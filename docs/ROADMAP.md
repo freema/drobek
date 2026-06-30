@@ -2,6 +2,15 @@
 
 > Produced by an 8-agent workflow (4 drafters → 3 adversarial critics → synthesis), 2026-06-30. Critique folded in; raw critiques in ROADMAP-critique.md.
 
+## ✅ Ratified decisions (2026-06-30, owner)
+
+- **D1 hostname → APEX `drobek.app`** (+ `mcp.drobek.app`). **Reuse the existing kept cert** (SAN already = drobek.app + www + mcp.drobek.app → no new cert) by replacing the apex→tomasgrasl redirect with the real app; **`noindex` during beta**. Accepts drobek.app is publicly the WIP. *(Owner overrode the beta-subdomain rec — acceptable: cert is valid, so churn shows plain 502s, not cert errors.)*
+- **D2 object storage → NO MinIO.** Blobs via a **pluggable blob-store interface, default = local disk** (content-hash files) + a drobek **signed upload endpoint** (agent PUTs out-of-band to drobek, not S3). Keeps the box light. S3/R2 adapter optional later for scale/large binaries. *(Reconciles R1/D2 — the roadmap over-specified object storage; local disk suffices for small static apps.)*
+- **D3 health → adopted:** `{ok,db,redis}` + 503-on-down + `/api/version{sha}`; MCP `/health`.
+- **D4 migrations → adopted:** two drizzle journals (`_core`/`_web`), two passes, one DB.
+- **D5 done/cadence → WIP=1 vertical slices** (no "all-at-once"); **foundation = M0 + all of M1**; M2/M3 may lag. Skeleton→prod 6–10 wk; M1 ~9–14 mo solo (accepted). Linear re-cut into M0/M1a/M1b/M1c.
+- **DNS for the future wildcard = Hostinger** (`*.dns-parking.com`) → DNS-01 via Hostinger API.
+
 ---
 
 # drobek — Deployment-First Roadmap (Final)
