@@ -2,6 +2,18 @@
 
 > 🌱 **Living doc.** Settled decisions marked plainly; **(open)** = still to specify. Canonical spec = the Linear project; this is the repo snapshot. Last sync: 2026-06-30.
 
+## ⚠️ Corrections (post-audit 2026-06-30) — authoritative; supersede anything below
+
+- **Blobs = local-disk `BlobStore`** (content-hash files) — **no PG `bytea`, no MinIO**. `blobs(sha256, content_type, size, path)` + `blob_refs(sha256, deploy_id)` (refcount for safe GC). **Persistent volume** in the deploy compose (else every deploy wipes apps). Signed-upload endpoint **stream-hashes + verifies sha256** server-side.
+- **Serving origin:** apex same-origin accepted **only for single-user self-host / M0–M1a**; **before multi-tenant/public, move the dashboard to `app.drobek.app`** (apps keep the apex path). See PHY-98.
+- **App visibility = `public | team | password`** (not "always public").
+- **Milestones:** add **M0** (walking skeleton); **foundation = M0 + M1a only** (M1b/M1c post-dogfood). Pull `audit_log` + `team-only` into M1a.
+- **super-admin is GLOBAL** (env `SUPERADMIN_EMAIL`), not a `memberships` role row.
+- **OAuth AS = build, not port** (puls tokens are shopId-bound; no refresh/audience).
+- **License = dual-license** (core AGPL public; non-AGPL grant to drobek-web).
+- **DNS = Hostinger** (`*.dns-parking.com`) for future wildcard DNS-01.
+- Full audit & findings: `docs/REVIEW.md`.
+
 drobek hosts small **client-side (static HTML/JS/CSS) "vibecoded"** micro-projects. Drop a folder → live URL. Headline = **MCP-native deploy** (the AI agent that built it deploys it). drobek also gives those static apps a **data API**, a **JS SDK** (data + their own end-user auth), and an **outbound proxy** — so they do real work without their own backend.
 
 **Shape:** a **single-box Node app** — Postgres (source of truth) + Redis (queue/cache/sessions) + two small services (`web`, `mcp-server`), same family as [`puls-mcp`](https://github.com/freema/puls-mcp). Batteries-included, but one box.
@@ -26,7 +38,8 @@ users(id, email, google_sub, ...)                roles: super-admin | workspace-
 workspaces(id, kind: personal|team, slug)        memberships(user_id, workspace_id, role)
 apps(id, workspace_id, slug, active_deploy_id, routing_mode, visibility=public, status: live|hibernated)
 deploys(id, app_id, manifest jsonb, lint_report jsonb, created_at)     -- immutable
-blobs(sha256 PK, content_type, bytes)            -- content-addressed, dedup
+blobs(sha256 PK, content_type, size, path)       -- content-addressed; BYTES ON LOCAL DISK (BlobStore), not PG
+blob_refs(sha256, deploy_id)                     -- refcount for cross-tenant-safe GC
 collections(app_id, name, json_schema jsonb, access_mode: public-read|public-write|locked|owner-only)
 app_documents(app_id, collection, id, owner_end_user_id?, doc jsonb, ...)
 workspace_end_users(workspace_id, id, email, provider, ...)  -- hosted apps' OWN users, workspace-scoped (SSO)
@@ -40,7 +53,7 @@ app_metrics(app_id, day, visits, ...)            -- lightweight PG counters, no 
 Static (no-auth) app: **path-based** `(<host>)/<workspace>/app/<slug>`. **Auth app** (uses end-user auth): **per-workspace apps-origin** `<workspace>.apps.<host>/<slug>` (wildcard cert). Per-app **SPA-fallback toggle** (default **open**).
 
 ## 5. Serving origin & isolation
-**Configurable.** Default = **hardened same-origin** (admin cookie path-scoped, data-API token-gated, strict CSP) for internal self-host. Opt-in = separate apps-origin for public SaaS. **Auth apps always get a per-workspace apps-origin** (SSO + token isolation). Apps **always public** (v1). Content-hash serving + caching (ETag, immutable).
+⚠️ **Apex same-origin is unsafe with untrusted authors** (admin account-takeover): path-scoped cookies + CSP are NOT boundaries vs same-origin credentialed `fetch`. Accepted **only for single-user self-host / M0–M1a**; before multi-tenant/public, **move the dashboard to `app.drobek.app`** (apps keep the apex path) — see Corrections + PHY-98. **Auth apps** always get a **per-workspace apps-origin** (`<ws>.apps.<host>`, SSO + token isolation). **App visibility = `public | team | password`**, gated *before* serving blobs. Content-hash serving + caching (ETag, immutable).
 
 ## 6. Auth — drobek accounts
 **Port the puls-mcp module:** email magic-code + Google OIDC + sessions + **OAuth 2.1 AS for MCP** (authorize/token/DCR/`.well-known`/PKCE). Workspaces **personal + team** (email-invite). **Fixed roles:** `super-admin` (via `SUPERADMIN_EMAIL`), `workspace-admin`, `editor`, `viewer`. Gate by **role + scope + workspace**.

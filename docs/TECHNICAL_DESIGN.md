@@ -14,14 +14,15 @@ oauth_access_tokens(token pk, user_id, client_id, scope, audience, expires_at)
 
 -- Tenancy
 workspaces(id pk, kind 'personal'|'team', slug unique, name, created_at)
-memberships(user_id fk, workspace_id fk, role 'super-admin'|'workspace-admin'|'editor'|'viewer', pk(user,ws))
+memberships(user_id fk, workspace_id fk, role 'workspace-admin'|'editor'|'viewer', pk(user,ws))  -- super-admin is GLOBAL (env SUPERADMIN_EMAIL), not a membership row
 
 -- Apps & deploys
 apps(id pk, workspace_id fk, slug, active_deploy_id null, routing_mode 'spa'|'exact',
      visibility 'public'|'team'|'password', password_hash null, status 'live'|'hibernated',
      uses_end_user_auth bool, created_at, unique(workspace_id, slug))
 deploys(id pk, app_id fk, manifest jsonb, lint_report jsonb, created_at)   -- immutable
-blobs(sha256 pk, content_type, bytes bytea)                                -- content-addressed
+blobs(sha256 pk, content_type, size, path)                                 -- content-addressed; bytes on LOCAL DISK (BlobStore), not bytea
+blob_refs(sha256 fk, deploy_id fk, pk(sha256, deploy_id))                   -- refcount for cross-tenant-safe GC
 deploy_files(deploy_id fk, path, sha256 fk, pk(deploy_id, path))           -- manifest expanded
 
 -- Data API
@@ -38,7 +39,7 @@ workspace_end_user_sessions(token pk, workspace_id fk, end_user_id fk, expires_a
 -- Proxy
 upstreams(id pk, workspace_id fk, name, base_url, allowed_methods[], allowed_path_prefixes[],
           auth_type 'none'|'bearer'|'header'|'basic', allowed_app_ids[], unique(workspace_id, name))
-upstream_secrets(upstream_id pk fk, ciphertext, iv, auth_tag, wrapped_dek)  -- AES-256-GCM, KEK=DROBEK_MASTER_KEY
+upstream_secrets(upstream_id pk fk, ciphertext, iv, auth_tag, wrapped_dek, kek_id)  -- AES-256-GCM, KEK=DROBEK_MASTER_KEY; kek_id enables rotation
 
 -- Ops
 app_metrics(app_id fk, day date, visits int, ..., pk(app_id, day))         -- cheap counters, no PII
