@@ -49,6 +49,11 @@ tasks:
       - pnpm lint
       - pnpm test
 
+  blob:sign:
+    desc: 'Mint a signed upload token (PHY-100) — task blob:sign -- <sha256> <maxBytes> <ttl-sec>'
+    cmds:
+      - pnpm --filter @drobek/core exec node scripts/sign-upload.mjs {{.CLI_ARGS}}
+
   e2e:
     desc: Playwright suite against the local compose stack (includes @local specs)
     env:
@@ -57,6 +62,8 @@ tasks:
       TEST_ENV: local
       DATABASE_URL: 'postgresql://drobek:drobek@localhost:{{.POSTGRES_PUBLISH | default "5441"}}/drobek'
       ALLOW_DESTRUCTIVE: '1'
+      # blob specs mint their own tokens — must sign with the stack's secret.
+      UPLOAD_SIGNING_SECRET: '{{.UPLOAD_SIGNING_SECRET}}'
     cmds:
       - pnpm -C tests-e2e exec playwright test
 

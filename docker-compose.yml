@@ -52,8 +52,15 @@ services:
       NODE_ENV: development
       GIT_SHA: ${GIT_SHA:-dev}
       SUPERADMIN_EMAIL: ${SUPERADMIN_EMAIL:-}
+      # D2/PHY-96: content-hash blob files live on the persistent volume.
+      BLOB_DIR: /data/blobs
+      # PHY-100: HMAC secret for signed upload tokens — required, no default.
+      UPLOAD_SIGNING_SECRET: ${UPLOAD_SIGNING_SECRET:?UPLOAD_SIGNING_SECRET must be set in .env (see .env.example)}
     volumes:
       - .:/repo
+      # D2: persistent blob volume (survives container rebuilds; the deploy
+      # compose mounts the same-named volume into web+worker+mcp, P0-E).
+      - drobek_blobs:/data/blobs
       # Anonymous volumes: keep container-installed deps out of the host tree
       # (and host-installed darwin binaries out of the container).
       - /repo/node_modules
@@ -89,8 +96,11 @@ services:
       DATABASE_URL: postgresql://drobek:drobek@postgres:5432/drobek
       REDIS_URL: redis://redis:6379
       GIT_SHA: ${GIT_SHA:-dev}
+      # D2: mcp shares the blob volume (deploy tooling reads blobs later).
+      BLOB_DIR: /data/blobs
     volumes:
       - .:/repo
+      - drobek_blobs:/data/blobs
       - /repo/node_modules
       - /repo/apps/web/node_modules
       - /repo/apps/mcp-server/node_modules
@@ -118,3 +128,6 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  # D2 (ratified): persistent content-hash blob store — /data/blobs/<ab>/<sha256>.
+  # Without this volume every rebuild would wipe deployed apps (PHY-96).
+  drobek_blobs:
