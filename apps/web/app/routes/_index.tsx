@@ -20,11 +20,18 @@ const styles = {
   h1: { fontSize: '2.25rem', marginBottom: '0.25rem' },
   tagline: { color: '#555', marginTop: 0 },
   list: { paddingLeft: '1.25rem' },
+  nav: { display: 'flex', justifyContent: 'flex-end' },
+  signIn: { color: '#1a1a1a', fontWeight: 600 },
 } as const;
 
 export default function Index() {
   return (
     <main style={styles.main}>
+      <nav style={styles.nav}>
+        <a href="/login" style={styles.signIn}>
+          Sign in
+        </a>
+      </nav>
       <h1 style={styles.h1}>drobek</h1>
       <p style={styles.tagline}>
         MCP-native hosting for vibecoded static micro-apps. Drop a folder,

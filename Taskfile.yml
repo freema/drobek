@@ -61,6 +61,8 @@ tasks:
       BASE_URL_MCP: 'http://localhost:{{.MCP_PUBLISH | default "3042"}}'
       TEST_ENV: local
       DATABASE_URL: 'postgresql://drobek:drobek@localhost:{{.POSTGRES_PUBLISH | default "5441"}}/drobek'
+      REDIS_URL: 'redis://localhost:{{.REDIS_PUBLISH | default "6391"}}'
+      MAILPIT_URL: 'http://localhost:{{.MAILPIT_PUBLISH | default "8025"}}'
       ALLOW_DESTRUCTIVE: '1'
       # blob specs mint their own tokens — must sign with the stack's secret.
       UPLOAD_SIGNING_SECRET: '{{.UPLOAD_SIGNING_SECRET}}'

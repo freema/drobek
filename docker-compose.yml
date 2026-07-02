@@ -37,6 +37,22 @@ services:
       timeout: 5s
       retries: 5
 
+  mailpit:
+    # U2: local SMTP sink — web sends login codes to mailpit:1025 (in-network,
+    # no host publish needed); the web UI + REST API publish to the host for
+    # e2e polling (tests-e2e/tests/auth-flow.spec.ts) and manual inspection.
+    image: axllent/mailpit
+    container_name: drobek-mailpit
+    ports:
+      - '${MAILPIT_PUBLISH:-8025}:8025'
+    healthcheck:
+      # Verified: the image ships /mailpit with a `readyz` probe subcommand
+      # (hits the /readyz endpoint on 8025 internally).
+      test: ['CMD', '/mailpit', 'readyz']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   web:
     build:
       context: .
@@ -56,6 +72,20 @@ services:
       BLOB_DIR: /data/blobs
       # PHY-100: HMAC secret for signed upload tokens — required, no default.
       UPLOAD_SIGNING_SECRET: ${UPLOAD_SIGNING_SECRET:?UPLOAD_SIGNING_SECRET must be set in .env (see .env.example)}
+      # U2: login-code e-mails go to the in-network mailpit sink (no auth).
+      SMTP_HOST: mailpit
+      SMTP_PORT: '1025'
+      SMTP_SECURE: '0'
+      EMAIL_FROM: ${EMAIL_FROM:-no-reply@drobek.app}
+      # U2: OTP guard — env kill switch + tunable limits. Dev values are
+      # RELAXED so local e2e and browser verification never trip them
+      # (prod defaults, used when unset: 5 / 20 / 3 / 60000 / 100).
+      OTP_LOGIN_DISABLED: ${OTP_LOGIN_DISABLED:-}
+      OTP_IP_SHORT_LIMIT: ${OTP_IP_SHORT_LIMIT:-100}
+      OTP_IP_DAILY_LIMIT: ${OTP_IP_DAILY_LIMIT:-500}
+      OTP_EMAIL_HOURLY_LIMIT: ${OTP_EMAIL_HOURLY_LIMIT:-50}
+      OTP_EMAIL_COOLDOWN_MS: ${OTP_EMAIL_COOLDOWN_MS:-5000}
+      OTP_GLOBAL_HOURLY_MAX: ${OTP_GLOBAL_HOURLY_MAX:-1000}
     volumes:
       - .:/repo
       # D2: persistent blob volume (survives container rebuilds; the deploy
@@ -80,6 +110,8 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      mailpit:
         condition: service_healthy
 
   mcp:
