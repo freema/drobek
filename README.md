@@ -60,6 +60,43 @@ drobek is an **open-core** project:
 - Subdomain + custom-domain + wildcard TLS model
 - Quotas, limits, lifecycle (do stale projects expire?)
 
+## Quickstart (local dev)
+
+Prereqs: Docker (compose v2), [go-task](https://taskfile.dev) 3, Node 22 + pnpm 10 (host-side checks only).
+
+```sh
+cp .env.example .env   # local ports + env; adjust if 3041/3042/5441/6391 are taken
+task up                # build + start web+mcp+postgres+redis, wait until healthy
+```
+
+The stack (all four services have healthchecks; core Drizzle migrations run
+automatically in the web entrypoint):
+
+| Service  | Host port | In-container | Check |
+| -------- | --------- | ------------ | ----- |
+| web (React Router 7 SSR) | [3041](http://localhost:3041) | 3000 | `GET /healthz` → `{ok,db,redis}`, 503 when a dependency is down |
+| mcp-server (Express) | [3042](http://localhost:3042) | 3001 | `GET /health` → `{ok:true}` |
+| postgres 17 | 5441 | 5432 | `pg_isready` |
+| redis 7 | 6391 | 6379 | `redis-cli ping` |
+
+Everyday commands:
+
+```sh
+task health       # curl both health endpoints
+task logs         # tail web + mcp
+task check        # host-side: build packages, typecheck, lint, unit tests
+task e2e          # Playwright suite (incl. @local specs) against the stack
+task e2e:smoke    # read-only @smoke specs only
+task db:generate  # drizzle-kit generate (journal __drizzle_migrations_core)
+task db:migrate   # apply core migrations manually
+task stop         # docker compose down
+```
+
+`/api/version` returns the git sha `task up` bakes in via `GIT_SHA`
+(fallback `dev`). Monorepo layout: `apps/{web,mcp-server}` +
+`packages/{db,core,sdk}` + `tests-e2e` (pnpm workspace). Architecture and
+the ratified D1–D5 decisions: [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md).
+
 ## License
 
 [AGPL-3.0](./LICENSE). The managed SaaS (`drobek-web`) stays private.

@@ -1,0 +1,120 @@
+# drobek — local dev stack (M0): web + mcp + postgres + redis. No worker yet
+# (the BullMQ worker joins the deploy compose with U6). Ports 3041/3042 are
+# drobek's; postgres/redis publish on non-default host ports to avoid
+# colliding with other local stacks.
+#
+# Bind-mounts + anonymous volumes on every node_modules dir: the host (macOS)
+# installs must never clobber the container's (linux) pnpm symlinks/binaries.
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: drobek-postgres
+    environment:
+      POSTGRES_USER: drobek
+      POSTGRES_PASSWORD: drobek
+      POSTGRES_DB: drobek
+    ports:
+      - '${POSTGRES_PUBLISH:-5441}:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U drobek -d drobek']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: drobek-redis
+    ports:
+      - '${REDIS_PUBLISH:-6391}:6379'
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: drobek-web
+    working_dir: /repo/apps/web
+    ports:
+      - '${WEB_PUBLISH:-3041}:${WEB_PORT:-3000}'
+    environment:
+      DATABASE_URL: postgresql://drobek:drobek@postgres:5432/drobek
+      REDIS_URL: redis://redis:6379
+      PORT: '${WEB_PORT:-3000}'
+      NODE_ENV: development
+      GIT_SHA: ${GIT_SHA:-dev}
+      SUPERADMIN_EMAIL: ${SUPERADMIN_EMAIL:-}
+    volumes:
+      - .:/repo
+      # Anonymous volumes: keep container-installed deps out of the host tree
+      # (and host-installed darwin binaries out of the container).
+      - /repo/node_modules
+      - /repo/apps/web/node_modules
+      - /repo/apps/mcp-server/node_modules
+      - /repo/packages/db/node_modules
+      - /repo/packages/core/node_modules
+      - /repo/packages/sdk/node_modules
+      - /repo/tests-e2e/node_modules
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -q -T 5 -O - "http://127.0.0.1:$${PORT:-3000}/healthz" || exit 1']
+      interval: 5s
+      timeout: 10s
+      retries: 90
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  mcp:
+    build:
+      context: .
+      dockerfile: apps/mcp-server/Dockerfile
+    container_name: drobek-mcp
+    working_dir: /repo/apps/mcp-server
+    ports:
+      - '${MCP_PUBLISH:-3042}:${MCP_PORT:-3001}'
+    environment:
+      PORT: '${MCP_PORT:-3001}'
+      NODE_ENV: development
+      DATABASE_URL: postgresql://drobek:drobek@postgres:5432/drobek
+      REDIS_URL: redis://redis:6379
+      GIT_SHA: ${GIT_SHA:-dev}
+    volumes:
+      - .:/repo
+      - /repo/node_modules
+      - /repo/apps/web/node_modules
+      - /repo/apps/mcp-server/node_modules
+      - /repo/packages/db/node_modules
+      - /repo/packages/core/node_modules
+      - /repo/packages/sdk/node_modules
+      - /repo/tests-e2e/node_modules
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -q -T 5 -O - "http://127.0.0.1:$${PORT:-3001}/health" || exit 1']
+      interval: 5s
+      timeout: 10s
+      retries: 45
+      start_period: 20s
+    depends_on:
+      # web runs `pnpm install` + package builds + migrations into the shared
+      # bind mount first; serializing avoids two containers compiling
+      # packages/*/dist concurrently.
+      web:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:

@@ -1,0 +1,75 @@
+version: '3'
+
+dotenv: ['.env']
+
+vars:
+  GIT_SHA:
+    sh: git -C {{.ROOT_DIR}} rev-parse --short HEAD 2>/dev/null || echo dev
+
+tasks:
+  up:
+    desc: Build + start the dev stack (web+mcp+postgres+redis) and wait until healthy
+    env:
+      GIT_SHA: '{{.GIT_SHA}}'
+    cmds:
+      - docker compose up -d --build --wait --wait-timeout 300
+      - task: health
+
+  stop:
+    desc: Stop the dev stack
+    cmds:
+      - docker compose down
+
+  logs:
+    desc: Tail web + mcp logs
+    cmds:
+      - docker compose logs -f web mcp
+
+  status:
+    desc: Container status
+    cmds:
+      - docker compose ps
+
+  db:generate:
+    desc: Generate Drizzle migrations from packages/db schema (journal __drizzle_migrations_core)
+    cmds:
+      - docker compose exec web pnpm --filter @drobek/db db:generate
+
+  db:migrate:
+    desc: Apply core Drizzle migrations (also runs automatically in the web entrypoint)
+    cmds:
+      - docker compose exec web pnpm --filter @drobek/db db:migrate
+
+  check:
+    desc: Host-side gate — build packages, typecheck, lint, unit tests
+    cmds:
+      - pnpm install
+      - pnpm build:packages
+      - pnpm typecheck
+      - pnpm lint
+      - pnpm test
+
+  e2e:
+    desc: Playwright suite against the local compose stack (includes @local specs)
+    env:
+      BASE_URL_WEB: 'http://localhost:{{.WEB_PUBLISH | default "3041"}}'
+      BASE_URL_MCP: 'http://localhost:{{.MCP_PUBLISH | default "3042"}}'
+      TEST_ENV: local
+      DATABASE_URL: 'postgresql://drobek:drobek@localhost:{{.POSTGRES_PUBLISH | default "5441"}}/drobek'
+      ALLOW_DESTRUCTIVE: '1'
+    cmds:
+      - pnpm -C tests-e2e exec playwright test
+
+  e2e:smoke:
+    desc: Read-only @smoke specs only (safe against any target)
+    env:
+      BASE_URL_WEB: 'http://localhost:{{.WEB_PUBLISH | default "3041"}}'
+      BASE_URL_MCP: 'http://localhost:{{.MCP_PUBLISH | default "3042"}}'
+    cmds:
+      - pnpm -C tests-e2e exec playwright test --grep "@smoke"
+
+  health:
+    desc: Curl both health endpoints from the host
+    cmds:
+      - curl -sf http://localhost:{{.WEB_PUBLISH | default "3041"}}/healthz && echo
+      - curl -sf http://localhost:{{.MCP_PUBLISH | default "3042"}}/health && echo

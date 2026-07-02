@@ -1,0 +1,39 @@
+# Node
+node_modules/
+npm-debug.log*
+pnpm-debug.log*
+.pnpm-store/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*~
+
+# Build
+dist/
+build/
+.react-router/
+coverage/
+
+# Playwright
+tests-e2e/playwright-report/
+tests-e2e/test-results/
+
+# Logs
+*.log
+logs/
+
+# Local working files
+.claude/
+*.local.md
+.local/

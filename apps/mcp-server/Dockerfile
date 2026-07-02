@@ -1,0 +1,34 @@
+# syntax=docker/dockerfile:1
+# drobek — mcp-server DEV image. Same bind-mount + anonymous-volume model as
+# apps/web/Dockerfile.
+FROM node:22-alpine
+RUN corepack enable && corepack prepare pnpm@10.33.2 --activate
+
+WORKDIR /repo
+
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+COPY apps/web/package.json ./apps/web/
+COPY apps/mcp-server/package.json ./apps/mcp-server/
+COPY packages/db/package.json ./packages/db/
+COPY packages/core/package.json ./packages/core/
+COPY packages/sdk/package.json ./packages/sdk/
+COPY tests-e2e/package.json ./tests-e2e/
+
+RUN pnpm install --frozen-lockfile
+
+COPY packages ./packages
+RUN pnpm --filter @drobek/db build \
+ && pnpm --filter @drobek/core build \
+ && pnpm --filter @drobek/sdk build
+COPY apps/mcp-server ./apps/mcp-server
+
+COPY apps/mcp-server/docker-entrypoint.sh /usr/local/bin/drobek-mcp-entrypoint.sh
+RUN chmod +x /usr/local/bin/drobek-mcp-entrypoint.sh
+
+WORKDIR /repo/apps/mcp-server
+
+ENV NODE_ENV=development
+EXPOSE 3001
+
+ENTRYPOINT ["/usr/local/bin/drobek-mcp-entrypoint.sh"]
+CMD ["pnpm", "run", "dev"]

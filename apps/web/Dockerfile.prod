@@ -1,0 +1,103 @@
+# syntax=docker/dockerfile:1.4
+# ============================================
+# drobek — Web (apps/web) Production Dockerfile
+# React Router v7 SSR
+# Workspace: @drobek/db, @drobek/core, @drobek/sdk
+# Container port 3000 (published as 3041 locally and on the VPS)
+# GHCR (P0-D): drobek-selfhost-web (public) / drobek-saas-web (private)
+# NOTE: runner MUST stay the LAST stage (default build target), and the
+# runner WORKDIR MUST be the app dir — RR7 assetsBuildDirectory is relative.
+# ============================================
+
+# --- Base ---
+FROM node:22-alpine AS base
+RUN corepack enable && corepack prepare pnpm@10.33.2 --activate
+WORKDIR /app
+
+# --- Deps (full install incl. dev — needed for the build) ---
+FROM base AS deps
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY apps/web/package.json ./apps/web/
+COPY apps/mcp-server/package.json ./apps/mcp-server/
+COPY packages/db/package.json ./packages/db/
+COPY packages/core/package.json ./packages/core/
+COPY packages/sdk/package.json ./packages/sdk/
+COPY tests-e2e/package.json ./tests-e2e/
+RUN pnpm install --frozen-lockfile
+
+# --- Builder (compile workspace packages, build the web app) ---
+FROM base AS builder
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/apps/web/node_modules ./apps/web/node_modules
+COPY --from=deps /app/packages/db/node_modules ./packages/db/node_modules
+COPY --from=deps /app/packages/core/node_modules ./packages/core/node_modules
+COPY --from=deps /app/packages/sdk/node_modules ./packages/sdk/node_modules
+
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+COPY packages ./packages
+COPY apps/web ./apps/web
+
+RUN pnpm --filter @drobek/db build \
+ && pnpm --filter @drobek/core build \
+ && pnpm --filter @drobek/sdk build
+RUN pnpm --filter web build
+
+# --- Prod deps (production-only, no dev deps) ---
+FROM base AS prod-deps
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY apps/web/package.json ./apps/web/
+COPY apps/mcp-server/package.json ./apps/mcp-server/
+COPY packages/db/package.json ./packages/db/
+COPY packages/core/package.json ./packages/core/
+COPY packages/sdk/package.json ./packages/sdk/
+COPY tests-e2e/package.json ./tests-e2e/
+RUN pnpm install --frozen-lockfile --prod --ignore-scripts
+
+# --- Runner (final production image — MUST be the last stage) ---
+FROM base AS runner
+ENV NODE_ENV=production
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+
+ARG GIT_SHA=dev
+ENV GIT_SHA=$GIT_SHA
+
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 appuser
+
+WORKDIR /app
+
+# Production node_modules (workspace symlinks resolve via package.jsons below)
+COPY --from=prod-deps --chown=appuser:nodejs /app/node_modules ./node_modules
+COPY --from=prod-deps --chown=appuser:nodejs /app/apps/web/node_modules ./apps/web/node_modules
+COPY --from=prod-deps --chown=appuser:nodejs /app/packages/db/node_modules ./packages/db/node_modules
+COPY --from=prod-deps --chown=appuser:nodejs /app/packages/core/node_modules ./packages/core/node_modules
+# NOTE: no packages/sdk/node_modules — @drobek/sdk has zero prod deps, so the
+# prod install creates none.
+
+# Workspace metadata (pnpm symlink resolution at runtime)
+COPY --from=builder --chown=appuser:nodejs /app/package.json /app/pnpm-workspace.yaml /app/pnpm-lock.yaml ./
+
+# Workspace package compiled output
+COPY --from=builder --chown=appuser:nodejs /app/packages/db/package.json ./packages/db/
+COPY --from=builder --chown=appuser:nodejs /app/packages/db/dist ./packages/db/dist
+COPY --from=builder --chown=appuser:nodejs /app/packages/core/package.json ./packages/core/
+COPY --from=builder --chown=appuser:nodejs /app/packages/core/dist ./packages/core/dist
+COPY --from=builder --chown=appuser:nodejs /app/packages/sdk/package.json ./packages/sdk/
+COPY --from=builder --chown=appuser:nodejs /app/packages/sdk/dist ./packages/sdk/dist
+
+# Web app build artifacts
+COPY --from=builder --chown=appuser:nodejs /app/apps/web/package.json ./apps/web/
+COPY --from=builder --chown=appuser:nodejs /app/apps/web/build ./apps/web/build
+
+# RR7 gotcha: assetsBuildDirectory ("build/client") is relative — a wrong CWD
+# means 404 on every /assets/* request.
+WORKDIR /app/apps/web
+
+USER appuser
+EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD wget -q -T 5 -O - http://127.0.0.1:3000/healthz || exit 1
+
+CMD ["pnpm", "start"]
