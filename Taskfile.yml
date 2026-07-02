@@ -77,6 +77,13 @@ tasks:
     cmds:
       - pnpm -C tests-e2e exec playwright test --grep "@smoke"
 
+  mock:google:
+    desc: Run the mock Google OIDC provider in the foreground (U3 — tests-e2e/mock-google.mjs, port 3049)
+    env:
+      MOCK_GOOGLE_PORT: '{{.MOCK_GOOGLE_PORT | default "3049"}}'
+    cmds:
+      - node tests-e2e/mock-google.mjs
+
   health:
     desc: Curl both health endpoints from the host
     cmds:

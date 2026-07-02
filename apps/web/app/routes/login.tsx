@@ -3,6 +3,7 @@ import {
   Form,
   redirect,
   useActionData,
+  useLoaderData,
   useNavigation,
   type ActionFunctionArgs,
   type LoaderFunctionArgs,
@@ -12,6 +13,7 @@ import {
   getClientIp,
   normalizeAuthEmail,
 } from '~/lib/auth/email-code.server';
+import { isGoogleLoginEnabled } from '~/lib/auth/google-oauth.server';
 import {
   guardOtpRequest,
   logOtpSent,
@@ -28,10 +30,20 @@ export function meta() {
 // Server-side sanity check; the input itself is type=email.
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// U3: ONE generic message for every Google-login failure mode — the real
+// reason is logged server-side only (no detail leak to the browser).
+const GENERIC_GOOGLE_ERROR =
+  'Google sign-in did not complete. Please try again, or sign in with an email code below.';
+
 export async function loader({ request }: LoaderFunctionArgs) {
   const user = await getSessionUser(request);
   if (user) throw redirect('/me');
-  return null;
+  const url = new URL(request.url);
+  return {
+    googleEnabled: isGoogleLoginEnabled(),
+    googleError:
+      url.searchParams.get('error') === 'google' ? GENERIC_GOOGLE_ERROR : null,
+  };
 }
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -130,12 +142,41 @@ const styles = {
     fontSize: '0.9rem',
     marginBottom: '1rem',
   },
+  // U3: "Continue with Google" — same footprint as the primary button,
+  // inverted colors so the email form stays the visual default.
+  googleLink: {
+    display: 'block',
+    boxSizing: 'border-box',
+    width: '100%',
+    padding: '0.6rem 0.75rem',
+    fontSize: '1rem',
+    fontFamily: 'inherit',
+    fontWeight: 600,
+    textAlign: 'center',
+    textDecoration: 'none',
+    color: '#1a1a1a',
+    background: '#fff',
+    border: '1px solid #d4d4d8',
+    borderRadius: '8px',
+    cursor: 'pointer',
+  },
+  divider: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.75rem',
+    margin: '1.25rem 0',
+    color: '#888',
+    fontSize: '0.8rem',
+  },
+  dividerLine: { flex: 1, height: 1, background: '#e4e4e7' },
 } as const;
 
 export default function LoginRoute() {
+  const { googleEnabled, googleError } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const nav = useNavigation();
   const submitting = nav.state !== 'idle';
+  const error = actionData?.error ?? googleError;
 
   return (
     <main style={styles.main}>
@@ -145,9 +186,9 @@ export default function LoginRoute() {
         password needed.
       </p>
 
-      {actionData?.error ? (
+      {error ? (
         <div style={styles.error} role="alert">
-          {actionData.error}
+          {error}
         </div>
       ) : null}
 
@@ -169,6 +210,19 @@ export default function LoginRoute() {
           {submitting ? 'Sending…' : 'Send code'}
         </button>
       </Form>
+
+      {googleEnabled ? (
+        <>
+          <div style={styles.divider} aria-hidden="true">
+            <span style={styles.dividerLine} />
+            <span>or</span>
+            <span style={styles.dividerLine} />
+          </div>
+          <a href="/auth/google" style={styles.googleLink}>
+            Continue with Google
+          </a>
+        </>
+      ) : null}
     </main>
   );
 }

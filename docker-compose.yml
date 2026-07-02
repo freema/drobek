@@ -86,6 +86,23 @@ services:
       OTP_EMAIL_HOURLY_LIMIT: ${OTP_EMAIL_HOURLY_LIMIT:-50}
       OTP_EMAIL_COOLDOWN_MS: ${OTP_EMAIL_COOLDOWN_MS:-5000}
       OTP_GLOBAL_HOURLY_MAX: ${OTP_GLOBAL_HOURLY_MAX:-1000}
+      # U3: Google OIDC login — dev defaults point at the LOCAL MOCK provider
+      # (tests-e2e/mock-google.mjs / `task mock:google`, host port 3049) with
+      # dummy credentials. Empty GOOGLE_CLIENT_ID disables the feature.
+      # URL split (see .env.example): AUTHORIZE is opened by the BROWSER on the
+      # host → localhost:3049; TOKEN + USERINFO are fetched by THIS CONTAINER →
+      # host.docker.internal:3049.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-local-dev-client}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-local-dev-secret}
+      GOOGLE_AUTH_URL: ${GOOGLE_AUTH_URL:-http://localhost:3049/authorize}
+      GOOGLE_TOKEN_URL: ${GOOGLE_TOKEN_URL:-http://host.docker.internal:3049/token}
+      GOOGLE_USERINFO_URL: ${GOOGLE_USERINFO_URL:-http://host.docker.internal:3049/userinfo}
+      # Origin the OAuth redirect_uri is built from (PUBLIC_ORIGIN + /auth/google/callback).
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-http://localhost:3041}
+    extra_hosts:
+      # linux portability: make host.docker.internal resolve everywhere
+      # (Docker Desktop has it natively; host-gateway covers linux engines).
+      - 'host.docker.internal:host-gateway'
     volumes:
       - .:/repo
       # D2: persistent blob volume (survives container rebuilds; the deploy

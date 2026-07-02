@@ -8,6 +8,9 @@ export default [
   route('login', 'routes/login.tsx'),
   route('login/verify', 'routes/login.verify.tsx'),
   route('auth/logout', 'routes/auth.logout.tsx'),
+  // U3 (PHY-53): Google OIDC login — account-link by email.
+  route('auth/google', 'routes/auth.google.tsx'),
+  route('auth/google/callback', 'routes/auth.google.callback.tsx'),
   route('me', 'routes/me.tsx'),
   // P0-B blob skeleton (D2/PHY-100): signed-upload sink + read-back path.
   route('__upload/:token', 'routes/__upload.$token.ts'),
