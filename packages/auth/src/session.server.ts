@@ -11,7 +11,7 @@
 import { randomBytes } from 'node:crypto';
 import { redirect } from 'react-router';
 import { getRedis } from '@drobek/core';
-import { SESSION_COOKIE, SESSION_MAX_AGE_SEC } from './constants';
+import { SESSION_COOKIE, SESSION_MAX_AGE_SEC } from './constants.js';
 
 export type SessionUser = {
   id: string;

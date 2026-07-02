@@ -1,0 +1,88 @@
+{
+  "name": "@drobek/auth",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./routes/login": {
+      "types": "./src/routes/login.tsx",
+      "default": "./dist/routes/login.js"
+    },
+    "./routes/login.server": {
+      "types": "./src/routes/login.server.ts",
+      "default": "./dist/routes/login.server.js"
+    },
+    "./routes/login.verify": {
+      "types": "./src/routes/login.verify.tsx",
+      "default": "./dist/routes/login.verify.js"
+    },
+    "./routes/login.verify.server": {
+      "types": "./src/routes/login.verify.server.ts",
+      "default": "./dist/routes/login.verify.server.js"
+    },
+    "./routes/auth.logout": {
+      "types": "./src/routes/auth.logout.tsx",
+      "default": "./dist/routes/auth.logout.js"
+    },
+    "./routes/auth.logout.server": {
+      "types": "./src/routes/auth.logout.server.ts",
+      "default": "./dist/routes/auth.logout.server.js"
+    },
+    "./routes/me": {
+      "types": "./src/routes/me.tsx",
+      "default": "./dist/routes/me.js"
+    },
+    "./routes/me.server": {
+      "types": "./src/routes/me.server.ts",
+      "default": "./dist/routes/me.server.js"
+    },
+    "./routes/auth.google": {
+      "types": "./src/routes/auth.google.tsx",
+      "default": "./dist/routes/auth.google.js"
+    },
+    "./routes/auth.google.server": {
+      "types": "./src/routes/auth.google.server.ts",
+      "default": "./dist/routes/auth.google.server.js"
+    },
+    "./routes/auth.google.callback": {
+      "types": "./src/routes/auth.google.callback.tsx",
+      "default": "./dist/routes/auth.google.callback.js"
+    },
+    "./routes/auth.google.callback.server": {
+      "types": "./src/routes/auth.google.callback.server.ts",
+      "default": "./dist/routes/auth.google.callback.server.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest",
+    "test:run": "vitest run"
+  },
+  "dependencies": {
+    "@drobek/core": "workspace:*",
+    "@drobek/db": "workspace:*",
+    "drizzle-orm": "^0.41.0",
+    "nodemailer": "^6.9.16"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-router": "^7.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "@types/nodemailer": "^6.4.17",
+    "@types/react": "^19.0.10",
+    "react": "^19.0.0",
+    "react-router": "7.14.0",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.7"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

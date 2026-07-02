@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { getDb, users } from '@drobek/db';
-import { normalizeAuthEmail } from './email-code.server';
-import type { GoogleIdentity } from './google-oauth.server';
+import { normalizeAuthEmail } from './email-code.server.js';
+import type { GoogleIdentity } from './google-oauth.server.js';
 
 /**
  * Ensure a `users` row exists for this e-mail (normalized trim+lowercase);

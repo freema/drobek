@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { GOOGLE_OAUTH_STATE_COOKIE } from './constants';
+import { GOOGLE_OAUTH_STATE_COOKIE } from './constants.js';
 import {
   buildGoogleAuthUrl,
   generateOAuthState,
@@ -11,7 +11,7 @@ import {
   oauthStatesMatch,
   readStateCookie,
   stateCookieHeader,
-} from './google-oauth.server';
+} from './google-oauth.server.js';
 
 describe('getGoogleOAuthConfig', () => {
   it('returns null when GOOGLE_CLIENT_ID is missing/empty (feature gated off)', () => {

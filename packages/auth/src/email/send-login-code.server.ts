@@ -1,11 +1,11 @@
-import { logger } from '~/lib/logger.server';
-import { maskEmail } from '~/lib/mask-email';
+import { logger } from '../logger.server.js';
+import { maskEmail } from '../mask-email.js';
 import {
   getEmailFrom,
   getSmtpTransport,
   smtpConfigured,
-} from '~/lib/email/smtp.server';
-import { renderLoginCodeEmail } from '~/lib/email/templates/login-code.server';
+} from './smtp.server.js';
+import { renderLoginCodeEmail } from './templates/login-code.server.js';
 
 /** Deliver the e-mail login code via SMTP (dev fallback: log the code). */
 export async function sendLoginCodeEmail(args: {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isSuperAdmin } from './super-admin.server';
+import { isSuperAdmin } from './super-admin.server.js';
 
 describe('isSuperAdmin', () => {
   it('matches after normalization (trim + lowercase) on both sides', () => {

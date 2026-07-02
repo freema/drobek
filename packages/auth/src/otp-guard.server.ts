@@ -18,9 +18,9 @@
  */
 import { createHash } from 'node:crypto';
 import { getRedis } from '@drobek/core';
-import { logger, serializeError } from '~/lib/logger.server';
-import { maskEmail } from '~/lib/mask-email';
-import { rateLimitRedis } from '~/lib/rate-limit.server';
+import { logger, serializeError } from './logger.server.js';
+import { maskEmail } from './mask-email.js';
+import { rateLimitRedis } from './rate-limit.server.js';
 
 // ---- Fixed windows (limits are env-tunable, windows are not) ----
 const IP_SHORT_WINDOW_MS = 15 * 60_000;

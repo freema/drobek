@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   resolveGoogleUser,
   type GoogleUserStore,
-} from './ensure-user.server';
+} from './ensure-user.server.js';
 
 /** In-memory GoogleUserStore mirroring the users-table uniques (email, sub). */
 class FakeUserStore implements GoogleUserStore {

@@ -14,7 +14,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import {
   GOOGLE_OAUTH_STATE_COOKIE,
   GOOGLE_OAUTH_STATE_MAX_AGE_SEC,
-} from './constants';
+} from './constants.js';
 
 export const GOOGLE_DEFAULT_AUTH_URL =
   'https://accounts.google.com/o/oauth2/v2/auth';

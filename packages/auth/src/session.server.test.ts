@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { FakeRedis } from './fake-redis';
+import { FakeRedis } from './fake-redis.js';
 
 let fake: FakeRedis;
 
@@ -11,14 +11,14 @@ vi.mock('@drobek/core', async (importOriginal) => {
   };
 });
 
-import { SESSION_COOKIE, SESSION_MAX_AGE_SEC } from './constants';
+import { SESSION_COOKIE, SESSION_MAX_AGE_SEC } from './constants.js';
 import {
   createUserSession,
   destroySession,
   getSessionUser,
   requireSessionUser,
   sessionCookieHeader,
-} from './session.server';
+} from './session.server.js';
 
 function requestWithCookie(cookie: string | null): Request {
   return new Request('http://localhost/me', {

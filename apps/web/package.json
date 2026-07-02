@@ -13,6 +13,7 @@
     "test:run": "vitest run"
   },
   "dependencies": {
+    "@drobek/auth": "workspace:*",
     "@drobek/core": "workspace:*",
     "@drobek/db": "workspace:*",
     "@paralleldrive/cuid2": "^2.2.2",

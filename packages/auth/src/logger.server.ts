@@ -1,7 +1,7 @@
 import { createConsoleLogger, type Logger } from '@drobek/core';
 
-/** Shared structured logger for the web app server code. */
-export const logger: Logger = createConsoleLogger('drobek-web');
+/** Shared structured logger for the auth package server code. */
+export const logger: Logger = createConsoleLogger('drobek-auth');
 
 /** Flatten an unknown thrown value into log-safe metadata. */
 export function serializeError(err: unknown): {

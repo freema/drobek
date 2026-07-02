@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { FakeRedis } from './fake-redis';
+import { FakeRedis } from './fake-redis.js';
 
 let fake: FakeRedis;
 
@@ -18,7 +18,7 @@ import {
   createEmailLoginCode,
   generateLoginCode,
   normalizeAuthEmail,
-} from './email-code.server';
+} from './email-code.server.js';
 
 const EMAIL = 'user@example.com';
 

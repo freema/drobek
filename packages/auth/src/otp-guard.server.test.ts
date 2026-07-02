@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { FakeRedis } from './fake-redis';
+import { FakeRedis } from './fake-redis.js';
 
 let fake: FakeRedis;
 
@@ -11,7 +11,7 @@ vi.mock('@drobek/core', async (importOriginal) => {
   };
 });
 
-vi.mock('~/lib/logger.server', () => ({
+vi.mock('./logger.server.js', () => ({
   logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
   serializeError: (err: unknown) => ({ message: String(err) }),
 }));
@@ -22,7 +22,7 @@ import {
   otpGuardLimitsFromEnv,
   releaseOtpCooldown,
   type OtpGuardLimits,
-} from './otp-guard.server';
+} from './otp-guard.server.js';
 
 /** The strict production defaults (spec §4) — injected, never read from env. */
 const STRICT: OtpGuardLimits = {

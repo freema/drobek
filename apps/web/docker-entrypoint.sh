@@ -8,6 +8,7 @@ CI=true pnpm install --frozen-lockfile
 echo "drobek web: building workspace packages..."
 pnpm --filter @drobek/db build
 pnpm --filter @drobek/core build
+pnpm --filter @drobek/auth build
 pnpm --filter @drobek/sdk build
 echo "drobek web: applying core Drizzle migrations (journal __drizzle_migrations_core)..."
 pnpm --filter @drobek/db db:migrate
