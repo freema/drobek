@@ -4,7 +4,11 @@
  * ./routes/* fetch rows (apps.server.ts) and hand them here for shaping, so the
  * ordering / field-mapping / authz decisions are testable without a database.
  */
-import { roleAtLeast, type WorkspaceRole } from '@drobek/tenancy';
+// Import from the server-free `/roles` subpath, NOT the @drobek/tenancy barrel:
+// view.ts is shared client+server (the route components import formatTimestamp),
+// and the barrel statically re-exports membership.server.js (DB) which the
+// production react-router client build refuses to bundle.
+import { roleAtLeast, type WorkspaceRole } from '@drobek/tenancy/roles';
 
 export type AppVisibility = 'public' | 'team' | 'password';
 export type AppLiveStatus = 'live' | 'hibernated';
