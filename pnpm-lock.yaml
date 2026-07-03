@@ -224,6 +224,9 @@ importers:
 
   packages/dashboard:
     dependencies:
+      '@drobek/data':
+        specifier: workspace:*
+        version: link:../data
       '@drobek/db':
         specifier: workspace:*
         version: link:../db

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ANON_CALLER,
   decideDataAccess,
+  decideMemberDataAccess,
   isAccessMode,
   type AccessMode,
   type DataCaller,
@@ -49,6 +50,31 @@ describe('decideDataAccess matrix', () => {
   it('an authenticated caller with no role is treated as unauthorized member (403)', () => {
     const ghost: DataCaller = { authenticated: true, role: null };
     expect(status('locked', 'read', ghost)).toBe(403);
+  });
+});
+
+describe('decideMemberDataAccess (dashboard member-view gate)', () => {
+  it('viewer can READ any collection but CANNOT delete/write', () => {
+    expect(decideMemberDataAccess({ role: 'viewer', operation: 'read' })).toBe(
+      true
+    );
+    expect(decideMemberDataAccess({ role: 'viewer', operation: 'write' })).toBe(
+      false
+    );
+  });
+
+  it('editor + workspace-admin can read AND write/delete', () => {
+    for (const role of ['editor', 'workspace-admin'] as const) {
+      expect(decideMemberDataAccess({ role, operation: 'read' })).toBe(true);
+      expect(decideMemberDataAccess({ role, operation: 'write' })).toBe(true);
+    }
+  });
+
+  it('a non-member (null role) is denied for both read and write', () => {
+    expect(decideMemberDataAccess({ role: null, operation: 'read' })).toBe(false);
+    expect(decideMemberDataAccess({ role: null, operation: 'write' })).toBe(
+      false
+    );
   });
 });
 

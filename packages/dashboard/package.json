@@ -23,6 +23,26 @@
     "./routes/workspaces.$slug.apps.$appSlug.server": {
       "types": "./src/routes/workspaces.$slug.apps.$appSlug.server.ts",
       "default": "./dist/routes/workspaces.$slug.apps.$appSlug.server.js"
+    },
+    "./routes/workspaces.$slug.apps.$appSlug.data": {
+      "types": "./src/routes/workspaces.$slug.apps.$appSlug.data.tsx",
+      "default": "./dist/routes/workspaces.$slug.apps.$appSlug.data.js"
+    },
+    "./routes/workspaces.$slug.apps.$appSlug.data.server": {
+      "types": "./src/routes/workspaces.$slug.apps.$appSlug.data.server.ts",
+      "default": "./dist/routes/workspaces.$slug.apps.$appSlug.data.server.js"
+    },
+    "./routes/workspaces.$slug.apps.$appSlug.data.$collection": {
+      "types": "./src/routes/workspaces.$slug.apps.$appSlug.data.$collection.tsx",
+      "default": "./dist/routes/workspaces.$slug.apps.$appSlug.data.$collection.js"
+    },
+    "./routes/workspaces.$slug.apps.$appSlug.data.$collection.server": {
+      "types": "./src/routes/workspaces.$slug.apps.$appSlug.data.$collection.server.ts",
+      "default": "./dist/routes/workspaces.$slug.apps.$appSlug.data.$collection.server.js"
+    },
+    "./routes/workspaces.$slug.apps.$appSlug.data.$collection.export-csv.server": {
+      "types": "./src/routes/workspaces.$slug.apps.$appSlug.data.$collection.export-csv.server.ts",
+      "default": "./dist/routes/workspaces.$slug.apps.$appSlug.data.$collection.export-csv.server.js"
     }
   },
   "scripts": {
@@ -32,6 +52,7 @@
     "test:run": "vitest run"
   },
   "dependencies": {
+    "@drobek/data": "workspace:*",
     "@drobek/db": "workspace:*",
     "@drobek/deploy": "workspace:*",
     "@drobek/tenancy": "workspace:*",

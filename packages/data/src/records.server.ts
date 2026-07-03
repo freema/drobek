@@ -50,7 +50,7 @@ export interface DataRecord {
   updatedAt: string;
 }
 
-function toRecord(row: {
+export function toRecord(row: {
   id: string;
   doc: unknown;
   createdAt: Date;
@@ -150,7 +150,7 @@ export async function createRecord(
 }
 
 /** Load a live document scoped to the app + collection, or throw not_found. */
-async function loadLive(appId: string, collection: string, id: string) {
+export async function loadLive(appId: string, collection: string, id: string) {
   const rows = await getDb()
     .select({
       id: appDocuments.id,
@@ -224,17 +224,32 @@ export async function updateRecord(
   return toRecord(row, collection.name);
 }
 
+/**
+ * Soft-delete a live document (the ONE tombstone path — sets deleted_at; the row
+ * is retained and excluded from every later read/query). Scoped to app +
+ * collection; throws not_found if it is not a live document. Shared by the U10
+ * public delete (below) and the dashboard member-view delete.
+ */
+export async function softDeleteById(
+  appId: string,
+  collection: string,
+  id: string
+): Promise<{ id: string; deleted: true }> {
+  const existing = await loadLive(appId, collection, id);
+  await getDb()
+    .update(appDocuments)
+    .set({ deletedAt: new Date() })
+    .where(eq(appDocuments.id, existing.id));
+  return { id: existing.id, deleted: true };
+}
+
 export async function deleteRecord(
   ctx: RecordContext & { id: string }
 ): Promise<{ id: string; deleted: true }> {
   const { app, collection } = await prepare(ctx, 'write');
   const existing = await loadLive(app.appId, collection.name, ctx.id);
   await enforceWriteRateLimit(app.appId);
-  await getDb()
-    .update(appDocuments)
-    .set({ deletedAt: new Date() })
-    .where(eq(appDocuments.id, existing.id));
-  return { id: existing.id, deleted: true };
+  return softDeleteById(app.appId, collection.name, existing.id);
 }
 
 /** The raw ordering expression (pre-cast) for a resolved sort. */
@@ -252,20 +267,38 @@ export interface QueryResult {
   nextCursor: string | null;
 }
 
+export interface QueryOptions {
+  where?: unknown;
+  sort?: unknown;
+  limit?: unknown;
+  cursor?: unknown;
+}
+
 export async function queryRecords(
-  ctx: RecordContext & {
-    where?: unknown;
-    sort?: unknown;
-    limit?: unknown;
-    cursor?: unknown;
-  }
+  ctx: RecordContext & QueryOptions
 ): Promise<QueryResult> {
   const { app, collection } = await prepare(ctx, 'read');
+  return executeQuery(app, collection, ctx);
+}
+
+/**
+ * The core keyset query over a RESOLVED app + collection — the ONE query path
+ * shared by the U10 public/anon reader (queryRecords, after the access-mode
+ * gate) and the dashboard member-view reader (after the membership gate). `where`
+ * and `sort` fields are whitelisted to the schema (query-build.ts): unknown
+ * fields are rejected (no injection, no jsonb-key probing). Soft-deleted rows
+ * are excluded; pagination is deterministic keyset over (order, id).
+ */
+export async function executeQuery(
+  app: ResolvedApp,
+  collection: CollectionRow,
+  opts: QueryOptions
+): Promise<QueryResult> {
   const docFields = schemaPropertyNames(collection.jsonSchema);
-  const where = normalizeWhere(ctx.where, docFields);
-  const sort = normalizeSort(ctx.sort, docFields);
-  const limit = clampLimit(ctx.limit);
-  const cursor = decodeCursor(ctx.cursor);
+  const where = normalizeWhere(opts.where, docFields);
+  const sort = normalizeSort(opts.sort, docFields);
+  const limit = clampLimit(opts.limit);
+  const cursor = decodeCursor(opts.cursor);
 
   // NULL-safe, text-form ordering expression → deterministic keyset pagination.
   const orderText = sql`coalesce((${orderExpr(sort)})::text, '')`;

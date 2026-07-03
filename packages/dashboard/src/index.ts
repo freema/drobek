@@ -16,6 +16,7 @@ export {
   deployShortId,
   lintStatusOf,
   canRollback,
+  canDeleteRecord,
   type AppVisibility,
   type AppLiveStatus,
   type DeployStateName,

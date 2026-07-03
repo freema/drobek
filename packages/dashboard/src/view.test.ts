@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  canDeleteRecord,
   canRollback,
   deployShortId,
   formatTimestamp,
@@ -171,5 +172,16 @@ describe('canRollback (rollback authorization decision)', () => {
     expect(canRollback('workspace-admin')).toBe(true);
     // requireWorkspaceRole collapses a super-admin to effectiveRole
     // 'workspace-admin', so the same path allows them.
+  });
+});
+
+describe('canDeleteRecord (Data-tab delete authorization)', () => {
+  it('denies a viewer and a non-member (read-only)', () => {
+    expect(canDeleteRecord('viewer')).toBe(false);
+    expect(canDeleteRecord(null)).toBe(false);
+  });
+  it('allows editor and workspace-admin', () => {
+    expect(canDeleteRecord('editor')).toBe(true);
+    expect(canDeleteRecord('workspace-admin')).toBe(true);
   });
 });

@@ -143,6 +143,13 @@ export default function AppDetailRoute() {
         >
           ← Apps
         </Link>
+        <Link
+          to={`/workspaces/${workspace.slug}/apps/${app.slug}/data`}
+          style={styles.navLink}
+          data-testid="app-data-link"
+        >
+          Data
+        </Link>
         <Link to={`/workspaces/${workspace.slug}`} style={styles.navLink}>
           Members &amp; roles
         </Link>

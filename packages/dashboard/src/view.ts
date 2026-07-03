@@ -160,6 +160,17 @@ export function canRollback(effectiveRole: WorkspaceRole | null): boolean {
   return effectiveRole !== null && roleAtLeast(effectiveRole, 'editor');
 }
 
+/**
+ * The Data-tab delete authorization (M1b, PHY-121), same rule as rollback:
+ * editor / workspace-admin (and super-admin ⇒ workspace-admin) may delete a
+ * record; a viewer or non-member may NOT. Gates whether the delete affordance
+ * renders; the action re-enforces it server-side via requireWorkspaceRole
+ * ('editor'). Reads are open to any member (viewer+) and are NOT gated here.
+ */
+export function canDeleteRecord(effectiveRole: WorkspaceRole | null): boolean {
+  return effectiveRole !== null && roleAtLeast(effectiveRole, 'editor');
+}
+
 // ── Display helpers ──────────────────────────────────────────────────────────
 
 /**

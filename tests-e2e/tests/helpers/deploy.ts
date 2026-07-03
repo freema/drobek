@@ -98,20 +98,25 @@ export interface DeployClient {
   transport: StreamableHTTPClientTransport;
 }
 
-/** Full login + consent(deploy:write) + token + connected MCP client. */
-export async function deployClient(
+/**
+ * Full login + consent(`scope`) + token + connected MCP client. Generalizes the
+ * deploy client so specs that need extra scopes (e.g. the Data tab's data:read/
+ * data:write) can reuse the whole OAuth dance.
+ */
+export async function mcpClient(
   page: Page,
-  request: APIRequestContext
+  request: APIRequestContext,
+  opts: { tag?: string; scope: string }
 ): Promise<DeployClient> {
   const resource = await mcpResource(request);
   const clientId = await registerClient(request);
-  await loginViaEmail(page, request, uniqueEmail('serve'));
+  await loginViaEmail(page, request, uniqueEmail(opts.tag ?? 'mcp'));
   const { verifier, challenge } = pkcePair();
   const code = await consentAndGetCode(page, {
     clientId,
     challenge,
     resource,
-    scope: 'mcp:whoami apps:read deploy:write',
+    scope: opts.scope,
   });
   const accessToken = await exchangeCode(request, { code, verifier, clientId });
 
@@ -122,6 +127,17 @@ export async function deployClient(
   const client = new Client({ name: 'drobek-e2e-serving', version: '0.0.0' });
   await client.connect(transport);
   return { client, transport };
+}
+
+/** Full login + consent(deploy:write) + token + connected MCP client. */
+export async function deployClient(
+  page: Page,
+  request: APIRequestContext
+): Promise<DeployClient> {
+  return mcpClient(page, request, {
+    tag: 'serve',
+    scope: 'mcp:whoami apps:read deploy:write',
+  });
 }
 
 export interface ToolCall {

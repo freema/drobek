@@ -77,3 +77,20 @@ export function decideDataAccess(input: {
   }
   return { ok: false, status: 403 };
 }
+
+/**
+ * The DASHBOARD (member-view) access decision — DISTINCT from decideDataAccess
+ * above. The dashboard is the app owner's own view of its data, so a workspace
+ * MEMBER may read EVERY collection of their app regardless of its access_mode
+ * (public/anon gate does NOT apply): viewer+ reads, editor+ writes/deletes, a
+ * non-member (null role) is denied. Tenant isolation (the app must belong to the
+ * member's workspace) is enforced separately by resolveApp; this is purely the
+ * membership + role gate.
+ */
+export function decideMemberDataAccess(input: {
+  role: WorkspaceRole | null;
+  operation: DataOperation;
+}): boolean {
+  if (!input.role) return false;
+  return roleAtLeast(input.role, minRoleFor(input.operation));
+}

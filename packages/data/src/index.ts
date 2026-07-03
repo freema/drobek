@@ -17,12 +17,38 @@ export {
   ACCESS_MODES,
   ANON_CALLER,
   decideDataAccess,
+  decideMemberDataAccess,
   isAccessMode,
   type AccessDecision,
   type AccessMode,
   type DataCaller,
   type DataOperation,
 } from './access.js';
+export {
+  cellText,
+  csvEscape,
+  csvHeader,
+  csvLine,
+  csvRow,
+  flattenDoc,
+  mapFilterSort,
+  schemaColumns,
+  schemaSummary,
+  type FilterSort,
+  type FlatRow,
+  type SchemaColumn,
+} from './columns.js';
+export {
+  deleteRecordForMember,
+  getCollectionForMember,
+  iterateRecordsForMember,
+  listCollectionsForMember,
+  queryRecordsForMember,
+  readRecordForMember,
+  type MemberCollection,
+  type MemberCollectionSummary,
+  type MemberDataContext,
+} from './member-view.server.js';
 export {
   assertSchemaShape,
   compileSchema,
