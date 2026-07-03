@@ -56,6 +56,9 @@ importers:
       '@drobek/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@drobek/tenancy':
+        specifier: workspace:*
+        version: link:../../packages/tenancy
       '@paralleldrive/cuid2':
         specifier: ^2.2.2
         version: 2.3.1
@@ -216,6 +219,40 @@ importers:
       typescript:
         specifier: ^5.7.3
         version: 5.9.3
+
+  packages/tenancy:
+    dependencies:
+      '@drobek/auth':
+        specifier: workspace:*
+        version: link:../auth
+      '@drobek/core':
+        specifier: workspace:*
+        version: link:../core
+      '@drobek/db':
+        specifier: workspace:*
+        version: link:../db
+      drizzle-orm:
+        specifier: ^0.41.0
+        version: 0.41.0(@types/pg@8.20.0)(pg@8.22.0)(postgres@3.4.9)
+    devDependencies:
+      '@types/node':
+        specifier: ^22
+        version: 22.20.0
+      '@types/react':
+        specifier: ^19.0.10
+        version: 19.2.17
+      react:
+        specifier: ^19.0.0
+        version: 19.2.7
+      react-router:
+        specifier: 7.14.0
+        version: 7.14.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.7
+        version: 3.2.6(@types/node@22.20.0)(tsx@4.22.4)
 
   tests-e2e:
     devDependencies:

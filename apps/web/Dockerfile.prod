@@ -22,6 +22,7 @@ COPY apps/mcp-server/package.json ./apps/mcp-server/
 COPY packages/db/package.json ./packages/db/
 COPY packages/core/package.json ./packages/core/
 COPY packages/auth/package.json ./packages/auth/
+COPY packages/tenancy/package.json ./packages/tenancy/
 COPY packages/sdk/package.json ./packages/sdk/
 COPY tests-e2e/package.json ./tests-e2e/
 RUN pnpm install --frozen-lockfile
@@ -33,6 +34,7 @@ COPY --from=deps /app/apps/web/node_modules ./apps/web/node_modules
 COPY --from=deps /app/packages/db/node_modules ./packages/db/node_modules
 COPY --from=deps /app/packages/core/node_modules ./packages/core/node_modules
 COPY --from=deps /app/packages/auth/node_modules ./packages/auth/node_modules
+COPY --from=deps /app/packages/tenancy/node_modules ./packages/tenancy/node_modules
 COPY --from=deps /app/packages/sdk/node_modules ./packages/sdk/node_modules
 
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
@@ -42,6 +44,7 @@ COPY apps/web ./apps/web
 RUN pnpm --filter @drobek/db build \
  && pnpm --filter @drobek/core build \
  && pnpm --filter @drobek/auth build \
+ && pnpm --filter @drobek/tenancy build \
  && pnpm --filter @drobek/sdk build
 RUN pnpm --filter web build
 
@@ -53,6 +56,7 @@ COPY apps/mcp-server/package.json ./apps/mcp-server/
 COPY packages/db/package.json ./packages/db/
 COPY packages/core/package.json ./packages/core/
 COPY packages/auth/package.json ./packages/auth/
+COPY packages/tenancy/package.json ./packages/tenancy/
 COPY packages/sdk/package.json ./packages/sdk/
 COPY tests-e2e/package.json ./tests-e2e/
 RUN pnpm install --frozen-lockfile --prod --ignore-scripts
@@ -77,6 +81,7 @@ COPY --from=prod-deps --chown=appuser:nodejs /app/apps/web/node_modules ./apps/w
 COPY --from=prod-deps --chown=appuser:nodejs /app/packages/db/node_modules ./packages/db/node_modules
 COPY --from=prod-deps --chown=appuser:nodejs /app/packages/core/node_modules ./packages/core/node_modules
 COPY --from=prod-deps --chown=appuser:nodejs /app/packages/auth/node_modules ./packages/auth/node_modules
+COPY --from=prod-deps --chown=appuser:nodejs /app/packages/tenancy/node_modules ./packages/tenancy/node_modules
 # NOTE: no packages/sdk/node_modules — @drobek/sdk has zero prod deps, so the
 # prod install creates none.
 
@@ -90,6 +95,8 @@ COPY --from=builder --chown=appuser:nodejs /app/packages/core/package.json ./pac
 COPY --from=builder --chown=appuser:nodejs /app/packages/core/dist ./packages/core/dist
 COPY --from=builder --chown=appuser:nodejs /app/packages/auth/package.json ./packages/auth/
 COPY --from=builder --chown=appuser:nodejs /app/packages/auth/dist ./packages/auth/dist
+COPY --from=builder --chown=appuser:nodejs /app/packages/tenancy/package.json ./packages/tenancy/
+COPY --from=builder --chown=appuser:nodejs /app/packages/tenancy/dist ./packages/tenancy/dist
 COPY --from=builder --chown=appuser:nodejs /app/packages/sdk/package.json ./packages/sdk/
 COPY --from=builder --chown=appuser:nodejs /app/packages/sdk/dist ./packages/sdk/dist
 

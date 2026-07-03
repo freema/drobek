@@ -1,4 +1,9 @@
-import { expect, test, type APIRequestContext } from '@playwright/test';
+import {
+  expect,
+  test,
+  type APIRequestContext,
+  type Page,
+} from '@playwright/test';
 import { TEST_ENV } from '../../playwright.config';
 
 /**
@@ -63,4 +68,27 @@ export async function pollLoginCode(
     await new Promise((r) => setTimeout(r, 300));
   }
   throw new Error(`no login-code email for ${email} within ${timeoutMs}ms`);
+}
+
+/** Full magic-code sign-in via the UI; leaves the page authenticated on /me. */
+export async function loginViaEmail(
+  page: Page,
+  request: APIRequestContext,
+  email: string
+): Promise<void> {
+  await page.goto('/login');
+  await page.getByLabel('Email').fill(email);
+  await page.getByRole('button', { name: 'Send code' }).click();
+  await page.waitForURL(/\/login\/verify/);
+  const code = await pollLoginCode(request, email);
+  await page.getByLabel('Code').fill(code);
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await page.waitForURL(/\/me$/);
+}
+
+/** Sign out the current session; leaves the page on the home route. */
+export async function logout(page: Page): Promise<void> {
+  await page.goto('/me');
+  await page.getByRole('button', { name: 'Sign out' }).click();
+  await page.waitForURL((url) => url.pathname === '/');
 }

@@ -51,6 +51,8 @@ const styles = {
     borderRadius: '8px',
     cursor: 'pointer',
   },
+  navRow: { margin: '0 0 1.5rem' },
+  navLink: { fontWeight: 600, color: '#1a1a1a' },
 } as const;
 
 export default function MeRoute() {
@@ -65,6 +67,13 @@ export default function MeRoute() {
         <span style={styles.email}>{email}</span>
         {superAdmin ? <span style={styles.badge}>Super-admin</span> : null}
       </div>
+
+      {/* U4 (PHY-54): entry point to the tenancy pages. */}
+      <p style={styles.navRow}>
+        <a href="/workspaces" style={styles.navLink}>
+          Workspaces
+        </a>
+      </p>
 
       <Form method="post" action="/auth/logout">
         <button type="submit" style={styles.button}>

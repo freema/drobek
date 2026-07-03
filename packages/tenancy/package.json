@@ -1,0 +1,79 @@
+{
+  "name": "@drobek/tenancy",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./routes/workspaces": {
+      "types": "./src/routes/workspaces.tsx",
+      "default": "./dist/routes/workspaces.js"
+    },
+    "./routes/workspaces.server": {
+      "types": "./src/routes/workspaces.server.ts",
+      "default": "./dist/routes/workspaces.server.js"
+    },
+    "./routes/workspaces.$slug": {
+      "types": "./src/routes/workspaces.$slug.tsx",
+      "default": "./dist/routes/workspaces.$slug.js"
+    },
+    "./routes/workspaces.$slug.server": {
+      "types": "./src/routes/workspaces.$slug.server.ts",
+      "default": "./dist/routes/workspaces.$slug.server.js"
+    },
+    "./routes/workspaces.$slug.invite": {
+      "types": "./src/routes/workspaces.$slug.invite.tsx",
+      "default": "./dist/routes/workspaces.$slug.invite.js"
+    },
+    "./routes/workspaces.$slug.invite.server": {
+      "types": "./src/routes/workspaces.$slug.invite.server.ts",
+      "default": "./dist/routes/workspaces.$slug.invite.server.js"
+    },
+    "./routes/invite.$token": {
+      "types": "./src/routes/invite.$token.tsx",
+      "default": "./dist/routes/invite.$token.js"
+    },
+    "./routes/invite.$token.server": {
+      "types": "./src/routes/invite.$token.server.ts",
+      "default": "./dist/routes/invite.$token.server.js"
+    },
+    "./routes/login.verify.server": {
+      "types": "./src/routes/login.verify.server.ts",
+      "default": "./dist/routes/login.verify.server.js"
+    },
+    "./routes/auth.google.callback.server": {
+      "types": "./src/routes/auth.google.callback.server.ts",
+      "default": "./dist/routes/auth.google.callback.server.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest",
+    "test:run": "vitest run"
+  },
+  "dependencies": {
+    "@drobek/auth": "workspace:*",
+    "@drobek/core": "workspace:*",
+    "@drobek/db": "workspace:*",
+    "drizzle-orm": "^0.41.0"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-router": "^7.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "@types/react": "^19.0.10",
+    "react": "^19.0.0",
+    "react-router": "7.14.0",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.7"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

@@ -12,6 +12,11 @@ export default [
   route('auth/google', 'routes/auth.google.tsx'),
   route('auth/google/callback', 'routes/auth.google.callback.tsx'),
   route('me', 'routes/me.tsx'),
+  // U4 (PHY-54): workspaces (personal+team) + roles + Redis invites.
+  route('workspaces', 'routes/workspaces.tsx'),
+  route('workspaces/:slug', 'routes/workspaces.$slug.tsx'),
+  route('workspaces/:slug/invite', 'routes/workspaces.$slug.invite.tsx'),
+  route('invite/:token', 'routes/invite.$token.tsx'),
   // P0-B blob skeleton (D2/PHY-100): signed-upload sink + read-back path.
   route('__upload/:token', 'routes/__upload.$token.ts'),
   route('__blob/:sha256', 'routes/__blob.$sha256.ts'),
