@@ -34,15 +34,6 @@ The headline channel is **MCP-native deployment**: the same AI agent that built 
 
 *(Exact set is still open — see Open questions.)*
 
-## Open core
-
-drobek is an **open-core** project:
-
-| Repo | Visibility | What |
-| --- | --- | --- |
-| [`drobek`](https://github.com/freema/drobek) (this repo) | public · AGPL-3.0 | The engine: project model, deploy pipeline, runtime that serves projects, MCP server. **Self-hostable** — run your own drobek. |
-| `drobek-web` | private | Managed SaaS control plane built on top of the core: dashboard, auth, teams, billing, custom domains, quotas. |
-
 ## Core concepts
 
 - **Project** — a deployed unit (static bundle or small app); has a name, an owner, a URL.
@@ -138,4 +129,4 @@ self-hosted stack works.
 
 ## License
 
-[AGPL-3.0](./LICENSE). The managed SaaS (`drobek-web`) stays private.
+[AGPL-3.0](./LICENSE).
