@@ -129,6 +129,7 @@ services:
       - /repo/packages/core/node_modules
       - /repo/packages/deploy/node_modules
       - /repo/packages/data/node_modules
+      - /repo/packages/agent-dx/node_modules
       - /repo/packages/sdk/node_modules
       - /repo/tests-e2e/node_modules
     healthcheck:
@@ -192,6 +193,7 @@ services:
       - /repo/packages/core/node_modules
       - /repo/packages/deploy/node_modules
       - /repo/packages/data/node_modules
+      - /repo/packages/agent-dx/node_modules
       - /repo/packages/sdk/node_modules
       - /repo/tests-e2e/node_modules
     healthcheck:
@@ -247,6 +249,7 @@ services:
       - /repo/packages/core/node_modules
       - /repo/packages/deploy/node_modules
       - /repo/packages/data/node_modules
+      - /repo/packages/agent-dx/node_modules
       - /repo/packages/sdk/node_modules
       - /repo/tests-e2e/node_modules
     healthcheck:

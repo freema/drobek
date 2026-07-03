@@ -40,6 +40,7 @@ import {
 import { roleAtLeast } from '@drobek/tenancy';
 import { hasScope } from '../scopes.js';
 import type { OAuthRole } from '../store.server.js';
+import { registerDocs } from './docs.js';
 import {
   authenticate,
   send401,
@@ -69,8 +70,13 @@ function accessRevokedResult() {
 export function buildMcpServer(ctx: AuthContext): McpServer {
   const server = new McpServer(
     { name: 'drobek', version: coreVersion().version },
-    { capabilities: { tools: {} } }
+    { capabilities: { tools: {}, resources: {}, prompts: {} } }
   );
+
+  // M1b Agent DX (PHY-124): docs resources (drobek://docs/*) + guided prompts,
+  // scope-agnostic so a connected agent can read the delivery-stack contract and
+  // the deploy/add-data recipes without web access. Does not affect the tools.
+  registerDocs(server);
 
   server.registerTool(
     'whoami',

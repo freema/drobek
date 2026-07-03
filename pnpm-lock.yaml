@@ -10,6 +10,9 @@ importers:
 
   apps/mcp-server:
     dependencies:
+      '@drobek/agent-dx':
+        specifier: workspace:*
+        version: link:../../packages/agent-dx
       '@drobek/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -59,6 +62,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@drobek/agent-dx':
+        specifier: workspace:*
+        version: link:../../packages/agent-dx
       '@drobek/auth':
         specifier: workspace:*
         version: link:../../packages/auth
@@ -162,6 +168,18 @@ importers:
       vite:
         specifier: ^6.2.0
         version: 6.4.3(@types/node@22.20.0)(tsx@4.22.4)
+      vitest:
+        specifier: ^3.0.7
+        version: 3.2.6(@types/node@22.20.0)(tsx@4.22.4)
+
+  packages/agent-dx:
+    devDependencies:
+      '@types/node':
+        specifier: ^22
+        version: 22.20.0
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
       vitest:
         specifier: ^3.0.7
         version: 3.2.6(@types/node@22.20.0)(tsx@4.22.4)
@@ -354,6 +372,9 @@ importers:
 
   packages/oauth:
     dependencies:
+      '@drobek/agent-dx':
+        specifier: workspace:*
+        version: link:../agent-dx
       '@drobek/auth':
         specifier: workspace:*
         version: link:../auth

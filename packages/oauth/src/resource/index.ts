@@ -26,6 +26,7 @@ export {
   type AuthOutcome,
 } from './oauth-resource.js';
 export { buildMcpServer, mountMcpEndpoint } from './mcp.js';
+export { registerDocs } from './docs.js';
 
 /**
  * Register the OAuth 2.1 protected-resource discovery routes (RFC 9728) + the

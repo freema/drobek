@@ -11,6 +11,7 @@
     "test:run": "vitest run"
   },
   "dependencies": {
+    "@drobek/agent-dx": "workspace:*",
     "@drobek/core": "workspace:*",
     "@drobek/data": "workspace:*",
     "@drobek/db": "workspace:*",

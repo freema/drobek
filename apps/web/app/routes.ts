@@ -4,6 +4,12 @@ export default [
   index('routes/_index.tsx'),
   route('healthz', 'routes/healthz.tsx'),
   route('api/version', 'routes/api.version.tsx'),
+  // M1b Agent DX (PHY-124): the /llms.txt convention + a human build page.
+  // Rendered from the @drobek/agent-dx manifest so they never drift from the
+  // real MCP tools.
+  route('llms.txt', 'routes/llms-txt.ts'),
+  route('llms-full.txt', 'routes/llms-full-txt.ts'),
+  route('build-with-your-agent', 'routes/build-with-your-agent.tsx'),
   // U2 (PHY-53): email magic-code auth + Redis sessions.
   route('login', 'routes/login.tsx'),
   route('login/verify', 'routes/login.verify.tsx'),

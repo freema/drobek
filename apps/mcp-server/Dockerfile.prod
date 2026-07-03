@@ -25,6 +25,7 @@ COPY packages/tenancy/package.json ./packages/tenancy/
 COPY packages/serving/package.json ./packages/serving/
 COPY packages/deploy/package.json ./packages/deploy/
 COPY packages/data/package.json ./packages/data/
+COPY packages/agent-dx/package.json ./packages/agent-dx/
 # @drobek/dashboard is web-only, but apps/web/package.json (copied above)
 # references it — the workspace-wide frozen install needs its manifest present.
 COPY packages/dashboard/package.json ./packages/dashboard/
@@ -44,6 +45,7 @@ COPY --from=deps /app/packages/tenancy/node_modules ./packages/tenancy/node_modu
 COPY --from=deps /app/packages/serving/node_modules ./packages/serving/node_modules
 COPY --from=deps /app/packages/deploy/node_modules ./packages/deploy/node_modules
 COPY --from=deps /app/packages/data/node_modules ./packages/data/node_modules
+COPY --from=deps /app/packages/agent-dx/node_modules ./packages/agent-dx/node_modules
 COPY --from=deps /app/packages/oauth/node_modules ./packages/oauth/node_modules
 COPY --from=deps /app/packages/sdk/node_modules ./packages/sdk/node_modules
 
@@ -58,6 +60,7 @@ RUN pnpm --filter @drobek/db build \
  && pnpm --filter @drobek/serving build \
  && pnpm --filter @drobek/deploy build \
  && pnpm --filter @drobek/data build \
+ && pnpm --filter @drobek/agent-dx build \
  && pnpm --filter @drobek/oauth build \
  && pnpm --filter @drobek/sdk build
 RUN pnpm --filter mcp-server build
@@ -74,6 +77,7 @@ COPY packages/tenancy/package.json ./packages/tenancy/
 COPY packages/serving/package.json ./packages/serving/
 COPY packages/deploy/package.json ./packages/deploy/
 COPY packages/data/package.json ./packages/data/
+COPY packages/agent-dx/package.json ./packages/agent-dx/
 # @drobek/dashboard is web-only, but apps/web/package.json (copied above)
 # references it — the workspace-wide frozen install needs its manifest present.
 COPY packages/dashboard/package.json ./packages/dashboard/
@@ -107,8 +111,9 @@ COPY --from=prod-deps --chown=appuser:nodejs /app/packages/serving/node_modules 
 COPY --from=prod-deps --chown=appuser:nodejs /app/packages/deploy/node_modules ./packages/deploy/node_modules
 COPY --from=prod-deps --chown=appuser:nodejs /app/packages/data/node_modules ./packages/data/node_modules
 COPY --from=prod-deps --chown=appuser:nodejs /app/packages/oauth/node_modules ./packages/oauth/node_modules
-# NOTE: no packages/sdk/node_modules — @drobek/sdk has zero prod deps, so the
-# prod install creates none.
+# NOTE: no packages/sdk/node_modules nor packages/agent-dx/node_modules —
+# @drobek/sdk and @drobek/agent-dx have zero prod deps, so the prod install
+# creates none.
 
 # Workspace metadata
 COPY --from=builder --chown=appuser:nodejs /app/package.json /app/pnpm-workspace.yaml /app/pnpm-lock.yaml ./
@@ -128,6 +133,8 @@ COPY --from=builder --chown=appuser:nodejs /app/packages/deploy/package.json ./p
 COPY --from=builder --chown=appuser:nodejs /app/packages/deploy/dist ./packages/deploy/dist
 COPY --from=builder --chown=appuser:nodejs /app/packages/data/package.json ./packages/data/
 COPY --from=builder --chown=appuser:nodejs /app/packages/data/dist ./packages/data/dist
+COPY --from=builder --chown=appuser:nodejs /app/packages/agent-dx/package.json ./packages/agent-dx/
+COPY --from=builder --chown=appuser:nodejs /app/packages/agent-dx/dist ./packages/agent-dx/dist
 COPY --from=builder --chown=appuser:nodejs /app/packages/oauth/package.json ./packages/oauth/
 COPY --from=builder --chown=appuser:nodejs /app/packages/oauth/dist ./packages/oauth/dist
 COPY --from=builder --chown=appuser:nodejs /app/packages/sdk/package.json ./packages/sdk/
