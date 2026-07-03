@@ -79,6 +79,15 @@ describe('renderLlmsFull', () => {
     expect(full).toContain('S256');
   });
 
+  it('puts RFC 9728 discovery on the resource origin, NOT the /mcp endpoint', () => {
+    // The protected-resource metadata is at <mcp-origin>/.well-known/…, never
+    // <mcp-origin>/mcp/.well-known/… — a wrong URL here 404s any agent.
+    expect(full).not.toContain('/mcp/.well-known/oauth-protected-resource');
+    expect(renderLlmsTxt()).not.toContain(
+      '/mcp/.well-known/oauth-protected-resource'
+    );
+  });
+
   it('documents the deploy flow, serving model, and lint block', () => {
     expect(full).toContain('deploy_init');
     expect(full).toContain('deploy_commit');
