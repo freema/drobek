@@ -19,7 +19,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import type { Express, Request, Response } from 'express';
 import { coreVersion } from '@drobek/core';
 import { apps, getDb } from '@drobek/db';
-import { hasScope } from '@drobek/oauth';
+import { hasScope } from '../scopes.js';
 import {
   authenticate,
   send401,

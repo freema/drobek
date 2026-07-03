@@ -19,9 +19,6 @@ importers:
       '@drobek/oauth':
         specifier: workspace:*
         version: link:../../packages/oauth
-      '@modelcontextprotocol/sdk':
-        specifier: ^1.19.0
-        version: 1.29.0(zod@4.4.3)
       drizzle-orm:
         specifier: ^0.41.0
         version: 0.41.0(@types/pg@8.20.0)(pg@8.22.0)(postgres@3.4.9)
@@ -237,10 +234,19 @@ importers:
       '@drobek/tenancy':
         specifier: workspace:*
         version: link:../tenancy
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.19.0
+        version: 1.29.0(zod@4.4.3)
       drizzle-orm:
         specifier: ^0.41.0
         version: 0.41.0(@types/pg@8.20.0)(pg@8.22.0)(postgres@3.4.9)
+      express:
+        specifier: ^4.21.2
+        version: 4.22.2
     devDependencies:
+      '@types/express':
+        specifier: ^4.17.21
+        version: 4.17.25
       '@types/node':
         specifier: ^22
         version: 22.20.0

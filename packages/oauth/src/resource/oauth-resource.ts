@@ -10,11 +10,9 @@
 import type { Request, Response } from 'express';
 import { and, eq } from 'drizzle-orm';
 import { getDb, memberships, users, workspaces } from '@drobek/db';
-import {
-  SCOPES,
-  validateAccessToken,
-  type OAuthRole,
-} from '@drobek/oauth';
+import { SCOPES } from '../scopes.js';
+import { validateAccessToken } from '../tokens.server.js';
+import type { OAuthRole } from '../store.server.js';
 
 /** Canonical resource identifier (also the required token audience). */
 export function mcpResourceUri(): string {
