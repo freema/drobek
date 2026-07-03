@@ -22,6 +22,8 @@ COPY packages/db/package.json ./packages/db/
 COPY packages/core/package.json ./packages/core/
 COPY packages/auth/package.json ./packages/auth/
 COPY packages/tenancy/package.json ./packages/tenancy/
+COPY packages/deploy/package.json ./packages/deploy/
+COPY packages/oauth/package.json ./packages/oauth/
 COPY packages/sdk/package.json ./packages/sdk/
 COPY tests-e2e/package.json ./tests-e2e/
 RUN pnpm install --frozen-lockfile
@@ -32,6 +34,10 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/apps/mcp-server/node_modules ./apps/mcp-server/node_modules
 COPY --from=deps /app/packages/db/node_modules ./packages/db/node_modules
 COPY --from=deps /app/packages/core/node_modules ./packages/core/node_modules
+COPY --from=deps /app/packages/auth/node_modules ./packages/auth/node_modules
+COPY --from=deps /app/packages/tenancy/node_modules ./packages/tenancy/node_modules
+COPY --from=deps /app/packages/deploy/node_modules ./packages/deploy/node_modules
+COPY --from=deps /app/packages/oauth/node_modules ./packages/oauth/node_modules
 COPY --from=deps /app/packages/sdk/node_modules ./packages/sdk/node_modules
 
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
@@ -40,6 +46,10 @@ COPY apps/mcp-server ./apps/mcp-server
 
 RUN pnpm --filter @drobek/db build \
  && pnpm --filter @drobek/core build \
+ && pnpm --filter @drobek/auth build \
+ && pnpm --filter @drobek/tenancy build \
+ && pnpm --filter @drobek/deploy build \
+ && pnpm --filter @drobek/oauth build \
  && pnpm --filter @drobek/sdk build
 RUN pnpm --filter mcp-server build
 
@@ -52,6 +62,8 @@ COPY packages/db/package.json ./packages/db/
 COPY packages/core/package.json ./packages/core/
 COPY packages/auth/package.json ./packages/auth/
 COPY packages/tenancy/package.json ./packages/tenancy/
+COPY packages/deploy/package.json ./packages/deploy/
+COPY packages/oauth/package.json ./packages/oauth/
 COPY packages/sdk/package.json ./packages/sdk/
 COPY tests-e2e/package.json ./tests-e2e/
 RUN pnpm install --frozen-lockfile --prod --ignore-scripts
@@ -75,6 +87,10 @@ COPY --from=prod-deps --chown=appuser:nodejs /app/node_modules ./node_modules
 COPY --from=prod-deps --chown=appuser:nodejs /app/apps/mcp-server/node_modules ./apps/mcp-server/node_modules
 COPY --from=prod-deps --chown=appuser:nodejs /app/packages/db/node_modules ./packages/db/node_modules
 COPY --from=prod-deps --chown=appuser:nodejs /app/packages/core/node_modules ./packages/core/node_modules
+COPY --from=prod-deps --chown=appuser:nodejs /app/packages/auth/node_modules ./packages/auth/node_modules
+COPY --from=prod-deps --chown=appuser:nodejs /app/packages/tenancy/node_modules ./packages/tenancy/node_modules
+COPY --from=prod-deps --chown=appuser:nodejs /app/packages/deploy/node_modules ./packages/deploy/node_modules
+COPY --from=prod-deps --chown=appuser:nodejs /app/packages/oauth/node_modules ./packages/oauth/node_modules
 # NOTE: no packages/sdk/node_modules — @drobek/sdk has zero prod deps, so the
 # prod install creates none.
 
@@ -86,6 +102,14 @@ COPY --from=builder --chown=appuser:nodejs /app/packages/db/package.json ./packa
 COPY --from=builder --chown=appuser:nodejs /app/packages/db/dist ./packages/db/dist
 COPY --from=builder --chown=appuser:nodejs /app/packages/core/package.json ./packages/core/
 COPY --from=builder --chown=appuser:nodejs /app/packages/core/dist ./packages/core/dist
+COPY --from=builder --chown=appuser:nodejs /app/packages/auth/package.json ./packages/auth/
+COPY --from=builder --chown=appuser:nodejs /app/packages/auth/dist ./packages/auth/dist
+COPY --from=builder --chown=appuser:nodejs /app/packages/tenancy/package.json ./packages/tenancy/
+COPY --from=builder --chown=appuser:nodejs /app/packages/tenancy/dist ./packages/tenancy/dist
+COPY --from=builder --chown=appuser:nodejs /app/packages/deploy/package.json ./packages/deploy/
+COPY --from=builder --chown=appuser:nodejs /app/packages/deploy/dist ./packages/deploy/dist
+COPY --from=builder --chown=appuser:nodejs /app/packages/oauth/package.json ./packages/oauth/
+COPY --from=builder --chown=appuser:nodejs /app/packages/oauth/dist ./packages/oauth/dist
 COPY --from=builder --chown=appuser:nodejs /app/packages/sdk/package.json ./packages/sdk/
 COPY --from=builder --chown=appuser:nodejs /app/packages/sdk/dist ./packages/sdk/dist
 

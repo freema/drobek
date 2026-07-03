@@ -118,6 +118,7 @@ services:
       - /repo/apps/mcp-server/node_modules
       - /repo/packages/db/node_modules
       - /repo/packages/core/node_modules
+      - /repo/packages/deploy/node_modules
       - /repo/packages/sdk/node_modules
       - /repo/tests-e2e/node_modules
     healthcheck:
@@ -158,6 +159,11 @@ services:
       PUBLIC_APP_URL: ${PUBLIC_APP_URL:-http://localhost:3041}
       # Global super-admin override for the per-tool-call membership re-check.
       SUPERADMIN_EMAIL: ${SUPERADMIN_EMAIL:-}
+      # U6 (PHY-57): deploy_init mints signed upload tokens (needs the same
+      # HMAC secret as the web upload sink) and enforces the deploy quota.
+      UPLOAD_SIGNING_SECRET: ${UPLOAD_SIGNING_SECRET:?UPLOAD_SIGNING_SECRET must be set in .env (see .env.example)}
+      DEPLOY_MAX_APP_BYTES: ${DEPLOY_MAX_APP_BYTES:-104857600}
+      DEPLOY_MAX_FILE_BYTES: ${DEPLOY_MAX_FILE_BYTES:-10485760}
     volumes:
       - .:/repo
       - drobek_blobs:/data/blobs
@@ -166,6 +172,7 @@ services:
       - /repo/apps/mcp-server/node_modules
       - /repo/packages/db/node_modules
       - /repo/packages/core/node_modules
+      - /repo/packages/deploy/node_modules
       - /repo/packages/sdk/node_modules
       - /repo/tests-e2e/node_modules
     healthcheck:
@@ -178,6 +185,59 @@ services:
       # web runs `pnpm install` + package builds + migrations into the shared
       # bind mount first; serializing avoids two containers compiling
       # packages/*/dist concurrently.
+      web:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    # U6 (PHY-57): the BullMQ deploy consumer. Ships INSIDE the web image
+    # (apps/web/scripts/worker.mjs) — NO separate app — and shares the DB, redis
+    # and the drobek_blobs volume with web+mcp. Queue "deploys", prefix "drobek"
+    # (shared-redis isolation from puls). No published port, no HTTP healthcheck
+    # (a pgrep running-check). The web image ENTRYPOINT builds packages +
+    # migrates first, then execs the command below.
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: drobek-worker
+    working_dir: /repo/apps/web
+    command: ['node', 'scripts/worker.mjs']
+    environment:
+      DATABASE_URL: postgresql://drobek:drobek@postgres:5432/drobek
+      REDIS_URL: redis://redis:6379
+      NODE_ENV: development
+      GIT_SHA: ${GIT_SHA:-dev}
+      SUPERADMIN_EMAIL: ${SUPERADMIN_EMAIL:-}
+      # D2: same blob volume the sink writes to — the worker reads bytes for lint.
+      BLOB_DIR: /data/blobs
+      # U6: PUBLIC_APP_URL is used to build the activated app URL in progress.
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-http://localhost:3041}
+      # U6: quota mirrors the mcp service (dev-generous defaults).
+      DEPLOY_MAX_APP_BYTES: ${DEPLOY_MAX_APP_BYTES:-104857600}
+      DEPLOY_MAX_FILE_BYTES: ${DEPLOY_MAX_FILE_BYTES:-10485760}
+    volumes:
+      - .:/repo
+      - drobek_blobs:/data/blobs
+      - /repo/node_modules
+      - /repo/apps/web/node_modules
+      - /repo/apps/mcp-server/node_modules
+      - /repo/packages/db/node_modules
+      - /repo/packages/core/node_modules
+      - /repo/packages/deploy/node_modules
+      - /repo/packages/sdk/node_modules
+      - /repo/tests-e2e/node_modules
+    healthcheck:
+      # No HTTP surface — assert the consumer process is alive (busybox pgrep).
+      test: ['CMD-SHELL', 'pgrep -f scripts/worker.mjs > /dev/null || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+    depends_on:
+      # Serialize behind web (shared bind-mount build) + require datastores.
       web:
         condition: service_healthy
       postgres:

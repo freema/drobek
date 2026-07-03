@@ -17,9 +17,18 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { and, eq, isNull } from 'drizzle-orm';
 import type { Express, Request, Response } from 'express';
+import { z } from 'zod';
 import { coreVersion } from '@drobek/core';
-import { apps, getDb } from '@drobek/db';
+import { apps, getDb, memberships } from '@drobek/db';
+import {
+  DeployError,
+  deployCommit,
+  deployInit,
+  deployStatus,
+  rollback,
+} from '@drobek/deploy';
 import { hasScope } from '../scopes.js';
+import type { OAuthRole } from '../store.server.js';
 import {
   authenticate,
   send401,
@@ -101,7 +110,163 @@ export function buildMcpServer(ctx: AuthContext): McpServer {
     );
   }
 
+  // ── U6 deploy tools (PHY-57) ───────────────────────────────────────────────
+  //
+  // deploy_init / deploy_commit / rollback require deploy:write; deploy_status
+  // accepts apps:read. Every call re-resolves the CURRENT membership role (not
+  // just the token's bound role) so a downgrade loses access immediately and an
+  // upgrade is honored; the deploy functions themselves enforce role >= editor.
+  registerDeployTools(server, ctx);
+
   return server;
+}
+
+/** Resolve the caller's CURRENT effective role in the bound workspace. */
+async function currentEffectiveRole(ctx: AuthContext): Promise<OAuthRole | null> {
+  if (ctx.superAdmin) return 'workspace-admin';
+  const [m] = await getDb()
+    .select({ role: memberships.role })
+    .from(memberships)
+    .where(
+      and(
+        eq(memberships.userId, ctx.userId),
+        eq(memberships.workspaceId, ctx.workspaceId)
+      )
+    )
+    .limit(1);
+  return (m?.role as OAuthRole | undefined) ?? null;
+}
+
+const manifestEntrySchema = z.object({
+  path: z.string(),
+  sha256: z.string(),
+  bytes: z.number().int().nonnegative(),
+});
+
+/** Map a thrown DeployError to a structured isError tool result; rethrow others. */
+async function runDeployTool(fn: () => Promise<unknown>) {
+  try {
+    return textResult(await fn());
+  } catch (err) {
+    if (err instanceof DeployError) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: JSON.stringify({ error: err.code, message: err.message }, null, 2),
+          },
+        ],
+        isError: true,
+      };
+    }
+    throw err;
+  }
+}
+
+/** Register the U6 deploy tools according to the token's granted scope. */
+function registerDeployTools(server: McpServer, ctx: AuthContext): void {
+  const canDeploy = hasScope(ctx.scope, 'deploy:write');
+  const canReadApps = hasScope(ctx.scope, 'apps:read');
+
+  if (canDeploy) {
+    server.registerTool(
+      'deploy_init',
+      {
+        description:
+          'Begin a deploy: validate the file manifest ({path, sha256, bytes}[] — an index.html at the root is required), create or target the app (slug from name, overridable), and return presigned PUT URLs for ONLY the files whose content is not already stored (content-hash dedup). Requires deploy:write and an editor+ role.',
+        inputSchema: {
+          name: z.string().optional(),
+          slug: z.string().optional(),
+          manifest: z.array(manifestEntrySchema).min(1),
+        },
+      },
+      async ({ name, slug, manifest }) => {
+        if (!(await stillGrantsRole(ctx))) return accessRevokedResult();
+        const role = await currentEffectiveRole(ctx);
+        if (!role) return accessRevokedResult();
+        return runDeployTool(() =>
+          deployInit({
+            userId: ctx.userId,
+            workspaceId: ctx.workspaceId,
+            workspaceSlug: ctx.workspaceSlug,
+            role,
+            name,
+            slug,
+            manifest,
+          })
+        );
+      }
+    );
+
+    server.registerTool(
+      'deploy_commit',
+      {
+        description:
+          'Finalize a deploy after its files are uploaded: verifies every manifest blob is stored, enqueues the build/lint/activate job, and returns the queued state. Poll deploy_status for progress. Requires deploy:write and an editor+ role.',
+        inputSchema: { deployId: z.string() },
+      },
+      async ({ deployId }) => {
+        if (!(await stillGrantsRole(ctx))) return accessRevokedResult();
+        const role = await currentEffectiveRole(ctx);
+        if (!role) return accessRevokedResult();
+        return runDeployTool(() =>
+          deployCommit({
+            userId: ctx.userId,
+            workspaceId: ctx.workspaceId,
+            role,
+            deployId,
+          })
+        );
+      }
+    );
+
+    server.registerTool(
+      'rollback',
+      {
+        description:
+          'Roll an app back to a prior ready deploy by repointing its active version (defaults to the previous good deploy; pass toDeployId to target a specific one). Requires deploy:write and an editor+ role.',
+        inputSchema: { slug: z.string(), toDeployId: z.string().optional() },
+      },
+      async ({ slug, toDeployId }) => {
+        if (!(await stillGrantsRole(ctx))) return accessRevokedResult();
+        const role = await currentEffectiveRole(ctx);
+        if (!role) return accessRevokedResult();
+        return runDeployTool(() =>
+          rollback({
+            userId: ctx.userId,
+            workspaceId: ctx.workspaceId,
+            role,
+            slug,
+            toDeployId,
+          })
+        );
+      }
+    );
+  }
+
+  if (canDeploy || canReadApps) {
+    server.registerTool(
+      'deploy_status',
+      {
+        description:
+          'Report a deploy pipeline state (awaiting_upload → queued → linting → storing → activating → ready | failed), whether it is the app’s active version, its URL, and any lint report/error. Requires apps:read.',
+        inputSchema: { deployId: z.string() },
+      },
+      async ({ deployId }) => {
+        if (!(await stillGrantsRole(ctx))) return accessRevokedResult();
+        const role = await currentEffectiveRole(ctx);
+        if (!role) return accessRevokedResult();
+        return runDeployTool(() =>
+          deployStatus({
+            userId: ctx.userId,
+            workspaceId: ctx.workspaceId,
+            role,
+            deployId,
+          })
+        );
+      }
+    );
+  }
 }
 
 interface McpSession {

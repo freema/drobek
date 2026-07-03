@@ -20,6 +20,8 @@ export default [
   // P0-B blob skeleton (D2/PHY-100): signed-upload sink + read-back path.
   route('__upload/:token', 'routes/__upload.$token.ts'),
   route('__blob/:sha256', 'routes/__blob.$sha256.ts'),
+  // U6 (PHY-57): deploy progress SSE stream (dashboard session-gated).
+  route('api/deploys/:id/events', 'routes/api.deploys.$id.events.ts'),
   // U5 (PHY-71/PHY-53): MCP OAuth 2.1 Authorization Server.
   route(
     '.well-known/oauth-authorization-server',

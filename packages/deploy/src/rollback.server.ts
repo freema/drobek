@@ -1,0 +1,76 @@
+/**
+ * rollback (U6, PHY-57): repoint apps.active_deploy_id at a prior READY deploy
+ * (or an explicit target). Deploys are immutable — rollback is a pointer flip,
+ * never a rebuild — and is audited.
+ */
+import { and, eq, isNull } from 'drizzle-orm';
+import { apps, deploys, getDb } from '@drobek/db';
+import { roleAtLeast, type WorkspaceRole } from '@drobek/tenancy';
+import { writeAudit } from './audit.server.js';
+import { DeployError } from './errors.js';
+import { chooseRollbackTarget } from './rollback-target.js';
+import { loadAppBySlug } from './store.server.js';
+import type { DeployState } from './types.js';
+
+export interface RollbackInput {
+  userId: string;
+  workspaceId: string;
+  role: WorkspaceRole;
+  slug: string;
+  toDeployId?: string;
+}
+
+export interface RollbackResult {
+  restoredDeployId: string;
+  appSlug: string;
+}
+
+export async function rollback(input: RollbackInput): Promise<RollbackResult> {
+  if (!roleAtLeast(input.role, 'editor')) {
+    throw new DeployError('forbidden', 'rollback requires an editor or workspace-admin role');
+  }
+
+  const app = await loadAppBySlug(input.workspaceId, input.slug);
+  if (!app) {
+    throw new DeployError('not_found', `no app "${input.slug}" in this workspace`);
+  }
+
+  const rows = await getDb()
+    .select({
+      id: deploys.id,
+      state: deploys.state,
+      createdAt: deploys.createdAt,
+      activatedAt: deploys.activatedAt,
+    })
+    .from(deploys)
+    .where(and(eq(deploys.appId, app.id), isNull(deploys.deletedAt)));
+
+  const chosen = chooseRollbackTarget(
+    rows.map((r) => ({
+      id: r.id,
+      state: r.state as DeployState,
+      createdAt: r.createdAt.getTime(),
+      activatedAt: r.activatedAt ? r.activatedAt.getTime() : null,
+    })),
+    app.activeDeployId,
+    input.toDeployId
+  );
+  if (!chosen.ok) {
+    throw new DeployError('no_rollback_target', 'no prior ready deploy to roll back to');
+  }
+
+  await getDb()
+    .update(apps)
+    .set({ activeDeployId: chosen.deployId })
+    .where(eq(apps.id, app.id));
+
+  await writeAudit({
+    workspaceId: input.workspaceId,
+    actorUserId: input.userId,
+    action: 'deploy.rollback',
+    target: input.slug,
+    meta: { toDeployId: chosen.deployId, fromDeployId: app.activeDeployId },
+  });
+
+  return { restoredDeployId: chosen.deployId, appSlug: input.slug };
+}

@@ -49,6 +49,24 @@ export const appVisibilityEnum = pgEnum('app_visibility', [
 
 export const appStatusEnum = pgEnum('app_status', ['live', 'hibernated']);
 
+/**
+ * Deploy lifecycle (U6, PHY-57). The pipeline streams these to the dashboard
+ * over SSE (Redis pub/sub channel `drobek:deploy:<id>`):
+ *   awaiting_upload → queued → linting → storing → activating → ready
+ *                                   └──────────────────────────→ failed
+ * A deploy only ever serves traffic once it is `ready` AND
+ * `apps.active_deploy_id` points at it.
+ */
+export const deployStateEnum = pgEnum('deploy_state', [
+  'awaiting_upload',
+  'queued',
+  'linting',
+  'storing',
+  'activating',
+  'ready',
+  'failed',
+]);
+
 // ── Identity ─────────────────────────────────────────────────────────────────
 
 export const users = pgTable('users', {
@@ -127,6 +145,14 @@ export const deploys = pgTable('deploys', {
     .references(() => apps.id),
   manifest: jsonb('manifest').notNull(),
   lintReport: jsonb('lint_report'),
+  /** Pipeline state streamed to the dashboard over SSE (U6, PHY-57). */
+  state: deployStateEnum('state').notNull().default('awaiting_upload'),
+  /** Actionable failure summary when state = 'failed' (lint block, etc.). */
+  error: text('error'),
+  /** Sum of the manifest's declared bytes — per-deploy quota accounting. */
+  totalBytes: bigint('total_bytes', { mode: 'number' }),
+  /** When this deploy last became the active (ready + pointed-at) version. */
+  activatedAt: timestamp('activated_at'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   /** Soft-delete tombstone (PHY-101). */
   deletedAt: timestamp('deleted_at'),
@@ -172,6 +198,27 @@ export const deployFiles = pgTable(
   },
   (t) => [primaryKey({ columns: [t.deployId, t.path] })]
 );
+
+/**
+ * Append-only audit trail (U6, PHY-57; TECHNICAL_DESIGN §1). Every
+ * security-relevant workspace mutation (deploy.activate, deploy.rollback, …)
+ * writes one immutable row. `actor_user_id` is nullable for system actions;
+ * `target` is a free-form subject (e.g. the app slug or deploy id); `meta`
+ * carries structured, secret-free context. Never updated, never deleted.
+ */
+export const auditLog = pgTable('audit_log', {
+  id: text('id')
+    .primaryKey()
+    .$defaultFn(() => createId()),
+  workspaceId: text('workspace_id')
+    .notNull()
+    .references(() => workspaces.id),
+  actorUserId: text('actor_user_id').references(() => users.id),
+  action: text('action').notNull(),
+  target: text('target'),
+  meta: jsonb('meta'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
 
 // ── MCP OAuth 2.1 Authorization Server (U5, PHY-71/PHY-53) ────────────────────
 //
