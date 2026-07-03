@@ -38,6 +38,16 @@ export default [
   route('oauth/register', 'routes/oauth.register.ts'),
   route('oauth/authorize', 'routes/oauth.authorize.tsx'),
   route('oauth/token', 'routes/oauth.token.ts'),
+  // U10 (PHY-55/PHY-56): REST Data API. More-specific static `data` segment →
+  // these rank above the serve splat below (they never fall through to it).
+  route(
+    ':ws/app/:slug/data/:collection',
+    'routes/serve.app.data.$collection.ts'
+  ),
+  route(
+    ':ws/app/:slug/data/:collection/:id',
+    'routes/serve.app.data.$collection.$id.ts'
+  ),
   // U7 (PHY-58): hardened same-origin app serving. The literal `app` middle
   // segment makes `:ws/app/:slug/*` specific enough that it never shadows the
   // dashboard routes above (all of which have a static first segment).

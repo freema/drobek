@@ -102,6 +102,15 @@ services:
       # U5 (PHY-71): the OAuth 2.1 Authorization Server issuer advertised in
       # /.well-known/oauth-authorization-server (falls back to PUBLIC_ORIGIN).
       PUBLIC_APP_URL: ${PUBLIC_APP_URL:-http://localhost:3041}
+      # U10 (PHY-55): Data API storage quota + write rate-limit (enforced by the
+      # REST data endpoints). DOCS_PER_APP is a deliberately LOW dev cap so the
+      # data-api e2e quota case can exceed it quickly (prod defaults are far
+      # higher — see .env.example).
+      DATA_MAX_DOCS_PER_APP: ${DATA_MAX_DOCS_PER_APP:-5}
+      DATA_MAX_DOC_BYTES: ${DATA_MAX_DOC_BYTES:-102400}
+      DATA_MAX_BYTES_PER_APP: ${DATA_MAX_BYTES_PER_APP:-52428800}
+      DATA_WRITE_RATE_LIMIT: ${DATA_WRITE_RATE_LIMIT:-120}
+      DATA_WRITE_RATE_WINDOW_MS: ${DATA_WRITE_RATE_WINDOW_MS:-60000}
     extra_hosts:
       # linux portability: make host.docker.internal resolve everywhere
       # (Docker Desktop has it natively; host-gateway covers linux engines).
@@ -119,6 +128,7 @@ services:
       - /repo/packages/db/node_modules
       - /repo/packages/core/node_modules
       - /repo/packages/deploy/node_modules
+      - /repo/packages/data/node_modules
       - /repo/packages/sdk/node_modules
       - /repo/tests-e2e/node_modules
     healthcheck:
@@ -164,6 +174,14 @@ services:
       UPLOAD_SIGNING_SECRET: ${UPLOAD_SIGNING_SECRET:?UPLOAD_SIGNING_SECRET must be set in .env (see .env.example)}
       DEPLOY_MAX_APP_BYTES: ${DEPLOY_MAX_APP_BYTES:-104857600}
       DEPLOY_MAX_FILE_BYTES: ${DEPLOY_MAX_FILE_BYTES:-10485760}
+      # U10 (PHY-55): the MCP data tools (collection_define / record_*) enforce
+      # the same Data API quota + write rate-limit as the REST endpoints. Keep
+      # these in lock-step with the web service (low dev DOCS_PER_APP cap).
+      DATA_MAX_DOCS_PER_APP: ${DATA_MAX_DOCS_PER_APP:-5}
+      DATA_MAX_DOC_BYTES: ${DATA_MAX_DOC_BYTES:-102400}
+      DATA_MAX_BYTES_PER_APP: ${DATA_MAX_BYTES_PER_APP:-52428800}
+      DATA_WRITE_RATE_LIMIT: ${DATA_WRITE_RATE_LIMIT:-120}
+      DATA_WRITE_RATE_WINDOW_MS: ${DATA_WRITE_RATE_WINDOW_MS:-60000}
     volumes:
       - .:/repo
       - drobek_blobs:/data/blobs
@@ -173,6 +191,7 @@ services:
       - /repo/packages/db/node_modules
       - /repo/packages/core/node_modules
       - /repo/packages/deploy/node_modules
+      - /repo/packages/data/node_modules
       - /repo/packages/sdk/node_modules
       - /repo/tests-e2e/node_modules
     healthcheck:
@@ -227,6 +246,7 @@ services:
       - /repo/packages/db/node_modules
       - /repo/packages/core/node_modules
       - /repo/packages/deploy/node_modules
+      - /repo/packages/data/node_modules
       - /repo/packages/sdk/node_modules
       - /repo/tests-e2e/node_modules
     healthcheck:

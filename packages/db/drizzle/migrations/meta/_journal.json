@@ -22,6 +22,13 @@
       "when": 1783067845061,
       "tag": "0002_odd_alex_power",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1783096383394,
+      "tag": "0003_nosy_shatterstar",
+      "breakpoints": true
     }
   ]
 }

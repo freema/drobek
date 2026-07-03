@@ -1,0 +1,39 @@
+{
+  "name": "@drobek/data",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./rest": {
+      "types": "./src/rest.server.ts",
+      "default": "./dist/rest.server.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest",
+    "test:run": "vitest run"
+  },
+  "dependencies": {
+    "@drobek/auth": "workspace:*",
+    "@drobek/core": "workspace:*",
+    "@drobek/db": "workspace:*",
+    "@drobek/serving": "workspace:*",
+    "@drobek/tenancy": "workspace:*",
+    "ajv": "^8.17.1",
+    "drizzle-orm": "^0.41.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.7"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

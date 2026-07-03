@@ -19,6 +19,7 @@ import {
   type AnyPgColumn,
   bigint,
   boolean,
+  index,
   jsonb,
   pgEnum,
   pgTable,
@@ -219,6 +220,75 @@ export const auditLog = pgTable('audit_log', {
   meta: jsonb('meta'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
+
+// ── Data API v1 — jsonb collections + documents (U10, PHY-55/PHY-56) ──────────
+//
+// A hosted app owns any number of named collections; each carries a REQUIRED
+// JSON Schema (validated server-side on every write) and a per-collection
+// ACCESS MODE that gates the REST data endpoints:
+//   public-read   — anon may read; writes require an editor+ member.
+//   public-write  — anon may read AND write (schema still enforced).
+//   locked        — no anon access; read/write only for workspace members
+//                   (viewer reads, editor writes) or the authed MCP author.
+//   owner-only    — reserved for U11 hosted-app END-USER auth (each end user
+//                   sees only their own docs). Defined here for forward-compat;
+//                   U10 rejects record ops on such collections as not_implemented.
+// `owner_end_user_id` is likewise a forward-compat nullable column (always null
+// in U10 — the workspace_end_users table lands with end-user auth in U11).
+export const collectionAccessModeEnum = pgEnum('collection_access_mode', [
+  'public-read',
+  'public-write',
+  'locked',
+  'owner-only',
+]);
+
+export const collections = pgTable(
+  'collections',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    appId: text('app_id')
+      .notNull()
+      .references(() => apps.id),
+    name: text('name').notNull(),
+    /** REQUIRED JSON Schema; every write is validated against this (ajv). */
+    jsonSchema: jsonb('json_schema').notNull(),
+    accessMode: collectionAccessModeEnum('access_mode')
+      .notNull()
+      .default('locked'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('collections_app_name_uq').on(t.appId, t.name)]
+);
+
+/**
+ * Per-app JSON documents (U10, PHY-55). `collection` is the collection NAME
+ * (unique per app in `collections`); `doc` is the validated payload.
+ * Soft-delete tombstone `deleted_at` (PHY-101) — a deleted doc is excluded from
+ * every read/query but the row is retained.
+ */
+export const appDocuments = pgTable(
+  'app_documents',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    appId: text('app_id')
+      .notNull()
+      .references(() => apps.id),
+    collection: text('collection').notNull(),
+    /** Forward-compat (U11 end-user auth) — always null in U10. */
+    ownerEndUserId: text('owner_end_user_id'),
+    doc: jsonb('doc').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    /** Soft-delete tombstone (PHY-101). */
+    deletedAt: timestamp('deleted_at'),
+  },
+  (t) => [index('app_documents_app_collection_idx').on(t.appId, t.collection)]
+);
 
 // ── MCP OAuth 2.1 Authorization Server (U5, PHY-71/PHY-53) ────────────────────
 //

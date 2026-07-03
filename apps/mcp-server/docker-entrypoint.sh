@@ -12,6 +12,7 @@ pnpm --filter @drobek/auth build
 pnpm --filter @drobek/tenancy build
 pnpm --filter @drobek/serving build
 pnpm --filter @drobek/deploy build
+pnpm --filter @drobek/data build
 pnpm --filter @drobek/oauth build
 pnpm --filter @drobek/sdk build
 cd /repo/apps/mcp-server

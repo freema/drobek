@@ -15,6 +15,7 @@ COPY packages/auth/package.json ./packages/auth/
 COPY packages/tenancy/package.json ./packages/tenancy/
 COPY packages/serving/package.json ./packages/serving/
 COPY packages/deploy/package.json ./packages/deploy/
+COPY packages/data/package.json ./packages/data/
 # @drobek/dashboard is web-only, but apps/web/package.json (copied above)
 # references it — the workspace-wide frozen install needs its manifest present.
 COPY packages/dashboard/package.json ./packages/dashboard/
@@ -31,6 +32,7 @@ RUN pnpm --filter @drobek/db build \
  && pnpm --filter @drobek/tenancy build \
  && pnpm --filter @drobek/serving build \
  && pnpm --filter @drobek/deploy build \
+ && pnpm --filter @drobek/data build \
  && pnpm --filter @drobek/oauth build \
  && pnpm --filter @drobek/sdk build
 COPY apps/mcp-server ./apps/mcp-server

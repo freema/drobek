@@ -21,12 +21,23 @@ import { z } from 'zod';
 import { coreVersion } from '@drobek/core';
 import { apps, getDb, memberships } from '@drobek/db';
 import {
+  DataError,
+  createRecord,
+  defineCollection,
+  deleteRecord,
+  queryRecords,
+  readRecord,
+  resolveApp,
+  updateRecord,
+} from '@drobek/data';
+import {
   DeployError,
   deployCommit,
   deployInit,
   deployStatus,
   rollback,
 } from '@drobek/deploy';
+import { roleAtLeast } from '@drobek/tenancy';
 import { hasScope } from '../scopes.js';
 import type { OAuthRole } from '../store.server.js';
 import {
@@ -117,6 +128,13 @@ export function buildMcpServer(ctx: AuthContext): McpServer {
   // just the token's bound role) so a downgrade loses access immediately and an
   // upgrade is honored; the deploy functions themselves enforce role >= editor.
   registerDeployTools(server, ctx);
+
+  // ── U10 data tools (PHY-55/PHY-56) ─────────────────────────────────────────
+  //
+  // collection_define + record_create/update/delete require data:write (+ a
+  // live editor role); record_read/query require data:read. The locator's
+  // workspace MUST be the token's bound workspace (cross-workspace rejected).
+  registerDataTools(server, ctx);
 
   return server;
 }
@@ -262,6 +280,260 @@ function registerDeployTools(server: McpServer, ctx: AuthContext): void {
             workspaceId: ctx.workspaceId,
             role,
             deployId,
+          })
+        );
+      }
+    );
+  }
+}
+
+/** Structured isError result for a plain forbidden (non-DeployError/DataError). */
+function forbiddenResult(message: string) {
+  return {
+    content: [
+      {
+        type: 'text' as const,
+        text: JSON.stringify({ error: 'forbidden', message }, null, 2),
+      },
+    ],
+    isError: true,
+  };
+}
+
+/** Map a thrown DataError to a structured isError result; rethrow others. */
+async function runDataTool(fn: () => Promise<unknown>) {
+  try {
+    return textResult(await fn());
+  } catch (err) {
+    if (err instanceof DataError) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: JSON.stringify(
+              { error: err.code, message: err.message, details: err.details },
+              null,
+              2
+            ),
+          },
+        ],
+        isError: true,
+      };
+    }
+    throw err;
+  }
+}
+
+const dataLocatorSchema = z.object({
+  workspace: z.string(),
+  slug: z.string(),
+});
+
+/** Register the U10 data tools according to the token's granted scope. */
+function registerDataTools(server: McpServer, ctx: AuthContext): void {
+  const canWrite = hasScope(ctx.scope, 'data:write');
+  const canRead = hasScope(ctx.scope, 'data:read');
+
+  /** Re-check membership + resolve the current role, or an isError result. */
+  async function requireRole(): Promise<OAuthRole | { isError: true; result: ReturnType<typeof accessRevokedResult> }> {
+    if (!(await stillGrantsRole(ctx))) {
+      return { isError: true, result: accessRevokedResult() };
+    }
+    const role = await currentEffectiveRole(ctx);
+    if (!role) return { isError: true, result: accessRevokedResult() };
+    return role;
+  }
+
+  if (canWrite) {
+    server.registerTool(
+      'collection_define',
+      {
+        description:
+          'Create or update a collection: a REQUIRED JSON Schema (every write is validated against it) and an access mode (public-read | public-write | locked | owner-only). Idempotent by (app, name). Requires data:write and an editor+ role. owner-only is reserved for U11 end-user auth.',
+        inputSchema: {
+          workspace: z.string(),
+          slug: z.string(),
+          name: z.string(),
+          jsonSchema: z.record(z.string(), z.unknown()),
+          accessMode: z.enum([
+            'public-read',
+            'public-write',
+            'locked',
+            'owner-only',
+          ]),
+        },
+      },
+      async ({ workspace, slug, name, jsonSchema, accessMode }) => {
+        const role = await requireRole();
+        if (typeof role === 'object') return role.result;
+        if (!roleAtLeast(role, 'editor')) {
+          return forbiddenResult(
+            'defining a collection requires an editor or workspace-admin role'
+          );
+        }
+        return runDataTool(async () => {
+          const app = await resolveApp({
+            wsSlug: workspace,
+            appSlug: slug,
+            requireWorkspaceId: ctx.workspaceId,
+          });
+          return defineCollection({ appId: app.appId, name, jsonSchema, accessMode });
+        });
+      }
+    );
+
+    server.registerTool(
+      'record_create',
+      {
+        description:
+          'Create a document in a collection. The document is validated against the collection JSON Schema (invalid → rejected), rate-limited, and quota-capped. Requires data:write.',
+        inputSchema: {
+          locator: dataLocatorSchema,
+          collection: z.string(),
+          doc: z.record(z.string(), z.unknown()),
+        },
+      },
+      async ({ locator, collection, doc }) => {
+        const role = await requireRole();
+        if (typeof role === 'object') return role.result;
+        return runDataTool(() =>
+          createRecord({
+            locator: {
+              wsSlug: locator.workspace,
+              appSlug: locator.slug,
+              requireWorkspaceId: ctx.workspaceId,
+            },
+            collection,
+            caller: { authenticated: true, role },
+            doc,
+          })
+        );
+      }
+    );
+
+    server.registerTool(
+      'record_update',
+      {
+        description:
+          'Patch a document (shallow-merge into the existing doc); the merged document is re-validated against the schema. Requires data:write.',
+        inputSchema: {
+          locator: dataLocatorSchema,
+          collection: z.string(),
+          id: z.string(),
+          patch: z.record(z.string(), z.unknown()),
+        },
+      },
+      async ({ locator, collection, id, patch }) => {
+        const role = await requireRole();
+        if (typeof role === 'object') return role.result;
+        return runDataTool(() =>
+          updateRecord({
+            locator: {
+              wsSlug: locator.workspace,
+              appSlug: locator.slug,
+              requireWorkspaceId: ctx.workspaceId,
+            },
+            collection,
+            caller: { authenticated: true, role },
+            id,
+            patch,
+          })
+        );
+      }
+    );
+
+    server.registerTool(
+      'record_delete',
+      {
+        description:
+          'Soft-delete a document (excluded from every subsequent read/query; the row is retained). Requires data:write.',
+        inputSchema: {
+          locator: dataLocatorSchema,
+          collection: z.string(),
+          id: z.string(),
+        },
+      },
+      async ({ locator, collection, id }) => {
+        const role = await requireRole();
+        if (typeof role === 'object') return role.result;
+        return runDataTool(() =>
+          deleteRecord({
+            locator: {
+              wsSlug: locator.workspace,
+              appSlug: locator.slug,
+              requireWorkspaceId: ctx.workspaceId,
+            },
+            collection,
+            caller: { authenticated: true, role },
+            id,
+          })
+        );
+      }
+    );
+  }
+
+  if (canRead) {
+    server.registerTool(
+      'record_read',
+      {
+        description:
+          'Read a single document by id from a collection. Requires data:read.',
+        inputSchema: {
+          locator: dataLocatorSchema,
+          collection: z.string(),
+          id: z.string(),
+        },
+      },
+      async ({ locator, collection, id }) => {
+        const role = await requireRole();
+        if (typeof role === 'object') return role.result;
+        return runDataTool(() =>
+          readRecord({
+            locator: {
+              wsSlug: locator.workspace,
+              appSlug: locator.slug,
+              requireWorkspaceId: ctx.workspaceId,
+            },
+            collection,
+            caller: { authenticated: true, role },
+            id,
+          })
+        );
+      }
+    );
+
+    server.registerTool(
+      'record_query',
+      {
+        description:
+          'Query a collection: `where` equality filters + `sort` (both restricted to the schema properties + createdAt/updatedAt/id — unknown fields rejected), `limit`, and an opaque `cursor` for pagination. Soft-deleted docs are excluded. Requires data:read.',
+        inputSchema: {
+          locator: dataLocatorSchema,
+          collection: z.string(),
+          where: z.record(z.string(), z.unknown()).optional(),
+          sort: z
+            .object({ field: z.string(), dir: z.enum(['asc', 'desc']).optional() })
+            .optional(),
+          limit: z.number().int().positive().optional(),
+          cursor: z.string().optional(),
+        },
+      },
+      async ({ locator, collection, where, sort, limit, cursor }) => {
+        const role = await requireRole();
+        if (typeof role === 'object') return role.result;
+        return runDataTool(() =>
+          queryRecords({
+            locator: {
+              wsSlug: locator.workspace,
+              appSlug: locator.slug,
+              requireWorkspaceId: ctx.workspaceId,
+            },
+            collection,
+            caller: { authenticated: true, role },
+            where,
+            sort,
+            limit,
+            cursor,
           })
         );
       }
