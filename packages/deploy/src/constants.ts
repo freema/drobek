@@ -50,9 +50,17 @@ export function publicAppUrl(env: NodeJS.ProcessEnv = process.env): string {
   );
 }
 
-/** Provisional public URL for a deployed app (U7 finalizes the serving route). */
-export function appUrl(slug: string, env: NodeJS.ProcessEnv = process.env): string {
-  return `${publicAppUrl(env)}/a/${slug}`;
+/**
+ * Public URL for a deployed app — the U7 hardened same-origin serving route
+ * `/:ws/app/:slug` (@drobek/serving). Both the workspace slug and the app slug
+ * are required to build a URL that actually resolves.
+ */
+export function appUrl(
+  workspaceSlug: string,
+  appSlug: string,
+  env: NodeJS.ProcessEnv = process.env
+): string {
+  return `${publicAppUrl(env)}/${workspaceSlug}/app/${appSlug}`;
 }
 
 /** Redis pub/sub channel the worker streams a deploy's progress on. */

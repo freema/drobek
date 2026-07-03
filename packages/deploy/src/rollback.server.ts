@@ -5,6 +5,7 @@
  */
 import { and, eq, isNull } from 'drizzle-orm';
 import { apps, deploys, getDb } from '@drobek/db';
+import { bustServeCache } from '@drobek/serving/cache';
 import { roleAtLeast, type WorkspaceRole } from '@drobek/tenancy';
 import { writeAudit } from './audit.server.js';
 import { DeployError } from './errors.js';
@@ -63,6 +64,10 @@ export async function rollback(input: RollbackInput): Promise<RollbackResult> {
     .update(apps)
     .set({ activeDeployId: chosen.deployId })
     .where(eq(apps.id, app.id));
+
+  // U7: the active pointer moved — bust the serving cache so the rolled-back
+  // version is served immediately (not up to the pointer TTL later).
+  await bustServeCache({ workspaceId: input.workspaceId, appSlug: input.slug });
 
   await writeAudit({
     workspaceId: input.workspaceId,

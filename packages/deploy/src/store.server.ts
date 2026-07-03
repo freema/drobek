@@ -5,7 +5,7 @@
  */
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { createBlobStoreFromEnv, type BlobStore } from '@drobek/core';
-import { apps, blobs, deploys, getDb } from '@drobek/db';
+import { apps, blobs, deploys, getDb, workspaces } from '@drobek/db';
 import type { ManifestEntry } from './manifest.js';
 import type { DeployState } from './types.js';
 
@@ -51,6 +51,8 @@ export async function loadDeployRow(deployId: string): Promise<DeployRow | null>
 export interface AppRow {
   id: string;
   workspaceId: string;
+  /** Workspace slug — needed to build the `/:ws/app/:slug` serving URL (U7). */
+  workspaceSlug: string;
   slug: string;
   activeDeployId: string | null;
 }
@@ -60,10 +62,12 @@ export async function loadAppRow(appId: string): Promise<AppRow | null> {
     .select({
       id: apps.id,
       workspaceId: apps.workspaceId,
+      workspaceSlug: workspaces.slug,
       slug: apps.slug,
       activeDeployId: apps.activeDeployId,
     })
     .from(apps)
+    .innerJoin(workspaces, eq(workspaces.id, apps.workspaceId))
     .where(eq(apps.id, appId))
     .limit(1);
   return rows[0] ?? null;
@@ -77,10 +81,12 @@ export async function loadAppBySlug(
     .select({
       id: apps.id,
       workspaceId: apps.workspaceId,
+      workspaceSlug: workspaces.slug,
       slug: apps.slug,
       activeDeployId: apps.activeDeployId,
     })
     .from(apps)
+    .innerJoin(workspaces, eq(workspaces.id, apps.workspaceId))
     .where(
       and(eq(apps.workspaceId, workspaceId), eq(apps.slug, slug), isNull(apps.deletedAt))
     )

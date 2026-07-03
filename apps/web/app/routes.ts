@@ -30,4 +30,8 @@ export default [
   route('oauth/register', 'routes/oauth.register.ts'),
   route('oauth/authorize', 'routes/oauth.authorize.tsx'),
   route('oauth/token', 'routes/oauth.token.ts'),
+  // U7 (PHY-58): hardened same-origin app serving. The literal `app` middle
+  // segment makes `:ws/app/:slug/*` specific enough that it never shadows the
+  // dashboard routes above (all of which have a static first segment).
+  route(':ws/app/:slug/*', 'routes/serve.app.ts'),
 ] satisfies RouteConfig;

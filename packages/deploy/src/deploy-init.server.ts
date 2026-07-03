@@ -140,7 +140,11 @@ export async function deployInit(input: DeployInitInput): Promise<DeployInitResu
 
   return {
     deployId: deploy.id,
-    app: { workspace: input.workspaceSlug, slug: app.slug, url: appUrl(app.slug) },
+    app: {
+      workspace: input.workspaceSlug,
+      slug: app.slug,
+      url: appUrl(input.workspaceSlug, app.slug),
+    },
     uploads,
   };
 }

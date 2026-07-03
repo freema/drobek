@@ -1,5 +1,5 @@
 {
-  "name": "@drobek/deploy",
+  "name": "@drobek/serving",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -8,9 +8,13 @@
       "types": "./src/index.ts",
       "default": "./dist/index.js"
     },
-    "./events": {
-      "types": "./src/events.ts",
-      "default": "./dist/events.js"
+    "./cache": {
+      "types": "./src/cache.server.ts",
+      "default": "./dist/cache.server.js"
+    },
+    "./password": {
+      "types": "./src/password.ts",
+      "default": "./dist/password.js"
     }
   },
   "scripts": {
@@ -23,11 +27,8 @@
     "@drobek/auth": "workspace:*",
     "@drobek/core": "workspace:*",
     "@drobek/db": "workspace:*",
-    "@drobek/serving": "workspace:*",
     "@drobek/tenancy": "workspace:*",
-    "bullmq": "^5.34.0",
-    "drizzle-orm": "^0.41.0",
-    "ioredis": "^5.6.0"
+    "drizzle-orm": "^0.41.0"
   },
   "devDependencies": {
     "@types/node": "^22",

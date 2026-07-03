@@ -20,6 +20,7 @@ import {
   type Logger,
 } from '@drobek/core';
 import { apps, blobRefs, blobs, deployFiles, deploys, getDb } from '@drobek/db';
+import { bustServeCache } from '@drobek/serving/cache';
 import { writeAudit } from './audit.server.js';
 import {
   DEPLOY_QUEUE,
@@ -249,6 +250,10 @@ export async function processDeployJob(job: ProcessDeployJob): Promise<void> {
         .where(eq(apps.id, app.id));
     });
 
+    // U7: the active pointer just moved — invalidate the serving cache so the
+    // new version is served immediately (best-effort; TTL backstop otherwise).
+    await bustServeCache({ workspaceId: app.workspaceId, appSlug: app.slug });
+
     // (d) AUDIT.
     await writeAudit({
       workspaceId: app.workspaceId,
@@ -262,7 +267,7 @@ export async function processDeployJob(job: ProcessDeployJob): Promise<void> {
       deployId,
       state: 'ready',
       step: 'activate',
-      url: appUrl(app.slug),
+      url: appUrl(app.workspaceSlug, app.slug),
       terminal: true,
     });
     log().info('deploy activated', { deployId, app: app.slug });

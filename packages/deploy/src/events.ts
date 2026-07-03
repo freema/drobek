@@ -11,7 +11,7 @@
 import { eq } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import { getRedis } from '@drobek/core';
-import { apps, deploys, getDb } from '@drobek/db';
+import { apps, deploys, getDb, workspaces } from '@drobek/db';
 import { appUrl, deployChannel } from './constants.js';
 import type { DeployProgress } from './progress.server.js';
 import { isTerminalState, type DeployState } from './types.js';
@@ -23,6 +23,8 @@ export interface DeployView {
   deployId: string;
   appId: string;
   workspaceId: string;
+  /** Workspace slug — needed to build the `/:ws/app/:slug` serving URL (U7). */
+  workspaceSlug: string;
   appSlug: string;
   state: DeployState;
   /** True when apps.active_deploy_id points at THIS deploy. */
@@ -37,6 +39,7 @@ export async function loadDeployView(deployId: string): Promise<DeployView | nul
       deployId: deploys.id,
       appId: apps.id,
       workspaceId: apps.workspaceId,
+      workspaceSlug: workspaces.slug,
       appSlug: apps.slug,
       state: deploys.state,
       activeDeployId: apps.activeDeployId,
@@ -45,6 +48,7 @@ export async function loadDeployView(deployId: string): Promise<DeployView | nul
     })
     .from(deploys)
     .innerJoin(apps, eq(apps.id, deploys.appId))
+    .innerJoin(workspaces, eq(workspaces.id, apps.workspaceId))
     .where(eq(deploys.id, deployId))
     .limit(1);
   const r = rows[0];
@@ -53,6 +57,7 @@ export async function loadDeployView(deployId: string): Promise<DeployView | nul
     deployId: r.deployId,
     appId: r.appId,
     workspaceId: r.workspaceId,
+    workspaceSlug: r.workspaceSlug,
     appSlug: r.appSlug,
     state: r.state as DeployState,
     active: r.activeDeployId === r.deployId,
@@ -66,7 +71,7 @@ export function progressFromView(view: DeployView): DeployProgress {
   return {
     deployId: view.deployId,
     state: view.state,
-    url: view.active ? appUrl(view.appSlug) : undefined,
+    url: view.active ? appUrl(view.workspaceSlug, view.appSlug) : undefined,
     error: view.error ?? undefined,
     terminal: isTerminalState(view.state),
   };

@@ -249,7 +249,8 @@ test('deploy happy path → ready → active, then dedup on re-deploy + SSE stre
 
     const ready = await waitForState(client, deployId, 'ready');
     expect(ready.active).toBe(true);
-    expect(ready.url).toContain('/a/');
+    // U7 finalized the serving route: the reported URL is /:ws/app/:slug.
+    expect(ready.url).toContain('/app/');
     const slug = ready.appSlug as string;
 
     // SSE: after ready the initial event is terminal — one event, stream closes.

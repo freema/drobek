@@ -40,7 +40,7 @@ export async function deployStatus(
     deployId: view.deployId,
     state: view.state,
     appSlug: view.appSlug,
-    url: appUrl(view.appSlug),
+    url: appUrl(view.workspaceSlug, view.appSlug),
     active: view.active,
     lintReport: view.lintReport ?? undefined,
     error: view.error ?? undefined,
