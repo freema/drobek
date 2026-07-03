@@ -13,6 +13,7 @@ COPY packages/db/package.json ./packages/db/
 COPY packages/core/package.json ./packages/core/
 COPY packages/auth/package.json ./packages/auth/
 COPY packages/tenancy/package.json ./packages/tenancy/
+COPY packages/oauth/package.json ./packages/oauth/
 COPY packages/sdk/package.json ./packages/sdk/
 COPY tests-e2e/package.json ./tests-e2e/
 
@@ -21,6 +22,9 @@ RUN pnpm install --frozen-lockfile
 COPY packages ./packages
 RUN pnpm --filter @drobek/db build \
  && pnpm --filter @drobek/core build \
+ && pnpm --filter @drobek/auth build \
+ && pnpm --filter @drobek/tenancy build \
+ && pnpm --filter @drobek/oauth build \
  && pnpm --filter @drobek/sdk build
 COPY apps/mcp-server ./apps/mcp-server
 

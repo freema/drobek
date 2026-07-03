@@ -1,0 +1,60 @@
+{
+  "name": "@drobek/oauth",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./routes/well-known.oauth-authorization-server": {
+      "types": "./src/routes/well-known.oauth-authorization-server.ts",
+      "default": "./dist/routes/well-known.oauth-authorization-server.js"
+    },
+    "./routes/oauth.register": {
+      "types": "./src/routes/oauth.register.ts",
+      "default": "./dist/routes/oauth.register.js"
+    },
+    "./routes/oauth.authorize": {
+      "types": "./src/routes/oauth.authorize.tsx",
+      "default": "./dist/routes/oauth.authorize.js"
+    },
+    "./routes/oauth.authorize.server": {
+      "types": "./src/routes/oauth.authorize.server.ts",
+      "default": "./dist/routes/oauth.authorize.server.js"
+    },
+    "./routes/oauth.token": {
+      "types": "./src/routes/oauth.token.ts",
+      "default": "./dist/routes/oauth.token.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest",
+    "test:run": "vitest run"
+  },
+  "dependencies": {
+    "@drobek/auth": "workspace:*",
+    "@drobek/core": "workspace:*",
+    "@drobek/db": "workspace:*",
+    "@drobek/tenancy": "workspace:*",
+    "drizzle-orm": "^0.41.0"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-router": "^7.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "@types/react": "^19.0.10",
+    "react": "^19.0.0",
+    "react-router": "7.14.0",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.7"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

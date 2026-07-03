@@ -172,3 +172,109 @@ export const deployFiles = pgTable(
   },
   (t) => [primaryKey({ columns: [t.deployId, t.path] })]
 );
+
+// ── MCP OAuth 2.1 Authorization Server (U5, PHY-71/PHY-53) ────────────────────
+//
+// drobek's web app is the OAuth 2.1 Authorization Server; mcp-server is the
+// protected Resource Server. All opaque tokens/codes are stored SHA-256-hashed
+// at rest (never the raw secret). PKCE S256 is mandatory. Tokens are
+// USER-scoped and carry a chosen workspace + membership role + an RFC 8707
+// `audience` the Resource Server validates. See @drobek/oauth.
+
+/** Dynamically registered (DCR) public PKCE clients — no client_secret. */
+export const oauthClients = pgTable('oauth_clients', {
+  id: text('id')
+    .primaryKey()
+    .$defaultFn(() => createId()),
+  clientId: text('client_id').notNull().unique(),
+  clientName: text('client_name').notNull(),
+  /** Exact-match set — the authorize redirect_uri must equal one of these. */
+  redirectUris: text('redirect_uris').array().notNull(),
+  tokenEndpointAuthMethod: text('token_endpoint_auth_method')
+    .notNull()
+    .default('none'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+/** Single-use PKCE authorization codes (~5 min TTL); consumed atomically. */
+export const oauthAuthorizationCodes = pgTable('oauth_authorization_codes', {
+  id: text('id')
+    .primaryKey()
+    .$defaultFn(() => createId()),
+  codeHash: text('code_hash').notNull().unique(),
+  /** Public client_id string the code was issued to (FK → oauth_clients). */
+  clientId: text('client_id')
+    .notNull()
+    .references(() => oauthClients.clientId, { onDelete: 'cascade' }),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  workspaceId: text('workspace_id')
+    .notNull()
+    .references(() => workspaces.id, { onDelete: 'cascade' }),
+  role: membershipRoleEnum('role').notNull(),
+  redirectUri: text('redirect_uri').notNull(),
+  codeChallenge: text('code_challenge').notNull(),
+  codeChallengeMethod: text('code_challenge_method').notNull(),
+  scope: text('scope').notNull(),
+  /** RFC 8707 requested resource → becomes the access token audience. */
+  resource: text('resource').notNull(),
+  used: boolean('used').notNull().default(false),
+  expiresAt: timestamp('expires_at').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+/** Opaque access tokens (~1 h TTL), audience-bound (RFC 8707). */
+export const oauthAccessTokens = pgTable('oauth_access_tokens', {
+  id: text('id')
+    .primaryKey()
+    .$defaultFn(() => createId()),
+  tokenHash: text('token_hash').notNull().unique(),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  workspaceId: text('workspace_id')
+    .notNull()
+    .references(() => workspaces.id, { onDelete: 'cascade' }),
+  role: membershipRoleEnum('role').notNull(),
+  oauthClientId: text('oauth_client_id').references(() => oauthClients.id, {
+    onDelete: 'set null',
+  }),
+  scope: text('scope').notNull(),
+  audience: text('audience').notNull(),
+  expiresAt: timestamp('expires_at').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  revokedAt: timestamp('revoked_at'),
+});
+
+/**
+ * Opaque refresh tokens (~30 day TTL) with ROTATION + reuse detection. On use:
+ * `used_at` is stamped and `rotated_to` points at the freshly-issued successor.
+ * Presenting a token whose `used_at` is already set is REUSE → the whole
+ * rotated_to lineage is invalidated and the grant's access tokens revoked.
+ */
+export const oauthRefreshTokens = pgTable('oauth_refresh_tokens', {
+  id: text('id')
+    .primaryKey()
+    .$defaultFn(() => createId()),
+  tokenHash: text('token_hash').notNull().unique(),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  workspaceId: text('workspace_id')
+    .notNull()
+    .references(() => workspaces.id, { onDelete: 'cascade' }),
+  role: membershipRoleEnum('role').notNull(),
+  oauthClientId: text('oauth_client_id').references(() => oauthClients.id, {
+    onDelete: 'set null',
+  }),
+  scope: text('scope').notNull(),
+  audience: text('audience').notNull(),
+  /** Self-FK: the successor token minted when this one was rotated. */
+  rotatedTo: text('rotated_to').references(
+    (): AnyPgColumn => oauthRefreshTokens.id
+  ),
+  usedAt: timestamp('used_at'),
+  expiresAt: timestamp('expires_at').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});

@@ -16,6 +16,7 @@
     "@drobek/auth": "workspace:*",
     "@drobek/core": "workspace:*",
     "@drobek/db": "workspace:*",
+    "@drobek/oauth": "workspace:*",
     "@drobek/tenancy": "workspace:*",
     "@paralleldrive/cuid2": "^2.2.2",
     "@react-router/node": "7.14.0",

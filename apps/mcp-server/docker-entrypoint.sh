@@ -8,6 +8,9 @@ CI=true pnpm install --frozen-lockfile
 echo "drobek mcp: building workspace packages..."
 pnpm --filter @drobek/db build
 pnpm --filter @drobek/core build
+pnpm --filter @drobek/auth build
+pnpm --filter @drobek/tenancy build
+pnpm --filter @drobek/oauth build
 pnpm --filter @drobek/sdk build
 cd /repo/apps/mcp-server
 echo "drobek mcp: starting..."

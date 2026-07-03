@@ -9,6 +9,10 @@ import {
   stateCookieHeader,
   type GoogleIdentity,
 } from '../google-oauth.server.js';
+import {
+  clearLoginReturnCookieHeader,
+  readLoginReturnCookie,
+} from '../return-to.server.js';
 import { createUserSession } from '../session.server.js';
 import { logger, serializeError } from '../logger.server.js';
 import { maskEmail } from '../mask-email.js';
@@ -89,9 +93,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
     email: maskEmail(resolved.email),
   });
 
+  // U5: honor a stashed same-origin return target (e.g. /oauth/authorize).
+  const returnTo = readLoginReturnCookie(request);
+
   const headers = new Headers();
-  headers.append('Location', '/me');
+  headers.append('Location', returnTo ?? '/me');
   headers.append('Set-Cookie', setCookie);
   headers.append('Set-Cookie', clearState);
+  if (returnTo) headers.append('Set-Cookie', clearLoginReturnCookieHeader());
   return new Response(null, { status: 302, headers });
 }

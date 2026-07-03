@@ -99,6 +99,9 @@ services:
       GOOGLE_USERINFO_URL: ${GOOGLE_USERINFO_URL:-http://host.docker.internal:3049/userinfo}
       # Origin the OAuth redirect_uri is built from (PUBLIC_ORIGIN + /auth/google/callback).
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-http://localhost:3041}
+      # U5 (PHY-71): the OAuth 2.1 Authorization Server issuer advertised in
+      # /.well-known/oauth-authorization-server (falls back to PUBLIC_ORIGIN).
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-http://localhost:3041}
     extra_hosts:
       # linux portability: make host.docker.internal resolve everywhere
       # (Docker Desktop has it natively; host-gateway covers linux engines).
@@ -147,6 +150,14 @@ services:
       GIT_SHA: ${GIT_SHA:-dev}
       # D2: mcp shares the blob volume (deploy tooling reads blobs later).
       BLOB_DIR: /data/blobs
+      # U5 (PHY-71): OAuth 2.1 Resource Server wiring. PUBLIC_MCP_URL is this
+      # server's canonical resource identifier (== the required token audience);
+      # PUBLIC_APP_URL is the drobek Authorization Server issuer advertised in
+      # the protected-resource metadata.
+      PUBLIC_MCP_URL: ${PUBLIC_MCP_URL:-http://localhost:3042}
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-http://localhost:3041}
+      # Global super-admin override for the per-tool-call membership re-check.
+      SUPERADMIN_EMAIL: ${SUPERADMIN_EMAIL:-}
     volumes:
       - .:/repo
       - drobek_blobs:/data/blobs

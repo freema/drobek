@@ -14,6 +14,10 @@ import {
   normalizeAuthEmail,
 } from '../email-code.server.js';
 import { ensureUserByEmail } from '../ensure-user.server.js';
+import {
+  clearLoginReturnCookieHeader,
+  readLoginReturnCookie,
+} from '../return-to.server.js';
 import { createUserSession } from '../session.server.js';
 import { maskEmail } from '../mask-email.js';
 
@@ -47,5 +51,10 @@ export async function action({ request }: ActionFunctionArgs) {
   const userId = await ensureUserByEmail(email);
   const { setCookie } = await createUserSession(userId, email);
 
-  return redirect('/me', { headers: { 'Set-Cookie': setCookie } });
+  // U5: land back on the stashed return target (e.g. /oauth/authorize) if set.
+  const returnTo = readLoginReturnCookie(request);
+  const headers = new Headers();
+  headers.append('Set-Cookie', setCookie);
+  if (returnTo) headers.append('Set-Cookie', clearLoginReturnCookieHeader());
+  return redirect(returnTo ?? '/me', { headers });
 }

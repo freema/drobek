@@ -22,6 +22,10 @@ import {
   logOtpSent,
   releaseOtpCooldown,
 } from '../otp-guard.server.js';
+import {
+  loginReturnCookieHeader,
+  safeReturnPath,
+} from '../return-to.server.js';
 import { getSessionUser } from '../session.server.js';
 import { logger, serializeError } from '../logger.server.js';
 import { maskEmail } from '../mask-email.js';
@@ -35,14 +39,26 @@ const GENERIC_GOOGLE_ERROR =
   'Google sign-in did not complete. Please try again, or sign in with an email code below.';
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const user = await getSessionUser(request);
-  if (user) throw redirect('/me');
   const url = new URL(request.url);
-  return {
+  // U5: a same-origin ?returnTo= (e.g. the OAuth /oauth/authorize URL) is
+  // stashed in a cookie so the email-code + Google round-trips land back there
+  // instead of on /me. Only same-origin relative paths survive validation.
+  const returnTo = safeReturnPath(url.searchParams.get('returnTo'));
+
+  const user = await getSessionUser(request);
+  if (user) throw redirect(returnTo ?? '/me');
+
+  const body = {
     googleEnabled: isGoogleLoginEnabled(),
     googleError:
       url.searchParams.get('error') === 'google' ? GENERIC_GOOGLE_ERROR : null,
   };
+  if (returnTo) {
+    return data(body, {
+      headers: { 'Set-Cookie': loginReturnCookieHeader(returnTo) },
+    });
+  }
+  return body;
 }
 
 export async function action({ request }: ActionFunctionArgs) {
