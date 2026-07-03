@@ -1,0 +1,55 @@
+{
+  "name": "@drobek/dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./routes/workspaces.$slug.apps": {
+      "types": "./src/routes/workspaces.$slug.apps.tsx",
+      "default": "./dist/routes/workspaces.$slug.apps.js"
+    },
+    "./routes/workspaces.$slug.apps.server": {
+      "types": "./src/routes/workspaces.$slug.apps.server.ts",
+      "default": "./dist/routes/workspaces.$slug.apps.server.js"
+    },
+    "./routes/workspaces.$slug.apps.$appSlug": {
+      "types": "./src/routes/workspaces.$slug.apps.$appSlug.tsx",
+      "default": "./dist/routes/workspaces.$slug.apps.$appSlug.js"
+    },
+    "./routes/workspaces.$slug.apps.$appSlug.server": {
+      "types": "./src/routes/workspaces.$slug.apps.$appSlug.server.ts",
+      "default": "./dist/routes/workspaces.$slug.apps.$appSlug.server.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest",
+    "test:run": "vitest run"
+  },
+  "dependencies": {
+    "@drobek/db": "workspace:*",
+    "@drobek/deploy": "workspace:*",
+    "@drobek/tenancy": "workspace:*",
+    "drizzle-orm": "^0.41.0"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-router": "^7.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "@types/react": "^19.0.10",
+    "react": "^19.0.0",
+    "react-router": "7.14.0",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.7"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

@@ -24,6 +24,9 @@ COPY packages/auth/package.json ./packages/auth/
 COPY packages/tenancy/package.json ./packages/tenancy/
 COPY packages/serving/package.json ./packages/serving/
 COPY packages/deploy/package.json ./packages/deploy/
+# @drobek/dashboard is web-only, but apps/web/package.json (copied above)
+# references it — the workspace-wide frozen install needs its manifest present.
+COPY packages/dashboard/package.json ./packages/dashboard/
 COPY packages/oauth/package.json ./packages/oauth/
 COPY packages/sdk/package.json ./packages/sdk/
 COPY tests-e2e/package.json ./tests-e2e/
@@ -67,6 +70,9 @@ COPY packages/auth/package.json ./packages/auth/
 COPY packages/tenancy/package.json ./packages/tenancy/
 COPY packages/serving/package.json ./packages/serving/
 COPY packages/deploy/package.json ./packages/deploy/
+# @drobek/dashboard is web-only, but apps/web/package.json (copied above)
+# references it — the workspace-wide frozen install needs its manifest present.
+COPY packages/dashboard/package.json ./packages/dashboard/
 COPY packages/oauth/package.json ./packages/oauth/
 COPY packages/sdk/package.json ./packages/sdk/
 COPY tests-e2e/package.json ./tests-e2e/

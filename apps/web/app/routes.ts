@@ -17,6 +17,14 @@ export default [
   route('workspaces/:slug', 'routes/workspaces.$slug.tsx'),
   route('workspaces/:slug/invite', 'routes/workspaces.$slug.invite.tsx'),
   route('invite/:token', 'routes/invite.$token.tsx'),
+  // U8 (PHY-74 slice / PHY-62): minimal dashboard — apps list, per-app deploy
+  // history + role-gated rollback. Static `apps` segment keeps these specific
+  // enough not to shadow `/workspaces/:slug/invite`.
+  route('workspaces/:slug/apps', 'routes/workspaces.$slug.apps.tsx'),
+  route(
+    'workspaces/:slug/apps/:appSlug',
+    'routes/workspaces.$slug.apps.$appSlug.tsx'
+  ),
   // P0-B blob skeleton (D2/PHY-100): signed-upload sink + read-back path.
   route('__upload/:token', 'routes/__upload.$token.ts'),
   route('__blob/:sha256', 'routes/__blob.$sha256.ts'),

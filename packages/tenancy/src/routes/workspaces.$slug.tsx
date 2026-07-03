@@ -131,6 +131,17 @@ export default function WorkspaceDetailRoute() {
         </span>
       </div>
 
+      {/* U8 (PHY-74 slice): entry point to the workspace's apps dashboard. */}
+      <p style={{ margin: '1rem 0 0' }}>
+        <Link
+          to={`/workspaces/${workspace.slug}/apps`}
+          style={{ fontWeight: 600, color: '#1a1a1a' }}
+          data-testid="apps-link"
+        >
+          Apps →
+        </Link>
+      </p>
+
       <h2 style={styles.h2}>Members</h2>
       <table style={styles.table} data-testid="members">
         <thead>

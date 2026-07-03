@@ -15,6 +15,7 @@
   "dependencies": {
     "@drobek/auth": "workspace:*",
     "@drobek/core": "workspace:*",
+    "@drobek/dashboard": "workspace:*",
     "@drobek/db": "workspace:*",
     "@drobek/deploy": "workspace:*",
     "@drobek/oauth": "workspace:*",

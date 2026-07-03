@@ -11,6 +11,10 @@
     "./events": {
       "types": "./src/events.ts",
       "default": "./dist/events.js"
+    },
+    "./rollback": {
+      "types": "./src/rollback.server.ts",
+      "default": "./dist/rollback.server.js"
     }
   },
   "scripts": {
