@@ -2,8 +2,19 @@
  * Email magic-code auth — code create/consume (ported from puls, U2 deltas):
  * - 6-digit NUMERIC code (crypto randomInt per digit, leading zeros allowed).
  * - Stored as SHA-256 hex in `drobek:otp:code:<sha256(email)>`, TTL 600 s.
- * - Max 5 wrong attempts, then the record is DELETED — the 6th attempt fails
- *   even with the correct code.
+ * - Max 5 guesses per code, tracked by an ATOMIC counter in a sibling key
+ *   `drobek:otp:attempts:<sha256(email)>`; the 6th guess is refused even with
+ *   the correct code (PHY-76 #1).
+ *
+ * Why a separate INCR counter (not an `attempts` field in the record): the
+ * former read-modify-write (`GET rec` → `rec.attempts += 1` → `SET rec`) had no
+ * atomicity, so a flood of concurrent guesses all read the same low count
+ * before any write-back and the cap could be raced past for the full 600 s TTL
+ * — an unauthenticated brute-force account-takeover of the 10^6 code space.
+ * `INCR` is atomic and evaluated FIRST, so Redis serializes the guesses and at
+ * most CODE_MAX_ATTEMPTS of them are ever checked against a live code,
+ * regardless of concurrency. IP/enumeration flooding is bounded separately by
+ * the verify-side rate limit in login.verify.server.ts.
  */
 import { createHash, randomInt } from 'node:crypto';
 import { getRedis } from '@drobek/core';
@@ -15,7 +26,6 @@ export const CODE_LENGTH = 6;
 interface LoginCodeRecord {
   email: string;
   codeHash: string;
-  attempts: number;
   ip?: string;
 }
 
@@ -29,6 +39,11 @@ function emailHash(email: string): string {
 
 function codeRedisKey(email: string): string {
   return `drobek:otp:code:${emailHash(email)}`;
+}
+
+/** Sibling key holding the atomic guess counter for the code above. */
+function attemptsRedisKey(email: string): string {
+  return `drobek:otp:attempts:${emailHash(email)}`;
 }
 
 export function normalizeAuthEmail(input: string): string {
@@ -51,15 +66,14 @@ export async function createEmailLoginCode(
   const rec: LoginCodeRecord = {
     email: norm,
     codeHash: hashCode(code),
-    attempts: 0,
     ip,
   };
-  await getRedis().set(
-    codeRedisKey(norm),
-    JSON.stringify(rec),
-    'EX',
-    CODE_TTL_S
-  );
+  const r = getRedis();
+  // Clear any burned counter from a prior code FIRST, so the fresh code always
+  // starts with a full guess budget (a leftover count >= max would otherwise
+  // kill the new code on arrival).
+  await r.del(attemptsRedisKey(norm));
+  await r.set(codeRedisKey(norm), JSON.stringify(rec), 'EX', CODE_TTL_S);
   return code;
 }
 
@@ -70,6 +84,24 @@ export async function consumeEmailLoginCode(
   const norm = normalizeAuthEmail(email);
   const r = getRedis();
   const key = codeRedisKey(norm);
+  const attemptsKey = attemptsRedisKey(norm);
+
+  // Atomic guess counter FIRST, before the code is even read. `INCR` is atomic,
+  // so Redis serializes concurrent guesses and hands each a distinct count —
+  // only the first CODE_MAX_ATTEMPTS ever proceed to a comparison against a live
+  // code. Everything past the cap is refused without evaluating a guess, which
+  // is what defeats the concurrent brute-force (PHY-76 #1).
+  const attempts = await r.incr(attemptsKey);
+  if (attempts === 1) {
+    // Bound the counter's lifetime to the code TTL (createEmailLoginCode also
+    // clears it when a fresh code is issued).
+    await r.pexpire(attemptsKey, CODE_TTL_S * 1000);
+  }
+  if (attempts > CODE_MAX_ATTEMPTS) {
+    await r.del(key);
+    return { ok: false, reason: 'too_many_attempts' };
+  }
+
   const raw = await r.get(key);
   if (!raw) return { ok: false, reason: 'no_code' };
 
@@ -81,26 +113,18 @@ export async function consumeEmailLoginCode(
     return { ok: false, reason: 'bad_record' };
   }
 
-  // Defensive: a record that already burned its attempts is dead.
-  if (rec.attempts >= CODE_MAX_ATTEMPTS) {
-    await r.del(key);
-    return { ok: false, reason: 'too_many_attempts' };
-  }
-
   if (hashCode(code.trim()) !== rec.codeHash) {
-    rec.attempts += 1;
-    if (rec.attempts >= CODE_MAX_ATTEMPTS) {
-      // 5th wrong attempt invalidates the code entirely — the next try fails
-      // with `no_code` even when it IS the correct code.
+    if (attempts >= CODE_MAX_ATTEMPTS) {
+      // Final allowed guess was wrong — invalidate the code entirely so the
+      // next try fails even if it IS the correct code.
       await r.del(key);
       return { ok: false, reason: 'too_many_attempts' };
     }
-    const ttl = await r.ttl(key);
-    await r.set(key, JSON.stringify(rec), 'EX', ttl > 0 ? ttl : CODE_TTL_S);
     return { ok: false, reason: 'wrong_code' };
   }
 
-  await r.del(key);
+  // Correct: single-use — drop the code and its spent counter.
+  await r.del(key, attemptsKey);
   return { ok: true };
 }
 
