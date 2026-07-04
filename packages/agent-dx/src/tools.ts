@@ -227,6 +227,32 @@ export const TOOL_DOCS: ToolDoc[] = [
       limit: 20,
     },
   },
+  {
+    name: 'app_errors',
+    title: 'Read app errors',
+    scope: 'apps:read',
+    description:
+      'Read the recent client-side errors captured for a deployed app (window.onerror + unhandledrejection, via the drobek error beacon), DEDUPED by message + stack head with occurrence counts, first/last-seen, the last URL, and a file:line hint. Call this after a deploy (once a user has hit the app) to close the deploy→observe→fix loop and self-correct. Read-only. Returns { workspace, app, totalEvents, distinctErrors, errors:[{ dedupKey, type, message, count, firstSeen, lastSeen, lastUrl, fileHint }] }.',
+    fields: [
+      { name: 'workspace', type: 'string', required: true, description: 'Workspace slug (from whoami).' },
+      { name: 'slug', type: 'string', required: true, description: 'App slug.' },
+      { name: 'since', type: 'string (ISO datetime, optional)', required: false, description: 'Only errors at/after this time; defaults to the last 14 days.' },
+    ],
+    example: { workspace: 'acme', slug: 'my-todo' },
+  },
+  {
+    name: 'app_logs',
+    title: 'Read app serving signals',
+    scope: 'apps:read',
+    description:
+      'Read the server-side serving signals for a deployed app: request volume, 5xx count, the top 404-by-path (missing assets/routes — a common cause of a blank or broken app), and the recent deploy history. Use it to spot broken asset paths and correlate errors with a deploy. Read-only. Returns { workspace, app, requests, count5xx, top404Paths:[{ path, count }], recentDeploys:[{ shortId, state, active, createdAt, activatedAt }] }.',
+    fields: [
+      { name: 'workspace', type: 'string', required: true, description: 'Workspace slug (from whoami).' },
+      { name: 'slug', type: 'string', required: true, description: 'App slug.' },
+      { name: 'since', type: 'string (ISO datetime, optional)', required: false, description: 'Aggregate signals at/after this time; defaults to the last 14 days.' },
+    ],
+    example: { workspace: 'acme', slug: 'my-todo' },
+  },
 ];
 
 /** The set of documented tool names (drift-guarded against the MCP registrations). */

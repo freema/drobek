@@ -22,6 +22,7 @@ COPY packages/db/package.json ./packages/db/
 COPY packages/core/package.json ./packages/core/
 COPY packages/auth/package.json ./packages/auth/
 COPY packages/tenancy/package.json ./packages/tenancy/
+COPY packages/insights/package.json ./packages/insights/
 COPY packages/serving/package.json ./packages/serving/
 COPY packages/deploy/package.json ./packages/deploy/
 COPY packages/data/package.json ./packages/data/
@@ -42,6 +43,7 @@ COPY --from=deps /app/packages/db/node_modules ./packages/db/node_modules
 COPY --from=deps /app/packages/core/node_modules ./packages/core/node_modules
 COPY --from=deps /app/packages/auth/node_modules ./packages/auth/node_modules
 COPY --from=deps /app/packages/tenancy/node_modules ./packages/tenancy/node_modules
+COPY --from=deps /app/packages/insights/node_modules ./packages/insights/node_modules
 COPY --from=deps /app/packages/serving/node_modules ./packages/serving/node_modules
 COPY --from=deps /app/packages/deploy/node_modules ./packages/deploy/node_modules
 COPY --from=deps /app/packages/data/node_modules ./packages/data/node_modules
@@ -57,6 +59,7 @@ RUN pnpm --filter @drobek/db build \
  && pnpm --filter @drobek/core build \
  && pnpm --filter @drobek/auth build \
  && pnpm --filter @drobek/tenancy build \
+ && pnpm --filter @drobek/insights build \
  && pnpm --filter @drobek/serving build \
  && pnpm --filter @drobek/deploy build \
  && pnpm --filter @drobek/data build \
@@ -74,6 +77,7 @@ COPY packages/db/package.json ./packages/db/
 COPY packages/core/package.json ./packages/core/
 COPY packages/auth/package.json ./packages/auth/
 COPY packages/tenancy/package.json ./packages/tenancy/
+COPY packages/insights/package.json ./packages/insights/
 COPY packages/serving/package.json ./packages/serving/
 COPY packages/deploy/package.json ./packages/deploy/
 COPY packages/data/package.json ./packages/data/
@@ -107,6 +111,7 @@ COPY --from=prod-deps --chown=appuser:nodejs /app/packages/db/node_modules ./pac
 COPY --from=prod-deps --chown=appuser:nodejs /app/packages/core/node_modules ./packages/core/node_modules
 COPY --from=prod-deps --chown=appuser:nodejs /app/packages/auth/node_modules ./packages/auth/node_modules
 COPY --from=prod-deps --chown=appuser:nodejs /app/packages/tenancy/node_modules ./packages/tenancy/node_modules
+COPY --from=prod-deps --chown=appuser:nodejs /app/packages/insights/node_modules ./packages/insights/node_modules
 COPY --from=prod-deps --chown=appuser:nodejs /app/packages/serving/node_modules ./packages/serving/node_modules
 COPY --from=prod-deps --chown=appuser:nodejs /app/packages/deploy/node_modules ./packages/deploy/node_modules
 COPY --from=prod-deps --chown=appuser:nodejs /app/packages/data/node_modules ./packages/data/node_modules
@@ -127,6 +132,8 @@ COPY --from=builder --chown=appuser:nodejs /app/packages/auth/package.json ./pac
 COPY --from=builder --chown=appuser:nodejs /app/packages/auth/dist ./packages/auth/dist
 COPY --from=builder --chown=appuser:nodejs /app/packages/tenancy/package.json ./packages/tenancy/
 COPY --from=builder --chown=appuser:nodejs /app/packages/tenancy/dist ./packages/tenancy/dist
+COPY --from=builder --chown=appuser:nodejs /app/packages/insights/package.json ./packages/insights/
+COPY --from=builder --chown=appuser:nodejs /app/packages/insights/dist ./packages/insights/dist
 COPY --from=builder --chown=appuser:nodejs /app/packages/serving/package.json ./packages/serving/
 COPY --from=builder --chown=appuser:nodejs /app/packages/serving/dist ./packages/serving/dist
 COPY --from=builder --chown=appuser:nodejs /app/packages/deploy/package.json ./packages/deploy/

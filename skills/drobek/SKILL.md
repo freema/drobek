@@ -87,9 +87,46 @@ Use `rollback({ slug, toDeployId? })` to repoint an app to a prior ready deploy.
   `validation_failed` → fix the doc against the schema; `too_many_docs` → the
   app hit its document cap; `index_html_required` → move index.html to the root).
 - The full code → meaning → fix table is the Error catalogue in llms-full.txt.
-- PLACEHOLDER (agent loop): once app-error capture lands, check `app_errors` for
-  the deployed app after the first user hits it, and self-correct. Until then,
-  verify by opening the live URL and exercising the app yourself.
+
+## Close the loop: read runtime errors (agent loop v1)
+
+drobek captures runtime problems from the DEPLOYED app so you can self-correct
+without a human relaying the console:
+
+- `app_errors({ workspace, slug, since? })` — recent client-side errors
+  (window.onerror + unhandledrejection), DEDUPED by message + stack head with
+  counts, first/last-seen, the last URL, and a `file:line` hint.
+- `app_logs({ workspace, slug, since? })` — serving signals: request volume,
+  5xx count, the top 404-by-path (a missing `/asset.js` or route is a common
+  cause of a blank/broken app), and recent deploys.
+
+Workflow after a deploy reaches `ready`: open the live URL (or ask the user to),
+then call `app_errors` and `app_logs`. Fix what they report (e.g. a 404 on
+`/app.js` → you used an absolute asset path; a `TypeError` with a `file:line`
+hint → patch that line), redeploy, and re-check until both are clean.
+
+To capture errors, add this ~5-line beacon to your `index.html` (drobek's JS SDK
+with richer auto-capture is a later unit — until then, paste this). It POSTs to
+the app's own same-origin `__beacon` endpoint (public, size-capped, rate-limited,
+and PII/secret-sanitized server-side — never send tokens/cookies yourself):
+
+```html
+<script>
+  var DROBEK_BEACON = location.pathname.split('/').slice(0, 4).join('/') + '/__beacon';
+  function drobekBeacon(type, message, stack) {
+    try {
+      navigator.sendBeacon(DROBEK_BEACON, JSON.stringify({ type: type, message: String(message), stack: stack, url: location.href, ua: navigator.userAgent, ts: Date.now() }));
+    } catch (e) {}
+  }
+  window.addEventListener('error', function (e) { drobekBeacon('error', e.message, e.error && e.error.stack); });
+  window.addEventListener('unhandledrejection', function (e) { drobekBeacon('unhandledrejection', (e.reason && e.reason.message) || e.reason, e.reason && e.reason.stack); });
+</script>
+```
+
+Note: `location.pathname.split('/').slice(0, 4).join('/')` resolves to the app
+root (`/:ws/app/:slug`) regardless of the current sub-path, so the beacon posts
+to `/:ws/app/:slug/__beacon`. Keep the `<script>` early in `<head>` so it
+catches errors from the rest of the page.
 
 ## Authoritative schemas
 

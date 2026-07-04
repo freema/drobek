@@ -22,8 +22,26 @@ import {
 } from 'react-router';
 import { requireWorkspaceRole } from '@drobek/tenancy';
 import { rollback } from '@drobek/deploy/rollback';
+import {
+  queryAppErrors,
+  queryAppLogs,
+  type AppErrorsView,
+  type AppLogsView,
+} from '@drobek/insights';
 import { listAppDeploys, loadAppForView } from '../apps.server.js';
 import { canRollback, servePath, shapeDeployHistory } from '../view.js';
+
+const EMPTY_ERRORS: AppErrorsView = {
+  totalEvents: 0,
+  distinctErrors: 0,
+  errors: [],
+};
+const EMPTY_LOGS: AppLogsView = {
+  requests: 0,
+  count5xx: 0,
+  top404Paths: [],
+  recentDeploys: [],
+};
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const access = await requireWorkspaceRole(
@@ -44,6 +62,14 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const deploys = shapeDeployHistory(deployRows, app.activeDeployId);
   const active = deploys.find((d) => d.active) ?? null;
 
+  // PHY-123 Overview panels — recent errors + a 404/traffic summary (read-only,
+  // viewer+). Best-effort: a signals hiccup degrades to empty, never 500s the
+  // app-detail page. Stored text is React-escaped on render (no stored XSS).
+  const [errors, logs] = await Promise.all([
+    queryAppErrors(app.id).catch(() => EMPTY_ERRORS),
+    queryAppLogs(app.id).catch(() => EMPTY_LOGS),
+  ]);
+
   return {
     workspace: { slug: access.workspace.slug, name: access.workspace.name },
     app: {
@@ -55,6 +81,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       url: servePath(access.workspace.slug, app.slug),
     },
     deploys,
+    errors,
+    logs,
     role: access.effectiveRole,
     canRollback: canRollback(access.effectiveRole),
   };

@@ -20,6 +20,7 @@
     "@drobek/data": "workspace:*",
     "@drobek/db": "workspace:*",
     "@drobek/deploy": "workspace:*",
+    "@drobek/insights": "workspace:*",
     "@drobek/oauth": "workspace:*",
     "@drobek/serving": "workspace:*",
     "@drobek/tenancy": "workspace:*",

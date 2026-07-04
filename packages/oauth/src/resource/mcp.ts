@@ -37,6 +37,11 @@ import {
   deployStatus,
   rollback,
 } from '@drobek/deploy';
+import {
+  InsightsError,
+  queryAppErrorsByLocator,
+  queryAppLogsByLocator,
+} from '@drobek/insights';
 import { roleAtLeast } from '@drobek/tenancy';
 import { hasScope } from '../scopes.js';
 import type { OAuthRole } from '../store.server.js';
@@ -141,6 +146,12 @@ export function buildMcpServer(ctx: AuthContext): McpServer {
   // live editor role); record_read/query require data:read. The locator's
   // workspace MUST be the token's bound workspace (cross-workspace rejected).
   registerDataTools(server, ctx);
+
+  // ── PHY-123 agent-loop read tools ──────────────────────────────────────────
+  //
+  // app_errors + app_logs are READ-ONLY (apps:read + any live membership). Both
+  // re-resolve the app inside the token's workspace (cross-workspace rejected).
+  registerInsightsTools(server, ctx);
 
   return server;
 }
@@ -545,6 +556,88 @@ function registerDataTools(server: McpServer, ctx: AuthContext): void {
       }
     );
   }
+}
+
+/** Map a thrown InsightsError to a structured isError result; rethrow others. */
+async function runInsightsTool(fn: () => Promise<unknown>) {
+  try {
+    return textResult(await fn());
+  } catch (err) {
+    if (err instanceof InsightsError) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: JSON.stringify({ error: err.code, message: err.message }, null, 2),
+          },
+        ],
+        isError: true,
+      };
+    }
+    throw err;
+  }
+}
+
+/**
+ * Register the PHY-123 agent-loop READ tools (app_errors / app_logs). Both are
+ * gated on apps:read + any live membership (role ≥ viewer), and the locator is
+ * re-resolved INSIDE the token's workspace so a cross-workspace read is rejected
+ * as not_found. They never mutate anything.
+ */
+function registerInsightsTools(server: McpServer, ctx: AuthContext): void {
+  if (!hasScope(ctx.scope, 'apps:read')) return;
+
+  server.registerTool(
+    'app_errors',
+    {
+      description:
+        'Read the recent client-side errors captured for a deployed app (window.onerror + unhandledrejection via the drobek error beacon), DEDUPED by message + stack head with occurrence counts, first/last-seen, the last URL, and a file:line hint. Use this after a deploy to close the fix loop. Read-only; requires apps:read and workspace membership.',
+      inputSchema: {
+        workspace: z.string(),
+        slug: z.string(),
+        since: z.string().optional(),
+      },
+    },
+    async ({ workspace, slug, since }) => {
+      if (!(await stillGrantsRole(ctx))) return accessRevokedResult();
+      const role = await currentEffectiveRole(ctx);
+      if (!role) return accessRevokedResult();
+      return runInsightsTool(() =>
+        queryAppErrorsByLocator({
+          wsSlug: workspace,
+          appSlug: slug,
+          requireWorkspaceId: ctx.workspaceId,
+          since,
+        })
+      );
+    }
+  );
+
+  server.registerTool(
+    'app_logs',
+    {
+      description:
+        'Read the server-side serving signals for a deployed app: request volume, 5xx count, the top 404-by-path (missing assets/routes), and the recent deploy history. Use this to spot broken asset paths and correlate errors with a deploy. Read-only; requires apps:read and workspace membership.',
+      inputSchema: {
+        workspace: z.string(),
+        slug: z.string(),
+        since: z.string().optional(),
+      },
+    },
+    async ({ workspace, slug, since }) => {
+      if (!(await stillGrantsRole(ctx))) return accessRevokedResult();
+      const role = await currentEffectiveRole(ctx);
+      if (!role) return accessRevokedResult();
+      return runInsightsTool(() =>
+        queryAppLogsByLocator({
+          wsSlug: workspace,
+          appSlug: slug,
+          requireWorkspaceId: ctx.workspaceId,
+          since,
+        })
+      );
+    }
+  );
 }
 
 interface McpSession {

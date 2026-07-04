@@ -46,6 +46,7 @@
     "@drobek/data": "workspace:*",
     "@drobek/db": "workspace:*",
     "@drobek/deploy": "workspace:*",
+    "@drobek/insights": "workspace:*",
     "@drobek/tenancy": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.19.0",
     "drizzle-orm": "^0.41.0",

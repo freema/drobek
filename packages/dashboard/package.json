@@ -55,6 +55,7 @@
     "@drobek/data": "workspace:*",
     "@drobek/db": "workspace:*",
     "@drobek/deploy": "workspace:*",
+    "@drobek/insights": "workspace:*",
     "@drobek/tenancy": "workspace:*",
     "drizzle-orm": "^0.41.0"
   },

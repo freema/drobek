@@ -20,6 +20,7 @@ import {
   bigint,
   boolean,
   index,
+  integer,
   jsonb,
   pgEnum,
   pgTable,
@@ -395,3 +396,71 @@ export const oauthRefreshTokens = pgTable('oauth_refresh_tokens', {
   expiresAt: timestamp('expires_at').notNull(),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
+
+// ── Agent loop v1 — error beacon + serving signals (PHY-123, PHY-92 slice) ─────
+//
+// The observe half of the deploy→observe→fix loop. `app_errors` is a per-app
+// RING BUFFER (capped count + age, oldest evicted by @drobek/insights on insert)
+// of SANITIZED client errors ingested by the PUBLIC, UNAUTHENTICATED beacon —
+// only message/stack/url/ua are stored, PII/secret-redacted + truncated; NEVER
+// cookies/tokens. `app_daily_stats` is the durable per-app/day serving-signal
+// roll-up (request volume / 5xx / 404s-by-path), fed from Redis hot counters by
+// a light flush. Both are read-only to the app_errors/app_logs MCP tools + the
+// dashboard Overview panels (viewer+; stored text is escaped on render).
+
+export const appErrorTypeEnum = pgEnum('app_error_type', [
+  'error',
+  'unhandledrejection',
+]);
+
+export const appErrors = pgTable(
+  'app_errors',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    appId: text('app_id')
+      .notNull()
+      .references(() => apps.id),
+    type: appErrorTypeEnum('type').notNull(),
+    /** Sanitized (redacted + truncated) error message. */
+    message: text('message').notNull(),
+    /** Sanitized stack, when the browser supplied one. */
+    stack: text('stack'),
+    /** Page URL the error fired on (sanitized). */
+    url: text('url').notNull(),
+    /** User-agent (sanitized), when present. */
+    ua: text('ua'),
+    /** Client-supplied event time (validated epoch-ms → timestamp); may skew. */
+    ts: timestamp('ts'),
+    /** sha256(message + stack head) — groups identical errors with counts. */
+    dedupKey: text('dedup_key').notNull(),
+    /** Server ingest time — the authoritative ordering + retention field. */
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (t) => [index('app_errors_app_created_idx').on(t.appId, t.createdAt)]
+);
+
+/**
+ * Per-app, per-UTC-day serving signals (PHY-123). `day` is a `YYYY-MM-DD` string
+ * (deterministic bucket, no tz math). `path_404_counts` is `{ path: count }`;
+ * `__other__` absorbs paths past the per-day cardinality cap. Upserted from the
+ * Redis hot counters on the read path (unique on (app_id, day)).
+ */
+export const appDailyStats = pgTable(
+  'app_daily_stats',
+  {
+    appId: text('app_id')
+      .notNull()
+      .references(() => apps.id),
+    day: text('day').notNull(),
+    path404Counts: jsonb('path_404_counts')
+      .$type<Record<string, number>>()
+      .notNull()
+      .default({}),
+    count5xx: integer('count_5xx').notNull().default(0),
+    requestCount: integer('request_count').notNull().default(0),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.appId, t.day] })]
+);

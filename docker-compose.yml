@@ -111,6 +111,17 @@ services:
       DATA_MAX_BYTES_PER_APP: ${DATA_MAX_BYTES_PER_APP:-52428800}
       DATA_WRITE_RATE_LIMIT: ${DATA_WRITE_RATE_LIMIT:-120}
       DATA_WRITE_RATE_WINDOW_MS: ${DATA_WRITE_RATE_WINDOW_MS:-60000}
+      # PHY-123 (agent loop v1): the PUBLIC error beacon. The per-app+IP rate
+      # limit is a deliberately LOW dev cap so the beacon-flood e2e trips 429
+      # quickly (prod default is 60). BEACON_APP_RATE_LIMIT is a second,
+      # IP-INDEPENDENT per-app cap so an attacker rotating X-Forwarded-For cannot
+      # dodge the per-IP bucket. Ring-buffer retention: newest 500 / 14 days.
+      BEACON_RATE_LIMIT: ${BEACON_RATE_LIMIT:-30}
+      BEACON_APP_RATE_LIMIT: ${BEACON_APP_RATE_LIMIT:-600}
+      BEACON_RATE_WINDOW_MS: ${BEACON_RATE_WINDOW_MS:-60000}
+      BEACON_MAX_EVENTS_PER_APP: ${BEACON_MAX_EVENTS_PER_APP:-500}
+      BEACON_RETENTION_DAYS: ${BEACON_RETENTION_DAYS:-14}
+      BEACON_SAMPLE_RATE: ${BEACON_SAMPLE_RATE:-1}
     extra_hosts:
       # linux portability: make host.docker.internal resolve everywhere
       # (Docker Desktop has it natively; host-gateway covers linux engines).
@@ -127,6 +138,7 @@ services:
       - /repo/apps/mcp-server/node_modules
       - /repo/packages/db/node_modules
       - /repo/packages/core/node_modules
+      - /repo/packages/insights/node_modules
       - /repo/packages/deploy/node_modules
       - /repo/packages/data/node_modules
       - /repo/packages/agent-dx/node_modules
@@ -191,6 +203,7 @@ services:
       - /repo/apps/mcp-server/node_modules
       - /repo/packages/db/node_modules
       - /repo/packages/core/node_modules
+      - /repo/packages/insights/node_modules
       - /repo/packages/deploy/node_modules
       - /repo/packages/data/node_modules
       - /repo/packages/agent-dx/node_modules
@@ -247,6 +260,7 @@ services:
       - /repo/apps/mcp-server/node_modules
       - /repo/packages/db/node_modules
       - /repo/packages/core/node_modules
+      - /repo/packages/insights/node_modules
       - /repo/packages/deploy/node_modules
       - /repo/packages/data/node_modules
       - /repo/packages/agent-dx/node_modules

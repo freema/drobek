@@ -25,6 +25,9 @@ importers:
       '@drobek/deploy':
         specifier: workspace:*
         version: link:../../packages/deploy
+      '@drobek/insights':
+        specifier: workspace:*
+        version: link:../../packages/insights
       '@drobek/oauth':
         specifier: workspace:*
         version: link:../../packages/oauth
@@ -83,6 +86,9 @@ importers:
       '@drobek/deploy':
         specifier: workspace:*
         version: link:../../packages/deploy
+      '@drobek/insights':
+        specifier: workspace:*
+        version: link:../../packages/insights
       '@drobek/oauth':
         specifier: workspace:*
         version: link:../../packages/oauth
@@ -251,6 +257,9 @@ importers:
       '@drobek/deploy':
         specifier: workspace:*
         version: link:../deploy
+      '@drobek/insights':
+        specifier: workspace:*
+        version: link:../insights
       '@drobek/tenancy':
         specifier: workspace:*
         version: link:../tenancy
@@ -370,6 +379,31 @@ importers:
         specifier: ^3.0.7
         version: 3.2.6(@types/node@22.20.0)(tsx@4.22.4)
 
+  packages/insights:
+    dependencies:
+      '@drobek/auth':
+        specifier: workspace:*
+        version: link:../auth
+      '@drobek/core':
+        specifier: workspace:*
+        version: link:../core
+      '@drobek/db':
+        specifier: workspace:*
+        version: link:../db
+      drizzle-orm:
+        specifier: ^0.41.0
+        version: 0.41.0(@types/pg@8.20.0)(pg@8.22.0)(postgres@3.4.9)
+    devDependencies:
+      '@types/node':
+        specifier: ^22
+        version: 22.20.0
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.7
+        version: 3.2.6(@types/node@22.20.0)(tsx@4.22.4)
+
   packages/oauth:
     dependencies:
       '@drobek/agent-dx':
@@ -390,6 +424,9 @@ importers:
       '@drobek/deploy':
         specifier: workspace:*
         version: link:../deploy
+      '@drobek/insights':
+        specifier: workspace:*
+        version: link:../insights
       '@drobek/tenancy':
         specifier: workspace:*
         version: link:../tenancy
@@ -445,6 +482,9 @@ importers:
       '@drobek/db':
         specifier: workspace:*
         version: link:../db
+      '@drobek/insights':
+        specifier: workspace:*
+        version: link:../insights
       '@drobek/tenancy':
         specifier: workspace:*
         version: link:../tenancy

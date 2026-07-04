@@ -43,8 +43,8 @@ describe('MCP tool ↔ agent-dx doc parity', () => {
     expect(registered).toEqual(documented);
   });
 
-  it('registers all 12 M1a/M1b tools under full scope', () => {
+  it('registers all 14 M1a/M1b tools under full scope', () => {
     const server = buildMcpServer(FULL_SCOPE_CTX);
-    expect(registeredToolNames(server)).toHaveLength(12);
+    expect(registeredToolNames(server)).toHaveLength(14);
   });
 });

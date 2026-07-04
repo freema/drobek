@@ -119,6 +119,75 @@ const styles = {
   },
   muted: { color: '#8a8a8e' },
   back: { fontSize: '0.9rem', color: '#555', marginTop: '2rem' },
+  panelGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(18rem, 1fr))',
+    gap: '1rem',
+    marginTop: '0.5rem',
+  },
+  panel: {
+    border: '1px solid #e4e4e7',
+    borderRadius: '10px',
+    padding: '0.9rem 1rem',
+    background: '#fcfcfd',
+  },
+  panelHead: {
+    display: 'flex',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    gap: '0.5rem',
+    marginBottom: '0.6rem',
+  },
+  panelTitle: { fontSize: '0.95rem', fontWeight: 700, margin: 0 },
+  errItem: {
+    borderBottom: '1px solid #f0f0f2',
+    padding: '0.5rem 0',
+  },
+  errMsg: {
+    fontFamily: 'ui-monospace, monospace',
+    fontSize: '0.82rem',
+    color: '#7f1d1d',
+    wordBreak: 'break-word',
+  },
+  errMeta: { fontSize: '0.74rem', color: '#71717a', marginTop: '0.2rem' },
+  countPill: {
+    display: 'inline-block',
+    minWidth: '1.4rem',
+    textAlign: 'center',
+    padding: '0.05rem 0.4rem',
+    fontSize: '0.72rem',
+    fontWeight: 700,
+    borderRadius: '999px',
+    background: '#fee2e2',
+    color: '#991b1b',
+    border: '1px solid #fecaca',
+  },
+  statRow: {
+    display: 'flex',
+    gap: '1.5rem',
+    marginBottom: '0.6rem',
+    fontSize: '0.85rem',
+  },
+  statNum: { fontSize: '1.3rem', fontWeight: 700, display: 'block' },
+  statLabel: {
+    fontSize: '0.7rem',
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em',
+    color: '#71717a',
+  },
+  pathRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    gap: '0.6rem',
+    padding: '0.3rem 0',
+    borderBottom: '1px solid #f0f0f2',
+    fontSize: '0.82rem',
+  },
+  pathText: {
+    fontFamily: 'ui-monospace, monospace',
+    wordBreak: 'break-word',
+    color: '#3f3f46',
+  },
 } as const;
 
 const LINT_LABEL: Record<string, string> = {
@@ -128,7 +197,7 @@ const LINT_LABEL: Record<string, string> = {
 };
 
 export default function AppDetailRoute() {
-  const { workspace, app, deploys, canRollback } =
+  const { workspace, app, deploys, errors, logs, canRollback } =
     useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const nav = useNavigation();
@@ -185,6 +254,100 @@ export default function AppDetailRoute() {
           <span style={styles.muted}>none</span>
         )}
       </p>
+
+      <h2 style={styles.h2}>Overview</h2>
+      <div style={styles.panelGrid}>
+        <section
+          style={styles.panel}
+          data-testid="errors-panel"
+          aria-label="Recent errors"
+        >
+          <div style={styles.panelHead}>
+            <p style={styles.panelTitle}>Recent errors</p>
+            <span style={styles.muted} data-testid="errors-total">
+              {errors.totalEvents} event{errors.totalEvents === 1 ? '' : 's'}
+            </span>
+          </div>
+          {errors.errors.length === 0 ? (
+            <p style={styles.muted}>No errors reported yet.</p>
+          ) : (
+            errors.errors.map((e) => (
+              <div
+                key={e.dedupKey}
+                style={styles.errItem}
+                data-testid="error-row"
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: '0.5rem',
+                    alignItems: 'flex-start',
+                  }}
+                >
+                  <span style={styles.countPill} data-testid="error-count">
+                    {e.count}×
+                  </span>
+                  {/* React escapes stored text — no stored XSS. */}
+                  <span style={styles.errMsg} data-testid="error-message">
+                    {e.message}
+                  </span>
+                </div>
+                <div style={styles.errMeta}>
+                  {e.type}
+                  {e.fileHint ? ` · ${e.fileHint}` : ''} · last{' '}
+                  {formatTimestamp(e.lastSeen)}
+                </div>
+              </div>
+            ))
+          )}
+        </section>
+
+        <section
+          style={styles.panel}
+          data-testid="logs-panel"
+          aria-label="Traffic and 404s"
+        >
+          <div style={styles.panelHead}>
+            <p style={styles.panelTitle}>Traffic &amp; 404s</p>
+          </div>
+          <div style={styles.statRow}>
+            <span>
+              <span style={styles.statNum} data-testid="logs-requests">
+                {logs.requests}
+              </span>
+              <span style={styles.statLabel}>requests</span>
+            </span>
+            <span>
+              <span style={styles.statNum} data-testid="logs-5xx">
+                {logs.count5xx}
+              </span>
+              <span style={styles.statLabel}>5xx</span>
+            </span>
+            <span>
+              <span style={styles.statNum} data-testid="logs-404-distinct">
+                {logs.top404Paths.length}
+              </span>
+              <span style={styles.statLabel}>404 paths</span>
+            </span>
+          </div>
+          <p style={{ ...styles.statLabel, marginBottom: '0.3rem' }}>
+            Top missing paths
+          </p>
+          {logs.top404Paths.length === 0 ? (
+            <p style={styles.muted}>No 404s recorded.</p>
+          ) : (
+            logs.top404Paths.map((p) => (
+              <div key={p.path} style={styles.pathRow} data-testid="top404-row">
+                {/* React escapes the stored path. */}
+                <span style={styles.pathText} data-testid="top404-path">
+                  {p.path}
+                </span>
+                <span style={styles.mono}>{p.count}</span>
+              </div>
+            ))
+          )}
+        </section>
+      </div>
 
       <h2 style={styles.h2}>Deploy history</h2>
       {actionData?.error ? (

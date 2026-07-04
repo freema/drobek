@@ -14,6 +14,7 @@ COPY packages/db/package.json ./packages/db/
 COPY packages/core/package.json ./packages/core/
 COPY packages/auth/package.json ./packages/auth/
 COPY packages/tenancy/package.json ./packages/tenancy/
+COPY packages/insights/package.json ./packages/insights/
 COPY packages/serving/package.json ./packages/serving/
 COPY packages/deploy/package.json ./packages/deploy/
 COPY packages/data/package.json ./packages/data/
@@ -30,6 +31,7 @@ RUN pnpm --filter @drobek/db build \
  && pnpm --filter @drobek/core build \
  && pnpm --filter @drobek/auth build \
  && pnpm --filter @drobek/tenancy build \
+ && pnpm --filter @drobek/insights build \
  && pnpm --filter @drobek/serving build \
  && pnpm --filter @drobek/deploy build \
  && pnpm --filter @drobek/data build \

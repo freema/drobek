@@ -1,5 +1,5 @@
 {
-  "name": "@drobek/serving",
+  "name": "@drobek/insights",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -8,13 +8,9 @@
       "types": "./src/index.ts",
       "default": "./dist/index.js"
     },
-    "./cache": {
-      "types": "./src/cache.server.ts",
-      "default": "./dist/cache.server.js"
-    },
-    "./password": {
-      "types": "./src/password.ts",
-      "default": "./dist/password.js"
+    "./beacon": {
+      "types": "./src/rest.server.ts",
+      "default": "./dist/rest.server.js"
     }
   },
   "scripts": {
@@ -27,8 +23,6 @@
     "@drobek/auth": "workspace:*",
     "@drobek/core": "workspace:*",
     "@drobek/db": "workspace:*",
-    "@drobek/insights": "workspace:*",
-    "@drobek/tenancy": "workspace:*",
     "drizzle-orm": "^0.41.0"
   },
   "devDependencies": {

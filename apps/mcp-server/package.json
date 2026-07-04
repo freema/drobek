@@ -16,6 +16,7 @@
     "@drobek/data": "workspace:*",
     "@drobek/db": "workspace:*",
     "@drobek/deploy": "workspace:*",
+    "@drobek/insights": "workspace:*",
     "@drobek/oauth": "workspace:*",
     "bullmq": "^5.34.0",
     "drizzle-orm": "^0.41.0",

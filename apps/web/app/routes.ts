@@ -70,6 +70,10 @@ export default [
     ':ws/app/:slug/data/:collection/:id',
     'routes/serve.app.data.$collection.$id.ts'
   ),
+  // PHY-123 (agent loop v1): the public error beacon. The literal `__beacon`
+  // suffix keeps it specific → it never shadows the U7 serve splat below nor the
+  // U10 data routes above.
+  route(':ws/app/:slug/__beacon', 'routes/serve.app.beacon.ts'),
   // U7 (PHY-58): hardened same-origin app serving. The literal `app` middle
   // segment makes `:ws/app/:slug/*` specific enough that it never shadows the
   // dashboard routes above (all of which have a static first segment).

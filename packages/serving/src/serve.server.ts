@@ -19,6 +19,7 @@
  */
 import { getSessionUser, isSuperAdmin } from '@drobek/auth';
 import { createBlobStoreFromEnv, type BlobStore } from '@drobek/core';
+import { incrementServingSignal } from '@drobek/insights';
 import { getMembership } from '@drobek/tenancy';
 import {
   bustServeCache,
@@ -206,45 +207,68 @@ export async function serveApp(
   if ('response' in resolved) return resolved.response;
   const app = resolved.app;
 
+  // PHY-123 serving signal: tally the request against the resolved app. Cheap +
+  // best-effort (incrementServingSignal swallows its own errors) — never blocks
+  // or fails the response, and does NOT touch the U7 gate/CSP/cache behavior.
+  await incrementServingSignal(app.appId, 'request');
+
   const rootPath = appRootPath(params.wsSlug, params.appSlug);
   const gateResult = await gate(request, app, rootPath);
   if (!gateResult.ok) return gateResult.response;
 
-  // activeDeployId is non-null (checked in resolveApp).
-  const manifest = await getServeManifest(app.activeDeployId as string);
-  const target = resolveServePath({
-    requestPath: params.splat,
-    routingMode: app.routingMode,
-    has: (p) => Object.prototype.hasOwnProperty.call(manifest, p),
-  });
-  if (target.kind === 'not-found') return notFound();
+  try {
+    // activeDeployId is non-null (checked in resolveApp).
+    const manifest = await getServeManifest(app.activeDeployId as string);
+    const target = resolveServePath({
+      requestPath: params.splat,
+      routingMode: app.routingMode,
+      has: (p) => Object.prototype.hasOwnProperty.call(manifest, p),
+    });
+    if (target.kind === 'not-found') {
+      await incrementServingSignal(app.appId, '404', params.splat);
+      return notFound();
+    }
 
-  const entry = manifest[target.path];
-  if (!entry) return notFound(); // manifest/deploy_files drift — fail closed
+    const entry = manifest[target.path];
+    if (!entry) {
+      // manifest/deploy_files drift — fail closed
+      await incrementServingSignal(app.appId, '404', params.splat);
+      return notFound();
+    }
 
-  const contentType = contentTypeForPath(target.path);
-  const etag = etagFor(entry.sha256);
-  const { cacheControl } = cacheControlFor(target.isEntry);
-  const headers = appResponseHeaders({
-    contentType,
-    etag,
-    cacheControl,
-    contentLength: entry.size,
-  });
+    const contentType = contentTypeForPath(target.path);
+    const etag = etagFor(entry.sha256);
+    const { cacheControl } = cacheControlFor(target.isEntry);
+    const headers = appResponseHeaders({
+      contentType,
+      etag,
+      cacheControl,
+      contentLength: entry.size,
+    });
 
-  if (isNotModified(request.headers.get('if-none-match'), etag)) {
-    const notModified: Record<string, string> = { ...headers };
-    delete notModified['Content-Length'];
-    return new Response(null, { status: 304, headers: notModified });
+    if (isNotModified(request.headers.get('if-none-match'), etag)) {
+      const notModified: Record<string, string> = { ...headers };
+      delete notModified['Content-Length'];
+      return new Response(null, { status: 304, headers: notModified });
+    }
+
+    if (method === 'HEAD') {
+      return new Response(null, { status: 200, headers });
+    }
+
+    const stream = await blobStore().getStream(entry.sha256);
+    if (!stream) {
+      // metadata without bytes — fail closed
+      await incrementServingSignal(app.appId, '404', params.splat);
+      return notFound();
+    }
+    return new Response(stream, { status: 200, headers });
+  } catch (err) {
+    // A genuine server fault (manifest/blob read threw) — tally a 5xx signal and
+    // return a controlled 500 (previously this threw uncaught → also a 500).
+    await incrementServingSignal(app.appId, '5xx');
+    throw err;
   }
-
-  if (method === 'HEAD') {
-    return new Response(null, { status: 200, headers });
-  }
-
-  const stream = await blobStore().getStream(entry.sha256);
-  if (!stream) return notFound(); // metadata without bytes — fail closed
-  return new Response(stream, { status: 200, headers });
 }
 
 function redirect303(path: string, setCookie?: string): Response {
