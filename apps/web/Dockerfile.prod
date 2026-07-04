@@ -28,6 +28,7 @@ COPY packages/serving/package.json ./packages/serving/
 COPY packages/deploy/package.json ./packages/deploy/
 COPY packages/audit/package.json ./packages/audit/
 COPY packages/data/package.json ./packages/data/
+COPY packages/proxy/package.json ./packages/proxy/
 COPY packages/agent-dx/package.json ./packages/agent-dx/
 COPY packages/dashboard/package.json ./packages/dashboard/
 COPY packages/oauth/package.json ./packages/oauth/
@@ -48,6 +49,7 @@ COPY --from=deps /app/packages/serving/node_modules ./packages/serving/node_modu
 COPY --from=deps /app/packages/deploy/node_modules ./packages/deploy/node_modules
 COPY --from=deps /app/packages/audit/node_modules ./packages/audit/node_modules
 COPY --from=deps /app/packages/data/node_modules ./packages/data/node_modules
+COPY --from=deps /app/packages/proxy/node_modules ./packages/proxy/node_modules
 COPY --from=deps /app/packages/agent-dx/node_modules ./packages/agent-dx/node_modules
 COPY --from=deps /app/packages/dashboard/node_modules ./packages/dashboard/node_modules
 COPY --from=deps /app/packages/oauth/node_modules ./packages/oauth/node_modules
@@ -66,6 +68,7 @@ RUN pnpm --filter @drobek/db build \
  && pnpm --filter @drobek/serving build \
  && pnpm --filter @drobek/deploy build \
  && pnpm --filter @drobek/data build \
+ && pnpm --filter @drobek/proxy build \
  && pnpm --filter @drobek/agent-dx build \
  && pnpm --filter @drobek/dashboard build \
  && pnpm --filter @drobek/oauth build \
@@ -86,6 +89,7 @@ COPY packages/serving/package.json ./packages/serving/
 COPY packages/deploy/package.json ./packages/deploy/
 COPY packages/audit/package.json ./packages/audit/
 COPY packages/data/package.json ./packages/data/
+COPY packages/proxy/package.json ./packages/proxy/
 COPY packages/agent-dx/package.json ./packages/agent-dx/
 COPY packages/dashboard/package.json ./packages/dashboard/
 COPY packages/oauth/package.json ./packages/oauth/
@@ -119,6 +123,7 @@ COPY --from=prod-deps --chown=appuser:nodejs /app/packages/serving/node_modules 
 COPY --from=prod-deps --chown=appuser:nodejs /app/packages/deploy/node_modules ./packages/deploy/node_modules
 COPY --from=prod-deps --chown=appuser:nodejs /app/packages/audit/node_modules ./packages/audit/node_modules
 COPY --from=prod-deps --chown=appuser:nodejs /app/packages/data/node_modules ./packages/data/node_modules
+COPY --from=prod-deps --chown=appuser:nodejs /app/packages/proxy/node_modules ./packages/proxy/node_modules
 COPY --from=prod-deps --chown=appuser:nodejs /app/packages/dashboard/node_modules ./packages/dashboard/node_modules
 COPY --from=prod-deps --chown=appuser:nodejs /app/packages/oauth/node_modules ./packages/oauth/node_modules
 # NOTE: no packages/sdk/node_modules nor packages/agent-dx/node_modules —
@@ -147,6 +152,8 @@ COPY --from=builder --chown=appuser:nodejs /app/packages/audit/package.json ./pa
 COPY --from=builder --chown=appuser:nodejs /app/packages/audit/dist ./packages/audit/dist
 COPY --from=builder --chown=appuser:nodejs /app/packages/data/package.json ./packages/data/
 COPY --from=builder --chown=appuser:nodejs /app/packages/data/dist ./packages/data/dist
+COPY --from=builder --chown=appuser:nodejs /app/packages/proxy/package.json ./packages/proxy/
+COPY --from=builder --chown=appuser:nodejs /app/packages/proxy/dist ./packages/proxy/dist
 COPY --from=builder --chown=appuser:nodejs /app/packages/agent-dx/package.json ./packages/agent-dx/
 COPY --from=builder --chown=appuser:nodejs /app/packages/agent-dx/dist ./packages/agent-dx/dist
 COPY --from=builder --chown=appuser:nodejs /app/packages/dashboard/package.json ./packages/dashboard/

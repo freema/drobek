@@ -43,6 +43,13 @@
       "when": 1783143918577,
       "tag": "0005_panoramic_bill_hollister",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1783151896848,
+      "tag": "0006_outgoing_ricochet",
+      "breakpoints": true
     }
   ]
 }

@@ -55,6 +55,14 @@
     "./routes/workspaces.$slug.activity.export-csv.server": {
       "types": "./src/routes/workspaces.$slug.activity.export-csv.server.ts",
       "default": "./dist/routes/workspaces.$slug.activity.export-csv.server.js"
+    },
+    "./routes/workspaces.$slug.upstreams": {
+      "types": "./src/routes/workspaces.$slug.upstreams.tsx",
+      "default": "./dist/routes/workspaces.$slug.upstreams.js"
+    },
+    "./routes/workspaces.$slug.upstreams.server": {
+      "types": "./src/routes/workspaces.$slug.upstreams.server.ts",
+      "default": "./dist/routes/workspaces.$slug.upstreams.server.js"
     }
   },
   "scripts": {
@@ -69,6 +77,7 @@
     "@drobek/db": "workspace:*",
     "@drobek/deploy": "workspace:*",
     "@drobek/insights": "workspace:*",
+    "@drobek/proxy": "workspace:*",
     "@drobek/tenancy": "workspace:*",
     "drizzle-orm": "^0.41.0"
   },

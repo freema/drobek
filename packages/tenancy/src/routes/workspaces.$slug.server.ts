@@ -34,5 +34,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     // PHY-85: the Activity (audit) view is admin/super-admin only. A super-admin's
     // effective workspace role is already 'workspace-admin', so this covers both.
     canViewActivity: access.effectiveRole === 'workspace-admin',
+    // PHY-59: the BFF proxy Upstreams config is admin/super-admin only (same gate).
+    canManageUpstreams: access.effectiveRole === 'workspace-admin',
   };
 }

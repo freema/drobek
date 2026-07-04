@@ -19,6 +19,7 @@ COPY packages/serving/package.json ./packages/serving/
 COPY packages/deploy/package.json ./packages/deploy/
 COPY packages/audit/package.json ./packages/audit/
 COPY packages/data/package.json ./packages/data/
+COPY packages/proxy/package.json ./packages/proxy/
 COPY packages/agent-dx/package.json ./packages/agent-dx/
 COPY packages/dashboard/package.json ./packages/dashboard/
 COPY packages/oauth/package.json ./packages/oauth/
@@ -37,6 +38,7 @@ RUN pnpm --filter @drobek/db build \
  && pnpm --filter @drobek/serving build \
  && pnpm --filter @drobek/deploy build \
  && pnpm --filter @drobek/data build \
+ && pnpm --filter @drobek/proxy build \
  && pnpm --filter @drobek/agent-dx build \
  && pnpm --filter @drobek/dashboard build \
  && pnpm --filter @drobek/oauth build \

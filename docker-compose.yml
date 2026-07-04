@@ -53,6 +53,26 @@ services:
       timeout: 5s
       retries: 5
 
+  proxy-echo:
+    # PHY-59 e2e: a tiny in-network HTTP echo target the proxy specs point an
+    # upstream at (echoes headers → proves auth injection; /redirect → proves
+    # no redirect following). Runs the repo's tests-e2e/proxy-echo.mjs on the
+    # drobek network; the web service allow-lists this hostname via
+    # PROXY_ALLOWED_HOSTS so the SSRF guard permits its private Docker IP.
+    image: node:22-alpine
+    container_name: drobek-proxy-echo
+    working_dir: /repo
+    command: ['node', 'tests-e2e/proxy-echo.mjs']
+    environment:
+      PORT: '8099'
+    volumes:
+      - .:/repo
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -q -T 3 -O - http://127.0.0.1:8099/health || exit 1']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   web:
     build:
       context: .
@@ -122,6 +142,19 @@ services:
       BEACON_MAX_EVENTS_PER_APP: ${BEACON_MAX_EVENTS_PER_APP:-500}
       BEACON_RETENTION_DAYS: ${BEACON_RETENTION_DAYS:-14}
       BEACON_SAMPLE_RATE: ${BEACON_SAMPLE_RATE:-1}
+      # PHY-59 (BFF proxy v1): KEK that wraps every upstream secret's DEK
+      # (AES-256-GCM envelope). REQUIRED for the proxy secret store; fail-closed
+      # if unset. Dev value only — prod .env.production needs a real
+      # `openssl rand -hex 32`.
+      DROBEK_MASTER_KEY: ${DROBEK_MASTER_KEY:-0000000000000000000000000000000000000000000000000000000000000000}
+      # PHY-59: operator allow-list of hostnames whose resolved-private IP the
+      # SSRF guard may connect to (empty in prod → fully strict). The dev value is
+      # the in-network e2e echo target only.
+      PROXY_ALLOWED_HOSTS: ${PROXY_ALLOWED_HOSTS:-proxy-echo}
+      # PHY-59: per-(workspace,user,upstream) proxy call rate-limit. LOW dev cap so
+      # the proxy-flood e2e trips 429 quickly (prod default 120).
+      PROXY_RATE_LIMIT: ${PROXY_RATE_LIMIT:-15}
+      PROXY_RATE_WINDOW_MS: ${PROXY_RATE_WINDOW_MS:-60000}
     extra_hosts:
       # linux portability: make host.docker.internal resolve everywhere
       # (Docker Desktop has it natively; host-gateway covers linux engines).

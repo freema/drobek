@@ -32,6 +32,10 @@ export default [
     'workspaces/:slug/activity/export.csv',
     'routes/workspaces.$slug.activity.export-csv.ts'
   ),
+  // PHY-59 (BFF proxy v1): the workspace-level Upstreams config — register/list/
+  // delete secret-injecting upstreams (workspace-admin/super-admin only). Static
+  // `upstreams` segment keeps it specific (never shadows the serve splat).
+  route('workspaces/:slug/upstreams', 'routes/workspaces.$slug.upstreams.tsx'),
   // U8 (PHY-74 slice / PHY-62): minimal dashboard — apps list, per-app deploy
   // history + role-gated rollback. Static `apps` segment keeps these specific
   // enough not to shadow `/workspaces/:slug/invite`.
@@ -79,6 +83,11 @@ export default [
     ':ws/app/:slug/data/:collection/:id',
     'routes/serve.app.data.$collection.$id.ts'
   ),
+  // PHY-59 (BFF proxy v1): ANY /:ws/api/proxy/:name/* → the secret-injecting,
+  // SSRF-guarded gateway. The literal `api/proxy` middle segments make it more
+  // specific than the U7 serve splat `:ws/app/:slug/*` (different literal `app`),
+  // so it never shadows serving nor the U10 data routes above.
+  route(':ws/api/proxy/:name/*', 'routes/proxy.$name.ts'),
   // PHY-123 (agent loop v1): the public error beacon. The literal `__beacon`
   // suffix keeps it specific → it never shadows the U7 serve splat below nor the
   // U10 data routes above.

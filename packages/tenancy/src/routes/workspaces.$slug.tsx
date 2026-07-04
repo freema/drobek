@@ -118,7 +118,7 @@ const styles = {
 } as const;
 
 export default function WorkspaceDetailRoute() {
-  const { workspace, members, role, canInvite, canViewActivity } =
+  const { workspace, members, role, canInvite, canViewActivity, canManageUpstreams } =
     useLoaderData<typeof loader>();
 
   return (
@@ -149,6 +149,18 @@ export default function WorkspaceDetailRoute() {
               data-testid="activity-link"
             >
               Activity →
+            </Link>
+          </>
+        ) : null}
+        {canManageUpstreams ? (
+          <>
+            {' '}
+            <Link
+              to={`/workspaces/${workspace.slug}/upstreams`}
+              style={{ fontWeight: 600, color: '#1a1a1a', marginLeft: '1rem' }}
+              data-testid="upstreams-link"
+            >
+              Upstreams →
             </Link>
           </>
         ) : null}

@@ -499,3 +499,77 @@ export const appDailyStats = pgTable(
   },
   (t) => [primaryKey({ columns: [t.appId, t.day] })]
 );
+
+// ── BFF proxy v1 — authed-member gateway to a backend (PHY-59, U12 slice) ──────
+//
+// A static app reaches a backend WITHOUT holding its secret: drobek is the
+// controlled gateway. A workspace-admin REGISTERS an upstream (a pinned base_url
+// + an allow-list of methods and path prefixes + an auth mode) and stores the
+// upstream secret AES-256-GCM envelope-encrypted (a random per-secret DEK wrapped
+// by the KEK env DROBEK_MASTER_KEY). At forward time drobek decrypts the secret
+// IN-MEMORY, injects it as the configured auth header, and forwards to the
+// SSRF-guarded upstream. In v1 the caller is an AUTHENTICATED workspace MEMBER
+// (drobek_session) — the anonymous public-app-visitor path is DEFERRED to U11
+// end-user auth (Referer is spoofable and is NOT a caller-auth boundary), so
+// `allowed_app_ids` is STORED for U11 but is NOT the v1 caller-auth.
+
+/** MVP upstream auth modes. HMAC + OpenAPI validation are deferred (PHY-59 v1). */
+export const upstreamAuthTypeEnum = pgEnum('upstream_auth_type', [
+  'none',
+  'bearer',
+  'header',
+]);
+
+export const upstreams = pgTable(
+  'upstreams',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    /** PINNED origin+base path; validated http(s) + non-private at registration. */
+    baseUrl: text('base_url').notNull(),
+    /** Allow-list — a forwarded method MUST be one of these (else 405). */
+    allowedMethods: text('allowed_methods').array().notNull(),
+    /** Allow-list — the normalized subpath MUST start with one of these (else 403). */
+    allowedPathPrefixes: text('allowed_path_prefixes').array().notNull(),
+    authType: upstreamAuthTypeEnum('auth_type').notNull().default('none'),
+    /** Header name to inject the secret under when auth_type = 'header'. */
+    authHeaderName: text('auth_header_name'),
+    /**
+     * STORED for U11 hosted-app end-user auth (which app may call this upstream
+     * anonymously) — NOT the v1 caller-auth (v1 = an authed workspace member).
+     */
+    allowedAppIds: text('allowed_app_ids').array().notNull().default([]),
+    createdBy: text('created_by').references(() => users.id),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('upstreams_workspace_name_uq').on(t.workspaceId, t.name)]
+);
+
+/**
+ * The upstream's injected secret, AES-256-GCM ENVELOPE-encrypted. A random
+ * per-secret DEK encrypts the secret; the DEK is WRAPPED by the KEK
+ * (DROBEK_MASTER_KEY). `kek_id` records which KEK wrapped it (enables rotation +
+ * fails closed on a wrong/rotated key — the GCM auth tag verify fails → config
+ * error, never a leak). The plaintext is NEVER stored, logged, or returned.
+ */
+export const upstreamSecrets = pgTable('upstream_secrets', {
+  upstreamId: text('upstream_id')
+    .primaryKey()
+    .references(() => upstreams.id, { onDelete: 'cascade' }),
+  /** base64 AES-256-GCM ciphertext of the secret (under the DEK). */
+  ciphertext: text('ciphertext').notNull(),
+  /** base64 12-byte IV for the secret ciphertext. */
+  iv: text('iv').notNull(),
+  /** base64 GCM auth tag for the secret ciphertext. */
+  authTag: text('auth_tag').notNull(),
+  /** The DEK wrapped by the KEK: base64(iv).base64(tag).base64(wrappedDek). */
+  wrappedDek: text('wrapped_dek').notNull(),
+  /** Stable, non-secret id of the KEK that wrapped the DEK (rotation). */
+  kekId: text('kek_id').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});

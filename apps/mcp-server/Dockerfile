@@ -18,6 +18,7 @@ COPY packages/serving/package.json ./packages/serving/
 COPY packages/deploy/package.json ./packages/deploy/
 COPY packages/audit/package.json ./packages/audit/
 COPY packages/data/package.json ./packages/data/
+COPY packages/proxy/package.json ./packages/proxy/
 COPY packages/agent-dx/package.json ./packages/agent-dx/
 # @drobek/dashboard is web-only, but apps/web/package.json (copied above)
 # references it — the workspace-wide frozen install needs its manifest present.
@@ -38,6 +39,7 @@ RUN pnpm --filter @drobek/db build \
  && pnpm --filter @drobek/serving build \
  && pnpm --filter @drobek/deploy build \
  && pnpm --filter @drobek/data build \
+ && pnpm --filter @drobek/proxy build \
  && pnpm --filter @drobek/agent-dx build \
  && pnpm --filter @drobek/oauth build \
  && pnpm --filter @drobek/sdk build

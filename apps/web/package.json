@@ -23,6 +23,7 @@
     "@drobek/deploy": "workspace:*",
     "@drobek/insights": "workspace:*",
     "@drobek/oauth": "workspace:*",
+    "@drobek/proxy": "workspace:*",
     "@drobek/serving": "workspace:*",
     "@drobek/tenancy": "workspace:*",
     "@paralleldrive/cuid2": "^2.2.2",
