@@ -17,6 +17,7 @@ COPY packages/tenancy/package.json ./packages/tenancy/
 COPY packages/insights/package.json ./packages/insights/
 COPY packages/serving/package.json ./packages/serving/
 COPY packages/deploy/package.json ./packages/deploy/
+COPY packages/audit/package.json ./packages/audit/
 COPY packages/data/package.json ./packages/data/
 COPY packages/agent-dx/package.json ./packages/agent-dx/
 COPY packages/dashboard/package.json ./packages/dashboard/
@@ -29,6 +30,7 @@ RUN pnpm install --frozen-lockfile
 COPY packages ./packages
 RUN pnpm --filter @drobek/db build \
  && pnpm --filter @drobek/core build \
+ && pnpm --filter @drobek/audit build \
  && pnpm --filter @drobek/auth build \
  && pnpm --filter @drobek/tenancy build \
  && pnpm --filter @drobek/insights build \

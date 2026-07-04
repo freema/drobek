@@ -30,6 +30,15 @@ import {
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
 
+/**
+ * Who performed an audited action (PHY-85). `agent` = an MCP tool call made on
+ * behalf of a connected coding agent (OAuth token); `user` = a human dashboard/
+ * web session action. Derived SERVER-SIDE at the call site — never from client
+ * input — so attribution is not spoofable. Defaults to `user` so the existing
+ * deploy/rollback rows migrate additively without loss.
+ */
+export const auditActorKindEnum = pgEnum('audit_actor_kind', ['user', 'agent']);
+
 // ── Enums ────────────────────────────────────────────────────────────────────
 
 export const workspaceKindEnum = pgEnum('workspace_kind', ['personal', 'team']);
@@ -202,25 +211,51 @@ export const deployFiles = pgTable(
 );
 
 /**
- * Append-only audit trail (U6, PHY-57; TECHNICAL_DESIGN §1). Every
- * security-relevant workspace mutation (deploy.activate, deploy.rollback, …)
- * writes one immutable row. `actor_user_id` is nullable for system actions;
- * `target` is a free-form subject (e.g. the app slug or deploy id); `meta`
- * carries structured, secret-free context. Never updated, never deleted.
+ * Append-only audit trail (U6/PHY-57; governance v1 PHY-85; TECHNICAL_DESIGN
+ * §1). Every security-relevant workspace mutation (deploy.activate,
+ * deploy.rollback, app.create, member.invite/accept/role_change, …) writes one
+ * immutable row. APPEND-ONLY: rows are never updated and never deleted except by
+ * the age-based retention prune (@drobek/audit).
+ *
+ * Attribution (PHY-85): `actor_user_id` is the acting user (nullable for system
+ * actions); `actor_kind` records whether that action came from a connected AGENT
+ * (an MCP tool call) or a human USER (dashboard/web) — both derived server-side.
+ *
+ * Subject: `subject_type` names the kind of thing acted on (app | member | …)
+ * and `target` holds its STABLE id (the app slug, the member user id, …). It is
+ * deliberately plain text with NO foreign key, so an audit row SURVIVES the
+ * deletion/tombstoning of its subject app/workspace (governance must outlive the
+ * resource). `meta` carries structured, secret-free, PII-free context only.
+ *
+ * `workspace_id` keeps the FK (audit is always read within a live workspace and
+ * workspaces are not deleted in v1); the subject app id is the one that must
+ * survive deletion, hence its text-not-FK treatment above.
  */
-export const auditLog = pgTable('audit_log', {
-  id: text('id')
-    .primaryKey()
-    .$defaultFn(() => createId()),
-  workspaceId: text('workspace_id')
-    .notNull()
-    .references(() => workspaces.id),
-  actorUserId: text('actor_user_id').references(() => users.id),
-  action: text('action').notNull(),
-  target: text('target'),
-  meta: jsonb('meta'),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-});
+export const auditLog = pgTable(
+  'audit_log',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id),
+    actorUserId: text('actor_user_id').references(() => users.id),
+    /** agent (MCP tool) vs user (dashboard/web) — server-derived, not spoofable. */
+    actorKind: auditActorKindEnum('actor_kind').notNull().default('user'),
+    action: text('action').notNull(),
+    /** The KIND of subject acted on: 'app' | 'member' | … (nullable, forward-open). */
+    subjectType: text('subject_type'),
+    /** The subject's stable id (app slug, member user id, …) — text, NO FK. */
+    target: text('target'),
+    meta: jsonb('meta'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (t) => [
+    // The Activity view reads by workspace, newest-first — index it.
+    index('audit_log_workspace_created_idx').on(t.workspaceId, t.createdAt),
+  ]
+);
 
 // ── Data API v1 — jsonb collections + documents (U10, PHY-55/PHY-56) ──────────
 //

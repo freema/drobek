@@ -118,7 +118,7 @@ const styles = {
 } as const;
 
 export default function WorkspaceDetailRoute() {
-  const { workspace, members, role, canInvite } =
+  const { workspace, members, role, canInvite, canViewActivity } =
     useLoaderData<typeof loader>();
 
   return (
@@ -140,6 +140,18 @@ export default function WorkspaceDetailRoute() {
         >
           Apps →
         </Link>
+        {canViewActivity ? (
+          <>
+            {' '}
+            <Link
+              to={`/workspaces/${workspace.slug}/activity`}
+              style={{ fontWeight: 600, color: '#1a1a1a', marginLeft: '1rem' }}
+              data-testid="activity-link"
+            >
+              Activity →
+            </Link>
+          </>
+        ) : null}
       </p>
 
       <h2 style={styles.h2}>Members</h2>

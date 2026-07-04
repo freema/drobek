@@ -6,6 +6,7 @@
 import { eq } from 'drizzle-orm';
 import { deploys, getDb } from '@drobek/db';
 import { roleAtLeast, type WorkspaceRole } from '@drobek/tenancy';
+import { type AuditActorKind } from './audit.server.js';
 import { DeployError } from './errors.js';
 import { enqueueDeploy } from './queue.server.js';
 import { loadAppRow, loadDeployRow, presentShas } from './store.server.js';
@@ -15,6 +16,8 @@ export interface DeployCommitInput {
   userId: string;
   workspaceId: string;
   role: WorkspaceRole;
+  /** agent (MCP tool) vs user — threaded to the worker's deploy.activate audit. */
+  actorKind: AuditActorKind;
   deployId: string;
 }
 
@@ -63,7 +66,12 @@ export async function deployCommit(
     .set({ state: 'queued', error: null })
     .where(eq(deploys.id, input.deployId));
 
-  await enqueueDeploy(input.deployId);
+  // Thread the committing actor to the worker so the async deploy.activate audit
+  // is attributed correctly (server-derived; the client cannot set actor_kind).
+  await enqueueDeploy(input.deployId, {
+    actorUserId: input.userId,
+    actorKind: input.actorKind,
+  });
 
   return { deployId: input.deployId, state: 'queued' };
 }

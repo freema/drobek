@@ -32,6 +32,7 @@ import {
 } from '@drobek/data';
 import {
   DeployError,
+  actorKindForSurface,
   deployCommit,
   deployInit,
   deployStatus,
@@ -225,6 +226,9 @@ function registerDeployTools(server: McpServer, ctx: AuthContext): void {
             workspaceId: ctx.workspaceId,
             workspaceSlug: ctx.workspaceSlug,
             role,
+            // MCP tool → the acting surface is a connected agent (PHY-85). Server-
+            // derived here; never taken from client input, so it is not spoofable.
+            actorKind: actorKindForSurface('mcp'),
             name,
             slug,
             manifest,
@@ -249,6 +253,9 @@ function registerDeployTools(server: McpServer, ctx: AuthContext): void {
             userId: ctx.userId,
             workspaceId: ctx.workspaceId,
             role,
+            // Agent surface → the async deploy.activate audit is attributed to the
+            // agent (server-derived; threaded to the worker via the deploy job).
+            actorKind: actorKindForSurface('mcp'),
             deployId,
           })
         );
@@ -271,6 +278,8 @@ function registerDeployTools(server: McpServer, ctx: AuthContext): void {
             userId: ctx.userId,
             workspaceId: ctx.workspaceId,
             role,
+            // Agent surface (PHY-85) — server-derived, not from client input.
+            actorKind: actorKindForSurface('mcp'),
             slug,
             toDeployId,
           })

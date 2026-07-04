@@ -18,6 +18,12 @@ import { randomBytes } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import { getRedis } from '@drobek/core';
 import { getDb, memberships } from '@drobek/db';
+import {
+  writeAudit,
+  actorKindForSurface,
+  AUDIT_ACTIONS,
+  AUDIT_SUBJECT_TYPES,
+} from '@drobek/audit';
 import { higherRole, isWorkspaceRole, type WorkspaceRole } from './roles.js';
 import { getWorkspaceById } from './membership.server.js';
 
@@ -61,7 +67,33 @@ export async function createInvite(args: {
     'EX',
     INVITE_TTL_SEC
   );
+  // NOTE: the member.invite audit row is written by the invite ROUTE action (it
+  // owns the session actor + a live DB), NOT here — createInvite stays a pure
+  // Redis helper (unit-tested without a database). See auditMemberInvite below.
   return { token };
+}
+
+/**
+ * Write the member.invite governance row (PHY-85). Called from the invite route
+ * action after createInvite succeeds. The actor is the inviting user, the surface
+ * is 'web' (invites have no MCP tool) → actor_kind = user. The invited EMAIL is
+ * PII and is deliberately NOT stored — only the granted role, which is
+ * non-sensitive; there is no member user id yet, so the subject id is null.
+ */
+export async function auditMemberInvite(args: {
+  workspaceId: string;
+  invitedByUserId: string;
+  role: WorkspaceRole;
+}): Promise<void> {
+  await writeAudit({
+    workspaceId: args.workspaceId,
+    actorUserId: args.invitedByUserId,
+    actorKind: actorKindForSurface('web'),
+    action: AUDIT_ACTIONS.memberInvite,
+    subjectType: AUDIT_SUBJECT_TYPES.member,
+    target: null,
+    meta: { role: args.role },
+  });
 }
 
 function parseInvite(raw: string | null): InviteRecord | null {
@@ -126,26 +158,75 @@ export async function acceptInvite(args: {
   const existing = existingRows[0]?.role ?? null;
   const finalRole = resolveAcceptedRole(existing, invite.role);
 
-  if (existing === null) {
-    await db
-      .insert(memberships)
-      .values({
-        userId: args.userId,
-        workspaceId: invite.workspaceId,
-        role: finalRole,
-      })
-      .onConflictDoNothing();
-  } else if (existing !== finalRole) {
-    await db
-      .update(memberships)
-      .set({ role: finalRole })
-      .where(
-        and(
-          eq(memberships.userId, args.userId),
-          eq(memberships.workspaceId, invite.workspaceId)
-        )
+  // The membership write + its governance audit go in ONE transaction (PHY-85) so
+  // the row and its provenance land together. The actor is the ACCEPTING user
+  // (server-derived from the session at the route) and the surface is 'web'
+  // (there is no MCP invite tool) → actor_kind = user. The subject is the member's
+  // own stable user id (an opaque cuid, not PII); the invited email is never stored.
+  await db.transaction(async (tx) => {
+    if (existing === null) {
+      await tx
+        .insert(memberships)
+        .values({
+          userId: args.userId,
+          workspaceId: invite.workspaceId,
+          role: finalRole,
+        })
+        .onConflictDoNothing();
+      await writeAudit(
+        {
+          workspaceId: invite.workspaceId,
+          actorUserId: args.userId,
+          actorKind: actorKindForSurface('web'),
+          action: AUDIT_ACTIONS.memberAccept,
+          subjectType: AUDIT_SUBJECT_TYPES.member,
+          target: args.userId,
+          meta: { role: finalRole },
+        },
+        tx
       );
-  }
+    } else if (existing !== finalRole) {
+      // Accept UPGRADED an existing membership — the one role-change path that
+      // exists today (a dedicated role-edit UI is deferred; the action enum stays
+      // open for it). Recorded as member.role_change.
+      await tx
+        .update(memberships)
+        .set({ role: finalRole })
+        .where(
+          and(
+            eq(memberships.userId, args.userId),
+            eq(memberships.workspaceId, invite.workspaceId)
+          )
+        );
+      await writeAudit(
+        {
+          workspaceId: invite.workspaceId,
+          actorUserId: args.userId,
+          actorKind: actorKindForSurface('web'),
+          action: AUDIT_ACTIONS.memberRoleChange,
+          subjectType: AUDIT_SUBJECT_TYPES.member,
+          target: args.userId,
+          meta: { from: existing, to: finalRole },
+        },
+        tx
+      );
+    } else {
+      // Already a member at an equal-or-higher role: the invite was consumed but
+      // no role changed. The accept still happened — record it.
+      await writeAudit(
+        {
+          workspaceId: invite.workspaceId,
+          actorUserId: args.userId,
+          actorKind: actorKindForSurface('web'),
+          action: AUDIT_ACTIONS.memberAccept,
+          subjectType: AUDIT_SUBJECT_TYPES.member,
+          target: args.userId,
+          meta: { role: finalRole },
+        },
+        tx
+      );
+    }
+  });
 
   return {
     ok: true,

@@ -31,5 +31,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     canInvite:
       access.effectiveRole === 'workspace-admin' &&
       access.workspace.kind === 'team',
+    // PHY-85: the Activity (audit) view is admin/super-admin only. A super-admin's
+    // effective workspace role is already 'workspace-admin', so this covers both.
+    canViewActivity: access.effectiveRole === 'workspace-admin',
   };
 }

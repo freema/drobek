@@ -23,6 +23,15 @@ export default [
   route('workspaces/:slug', 'routes/workspaces.$slug.tsx'),
   route('workspaces/:slug/invite', 'routes/workspaces.$slug.invite.tsx'),
   route('invite/:token', 'routes/invite.$token.tsx'),
+  // PHY-85 (governance v1): the workspace Activity view — the append-only audit
+  // trail (who deployed/rolled back/created/invited, and whether it was the agent
+  // or a human), admin/super-admin only, + a CSV export. Static `activity` segment
+  // keeps these specific (they never fall through to the serve splat).
+  route('workspaces/:slug/activity', 'routes/workspaces.$slug.activity.tsx'),
+  route(
+    'workspaces/:slug/activity/export.csv',
+    'routes/workspaces.$slug.activity.export-csv.ts'
+  ),
   // U8 (PHY-74 slice / PHY-62): minimal dashboard — apps list, per-app deploy
   // history + role-gated rollback. Static `apps` segment keeps these specific
   // enough not to shadow `/workspaces/:slug/invite`.

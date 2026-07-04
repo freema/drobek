@@ -1,25 +1,16 @@
 /**
- * Append-only audit writes (U6, PHY-57). Never logs secrets; `meta` carries
- * structured, non-sensitive context only.
+ * Audit writes moved to the neutral @drobek/audit package (PHY-85) so
+ * @drobek/tenancy can also write without a @drobek/deploy → cycle. This module
+ * re-exports the write helper + the actor vocabulary for the deploy call sites
+ * (worker deploy.activate, rollback) and downstream consumers that import from
+ * the @drobek/deploy barrel / the /rollback subpath.
  */
-import { auditLog, getDb } from '@drobek/db';
-
-export interface AuditEntry {
-  workspaceId: string;
-  actorUserId?: string | null;
-  action: string;
-  target?: string | null;
-  meta?: Record<string, unknown> | null;
-}
-
-export async function writeAudit(entry: AuditEntry): Promise<void> {
-  await getDb()
-    .insert(auditLog)
-    .values({
-      workspaceId: entry.workspaceId,
-      actorUserId: entry.actorUserId ?? null,
-      action: entry.action,
-      target: entry.target ?? null,
-      meta: entry.meta ?? null,
-    });
-}
+export {
+  writeAudit,
+  actorKindForSurface,
+  AUDIT_ACTIONS,
+  AUDIT_SUBJECT_TYPES,
+  type AuditEntry,
+  type AuditActorKind,
+  type AuditSurface,
+} from '@drobek/audit';

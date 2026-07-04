@@ -7,16 +7,28 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { apps, deploys, getDb } from '@drobek/db';
 import { bustServeCache } from '@drobek/serving/cache';
 import { roleAtLeast, type WorkspaceRole } from '@drobek/tenancy';
-import { writeAudit } from './audit.server.js';
+import {
+  writeAudit,
+  AUDIT_ACTIONS,
+  AUDIT_SUBJECT_TYPES,
+  type AuditActorKind,
+} from './audit.server.js';
 import { DeployError } from './errors.js';
 import { chooseRollbackTarget } from './rollback-target.js';
 import { loadAppBySlug } from './store.server.js';
 import type { DeployState } from './types.js';
 
+// Re-export the actor helper on the /rollback subpath so the dashboard rollback
+// action (which imports rollback here to stay bullmq-free) can resolve its
+// actor_kind without pulling the @drobek/deploy barrel.
+export { actorKindForSurface, type AuditActorKind } from './audit.server.js';
+
 export interface RollbackInput {
   userId: string;
   workspaceId: string;
   role: WorkspaceRole;
+  /** agent (MCP tool) vs user (dashboard) — server-derived at the call site. */
+  actorKind: AuditActorKind;
   slug: string;
   toDeployId?: string;
 }
@@ -72,7 +84,9 @@ export async function rollback(input: RollbackInput): Promise<RollbackResult> {
   await writeAudit({
     workspaceId: input.workspaceId,
     actorUserId: input.userId,
-    action: 'deploy.rollback',
+    actorKind: input.actorKind,
+    action: AUDIT_ACTIONS.deployRollback,
+    subjectType: AUDIT_SUBJECT_TYPES.app,
     target: input.slug,
     meta: { toDeployId: chosen.deployId, fromDeployId: app.activeDeployId },
   });

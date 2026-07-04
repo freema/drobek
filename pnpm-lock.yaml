@@ -13,6 +13,9 @@ importers:
       '@drobek/agent-dx':
         specifier: workspace:*
         version: link:../../packages/agent-dx
+      '@drobek/audit':
+        specifier: workspace:*
+        version: link:../../packages/audit
       '@drobek/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -68,6 +71,9 @@ importers:
       '@drobek/agent-dx':
         specifier: workspace:*
         version: link:../../packages/agent-dx
+      '@drobek/audit':
+        specifier: workspace:*
+        version: link:../../packages/audit
       '@drobek/auth':
         specifier: workspace:*
         version: link:../../packages/auth
@@ -190,6 +196,25 @@ importers:
         specifier: ^3.0.7
         version: 3.2.6(@types/node@22.20.0)(tsx@4.22.4)
 
+  packages/audit:
+    dependencies:
+      '@drobek/db':
+        specifier: workspace:*
+        version: link:../db
+      drizzle-orm:
+        specifier: ^0.41.0
+        version: 0.41.0(@types/pg@8.20.0)(pg@8.22.0)(postgres@3.4.9)
+    devDependencies:
+      '@types/node':
+        specifier: ^22
+        version: 22.20.0
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.7
+        version: 3.2.6(@types/node@22.20.0)(tsx@4.22.4)
+
   packages/auth:
     dependencies:
       '@drobek/core':
@@ -248,6 +273,9 @@ importers:
 
   packages/dashboard:
     dependencies:
+      '@drobek/audit':
+        specifier: workspace:*
+        version: link:../audit
       '@drobek/data':
         specifier: workspace:*
         version: link:../data
@@ -344,6 +372,9 @@ importers:
 
   packages/deploy:
     dependencies:
+      '@drobek/audit':
+        specifier: workspace:*
+        version: link:../audit
       '@drobek/auth':
         specifier: workspace:*
         version: link:../auth
@@ -504,6 +535,9 @@ importers:
 
   packages/tenancy:
     dependencies:
+      '@drobek/audit':
+        specifier: workspace:*
+        version: link:../audit
       '@drobek/auth':
         specifier: workspace:*
         version: link:../auth

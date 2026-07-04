@@ -43,6 +43,18 @@
     "./routes/workspaces.$slug.apps.$appSlug.data.$collection.export-csv.server": {
       "types": "./src/routes/workspaces.$slug.apps.$appSlug.data.$collection.export-csv.server.ts",
       "default": "./dist/routes/workspaces.$slug.apps.$appSlug.data.$collection.export-csv.server.js"
+    },
+    "./routes/workspaces.$slug.activity": {
+      "types": "./src/routes/workspaces.$slug.activity.tsx",
+      "default": "./dist/routes/workspaces.$slug.activity.js"
+    },
+    "./routes/workspaces.$slug.activity.server": {
+      "types": "./src/routes/workspaces.$slug.activity.server.ts",
+      "default": "./dist/routes/workspaces.$slug.activity.server.js"
+    },
+    "./routes/workspaces.$slug.activity.export-csv.server": {
+      "types": "./src/routes/workspaces.$slug.activity.export-csv.server.ts",
+      "default": "./dist/routes/workspaces.$slug.activity.export-csv.server.js"
     }
   },
   "scripts": {
@@ -52,6 +64,7 @@
     "test:run": "vitest run"
   },
   "dependencies": {
+    "@drobek/audit": "workspace:*",
     "@drobek/data": "workspace:*",
     "@drobek/db": "workspace:*",
     "@drobek/deploy": "workspace:*",

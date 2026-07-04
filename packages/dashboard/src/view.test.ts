@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
   canDeleteRecord,
+  canReadActivity,
   canRollback,
   deployShortId,
   formatTimestamp,
   lintStatusOf,
   servePath,
+  shapeActivity,
   shapeApps,
   shapeDeployHistory,
+  type ActivityRowInput,
   type AppListRow,
   type DeployHistoryRow,
 } from './view.js';
@@ -183,5 +186,81 @@ describe('canDeleteRecord (Data-tab delete authorization)', () => {
   it('allows editor and workspace-admin', () => {
     expect(canDeleteRecord('editor')).toBe(true);
     expect(canDeleteRecord('workspace-admin')).toBe(true);
+  });
+});
+
+describe('canReadActivity (PHY-85 audit read authorization — pure)', () => {
+  it('allows only workspace-admin (super-admin collapses to it)', () => {
+    expect(canReadActivity('workspace-admin')).toBe(true);
+  });
+  it('denies editor, viewer, and a non-member', () => {
+    expect(canReadActivity('editor')).toBe(false);
+    expect(canReadActivity('viewer')).toBe(false);
+    expect(canReadActivity(null)).toBe(false);
+  });
+});
+
+describe('shapeActivity (PHY-85 audit-row shaping)', () => {
+  const rows: ActivityRowInput[] = [
+    {
+      id: 'a1',
+      actorEmail: 'human@example.com',
+      actorKind: 'user',
+      action: 'deploy.rollback',
+      subjectType: 'app',
+      subject: 'my-app',
+      createdAt: new Date('2026-07-04T10:00:00.000Z'),
+    },
+    {
+      id: 'a2',
+      actorEmail: 'agentuser@example.com',
+      actorKind: 'agent',
+      action: 'deploy.activate',
+      subjectType: 'app',
+      subject: 'my-app',
+      createdAt: new Date('2026-07-04T12:00:00.000Z'),
+    },
+    {
+      id: 'a3',
+      actorEmail: null,
+      actorKind: 'user',
+      action: 'member.invite',
+      subjectType: 'member',
+      subject: null,
+      createdAt: new Date('2026-07-04T11:00:00.000Z'),
+    },
+  ];
+
+  it('sorts newest-first (created_at desc, id desc tie-break)', () => {
+    const shaped = shapeActivity(rows);
+    expect(shaped.map((r) => r.id)).toEqual(['a2', 'a3', 'a1']);
+  });
+
+  it('maps actor_kind to a badge and the email to the actor label', () => {
+    const shaped = shapeActivity(rows);
+    const agent = shaped.find((r) => r.id === 'a2')!;
+    expect(agent.actorBadge).toBe('agent');
+    expect(agent.actorLabel).toBe('agentuser@example.com');
+  });
+
+  it('labels an actor-less row as system', () => {
+    const shaped = shapeActivity(rows);
+    const systemRow = shaped.find((r) => r.id === 'a3')!;
+    expect(systemRow.actorLabel).toBe('system');
+    expect(systemRow.actorBadge).toBe('user');
+  });
+
+  it('renders a deterministic UTC time and carries the subject', () => {
+    const shaped = shapeActivity(rows);
+    const rollback = shaped.find((r) => r.id === 'a1')!;
+    expect(rollback.time).toBe('2026-07-04 10:00 UTC');
+    expect(rollback.subjectType).toBe('app');
+    expect(rollback.subject).toBe('my-app');
+  });
+
+  it('is a pure function — does not mutate its input order', () => {
+    const input = [...rows];
+    shapeActivity(input);
+    expect(input.map((r) => r.id)).toEqual(['a1', 'a2', 'a3']);
   });
 });

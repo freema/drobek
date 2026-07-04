@@ -6,12 +6,43 @@
  * Both editions (selfhost core + saas) run this exact file.
  */
 import { createConsoleLogger } from '@drobek/core';
-import { DEPLOY_QUEUE, QUEUE_PREFIX, createDeployWorker } from '@drobek/deploy';
+import {
+  DEPLOY_QUEUE,
+  QUEUE_PREFIX,
+  auditRetentionDays,
+  createDeployWorker,
+  pruneAuditLog,
+} from '@drobek/deploy';
 
 const log = createConsoleLogger('drobek-worker');
 log.info('starting deploy worker', { queue: DEPLOY_QUEUE, prefix: QUEUE_PREFIX });
 
 const worker = createDeployWorker();
+
+// PHY-85 governance: the audit trail is append-only; the ONLY deletion anywhere
+// is this age-based retention prune, driven from the worker's periodic sweep (it
+// never targets a specific row and is not exposed over any API/UI). Runs at
+// startup, then daily; a failure is logged and retried on the next tick.
+const AUDIT_PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1000;
+async function pruneAuditOnce() {
+  try {
+    const { deleted } = await pruneAuditLog();
+    if (deleted > 0) {
+      log.info('audit retention prune', {
+        deleted,
+        retentionDays: auditRetentionDays(),
+      });
+    }
+  } catch (err) {
+    log.error('audit retention prune failed', { error: err?.message });
+  }
+}
+void pruneAuditOnce();
+const auditPruneTimer = setInterval(
+  () => void pruneAuditOnce(),
+  AUDIT_PRUNE_INTERVAL_MS
+);
+if (typeof auditPruneTimer.unref === 'function') auditPruneTimer.unref();
 
 worker.on('ready', () => log.info('worker ready'));
 worker.on('active', (job) =>
@@ -34,6 +65,7 @@ async function shutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
   log.info('shutting down', { signal });
+  clearInterval(auditPruneTimer);
   try {
     await worker.close();
   } catch (err) {

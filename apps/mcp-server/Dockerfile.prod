@@ -25,6 +25,7 @@ COPY packages/tenancy/package.json ./packages/tenancy/
 COPY packages/insights/package.json ./packages/insights/
 COPY packages/serving/package.json ./packages/serving/
 COPY packages/deploy/package.json ./packages/deploy/
+COPY packages/audit/package.json ./packages/audit/
 COPY packages/data/package.json ./packages/data/
 COPY packages/agent-dx/package.json ./packages/agent-dx/
 # @drobek/dashboard is web-only, but apps/web/package.json (copied above)
@@ -46,6 +47,7 @@ COPY --from=deps /app/packages/tenancy/node_modules ./packages/tenancy/node_modu
 COPY --from=deps /app/packages/insights/node_modules ./packages/insights/node_modules
 COPY --from=deps /app/packages/serving/node_modules ./packages/serving/node_modules
 COPY --from=deps /app/packages/deploy/node_modules ./packages/deploy/node_modules
+COPY --from=deps /app/packages/audit/node_modules ./packages/audit/node_modules
 COPY --from=deps /app/packages/data/node_modules ./packages/data/node_modules
 COPY --from=deps /app/packages/agent-dx/node_modules ./packages/agent-dx/node_modules
 COPY --from=deps /app/packages/oauth/node_modules ./packages/oauth/node_modules
@@ -57,6 +59,7 @@ COPY apps/mcp-server ./apps/mcp-server
 
 RUN pnpm --filter @drobek/db build \
  && pnpm --filter @drobek/core build \
+ && pnpm --filter @drobek/audit build \
  && pnpm --filter @drobek/auth build \
  && pnpm --filter @drobek/tenancy build \
  && pnpm --filter @drobek/insights build \
@@ -80,6 +83,7 @@ COPY packages/tenancy/package.json ./packages/tenancy/
 COPY packages/insights/package.json ./packages/insights/
 COPY packages/serving/package.json ./packages/serving/
 COPY packages/deploy/package.json ./packages/deploy/
+COPY packages/audit/package.json ./packages/audit/
 COPY packages/data/package.json ./packages/data/
 COPY packages/agent-dx/package.json ./packages/agent-dx/
 # @drobek/dashboard is web-only, but apps/web/package.json (copied above)
@@ -114,6 +118,7 @@ COPY --from=prod-deps --chown=appuser:nodejs /app/packages/tenancy/node_modules 
 COPY --from=prod-deps --chown=appuser:nodejs /app/packages/insights/node_modules ./packages/insights/node_modules
 COPY --from=prod-deps --chown=appuser:nodejs /app/packages/serving/node_modules ./packages/serving/node_modules
 COPY --from=prod-deps --chown=appuser:nodejs /app/packages/deploy/node_modules ./packages/deploy/node_modules
+COPY --from=prod-deps --chown=appuser:nodejs /app/packages/audit/node_modules ./packages/audit/node_modules
 COPY --from=prod-deps --chown=appuser:nodejs /app/packages/data/node_modules ./packages/data/node_modules
 COPY --from=prod-deps --chown=appuser:nodejs /app/packages/oauth/node_modules ./packages/oauth/node_modules
 # NOTE: no packages/sdk/node_modules nor packages/agent-dx/node_modules —
@@ -138,6 +143,8 @@ COPY --from=builder --chown=appuser:nodejs /app/packages/serving/package.json ./
 COPY --from=builder --chown=appuser:nodejs /app/packages/serving/dist ./packages/serving/dist
 COPY --from=builder --chown=appuser:nodejs /app/packages/deploy/package.json ./packages/deploy/
 COPY --from=builder --chown=appuser:nodejs /app/packages/deploy/dist ./packages/deploy/dist
+COPY --from=builder --chown=appuser:nodejs /app/packages/audit/package.json ./packages/audit/
+COPY --from=builder --chown=appuser:nodejs /app/packages/audit/dist ./packages/audit/dist
 COPY --from=builder --chown=appuser:nodejs /app/packages/data/package.json ./packages/data/
 COPY --from=builder --chown=appuser:nodejs /app/packages/data/dist ./packages/data/dist
 COPY --from=builder --chown=appuser:nodejs /app/packages/agent-dx/package.json ./packages/agent-dx/

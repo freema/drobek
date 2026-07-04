@@ -21,7 +21,12 @@ import {
 } from '@drobek/core';
 import { apps, blobRefs, blobs, deployFiles, deploys, getDb } from '@drobek/db';
 import { bustServeCache } from '@drobek/serving/cache';
-import { writeAudit } from './audit.server.js';
+import {
+  writeAudit,
+  AUDIT_ACTIONS,
+  AUDIT_SUBJECT_TYPES,
+  type AuditActorKind,
+} from './audit.server.js';
 import {
   DEPLOY_QUEUE,
   QUEUE_PREFIX,
@@ -178,6 +183,9 @@ async function acquireAppLock(
 
 export interface ProcessDeployJob {
   deployId: string;
+  /** Committing actor (PHY-85), for the deploy.activate audit. */
+  actorUserId?: string | null;
+  actorKind?: AuditActorKind | null;
 }
 
 export async function processDeployJob(job: ProcessDeployJob): Promise<void> {
@@ -254,11 +262,16 @@ export async function processDeployJob(job: ProcessDeployJob): Promise<void> {
     // new version is served immediately (best-effort; TTL backstop otherwise).
     await bustServeCache({ workspaceId: app.workspaceId, appSlug: app.slug });
 
-    // (d) AUDIT.
+    // (d) AUDIT. The deploy runs async in the worker, but attribution is carried
+    // on the job from the committing call site (PHY-85): the MCP deploy_commit
+    // tool → agent, a (future) dashboard commit → user. actor_kind defaults to
+    // 'user' at the DB only if a legacy job carries none; new jobs always thread it.
     await writeAudit({
       workspaceId: app.workspaceId,
-      actorUserId: null,
-      action: 'deploy.activate',
+      actorUserId: job.actorUserId ?? null,
+      actorKind: job.actorKind ?? 'user',
+      action: AUDIT_ACTIONS.deployActivate,
+      subjectType: AUDIT_SUBJECT_TYPES.app,
       target: app.slug,
       meta: { deployId, appId: app.id },
     });

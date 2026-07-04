@@ -9,6 +9,7 @@
 // and the barrel statically re-exports membership.server.js (DB) which the
 // production react-router client build refuses to bundle.
 import { roleAtLeast, type WorkspaceRole } from '@drobek/tenancy/roles';
+import type { AuditActorKind } from '@drobek/audit/actor';
 
 export type AppVisibility = 'public' | 'team' | 'password';
 export type AppLiveStatus = 'live' | 'hibernated';
@@ -169,6 +170,72 @@ export function canRollback(effectiveRole: WorkspaceRole | null): boolean {
  */
 export function canDeleteRecord(effectiveRole: WorkspaceRole | null): boolean {
   return effectiveRole !== null && roleAtLeast(effectiveRole, 'editor');
+}
+
+// ── Activity / audit view (PHY-85) ───────────────────────────────────────────
+
+/**
+ * Governance read authorization, as a pure function: the workspace Activity view
+ * (the audit trail) is workspace-admin / super-admin ONLY. A super-admin's
+ * effective workspace role is 'workspace-admin', so this one rule covers it; an
+ * editor, viewer, or non-member (null effective role) is DENIED. The route
+ * re-enforces this server-side via requireWorkspaceRole('workspace-admin') — a
+ * viewer/editor → 403, a non-member → 404, anonymous → /login redirect.
+ */
+export function canReadActivity(effectiveRole: WorkspaceRole | null): boolean {
+  return effectiveRole !== null && roleAtLeast(effectiveRole, 'workspace-admin');
+}
+
+/** A raw audit row handed to the Activity shaping (db-free; from listActivity). */
+export interface ActivityRowInput {
+  id: string;
+  actorEmail: string | null;
+  actorKind: AuditActorKind;
+  action: string;
+  subjectType: string | null;
+  subject: string | null;
+  createdAt: Date;
+}
+
+export interface ActivityItem {
+  id: string;
+  action: string;
+  /** agent (an MCP tool ran on behalf of a connected agent) vs user (a human). */
+  actorKind: AuditActorKind;
+  /** Badge text mirrors actorKind: 'agent' | 'user'. */
+  actorBadge: AuditActorKind;
+  /** Which human/agent: the actor's email, or 'system' when there is no actor. */
+  actorLabel: string;
+  subjectType: string | null;
+  subject: string | null;
+  /** Deterministic UTC display time (SSR/CSR byte-identical). */
+  time: string;
+}
+
+/**
+ * Shape audit rows for the Activity table: newest-first (created_at desc, id desc
+ * as a stable tie-break — the same order the keyset read returns, re-asserted here
+ * so the pure shaping is deterministic on its own), an actor_kind badge, and the
+ * actor's email (or 'system' for an actor-less row). No secrets/PII beyond the
+ * email that the admin viewer is already entitled to see.
+ */
+export function shapeActivity(rows: ActivityRowInput[]): ActivityItem[] {
+  return [...rows]
+    .sort(
+      (a, b) =>
+        b.createdAt.getTime() - a.createdAt.getTime() ||
+        b.id.localeCompare(a.id)
+    )
+    .map((r) => ({
+      id: r.id,
+      action: r.action,
+      actorKind: r.actorKind,
+      actorBadge: r.actorKind,
+      actorLabel: r.actorEmail ?? 'system',
+      subjectType: r.subjectType,
+      subject: r.subject,
+      time: formatTimestamp(r.createdAt.toISOString()),
+    }));
 }
 
 // ── Display helpers ──────────────────────────────────────────────────────────

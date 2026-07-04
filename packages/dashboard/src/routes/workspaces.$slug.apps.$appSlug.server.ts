@@ -21,7 +21,7 @@ import {
   type LoaderFunctionArgs,
 } from 'react-router';
 import { requireWorkspaceRole } from '@drobek/tenancy';
-import { rollback } from '@drobek/deploy/rollback';
+import { actorKindForSurface, rollback } from '@drobek/deploy/rollback';
 import {
   queryAppErrors,
   queryAppLogs,
@@ -107,6 +107,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
       userId: access.user.id,
       workspaceId: access.workspace.id,
       role: access.effectiveRole,
+      // Dashboard/web surface (PHY-85) → the rollback audit is attributed to the
+      // human session user. Server-derived here; the client cannot set it.
+      actorKind: actorKindForSurface('web'),
       slug: appSlug,
       toDeployId,
     });

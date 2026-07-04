@@ -103,4 +103,15 @@ export {
   loadAppRow,
   loadAppBySlug,
 } from './store.server.js';
-export { writeAudit, type AuditEntry } from './audit.server.js';
+export {
+  writeAudit,
+  actorKindForSurface,
+  type AuditEntry,
+  type AuditActorKind,
+  type AuditSurface,
+} from './audit.server.js';
+export {
+  pruneAuditLog,
+  auditRetentionDays,
+  type PruneAuditInput,
+} from '@drobek/audit';

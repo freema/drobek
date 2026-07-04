@@ -14,7 +14,11 @@ import {
 } from 'react-router';
 import { logger, maskEmail, normalizeAuthEmail, serializeError } from '@drobek/auth';
 import { requireWorkspaceRole } from '../membership.server.js';
-import { acceptInviteUrl, createInvite } from '../invites.server.js';
+import {
+  acceptInviteUrl,
+  auditMemberInvite,
+  createInvite,
+} from '../invites.server.js';
 import { sendInviteEmail } from '../email/invite-email.server.js';
 import { isWorkspaceRole } from '../roles.js';
 
@@ -68,6 +72,15 @@ export async function action({ request, params }: ActionFunctionArgs) {
     email,
   });
   const inviteUrl = acceptInviteUrl(token);
+
+  // Governance (PHY-85): record who invited someone at what role — server-derived
+  // actor + actor_kind (this dashboard action is the human/web surface). No PII:
+  // the invited email is never stored, only the granted role.
+  await auditMemberInvite({
+    workspaceId: access.workspace.id,
+    invitedByUserId: access.user.id,
+    role: roleRaw,
+  });
 
   let emailSent = false;
   if (email) {

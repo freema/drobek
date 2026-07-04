@@ -9,6 +9,12 @@ import { mintUploadToken } from '@drobek/core';
 import { apps, deploys, getDb } from '@drobek/db';
 import { roleAtLeast, type WorkspaceRole } from '@drobek/tenancy';
 import {
+  writeAudit,
+  AUDIT_ACTIONS,
+  AUDIT_SUBJECT_TYPES,
+  type AuditActorKind,
+} from './audit.server.js';
+import {
   UPLOAD_TOKEN_TTL_SEC,
   appUrl,
   publicAppUrl,
@@ -25,6 +31,8 @@ export interface DeployInitInput {
   workspaceSlug: string;
   /** The caller's EFFECTIVE current role (re-checked at the tool layer). */
   role: WorkspaceRole;
+  /** agent (MCP tool) vs user — server-derived at the call site. */
+  actorKind: AuditActorKind;
   slug?: string;
   name?: string;
   manifest: unknown;
@@ -109,6 +117,21 @@ export async function deployInit(input: DeployInitInput): Promise<DeployInitResu
   const { entries, totalBytes } = validateManifest(input.manifest, limits);
 
   const app = await resolveApp(input.workspaceId, input.slug, input.name);
+
+  // Governance (PHY-85): a brand-new app is an auditable creation. Attributed to
+  // the token user; actor_kind flows from the call site (MCP tool = agent). The
+  // subject is the STABLE app slug (text, survives later app deletion).
+  if (app.created) {
+    await writeAudit({
+      workspaceId: input.workspaceId,
+      actorUserId: input.userId,
+      actorKind: input.actorKind,
+      action: AUDIT_ACTIONS.appCreate,
+      subjectType: AUDIT_SUBJECT_TYPES.app,
+      target: app.slug,
+      meta: { appId: app.id },
+    });
+  }
 
   // Dedup diff: only MISSING hashes get an upload URL.
   const present = await presentShas(entries.map((e) => e.sha256));

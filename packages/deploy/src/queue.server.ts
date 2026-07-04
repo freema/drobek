@@ -7,7 +7,14 @@
  */
 import { Queue, type ConnectionOptions } from 'bullmq';
 import { Redis } from 'ioredis';
+import { type AuditActorKind } from './audit.server.js';
 import { DEPLOY_QUEUE, QUEUE_PREFIX } from './constants.js';
+
+/** Governance attribution carried on the deploy job (PHY-85). */
+export interface DeployJobActor {
+  actorUserId: string;
+  actorKind: AuditActorKind;
+}
 
 function requireRedisUrl(): string {
   const url = process.env.REDIS_URL;
@@ -43,10 +50,17 @@ export function getDeployQueue(): Queue {
  * deploy (a duplicate commit of the same deploy will not fan out extra jobs
  * while one is still pending). Retries cover transient worker/lock failures.
  */
-export async function enqueueDeploy(deployId: string): Promise<void> {
+export async function enqueueDeploy(
+  deployId: string,
+  actor?: DeployJobActor
+): Promise<void> {
   await getDeployQueue().add(
     'process',
-    { deployId },
+    {
+      deployId,
+      actorUserId: actor?.actorUserId ?? null,
+      actorKind: actor?.actorKind ?? null,
+    },
     {
       jobId: deployId,
       attempts: 3,
