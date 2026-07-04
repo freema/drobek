@@ -18,6 +18,7 @@ import {
   consumeEmailLoginCode,
   createEmailLoginCode,
   generateLoginCode,
+  getClientIp,
   normalizeAuthEmail,
 } from './email-code.server.js';
 
@@ -182,5 +183,40 @@ describe('consumeEmailLoginCode', () => {
 describe('normalizeAuthEmail', () => {
   it('trims and lowercases', () => {
     expect(normalizeAuthEmail('  Foo@BAR.com ')).toBe('foo@bar.com');
+  });
+});
+
+describe('getClientIp (trusts the proxy, not the client — PHY-76 #4)', () => {
+  function req(headers: Record<string, string>): Request {
+    return new Request('https://drobek.app/login/verify', { headers });
+  }
+
+  it('prefers X-Real-IP (nginx $remote_addr, not client-spoofable)', () => {
+    expect(getClientIp(req({ 'x-real-ip': '203.0.113.7' }))).toBe('203.0.113.7');
+  });
+
+  it('ignores a spoofed leftmost X-Forwarded-For when X-Real-IP is present', () => {
+    // Attacker prepends "1.1.1.1"; nginx sets X-Real-IP to the true peer.
+    const r = req({
+      'x-real-ip': '203.0.113.7',
+      'x-forwarded-for': '1.1.1.1, 203.0.113.7',
+    });
+    expect(getClientIp(r)).toBe('203.0.113.7');
+  });
+
+  it('falls back to the RIGHTMOST XFF hop (the proxy-appended peer), never the leftmost', () => {
+    // Client-supplied "1.1.1.1" is prepended; the real peer is appended last.
+    const r = req({ 'x-forwarded-for': '1.1.1.1, 10.0.0.1, 203.0.113.7' });
+    expect(getClientIp(r)).toBe('203.0.113.7');
+  });
+
+  it('trims whitespace and skips empty hops', () => {
+    expect(getClientIp(req({ 'x-forwarded-for': ' 1.1.1.1 ,  ' }))).toBe(
+      '1.1.1.1'
+    );
+  });
+
+  it('returns undefined when no proxy header is present', () => {
+    expect(getClientIp(req({}))).toBeUndefined();
   });
 });

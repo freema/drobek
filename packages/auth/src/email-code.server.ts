@@ -128,10 +128,34 @@ export async function consumeEmailLoginCode(
   return { ok: true };
 }
 
+/**
+ * Best-effort client IP for per-IP rate limits. Trusts the reverse proxy, NOT
+ * the client (PHY-76 #4):
+ *
+ * - Prefer `X-Real-IP`: prod nginx sets it to `$remote_addr` (the real TCP peer)
+ *   and OVERWRITES any client-sent value, so it cannot be spoofed from outside.
+ *   Trusting it also delegates the "which hop is real" decision to the proxy,
+ *   which is the layer that actually knows the topology.
+ * - Fallback `X-Forwarded-For`: take the RIGHTMOST hop, which the proxy APPENDS
+ *   from the real socket (`$proxy_add_x_forwarded_for`). NEVER the leftmost —
+ *   nginx prepends the client-sent chain there, so the head is attacker-chosen
+ *   (the old code returned exactly that leftmost entry, voiding every per-IP
+ *   limit via a spoofed header).
+ *
+ * With no proxy in front (direct exposure), no header is trustworthy and this
+ * returns whatever is present — per-IP limits are inherently weak there; the
+ * recommended deployment runs behind nginx.
+ */
 export function getClientIp(request: Request): string | undefined {
+  const real = request.headers.get('x-real-ip')?.trim();
+  if (real) return real;
   const xff = request.headers.get('x-forwarded-for');
-  if (xff) return xff.split(',')[0]?.trim();
-  const real = request.headers.get('x-real-ip');
-  if (real) return real.trim();
+  if (xff) {
+    const hops = xff
+      .split(',')
+      .map((h) => h.trim())
+      .filter(Boolean);
+    if (hops.length > 0) return hops[hops.length - 1];
+  }
   return undefined;
 }
