@@ -113,6 +113,25 @@ describe('CSV serialization (RFC-4180 escaping + column ordering)', () => {
     expect(csvEscape('carriage\rreturn')).toBe('"carriage\rreturn"');
   });
 
+  it('neutralizes spreadsheet formula injection with a leading quote (PHY-76 #4)', () => {
+    // Leading =/+/-/@ triggers a formula in Excel/LibreOffice/Sheets.
+    expect(csvEscape('=1+1')).toBe("'=1+1");
+    expect(csvEscape('+1')).toBe("'+1");
+    expect(csvEscape('-1')).toBe("'-1");
+    expect(csvEscape('@SUM(A1)')).toBe("'@SUM(A1)");
+    // Leading tab is guarded ('); tab is not in the RFC quote-set so no wrap.
+    expect(csvEscape('\t=1')).toBe("'\t=1");
+    // Leading CR is guarded AND RFC-quoted (\r is in the quote-set).
+    expect(csvEscape('\r=1')).toBe('"\'\r=1"');
+    // A classic exfil / RCE payload is defanged AND RFC-quoted for its comma.
+    expect(csvEscape('=HYPERLINK("http://evil","x")')).toBe(
+      '"\'=HYPERLINK(""http://evil"",""x"")"'
+    );
+    // Non-leading triggers are untouched (only the FIRST char matters).
+    expect(csvEscape('a=1')).toBe('a=1');
+    expect(csvEscape('3-2')).toBe('3-2');
+  });
+
   it('header = schema field names in column order', () => {
     expect(csvHeader(schemaColumns(TODO_SCHEMA))).toBe('title,done,priority');
   });

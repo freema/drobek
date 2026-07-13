@@ -13,20 +13,27 @@ vi.mock('@drobek/core', async (importOriginal) => {
 });
 
 import {
+  CODE_MAX_ATTEMPTS,
   CODE_TTL_S,
   consumeEmailLoginCode,
   createEmailLoginCode,
   generateLoginCode,
+  getClientIp,
   normalizeAuthEmail,
 } from './email-code.server.js';
 
 const EMAIL = 'user@example.com';
 
+function emailHashHex(email: string): string {
+  return createHash('sha256').update(email.trim().toLowerCase()).digest('hex');
+}
+
 function codeKey(email: string): string {
-  const h = createHash('sha256')
-    .update(email.trim().toLowerCase())
-    .digest('hex');
-  return `drobek:otp:code:${h}`;
+  return `drobek:otp:code:${emailHashHex(email)}`;
+}
+
+function attemptsKey(email: string): string {
+  return `drobek:otp:attempts:${emailHashHex(email)}`;
 }
 
 function wrongCodeFor(code: string): string {
@@ -51,13 +58,8 @@ describe('createEmailLoginCode', () => {
     const raw = await fake.get(codeKey(EMAIL));
     expect(raw).not.toBeNull();
 
-    const rec = JSON.parse(raw!) as {
-      email: string;
-      codeHash: string;
-      attempts: number;
-    };
+    const rec = JSON.parse(raw!) as { email: string; codeHash: string };
     expect(rec.email).toBe(EMAIL);
-    expect(rec.attempts).toBe(0);
     expect(rec.codeHash).toBe(
       createHash('sha256').update(code).digest('hex')
     );
@@ -70,6 +72,15 @@ describe('createEmailLoginCode', () => {
   it('normalizes the email (trim + lowercase) for the redis key', async () => {
     await createEmailLoginCode('  User@Example.COM ', undefined);
     expect(await fake.get(codeKey(EMAIL))).not.toBeNull();
+  });
+
+  it('resets a burned attempt counter so a re-issued code starts fresh', async () => {
+    // Burn the counter to the cap under an old code…
+    await fake.set(attemptsKey(EMAIL), String(CODE_MAX_ATTEMPTS), 'EX', 600);
+    // …then issue a new code; the fresh code must accept guesses again.
+    const code = await createEmailLoginCode(EMAIL, undefined);
+    expect(await fake.get(attemptsKey(EMAIL))).toBeNull();
+    expect(await consumeEmailLoginCode(EMAIL, code)).toEqual({ ok: true });
   });
 });
 
@@ -92,15 +103,15 @@ describe('consumeEmailLoginCode', () => {
     });
   });
 
-  it('wrong code increments attempts and keeps the TTL', async () => {
+  it('wrong code increments the atomic counter and leaves the code record + TTL intact', async () => {
     const code = await createEmailLoginCode(EMAIL, undefined);
     const res = await consumeEmailLoginCode(EMAIL, wrongCodeFor(code));
     expect(res).toEqual({ ok: false, reason: 'wrong_code' });
 
-    const rec = JSON.parse((await fake.get(codeKey(EMAIL)))!) as {
-      attempts: number;
-    };
-    expect(rec.attempts).toBe(1);
+    // The guess count lives in a sibling key, not in the code record.
+    expect(await fake.get(attemptsKey(EMAIL))).toBe('1');
+    // The code record itself is untouched (and still consumable by the owner).
+    expect(await fake.get(codeKey(EMAIL))).not.toBeNull();
     const ttl = await fake.ttl(codeKey(EMAIL));
     expect(ttl).toBeGreaterThan(0);
     expect(ttl).toBeLessThanOrEqual(CODE_TTL_S);
@@ -123,10 +134,41 @@ describe('consumeEmailLoginCode', () => {
     });
     expect(await fake.get(codeKey(EMAIL))).toBeNull();
 
-    // 6th attempt with the CORRECT code is rejected.
+    // 6th attempt with the CORRECT code is refused (counter already over cap).
     expect(await consumeEmailLoginCode(EMAIL, code)).toEqual({
       ok: false,
-      reason: 'no_code',
+      reason: 'too_many_attempts',
+    });
+  });
+
+  it('caps a CONCURRENT guess flood at CODE_MAX_ATTEMPTS evaluations (PHY-76 #1)', async () => {
+    // Regression: the old GET→attempts+1→SET read-modify-write could be raced
+    // past the cap by concurrent guesses. The atomic INCR-first counter must
+    // let at most CODE_MAX_ATTEMPTS guesses reach a live code no matter how many
+    // fire at once.
+    const code = await createEmailLoginCode(EMAIL, undefined);
+    const wrong = wrongCodeFor(code);
+
+    const results = await Promise.all(
+      Array.from({ length: 50 }, () => consumeEmailLoginCode(EMAIL, wrong))
+    );
+
+    // INCR hands every concurrent guess a distinct count, and only counts in
+    // [1, CODE_MAX_ATTEMPTS - 1] reach the "wrong_code" branch — so no matter
+    // how the 50 interleave, at most CODE_MAX_ATTEMPTS - 1 of them can come back
+    // "wrong_code". (The old read-modify-write let all 50 read attempts=0 and
+    // return "wrong_code".) Nothing succeeds — every guess here is wrong.
+    const wrongCodeHits = results.filter(
+      (r) => r.ok === false && r.reason === 'wrong_code'
+    );
+    expect(wrongCodeHits.length).toBeLessThanOrEqual(CODE_MAX_ATTEMPTS - 1);
+    expect(results.some((r) => r.ok === true)).toBe(false);
+
+    // The flood burned the code — even the correct code no longer works.
+    expect(await fake.get(codeKey(EMAIL))).toBeNull();
+    expect(await consumeEmailLoginCode(EMAIL, code)).toEqual({
+      ok: false,
+      reason: 'too_many_attempts',
     });
   });
 
@@ -141,5 +183,40 @@ describe('consumeEmailLoginCode', () => {
 describe('normalizeAuthEmail', () => {
   it('trims and lowercases', () => {
     expect(normalizeAuthEmail('  Foo@BAR.com ')).toBe('foo@bar.com');
+  });
+});
+
+describe('getClientIp (trusts the proxy, not the client — PHY-76 #4)', () => {
+  function req(headers: Record<string, string>): Request {
+    return new Request('https://drobek.app/login/verify', { headers });
+  }
+
+  it('prefers X-Real-IP (nginx $remote_addr, not client-spoofable)', () => {
+    expect(getClientIp(req({ 'x-real-ip': '203.0.113.7' }))).toBe('203.0.113.7');
+  });
+
+  it('ignores a spoofed leftmost X-Forwarded-For when X-Real-IP is present', () => {
+    // Attacker prepends "1.1.1.1"; nginx sets X-Real-IP to the true peer.
+    const r = req({
+      'x-real-ip': '203.0.113.7',
+      'x-forwarded-for': '1.1.1.1, 203.0.113.7',
+    });
+    expect(getClientIp(r)).toBe('203.0.113.7');
+  });
+
+  it('falls back to the RIGHTMOST XFF hop (the proxy-appended peer), never the leftmost', () => {
+    // Client-supplied "1.1.1.1" is prepended; the real peer is appended last.
+    const r = req({ 'x-forwarded-for': '1.1.1.1, 10.0.0.1, 203.0.113.7' });
+    expect(getClientIp(r)).toBe('203.0.113.7');
+  });
+
+  it('trims whitespace and skips empty hops', () => {
+    expect(getClientIp(req({ 'x-forwarded-for': ' 1.1.1.1 ,  ' }))).toBe(
+      '1.1.1.1'
+    );
+  });
+
+  it('returns undefined when no proxy header is present', () => {
+    expect(getClientIp(req({}))).toBeUndefined();
   });
 });

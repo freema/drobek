@@ -144,9 +144,25 @@ export function mapFilterSort(input: {
 
 // ── CSV (RFC-4180) ───────────────────────────────────────────────────────────
 
-/** Escape one CSV field: wrap in quotes + double internal quotes when needed. */
+/**
+ * A cell that would be parsed as a formula by Excel / LibreOffice / Sheets when
+ * the file is opened: leading `= + - @`, or a leading control char (tab, CR)
+ * that some apps strip before they look for the trigger. Record values in a
+ * public-write collection are attacker-controlled, so an exported `=cmd|…` or
+ * `=HYPERLINK(…)` cell would execute in the admin's spreadsheet — CSV formula
+ * injection (PHY-76 #4).
+ */
+const CSV_FORMULA_TRIGGER = /^[=+\-@\t\r]/;
+
+/**
+ * Escape one CSV field: first neutralize spreadsheet formula injection (prefix a
+ * single quote so the cell is treated as literal text), then apply RFC-4180
+ * quoting (wrap in quotes + double internal quotes) when needed. Every exported
+ * cell — Data tab AND Activity/audit — runs through here via csvLine.
+ */
 export function csvEscape(value: string): string {
-  return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+  const safe = CSV_FORMULA_TRIGGER.test(value) ? `'${value}` : value;
+  return /[",\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 }
 
 /** A single CSV line (no trailing newline) from raw cell strings. */
