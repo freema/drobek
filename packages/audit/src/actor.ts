@@ -56,6 +56,10 @@ export const AUDIT_ACTIONS = {
   moduleConfirm: 'module.confirm',
   /** M1-01: the owner rejected a pending module change in the dashboard. */
   moduleReject: 'module.reject',
+  /** M1-02: an end user signed in to an app (platform module auth, actor end_user). */
+  authSignIn: 'auth.sign_in',
+  /** M1-02: the owner signed every end user of an app out (session epoch bump). */
+  endUserSessionsRevoke: 'end_users.sessions_revoke',
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];

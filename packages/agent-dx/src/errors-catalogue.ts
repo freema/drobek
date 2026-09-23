@@ -195,6 +195,24 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     meaning: 'The route exists but not for this HTTP method.',
     fix: 'Use the SDK call from the module skill.',
   },
+  {
+    code: 'email_not_allowed',
+    surface: 'module route (auth) 403 (DrobekError)',
+    meaning: 'The address may not sign in to this app: it is not in `allow` / `adminEmails` of the auth config, or the user is disabled. No code was sent.',
+    fix: "Add the address or its domain with configure_module('auth'), or tell the user who may sign in.",
+  },
+  {
+    code: 'invalid_code',
+    surface: 'module route (auth) 400 (DrobekError)',
+    meaning: 'The sign-in code is wrong, expired (10 minutes) or already used.',
+    fix: 'Re-enter the code from the e-mail, or request a new one with drobek.auth.sendCode.',
+  },
+  {
+    code: 'too_many_attempts',
+    surface: 'module route (auth) 429 (DrobekError)',
+    meaning: 'Five wrong codes were entered for this address; the code is dead.',
+    fix: 'Request a new code (drobek.auth.sendCode); <LoginGate> goes back to the e-mail step by itself.',
+  },
   // ── OAuth 2.1 connect flow ────────────────────────────────────────────────
   {
     code: 'invalid redirect_uri (redirect_uri mismatch)',

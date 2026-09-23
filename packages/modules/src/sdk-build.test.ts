@@ -34,6 +34,16 @@ describe('SDK composition', () => {
     expect(dts).toContain('class DrobekError');
   });
 
+  it('inline sources (`drobek/<module>`) are read for the compiler, NOT bundled into sdk.js', async () => {
+    const sdk = await buildSdk([echo, quiet]);
+    expect(Object.keys(sdk.inline)).toEqual(['drobek/echo']);
+    expect(sdk.inline['drobek/echo']).toContain('export const Echo');
+    expect(sdk.js.toString()).not.toContain('Echo = ');
+    expect(sdk.dts).toContain("// ── import { … } from 'drobek/echo'");
+    expect(sdk.dts).toContain('// export const Echo: () => null;');
+    expect((await buildSdk([quiet])).inline).toEqual({});
+  });
+
   it('composes the entry source', () => {
     expect(sdkEntrySource('/core.js', [echo]).replace(JSON.stringify(echo.sdk!.entry), '"<echo-sdk>"')).toMatchSnapshot();
   });

@@ -4,6 +4,8 @@ import { BINARY_EXTS, extOf, resolveAppSpecifier } from './paths.js';
 import type { CompileErrorCode } from './types.js';
 
 export const APP_NAMESPACE = 'app';
+/** `drobek/<module>` platform sources compiled into the app (M1-02). */
+export const SDK_SOURCE_NAMESPACE = 'drobek-sdk';
 
 const LOADERS: Record<string, Loader> = {
   '.tsx': 'tsx',
@@ -29,6 +31,8 @@ export interface VirtualFsState {
   imports: Record<string, string>;
   /** What the bare `drobek` import resolves to (external). */
   sdkUrl: string;
+  /** `drobek/<module>` → platform source compiled into the app. */
+  sdkSources: Record<string, string>;
   maxImportDepth: number;
   /** App paths handed to esbuild (a subset of `files`, asserted in tests). */
   loaded: Set<string>;
@@ -98,6 +102,33 @@ export function virtualFsPlugin(state: VirtualFsState): Plugin {
           );
         }
         if (spec === SDK_SPECIFIER) return { path: state.sdkUrl || SDK_URL, external: true };
+        if (spec.startsWith(`${SDK_SPECIFIER}/`)) {
+          if (Object.prototype.hasOwnProperty.call(state.sdkSources, spec)) {
+            return { path: spec, namespace: SDK_SOURCE_NAMESPACE };
+          }
+          const available = Object.keys(state.sdkSources);
+          return fail(
+            'unresolved_import',
+            `"${spec}" is not a platform import on this server${available.length ? ` (available: drobek, ${available.join(', ')})` : ' (only "drobek")'}.`,
+            spec
+          );
+        }
+
+        if (args.namespace === SDK_SOURCE_NAMESPACE) {
+          // A platform source may import only bare packages (through the app's
+          // import map) and `drobek` — never files.
+          if (spec.startsWith('.') || spec.startsWith('/')) {
+            return fail('unresolved_import', `${args.importer} cannot import "${spec}".`, spec);
+          }
+          const url = lookupBare(spec, state.imports);
+          if (url) return { path: url, external: true };
+          const pkg = spec.startsWith('@') ? spec.split('/').slice(0, 2).join('/') : spec.split('/')[0];
+          return fail(
+            'unresolved_import',
+            `${args.importer} needs "${spec}" — add it to drobek.json imports: { "${pkg}": "https://esm.sh/${pkg}@<version>" } (the react-ts template already maps react).`,
+            spec
+          );
+        }
 
         const importer = args.namespace === APP_NAMESPACE ? args.importer : '';
         const parentDepth = depth.get(importer) ?? 0;
@@ -134,6 +165,13 @@ export function virtualFsPlugin(state: VirtualFsState): Plugin {
           `Unknown import "${spec}". drobek has no node_modules and no Node built-ins — add the package to drobek.json imports: { "${pkg}": "https://esm.sh/${pkg}@<version>" }`,
           spec
         );
+      });
+
+      build.onLoad({ filter: /.*/, namespace: SDK_SOURCE_NAMESPACE }, (args) => {
+        if (state.aborted) return fail('timeout', 'compile aborted');
+        const contents = state.sdkSources[args.path];
+        if (contents === undefined) return fail('unresolved_import', `Cannot load "${args.path}".`, args.path);
+        return { contents, loader: 'tsx' };
       });
 
       build.onLoad({ filter: /.*/, namespace: APP_NAMESPACE }, async (args) => {

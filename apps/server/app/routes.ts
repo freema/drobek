@@ -63,6 +63,12 @@ export default [
     'api/apps/:id/modules/:module/:decision',
     'routes/api.apps.$id.modules.$module.$decision.ts'
   ),
+  // M1-02 (NSO-294): the owner signs every end user of an app out (session
+  // epoch bump, PHY-76 #9; the M2-03 users page calls this API).
+  route(
+    'api/apps/:id/end-user-sessions/revoke',
+    'routes/api.apps.$id.end-user-sessions.revoke.ts'
+  ),
   // U5 (PHY-71/PHY-53): MCP OAuth 2.1 Authorization Server.
   route(
     '.well-known/oauth-authorization-server',

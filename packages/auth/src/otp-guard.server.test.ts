@@ -225,3 +225,49 @@ describe('otpGuardLimitsFromEnv', () => {
     });
   });
 });
+
+describe('scoped guard (M1-02: one app\'s end users)', () => {
+  const SCOPE = 'eu:app_1';
+
+  it('counts per scope: an app\'s per-IP window never touches the dashboard or another app', async () => {
+    for (let i = 0; i < 5; i += 1) {
+      expect(await guardOtpRequest({ ip: '10.0.0.5', email: `s${i}@example.com`, limits: STRICT, scope: SCOPE })).toEqual({ ok: true });
+    }
+    const sixth = await guardOtpRequest({ ip: '10.0.0.5', email: 's9@example.com', limits: STRICT, scope: SCOPE });
+    expect(sixth).toMatchObject({ ok: false, kind: 'error', status: 429, reason: 'ip_short' });
+    expect(await guardOtpRequest({ ip: '10.0.0.5', email: 'd@example.com', limits: STRICT })).toEqual({ ok: true });
+    expect(await guardOtpRequest({ ip: '10.0.0.5', email: 'o@example.com', limits: STRICT, scope: 'eu:app_2' })).toEqual({ ok: true });
+    expect(await fake.get(`drobek:rl:${SCOPE}:otp-ip-15m:10.0.0.5`)).toBe('6');
+  });
+
+  it('the scope\'s hourly brake pauses only that scope', async () => {
+    const limits = { ...STRICT, globalHourlyMax: 2, ipShortLimit: 100, ipDailyLimit: 100 };
+    expect(await guardOtpRequest({ ip: '10.0.0.6', email: 'a1@example.com', limits, scope: SCOPE })).toEqual({ ok: true });
+    expect(await guardOtpRequest({ ip: '10.0.0.6', email: 'a2@example.com', limits, scope: SCOPE })).toEqual({ ok: true });
+    expect(await guardOtpRequest({ ip: '10.0.0.6', email: 'a3@example.com', limits, scope: SCOPE })).toMatchObject({ ok: false, status: 503, reason: 'global_brake' });
+    expect(await isOtpSendingPaused(SCOPE)).toEqual({ paused: true, reason: 'scope_autopause' });
+    expect(await isOtpSendingPaused()).toEqual({ paused: false });
+    expect(await isOtpSendingPaused('eu:app_2')).toEqual({ paused: false });
+  });
+
+  it('a scope obeys the operator-wide switches (manual kill switch, dashboard auto-pause)', async () => {
+    await fake.set('drobek:otp:autopause', '1', 'PX', 60_000);
+    expect(await isOtpSendingPaused(SCOPE)).toEqual({ paused: true, reason: 'global_autopause' });
+    await fake.del('drobek:otp:autopause');
+    await fake.set('drobek:otp:killswitch', '1');
+    expect(await guardOtpRequest({ ip: '10.0.0.7', email: 'k@example.com', limits: STRICT, scope: SCOPE })).toMatchObject({
+      ok: false,
+      status: 503,
+      reason: 'manual_kill_switch',
+    });
+  });
+
+  it('cooldown + release are per scope', async () => {
+    expect(await guardOtpRequest({ ip: '10.0.0.8', email: 'c@example.com', limits: STRICT, scope: SCOPE })).toEqual({ ok: true });
+    expect(await guardOtpRequest({ ip: '10.0.0.8', email: 'c@example.com', limits: STRICT, scope: SCOPE })).toMatchObject({ kind: 'redirect_verify', reason: 'cooldown' });
+    // The dashboard cooldown for the same e-mail is independent.
+    expect(await guardOtpRequest({ ip: '10.0.0.8', email: 'c@example.com', limits: STRICT })).toEqual({ ok: true });
+    await releaseOtpCooldown('c@example.com', SCOPE);
+    expect(await guardOtpRequest({ ip: '10.0.0.8', email: 'c@example.com', limits: STRICT, scope: SCOPE })).toEqual({ ok: true });
+  });
+});

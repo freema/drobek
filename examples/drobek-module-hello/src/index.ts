@@ -6,7 +6,8 @@
  *
  *   GET  /__drobek/v1/hello        → { greeting, message, waves, signed }
  *   POST /__drobek/v1/hello/wave   → { waves }   (rate-limited per visitor IP)
- *   drobek.hello.ping() / drobek.hello.wave(name)
+ *   GET  /__drobek/v1/hello/whoami → the visitor as ctx.principal (auth module)
+ *   drobek.hello.ping() / drobek.hello.wave(name) / drobek.hello.whoami()
  *   config { greeting, excited } — a greeting change needs the owner's OK.
  */
 import { createHmac } from 'node:crypto';
@@ -37,8 +38,11 @@ export interface Hello {
   signed: boolean;
   signature?: string;
 }
+export type Visitor = { signed_in: false } | { signed_in: true; id: string; email: string; role: 'user' | 'admin' };
 export interface Api {
   ping(): Promise<Hello>;
+  /** The visitor as every platform module sees them (signed in through the auth module, or not). */
+  whoami(): Promise<Visitor>;
   /** name: 1–40 characters; rate-limited (HELLO_WAVES_PER_MINUTE per visitor per minute) */
   wave(name: string): Promise<{ waves: number }>;
 }
@@ -76,6 +80,13 @@ const hello = defineModule<HelloConfig>({
         ...(key !== null ? { signature: createHmac('sha256', key).update(message).digest('hex').slice(0, 16) } : {}),
       };
     });
+    // ctx.principal: core's decision for this request (a signed-in end user
+    // of THIS app, with their current role, or anonymous).
+    r.get('/whoami', { rule: 'public' }, async (_req, ctx) =>
+      ctx.principal.kind === 'user'
+        ? { signed_in: true, id: ctx.principal.id, email: ctx.principal.email, role: ctx.principal.role }
+        : { signed_in: false }
+    );
     r.post(
       '/wave',
       {

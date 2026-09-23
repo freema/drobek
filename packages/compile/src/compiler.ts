@@ -5,7 +5,7 @@ import * as esbuild from 'esbuild';
 import { SDK_URL, readAppConfig } from './config.js';
 import { limitsFromEnv, type CompileLimits } from './limits.js';
 import { isAllowedExt, normalizeAppPath, TEXT_EXTS, extOf } from './paths.js';
-import { APP_NAMESPACE, virtualFsPlugin, type FailDetail, type VirtualFsState } from './plugin.js';
+import { APP_NAMESPACE, SDK_SOURCE_NAMESPACE, virtualFsPlugin, type FailDetail, type VirtualFsState } from './plugin.js';
 import { Semaphore } from './queue.js';
 import { scanForSecrets } from './secrets.js';
 import type {
@@ -54,7 +54,7 @@ function fromEsbuild(messages: esbuild.Message[]): CompileMessage[] {
     const out: CompileMessage = { code, text: m.text };
     if (typeof detail.specifier === 'string') out.specifier = detail.specifier;
     if (m.location) {
-      out.file = m.location.file.replace(new RegExp(`^${APP_NAMESPACE}:`), '');
+      out.file = m.location.file.replace(new RegExp(`^(?:${APP_NAMESPACE}|${SDK_SOURCE_NAMESPACE}):`), '');
       out.line = m.location.line;
       out.column = m.location.column;
       out.lineText = m.location.lineText;
@@ -195,6 +195,7 @@ export class Compiler {
       files,
       imports: config.imports,
       sdkUrl: opts.sdkUrl ?? SDK_URL,
+      sdkSources: opts.sdkSources ?? {},
       maxImportDepth: this.limits.maxImportDepth,
       loaded: new Set(),
       aborted: false,

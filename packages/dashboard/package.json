@@ -67,6 +67,10 @@
     "./routes/api.apps.$id.modules.$module.$decision.server": {
       "types": "./src/routes/api.apps.$id.modules.$module.$decision.server.ts",
       "default": "./dist/routes/api.apps.$id.modules.$module.$decision.server.js"
+    },
+    "./routes/api.apps.$id.end-user-sessions.revoke.server": {
+      "types": "./src/routes/api.apps.$id.end-user-sessions.revoke.server.ts",
+      "default": "./dist/routes/api.apps.$id.end-user-sessions.revoke.server.js"
     }
   },
   "scripts": {
@@ -79,6 +83,7 @@
     "@drobek/apps": "workspace:*",
     "@drobek/audit": "workspace:*",
     "@drobek/auth": "workspace:*",
+    "@drobek/core": "workspace:*",
     "@drobek/data": "workspace:*",
     "@drobek/db": "workspace:*",
     "@drobek/insights": "workspace:*",

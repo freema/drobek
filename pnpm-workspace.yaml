@@ -1,5 +1,6 @@
 packages:
   - 'apps/*'
   - 'packages/*'
+  - 'modules/*'
   - 'examples/*'
   - 'tests-e2e'

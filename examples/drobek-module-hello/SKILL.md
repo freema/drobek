@@ -34,10 +34,12 @@ document.querySelector('#wave').addEventListener('click', async () => {
 ```ts
 drobek.hello.ping(): Promise<{ greeting: string; message: string; waves: number; signed: boolean; signature?: string }>
 drobek.hello.wave(name: string): Promise<{ waves: number }>   // name: 1–40 characters
+drobek.hello.whoami(): Promise<{ signed_in: false } | { signed_in: true; id: string; email: string; role: 'user' | 'admin' }>
 ```
 
 HTTP (what the SDK calls): `GET /__drobek/v1/hello`, `POST /__drobek/v1/hello/wave`
-with `{ "name": "Ada" }`. Only the app itself may call them (same origin; the
+with `{ "name": "Ada" }`, `GET /__drobek/v1/hello/whoami` (the visitor signed in
+through the `auth` module, if the server has it). Only the app itself may call them (same origin; the
 SDK sends the `X-Drobek-SDK: 1` header).
 
 ## Config (configure_module)

@@ -63,6 +63,10 @@ Echoes.
   "name": "echo",
   "sdk": {
     "import": "import { drobek } from 'drobek';",
+    "inline": {
+      "import": "import { … } from 'drobek/echo';",
+      "types": "export const Echo: () => null;",
+    },
     "types": "export declare namespace echo {
   export interface Api { hi(): Promise<{ greeting: string }>; }
 }

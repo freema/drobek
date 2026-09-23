@@ -96,9 +96,14 @@ services:
       DATA_MAX_DOCS_PER_APP: '5'
       PROXY_RATE_LIMIT: '15'
       BEACON_RATE_LIMIT: '30'
-      # M1-01: the example module, loaded from the image's own dependencies.
-      DROBEK_MODULES: hello
+      # M1-01: the example module, loaded from the image's own dependencies;
+      # M1-02: the built-in auth module (relaxed sign-in limits, as in dev).
+      DROBEK_MODULES: hello,auth
       HELLO_WAVES_PER_MINUTE: '5'
+      AUTH_CODES_PER_IP_15MIN: '100'
+      AUTH_CODES_PER_IP_DAY: '500'
+      AUTH_CODES_PER_EMAIL_HOUR: '50'
+      AUTH_ATTEMPTS_PER_IP_15MIN: '500'
       # Google OIDC → the mock the auth-google spec spawns on the host (:3049).
       GOOGLE_CLIENT_ID: local-dev-client
       GOOGLE_CLIENT_SECRET: local-dev-secret

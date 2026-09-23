@@ -52,6 +52,13 @@ describe('drobek-module-hello', () => {
     expect(res.body).toEqual({ greeting: 'Ahoj', message: 'Ahoj!', waves: 0, signed: false });
   });
 
+  it('GET /whoami reports ctx.principal (anon, or the signed-in end user with the role)', async () => {
+    const t = createModuleTestContext(hello, { db, app: { id: appId } });
+    expect((await t.request('GET', '/whoami')).body).toEqual({ signed_in: false });
+    t.setPrincipal({ kind: 'user', id: 'eu_1', email: 'ana@example.com', role: 'admin' });
+    expect((await t.request('GET', '/whoami')).body).toEqual({ signed_in: true, id: 'eu_1', email: 'ana@example.com', role: 'admin' });
+  });
+
   it('POST /wave stores a wave; the body is validated with a field path', async () => {
     const t = createModuleTestContext(hello, { db, app: { id: appId } });
     expect((await t.request('POST', '/wave', { body: { name: 'Ada' } })).body).toEqual({ waves: 1 });
@@ -98,5 +105,7 @@ describe('drobek-module-hello', () => {
     expect(js).toContain('/wave');
     expect(sdk.dts).toContain('readonly hello: hello.Api;');
     expect(sdk.dts).toContain('ping(): Promise<Hello>;');
+    expect(sdk.dts).toContain('whoami(): Promise<Visitor>;');
+    expect(js).toContain('/whoami');
   });
 });

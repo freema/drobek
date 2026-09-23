@@ -22,6 +22,8 @@ export {
   type DrobekModule,
   type EmailMessage,
   type EmailRecipient,
+  type EndUser,
+  type EndUserAuthority,
   type HookApp,
   type Limits,
   type ModuleContext,
@@ -57,10 +59,24 @@ export {
 export {
   END_USER_COOKIE,
   END_USER_COOKIE_INSECURE,
+  END_USER_SESSION_TTL_SEC,
+  END_USER_TOKEN_RE,
   cookiePrincipalResolver,
+  createEndUserSession,
+  destroyEndUserSession,
+  endUserCookieHeader,
   endUserCookieName,
   endUserCookiesSecure,
+  endUserEpochKey,
   endUserSessionKey,
+  loadEndUserSession,
+  parseEndUserSession,
+  readEndUserToken,
+  renewEndUserSession,
+  revokeEndUserSessions,
+  type EndUserRedis,
+  type CurrentEndUser,
+  type EndUserSession,
   type PrincipalResolver,
 } from './principal.js';
 export { SECRET_NAME_RE, SecretStoreError, deleteModuleSecret, getModuleSecret, secretsSet, setModuleSecret } from './secrets.server.js';
@@ -74,12 +90,13 @@ export {
   skillForImport,
   type SkillEntry,
 } from './skills.js';
-export { SDK_PATH, SDK_TYPES_PATH, buildSdk, sdkDeclarations, type SdkBundle } from './sdk-build.js';
+export { SDK_PATH, SDK_TYPES_PATH, buildSdk, inlineSpecifier, sdkDeclarations, type SdkBundle } from './sdk-build.js';
+export { EMAIL_RE, resolveRecipients, sanitizeSubject } from './email.js';
 export { SDK_HEADER, DEFAULT_MAX_BODY_BYTES, type PipelineRequest, type PipelineResult } from './router.js';
 export {
-  BUILTIN_MODULES,
   ModuleLoadError,
   RESERVED_MODULE_NAMES,
+  endUserAuthorityOf,
   loadModules,
   packageNameFor,
   parseModuleList,

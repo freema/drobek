@@ -21,15 +21,20 @@ A module contributes, for every app on the server:
 ## Enabling modules
 
 ```sh
-DROBEK_MODULES=hello            # comma-separated; empty = no modules
+DROBEK_MODULES=hello,auth       # comma-separated; empty = no modules
 ```
 
-Each entry resolves, in this order:
+Each entry resolves:
 
-1. a built-in module of this repo (`BUILTIN_MODULES`);
-2. a short name `x` → the npm package **`drobek-module-x`**;
-3. a full package name (`drobek-module-x`, `@scope/pkg`, anything with a `/`)
+1. a short name `x` → the npm package **`drobek-module-x`**;
+2. a full package name (`drobek-module-x`, `@scope/pkg`, anything with a `/`)
    → exactly that package.
+
+The built-in modules of this repo live in `modules/<name>` as the workspace
+packages `drobek-module-<name>`, dependencies of `apps/server` (and so of the
+image). They load exactly like a third-party module: nothing in the registry
+knows them by name. Built in: [`auth`](#the-built-in-auth-module) (end-user
+sign-in).
 
 Packages resolve from the **server's** install: `<cwd>/package.json` (`/app` in
 the image, `apps/server` in the dev stack), overridable with
@@ -43,8 +48,10 @@ two modules with one name, a missing `sdk.entry`, a reserved name (`sdk`,
 `v1`, `drobek`, `internal`). Nothing is skipped silently. On start the log
 names the active modules (`platform modules ready`).
 
-The dev compose enables the example module (`DROBEK_MODULES=hello`,
-`HELLO_WAVES_PER_MINUTE=5`); so does the e2e image compose.
+The dev compose enables the example module and the built-in auth
+(`DROBEK_MODULES=hello,auth`, `HELLO_WAVES_PER_MINUTE=5`, relaxed `AUTH_*`
+limits because every local request shares one client IP); so does the e2e
+image compose.
 
 ## The contract
 
@@ -62,9 +69,13 @@ export default defineModule<Config>({
   rules: { ops: { ping: 'public' } },           // operations shown in the rule editor
   limits: [{ env: 'HELLO_WAVES_PER_MINUTE', default: 30, meaning }],
   routes(r) { /* r.get / post / put / patch / delete */ },
-  sdk: { entry: '/abs/path/sdk.js', types: 'export interface Api { … }' },
+  sdk: {
+    entry: '/abs/path/sdk.js', types: 'export interface Api { … }',
+    inline: { entry: '/abs/path/ui.tsx', types: '…' },       // optional: `import … from 'drobek/<name>'`
+  },
   migrations: { folder: '/abs/path/migrations' },
   hooks: { onAppCreate(app, services) {}, onPublish(app, services) {} },
+  endUsers: { current({ app, user, config, db, log }) {} },  // only the module that owns end-user sessions (auth)
 });
 ```
 
@@ -144,7 +155,7 @@ Everything a handler gets is scoped to **one app and one module**:
 | `rateLimit(bucket, key, max, windowMs)` | fixed-window counter in Redis, namespaced to the module and app |
 | `secrets.get(name)` | the plaintext of a **declared** secret of this app, or `null`; reading an undeclared name throws |
 | `audit(action, meta?)` | an audit row `<module>.<action>` for this app, actor kind `end_user` |
-| `email.send({ to, subject, text })` | `to` is `{ config: 'dotted.path' }` (addresses in this app's owner-confirmed config) or `{ principal: true }` (the signed-in end user). Never an arbitrary address. The text is escaped into the drobek layout. |
+| `email.send({ to, subject, text })` | `to` is `{ config: 'dotted.path' }` (addresses in this app's owner-confirmed config), `{ principal: true }` (the signed-in end user) or `{ signInAddress }` (the address a visitor typed into a sign-in form: one address, for a sign-in code only; the module decides first that it may sign in). Never an arbitrary address. The subject is one line (control and line-separator characters become spaces, 200 characters at most); the text is escaped into the drobek layout. |
 | `db`, `log` | the database (drizzle) and a logger |
 
 ### The SDK
@@ -179,6 +190,26 @@ Both are served on every app host (never on the dashboard origin):
 Changing `DROBEK_MODULES` changes the hash; apps pick up the new SDK on their
 next compile.
 
+#### Inline sources: `import … from 'drobek/<name>'`
+
+Some SDK code must share the app's own libraries, e.g. a React component that
+must use the app's React. `sdk.inline = { entry, types }` names one
+TypeScript/JSX source file of the module. It is **not** in `sdk.js`: the
+compiler builds it **into** the app that imports `drobek/<name>`, like one of
+the app's own files:
+
+- its bare imports resolve through the **app's** `drobek.json` import map
+  (the app and the module share one React); a missing mapping is an
+  `unresolved_import` that says what to add to `drobek.json`;
+- `drobek` resolves to the server's `sdk.js` (the same `drobek.<name>`
+  instance the app uses);
+- relative imports are refused: the file must be self-contained;
+- `types` is appended to `/__drobek/sdk.d.ts` and returned by `skill_info`
+  (`sdk.inline { import, types }`).
+
+An unknown `drobek/<x>` import is an `unresolved_import` listing the
+available ones.
+
 ### Migrations and tables
 
 A module with tables ships a drizzle migrations folder
@@ -208,7 +239,7 @@ Secret values never live here (they live encrypted in `module_secrets`).
 `config` is a merge patch (`null` removes a key). The tool takes the app's
 single-writer lease, merges the patch, and validates the result. Then:
 
-- **invalid** → `invalid_params` with `details: [{ path, message }]` and
+- **invalid** → `invalid_params` with `issues: [{ path, message }]` and
   `hint: "skill_info('hello')"`;
 - **something that looks like a secret value** (an API key, a private key, …)
   → `invalid_params`: secrets are set only in the dashboard;
@@ -346,6 +377,104 @@ t.setPrincipal({ kind: 'anon' });
 Mutating requests send the app's `Origin` and `X-Drobek-SDK: 1` by default;
 pass `headers` to test the CSRF guard.
 
+## End-user sessions (core)
+
+The end-user session belongs to core (`@drobek/modules`), not to a module, so
+every module sees the signed-in user as `ctx.principal` without importing the
+auth module:
+
+- the cookie: `__Host-drobek_eu` (`drobek_eu` in plain-http dev), host-only
+  (no `Domain`), `Path=/`, `HttpOnly`, `SameSite=Lax`, `Secure` in production
+  or when the apps origin is https; the value is 64 hex characters;
+- the record: Redis `drobek:eu:<app_id>:<token>` →
+  `{ id, email, role, epoch }`, 30 days, rolled forward by the auth module's
+  `me`;
+- the app's epoch `drobek:eu-epoch:<app_id>`: a session whose epoch differs is
+  dead. Raising it signs every user of the app out on every host of the app
+  (preview, production, version hosts);
+- **the record is never the principal on its own**: for every module request
+  that carries a live session, core asks the module that owns end-user
+  sessions (`endUsers.current`, the auth module) who the user is NOW, with
+  the app's current config. `null` (disabled, deleted, no longer allowed) →
+  the request is anonymous and the session is deleted; otherwise the
+  principal carries the user's CURRENT role. There is no cache: a change
+  applies to the next request to any module, whether or not the app calls
+  `me`. A failing lookup makes that request anonymous (fail closed). At most
+  one active module may declare `endUsers` (two refuse the start); with none,
+  no session is honoured;
+- helpers: `createEndUserSession`, `loadEndUserSession`,
+  `renewEndUserSession`, `destroyEndUserSession`, `revokeEndUserSessions`,
+  `endUserCookieHeader`, `readEndUserToken`, `cookiePrincipalResolver({
+  redis, secure, current })` (fails closed: any Redis error is an anonymous
+  visitor).
+
+Preview and production are different hosts, so a session never crosses them;
+the users (rows) are per app and shared by both.
+
+### Signing every user out: `POST /api/apps/:app_id/end-user-sessions/revoke`
+
+The owner's dashboard API (no MCP tool: the owner decides, never an agent).
+The same guards as the confirm API: POST only (`405`), a dashboard session
+(`401`), a **required** dashboard `Origin` (`403`), editor or workspace-admin
+of the app's workspace or a super-admin; a missing app and a non-member both
+get `404 not_found`, a viewer `403`. It raises the epoch and answers `{ ok:
+true, app_id, epoch }`; audit `end_users.sessions_revoke` (actor user).
+
+## The built-in `auth` module
+
+[`modules/auth`](../modules/auth) (`drobek-module-auth`): the people who use
+an app sign in with a 6-digit code e-mailed to them. Its `SKILL.md` is what
+`skill_info('auth')` returns.
+
+- **Routes** (`/__drobek/v1/auth/…`, all `public`, CSRF `sdk-header`):
+  `POST send-code { email }`, `POST verify { email, code }` → `{ user }` +
+  the session cookie, `GET me` → `{ user | null }` (+ rolls the session and
+  its cookie), `POST logout`.
+- **Config** `{ allow: { emails, domains, anyone }, adminEmails }`: exact
+  addresses (lowercased), exact domains, and `anyone: true`, which **needs the
+  owner's confirmation**. `adminEmails` may sign in and get the role `admin`.
+  The editors and workspace-admins of the app's workspace may always sign in
+  with their own address, as `admin` (the preview works before any config);
+  viewers may not.
+- **Table** `mod_auth_users (id, app_id, email, role, verified_at,
+  last_login_at, disabled_at, created_at)`, unique `(app_id, email)`, cascade
+  on app delete. A user with `disabled_at` cannot sign in, and their next `me`
+  signs them out.
+- **Codes**: the dashboard login's own machinery from `@drobek/auth`
+  (`createEmailLoginCode` / `consumeEmailLoginCode`, the atomic guess counter
+  of PHY-76 #1, the OTP guard layers) with the scope `eu:<app_id>`: keys
+  `drobek:otp:eu:<app_id>:…`, rate-limit buckets `drobek:rl:eu:<app_id>:…`.
+  One app's codes, counters and pauses never touch the dashboard's or another
+  app's; the operator's kill switch (`OTP_LOGIN_DISABLED`) and the global
+  pause still apply. A code lives 10 minutes, works once and dies after 5
+  wrong tries (`too_many_attempts`).
+- **send-code** checks the allowlist first: an address that may not sign in
+  gets `403 email_not_allowed` and no e-mail. Within the per-address cooldown
+  and hourly share it answers like a send and sends nothing. The e-mail names
+  the app (a one-line, capped name) and goes to `{ signInAddress }`; logs mask
+  addresses (`maskEmail`).
+- **verify** decides the allowlist again (it may have changed since the code
+  was sent), upserts the user (role from the config), creates the session and
+  writes the audit `auth.sign_in` (actor end_user).
+- **Who is signed in, now** (`src/current.ts`, the module's
+  `endUsers.current`): the `mod_auth_users` row exists and is not disabled,
+  the current config still lets the address in (allowlist, `adminEmails`, or
+  an editor / workspace-admin of the app's workspace), and the role follows
+  the config. Core runs it for every module request with a session (two
+  indexed lookups), so a user who is disabled, deleted, dropped from the
+  allowlist or `adminEmails`, or an editor removed from the workspace, is
+  anonymous or demoted in EVERY module on the next request.
+- **me** makes the same decision, and also writes a changed role back to the
+  row, rolls the session forward and clears the cookie of an ended session.
+- **Limits** (per app): `AUTH_CODES_PER_IP_15MIN` 5, `AUTH_CODES_PER_IP_DAY`
+  20, `AUTH_CODES_PER_EMAIL_HOUR` 3, `AUTH_CODES_PER_APP_HOUR` 100 (then the
+  app's sign-in e-mails pause for 15 minutes), `AUTH_ATTEMPTS_PER_IP_15MIN` 30
+  (send-code + verify calls), `END_USERS_MAX_PER_APP` 1000.
+- **SDK**: `drobek.auth.me() / sendCode(email) / verify(email, code) /
+  logout() / onChange(cb)` in `sdk.js`, and the inline source `drobek/auth`:
+  `<LoginGate title requireAdmin loading>` and `useAuth()`, React components
+  built into the app with the app's React.
+
 ## The example: `drobek-module-hello`
 
 [`examples/drobek-module-hello`](../examples/drobek-module-hello) is an
@@ -360,7 +489,10 @@ external workspace package, loaded exactly as a third-party module would be
   confirmation, `excited` applies at once;
 - optional secret `HELLO_SIGNATURE` (the ping is HMAC-signed when set);
 - table `mod_hello_waves` (its own migrations and journal);
-- `drobek.hello.ping()` / `drobek.hello.wave(name)` in the browser;
+- `GET /__drobek/v1/hello/whoami` → the visitor as `ctx.principal` (signed in
+  through the auth module with the current role, or `{ signed_in: false }`);
+- `drobek.hello.ping()` / `drobek.hello.wave(name)` / `drobek.hello.whoami()`
+  in the browser;
 - its `SKILL.md` is what `skill_info('hello')` returns.
 
 Try it in the dev stack: create an app with an agent, write

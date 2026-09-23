@@ -119,7 +119,18 @@ single long-lived `next` branch; pushes happen only at milestone end.
   `POST /api/apps/:id/modules/:m/confirm|reject`, `docs/MODULES.md`.
   The `confirm_url` page (`/workspaces/<ws>/apps/<slug>/modules/<m>`) and the
   secrets form are M2-02. drobek-web does not wire the module runtime yet.
-- Next: M1-02 (NSO-294 auth module), then M1-03 data, M1-04 forms+email.
+- M1-02 (NSO-294) done locally: built-in module `modules/auth`
+  (`drobek-module-auth`; built-ins are `modules/*` workspace packages,
+  `BUILTIN_MODULES` is gone), end-user sessions + epoch in `@drobek/modules`
+  (`principal.ts`), scoped OTP in `@drobek/auth` (`eu:<app_id>`), inline SDK
+  sources (`drobek/auth` → `<LoginGate>` compiled into the app with the app's
+  React), dashboard API `POST /api/apps/:id/end-user-sessions/revoke` (shared
+  guards in `packages/dashboard/src/app-api.server.ts`). Dev + e2e compose run
+  `DROBEK_MODULES=hello,auth`. The dashboard UI for end users (list, disable,
+  "sign everyone out" button) is M2-03. Core asks the auth module
+  (`endUsers.current`) about every session on every module request, so a
+  disabled / removed user is anonymous everywhere on the next request.
+- Next: M1-03 data, M1-04 forms+email.
 
 ## Notes and gotchas
 
@@ -264,6 +275,23 @@ single long-lived `next` branch; pushes happen only at milestone end.
   (401 JSON); `app_locked` stays the MCP single-writer lease code.
 - A compile `unresolved_import` hint names a skill only when that skill is
   active on the server; otherwise it is the bare `skill_info()`.
+
+- End-user cookie over plain-http dev is `drobek_eu` without `Secure`
+  (Chromium refuses Secure cookies on `http://*.localhost`); production and
+  https apps origins use `__Host-drobek_eu` + `Secure`. The auth e2e derives
+  the name from `APPS_URL_SCHEME`.
+- A built-in module is a NEW workspace package: the dev compose needs its
+  anonymous `node_modules` volume (`/repo/modules/<name>/node_modules`) and
+  the container must be recreated (`docker compose up -d drobek`), not just
+  restarted, after a compose env/volume change.
+- Heredocs / the Write tool turn `\u2028` / `\u2029` escapes inside regex
+  literals into the literal characters (TS1161 "Unterminated regular
+  expression literal"); write them back as escapes.
+- After a host `task check`, the dev server can answer 500 with `EACCES`
+  reading a freshly rebuilt `packages/*/dist` file from Vite's SSR build;
+  another `docker compose restart drobek` clears it.
+- `configure_module` issue paths use brackets for array indexes
+  (`allow.emails[0]`).
 
 ## Failed approaches
 

@@ -52,6 +52,15 @@ export interface CompileOptions {
    * `SDK_URL` (unversioned).
    */
   sdkUrl?: string;
+  /**
+   * Platform sources an app may import as `drobek/<module>` (M1-02): the
+   * specifier → the source text of a module's `sdk.inline` (e.g. the auth
+   * module's `<LoginGate>`). They are compiled INTO the app bundle: their bare
+   * imports resolve through the app's `drobek.json` (so a component uses the
+   * app's own React), `drobek` resolves to `sdkUrl`, relative imports are
+   * refused. Read by the server from its own disk — never app input.
+   */
+  sdkSources?: Record<string, string>;
 }
 
 export type SourceFiles = Map<string, string | Buffer>;

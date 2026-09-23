@@ -1,18 +1,19 @@
 /**
  * Loading the active modules (M1-01): `DROBEK_MODULES` is a comma-separated
- * list the operator sets. Each entry resolves to a package, in this order:
+ * list the operator sets. Each entry resolves to a package:
  *
- *   1. a BUILT-IN module of this repo (`modules/<name>`, the BUILTIN_MODULES
- *      table below);
- *   2. a short name `x` → the npm package `drobek-module-x`;
- *   3. a full package name (`drobek-module-x`, `@scope/pkg`, anything with a
- *      `/`) → exactly that package.
+ *   - a short name `x` → the npm package `drobek-module-x`;
+ *   - a full package name (`drobek-module-x`, `@scope/pkg`, anything with a
+ *     `/`) → exactly that package.
  *
- * Third-party packages resolve from the SERVER's install (`<cwd>/package.json`
- * — `/app` in the image, `apps/server` in the dev stack; override with
+ * Packages resolve from the SERVER's install (`<cwd>/package.json` — `/app`
+ * in the image, `apps/server` in the dev stack; override with
  * `DROBEK_MODULES_ROOT`), so an operator adds one with a plain dependency of
- * the server. The package's default export (or its `module` export) must come
- * from `defineModule()`.
+ * the server. The BUILT-IN modules of this repo (`modules/<name>`, e.g.
+ * `modules/auth` = `drobek-module-auth`) are workspace packages the server
+ * depends on, so they resolve exactly like a third-party module. The
+ * package's default export (or its `module` export) must come from
+ * `defineModule()`.
  *
  * Anything off — unknown package, not a module, invalid name/schema/defaults,
  * two modules with one name, a missing sdk.entry — stops the server at start
@@ -25,9 +26,6 @@ import { pathToFileURL } from 'node:url';
 import { MODULE_NAME_RE, isDefinedModule, type AnyModule } from './contract.js';
 import { SECRET_NAME_RE } from './secrets.server.js';
 import { toPath } from './sdk-build.js';
-
-/** Built-in modules shipped in this repo (`modules/<name>`), by name. */
-export const BUILTIN_MODULES: Readonly<Record<string, () => Promise<unknown>>> = {};
 
 /** Names a module may not take (they are path segments of `/__drobek/…`). */
 export const RESERVED_MODULE_NAMES = new Set(['sdk', 'v1', 'drobek', 'internal']);
@@ -79,31 +77,27 @@ function exportedModule(ns: unknown): unknown {
 /** Import one DROBEK_MODULES entry → its module (throws ModuleLoadError). */
 export async function resolveModule(entry: string, opts: ResolveOptions = {}): Promise<AnyModule> {
   let ns: unknown;
-  if (BUILTIN_MODULES[entry]) {
-    ns = await BUILTIN_MODULES[entry]();
-  } else {
-    const pkg = packageNameFor(entry);
-    try {
-      if (opts.importer) {
-        ns = await opts.importer(pkg);
-      } else {
-        const root = resolve(opts.root ?? process.env.DROBEK_MODULES_ROOT ?? process.cwd());
-        const manifest = resolve(root, 'package.json');
-        let url: string | null = null;
-        if (existsSync(manifest)) {
-          try {
-            url = pathToFileURL(createRequire(manifest).resolve(pkg)).href;
-          } catch {
-            url = null;
-          }
+  const pkg = packageNameFor(entry);
+  try {
+    if (opts.importer) {
+      ns = await opts.importer(pkg);
+    } else {
+      const root = resolve(opts.root ?? process.env.DROBEK_MODULES_ROOT ?? process.cwd());
+      const manifest = resolve(root, 'package.json');
+      let url: string | null = null;
+      if (existsSync(manifest)) {
+        try {
+          url = pathToFileURL(createRequire(manifest).resolve(pkg)).href;
+        } catch {
+          url = null;
         }
-        ns = await import(/* @vite-ignore */ url ?? pkg);
       }
-    } catch (err) {
-      throw new ModuleLoadError(
-        `DROBEK_MODULES names "${entry}", but the package "${pkg}" cannot be loaded (${String((err as Error)?.message ?? err).split('\n')[0]}). Install it as a dependency of the server or remove it from DROBEK_MODULES.`
-      );
+      ns = await import(/* @vite-ignore */ url ?? pkg);
     }
+  } catch (err) {
+    throw new ModuleLoadError(
+      `DROBEK_MODULES names "${entry}", but the package "${pkg}" cannot be loaded (${String((err as Error)?.message ?? err).split('\n')[0]}). Install it as a dependency of the server or remove it from DROBEK_MODULES.`
+    );
   }
   const mod = exportedModule(ns);
   if (!mod) {
@@ -142,9 +136,31 @@ export function validateModule(m: AnyModule): void {
     if (typeof m.sdk.types !== 'string' || !/\binterface\s+Api\b/.test(m.sdk.types)) {
       fail('sdk.types must declare `interface Api`');
     }
+    if (m.sdk.inline !== undefined) {
+      const { entry, types } = m.sdk.inline;
+      if (typeof entry !== 'string' || !/\.(tsx?|jsx?|mjs)$/.test(toPath(entry)) || !existsSync(toPath(entry))) {
+        fail(`sdk.inline.entry must be an existing .ts/.tsx/.js/.jsx file: ${String(entry)}`);
+      }
+      if (typeof types !== 'string' || !types.trim()) fail('sdk.inline.types is required');
+    }
   }
   if (m.migrations && !existsSync(toPath(m.migrations.folder))) fail(`migrations.folder does not exist: ${m.migrations.folder}`);
   if (m.routes !== undefined && typeof m.routes !== 'function') fail('routes must be a function');
+  if (m.endUsers !== undefined && typeof m.endUsers?.current !== 'function') fail('endUsers.current must be a function');
+}
+
+/**
+ * The one active module that owns end-user sessions (`endUsers`), or null.
+ * Two owners would disagree about who is signed in: refused at start.
+ */
+export function endUserAuthorityOf(modules: AnyModule[]): AnyModule | null {
+  const owners = modules.filter((m) => m.endUsers !== undefined);
+  if (owners.length > 1) {
+    throw new ModuleLoadError(
+      `only one module may own end-user sessions (endUsers); active: ${owners.map((m) => m.name).join(', ')}`
+    );
+  }
+  return owners[0] ?? null;
 }
 
 /** Resolve + validate every DROBEK_MODULES entry; no duplicates. */
@@ -158,6 +174,7 @@ export async function loadModules(env: NodeJS.ProcessEnv = process.env, opts: Re
     }
     modules.push(m);
   }
+  endUserAuthorityOf(modules);
   const limitNames = new Map<string, string>();
   for (const m of modules) {
     for (const l of m.limits ?? []) {

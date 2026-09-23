@@ -40,7 +40,7 @@ describe('pipeline', () => {
     t.setPrincipal(user);
     const ok = await t.request('GET', '/');
     expect(ok.status).toBe(200);
-    expect(ok.body).toEqual({ greeting: 'hi', principal: 'user', hasToken: true });
+    expect(ok.body).toEqual({ greeting: 'hi', principal: 'user:user', hasToken: true });
     expect(ok.headers['Cache-Control']).toBe('no-store');
     const open = createModuleTestContext(echo, { config: { access: 'public' } });
     expect((await open.request('GET', '/')).status).toBe(200);

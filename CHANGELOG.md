@@ -2,6 +2,60 @@
 
 ## Unreleased (`next`)
 
+### The built-in `auth` module: end-user sign-in (NSO-294)
+
+- **`modules/auth`** (`drobek-module-auth`, a workspace package and a
+  dependency of the server, loaded like any module with
+  `DROBEK_MODULES=auth`): the people who use an app sign in with a 6-digit
+  code e-mailed to them. Routes `/__drobek/v1/auth/send-code`, `verify`, `me`,
+  `logout`; config `{ allow: { emails, domains, anyone }, adminEmails }`
+  (`anyone: true` waits for the owner); table `mod_auth_users` (migration
+  `0000_auth_users`, its own journal); the workspace's editors always sign in
+  as `admin`; `disabled_at` users cannot sign in and are signed out on `me`;
+  every `me` re-checks the allowlist and the role. Limits
+  `AUTH_CODES_PER_IP_15MIN`, `AUTH_CODES_PER_IP_DAY`,
+  `AUTH_CODES_PER_EMAIL_HOUR`, `AUTH_CODES_PER_APP_HOUR`,
+  `AUTH_ATTEMPTS_PER_IP_15MIN`, `END_USERS_MAX_PER_APP`. Audit
+  `auth.sign_in`. Errors `email_not_allowed` (403, no e-mail sent),
+  `invalid_code` (400), `too_many_attempts` (429) are in the error catalogue.
+  Its skill (`skill_info('auth')`) carries a `<LoginGate>` example.
+- **`drobek.auth`** in `/__drobek/sdk.js` (`me`, `sendCode`, `verify`,
+  `logout`, `onChange`) and **`import { LoginGate, useAuth } from
+  'drobek/auth'`**: React components compiled into the app with the app's own
+  React.
+- **Inline SDK sources** (`sdk.inline { entry, types }` in the module
+  contract): `@drobek/compile` builds `drobek/<module>` into the app bundle,
+  resolving its bare imports through the app's `drobek.json`; relative imports
+  are refused; an unknown `drobek/<x>` lists the available ones.
+- **End-user sessions in core** (`@drobek/modules`): host-only cookie
+  `__Host-drobek_eu` (`drobek_eu`, without `Secure`, only in plain-http dev),
+  `HttpOnly`, `SameSite=Lax`; Redis `drobek:eu:<app_id>:<token>`, 30 days
+  rolling; a per-app epoch (`drobek:eu-epoch:<app_id>`) revokes every session
+  of an app at once (PHY-76 #9). The principal resolver fails closed.
+- **The principal is authoritative**: the Redis record alone never makes a
+  principal. On every module request that carries a session, core asks the
+  module that owns end-user sessions (new contract field `endUsers.current`,
+  declared by `auth`; at most one per server, none → no session is honoured)
+  who the user is now. Disabled, deleted, no longer allowed (allowlist,
+  `adminEmails`, workspace editor removed) → anonymous in every module and
+  the session deleted; a role change applies on the next request. No cache.
+- **`drobek-module-hello`**: `GET /whoami` / `drobek.hello.whoami()` returns
+  the visitor as `ctx.principal`.
+- **Dashboard API `POST /api/apps/:id/end-user-sessions/revoke`**: the owner
+  signs every user of an app out (the confirm API's guards: session, required
+  dashboard `Origin`, editor, non-member → 404). Audit
+  `end_users.sessions_revoke` (actor user). The two owner APIs share one guard
+  implementation (`packages/dashboard/src/app-api.server.ts`).
+- **`@drobek/auth`**: the e-mail code and the OTP guard take an optional scope
+  (`otpKeyPrefix`), so an app's end-user codes, counters, cooldowns and pauses
+  are separate from the dashboard login's; the operator kill switch still
+  applies.
+- **Module e-mail**: the recipient kind `{ signInAddress }` (one address, for
+  a sign-in code); subjects are forced to one line of at most 200 characters.
+- The built-in module list moved from the registry (`BUILTIN_MODULES` is
+  gone) to `modules/*` packages. The dev and e2e composes run
+  `DROBEK_MODULES=hello,auth` with relaxed `AUTH_*` limits.
+
 ### Platform modules: the contract, `skill_info`, `configure_module` (NSO-287)
 
 - **`@drobek/modules`** (new): the module contract (`defineModule`, contract

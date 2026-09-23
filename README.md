@@ -33,7 +33,11 @@ app owner in the dashboard.
   email, files and a secret-injecting proxy. A module is platform code the
   operator enables with `DROBEK_MODULES` (routes under `/__drobek/v1/<name>`,
   `drobek.<name>` in the browser SDK, a per-app config, a skill for the agent);
-  the contract is [`docs/MODULES.md`](./docs/MODULES.md).
+  the contract is [`docs/MODULES.md`](./docs/MODULES.md). Built in
+  (`modules/`, enable with `DROBEK_MODULES=auth`):
+  - **`auth`** — the people who use an app sign in with an e-mailed 6-digit
+    code: an allowlist of addresses and domains, admins, a React
+    `<LoginGate>`, host-only 30-day sessions the owner can revoke at once.
 
 The full plan is [`docs/vision-plan.md`](./docs/vision-plan.md).
 

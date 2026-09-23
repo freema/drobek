@@ -1,6 +1,7 @@
 /**
  * Unit-test helper: minimal in-memory Redis covering exactly the subset the
- * auth stack uses (GET/SET EX|PX|NX/GETEX/DEL/TTL/PEXPIRE/INCR/EXISTS).
+ * auth stack uses (GET/MGET/SET EX|PX|NX/GETEX/DEL/TTL/EXPIRE/PEXPIRE/INCR/
+ * EXISTS) — also the end-user sessions of the platform `auth` module (M1-02).
  * Set `failing = true` to make every op throw (fail-closed tests).
  * Not a *.test.ts file — vitest never collects it as a suite.
  */
@@ -31,6 +32,11 @@ export class FakeRedis {
   async get(key: string): Promise<string | null> {
     this.throwIfFailing();
     return this.live(key)?.value ?? null;
+  }
+
+  async mget(...keys: string[]): Promise<(string | null)[]> {
+    this.throwIfFailing();
+    return keys.map((k) => this.live(k)?.value ?? null);
   }
 
   async set(
@@ -83,6 +89,10 @@ export class FakeRedis {
     if (!e) return -2;
     if (e.expiresAt === null) return -1;
     return Math.ceil((e.expiresAt - Date.now()) / 1000);
+  }
+
+  async expire(key: string, sec: number): Promise<number> {
+    return this.pexpire(key, sec * 1000);
   }
 
   async pexpire(key: string, ms: number): Promise<number> {

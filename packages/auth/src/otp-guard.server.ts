@@ -15,9 +15,18 @@
  *
  * On Redis errors the decision is FAIL-CLOSED (better a temporarily
  * unavailable login than thousands of un-throttled e-mails).
+ *
+ * SCOPES (M1-02): `scope` undefined = the dashboard login (the original keys);
+ * `eu:<app_id>` = the end users of one app (platform module `auth`). A scoped
+ * request has its OWN per-IP, per-e-mail and hourly counters, cooldown and
+ * auto-pause (one app's abuse never pauses the dashboard login or another
+ * app), and still obeys the operator-wide switches that protect the mailbox:
+ * `OTP_LOGIN_DISABLED`, the manual kill switch and the dashboard's global
+ * auto-pause.
  */
 import { createHash } from 'node:crypto';
 import { getRedis } from '@drobek/core';
+import { otpKeyPrefix, type OtpScope } from './email-code.server.js';
 import { logger, serializeError } from './logger.server.js';
 import { maskEmail } from './mask-email.js';
 import { rateLimitRedis } from './rate-limit.server.js';
@@ -80,17 +89,27 @@ function hashEmail(email: string): string {
   return createHash('sha256').update(email.trim().toLowerCase()).digest('hex');
 }
 
-function cooldownKey(emailHash: string): string {
-  return `drobek:otp:cd:${emailHash}`;
+function cooldownKey(emailHash: string, scope?: OtpScope): string {
+  return `${otpKeyPrefix(scope)}cd:${emailHash}`;
+}
+
+function autopauseKey(scope?: OtpScope): string {
+  return scope === undefined ? AUTOPAUSE_KEY : `${otpKeyPrefix(scope)}autopause`;
+}
+
+/** Rate-limit bucket of a scope: `otp-ip-15m` / `eu:<app_id>:otp-ip-15m`. */
+function bucket(name: string, scope?: OtpScope): string {
+  return scope === undefined ? name : `${otpKeyPrefix(scope).slice('drobek:otp:'.length)}${name}`;
 }
 
 function logBlock(
   reason: string,
-  ctx: { ip?: string; email: string; alert?: boolean }
+  ctx: { ip?: string; email: string; alert?: boolean; scope?: OtpScope }
 ): void {
   const meta = {
     event: 'otp_send_blocked',
     reason,
+    ...(ctx.scope ? { scope: ctx.scope } : {}),
     ip: ctx.ip ?? 'unknown',
     email: maskEmail(ctx.email),
     emailHash: hashEmail(ctx.email).slice(0, 12),
@@ -101,29 +120,35 @@ function logBlock(
 }
 
 /** Log a successful code send (the login route calls this after the e-mail). */
-export function logOtpSent(ctx: { ip?: string; email: string }): void {
+export function logOtpSent(ctx: { ip?: string; email: string; scope?: OtpScope }): void {
   logger.info('[otp-guard] sent', {
     event: 'otp_send_ok',
+    ...(ctx.scope ? { scope: ctx.scope } : {}),
     ip: ctx.ip ?? 'unknown',
     email: maskEmail(ctx.email),
     emailHash: hashEmail(ctx.email).slice(0, 12),
   });
 }
 
-/** Is OTP sending paused? (env kill switch | manual Redis flag | auto-pause) */
-export async function isOtpSendingPaused(): Promise<
+/**
+ * Is OTP sending paused? (env kill switch | manual Redis flag | auto-pause).
+ * A scoped check also honours the scope's own auto-pause (`scope_autopause`).
+ */
+export async function isOtpSendingPaused(scope?: OtpScope): Promise<
   { paused: true; reason: string } | { paused: false }
 > {
   if (String(process.env.OTP_LOGIN_DISABLED ?? '') === '1') {
     return { paused: true, reason: 'env_kill_switch' };
   }
   const r = getRedis();
-  const [manual, auto] = await Promise.all([
+  const [manual, auto, scoped] = await Promise.all([
     r.exists(KILLSWITCH_KEY),
     r.exists(AUTOPAUSE_KEY),
+    scope === undefined ? Promise.resolve(0) : r.exists(autopauseKey(scope)),
   ]);
   if (manual) return { paused: true, reason: 'manual_kill_switch' };
   if (auto) return { paused: true, reason: 'global_autopause' };
+  if (scoped) return { paused: true, reason: 'scope_autopause' };
   return { paused: false };
 }
 
@@ -131,9 +156,9 @@ export async function isOtpSendingPaused(): Promise<
  * Release the per-e-mail cooldown (call when the e-mail send FAILED — so the
  * user can retry immediately instead of being held by the cooldown).
  */
-export async function releaseOtpCooldown(email: string): Promise<void> {
+export async function releaseOtpCooldown(email: string, scope?: OtpScope): Promise<void> {
   try {
-    await getRedis().del(cooldownKey(hashEmail(email)));
+    await getRedis().del(cooldownKey(hashEmail(email), scope));
   } catch {
     /* best-effort */
   }
@@ -144,20 +169,23 @@ export async function guardOtpRequest(args: {
   ip: string | undefined;
   email: string;
   limits?: OtpGuardLimits;
+  /** undefined = the dashboard login; `eu:<app_id>` = one app's end users. */
+  scope?: OtpScope;
 }): Promise<OtpGuardDecision> {
-  const { ip, email } = args;
+  const { ip, email, scope } = args;
   const limits = args.limits ?? otpGuardLimitsFromEnv();
   const ipKey = ip ?? 'unknown';
   const emailHash = hashEmail(email);
 
   try {
     // 0. Kill switch / auto-pause
-    const paused = await isOtpSendingPaused();
+    const paused = await isOtpSendingPaused(scope);
     if (paused.paused) {
       logBlock(paused.reason, {
         ip,
         email,
-        alert: paused.reason === 'global_autopause',
+        scope,
+        alert: paused.reason === 'global_autopause' || paused.reason === 'scope_autopause',
       });
       return {
         ok: false,
@@ -170,13 +198,13 @@ export async function guardOtpRequest(args: {
 
     // 1. per-IP short window
     const ipShort = await rateLimitRedis(
-      'otp-ip-15m',
+      bucket('otp-ip-15m', scope),
       ipKey,
       limits.ipShortLimit,
       IP_SHORT_WINDOW_MS
     );
     if (!ipShort.ok) {
-      logBlock('ip_short', { ip, email, alert: true });
+      logBlock('ip_short', { ip, email, scope, alert: true });
       return {
         ok: false,
         kind: 'error',
@@ -188,13 +216,13 @@ export async function guardOtpRequest(args: {
 
     // 2. per-IP daily window
     const ipDaily = await rateLimitRedis(
-      'otp-ip-24h',
+      bucket('otp-ip-24h', scope),
       ipKey,
       limits.ipDailyLimit,
       IP_DAILY_WINDOW_MS
     );
     if (!ipDaily.ok) {
-      logBlock('ip_daily', { ip, email, alert: true });
+      logBlock('ip_daily', { ip, email, scope, alert: true });
       return {
         ok: false,
         kind: 'error',
@@ -214,7 +242,7 @@ export async function guardOtpRequest(args: {
     //    a double-click never burns the hourly budget.
     const r = getRedis();
     const acquired = await r.set(
-      cooldownKey(emailHash),
+      cooldownKey(emailHash, scope),
       '1',
       'PX',
       limits.emailCooldownMs,
@@ -222,25 +250,25 @@ export async function guardOtpRequest(args: {
     );
     if (acquired === null) {
       // A code was just sent → send nothing new, redirect to verify (generic).
-      logBlock('cooldown', { ip, email });
+      logBlock('cooldown', { ip, email, scope });
       return { ok: false, kind: 'redirect_verify', reason: 'cooldown' };
     }
 
     // 4. per-e-mail hourly limit
     const emailHourly = await rateLimitRedis(
-      'otp-email-1h',
+      bucket('otp-email-1h', scope),
       emailHash,
       limits.emailHourlyLimit,
       EMAIL_HOURLY_WINDOW_MS
     );
     if (!emailHourly.ok) {
-      logBlock('email_hourly', { ip, email });
+      logBlock('email_hourly', { ip, email, scope });
       return { ok: false, kind: 'redirect_verify', reason: 'email_hourly' };
     }
 
     // 5. Global brake (N / h across the whole app)
     const globalRl = await rateLimitRedis(
-      'otp-global-1h',
+      bucket('otp-global-1h', scope),
       'all',
       limits.globalHourlyMax,
       GLOBAL_WINDOW_MS
@@ -248,17 +276,18 @@ export async function guardOtpRequest(args: {
     if (!globalRl.ok) {
       // Auto-pause: temporarily stop ALL sends — protect the mailbox before
       // the provider does it for us.
-      await r.set(AUTOPAUSE_KEY, '1', 'PX', GLOBAL_AUTOPAUSE_MS);
+      await r.set(autopauseKey(scope), '1', 'PX', GLOBAL_AUTOPAUSE_MS);
       logger.warn(
         '[otp-guard] ALERT: global hourly OTP cap exceeded — auto-pausing sends',
         {
           event: 'otp_global_brake',
+          ...(scope ? { scope } : {}),
           max: limits.globalHourlyMax,
           autopauseMs: GLOBAL_AUTOPAUSE_MS,
           alert: true,
         }
       );
-      logBlock('global_brake', { ip, email, alert: true });
+      logBlock('global_brake', { ip, email, scope, alert: true });
       return {
         ok: false,
         kind: 'error',
@@ -273,6 +302,7 @@ export async function guardOtpRequest(args: {
     // FAIL-CLOSED: if we cannot enforce the limits (typically a Redis outage)
     // we do NOT send e-mails — protect the mailbox.
     logger.error('[otp-guard] guard error — fail-closed', {
+      ...(scope ? { scope } : {}),
       err: serializeError(err),
       email: maskEmail(email),
     });

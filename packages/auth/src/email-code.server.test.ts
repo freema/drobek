@@ -268,3 +268,33 @@ describe('trustProxyMode / trustProxyConfigError', () => {
     expect(trustProxyConfigError({ TRUST_PROXY: 'true' })).toMatch(/TRUST_PROXY must be one of/);
   });
 });
+
+describe('scoped codes (M1-02: one app\'s end users)', () => {
+  const SCOPE = 'eu:app_1';
+
+  it('stores the code under drobek:otp:<scope>:code:… — never the dashboard key', async () => {
+    const code = await createEmailLoginCode(EMAIL, undefined, SCOPE);
+    expect(await fake.get(`drobek:otp:${SCOPE}:code:${emailHashHex(EMAIL)}`)).not.toBeNull();
+    expect(await fake.get(codeKey(EMAIL))).toBeNull();
+    // A scoped code cannot be consumed by the dashboard login or another app.
+    expect(await consumeEmailLoginCode(EMAIL, code)).toEqual({ ok: false, reason: 'no_code' });
+    expect(await consumeEmailLoginCode(EMAIL, code, 'eu:app_2')).toEqual({ ok: false, reason: 'no_code' });
+    expect(await consumeEmailLoginCode(EMAIL, code, SCOPE)).toEqual({ ok: true });
+  });
+
+  it('keeps a separate atomic counter per scope (a burned app code leaves the dashboard code alive)', async () => {
+    const dash = await createEmailLoginCode(EMAIL, undefined);
+    const app = await createEmailLoginCode(EMAIL, undefined, SCOPE);
+    const results = await Promise.all(
+      Array.from({ length: 30 }, () => consumeEmailLoginCode(EMAIL, wrongCodeFor(app), SCOPE))
+    );
+    expect(results.filter((r) => !r.ok && r.reason === 'wrong_code').length).toBeLessThanOrEqual(CODE_MAX_ATTEMPTS - 1);
+    expect(await consumeEmailLoginCode(EMAIL, app, SCOPE)).toEqual({ ok: false, reason: 'too_many_attempts' });
+    expect(await consumeEmailLoginCode(EMAIL, dash)).toEqual({ ok: true });
+  });
+
+  it('refuses a scope that is not a plain key fragment', async () => {
+    await expect(createEmailLoginCode(EMAIL, undefined, 'eu:*')).rejects.toThrow(/invalid OTP scope/);
+    await expect(createEmailLoginCode(EMAIL, undefined, '')).rejects.toThrow(/invalid OTP scope/);
+  });
+});

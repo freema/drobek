@@ -23,13 +23,14 @@ import { scanForSecrets } from '@drobek/compile';
 import { createConsoleLogger, getRedis, type Logger } from '@drobek/core';
 import { getDb, runJournalMigrations, type DB } from '@drobek/db';
 import { z } from 'zod';
-import type { AnyModule, HookApp, Limits, ModuleContext, Principal, RateLimitResult } from './contract.js';
+import type { AnyModule, EndUser, HookApp, Limits, ModuleContext, Principal, RateLimitResult } from './contract.js';
 import { readConfigRow, readConfigRows, withLockedConfig, type PendingChange } from './configs.server.js';
+import { resolveRecipients, sanitizeSubject } from './email.js';
 import { ModuleError, isModuleError, issuePaths, skillHint } from './errors.js';
 import { createLimitsProvider, type LimitsProvider } from './limits.js';
 import { jsonEqual, mergePatch } from './merge-patch.js';
 import { cookiePrincipalResolver, endUserCookiesSecure, type PrincipalResolver } from './principal.js';
-import { ModuleLoadError, loadModules, type ResolveOptions } from './registry.js';
+import { ModuleLoadError, endUserAuthorityOf, loadModules, type ResolveOptions } from './registry.js';
 import { collectRoutes, errorResult, matchRoute, runRoute, type PipelineRequest, type PipelineResult, type Route } from './router.js';
 import { decideAccess } from './rules.js';
 import { SDK_PATH, SDK_TYPES_PATH, buildSdk, moduleTypes, toPath, type SdkBundle } from './sdk-build.js';
@@ -128,7 +129,7 @@ export interface SkillInfo {
   kind: 'module' | 'general';
   use_when: string;
   content: string;
-  sdk?: { import: string; types: string };
+  sdk?: { import: string; types: string; inline?: { import: string; types: string } };
   config?: { schema: unknown; defaults: unknown; confirm_required: string };
   limits?: { name: string; value: number; meaning: string }[];
   secrets?: { name: string; description: string; required: boolean }[];
@@ -178,17 +179,6 @@ export function confirmUrl(env: NodeJS.ProcessEnv, workspaceSlug: string, appSlu
   return `${dashboardOrigin(env)}/workspaces/${encodeURIComponent(workspaceSlug)}/apps/${encodeURIComponent(appSlug)}/modules/${encodeURIComponent(module)}`;
 }
 
-function valueAtPath(obj: unknown, path: string): unknown {
-  let cur: unknown = obj;
-  for (const seg of path.split('.')) {
-    if (!cur || typeof cur !== 'object') return undefined;
-    cur = (cur as Record<string, unknown>)[seg];
-  }
-  return cur;
-}
-
-const EMAIL_RE = /^[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]+$/;
-
 // ── the runtime ──────────────────────────────────────────────────────────────
 
 export class ModuleRuntime {
@@ -218,6 +208,23 @@ export class ModuleRuntime {
     return this.byName.get(name);
   }
 
+  // ── end users ──
+
+  /**
+   * Who the user of a live session of `app` is NOW, according to the module
+   * that owns end-user sessions (its `endUsers.current` with this app's
+   * effective config) — null when no active module owns sessions, or the user
+   * may not be signed in any more.
+   */
+  async currentEndUser(app: HookApp, user: EndUser): Promise<EndUser | null> {
+    const m = endUserAuthorityOf(this.modules);
+    if (!m?.endUsers) return null;
+    const db = this.deps.db();
+    const row = await readConfigRow(app.id, m.name, db);
+    const config = this.effectiveConfig(m, row.config);
+    return m.endUsers.current({ app, user, config, db, log: this.deps.log });
+  }
+
   // ── skills ──
 
   skillList(): SkillListItem[] {
@@ -237,6 +244,9 @@ export class ModuleRuntime {
         import: "import { drobek } from 'drobek';",
         types: `${types}\n// drobek.${m.name}: ${m.name}.Api`,
       };
+      if (m.sdk?.inline) {
+        out.sdk.inline = { import: `import { … } from 'drobek/${m.name}';`, types: m.sdk.inline.types.trim() };
+      }
     }
     let schema: unknown = null;
     try {
@@ -514,7 +524,11 @@ export class ModuleRuntime {
       const res = await runRoute({ ...req, path: match[2] ?? '/' }, hit.route, hit.params, {
         module: m.name,
         selfOrigin,
-        principal: () => this.deps.principal({ appId: app.id, cookieHeader: req.header('cookie') }),
+        principal: () =>
+          this.deps.principal({
+            app: { id: app.id, slug: app.slug, workspaceId: app.workspaceId },
+            cookieHeader: req.header('cookie'),
+          }),
         context: (principal) => this.context(m, app, principal, getLimits),
         limit: async (name) => {
           const l = await getLimits();
@@ -594,16 +608,9 @@ export class ModuleRuntime {
       },
       email: {
         send: async (message) => {
-          let to: string[];
-          if ('principal' in message.to) {
-            if (principal.kind !== 'user') throw new ModuleError('unauthorized', 'Sign in to this app first.');
-            to = [principal.email];
-          } else {
-            const v = valueAtPath(config, message.to.config);
-            to = (Array.isArray(v) ? v : [v]).filter((x): x is string => typeof x === 'string' && EMAIL_RE.test(x));
-          }
+          const to = resolveRecipients(message.to, principal, config);
           if (to.length === 0) return { sent: 0 };
-          await deps.email.send({ to, subject: String(message.subject).slice(0, 200), text: String(message.text) });
+          await deps.email.send({ to, subject: sanitizeSubject(message.subject), text: String(message.text) });
           return { sent: to.length };
         },
       },
@@ -634,6 +641,7 @@ export async function loadModuleRuntime(opts: LoadRuntimeOptions = {}): Promise<
   const env = opts.env ?? process.env;
   const log = opts.log ?? opts.deps?.log ?? createConsoleLogger('modules');
   const modules = opts.modules ?? (await loadModules(env, opts));
+  const authority = endUserAuthorityOf(modules);
 
   if (env.DROBEK_MIGRATE_ON_START !== '0') {
     const migrate =
@@ -649,17 +657,24 @@ export async function loadModuleRuntime(opts: LoadRuntimeOptions = {}): Promise<
   const sdk = await buildSdk(modules);
   const skillsDir = opts.skillsDir === undefined ? generalSkillsDir(env) : opts.skillsDir;
   const skills = mergeSkills(moduleSkills(modules), loadGeneralSkills(skillsDir, log), log);
+  // Bound below: the resolver asks the runtime (the session owner's
+  // `endUsers.current` with the app's config) about every live session.
+  let runtime: ModuleRuntime | null = null;
   const deps: RuntimeDeps = {
     env,
     log,
     db: getDb,
     limits: createLimitsProvider({ catalogue: modules.flatMap((m) => m.limits ?? []), env, redis: getRedis, log }),
-    principal: cookiePrincipalResolver({ redis: getRedis, secure: endUserCookiesSecure(env) }),
+    principal: cookiePrincipalResolver({
+      redis: getRedis,
+      secure: endUserCookiesSecure(env),
+      current: authority ? (app, user) => (runtime ? runtime.currentEndUser(app, user) : Promise.resolve(null)) : null,
+    }),
     rateLimit: redisRateLimiter(getRedis),
     email: smtpEmailTransport(log),
     ...opts.deps,
   };
-  const runtime = new ModuleRuntime({ modules, skills, sdk, deps });
+  runtime = new ModuleRuntime({ modules, skills, sdk, deps });
   log.info('platform modules ready', {
     modules: modules.map((m) => `${m.name}@${m.version}`),
     skills: skills.map((s) => s.name),

@@ -35,7 +35,7 @@ export const echo = defineModule<EchoConfig>({
   routes(r) {
     r.get('/', { rule: (c) => c.access }, async (_req, ctx) => ({
       greeting: ctx.config.greeting,
-      principal: ctx.principal.kind,
+      principal: ctx.principal.kind === 'user' ? `user:${ctx.principal.role}` : 'anon',
       hasToken: (await ctx.secrets.get('ECHO_TOKEN')) !== null,
     }));
     r.post(
@@ -62,6 +62,10 @@ export const echo = defineModule<EchoConfig>({
   sdk: {
     entry: fileURLToPath(new URL('./fixture-sdk.ts', import.meta.url)),
     types: 'export interface Api { hi(): Promise<{ greeting: string }>; }',
+    inline: {
+      entry: fileURLToPath(new URL('./fixture-inline.tsx', import.meta.url)),
+      types: 'export const Echo: () => null;',
+    },
   },
 });
 

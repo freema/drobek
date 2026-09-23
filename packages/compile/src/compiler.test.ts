@@ -92,6 +92,69 @@ describe('compile — happy path', () => {
     expect(text(r.outputs.get('main.js'))).toContain('from "/__drobek/sdk.js?v=0123456789abcdef"');
   });
 
+  describe('drobek/<module> platform sources (M1-02)', () => {
+    const GATE = [
+      "import { useState } from 'react';",
+      "import { drobek } from 'drobek';",
+      'export function Gate(props: { label: string }) {',
+      '  const [n] = useState(0);',
+      '  return <b data-n={n}>{props.label}{String(Boolean(drobek))}</b>;',
+      '}',
+    ].join('\n');
+    const sdk = { sdkUrl: '/__drobek/sdk.js?v=0123456789abcdef', sdkSources: { 'drobek/auth': GATE } };
+    const imports = JSON.stringify({
+      imports: { react: 'https://esm.sh/react@19.1.0', 'react/jsx-runtime': 'https://esm.sh/react@19.1.0/jsx-runtime' },
+    });
+
+    it('compiles the source into the app with the APP\'s import map (one React) and `drobek` → the SDK', async () => {
+      const r = await compile(
+        new Map([
+          ['drobek.json', imports],
+          ['src/main.tsx', "import { Gate } from 'drobek/auth';\nimport { useState } from 'react';\nconsole.log(Gate, useState);"],
+        ]),
+        sdk
+      );
+      expect(r.ok, JSON.stringify(r.errors)).toBe(true);
+      const js = text(r.outputs.get('main.js'));
+      expect(js).toContain('function Gate(');
+      expect(js).toContain('from "https://esm.sh/react@19.1.0"');
+      expect(js).toContain('from "https://esm.sh/react@19.1.0/jsx-runtime"');
+      expect(js).toContain('from "/__drobek/sdk.js?v=0123456789abcdef"');
+      // The app and the platform source import the very same React URL (one module in the browser).
+      const reactUrls = new Set([...js.matchAll(/from "(https:\/\/esm\.sh\/react[^"]*)"/g)].map((m) => m[1]));
+      expect(reactUrls).toEqual(new Set(['https://esm.sh/react@19.1.0', 'https://esm.sh/react@19.1.0/jsx-runtime']));
+      // The platform source is not an app input.
+      expect(r.inputs).toEqual(['src/main.tsx']);
+    });
+
+    it('an unknown drobek/<x> is an unresolved import naming the available ones', async () => {
+      const r = await compile(new Map([['src/main.ts', "import { x } from 'drobek/data';\nconsole.log(x);"]]), sdk);
+      expect(r.ok).toBe(false);
+      expect(r.errors[0]).toMatchObject({ code: 'unresolved_import', specifier: 'drobek/data' });
+      expect(r.errors[0].text).toContain('drobek/auth');
+    });
+
+    it('without react in the import map the error says what to add', async () => {
+      const r = await compile(new Map([['src/main.ts', "import { Gate } from 'drobek/auth';\nconsole.log(Gate);"]]), sdk);
+      expect(r.ok).toBe(false);
+      expect(r.errors[0]).toMatchObject({ code: 'unresolved_import', specifier: 'react' });
+      expect(r.errors[0].text).toContain('drobek.json imports');
+    });
+
+    it('a platform source cannot reach the app files', async () => {
+      const r = await compile(
+        new Map([
+          ['drobek.json', imports],
+          ['src/secret.ts', 'export const s = 1;'],
+          ['src/main.ts', "import { Gate } from 'drobek/evil';\nconsole.log(Gate);"],
+        ]),
+        { sdkSources: { 'drobek/evil': "import { s } from '../src/secret';\nexport const Gate = s;" } }
+      );
+      expect(r.ok).toBe(false);
+      expect(r.errors[0]).toMatchObject({ code: 'unresolved_import', specifier: '../src/secret' });
+    });
+  });
+
   it('emits image imports as hashed assets', async () => {
     const png = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
     const r = await compile(

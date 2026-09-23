@@ -11,7 +11,7 @@
  * code.
  */
 import { createHash } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -30,6 +30,17 @@ export interface SdkBundle {
   url: string;
   /** The active modules it contains, in order. */
   modules: string[];
+  /**
+   * `drobek/<module>` → the source of that module's `sdk.inline` (read at
+   * start). The compiler builds these INTO an app that imports them, with the
+   * app's own import map (M1-02) — they are not part of `js`.
+   */
+  inline: Record<string, string>;
+}
+
+/** The import specifier of a module's inline SDK source. */
+export function inlineSpecifier(module: string): string {
+  return `drobek/${module}`;
 }
 
 /** file: URL or path → absolute path. */
@@ -78,6 +89,19 @@ export function moduleTypes(module: AnyModule): string | null {
   return [`export declare namespace ${module.name} {`, indent(module.sdk.types), '}'].join('\n');
 }
 
+/** The `drobek/<name>` declarations, as comment blocks after the main module (they are separate imports). */
+function inlineDeclarations(modules: AnyModule[]): string[] {
+  return modules
+    .filter((m) => m.sdk?.inline)
+    .map((m) =>
+      [
+        `// ── import { … } from '${inlineSpecifier(m.name)}' — compiled into the app with its own import map ──`,
+        ...m.sdk!.inline!.types.trim().split('\n').map((l) => `// ${l}`.trimEnd()),
+        '',
+      ].join('\n')
+    );
+}
+
 export function sdkDeclarations(modules: AnyModule[]): string {
   const withSdk = modules.filter((m) => m.sdk);
   return [
@@ -92,14 +116,21 @@ export function sdkDeclarations(modules: AnyModule[]): string {
     'export declare const drobek: Drobek;',
     'export default drobek;',
     '',
+    ...inlineDeclarations(withSdk),
   ].join('\n');
 }
 
 /** Bundle the SDK for `modules` (esbuild, in memory). Throws on a broken module entry. */
 export async function buildSdk(modules: AnyModule[], coreEntry: string = sdkCoreEntry()): Promise<SdkBundle> {
+  const inline: Record<string, string> = {};
   for (const m of modules) {
     if (m.sdk && !existsSync(toPath(m.sdk.entry))) {
       throw new Error(`module "${m.name}": sdk.entry does not exist: ${toPath(m.sdk.entry)}`);
+    }
+    if (m.sdk?.inline) {
+      const file = toPath(m.sdk.inline.entry);
+      if (!existsSync(file)) throw new Error(`module "${m.name}": sdk.inline.entry does not exist: ${file}`);
+      inline[inlineSpecifier(m.name)] = readFileSync(file, 'utf8');
     }
   }
   const result = await esbuild.build({
@@ -123,5 +154,6 @@ export async function buildSdk(modules: AnyModule[], coreEntry: string = sdkCore
     hash,
     url: `${SDK_PATH}?v=${hash}`,
     modules: modules.filter((m) => m.sdk).map((m) => m.name),
+    inline,
   };
 }

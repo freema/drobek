@@ -13,9 +13,13 @@ export interface Hello {
   signature?: string;
 }
 
+/** The visitor as every platform module sees them (signed in through the auth module, or not). */
+export type Visitor = { signed_in: false } | { signed_in: true; id: string; email: string; role: 'user' | 'admin' };
+
 export default function hello(core: SdkCore) {
   return {
     ping: () => core.request<Hello>('GET', '/'),
+    whoami: () => core.request<Visitor>('GET', '/whoami'),
     wave: (name: string) => core.request<{ waves: number }>('POST', '/wave', { body: { name } }),
   };
 }

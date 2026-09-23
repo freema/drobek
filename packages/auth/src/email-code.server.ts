@@ -38,13 +38,31 @@ function emailHash(email: string): string {
   return createHash('sha256').update(email.trim().toLowerCase()).digest('hex');
 }
 
-function codeRedisKey(email: string): string {
-  return `drobek:otp:code:${emailHash(email)}`;
+/**
+ * Where a code lives. `undefined` = the dashboard login (`drobek:otp:…`, the
+ * original keys); a scope such as `eu:<app_id>` = the end users of ONE app
+ * (the platform `auth` module, M1-02): `drobek:otp:eu:<app_id>:…`. A code of
+ * one scope can never be consumed in another — same code, same counter
+ * semantics, separate key spaces.
+ */
+export type OtpScope = string | undefined;
+
+const SCOPE_RE = /^[A-Za-z0-9_:-]{1,120}$/;
+
+/** `drobek:otp:` + `<scope>:` (validated — never an arbitrary key fragment). */
+export function otpKeyPrefix(scope: OtpScope): string {
+  if (scope === undefined) return 'drobek:otp:';
+  if (!SCOPE_RE.test(scope)) throw new Error(`invalid OTP scope: ${JSON.stringify(scope)}`);
+  return `drobek:otp:${scope}:`;
+}
+
+function codeRedisKey(email: string, scope?: OtpScope): string {
+  return `${otpKeyPrefix(scope)}code:${emailHash(email)}`;
 }
 
 /** Sibling key holding the atomic guess counter for the code above. */
-function attemptsRedisKey(email: string): string {
-  return `drobek:otp:attempts:${emailHash(email)}`;
+function attemptsRedisKey(email: string, scope?: OtpScope): string {
+  return `${otpKeyPrefix(scope)}attempts:${emailHash(email)}`;
 }
 
 export function normalizeAuthEmail(input: string): string {
@@ -60,7 +78,8 @@ export function generateLoginCode(): string {
 
 export async function createEmailLoginCode(
   email: string,
-  ip: string | undefined
+  ip: string | undefined,
+  scope?: OtpScope
 ): Promise<string> {
   const norm = normalizeAuthEmail(email);
   const code = generateLoginCode();
@@ -73,19 +92,20 @@ export async function createEmailLoginCode(
   // Clear any burned counter from a prior code FIRST, so the fresh code always
   // starts with a full guess budget (a leftover count >= max would otherwise
   // kill the new code on arrival).
-  await r.del(attemptsRedisKey(norm));
-  await r.set(codeRedisKey(norm), JSON.stringify(rec), 'EX', CODE_TTL_S);
+  await r.del(attemptsRedisKey(norm, scope));
+  await r.set(codeRedisKey(norm, scope), JSON.stringify(rec), 'EX', CODE_TTL_S);
   return code;
 }
 
 export async function consumeEmailLoginCode(
   email: string,
-  code: string
+  code: string,
+  scope?: OtpScope
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
   const norm = normalizeAuthEmail(email);
   const r = getRedis();
-  const key = codeRedisKey(norm);
-  const attemptsKey = attemptsRedisKey(norm);
+  const key = codeRedisKey(norm, scope);
+  const attemptsKey = attemptsRedisKey(norm, scope);
 
   // Atomic guess counter FIRST, before the code is even read. `INCR` is atomic,
   // so Redis serializes concurrent guesses and hands each a distinct count —

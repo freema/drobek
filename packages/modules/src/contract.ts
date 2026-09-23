@@ -35,15 +35,24 @@ export const MODULE_NAME_RE = /^[a-z][a-z0-9]{1,30}$/;
 
 /**
  * Who is calling a module route, resolved by core from the host-only
- * `drobek_eu` end-user session cookie of the app host (§5.0):
+ * `drobek_eu` end-user session cookie of the app host (§5.0). The platform
+ * module `auth` signs end users in (e-mail code):
  *  - `anon` — no (valid) session;
  *  - `user` — an end user signed in to THIS app; `role: 'admin'` marks the
- *    app's administrators (the owner signs in with their e-mail and is admin).
+ *    app's administrators (the auth config's `adminEmails`, and the editors
+ *    of the app's workspace signing in with their own e-mail).
  * The dashboard session is never read on an app host.
  */
 export type Principal =
   | { kind: 'anon' }
   | { kind: 'user'; id: string; email: string; role: 'user' | 'admin' };
+
+/** A signed-in end user (the `user` principal without its tag). */
+export interface EndUser {
+  id: string;
+  email: string;
+  role: 'user' | 'admin';
+}
 
 /**
  * An access rule: a `|`-separated disjunction of principals —
@@ -112,6 +121,21 @@ export interface ModuleSdk {
    * `declare namespace <name> { … }` in `/__drobek/sdk.d.ts`.
    */
   types: string;
+  /**
+   * Optional source module an app imports as `drobek/<name>` (e.g. React
+   * components such as the auth module's `<LoginGate>`). Unlike `entry` it is
+   * NOT in `/__drobek/sdk.js`: the compiler builds it INTO the app bundle, so
+   * its bare imports (`react`, …) resolve through the app's own `drobek.json`
+   * — the app and the component share one React — and `drobek` resolves to
+   * the SDK. One self-contained `.ts`/`.tsx` file (no relative imports),
+   * read from the operator's disk at server start.
+   */
+  inline?: {
+    /** Absolute path (or `file:` URL) of the `.ts`/`.tsx` source. */
+    entry: string;
+    /** Its declarations (shown by skill_info and in `/__drobek/sdk.d.ts`). */
+    types: string;
+  };
 }
 
 /** Module-owned tables: a drizzle migrations folder with its own journal. */
@@ -132,6 +156,24 @@ export interface ModuleHooks {
   onAppCreate?: (app: HookApp, services: ModuleServices) => Promise<void> | void;
   /** After a version was published (MCP publish or the dashboard). */
   onPublish?: (app: HookApp & { version: number }, services: ModuleServices) => Promise<void> | void;
+}
+
+/**
+ * The module that OWNS end-user sessions (the built-in `auth`): core asks it
+ * about the user of every live session before any module route sees a
+ * principal, so a user who was disabled, deleted or removed from the
+ * allowlist is anonymous — and their session deleted — on the very next
+ * request to ANY module, and a role follows the app's config at once. At most
+ * one active module may declare it; without one, no session is honoured.
+ */
+export interface EndUserAuthority<Config = unknown> {
+  /**
+   * The user of a live session of `app` as they are NOW (their current role),
+   * or null: not allowed any more → core ends the session. Called once per
+   * module request that carries a session; keep it to indexed lookups. A throw
+   * makes that request anonymous (fail closed) without ending the session.
+   */
+  current(input: { app: HookApp; user: EndUser; config: Config; db: DB; log: Logger }): Promise<EndUser | null>;
 }
 
 // ── the module ───────────────────────────────────────────────────────────────
@@ -164,6 +206,8 @@ export interface DrobekModule<Config = unknown> {
   sdk?: ModuleSdk;
   migrations?: ModuleMigrations;
   hooks?: ModuleHooks;
+  /** Only the module that creates end-user sessions (auth). */
+  endUsers?: EndUserAuthority<Config>;
 }
 
 /** A module of any config type (what the registry holds). */
@@ -198,10 +242,17 @@ export type EmailRecipient =
   /** The addresses at this dotted path of THIS module's app config (owner-confirmed). */
   | { config: string }
   /** The signed-in end user making the request (their verified e-mail). */
-  | { principal: true };
+  | { principal: true }
+  /**
+   * The ONE address someone is signing in with — the one-time code of the
+   * auth module, sent only after the address passed the app's owner-confirmed
+   * allowlist and the sign-in rate limits. Not for anything else.
+   */
+  | { signInAddress: string };
 
 export interface EmailMessage {
   to: EmailRecipient;
+  /** One line: control characters (CR/LF, …) become spaces, max 200 characters. */
   subject: string;
   /** Plain text; the server wraps it in the drobek layout (escaped). */
   text: string;

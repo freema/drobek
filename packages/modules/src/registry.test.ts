@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { defineModule } from './contract.js';
-import { ModuleLoadError, loadModules, packageNameFor, parseModuleList, resolveModule, validateModule } from './registry.js';
+import { ModuleLoadError, endUserAuthorityOf, loadModules, packageNameFor, parseModuleList, resolveModule, validateModule } from './registry.js';
 import { echo, quiet } from './test/fixtures.js';
 
 const importer = (map: Record<string, unknown>) => async (pkg: string) => {
@@ -49,6 +49,9 @@ describe('registry', () => {
     expect(() => validateModule(defineModule({ ...base, name: 'ok', secrets: [{ name: 'lower', description: '' }] }))).toThrow(/UPPER_SNAKE/);
     expect(() => validateModule(defineModule({ ...base, name: 'ok', sdk: { entry: '/nope.js', types: 'interface Api {}' } }))).toThrow(/sdk.entry/);
     expect(() => validateModule(defineModule({ ...base, name: 'ok', skill: { useWhen: '', markdown: 'x' } }))).toThrow(/useWhen/);
+    const sdk = echo.sdk!;
+    expect(() => validateModule(defineModule({ ...base, name: 'ok', sdk: { ...sdk, inline: { entry: '/nope.tsx', types: 'x' } } }))).toThrow(/sdk.inline.entry/);
+    expect(() => validateModule(defineModule({ ...base, name: 'ok', sdk: { ...sdk, inline: { entry: sdk.inline!.entry, types: ' ' } } }))).toThrow(/sdk.inline.types/);
     expect(() => validateModule(echo)).not.toThrow();
   });
 
@@ -57,5 +60,19 @@ describe('registry', () => {
     await expect(
       loadModules({ DROBEK_MODULES: 'echo,twin' }, { importer: importer({ 'drobek-module-echo': echo, 'drobek-module-twin': twin }) })
     ).rejects.toThrow(/limit "ECHO_PER_MINUTE"/);
+  });
+
+  it('at most one module owns end-user sessions (endUsers.current must be a function)', async () => {
+    const base = { version: '1.0.0', skill: { useWhen: 'x', markdown: '# x' }, configSchema: z.object({}), configDefaults: {} };
+    const current = async () => null;
+    const one = defineModule({ ...base, name: 'one', endUsers: { current } });
+    const two = defineModule({ ...base, name: 'two', endUsers: { current } });
+    expect(() => validateModule(defineModule({ ...base, name: 'bad', endUsers: {} as never }))).toThrow(/endUsers.current/);
+    expect(endUserAuthorityOf([quiet, one])).toBe(one);
+    expect(endUserAuthorityOf([quiet])).toBeNull();
+    expect(() => endUserAuthorityOf([one, two])).toThrow(/only one module may own end-user sessions/);
+    await expect(
+      loadModules({ DROBEK_MODULES: 'one,two' }, { importer: importer({ 'drobek-module-one': one, 'drobek-module-two': two }) })
+    ).rejects.toThrow(ModuleLoadError);
   });
 });

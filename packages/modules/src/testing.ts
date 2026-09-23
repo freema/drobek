@@ -19,6 +19,7 @@ import { mergePatch } from './merge-patch.js';
 import { collectRoutes, errorResult, matchRoute, runRoute, type PipelineResult } from './router.js';
 import { decideAccess } from './rules.js';
 import { ModuleError } from './errors.js';
+import { resolveRecipients, sanitizeSubject } from './email.js';
 import { memoryRateLimiter } from './runtime.js';
 
 export interface ModuleTestOptions {
@@ -61,15 +62,6 @@ export interface ModuleTestContext {
   emails: { to: string[]; subject: string; text: string }[];
   /** Change who is calling. */
   setPrincipal(principal: Principal): void;
-}
-
-function valueAtPath(obj: unknown, path: string): unknown {
-  let cur: unknown = obj;
-  for (const seg of path.split('.')) {
-    if (!cur || typeof cur !== 'object') return undefined;
-    cur = (cur as Record<string, unknown>)[seg];
-  }
-  return cur;
 }
 
 function noDb(): DB {
@@ -119,15 +111,8 @@ export function createModuleTestContext(module: AnyModule, opts: ModuleTestOptio
     },
     email: {
       send: async (message: EmailMessage) => {
-        let to: string[];
-        if ('principal' in message.to) {
-          if (principal.kind !== 'user') throw new ModuleError('unauthorized', 'Sign in to this app first.');
-          to = [principal.email];
-        } else {
-          const v = valueAtPath(config, message.to.config);
-          to = (Array.isArray(v) ? v : [v]).filter((x): x is string => typeof x === 'string' && x.includes('@'));
-        }
-        if (to.length > 0) emails.push({ to, subject: message.subject, text: message.text });
+        const to = resolveRecipients(message.to, principal, config);
+        if (to.length > 0) emails.push({ to, subject: sanitizeSubject(message.subject), text: String(message.text) });
         return { sent: to.length };
       },
     },

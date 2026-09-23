@@ -13,6 +13,10 @@ import { eq } from 'drizzle-orm';
 import { noopLogger } from '@drobek/core';
 import { createLimitsProvider } from './limits.js';
 import { ModuleError } from './errors.js';
+import { FakeRedis } from '@drobek/auth';
+import { z } from 'zod';
+import { defineModule } from './contract.js';
+import { cookiePrincipalResolver, createEndUserSession, loadEndUserSession } from './principal.js';
 import { ModuleRuntime, loadModuleRuntime, memoryRateLimiter, type PlatformRequest, type RuntimeDeps } from './runtime.js';
 import { setModuleSecret } from './secrets.server.js';
 import { freshDb, type TestDb } from './test/db.js';
@@ -368,5 +372,57 @@ describe('HTTP on the app hosts', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ actorKind: 'end_user', actorUserId: null, target: 'shop' });
     expect(rows[0].meta).toEqual({ length: 4, module: 'echo', end_user: 'anon' });
+  });
+
+  it("the session owner's endUsers.current decides every module request's principal (config-aware, session ended on null)", async () => {
+    const gate = defineModule<{ banned: string[]; admins: string[] }>({
+      name: 'gate',
+      version: '1.0.0',
+      skill: { useWhen: 'x', markdown: '# gate' },
+      configSchema: z.object({ banned: z.array(z.string()), admins: z.array(z.string()) }),
+      configDefaults: { banned: [], admins: [] },
+      endUsers: {
+        current: async ({ app: a, user, config }) => {
+          expect(a).toEqual({ id: app.id, slug: app.slug, workspaceId: app.workspaceId });
+          if (config.banned.includes(user.email)) return null;
+          return { ...user, role: config.admins.includes(user.email) ? 'admin' : 'user' };
+        },
+      },
+    });
+    const fake = new FakeRedis();
+    let bound: ModuleRuntime | null = null;
+    const r = await loadModuleRuntime({
+      env: ENV,
+      log: noopLogger,
+      modules: [echo, quiet, gate],
+      skillsDir,
+      deps: {
+        rateLimit: memoryRateLimiter(),
+        email: { send: async () => {} },
+        principal: cookiePrincipalResolver({ redis: () => fake, secure: false, current: (a, u) => bound!.currentEndUser(a, u) }),
+      },
+    });
+    bound = r;
+    await r.configure({ app, module: 'echo', patch: { access: 'public' }, actorUserId: userId });
+    await r.confirm({ app, module: 'echo', userId });
+    const token = await createEndUserSession(fake, app.id, { id: 'eu_1', email: 'ana@example.com', role: 'user' });
+    const who = async () => json(await r.handle(req('GET', '/__drobek/v1/echo', { headers: { cookie: `drobek_eu=${token}` } }), app));
+
+    expect(await who()).toMatchObject({ principal: 'user:user' });
+    await r.configure({ app, module: 'gate', patch: { admins: ['ana@example.com'] }, actorUserId: userId });
+    expect(await who()).toMatchObject({ principal: 'user:admin' }); // the next request, no sign-in
+    await r.configure({ app, module: 'gate', patch: { banned: ['ana@example.com'] }, actorUserId: userId });
+    expect(await who()).toMatchObject({ principal: 'anon' });
+    expect(await loadEndUserSession(fake, app.id, token)).toBeNull(); // the session is gone
+    await r.configure({ app, module: 'gate', patch: { banned: [] }, actorUserId: userId });
+    expect(await who()).toMatchObject({ principal: 'anon' }); // and stays gone
+    const hookApp = { id: app.id, slug: app.slug, workspaceId: app.workspaceId };
+    expect(await r.currentEndUser(hookApp, { id: 'eu_1', email: 'ana@example.com', role: 'user' })).toEqual({
+      id: 'eu_1',
+      email: 'ana@example.com',
+      role: 'admin',
+    });
+    // Without a session owner, no module honours a session.
+    expect(await rt.currentEndUser(hookApp, { id: 'eu_1', email: 'ana@example.com', role: 'user' })).toBeNull();
   });
 });

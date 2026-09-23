@@ -337,8 +337,9 @@ async function compileAndStore(
   sources: Map<string, string | Buffer>,
   reasoning: string
 ): Promise<{ number: number; result: CompileResult }> {
-  // The bare `drobek` import → this server's versioned SDK (immutable caching).
-  const result = await ctx.deps.compile(sources, { sdkUrl: ctx.modules.sdk.url });
+  // The bare `drobek` import → this server's versioned SDK (immutable caching);
+  // `drobek/<module>` → that module's inline source, built into the app (M1-02).
+  const result = await ctx.deps.compile(sources, { sdkUrl: ctx.modules.sdk.url, sdkSources: ctx.modules.sdk.inline });
   refuseUnstorable(result);
   const { number } = await createVersion(app.id, versionFiles(sources, result), {
     actor: actorOf(ctx),

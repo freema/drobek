@@ -31,6 +31,8 @@ export {
   getClientIp,
   trustProxyConfigError,
   trustProxyMode,
+  otpKeyPrefix,
+  type OtpScope,
   type TrustProxyMode,
 } from './email-code.server.js';
 export {
