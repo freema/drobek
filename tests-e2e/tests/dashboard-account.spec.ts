@@ -128,7 +128,11 @@ test('account: API key create → MCP initialize → revoke → 401 within 1 s; 
   await expect(page.locator('[data-testid="api-key-row"][data-status="revoked"]')).toHaveCount(1);
   await expect(page.locator('[data-testid="api-key-row"][data-status="active"]')).toHaveCount(0);
 
-  // A create with no scope is refused with a message, not a 500.
+  await page.waitForLoadState('networkidle');
+  expect(problems).toEqual([]);
+
+  // A create with no scope is refused with a message, not a 500. The 400 is
+  // deliberate, and Chrome logs every non-2xx resource as console.error.
   await page.getByTestId('api-key-name').fill('no scopes');
   await page.getByTestId('api-key-scope-read').uncheck();
   await page.getByTestId('api-key-scope-write').uncheck();
@@ -137,7 +141,7 @@ test('account: API key create → MCP initialize → revoke → 401 within 1 s; 
   await expect(page.locator('[data-testid="api-key-row"]')).toHaveCount(1);
 
   await page.waitForLoadState('networkidle');
-  expect(problems).toEqual([]);
+  expect(problems.filter((p) => !/status of 400/.test(p))).toEqual([]);
 });
 
 test('account: OAuth connection is listed; revoke kills access + refresh (reuse → invalid_grant); Activity + CSV + footer @local', async ({

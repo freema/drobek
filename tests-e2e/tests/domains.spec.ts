@@ -261,10 +261,16 @@ test.describe('custom domains (M3-01) @local', () => {
         ])
       );
       await expect
-        .poll(async () => (await domainRow(HOST, app.id))?.verified_at ?? 'still verified', {
-          timeout: 45_000,
-          intervals: [1_000],
-        })
+        .poll(
+          async () => {
+            const row = await domainRow(HOST, app.id);
+            return row ? row.verified_at : 'no row';
+          },
+          {
+            timeout: 45_000,
+            intervals: [1_000],
+          }
+        )
         .toBeNull();
       expect((await domainRow(HOST, app.id))?.last_error).toBeTruthy();
 

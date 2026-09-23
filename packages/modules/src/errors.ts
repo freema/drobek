@@ -49,7 +49,16 @@ export interface ModuleErrorBody {
   hint?: string;
 }
 
+/**
+ * Cross-instance brand: the dashboard's Vite SSR runner and the module
+ * processes can each hold their own copy of this class, and subclasses
+ * (`DataError`, …) rename `name`, so neither `instanceof` nor the name
+ * identifies a module error reliably. `Symbol.for` is shared per realm.
+ */
+const MODULE_ERROR_BRAND: unique symbol = Symbol.for('drobek.module-error') as never;
+
 export class ModuleError extends Error {
+  readonly [MODULE_ERROR_BRAND] = true as const;
   readonly code: ModuleErrorCode;
   readonly status: number;
   readonly details?: unknown;
@@ -84,14 +93,11 @@ export class ModuleError extends Error {
  * its own copy of this package, so `instanceof` is not enough.
  */
 export function isModuleError(err: unknown): err is ModuleError {
-  return (
-    err instanceof ModuleError ||
-    (typeof err === 'object' &&
-      err !== null &&
-      (err as ModuleError).name === 'ModuleError' &&
-      typeof (err as ModuleError).status === 'number' &&
-      typeof (err as ModuleError).body === 'function')
-  );
+  if (err instanceof ModuleError) return true;
+  if (typeof err !== 'object' || err === null) return false;
+  const e = err as Partial<ModuleError> & { [MODULE_ERROR_BRAND]?: unknown };
+  if (typeof e.status !== 'number' || typeof e.body !== 'function') return false;
+  return e[MODULE_ERROR_BRAND] === true || e.name === 'ModuleError';
 }
 
 /** `skill_info('<name>')` — the hint every module error carries by default. */

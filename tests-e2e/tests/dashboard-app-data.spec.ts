@@ -197,8 +197,8 @@ test.describe("dashboard: the owner's app tabs — data edits + import, forms, u
 
     // The app page links every tab (one nav line each).
     await p.goto(`/workspaces/${ws}/apps/${dataApp.slug}`);
-    for (const id of ['app-data-link', 'app-forms-link', 'app-end-users-link', 'app-uploads-link', 'app-logs-link']) {
-      await expect(p.locator(`[data-testid="${id}"]`)).toBeVisible();
+    for (const tab of ['data', 'forms', 'end-users', 'uploads', 'logs']) {
+      await expect(p.locator(`[data-testid="app-tab"][data-tab="${tab}"]`)).toBeVisible();
     }
 
     await p.goto(coll);
