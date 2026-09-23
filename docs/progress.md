@@ -909,6 +909,29 @@ block, then `next` is pushed and the single MR opened.
   part is skipped there — a throttled IP also gets 429 (without lookup) for
   real apps the serve cache has not seen yet, for up to one window.
 
+- Batch merge (NSO-309/316/322/308/304/315 onto the abuse merge): NSO-322
+  removed `replaceRecord` from `modules/data/src/store.ts`, but NSO-301's
+  owner edit (`records.ts` `update`) used it — it now calls `patchRecord`
+  with a replacing `next: () => doc`, so the dashboard edit also re-reads the
+  row under the write lock. Any new caller: use `patchRecord`.
+- Skill line limits disagree by one: `packages/skills-check` counts
+  `fileText.trimEnd()` lines (≤ 150), while each module's own
+  `index.test.ts` counts `markdown.split('\n')` INCLUDING the trailing
+  newline — a module SKILL.md of exactly 150 lines passes skills-check and
+  fails its module test. Keep module skills ≤ 149 lines.
+- `apps/server/server/migrate.ts` (NSO-304) repeats the server entry's config
+  checks; a new `*ConfigError` in `server/index.ts` must be added there too
+  (NSO-292's `domainsConfigError` was missing after the merge).
+- Operator env knobs now live in THREE places: `.env.example` (dev, full
+  list), `.env.production.example` (self-host) and the env table of
+  `docs/SELF-HOSTING.md` — a new operator-facing variable goes into all three.
+- `handleAppRequest` order after NSO-315 × NSO-293: method → well-known
+  report pointer → unknown-host limiter (a throttled IP gets 429 without a
+  lookup unless `knowsLiveApp`) → lookup (miss = counted 404 / 429) →
+  `X-Drobek-App` → takedown 451 → primary-domain 302 → visibility → file. A
+  throttled client therefore gets 429, not 451, for a taken-down app the
+  serve cache has not seen yet.
+
 ## Failed approaches
 
 - `pnpm deploy --offline` in the Dockerfile builder: fails with

@@ -882,6 +882,21 @@ describe('unknown hosts: per-IP limit (NSO-315)', () => {
     expect(errors).toHaveLength(3);
   });
 
+  it('a throttled client still gets the 451 of a taken-down app the cache knows (limiter, then lookup, then 451)', async () => {
+    const { d } = limited(1);
+    model.get('shop')!.app.lockedReason = 'phishing';
+    expect((await handleAppRequest(req(prod('shop')), d)).status).toBe(451); // cached as a live (locked) app
+    await handleAppRequest(req(prod('nope-a')), d);
+    expect((await handleAppRequest(req(prod('nope-b')), d)).status).toBe(429);
+    const r = await handleAppRequest(req(prod('shop')), d);
+    expect(r.status).toBe(451);
+    expect(r.headers['X-Drobek-App']).toBe('shop');
+    // An app the cache has not seen yet is 429 for the throttled client, never a lookup.
+    const before = calls.resolve;
+    expect((await handleAppRequest(req(prod('vault')), d)).status).toBe(429);
+    expect(calls.resolve).toBe(before);
+  });
+
   it('missing files of a known app are never counted', async () => {
     const { d, keys } = limited(1);
     for (let i = 0; i < 5; i++) await handleAppRequest(req(prod('shop'), `/missing-${i}.png`), d);
