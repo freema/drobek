@@ -20,10 +20,16 @@ Opus 5.5 subagents, black-box verification by Sonnet, everything lands on
 | 5 | NSO-320 e-mail budget split | merged 2199fa1, check green | no migration |
 | 6 | NSO-288 M2-01 app page | merged 28ee0d3 (+ test-id/tab-test fixups), check green | slot 0016; Modules/Domains/Forms/Users/Uploads/Logs tabs live in `app-tabs.ts` |
 | 8 | NSO-292 M3-01 domains | merged 1836a03 + b962c18, check green | 0018 prevId re-chained to 0016; compose env changed → `docker compose up -d drobek` before block-end e2e |
-| 10 | NSO-308 M1-08 skills | running (worktree, base b056d57) | last M1 task |
+| 10 | NSO-308 M1-08 skills | merged dc4ee4c (+c255d1c), check green | `task eval` runs after block-end e2e; module SKILL.md ≤ 149 lines |
 | 11 | NSO-301 M2-03 data/forms/users/uploads/logs tabs | merged c63acef, check green | no migration; `AppSubnav` now reads `APP_TABS` |
-| 12 | NSO-293 M4-02 abuse | running (worktree, base 8f25925) | slot 0021 |
-| 13 | NSO-304 M4-03 self-host packaging | running (worktree, base 8f25925) | VPS timing needs Tomáš |
+| 12 | NSO-293 M4-02 abuse | merged e61be60 + e85af86 (Opus merge agent), check green | 0021 re-chained to 0018; app page 423 + LockedByAdminNotice |
+| 13 | NSO-304 M4-03 self-host packaging | merged dd564fd (+1dd5d75), check green; local rehearsal PASSED | clean-VPS timing → Tomáš (BLOKOVÁNO); `main` CI now pushes `:edge`, releases push `latest` |
+| 15 | NSO-322 M1 security fixes (R1 R2 H1 H2 H3 M1 M2) | merged 336061d..2ade6ed (+dee94ac), check green | admin-only proxy confirms; per-app sign-in share |
+| 16 | NSO-309 OTP unknown-IP bucket | merged 6ffac11, check green | follow-up NSO-328 for the same pattern elsewhere |
+| 17 | NSO-316 smoke cleanup | merged 94d258f, check green | prod smoke reuses one stable slug |
+| 18 | NSO-315 unknown-host negative cache + limiter | merged 27e1436 (+98a5910), check green | 429 before lookup for throttled IPs |
+| 19 | NSO-305 drobek-web restructure (+318 folded) | running (repo ../drobek-web, branch next) | separate repo; image not yet published |
+| 20 | NSO-298 docs rewrite | running (worktree, base 98a5910) | adds doc-lint to `task check` |
 | – | M1 block-end e2e + black-box | e2e green (99 + reruns, 8f25925); Sonnet black-box 25 PASS / 0 FAIL / 1 not testable (NSO-320 cap needs Redis seeding) | **M1 complete** → `next` pushed, draft MR opened |
 | 7 | NSO-291 M2-02 modules UI | merged 8d88040, check green | pending owner mail 1/h per app |
 | 9 | NSO-284 M2-04 keys/connections | merged 574cb76, check green | no migration |
