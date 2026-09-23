@@ -83,10 +83,30 @@ single long-lived `next` branch; pushes happen only at milestone end.
   `docker-compose.tls.yaml` (`task dev:tls`), `deployments/Dockerfile.caddy`,
   `docs/SELF-HOSTING.md`.
 
+- **M0-08 (NSO-289) — e2e loop + CI against the prod image.**
+  `tests-e2e/tests/mcp-loop.spec.ts`: (1) `@local` — the official SDK client
+  with an `OAuthClientProvider` (401 → discovery → DCR → PKCE consent driven by
+  Playwright → `finishAuth`) then list → create → broken write → fix → preview
+  host → publish → prod host → restore → get_app, asserted < 90 s (≈1 s
+  locally); (2) `@smoke` — the same loop on a `drk_` key from `SMOKE_API_KEY`
+  (a throwaway SQL-minted key under TEST_ENV=local), `smoke-<random>` app,
+  public HTTP + MCP only. `agent-loop.spec.ts` → `dashboard-insights.spec.ts`
+  (the insight panels, unchanged). `helpers/apps-host.ts` = raw app-host
+  requests over http or https (127.0.0.1 + Host/SNI for `*.localhost`).
+  `docker-compose.e2e.yaml` + `scripts/e2e-image.sh` (= `task e2e:image` = the
+  CI `e2e` job): prod image behind Caddy `tls internal` on :8443, fresh
+  throwaway datastores, whole `@smoke` + `@local` suite. `ci.yml`: push to
+  `next`/`main` only, concurrency cancel, quality → e2e, main pushes the tested
+  image.
+
 ## Next
 
-- M0-08 (NSO-289). M0-09 (NSO-299) is
-  blocked on Tomáš (VPS/DNS); M0-10 (NSO-302) needs `freema/drobek-plugin`.
+- M0-09 (NSO-299) is blocked on Tomáš (VPS/DNS): it must provision
+  `SMOKE_API_KEY` (a `read,write,publish` key of a dedicated smoke user —
+  inside the prod container: `node node_modules/@drobek/oauth/dist/cli/api-key-create.js
+  --email <smoke user> --name smoke --scopes read,write,publish`) and run
+  `BASE_URL_WEB=https://… task e2e:smoke` after each deploy. M0-10 (NSO-302)
+  needs `freema/drobek-plugin`.
 
 ## Notes and gotchas
 
@@ -188,6 +208,28 @@ single long-lived `next` branch; pushes happen only at milestone end.
   Caddy merges `?domain=` into an ask URL that already has `?token=`.
 - The Caddy admin API logs every request at info level — don't poll it from
   a healthcheck; the compose files probe the TLS port with `nc -z`.
+
+- The image e2e flow runs NODE_ENV=production, so it needs TLS: Chromium
+  refuses the production `__Host-` cookies on plain http. Playwright gets
+  `ignoreHTTPSErrors` (E2E_IGNORE_HTTPS_ERRORS=1); Node clients (MCP SDK,
+  node:https) trust Caddy's root through NODE_EXTRA_CA_CERTS
+  (`.caddy/e2e-root.crt`, copied per run). `E2E_TARGET_PRODUCTION=1` flips the
+  CIMD spec to asserting the refusal of the http dev origin
+  (`OAUTH_CIMD_DEV_ORIGINS` is ignored in production).
+- Behind Caddy a nested label (`x.<slug>.apps.localhost`) matches no
+  certificate — the handshake fails (TLS alert 80) instead of the plain-http
+  404; apps-origin.spec asserts either by scheme.
+- `healthz-degraded.spec` runs `docker compose stop redis`; under the image
+  flow the script exports COMPOSE_FILE + COMPOSE_PROJECT_NAME so it stops the
+  e2e stack's redis, not the dev one.
+- esbuild's native binary (`@esbuild/linux-<arch>`, fetched for the build
+  platform) runs in the production image: every `create_app` in the image run
+  compiles the react-ts template.
+- There is no app deletion path outside the database (no MCP tool; the
+  dashboard delete is M2-01), so the prod smoke leaves one `smoke-*` app per
+  run.
+- Validate the workflow without installing anything:
+  `docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:latest`.
 
 ## Failed approaches
 

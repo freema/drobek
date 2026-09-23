@@ -1,8 +1,15 @@
 import { createHash, randomBytes, scrypt } from 'node:crypto';
-import { request as httpRequest, type IncomingHttpHeaders } from 'node:http';
 import { expect, test } from '@playwright/test';
 import { Redis } from 'ioredis';
-import { APPS_DOMAIN, APPS_URL_SCHEME, BASE_URL_WEB, TEST_ENV } from '../playwright.config';
+import { APPS_URL_SCHEME, BASE_URL_WEB, TEST_ENV } from '../playwright.config';
+import {
+  hostRequest,
+  prodHost,
+  previewHost,
+  urlOf,
+  versionHost,
+  type Raw,
+} from './helpers/apps-host';
 import { skipUnlessLocal } from './helpers/auth';
 import { callTool, connectBearer, mcpClient } from './helpers/mcp';
 import { userIdByEmail, withDb } from './helpers/seed';
@@ -24,9 +31,10 @@ import { userIdByEmail, withDb } from './helpers/seed';
  *     browsers refuse `__Host-` on http://localhost);
  *   - the password gate sets a host-only cookie on that app host only;
  *   - a mutating dashboard request with an app Origin → 403.
- * App hosts are reached over node:http at 127.0.0.1 with an explicit Host
- * header (exactly what a browser sends for *.localhost), and in the browser
- * directly (Chromium resolves *.localhost to loopback).
+ * App hosts are reached over node:http(s) at 127.0.0.1 with an explicit Host
+ * header / SNI (helpers/apps-host.ts — exactly what a browser sends for
+ * *.localhost), and in the browser directly (Chromium resolves *.localhost to
+ * loopback).
  */
 
 const WEB = new URL(BASE_URL_WEB);
@@ -57,45 +65,6 @@ const EXPECTED_CSP =
   "style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https:; " +
   "font-src 'self' data: https:; connect-src 'self' https://esm.sh; object-src 'none'; " +
   "base-uri 'self'; frame-ancestors 'none'; form-action 'self'";
-
-const prodHost = (slug: string) => `${slug}.${APPS_DOMAIN}`;
-const previewHost = (slug: string) => `${slug}--preview.${APPS_DOMAIN}`;
-const versionHost = (slug: string, n: number) => `${slug}--v${n}.${APPS_DOMAIN}`;
-const urlOf = (host: string) => `${APPS_URL_SCHEME}://${host}`;
-
-interface Raw {
-  status: number;
-  headers: IncomingHttpHeaders;
-  body: string;
-}
-
-/** A request to the stack with an explicit Host header (node:http, no cookie jar). */
-function hostRequest(
-  host: string,
-  path = '/',
-  opts: { method?: string; headers?: Record<string, string>; body?: string } = {}
-): Promise<Raw> {
-  return new Promise((resolve, reject) => {
-    const req = httpRequest(
-      {
-        host: '127.0.0.1',
-        port: Number(WEB.port || 80),
-        path,
-        method: opts.method ?? 'GET',
-        headers: { ...opts.headers, Host: host },
-        setHost: false,
-      },
-      (res) => {
-        let body = '';
-        res.setEncoding('utf8');
-        res.on('data', (c: string) => (body += c));
-        res.on('end', () => resolve({ status: res.statusCode ?? 0, headers: res.headers, body }));
-      }
-    );
-    req.on('error', reject);
-    req.end(opts.body);
-  });
-}
 
 /** Seed a `drk_` API key for `email` (only its SHA-256 is stored). */
 async function seedApiKey(email: string, scopes: string): Promise<string> {
@@ -296,7 +265,13 @@ test('app hosts: preview / publish / rollback / --vN, served files, headers, cac
     const unknown = await hostRequest(previewHost(`${slug}-nope`));
     expect(unknown.status).toBe(404);
     expectAppSecurityHeaders(unknown, { noindex: true });
-    expect((await hostRequest(`x.${prodHost(slug)}`)).status).toBe(404);
+    if (APPS_URL_SCHEME === 'https') {
+      // Behind Caddy a nested label matches no certificate (`*.<APPS_DOMAIN>`
+      // covers one label): the handshake is refused before drobek sees it.
+      await expect(hostRequest(`x.${prodHost(slug)}`)).rejects.toThrow(/SSL|TLS|alert|EPROTO/i);
+    } else {
+      expect((await hostRequest(`x.${prodHost(slug)}`)).status).toBe(404);
+    }
 
     // Audit: app.publish rows by the agent.
     const audit = await withDb(async (c) =>

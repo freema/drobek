@@ -147,7 +147,8 @@ task check        # host-side: build packages, typecheck, lint, unit tests
 task build        # build the production image ghcr.io/freema/drobek:<sha>
 task prod:proof   # build + prove the prod image (size, non-root, fail-closed, live boot)
 task e2e          # Playwright suite (incl. @local specs) vs the stack
-task e2e:smoke    # read-only @smoke specs only (safe against any target)
+task e2e:image    # what CI runs: the prod image behind Caddy + the whole suite
+task e2e:smoke    # @smoke specs only (safe against any target, prod included)
 task api-key:create EMAIL=… NAME=… SCOPES=read,write  # print a drk_ API key once (local stack)
 task dev:tls      # dev stack behind Caddy (tls internal) on https://localhost; task dev:tls:down to leave
 task caddy:config # generate deployments/Caddyfile from .env (production TLS)
@@ -156,6 +157,43 @@ task db:generate  # drizzle-kit generate (journal __drizzle_migrations_core)
 task db:migrate   # apply core migrations manually
 task down         # docker compose down
 ```
+
+### End-to-end tests
+
+`tests-e2e` is one Playwright suite with two tiers:
+
+- **`@local`** — needs a local stack: seeds and reads Postgres / Redis /
+  Mailpit directly. `global-setup.ts` TRUNCATEs the core tables first, but only
+  with `ALLOW_DESTRUCTIVE=1` AND a `DATABASE_URL` host on its allow-list
+  (`localhost`, `127.0.0.1`, `postgres`).
+- **`@smoke`** — public HTTP + MCP only, safe against production: never the
+  database, Redis or Mailpit. The MCP smoke loop (`mcp-loop.spec.ts`) signs in
+  with a `drk_` key from `SMOKE_API_KEY` (read from the environment only), and
+  creates, writes, previews and publishes one `smoke-<random>` app (there is no
+  public app deletion yet, so each run leaves that one app behind):
+
+  ```sh
+  BASE_URL_WEB=https://drobek.app SMOKE_API_KEY=drk_… task e2e:smoke
+  ```
+
+  Without the key it is skipped on a localhost target and fails anywhere else;
+  under `task e2e` it mints a throwaway key in the local DB.
+
+`mcp-loop.spec.ts` is the agent loop end to end: the official MCP SDK client
+with an OAuth provider (401 → discovery → DCR → PKCE consent driven by
+Playwright → token), then `list_apps` → `create_app` → `write_files` (compile
+error → fix) → preview host → `publish` → production host → `restore_version`
+→ `get_app`, asserted under 90 s.
+
+`task e2e` runs against the dev stack (`task up`). **`task e2e:image`** is the
+CI flow (`.github/workflows/ci.yml` runs the same `scripts/e2e-image.sh`):
+build the production image, start it with `docker-compose.e2e.yaml` (project
+`drobek-e2e`, its own loopback ports, so it runs next to the dev stack) behind
+Caddy with `tls internal` on `https://localhost:8443` and
+`https://<slug>--preview.apps.localhost:8443`, let it migrate a fresh DB, then
+run `@smoke` + `@local` and tear everything down. `DROBEK_IMAGE=…` skips the
+build, `E2E_KEEP=1` keeps the stack, extra args go to Playwright
+(`task e2e:image -- tests/mcp-loop.spec.ts`).
 
 `/api/version` returns the git sha `task dev` bakes in via `GIT_SHA`
 (fallback `dev`). Monorepo layout: `apps/server` +

@@ -1,37 +1,59 @@
-# drobek (PUBLIC core) — CI → GHCR (P0-D)
+# drobek (PUBLIC core) — CI (M0-08)
 #
-# quality: install → build packages → typecheck → lint → unit tests.
-# build-push (main only): buildx → ONE image ghcr.io/freema/drobek:{sha,latest}
-# (M0-01: dashboard + OAuth AS + MCP in one process, root Dockerfile).
+#   quality  lint → typecheck → unit tests (the `task check` pieces)
+#   e2e      build the production image ONCE (Dockerfile `runner`) → run it
+#            with docker-compose.e2e.yaml behind Caddy (tls internal) with
+#            throwaway postgres / redis / mailpit / proxy-echo → the server
+#            migrates the fresh DB on start → /healthz → Playwright @smoke +
+#            @local (guarded TRUNCATE, host allow-list) — scripts/e2e-image.sh,
+#            the same script `task e2e:image` runs locally.
+#            On main, the exact image that passed is pushed to GHCR
+#            (ghcr.io/freema/drobek:{sha,latest}).
 #
-# The image must be PUBLIC visibility so `docker compose up` pulls without
-# auth. New GHCR packages are private by default: the visibility flip is a
-# ONE-TIME operator action after the first publish (GitHub → package →
-# settings → public), not CI's.
+# Triggers: pushes to `next` and `main` only (Actions capacity is limited —
+# `next` is pushed at milestone end; no PR / schedule triggers). A newer push
+# to the same branch cancels the running one.
+#
+# No repository secrets are used except the automatic GITHUB_TOKEN (GHCR push
+# on main). The e2e stack's DROBEK_MASTER_KEY / TLS_ASK_TOKEN are generated per
+# run by scripts/e2e-image.sh.
+#
+# The GHCR package must be PUBLIC so `docker compose pull` works without auth:
+# a ONE-TIME operator action after the first publish (package → settings).
 name: CI
 
 on:
   push:
-    branches: [main]
-  pull_request:
+    branches: [main, next]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PNPM_VERSION: 10.33.2
+  NODE_VERSION: '22'
+  IMAGE: ghcr.io/freema/drobek
 
 jobs:
   quality:
-    name: Quality gate
+    name: Lint · typecheck · unit
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 10.33.2
+          version: ${{ env.PNPM_VERSION }}
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
-          cache: 'pnpm'
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
 
       - name: Install (frozen lockfile)
         run: pnpm install --frozen-lockfile
@@ -39,24 +61,23 @@ jobs:
       - name: Build workspace packages
         run: pnpm build:packages
 
-      - name: Typecheck
-        run: pnpm typecheck
-
       - name: Lint
         run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
 
       - name: Unit tests
         run: pnpm test
 
-  build-push:
-    name: Build & push drobek image
+  e2e:
+    name: Prod image · compose · e2e (@smoke + @local)
     runs-on: ubuntu-latest
     needs: quality
-    # Push images from main only; PRs stop at the quality gate.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    timeout-minutes: 30
     permissions:
       contents: read
-      packages: write
+      packages: write # only used by the main-branch push steps below
     steps:
       - uses: actions/checkout@v4
 
@@ -64,27 +85,85 @@ jobs:
         id: sha
         run: echo "short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install the e2e package only
+        run: pnpm install --frozen-lockfile --filter tests-e2e
+
+      - name: Resolve the Playwright version
+        id: pw
+        run: echo "version=$(pnpm -C tests-e2e exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}-chromium
+
+      - name: Install Chromium + system deps
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: pnpm -C tests-e2e exec playwright install --with-deps chromium
+
+      - name: Install Chromium system deps (browser cached)
+        if: steps.pw-cache.outputs.cache-hit == 'true'
+        run: pnpm -C tests-e2e exec playwright install-deps chromium
+
       - uses: docker/setup-buildx-action@v3
 
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - uses: docker/build-push-action@v6
+      - name: Build the production image (runner target)
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile
-          # runner is the LAST stage (default target) — keep explicit anyway.
           target: runner
-          push: true
+          # Into the local daemon: compose runs it, and on main this exact image is pushed.
+          load: true
+          push: false
           tags: |
-            ghcr.io/freema/drobek:latest
-            ghcr.io/freema/drobek:${{ steps.sha.outputs.short }}
+            ${{ env.IMAGE }}:${{ steps.sha.outputs.short }}
+            ${{ env.IMAGE }}:latest
           build-args: |
             GIT_SHA=${{ steps.sha.outputs.short }}
           cache-from: type=gha,scope=drobek
           cache-to: type=gha,scope=drobek,mode=max
           provenance: false
           sbom: false
+
+      - name: e2e against the image (compose up → migrate → @smoke + @local)
+        env:
+          DROBEK_IMAGE: ${{ env.IMAGE }}:${{ steps.sha.outputs.short }}
+        run: ./scripts/e2e-image.sh
+
+      - name: Upload the Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ steps.sha.outputs.short }}
+          path: |
+            tests-e2e/playwright-report
+            tests-e2e/test-results
+          retention-days: 7
+
+      - name: Log in to GHCR
+        if: github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push the tested image
+        if: github.ref == 'refs/heads/main'
+        env:
+          SHA: ${{ steps.sha.outputs.short }}
+        run: |
+          docker push "$IMAGE:$SHA"
+          docker push "$IMAGE:latest"

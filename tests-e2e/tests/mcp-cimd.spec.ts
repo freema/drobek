@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { expect, test } from '@playwright/test';
-import { BASE_URL_WEB } from '../playwright.config';
+import { BASE_URL_WEB, TARGET_PRODUCTION } from '../playwright.config';
 import {
   loginViaEmail,
   resetDcrIpRateLimit,
@@ -29,6 +29,9 @@ import { personalWorkspaceOf, seedApp, userIdByEmail, withDb } from './helpers/s
  *  - DCR: the 11th registration from one IP within the hour → 429;
  *  - RS audience: a token issued for another resource → 401 invalid_token;
  *  - API keys: a drk_ key passes initialize + list_apps; revoked → 401.
+ * Against a NODE_ENV=production target (the image flow, E2E_TARGET_PRODUCTION=1)
+ * the dev allowance is off by design, so the same http proxy-echo documents
+ * must be refused with "must use https" instead.
  */
 
 const ECHO = 'http://proxy-echo:8099';
@@ -60,6 +63,20 @@ test('CIMD: a metadata-document client → consent → token → tools/list filt
   const clientId = cimdUrl();
   const email = uniqueEmail('cimd');
   await loginViaEmail(page, request, email);
+
+  if (TARGET_PRODUCTION) {
+    // Production ignores OAUTH_CIMD_DEV_ORIGINS: an http document is refused
+    // before anything is fetched, and no client row is mirrored.
+    await page.goto(authorizeUrl(clientId, resource));
+    const box = page.getByTestId('oauth-error');
+    await expect(box).toContainText('invalid_client');
+    await expect(box).toContainText('client_id must use https');
+    const rows = await withDb(async (c) =>
+      (await c.query(`SELECT 1 FROM oauth_clients WHERE client_id = $1`, [clientId])).rows
+    );
+    expect(rows).toEqual([]);
+    return;
+  }
 
   // The client asks for read + write; the user grants only read.
   const { verifier, challenge } = pkcePair();
@@ -135,8 +152,9 @@ test('CIMD: private-IP, non-allowed origin, mismatched client_id and bad redirec
     ['https://169.254.169.254/latest/meta-data', /private or reserved/],
     // The dev allowance is ONE exact origin: another port on the same host is out.
     ['http://proxy-echo:8098/cimd/x/client.json', /https/],
-    [cimdUrl('cimd-mismatch'), /does not match/],
-    [cimdUrl('cimd-badredirect'), /redirect_uri/],
+    // (Production refuses these http documents before fetching them.)
+    [cimdUrl('cimd-mismatch'), TARGET_PRODUCTION ? /must use https/ : /does not match/],
+    [cimdUrl('cimd-badredirect'), TARGET_PRODUCTION ? /must use https/ : /redirect_uri/],
   ];
   for (const [clientId, reason] of cases) {
     // Client errors are SHOWN (400), never redirected to an untrusted URI.

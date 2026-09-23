@@ -18,22 +18,21 @@ import {
 } from './helpers/seed';
 
 /**
- * PHY-123 acceptance (agent loop v1), dashboard half: the captured runtime
- * signals render on the app Overview. The public error beacon + app serving
- * routes are gone (NSO-281) and the app_errors / app_logs MCP tools were
- * replaced by the M0-05 tool set (NSO-283), so the signals are SEEDED straight
- * into app_errors / app_daily_stats — the rows the ingest path stores — and
- * the dashboard panels are asserted end-to-end (stored text React-escaped),
- * plus the authz: a seeded viewer reads the panel, a non-member gets 404, a
- * soft-deleted app 404s for the member too.
+ * Dashboard insight panels (PHY-123, formerly agent-loop.spec.ts — the agent
+ * loop itself is mcp-loop.spec.ts since M0-08): the captured runtime signals
+ * render on the app Overview. The signals are SEEDED straight into app_errors /
+ * app_daily_stats — the rows the ingest path stores — and the Errors + Logs
+ * panels are asserted end-to-end (stored text React-escaped), plus the authz:
+ * a seeded viewer reads the panel, a non-member gets 404, a soft-deleted app
+ * 404s for the member too.
  */
 
-test('agent loop: deduped errors + serving signals render on the dashboard Overview @local', async ({
+test('dashboard insights: deduped errors + serving signals render on the app Overview @local', async ({
   page,
   request,
 }) => {
   skipUnlessLocal();
-  const email = uniqueEmail('loop');
+  const email = uniqueEmail('insights');
   await loginViaEmail(page, request, email);
   const personal = await personalWorkspaceOf(email);
   const ws = personal.slug;
@@ -72,6 +71,10 @@ test('agent loop: deduped errors + serving signals render on the dashboard Overv
   });
 
   // ── Dashboard Overview panels (owner is a member → viewer+) ───────────────
+  // Let the previous page settle first: in dev, React Router's lazy route
+  // discovery (`/__manifest`) aborted by our own navigation logs "Failed to
+  // fetch manifest patches" — noise from the test, not from this page.
+  await page.waitForLoadState('networkidle');
   const consoleErrors: string[] = [];
   page.on('console', (m) => {
     if (m.type() === 'error') consoleErrors.push(m.text());
@@ -102,7 +105,7 @@ test('agent loop: deduped errors + serving signals render on the dashboard Overv
   expect(consoleErrors, consoleErrors.join('\n')).toEqual([]);
 });
 
-test('agent loop: a viewer reads the dashboard error panel, a non-member cannot @local', async ({
+test('dashboard insights: a viewer reads the error panel, a non-member cannot @local', async ({
   page,
   request,
   browser,
@@ -110,7 +113,7 @@ test('agent loop: a viewer reads the dashboard error panel, a non-member cannot 
   skipUnlessLocal();
 
   // Owner A gets an app + one captured error.
-  const ownerEmail = uniqueEmail('loop-owner');
+  const ownerEmail = uniqueEmail('insights-owner');
   await loginViaEmail(page, request, ownerEmail);
   const personal = await personalWorkspaceOf(ownerEmail);
   const ws = personal.slug;
@@ -125,7 +128,7 @@ test('agent loop: a viewer reads the dashboard error panel, a non-member cannot 
   await expect(page.getByTestId('error-message').first()).toHaveText(message);
 
   // A seeded VIEWER of A's workspace can read the dashboard error panel.
-  const viewerEmail = uniqueEmail('loop-viewer');
+  const viewerEmail = uniqueEmail('insights-viewer');
   await logout(page);
   await loginViaEmail(page, request, viewerEmail);
   await addMembership(await userIdByEmail(viewerEmail), workspaceId, 'viewer');
@@ -137,7 +140,7 @@ test('agent loop: a viewer reads the dashboard error panel, a non-member cannot 
   const ctxC = await browser.newContext();
   try {
     const pageC = await ctxC.newPage();
-    await loginViaEmail(pageC, request, uniqueEmail('loop-nonmember'));
+    await loginViaEmail(pageC, request, uniqueEmail('insights-nonmember'));
     const res = await pageC.goto(`/workspaces/${ws}/apps/${app.slug}`);
     expect(res?.status()).toBe(404);
     await expect(pageC.getByTestId('errors-panel')).toHaveCount(0);

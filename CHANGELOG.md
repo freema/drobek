@@ -2,6 +2,28 @@
 
 ## Unreleased (`next`)
 
+### e2e agent loop + CI against the production image (NSO-289)
+
+- **`tests-e2e/tests/mcp-loop.spec.ts`**: the agent loop through a real MCP
+  client — the SDK's OAuth provider does discovery, Dynamic Client
+  Registration and PKCE (consent driven by Playwright), then list_apps →
+  create_app → write_files (compile error → fix) → preview host → publish →
+  production host → restore_version → get_app, under 90 s. A second, `@smoke`
+  loop authenticates with `SMOKE_API_KEY` (a `drk_` key, env only) and is safe
+  against production: public HTTP + MCP, one `smoke-<random>` app, no
+  database / Redis / Mailpit. `agent-loop.spec.ts` is now
+  `dashboard-insights.spec.ts`.
+- **`task e2e:image`** / `scripts/e2e-image.sh` / `docker-compose.e2e.yaml`:
+  the production image behind Caddy (`tls internal`, `https://localhost:8443`)
+  with throwaway postgres / redis / mailpit / proxy-echo, migrations on boot,
+  then the whole `@smoke` + `@local` suite. Runs next to the dev stack.
+- **CI** (`.github/workflows/ci.yml`): push to `next` / `main` only (no PR
+  trigger), cancel-in-progress; lint + typecheck + unit, then build the image
+  once, run the e2e flow against it, and on `main` push exactly that image.
+  pnpm store + Playwright browsers cached; no secrets beyond `GITHUB_TOKEN`.
+- `task e2e:smoke` takes `BASE_URL_WEB` / `SMOKE_API_KEY` from the environment
+  (the post-deploy smoke of M0-09).
+
 ### TLS for the apps origin: Caddy, wildcard cert, `ask` endpoint (NSO-286)
 
 - **Caddy in front** (`docker-compose.production.yaml`: drobek + postgres +

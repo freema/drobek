@@ -101,6 +101,12 @@ tasks:
     cmds:
       - pnpm -C tests-e2e exec playwright test {{.CLI_ARGS}}
 
+  e2e:image:
+    desc: 'The CI e2e flow locally: build the prod image, run it behind Caddy (tls internal) next to the dev stack, whole @smoke + @local suite [DROBEK_IMAGE=… skips the build; E2E_KEEP=1 keeps the stack]'
+    cmds:
+      - '{{if not .DROBEK_IMAGE}}docker build --target runner --build-arg GIT_SHA={{.GIT_SHA}} -t {{.IMAGE}}:e2e .{{else}}true{{end}}'
+      - DROBEK_IMAGE={{.DROBEK_IMAGE | default (printf "%s:e2e" .IMAGE)}} ./scripts/e2e-image.sh {{.CLI_ARGS}}
+
   api-key:create:
     desc: 'Create a drk_ API key for an EXISTING user in the local dev DB and print it once (EMAIL=… [NAME=cli] [SCOPES=read,write])'
     requires:
@@ -111,10 +117,10 @@ tasks:
         --email '{{.EMAIL}}' --name '{{.NAME | default "cli"}}' --scopes '{{.SCOPES | default "read,write"}}'
 
   e2e:smoke:
-    desc: Read-only @smoke specs only (safe against any target)
+    desc: '@smoke specs only — safe against any target (BASE_URL_WEB=https://… SMOKE_API_KEY=drk_… for production; never touches DB/Redis/Mailpit)'
     env:
-      BASE_URL_WEB: '{{.WEB_URL}}'
-      BASE_URL_MCP: '{{.WEB_URL}}'
+      BASE_URL_WEB: '{{.BASE_URL_WEB | default .WEB_URL}}'
+      BASE_URL_MCP: '{{.BASE_URL_MCP | default .BASE_URL_WEB | default .WEB_URL}}'
     cmds:
       - pnpm -C tests-e2e exec playwright test --grep "@smoke"
 
