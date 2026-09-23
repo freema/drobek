@@ -255,6 +255,43 @@ describe('REST: rules', () => {
     expect((await ctx({ principal: B }).request('GET', '/members')).status).toBe(200);
   });
 
+  it('two interleaved PATCHes of one record both land: the merge happens inside the write lock (NSO-322 M1)', async () => {
+    const rec = await create(ctx({ principal: A }), 'members', { name: 'Ana', city: 'Brno', n: 0 });
+    // Request 1 reads the record, then its write transaction waits until request 2 has written.
+    let open!: () => void;
+    const gate = new Promise<void>((resolve) => (open = resolve));
+    let gated = 0;
+    const slowDb = new Proxy(db, {
+      get(target, key) {
+        if (key === 'transaction') {
+          return async (...args: unknown[]) => {
+            gated += 1;
+            await gate;
+            return (target.transaction as (...a: unknown[]) => unknown).apply(target, args);
+          };
+        }
+        const v = Reflect.get(target, key, target) as unknown;
+        return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(target) : v;
+      },
+    }) as DB;
+    const slow = createModuleTestContext(data, {
+      db: slowDb,
+      app: { id: appA, slug: 'notes', workspaceId },
+      config: CONFIG,
+      principal: A,
+      origin: 'http://notes--preview.apps.localhost',
+    });
+    const first = slow.request('PATCH', `/members/${rec._id}`, { body: { city: 'Praha' } });
+    while (gated === 0) await new Promise((r) => setTimeout(r, 1));
+    const second = await ctx({ principal: A }).request('PATCH', `/members/${rec._id}`, { body: { n: 2 } });
+    expect(second.status).toBe(200);
+    open();
+    const done = await first;
+    expect(done.status).toBe(200);
+    expect(done.body).toMatchObject({ name: 'Ana', city: 'Praha', n: 2 });
+    expect((await ctx({ principal: A }).request('GET', `/members/${rec._id}`)).body).toMatchObject({ name: 'Ana', city: 'Praha', n: 2 });
+  });
+
   it("update: owner — another user's record → 403, one's own → 200 (shallow merge)", async () => {
     const rec = await create(ctx({ principal: A }), 'members', { name: 'Ana', city: 'Brno' });
     const other = await ctx({ principal: B }).request('PATCH', `/members/${rec._id}`, { body: { name: 'Hacked' } });

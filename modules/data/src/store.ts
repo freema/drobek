@@ -104,18 +104,39 @@ export async function loadRecord(db: DB, appId: string, collection: string, id: 
   return row ?? null;
 }
 
-/** Replace a record's fields (the caller merged and validated them). null when it no longer exists. */
-export async function replaceRecord(
+/**
+ * Update a record from its CURRENT fields (NSO-322 M1): the row is re-read
+ * `FOR UPDATE` inside the app's write lock, `next(doc)` builds the new fields
+ * from it (merge + validate — a throw rolls back), then the quota check and
+ * the UPDATE. Two concurrent PATCHes of one record therefore both land
+ * instead of the later one overwriting the earlier with a stale merge. null
+ * when the record no longer exists.
+ */
+export async function patchRecord(
   db: DB,
-  input: { appId: string; collection: string; id: string; doc: Record<string, unknown>; limits: DataQuotaLimits }
+  input: {
+    appId: string;
+    collection: string;
+    id: string;
+    next: (doc: Record<string, unknown>) => Record<string, unknown>;
+    limits: DataQuotaLimits;
+  }
 ): Promise<DataRecordRow | null> {
-  const bytes = docByteSize(input.doc);
   return withAppWriteLock(db, input.appId, async (tx) => {
+    const [current] = await tx
+      .select()
+      .from(dataRecords)
+      .where(and(scope(input.appId, input.collection), eq(dataRecords.id, input.id)))
+      .limit(1)
+      .for('update');
+    if (!current) return null;
+    const doc = input.next({ ...(current.doc ?? {}) });
+    const bytes = docByteSize(doc);
     const u = await usage(tx, input.appId, input.id);
     enforceWriteQuota({ limits: input.limits, newDocBytes: bytes, liveDocCount: u.count, liveBytesExcludingTarget: u.bytes, isCreate: false });
     const [row] = await tx
       .update(dataRecords)
-      .set({ doc: input.doc, bytes, updatedAt: new Date() })
+      .set({ doc, bytes, updatedAt: new Date() })
       .where(and(scope(input.appId, input.collection), eq(dataRecords.id, input.id)))
       .returning();
     return row ?? null;

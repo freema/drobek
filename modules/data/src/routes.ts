@@ -26,7 +26,7 @@ import { dataQuotaFromLimits } from './quota.js';
 import { csvLines, pageOf, requireCollection } from './records.js';
 import { parseFilterParam } from './query-build.js';
 import { validateDocument } from './schema-validate.js';
-import { deleteRecord, insertRecord, loadRecord, replaceRecord, toRecord } from './store.js';
+import { deleteRecord, insertRecord, loadRecord, patchRecord, toRecord } from './store.js';
 
 type Ctx = ModuleContext<DataConfig>;
 
@@ -158,11 +158,17 @@ export function registerRoutes(r: ModuleRouter<DataConfig>): void {
 
   r.patch('/:collection/:id', { maxBodyBytes: MAX_WRITE_BODY }, async (req, ctx) => {
     const { name, c, row } = await target(ctx, req.params.collection, req.params.id, 'update');
-    const doc = { ...row.doc, ...clientFields(req.body) };
-    for (const k of Object.keys(doc)) if (k.startsWith('_')) delete doc[k];
-    if (c.schema) validateDocument(c.schema, doc);
+    const fields = clientFields(req.body);
+    const merged = (current: Record<string, unknown>) => {
+      const doc = { ...current, ...fields };
+      for (const k of Object.keys(doc)) if (k.startsWith('_')) delete doc[k];
+      if (c.schema) validateDocument(c.schema, doc);
+      return doc;
+    };
+    merged(row.doc ?? {}); // fail fast (422) before the write counts
     await writeAllowed(ctx);
-    const updated = await replaceRecord(ctx.db, { appId: ctx.app.id, collection: name, id: row.id, doc, limits: dataQuotaFromLimits(await ctx.limits()) });
+    // Merged again onto the row as it is INSIDE the write lock — never the copy read above (NSO-322 M1).
+    const updated = await patchRecord(ctx.db, { appId: ctx.app.id, collection: name, id: row.id, limits: dataQuotaFromLimits(await ctx.limits()), next: merged });
     if (!updated) throw new DataError('not_found', `No record "${row.id}" in "${name}".`);
     return toRecord(updated);
   });
