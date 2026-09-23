@@ -594,9 +594,51 @@ verbatim:
 > external APIs), call `skill_info` and follow the skill; `create_app`/`get_app`
 > list the available skills.
 
-Writing a skill: target 150 lines or fewer; when to use → minimal working code
-→ the exact SDK calls and types → limits and server-enforced rules → common
-errors and fixes.
+The repo ships three general skills: `start` (how an app works: files,
+`drobek.json`, the write_files → compile → preview → publish loop, the lease,
+what the server never runs), `debug` (reading `compile.errors` and
+`get_logs`, typical causes and fixes) and `ui` (Tailwind v4's browser build
+from esm.sh, responsive layout, the accessibility minimum, forms and
+loading/error states). With every built-in module enabled `skill_info()`
+lists 9 skills: `auth, email, forms, data, proxy, files, debug, start, ui`
+(plus `hello` in the dev stack).
+
+### The skill format (NSO-308)
+
+Skills are written for the agent only: terse, code first, exact API names,
+no marketing. Every skill — built-in module or general — has at most 150
+lines (frontmatter included) and exactly these `##` sections under one
+`# <name> — <what it is>` title:
+
+1. `## 1. When to use` — the situation, and what NOT to use instead;
+2. `## 2. Minimal working code` — a complete `src/main.tsx` (or page) that
+   works as written, plus the `configure_module` payload it needs;
+3. `## 3. API and types` — the SDK as ```` ```ts api ```` declaration blocks
+   (first line `// drobek.<module>` or `// drobek/<module>`), config keys;
+4. `## 4. Rules and limits` — what the server enforces (confirmations,
+   limits by env name and default);
+5. `## 5. Errors → fix` — a table `| error | cause | fix |`; a backticked
+   code in the first column must exist in the error catalogue.
+
+`@drobek/skills-check` (part of `task check`) enforces the format and that
+the code does not rot: every fenced block is checked by its info string —
+`tsx`/`ts`/`jsx`/`js` are compiled with `@drobek/compile` exactly like
+`write_files` (the skill's import map, the SDK, the inline sources, the
+secret scan) AND typechecked with the TypeScript compiler against the
+generated `sdk.d.ts` + the inline declarations + `@types/react` (esbuild
+only strips types); `ts api` blocks must be mutually assignable to the real
+declarations; `json` blocks must parse, a `configure_module` payload
+(`module` + `config`) must pass the module's schema over its defaults, and
+```` ```json drobek.json ```` sets the import map for the skill's following
+blocks; `html` is compiled and its `<script src>` must satisfy the apps CSP;
+`css` is compiled; `sh`/`text` are prose; a block without a language fails.
+A module skill needs a `ts api` block per import it offers and one
+`configure_module` payload. A failure names the SKILL.md line, the skill and
+the block. The e2e module specs run the FIRST ```` ```tsx ```` block of a
+module skill as a live app — keep its visible texts stable.
+
+The agent-level eval (does a fresh agent build working apps from these
+skills?) is `tests-eval/` (`task eval`, manual, not CI).
 
 ## Limits and the limits provider
 

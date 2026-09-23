@@ -1,38 +1,30 @@
 # proxy — call an external API without putting its key in the app
 
-Use it when the app needs an API that takes a secret key: OpenAI,
-Anthropic, Stripe, a weather or maps API, the owner's own backend. The
-browser calls drobek; drobek adds the key on the server and forwards the
-request. **Never put an API key in the app's files** (write_files refuses
-it), never import `openai` / `@anthropic-ai/sdk` / `stripe` in the browser,
-and never ask the user for a key in chat.
+## 1. When to use
 
-## How it is set up (two steps, two people)
+The app needs an API that takes a secret key (OpenAI, Anthropic, Stripe, a
+weather/maps API, the owner's backend), or any API on another origin (the
+apps CSP blocks direct `fetch` to other sites). The browser calls drobek,
+drobek adds the key server-side and forwards. Never put a key in app files
+(write_files refuses it), never import `openai` / `@anthropic-ai/sdk` /
+`stripe` in the browser, never ask the user for a key in chat.
 
-1. **The workspace admin registers the upstream** in the drobek dashboard
-   (workspace → Upstreams): a name (e.g. `openai`), the base URL
-   (`https://api.openai.com`, ports 80/443 only), the allowed methods and
-   path prefixes, how the key is sent (`Authorization: Bearer …` or a
-   named header) and the key itself. You cannot do this over MCP — tell the
-   user exactly what to register.
-2. **You assign it to the app** with `configure_module`:
+## 2. Minimal working code
+
+Setup has two steps. (1) A workspace admin registers the upstream in the
+drobek dashboard (workspace → Upstreams): name, base URL (public host, port
+80/443), allowed methods + path prefixes, auth (`Bearer` or a named header)
+and the key. Not possible over MCP — tell the user exactly what to register.
+Check with `get_app` → `modules.proxy.info.upstreams`. (2) Assign it to the
+app:
 
 ```json
 { "app_id": "…", "module": "proxy", "config": { "upstreams": { "openai": { "rules": { "call": "user" } } } } }
 ```
 
-Assigning an upstream **needs a workspace admin's confirmation**: the answer
-is `applied: false`, `confirm_role: "admin"` and a `confirm_url` — give the
-user that link (an editor can only reject it). Until an admin confirms,
-calls answer 403. `get_app` → `modules.proxy.info.upstreams` shows
-every upstream of the workspace: `registered`, `assigned`, `call`,
-`hasSecret` (whether the key is set — never its value), `allowedMethods`,
-`allowedPathPrefixes`.
-
-## Minimal working code (react-ts template, with the auth module)
-
-`call: "user"` means only signed-in users may call it, so the UI lives in
-`<LoginGate>` (`skill_info('auth')`).
+This needs a **workspace admin's** confirmation: the answer is `applied:
+false`, `confirm_role: "admin"` + `confirm_url` — give the user the link (an
+editor can only reject it); until an admin confirms, calls answer 403.
 
 ```tsx
 // src/main.tsx
@@ -45,21 +37,23 @@ import './styles.css';
 function Ask() {
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState('');
+  const [busy, setBusy] = useState(false);
   async function ask() {
-    setAnswer('Thinking…');
+    setBusy(true);
     const res = await drobek.proxy.fetch('openai', '/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: 'gpt-4o-mini', messages: [{ role: 'user', content: question }] }),
     });
     const body = await res.json();
-    setAnswer(res.ok ? body.choices[0].message.content : body.message ?? `Error ${res.status}`);
+    setAnswer(res.ok ? body.choices[0].message.content : (body.message ?? `Error ${res.status}`));
+    setBusy(false);
   }
   return (
     <main>
       <h1>Ask</h1>
-      <textarea value={question} onChange={(e) => setQuestion(e.target.value)} />
-      <button onClick={ask} disabled={!question}>Ask</button>
+      <textarea aria-label="Question" value={question} onChange={(e) => setQuestion(e.target.value)} />
+      <button onClick={ask} disabled={!question || busy}>{busy ? 'Thinking…' : 'Ask'}</button>
       <p role="status">{answer}</p>
     </main>
   );
@@ -72,57 +66,57 @@ createRoot(document.getElementById('root')!).render(
 );
 ```
 
-## SDK
+`call: "user"` = only signed-in users (`skill_info('auth')`), hence `<LoginGate>`.
 
-```ts
-drobek.proxy.fetch(upstream: string, path?: string, init?: RequestInit): Promise<Response>
+## 3. API and types
+
+```ts api
+// drobek.proxy
+export interface Api {
+  /** fetch() through drobek: `path` (+ ?query) is appended to the upstream's base URL. Any status resolves — check res.ok. */
+  fetch(upstream: string, path?: string, init?: RequestInit): Promise<Response>;
+}
 ```
 
-- Same as `fetch`: `path` (with its `?query`) is appended to the
-  upstream's base URL; `init` is a normal `RequestInit` (method, headers,
-  body as a string). It resolves with the standard `Response` for **any**
-  status — check `res.ok`. It does not throw a DrobekError.
-- drobek's own refusals are JSON `{ error, message }` (table below); any
-  other status/body is the upstream's.
-- Your `Authorization` and `Cookie` headers are dropped; the server's key
-  wins. Other headers (e.g. `anthropic-version`) pass through.
-- Streaming (SSE) responses are not supported: the response arrives whole.
+- Same as `fetch`: `init` is a normal `RequestInit` (method, headers, body
+  as a string). It never throws a `DrobekError`; drobek's own refusals are
+  JSON `{ error, message, details? }` (table below), anything else is the
+  upstream's answer.
+- Your `Authorization` and `Cookie` headers are dropped (the server's key
+  wins); other headers (e.g. `anthropic-version`) pass through.
+- Config `upstreams.<name>`: `rules.call` (default `user`) = `user | admin |
+  public | none`, joined with `|` (`owner` is refused); `rateLimit?` = calls
+  per minute from the whole app. Unassign: `{ "upstreams": { "openai": null } }`.
+- `get_app` → `modules.proxy.info.upstreams[]`: `{ name, registered,
+  assigned, call?, rateLimit?, hasSecret, allowedMethods?,
+  allowedPathPrefixes? }` — never the key or the base URL.
+- REST: `/__drobek/v1/proxy/<upstream>/<path>` with `X-Drobek-SDK: 1`.
 
-## Config
+## 4. Rules and limits
 
-- `upstreams.<name>.rules.call` (default `"user"`): who may call —
-  `user` (any signed-in user of the app), `admin` (the app's admins),
-  `public` (anyone, even signed out), `none`; combine with `|`.
-  **`public` needs the owner's confirmation** and every client IP is
-  limited to `PROXY_PUBLIC_CALLS_PER_MIN_PER_IP` calls per minute — every
-  visitor spends the owner's API budget, so prefer `user`.
-- `upstreams.<name>.rateLimit` (optional): calls per minute to this
-  upstream from the whole app.
-- Remove an assignment: `{ "upstreams": { "openai": null } }` (applies at
-  once).
-
-## What the server enforces
-
-- Only upstreams assigned to this app, and only the methods + path prefixes
-  the admin allowed.
-- `PROXY_CALLS_PER_MIN` (60): calls per app per minute, all upstreams.
-- No redirects are followed (a 3xx is returned as-is); 20 s timeout; the
-  response is at most 5 MiB; request bodies at most 1 MiB.
+- Assigning an upstream and opening `call` to `public` need the owner's
+  confirmation. `public` = every visitor spends the owner's API budget;
+  prefer `user`.
+- Only assigned upstreams, only the admin's methods + path prefixes.
+- `PROXY_CALLS_PER_MIN` 60 per app (all upstreams);
+  `PROXY_PUBLIC_CALLS_PER_MIN_PER_IP` 10 for `public` upstreams.
+- No redirects followed (a 3xx comes back as-is); 20 s timeout; response
+  ≤ 5 MiB; request body ≤ 1 MiB; streaming (SSE) arrives whole.
 - Private/internal addresses and ports other than 80/443 are unreachable.
-- The key is added on the server and never appears in responses, logs,
-  get_app or skill_info.
+- The key never appears in responses, logs, get_app or skill_info.
 
-## Common errors
+## 5. Errors → fix
 
 | error | cause | fix |
 |---|---|---|
-| `forbidden` (403) `upstream_not_assigned` | not in the app's config, or not confirmed yet | `configure_module('proxy', …)`; the owner confirms |
-| `unauthorized` (401) | `call: "user"` and nobody is signed in | wrap the UI in `<LoginGate>` |
-| `forbidden` (403) | the caller's role does not match `call` | show a friendly message |
-| `not_found` (404) `upstream_not_registered` | no such upstream in the workspace | ask the workspace admin to register it (name must match) |
-| `forbidden` (403) `upstream_not_allowed` | no admin confirmed this app for it (e.g. assigned before it was registered) | remove it from the config, add it again, an admin confirms |
-| `method_not_allowed` (405) / `path_not_allowed` (403) | outside the upstream's allow-lists | use an allowed method/path, or ask the admin to widen them |
-| `rate_limited` (429) | a per-minute limit | wait `Retry-After` seconds; never retry in a loop |
-| `csrf_rejected` (403) | plain `fetch('/__drobek/v1/proxy/…')` | use `drobek.proxy.fetch` |
-| `ssrf_blocked` (403) | the upstream resolves to a private address | the admin must use a public host |
+| `forbidden` (403) | `details.reason: upstream_not_assigned` (not configured / not confirmed), or the caller's role | `configure_module('proxy')`; an admin confirms |
+| `forbidden` (403) | `details.reason: upstream_not_allowed` (no admin confirmed this app, e.g. assigned before it was registered) | remove it from the config, add it again, an admin confirms |
+| `unauthorized` (401) | `call: "user"` and nobody signed in | wrap the UI in `<LoginGate>` |
+| `not_found` (404) | `details.reason: upstream_not_registered` | ask the workspace admin to register it (same name) |
+| `method_not_allowed` (405) | method outside the allow-list | use an allowed method |
+| `path_not_allowed` (403) | path outside the allowed prefixes | use an allowed path, or ask the admin |
+| `rate_limited` (429) | a per-minute limit | wait `Retry-After`; never loop |
+| `csrf_rejected` (403) | raw `fetch('/__drobek/v1/proxy/…')` | use `drobek.proxy.fetch` |
+| `ssrf_blocked` (403) | upstream resolves to a private address | the admin must use a public host |
 | `upstream_error` (502) | unreachable, timed out or > 5 MiB | show "try again later" |
+| `config_error` (500) | the upstream's stored key is unusable | the admin re-enters it in the dashboard |

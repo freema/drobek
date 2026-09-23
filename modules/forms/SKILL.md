@@ -1,12 +1,16 @@
 # forms — contact, order and feedback forms without a backend
 
-Use it when visitors fill in a form and the answers must be kept or reach
-the owner: a contact form, an order or booking request, a sign-up list,
-feedback. drobek stores every submission and e-mails it to the app's
-owners. Never use Formspree, Netlify Forms, EmailJS, Google Forms embeds or
-a `mailto:` form: they cannot run here, or leak the data to a third party.
+## 1. When to use
 
-## Minimal working code (react-ts template)
+Visitors fill in a form and the answers must be kept or reach the owner:
+contact, order/booking request, sign-up list, feedback. drobek stores each
+submission and e-mails it to the app's owners. Never use Formspree, Netlify
+Forms, EmailJS, Google Forms embeds or `mailto:` forms.
+
+## 2. Minimal working code
+
+No configuration needed: any form name works, anyone may submit, the
+owners get an e-mail.
 
 ```tsx
 // src/main.tsx
@@ -37,40 +41,27 @@ function Contact() {
 createRoot(document.getElementById('root')!).render(<Contact />);
 ```
 
-`<Form name="…">` renders a `<form>` around your inputs, adds the invisible
-anti-spam field, fetches the time token when it mounts and sends every
-named field; after a success it shows `success` (default "Thank you —
-sent."), on an error a message (`role="alert"`). `drobek/forms` is compiled
-into your app with your own React (`drobek.json` maps `react` and
-`react/jsx-runtime`; the react-ts template does). It works for any form
-name, with no configuration: anyone may submit and the owners get an e-mail.
+`<Form name>` renders the `<form>`, adds the hidden anti-spam field, fetches
+the time token on mount, sends every named field, then shows `success`
+(default "Thank you — sent.") or an error (`role="alert"`). `drobek/forms`
+is compiled with the app's React (`drobek.json` maps `react` +
+`react/jsx-runtime`; the react-ts template does).
 
 Without React:
 
 ```js
 import { drobek } from 'drobek';
-drobek.forms.prepare('contact');                     // on page load: fetch the token early
-await drobek.forms.submit('contact', new FormData(formElement)); // or a plain object
+
+const form = document.querySelector('form');
+void drobek.forms.prepare('contact'); // fetch the token early
+if (form) form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  await drobek.forms.submit('contact', new FormData(form));
+  form.replaceWith('Thanks!');
+});
 ```
 
-## SDK
-
-```ts
-type FieldValue = string | number | boolean | null | string[];
-drobek.forms.prepare(form: string): Promise<void>
-drobek.forms.submit(form: string, data: Record<string, FieldValue> | FormData): Promise<{ ok: true; id: string }>
-drobek.forms.submissions(form: string, opts?: { limit?: number; before?: string }) // admins
-  : Promise<{ submissions: { id, created_at, data, user_id, notified }[]; next_cursor: string | null }>
-drobek.forms.csvUrl(form: string): string               // admins: <a href={…} download>
-
-// import { Form } from 'drobek/forms'
-<Form name="contact" success?={<p>…</p>} onSuccess?={({ id }) => …} onError?={({ code, message }) => …}
-      className?="…">{inputs + submit button}</Form>
-```
-
-Errors reject with a `DrobekError` (`err.code`, `err.status`, `err.message`).
-
-## Config (`configure_module`, optional)
+Extra recipients / signed-in-only form:
 
 ```json
 { "app_id": "…", "module": "forms", "config": { "forms": {
@@ -78,38 +69,62 @@ Errors reject with a `DrobekError` (`err.code`, `err.status`, `err.message`).
   "members-feedback": { "rules": { "submit": "user" } } } } }
 ```
 
-- `notify.emails` (≤ 10): extra addresses that get every submission. Any
-  change **needs the owner's confirmation**: `configure_module` answers
-  `applied: false` with a `confirm_url`; give the user that link.
-- `notify.owners` (default `true`): e-mail the app's owners (the editors and
-  admins of its drobek workspace). `false` = store only.
-- `rules.submit`: `public` (default) or `user` (signed-in users only, see
-  `skill_info('auth')`).
+## 3. API and types
 
-## What the server enforces
+```ts api
+// drobek.forms
+export type FieldValue = string | number | boolean | null | string[];
+export interface Submission { id: string; created_at: string; data: Record<string, FieldValue>; user_id: string | null; notified: boolean }
+export interface Api {
+  prepare(form: string): Promise<void>; // fetch the time token early
+  submit(form: string, data: Record<string, FieldValue> | FormData): Promise<{ ok: true; id: string }>; // waits ≥ 2 s after the token
+  submissions(form: string, opts?: { limit?: number; before?: string }): Promise<{ submissions: Submission[]; next_cursor: string | null }>; // admins
+  csvUrl(form: string): string; // admins: <a href={…} download>
+}
+```
 
-- The body: a flat object of text (≤ 10 000 characters), numbers,
-  true/false or lists of texts; ≤ 50 fields, 32 KiB in total; names starting
-  with `_` are reserved. No files (use the files module, submit the id).
-- Anti-spam: a filled honeypot is dropped silently (it answers like a
-  success); a submission less than 2 s after its token is refused; tokens
-  last 2 hours (the SDK renews them).
-- `FORMS_SUBMITS_PER_IP_HOUR` (10) per visitor per app, `FORMS_PER_APP_PER_DAY`
-  (200) per app. Notification e-mails also count against the email module's
+```ts api
+// drobek/forms
+import type { FormHTMLAttributes, JSX, ReactNode } from 'react';
+export interface FormProps extends Omit<FormHTMLAttributes<HTMLFormElement>, 'onSubmit' | 'onError' | 'name' | 'action' | 'method' | 'children'> {
+  name: string; // ^[a-z0-9][a-z0-9_-]{0,39}$
+  children: ReactNode;
+  success?: ReactNode;
+  onSuccess?: (result: { id: string }) => void;
+  onError?: (error: { code: string; message: string }) => void;
+}
+export function Form(props: FormProps): JSX.Element;
+```
+
+Config per form name: `rules.submit` `public` (default) | `user`;
+`notify.emails` (≤ 10 extra addresses); `notify.owners` (default `true`;
+`false` = store only). Failures reject with `DrobekError`.
+
+## 4. Rules and limits
+
+- Any change to `notify.emails` needs the owner's confirmation:
+  `configure_module` answers `applied: false` + `confirm_url`.
+- Body: a flat object — text ≤ 10 000 chars, numbers, booleans, null, lists
+  of texts; ≤ 50 fields, 32 KiB; names starting with `_` are reserved. No
+  files (upload with `files`, submit the id).
+- Anti-spam: a filled honeypot is dropped silently (answered like a
+  success); a submit < 2 s after its token is refused; tokens last 2 h.
+- `FORMS_SUBMITS_PER_IP_HOUR` 10 per visitor per app,
+  `FORMS_PER_APP_PER_DAY` 200 per app. Notifications also count against
   `EMAIL_PER_APP_PER_DAY`; past it submissions are still stored.
-- The e-mail shows the fields as plain text: HTML in a field is never
-  rendered. Submissions are personal data: only the app's admins (auth
-  module, role `admin`) can list or export them; the owner also sees them in
-  drobek.
+- Submissions are personal data: only app admins (auth, role `admin`) can
+  list/export them; the owner also sees them in drobek.
 
-## Common errors
+## 5. Errors → fix
 
 | error | cause | fix |
 |---|---|---|
-| `invalid_request` (400) | an empty form, a nested object, a file, a `_` field | see `details[].path`; send flat text fields |
+| `invalid_request` (400) | empty form, nested object, a `_` field | read `details[].path`; send flat text fields |
 | `submitted_too_fast` (429) | sent < 2 s after the token | the SDK waits by itself; call `prepare` early |
-| `invalid_form_token` (400) | `_t` missing, from another form, or older than 2 h | submit through the SDK / `<Form>` |
-| `rate_limited` (429) | 10 submissions from one visitor within an hour | show a message; `Retry-After` |
+| `invalid_form_token` (400) | `_t` missing, other form, older than 2 h | submit through the SDK / `<Form>` |
+| `rate_limited` (429) | 10 submissions from one visitor in an hour | show a message; `Retry-After` |
 | `limit_exceeded` (429) | the app's daily submissions | try again tomorrow |
-| `unauthorized` / `forbidden` | `rules.submit: user` without sign-in; listing without admin | `<LoginGate>`; sign in as an admin |
+| `unauthorized` (401) | `rules.submit: user` without sign-in | `<LoginGate>` (`skill_info('auth')`) |
+| `forbidden` (403) | listing submissions without the admin role | sign in as an admin |
 | `unsupported_media_type` (415) | not JSON / multipart, or a file part | use the SDK |
+| `unavailable` (503) | the server has no `DROBEK_MASTER_KEY` or mail paused | tell the owner; retry later |

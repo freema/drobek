@@ -154,7 +154,7 @@ describe('drobek-module-auth — module shape', () => {
     const md = auth.skill.markdown;
     expect(md.split('\n').length).toBeLessThanOrEqual(150);
     expect(md).toContain("import { LoginGate } from 'drobek/auth';");
-    for (const h of ['## 1. Say who may sign in', '## 2. Minimal working code', '## SDK', '## What the server enforces', '## Common errors']) {
+    for (const h of ['## 1. When to use', '## 2. Minimal working code', '## 3. API and types', '## 4. Rules and limits', '## 5. Errors → fix']) {
       expect(md).toContain(h);
     }
     for (const code of ['email_not_allowed', 'invalid_code', 'too_many_attempts', 'rate_limited']) expect(md).toContain(code);

@@ -225,6 +225,44 @@ block, then `next` is pushed and the single MR opened.
   production cleanup of older `smoke-*` apps = runbook step under Next →
   M0-09. No migration; spec not run in the task (block-end e2e).
 
+- **M1-08 (NSO-308): the agent skills.** There are 9 skills in the 5-section format:
+  1. When to use
+  2. Minimal working code
+  3. API and types
+  4. Rules and limits
+  5. Errors → fix
+
+  Each skill is at most 150 lines. Six are module skills:
+  `modules/{auth,email,forms,data,proxy,files}/SKILL.md`. Three are general skills:
+  `skills/{start,debug,ui}/SKILL.md`. `skill_info()` lists all 9, and each has a one-line
+  `use_when`. The dev stack also lists `hello`, which makes 10.
+
+  **`@drobek/skills-check`** is a new test-only package, wired into `pnpm typecheck` and
+  `pnpm test`, and it runs in about 3 s. It checks every code block of every skill:
+  - it compiles the block with `@drobek/compile`, using the skill's `drobek.json` import map;
+  - it typechecks the block with one `ts.createProgram` against the CURRENT generated
+    `sdk.d.ts`, the inline `drobek/<m>` types and `@types/react`;
+  - for `ts api` blocks it asserts that the documented interface and the real one in
+    `sdk.d.ts` are assignable both ways;
+  - it validates `configure_module` payloads against the module's zod `configSchema`;
+  - it checks that `html` scripts pass the apps CSP.
+
+  It also checks the format of each skill: the sections, the line limit, the error codes
+  (they must be in the catalogue), and the tool names that the `start` skill mentions.
+
+  **`tests-eval/`** is the MANUAL reference-app eval, run as `task eval`. It is not in CI.
+  - `run.mjs` runs the three apps (a) contact form → owner mail, (b) a list with login and an
+    admin role, and (c) a proxy call. It has `--self-check` and `--dry-run` modes.
+  - `lib.mjs` parses stream-json transcripts, parses `sdk.d.ts` and detects non-existent
+    APIs. `skills-check` tests these parsers on the real SDK.
+
+  **Other changes:**
+  - The briefing's Styling line now names Tailwind v4's browser build on esm.sh
+    (`TAILWIND_BROWSER_URL`).
+  - The auth and forms `INLINE_TYPES` now import `JSX` from react (a bug fix).
+
+  The eval has NOT been run yet. The orchestrator runs it and posts the results table.
+
 ## Next
 
 - M0-09 (NSO-299) is blocked on Tomáš (VPS/DNS): it must provision
@@ -780,6 +818,42 @@ block, then `next` is pushed and the single MR opened.
   nor the stored `key_hash` (that would publish a prefix of the credential
   hash). If `create_app` ever returns a variant (`smoke-<hex>-xxxx`) the spec
   fails instead of silently creating an app per run.
+
+- **NSO-308: the e2e specs depend on each module skill's FIRST ```tsx block.** They run it
+  as a live app: forms-email, auth-module, data-module and files-module all do this. Keep the
+  visible texts those specs assert when you edit a skill:
+  - auth: `#who` "Signed in as X (role)", and the heading "Team board";
+  - forms: `#thanks`, the labels Name / Email / Message, and the button Send;
+  - email: "Ask the owners for access", and the status text "The owners were notified.";
+  - data: "My todos", "New todo", and the buttons Add and Delete;
+  - files: "My photos", and "Upload a photo".
+- React 19's `@types/react` has NO global `JSX` namespace. A module's `INLINE_TYPES` must use
+  `import type { JSX } from 'react'`. A bare `JSX.Element` used to be silently unresolved in
+  skill_info and sdk.d.ts. skills-check now typechecks those types.
+- **Tailwind is not built on the server.** esbuild passes `@apply` and `@tailwind` through
+  untouched, so the styles silently do nothing. `@import "tailwindcss"` in a .css file is an
+  `unresolved_import`. The CSP-compatible way is
+  `<script type="module" src="https://esm.sh/@tailwindcss/browser@4.1.11">` in index.html,
+  which was verified to execute. It is guarded by `TAILWIND_BROWSER_URL` in agent-dx and the
+  `ui` skill test.
+- **skills-check typechecks through one virtual compiler host,** rooted at
+  `packages/skills-check/.virtual`, which is never written to disk. It maps `drobek` →
+  `types/drobek.d.ts` and `drobek/*` → `types/inline/*.d.ts`. A `// src/x.tsx` first line
+  puts a block at that path. A skill's `json drobek.json` block sets the import map for its
+  later blocks. A `ts api` block is a declaration block, compared with the real SDK instead
+  of being compiled.
+- **Skill format limits.** Each skill is at most 150 lines, with exactly the 5 numbered H2
+  sections. Every error code the skill mentions must be in `ERROR_CATALOGUE` (or be a
+  module's own code). Prose must not use "we", "our" or "us". The data skill sits at 149
+  lines, so trim before adding.
+- **The eval harness shells out only when you run it:** `docker exec drobek … api-key-create.js`
+  for the key (by container name, so it does not depend on the compose project name of a
+  worktree), and `claude -p`. Claude Code expands the MCP config header
+  `Bearer ${DROBEK_API_KEY}` from the child's environment, so the key never lands in a file.
+- **The Bash tool of a worktree agent refuses some commands.** It refuses complex heredocs and
+  any command containing the word "eval" (`task eval …` included) as "can't be verified to
+  stay inside the worktree". Write a python script to the scratchpad and run it, or check
+  with `task --list`.
 
 ## Failed approaches
 

@@ -124,6 +124,11 @@ tasks:
     cmds:
       - pnpm -C tests-e2e exec playwright test --grep "@smoke"
 
+  eval:
+    desc: 'MANUAL agent eval (NSO-308, never CI): clean `claude -p` sessions with only the drobek MCP build 3 reference apps against the local stack; results in tests-eval/results/ [-- --dry-run | --self-check | --only a,b,c | --mode plugin]'
+    cmds:
+      - node tests-eval/run.mjs {{.CLI_ARGS}}
+
   prod:proof:
     desc: Build the production image and prove it boots, serves and fails closed (scripts/prod-proof.sh)
     cmds:

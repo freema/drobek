@@ -42,3 +42,6 @@ logs/
 /deployments/Caddyfile
 /.caddy/
 /certs/
+
+# tests-eval (NSO-308): raw Claude Code transcripts stay local
+tests-eval/results/*.jsonl

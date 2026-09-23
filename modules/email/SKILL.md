@@ -1,25 +1,23 @@
 # email — notify the app's owners by e-mail
 
-Use it when something in the app should reach its owners by e-mail: a
-visitor asks for access, a stock level is low, someone reports a problem.
-Also for the sender name of every e-mail the app sends (form notifications,
-sign-in codes). There is **no way to e-mail an arbitrary address** from an
-app: not from the browser, not through drobek. Never use EmailJS, SendGrid,
-Resend, nodemailer or a `mailto:` workaround: they cannot run here.
+## 1. When to use
 
-For contact forms use the `forms` module instead (`skill_info('forms')`):
-it stores every submission and e-mails the owners for you.
+Something in the app must reach its owners by e-mail: an access request, a
+low-stock alert, a problem report. Also: the sender name / Reply-To of every
+e-mail the app sends. An app can NOT e-mail an arbitrary address (no
+EmailJS, SendGrid, Resend, nodemailer, `mailto:` tricks). A contact form →
+use `forms` (`skill_info('forms')`): it stores and e-mails submissions.
 
-## Minimal working code (react-ts template, with the auth module)
+## 2. Minimal working code
 
-Only a signed-in user can notify the owners, so the button lives inside
-`<LoginGate>` (`skill_info('auth')`).
+`notifyAdmins` needs a signed-in user, so the UI sits in `<LoginGate>`
+(`skill_info('auth')`).
 
 ```tsx
 // src/main.tsx
 import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { drobek } from 'drobek';
+import { drobek, DrobekError } from 'drobek';
 import { LoginGate } from 'drobek/auth';
 import './styles.css';
 
@@ -28,10 +26,10 @@ function RequestAccess() {
   async function ask() {
     setStatus('Sending…');
     try {
-      await drobek.email.notifyAdmins('Access request', 'Please give me access to the stock list.');
-      setStatus('The owners were notified.');
+      const { sent } = await drobek.email.notifyAdmins('Access request', 'Please give me access to the stock list.');
+      setStatus(sent > 0 ? 'The owners were notified.' : 'Nobody to notify.');
     } catch (err) {
-      setStatus(err instanceof Error ? err.message : 'Could not send.');
+      setStatus(err instanceof DrobekError && err.code === 'limit_exceeded' ? 'Daily limit reached — try tomorrow.' : 'Could not send.');
     }
   }
   return (
@@ -50,52 +48,54 @@ createRoot(document.getElementById('root')!).render(
 );
 ```
 
-## SDK
-
-```ts
-drobek.email.notifyAdmins(subject: string, text: string): Promise<{ sent: number }>
-```
-
-- `subject`: 1–150 characters, one line. `text`: 1–5000 characters of plain
-  text (newlines kept, no HTML: markup is shown as text).
-- The recipients are the app's **owners**: the editors and workspace admins
-  of the app's drobek workspace. The e-mail says which signed-in user sent
-  it, so the owner can reply to them.
-- Errors reject with a `DrobekError` (`err.code`, `err.status`, `err.message`).
-
-## Config (`configure_module`, optional)
+Optional sender settings:
 
 ```json
 { "app_id": "…", "module": "email", "config": { "fromName": "Acme bakery", "replyTo": "orders@acme.example" } }
 ```
 
-- `fromName` (≤ 60 characters, one plain line): the sender name of every
-  e-mail the app sends. The address is always the server's own. Applies at
-  once.
-- `replyTo`: where replies to the app's e-mails go. A new `replyTo`
-  **needs the owner's confirmation**: `configure_module` answers
-  `applied: false` with a `confirm_url` for the user.
+## 3. API and types
 
-## What the server enforces
+```ts api
+// drobek.email
+export interface Api {
+  /** E-mail the app's owners. subject 1–150 chars (one line), text 1–5000 chars plain text. */
+  notifyAdmins(subject: string, text: string): Promise<{ sent: number }>;
+}
+```
 
-- Recipients come only from the server: the app's owners, addresses the
-  owner confirmed in a module config (e.g. `forms` notifications), or the
-  signed-in user. Your code never names an address.
-- `EMAIL_NOTIFY_ADMINS_PER_DAY` (20): `notifyAdmins` calls per app per day.
-- `EMAIL_PER_APP_PER_DAY` (50): notification e-mails per app per day
-  (notifyAdmins + form notifications together; sign-in codes do not count).
-- An operator-wide hourly cap covers all app e-mail on the server; past it,
-  app e-mail pauses for a while (`unavailable`).
-- Subjects are one line (line breaks become spaces); texts are escaped into
-  drobek's e-mail layout. `skill_info('email')` shows this server's limits.
+- Recipients = the app's **owners**: editors and workspace-admins of the
+  app's drobek workspace. The mail names the signed-in user who sent it.
+  The subject becomes `[<app name>] <subject>`.
+- Config: `fromName` (≤ 60 chars, one plain line, no `"<>@\`) — applies at
+  once; `replyTo` (an address) — see rules. Failures reject with
+  `DrobekError` (`code`, `status`, `message`).
+- REST: `POST /__drobek/v1/email/notify-admins { subject, text }` with the
+  header `X-Drobek-SDK: 1` (the SDK sends it).
 
-## Common errors
+## 4. Rules and limits
+
+- A new or changed `replyTo` needs the owner's confirmation:
+  `configure_module` answers `applied: false` + `confirm_url`; give the user
+  the link.
+- Recipients come only from the server: the owners, addresses the owner
+  confirmed in a module config (e.g. `forms` notify lists), the signed-in
+  user. App code never names an address.
+- `EMAIL_NOTIFY_ADMINS_PER_DAY` 20 `notifyAdmins` calls per app per day;
+  `EMAIL_PER_APP_PER_DAY` 50 notification e-mails per app per day
+  (notifyAdmins + form notifications; sign-in codes do not count).
+- An operator-wide hourly budget covers all app e-mail; past it,
+  notifications pause for a while (`unavailable`), sign-in codes keep going.
+- The text is escaped into drobek's layout: HTML shows as text.
+  `skill_info('email').limits` has this server's values.
+
+## 5. Errors → fix
 
 | error | cause | fix |
 |---|---|---|
-| `unauthorized` (401) | nobody is signed in | wrap the UI in `<LoginGate>` (auth module) |
+| `unauthorized` (401) | nobody is signed in | wrap the UI in `<LoginGate>` |
 | `limit_exceeded` (429) | the app's daily e-mail limit | show "try again tomorrow"; never retry in a loop |
-| `unavailable` (503) | app e-mail is paused on the server, or the mail server failed | show a message; try again later |
-| `invalid_request` (400) | empty or too long subject/text | see `details[].path` |
-| `csrf_rejected` (403) | `fetch` without the SDK | call `drobek.email.notifyAdmins` |
-| `invalid_params` from configure_module | a bad `fromName` / `replyTo` | see `issues[].path` |
+| `unavailable` (503) | app e-mail paused on the server, or SMTP failed | show a message; retry later |
+| `invalid_request` (400) | empty or too long subject/text | read `details[].path` |
+| `csrf_rejected` (403) | raw `fetch` without the SDK header | call `drobek.email.notifyAdmins` |
+| `invalid_params` | configure_module: bad `fromName` / `replyTo` | read `issues[].path` |

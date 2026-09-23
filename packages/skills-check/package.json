@@ -1,0 +1,32 @@
+{
+  "name": "@drobek/skills-check",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Test-only (NSO-308): the agent skills skill_info serves (skills/<name>/SKILL.md + modules/*/SKILL.md) — the 5-section format, the skill_info() list, and every code example compiled with @drobek/compile and typechecked against the live SDK types (sdk.d.ts).",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest",
+    "test:run": "vitest run"
+  },
+  "devDependencies": {
+    "@drobek/agent-dx": "workspace:*",
+    "@drobek/compile": "workspace:*",
+    "@drobek/core": "workspace:*",
+    "@drobek/modules": "workspace:*",
+    "@types/node": "^22",
+    "@types/react": "^19.0.10",
+    "@types/react-dom": "^19.0.4",
+    "drobek-module-auth": "workspace:*",
+    "drobek-module-data": "workspace:*",
+    "drobek-module-email": "workspace:*",
+    "drobek-module-files": "workspace:*",
+    "drobek-module-forms": "workspace:*",
+    "drobek-module-proxy": "workspace:*",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.7"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

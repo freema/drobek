@@ -25,6 +25,13 @@ export const TEMPLATE_IMPORTS: Readonly<Record<string, string>> = {
   'react-dom/client': `https://esm.sh/react-dom@${REACT_VERSION}/client?deps=react@${REACT_VERSION}`,
 };
 
+/**
+ * Tailwind CSS v4's browser build on esm.sh (NSO-308): the no-build-step way
+ * to use Tailwind under the apps CSP (scripts only from the app + esm.sh). The
+ * `ui` skill uses the same URL (guarded by @drobek/skills-check).
+ */
+export const TAILWIND_BROWSER_URL = 'https://esm.sh/@tailwindcss/browser@4.1.11';
+
 /** The live compile limits the briefing states (defaults = @drobek/compile DEFAULT_LIMITS). */
 export interface BriefingLimits {
   maxFiles: number;
@@ -109,7 +116,7 @@ export function renderBriefing(opts: { limits?: Partial<BriefingLimits>; skills?
     '```',
     '',
     '## Styling',
-    '- Write plain CSS and import it from TypeScript. There is no Tailwind (or any other) build step.',
+    `- Write plain CSS and import it from TypeScript, or load Tailwind CSS v4's browser build from esm.sh in index.html (\`<script type="module" src="${TAILWIND_BROWSER_URL}"></script>\`). There is no PostCSS/Tailwind build step: \`@apply\` / \`@import "tailwindcss"\` in a .css file do nothing or fail. The \`ui\` skill (when listed) has the pattern.`,
     '',
     ...skillsSection(opts.skills ?? []),
     '',

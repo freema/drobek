@@ -67,7 +67,7 @@ export interface Api {
 `;
 
 export const INLINE_TYPES = `
-import type { FormHTMLAttributes, ReactNode } from 'react';
+import type { FormHTMLAttributes, JSX, ReactNode } from 'react';
 export interface FormProps extends Omit<FormHTMLAttributes<HTMLFormElement>, 'onSubmit' | 'onError' | 'name' | 'action' | 'method' | 'children'> {
   /** The form's name: lowercase letters, digits, - and _ (max 40). */
   name: string;

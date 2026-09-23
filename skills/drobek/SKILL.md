@@ -60,6 +60,11 @@ Before using a backend (login, stored data, forms, email, file uploads, external
   keep state in the browser (e.g. `localStorage`).
 - `skill_info({ name })` returns the skill: minimal working code, the exact
   SDK calls and types, the module's config schema, limits and common errors.
+- Besides the module skills (`auth`, `data`, `forms`, `email`, `files`,
+  `proxy`, …) the list has general skills: `start` (files, drobek.json, the
+  write → preview → publish loop), `debug` (compile errors, `get_logs`,
+  401/403 from a module) and `ui` (Tailwind from esm.sh, responsive and
+  accessible screens, loading and error states).
 - `configure_module({ app_id, module, config })` sets a module's config for
   the app (`config` is partial: only the keys you change). A sensitive change
   comes back `applied: false` with `pending_confirmation` and a `confirm_url`:

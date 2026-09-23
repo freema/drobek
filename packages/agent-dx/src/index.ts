@@ -26,6 +26,7 @@ export {
 } from './limits.js';
 export {
   REACT_VERSION,
+  TAILWIND_BROWSER_URL,
   TEMPLATE_IMPORTS,
   renderBriefing,
   type BriefingLimits,

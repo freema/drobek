@@ -56,7 +56,7 @@ export interface Api {
 `;
 
 export const INLINE_TYPES = `
-import type { ReactNode } from 'react';
+import type { JSX, ReactNode } from 'react';
 export interface User { id: string; email: string; role: 'user' | 'admin' }
 export interface LoginGateProps {
   /** What signed-in users see; a function gets the user. */
@@ -69,7 +69,7 @@ export interface LoginGateProps {
   loading?: ReactNode;
 }
 export function LoginGate(props: LoginGateProps): JSX.Element;
-export function useAuth(): { user: User | null; loading: boolean; logout(): Promise<void>; refresh(): Promise<void> };
+export function useAuth(): { user: User | null; loading: boolean; error: string | null; logout(): Promise<void>; refresh(): Promise<void> };
 `;
 
 const auth = defineModule<AuthConfig>({
