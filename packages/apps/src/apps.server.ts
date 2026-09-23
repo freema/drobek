@@ -8,6 +8,8 @@ import type { Actor } from './types.js';
 export interface CreateAppInput {
   workspaceId: string;
   slug: string;
+  /** Human-readable name (create_app's `name`); the slug is derived from it by the caller. */
+  name?: string | null;
   actor: Actor;
 }
 
@@ -41,6 +43,7 @@ async function slugTaken(slug: string): Promise<AppsError> {
  */
 export async function createApp(input: CreateAppInput): Promise<{ id: string; slug: string }> {
   const { workspaceId, slug, actor } = input;
+  const name = input.name?.trim() || null;
   const reason = validateAppSlug(slug);
   if (reason) {
     const suggestion = suggestSlug(slug);
@@ -54,7 +57,7 @@ export async function createApp(input: CreateAppInput): Promise<{ id: string; sl
     return await getDb().transaction(async (tx) => {
       const [row] = await tx
         .insert(apps)
-        .values({ workspaceId, slug })
+        .values({ workspaceId, slug, name })
         .returning({ id: apps.id, slug: apps.slug });
       await writeAudit(
         {

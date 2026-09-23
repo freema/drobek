@@ -34,18 +34,18 @@ async function connect(scopes: Scope[]): Promise<Client> {
   return client;
 }
 
-const READ = ['app_errors', 'app_logs', 'list_apps', 'record_query', 'record_read'];
-const WRITE = ['collection_define', 'record_create', 'record_delete', 'record_update'];
+const READ = ['get_app', 'list_apps', 'read_file'];
+const WRITE = ['create_app', 'restore_version', 'write_files'];
 
 const EXPECTED: Array<[Scope[], string[]]> = [
-  [[], ['whoami']],
-  [['read'], ['whoami', ...READ]],
-  [['write'], ['whoami', ...WRITE]],
-  [['publish'], ['whoami']],
-  [['read', 'write'], ['whoami', ...READ, ...WRITE]],
-  [['read', 'publish'], ['whoami', ...READ]],
-  [['write', 'publish'], ['whoami', ...WRITE]],
-  [['read', 'write', 'publish'], ['whoami', ...READ, ...WRITE]],
+  [[], []],
+  [['read'], [...READ]],
+  [['write'], [...WRITE]],
+  [['publish'], []],
+  [['read', 'write'], [...READ, ...WRITE]],
+  [['read', 'publish'], [...READ]],
+  [['write', 'publish'], [...WRITE]],
+  [['read', 'write', 'publish'], [...READ, ...WRITE]],
 ];
 
 describe('tools/list reflects the granted scope', () => {
@@ -69,10 +69,11 @@ describe('tools/list reflects the granted scope', () => {
     const client = await connect(['read']);
     try {
       const res = await client.callTool({
-        name: 'record_create',
-        arguments: { locator: { workspace: 'w', slug: 'a' }, collection: 'c', doc: {} },
+        name: 'write_files',
+        arguments: { app_id: 'a', files: [{ path: 'a.txt', content: 'x' }], reasoning: 'x' },
       });
       expect(res.isError).toBe(true);
+      expect((res.content as { text: string }[])[0].text).toContain('write_files not found');
     } finally {
       await client.close();
     }

@@ -3,6 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { SKILL_INSTALL_COMMAND } from './render.js';
+import { TOOL_NAMES } from './tools.js';
 
 /**
  * The drobek skill is versioned in the repo under skills/drobek/. These asserts
@@ -16,9 +17,12 @@ const SKILL_README = resolve(REPO_ROOT, 'skills/drobek/README.md');
 
 const REQUIRED_SECTIONS = [
   '## Your workspace',
-  '## Define your data schema first',
-  '## Use the data tools',
-  '## Check for errors',
+  '## Create an app',
+  '## Write files, read the compile result',
+  '## One writer at a time',
+  '## Roll back',
+  '## Publishing',
+  '## Errors',
   '## Authoritative schemas',
 ];
 
@@ -35,10 +39,13 @@ describe('skills/drobek/SKILL.md', () => {
     for (const s of REQUIRED_SECTIONS) expect(md, s).toContain(s);
   });
 
-  it('teaches schema-first data and the error loop, never the removed deploy tools', () => {
-    expect(md).toContain('collection_define');
-    expect(md).toContain('app_errors');
-    expect(md).not.toContain('deploy_init');
+  it('teaches the create → write → preview loop with every current tool, never a removed one', () => {
+    for (const tool of TOOL_NAMES) expect(md, tool).toContain(tool);
+    for (const gone of ['whoami', 'collection_define', 'record_create', 'app_errors', 'app_logs', 'deploy_init']) {
+      expect(md, gone).not.toContain(gone);
+    }
+    expect(md).toContain('preview_url');
+    expect(md).toContain('untrusted');
   });
 
   it('links the authoritative schemas (llms.txt) rather than duplicating them', () => {

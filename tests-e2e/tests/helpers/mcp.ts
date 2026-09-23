@@ -8,6 +8,7 @@ import {
 } from '@playwright/test';
 import { BASE_URL_MCP, BASE_URL_WEB } from '../../playwright.config';
 import { loginViaEmail, resetDcrIpRateLimit, uniqueEmail } from './auth';
+import { personalWorkspaceOf } from './seed';
 
 /**
  * Shared MCP harness: full login + OAuth consent (PKCE S256) + token exchange +
@@ -20,7 +21,7 @@ import { loginViaEmail, resetDcrIpRateLimit, uniqueEmail } from './auth';
 /** The loopback redirect_uri the browser's cross-origin redirect is intercepted at. */
 export const REDIRECT_URI = 'http://127.0.0.1:9988/callback';
 
-/** Every scope the AS issues — tools/list then carries all 10 tools. */
+/** Every scope the AS issues — tools/list then carries all 6 tools. */
 export const FULL_SCOPE = 'read write publish';
 
 export function pkcePair(): { verifier: string; challenge: string } {
@@ -159,7 +160,7 @@ export async function rawInitialize(
   });
 }
 
-export interface WhoamiWorkspace {
+export interface ListedWorkspace {
   slug: string;
   name: string;
   kind: 'personal' | 'team';
@@ -171,10 +172,10 @@ export interface McpClient {
   transport: StreamableHTTPClientTransport;
   /** The signed-in user's email (the token subject). */
   email: string;
-  /** The user's PERSONAL workspace slug (from whoami) — where specs seed apps. */
+  /** The user's PERSONAL workspace slug (from list_apps) — where specs seed apps. */
   workspace: string;
-  /** Every workspace the user belongs to (from whoami). */
-  workspaces: WhoamiWorkspace[];
+  /** Every workspace the user belongs to (from list_apps). */
+  workspaces: ListedWorkspace[];
 }
 
 /**
@@ -204,16 +205,24 @@ export async function mcpClient(
   expect(tok.body.access_token, 'access token issued').toBeTruthy();
 
   const { client, transport } = await connectBearer(tok.body.access_token as string);
-  const who = await callTool(client, 'whoami', {});
-  expect(who.isError, `whoami: ${JSON.stringify(who.json)}`).toBe(false);
-  const workspaces = who.json.workspaces as WhoamiWorkspace[];
+  // list_apps (read scope) names the workspaces; a grant without read (e.g.
+  // write-only) falls back to the database for the personal workspace.
+  let workspaces: ListedWorkspace[];
+  if (scope.split(/\s+/).includes('read')) {
+    const listed = await callTool(client, 'list_apps', {});
+    expect(listed.isError, `list_apps: ${JSON.stringify(listed.json)}`).toBe(false);
+    workspaces = listed.json.workspaces as ListedWorkspace[];
+  } else {
+    const ws = await personalWorkspaceOf(email);
+    workspaces = [{ slug: ws.slug, name: 'Personal', kind: 'personal', role: 'workspace-admin' }];
+  }
   const personal = workspaces.find((w) => w.kind === 'personal');
-  expect(personal, 'whoami lists the personal workspace').toBeTruthy();
+  expect(personal, 'the user has a personal workspace').toBeTruthy();
   return {
     client,
     transport,
     email,
-    workspace: (personal as WhoamiWorkspace).slug,
+    workspace: (personal as ListedWorkspace).slug,
     workspaces,
   };
 }
@@ -223,19 +232,30 @@ export interface ToolCall {
   json: Record<string, unknown>;
 }
 
+export interface ToolCallWithText extends ToolCall {
+  /** The first text content block, verbatim (read_file: the untrusted envelope). */
+  text: string;
+}
+
+/**
+ * Call a tool. `json` is the structuredContent every drobek tool returns
+ * (falls back to parsing the text; non-JSON text — e.g. the SDK's "Tool …
+ * not found" — is kept as `{ text }`).
+ */
 export async function callTool(
   client: Client,
   name: string,
   args: Record<string, unknown>
-): Promise<ToolCall> {
+): Promise<ToolCallWithText> {
   const res = await client.callTool({ name, arguments: args });
-  const text = (res.content as { type: string; text: string }[])[0].text;
-  let json: Record<string, unknown>;
-  try {
-    json = JSON.parse(text) as Record<string, unknown>;
-  } catch {
-    // Non-JSON error text (e.g. "Access denied: …") — keep it inspectable.
-    json = { text };
+  const text = (res.content as { type: string; text: string }[])[0]?.text ?? '';
+  let json = res.structuredContent as Record<string, unknown> | undefined;
+  if (!json) {
+    try {
+      json = JSON.parse(text) as Record<string, unknown>;
+    } catch {
+      json = { text };
+    }
   }
-  return { isError: Boolean(res.isError), json };
+  return { isError: Boolean(res.isError), json, text };
 }

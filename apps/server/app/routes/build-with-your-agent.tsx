@@ -18,7 +18,7 @@ export function meta() {
     {
       name: 'description',
       content:
-        'Connect the drobek MCP server, install the drobek skill, and let your agent ship static micro-apps.',
+        'Connect the drobek MCP server, install the drobek skill, and let your agent build web apps directly in your drobek workspace.',
     },
   ];
 }
@@ -85,8 +85,9 @@ export default function BuildWithYourAgent() {
       <h1 style={styles.h1}>Build with your agent</h1>
       <p style={styles.tagline}>
         Point Claude Code or Cursor at the drobek MCP server, install the drobek
-        skill, and ship a static micro-app to a live URL — with an optional
-        JSON-schema-backed Data API.
+        skill, and let your agent create an app, write its files and hand you a
+        live preview URL — drobek compiles every write and keeps it as a
+        version.
       </p>
 
       <h2 style={styles.h2}>1. Connect the MCP server</h2>
@@ -112,8 +113,8 @@ export default function BuildWithYourAgent() {
           <a href="/llms-full.txt" style={styles.link}>
             /llms-full.txt
           </a>{' '}
-          — the full contract: every tool + input schema, data access modes,
-          limits, and the error catalogue.
+          — the full contract: every tool with its inputs and result, the app
+          briefing, limits, and the error catalogue.
         </li>
       </ul>
       <p style={styles.scope}>

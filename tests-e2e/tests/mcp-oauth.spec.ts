@@ -23,8 +23,8 @@ import { personalWorkspaceOf, seedApp, workspaceIdBySlug } from './helpers/seed'
  * scope checkboxes, NO workspace choice) → token → Bearer MCP call — plus the
  * security negatives: unauthenticated 401, a foreign `resource` → invalid_target,
  * RFC 9207 `iss` on every authorization response, single-use code, and refresh
- * rotation + reuse detection. The token is USER-bound: whoami / list_apps span
- * every workspace of the user, and a non-member gets not_found.
+ * rotation + reuse detection. The token is USER-bound: list_apps spans every
+ * workspace of the user, and a non-member gets not_found.
  * CIMD, the DCR rate limit, the RS audience check and API keys live in
  * mcp-cimd.spec.ts.
  */
@@ -159,7 +159,7 @@ async function mcpResource(request: APIRequestContext): Promise<string> {
   return body.resource;
 }
 
-test('MCP OAuth 2.1 end-to-end: discovery → register → consent → token → whoami @local', async ({
+test('MCP OAuth 2.1 end-to-end: discovery → register → consent → token → list_apps @local', async ({
   page,
   request,
 }) => {
@@ -227,20 +227,16 @@ test('MCP OAuth 2.1 end-to-end: discovery → register → consent → token →
   try {
     const tools = await client.listTools();
     const names = tools.tools.map((t) => t.name);
-    expect(names).toContain('whoami');
-    // read was granted → list_apps is exposed; write was not → no write tools.
-    expect(names).toContain('list_apps');
-    expect(names).not.toContain('record_create');
-
-    const who = await callTool(client, 'whoami', {});
-    expect(who.json.email).toBe(email);
-    expect(who.json.scope).toBe('read');
-    const workspaces = who.json.workspaces as { kind: string; role: string }[];
-    expect(workspaces).toHaveLength(1);
-    expect(workspaces[0]).toMatchObject({ kind: 'personal', role: 'workspace-admin' });
+    // read was granted → the read tools are exposed; write was not → no write tools.
+    expect(names.sort()).toEqual(['get_app', 'list_apps', 'read_file']);
 
     const listed = await callTool(client, 'list_apps', {});
-    expect(listed.json.count).toBe(0);
+    expect(listed.isError).toBe(false);
+    expect(listed.json.user).toEqual({ email });
+    const workspaces = listed.json.workspaces as { kind: string; role: string }[];
+    expect(workspaces).toHaveLength(1);
+    expect(workspaces[0]).toMatchObject({ kind: 'personal', role: 'workspace-admin' });
+    expect(listed.json.apps).toEqual([]);
   } finally {
     await transport.close();
   }
@@ -357,7 +353,7 @@ test('MCP OAuth negatives: no-token 401, invalid_target, deny, single-use code, 
   }
 });
 
-test('MCP token is USER-bound: whoami + list_apps span both of the user’s workspaces; a non-member gets not_found @local', async ({
+test('MCP token is USER-bound: list_apps spans both of the user’s workspaces; a non-member gets not_found @local', async ({
   page,
   request,
   browser,
@@ -397,16 +393,13 @@ test('MCP token is USER-bound: whoami + list_apps span both of the user’s work
     expect(all).toEqual([`${personal.slug}/${personalApp.slug}`, `${teamSlug}/${teamApp.slug}`]);
 
     const onlyTeam = await callTool(mcp.client, 'list_apps', { workspace: teamSlug });
-    expect(onlyTeam.json.workspace).toBe(teamSlug);
     expect((onlyTeam.json.apps as { slug: string }[]).map((a) => a.slug)).toEqual([teamApp.slug]);
 
-    // Per-call authorization: both workspaces are reachable with this token.
-    for (const [ws, slug] of [
-      [personal.slug, personalApp.slug],
-      [teamSlug, teamApp.slug],
-    ]) {
-      const r = await callTool(mcp.client, 'app_errors', { workspace: ws, slug });
+    // Per-call authorization: apps in both workspaces are reachable with this token.
+    for (const app of [personalApp, teamApp]) {
+      const r = await callTool(mcp.client, 'get_app', { app_id: app.id });
       expect(r.isError, JSON.stringify(r.json)).toBe(false);
+      expect(r.json.slug).toBe(app.slug);
     }
   } finally {
     await mcp.transport.close();
@@ -418,23 +411,17 @@ test('MCP token is USER-bound: whoami + list_apps span both of the user’s work
   const pageB = await ctxB.newPage();
   const other = await mcpClient(pageB, request, { tag: 'mcp-outsider', scope: 'read' });
   try {
-    const cross = await callTool(other.client, 'app_errors', {
-      workspace: teamSlug,
-      slug: teamApp.slug,
-    });
-    const missing = await callTool(other.client, 'app_errors', {
-      workspace: other.workspace,
-      slug: 'e2e-no-such-app',
-    });
+    const cross = await callTool(other.client, 'get_app', { app_id: teamApp.id });
+    const missing = await callTool(other.client, 'get_app', { app_id: 'e2e-no-such-app' });
     expect(cross.isError).toBe(true);
     expect(cross.json).toEqual(missing.json);
-    expect(cross.json.error).toBe('not_found');
+    expect(cross.json.code).toBe('not_found');
 
     const foreignList = await callTool(other.client, 'list_apps', { workspace: teamSlug });
     expect(foreignList.isError).toBe(true);
-    expect(foreignList.json.error).toBe('not_found');
+    expect(foreignList.json.code).toBe('not_found');
     const own = await callTool(other.client, 'list_apps', {});
-    expect(own.json.count).toBe(0);
+    expect(own.json.apps).toEqual([]);
   } finally {
     await other.transport.close();
     await pageB.close();

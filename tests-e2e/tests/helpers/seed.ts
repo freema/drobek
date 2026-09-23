@@ -268,3 +268,49 @@ export async function seedDailyStats(
     )
   );
 }
+
+/**
+ * Insert a data collection (what the removed `collection_define` MCP tool
+ * stored — the dashboard Data tab still reads it). Idempotent by (app, name).
+ */
+export async function seedCollection(opts: {
+  appId: string;
+  name: string;
+  jsonSchema: Record<string, unknown>;
+  accessMode: 'public-read' | 'public-write' | 'locked' | 'owner-only';
+}): Promise<void> {
+  await withDb((c) =>
+    c.query(
+      `INSERT INTO collections (id, app_id, name, json_schema, access_mode)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (app_id, name) DO UPDATE
+         SET json_schema = EXCLUDED.json_schema, access_mode = EXCLUDED.access_mode, updated_at = now()`,
+      [newId('col'), opts.appId, opts.name, JSON.stringify(opts.jsonSchema), opts.accessMode]
+    )
+  );
+}
+
+/**
+ * Insert documents into a collection, oldest first (each one a millisecond
+ * later, so newest-first ordering is deterministic). Returns their ids.
+ */
+export async function seedDocuments(
+  appId: string,
+  collection: string,
+  docs: Record<string, unknown>[]
+): Promise<string[]> {
+  return withDb(async (c) => {
+    const ids: string[] = [];
+    for (let i = 0; i < docs.length; i++) {
+      const id = newId('doc');
+      await c.query(
+        `INSERT INTO app_documents (id, app_id, collection, doc, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, now() - make_interval(secs => $5::double precision),
+                 now() - make_interval(secs => $5::double precision))`,
+        [id, appId, collection, JSON.stringify(docs[i]), (docs.length - i) / 1000]
+      );
+      ids.push(id);
+    }
+    return ids;
+  });
+}

@@ -1,20 +1,22 @@
 /**
- * M0-04: user-bound grants on a real (PGlite) database —
- *  - per-call membership authorization (member role, super-admin override,
- *    identical not_found for an unknown workspace / non-member / missing app);
- *  - list_apps across every workspace of the user (+ the workspace filter);
+ * M0-04/M0-05: user-bound grants on a real (PGlite) database —
  *  - the RS Bearer path: audience check for OAuth tokens, `drk_` API keys,
- *    revoked key → invalid.
+ *    revoked key → invalid, super-admin by email;
+ *  - the MCP server this package builds authorizes every tool call per app
+ *    (the bodies live in @drobek/mcp; this is the wiring check): identical
+ *    not_found for a foreign / missing app, viewer cannot write, super-admin
+ *    override.
  */
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { Request } from 'express';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { noopLogger } from '@drobek/core';
 import { apps, memberships, users, workspaces } from '@drobek/db';
+import { memoryLeaseStore } from '@drobek/mcp';
 import { createApiKey, revokeApiKey } from '../api-keys.server.js';
 import { issueAccessAndRefresh } from '../tokens.server.js';
 import { freshDb, type TestDb } from '../test/db.js';
-import { listAppsForPrincipal, listPrincipalWorkspaces, resolveCallWorkspace } from './access.js';
 import { buildMcpServer } from './mcp.js';
 import { authenticate, mcpResourceUri, type AuthContext } from './oauth-resource.js';
 
@@ -38,69 +40,21 @@ beforeAll(async () => {
     { userId: alice.id, workspaceId: team.id, role: 'viewer' },
     { userId: bob.id, workspaceId: pb.id, role: 'workspace-admin' },
   ]);
-  await db.insert(apps).values([
-    { workspaceId: pa.id, slug: 'alice-app' },
-    { workspaceId: team.id, slug: 'team-app' },
-    { workspaceId: pb.id, slug: 'bob-app' },
-  ]);
-  Object.assign(ids, { alice: alice.id, bob: bob.id, root: root.id, team: team.id });
+  const [teamApp] = await db.insert(apps).values({ workspaceId: team.id, slug: 'team-app' }).returning();
+  const [bobApp] = await db.insert(apps).values({ workspaceId: pb.id, slug: 'bob-app' }).returning();
+  Object.assign(ids, {
+    alice: alice.id,
+    bob: bob.id,
+    root: root.id,
+    teamApp: teamApp.id,
+    bobApp: bobApp.id,
+  });
 });
 
 afterEach(() => {
   process.env = { ...savedEnv };
 });
 afterAll(async () => close());
-
-const alice = () => ({ userId: ids.alice, superAdmin: false });
-
-describe('resolveCallWorkspace (per-call membership)', () => {
-  it("resolves the caller's role in each of their workspaces", async () => {
-    expect(await resolveCallWorkspace(alice(), 'alice')).toMatchObject({
-      workspaceSlug: 'alice',
-      role: 'workspace-admin',
-    });
-    expect(await resolveCallWorkspace(alice(), 'team-x')).toMatchObject({
-      workspaceId: ids.team,
-      role: 'viewer',
-    });
-  });
-
-  it('answers a non-member and an unknown workspace identically (null → not_found)', async () => {
-    expect(await resolveCallWorkspace(alice(), 'bob')).toBeNull();
-    expect(await resolveCallWorkspace(alice(), 'no-such-workspace')).toBeNull();
-    expect(await resolveCallWorkspace(alice(), '')).toBeNull();
-  });
-
-  it('lets the super-admin into any workspace as workspace-admin', async () => {
-    const root = { userId: ids.root, superAdmin: true };
-    expect(await resolveCallWorkspace(root, 'bob')).toMatchObject({ role: 'workspace-admin' });
-    expect(await resolveCallWorkspace(root, 'no-such-workspace')).toBeNull();
-  });
-});
-
-describe('whoami / list_apps across workspaces', () => {
-  it('lists every workspace with the role', async () => {
-    expect(await listPrincipalWorkspaces(alice())).toEqual([
-      { slug: 'alice', name: 'Alice', kind: 'personal', role: 'workspace-admin' },
-      { slug: 'team-x', name: 'Team X', kind: 'team', role: 'viewer' },
-    ]);
-  });
-
-  it('lists apps from all of the user’s workspaces, never another user’s', async () => {
-    const rows = (await listAppsForPrincipal(alice())) ?? [];
-    expect(rows.map((r) => `${r.workspace}/${r.slug}`)).toEqual([
-      'alice/alice-app',
-      'team-x/team-app',
-    ]);
-  });
-
-  it('filters by workspace, and a foreign/unknown workspace is null (not_found)', async () => {
-    const rows = (await listAppsForPrincipal(alice(), 'team-x')) ?? [];
-    expect(rows.map((r) => r.slug)).toEqual(['team-app']);
-    expect(await listAppsForPrincipal(alice(), 'bob')).toBeNull();
-    expect(await listAppsForPrincipal(alice(), 'nope')).toBeNull();
-  });
-});
 
 function ctxFor(userId: string, email: string, superAdmin = false): AuthContext {
   return {
@@ -116,7 +70,12 @@ function ctxFor(userId: string, email: string, superAdmin = false): AuthContext 
 }
 
 async function call(ctx: AuthContext, name: string, args: Record<string, unknown>) {
-  const server = buildMcpServer(ctx);
+  const server = buildMcpServer(ctx, {
+    leases: memoryLeaseStore(),
+    notifyAppChanged: async () => {},
+    env: { APPS_DOMAIN: 'drobek.app' },
+    log: noopLogger,
+  });
   const [c, s] = InMemoryTransport.createLinkedPair();
   await server.connect(s);
   const client = new Client({ name: 't', version: '0' });
@@ -131,44 +90,42 @@ async function call(ctx: AuthContext, name: string, args: Record<string, unknown
 }
 
 describe('MCP tools authorize per call (anti-enumeration)', () => {
-  it('not_found is byte-identical for a foreign app, an unknown workspace and a missing app', async () => {
+  it('not_found is byte-identical for a foreign app and a missing app', async () => {
     const ctx = ctxFor(ids.alice, 'alice@example.test');
-    const foreign = await call(ctx, 'app_errors', { workspace: 'bob', slug: 'bob-app' });
-    const unknownWs = await call(ctx, 'app_errors', { workspace: 'nope', slug: 'bob-app' });
-    const missing = await call(ctx, 'app_errors', { workspace: 'alice', slug: 'nope-app' });
-    for (const r of [foreign, unknownWs, missing]) expect(r.isError).toBe(true);
+    const foreign = await call(ctx, 'get_app', { app_id: ids.bobApp });
+    const missing = await call(ctx, 'get_app', { app_id: 'no-such-app' });
+    for (const r of [foreign, missing]) expect(r.isError).toBe(true);
     expect(foreign.body).toBe(missing.body);
-    expect(unknownWs.body).toBe(missing.body);
-    expect(JSON.parse(missing.body)).toEqual({ error: 'not_found', message: 'app not found' });
+    expect(JSON.parse(missing.body)).toMatchObject({ code: 'not_found', message: 'app not found' });
+    expect(JSON.parse(missing.body).hint).toBeTruthy();
   });
 
-  it('a viewer member reads, but cannot define a collection (editor+)', async () => {
+  it('a viewer member reads, but cannot write (editor+)', async () => {
     const ctx = ctxFor(ids.alice, 'alice@example.test');
-    const read = await call(ctx, 'app_errors', { workspace: 'team-x', slug: 'team-app' });
-    expect(read.isError).toBe(false);
-    const define = await call(ctx, 'collection_define', {
-      workspace: 'team-x',
-      slug: 'team-app',
-      name: 'todos',
-      jsonSchema: { type: 'object' },
-      accessMode: 'locked',
+    const read = await call(ctx, 'get_app', { app_id: ids.teamApp });
+    expect(read.isError, read.body).toBe(false);
+    expect(JSON.parse(read.body)).toMatchObject({ slug: 'team-app', workspace: 'team-x', latest_version: 0 });
+    const write = await call(ctx, 'write_files', {
+      app_id: ids.teamApp,
+      files: [{ path: 'index.html', content: '<h1>x</h1>' }],
+      reasoning: 'x',
     });
-    expect(define.isError).toBe(true);
-    expect(JSON.parse(define.body).error).toBe('forbidden');
+    expect(write.isError).toBe(true);
+    expect(JSON.parse(write.body).code).toBe('forbidden');
   });
 
   it('the super-admin reaches a workspace they are not a member of', async () => {
     const ctx = ctxFor(ids.root, 'root@example.test', true);
-    const r = await call(ctx, 'app_errors', { workspace: 'bob', slug: 'bob-app' });
+    const r = await call(ctx, 'get_app', { app_id: ids.bobApp });
     expect(r.isError).toBe(false);
   });
 
-  it('whoami returns the user and all their workspaces', async () => {
-    const r = await call(ctxFor(ids.alice, 'alice@example.test'), 'whoami', {});
+  it('list_apps returns the user and all their workspaces', async () => {
+    const r = await call(ctxFor(ids.alice, 'alice@example.test'), 'list_apps', {});
     const body = JSON.parse(r.body);
-    expect(body.email).toBe('alice@example.test');
+    expect(body.user).toEqual({ email: 'alice@example.test' });
     expect(body.workspaces.map((w: { slug: string }) => w.slug)).toEqual(['alice', 'team-x']);
-    expect(body.tools).toContain('record_create');
+    expect(body.apps.map((a: { slug: string }) => a.slug)).toEqual(['team-app']);
   });
 });
 

@@ -2,6 +2,50 @@
 
 ## Unreleased (`next`)
 
+### ⚠️ Breaking: the MCP tool set is replaced — create_app + write tools (NSO-283)
+
+The MCP server now exposes exactly **six tools** (new package
+`@drobek/mcp`; `@drobek/oauth` keeps the transport, sessions and auth):
+
+| Tool | Scope | Annotations |
+| --- | --- | --- |
+| `list_apps` | read | readOnly |
+| `create_app` | write | not read-only, not destructive |
+| `get_app` | read | readOnly |
+| `read_file` | read | readOnly |
+| `write_files` | write | destructive |
+| `restore_version` | write | destructive |
+
+- **Removed from MCP:** `whoami` (its answer is part of `list_apps`),
+  `collection_define`, `record_create` / `record_read` / `record_update` /
+  `record_delete` / `record_query`, `app_errors`, `app_logs`, and the
+  `add-data-to-app` prompt (replaced by `build-an-app`). The data and insights
+  packages stay — the dashboard still uses them. Agents configured against the
+  old tools must be updated; `publish` unlocks no tool until M0-06.
+- **Apps are addressed by `app_id`** and every call is authorized against the
+  app's workspace (viewer+ reads, editor+ writes, super-admin everywhere; a
+  foreign or missing app is the same `not_found`).
+- **`create_app`** derives the slug from `name` (a free `-xxxx` suffix when
+  taken) and stores version 1 from the `react-ts` template (pinned React
+  import map) or the `html` template, compiled; it returns the briefing.
+- **`write_files`**: 1–20 changes → validate → secret scan → compile → one new
+  version (`compile_status` ok | error; sources are kept either way, built
+  outputs only when ok) → a Redis `drobek:app-changed` message (cache bust
+  for M0-06). A credential in a file is refused with `secret_in_source` and
+  nothing is stored.
+- **Single-writer lease** `drobek:applock:<app_id>` (3 min, renewed by every
+  write): another user gets `app_locked` with the masked holder and
+  `expires_at`; the same user's other sessions take it over.
+- **`read_file`** output is marked `untrusted: true` and wrapped in an explicit
+  untrusted envelope.
+- **Errors** are `{ code, message, hint }` (was `{ error, message }`), with the
+  hints from the rewritten error catalogue.
+- **New config `APPS_DOMAIN`** (+ optional `APPS_URL_SCHEME`): the host apps
+  live under — `<slug>.<APPS_DOMAIN>`, preview `<slug>--preview.<APPS_DOMAIN>`.
+  Required in production (the server refuses to start without it); dev default
+  `apps.localhost:3041` over http.
+- **Migration `0009_app_name`** adds the nullable `apps.name` (additive).
+
 ### ⚠️ Breaking: user-bound MCP tokens, new scopes, CIMD (NSO-282)
 
 Core migration **`0008_user_bound_tokens`** makes every MCP credential belong

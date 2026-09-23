@@ -1,7 +1,7 @@
 # drobek skill
 
-Teaches an agent (Claude Code, Cursor) to work in a drobek workspace and add data to
-its apps. It is intentionally thin: it teaches the WORKFLOW and
+Teaches an agent (Claude Code, Cursor) to build and change apps in a drobek workspace;
+it is intentionally thin: it teaches the WORKFLOW and
 links the authoritative, always-current schemas (llms-full.txt + the MCP docs
 resources) instead of duplicating them.
 
@@ -33,8 +33,8 @@ consent → token automatically. See the "Connect" section of llms-full.txt.
   drift-guard unit test in `@drobek/oauth`
   (`packages/oauth/src/resource/tool-docs-parity.test.ts`) asserts the set of
   tools the MCP server actually registers EQUALS `TOOL_NAMES` in
-  `@drobek/agent-dx`. Add a tool without a doc (or remove a doc for a live tool)
-  and CI fails.
+  `@drobek/agent-dx` — names, input fields, annotations and scopes. Add a tool
+  without a doc (or remove a doc for a live tool) and CI fails.
 - The docs (llms.txt / llms-full.txt / the MCP docs resources / this skill) all
   render from the same `@drobek/agent-dx` manifest, so updating the manifest
   updates every surface at once.

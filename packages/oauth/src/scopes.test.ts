@@ -49,19 +49,19 @@ function allCombinations(): Scope[][] {
   return out;
 }
 
-const READ_TOOLS = ['list_apps', 'record_read', 'record_query', 'app_errors', 'app_logs'];
-const WRITE_TOOLS = ['collection_define', 'record_create', 'record_update', 'record_delete'];
+const READ_TOOLS = ['list_apps', 'get_app', 'read_file'];
+const WRITE_TOOLS = ['create_app', 'write_files', 'restore_version'];
 
 /** The exact tools/list per combination, spelled out (not derived from the table). */
 const EXPECTED: Record<string, string[]> = {
-  '': ['whoami'],
-  read: ['whoami', ...READ_TOOLS],
-  write: ['whoami', ...WRITE_TOOLS],
-  publish: ['whoami'],
-  'read write': ['whoami', ...READ_TOOLS, ...WRITE_TOOLS],
-  'read publish': ['whoami', ...READ_TOOLS],
-  'write publish': ['whoami', ...WRITE_TOOLS],
-  'read write publish': ['whoami', ...READ_TOOLS, ...WRITE_TOOLS],
+  '': [],
+  read: [...READ_TOOLS],
+  write: [...WRITE_TOOLS],
+  publish: [],
+  'read write': [...READ_TOOLS, ...WRITE_TOOLS],
+  'read publish': [...READ_TOOLS],
+  'write publish': [...WRITE_TOOLS],
+  'read write publish': [...READ_TOOLS, ...WRITE_TOOLS],
 };
 
 describe('tool → scope table', () => {
@@ -80,11 +80,12 @@ describe('tool → scope table', () => {
     });
   }
 
-  it('whoami needs no scope; every other tool needs exactly one', () => {
-    expect(TOOL_SCOPES.whoami).toBeNull();
-    expect(toolAllowed([], 'whoami')).toBe(true);
-    expect(toolAllowed(['read'], 'record_create')).toBe(false);
-    expect(toolAllowed(['write'], 'record_read')).toBe(false);
-    expect(toolAllowed('read', 'record_read')).toBe(true);
+  it('every tool needs exactly one scope; publish unlocks none yet', () => {
+    for (const scope of Object.values(TOOL_SCOPES)) expect(['read', 'write']).toContain(scope);
+    expect(toolAllowed([], 'list_apps')).toBe(false);
+    expect(toolAllowed(['read'], 'write_files')).toBe(false);
+    expect(toolAllowed(['write'], 'read_file')).toBe(false);
+    expect(toolAllowed('read', 'get_app')).toBe(true);
+    expect(allowedTools(['publish'])).toEqual([]);
   });
 });

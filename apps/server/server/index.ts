@@ -1,7 +1,7 @@
 /**
  * drobek server entry — the ONE process of the self-hostable image (M0-01).
  *
- * Boot order: refuse insecure secrets (PHY-76 #6) → apply core migrations →
+ * Boot order: refuse insecure secrets (PHY-76 #6) or an invalid APPS_DOMAIN → apply core migrations →
  * mount React Router (Vite middleware in dev, `build/server` in production)
  * behind the MCP resource → start background jobs → listen.
  */
@@ -11,6 +11,7 @@ import { basename, dirname, resolve } from 'node:path';
 import { createRequestHandler } from '@react-router/express';
 import type { RequestHandler } from 'express';
 import type { ServerBuild } from 'react-router';
+import { appsOriginConfigError } from '@drobek/apps';
 import { createConsoleLogger, secretsConfigError } from '@drobek/core';
 import { runCoreMigrations } from '@drobek/db';
 import { createServerApp } from './app.js';
@@ -18,7 +19,7 @@ import { startBackgroundJobs } from './jobs.js';
 
 const log = createConsoleLogger('drobek');
 
-const configError = secretsConfigError(process.env);
+const configError = secretsConfigError(process.env) ?? appsOriginConfigError(process.env);
 if (configError) {
   console.error(configError);
   process.exit(1);

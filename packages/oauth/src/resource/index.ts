@@ -3,6 +3,9 @@
  * Resource + Streamable HTTP `/mcp` endpoint (U5, PHY-71/PHY-53; user-bound
  * grants, scopes read/write/publish and API keys since M0-04).
  *
+ * The tool bodies live in @drobek/mcp; this entry owns discovery, the Bearer
+ * gate, the transport and the sessions.
+ *
  * Mounted by the single drobek server process (apps/server) next to the
  * dashboard; each edition owns only its `/health` + `/version` and calls
  * `mountMcpResource(app)` for everything OAuth/MCP.
@@ -25,14 +28,6 @@ export {
   type AuthContext,
   type AuthOutcome,
 } from './oauth-resource.js';
-export {
-  resolveCallWorkspace,
-  listPrincipalWorkspaces,
-  listAppsForPrincipal,
-  type CallWorkspace,
-  type WhoamiWorkspace,
-  type ListedApp,
-} from './access.js';
 export { buildMcpServer, mountMcpEndpoint } from './mcp.js';
 export { registerDocs } from './docs.js';
 

@@ -129,6 +129,8 @@ export const apps = pgTable(
       .references(() => workspaces.id),
     /** GLOBALLY unique — it is the app's host label `<slug>.<APPS_DOMAIN>`. */
     slug: text('slug').notNull(),
+    /** Human-readable name given at create_app (null for pre-M0-05 apps → show the slug). */
+    name: text('name'),
     /** The version served on the production host; publish/rollback move it. */
     publishedVersionId: text('published_version_id').references(
       (): AnyPgColumn => appVersions.id,

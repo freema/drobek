@@ -41,29 +41,25 @@ describe('renderLlmsTxt', () => {
 describe('renderLlmsFull', () => {
   const full = renderLlmsFull(ENV);
 
-  it('contains every current tool name with an example call', () => {
-    for (const name of TOOL_NAMES) expect(full).toContain(name);
-    // spot-check the explicit tool set
-    for (const name of [
-      'whoami',
-      'list_apps',
-      'collection_define',
-      'record_create',
-      'record_read',
-      'record_update',
-      'record_delete',
-      'record_query',
-    ]) {
-      expect(full).toContain(name);
-    }
+  it('contains every current tool with annotations, result shape and an example call', () => {
+    for (const name of TOOL_NAMES) expect(full).toContain(`### ${name} — `);
     expect(full).toContain('Example call:');
+    expect(full).toContain('Returns: ');
+    expect(full).toContain('Annotations: readOnlyHint=false, destructiveHint=true, openWorldHint=false');
   });
 
-  it('documents the data access modes', () => {
-    expect(full).toContain('public-read');
-    expect(full).toContain('public-write');
-    expect(full).toContain('locked');
-    expect(full).toContain('owner-only');
+  it('carries the app briefing (stack, import map, rules)', () => {
+    expect(full).toContain('## The app briefing (returned by create_app and get_app)');
+    expect(full).toContain('### Stack');
+    expect(full).toContain('https://esm.sh/react@');
+    expect(full).toContain('app_locked');
+  });
+
+  it('no longer documents the removed data / insight tools', () => {
+    for (const gone of ['whoami', 'collection_define', 'record_create', 'record_query', 'app_errors', 'app_logs', 'public-write']) {
+      expect(full, gone).not.toContain(gone);
+      expect(renderLlmsTxt(ENV), gone).not.toContain(gone);
+    }
   });
 
   it('documents the MCP connect / OAuth flow', () => {
@@ -81,7 +77,7 @@ describe('renderLlmsFull', () => {
     expect(full).toContain('Client ID Metadata Document');
     expect(full).toContain('invalid_target');
     expect(full).toContain('iss=');
-    expect(full).toContain('whoami lists every workspace');
+    expect(full).toContain('list_apps lists every workspace');
     expect(full).toContain('drk_');
     for (const old of ['mcp:whoami', 'apps:read', 'deploy:write', 'data:read', 'data:write']) {
       expect(full, old).not.toContain(old);
@@ -109,15 +105,17 @@ describe('renderLlmsFull', () => {
     expect(full).toContain('## Error catalogue');
     for (const e of ERROR_CATALOGUE) expect(full).toContain(e.code);
     // task-named exemplars
-    expect(full).toContain('validation_failed');
-    expect(full).toContain('too_many_docs');
+    for (const code of ['app_locked', 'not_found', 'compile_error', 'secret_in_source', 'limit_exceeded', 'invalid_params', 'invalid_path', 'busy']) {
+      expect(full, code).toContain(`- ${code} — `);
+    }
     expect(full).toContain('redirect_uri');
+    expect(full).toContain('{ code, message, hint }');
   });
 
   it('contains the limits (every env cap)', () => {
     for (const l of LIMITS) expect(full).toContain(l.env);
-    expect(full).toContain('DATA_MAX_DOCS_PER_APP');
     expect(full).toContain('COMPILE_MAX_TOTAL_BYTES');
+    expect(full).not.toContain('DATA_MAX_DOCS_PER_APP');
   });
 
   it('surfaces the skill install command + docs resource uri consistency', () => {

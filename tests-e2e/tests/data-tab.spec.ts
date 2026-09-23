@@ -5,24 +5,27 @@ import {
   skipUnlessLocal,
   uniqueEmail,
 } from './helpers/auth';
-import { callTool, type McpClient, mcpClient } from './helpers/mcp';
+import { type McpClient, mcpClient } from './helpers/mcp';
 import {
   addMembership,
   seedApp as seedAppRow,
+  seedCollection,
+  seedDocuments,
   userIdByEmail,
   workspaceIdBySlug,
 } from './helpers/seed';
 
 /**
  * M1b acceptance (PHY-121): the dashboard Data tab (lite). Seed a collection +
- * records via the U10 MCP data tools (on an app SEEDED via SQL), then drive the dashboard UI as the
- * workspace admin: the collections list, the collection table (schema columns,
- * newest-first), a filter + sort round-trip through the U10 query API, a
- * server-streamed CSV export of the filtered rows, a read-only record viewer,
- * and an editor+ confirm-delete. Then: a VIEWER sees the table but no delete
- * affordance and a direct POST to the delete action is 403; a cross-workspace
- * app/collection is unreachable (404). Console must stay clean (no hydration
- * errors). Requires the local compose stack.
+ * records straight into Postgres (the MCP data tools are gone since NSO-283;
+ * the Data tab still reads the same tables) on an app SEEDED via SQL, then
+ * drive the dashboard UI as the workspace admin: the collections list, the
+ * collection table (schema columns, newest-first), a filter + sort round-trip
+ * through the query API, a server-streamed CSV export of the filtered rows, a
+ * read-only record viewer, and an editor+ confirm-delete. Then: a VIEWER sees
+ * the table but no delete affordance and a direct POST to the delete action is
+ * 403; a cross-workspace app/collection is unreachable (404). Console must
+ * stay clean (no hydration errors). Requires the local compose stack.
  */
 
 const DATA_SCOPE = 'read write';
@@ -45,55 +48,28 @@ interface SeededApp {
 }
 
 /**
- * Seed a throwaway app in the user's personal workspace, define a `todos` collection (LOCKED — the member-view
- * still reads it) + an owner-only `private_notes` collection (which the public/
- * anon path rejects but the owner dashboard may list/read), and seed 4 todos.
+ * Seed a throwaway app in the user's personal workspace, a `todos` collection
+ * (LOCKED — the member-view still reads it) + an owner-only `private_notes`
+ * collection (the dashboard may list/read it regardless of mode), and 4 todos.
  * `delta` carries an extra non-schema key to exercise the per-row expander.
  */
 async function seedApp(mcp: McpClient): Promise<SeededApp> {
-  const { client } = mcp;
   const workspaceId = await workspaceIdBySlug(mcp.workspace);
   const row = await seedAppRow({ workspaceId });
-  const dep = { workspaceSlug: mcp.workspace, appSlug: row.slug };
-  const locator = { workspace: dep.workspaceSlug, slug: dep.appSlug };
-
-  const def = await callTool(client, 'collection_define', {
-    workspace: dep.workspaceSlug,
-    slug: dep.appSlug,
-    name: 'todos',
-    jsonSchema: SCHEMA,
-    accessMode: 'locked',
-  });
-  expect(def.isError, JSON.stringify(def.json)).toBe(false);
-
-  // owner-only: record ops are rejected on the public/MCP path (not_implemented)
-  // — the dashboard member-view must still LIST + open it (regardless of mode).
-  const ownerDef = await callTool(client, 'collection_define', {
-    workspace: dep.workspaceSlug,
-    slug: dep.appSlug,
+  await seedCollection({ appId: row.id, name: 'todos', jsonSchema: SCHEMA, accessMode: 'locked' });
+  await seedCollection({
+    appId: row.id,
     name: 'private_notes',
     jsonSchema: SCHEMA,
     accessMode: 'owner-only',
   });
-  expect(ownerDef.isError, JSON.stringify(ownerDef.json)).toBe(false);
-
-  const docs = [
+  const ids = await seedDocuments(row.id, 'todos', [
     { title: 'alpha', done: false, priority: 3 },
     { title: 'bravo', done: true, priority: 1 },
     { title: 'charlie', done: false, priority: 2 },
     { title: 'delta', done: true, priority: 4, tags: ['x', 'y'] },
-  ];
-  const ids: string[] = [];
-  for (const doc of docs) {
-    const r = await callTool(client, 'record_create', {
-      locator,
-      collection: 'todos',
-      doc,
-    });
-    expect(r.isError, JSON.stringify(r.json)).toBe(false);
-    ids.push(r.json.id as string);
-  }
-  return { ws: dep.workspaceSlug, workspaceId, app: dep.appSlug, ids };
+  ]);
+  return { ws: mcp.workspace, workspaceId, app: row.slug, ids };
 }
 
 test('data tab: collections → table → filter/sort round-trip → CSV → record viewer → delete @local', async ({

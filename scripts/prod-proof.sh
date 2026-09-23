@@ -66,6 +66,7 @@ docker run -d --name "$NAME" --network "$NET" -p "$PORT:3000" \
   -e REDIS_URL="redis://$NAME-redis:6379" \
   -e DROBEK_MASTER_KEY="$(openssl rand -hex 32)" \
   -e PUBLIC_APP_URL="$BASE" \
+  -e APPS_DOMAIN=apps.localhost \
   "$IMAGE" >/dev/null
 
 healthy=""

@@ -79,9 +79,17 @@ secret still holds a `change-me…` placeholder. Next to it:
    `write`, `publish` — and it receives a token bound to **you**, not to one
    workspace: it reaches every workspace you are a member of, with your role
    in each.
-3. The agent can now list your workspaces and apps, define and query data
-   collections, and read the runtime errors real users hit. Browse the apps,
-   their version history and publish a version under `/workspaces/<slug>/apps`.
+3. The agent now has six tools: `list_apps` (your workspaces + apps),
+   `create_app` (an app with a compiling v1 from the `react-ts` or `html`
+   template, plus a briefing of the rules), `get_app`, `read_file`,
+   `write_files` (1–20 changes → one new version, compiled on the server; the
+   compile errors come straight back) and `restore_version`. After each
+   successful compile it hands you the `preview_url` —
+   `http://<slug>--preview.apps.localhost:3041` locally,
+   `https://<slug>--preview.<APPS_DOMAIN>` in production (serving those hosts
+   lands in the next unit). One agent writes an app at a time (a 3-minute
+   lease). Browse the apps, their version history and publish a version under
+   `/workspaces/<slug>/apps`.
 
 For scripts and tests without an OAuth flow, `task api-key:create
 EMAIL=you@example.com NAME=laptop SCOPES=read,write` prints a personal `drk_…`
@@ -110,7 +118,7 @@ task down         # docker compose down
 
 `/api/version` returns the git sha `task dev` bakes in via `GIT_SHA`
 (fallback `dev`). Monorepo layout: `apps/server` +
-`packages/{db,core,compile,apps,audit,auth,tenancy,oauth,data,proxy,insights,serving,dashboard,agent-dx,sdk}` +
+`packages/{db,core,compile,apps,audit,auth,tenancy,mcp,oauth,data,proxy,insights,serving,dashboard,agent-dx,sdk}` +
 `tests-e2e` (pnpm workspace). Architecture and the ratified D1–D5 decisions:
 [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md).
 

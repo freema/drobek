@@ -99,18 +99,11 @@ test('CIMD: a metadata-document client → consent → token → tools/list filt
   const { client, transport } = await connectBearer(tok.body.access_token as string);
   try {
     const names = (await client.listTools()).tools.map((t) => t.name).sort();
-    expect(names).toEqual(
-      ['app_errors', 'app_logs', 'list_apps', 'record_query', 'record_read', 'whoami'].sort()
-    );
-    const who = await callTool(client, 'whoami', {});
-    expect(who.json.email).toBe(email);
-    expect(who.json.scope).toBe('read');
+    expect(names).toEqual(['get_app', 'list_apps', 'read_file']);
+    const who = await callTool(client, 'list_apps', {});
+    expect(who.json.user).toEqual({ email });
     // A write tool is not callable with this grant.
-    const write = await callTool(client, 'record_create', {
-      locator: { workspace: 'x', slug: 'y' },
-      collection: 'c',
-      doc: {},
-    });
+    const write = await callTool(client, 'create_app', { name: 'Nope' });
     expect(write.isError).toBe(true);
   } finally {
     await transport.close();
@@ -238,11 +231,10 @@ test('API key: a drk_ key passes initialize + list_apps; revoked → 401 @local'
   try {
     const names = (await client.listTools()).tools.map((t) => t.name);
     expect(names).toContain('list_apps');
-    expect(names).not.toContain('record_create');
-    const who = await callTool(client, 'whoami', {});
-    expect(who.json).toMatchObject({ email, auth: 'api_key', scope: 'read' });
+    expect(names).not.toContain('write_files');
     const listed = await callTool(client, 'list_apps', {});
     expect(listed.isError).toBe(false);
+    expect(listed.json.user).toEqual({ email });
     expect((listed.json.apps as { slug: string }[]).map((a) => a.slug)).toEqual([app.slug]);
   } finally {
     await transport.close();

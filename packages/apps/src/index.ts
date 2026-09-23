@@ -32,6 +32,14 @@ export {
   sweepUnreferencedBlobs,
 } from './gc.server.js';
 export { withRedisLock } from './lock.server.js';
+export {
+  DEV_APPS_DOMAIN,
+  appsOrigin,
+  appsOriginConfigError,
+  previewUrl,
+  publishedUrl,
+  type AppsOrigin,
+} from './origin.js';
 export type {
   Actor,
   CompileStatus,

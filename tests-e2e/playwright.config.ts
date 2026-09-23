@@ -13,6 +13,15 @@ export const BASE_URL_WEB =
 export const BASE_URL_MCP =
   process.env.BASE_URL_MCP ?? BASE_URL_WEB;
 export const TEST_ENV = process.env.TEST_ENV ?? '';
+/**
+ * The apps origin the stack hands out (M0-05) — mirrors the server's default:
+ * docker-compose sets APPS_DOMAIN=apps.localhost:3041; the scheme is http for
+ * localhost / *.localhost unless APPS_URL_SCHEME overrides it.
+ */
+export const APPS_DOMAIN = process.env.APPS_DOMAIN || 'apps.localhost:3041';
+export const APPS_URL_SCHEME =
+  process.env.APPS_URL_SCHEME ||
+  (/(^|\.)localhost(:\d+)?$/.test(APPS_DOMAIN) ? 'http' : 'https');
 
 export default defineConfig({
   testDir: './tests',

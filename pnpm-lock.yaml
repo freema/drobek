@@ -400,7 +400,7 @@ importers:
         specifier: ^3.0.7
         version: 3.2.6(@types/node@22.20.0)(tsx@4.22.4)
 
-  packages/oauth:
+  packages/mcp:
     dependencies:
       '@drobek/agent-dx':
         specifier: workspace:*
@@ -408,27 +408,73 @@ importers:
       '@drobek/apps':
         specifier: workspace:*
         version: link:../apps
+      '@drobek/audit':
+        specifier: workspace:*
+        version: link:../audit
+      '@drobek/auth':
+        specifier: workspace:*
+        version: link:../auth
+      '@drobek/compile':
+        specifier: workspace:*
+        version: link:../compile
+      '@drobek/core':
+        specifier: workspace:*
+        version: link:../core
+      '@drobek/db':
+        specifier: workspace:*
+        version: link:../db
+      '@drobek/tenancy':
+        specifier: workspace:*
+        version: link:../tenancy
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.19.0
+        version: 1.29.0(zod@4.4.3)
+      drizzle-orm:
+        specifier: ^0.41.0
+        version: 0.41.0(@electric-sql/pglite@0.2.17)(@types/pg@8.20.0)(pg@8.22.0)(postgres@3.4.9)
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@electric-sql/pglite':
+        specifier: ^0.2.17
+        version: 0.2.17
+      '@types/node':
+        specifier: ^22
+        version: 22.20.0
+      react:
+        specifier: ^19.0.0
+        version: 19.2.7
+      react-router:
+        specifier: 7.14.0
+        version: 7.14.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.7
+        version: 3.2.6(@types/node@22.20.0)(tsx@4.22.4)
+
+  packages/oauth:
+    dependencies:
+      '@drobek/agent-dx':
+        specifier: workspace:*
+        version: link:../agent-dx
       '@drobek/auth':
         specifier: workspace:*
         version: link:../auth
       '@drobek/core':
         specifier: workspace:*
         version: link:../core
-      '@drobek/data':
-        specifier: workspace:*
-        version: link:../data
       '@drobek/db':
         specifier: workspace:*
         version: link:../db
-      '@drobek/insights':
+      '@drobek/mcp':
         specifier: workspace:*
-        version: link:../insights
+        version: link:../mcp
       '@drobek/proxy':
         specifier: workspace:*
         version: link:../proxy
-      '@drobek/tenancy':
-        specifier: workspace:*
-        version: link:../tenancy
       '@modelcontextprotocol/sdk':
         specifier: ^1.19.0
         version: 1.29.0(zod@4.4.3)

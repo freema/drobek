@@ -45,10 +45,20 @@ single long-lived `next` branch; pushes happen only at milestone end.
   `cimd.server.ts` (SSRF-guarded fetch, Redis cache), DCR rate limit + unused
   cap, RFC 9207 `iss`, audience check, `drk_` API keys + `task api-key:create`.
 
+- **M0-05 (NSO-283) — the 6 core MCP tools.** `@drobek/mcp` holds the tool
+  bodies (`list_apps`, `create_app`, `get_app`, `read_file`, `write_files`,
+  `restore_version`); `packages/oauth` keeps transport/auth and calls
+  `registerAppTools`. `write_files` = validate → secret scan (refuse, store
+  nothing) → `@drobek/compile` → `createVersion` (source + built) → Redis
+  `drobek:app-changed` publish. Single-writer lease `drobek:applock:<app_id>`
+  (Lua, 3 min). Briefing + templates live in `@drobek/agent-dx`. The old
+  whoami / collection_define / record_* / app_errors / app_logs tools are gone
+  (M1 brings configure_module / query_data / get_logs). `APPS_DOMAIN` is
+  required in production; migration 0009 adds `apps.name`.
+
 ## Next
 
-- M0-05 (NSO-283, `create_app` + write tools),
-  M0-06 (NSO-285), M0-07 (NSO-286), M0-08 (NSO-289). M0-09 (NSO-299) is
+- M0-06 (NSO-285), M0-07 (NSO-286), M0-08 (NSO-289). M0-09 (NSO-299) is
   blocked on Tomáš (VPS/DNS); M0-10 (NSO-302) needs `freema/drobek-plugin`.
 
 ## Notes and gotchas
@@ -92,8 +102,9 @@ single long-lived `next` branch; pushes happen only at milestone end.
   (it reported "No schema changes"); 0007 is hand-written, with the snapshot
   taken from a fresh generate. `packages/apps/src/migration.test.ts` applies
   0000–0006, seeds prod-shaped rows, then applies 0007.
-- Until `create_app` / write tools exist (M0-05), e2e specs seed apps and
-  versions straight into Postgres (`tests-e2e/tests/helpers/seed.ts`).
+- e2e specs that only need an app in the DB seed it through SQL
+  (`tests-e2e/tests/helpers/seed.ts`); `mcp-core-tools.spec.ts` drives the real
+  tools. `task e2e` truncates the local dev DB in global-setup.
 
 - `drizzle-kit generate` DID see the 0008 changes (unlike 0007); the SQL was
   then hand-edited (TRUNCATE of codes/tokens before the column drops,

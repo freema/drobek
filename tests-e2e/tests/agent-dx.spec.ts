@@ -13,22 +13,28 @@ import { FULL_SCOPE, mcpClient } from './helpers/mcp';
  * operator demo — here we assert the INGREDIENTS.
  */
 
-/** Exactly the MCP tools that exist after the deploy pipeline removal (NSO-281). */
+/** Exactly the M0-05 MCP tool set (NSO-283). */
 const ALL_TOOLS = [
-  'whoami',
   'list_apps',
+  'create_app',
+  'get_app',
+  'read_file',
+  'write_files',
+  'restore_version',
+];
+
+/** Removed tools (deploy pipeline NSO-281, data/insight tools NSO-283) — never advertised. */
+const REMOVED_TOOLS = [
+  'deploy_init',
+  'deploy_commit',
+  'deploy_status',
+  'whoami',
   'collection_define',
   'record_create',
-  'record_read',
-  'record_update',
-  'record_delete',
   'record_query',
   'app_errors',
   'app_logs',
 ];
-
-/** Removed with the upload/deploy pipeline — must not be advertised anywhere. */
-const REMOVED_TOOLS = ['deploy_init', 'deploy_commit', 'deploy_status', 'rollback'];
 
 test('GET /llms.txt → 200 text/plain with the title + section links @smoke', async ({
   request,
@@ -55,27 +61,23 @@ test('GET /llms-full.txt → 200 with every tool, no deploy pipeline, the limits
   for (const name of ALL_TOOLS) expect(body, name).toContain(`### ${name} `);
   for (const name of REMOVED_TOOLS) expect(body, name).not.toContain(name);
 
-  // app_logs documents the version-based shape, not the old deploy list.
-  expect(body).toContain('recentVersions');
-  expect(body).not.toContain('recentDeploys');
-
-  // No REST data API / upload routes any more — data goes through the MCP tools.
+  // No REST data API / upload routes.
   expect(body).not.toContain('/:ws/app/:slug');
   expect(body).not.toContain('__upload');
   expect(body).not.toContain('__beacon');
 
-  // Data access modes are still documented (they gate the MCP data tools).
-  expect(body).toContain('public-write');
-  expect(body).toContain('locked');
+  // The briefing (stack, import map, rules) and the annotations.
+  expect(body).toContain('## The app briefing');
+  expect(body).toContain('https://esm.sh/react@');
+  expect(body).toContain('destructiveHint=true');
 
   // Error catalogue.
   expect(body).toContain('## Error catalogue');
-  expect(body).toContain('validation_failed');
-  expect(body).toContain('too_many_docs');
+  expect(body).toContain('app_locked');
+  expect(body).toContain('secret_in_source');
   expect(body).toContain('redirect_uri');
 
-  // Limits: data caps + the compile caps that replaced DEPLOY_MAX_*.
-  expect(body).toContain('DATA_MAX_DOCS_PER_APP');
+  // Limits: the compile caps + the tool contract limits.
   expect(body).toContain('COMPILE_MAX_FILES');
   expect(body).toContain('COMPILE_MAX_FILE_BYTES');
   expect(body).toContain('COMPILE_MAX_TOTAL_BYTES');
@@ -91,18 +93,17 @@ test('build-with-your-agent page renders with the skill install command + MCP UR
   const html = await res.text();
   expect(html).toContain('cp -r skills/drobek ~/.claude/skills/drobek');
   expect(html).toContain('/mcp');
-  // The tool list is rendered on the page — the current tools, no deploy tools.
-  expect(html).toContain('collection_define');
-  expect(html).toContain('app_logs');
+  // The tool list is rendered on the page — the current tools, no removed ones.
+  for (const name of ALL_TOOLS) expect(html, name).toContain(name);
   for (const name of REMOVED_TOOLS) expect(html, name).not.toContain(name);
 });
 
-test('MCP tools/list is exactly the 10 tools; docs resources + the add-data prompt are populated @local', async ({
+test('MCP tools/list is exactly the 6 tools; docs resources + the build-an-app prompt are populated @local', async ({
   page,
   request,
 }) => {
   skipUnlessLocal();
-  // Every scope → tools/list is exactly the 10 remaining tools.
+  // Every scope → tools/list is exactly the 6 tools.
   const { client, transport } = await mcpClient(page, request, {
     tag: 'agent-dx',
     scope: FULL_SCOPE,
@@ -119,26 +120,26 @@ test('MCP tools/list is exactly the 10 tools; docs resources + the add-data prom
     // resources/read → the llms-full content.
     const read = await client.readResource({ uri: 'drobek://docs/llms-full' });
     const text = (read.contents[0] as { text?: string }).text ?? '';
-    expect(text).toContain('# drobek — full delivery-stack contract');
+    expect(text).toContain('# drobek — full agent contract');
     for (const name of ALL_TOOLS) expect(text, name).toContain(name);
     for (const name of REMOVED_TOOLS) expect(text, name).not.toContain(name);
     expect(text).toContain('## Error catalogue');
 
-    // prompts/list → the single remaining guided prompt.
+    // prompts/list → the single guided prompt.
     const prompts = await client.listPrompts();
-    expect(prompts.prompts.map((p) => p.name)).toEqual(['add-data-to-app']);
+    expect(prompts.prompts.map((p) => p.name)).toEqual(['build-an-app']);
 
-    // prompts/get → a populated message carrying the passed locator.
+    // prompts/get → a populated message carrying the passed arguments.
     const got = await client.getPrompt({
-      name: 'add-data-to-app',
-      arguments: { workspace: 'acme', slug: 'my-todo', collection: 'todos' },
+      name: 'build-an-app',
+      arguments: { name: 'Shift planner', idea: 'plan weekly shifts', workspace: 'acme' },
     });
     expect(got.messages.length).toBeGreaterThan(0);
     const msg = got.messages[0].content as { type: string; text?: string };
     expect(msg.type).toBe('text');
-    expect(msg.text ?? '').toContain('collection_define');
-    expect(msg.text ?? '').toContain('acme/my-todo');
-    expect(msg.text ?? '').toContain('"todos"');
+    expect(msg.text ?? '').toContain('create_app({ name: "Shift planner", workspace: "acme" })');
+    expect(msg.text ?? '').toContain('write_files');
+    expect(msg.text ?? '').toContain('preview_url');
   } finally {
     await transport.close();
   }

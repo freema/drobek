@@ -4,6 +4,7 @@
  * and the MCP docs resources render from, so every surface stays in sync with
  * the TOOL_DOCS manifest, the error catalogue, and the limits.
  */
+import { renderBriefing } from './briefing.js';
 import { ERROR_CATALOGUE } from './errors-catalogue.js';
 import { LIMITS } from './limits.js';
 import { TOOL_DOCS, type ToolDoc } from './tools.js';
@@ -21,12 +22,18 @@ export const DOCS_RESOURCE_LLMS_FULL = 'drobek://docs/llms-full';
 export const DOCS_RESOURCE_TOOLS = 'drobek://docs/tools';
 
 const SUMMARY =
-  'drobek is an open-source cloud workspace for agent-built web apps. Connect the drobek MCP server from your agent (Claude Code, Cursor) and it works directly in your drobek workspace: apps, their immutable versions, JSON-schema-backed data collections, and the errors real users hit.';
+  'drobek is an open-source cloud workspace for agent-built web apps. Connect the drobek MCP server from your agent (Claude Code, Cursor) and it works directly in your drobek workspace: create an app, write its files, get the compile result back on every write, and hand the user a live preview URL — every change is an immutable version.';
+
+function hints(tool: ToolDoc): string {
+  const a = tool.annotations;
+  return `readOnlyHint=${a.readOnlyHint}, destructiveHint=${a.destructiveHint}, openWorldHint=${a.openWorldHint}`;
+}
 
 function renderToolFull(tool: ToolDoc): string {
   const lines: string[] = [];
   lines.push(`### ${tool.name} — ${tool.title}`);
   lines.push(`Scope: ${tool.scope}`);
+  lines.push(`Annotations: ${hints(tool)}`);
   lines.push('');
   lines.push(tool.description);
   lines.push('');
@@ -38,6 +45,8 @@ function renderToolFull(tool: ToolDoc): string {
       lines.push(`- ${f.name} — ${f.type}${f.required ? '' : ' (optional)'} — ${f.description}`);
     }
   }
+  lines.push('');
+  lines.push(`Returns: ${tool.returns}`);
   lines.push('');
   lines.push('Example call:');
   lines.push('```json');
@@ -67,7 +76,7 @@ export function renderLlmsTxt(env: NodeJS.ProcessEnv = process.env): string {
     `> ${SUMMARY}`,
     '',
     '## Docs',
-    `- [Full delivery-stack contract](${app}/llms-full.txt): the MCP connect/OAuth flow, every tool with its input schema + an example, data access modes, quotas/limits, and the error catalogue.`,
+    `- [Full contract](${app}/llms-full.txt): the MCP connect/OAuth flow, every tool with its inputs, result shape and an example, the app briefing (stack, files, import map, rules), limits, and the error catalogue.`,
     `- [Build with your agent](${app}/build-with-your-agent): connect the MCP server + install the drobek skill.`,
     '',
     '## Connect (MCP)',
@@ -81,7 +90,7 @@ export function renderLlmsTxt(env: NodeJS.ProcessEnv = process.env): string {
 }
 
 /**
- * /llms-full.txt — the full delivery-stack contract. Rendered from the same
+ * /llms-full.txt — the full agent contract. Rendered from the same
  * manifest as /llms.txt so it never drifts from the real tools.
  */
 export function renderLlmsFull(env: NodeJS.ProcessEnv = process.env): string {
@@ -91,7 +100,7 @@ export function renderLlmsFull(env: NodeJS.ProcessEnv = process.env): string {
   const prm = protectedResourceMetadataUrl(env);
   const sections: string[] = [];
 
-  sections.push(['# drobek — full delivery-stack contract', '', `> ${SUMMARY}`].join('\n'));
+  sections.push(['# drobek — full agent contract', '', `> ${SUMMARY}`].join('\n'));
 
   sections.push(
     [
@@ -109,9 +118,9 @@ export function renderLlmsFull(env: NodeJS.ProcessEnv = process.env): string {
       '',
       'The `resource` MUST be exactly the MCP endpoint (else `invalid_target`), and the token is accepted only there (else 401 invalid_token). Check that the `iss` in the authorization response equals the issuer (RFC 9207). Refresh tokens rotate; reuse of an old refresh token burns the lineage.',
       '',
-      'Scopes: read (whoami, list_apps, record_read/query, app_errors/logs), write (collection_define, record_create/update/delete), publish (make a version live). whoami works with any grant. The consent screen offers the requested scopes (read + write when none are requested) and the user may uncheck any; tools/list shows exactly the granted tools.',
+      'Scopes: read (list_apps, get_app, read_file), write (create_app, write_files, restore_version), publish (make a version live — its tool arrives with app serving; until then the owner publishes from the dashboard). The consent screen offers the requested scopes (read + write when none are requested) and the user may uncheck any; tools/list shows exactly the granted tools.',
       '',
-      'The grant belongs to the USER, not to one workspace: whoami lists every workspace with your role, list_apps spans them all, and each tool call is authorized against your membership in the workspace it names (a workspace or app you cannot reach answers not_found).',
+      'The grant belongs to the USER, not to one workspace: list_apps lists every workspace with your role and the apps across them, and each tool call is authorized against your membership in the app\'s workspace (viewer+ reads, editor+ writes; a workspace or app you cannot reach answers not_found).',
       '',
       '`drk_…` personal API keys are an alternative Bearer for the same endpoint (same scopes, no OAuth flow).',
     ].join('\n')
@@ -121,21 +130,15 @@ export function renderLlmsFull(env: NodeJS.ProcessEnv = process.env): string {
 
   sections.push(
     [
-      '## Data collections',
+      '## The app briefing (returned by create_app and get_app)',
       '',
-      'Access modes (set per collection at collection_define):',
-      '- public-read — anonymous reads; writes need an editor+ member.',
-      '- public-write — anonymous reads AND writes (the schema is still validated).',
-      '- locked — no anonymous access; reads need a viewer+ member, writes an editor+ member.',
-      '- owner-only — RESERVED for U11 end-user auth; record ops are rejected as not_implemented for now.',
-      '',
-      'Every write (any mode) is schema-validated, write-rate-limited, and quota-capped.',
+      renderBriefing().replace(/^# drobek app briefing\n\n/, '').replace(/^## /gm, '### '),
     ].join('\n')
   );
 
   sections.push(
     [
-      '## Quotas & limits (env-driven caps)',
+      '## Limits',
       '',
       ...LIMITS.map((l) => `- ${l.env} (default ${l.default}) — ${l.meaning}`),
     ].join('\n')
@@ -145,7 +148,7 @@ export function renderLlmsFull(env: NodeJS.ProcessEnv = process.env): string {
     [
       '## Error catalogue',
       '',
-      'Every failure carries a stable `code`. code — where — meaning — fix:',
+      'A failed tool call returns `isError: true` with `{ code, message, hint }` (the hint is the fix below). Compile problems are NOT tool failures: they come back in `compile.errors[]` with their own code. code — where — meaning — fix:',
       '',
       ...ERROR_CATALOGUE.map(
         (e) => `- ${e.code} — ${e.surface} — ${e.meaning} FIX: ${e.fix}`

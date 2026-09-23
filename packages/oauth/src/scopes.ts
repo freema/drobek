@@ -5,13 +5,12 @@
  * bound to a USER; the scope decides WHICH tools exist for it, and the user's
  * membership role in the targeted workspace decides what each call may touch.
  *
- *   read    — look: whoami, list apps, read data, read errors + serving logs.
- *   write   — change: define collections, create/update/delete records.
- *   publish — make a version live at its public URL.
+ *   read    — look: list apps (+ who am I), get an app, read its files.
+ *   write   — change: create apps, write files (new versions), restore.
+ *   publish — make a version live at its public URL (tool arrives in M0-06).
  *
  * `TOOL_SCOPES` is the ONE table both `tools/list` filtering and per-call
- * enforcement read (resource/mcp.ts). whoami needs no scope — any valid
- * grant may identify itself.
+ * enforcement read (resource/mcp.ts).
  */
 export const SCOPES = ['read', 'write', 'publish'] as const;
 
@@ -62,20 +61,17 @@ export function hasScope(granted: string | null | undefined, scope: Scope): bool
 
 /**
  * Every MCP tool and the scope it needs (null = any valid grant). Adding a
- * tool means adding it HERE (and to the @drobek/agent-dx manifest — both are
- * drift-guarded by tool-docs-parity.test.ts).
+ * tool means adding it HERE, in @drobek/mcp and in the @drobek/agent-dx
+ * manifest — all three are drift-guarded by tool-docs-parity.test.ts.
+ * `publish` unlocks no tool until the publish tool lands (M0-06).
  */
 export const TOOL_SCOPES = {
-  whoami: null,
   list_apps: 'read',
-  record_read: 'read',
-  record_query: 'read',
-  app_errors: 'read',
-  app_logs: 'read',
-  collection_define: 'write',
-  record_create: 'write',
-  record_update: 'write',
-  record_delete: 'write',
+  get_app: 'read',
+  read_file: 'read',
+  create_app: 'write',
+  write_files: 'write',
+  restore_version: 'write',
 } as const satisfies Record<string, Scope | null>;
 
 export type ToolName = keyof typeof TOOL_SCOPES;

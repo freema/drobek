@@ -122,6 +122,11 @@ services:
       # /.well-known/oauth-authorization-server (falls back to PUBLIC_ORIGIN).
       # The MCP resource (token audience) is PUBLIC_APP_URL + /mcp.
       PUBLIC_APP_URL: ${PUBLIC_APP_URL:-http://localhost:3041}
+      # M0-05: apps live on <slug>.<APPS_DOMAIN> / <slug>--preview.<APPS_DOMAIN>
+      # (serving arrives in M0-06). *.localhost resolves to loopback in browsers;
+      # the scheme defaults to http for *.localhost (APPS_URL_SCHEME overrides).
+      APPS_DOMAIN: ${APPS_DOMAIN:-apps.localhost:3041}
+      APPS_URL_SCHEME: ${APPS_URL_SCHEME:-}
       # U10 (PHY-55): Data API storage quota + write rate-limit. DOCS_PER_APP is
       # a deliberately LOW dev cap so the data e2e quota case can exceed it
       # quickly (prod defaults are far higher — see .env.example).
@@ -179,6 +184,7 @@ services:
       - /repo/packages/data/node_modules
       - /repo/packages/db/node_modules
       - /repo/packages/insights/node_modules
+      - /repo/packages/mcp/node_modules
       - /repo/packages/oauth/node_modules
       - /repo/packages/proxy/node_modules
       - /repo/packages/sdk/node_modules

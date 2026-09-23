@@ -1,18 +1,18 @@
 /**
- * DRIFT GUARD (M1b Agent DX, PHY-124) — the enforced half of the maintenance
- * rule: the set of tools the MCP server ACTUALLY registers MUST equal the set of
- * tools documented in the @drobek/agent-dx manifest (TOOL_NAMES). Add a tool to
- * the registrations below without a doc (or a doc for a tool that no longer
- * exists) and this test fails, so llms.txt / the skill can never silently drift
- * from the real tool surface.
+ * DRIFT GUARD (PHY-124, M0-05) — the tools the MCP server ACTUALLY registers
+ * must equal the @drobek/agent-dx manifest (TOOL_DOCS): the same names, the
+ * same input field names, the same annotations, and the scope each doc names
+ * must be the one TOOL_SCOPES enforces. Add or change a tool without its doc
+ * (or the other way round) and this fails, so llms.txt / llms-full.txt / the
+ * skill can never silently drift from tools/list.
  *
- * We build a MAXIMAL-scope MCP server (every scope granted) so every scope-gated
- * tool is registered, then read the McpServer's registered tool map. No DB is
- * touched: buildMcpServer only registers handlers; the callbacks never run here.
+ * A MAXIMAL-scope server (every scope granted) is listed over an in-memory
+ * MCP client. No DB is touched: listing never runs a tool body.
  */
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { describe, expect, it } from 'vitest';
 import { TOOL_DOCS, TOOL_NAMES } from '@drobek/agent-dx';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { SCOPES, TOOL_SCOPES } from '../scopes.js';
 import { buildMcpServer } from './mcp.js';
 import type { AuthContext } from './oauth-resource.js';
@@ -28,19 +28,40 @@ const FULL_SCOPE_CTX: AuthContext = {
   audience: 'http://localhost:3041/mcp',
 };
 
-/** Read the tool names the McpServer actually registered (SDK internal map). */
-function registeredToolNames(server: McpServer): string[] {
-  const map = (server as unknown as { _registeredTools: Record<string, unknown> })
-    ._registeredTools;
-  return Object.keys(map);
+async function listedTools() {
+  const server = buildMcpServer(FULL_SCOPE_CTX);
+  const [c, s] = InMemoryTransport.createLinkedPair();
+  await server.connect(s);
+  const client = new Client({ name: 'parity', version: '0' });
+  await client.connect(c);
+  try {
+    return (await client.listTools()).tools;
+  } finally {
+    await client.close();
+  }
 }
 
-describe('MCP tool ↔ agent-dx doc parity', () => {
-  it('every registered tool has a doc, and every doc maps to a registered tool', () => {
-    const server = buildMcpServer(FULL_SCOPE_CTX);
-    const registered = registeredToolNames(server).sort();
-    const documented = [...TOOL_NAMES].sort();
-    expect(registered).toEqual(documented);
+describe('MCP tools/list ↔ agent-dx TOOL_DOCS parity', () => {
+  it('registers exactly the documented tools, in manifest order', async () => {
+    const tools = await listedTools();
+    expect(tools.map((t) => t.name)).toEqual(TOOL_NAMES);
+    expect(tools).toHaveLength(6);
+  });
+
+  it('each tool has the documented title, description, annotations and input fields', async () => {
+    const tools = await listedTools();
+    for (const doc of TOOL_DOCS) {
+      const tool = tools.find((t) => t.name === doc.name)!;
+      expect(tool.title, doc.name).toBe(doc.title);
+      expect(tool.description, doc.name).toBe(doc.description);
+      expect(tool.annotations, doc.name).toEqual({ title: doc.title, ...doc.annotations });
+      const props = Object.keys((tool.inputSchema.properties ?? {}) as object);
+      expect(props, doc.name).toEqual(doc.fields.map((f) => f.name));
+      const required = (tool.inputSchema.required ?? []) as string[];
+      expect([...required].sort(), doc.name).toEqual(
+        doc.fields.filter((f) => f.required).map((f) => f.name).sort()
+      );
+    }
   });
 
   it('the tool → scope table names exactly the documented tools', () => {
@@ -50,17 +71,28 @@ describe('MCP tool ↔ agent-dx doc parity', () => {
   it("each doc's scope line starts with the scope the table enforces", () => {
     for (const doc of TOOL_DOCS) {
       const scope = TOOL_SCOPES[doc.name as keyof typeof TOOL_SCOPES];
-      expect(doc.scope, doc.name).toMatch(
-        scope === null ? /^always available/ : new RegExp(`^${scope}\\b`)
-      );
+      expect(doc.scope, doc.name).toMatch(new RegExp(`^${scope}\\b`));
     }
   });
 
-  it('registers no removed upload-pipeline tool under full scope', () => {
-    const names = registeredToolNames(buildMcpServer(FULL_SCOPE_CTX));
-    for (const gone of ['deploy_init', 'deploy_commit', 'deploy_status', 'rollback']) {
+  it('no removed tool is registered under full scope', async () => {
+    const names = (await listedTools()).map((t) => t.name);
+    for (const gone of [
+      'whoami',
+      'collection_define',
+      'record_create',
+      'record_read',
+      'record_update',
+      'record_delete',
+      'record_query',
+      'app_errors',
+      'app_logs',
+      'deploy_init',
+      'deploy_commit',
+      'deploy_status',
+      'rollback',
+    ]) {
       expect(names).not.toContain(gone);
     }
-    expect(names).toHaveLength(10);
   });
 });

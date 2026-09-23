@@ -20,18 +20,17 @@ describe('/llms-full.txt loader', () => {
     expect(res.headers.get('content-type')).toContain('text/plain');
     const body = await res.text();
     for (const name of [
-      'whoami',
       'list_apps',
-      'collection_define',
-      'record_create',
-      'record_read',
-      'record_update',
-      'record_delete',
-      'record_query',
+      'create_app',
+      'get_app',
+      'read_file',
+      'write_files',
+      'restore_version',
     ]) {
       expect(body).toContain(name);
     }
+    expect(body).not.toContain('whoami');
     expect(body).toContain('## Error catalogue');
-    expect(body).toContain('validation_failed');
+    expect(body).toContain('app_locked');
   });
 });

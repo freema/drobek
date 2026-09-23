@@ -34,7 +34,7 @@ const CORE_TABLES = [
  * AND the REDIS_URL host is local. Never touches `drobek:session:*`.
  */
 const ALLOWED_REDIS_HOSTS = ['localhost', '127.0.0.1', 'redis'];
-const REDIS_CLEANUP_PATTERNS = ['drobek:otp:*', 'drobek:rl:*'];
+const REDIS_CLEANUP_PATTERNS = ['drobek:otp:*', 'drobek:rl:*', 'drobek:applock:*'];
 
 async function cleanupAuthRedisKeys(): Promise<void> {
   const url = process.env.REDIS_URL;
