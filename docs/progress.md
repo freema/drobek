@@ -17,10 +17,16 @@ single long-lived `next` branch; pushes happen only at milestone end.
   targets) → `ghcr.io/freema/drobek`. The server migrates itself on start
   (`runCoreMigrations`) and refuses placeholder secrets
   (`@drobek/core` `secretsConfigError`). MCP resource = `PUBLIC_APP_URL + /mcp`.
+- **M0-03 (NSO-280) — `@drobek/compile`.** In-process esbuild (`context()` +
+  `rebuild()`) over an in-memory file map: virtual-FS plugin (never the disk),
+  `drobek.json` import map (bare → `https://` external, `drobek` →
+  `/__drobek/sdk.js`), pre-build limits (`COMPILE_*`), secret scan, import
+  depth cap, FIFO semaphore (`busy`), per-build timeout via `ctx.cancel()`.
+  Not wired into any tool yet — `write_files` (M1) calls it. ~3 ms warm.
 
 ## Next
 
-- M0-02 (NSO-280): version data model + drop the upload pipeline. Remove the
+- M0-02 (NSO-281): version data model + drop the upload pipeline. Remove the
   in-process deploy consumer from `apps/server/server/jobs.ts` together with
   `@drobek/deploy` (keep the audit prune).
 
@@ -50,6 +56,11 @@ single long-lived `next` branch; pushes happen only at milestone end.
   specs before debugging them.
 - The full e2e suite needs Playwright Chromium on the host:
   `pnpm -C tests-e2e exec playwright install chromium`.
+
+- esbuild drops unused TS imports (type-only elision), so an "unresolved
+  import" test must actually USE the import or esbuild never resolves it.
+- A timed-out compile is stopped with its own `ctx.cancel()`; the global
+  `esbuild.stop()` would kill every concurrent build in the process.
 
 ## Failed approaches
 

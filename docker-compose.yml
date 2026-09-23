@@ -175,6 +175,7 @@ services:
       - /repo/packages/agent-dx/node_modules
       - /repo/packages/audit/node_modules
       - /repo/packages/auth/node_modules
+      - /repo/packages/compile/node_modules
       - /repo/packages/core/node_modules
       - /repo/packages/dashboard/node_modules
       - /repo/packages/data/node_modules
