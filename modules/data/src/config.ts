@@ -11,7 +11,10 @@
  * Changes that need the owner's confirmation (confirmRequired):
  *  - any operation opened to `public` — except `read` of a NEW collection that
  *    holds no records yet;
- *  - `update` or `delete` opened to every signed-in user (`user`);
+ *  - `read`, `update` or `delete` opened to every signed-in user (`user`) —
+ *    `read` again except for a NEW collection that holds no records yet
+ *    (NSO-322 M2: widening `owner|admin` to `user` shows every user's
+ *    records to everyone signed in);
  *  - removing the schema of a collection that holds records.
  */
 import { isValidRule, ruleIsPublic, z, type ConfirmContext } from '@drobek/modules';
@@ -85,6 +88,7 @@ const OPENS: Record<Op, string> = {
 };
 
 const USER_OPENS: Partial<Record<Op, string>> = {
+  read: 'every signed-in user may read every record, not only their own',
   update: 'every signed-in user may change every record, not only their own',
   delete: 'every signed-in user may delete every record, not only their own',
 };
@@ -108,6 +112,7 @@ export async function dataConfirmRequired(before: DataConfig, after: DataConfig,
         if (op === 'read' && !br && (await count(name)) === 0) continue;
         out.push(`data.collections.${name}.rules.${op}: ${was} → "${ar[op]}" (${OPENS[op]})`);
       } else if (USER_OPENS[op] && ruleAdmits(ar[op], 'user') && !(br && ruleAdmits(br[op], 'user'))) {
+        if (op === 'read' && !br && (await count(name)) === 0) continue;
         out.push(`data.collections.${name}.rules.${op}: ${was} → "${ar[op]}" (${USER_OPENS[op]})`);
       }
     }

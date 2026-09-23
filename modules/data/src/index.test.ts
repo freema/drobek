@@ -225,6 +225,22 @@ describe('confirmRequired', () => {
     expect(await confirm({}, { collections: { x: { rules: { create: 'user', read: 'user' } } } })).toEqual([]);
   });
 
+  it('read widened to every signed-in user needs a confirmation (NSO-322 M2) — not for a NEW empty collection', async () => {
+    expect(await confirm({ collections: { x: {} } }, { collections: { x: { rules: { read: 'user' } } } })).toEqual([
+      'data.collections.x.rules.read: "owner|admin" → "user" (every signed-in user may read every record, not only their own)',
+    ]);
+    expect(await confirm({ collections: { x: { rules: { read: 'owner' } } } }, { collections: { x: { rules: { read: 'owner|user' } } } })).toHaveLength(1);
+    // Already open to users, or narrowed: nothing.
+    expect(await confirm({ collections: { x: { rules: { read: 'user' } } } }, { collections: { x: { rules: { read: 'user|admin' } } } })).toEqual([]);
+    expect(await confirm({ collections: { x: { rules: { read: 'user' } } } }, { collections: { x: { rules: { read: 'owner' } } } })).toEqual([]);
+    // A new collection: free while empty; one that already holds records (a re-declared one) needs it.
+    expect(await confirm({}, { collections: { todos: { rules: { read: 'user' } } } })).toEqual([]);
+    await create(ctx({ principal: A }), 'todos', { title: 'kept' });
+    expect(await confirm({}, { collections: { todos: { rules: { read: 'user' } } } })).toEqual([
+      'data.collections.todos.rules.read: (new collection) → "user" (every signed-in user may read every record, not only their own)',
+    ]);
+  });
+
   it('removing the schema of a collection with records (not of an empty one)', async () => {
     expect(await confirm({ collections: { todos: { schema: TODO_SCHEMA } } }, { collections: { todos: {} } })).toEqual([]);
     await create(ctx({ principal: A }), 'todos', { title: 'one' });

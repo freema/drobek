@@ -25,9 +25,10 @@ from the auth module — read `skill_info('auth')`.
   above are the default for a collection without `rules`: each user sees and
   changes only their own records, admins everything, visitors nothing.
 - A guestbook: `{"read":"public","create":"public","update":"admin","delete":"admin"}`.
-- Opening an operation to `public`, `update`/`delete` to `user` (everyone
-  may change everyone's records), or removing the schema of a collection with
-  records **needs the owner's confirmation**: `configure_module` answers
+- Opening an operation to `public`, `read`/`update`/`delete` of an existing
+  collection to `user` (everyone signed in sees or changes everyone's
+  records), or removing the schema of a collection with records **needs the
+  owner's confirmation**: `configure_module` answers
   `applied: false` with a `confirm_url`. Give the user that link and say why.
 - The config is a JSON merge patch: send only what changes; `null` deletes.
 

@@ -845,8 +845,9 @@ of JSON records with per-operation rules. `skill_info('data')`.
   field `details`), and only its properties can be filtered and sorted on.
 - **Needs the owner's confirmation** (`confirmRequired`, uses the context's
   db): any operation opened to `public` (except `read` of a NEW collection
-  that holds no records), `update` / `delete` opened to every signed-in user
-  (`user`), removing the `schema` of a collection that holds records.
+  that holds no records), `read` / `update` / `delete` opened to every
+  signed-in user (`user`; `read` again except for a NEW empty collection),
+  removing the `schema` of a collection that holds records.
 - **Routes** (`/__drobek/v1/data/…`, every app host; the preview and
   production hosts share the app's records):
   - `GET :collection?filter=<json>&sort=&dir=&limit=&cursor=` (rule `read`)
