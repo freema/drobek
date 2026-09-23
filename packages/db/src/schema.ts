@@ -59,12 +59,13 @@ export const membershipRoleEnum = pgEnum('membership_role', [
   'viewer',
 ]);
 
-/** App visibility gate, checked BEFORE serving blobs (public | team | password). */
-export const appVisibilityEnum = pgEnum('app_visibility', [
-  'public',
-  'team',
-  'password',
-]);
+/**
+ * App visibility gate, checked on the app host BEFORE any file is read
+ * (M0-06): `public` or `password`. The former `team` value is gone — app hosts
+ * never read the dashboard session, so "members only" cannot be enforced
+ * there (migration 0010 turns `team` apps into `password` apps).
+ */
+export const appVisibilityEnum = pgEnum('app_visibility', ['public', 'password']);
 
 export const appStatusEnum = pgEnum('app_status', ['live', 'hibernated']);
 
@@ -139,6 +140,12 @@ export const apps = pgTable(
     visibility: appVisibilityEnum('visibility').notNull().default('public'),
     /** Only set when visibility = 'password'. */
     passwordHash: text('password_hash'),
+    /**
+     * CSP `frame-ancestors` override for the app's hosts (M0-06), e.g.
+     * `https://intranet.example.com`. Null → `'none'` (no embedding). Edited
+     * in the dashboard later (M2); validated before it reaches a header.
+     */
+    frameAncestors: text('frame_ancestors'),
     status: appStatusEnum('status').notNull().default('live'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     /** Soft-delete tombstone (PHY-101). */

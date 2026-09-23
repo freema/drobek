@@ -17,6 +17,7 @@ import {
   logger,
   serializeError,
   SESSION_COOKIE,
+  cookieName,
 } from '@drobek/auth';
 import { getDb, memberships, workspaces } from '@drobek/db';
 import { personalSlugBase, personalSlugCandidate } from './slug.js';
@@ -131,7 +132,7 @@ export async function ensurePersonalWorkspaceAfterLogin(
     const pair = response.headers
       .getSetCookie()
       .map((c) => c.split(';')[0]?.trim() ?? '')
-      .find((c) => c.startsWith(`${SESSION_COOKIE}=`) && !c.endsWith('='));
+      .find((c) => c.startsWith(`${cookieName(SESSION_COOKIE)}=`) && !c.endsWith('='));
     if (!pair) return;
 
     // Resolve the session through auth's public API — no key-format coupling.

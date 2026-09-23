@@ -85,6 +85,13 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     fix: 'Call create_app again, or with a more specific name.',
   },
   {
+    code: 'not_publishable',
+    surface: 'MCP tool isError (publish)',
+    meaning:
+      'The version you asked publish to put live did not compile (only versions with compile_status ok can be published), or the app has no version that compiled yet. Nothing changed on the production URL.',
+    fix: 'Publish a version that compiled: omit `version` to publish the newest one that did, or fix compile.errors with write_files first.',
+  },
+  {
     code: 'internal_error',
     surface: 'MCP tool isError',
     meaning: 'drobek failed unexpectedly while handling the call (the details are in the server log, never in the response).',

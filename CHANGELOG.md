@@ -2,6 +2,60 @@
 
 ## Unreleased (`next`)
 
+### ⚠️ Breaking: apps on their own origin, `publish` tool, `__Host-` cookies (NSO-285)
+
+- **Everyone is signed out once.** The dashboard session cookie is renamed
+  `drobek_session` → **`__Host-drobek_session`** (always `Secure`, `Path=/`,
+  no `Domain` — host-only, so it can never reach an app host). The old cookie
+  is ignored. The Google-login state and login-return cookies get the same
+  prefix (`__Host-drobek_google_oauth_state`, `__Host-drobek_login_return`).
+  The prefix (and `Secure`) is used whenever `NODE_ENV=production` or the
+  dashboard origin is https; only plain-http development drops it (browsers
+  refuse `__Host-` on `http://localhost`) — the cookies stay host-only there.
+- **App serving (host dispatch in `apps/server`).** `<slug>.<APPS_DOMAIN>` →
+  the published version (a 404 "not published yet" page before the first
+  publish), `<slug>--preview.<APPS_DOMAIN>` → the newest version that
+  compiled, `<slug>--v<N>.<APPS_DOMAIN>` → exactly version N. Files come from
+  `version_files`: built outputs win over a source on the same path,
+  `*.ts`/`*.tsx`/`*.jsx` sources and `drobek.json` are never served, other
+  paths fall back to `index.html`. `ETag` = the sha256 (304 on
+  `If-None-Match`); `Cache-Control: public, max-age=0, must-revalidate`, and
+  `public, max-age=31536000, immutable` for js/css requested with a hash query
+  (`?v=<8–64 url-safe chars>`); password apps use `private`. Bytes are cached
+  in-process (LRU by sha256, 256 MiB), host resolutions for 60 s; both are
+  busted on every new version / publish through the Redis
+  `drobek:app-changed` channel (and a full drop on a Redis reconnect).
+- **App headers:** the app CSP (`default-src 'self'; script-src 'self'
+  https://esm.sh 'unsafe-inline'; …; frame-ancestors 'none'; form-action
+  'self'`), `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`,
+  `X-Robots-Tag: noindex` on preview/version hosts. App hosts never read the
+  dashboard session and never set a dashboard cookie. A malformed `Host` is a
+  400.
+- **The dashboard never serves an app** and refuses mutating requests (POST,
+  PUT, PATCH, DELETE) whose `Origin` is an app host, `null` or a foreign site
+  with **403** (`/oauth/token`, `/oauth/register` and `/mcp` are exempt — they
+  are cross-origin by design and cookie-less). This also applies to the BFF
+  proxy route: an app page can no longer call it with the dashboard session.
+- **Password gate:** `apps.visibility` is now `public | password`. A password
+  app answers 401 with a form on every host; `POST /__drobek/password` (10
+  attempts per 15 min per app + IP) sets `__Host-drobek_app_access`
+  (host-only, `Secure`, `HttpOnly`, `SameSite=Lax`, 12 h; plain-http dev:
+  `drobek_app_access` without `Secure`), an HMAC token bound to the app and
+  signed with a key derived from `DROBEK_MASTER_KEY`.
+- **New MCP tool `publish(app_id, version?)`** — scope `publish`, editor+,
+  annotations destructive + open-world; the default is the newest version that
+  compiled, an older one is the production rollback; a version that did not
+  compile → `not_publishable`. Audited as `app.publish`; returns
+  `{ published_version, previous_version, published_url, domains }`. No
+  write lease (it only moves the published pointer). `tools/list` now has
+  seven tools; the briefing, `/llms*.txt`, the `build-an-app` prompt and the
+  skill say to publish only when the user explicitly asks.
+- **Migration `0010_apps_origin`**: the `app_visibility` enum becomes
+  `public | password` (existing `team` apps become `password` — with no
+  password set they stay closed until an owner sets one) and adds the
+  nullable `apps.frame_ancestors` (`'self'` or up to 10 http(s) origins,
+  space-separated; anything else falls back to `'none'`).
+
 ### ⚠️ Breaking: the MCP tool set is replaced — create_app + write tools (NSO-283)
 
 The MCP server now exposes exactly **six tools** (new package

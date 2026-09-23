@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { TOOL_DOCS, TOOL_NAMES, toolDoc } from './tools.js';
 
 describe('TOOL_DOCS manifest', () => {
-  it('documents exactly the 6 M0-05 tools, in tools/list order', () => {
+  it('documents exactly the 7 tools, in tools/list order', () => {
     expect(TOOL_NAMES).toEqual([
       'list_apps',
       'create_app',
@@ -10,6 +10,7 @@ describe('TOOL_DOCS manifest', () => {
       'read_file',
       'write_files',
       'restore_version',
+      'publish',
     ]);
   });
 
@@ -48,6 +49,17 @@ describe('TOOL_DOCS manifest', () => {
         openWorldHint: false,
       });
     }
+    // publish changes what the public internet sees.
+    expect(toolDoc('publish').annotations).toEqual({
+      readOnlyHint: false,
+      destructiveHint: true,
+      openWorldHint: true,
+    });
+  });
+
+  it('publish is documented as explicit-request only, with the publish scope', () => {
+    expect(toolDoc('publish').scope).toMatch(/^publish\b/);
+    expect(toolDoc('publish').description).toMatch(/ONLY when the user explicitly asks/);
   });
 
   it('every field has a name, type, and description; examples only use documented fields', () => {

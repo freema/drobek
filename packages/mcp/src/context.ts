@@ -3,9 +3,12 @@
  * side-effect seams the tools use (lease store, change notifications, compiler,
  * clock) — injectable so unit tests run without Redis and without sleeping.
  */
+import { notifyAppChanged, type AppChangedEvent } from '@drobek/apps';
 import { Compiler } from '@drobek/compile';
 import { createConsoleLogger, getRedis, type Logger } from '@drobek/core';
 import { redisLeaseStore, type LeaseStore } from './lease.js';
+
+export { APP_CHANGED_CHANNEL, type AppChangedEvent } from '@drobek/apps';
 
 /** The authenticated principal of one MCP session (a user-bound grant). */
 export interface ToolPrincipal {
@@ -13,15 +16,6 @@ export interface ToolPrincipal {
   email: string;
   /** Global SUPERADMIN_EMAIL override: reaches every workspace. */
   superAdmin: boolean;
-}
-
-/** Redis pub/sub channel the app hosts' serve cache listens on (M0-06). */
-export const APP_CHANGED_CHANNEL = 'drobek:app-changed';
-
-export interface AppChangedEvent {
-  app_id: string;
-  slug: string;
-  version: number;
 }
 
 export interface ToolDeps {
@@ -48,13 +42,7 @@ export function defaultDeps(overrides: Partial<ToolDeps> = {}): ToolDeps {
   const log = overrides.log ?? createConsoleLogger('mcp');
   return {
     leases: redisLeaseStore(() => getRedis(), overrides.now),
-    notifyAppChanged: async (event) => {
-      try {
-        await getRedis().publish(APP_CHANGED_CHANNEL, JSON.stringify(event));
-      } catch (err) {
-        log.warn('app-changed publish failed', { app_id: event.app_id, error: String(err) });
-      }
-    },
+    notifyAppChanged: (event) => notifyAppChanged(event, log),
     compile: (files) => defaultCompiler().compile(files),
     get limits() {
       return defaultCompiler().limits;

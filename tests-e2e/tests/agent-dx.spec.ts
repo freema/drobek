@@ -13,7 +13,7 @@ import { FULL_SCOPE, mcpClient } from './helpers/mcp';
  * operator demo — here we assert the INGREDIENTS.
  */
 
-/** Exactly the M0-05 MCP tool set (NSO-283). */
+/** Exactly the MCP tool set: M0-05 core tools (NSO-283) + publish (NSO-285). */
 const ALL_TOOLS = [
   'list_apps',
   'create_app',
@@ -21,6 +21,7 @@ const ALL_TOOLS = [
   'read_file',
   'write_files',
   'restore_version',
+  'publish',
 ];
 
 /** Removed tools (deploy pipeline NSO-281, data/insight tools NSO-283) — never advertised. */
@@ -98,12 +99,12 @@ test('build-with-your-agent page renders with the skill install command + MCP UR
   for (const name of REMOVED_TOOLS) expect(html, name).not.toContain(name);
 });
 
-test('MCP tools/list is exactly the 6 tools; docs resources + the build-an-app prompt are populated @local', async ({
+test('MCP tools/list is exactly the 7 tools; docs resources + the build-an-app prompt are populated @local', async ({
   page,
   request,
 }) => {
   skipUnlessLocal();
-  // Every scope → tools/list is exactly the 6 tools.
+  // Every scope → tools/list is exactly the 7 tools.
   const { client, transport } = await mcpClient(page, request, {
     tag: 'agent-dx',
     scope: FULL_SCOPE,

@@ -122,8 +122,9 @@ services:
       # /.well-known/oauth-authorization-server (falls back to PUBLIC_ORIGIN).
       # The MCP resource (token audience) is PUBLIC_APP_URL + /mcp.
       PUBLIC_APP_URL: ${PUBLIC_APP_URL:-http://localhost:3041}
-      # M0-05: apps live on <slug>.<APPS_DOMAIN> / <slug>--preview.<APPS_DOMAIN>
-      # (serving arrives in M0-06). *.localhost resolves to loopback in browsers;
+      # M0-05/M0-06: apps are served by this same process on
+      # <slug>.<APPS_DOMAIN> (published), <slug>--preview.<APPS_DOMAIN> and
+      # <slug>--v<N>.<APPS_DOMAIN>. *.localhost resolves to loopback in browsers;
       # the scheme defaults to http for *.localhost (APPS_URL_SCHEME overrides).
       APPS_DOMAIN: ${APPS_DOMAIN:-apps.localhost:3041}
       APPS_URL_SCHEME: ${APPS_URL_SCHEME:-}

@@ -17,7 +17,7 @@ import {
   type ActionFunctionArgs,
   type LoaderFunctionArgs,
 } from 'react-router';
-import { AppsError, listVersions, publish } from '@drobek/apps';
+import { AppsError, listVersions, notifyAppChanged, publish } from '@drobek/apps';
 import { actorKindForSurface } from '@drobek/audit';
 import { requireWorkspaceRole } from '@drobek/tenancy';
 import {
@@ -104,10 +104,12 @@ export async function action({ request, params }: ActionFunctionArgs) {
   try {
     // Dashboard/web surface (PHY-85) → the publish audit is attributed to the
     // human session user. Server-derived here; the client cannot set it.
-    await publish(app.id, versionId, {
+    const published = await publish(app.id, versionId, {
       userId: access.user.id,
       kind: actorKindForSurface('web'),
     });
+    // M0-06: the production host serves the new version from the next request.
+    await notifyAppChanged({ app_id: app.id, slug: app.slug, version: published.number, kind: 'publish' });
   } catch (err) {
     // Expected failures (not_found / not_publishable) carry a caller-safe message.
     if (err instanceof AppsError) {

@@ -1,8 +1,9 @@
 /**
  * The apps origin (M0-05): every app lives on its own host under
  * `APPS_DOMAIN` — the published version at `<slug>.<APPS_DOMAIN>`, the working
- * copy at `<slug>--preview.<APPS_DOMAIN>`. Serving those hosts is M0-06; this
- * module only computes the URLs the tools and the dashboard hand out.
+ * copy at `<slug>--preview.<APPS_DOMAIN>`, one version at
+ * `<slug>--v<N>.<APPS_DOMAIN>`. This module computes the URLs the tools and the
+ * dashboard hand out; host.ts parses them back (M0-06 serving).
  *
  * `APPS_DOMAIN` is a bare host (optionally `:port`), no scheme. It is required
  * in production (the server refuses to start without it); in dev it defaults
@@ -10,6 +11,8 @@
  * `APPS_URL_SCHEME` (http | https) defaults to http for `localhost` /
  * `*.localhost` and https otherwise.
  */
+
+import type { HostConfig } from './host.js';
 
 export const DEV_APPS_DOMAIN = 'apps.localhost:3041';
 
@@ -84,4 +87,34 @@ export function previewUrl(slug: string, env: NodeJS.ProcessEnv = process.env): 
 export function publishedUrl(slug: string, env: NodeJS.ProcessEnv = process.env): string {
   const { scheme, domain } = appsOrigin(env);
   return `${scheme}://${slug}.${domain}`;
+}
+
+/** `https://<slug>--v<N>.<APPS_DOMAIN>` — exactly version N. */
+export function versionUrl(slug: string, number: number, env: NodeJS.ProcessEnv = process.env): string {
+  const { scheme, domain } = appsOrigin(env);
+  return `${scheme}://${slug}--v${number}.${domain}`;
+}
+
+/**
+ * The dashboard origin (`PUBLIC_APP_URL`, falling back to `PUBLIC_ORIGIN`, then
+ * the dev default) — the same resolution the OAuth issuer and the agent docs use.
+ */
+export function dashboardOrigin(env: NodeJS.ProcessEnv = process.env): string {
+  const raw = env.PUBLIC_APP_URL?.trim() || env.PUBLIC_ORIGIN?.trim() || 'http://localhost:3041';
+  try {
+    return new URL(raw).origin;
+  } catch {
+    return raw.replace(/\/+$/, '');
+  }
+}
+
+/** What host dispatch needs: APPS_DOMAIN and the dashboard's host. Throws on a bad APPS_DOMAIN. */
+export function hostConfig(env: NodeJS.ProcessEnv = process.env): HostConfig {
+  let dashboardHost: string | null = null;
+  try {
+    dashboardHost = new URL(dashboardOrigin(env)).host || null;
+  } catch {
+    dashboardHost = null;
+  }
+  return { appsDomain: appsOrigin(env).domain, dashboardHost };
 }

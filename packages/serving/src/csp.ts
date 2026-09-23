@@ -1,67 +1,83 @@
 /**
- * Security headers for served app responses (U7, PHY-58 / PHY-52). Pure.
+ * Security headers of every response an app host sends (M0-06, plan §3.3).
+ * Pure. Every app has its own host = its own origin, so the CSP confines the
+ * app to itself (+ esm.sh for the import-mapped dependencies) and the headers
+ * below go on EVERY app-host response — files, 304s, the not-published / 404
+ * pages and the password page alike.
  *
- * CSP trade-off for STATIC vibecoded apps: they routinely inline `<script>` and
- * `<style>` and load only same-origin assets, so a nonce/hash CSP would break
- * the vast majority of them. We therefore ship a conservative ALLOW-INLINE
- * policy that still confines the app to its own origin for actives and blocks
- * the dangerous primitives:
- *   default-src 'self'                  — same-origin only by default
- *   script-src 'self' 'unsafe-inline'   — inline app scripts run; no cross-origin JS
- *   style-src  'self' 'unsafe-inline'   — inline styles run
- *   img/font/media-src 'self' data: …   — data/blob assets common in SPAs
- *   connect-src 'self'                  — fetch/XHR/WebSocket back to same origin only
- *   object-src 'none'; base-uri 'self'; frame-ancestors 'self'; form-action 'self'
+ *   default-src 'self'
+ *   script-src  'self' https://esm.sh 'unsafe-inline'   — the build + esm.sh deps; inline app scripts run
+ *   style-src   'self' 'unsafe-inline' https:           — inline styles, CSS from CDNs
+ *   img-src     'self' data: blob: https:
+ *   font-src    'self' data: https:
+ *   connect-src 'self' https://esm.sh                   — fetch only back to the app itself
+ *                                                          (modules live at /__drobek/*, M1)
+ *   object-src 'none'; base-uri 'self'; form-action 'self'
+ *   frame-ancestors 'none'                              — or the app's validated override
  *
- * ⚠️ RESIDUAL RISK (PHY-98 / U11): the apex same-origin is NOT a real boundary
- * against an untrusted author. An app served here shares drobek's origin with
- * the dashboard, and neither CSP nor path-scoped cookies stop a same-origin
- * credentialed fetch from app JS to the dashboard. This is ACCEPTED for the
- * single-user self-host / M0–M1a only. The real fix — moving the dashboard to
- * app.drobek.app and giving apps a per-workspace apps-origin — is PHY-98 / U11,
- * OUT OF U7 SCOPE. Do NOT treat this CSP as an author sandbox.
+ * Plus `X-Content-Type-Options: nosniff` (the Content-Type comes from the path
+ * extension only), `Referrer-Policy: no-referrer` (an app URL never leaks to a
+ * third party), and `X-Robots-Tag: noindex` on the preview and version hosts
+ * (only the published host may be indexed).
  */
-export const APP_CSP = [
+
+export const DEFAULT_FRAME_ANCESTORS = "'none'";
+
+const CSP_BASE = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline'",
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
-  "font-src 'self' data:",
-  "media-src 'self' data: blob:",
-  "connect-src 'self'",
+  "script-src 'self' https://esm.sh 'unsafe-inline'",
+  "style-src 'self' 'unsafe-inline' https:",
+  "img-src 'self' data: blob: https:",
+  "font-src 'self' data: https:",
+  "connect-src 'self' https://esm.sh",
   "object-src 'none'",
   "base-uri 'self'",
-  "frame-ancestors 'self'",
-  "form-action 'self'",
-].join('; ');
+];
 
-/** Invariant security headers on EVERY served app response (incl. 404/304). */
-export function baseSecurityHeaders(): Record<string, string> {
-  return {
-    'Content-Security-Policy': APP_CSP,
-    'X-Content-Type-Options': 'nosniff',
-    'Referrer-Policy': 'strict-origin-when-cross-origin',
-    'X-Frame-Options': 'SAMEORIGIN',
-  };
+/** The CSP for an app host with the given (already validated) frame-ancestors value. */
+export function appCsp(frameAncestors: string = DEFAULT_FRAME_ANCESTORS): string {
+  return [...CSP_BASE, `frame-ancestors ${frameAncestors}`, "form-action 'self'"].join('; ');
 }
 
-export interface AppHeaderInput {
-  contentType: string;
-  etag: string;
-  cacheControl: string;
-  contentLength?: number;
+/** The default app CSP (no embedding). */
+export const APP_CSP = appCsp();
+
+// One CSP source expression allowed in a per-app frame-ancestors override:
+// 'self', or an http(s) origin whose host may start with a `*.` wildcard.
+const SOURCE_RE =
+  /^(?:'self'|https?:\/\/(?:\*\.)?[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*(?::\d{1,5})?)$/;
+const MAX_SOURCES = 10;
+
+/**
+ * Validate a stored `apps.frame_ancestors` override into a CSP source list, or
+ * null when it is absent or invalid (→ the caller uses `'none'`). Fail closed:
+ * anything but a short list of `'self'` / http(s) origins — a `;`, a quote, a
+ * path, a scheme-only source like `https:`, `*` — rejects the whole value, so a
+ * stored value can never inject another CSP directive or a header.
+ */
+export function parseFrameAncestors(raw: string | null | undefined): string | null {
+  if (typeof raw !== 'string') return null;
+  const tokens = raw.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0 || tokens.length > MAX_SOURCES) return null;
+  if (tokens.length === 1 && tokens[0] === "'none'") return DEFAULT_FRAME_ANCESTORS;
+  if (!tokens.every((t) => SOURCE_RE.test(t))) return null;
+  return [...new Set(tokens)].join(' ');
 }
 
-/** Full header set for a 200 (or HEAD) file response. */
-export function appResponseHeaders(input: AppHeaderInput): Record<string, string> {
+export interface SecurityHeaderInput {
+  /** Validated frame-ancestors (parseFrameAncestors), null → 'none'. */
+  frameAncestors?: string | null;
+  /** Preview and version hosts are never indexed. */
+  noindex: boolean;
+}
+
+/** The invariant security headers of EVERY app-host response (incl. 304/401/404/405). */
+export function appSecurityHeaders(input: SecurityHeaderInput): Record<string, string> {
   const h: Record<string, string> = {
-    ...baseSecurityHeaders(),
-    'Content-Type': input.contentType,
-    ETag: input.etag,
-    'Cache-Control': input.cacheControl,
+    'Content-Security-Policy': appCsp(input.frameAncestors ?? DEFAULT_FRAME_ANCESTORS),
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'no-referrer',
   };
-  if (input.contentLength !== undefined) {
-    h['Content-Length'] = String(input.contentLength);
-  }
+  if (input.noindex) h['X-Robots-Tag'] = 'noindex';
   return h;
 }

@@ -11,7 +11,7 @@
 import { roleAtLeast, type WorkspaceRole } from '@drobek/tenancy/roles';
 import type { AuditActorKind } from '@drobek/audit/actor';
 
-export type AppVisibility = 'public' | 'team' | 'password';
+export type AppVisibility = 'public' | 'password';
 export type AppLiveStatus = 'live' | 'hibernated';
 
 /** Mirrors the `compile_status` pg enum. */

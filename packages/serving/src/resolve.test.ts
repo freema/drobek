@@ -4,6 +4,7 @@ import {
   IMMUTABLE_CACHE,
   REVALIDATE_CACHE,
   cacheControlFor,
+  decodeRequestPath,
   etagFor,
   isNotModified,
   normalizeRequestPath,
@@ -104,17 +105,52 @@ describe('resolveServePath — spa fallback', () => {
 });
 
 describe('cacheControlFor', () => {
-  it('revalidates the entry document', () => {
-    expect(cacheControlFor(true)).toEqual({
-      cacheControl: REVALIDATE_CACHE,
-      immutable: false,
-    });
+  const cc = (path: string, query = '', isPrivate = false) => cacheControlFor({ path, query, isPrivate });
+
+  it('HTML always revalidates: public, max-age=0, must-revalidate', () => {
+    expect(REVALIDATE_CACHE).toBe('public, max-age=0, must-revalidate');
+    expect(cc('index.html')).toBe(REVALIDATE_CACHE);
+    expect(cc('index.html', 'v=0123456789abcdef')).toBe(REVALIDATE_CACHE);
   });
-  it('immutably caches every other asset', () => {
-    expect(cacheControlFor(false)).toEqual({
-      cacheControl: IMMUTABLE_CACHE,
-      immutable: true,
-    });
+
+  it('JS/CSS without a hash query revalidate (the name is stable across versions)', () => {
+    expect(cc('main.js')).toBe(REVALIDATE_CACHE);
+    expect(cc('main.css')).toBe(REVALIDATE_CACHE);
+    expect(cc('main.js', 'v=2')).toBe(REVALIDATE_CACHE);
+    expect(cc('main.js', 'a=1&b=2')).toBe(REVALIDATE_CACHE);
+  });
+
+  it('JS/CSS with a hash query are immutable', () => {
+    expect(IMMUTABLE_CACHE).toBe('public, max-age=31536000, immutable');
+    expect(cc('main.js', 'v=3f9a0c1d')).toBe(IMMUTABLE_CACHE);
+    expect(cc('main.css', 'h=3f9a0c1d2e')).toBe(IMMUTABLE_CACHE);
+    expect(cc('app.mjs', '3f9a0c1d2e4b')).toBe(IMMUTABLE_CACHE);
+  });
+
+  it('other assets revalidate even with a hash query', () => {
+    expect(cc('logo.png', 'v=3f9a0c1d')).toBe(REVALIDATE_CACHE);
+  });
+
+  it('a password-protected app is never publicly cacheable', () => {
+    expect(cc('index.html', '', true)).toBe('private, max-age=0, must-revalidate');
+    expect(cc('main.js', 'v=3f9a0c1d', true)).toBe('private, max-age=31536000, immutable');
+  });
+});
+
+describe('decodeRequestPath', () => {
+  it('percent-decodes each segment', () => {
+    expect(decodeRequestPath('/img/my%20photo.png')).toBe('/img/my photo.png');
+  });
+
+  it('rejects encoded separators, NUL and malformed escapes', () => {
+    expect(decodeRequestPath('/a%2f..%2fetc')).toBeNull();
+    expect(decodeRequestPath('/a%5c..')).toBeNull();
+    expect(decodeRequestPath('/a%00')).toBeNull();
+    expect(decodeRequestPath('/%E0%A4%A')).toBeNull();
+  });
+
+  it('decoded dot segments are still refused by normalizeRequestPath', () => {
+    expect(normalizeRequestPath(decodeRequestPath('/%2e%2e/secret')!)).toBeNull();
   });
 });
 

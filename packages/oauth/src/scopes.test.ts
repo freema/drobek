@@ -51,17 +51,18 @@ function allCombinations(): Scope[][] {
 
 const READ_TOOLS = ['list_apps', 'get_app', 'read_file'];
 const WRITE_TOOLS = ['create_app', 'write_files', 'restore_version'];
+const PUBLISH_TOOLS = ['publish'];
 
 /** The exact tools/list per combination, spelled out (not derived from the table). */
 const EXPECTED: Record<string, string[]> = {
   '': [],
   read: [...READ_TOOLS],
   write: [...WRITE_TOOLS],
-  publish: [],
+  publish: [...PUBLISH_TOOLS],
   'read write': [...READ_TOOLS, ...WRITE_TOOLS],
-  'read publish': [...READ_TOOLS],
-  'write publish': [...WRITE_TOOLS],
-  'read write publish': [...READ_TOOLS, ...WRITE_TOOLS],
+  'read publish': [...READ_TOOLS, ...PUBLISH_TOOLS],
+  'write publish': [...WRITE_TOOLS, ...PUBLISH_TOOLS],
+  'read write publish': [...READ_TOOLS, ...WRITE_TOOLS, ...PUBLISH_TOOLS],
 };
 
 describe('tool → scope table', () => {
@@ -80,12 +81,13 @@ describe('tool → scope table', () => {
     });
   }
 
-  it('every tool needs exactly one scope; publish unlocks none yet', () => {
-    for (const scope of Object.values(TOOL_SCOPES)) expect(['read', 'write']).toContain(scope);
+  it('every tool needs exactly one scope; publish unlocks exactly the publish tool', () => {
+    for (const scope of Object.values(TOOL_SCOPES)) expect(['read', 'write', 'publish']).toContain(scope);
     expect(toolAllowed([], 'list_apps')).toBe(false);
     expect(toolAllowed(['read'], 'write_files')).toBe(false);
     expect(toolAllowed(['write'], 'read_file')).toBe(false);
     expect(toolAllowed('read', 'get_app')).toBe(true);
-    expect(allowedTools(['publish'])).toEqual([]);
+    expect(toolAllowed(['read', 'write'], 'publish')).toBe(false);
+    expect(allowedTools(['publish'])).toEqual(['publish']);
   });
 });

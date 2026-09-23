@@ -15,6 +15,7 @@ export const TOOL_ERROR_CODES = [
   'app_locked',
   'busy',
   'slug_taken',
+  'not_publishable',
   'internal_error',
 ] as const;
 

@@ -96,38 +96,45 @@ describe('oauth state generation + validation', () => {
 
 describe('state cookie helpers', () => {
   const prevNodeEnv = process.env.NODE_ENV;
+  const prevAppUrl = process.env.PUBLIC_APP_URL;
   beforeEach(() => {
     process.env.NODE_ENV = 'test';
+    process.env.PUBLIC_APP_URL = 'https://drobek.app';
   });
   afterEach(() => {
     process.env.NODE_ENV = prevNodeEnv;
+    if (prevAppUrl === undefined) delete process.env.PUBLIC_APP_URL;
+    else process.env.PUBLIC_APP_URL = prevAppUrl;
   });
 
-  it('sets a short-lived HttpOnly SameSite=Lax cookie', () => {
+  it('sets a short-lived host-only __Host- cookie (HttpOnly, Lax, Secure, Path=/, no Domain)', () => {
     const s = generateOAuthState();
     const header = stateCookieHeader(s);
-    expect(header).toContain(`${GOOGLE_OAUTH_STATE_COOKIE}=${s}`);
-    expect(header).toContain('HttpOnly');
-    expect(header).toContain('SameSite=Lax');
-    expect(header).toContain('Max-Age=600');
-    expect(header).not.toContain('Secure');
+    expect(GOOGLE_OAUTH_STATE_COOKIE).toBe('drobek_google_oauth_state');
+    expect(header).toBe(`__Host-drobek_google_oauth_state=${s}; Path=/; HttpOnly; SameSite=Lax; Secure; Max-Age=600`);
   });
 
-  it('adds Secure in production', () => {
+  it('production is always __Host- + Secure; plain-http dev drops both', () => {
     process.env.NODE_ENV = 'production';
-    expect(stateCookieHeader(generateOAuthState())).toContain('Secure');
+    process.env.PUBLIC_APP_URL = 'http://drobek.internal';
+    expect(stateCookieHeader(generateOAuthState())).toMatch(/^__Host-drobek_google_oauth_state=.*; Secure; /);
+    process.env.NODE_ENV = 'development';
+    process.env.PUBLIC_APP_URL = 'http://localhost:3041';
+    const dev = stateCookieHeader(generateOAuthState());
+    expect(dev).toMatch(/^drobek_google_oauth_state=/);
+    expect(dev).not.toContain('Secure');
   });
 
   it('clears with Max-Age=0 and an empty value', () => {
     const header = stateCookieHeader('', { clear: true });
-    expect(header).toContain(`${GOOGLE_OAUTH_STATE_COOKIE}=;`);
+    expect(header).toContain(`__Host-${GOOGLE_OAUTH_STATE_COOKIE}=;`);
     expect(header).toContain('Max-Age=0');
   });
 
   it('round-trips through readStateCookie', () => {
     const s = generateOAuthState();
     const req = new Request('http://localhost/auth/google/callback', {
-      headers: { Cookie: `foo=bar; ${GOOGLE_OAUTH_STATE_COOKIE}=${s}; x=y` },
+      headers: { Cookie: `foo=bar; __Host-${GOOGLE_OAUTH_STATE_COOKIE}=${s}; x=y` },
     });
     expect(readStateCookie(req)).toBe(s);
     expect(oauthStatesMatch(s, readStateCookie(req))).toBe(true);

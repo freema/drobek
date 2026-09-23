@@ -2,8 +2,9 @@
  * drobek server entry — the ONE process of the self-hostable image (M0-01).
  *
  * Boot order: refuse insecure secrets (PHY-76 #6) or an invalid APPS_DOMAIN → apply core migrations →
- * mount React Router (Vite middleware in dev, `build/server` in production)
- * behind the MCP resource → start background jobs → listen.
+ * mount the app-host dispatcher (M0-06), then React Router (Vite middleware in
+ * dev, `build/server` in production) behind the MCP resource → start
+ * background jobs + the serve-cache subscriber → listen.
  */
 import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
@@ -14,6 +15,7 @@ import type { ServerBuild } from 'react-router';
 import { appsOriginConfigError } from '@drobek/apps';
 import { createConsoleLogger, secretsConfigError } from '@drobek/core';
 import { runCoreMigrations } from '@drobek/db';
+import { ServeStore, createAppsHostMiddleware, subscribeServeCache } from '@drobek/serving';
 import { createServerApp } from './app.js';
 import { startBackgroundJobs } from './jobs.js';
 
@@ -62,7 +64,13 @@ if (production) {
   });
 }
 
-const app = createServerApp({ rrHandler, before, clientDir });
+// M0-06: the app hosts' cache, busted by every app-changed event (in-process
+// and over Redis pub/sub).
+const serveStore = new ServeStore();
+const serveCache = subscribeServeCache(serveStore, { log });
+const appsHost = createAppsHostMiddleware({ store: serveStore }) as RequestHandler;
+
+const app = createServerApp({ rrHandler, before, clientDir, appsHost });
 const jobs = startBackgroundJobs(log);
 
 httpServer.on('request', app);
@@ -78,6 +86,7 @@ async function shutdown(signal: string): Promise<void> {
   log.info('shutting down', { signal });
   server.close();
   await jobs.stop();
+  await serveCache.stop();
   process.exit(0);
 }
 process.on('SIGTERM', () => void shutdown('SIGTERM'));

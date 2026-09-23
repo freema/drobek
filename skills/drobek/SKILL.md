@@ -1,6 +1,6 @@
 ---
 name: drobek
-description: Build and change web apps directly in a drobek cloud workspace from your agent. Use when the user wants to create a small web app (internal tool, form, calculator, demo), edit an existing drobek app, look at its files or versions, or roll it back — over the drobek MCP server.
+description: Build and change web apps directly in a drobek cloud workspace from your agent. Use when the user wants to create a small web app (internal tool, form, calculator, demo), edit an existing drobek app, look at its files or versions, roll it back, or publish it — over the drobek MCP server.
 ---
 
 # Work in drobek
@@ -82,15 +82,26 @@ an exact copy of an old one — history is never rewritten.
 
 ## Publishing
 
-Publishing makes a version public at the app's production URL. Do it only when
-the user explicitly asks. Today the owner publishes from the drobek dashboard
-(app → versions → Publish); the `publish` scope unlocks no tool yet.
+Every app lives on its own hosts: `preview_url`
+(`<slug>--preview.<APPS_DOMAIN>`) follows every write that compiles, the
+production URL (`<slug>.<APPS_DOMAIN>`) serves the PUBLISHED version only, and
+`<slug>--v<N>.<APPS_DOMAIN>` serves exactly version N.
+
+`publish({ app_id, version? })` (scope `publish`) puts a version live — by
+default the newest version that compiled; an older `version` rolls production
+back. It returns `published_url`, which you give to the user. Only versions
+that compiled can be published (`not_publishable`).
+
+Publish **only when the user explicitly asks** ("publish it", "make it live").
+Never publish on your own initiative — the preview URL is for showing work in
+progress. The owner can also publish from the drobek dashboard.
 
 ## Errors
 
 A failed call returns `isError: true` with `{ code, message, hint }` — the
 `hint` says what to do (`not_found`, `forbidden`, `invalid_params`,
-`invalid_path`, `limit_exceeded`, `secret_in_source`, `app_locked`, `busy`, …).
+`invalid_path`, `limit_exceeded`, `secret_in_source`, `app_locked`, `busy`,
+`not_publishable`, …).
 Compile problems are not tool failures: they come back in `compile.errors`. The
 full code → meaning → fix table is the Error catalogue in llms-full.txt.
 

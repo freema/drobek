@@ -15,6 +15,7 @@ import {
   GOOGLE_OAUTH_STATE_COOKIE,
   GOOGLE_OAUTH_STATE_MAX_AGE_SEC,
 } from './constants.js';
+import { cookieName, hostCookieHeader } from './cookies.js';
 
 export const GOOGLE_DEFAULT_AUTH_URL =
   'https://accounts.google.com/o/oauth2/v2/auth';
@@ -97,24 +98,19 @@ export function stateCookieHeader(
   state: string,
   opts: { clear?: boolean } = {}
 ): string {
-  const secure = process.env.NODE_ENV === 'production';
-  const parts = [
-    `${GOOGLE_OAUTH_STATE_COOKIE}=${opts.clear ? '' : encodeURIComponent(state)}`,
-    'Path=/',
-    'HttpOnly',
-    'SameSite=Lax',
-    secure ? 'Secure' : '',
-    opts.clear ? 'Max-Age=0' : `Max-Age=${GOOGLE_OAUTH_STATE_MAX_AGE_SEC}`,
-  ].filter(Boolean);
-  return parts.join('; ');
+  return hostCookieHeader(GOOGLE_OAUTH_STATE_COOKIE, encodeURIComponent(state), {
+    maxAgeSec: GOOGLE_OAUTH_STATE_MAX_AGE_SEC,
+    clear: opts.clear,
+  });
 }
 
 export function readStateCookie(request: Request): string | null {
   const header = request.headers.get('Cookie');
   if (!header) return null;
+  const name = cookieName(GOOGLE_OAUTH_STATE_COOKIE);
   for (const part of header.split(';')) {
     const [k, ...rest] = part.trim().split('=');
-    if (k === GOOGLE_OAUTH_STATE_COOKIE && rest.length > 0) {
+    if (k === name && rest.length > 0) {
       return decodeURIComponent(rest.join('=').trim());
     }
   }

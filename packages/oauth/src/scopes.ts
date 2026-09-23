@@ -7,7 +7,7 @@
  *
  *   read    — look: list apps (+ who am I), get an app, read its files.
  *   write   — change: create apps, write files (new versions), restore.
- *   publish — make a version live at its public URL (tool arrives in M0-06).
+ *   publish — make a version live at its public URL (the `publish` tool, M0-06).
  *
  * `TOOL_SCOPES` is the ONE table both `tools/list` filtering and per-call
  * enforcement read (resource/mcp.ts).
@@ -63,7 +63,6 @@ export function hasScope(granted: string | null | undefined, scope: Scope): bool
  * Every MCP tool and the scope it needs (null = any valid grant). Adding a
  * tool means adding it HERE, in @drobek/mcp and in the @drobek/agent-dx
  * manifest — all three are drift-guarded by tool-docs-parity.test.ts.
- * `publish` unlocks no tool until the publish tool lands (M0-06).
  */
 export const TOOL_SCOPES = {
   list_apps: 'read',
@@ -72,6 +71,7 @@ export const TOOL_SCOPES = {
   create_app: 'write',
   write_files: 'write',
   restore_version: 'write',
+  publish: 'publish',
 } as const satisfies Record<string, Scope | null>;
 
 export type ToolName = keyof typeof TOOL_SCOPES;

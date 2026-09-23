@@ -79,17 +79,48 @@ secret still holds a `change-me…` placeholder. Next to it:
    `write`, `publish` — and it receives a token bound to **you**, not to one
    workspace: it reaches every workspace you are a member of, with your role
    in each.
-3. The agent now has six tools: `list_apps` (your workspaces + apps),
+3. The agent now has seven tools: `list_apps` (your workspaces + apps),
    `create_app` (an app with a compiling v1 from the `react-ts` or `html`
    template, plus a briefing of the rules), `get_app`, `read_file`,
    `write_files` (1–20 changes → one new version, compiled on the server; the
-   compile errors come straight back) and `restore_version`. After each
-   successful compile it hands you the `preview_url` —
-   `http://<slug>--preview.apps.localhost:3041` locally,
-   `https://<slug>--preview.<APPS_DOMAIN>` in production (serving those hosts
-   lands in the next unit). One agent writes an app at a time (a 3-minute
-   lease). Browse the apps, their version history and publish a version under
-   `/workspaces/<slug>/apps`.
+   compile errors come straight back), `restore_version` and `publish`
+   (scope `publish`; only when you ask it to go live). After each successful
+   compile it hands you the `preview_url`. One agent writes an app at a time
+   (a 3-minute lease). Browse the apps, their version history and publish a
+   version under `/workspaces/<slug>/apps`.
+
+### Opening apps locally
+
+Every app is served on its own origin, never by the dashboard. Locally
+`APPS_DOMAIN=apps.localhost:3041`, and browsers resolve every `*.localhost`
+name to your machine, so there is nothing to add to `/etc/hosts`:
+
+| Host | Serves |
+| --- | --- |
+| `http://<slug>--preview.apps.localhost:3041` | the newest version that compiled (the working copy) |
+| `http://<slug>.apps.localhost:3041` | the published version (a "not published yet" page until the first publish) |
+| `http://<slug>--v<N>.apps.localhost:3041` | exactly version N (404 when it does not exist or did not compile) |
+
+Only the compiled output and plain assets are served — `*.ts`/`*.tsx`/`*.jsx`
+sources and `drobek.json` never are; any other path without a file falls back
+to `index.html` (client-side routing). Preview and version hosts send
+`X-Robots-Tag: noindex`; every app response carries the app CSP,
+`frame-ancestors 'none'` (per-app override: `apps.frame_ancestors`),
+`Referrer-Policy: no-referrer` and `nosniff`. A `password` app shows a password
+form and remembers the unlock in a host-only `__Host-drobek_app_access` cookie
+(its key is derived from `DROBEK_MASTER_KEY`).
+
+From a terminal, send the app host in the `Host` header — curl and Node do not
+resolve `*.localhost` on every system:
+
+```sh
+curl -i -H 'Host: <slug>--preview.apps.localhost:3041' http://127.0.0.1:3041/
+```
+
+The dashboard session cookie is `__Host-drobek_session` (host-only, `Secure`)
+in production and on any https origin. Browsers refuse `__Host-` cookies on
+plain `http://localhost`, so the http dev stack (NODE_ENV ≠ production) uses
+the unprefixed, still host-only `drobek_session` / `drobek_app_access` instead.
 
 For scripts and tests without an OAuth flow, `task api-key:create
 EMAIL=you@example.com NAME=laptop SCOPES=read,write` prints a personal `drk_…`

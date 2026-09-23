@@ -19,6 +19,7 @@ import {
   createApp,
   getApp,
   listApps,
+  publishApp,
   readFile,
   restoreVersion,
   writeFiles,
@@ -27,7 +28,7 @@ import {
 } from './tools.js';
 import { TEMPLATES } from './templates.js';
 
-/** The M0-05 tool set, in tools/list order. */
+/** The tool set, in tools/list order (M0-05 + publish, M0-06). */
 export const APP_TOOL_NAMES = [
   'list_apps',
   'create_app',
@@ -35,6 +36,7 @@ export const APP_TOOL_NAMES = [
   'read_file',
   'write_files',
   'restore_version',
+  'publish',
 ] as const;
 
 export type AppToolName = (typeof APP_TOOL_NAMES)[number];
@@ -73,6 +75,13 @@ export const INPUT_SCHEMAS = {
   restore_version: {
     app_id: appId,
     version: z.number().describe('The version number to copy into a new version.'),
+  },
+  publish: {
+    app_id: appId,
+    version: z
+      .number()
+      .optional()
+      .describe('The version number to put live; default the newest version that compiled. An older one = production rollback.'),
   },
 } as const;
 
@@ -172,9 +181,10 @@ export function registerAppTools(
   });
   register('write_files', writeFiles);
   register('restore_version', restoreVersion);
+  register('publish', publishApp);
 
   if (registered === 0) {
-    // A grant with no tool scope (e.g. only `publish` today) must still get an
+    // A grant with no tool scope (e.g. none of read/write/publish) must still get an
     // empty tools/list, not "Method not found": the SDK installs the tools
     // handlers on the first registration, so register a placeholder and drop it.
     server.registerTool('__drobek_none', { description: 'placeholder' }, async () => ({ content: [] })).remove();

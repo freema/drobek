@@ -1,6 +1,6 @@
 /**
  * TOOL_DOCS — the declarative documentation manifest for the drobek MCP tools
- * (M0-05, NSO-283). This is the SINGLE SOURCE OF TRUTH the agent-facing docs
+ * (M0-05 NSO-283; publish M0-06 NSO-285). This is the SINGLE SOURCE OF TRUTH the agent-facing docs
  * render from (llms.txt / llms-full.txt / MCP docs resources / the build page),
  * and @drobek/mcp registers each tool with THIS title, description and
  * annotations — so the published docs cannot drift from the real tools.
@@ -151,6 +151,25 @@ export const TOOL_DOCS: ToolDoc[] = [
     ],
     returns: '{ version, restored_from, compile:{ok,errors,warnings}, preview_url }',
     example: { app_id: 'k3v9x0…', version: 3 },
+  },
+  {
+    name: 'publish',
+    title: 'Publish a version',
+    scope: 'publish (editor+ role in the workspace)',
+    description:
+      'Put a version live at the production URL `https://<slug>.<APPS_DOMAIN>` — by default the newest version that compiled; pass an older `version` to roll production back. Only versions that compiled can be published (not_publishable otherwise). The preview URL keeps following your writes; production changes only when you publish again. Call this ONLY when the user explicitly asks to publish / go live — never on your own initiative. Does not take the write lease.',
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+    fields: [
+      { name: 'app_id', type: 'string', required: true, description: 'The app id.' },
+      {
+        name: 'version',
+        type: 'number (optional)',
+        required: false,
+        description: 'The version to put live; default the newest version that compiled (an older one = production rollback).',
+      },
+    ],
+    returns: '{ published_version, previous_version, published_url, domains:[host] }',
+    example: { app_id: 'k3v9x0…' },
   },
 ];
 

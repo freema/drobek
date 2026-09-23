@@ -1,18 +1,19 @@
 /**
- * App password hashing + the stateless app-access cookie (U7, PHY-58).
+ * App password hashing + the stateless app-access cookie (U7, PHY-58; M0-06).
  *
- * Dependency-light on purpose (only `node:crypto`) so it can be imported from a
- * thin react-router route with no db/redis pulled in.
+ * Dependency-light on purpose (only `node:crypto`).
  *
  * - App passwords (`apps.password_hash`) are stored scrypt-hashed with a random
  *   per-password salt. The plaintext is NEVER stored, returned, or logged.
  * - The app-access cookie is a stateless HMAC token binding the appId + expiry.
- *   It is signed with a server secret the caller passes in, under a distinct
- *   `appaccess.` domain-separation prefix so it can never be confused with any
- *   other token signed by the same secret. The cookie is HttpOnly and scoped to
- *   the app so it is not sent to the dashboard or to other apps.
+ *   It is signed with a key derived (HKDF) from DROBEK_MASTER_KEY under its own
+ *   label, and under a distinct `appaccess.` prefix, so it can never be confused
+ *   with any other token. The cookie is `__Host-` prefixed: Secure, Path=/, NO
+ *   Domain — it lives on exactly the one app host that set it (a sibling app on
+ *   the same registrable domain can neither read nor overwrite it).
  */
-import { createHmac, randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
+import { createHmac, hkdfSync, randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
+import { appsOrigin } from '@drobek/apps';
 
 // ── App password hashing (scrypt) ────────────────────────────────────────────
 
@@ -68,7 +69,29 @@ export async function verifyAppPassword(
 
 // ── App-access cookie (stateless HMAC token) ─────────────────────────────────
 
-export const APP_ACCESS_COOKIE = 'drobek_app_access';
+/** The app-access cookie name on https app hosts (and always in production). */
+export const APP_ACCESS_COOKIE = '__Host-drobek_app_access';
+/** The name on plain-http dev app hosts (browsers refuse `__Host-` over http). */
+export const APP_ACCESS_COOKIE_INSECURE = 'drobek_app_access';
+
+/** The app-access cookie name for the given mode (see appCookiesSecure). */
+export function appAccessCookieName(secure: boolean): string {
+  return secure ? APP_ACCESS_COOKIE : APP_ACCESS_COOKIE_INSECURE;
+}
+
+/**
+ * `__Host-` + Secure app cookies: always in production, and whenever the apps
+ * origin is https. Plain-http dev (`http://*.apps.localhost:3041`) drops both —
+ * browsers refuse `__Host-` / Secure cookies there. Host-only either way.
+ */
+export function appCookiesSecure(env: NodeJS.ProcessEnv = process.env): boolean {
+  if (env.NODE_ENV === 'production') return true;
+  try {
+    return appsOrigin(env).scheme === 'https';
+  } catch {
+    return true;
+  }
+}
 /** Password unlock lasts this long before the visitor must re-enter it. */
 export const APP_ACCESS_TTL_SEC = 60 * 60 * 12; // 12h
 
@@ -141,22 +164,33 @@ export function verifyAppAccessToken(
 }
 
 /**
- * Path-scoped `Set-Cookie` for the app-access token. `path` MUST be the app
- * root (`/:ws/app/:slug`) so the browser only replays it on that app's paths —
- * never the dashboard and never a sibling app.
+ * `Set-Cookie` for the app-access token: host-only (`__Host-`, no Domain),
+ * Secure, Path=/, HttpOnly, SameSite=Lax. `secure: false` (plain-http dev
+ * only) drops the prefix and Secure; still host-only.
  */
 export function appAccessCookieHeader(
   token: string,
-  opts: { path: string; maxAgeSec?: number; clear?: boolean }
+  opts: { maxAgeSec?: number; clear?: boolean; secure?: boolean } = {}
 ): string {
-  const secure = process.env.NODE_ENV === 'production';
-  const parts = [
-    `${APP_ACCESS_COOKIE}=${opts.clear ? '' : token}`,
-    `Path=${opts.path}`,
+  const secure = opts.secure ?? true;
+  return [
+    `${appAccessCookieName(secure)}=${opts.clear ? '' : token}`,
+    'Path=/',
+    ...(secure ? ['Secure'] : []),
     'HttpOnly',
     'SameSite=Lax',
-    secure ? 'Secure' : '',
     opts.clear ? 'Max-Age=0' : `Max-Age=${opts.maxAgeSec ?? APP_ACCESS_TTL_SEC}`,
-  ].filter(Boolean);
-  return parts.join('; ');
+  ].join('; ');
+}
+
+/**
+ * The app-access signing key: HKDF-SHA256 over DROBEK_MASTER_KEY (64 hex chars)
+ * with its own label. null when the master key is missing or malformed — the
+ * gate then fails closed (nobody gets in, the unlock POST answers 500).
+ */
+export function appAccessSecret(env: NodeJS.ProcessEnv = process.env): string | null {
+  const raw = (env.DROBEK_MASTER_KEY ?? '').trim();
+  if (!/^[0-9a-fA-F]{64}$/.test(raw)) return null;
+  const key = hkdfSync('sha256', Buffer.from(raw, 'hex'), Buffer.alloc(0), 'drobek/app-access/v1', 32);
+  return Buffer.from(key).toString('hex');
 }

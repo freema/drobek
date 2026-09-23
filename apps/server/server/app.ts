@@ -1,5 +1,7 @@
+import { createOriginCheckMiddleware } from '@drobek/auth';
 import { coreVersion } from '@drobek/core';
 import { mountMcpResource } from '@drobek/oauth/resource';
+import { createAppsHostMiddleware } from '@drobek/serving';
 import express, {
   type Express,
   type NextFunction,
@@ -18,19 +20,33 @@ export interface ServerAppOptions {
   before?: RequestHandler[];
   /** Absolute path of `build/client` — served statically in production. */
   clientDir?: string;
+  /**
+   * The app-host dispatcher (M0-06). Default: a fresh one from APPS_DOMAIN +
+   * PUBLIC_APP_URL; index.ts passes one whose cache is wired to the
+   * app-changed events.
+   */
+  appsHost?: RequestHandler;
 }
 
 /**
  * The single drobek process (M0-01): one Express app serves the dashboard +
  * OAuth 2.1 AS (React Router) and the OAuth-protected MCP resource at `/mcp`.
  *
- * Order matters: the MCP/health routes are registered before React Router so
- * its `:ws/app/:slug/*` splat can never shadow them, and `express.json()` is
- * scoped to `/mcp` because React Router actions must read the raw body.
+ * Order matters:
+ *  1. the app-host dispatcher (M0-06) runs FIRST: a request whose Host is an
+ *     app host (`<slug>[--preview|--v<N>].<APPS_DOMAIN>`) is answered there and
+ *     never reaches anything below — no dashboard route, no /mcp, no session
+ *     code. The dashboard host never serves app files (there is no app route).
+ *  2. the Origin check (CSRF) for every mutating dashboard request;
+ *  3. health/version, then `/mcp` (with `express.json()` scoped to it, because
+ *     React Router actions must read the raw body), then React Router.
  */
 export function createServerApp(opts: ServerAppOptions): Express {
   const app = express();
   app.disable('x-powered-by');
+
+  app.use(opts.appsHost ?? (createAppsHostMiddleware() as RequestHandler));
+  app.use(createOriginCheckMiddleware() as RequestHandler);
 
   // Static liveness (D3) — no dependency checks; `/healthz` (React Router)
   // is the real `{ok, db, redis}` probe.

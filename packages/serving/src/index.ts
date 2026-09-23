@@ -1,9 +1,8 @@
 /**
- * @drobek/serving — pure serving building blocks (path resolution, cache
- * headers, content types, CSP, visibility gate, app passwords). The request
- * handler that serves versions from the apps origin arrives with M0-06; the
- * deploy-based `/:ws/app/:slug/*` handler was removed with the upload
- * pipeline (M0-02).
+ * @drobek/serving — the apps origin (M0-06): every app is served from its own
+ * hosts under APPS_DOMAIN (`<slug>`, `<slug>--preview`, `<slug>--v<N>`) out of
+ * its immutable versions. Host dispatch (`createAppsHostMiddleware`), the
+ * request handler, the caches (+ their pub/sub bust), CSP and the password gate.
  */
 export {
   DEFAULT_CONTENT_TYPE,
@@ -16,20 +15,23 @@ export {
   IMMUTABLE_CACHE,
   REVALIDATE_CACHE,
   cacheControlFor,
+  decodeRequestPath,
   etagFor,
   isNotModified,
   normalizeRequestPath,
   resolveServePath,
-  type CacheDecision,
+  type CacheInput,
   type ResolveInput,
   type ResolveResult,
   type RoutingMode,
 } from './resolve.js';
 export {
   APP_CSP,
-  appResponseHeaders,
-  baseSecurityHeaders,
-  type AppHeaderInput,
+  DEFAULT_FRAME_ANCESTORS,
+  appCsp,
+  appSecurityHeaders,
+  parseFrameAncestors,
+  type SecurityHeaderInput,
 } from './csp.js';
 export {
   decideVisibility,
@@ -39,11 +41,49 @@ export {
 } from './visibility.js';
 export {
   APP_ACCESS_COOKIE,
+  APP_ACCESS_COOKIE_INSECURE,
+  appAccessCookieName,
+  appCookiesSecure,
   APP_ACCESS_TTL_SEC,
   appAccessCookieHeader,
+  appAccessSecret,
   hashAppPassword,
   mintAppAccessToken,
   verifyAppAccessToken,
   verifyAppPassword,
 } from './password.js';
+export { ByteLru, CountLru, DEFAULT_BLOB_CACHE_BYTES } from './lru.js';
+export {
+  isUnservedSource,
+  servedManifest,
+  type ServedFile,
+  type ServedManifest,
+  type StoredFile,
+} from './manifest.js';
+export { UNLOCK_PATH } from './pages.js';
+export {
+  UNLOCK_ATTEMPTS,
+  UNLOCK_WINDOW_MS,
+  handleAppRequest,
+  type AppRequest,
+  type AppResponse,
+  type HandlerDeps,
+} from './handler.js';
+export {
+  RESOLVE_TTL_MS,
+  ServeStore,
+  dbLoaders,
+  type Resolved,
+  type ServeApp,
+  type ServeLoaders,
+  type ServeStoreOptions,
+  type ServeVersion,
+} from './store.server.js';
+export { subscribeServeCache, type ServeCacheSubscription } from './subscriber.server.js';
+export {
+  createAppsHostMiddleware,
+  defaultHandlerDeps,
+  type AppsHostOptions,
+  type NodeMiddleware,
+} from './node.js';
 export { resolveWorkspaceId } from './workspace.server.js';

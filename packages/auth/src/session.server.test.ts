@@ -28,6 +28,8 @@ function requestWithCookie(cookie: string | null): Request {
 
 beforeEach(() => {
   fake = new FakeRedis();
+  // An https dashboard → `__Host-` cookies (the production shape).
+  vi.stubEnv('PUBLIC_APP_URL', 'https://drobek.app');
 });
 
 afterEach(() => {
@@ -35,26 +37,47 @@ afterEach(() => {
 });
 
 describe('sessionCookieHeader', () => {
-  it('sets HttpOnly, Path=/, SameSite=Lax and a 30-day Max-Age (no Secure outside production)', () => {
+  it('is a host-only __Host- cookie: HttpOnly, Path=/, SameSite=Lax, Secure, no Domain, 30 days', () => {
     const header = sessionCookieHeader('a'.repeat(96), {
       maxAgeSec: SESSION_MAX_AGE_SEC,
     });
-    expect(header).toContain(`${SESSION_COOKIE}=${'a'.repeat(96)}`);
-    expect(header).toContain('HttpOnly');
-    expect(header).toContain('Path=/');
-    expect(header).toContain('SameSite=Lax');
-    expect(header).toContain(`Max-Age=${60 * 60 * 24 * 30}`);
-    expect(header).not.toContain('Secure');
+    expect(SESSION_COOKIE).toBe('drobek_session');
+    expect(header).toBe(
+      `__Host-drobek_session=${'a'.repeat(96)}; Path=/; HttpOnly; SameSite=Lax; Secure; Max-Age=${60 * 60 * 24 * 30}`
+    );
+    expect(header.toLowerCase()).not.toContain('domain=');
     expect(header).not.toContain('SameSite=None');
   });
 
-  it('adds Secure only when NODE_ENV=production (still SameSite=Lax)', () => {
-    vi.stubEnv('NODE_ENV', 'production');
-    const header = sessionCookieHeader('b'.repeat(96), {
-      maxAgeSec: SESSION_MAX_AGE_SEC,
+  it('production is always __Host- + Secure; only plain-http dev drops both (still host-only)', () => {
+    const b = 'b'.repeat(96);
+    for (const [nodeEnv, url] of [
+      ['production', 'https://drobek.app'],
+      ['production', 'http://drobek.internal'],
+      ['development', 'https://drobek.test'],
+    ]) {
+      vi.stubEnv('NODE_ENV', nodeEnv);
+      vi.stubEnv('PUBLIC_APP_URL', url);
+      const header = sessionCookieHeader(b, { maxAgeSec: SESSION_MAX_AGE_SEC });
+      expect(header, `${nodeEnv} ${url}`).toMatch(/^__Host-drobek_session=b+; Path=\/; HttpOnly; SameSite=Lax; Secure; /);
+    }
+    vi.stubEnv('NODE_ENV', 'development');
+    vi.stubEnv('PUBLIC_APP_URL', 'http://localhost:3041');
+    const dev = sessionCookieHeader(b, { maxAgeSec: SESSION_MAX_AGE_SEC });
+    expect(dev).toBe(`drobek_session=${b}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_MAX_AGE_SEC}`);
+    expect(dev.toLowerCase()).not.toContain('domain=');
+  });
+
+  it('only the __Host- cookie authenticates — a legacy drobek_session cookie is ignored', async () => {
+    const { token } = await createUserSession('user_legacy', 'l@b.com');
+    expect(await getSessionUser(requestWithCookie(`drobek_session=${token}`))).toBeNull();
+    expect(await getSessionUser(requestWithCookie(`__Host-drobek_session=${token}`))).toMatchObject({
+      id: 'user_legacy',
     });
-    expect(header).toContain('Secure');
-    expect(header).toContain('SameSite=Lax');
+    // Plain-http dev reads only the unprefixed name.
+    vi.stubEnv('PUBLIC_APP_URL', 'http://localhost:3041');
+    expect(await getSessionUser(requestWithCookie(`__Host-drobek_session=${token}`))).toBeNull();
+    expect(await getSessionUser(requestWithCookie(`drobek_session=${token}`))).toMatchObject({ id: 'user_legacy' });
   });
 
   it('clear mode empties the value and sets Max-Age=0', () => {
@@ -92,7 +115,7 @@ describe('redis session round-trip', () => {
     expect(await fake.ttl(`drobek:session:${token}`)).toBeLessThanOrEqual(60);
 
     const user = await getSessionUser(
-      requestWithCookie(`${SESSION_COOKIE}=${token}`)
+      requestWithCookie(`__Host-${SESSION_COOKIE}=${token}`)
     );
     expect(user).toEqual({ id: 'user_2', email: 'roll@b.com' });
 
@@ -106,12 +129,12 @@ describe('redis session round-trip', () => {
     expect(await getSessionUser(requestWithCookie(null))).toBeNull();
     expect(
       await getSessionUser(
-        requestWithCookie(`${SESSION_COOKIE}=not-a-real-token`)
+        requestWithCookie(`__Host-${SESSION_COOKIE}=not-a-real-token`)
       )
     ).toBeNull();
     expect(
       await getSessionUser(
-        requestWithCookie(`${SESSION_COOKIE}=${'c'.repeat(96)}`)
+        requestWithCookie(`__Host-${SESSION_COOKIE}=${'c'.repeat(96)}`)
       )
     ).toBeNull();
   });
@@ -130,12 +153,12 @@ describe('redis session round-trip', () => {
   it('destroySession deletes the redis key and returns a clearing cookie', async () => {
     const { token } = await createUserSession('user_3', 'bye@b.com');
     const clear = await destroySession(
-      requestWithCookie(`${SESSION_COOKIE}=${token}`)
+      requestWithCookie(`__Host-${SESSION_COOKIE}=${token}`)
     );
     expect(clear).toContain('Max-Age=0');
     expect(await fake.get(`drobek:session:${token}`)).toBeNull();
     expect(
-      await getSessionUser(requestWithCookie(`${SESSION_COOKIE}=${token}`))
+      await getSessionUser(requestWithCookie(`__Host-${SESSION_COOKIE}=${token}`))
     ).toBeNull();
   });
 });

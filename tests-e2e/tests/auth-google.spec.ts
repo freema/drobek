@@ -149,7 +149,7 @@ test('tampered state is rejected: no session cookie, bounced to /login?error=goo
     .headersArray()
     .filter((h) => h.name.toLowerCase() === 'set-cookie');
   expect(
-    setCookies.some((h) => h.value.trim().startsWith('drobek_session=')),
+    setCookies.some((h) => /^(__Host-)?drobek_session=/.test(h.value.trim())),
     'a rejected callback must never set a session cookie'
   ).toBe(false);
 });
@@ -167,7 +167,7 @@ test('missing state is rejected: no session cookie @local', async ({
     .headersArray()
     .filter((h) => h.name.toLowerCase() === 'set-cookie');
   expect(
-    setCookies.some((h) => h.value.trim().startsWith('drobek_session='))
+    setCookies.some((h) => /^(__Host-)?drobek_session=/.test(h.value.trim()))
   ).toBe(false);
 });
 

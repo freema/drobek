@@ -71,6 +71,13 @@
       "when": 1790149105340,
       "tag": "0009_app_name",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790152014046,
+      "tag": "0010_apps_origin",
+      "breakpoints": true
     }
   ]
 }

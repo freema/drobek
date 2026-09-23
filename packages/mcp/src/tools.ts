@@ -1,6 +1,6 @@
 /**
- * The six M0-05 tool bodies (plan §4): list_apps, create_app, get_app,
- * read_file, write_files, restore_version. Each takes the caller + validated
+ * The MCP tool bodies (plan §4): list_apps, create_app, get_app, read_file,
+ * write_files, restore_version (M0-05) and publish (M0-06). Each takes the caller + validated
  * arguments and returns a plain JSON payload or throws a ToolError; the MCP
  * wiring (register.ts) turns that into a CallToolResult.
  *
@@ -8,7 +8,8 @@
  *  - every call authorizes against the TARGET app's workspace (access.ts);
  *  - the server only compiles app code (esbuild), never executes it;
  *  - a credential in a file is refused before anything is stored;
- *  - writes hold the app's single-writer lease (lease.ts).
+ *  - writes hold the app's single-writer lease (lease.ts); publish does not —
+ *    it writes no files, only moves the production pointer.
  */
 import {
   APP_LOCK_TTL_SEC,
@@ -24,6 +25,7 @@ import {
   getVersion,
   listVersions,
   previewUrl,
+  publish as publishVersion,
   publishedUrl,
   readBlobs,
   readVersionFile,
@@ -539,5 +541,52 @@ export async function restoreVersion(ctx: CallContext, args: { app_id: string; v
     },
     preview_url: previewUrl(app.slug, ctx.deps.env),
     ...(await previewNote(app.id, ok)),
+  };
+}
+
+// ── publish ──────────────────────────────────────────────────────────────────
+
+/**
+ * Put a version live on the production host `<slug>.<APPS_DOMAIN>` — default
+ * the newest version that compiled; an older `version` IS the production
+ * rollback. Only `ok` versions are publishable (not_publishable otherwise).
+ * editor+ (same floor as writing). No single-writer lease: publish writes no
+ * files and cannot interleave with a write — it only moves one pointer
+ * (atomic, audited `app.publish` by @drobek/apps).
+ */
+export async function publishApp(ctx: CallContext, args: { app_id: string; version?: number }) {
+  const { app } = await authorizeApp(ctx.principal, args.app_id, 'editor');
+  if (args.version !== undefined && (!Number.isInteger(args.version) || args.version < 1)) {
+    throw new ToolError('invalid_params', '`version` must be a positive integer.');
+  }
+  const number = args.version ?? (await lastOkVersionNumber(app.id));
+  if (number === null) {
+    throw new ToolError(
+      'not_publishable',
+      'No version of this app has compiled yet, so there is nothing to publish. Fix compile.errors with write_files first.'
+    );
+  }
+  const version = await getVersion(app.id, { number });
+  if (!version) throw new ToolError('not_found', `Version ${number} does not exist.`);
+
+  let result: { number: number; previousNumber: number | null };
+  try {
+    result = await publishVersion(app.id, version.id, actorOf(ctx));
+  } catch (err) {
+    if (err instanceof AppsError && err.code === 'not_publishable') {
+      throw new ToolError('not_publishable', err.message, { version: number });
+    }
+    if (err instanceof AppsError && err.code === 'not_found') {
+      throw new ToolError('not_found', `Version ${number} does not exist.`);
+    }
+    throw err;
+  }
+  await ctx.deps.notifyAppChanged({ app_id: app.id, slug: app.slug, version: result.number, kind: 'publish' });
+  const url = publishedUrl(app.slug, ctx.deps.env);
+  return {
+    published_version: result.number,
+    previous_version: result.previousNumber,
+    published_url: url,
+    domains: [new URL(url).host],
   };
 }

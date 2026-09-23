@@ -4,14 +4,16 @@
  *
  * Key `drobek:session:<token>`, value JSON {userId, email, createdAt},
  * token = randomBytes(48) hex. Rolling 30-day TTL — refreshed (GETEX) on
- * every authenticated access. Cookie `drobek_session`: HttpOnly; Path=/;
- * SameSite=Lax (always — drobek has no iframe embedding); Secure only when
- * NODE_ENV=production; Max-Age 30 days.
+ * every authenticated access. Cookie `__Host-drobek_session` (M0-06): HttpOnly;
+ * Path=/; no Domain; Secure; SameSite=Lax (drobek has no iframe embedding);
+ * Max-Age 30 days. Host-only on the dashboard host: an app host never receives
+ * it. Plain-http dev (see cookies.ts) uses `drobek_session` without Secure.
  */
 import { randomBytes } from 'node:crypto';
 import { redirect } from 'react-router';
 import { getRedis } from '@drobek/core';
 import { SESSION_COOKIE, SESSION_MAX_AGE_SEC } from './constants.js';
+import { cookieName, hostCookieHeader } from './cookies.js';
 
 export type SessionUser = {
   id: string;
@@ -44,7 +46,7 @@ function parseCookies(header: string | null): Record<string, string> {
 
 export function readSessionToken(request: Request): string | null {
   const cookies = parseCookies(request.headers.get('Cookie'));
-  const token = cookies[SESSION_COOKIE] ?? null;
+  const token = cookies[cookieName(SESSION_COOKIE)] ?? null;
   // Never build Redis keys from arbitrary cookie payloads.
   return token && TOKEN_RE.test(token) ? token : null;
 }
@@ -53,17 +55,7 @@ export function sessionCookieHeader(
   token: string,
   opts: { maxAgeSec: number; clear?: boolean }
 ): string {
-  const secure = process.env.NODE_ENV === 'production';
-  const parts = [
-    `${SESSION_COOKIE}=${opts.clear ? '' : encodeURIComponent(token)}`,
-    'Path=/',
-    'HttpOnly',
-    // Always Lax — drobek has no third-party iframe embedding (unlike puls).
-    'SameSite=Lax',
-    secure ? 'Secure' : '',
-    opts.clear ? 'Max-Age=0' : `Max-Age=${opts.maxAgeSec}`,
-  ].filter(Boolean);
-  return parts.join('; ');
+  return hostCookieHeader(SESSION_COOKIE, encodeURIComponent(token), opts);
 }
 
 export async function getSessionUser(

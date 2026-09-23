@@ -36,16 +36,17 @@ async function connect(scopes: Scope[]): Promise<Client> {
 
 const READ = ['get_app', 'list_apps', 'read_file'];
 const WRITE = ['create_app', 'restore_version', 'write_files'];
+const PUBLISH = ['publish'];
 
 const EXPECTED: Array<[Scope[], string[]]> = [
   [[], []],
   [['read'], [...READ]],
   [['write'], [...WRITE]],
-  [['publish'], []],
+  [['publish'], [...PUBLISH]],
   [['read', 'write'], [...READ, ...WRITE]],
-  [['read', 'publish'], [...READ]],
-  [['write', 'publish'], [...WRITE]],
-  [['read', 'write', 'publish'], [...READ, ...WRITE]],
+  [['read', 'publish'], [...READ, ...PUBLISH]],
+  [['write', 'publish'], [...WRITE, ...PUBLISH]],
+  [['read', 'write', 'publish'], [...READ, ...WRITE, ...PUBLISH]],
 ];
 
 describe('tools/list reflects the granted scope', () => {

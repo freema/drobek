@@ -5,7 +5,7 @@
  * single-writer lease (with a clock seam — no 3-minute sleep), per-call
  * authorization, and the audit rows.
  */
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createVersion, getVersion, publish } from '@drobek/apps';
 import { apps, auditLog, memberships, users, workspaces } from '@drobek/db';
@@ -590,6 +590,107 @@ describe('list_apps', () => {
       expect(apps2).toHaveLength(count.length);
     } finally {
       await c.close();
+    }
+  });
+});
+
+describe('publish', () => {
+  it('publishes the newest ok version by default, rolls back with `version`, audits app.publish, busts the cache', async () => {
+    const app = await newApp('Publish me', { template: 'html' });
+    const alice = await as('alice');
+    try {
+      // v2 compiles, v3 does not (a broken drobek.json): the default target is v2.
+      await alice.call('write_files', {
+        app_id: app.app_id,
+        files: [{ path: 'index.html', content: '<h1>two</h1>' }],
+        reasoning: 'v2',
+      });
+      const broken = await alice.call('write_files', {
+        app_id: app.app_id,
+        files: [{ path: 'drobek.json', content: '{ not json' }],
+        reasoning: 'v3 broken',
+      });
+      expect((broken.body.compile as { ok: boolean }).ok).toBe(false);
+
+      deps.events.length = 0;
+      const r = await alice.call('publish', { app_id: app.app_id });
+      expect(r.isError, r.text).toBe(false);
+      expect(r.body).toEqual({
+        published_version: 2,
+        previous_version: null,
+        published_url: `https://${app.slug}.drobek.app`,
+        domains: [`${app.slug}.drobek.app`],
+      });
+      expect(deps.events).toEqual([{ app_id: app.app_id, slug: app.slug, version: 2, kind: 'publish' }]);
+
+      // Rollback of production = publish an older version.
+      const back = await alice.call('publish', { app_id: app.app_id, version: 1 });
+      expect(back.body).toMatchObject({ published_version: 1, previous_version: 2 });
+      const got = await alice.call('get_app', { app_id: app.app_id });
+      expect(got.body).toMatchObject({ published_version: 1, published_url: `https://${app.slug}.drobek.app` });
+
+      // Only ok versions: v3 did not compile; v9 does not exist.
+      const bad = await alice.call('publish', { app_id: app.app_id, version: 3 });
+      expect(bad.isError).toBe(true);
+      expect(bad.body).toMatchObject({ code: 'not_publishable', version: 3 });
+      expect(String(bad.body.hint)).toContain('compiled');
+      const missing = await alice.call('publish', { app_id: app.app_id, version: 9 });
+      expect(missing.body.code).toBe('not_found');
+      const invalid = await alice.call('publish', { app_id: app.app_id, version: 0 });
+      expect(invalid.body.code).toBe('invalid_params');
+
+      const rows = await db
+        .select({ action: auditLog.action, actorKind: auditLog.actorKind, meta: auditLog.meta })
+        .from(auditLog)
+        .where(and(eq(auditLog.target, app.slug), eq(auditLog.action, 'app.publish')));
+      expect(rows.map((x) => (x.meta as { version: number }).version)).toEqual([2, 1]);
+      for (const row of rows) expect(row.actorKind).toBe('agent');
+    } finally {
+      await alice.close();
+    }
+  });
+
+  it('not_publishable when nothing has compiled yet', async () => {
+    const app = await newApp('Never compiled', { template: 'html' });
+    // Make every version non-ok (as if the template had failed).
+    await db.execute(sql`UPDATE app_versions SET compile_status = 'error' WHERE app_id = ${app.app_id}`);
+    const c = await as('alice');
+    try {
+      const r = await c.call('publish', { app_id: app.app_id });
+      expect(r.body.code).toBe('not_publishable');
+    } finally {
+      await c.close();
+    }
+  });
+
+  it('needs editor+: a viewer is forbidden, a non-member gets not_found; no lease needed', async () => {
+    const app = await newApp('Publish roles', { template: 'html' });
+    // Alice holds the write lease — publish by Bob (editor) is still allowed.
+    const alice = await as('alice');
+    await alice.call('write_files', {
+      app_id: app.app_id,
+      files: [{ path: 'index.html', content: '<h1>alice</h1>' }],
+      reasoning: 'take the lease',
+    });
+    await alice.close();
+    for (const [who, code] of [
+      ['vera', 'forbidden'],
+      ['eve', 'not_found'],
+    ] as const) {
+      const c = await as(who);
+      try {
+        expect((await c.call('publish', { app_id: app.app_id })).body.code, who).toBe(code);
+      } finally {
+        await c.close();
+      }
+    }
+    const bob = await as('bob');
+    try {
+      const r = await bob.call('publish', { app_id: app.app_id });
+      expect(r.isError, r.text).toBe(false);
+      expect(r.body.published_version).toBe(2);
+    } finally {
+      await bob.close();
     }
   });
 });

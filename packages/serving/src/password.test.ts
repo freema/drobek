@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   APP_ACCESS_COOKIE,
   appAccessCookieHeader,
+  appCookiesSecure,
+  appAccessSecret,
   hashAppPassword,
   mintAppAccessToken,
   verifyAppAccessToken,
@@ -64,16 +66,45 @@ describe('app-access token', () => {
 });
 
 describe('appAccessCookieHeader', () => {
-  it('is HttpOnly and path-scoped to the app', () => {
-    const h = appAccessCookieHeader('tok', { path: '/acme/app/site' });
-    expect(h.startsWith(`${APP_ACCESS_COOKIE}=tok`)).toBe(true);
-    expect(h).toContain('Path=/acme/app/site');
-    expect(h).toContain('HttpOnly');
-    expect(h).toContain('SameSite=Lax');
+  it('is a host-only __Host- cookie: Secure, Path=/, no Domain, HttpOnly, Lax', () => {
+    const h = appAccessCookieHeader('tok');
+    expect(APP_ACCESS_COOKIE).toBe('__Host-drobek_app_access');
+    expect(h).toBe(`${APP_ACCESS_COOKIE}=tok; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=43200`);
+    expect(h.toLowerCase()).not.toContain('domain=');
+  });
+
+  it('plain-http dev (secure: false) drops the prefix and Secure; still host-only', () => {
+    expect(appAccessCookieHeader('tok', { secure: false })).toBe(
+      'drobek_app_access=tok; Path=/; HttpOnly; SameSite=Lax; Max-Age=43200'
+    );
+  });
+
+  it('appCookiesSecure: production always, otherwise only for an https apps origin', () => {
+    const env = (e: Record<string, string>) => e as NodeJS.ProcessEnv;
+    expect(appCookiesSecure(env({ NODE_ENV: 'production', APPS_DOMAIN: 'apps.localhost:3041' }))).toBe(true);
+    expect(appCookiesSecure(env({ NODE_ENV: 'development', APPS_DOMAIN: 'apps.example.com' }))).toBe(true);
+    expect(appCookiesSecure(env({ NODE_ENV: 'development', APPS_DOMAIN: 'apps.localhost:3041' }))).toBe(false);
+    expect(appCookiesSecure(env({ NODE_ENV: 'development' }))).toBe(false);
   });
 
   it('clears with Max-Age=0', () => {
-    const h = appAccessCookieHeader('', { path: '/acme/app/site', clear: true });
+    const h = appAccessCookieHeader('', { clear: true });
     expect(h).toContain('Max-Age=0');
+  });
+});
+
+describe('appAccessSecret', () => {
+  it('derives a stable key from DROBEK_MASTER_KEY, distinct from the key itself', () => {
+    const env = { DROBEK_MASTER_KEY: 'ab'.repeat(32) };
+    const a = appAccessSecret(env);
+    expect(a).toMatch(/^[0-9a-f]{64}$/);
+    expect(appAccessSecret(env)).toBe(a);
+    expect(a).not.toBe('ab'.repeat(32));
+    expect(appAccessSecret({ DROBEK_MASTER_KEY: 'cd'.repeat(32) })).not.toBe(a);
+  });
+
+  it('is null (fail closed) without a well-formed master key', () => {
+    expect(appAccessSecret({})).toBeNull();
+    expect(appAccessSecret({ DROBEK_MASTER_KEY: 'short' })).toBeNull();
   });
 });

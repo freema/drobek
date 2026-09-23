@@ -56,12 +56,44 @@ single long-lived `next` branch; pushes happen only at milestone end.
   (M1 brings configure_module / query_data / get_logs). `APPS_DOMAIN` is
   required in production; migration 0009 adds `apps.name`.
 
+- **M0-06 (NSO-285) — apps on their own origin + `publish`.** Host
+  classification lives in `@drobek/apps` (`host.ts`: `classifyHost`,
+  `isAppsOrigin`) so `@drobek/serving` and `@drobek/auth` share it without a
+  dependency cycle. `@drobek/serving` = `createAppsHostMiddleware` (first
+  Express middleware; dashboard host → `next()`, app host → `handleAppRequest`,
+  bad Host → 400) + `ServeStore` (host-resolution cache 60 s, manifest cache,
+  256 MiB byte LRU of blobs) + `subscribeServeCache` (local EventEmitter +
+  Redis `drobek:app-changed`). `notifyAppChanged` in `@drobek/apps` emits
+  locally AND publishes, so a single process never serves stale bytes even
+  before the Redis round trip. Password gate with an HKDF(DROBEK_MASTER_KEY)
+  signed `__Host-drobek_app_access`. `@drobek/auth` `origin-check.ts` refuses
+  mutating dashboard requests from app/null/foreign origins. All dashboard
+  cookies are `__Host-` (`cookies.ts` `hostCookieHeader`). MCP `publish` tool
+  (scope `publish`, no lease). Migration 0010 (`team` → `password`,
+  `apps.frame_ancestors`).
+
 ## Next
 
-- M0-06 (NSO-285), M0-07 (NSO-286), M0-08 (NSO-289). M0-09 (NSO-299) is
+- M0-07 (NSO-286), M0-08 (NSO-289). M0-09 (NSO-299) is
   blocked on Tomáš (VPS/DNS); M0-10 (NSO-302) needs `freema/drobek-plugin`.
 
 ## Notes and gotchas
+
+- App hosts in e2e / curl: Node and curl do not resolve `*.localhost` on every
+  system — send `Host: <slug>--preview.apps.localhost:3041` to
+  `127.0.0.1:3041` instead. Chromium resolves `*.localhost` itself, so
+  `page.goto(http://<slug>.apps.localhost:3041)` works.
+- Chromium (Playwright 1.50 / 133) REFUSES `__Host-` cookies on
+  `http://localhost` and even plain `Secure` ones on `http://*.localhost`.
+  That is why `cookieName()` / `appCookiesSecure()` drop the prefix + Secure
+  on plain-http dev (NODE_ENV ≠ production and an http origin); production is
+  always `__Host-`. The e2e derives the expected names from the target scheme.
+- Playwright's `context.cookies(url)` lists a host-only `localhost` cookie for
+  `http://x.apps.localhost` too (its own domain-suffix filter) — the browser
+  does NOT send it. Assert on `response.request().allHeaders().cookie`.
+- Playwright `APIRequestContext` sends no `Origin`, so the dashboard origin
+  check lets it through (no `Sec-Fetch-Site` either); pass `Origin` explicitly
+  to test the refusal.
 
 - The containerd image store reports the **compressed** size in
   `docker image inspect .Size`; `scripts/prod-proof.sh` measures the unpacked

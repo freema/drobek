@@ -31,7 +31,16 @@ describe('renderBriefing', () => {
     expect(b).toContain('3 minutes');
     expect(b).toContain('preview_url');
     expect(b).toMatch(/only when the user explicitly asks/);
-    expect(b).toContain('dashboard');
+    expect(b).toContain('call `publish`');
+    expect(b).toContain('Never publish on your own initiative');
+  });
+
+  it('explains the hosts, what is (not) served and the CSP', () => {
+    expect(b).toContain('## Hosts');
+    expect(b).toContain('<slug>--preview.<APPS_DOMAIN>');
+    expect(b).toContain('<slug>--v<N>.<APPS_DOMAIN>');
+    expect(b).toMatch(/NOT served: `\.ts\/\.tsx\/\.jsx` sources/);
+    expect(b).toContain('https://esm.sh');
   });
 
   it('lists no platform module that does not exist', () => {

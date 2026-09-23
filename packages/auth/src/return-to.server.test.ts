@@ -42,9 +42,11 @@ describe('login return cookie round-trip', () => {
   });
 
   it('returns null for an unsafe cookie value', () => {
-    const req = new Request('http://localhost/login/verify', {
-      headers: { Cookie: 'drobek_login_return=https%3A%2F%2Fevil.example' },
-    });
-    expect(readLoginReturnCookie(req)).toBeNull();
+    for (const name of ['__Host-drobek_login_return', 'drobek_login_return']) {
+      const req = new Request('http://localhost/login/verify', {
+        headers: { Cookie: `${name}=https%3A%2F%2Fevil.example` },
+      });
+      expect(readLoginReturnCookie(req)).toBeNull();
+    }
   });
 });

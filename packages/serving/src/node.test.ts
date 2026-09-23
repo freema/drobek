@@ -1,0 +1,150 @@
+/**
+ * The node:http adapter + host dispatch over a real HTTP server: dashboard
+ * hosts fall through to `next()` (the dashboard), app hosts are answered here
+ * and never reach it, invalid Hosts get a 400. Requests go to 127.0.0.1 with an
+ * explicit Host header — exactly what a browser sends for `*.localhost`.
+ */
+import { request as httpRequest, createServer, type Server } from 'node:http';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createAppsHostMiddleware } from './node.js';
+import { ServeStore, type ServeLoaders } from './store.server.js';
+
+const HTML = '<!doctype html><h1>hi</h1>';
+const loaders: ServeLoaders = {
+  resolve: async (t) =>
+    t.slug === 'shop'
+      ? { app: { id: 'a1', slug: 'shop', visibility: 'public', frameAncestors: null }, version: { id: 'v1', number: 1 } }
+      : { app: null, version: null },
+  loadFiles: async () => [{ path: 'index.html', kind: 'source', sha256: 'h'.repeat(64), size: HTML.length }],
+  loadBlobs: async () => new Map([['h'.repeat(64), Buffer.from(HTML)]]),
+  loadPasswordHash: async () => null,
+};
+
+let server: Server;
+let port: number;
+let dashboardHits: string[];
+
+beforeAll(async () => {
+  dashboardHits = [];
+  const mw = createAppsHostMiddleware({
+    hosts: { appsDomain: 'apps.localhost:3041', dashboardHost: 'localhost:3041' },
+    store: new ServeStore({ loaders }),
+    deps: { accessSecret: null, allowUnlockAttempt: async () => true, signal: () => {} },
+  });
+  server = createServer((req, res) =>
+    mw(req, res, () => {
+      dashboardHits.push(String(req.headers.host));
+      res.setHeader('Set-Cookie', '__Host-drobek_session=x; Path=/; Secure; HttpOnly');
+      res.end('dashboard');
+    })
+  );
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+  port = (server.address() as { port: number }).port;
+});
+afterAll(async () => {
+  await new Promise<void>((r) => server.close(() => r()));
+});
+
+function get(
+  host: string | null,
+  path = '/',
+  headers: Record<string, string> = {},
+  method = 'GET'
+): Promise<{ status: number; headers: Record<string, string | string[] | undefined>; body: string }> {
+  return new Promise((resolve, reject) => {
+    const req = httpRequest({ host: '127.0.0.1', port, path, method, headers, setHost: false }, (res) => {
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (c: string) => (body += c));
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, headers: res.headers, body }));
+    });
+    req.on('error', reject);
+    if (host !== null) req.setHeader('Host', host);
+    req.end();
+  });
+}
+
+describe('host dispatch', () => {
+  it('an app host is answered by the apps handler and never reaches the dashboard', async () => {
+    dashboardHits = [];
+    const r = await get('shop--preview.apps.localhost:3041', '/');
+    expect(r.status).toBe(200);
+    expect(r.body).toBe(HTML);
+    expect(r.headers['content-security-policy']).toContain("frame-ancestors 'none'");
+    expect(r.headers['x-robots-tag']).toBe('noindex');
+    // Dashboard paths on an app host are app paths, not dashboard routes.
+    for (const p of ['/mcp', '/login', '/oauth/token', '/workspaces', '/health']) {
+      await get('shop.apps.localhost:3041', p);
+    }
+    expect(dashboardHits).toEqual([]);
+  });
+
+  it('the dashboard host goes to the dashboard (and never serves an app)', async () => {
+    dashboardHits = [];
+    const r = await get('localhost:3041', '/acme/app/shop');
+    expect(r.body).toBe('dashboard');
+    expect(dashboardHits).toEqual(['localhost:3041']);
+  });
+
+  it('a dashboard session cookie sent to an app host changes nothing; no Set-Cookie', async () => {
+    const plain = await get('shop.apps.localhost:3041', '/');
+    const withSession = await get('shop.apps.localhost:3041', '/', {
+      Cookie: `__Host-drobek_session=${'a'.repeat(96)}; drobek_session=${'b'.repeat(96)}`,
+    });
+    expect(withSession.status).toBe(plain.status);
+    expect(withSession.body).toBe(plain.body);
+    expect(withSession.headers['set-cookie']).toBeUndefined();
+    expect(plain.headers['set-cookie']).toBeUndefined();
+  });
+
+  it('X-Forwarded-Host cannot move a request between sides', async () => {
+    dashboardHits = [];
+    const r = await get('localhost:3041', '/', { 'X-Forwarded-Host': 'shop.apps.localhost:3041' });
+    expect(r.body).toBe('dashboard');
+    const a = await get('shop.apps.localhost:3041', '/', { 'X-Forwarded-Host': 'localhost:3041' });
+    expect(a.body).toBe(HTML);
+  });
+
+  it('malformed / crafted Hosts: 400 or an apps-side 404, never the dashboard with app bytes', async () => {
+    dashboardHits = [];
+    const bad = await get('shop--preview.apps.localhost:3041.attacker', '/');
+    expect(bad.status).toBe(400);
+    expect(bad.headers['content-security-policy']).toBeTruthy();
+    const deep = await get('a.shop.apps.localhost:3041', '/');
+    expect(deep.status).toBe(404);
+    const unknown = await get('nope-app.apps.localhost:3041', '/');
+    expect(unknown.status).toBe(404);
+    expect(unknown.headers['content-security-policy']).toBeTruthy();
+    const upper = await get('SHOP.APPS.LOCALHOST.:3041', '/');
+    expect(upper.body).toBe(HTML);
+    expect(dashboardHits).toEqual([]);
+  });
+
+  it('path traversal on an app host is a 404', async () => {
+    for (const p of ['/../../etc/passwd', '/%2e%2e/%2e%2e/etc/passwd', '/..%2f..%2fetc%2fpasswd']) {
+      expect((await get('shop.apps.localhost:3041', p)).status, p).toBe(404);
+    }
+  });
+
+  it('an unlock POST with an oversized body is refused cleanly', async () => {
+    const r = await new Promise<number>((resolve, reject) => {
+      const req = httpRequest(
+        {
+          host: '127.0.0.1',
+          port,
+          path: '/__drobek/password',
+          method: 'POST',
+          headers: { Host: 'shop.apps.localhost:3041', 'Content-Type': 'application/x-www-form-urlencoded' },
+        },
+        (res) => {
+          res.resume();
+          res.on('end', () => resolve(res.statusCode ?? 0));
+        }
+      );
+      req.on('error', reject);
+      req.end(`password=${'x'.repeat(10_000)}`);
+    });
+    // shop is public → the unlock path just redirects home.
+    expect(r).toBe(303);
+  });
+});

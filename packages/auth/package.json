@@ -64,6 +64,7 @@
     "test:run": "vitest run"
   },
   "dependencies": {
+    "@drobek/apps": "workspace:*",
     "@drobek/core": "workspace:*",
     "@drobek/db": "workspace:*",
     "drizzle-orm": "^0.41.0",

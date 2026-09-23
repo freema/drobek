@@ -1,4 +1,4 @@
-import type { Server } from 'node:http';
+import { request as httpRequest, type Server } from 'node:http';
 import type { RequestHandler } from 'express';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createServerApp } from './app.js';
@@ -17,6 +17,7 @@ const rrHandler: RequestHandler = (req, res) => {
 
 beforeAll(async () => {
   process.env.PUBLIC_APP_URL = 'http://drobek.test';
+  process.env.APPS_DOMAIN = 'apps.drobek.test';
   delete process.env.PUBLIC_MCP_URL;
   server = createServerApp({ rrHandler }).listen(0, '127.0.0.1');
   await new Promise<void>((resolve) => server.once('listening', resolve));
@@ -88,5 +89,57 @@ describe('single drobek process', () => {
     });
     expect(res.status).toBe(413);
     expect(await res.json()).toEqual({ ok: false, error: 'entity_too_large' });
+  });
+});
+
+/** A raw request with an explicit Host header (fetch() cannot set Host). */
+function raw(
+  method: string,
+  path: string,
+  headers: Record<string, string>
+): Promise<{ status: number; body: string; headers: Record<string, unknown> }> {
+  const { port } = new URL(baseUrl);
+  return new Promise((resolve, reject) => {
+    const req = httpRequest({ host: '127.0.0.1', port, method, path, headers }, (res) => {
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (c: string) => (body += c));
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, body, headers: res.headers }));
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+describe('apps origin dispatch + dashboard CSRF (M0-06)', () => {
+  it('a host under APPS_DOMAIN never reaches React Router, /mcp or /health', async () => {
+    for (const path of ['/', '/login', '/mcp', '/health', '/workspaces/acme/apps/x']) {
+      // The apex of APPS_DOMAIN names no app → the apps side answers 404 (no DB needed).
+      const r = await raw('GET', path, { Host: 'apps.drobek.test' });
+      expect(r.status, path).toBe(404);
+      expect(r.body).not.toContain('"rr":true');
+      expect(r.headers['content-security-policy']).toContain("frame-ancestors 'none'");
+    }
+  });
+
+  it('an invalid Host is a 400', async () => {
+    const r = await raw('GET', '/', { Host: 'x--preview.apps.drobek.test:80.attacker' });
+    expect(r.status).toBe(400);
+  });
+
+  it('the dashboard has no app route: /:ws/app/:slug goes to React Router (which 404s it)', async () => {
+    const r = await raw('GET', '/acme/app/shop', { Host: 'drobek.test' });
+    expect(JSON.parse(r.body)).toMatchObject({ rr: true, path: '/acme/app/shop' });
+  });
+
+  it('a mutating dashboard request from an app origin is refused before React Router', async () => {
+    const evil = await raw('POST', '/auth/logout', { Host: 'drobek.test', Origin: 'http://evil.apps.drobek.test' });
+    expect(evil.status).toBe(403);
+    expect(evil.body).not.toContain('"rr":true');
+    const own = await raw('POST', '/auth/logout', { Host: 'drobek.test', Origin: 'http://drobek.test' });
+    expect(JSON.parse(own.body)).toMatchObject({ rr: true });
+    // The token endpoint is exempt (native / web MCP clients call it cross-origin).
+    const token = await raw('POST', '/oauth/token', { Host: 'drobek.test', Origin: 'https://claude.ai' });
+    expect(JSON.parse(token.body)).toMatchObject({ rr: true });
   });
 });

@@ -10,6 +10,7 @@ import {
   LOGIN_RETURN_COOKIE,
   LOGIN_RETURN_MAX_AGE_SEC,
 } from './constants.js';
+import { cookieName, hostCookieHeader } from './cookies.js';
 
 /** ASCII control chars (incl. CR/LF header-splitting) + DEL. */
 function hasControlChar(value: string): boolean {
@@ -30,37 +31,27 @@ export function safeReturnPath(value: string | null | undefined): string | null 
   return value;
 }
 
-function cookieAttrs(clear: boolean): string {
-  const secure = process.env.NODE_ENV === 'production';
-  return [
-    'Path=/',
-    'HttpOnly',
-    'SameSite=Lax',
-    secure ? 'Secure' : '',
-    clear ? 'Max-Age=0' : `Max-Age=${LOGIN_RETURN_MAX_AGE_SEC}`,
-  ]
-    .filter(Boolean)
-    .join('; ');
-}
-
 /** Set-Cookie value storing a (validated) return path, URL-encoded. */
 export function loginReturnCookieHeader(path: string): string {
-  return `${LOGIN_RETURN_COOKIE}=${encodeURIComponent(path)}; ${cookieAttrs(false)}`;
+  return hostCookieHeader(LOGIN_RETURN_COOKIE, encodeURIComponent(path), {
+    maxAgeSec: LOGIN_RETURN_MAX_AGE_SEC,
+  });
 }
 
 /** Set-Cookie value clearing the return cookie. */
 export function clearLoginReturnCookieHeader(): string {
-  return `${LOGIN_RETURN_COOKIE}=; ${cookieAttrs(true)}`;
+  return hostCookieHeader(LOGIN_RETURN_COOKIE, '', { maxAgeSec: 0, clear: true });
 }
 
 /** Read + validate the return path from the request's cookies. */
 export function readLoginReturnCookie(request: Request): string | null {
   const header = request.headers.get('Cookie');
   if (!header) return null;
+  const name = cookieName(LOGIN_RETURN_COOKIE);
   for (const part of header.split(';')) {
     const idx = part.indexOf('=');
     if (idx === -1) continue;
-    if (part.slice(0, idx).trim() !== LOGIN_RETURN_COOKIE) continue;
+    if (part.slice(0, idx).trim() !== name) continue;
     let decoded: string;
     try {
       decoded = decodeURIComponent(part.slice(idx + 1).trim());

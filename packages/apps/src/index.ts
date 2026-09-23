@@ -33,13 +33,34 @@ export {
 } from './gc.server.js';
 export { withRedisLock } from './lock.server.js';
 export {
+  APP_CHANGED_CHANNEL,
+  emitLocalAppChanged,
+  notifyAppChanged,
+  onLocalAppChanged,
+  parseAppChangedEvent,
+  type AppChangedEvent,
+} from './events.js';
+export {
   DEV_APPS_DOMAIN,
   appsOrigin,
   appsOriginConfigError,
+  dashboardOrigin,
+  hostConfig,
   previewUrl,
   publishedUrl,
+  versionUrl,
   type AppsOrigin,
 } from './origin.js';
+export {
+  appHostOf,
+  classifyHost,
+  isAppsOrigin,
+  parseAppLabel,
+  splitHost,
+  type AppHostTarget,
+  type HostClass,
+  type HostConfig,
+} from './host.js';
 export type {
   Actor,
   CompileStatus,

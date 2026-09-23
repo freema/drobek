@@ -1,5 +1,5 @@
 /**
- * tools/list snapshot (M0-05 acceptance): exactly the 6 tools, in order, with
+ * tools/list snapshot (M0-05 + M0-06): exactly the 7 tools, in order, with
  * their titles, annotations and input schemas. Hand-written on purpose — a
  * change to the public tool surface must be a deliberate edit here.
  */
@@ -29,7 +29,7 @@ async function listTools(allow?: (t: string) => boolean) {
 const RO = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 
 describe('tools/list', () => {
-  it('is exactly the 6 tools with their annotations and inputs (snapshot)', async () => {
+  it('is exactly the 7 tools with their annotations and inputs (snapshot)', async () => {
     const tools = await listTools();
     const snapshot = tools.map((t) => ({
       name: t.name,
@@ -90,6 +90,18 @@ describe('tools/list', () => {
         },
         properties: ['app_id', 'version'],
         required: ['app_id', 'version'],
+      },
+      {
+        name: 'publish',
+        title: 'Publish a version',
+        annotations: {
+          title: 'Publish a version',
+          readOnlyHint: false,
+          destructiveHint: true,
+          openWorldHint: true,
+        },
+        properties: ['app_id', 'version'],
+        required: ['app_id'],
       },
     ]);
     const create = tools.find((t) => t.name === 'create_app')!;
