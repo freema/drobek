@@ -23,8 +23,8 @@ import {
   deleteRecord,
   insertRecords,
   loadRecord,
+  patchRecord,
   queryRecords,
-  replaceRecord,
   toRecord,
   type DataRecord,
 } from './store.js';
@@ -279,7 +279,8 @@ export const recordsAuthority: RecordsAuthority<DataConfig> = {
     if (!row) return null;
     const doc = ownFields(fields);
     if (c.schema) validateDocument(c.schema, doc);
-    const updated = await replaceRecord(view.db, { appId: view.app.id, collection, id, doc, limits: dataQuotaFromLimits(await view.limits()) });
+    // The owner's edit replaces the fields wholesale; patchRecord re-checks the row under the write lock (NSO-322).
+    const updated = await patchRecord(view.db, { appId: view.app.id, collection, id, next: () => doc, limits: dataQuotaFromLimits(await view.limits()) });
     return updated ? toRecord(updated) : null;
   },
 
