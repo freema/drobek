@@ -16,6 +16,7 @@ import { appsOriginConfigError } from '@drobek/apps';
 import { trustProxyConfigError } from '@drobek/auth';
 import { createConsoleLogger, secretsConfigError } from '@drobek/core';
 import { runCoreMigrations } from '@drobek/db';
+import { domainsConfigError } from '@drobek/domains';
 import { limitsProviderConfigError, loadModuleRuntime } from '@drobek/modules';
 import { tlsAskConfigError } from '@drobek/serving';
 import postgres from 'postgres';
@@ -27,7 +28,8 @@ const configError =
   appsOriginConfigError(process.env) ??
   trustProxyConfigError(process.env) ??
   tlsAskConfigError(process.env) ??
-  limitsProviderConfigError(process.env);
+  limitsProviderConfigError(process.env) ??
+  domainsConfigError(process.env);
 if (configError) {
   console.error(configError);
   process.exit(1);

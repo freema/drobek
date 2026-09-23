@@ -209,6 +209,9 @@ built-ins.
 | `TLS_*`, `CADDY_*` | per TLS path | see [TLS](#tls) |
 | `HTTP_PORT`, `HTTPS_PORT`, `PUBLISH_IP` | — | published ports / bind address |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | — | optional Google sign-in |
+| `TLS_CUSTOM_DOMAINS`, `DOMAINS_MAX_PER_APP`, `DOMAINS_DNS_SERVERS`, `DOMAINS_RECHECK_INTERVAL_MS` | — | [custom domains](#custom-domains) (catch-all certificate on by default in on-demand mode; 3 per app) |
+| `TERMS_URL`, `ABUSE_REPORTS_PER_IP_HOUR`, `ABUSE_BRAND_WORDS` | — | [abuse handling](#abuse-and-takedowns) (terms link of the 451 page; 5 reports / IP / hour; publish-heuristic brand words) |
+| `EMAIL_SIGNIN_APP_HOURLY_SHARE` | — (25) | one app's percent of the sign-in e-mail budget — raise it on a single-app server (see [Production compose](#production-compose)) |
 | limits (`OTP_*`, `COMPILE_*`, `DATA_*`, `FILES_*`, `EMAIL_*`, …) | — | production defaults; the full list is in [`.env.example`](../.env.example) |
 
 The file is read by `docker compose` and by `docker run --env-file` (the
@@ -557,51 +560,6 @@ one per version URL you open — fine for a self-host with a handful of apps,
 not for a busy multi-tenant instance (use (a) or (b) there). Certificates stay
 cached in `caddy_data` after an app is deleted until they expire.
 
-## The rehearsal (`task selfhost:rehearsal`)
-
-[`scripts/selfhost-rehearsal.sh`](../scripts/selfhost-rehearsal.sh) runs this
-guide end to end on throwaway stacks (unique `COMPOSE_PROJECT_NAME`s, every
-port on 127.0.0.1, a throwaway Mailpit as the SMTP server): it builds the
-image, copies only the self-host files into a fresh directory ("machine A"),
-runs `task selfhost:init` twice (idempotency) and `docker compose config`
-(no warnings), starts the stack, signs a user in over the e-mail code flow,
-mints an API key with the container CLI, creates + writes + publishes an app
-over MCP (the official SDK client) and uploads a file through the files
-module; then `task backup`, `down -v`, a second fresh directory ("machine B")
-with only machine A's `.env.production`, `task selfhost:init`, `task
-restore`, and asserts the app serves on its host, the file downloads byte for
-byte, the same API key works and Caddy's restored CA still validates; a
-second restore must be refused and a second `task selfhost:migrate` must
-apply nothing. It prints the wall-clock time of every phase. Not part of
-`task check` or CI (it takes minutes). Knobs: `REHEARSAL_HTTPS_PORT` (9443),
-`REHEARSAL_SKIP_BUILD=1`, `REHEARSAL_KEEP=1` (see the script header).
-
-## Development: `task dev:tls`
-
-The dev stack normally runs on plain HTTP (`task up`, `http://localhost:3041`,
-`http://<slug>--preview.apps.localhost:3041`). To run it behind Caddy with its
-local CA:
-
-```sh
-task dev:tls        # generates .caddy/Caddyfile.dev (TLS_INTERNAL=1), starts caddy on :443,
-                    # copies Caddy's root CA to .caddy/root.crt
-curl --cacert .caddy/root.crt https://localhost/healthz
-curl --cacert .caddy/root.crt \
-  --resolve x--preview.apps.localhost:443:127.0.0.1 https://x--preview.apps.localhost/
-task dev:tls:down   # remove caddy, back to the plain HTTP dev stack
-```
-
-It layers [`docker-compose.tls.yaml`](../docker-compose.tls.yaml) over the dev
-compose file: drobek switches to `PUBLIC_APP_URL=https://localhost`,
-`APPS_DOMAIN=apps.localhost`, `APPS_URL_SCHEME=https` and
-`TRUST_PROXY=x-real-ip`. If port 443 is taken on your machine, use
-`task dev:tls DEV_TLS_PORT=8443` — every URL then carries `:8443`.
-
-The root CA stays in the `caddy_dev_data` volume; drobek never installs it
-anywhere (`skip_install_trust`). To make browsers trust it, import
-`.caddy/root.crt` into your OS or browser trust store yourself — or keep using
-`curl --cacert` / `NODE_EXTRA_CA_CERTS=.caddy/root.crt`.
-
 ## Custom domains
 
 An app can also answer on a host name its owner controls (M3-01). The owner
@@ -661,8 +619,8 @@ drobek's ask answers `200` only for a verified domain of a live app, so an
 unknown SNI never triggers an ACME order. The catch-all is **on by default in
 mode (c)**; in modes (a) and (b) set `TLS_CUSTOM_DOMAINS=1` (then
 `TLS_ASK_TOKEN` is required as well — the generator refuses otherwise);
-`TLS_CUSTOM_DOMAINS=0` turns it off. Re-run `task caddy:config` after changing
-it.
+`TLS_CUSTOM_DOMAINS=0` turns it off. Re-run `task selfhost:init` + `task
+tls:reload` after changing it (`task caddy:config` in a development checkout).
 
 Certificate lifecycle: Caddy obtains the certificate at the first HTTPS
 request after verification (HTTP-01 on port 80 or TLS-ALPN-01 on 443 — both
@@ -720,3 +678,47 @@ Anyone can publish on a public drobek, so the operator (every address in
 DMCA notices and the legal side of abuse handling belong to your terms of
 service, not to drobek.
 
+## The rehearsal (`task selfhost:rehearsal`)
+
+[`scripts/selfhost-rehearsal.sh`](../scripts/selfhost-rehearsal.sh) runs this
+guide end to end on throwaway stacks (unique `COMPOSE_PROJECT_NAME`s, every
+port on 127.0.0.1, a throwaway Mailpit as the SMTP server): it builds the
+image, copies only the self-host files into a fresh directory ("machine A"),
+runs `task selfhost:init` twice (idempotency) and `docker compose config`
+(no warnings), starts the stack, signs a user in over the e-mail code flow,
+mints an API key with the container CLI, creates + writes + publishes an app
+over MCP (the official SDK client) and uploads a file through the files
+module; then `task backup`, `down -v`, a second fresh directory ("machine B")
+with only machine A's `.env.production`, `task selfhost:init`, `task
+restore`, and asserts the app serves on its host, the file downloads byte for
+byte, the same API key works and Caddy's restored CA still validates; a
+second restore must be refused and a second `task selfhost:migrate` must
+apply nothing. It prints the wall-clock time of every phase. Not part of
+`task check` or CI (it takes minutes). Knobs: `REHEARSAL_HTTPS_PORT` (9443),
+`REHEARSAL_SKIP_BUILD=1`, `REHEARSAL_KEEP=1` (see the script header).
+
+## Development: `task dev:tls`
+
+The dev stack normally runs on plain HTTP (`task up`, `http://localhost:3041`,
+`http://<slug>--preview.apps.localhost:3041`). To run it behind Caddy with its
+local CA:
+
+```sh
+task dev:tls        # generates .caddy/Caddyfile.dev (TLS_INTERNAL=1), starts caddy on :443,
+                    # copies Caddy's root CA to .caddy/root.crt
+curl --cacert .caddy/root.crt https://localhost/healthz
+curl --cacert .caddy/root.crt \
+  --resolve x--preview.apps.localhost:443:127.0.0.1 https://x--preview.apps.localhost/
+task dev:tls:down   # remove caddy, back to the plain HTTP dev stack
+```
+
+It layers [`docker-compose.tls.yaml`](../docker-compose.tls.yaml) over the dev
+compose file: drobek switches to `PUBLIC_APP_URL=https://localhost`,
+`APPS_DOMAIN=apps.localhost`, `APPS_URL_SCHEME=https` and
+`TRUST_PROXY=x-real-ip`. If port 443 is taken on your machine, use
+`task dev:tls DEV_TLS_PORT=8443` — every URL then carries `:8443`.
+
+The root CA stays in the `caddy_dev_data` volume; drobek never installs it
+anywhere (`skip_install_trust`). To make browsers trust it, import
+`.caddy/root.crt` into your OS or browser trust store yourself — or keep using
+`curl --cacert` / `NODE_EXTRA_CA_CERTS=.caddy/root.crt`.
