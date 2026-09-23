@@ -14,20 +14,8 @@ import type { AuditActorKind } from '@drobek/audit/actor';
 export type AppVisibility = 'public' | 'team' | 'password';
 export type AppLiveStatus = 'live' | 'hibernated';
 
-/** Mirrors the `deploy_state` pg enum (kept local so no bullmq barrel leaks). */
-export type DeployStateName =
-  | 'awaiting_upload'
-  | 'queued'
-  | 'linting'
-  | 'storing'
-  | 'activating'
-  | 'ready'
-  | 'failed';
-
-/** The U7 hardened same-origin serving path for a deployed app. */
-export function servePath(workspaceSlug: string, appSlug: string): string {
-  return `/${workspaceSlug}/app/${appSlug}`;
-}
+/** Mirrors the `compile_status` pg enum. */
+export type CompileStatusName = 'pending' | 'ok' | 'error';
 
 // ── Apps list ────────────────────────────────────────────────────────────────
 
@@ -36,32 +24,30 @@ export interface AppListRow {
   slug: string;
   status: AppLiveStatus;
   visibility: AppVisibility;
-  activeDeployId: string | null;
+  publishedVersionId: string | null;
   createdAt: Date;
-  /** activatedAt of the app's active deploy — the "last deployed (live)" time. */
-  lastDeployAt: Date | null;
+  /** Newest version's number (null before the first write). */
+  latestVersion: number | null;
+  /** When the newest version was written. */
+  lastChangeAt: Date | null;
 }
 
 export interface AppListItem {
   slug: string;
   status: AppLiveStatus;
   visibility: AppVisibility;
-  /** True once the app has an active (served) deploy. */
-  live: boolean;
-  /** Relative live URL `/:ws/app/:slug`. */
-  url: string;
+  /** True once a version is published. */
+  published: boolean;
+  latestVersion: number | null;
   createdAt: string;
-  lastDeployAt: string | null;
+  lastChangeAt: string | null;
 }
 
 /**
  * Shape the workspace's apps for the list view: newest-created first, slug as a
- * stable tie-break. `live` reflects whether a deploy is currently active.
+ * stable tie-break.
  */
-export function shapeApps(
-  rows: AppListRow[],
-  workspaceSlug: string
-): AppListItem[] {
+export function shapeApps(rows: AppListRow[]): AppListItem[] {
   return [...rows]
     .sort(
       (a, b) =>
@@ -72,97 +58,74 @@ export function shapeApps(
       slug: r.slug,
       status: r.status,
       visibility: r.visibility,
-      live: r.activeDeployId !== null,
-      url: servePath(workspaceSlug, r.slug),
+      published: r.publishedVersionId !== null,
+      latestVersion: r.latestVersion,
       createdAt: r.createdAt.toISOString(),
-      lastDeployAt: r.lastDeployAt ? r.lastDeployAt.toISOString() : null,
+      lastChangeAt: r.lastChangeAt ? r.lastChangeAt.toISOString() : null,
     }));
 }
 
-// ── Deploy history ───────────────────────────────────────────────────────────
+// ── Version history ──────────────────────────────────────────────────────────
 
-export type LintStatus = 'clean' | 'blocked' | 'unknown';
-
-/** A db row for the deploy-history shaping (from apps.server.ts). */
-export interface DeployHistoryRow {
+/** A version as the history table shows it (from @drobek/apps listVersions). */
+export interface VersionHistoryRow {
   id: string;
-  state: DeployStateName;
+  number: number;
+  actorKind: AuditActorKind;
+  reasoning: string | null;
+  compileStatus: CompileStatusName;
   createdAt: Date;
-  activatedAt: Date | null;
-  /** The stored lint report jsonb, or null before linting ran. */
-  lintReport: { ok?: boolean } | null;
+  published: boolean;
 }
 
-export interface DeployHistoryItem {
+export interface VersionHistoryItem {
   id: string;
-  /** First 8 chars — the human-friendly short id shown in the UI. */
-  shortId: string;
-  state: DeployStateName;
-  /** True when this deploy is the one `apps.active_deploy_id` points at. */
-  active: boolean;
+  number: number;
+  actorKind: AuditActorKind;
+  reasoning: string | null;
+  compileStatus: CompileStatusName;
   createdAt: string;
-  activatedAt: string | null;
-  lintStatus: LintStatus;
-  /** A prior READY deploy that is NOT the active one → a rollback target. */
-  rollbackTarget: boolean;
-}
-
-export function deployShortId(id: string): string {
-  return id.slice(0, 8);
-}
-
-/** clean ⇔ lint report present with ok=true; blocked ⇔ ok=false; else unknown. */
-export function lintStatusOf(report: { ok?: boolean } | null): LintStatus {
-  if (report && typeof report.ok === 'boolean') {
-    return report.ok ? 'clean' : 'blocked';
-  }
-  return 'unknown';
+  published: boolean;
+  /** A version that compiled and is not the published one → can be published. */
+  publishable: boolean;
 }
 
 /**
- * Shape the app's deploy history: newest-created first (id as a stable
- * tie-break), the active deploy flagged, and each prior READY deploy marked as
- * a rollback target. Role gating (whether the button renders / the action is
- * allowed) is a SEPARATE decision — see canRollback.
+ * Shape the version history: newest first, the published version flagged,
+ * every other version that compiled `ok` publishable (publishing an older
+ * version IS the rollback). Role gating is a separate decision — canPublish.
  */
-export function shapeDeployHistory(
-  rows: DeployHistoryRow[],
-  activeDeployId: string | null
-): DeployHistoryItem[] {
+export function shapeVersionHistory(rows: VersionHistoryRow[]): VersionHistoryItem[] {
   return [...rows]
-    .sort(
-      (a, b) =>
-        b.createdAt.getTime() - a.createdAt.getTime() ||
-        b.id.localeCompare(a.id)
-    )
+    .sort((a, b) => b.number - a.number)
     .map((r) => ({
       id: r.id,
-      shortId: deployShortId(r.id),
-      state: r.state,
-      active: r.id === activeDeployId,
+      number: r.number,
+      actorKind: r.actorKind,
+      reasoning: r.reasoning,
+      compileStatus: r.compileStatus,
       createdAt: r.createdAt.toISOString(),
-      activatedAt: r.activatedAt ? r.activatedAt.toISOString() : null,
-      lintStatus: lintStatusOf(r.lintReport),
-      rollbackTarget: r.state === 'ready' && r.id !== activeDeployId,
+      published: r.published,
+      publishable: r.compileStatus === 'ok' && !r.published,
     }));
 }
 
-// ── Rollback authorization (pure) ────────────────────────────────────────────
+// ── Publish authorization (pure) ─────────────────────────────────────────────
 
 /**
- * The rollback authorization decision, as a pure function (the same rule
- * @drobek/deploy's rollback enforces): allowed for editor / workspace-admin
- * (and super-admin, whose effective workspace role is 'workspace-admin');
- * DENIED for a viewer or a non-member (null effective role). This gates BOTH
- * whether the "Roll back" button renders AND — enforced server-side in the
- * action via requireWorkspaceRole('editor') — whether the POST is accepted.
+ * The publish authorization decision, as a pure function: allowed for editor /
+ * workspace-admin (and super-admin, whose effective workspace role is
+ * 'workspace-admin'); DENIED for a viewer or a non-member (null effective
+ * role). This gates BOTH whether the "Publish" button renders AND — enforced
+ * server-side in the action via requireWorkspaceRole('editor') — whether the
+ * POST is accepted.
  */
-export function canRollback(effectiveRole: WorkspaceRole | null): boolean {
+export function canPublish(effectiveRole: WorkspaceRole | null): boolean {
   return effectiveRole !== null && roleAtLeast(effectiveRole, 'editor');
 }
 
 /**
- * The Data-tab delete authorization (M1b, PHY-121), same rule as rollback:
+ * The Data-tab delete authorization (M1b, PHY-121), same rule as publish:
  * editor / workspace-admin (and super-admin ⇒ workspace-admin) may delete a
  * record; a viewer or non-member may NOT. Gates whether the delete affordance
  * renders; the action re-enforces it server-side via requireWorkspaceRole

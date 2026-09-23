@@ -11,15 +11,13 @@ describe('findSecretProblems', () => {
 
   it('rejects placeholders on every known secret', () => {
     const env = {
-      UPLOAD_SIGNING_SECRET: 'changeme',
-      SMTP_PASS: 'CHANGE_ME',
+      SMTP_PASS: 'changeme',
       GOOGLE_CLIENT_SECRET: 'replace-me',
       DROBEK_MASTER_KEY: REAL,
     };
     expect(findSecretProblems(env).map((p) => p.name).sort()).toEqual([
       'GOOGLE_CLIENT_SECRET',
       'SMTP_PASS',
-      'UPLOAD_SIGNING_SECRET',
     ]);
   });
 
@@ -39,8 +37,8 @@ describe('findSecretProblems', () => {
   });
 
   it('never echoes secret values in the error message', () => {
-    const msg = secretsConfigError({ UPLOAD_SIGNING_SECRET: 'change-me-hunter2' });
-    expect(msg).toContain('UPLOAD_SIGNING_SECRET');
+    const msg = secretsConfigError({ SMTP_PASS: 'change-me-hunter2' });
+    expect(msg).toContain('SMTP_PASS');
     expect(msg).not.toContain('hunter2');
     expect(secretsConfigError({ DROBEK_MASTER_KEY: REAL })).toBeNull();
   });

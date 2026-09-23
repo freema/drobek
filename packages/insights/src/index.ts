@@ -1,6 +1,6 @@
 /**
  * @drobek/insights — the agent-loop v1 (PHY-123, the observe slice of PHY-92) as
- * a react-free workspace LIBRARY. It closes the deploy→observe→fix loop inside
+ * a react-free workspace LIBRARY. It closes the write→observe→fix loop inside
  * the editor agent:
  *
  *  - a PUBLIC error beacon (recordBeacon / handleBeacon) that ingests untrusted
@@ -53,9 +53,9 @@ export {
   type AppErrorsView,
   type AppLogsView,
   type DedupedError,
-  type DeployRow,
+  type VersionRow,
   type ErrorRow,
-  type RecentDeploy,
+  type RecentVersion,
   type Top404,
 } from './shape.js';
 export { resolveLiveApp, type ResolvedApp } from './resolve.server.js';

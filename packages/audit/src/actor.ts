@@ -30,7 +30,12 @@ export function actorKindForSurface(surface: AuditSurface): AuditActorKind {
  */
 export const AUDIT_ACTIONS = {
   appCreate: 'app.create',
+  appVersionWrite: 'app.version.write',
+  appVersionRestore: 'app.version.restore',
+  appPublish: 'app.publish',
+  /** Legacy (pre-M0-02 upload pipeline) — kept so historic rows still label. */
   deployActivate: 'deploy.activate',
+  /** Legacy (pre-M0-02 upload pipeline). */
   deployRollback: 'deploy.rollback',
   memberInvite: 'member.invite',
   memberAccept: 'member.accept',

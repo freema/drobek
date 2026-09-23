@@ -58,59 +58,6 @@ export const TOOL_DOCS: ToolDoc[] = [
     example: {},
   },
   {
-    name: 'deploy_init',
-    title: 'Begin a deploy',
-    scope: 'deploy:write (editor+ role)',
-    description:
-      'Begin a deploy: validate the file manifest (an index.html at the root is REQUIRED), create or target the app (slug derived from name, overridable), and return presigned PUT URLs for ONLY the files whose content is not already stored (content-hash dedup). Returns { deployId, app:{workspace,slug,url}, uploads:[{path,putUrl}] }.',
-    fields: [
-      { name: 'name', type: 'string (optional)', required: false, description: 'App display name; the slug is derived from it on first deploy.' },
-      { name: 'slug', type: 'string (optional)', required: false, description: 'Explicit app slug (target an existing app, or pin the slug).' },
-      { name: 'manifest', type: '{ path, sha256, bytes }[]', required: true, description: 'Every file in the deploy: repo-relative path, sha256 hex of the bytes, and byte length. Must include index.html at the root.' },
-    ],
-    example: {
-      name: 'my-todo',
-      manifest: [
-        { path: 'index.html', sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', bytes: 512 },
-        { path: 'app.js', sha256: '2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae', bytes: 1024 },
-      ],
-    },
-  },
-  {
-    name: 'deploy_commit',
-    title: 'Finalize a deploy',
-    scope: 'deploy:write (editor+ role)',
-    description:
-      'Finalize a deploy after its files are uploaded: verify every manifest blob is stored, enqueue the build/lint/activate job, and return the queued state. Poll deploy_status for progress.',
-    fields: [
-      { name: 'deployId', type: 'string', required: true, description: 'The deployId returned by deploy_init.' },
-    ],
-    example: { deployId: 'dpl_01hzz…' },
-  },
-  {
-    name: 'deploy_status',
-    title: 'Poll a deploy',
-    scope: 'apps:read',
-    description:
-      'Report a deploy pipeline state (awaiting_upload → queued → linting → storing → activating → ready | failed), whether it is the app’s active version, its live URL, and any lint report/error. Poll until state === "ready", then open the URL.',
-    fields: [
-      { name: 'deployId', type: 'string', required: true, description: 'The deployId to inspect.' },
-    ],
-    example: { deployId: 'dpl_01hzz…' },
-  },
-  {
-    name: 'rollback',
-    title: 'Roll back an app',
-    scope: 'deploy:write (editor+ role)',
-    description:
-      'Roll an app back to a prior ready deploy by repointing its active version (defaults to the previous good deploy; pass toDeployId to target a specific one).',
-    fields: [
-      { name: 'slug', type: 'string', required: true, description: 'The app slug to roll back.' },
-      { name: 'toDeployId', type: 'string (optional)', required: false, description: 'Target a specific prior ready deploy; omit for the previous good one.' },
-    ],
-    example: { slug: 'my-todo' },
-  },
-  {
     name: 'collection_define',
     title: 'Define a collection',
     scope: 'data:write (editor+ role)',
@@ -119,7 +66,7 @@ export const TOOL_DOCS: ToolDoc[] = [
     fields: [
       { name: 'workspace', type: 'string', required: true, description: 'Workspace slug (from whoami).' },
       { name: 'slug', type: 'string', required: true, description: 'App slug.' },
-      { name: 'name', type: 'string', required: true, description: 'Collection name (URL segment in the REST API).' },
+      { name: 'name', type: 'string', required: true, description: 'Collection name (unique within the app).' },
       { name: 'jsonSchema', type: 'object (JSON Schema)', required: true, description: 'The JSON Schema every document is validated against.' },
       { name: 'accessMode', type: '"public-read" | "public-write" | "locked" | "owner-only"', required: true, description: 'Who may read/write anonymously (see access modes).' },
     ],
@@ -232,7 +179,7 @@ export const TOOL_DOCS: ToolDoc[] = [
     title: 'Read app errors',
     scope: 'apps:read',
     description:
-      'Read the recent client-side errors captured for a deployed app (window.onerror + unhandledrejection, via the drobek error beacon), DEDUPED by message + stack head with occurrence counts, first/last-seen, the last URL, and a file:line hint. Call this after a deploy (once a user has hit the app) to close the deploy→observe→fix loop and self-correct. Read-only. Returns { workspace, app, totalEvents, distinctErrors, errors:[{ dedupKey, type, message, count, firstSeen, lastSeen, lastUrl, fileHint }] }.',
+      'Read the recent client-side errors captured for an app (window.onerror + unhandledrejection), DEDUPED by message + stack head with occurrence counts, first/last-seen, the last URL, and a file:line hint. Call this after a change (once a user has hit the app) to close the write→observe→fix loop and self-correct. Read-only. Returns { workspace, app, totalEvents, distinctErrors, errors:[{ dedupKey, type, message, count, firstSeen, lastSeen, lastUrl, fileHint }] }.',
     fields: [
       { name: 'workspace', type: 'string', required: true, description: 'Workspace slug (from whoami).' },
       { name: 'slug', type: 'string', required: true, description: 'App slug.' },
@@ -245,7 +192,7 @@ export const TOOL_DOCS: ToolDoc[] = [
     title: 'Read app serving signals',
     scope: 'apps:read',
     description:
-      'Read the server-side serving signals for a deployed app: request volume, 5xx count, the top 404-by-path (missing assets/routes — a common cause of a blank or broken app), and the recent deploy history. Use it to spot broken asset paths and correlate errors with a deploy. Read-only. Returns { workspace, app, requests, count5xx, top404Paths:[{ path, count }], recentDeploys:[{ shortId, state, active, createdAt, activatedAt }] }.',
+      'Read the server-side serving signals for an app: request volume, 5xx count, the top 404-by-path (missing assets/routes — a common cause of a blank or broken app), and the recent versions. Use it to spot broken asset paths and correlate errors with a version. Read-only. Returns { workspace, app, requests, count5xx, top404Paths:[{ path, count }], recentVersions:[{ number, compileStatus, actorKind, published, createdAt }] }.',
     fields: [
       { name: 'workspace', type: 'string', required: true, description: 'Workspace slug (from whoami).' },
       { name: 'slug', type: 'string', required: true, description: 'App slug.' },

@@ -23,12 +23,23 @@ single long-lived `next` branch; pushes happen only at milestone end.
   `/__drobek/sdk.js`), pre-build limits (`COMPILE_*`), secret scan, import
   depth cap, FIFO semaphore (`busy`), per-build timeout via `ctx.cancel()`.
   Not wired into any tool yet — `write_files` (M1) calls it. ~3 ms warm.
+- **M0-02 (NSO-281) — app versions, upload pipeline gone.** Migration
+  `0007_app_versions` (hand-written; destructive, see `CHANGELOG.md`) drops
+  deploys/deploy_files/blob_refs/old blobs and adds `blobs` (bytea, sha256
+  dedup), `app_versions`, `version_files`, `apps.published_version_id`; slugs
+  are now globally unique host labels (CHECK + rename of offenders).
+  `@drobek/apps` = createApp / createVersion / publish / restore / blob GC
+  (hourly, Redis lease, 7-day grace). `@drobek/deploy`, the deploy MCP tools,
+  `/__upload`, `/__blob`, `/:ws/app/:slug/*` (serving, REST data, beacon) and
+  `UPLOAD_SIGNING_SECRET` / `BLOB_DIR` / `DEPLOY_MAX_*` are gone. The dashboard
+  shows a version history with a Publish button (editor+). App serving and
+  the beacon come back on the apps origin in M0-06.
 
 ## Next
 
-- M0-02 (NSO-281): version data model + drop the upload pipeline. Remove the
-  in-process deploy consumer from `apps/server/server/jobs.ts` together with
-  `@drobek/deploy` (keep the audit prune).
+- M0-04 (NSO-282), then M0-05 (NSO-283, `create_app` + write tools),
+  M0-06 (NSO-285), M0-07 (NSO-286), M0-08 (NSO-289). M0-09 (NSO-299) is
+  blocked on Tomáš (VPS/DNS); M0-10 (NSO-302) needs `freema/drobek-plugin`.
 
 ## Notes and gotchas
 
@@ -61,6 +72,18 @@ single long-lived `next` branch; pushes happen only at milestone end.
   import" test must actually USE the import or esbuild never resolves it.
 - A timed-out compile is stopped with its own `ctx.cancel()`; the global
   `esbuild.stop()` would kill every concurrent build in the process.
+
+- DB-backed unit tests use PGlite (`@electric-sql/pglite`) +
+  `setDbForTests()` from `@drobek/db`. PGlite MUST also be a root
+  devDependency: otherwise pnpm resolves two peer variants of drizzle-orm and
+  the `@drobek/db` table objects stop matching the ones in the test package.
+  `db.execute` runs one statement; use `pg.exec` for multi-statement seeds.
+- `drizzle-kit generate` did not see the 0007 changes against the snapshot
+  (it reported "No schema changes"); 0007 is hand-written, with the snapshot
+  taken from a fresh generate. `packages/apps/src/migration.test.ts` applies
+  0000–0006, seeds prod-shaped rows, then applies 0007.
+- Until `create_app` / write tools exist (M0-05), e2e specs seed apps and
+  versions straight into Postgres (`tests-e2e/tests/helpers/seed.ts`).
 
 ## Failed approaches
 

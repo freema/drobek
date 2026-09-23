@@ -1,24 +1,27 @@
 /**
  * drobek core schema — day-one set (M0 walking skeleton).
  *
- * Scope per docs/TECHNICAL_DESIGN.md §1, deliberately trimmed to what P0
- * needs: identity + tenancy + apps/deploys/blobs. M1b/M2 tables
- * (sessions, oauth_*, collections, app_documents, workspace_end_users,
- * upstreams, metrics, audit_log) land with their build units — do NOT add
- * them here ahead of time.
+ * Identity + tenancy + apps and their immutable versions (M0-02, NSO-281),
+ * plus the tables each later unit added (oauth_*, collections, app_documents,
+ * upstreams, audit_log, app_errors, app_daily_stats).
  *
  * Hard constraints encoded here:
- * - D2: blobs are content-addressed METADATA only — bytes live on local disk
- *   via the BlobStore (P0-B). No bytea column, ever.
- * - PHY-101: soft-delete tombstones (`deleted_at`) on apps + deploys.
+ * - App file bytes live IN Postgres (`blobs.bytes`, content-addressed by
+ *   sha256, deduplicated across versions and apps). Apps are small source
+ *   trees (≤ 5 MiB per version, enforced by @drobek/compile), so one database
+ *   is the whole state — no disk volume to back up separately.
+ * - A version is immutable; publish/restore only move `apps.published_version_id`
+ *   or add a new version.
+ * - PHY-101: soft-delete tombstone (`deleted_at`) on apps.
  * - super-admin is a GLOBAL env flag (SUPERADMIN_EMAIL), NOT a membership
  *   role — hence memberships only knows workspace-admin/editor/viewer.
  */
 import { createId } from '@paralleldrive/cuid2';
 import {
   type AnyPgColumn,
-  bigint,
   boolean,
+  check,
+  customType,
   index,
   integer,
   jsonb,
@@ -29,6 +32,13 @@ import {
   timestamp,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+
+/** Postgres `bytea` ↔ Node `Buffer`. */
+const bytea = customType<{ data: Buffer; driverData: Buffer | Uint8Array }>({
+  dataType: () => 'bytea',
+  fromDriver: (v) => (Buffer.isBuffer(v) ? v : Buffer.from(v)),
+});
 
 /**
  * Who performed an audited action (PHY-85). `agent` = an MCP tool call made on
@@ -49,8 +59,6 @@ export const membershipRoleEnum = pgEnum('membership_role', [
   'viewer',
 ]);
 
-export const routingModeEnum = pgEnum('routing_mode', ['spa', 'exact']);
-
 /** App visibility gate, checked BEFORE serving blobs (public | team | password). */
 export const appVisibilityEnum = pgEnum('app_visibility', [
   'public',
@@ -61,22 +69,13 @@ export const appVisibilityEnum = pgEnum('app_visibility', [
 export const appStatusEnum = pgEnum('app_status', ['live', 'hibernated']);
 
 /**
- * Deploy lifecycle (U6, PHY-57). The pipeline streams these to the dashboard
- * over SSE (Redis pub/sub channel `drobek:deploy:<id>`):
- *   awaiting_upload → queued → linting → storing → activating → ready
- *                                   └──────────────────────────→ failed
- * A deploy only ever serves traffic once it is `ready` AND
- * `apps.active_deploy_id` points at it.
+ * Result of compiling a version (@drobek/compile). `pending` = stored but not
+ * compiled yet; only an `ok` version can be published.
  */
-export const deployStateEnum = pgEnum('deploy_state', [
-  'awaiting_upload',
-  'queued',
-  'linting',
-  'storing',
-  'activating',
-  'ready',
-  'failed',
-]);
+export const compileStatusEnum = pgEnum('compile_status', ['pending', 'ok', 'error']);
+
+/** `source` = written by the agent; `built` = compiler output (served first). */
+export const versionFileKindEnum = pgEnum('version_file_kind', ['source', 'built']);
 
 // ── Identity ─────────────────────────────────────────────────────────────────
 
@@ -117,7 +116,7 @@ export const memberships = pgTable(
   (t) => [primaryKey({ columns: [t.userId, t.workspaceId] })]
 );
 
-// ── Apps & deploys ───────────────────────────────────────────────────────────
+// ── Apps & versions ──────────────────────────────────────────────────────────
 
 export const apps = pgTable(
   'apps',
@@ -128,86 +127,83 @@ export const apps = pgTable(
     workspaceId: text('workspace_id')
       .notNull()
       .references(() => workspaces.id),
+    /** GLOBALLY unique — it is the app's host label `<slug>.<APPS_DOMAIN>`. */
     slug: text('slug').notNull(),
-    /** Currently served deploy; flipping this IS the deploy/rollback primitive. */
-    activeDeployId: text('active_deploy_id').references(
-      (): AnyPgColumn => deploys.id
+    /** The version served on the production host; publish/rollback move it. */
+    publishedVersionId: text('published_version_id').references(
+      (): AnyPgColumn => appVersions.id,
+      { onDelete: 'set null' }
     ),
-    routingMode: routingModeEnum('routing_mode').notNull().default('spa'),
     visibility: appVisibilityEnum('visibility').notNull().default('public'),
     /** Only set when visibility = 'password'. */
     passwordHash: text('password_hash'),
     status: appStatusEnum('status').notNull().default('live'),
-    usesEndUserAuth: boolean('uses_end_user_auth').notNull().default(false),
     createdAt: timestamp('created_at').notNull().defaultNow(),
-    /** Soft-delete tombstone (PHY-101) — erasure vs deploy immutability. */
+    /** Soft-delete tombstone (PHY-101). */
     deletedAt: timestamp('deleted_at'),
   },
-  (t) => [uniqueIndex('apps_workspace_slug_uq').on(t.workspaceId, t.slug)]
+  (t) => [
+    uniqueIndex('apps_slug_uq').on(t.slug),
+    index('apps_workspace_idx').on(t.workspaceId),
+    // Grammar mirrored by @drobek/apps validateAppSlug (which adds reserved words).
+    check(
+      'apps_slug_format',
+      sql`${t.slug} ~ '^[a-z0-9]+(-[a-z0-9]+)*$' AND char_length(${t.slug}) BETWEEN 3 AND 40`
+    ),
+  ]
 );
 
-/** Immutable deploy versions — rollback = repoint apps.active_deploy_id. */
-export const deploys = pgTable('deploys', {
-  id: text('id')
-    .primaryKey()
-    .$defaultFn(() => createId()),
-  appId: text('app_id')
-    .notNull()
-    .references(() => apps.id),
-  manifest: jsonb('manifest').notNull(),
-  lintReport: jsonb('lint_report'),
-  /** Pipeline state streamed to the dashboard over SSE (U6, PHY-57). */
-  state: deployStateEnum('state').notNull().default('awaiting_upload'),
-  /** Actionable failure summary when state = 'failed' (lint block, etc.). */
-  error: text('error'),
-  /** Sum of the manifest's declared bytes — per-deploy quota accounting. */
-  totalBytes: bigint('total_bytes', { mode: 'number' }),
-  /** When this deploy last became the active (ready + pointed-at) version. */
-  activatedAt: timestamp('activated_at'),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  /** Soft-delete tombstone (PHY-101). */
-  deletedAt: timestamp('deleted_at'),
-});
-
-/**
- * Content-addressed blob METADATA. The bytes live on local disk under the
- * BlobStore (D2 — `/data/blobs/<ab>/<sha256>`, P0-B); `path` is the
- * store-relative location. NO byte content in Postgres.
- */
+/** Content-addressed file bytes, shared by every version (and app) that uses them. */
 export const blobs = pgTable('blobs', {
   sha256: text('sha256').primaryKey(),
-  contentType: text('content_type').notNull(),
-  size: bigint('size', { mode: 'number' }).notNull(),
-  path: text('path').notNull(),
+  bytes: bytea('bytes').notNull(),
+  size: integer('size').notNull(),
+  /** Refreshed whenever a new version references the blob (GC grace period). */
+  createdAt: timestamp('created_at').notNull().defaultNow(),
 });
 
-/** Refcount join — which deploys reference which blob (cross-tenant-safe GC). */
-export const blobRefs = pgTable(
-  'blob_refs',
+/** One immutable snapshot of an app's files; `number` counts up per app from 1. */
+export const appVersions = pgTable(
+  'app_versions',
   {
-    sha256: text('sha256')
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    appId: text('app_id')
       .notNull()
-      .references(() => blobs.sha256),
-    deployId: text('deploy_id')
-      .notNull()
-      .references(() => deploys.id),
+      .references(() => apps.id),
+    number: integer('number').notNull(),
+    createdByUserId: text('created_by_user_id').references(() => users.id),
+    /** agent (MCP) vs user (dashboard) — server-derived, like audit_log. */
+    actorKind: auditActorKindEnum('actor_kind').notNull(),
+    /** The agent's one-line "why" for this change (shown in the history). */
+    reasoning: text('reasoning'),
+    compileStatus: compileStatusEnum('compile_status').notNull().default('pending'),
+    /** @drobek/compile messages when compile_status = 'error'. */
+    compileErrors: jsonb('compile_errors'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
   },
-  (t) => [primaryKey({ columns: [t.sha256, t.deployId] })]
+  (t) => [uniqueIndex('app_versions_app_number_uq').on(t.appId, t.number)]
 );
 
-/** Deploy manifest expanded: request path → blob hash. */
-export const deployFiles = pgTable(
-  'deploy_files',
+/** A version's file list: path → blob. A path may exist once per kind. */
+export const versionFiles = pgTable(
+  'version_files',
   {
-    deployId: text('deploy_id')
+    versionId: text('version_id')
       .notNull()
-      .references(() => deploys.id),
+      .references(() => appVersions.id, { onDelete: 'cascade' }),
     path: text('path').notNull(),
     sha256: text('sha256')
       .notNull()
       .references(() => blobs.sha256),
+    size: integer('size').notNull(),
+    kind: versionFileKindEnum('kind').notNull(),
   },
-  (t) => [primaryKey({ columns: [t.deployId, t.path] })]
+  (t) => [
+    primaryKey({ columns: [t.versionId, t.kind, t.path] }),
+    index('version_files_sha256_idx').on(t.sha256),
+  ]
 );
 
 /**

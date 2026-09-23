@@ -8,10 +8,6 @@
       "types": "./src/index.ts",
       "default": "./dist/index.js"
     },
-    "./cache": {
-      "types": "./src/cache.server.ts",
-      "default": "./dist/cache.server.js"
-    },
     "./password": {
       "types": "./src/password.ts",
       "default": "./dist/password.js"
@@ -24,11 +20,8 @@
     "test:run": "vitest run"
   },
   "dependencies": {
-    "@drobek/auth": "workspace:*",
     "@drobek/core": "workspace:*",
     "@drobek/db": "workspace:*",
-    "@drobek/insights": "workspace:*",
-    "@drobek/tenancy": "workspace:*",
     "drizzle-orm": "^0.41.0"
   },
   "devDependencies": {

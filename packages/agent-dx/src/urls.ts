@@ -1,11 +1,11 @@
 /**
  * Public-origin helpers for the agent docs (M1b, PHY-124). Mirror the resolution
- * in @drobek/oauth/resource and @drobek/deploy so the rendered URLs match what
+ * in @drobek/oauth/resource so the rendered URLs match what
  * the running stack actually serves — without taking a dependency on those
  * packages (agent-dx is a zero-dep leaf).
  */
 
-/** The drobek web origin (OAuth AS + app serving). */
+/** The drobek dashboard origin (dashboard + OAuth AS + MCP). */
 export function publicAppUrl(env: NodeJS.ProcessEnv = process.env): string {
   const raw =
     env.PUBLIC_APP_URL?.trim() ||

@@ -7,10 +7,10 @@
  * - App passwords (`apps.password_hash`) are stored scrypt-hashed with a random
  *   per-password salt. The plaintext is NEVER stored, returned, or logged.
  * - The app-access cookie is a stateless HMAC token binding the appId + expiry.
- *   It is signed with UPLOAD_SIGNING_SECRET (already required stack-wide) under
- *   a distinct `appaccess.` domain-separation prefix so it can never be confused
- *   with an upload token. The cookie is HttpOnly and PATH-SCOPED to the app so
- *   it is not sent to the dashboard or to other apps.
+ *   It is signed with a server secret the caller passes in, under a distinct
+ *   `appaccess.` domain-separation prefix so it can never be confused with any
+ *   other token signed by the same secret. The cookie is HttpOnly and scoped to
+ *   the app so it is not sent to the dashboard or to other apps.
  */
 import { createHmac, randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
 
@@ -80,7 +80,7 @@ interface AppAccessPayload {
 }
 
 function accessSign(payloadB64: string, secret: string): Buffer {
-  // Domain separation from upload tokens which reuse the same HMAC secret.
+  // Domain separation from any other token signed with the same secret.
   return createHmac('sha256', secret).update(`appaccess.${payloadB64}`).digest();
 }
 

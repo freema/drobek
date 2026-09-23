@@ -1,9 +1,10 @@
 /**
- * /workspaces/:slug/apps/:appSlug — client half (U8, PHY-74 slice): the app's
- * live URL / status / visibility / active deploy, plus its DEPLOY HISTORY. Each
- * prior READY deploy shows a "Roll back to this" button — but ONLY when the
- * viewer may roll back (editor+). The button posts to this route's action,
- * which re-enforces the role server-side. Server code lives in the .server.ts.
+ * /workspaces/:slug/apps/:appSlug — client half (PHY-74 slice): the app's
+ * status / visibility / published version, plus its VERSION HISTORY. Each
+ * version that compiled and is not published shows a "Publish" button — but
+ * ONLY when the viewer may publish (editor+); publishing an older version is
+ * the rollback. The button posts to this route's action, which re-enforces
+ * the role server-side. Server code lives in the .server.ts.
  */
 import {
   Form,
@@ -52,7 +53,6 @@ const styles = {
     flexWrap: 'wrap',
   },
   urlRow: { margin: '0.75rem 0', fontSize: '0.95rem' },
-  urlLink: { color: '#1e3a8a' },
   badge: {
     display: 'inline-block',
     padding: '0.1rem 0.55rem',
@@ -190,14 +190,14 @@ const styles = {
   },
 } as const;
 
-const LINT_LABEL: Record<string, string> = {
-  clean: 'lint ✓',
-  blocked: 'lint ✗',
-  unknown: 'lint —',
+const COMPILE_LABEL: Record<string, string> = {
+  ok: 'compiled ✓',
+  error: 'errors ✗',
+  pending: 'not compiled',
 };
 
 export default function AppDetailRoute() {
-  const { workspace, app, deploys, errors, logs, canRollback } =
+  const { workspace, app, versions, errors, logs, canPublish } =
     useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const nav = useNavigation();
@@ -226,30 +226,19 @@ export default function AppDetailRoute() {
 
       <div style={styles.headRow}>
         <h1 style={styles.h1}>{app.slug}</h1>
-        {app.activeDeployId ? (
-          <span style={styles.activeBadge}>live</span>
+        {app.publishedVersion !== null ? (
+          <span style={styles.activeBadge}>published</span>
         ) : (
-          <span style={styles.badge}>no deploy</span>
+          <span style={styles.badge}>not published</span>
         )}
         <span style={styles.badge}>{app.status}</span>
         <span style={styles.badge}>{app.visibility}</span>
       </div>
 
-      <p style={styles.urlRow}>
-        <a
-          href={app.url}
-          style={styles.urlLink}
-          data-testid="app-live-url"
-          target="_blank"
-          rel="noreferrer"
-        >
-          {app.url}
-        </a>
-      </p>
-      <p style={styles.urlRow} data-testid="app-active-deploy">
-        Active deploy:{' '}
-        {app.activeShortId ? (
-          <code style={styles.mono}>{app.activeShortId}</code>
+      <p style={styles.urlRow} data-testid="app-published-version">
+        Published version:{' '}
+        {app.publishedVersion !== null ? (
+          <code style={styles.mono}>v{app.publishedVersion}</code>
         ) : (
           <span style={styles.muted}>none</span>
         )}
@@ -349,65 +338,64 @@ export default function AppDetailRoute() {
         </section>
       </div>
 
-      <h2 style={styles.h2}>Deploy history</h2>
+      <h2 style={styles.h2}>Versions</h2>
       {actionData?.error ? (
-        <div style={styles.error} role="alert" data-testid="rollback-error">
+        <div style={styles.error} role="alert" data-testid="publish-error">
           {actionData.error}
         </div>
       ) : null}
 
-      <table style={styles.table} data-testid="deploy-history">
-        <thead>
-          <tr>
-            <th style={styles.th}>Deploy</th>
-            <th style={styles.th}>State</th>
-            <th style={styles.th}>Lint</th>
-            <th style={styles.th}>Created</th>
-            <th style={styles.th}>Activated</th>
-            <th style={styles.th} />
-          </tr>
-        </thead>
-        <tbody>
-          {deploys.map((d) => (
-            <tr key={d.id} data-testid="deploy-row" data-deploy-id={d.id}>
-              <td style={styles.td}>
-                <code style={styles.mono}>{d.shortId}</code>{' '}
-                {d.active ? (
-                  <span style={styles.activeBadge} data-testid="deploy-active">
-                    active
-                  </span>
-                ) : null}
-              </td>
-              <td style={styles.td}>{d.state}</td>
-              <td style={styles.td}>{LINT_LABEL[d.lintStatus]}</td>
-              <td style={styles.td}>{formatTimestamp(d.createdAt)}</td>
-              <td style={styles.td}>
-                {d.activatedAt ? (
-                  formatTimestamp(d.activatedAt)
-                ) : (
-                  <span style={styles.muted}>—</span>
-                )}
-              </td>
-              <td style={styles.td}>
-                {canRollback && d.rollbackTarget ? (
-                  <Form method="post">
-                    <input type="hidden" name="toDeployId" value={d.id} />
-                    <button
-                      type="submit"
-                      style={styles.rbButton}
-                      disabled={submitting}
-                      data-testid="rollback-button"
-                      data-deploy-id={d.id}
-                    >
-                      Roll back to this
-                    </button>
-                  </Form>
-                ) : null}
-              </td>
+      {versions.length === 0 ? (
+        <p style={styles.muted}>No versions yet — your agent writes the first one.</p>
+      ) : (
+        <table style={styles.table} data-testid="version-history">
+          <thead>
+            <tr>
+              <th style={styles.th}>Version</th>
+              <th style={styles.th}>By</th>
+              <th style={styles.th}>Compile</th>
+              <th style={styles.th}>Note</th>
+              <th style={styles.th}>Created</th>
+              <th style={styles.th} />
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {versions.map((v) => (
+              <tr key={v.id} data-testid="version-row" data-version={v.number}>
+                <td style={styles.td}>
+                  <code style={styles.mono}>v{v.number}</code>{' '}
+                  {v.published ? (
+                    <span style={styles.activeBadge} data-testid="version-published">
+                      published
+                    </span>
+                  ) : null}
+                </td>
+                <td style={styles.td}>{v.actorKind}</td>
+                <td style={styles.td}>{COMPILE_LABEL[v.compileStatus]}</td>
+                {/* React escapes the agent-supplied reasoning. */}
+                <td style={styles.td}>{v.reasoning ?? <span style={styles.muted}>—</span>}</td>
+                <td style={styles.td}>{formatTimestamp(v.createdAt)}</td>
+                <td style={styles.td}>
+                  {canPublish && v.publishable ? (
+                    <Form method="post">
+                      <input type="hidden" name="versionId" value={v.id} />
+                      <button
+                        type="submit"
+                        style={styles.rbButton}
+                        disabled={submitting}
+                        data-testid="publish-button"
+                        data-version={v.number}
+                      >
+                        Publish
+                      </button>
+                    </Form>
+                  ) : null}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
 
       <p style={styles.back}>
         <Link to={`/workspaces/${workspace.slug}/apps`}>← All apps</Link>

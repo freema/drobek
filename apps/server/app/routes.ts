@@ -24,20 +24,18 @@ export default [
   route('workspaces/:slug/invite', 'routes/workspaces.$slug.invite.tsx'),
   route('invite/:token', 'routes/invite.$token.tsx'),
   // PHY-85 (governance v1): the workspace Activity view — the append-only audit
-  // trail (who deployed/rolled back/created/invited, and whether it was the agent
-  // or a human), admin/super-admin only, + a CSV export. Static `activity` segment
-  // keeps these specific (they never fall through to the serve splat).
+  // trail (who created/published/invited, and whether it was the agent
+  // or a human), admin/super-admin only, + a CSV export.
   route('workspaces/:slug/activity', 'routes/workspaces.$slug.activity.tsx'),
   route(
     'workspaces/:slug/activity/export.csv',
     'routes/workspaces.$slug.activity.export-csv.ts'
   ),
   // PHY-59 (BFF proxy v1): the workspace-level Upstreams config — register/list/
-  // delete secret-injecting upstreams (workspace-admin/super-admin only). Static
-  // `upstreams` segment keeps it specific (never shadows the serve splat).
+  // delete secret-injecting upstreams (workspace-admin/super-admin only).
   route('workspaces/:slug/upstreams', 'routes/workspaces.$slug.upstreams.tsx'),
-  // U8 (PHY-74 slice / PHY-62): minimal dashboard — apps list, per-app deploy
-  // history + role-gated rollback. Static `apps` segment keeps these specific
+  // U8 (PHY-74 slice / PHY-62): minimal dashboard — apps list, per-app version
+  // history + role-gated publish. Static `apps` segment keeps these specific
   // enough not to shadow `/workspaces/:slug/invite`.
   route('workspaces/:slug/apps', 'routes/workspaces.$slug.apps.tsx'),
   route(
@@ -46,8 +44,7 @@ export default [
   ),
   // M1b (PHY-121): dashboard Data tab (lite) — collections list, collection
   // table (filter/sort/paginate through the U10 query API), streamed CSV export,
-  // read-only record viewer, editor+ delete. Static `data` segment keeps these
-  // specific (they never fall through to the serve splat).
+  // read-only record viewer, editor+ delete.
   route(
     'workspaces/:slug/apps/:appSlug/data',
     'routes/workspaces.$slug.apps.$appSlug.data.tsx'
@@ -60,11 +57,6 @@ export default [
     'workspaces/:slug/apps/:appSlug/data/:collection/export.csv',
     'routes/workspaces.$slug.apps.$appSlug.data.$collection.export-csv.ts'
   ),
-  // P0-B blob skeleton (D2/PHY-100): signed-upload sink + read-back path.
-  route('__upload/:token', 'routes/__upload.$token.ts'),
-  route('__blob/:sha256', 'routes/__blob.$sha256.ts'),
-  // U6 (PHY-57): deploy progress SSE stream (dashboard session-gated).
-  route('api/deploys/:id/events', 'routes/api.deploys.$id.events.ts'),
   // U5 (PHY-71/PHY-53): MCP OAuth 2.1 Authorization Server.
   route(
     '.well-known/oauth-authorization-server',
@@ -73,27 +65,7 @@ export default [
   route('oauth/register', 'routes/oauth.register.ts'),
   route('oauth/authorize', 'routes/oauth.authorize.tsx'),
   route('oauth/token', 'routes/oauth.token.ts'),
-  // U10 (PHY-55/PHY-56): REST Data API. More-specific static `data` segment →
-  // these rank above the serve splat below (they never fall through to it).
-  route(
-    ':ws/app/:slug/data/:collection',
-    'routes/serve.app.data.$collection.ts'
-  ),
-  route(
-    ':ws/app/:slug/data/:collection/:id',
-    'routes/serve.app.data.$collection.$id.ts'
-  ),
   // PHY-59 (BFF proxy v1): ANY /:ws/api/proxy/:name/* → the secret-injecting,
-  // SSRF-guarded gateway. The literal `api/proxy` middle segments make it more
-  // specific than the U7 serve splat `:ws/app/:slug/*` (different literal `app`),
-  // so it never shadows serving nor the U10 data routes above.
+  // SSRF-guarded gateway.
   route(':ws/api/proxy/:name/*', 'routes/proxy.$name.ts'),
-  // PHY-123 (agent loop v1): the public error beacon. The literal `__beacon`
-  // suffix keeps it specific → it never shadows the U7 serve splat below nor the
-  // U10 data routes above.
-  route(':ws/app/:slug/__beacon', 'routes/serve.app.beacon.ts'),
-  // U7 (PHY-58): hardened same-origin app serving. The literal `app` middle
-  // segment makes `:ws/app/:slug/*` specific enough that it never shadows the
-  // dashboard routes above (all of which have a static first segment).
-  route(':ws/app/:slug/*', 'routes/serve.app.ts'),
 ] satisfies RouteConfig;

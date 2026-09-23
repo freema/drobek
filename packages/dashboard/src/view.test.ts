@@ -1,18 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
   canDeleteRecord,
+  canPublish,
   canReadActivity,
-  canRollback,
-  deployShortId,
   formatTimestamp,
-  lintStatusOf,
-  servePath,
   shapeActivity,
   shapeApps,
-  shapeDeployHistory,
+  shapeVersionHistory,
   type ActivityRowInput,
   type AppListRow,
-  type DeployHistoryRow,
+  type VersionHistoryRow,
 } from './view.js';
 
 describe('formatTimestamp (deterministic — no SSR/client hydration mismatch)', () => {
@@ -29,152 +26,90 @@ describe('formatTimestamp (deterministic — no SSR/client hydration mismatch)',
   });
 });
 
-describe('servePath', () => {
-  it('builds the U7 same-origin serving path', () => {
-    expect(servePath('acme', 'todo')).toBe('/acme/app/todo');
-  });
-});
-
 describe('shapeApps', () => {
-  const row = (
-    slug: string,
-    createdAt: Date,
-    over: Partial<AppListRow> = {}
-  ): AppListRow => ({
+  const row = (slug: string, createdAt: Date, over: Partial<AppListRow> = {}): AppListRow => ({
     slug,
     status: 'live',
     visibility: 'public',
-    activeDeployId: 'dep_x',
+    publishedVersionId: 'ver_x',
     createdAt,
-    lastDeployAt: null,
+    latestVersion: 3,
+    lastChangeAt: new Date('2026-01-02T00:00:00Z'),
     ...over,
   });
 
-  it('maps fields and builds the live URL', () => {
-    const [item] = shapeApps(
-      [row('todo', new Date('2026-01-01T00:00:00Z'), { lastDeployAt: new Date('2026-01-02T00:00:00Z') })],
-      'acme'
-    );
-    expect(item).toMatchObject({
+  it('maps fields', () => {
+    const [item] = shapeApps([row('todo', new Date('2026-01-01T00:00:00Z'))]);
+    expect(item).toEqual({
       slug: 'todo',
       status: 'live',
       visibility: 'public',
-      live: true,
-      url: '/acme/app/todo',
+      published: true,
+      latestVersion: 3,
       createdAt: '2026-01-01T00:00:00.000Z',
-      lastDeployAt: '2026-01-02T00:00:00.000Z',
+      lastChangeAt: '2026-01-02T00:00:00.000Z',
     });
   });
 
-  it('flags apps with no active deploy as not live', () => {
-    const [item] = shapeApps(
-      [row('draft', new Date('2026-01-01T00:00:00Z'), { activeDeployId: null })],
-      'acme'
-    );
-    expect(item.live).toBe(false);
-    expect(item.lastDeployAt).toBeNull();
+  it('flags apps with no published version and no versions yet', () => {
+    const [item] = shapeApps([
+      row('draft', new Date('2026-01-01T00:00:00Z'), {
+        publishedVersionId: null,
+        latestVersion: null,
+        lastChangeAt: null,
+      }),
+    ]);
+    expect(item).toMatchObject({ published: false, latestVersion: null, lastChangeAt: null });
   });
 
-  it('sorts newest-created first, slug as tie-break', () => {
-    const same = new Date('2026-01-01T00:00:00Z');
-    const items = shapeApps(
-      [
-        row('old', new Date('2025-01-01T00:00:00Z')),
-        row('beta', same),
-        row('alpha', same),
-        row('newest', new Date('2027-01-01T00:00:00Z')),
-      ],
-      'acme'
-    );
-    expect(items.map((i) => i.slug)).toEqual(['newest', 'alpha', 'beta', 'old']);
+  it('orders newest-created first, slug as tie-break', () => {
+    const t = new Date('2026-01-01T00:00:00Z');
+    const items = shapeApps([
+      row('b', t),
+      row('a', t),
+      row('newest', new Date('2026-02-01T00:00:00Z')),
+    ]);
+    expect(items.map((i) => i.slug)).toEqual(['newest', 'a', 'b']);
   });
 });
 
-describe('deployShortId / lintStatusOf', () => {
-  it('takes the first 8 chars', () => {
-    expect(deployShortId('abcdef0123456789')).toBe('abcdef01');
-  });
-
-  it('maps the lint report to a status', () => {
-    expect(lintStatusOf({ ok: true })).toBe('clean');
-    expect(lintStatusOf({ ok: false })).toBe('blocked');
-    expect(lintStatusOf(null)).toBe('unknown');
-    expect(lintStatusOf({})).toBe('unknown');
-  });
-});
-
-describe('shapeDeployHistory', () => {
-  const dep = (
-    id: string,
-    createdAt: Date,
-    over: Partial<DeployHistoryRow> = {}
-  ): DeployHistoryRow => ({
-    id,
-    state: 'ready',
-    createdAt,
-    activatedAt: createdAt,
-    lintReport: { ok: true },
+describe('shapeVersionHistory', () => {
+  const v = (number: number, over: Partial<VersionHistoryRow> = {}): VersionHistoryRow => ({
+    id: `ver_${number}`,
+    number,
+    actorKind: 'agent',
+    reasoning: null,
+    compileStatus: 'ok',
+    createdAt: new Date(Date.UTC(2026, 0, number)),
+    published: false,
     ...over,
   });
 
-  it('orders newest-first and flags the active deploy', () => {
-    const items = shapeDeployHistory(
-      [
-        dep('v1aaaaaa1111', new Date('2026-01-01T00:00:00Z')),
-        dep('v2bbbbbb2222', new Date('2026-01-02T00:00:00Z')),
-      ],
-      'v2bbbbbb2222'
-    );
-    expect(items.map((i) => i.id)).toEqual(['v2bbbbbb2222', 'v1aaaaaa1111']);
-    expect(items[0].active).toBe(true);
-    expect(items[1].active).toBe(false);
-  });
-
-  it('marks prior READY deploys (not the active one) as rollback targets', () => {
-    const items = shapeDeployHistory(
-      [
-        dep('v1aaaaaa1111', new Date('2026-01-01T00:00:00Z')),
-        dep('v2bbbbbb2222', new Date('2026-01-02T00:00:00Z')),
-        dep('v3ffffff3333', new Date('2026-01-03T00:00:00Z'), {
-          state: 'failed',
-          activatedAt: null,
-          lintReport: { ok: false },
-        }),
-      ],
-      'v2bbbbbb2222'
-    );
-    const byId = new Map(items.map((i) => [i.id, i]));
-    // The active ready deploy is not a rollback target...
-    expect(byId.get('v2bbbbbb2222')?.rollbackTarget).toBe(false);
-    // ...a prior READY one is...
-    expect(byId.get('v1aaaaaa1111')?.rollbackTarget).toBe(true);
-    // ...and a failed deploy never is.
-    expect(byId.get('v3ffffff3333')?.rollbackTarget).toBe(false);
-    expect(byId.get('v3ffffff3333')?.lintStatus).toBe('blocked');
-  });
-
-  it('shortens ids and serializes timestamps', () => {
-    const [item] = shapeDeployHistory(
-      [dep('deadbeefcafe0000', new Date('2026-01-01T00:00:00Z'))],
-      null
-    );
-    expect(item.shortId).toBe('deadbeef');
-    expect(item.createdAt).toBe('2026-01-01T00:00:00.000Z');
-    expect(item.active).toBe(false);
+  it('orders newest first and marks ok, unpublished versions publishable', () => {
+    const items = shapeVersionHistory([
+      v(1),
+      v(3, { compileStatus: 'error' }),
+      v(2, { published: true }),
+      v(4, { compileStatus: 'pending' }),
+    ]);
+    expect(items.map((i) => [i.number, i.published, i.publishable])).toEqual([
+      [4, false, false],
+      [3, false, false],
+      [2, true, false],
+      [1, false, true],
+    ]);
+    expect(items[3].createdAt).toBe('2026-01-01T00:00:00.000Z');
   });
 });
 
-describe('canRollback (rollback authorization decision)', () => {
-  it('denies a viewer and a non-member', () => {
-    expect(canRollback('viewer')).toBe(false);
-    expect(canRollback(null)).toBe(false);
+describe('canPublish (publish/rollback authorization decision)', () => {
+  it('allows editor and workspace-admin', () => {
+    expect(canPublish('editor')).toBe(true);
+    expect(canPublish('workspace-admin')).toBe(true);
   });
-
-  it('allows editor, workspace-admin, and super-admin (effective workspace-admin)', () => {
-    expect(canRollback('editor')).toBe(true);
-    expect(canRollback('workspace-admin')).toBe(true);
-    // requireWorkspaceRole collapses a super-admin to effectiveRole
-    // 'workspace-admin', so the same path allows them.
+  it('denies viewers and non-members', () => {
+    expect(canPublish('viewer')).toBe(false);
+    expect(canPublish(null)).toBe(false);
   });
 });
 

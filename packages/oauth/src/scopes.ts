@@ -8,7 +8,8 @@
  *                  ALWAYS available; this scope is granted for forward-compat).
  *   apps:read    — list apps in the token's workspace (ENFORCED now: gates the
  *                  list_apps tool).
- *   deploy:write — create/commit deploys (U6 — consented now, tool lands later).
+ *   deploy:write — change apps (write versions / publish). Kept in the
+ *                  vocabulary so already-consented tokens stay valid.
  *   data:read    — read app data/collections (U10 — consented now).
  *   data:write   — mutate app data/collections (U10 — consented now).
  */

@@ -89,10 +89,6 @@ services:
       NODE_ENV: development
       GIT_SHA: ${GIT_SHA:-dev}
       SUPERADMIN_EMAIL: ${SUPERADMIN_EMAIL:-}
-      # D2/PHY-96: content-hash blob files live on the persistent volume.
-      BLOB_DIR: /data/blobs
-      # PHY-100: HMAC secret for signed upload tokens — required, no default.
-      UPLOAD_SIGNING_SECRET: ${UPLOAD_SIGNING_SECRET:?UPLOAD_SIGNING_SECRET must be set in .env (see .env.example)}
       # U2: login-code e-mails go to the in-network mailpit sink (no auth).
       SMTP_HOST: mailpit
       SMTP_PORT: '1025'
@@ -124,13 +120,9 @@ services:
       # /.well-known/oauth-authorization-server (falls back to PUBLIC_ORIGIN).
       # The MCP resource (token audience) is PUBLIC_APP_URL + /mcp.
       PUBLIC_APP_URL: ${PUBLIC_APP_URL:-http://localhost:3041}
-      # U6 (PHY-57): deploy_init quota (legacy upload pipeline until M0-02).
-      DEPLOY_MAX_APP_BYTES: ${DEPLOY_MAX_APP_BYTES:-104857600}
-      DEPLOY_MAX_FILE_BYTES: ${DEPLOY_MAX_FILE_BYTES:-10485760}
-      # U10 (PHY-55): Data API storage quota + write rate-limit (enforced by the
-      # REST data endpoints). DOCS_PER_APP is a deliberately LOW dev cap so the
-      # data-api e2e quota case can exceed it quickly (prod defaults are far
-      # higher — see .env.example).
+      # U10 (PHY-55): Data API storage quota + write rate-limit. DOCS_PER_APP is
+      # a deliberately LOW dev cap so the data e2e quota case can exceed it
+      # quickly (prod defaults are far higher — see .env.example).
       DATA_MAX_DOCS_PER_APP: ${DATA_MAX_DOCS_PER_APP:-5}
       DATA_MAX_DOC_BYTES: ${DATA_MAX_DOC_BYTES:-102400}
       DATA_MAX_BYTES_PER_APP: ${DATA_MAX_BYTES_PER_APP:-52428800}
@@ -166,13 +158,12 @@ services:
       - 'host.docker.internal:host-gateway'
     volumes:
       - .:/repo
-      # D2: persistent blob volume (survives container rebuilds).
-      - drobek_blobs:/data/blobs
       # Anonymous volumes: keep container-installed deps out of the host tree
       # (and host-installed darwin binaries out of the container).
       - /repo/node_modules
       - /repo/apps/server/node_modules
       - /repo/packages/agent-dx/node_modules
+      - /repo/packages/apps/node_modules
       - /repo/packages/audit/node_modules
       - /repo/packages/auth/node_modules
       - /repo/packages/compile/node_modules
@@ -180,7 +171,6 @@ services:
       - /repo/packages/dashboard/node_modules
       - /repo/packages/data/node_modules
       - /repo/packages/db/node_modules
-      - /repo/packages/deploy/node_modules
       - /repo/packages/insights/node_modules
       - /repo/packages/oauth/node_modules
       - /repo/packages/proxy/node_modules
@@ -205,6 +195,3 @@ services:
 volumes:
   postgres_data:
   redis_data:
-  # D2 (ratified): persistent content-hash blob store — /data/blobs/<ab>/<sha256>.
-  # Without this volume every rebuild would wipe deployed apps (PHY-96).
-  drobek_blobs:

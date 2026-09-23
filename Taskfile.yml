@@ -88,11 +88,6 @@ tasks:
     cmds:
       - docker compose exec drobek pnpm --filter @drobek/db db:migrate
 
-  blob:sign:
-    desc: 'Mint a signed upload token (PHY-100) — task blob:sign -- <sha256> <maxBytes> <ttl-sec>'
-    cmds:
-      - pnpm --filter @drobek/core exec node scripts/sign-upload.mjs {{.CLI_ARGS}}
-
   e2e:
     desc: Playwright suite against the local compose stack (includes @local specs)
     env:
@@ -103,8 +98,6 @@ tasks:
       REDIS_URL: 'redis://localhost:{{.REDIS_PUBLISH | default "6391"}}'
       MAILPIT_URL: 'http://localhost:{{.MAILPIT_PUBLISH | default "8025"}}'
       ALLOW_DESTRUCTIVE: '1'
-      # blob specs mint their own tokens — must sign with the stack's secret.
-      UPLOAD_SIGNING_SECRET: '{{.UPLOAD_SIGNING_SECRET}}'
     cmds:
       - pnpm -C tests-e2e exec playwright test {{.CLI_ARGS}}
 

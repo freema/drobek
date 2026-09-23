@@ -4,7 +4,7 @@
  * token's workspace as the cross-workspace guard). Shaping is pure (shape.ts).
  */
 import { and, desc, eq, gte } from 'drizzle-orm';
-import { appDailyStats, appErrors, apps, deploys, getDb } from '@drobek/db';
+import { appDailyStats, appErrors, appVersions, apps, getDb } from '@drobek/db';
 import { DEFAULT_RETENTION_DAYS } from './limits.js';
 import { resolveLiveApp } from './resolve.server.js';
 import { flushDay, utcDay } from './signals.server.js';
@@ -18,7 +18,7 @@ import {
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** Hard cap on rows scanned for the dedup — the ring buffer keeps ≤500 anyway. */
 const ERROR_SCAN_LIMIT = 1000;
-const RECENT_DEPLOYS_LIMIT = 5;
+const RECENT_VERSIONS_LIMIT = 5;
 
 function sinceDate(since: string | Date | undefined, days: number): Date {
   if (since instanceof Date && !Number.isNaN(since.getTime())) return since;
@@ -52,7 +52,7 @@ export async function queryAppErrors(
   return dedupErrors(rows);
 }
 
-/** Serving signals (requests / 5xx / top-404s) + recent deploys for an app. */
+/** Serving signals (requests / 5xx / top-404s) + recent versions for an app. */
 export async function queryAppLogs(
   appId: string,
   opts: { since?: string | Date } = {}
@@ -73,22 +73,23 @@ export async function queryAppLogs(
     .where(and(eq(appDailyStats.appId, appId), gte(appDailyStats.day, fromDay)));
 
   const [appRow] = await getDb()
-    .select({ activeDeployId: apps.activeDeployId })
+    .select({ publishedVersionId: apps.publishedVersionId })
     .from(apps)
     .where(eq(apps.id, appId))
     .limit(1);
 
-  const deployRows = await getDb()
+  const versionRows = await getDb()
     .select({
-      id: deploys.id,
-      state: deploys.state,
-      createdAt: deploys.createdAt,
-      activatedAt: deploys.activatedAt,
+      id: appVersions.id,
+      number: appVersions.number,
+      compileStatus: appVersions.compileStatus,
+      actorKind: appVersions.actorKind,
+      createdAt: appVersions.createdAt,
     })
-    .from(deploys)
-    .where(eq(deploys.appId, appId))
-    .orderBy(desc(deploys.createdAt))
-    .limit(RECENT_DEPLOYS_LIMIT);
+    .from(appVersions)
+    .where(eq(appVersions.appId, appId))
+    .orderBy(desc(appVersions.number))
+    .limit(RECENT_VERSIONS_LIMIT);
 
   return shapeLogs({
     daily: daily.map((d) => ({
@@ -96,8 +97,8 @@ export async function queryAppLogs(
       count5xx: d.count5xx,
       path404Counts: d.path404Counts as Record<string, number> | null,
     })),
-    deploys: deployRows,
-    activeDeployId: appRow?.activeDeployId ?? null,
+    versions: versionRows,
+    publishedVersionId: appRow?.publishedVersionId ?? null,
   });
 }
 
@@ -121,7 +122,7 @@ export async function queryAppErrorsByLocator(
   return { workspace: loc.wsSlug, app: loc.appSlug, ...view };
 }
 
-/** MCP app_logs: resolve the token-scoped app, then serving signals + deploys. */
+/** MCP app_logs: resolve the token-scoped app, then serving signals + versions. */
 export async function queryAppLogsByLocator(
   loc: InsightsLocator
 ): Promise<AppLogsView & { workspace: string; app: string }> {

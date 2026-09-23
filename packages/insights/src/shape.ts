@@ -98,11 +98,12 @@ export interface DailyStatRow {
   path404Counts: Record<string, number> | null;
 }
 
-export interface DeployRow {
+export interface VersionRow {
   id: string;
-  state: string;
+  number: number;
+  compileStatus: string;
+  actorKind: string;
   createdAt: Date;
-  activatedAt: Date | null;
 }
 
 export interface Top404 {
@@ -110,26 +111,28 @@ export interface Top404 {
   count: number;
 }
 
-export interface RecentDeploy {
-  shortId: string;
-  state: string;
-  active: boolean;
+export interface RecentVersion {
+  number: number;
+  compileStatus: string;
+  /** Who wrote it: agent (MCP) or user (dashboard). */
+  actorKind: string;
+  /** True for the version the production host serves. */
+  published: boolean;
   createdAt: string;
-  activatedAt: string | null;
 }
 
 export interface AppLogsView {
   requests: number;
   count5xx: number;
   top404Paths: Top404[];
-  recentDeploys: RecentDeploy[];
+  recentVersions: RecentVersion[];
 }
 
-/** Aggregate the per-day signal rows + recent deploys into the app_logs shape. */
+/** Aggregate the per-day signal rows + recent versions into the app_logs shape. */
 export function shapeLogs(input: {
   daily: DailyStatRow[];
-  deploys: DeployRow[];
-  activeDeployId: string | null;
+  versions: VersionRow[];
+  publishedVersionId: string | null;
 }): AppLogsView {
   let requests = 0;
   let count5xx = 0;
@@ -146,13 +149,13 @@ export function shapeLogs(input: {
     .sort((a, b) => b.count - a.count || (a.path < b.path ? -1 : 1))
     .slice(0, TOP_404_LIMIT);
 
-  const recentDeploys = input.deploys.map((d) => ({
-    shortId: d.id.slice(0, 8),
-    state: d.state,
-    active: d.id === input.activeDeployId,
-    createdAt: d.createdAt.toISOString(),
-    activatedAt: d.activatedAt ? d.activatedAt.toISOString() : null,
+  const recentVersions = input.versions.map((v) => ({
+    number: v.number,
+    compileStatus: v.compileStatus,
+    actorKind: v.actorKind,
+    published: v.id === input.publishedVersionId,
+    createdAt: v.createdAt.toISOString(),
   }));
 
-  return { requests, count5xx, top404Paths, recentDeploys };
+  return { requests, count5xx, top404Paths, recentVersions };
 }

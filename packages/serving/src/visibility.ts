@@ -1,6 +1,6 @@
 /**
  * Visibility gate decision (U7, PHY-58). Pure — evaluated BEFORE any
- * deploy_files / blob access so an unauthorized request never reaches app bytes.
+ * version_files / blob access so an unauthorized request never reaches app bytes.
  */
 
 export type Visibility = 'public' | 'team' | 'password';

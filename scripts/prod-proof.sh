@@ -65,7 +65,6 @@ docker run -d --name "$NAME" --network "$NET" -p "$PORT:3000" \
   -e DATABASE_URL="postgresql://drobek:drobek@$NAME-pg:5432/drobek" \
   -e REDIS_URL="redis://$NAME-redis:6379" \
   -e DROBEK_MASTER_KEY="$(openssl rand -hex 32)" \
-  -e UPLOAD_SIGNING_SECRET="$(openssl rand -hex 32)" \
   -e PUBLIC_APP_URL="$BASE" \
   "$IMAGE" >/dev/null
 
@@ -77,6 +76,11 @@ done
 [ -n "$healthy" ] || { docker logs "$NAME" 2>&1 | tail -40; fail "/healthz never went green"; }
 echo "$body" | grep -q '"ok":true' || fail "/healthz body: $body"
 ok "/healthz → $body"
+
+docker exec "$NAME-pg" psql -U drobek -d drobek -tAc \
+  "select count(*) from information_schema.tables where table_name in ('app_versions','version_files','blobs')" \
+  | grep -qx 3 || fail "core migrations did not create the version tables"
+ok "server migrated the database on start (app_versions, version_files, blobs)"
 
 hdr=$(curl -s -o /dev/null -D - -X POST "$BASE/mcp" -H 'content-type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize"}')

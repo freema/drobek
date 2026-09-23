@@ -2,7 +2,7 @@
  * Fail-closed start (PHY-76 #6): refuse to boot with a known placeholder or,
  * in production, a missing/weak secret. Copying `.env.example` verbatim must
  * never produce a running instance that encrypts upstream secrets with a
- * published key or signs tokens with a guessable HMAC secret.
+ * published key.
  *
  * Only variable NAMES are ever reported — never values.
  */
@@ -10,7 +10,6 @@
 /** Secrets checked for placeholder values whenever they are set. */
 export const SECRET_ENV_VARS = [
   'DROBEK_MASTER_KEY',
-  'UPLOAD_SIGNING_SECRET',
   'SMTP_PASS',
   'GOOGLE_CLIENT_SECRET',
 ] as const;

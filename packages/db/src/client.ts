@@ -34,6 +34,14 @@ export function getDb(): DB {
   return db;
 }
 
+/**
+ * Swap in another drizzle database (tests: an in-process PGlite with the core
+ * migrations applied). Pass null to go back to the DATABASE_URL pool.
+ */
+export function setDbForTests(testDb: unknown): void {
+  db = testDb as DB | null;
+}
+
 /** Cheap connectivity probe used by @drobek/core runHealthChecks(). */
 export async function healthDbPing(): Promise<void> {
   await getSql()`select 1`;

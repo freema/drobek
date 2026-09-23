@@ -1,7 +1,7 @@
 # drobek skill
 
-Teaches an agent (Claude Code, Cursor) to structure, deploy, and add data to a
-static micro-app on drobek. It is intentionally thin: it teaches the WORKFLOW and
+Teaches an agent (Claude Code, Cursor) to work in a drobek workspace and add data to
+its apps. It is intentionally thin: it teaches the WORKFLOW and
 links the authoritative, always-current schemas (llms-full.txt + the MCP docs
 resources) instead of duplicating them.
 

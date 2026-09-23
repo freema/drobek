@@ -43,14 +43,10 @@ describe('renderLlmsFull', () => {
 
   it('contains every current tool name with an example call', () => {
     for (const name of TOOL_NAMES) expect(full).toContain(name);
-    // spot-check the explicit U10/U6 tool set from the task spec
+    // spot-check the explicit tool set
     for (const name of [
       'whoami',
       'list_apps',
-      'deploy_init',
-      'deploy_commit',
-      'deploy_status',
-      'rollback',
       'collection_define',
       'record_create',
       'record_read',
@@ -63,9 +59,7 @@ describe('renderLlmsFull', () => {
     expect(full).toContain('Example call:');
   });
 
-  it('documents the REST data API shapes + access modes', () => {
-    expect(full).toContain('/:ws/app/:slug/data/:collection');
-    expect(full).toContain('/:ws/app/:slug/data/:collection/:id');
+  it('documents the data access modes', () => {
     expect(full).toContain('public-read');
     expect(full).toContain('public-write');
     expect(full).toContain('locked');
@@ -90,13 +84,11 @@ describe('renderLlmsFull', () => {
     );
   });
 
-  it('documents the deploy flow, serving model, and lint block', () => {
-    expect(full).toContain('deploy_init');
-    expect(full).toContain('deploy_commit');
-    expect(full).toContain('deploy_status');
-    expect(full).toContain('index.html');
-    expect(full).toContain('Content-Security-Policy');
-    expect(full.toLowerCase()).toContain('lint');
+  it('no longer documents the removed upload/deploy pipeline', () => {
+    for (const gone of ['deploy_init', 'deploy_commit', 'deploy_status', '/:ws/app/:slug']) {
+      expect(full).not.toContain(gone);
+      expect(renderLlmsTxt(ENV)).not.toContain(gone);
+    }
   });
 
   it('contains the error catalogue (every code)', () => {
@@ -111,7 +103,7 @@ describe('renderLlmsFull', () => {
   it('contains the limits (every env cap)', () => {
     for (const l of LIMITS) expect(full).toContain(l.env);
     expect(full).toContain('DATA_MAX_DOCS_PER_APP');
-    expect(full).toContain('DEPLOY_MAX_FILE_BYTES');
+    expect(full).toContain('COMPILE_MAX_TOTAL_BYTES');
   });
 
   it('surfaces the skill install command + docs resource uri consistency', () => {

@@ -23,7 +23,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       name: access.workspace.name,
       kind: access.workspace.kind,
     },
-    apps: shapeApps(apps, access.workspace.slug),
+    apps: shapeApps(apps),
     role: access.effectiveRole,
   };
 }

@@ -1,61 +1,44 @@
 # drobek
 
-> Open-source hosting for **vibecoded micro-projects**. Drop a small HTML/static app and get a live URL in one step — MCP-native.
+> An open-source cloud workspace for agent-built web apps. Your own agent
+> (Claude Code, Cursor, …) connects over MCP and works **directly in drobek** —
+> every write is compiled on the server, versioned, previewable and
+> publishable — with backend capabilities only through TypeScript platform
+> modules and a dashboard for the humans.
 
-**Status:** 🌱 Early — we're shaping the concept. Architecture and APIs will change.
+**Status:** 🌱 Early — the cloud-workspace rebuild is in progress on `next`.
 
 ---
 
-## The problem
+## Why
 
-Inside companies, people constantly produce **tiny one-off projects**: an internal dashboard, a landing page, a calculator, a demo for a client, a "can you make me a quick page that shows X". More and more of these are **vibecoded** — generated in minutes with an AI agent.
+People inside companies constantly need **tiny apps**: an internal dashboard,
+a form, a calculator, a demo for a client. An AI agent writes one in minutes —
+and then it has nowhere to live. Localhost disappears, a ZIP in Slack never
+runs, "real" hosting needs a repo, a build and an account.
 
-These projects have nowhere to live:
-
-- **localhost** → disappears when you close the laptop
-- **a ZIP in Slack** → nobody runs it
-- **"real" hosting** (Vercel/Netlify/S3) → overkill for one HTML file: needs an account, a git repo, a build step, config
-- **internal infra** → a ticket to IT, wait a week
-
-So great little things never reach the people who'd use them.
-
-## What drobek does
-
-drobek is **"paste & it's live."** Hand it a folder or an HTML file → get a URL. No build, no config for static projects.
-
-The headline channel is **MCP-native deployment**: the same AI agent that built the project deploys it. *"Deploy this to drobek"* → one tool call → live URL. Zero context switch, no leaving the chat.
-
-## Deploy channels (planned)
-
-- **MCP** — the agent that wrote it ships it (primary)
-- **CLI** — `drobek deploy ./my-app`
-- **Web drag & drop** — for non-devs
-- **API / git push** — for everything else
-
-*(Exact set is still open — see Open questions.)*
+drobek gives the agent a place to work instead of a place to upload to: the
+files live in drobek, drobek compiles them (esbuild, in-process — **the server
+never executes app code**), keeps every change as an immutable version, and
+serves the result. Secrets never pass through the agent: they are set by the
+app owner in the dashboard.
 
 ## Core concepts
 
-- **Project** — a deployed unit (static bundle or small app); has a name, an owner, a URL.
-- **Deploy** — an immutable version of a project (rollback-able).
-- **Channel** — how a deploy arrives (MCP / CLI / web / API).
-- **Hosting** — drobek serves the project on a subdomain (and, later, custom domains) with TLS.
+- **Workspace** — people with roles (workspace-admin / editor / viewer).
+- **App** — a globally unique slug (`<slug>.<APPS_DOMAIN>`), owned by a workspace.
+- **Version** — an immutable snapshot of the app's files, numbered per app.
+  Publishing moves one pointer; publishing an older version is the rollback.
+- **Modules** — the only backend an app gets: data collections, auth, forms,
+  email, files and a secret-injecting proxy, configured in the dashboard.
 
-## Open questions (being decided)
-
-- **Static only, or running backends too?** (static is ~10× simpler; backends need isolation)
-- Runtime & serving model (object storage + router? containers per project?)
-- Isolation & security for untrusted vibecoded code
-- Auth & multi-tenancy
-- How a bundle travels over MCP (inline? presigned upload?)
-- Subdomain + custom-domain + wildcard TLS model
-- Quotas, limits, lifecycle (do stale projects expire?)
+The full plan is [`docs/vision-plan.md`](./docs/vision-plan.md).
 
 ## Self-host quickstart
 
 The whole stack builds **from source** and runs with one command — clone,
 copy the env, `docker compose up`, and you have a working drobek: email
-sign-in, workspaces, the MCP OAuth server, the deploy pipeline, path serving,
+sign-in, workspaces, the MCP OAuth server, app versions,
 and the dashboard.
 
 Prereqs: **Docker** (compose v2). [go-task](https://taskfile.dev) 3 + Node 22 +
@@ -67,7 +50,7 @@ git clone https://github.com/freema/drobek && cd drobek
 cp .env.example .env
 # Two edits make it yours (the rest have working dev defaults):
 #   1. SUPERADMIN_EMAIL  → the email you'll sign in with (becomes super-admin)
-#   2. UPLOAD_SIGNING_SECRET → a real secret:  openssl rand -hex 32
+#   2. DROBEK_MASTER_KEY → a real key:  openssl rand -hex 32
 docker compose up -d --build     # or: task dev  (waits until healthy)
 ```
 
@@ -84,22 +67,20 @@ secret still holds a `change-me…` placeholder. Next to it:
 | redis 7 | 6391 | 6379 | `redis-cli ping` |
 | mailpit (dev SMTP sink) | [8025](http://localhost:8025) | 1025/8025 | `/mailpit readyz` |
 
-**Deploy a static app from your agent (the headline flow):**
+**Connect your agent:**
 
 1. Open [localhost:3041](http://localhost:3041) and sign in with your email.
    The dev stack sends the login code to the **mailpit** sink — read it at
    [localhost:8025](http://localhost:8025) (production wires real SMTP instead).
 2. Point an MCP client (e.g. Claude Code) at `http://localhost:3041/mcp`. It
    discovers the drobek OAuth Authorization Server, you approve the consent
-   screen in your browser (choosing the workspace + granting `deploy:write`),
-   and it receives a scoped token.
-3. Ask the agent to deploy your static app. It calls `deploy_init` → uploads the
-   files → `deploy_commit`; the in-process deploy consumer lints, stores, and activates the version,
-   and the app goes live at `http://localhost:3041/<workspace>/app/<slug>`.
-4. Roll back (the `rollback` tool or the dashboard) and browse the deploy
-   history + apps list under `/workspaces/<slug>/apps`.
+   screen in your browser (choosing the workspace + the granted scopes), and it
+   receives a scoped token.
+3. The agent can now see your workspace and apps, define and query data
+   collections, and read the runtime errors real users hit. Browse the apps,
+   their version history and publish a version under `/workspaces/<slug>/apps`.
 
-`docker compose down -v` wipes the volumes (postgres, redis, blobs) for a clean
+`docker compose down -v` wipes the volumes (postgres, redis) for a clean
 start; `docker compose down` keeps your data.
 
 Everyday commands:
@@ -111,22 +92,16 @@ task logs         # tail the drobek service
 task check        # host-side: build packages, typecheck, lint, unit tests
 task build        # build the production image ghcr.io/freema/drobek:<sha>
 task prod:proof   # build + prove the prod image (size, non-root, fail-closed, live boot)
-task e2e          # Playwright suite (incl. @local + the M1a acceptance) vs the stack
+task e2e          # Playwright suite (incl. @local specs) vs the stack
 task e2e:smoke    # read-only @smoke specs only (safe against any target)
 task db:generate  # drizzle-kit generate (journal __drizzle_migrations_core)
 task db:migrate   # apply core migrations manually
 task down         # docker compose down
 ```
 
-The end-to-end M1a acceptance —
-[`tests-e2e/tests/m1a-acceptance.spec.ts`](./tests-e2e/tests/m1a-acceptance.spec.ts)
-— exercises the whole flow above in one test (login → team → MCP OAuth →
-deploy → serve → v2 → rollback → dashboard) and is the canonical proof the
-self-hosted stack works.
-
 `/api/version` returns the git sha `task dev` bakes in via `GIT_SHA`
 (fallback `dev`). Monorepo layout: `apps/server` +
-`packages/{db,core,auth,tenancy,oauth,deploy,serving,dashboard,sdk}` +
+`packages/{db,core,compile,apps,audit,auth,tenancy,oauth,data,proxy,insights,serving,dashboard,agent-dx,sdk}` +
 `tests-e2e` (pnpm workspace). Architecture and the ratified D1–D5 decisions:
 [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md).
 

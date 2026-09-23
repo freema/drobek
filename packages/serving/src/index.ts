@@ -1,10 +1,9 @@
 /**
- * @drobek/serving — U7 hardened same-origin path serving (PHY-58; PHY-52/82/76)
- * as a react-free workspace LIBRARY. The core logic (resolution, caching,
- * visibility gate, CSP, password) lives here; apps/web (and the saas web app)
- * register a thin `/:ws/app/:slug/*` route that calls `serveApp` /
- * `handleAppPasswordPost`. The deploy pipeline imports `bustServeCache` from
- * `@drobek/serving/cache` to invalidate on activate/rollback.
+ * @drobek/serving — pure serving building blocks (path resolution, cache
+ * headers, content types, CSP, visibility gate, app passwords). The request
+ * handler that serves versions from the apps origin arrives with M0-06; the
+ * deploy-based `/:ws/app/:slug/*` handler was removed with the upload
+ * pipeline (M0-02).
  */
 export {
   DEFAULT_CONTENT_TYPE,
@@ -47,21 +46,4 @@ export {
   verifyAppAccessToken,
   verifyAppPassword,
 } from './password.js';
-export {
-  bustServeCache,
-  getServeAppRecord,
-  getServeManifest,
-  loadAppPasswordHash,
-  resolveWorkspaceId,
-  type AppStatus,
-  type ManifestFile,
-  type ServeAppRecord,
-  type ServeManifest,
-} from './cache.server.js';
-export {
-  handleAppPasswordPost,
-  renderPasswordPage,
-  serveApp,
-  setServeBlobStoreForTests,
-  type ServeParams,
-} from './serve.server.js';
+export { resolveWorkspaceId } from './workspace.server.js';

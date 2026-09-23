@@ -21,7 +21,7 @@ export const DOCS_RESOURCE_LLMS_FULL = 'drobek://docs/llms-full';
 export const DOCS_RESOURCE_TOOLS = 'drobek://docs/tools';
 
 const SUMMARY =
-  'drobek is MCP-native hosting for vibecoded static micro-apps. Connect the drobek MCP server from your agent (Claude Code, Cursor), deploy a folder of static files, and get a live URL — with an optional JSON-schema-backed Data API for dynamic apps.';
+  'drobek is an open-source cloud workspace for agent-built web apps. Connect the drobek MCP server from your agent (Claude Code, Cursor) and it works directly in your drobek workspace: apps, their immutable versions, JSON-schema-backed data collections, and the errors real users hit.';
 
 function renderToolFull(tool: ToolDoc): string {
   const lines: string[] = [];
@@ -67,7 +67,7 @@ export function renderLlmsTxt(env: NodeJS.ProcessEnv = process.env): string {
     `> ${SUMMARY}`,
     '',
     '## Docs',
-    `- [Full delivery-stack contract](${app}/llms-full.txt): the MCP connect/OAuth flow, every tool with its input schema + an example, the REST Data API, the deploy flow, the serving model, quotas/limits, and the error catalogue.`,
+    `- [Full delivery-stack contract](${app}/llms-full.txt): the MCP connect/OAuth flow, every tool with its input schema + an example, data access modes, quotas/limits, and the error catalogue.`,
     `- [Build with your agent](${app}/build-with-your-agent): connect the MCP server + install the drobek skill.`,
     '',
     '## Connect (MCP)',
@@ -76,13 +76,6 @@ export function renderLlmsTxt(env: NodeJS.ProcessEnv = process.env): string {
     '',
     '## Tools',
     ...toolList,
-    '',
-    '## REST Data API',
-    '- GET/POST  /:ws/app/:slug/data/:collection',
-    '- GET/PATCH/DELETE  /:ws/app/:slug/data/:collection/:id',
-    '',
-    '## Deploy',
-    '- deploy_init (index.html at root) → PUT the missing files → deploy_commit → poll deploy_status until ready → open the live URL.',
     '',
   ].join('\n');
 }
@@ -124,15 +117,7 @@ export function renderLlmsFull(env: NodeJS.ProcessEnv = process.env): string {
 
   sections.push(
     [
-      '## REST Data API',
-      '',
-      'Same-origin REST over the same collections the data tools use. All responses are `no-store` JSON.',
-      '',
-      '- GET  /:ws/app/:slug/data/:collection — list/query (query params: equality filters by field, plus `limit`, `cursor`, `sort`, `dir`). Returns { records, nextCursor }.',
-      '- POST /:ws/app/:slug/data/:collection — create a document (JSON body, validated against the schema). Returns the stored document.',
-      '- GET  /:ws/app/:slug/data/:collection/:id — read one document.',
-      '- PATCH /:ws/app/:slug/data/:collection/:id — shallow-merge patch, re-validated.',
-      '- DELETE /:ws/app/:slug/data/:collection/:id — soft-delete.',
+      '## Data collections',
       '',
       'Access modes (set per collection at collection_define):',
       '- public-read — anonymous reads; writes need an editor+ member.',
@@ -141,31 +126,6 @@ export function renderLlmsFull(env: NodeJS.ProcessEnv = process.env): string {
       '- owner-only — RESERVED for U11 end-user auth; record ops are rejected as not_implemented for now.',
       '',
       'Every write (any mode) is schema-validated, write-rate-limited, and quota-capped.',
-    ].join('\n')
-  );
-
-  sections.push(
-    [
-      '## Deploy flow',
-      '',
-      '1. Structure the app: an `index.html` at the ROOT, relative asset paths, all files static.',
-      '2. deploy_init with the file manifest ({ path, sha256, bytes }[]). It returns presigned PUT URLs for ONLY the files whose content is not already stored (content-hash dedup).',
-      '3. PUT each file to its presigned URL (the sink verifies the sha256).',
-      '4. deploy_commit to enqueue the build/lint/activate job.',
-      '5. Poll deploy_status: awaiting_upload → queued → linting → storing → activating → ready | failed.',
-      '6. On `ready`, open the returned live URL. On `failed`, read the lint report.',
-      '',
-      'Strict lint blocks non-static bundles (e.g. anything pulling chromium/puppeteer) — such a deploy ends `failed` and never activates. Use `rollback` to repoint an app to a prior ready deploy.',
-    ].join('\n')
-  );
-
-  sections.push(
-    [
-      '## Serving model',
-      '',
-      `- URL shape: ${app}/:ws/app/:slug/* (workspace slug + app slug).`,
-      '- Hardened same-origin serving with a strict Content-Security-Policy; hashed assets are served immutable/cacheable.',
-      '- Only the active (ready) deploy is served; a rollback repoints which deploy is active.',
     ].join('\n')
   );
 

@@ -1,18 +1,15 @@
 /**
- * GET/POST /workspaces/:slug/apps/:appSlug — server half (U8, PHY-74 slice).
+ * GET/POST /workspaces/:slug/apps/:appSlug — server half (PHY-74 slice).
  *
- * GET (viewer+): the app (live URL, status, visibility, active deploy) + its
- * DEPLOY HISTORY (each deploy's short id, state, created/activated time, active
- * flag, lint status). A viewer sees everything but no rollback control.
+ * GET (viewer+): the app (status, visibility, published version) + its
+ * VERSION HISTORY (number, author kind, compile status, reasoning, published
+ * flag). A viewer sees everything but no publish control.
  *
- * POST (editor+): the ROLLBACK action. The role gate is enforced SERVER-SIDE by
+ * POST (editor+): PUBLISH a version — publishing an older version is the
+ * rollback. The role gate is enforced SERVER-SIDE by
  * requireWorkspaceRole('editor') — a viewer gets 403, a non-member 404, an
- * anonymous request a /login redirect — BEFORE @drobek/deploy's rollback runs
- * (which re-checks editor+ and writes the audit row). This is the PHY-74
- * acceptance: rollback works from the UI, and a viewer cannot roll back.
- *
- * We import rollback from the `@drobek/deploy/rollback` subpath (react/bullmq
- * free) so the web bundle never pulls the queue in — mirrors the events route.
+ * anonymous request a /login redirect — BEFORE @drobek/apps publish runs
+ * (which moves the pointer and writes the `app.publish` audit row).
  */
 import {
   data,
@@ -20,16 +17,17 @@ import {
   type ActionFunctionArgs,
   type LoaderFunctionArgs,
 } from 'react-router';
+import { AppsError, listVersions, publish } from '@drobek/apps';
+import { actorKindForSurface } from '@drobek/audit';
 import { requireWorkspaceRole } from '@drobek/tenancy';
-import { actorKindForSurface, rollback } from '@drobek/deploy/rollback';
 import {
   queryAppErrors,
   queryAppLogs,
   type AppErrorsView,
   type AppLogsView,
 } from '@drobek/insights';
-import { listAppDeploys, loadAppForView } from '../apps.server.js';
-import { canRollback, servePath, shapeDeployHistory } from '../view.js';
+import { loadAppForView } from '../apps.server.js';
+import { canPublish, shapeVersionHistory } from '../view.js';
 
 const EMPTY_ERRORS: AppErrorsView = {
   totalEvents: 0,
@@ -40,7 +38,7 @@ const EMPTY_LOGS: AppLogsView = {
   requests: 0,
   count5xx: 0,
   top404Paths: [],
-  recentDeploys: [],
+  recentVersions: [],
 };
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
@@ -58,9 +56,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     throw data({ message: 'Not found' }, { status: 404 });
   }
 
-  const deployRows = await listAppDeploys(app.id);
-  const deploys = shapeDeployHistory(deployRows, app.activeDeployId);
-  const active = deploys.find((d) => d.active) ?? null;
+  const versions = shapeVersionHistory(await listVersions(app.id, { limit: 100 }));
+  const published = versions.find((v) => v.published) ?? null;
 
   // PHY-123 Overview panels — recent errors + a 404/traffic summary (read-only,
   // viewer+). Best-effort: a signals hiccup degrades to empty, never 500s the
@@ -76,15 +73,13 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       slug: app.slug,
       status: app.status,
       visibility: app.visibility,
-      activeDeployId: app.activeDeployId,
-      activeShortId: active?.shortId ?? null,
-      url: servePath(access.workspace.slug, app.slug),
+      publishedVersion: published?.number ?? null,
     },
-    deploys,
+    versions,
     errors,
     logs,
     role: access.effectiveRole,
-    canRollback: canRollback(access.effectiveRole),
+    canPublish: canPublish(access.effectiveRole),
   };
 }
 
@@ -99,29 +94,28 @@ export async function action({ request, params }: ActionFunctionArgs) {
   );
 
   const appSlug = String(params.appSlug ?? '');
+  const app = await loadAppForView(access.workspace.id, appSlug);
+  if (!app) {
+    throw data({ message: 'Not found' }, { status: 404 });
+  }
   const form = await request.formData();
-  const toDeployId = String(form.get('toDeployId') ?? '').trim() || undefined;
+  const versionId = String(form.get('versionId') ?? '').trim();
 
   try {
-    await rollback({
+    // Dashboard/web surface (PHY-85) → the publish audit is attributed to the
+    // human session user. Server-derived here; the client cannot set it.
+    await publish(app.id, versionId, {
       userId: access.user.id,
-      workspaceId: access.workspace.id,
-      role: access.effectiveRole,
-      // Dashboard/web surface (PHY-85) → the rollback audit is attributed to the
-      // human session user. Server-derived here; the client cannot set it.
-      actorKind: actorKindForSurface('web'),
-      slug: appSlug,
-      toDeployId,
+      kind: actorKindForSurface('web'),
     });
   } catch (err) {
-    // rollback throws DeployError (has a `.code`) for expected failures — e.g.
-    // no_rollback_target / not_found. Surface the (non-secret) message; the
-    // editor+ gate above already handled the authz case.
-    const message =
-      err instanceof Error ? err.message : 'Rollback failed. Please try again.';
-    return data({ error: message }, { status: 400 });
+    // Expected failures (not_found / not_publishable) carry a caller-safe message.
+    if (err instanceof AppsError) {
+      return data({ error: err.message }, { status: 400 });
+    }
+    throw err;
   }
 
-  // Reflect the new active deploy: bounce back to the detail page (revalidates).
+  // Reflect the new published version: bounce back to the detail page.
   return redirect(`/workspaces/${access.workspace.slug}/apps/${appSlug}`);
 }

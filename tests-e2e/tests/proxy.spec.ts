@@ -1,9 +1,13 @@
 import { randomBytes } from 'node:crypto';
-import pg from 'pg';
-import { expect, test } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { BASE_URL_WEB } from '../playwright.config';
 import { loginViaEmail, logout, skipUnlessLocal, uniqueEmail } from './helpers/auth';
-import { indexHtml, initUploadCommit, mcpClient } from './helpers/deploy';
+import {
+  addMembership,
+  personalWorkspaceOf,
+  seedApp,
+  userIdByEmail,
+} from './helpers/seed';
 
 /**
  * PHY-59 acceptance (BFF proxy v1 — authed members). As a workspace-admin,
@@ -19,35 +23,29 @@ import { indexHtml, initUploadCommit, mcpClient } from './helpers/deploy';
  *     resolves private (not allow-listed) is blocked at forward time (403); a
  *     redirect to an internal URL is returned verbatim, NOT followed;
  *   - an anonymous proxy call → 401.
- * Requires the local compose stack + worker + the proxy-echo service.
+ * Requires the local compose stack + the proxy-echo service.
  */
 
-const DEPLOY_SCOPE = 'mcp:whoami apps:read deploy:write';
 const ECHO_BASE = 'http://proxy-echo:8099';
 const SECRET = 'super-secret-token-123';
-const DB_URL =
-  process.env.DATABASE_URL ?? 'postgresql://drobek:drobek@localhost:5441/drobek';
-
-async function withDb<T>(fn: (c: pg.Client) => Promise<T>): Promise<T> {
-  const client = new pg.Client({ connectionString: DB_URL });
-  await client.connect();
-  try {
-    return await fn(client);
-  } finally {
-    await client.end();
-  }
-}
-
-async function workspaceIdFor(ws: string): Promise<string> {
-  return withDb(async (c) => {
-    const res = await c.query(`SELECT id FROM workspaces WHERE slug = $1`, [ws]);
-    expect(res.rows.length, 'workspace exists').toBe(1);
-    return res.rows[0].id as string;
-  });
+/**
+ * Sign in a fresh user (their personal workspace materializes → they are its
+ * workspace-admin) and seed an app into it. Returns the workspace slug + id.
+ */
+async function adminWorkspace(
+  page: Page,
+  request: APIRequestContext,
+  tag: string
+): Promise<{ slug: string; id: string }> {
+  const email = uniqueEmail(tag);
+  await loginViaEmail(page, request, email);
+  const ws = await personalWorkspaceOf(email);
+  await seedApp({ workspaceId: ws.id });
+  return ws;
 }
 
 /** Register the `echo` upstream via the dashboard form (admin session on `page`). */
-async function registerEcho(page: import('@playwright/test').Page, ws: string) {
+async function registerEcho(page: Page, ws: string) {
   await page.goto(`/workspaces/${ws}/upstreams`);
   await page.getByTestId('field-name').fill('echo');
   await page.getByTestId('field-baseurl').fill(ECHO_BASE);
@@ -69,22 +67,8 @@ test('proxy: register → member call injects the secret; method/path gate; secr
 }) => {
   skipUnlessLocal();
 
-  // Admin session + a workspace (deploying an app makes the user workspace-admin).
-  const { client, transport } = await mcpClient(page, request, {
-    tag: 'proxy-admin',
-    scope: DEPLOY_SCOPE,
-  });
-  let ws: string;
-  try {
-    const salt = randomBytes(6).toString('hex');
-    const dep = await initUploadCommit(client, request, {
-      name: `E2E Proxy ${salt}`,
-      files: [indexHtml(`proxy ${salt}`)],
-    });
-    ws = dep.workspaceSlug;
-  } finally {
-    await transport.close();
-  }
+  // Admin session + a workspace (the personal workspace owner is workspace-admin).
+  const ws = (await adminWorkspace(page, request, 'proxy-admin')).slug;
 
   await registerEcho(page, ws);
 
@@ -142,21 +126,7 @@ test('proxy: SSRF — private base_url rejected at registration; private-resolvi
 }) => {
   skipUnlessLocal();
 
-  const { client, transport } = await mcpClient(page, request, {
-    tag: 'proxy-ssrf',
-    scope: DEPLOY_SCOPE,
-  });
-  let ws: string;
-  try {
-    const salt = randomBytes(6).toString('hex');
-    const dep = await initUploadCommit(client, request, {
-      name: `E2E ProxySSRF ${salt}`,
-      files: [indexHtml(`ssrf ${salt}`)],
-    });
-    ws = dep.workspaceSlug;
-  } finally {
-    await transport.close();
-  }
+  const ws = (await adminWorkspace(page, request, 'proxy-ssrf')).slug;
   const createUrl = `${BASE_URL_WEB}/workspaces/${ws}/upstreams`;
 
   // Registering a base_url with a private/reserved IP LITERAL → 400 (rejected).
@@ -210,38 +180,17 @@ test('proxy: an editor cannot configure upstreams (page 403 + POST 403) @local',
 }) => {
   skipUnlessLocal();
 
-  const { client, transport } = await mcpClient(page, request, {
-    tag: 'proxy-owner',
-    scope: DEPLOY_SCOPE,
-  });
-  let ws: string;
-  try {
-    const salt = randomBytes(6).toString('hex');
-    const dep = await initUploadCommit(client, request, {
-      name: `E2E ProxyRole ${salt}`,
-      files: [indexHtml(`role ${salt}`)],
-    });
-    ws = dep.workspaceSlug;
-  } finally {
-    await transport.close();
-  }
-  const workspaceId = await workspaceIdFor(ws);
+  const { slug: ws, id: workspaceId } = await adminWorkspace(
+    page,
+    request,
+    'proxy-owner'
+  );
 
   // A different user signs in and is seeded as an EDITOR of the owner's workspace.
   const editorEmail = uniqueEmail('proxy-editor');
   await logout(page);
   await loginViaEmail(page, request, editorEmail);
-  const editorUserId = await withDb(async (c) => {
-    const res = await c.query(`SELECT id FROM users WHERE email = $1`, [editorEmail]);
-    expect(res.rows.length, 'editor user exists').toBe(1);
-    return res.rows[0].id as string;
-  });
-  await withDb((c) =>
-    c.query(
-      `INSERT INTO memberships (user_id, workspace_id, role) VALUES ($1, $2, 'editor')`,
-      [editorUserId, workspaceId]
-    )
-  );
+  await addMembership(await userIdByEmail(editorEmail), workspaceId, 'editor');
 
   // The editor cannot even load the config page (admin-gated → 403).
   const pageRes = await page.request.get(`${BASE_URL_WEB}/workspaces/${ws}/upstreams`);
@@ -268,21 +217,7 @@ test('proxy: a flood of member calls trips the rate limit (429) @local', async (
 }) => {
   skipUnlessLocal();
 
-  const { client, transport } = await mcpClient(page, request, {
-    tag: 'proxy-flood',
-    scope: DEPLOY_SCOPE,
-  });
-  let ws: string;
-  try {
-    const salt = randomBytes(6).toString('hex');
-    const dep = await initUploadCommit(client, request, {
-      name: `E2E ProxyFlood ${salt}`,
-      files: [indexHtml(`flood ${salt}`)],
-    });
-    ws = dep.workspaceSlug;
-  } finally {
-    await transport.close();
-  }
+  const ws = (await adminWorkspace(page, request, 'proxy-flood')).slug;
   await registerEcho(page, ws);
 
   // The dev compose caps PROXY_RATE_LIMIT low (15) → a flood trips 429.

@@ -1,7 +1,7 @@
 /**
  * LIMITS — the env-driven quota/cap catalogue surfaced to agents (M1b Agent DX,
  * PHY-124). Default values mirror the constants in @drobek/data (quota.ts /
- * rate-limit.ts) and @drobek/deploy (constants.ts). agent-dx is a zero-dep leaf,
+ * rate-limit.ts) and @drobek/compile (limits.ts). agent-dx is a zero-dep leaf,
  * so the defaults are restated here as documentation; the AUTHORITATIVE runtime
  * value is always the server's env var.
  */
@@ -39,13 +39,18 @@ export const LIMITS: LimitDoc[] = [
     meaning: 'The write rate-limit window.',
   },
   {
-    env: 'DEPLOY_MAX_FILE_BYTES',
-    default: '10485760 (10 MiB)',
-    meaning: 'Max declared bytes for any single deployed file.',
+    env: 'COMPILE_MAX_FILES',
+    default: '200',
+    meaning: 'Max files in one app version.',
   },
   {
-    env: 'DEPLOY_MAX_APP_BYTES',
-    default: '104857600 (100 MiB)',
-    meaning: 'Max summed declared bytes for one deploy.',
+    env: 'COMPILE_MAX_FILE_BYTES',
+    default: '524288 (512 KiB)',
+    meaning: 'Max bytes of a single app file.',
+  },
+  {
+    env: 'COMPILE_MAX_TOTAL_BYTES',
+    default: '5242880 (5 MiB)',
+    meaning: 'Max summed bytes of one app version.',
   },
 ];

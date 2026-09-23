@@ -1,7 +1,7 @@
 /**
- * Append-only audit WRITE (PHY-85; extracted from @drobek/deploy so both
- * @drobek/deploy and @drobek/tenancy can write without a dependency cycle — this
- * package depends ONLY on @drobek/db).
+ * Append-only audit WRITE (PHY-85; its own package so both @drobek/apps and
+ * @drobek/tenancy can write without a dependency cycle — this package depends
+ * ONLY on @drobek/db).
  *
  * The ONLY mutation this module performs is an INSERT. There is deliberately no
  * update/delete path here (retention prune lives in ./retention.server.ts and is

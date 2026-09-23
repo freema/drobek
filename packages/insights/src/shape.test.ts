@@ -4,7 +4,7 @@ import {
   shapeLogs,
   type ErrorRow,
   type DailyStatRow,
-  type DeployRow,
+  type VersionRow,
 } from './shape.js';
 
 function errRow(over: Partial<ErrorRow>): ErrorRow {
@@ -65,15 +65,23 @@ describe('shapeLogs', () => {
       { requestCount: 10, count5xx: 1, path404Counts: { '/missing': 2, '/gone': 5 } },
       { requestCount: 4, count5xx: 0, path404Counts: { '/missing': 3 } },
     ];
-    const deploys: DeployRow[] = [
+    const versions: VersionRow[] = [
       {
-        id: 'dpl_aaaaaaaa1111',
-        state: 'ready',
+        id: 'ver_2',
+        number: 2,
+        compileStatus: 'error',
+        actorKind: 'agent',
+        createdAt: new Date('2026-07-01T00:05:00Z'),
+      },
+      {
+        id: 'ver_1',
+        number: 1,
+        compileStatus: 'ok',
+        actorKind: 'agent',
         createdAt: new Date('2026-07-01T00:00:00Z'),
-        activatedAt: new Date('2026-07-01T00:05:00Z'),
       },
     ];
-    const view = shapeLogs({ daily, deploys, activeDeployId: 'dpl_aaaaaaaa1111' });
+    const view = shapeLogs({ daily, versions, publishedVersionId: 'ver_1' });
     expect(view.requests).toBe(14);
     expect(view.count5xx).toBe(1);
     // tie on count (5) → path ascending: '/gone' before '/missing'
@@ -81,20 +89,19 @@ describe('shapeLogs', () => {
       { path: '/gone', count: 5 },
       { path: '/missing', count: 5 },
     ]);
-    expect(view.recentDeploys[0]).toMatchObject({
-      shortId: 'dpl_aaaa',
-      state: 'ready',
-      active: true,
-    });
+    expect(view.recentVersions).toEqual([
+      { number: 2, compileStatus: 'error', actorKind: 'agent', published: false, createdAt: '2026-07-01T00:05:00.000Z' },
+      { number: 1, compileStatus: 'ok', actorKind: 'agent', published: true, createdAt: '2026-07-01T00:00:00.000Z' },
+    ]);
   });
 
   it('handles empty signals', () => {
-    const view = shapeLogs({ daily: [], deploys: [], activeDeployId: null });
+    const view = shapeLogs({ daily: [], versions: [], publishedVersionId: null });
     expect(view).toEqual({
       requests: 0,
       count5xx: 0,
       top404Paths: [],
-      recentDeploys: [],
+      recentVersions: [],
     });
   });
 });

@@ -9,7 +9,7 @@ describe('/llms.txt loader', () => {
     expect(res.headers.get('content-type')).toContain('text/plain');
     const body = await res.text();
     expect(body.startsWith('# drobek')).toBe(true);
-    expect(body).toContain('deploy_init');
+    expect(body).toContain('list_apps');
   });
 });
 
@@ -22,10 +22,6 @@ describe('/llms-full.txt loader', () => {
     for (const name of [
       'whoami',
       'list_apps',
-      'deploy_init',
-      'deploy_commit',
-      'deploy_status',
-      'rollback',
       'collection_define',
       'record_create',
       'record_read',

@@ -9,6 +9,8 @@ import {
 } from '@playwright/test';
 import { BASE_URL_MCP, BASE_URL_WEB } from '../playwright.config';
 import { loginViaEmail, skipUnlessLocal, uniqueEmail } from './helpers/auth';
+import { callTool, mcpClient } from './helpers/mcp';
+import { personalWorkspaceOf, seedApp, workspaceIdBySlug } from './helpers/seed';
 
 /**
  * U5 acceptance (PHY-71/PHY-53): the MCP OAuth 2.1 flow end-to-end against the
@@ -325,6 +327,59 @@ test('MCP OAuth negatives: no-token 401, wrong-audience reject, single-use code,
   }
 });
 
+test('MCP token binds to the workspace chosen at consent: a TEAM token sees only the team apps @local', async ({
+  page,
+  request,
+}) => {
+  skipUnlessLocal();
+  const salt = randomBytes(5).toString('hex');
+  const email = uniqueEmail('mcp-team');
+  const teamName = `MCP Team ${salt}`;
+  const teamSlug = `mcp-team-${salt}`;
+
+  // Log in → personal workspace materializes → create a TEAM workspace.
+  await loginViaEmail(page, request, email);
+  await page.goto('/workspaces');
+  await page.getByLabel('Team name').fill(teamName);
+  await page.getByLabel('Slug').fill(teamSlug);
+  await page.getByRole('button', { name: 'Create team' }).click();
+  await page.waitForURL(new RegExp(`/workspaces/${teamSlug}$`));
+
+  // One app in each workspace.
+  const personal = await personalWorkspaceOf(email);
+  const personalApp = await seedApp({ workspaceId: personal.id });
+  const teamApp = await seedApp({ workspaceId: await workspaceIdBySlug(teamSlug) });
+
+  // Consent with the TEAM workspace selected → the token is bound there.
+  const mcp = await mcpClient(page, request, {
+    email,
+    signedIn: true,
+    workspaceLabel: `${teamName} (workspace-admin)`,
+  });
+  try {
+    expect(mcp.workspace).toBe(teamSlug);
+    const who = await callTool(mcp.client, 'whoami', {});
+    expect(who.json.email).toBe(email);
+    expect(who.json.role).toBe('workspace-admin');
+
+    const listed = await callTool(mcp.client, 'list_apps', {});
+    expect(listed.json.workspace).toBe(teamSlug);
+    const slugs = (listed.json.apps as { slug: string }[]).map((a) => a.slug);
+    expect(slugs).toEqual([teamApp.slug]);
+    expect(slugs).not.toContain(personalApp.slug);
+
+    // The personal workspace is out of this token's reach.
+    const cross = await callTool(mcp.client, 'app_errors', {
+      workspace: personal.slug,
+      slug: personalApp.slug,
+    });
+    expect(cross.isError).toBe(true);
+    expect(cross.json.error).toBe('not_found');
+  } finally {
+    await mcp.transport.close();
+  }
+});
+
 test('OAuth authorization-server discovery returns the authorize endpoint @smoke', async ({
   request,
 }) => {
@@ -335,4 +390,51 @@ test('OAuth authorization-server discovery returns the authorize endpoint @smoke
   const meta = (await res.json()) as Record<string, string[] | string>;
   expect(meta.authorization_endpoint).toBeTruthy();
   expect(meta.code_challenge_methods_supported).toContain('S256');
+});
+
+/**
+ * M1a coherence, READ-ONLY — safe against ANY target (local OR beta/prod).
+ * Proves the self-host/beta discovery chain is internally consistent without a
+ * single write or a login email: the RS advertises the drobek AS, the AS
+ * advertises PKCE-S256 + the three OAuth endpoints, and both health surfaces
+ * are live. This is the beta-safe half of the M1a acceptance.
+ */
+test('M1a discovery chain is coherent (RS ↔ AS ↔ health) @smoke', async ({
+  request,
+}) => {
+  // Web + MCP are both live.
+  const webHealth = await request.get(`${BASE_URL_WEB}/healthz`);
+  expect(webHealth.status()).toBe(200);
+  const mcpHealth = await request.get(`${BASE_URL_MCP}/health`);
+  expect(mcpHealth.status()).toBe(200);
+  expect((await mcpHealth.json()).ok).toBe(true);
+
+  // Protected-resource metadata (RFC 9728): the RS points at an AS + declares
+  // the app/data scope surface the MCP tools need.
+  const prmRes = await request.get(
+    `${BASE_URL_MCP}/.well-known/oauth-protected-resource`
+  );
+  expect(prmRes.status()).toBe(200);
+  const prm = (await prmRes.json()) as {
+    resource: string;
+    authorization_servers: string[];
+    scopes_supported: string[];
+  };
+  expect(prm.resource).toBeTruthy();
+  expect(prm.authorization_servers.length).toBeGreaterThan(0);
+  expect(prm.scopes_supported).toContain('apps:read');
+  expect(prm.scopes_supported).toContain('data:write');
+
+  // Authorization-server metadata (RFC 8414): the AS advertised by the RS
+  // actually serves the three OAuth 2.1 endpoints + PKCE S256.
+  const asIssuer = prm.authorization_servers[0].replace(/\/+$/, '');
+  const asRes = await request.get(
+    `${asIssuer}/.well-known/oauth-authorization-server`
+  );
+  expect(asRes.status()).toBe(200);
+  const as = (await asRes.json()) as Record<string, string[] | string>;
+  expect(String(as.authorization_endpoint)).toContain('/oauth/authorize');
+  expect(String(as.token_endpoint)).toContain('/oauth/token');
+  expect(String(as.registration_endpoint)).toContain('/oauth/register');
+  expect(as.code_challenge_methods_supported).toContain('S256');
 });

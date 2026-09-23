@@ -31,14 +31,6 @@ import {
   updateRecord,
 } from '@drobek/data';
 import {
-  DeployError,
-  actorKindForSurface,
-  deployCommit,
-  deployInit,
-  deployStatus,
-  rollback,
-} from '@drobek/deploy';
-import {
   InsightsError,
   queryAppErrorsByLocator,
   queryAppLogsByLocator,
@@ -81,7 +73,7 @@ export function buildMcpServer(ctx: AuthContext): McpServer {
 
   // M1b Agent DX (PHY-124): docs resources (drobek://docs/*) + guided prompts,
   // scope-agnostic so a connected agent can read the delivery-stack contract and
-  // the deploy/add-data recipes without web access. Does not affect the tools.
+  // the add-data recipe without web access. Does not affect the tools.
   registerDocs(server);
 
   server.registerTool(
@@ -133,14 +125,6 @@ export function buildMcpServer(ctx: AuthContext): McpServer {
     );
   }
 
-  // ── U6 deploy tools (PHY-57) ───────────────────────────────────────────────
-  //
-  // deploy_init / deploy_commit / rollback require deploy:write; deploy_status
-  // accepts apps:read. Every call re-resolves the CURRENT membership role (not
-  // just the token's bound role) so a downgrade loses access immediately and an
-  // upgrade is honored; the deploy functions themselves enforce role >= editor.
-  registerDeployTools(server, ctx);
-
   // ── U10 data tools (PHY-55/PHY-56) ─────────────────────────────────────────
   //
   // collection_define + record_create/update/delete require data:write (+ a
@@ -173,147 +157,7 @@ async function currentEffectiveRole(ctx: AuthContext): Promise<OAuthRole | null>
   return (m?.role as OAuthRole | undefined) ?? null;
 }
 
-const manifestEntrySchema = z.object({
-  path: z.string(),
-  sha256: z.string(),
-  bytes: z.number().int().nonnegative(),
-});
-
-/** Map a thrown DeployError to a structured isError tool result; rethrow others. */
-async function runDeployTool(fn: () => Promise<unknown>) {
-  try {
-    return textResult(await fn());
-  } catch (err) {
-    if (err instanceof DeployError) {
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: JSON.stringify({ error: err.code, message: err.message }, null, 2),
-          },
-        ],
-        isError: true,
-      };
-    }
-    throw err;
-  }
-}
-
-/** Register the U6 deploy tools according to the token's granted scope. */
-function registerDeployTools(server: McpServer, ctx: AuthContext): void {
-  const canDeploy = hasScope(ctx.scope, 'deploy:write');
-  const canReadApps = hasScope(ctx.scope, 'apps:read');
-
-  if (canDeploy) {
-    server.registerTool(
-      'deploy_init',
-      {
-        description:
-          'Begin a deploy: validate the file manifest ({path, sha256, bytes}[] — an index.html at the root is required), create or target the app (slug from name, overridable), and return presigned PUT URLs for ONLY the files whose content is not already stored (content-hash dedup). Requires deploy:write and an editor+ role.',
-        inputSchema: {
-          name: z.string().optional(),
-          slug: z.string().optional(),
-          manifest: z.array(manifestEntrySchema).min(1),
-        },
-      },
-      async ({ name, slug, manifest }) => {
-        if (!(await stillGrantsRole(ctx))) return accessRevokedResult();
-        const role = await currentEffectiveRole(ctx);
-        if (!role) return accessRevokedResult();
-        return runDeployTool(() =>
-          deployInit({
-            userId: ctx.userId,
-            workspaceId: ctx.workspaceId,
-            workspaceSlug: ctx.workspaceSlug,
-            role,
-            // MCP tool → the acting surface is a connected agent (PHY-85). Server-
-            // derived here; never taken from client input, so it is not spoofable.
-            actorKind: actorKindForSurface('mcp'),
-            name,
-            slug,
-            manifest,
-          })
-        );
-      }
-    );
-
-    server.registerTool(
-      'deploy_commit',
-      {
-        description:
-          'Finalize a deploy after its files are uploaded: verifies every manifest blob is stored, enqueues the build/lint/activate job, and returns the queued state. Poll deploy_status for progress. Requires deploy:write and an editor+ role.',
-        inputSchema: { deployId: z.string() },
-      },
-      async ({ deployId }) => {
-        if (!(await stillGrantsRole(ctx))) return accessRevokedResult();
-        const role = await currentEffectiveRole(ctx);
-        if (!role) return accessRevokedResult();
-        return runDeployTool(() =>
-          deployCommit({
-            userId: ctx.userId,
-            workspaceId: ctx.workspaceId,
-            role,
-            // Agent surface → the async deploy.activate audit is attributed to the
-            // agent (server-derived; threaded to the worker via the deploy job).
-            actorKind: actorKindForSurface('mcp'),
-            deployId,
-          })
-        );
-      }
-    );
-
-    server.registerTool(
-      'rollback',
-      {
-        description:
-          'Roll an app back to a prior ready deploy by repointing its active version (defaults to the previous good deploy; pass toDeployId to target a specific one). Requires deploy:write and an editor+ role.',
-        inputSchema: { slug: z.string(), toDeployId: z.string().optional() },
-      },
-      async ({ slug, toDeployId }) => {
-        if (!(await stillGrantsRole(ctx))) return accessRevokedResult();
-        const role = await currentEffectiveRole(ctx);
-        if (!role) return accessRevokedResult();
-        return runDeployTool(() =>
-          rollback({
-            userId: ctx.userId,
-            workspaceId: ctx.workspaceId,
-            role,
-            // Agent surface (PHY-85) — server-derived, not from client input.
-            actorKind: actorKindForSurface('mcp'),
-            slug,
-            toDeployId,
-          })
-        );
-      }
-    );
-  }
-
-  if (canDeploy || canReadApps) {
-    server.registerTool(
-      'deploy_status',
-      {
-        description:
-          'Report a deploy pipeline state (awaiting_upload → queued → linting → storing → activating → ready | failed), whether it is the app’s active version, its URL, and any lint report/error. Requires apps:read.',
-        inputSchema: { deployId: z.string() },
-      },
-      async ({ deployId }) => {
-        if (!(await stillGrantsRole(ctx))) return accessRevokedResult();
-        const role = await currentEffectiveRole(ctx);
-        if (!role) return accessRevokedResult();
-        return runDeployTool(() =>
-          deployStatus({
-            userId: ctx.userId,
-            workspaceId: ctx.workspaceId,
-            role,
-            deployId,
-          })
-        );
-      }
-    );
-  }
-}
-
-/** Structured isError result for a plain forbidden (non-DeployError/DataError). */
+/** Structured isError result for a plain forbidden (non-DataError). */
 function forbiddenResult(message: string) {
   return {
     content: [
@@ -600,7 +444,7 @@ function registerInsightsTools(server: McpServer, ctx: AuthContext): void {
     'app_errors',
     {
       description:
-        'Read the recent client-side errors captured for a deployed app (window.onerror + unhandledrejection via the drobek error beacon), DEDUPED by message + stack head with occurrence counts, first/last-seen, the last URL, and a file:line hint. Use this after a deploy to close the fix loop. Read-only; requires apps:read and workspace membership.',
+        'Read the recent client-side errors captured for an app (window.onerror + unhandledrejection), DEDUPED by message + stack head with occurrence counts, first/last-seen, the last URL, and a file:line hint. Use this after a change to close the fix loop. Read-only; requires apps:read and workspace membership.',
       inputSchema: {
         workspace: z.string(),
         slug: z.string(),
@@ -626,7 +470,7 @@ function registerInsightsTools(server: McpServer, ctx: AuthContext): void {
     'app_logs',
     {
       description:
-        'Read the server-side serving signals for a deployed app: request volume, 5xx count, the top 404-by-path (missing assets/routes), and the recent deploy history. Use this to spot broken asset paths and correlate errors with a deploy. Read-only; requires apps:read and workspace membership.',
+        'Read the server-side serving signals for an app: request volume, 5xx count, the top 404-by-path (missing assets/routes), and the recent versions (compile status, which one is published). Use this to spot broken asset paths and correlate errors with a version. Read-only; requires apps:read and workspace membership.',
       inputSchema: {
         workspace: z.string(),
         slug: z.string(),

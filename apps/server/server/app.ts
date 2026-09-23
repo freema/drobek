@@ -10,7 +10,7 @@ import express, {
 
 export interface ServerAppOptions {
   /**
-   * The React Router request handler (dashboard, OAuth AS, app serving). In
+   * The React Router request handler (dashboard, OAuth AS). In
    * dev it loads the build through Vite; in production from `build/server`.
    */
   rrHandler: RequestHandler;

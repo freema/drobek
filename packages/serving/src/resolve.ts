@@ -7,12 +7,12 @@ import { extensionOf, hasExtension } from './content-type.js';
 
 export type RoutingMode = 'spa' | 'exact';
 
-/** The canonical entry document; the deploy pipeline guarantees it exists. */
+/** The canonical entry document of an app. */
 export const ENTRY_HTML = 'index.html';
 
 /**
  * An HTML document is an "entry": it references the (immutable) hashed assets
- * and changes between deploys, so it must REVALIDATE. This covers the root
+ * and changes between versions, so it must REVALIDATE. This covers the root
  * index.html, the SPA fallback, AND any nested index.html of a multi-page
  * static site. Everything else is treated as an immutable asset.
  */
@@ -25,7 +25,7 @@ export interface ResolveInput {
   /** The splat after `/:ws/app/:slug/` (may be `''` for the bare app root). */
   requestPath: string;
   routingMode: RoutingMode;
-  /** Membership test against the active deploy's file manifest. */
+  /** Membership test against the served version's file list. */
   has: (path: string) => boolean;
 }
 
@@ -34,9 +34,9 @@ export type ResolveResult =
   | { kind: 'not-found' };
 
 /**
- * Normalize a request splat into a candidate manifest key. Mirrors
- * `normalizeManifestPath` in @drobek/deploy so lookups line up with the stored
- * `deploy_files.path` rows: strip leading slash(es), collapse `//`, map the
+ * Normalize a request splat into a candidate file key. Mirrors
+ * `normalizeAppPath` in @drobek/compile so lookups line up with the stored
+ * `version_files.path` rows: strip leading slash(es), collapse `//`, map the
  * bare / trailing-slash form to that directory's `index.html`. Any traversal
  * (`..`, `.`, empty segment) → `null` (reject, never serve).
  */
@@ -89,7 +89,7 @@ export interface CacheDecision {
 
 /**
  * Entry HTML (index.html, incl. the SPA fallback) MUST revalidate so a new
- * deploy is picked up immediately; every other file is treated as
+ * version is picked up immediately; every other file is treated as
  * content-addressed/immutable. Even a non-fingerprinted asset is safe: the
  * entry document that references it always revalidates, and its ETag (the
  * content hash) forces correctness.

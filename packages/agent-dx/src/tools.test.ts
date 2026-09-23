@@ -2,22 +2,18 @@ import { describe, expect, it } from 'vitest';
 import { TOOL_DOCS, TOOL_NAMES } from './tools.js';
 
 describe('TOOL_DOCS manifest', () => {
-  it('documents exactly the 14 M1a/M1b tools', () => {
+  it('documents exactly the registered tools', () => {
     expect(TOOL_NAMES.sort()).toEqual(
       [
         'app_errors',
         'app_logs',
         'collection_define',
-        'deploy_commit',
-        'deploy_init',
-        'deploy_status',
         'list_apps',
         'record_create',
         'record_delete',
         'record_query',
         'record_read',
         'record_update',
-        'rollback',
         'whoami',
       ].sort()
     );

@@ -112,8 +112,8 @@ export default function BuildWithYourAgent() {
           <a href="/llms-full.txt" style={styles.link}>
             /llms-full.txt
           </a>{' '}
-          — the full delivery-stack contract: every tool + input schema, the REST
-          Data API, the deploy flow, limits, and the error catalogue.
+          — the full contract: every tool + input schema, data access modes,
+          limits, and the error catalogue.
         </li>
       </ul>
       <p style={styles.scope}>

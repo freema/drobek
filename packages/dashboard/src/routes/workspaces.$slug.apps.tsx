@@ -1,7 +1,7 @@
 /**
  * /workspaces/:slug/apps — client half (U8, PHY-74 slice): the workspace's
- * apps with status / visibility / live URL / last-deploy time. Each app links
- * to its detail page (deploy history + rollback). Server code lives in
+ * apps with status / visibility / published state / latest version. Each app
+ * links to its detail page (version history + publish). Server code lives in
  * ./workspaces.$slug.apps.server.ts.
  */
 import { Link, useLoaderData } from 'react-router';
@@ -91,7 +91,6 @@ const styles = {
     background: '#fef3c7',
     border: '1px solid #fde68a',
   },
-  urlLink: { color: '#1e3a8a', fontSize: '0.85rem', marginLeft: 'auto' },
   empty: {
     color: '#555',
     fontStyle: 'italic',
@@ -118,11 +117,11 @@ export default function WorkspaceAppsRoute() {
         <h1 style={styles.h1}>{workspace.name}</h1>
         <span style={styles.badge}>{workspace.kind}</span>
       </div>
-      <p style={styles.hint}>Apps deployed in this workspace.</p>
+      <p style={styles.hint}>Apps in this workspace.</p>
 
       {apps.length === 0 ? (
         <p style={styles.empty} data-testid="apps-empty">
-          No apps yet — deploy one with the drobek MCP tools.
+          No apps yet — ask your agent to create one with the drobek MCP tools.
         </p>
       ) : (
         <ul style={styles.list} data-testid="apps-list">
@@ -140,29 +139,20 @@ export default function WorkspaceAppsRoute() {
               >
                 {app.slug}
               </Link>
-              {app.live ? (
-                <span style={styles.liveBadge}>live</span>
+              {app.published ? (
+                <span style={styles.liveBadge}>published</span>
               ) : (
-                <span style={styles.badge}>no deploy</span>
+                <span style={styles.badge}>not published</span>
               )}
               {app.status === 'hibernated' ? (
                 <span style={styles.hibBadge}>hibernated</span>
               ) : null}
               <span style={styles.badge}>{app.visibility}</span>
-              {app.lastDeployAt ? (
-                <span style={styles.meta}>
-                  deployed {formatTimestamp(app.lastDeployAt)}
+              {app.latestVersion !== null && app.lastChangeAt ? (
+                <span style={styles.meta} data-testid="app-latest-version">
+                  v{app.latestVersion} · {formatTimestamp(app.lastChangeAt)}
                 </span>
               ) : null}
-              <a
-                href={app.url}
-                style={styles.urlLink}
-                data-testid="app-live-url"
-                target="_blank"
-                rel="noreferrer"
-              >
-                {app.url}
-              </a>
             </li>
           ))}
         </ul>

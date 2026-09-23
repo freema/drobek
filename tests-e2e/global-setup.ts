@@ -15,10 +15,9 @@ const ALLOWED_DB_HOSTS = ['localhost', '127.0.0.1', 'postgres'];
 
 /** Core tables in FK-safe order (children first; CASCADE covers the rest). */
 const CORE_TABLES = [
-  'deploy_files',
-  'blob_refs',
+  'version_files',
+  'app_versions',
   'blobs',
-  'deploys',
   'apps',
   'memberships',
   'workspaces',

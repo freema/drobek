@@ -72,10 +72,10 @@
     "test:run": "vitest run"
   },
   "dependencies": {
+    "@drobek/apps": "workspace:*",
     "@drobek/audit": "workspace:*",
     "@drobek/data": "workspace:*",
     "@drobek/db": "workspace:*",
-    "@drobek/deploy": "workspace:*",
     "@drobek/insights": "workspace:*",
     "@drobek/proxy": "workspace:*",
     "@drobek/tenancy": "workspace:*",

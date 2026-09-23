@@ -1,47 +1,36 @@
-import pg from 'pg';
 import { expect, test, type Page } from '@playwright/test';
 import { loginViaEmail, skipUnlessLocal, uniqueEmail } from './helpers/auth';
 import {
-  deployClient,
-  indexHtml,
-  initUploadCommit,
-  waitForState,
-} from './helpers/deploy';
+  personalWorkspaceOf,
+  seedApp,
+  seedVersion,
+  userIdByEmail,
+  withDb,
+} from './helpers/seed';
 
 /**
- * PHY-85 acceptance (governance / audit log v1): who deployed what, when, and was
- * it the AGENT or a HUMAN.
- *   (1) an MCP-driven deploy (OAuth token) writes app.create + deploy.activate
- *       audit rows attributed to the AGENT + the token user; a dashboard rollback
- *       writes deploy.rollback attributed to the USER — same person, different
- *       surface, so actor_kind is derived from the surface, not spoofable.
+ * PHY-85 acceptance (governance / audit log v1): who published what, when, and
+ * was it the AGENT or a HUMAN.
+ *   (1) a dashboard publish (and a publish of an older version = the rollback)
+ *       writes `app.publish` attributed to the USER with {version,
+ *       previousVersion} meta — actor_kind is derived server-side from the
+ *       surface, so a spoofed form field cannot flip it.
  *   (2) the workspace Activity view (admin only) lists them, filterable by app +
  *       action; the CSV export matches the filter; a soft-deleted app's prior
  *       events STILL show (the subject is retained — no FK cascade).
  *   (3) a team invite + accept write member.invite (inviter) + member.accept
  *       (accepter); an EDITOR is denied the Activity view (403).
- * Requires the local compose stack + worker (deploys go through the pipeline).
+ * No remaining MCP tool writes an audit row (the agent-side writers — version
+ * writes via MCP — are not exposed yet), so agent attribution is covered by the
+ * unit tests only. Apps + versions are SEEDED via SQL.
  */
-
-const DB_URL =
-  process.env.DATABASE_URL ??
-  'postgresql://drobek:drobek@localhost:5441/drobek';
-
-async function withDb<T>(fn: (c: pg.Client) => Promise<T>): Promise<T> {
-  const client = new pg.Client({ connectionString: DB_URL });
-  await client.connect();
-  try {
-    return await fn(client);
-  } finally {
-    await client.end();
-  }
-}
 
 interface AuditRow {
   action: string;
   actor_kind: string;
   actor_user_id: string | null;
   actor_email: string | null;
+  meta: Record<string, unknown> | null;
 }
 
 async function auditRowsForSubject(
@@ -50,7 +39,8 @@ async function auditRowsForSubject(
 ): Promise<AuditRow[]> {
   return withDb(async (c) => {
     const res = await c.query(
-      `SELECT al.action, al.actor_kind, al.actor_user_id, u.email AS actor_email
+      `SELECT al.action, al.actor_kind, al.actor_user_id, u.email AS actor_email,
+              al.meta
          FROM audit_log al
          JOIN workspaces w ON w.id = al.workspace_id
          LEFT JOIN users u ON u.id = al.actor_user_id
@@ -76,148 +66,124 @@ function uniqueSlug(): string {
   return `e2e-audit-${Date.now().toString(36)}${Math.floor(Math.random() * 1000)}`;
 }
 
-test('audit: MCP deploy is agent-attributed, dashboard rollback is user-attributed; Activity view + CSV + soft-delete survival @local', async ({
+test('audit: dashboard publish is user-attributed (not spoofable); Activity view + CSV + soft-delete survival @local', async ({
   page,
   request,
 }) => {
   skipUnlessLocal();
+
+  // The owner signs in → personal workspace (owner = workspace-admin), then an
+  // app with two compiled versions is seeded (seeding writes NO audit rows, so
+  // every audit row below comes from the dashboard publishes).
+  const email = uniqueEmail('audit-owner');
+  await loginViaEmail(page, request, email);
+  // Watch the console from here on (the login helper's navigation away from
+  // /me can abort a harmless route-manifest prefetch).
+  await page.waitForLoadState('networkidle');
   const problems = watchConsole(page);
-  const { client, transport } = await deployClient(page, request);
-  try {
-    const salt = Math.random().toString(36).slice(2, 8);
-    const slug = `audit-${salt}`;
+  const ws = await personalWorkspaceOf(email);
+  const ownerId = await userIdByEmail(email);
+  const app = await seedApp({ workspaceId: ws.id });
+  const v1 = await seedVersion({ appId: app.id });
+  const v2 = await seedVersion({ appId: app.id });
+  const appSlug = app.slug;
 
-    // Two MCP-driven deploys (agent surface): v1 then v2 (active). One app.create
-    // (first deploy only) + one deploy.activate PER deploy.
-    const v1 = await initUploadCommit(client, request, {
-      name: `Audit ${salt}`,
-      slug,
-      files: [indexHtml(`v1 ${salt}`)],
-    });
-    await waitForState(client, v1.deployId, 'ready');
-    const v2 = await initUploadCommit(client, request, {
-      slug,
-      files: [indexHtml(`v2 ${salt}`)],
-    });
-    const v2ready = await waitForState(client, v2.deployId, 'ready');
-    expect(v2ready.active).toBe(true);
+  // (a) Publish v2 via the UI (nothing published before).
+  await page.goto(`/workspaces/${ws.slug}/apps/${appSlug}`);
+  await page
+    .locator('[data-testid="publish-button"][data-version="2"]')
+    .click();
+  await expect(
+    page.locator(
+      '[data-testid="version-row"][data-version="2"] [data-testid="version-published"]'
+    )
+  ).toBeVisible();
+  // Let the post-publish revalidation + route discovery settle before leaving.
+  await page.waitForLoadState('networkidle');
 
-    const ws = v1.workspaceSlug; // the deployer's personal workspace (owner = admin)
-    const appSlug = v1.appSlug;
+  // (b) Publish v1 (the rollback) via a direct POST that tries to SPOOF the
+  // actor kind — the server derives it from the surface and ignores the form.
+  const spoof = await page.request.post(`/workspaces/${ws.slug}/apps/${appSlug}`, {
+    form: { versionId: v1.id, actorKind: 'agent', actor_kind: 'agent' },
+    maxRedirects: 0,
+  });
+  expect([302, 303, 204]).toContain(spoof.status());
+  const published = await withDb(async (c) => {
+    const res = await c.query(`SELECT published_version_id FROM apps WHERE id = $1`, [
+      app.id,
+    ]);
+    return res.rows[0].published_version_id as string;
+  });
+  expect(published).toBe(v1.id);
+  expect(v2.id).not.toBe(v1.id);
 
-    // Dashboard rollback to v1 (USER surface) — the owner is workspace-admin.
-    await page.goto(`/workspaces/${ws}/apps/${appSlug}`);
-    await page
-      .locator(
-        `[data-testid="deploy-row"][data-deploy-id="${v1.deployId}"] [data-testid="rollback-button"]`
-      )
-      .click();
-    await expect(
-      page.locator(
-        `[data-testid="deploy-row"][data-deploy-id="${v1.deployId}"] [data-testid="deploy-active"]`
-      )
-    ).toBeVisible();
+  // ── DB: exactly two app.publish rows, both USER-attributed to the owner ─────
+  const rows = await auditRowsForSubject(ws.slug, appSlug);
+  expect(rows.map((r) => r.action)).toEqual(['app.publish', 'app.publish']);
+  expect(rows.every((r) => r.actor_kind === 'user')).toBe(true);
+  expect(rows.every((r) => r.actor_user_id === ownerId)).toBe(true);
+  expect(rows.map((r) => r.meta)).toEqual([
+    { version: 2, previousVersion: null },
+    { version: 1, previousVersion: 2 },
+  ]);
 
-    // ── DB: attribution is correct and not swapped ────────────────────────────
-    const rows = await auditRowsForSubject(ws, appSlug);
-    const byAction = (a: string) => rows.filter((r) => r.action === a);
-
-    expect(byAction('app.create')).toHaveLength(1);
-    expect(byAction('app.create')[0].actor_kind).toBe('agent');
-
-    const activates = byAction('deploy.activate');
-    expect(activates, 'exactly one deploy.activate PER deploy').toHaveLength(2);
-    expect(activates.every((r) => r.actor_kind === 'agent')).toBe(true);
-
-    const rollbacks = byAction('deploy.rollback');
-    expect(rollbacks, 'exactly one deploy.rollback').toHaveLength(1);
-    expect(rollbacks[0].actor_kind).toBe('user');
-
-    // Not spoofable / not swapped: no activate is user, no rollback is agent.
-    expect(activates.some((r) => r.actor_kind === 'user')).toBe(false);
-    expect(rollbacks.some((r) => r.actor_kind === 'agent')).toBe(false);
-
-    // Same person (token user == session user == the workspace owner), which is
-    // exactly why actor_kind has to come from the SURFACE, not the user.
-    const actorIds = new Set(rows.map((r) => r.actor_user_id));
-    expect(actorIds.size, 'one distinct actor').toBe(1);
-    const [actorId] = [...actorIds];
-    expect(actorId).toBeTruthy();
-    const owner = await withDb(async (c) => {
-      const res = await c.query(
-        `SELECT m.user_id FROM memberships m
-           JOIN workspaces w ON w.id = m.workspace_id
-          WHERE w.slug = $1`,
-        [ws]
-      );
-      return res.rows[0]?.user_id as string;
-    });
-    expect(actorId).toBe(owner);
-
-    // ── Activity view (admin) — filterable by action, agent/user badges ───────
-    await page.goto(`/workspaces/${ws}/activity`);
-    await expect(page.getByTestId('activity-table')).toBeVisible();
-
-    await page.getByTestId('filter-action').selectOption('deploy.activate');
-    await page.getByTestId('filter-apply').click();
-    const activateRows = page.locator('[data-testid="activity-row"]');
-    await expect(activateRows).toHaveCount(2);
-    for (const kind of await activateRows.evaluateAll((els) =>
-      els.map((e) => e.getAttribute('data-actor-kind'))
-    )) {
-      expect(kind).toBe('agent');
-    }
-
-    await page.goto(`/workspaces/${ws}/activity?action=deploy.rollback`);
-    const rollbackRow = page.locator('[data-testid="activity-row"]');
-    await expect(rollbackRow).toHaveCount(1);
-    await expect(rollbackRow).toHaveAttribute('data-actor-kind', 'user');
-    await expect(rollbackRow).toHaveAttribute('data-action', 'deploy.rollback');
-
-    // ── CSV export matches the filtered rows ──────────────────────────────────
-    const csvRes = await page.request.get(
-      `/workspaces/${ws}/activity/export.csv?action=deploy.rollback`
-    );
-    expect(csvRes.status()).toBe(200);
-    expect(csvRes.headers()['content-type']).toContain('text/csv');
-    const csvLines = (await csvRes.text())
-      .split('\r\n')
-      .filter((l) => l.length > 0);
-    expect(csvLines[0]).toBe('time,action,actor_kind,actor,subject_type,subject');
-    expect(csvLines).toHaveLength(2); // header + the single rollback row
-    const cols = csvLines[1].split(',');
-    expect(cols[1]).toBe('deploy.rollback');
-    expect(cols[2]).toBe('user');
-    expect(cols[5]).toBe(appSlug);
-
-    // The unfiltered export carries all three action kinds for this app.
-    const fullCsv = await (
-      await page.request.get(`/workspaces/${ws}/activity/export.csv?app=${appSlug}`)
-    ).text();
-    expect(fullCsv).toContain('app.create');
-    expect(fullCsv).toContain('deploy.activate');
-    expect(fullCsv).toContain('deploy.rollback');
-
-    // ── Soft-delete the app → its prior audit events STILL show (subject kept) ─
-    await withDb(async (c) => {
-      const res = await c.query(
-        `UPDATE apps SET deleted_at = now()
-           WHERE slug = $1
-             AND workspace_id = (SELECT id FROM workspaces WHERE slug = $2)`,
-        [appSlug, ws]
-      );
-      expect(res.rowCount).toBe(1);
-    });
-    await page.goto(`/workspaces/${ws}/activity?app=${appSlug}`);
-    await expect(page.getByTestId('activity-table')).toBeVisible();
-    // app.create + 2×deploy.activate + deploy.rollback = 4 rows, all retained.
-    await expect(page.locator('[data-testid="activity-row"]')).toHaveCount(4);
-
-    await page.waitForTimeout(300);
-    expect(problems).toEqual([]);
-  } finally {
-    await transport.close();
+  // ── Activity view (admin) — filterable by app + action, user badges ───────
+  await page.goto(`/workspaces/${ws.slug}/activity`);
+  await expect(page.getByTestId('activity-table')).toBeVisible();
+  await page.getByTestId('filter-app').selectOption(appSlug);
+  await page.getByTestId('filter-action').selectOption('app.publish');
+  await page.getByTestId('filter-apply').click();
+  await page.waitForURL(/action=app\.publish/);
+  const publishRows = page.locator('[data-testid="activity-row"]');
+  await expect(publishRows).toHaveCount(2);
+  for (const row of await publishRows.all()) {
+    await expect(row).toHaveAttribute('data-actor-kind', 'user');
+    await expect(row).toHaveAttribute('data-action', 'app.publish');
+    await expect(row.getByTestId('activity-actor')).toContainText(email);
+    await expect(row.getByTestId('activity-subject')).toContainText(appSlug);
   }
+
+  // ── CSV export matches the filtered rows ──────────────────────────────────
+  const csvRes = await page.request.get(
+    `/workspaces/${ws.slug}/activity/export.csv?app=${appSlug}&action=app.publish`
+  );
+  expect(csvRes.status()).toBe(200);
+  expect(csvRes.headers()['content-type']).toContain('text/csv');
+  const csvLines = (await csvRes.text())
+    .split('\r\n')
+    .filter((l) => l.length > 0);
+  expect(csvLines[0]).toBe('time,action,actor_kind,actor,subject_type,subject');
+  expect(csvLines).toHaveLength(3); // header + the two publish rows
+  for (const line of csvLines.slice(1)) {
+    const cols = line.split(',');
+    expect(cols[1]).toBe('app.publish');
+    expect(cols[2]).toBe('user');
+    expect(cols[3]).toBe(email);
+    expect(cols[4]).toBe('app');
+    expect(cols[5]).toBe(appSlug);
+  }
+
+  // A filter that matches nothing for this app exports only the header.
+  const none = await (
+    await page.request.get(
+      `/workspaces/${ws.slug}/activity/export.csv?app=${appSlug}&action=member.invite`
+    )
+  ).text();
+  expect(none.split('\r\n').filter((l) => l.length > 0)).toHaveLength(1);
+
+  // ── Soft-delete the app → its prior audit events STILL show (subject kept) ─
+  await withDb(async (c) => {
+    const res = await c.query(`UPDATE apps SET deleted_at = now() WHERE id = $1`, [
+      app.id,
+    ]);
+    expect(res.rowCount).toBe(1);
+  });
+  await page.goto(`/workspaces/${ws.slug}/activity?app=${appSlug}`);
+  await expect(page.getByTestId('activity-table')).toBeVisible();
+  await expect(page.locator('[data-testid="activity-row"]')).toHaveCount(2);
+
+  await page.waitForTimeout(300);
+  expect(problems).toEqual([]);
 });
 
 test('audit: team invite + accept are attributed; an editor is denied the Activity view (403) @local', async ({

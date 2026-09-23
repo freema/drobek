@@ -15,10 +15,9 @@ const SKILL_MD = resolve(REPO_ROOT, 'skills/drobek/SKILL.md');
 const SKILL_README = resolve(REPO_ROOT, 'skills/drobek/README.md');
 
 const REQUIRED_SECTIONS = [
-  '## Structure your app',
+  '## Your workspace',
   '## Define your data schema first',
-  '## Use the Data API',
-  '## Deploy',
+  '## Use the data tools',
   '## Check for errors',
   '## Authoritative schemas',
 ];
@@ -36,12 +35,10 @@ describe('skills/drobek/SKILL.md', () => {
     for (const s of REQUIRED_SECTIONS) expect(md, s).toContain(s);
   });
 
-  it('teaches the deploy sequence + schema-first + index.html-at-root', () => {
-    expect(md).toContain('index.html');
+  it('teaches schema-first data and the error loop, never the removed deploy tools', () => {
     expect(md).toContain('collection_define');
-    expect(md).toContain('deploy_init');
-    expect(md).toContain('deploy_commit');
-    expect(md).toContain('deploy_status');
+    expect(md).toContain('app_errors');
+    expect(md).not.toContain('deploy_init');
   });
 
   it('links the authoritative schemas (llms.txt) rather than duplicating them', () => {

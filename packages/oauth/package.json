@@ -41,11 +41,11 @@
   },
   "dependencies": {
     "@drobek/agent-dx": "workspace:*",
+    "@drobek/apps": "workspace:*",
     "@drobek/auth": "workspace:*",
     "@drobek/core": "workspace:*",
     "@drobek/data": "workspace:*",
     "@drobek/db": "workspace:*",
-    "@drobek/deploy": "workspace:*",
     "@drobek/insights": "workspace:*",
     "@drobek/tenancy": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.19.0",

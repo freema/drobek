@@ -4,6 +4,7 @@ import {
   type APIRequestContext,
   type Page,
 } from '@playwright/test';
+import { Redis } from 'ioredis';
 import { TEST_ENV } from '../../playwright.config';
 
 /**
@@ -70,12 +71,37 @@ export async function pollLoginCode(
   throw new Error(`no login-code email for ${email} within ${timeoutMs}ms`);
 }
 
+const LOCAL_REDIS_HOSTS = ['localhost', '127.0.0.1', 'redis'];
+
+/**
+ * The verify endpoint caps code checks per client IP (30 / 15 min, hard-coded in
+ * @drobek/auth). Every e2e login comes from the same IP, so a full local run
+ * trips it mid-suite and a CORRECT code is answered with the generic "not
+ * valid" error. Local-only (TEST_ENV=local + a local REDIS_URL, mirroring the
+ * global-setup guard): drop just that bucket before each sign-in. Never touches
+ * the per-code attempt counter or the send-side guards. Remove with NSO-309.
+ */
+async function resetVerifyIpRateLimit(): Promise<void> {
+  const url = process.env.REDIS_URL;
+  if (!url || TEST_ENV !== 'local') return;
+  if (!LOCAL_REDIS_HOSTS.includes(new URL(url).hostname)) return;
+  const redis = new Redis(url, { maxRetriesPerRequest: 2, lazyConnect: true });
+  await redis.connect();
+  try {
+    const keys = await redis.keys('drobek:rl:otp-verify-ip:*');
+    if (keys.length > 0) await redis.del(...keys);
+  } finally {
+    redis.disconnect();
+  }
+}
+
 /** Full magic-code sign-in via the UI; leaves the page authenticated on /me. */
 export async function loginViaEmail(
   page: Page,
   request: APIRequestContext,
   email: string
 ): Promise<void> {
+  await resetVerifyIpRateLimit();
   await page.goto('/login');
   await page.getByLabel('Email').fill(email);
   await page.getByRole('button', { name: 'Send code' }).click();
