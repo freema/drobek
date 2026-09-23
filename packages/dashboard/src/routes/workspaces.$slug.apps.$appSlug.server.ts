@@ -28,6 +28,7 @@ import {
   type AppLogsView,
 } from '@drobek/insights';
 import { loadAppForView } from '../apps.server.js';
+import { loadPendingBanner } from '../pending-banner.server.js';
 import { canPublish, shapeVersionHistory } from '../view.js';
 
 const EMPTY_ERRORS: AppErrorsView = {
@@ -81,6 +82,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     logs,
     role: access.effectiveRole,
     canPublish: canPublish(access.effectiveRole),
+    // M2-02: "N changes await confirmation" in the header (PendingBanner).
+    pendingBanner: await loadPendingBanner(app, access.workspace.slug, app.slug),
   };
 }
 

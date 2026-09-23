@@ -24,7 +24,7 @@ import { actorKindForSurface, writeAudit } from '@drobek/audit';
 import { renderTextEmailHtml, sendEmail } from '@drobek/email';
 import { scanForSecrets } from '@drobek/compile';
 import { createConsoleLogger, getRedis, type Logger } from '@drobek/core';
-import { getDb, memberships, runJournalMigrations, users, type DB } from '@drobek/db';
+import { apps, getDb, memberships, runJournalMigrations, users, type DB } from '@drobek/db';
 import { recordModuleRequest } from '@drobek/insights';
 import { and, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
@@ -54,7 +54,8 @@ import { ModuleLoadError, checkRequires, endUserAuthorityOf, loadModules, mailAu
 import { collectRoutes, errorResult, isReadable, matchRoute, runRoute, type PipelineRequest, type PipelineResult, type Route } from './router.js';
 import { decideAccess } from './rules.js';
 import { BEACON_SCRIPT_PATH, SDK_PATH, SDK_TYPES_PATH, buildSdk, moduleTypes, toPath, type SdkBundle } from './sdk-build.js';
-import { getModuleSecret, secretsSet } from './secrets.server.js';
+import { PENDING_MAIL_WINDOW_MS, pendingMail, pendingMailKey } from './pending-mail.js';
+import { getModuleSecret, secretsSet, secretsStatus } from './secrets.server.js';
 import { generalSkillsDir, loadGeneralSkills, mergeSkills, moduleSkills, skillForImport, type SkillEntry } from './skills.js';
 
 // ── deps ─────────────────────────────────────────────────────────────────────
@@ -194,6 +195,12 @@ export interface ConfigureInput {
   patch: unknown;
   /** The dashboard user whose agent calls (audit + pending.proposed_by). */
   actorUserId: string;
+  /**
+   * Who changes the config: `mcp` (default — configure_module, audit actor
+   * `agent`, the owners get the pending-change e-mail) or `web` (the owner's
+   * own dashboard form, audit actor `user`, no e-mail: they are looking at it).
+   */
+  surface?: 'mcp' | 'web';
 }
 
 export interface ConfigureResult {
@@ -219,6 +226,41 @@ export interface BoundRecords {
   get(collection: string, id: string): Promise<Record<string, unknown> | null>;
   remove(collection: string, id: string): Promise<boolean>;
   csv(query: Omit<RecordsQuery, 'limit' | 'cursor'>): AsyncIterable<string>;
+}
+
+/** A pending change as the dashboard shows it (M2-02). */
+export interface PendingView {
+  /** What needs confirming, verbatim from the module's confirmRequired. */
+  changes: string[];
+  proposed_at: string;
+  proposed_by: string | null;
+  /** The effective config once confirmed (null when it no longer validates). */
+  after: unknown;
+  /** Why confirming would fail now (the pending change no longer fits the config). */
+  invalid?: { path: string; message: string }[];
+}
+
+/** One module of one app, for the owner's dashboard (never a secret value). */
+export interface ModuleDashboardView {
+  name: string;
+  version: string;
+  use_when: string;
+  /** The config's JSON Schema (zod → JSON Schema, input side), null when not representable. */
+  schema: unknown;
+  defaults: unknown;
+  /** What was set (sparse merge patch over the defaults). */
+  stored: Record<string, unknown>;
+  /** The effective config in force. */
+  config: unknown;
+  pending: PendingView | null;
+  /** Declared secrets: names, docs and whether/when they are set — never a value. */
+  secrets: { name: string; description: string; required: boolean; hasSecret: boolean; updated_at: string | null }[];
+  /** The operations the module's rules cover (module.rules.ops). */
+  ops: Record<string, string>;
+  /** Whether some changes of this module wait for the owner (it declares confirmRequired). */
+  confirms: boolean;
+  /** The module's secret-free appInfo. */
+  info?: Record<string, unknown>;
 }
 
 export interface DecisionInput {
@@ -363,6 +405,73 @@ export class ModuleRuntime {
 
   // ── config ──
 
+  /** The config's JSON Schema for forms (the INPUT side: defaulted keys are optional), or null. */
+  configJsonSchema(m: AnyModule): unknown {
+    try {
+      return z.toJSONSchema(m.configSchema as z.ZodType, { unrepresentable: 'any', io: 'input' });
+    } catch {
+      return null;
+    }
+  }
+
+  /** The modules of `appId` with a change waiting for the owner (active modules only). */
+  async pendingSummary(appId: string): Promise<{ module: string; changes: string[] }[]> {
+    const rows = await readConfigRows(appId, this.modules.map((m) => m.name));
+    const out: { module: string; changes: string[] }[] = [];
+    for (const m of this.modules) {
+      const p = rows.get(m.name)?.pending;
+      if (p) out.push({ module: m.name, changes: p.changes });
+    }
+    return out;
+  }
+
+  /**
+   * One module of one app for the owner's dashboard (M2-02): schema, defaults,
+   * stored + effective config, the pending change with its effective result,
+   * the declared secrets with hasSecret / updated_at (NEVER a value), the rule
+   * operations and the module's secret-free appInfo.
+   */
+  async moduleView(app: HookApp, name: string): Promise<ModuleDashboardView> {
+    const m = this.requireModule(name);
+    const row = await readConfigRow(app.id, m.name, this.deps.db());
+    const config = this.effectiveConfig(m, row.config);
+    let pending: PendingView | null = null;
+    if (row.pending) {
+      const r = m.configSchema.safeParse(mergePatch(m.configDefaults, mergePatch(row.config, row.pending.patch)));
+      pending = {
+        changes: row.pending.changes,
+        proposed_at: row.pending.proposed_at,
+        proposed_by: row.pending.proposed_by,
+        after: r.success ? r.data : null,
+      };
+      if (!r.success) pending.invalid = issuePaths(r.error.issues);
+    }
+    const docs = m.secrets ?? [];
+    const status = await secretsStatus(app.id, m.name, docs.map((s) => s.name));
+    const view: ModuleDashboardView = {
+      name: m.name,
+      version: m.version,
+      use_when: m.skill.useWhen,
+      schema: this.configJsonSchema(m),
+      defaults: m.configDefaults,
+      stored: row.config,
+      config,
+      pending,
+      secrets: docs.map((s) => ({
+        name: s.name,
+        description: s.description,
+        required: s.required === true,
+        hasSecret: status.has(s.name),
+        updated_at: status.get(s.name)?.toISOString() ?? null,
+      })),
+      ops: { ...(m.rules?.ops ?? {}) },
+      confirms: Boolean(m.confirmRequired),
+    };
+    const info = await this.appInfo(m, app, config);
+    if (info) view.info = info;
+    return view;
+  }
+
   /** The effective config of `module` for a stored (sparse) config. */
   effectiveConfig(m: AnyModule, stored: Record<string, unknown>): unknown {
     const r = m.configSchema.safeParse(mergePatch(m.configDefaults, stored));
@@ -464,6 +573,7 @@ export class ModuleRuntime {
       );
     }
     const link = confirmUrl(this.deps.env, input.app.workspaceSlug, input.app.slug, m.name);
+    const surface = input.surface ?? 'mcp';
 
     const result = await withLockedConfig(input.app.id, m.name, async (row, write, tx) => {
       const before = this.effectiveConfig(m, row.config);
@@ -483,7 +593,7 @@ export class ModuleRuntime {
           {
             workspaceId: input.app.workspaceId,
             actorUserId: input.actorUserId,
-            actorKind: actorKindForSurface('mcp'),
+            actorKind: actorKindForSurface(surface),
             action: 'module.configure',
             subjectType: 'app',
             target: input.app.slug,
@@ -504,7 +614,7 @@ export class ModuleRuntime {
         {
           workspaceId: input.app.workspaceId,
           actorUserId: input.actorUserId,
-          actorKind: actorKindForSurface('mcp'),
+          actorKind: actorKindForSurface(surface),
           action: 'module.pending',
           subjectType: 'app',
           target: input.app.slug,
@@ -527,7 +637,49 @@ export class ModuleRuntime {
     if (missing.length > 0) out.secrets_missing = missing;
     const info = await this.appInfo(m, { id: input.app.id, slug: input.app.slug, workspaceId: input.app.workspaceId }, result.config);
     if (info) out.info = info;
+    // A change an AGENT proposed now waits: tell the owners (best effort, 1/h per app).
+    if (!result.applied && surface === 'mcp') await this.notifyPendingOwners(m, input.app);
     return out;
+  }
+
+  /**
+   * E-mail the app's owners that changes wait for their confirmation (M2-02):
+   * through the module e-mail path (`{ appOwners: true }`, the mail authority
+   * — the `email` module — and the operator-wide budgets), at most once per
+   * app per hour (PENDING_MAIL_WINDOW_MS), listing every module that waits.
+   * Never fails the configure call: without a mail authority nothing is sent
+   * (the dashboard banner shows it), and any refusal is logged.
+   */
+  private async notifyPendingOwners(
+    m: AnyModule,
+    app: { id: string; slug: string; workspaceId: string; workspaceSlug: string }
+  ): Promise<void> {
+    const deps = this.deps;
+    try {
+      if (!mailAuthorityOf(this.modules)?.mail) return;
+      const slot = await deps.rateLimit(pendingMailKey(app.id), 1, PENDING_MAIL_WINDOW_MS);
+      if (!slot.ok) return;
+      const waiting = await this.pendingSummary(app.id);
+      if (waiting.length === 0) return;
+      const [row] = await deps.db().select({ name: apps.name }).from(apps).where(eq(apps.id, app.id)).limit(1);
+      const mail = pendingMail({
+        appName: row?.name ?? app.slug,
+        modules: waiting.map((w) => ({ ...w, confirmUrl: confirmUrl(deps.env, app.workspaceSlug, app.slug, w.module) })),
+      });
+      const hookApp: HookApp = { id: app.id, slug: app.slug, workspaceId: app.workspaceId };
+      const out = await this.sendEmail(m, hookApp, { kind: 'anon' }, {}, () => deps.limits.forWorkspace(app.workspaceId), {
+        to: { appOwners: true },
+        subject: mail.subject,
+        text: mail.text,
+      });
+      deps.log.info('pending-change e-mail sent', { app_id: app.id, module: m.name, recipients: out.sent });
+    } catch (err) {
+      deps.log.warn('pending-change e-mail not sent', {
+        app_id: app.id,
+        module: m.name,
+        error: isModuleError(err) ? err.code : redactAddresses(String((err as Error)?.message ?? err)),
+      });
+    }
   }
 
   /** The owner confirms the pending change (dashboard): apply it on top of the current config. */

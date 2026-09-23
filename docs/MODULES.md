@@ -412,6 +412,55 @@ POST /api/apps/:app_id/modules/:module/reject
 - `reject` drops it (audit `module.reject`, actor user):
   `{ ok: true, decision: 'reject', module, config, rejected: [...] }`.
 
+**The owner is told by e-mail** (M2-02): when an agent's `configure_module`
+leaves a change pending, core e-mails the app's owners (`{ appOwners: true }`
+— the editors and workspace-admins) through the normal module e-mail path:
+the mail authority (the `email` module: its per-app daily limit and
+envelope) and the operator-wide `notification` budget. At most **one e-mail
+per app per hour** (Redis `drobek:rl:modules:pending-mail:<app_id>`); each one
+lists every module of the app that is waiting, its confirmRequired strings
+and its review URL, so a burst of proposals is aggregated. Without an active
+mail authority nothing is sent, and a refused send is logged — it never fails
+the tool call. A change the owner makes in the dashboard form sends no e-mail.
+
+### The dashboard Modules tab (M2-02)
+
+`/workspaces/<ws>/apps/<slug>/modules` lists the active modules for the app
+(configured or defaults, what waits, missing required secrets); the app page
+shows a "N changes await confirmation" banner (`PendingBanner` +
+`loadPendingBanner()` in `@drobek/dashboard`). The module page (the
+`confirm_url`) has, top to bottom:
+
+- **the pending change**: who proposed it and when, the module's
+  confirmRequired strings each with a plain-language risk note, a
+  before → after table of every changed path of the effective config, and
+  Confirm / Reject (the same `runtime.confirm` / `reject` as the API above);
+- **the configuration form**, generated from the module's `configSchema`
+  (zod → JSON Schema, input side) by the dashboard's own renderer: objects
+  (nested), string, string enum, number, integer, boolean, arrays of strings
+  (one per line); anything else — a record of named entries, arrays of
+  objects, unions — is a JSON field. The form posts plain fields; the server
+  rebuilds the config, turns it into a merge patch against the config in
+  force and runs **the same configure path as `configure_module`**
+  (`surface: 'web'`: audit actor `user`), so a relaxation becomes a pending
+  change there too. The module's schema is the only validator: its issues
+  come back at their fields (`allow.emails[0]` → the `allow.emails` field).
+  Give fields a `title` / `description` in zod (`.meta()`) to label them;
+- the built-in **data** module gets a collections editor instead of a JSON
+  field: per collection a table operation × principal (Anyone, Signed-in
+  users, Record owner, App admins; nothing checked = `none`) and the JSON
+  Schema textarea; add / remove a collection. The built-in **proxy** module
+  gets the workspace's upstreams (registered, secret set — never the value
+  or base URL) with assign / unassign, the `call` rule and `rateLimit`;
+- **the secrets** the module declares: write-only. The page shows the name,
+  the description, `required`, whether it is set and when — never the value.
+  Set / Rotate / Remove (`setModuleSecret` / `deleteModuleSecret`, audit
+  `module.secret_set` `{ module, name, rotated }` / `module.secret_remove`).
+  A stored value is followed by a redirect, so it appears in no response.
+
+Viewers see all of it without a single control; every POST needs the editor
+role (viewer → 403).
+
 ## Skills: `skill_info`
 
 `skill_info` (MCP, scope `read`) is how an agent learns a backend when it

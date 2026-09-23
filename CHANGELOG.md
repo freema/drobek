@@ -22,6 +22,28 @@
   without a sha links to the `main` tree.
 - `@drobek/oauth`: `listApiKeys`, `revokeUserApiKey`, `listConnections`,
   `revokeConnection`. No migration.
+### Dashboard: the Modules tab (NSO-291)
+
+- **`/workspaces/<ws>/apps/<app>/modules`** lists the server's platform
+  modules for the app (configured, pending, missing required secrets);
+  **`…/modules/<module>`** (configure_module's `confirm_url`) shows the pending
+  change (before → after diff, the module's confirmRequired strings with a
+  plain-language risk note, Confirm / Reject), a config form generated from
+  the module's JSON Schema (own renderer; the server validates through the
+  module's configSchema and puts each error at its field), the write-only
+  secrets (Set / Rotate / Remove, `hasSecret` + when set; audit
+  `module.secret_set` / `module.secret_remove` with the name only), the data
+  module's collections + rules editor (operation × principal, JSON Schema)
+  and the proxy module's per-app upstream assignments. Every save goes
+  through the configure path, so relaxations wait for confirmation. Viewers
+  see everything without controls (POST → 403). The app page shows "N
+  changes await confirmation" (`PendingBanner`).
+- **`@drobek/modules`**: an agent's `configure_module` that leaves a change
+  pending e-mails the app's owners (the `email` module's `{ appOwners: true }`
+  path, a `notification`), at most once per app per hour (Redis
+  `drobek:rl:modules:pending-mail:<app_id>`), listing everything that waits.
+  `configure({ surface: 'web' })` audits as the user and sends no e-mail;
+  `moduleView()`, `pendingSummary()`, `secretsStatus()`.
 
 ### The built-in `proxy` module (NSO-297)
 

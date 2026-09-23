@@ -314,6 +314,48 @@ describe('configure / confirm / reject', () => {
   });
 });
 
+describe('the dashboard view (M2-02)', () => {
+  it('moduleView: schema (input side), stored + effective config, the pending result, secrets as hasSecret only', async () => {
+    await setModuleSecret({ appId: app.id, module: 'echo', name: 'ECHO_TOKEN', value: SECRET_VALUE, env: ENV });
+    await rt.configure({ app, module: 'echo', patch: { loud: true }, actorUserId: userId });
+    await rt.configure({ app, module: 'echo', patch: { access: 'public' }, actorUserId: userId });
+    const hookApp = { id: app.id, slug: app.slug, workspaceId: app.workspaceId };
+    const view = await rt.moduleView(hookApp, 'echo');
+    expect(view).toMatchObject({
+      name: 'echo',
+      version: '1.2.3',
+      use_when: 'you need to echo things back in a test',
+      stored: { loud: true },
+      config: { greeting: 'hi', access: 'user', notify: [], loud: true },
+      confirms: true,
+      pending: {
+        changes: ['access: anyone can read'],
+        proposed_by: userId,
+        after: { greeting: 'hi', access: 'public', notify: [], loud: true },
+      },
+      defaults: { greeting: 'hi', access: 'user', notify: [], loud: false },
+    });
+    expect(view.pending?.invalid).toBeUndefined();
+    expect((view.schema as { properties: Record<string, unknown> }).properties.access).toEqual({ type: 'string', enum: ['public', 'user'] });
+    expect(view.secrets).toEqual([
+      { name: 'ECHO_TOKEN', description: 'upstream token', required: true, hasSecret: true, updated_at: expect.any(String) },
+      { name: 'ECHO_EXTRA', description: 'optional', required: false, hasSecret: false, updated_at: null },
+    ]);
+    expect(JSON.stringify(view)).not.toContain(SECRET_VALUE);
+    expect(JSON.stringify(view)).not.toContain('ciphertext');
+    expect(await rt.pendingSummary(app.id)).toEqual([{ module: 'echo', changes: ['access: anyone can read'] }]);
+    expect((await rt.moduleView(hookApp, 'quiet')).pending).toBeNull();
+    await expect(rt.moduleView(hookApp, 'nope')).rejects.toMatchObject({ code: 'not_found' });
+  });
+
+  it('a web-surface configure is audited as the user', async () => {
+    const out = await rt.configure({ app, module: 'echo', patch: { greeting: 'ahoj' }, actorUserId: userId, surface: 'web' });
+    expect(out.applied).toBe(true);
+    const audit = await db.select().from(auditLog);
+    expect(audit.map((a) => [a.action, a.actorKind])).toEqual([['module.configure', 'user']]);
+  });
+});
+
 describe('HTTP on the app hosts', () => {
   it('/__drobek/sdk.js: immutable with the current ?v=, revalidate otherwise, 304 on the ETag', async () => {
     const pinned = await rt.handle(req('GET', '/__drobek/sdk.js', { query: `v=${rt.sdk.hash}` }), app);
@@ -678,6 +720,55 @@ describe('module e-mail (ctx.email.send through the runtime)', () => {
     expect(JSON.stringify(log.error.mock.calls)).toContain('<[address]>: Recipient address rejected');
     expect(sent.map((m) => m.to)).toEqual(['team@example.com']);
     expect((await db.select().from(auditLog).where(eq(auditLog.action, 'email.send'))).length).toBe(before + 1);
+  });
+
+  it('pending-change e-mail (M2-02): an agent proposal mails the owners once per app per hour, listing everything that waits', async () => {
+    const [ed] = await db.insert(users).values({ email: 'pending-owner@example.com' }).returning();
+    await db.insert(memberships).values({ userId: ed.id, workspaceId: ws.id, role: 'editor' });
+    try {
+      const { r, sent } = await setup([echo, sender, mailer], { env: { MAILER_PER_DAY: '100' } });
+      // The owner's own dashboard edit waits too, but mails nobody (they are looking at it).
+      const web = await r.configure({ app, module: 'echo', patch: { notify: ['x@example.com'] }, actorUserId: userId, surface: 'web' });
+      expect(web.applied).toBe(false);
+      expect(sent).toHaveLength(0);
+      const audit = await db.select().from(auditLog).where(eq(auditLog.action, 'module.pending'));
+      expect(audit.map((a) => a.actorKind)).toEqual(['user']);
+
+      const held = await r.configure({ app, module: 'echo', patch: { access: 'public' }, actorUserId: userId });
+      expect(held.applied).toBe(false);
+      expect(sent).toHaveLength(1);
+      expect(sent[0]).toMatchObject({ to: 'pending-owner@example.com', subject: '[shop] 1 change awaits your confirmation', fromName: 'Shop' });
+      expect(sent[0].text).toContain('Module echo:\n  - access: anyone can read\n  Review: https://drobek.example/workspaces/acme/apps/shop/modules/echo');
+
+      // A second proposal within the hour: no second e-mail (the banner shows it).
+      await r.configure({ app, module: 'echo', patch: { notify: ['boss@example.com'] }, actorUserId: userId });
+      expect(sent).toHaveLength(1);
+      expect(await r.pendingSummary(app.id)).toEqual([{ module: 'echo', changes: ['notify: new recipient boss@example.com'] }]);
+      // A safe change never mails.
+      await r.configure({ app, module: 'echo', patch: { loud: true }, actorUserId: userId });
+      expect(sent).toHaveLength(1);
+    } finally {
+      await db.delete(memberships).where(eq(memberships.workspaceId, ws.id));
+    }
+  });
+
+  it('pending-change e-mail: nothing without a mail authority; a refused send never fails configure_module', async () => {
+    const [ed] = await db.insert(users).values({ email: 'pending-owner2@example.com' }).returning();
+    await db.insert(memberships).values({ userId: ed.id, workspaceId: ws.id, role: 'workspace-admin' });
+    try {
+      const plain = await setup([echo, sender]);
+      expect((await plain.r.configure({ app, module: 'echo', patch: { access: 'public' }, actorUserId: userId })).applied).toBe(false);
+      expect(plain.sent).toHaveLength(0);
+      await plain.r.reject({ app, module: 'echo', userId });
+
+      const failing = await setup([echo, mailer], { fail: () => true });
+      const out = await failing.r.configure({ app, module: 'echo', patch: { access: 'public' }, actorUserId: userId });
+      expect(out).toMatchObject({ applied: false, pending_confirmation: ['access: anyone can read'] });
+      expect(failing.log.warn).toHaveBeenCalledWith('pending-change e-mail not sent', expect.objectContaining({ module: 'echo', error: 'unavailable' }));
+      expect(JSON.stringify(failing.log.warn.mock.calls)).not.toContain('pending-owner2@example.com');
+    } finally {
+      await db.delete(memberships).where(eq(memberships.workspaceId, ws.id));
+    }
   });
 
   it('refuses to load a module whose required module is not active', async () => {

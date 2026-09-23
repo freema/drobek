@@ -81,6 +81,20 @@ export async function getModuleSecret(
   );
 }
 
+/**
+ * When each of `names` was last set for this app + module (name → updated_at;
+ * unset names are absent) — for the dashboard's secrets form. Selects the name
+ * and the timestamp only: the ciphertext never leaves the database here.
+ */
+export async function secretsStatus(appId: string, module: string, names: string[]): Promise<Map<string, Date>> {
+  if (names.length === 0) return new Map();
+  const rows = await getDb()
+    .select({ name: moduleSecrets.name, updatedAt: moduleSecrets.updatedAt })
+    .from(moduleSecrets)
+    .where(and(eq(moduleSecrets.appId, appId), eq(moduleSecrets.module, module), inArray(moduleSecrets.name, names)));
+  return new Map(rows.map((r) => [r.name, r.updatedAt]));
+}
+
 /** Which of `names` are set for this app + module — names only, never values. */
 export async function secretsSet(appId: string, module: string, names: string[]): Promise<Set<string>> {
   if (names.length === 0) return new Set();

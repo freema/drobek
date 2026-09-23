@@ -18,6 +18,7 @@ import type {
   loader,
 } from './workspaces.$slug.apps.$appSlug.server.js';
 import { formatTimestamp } from '../view.js';
+import { PendingBanner } from '../pending-banner.js';
 
 export function meta({
   data,
@@ -197,7 +198,7 @@ const COMPILE_LABEL: Record<string, string> = {
 };
 
 export default function AppDetailRoute() {
-  const { workspace, app, versions, errors, logs, canPublish } =
+  const { workspace, app, versions, errors, logs, canPublish, pendingBanner } =
     useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const nav = useNavigation();
@@ -219,6 +220,7 @@ export default function AppDetailRoute() {
         >
           Data
         </Link>
+        <Link to={`/workspaces/${workspace.slug}/apps/${app.slug}/modules`} style={styles.navLink} data-testid="app-modules-link">Modules</Link>
         <Link to={`/workspaces/${workspace.slug}`} style={styles.navLink}>
           Members &amp; roles
         </Link>
@@ -234,6 +236,8 @@ export default function AppDetailRoute() {
         <span style={styles.badge}>{app.status}</span>
         <span style={styles.badge}>{app.visibility}</span>
       </div>
+
+      <PendingBanner banner={pendingBanner} />
 
       <p style={styles.urlRow} data-testid="app-published-version">
         Published version:{' '}

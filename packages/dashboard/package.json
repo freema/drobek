@@ -44,6 +44,30 @@
       "types": "./src/routes/workspaces.$slug.apps.$appSlug.data.$collection.export-csv.server.ts",
       "default": "./dist/routes/workspaces.$slug.apps.$appSlug.data.$collection.export-csv.server.js"
     },
+    "./routes/workspaces.$slug.apps.$appSlug.modules": {
+      "types": "./src/routes/workspaces.$slug.apps.$appSlug.modules.tsx",
+      "default": "./dist/routes/workspaces.$slug.apps.$appSlug.modules.js"
+    },
+    "./routes/workspaces.$slug.apps.$appSlug.modules.server": {
+      "types": "./src/routes/workspaces.$slug.apps.$appSlug.modules.server.ts",
+      "default": "./dist/routes/workspaces.$slug.apps.$appSlug.modules.server.js"
+    },
+    "./routes/workspaces.$slug.apps.$appSlug.modules.$module": {
+      "types": "./src/routes/workspaces.$slug.apps.$appSlug.modules.$module.tsx",
+      "default": "./dist/routes/workspaces.$slug.apps.$appSlug.modules.$module.js"
+    },
+    "./routes/workspaces.$slug.apps.$appSlug.modules.$module.server": {
+      "types": "./src/routes/workspaces.$slug.apps.$appSlug.modules.$module.server.ts",
+      "default": "./dist/routes/workspaces.$slug.apps.$appSlug.modules.$module.server.js"
+    },
+    "./pending-banner": {
+      "types": "./src/pending-banner.tsx",
+      "default": "./dist/pending-banner.js"
+    },
+    "./pending-banner.server": {
+      "types": "./src/pending-banner.server.ts",
+      "default": "./dist/pending-banner.server.js"
+    },
     "./routes/workspaces.$slug.activity": {
       "types": "./src/routes/workspaces.$slug.activity.tsx",
       "default": "./dist/routes/workspaces.$slug.activity.js"
@@ -117,6 +141,7 @@
     "react-router": "^7.0.0"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.2.17",
     "@types/node": "^22",
     "@types/react": "^19.0.10",
     "react": "^19.0.0",

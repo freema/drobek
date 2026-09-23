@@ -61,6 +61,17 @@ export default [
     'workspaces/:slug/apps/:appSlug/data/:collection/export.csv',
     'routes/workspaces.$slug.apps.$appSlug.data.$collection.export-csv.ts'
   ),
+  // M2-02 (NSO-291): the Modules tab — config forms, pending confirmations,
+  // secrets, the data collections/rules editor, per-app upstreams. The module
+  // page is configure_module's confirm_url.
+  route(
+    'workspaces/:slug/apps/:appSlug/modules',
+    'routes/workspaces.$slug.apps.$appSlug.modules.tsx'
+  ),
+  route(
+    'workspaces/:slug/apps/:appSlug/modules/:module',
+    'routes/workspaces.$slug.apps.$appSlug.modules.$module.tsx'
+  ),
   // M1-01 (NSO-287): the owner confirms/rejects a pending platform-module
   // change (configure_module → confirm_url; the M2-02 page calls this API).
   route(

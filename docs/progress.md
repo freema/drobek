@@ -228,6 +228,21 @@ block, then `next` is pushed and the single MR opened.
   Activity/CSV `?actor=` filter incl. `end_user`, and the root-layout footer
   `Source (AGPL-3.0) · <sha>` (`@drobek/dashboard/footer`, sha = `GIT_SHA`
   from the root loader). No migration. e2e `dashboard-account.spec.ts` written.
+- M2-02 (NSO-291) done locally: the dashboard Modules tab —
+  `workspaces.$slug.apps.$appSlug.modules(.$module)` in `@drobek/dashboard`
+  (the module page is configure_module's `confirm_url`): pending change with
+  a before → after diff + risk notes + Confirm/Reject, a config form from the
+  module's JSON Schema (own renderer, `module-config.ts` +
+  `module-ui/json-schema-form.tsx`; the server validates through the same
+  `runtime.configure` path, `surface: 'web'`), write-only secrets
+  (Set/Rotate/Remove, audit name-only), the data collections + rules editor
+  (op × principal checkboxes, JSON Schema textarea) and the proxy per-app
+  upstream assignment. `PendingBanner` + `loadPendingBanner()` render "N
+  changes await confirmation" on the app page (one Modules link + one banner
+  line added to the current app route — NSO-288 rewrites that file). An
+  agent-made pending change e-mails the owners through the email module (1/h
+  per app, `drobek:rl:modules:pending-mail:<app_id>`). No migration. e2e
+  `tests-e2e/tests/dashboard-modules.spec.ts` written, not run.
 
 ## Notes and gotchas
 
@@ -507,6 +522,20 @@ block, then `next` is pushed and the single MR opened.
   the footer renders from `useRouteLoaderData('root')` in `Layout`, so it
   falls back to the `main` tree link when the root loader did not run (error
   document). drobek-web has its own root and needs the same footer.
+- The pending-change owner e-mail (NSO-291) is a `notification` counted like
+  any module mail: every e2e spec whose agent leaves a change pending now
+  sends one mail per app per hour to the owner (subject `[<app>] … awaits your
+  confirmation`, no 6-digit number, so `pollLoginCode` is unaffected as long
+  as a new code is requested after it). A spec that needs a second pending
+  e-mail for the same app must delete `drobek:rl:modules:pending-mail:<app_id>`.
+- The Modules page's forms post plain fields (`cfg.<path>`, `rule.<op>.<principal>`)
+  and the server rebuilds the config, so the pages work without client JS;
+  inputs are uncontrolled — the form is keyed by its values so a
+  confirm/save that changes the config remounts it with the new values.
+- React Router single fetch: a page's loader data is `GET <path>.data`; the
+  secret e2e greps both the HTML and that for the secret value.
+- `z.toJSONSchema(schema, { io: 'input' })` is what the dashboard form uses
+  (defaulted keys optional); `skill_info` keeps the output-side schema.
 
 ## Failed approaches
 

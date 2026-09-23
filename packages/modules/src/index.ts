@@ -91,8 +91,9 @@ export {
   type EndUserSession,
   type PrincipalResolver,
 } from './principal.js';
-export { SECRET_NAME_RE, SecretStoreError, deleteModuleSecret, getModuleSecret, secretsSet, setModuleSecret } from './secrets.server.js';
+export { SECRET_NAME_RE, SECRET_MAX_BYTES, SecretStoreError, deleteModuleSecret, getModuleSecret, secretsSet, secretsStatus, setModuleSecret } from './secrets.server.js';
 export { readConfigRow, type ConfigRow, type PendingChange } from './configs.server.js';
+export { PENDING_MAIL_WINDOW_MS, pendingMail, pendingMailKey, type PendingMailModule } from './pending-mail.js';
 export {
   BACKEND_IMPORT_SKILLS,
   PLATFORM_SKILL_NAME,
@@ -160,6 +161,8 @@ export {
   type ConfigureResult,
   type DecisionInput,
   type EmailTransport,
+  type ModuleDashboardView,
+  type PendingView,
   type TransportMessage,
   type LoadRuntimeOptions,
   type PlatformApp,
