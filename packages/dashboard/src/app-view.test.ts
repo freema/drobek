@@ -19,6 +19,7 @@ describe('app tabs (data-driven)', () => {
       '/workspaces/ws/apps/todo',
       '/workspaces/ws/apps/todo/files',
       '/workspaces/ws/apps/todo/data',
+      '/workspaces/ws/apps/todo/modules',
       '/workspaces/ws/apps/todo/settings',
     ]);
   });
@@ -27,6 +28,7 @@ describe('app tabs (data-driven)', () => {
     ['/workspaces/ws/apps/todo', 'overview'],
     ['/workspaces/ws/apps/todo/files', 'files'],
     ['/workspaces/ws/apps/todo/data/tasks', 'data'],
+    ['/workspaces/ws/apps/todo/modules/forms', 'modules'],
     ['/workspaces/ws/apps/todo/settings', 'settings'],
     ['/workspaces/ws/apps/todo/unknown', 'overview'],
   ])('%s → %s', (path, tab) => {
