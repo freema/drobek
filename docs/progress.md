@@ -18,15 +18,16 @@ Opus 5.5 subagents, black-box verification by Sonnet, everything lands on
 | 3 | NSO-297 M1-06 proxy | merged 9130f7e, check green | e2e spec written, runs at block end |
 | 4 | NSO-290 M1-07 get_logs | merged 2a7fe09, check green | migration 0014; e2e spec at block end |
 | 5 | NSO-320 e-mail budget split | merged 2199fa1, check green | no migration |
-| 6 | NSO-288 M2-01 app page | running (worktree, base 9130f7e) | slot 0016 |
-| 8 | NSO-292 M3-01 domains | running (worktree, base 9130f7e) | slot 0018 |
+| 6 | NSO-288 M2-01 app page | merged 28ee0d3 (+ test-id/tab-test fixups), check green | slot 0016; Modules/Domains/Forms/Users/Uploads/Logs tabs live in `app-tabs.ts` |
+| 8 | NSO-292 M3-01 domains | merged 1836a03 + b962c18, check green | 0018 prevId re-chained to 0016; compose env changed → `docker compose up -d drobek` before block-end e2e |
 | 10 | NSO-308 M1-08 skills | running (worktree, base b056d57) | last M1 task |
-| 11 | NSO-301 M2-03 data/forms/users/uploads/logs tabs | running (worktree, base b056d57) | slot 0020 |
+| 11 | NSO-301 M2-03 data/forms/users/uploads/logs tabs | merged c63acef, check green | no migration; `AppSubnav` now reads `APP_TABS` |
 | 12 | NSO-293 M4-02 abuse | running (worktree, base 8f25925) | slot 0021 |
 | 13 | NSO-304 M4-03 self-host packaging | running (worktree, base 8f25925) | VPS timing needs Tomáš |
 | – | M1 block-end e2e + black-box | e2e green (99 + reruns, 8f25925); Sonnet black-box 25 PASS / 0 FAIL / 1 not testable (NSO-320 cap needs Redis seeding) | **M1 complete** → `next` pushed, draft MR opened |
 | 7 | NSO-291 M2-02 modules UI | merged 8d88040, check green | pending owner mail 1/h per app |
 | 9 | NSO-284 M2-04 keys/connections | merged 574cb76, check green | no migration |
+| 14 | M1 security review (read-only, `953659f..8f25925`) | done: 2 red-gate (SVG sniffer ReDoS, proxy `\` escape), 4 high, 6 medium, lows | fixes → NSO-322 (running, worktree from 31a53ca); follow-ups filed NSO-323..327 |
 
 **Mode change (Tomáš, 2026-09-23 evening):** speed over per-task proof. Per
 task = implementation + unit tests + e2e spec FILES + green `task check`;
