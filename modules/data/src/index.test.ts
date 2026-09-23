@@ -11,7 +11,7 @@ import { migrate } from 'drizzle-orm/pglite/migrator';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { apps, moduleConfigs, workspaces, type DB } from '@drobek/db';
 import * as schema from '@drobek/db/schema';
-import { buildSdk, isDefinedModule, loadModules, type Principal, type RecordsView } from '@drobek/modules';
+import { RECORDS_IMPORT_MAX_ROWS, buildSdk, isDefinedModule, loadModules, type Principal, type RecordsView } from '@drobek/modules';
 import { createModuleTestContext, type ModuleTestContext } from '@drobek/modules/testing';
 import auth from 'drobek-module-auth';
 import data, { DATA_CONFIG_DEFAULTS, dataConfigSchema, dataConfirmRequired, dataRecords, recordsAuthority, type DataConfig } from './index.js';
@@ -115,8 +115,11 @@ async function create(t: ModuleTestContext, collection: string, body: unknown): 
   return r.body as Rec;
 }
 
+/** The workspace limits the owner's view sees (tests lower them). */
+let viewLimits: Record<string, number> = {};
+
 function view(app = appA, config: DataConfig = dataConfigSchema.parse(CONFIG)): RecordsView<DataConfig> {
-  return { app: { id: app, slug: 'notes', workspaceId }, config, db, log: { debug() {}, info() {}, warn() {}, error() {} } as never };
+  return { app: { id: app, slug: 'notes', workspaceId }, config, db, log: { debug() {}, info() {}, warn() {}, error() {} } as never, limits: async () => viewLimits };
 }
 
 describe('the module', () => {
@@ -539,6 +542,89 @@ describe("the owner's view (records authority)", () => {
     expect(lines).toHaveLength(3);
     expect(await recordsAuthority.remove(v, 'todos', two._id)).toBe(true);
     expect(await recordsAuthority.get(v, 'todos', two._id)).toBeNull();
+  });
+});
+
+describe("the owner's edits (records authority, M2-03)", () => {
+  beforeEach(() => {
+    viewLimits = {};
+  });
+
+  it('update replaces the own fields (validated, _owner kept); a missing record → null; a bad one → validation_failed', async () => {
+    const rec = await create(ctx({ principal: A }), 'todos', { title: 'one', priority: 1, tags: ['x'] });
+    const v = view();
+    const updated = await recordsAuthority.update!(v, 'todos', rec._id, { title: 'uno', done: true, _owner: 'spoof', _id: 'x' });
+    expect(updated).toMatchObject({ _id: rec._id, _owner: 'eu_a', title: 'uno', done: true });
+    expect(updated).not.toHaveProperty('priority');
+    expect(await recordsAuthority.update!(v, 'todos', 'missing', { title: 'x' })).toBeNull();
+    await expect(recordsAuthority.update!(v, 'todos', rec._id, { done: 'yes' })).rejects.toMatchObject({ code: 'validation_failed' });
+    expect(await recordsAuthority.get(v, 'todos', rec._id)).toMatchObject({ title: 'uno' });
+    await expect(recordsAuthority.update!(v, 'nope', rec._id, {})).rejects.toMatchObject({ code: 'not_found' });
+  });
+
+  it('importCsv: typed cells from the schema, _… columns ignored, formula guards undone, file order = creation order', async () => {
+    const v = view();
+    const csv = ['_id,title,done,priority,tags', "x1,first,true,'-2,\"[\"\"a\"\"]\"", 'x2,\"second, with comma\",FALSE,,', ''].join('\r\n');
+    expect(await recordsAuthority.importCsv!(v, 'todos', csv)).toEqual({ imported: 2 });
+    const page = await recordsAuthority.query(v, { collection: 'todos', dir: 'asc' });
+    expect(page.records).toMatchObject([
+      { title: 'first', done: true, priority: -2, tags: ['a'], _owner: null },
+      { title: 'second, with comma', done: false },
+    ]);
+    expect(page.records[0]._id).not.toBe('x1');
+    expect(page.records[1]).not.toHaveProperty('priority');
+  });
+
+  it('importCsv: one invalid row → its line reported, nothing stored (all or nothing)', async () => {
+    const v = view();
+    const csv = ['title,priority', 'ok,1', 'fine,2', ',3', 'never,4'].join('\n');
+    await expect(recordsAuthority.importCsv!(v, 'todos', csv)).rejects.toMatchObject({
+      code: 'validation_failed',
+      message: expect.stringMatching(/^Line 4: /),
+      details: { line: 4 },
+    });
+    const wrongWidth = ['title,priority', 'ok,1', 'too,many,cells'].join('\n');
+    await expect(recordsAuthority.importCsv!(v, 'todos', wrongWidth)).rejects.toMatchObject({ code: 'validation_failed', details: { line: 3 } });
+    const badQuote = ['title', '"open'].join('\n');
+    await expect(recordsAuthority.importCsv!(v, 'todos', badQuote)).rejects.toMatchObject({ code: 'invalid_request', details: { line: 2 } });
+    expect((await recordsAuthority.query(v, { collection: 'todos' })).total).toBe(0);
+  });
+
+  it(`importCsv: ${RECORDS_IMPORT_MAX_ROWS} rows import; ${RECORDS_IMPORT_MAX_ROWS + 1} are refused before any write`, async () => {
+    const v = view(appA, dataConfigSchema.parse(CONFIG));
+    viewLimits = { DATA_MAX_DOCS_PER_APP: 20_000 };
+    const rows = (n: number) => ['title', ...Array.from({ length: n }, (_, i) => `t${i}`)].join('\n');
+    await expect(recordsAuthority.importCsv!(v, 'guestbook', rows(RECORDS_IMPORT_MAX_ROWS + 1))).rejects.toMatchObject({
+      code: 'payload_too_large',
+      details: { limit: 'RECORDS_IMPORT_MAX_ROWS', value: RECORDS_IMPORT_MAX_ROWS },
+    });
+    expect((await recordsAuthority.query(v, { collection: 'guestbook' })).total).toBe(0);
+    expect(await recordsAuthority.importCsv!(v, 'guestbook', rows(RECORDS_IMPORT_MAX_ROWS))).toEqual({ imported: RECORDS_IMPORT_MAX_ROWS });
+    expect((await recordsAuthority.query(v, { collection: 'guestbook' })).total).toBe(RECORDS_IMPORT_MAX_ROWS);
+  });
+
+  it('importCsv respects the quota as a whole batch (nothing stored past it); a record over DATA_MAX_DOC_BYTES names its line', async () => {
+    await create(ctx({ principal: A }), 'todos', { title: 'already' });
+    viewLimits = { DATA_MAX_DOCS_PER_APP: 3, DATA_MAX_DOC_BYTES: 40 };
+    const v = view();
+    await expect(recordsAuthority.importCsv!(v, 'todos', 'title\na\nb\nc')).rejects.toMatchObject({ code: 'quota_exceeded' });
+    await expect(recordsAuthority.importCsv!(v, 'todos', `title\nshort\n${'x'.repeat(60)}`)).rejects.toMatchObject({
+      code: 'validation_failed',
+      details: { line: 3 },
+    });
+    expect((await recordsAuthority.query(v, { collection: 'todos' })).total).toBe(1);
+    expect(await recordsAuthority.importCsv!(v, 'todos', 'title\na\nb')).toEqual({ imported: 2 });
+  });
+
+  it('dropCollection deletes the records of that collection only and returns the config patch', async () => {
+    await create(ctx({ principal: A }), 'todos', { title: 'gone' });
+    await create(ctx({ principal: A }), 'guestbook', { text: 'stays' });
+    const other = await create(ctx({ principal: A, app: appB }), 'todos', { title: 'other app' });
+    const out = await recordsAuthority.dropCollection!(view(), 'todos');
+    expect(out).toEqual({ records: 1, configPatch: { collections: { todos: null } } });
+    expect((await recordsAuthority.query(view(), { collection: 'guestbook' })).total).toBe(1);
+    expect(await recordsAuthority.get(view(appB), 'todos', other._id)).toMatchObject({ title: 'other app' });
+    await expect(recordsAuthority.dropCollection!(view(), 'nope')).rejects.toMatchObject({ code: 'not_found' });
   });
 });
 

@@ -110,6 +110,24 @@
 - **Audit**: `domain.add`, `domain.verify`, `domain.unverify`,
   `domain.primary`, `domain.remove`. **MCP** `publish` returns
   `domains: [<default host>, …verified custom domains]`.
+### Dashboard: the owner's app tabs (NSO-301)
+
+- **Data tab**: edit a record as JSON (validated by the module), import a
+  CSV (≤ 5 000 rows, all or nothing, the first bad row named by its line;
+  skips `DATA_WRITE_RATE_LIMIT`, keeps the quotas), delete a collection
+  after typing its name. New tabs **Forms** (`/workspaces/:slug/apps/:appSlug/forms`:
+  filter, CSV, delete), **Users** (`…/end-users`: role, block, sign everyone
+  out), **Uploads** (`…/uploads`: list, nosniff raster preview, delete) and
+  **Logs** (`…/logs`: the `get_logs` data, since + Refresh). All mutations
+  editor+, audited (`data.import`, `data.record_update`, `data.record_delete`,
+  `data.collection_delete`, `forms.submission_delete`, `end_users.role`,
+  `end_users.disable`, `end_users.enable`, `files.delete`).
+- **`@drobek/modules`** (contract stays 1.0.0 — additive, all optional):
+  `records.update/importCsv/dropCollection`, `endUsers.list/setRole/
+  setDisabled`, new `submissions` and `files` authorities, `OwnerView`
+  (with `limits()`), `RECORDS_IMPORT_MAX_ROWS`. Built-in `data`, `auth`,
+  `forms`, `files` implement them. `@drobek/core`: `parseCsv`, `csvUnguard`,
+  `CsvParseError`.
 
 ### The built-in `proxy` module (NSO-297)
 

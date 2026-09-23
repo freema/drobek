@@ -21,6 +21,7 @@
  * module, audit, the database and e-mail. A module never reads cookies itself
  * and never sees another app's id.
  */
+import type { Readable } from 'node:stream';
 import type { Logger } from '@drobek/core';
 import type { DB } from '@drobek/db';
 import type { ZodType } from 'zod';
@@ -174,6 +175,53 @@ export interface EndUserAuthority<Config = unknown> {
    * makes that request anonymous (fail closed) without ending the session.
    */
   current(input: { app: HookApp; user: EndUser; config: Config; db: DB; log: Logger }): Promise<EndUser | null>;
+
+  // ── the owner's view (the dashboard Users tab, M2-03) — optional ──
+  // Core calls these only after it authorized a drobek account for the app
+  // (the workspace role; changes are editor+). Unknown user → null / a
+  // ModuleError `not_found`.
+
+  /** The app's end users, newest first (`search` = a case-insensitive part of the address). */
+  list?(view: OwnerView<Config>, query: EndUserListQuery): Promise<EndUserPage>;
+  /**
+   * Make a user `user` or `admin`. When the role follows the app's config,
+   * return the merge patch of THIS module's config that gives it (core applies
+   * it under the config lock, in the same transaction as `view.db`, without a
+   * confirmation — the owner is the one who confirms). The change applies to
+   * the next module request (core asks `current` on every one). A role that
+   * cannot be changed (e.g. a workspace editor is always admin) → ModuleError
+   * `conflict`.
+   */
+  setRole?(view: OwnerView<Config>, id: string, role: 'user' | 'admin'): Promise<{ user: EndUserRecord; configPatch: Record<string, unknown> | null }>;
+  /** Block (true) or unblock a user; a blocked user is anonymous — and signed out — on the next request. */
+  setDisabled?(view: OwnerView<Config>, id: string, disabled: boolean): Promise<EndUserRecord | null>;
+}
+
+/** One end user as the owner sees them. */
+export interface EndUserRecord {
+  id: string;
+  email: string;
+  /** The role they have NOW (what `current` would answer). */
+  role: 'user' | 'admin';
+  /** Why they are admin: `workspace` (an editor of the app's workspace — fixed), `config` (the module's config). */
+  roleSource: 'workspace' | 'config' | null;
+  /** `active`, `disabled` by the owner, or `not_allowed` any more by the config (signed out on their next request). */
+  status: 'active' | 'disabled' | 'not_allowed';
+  created_at: string;
+  last_sign_in_at: string | null;
+}
+
+export interface EndUserListQuery {
+  search?: string;
+  limit?: number;
+  cursor?: string | null;
+}
+
+export interface EndUserPage {
+  users: EndUserRecord[];
+  /** Users matching the search (all pages). */
+  total: number;
+  next_cursor: string | null;
 }
 
 /** What an e-mail is for (the module that owns app e-mail treats them differently). */
@@ -229,13 +277,23 @@ export interface ConfirmContext {
 
 // ── the records authority (data) ─────────────────────────────────────────────
 
-/** The app a records call is about, with the records module's effective config for it. */
-export interface RecordsView<Config = unknown> {
+/**
+ * One app as a module's OWNER-facing authority sees it (records, end users,
+ * submissions, files): core authorized a drobek account for the app first.
+ * `config` is the module's effective config for the app, `db` the database —
+ * or the transaction core runs the call in (a config change) — and `limits`
+ * the app's workspace limits.
+ */
+export interface OwnerView<Config = unknown> {
   app: HookApp;
   config: Config;
   db: DB;
   log: Logger;
+  limits(): Promise<Limits>;
 }
+
+/** The app a records call is about, with the records module's effective config for it. */
+export type RecordsView<Config = unknown> = OwnerView<Config>;
 
 /** One collection as the owner sees it. */
 export interface RecordsCollection {
@@ -285,6 +343,112 @@ export interface RecordsAuthority<Config = unknown> {
   remove(view: RecordsView<Config>, collection: string, id: string): Promise<boolean>;
   /** The CSV export of a collection (filter + sort applied): the header line, then one line per record (no line breaks). */
   csv(view: RecordsView<Config>, query: Omit<RecordsQuery, 'limit' | 'cursor'>): AsyncIterable<string>;
+
+  // ── owner edits (the dashboard Data tab, M2-03, editor+) — optional ──
+
+  /**
+   * Replace a record's own fields (`_…` keys are ignored), validated like any
+   * write (schema, the per-record and per-app quotas); `_owner` and
+   * `_created_at` stay. null when the record does not exist. A bad record →
+   * ModuleError `validation_failed` (details: the fields).
+   */
+  update?(view: RecordsView<Config>, collection: string, id: string, fields: Record<string, unknown>): Promise<Record<string, unknown> | null>;
+  /**
+   * Import CSV text into a collection as new records (no owner): the header
+   * names the fields. All or nothing — ONE transaction; too many rows
+   * (`RECORDS_IMPORT_MAX_ROWS`) is refused before anything is parsed further,
+   * and the first invalid row is reported with its line number
+   * (ModuleError `validation_failed`, `details.line`) with nothing stored.
+   */
+  importCsv?(view: RecordsView<Config>, collection: string, csv: string): Promise<{ imported: number }>;
+  /**
+   * Delete a collection: its records now (in `view.db`, core's config
+   * transaction), and return the merge patch of the module's config that
+   * removes its declaration (core writes it in the same transaction).
+   */
+  dropCollection?(view: RecordsView<Config>, collection: string): Promise<{ records: number; configPatch: Record<string, unknown> }>;
+}
+
+/** The most rows (without the header) one CSV import may carry. */
+export const RECORDS_IMPORT_MAX_ROWS = 5000;
+
+// ── the submissions authority (forms) ────────────────────────────────────────
+
+export interface SubmissionsQuery {
+  /** One form, or every form of the app. */
+  form?: string;
+  /** Submitted at or after (ISO timestamp). */
+  from?: string;
+  /** Submitted before (ISO timestamp, exclusive). */
+  to?: string;
+  limit?: number;
+  cursor?: string | null;
+}
+
+/** A stored submission as the owner sees it. */
+export interface OwnerSubmission {
+  id: string;
+  form: string;
+  created_at: string;
+  data: Record<string, unknown>;
+  user_id: string | null;
+  notified: boolean;
+}
+
+export interface SubmissionsPage {
+  submissions: OwnerSubmission[];
+  /** Submissions matching the filter (all pages). */
+  total: number;
+  next_cursor: string | null;
+}
+
+/**
+ * The module that stores form submissions (the built-in `forms`) answers the
+ * OWNER (the dashboard Forms tab): core calls it only after it authorized a
+ * drobek account for the app. Bad filter/cursor → ModuleError `invalid_request`.
+ */
+export interface SubmissionsAuthority<Config = unknown> {
+  /** The app's forms (declared or with stored submissions) and their submission counts. */
+  forms(view: OwnerView<Config>): Promise<{ name: string; submissions: number }[]>;
+  list(view: OwnerView<Config>, query: SubmissionsQuery): Promise<SubmissionsPage>;
+  /** The CSV export (filter applied, newest first, capped): header line first, one line per submission. */
+  csv(view: OwnerView<Config>, query: Omit<SubmissionsQuery, 'limit' | 'cursor'>): AsyncIterable<string>;
+  /** Delete one submission; false when it did not exist. */
+  remove(view: OwnerView<Config>, id: string): Promise<boolean>;
+}
+
+// ── the files authority (files) ──────────────────────────────────────────────
+
+/** A stored upload as the owner sees it. */
+export interface OwnerFile {
+  id: string;
+  name: string;
+  /** The sniffed type (never the client's), e.g. `image/png`. */
+  type: string;
+  size: number;
+  /** The uploader's end-user id, or null. */
+  owner: string | null;
+  created_at: string;
+}
+
+export interface OwnerFilesPage {
+  files: OwnerFile[];
+  next_cursor: string | null;
+  used_bytes: number;
+  quota_bytes: number;
+}
+
+/**
+ * The module that stores end-user uploads (the built-in `files`) answers the
+ * OWNER (the dashboard Uploads tab): list, the bytes (for a preview /
+ * download core serves with `nosniff`), delete (the module's own rules for
+ * the stored bytes, e.g. content shared by another app stays).
+ */
+export interface FilesAuthority<Config = unknown> {
+  list(view: OwnerView<Config>, query: { limit?: number; cursor?: string | null }): Promise<OwnerFilesPage>;
+  /** The file and its bytes, or null. The caller reads the stream once. */
+  open(view: OwnerView<Config>, id: string): Promise<{ file: OwnerFile; stream: Readable } | null>;
+  remove(view: OwnerView<Config>, id: string): Promise<boolean>;
 }
 
 // ── per-app info (get_app / configure_module) ────────────────────────────────
@@ -340,6 +504,10 @@ export interface DrobekModule<Config = unknown> {
    * browser. Never called for an app host request.
    */
   records?: RecordsAuthority<Config>;
+  /** Only the module that stores form submissions (forms): the owner's view for the dashboard. */
+  submissions?: SubmissionsAuthority<Config>;
+  /** Only the module that stores end-user uploads (files): the owner's view for the dashboard. */
+  files?: FilesAuthority<Config>;
   /**
    * Secret-free facts about this module's state for ONE app, shown to the
    * app's agents: get_app's `modules.<name>.info` and configure_module's

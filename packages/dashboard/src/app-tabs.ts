@@ -19,6 +19,10 @@ export const APP_TABS: readonly AppTab[] = [
   { key: 'files', to: 'files', label: 'Files' },
   { key: 'data', to: 'data', label: 'Data' },
   { key: 'modules', to: 'modules', label: 'Modules' },
+  { key: 'forms', to: 'forms', label: 'Forms' },
+  { key: 'end-users', to: 'end-users', label: 'Users' },
+  { key: 'uploads', to: 'uploads', label: 'Uploads' },
+  { key: 'logs', to: 'logs', label: 'Logs' },
   { key: 'domains', to: 'domains', label: 'Domains' },
   { key: 'settings', to: 'settings', label: 'Settings' },
 ];

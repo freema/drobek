@@ -20,6 +20,10 @@ describe('app tabs (data-driven)', () => {
       '/workspaces/ws/apps/todo/files',
       '/workspaces/ws/apps/todo/data',
       '/workspaces/ws/apps/todo/modules',
+      '/workspaces/ws/apps/todo/forms',
+      '/workspaces/ws/apps/todo/end-users',
+      '/workspaces/ws/apps/todo/uploads',
+      '/workspaces/ws/apps/todo/logs',
       '/workspaces/ws/apps/todo/domains',
       '/workspaces/ws/apps/todo/settings',
     ]);

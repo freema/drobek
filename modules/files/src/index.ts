@@ -23,6 +23,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { defineModule } from '@drobek/modules';
 import { FILES_CONFIG_DEFAULTS, filesConfigSchema, filesConfirmRequired, type FilesConfig } from './config.js';
+import { filesAuthority } from './owner.js';
 import { DEFAULT_MAX_BYTES, DEFAULT_QUOTA_PER_APP, DEFAULT_UPLOAD_RATE_LIMIT, registerRoutes } from './routes.js';
 
 export { BlobStore, BlobWriter, DEFAULT_FILES_DIR, blobStore, filesDir } from './blob-store.js';
@@ -37,6 +38,7 @@ export {
   type FilesConfig,
 } from './config.js';
 export { FilesError, filesErrorStatus, type FilesErrorCode } from './errors.js';
+export { filesAuthority, ownerFile } from './owner.js';
 export {
   DEFAULT_MAX_BYTES,
   DEFAULT_QUOTA_PER_APP,
@@ -106,6 +108,7 @@ const filesModule = defineModule<FilesConfig>({
     { env: 'FILES_UPLOAD_RATE_LIMIT', default: DEFAULT_UPLOAD_RATE_LIMIT, meaning: 'uploads one app may take per minute' },
   ],
   routes: registerRoutes,
+  files: filesAuthority,
   sdk: { entry: sdkEntry, types: SDK_TYPES },
   migrations: { folder: here('../migrations') },
 });

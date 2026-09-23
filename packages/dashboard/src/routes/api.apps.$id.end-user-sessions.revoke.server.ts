@@ -11,10 +11,8 @@
  * 403. Audit `end_users.sessions_revoke`, actor_kind `user`.
  */
 import { data, type ActionFunctionArgs } from 'react-router';
-import { AUDIT_ACTIONS, actorKindForSurface, writeAudit } from '@drobek/audit';
-import { getRedis } from '@drobek/core';
-import { revokeEndUserSessions } from '@drobek/modules';
 import { NO_STORE, apiError, authorizeAppApi } from '../app-api.server.js';
+import { revokeAllEndUserSessions } from '../end-user-sessions.server.js';
 
 export async function loader() {
   return apiError(405, 'method_not_allowed', 'POST to sign every user of this app out.');
@@ -25,15 +23,6 @@ export async function action({ request, params }: ActionFunctionArgs) {
   if (!auth.ok) return auth.response;
   const { app, user } = auth;
 
-  const epoch = await revokeEndUserSessions(getRedis(), app.id);
-  await writeAudit({
-    workspaceId: app.workspaceId,
-    actorUserId: user.id,
-    actorKind: actorKindForSurface('web'),
-    action: AUDIT_ACTIONS.endUserSessionsRevoke,
-    subjectType: 'app',
-    target: app.slug,
-    meta: { epoch },
-  });
+  const epoch = await revokeAllEndUserSessions(app, user.id);
   return data({ ok: true, app_id: app.id, epoch }, { headers: NO_STORE });
 }

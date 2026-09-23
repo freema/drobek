@@ -17,7 +17,7 @@ import * as schema from '@drobek/db/schema';
 import { buildSdk, isDefinedModule, loadModules, type Principal } from '@drobek/modules';
 import { createModuleTestContext, type ModuleTestContext, type TestResponse } from '@drobek/modules/testing';
 import auth from 'drobek-module-auth';
-import filesModule, { FILES_CONFIG_DEFAULTS, blobStore, cleanName, files, filesConfigSchema, filesConfirmRequired, type FilesConfig } from './index.js';
+import filesModule, { FILES_CONFIG_DEFAULTS, blobStore, cleanName, files, filesAuthority, filesConfigSchema, filesConfirmRequired, type FilesConfig } from './index.js';
 
 const CORE_MIGRATIONS = fileURLToPath(new URL('../../../packages/db/drizzle/migrations', import.meta.url));
 const MiB = 1024 * 1024;
@@ -440,5 +440,48 @@ describe('quota', () => {
     expect(onDisk().tmp).toEqual([]);
     expect(onDisk().blobs).toHaveLength(1);
     await stored(ctx({ limits }), png(400));
+  });
+});
+
+describe("the owner's view (files authority, M2-03)", () => {
+  const view = (app = appA, limits: Record<string, number> = {}) => ({
+    app: { id: app, slug: app === appA ? 'album' : 'other', workspaceId },
+    config: filesConfigSchema.parse({}),
+    db,
+    log: { debug() {}, info() {}, warn() {}, error() {} } as never,
+    limits: async () => limits,
+  });
+
+  it('lists newest first with usage + quota, opens the bytes (whatever the read rule), stays in its app', async () => {
+    const first = await stored(ctx(), png(300), { filename: 'one.png' });
+    const second = await stored(ctx({ principal: BOB }), PDF, { filename: 'doc.pdf' });
+    const page = await filesAuthority.list(view(appA, { FILES_QUOTA_PER_APP: 5000 }), {});
+    expect(page).toMatchObject({ used_bytes: 300 + PDF.length, quota_bytes: 5000, next_cursor: null });
+    expect(page.files.map((f) => [f.id, f.type, f.owner])).toEqual([
+      [second.id, 'application/pdf', 'eu_bob'],
+      [first.id, 'image/png', 'eu_ana'],
+    ]);
+    const p1 = await filesAuthority.list(view(), { limit: 1 });
+    expect((await filesAuthority.list(view(), { limit: 1, cursor: p1.next_cursor })).files.map((f) => f.id)).toEqual([first.id]);
+
+    const opened = await filesAuthority.open(view(), first.id);
+    expect(opened?.file).toMatchObject({ id: first.id, name: 'one.png', type: 'image/png', size: 300 });
+    const chunks: Buffer[] = [];
+    for await (const c of opened!.stream) chunks.push(c as Buffer);
+    expect(Buffer.concat(chunks).length).toBe(300);
+    expect(await filesAuthority.open(view(appB), first.id)).toBeNull();
+    expect(await filesAuthority.remove(view(appB), first.id)).toBe(false);
+  });
+
+  it('remove keeps content another app still references (the module dedup rule)', async () => {
+    const bytes = png(1200);
+    const h = sha(bytes);
+    const a = await stored(ctx({ app: appA }), bytes);
+    const b = await stored(ctx({ app: appB }), bytes);
+    expect(await filesAuthority.remove(view(appA), a.id)).toBe(true);
+    expect(await blobStore().has(h)).toBe(true);
+    expect(await filesAuthority.remove(view(appA), a.id)).toBe(false);
+    expect(await filesAuthority.remove(view(appB), b.id)).toBe(true);
+    expect(await blobStore().has(h)).toBe(false);
   });
 });

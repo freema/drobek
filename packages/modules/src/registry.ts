@@ -153,6 +153,24 @@ export function validateModule(m: AnyModule): void {
     for (const fn of ['collections', 'query', 'get', 'remove', 'csv'] as const) {
       if (typeof m.records?.[fn] !== 'function') fail(`records.${fn} must be a function`);
     }
+    for (const fn of ['update', 'importCsv', 'dropCollection'] as const) {
+      if (m.records?.[fn] !== undefined && typeof m.records[fn] !== 'function') fail(`records.${fn} must be a function`);
+    }
+  }
+  if (m.endUsers !== undefined) {
+    for (const fn of ['list', 'setRole', 'setDisabled'] as const) {
+      if (m.endUsers?.[fn] !== undefined && typeof m.endUsers[fn] !== 'function') fail(`endUsers.${fn} must be a function`);
+    }
+  }
+  if (m.submissions !== undefined) {
+    for (const fn of ['forms', 'list', 'csv', 'remove'] as const) {
+      if (typeof m.submissions?.[fn] !== 'function') fail(`submissions.${fn} must be a function`);
+    }
+  }
+  if (m.files !== undefined) {
+    for (const fn of ['list', 'open', 'remove'] as const) {
+      if (typeof m.files?.[fn] !== 'function') fail(`files.${fn} must be a function`);
+    }
   }
   if (m.requires !== undefined) {
     if (!Array.isArray(m.requires) || m.requires.some((r) => typeof r !== 'string' || !MODULE_NAME_RE.test(r) || r === m.name)) {
@@ -182,6 +200,24 @@ export function recordsAuthorityOf(modules: AnyModule[]): AnyModule | null {
   const owners = modules.filter((m) => m.records !== undefined);
   if (owners.length > 1) {
     throw new ModuleLoadError(`only one module may store app records (records); active: ${owners.map((m) => m.name).join(', ')}`);
+  }
+  return owners[0] ?? null;
+}
+
+/** The one active module that stores form submissions (`submissions`), or null (two refuse the start). */
+export function submissionsAuthorityOf(modules: AnyModule[]): AnyModule | null {
+  const owners = modules.filter((m) => m.submissions !== undefined);
+  if (owners.length > 1) {
+    throw new ModuleLoadError(`only one module may store form submissions (submissions); active: ${owners.map((m) => m.name).join(', ')}`);
+  }
+  return owners[0] ?? null;
+}
+
+/** The one active module that stores end-user uploads (`files`), or null (two refuse the start). */
+export function filesAuthorityOf(modules: AnyModule[]): AnyModule | null {
+  const owners = modules.filter((m) => m.files !== undefined);
+  if (owners.length > 1) {
+    throw new ModuleLoadError(`only one module may store uploads (files); active: ${owners.map((m) => m.name).join(', ')}`);
   }
   return owners[0] ?? null;
 }
@@ -227,6 +263,8 @@ export async function loadModules(env: NodeJS.ProcessEnv = process.env, opts: Re
   endUserAuthorityOf(modules);
   mailAuthorityOf(modules);
   recordsAuthorityOf(modules);
+  submissionsAuthorityOf(modules);
+  filesAuthorityOf(modules);
   checkRequires(modules);
   const limitNames = new Map<string, string>();
   for (const m of modules) {

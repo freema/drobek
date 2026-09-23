@@ -6,6 +6,7 @@
  */
 import { Link, useLoaderData } from 'react-router';
 import type { loader } from './workspaces.$slug.apps.$appSlug.data.server.js';
+import { AppSubnav, ui } from '../owner-ui.js';
 
 export function meta({
   data,
@@ -70,29 +71,22 @@ const styles = {
 } as const;
 
 export default function AppDataRoute() {
-  const { workspace, appSlug, collections } = useLoaderData<typeof loader>();
+  const { workspace, appSlug, collections, dropped } = useLoaderData<typeof loader>();
 
   return (
     <main style={styles.main}>
-      <p style={styles.nav}>
-        <Link
-          to={`/workspaces/${workspace.slug}/apps/${appSlug}`}
-          style={styles.navLink}
-        >
-          ← {appSlug}
-        </Link>
-        <Link
-          to={`/workspaces/${workspace.slug}/apps`}
-          style={styles.navLink}
-        >
-          Apps
-        </Link>
-      </p>
+      <AppSubnav workspaceSlug={workspace.slug} appSlug={appSlug} current="data" />
 
       <h1 style={styles.h1}>Data</h1>
       <p style={styles.hint}>
         Collections stored by <strong>{appSlug}</strong> (the data module; preview and production share them).
       </p>
+
+      {dropped ? (
+        <div style={ui.notice} role="status" data-testid="collection-dropped">
+          Collection <strong>{dropped}</strong> deleted.
+        </div>
+      ) : null}
 
       {collections.length === 0 ? (
         <p style={styles.empty} data-testid="collections-empty">

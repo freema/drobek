@@ -18,6 +18,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { defineModule } from '@drobek/modules';
 import { FORMS_CONFIG_DEFAULTS, formsConfigSchema, formsConfirmRequired, type FormsConfig } from './config.js';
+import { submissionsAuthority } from './owner.js';
 import { registerRoutes } from './routes.js';
 
 export {
@@ -31,6 +32,7 @@ export {
 } from './config.js';
 export { MAX_FIELDS, fieldText, splitBody, validateFields } from './fields.js';
 export { CSV_MAX_ROWS, notificationEmail, oneLine } from './routes.js';
+export { ownerSubmission, submissionsAuthority, submissionsCsv } from './owner.js';
 export { formSubmissions, type FieldValue, type FormSubmissionRow } from './schema.js';
 export { FORM_MIN_FILL_MS, FORM_TOKEN_TTL_MS, checkFormToken, formsKey, ipHash, issueFormToken } from './token.js';
 
@@ -101,6 +103,7 @@ const forms = defineModule<FormsConfig>({
     { env: 'FORMS_PER_APP_PER_DAY', default: 200, meaning: 'submissions one app may take per day (all its forms)' },
   ],
   routes: registerRoutes,
+  submissions: submissionsAuthority,
   sdk: {
     entry: sdkEntry,
     types: SDK_TYPES,

@@ -93,6 +93,15 @@ export default [
     'workspaces/:slug/apps/:appSlug/domains',
     'routes/workspaces.$slug.apps.$appSlug.domains.tsx'
   ),
+  // M2-03 (NSO-301): the owner's module tabs of an app — Forms (submissions,
+  // filter + CSV + delete), Users (end users: role, block, sign everyone out),
+  // Uploads (files module, nosniff preview/download, delete), Logs (get_logs).
+  route('workspaces/:slug/apps/:appSlug/forms', 'routes/workspaces.$slug.apps.$appSlug.forms.tsx'),
+  route('workspaces/:slug/apps/:appSlug/forms/export.csv', 'routes/workspaces.$slug.apps.$appSlug.forms.export-csv.ts'),
+  route('workspaces/:slug/apps/:appSlug/end-users', 'routes/workspaces.$slug.apps.$appSlug.end-users.tsx'),
+  route('workspaces/:slug/apps/:appSlug/uploads', 'routes/workspaces.$slug.apps.$appSlug.uploads.tsx'),
+  route('workspaces/:slug/apps/:appSlug/uploads/:fileId', 'routes/workspaces.$slug.apps.$appSlug.uploads.$fileId.ts'),
+  route('workspaces/:slug/apps/:appSlug/logs', 'routes/workspaces.$slug.apps.$appSlug.logs.tsx'),
   // M1-01 (NSO-287): the owner confirms/rejects a pending platform-module
   // change (configure_module → confirm_url; the M2-02 page calls this API).
   route(

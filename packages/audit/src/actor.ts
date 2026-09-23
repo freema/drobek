@@ -111,6 +111,24 @@ export const AUDIT_ACTIONS = {
   domainPrimary: 'domain.primary',
   /** M3-01: an owner removed a custom domain (Caddy's certificate expires on its own). */
   domainRemove: 'domain.remove',
+  /** M2-03: the owner edited a record in the dashboard Data tab (collection + id, never values). */
+  dataRecordUpdate: 'data.record_update',
+  /** M2-03: the owner deleted a record in the dashboard Data tab. */
+  dataRecordDelete: 'data.record_delete',
+  /** M2-03: the owner imported a CSV into a collection (collection + row count). */
+  dataImport: 'data.import',
+  /** M2-03: the owner deleted a collection (its records and its declaration). */
+  dataCollectionDelete: 'data.collection_delete',
+  /** M2-03: the owner deleted a form submission. */
+  formsSubmissionDelete: 'forms.submission_delete',
+  /** M2-03: the owner changed an end user's role (end-user id + role, never the address). */
+  endUserRole: 'end_users.role',
+  /** M2-03: the owner blocked an end user. */
+  endUserDisable: 'end_users.disable',
+  /** M2-03: the owner unblocked an end user. */
+  endUserEnable: 'end_users.enable',
+  /** M1-05 / M2-03: an uploaded file was deleted (by the app's end user, or by the owner in the dashboard). */
+  filesDelete: 'files.delete',
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];

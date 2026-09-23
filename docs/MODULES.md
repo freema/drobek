@@ -340,6 +340,87 @@ collections and `invalid_params`). `ModuleRuntime.records(app)` binds the
 authority to one app (`BoundRecords`); without a records module it returns
 null and both surfaces answer 404.
 
+### The owner's edits and the other owner authorities (M2-03)
+
+The dashboard's app tabs (Data, Forms, Users, Uploads, Logs) act for the
+app OWNER through the same kind of owner-facing authority — core never reads
+or writes a module's tables. Every authority call gets an `OwnerView`
+(`RecordsView` is the same type): the app, the module's effective config,
+`db`, `log` and `limits()` (the workspace's limits, memoized per call).
+Loaders are viewer+, mutations editor+ (and the dashboard origin check);
+core writes the audit row (actor kind `user`).
+
+Optional `records` methods (the built-in `data` has all three; a module
+without one answers `unavailable`):
+
+```ts
+records: {
+  update?(view, collection, id, fields)  // → record | null; the module validates (schema, size, quota)
+  importCsv?(view, collection, csv)      // → { imported }; ALL or nothing
+  dropCollection?(view, collection)      // → { records, configPatch }
+}
+```
+
+- `importCsv`: the header row names the fields (`_…` columns are skipped,
+  empty cells omitted, cells typed by the schema); at most
+  `RECORDS_IMPORT_MAX_ROWS` (5 000) data rows — the 5 001st is refused before
+  anything is written (`payload_too_large`). Every row is validated first; the
+  first bad one is a `validation_failed` whose message and `details.line`
+  name its line, and nothing is stored (one transaction under the app's
+  write lock). An owner import **bypasses `DATA_WRITE_RATE_LIMIT`** (a
+  deliberate bulk action by the owner, not app traffic) but **not** the
+  quotas: `DATA_MAX_DOCS_PER_APP`, the per-app bytes and the per-record size
+  still apply. Dashboard: `data.import` (row count only).
+- `dropCollection`: deletes the records and returns the config patch that
+  removes the collection; core applies the patch through the same path as
+  `configure_module` (config lock, merge-patch, `validateConfig`) and writes
+  the records deletion, the config and the `data.collection_delete` audit in
+  ONE transaction. The dashboard asks the owner to type the collection name.
+
+Optional `endUsers` owner methods (the built-in `auth` has them):
+
+```ts
+endUsers: {
+  current(...)                          // the per-request principal (required, as before)
+  list?(view, { search?, limit?, cursor? })   // → { users, total, next_cursor }
+  setRole?(view, id, role)              // → { user, configPatch }
+  setDisabled?(view, id, disabled)      // → user | null
+}
+```
+
+`setRole` returns a config patch (auth: the address into / out of
+`adminEmails`, and into `allow.emails` when demoting someone the config would
+otherwise not let in); core applies it like `dropCollection` and audits
+`end_users.role`. Because core asks the module about the user on every
+module request, the new role applies to the very next request. A workspace
+editor is always admin (`conflict`, `details.reason: 'workspace_editor'`).
+There is no per-user sign-out (sessions are not indexed per user): blocking
+ends a user's sessions at once, and "sign everyone out" is the app's session
+epoch (`end_users.sessions_revoke`).
+
+New optional authorities (at most one enabled module each, like `records`):
+
+```ts
+submissions: {                          // built-in forms
+  forms(view)                           // → form names
+  list(view, { form?, from?, to?, limit?, cursor? })  // → { submissions, total, next_cursor }
+  csv(view, query)                      // → AsyncIterable of CSV lines (formula-neutralized)
+  remove(view, id)                      // → boolean
+}
+files: {                                // built-in files
+  list(view, { limit?, cursor? })       // → { files, next_cursor, used_bytes, quota_bytes }
+  open(view, id)                        // → { file, stream } | null
+  remove(view, id)                      // → boolean (the module's cross-app dedup rule for the bytes)
+}
+```
+
+`ModuleRuntime.submissions(app)` / `.files(app)` / `.endUsers(app)` bind them
+to one app (null without such a module; the tab then says the module is not
+enabled). The dashboard serves an upload's bytes on its own origin only with
+the module's sniffed type, `nosniff`, `Content-Security-Policy: default-src
+'none'; sandbox`, and `inline` only for PNG / JPEG / GIF / WebP (everything
+else, SVG and PDF included, is an attachment).
+
 ## Per-app configuration
 
 Stored in `module_configs` (`app_id`, `module`, `config` jsonb, `pending`

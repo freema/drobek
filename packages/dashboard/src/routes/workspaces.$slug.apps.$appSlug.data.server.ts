@@ -27,5 +27,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       schemaSummary: schemaSummary(c.columns),
     })),
     role: access.effectiveRole,
+    /** A collection the owner just deleted (the notice after the redirect). */
+    dropped: (new URL(request.url).searchParams.get('dropped') ?? '').slice(0, 64),
   };
 }

@@ -96,6 +96,46 @@
       "types": "./src/routes/workspaces.$slug.apps.$appSlug.domains.server.ts",
       "default": "./dist/routes/workspaces.$slug.apps.$appSlug.domains.server.js"
     },
+    "./routes/workspaces.$slug.apps.$appSlug.forms": {
+      "types": "./src/routes/workspaces.$slug.apps.$appSlug.forms.tsx",
+      "default": "./dist/routes/workspaces.$slug.apps.$appSlug.forms.js"
+    },
+    "./routes/workspaces.$slug.apps.$appSlug.forms.server": {
+      "types": "./src/routes/workspaces.$slug.apps.$appSlug.forms.server.ts",
+      "default": "./dist/routes/workspaces.$slug.apps.$appSlug.forms.server.js"
+    },
+    "./routes/workspaces.$slug.apps.$appSlug.forms.export-csv.server": {
+      "types": "./src/routes/workspaces.$slug.apps.$appSlug.forms.export-csv.server.ts",
+      "default": "./dist/routes/workspaces.$slug.apps.$appSlug.forms.export-csv.server.js"
+    },
+    "./routes/workspaces.$slug.apps.$appSlug.end-users": {
+      "types": "./src/routes/workspaces.$slug.apps.$appSlug.end-users.tsx",
+      "default": "./dist/routes/workspaces.$slug.apps.$appSlug.end-users.js"
+    },
+    "./routes/workspaces.$slug.apps.$appSlug.end-users.server": {
+      "types": "./src/routes/workspaces.$slug.apps.$appSlug.end-users.server.ts",
+      "default": "./dist/routes/workspaces.$slug.apps.$appSlug.end-users.server.js"
+    },
+    "./routes/workspaces.$slug.apps.$appSlug.uploads": {
+      "types": "./src/routes/workspaces.$slug.apps.$appSlug.uploads.tsx",
+      "default": "./dist/routes/workspaces.$slug.apps.$appSlug.uploads.js"
+    },
+    "./routes/workspaces.$slug.apps.$appSlug.uploads.server": {
+      "types": "./src/routes/workspaces.$slug.apps.$appSlug.uploads.server.ts",
+      "default": "./dist/routes/workspaces.$slug.apps.$appSlug.uploads.server.js"
+    },
+    "./routes/workspaces.$slug.apps.$appSlug.uploads.$fileId.server": {
+      "types": "./src/routes/workspaces.$slug.apps.$appSlug.uploads.$fileId.server.ts",
+      "default": "./dist/routes/workspaces.$slug.apps.$appSlug.uploads.$fileId.server.js"
+    },
+    "./routes/workspaces.$slug.apps.$appSlug.logs": {
+      "types": "./src/routes/workspaces.$slug.apps.$appSlug.logs.tsx",
+      "default": "./dist/routes/workspaces.$slug.apps.$appSlug.logs.js"
+    },
+    "./routes/workspaces.$slug.apps.$appSlug.logs.server": {
+      "types": "./src/routes/workspaces.$slug.apps.$appSlug.logs.server.ts",
+      "default": "./dist/routes/workspaces.$slug.apps.$appSlug.logs.server.js"
+    },
     "./routes/workspaces.$slug.activity": {
       "types": "./src/routes/workspaces.$slug.activity.tsx",
       "default": "./dist/routes/workspaces.$slug.activity.js"

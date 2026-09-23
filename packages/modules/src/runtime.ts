@@ -20,19 +20,28 @@
  * route modules share the instance the server entry created).
  */
 import { appsOrigin, dashboardOrigin } from '@drobek/apps';
-import { actorKindForSurface, writeAudit } from '@drobek/audit';
+import { AUDIT_ACTIONS, actorKindForSurface, writeAudit } from '@drobek/audit';
 import { renderTextEmailHtml, sendEmail } from '@drobek/email';
 import { scanForSecrets } from '@drobek/compile';
 import { createConsoleLogger, getRedis, type Logger } from '@drobek/core';
 import { apps, getDb, memberships, runJournalMigrations, users, type DB } from '@drobek/db';
 import { recordModuleRequest } from '@drobek/insights';
 import { and, eq, inArray } from 'drizzle-orm';
+import type { Readable } from 'node:stream';
 import { z } from 'zod';
 import type {
   AnyModule,
   EmailMessage,
   EndUser,
+  EndUserListQuery,
+  EndUserPage,
+  EndUserRecord,
   HookApp,
+  OwnerFile,
+  OwnerFilesPage,
+  OwnerView,
+  SubmissionsPage,
+  SubmissionsQuery,
   Limits,
   MailEnvelope,
   ModuleContext,
@@ -50,7 +59,17 @@ import { createLimitsProvider, type LimitsProvider } from './limits.js';
 import { mailGuardConfigFromEnv, redisMailGuard, type MailGuard, type MailGuardRedis } from './mail-guard.js';
 import { jsonEqual, mergePatch } from './merge-patch.js';
 import { cookiePrincipalResolver, endUserCookiesSecure, type PrincipalResolver } from './principal.js';
-import { ModuleLoadError, checkRequires, endUserAuthorityOf, loadModules, mailAuthorityOf, recordsAuthorityOf, type ResolveOptions } from './registry.js';
+import {
+  ModuleLoadError,
+  checkRequires,
+  endUserAuthorityOf,
+  filesAuthorityOf,
+  loadModules,
+  mailAuthorityOf,
+  recordsAuthorityOf,
+  submissionsAuthorityOf,
+  type ResolveOptions,
+} from './registry.js';
 import { collectRoutes, errorResult, isReadable, matchRoute, runRoute, type PipelineRequest, type PipelineResult, type Route } from './router.js';
 import { decideAccess } from './rules.js';
 import { BEACON_SCRIPT_PATH, SDK_PATH, SDK_TYPES_PATH, buildSdk, moduleTypes, toPath, type SdkBundle } from './sdk-build.js';
@@ -226,6 +245,42 @@ export interface BoundRecords {
   get(collection: string, id: string): Promise<Record<string, unknown> | null>;
   remove(collection: string, id: string): Promise<boolean>;
   csv(query: Omit<RecordsQuery, 'limit' | 'cursor'>): AsyncIterable<string>;
+  /** Replace a record's fields (owner edit); null when it does not exist. `unavailable` when the module cannot. */
+  update(collection: string, id: string, fields: Record<string, unknown>): Promise<Record<string, unknown> | null>;
+  /** All-or-nothing CSV import (see RecordsAuthority.importCsv). */
+  importCsv(collection: string, csv: string): Promise<{ imported: number }>;
+  /**
+   * Delete a collection: its records and its declaration in the module's
+   * config, in ONE transaction under the config lock; audited
+   * `data.collection_delete` (actor user).
+   */
+  dropCollection(collection: string, actorUserId: string): Promise<{ records: number }>;
+}
+
+/** The end users of one app (the module that declares `endUsers`, bound to the app's config). */
+export interface BoundEndUsers {
+  module: string;
+  list(query: EndUserListQuery): Promise<EndUserPage>;
+  /** Change a role; a config change is applied under the config lock and audited `end_users.role` (actor user). */
+  setRole(id: string, role: 'user' | 'admin', actorUserId: string): Promise<EndUserRecord>;
+  setDisabled(id: string, disabled: boolean): Promise<EndUserRecord | null>;
+}
+
+/** The form submissions of one app (the module that declares `submissions`). */
+export interface BoundSubmissions {
+  module: string;
+  forms(): Promise<{ name: string; submissions: number }[]>;
+  list(query: SubmissionsQuery): Promise<SubmissionsPage>;
+  csv(query: Omit<SubmissionsQuery, 'limit' | 'cursor'>): AsyncIterable<string>;
+  remove(id: string): Promise<boolean>;
+}
+
+/** The end-user uploads of one app (the module that declares `files`). */
+export interface BoundFiles {
+  module: string;
+  list(query: { limit?: number; cursor?: string | null }): Promise<OwnerFilesPage>;
+  open(id: string): Promise<{ file: OwnerFile; stream: Readable } | null>;
+  remove(id: string): Promise<boolean>;
 }
 
 /** A pending change as the dashboard shows it (M2-02). */
@@ -276,6 +331,11 @@ const V1_RE = /^\/__drobek\/v1\/([^/]+)(\/.*)?$/;
 /** The dashboard page where the owner confirms a module change (M2-02 serves it). */
 export function confirmUrl(env: NodeJS.ProcessEnv, workspaceSlug: string, appSlug: string, module: string): string {
   return `${dashboardOrigin(env)}/workspaces/${encodeURIComponent(workspaceSlug)}/apps/${encodeURIComponent(appSlug)}/modules/${encodeURIComponent(module)}`;
+}
+
+/** An optional owner-facing authority method the active module does not implement. */
+function unsupported(module: string, what: string): ModuleError {
+  return new ModuleError('unavailable', `The ${module} module on this server does not support ${what}.`);
 }
 
 // ── the runtime ──────────────────────────────────────────────────────────────
@@ -337,7 +397,7 @@ export class ModuleRuntime {
     if (!m?.records) return null;
     const db = this.deps.db();
     const row = await readConfigRow(app.id, m.name, db);
-    const view: RecordsView = { app, config: this.effectiveConfig(m, row.config), db, log: this.deps.log };
+    const view: RecordsView = this.ownerView(app, this.effectiveConfig(m, row.config), db);
     const r = m.records;
     return {
       module: m.name,
@@ -346,6 +406,135 @@ export class ModuleRuntime {
       get: (collection, id) => r.get(view, collection, id),
       remove: (collection, id) => r.remove(view, collection, id),
       csv: (q) => r.csv(view, q),
+      update: async (collection, id, fields) => {
+        if (!r.update) throw unsupported(m.name, 'editing records');
+        return r.update(view, collection, id, fields);
+      },
+      importCsv: async (collection, csv) => {
+        if (!r.importCsv) throw unsupported(m.name, 'importing CSV');
+        return r.importCsv(view, collection, csv);
+      },
+      dropCollection: async (collection, actorUserId) => {
+        const drop = r.dropCollection?.bind(r);
+        if (!drop) throw unsupported(m.name, 'deleting collections');
+        return this.ownerConfigChange(m, app, actorUserId, async (config, tx) => {
+          const out = await drop(this.ownerView(app, config, tx), collection);
+          return {
+            patch: out.configPatch,
+            result: { records: out.records },
+            audit: { action: AUDIT_ACTIONS.dataCollectionDelete, meta: { module: m.name, collection, records: out.records } },
+          };
+        });
+      },
+    };
+  }
+
+  /** The OwnerView of `app` for an owner-facing authority (limits of the app's workspace, loaded once). */
+  private ownerView<C>(app: HookApp, config: C, db: DB): OwnerView<C> {
+    let limits: Promise<Limits> | null = null;
+    return { app, config, db, log: this.deps.log, limits: () => (limits ??= this.deps.limits.forWorkspace(app.workspaceId)) };
+  }
+
+  /**
+   * An OWNER's change of module `m`'s config for `app` (the dashboard, never
+   * an agent): under the config lock, `fn` gets the effective config and the
+   * transaction, does its own writes in it and returns a merge patch (or
+   * null); the patched config must pass configSchema. No confirmation: the
+   * owner is the one who confirms. A pending agent change stays pending.
+   */
+  private async ownerConfigChange<T>(
+    m: AnyModule,
+    app: HookApp,
+    actorUserId: string,
+    fn: (config: unknown, tx: DB) => Promise<{ patch: Record<string, unknown> | null; result: T; audit: { action: string; meta: Record<string, unknown> } }>
+  ): Promise<T> {
+    return withLockedConfig(app.id, m.name, async (row, write, tx) => {
+      const db = tx as unknown as DB;
+      const out = await fn(this.effectiveConfig(m, row.config), db);
+      if (out.patch) {
+        const nextStored = mergePatch(row.config, out.patch) as Record<string, unknown>;
+        this.validateConfig(m, mergePatch(m.configDefaults, nextStored));
+        if (!jsonEqual(nextStored, row.config)) await write({ config: nextStored });
+      }
+      await writeAudit(
+        {
+          workspaceId: app.workspaceId,
+          actorUserId,
+          actorKind: actorKindForSurface('web'),
+          action: out.audit.action,
+          subjectType: 'app',
+          target: app.slug,
+          meta: out.audit.meta,
+        },
+        tx
+      );
+      return out.result;
+    });
+  }
+
+  // ── end users (the owner's view) ──
+
+  /** The app's end users (the module that declares `endUsers`), or null. */
+  async endUsers(app: HookApp): Promise<BoundEndUsers | null> {
+    const m = endUserAuthorityOf(this.modules);
+    if (!m?.endUsers) return null;
+    const db = this.deps.db();
+    const row = await readConfigRow(app.id, m.name, db);
+    const view = this.ownerView(app, this.effectiveConfig(m, row.config), db);
+    const a = m.endUsers;
+    return {
+      module: m.name,
+      list: async (q) => {
+        if (!a.list) throw unsupported(m.name, 'listing end users');
+        return a.list(view, q);
+      },
+      setRole: async (id, role, actorUserId) => {
+        const setRole = a.setRole?.bind(a);
+        if (!setRole) throw unsupported(m.name, 'changing roles');
+        return this.ownerConfigChange(m, app, actorUserId, async (config, tx) => {
+          const out = await setRole(this.ownerView(app, config, tx), id, role);
+          return { patch: out.configPatch, result: out.user, audit: { action: AUDIT_ACTIONS.endUserRole, meta: { module: m.name, end_user: id, role } } };
+        });
+      },
+      setDisabled: async (id, disabled) => {
+        if (!a.setDisabled) throw unsupported(m.name, 'blocking users');
+        return a.setDisabled(view, id, disabled);
+      },
+    };
+  }
+
+  // ── submissions / files (the owner's view) ──
+
+  /** The app's form submissions (the module that declares `submissions`), or null. */
+  async submissions(app: HookApp): Promise<BoundSubmissions | null> {
+    const m = submissionsAuthorityOf(this.modules);
+    if (!m?.submissions) return null;
+    const db = this.deps.db();
+    const row = await readConfigRow(app.id, m.name, db);
+    const view = this.ownerView(app, this.effectiveConfig(m, row.config), db);
+    const a = m.submissions;
+    return {
+      module: m.name,
+      forms: () => a.forms(view),
+      list: (q) => a.list(view, q),
+      csv: (q) => a.csv(view, q),
+      remove: (id) => a.remove(view, id),
+    };
+  }
+
+  /** The app's end-user uploads (the module that declares `files`), or null. */
+  async files(app: HookApp): Promise<BoundFiles | null> {
+    const m = filesAuthorityOf(this.modules);
+    if (!m?.files) return null;
+    const db = this.deps.db();
+    const row = await readConfigRow(app.id, m.name, db);
+    const view = this.ownerView(app, this.effectiveConfig(m, row.config), db);
+    const a = m.files;
+    return {
+      module: m.name,
+      list: (q) => a.list(view, q),
+      open: (id) => a.open(view, id),
+      remove: (id) => a.remove(view, id),
     };
   }
 
@@ -1014,6 +1203,8 @@ export async function loadModuleRuntime(opts: LoadRuntimeOptions = {}): Promise<
   const authority = endUserAuthorityOf(modules);
   mailAuthorityOf(modules);
   recordsAuthorityOf(modules);
+  submissionsAuthorityOf(modules);
+  filesAuthorityOf(modules);
   checkRequires(modules);
 
   if (env.DROBEK_MIGRATE_ON_START !== '0') {

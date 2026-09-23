@@ -22,10 +22,12 @@ import { fileURLToPath } from 'node:url';
 import { defineModule } from '@drobek/modules';
 import { AUTH_CONFIG_DEFAULTS, authConfigSchema, authConfirmRequired, type AuthConfig } from './config.js';
 import { currentUser } from './current.js';
+import { ownerMethods } from './owner.js';
 import { registerRoutes } from './routes.js';
 
 export { AUTH_CONFIG_DEFAULTS, authConfigSchema, authConfirmRequired, decideSignIn, type AuthConfig } from './config.js';
 export { currentUser } from './current.js';
+export { endUserRecord, ownerMethods, workspaceEditorEmails } from './owner.js';
 export { otpScope, safeName, signInEmail, type PublicUser } from './routes.js';
 export { authUsers, type AuthUserRow } from './schema.js';
 
@@ -100,6 +102,8 @@ const auth = defineModule<AuthConfig>({
   routes: registerRoutes,
   endUsers: {
     current: async ({ app, user, config, db }) => (await currentUser(db, app, config, user.id))?.user ?? null,
+    // The owner's view (the dashboard Users tab): list, role, block.
+    ...ownerMethods,
   },
   sdk: {
     entry: sdkEntry,

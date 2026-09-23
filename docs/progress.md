@@ -178,6 +178,22 @@ block, then `next` is pushed and the single MR opened.
   `0016_apps_slug_release`. e2e `tests-e2e/tests/dashboard-app.spec.ts`
   written (not run in the task).
 
+- **M2-03 (NSO-301) — dashboard owner tabs.** Data tab: JSON record edit
+  (module-validated), CSV import (server-side `parseCsv` in `@drobek/core`,
+  ≤ 5 000 rows, all-or-nothing in one tx, the first bad row named by its
+  line; bypasses the write rate limit, not the quotas), delete collection
+  (typed name; records + config patch + audit in one tx through the
+  runtime's owner config path). New tabs `…/apps/:appSlug/forms` (filter by
+  form + UTC day range, CSV, delete), `…/end-users` (role, block, sign
+  everyone out), `…/uploads` (list, raster preview proxied by the dashboard
+  with nosniff + sandbox CSP, delete) and `…/logs` (the `get_logs` readers,
+  since + Refresh). Contract: optional `records.update/importCsv/
+  dropCollection`, `endUsers.list/setRole/setDisabled`, new `submissions` and
+  `files` authorities (`OwnerView` with `limits()`); new audit actions
+  `data.*`, `forms.submission_delete`, `end_users.role|disable|enable`,
+  `files.delete`. No migration. e2e `tests-e2e/tests/dashboard-app-data.spec.ts`
+  written (not run).
+
 ## Next
 
 - M0-09 (NSO-299) is blocked on Tomáš (VPS/DNS): it must provision
@@ -532,6 +548,16 @@ block, then `next` is pushed and the single MR opened.
 - Deleting an app cascades its `mod_files` rows but leaves the blobs on disk
   (a blob may be shared with another app, and there is no sweeper yet) —
   M2-01's app deletion must remove blobs that no remaining row references.
+- The auth module has no per-user session index, so the Users tab cannot
+  sign ONE user out — blocking does (their sessions end on the next
+  request); "sign everyone out" bumps the app's session epoch. An end user's
+  role lives in the auth CONFIG (`adminEmails`), so a dashboard role change
+  is a config write (audited `end_users.role`), not a row update.
+- `loadModuleRuntime({ modules })` (the test path) skips `validateModule`;
+  a test of an incomplete authority must call `validateModule` itself.
+- The owner CSV import skips `DATA_WRITE_RATE_LIMIT` on purpose but keeps
+  every quota; imported records get `created_at = now + row index` ms so the
+  newest-first table shows them in file order reversed and stays stable.
 
 - Block-end e2e after parallel merges: expect stale expectations, not bugs —
   the read-scope tools list (`get_logs`, `query_data`), the module `available`

@@ -4,15 +4,18 @@
  * order); rows are records newest-first; non-schema keys sit under a per-row
  * expander. A field FILTER + a SORT submit as GET params (round-tripped through
  * the loader → the data module's records query). A read-only JSON viewer opens for one record.
- * An editor+ may delete a record via a confirm step; a viewer sees no delete
- * control. All values arrive pre-shaped — this file stays client-safe (imports
- * only react-router + the server-free ../view.js).
+ * An editor+ may delete a record via a confirm step, edit one in a JSON
+ * editor (validated by the data module), import a CSV file (all or nothing)
+ * and delete the whole collection after typing its name; a viewer sees none
+ * of these controls. All values arrive pre-shaped — this file stays
+ * client-safe (imports only react-router + server-free helpers).
  */
 import { Form, Link, useActionData, useLoaderData } from 'react-router';
 import type {
   action,
   loader,
 } from './workspaces.$slug.apps.$appSlug.data.$collection.server.js';
+import { AppSubnav } from '../owner-ui.js';
 import { formatTimestamp } from '../view.js';
 
 export function meta({
@@ -176,6 +179,44 @@ const styles = {
     marginBottom: '0.4rem',
   },
   back: { fontSize: '0.9rem', color: '#555', marginTop: '2rem' },
+  notice: {
+    background: '#f0fdf4',
+    border: '1px solid #bbf7d0',
+    color: '#166534',
+    borderRadius: '8px',
+    padding: '0.6rem 0.75rem',
+    fontSize: '0.9rem',
+    margin: '1rem 0',
+  },
+  ownerBar: {
+    display: 'flex',
+    gap: '0.75rem',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    margin: '0.75rem 0',
+    fontSize: '0.85rem',
+  },
+  textarea: {
+    width: '100%',
+    minHeight: '14rem',
+    fontFamily: 'ui-monospace, monospace',
+    fontSize: '0.8rem',
+    padding: '0.6rem',
+    border: '1px solid #d4d4d8',
+    borderRadius: '8px',
+    boxSizing: 'border-box',
+  },
+  editBtn: {
+    padding: '0.35rem 0.8rem',
+    fontSize: '0.85rem',
+    fontFamily: 'inherit',
+    fontWeight: 600,
+    color: '#fff',
+    background: '#1a1a1a',
+    border: 'none',
+    borderRadius: '7px',
+    cursor: 'pointer',
+  },
 } as const;
 
 export default function CollectionTableRoute() {
@@ -191,21 +232,26 @@ export default function CollectionTableRoute() {
     confirmId,
     openRecord,
     canDelete,
+    editRecord,
+    dropOpen,
+    imported,
+    importMaxRows,
   } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
 
   const dataBase = `/workspaces/${workspace.slug}/apps/${appSlug}/data`;
   const collBase = `${dataBase}/${collection.name}`;
   const sortOptions = [...columns.map((c) => c.key), '_created_at', '_updated_at'];
+  const failed = actionData && 'error' in actionData ? actionData : null;
+  // A failed save keeps the owner's text in the editor.
+  const editJson = failed?.intent === 'update' && 'json' in failed ? String(failed.json) : editRecord?.json ?? '';
 
   return (
     <main style={styles.main}>
+      <AppSubnav workspaceSlug={workspace.slug} appSlug={appSlug} current="data" />
       <p style={styles.nav}>
         <Link to={dataBase} style={styles.navLink}>
-          ← Data
-        </Link>
-        <Link to={`/workspaces/${workspace.slug}/apps/${appSlug}`} style={styles.navLink}>
-          {appSlug}
+          ← All collections
         </Link>
       </p>
 
@@ -216,10 +262,79 @@ export default function CollectionTableRoute() {
         </span>
       </div>
 
-      {actionData?.error ? (
-        <div style={styles.error} role="alert" data-testid="data-error">
-          {actionData.error}
+      {failed ? (
+        <div style={styles.error} role="alert" data-testid="data-error" data-intent={failed.intent}>
+          {failed.error}
         </div>
+      ) : null}
+
+      {imported !== null ? (
+        <div style={styles.notice} role="status" data-testid="import-done">
+          Imported {imported} {imported === 1 ? 'record' : 'records'}.
+        </div>
+      ) : null}
+
+      {/* The owner's collection tools (editor+): CSV import, delete the collection. */}
+      {canDelete ? (
+        <div style={styles.ownerBar} data-testid="owner-tools">
+          <Form method="post" encType="multipart/form-data" style={styles.ownerBar} data-testid="import-form">
+            <input type="hidden" name="intent" value="import" />
+            <label style={styles.label} htmlFor="import-file">
+              Import CSV
+            </label>
+            <input id="import-file" type="file" name="file" accept=".csv,text/csv" required data-testid="import-file" />
+            <button type="submit" style={styles.applyBtn} data-testid="import-submit">
+              Import
+            </button>
+            <span style={{ color: '#71717a' }}>
+              header = field names, ≤ {importMaxRows} rows, all or nothing
+            </span>
+          </Form>
+          <Link to={`${collBase}?drop=1`} style={{ ...styles.delLink, marginLeft: 'auto' }} data-testid="drop-link">
+            Delete collection…
+          </Link>
+        </div>
+      ) : null}
+
+      {dropOpen ? (
+        <Form method="post" style={styles.modal} data-testid="drop-form">
+          <input type="hidden" name="intent" value="drop-collection" />
+          <p style={{ margin: '0 0 0.5rem' }}>
+            This deletes <strong>{collection.name}</strong> — its {collection.records}{' '}
+            {collection.records === 1 ? 'record' : 'records'} and its declaration in the app&apos;s data config. The app&apos;s
+            code that uses it will get 404s. Type the collection name to confirm.
+          </p>
+          <input name="confirm_name" autoComplete="off" style={styles.input} aria-label="Collection name" data-testid="drop-confirm-name" />{' '}
+          <button type="submit" style={styles.delBtn} data-testid="drop-confirm">
+            Delete collection
+          </button>{' '}
+          <Link to={collBase} style={styles.actionLink} data-testid="drop-cancel">
+            Cancel
+          </Link>
+        </Form>
+      ) : null}
+
+      {/* The JSON editor for one record (editor+). */}
+      {editRecord ? (
+        <Form method="post" style={styles.modal} aria-label="Edit record" data-testid="edit-form">
+          <div style={styles.modalHead}>
+            <strong style={styles.mono}>Edit {editRecord.id}</strong>
+            <span style={{ color: '#71717a', fontSize: '0.8rem' }}>
+              the record&apos;s own fields as JSON; _id, _owner and the times stay
+            </span>
+          </div>
+          <input type="hidden" name="intent" value="update" />
+          <input type="hidden" name="id" value={editRecord.id} />
+          <textarea key={editJson} name="json" defaultValue={editJson} style={styles.textarea} spellCheck={false} data-testid="edit-json" />
+          <div style={{ marginTop: '0.5rem' }}>
+            <button type="submit" style={styles.editBtn} data-testid="edit-save">
+              Save
+            </button>{' '}
+            <Link to={`${collBase}${toSearch(baseSearch)}`} style={styles.actionLink} data-testid="edit-cancel">
+              Cancel
+            </Link>
+          </div>
+        </Form>
       ) : null}
 
       {/* FILTER + SORT — GET form, round-tripped through the loader. */}
@@ -362,6 +477,15 @@ export default function CollectionTableRoute() {
                     >
                       View
                     </Link>
+                    {canDelete ? (
+                      <Link
+                        to={`${collBase}${toSearch(baseSearch, { edit: r.id })}`}
+                        style={styles.actionLink}
+                        data-testid="record-edit"
+                      >
+                        Edit
+                      </Link>
+                    ) : null}
                     {canDelete ? (
                       confirmId === r.id ? (
                         <Form

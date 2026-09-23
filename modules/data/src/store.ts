@@ -13,6 +13,7 @@ import { and, eq, sql, type SQL } from 'drizzle-orm';
 import type { DB } from '@drobek/db';
 import type { Condition, CursorState, ScalarValue, SortSpec } from './query-build.js';
 import { encodeCursor } from './query-build.js';
+import { DataError } from './errors.js';
 import { docByteSize, enforceWriteQuota, type DataQuotaLimits } from './quota.js';
 import { dataRecords, type DataRecordRow } from './schema.js';
 
@@ -119,6 +120,49 @@ export async function replaceRecord(
       .returning();
     return row ?? null;
   });
+}
+
+/**
+ * Insert many records at once (the owner's CSV import): ONE transaction under
+ * the app's write lock, the quota checked for the whole batch first — either
+ * every record is stored or none. `created_at` rises by a millisecond per
+ * record, so the file's order is the creation order.
+ */
+export async function insertRecords(
+  db: DB,
+  input: { appId: string; collection: string; docs: Record<string, unknown>[]; limits: DataQuotaLimits }
+): Promise<number> {
+  const sized = input.docs.map((doc) => ({ doc, bytes: docByteSize(doc) }));
+  return withAppWriteLock(db, input.appId, async (tx) => {
+    const u = await usage(tx, input.appId);
+    const total = sized.reduce((a, d) => a + d.bytes, 0);
+    for (const d of sized) {
+      enforceWriteQuota({ limits: input.limits, newDocBytes: d.bytes, liveDocCount: 0, liveBytesExcludingTarget: 0, isCreate: false });
+    }
+    if (u.count + sized.length > input.limits.maxDocsPerApp) {
+      throw new DataError(
+        'quota_exceeded',
+        `The import would store ${u.count + sized.length} records; this app may store at most ${input.limits.maxDocsPerApp} (${u.count} stored).`,
+        { details: { limit: 'DATA_MAX_DOCS_PER_APP', value: input.limits.maxDocsPerApp } }
+      );
+    }
+    enforceWriteQuota({ limits: input.limits, newDocBytes: total, liveDocCount: 0, liveBytesExcludingTarget: u.bytes, isCreate: false });
+    const base = Date.now();
+    for (let i = 0; i < sized.length; i += 500) {
+      const chunk = sized.slice(i, i + 500).map((d, j) => {
+        const at = new Date(base + i + j);
+        return { id: newRecordId(), appId: input.appId, collection: input.collection, ownerId: null, doc: d.doc, bytes: d.bytes, createdAt: at, updatedAt: at };
+      });
+      await tx.insert(dataRecords).values(chunk);
+    }
+    return sized.length;
+  });
+}
+
+/** Delete every record of one collection of an app; how many were deleted. */
+export async function deleteCollectionRecords(db: DB, appId: string, collection: string): Promise<number> {
+  const rows = await db.delete(dataRecords).where(scope(appId, collection)).returning({ id: dataRecords.id });
+  return rows.length;
 }
 
 export async function deleteRecord(db: DB, appId: string, collection: string, id: string): Promise<boolean> {

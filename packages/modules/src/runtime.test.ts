@@ -19,6 +19,7 @@ import { defineModule, type AnyModule } from './contract.js';
 import { cookiePrincipalResolver, createEndUserSession, loadEndUserSession } from './principal.js';
 import { ModuleRuntime, loadModuleRuntime, memoryRateLimiter, type PlatformRequest, type RuntimeDeps, type TransportMessage } from './runtime.js';
 import { memoryMailGuard, type MailGuard, type MailGuardConfig } from './mail-guard.js';
+import { validateModule } from './registry.js';
 import { setModuleSecret } from './secrets.server.js';
 import { freshDb, type TestDb } from './test/db.js';
 import { echo, quiet } from './test/fixtures.js';
@@ -827,5 +828,98 @@ describe('the records authority (query_data, the dashboard Data tab)', () => {
     const lines: string[] = [];
     for await (const l of bound!.csv({ collection: 'x' })) lines.push(l);
     expect(lines).toEqual(['a']);
+  });
+});
+
+describe("the owner's authorities (M2-03): owner config changes, end users, submissions, files", () => {
+  const base = { version: '1.0.0', skill: { useWhen: 'x', markdown: '# x' } };
+  const hook = () => ({ id: app.id, slug: app.slug, workspaceId: app.workspaceId });
+  const dropped: string[] = [];
+
+  const store = defineModule({
+    ...base,
+    name: 'store',
+    configSchema: z.object({ tables: z.record(z.string(), z.object({ n: z.number() })).default({}) }),
+    configDefaults: { tables: {} },
+    records: {
+      collections: async () => [],
+      query: async () => ({ collection: { name: 'x', rules: {}, schema: null, columns: [], records: 0 }, records: [], total: 0, next_cursor: null }),
+      get: async () => null,
+      remove: async () => false,
+      csv: async function* () {},
+      dropCollection: async (view, name) => {
+        if (typeof (view.db as { select?: unknown }).select !== 'function') throw new Error('no tx');
+        dropped.push(name);
+        // `bad` produces a config the schema refuses → the whole change rolls back.
+        return { records: 3, configPatch: name === 'bad' ? { tables: { bad: { n: 'x' } } } : { tables: { [name]: null } } };
+      },
+    },
+  });
+  const people = defineModule({
+    ...base,
+    name: 'people',
+    configSchema: z.object({ admins: z.array(z.string()).default([]) }),
+    configDefaults: { admins: [] },
+    endUsers: {
+      current: async ({ user }) => user,
+      setRole: async (view, id, role) => ({
+        user: { id, email: `${id}@x.cz`, role, roleSource: role === 'admin' ? 'config' : null, status: 'active', created_at: '', last_sign_in_at: null },
+        configPatch: role === 'admin' ? { admins: [...(view.config as { admins: string[] }).admins, id] } : null,
+      }),
+    },
+  });
+
+  async function load(modules: AnyModule[]) {
+    return loadModuleRuntime({
+      env: ENV,
+      log: noopLogger,
+      modules,
+      skillsDir,
+      deps: { rateLimit: memoryRateLimiter(), principal: async () => ({ kind: 'anon' }), email: { send: async () => {} } },
+    });
+  }
+
+  it('dropCollection: the patch and the audit land in one transaction; a patch the schema refuses rolls everything back', async () => {
+    const r = await load([store]);
+    await r.configure({ app, module: 'store', patch: { tables: { todos: { n: 1 }, keep: { n: 2 } } }, actorUserId: userId });
+    const bound = (await r.records(hook()))!;
+    expect(await bound.dropCollection('todos', userId)).toEqual({ records: 3 });
+    const [row] = await db.select().from(moduleConfigs).where(eq(moduleConfigs.appId, app.id));
+    expect(row.config).toEqual({ tables: { keep: { n: 2 } } });
+    const audits = await db.select().from(auditLog).where(eq(auditLog.action, 'data.collection_delete'));
+    expect(audits.at(-1)).toMatchObject({ actorKind: 'user', actorUserId: userId, target: app.slug, meta: { collection: 'todos', records: 3, module: 'store' } });
+
+    const before = audits.length;
+    await expect(bound.dropCollection('bad', userId)).rejects.toMatchObject({ code: 'invalid_params' });
+    expect((await db.select().from(auditLog).where(eq(auditLog.action, 'data.collection_delete'))).length).toBe(before);
+    await expect(bound.update('keep', 'id', {})).rejects.toMatchObject({ code: 'unavailable' });
+    await expect(bound.importCsv('keep', 'a')).rejects.toMatchObject({ code: 'unavailable' });
+  });
+
+  it("setRole applies the module's config patch (audited end_users.role); missing owner methods → unavailable; no module → null", async () => {
+    const r = await load([people]);
+    const users = (await r.endUsers(hook()))!;
+    expect(await users.setRole('eu_1', 'admin', userId)).toMatchObject({ role: 'admin' });
+    const [row] = await db.select().from(moduleConfigs).where(eq(moduleConfigs.module, 'people'));
+    expect(row.config).toEqual({ admins: ['eu_1'] });
+    const audit = (await db.select().from(auditLog).where(eq(auditLog.action, 'end_users.role'))).at(-1);
+    expect(audit).toMatchObject({ actorKind: 'user', meta: { end_user: 'eu_1', role: 'admin', module: 'people' } });
+    await expect(users.list({})).rejects.toMatchObject({ code: 'unavailable' });
+    await expect(users.setDisabled('eu_1', true)).rejects.toMatchObject({ code: 'unavailable' });
+
+    expect(await r.submissions(hook())).toBeNull();
+    expect(await r.files(hook())).toBeNull();
+    expect(await (await load([store])).endUsers(hook())).toBeNull();
+  });
+
+  it('refuses a module whose submissions / files authority is incomplete, and two modules declaring one', async () => {
+    const half = defineModule({ ...base, name: 'half', configSchema: z.object({}), configDefaults: {}, files: { list: async () => ({ files: [], next_cursor: null, used_bytes: 0, quota_bytes: 0 }) } as never });
+    expect(() => validateModule(half)).toThrow(/files\.open must be a function/);
+    const subs = { forms: async () => [], list: async () => ({ submissions: [], total: 0, next_cursor: null }), csv: async function* () {}, remove: async () => false };
+    const a = defineModule({ ...base, name: 'formsa', configSchema: z.object({}), configDefaults: {}, submissions: subs });
+    const b = defineModule({ ...base, name: 'formsb', configSchema: z.object({}), configDefaults: {}, submissions: subs });
+    await expect(load([a, b])).rejects.toThrow(/only one module may store form submissions/);
+    const one = await load([a]);
+    expect((await one.submissions(hook()))?.module).toBe('formsa');
   });
 });

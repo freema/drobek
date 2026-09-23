@@ -23,6 +23,7 @@ import forms, {
   ipHash,
   issueFormToken,
   notificationEmail,
+  submissionsAuthority,
   validateFields,
 } from './index.js';
 
@@ -394,5 +395,65 @@ describe('reading submissions (admins only)', () => {
     expect(head).toBe('id,created_at,n,name,note,plain,tab');
     expect(line).toContain(",'=1+1,'@SUM(A1),\"a,\"\"b\"\"\",'\tx");
     expect(t.audits).toEqual([{ action: 'forms.export', meta: { form: 'contact', rows: 1 } }]);
+  });
+});
+
+describe("the owner's view (submissions authority, M2-03)", () => {
+  const view = (app = appId) => ({
+    app: { id: app, slug: 'shop', workspaceId },
+    config: formsConfigSchema.parse({ forms: { contact: {}, quiet: {} } }),
+    db,
+    log: logger() as never,
+    limits: async () => ({}),
+  });
+
+  async function seed(form: string, at: string, data: Record<string, unknown>, app = appId): Promise<string> {
+    const id = `fs_${Math.random().toString(16).slice(2).padEnd(24, '0').slice(0, 24)}`;
+    await db.insert(formSubmissions).values({ id, appId: app, form, data: data as never, createdAt: new Date(at) });
+    return id;
+  }
+
+  it('forms: declared + stored, with counts; list: form filter, [from, to) range, keyset pages, total', async () => {
+    const [other] = await db.insert(apps).values({ workspaceId, slug: 'other-shop', name: 'Other' }).returning();
+    await seed('contact', '2026-09-01T10:00:00Z', { name: 'a' });
+    await seed('contact', '2026-09-02T10:00:00Z', { name: 'b' });
+    await seed('order', '2026-09-03T10:00:00Z', { qty: 2 });
+    await seed('contact', '2026-09-04T10:00:00Z', { name: 'c' });
+    await seed('contact', '2026-09-04T11:00:00Z', { name: 'foreign' }, other.id);
+
+    expect(await submissionsAuthority.forms(view())).toEqual([
+      { name: 'contact', submissions: 3 },
+      { name: 'order', submissions: 1 },
+      { name: 'quiet', submissions: 0 },
+    ]);
+    const all = await submissionsAuthority.list(view(), {});
+    expect(all.total).toBe(4);
+    expect(all.submissions.map((x) => x.data.name ?? x.form)).toEqual(['c', 'order', 'b', 'a']);
+
+    const ranged = await submissionsAuthority.list(view(), { form: 'contact', from: '2026-09-02T00:00:00Z', to: '2026-09-04T00:00:00Z' });
+    expect(ranged).toMatchObject({ total: 1, next_cursor: null, submissions: [{ form: 'contact', data: { name: 'b' }, notified: false }] });
+
+    const p1 = await submissionsAuthority.list(view(), { form: 'contact', limit: 2 });
+    expect(p1.submissions.map((x) => x.data.name)).toEqual(['c', 'b']);
+    const p2 = await submissionsAuthority.list(view(), { form: 'contact', limit: 2, cursor: p1.next_cursor });
+    expect(p2).toMatchObject({ next_cursor: null, submissions: [{ data: { name: 'a' } }] });
+
+    await expect(submissionsAuthority.list(view(), { form: 'Bad Name' })).rejects.toMatchObject({ code: 'invalid_request' });
+    await expect(submissionsAuthority.list(view(), { from: 'yesterday' })).rejects.toMatchObject({ code: 'invalid_request' });
+    await expect(submissionsAuthority.list(view(), { cursor: 'junk' })).rejects.toMatchObject({ code: 'invalid_request' });
+  });
+
+  it('csv: id, form, created_at + sorted fields, the filter applied, formulas neutralized; remove: this app only', async () => {
+    const id = await seed('contact', '2026-09-01T10:00:00Z', { name: '=1+1', tags: ['x', 'y'] });
+    await seed('order', '2026-09-02T10:00:00Z', { qty: 2 });
+    const lines: string[] = [];
+    for await (const l of submissionsAuthority.csv(view(), { form: 'contact' })) lines.push(l);
+    expect(lines).toEqual(['id,form,created_at,name,tags', `${id},contact,2026-09-01T10:00:00.000Z,'=1+1,"x, y"`]);
+
+    const [other] = await db.insert(apps).values({ workspaceId, slug: 'third-shop', name: 'Third' }).returning();
+    expect(await submissionsAuthority.remove(view(other.id), id)).toBe(false);
+    expect(await submissionsAuthority.remove(view(), id)).toBe(true);
+    expect(await submissionsAuthority.remove(view(), id)).toBe(false);
+    expect((await submissionsAuthority.list(view(), {})).total).toBe(1);
   });
 });

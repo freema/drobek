@@ -20,7 +20,9 @@ import {
   isDefinedModule,
   loadModules,
   memoryMailGuard,
+  mergePatch,
   revokeEndUserSessions,
+  type OwnerView,
 } from '@drobek/modules';
 import { createModuleTestContext, type ModuleTestContext } from '@drobek/modules/testing';
 import { noopLogger } from '@drobek/core';
@@ -442,5 +444,84 @@ describe('drobek-module-auth — sign-in', () => {
     const m = signInEmail({ appName: '<b>Shop</b>', host: null, code: '123456' });
     expect(m.subject).toBe('123456 is your sign-in code for <b>Shop</b>');
     expect(m.text).not.toContain(' on ');
+  });
+});
+
+describe("drobek-module-auth — the owner's view (M2-03)", () => {
+  type Config = ReturnType<typeof authConfigSchema.parse>;
+  const view = (config: Config): OwnerView<Config> => ({ app: APP(), config, db, log: noopLogger, limits: async () => ({}) });
+  const owner = auth.endUsers!;
+
+  async function seedUser(email: string, at: string, extra: Partial<typeof authUsers.$inferInsert> = {}): Promise<string> {
+    const id = `eu_${createHash('sha256').update(email).digest('hex').slice(0, 24)}`;
+    await db.insert(authUsers).values({ id, appId, email, role: 'user', createdAt: new Date(at), lastLoginAt: new Date(at), ...extra });
+    return id;
+  }
+  const now = async (config: Config, id: string, email: string) => owner.current({ app: APP(), user: { id, email, role: 'user' }, config, db, log: noopLogger });
+
+  it('list: role and why, status, search, keyset pages (newest first)', async () => {
+    const config = authConfigSchema.parse(CONFIG);
+    await seedUser('ana@example.com', '2026-09-01T10:00:00Z');
+    await seedUser('boss@example.com', '2026-09-02T10:00:00Z');
+    await seedUser('builder@example.com', '2026-09-03T10:00:00Z');
+    await seedUser('gone@example.com', '2026-09-04T10:00:00Z');
+    await seedUser('eva@firma.cz', '2026-09-05T10:00:00Z', { disabledAt: new Date() });
+
+    const all = await owner.list!(view(config), {});
+    expect(all.total).toBe(5);
+    expect(all.users.map((u) => [u.email, u.role, u.roleSource, u.status])).toEqual([
+      ['eva@firma.cz', 'user', null, 'disabled'],
+      ['gone@example.com', 'user', null, 'not_allowed'],
+      ['builder@example.com', 'admin', 'workspace', 'active'],
+      ['boss@example.com', 'admin', 'config', 'active'],
+      ['ana@example.com', 'user', null, 'active'],
+    ]);
+    expect((await owner.list!(view(config), { search: 'EXAMPLE.com' })).total).toBe(4);
+    expect((await owner.list!(view(config), { search: '%' })).total).toBe(0);
+    const p1 = await owner.list!(view(config), { limit: 2 });
+    const p2 = await owner.list!(view(config), { limit: 2, cursor: p1.next_cursor });
+    const p3 = await owner.list!(view(config), { limit: 2, cursor: p2.next_cursor });
+    expect([...p1.users, ...p2.users, ...p3.users].map((u) => u.email)).toHaveLength(5);
+    expect(p3.next_cursor).toBeNull();
+    await expect(owner.list!(view(config), { cursor: 'junk' })).rejects.toMatchObject({ code: 'invalid_request' });
+  });
+
+  it('setRole returns the config patch that gives the role; the next current() answers with it', async () => {
+    let config = authConfigSchema.parse(CONFIG);
+    const ana = await seedUser('ana@example.com', '2026-09-01T10:00:00Z');
+    const boss = await seedUser('boss@example.com', '2026-09-02T10:00:00Z');
+    const apply = (patch: Record<string, unknown> | null) => {
+      if (patch) config = authConfigSchema.parse(mergePatch(config, patch));
+    };
+
+    const up = await owner.setRole!(view(config), ana, 'admin');
+    expect(up.configPatch).toEqual({ adminEmails: ['boss@example.com', 'ana@example.com'] });
+    expect(up.user).toMatchObject({ role: 'admin', roleSource: 'config' });
+    apply(up.configPatch);
+    expect(await now(config, ana, 'ana@example.com')).toMatchObject({ role: 'admin' });
+
+    // boss is admin only through adminEmails: demoted, they stay allowed as a user.
+    const down = await owner.setRole!(view(config), boss, 'user');
+    expect(down.configPatch).toEqual({ adminEmails: ['ana@example.com'], allow: { emails: ['ana@example.com', 'boss@example.com'] } });
+    apply(down.configPatch);
+    expect(await now(config, boss, 'boss@example.com')).toMatchObject({ role: 'user' });
+    expect(config.allow).toMatchObject({ domains: ['firma.cz'], anyone: false });
+
+    // Unchanged role → no patch.
+    expect((await owner.setRole!(view(config), ana, 'admin')).configPatch).toBeNull();
+    await expect(owner.setRole!(view(config), 'eu_000000000000000000000000', 'admin')).rejects.toMatchObject({ code: 'not_found' });
+  });
+
+  it('a workspace editor is always admin (conflict); setDisabled blocks and unblocks (current null → back)', async () => {
+    const config = authConfigSchema.parse(CONFIG);
+    const builder = await seedUser('builder@example.com', '2026-09-01T10:00:00Z');
+    await expect(owner.setRole!(view(config), builder, 'user')).rejects.toMatchObject({ code: 'conflict', details: { reason: 'workspace_editor' } });
+
+    const ana = await seedUser('ana@example.com', '2026-09-02T10:00:00Z');
+    expect(await owner.setDisabled!(view(config), ana, true)).toMatchObject({ status: 'disabled' });
+    expect(await now(config, ana, 'ana@example.com')).toBeNull();
+    expect(await owner.setDisabled!(view(config), ana, false)).toMatchObject({ status: 'active' });
+    expect(await now(config, ana, 'ana@example.com')).toMatchObject({ role: 'user' });
+    expect(await owner.setDisabled!(view(config), 'eu_000000000000000000000000', true)).toBeNull();
   });
 });
