@@ -99,10 +99,12 @@ function customGet(path = '/'): Promise<Raw> {
     const req = httpRequest(
       { host: '127.0.0.1', port, path, method: 'GET', headers: { Host: HOST_WITH_PORT }, setHost: false },
       (res) => {
-        let body = '';
-        res.setEncoding('utf8');
-        res.on('data', (c: string) => (body += c));
-        res.on('end', () => resolve({ status: res.statusCode ?? 0, headers: res.headers, body }));
+        const chunks: Buffer[] = [];
+        res.on('data', (c: Buffer) => chunks.push(c));
+        res.on('end', () => {
+          const bytes = Buffer.concat(chunks);
+          resolve({ status: res.statusCode ?? 0, headers: res.headers, body: bytes.toString('utf8'), bytes });
+        });
       }
     );
     req.setTimeout(15_000, () => req.destroy(new Error(`timeout: http://${HOST_WITH_PORT}${path}`)));
