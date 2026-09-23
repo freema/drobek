@@ -34,10 +34,17 @@ app owner in the dashboard.
   operator enables with `DROBEK_MODULES` (routes under `/__drobek/v1/<name>`,
   `drobek.<name>` in the browser SDK, a per-app config, a skill for the agent);
   the contract is [`docs/MODULES.md`](./docs/MODULES.md). Built in
-  (`modules/`, enable with `DROBEK_MODULES=auth`):
+  (`modules/`, enable with `DROBEK_MODULES=auth,email,forms`):
   - **`auth`** — the people who use an app sign in with an e-mailed 6-digit
     code: an allowlist of addresses and domains, admins, a React
     `<LoginGate>`, host-only 30-day sessions the owner can revoke at once.
+  - **`email`** — `drobek.email.notifyAdmins()` e-mails the app's owners; the
+    app's sender name, reply-to and daily mail limit. Apps can never e-mail an
+    arbitrary address; an operator-wide hourly cap pauses all module mail.
+  - **`forms`** — a React `<Form name="contact">` (or
+    `drobek.forms.submit()`): submissions stored and e-mailed to the owners,
+    with a honeypot, a time token and per-visitor limits; admins list and
+    export them as CSV. Requires `email`.
 
 The full plan is [`docs/vision-plan.md`](./docs/vision-plan.md).
 

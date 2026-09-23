@@ -11,6 +11,10 @@
     "./rest": {
       "types": "./src/rest.server.ts",
       "default": "./dist/rest.server.js"
+    },
+    "./columns": {
+      "types": "./src/columns.ts",
+      "default": "./dist/columns.js"
     }
   },
   "scripts": {

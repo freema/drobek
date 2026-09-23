@@ -1,0 +1,31 @@
+{
+  "name": "@drobek/email",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The operator's outgoing e-mail: the SMTP transport (nodemailer), the drobek layout and plain-text messages. Shared by the dashboard login, workspace invites and the platform module e-mail.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest",
+    "test:run": "vitest run"
+  },
+  "dependencies": {
+    "nodemailer": "^6.9.16"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "@types/nodemailer": "^6.4.17",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.7"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

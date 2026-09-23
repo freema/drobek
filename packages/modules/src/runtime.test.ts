@@ -8,16 +8,17 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { apps, auditLog, moduleConfigs, moduleSecrets, users, workspaces } from '@drobek/db';
+import { apps, auditLog, memberships, moduleConfigs, moduleSecrets, users, workspaces } from '@drobek/db';
 import { eq } from 'drizzle-orm';
 import { noopLogger } from '@drobek/core';
 import { createLimitsProvider } from './limits.js';
 import { ModuleError } from './errors.js';
 import { FakeRedis } from '@drobek/auth';
 import { z } from 'zod';
-import { defineModule } from './contract.js';
+import { defineModule, type AnyModule } from './contract.js';
 import { cookiePrincipalResolver, createEndUserSession, loadEndUserSession } from './principal.js';
-import { ModuleRuntime, loadModuleRuntime, memoryRateLimiter, type PlatformRequest, type RuntimeDeps } from './runtime.js';
+import { ModuleRuntime, loadModuleRuntime, memoryRateLimiter, type PlatformRequest, type RuntimeDeps, type TransportMessage } from './runtime.js';
+import { memoryMailGuard } from './mail-guard.js';
 import { setModuleSecret } from './secrets.server.js';
 import { freshDb, type TestDb } from './test/db.js';
 import { echo, quiet } from './test/fixtures.js';
@@ -53,6 +54,7 @@ async function runtime(deps: Partial<RuntimeDeps> = {}): Promise<ModuleRuntime> 
       rateLimit: memoryRateLimiter(),
       principal: async () => ({ kind: 'anon' }),
       email: { send: async () => {} },
+      mailGuard: memoryMailGuard({ hourlyMax: 1000, pauseMinutes: 1 }, noopLogger),
       ...deps,
     },
   });
@@ -399,6 +401,7 @@ describe('HTTP on the app hosts', () => {
       deps: {
         rateLimit: memoryRateLimiter(),
         email: { send: async () => {} },
+        mailGuard: memoryMailGuard({ hourlyMax: 1000, pauseMinutes: 1 }, noopLogger),
         principal: cookiePrincipalResolver({ redis: () => fake, secure: false, current: (a, u) => bound!.currentEndUser(a, u) }),
       },
     });
@@ -424,5 +427,143 @@ describe('HTTP on the app hosts', () => {
     });
     // Without a session owner, no module honours a session.
     expect(await rt.currentEndUser(hookApp, { id: 'eu_1', email: 'ana@example.com', role: 'user' })).toBeNull();
+  });
+});
+
+describe('module e-mail (ctx.email.send through the runtime)', () => {
+  const base = { version: '1.0.0', skill: { useWhen: 'x', markdown: '# x' } };
+  /** A sender module: POST /mail { to } sends to that recipient reference. */
+  const sender = defineModule<{ notify: string[] }>({
+    ...base,
+    name: 'sender',
+    configSchema: z.object({ notify: z.array(z.string()) }),
+    configDefaults: { notify: ['team@example.com'] },
+    routes(r) {
+      r.post('/mail', { rule: 'public', body: z.object({ to: z.any() }) }, async (q, ctx) =>
+        ctx.email.send({ to: q.body.to, subject: 'Hello\r\nBcc: x@evil.example', text: '<b>hi</b>' })
+      );
+    },
+  });
+  /** A mail authority: a per-app daily limit + an envelope. */
+  const mailer = defineModule<{ fromName: string }>({
+    ...base,
+    name: 'mailer',
+    configSchema: z.object({ fromName: z.string() }),
+    configDefaults: { fromName: 'Shop' },
+    limits: [{ env: 'MAILER_PER_DAY', default: 2, meaning: 'mails per app per day' }],
+    mail: {
+      prepare: async (input) => {
+        const r = await input.rateLimit('day', 'all', input.limits.MAILER_PER_DAY, 86_400_000);
+        if (!r.ok) throw new ModuleError('limit_exceeded', 'daily', { details: { module: input.module, kind: input.kind } });
+        return { fromName: input.config.fromName, replyTo: 'reply@example.com' };
+      },
+    },
+  });
+
+  async function setup(modules: AnyModule[], hourlyMax = 1000, fail?: (m: TransportMessage) => boolean) {
+    const sent: TransportMessage[] = [];
+    const l = logger();
+    const r = await loadModuleRuntime({
+      env: ENV,
+      log: l,
+      modules,
+      skillsDir: null,
+      deps: {
+        rateLimit: memoryRateLimiter(),
+        principal: async () => ({ kind: 'anon' }),
+        email: {
+          send: async (m) => {
+            if (fail?.(m)) throw new Error(`550 5.1.1 <${m.to}>: Recipient address rejected`);
+            sent.push(m);
+          },
+        },
+        mailGuard: memoryMailGuard({ hourlyMax, pauseMinutes: 15 }, l),
+      },
+    });
+    const send = async (to: unknown) =>
+      r.handle(req('POST', '/__drobek/v1/sender/mail', { headers: { ...sdkPost }, body: { to } }), app);
+    return { r, sent, send, log: l };
+  }
+
+  it('the mail authority applies its policy and envelope; one message per address; audit email.send', async () => {
+    // The app's owners: editors + workspace-admins of its workspace (not viewers).
+    const [ed] = await db.insert(users).values({ email: 'Editor@Example.com' }).returning();
+    const [vi] = await db.insert(users).values({ email: 'viewer@example.com' }).returning();
+    await db.insert(memberships).values([
+      { userId: ed.id, workspaceId: ws.id, role: 'editor' },
+      { userId: vi.id, workspaceId: ws.id, role: 'viewer' },
+    ]);
+    const { send, sent } = await setup([sender, mailer]);
+    const res = await send([{ config: 'notify' }, { appOwners: true }]);
+    expect(res.status, String(res.body)).toBe(200);
+    expect(json(res)).toEqual({ sent: 2 });
+    const envelope = { subject: 'Hello Bcc: x@evil.example', text: '<b>hi</b>', fromName: 'Shop', replyTo: 'reply@example.com' };
+    expect(sent).toEqual([
+      { to: 'team@example.com', ...envelope },
+      { to: 'editor@example.com', ...envelope },
+    ]);
+    await db.delete(memberships).where(eq(memberships.workspaceId, ws.id));
+    const rows = await db.select().from(auditLog).where(eq(auditLog.action, 'email.send'));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ actorKind: 'end_user', target: 'shop', meta: { module: 'sender', kind: 'notification', recipients: 2, end_user: 'anon' } });
+    expect(JSON.stringify(rows[0].meta)).not.toContain('team@example.com');
+    // The authority's per-app limit (2/day): the third message is refused.
+    expect((await send({ config: 'notify' })).status).toBe(200);
+    const third = await send({ config: 'notify' });
+    expect(third.status).toBe(429);
+    expect(json(third)).toMatchObject({ error: 'limit_exceeded', details: { module: 'sender', kind: 'notification' } });
+    expect(sent).toHaveLength(3);
+  });
+
+  it('no recipient resolved → sent 0, nothing counted', async () => {
+    const { send, sent } = await setup([sender, mailer]);
+    expect(json(await send({ config: 'missing.path' }))).toEqual({ sent: 0 });
+    expect(sent).toHaveLength(0);
+  });
+
+  it('without a mail authority only sign-in codes go out; notifications are unavailable', async () => {
+    const { send, sent } = await setup([sender]);
+    const refused = await send({ config: 'notify' });
+    expect(refused.status).toBe(503);
+    expect(json(refused)).toMatchObject({ error: 'unavailable' });
+    const code = await send({ signInAddress: 'ana@example.com' });
+    expect(json(code)).toEqual({ sent: 1 });
+    expect(sent.map((m) => m.to)).toEqual(['ana@example.com']);
+  });
+
+  it('the global hourly cap covers every module message: auto-pause + the super-admin ALERT line', async () => {
+    const { send, sent, log } = await setup([sender, mailer], 1);
+    expect((await send({ signInAddress: 'a@example.com' })).status).toBe(200);
+    const over = await send({ signInAddress: 'b@example.com' });
+    expect(over.status).toBe(503);
+    expect(over.headers['Retry-After']).toBe('900');
+    expect(json(over)).toMatchObject({ error: 'unavailable', details: { reason: 'email_paused' } });
+    expect(log.error).toHaveBeenCalledWith(
+      'ALERT: module e-mail paused — the global hourly cap was reached',
+      expect.objectContaining({ event: 'email_global_pause', audience: 'super_admin', module: 'sender', kind: 'sign_in' })
+    );
+    // Paused: refused before anything is counted or sent.
+    expect((await send({ config: 'notify' })).status).toBe(503);
+    expect(sent.map((m) => m.to)).toEqual(['a@example.com']);
+  });
+
+  it('an SMTP failure → 503 unavailable, logged without the address; the messages already sent are audited', async () => {
+    const { send, sent, log } = await setup([sender, mailer], 1000, (m) => m.to === 'b@example.com');
+    const before = (await db.select().from(auditLog).where(eq(auditLog.action, 'email.send'))).length;
+    const res = await send({ config: 'notify' });
+    expect(res.status).toBe(200);
+    const r = await send({ signInAddress: 'b@example.com' });
+    expect(r.status).toBe(503);
+    expect(json(r)).toMatchObject({ error: 'unavailable' });
+    expect(log.error).toHaveBeenCalledWith('module e-mail failed', expect.objectContaining({ module: 'sender', kind: 'sign_in', sent: 0 }));
+    expect(JSON.stringify(log.error.mock.calls)).not.toContain('b@example.com');
+    expect(JSON.stringify(log.error.mock.calls)).toContain('<[address]>: Recipient address rejected');
+    expect(sent.map((m) => m.to)).toEqual(['team@example.com']);
+    expect((await db.select().from(auditLog).where(eq(auditLog.action, 'email.send'))).length).toBe(before + 1);
+  });
+
+  it('refuses to load a module whose required module is not active', async () => {
+    const needy = defineModule({ ...base, name: 'needy', requires: ['mailer'], configSchema: z.object({}), configDefaults: {} });
+    await expect(setup([needy])).rejects.toThrow(/module "needy" requires the module "mailer"/);
   });
 });

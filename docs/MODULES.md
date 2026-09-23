@@ -21,7 +21,7 @@ A module contributes, for every app on the server:
 ## Enabling modules
 
 ```sh
-DROBEK_MODULES=hello,auth       # comma-separated; empty = no modules
+DROBEK_MODULES=hello,auth,email,forms   # comma-separated; empty = no modules
 ```
 
 Each entry resolves:
@@ -34,7 +34,9 @@ The built-in modules of this repo live in `modules/<name>` as the workspace
 packages `drobek-module-<name>`, dependencies of `apps/server` (and so of the
 image). They load exactly like a third-party module: nothing in the registry
 knows them by name. Built in: [`auth`](#the-built-in-auth-module) (end-user
-sign-in).
+sign-in), [`email`](#the-built-in-email-module) (notifications to the app's
+owners, the app's mail policy) and [`forms`](#the-built-in-forms-module)
+(form submissions; requires `email`).
 
 Packages resolve from the **server's** install: `<cwd>/package.json` (`/app` in
 the image, `apps/server` in the dev stack), overridable with
@@ -45,13 +47,16 @@ dependency to the server and listing it. The package's default export (or its
 The server **refuses to start** when anything is off: an unknown package, an
 export that is not a module, an invalid name, defaults that fail the schema,
 two modules with one name, a missing `sdk.entry`, a reserved name (`sdk`,
-`v1`, `drobek`, `internal`). Nothing is skipped silently. On start the log
+`v1`, `drobek`, `internal`), a module whose `requires` is not enabled
+(`module "forms" requires the module "email": add it to DROBEK_MODULES
+(e.g. DROBEK_MODULES=…,email)`), two modules declaring `mail`. Nothing is
+skipped silently. On start the log
 names the active modules (`platform modules ready`).
 
-The dev compose enables the example module and the built-in auth
-(`DROBEK_MODULES=hello,auth`, `HELLO_WAVES_PER_MINUTE=5`, relaxed `AUTH_*`
-limits because every local request shares one client IP); so does the e2e
-image compose.
+The dev compose enables the example module and every built-in module
+(`DROBEK_MODULES=hello,auth,email,forms`, `HELLO_WAVES_PER_MINUTE=5`, relaxed
+`AUTH_*` limits because every local request shares one client IP); so does
+the e2e image compose.
 
 ## The contract
 
@@ -76,6 +81,8 @@ export default defineModule<Config>({
   migrations: { folder: '/abs/path/migrations' },
   hooks: { onAppCreate(app, services) {}, onPublish(app, services) {} },
   endUsers: { current({ app, user, config, db, log }) {} },  // only the module that owns end-user sessions (auth)
+  mail: { prepare(input) {} },   // only the module that owns the app's mail policy (email) — see "Module e-mail"
+  requires: ['email'],           // other modules this one needs; missing → the server refuses to start
 });
 ```
 
@@ -94,6 +101,7 @@ r.post(
     query: z.object({ … }),                          // optional
     rateLimit: { bucket: 'wave', max: 'HELLO_WAVES_PER_MINUTE', windowMs: 60_000, per: 'ip' },
     maxBodyBytes: 1024,                              // default 32 KiB
+    bodyTypes: ['json', 'multipart'],                // default ['json']; multipart = text fields only
     csrf: 'sdk-header',                              // default; 'same-origin' for sendBeacon-style calls
   },
   async (req, ctx) => ({ waves: 1 })                 // JSON 200, or respond(status, body, headers)
@@ -110,8 +118,11 @@ module route goes through the same pipeline:
    also required (`403 csrf_rejected`);
 3. the caller and this app's config → the route `rule` (`401` / `403`);
 4. the rate limit (`429 rate_limited` + `Retry-After`);
-5. the body: JSON only (`415`), size-capped (`413`), then the zod schema;
-   the query too (`400 invalid_request` with `details: [{ path, message }]`);
+5. the body: JSON (or, with `bodyTypes` including `multipart`,
+   `multipart/form-data` with text fields only — a repeated name becomes an
+   array, a file part is `415`); anything else `415`; size-capped (`413`),
+   then the zod schema; the query too (`400 invalid_request` with
+   `details: [{ path, message }]`);
 6. the handler → JSON with `Cache-Control: no-store`.
 
 Every failure uses **one error shape**:
@@ -155,7 +166,7 @@ Everything a handler gets is scoped to **one app and one module**:
 | `rateLimit(bucket, key, max, windowMs)` | fixed-window counter in Redis, namespaced to the module and app |
 | `secrets.get(name)` | the plaintext of a **declared** secret of this app, or `null`; reading an undeclared name throws |
 | `audit(action, meta?)` | an audit row `<module>.<action>` for this app, actor kind `end_user` |
-| `email.send({ to, subject, text })` | `to` is `{ config: 'dotted.path' }` (addresses in this app's owner-confirmed config), `{ principal: true }` (the signed-in end user) or `{ signInAddress }` (the address a visitor typed into a sign-in form: one address, for a sign-in code only; the module decides first that it may sign in). Never an arbitrary address. The subject is one line (control and line-separator characters become spaces, 200 characters at most); the text is escaped into the drobek layout. |
+| `email.send({ to, subject, text })` → `{ sent }` | `to` is one reference or a list: `{ config: 'dotted.path' }` (addresses in this app's owner-confirmed config), `{ principal: true }` (the signed-in end user), `{ appOwners: true }` (the editors and workspace-admins of the app's drobek workspace) or `{ signInAddress }` (the address a visitor typed into a sign-in form: always alone, for a sign-in code only; the module decides first that it may sign in). Never an arbitrary address. Addresses are validated, lowercased and de-duplicated; each gets its own message. The subject is one line (control and line-separator characters become spaces, 200 characters at most); the text (≤ 20 000 characters) is escaped into the drobek layout. Rejects with `limit_exceeded` / `unavailable` — see [Module e-mail](#module-e-mail). |
 | `db`, `log` | the database (drizzle) and a logger |
 
 ### The SDK
@@ -221,6 +232,35 @@ migrations (`DROBEK_MIGRATE_ON_START=0` turns both off). Conventions:
 - every per-app row references `apps(id)` with `ON DELETE CASCADE`, so deleting
   an app deletes its module data;
 - a handler always filters by `ctx.app.id`.
+
+### Module e-mail
+
+Every `ctx.email.send` of every module goes through one path in core:
+
+1. resolve the recipients (above); nobody → `{ sent: 0 }`;
+2. the **operator-wide hourly cap** (`EMAIL_GLOBAL_HOURLY_MAX`, default 500
+   recipients per rolling hour across all apps and modules, sign-in codes
+   included; Redis `drobek:rl:mail:global`). Past it, module e-mail **pauses**
+   for `EMAIL_GLOBAL_PAUSE_MINUTES` (default 15, key `drobek:mail:paused`) and
+   the server logs one line for the super admin: `level: error`, `message:
+   "ALERT: module e-mail paused — …"`, `event: email_global_pause`, `alert:
+   true`, `audience: super_admin` (with the app and module that tripped it).
+   While paused, every send is refused with `503 unavailable` (`details.reason:
+   email_paused`, `Retry-After`); deleting the pause key resumes early. The cap
+   is not overridable by the limits provider, and a Redis error refuses the
+   send (fail closed);
+3. the **mail authority**: the one enabled module that declares `mail` (the
+   built-in `email`) runs `mail.prepare({ app, module, kind, recipients,
+   config, limits, rateLimit, log })` with ITS config for the app. It applies
+   the app's own policy (the per-app daily limit) and returns the envelope
+   (`fromName`, `replyTo`). Without an authority only sign-in codes (`kind:
+   sign_in`) can be sent; any other message is `503 unavailable`;
+4. one message per address through the server's SMTP transport
+   (`@drobek/email`, the same one the dashboard login uses), the sender
+   address always the server's `EMAIL_FROM`; a transport failure stops there
+   with `503 unavailable` (the error is logged with addresses redacted);
+5. an audit row `email.send` (actor end_user) with the module, the kind and
+   the recipient count — never an address.
 
 ## Per-app configuration
 
@@ -370,7 +410,7 @@ const t = createModuleTestContext(hello, {
 const res = await t.request('POST', '/wave', { body: { name: 'Ada' } });
 expect(res).toMatchObject({ status: 200, body: { waves: 1 } });
 t.audits;   // [{ action: 'hello.…', meta }]
-t.emails;   // [{ to, subject, text }]
+t.emails;   // [{ to, subject, text, kind, fromName?, replyTo? }] (owners: ['…'] feeds { appOwners: true })
 t.setPrincipal({ kind: 'anon' });
 ```
 
@@ -474,6 +514,82 @@ an app sign in with a 6-digit code e-mailed to them. Its `SKILL.md` is what
   logout() / onChange(cb)` in `sdk.js`, and the inline source `drobek/auth`:
   `<LoginGate title requireAdmin loading>` and `useAuth()`, React components
   built into the app with the app's React.
+
+## The built-in `email` module
+
+[`modules/email`](../modules/email) (`drobek-module-email`): the app's mail
+policy and a way to reach the app's owners. `skill_info('email')`.
+
+- **Route** `POST /__drobek/v1/email/notify-admins { subject, text }` (rule
+  `user`, strict body: subject 1–150, text 1–5000 characters, 8 KiB) →
+  `{ sent }`; SDK `drobek.email.notifyAdmins(subject, text)`. The recipients
+  are the **app's owners**: the editors and workspace-admins of the app's
+  drobek workspace — verified drobek accounts nobody can add through MCP (the
+  auth module's `adminEmails` are deliberately NOT used: an agent can change
+  them without confirmation). The subject becomes `[<app name>] <subject>`;
+  the text names the signed-in user who sent it and the app host.
+- **Config** `{ fromName?, replyTo? }`: `fromName` (1–60 characters, no
+  control characters or `"<>@\`) applies at once; a new or changed `replyTo`
+  **needs the owner's confirmation**.
+- **The mail authority** (`mail.prepare`): counts every notification (not
+  sign-in codes) against `EMAIL_PER_APP_PER_DAY` (default 50 per app per day,
+  `limit_exceeded` past it) and sets `fromName` / `replyTo` on every message
+  the app sends — form notifications and sign-in codes included.
+- **Limits**: `EMAIL_PER_APP_PER_DAY` 50, `EMAIL_NOTIFY_ADMINS_PER_DAY` 20
+  (notifyAdmins calls per app per day; the 21st is `429 limit_exceeded`).
+
+## The built-in `forms` module
+
+[`modules/forms`](../modules/forms) (`drobek-module-forms`, `requires:
+['email']`): form submissions stored and e-mailed. `skill_info('forms')`.
+
+- **Routes** (`/__drobek/v1/forms/…`, form names `^[a-z0-9][a-z0-9_-]{0,39}$`):
+  - `GET :form/token` (public) → `{ token, min_wait_ms: 2000, expires_in:
+    7200 }`: the time token `_t` = `<issued-at>.<HMAC-SHA256>` bound to the app
+    and the form, keyed by HKDF(`DROBEK_MASTER_KEY`, `drobek/forms-token/v1`) —
+    no separate secret; without the master key forms answer `503`;
+  - `POST :form` (rule `rules.submit`: `public` default or `user`; JSON or
+    text-only multipart; 32 KiB) → `{ ok: true, id }`. In order: the
+    honeypot `_hp` — non-empty → answered `{ ok: true, id }` like a success,
+    nothing stored or sent, and a log line `forms_honeypot_drop` with the
+    per-app daily counter `dropped_today` (never the values); the token —
+    missing/forged/other form/expired → `400 invalid_form_token`
+    (`details.reason`), younger than 2 s → `429 submitted_too_fast`
+    (`Retry-After`); the fields — a flat object, ≤ 50 fields, strings ≤ 10 000
+    characters, finite numbers, booleans, null, lists of ≤ 50 strings; `_`
+    names reserved; the limits — `FORMS_SUBMITS_PER_IP_HOUR` (10 per client
+    IP per app, `rate_limited`) and `FORMS_PER_APP_PER_DAY` (200,
+    `limit_exceeded`); then the row and the notification. A failed
+    notification (the app's mail limit, the global pause) never loses the
+    submission: it stays stored with `notified_at` null and a
+    `forms_notify_failed` log line (error code only);
+  - `GET :form/submissions?limit=1..100&before=<cursor>` (rule `admin`) →
+    `{ submissions: [{ id, created_at, data, user_id, notified }],
+    next_cursor }`, newest first;
+  - `GET :form/submissions.csv` (rule `admin`) → `text/csv` attachment (≤ 10 000
+    rows; columns `id, created_at` + every field name, sorted), cells through
+    `@drobek/data`'s CSV writer (formula prefixes `= + - @ tab CR` neutralized
+    with `'`); audit `forms.export` (form + row count).
+  Every answer is `Cache-Control: no-store`; logs carry ids and counts, never
+  field values.
+- **Config** `{ forms: { <name>: { rules: { submit }, notify: { emails,
+  owners } } } }` (≤ 50 forms; an undeclared form uses the defaults: public,
+  owners notified). **Any change to `notify.emails`** (≤ 10 addresses) needs
+  the owner's confirmation; `notify.owners: false` stores only.
+- **Notification**: `ctx.email.send({ to: [{ config:
+  'forms.<name>.notify.emails' }, { appOwners: true }] })`, subject `New
+  "<form>" submission — <app name>`, the fields as plain text (escaped into
+  the layout: HTML in a field is never rendered), a link to the app in the
+  dashboard.
+- **Table** `mod_forms_submissions (id, app_id, form, data jsonb, ip_hash,
+  user_id, notified_at, created_at)`, cascade on app delete, index `(app_id,
+  form, created_at DESC, id DESC)`. `ip_hash` is a keyed HMAC of the client
+  IP (per app), never the IP.
+- **SDK**: `drobek.forms.prepare(form)`, `submit(form, data | FormData)` (waits
+  for the token, retries once on a stale token), `submissions(form, opts)`,
+  `csvUrl(form)`; the inline source `drobek/forms`: `<Form name success
+  onSuccess onError>` — a `<form>` with the hidden honeypot, the token fetched
+  on mount, a `role="status"` success and a `role="alert"` error.
 
 ## The example: `drobek-module-hello`
 

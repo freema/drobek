@@ -102,3 +102,40 @@ describe('pipeline', () => {
     await expect(t.request('GET', '/boom')).rejects.toThrow('kaboom');
   });
 });
+
+describe('body types', () => {
+  const B = 'xYzBoundary';
+  const multipart = (fields: [string, string][], extra = '') =>
+    fields.map(([k, v]) => `--${B}\r\nContent-Disposition: form-data; name="${k}"${extra}\r\n\r\n${v}\r\n`).join('') + `--${B}--\r\n`;
+
+  it('JSON by default: multipart → 415', async () => {
+    const t = createModuleTestContext(echo);
+    const res = await t.request('POST', '/say', { rawBody: multipart([['text', 'x']]), headers: { 'content-type': `multipart/form-data; boundary=${B}` } });
+    expect(res.status).toBe(415);
+    expect(res.body).toMatchObject({ error: 'unsupported_media_type', message: expect.stringContaining('JSON') });
+  });
+
+  it("bodyTypes ['json','multipart']: text fields parse; files → 415; other types → 415; JSON still works", async () => {
+    const { defineModule, z } = await import('./index.js');
+    const form = defineModule({
+      name: 'form',
+      version: '1.0.0',
+      skill: { useWhen: 'x', markdown: '# x' },
+      configSchema: z.object({}),
+      configDefaults: {},
+      routes(r) {
+        r.post('/in', { rule: 'public', bodyTypes: ['json', 'multipart'] }, (q) => ({ got: q.body }));
+      },
+    });
+    const t = createModuleTestContext(form);
+    const ct = { 'content-type': `multipart/form-data; boundary=${B}` };
+    const ok = await t.request('POST', '/in', { rawBody: multipart([['a', '1'], ['b', 'x'], ['b', 'y']]), headers: ct });
+    expect(ok).toMatchObject({ status: 200, body: { got: { a: '1', b: ['x', 'y'] } } });
+    const file = await t.request('POST', '/in', { rawBody: multipart([['f', 'bytes']], '; filename="a.txt"'), headers: ct });
+    expect(file.status).toBe(415);
+    const text = await t.request('POST', '/in', { rawBody: 'a=1', headers: { 'content-type': 'application/x-www-form-urlencoded' } });
+    expect(text.status).toBe(415);
+    expect(text.body).toMatchObject({ message: expect.stringContaining('multipart/form-data') });
+    expect(await t.request('POST', '/in', { body: { a: 1 } })).toMatchObject({ status: 200, body: { got: { a: 1 } } });
+  });
+});

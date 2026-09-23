@@ -130,7 +130,20 @@ single long-lived `next` branch; pushes happen only at milestone end.
   "sign everyone out" button) is M2-03. Core asks the auth module
   (`endUsers.current`) about every session on every module request, so a
   disabled / removed user is anonymous everywhere on the next request.
-- Next: M1-03 data, M1-04 forms+email.
+- M1-04 (NSO-295) done locally: the SMTP transport + layout moved to the new
+  core package `@drobek/email` (`@drobek/auth` re-exports the old names);
+  built-in modules `modules/email` (`notifyAdmins` → the app's owners =
+  workspace editors/admins; `fromName`/`replyTo`; the mail authority
+  `mail.prepare` with `EMAIL_PER_APP_PER_DAY`) and `modules/forms` (token /
+  submit / admin list + CSV, honeypot, HMAC time token from
+  `DROBEK_MASTER_KEY`, `mod_forms_submissions`, inline `<Form>`). Core:
+  `{ appOwners: true }` recipients, the operator-wide mail cap + pause
+  (`mail-guard.ts`, `EMAIL_GLOBAL_HOURLY_MAX`, ALERT log line), contract
+  `requires` + `mail` + route `bodyTypes` (text-only multipart,
+  `multipart.ts`). Dev + e2e compose run `DROBEK_MODULES=hello,auth,email,forms`.
+  The dashboard view of submissions is M2 (the owner reaches them through
+  the app as an admin today).
+- Next: M1-03 data.
 
 ## Notes and gotchas
 
@@ -292,6 +305,20 @@ single long-lived `next` branch; pushes happen only at milestone end.
   another `docker compose restart drobek` clears it.
 - `configure_module` issue paths use brackets for array indexes
   (`allow.emails[0]`).
+- Mailpit's REST `Text` uses `\r\n` line endings: normalize before matching
+  multi-line text in e2e.
+- Postgres `jsonb` does not keep the submitted key order (shorter keys first):
+  the forms CSV sorts its field columns by name.
+- The auth module's `send-code` answers 200 WITHOUT sending inside the
+  per-address cooldown: an e2e that expects a refusal (e.g. the mail pause)
+  must use a fresh address.
+- After a lockfile change the first dashboard page load in dev triggers Vite's
+  dependency re-optimization and a full reload — the first e2e sign-in can
+  time out once; rerun.
+- e2e specs read server log lines with `docker compose logs --since <iso>
+  drobek` (works for the dev stack and `task e2e:image`, whose script exports
+  `COMPOSE_FILE` / `COMPOSE_PROJECT_NAME`); match on a unique app id and
+  start a minute back to tolerate clock skew.
 
 ## Failed approaches
 

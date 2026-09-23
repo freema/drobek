@@ -9,8 +9,9 @@
  *   3. the caller (principal) and this app's config → the route `rule`
  *      (401 / 403);
  *   4. rate limit (429 `rate_limited`, Retry-After);
- *   5. body: JSON only, size-capped, then the route's zod schema; query too
- *      (400 `invalid_request` with `details: [{ path, message }]`);
+ *   5. body: JSON (or, when the route accepts it, text-only
+ *      multipart/form-data), size-capped, then the route's zod schema; query
+ *      too (400 `invalid_request` with `details: [{ path, message }]`);
  *   6. the handler → JSON (or `respond(...)`), `Cache-Control: no-store`.
  *
  * Every failure answers the uniform `{ error, message, details?, hint }`.
@@ -25,6 +26,7 @@ import type {
   RouteOptions,
 } from './contract.js';
 import { ModuleError, isModuleError, issuePaths } from './errors.js';
+import { parseMultipart } from './multipart.js';
 import { decideAccess } from './rules.js';
 
 export const DEFAULT_MAX_BODY_BYTES = 32 * 1024;
@@ -198,13 +200,20 @@ function validate<T>(schema: ZodType<T> | undefined, value: unknown, what: strin
   return r.data;
 }
 
-async function readJsonBody(req: PipelineRequest, limit: number): Promise<unknown> {
+async function readRequestBody(req: PipelineRequest, limit: number, types: ReadonlyArray<'json' | 'multipart'>): Promise<unknown> {
   const raw = await req.readBody(limit);
   if (raw === 'too_large') throw new ModuleError('payload_too_large', `The request body exceeds ${limit} bytes.`);
   if (raw === null || raw.length === 0) return undefined;
-  const type = (req.header('content-type') ?? '').split(';')[0].trim().toLowerCase();
-  if (type !== 'application/json') {
-    throw new ModuleError('unsupported_media_type', 'Send the body as JSON (Content-Type: application/json).');
+  const header = req.header('content-type');
+  const type = (header ?? '').split(';')[0].trim().toLowerCase();
+  if (type === 'multipart/form-data' && types.includes('multipart')) return parseMultipart(raw, header);
+  if (type !== 'application/json' || !types.includes('json')) {
+    throw new ModuleError(
+      'unsupported_media_type',
+      types.includes('multipart')
+        ? 'Send the body as JSON (Content-Type: application/json) or multipart/form-data with text fields.'
+        : 'Send the body as JSON (Content-Type: application/json).'
+    );
   }
   try {
     return JSON.parse(raw.toString('utf8'));
@@ -259,7 +268,11 @@ export async function runRoute(
     const body =
       method === 'GET' || method === 'HEAD'
         ? undefined
-        : validate(opts.body, await readJsonBody(req, opts.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES), 'request body');
+        : validate(
+            opts.body,
+            await readRequestBody(req, opts.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES, opts.bodyTypes ?? ['json']),
+            'request body'
+          );
     const query = validate(opts.query, parseQuery(req.query), 'query');
 
     const out = await route.handler(

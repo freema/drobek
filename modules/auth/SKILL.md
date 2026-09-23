@@ -96,12 +96,13 @@ Errors reject with a `DrobekError` (`err.code`, `err.status`, `err.message`).
   preview, then sign in again on the published app. Users are shared: the
   same e-mail is the same user (same `id`) on both.
 - A code is valid 10 minutes, works once, and dies after 5 wrong tries.
-- Per app: `AUTH_CODES_PER_IP_15MIN` (5) and `AUTH_CODES_PER_IP_DAY` (20)
-  codes per visitor IP, `AUTH_CODES_PER_EMAIL_HOUR` (3) per address (more
-  requests answer "sent" but send nothing new), `AUTH_CODES_PER_APP_HOUR`
-  (100, then sign-in e-mails pause 15 minutes), `AUTH_ATTEMPTS_PER_IP_15MIN`
-  (30 send/verify calls), `END_USERS_MAX_PER_APP` (1000 users). The
-  operator may set other values; `skill_info('auth')` shows this server's.
+- Per app (defaults in parentheses; this server's values are in the
+  `limits` of `skill_info('auth')`): `AUTH_CODES_PER_IP_15MIN` (5) and
+  `AUTH_CODES_PER_IP_DAY` (20) codes per visitor IP,
+  `AUTH_CODES_PER_EMAIL_HOUR` (3) per address (more requests answer "sent"
+  but send nothing new), `AUTH_CODES_PER_APP_HOUR` (100, then sign-in e-mails
+  pause 15 minutes), `AUTH_ATTEMPTS_PER_IP_15MIN` (30 send/verify calls),
+  `END_USERS_MAX_PER_APP` (1000 users).
 - Every request re-checks the user, in every module: removed from the
   allowlist or disabled → signed out at once; a role follows `adminEmails`
   on the next request. The owner can sign every user of the app out at once

@@ -62,8 +62,13 @@ short name `x` loads the package `drobek-module-x` from the server's
 dependencies). The server applies each module's migrations on start and
 refuses to start on a module it cannot load. Limits come from their env vars
 or, with `LIMITS_PROVIDER_URL` + `LIMITS_PROVIDER_SECRET`, from your own
-signed limits endpoint. The contract and the provider protocol are in
-[`MODULES.md`](./MODULES.md).
+signed limits endpoint. The image ships the built-in `auth`, `email` and
+`forms` (`DROBEK_MODULES=auth,email,forms`; `forms` requires `email`). Module
+e-mail uses the same SMTP settings as the dashboard login and is capped
+server-wide by `EMAIL_GLOBAL_HOURLY_MAX` (default 500 recipients per hour):
+past it, module e-mail pauses for `EMAIL_GLOBAL_PAUSE_MINUTES` and the log
+gets an `email_global_pause` ALERT line — alert on it. The contract and the
+provider protocol are in [`MODULES.md`](./MODULES.md).
 
 Volumes: `postgres_data`, `redis_data`, `caddy_data` (ACME account, issued
 certificates, Caddy's local CA — back it up; losing it means re-issuing every

@@ -87,18 +87,18 @@ export {
 } from './origin-check.js';
 export { maskEmail } from './mask-email.js';
 export { logger, serializeError } from './logger.server.js';
+// The transport + layout moved to @drobek/email (M1-04); re-exported so
+// existing consumers (tenancy invites, drobek-web) keep working.
 export {
   smtpConfigured,
   getSmtpTransport,
   getEmailFrom,
   resetSmtpTransportForTests,
-} from './email/smtp.server.js';
-export {
   renderEmailLayout,
   escapeHtml,
   emailBrand,
   type EmailLayoutInput,
-} from './email/layout.server.js';
+} from '@drobek/email';
 export { sendLoginCodeEmail } from './email/send-login-code.server.js';
 export {
   renderLoginCodeEmail,

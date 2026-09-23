@@ -30,11 +30,11 @@ const CORE_TABLES = [
 /**
  * U2: deterministic reruns for the auth specs — drop leftover OTP + rate-limit
  * counters (per-IP windows accumulate across runs). Mirrors the destructive
- * DB guard: ONLY `drobek:otp:*` + `drobek:rl:*` keys, ONLY when TEST_ENV=local
+ * DB guard: ONLY `drobek:otp|rl|applock|mail:*` keys (M1-04: the mail pause), ONLY when TEST_ENV=local
  * AND the REDIS_URL host is local. Never touches `drobek:session:*`.
  */
 const ALLOWED_REDIS_HOSTS = ['localhost', '127.0.0.1', 'redis'];
-const REDIS_CLEANUP_PATTERNS = ['drobek:otp:*', 'drobek:rl:*', 'drobek:applock:*'];
+const REDIS_CLEANUP_PATTERNS = ['drobek:otp:*', 'drobek:rl:*', 'drobek:applock:*', 'drobek:mail:*'];
 
 async function cleanupAuthRedisKeys(): Promise<void> {
   const url = process.env.REDIS_URL;

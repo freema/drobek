@@ -2,6 +2,49 @@
 
 ## Unreleased (`next`)
 
+### The built-in `forms` and `email` modules (NSO-295)
+
+- **`@drobek/email`** (new core package): the SMTP transport and the e-mail
+  layout moved out of `@drobek/auth` (which re-exports the old names), plus
+  `sendEmail` (sender name sanitized, the address always `EMAIL_FROM`) and
+  `renderTextEmailHtml` (plain text escaped into the layout). The dashboard
+  login, invites and module mail share it.
+- **`modules/email`** (`drobek-module-email`): `POST
+  /__drobek/v1/email/notify-admins` / `drobek.email.notifyAdmins(subject,
+  text)` (signed-in users) e-mails the app's owners — the editors and
+  workspace-admins of its workspace; `EMAIL_NOTIFY_ADMINS_PER_DAY` (20 per
+  app) → `limit_exceeded`. Config `{ fromName, replyTo }` (a new `replyTo`
+  waits for the owner). It is the app's **mail authority**: every
+  notification any module sends counts against `EMAIL_PER_APP_PER_DAY` (50)
+  and carries the app's sender name and reply-to.
+- **`modules/forms`** (`drobek-module-forms`, requires `email`): `GET
+  /__drobek/v1/forms/:form/token`, `POST /__drobek/v1/forms/:form` (JSON or
+  text-only multipart, 32 KiB; honeypot `_hp` dropped silently with a log
+  counter; HMAC time token `_t` keyed from `DROBEK_MASTER_KEY`, ≥ 2 s old →
+  otherwise `429 submitted_too_fast` / `400 invalid_form_token`;
+  `FORMS_SUBMITS_PER_IP_HOUR` 10, `FORMS_PER_APP_PER_DAY` 200), admin-only
+  `GET :form/submissions` (keyset pagination) and `submissions.csv` (formula
+  cells neutralized, audit `forms.export`). Table `mod_forms_submissions`
+  (IP stored as a keyed hash). Notifications to the owners and
+  `notify.emails` (any change waits for the owner). SDK `drobek.forms` and
+  the inline React `<Form>` (`import { Form } from 'drobek/forms'`).
+- **Module e-mail in core**: the recipient kind `{ appOwners: true }` and
+  recipient lists (validated, de-duplicated, one message per address); the
+  operator-wide cap `EMAIL_GLOBAL_HOURLY_MAX` (500 recipients per hour, all
+  module mail including sign-in codes) pauses module e-mail for
+  `EMAIL_GLOBAL_PAUSE_MINUTES` (15) with an `email_global_pause` ALERT log
+  line for the super admin (`503 unavailable`, fail closed); audit
+  `email.send` (counts, never addresses). Texts are capped at 20 000
+  characters.
+- **Module contract** (additive): `requires` (missing dependency → the server
+  refuses to start with a message naming `DROBEK_MODULES`), `mail.prepare`
+  (the mail authority, at most one), route `bodyTypes: ['json',
+  'multipart']` (text fields only; files → `415`), `RateLimitResult.count`.
+- Error catalogue: `submitted_too_fast`, `invalid_form_token`; module-route
+  meanings of `limit_exceeded`, `unavailable`, `unsupported_media_type`.
+- The dev and e2e composes run `DROBEK_MODULES=hello,auth,email,forms`.
+  e2e `forms-email.spec.ts`.
+
 ### The built-in `auth` module: end-user sign-in (NSO-294)
 
 - **`modules/auth`** (`drobek-module-auth`, a workspace package and a

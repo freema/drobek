@@ -1,10 +1,6 @@
 import { logger } from '../logger.server.js';
 import { maskEmail } from '../mask-email.js';
-import {
-  getEmailFrom,
-  getSmtpTransport,
-  smtpConfigured,
-} from './smtp.server.js';
+import { getEmailFrom, getSmtpTransport, smtpConfigured } from '@drobek/email';
 import { renderLoginCodeEmail } from './templates/login-code.server.js';
 
 /** Deliver the e-mail login code via SMTP (dev fallback: log the code). */

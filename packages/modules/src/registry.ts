@@ -16,8 +16,9 @@
  * `defineModule()`.
  *
  * Anything off — unknown package, not a module, invalid name/schema/defaults,
- * two modules with one name, a missing sdk.entry — stops the server at start
- * with a message that names the module. Nothing is skipped silently.
+ * two modules with one name, a missing sdk.entry, a module whose `requires`
+ * is not active — stops the server at start with a message that names the
+ * module. Nothing is skipped silently.
  */
 import { createRequire } from 'node:module';
 import { existsSync } from 'node:fs';
@@ -147,6 +148,37 @@ export function validateModule(m: AnyModule): void {
   if (m.migrations && !existsSync(toPath(m.migrations.folder))) fail(`migrations.folder does not exist: ${m.migrations.folder}`);
   if (m.routes !== undefined && typeof m.routes !== 'function') fail('routes must be a function');
   if (m.endUsers !== undefined && typeof m.endUsers?.current !== 'function') fail('endUsers.current must be a function');
+  if (m.mail !== undefined && typeof m.mail?.prepare !== 'function') fail('mail.prepare must be a function');
+  if (m.requires !== undefined) {
+    if (!Array.isArray(m.requires) || m.requires.some((r) => typeof r !== 'string' || !MODULE_NAME_RE.test(r) || r === m.name)) {
+      fail('requires must list the names of OTHER modules');
+    }
+  }
+}
+
+/**
+ * The one active module that owns app e-mail (`mail`), or null. Two would
+ * apply two policies to one message: refused at start.
+ */
+export function mailAuthorityOf(modules: AnyModule[]): AnyModule | null {
+  const owners = modules.filter((m) => m.mail !== undefined);
+  if (owners.length > 1) {
+    throw new ModuleLoadError(`only one module may own app e-mail (mail); active: ${owners.map((m) => m.name).join(', ')}`);
+  }
+  return owners[0] ?? null;
+}
+
+/** Every module's `requires` must be active too (a clear start error names what to add). */
+export function checkRequires(modules: AnyModule[]): void {
+  const active = new Set(modules.map((m) => m.name));
+  for (const m of modules) {
+    const missing = (m.requires ?? []).filter((r) => !active.has(r));
+    if (missing.length > 0) {
+      throw new ModuleLoadError(
+        `module "${m.name}" requires the module${missing.length > 1 ? 's' : ''} ${missing.map((x) => `"${x}"`).join(', ')}: add ${missing.length > 1 ? 'them' : 'it'} to DROBEK_MODULES (e.g. DROBEK_MODULES=${[...active, ...missing].join(',')})`
+      );
+    }
+  }
 }
 
 /**
@@ -175,6 +207,8 @@ export async function loadModules(env: NodeJS.ProcessEnv = process.env, opts: Re
     modules.push(m);
   }
   endUserAuthorityOf(modules);
+  mailAuthorityOf(modules);
+  checkRequires(modules);
   const limitNames = new Map<string, string>();
   for (const m of modules) {
     for (const l of m.limits ?? []) {

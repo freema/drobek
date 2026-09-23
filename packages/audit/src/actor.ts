@@ -60,6 +60,10 @@ export const AUDIT_ACTIONS = {
   authSignIn: 'auth.sign_in',
   /** M1-02: the owner signed every end user of an app out (session epoch bump). */
   endUserSessionsRevoke: 'end_users.sessions_revoke',
+  /** M1-04: a module sent e-mail through ctx.email.send (counts and kind only — never addresses). */
+  emailSend: 'email.send',
+  /** M1-04: an app admin exported a form's submissions as CSV (form + row count, never values). */
+  formsExport: 'forms.export',
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];

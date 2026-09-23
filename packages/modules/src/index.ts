@@ -20,12 +20,16 @@ export {
   type AccessDecision,
   type AnyModule,
   type DrobekModule,
+  type EmailKind,
   type EmailMessage,
   type EmailRecipient,
   type EndUser,
   type EndUserAuthority,
   type HookApp,
   type Limits,
+  type MailAuthority,
+  type MailEnvelope,
+  type MailPrepareInput,
   type ModuleContext,
   type ModuleHooks,
   type ModuleLimit,
@@ -91,18 +95,32 @@ export {
   type SkillEntry,
 } from './skills.js';
 export { SDK_PATH, SDK_TYPES_PATH, buildSdk, inlineSpecifier, sdkDeclarations, type SdkBundle } from './sdk-build.js';
-export { EMAIL_RE, resolveRecipients, sanitizeSubject } from './email.js';
+export { EMAIL_RE, MAX_EMAIL_TEXT, capEmailText, emailKind, recipientRefs, resolveRecipients, sanitizeSubject, type RecipientSources } from './email.js';
+export {
+  MAIL_GLOBAL_COUNTER_KEY,
+  MAIL_PAUSE_KEY,
+  mailGuardConfigFromEnv,
+  memoryMailGuard,
+  redisMailGuard,
+  type MailGuard,
+  type MailGuardConfig,
+  type MailGuardMeta,
+} from './mail-guard.js';
+export { multipartBoundary, parseMultipart } from './multipart.js';
 export { SDK_HEADER, DEFAULT_MAX_BODY_BYTES, type PipelineRequest, type PipelineResult } from './router.js';
 export {
   ModuleLoadError,
   RESERVED_MODULE_NAMES,
+  checkRequires,
   endUserAuthorityOf,
+  mailAuthorityOf,
   loadModules,
   packageNameFor,
   parseModuleList,
 } from './registry.js';
 export {
   ModuleRuntime,
+  appOwnerEmails,
   confirmUrl,
   loadModuleRuntime,
   memoryRateLimiter,
@@ -116,6 +134,7 @@ export {
   type ConfigureResult,
   type DecisionInput,
   type EmailTransport,
+  type TransportMessage,
   type LoadRuntimeOptions,
   type PlatformApp,
   type PlatformRequest,

@@ -1,0 +1,39 @@
+{
+  "name": "drobek-module-email",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Built-in drobek platform module: the app-facing e-mail policy (per-app limits, sender name, Reply-To) and drobek.email.notifyAdmins().",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "SKILL.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest",
+    "test:run": "vitest run"
+  },
+  "dependencies": {
+    "@drobek/db": "workspace:*",
+    "@drobek/modules": "workspace:*",
+    "@drobek/sdk": "workspace:*",
+    "drizzle-orm": "^0.41.0"
+  },
+  "devDependencies": {
+    "@drobek/core": "workspace:*",
+    "@electric-sql/pglite": "^0.2.17",
+    "@types/node": "^22",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.7"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

@@ -55,10 +55,10 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
   },
   {
     code: 'limit_exceeded',
-    surface: 'MCP tool isError; compile.errors[]',
+    surface: 'MCP tool isError; compile.errors[]; module route 429 (DrobekError), Retry-After',
     meaning:
-      'The version would exceed a size limit (COMPILE_MAX_FILES files, COMPILE_MAX_FILE_BYTES per file, COMPILE_MAX_TOTAL_BYTES in total) or an import chain is deeper than COMPILE_MAX_IMPORT_DEPTH.',
-    fix: 'Split big files, delete unused ones, load large libraries from esm.sh through drobek.json instead of copying them into the app.',
+      'The version would exceed a size limit (COMPILE_MAX_FILES files, COMPILE_MAX_FILE_BYTES per file, COMPILE_MAX_TOTAL_BYTES in total) or an import chain is deeper than COMPILE_MAX_IMPORT_DEPTH. On a module route: a quota of the app or the user is used up for the period (`details.limit`, e.g. FORMS_PER_APP_PER_DAY, EMAIL_PER_APP_PER_DAY, EMAIL_NOTIFY_ADMINS_PER_DAY).',
+    fix: 'Split big files, delete unused ones, load large libraries from esm.sh through drobek.json instead of copying them into the app. On a module route: show the user a message and stop — the quota resets after Retry-After; the app owner can ask the operator for a higher plan limit.',
   },
   {
     code: 'secret_in_source',
@@ -174,8 +174,9 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
   {
     code: 'unsupported_media_type',
     surface: 'module route 415 (DrobekError)',
-    meaning: 'A body was sent that is not JSON.',
-    fix: 'Use the SDK, which sends JSON; with fetch set Content-Type: application/json.',
+    meaning:
+      'A body was sent that is not JSON (routes that also take multipart/form-data, like forms, accept text fields only — a file part is refused).',
+    fix: 'Use the SDK, which sends JSON; with fetch set Content-Type: application/json. Forms take no files.',
   },
   {
     code: 'conflict',
@@ -186,7 +187,8 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
   {
     code: 'unavailable',
     surface: 'module route 503 (DrobekError)',
-    meaning: 'A service the module depends on is down or not configured on this server.',
+    meaning:
+      'A service the module depends on is down or not configured on this server — e.g. module e-mail is paused because the server-wide hourly cap was reached (`details.reason: email_paused`, Retry-After), the server runs no `email` module, or it has no DROBEK_MASTER_KEY (forms).',
     fix: 'Show the user a message and retry later; tell the app owner if it persists.',
   },
   {
@@ -206,6 +208,18 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     surface: 'module route (auth) 400 (DrobekError)',
     meaning: 'The sign-in code is wrong, expired (10 minutes) or already used.',
     fix: 'Re-enter the code from the e-mail, or request a new one with drobek.auth.sendCode.',
+  },
+  {
+    code: 'submitted_too_fast',
+    surface: 'module route (forms) 429 (DrobekError), Retry-After',
+    meaning: 'The form was sent less than 2 s after its token was issued (`details.min_wait_ms`) — the bot check. Nothing was stored.',
+    fix: 'Use <Form> or drobek.forms.submit (they fetch the token early and wait); with your own fetch, call GET /__drobek/v1/forms/<form>/token when the form is shown, not on submit.',
+  },
+  {
+    code: 'invalid_form_token',
+    surface: 'module route (forms) 400 (DrobekError)',
+    meaning: 'The `_t` field is missing, forged, for another form/app, or older than 2 hours (`details.reason`: invalid | expired). Nothing was stored.',
+    fix: 'Use <Form> or drobek.forms.submit — they fetch a fresh token and retry once by themselves.',
   },
   {
     code: 'too_many_attempts',

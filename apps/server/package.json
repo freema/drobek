@@ -32,6 +32,8 @@
     "@react-router/node": "7.14.0",
     "drizzle-orm": "^0.41.0",
     "drobek-module-auth": "workspace:*",
+    "drobek-module-email": "workspace:*",
+    "drobek-module-forms": "workspace:*",
     "drobek-module-hello": "workspace:*",
     "express": "^4.21.2",
     "ioredis": "^5.6.0",

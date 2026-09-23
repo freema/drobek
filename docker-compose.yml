@@ -172,12 +172,22 @@ services:
       # M1-02 (NSO-294): the built-in `auth` module (modules/auth, package
       # `drobek-module-auth`). Its sign-in limits are RELAXED: every local
       # request shares one client-IP bucket, and the e2e signs in many times.
-      DROBEK_MODULES: ${DROBEK_MODULES:-hello,auth}
+      # M1-04 (NSO-295): the built-in `email` (notifyAdmins, the per-app mail
+      # limit) and `forms` (requires email) modules. FORMS_SUBMITS_PER_IP_HOUR
+      # keeps its default 10 — every local request shares the `unknown` IP
+      # bucket, so the forms e2e resets that bucket before it counts.
+      DROBEK_MODULES: ${DROBEK_MODULES:-hello,auth,email,forms}
       HELLO_WAVES_PER_MINUTE: ${HELLO_WAVES_PER_MINUTE:-5}
       AUTH_CODES_PER_IP_15MIN: ${AUTH_CODES_PER_IP_15MIN:-100}
       AUTH_CODES_PER_IP_DAY: ${AUTH_CODES_PER_IP_DAY:-500}
       AUTH_CODES_PER_EMAIL_HOUR: ${AUTH_CODES_PER_EMAIL_HOUR:-50}
       AUTH_ATTEMPTS_PER_IP_15MIN: ${AUTH_ATTEMPTS_PER_IP_15MIN:-500}
+      EMAIL_PER_APP_PER_DAY: ${EMAIL_PER_APP_PER_DAY:-50}
+      EMAIL_NOTIFY_ADMINS_PER_DAY: ${EMAIL_NOTIFY_ADMINS_PER_DAY:-20}
+      EMAIL_GLOBAL_HOURLY_MAX: ${EMAIL_GLOBAL_HOURLY_MAX:-1000}
+      EMAIL_GLOBAL_PAUSE_MINUTES: ${EMAIL_GLOBAL_PAUSE_MINUTES:-15}
+      FORMS_SUBMITS_PER_IP_HOUR: ${FORMS_SUBMITS_PER_IP_HOUR:-10}
+      FORMS_PER_APP_PER_DAY: ${FORMS_PER_APP_PER_DAY:-200}
       LIMITS_PROVIDER_URL: ${LIMITS_PROVIDER_URL:-}
       LIMITS_PROVIDER_SECRET: ${LIMITS_PROVIDER_SECRET:-}
     extra_hosts:
@@ -199,6 +209,7 @@ services:
       - /repo/packages/dashboard/node_modules
       - /repo/packages/data/node_modules
       - /repo/packages/db/node_modules
+      - /repo/packages/email/node_modules
       - /repo/packages/insights/node_modules
       - /repo/packages/mcp/node_modules
       - /repo/packages/modules/node_modules
@@ -210,6 +221,8 @@ services:
       - /repo/tests-e2e/node_modules
       - /repo/examples/drobek-module-hello/node_modules
       - /repo/modules/auth/node_modules
+      - /repo/modules/email/node_modules
+      - /repo/modules/forms/node_modules
     healthcheck:
       test: ['CMD-SHELL', 'wget -q -T 5 -O - "http://127.0.0.1:$${PORT:-3000}/healthz" || exit 1']
       interval: 5s

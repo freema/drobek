@@ -1,4 +1,4 @@
-import { emailBrand, escapeHtml, renderEmailLayout } from '../layout.server.js';
+import { emailBrand, escapeHtml, renderEmailLayout } from '@drobek/email';
 
 export interface LoginCodeVars {
   code: string;

@@ -18,19 +18,21 @@
  */
 import { appsOrigin, dashboardOrigin } from '@drobek/apps';
 import { actorKindForSurface, writeAudit } from '@drobek/audit';
-import { escapeHtml, getEmailFrom, getSmtpTransport, renderEmailLayout, smtpConfigured } from '@drobek/auth';
+import { renderTextEmailHtml, sendEmail } from '@drobek/email';
 import { scanForSecrets } from '@drobek/compile';
 import { createConsoleLogger, getRedis, type Logger } from '@drobek/core';
-import { getDb, runJournalMigrations, type DB } from '@drobek/db';
+import { getDb, memberships, runJournalMigrations, users, type DB } from '@drobek/db';
+import { and, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
-import type { AnyModule, EndUser, HookApp, Limits, ModuleContext, Principal, RateLimitResult } from './contract.js';
+import type { AnyModule, EmailMessage, EndUser, HookApp, Limits, MailEnvelope, ModuleContext, Principal, RateLimitResult } from './contract.js';
 import { readConfigRow, readConfigRows, withLockedConfig, type PendingChange } from './configs.server.js';
-import { resolveRecipients, sanitizeSubject } from './email.js';
+import { capEmailText, emailKind, redactAddresses, resolveRecipients, sanitizeSubject } from './email.js';
 import { ModuleError, isModuleError, issuePaths, skillHint } from './errors.js';
 import { createLimitsProvider, type LimitsProvider } from './limits.js';
+import { mailGuardConfigFromEnv, redisMailGuard, type MailGuard, type MailGuardRedis } from './mail-guard.js';
 import { jsonEqual, mergePatch } from './merge-patch.js';
 import { cookiePrincipalResolver, endUserCookiesSecure, type PrincipalResolver } from './principal.js';
-import { ModuleLoadError, endUserAuthorityOf, loadModules, type ResolveOptions } from './registry.js';
+import { ModuleLoadError, checkRequires, endUserAuthorityOf, loadModules, mailAuthorityOf, type ResolveOptions } from './registry.js';
 import { collectRoutes, errorResult, matchRoute, runRoute, type PipelineRequest, type PipelineResult, type Route } from './router.js';
 import { decideAccess } from './rules.js';
 import { SDK_PATH, SDK_TYPES_PATH, buildSdk, moduleTypes, toPath, type SdkBundle } from './sdk-build.js';
@@ -41,8 +43,15 @@ import { generalSkillsDir, loadGeneralSkills, mergeSkills, moduleSkills, skillFo
 
 export type RateLimiter = (key: string, max: number, windowMs: number) => Promise<RateLimitResult>;
 
+/** One outgoing message to ONE address (recipients never see each other). */
+export interface TransportMessage extends MailEnvelope {
+  to: string;
+  subject: string;
+  text: string;
+}
+
 export interface EmailTransport {
-  send(message: { to: string[]; subject: string; text: string }): Promise<void>;
+  send(message: TransportMessage): Promise<void>;
 }
 
 export interface RuntimeDeps {
@@ -53,6 +62,8 @@ export interface RuntimeDeps {
   principal: PrincipalResolver;
   rateLimit: RateLimiter;
   email: EmailTransport;
+  /** The operator-wide hourly cap on module e-mail (auto-pause). */
+  mailGuard: MailGuard;
 }
 
 type RedisLike = ReturnType<typeof getRedis>;
@@ -64,10 +75,10 @@ export function redisRateLimiter(redis: () => Pick<RedisLike, 'incr' | 'pexpire'
     const k = `drobek:rl:${key}`;
     const n = await r.incr(k);
     if (n === 1) await r.pexpire(k, windowMs);
-    if (n <= max) return { ok: true, retryAfterSec: 0 };
+    if (n <= max) return { ok: true, count: n, retryAfterSec: 0 };
     const ttl = await r.ttl(k);
     if (ttl < 0) await r.pexpire(k, windowMs); // a key that lost its expiry must not lock forever
-    return { ok: false, retryAfterSec: Math.max(1, ttl > 0 ? ttl : Math.ceil(windowMs / 1000)) };
+    return { ok: false, count: n, retryAfterSec: Math.max(1, ttl > 0 ? ttl : Math.ceil(windowMs / 1000)) };
   };
 }
 
@@ -82,29 +93,37 @@ export function memoryRateLimiter(now: () => number = Date.now): RateLimiter & {
       windows.set(key, w);
     }
     w.n += 1;
-    return w.n <= max ? { ok: true, retryAfterSec: 0 } : { ok: false, retryAfterSec: Math.max(1, Math.ceil((w.resetAt - t) / 1000)) };
+    return w.n <= max
+      ? { ok: true, count: w.n, retryAfterSec: 0 }
+      : { ok: false, count: w.n, retryAfterSec: Math.max(1, Math.ceil((w.resetAt - t) / 1000)) };
   }) as RateLimiter & { reset(): void };
   fn.reset = () => windows.clear();
   return fn;
 }
 
-/** Plain-text mail through the operator's SMTP (the same transport as login codes). */
-export function smtpEmailTransport(log: Logger): EmailTransport {
+/** Plain-text mail through the operator's SMTP (@drobek/email — the transport of the login codes too). */
+export function smtpEmailTransport(log: Logger, env: NodeJS.ProcessEnv = process.env): EmailTransport {
   return {
-    async send({ to, subject, text }) {
-      if (!smtpConfigured()) {
-        if (process.env.NODE_ENV === 'production') throw new Error('SMTP is not configured');
-        log.info('module e-mail not sent (SMTP not configured in dev)', { recipients: to.length, subject });
-        return;
-      }
-      const t = await getSmtpTransport();
-      const html = renderEmailLayout({
-        preview: subject,
-        body: `<p style="white-space:pre-wrap;margin:0;">${escapeHtml(text)}</p>`,
+    async send({ to, subject, text, fromName, replyTo }) {
+      const html = renderTextEmailHtml({
+        subject,
+        text,
+        footNote: 'Sent by an app hosted on drobek. You get it because this address is configured for the app, or you are signed in to it or own it.',
       });
-      await t.sendMail({ from: getEmailFrom(), to, subject, text, html });
+      const r = await sendEmail({ to, subject, text, html, fromName, replyTo }, env);
+      if (r === 'not_configured') log.info('module e-mail not sent (SMTP not configured in dev)', { subject });
     },
   };
+}
+
+/** The addresses of an app's owners: the editors and workspace-admins of its workspace. */
+export async function appOwnerEmails(db: DB, workspaceId: string): Promise<string[]> {
+  const rows = await db
+    .select({ email: users.email })
+    .from(memberships)
+    .innerJoin(users, eq(users.id, memberships.userId))
+    .where(and(eq(memberships.workspaceId, workspaceId), inArray(memberships.role, ['editor', 'workspace-admin'])));
+  return rows.map((r) => r.email);
 }
 
 // ── shapes ───────────────────────────────────────────────────────────────────
@@ -488,6 +507,82 @@ export class ModuleRuntime {
     }
   }
 
+  // ── e-mail ──
+
+  /**
+   * `ctx.email.send` of module `m` for `app`: resolve the allowed recipients,
+   * refuse while module e-mail is paused, let the mail authority (the `email`
+   * module) apply the app's policy and envelope, count against the
+   * operator-wide hourly cap, send one message per address, audit.
+   */
+  private async sendEmail(
+    m: AnyModule,
+    app: HookApp,
+    principal: Principal,
+    config: unknown,
+    getLimits: () => Promise<Limits>,
+    message: EmailMessage
+  ): Promise<{ sent: number }> {
+    const deps = this.deps;
+    const db = deps.db();
+    const kind = emailKind(message.to);
+    const to = await resolveRecipients(message.to, { principal, config, owners: () => appOwnerEmails(db, app.workspaceId) });
+    if (to.length === 0) return { sent: 0 };
+    const subject = sanitizeSubject(message.subject);
+    const text = capEmailText(message.text);
+    const meta = { app_id: app.id, module: m.name, kind };
+
+    await deps.mailGuard.assertOpen(meta);
+    let envelope: MailEnvelope = {};
+    const authority = mailAuthorityOf(this.modules);
+    if (authority?.mail) {
+      const row = await readConfigRow(app.id, authority.name, db);
+      envelope = await authority.mail.prepare({
+        app,
+        module: m.name,
+        kind,
+        recipients: to.length,
+        config: this.effectiveConfig(authority, row.config),
+        limits: await getLimits(),
+        rateLimit: (bucket, key, max, windowMs) =>
+          deps.rateLimit(`mod:${authority.name}:${app.id}:${bucket}:${key}`, max, windowMs),
+        log: deps.log,
+      });
+    } else if (kind !== 'sign_in') {
+      throw new ModuleError('unavailable', 'This server sends no app e-mail: the platform module "email" is not active.', {
+        hint: skillHint(),
+      });
+    }
+    await deps.mailGuard.admit(to.length, meta);
+
+    let sent = 0;
+    try {
+      for (const address of to) {
+        try {
+          await deps.email.send({ to: address, subject, text, ...envelope });
+        } catch (err) {
+          // SMTP errors can quote the recipient: log them without addresses, answer 503.
+          deps.log.error('module e-mail failed', { ...meta, sent, error: redactAddresses(String((err as Error)?.message ?? err)) });
+          throw new ModuleError('unavailable', 'The e-mail could not be sent. Try again later.');
+        }
+        sent += 1;
+      }
+    } finally {
+      if (sent > 0) {
+        await writeAudit({
+          workspaceId: app.workspaceId,
+          actorUserId: null,
+          actorKind: actorKindForSurface('apps'),
+          action: 'email.send',
+          subjectType: 'app',
+          target: app.slug,
+          meta: { module: m.name, kind, recipients: sent, end_user: principal.kind === 'user' ? principal.id : 'anon' },
+        }).catch((err: unknown) => deps.log.error('audit email.send failed', { app_id: app.id, error: String(err) }));
+      }
+    }
+    return { sent };
+  }
+
   // ── HTTP on the app hosts ──
 
   /** Answer one `/__drobek/*` request of `app` (never throws). */
@@ -607,12 +702,7 @@ export class ModuleRuntime {
         });
       },
       email: {
-        send: async (message) => {
-          const to = resolveRecipients(message.to, principal, config);
-          if (to.length === 0) return { sent: 0 };
-          await deps.email.send({ to, subject: sanitizeSubject(message.subject), text: String(message.text) });
-          return { sent: to.length };
-        },
+        send: (message) => this.sendEmail(m, hookApp, principal, config, getLimits, message),
       },
     };
   }
@@ -642,6 +732,8 @@ export async function loadModuleRuntime(opts: LoadRuntimeOptions = {}): Promise<
   const log = opts.log ?? opts.deps?.log ?? createConsoleLogger('modules');
   const modules = opts.modules ?? (await loadModules(env, opts));
   const authority = endUserAuthorityOf(modules);
+  mailAuthorityOf(modules);
+  checkRequires(modules);
 
   if (env.DROBEK_MIGRATE_ON_START !== '0') {
     const migrate =
@@ -671,7 +763,12 @@ export async function loadModuleRuntime(opts: LoadRuntimeOptions = {}): Promise<
       current: authority ? (app, user) => (runtime ? runtime.currentEndUser(app, user) : Promise.resolve(null)) : null,
     }),
     rateLimit: redisRateLimiter(getRedis),
-    email: smtpEmailTransport(log),
+    email: smtpEmailTransport(log, env),
+    mailGuard: redisMailGuard({
+      redis: () => getRedis() as unknown as MailGuardRedis,
+      config: mailGuardConfigFromEnv(env),
+      log,
+    }),
     ...opts.deps,
   };
   runtime = new ModuleRuntime({ modules, skills, sdk, deps });

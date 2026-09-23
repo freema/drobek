@@ -67,8 +67,8 @@
     "@drobek/apps": "workspace:*",
     "@drobek/core": "workspace:*",
     "@drobek/db": "workspace:*",
-    "drizzle-orm": "^0.41.0",
-    "nodemailer": "^6.9.16"
+    "@drobek/email": "workspace:*",
+    "drizzle-orm": "^0.41.0"
   },
   "peerDependencies": {
     "react": "^19.0.0",
@@ -76,7 +76,6 @@
   },
   "devDependencies": {
     "@types/node": "^22",
-    "@types/nodemailer": "^6.4.17",
     "@types/react": "^19.0.10",
     "react": "^19.0.0",
     "react-router": "7.14.0",

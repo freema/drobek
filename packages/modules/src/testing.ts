@@ -14,12 +14,12 @@
  */
 import { noopLogger, type Logger } from '@drobek/core';
 import type { DB } from '@drobek/db';
-import type { AnyModule, EmailMessage, HookApp, Limits, ModuleContext, Principal } from './contract.js';
+import type { AnyModule, EmailMessage, HookApp, Limits, MailEnvelope, ModuleContext, Principal } from './contract.js';
 import { mergePatch } from './merge-patch.js';
 import { collectRoutes, errorResult, matchRoute, runRoute, type PipelineResult } from './router.js';
 import { decideAccess } from './rules.js';
 import { ModuleError } from './errors.js';
-import { resolveRecipients, sanitizeSubject } from './email.js';
+import { capEmailText, emailKind, resolveRecipients, sanitizeSubject } from './email.js';
 import { memoryRateLimiter } from './runtime.js';
 
 export interface ModuleTestOptions {
@@ -36,10 +36,15 @@ export interface ModuleTestOptions {
   /** The app host the requests come from (default `http://test--preview.apps.localhost`). */
   origin?: string;
   now?: () => number;
+  /** The app owners' addresses (`{ appOwners: true }` recipients; default none). */
+  owners?: string[];
 }
 
 export interface TestRequestInit {
+  /** A JSON body. */
   body?: unknown;
+  /** A raw body instead (set its `content-type` in `headers`), e.g. multipart/form-data. */
+  rawBody?: Buffer | string;
   query?: Record<string, string>;
   headers?: Record<string, string>;
   clientIp?: string;
@@ -58,8 +63,12 @@ export interface ModuleTestContext {
   request(method: string, path: string, init?: TestRequestInit): Promise<TestResponse>;
   /** Audit rows the module wrote (`<module>.<action>`). */
   audits: { action: string; meta: Record<string, unknown> }[];
-  /** E-mails the module sent (resolved recipients). */
-  emails: { to: string[]; subject: string; text: string }[];
+  /**
+   * E-mails the module sent (resolved recipients, one entry per send). When
+   * the module under test is the mail authority (`mail`), its own `prepare`
+   * runs first (limits, envelope) exactly as core runs it.
+   */
+  emails: ({ to: string[]; subject: string; text: string; kind: 'sign_in' | 'notification' } & MailEnvelope)[];
   /** Change who is calling. */
   setPrincipal(principal: Principal): void;
 }
@@ -111,8 +120,23 @@ export function createModuleTestContext(module: AnyModule, opts: ModuleTestOptio
     },
     email: {
       send: async (message: EmailMessage) => {
-        const to = resolveRecipients(message.to, principal, config);
-        if (to.length > 0) emails.push({ to, subject: sanitizeSubject(message.subject), text: String(message.text) });
+        const kind = emailKind(message.to);
+        const to = await resolveRecipients(message.to, { principal, config, owners: async () => opts.owners ?? [] });
+        if (to.length === 0) return { sent: 0 };
+        let envelope: MailEnvelope = {};
+        if (module.mail) {
+          envelope = await module.mail.prepare({
+            app,
+            module: module.name,
+            kind,
+            recipients: to.length,
+            config,
+            limits,
+            rateLimit: (bucket, key, max, windowMs) => rateLimit(`${bucket}:${key}`, max, windowMs),
+            log: opts.log ?? noopLogger,
+          });
+        }
+        emails.push({ to, subject: sanitizeSubject(message.subject), text: capEmailText(message.text), kind, ...envelope });
         return { sent: to.length };
       },
     },
@@ -147,10 +171,15 @@ export function createModuleTestContext(module: AnyModule, opts: ModuleTestOptio
       const mutating = !['GET', 'HEAD'].includes(upper);
       const headers: Record<string, string> = {
         ...(mutating ? { origin, 'x-drobek-sdk': '1' } : {}),
-        ...(init.body !== undefined ? { 'content-type': 'application/json' } : {}),
+        ...(init.body !== undefined && init.rawBody === undefined ? { 'content-type': 'application/json' } : {}),
       };
       for (const [k, v] of Object.entries(init.headers ?? {})) headers[k.toLowerCase()] = v;
-      const raw = init.body === undefined ? null : Buffer.from(JSON.stringify(init.body));
+      const raw =
+        init.rawBody !== undefined
+          ? Buffer.from(init.rawBody)
+          : init.body === undefined
+            ? null
+            : Buffer.from(JSON.stringify(init.body));
       const qs = new URLSearchParams(init.query ?? {}).toString();
       const hit = matchRoute(routes, upper, path);
       if (hit.kind === 'not_found') return toResponse(errorResult(new ModuleError('not_found', `no route ${upper} ${path}`), module.name));

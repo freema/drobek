@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { defineModule } from './contract.js';
-import { ModuleLoadError, endUserAuthorityOf, loadModules, packageNameFor, parseModuleList, resolveModule, validateModule } from './registry.js';
+import { ModuleLoadError, checkRequires, endUserAuthorityOf, loadModules, mailAuthorityOf, packageNameFor, parseModuleList, resolveModule, validateModule } from './registry.js';
 import { echo, quiet } from './test/fixtures.js';
 
 const importer = (map: Record<string, unknown>) => async (pkg: string) => {
@@ -74,5 +74,29 @@ describe('registry', () => {
     await expect(
       loadModules({ DROBEK_MODULES: 'one,two' }, { importer: importer({ 'drobek-module-one': one, 'drobek-module-two': two }) })
     ).rejects.toThrow(ModuleLoadError);
+  });
+
+  it('requires: a module that needs another refuses the start without it (and names the fix)', async () => {
+    const base = { version: '1.0.0', skill: { useWhen: 'x', markdown: '# x' }, configSchema: z.object({}), configDefaults: {} };
+    const mail = defineModule({ ...base, name: 'mail' });
+    const form = defineModule({ ...base, name: 'form', requires: ['mail'] });
+    expect(() => validateModule(defineModule({ ...base, name: 'selfish', requires: ['selfish'] }))).toThrow(/OTHER modules/);
+    expect(() => validateModule(defineModule({ ...base, name: 'odd', requires: ['Bad Name'] }))).toThrow(/requires/);
+    expect(() => checkRequires([form, mail])).not.toThrow();
+    expect(() => checkRequires([form])).toThrow(/module "form" requires the module "mail": add it to DROBEK_MODULES \(e.g. DROBEK_MODULES=form,mail\)/);
+    await expect(loadModules({ DROBEK_MODULES: 'form' }, { importer: importer({ 'drobek-module-form': form }) })).rejects.toThrow(ModuleLoadError);
+    const both = await loadModules({ DROBEK_MODULES: 'form,mail' }, { importer: importer({ 'drobek-module-form': form, 'drobek-module-mail': mail }) });
+    expect(both.map((m) => m.name)).toEqual(['form', 'mail']);
+  });
+
+  it('at most one module owns app e-mail (mail.prepare must be a function)', () => {
+    const base = { version: '1.0.0', skill: { useWhen: 'x', markdown: '# x' }, configSchema: z.object({}), configDefaults: {} };
+    const prepare = async () => ({});
+    const one = defineModule({ ...base, name: 'one', mail: { prepare } });
+    const two = defineModule({ ...base, name: 'two', mail: { prepare } });
+    expect(() => validateModule(defineModule({ ...base, name: 'bad', mail: {} as never }))).toThrow(/mail.prepare/);
+    expect(mailAuthorityOf([quiet, one])).toBe(one);
+    expect(mailAuthorityOf([quiet])).toBeNull();
+    expect(() => mailAuthorityOf([one, two])).toThrow(/only one module may own app e-mail/);
   });
 });

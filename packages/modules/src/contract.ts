@@ -176,6 +176,50 @@ export interface EndUserAuthority<Config = unknown> {
   current(input: { app: HookApp; user: EndUser; config: Config; db: DB; log: Logger }): Promise<EndUser | null>;
 }
 
+/** What an e-mail is for (the module that owns app e-mail treats them differently). */
+export type EmailKind =
+  /** A one-time sign-in code (`{ signInAddress }`) — the auth module. */
+  | 'sign_in'
+  /** Everything else: form notifications, notifyAdmins, a message to the signed-in user. */
+  | 'notification';
+
+/** What core hands the mail authority for every message of any module of an app. */
+export interface MailPrepareInput<Config = unknown> {
+  app: HookApp;
+  /** The module that sends (e.g. `forms`). */
+  module: string;
+  kind: EmailKind;
+  /** How many addresses the message resolved to (≥ 1). */
+  recipients: number;
+  /** The MAIL module's own effective config for this app. */
+  config: Config;
+  /** Limits of the app's workspace. */
+  limits: Limits;
+  /** Fixed-window counter namespaced to the MAIL module + this app. */
+  rateLimit(bucket: string, key: string, max: number, windowMs: number): Promise<RateLimitResult>;
+  log: Logger;
+}
+
+/** Envelope details the mail authority adds to a message. */
+export interface MailEnvelope {
+  /** Display name of the sender (the address is always the operator's EMAIL_FROM). */
+  fromName?: string;
+  /** A Reply-To address. */
+  replyTo?: string;
+}
+
+/**
+ * The module that owns app e-mail (the built-in `email`): core calls
+ * `prepare` for EVERY `ctx.email.send` of any module, after the recipients
+ * resolved and before anything is sent. It enforces the per-app policy (a
+ * `limit_exceeded` ModuleError refuses the message) and returns the
+ * envelope. At most one active module may declare it. Without one, only
+ * sign-in codes can be sent; any other message is `unavailable`.
+ */
+export interface MailAuthority<Config = unknown> {
+  prepare(input: MailPrepareInput<Config>): Promise<MailEnvelope>;
+}
+
 // ── the module ───────────────────────────────────────────────────────────────
 
 export interface DrobekModule<Config = unknown> {
@@ -208,6 +252,13 @@ export interface DrobekModule<Config = unknown> {
   hooks?: ModuleHooks;
   /** Only the module that creates end-user sessions (auth). */
   endUsers?: EndUserAuthority<Config>;
+  /** Only the module that owns app e-mail (email): per-app limits + the envelope of every module e-mail. */
+  mail?: MailAuthority<Config>;
+  /**
+   * Other modules this one needs (by name), e.g. `forms` requires `email`.
+   * The server refuses to start when one of them is not in DROBEK_MODULES.
+   */
+  requires?: string[];
 }
 
 /** A module of any config type (what the registry holds). */
@@ -233,6 +284,8 @@ export type Limits = Readonly<Record<string, number>>;
 
 export interface RateLimitResult {
   ok: boolean;
+  /** Calls counted in the current window, this one included. */
+  count: number;
   /** Seconds until the window resets (a hint for Retry-After). */
   retryAfterSec: number;
 }
@@ -244,17 +297,25 @@ export type EmailRecipient =
   /** The signed-in end user making the request (their verified e-mail). */
   | { principal: true }
   /**
+   * The app's owners: the editors and workspace-admins of the app's workspace
+   * (verified drobek accounts; membership is managed by people in the
+   * dashboard, never by an agent).
+   */
+  | { appOwners: true }
+  /**
    * The ONE address someone is signing in with — the one-time code of the
    * auth module, sent only after the address passed the app's owner-confirmed
-   * allowlist and the sign-in rate limits. Not for anything else.
+   * allowlist and the sign-in rate limits. Not for anything else (and never
+   * combined with another recipient).
    */
   | { signInAddress: string };
 
 export interface EmailMessage {
-  to: EmailRecipient;
+  /** One recipient reference or several (de-duplicated; every address gets its own message). */
+  to: EmailRecipient | EmailRecipient[];
   /** One line: control characters (CR/LF, …) become spaces, max 200 characters. */
   subject: string;
-  /** Plain text; the server wraps it in the drobek layout (escaped). */
+  /** Plain text (max 20 000 characters); the server wraps it in the drobek layout (escaped). */
   text: string;
 }
 
@@ -286,6 +347,12 @@ export interface ModuleContext<Config = unknown> extends ModuleServices {
   /** Append an audit row for this app (actor derived by the server). */
   audit(action: string, meta?: Record<string, unknown>): Promise<void>;
   email: {
+    /**
+     * Send to allowed recipients only (never an arbitrary address). Resolves
+     * `{ sent }` (0 when no address resolved). Rejects with a ModuleError:
+     * `limit_exceeded` (the app's e-mail limits), `unavailable` (e-mail is
+     * paused by the operator-wide hourly cap, or no mail module is active).
+     */
     send(message: EmailMessage): Promise<{ sent: number }>;
   };
 }
@@ -344,6 +411,13 @@ export interface RouteOptions<Config = unknown, Body = unknown, Query = Record<s
   rateLimit?: RouteRateLimit;
   /** Max request body (default 32 KiB). */
   maxBodyBytes?: number;
+  /**
+   * Accepted body formats (default `['json']`). `multipart` =
+   * `multipart/form-data` with text fields only: the body becomes
+   * `{ name: value }` (a repeated name → an array of values); a file part is
+   * refused (415). Anything else is `415 unsupported_media_type`.
+   */
+  bodyTypes?: Array<'json' | 'multipart'>;
   /**
    * CSRF guard for mutating methods (POST/PUT/PATCH/DELETE). Always: an
    * `Origin` header, when present, must be the app host itself. Default

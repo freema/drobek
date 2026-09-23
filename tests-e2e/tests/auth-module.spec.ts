@@ -7,7 +7,7 @@ import { withDb } from './helpers/seed';
 
 /**
  * M1-02 (NSO-294): the built-in platform module `auth` end to end on the apps
- * host (DROBEK_MODULES=hello,auth in both composes, relaxed AUTH_* limits):
+ * host (DROBEK_MODULES=hello,auth,email,forms in both composes, relaxed AUTH_* limits):
  *
  *  - skill_info('auth') carries the <LoginGate> example; an agent writes it
  *    as src/main.tsx of a react-ts app and it compiles (drobek/auth is built
