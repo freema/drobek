@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TypeSniffer, claimsCsv, sniffBinary, sniffType, typeAllowed } from './sniff.js';
+import { SNIFF_HEAD_BYTES, TypeSniffer, claimsCsv, looksLikeSvg, sniffBinary, sniffType, typeAllowed } from './sniff.js';
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
 const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 16, 0x4a, 0x46, 0x49, 0x46, 0, 1]);
@@ -38,6 +38,35 @@ describe('sniffing (the bytes decide, never the name or the declared type)', () 
     expect(sniffType(decorated)).toBe('image/svg+xml');
     expect(sniffType(Buffer.from('<html><svg></svg></html>'))).toBeNull();
     expect(sniffType(Buffer.from('<svgx></svgx>'))).toBeNull();
+  });
+
+  it('SVG: a DOCTYPE with an internal subset; unterminated prolog items are not SVG', () => {
+    expect(looksLikeSvg('<!DOCTYPE svg [ <!ENTITY a "b"> ]>\n<svg/>')).toBe(true);
+    expect(looksLikeSvg('<!doctype svg><!-- c --><?pi x?>\n\t<SVG>')).toBe(true);
+    expect(looksLikeSvg('<!DOCTYPE html><svg>')).toBe(false);
+    expect(looksLikeSvg('<!DOCTYPE svg><!DOCTYPE svg><svg>')).toBe(false); // one DOCTYPE only
+    expect(looksLikeSvg('<?xml version="1.0"')).toBe(false);
+    expect(looksLikeSvg('<!-- never closed <svg>')).toBe(false);
+    expect(looksLikeSvg('<!DOCTYPE svg [ <!ENTITY a "b"> <svg>')).toBe(false);
+    expect(looksLikeSvg('<!---->'.repeat(65) + '<svg>')).toBe(false); // over the prolog cap
+    expect(looksLikeSvg('<!---->'.repeat(10) + '<svg>')).toBe(true);
+  });
+
+  it('SVG sniffing is linear: pathological 16 KiB heads answer fast (NSO-322 R1)', () => {
+    const fill = (unit: string, tail = 'a'): Buffer => Buffer.from(unit.repeat(Math.floor((SNIFF_HEAD_BYTES - tail.length) / unit.length)) + tail);
+    const inputs = [
+      fill('<?xml?>'), // overlapping `<?xml…?>` / `<?…?>` alternatives in the old regex
+      fill('<!---->'),
+      fill('<?xml?>', '<svg>'),
+      Buffer.from('<?' + ' '.repeat(SNIFF_HEAD_BYTES - 2)), // unterminated `<?`
+      Buffer.from('<!--' + '-'.repeat(SNIFF_HEAD_BYTES - 4)),
+      Buffer.from('<!DOCTYPE svg [' + '<'.repeat(SNIFF_HEAD_BYTES - 15)),
+    ];
+    for (const input of inputs) {
+      const started = performance.now();
+      expect(sniffType(input)).toBeNull();
+      expect(performance.now() - started).toBeLessThan(50);
+    }
   });
 
   it('CSV only when the client calls it CSV, it is UTF-8 text and holds no markup', () => {

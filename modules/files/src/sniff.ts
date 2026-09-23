@@ -58,9 +58,72 @@ export function sniffBinary(head: Buffer): FileType | null {
 /** Enough bytes to tell every binary signature apart. */
 const MAGIC_BYTES = 12;
 
-// Optional BOM + whitespace, then any mix of an XML declaration, comments,
-// processing instructions and one `<!DOCTYPE svg …>`, then the `<svg` root.
-const SVG_RE = /^\s*(?:(?:<\?xml[^>]*\?>|<!--[\s\S]*?-->|<\?[^>]*\?>|<!DOCTYPE\s+svg[^>[]*(?:\[[^\]]*\])?\s*>)\s*)*<svg[\s>/]/i;
+/** Most prolog items (declaration, PIs, comments) looked past before `<svg`. */
+const SVG_PROLOG_MAX_ITEMS = 64;
+// Sticky (`y`): matched at `lastIndex`, never scanning ahead.
+const SVG_ROOT_RE = /<svg[\s>/]/iy;
+const DOCTYPE_SVG_RE = /<!DOCTYPE[ \t\r\n]+svg(?=[ \t\r\n>[])/iy;
+
+const matchesAt = (re: RegExp, s: string, at: number): boolean => {
+  re.lastIndex = at;
+  return re.test(s);
+};
+
+const isXmlSpace = (c: string): boolean => c === ' ' || c === '\t' || c === '\n' || c === '\r';
+
+/**
+ * Does the (BOM-stripped) head start with an `<svg` root? Whitespace, then any
+ * mix of XML declarations / processing instructions (`<?…?>`) and comments
+ * (`<!--…-->`) — at most SVG_PROLOG_MAX_ITEMS — and one `<!DOCTYPE svg …>`
+ * (with an optional `[…]` internal subset), then `<svg`.
+ *
+ * A linear scanner on purpose: the regex it replaces backtracked
+ * exponentially on repeated `<?xml?>` (NSO-322 R1). Every step moves `i`
+ * forward through `indexOf`, so the cost is O(head length). An unterminated
+ * item is not an SVG.
+ */
+export function looksLikeSvg(head: string): boolean {
+  let i = 0;
+  const skipSpace = (): void => {
+    while (i < head.length && isXmlSpace(head[i])) i++;
+  };
+  let doctype = false;
+  for (let items = 0; items <= SVG_PROLOG_MAX_ITEMS; items++) {
+    skipSpace();
+    if (head.startsWith('<?', i)) {
+      const end = head.indexOf('?>', i + 2);
+      if (end < 0) return false;
+      i = end + 2;
+      continue;
+    }
+    if (head.startsWith('<!--', i)) {
+      const end = head.indexOf('-->', i + 4);
+      if (end < 0) return false;
+      i = end + 3;
+      continue;
+    }
+    if (!doctype && matchesAt(DOCTYPE_SVG_RE, head, i)) {
+      doctype = true;
+      const gt = head.indexOf('>', i);
+      const bracket = head.indexOf('[', i);
+      if (gt < 0) return false;
+      if (bracket < 0 || gt < bracket) {
+        i = gt + 1;
+        continue;
+      }
+      // An internal subset: `[` … `]`, optional whitespace, `>`.
+      const close = head.indexOf(']', bracket + 1);
+      if (close < 0) return false;
+      i = close + 1;
+      skipSpace();
+      if (head[i] !== '>') return false;
+      i++;
+      continue;
+    }
+    return matchesAt(SVG_ROOT_RE, head, i);
+  }
+  return false;
+}
 const MARKUP_RE = /<!doctype|<html|<script|<\?xml|<svg|<body|<iframe/i;
 
 const CSV_TYPES = new Set(['text/csv', 'application/csv', 'text/comma-separated-values', 'application/vnd.ms-excel', 'text/x-csv']);
@@ -130,7 +193,7 @@ export class TypeSniffer {
     }
     let head = this.head.toString('utf8');
     if (head.charCodeAt(0) === 0xfeff) head = head.slice(1); // a UTF-8 BOM
-    if (SVG_RE.test(head)) return 'image/svg+xml';
+    if (looksLikeSvg(head)) return 'image/svg+xml';
     const first = head.trimStart()[0];
     if (claimsCsv(declaredType, filename) && first !== '<' && !MARKUP_RE.test(head)) return 'text/csv';
     return null;
