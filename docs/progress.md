@@ -19,11 +19,14 @@ Opus 5.5 subagents, black-box verification by Sonnet, everything lands on
 | 4 | NSO-290 M1-07 get_logs | merged 2a7fe09, check green | migration 0014; e2e spec at block end |
 | 5 | NSO-320 e-mail budget split | merged 2199fa1, check green | no migration |
 | 6 | NSO-288 M2-01 app page | running (worktree, base 9130f7e) | slot 0016 |
-| 7 | NSO-291 M2-02 modules UI | running (worktree, base 9130f7e) | slot 0017 |
 | 8 | NSO-292 M3-01 domains | running (worktree, base 9130f7e) | slot 0018 |
-| 9 | NSO-284 M2-04 keys/connections | running (worktree, base 9130f7e) | slot 0019 |
 | 10 | NSO-308 M1-08 skills | running (worktree, base b056d57) | last M1 task |
 | 11 | NSO-301 M2-03 data/forms/users/uploads/logs tabs | running (worktree, base b056d57) | slot 0020 |
+| 12 | NSO-293 M4-02 abuse | running (worktree, base 8f25925) | slot 0021 |
+| 13 | NSO-304 M4-03 self-host packaging | running (worktree, base 8f25925) | VPS timing needs Tomáš |
+| – | M1 block-end e2e + black-box | e2e green (99 + reruns, 8f25925); Sonnet black-box 25 PASS / 0 FAIL / 1 not testable (NSO-320 cap needs Redis seeding) | **M1 complete** → `next` pushed, draft MR opened |
+| 7 | NSO-291 M2-02 modules UI | merged 8d88040, check green | pending owner mail 1/h per app |
+| 9 | NSO-284 M2-04 keys/connections | merged 574cb76, check green | no migration |
 
 **Mode change (Tomáš, 2026-09-23 evening):** speed over per-task proof. Per
 task = implementation + unit tests + e2e spec FILES + green `task check`;
