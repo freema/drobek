@@ -25,7 +25,7 @@ import {
  * errors). Requires the local compose stack.
  */
 
-const DATA_SCOPE = 'mcp:whoami apps:read data:read data:write';
+const DATA_SCOPE = 'read write';
 
 const SCHEMA = {
   type: 'object',
@@ -45,7 +45,7 @@ interface SeededApp {
 }
 
 /**
- * Seed a throwaway app in the token's workspace, define a `todos` collection (LOCKED — the member-view
+ * Seed a throwaway app in the user's personal workspace, define a `todos` collection (LOCKED — the member-view
  * still reads it) + an owner-only `private_notes` collection (which the public/
  * anon path rejects but the owner dashboard may list/read), and seed 4 todos.
  * `delta` carries an extra non-schema key to exercise the per-row expander.

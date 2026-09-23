@@ -327,10 +327,19 @@ export const appDocuments = pgTable(
 // drobek's web app is the OAuth 2.1 Authorization Server; mcp-server is the
 // protected Resource Server. All opaque tokens/codes are stored SHA-256-hashed
 // at rest (never the raw secret). PKCE S256 is mandatory. Tokens are
-// USER-scoped and carry a chosen workspace + membership role + an RFC 8707
+// bound to a USER (M0-04, NSO-282) — not to a workspace: every MCP tool call
+// re-resolves the caller's membership in the workspace it targets — and carry
+// the granted scope (`read` / `write` / `publish`) plus the RFC 8707
 // `audience` the Resource Server validates. See @drobek/oauth.
 
-/** Dynamically registered (DCR) public PKCE clients — no client_secret. */
+/**
+ * Public PKCE clients — no client_secret. `source` = `dcr` for a Dynamic Client
+ * Registration row (random hex client_id) or `cimd` for a Client ID Metadata
+ * Document client (client_id = the https URL of its metadata; the row is an
+ * upserted mirror of the fetched document so codes/tokens can reference it).
+ * `last_used_at` is stamped when the user approves a grant for the client —
+ * a DCR row that never got one counts toward the unused-client cap.
+ */
 export const oauthClients = pgTable('oauth_clients', {
   id: text('id')
     .primaryKey()
@@ -342,6 +351,8 @@ export const oauthClients = pgTable('oauth_clients', {
   tokenEndpointAuthMethod: text('token_endpoint_auth_method')
     .notNull()
     .default('none'),
+  source: text('source').notNull().default('dcr'),
+  lastUsedAt: timestamp('last_used_at'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
 
@@ -358,10 +369,6 @@ export const oauthAuthorizationCodes = pgTable('oauth_authorization_codes', {
   userId: text('user_id')
     .notNull()
     .references(() => users.id, { onDelete: 'cascade' }),
-  workspaceId: text('workspace_id')
-    .notNull()
-    .references(() => workspaces.id, { onDelete: 'cascade' }),
-  role: membershipRoleEnum('role').notNull(),
   redirectUri: text('redirect_uri').notNull(),
   codeChallenge: text('code_challenge').notNull(),
   codeChallengeMethod: text('code_challenge_method').notNull(),
@@ -382,10 +389,6 @@ export const oauthAccessTokens = pgTable('oauth_access_tokens', {
   userId: text('user_id')
     .notNull()
     .references(() => users.id, { onDelete: 'cascade' }),
-  workspaceId: text('workspace_id')
-    .notNull()
-    .references(() => workspaces.id, { onDelete: 'cascade' }),
-  role: membershipRoleEnum('role').notNull(),
   oauthClientId: text('oauth_client_id').references(() => oauthClients.id, {
     onDelete: 'set null',
   }),
@@ -410,10 +413,6 @@ export const oauthRefreshTokens = pgTable('oauth_refresh_tokens', {
   userId: text('user_id')
     .notNull()
     .references(() => users.id, { onDelete: 'cascade' }),
-  workspaceId: text('workspace_id')
-    .notNull()
-    .references(() => workspaces.id, { onDelete: 'cascade' }),
-  role: membershipRoleEnum('role').notNull(),
   oauthClientId: text('oauth_client_id').references(() => oauthClients.id, {
     onDelete: 'set null',
   }),
@@ -425,6 +424,29 @@ export const oauthRefreshTokens = pgTable('oauth_refresh_tokens', {
   ),
   usedAt: timestamp('used_at'),
   expiresAt: timestamp('expires_at').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+/**
+ * Personal API keys (M0-04, NSO-282): `drk_` + 32 base64url chars, an
+ * alternative Bearer for the same MCP Resource Server path (the prefix tells
+ * them apart). Bound to a user like an OAuth token, same scope vocabulary
+ * (`scopes` is space-delimited), no audience. Only the SHA-256 of the key is
+ * stored; the raw key is shown once at creation. `last_used_at` is refreshed
+ * at most once a minute; a set `revoked_at` rejects the key.
+ */
+export const apiKeys = pgTable('api_keys', {
+  id: text('id')
+    .primaryKey()
+    .$defaultFn(() => createId()),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  keyHash: text('key_hash').notNull().unique(),
+  scopes: text('scopes').notNull(),
+  lastUsedAt: timestamp('last_used_at'),
+  revokedAt: timestamp('revoked_at'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
 

@@ -28,11 +28,13 @@ export {
   getWorkspaceBySlug,
   getWorkspaceById,
   requireWorkspaceRole,
+  resolveWorkspaceAccess,
   listWorkspaceMembers,
   listUserWorkspaces,
   listAllWorkspaces,
   type WorkspaceSummary,
   type WorkspaceAccess,
+  type PrincipalWorkspaceAccess,
   type WorkspaceMember,
   type UserWorkspace,
 } from './membership.server.js';

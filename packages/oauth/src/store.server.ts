@@ -15,15 +15,10 @@ import {
   type DB,
 } from '@drobek/db';
 
-/** The three membership roles a token can be bound to (mirrors membershipRoleEnum). */
-export type OAuthRole = 'workspace-admin' | 'editor' | 'viewer';
-
 export interface AuthCodeRecord {
   codeHash: string;
   clientId: string;
   userId: string;
-  workspaceId: string;
-  role: OAuthRole;
   redirectUri: string;
   codeChallenge: string;
   codeChallengeMethod: string;
@@ -37,11 +32,10 @@ export interface AuthCodeRow extends AuthCodeRecord {
   createdAt: Date;
 }
 
+/** A user-bound grant (M0-04): no workspace, no role — membership is resolved per call. */
 export interface GrantRecord {
   tokenHash: string;
   userId: string;
-  workspaceId: string;
-  role: OAuthRole;
   oauthClientId: string | null;
   scope: string;
   audience: string;
@@ -62,7 +56,6 @@ export interface RefreshTokenRow extends GrantRecord {
 /** Grant identity used to revoke a lineage's access tokens on reuse. */
 export interface GrantKey {
   userId: string;
-  workspaceId: string;
   oauthClientId: string | null;
   audience: string;
 }
@@ -141,7 +134,6 @@ export function createMemoryOAuthStore(): OAuthStore {
       for (const row of access.values()) {
         if (
           row.userId === grant.userId &&
-          row.workspaceId === grant.workspaceId &&
           row.oauthClientId === grant.oauthClientId &&
           row.audience === grant.audience &&
           row.revokedAt === null
@@ -204,8 +196,6 @@ export function createDbOAuthStore(db: DB): OAuthStore {
         codeHash: rec.codeHash,
         clientId: rec.clientId,
         userId: rec.userId,
-        workspaceId: rec.workspaceId,
-        role: rec.role,
         redirectUri: rec.redirectUri,
         codeChallenge: rec.codeChallenge,
         codeChallengeMethod: rec.codeChallengeMethod,
@@ -240,8 +230,6 @@ export function createDbOAuthStore(db: DB): OAuthStore {
       await db.insert(oauthAccessTokens).values({
         tokenHash: rec.tokenHash,
         userId: rec.userId,
-        workspaceId: rec.workspaceId,
-        role: rec.role,
         oauthClientId: rec.oauthClientId,
         scope: rec.scope,
         audience: rec.audience,
@@ -263,7 +251,6 @@ export function createDbOAuthStore(db: DB): OAuthStore {
         .where(
           and(
             eq(oauthAccessTokens.userId, grant.userId),
-            eq(oauthAccessTokens.workspaceId, grant.workspaceId),
             eq(oauthAccessTokens.audience, grant.audience),
             grant.oauthClientId === null
               ? isNull(oauthAccessTokens.oauthClientId)
@@ -279,8 +266,6 @@ export function createDbOAuthStore(db: DB): OAuthStore {
         .values({
           tokenHash: rec.tokenHash,
           userId: rec.userId,
-          workspaceId: rec.workspaceId,
-          role: rec.role,
           oauthClientId: rec.oauthClientId,
           scope: rec.scope,
           audience: rec.audience,

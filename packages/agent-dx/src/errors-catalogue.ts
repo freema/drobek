@@ -71,13 +71,13 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
   {
     code: 'forbidden',
     surface: 'data tool isError',
-    meaning: 'The caller is authenticated but lacks the role (editor+ for writes) or the token scope.',
-    fix: 'Use a token/role with the required scope: data:write needs an editor+ membership.',
+    meaning: 'The caller is a member of the workspace but their role is too low (editor+ for writes and collection_define).',
+    fix: 'Ask a workspace admin for an editor role — the write scope alone does not raise your role.',
   },
   {
     code: 'not_found',
     surface: 'data tool isError',
-    meaning: 'The workspace, app, collection, or document does not exist (or is not yours).',
+    meaning: 'The workspace, app, collection, or document does not exist — or you are not a member of that workspace (both answer the same).',
     fix: 'Check the workspace slug (from whoami), app slug, collection name, and id.',
   },
   {
@@ -100,9 +100,27 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     fix: 'Restart the flow: new /authorize → new code → exchange once; rotate refresh tokens and never reuse an old one.',
   },
   {
+    code: 'invalid_client',
+    surface: 'OAuth /authorize 400 (shown, not redirected)',
+    meaning: 'Unknown DCR client_id, or the Client ID Metadata Document could not be used: not a canonical https URL with a path, unreachable, private/reserved address, over 64 KiB, slower than 5 s, a redirect, not JSON, its client_id differs from its URL, or a redirect_uri breaks the policy.',
+    fix: 'Serve the metadata JSON at the exact https client_id URL (client_id inside = that URL, redirect_uris https or loopback), or register via /oauth/register.',
+  },
+  {
+    code: 'invalid_target',
+    surface: 'OAuth /authorize redirect',
+    meaning: 'The `resource` parameter is not this drobek MCP endpoint (RFC 8707).',
+    fix: 'Send `resource` = the `resource` value from /.well-known/oauth-protected-resource.',
+  },
+  {
+    code: 'rate_limited (429 on /oauth/register)',
+    surface: 'OAuth /oauth/register 429',
+    meaning: 'Too many client registrations from one address in the last hour (10), or (503 temporarily_unavailable) too many registered clients that never completed consent.',
+    fix: 'Reuse your registered client_id, or identify the client with a Client ID Metadata Document URL instead.',
+  },
+  {
     code: 'invalid_token (401 on /mcp)',
     surface: 'MCP endpoint 401 + WWW-Authenticate',
-    meaning: 'The Bearer token is missing, expired, revoked, or minted for a DIFFERENT resource/audience (RFC 8707).',
-    fix: 'Obtain a token whose `resource` is exactly the MCP endpoint from the protected-resource metadata, and send it as `Authorization: Bearer …`.',
+    meaning: 'The Bearer token or API key is missing, expired, revoked, or the token was minted for a DIFFERENT resource/audience (RFC 8707).',
+    fix: 'Obtain a token whose `resource` is exactly the MCP endpoint from the protected-resource metadata (or use a live drk_ API key), and send it as `Authorization: Bearer …`.',
   },
 ];

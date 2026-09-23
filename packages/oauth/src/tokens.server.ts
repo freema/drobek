@@ -13,15 +13,12 @@ import { generateOpaqueToken, hashToken } from './crypto.server.js';
 import {
   defaultOAuthStore,
   type GrantKey,
-  type OAuthRole,
   type OAuthStore,
   type RefreshTokenRow,
 } from './store.server.js';
 
 export interface GrantInput {
   userId: string;
-  workspaceId: string;
-  role: OAuthRole;
   oauthClientId: string | null;
   scope: string;
   audience: string;
@@ -61,15 +58,32 @@ export type RotateResult =
   | (IssuedTokens & { ok: true })
   | { ok: false; error: 'invalid_grant'; reuse: boolean; description: string };
 
+export interface RotateOptions {
+  /**
+   * The internal oauth_clients.id of the client presenting the refresh token,
+   * when it identified itself (client_id). A refresh token is bound to the
+   * public client it was issued to; another client gets invalid_grant (without
+   * burning the victim's lineage).
+   */
+  expectedOauthClientId?: string | null;
+}
+
 /** Rotate a refresh token; detects + punishes reuse per the schema contract. */
 export async function rotateRefreshToken(
   rawRefresh: string,
   store: OAuthStore = defaultOAuthStore(),
-  now: number = Date.now()
+  now: number = Date.now(),
+  opts: RotateOptions = {}
 ): Promise<RotateResult> {
   const row = await store.findRefreshTokenByHash(hashToken(rawRefresh));
   if (!row) {
     return { ok: false, error: 'invalid_grant', reuse: false, description: 'unknown refresh token' };
+  }
+  if (
+    opts.expectedOauthClientId !== undefined &&
+    opts.expectedOauthClientId !== row.oauthClientId
+  ) {
+    return { ok: false, error: 'invalid_grant', reuse: false, description: 'client_id mismatch' };
   }
   if (row.expiresAt.getTime() <= now) {
     return { ok: false, error: 'invalid_grant', reuse: false, description: 'refresh token expired' };
@@ -102,8 +116,6 @@ export async function rotateRefreshToken(
 
   const grant: GrantInput = {
     userId: row.userId,
-    workspaceId: row.workspaceId,
-    role: row.role,
     oauthClientId: row.oauthClientId,
     scope: row.scope,
     audience: row.audience,
@@ -154,17 +166,16 @@ export async function revokeLineage(
 
   const key: GrantKey = {
     userId: start.userId,
-    workspaceId: start.workspaceId,
     oauthClientId: start.oauthClientId,
     audience: start.audience,
   };
   await store.revokeAccessTokensForGrant(key);
 }
 
+/** A validated access token: WHO (user) + WHAT (scope) + for WHICH resource. */
 export interface AccessTokenClaims {
+  id: string;
   userId: string;
-  workspaceId: string;
-  role: OAuthRole;
   scope: string;
   audience: string;
   oauthClientId: string | null;
@@ -189,9 +200,8 @@ export async function validateAccessToken(
   if (row.expiresAt.getTime() <= now) return null;
   if (opts.audience !== undefined && row.audience !== opts.audience) return null;
   return {
+    id: row.id,
     userId: row.userId,
-    workspaceId: row.workspaceId,
-    role: row.role,
     scope: row.scope,
     audience: row.audience,
     oauthClientId: row.oauthClientId,

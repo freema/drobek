@@ -101,6 +101,15 @@ tasks:
     cmds:
       - pnpm -C tests-e2e exec playwright test {{.CLI_ARGS}}
 
+  api-key:create:
+    desc: 'Create a drk_ API key for an EXISTING user in the local dev DB and print it once (EMAIL=… [NAME=cli] [SCOPES=read,write])'
+    requires:
+      vars: [EMAIL]
+    cmds:
+      - >-
+        docker compose exec -T drobek node packages/oauth/dist/cli/api-key-create.js
+        --email '{{.EMAIL}}' --name '{{.NAME | default "cli"}}' --scopes '{{.SCOPES | default "read,write"}}'
+
   e2e:smoke:
     desc: Read-only @smoke specs only (safe against any target)
     env:

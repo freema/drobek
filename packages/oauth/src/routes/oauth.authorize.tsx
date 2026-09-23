@@ -1,10 +1,13 @@
 /**
- * /oauth/authorize — consent UI (U5). Client half; server logic (validation,
- * login bounce, code issuance) lives in ./oauth.authorize.server.ts. Names the
- * requesting client, lets the user pick which workspace (and thus which role)
- * the token is bound to, and lists the scopes being granted.
+ * /oauth/authorize — consent UI (U5, M0-04). Client half; server logic
+ * (validation, login bounce, code issuance) lives in ./oauth.authorize.server.ts.
+ * Names the requesting client (and, for a CIMD client, the host that vouches
+ * for that name) and offers the three scope checkboxes. There is no workspace
+ * choice: the grant is bound to the user and reaches the workspaces they are
+ * a member of, with their role in each.
  */
 import { Form, useLoaderData } from 'react-router';
+import { SCOPES } from '../scopes.js';
 import type { loader } from './oauth.authorize.server.js';
 
 export function meta() {
@@ -13,11 +16,9 @@ export function meta() {
 
 /** Human labels for the scope vocabulary shown on the consent screen. */
 const SCOPE_LABELS: Record<string, string> = {
-  'mcp:whoami': 'Identify you (email, workspace, role)',
-  'apps:read': 'List the apps in the selected workspace',
-  'deploy:write': 'Create and deploy apps',
-  'data:read': 'Read app data and collections',
-  'data:write': 'Modify app data and collections',
+  read: 'See your workspaces and apps, read app data, errors and logs',
+  write: 'Change apps: define collections and create, update or delete records',
+  publish: 'Publish app versions to their live URL',
 };
 
 const styles = {
@@ -44,16 +45,8 @@ const styles = {
     fontWeight: 600,
     margin: '1.25rem 0 0.35rem',
   },
-  select: {
-    width: '100%',
-    boxSizing: 'border-box',
-    padding: '0.6rem 0.75rem',
-    fontSize: '1rem',
-    fontFamily: 'inherit',
-    border: '1px solid #d4d4d8',
-    borderRadius: '8px',
-    background: '#fff',
-  },
+  note: { color: '#555', fontSize: '0.85rem', marginTop: '0.75rem' },
+  muted: { color: '#9ca3af' },
   scopeList: {
     listStyle: 'none',
     padding: 0,
@@ -124,17 +117,21 @@ export default function OAuthAuthorizeRoute() {
     );
   }
 
-  const { clientName, redirectHost, workspaces, scopes, params } = loaderData;
+  const { clientName, clientHost, redirectHost, requested, params } = loaderData;
 
   return (
     <main style={styles.main}>
       <div style={styles.eyebrow}>drobek · authorization</div>
-      <h1 style={styles.h1}>
-        {clientName} wants access to a workspace
-      </h1>
+      <h1 style={styles.h1}>{clientName} wants access to your drobek account</h1>
       <p style={styles.lede}>
-        Approving grants <b>{clientName}</b> an MCP token for the workspace you
-        choose. You will be returned to <span style={styles.code}>{redirectHost}</span>.
+        {clientHost ? (
+          <>
+            Identified by <span style={styles.code}>{clientHost}</span>.{' '}
+          </>
+        ) : null}
+        Approving grants <b>{clientName}</b> an MCP token for you. It reaches
+        every workspace you are a member of, limited by your role in each. You
+        will be returned to <span style={styles.code}>{redirectHost}</span>.
       </p>
 
       <Form method="post" data-testid="consent-form">
@@ -151,42 +148,31 @@ export default function OAuthAuthorizeRoute() {
         <input type="hidden" name="resource" value={params.resource} />
         <input type="hidden" name="scope" value={params.scope} />
 
-        <label htmlFor="workspace_id" style={styles.label}>
-          Workspace
-        </label>
-        <select
-          id="workspace_id"
-          name="workspace_id"
-          required
-          defaultValue={workspaces[0]?.id}
-          style={styles.select}
-          data-testid="workspace-select"
-        >
-          {workspaces.map((w) => (
-            <option key={w.id} value={w.id}>
-              {w.name} ({w.role})
-            </option>
-          ))}
-        </select>
-
-        <div style={styles.label}>Scopes requested</div>
+        <div style={styles.label}>Permissions</div>
         <ul style={styles.scopeList} data-testid="scope-list">
-          {scopes.map((scope) => (
-            <li key={scope} style={styles.scopeItem}>
-              <input
-                type="checkbox"
-                name={`scope_${scope}`}
-                defaultChecked
-                data-testid={`scope-${scope}`}
-              />
-              <span>
-                <span style={styles.code}>{scope}</span>
-                <br />
-                {SCOPE_LABELS[scope] ?? scope}
-              </span>
-            </li>
-          ))}
+          {SCOPES.map((scope) => {
+            const offered = requested.includes(scope);
+            return (
+              <li key={scope} style={styles.scopeItem}>
+                <input
+                  type="checkbox"
+                  id={`scope_${scope}`}
+                  name={`scope_${scope}`}
+                  defaultChecked={offered}
+                  disabled={!offered}
+                  data-testid={`scope-${scope}`}
+                />
+                <label htmlFor={`scope_${scope}`} style={offered ? undefined : styles.muted}>
+                  <span style={styles.code}>{scope}</span>
+                  {offered ? null : ' (not requested)'}
+                  <br />
+                  {SCOPE_LABELS[scope] ?? scope}
+                </label>
+              </li>
+            );
+          })}
         </ul>
+        <p style={styles.note}>Uncheck anything you do not want to grant.</p>
 
         <div style={styles.actions}>
           <button

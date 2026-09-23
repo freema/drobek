@@ -1,30 +1,24 @@
 /**
- * drobek MCP scope vocabulary (U5, PHY-71). Forward-compatible with the tool
- * batches that land later — U5 only *enforces* the read/whoami path; the
- * deploy/data scopes are issued + consented now so no token migration is
- * needed when U6/U10 mount their tools.
+ * drobek MCP scope vocabulary + the tool → scope table (M0-04, NSO-282).
  *
- *   mcp:whoami   — identify the authed user/workspace/role (whoami tool is
- *                  ALWAYS available; this scope is granted for forward-compat).
- *   apps:read    — list apps in the token's workspace (ENFORCED now: gates the
- *                  list_apps tool).
- *   deploy:write — change apps (write versions / publish). Kept in the
- *                  vocabulary so already-consented tokens stay valid.
- *   data:read    — read app data/collections (U10 — consented now).
- *   data:write   — mutate app data/collections (U10 — consented now).
+ * Three scopes, one consent checkbox each. A grant (OAuth token or API key) is
+ * bound to a USER; the scope decides WHICH tools exist for it, and the user's
+ * membership role in the targeted workspace decides what each call may touch.
+ *
+ *   read    — look: whoami, list apps, read data, read errors + serving logs.
+ *   write   — change: define collections, create/update/delete records.
+ *   publish — make a version live at its public URL.
+ *
+ * `TOOL_SCOPES` is the ONE table both `tools/list` filtering and per-call
+ * enforcement read (resource/mcp.ts). whoami needs no scope — any valid
+ * grant may identify itself.
  */
-export const SCOPES = [
-  'mcp:whoami',
-  'apps:read',
-  'deploy:write',
-  'data:read',
-  'data:write',
-] as const;
+export const SCOPES = ['read', 'write', 'publish'] as const;
 
 export type Scope = (typeof SCOPES)[number];
 
-/** Scopes an MCP client gets when it requests none — the read/whoami baseline. */
-export const DEFAULT_SCOPES: readonly Scope[] = ['mcp:whoami', 'apps:read'];
+/** What a client that requests no scope gets offered on the consent screen. */
+export const DEFAULT_SCOPES: readonly Scope[] = ['read', 'write'];
 
 const SCOPE_SET = new Set<string>(SCOPES);
 
@@ -32,19 +26,28 @@ export function isKnownScope(value: string): value is Scope {
   return SCOPE_SET.has(value);
 }
 
-/**
- * Parse a space-delimited scope string into the known-scope subset (unknown
- * scopes are dropped, never errored — RFC 6749 §3.3). Empty/absent input →
- * the DEFAULT_SCOPES baseline so a client that omits `scope` still works.
- */
-export function parseScopes(raw: string | null | undefined): Scope[] {
-  const requested = (raw ?? '')
+function splitScopes(raw: string | null | undefined): string[] {
+  return (raw ?? '')
     .split(/\s+/)
     .map((s) => s.trim())
-    .filter(Boolean)
-    .filter(isKnownScope);
-  const unique = Array.from(new Set(requested));
-  return unique.length > 0 ? unique : [...DEFAULT_SCOPES];
+    .filter(Boolean);
+}
+
+/** The known scopes in `raw`, deduped, in vocabulary order. Unknown ones are dropped. */
+export function knownScopes(raw: string | null | undefined): Scope[] {
+  const present = new Set(splitScopes(raw));
+  return SCOPES.filter((s) => present.has(s));
+}
+
+/**
+ * Parse a REQUESTED scope string (authorize): the known subset (unknown scopes
+ * are dropped, never errored — RFC 6749 §3.3). An absent/empty request →
+ * DEFAULT_SCOPES; a request naming only unknown scopes → [] (the caller answers
+ * `invalid_scope`).
+ */
+export function parseScopes(raw: string | null | undefined): Scope[] {
+  if (splitScopes(raw).length === 0) return [...DEFAULT_SCOPES];
+  return knownScopes(raw);
 }
 
 /** Serialize a scope list back to the space-delimited wire form. */
@@ -54,6 +57,40 @@ export function serializeScopes(scopes: readonly string[]): string {
 
 /** True when `granted` (space-delimited) contains `scope`. */
 export function hasScope(granted: string | null | undefined, scope: Scope): boolean {
-  if (!granted) return false;
-  return granted.split(/\s+/).includes(scope);
+  return splitScopes(granted).includes(scope);
+}
+
+/**
+ * Every MCP tool and the scope it needs (null = any valid grant). Adding a
+ * tool means adding it HERE (and to the @drobek/agent-dx manifest — both are
+ * drift-guarded by tool-docs-parity.test.ts).
+ */
+export const TOOL_SCOPES = {
+  whoami: null,
+  list_apps: 'read',
+  record_read: 'read',
+  record_query: 'read',
+  app_errors: 'read',
+  app_logs: 'read',
+  collection_define: 'write',
+  record_create: 'write',
+  record_update: 'write',
+  record_delete: 'write',
+} as const satisfies Record<string, Scope | null>;
+
+export type ToolName = keyof typeof TOOL_SCOPES;
+
+const TOOLS = Object.keys(TOOL_SCOPES) as ToolName[];
+
+/** May a grant holding `granted` call (and see) `tool`? */
+export function toolAllowed(granted: string | readonly Scope[], tool: ToolName): boolean {
+  const needed = TOOL_SCOPES[tool];
+  if (needed === null) return true;
+  const scopes = typeof granted === 'string' ? knownScopes(granted) : granted;
+  return scopes.includes(needed);
+}
+
+/** The tools a grant holding `granted` sees in tools/list, in table order. */
+export function allowedTools(granted: string | readonly Scope[]): ToolName[] {
+  return TOOLS.filter((t) => toolAllowed(granted, t));
 }

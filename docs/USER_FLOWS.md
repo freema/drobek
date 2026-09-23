@@ -10,7 +10,7 @@ Actors: **editor** (the person who vibecodes + deploys, via a drobek account) ·
 
 1. Editor vibecodes a small static app locally in Claude Code (e.g. `dashboard/` with `index.html`).
 2. Editor adds the **drobek MCP server** in Claude Code (one URL, e.g. `https://mcp.drobek.app`).
-3. First tool call → MCP returns **401** → Claude Code opens the **OAuth** flow in the browser → editor logs into drobek (**email magic-code** or **Google**) → consents to scopes (`deploy:write`, `data:write`) → token stored.
+3. First tool call → MCP returns **401** → Claude Code opens the **OAuth** flow in the browser → editor logs into drobek (**email magic-code** or **Google**) → consents to scopes (`read`, `write`) → token stored.
 4. Editor: *"deploy this to drobek."* Agent calls **`deploy_init`** with a file manifest (paths + sha256). drobek auto-creates the app (slug from folder name) under the editor's **personal workspace** and returns presigned `putUrl`s for the **missing** files only.
 5. Agent **PUTs** the file bytes out-of-band, then calls **`deploy_commit`**.
 6. drobek runs the async job (lint → store blobs → activate). Agent polls **`deploy_status`** → `ready`, returns the **live URL** `https://drobek.app/<me>/app/dashboard`.

@@ -1,32 +1,73 @@
 /**
- * POST /oauth/register (U5) — Dynamic Client Registration (RFC 7591) for public
- * PKCE clients. Accepts client_name + redirect_uris[]; validates each URI is
- * absolute https (or http on loopback for native/dev clients); returns a
- * client_id with token_endpoint_auth_method = "none". no-store.
+ * POST /oauth/register (U5, M0-04) — Dynamic Client Registration (RFC 7591)
+ * for public PKCE clients. Kept next to CIMD because Claude and ChatGPT
+ * register this way today. Accepts client_name + redirect_uris[]; validates
+ * each URI is absolute https (or http on loopback for native/dev clients);
+ * returns a client_id with token_endpoint_auth_method = "none". no-store.
+ *
+ * Abuse caps (PHY-76 #7): 10 registrations per client IP per hour (→ 429),
+ * capped client_name / redirect_uris, and at most OAUTH_DCR_MAX_UNUSED_CLIENTS
+ * (default 500) clients that never received a grant (→ 503) — abandoned
+ * registrations older than a day are pruned first.
  */
 import type { ActionFunctionArgs } from 'react-router';
-import { createClient } from '../clients.server.js';
-import { isValidRegisterRedirectUri } from '../redirect-uri.js';
+import { getClientIp, rateLimitRedis } from '@drobek/auth';
+import {
+  countUnusedDcrClients,
+  createClient,
+  pruneUnusedDcrClients,
+} from '../clients.server.js';
+import {
+  DCR_MAX_UNUSED_CLIENTS,
+  DCR_RATE_LIMIT,
+  DCR_RATE_WINDOW_MS,
+  DCR_UNUSED_CLIENT_TTL_MS,
+} from '../constants.js';
+import { checkClientMetadata } from '../redirect-uri.js';
 
 type RegisterBody = {
   client_name?: unknown;
   redirect_uris?: unknown;
 };
 
-function jsonError(error: string, description: string, status = 400): Response {
+function jsonError(
+  error: string,
+  description: string,
+  status = 400,
+  headers: Record<string, string> = {}
+): Response {
   return Response.json(
     { error, error_description: description },
-    { status, headers: { 'Cache-Control': 'no-store' } }
+    { status, headers: { 'Cache-Control': 'no-store', ...headers } }
   );
 }
 
-function isStringArray(v: unknown): v is string[] {
-  return Array.isArray(v) && v.every((s) => typeof s === 'string' && s.length > 0);
+/** OAUTH_DCR_MAX_UNUSED_CLIENTS (positive integer) or the 500 default. */
+export function maxUnusedDcrClients(env: NodeJS.ProcessEnv = process.env): number {
+  const n = Number(env.OAUTH_DCR_MAX_UNUSED_CLIENTS);
+  return Number.isInteger(n) && n > 0 ? n : DCR_MAX_UNUSED_CLIENTS;
 }
 
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== 'POST') {
     return jsonError('invalid_request', 'POST required', 405);
+  }
+
+  // Per-IP fixed window, counted before any parsing so junk bodies pay too.
+  const ip = getClientIp(request) ?? 'unknown';
+  const limited = await rateLimitRedis(
+    'oauth-register-ip',
+    ip,
+    DCR_RATE_LIMIT,
+    DCR_RATE_WINDOW_MS
+  );
+  if (!limited.ok) {
+    return jsonError(
+      'rate_limited',
+      `at most ${DCR_RATE_LIMIT} client registrations per hour from one address`,
+      429,
+      { 'Retry-After': String(Math.ceil(DCR_RATE_WINDOW_MS / 1000)) }
+    );
   }
 
   let body: RegisterBody;
@@ -36,30 +77,27 @@ export async function action({ request }: ActionFunctionArgs) {
     return jsonError('invalid_client_metadata', 'JSON body required');
   }
 
-  const clientName =
-    typeof body.client_name === 'string' ? body.client_name.trim() : '';
-  if (!clientName) {
-    return jsonError('invalid_client_metadata', 'client_name is required');
-  }
+  const meta = checkClientMetadata({
+    clientName: body.client_name,
+    redirectUris: body.redirect_uris,
+  });
+  if (!meta.ok) return jsonError(meta.error, meta.description);
 
-  if (!isStringArray(body.redirect_uris) || body.redirect_uris.length === 0) {
-    return jsonError(
-      'invalid_redirect_uri',
-      'redirect_uris must be a non-empty array of strings'
-    );
-  }
-  for (const uri of body.redirect_uris) {
-    if (!isValidRegisterRedirectUri(uri)) {
+  if ((await countUnusedDcrClients()) >= maxUnusedDcrClients()) {
+    await pruneUnusedDcrClients(new Date(Date.now() - DCR_UNUSED_CLIENT_TTL_MS));
+    if ((await countUnusedDcrClients()) >= maxUnusedDcrClients()) {
       return jsonError(
-        'invalid_redirect_uri',
-        `redirect_uri "${uri}" must be absolute https (or http on localhost)`
+        'temporarily_unavailable',
+        'too many unused client registrations — try again later',
+        503,
+        { 'Retry-After': '3600' }
       );
     }
   }
 
   const client = await createClient({
-    clientName,
-    redirectUris: body.redirect_uris,
+    clientName: meta.clientName,
+    redirectUris: meta.redirectUris,
   });
 
   return Response.json(

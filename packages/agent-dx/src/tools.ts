@@ -30,7 +30,11 @@ export interface ToolDoc {
   /** Tool name — MUST match the MCP registration exactly (drift-guarded). */
   name: string;
   title: string;
-  /** Human-readable scope/role requirement. */
+  /**
+   * Human-readable scope/role requirement. MUST start with the scope the MCP
+   * server enforces (`read` / `write` / `publish`) or `always available` —
+   * drift-guarded against @drobek/oauth TOOL_SCOPES.
+   */
   scope: string;
   description: string;
   fields: ToolField[];
@@ -42,25 +46,27 @@ export const TOOL_DOCS: ToolDoc[] = [
   {
     name: 'whoami',
     title: 'Who am I',
-    scope: 'always available (mcp:whoami)',
+    scope: 'always available (any valid token or API key)',
     description:
-      'Return the authenticated drobek user, the bound workspace + role, and the granted MCP scope. Call this first to learn your workspace slug — you need it for the data tools.',
+      'Return the authenticated drobek user, EVERY workspace they belong to ({ slug, name, kind, role }), the granted scope, and the tools it unlocks. Call this first to learn your workspace slugs — the data and insight tools take one. Your role in a workspace decides what you may change there.',
     fields: [],
     example: {},
   },
   {
     name: 'list_apps',
     title: 'List apps',
-    scope: 'apps:read',
+    scope: 'read',
     description:
-      'List the apps in the bound workspace (slug, status, visibility, createdAt). May be empty.',
-    fields: [],
+      'List your apps across every workspace you belong to — each with its workspace slug, status, visibility and createdAt — or only one workspace with `workspace`. May be empty. An unknown workspace, or one you are not a member of, answers not_found.',
+    fields: [
+      { name: 'workspace', type: 'string (optional)', required: false, description: 'Only this workspace (slug from whoami).' },
+    ],
     example: {},
   },
   {
     name: 'collection_define',
     title: 'Define a collection',
-    scope: 'data:write (editor+ role)',
+    scope: 'write (editor+ role in the workspace)',
     description:
       'Create or update a collection: a REQUIRED JSON Schema (every write is validated against it) and an access mode (public-read | public-write | locked | owner-only). Idempotent by (app, name). Define this FIRST, then write your app code against the schema. owner-only is reserved for U11 end-user auth.',
     fields: [
@@ -86,7 +92,7 @@ export const TOOL_DOCS: ToolDoc[] = [
   {
     name: 'record_create',
     title: 'Create a document',
-    scope: 'data:write',
+    scope: 'write',
     description:
       'Create a document in a collection. Validated against the collection JSON Schema (invalid → rejected), rate-limited, and quota-capped. Returns the stored document { id, ...doc, createdAt, updatedAt }.',
     fields: [
@@ -103,7 +109,7 @@ export const TOOL_DOCS: ToolDoc[] = [
   {
     name: 'record_read',
     title: 'Read a document',
-    scope: 'data:read',
+    scope: 'read',
     description: 'Read a single document by id from a collection.',
     fields: [
       { name: 'locator', type: '{ workspace, slug }', required: true, description: 'Workspace slug + app slug.' },
@@ -119,7 +125,7 @@ export const TOOL_DOCS: ToolDoc[] = [
   {
     name: 'record_update',
     title: 'Update a document',
-    scope: 'data:write',
+    scope: 'write',
     description:
       'Patch a document (shallow-merge into the existing doc); the merged document is re-validated against the schema.',
     fields: [
@@ -138,7 +144,7 @@ export const TOOL_DOCS: ToolDoc[] = [
   {
     name: 'record_delete',
     title: 'Delete a document',
-    scope: 'data:write',
+    scope: 'write',
     description:
       'Soft-delete a document (excluded from every subsequent read/query; the row is retained).',
     fields: [
@@ -155,7 +161,7 @@ export const TOOL_DOCS: ToolDoc[] = [
   {
     name: 'record_query',
     title: 'Query a collection',
-    scope: 'data:read',
+    scope: 'read',
     description:
       'Query a collection: `where` equality filters + `sort` (both restricted to the schema properties + createdAt/updatedAt/id — unknown fields rejected), `limit`, and an opaque `cursor` for pagination. Soft-deleted docs are excluded. Returns { records:[…], nextCursor }.',
     fields: [
@@ -177,7 +183,7 @@ export const TOOL_DOCS: ToolDoc[] = [
   {
     name: 'app_errors',
     title: 'Read app errors',
-    scope: 'apps:read',
+    scope: 'read',
     description:
       'Read the recent client-side errors captured for an app (window.onerror + unhandledrejection), DEDUPED by message + stack head with occurrence counts, first/last-seen, the last URL, and a file:line hint. Call this after a change (once a user has hit the app) to close the write→observe→fix loop and self-correct. Read-only. Returns { workspace, app, totalEvents, distinctErrors, errors:[{ dedupKey, type, message, count, firstSeen, lastSeen, lastUrl, fileHint }] }.',
     fields: [
@@ -190,7 +196,7 @@ export const TOOL_DOCS: ToolDoc[] = [
   {
     name: 'app_logs',
     title: 'Read app serving signals',
-    scope: 'apps:read',
+    scope: 'read',
     description:
       'Read the server-side serving signals for an app: request volume, 5xx count, the top 404-by-path (missing assets/routes — a common cause of a blank or broken app), and the recent versions. Use it to spot broken asset paths and correlate errors with a version. Read-only. Returns { workspace, app, requests, count5xx, top404Paths:[{ path, count }], recentVersions:[{ number, compileStatus, actorKind, published, createdAt }] }.',
     fields: [

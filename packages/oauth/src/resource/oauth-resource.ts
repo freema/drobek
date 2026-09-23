@@ -1,39 +1,27 @@
 /**
- * mcp-server as an OAuth 2.1 Protected Resource (U5, PHY-71/PHY-53).
+ * The MCP endpoint as an OAuth 2.1 Protected Resource (U5, M0-04).
  *
  * The RS never mints tokens — it validates the Bearer against the drobek AS's
- * token store (@drobek/oauth) AND enforces RFC 8707: the token's `audience`
- * MUST equal THIS resource's canonical URI. Missing/invalid tokens get a 401
- * with a WWW-Authenticate challenge pointing at the protected-resource
- * metadata, per the MCP spec.
+ * token store and enforces RFC 8707: an OAuth access token's `audience` MUST
+ * equal THIS resource's canonical URI. A Bearer starting with `drk_` is a
+ * personal API key instead (same path, same scope model, no audience).
+ * Missing/invalid credentials get a 401 with a WWW-Authenticate challenge
+ * pointing at the protected-resource metadata, per the MCP spec.
+ *
+ * Both credentials are bound to a USER, never to a workspace: the tools
+ * resolve the caller's membership in the targeted workspace on every call
+ * (resource/access.ts).
  */
 import type { Request, Response } from 'express';
-import { and, eq } from 'drizzle-orm';
-import { getDb, memberships, users, workspaces } from '@drobek/db';
-import { SCOPES } from '../scopes.js';
+import { eq } from 'drizzle-orm';
+import { isSuperAdmin } from '@drobek/auth';
+import { getDb, users } from '@drobek/db';
+import { looksLikeApiKey, validateApiKey } from '../api-keys.server.js';
+import { authorizationServer, mcpResourceUri } from '../metadata.js';
+import { knownScopes, SCOPES, type Scope } from '../scopes.js';
 import { validateAccessToken } from '../tokens.server.js';
-import type { OAuthRole } from '../store.server.js';
 
-/**
- * Canonical resource identifier (also the required token audience) — the MCP
- * endpoint URL itself. One process serves the dashboard, the AS and this RS,
- * so it defaults to `PUBLIC_APP_URL + /mcp`; `PUBLIC_MCP_URL` (a full endpoint
- * URL) overrides it.
- */
-export function mcpResourceUri(): string {
-  const raw = process.env.PUBLIC_MCP_URL?.trim();
-  if (raw) return raw.replace(/\/+$/, '');
-  return `${authorizationServer()}/mcp`;
-}
-
-/** The drobek Authorization Server issuer origin. */
-export function authorizationServer(): string {
-  const raw =
-    process.env.PUBLIC_APP_URL?.trim() ||
-    process.env.PUBLIC_ORIGIN?.trim() ||
-    'http://localhost:3041';
-  return raw.replace(/\/+$/, '');
-}
+export { authorizationServer, mcpResourceUri } from '../metadata.js';
 
 /** RFC 9728 protected-resource metadata body. */
 export function protectedResourceMetadata(): Record<string, unknown> {
@@ -79,16 +67,22 @@ function extractBearer(req: Request): string | null {
   return m ? m[1].trim() : null;
 }
 
+/** The authenticated principal of one MCP request. */
 export interface AuthContext {
+  /** Which credential authenticated the call. */
+  kind: 'oauth' | 'api_key';
+  /** Row id of the access token / API key (never the secret). */
+  credentialId: string;
   userId: string;
   email: string;
-  workspaceId: string;
-  workspaceSlug: string;
-  workspaceName: string;
-  role: OAuthRole;
-  scope: string;
-  audience: string;
+  /** Global SUPERADMIN_EMAIL override: reaches every workspace. */
   superAdmin: boolean;
+  /** Granted scope, space-delimited wire form. */
+  scope: string;
+  /** Granted scope, parsed (known scopes only). */
+  scopes: Scope[];
+  /** The OAuth token's RFC 8707 audience; null for an API key. */
+  audience: string | null;
 }
 
 export type AuthOutcome =
@@ -96,81 +90,47 @@ export type AuthOutcome =
   | { kind: 'no_token' }
   | { kind: 'invalid' };
 
-const ROLE_RANK: Record<OAuthRole, number> = {
-  viewer: 0,
-  editor: 1,
-  'workspace-admin': 2,
-};
-
-/** SUPERADMIN_EMAIL is a comma-separated global override (mirrors @drobek/auth). */
-export function isSuperAdminEmail(email: string): boolean {
-  const targets = (process.env.SUPERADMIN_EMAIL ?? '')
-    .split(',')
-    .map((e) => e.trim().toLowerCase())
-    .filter(Boolean);
-  return targets.length > 0 && targets.includes(email.trim().toLowerCase());
-}
-
 /**
- * Validate the Bearer + audience, then hydrate the workspace/user identity the
- * token is bound to. audience mismatch / expiry / revocation all collapse to
- * `invalid` (→ 401).
+ * Validate the Bearer (OAuth access token + audience, or API key), then load
+ * the user it is bound to. Unknown / expired / revoked / wrong-audience all
+ * collapse to `invalid` (→ 401 invalid_token).
  */
 export async function authenticate(req: Request): Promise<AuthOutcome> {
   const bearer = extractBearer(req);
   if (!bearer) return { kind: 'no_token' };
 
-  const claims = await validateAccessToken(bearer, {
-    audience: mcpResourceUri(),
-  });
-  if (!claims) return { kind: 'invalid' };
+  let claims: { id: string; userId: string; scope: string; audience: string | null };
+  let kind: AuthContext['kind'];
+  if (looksLikeApiKey(bearer)) {
+    const key = await validateApiKey(bearer);
+    if (!key) return { kind: 'invalid' };
+    claims = { ...key, audience: null };
+    kind = 'api_key';
+  } else {
+    const token = await validateAccessToken(bearer, { audience: mcpResourceUri() });
+    if (!token) return { kind: 'invalid' };
+    claims = token;
+    kind = 'oauth';
+  }
 
-  const db = getDb();
-  const [u] = await db
+  const [u] = await getDb()
     .select({ email: users.email })
     .from(users)
     .where(eq(users.id, claims.userId))
     .limit(1);
-  const [w] = await db
-    .select({ slug: workspaces.slug, name: workspaces.name })
-    .from(workspaces)
-    .where(eq(workspaces.id, claims.workspaceId))
-    .limit(1);
-  if (!u || !w) return { kind: 'invalid' };
+  if (!u) return { kind: 'invalid' };
 
   return {
     kind: 'ok',
     ctx: {
+      kind,
+      credentialId: claims.id,
       userId: claims.userId,
       email: u.email,
-      workspaceId: claims.workspaceId,
-      workspaceSlug: w.slug,
-      workspaceName: w.name,
-      role: claims.role,
+      superAdmin: isSuperAdmin(u.email),
       scope: claims.scope,
+      scopes: knownScopes(claims.scope),
       audience: claims.audience,
-      superAdmin: isSuperAdminEmail(u.email),
     },
   };
-}
-
-/**
- * Defense-in-depth per-tool-call re-check: the membership must STILL exist and
- * still grant at least the role the token was bound to (super-admin overrides).
- * A revoked/downgraded membership silently loses access even on a live token.
- */
-export async function stillGrantsRole(ctx: AuthContext): Promise<boolean> {
-  if (ctx.superAdmin) return true;
-  const [m] = await getDb()
-    .select({ role: memberships.role })
-    .from(memberships)
-    .where(
-      and(
-        eq(memberships.userId, ctx.userId),
-        eq(memberships.workspaceId, ctx.workspaceId)
-      )
-    )
-    .limit(1);
-  if (!m) return false;
-  return ROLE_RANK[m.role as OAuthRole] >= ROLE_RANK[ctx.role];
 }

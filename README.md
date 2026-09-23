@@ -73,12 +73,20 @@ secret still holds a `change-me…` placeholder. Next to it:
    The dev stack sends the login code to the **mailpit** sink — read it at
    [localhost:8025](http://localhost:8025) (production wires real SMTP instead).
 2. Point an MCP client (e.g. Claude Code) at `http://localhost:3041/mcp`. It
-   discovers the drobek OAuth Authorization Server, you approve the consent
-   screen in your browser (choosing the workspace + the granted scopes), and it
-   receives a scoped token.
-3. The agent can now see your workspace and apps, define and query data
+   discovers the drobek OAuth Authorization Server (identifying itself with a
+   Client ID Metadata Document URL or by Dynamic Client Registration), you
+   approve the consent screen in your browser — three checkboxes: `read`,
+   `write`, `publish` — and it receives a token bound to **you**, not to one
+   workspace: it reaches every workspace you are a member of, with your role
+   in each.
+3. The agent can now list your workspaces and apps, define and query data
    collections, and read the runtime errors real users hit. Browse the apps,
    their version history and publish a version under `/workspaces/<slug>/apps`.
+
+For scripts and tests without an OAuth flow, `task api-key:create
+EMAIL=you@example.com NAME=laptop SCOPES=read,write` prints a personal `drk_…`
+API key once (for an existing user of the local stack); send it as
+`Authorization: Bearer drk_…` to `/mcp`.
 
 `docker compose down -v` wipes the volumes (postgres, redis) for a clean
 start; `docker compose down` keeps your data.
@@ -94,6 +102,7 @@ task build        # build the production image ghcr.io/freema/drobek:<sha>
 task prod:proof   # build + prove the prod image (size, non-root, fail-closed, live boot)
 task e2e          # Playwright suite (incl. @local specs) vs the stack
 task e2e:smoke    # read-only @smoke specs only (safe against any target)
+task api-key:create EMAIL=… NAME=… SCOPES=read,write  # print a drk_ API key once (local stack)
 task db:generate  # drizzle-kit generate (journal __drizzle_migrations_core)
 task db:migrate   # apply core migrations manually
 task down         # docker compose down

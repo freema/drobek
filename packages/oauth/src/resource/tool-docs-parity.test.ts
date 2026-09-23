@@ -11,21 +11,21 @@
  * touched: buildMcpServer only registers handlers; the callbacks never run here.
  */
 import { describe, expect, it } from 'vitest';
-import { TOOL_NAMES } from '@drobek/agent-dx';
+import { TOOL_DOCS, TOOL_NAMES } from '@drobek/agent-dx';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { SCOPES, TOOL_SCOPES } from '../scopes.js';
 import { buildMcpServer } from './mcp.js';
 import type { AuthContext } from './oauth-resource.js';
 
 const FULL_SCOPE_CTX: AuthContext = {
+  kind: 'oauth',
+  credentialId: 'tok_test',
   userId: 'u_test',
   email: 'test@example.com',
-  workspaceId: 'w_test',
-  workspaceSlug: 'test-ws',
-  workspaceName: 'Test WS',
-  role: 'workspace-admin',
-  scope: 'mcp:whoami apps:read deploy:write data:read data:write',
-  audience: 'http://localhost:3042',
   superAdmin: false,
+  scope: SCOPES.join(' '),
+  scopes: [...SCOPES],
+  audience: 'http://localhost:3041/mcp',
 };
 
 /** Read the tool names the McpServer actually registered (SDK internal map). */
@@ -41,6 +41,19 @@ describe('MCP tool ↔ agent-dx doc parity', () => {
     const registered = registeredToolNames(server).sort();
     const documented = [...TOOL_NAMES].sort();
     expect(registered).toEqual(documented);
+  });
+
+  it('the tool → scope table names exactly the documented tools', () => {
+    expect(Object.keys(TOOL_SCOPES).sort()).toEqual([...TOOL_NAMES].sort());
+  });
+
+  it("each doc's scope line starts with the scope the table enforces", () => {
+    for (const doc of TOOL_DOCS) {
+      const scope = TOOL_SCOPES[doc.name as keyof typeof TOOL_SCOPES];
+      expect(doc.scope, doc.name).toMatch(
+        scope === null ? /^always available/ : new RegExp(`^${scope}\\b`)
+      );
+    }
   });
 
   it('registers no removed upload-pipeline tool under full scope', () => {

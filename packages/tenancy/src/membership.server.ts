@@ -128,6 +128,44 @@ export async function requireWorkspaceRole(
   };
 }
 
+export interface PrincipalWorkspaceAccess {
+  workspace: WorkspaceSummary;
+  /** The principal's own membership role — null for a membership-less super-admin. */
+  membershipRole: WorkspaceRole | null;
+  /** What the call gates on; super-admin ⇒ 'workspace-admin'. */
+  effectiveRole: WorkspaceRole;
+}
+
+/**
+ * Session-free twin of requireWorkspaceRole for token principals (MCP OAuth
+ * tokens and API keys are bound to a USER, not a workspace — M0-04): resolve
+ * `workspaceSlug` and the user's membership in it on every call. Returns null
+ * for an unknown workspace AND for a non-member alike, so callers answer both
+ * with the same `not_found` (anti-enumeration). The global super-admin reaches
+ * every workspace. Role floors (e.g. editor+ to write) stay with the caller.
+ */
+export async function resolveWorkspaceAccess(input: {
+  userId: string;
+  superAdmin: boolean;
+  workspaceSlug: string;
+}): Promise<PrincipalWorkspaceAccess | null> {
+  if (!input.workspaceSlug) return null;
+  const workspace = await getWorkspaceBySlug(input.workspaceSlug);
+  if (!workspace) return null;
+  const membership = await getMembership(input.userId, workspace.id);
+  const decision = decideWorkspaceAccess({
+    membershipRole: membership?.role ?? null,
+    superAdmin: input.superAdmin,
+    minRole: 'viewer',
+  });
+  if (!decision.ok) return null;
+  return {
+    workspace,
+    membershipRole: membership?.role ?? null,
+    effectiveRole: decision.effectiveRole,
+  };
+}
+
 export interface WorkspaceMember {
   email: string;
   role: WorkspaceRole;

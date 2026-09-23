@@ -11,10 +11,8 @@ import { hashToken } from './crypto.server.js';
 
 const GRANT: GrantInput = {
   userId: 'u1',
-  workspaceId: 'ws1',
-  role: 'editor',
   oauthClientId: 'client-pk-1',
-  scope: 'mcp:whoami apps:read',
+  scope: 'read write',
   audience: 'http://localhost:3042',
 };
 
@@ -30,8 +28,8 @@ describe('validateAccessToken', () => {
     const claims = await validateAccessToken(accessToken, {}, store);
     expect(claims).not.toBeNull();
     expect(claims?.userId).toBe('u1');
-    expect(claims?.workspaceId).toBe('ws1');
-    expect(claims?.role).toBe('editor');
+    expect(claims?.scope).toBe('read write');
+    expect(claims).not.toHaveProperty('workspaceId');
     expect(claims?.audience).toBe('http://localhost:3042');
   });
 
@@ -103,6 +101,20 @@ describe('rotateRefreshToken', () => {
     // …and every access token from the grant is revoked.
     expect(await validateAccessToken(first.accessToken, {}, store)).toBeNull();
     expect(await validateAccessToken(rotated.accessToken, {}, store)).toBeNull();
+  });
+
+  it('rejects a refresh presented by another client without burning the lineage', async () => {
+    const first = await issueAccessAndRefresh(GRANT, store);
+    const stolen = await rotateRefreshToken(first.refreshToken, store, Date.now(), {
+      expectedOauthClientId: 'someone-else',
+    });
+    expect(stolen.ok).toBe(false);
+    if (!stolen.ok) expect(stolen.reuse).toBe(false);
+    // The rightful client can still rotate it.
+    const ok = await rotateRefreshToken(first.refreshToken, store, Date.now(), {
+      expectedOauthClientId: GRANT.oauthClientId,
+    });
+    expect(ok.ok).toBe(true);
   });
 
   it('rejects an unknown refresh token', async () => {

@@ -1,11 +1,14 @@
 /**
- * POST /oauth/token (U5). Two grants:
+ * POST /oauth/token (U5, M0-04). Two grants:
  *
  *  - authorization_code: verify the code (unused + unexpired), EXACT
- *    redirect_uri match, PKCE S256, atomically consume it, then issue an
- *    audience-bound access token (+ rotating refresh token).
+ *    redirect_uri match, the presenting client_id (a DCR id or a CIMD URL —
+ *    string-equal to the one the code was issued to), PKCE S256, atomically
+ *    consume it, then issue a USER-bound, audience-bound access token (+
+ *    rotating refresh token).
  *  - refresh_token: rotate — issue a new access+refresh, invalidate the old
- *    refresh; reuse of an already-rotated token burns the lineage.
+ *    refresh; reuse of an already-rotated token burns the lineage. A client
+ *    that names itself must be the one the refresh token was issued to.
  *
  * Every failure is a proper OAuth JSON error (invalid_request / invalid_grant /
  * unsupported_grant_type) with the right status and no-store — never a stack.
@@ -108,8 +111,6 @@ async function handleAuthorizationCode(
 
   const issued = await issueAccessAndRefresh({
     userId: row.userId,
-    workspaceId: row.workspaceId,
-    role: row.role,
     oauthClientId: client?.id ?? null,
     scope: row.scope,
     audience: row.resource,
@@ -130,7 +131,15 @@ async function handleRefreshToken(params: URLSearchParams): Promise<Response> {
     return tokenError('invalid_request', 'refresh_token is required');
   }
 
-  const rotated = await rotateRefreshToken(refreshToken);
+  const clientId = params.get('client_id');
+  let expectedOauthClientId: string | null | undefined;
+  if (clientId) {
+    // An unknown client_id can match no token; '' never equals a row id.
+    expectedOauthClientId = (await findClientByClientId(clientId))?.id ?? '';
+  }
+  const rotated = await rotateRefreshToken(refreshToken, undefined, undefined, {
+    expectedOauthClientId,
+  });
   if (!rotated.ok) {
     return tokenError(rotated.error, rotated.description);
   }

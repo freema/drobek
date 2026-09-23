@@ -19,6 +19,9 @@ const CORE_TABLES = [
   'app_versions',
   'blobs',
   'apps',
+  // M0-04: DCR clients never authorized count toward the unused-client cap
+  // (OAUTH_DCR_MAX_UNUSED_CLIENTS) — start every run from zero.
+  'oauth_clients',
   'memberships',
   'workspaces',
   'users',

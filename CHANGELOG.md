@@ -2,6 +2,53 @@
 
 ## Unreleased (`next`)
 
+### ⚠️ Breaking: user-bound MCP tokens, new scopes, CIMD (NSO-282)
+
+Core migration **`0008_user_bound_tokens`** makes every MCP credential belong
+to a **user**, not a workspace. It runs automatically on server start and is
+**destructive by design**:
+
+- **Deleted:** every OAuth authorization code, access token and refresh token
+  (`TRUNCATE`) — each connected agent must reconnect once and go through the
+  consent screen again. Registered clients are kept.
+- **Dropped columns:** `workspace_id` and `role` on `oauth_authorization_codes`,
+  `oauth_access_tokens` and `oauth_refresh_tokens`. Access is now decided **per
+  tool call** from the user's current memberships (super-admins reach every
+  workspace); an unknown workspace, a workspace the user is not a member of and
+  a missing app all answer the same `not_found`.
+- **New scopes** `read` / `write` / `publish` replace the old vocabulary
+  everywhere (AS metadata, consent, tokens, docs). The consent screen has no
+  workspace picker any more — only the three checkboxes; the grant is the
+  checked ∩ requested scopes, and an empty grant is a denial. `tools/list`
+  shows only the tools the grant allows (one tool→scope table):
+  `read` = `whoami`, `list_apps`, `record_read`, `record_query`, `app_errors`,
+  `app_logs`; `write` = `collection_define`, `record_create`, `record_update`,
+  `record_delete`; `publish` = no tools yet; `whoami` is always available.
+- **`whoami`** now lists all of the user's workspaces with roles;
+  **`list_apps`** spans every workspace, with an optional `workspace` filter.
+- **CIMD:** an `https` `client_id` URL is a Client ID Metadata Document,
+  fetched through the proxy SSRF guard (https only, default port, 64 KiB,
+  5 s, no redirects, cached 1 h in Redis); its `client_id` must equal the URL
+  and its `redirect_uris` pass the DCR policy. Any failure is `invalid_client`,
+  shown, never redirected. AS metadata advertises
+  `client_id_metadata_document_supported: true`. New columns
+  `oauth_clients.source` (`dcr` / `cimd`) and `oauth_clients.last_used_at`.
+- **DCR limits:** 10 registrations per IP per hour (→ `429 rate_limited`), and
+  at most 500 never-authorized clients (`OAUTH_DCR_MAX_UNUSED_CLIENTS`; stale
+  ones older than 24 h are pruned, otherwise `503`).
+- **RFC 9207:** every authorization response carries `iss`
+  (`authorization_response_iss_parameter_supported: true`).
+- **Audience:** the resource server accepts only tokens whose resource is the
+  MCP URL (else `401 invalid_token`); `/oauth/authorize` with a foreign
+  `resource` answers `invalid_target`.
+- **API keys:** new table `api_keys` (only the SHA-256 is stored). A
+  `drk_…` bearer takes the same resource-server path as an OAuth token;
+  revoked → `401`. Create one with
+  `task api-key:create EMAIL=… [NAME=…] [SCOPES=read,write]`.
+- **New config:** `OAUTH_DCR_MAX_UNUSED_CLIENTS` (default 500) and the
+  dev-only `OAUTH_CIMD_DEV_ORIGINS` (exact origins allowed over http / on a
+  private address for local CIMD mocks; ignored in production).
+
 ### ⚠️ Breaking: the upload/deploy pipeline is gone — apps are versions now (NSO-281)
 
 Core migration **`0007_app_versions`** replaces the deploy pipeline with

@@ -102,14 +102,18 @@ export function renderLlmsFull(env: NodeJS.ProcessEnv = process.env): string {
       `1. Unauthenticated POST ${mcp} → 401 with \`WWW-Authenticate: Bearer resource_metadata="…/.well-known/oauth-protected-resource"\`.`,
       `2. GET ${prm} → { resource, authorization_servers } (RFC 9728).`,
       `3. GET ${app}/.well-known/oauth-authorization-server → the AS metadata (authorize/token/register endpoints; code_challenge_methods_supported includes S256).`,
-      `4. Dynamic Client Registration: POST ${app}/oauth/register { client_name, redirect_uris } → { client_id }.`,
-      `5. GET ${app}/oauth/authorize?response_type=code&client_id=…&redirect_uri=…&code_challenge=…&code_challenge_method=S256&scope=…&resource=${mcp} → user consent → ?code=…`,
+      `4. Identify the client: EITHER use an https URL that serves your Client ID Metadata Document as the client_id (preferred; the document's client_id must equal that URL and its redirect_uris are validated) OR Dynamic Client Registration: POST ${app}/oauth/register { client_name, redirect_uris } → { client_id } (rate-limited per IP).`,
+      `5. GET ${app}/oauth/authorize?response_type=code&client_id=…&redirect_uri=…&code_challenge=…&code_challenge_method=S256&scope=read%20write&resource=${mcp} → user consent → ?code=…&state=…&iss=${app}`,
       `6. POST ${app}/oauth/token (grant_type=authorization_code, code, code_verifier, redirect_uri, client_id) → { access_token, refresh_token }.`,
       `7. Connect the MCP client to ${mcp} with \`Authorization: Bearer <access_token>\`.`,
       '',
-      'The token audience (RFC 8707 `resource`) MUST equal the MCP endpoint or the call is rejected 401. Refresh tokens rotate; reuse of an old refresh token burns the lineage.',
+      'The `resource` MUST be exactly the MCP endpoint (else `invalid_target`), and the token is accepted only there (else 401 invalid_token). Check that the `iss` in the authorization response equals the issuer (RFC 9207). Refresh tokens rotate; reuse of an old refresh token burns the lineage.',
       '',
-      'Scopes: mcp:whoami (always), apps:read, deploy:write, data:read, data:write. A client that requests none gets the mcp:whoami + apps:read baseline. tools/list reflects the granted scope.',
+      'Scopes: read (whoami, list_apps, record_read/query, app_errors/logs), write (collection_define, record_create/update/delete), publish (make a version live). whoami works with any grant. The consent screen offers the requested scopes (read + write when none are requested) and the user may uncheck any; tools/list shows exactly the granted tools.',
+      '',
+      'The grant belongs to the USER, not to one workspace: whoami lists every workspace with your role, list_apps spans them all, and each tool call is authorized against your membership in the workspace it names (a workspace or app you cannot reach answers not_found).',
+      '',
+      '`drk_…` personal API keys are an alternative Bearer for the same endpoint (same scopes, no OAuth flow).',
     ].join('\n')
   );
 

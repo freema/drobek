@@ -32,7 +32,7 @@ import {
  *       but a non-member gets 404; a soft-deleted app 404s for the member too.
  */
 
-const READ_SCOPE = 'mcp:whoami apps:read';
+const READ_SCOPE = 'read';
 
 test('agent loop: app_errors (deduped) + app_logs (top-404, recentVersions) over MCP + dashboard panels @local', async ({
   page,
@@ -44,7 +44,7 @@ test('agent loop: app_errors (deduped) + app_logs (top-404, recentVersions) over
     scope: READ_SCOPE,
   });
   try {
-    // app_errors + app_logs are registered under the apps:read scope.
+    // app_errors + app_logs are registered under the read scope.
     const tools = (await client.listTools()).tools.map((t) => t.name);
     expect(tools).toContain('app_errors');
     expect(tools).toContain('app_logs');
@@ -230,7 +230,7 @@ test('agent loop: a cross-workspace token cannot read app_errors/app_logs; a vie
     await a.transport.close();
   }
 
-  // Client B (a different user/workspace) — its token cannot read A's app.
+  // Client B (a different user, not a member of A's workspace) cannot read A's app.
   const ctxB = await browser.newContext();
   const pageB = await ctxB.newPage();
   const b = await mcpClient(pageB, request, { tag: 'loop-cross', scope: READ_SCOPE });

@@ -15,12 +15,10 @@ function issue(now = Date.now()) {
     {
       clientId: 'client-abc',
       userId: 'user-1',
-      workspaceId: 'ws-1',
-      role: 'editor',
       redirectUri: REDIRECT,
       codeChallenge: CHALLENGE,
       codeChallengeMethod: 'S256',
-      scope: 'mcp:whoami apps:read',
+      scope: 'read write',
       resource: 'http://localhost:3042',
     },
     store,
@@ -33,7 +31,7 @@ beforeEach(() => {
 });
 
 describe('consumeAuthCode', () => {
-  it('consumes a valid code once and binds the grant', async () => {
+  it('consumes a valid code once and binds the user-level grant', async () => {
     const code = await issue();
     const res = await consumeAuthCode(
       { code, redirectUri: REDIRECT, codeVerifier: VERIFIER, clientId: 'client-abc' },
@@ -42,8 +40,10 @@ describe('consumeAuthCode', () => {
     expect(res.ok).toBe(true);
     if (res.ok) {
       expect(res.row.userId).toBe('user-1');
-      expect(res.row.workspaceId).toBe('ws-1');
-      expect(res.row.role).toBe('editor');
+      expect(res.row.scope).toBe('read write');
+      // User-bound (M0-04): the code carries no workspace and no role.
+      expect(res.row).not.toHaveProperty('workspaceId');
+      expect(res.row).not.toHaveProperty('role');
       expect(res.row.resource).toBe('http://localhost:3042');
     }
   });

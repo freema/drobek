@@ -1,6 +1,7 @@
 /**
  * @drobek/oauth/resource — the Express-mountable MCP OAuth 2.1 Protected
- * Resource + Streamable HTTP `/mcp` endpoint (U5, PHY-71/PHY-53).
+ * Resource + Streamable HTTP `/mcp` endpoint (U5, PHY-71/PHY-53; user-bound
+ * grants, scopes read/write/publish and API keys since M0-04).
  *
  * Mounted by the single drobek server process (apps/server) next to the
  * dashboard; each edition owns only its `/health` + `/version` and calls
@@ -21,11 +22,17 @@ export {
   protectedResourceMetadata,
   send401,
   authenticate,
-  stillGrantsRole,
-  isSuperAdminEmail,
   type AuthContext,
   type AuthOutcome,
 } from './oauth-resource.js';
+export {
+  resolveCallWorkspace,
+  listPrincipalWorkspaces,
+  listAppsForPrincipal,
+  type CallWorkspace,
+  type WhoamiWorkspace,
+  type ListedApp,
+} from './access.js';
 export { buildMcpServer, mountMcpEndpoint } from './mcp.js';
 export { registerDocs } from './docs.js';
 

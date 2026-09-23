@@ -48,6 +48,18 @@ export interface SsrfForwardInput {
   headers: Record<string, string>;
   body?: Buffer;
   env?: NodeJS.ProcessEnv;
+  /**
+   * Replaces the `PROXY_ALLOWED_HOSTS` operator allow-list for this call. A
+   * caller that is NOT the BFF proxy (e.g. the OAuth CIMD fetch) passes its own
+   * set — usually empty — so the proxy's allow-list never widens it.
+   */
+  allowedHosts?: ReadonlySet<string>;
+  /** Overrides PROXY_CONNECT_TIMEOUT_MS (connect/idle socket timeout). */
+  timeoutMs?: number;
+  /** Overrides PROXY_MAX_RESPONSE_BYTES (enforced while streaming). */
+  maxResponseBytes?: number;
+  /** Optional wall-clock cap for the whole exchange (a slow drip cannot outlive it). */
+  deadlineMs?: number;
 }
 
 export interface SsrfForwardResult {
@@ -79,7 +91,7 @@ export async function ssrfSafeForward(
 ): Promise<SsrfForwardResult> {
   const env = input.env ?? process.env;
   const host = input.url.hostname.replace(/^\[|\]$/g, '');
-  const allowed = proxyAllowedHosts(env);
+  const allowed = input.allowedHosts ?? proxyAllowedHosts(env);
 
   const { address, family } = await resolveOnce(host);
 
@@ -91,8 +103,11 @@ export async function ssrfSafeForward(
     );
   }
 
-  const timeoutMs = intEnv(env.PROXY_CONNECT_TIMEOUT_MS, DEFAULT_CONNECT_TIMEOUT_MS);
-  const maxBytes = intEnv(env.PROXY_MAX_RESPONSE_BYTES, DEFAULT_MAX_RESPONSE_BYTES);
+  const timeoutMs =
+    input.timeoutMs ?? intEnv(env.PROXY_CONNECT_TIMEOUT_MS, DEFAULT_CONNECT_TIMEOUT_MS);
+  const maxBytes =
+    input.maxResponseBytes ??
+    intEnv(env.PROXY_MAX_RESPONSE_BYTES, DEFAULT_MAX_RESPONSE_BYTES);
   const lib = input.url.protocol === 'https:' ? https : http;
 
   // Pin the DNS result: the socket connects to `address` (no re-resolution), but
@@ -115,7 +130,16 @@ export async function ssrfSafeForward(
     else callback(null, address, family);
   }) as unknown as typeof dnsLookup;
 
-  return new Promise<SsrfForwardResult>((resolve, reject) => {
+  return new Promise<SsrfForwardResult>((resolveOuter, rejectOuter) => {
+    let deadline: NodeJS.Timeout | undefined;
+    const resolve = (v: SsrfForwardResult) => {
+      clearTimeout(deadline);
+      resolveOuter(v);
+    };
+    const reject = (e: unknown) => {
+      clearTimeout(deadline);
+      rejectOuter(e);
+    };
     const req = lib.request(
       input.url,
       {
@@ -127,6 +151,12 @@ export async function ssrfSafeForward(
         // any 3xx verbatim. (No agent-level redirect handling exists here.)
       },
       (res) => {
+        const declared = Number(res.headers['content-length']);
+        if (Number.isFinite(declared) && declared > maxBytes) {
+          res.destroy();
+          reject(new ProxyError('upstream_error', 'upstream response exceeded the size cap'));
+          return;
+        }
         const chunks: Buffer[] = [];
         let total = 0;
         res.on('data', (chunk: Buffer) => {
@@ -160,6 +190,14 @@ export async function ssrfSafeForward(
     req.on('timeout', () => {
       req.destroy(new ProxyError('upstream_error', 'upstream request timed out'));
     });
+    if (input.deadlineMs !== undefined) {
+      deadline = setTimeout(() => {
+        const err = new ProxyError('upstream_error', 'upstream request timed out');
+        req.destroy(err);
+        reject(err);
+      }, input.deadlineMs);
+      deadline.unref();
+    }
     req.on('error', (err) => {
       reject(
         err instanceof ProxyError

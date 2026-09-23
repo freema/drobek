@@ -423,6 +423,9 @@ importers:
       '@drobek/insights':
         specifier: workspace:*
         version: link:../insights
+      '@drobek/proxy':
+        specifier: workspace:*
+        version: link:../proxy
       '@drobek/tenancy':
         specifier: workspace:*
         version: link:../tenancy
@@ -439,6 +442,9 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
+      '@electric-sql/pglite':
+        specifier: ^0.2.17
+        version: 0.2.17
       '@types/express':
         specifier: ^4.17.21
         version: 4.17.25

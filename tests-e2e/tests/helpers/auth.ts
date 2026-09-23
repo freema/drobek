@@ -74,25 +74,42 @@ export async function pollLoginCode(
 const LOCAL_REDIS_HOSTS = ['localhost', '127.0.0.1', 'redis'];
 
 /**
- * The verify endpoint caps code checks per client IP (30 / 15 min, hard-coded in
- * @drobek/auth). Every e2e login comes from the same IP, so a full local run
- * trips it mid-suite and a CORRECT code is answered with the generic "not
- * valid" error. Local-only (TEST_ENV=local + a local REDIS_URL, mirroring the
- * global-setup guard): drop just that bucket before each sign-in. Never touches
- * the per-code attempt counter or the send-side guards. Remove with NSO-309.
+ * Drop one per-IP rate-limit family (`drobek:rl:<bucket>:*`). Local-only
+ * (TEST_ENV=local + a local REDIS_URL, mirroring the global-setup guard); a
+ * no-op anywhere else. In the compose stack every request shares ONE client-IP
+ * bucket, so a full run would trip the per-IP limits mid-suite. Remove with
+ * NSO-309.
  */
-async function resetVerifyIpRateLimit(): Promise<void> {
+export async function resetRateLimitBucket(bucket: string): Promise<void> {
   const url = process.env.REDIS_URL;
   if (!url || TEST_ENV !== 'local') return;
   if (!LOCAL_REDIS_HOSTS.includes(new URL(url).hostname)) return;
   const redis = new Redis(url, { maxRetriesPerRequest: 2, lazyConnect: true });
   await redis.connect();
   try {
-    const keys = await redis.keys('drobek:rl:otp-verify-ip:*');
+    const keys = await redis.keys(`drobek:rl:${bucket}:*`);
     if (keys.length > 0) await redis.del(...keys);
   } finally {
     redis.disconnect();
   }
+}
+
+/**
+ * The verify endpoint caps code checks per client IP (30 / 15 min, hard-coded in
+ * @drobek/auth), so a CORRECT code would be answered with the generic "not
+ * valid" error mid-suite: drop just that bucket before each sign-in. Never
+ * touches the per-code attempt counter or the send-side guards.
+ */
+async function resetVerifyIpRateLimit(): Promise<void> {
+  await resetRateLimitBucket('otp-verify-ip');
+}
+
+/**
+ * /oauth/register allows 10 registrations per IP per hour (PHY-76 #7) and the
+ * suite registers far more: drop that bucket before each registration.
+ */
+export async function resetDcrIpRateLimit(): Promise<void> {
+  await resetRateLimitBucket('oauth-register-ip');
 }
 
 /** Full magic-code sign-in via the UI; leaves the page authenticated on /me. */

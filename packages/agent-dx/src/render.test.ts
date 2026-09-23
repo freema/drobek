@@ -75,6 +75,20 @@ describe('renderLlmsFull', () => {
     expect(full).toContain('S256');
   });
 
+  it('documents the M0-04 model: user-bound grants, read/write/publish, CIMD, iss, API keys', () => {
+    expect(full).toContain('Scopes: read (');
+    expect(full).toContain('publish');
+    expect(full).toContain('Client ID Metadata Document');
+    expect(full).toContain('invalid_target');
+    expect(full).toContain('iss=');
+    expect(full).toContain('whoami lists every workspace');
+    expect(full).toContain('drk_');
+    for (const old of ['mcp:whoami', 'apps:read', 'deploy:write', 'data:read', 'data:write']) {
+      expect(full, old).not.toContain(old);
+      expect(renderLlmsTxt(ENV), old).not.toContain(old);
+    }
+  });
+
   it('puts RFC 9728 discovery on the resource origin, NOT the /mcp endpoint', () => {
     // The protected-resource metadata is at <mcp-origin>/.well-known/…, never
     // <mcp-origin>/mcp/.well-known/… — a wrong URL here 404s any agent.

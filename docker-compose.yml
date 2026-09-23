@@ -59,6 +59,8 @@ services:
     # no redirect following). Runs the repo's tests-e2e/proxy-echo.mjs on the
     # drobek network; the drobek service allow-lists this hostname via
     # PROXY_ALLOWED_HOSTS so the SSRF guard permits its private Docker IP.
+    # M0-04: it also serves mock OAuth Client ID Metadata Documents under
+    # /cimd/… (allowed via OAUTH_CIMD_DEV_ORIGINS, exact origin).
     image: node:22-alpine
     container_name: drobek-proxy-echo
     working_dir: /repo
@@ -148,6 +150,11 @@ services:
       # SSRF guard may connect to (empty in prod → fully strict). The dev value is
       # the in-network e2e echo target only.
       PROXY_ALLOWED_HOSTS: ${PROXY_ALLOWED_HOSTS:-proxy-echo}
+      # M0-04 (NSO-282): DEV/TEST ONLY — exact origins allowed to serve an OAuth
+      # Client ID Metadata Document over http from a private address (the e2e
+      # mock on proxy-echo). Everything else must be public https; ignored when
+      # NODE_ENV=production. Never set this in production.
+      OAUTH_CIMD_DEV_ORIGINS: ${OAUTH_CIMD_DEV_ORIGINS:-http://proxy-echo:8099}
       # PHY-59: per-(workspace,user,upstream) proxy call rate-limit. LOW dev cap so
       # the proxy-flood e2e trips 429 quickly (prod default 120).
       PROXY_RATE_LIMIT: ${PROXY_RATE_LIMIT:-15}

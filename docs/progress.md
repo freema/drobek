@@ -34,10 +34,20 @@ single long-lived `next` branch; pushes happen only at milestone end.
   `UPLOAD_SIGNING_SECRET` / `BLOB_DIR` / `DEPLOY_MAX_*` are gone. The dashboard
   shows a version history with a Publish button (editor+). App serving and
   the beacon come back on the apps origin in M0-06.
+- **M0-04 (NSO-282) — user-bound tokens, scopes, CIMD, API keys.** Migration
+  `0008_user_bound_tokens` (generated, then hand-edited; destructive, see
+  `CHANGELOG.md`) deletes all codes/tokens and drops their
+  `workspace_id`/`role`; adds `oauth_clients.source`/`last_used_at` and
+  `api_keys`. Scopes `read`/`write`/`publish`; `TOOL_SCOPES` in
+  `packages/oauth/src/scopes.ts` drives both `tools/list` (only allowed tools
+  are registered) and enforcement. Membership is resolved per call
+  (`resource/access.ts`, super-admin override, uniform `not_found`). CIMD in
+  `cimd.server.ts` (SSRF-guarded fetch, Redis cache), DCR rate limit + unused
+  cap, RFC 9207 `iss`, audience check, `drk_` API keys + `task api-key:create`.
 
 ## Next
 
-- M0-04 (NSO-282), then M0-05 (NSO-283, `create_app` + write tools),
+- M0-05 (NSO-283, `create_app` + write tools),
   M0-06 (NSO-285), M0-07 (NSO-286), M0-08 (NSO-289). M0-09 (NSO-299) is
   blocked on Tomáš (VPS/DNS); M0-10 (NSO-302) needs `freema/drobek-plugin`.
 
@@ -84,6 +94,26 @@ single long-lived `next` branch; pushes happen only at milestone end.
   0000–0006, seeds prod-shaped rows, then applies 0007.
 - Until `create_app` / write tools exist (M0-05), e2e specs seed apps and
   versions straight into Postgres (`tests-e2e/tests/helpers/seed.ts`).
+
+- `drizzle-kit generate` DID see the 0008 changes (unlike 0007); the SQL was
+  then hand-edited (TRUNCATE of codes/tokens before the column drops,
+  `last_used_at` backfill for clients that were already used).
+- `tests-e2e/proxy-echo.mjs` is a bind-mounted script, not a watched one:
+  after editing it run `docker compose restart proxy-echo`. It also serves the
+  CIMD mock documents (`/cimd/…`); `OAUTH_CIMD_DEV_ORIGINS` in
+  `docker-compose.yml` allows exactly `http://proxy-echo:8099`.
+- Locally every request shares the `unknown` client-IP bucket (NSO-309), so
+  the DCR limit (10/h) would trip across specs: `registerClient` in
+  `tests-e2e/tests/helpers/mcp.ts` clears the `oauth-register-ip` bucket
+  first, and global-setup truncates `oauth_clients`.
+- An MCP tool that the grant does not allow is simply not registered; calling
+  it yields the SDK's own `isError` "Tool … not found" result, not a
+  drobek error code.
+
+- `task check` rebuilds every package's `dist/` on the host bind mount; the
+  running dev container can read a half-written file and crash-loop
+  (`EACCES … packages/core/dist/health.js`). Don't run `task check` while
+  someone is testing against the stack; `docker compose restart drobek` fixes it.
 
 ## Failed approaches
 

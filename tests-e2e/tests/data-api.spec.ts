@@ -12,9 +12,9 @@ import { seedApp, workspaceIdBySlug } from './helpers/seed';
  * longer created by an MCP deploy). Requires the local compose stack.
  */
 
-const DATA_SCOPE = 'mcp:whoami apps:read data:read data:write';
+const DATA_SCOPE = 'read write';
 
-/** Login + consent(data:read/write) + connected MCP client. */
+/** Login + consent(read + write) + connected MCP client. */
 async function dataClient(
   page: Page,
   request: APIRequestContext,
@@ -34,7 +34,7 @@ const TODO_SCHEMA = {
   additionalProperties: false,
 };
 
-/** Seed a throwaway app in the token's workspace so the data tools can resolve it. */
+/** Seed a throwaway app in the user's personal workspace so the data tools can resolve it. */
 async function freshApp(
   mcp: McpClient
 ): Promise<{ workspace: string; slug: string }> {
@@ -58,7 +58,7 @@ test('collection_define + schema-honoring CRUD round-trip via MCP @local', async
     expect(tools).toContain('record_delete');
     expect(tools).toContain('record_query');
     const who = await callTool(client, 'whoami', {});
-    expect(who.json.scope, 'data scopes granted').toContain('data:write');
+    expect(who.json.scope, 'data scopes granted').toBe('read write');
 
     const app = await freshApp(mcp);
     const locator = { workspace: app.workspace, slug: app.slug };
@@ -213,7 +213,7 @@ test('tenant isolation: a record op on another workspace than the token is rejec
   browser,
 }) => {
   skipUnlessLocal();
-  // Client A (this page), bound to A's personal workspace.
+  // Client A (this page) — a member of its personal workspace only.
   const a = await dataClient(page, request, 'data-tenant-a');
   // Client B in an isolated browser context → a different user/workspace.
   const ctxB = await browser.newContext();
@@ -232,7 +232,7 @@ test('tenant isolation: a record op on another workspace than the token is rejec
     });
     expect(defB.isError, JSON.stringify(defB.json)).toBe(false);
 
-    // A (bound to workspace A) targets B's locator → rejected (not found).
+    // A (not a member of B's workspace) targets B's locator → rejected (not found).
     const cross = await callTool(a.client, 'record_create', {
       locator: { workspace: appB.workspace, slug: appB.slug },
       collection: 'secrets',

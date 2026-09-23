@@ -11,14 +11,25 @@ workspace. Every change to an app is an immutable **version**; the owner
 publishes a version from the dashboard (publishing an older one is the
 rollback). Apps that store data use JSON-schema-backed collections.
 
-Connect the MCP server first (OAuth 2.1, PKCE). The AUTHORITATIVE,
-always-current tool schemas live in llms-full.txt and the MCP docs resource —
-link to them, do not hand-copy schemas into app code.
+Connect the MCP server first (OAuth 2.1, PKCE — or a `drk_…` API key). The
+user approves the scopes on the consent screen: `read` (look), `write` (change
+data) and `publish` (make a version live); you only see the tools your grant
+allows. The AUTHORITATIVE, always-current tool schemas live in llms-full.txt
+and the MCP docs resource — link to them, do not hand-copy schemas into app
+code.
 
 ## Your workspace
 
-1. Call `whoami` to learn your `workspace` slug and role.
-2. Call `list_apps` to see the apps in it (slug, status, visibility).
+Your access belongs to the user, not to one workspace:
+
+1. Call `whoami` — it lists EVERY workspace the user belongs to (`slug`,
+   `name`, `kind`, `role`) and the tools your grant unlocks.
+2. Call `list_apps` to see the apps across all of them (each with its
+   `workspace` slug), or `list_apps({ workspace })` for one.
+3. Pass the right `workspace` slug to every data / error tool. Your role in
+   that workspace decides what you may change (`viewer` reads; `editor` and
+   `workspace-admin` also write). A workspace or app you cannot reach answers
+   `not_found`, exactly like one that does not exist.
 
 App slugs are global host labels: 3–40 characters of `a–z`, `0–9` and single
 dashes.

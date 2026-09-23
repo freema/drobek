@@ -10,15 +10,12 @@ import { exactRedirectUriMatch } from './redirect-uri.js';
 import {
   defaultOAuthStore,
   type AuthCodeRow,
-  type OAuthRole,
   type OAuthStore,
 } from './store.server.js';
 
 export interface IssueAuthCodeInput {
   clientId: string;
   userId: string;
-  workspaceId: string;
-  role: OAuthRole;
   redirectUri: string;
   codeChallenge: string;
   codeChallengeMethod: string;
@@ -37,8 +34,6 @@ export async function issueAuthCode(
     codeHash: hashToken(code),
     clientId: input.clientId,
     userId: input.userId,
-    workspaceId: input.workspaceId,
-    role: input.role,
     redirectUri: input.redirectUri,
     codeChallenge: input.codeChallenge,
     codeChallengeMethod: input.codeChallengeMethod,

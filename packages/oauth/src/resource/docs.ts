@@ -67,7 +67,7 @@ export function registerDocs(server: McpServer): void {
       },
     },
     ({ workspace, slug, collection }) => {
-      const ws = workspace ?? '<workspace from whoami>';
+      const ws = workspace ?? '<workspace slug from whoami>';
       const app = slug ?? '<app slug>';
       const coll = collection ?? '<collection name>';
       return {
@@ -79,7 +79,7 @@ export function registerDocs(server: McpServer): void {
               text: [
                 `Add a "${coll}" data collection to the drobek app ${ws}/${app}. Schema first:`,
                 '',
-                '1. If you do not know the workspace, call whoami to get its slug.',
+                '1. If you do not know the workspace, call whoami — it lists every workspace you belong to (slug + role) — or list_apps to find the app.',
                 `2. Define the collection FIRST: collection_define({ workspace: "${ws}", slug: "${app}", name: "${coll}", jsonSchema: { …JSON Schema… }, accessMode: "public-write" | "public-read" | "locked" }). Choose the access mode by who writes from the browser.`,
                 `3. Seed/verify with record_create({ locator: { workspace: "${ws}", slug: "${app}" }, collection: "${coll}", doc: { … } }).`,
                 `4. Read back with record_query({ locator: { workspace: "${ws}", slug: "${app}" }, collection: "${coll}" }).`,

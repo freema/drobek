@@ -7,27 +7,31 @@ import {
   type Page,
 } from '@playwright/test';
 import { BASE_URL_MCP, BASE_URL_WEB } from '../../playwright.config';
-import { loginViaEmail, uniqueEmail } from './auth';
+import { loginViaEmail, resetDcrIpRateLimit, uniqueEmail } from './auth';
 
 /**
  * Shared MCP harness: full login + OAuth consent (PKCE S256) + token exchange +
  * a connected Streamable-HTTP MCP client, plus a JSON tool-call helper.
+ * Tokens are USER-bound (M0-04): the consent screen has no workspace choice,
+ * only the read / write / publish checkboxes.
  * Not a spec file — Playwright's testMatch never collects it.
  */
 
-const REDIRECT_URI = 'http://127.0.0.1:9988/callback';
+/** The loopback redirect_uri the browser's cross-origin redirect is intercepted at. */
+export const REDIRECT_URI = 'http://127.0.0.1:9988/callback';
 
 /** Every scope the AS issues — tools/list then carries all 10 tools. */
-export const FULL_SCOPE =
-  'mcp:whoami apps:read deploy:write data:read data:write';
+export const FULL_SCOPE = 'read write publish';
 
-function pkcePair(): { verifier: string; challenge: string } {
+export function pkcePair(): { verifier: string; challenge: string } {
   const verifier = randomBytes(32).toString('base64url');
   const challenge = createHash('sha256').update(verifier).digest('base64url');
   return { verifier, challenge };
 }
 
-async function registerClient(request: APIRequestContext): Promise<string> {
+/** DCR (after clearing the shared local per-IP registration bucket). */
+export async function registerClient(request: APIRequestContext): Promise<string> {
+  await resetDcrIpRateLimit();
   const res = await request.post(`${BASE_URL_WEB}/oauth/register`, {
     data: { client_name: 'drobek e2e MCP client', redirect_uris: [REDIRECT_URI] },
   });
@@ -35,7 +39,7 @@ async function registerClient(request: APIRequestContext): Promise<string> {
   return ((await res.json()) as { client_id: string }).client_id;
 }
 
-async function mcpResource(request: APIRequestContext): Promise<string> {
+export async function mcpResource(request: APIRequestContext): Promise<string> {
   const res = await request.get(
     `${BASE_URL_MCP}/.well-known/oauth-protected-resource`
   );
@@ -43,16 +47,20 @@ async function mcpResource(request: APIRequestContext): Promise<string> {
   return ((await res.json()) as { resource: string }).resource;
 }
 
-async function consentAndGetCode(
+/**
+ * Drive the consent screen (optionally unchecking some requested scopes) and
+ * return the whole redirect URL (code, state, iss).
+ */
+export async function consentAndCapture(
   page: Page,
   opts: {
     clientId: string;
     challenge: string;
     resource: string;
     scope: string;
-    workspaceLabel?: string;
+    uncheck?: string[];
   }
-): Promise<string> {
+): Promise<URL> {
   const params = new URLSearchParams({
     response_type: 'code',
     client_id: opts.clientId,
@@ -65,11 +73,8 @@ async function consentAndGetCode(
   });
   await page.goto(`/oauth/authorize?${params.toString()}`);
   await expect(page.getByTestId('consent-approve')).toBeVisible();
-  if (opts.workspaceLabel) {
-    // Bind the token to a non-default workspace (label "<name> (<role>)").
-    await page
-      .getByTestId('workspace-select')
-      .selectOption({ label: opts.workspaceLabel });
+  for (const scope of opts.uncheck ?? []) {
+    await page.getByTestId(`scope-${scope}`).uncheck();
   }
   const captured = new Promise<string>((resolve) => {
     void page.route('http://127.0.0.1:9988/**', (route) => {
@@ -81,15 +86,30 @@ async function consentAndGetCode(
   await page.getByTestId('consent-approve').click();
   const capturedUrl = await captured;
   await page.unroute('http://127.0.0.1:9988/**');
-  const code = new URL(capturedUrl).searchParams.get('code');
+  return new URL(capturedUrl);
+}
+
+async function consentAndGetCode(
+  page: Page,
+  opts: { clientId: string; challenge: string; resource: string; scope: string }
+): Promise<string> {
+  const url = await consentAndCapture(page, opts);
+  const code = url.searchParams.get('code');
   expect(code, 'authorization code present').toBeTruthy();
   return code as string;
 }
 
-async function exchangeCode(
+export interface TokenBody {
+  access_token?: string;
+  refresh_token?: string;
+  scope?: string;
+  error?: string;
+}
+
+export async function exchangeCode(
   request: APIRequestContext,
   opts: { code: string; verifier: string; clientId: string }
-): Promise<string> {
+): Promise<{ status: number; body: TokenBody }> {
   const res = await request.post(`${BASE_URL_WEB}/oauth/token`, {
     form: {
       grant_type: 'authorization_code',
@@ -99,10 +119,51 @@ async function exchangeCode(
       client_id: opts.clientId,
     },
   });
-  expect(res.status(), 'token exchange').toBe(200);
-  const body = (await res.json()) as { access_token?: string; scope?: string };
-  expect(body.access_token, 'access token issued').toBeTruthy();
-  return body.access_token as string;
+  return { status: res.status(), body: (await res.json()) as TokenBody };
+}
+
+/** Connect the official SDK client with a Bearer (OAuth token or drk_ API key). */
+export async function connectBearer(
+  bearer: string
+): Promise<{ client: Client; transport: StreamableHTTPClientTransport }> {
+  const transport = new StreamableHTTPClientTransport(
+    new URL(`${BASE_URL_MCP}/mcp`),
+    { requestInit: { headers: { Authorization: `Bearer ${bearer}` } } }
+  );
+  const client = new Client({ name: 'drobek-e2e', version: '0.0.0' });
+  await client.connect(transport);
+  return { client, transport };
+}
+
+/** A raw MCP initialize POST — for the auth negatives (no SDK). */
+export async function rawInitialize(
+  request: APIRequestContext,
+  headers: Record<string, string>
+) {
+  return request.post(`${BASE_URL_MCP}/mcp`, {
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json, text/event-stream',
+      ...headers,
+    },
+    data: {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2025-06-18',
+        capabilities: {},
+        clientInfo: { name: 'e2e-raw', version: '0' },
+      },
+    },
+  });
+}
+
+export interface WhoamiWorkspace {
+  slug: string;
+  name: string;
+  kind: 'personal' | 'team';
+  role: string;
 }
 
 export interface McpClient {
@@ -110,15 +171,15 @@ export interface McpClient {
   transport: StreamableHTTPClientTransport;
   /** The signed-in user's email (the token subject). */
   email: string;
-  /** The workspace slug the token is bound to (from whoami). */
+  /** The user's PERSONAL workspace slug (from whoami) — where specs seed apps. */
   workspace: string;
+  /** Every workspace the user belongs to (from whoami). */
+  workspaces: WhoamiWorkspace[];
 }
 
 /**
  * Full login (a fresh unique user, or `opts.email`) + consent(`scope`) + token +
- * connected MCP client. Leaves `page` signed in as that user. The token binds to
- * the user's personal workspace unless `workspaceLabel` picks another one on
- * the consent screen; the bound slug is returned as `workspace`. Pass
+ * connected MCP client. Leaves `page` signed in as that user. Pass
  * `signedIn: true` (with `email`) when `page` already holds that user's session.
  */
 export async function mcpClient(
@@ -129,7 +190,6 @@ export async function mcpClient(
     scope?: string;
     email?: string;
     signedIn?: boolean;
-    workspaceLabel?: string;
   } = {}
 ): Promise<McpClient> {
   const scope = opts.scope ?? FULL_SCOPE;
@@ -138,29 +198,23 @@ export async function mcpClient(
   const clientId = await registerClient(request);
   if (!opts.signedIn) await loginViaEmail(page, request, email);
   const { verifier, challenge } = pkcePair();
-  const code = await consentAndGetCode(page, {
-    clientId,
-    challenge,
-    resource,
-    scope,
-    workspaceLabel: opts.workspaceLabel,
-  });
-  const accessToken = await exchangeCode(request, { code, verifier, clientId });
+  const code = await consentAndGetCode(page, { clientId, challenge, resource, scope });
+  const tok = await exchangeCode(request, { code, verifier, clientId });
+  expect(tok.status, 'token exchange').toBe(200);
+  expect(tok.body.access_token, 'access token issued').toBeTruthy();
 
-  const transport = new StreamableHTTPClientTransport(
-    new URL(`${BASE_URL_MCP}/mcp`),
-    { requestInit: { headers: { Authorization: `Bearer ${accessToken}` } } }
-  );
-  const client = new Client({ name: 'drobek-e2e', version: '0.0.0' });
-  await client.connect(transport);
-
+  const { client, transport } = await connectBearer(tok.body.access_token as string);
   const who = await callTool(client, 'whoami', {});
   expect(who.isError, `whoami: ${JSON.stringify(who.json)}`).toBe(false);
+  const workspaces = who.json.workspaces as WhoamiWorkspace[];
+  const personal = workspaces.find((w) => w.kind === 'personal');
+  expect(personal, 'whoami lists the personal workspace').toBeTruthy();
   return {
     client,
     transport,
     email,
-    workspace: who.json.workspace as string,
+    workspace: (personal as WhoamiWorkspace).slug,
+    workspaces,
   };
 }
 

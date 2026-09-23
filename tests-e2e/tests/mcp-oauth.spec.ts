@@ -8,16 +8,25 @@ import {
   type Page,
 } from '@playwright/test';
 import { BASE_URL_MCP, BASE_URL_WEB } from '../playwright.config';
-import { loginViaEmail, skipUnlessLocal, uniqueEmail } from './helpers/auth';
-import { callTool, mcpClient } from './helpers/mcp';
+import {
+  loginViaEmail,
+  resetDcrIpRateLimit,
+  skipUnlessLocal,
+  uniqueEmail,
+} from './helpers/auth';
+import { callTool, mcpClient, rawInitialize } from './helpers/mcp';
 import { personalWorkspaceOf, seedApp, workspaceIdBySlug } from './helpers/seed';
 
 /**
- * U5 acceptance (PHY-71/PHY-53): the MCP OAuth 2.1 flow end-to-end against the
- * local compose stack — discovery → DCR → browser consent (PKCE S256) → token
- * → Bearer MCP call — plus the R6 security negatives: unauthenticated 401,
- * wrong-audience rejection (RFC 8707), single-use code, and refresh rotation +
- * reuse detection. Mirrors ROADMAP §5's e2e line for U5.
+ * U5 + M0-04 acceptance: the MCP OAuth 2.1 flow end-to-end against the local
+ * compose stack — discovery → DCR → browser consent (PKCE S256, the three
+ * scope checkboxes, NO workspace choice) → token → Bearer MCP call — plus the
+ * security negatives: unauthenticated 401, a foreign `resource` → invalid_target,
+ * RFC 9207 `iss` on every authorization response, single-use code, and refresh
+ * rotation + reuse detection. The token is USER-bound: whoami / list_apps span
+ * every workspace of the user, and a non-member gets not_found.
+ * CIMD, the DCR rate limit, the RS audience check and API keys live in
+ * mcp-cimd.spec.ts.
  */
 
 // A loopback redirect_uri that nothing serves — the browser's cross-origin
@@ -31,6 +40,7 @@ function pkcePair(): { verifier: string; challenge: string } {
 }
 
 async function registerClient(request: APIRequestContext): Promise<string> {
+  await resetDcrIpRateLimit();
   const res = await request.post(`${BASE_URL_WEB}/oauth/register`, {
     data: {
       client_name: 'drobek e2e MCP client',
@@ -41,6 +51,25 @@ async function registerClient(request: APIRequestContext): Promise<string> {
   const body = (await res.json()) as { client_id: string };
   expect(body.client_id).toBeTruthy();
   return body.client_id;
+}
+
+function authorizeQuery(opts: {
+  clientId: string;
+  challenge: string;
+  resource: string;
+  state: string;
+  scope?: string;
+}): string {
+  return new URLSearchParams({
+    response_type: 'code',
+    client_id: opts.clientId,
+    redirect_uri: REDIRECT_URI,
+    code_challenge: opts.challenge,
+    code_challenge_method: 'S256',
+    scope: opts.scope ?? 'read',
+    resource: opts.resource,
+    state: opts.state,
+  }).toString();
 }
 
 /** Drive the consent screen and capture the authorization code from redirect. */
@@ -54,19 +83,10 @@ async function consentAndGetCode(
     scope?: string;
   }
 ): Promise<string> {
-  const params = new URLSearchParams({
-    response_type: 'code',
-    client_id: opts.clientId,
-    redirect_uri: REDIRECT_URI,
-    code_challenge: opts.challenge,
-    code_challenge_method: 'S256',
-    scope: opts.scope ?? 'mcp:whoami apps:read',
-    resource: opts.resource,
-    state: opts.state,
-  });
-
-  await page.goto(`/oauth/authorize?${params.toString()}`);
+  await page.goto(`/oauth/authorize?${authorizeQuery(opts)}`);
   await expect(page.getByTestId('consent-approve')).toBeVisible();
+  // M0-04: the grant is user-bound — no workspace picker on the consent screen.
+  await expect(page.getByTestId('workspace-select')).toHaveCount(0);
 
   const captured = new Promise<string>((resolve) => {
     void page.route('http://127.0.0.1:9977/**', (route) => {
@@ -81,6 +101,8 @@ async function consentAndGetCode(
 
   const url = new URL(capturedUrl);
   expect(url.searchParams.get('state')).toBe(opts.state);
+  // RFC 9207: the authorization response names its issuer.
+  expect(url.searchParams.get('iss')).toBe(BASE_URL_WEB.replace(/\/+$/, ''));
   const code = url.searchParams.get('code');
   expect(code, 'authorization code present in redirect').toBeTruthy();
   return code as string;
@@ -128,30 +150,6 @@ async function refresh(
   return { status: res.status(), body: await res.json() };
 }
 
-/** A raw MCP initialize POST — used for the auth negatives (no SDK). */
-async function rawInitialize(
-  request: APIRequestContext,
-  headers: Record<string, string>
-) {
-  return request.post(`${BASE_URL_MCP}/mcp`, {
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json, text/event-stream',
-      ...headers,
-    },
-    data: {
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'initialize',
-      params: {
-        protocolVersion: '2025-06-18',
-        capabilities: {},
-        clientInfo: { name: 'e2e-raw', version: '0' },
-      },
-    },
-  });
-}
-
 async function mcpResource(request: APIRequestContext): Promise<string> {
   const res = await request.get(
     `${BASE_URL_MCP}/.well-known/oauth-protected-resource`
@@ -175,25 +173,30 @@ test('MCP OAuth 2.1 end-to-end: discovery → register → consent → token →
   const prm = (await prmRes.json()) as {
     resource: string;
     authorization_servers: string[];
+    scopes_supported: string[];
   };
   expect(prm.authorization_servers.length).toBeGreaterThan(0);
+  expect(prm.scopes_supported).toEqual(['read', 'write', 'publish']);
   const resource = prm.resource;
 
-  // (2) authorization-server metadata.
+  // (2) authorization-server metadata (+ CIMD and RFC 9207 support flags).
   const asRes = await request.get(
     `${BASE_URL_WEB}/.well-known/oauth-authorization-server`
   );
   expect(asRes.status()).toBe(200);
-  const as = (await asRes.json()) as Record<string, string[] | string>;
+  const as = (await asRes.json()) as Record<string, unknown>;
   expect(as.authorization_endpoint).toContain('/oauth/authorize');
   expect(as.token_endpoint).toContain('/oauth/token');
   expect(as.registration_endpoint).toContain('/oauth/register');
   expect(as.code_challenge_methods_supported).toContain('S256');
+  expect(as.scopes_supported).toEqual(['read', 'write', 'publish']);
+  expect(as.client_id_metadata_document_supported).toBe(true);
+  expect(as.authorization_response_iss_parameter_supported).toBe(true);
 
   // (3) DCR.
   const clientId = await registerClient(request);
 
-  // (4) log in + consent → code.
+  // (4) log in + consent (read only) → code (+ iss asserted in the helper).
   const email = uniqueEmail('mcp-oauth');
   await loginViaEmail(page, request, email);
   const { verifier, challenge } = pkcePair();
@@ -202,6 +205,7 @@ test('MCP OAuth 2.1 end-to-end: discovery → register → consent → token →
     challenge,
     resource,
     state: 'state-xyz',
+    scope: 'read',
   });
 
   // (5) token exchange.
@@ -210,6 +214,7 @@ test('MCP OAuth 2.1 end-to-end: discovery → register → consent → token →
   expect(tok.body.token_type).toBe('Bearer');
   expect(tok.body.access_token).toBeTruthy();
   expect(tok.body.refresh_token).toBeTruthy();
+  expect(tok.body.scope).toBe('read');
   const accessToken = tok.body.access_token as string;
 
   // (6) Bearer MCP call via the official SDK client.
@@ -223,32 +228,25 @@ test('MCP OAuth 2.1 end-to-end: discovery → register → consent → token →
     const tools = await client.listTools();
     const names = tools.tools.map((t) => t.name);
     expect(names).toContain('whoami');
-    // apps:read was granted → list_apps is exposed.
+    // read was granted → list_apps is exposed; write was not → no write tools.
     expect(names).toContain('list_apps');
+    expect(names).not.toContain('record_create');
 
-    const who = await client.callTool({ name: 'whoami', arguments: {} });
-    const whoText = (who.content as { type: string; text: string }[])[0].text;
-    const whoami = JSON.parse(whoText) as {
-      email: string;
-      role: string;
-      workspace: string;
-      scope: string;
-    };
-    expect(whoami.email).toBe(email);
-    expect(whoami.role).toBe('workspace-admin');
-    expect(whoami.scope).toContain('apps:read');
+    const who = await callTool(client, 'whoami', {});
+    expect(who.json.email).toBe(email);
+    expect(who.json.scope).toBe('read');
+    const workspaces = who.json.workspaces as { kind: string; role: string }[];
+    expect(workspaces).toHaveLength(1);
+    expect(workspaces[0]).toMatchObject({ kind: 'personal', role: 'workspace-admin' });
 
-    const listed = await client.callTool({ name: 'list_apps', arguments: {} });
-    const listedText = (listed.content as { type: string; text: string }[])[0]
-      .text;
-    const apps = JSON.parse(listedText) as { count: number };
-    expect(apps.count).toBe(0);
+    const listed = await callTool(client, 'list_apps', {});
+    expect(listed.json.count).toBe(0);
   } finally {
     await transport.close();
   }
 });
 
-test('MCP OAuth negatives: no-token 401, wrong-audience reject, single-use code, refresh rotation + reuse @local', async ({
+test('MCP OAuth negatives: no-token 401, invalid_target, deny, single-use code, refresh rotation + reuse @local', async ({
   page,
   request,
 }) => {
@@ -261,10 +259,54 @@ test('MCP OAuth negatives: no-token 401, wrong-audience reject, single-use code,
   expect(noToken.headers()['www-authenticate']).toContain('resource_metadata=');
 
   const clientId = await registerClient(request);
+
+  // A resource that is not this MCP endpoint → redirected back with
+  // invalid_target (+ state + iss) before any login or consent.
+  {
+    const { challenge } = pkcePair();
+    const res = await request.get(
+      `${BASE_URL_WEB}/oauth/authorize?${authorizeQuery({
+        clientId,
+        challenge,
+        resource: 'https://wrong.example/mcp',
+        state: 'neg-target',
+      })}`,
+      { maxRedirects: 0 }
+    );
+    expect(res.status()).toBe(302);
+    const loc = new URL(res.headers()['location']);
+    expect(`${loc.origin}${loc.pathname}`).toBe(REDIRECT_URI);
+    expect(loc.searchParams.get('error')).toBe('invalid_target');
+    expect(loc.searchParams.get('state')).toBe('neg-target');
+    expect(loc.searchParams.get('iss')).toBe(BASE_URL_WEB.replace(/\/+$/, ''));
+    expect(loc.searchParams.get('code')).toBeNull();
+  }
+
   const email = uniqueEmail('mcp-neg');
   await loginViaEmail(page, request, email);
 
-  // --- single-use code + refresh rotation/reuse (correct audience) ---
+  // Deny → access_denied, still carrying iss.
+  {
+    const { challenge } = pkcePair();
+    await page.goto(
+      `/oauth/authorize?${authorizeQuery({ clientId, challenge, resource, state: 'neg-deny' })}`
+    );
+    const captured = new Promise<string>((resolve) => {
+      void page.route('http://127.0.0.1:9977/**', (route) => {
+        const url = route.request().url();
+        void route.fulfill({ status: 200, contentType: 'text/html', body: 'ok' });
+        resolve(url);
+      });
+    });
+    await page.getByTestId('consent-deny').click();
+    const denied = new URL(await captured);
+    await page.unroute('http://127.0.0.1:9977/**');
+    expect(denied.searchParams.get('error')).toBe('access_denied');
+    expect(denied.searchParams.get('iss')).toBe(BASE_URL_WEB.replace(/\/+$/, ''));
+    expect(denied.searchParams.get('code')).toBeNull();
+  }
+
+  // --- single-use code + refresh rotation/reuse ---
   {
     const { verifier, challenge } = pkcePair();
     const code = await consentAndGetCode(page, {
@@ -306,30 +348,19 @@ test('MCP OAuth negatives: no-token 401, wrong-audience reject, single-use code,
     });
     expect(burned.status).toBe(400);
     expect(burned.body.error).toBe('invalid_grant');
-  }
 
-  // --- wrong audience: a token minted for a different resource is rejected ---
-  {
-    const { verifier, challenge } = pkcePair();
-    const code = await consentAndGetCode(page, {
-      clientId,
-      challenge,
-      resource: 'https://wrong.example/mcp',
-      state: 'neg-b',
+    // …as is every access token of the grant.
+    const dead = await rawInitialize(request, {
+      Authorization: `Bearer ${rot.body.access_token}`,
     });
-    const tok = await exchangeCode(request, { code, verifier, clientId });
-    expect(tok.status).toBe(200);
-
-    const rejected = await rawInitialize(request, {
-      Authorization: `Bearer ${tok.body.access_token}`,
-    });
-    expect(rejected.status()).toBe(401);
+    expect(dead.status()).toBe(401);
   }
 });
 
-test('MCP token binds to the workspace chosen at consent: a TEAM token sees only the team apps @local', async ({
+test('MCP token is USER-bound: whoami + list_apps span both of the user’s workspaces; a non-member gets not_found @local', async ({
   page,
   request,
+  browser,
 }) => {
   skipUnlessLocal();
   const salt = randomBytes(5).toString('hex');
@@ -350,33 +381,64 @@ test('MCP token binds to the workspace chosen at consent: a TEAM token sees only
   const personalApp = await seedApp({ workspaceId: personal.id });
   const teamApp = await seedApp({ workspaceId: await workspaceIdBySlug(teamSlug) });
 
-  // Consent with the TEAM workspace selected → the token is bound there.
-  const mcp = await mcpClient(page, request, {
-    email,
-    signedIn: true,
-    workspaceLabel: `${teamName} (workspace-admin)`,
-  });
+  // One consent, no workspace choice → the token reaches both workspaces.
+  const mcp = await mcpClient(page, request, { email, signedIn: true, scope: 'read' });
   try {
-    expect(mcp.workspace).toBe(teamSlug);
-    const who = await callTool(mcp.client, 'whoami', {});
-    expect(who.json.email).toBe(email);
-    expect(who.json.role).toBe('workspace-admin');
+    expect(mcp.workspace).toBe(personal.slug);
+    expect(mcp.workspaces.map((w) => [w.slug, w.kind, w.role])).toEqual([
+      [personal.slug, 'personal', 'workspace-admin'],
+      [teamSlug, 'team', 'workspace-admin'],
+    ]);
 
     const listed = await callTool(mcp.client, 'list_apps', {});
-    expect(listed.json.workspace).toBe(teamSlug);
-    const slugs = (listed.json.apps as { slug: string }[]).map((a) => a.slug);
-    expect(slugs).toEqual([teamApp.slug]);
-    expect(slugs).not.toContain(personalApp.slug);
+    const all = (listed.json.apps as { workspace: string; slug: string }[]).map(
+      (a) => `${a.workspace}/${a.slug}`
+    );
+    expect(all).toEqual([`${personal.slug}/${personalApp.slug}`, `${teamSlug}/${teamApp.slug}`]);
 
-    // The personal workspace is out of this token's reach.
-    const cross = await callTool(mcp.client, 'app_errors', {
-      workspace: personal.slug,
-      slug: personalApp.slug,
-    });
-    expect(cross.isError).toBe(true);
-    expect(cross.json.error).toBe('not_found');
+    const onlyTeam = await callTool(mcp.client, 'list_apps', { workspace: teamSlug });
+    expect(onlyTeam.json.workspace).toBe(teamSlug);
+    expect((onlyTeam.json.apps as { slug: string }[]).map((a) => a.slug)).toEqual([teamApp.slug]);
+
+    // Per-call authorization: both workspaces are reachable with this token.
+    for (const [ws, slug] of [
+      [personal.slug, personalApp.slug],
+      [teamSlug, teamApp.slug],
+    ]) {
+      const r = await callTool(mcp.client, 'app_errors', { workspace: ws, slug });
+      expect(r.isError, JSON.stringify(r.json)).toBe(false);
+    }
   } finally {
     await mcp.transport.close();
+  }
+
+  // A different user (not a member of either workspace) → not_found, the same
+  // answer as an app that does not exist.
+  const ctxB = await browser.newContext();
+  const pageB = await ctxB.newPage();
+  const other = await mcpClient(pageB, request, { tag: 'mcp-outsider', scope: 'read' });
+  try {
+    const cross = await callTool(other.client, 'app_errors', {
+      workspace: teamSlug,
+      slug: teamApp.slug,
+    });
+    const missing = await callTool(other.client, 'app_errors', {
+      workspace: other.workspace,
+      slug: 'e2e-no-such-app',
+    });
+    expect(cross.isError).toBe(true);
+    expect(cross.json).toEqual(missing.json);
+    expect(cross.json.error).toBe('not_found');
+
+    const foreignList = await callTool(other.client, 'list_apps', { workspace: teamSlug });
+    expect(foreignList.isError).toBe(true);
+    expect(foreignList.json.error).toBe('not_found');
+    const own = await callTool(other.client, 'list_apps', {});
+    expect(own.json.count).toBe(0);
+  } finally {
+    await other.transport.close();
+    await pageB.close();
+    await ctxB.close();
   }
 });
 
@@ -422,8 +484,8 @@ test('M1a discovery chain is coherent (RS ↔ AS ↔ health) @smoke', async ({
   };
   expect(prm.resource).toBeTruthy();
   expect(prm.authorization_servers.length).toBeGreaterThan(0);
-  expect(prm.scopes_supported).toContain('apps:read');
-  expect(prm.scopes_supported).toContain('data:write');
+  expect(prm.scopes_supported).toContain('read');
+  expect(prm.scopes_supported).toContain('write');
 
   // Authorization-server metadata (RFC 8414): the AS advertised by the RS
   // actually serves the three OAuth 2.1 endpoints + PKCE S256.

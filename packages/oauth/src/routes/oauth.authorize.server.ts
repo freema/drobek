@@ -1,16 +1,23 @@
 /**
- * GET/POST /oauth/authorize (U5) — the browser-facing authorization endpoint +
- * consent. Server half; the consent UI lives in ./oauth.authorize.tsx.
+ * GET/POST /oauth/authorize (U5, M0-04) — the browser-facing authorization
+ * endpoint + consent. Server half; the consent UI lives in ./oauth.authorize.tsx.
  *
- * GET: validate client_id + EXACT redirect_uri + response_type=code + PKCE
- * (S256 required) + resource; bounce to /login (carrying the authorize params)
- * when signed-out; otherwise render consent naming the client, a workspace
- * selector over the user's memberships, and the requested scopes.
+ * Validation order follows RFC 6749 §4.1.2.1: the client (a DCR client_id or
+ * a CIMD metadata URL) and the EXACT redirect_uri are checked first — a
+ * failure there is SHOWN (400), never redirected, because the redirect target
+ * is not trusted yet. Every later failure (response_type, PKCE S256, the RFC
+ * 8707 `resource` = this MCP endpoint → `invalid_target`, `invalid_scope`) is
+ * redirected back with `error`, `state` and the RFC 9207 `iss`.
  *
- * POST: re-validate, then on "allow" mint a single-use code bound to
- * (user, chosen workspace + its role, resource, granted scope, PKCE,
- * redirect_uri) and 302 back to redirect_uri?code&state. "deny" → 302 with
- * error=access_denied. Invalid params never 500 — clean OAuth errors only.
+ * GET: bounce to /login (carrying the authorize params) when signed-out;
+ * otherwise render consent naming the client and the three scope checkboxes
+ * (read / write / publish; only the requested ones can be granted).
+ *
+ * POST: re-validate, then on "allow" mint a single-use code bound to (user,
+ * resource, granted scope, PKCE, redirect_uri) and 302 back with
+ * code + state + iss. The token is USER-bound: no workspace is chosen here —
+ * each MCP call is authorized against the caller's membership in the
+ * workspace it targets. "deny" (or granting nothing) → access_denied.
  */
 import {
   data,
@@ -18,17 +25,13 @@ import {
   type ActionFunctionArgs,
   type LoaderFunctionArgs,
 } from 'react-router';
-import { getSessionUser, isSuperAdmin } from '@drobek/auth';
-import {
-  ensurePersonalWorkspace,
-  getWorkspaceById,
-  listUserWorkspaces,
-} from '@drobek/tenancy';
-import { findClientByClientId, type OAuthClient } from '../clients.server.js';
+import { getSessionUser } from '@drobek/auth';
+import { resolveClient } from '../client-resolve.server.js';
+import { markClientUsed, type OAuthClient } from '../clients.server.js';
 import { issueAuthCode } from '../codes.server.js';
-import { exactRedirectUriMatch, isValidResource } from '../redirect-uri.js';
-import { isKnownScope, parseScopes, serializeScopes } from '../scopes.js';
-import type { OAuthRole } from '../store.server.js';
+import { authorizationServerIssuer, isMcpResource, mcpResourceUri } from '../metadata.js';
+import { exactRedirectUriMatch } from '../redirect-uri.js';
+import { parseScopes, serializeScopes, SCOPES, type Scope } from '../scopes.js';
 
 interface AuthorizeParams {
   clientId: string;
@@ -54,47 +57,80 @@ function readParams(get: (k: string) => string | null): AuthorizeParams {
   };
 }
 
-type Validated =
-  | { ok: true; client: OAuthClient; params: AuthorizeParams }
-  | { ok: false; error: string; errorDescription: string };
+interface OAuthFailure {
+  error: string;
+  errorDescription: string;
+}
 
-/**
- * Structural validation shared by GET + POST. redirect_uri is validated
- * against the registered set with EXACT string equality before we ever trust
- * it — so an invalid/unknown redirect_uri is surfaced here, never redirected to.
- */
+type Validated =
+  | { ok: true; client: OAuthClient; requested: Scope[] }
+  /** Client/redirect_uri problem: SHOW it. */
+  | { ok: false; show: true; failure: OAuthFailure }
+  /** Anything else: redirect it (the redirect_uri is already trusted). */
+  | { ok: false; show: false; failure: OAuthFailure };
+
+/** Validation shared by GET + POST (see the module comment for the order). */
 async function validate(params: AuthorizeParams): Promise<Validated> {
-  if (params.responseType !== 'code') {
-    return { ok: false, error: 'unsupported_response_type', errorDescription: 'response_type must be code' };
-  }
-  if (!params.clientId) {
-    return { ok: false, error: 'invalid_request', errorDescription: 'client_id is required' };
-  }
-  if (!params.redirectUri) {
-    return { ok: false, error: 'invalid_request', errorDescription: 'redirect_uri is required' };
-  }
-  const client = await findClientByClientId(params.clientId);
-  if (!client) {
-    return { ok: false, error: 'invalid_client', errorDescription: 'unknown client_id' };
-  }
+  const show = (error: string, errorDescription: string): Validated => ({
+    ok: false,
+    show: true,
+    failure: { error, errorDescription },
+  });
+  const back = (error: string, errorDescription: string): Validated => ({
+    ok: false,
+    show: false,
+    failure: { error, errorDescription },
+  });
+
+  if (!params.clientId) return show('invalid_request', 'client_id is required');
+  if (!params.redirectUri) return show('invalid_request', 'redirect_uri is required');
+  const resolved = await resolveClient(params.clientId);
+  if (!resolved.ok) return show(resolved.error, resolved.description);
+  const client = resolved.client;
   if (!exactRedirectUriMatch(params.redirectUri, client.redirectUris)) {
-    return { ok: false, error: 'invalid_request', errorDescription: 'redirect_uri is not registered for this client' };
+    return show('invalid_request', 'redirect_uri is not registered for this client');
+  }
+
+  if (params.responseType !== 'code') {
+    return back('unsupported_response_type', 'response_type must be code');
   }
   if (!params.codeChallenge || params.codeChallengeMethod !== 'S256') {
-    return { ok: false, error: 'invalid_request', errorDescription: 'PKCE with code_challenge_method=S256 is required' };
+    return back('invalid_request', 'PKCE with code_challenge_method=S256 is required');
   }
-  if (!params.resource || !isValidResource(params.resource)) {
-    return { ok: false, error: 'invalid_request', errorDescription: 'resource must be an absolute URI (RFC 8707)' };
+  if (!params.resource) {
+    return back('invalid_request', 'resource is required (RFC 8707)');
   }
-  return { ok: true, client, params };
+  if (!isMcpResource(params.resource)) {
+    return back('invalid_target', `resource must be ${mcpResourceUri()}`);
+  }
+  const requested = parseScopes(params.scope);
+  if (requested.length === 0) {
+    return back('invalid_scope', `scope must name at least one of: ${SCOPES.join(' ')}`);
+  }
+  return { ok: true, client, requested };
+}
+
+/** 302 to the (already validated) redirect_uri with RFC 6749 + RFC 9207 params. */
+function redirectBack(
+  request: Request,
+  params: AuthorizeParams,
+  values: Record<string, string>
+): Response {
+  const target = new URL(params.redirectUri);
+  for (const [k, v] of Object.entries(values)) target.searchParams.set(k, v);
+  if (params.state) target.searchParams.set('state', params.state);
+  target.searchParams.set('iss', authorizationServerIssuer(request));
+  return redirect(target.toString());
 }
 
 export interface AuthorizeConsentData {
   ok: true;
   clientName: string;
+  /** For a CIMD client: the host that vouches for the name (its metadata URL). */
+  clientHost: string | null;
   redirectHost: string;
-  workspaces: { id: string; slug: string; name: string; role: OAuthRole }[];
-  scopes: string[];
+  /** The scopes this client asked for (only these can be granted). */
+  requested: Scope[];
   params: AuthorizeParams;
 }
 export interface AuthorizeErrorData {
@@ -110,8 +146,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   const v = await validate(params);
   if (!v.ok) {
+    if (!v.show) {
+      throw redirectBack(request, params, {
+        error: v.failure.error,
+        error_description: v.failure.errorDescription,
+      });
+    }
     return data<AuthorizeErrorData>(
-      { ok: false, error: v.error, errorDescription: v.errorDescription },
+      { ok: false, ...v.failure },
       { status: 400, headers: { 'Cache-Control': 'no-store' } }
     );
   }
@@ -121,10 +163,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
     const returnTo = `${url.pathname}${url.search}`;
     throw redirect(`/login?returnTo=${encodeURIComponent(returnTo)}`);
   }
-
-  // Guarantee the personal workspace exists so there is always ≥1 choice.
-  await ensurePersonalWorkspace(user.id, user.email);
-  const workspaces = await listUserWorkspaces(user.id);
 
   let redirectHost = params.redirectUri;
   try {
@@ -137,41 +175,34 @@ export async function loader({ request }: LoaderFunctionArgs) {
     {
       ok: true,
       clientName: v.client.clientName,
+      clientHost: v.client.source === 'cimd' ? new URL(v.client.clientId).host : null,
       redirectHost,
-      workspaces: workspaces.map((w) => ({
-        id: w.id,
-        slug: w.slug,
-        name: w.name,
-        role: w.role as OAuthRole,
-      })),
-      scopes: parseScopes(params.scope),
+      requested: v.requested,
       params,
     },
     { headers: { 'Cache-Control': 'no-store' } }
   );
 }
 
-/** Append error params to a validated redirect_uri and 302. */
-function redirectWithError(redirectUri: string, error: string, state: string): Response {
-  const target = new URL(redirectUri);
-  target.searchParams.set('error', error);
-  if (state) target.searchParams.set('state', state);
-  return redirect(target.toString());
-}
-
 export async function action({ request }: ActionFunctionArgs) {
   const form = await request.formData();
   const get = (k: string): string | null => {
-    const v = form.get(k);
-    return typeof v === 'string' ? v : null;
+    const val = form.get(k);
+    return typeof val === 'string' ? val : null;
   };
   const params = readParams(get);
 
   const v = await validate(params);
   if (!v.ok) {
+    if (!v.show) {
+      throw redirectBack(request, params, {
+        error: v.failure.error,
+        error_description: v.failure.errorDescription,
+      });
+    }
     // redirect_uri is NOT trusted here — render a clean 400, never redirect.
     throw data(
-      { message: `${v.error}: ${v.errorDescription}` },
+      { message: `${v.failure.error}: ${v.failure.errorDescription}` },
       { status: 400 }
     );
   }
@@ -179,52 +210,32 @@ export async function action({ request }: ActionFunctionArgs) {
   const user = await getSessionUser(request);
   if (!user) throw redirect('/login');
 
-  const decision = get('decision');
-  if (decision !== 'allow') {
-    throw redirectWithError(params.redirectUri, 'access_denied', params.state);
+  if (get('decision') !== 'allow') {
+    throw redirectBack(request, params, { error: 'access_denied' });
   }
 
-  // Resolve the chosen workspace + the user's role in it (super-admin override).
-  const workspaceId = get('workspace_id') ?? '';
-  const superAdmin = isSuperAdmin(user.email);
-  const mine = await listUserWorkspaces(user.id);
-  const membership = mine.find((w) => w.id === workspaceId);
-  let role: OAuthRole;
-  if (membership) {
-    role = membership.role as OAuthRole;
-  } else if (superAdmin && (await getWorkspaceById(workspaceId))) {
-    role = 'workspace-admin';
-  } else {
-    throw data(
-      { message: 'You are not a member of the selected workspace.' },
-      { status: 403 }
-    );
+  // Granted = the checked scope_<name> boxes ∩ what the client requested.
+  const granted = v.requested.filter((s) => {
+    const box = get(`scope_${s}`);
+    return box === 'on' || box === 'true';
+  });
+  if (granted.length === 0) {
+    throw redirectBack(request, params, {
+      error: 'access_denied',
+      error_description: 'no scope was granted',
+    });
   }
-
-  // Granted scope = the checked scope_<name> boxes, restricted to known scopes.
-  const granted: string[] = [];
-  for (const [k, val] of form.entries()) {
-    if (!k.startsWith('scope_')) continue;
-    if (val !== 'on' && val !== 'true') continue;
-    const scope = k.slice('scope_'.length);
-    if (isKnownScope(scope)) granted.push(scope);
-  }
-  const scope = serializeScopes(Array.from(new Set(granted)));
 
   const code = await issueAuthCode({
     clientId: v.client.clientId,
     userId: user.id,
-    workspaceId,
-    role,
     redirectUri: params.redirectUri,
     codeChallenge: params.codeChallenge,
     codeChallengeMethod: params.codeChallengeMethod,
-    scope,
-    resource: params.resource,
+    scope: serializeScopes(granted),
+    resource: mcpResourceUri(),
   });
+  await markClientUsed(v.client.clientId);
 
-  const target = new URL(params.redirectUri);
-  target.searchParams.set('code', code);
-  if (params.state) target.searchParams.set('state', params.state);
-  throw redirect(target.toString());
+  throw redirectBack(request, params, { code });
 }
