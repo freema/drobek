@@ -56,6 +56,15 @@ Caddy sets from the TCP peer — a client-sent `X-Real-IP` or
 `X-Forwarded-For` is overwritten/ignored. Leave `TRUST_PROXY` unset only when
 a different proxy (e.g. nginx with `X-Real-IP $remote_addr`) is in front.
 
+Platform modules (the backends apps use through `import { drobek } from
+'drobek'`) are enabled with `DROBEK_MODULES` in `.env` (comma-separated; a
+short name `x` loads the package `drobek-module-x` from the server's
+dependencies). The server applies each module's migrations on start and
+refuses to start on a module it cannot load. Limits come from their env vars
+or, with `LIMITS_PROVIDER_URL` + `LIMITS_PROVIDER_SECRET`, from your own
+signed limits endpoint. The contract and the provider protocol are in
+[`MODULES.md`](./MODULES.md).
+
 Volumes: `postgres_data`, `redis_data`, `caddy_data` (ACME account, issued
 certificates, Caddy's local CA — back it up; losing it means re-issuing every
 certificate) and `caddy_config`.

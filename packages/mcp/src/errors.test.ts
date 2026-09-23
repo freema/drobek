@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ERROR_CATALOGUE, errorDoc } from '@drobek/agent-dx';
 import type { CompileErrorCode } from '@drobek/compile';
+import { MODULE_ERROR_CODES } from '@drobek/modules';
 import { TOOL_ERROR_CODES, ToolError } from './errors.js';
 
 /** Every @drobek/compile error code (exhaustive: adding one breaks the type). */
@@ -25,6 +26,10 @@ describe('error catalogue coverage', () => {
 
   it('every compile.errors[] code has a catalogue entry', () => {
     for (const code of Object.keys(COMPILE_CODES)) expect(errorDoc(code), code).toBeTruthy();
+  });
+
+  it('every module-route error code (DrobekError) has a catalogue entry (M1-01)', () => {
+    for (const code of MODULE_ERROR_CODES) expect(errorDoc(code), code).toBeTruthy();
   });
 
   it('the catalogue has no duplicate codes and documents compile_error', () => {

@@ -8,7 +8,8 @@
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createVersion, getVersion, publish } from '@drobek/apps';
-import { apps, auditLog, memberships, users, workspaces } from '@drobek/db';
+import { apps, auditLog, memberships, moduleConfigs, moduleSecrets, users, workspaces } from '@drobek/db';
+import { setModuleSecret } from '@drobek/modules';
 import { APP_LOCK_TTL_SEC } from '@drobek/agent-dx';
 import type { ToolPrincipal } from './context.js';
 import { freshDb, type TestDb } from './test/db.js';
@@ -123,7 +124,15 @@ describe('create_app', () => {
       expect(files).toEqual(['drobek.json', 'index.html', 'src/main.tsx', 'src/styles.css']);
       const versions = app.body.versions as { number: number; actor_kind: string; compile_status: string }[];
       expect(versions[0]).toMatchObject({ number: 1, actor_kind: 'agent', compile_status: 'ok' });
-      expect(app.body).toMatchObject({ latest_version: 1, compile_status: 'ok', modules: {} });
+      expect(app.body).toMatchObject({
+        latest_version: 1,
+        compile_status: 'ok',
+        modules: { greet: { configured: false, pending: false, config: { greeting: 'Hi', audience: 'user', emoji: false } } },
+        skills: [
+          { name: 'greet', use_when: 'you want the server to greet the visitor' },
+          { name: 'data', use_when: 'you need to store records on the server' },
+        ],
+      });
       expect(app.body).not.toHaveProperty('lock');
 
       // The built outputs are stored next to the sources.
@@ -335,8 +344,8 @@ describe('write_files', () => {
 });
 
 describe('single-writer lease', () => {
-  const write = (ctxDeps: TestDeps, who: ToolPrincipal, sessionId: string, appId: string, n: number) => {
-    const ctx: CallContext = { principal: who, sessionId, deps: ctxDeps };
+  const write = async (ctxDeps: TestDeps, who: ToolPrincipal, sessionId: string, appId: string, n: number) => {
+    const ctx: CallContext = { principal: who, sessionId, deps: ctxDeps, modules: await ctxDeps.modules() };
     return writeFiles(ctx, {
       app_id: appId,
       files: [{ path: 'notes.txt', content: `v${n}` }],
@@ -692,5 +701,243 @@ describe('publish', () => {
     } finally {
       await bob.close();
     }
+  });
+});
+
+describe('skill_info (M1-01)', () => {
+  it('lists the skills (modules first, then general); the same list rides on create_app and get_app', async () => {
+    const c = await as('vera');
+    try {
+      const r = await c.call('skill_info');
+      expect(r.isError, r.text).toBe(false);
+      expect(r.body).toMatchInlineSnapshot(`
+        {
+          "note": "Call skill_info with a name before using that backend; follow the skill exactly.",
+          "skills": [
+            {
+              "name": "greet",
+              "use_when": "you want the server to greet the visitor",
+            },
+            {
+              "name": "data",
+              "use_when": "you need to store records on the server",
+            },
+          ],
+        }
+      `);
+    } finally {
+      await c.close();
+    }
+    const alice = await as('alice');
+    try {
+      const created = await alice.call('create_app', { name: 'Skills listed', workspace: 'team-x', template: 'html' });
+      expect(created.body.skills).toEqual((await alice.call('skill_info')).body.skills);
+      expect(created.body.briefing).toContain('  - `greet` — use when you want the server to greet the visitor');
+      expect(created.body.briefing).toContain('call `skill_info`');
+    } finally {
+      await alice.close();
+    }
+  });
+
+  it('returns one skill: content, config schema/defaults, secret NAMES — never a value or any app config', async () => {
+    const app = await newApp('Skill secrets', { template: 'html' });
+    const SECRET = 'greet-key-THIS-MUST-NEVER-LEAK-9f8e7d';
+    await setModuleSecret({ appId: app.app_id, module: 'greet', name: 'GREET_KEY', value: SECRET, env: { DROBEK_MASTER_KEY: '22'.repeat(32) } });
+    const alice = await as('alice');
+    try {
+      await alice.call('configure_module', { app_id: app.app_id, module: 'greet', config: { emoji: true } });
+      const r = await alice.call('skill_info', { name: 'greet' });
+      expect(r.isError, r.text).toBe(false);
+      expect(r.body).toMatchObject({
+        name: 'greet',
+        kind: 'module',
+        use_when: 'you want the server to greet the visitor',
+        content: '# greet\n\nCall `drobek.greet.hi()`.\n',
+        config: { defaults: { greeting: 'Hi', audience: 'user', emoji: false } },
+        secrets: [{ name: 'GREET_KEY', description: 'signs greetings', required: true }],
+      });
+      expect(r.text).not.toContain(SECRET);
+      expect(r.text).not.toContain('"emoji": true');
+      // get_app shows only whether the secret is set
+      const got = await alice.call('get_app', { app_id: app.app_id });
+      expect(got.text).not.toContain(SECRET);
+      expect((got.body.modules as Record<string, unknown>).greet).toMatchObject({
+        configured: true,
+        config: { emoji: true },
+        secrets: [{ name: 'GREET_KEY', hasSecret: true }],
+      });
+    } finally {
+      await alice.close();
+    }
+  });
+
+  it('an unknown name → not_found with the available names', async () => {
+    const c = await as('eve');
+    try {
+      const r = await c.call('skill_info', { name: 'firebase' });
+      expect(r.isError).toBe(true);
+      expect(r.body).toEqual({
+        code: 'not_found',
+        message: 'No skill "firebase" on this server.',
+        hint: 'skill_info()',
+        available: ['greet', 'data'],
+      });
+    } finally {
+      await c.close();
+    }
+  });
+
+  it('an unresolved backend import carries a skill hint in compile.errors', async () => {
+    const app = await newApp('Firebase habit');
+    const c = await as('alice');
+    try {
+      const r = await c.call('write_files', {
+        app_id: app.app_id,
+        files: [{ path: 'src/main.tsx', content: "import { initializeApp } from 'firebase/app';\ninitializeApp({});\n" }],
+        reasoning: 'firebase',
+      });
+      const errors = (r.body.compile as { errors: { code: string; hint?: string }[] }).errors;
+      expect(errors[0]).toMatchObject({ code: 'unresolved_import', hint: "skill_info('data')" });
+      const other = await c.call('write_files', {
+        app_id: app.app_id,
+        files: [{ path: 'src/main.tsx', content: "import dayjs from 'dayjs';\ndayjs();\n" }],
+        reasoning: 'dayjs',
+      });
+      const e2 = (other.body.compile as { errors: { code: string; hint?: string }[] }).errors[0];
+      expect(e2.code).toBe('unresolved_import');
+      expect(e2.hint).toBeUndefined();
+      // get_app's compile_errors carry it too
+      await c.call('write_files', {
+        app_id: app.app_id,
+        files: [{ path: 'src/main.tsx', content: "import { createClient } from '@supabase/supabase-js';\ncreateClient('a','b');\n" }],
+        reasoning: 'supabase',
+      });
+      const got = await c.call('get_app', { app_id: app.app_id });
+      expect((got.body.compile_errors as { hint?: string }[])[0].hint).toBe("skill_info('data')");
+    } finally {
+      await c.close();
+    }
+  });
+
+  it('the bare `drobek` import compiles to this server\'s versioned SDK URL', async () => {
+    const app = await newApp('Uses sdk', { template: 'html' });
+    const c = await as('alice');
+    try {
+      const r = await c.call('write_files', {
+        app_id: app.app_id,
+        files: [
+          { path: 'src/main.ts', content: "import { drobek } from 'drobek';\nconsole.log(drobek);\n" },
+          { path: 'index.html', content: '<script type="module" src="/main.js"></script>' },
+        ],
+        reasoning: 'sdk',
+      });
+      expect((r.body.compile as { ok: boolean }).ok).toBe(true);
+      const rt = await deps.modules();
+      const v = await getVersion(app.app_id, { number: r.body.version as number });
+      const main = v!.files.find((f) => f.kind === 'built' && f.path === 'main.js');
+      expect(main).toBeTruthy();
+      const [row] = await db.execute<{ bytes: Buffer }>(sql`SELECT b.bytes FROM blobs b WHERE b.sha256 = ${main!.sha256}`).then((x) => (Array.isArray(x) ? x : (x as { rows: { bytes: Buffer }[] }).rows));
+      expect(Buffer.from(row.bytes).toString('utf8')).toContain(rt.sdk.url);
+    } finally {
+      await c.close();
+    }
+  });
+});
+
+describe('configure_module (M1-01)', () => {
+  it('invalid config → invalid_params with the field paths and the module skill hint', async () => {
+    const app = await newApp('Cfg invalid', { template: 'html' });
+    const c = await as('alice');
+    try {
+      const r = await c.call('configure_module', { app_id: app.app_id, module: 'greet', config: { greeting: '', audience: 'everyone' } });
+      expect(r.isError).toBe(true);
+      expect(r.body).toMatchObject({
+        code: 'invalid_params',
+        hint: "skill_info('greet')",
+        issues: [{ path: 'greeting' }, { path: 'audience' }],
+      });
+      const unknown = await c.call('configure_module', { app_id: app.app_id, module: 'nope', config: {} });
+      expect(unknown.body).toMatchObject({ code: 'not_found', available: ['greet'] });
+      const secret = await c.call('configure_module', {
+        app_id: app.app_id,
+        module: 'greet',
+        config: { greeting: 'ghp_' + 'a'.repeat(36) },
+      });
+      expect(secret.body.code).toBe('invalid_params');
+    } finally {
+      await c.close();
+    }
+  });
+
+  it('a safe change applies; a confirmRequired one is pending with confirm_url; get_app shows pending:true', async () => {
+    const app = await newApp('Cfg pending', { template: 'html' });
+    const c = await as('bob');
+    try {
+      const safe = await c.call('configure_module', { app_id: app.app_id, module: 'greet', config: { emoji: true } });
+      expect(safe.body).toEqual({
+        module: 'greet',
+        applied: true,
+        config: { greeting: 'Hi', audience: 'user', emoji: true },
+        pending_confirmation: [],
+        secrets_missing: ['GREET_KEY'],
+        secrets_note: expect.stringContaining('dashboard'),
+      });
+      const held = await c.call('configure_module', { app_id: app.app_id, module: 'greet', config: { greeting: 'Ahoj', audience: 'public' } });
+      expect(held.isError, held.text).toBe(false);
+      expect(held.body).toMatchObject({
+        module: 'greet',
+        applied: false,
+        config: { greeting: 'Hi', audience: 'user', emoji: true },
+        pending_confirmation: ['greeting: "Hi" → "Ahoj"', 'audience: anyone may call greet'],
+        confirm_url: `https://dash.drobek.test/workspaces/team-x/apps/${app.slug}/modules/greet`,
+        note: expect.stringContaining('confirm_url'),
+      });
+      const got = await c.call('get_app', { app_id: app.app_id });
+      expect((got.body.modules as Record<string, unknown>).greet).toMatchObject({
+        pending: true,
+        pending_confirmation: ['greeting: "Hi" → "Ahoj"', 'audience: anyone may call greet'],
+        confirm_url: `https://dash.drobek.test/workspaces/team-x/apps/${app.slug}/modules/greet`,
+      });
+      const [row] = await db.select().from(moduleConfigs).where(eq(moduleConfigs.appId, app.app_id));
+      expect(row.config).toEqual({ emoji: true });
+      const audit = await db
+        .select({ action: auditLog.action, actorKind: auditLog.actorKind })
+        .from(auditLog)
+        .where(and(eq(auditLog.target, app.slug), sql`${auditLog.action} like 'module.%'`));
+      expect(audit).toEqual([
+        { action: 'module.configure', actorKind: 'agent' },
+        { action: 'module.pending', actorKind: 'agent' },
+      ]);
+    } finally {
+      await c.close();
+    }
+  });
+
+  it('per-call authorization: viewer forbidden, non-member not_found; takes the lease', async () => {
+    const app = await newApp('Cfg auth', { template: 'html' });
+    for (const [who, code] of [
+      ['vera', 'forbidden'],
+      ['eve', 'not_found'],
+    ] as const) {
+      const c = await as(who);
+      try {
+        const r = await c.call('configure_module', { app_id: app.app_id, module: 'greet', config: { emoji: true } });
+        expect(r.body.code, who).toBe(code);
+      } finally {
+        await c.close();
+      }
+    }
+    // Bob holds the lease → Alice's configure_module is app_locked.
+    const bob = await as('bob');
+    await bob.call('configure_module', { app_id: app.app_id, module: 'greet', config: { emoji: true } });
+    await bob.close();
+    const alice = await as('alice');
+    try {
+      const r = await alice.call('configure_module', { app_id: app.app_id, module: 'greet', config: { emoji: false } });
+      expect(r.body.code).toBe('app_locked');
+    } finally {
+      await alice.close();
+    }
+    await db.delete(moduleSecrets);
   });
 });

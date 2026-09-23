@@ -1,0 +1,127 @@
+/**
+ * The browser SDK of THIS server (M1-01): at startup esbuild bundles the SDK
+ * core (`@drobek/sdk` core.ts) + the `sdk.entry` of every active module into
+ * ONE ES module, served on every app host at `/__drobek/sdk.js`; the
+ * declarations go to `/__drobek/sdk.d.ts`. Only ACTIVE modules are in it.
+ *
+ * Versioning: `hash` = sha256 of the bundle (16 hex chars). `url` =
+ * `/__drobek/sdk.js?v=<hash>` is what the compiler maps the bare `drobek`
+ * import to, and is served `immutable`; the unversioned URL revalidates
+ * (ETag). This is platform code read from the operator's disk — never app
+ * code.
+ */
+import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import * as esbuild from 'esbuild';
+import { CORE_SDK_TYPES } from '@drobek/sdk';
+import type { AnyModule } from './contract.js';
+
+export const SDK_PATH = '/__drobek/sdk.js';
+export const SDK_TYPES_PATH = '/__drobek/sdk.d.ts';
+
+export interface SdkBundle {
+  js: Buffer;
+  dts: string;
+  hash: string;
+  /** `/__drobek/sdk.js?v=<hash>` */
+  url: string;
+  /** The active modules it contains, in order. */
+  modules: string[];
+}
+
+/** file: URL or path → absolute path. */
+export function toPath(pathOrUrl: string): string {
+  return pathOrUrl.startsWith('file:') ? fileURLToPath(pathOrUrl) : pathOrUrl;
+}
+
+/** The SDK core source: `@drobek/sdk` dist/core.js (src/core.ts in a source checkout). */
+export function sdkCoreEntry(): string {
+  const require = createRequire(import.meta.url);
+  const root = dirname(require.resolve('@drobek/sdk/package.json'));
+  for (const candidate of [join(root, 'dist/core.js'), join(root, 'src/core.ts')]) {
+    if (existsSync(candidate)) return candidate;
+  }
+  throw new Error('@drobek/sdk core not found (build @drobek/sdk first)');
+}
+
+/** The composed entry module esbuild bundles (exported for tests). */
+export function sdkEntrySource(coreEntry: string, modules: AnyModule[]): string {
+  const withSdk = modules.filter((m) => m.sdk);
+  const lines = [
+    '// drobek SDK — composed at server start from the SDK core + the active platform modules.',
+    `import { createCore, DrobekError } from ${JSON.stringify(coreEntry)};`,
+    ...withSdk.map((m, i) => `import m${i} from ${JSON.stringify(toPath(m.sdk!.entry))};`),
+    'export const drobek = Object.freeze({',
+    ...withSdk.map((m, i) => `  ${JSON.stringify(m.name)}: m${i}(createCore(${JSON.stringify(m.name)})),`),
+    '});',
+    'export { DrobekError };',
+    'export default drobek;',
+    '',
+  ];
+  return lines.join('\n');
+}
+
+function indent(text: string, pad = '  '): string {
+  return text
+    .trim()
+    .split('\n')
+    .map((l) => (l ? pad + l : l))
+    .join('\n');
+}
+
+/** One module's slice of sdk.d.ts (also what skill_info shows for it). */
+export function moduleTypes(module: AnyModule): string | null {
+  if (!module.sdk) return null;
+  return [`export declare namespace ${module.name} {`, indent(module.sdk.types), '}'].join('\n');
+}
+
+export function sdkDeclarations(modules: AnyModule[]): string {
+  const withSdk = modules.filter((m) => m.sdk);
+  return [
+    "// drobek SDK types — `import { drobek } from 'drobek'`. Generated at server start;",
+    '// only the platform modules active on this server are listed.',
+    CORE_SDK_TYPES,
+    '',
+    ...withSdk.map((m) => moduleTypes(m) + '\n'),
+    'export interface Drobek {',
+    ...withSdk.map((m) => `  /** Use when ${m.skill.useWhen.replace(/\*\//g, '* /')} — skill_info('${m.name}') */\n  readonly ${m.name}: ${m.name}.Api;`),
+    '}',
+    'export declare const drobek: Drobek;',
+    'export default drobek;',
+    '',
+  ].join('\n');
+}
+
+/** Bundle the SDK for `modules` (esbuild, in memory). Throws on a broken module entry. */
+export async function buildSdk(modules: AnyModule[], coreEntry: string = sdkCoreEntry()): Promise<SdkBundle> {
+  for (const m of modules) {
+    if (m.sdk && !existsSync(toPath(m.sdk.entry))) {
+      throw new Error(`module "${m.name}": sdk.entry does not exist: ${toPath(m.sdk.entry)}`);
+    }
+  }
+  const result = await esbuild.build({
+    stdin: { contents: sdkEntrySource(coreEntry, modules), loader: 'js', resolveDir: dirname(coreEntry), sourcefile: 'drobek-sdk.js' },
+    bundle: true,
+    write: false,
+    format: 'esm',
+    platform: 'browser',
+    target: 'es2022',
+    minify: false,
+    legalComments: 'none',
+    charset: 'utf8',
+    external: ['https://*', 'http://*'],
+    logLevel: 'silent',
+  });
+  const js = Buffer.from(result.outputFiles[0].contents);
+  const hash = createHash('sha256').update(js).digest('hex').slice(0, 16);
+  return {
+    js,
+    dts: sdkDeclarations(modules),
+    hash,
+    url: `${SDK_PATH}?v=${hash}`,
+    modules: modules.filter((m) => m.sdk).map((m) => m.name),
+  };
+}

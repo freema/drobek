@@ -2,6 +2,61 @@
 
 ## Unreleased (`next`)
 
+### Platform modules: the contract, `skill_info`, `configure_module` (NSO-287)
+
+- **`@drobek/modules`** (new): the module contract (`defineModule`, contract
+  1.0.0), the registry that loads `DROBEK_MODULES` (short name `x` →
+  package `drobek-module-x`, resolved from the server's dependencies; any
+  misconfiguration stops the server at start), the per-request app-scoped
+  `ModuleContext` (principal from the end-user cookie, `rules.decide`,
+  `limits`, `rateLimit`, `secrets.get`, `audit`, `db`, `email`), the
+  `ModuleRouter` pipeline (CSRF, rule, rate limit, zod body/query with field
+  paths) with one error shape `{ error, message, details?, hint }`, module
+  migrations with their own journal (`__drizzle_migrations_mod_<name>`), and
+  `@drobek/modules/testing` (`createModuleTestContext`). Contract:
+  `docs/MODULES.md`.
+- **`/__drobek/sdk.js` + `sdk.d.ts`** on every app host: the SDK core
+  (`@drobek/sdk`) plus every active module, bundled with esbuild at start. The
+  compiler maps `import { drobek } from 'drobek'` to `sdk.js?v=<hash>`
+  (immutable under the current hash, revalidate + ETag otherwise).
+  `/__drobek/v1/<module>/…` routes answer after the app's visibility gate; a
+  locked app answers `401 password_required`.
+- **Migration `0011_modules`**: `module_configs` (sparse merge-patch config +
+  one pending change per app and module), `module_secrets` (envelope-encrypted
+  per-app module secrets, written only from the dashboard, never returned by
+  any API), audit actor kind `end_user`; both tables cascade on app delete.
+- **MCP `configure_module`** (scope `write`, editor, takes the lease): a merge
+  patch validated against the module's schema; changes the module marks as
+  risky are held as pending and return `confirm_url`; values that look like
+  secrets are refused; `secrets_missing` lists unset required secrets by name.
+  Audit `module.configure` / `module.pending` (actor agent).
+- **Dashboard API `POST /api/apps/:id/modules/:module/confirm|reject`**
+  (session, required dashboard `Origin`, editor; non-member → 404; nothing
+  pending → 409). Audit `module.confirm` / `module.reject` (actor user).
+- **MCP `skill_info`** (scope `read`) replaces the planned `module_info`:
+  `skill_info()` lists the skills (name + use_when), which `create_app`,
+  `get_app` and the briefing list too; `skill_info('<name>')` returns the skill
+  plus, for a module, the SDK types, the config JSON Schema and defaults,
+  limits and secret names. It never returns a secret value or any app's
+  config. General skills come from `skills/<name>/SKILL.md` (the platform
+  skill `skills/drobek` is not listed); the image now ships `skills/`.
+  Module route errors hint `skill_info('<module>')`; an `unresolved_import` of
+  a backend SDK hints the matching skill (`skill_info()` when none is active).
+  `get_app` returns `modules.<name>` (config, pending, `confirm_url`, secret
+  names with `hasSecret`). The MCP server now has nine tools; the consent
+  screen labels list them.
+- **`LIMITS_PROVIDER_URL`** (+ `LIMITS_PROVIDER_SECRET`, ≥ 32 chars, checked
+  at start): HMAC-signed `GET /limits/<workspace_id>`, cached 60 s in Redis,
+  env defaults when the provider is down.
+- **`@drobek/agent-dx`**: `MODULE_INFO_RULE` is now `SKILL_INFO_RULE`
+  ("Before using a backend … call `skill_info` and follow the skill;
+  `create_app`/`get_app` list the available skills."), stated verbatim in
+  `skills/drobek/SKILL.md` (guard test) and the plugin's skills; tool docs and
+  the error catalogue cover the new tools and every module error code.
+- **`examples/drobek-module-hello`**: the example module as an external
+  workspace package (routes, SDK, config with a confirm rule, optional secret,
+  a limit, its own table and SKILL.md). The dev and e2e composes run with
+  `DROBEK_MODULES=hello`.
 ### Agent DX v0: the drobek plugin, install lines, skill guard (NSO-302)
 
 - **`freema/drobek-plugin`** (new repo, MIT): marketplace `drobek` with plugin

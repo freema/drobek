@@ -5,8 +5,9 @@
  * bound to a USER; the scope decides WHICH tools exist for it, and the user's
  * membership role in the targeted workspace decides what each call may touch.
  *
- *   read    — look: list apps (+ who am I), get an app, read its files.
- *   write   — change: create apps, write files (new versions), restore.
+ *   read    — look: list apps (+ who am I), get an app, read its files, read skills.
+ *   write   — change: create apps, write files (new versions), restore,
+ *             configure platform modules.
  *   publish — make a version live at its public URL (the `publish` tool, M0-06).
  *
  * `TOOL_SCOPES` is the ONE table both `tools/list` filtering and per-call
@@ -68,9 +69,11 @@ export const TOOL_SCOPES = {
   list_apps: 'read',
   get_app: 'read',
   read_file: 'read',
+  skill_info: 'read',
   create_app: 'write',
   write_files: 'write',
   restore_version: 'write',
+  configure_module: 'write',
   publish: 'publish',
 } as const satisfies Record<string, Scope | null>;
 

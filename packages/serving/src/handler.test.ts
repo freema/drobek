@@ -102,7 +102,7 @@ beforeEach(() => {
     [
       'shop',
       {
-        app: { id: 'app_shop', slug: 'shop', visibility: 'public', frameAncestors: null },
+        app: { id: 'app_shop', slug: 'shop', workspaceId: 'ws_1', visibility: 'public', frameAncestors: null },
         published: 1,
         versions: new Map([
           [1, version('v_1', true, INDEX_V1)],
@@ -115,7 +115,7 @@ beforeEach(() => {
     [
       'draft',
       {
-        app: { id: 'app_draft', slug: 'draft', visibility: 'public', frameAncestors: null },
+        app: { id: 'app_draft', slug: 'draft', workspaceId: 'ws_1', visibility: 'public', frameAncestors: null },
         published: null,
         versions: new Map([[1, version('d_1', true, INDEX_V1)]]),
         passwordHash: null,
@@ -124,7 +124,7 @@ beforeEach(() => {
     [
       'vault',
       {
-        app: { id: 'app_vault', slug: 'vault', visibility: 'password', frameAncestors: null },
+        app: { id: 'app_vault', slug: 'vault', workspaceId: 'ws_1', visibility: 'password', frameAncestors: null },
         published: 1,
         versions: new Map([[1, version('p_1', true, '<h1>secret</h1>')]]),
         passwordHash: null,
@@ -144,7 +144,7 @@ beforeEach(() => {
 function req(
   target: AppHostTarget | null,
   path = '/',
-  opts: { method?: string; query?: string; headers?: Record<string, string>; form?: Record<string, string> } = {}
+  opts: { method?: string; query?: string; headers?: Record<string, string>; form?: Record<string, string>; body?: string } = {}
 ): AppRequest {
   const headers = Object.fromEntries(Object.entries(opts.headers ?? {}).map(([k, v]) => [k.toLowerCase(), v]));
   return {
@@ -154,6 +154,7 @@ function req(
     query: opts.query ?? '',
     header: (n) => headers[n.toLowerCase()] ?? null,
     readForm: async () => (opts.form ? new URLSearchParams(opts.form) : null),
+    readBody: async () => (opts.body === undefined ? null : Buffer.from(opts.body)),
     clientIp: '203.0.113.9',
   };
 }
@@ -458,5 +459,51 @@ describe('password gate', () => {
     const r = await handleAppRequest(req(prod('shop'), UNLOCK_PATH, { method: 'POST', form: { password: 'x' } }), deps);
     expect(r.status).toBe(303);
     expect(r.headers['Set-Cookie']).toBeUndefined();
+  });
+});
+
+describe('platform paths (/__drobek/*, M1-01)', () => {
+  function withPlatform(): { d: HandlerDeps; seen: { path: string; method: string; app: string; body: string | null }[] } {
+    const seen: { path: string; method: string; app: string; body: string | null }[] = [];
+    const d: HandlerDeps = {
+      ...deps,
+      platform: async (r, ctx) => {
+        const b = await r.readBody(1024);
+        seen.push({ path: r.path, method: r.method, app: ctx.app.id, body: Buffer.isBuffer(b) ? b.toString() : null });
+        return { status: 200, headers: { 'Content-Type': 'application/json', 'Content-Security-Policy': 'bogus' }, body: '{"ok":true}' };
+      },
+    };
+    return { d, seen };
+  }
+
+  it('go to the platform handler with any method, after the app is resolved; security headers win', async () => {
+    const { d, seen } = withPlatform();
+    const r = await handleAppRequest(req(preview('shop'), '/__drobek/v1/hello/wave', { method: 'POST', body: '{"name":"a"}' }), d);
+    expect(r.status).toBe(200);
+    expect(r.headers['Content-Security-Policy']).not.toBe('bogus');
+    expect(r.headers['X-Content-Type-Options']).toBe('nosniff');
+    expect(seen).toEqual([{ path: '/__drobek/v1/hello/wave', method: 'POST', app: 'app_shop', body: '{"name":"a"}' }]);
+    // an app that has no version yet still reaches the platform (the SDK is independent of the app's files)
+    expect((await handleAppRequest(req(prod('draft'), '/__drobek/sdk.js'), d)).status).toBe(200);
+  });
+
+  it('a missing app never reaches the platform; a locked app answers JSON 401 password_required', async () => {
+    const { d, seen } = withPlatform();
+    expect((await handleAppRequest(req(prod('nope'), '/__drobek/sdk.js'), d)).status).toBe(404);
+    const locked = await handleAppRequest(req(prod('vault'), '/__drobek/v1/hello'), d);
+    expect(locked.status).toBe(401);
+    expect(JSON.parse(text(locked.body))).toMatchObject({ error: 'password_required' });
+    expect(seen).toEqual([]);
+    const token = mintAppAccessToken('app_vault', SECRET);
+    const open = await handleAppRequest(req(prod('vault'), '/__drobek/v1/hello', { headers: { Cookie: `${APP_ACCESS_COOKIE}=${token}` } }), d);
+    expect(open.status).toBe(200);
+  });
+
+  it('the unlock POST stays the password gate; without a platform handler the paths are plain files', async () => {
+    const { d, seen } = withPlatform();
+    expect((await handleAppRequest(req(prod('shop'), UNLOCK_PATH, { method: 'POST', form: { password: 'x' } }), d)).status).toBe(303);
+    expect(seen).toEqual([]);
+    expect((await handleAppRequest(req(prod('shop'), '/__drobek/v1/hello', { method: 'POST' }), deps)).status).toBe(405);
+    expect((await handleAppRequest(req(prod('shop'), '/__drobek/sdk.js'), deps)).status).toBe(404);
   });
 });

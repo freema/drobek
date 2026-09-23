@@ -11,9 +11,16 @@
  *   5. the file: built wins over source, TS/JSX sources never served, SPA
  *      fallback for extension-less paths, ETag = sha256 → 304.
  *
+ * PLATFORM paths (M1-01): `/__drobek/*` (except the unlock POST) go to
+ * `deps.platform` — the module runtime (SDK, module routes) — AFTER steps 2
+ * and 3, so a module route never runs for a missing app or behind a locked
+ * password gate (that answers JSON 401 `password_required`). Any method may reach
+ * it; the runtime answers 405 itself. The app's files are never involved.
+ *
  * ISOLATION: this handler reads exactly ONE cookie, the app-access cookie of
- * the password gate, and sets no other. The dashboard session is never
- * parsed, looked up or touched here, whatever the request carries.
+ * the password gate, and sets no other; the platform handler additionally
+ * reads the app's end-user cookie (`drobek_eu`, M1-01). The dashboard session
+ * is never parsed, looked up or touched here, whatever the request carries.
  * Every response — 200, 304, 401, 404, 405, 429, 500 — carries the app CSP,
  * nosniff, Referrer-Policy and (preview/version hosts) X-Robots-Tag.
  */
@@ -49,8 +56,16 @@ export interface AppRequest {
   header(name: string): string | null;
   /** The urlencoded form body (unlock POST only; capped by the adapter). null when unreadable. */
   readForm(): Promise<URLSearchParams | null>;
+  /** The raw body up to `limit` bytes ('too_large' past it; platform paths only). */
+  readBody(limit: number): Promise<Buffer | 'too_large' | null>;
   clientIp: string | null;
 }
+
+/** Where the platform (module runtime) answers on every app host. */
+export const PLATFORM_PREFIX = '/__drobek/';
+
+/** Answers a `/__drobek/*` request for a resolved, visibility-cleared app. */
+export type PlatformHandler = (req: AppRequest, ctx: { app: ServeApp; target: AppHostTarget }) => Promise<AppResponse>;
 
 export interface AppResponse {
   status: number;
@@ -69,6 +84,8 @@ export interface HandlerDeps {
   now?: () => number;
   /** `__Host-` + Secure app-access cookie (default true; false only on plain-http dev). */
   secureCookies?: boolean;
+  /** The module runtime for `/__drobek/*` (absent → those paths are plain 404s). */
+  platform?: PlatformHandler;
 }
 
 const HTML = 'text/html; charset=utf-8';
@@ -114,7 +131,8 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
   const missing = (reason: MissingReason) => page(404, missingPage(reason));
 
   const isUnlock = method === 'POST' && req.path === UNLOCK_PATH;
-  if (method !== 'GET' && method !== 'HEAD' && !isUnlock) {
+  const isPlatform = !isUnlock && deps.platform !== undefined && req.path.startsWith(PLATFORM_PREFIX);
+  if (method !== 'GET' && method !== 'HEAD' && !isUnlock && !isPlatform) {
     return page(405, errorPage('Method not allowed', 'This address only serves files.'), {
       Allow: 'GET, HEAD',
     });
@@ -133,7 +151,20 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
     app.visibility === 'password' && token !== null && deps.accessSecret !== null
       ? verifyAppAccessToken(token, app.id, deps.accessSecret, (deps.now ?? Date.now)())
       : false;
-  if (decideVisibility({ visibility: app.visibility, hasAppAccess }).action === 'password') {
+  const locked = decideVisibility({ visibility: app.visibility, hasAppAccess }).action === 'password';
+  if (isPlatform) {
+    if (locked) {
+      return {
+        status: 401,
+        headers: { ...security, 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': NO_STORE },
+        body: JSON.stringify({ error: 'password_required', message: 'This app is password-protected — unlock it first.' }),
+      };
+    }
+    const r = await deps.platform!(req, { app, target: req.target });
+    if (r.status >= 500) deps.signal?.(app.id, '5xx');
+    return { ...r, headers: { ...r.headers, ...security } };
+  }
+  if (locked) {
     const next = safeNext(req.query ? `${req.path}?${req.query}` : req.path);
     return page(401, passwordPage({ next }));
   }

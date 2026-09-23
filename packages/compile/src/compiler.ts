@@ -2,10 +2,10 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as esbuild from 'esbuild';
-import { readAppConfig } from './config.js';
+import { SDK_URL, readAppConfig } from './config.js';
 import { limitsFromEnv, type CompileLimits } from './limits.js';
 import { isAllowedExt, normalizeAppPath, TEXT_EXTS, extOf } from './paths.js';
-import { APP_NAMESPACE, virtualFsPlugin, type VirtualFsState } from './plugin.js';
+import { APP_NAMESPACE, virtualFsPlugin, type FailDetail, type VirtualFsState } from './plugin.js';
 import { Semaphore } from './queue.js';
 import { scanForSecrets } from './secrets.js';
 import type {
@@ -47,10 +47,12 @@ function failed(errors: CompileMessage[], started: number): CompileResult {
 
 function fromEsbuild(messages: esbuild.Message[]): CompileMessage[] {
   return messages.map((m) => {
-    const code = KNOWN_CODES.has(m.detail as CompileErrorCode)
-      ? (m.detail as CompileErrorCode)
+    const detail = (m.detail && typeof m.detail === 'object' ? m.detail : { code: m.detail }) as Partial<FailDetail>;
+    const code = KNOWN_CODES.has(detail.code as CompileErrorCode)
+      ? (detail.code as CompileErrorCode)
       : 'build_error';
     const out: CompileMessage = { code, text: m.text };
+    if (typeof detail.specifier === 'string') out.specifier = detail.specifier;
     if (m.location) {
       out.file = m.location.file.replace(new RegExp(`^${APP_NAMESPACE}:`), '');
       out.line = m.location.line;
@@ -192,6 +194,7 @@ export class Compiler {
     const state: VirtualFsState = {
       files,
       imports: config.imports,
+      sdkUrl: opts.sdkUrl ?? SDK_URL,
       maxImportDepth: this.limits.maxImportDepth,
       loaded: new Set(),
       aborted: false,

@@ -24,11 +24,11 @@ export const PLUGIN_INSTALL_COMMAND = `claude plugin install ${PLUGIN_NAME}@${PL
 export const PLUGIN_BUILD_COMMAND = `/${PLUGIN_NAME}:build-app`;
 
 /**
- * The platform-module rule every drobek skill states VERBATIM (skills/drobek
- * and the plugin's three skill variants — guarded by skill.test.ts here and by
- * scripts/check-drobek.mjs in the plugin repo). A skill is installed once and
- * outlives server releases, so it states the rule conditionally; the briefing
- * a server returns lists exactly the modules that server has.
+ * The skills rule every drobek skill states VERBATIM (skills/drobek and the
+ * plugin's three skill variants — guarded by skill.test.ts here and by
+ * scripts/check-drobek.mjs in the plugin repo). It is true on every server,
+ * with or without platform modules: `skill_info` always exists and lists what
+ * this server has (possibly nothing), and create_app/get_app carry the list.
  */
-export const MODULE_INFO_RULE =
-  'drobek has no platform modules in this workspace yet; build self-contained front-ends. If your tool list includes `module_info`, call it for a module before using that module.';
+export const SKILL_INFO_RULE =
+  'Before using a backend (login, stored data, forms, email, file uploads, external APIs), call `skill_info` and follow the skill; `create_app`/`get_app` list the available skills.';

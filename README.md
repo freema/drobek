@@ -30,7 +30,10 @@ app owner in the dashboard.
 - **Version** — an immutable snapshot of the app's files, numbered per app.
   Publishing moves one pointer; publishing an older version is the rollback.
 - **Modules** — the only backend an app gets: data collections, auth, forms,
-  email, files and a secret-injecting proxy, configured in the dashboard.
+  email, files and a secret-injecting proxy. A module is platform code the
+  operator enables with `DROBEK_MODULES` (routes under `/__drobek/v1/<name>`,
+  `drobek.<name>` in the browser SDK, a per-app config, a skill for the agent);
+  the contract is [`docs/MODULES.md`](./docs/MODULES.md).
 
 The full plan is [`docs/vision-plan.md`](./docs/vision-plan.md).
 
@@ -79,12 +82,16 @@ secret still holds a `change-me…` placeholder. Next to it:
    `write`, `publish` — and it receives a token bound to **you**, not to one
    workspace: it reaches every workspace you are a member of, with your role
    in each.
-3. The agent now has seven tools: `list_apps` (your workspaces + apps),
+3. The agent now has nine tools: `list_apps` (your workspaces + apps),
    `create_app` (an app with a compiling v1 from the `react-ts` or `html`
-   template, plus a briefing of the rules), `get_app`, `read_file`,
-   `write_files` (1–20 changes → one new version, compiled on the server; the
-   compile errors come straight back), `restore_version` and `publish`
-   (scope `publish`; only when you ask it to go live). After each successful
+   template, plus a briefing of the rules and the available skills),
+   `get_app`, `read_file`, `write_files` (1–20 changes → one new version,
+   compiled on the server; the compile errors come straight back),
+   `restore_version`, `skill_info` (how to use a backend: the skills of the
+   enabled modules), `configure_module` (an app's module config; risky changes
+   wait for your confirmation in the dashboard, and secrets are never set
+   through the agent) and `publish` (scope `publish`; only when you ask it to
+   go live). After each successful
    compile it hands you the `preview_url`. One agent writes an app at a time
    (a 3-minute lease). Browse the apps, their version history and publish a
    version under `/workspaces/<slug>/apps`.

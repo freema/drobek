@@ -16,19 +16,21 @@ import { toolDoc } from '@drobek/agent-dx';
 import { defaultDeps, type ToolDeps, type ToolPrincipal } from './context.js';
 import { ToolError } from './errors.js';
 import {
+  configureModule,
   createApp,
   getApp,
   listApps,
   publishApp,
   readFile,
   restoreVersion,
+  skillInfo,
   writeFiles,
   type CallContext,
   type ReadFileResult,
 } from './tools.js';
 import { TEMPLATES } from './templates.js';
 
-/** The tool set, in tools/list order (M0-05 + publish, M0-06). */
+/** The tool set, in tools/list order (M0-05 + publish, M0-06 + skill_info/configure_module, M1-01). */
 export const APP_TOOL_NAMES = [
   'list_apps',
   'create_app',
@@ -37,6 +39,8 @@ export const APP_TOOL_NAMES = [
   'write_files',
   'restore_version',
   'publish',
+  'skill_info',
+  'configure_module',
 ] as const;
 
 export type AppToolName = (typeof APP_TOOL_NAMES)[number];
@@ -82,6 +86,16 @@ export const INPUT_SCHEMAS = {
       .number()
       .optional()
       .describe('The version number to put live; default the newest version that compiled. An older one = production rollback.'),
+  },
+  skill_info: {
+    name: z.string().optional().describe('A skill name from the list; omit to list every skill.'),
+  },
+  configure_module: {
+    app_id: appId,
+    module: z.string().describe('The platform module, e.g. "forms" (skill_info() lists them).'),
+    config: z
+      .record(z.string(), z.unknown())
+      .describe('A PARTIAL config (JSON merge patch): only the keys you change; null resets a key to its default.'),
   },
 } as const;
 
@@ -155,8 +169,13 @@ export function registerAppTools(
       // The SDK infers args from the schema; each body re-validates what it relies on.
       (async (args: A, extra: { sessionId?: string }) => {
         const d = getDeps();
-        const ctx: CallContext = { principal, sessionId: extra?.sessionId ?? 'stateless', deps: d };
         try {
+          const ctx: CallContext = {
+            principal,
+            sessionId: extra?.sessionId ?? 'stateless',
+            deps: d,
+            modules: await d.modules(),
+          };
           return shape(await run(ctx, args), args);
         } catch (err) {
           if (err instanceof ToolError) return errorResult(err.toBody());
@@ -182,6 +201,8 @@ export function registerAppTools(
   register('write_files', writeFiles);
   register('restore_version', restoreVersion);
   register('publish', publishApp);
+  register('skill_info', skillInfo);
+  register('configure_module', configureModule);
 
   if (registered === 0) {
     // A grant with no tool scope (e.g. none of read/write/publish) must still get an

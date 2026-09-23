@@ -41,6 +41,9 @@ importers:
       '@drobek/insights':
         specifier: workspace:*
         version: link:../../packages/insights
+      '@drobek/modules':
+        specifier: workspace:*
+        version: link:../../packages/modules
       '@drobek/oauth':
         specifier: workspace:*
         version: link:../../packages/oauth
@@ -65,6 +68,9 @@ importers:
       drizzle-orm:
         specifier: ^0.41.0
         version: 0.41.0(@electric-sql/pglite@0.2.17)(@types/pg@8.20.0)(pg@8.22.0)(postgres@3.4.9)
+      drobek-module-hello:
+        specifier: workspace:*
+        version: link:../../examples/drobek-module-hello
       express:
         specifier: ^4.21.2
         version: 4.22.2
@@ -135,6 +141,34 @@ importers:
       vite:
         specifier: ^6.2.0
         version: 6.4.3(@types/node@22.20.0)(tsx@4.22.4)
+      vitest:
+        specifier: ^3.0.7
+        version: 3.2.6(@types/node@22.20.0)(tsx@4.22.4)
+
+  examples/drobek-module-hello:
+    dependencies:
+      '@drobek/modules':
+        specifier: workspace:*
+        version: link:../../packages/modules
+      '@drobek/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
+      drizzle-orm:
+        specifier: ^0.41.0
+        version: 0.41.0(@electric-sql/pglite@0.2.17)(@types/pg@8.20.0)(pg@8.22.0)(postgres@3.4.9)
+    devDependencies:
+      '@drobek/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@electric-sql/pglite':
+        specifier: ^0.2.17
+        version: 0.2.17
+      '@types/node':
+        specifier: ^22
+        version: 22.20.0
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
       vitest:
         specifier: ^3.0.7
         version: 3.2.6(@types/node@22.20.0)(tsx@4.22.4)
@@ -284,6 +318,9 @@ importers:
       '@drobek/audit':
         specifier: workspace:*
         version: link:../audit
+      '@drobek/auth':
+        specifier: workspace:*
+        version: link:../auth
       '@drobek/data':
         specifier: workspace:*
         version: link:../data
@@ -293,6 +330,9 @@ importers:
       '@drobek/insights':
         specifier: workspace:*
         version: link:../insights
+      '@drobek/modules':
+        specifier: workspace:*
+        version: link:../modules
       '@drobek/proxy':
         specifier: workspace:*
         version: link:../proxy
@@ -426,6 +466,9 @@ importers:
       '@drobek/db':
         specifier: workspace:*
         version: link:../db
+      '@drobek/modules':
+        specifier: workspace:*
+        version: link:../modules
       '@drobek/tenancy':
         specifier: workspace:*
         version: link:../tenancy
@@ -451,6 +494,55 @@ importers:
       react-router:
         specifier: 7.14.0
         version: 7.14.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.7
+        version: 3.2.6(@types/node@22.20.0)(tsx@4.22.4)
+
+  packages/modules:
+    dependencies:
+      '@drobek/apps':
+        specifier: workspace:*
+        version: link:../apps
+      '@drobek/audit':
+        specifier: workspace:*
+        version: link:../audit
+      '@drobek/auth':
+        specifier: workspace:*
+        version: link:../auth
+      '@drobek/compile':
+        specifier: workspace:*
+        version: link:../compile
+      '@drobek/core':
+        specifier: workspace:*
+        version: link:../core
+      '@drobek/db':
+        specifier: workspace:*
+        version: link:../db
+      '@drobek/proxy':
+        specifier: workspace:*
+        version: link:../proxy
+      '@drobek/sdk':
+        specifier: workspace:*
+        version: link:../sdk
+      drizzle-orm:
+        specifier: ^0.41.0
+        version: 0.41.0(@electric-sql/pglite@0.2.17)(@types/pg@8.20.0)(pg@8.22.0)(postgres@3.4.9)
+      esbuild:
+        specifier: ^0.25.0
+        version: 0.25.12
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@electric-sql/pglite':
+        specifier: ^0.2.17
+        version: 0.2.17
+      '@types/node':
+        specifier: ^22
+        version: 22.20.0
       typescript:
         specifier: ^5.7.3
         version: 5.9.3
@@ -552,6 +644,9 @@ importers:
       typescript:
         specifier: ^5.7.3
         version: 5.9.3
+      vitest:
+        specifier: ^3.0.7
+        version: 3.2.6(@types/node@22.20.0)(tsx@4.22.4)
 
   packages/serving:
     dependencies:

@@ -1,7 +1,8 @@
 /**
  * ERROR_CATALOGUE — every stable error `code` an agent can meet: MCP tool
  * failures (`isError: true` with `{ code, message, hint }`), the per-error
- * codes inside `compile.errors[]`, and the OAuth connect flow (M0-05, NSO-283).
+ * codes inside `compile.errors[]`, the platform module routes an app calls
+ * (`/__drobek/v1/…`, M1-01) and the OAuth connect flow (M0-05, NSO-283).
  *
  * The MCP tools take their `hint` from HERE (`errorHint`), and a unit test in
  * @drobek/mcp asserts that every code the tools can emit — and every
@@ -28,21 +29,22 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     code: 'not_found',
     surface: 'MCP tool isError',
     meaning:
-      'The app, workspace, version or file does not exist — or you are not a member of its workspace (both answer the same, so ids cannot be probed).',
-    fix: 'Call list_apps for the app ids and workspaces you can reach; get_app lists the files and versions of an app.',
+      'The app, workspace, version or file does not exist — or you are not a member of its workspace (both answer the same, so ids cannot be probed). From skill_info / configure_module: no such skill or module on this server (`available` lists the ones that exist).',
+    fix: 'Call list_apps for the app ids and workspaces you can reach; get_app lists the files and versions of an app; skill_info() lists the skills and modules.',
   },
   {
     code: 'forbidden',
-    surface: 'MCP tool isError',
-    meaning: 'You are a member of the workspace, but your role is viewer — changing apps needs editor or workspace-admin.',
-    fix: 'Ask a workspace admin for the editor role (the write scope alone does not raise your role), or work in a workspace where you are an editor.',
+    surface: 'MCP tool isError; module route 403 (DrobekError)',
+    meaning:
+      'You are a member of the workspace, but your role is viewer — changing apps needs editor or workspace-admin. From a module route: the signed-in end user may not do this (the module\'s rule, e.g. owner or admin only).',
+    fix: 'Ask a workspace admin for the editor role (the write scope alone does not raise your role), or work in a workspace where you are an editor. In an app: show the end user a friendly message.',
   },
   {
     code: 'invalid_params',
     surface: 'MCP tool isError',
     meaning:
-      'An argument breaks the tool contract: more than 20 files in one write_files, the same path twice, deleting a file that does not exist, reasoning over 300 characters, an empty name, a non-positive version number.',
-    fix: 'Read `message`, fix the arguments and call again. Split large changes into several write_files calls of at most 20 files.',
+      'An argument breaks the tool contract: more than 20 files in one write_files, the same path twice, deleting a file that does not exist, reasoning over 300 characters, an empty name, a non-positive version number — or a configure_module config that fails the module\'s schema (`issues[]` carries each field path) or contains a credential.',
+    fix: 'Read `message` (and `issues[].path`), fix the arguments and call again. Split large changes into several write_files calls of at most 20 files. For a module config, skill_info(module) shows the schema.',
   },
   {
     code: 'invalid_path',
@@ -115,8 +117,8 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     code: 'unresolved_import',
     surface: 'compile.errors[]',
     meaning:
-      'An import is neither an app file nor in drobek.json `imports` (bare packages are never installed — the browser loads them from their URL).',
-    fix: 'Fix the relative path, or add the package to drobek.json `imports` with a pinned https URL (e.g. "date-fns": "https://esm.sh/date-fns@4.1.0").',
+      'An import is neither an app file nor in drobek.json `imports` (bare packages are never installed — the browser loads them from their URL). When the entry carries a `hint` like skill_info(\'data\'), the package is a backend SDK (Firebase, Supabase, …) the platform replaces.',
+    fix: 'Follow the entry\'s `hint` when it has one (call that skill_info and use the drobek SDK instead). Otherwise fix the relative path, or add the package to drobek.json `imports` with a pinned https URL (e.g. "date-fns": "https://esm.sh/date-fns@4.1.0").',
   },
   {
     code: 'invalid_config',
@@ -129,6 +131,69 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     surface: 'compile.errors[]',
     meaning: 'The build ran longer than COMPILE_TIMEOUT_MS and was stopped (the version is stored with compile_status error).',
     fix: 'Look for an import cycle or a very large generated file.',
+  },
+  // ── platform module routes (/__drobek/v1/<module>/…, the drobek SDK) ──────
+  // Body { error, message, details?, hint } — `error` is the code below; the
+  // SDK throws it as DrobekError { status, code, message, details, hint }.
+  {
+    code: 'invalid_request',
+    surface: 'module route 400 (DrobekError)',
+    meaning: 'The request body or query failed the route\'s schema; `details[]` lists each `{ path, message }`, or the body is not valid JSON.',
+    fix: 'Send what the module\'s skill documents (skill_info(module)); fix the fields named in details[].path.',
+  },
+  {
+    code: 'unauthorized',
+    surface: 'module route 401 (DrobekError)',
+    meaning: 'The route needs a signed-in end user of this app and the visitor is not signed in.',
+    fix: 'Sign the visitor in first (see skill_info(\'auth\') when the server has it), then retry.',
+  },
+  {
+    code: 'csrf_rejected',
+    surface: 'module route 403 (DrobekError)',
+    meaning: 'A mutating call came from another origin, a sandboxed/opaque origin, or without the `X-Drobek-SDK: 1` header.',
+    fix: "Call module routes through the SDK (`import { drobek } from 'drobek'`) from the app's own pages.",
+  },
+  {
+    code: 'password_required',
+    surface: 'module route 401',
+    meaning: 'The app is password-protected and this browser has not unlocked it yet.',
+    fix: 'Open the app URL and enter the password first; module calls then work.',
+  },
+  {
+    code: 'rate_limited',
+    surface: 'module route 429 (DrobekError), Retry-After',
+    meaning: 'A module limit was hit (per visitor, per user or per app — `details.limit` per `details.window_seconds`).',
+    fix: 'Show the user a message and retry after Retry-After seconds; never loop.',
+  },
+  {
+    code: 'payload_too_large',
+    surface: 'module route 413 (DrobekError)',
+    meaning: 'The request body is bigger than the route allows.',
+    fix: 'Send less (the module skill states the size limits).',
+  },
+  {
+    code: 'unsupported_media_type',
+    surface: 'module route 415 (DrobekError)',
+    meaning: 'A body was sent that is not JSON.',
+    fix: 'Use the SDK, which sends JSON; with fetch set Content-Type: application/json.',
+  },
+  {
+    code: 'conflict',
+    surface: 'module route 409 (DrobekError)',
+    meaning: 'The request conflicts with the current state (e.g. a record that already exists or changed meanwhile).',
+    fix: 'Reload the state and retry; the module skill names its conflict cases.',
+  },
+  {
+    code: 'unavailable',
+    surface: 'module route 503 (DrobekError)',
+    meaning: 'A service the module depends on is down or not configured on this server.',
+    fix: 'Show the user a message and retry later; tell the app owner if it persists.',
+  },
+  {
+    code: 'method_not_allowed',
+    surface: 'module route 405 (DrobekError), Allow',
+    meaning: 'The route exists but not for this HTTP method.',
+    fix: 'Use the SDK call from the module skill.',
   },
   // ── OAuth 2.1 connect flow ────────────────────────────────────────────────
   {

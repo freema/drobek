@@ -43,10 +43,26 @@ describe('renderBriefing', () => {
     expect(b).toContain('https://esm.sh');
   });
 
-  it('lists no platform module that does not exist', () => {
-    expect(b).toContain('None are available on this server yet');
+  it('with no skills: says so, keeps the skill_info rule, lists nothing that does not exist', () => {
+    expect(b).toContain('This server has no platform modules and no skills');
+    expect(b).toContain('call `skill_info`');
     expect(b).not.toContain('module_info');
     expect(b).not.toContain('drobek.data');
+    expect(b).not.toContain('Available skills');
+  });
+
+  it('with skills: the SDK import, the rule and one line per skill', () => {
+    const live = renderBriefing({
+      skills: [
+        { name: 'hello', use_when: 'you want to check that platform modules work' },
+        { name: 'design', use_when: 'Use when the app should look polished' },
+      ],
+    });
+    expect(live).toContain("`import { drobek } from 'drobek'` is the platform SDK");
+    expect(live).toContain('call `skill_info` with the skill');
+    expect(live).toContain('  - `hello` — use when you want to check that platform modules work');
+    expect(live).toContain('  - `design` — use when the app should look polished');
+    expect(live).toContain('never ask for their values');
   });
 
   it('renders the live limits it is given', () => {

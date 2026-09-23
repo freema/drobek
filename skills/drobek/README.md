@@ -53,9 +53,14 @@ consent → token automatically. See the "Connect" section of llms-full.txt.
   render from the same `@drobek/agent-dx` manifest, so updating the manifest
   updates every surface at once. This SKILL.md is hand-written; the unit test
   `packages/agent-dx/src/skill.test.ts` asserts it names every tool, carries the
-  loop rules and states `MODULE_INFO_RULE` verbatim.
+  loop rules and states `SKILL_INFO_RULE` verbatim.
+- `skill_info` lists the server's skills; this platform skill is NOT among
+  them (it is what connects an agent to drobek in the first place — an agent
+  calling `skill_info` already has it and the briefing). General skills for
+  `skill_info` live next to it as `skills/<name>/SKILL.md` (frontmatter
+  `name` + `description` = the "use when…" sentence).
 - The plugin's skills (freema/drobek-plugin) carry the same loop and rules; its
-  `scripts/check-drobek.mjs` holds the same tool list and module rule — update
+  `scripts/check-drobek.mjs` holds the same tool list and skills rule — update
   it together with `TOOL_DOCS`.
 
 > Operator note: also add this same maintenance line to `docs/ROADMAP.md`

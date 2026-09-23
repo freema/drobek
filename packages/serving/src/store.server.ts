@@ -26,6 +26,8 @@ import type { Visibility } from './visibility.js';
 export interface ServeApp {
   id: string;
   slug: string;
+  /** The owning workspace (module runtime: limits, audit). */
+  workspaceId: string;
   visibility: Visibility;
   /** Raw `apps.frame_ancestors` (validated by the header builder). */
   frameAncestors: string | null;
@@ -132,6 +134,7 @@ async function resolveFromDb(target: AppHostTarget): Promise<Resolved> {
     .select({
       id: apps.id,
       slug: apps.slug,
+      workspaceId: apps.workspaceId,
       visibility: apps.visibility,
       frameAncestors: apps.frameAncestors,
       status: apps.status,
@@ -144,6 +147,7 @@ async function resolveFromDb(target: AppHostTarget): Promise<Resolved> {
   const app: ServeApp = {
     id: row.id,
     slug: row.slug,
+    workspaceId: row.workspaceId,
     visibility: row.visibility as Visibility,
     frameAncestors: row.frameAncestors,
   };

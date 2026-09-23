@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { TOOL_DOCS, TOOL_NAMES, toolDoc } from './tools.js';
 
 describe('TOOL_DOCS manifest', () => {
-  it('documents exactly the 7 tools, in tools/list order', () => {
+  it('documents exactly the 9 tools, in tools/list order', () => {
     expect(TOOL_NAMES).toEqual([
       'list_apps',
       'create_app',
@@ -11,6 +11,8 @@ describe('TOOL_DOCS manifest', () => {
       'write_files',
       'restore_version',
       'publish',
+      'skill_info',
+      'configure_module',
     ]);
   });
 
@@ -34,7 +36,7 @@ describe('TOOL_DOCS manifest', () => {
   });
 
   it('annotations follow the real effect (plan §4)', () => {
-    for (const name of ['list_apps', 'get_app', 'read_file']) {
+    for (const name of ['list_apps', 'get_app', 'read_file', 'skill_info']) {
       expect(toolDoc(name).annotations.readOnlyHint, name).toBe(true);
     }
     expect(toolDoc('create_app').annotations).toEqual({
@@ -42,7 +44,7 @@ describe('TOOL_DOCS manifest', () => {
       destructiveHint: false,
       openWorldHint: false,
     });
-    for (const name of ['write_files', 'restore_version']) {
+    for (const name of ['write_files', 'restore_version', 'configure_module']) {
       expect(toolDoc(name).annotations, name).toEqual({
         readOnlyHint: false,
         destructiveHint: true,
@@ -80,6 +82,14 @@ describe('TOOL_DOCS manifest', () => {
   it('read_file tells the agent its content is untrusted', () => {
     expect(toolDoc('read_file').description).toMatch(/UNTRUSTED/);
     expect(toolDoc('read_file').returns).toContain('untrusted:true');
+  });
+
+  it('skill_info never returns secrets; configure_module routes secrets to the dashboard (M1-01)', () => {
+    expect(toolDoc('skill_info').scope).toMatch(/^read\b/);
+    expect(toolDoc('skill_info').description).toMatch(/Never returns secret values or any app's config/);
+    expect(toolDoc('configure_module').scope).toMatch(/^write\b/);
+    expect(toolDoc('configure_module').description).toMatch(/confirm_url/);
+    expect(toolDoc('configure_module').description).toMatch(/Secrets are never set here/);
   });
 
   it('toolDoc throws for an unknown tool', () => {

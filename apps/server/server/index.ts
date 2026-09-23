@@ -2,7 +2,9 @@
  * drobek server entry — the ONE process of the self-hostable image (M0-01).
  *
  * Boot order: refuse insecure secrets (PHY-76 #6), an invalid APPS_DOMAIN,
- * TRUST_PROXY or TLS_ASK_TOKEN → apply core migrations →
+ * TRUST_PROXY, TLS_ASK_TOKEN or LIMITS_PROVIDER_URL → apply core migrations →
+ * load the platform modules (DROBEK_MODULES: their migrations, the composed
+ * SDK, the skills — a bad module stops the start, M1-01) →
  * mount the app-host dispatcher (M0-06), then React Router (Vite middleware in
  * dev, `build/server` in production) behind the MCP resource → start
  * background jobs + the serve-cache subscriber → listen.
@@ -17,6 +19,7 @@ import { appsOriginConfigError } from '@drobek/apps';
 import { trustProxyConfigError } from '@drobek/auth';
 import { createConsoleLogger, secretsConfigError } from '@drobek/core';
 import { runCoreMigrations } from '@drobek/db';
+import { limitsProviderConfigError, moduleRuntime } from '@drobek/modules';
 import {
   ServeStore,
   createAppsHostMiddleware,
@@ -32,7 +35,8 @@ const configError =
   secretsConfigError(process.env) ??
   appsOriginConfigError(process.env) ??
   trustProxyConfigError(process.env) ??
-  tlsAskConfigError(process.env);
+  tlsAskConfigError(process.env) ??
+  limitsProviderConfigError(process.env);
 if (configError) {
   console.error(configError);
   process.exit(1);
@@ -47,6 +51,13 @@ if (process.env.DROBEK_MIGRATE_ON_START !== '0') {
   log.info('applying core migrations');
   await runCoreMigrations();
 }
+
+// M1-01: the platform modules. Loaded once per process (moduleRuntime() is
+// shared with the Vite-loaded dashboard routes through globalThis).
+const modules = await moduleRuntime({ log: createConsoleLogger('modules') }).catch((err: unknown) => {
+  console.error((err as Error)?.message ?? err);
+  process.exit(1);
+});
 
 // Created up front so Vite's HMR websocket can share the app port in dev
 // (a separate HMR port would not be published from the container).
@@ -79,7 +90,11 @@ if (production) {
 // and over Redis pub/sub).
 const serveStore = new ServeStore();
 const serveCache = subscribeServeCache(serveStore, { log });
-const appsHost = createAppsHostMiddleware({ store: serveStore }) as RequestHandler;
+const appsHost = createAppsHostMiddleware({
+  store: serveStore,
+  // `/__drobek/*` on the app hosts: the SDK + module routes (M1-01).
+  deps: { platform: (req, { app }) => modules.handle(req, app) },
+}) as RequestHandler;
 
 const app = createServerApp({ rrHandler, before, clientDir, appsHost });
 const jobs = startBackgroundJobs(log);

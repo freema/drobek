@@ -4,8 +4,11 @@
  * modules (*.server.ts) and the dashboard shaping both build on these.
  */
 
-/** Mirrors the `audit_actor_kind` pg enum. */
-export type AuditActorKind = 'user' | 'agent';
+/**
+ * Mirrors the `audit_actor_kind` pg enum. `end_user` (M1-01) = a signed-in end
+ * user of an app acting through a platform module on the apps origin.
+ */
+export type AuditActorKind = 'user' | 'agent' | 'end_user';
 
 /**
  * Where an audited action originated. This is the SINGLE source of truth for
@@ -14,11 +17,16 @@ export type AuditActorKind = 'user' | 'agent';
  * passes 'web' (it runs as the human session user). The connecting client can
  * never influence this, so agent-vs-user attribution is not spoofable.
  */
-export type AuditSurface = 'mcp' | 'web';
+export type AuditSurface = 'mcp' | 'web' | 'apps';
 
-/** The canonical surface → actor_kind mapping (pure; unit-tested). */
+/**
+ * The canonical surface → actor_kind mapping (pure; unit-tested). `apps` = a
+ * platform-module request on an app host, made by the app's end user (M1-01).
+ */
 export function actorKindForSurface(surface: AuditSurface): AuditActorKind {
-  return surface === 'mcp' ? 'agent' : 'user';
+  if (surface === 'mcp') return 'agent';
+  if (surface === 'apps') return 'end_user';
+  return 'user';
 }
 
 /**
@@ -40,6 +48,14 @@ export const AUDIT_ACTIONS = {
   memberInvite: 'member.invite',
   memberAccept: 'member.accept',
   memberRoleChange: 'member.role_change',
+  /** M1-01: configure_module applied a module config change directly. */
+  moduleConfigure: 'module.configure',
+  /** M1-01: configure_module stored a change that needs the owner's confirmation. */
+  modulePending: 'module.pending',
+  /** M1-01: the owner confirmed a pending module change in the dashboard. */
+  moduleConfirm: 'module.confirm',
+  /** M1-01: the owner rejected a pending module change in the dashboard. */
+  moduleReject: 'module.reject',
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];

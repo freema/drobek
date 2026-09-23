@@ -1,0 +1,39 @@
+{
+  "name": "drobek-module-hello",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Example drobek platform module: GET /__drobek/v1/hello, drobek.hello.ping(), config { greeting, excited }.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "migrations",
+    "SKILL.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest",
+    "test:run": "vitest run"
+  },
+  "dependencies": {
+    "@drobek/modules": "workspace:*",
+    "@drobek/sdk": "workspace:*",
+    "drizzle-orm": "^0.41.0"
+  },
+  "devDependencies": {
+    "@drobek/db": "workspace:*",
+    "@electric-sql/pglite": "^0.2.17",
+    "@types/node": "^22",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.7"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

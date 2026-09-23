@@ -165,6 +165,14 @@ services:
       # the proxy-flood e2e trips 429 quickly (prod default 120).
       PROXY_RATE_LIMIT: ${PROXY_RATE_LIMIT:-15}
       PROXY_RATE_WINDOW_MS: ${PROXY_RATE_WINDOW_MS:-60000}
+      # M1-01 (NSO-287): platform modules. The dev stack runs the example
+      # module `hello` (examples/drobek-module-hello — a dependency of
+      # apps/server, loaded as the package `drobek-module-hello`). Its wave
+      # limit is LOW so the modules e2e trips 429 quickly (module default 30).
+      DROBEK_MODULES: ${DROBEK_MODULES:-hello}
+      HELLO_WAVES_PER_MINUTE: ${HELLO_WAVES_PER_MINUTE:-5}
+      LIMITS_PROVIDER_URL: ${LIMITS_PROVIDER_URL:-}
+      LIMITS_PROVIDER_SECRET: ${LIMITS_PROVIDER_SECRET:-}
     extra_hosts:
       # linux portability: make host.docker.internal resolve everywhere
       # (Docker Desktop has it natively; host-gateway covers linux engines).
@@ -186,12 +194,14 @@ services:
       - /repo/packages/db/node_modules
       - /repo/packages/insights/node_modules
       - /repo/packages/mcp/node_modules
+      - /repo/packages/modules/node_modules
       - /repo/packages/oauth/node_modules
       - /repo/packages/proxy/node_modules
       - /repo/packages/sdk/node_modules
       - /repo/packages/serving/node_modules
       - /repo/packages/tenancy/node_modules
       - /repo/tests-e2e/node_modules
+      - /repo/examples/drobek-module-hello/node_modules
     healthcheck:
       test: ['CMD-SHELL', 'wget -q -T 5 -O - "http://127.0.0.1:$${PORT:-3000}/healthz" || exit 1']
       interval: 5s

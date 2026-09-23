@@ -29,12 +29,16 @@ import { ServeStore } from './store.server.js';
 /** The unlock form is tiny; anything bigger is not a password submission. */
 const MAX_FORM_BYTES = 4096;
 
-function readBody(req: IncomingMessage, limit: number): Promise<Buffer | null> {
+/** Platform (module) request bodies are capped by the route; this is the hard ceiling. */
+const MAX_PLATFORM_BODY_BYTES = 1024 * 1024;
+
+/** The body up to `limit` bytes; 'too_large' past it; null on a stream error. */
+function readBody(req: IncomingMessage, limit: number): Promise<Buffer | 'too_large' | null> {
   return new Promise((resolve) => {
     const chunks: Buffer[] = [];
     let size = 0;
     let done = false;
-    const finish = (v: Buffer | null) => {
+    const finish = (v: Buffer | 'too_large' | null) => {
       if (done) return;
       done = true;
       resolve(v);
@@ -42,7 +46,7 @@ function readBody(req: IncomingMessage, limit: number): Promise<Buffer | null> {
     req.on('data', (chunk: Buffer) => {
       size += chunk.length;
       if (size > limit) {
-        finish(null);
+        finish('too_large');
         req.resume();
         return;
       }
@@ -128,7 +132,13 @@ export function createAppsHostMiddleware(opts: AppsHostOptions = {}): NodeMiddle
         const type = (headerOf(req, 'content-type') ?? '').split(';')[0].trim().toLowerCase();
         if (type !== 'application/x-www-form-urlencoded') return null;
         const body = await readBody(req, MAX_FORM_BYTES);
-        return body ? new URLSearchParams(body.toString('utf8')) : null;
+        return Buffer.isBuffer(body) ? new URLSearchParams(body.toString('utf8')) : null;
+      },
+      readBody: async (limit) => {
+        const cap = Math.min(limit, MAX_PLATFORM_BODY_BYTES);
+        const declared = Number(headerOf(req, 'content-length') ?? NaN);
+        if (Number.isFinite(declared) && declared > cap) return 'too_large';
+        return readBody(req, cap);
       },
     };
 

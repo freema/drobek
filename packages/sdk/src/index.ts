@@ -1,9 +1,16 @@
 /**
- * @drobek/sdk — placeholder (M0).
- *
- * The real JS SDK (data CRUD + hosted-app end-user auth, delivered as a
- * versioned `<host>/sdk@1.js` script) is an M1c deliverable. This package
- * only reserves the workspace slot so the monorepo shape is final from day
- * one.
+ * @drobek/sdk — the browser SDK core (M1-01, NSO-287). `core.ts` is bundled
+ * into `/__drobek/sdk.js` with the SDK entry of every active platform module;
+ * module SDK entries type their argument with `SdkCore` from here.
  */
-export const SDK_VERSION = '0.0.1';
+export const SDK_VERSION = '1.0.0';
+export {
+  DrobekError,
+  MODULE_API_BASE,
+  SDK_HEADER,
+  createCore,
+  type QueryValue,
+  type RequestOptions,
+  type SdkCore,
+} from './core.js';
+export { CORE_SDK_TYPES } from './types.js';

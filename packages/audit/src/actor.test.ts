@@ -14,10 +14,14 @@ describe('actorKindForSurface (PHY-85 actor_kind resolution)', () => {
     expect(actorKindForSurface('web')).toBe('user');
   });
 
-  it('is total over the surface union (only the two surfaces)', () => {
-    const surfaces = ['mcp', 'web'] as const;
+  it('a platform-module request on an app host is attributed to the end user (M1-01)', () => {
+    expect(actorKindForSurface('apps')).toBe('end_user');
+  });
+
+  it('is total over the surface union (the three surfaces)', () => {
+    const surfaces = ['mcp', 'web', 'apps'] as const;
     const kinds = surfaces.map(actorKindForSurface);
-    expect(new Set(kinds)).toEqual(new Set(['agent', 'user']));
+    expect(new Set(kinds)).toEqual(new Set(['agent', 'user', 'end_user']));
   });
 });
 

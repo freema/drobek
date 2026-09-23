@@ -26,3 +26,27 @@ export async function runCoreMigrations(databaseUrl = process.env.DATABASE_URL):
     await sql.end({ timeout: 5 });
   }
 }
+
+/**
+ * Apply ANOTHER drizzle migrations folder with its OWN journal table in the
+ * `drizzle` schema (M1-01: a platform module's tables, journal
+ * `__drizzle_migrations_mod_<name>`), exactly like the core migrations.
+ */
+export async function runJournalMigrations(opts: {
+  migrationsFolder: string;
+  migrationsTable: string;
+  databaseUrl?: string;
+}): Promise<void> {
+  const databaseUrl = opts.databaseUrl ?? process.env.DATABASE_URL;
+  if (!databaseUrl) throw new Error('DATABASE_URL is required');
+  const sql = postgres(databaseUrl, { max: 1, connect_timeout: 10, onnotice: () => {} });
+  try {
+    await migrate(drizzle(sql), {
+      migrationsFolder: opts.migrationsFolder,
+      migrationsTable: opts.migrationsTable,
+      migrationsSchema: 'drizzle',
+    });
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+}

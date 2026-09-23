@@ -1,0 +1,373 @@
+# Platform modules
+
+A **platform module** is the only way an app on drobek gets a backend. It is
+platform code the **operator** installs, never code an app author or agent
+uploads: the server still never executes app code. The contract is the
+TypeScript package `@drobek/modules` (contract version `1.0.0`, semver).
+
+A module contributes, for every app on the server:
+
+| Piece | Where it shows up |
+| ----- | ----------------- |
+| **Routes** | `/__drobek/v1/<name>/…` on every app host (preview and production) |
+| **SDK slice** | `drobek.<name>` in `/__drobek/sdk.js` (`import { drobek } from 'drobek'`) |
+| **Per-app config** | validated by a zod `configSchema`; set by agents with `configure_module` |
+| **Confirmation rules** | `confirmRequired(before, after)`: risky changes wait for the owner |
+| **Secrets** | names only; values are entered in the dashboard, never through MCP |
+| **Limits** | env-named numbers (`HELLO_WAVES_PER_MINUTE`), overridable per workspace |
+| **Tables** | a drizzle migrations folder with its own journal |
+| **Skill** | the agent-facing Markdown `skill_info('<name>')` returns |
+
+## Enabling modules
+
+```sh
+DROBEK_MODULES=hello            # comma-separated; empty = no modules
+```
+
+Each entry resolves, in this order:
+
+1. a built-in module of this repo (`BUILTIN_MODULES`);
+2. a short name `x` → the npm package **`drobek-module-x`**;
+3. a full package name (`drobek-module-x`, `@scope/pkg`, anything with a `/`)
+   → exactly that package.
+
+Packages resolve from the **server's** install: `<cwd>/package.json` (`/app` in
+the image, `apps/server` in the dev stack), overridable with
+`DROBEK_MODULES_ROOT`. So adding a third-party module means adding a
+dependency to the server and listing it. The package's default export (or its
+`module` export) must come from `defineModule()`.
+
+The server **refuses to start** when anything is off: an unknown package, an
+export that is not a module, an invalid name, defaults that fail the schema,
+two modules with one name, a missing `sdk.entry`, a reserved name (`sdk`,
+`v1`, `drobek`, `internal`). Nothing is skipped silently. On start the log
+names the active modules (`platform modules ready`).
+
+The dev compose enables the example module (`DROBEK_MODULES=hello`,
+`HELLO_WAVES_PER_MINUTE=5`); so does the e2e image compose.
+
+## The contract
+
+```ts
+import { defineModule, z } from '@drobek/modules';
+
+export default defineModule<Config>({
+  name: 'hello',                 // /^[a-z][a-z0-9]{1,30}$/: URL, drobek.<name>, config key, skill name
+  version: '1.0.0',              // the module's own semver
+  skill: { useWhen, markdown },  // useWhen: ONE sentence starting with the situation
+  configSchema,                  // zod; validates configure_module + the dashboard form
+  configDefaults,                // the config of an app nobody configured (must pass the schema)
+  confirmRequired(before, after) { return [] }, // non-empty → the change waits for the owner
+  secrets: [{ name: 'HELLO_SIGNATURE', description, required?: boolean }],
+  rules: { ops: { ping: 'public' } },           // operations shown in the rule editor
+  limits: [{ env: 'HELLO_WAVES_PER_MINUTE', default: 30, meaning }],
+  routes(r) { /* r.get / post / put / patch / delete */ },
+  sdk: { entry: '/abs/path/sdk.js', types: 'export interface Api { … }' },
+  migrations: { folder: '/abs/path/migrations' },
+  hooks: { onAppCreate(app, services) {}, onPublish(app, services) {} },
+});
+```
+
+Hooks run after `create_app` stored version 1 and after a version was
+published (MCP or dashboard). They are best effort: a failure is logged and
+never fails the tool call.
+
+### Routes: `ModuleRouter`
+
+```ts
+r.post(
+  '/wave',
+  {
+    rule: 'public',                                  // or (config) => config.access
+    body: z.object({ name: z.string().min(1).max(40) }),
+    query: z.object({ … }),                          // optional
+    rateLimit: { bucket: 'wave', max: 'HELLO_WAVES_PER_MINUTE', windowMs: 60_000, per: 'ip' },
+    maxBodyBytes: 1024,                              // default 32 KiB
+    csrf: 'sdk-header',                              // default; 'same-origin' for sendBeacon-style calls
+  },
+  async (req, ctx) => ({ waves: 1 })                 // JSON 200, or respond(status, body, headers)
+);
+```
+
+Patterns support `:param` segments (`/items/:id` → `req.params.id`). Every
+module route goes through the same pipeline:
+
+1. match module, method and path: `404 not_found` (an unknown module also
+   lists `details.available`) or `405 method_not_allowed` (with `Allow`);
+2. **CSRF** for POST/PUT/PATCH/DELETE: an `Origin`, when present, must be the
+   app host itself; with `csrf: 'sdk-header'` the `X-Drobek-SDK: 1` header is
+   also required (`403 csrf_rejected`);
+3. the caller and this app's config → the route `rule` (`401` / `403`);
+4. the rate limit (`429 rate_limited` + `Retry-After`);
+5. the body: JSON only (`415`), size-capped (`413`), then the zod schema;
+   the query too (`400 invalid_request` with `details: [{ path, message }]`);
+6. the handler → JSON with `Cache-Control: no-store`.
+
+Every failure uses **one error shape**:
+
+```json
+{ "error": "invalid_request", "message": "…", "details": [{ "path": "name", "message": "…" }], "hint": "skill_info('hello')" }
+```
+
+Handlers throw `new ModuleError(code, message, { details, hint, headers })`.
+Anything else becomes `500 internal_error` without internals (logged on the
+server). Codes: `invalid_request` 400, `unauthorized` 401,
+`password_required` 401, `forbidden` 403, `csrf_rejected` 403, `not_found`
+404, `method_not_allowed` 405, `conflict` 409, `payload_too_large` 413,
+`unsupported_media_type` 415, `rate_limited` / `limit_exceeded` 429,
+`internal_error` 500, `unavailable` 503. Every code has an entry in the
+agent-facing error catalogue (`/llms-full.txt`).
+
+Platform routes answer on an app host **after** the app is resolved and after
+its visibility gate: a password-protected app answers `401
+password_required` (JSON) until the visitor unlocked it. The apps-origin
+security headers (CSP, `X-Content-Type-Options`, …) override whatever a module
+sets.
+
+### Access rules
+
+A rule is a `|`-separated disjunction of `public`, `user`, `owner`, `admin`,
+`none` (e.g. `"owner|admin"`). `owner` matches a signed-in end user whose id
+equals the record's owner: `ctx.rules.decide(rule, ownerId)`.
+
+### `ModuleContext`
+
+Everything a handler gets is scoped to **one app and one module**:
+
+| Field | Meaning |
+| ----- | ------- |
+| `app` | `{ id, slug, workspaceId }` |
+| `principal` | `{ kind: 'anon' }` or `{ kind: 'user', id, email, role: 'user' \| 'admin' }`, resolved by core from the host-only end-user cookie (`__Host-drobek_eu`; plain-http dev: `drobek_eu`). A module never reads cookies, and the dashboard session is never read on an app host. |
+| `config` | this app's effective config: `configSchema.parse(merge(configDefaults, stored))` |
+| `rules.decide(rule, ownerId?)` | `{ ok: true }` or `{ ok: false, status: 401 \| 403 }` |
+| `limits()` | this workspace's limits (env defaults or the limits provider) |
+| `rateLimit(bucket, key, max, windowMs)` | fixed-window counter in Redis, namespaced to the module and app |
+| `secrets.get(name)` | the plaintext of a **declared** secret of this app, or `null`; reading an undeclared name throws |
+| `audit(action, meta?)` | an audit row `<module>.<action>` for this app, actor kind `end_user` |
+| `email.send({ to, subject, text })` | `to` is `{ config: 'dotted.path' }` (addresses in this app's owner-confirmed config) or `{ principal: true }` (the signed-in end user). Never an arbitrary address. The text is escaped into the drobek layout. |
+| `db`, `log` | the database (drizzle) and a logger |
+
+### The SDK
+
+`sdk.entry` is an ES module whose **default export** is `(core: SdkCore) =>
+Api` (`SdkCore` from `@drobek/sdk`):
+
+```ts
+import type { SdkCore } from '@drobek/sdk';
+export default (core: SdkCore) => ({
+  ping: () => core.request<Hello>('GET', '/'),
+  wave: (name: string) => core.request<{ waves: number }>('POST', '/wave', { body: { name } }),
+});
+```
+
+`core.request` calls `/__drobek/v1/<module><path>`, sends `X-Drobek-SDK: 1`,
+and rejects with `DrobekError { status, code, message, details, hint }` on a
+non-2xx. `sdk.types` must declare an `interface Api`; it is wrapped in
+`declare namespace <name> { … }` in `/__drobek/sdk.d.ts`.
+
+At start the server bundles the core and every active module's entry with
+esbuild into **one** ESM file, `/__drobek/sdk.js`, plus `/__drobek/sdk.d.ts`.
+Both are served on every app host (never on the dashboard origin):
+
+- the compiler maps an app's bare `import { drobek } from 'drobek'` to
+  `/__drobek/sdk.js?v=<hash>` (the hash of the bundle);
+- under the current `?v=` the file is `Cache-Control: public,
+  max-age=31536000, immutable`; without it or under a stale `v` it is
+  `public, max-age=0, must-revalidate`;
+- both carry an `ETag`; a matching `If-None-Match` gets `304`.
+
+Changing `DROBEK_MODULES` changes the hash; apps pick up the new SDK on their
+next compile.
+
+### Migrations and tables
+
+A module with tables ships a drizzle migrations folder
+(`migrations: { folder }`). On start the server applies it with the module's
+**own journal**, `drizzle.__drizzle_migrations_mod_<name>`, after the core
+migrations (`DROBEK_MIGRATE_ON_START=0` turns both off). Conventions:
+
+- table names start with `mod_<name>_` (e.g. `mod_hello_waves`);
+- every per-app row references `apps(id)` with `ON DELETE CASCADE`, so deleting
+  an app deletes its module data;
+- a handler always filters by `ctx.app.id`.
+
+## Per-app configuration
+
+Stored in `module_configs` (`app_id`, `module`, `config` jsonb, `pending`
+jsonb, `updated_at`; primary key `(app_id, module)`, cascade on app delete).
+`config` holds only what was set, as a sparse **JSON merge patch** (RFC 7396)
+over `configDefaults`; the effective config is re-validated on every read.
+Secret values never live here (they live encrypted in `module_secrets`).
+
+### `configure_module` (MCP, scope `write`, role editor)
+
+```json
+{ "app_id": "…", "module": "hello", "config": { "greeting": "Ahoj" } }
+```
+
+`config` is a merge patch (`null` removes a key). The tool takes the app's
+single-writer lease, merges the patch, and validates the result. Then:
+
+- **invalid** → `invalid_params` with `details: [{ path, message }]` and
+  `hint: "skill_info('hello')"`;
+- **something that looks like a secret value** (an API key, a private key, …)
+  → `invalid_params`: secrets are set only in the dashboard;
+- **unchanged** → `{ applied: false, unchanged: true, … }`;
+- **`confirmRequired` is empty** → written at once (audit `module.configure`,
+  actor agent): `{ applied: true, config, pending_confirmation: [] }`;
+- **`confirmRequired` names changes** → stored as the app's pending change
+  (audit `module.pending`, actor agent), the config in force stays:
+  `{ applied: false, config, pending_confirmation: ["greeting: \"Hello\" → \"Ahoj\""], confirm_url }`.
+
+A newer pending change replaces the older one. Required secrets that are not
+set yet come back as `secrets_missing: ["NAME"]` (names only).
+
+`get_app` returns `modules.<name>`: `{ configured, config, pending,
+pending_confirmation?, confirm_url?, secrets: [{ name, hasSecret }] }`.
+
+### Confirming a pending change
+
+`confirm_url` is the dashboard page
+`<DASHBOARD_ORIGIN>/workspaces/<ws>/apps/<slug>/modules/<module>` where the
+owner reviews the change. The page (or any dashboard client) calls:
+
+```
+POST /api/apps/:app_id/modules/:module/confirm
+POST /api/apps/:app_id/modules/:module/reject
+```
+
+- a dashboard session is required (`401 unauthorized` otherwise);
+- an `Origin` header equal to the dashboard origin is **required** (`403`
+  without one or with an app host's origin);
+- the caller must be an editor or workspace-admin of the app's workspace (or a
+  super-admin); a missing app and a non-member both get `404 not_found`, a
+  viewer `403`;
+- nothing pending → `409 conflict` (`details.reason: 'nothing_pending'`); a
+  pending change that no longer validates → `409 conflict`
+  (`details.reason: 'pending_invalid'`, with the issues);
+- `confirm` applies the change (audit `module.confirm`, actor user):
+  `{ ok: true, decision: 'confirm', module, config, confirmed: [...] }`;
+- `reject` drops it (audit `module.reject`, actor user):
+  `{ ok: true, decision: 'reject', module, config, rejected: [...] }`.
+
+## Skills: `skill_info`
+
+`skill_info` (MCP, scope `read`) is how an agent learns a backend when it
+needs one:
+
+- `skill_info()` → `{ skills: [{ name, use_when }] }`. The same list is in
+  `create_app` and `get_app` (`skills`) and in the briefing;
+- `skill_info('<name>')` → `{ name, kind, use_when, content }`, and for a
+  module also `sdk { import, types }`, `config { schema (JSON Schema),
+  defaults, confirm_required }`, `limits [{ name, value, meaning }]` and
+  `secrets [{ name, description, required }]`;
+- an unknown name → `not_found` with `available` and `hint: "skill_info()"`.
+
+It never returns a secret value or any app's config.
+
+Two sources feed one list:
+
+- **module skills**: every active module's `skill`;
+- **general skills**: `skills/<name>/SKILL.md` with frontmatter `name` and
+  `description` (the description is the "use when …" sentence). The directory
+  is `DROBEK_SKILLS_DIR`, else `<cwd>/skills` (the image copies the repo's
+  `skills/`), else `<cwd>/../../skills` (the dev server).
+
+`skills/drobek` is **not** listed: it is the platform skill an agent installs
+to reach drobek at all, and its rules are already in the briefing. On a name
+clash a module skill wins.
+
+Errors point back at the skills: module route errors carry
+`hint: "skill_info('<module>')"`, and a compile error on a backend import
+(`firebase`, `@supabase/supabase-js`, …) carries `skill_info('<skill>')` when
+a matching skill is active, else `skill_info()`.
+
+Every drobek skill states the rule (`SKILL_INFO_RULE` in `@drobek/agent-dx`)
+verbatim:
+
+> Before using a backend (login, stored data, forms, email, file uploads,
+> external APIs), call `skill_info` and follow the skill; `create_app`/`get_app`
+> list the available skills.
+
+Writing a skill: target 150 lines or fewer; when to use → minimal working code
+→ the exact SDK calls and types → limits and server-enforced rules → common
+errors and fixes.
+
+## Limits and the limits provider
+
+Every limit is its env var (`HELLO_WAVES_PER_MINUTE=5`) or the module's
+default. An operator with plans sets:
+
+```sh
+LIMITS_PROVIDER_URL=https://billing.internal
+LIMITS_PROVIDER_SECRET=<openssl rand -hex 32>   # ≥ 32 characters; required with the URL
+```
+
+drobek then asks, per workspace:
+
+```
+GET <LIMITS_PROVIDER_URL>/limits/<workspace_id>
+X-Drobek-Timestamp: <unix seconds>
+X-Drobek-Signature: v1=<hex HMAC-SHA256(LIMITS_PROVIDER_SECRET, "<ts>.GET./limits/<workspace_id>")>
+```
+
+and expects `{ "limits": { "<ENV_NAME>": <positive integer>, … } }`. Known
+names override the env defaults; unknown names and bad values are ignored.
+Answers are cached in Redis for 60 s (`drobek:limits:<workspace_id>`). When
+the provider is down, slower than 2 s or answers garbage, the env defaults
+apply for 10 s and a warning is logged: a provider outage never takes apps
+down. `signLimitsRequest(secret, ts, path)` is exported for the provider side.
+The server refuses to start with a URL but a missing or weak secret.
+
+## Testing a module
+
+`@drobek/modules/testing` runs routes through the **same pipeline**
+production uses, without a server, Redis or SMTP:
+
+```ts
+import { createModuleTestContext } from '@drobek/modules/testing';
+import hello from './index.js';
+
+const t = createModuleTestContext(hello, {
+  db,                                   // e.g. PGlite with the core + module migrations
+  app: { id: appId },
+  config: { greeting: 'Ahoj' },         // merged over configDefaults, validated
+  secrets: { HELLO_SIGNATURE: 'k' },
+  limits: { HELLO_WAVES_PER_MINUTE: 1 },
+  principal: { kind: 'user', id: 'u1', email: 'a@example.com', role: 'user' },
+});
+const res = await t.request('POST', '/wave', { body: { name: 'Ada' } });
+expect(res).toMatchObject({ status: 200, body: { waves: 1 } });
+t.audits;   // [{ action: 'hello.…', meta }]
+t.emails;   // [{ to, subject, text }]
+t.setPrincipal({ kind: 'anon' });
+```
+
+Mutating requests send the app's `Origin` and `X-Drobek-SDK: 1` by default;
+pass `headers` to test the CSRF guard.
+
+## The example: `drobek-module-hello`
+
+[`examples/drobek-module-hello`](../examples/drobek-module-hello) is an
+external workspace package, loaded exactly as a third-party module would be
+(`DROBEK_MODULES=hello` → `drobek-module-hello`, a dependency of
+`apps/server`):
+
+- `GET /__drobek/v1/hello` → `{ greeting, message, waves, signed, signature? }`;
+- `POST /__drobek/v1/hello/wave` `{ name }` → `{ waves }`, rate-limited per
+  visitor IP (`HELLO_WAVES_PER_MINUTE`, default 30);
+- config `{ greeting, excited }`; a greeting change needs the owner's
+  confirmation, `excited` applies at once;
+- optional secret `HELLO_SIGNATURE` (the ping is HMAC-signed when set);
+- table `mod_hello_waves` (its own migrations and journal);
+- `drobek.hello.ping()` / `drobek.hello.wave(name)` in the browser;
+- its `SKILL.md` is what `skill_info('hello')` returns.
+
+Try it in the dev stack: create an app with an agent, write
+
+```ts
+import { drobek } from 'drobek';
+drobek.hello.ping().then((h) => (document.body.textContent = h.message));
+```
+
+and open the `preview_url`.

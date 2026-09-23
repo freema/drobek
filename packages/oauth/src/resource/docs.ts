@@ -84,6 +84,8 @@ export function registerDocs(server: McpServer): void {
                 '4. If compile.ok is false, fix compile.errors (file, line, column, text) and write again; the preview keeps the last version that compiled.',
                 '5. When compile.ok is true, give the user the preview_url. Call publish ONLY if the user explicitly asks to go live, then share the published_url.',
                 '',
+                'Before using a backend (login, stored data, forms, email, file uploads, external APIs), call skill_info with the skill name and follow it; create_app/get_app list the available skills. Module configs go through configure_module — a change that needs the owner\'s OK returns a confirm_url to give the user.',
+                '',
                 'list_apps shows your workspaces and apps; get_app re-orients you (files, versions, lock). The full contract is the drobek://docs/llms-full resource.',
               ].join('\n'),
             },

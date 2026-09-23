@@ -27,6 +27,8 @@ export interface CompileMessage {
   /** 0-based column (as esbuild reports it). */
   column?: number;
   lineText?: string;
+  /** `unresolved_import` only: the import specifier that could not be resolved (e.g. `firebase/app`). */
+  specifier?: string;
 }
 
 export interface CompileResult {
@@ -44,6 +46,12 @@ export interface CompileOptions {
   /** Inline source maps (preview). Publish compiles without. Default true. */
   sourcemap?: boolean;
   minify?: boolean;
+  /**
+   * What the bare `drobek` import becomes (M1-01): the server's versioned SDK
+   * URL, e.g. `/__drobek/sdk.js?v=3f2a…` (immutable caching). Default
+   * `SDK_URL` (unversioned).
+   */
+  sdkUrl?: string;
 }
 
 export type SourceFiles = Map<string, string | Buffer>;

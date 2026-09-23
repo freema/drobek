@@ -61,7 +61,7 @@ describe('dbLoaders.resolve', () => {
     await publish(app.id, v1.id, actor);
     const prod = await dbLoaders.resolve({ kind: 'prod', slug: 'loader-app' });
     expect(prod.version).toEqual(v1);
-    expect(prod.app).toEqual({ id: app.id, slug: 'loader-app', visibility: 'public', frameAncestors: null });
+    expect(prod.app).toEqual({ id: app.id, slug: 'loader-app', workspaceId: wsId, visibility: 'public', frameAncestors: null });
   });
 
   it('a soft-deleted or hibernated app does not exist for the app hosts', async () => {
@@ -107,6 +107,7 @@ describe('cache bust on app-changed', () => {
       query: '',
       header: () => null,
       readForm: async () => null,
+      readBody: async () => null,
       clientIp: null,
     };
   }

@@ -1,6 +1,7 @@
 /**
  * The MCP tool bodies (plan §4): list_apps, create_app, get_app, read_file,
- * write_files, restore_version (M0-05) and publish (M0-06). Each takes the caller + validated
+ * write_files, restore_version (M0-05), publish (M0-06), skill_info and
+ * configure_module (M1-01). Each takes the caller + validated
  * arguments and returns a plain JSON payload or throws a ToolError; the MCP
  * wiring (register.ts) turns that into a CallToolResult.
  *
@@ -9,7 +10,11 @@
  *  - the server only compiles app code (esbuild), never executes it;
  *  - a credential in a file is refused before anything is stored;
  *  - writes hold the app's single-writer lease (lease.ts); publish does not —
- *    it writes no files, only moves the production pointer.
+ *    it writes no files, only moves the production pointer. configure_module
+ *    takes it too: a module config is part of what the app's agent edits;
+ *  - secrets never pass through MCP: skill_info names a module's secrets,
+ *    get_app says whether each is set (`hasSecret`), configure_module refuses
+ *    credential-looking values. Only the dashboard sets them.
  */
 import {
   APP_LOCK_TTL_SEC,
@@ -45,6 +50,7 @@ import {
   type CompileMessage,
   type CompileResult,
 } from '@drobek/compile';
+import { confirmUrl, isModuleError, type ModuleRuntime, type SkillListItem } from '@drobek/modules';
 import { ensurePersonalWorkspace, listUserWorkspaces } from '@drobek/tenancy';
 import { authorizeApp, authorizeWorkspace } from './access.js';
 import type { ToolDeps, ToolPrincipal } from './context.js';
@@ -66,6 +72,8 @@ export interface CallContext {
   /** MCP session id — recorded in the lease (the same user may take it over). */
   sessionId: string;
   deps: ToolDeps;
+  /** The platform modules + skills of this process (resolved once per call). */
+  modules: ModuleRuntime;
 }
 
 const NAME_MAX = 80;
@@ -80,28 +88,38 @@ function extOf(path: string): string {
   return i <= path.lastIndexOf('/') ? '' : path.slice(i).toLowerCase();
 }
 
-/** `{ code, file, line, column, text }` — the agent-facing compile message. */
+/**
+ * `{ code, file, line, column, text, hint? }` — the agent-facing compile
+ * message. `hint` (M1-01) points a backend import the platform replaces at its
+ * skill, e.g. `unresolved_import` of `firebase` → `skill_info('data')`.
+ */
 export interface CompileErrorOut {
   code: string;
   file: string | null;
   line: number | null;
   column: number | null;
   text: string;
+  hint?: string;
 }
 
-function toCompileOut(messages: unknown): CompileErrorOut[] {
+function toCompileOut(messages: unknown, modules?: ModuleRuntime): CompileErrorOut[] {
   if (!Array.isArray(messages)) return [];
-  return (messages as Partial<CompileMessage>[]).map((m) => ({
-    code: String(m.code ?? 'build_error'),
-    file: m.file ?? null,
-    line: m.line ?? null,
-    column: m.column ?? null,
-    text: String(m.text ?? ''),
-  }));
+  return (messages as Partial<CompileMessage>[]).map((m) => {
+    const out: CompileErrorOut = {
+      code: String(m.code ?? 'build_error'),
+      file: m.file ?? null,
+      line: m.line ?? null,
+      column: m.column ?? null,
+      text: String(m.text ?? ''),
+    };
+    const hint = modules?.compileHint({ code: out.code, specifier: m.specifier });
+    if (hint) out.hint = hint;
+    return out;
+  });
 }
 
-function briefing(deps: ToolDeps): string {
-  const L = deps.limits;
+function briefing(ctx: CallContext): string {
+  const L = ctx.deps.limits;
   return renderBriefing({
     limits: {
       maxFiles: L.maxFiles,
@@ -109,7 +127,12 @@ function briefing(deps: ToolDeps): string {
       maxTotalBytes: L.maxTotalBytes,
       timeoutMs: L.timeoutMs,
     },
+    skills: ctx.modules.skillList(),
   });
+}
+
+function skills(ctx: CallContext): SkillListItem[] {
+  return ctx.modules.skillList();
 }
 
 // ── leases ───────────────────────────────────────────────────────────────────
@@ -216,10 +239,11 @@ export async function getApp(ctx: CallContext, args: { app_id: string }) {
   const head = latest.get(app.id);
   const detail = head ? await getVersion(app.id, { id: head.id }) : null;
   const lock = locks.get(app.id);
+  const modules = await ctx.modules.appModules(app.id, (m) => confirmUrl(ctx.modules.deps.env, app.workspaceSlug, app.slug, m));
   return {
     ...items[0],
-    compile_errors: head?.compileStatus === 'error' ? toCompileOut(head.compileErrors) : [],
-    briefing: briefing(ctx.deps),
+    compile_errors: head?.compileStatus === 'error' ? toCompileOut(head.compileErrors, ctx.modules) : [],
+    briefing: briefing(ctx),
     files: (detail?.files ?? [])
       .filter((f) => f.kind === 'source')
       .map((f) => ({ path: f.path, size: f.size, sha256: f.sha256 })),
@@ -230,7 +254,8 @@ export async function getApp(ctx: CallContext, args: { app_id: string }) {
       reasoning: v.reasoning,
       compile_status: v.compileStatus,
     })),
-    modules: {},
+    modules,
+    skills: skills(ctx),
     ...(lock ? { lock } : {}),
   };
 }
@@ -279,8 +304,8 @@ export async function readFile(
 
 // ── compile + store (create_app v1, write_files) ─────────────────────────────
 
-function compileOut(r: Pick<CompileResult, 'ok' | 'errors' | 'warnings'>) {
-  return { ok: r.ok, errors: toCompileOut(r.errors), warnings: toCompileOut(r.warnings) };
+function compileOut(r: Pick<CompileResult, 'ok' | 'errors' | 'warnings'>, modules?: ModuleRuntime) {
+  return { ok: r.ok, errors: toCompileOut(r.errors, modules), warnings: toCompileOut(r.warnings, modules) };
 }
 
 /** Refuse (nothing stored) on a secret or a saturated compiler; everything else is stored. */
@@ -312,7 +337,8 @@ async function compileAndStore(
   sources: Map<string, string | Buffer>,
   reasoning: string
 ): Promise<{ number: number; result: CompileResult }> {
-  const result = await ctx.deps.compile(sources);
+  // The bare `drobek` import → this server's versioned SDK (immutable caching).
+  const result = await ctx.deps.compile(sources, { sdkUrl: ctx.modules.sdk.url });
   refuseUnstorable(result);
   const { number } = await createVersion(app.id, versionFiles(sources, result), {
     actor: actorOf(ctx),
@@ -367,6 +393,7 @@ export async function createApp(
     templateFiles(template, name),
     `Created from the ${template} template`
   );
+  await ctx.modules.runHook('onAppCreate', { id: created.id, slug: created.slug, workspaceId: ws.id });
   return {
     app_id: created.id,
     name,
@@ -374,9 +401,10 @@ export async function createApp(
     workspace: ws.slug,
     template,
     version: number,
-    compile: compileOut(result),
+    compile: compileOut(result, ctx.modules),
     preview_url: previewUrl(created.slug, ctx.deps.env),
-    briefing: briefing(ctx.deps),
+    briefing: briefing(ctx),
+    skills: skills(ctx),
   };
 }
 
@@ -504,7 +532,7 @@ export async function writeFiles(
   const { number, result } = await compileAndStore(ctx, app, files, args.reasoning.trim());
   return {
     version: number,
-    compile: compileOut(result),
+    compile: compileOut(result, ctx.modules),
     preview_url: previewUrl(app.slug, ctx.deps.env),
     changed,
     ...(await previewNote(app.id, result.ok)),
@@ -536,7 +564,7 @@ export async function restoreVersion(ctx: CallContext, args: { app_id: string; v
     restored_from: args.version,
     compile: {
       ok,
-      errors: ok ? [] : toCompileOut(v?.compileErrors),
+      errors: ok ? [] : toCompileOut(v?.compileErrors, ctx.modules),
       warnings: [],
     },
     preview_url: previewUrl(app.slug, ctx.deps.env),
@@ -582,6 +610,7 @@ export async function publishApp(ctx: CallContext, args: { app_id: string; versi
     throw err;
   }
   await ctx.deps.notifyAppChanged({ app_id: app.id, slug: app.slug, version: result.number, kind: 'publish' });
+  await ctx.modules.runHook('onPublish', { id: app.id, slug: app.slug, workspaceId: app.workspaceId, version: result.number });
   const url = publishedUrl(app.slug, ctx.deps.env);
   return {
     published_version: result.number,
@@ -589,4 +618,85 @@ export async function publishApp(ctx: CallContext, args: { app_id: string; versi
     published_url: url,
     domains: [new URL(url).host],
   };
+}
+
+// ── skill_info ───────────────────────────────────────────────────────────────
+
+/**
+ * The agent-facing documentation of this server's backends (M1-01):
+ * `skill_info()` lists every skill (active modules + general skills) with its
+ * "use when…" sentence; `skill_info(name)` returns one skill's Markdown (for a
+ * module also its SDK types, config schema/defaults, limits and the NAMES of
+ * its secrets). Server-wide, app-independent: it never returns a secret value
+ * or any app's config.
+ */
+export async function skillInfo(ctx: CallContext, args: { name?: string }) {
+  const list = ctx.modules.skillList();
+  if (args.name === undefined || args.name === '') {
+    return {
+      skills: list,
+      note:
+        list.length === 0
+          ? 'This server has no platform modules and no skills: build self-contained front-ends (state in the browser).'
+          : 'Call skill_info with a name before using that backend; follow the skill exactly.',
+    };
+  }
+  const info = ctx.modules.skillInfo(String(args.name));
+  if (!info) {
+    throw new ToolError('not_found', `No skill "${String(args.name)}" on this server.`, {
+      available: list.map((s) => s.name),
+      hint: 'skill_info()',
+    });
+  }
+  return info;
+}
+
+// ── configure_module ─────────────────────────────────────────────────────────
+
+/**
+ * Set a platform module's per-app config (M1-01). `config` is a PARTIAL
+ * config (JSON merge patch: only the keys you change; null resets a key).
+ * Validated against the module's configSchema (`invalid_params` with the
+ * field paths). Changes the module marks as needing the owner's OK (e.g.
+ * opening data to the public, a new e-mail recipient) are held as pending:
+ * `applied:false`, `pending_confirmation`, `confirm_url` for the user.
+ * editor+; takes the single-writer lease like write_files.
+ */
+export async function configureModule(
+  ctx: CallContext,
+  args: { app_id: string; module: string; config: unknown }
+) {
+  const { app } = await authorizeApp(ctx.principal, args.app_id, 'editor');
+  if (typeof args.module !== 'string' || args.module.length === 0) {
+    throw new ToolError('invalid_params', '`module` must be the name of a platform module (see skill_info()).');
+  }
+  await takeLease(ctx, app.id);
+  try {
+    const out = await ctx.modules.configure({
+      app: { id: app.id, slug: app.slug, workspaceId: app.workspaceId, workspaceSlug: app.workspaceSlug },
+      module: args.module,
+      patch: args.config,
+      actorUserId: ctx.principal.userId,
+    });
+    return {
+      ...out,
+      ...(out.pending_confirmation.length > 0
+        ? {
+            note: 'Give the user confirm_url and tell them what needs their confirmation. The pending change applies only after they confirm it in the drobek dashboard; until then the config above stays in force.',
+          }
+        : {}),
+      ...(out.secrets_missing?.length
+        ? { secrets_note: 'The app owner sets these secrets in the drobek dashboard — never ask for their values, never put them in files or config.' }
+        : {}),
+    };
+  } catch (err) {
+    if (isModuleError(err) && (err.code === 'invalid_params' || err.code === 'not_found')) {
+      const details = (err.details && typeof err.details === 'object' ? err.details : {}) as Record<string, unknown>;
+      throw new ToolError(err.code === 'not_found' ? 'not_found' : 'invalid_params', err.message, {
+        ...details,
+        ...(err.hint ? { hint: err.hint } : {}),
+      });
+    }
+    throw err;
+  }
 }

@@ -4,14 +4,51 @@
  * and an MCP client connected over an in-memory transport to a server with
  * the tools registered — the same wiring @drobek/oauth uses.
  */
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { Compiler, type CompileLimits } from '@drobek/compile';
 import { noopLogger } from '@drobek/core';
+import { loadModuleRuntime, memoryRateLimiter, type ModuleRuntime } from '@drobek/modules';
 import type { AppChangedEvent, ToolDeps, ToolPrincipal } from '../context.js';
 import { memoryLeaseStore } from '../lease.js';
 import { registerAppTools } from '../register.js';
+import { greet } from './modules.js';
+
+let sharedRuntime: Promise<ModuleRuntime> | null = null;
+
+/** A general skill `data` (so a firebase import can point at it). */
+function testSkillsDir(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'drobek-mcp-skills-'));
+  mkdirSync(join(dir, 'data'));
+  writeFileSync(
+    join(dir, 'data', 'SKILL.md'),
+    '---\nname: data\ndescription: you need to store records on the server\n---\n# data\n\nStore records.\n'
+  );
+  return dir;
+}
+
+/**
+ * The test module runtime: the `greet` module + one general skill (`data`), a
+ * fixed dashboard origin (confirm_url), in-memory rate limiting.
+ */
+export function testModules(): Promise<ModuleRuntime> {
+  sharedRuntime ??= loadModuleRuntime({
+    env: { APPS_DOMAIN: 'drobek.app', PUBLIC_APP_URL: 'https://dash.drobek.test', DROBEK_MIGRATE_ON_START: '0', DROBEK_MASTER_KEY: '22'.repeat(32) },
+    log: noopLogger,
+    modules: [greet],
+    skillsDir: testSkillsDir(),
+    deps: {
+      rateLimit: memoryRateLimiter(),
+      principal: async () => ({ kind: 'anon' }),
+      email: { send: async () => {} },
+    },
+  });
+  return sharedRuntime;
+}
 
 export interface TestClock {
   now: () => number;
@@ -37,11 +74,12 @@ export function testDeps(limits: Partial<CompileLimits> = {}): TestDeps {
     notifyAppChanged: async (e) => {
       events.push(e);
     },
-    compile: (files) => compiler.compile(files),
+    compile: (files, opts) => compiler.compile(files, opts),
     limits: compiler.limits,
     now: clock.now,
     env: { APPS_DOMAIN: 'drobek.app' },
     log: noopLogger,
+    modules: testModules,
     events,
     clock,
   };

@@ -68,6 +68,8 @@ export {
   type AppRequest,
   type AppResponse,
   type HandlerDeps,
+  PLATFORM_PREFIX,
+  type PlatformHandler,
 } from './handler.js';
 export {
   RESOLVE_TTL_MS,

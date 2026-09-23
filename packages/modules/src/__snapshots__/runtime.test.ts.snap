@@ -1,0 +1,85 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`skills > skillInfo(module): content + sdk + config schema + limits + secret NAMES 1`] = `
+{
+  "config": {
+    "confirm_required": "Some changes need the app owner's confirmation in the dashboard: configure_module then answers applied:false with pending_confirmation and a confirm_url for the user.",
+    "defaults": {
+      "access": "user",
+      "greeting": "hi",
+      "loud": false,
+      "notify": [],
+    },
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "access": {
+          "enum": [
+            "public",
+            "user",
+          ],
+          "type": "string",
+        },
+        "greeting": {
+          "maxLength": 40,
+          "minLength": 1,
+          "type": "string",
+        },
+        "loud": {
+          "type": "boolean",
+        },
+        "notify": {
+          "items": {
+            "format": "email",
+            "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$",
+            "type": "string",
+          },
+          "maxItems": 5,
+          "type": "array",
+        },
+      },
+      "required": [
+        "greeting",
+        "access",
+        "notify",
+        "loud",
+      ],
+      "type": "object",
+    },
+  },
+  "content": "# echo
+
+Echoes.
+",
+  "kind": "module",
+  "limits": [
+    {
+      "meaning": "echo calls per minute",
+      "name": "ECHO_PER_MINUTE",
+      "value": 5,
+    },
+  ],
+  "name": "echo",
+  "sdk": {
+    "import": "import { drobek } from 'drobek';",
+    "types": "export declare namespace echo {
+  export interface Api { hi(): Promise<{ greeting: string }>; }
+}
+// drobek.echo: echo.Api",
+  },
+  "secrets": [
+    {
+      "description": "upstream token",
+      "name": "ECHO_TOKEN",
+      "required": true,
+    },
+    {
+      "description": "optional",
+      "name": "ECHO_EXTRA",
+      "required": false,
+    },
+  ],
+  "use_when": "you need to echo things back in a test",
+}
+`;

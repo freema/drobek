@@ -1,0 +1,13 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`SDK composition > composes the entry source 1`] = `
+"// drobek SDK — composed at server start from the SDK core + the active platform modules.
+import { createCore, DrobekError } from "/core.js";
+import m0 from "<echo-sdk>";
+export const drobek = Object.freeze({
+  "echo": m0(createCore("echo")),
+});
+export { DrobekError };
+export default drobek;
+"
+`;

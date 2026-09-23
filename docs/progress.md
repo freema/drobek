@@ -111,7 +111,15 @@ single long-lived `next` branch; pushes happen only at milestone end.
   at `../drobek-plugin`, branch `next`, not pushed. Its `.mcp.json` targets
   `https://drobek.app/mcp`; once M0-09 is deployed, re-run the calculator
   test against production.
-- Next milestone: M1 (NSO-287 M1-01 module contract first).
+- M1-01 (NSO-287) done: `@drobek/modules` (registry, ModuleRouter, runtime,
+  SDK build, skills, limits provider, module configs + encrypted module
+  secrets), `@drobek/sdk` core, example external module
+  `examples/drobek-module-hello` (dev + e2e compose run `DROBEK_MODULES=hello`),
+  MCP `skill_info` + `configure_module`, dashboard API
+  `POST /api/apps/:id/modules/:m/confirm|reject`, `docs/MODULES.md`.
+  The `confirm_url` page (`/workspaces/<ws>/apps/<slug>/modules/<m>`) and the
+  secrets form are M2-02. drobek-web does not wire the module runtime yet.
+- Next: M1-02 (NSO-294 auth module), then M1-03 data, M1-04 forms+email.
 
 ## Notes and gotchas
 
@@ -246,6 +254,16 @@ single long-lived `next` branch; pushes happen only at milestone end.
 - `claude plugin validate` only parses skill/command frontmatter under the
   conventional `skills/` + `commands/` layout; the plugin repo's
   `scripts/validate-claude-components.mjs` stages each skill variant that way.
+
+- Module resolution: `DROBEK_MODULES=x` → package `drobek-module-x`, resolved
+  from the server's package.json (`DROBEK_MODULES_ROOT` overrides); a load
+  error stops the server at start. The module runtime is memoized on
+  `globalThis` so the Vite-loaded dashboard routes share the server's
+  instance.
+- The platform/module error for a password-locked app is `password_required`
+  (401 JSON); `app_locked` stays the MCP single-writer lease code.
+- A compile `unresolved_import` hint names a skill only when that skill is
+  active on the server; otherwise it is the bare `skill_info()`.
 
 ## Failed approaches
 

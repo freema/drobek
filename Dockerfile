@@ -56,6 +56,9 @@ COPY --from=builder --chown=node:node /out/package.json ./package.json
 COPY --from=builder --chown=node:node /out/node_modules ./node_modules
 COPY --from=builder --chown=node:node /out/build ./build
 COPY --from=builder --chown=node:node /out/dist ./dist
+# M1-01: general skills for skill_info (skills/<name>/SKILL.md; the platform
+# skill skills/drobek is shipped too but never listed).
+COPY --from=builder --chown=node:node /repo/skills ./skills
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \

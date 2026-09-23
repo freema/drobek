@@ -13,7 +13,7 @@ const HTML = '<!doctype html><h1>hi</h1>';
 const loaders: ServeLoaders = {
   resolve: async (t) =>
     t.slug === 'shop'
-      ? { app: { id: 'a1', slug: 'shop', visibility: 'public', frameAncestors: null }, version: { id: 'v1', number: 1 } }
+      ? { app: { id: 'a1', slug: 'shop', workspaceId: 'ws1', visibility: 'public', frameAncestors: null }, version: { id: 'v1', number: 1 } }
       : { app: null, version: null },
   loadFiles: async () => [{ path: 'index.html', kind: 'source', sha256: 'h'.repeat(64), size: HTML.length }],
   loadBlobs: async () => new Map([['h'.repeat(64), Buffer.from(HTML)]]),

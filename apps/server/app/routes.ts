@@ -57,6 +57,12 @@ export default [
     'workspaces/:slug/apps/:appSlug/data/:collection/export.csv',
     'routes/workspaces.$slug.apps.$appSlug.data.$collection.export-csv.ts'
   ),
+  // M1-01 (NSO-287): the owner confirms/rejects a pending platform-module
+  // change (configure_module → confirm_url; the M2-02 page calls this API).
+  route(
+    'api/apps/:id/modules/:module/:decision',
+    'routes/api.apps.$id.modules.$module.$decision.ts'
+  ),
   // U5 (PHY-71/PHY-53): MCP OAuth 2.1 Authorization Server.
   route(
     '.well-known/oauth-authorization-server',

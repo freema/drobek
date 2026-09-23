@@ -34,8 +34,8 @@ async function connect(scopes: Scope[]): Promise<Client> {
   return client;
 }
 
-const READ = ['get_app', 'list_apps', 'read_file'];
-const WRITE = ['create_app', 'restore_version', 'write_files'];
+const READ = ['get_app', 'list_apps', 'read_file', 'skill_info'];
+const WRITE = ['configure_module', 'create_app', 'restore_version', 'write_files'];
 const PUBLISH = ['publish'];
 
 const EXPECTED: Array<[Scope[], string[]]> = [

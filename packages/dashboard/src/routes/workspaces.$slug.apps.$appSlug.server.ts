@@ -19,6 +19,7 @@ import {
 } from 'react-router';
 import { AppsError, listVersions, notifyAppChanged, publish } from '@drobek/apps';
 import { actorKindForSurface } from '@drobek/audit';
+import { moduleRuntime } from '@drobek/modules';
 import { requireWorkspaceRole } from '@drobek/tenancy';
 import {
   queryAppErrors,
@@ -110,6 +111,13 @@ export async function action({ request, params }: ActionFunctionArgs) {
     });
     // M0-06: the production host serves the new version from the next request.
     await notifyAppChanged({ app_id: app.id, slug: app.slug, version: published.number, kind: 'publish' });
+    // M1-01: platform modules react to a publish (best effort, errors logged).
+    await (await moduleRuntime()).runHook('onPublish', {
+      id: app.id,
+      slug: app.slug,
+      workspaceId: access.workspace.id,
+      version: published.number,
+    });
   } catch (err) {
     // Expected failures (not_found / not_publishable) carry a caller-safe message.
     if (err instanceof AppsError) {

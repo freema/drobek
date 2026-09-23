@@ -78,6 +78,13 @@
       "when": 1790152014046,
       "tag": "0010_apps_origin",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1790162052842,
+      "tag": "0011_modules",
+      "breakpoints": true
     }
   ]
 }

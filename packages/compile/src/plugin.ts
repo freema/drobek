@@ -27,6 +27,8 @@ export interface VirtualFsState {
   /** App path → content (text as string, binary assets as Buffer). */
   files: Map<string, string | Buffer>;
   imports: Record<string, string>;
+  /** What the bare `drobek` import resolves to (external). */
+  sdkUrl: string;
   maxImportDepth: number;
   /** App paths handed to esbuild (a subset of `files`, asserted in tests). */
   loaded: Set<string>;
@@ -38,8 +40,15 @@ export interface VirtualFsState {
   beforeLoad?: (path: string) => Promise<void>;
 }
 
-function fail(code: CompileErrorCode, text: string) {
-  return { errors: [{ text, detail: code }] };
+/** esbuild message `detail`: the drobek error code (+ the specifier of an unresolved import). */
+export interface FailDetail {
+  code: CompileErrorCode;
+  specifier?: string;
+}
+
+function fail(code: CompileErrorCode, text: string, specifier?: string) {
+  const detail: FailDetail = specifier === undefined ? { code } : { code, specifier };
+  return { errors: [{ text, detail }] };
 }
 
 function lookupBare(specifier: string, imports: Record<string, string>): string | null {
@@ -84,10 +93,11 @@ export function virtualFsPlugin(state: VirtualFsState): Plugin {
         if (spec.startsWith('//')) {
           return fail(
             'unresolved_import',
-            `"${spec}" is a scheme-less URL — write the full https:// URL or add the package to drobek.json imports.`
+            `"${spec}" is a scheme-less URL — write the full https:// URL or add the package to drobek.json imports.`,
+            spec
           );
         }
-        if (spec === SDK_SPECIFIER) return { path: SDK_URL, external: true };
+        if (spec === SDK_SPECIFIER) return { path: state.sdkUrl || SDK_URL, external: true };
 
         const importer = args.namespace === APP_NAMESPACE ? args.importer : '';
         const parentDepth = depth.get(importer) ?? 0;
@@ -100,7 +110,8 @@ export function virtualFsPlugin(state: VirtualFsState): Plugin {
               'unresolved_import',
               target
                 ? `Cannot find "${spec}" in the app files (looked for ${target} with .tsx/.ts/.jsx/.js/.css/.json and /index.*).`
-                : `"${spec}" points outside the app — imports may only reference the app's own files.`
+                : `"${spec}" points outside the app — imports may only reference the app's own files.`,
+              spec
             );
           }
           const d = parentDepth + 1;
@@ -120,7 +131,8 @@ export function virtualFsPlugin(state: VirtualFsState): Plugin {
         const pkg = spec.startsWith('@') ? spec.split('/').slice(0, 2).join('/') : spec.split('/')[0];
         return fail(
           'unresolved_import',
-          `Unknown import "${spec}". drobek has no node_modules and no Node built-ins — add the package to drobek.json imports: { "${pkg}": "https://esm.sh/${pkg}@<version>" }`
+          `Unknown import "${spec}". drobek has no node_modules and no Node built-ins — add the package to drobek.json imports: { "${pkg}": "https://esm.sh/${pkg}@<version>" }`,
+          spec
         );
       });
 

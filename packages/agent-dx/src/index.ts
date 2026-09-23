@@ -36,7 +36,7 @@ export {
   protectedResourceMetadataUrl,
 } from './urls.js';
 export {
-  MODULE_INFO_RULE,
+  SKILL_INFO_RULE,
   PLUGIN_BUILD_COMMAND,
   PLUGIN_INSTALL_COMMAND,
   PLUGIN_MARKETPLACE,

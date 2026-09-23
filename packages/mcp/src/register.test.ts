@@ -1,5 +1,5 @@
 /**
- * tools/list snapshot (M0-05 + M0-06): exactly the 7 tools, in order, with
+ * tools/list snapshot (M0-05 + M0-06 + M1-01): exactly the 9 tools, in order, with
  * their titles, annotations and input schemas. Hand-written on purpose — a
  * change to the public tool surface must be a deliberate edit here.
  */
@@ -29,7 +29,7 @@ async function listTools(allow?: (t: string) => boolean) {
 const RO = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 
 describe('tools/list', () => {
-  it('is exactly the 7 tools with their annotations and inputs (snapshot)', async () => {
+  it('is exactly the 9 tools with their annotations and inputs (snapshot)', async () => {
     const tools = await listTools();
     const snapshot = tools.map((t) => ({
       name: t.name,
@@ -102,6 +102,25 @@ describe('tools/list', () => {
         },
         properties: ['app_id', 'version'],
         required: ['app_id'],
+      },
+      {
+        name: 'skill_info',
+        title: 'Read a skill',
+        annotations: { title: 'Read a skill', ...RO },
+        properties: ['name'],
+        required: [],
+      },
+      {
+        name: 'configure_module',
+        title: 'Configure a platform module',
+        annotations: {
+          title: 'Configure a platform module',
+          readOnlyHint: false,
+          destructiveHint: true,
+          openWorldHint: false,
+        },
+        properties: ['app_id', 'module', 'config'],
+        required: ['app_id', 'module', 'config'],
       },
     ]);
     const create = tools.find((t) => t.name === 'create_app')!;

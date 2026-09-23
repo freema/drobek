@@ -45,9 +45,12 @@ const bytea = customType<{ data: Buffer; driverData: Buffer | Uint8Array }>({
  * behalf of a connected coding agent (OAuth token); `user` = a human dashboard/
  * web session action. Derived SERVER-SIDE at the call site — never from client
  * input — so attribution is not spoofable. Defaults to `user` so the existing
- * deploy/rollback rows migrate additively without loss.
+ * deploy/rollback rows migrate additively without loss. `end_user` (M1-01) = a
+ * signed-in end user of an app acting through a platform module on the apps
+ * origin (`ctx.audit`); such rows carry no `actor_user_id` (end users are not
+ * drobek users).
  */
-export const auditActorKindEnum = pgEnum('audit_actor_kind', ['user', 'agent']);
+export const auditActorKindEnum = pgEnum('audit_actor_kind', ['user', 'agent', 'end_user']);
 
 // ── Enums ────────────────────────────────────────────────────────────────────
 
@@ -600,3 +603,57 @@ export const upstreamSecrets = pgTable('upstream_secrets', {
   kekId: text('kek_id').notNull(),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
+
+// ── Platform modules (M1-01, NSO-287) ────────────────────────────────────────
+
+/**
+ * Per-app configuration of one platform module (`@drobek/modules`).
+ *
+ * `config` holds what the agent / owner SET (a sparse JSON object — the
+ * module's `configDefaults` fill the rest when it is read, so a module upgrade
+ * can change a default without rewriting rows). `pending` holds ONE change
+ * waiting for the owner's confirmation in the dashboard (`confirmRequired`):
+ * `{ patch, changes, proposed_at, proposed_by }` — the RFC 7396 merge patch
+ * the agent sent, applied on top of the then-current config when confirmed.
+ * Never contains secret values (module secrets live in `module_secrets`).
+ */
+export const moduleConfigs = pgTable(
+  'module_configs',
+  {
+    appId: text('app_id')
+      .notNull()
+      .references(() => apps.id, { onDelete: 'cascade' }),
+    module: text('module').notNull(),
+    config: jsonb('config').notNull().default({}),
+    pending: jsonb('pending'),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.appId, t.module] })]
+);
+
+/**
+ * A module secret of one app (e.g. an API key a module injects server-side),
+ * AES-256-GCM ENVELOPE-encrypted exactly like `upstream_secrets` (random DEK
+ * wrapped by the KEK from DROBEK_MASTER_KEY, `kek_id` for rotation). Values are
+ * written only from the dashboard (never over MCP), read only inside a module
+ * handler (`ctx.secrets.get`) and never returned by any API — agents see
+ * `hasSecret` only.
+ */
+export const moduleSecrets = pgTable(
+  'module_secrets',
+  {
+    appId: text('app_id')
+      .notNull()
+      .references(() => apps.id, { onDelete: 'cascade' }),
+    module: text('module').notNull(),
+    name: text('name').notNull(),
+    ciphertext: text('ciphertext').notNull(),
+    iv: text('iv').notNull(),
+    authTag: text('auth_tag').notNull(),
+    wrappedDek: text('wrapped_dek').notNull(),
+    kekId: text('kek_id').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.appId, t.module, t.name] })]
+);

@@ -3,9 +3,10 @@
  * get_app, and the same text llms-full.txt and the drobek skill point to. ONE
  * source: MCP, llms-full.txt and SKILL.md never tell different stories.
  *
- * Only what exists today is described: there are no platform modules yet, so
- * none are listed. Publishing is the `publish` tool (M0-06) — only on the
- * user's explicit request.
+ * Only what exists on THIS server is described: the platform modules and
+ * general skills are listed from the live registry (M1-01) — none when the
+ * operator enabled none. Publishing is the `publish` tool (M0-06) — only on
+ * the user's explicit request.
  */
 import { APP_LOCK_TTL_SEC, REASONING_MAX_CHARS, WRITE_FILES_MAX } from './limits.js';
 
@@ -45,8 +46,37 @@ function kib(bytes: number): string {
     : `${Math.round(bytes / 1024)} KiB`;
 }
 
-/** The briefing as Markdown. `limits` = the server's live compile limits. */
-export function renderBriefing(opts: { limits?: Partial<BriefingLimits> } = {}): string {
+/** One entry of the skills list (skill_info() / create_app / get_app). */
+export interface BriefingSkill {
+  name: string;
+  use_when: string;
+}
+
+function skillsSection(skills: BriefingSkill[]): string[] {
+  const rule =
+    '- Before using a backend (login, stored data, forms, email, file uploads, external APIs), call `skill_info` with the skill\'s name and follow it exactly. `skill_info()` lists the skills; `configure_module` sets a module\'s per-app config (sensitive changes wait for the owner\'s confirmation — give the user the `confirm_url`).';
+  if (skills.length === 0) {
+    return [
+      '## Platform modules and skills',
+      '- This server has no platform modules and no skills: there is no server-side data, auth, forms, email or files API. Build self-contained front-ends; keep state in the browser (e.g. localStorage).',
+      rule,
+    ];
+  }
+  return [
+    '## Platform modules and skills',
+    '- `import { drobek } from \'drobek\'` is the platform SDK (no import-map entry needed): `drobek.<module>` for every platform module below. Do not add Firebase, Supabase or other backend SDKs — they are not reachable from an app (CSP) and the platform does the job.',
+    rule,
+    '- Secrets (API keys, tokens) are set by the app owner in the drobek dashboard — never ask for their values, never put them in files or config.',
+    '- Available skills:',
+    ...skills.map((s) => `  - \`${s.name}\` — use when ${s.use_when.replace(/^use when\s+/i, '')}`),
+  ];
+}
+
+/**
+ * The briefing as Markdown. `limits` = the server's live compile limits;
+ * `skills` = this server's skills list (module + general skills).
+ */
+export function renderBriefing(opts: { limits?: Partial<BriefingLimits>; skills?: BriefingSkill[] } = {}): string {
   const L = { ...DEFAULT_BRIEFING_LIMITS, ...opts.limits };
   return [
     '# drobek app briefing',
@@ -71,7 +101,7 @@ export function renderBriefing(opts: { limits?: Partial<BriefingLimits> } = {}):
     `- Limits per version: ${L.maxFiles} files, ${kib(L.maxFileBytes)} per file, ${kib(L.maxTotalBytes)} in total; a build may take ${L.timeoutMs / 1000} s.`,
     '',
     '## Dependencies (drobek.json import map)',
-    '- Bare imports resolve ONLY through drobek.json `imports` → pinned https URLs (esm.sh) that the browser loads. `pkg/sub` maps to the `pkg` URL + `/sub` unless listed itself. An unlisted package is a compile error (`unresolved_import`) that names the line to add.',
+    '- Bare imports resolve ONLY through drobek.json `imports` → pinned https URLs (esm.sh) that the browser loads (the one exception is `drobek`, the platform SDK). `pkg/sub` maps to the `pkg` URL + `/sub` unless listed itself. An unlisted package is a compile error (`unresolved_import`) that names the line to add.',
     '- Pin exact versions. Keep react and react-dom on the same version (`?deps=react@<version>` on react-dom) so the page has one React.',
     '- The react-ts template ships this map:',
     '```json',
@@ -81,8 +111,7 @@ export function renderBriefing(opts: { limits?: Partial<BriefingLimits> } = {}):
     '## Styling',
     '- Write plain CSS and import it from TypeScript. There is no Tailwind (or any other) build step.',
     '',
-    '## Platform modules',
-    '- None are available on this server yet (no server-side data, auth, forms, email or files API). Build self-contained front-ends; keep state in the browser (e.g. localStorage).',
+    ...skillsSection(opts.skills ?? []),
     '',
     '## Rules',
     '- No secrets in files. Every write is scanned for API keys, tokens and private keys and refused with `secret_in_source` (nothing is stored). Apps are public; secrets belong to the app owner in the drobek dashboard.',

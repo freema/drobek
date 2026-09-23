@@ -83,6 +83,15 @@ describe('compile — happy path', () => {
     expect(r.outputs.has('main.js')).toBe(true);
   });
 
+  it('maps `drobek` to the versioned SDK URL it is given (M1-01)', async () => {
+    const r = await compile(
+      new Map([['src/main.ts', "import { drobek } from 'drobek';\nconsole.log(drobek);"]]),
+      { sdkUrl: '/__drobek/sdk.js?v=0123456789abcdef' }
+    );
+    expect(r.ok).toBe(true);
+    expect(text(r.outputs.get('main.js'))).toContain('from "/__drobek/sdk.js?v=0123456789abcdef"');
+  });
+
   it('emits image imports as hashed assets', async () => {
     const png = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
     const r = await compile(
@@ -144,7 +153,7 @@ describe('compile — errors', () => {
   ])('never reaches the disk: import %s → unresolved_import', async (spec, hint) => {
     const r = await compile(new Map([['src/main.ts', `import x from '${spec}';\nconsole.log(x);`]]));
     expect(r.ok).toBe(false);
-    expect(r.errors[0]).toMatchObject({ code: 'unresolved_import', file: 'src/main.ts', line: 1 });
+    expect(r.errors[0]).toMatchObject({ code: 'unresolved_import', file: 'src/main.ts', line: 1, specifier: spec });
     expect(r.errors[0].text).toContain(hint);
     expect(r.errors[0].text).not.toMatch(/ENOENT|no such file/i);
     // The plugin only ever loaded paths from the in-memory map.
@@ -154,6 +163,8 @@ describe('compile — errors', () => {
   it('tells the agent exactly how to add an unknown package', async () => {
     const r = await compile(new Map([['src/main.ts', "import { format } from 'date-fns/format';\nconsole.log(format);"]]));
     expect(r.errors[0].text).toContain('"date-fns": "https://esm.sh/date-fns@<version>"');
+    // The specifier travels structured, so a caller can attach a hint (M1-01: firebase → skill_info('data')).
+    expect(r.errors[0].specifier).toBe('date-fns/format');
   });
 
   it('rejects too many files before esbuild starts', async () => {

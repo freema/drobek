@@ -3,7 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
-  MODULE_INFO_RULE,
+  SKILL_INFO_RULE,
   PLUGIN_INSTALL_COMMAND,
   PLUGIN_MARKETPLACE_ADD_COMMAND,
   PLUGIN_REPO_URL,
@@ -69,8 +69,9 @@ describe('skills/drobek/SKILL.md', () => {
     expect(md).toContain('drobek dashboard');
   });
 
-  it('states the module_info rule verbatim, in the present tense (M0-10)', () => {
-    expect(md).toContain(MODULE_INFO_RULE);
+  it('states the skill_info rule verbatim, in the present tense (M1-01)', () => {
+    expect(md).toContain(SKILL_INFO_RULE);
+    expect(md).not.toContain('module_info');
     for (const future of ['later', 'phase 2', 'coming soon', 'will be available']) {
       expect(md.toLowerCase(), future).not.toContain(future);
     }

@@ -22,14 +22,16 @@ import {
  */
 
 const ALL_TOOLS = [
+  'configure_module',
   'create_app',
   'get_app',
   'list_apps',
   'read_file',
   'restore_version',
+  'skill_info',
   'write_files',
 ];
-const READ_TOOLS = new Set(['list_apps', 'get_app', 'read_file']);
+const READ_TOOLS = new Set(['list_apps', 'get_app', 'read_file', 'skill_info']);
 
 const TEMPLATE_FILES = ['drobek.json', 'index.html', 'src/main.tsx', 'src/styles.css'];
 
@@ -132,7 +134,7 @@ test('core tools: create → broken write → fix → limits → restore → rea
   skipUnlessLocal();
   const a = await mcpClient(page, request, { tag: 'core', scope: 'read write' });
   try {
-    // tools/list under `read write`: exactly the 6 non-publish tools, each with a title + annotations.
+    // tools/list under `read write`: exactly the 8 non-publish tools, each with a title + annotations.
     const listed = (await a.client.listTools()).tools;
     expect(listed.map((t) => t.name).sort()).toEqual(ALL_TOOLS);
     for (const t of listed) {
