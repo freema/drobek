@@ -63,8 +63,12 @@ dependencies). The server applies each module's migrations on start and
 refuses to start on a module it cannot load. Limits come from their env vars
 or, with `LIMITS_PROVIDER_URL` + `LIMITS_PROVIDER_SECRET`, from your own
 signed limits endpoint. The image ships the built-in `auth`, `email`,
-`forms` and `data` (`DROBEK_MODULES=auth,email,forms,data`; `forms` requires
-`email`). Enabling `data` on a server that stored records through the
+`forms`, `data` and `proxy` (`DROBEK_MODULES=auth,email,forms,data,proxy`;
+`forms` requires `email`). Proxy upstreams may only use ports 80 and 443
+(`PROXY_ALLOWED_PORTS`); an upstream on a private address needs its hostname
+on `PROXY_ALLOWED_HOSTS` (keep it empty in production). The old
+`/<ws>/api/proxy/<name>/*` dashboard-host route is gone: an app calls
+`/__drobek/v1/proxy/<name>/*` once the upstream is assigned to it. Enabling `data` on a server that stored records through the
 pre-module Data API imports them (collections → the app's data config,
 access modes → rules, live documents → records) and drops the old
 `collections` / `app_documents` tables in its first migration — back up the

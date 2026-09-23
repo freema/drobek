@@ -9,6 +9,8 @@ import {
   normalizePrefixes,
   pathMatchesPrefix,
   validateBaseUrl,
+  effectivePort,
+  proxyAllowedPorts,
 } from './validate.js';
 
 describe('normalizeMethods', () => {
@@ -119,5 +121,52 @@ describe('buildTargetUrl', () => {
     expect(buildTargetUrl('https://api.example.com', '/', '').href).toBe(
       'https://api.example.com/'
     );
+  });
+});
+
+describe('port allow-list (PHY-76 #8, NSO-297)', () => {
+  const codeOf = (fn: () => unknown): string | undefined => {
+    try {
+      fn();
+    } catch (err) {
+      return err instanceof ProxyError ? err.code : 'not-a-proxy-error';
+    }
+    return undefined;
+  };
+
+  it('accepts the default ports 80 and 443 (implicit or explicit)', () => {
+    expect(validateBaseUrl('https://api.example.com').normalized).toBe('https://api.example.com');
+    expect(validateBaseUrl('http://api.example.com:80/v1').normalized).toBe('http://api.example.com/v1');
+    expect(validateBaseUrl('https://api.example.com:443').normalized).toBe('https://api.example.com');
+    expect(validateBaseUrl('http://api.example.com:443').normalized).toBe('http://api.example.com:443');
+  });
+
+  it('rejects any other port at registration with invalid_request', () => {
+    for (const url of [
+      'https://api.example.com:8080',
+      'http://scan-target.example:6379',
+      'http://x.example:22',
+      'https://x.example:8443',
+    ]) {
+      expect(codeOf(() => validateBaseUrl(url)), url).toBe('invalid_request');
+    }
+    expect(() => validateBaseUrl('https://api.example.com:8080')).toThrow(
+      /port 8080 is not allowed \(allowed: 80, 443\)/
+    );
+  });
+
+  it('PROXY_ALLOWED_PORTS replaces the list; junk falls back to 80/443, never "any"', () => {
+    const env = { PROXY_ALLOWED_PORTS: '443, 8443' } as NodeJS.ProcessEnv;
+    expect(validateBaseUrl('https://x.example:8443', env).normalized).toBe('https://x.example:8443');
+    expect(codeOf(() => validateBaseUrl('http://x.example', env))).toBe('invalid_request');
+    const junk = proxyAllowedPorts({ PROXY_ALLOWED_PORTS: 'x, 0, 70000' } as NodeJS.ProcessEnv);
+    expect([...junk].sort((a, b) => a - b)).toEqual([80, 443]);
+    expect([...proxyAllowedPorts({} as NodeJS.ProcessEnv)].sort((a, b) => a - b)).toEqual([80, 443]);
+  });
+
+  it('effectivePort: explicit port, else the scheme default', () => {
+    expect(effectivePort(new URL('https://x.example'))).toBe(443);
+    expect(effectivePort(new URL('http://x.example'))).toBe(80);
+    expect(effectivePort(new URL('http://x.example:8099'))).toBe(8099);
   });
 });

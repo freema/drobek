@@ -90,11 +90,11 @@ export const TOOL_DOCS: ToolDoc[] = [
     title: 'Get an app',
     scope: 'read (any role in the workspace)',
     description:
-      'Snapshot of one app: everything list_apps shows plus the briefing, the source files of the latest version ({path,size,sha256}), the last 20 versions (number, created_at, actor_kind, reasoning, compile_status), the latest compile errors, the platform modules (per module: its effective config, whether a change waits for the owner\'s confirmation, and which secrets are set — names and hasSecret only, never values), the skills list, and the write lock (holder + expires_at) if someone holds it. Use it to re-orient before editing.',
+      'Snapshot of one app: everything list_apps shows plus the briefing, the source files of the latest version ({path,size,sha256}), the last 20 versions (number, created_at, actor_kind, reasoning, compile_status), the latest compile errors, the platform modules (per module: its effective config, whether a change waits for the owner\'s confirmation, which secrets are set — names and hasSecret only, never values — and the module\'s info, e.g. proxy: the workspace upstreams with registered/assigned/call/hasSecret), the skills list, and the write lock (holder + expires_at) if someone holds it. Use it to re-orient before editing.',
     annotations: READ_ONLY,
     fields: [{ name: 'app_id', type: 'string', required: true, description: 'The app id (from list_apps / create_app).' }],
     returns:
-      '{ app_id, name, slug, workspace, preview_url, published_url?, published_version?, latest_version, compile_status, compile_errors, briefing, files:[{path,size,sha256}], versions:[{number,created_at,actor_kind,reasoning,compile_status}], modules:{<name>:{configured,config,pending,pending_confirmation?,confirm_url?,secrets?:[{name,hasSecret}]}}, skills:[{name,use_when}], lock?:{holder,expires_at} }',
+      '{ app_id, name, slug, workspace, preview_url, published_url?, published_version?, latest_version, compile_status, compile_errors, briefing, files:[{path,size,sha256}], versions:[{number,created_at,actor_kind,reasoning,compile_status}], modules:{<name>:{configured,config,pending,pending_confirmation?,confirm_url?,secrets?:[{name,hasSecret}],info?}}, skills:[{name,use_when}], lock?:{holder,expires_at} }',
     example: { app_id: 'k3v9x0…' },
   },
   {
@@ -205,7 +205,7 @@ export const TOOL_DOCS: ToolDoc[] = [
       },
     ],
     returns:
-      '{ module, applied, config (effective, now in force), pending_confirmation:[string], confirm_url?, secrets_missing?:[name], unchanged?, note? }',
+      '{ module, applied, config (effective, now in force), pending_confirmation:[string], confirm_url?, secrets_missing?:[name], info? (the module\'s secret-free state, e.g. proxy upstreams with hasSecret), unchanged?, note? }',
     example: { app_id: 'k3v9x0…', module: 'hello', config: { excited: true } },
   },
   {

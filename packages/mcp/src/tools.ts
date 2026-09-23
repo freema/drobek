@@ -245,7 +245,10 @@ export async function getApp(ctx: CallContext, args: { app_id: string }) {
   const head = latest.get(app.id);
   const detail = head ? await getVersion(app.id, { id: head.id }) : null;
   const lock = locks.get(app.id);
-  const modules = await ctx.modules.appModules(app.id, (m) => confirmUrl(ctx.modules.deps.env, app.workspaceSlug, app.slug, m));
+  const modules = await ctx.modules.appModules(
+    { id: app.id, slug: app.slug, workspaceId: app.workspaceId },
+    (m) => confirmUrl(ctx.modules.deps.env, app.workspaceSlug, app.slug, m)
+  );
   return {
     ...items[0],
     compile_errors: head?.compileStatus === 'error' ? toCompileOut(head.compileErrors, ctx.modules) : [],

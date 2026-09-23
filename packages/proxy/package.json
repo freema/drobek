@@ -7,10 +7,6 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./dist/index.js"
-    },
-    "./route": {
-      "types": "./src/route.server.ts",
-      "default": "./dist/route.server.js"
     }
   },
   "scripts": {
@@ -21,7 +17,6 @@
   },
   "dependencies": {
     "@drobek/audit": "workspace:*",
-    "@drobek/auth": "workspace:*",
     "@drobek/core": "workspace:*",
     "@drobek/db": "workspace:*",
     "@drobek/tenancy": "workspace:*",

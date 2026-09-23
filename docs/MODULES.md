@@ -36,8 +36,10 @@ image). They load exactly like a third-party module: nothing in the registry
 knows them by name. Built in: [`auth`](#the-built-in-auth-module) (end-user
 sign-in), [`email`](#the-built-in-email-module) (notifications to the app's
 owners, the app's mail policy), [`forms`](#the-built-in-forms-module)
-(form submissions; requires `email`) and [`data`](#the-built-in-data-module)
-(collections of records with per-operation rules).
+(form submissions; requires `email`), [`data`](#the-built-in-data-module)
+(collections of records with per-operation rules) and
+[`proxy`](#the-built-in-proxy-module) (calls to the workspace's registered
+upstreams, secret injected server-side).
 
 Packages resolve from the **server's** install: `<cwd>/package.json` (`/app` in
 the image, `apps/server` in the dev stack), overridable with
@@ -105,15 +107,21 @@ r.post(
     query: z.object({ … }),                          // optional
     rateLimit: { bucket: 'wave', max: 'HELLO_WAVES_PER_MINUTE', windowMs: 60_000, per: 'ip' },
     maxBodyBytes: 1024,                              // default 32 KiB
-    bodyTypes: ['json', 'multipart'],                // default ['json']; multipart = text fields only
+    bodyTypes: ['json', 'multipart'],                // default ['json']; multipart = text fields only; 'raw' = the Buffer
     csrf: 'sdk-header',                              // default; 'same-origin' for sendBeacon-style calls
   },
   async (req, ctx) => ({ waves: 1 })                 // JSON 200, or respond(status, body, headers)
 );
 ```
 
-Patterns support `:param` segments (`/items/:id` → `req.params.id`). Every
-module route goes through the same pipeline:
+Patterns support `:param` segments (`/items/:id` → `req.params.id`) and a
+trailing `*` that captures the rest of the path RAW (percent-encoded, no
+leading slash) in `req.params['*']` (`/:upstream/*`, NSO-297). A handler also
+gets `req.rawQuery` (the query string as sent, repeated keys intact) and
+`req.headers()` (every request header, lower-cased names) — for pass-through
+routes such as the proxy's; `bodyTypes: ['raw']` hands the body over as the
+unparsed `Buffer` (any content type, `body` schema skipped). Every module
+route goes through the same pipeline:
 
 1. match module, method and path: `404 not_found` (an unknown module also
    lists `details.available`) or `405 method_not_allowed` (with `Allow`);
@@ -357,7 +365,14 @@ A newer pending change replaces the older one. Required secrets that are not
 set yet come back as `secrets_missing: ["NAME"]` (names only).
 
 `get_app` returns `modules.<name>`: `{ configured, config, pending,
-pending_confirmation?, confirm_url?, secrets: [{ name, hasSecret }] }`.
+pending_confirmation?, confirm_url?, secrets: [{ name, hasSecret }], info? }`.
+
+`info` is the module's optional `appInfo(view)` (NSO-297): secret-free facts
+about the module's state for the app (`view = { app, config, db, log }`),
+also returned by `configure_module` for the config now in force. The proxy
+module lists the workspace's upstreams with `hasSecret`; never put a secret
+value, another app's data or anything the agent must not see there. A
+throwing `appInfo` is logged and left out.
 
 ### Confirming a pending change
 
@@ -719,6 +734,52 @@ of JSON records with per-operation rules. `skill_info('data')`.
 - **SDK** `drobek.data.collection<T>(name)` → `list(opts)`, `get(id)`,
   `create(fields)`, `update(id, fields)`, `remove(id)`, `exportCsvUrl(opts)`;
   the types (`Doc<T>`, `Filter<T>`, `Page<T>`) are in `/__drobek/sdk.d.ts`.
+
+## The built-in `proxy` module
+
+[`modules/proxy`](../modules/proxy) (`drobek-module-proxy`, NSO-297): an app
+calls an external API without holding its secret. `skill_info('proxy')`.
+
+- **Upstreams are workspace-level** (`@drobek/proxy`, dashboard → workspace →
+  Upstreams, workspace-admin only): `name`, `base_url` (http(s), a public host,
+  **port 80/443 only** — `PROXY_ALLOWED_PORTS`, PHY-76 #8; anything else is
+  `invalid_request` at registration and `ssrf_blocked` at connect time),
+  allowed methods + path prefixes, `auth_type` `none | bearer | header` and
+  the write-only secret (AES-256-GCM envelope under `DROBEK_MASTER_KEY`). Never
+  over MCP.
+- **Config** `{ upstreams: { <name>: { rules: { call }, rateLimit? } } }` (≤ 20):
+  assigns a workspace upstream to the app. `call` = `user` (default) | `admin`
+  | `public` | `none` (alternatives with `|`; `owner` is refused). **Assigning
+  an upstream** and **opening `call` to `public`** need the owner's
+  confirmation.
+- **Route** `GET|HEAD|POST|PUT|PATCH|DELETE /__drobek/v1/proxy/:upstream/*`
+  (raw body ≤ 1 MiB). In order: `X-Drobek-SDK: 1` on every method (`403
+  csrf_rejected` — a call spends the owner's key, so not even a cross-site GET);
+  assigned to the app (`403 forbidden`, `details.reason:
+  upstream_not_assigned`); the `call` rule (`401` / `403`); rate limits —
+  `PROXY_PUBLIC_CALLS_PER_MIN_PER_IP` (10, `public` upstreams only),
+  `PROXY_CALLS_PER_MIN` (60 per app, all upstreams) and the assignment's
+  `rateLimit` (`429 rate_limited` + `Retry-After`); registered in the app's
+  workspace (`404 not_found`, `upstream_not_registered`); then
+  `@drobek/proxy` `forwardToUpstream`: the method/path allow-lists (`405
+  method_not_allowed` / `403 path_not_allowed`, traversal-proof), the secret
+  decrypted in memory and injected (`Authorization: Bearer …` or the named
+  header), the client's `Cookie`, `Authorization`, hop-by-hop, `X-Forwarded-*`,
+  `Forwarded`, `Via`, `Origin`, `Referer`, `Sec-*` and `X-Drobek-SDK` stripped,
+  `Accept-Encoding: identity`; the SSRF guard (DNS resolved once + pinned IP,
+  private/reserved ranges blocked unless on `PROXY_ALLOWED_HOSTS`, ports
+  80/443, **no redirects** — a 3xx is returned as-is, 20 s deadline, 5 MiB
+  response cap → `ssrf_blocked` 403 (audited as `proxy.blocked`) /
+  `upstream_error` 502). The response keeps the upstream's status and headers
+  minus `Set-Cookie`, `Access-Control-*` and framing headers, with
+  `Cache-Control: no-store`.
+- **Info**: `get_app` → `modules.proxy.info.upstreams: [{ name, registered,
+  assigned, call?, rateLimit?, hasSecret, allowedMethods?, allowedPathPrefixes?
+  }]` (never the secret or the base URL).
+- **SDK**: `drobek.proxy.fetch(upstream, path?, init?)` → the standard
+  `Response` (same-origin fetch with `X-Drobek-SDK: 1`).
+- The old dashboard-host route `/:ws/api/proxy/:name/*` (workspace members
+  with a dashboard session) is gone.
 
 ## The example: `drobek-module-hello`
 

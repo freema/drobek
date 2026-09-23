@@ -80,6 +80,9 @@ importers:
       drobek-module-hello:
         specifier: workspace:*
         version: link:../../examples/drobek-module-hello
+      drobek-module-proxy:
+        specifier: workspace:*
+        version: link:../../modules/proxy
       express:
         specifier: ^4.21.2
         version: 4.22.2
@@ -335,6 +338,46 @@ importers:
       react:
         specifier: ^19.0.0
         version: 19.2.7
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.7
+        version: 3.2.6(@types/node@22.20.0)(tsx@4.22.4)
+
+  modules/proxy:
+    dependencies:
+      '@drobek/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@drobek/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@drobek/modules':
+        specifier: workspace:*
+        version: link:../../packages/modules
+      '@drobek/proxy':
+        specifier: workspace:*
+        version: link:../../packages/proxy
+      '@drobek/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
+    devDependencies:
+      '@drobek/compile':
+        specifier: workspace:*
+        version: link:../../packages/compile
+      '@electric-sql/pglite':
+        specifier: ^0.2.17
+        version: 0.2.17
+      '@types/node':
+        specifier: ^22
+        version: 22.20.0
+      drizzle-orm:
+        specifier: ^0.41.0
+        version: 0.41.0(@electric-sql/pglite@0.2.17)(@types/pg@8.20.0)(pg@8.22.0)(postgres@3.4.9)
+      drobek-module-auth:
+        specifier: workspace:*
+        version: link:../auth
       typescript:
         specifier: ^5.7.3
         version: 5.9.3
@@ -773,9 +816,6 @@ importers:
       '@drobek/audit':
         specifier: workspace:*
         version: link:../audit
-      '@drobek/auth':
-        specifier: workspace:*
-        version: link:../auth
       '@drobek/core':
         specifier: workspace:*
         version: link:../core

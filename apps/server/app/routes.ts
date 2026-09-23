@@ -32,7 +32,8 @@ export default [
     'routes/workspaces.$slug.activity.export-csv.ts'
   ),
   // PHY-59 (BFF proxy v1): the workspace-level Upstreams config — register/list/
-  // delete secret-injecting upstreams (workspace-admin/super-admin only).
+  // delete secret-injecting upstreams (workspace-admin/super-admin only). Apps
+  // call them through the `proxy` platform module (NSO-297).
   route('workspaces/:slug/upstreams', 'routes/workspaces.$slug.upstreams.tsx'),
   // U8 (PHY-74 slice / PHY-62): minimal dashboard — apps list, per-app version
   // history + role-gated publish. Static `apps` segment keeps these specific
@@ -77,7 +78,7 @@ export default [
   route('oauth/register', 'routes/oauth.register.ts'),
   route('oauth/authorize', 'routes/oauth.authorize.tsx'),
   route('oauth/token', 'routes/oauth.token.ts'),
-  // PHY-59 (BFF proxy v1): ANY /:ws/api/proxy/:name/* → the secret-injecting,
-  // SSRF-guarded gateway.
-  route(':ws/api/proxy/:name/*', 'routes/proxy.$name.ts'),
+  // NSO-297: the old dashboard-host proxy (`/:ws/api/proxy/:name/*`) is gone —
+  // apps call upstreams on their own host through the `proxy` platform module
+  // (`/__drobek/v1/proxy/:upstream/*`).
 ] satisfies RouteConfig;

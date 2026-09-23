@@ -287,6 +287,16 @@ export interface RecordsAuthority<Config = unknown> {
   csv(view: RecordsView<Config>, query: Omit<RecordsQuery, 'limit' | 'cursor'>): AsyncIterable<string>;
 }
 
+// ── per-app info (get_app / configure_module) ────────────────────────────────
+
+/** One app as a module sees it outside a request: its effective config + services. */
+export interface ModuleAppView<Config = unknown> {
+  app: HookApp;
+  config: Config;
+  db: DB;
+  log: Logger;
+}
+
 // ── the module ───────────────────────────────────────────────────────────────
 
 export interface DrobekModule<Config = unknown> {
@@ -330,6 +340,14 @@ export interface DrobekModule<Config = unknown> {
    * browser. Never called for an app host request.
    */
   records?: RecordsAuthority<Config>;
+  /**
+   * Secret-free facts about this module's state for ONE app, shown to the
+   * app's agents: get_app's `modules.<name>.info` and configure_module's
+   * `info` (after the change). E.g. the proxy module lists the workspace
+   * upstreams the config points at with `hasSecret` — NEVER a secret value,
+   * never another app's data. A throw is logged and the `info` left out.
+   */
+  appInfo?(view: ModuleAppView<Config>): Promise<Record<string, unknown>> | Record<string, unknown>;
   /**
    * Other modules this one needs (by name), e.g. `forms` requires `email`.
    * The server refuses to start when one of them is not in DROBEK_MODULES.
@@ -441,13 +459,21 @@ export interface ModuleRequest<Body = unknown, Query = Record<string, string>> {
   method: string;
   /** Path below `/__drobek/v1/<module>`, always starting with `/`. */
   path: string;
-  /** `:name` segments of the route pattern. */
+  /**
+   * `:name` segments of the route pattern (percent-decoded). A trailing `*`
+   * segment captures the rest of the path in `params['*']` — RAW
+   * (percent-encoded, no leading slash, '' when nothing follows).
+   */
   params: Record<string, string>;
   /** Query parameters (validated when the route declares `query`). */
   query: Query;
+  /** The raw query string, without `?` ('' when none) — repeated keys and encoding intact. */
+  rawQuery: string;
   /** Parsed JSON body (validated when the route declares `body`). */
   body: Body;
   header(name: string): string | null;
+  /** Every request header (lower-cased names; repeated ones joined with `, `). */
+  headers(): Record<string, string>;
   clientIp: string | null;
 }
 
@@ -493,9 +519,12 @@ export interface RouteOptions<Config = unknown, Body = unknown, Query = Record<s
    * Accepted body formats (default `['json']`). `multipart` =
    * `multipart/form-data` with text fields only: the body becomes
    * `{ name: value }` (a repeated name → an array of values); a file part is
-   * refused (415). Anything else is `415 unsupported_media_type`.
+   * refused (415). `raw` = any content type, unparsed: the body is the
+   * `Buffer` (undefined when empty) and `body` validation is skipped — for
+   * pass-through routes (the proxy). Anything else is
+   * `415 unsupported_media_type`.
    */
-  bodyTypes?: Array<'json' | 'multipart'>;
+  bodyTypes?: Array<'json' | 'multipart' | 'raw'>;
   /**
    * CSRF guard for mutating methods (POST/PUT/PATCH/DELETE). Always: an
    * `Origin` header, when present, must be the app host itself. Default

@@ -46,7 +46,7 @@ Actors: **editor** (the person who vibecodes + deploys, via a drobek account) ·
 ## F. Workspace-admin — proxy to a company backend (M2)
 
 1. Workspace-admin registers an **upstream** in the dashboard (base URL pinned + secret) → drobek envelope-encrypts the secret.
-2. A static app calls `/<ws>/api/proxy/<name>/...`; drobek injects auth server-side and forwards (SSRF-guarded). The app never sees the URL or secret.
+2. The agent assigns the upstream to the app (`configure_module('proxy')`, the owner confirms); the app calls `drobek.proxy.fetch('<name>', '/...')` (`/__drobek/v1/proxy/<name>/...`); drobek injects auth server-side and forwards (SSRF-guarded). The app never sees the URL or secret.
 3. An `editor` who isn't allowed to expose a backend is **forced through** this controlled proxy — governance.
 
 ---

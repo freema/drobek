@@ -10,7 +10,8 @@
  *  - `skillList()` / `skillInfo()` — the `skill_info` tool, create_app, get_app;
  *  - `configure()` / `confirm()` / `reject()` — configure_module and the
  *    dashboard's pending-change API;
- *  - `appModules()` — get_app's `modules` (configured, pending, hasSecret);
+ *  - `appModules()` — get_app's `modules` (configured, pending, hasSecret, the
+ *    module's secret-free `info`);
  *  - `compileHint()` — the skill an `unresolved_import` should point at;
  *  - `runHook()` — onAppCreate / onPublish.
  *
@@ -183,6 +184,8 @@ export interface AppModuleState {
   pending_confirmation?: string[];
   confirm_url?: string;
   secrets?: { name: string; hasSecret: boolean }[];
+  /** The module's `appInfo` (secret-free), when it declares one. */
+  info?: Record<string, unknown>;
 }
 
 export interface ConfigureInput {
@@ -203,6 +206,8 @@ export interface ConfigureResult {
   confirm_url?: string;
   secrets_missing?: string[];
   unchanged?: true;
+  /** The module's `appInfo` for the config now in force (secret-free), when it declares one. */
+  info?: Record<string, unknown>;
 }
 
 /** The records store of one app (the module that declares `records`, bound to the app's config). */
@@ -366,7 +371,26 @@ export class ModuleRuntime {
     return m.configDefaults;
   }
 
-  async appModules(appId: string, confirmLink?: (module: string) => string): Promise<Record<string, AppModuleState>> {
+  /**
+   * The secret-free `appInfo` of module `m` for `app` (undefined when the
+   * module has none, or it failed — logged, never fatal).
+   */
+  private async appInfo(m: AnyModule, app: HookApp, config: unknown): Promise<Record<string, unknown> | undefined> {
+    if (!m.appInfo) return undefined;
+    try {
+      return await m.appInfo({ app, config, db: this.deps.db(), log: this.deps.log });
+    } catch (err) {
+      this.deps.log.error('module appInfo failed', { module: m.name, app_id: app.id, error: String((err as Error)?.stack ?? err) });
+      return undefined;
+    }
+  }
+
+  /**
+   * get_app's `modules`. Pass the app (not only its id) to include each
+   * module's `info` (it needs the app's workspace).
+   */
+  async appModules(app: string | HookApp, confirmLink?: (module: string) => string): Promise<Record<string, AppModuleState>> {
+    const appId = typeof app === 'string' ? app : app.id;
     const rows = await readConfigRows(appId, this.modules.map((m) => m.name));
     const out: Record<string, AppModuleState> = {};
     for (const m of this.modules) {
@@ -384,6 +408,10 @@ export class ModuleRuntime {
       if (m.secrets?.length) {
         const set = await secretsSet(appId, m.name, m.secrets.map((s) => s.name));
         state.secrets = m.secrets.map((s) => ({ name: s.name, hasSecret: set.has(s.name) }));
+      }
+      if (typeof app !== 'string') {
+        const info = await this.appInfo(m, app, state.config);
+        if (info) state.info = info;
       }
       out[m.name] = state;
     }
@@ -497,6 +525,8 @@ export class ModuleRuntime {
     if ('unchanged' in result && result.unchanged) out.unchanged = true;
     const missing = await this.missingSecrets(input.app.id, m);
     if (missing.length > 0) out.secrets_missing = missing;
+    const info = await this.appInfo(m, { id: input.app.id, slug: input.app.slug, workspaceId: input.app.workspaceId }, result.config);
+    if (info) out.info = info;
     return out;
   }
 

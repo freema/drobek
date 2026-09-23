@@ -10,8 +10,9 @@
  *      (401 / 403);
  *   4. rate limit (429 `rate_limited`, Retry-After);
  *   5. body: JSON (or, when the route accepts it, text-only
- *      multipart/form-data), size-capped, then the route's zod schema; query
- *      too (400 `invalid_request` with `details: [{ path, message }]`);
+ *      multipart/form-data, or the raw bytes), size-capped, then the route's
+ *      zod schema; query too (400 `invalid_request` with
+ *      `details: [{ path, message }]`);
  *   6. the handler → JSON (or `respond(...)`), `Cache-Control: no-store`.
  *
  * Every failure answers the uniform `{ error, message, details?, hint }`.
@@ -47,13 +48,20 @@ function splitPath(path: string): string[] {
   return path.split('/').filter((s) => s.length > 0);
 }
 
+/** The rest-of-path segment: only as the LAST segment of a pattern (`/:upstream/*`). */
+export const WILDCARD = '*';
+
 export function normalizePattern(pattern: string): string {
   const segs = splitPath(pattern);
-  for (const s of segs) {
+  segs.forEach((s, i) => {
+    if (s === WILDCARD) {
+      if (i !== segs.length - 1) throw new Error(`"*" must be the last segment in "${pattern}"`);
+      return;
+    }
     if (s.startsWith(':') ? !/^:[A-Za-z_][A-Za-z0-9_]*$/.test(s) : !/^[A-Za-z0-9._~-]+$/.test(s)) {
       throw new Error(`invalid route segment "${s}" in "${pattern}"`);
     }
-  }
+  });
   return '/' + segs.join('/');
 }
 
@@ -78,9 +86,13 @@ export function collectRoutes(register: ((r: ModuleRouter) => void) | undefined)
 }
 
 function matchSegments(segments: string[], parts: string[]): Record<string, string> | null {
-  if (segments.length !== parts.length) return null;
+  const wildcard = segments[segments.length - 1] === WILDCARD;
+  const fixed = wildcard ? segments.length - 1 : segments.length;
+  if (wildcard ? parts.length < fixed : parts.length !== fixed) return null;
   const params: Record<string, string> = {};
-  for (let i = 0; i < segments.length; i++) {
+  // The rest stays RAW (percent-encoded): a pass-through route normalizes it itself.
+  if (wildcard) params[WILDCARD] = parts.slice(fixed).join('/');
+  for (let i = 0; i < fixed; i++) {
     const s = segments[i];
     if (s.startsWith(':')) {
       let v: string;
@@ -124,6 +136,8 @@ export interface PipelineRequest {
   path: string;
   query: string;
   header(name: string): string | null;
+  /** Every header, lower-cased names (absent → ModuleRequest.headers() answers {}). */
+  headers?(): Record<string, string>;
   clientIp: string | null;
   /** The raw body up to `limit` bytes; 'too_large' past it. */
   readBody(limit: number): Promise<Buffer | 'too_large' | null>;
@@ -200,10 +214,11 @@ function validate<T>(schema: ZodType<T> | undefined, value: unknown, what: strin
   return r.data;
 }
 
-async function readRequestBody(req: PipelineRequest, limit: number, types: ReadonlyArray<'json' | 'multipart'>): Promise<unknown> {
+async function readRequestBody(req: PipelineRequest, limit: number, types: ReadonlyArray<'json' | 'multipart' | 'raw'>): Promise<unknown> {
   const raw = await req.readBody(limit);
   if (raw === 'too_large') throw new ModuleError('payload_too_large', `The request body exceeds ${limit} bytes.`);
   if (raw === null || raw.length === 0) return undefined;
+  if (types.includes('raw')) return raw;
   const header = req.header('content-type');
   const type = (header ?? '').split(';')[0].trim().toLowerCase();
   if (type === 'multipart/form-data' && types.includes('multipart')) return parseMultipart(raw, header);
@@ -265,18 +280,27 @@ export async function runRoute(
     }
 
     const method = req.method.toUpperCase();
+    const types = opts.bodyTypes ?? ['json'];
     const body =
       method === 'GET' || method === 'HEAD'
         ? undefined
-        : validate(
-            opts.body,
-            await readRequestBody(req, opts.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES, opts.bodyTypes ?? ['json']),
-            'request body'
-          );
+        : types.includes('raw')
+          ? await readRequestBody(req, opts.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES, types)
+          : validate(opts.body, await readRequestBody(req, opts.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES, types), 'request body');
     const query = validate(opts.query, parseQuery(req.query), 'query');
 
     const out = await route.handler(
-      { method, path: req.path, params, query, body, header: (n) => req.header(n), clientIp: req.clientIp },
+      {
+        method,
+        path: req.path,
+        params,
+        query,
+        rawQuery: req.query,
+        body,
+        header: (n) => req.header(n),
+        headers: () => (req.headers ? req.headers() : {}),
+        clientIp: req.clientIp,
+      },
       ctx
     );
     if (isResponse(out)) {

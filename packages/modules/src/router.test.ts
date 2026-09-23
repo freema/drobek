@@ -139,3 +139,48 @@ describe('body types', () => {
     expect(await t.request('POST', '/in', { body: { a: 1 } })).toMatchObject({ status: 200, body: { got: { a: 1 } } });
   });
 });
+
+describe('wildcard routes, raw bodies, all headers (NSO-297)', () => {
+  it('a trailing * captures the RAW rest of the path; * elsewhere is refused', () => {
+    const routes = collectRoutes((r) => {
+      r.get('/:upstream/*', () => 1);
+      r.get('/fixed', () => 2);
+    });
+    expect(matchRoute(routes, 'GET', '/echo/v1/a%2Fb/c')).toMatchObject({ kind: 'route', params: { upstream: 'echo', '*': 'v1/a%2Fb/c' } });
+    expect(matchRoute(routes, 'GET', '/echo')).toMatchObject({ kind: 'route', params: { upstream: 'echo', '*': '' } });
+    expect(matchRoute(routes, 'HEAD', '/echo/x')).toMatchObject({ kind: 'route', params: { '*': 'x' } });
+    expect(matchRoute(routes, 'POST', '/echo/x')).toEqual({ kind: 'method_not_allowed', allow: ['GET'] });
+    expect(() => normalizePattern('/*/x')).toThrow(/last segment/);
+  });
+
+  it("bodyTypes ['raw']: any content type arrives as the Buffer; handlers see every header and the raw query", async () => {
+    const { defineModule, z } = await import('./index.js');
+    const pass = defineModule({
+      name: 'pass',
+      version: '1.0.0',
+      skill: { useWhen: 'x', markdown: '# x' },
+      configSchema: z.object({}),
+      configDefaults: {},
+      routes(r) {
+        r.post('/:name/*', { rule: 'public', bodyTypes: ['raw'], maxBodyBytes: 8 }, (q) => ({
+          isBuffer: Buffer.isBuffer(q.body),
+          text: Buffer.isBuffer(q.body) ? q.body.toString('utf8') : null,
+          rest: q.params['*'],
+          raw: q.rawQuery,
+          custom: q.headers()['x-custom'],
+        }));
+      },
+    });
+    const t = createModuleTestContext(pass);
+    const ok = await t.request('POST', '/n/a/b', {
+      rawBody: 'a=1&b=2',
+      query: { q: '1' },
+      headers: { 'content-type': 'application/x-www-form-urlencoded', 'x-custom': 'yes' },
+    });
+    expect(ok).toMatchObject({ status: 200, body: { isBuffer: true, text: 'a=1&b=2', rest: 'a/b', raw: 'q=1', custom: 'yes' } });
+    const big = await t.request('POST', '/n/x', { rawBody: '123456789', headers: { 'content-type': 'text/plain' } });
+    expect(big.status).toBe(413);
+    const empty = await t.request('POST', '/n/x', {});
+    expect(empty.body).toMatchObject({ isBuffer: false, text: null });
+  });
+});

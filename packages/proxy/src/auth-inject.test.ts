@@ -88,7 +88,47 @@ describe('buildForwardHeaders — strips client credentials + hop-by-hop', () =>
   });
 });
 
+describe('buildForwardHeaders — browser metadata never reaches the upstream (NSO-297)', () => {
+  it('drops origin / referer / sec-* / x-drobek-sdk / forwarded / via; asks for identity encoding', () => {
+    const out = buildForwardHeaders(
+      headers({
+        origin: 'https://notes.apps.example',
+        referer: 'https://notes.apps.example/page',
+        'sec-fetch-site': 'same-origin',
+        'sec-ch-ua': '"Chromium"',
+        'x-drobek-sdk': '1',
+        forwarded: 'for=1.2.3.4',
+        via: '1.1 caddy',
+        'x-forwarded-port': '443',
+        'accept-encoding': 'gzip, br',
+        'content-type': 'application/json',
+        'anthropic-version': '2023-06-01',
+      }),
+      { authType: 'bearer', secret: 'S' }
+    );
+    for (const gone of ['origin', 'referer', 'sec-fetch-site', 'sec-ch-ua', 'x-drobek-sdk', 'forwarded', 'via', 'x-forwarded-port']) {
+      expect(out[gone], gone).toBeUndefined();
+    }
+    expect(out['accept-encoding']).toBe('identity');
+    expect(out['content-type']).toBe('application/json');
+    expect(out['anthropic-version']).toBe('2023-06-01');
+    expect(out['authorization']).toBe('Bearer S');
+  });
+});
+
 describe('filterResponseHeaders', () => {
+  it("strips the upstream's CORS grants (NSO-297)", () => {
+    const out = filterResponseHeaders([
+      ['content-type', 'text/plain'],
+      ['Access-Control-Allow-Origin', '*'],
+      ['access-control-allow-credentials', 'true'],
+      ['location', 'https://elsewhere.example/'],
+    ]);
+    expect(out['Access-Control-Allow-Origin']).toBeUndefined();
+    expect(out['access-control-allow-credentials']).toBeUndefined();
+    expect(out['location']).toBe('https://elsewhere.example/');
+  });
+
   it('strips hop-by-hop + set-cookie from the upstream response', () => {
     const out = filterResponseHeaders([
       ['content-type', 'application/json'],

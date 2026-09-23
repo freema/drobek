@@ -33,6 +33,7 @@ export {
   type MailPrepareInput,
   type ModuleContext,
   type ModuleHooks,
+  type ModuleAppView,
   type ModuleLimit,
   type ModuleMigrations,
   type ModuleRequest,

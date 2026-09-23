@@ -218,6 +218,7 @@ export function createModuleTestContext(module: AnyModule, opts: ModuleTestOptio
           path,
           query: qs,
           header: (n) => headers[n.toLowerCase()] ?? null,
+          headers: () => ({ ...headers }),
           clientIp: init.clientIp ?? '127.0.0.1',
           readBody: async (limit) => (raw && raw.length > limit ? 'too_large' : raw),
         },

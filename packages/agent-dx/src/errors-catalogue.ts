@@ -240,6 +240,30 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     meaning: 'Five wrong codes were entered for this address; the code is dead.',
     fix: 'Request a new code (drobek.auth.sendCode); <LoginGate> goes back to the e-mail step by itself.',
   },
+  {
+    code: 'path_not_allowed',
+    surface: 'module route (proxy) 403',
+    meaning: "The path is outside the upstream's allowed path prefixes (or climbs out of them with ../ or an encoded slash).",
+    fix: "get_app → modules.proxy.info.upstreams[].allowedPathPrefixes lists the allowed prefixes; ask the workspace admin to widen them in the dashboard if the app really needs another path.",
+  },
+  {
+    code: 'ssrf_blocked',
+    surface: 'module route (proxy) 403',
+    meaning: 'The upstream resolves to a private/internal address or uses a port other than 80/443 — drobek never connects there.',
+    fix: 'The workspace admin must register the upstream with a public host on port 80/443. Nothing to fix in the app code.',
+  },
+  {
+    code: 'upstream_error',
+    surface: 'module route (proxy) 502',
+    meaning: 'The upstream could not be reached, timed out (20 s) or answered more than 5 MiB.',
+    fix: 'Show "try again later" in the app; ask for smaller responses (pagination, limits). Never retry in a tight loop.',
+  },
+  {
+    code: 'config_error',
+    surface: 'module route (proxy) 500',
+    meaning: "The upstream's stored secret cannot be used (missing, or the server's master key changed).",
+    fix: 'The workspace admin re-registers the upstream with its secret in the dashboard. Never ask for the secret in chat.',
+  },
   // ── OAuth 2.1 connect flow ────────────────────────────────────────────────
   {
     code: 'invalid redirect_uri (redirect_uri mismatch)',

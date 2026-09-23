@@ -143,9 +143,10 @@ const styles = {
 } as const;
 
 export default function UpstreamsRoute() {
-  const { workspace, upstreams } = useLoaderData<typeof loader>();
+  const { workspace, upstreams, allowedPorts } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const error = actionData && 'error' in actionData ? actionData.error : null;
+  const errorCode = actionData && 'code' in actionData ? actionData.code : undefined;
 
   return (
     <main style={styles.main}>
@@ -162,12 +163,13 @@ export default function UpstreamsRoute() {
       <p style={styles.hint}>
         Register a backend your apps can reach through drobek WITHOUT holding the
         secret. drobek is the SSRF-guarded gateway: it injects the credential and
-        forwards only the methods + path prefixes you allow. Callers must be signed
-        in as a member of this workspace.
+        forwards only the methods + path prefixes you allow, to ports {allowedPorts.join('/')} only.
+        An app may call an upstream once its proxy config assigns it (you confirm
+        that per app); the config also says which of the app’s users may call it.
       </p>
 
       {error ? (
-        <p style={styles.error} data-testid="upstream-error">
+        <p style={styles.error} data-testid="upstream-error" data-error-code={errorCode}>
           {error}
         </p>
       ) : null}
@@ -238,7 +240,7 @@ export default function UpstreamsRoute() {
             data-testid="field-name"
           />
           <label htmlFor="up-base" style={styles.label}>
-            Base URL (https, public host)
+            Base URL (https, public host, port {allowedPorts.join(' or ')})
           </label>
           <input
             id="up-base"

@@ -78,7 +78,7 @@ Static (no-auth) app: **path-based** `(<host>)/<workspace>/app/<slug>`. **Auth a
 JS over the REST API: **data CRUD + query** and **end-user auth**. Delivered as a **versioned `<script>` from the drobek host** (`<host>/sdk@1.js`, no build); `@drobek/sdk` npm maybe later. In `packages/sdk`.
 
 ## 12. Proxy (Variant 2)
-BFF outbound proxy: a `workspace-admin`/`super-admin` (configurable per workspace) registers an upstream (`base_url` pinned, **envelope-encrypted secrets**, KEK from `DROBEK_MASTER_KEY`); app calls `/<ws>/api/proxy/<name>/*`, drobek injects auth, scopes to workspace+app, owns CORS, rate-limits. **SSRF-guarded** (allowlist host, resolve DNS once, block private ranges, no redirects). Built **right after** Data API (M2).
+BFF outbound proxy: a `workspace-admin`/`super-admin` (configurable per workspace) registers an upstream (`base_url` pinned, **envelope-encrypted secrets**, KEK from `DROBEK_MASTER_KEY`); the upstream is assigned per app through the `proxy` module (owner-confirmed), the app calls `/__drobek/v1/proxy/<name>/*` (NSO-297; ports 80/443 only), drobek injects auth, scopes to workspace+app, owns CORS, rate-limits. **SSRF-guarded** (allowlist host, resolve DNS once, block private ranges, no redirects). Built **right after** Data API (M2).
 
 ## 13. Quotas & lifecycle
 Conservative configurable quotas (≈ app 25 MB / 200 files / 5 MB per file / data 10 MB per app + write rate-limit). Lifecycle: inactive apps **hibernate → delete**, thresholds configurable.

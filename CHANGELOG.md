@@ -2,6 +2,30 @@
 
 ## Unreleased (`next`)
 
+### The built-in `proxy` module (NSO-297)
+
+- **`modules/proxy`** (`drobek-module-proxy`): `/__drobek/v1/proxy/:upstream/*`
+  (GET/HEAD/POST/PUT/PATCH/DELETE, raw body 1 MiB) forwards to a workspace
+  upstream with its secret injected server-side. Config `{ upstreams: { <name>:
+  { rules: { call }, rateLimit? } } }` assigns an upstream to the app —
+  assigning one and `call: 'public'` wait for the owner's confirmation.
+  `X-Drobek-SDK: 1` on every call, `PROXY_CALLS_PER_MIN` (60 per app),
+  `PROXY_PUBLIC_CALLS_PER_MIN_PER_IP` (10) for public upstreams, an optional
+  per-assignment `rateLimit`. `get_app` / `configure_module` show
+  `info.upstreams[]` with `hasSecret` (never the value). SDK
+  `drobek.proxy.fetch(upstream, path, init)`.
+- **`@drobek/proxy`**: port allow-list 80/443 (`PROXY_ALLOWED_PORTS`, PHY-76 #8)
+  at registration (`invalid_request`) and at connect time (`ssrf_blocked`);
+  20 s forward deadline, 5 MiB response cap; the client's `Origin`, `Referer`,
+  `Forwarded`, `Via`, `Sec-*` are no longer forwarded, `Accept-Encoding` is
+  forced to `identity`; upstream `Access-Control-*` headers are dropped and
+  responses are `Cache-Control: no-store`. **Removed:** the dashboard-host
+  route `/<ws>/api/proxy/<name>/*`, `PROXY_RATE_LIMIT` /
+  `PROXY_RATE_WINDOW_MS`, `canCallProxy`.
+- **`@drobek/modules`**: trailing `*` route segments (`req.params['*']`),
+  `bodyTypes: ['raw']`, `req.headers()`, `req.rawQuery`, and the optional
+  `appInfo(view)` hook surfaced as `modules.<name>.info`.
+
 ### The built-in `forms` and `email` modules (NSO-295)
 
 - **`@drobek/email`** (new core package): the SMTP transport and the e-mail

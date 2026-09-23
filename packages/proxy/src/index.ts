@@ -1,8 +1,9 @@
 /**
- * @drobek/proxy — the PHY-59 BFF proxy v1 (authed workspace members). A static
- * app reaches a backend WITHOUT holding the secret; drobek is the controlled,
- * SSRF-guarded, secret-injecting gateway. React-free server logic; the thin
- * `/:ws/api/proxy/:name/*` route lives under the `@drobek/proxy/route` subpath.
+ * @drobek/proxy — the secret-injecting, SSRF-guarded gateway core (PHY-59).
+ * Upstreams (base_url, allow-lists, envelope-encrypted secret) are registered
+ * per WORKSPACE in the dashboard; apps reach them through the `proxy` platform
+ * module (`/__drobek/v1/proxy/:upstream/*` on the app host, NSO-297), which
+ * decides who may call and calls `forwardToUpstream`. React-free server logic.
  */
 export {
   ProxyError,
@@ -27,6 +28,9 @@ export {
   normalizePrefixes,
   pathMatchesPrefix,
   validateBaseUrl,
+  DEFAULT_PROXY_ALLOWED_PORTS,
+  effectivePort,
+  proxyAllowedPorts,
   type AllowedMethod,
   type ValidatedBaseUrl,
 } from './validate.js';
@@ -36,7 +40,7 @@ export {
   type InjectAuthInput,
   type UpstreamAuthType,
 } from './auth-inject.js';
-export { canCallProxy, canConfigureUpstreams } from './authz.js';
+export { canConfigureUpstreams } from './authz.js';
 export {
   decryptSecret,
   encryptSecret,
@@ -45,17 +49,13 @@ export {
 } from './crypto.server.js';
 export {
   DEFAULT_CONNECT_TIMEOUT_MS,
+  DEFAULT_FORWARD_DEADLINE_MS,
   DEFAULT_MAX_RESPONSE_BYTES,
   proxyAllowedHosts,
   ssrfSafeForward,
   type SsrfForwardInput,
   type SsrfForwardResult,
 } from './ssrf.server.js';
-export {
-  DEFAULT_PROXY_RATE_LIMIT,
-  DEFAULT_PROXY_RATE_WINDOW_MS,
-  enforceProxyRateLimit,
-} from './rate-limit.js';
 export {
   PROXY_AUDIT_ACTIONS,
   PROXY_SUBJECT_TYPE,
@@ -67,14 +67,12 @@ export {
   getUpstream,
   listUpstreams,
   resolveUpstreamForForward,
+  upstreamSummaries,
+  UPSTREAM_NAME_RE,
   type ConfigureActor,
   type CreateUpstreamInput,
   type UpstreamRecord,
+  type UpstreamSummary,
   type UpstreamView,
 } from './upstreams.server.js';
-export { forwardProxy, type ForwardInput } from './forward.server.js';
-export {
-  handleProxyRequest,
-  proxyParamsOf,
-  type ProxyRouteParams,
-} from './route.server.js';
+export { forwardToUpstream, type ForwardInput, type ForwardResult } from './forward.server.js';

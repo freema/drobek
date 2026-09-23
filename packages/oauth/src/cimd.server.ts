@@ -24,7 +24,7 @@
  */
 import { createHash } from 'node:crypto';
 import { getRedis } from '@drobek/core';
-import { ProxyError, ssrfSafeForward } from '@drobek/proxy';
+import { ProxyError, effectivePort, ssrfSafeForward } from '@drobek/proxy';
 import {
   CIMD_CACHE_TTL_SEC,
   CIMD_FAILURE_TTL_SEC,
@@ -166,6 +166,9 @@ export const fetchCimdDocument: CimdFetcher = async (url, { allowPrivate }) => {
         allowedHosts: allowPrivate
           ? new Set([url.hostname.replace(/^\[|\]$/g, '').toLowerCase()])
           : new Set<string>(),
+        // The one port checkCimdClientIdUrl vouched for (443, or the dev
+        // origin's) — never the proxy's PROXY_ALLOWED_PORTS.
+        allowedPorts: new Set([effectivePort(url)]),
         timeoutMs: CIMD_TIMEOUT_MS,
         maxResponseBytes: CIMD_MAX_BYTES,
         deadlineMs: CIMD_TIMEOUT_MS,

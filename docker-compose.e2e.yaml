@@ -59,6 +59,8 @@ services:
     command: ['node', '/e2e/proxy-echo.mjs']
     environment:
       PORT: '8099'
+      # Upstreams may only use ports 80/443 (NSO-297): the proxy e2e uses port 80.
+      EXTRA_PORTS: '80'
     volumes:
       - ./tests-e2e:/e2e:ro
     healthcheck:
@@ -94,13 +96,13 @@ services:
       OTP_EMAIL_COOLDOWN_MS: '5000'
       OTP_GLOBAL_HOURLY_MAX: '1000'
       DATA_MAX_DOCS_PER_APP: '5'
-      PROXY_RATE_LIMIT: '15'
       BEACON_RATE_LIMIT: '30'
       # M1-01: the example module, loaded from the image's own dependencies;
       # M1-02: the built-in auth module (relaxed sign-in limits, as in dev);
       # M1-04: the built-in email + forms modules (limits as in dev);
       # M1-03: the built-in data module (DATA_MAX_DOCS_PER_APP 5 above).
-      DROBEK_MODULES: hello,auth,email,forms,data
+      # M1-06: the built-in proxy module (PROXY_CALLS_PER_MIN default 60).
+      DROBEK_MODULES: hello,auth,email,forms,data,proxy
       HELLO_WAVES_PER_MINUTE: '5'
       AUTH_CODES_PER_IP_15MIN: '100'
       AUTH_CODES_PER_IP_DAY: '500'

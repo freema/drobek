@@ -17,6 +17,7 @@ import {
   createUpstream,
   deleteUpstream,
   listUpstreams,
+  proxyAllowedPorts,
   ProxyError,
   proxyErrorStatus,
 } from '@drobek/proxy';
@@ -45,6 +46,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     workspace: { slug: access.workspace.slug, name: access.workspace.name },
     upstreams,
     role: access.effectiveRole,
+    // PHY-76 #8: the destination ports a base_url may use (PROXY_ALLOWED_PORTS, default 80/443).
+    allowedPorts: [...proxyAllowedPorts()].sort((a, b) => a - b),
   };
 }
 
@@ -86,7 +89,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
     return data({ error: 'Unsupported action.' }, { status: 400 });
   } catch (err) {
     if (err instanceof ProxyError) {
-      return data({ error: err.message }, { status: proxyErrorStatus(err.code) });
+      // `code` is the stable reason (e.g. invalid_request for a base_url port
+      // outside 80/443 — PHY-76 #8); the message is secret-free.
+      return data({ error: err.message, code: err.code }, { status: proxyErrorStatus(err.code) });
     }
     throw err;
   }

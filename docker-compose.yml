@@ -67,6 +67,9 @@ services:
     command: ['node', 'tests-e2e/proxy-echo.mjs']
     environment:
       PORT: '8099'
+      # NSO-297: upstreams may only use ports 80/443 — the proxy e2e registers
+      # `http://proxy-echo` (port 80); 8099 stays for the CIMD mock + healthcheck.
+      EXTRA_PORTS: '80'
     volumes:
       - .:/repo
     healthcheck:
@@ -161,10 +164,6 @@ services:
       # mock on proxy-echo). Everything else must be public https; ignored when
       # NODE_ENV=production. Never set this in production.
       OAUTH_CIMD_DEV_ORIGINS: ${OAUTH_CIMD_DEV_ORIGINS:-http://proxy-echo:8099}
-      # PHY-59: per-(workspace,user,upstream) proxy call rate-limit. LOW dev cap so
-      # the proxy-flood e2e trips 429 quickly (prod default 120).
-      PROXY_RATE_LIMIT: ${PROXY_RATE_LIMIT:-15}
-      PROXY_RATE_WINDOW_MS: ${PROXY_RATE_WINDOW_MS:-60000}
       # M1-01 (NSO-287): platform modules. The dev stack runs the example
       # module `hello` (examples/drobek-module-hello — a dependency of
       # apps/server, loaded as the package `drobek-module-hello`). Its wave
@@ -176,7 +175,9 @@ services:
       # limit) and `forms` (requires email) modules. FORMS_SUBMITS_PER_IP_HOUR
       # keeps its default 10 — every local request shares the `unknown` IP
       # bucket, so the forms e2e resets that bucket before it counts.
-      DROBEK_MODULES: ${DROBEK_MODULES:-hello,auth,email,forms,data}
+      # M1-06 (NSO-297): the built-in `proxy` (per-app upstream assignment;
+      # PROXY_CALLS_PER_MIN keeps its default 60 — the e2e trips the 61st call).
+      DROBEK_MODULES: ${DROBEK_MODULES:-hello,auth,email,forms,data,proxy}
       HELLO_WAVES_PER_MINUTE: ${HELLO_WAVES_PER_MINUTE:-5}
       AUTH_CODES_PER_IP_15MIN: ${AUTH_CODES_PER_IP_15MIN:-100}
       AUTH_CODES_PER_IP_DAY: ${AUTH_CODES_PER_IP_DAY:-500}
@@ -227,6 +228,7 @@ services:
       - /repo/modules/email/node_modules
       - /repo/modules/forms/node_modules
       - /repo/modules/data/node_modules
+      - /repo/modules/proxy/node_modules
     healthcheck:
       test: ['CMD-SHELL', 'wget -q -T 5 -O - "http://127.0.0.1:$${PORT:-3000}/healthz" || exit 1']
       interval: 5s

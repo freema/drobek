@@ -160,6 +160,43 @@ describe('skills', () => {
     ]);
   });
 
+  it("appInfo (NSO-297): get_app's modules.<name>.info and configure_module's info; a failing appInfo is left out", async () => {
+    const seen: unknown[] = [];
+    const infoMod = defineModule<{ things: string[] }>({
+      name: 'infomod',
+      version: '1.0.0',
+      skill: { useWhen: 'x', markdown: '# x' },
+      configSchema: z.object({ things: z.array(z.string()).default([]) }),
+      configDefaults: { things: [] },
+      appInfo: async (view) => {
+        seen.push(view.app);
+        return { count: view.config.things.length, hasSecret: false };
+      },
+    });
+    const broken = defineModule({
+      name: 'broken',
+      version: '1.0.0',
+      skill: { useWhen: 'x', markdown: '# x' },
+      configSchema: z.object({}),
+      configDefaults: {},
+      appInfo: () => {
+        throw new Error('boom');
+      },
+    });
+    const log = logger();
+    const r = new ModuleRuntime({ modules: [infoMod, broken], skills: [], sdk: rt.sdk, deps: { ...rt.deps, log } });
+    const out = await r.configure({ app, module: 'infomod', patch: { things: ['a', 'b'] }, actorUserId: userId });
+    expect(out.info).toEqual({ count: 2, hasSecret: false });
+    const hook = { id: app.id, slug: app.slug, workspaceId: app.workspaceId };
+    const mods = await r.appModules(hook);
+    expect(mods.infomod.info).toEqual({ count: 2, hasSecret: false });
+    expect(mods.broken.info).toBeUndefined();
+    expect(log.error).toHaveBeenCalledWith('module appInfo failed', expect.objectContaining({ module: 'broken' }));
+    expect(seen).toContainEqual(hook);
+    // By id only (no workspace at hand): no info, the rest unchanged.
+    expect((await r.appModules(app.id)).infomod.info).toBeUndefined();
+  });
+
   it('compileHint: backend imports → the matching skill when active, else skill_info()', () => {
     expect(rt.compileHint({ code: 'unresolved_import', specifier: 'firebase/firestore' })).toBe('skill_info()');
     expect(rt.compileHint({ code: 'unresolved_import', specifier: 'react' })).toBeUndefined();

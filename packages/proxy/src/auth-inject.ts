@@ -25,7 +25,11 @@ const HOP_BY_HOP = new Set([
  * Client → upstream: additionally stripped. `host` is set by the HTTP client to
  * the upstream host; `cookie`/`authorization` carry the drobek session + client
  * credentials and must NEVER leak to the upstream; `content-length` is recomputed
- * by the client; `x-forwarded-*` would leak internal topology.
+ * by the client; `x-forwarded-*` / `forwarded` / `via` / `x-real-ip` would leak
+ * internal topology and the end user's IP; `origin` / `referer` / `sec-*` are the
+ * BROWSER's view of the app host (APIs that refuse browser calls key on them);
+ * `x-drobek-sdk` is drobek's own CSRF marker. `accept-encoding` is replaced by
+ * `identity`: the gateway relays the body as-is and drops `content-encoding`.
  */
 const STRIP_TO_UPSTREAM = new Set([
   ...HOP_BY_HOP,
@@ -33,22 +37,37 @@ const STRIP_TO_UPSTREAM = new Set([
   'cookie',
   'authorization',
   'content-length',
+  'accept-encoding',
+  'forwarded',
+  'via',
   'x-forwarded-for',
   'x-forwarded-host',
   'x-forwarded-proto',
+  'x-forwarded-port',
   'x-real-ip',
+  'origin',
+  'referer',
+  'x-drobek-sdk',
 ]);
+
+/** Browser-only request metadata (`sec-fetch-*`, `sec-ch-ua*`, …) never crosses the gateway. */
+function strippedToUpstream(name: string): boolean {
+  return STRIP_TO_UPSTREAM.has(name) || name.startsWith('sec-');
+}
 
 /**
  * Upstream → client: strip hop-by-hop + framing headers (the drobek HTTP client
- * re-frames the response) and any Set-Cookie from the upstream (it must not be
- * planted in the drobek origin).
+ * re-frames the response), any Set-Cookie from the upstream (it must not be
+ * planted in the app's origin) and the upstream's CORS grants
+ * (`access-control-*`: the upstream must not open the app host's proxy route
+ * to other origins).
  */
 const STRIP_FROM_UPSTREAM = new Set([
   ...HOP_BY_HOP,
   'content-length',
   'content-encoding',
   'set-cookie',
+  'set-cookie2',
 ]);
 
 export interface InjectAuthInput {
@@ -69,8 +88,11 @@ export function buildForwardHeaders(
 ): Record<string, string> {
   const out: Record<string, string> = {};
   incoming.forEach((value, key) => {
-    if (!STRIP_TO_UPSTREAM.has(key.toLowerCase())) out[key.toLowerCase()] = value;
+    const name = key.toLowerCase();
+    if (!strippedToUpstream(name)) out[name] = value;
   });
+  // The body is relayed verbatim (never decoded), so ask for it unencoded.
+  out['accept-encoding'] = 'identity';
 
   if (inject.authType === 'bearer') {
     if (!inject.secret) {
@@ -97,7 +119,8 @@ export function filterResponseHeaders(
 ): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [k, v] of entries) {
-    if (!STRIP_FROM_UPSTREAM.has(k.toLowerCase())) out[k] = v;
+    const name = k.toLowerCase();
+    if (!STRIP_FROM_UPSTREAM.has(name) && !name.startsWith('access-control-')) out[k] = v;
   }
   return out;
 }

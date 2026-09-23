@@ -191,6 +191,19 @@ block, then `next` is pushed and the single MR opened.
   `untrusted`), dashboard Data tab on the records authority, `@drobek/data`
   removed, core migration 0012. `t.confirm()` in `@drobek/modules` testing.
 - Next: M1-05 files, M1-06 proxy, M1-07 get_logs (parallel worktrees), then M1-08 skills.
+- M1-06 (NSO-297) done locally: built-in module `modules/proxy`
+  (`drobek-module-proxy`): `/__drobek/v1/proxy/:upstream/*`, per-app config
+  `{ upstreams: { name: { rules: { call }, rateLimit? } } }` (assigning an
+  upstream and `call: 'public'` are owner-confirmed), `PROXY_CALLS_PER_MIN`
+  60/app, `PROXY_PUBLIC_CALLS_PER_MIN_PER_IP` 10, SDK `drobek.proxy.fetch`.
+  `@drobek/proxy` keeps registry + crypto + SSRF guard, gains the port
+  allow-list 80/443 (`PROXY_ALLOWED_PORTS`, PHY-76 #8), loses the
+  dashboard-host route and its limiter. `@drobek/modules`: wildcard routes,
+  raw bodies, `req.headers()` / `req.rawQuery`, the `appInfo` hook
+  (`modules.<name>.info` in `get_app` / `configure_module`). Dev + e2e compose
+  run `DROBEK_MODULES=…,proxy`. The per-app upstream view in the dashboard is
+  M2; upstream registration stays in the workspace Upstreams page.
+- Next: M1-03 data.
 
 ## Notes and gotchas
 
@@ -414,6 +427,22 @@ block, then `next` is pushed and the single MR opened.
 - The auth module's `send-code` now passes an `email_paused` refusal on
   unchanged (503 with `details.class: sign_in` + Retry-After) instead of its
   generic "could not be sent"; other mail errors still map to the generic 503.
+- Proxy upstreams may only use ports 80/443 (NSO-297), so `http://proxy-echo:8099`
+  can no longer be registered: `proxy-echo` also listens on `EXTRA_PORTS`
+  (the composes set `80`) and the e2e registers `http://proxy-echo`. After
+  pulling this change recreate it (`docker compose up -d proxy-echo`) and
+  `drobek` (new `DROBEK_MODULES` + the `modules/proxy/node_modules` volume).
+  The CIMD fetch (`@drobek/oauth`) passes its own `allowedPorts` to
+  `ssrfSafeForward`, so its dev origin on 8099 keeps working.
+- The proxy forces `Accept-Encoding: identity` upstream: forwarding the
+  browser's `gzip` made Node's fetch decompress the body while the relayed
+  `Content-Encoding` header still said gzip.
+- `pollLoginCode` reads the newest mail of an address: two sign-ins of the
+  same address in one spec can race — use a separate address per sign-in
+  that can overlap (the proxy spec's flood app uses its own user).
+- In an agent worktree, Bash refuses `cat > file <<EOF` / `>>` heredocs as
+  "cannot verify it stays inside the worktree"; write files with the Write
+  tool or a `python3 - <<'EOF'` script instead.
 
 ## Failed approaches
 

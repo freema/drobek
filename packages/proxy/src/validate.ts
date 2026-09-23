@@ -2,7 +2,7 @@
  * PURE request/registration validation (PHY-59) — no db, no network; unit
  * tested. Covers: method allow-list, path-prefix allow-list with traversal-proof
  * normalization, and base_url validation at REGISTRATION (http(s) only + not a
- * private/reserved IP literal + no userinfo).
+ * private/reserved IP literal + no userinfo + a port on the allow-list).
  */
 import { ProxyError } from './errors.js';
 import { isBlockedIp } from './ip-classify.js';
@@ -121,6 +121,30 @@ export function assertPathAllowed(path: string, prefixes: string[]): void {
   }
 }
 
+/** Destination ports an upstream may use unless the operator sets PROXY_ALLOWED_PORTS (PHY-76 #8). */
+export const DEFAULT_PROXY_ALLOWED_PORTS: readonly number[] = [80, 443];
+
+/**
+ * The destination-port allow-list (PHY-76 #8): `PROXY_ALLOWED_PORTS` (comma/space
+ * separated, 1–65535), default 80 + 443. Invalid entries are ignored; an empty
+ * or all-invalid value falls back to the default — never "any port".
+ */
+export function proxyAllowedPorts(env: NodeJS.ProcessEnv = process.env): Set<number> {
+  const ports = String(env.PROXY_ALLOWED_PORTS ?? '')
+    .split(/[,\s]+/)
+    .map((p) => p.trim())
+    .filter((p) => /^\d{1,5}$/.test(p))
+    .map(Number)
+    .filter((n) => n >= 1 && n <= 65535);
+  return new Set(ports.length > 0 ? ports : DEFAULT_PROXY_ALLOWED_PORTS);
+}
+
+/** The port a URL connects to: the explicit one, else the scheme default (80 / 443). */
+export function effectivePort(url: URL): number {
+  if (url.port !== '') return Number(url.port);
+  return url.protocol === 'https:' ? 443 : 80;
+}
+
 export interface ValidatedBaseUrl {
   url: URL;
   /** origin + path, no trailing slash, no query/hash — what we persist. */
@@ -128,12 +152,17 @@ export interface ValidatedBaseUrl {
 }
 
 /**
- * Validate a base_url at REGISTRATION: http(s) only, no userinfo, and the host
- * must NOT be a private/reserved IP LITERAL or `localhost`. (Hostnames that
- * resolve to a private IP are caught at forward time by the DNS-pinned SSRF
- * guard — this is the cheap literal check that also rejects the obvious cases.)
+ * Validate a base_url at REGISTRATION: http(s) only, no userinfo, the host
+ * must NOT be a private/reserved IP LITERAL or `localhost`, and the port must
+ * be on the allow-list (80/443 by default, PROXY_ALLOWED_PORTS — PHY-76 #8; the
+ * SSRF guard re-asserts it at connect time). (Hostnames that resolve to a
+ * private IP are caught at forward time by the DNS-pinned SSRF guard — this is
+ * the cheap literal check that also rejects the obvious cases.)
  */
-export function validateBaseUrl(raw: string): ValidatedBaseUrl {
+export function validateBaseUrl(
+  raw: string,
+  env: NodeJS.ProcessEnv = process.env
+): ValidatedBaseUrl {
   let url: URL;
   try {
     url = new URL(String(raw).trim());
@@ -145,6 +174,14 @@ export function validateBaseUrl(raw: string): ValidatedBaseUrl {
   }
   if (url.username !== '' || url.password !== '') {
     throw new ProxyError('invalid_request', 'base_url must not contain credentials');
+  }
+  const allowedPorts = proxyAllowedPorts(env);
+  const port = effectivePort(url);
+  if (!allowedPorts.has(port)) {
+    throw new ProxyError(
+      'invalid_request',
+      `base_url port ${port} is not allowed (allowed: ${[...allowedPorts].sort((a, b) => a - b).join(', ')})`
+    );
   }
   const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
   if (host === '' || host === 'localhost' || host.endsWith('.localhost')) {

@@ -1,18 +1,22 @@
 /**
- * forwardProxy (PHY-59) — the BFF forward orchestrator. Resolves the upstream,
- * rate-limits the caller, enforces the method + path allow-lists, decrypts the
- * secret IN MEMORY, injects it, and forwards through the SSRF-safe choke point,
- * returning the upstream response with drobek-owned CORS + `no-store`.
+ * forwardToUpstream — the gateway core of one proxied call (PHY-59, NSO-297).
+ * Principal-agnostic: WHO may call WHICH upstream is decided by the caller (the
+ * `proxy` platform module checks the app's config, rule and rate limits on the
+ * app host). This enforces what belongs to the upstream itself:
  *
- * The caller's workspace MEMBERSHIP is authorized by the route BEFORE this runs
- * (v1 = any member). This module trusts the passed workspaceId/userId.
+ *   1. the method + path allow-lists (path normalized traversal-proof);
+ *   2. the secret, decrypted IN MEMORY and injected (never logged or returned);
+ *   3. the client's Cookie / Authorization / hop-by-hop / browser headers
+ *      stripped (auth-inject.ts);
+ *   4. the SSRF-safe forward: resolve once + pinned IP, port allow-list, no
+ *      redirects, connect timeout, 20 s deadline, 5 MiB response cap;
+ *   5. the response relayed with filtered headers + `Cache-Control: no-store`.
  */
 import { buildForwardHeaders, filterResponseHeaders } from './auth-inject.js';
 import { decryptSecret } from './crypto.server.js';
 import { ProxyError } from './errors.js';
-import { enforceProxyRateLimit } from './rate-limit.js';
-import { ssrfSafeForward } from './ssrf.server.js';
-import { resolveUpstreamForForward } from './upstreams.server.js';
+import { DEFAULT_FORWARD_DEADLINE_MS, ssrfSafeForward } from './ssrf.server.js';
+import type { UpstreamRecord } from './upstreams.server.js';
 import {
   assertMethodAllowed,
   assertPathAllowed,
@@ -21,63 +25,44 @@ import {
 } from './validate.js';
 
 export interface ForwardInput {
-  workspaceId: string;
-  userId: string;
-  /** Upstream name from `/:ws/api/proxy/:name/*`. */
-  name: string;
-  /** The `*` splat — the subpath under the upstream. */
+  upstream: UpstreamRecord;
+  /** The client's method (HEAD included). */
+  method: string;
+  /** The subpath under the upstream (raw, percent-encoded; normalized here). */
   subpath: string;
-  request: Request;
+  /** The client's raw query string, with or without `?` ('' for none). */
+  search: string;
+  /** The client's request headers (filtered here). */
+  headers: Headers;
+  body?: Buffer;
   env?: NodeJS.ProcessEnv;
+  /** Wall-clock cap of the exchange (default 20 s). */
+  deadlineMs?: number;
+}
+
+export interface ForwardResult {
+  status: number;
+  headers: Record<string, string>;
+  /** null for HEAD / 204 / 304. */
+  body: Buffer | null;
+  /** The address the gateway connected to (non-secret; for logs). */
+  resolvedIp: string;
 }
 
 const BODYLESS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
-/** Drobek-owned CORS: reflect Origin ONLY when it is the drobek app origin. */
-function corsFor(request: Request, env: NodeJS.ProcessEnv): Record<string, string> {
-  const origin = request.headers.get('Origin');
-  if (!origin) return {};
-  const allow = [env.PUBLIC_ORIGIN, env.PUBLIC_APP_URL]
-    .filter((v): v is string => Boolean(v))
-    .map((v) => v.replace(/\/$/, ''));
-  if (allow.includes(origin.replace(/\/$/, ''))) {
-    return {
-      'Access-Control-Allow-Origin': origin,
-      'Access-Control-Allow-Credentials': 'true',
-      Vary: 'Origin',
-    };
-  }
-  // Not the drobek origin → do NOT reflect (blocks cross-origin reads).
-  return { Vary: 'Origin' };
-}
-
-export async function forwardProxy(input: ForwardInput): Promise<Response> {
+export async function forwardToUpstream(input: ForwardInput): Promise<ForwardResult> {
   const env = input.env ?? process.env;
-  const method = input.request.method.toUpperCase();
+  const method = input.method.toUpperCase();
+  const upstream = input.upstream;
 
-  // 1) Resolve the upstream (404 if the name is unknown in this workspace).
-  const upstream = await resolveUpstreamForForward(input.workspaceId, input.name);
-
-  // 2) Rate-limit per (workspace, user, upstream) — bound abuse early.
-  await enforceProxyRateLimit(
-    {
-      workspaceId: input.workspaceId,
-      userId: input.userId,
-      upstreamId: upstream.id,
-    },
-    env
-  );
-
-  // 3) Method + path allow-lists (path normalized traversal-proof).
+  // 1) Method + path allow-lists.
   assertMethodAllowed(method, upstream.allowedMethods);
   const normalizedPath = normalizeForwardPath(input.subpath);
   assertPathAllowed(normalizedPath, upstream.allowedPathPrefixes);
+  const target = buildTargetUrl(upstream.baseUrl, normalizedPath, input.search);
 
-  // 4) Build the target URL = base_url + subpath + query.
-  const search = new URL(input.request.url).search;
-  const target = buildTargetUrl(upstream.baseUrl, normalizedPath, search);
-
-  // 5) Decrypt the secret IN MEMORY (fail closed on a wrong/rotated KEK).
+  // 2) Decrypt the secret IN MEMORY (fail closed on a wrong/rotated KEK).
   let secret: string | null = null;
   if (upstream.authType !== 'none') {
     if (!upstream.secret) {
@@ -86,34 +71,37 @@ export async function forwardProxy(input: ForwardInput): Promise<Response> {
     secret = decryptSecret(upstream.secret, env);
   }
 
-  // 6) Build outgoing headers — strips client Cookie/Authorization + hop-by-hop,
-  //    injects the upstream auth.
-  const headers = buildForwardHeaders(input.request.headers, {
+  // 3) Outgoing headers: client credentials + browser metadata stripped, auth injected.
+  const headers = buildForwardHeaders(input.headers, {
     authType: upstream.authType,
     authHeaderName: upstream.authHeaderName,
     secret,
   });
+  const body =
+    !BODYLESS.has(method) && input.body && input.body.length > 0 ? input.body : undefined;
 
-  // 7) Read the client body (bodyless methods carry none).
-  let body: Buffer | undefined;
-  if (!BODYLESS.has(method)) {
-    const buf = Buffer.from(await input.request.arrayBuffer());
-    if (buf.length > 0) body = buf;
-  }
+  // 4) SSRF-safe forward (pinned IP, port allow-list, no redirects, deadline, size cap).
+  const result = await ssrfSafeForward({
+    url: target,
+    method,
+    headers,
+    body,
+    env,
+    deadlineMs: input.deadlineMs ?? DEFAULT_FORWARD_DEADLINE_MS,
+  });
 
-  // 8) SSRF-safe forward (no redirects, pinned IP, timeout).
-  const result = await ssrfSafeForward({ url: target, method, headers, body });
-
-  // 9) Relay the upstream response with drobek CORS + no-store.
+  // 5) Relay: filtered headers, never cached.
   const outHeaders = filterResponseHeaders(Object.entries(result.headers));
+  for (const k of Object.keys(outHeaders)) {
+    if (k.toLowerCase() === 'cache-control') delete outHeaders[k];
+  }
   outHeaders['Cache-Control'] = 'no-store';
   outHeaders['X-Content-Type-Options'] = 'nosniff';
-  Object.assign(outHeaders, corsFor(input.request, env));
-
-  // A 204/304 (and HEAD) response must carry no body per the Fetch spec.
   const nullBody = result.status === 204 || result.status === 304 || method === 'HEAD';
-  return new Response(nullBody ? null : new Uint8Array(result.body), {
+  return {
     status: result.status,
     headers: outHeaders,
-  });
+    body: nullBody ? null : result.body,
+    resolvedIp: result.resolvedIp,
+  };
 }

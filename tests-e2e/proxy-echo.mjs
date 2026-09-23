@@ -7,6 +7,10 @@
 // tests/mcp-cimd.spec.ts; the drobek service allows exactly this origin via
 // OAUTH_CIMD_DEV_ORIGINS (dev/test only).
 //
+// NSO-297: upstreams may only use ports 80/443, so it ALSO listens on every
+// port in EXTRA_PORTS (the composes set 80): the proxy-module e2e registers
+// `http://proxy-echo` (port 80), the CIMD mock + healthcheck keep PORT (8099).
+//
 // It runs as a compose service (node:22-alpine, the repo bind-mounted) on the
 // drobek network, hostname `proxy-echo`. Because a Docker container resolves to a
 // PRIVATE IP, the SSRF guard would block it — so the web service allow-lists this
@@ -14,6 +18,11 @@
 import http from 'node:http';
 
 const PORT = Number(process.env.PORT || 8099);
+const EXTRA_PORTS = String(process.env.EXTRA_PORTS || '')
+  .split(/[,\s]+/)
+  .filter((p) => /^\d+$/.test(p))
+  .map(Number)
+  .filter((p) => p !== PORT);
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
@@ -80,3 +89,10 @@ server.listen(PORT, () => {
   // eslint-disable-next-line no-console
   console.log(`proxy-echo listening on :${PORT}`);
 });
+for (const port of EXTRA_PORTS) {
+  // The same handler on another port (a second listener of one server is not allowed).
+  http.createServer((req, res) => server.emit('request', req, res)).listen(port, () => {
+    // eslint-disable-next-line no-console
+    console.log(`proxy-echo also listening on :${port}`);
+  });
+}

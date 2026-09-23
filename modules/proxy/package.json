@@ -1,0 +1,42 @@
+{
+  "name": "drobek-module-proxy",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Built-in drobek platform module: an app calls external APIs through its workspace's registered upstreams — the secret is injected server-side, per-app assignment + call rule, SSRF guard, port allow-list, rate limits.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "SKILL.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest",
+    "test:run": "vitest run"
+  },
+  "dependencies": {
+    "@drobek/core": "workspace:*",
+    "@drobek/db": "workspace:*",
+    "@drobek/modules": "workspace:*",
+    "@drobek/proxy": "workspace:*",
+    "@drobek/sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "@drobek/compile": "workspace:*",
+    "@electric-sql/pglite": "^0.2.17",
+    "@types/node": "^22",
+    "drizzle-orm": "^0.41.0",
+    "drobek-module-auth": "workspace:*",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.7"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

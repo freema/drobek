@@ -4,6 +4,9 @@
  *
  * Contract:
  *   1. Resolve the host to an IP ONCE (dns.lookup).
+ *   1b. The destination PORT must be on the allow-list (80/443 by default,
+ *      `PROXY_ALLOWED_PORTS`, PHY-76 #8) — re-asserted here, at connect time,
+ *      not only at registration.
  *   2. Classify that IP — REJECT private/loopback/link-local/CGNAT/reserved/
  *      multicast (see ip-classify) UNLESS the host is on the operator's explicit
  *      `PROXY_ALLOWED_HOSTS` allow-list (empty by default → fully strict; a
@@ -14,16 +17,20 @@
  *      DNS-rebind cannot swap the IP between the check and the connect.
  *   4. NO redirect following — a 3xx is returned verbatim, never auto-followed to
  *      an internal target.
- *   5. A per-request connect/idle timeout + a response-size cap.
+ *   5. A per-request connect/idle timeout, an optional wall-clock deadline and
+ *      a response-size cap.
  */
 import { lookup as dnsLookup, type LookupAddress } from 'node:dns';
 import http from 'node:http';
 import https from 'node:https';
 import { ProxyError } from './errors.js';
 import { isBlockedIp } from './ip-classify.js';
+import { effectivePort, proxyAllowedPorts } from './validate.js';
 
 export const DEFAULT_CONNECT_TIMEOUT_MS = 8_000;
-export const DEFAULT_MAX_RESPONSE_BYTES = 10 * 1024 * 1024; // 10 MiB
+export const DEFAULT_MAX_RESPONSE_BYTES = 5 * 1024 * 1024; // 5 MiB
+/** Wall-clock cap of one proxied exchange (the app-host proxy passes it as deadlineMs). */
+export const DEFAULT_FORWARD_DEADLINE_MS = 20_000;
 
 /** Parse the operator's private-host allow-list (comma/space separated hostnames). */
 export function proxyAllowedHosts(env: NodeJS.ProcessEnv = process.env): Set<string> {
@@ -54,6 +61,11 @@ export interface SsrfForwardInput {
    * set — usually empty — so the proxy's allow-list never widens it.
    */
   allowedHosts?: ReadonlySet<string>;
+  /**
+   * Replaces the `PROXY_ALLOWED_PORTS` allow-list (default 80/443) for this
+   * call — e.g. the CIMD fetch passes the one port its URL check vouched for.
+   */
+  allowedPorts?: ReadonlySet<number>;
   /** Overrides PROXY_CONNECT_TIMEOUT_MS (connect/idle socket timeout). */
   timeoutMs?: number;
   /** Overrides PROXY_MAX_RESPONSE_BYTES (enforced while streaming). */
@@ -92,6 +104,12 @@ export async function ssrfSafeForward(
   const env = input.env ?? process.env;
   const host = input.url.hostname.replace(/^\[|\]$/g, '');
   const allowed = input.allowedHosts ?? proxyAllowedHosts(env);
+  const ports = input.allowedPorts ?? proxyAllowedPorts(env);
+
+  if (!ports.has(effectivePort(input.url))) {
+    // Checked before any DNS lookup: a non-web port is never contacted.
+    throw new ProxyError('ssrf_blocked', 'upstream port is not allowed');
+  }
 
   const { address, family } = await resolveOnce(host);
 

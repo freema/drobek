@@ -126,6 +126,13 @@ export function createAppsHostMiddleware(opts: AppsHostOptions = {}): NodeMiddle
       path: path.startsWith('/') ? path : `/${path}`,
       query: q === -1 ? '' : rawUrl.slice(q + 1),
       header: (name) => headerOf(req, name),
+      headers: () => {
+        const out: Record<string, string> = {};
+        for (const [k, v] of Object.entries(req.headers)) {
+          if (v !== undefined) out[k.toLowerCase()] = Array.isArray(v) ? v.join(', ') : v;
+        }
+        return out;
+      },
       clientIp:
         // getClientIp only reads headers (X-Real-IP, then the rightmost XFF hop).
         getClientIp({ headers: { get: (n: string) => headerOf(req, n) } } as unknown as Request) ?? null,

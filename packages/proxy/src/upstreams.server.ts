@@ -4,9 +4,9 @@
  * envelope-encrypted at rest and is NEVER returned by any function here — the
  * safe view exposes only `hasSecret`.
  */
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { actorKindForSurface, writeAudit } from '@drobek/audit';
-import { getDb, upstreamSecrets, upstreams } from '@drobek/db';
+import { getDb, upstreamSecrets, upstreams, type DB } from '@drobek/db';
 import type { WorkspaceRole } from '@drobek/tenancy';
 import { PROXY_AUDIT_ACTIONS, PROXY_SUBJECT_TYPE } from './audit-actions.js';
 import { canConfigureUpstreams } from './authz.js';
@@ -19,7 +19,9 @@ import {
   validateBaseUrl,
 } from './validate.js';
 
-const NAME_RE = /^[a-z][a-z0-9_-]{0,63}$/i;
+/** Upstream names: 1–64 chars, a letter first, then letters, digits, `-` or `_`. */
+export const UPSTREAM_NAME_RE = /^[a-z][a-z0-9_-]{0,63}$/i;
+const NAME_RE = UPSTREAM_NAME_RE;
 
 /** Safe, secret-free upstream view (dashboard/API). */
 export interface UpstreamView {
@@ -66,6 +68,8 @@ export interface CreateUpstreamInput extends ConfigureActor {
   allowedAppIds?: string[];
   /** Plaintext secret — encrypted here, never persisted or returned in the clear. */
   secret?: string | null;
+  /** PROXY_ALLOWED_PORTS / DROBEK_MASTER_KEY source (default process.env). */
+  env?: NodeJS.ProcessEnv;
 }
 
 function assertConfigure(actor: ConfigureActor): void {
@@ -106,7 +110,7 @@ export async function createUpstream(
       'name must be 1–64 chars, start with a letter, and contain only letters, digits, "-" or "_"'
     );
   }
-  const { normalized: baseUrl } = validateBaseUrl(input.baseUrl);
+  const { normalized: baseUrl } = validateBaseUrl(input.baseUrl, input.env);
   const allowedMethods = normalizeMethods(input.allowedMethods);
   const allowedPathPrefixes = normalizePrefixes(input.allowedPathPrefixes);
 
@@ -133,7 +137,7 @@ export async function createUpstream(
     }
   }
 
-  const envelope = secretPlain !== '' ? encryptSecret(secretPlain) : null;
+  const envelope = secretPlain !== '' ? encryptSecret(secretPlain, input.env) : null;
 
   const db = getDb();
   const existing = await db
@@ -272,15 +276,61 @@ export async function deleteUpstream(
 }
 
 /**
+ * Secret-free facts about the upstreams of one workspace, for an app of it
+ * (the proxy module's get_app / configure_module info): the name, whether a
+ * secret is stored (`hasSecret` — NEVER the value) and the allow-lists an app
+ * must stay inside. NOT role-gated: the caller authorized a drobek account
+ * for an app of this workspace already.
+ */
+export interface UpstreamSummary {
+  name: string;
+  hasSecret: boolean;
+  allowedMethods: string[];
+  allowedPathPrefixes: string[];
+}
+
+export async function upstreamSummaries(
+  workspaceId: string,
+  db: DB = getDb()
+): Promise<UpstreamSummary[]> {
+  const rows = await db
+    .select({
+      id: upstreams.id,
+      name: upstreams.name,
+      allowedMethods: upstreams.allowedMethods,
+      allowedPathPrefixes: upstreams.allowedPathPrefixes,
+    })
+    .from(upstreams)
+    .where(eq(upstreams.workspaceId, workspaceId))
+    .orderBy(upstreams.name);
+  if (rows.length === 0) return [];
+  const withSecret = new Set(
+    (
+      await db
+        .select({ upstreamId: upstreamSecrets.upstreamId })
+        .from(upstreamSecrets)
+        .where(inArray(upstreamSecrets.upstreamId, rows.map((r) => r.id)))
+    ).map((r) => r.upstreamId)
+  );
+  return rows.map((r) => ({
+    name: r.name,
+    hasSecret: withSecret.has(r.id),
+    allowedMethods: r.allowedMethods,
+    allowedPathPrefixes: r.allowedPathPrefixes,
+  }));
+}
+
+/**
  * Resolve an upstream by (workspaceId, name) for the FORWARD path — includes the
  * persisted secret envelope for an in-memory decrypt. NOT role-gated here: the
- * caller's workspace membership is authorized upstream by the route.
+ * caller (the proxy module) has checked the app's own config and rule first.
  */
 export async function resolveUpstreamForForward(
   workspaceId: string,
-  name: string
+  name: string,
+  db: DB = getDb()
 ): Promise<UpstreamRecord> {
-  const rows = await getDb()
+  const rows = await db
     .select()
     .from(upstreams)
     .where(and(eq(upstreams.workspaceId, workspaceId), eq(upstreams.name, name)))
@@ -289,7 +339,7 @@ export async function resolveUpstreamForForward(
   if (!row) {
     throw new ProxyError('not_found', 'upstream not found');
   }
-  const secRows = await getDb()
+  const secRows = await db
     .select()
     .from(upstreamSecrets)
     .where(eq(upstreamSecrets.upstreamId, row.id))

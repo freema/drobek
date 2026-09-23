@@ -58,6 +58,8 @@ export interface AppRequest {
   /** Raw query string without the `?` ('' when none). */
   query: string;
   header(name: string): string | null;
+  /** Every request header, lower-cased names (platform paths: the proxy module forwards them, filtered). */
+  headers?(): Record<string, string>;
   /** The urlencoded form body (unlock POST only; capped by the adapter). null when unreadable. */
   readForm(): Promise<URLSearchParams | null>;
   /** The raw body up to `limit` bytes ('too_large' past it; platform paths only). */
