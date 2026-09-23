@@ -168,7 +168,7 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
   {
     code: 'payload_too_large',
     surface: 'module route 413 (DrobekError)',
-    meaning: 'The request body is bigger than the route allows — for data, one record over the per-record size limit (`details.limit`).',
+    meaning: 'The request body is bigger than the route allows — for data, one record over the per-record size limit; for files, the file over the per-file cap (`details.limit` is `maxBytes` or `FILES_MAX_BYTES`, `details.value` the cap in bytes). Nothing was stored.',
     fix: 'Send less (the module skill states the size limits).',
   },
   {
@@ -179,9 +179,9 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
   },
   {
     code: 'quota_exceeded',
-    surface: 'module route (data) 409 (DrobekError)',
+    surface: 'module route (data, files) 409 (DrobekError)',
     meaning:
-      'The app reached a storage limit — the number of records across all its collections, or their total size (`details.limit` names it, `details.value` is the limit; skill_info(\'data\') lists them). Nothing was stored.',
+      'The app reached a storage limit — for files, FILES_QUOTA_PER_APP (the total bytes of its stored files, `details.used`); for data, the number of records across all its collections, or their total size (`details.limit` names it, `details.value` is the limit; skill_info(\'data\') lists them). Nothing was stored.',
     fix: 'Delete records the app no longer needs (query_data finds them), or tell the user the app is full; the server operator sets the limits.',
   },
   {
@@ -189,7 +189,14 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     surface: 'module route 415 (DrobekError)',
     meaning:
       'A body was sent that is not JSON (routes that also take multipart/form-data, like forms, accept text fields only — a file part is refused).',
-    fix: 'Use the SDK, which sends JSON; with fetch set Content-Type: application/json. Forms take no files.',
+    fix: 'Use the SDK, which sends JSON; with fetch set Content-Type: application/json. Forms take no files; a files upload must be multipart/form-data with one file (drobek.files.upload does that).',
+  },
+  {
+    code: 'unsupported_type',
+    surface: 'module route (files) 415 (DrobekError)',
+    meaning:
+      'The uploaded file is not a type the app accepts. The type is decided from the bytes (PNG, JPEG, GIF, WebP, PDF, SVG, CSV), never from the name or the declared type — an HTML page renamed to .png is refused (`details.allowed` lists the accepted types; `details.type` is the detected type when it is known but not allowed). Nothing was stored.',
+    fix: "Upload an image, a PDF or a CSV; to accept fewer types set allowedTypes with configure_module('files').",
   },
   {
     code: 'conflict',

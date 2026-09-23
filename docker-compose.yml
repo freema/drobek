@@ -139,6 +139,14 @@ services:
       DATA_MAX_BYTES_PER_APP: ${DATA_MAX_BYTES_PER_APP:-52428800}
       DATA_WRITE_RATE_LIMIT: ${DATA_WRITE_RATE_LIMIT:-120}
       DATA_WRITE_RATE_WINDOW_MS: ${DATA_WRITE_RATE_WINDOW_MS:-60000}
+      # M1-05: the files module. Uploads live on the files_data volume
+      # (FILES_DIR). QUOTA_PER_APP is a deliberately LOW dev cap (2 MiB) so the
+      # files e2e quota case exceeds it quickly; the per-file cap stays the
+      # production 10 MiB (prod quota default: 500 MiB — see .env.example).
+      FILES_DIR: ${FILES_DIR:-/data/files}
+      FILES_MAX_BYTES: ${FILES_MAX_BYTES:-10485760}
+      FILES_QUOTA_PER_APP: ${FILES_QUOTA_PER_APP:-2097152}
+      FILES_UPLOAD_RATE_LIMIT: ${FILES_UPLOAD_RATE_LIMIT:-60}
       # PHY-123 (agent loop v1): the PUBLIC error beacon. The per-app+IP rate
       # limit is a deliberately LOW dev cap so the beacon-flood e2e trips 429
       # quickly (prod default is 60). BEACON_APP_RATE_LIMIT is a second,
@@ -177,7 +185,8 @@ services:
       # bucket, so the forms e2e resets that bucket before it counts.
       # M1-06 (NSO-297): the built-in `proxy` (per-app upstream assignment;
       # PROXY_CALLS_PER_MIN keeps its default 60 — the e2e trips the 61st call).
-      DROBEK_MODULES: ${DROBEK_MODULES:-hello,auth,email,forms,data,proxy}
+      # M1-05 (NSO-296): the built-in `files` (uploads on the files_data volume).
+      DROBEK_MODULES: ${DROBEK_MODULES:-hello,auth,email,forms,data,proxy,files}
       HELLO_WAVES_PER_MINUTE: ${HELLO_WAVES_PER_MINUTE:-5}
       AUTH_CODES_PER_IP_15MIN: ${AUTH_CODES_PER_IP_15MIN:-100}
       AUTH_CODES_PER_IP_DAY: ${AUTH_CODES_PER_IP_DAY:-500}
@@ -229,6 +238,9 @@ services:
       - /repo/modules/forms/node_modules
       - /repo/modules/data/node_modules
       - /repo/modules/proxy/node_modules
+      - /repo/modules/files/node_modules
+      # M1-05: the files module's uploads (FILES_DIR).
+      - files_data:/data/files
     healthcheck:
       test: ['CMD-SHELL', 'wget -q -T 5 -O - "http://127.0.0.1:$${PORT:-3000}/healthz" || exit 1']
       interval: 5s
@@ -246,3 +258,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  files_data:

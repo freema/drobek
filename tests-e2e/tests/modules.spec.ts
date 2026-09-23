@@ -189,7 +189,7 @@ test.describe('platform modules — the hello example (M1-01) @local', () => {
     expect(wrong.headers.allow).toBe('POST');
     const nope = await hostRequest(host, '/__drobek/v1/nope');
     expect(nope.status).toBe(404);
-    expect(JSON.parse(nope.body)).toMatchObject({ error: 'not_found', details: { available: ['hello', 'auth', 'email', 'forms', 'data'] } });
+    expect(JSON.parse(nope.body)).toMatchObject({ error: 'not_found', details: { available: ['hello', 'auth', 'email', 'forms', 'data', 'files'] } });
 
     // HELLO_WAVES_PER_MINUTE=5 per visitor IP (the browser test already waved once).
     const statuses: number[] = [];

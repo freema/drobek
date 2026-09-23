@@ -3,7 +3,7 @@
  * runRoute production uses): CSRF, rules, rate limit, validation, errors.
  */
 import { describe, expect, it } from 'vitest';
-import { collectRoutes, matchRoute, normalizePattern } from './router.js';
+import { collectRoutes, matchRoute, normalizePattern, runRoute } from './router.js';
 import { createModuleTestContext } from './testing.js';
 import { echo } from './test/fixtures.js';
 
@@ -182,5 +182,76 @@ describe('wildcard routes, raw bodies, all headers (NSO-297)', () => {
     expect(big.status).toBe(413);
     const empty = await t.request('POST', '/n/x', {});
     expect(empty.body).toMatchObject({ isBuffer: false, text: null });
+  });
+});
+
+describe("bodyTypes: ['file'] (a streamed upload)", () => {
+  const B = 'xBoundary';
+  const routes = collectRoutes((r) => {
+    r.post('/up', { bodyTypes: ['file'] }, async (req) => {
+      const f = await req.file();
+      let n = 0;
+      for await (const c of f.stream) n += c.length;
+      return { name: f.filename, bytes: n, fields: f.fields, body: req.body ?? null };
+    });
+    r.post('/ignore', { bodyTypes: ['file'] }, () => ({ ok: true }));
+    r.post('/json', async (req) => req.file());
+  });
+  const body = Buffer.from(`--${B}\r\nContent-Disposition: form-data; name="n"\r\n\r\n1\r\n--${B}\r\nContent-Disposition: form-data; name="f"; filename="a.bin"\r\n\r\n${'z'.repeat(100_000)}\r\n--${B}--\r\n`);
+  const run = async (path: string, json = false) => {
+    let offset = 0;
+    const state = { returned: false, readBody: false };
+    const source: AsyncIterableIterator<Buffer> = {
+      [Symbol.asyncIterator]: () => source,
+      next: async () => {
+        if (state.returned || offset >= body.length) return { value: undefined, done: true };
+        const c = body.subarray(offset, offset + 1000);
+        offset += c.length;
+        return { value: c, done: false };
+      },
+      return: async () => {
+        state.returned = true;
+        return { value: undefined, done: true };
+      },
+    };
+    const hit = matchRoute(routes, 'POST', path);
+    if (hit.kind !== 'route') throw new Error('no route');
+    const res = await runRoute(
+      {
+        method: 'POST',
+        path,
+        query: '',
+        header: (n) =>
+          ({ 'content-type': json ? 'application/json' : `multipart/form-data; boundary=${B}`, 'x-drobek-sdk': '1' })[n.toLowerCase()] ?? null,
+        clientIp: null,
+        readBody: async () => {
+          state.readBody = true;
+          return json ? Buffer.from('{}') : body;
+        },
+        bodyStream: () => source,
+      },
+      hit.route,
+      hit.params,
+      { module: 'm', selfOrigin: null, principal: async () => ({ kind: 'anon' }), context: async () => ({}) as never, limit: async () => 0 }
+    );
+    return { res, state, offset };
+  };
+
+  it('the handler streams the one file (text fields before it); the router never buffers the body', async () => {
+    const { res, state } = await run('/up');
+    expect(res.status).toBe(200);
+    expect(JSON.parse(String(res.body))).toEqual({ name: 'a.bin', bytes: 100_000, fields: { n: '1' }, body: null });
+    expect(state.readBody).toBe(false);
+  });
+
+  it('a handler that never reads the file: the body is returned (discarded) unread', async () => {
+    const { res, state, offset } = await run('/ignore');
+    expect(res.status).toBe(200);
+    expect(offset).toBe(0);
+    expect(state.returned).toBe(false); // never even opened
+  });
+
+  it('req.file() on a route without bodyTypes file is a programming error (500 by the runtime)', async () => {
+    await expect(run('/json', true)).rejects.toThrow(/does not take a file/);
   });
 });

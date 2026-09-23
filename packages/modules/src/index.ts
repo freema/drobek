@@ -54,6 +54,7 @@ export {
   type RouteOptions,
   type RouteRateLimit,
   type Rule,
+  type UploadedFile,
 } from './contract.js';
 export { MODULE_ERROR_CODES, ModuleError, isModuleError, skillHint, issuePaths, type ModuleErrorBody, type ModuleErrorCode } from './errors.js';
 export { RULE_TOKENS, decideAccess, isValidRule, parseRule, ruleIsPublic } from './rules.js';
@@ -129,8 +130,8 @@ export {
   type MailGuardMeta,
   type MailGuardRedis,
 } from './mail-guard.js';
-export { multipartBoundary, parseMultipart } from './multipart.js';
-export { SDK_HEADER, DEFAULT_MAX_BODY_BYTES, type PipelineRequest, type PipelineResult } from './router.js';
+export { MAX_FILE_HEAD_BYTES, multipartBoundary, parseMultipart, streamMultipartFile } from './multipart.js';
+export { SDK_HEADER, DEFAULT_MAX_BODY_BYTES, isReadable, type PipelineRequest, type PipelineResult } from './router.js';
 export {
   ModuleLoadError,
   RESERVED_MODULE_NAMES,

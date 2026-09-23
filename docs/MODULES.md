@@ -37,9 +37,11 @@ knows them by name. Built in: [`auth`](#the-built-in-auth-module) (end-user
 sign-in), [`email`](#the-built-in-email-module) (notifications to the app's
 owners, the app's mail policy), [`forms`](#the-built-in-forms-module)
 (form submissions; requires `email`), [`data`](#the-built-in-data-module)
-(collections of records with per-operation rules) and
+(collections of records with per-operation rules),
 [`proxy`](#the-built-in-proxy-module) (calls to the workspace's registered
-upstreams, secret injected server-side).
+upstreams, secret injected server-side) and
+[`files`](#the-built-in-files-module) (end-user uploads, sniffed types,
+per-app quota).
 
 Packages resolve from the **server's** install: `<cwd>/package.json` (`/app` in
 the image, `apps/server` in the dev stack), overridable with
@@ -58,7 +60,7 @@ skipped silently. On start the log
 names the active modules (`platform modules ready`).
 
 The dev compose enables the example module and every built-in module
-(`DROBEK_MODULES=hello,auth,email,forms,data`, `HELLO_WAVES_PER_MINUTE=5`,
+(`DROBEK_MODULES=hello,auth,email,forms,data,proxy,files`, `HELLO_WAVES_PER_MINUTE=5`,
 relaxed `AUTH_*` limits because every local request shares one client IP,
 `DATA_MAX_DOCS_PER_APP=5` so the quota e2e trips quickly); so does the e2e
 image compose.
@@ -107,7 +109,7 @@ r.post(
     query: z.object({ … }),                          // optional
     rateLimit: { bucket: 'wave', max: 'HELLO_WAVES_PER_MINUTE', windowMs: 60_000, per: 'ip' },
     maxBodyBytes: 1024,                              // default 32 KiB
-    bodyTypes: ['json', 'multipart'],                // default ['json']; multipart = text fields only; 'raw' = the Buffer
+    bodyTypes: ['json', 'multipart'],                // default ['json']; multipart = text fields only; 'raw' = the Buffer; ['file'] = one streamed file
     csrf: 'sdk-header',                              // default; 'same-origin' for sendBeacon-style calls
   },
   async (req, ctx) => ({ waves: 1 })                 // JSON 200, or respond(status, body, headers)
@@ -134,8 +136,19 @@ route goes through the same pipeline:
    `multipart/form-data` with text fields only — a repeated name becomes an
    array, a file part is `415`); anything else `415`; size-capped (`413`),
    then the zod schema; the query too (`400 invalid_request` with
-   `details: [{ path, message }]`);
-6. the handler → JSON with `Cache-Control: no-store`.
+   `details: [{ path, message }]`). A `bodyTypes: ['file']` route instead
+   gets the body UNREAD: `await req.file()` parses a `multipart/form-data`
+   body with ONE file part (text fields may precede it, ≤ 64 KiB of headers
+   and fields) and returns `{ field, filename, declaredType, fields, stream }`
+   — `stream` yields the file's bytes as they arrive and the handler caps
+   them itself (`maxBodyBytes` does not apply). Leaving the loop early
+   discards the rest of the request without buffering it (the answer still
+   reaches the client); whatever the handler did not read is discarded after
+   it returns. `filename` / `declaredType` are the client's — never trust
+   them;
+6. the handler → JSON with `Cache-Control: no-store` (or `respond(status,
+   body, headers)`: a string/Buffer is sent as-is, a Node `Readable` is
+   streamed — e.g. a stored file — and destroyed unread for `HEAD`).
 
 Every failure uses **one error shape**:
 
@@ -780,6 +793,64 @@ calls an external API without holding its secret. `skill_info('proxy')`.
   `Response` (same-origin fetch with `X-Drobek-SDK: 1`).
 - The old dashboard-host route `/:ws/api/proxy/:name/*` (workspace members
   with a dashboard session) is gone.
+## The built-in `files` module
+
+[`modules/files`](../modules/files) (`drobek-module-files`): files the
+people who use an app upload. `skill_info('files')`.
+
+- **Routes** (`/__drobek/v1/files/…`):
+  - `POST /` (`bodyTypes: ['file']`, rule `rules.upload`; `owner` admits the
+    uploader like data's create) → `201 { id, url, size, type, name, owner,
+    created_at }`. In order: the rule; `FILES_UPLOAD_RATE_LIMIT` (60 uploads
+    per minute per app, `429 rate_limited`); a declared `Content-Length` over
+    the per-file cap (+ 65 KiB of framing) → `413` before anything is read;
+    the app already at its quota → `409 quota_exceeded` before anything is
+    read; then the file streams to `FILES_DIR/tmp/<uuid>.part` while it is
+    counted (past the cap: `413 payload_too_large`, the rest discarded),
+    sha256-hashed and sniffed (`415 unsupported_type` as soon as the bytes can
+    be no accepted type, or at the end); an empty file is `400`; the quota
+    again, exactly, under a per-app advisory lock; then the row and the
+    rename to `FILES_DIR/<sha[0:2]>/<sha[2:4]>/<sha256>` (the same content
+    of any app is stored once). Every failure removes the temp file. Audit
+    `files.upload` (id, size, type);
+  - `GET /:id` (rule `rules.read`; a visitor the rule can never admit gets
+    `401` before any lookup; `owner` = the uploader) → the bytes, streamed:
+    the SNIFFED `Content-Type` (`text/csv; charset=utf-8`),
+    `X-Content-Type-Options: nosniff`, `Content-Disposition: inline` for
+    PNG/JPEG/GIF/WebP/PDF and `attachment` for SVG and CSV (with an ASCII
+    `filename` and a UTF-8 `filename*`), `ETag: "<sha256>"` (304 on
+    `If-None-Match`), `Cache-Control: public, max-age=31536000, immutable`
+    when the read rule is `public`, else `private, no-cache`;
+  - `DELETE /:id` (fixed rule `owner|admin`) → `{ id, deleted: true }`; the
+    blob is unlinked only when no `mod_files` row of ANY app references its
+    sha256 any more (under a per-sha256 advisory lock shared with uploads).
+    Audit `files.delete`;
+  - `GET /?limit=1..200&cursor=` (rule `admin`) → `{ files, next_cursor,
+    used_bytes, quota_bytes }`, newest first.
+- **Types** (sniffed from the bytes, never the name or the declared type):
+  PNG, JPEG, GIF, WebP and PDF by their magic bytes; SVG = valid UTF-8 text
+  whose root element is `<svg` (after an optional BOM, XML declaration,
+  comments, DOCTYPE); CSV = valid UTF-8 text without control characters or
+  markup that the client ALSO calls CSV (`text/csv`-ish type or `.csv`
+  name). Anything else — an HTML page named `.png` — is `415
+  unsupported_type`.
+- **Config** `{ rules: { upload, read }, maxBytes?, allowedTypes }`
+  (defaults `user` / `user`, no `maxBytes`, `['image/*',
+  'application/pdf', 'text/csv']`). `maxBytes` only lowers
+  `FILES_MAX_BYTES`. Opening `upload` to `public`, or `read` to `public`
+  while the app holds files, needs the owner's confirmation.
+- **Limits**: `FILES_MAX_BYTES` 10 MiB, `FILES_QUOTA_PER_APP` 500 MiB (the
+  sum of the app's `mod_files.size`, per row even when content is shared),
+  `FILES_UPLOAD_RATE_LIMIT` 60/min. The directory is `FILES_DIR` (default
+  `/data/files`; the production compose mounts the `files_data` volume).
+- **Table** `mod_files (id, app_id, sha256, size, type, name, owner_id,
+  created_at)`, cascade on app delete (the blobs of a deleted app stay on
+  disk — see the known gaps in `docs/progress.md`), indexes `(app_id,
+  created_at DESC, id DESC)` and `(sha256)`.
+- **SDK**: `drobek.files.upload(file, { name?, signal? })` (a `FormData`
+  through the SDK core), `url(id)`, `remove(id)`, `list({ limit?, cursor? })`.
+- **Not in v1**: image transformations, EXIF stripping, object storage (S3),
+  public galleries.
 
 ## The example: `drobek-module-hello`
 

@@ -10,6 +10,7 @@
  * mount it without this package depending on Express.
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { Readable, pipeline } from 'node:stream';
 import { classifyHost, hostConfig, type HostConfig } from '@drobek/apps';
 import { getClientIp, rateLimitRedis } from '@drobek/auth';
 import { createConsoleLogger, type Logger } from '@drobek/core';
@@ -63,10 +64,89 @@ function headerOf(req: IncomingMessage, name: string): string | null {
   return Array.isArray(v) ? v.join(', ') : v;
 }
 
+/**
+ * The request body as a pull stream (paused mode — nothing is read ahead of
+ * the consumer, so a slow disk write back-pressures the client). `return()`
+ * stops reading and lets the rest flow into the void: the upload is discarded,
+ * never buffered, and the connection stays usable for the response. A client
+ * that goes away mid-body makes `next()` throw.
+ */
+export function requestBodyStream(req: IncomingMessage): AsyncIterableIterator<Buffer> {
+  let ended = false;
+  let failure: Error | null = null;
+  let finished = false;
+  let wake: (() => void) | null = null;
+  const notify = () => {
+    const w = wake;
+    wake = null;
+    w?.();
+  };
+  const onEnd = () => {
+    ended = true;
+    notify();
+  };
+  const onError = (err: Error) => {
+    failure = err;
+    notify();
+  };
+  const onClose = () => {
+    if (!req.readableEnded) failure ??= new Error('the client aborted the request body');
+    notify();
+  };
+  req.on('readable', notify);
+  req.on('end', onEnd);
+  req.on('error', onError);
+  req.on('close', onClose);
+  const cleanup = () => {
+    finished = true;
+    req.off('readable', notify);
+    req.off('end', onEnd);
+    req.off('error', onError);
+    req.off('close', onClose);
+  };
+  const iter: AsyncIterableIterator<Buffer> = {
+    [Symbol.asyncIterator]() {
+      return iter;
+    },
+    async next() {
+      for (;;) {
+        if (finished) return { value: undefined, done: true };
+        const chunk = req.read() as Buffer | null;
+        if (chunk !== null) return { value: chunk, done: false };
+        if (failure) {
+          const err: Error = failure;
+          cleanup();
+          throw err;
+        }
+        if (ended || req.readableEnded) {
+          cleanup();
+          return { value: undefined, done: true };
+        }
+        await new Promise<void>((resolve) => (wake = resolve));
+      }
+    },
+    async return() {
+      if (!finished) {
+        cleanup();
+        if (!req.readableEnded) req.resume();
+      }
+      return { value: undefined, done: true };
+    },
+  };
+  return iter;
+}
+
 function send(res: ServerResponse, r: AppResponse): void {
   res.statusCode = r.status;
   for (const [k, v] of Object.entries(r.headers)) res.setHeader(k, v);
-  res.end(r.body ?? undefined);
+  const body = r.body;
+  if (body instanceof Readable) {
+    pipeline(body, res, (err) => {
+      if (err && !res.destroyed) res.destroy();
+    });
+    return;
+  }
+  res.end(body ?? undefined);
 }
 
 export interface AppsHostOptions {
@@ -148,6 +228,7 @@ export function createAppsHostMiddleware(opts: AppsHostOptions = {}): NodeMiddle
         if (Number.isFinite(declared) && declared > cap) return 'too_large';
         return readBody(req, cap);
       },
+      bodyStream: () => requestBodyStream(req),
     };
 
     handleAppRequest(request, deps).then(

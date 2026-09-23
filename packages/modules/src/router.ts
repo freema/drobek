@@ -12,11 +12,14 @@
  *   5. body: JSON (or, when the route accepts it, text-only
  *      multipart/form-data, or the raw bytes), size-capped, then the route's
  *      zod schema; query too (400 `invalid_request` with
- *      `details: [{ path, message }]`);
+ *      `details: [{ path, message }]`) — a `bodyTypes: ['file']` route
+ *      instead streams its one file through `req.file()` (the unread rest is
+ *      discarded after the handler);
  *   6. the handler → JSON (or `respond(...)`), `Cache-Control: no-store`.
  *
  * Every failure answers the uniform `{ error, message, details?, hint }`.
  */
+import { Readable } from 'node:stream';
 import type { ZodType } from 'zod';
 import type {
   ModuleContext,
@@ -27,7 +30,7 @@ import type {
   RouteOptions,
 } from './contract.js';
 import { ModuleError, isModuleError, issuePaths } from './errors.js';
-import { parseMultipart } from './multipart.js';
+import { parseMultipart, streamMultipartFile } from './multipart.js';
 import { decideAccess } from './rules.js';
 
 export const DEFAULT_MAX_BODY_BYTES = 32 * 1024;
@@ -141,12 +144,25 @@ export interface PipelineRequest {
   clientIp: string | null;
   /** The raw body up to `limit` bytes; 'too_large' past it. */
   readBody(limit: number): Promise<Buffer | 'too_large' | null>;
+  /**
+   * The raw body as a stream, uncapped (`bodyTypes: ['file']` routes — the
+   * handler caps it). Call it at most once. `return()` abandons the rest: the
+   * adapter discards it without buffering. Adapters without it fall back to
+   * `readBody` (tests).
+   */
+  bodyStream?(): AsyncIterableIterator<Buffer>;
 }
 
 export interface PipelineResult {
   status: number;
   headers: Record<string, string>;
-  body: Buffer | string | null;
+  /** A Node Readable is streamed by the adapter (and destroyed unread for HEAD). */
+  body: Buffer | string | Readable | null;
+}
+
+/** A Node Readable (a streamed response body)? */
+export function isReadable(v: unknown): v is Readable {
+  return v instanceof Readable;
 }
 
 /** The pipeline's seams: the runtime builds the context (config, principal, services). */
@@ -243,6 +259,15 @@ function rateKey(per: 'ip' | 'app' | 'principal', req: PipelineRequest, principa
   return `ip:${req.clientIp ?? 'unknown'}`;
 }
 
+/** A body stream over `readBody` for adapters without `bodyStream` (whole body, in memory). */
+function bufferedStream(req: PipelineRequest): AsyncIterableIterator<Buffer> {
+  const gen = async function* (): AsyncGenerator<Buffer> {
+    const raw = await req.readBody(Number.MAX_SAFE_INTEGER);
+    if (Buffer.isBuffer(raw) && raw.length > 0) yield raw;
+  };
+  return gen();
+}
+
 /** Run one matched route through the pipeline (never throws). */
 export async function runRoute(
   req: PipelineRequest,
@@ -280,32 +305,47 @@ export async function runRoute(
     }
 
     const method = req.method.toUpperCase();
-    const types = opts.bodyTypes ?? ['json'];
+    const types = (opts.bodyTypes ?? ['json']).filter((t): t is 'json' | 'multipart' | 'raw' => t !== 'file');
+    const fileRoute = (opts.bodyTypes ?? []).includes('file');
     const body =
-      method === 'GET' || method === 'HEAD'
+      method === 'GET' || method === 'HEAD' || fileRoute
         ? undefined
         : types.includes('raw')
           ? await readRequestBody(req, opts.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES, types)
           : validate(opts.body, await readRequestBody(req, opts.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES, types), 'request body');
     const query = validate(opts.query, parseQuery(req.query), 'query');
 
-    const out = await route.handler(
-      {
-        method,
-        path: req.path,
-        params,
-        query,
-        rawQuery: req.query,
-        body,
-        header: (n) => req.header(n),
-        headers: () => (req.headers ? req.headers() : {}),
-        clientIp: req.clientIp,
-      },
-      ctx
-    );
+    let source: AsyncIterableIterator<Buffer> | null = null;
+    const file = async () => {
+      if (!fileRoute || method === 'GET' || method === 'HEAD') throw new Error(`route ${route.method} ${route.pattern} does not take a file (bodyTypes: ['file'])`);
+      if (source) throw new Error('req.file() may be called once');
+      source = req.bodyStream ? req.bodyStream() : bufferedStream(req);
+      return streamMultipartFile(source, req.header('content-type'));
+    };
+    let out: unknown;
+    try {
+      out = await route.handler(
+        {
+          method,
+          path: req.path,
+          params,
+          query,
+          rawQuery: req.query,
+          body,
+          header: (n) => req.header(n),
+          headers: () => (req.headers ? req.headers() : {}),
+          clientIp: req.clientIp,
+          file,
+        },
+        ctx
+      );
+    } finally {
+      // Whatever the handler did not read is discarded (never buffered).
+      await (source as AsyncIterableIterator<Buffer> | null)?.return?.();
+    }
     if (isResponse(out)) {
       const b = out.body;
-      if (typeof b === 'string' || Buffer.isBuffer(b)) {
+      if (typeof b === 'string' || Buffer.isBuffer(b) || isReadable(b)) {
         return { status: out.status, headers: { 'Cache-Control': 'no-store', ...out.headers }, body: b };
       }
       if (out.status === 204 || b === null || b === undefined) {

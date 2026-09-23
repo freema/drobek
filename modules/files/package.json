@@ -1,0 +1,42 @@
+{
+  "name": "drobek-module-files",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Built-in drobek platform module: end-user file uploads — content-addressed on disk (FILES_DIR), type sniffed from the bytes, size streamed and capped, per-app quota, nosniff serving with upload/read rules.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "migrations",
+    "SKILL.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest",
+    "test:run": "vitest run"
+  },
+  "dependencies": {
+    "@drobek/db": "workspace:*",
+    "@drobek/modules": "workspace:*",
+    "@drobek/sdk": "workspace:*",
+    "@paralleldrive/cuid2": "^2.2.2",
+    "drizzle-orm": "^0.41.0"
+  },
+  "devDependencies": {
+    "@drobek/compile": "workspace:*",
+    "@electric-sql/pglite": "^0.2.17",
+    "@types/node": "^22",
+    "drobek-module-auth": "workspace:*",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.7"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

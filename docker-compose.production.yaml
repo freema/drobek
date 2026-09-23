@@ -55,6 +55,11 @@ services:
       TRUST_PROXY: x-real-ip
       PUBLIC_APP_URL: ${PUBLIC_APP_URL:?set PUBLIC_APP_URL in .env (https://your-dashboard-host)}
       APPS_DOMAIN: ${APPS_DOMAIN:?set APPS_DOMAIN in .env (apps live on *.<APPS_DOMAIN>)}
+      # The files module's uploads live on the files_data volume below.
+      FILES_DIR: /data/files
+    volumes:
+      # End-user uploads (files module, content-addressed) — back this up.
+      - files_data:/data/files
     # The image's own HEALTHCHECK probes /healthz (db + redis).
     depends_on:
       postgres:
@@ -112,3 +117,4 @@ volumes:
   redis_data:
   caddy_data:
   caddy_config:
+  files_data:

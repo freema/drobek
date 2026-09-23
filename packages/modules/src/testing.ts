@@ -16,7 +16,7 @@ import { noopLogger, type Logger } from '@drobek/core';
 import type { DB } from '@drobek/db';
 import type { AnyModule, EmailMessage, HookApp, Limits, MailEnvelope, ModuleContext, Principal } from './contract.js';
 import { mergePatch } from './merge-patch.js';
-import { collectRoutes, errorResult, matchRoute, runRoute, type PipelineResult } from './router.js';
+import { collectRoutes, errorResult, isReadable, matchRoute, runRoute, type PipelineResult } from './router.js';
 import { decideAccess } from './rules.js';
 import { ModuleError } from './errors.js';
 import { capEmailText, emailKind, resolveRecipients, sanitizeSubject } from './email.js';
@@ -52,6 +52,8 @@ export interface TestRequestInit {
   body?: unknown;
   /** A raw body instead (set its `content-type` in `headers`), e.g. multipart/form-data. */
   rawBody?: Buffer | string;
+  /** A `bodyTypes: ['file']` route streams `rawBody` in chunks of this many bytes (default 64 KiB). */
+  chunkSize?: number;
   query?: Record<string, string>;
   headers?: Record<string, string>;
   clientIp?: string;
@@ -62,6 +64,10 @@ export interface TestResponse {
   headers: Record<string, string>;
   /** Parsed JSON (or the raw text when the body is not JSON). */
   body: unknown;
+  /** The raw response bytes (a streamed body is collected). */
+  bytes: Buffer;
+  /** Request body bytes a streaming (`file`) route pulled before it stopped. */
+  bodyBytesRead: number;
 }
 
 export interface ModuleTestContext {
@@ -161,9 +167,16 @@ export function createModuleTestContext(module: AnyModule, opts: ModuleTestOptio
 
   const routes = collectRoutes(module.routes?.bind(module) as never);
 
-  const toResponse = (r: PipelineResult): TestResponse => {
-    let body: unknown = r.body;
-    if (Buffer.isBuffer(body)) body = body.toString('utf8');
+  const toResponse = async (r: PipelineResult, bodyBytesRead = 0): Promise<TestResponse> => {
+    let bytes: Buffer;
+    if (isReadable(r.body)) {
+      const chunks: Buffer[] = [];
+      for await (const c of r.body) chunks.push(Buffer.from(c as Uint8Array));
+      bytes = Buffer.concat(chunks);
+    } else {
+      bytes = r.body === null ? Buffer.alloc(0) : Buffer.from(r.body);
+    }
+    let body: unknown = r.body === null ? null : bytes.toString('utf8');
     if (typeof body === 'string') {
       try {
         body = JSON.parse(body);
@@ -171,7 +184,33 @@ export function createModuleTestContext(module: AnyModule, opts: ModuleTestOptio
         /* keep the text */
       }
     }
-    return { status: r.status, headers: r.headers, body };
+    return { status: r.status, headers: r.headers, body, bytes, bodyBytesRead };
+  };
+
+  /** `raw` as the adapter's pull stream, in `size`-byte chunks; counts what was pulled. */
+  const chunked = (raw: Buffer | null, size: number, read: { n: number }): AsyncIterableIterator<Buffer> => {
+    let offset = 0;
+    let done = false;
+    const iter: AsyncIterableIterator<Buffer> = {
+      [Symbol.asyncIterator]() {
+        return iter;
+      },
+      async next() {
+        if (done || !raw || offset >= raw.length) {
+          done = true;
+          return { value: undefined, done: true };
+        }
+        const chunk = raw.subarray(offset, offset + size);
+        offset += chunk.length;
+        read.n += chunk.length;
+        return { value: chunk, done: false };
+      },
+      async return() {
+        done = true;
+        return { value: undefined, done: true };
+      },
+    };
+    return iter;
   };
 
   return {
@@ -212,6 +251,7 @@ export function createModuleTestContext(module: AnyModule, opts: ModuleTestOptio
       if (hit.kind === 'method_not_allowed') {
         return toResponse(errorResult(new ModuleError('method_not_allowed', `Use ${hit.allow.join(' or ')}.`), module.name));
       }
+      const read = { n: 0 };
       const res = await runRoute(
         {
           method: upper,
@@ -221,6 +261,7 @@ export function createModuleTestContext(module: AnyModule, opts: ModuleTestOptio
           headers: () => ({ ...headers }),
           clientIp: init.clientIp ?? '127.0.0.1',
           readBody: async (limit) => (raw && raw.length > limit ? 'too_large' : raw),
+          bodyStream: () => chunked(raw, init.chunkSize ?? 64 * 1024, read),
         },
         hit.route,
         hit.params,
@@ -236,7 +277,7 @@ export function createModuleTestContext(module: AnyModule, opts: ModuleTestOptio
           },
         }
       );
-      return toResponse(res);
+      return toResponse(res, read.n);
     },
   };
 }

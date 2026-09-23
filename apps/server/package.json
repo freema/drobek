@@ -33,6 +33,7 @@
     "drobek-module-auth": "workspace:*",
     "drobek-module-data": "workspace:*",
     "drobek-module-email": "workspace:*",
+    "drobek-module-files": "workspace:*",
     "drobek-module-forms": "workspace:*",
     "drobek-module-hello": "workspace:*",
     "drobek-module-proxy": "workspace:*",

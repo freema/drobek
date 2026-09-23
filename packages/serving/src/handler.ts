@@ -28,6 +28,7 @@
  * Every response — 200, 304, 401, 404, 405, 429, 500 — carries the app CSP,
  * nosniff, Referrer-Policy and (preview/version hosts) X-Robots-Tag.
  */
+import type { Readable } from 'node:stream';
 import type { AppHostTarget } from '@drobek/apps';
 import { contentTypeForPath } from './content-type.js';
 import { appSecurityHeaders, parseFrameAncestors } from './csp.js';
@@ -64,6 +65,12 @@ export interface AppRequest {
   readForm(): Promise<URLSearchParams | null>;
   /** The raw body up to `limit` bytes ('too_large' past it; platform paths only). */
   readBody(limit: number): Promise<Buffer | 'too_large' | null>;
+  /**
+   * The raw body as a stream, UNCAPPED (platform file uploads — the module
+   * route caps it). `return()` abandons the rest: it is discarded, never
+   * buffered. Once per request.
+   */
+  bodyStream?(): AsyncIterableIterator<Buffer>;
   clientIp: string | null;
 }
 
@@ -82,7 +89,8 @@ export type PlatformHandler = (req: AppRequest, ctx: { app: ServeApp; target: Ap
 export interface AppResponse {
   status: number;
   headers: Record<string, string>;
-  body: Buffer | string | null;
+  /** A Readable (a platform file download) is piped by the adapter. */
+  body: Buffer | string | Readable | null;
 }
 
 export interface HandlerDeps {

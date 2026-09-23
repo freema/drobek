@@ -34,6 +34,17 @@ describe('SDK core', () => {
     expect((calls[0].init.headers as Record<string, string>)['Content-Type']).toBe('application/json');
   });
 
+  it('sends a FormData body as-is (multipart; the runtime sets the boundary)', async () => {
+    const { f, calls } = fakeFetch(() => json(201, { id: 'f1' }));
+    const core = createCore('files', f);
+    const form = new FormData();
+    form.append('file', new Blob(['hi'], { type: 'text/csv' }), 'a.csv');
+    expect(await core.request('POST', '', { body: form })).toEqual({ id: 'f1' });
+    expect(calls[0].init.body).toBe(form);
+    expect((calls[0].init.headers as Record<string, string>)['Content-Type']).toBeUndefined();
+    expect((calls[0].init.headers as Record<string, string>)['X-Drobek-SDK']).toBe('1');
+  });
+
   it('rejects with DrobekError carrying the uniform error shape', async () => {
     const { f } = fakeFetch(() =>
       json(429, { error: 'rate_limited', message: 'Slow down.', details: { retry_after: 3 }, hint: "skill_info('hello')" })

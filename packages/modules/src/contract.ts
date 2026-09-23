@@ -475,13 +475,40 @@ export interface ModuleRequest<Body = unknown, Query = Record<string, string>> {
   /** Every request header (lower-cased names; repeated ones joined with `, `). */
   headers(): Record<string, string>;
   clientIp: string | null;
+  /**
+   * The ONE file of a `bodyTypes: ['file']` route (multipart/form-data),
+   * streamed — never buffered by the router. Rejects with a ModuleError
+   * (`unsupported_media_type`, `invalid_request`) when the body is not such a
+   * multipart body; throws on any other route. Call it once.
+   */
+  file(): Promise<UploadedFile>;
+}
+
+/** The file part of a multipart upload (`req.file()`). Everything but `stream` is client-supplied: never trust it. */
+export interface UploadedFile {
+  /** The multipart field name of the file part. */
+  field: string;
+  /** The client's file name ('' when none) — untrusted. */
+  filename: string;
+  /** The Content-Type the client declared for the part, or null — untrusted (sniff the bytes). */
+  declaredType: string | null;
+  /** Text fields sent BEFORE the file part (a field after it is refused). */
+  fields: Record<string, string>;
+  /**
+   * The file's bytes as they arrive. Read it once. The route caps the size
+   * itself: stop early by leaving the loop (`break`/`throw`) — the rest of the
+   * request is then discarded without being buffered. Iteration throws a
+   * ModuleError `invalid_request` on a malformed body (no closing boundary, a
+   * second part) and an Error when the client aborts.
+   */
+  stream: AsyncIterable<Buffer>;
 }
 
 /** A non-JSON-200 answer: `respond(status, body, headers)`. */
 export interface ModuleResponse {
   readonly __drobekResponse: true;
   status: number;
-  /** JSON-serialisable value, or a string/Buffer sent as-is. */
+  /** JSON-serialisable value, a string/Buffer sent as-is, or a Node `Readable` streamed as-is (e.g. a file). */
   body: unknown;
   headers: Record<string, string>;
 }
@@ -523,8 +550,12 @@ export interface RouteOptions<Config = unknown, Body = unknown, Query = Record<s
    * `Buffer` (undefined when empty) and `body` validation is skipped — for
    * pass-through routes (the proxy). Anything else is
    * `415 unsupported_media_type`.
+   * `file` = `multipart/form-data` carrying ONE file: the router does not read
+   * the body (and `maxBodyBytes` does not apply) — the handler streams it with
+   * `req.file()` and MUST cap its size itself. Exclusive: a `file` route takes
+   * no JSON body.
    */
-  bodyTypes?: Array<'json' | 'multipart' | 'raw'>;
+  bodyTypes?: Array<'json' | 'multipart' | 'raw' | 'file'>;
   /**
    * CSRF guard for mutating methods (POST/PUT/PATCH/DELETE). Always: an
    * `Origin` header, when present, must be the app host itself. Default

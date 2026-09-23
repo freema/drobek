@@ -102,7 +102,10 @@ services:
       # M1-04: the built-in email + forms modules (limits as in dev);
       # M1-03: the built-in data module (DATA_MAX_DOCS_PER_APP 5 above).
       # M1-06: the built-in proxy module (PROXY_CALLS_PER_MIN default 60).
-      DROBEK_MODULES: hello,auth,email,forms,data,proxy
+      # M1-05: the built-in files module (FILES_QUOTA_PER_APP 2 MiB below).
+      DROBEK_MODULES: hello,auth,email,forms,data,proxy,files
+      FILES_MAX_BYTES: '10485760'
+      FILES_QUOTA_PER_APP: '2097152'
       HELLO_WAVES_PER_MINUTE: '5'
       AUTH_CODES_PER_IP_15MIN: '100'
       AUTH_CODES_PER_IP_DAY: '500'
@@ -128,6 +131,9 @@ services:
       OAUTH_CIMD_DEV_ORIGINS: http://proxy-echo:8099
     extra_hosts:
       - 'host.docker.internal:host-gateway'
+    volumes:
+      # M1-05: the files module's uploads (FILES_DIR default; throwaway).
+      - /data/files
     # The image's own HEALTHCHECK probes /healthz (db + redis) — `up --wait` uses it.
     depends_on:
       postgres:

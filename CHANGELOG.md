@@ -25,6 +25,25 @@
 - **`@drobek/modules`**: trailing `*` route segments (`req.params['*']`),
   `bodyTypes: ['raw']`, `req.headers()`, `req.rawQuery`, and the optional
   `appInfo(view)` hook surfaced as `modules.<name>.info`.
+### The built-in `files` module (NSO-296)
+
+- **`modules/files`** (`drobek-module-files`): end-user uploads. `POST
+  /__drobek/v1/files` / `drobek.files.upload(file)` streams one file to
+  `FILES_DIR` (per-file cap `FILES_MAX_BYTES` 10 MiB → `413`, aborted while
+  streaming; per-app quota `FILES_QUOTA_PER_APP` 500 MiB → `409
+  quota_exceeded`; `FILES_UPLOAD_RATE_LIMIT` 60/min). The type is sniffed
+  from the bytes — PNG, JPEG, GIF, WebP, PDF, SVG, CSV; anything else (an
+  HTML page named `.png`) → `415 unsupported_type`. `GET /:id` serves the
+  sniffed type with `nosniff`, `inline` only for images and PDF (SVG and CSV
+  as attachments), an ETag and an immutable cache when `read` is public.
+  `DELETE /:id` (owner or admin). Blobs are content-addressed and shared
+  across apps; one is unlinked when no file references it. Config `{ rules:
+  { upload, read }, maxBytes?, allowedTypes }`; opening either rule to
+  public waits for the owner. Table `mod_files`.
+- **`@drobek/modules`**: route `bodyTypes: ['file']` with `req.file()` (a
+  streaming single-file multipart parser); handlers may answer with a Node
+  `Readable` body. **`@drobek/serving`** streams request and response
+  bodies; **`@drobek/sdk`** sends a `FormData` body as-is.
 
 ### The built-in `forms` and `email` modules (NSO-295)
 

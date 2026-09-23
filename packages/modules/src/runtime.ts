@@ -51,7 +51,7 @@ import { mailGuardConfigFromEnv, redisMailGuard, type MailGuard, type MailGuardR
 import { jsonEqual, mergePatch } from './merge-patch.js';
 import { cookiePrincipalResolver, endUserCookiesSecure, type PrincipalResolver } from './principal.js';
 import { ModuleLoadError, checkRequires, endUserAuthorityOf, loadModules, mailAuthorityOf, recordsAuthorityOf, type ResolveOptions } from './registry.js';
-import { collectRoutes, errorResult, matchRoute, runRoute, type PipelineRequest, type PipelineResult, type Route } from './router.js';
+import { collectRoutes, errorResult, isReadable, matchRoute, runRoute, type PipelineRequest, type PipelineResult, type Route } from './router.js';
 import { decideAccess } from './rules.js';
 import { BEACON_SCRIPT_PATH, SDK_PATH, SDK_TYPES_PATH, buildSdk, moduleTypes, toPath, type SdkBundle } from './sdk-build.js';
 import { getModuleSecret, secretsSet } from './secrets.server.js';
@@ -744,7 +744,10 @@ export class ModuleRuntime {
           return v;
         },
       });
-      if (req.method.toUpperCase() === 'HEAD') return { ...res, body: null };
+      if (req.method.toUpperCase() === 'HEAD') {
+        if (isReadable(res.body)) res.body.destroy();
+        return { ...res, body: null };
+      }
       return res;
     } catch (err) {
       if (isModuleError(err)) return errorResult(err);

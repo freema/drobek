@@ -44,7 +44,7 @@ export type QueryValue = string | number | boolean | null | undefined;
 export interface RequestOptions {
   /** Query parameters (null/undefined are skipped). */
   query?: Record<string, QueryValue>;
-  /** JSON body (sent with `Content-Type: application/json`). */
+  /** JSON body (sent with `Content-Type: application/json`); a `FormData` is sent as multipart/form-data. */
   body?: unknown;
   headers?: Record<string, string>;
   signal?: AbortSignal;
@@ -106,7 +106,10 @@ export function createCore(module: string, fetchImpl?: FetchLike): SdkCore {
       const headers: Record<string, string> = { Accept: 'application/json', [SDK_HEADER]: '1', ...opts.headers };
       const init: RequestInit = { method: method.toUpperCase(), headers, credentials: 'same-origin' };
       if (opts.signal) init.signal = opts.signal;
-      if (opts.body !== undefined) {
+      if (typeof FormData !== 'undefined' && opts.body instanceof FormData) {
+        // multipart/form-data: the browser sets the Content-Type with its boundary.
+        init.body = opts.body;
+      } else if (opts.body !== undefined) {
         headers['Content-Type'] = 'application/json';
         init.body = JSON.stringify(opts.body);
       }

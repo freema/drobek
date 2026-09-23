@@ -204,6 +204,15 @@ block, then `next` is pushed and the single MR opened.
   run `DROBEK_MODULES=…,proxy`. The per-app upstream view in the dashboard is
   M2; upstream registration stays in the workspace Upstreams page.
 - Next: M1-03 data.
+- M1-05 (NSO-296) done locally (worktree; the e2e spec
+  `tests-e2e/tests/files-module.spec.ts` is written, not run yet): built-in
+  module `modules/files` (upload / serve / delete / admin list, sniffed types,
+  content-addressed blobs in `FILES_DIR` with cross-app dedup, per-app quota,
+  `mod_files`). Core: route `bodyTypes: ['file']` + `req.file()` (streaming
+  single-file multipart), `Readable` response bodies through the module
+  pipeline and `@drobek/serving`, `@drobek/sdk` sends `FormData` as-is.
+  Compose: `DROBEK_MODULES=…,data,files`, the `files_data` volume (dev + prod),
+  e2e `FILES_QUOTA_PER_APP` 2 MiB.
 
 ## Notes and gotchas
 
@@ -443,6 +452,22 @@ block, then `next` is pushed and the single MR opened.
 - In an agent worktree, Bash refuses `cat > file <<EOF` / `>>` heredocs as
   "cannot verify it stays inside the worktree"; write files with the Write
   tool or a `python3 - <<'EOF'` script instead.
+- A module route that takes a file declares `bodyTypes: ['file']`: the router
+  then reads NOTHING and the handler pulls the bytes with `req.file()`
+  (`maxBodyBytes` does not apply — the handler caps them). Answering early
+  (413 in the middle of an upload) works because the rest of the request is
+  resumed and discarded, not left paused: a paused socket never reads the
+  client's remaining bytes and the client never sees the answer.
+- The Write tool turns `﻿` escapes in regex literals into literal BOM
+  characters (invisible in diffs); `modules/files/src/sniff.ts` strips the
+  BOM with `charCodeAt(0) === 0xfeff` instead.
+- A new workspace package (`modules/files`) needs its own anonymous
+  `node_modules` volume in `docker-compose.yml` and a recreated dev container
+  (`task up`), like every module before it; the uploads live in the named
+  volume `files_data` (`/data/files`), which `docker compose down -v` wipes.
+- Deleting an app cascades its `mod_files` rows but leaves the blobs on disk
+  (a blob may be shared with another app, and there is no sweeper yet) —
+  M2-01's app deletion must remove blobs that no remaining row references.
 
 ## Failed approaches
 

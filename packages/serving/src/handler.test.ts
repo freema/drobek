@@ -162,7 +162,7 @@ function req(
 const prod = (slug: string): AppHostTarget => ({ kind: 'prod', slug });
 const preview = (slug: string): AppHostTarget => ({ kind: 'preview', slug });
 const ver = (slug: string, number: number): AppHostTarget => ({ kind: 'version', slug, number });
-const text = (b: Buffer | string | null) => (b === null ? '' : b.toString());
+const text = (b: unknown) => (b === null ? '' : String(b)); // Buffer → UTF-8
 
 describe('which version a host serves', () => {
   it('preview = the newest version that compiled; prod = the published one; --vN = exactly N', async () => {

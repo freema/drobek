@@ -5,6 +5,7 @@
  * explicit Host header — exactly what a browser sends for `*.localhost`.
  */
 import { request as httpRequest, createServer, type Server } from 'node:http';
+import { Readable } from 'node:stream';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { BEACON_PATH as INSIGHTS_BEACON_PATH, handleBeacon, type BeaconRecorder } from '@drobek/insights';
 import { BEACON_PATH } from './handler.js';
@@ -258,5 +259,83 @@ describe('POST /__drobek/v1/_beacon', () => {
     });
     expect(get).toBe(405);
     expect(await post('{}', { headers: { Host: 'nope-app.apps.localhost:3041' } })).toBe(404);
+  });
+});
+
+describe('platform body streams + streamed responses (the files module)', () => {
+  let platformServer: Server;
+  let platformPort: number;
+  const seen = { read: 0 };
+
+  beforeAll(async () => {
+    const mw = createAppsHostMiddleware({
+      hosts: { appsDomain: 'apps.localhost:3041', dashboardHost: 'localhost:3041' },
+      store: new ServeStore({ loaders }),
+      deps: {
+        accessSecret: null,
+        allowUnlockAttempt: async () => true,
+        signal: () => {},
+        platform: async (req) => {
+          if (req.method === 'GET') {
+            return { status: 200, headers: { 'Content-Type': 'text/plain' }, body: Readable.from([Buffer.from('streamed '), Buffer.from('body')]) };
+          }
+          // Read at most 1 MiB, then give up: the rest must be discarded, not buffered, and the answer must arrive.
+          const stream = req.bodyStream!();
+          seen.read = 0;
+          for await (const chunk of stream) {
+            seen.read += chunk.length;
+            if (seen.read > 1024 * 1024) break;
+          }
+          return { status: 413, headers: { 'Content-Type': 'application/json' }, body: '{"error":"payload_too_large"}' };
+        },
+      },
+    });
+    platformServer = createServer((req, res) => mw(req, res, () => res.end('dashboard')));
+    await new Promise<void>((r) => platformServer.listen(0, '127.0.0.1', r));
+    platformPort = (platformServer.address() as { port: number }).port;
+  });
+  afterAll(async () => {
+    platformServer.closeAllConnections(); // the client agent keeps its socket alive
+    await new Promise<void>((r) => platformServer.close(() => r()));
+  });
+
+  /** Settles once the answer arrived AND the whole body was written (an early answer precedes the end of the upload). */
+  function send(method: string, body?: Buffer): Promise<{ status: number; body: string }> {
+    return new Promise((resolve, reject) => {
+      let answer: { status: number; body: string } | null = null;
+      let written = false;
+      const settle = () => answer && written && resolve(answer);
+      const req = httpRequest(
+        { host: '127.0.0.1', port: platformPort, path: '/__drobek/v1/files', method, headers: { Host: 'shop.apps.localhost:3041' } },
+        (res) => {
+          let text = '';
+          res.setEncoding('utf8');
+          res.on('data', (c: string) => (text += c));
+          res.on('end', () => {
+            answer = { status: res.statusCode ?? 0, body: text };
+            settle();
+          });
+        }
+      );
+      req.on('error', reject);
+      req.on('finish', () => {
+        written = true;
+        settle();
+      });
+      req.end(body);
+    });
+  }
+
+  it('a route that stops reading answers normally; the unread rest is discarded (the client still gets the answer)', async () => {
+    const r = await send('POST', Buffer.alloc(8 * 1024 * 1024, 1));
+    expect(r).toEqual({ status: 413, body: '{"error":"payload_too_large"}' });
+    expect(seen.read).toBeGreaterThan(1024 * 1024);
+    expect(seen.read).toBeLessThan(3 * 1024 * 1024);
+    // The connection is still usable afterwards.
+    expect((await send('GET')).status).toBe(200);
+  });
+
+  it('a Readable body is piped to the client', async () => {
+    expect(await send('GET')).toEqual({ status: 200, body: 'streamed body' });
   });
 });

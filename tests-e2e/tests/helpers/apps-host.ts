@@ -19,12 +19,14 @@ export interface Raw {
   status: number;
   headers: IncomingHttpHeaders;
   body: string;
+  /** The raw response bytes (`body` is them decoded as UTF-8). */
+  bytes: Buffer;
 }
 
 export interface RawOpts {
   method?: string;
   headers?: Record<string, string>;
-  body?: string;
+  body?: string | Buffer;
 }
 
 /** `slug.apps.localhost:3041` → { hostname, port } (port defaults from the scheme). */
@@ -55,10 +57,12 @@ export function rawRequest(
         ...(scheme === 'https' ? { servername: hostname } : {}),
       },
       (res) => {
-        let body = '';
-        res.setEncoding('utf8');
-        res.on('data', (c: string) => (body += c));
-        res.on('end', () => resolve({ status: res.statusCode ?? 0, headers: res.headers, body }));
+        const chunks: Buffer[] = [];
+        res.on('data', (c: Buffer) => chunks.push(c));
+        res.on('end', () => {
+          const bytes = Buffer.concat(chunks);
+          resolve({ status: res.statusCode ?? 0, headers: res.headers, body: bytes.toString('utf8'), bytes });
+        });
       }
     );
     req.setTimeout(15_000, () => req.destroy(new Error(`timeout: ${scheme}://${host}${path}`)));
