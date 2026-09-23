@@ -51,11 +51,13 @@ export async function mailpitMessagesFor(
 export async function pollLoginCode(
   request: APIRequestContext,
   email: string,
-  timeoutMs = 30_000
+  timeoutMs = 30_000,
+  /** Message IDs to ignore — snapshot them BEFORE send-code when the address already received a code in this run. */
+  skipIds: ReadonlySet<string> = new Set()
 ): Promise<string> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const msgs = await mailpitMessagesFor(request, email);
+    const msgs = (await mailpitMessagesFor(request, email)).filter((m) => !skipIds.has(m.ID));
     if (msgs.length > 0) {
       const detail = await request.get(
         `${MAILPIT_URL}/api/v1/message/${msgs[0].ID}`

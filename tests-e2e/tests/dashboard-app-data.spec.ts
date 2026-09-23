@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { expect, test, type APIRequestContext, type BrowserContext, type Page } from '@playwright/test';
 import { APPS_URL_SCHEME, BASE_URL_WEB } from '../playwright.config';
 import { hostRequest, previewHost, urlOf, type Raw } from './helpers/apps-host';
-import { loginViaEmail, pollLoginCode, skipUnlessLocal, uniqueEmail } from './helpers/auth';
+import { loginViaEmail, mailpitMessagesFor, pollLoginCode, skipUnlessLocal, uniqueEmail } from './helpers/auth';
 import { FULL_SCOPE, callTool, mcpClient, type McpClient } from './helpers/mcp';
 import {
   addMembership,
@@ -92,10 +92,18 @@ function json<T = Record<string, unknown>>(r: Raw): T {
 /** send-code → the Mailpit code → verify on `host`; the Cookie header value. */
 async function signIn(request: APIRequestContext, host: string, address: string): Promise<string> {
   const headers = { ...sdkHeaders(host), 'Content-Type': 'application/json' };
-  const sent = await hostRequest(host, '/__drobek/v1/auth/send-code', { method: 'POST', headers, body: JSON.stringify({ email: address }) });
-  expect(sent.status, sent.body).toBe(200);
-  const code = await pollLoginCode(request, address);
-  const verified = await hostRequest(host, '/__drobek/v1/auth/verify', { method: 'POST', headers, body: JSON.stringify({ email: address, code }) });
+  // The same address signs in several times in one test: ignore the codes it
+  // already received, and outlast the per-e-mail send cooldown (send-code
+  // answers 200 without a mail while it runs; OTP_EMAIL_COOLDOWN_MS = 5 s in dev).
+  const seen = new Set((await mailpitMessagesFor(request, address)).map((m) => m.ID));
+  let code: string | null = null;
+  for (let attempt = 0; attempt < 4 && !code; attempt++) {
+    const sent = await hostRequest(host, '/__drobek/v1/auth/send-code', { method: 'POST', headers, body: JSON.stringify({ email: address }) });
+    expect(sent.status, sent.body).toBe(200);
+    code = await pollLoginCode(request, address, 6_000, seen).catch(() => null);
+  }
+  expect(code, `no login code for ${address} after 4 send-code attempts`).toBeTruthy();
+  const verified = await hostRequest(host, '/__drobek/v1/auth/verify', { method: 'POST', headers, body: JSON.stringify({ email: address, code: code! }) });
   expect(verified.status, verified.body).toBe(200);
   const sc = verified.headers['set-cookie'];
   const m = new RegExp(`(${COOKIE}=[0-9a-f]{64})`).exec((Array.isArray(sc) ? sc : sc ? [sc] : []).join('\n'));
