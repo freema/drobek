@@ -104,7 +104,7 @@ test.describe('dashboard Modules tab (M2-02) @local', () => {
     app = created.json as unknown as Created;
 
     await ownerPage.goto(`/workspaces/${app.workspace}/apps/${app.slug}`);
-    await ownerPage.getByTestId('app-modules-link').click();
+    await ownerPage.locator('[data-testid="app-tab"][data-tab="modules"]').click();
     await expect(ownerPage).toHaveURL(new RegExp(`/apps/${app.slug}/modules$`));
     for (const m of ['hello', 'auth', 'email', 'forms', 'data', 'proxy']) {
       await expect(ownerPage.locator(`[data-testid="module-row"][data-module="${m}"]`)).toBeVisible();

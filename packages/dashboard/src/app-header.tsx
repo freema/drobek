@@ -224,7 +224,6 @@ export function AppTabs({ header }: { header: AppHeaderData }) {
           aria-current={t.key === active ? 'page' : undefined}
           data-testid="app-tab"
           data-tab={t.key}
-          data-testid={`app-${t.key}-link`}
         >
           {t.label}
         </Link>
