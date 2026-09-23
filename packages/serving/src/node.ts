@@ -31,6 +31,7 @@ import {
 import { appSecurityHeaders } from './csp.js';
 import { appAccessSecret, appCookiesSecure } from './password.js';
 import { ServeStore } from './store.server.js';
+import { UnknownHostLimiter, unknownHostLimitsFromEnv } from './unknown-host.js';
 
 /** The unlock form is tiny; anything bigger is not a password submission. */
 const MAX_FORM_BYTES = 4096;
@@ -177,8 +178,12 @@ function customDomainOriginFor(hosts: HostConfig): (hostname: string) => string 
 
 export type NodeMiddleware = (req: IncomingMessage, res: ServerResponse, next: (err?: unknown) => void) => void;
 
-/** The production handler deps: HKDF'd access key, Redis limiter, insights counters + beacon. */
-export function defaultHandlerDeps(store: ServeStore): HandlerDeps {
+/**
+ * The production handler deps: HKDF'd access key, Redis limiters (unlock
+ * attempts; NSO-315 unknown hosts per IP, APPS_UNKNOWN_HOST_LIMIT /
+ * APPS_UNKNOWN_HOST_WINDOW_MS), insights counters + beacon.
+ */
+export function defaultHandlerDeps(store: ServeStore, log?: Logger): HandlerDeps {
   return {
     store,
     accessSecret: appAccessSecret(),
@@ -187,19 +192,24 @@ export function defaultHandlerDeps(store: ServeStore): HandlerDeps {
       (await rateLimitRedis('app-unlock', `${appId}:${ip ?? 'unknown'}`, UNLOCK_ATTEMPTS, UNLOCK_WINDOW_MS)).ok,
     signal: (appId, kind, path) => void incrementServingSignal(appId, kind, path),
     beacon: (req, app) => handleBeacon(req, app.id),
+    unknownHosts: new UnknownHostLimiter({
+      ...unknownHostLimitsFromEnv(),
+      counter: async (ip, limit, windowMs) => (await rateLimitRedis('apps-unknown-host', ip, limit, windowMs)).ok,
+      onError: (err) => log?.warn('unknown-host limiter unavailable', { error: String((err as Error)?.message ?? err) }),
+    }),
   };
 }
 
 export function createAppsHostMiddleware(opts: AppsHostOptions = {}): NodeMiddleware {
   const hosts = opts.hosts ?? hostConfig();
   const store = opts.store ?? new ServeStore();
+  const log = opts.log ?? createConsoleLogger('apps-host');
   const deps: HandlerDeps = {
-    ...defaultHandlerDeps(store),
+    ...defaultHandlerDeps(store, log),
     customDomainOrigin: customDomainOriginFor(hosts),
     ...opts.deps,
     store,
   };
-  const log = opts.log ?? createConsoleLogger('apps-host');
 
   const plain = (res: ServerResponse, status: number, body: string) =>
     send(res, {

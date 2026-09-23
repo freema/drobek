@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { AUDIT_ACTIONS, writeAudit } from '@drobek/audit';
 import { apps, getDb } from '@drobek/db';
 import { AppsError } from './errors.js';
+import { notifyAppChanged } from './events.js';
 import { releaseDeletedAppSlugs } from './lifecycle.server.js';
 import { suggestSlug, validateAppSlug } from './slug.js';
 import type { Actor } from './types.js';
@@ -41,7 +42,9 @@ async function slugTaken(slug: string): Promise<AppsError> {
 /**
  * Create an app in a workspace. Slugs are global: a taken one fails with
  * `slug_taken` + a free `<slug>-<4hex>` suggestion (a soft-deleted app holds
- * its slug for 30 days). Audited as `app.create`.
+ * its slug for 30 days). Audited as `app.create`. Announces itself as an
+ * app-changed `create` event (NSO-315) so an app host that cached the slug as
+ * unknown serves the new app on the very next request.
  */
 export async function createApp(input: CreateAppInput): Promise<{ id: string; slug: string }> {
   const { workspaceId, slug, actor } = input;
@@ -58,8 +61,9 @@ export async function createApp(input: CreateAppInput): Promise<{ id: string; sl
   await releaseDeletedAppSlugs({ slug });
   if (await slugExists(slug)) throw await slugTaken(slug);
 
+  let created: { id: string; slug: string };
   try {
-    return await getDb().transaction(async (tx) => {
+    created = await getDb().transaction(async (tx) => {
       const [row] = await tx
         .insert(apps)
         .values({ workspaceId, slug, name })
@@ -82,4 +86,6 @@ export async function createApp(input: CreateAppInput): Promise<{ id: string; sl
     if (isUniqueViolation(err)) throw await slugTaken(slug);
     throw err;
   }
+  await notifyAppChanged({ app_id: created.id, slug: created.slug, kind: 'create' });
+  return created;
 }

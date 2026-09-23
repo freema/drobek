@@ -75,6 +75,8 @@ export {
   type PlatformHandler,
 } from './handler.js';
 export {
+  MAX_NEGATIVE_ENTRIES,
+  NEGATIVE_TTL_MS,
   RESOLVE_TTL_MS,
   ServeStore,
   dbLoaders,
@@ -84,6 +86,15 @@ export {
   type ServeStoreOptions,
   type ServeVersion,
 } from './store.server.js';
+export {
+  DEFAULT_UNKNOWN_HOST_LIMIT,
+  DEFAULT_UNKNOWN_HOST_WINDOW_MS,
+  UnknownHostLimiter,
+  unknownHostLimitsFromEnv,
+  type UnknownHostCounter,
+  type UnknownHostLimiterOptions,
+  type UnknownHostLimits,
+} from './unknown-host.js';
 export { subscribeServeCache, type ServeCacheSubscription } from './subscriber.server.js';
 export {
   createAppsHostMiddleware,

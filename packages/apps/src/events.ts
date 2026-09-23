@@ -19,8 +19,12 @@ export interface AppChangedEvent {
   slug: string;
   /** The version that was written / restored / published, when there is one. */
   version?: number;
-  /** `domain` (M3-01): a custom domain of the app was added, verified, unverified, removed or made primary. */
-  kind?: 'version' | 'publish' | 'unpublish' | 'settings' | 'delete' | 'domain';
+  /**
+   * `domain` (M3-01): a custom domain of the app was added, verified, unverified, removed or made primary.
+   * `create` (NSO-315): the app row was just created — the app hosts forget a
+   * cached "no such slug", so the new app is reachable at once.
+   */
+  kind?: 'version' | 'publish' | 'unpublish' | 'settings' | 'delete' | 'domain' | 'create';
 }
 
 const local = new EventEmitter();

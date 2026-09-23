@@ -5,7 +5,9 @@
  *
  * Order (each step before any byte of the app is touched):
  *   1. method — GET/HEAD, plus POST to the password-unlock path; else 405;
- *   2. the app behind the host (404 page when there is none);
+ *   2. the app behind the host (404 page when there is none; NSO-315: a client
+ *      IP past its unknown-host budget gets 429 instead — and, while throttled,
+ *      429 before any lookup for hosts the cache does not know as live apps);
  *   3. the visibility gate (password page / unlock POST);
  *   4. the version the host serves (404 "not published" / "nothing compiled");
  *   5. the file: built wins over source, TS/JSX sources never served, SPA
@@ -70,6 +72,7 @@ import {
   resolveServePath,
 } from './resolve.js';
 import type { ServeApp, ServeStore } from './store.server.js';
+import type { UnknownHostLimiter } from './unknown-host.js';
 import { decideVisibility } from './visibility.js';
 
 export interface AppRequest {
@@ -139,6 +142,8 @@ export interface HandlerDeps {
   reportUrl?: (host: string) => string;
   /** The terms the 451 page links (default: TERMS_URL, else `<PUBLIC_APP_URL>/terms`). */
   termsUrl?: string;
+  /** NSO-315: per-IP budget of "no app here" answers (absent → never throttled). */
+  unknownHosts?: UnknownHostLimiter;
 }
 
 /** Header naming the app behind an app-host response (M4-02). */
@@ -201,9 +206,26 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
     return wellKnownReport(req, deps, method, security);
   }
 
-  if (!req.target) return missing('no-app');
+  // ── the app (NSO-315: unknown hosts are counted per client IP) ──
+  const throttled = (): AppResponse => ({
+    status: 429,
+    headers: {
+      ...security,
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Cache-Control': NO_STORE,
+      'Retry-After': String(deps.unknownHosts?.retryAfterSec ?? 60),
+    },
+    body: method === 'HEAD' ? null : 'Too Many Requests',
+  });
+  const unknownApp = async (): Promise<AppResponse> =>
+    deps.unknownHosts && !(await deps.unknownHosts.allow(req.clientIp)) ? throttled() : missing('no-app');
+
+  if (!req.target) return unknownApp();
+  if (deps.unknownHosts?.isThrottled(req.clientIp) && !deps.store.knowsLiveApp(req.target.slug)) {
+    return throttled();
+  }
   const { app, version } = await deps.store.resolve(req.target);
-  if (!app) return missing('no-app');
+  if (!app) return unknownApp();
   security = {
     ...appSecurityHeaders({ noindex, frameAncestors: parseFrameAncestors(app.frameAncestors) }),
     [APP_HEADER]: app.slug,

@@ -7,7 +7,9 @@
  * the first request after a publish already sees the new version) and a
  * dedicated Redis subscriber connection (changes made by any other process).
  * Busting twice is harmless. A `domain` event (M3-01) also drops every cached
- * custom-host resolution.
+ * custom-host resolution (and every cached custom-host miss). A `create` event
+ * (NSO-315, from createApp) busts the slug like any other — which forgets a
+ * cached "no such slug", so the new app is served at once.
  */
 import type { Redis } from 'ioredis';
 import {

@@ -155,6 +155,35 @@ describe('cache bust on app-changed', () => {
   });
 });
 
+describe('unknown slugs through the real loaders (NSO-315)', () => {
+  it('a slug cached as unknown is served right after createApp (its create event busts the miss)', async () => {
+    const store = new ServeStore();
+    const sub = subscribeServeCache(store, { redis: null });
+    try {
+      const preview = { kind: 'preview' as const, slug: 'late-app' };
+      expect(await store.resolve(preview)).toEqual({ app: null, version: null });
+      const created = await createApp({ workspaceId: wsId, slug: 'late-app', actor });
+      expect((await store.resolve(preview)).app?.id).toBe(created.id);
+    } finally {
+      await sub.stop();
+    }
+  });
+
+  it('an unknown custom hostname is cached as a miss until a domain event', async () => {
+    const store = new ServeStore();
+    const sub = subscribeServeCache(store, { redis: null });
+    try {
+      const created = await createApp({ workspaceId: wsId, slug: 'miss-domain-app', actor });
+      const app = { id: created.id, slug: created.slug, workspaceId: wsId };
+      expect(await store.resolveCustomHost('miss.firma.cz')).toBeNull();
+      await addDomain(app, 'miss.firma.cz', { userId: actor.userId, kind: 'user' });
+      expect(await store.resolveCustomHost('miss.firma.cz')).toEqual({ slug: null });
+    } finally {
+      await sub.stop();
+    }
+  });
+});
+
 describe('custom domains through the real loaders (M3-01)', () => {
   const nodata = () => Promise.reject(Object.assign(new Error('nodata'), { code: 'ENODATA' }));
 

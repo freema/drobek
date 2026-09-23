@@ -896,6 +896,18 @@ block, then `next` is pushed and the single MR opened.
 - A worktree agent's Bash tool refuses any command TEXT containing the word
   git (even inside python / grep patterns such as `GIT_SHA`) — write such
   files with the Write/Edit tools; scripts that run git themselves are fine.
+- NSO-315: `ServeStore.resolve` no longer stores `{ app: null }` in the
+  positive per-slug map — misses go to the separate negative LRU (30 s). A test
+  that expects a missing app to stay missing for the full 60 s positive TTL, or
+  that a new app appears only after the TTL, is now wrong: `createApp` emits a
+  `create` app-changed event itself (in-process emitter first), so any process
+  with `subscribeServeCache` sees the app at once. The unknown-host limiter is
+  in `defaultHandlerDeps`; unit tests that inject their own deps get none.
+- NSO-315 e2e (`apps-unknown-host.spec.ts`): the 429 part sends a random
+  TEST-NET-2 `X-Real-IP`, honoured only on the plain-http dev stack; behind
+  Caddy (`TRUST_PROXY=x-real-ip`) every spec shares the runner's IP, so the
+  part is skipped there — a throttled IP also gets 429 (without lookup) for
+  real apps the serve cache has not seen yet, for up to one window.
 
 ## Failed approaches
 

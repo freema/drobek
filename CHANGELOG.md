@@ -65,6 +65,25 @@
   schema's content (before, every module request re-parsed the config and
   recompiled every collection schema — ~2 ms each).
 
+### Apps origin: negative cache + per-IP limit for unknown hosts (NSO-315)
+
+- **Negative cache** in `ServeStore`: a slug with no live app and a hostname
+  that is no custom domain are remembered for 30 s in their own count-capped
+  LRUs (10 000 each), apart from the positive caches — repeating the same
+  unknown host is one DB lookup, and a random-slug flood cannot evict a real
+  app's entry. One miss answers every host of the slug (prod, preview, `--vN`).
+- `createApp` (`@drobek/apps`) now announces an app-changed **`create`** event;
+  any event of a slug drops its cached miss, so a new app is reachable on the
+  very next request. A `domain` event also drops every hostname miss.
+- **Per-IP limit** on "no app here" 404s: `APPS_UNKNOWN_HOST_LIMIT` (default
+  60) per `APPS_UNKNOWN_HOST_WINDOW_MS` (default 60 000), counted in Redis
+  (`drobek:rl:apps-unknown-host:<ip>`). Past it the answer is `429 Too Many
+  Requests` (plain text, `Retry-After`, the base app security headers), and
+  while throttled the IP gets 429 without any lookup for hosts the cache does
+  not already know as live apps. A client without a recognised IP is never
+  counted (NSO-309); the limiter fails open when Redis is down. Other 404
+  pages and headers are unchanged. No migration.
+
 ### Dashboard account area: API keys, OAuth connections, Activity filter, source footer (NSO-284)
 
 - **`/me/api-keys`**: create a personal `drk_` key (name + `read` / `write` /

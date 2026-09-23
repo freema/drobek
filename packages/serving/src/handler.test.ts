@@ -12,6 +12,9 @@ import type { StoredFile } from './manifest.js';
 import { UNLOCK_PATH } from './pages.js';
 import { APP_ACCESS_COOKIE, hashAppPassword, mintAppAccessToken } from './password.js';
 import { ServeStore, type ServeApp, type ServeLoaders } from './store.server.js';
+import { emitLocalAppChanged } from '@drobek/apps';
+import { subscribeServeCache } from './subscriber.server.js';
+import { UnknownHostLimiter } from './unknown-host.js';
 
 const sha = (s: string) => createHash('sha256').update(s).digest('hex');
 
@@ -717,5 +720,171 @@ describe('abuse: report pointer, takedown 451, X-Drobek-App (M4-02)', () => {
     const r = await handleAppRequest(req(prod('shop')), withReport(deps));
     expect(r.status).toBe(451);
     expect(r.headers.Location).toBeUndefined();
+  });
+});
+
+describe('unknown hosts: negative cache (NSO-315)', () => {
+  it('a repeated unknown slug is ONE lookup for every host of it, until the 30 s TTL ends', async () => {
+    let now = 1_000;
+    const s = new ServeStore({ loaders, now: () => now });
+    const d = { ...deps, store: s };
+    for (const t of [prod('ghost'), prod('ghost'), preview('ghost'), ver('ghost', 2)]) {
+      expect((await handleAppRequest(req(t), d)).status).toBe(404);
+    }
+    expect(calls.resolve).toBe(1);
+    now += 30_001;
+    expect((await handleAppRequest(req(prod('ghost')), d)).status).toBe(404);
+    expect(calls.resolve).toBe(2);
+  });
+
+  it('a create event makes the new app reachable at once', async () => {
+    const s = new ServeStore({ loaders });
+    const sub = subscribeServeCache(s, { redis: null });
+    try {
+      const d = { ...deps, store: s };
+      expect((await handleAppRequest(req(preview('fresh')), d)).status).toBe(404);
+      model.set('fresh', {
+        app: { id: 'app_fresh', slug: 'fresh', workspaceId: 'ws_1', visibility: 'public', frameAncestors: null },
+        published: null,
+        versions: new Map([[1, version('f_1', true, '<h1>fresh</h1>')]]),
+        passwordHash: null,
+      });
+      // Without an event the miss is still remembered …
+      expect((await handleAppRequest(req(preview('fresh')), d)).status).toBe(404);
+      // … the create event (createApp) forgets it: the very next request serves the app.
+      emitLocalAppChanged({ app_id: 'app_fresh', slug: 'fresh', kind: 'create' });
+      expect(text((await handleAppRequest(req(preview('fresh')), d)).body)).toContain('<h1>fresh</h1>');
+    } finally {
+      await sub.stop();
+    }
+  });
+
+  it('misses live apart from the positive cache: a random-slug flood never evicts a real app', async () => {
+    const s = new ServeStore({ loaders, negativeMaxEntries: 5 });
+    const d = { ...deps, store: s };
+    await handleAppRequest(req(prod('shop')), d);
+    for (let i = 0; i < 50; i++) await handleAppRequest(req(prod(`rnd-${i}`)), d);
+    const before = calls.resolve;
+    expect((await handleAppRequest(req(prod('shop')), d)).status).toBe(200);
+    expect(calls.resolve).toBe(before);
+    // Bounded: the newest misses are still cached, the oldest were evicted (looked up again).
+    await handleAppRequest(req(prod('rnd-49')), d);
+    expect(calls.resolve).toBe(before);
+    await handleAppRequest(req(prod('rnd-0')), d);
+    expect(calls.resolve).toBe(before + 1);
+  });
+
+  it('a custom-host miss is cached too; a domain event forgets it', async () => {
+    const domains = new Map<string, { slug: string | null }>();
+    let lookups = 0;
+    const s = new ServeStore({
+      loaders: {
+        ...loaders,
+        resolveCustomHost: async (h) => {
+          lookups++;
+          return domains.get(h) ?? null;
+        },
+      },
+    });
+    const sub = subscribeServeCache(s, { redis: null });
+    try {
+      expect(await s.resolveCustomHost('shop.firma.cz')).toBeNull();
+      expect(await s.resolveCustomHost('shop.firma.cz')).toBeNull();
+      expect(lookups).toBe(1);
+      domains.set('shop.firma.cz', { slug: null });
+      // A version event of some app does not touch the hostname misses …
+      emitLocalAppChanged({ app_id: 'app_shop', slug: 'shop', kind: 'version' });
+      expect(await s.resolveCustomHost('shop.firma.cz')).toBeNull();
+      // … a domain event does.
+      emitLocalAppChanged({ app_id: 'app_shop', slug: 'shop', kind: 'domain' });
+      expect(await s.resolveCustomHost('shop.firma.cz')).toEqual({ slug: null });
+      expect(lookups).toBe(2);
+    } finally {
+      await sub.stop();
+    }
+  });
+});
+
+describe('unknown hosts: per-IP limit (NSO-315)', () => {
+  function limited(limit = 3) {
+    const counts = new Map<string, number>();
+    const keys: string[] = [];
+    const limiter = new UnknownHostLimiter({
+      limit,
+      windowMs: 60_000,
+      counter: async (key, max) => {
+        keys.push(key);
+        const n = (counts.get(key) ?? 0) + 1;
+        counts.set(key, n);
+        return n <= max;
+      },
+    });
+    return { d: { ...deps, unknownHosts: limiter } as HandlerDeps, keys };
+  }
+
+  it('past the limit an unknown host answers 429 (small body, base headers only)', async () => {
+    const { d, keys } = limited(3);
+    for (let i = 0; i < 3; i++) expect((await handleAppRequest(req(prod(`nope-${i}`)), d)).status).toBe(404);
+    const r = await handleAppRequest(req(prod('nope-3')), d);
+    expect(r.status).toBe(429);
+    expect(text(r.body)).toBe('Too Many Requests');
+    expect(r.headers).toEqual({
+      'Content-Security-Policy': APP_CSP,
+      'X-Content-Type-Options': 'nosniff',
+      'Referrer-Policy': 'no-referrer',
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'Retry-After': '60',
+    });
+    expect(keys).toEqual(Array(4).fill('203.0.113.9'));
+    expect((await handleAppRequest(req(prod('nope-4'), '/', { method: 'HEAD' }), d)).body).toBeNull();
+  });
+
+  it('while throttled: no lookup for unknown hosts; apps the cache knows as live are still served', async () => {
+    const { d } = limited(1);
+    await handleAppRequest(req(prod('shop')), d); // cached as a live app
+    await handleAppRequest(req(prod('nope-a')), d);
+    expect((await handleAppRequest(req(prod('nope-b')), d)).status).toBe(429);
+    const before = calls.resolve;
+    expect((await handleAppRequest(req(prod('nope-c')), d)).status).toBe(429);
+    expect((await handleAppRequest(req(null), d)).status).toBe(429);
+    expect(calls.resolve).toBe(before);
+    expect((await handleAppRequest(req(prod('shop')), d)).status).toBe(200);
+    expect((await handleAppRequest(req(preview('shop')), d)).status).toBe(200);
+  });
+
+  it('a malformed app host (no target) counts as unknown too', async () => {
+    const { d } = limited(1);
+    expect((await handleAppRequest(req(null), d)).status).toBe(404);
+    expect((await handleAppRequest(req(null), d)).status).toBe(429);
+  });
+
+  it('NSO-309: a client without a recognised IP is never counted (no shared bucket)', async () => {
+    const { d, keys } = limited(1);
+    for (let i = 0; i < 5; i++) {
+      const r = await handleAppRequest({ ...req(prod(`anon-${i}`)), clientIp: null }, d);
+      expect(r.status).toBe(404);
+    }
+    expect(keys).toEqual([]);
+  });
+
+  it('a failing counter fails open (the plain 404)', async () => {
+    const errors: unknown[] = [];
+    const limiter = new UnknownHostLimiter({
+      limit: 1,
+      counter: async () => {
+        throw new Error('redis down');
+      },
+      onError: (e) => errors.push(e),
+    });
+    const d = { ...deps, unknownHosts: limiter };
+    for (let i = 0; i < 3; i++) expect((await handleAppRequest(req(prod(`x-${i}`)), d)).status).toBe(404);
+    expect(errors).toHaveLength(3);
+  });
+
+  it('missing files of a known app are never counted', async () => {
+    const { d, keys } = limited(1);
+    for (let i = 0; i < 5; i++) await handleAppRequest(req(prod('shop'), `/missing-${i}.png`), d);
+    expect(keys).toEqual([]);
   });
 });
