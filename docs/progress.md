@@ -585,6 +585,23 @@ block, then `next` is pushed and the single MR opened.
 - The Write tool turns `﻿` escapes in regex literals into literal BOM
   characters (invisible in diffs); `modules/files/src/sniff.ts` strips the
   BOM with `charCodeAt(0) === 0xfeff` instead.
+- NSO-322: `mailBudgets()` now also has `perAppSignIn`; with the unit-test
+  configs where one app's sign-in share equals the whole sign-in budget
+  (`hourlyMax` 4 → sign-in 2, share min(2, ≥10) = 2) the per-app refusal
+  (`limit: EMAIL_SIGNIN_APP_HOURLY_SHARE`) fires BEFORE the class pause — a
+  test that wants the `sign_in` pause from one app pre-fills the class
+  counter from another app (same trick as the notification share).
+- NSO-322: proxy upstreams now need `allowed_app_ids` to name the app; the
+  confirm of an assignment by a workspace admin writes it (onConfirmed).
+  Unit tests that insert upstream rows directly must set `allowedAppIds`;
+  an e2e/dev flow where an EDITOR confirms a proxy assignment gets `403
+  admin_required`.
+- NSO-322: the runtime's effective-config memo hands every caller a
+  `structuredClone`; a module whose configSchema transforms into something
+  not cloneable (a function) is simply never memoized.
+- A concurrency test on PGlite (one connection, transactions serialized)
+  can force an interleaving by wrapping the `db` in a Proxy whose
+  `transaction` waits on a promise (modules/data index.test.ts, NSO-322 M1).
 - A new workspace package (`modules/files`) needs its own anonymous
   `node_modules` volume in `docker-compose.yml` and a recreated dev container
   (`task up`), like every module before it; the uploads live in the named

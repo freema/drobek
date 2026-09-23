@@ -30,6 +30,41 @@
   apps. One-time cleanup of the older `smoke-*` apps is a manual runbook step
   (docs/progress.md → Next → M0-09). No migration.
 
+### Security: M1 review fixes (NSO-322)
+
+- **files**: the SVG sniffer's regex backtracked exponentially on repeated
+  `<?xml?>` / `<!---->` (a few hundred bytes from any signed-in end user
+  blocked the event loop for hours). It is a linear scanner now (PIs,
+  comments, one DOCTYPE with an internal subset, at most 64 prolog items,
+  then `<svg`); an unterminated item is not an SVG.
+- **proxy**: a backslash in the forwarded path (`/\evil.com/x`,
+  `..\..\admin`, `%5c`) is refused — the WHATWG URL parser reads `\` as
+  `/`, so it reached another host with the upstream secret injected, or
+  left the base path. The built target must keep the base origin and base
+  path, and the allowed prefixes are checked against the parsed target path.
+- **proxy**: assigning an upstream to an app and opening its `call` to
+  `public` now need a **workspace admin** (editors may still reject);
+  confirming puts the app on the upstream's `allowed_app_ids`, which the
+  forward path enforces (`403 upstream_not_allowed`; empty = no app). The
+  module contract gains `confirmRequired` items `{ change, confirmRole:
+  'admin' }` (pending `confirm_role`, `403 admin_required` for others;
+  `confirm_role: "admin"` in configure_module / get_app; the dashboard
+  pending panel says so) and an `onConfirmed(before, after, { app, db,
+  userId, role })` hook inside the confirm transaction.
+- **module e-mail**: one app can no longer pause sign-in codes for every
+  app: `EMAIL_SIGNIN_APP_HOURLY_SHARE` (default 25 % of the sign-in budget,
+  at least 10) per app, Redis `drobek:rl:mail:app:<app_id>:sign_in`; the
+  auth module clamps `AUTH_CODES_PER_APP_HOUR` to it
+  (`ctx.email.signInShare`).
+- **data**: a PATCH merges onto the record inside the app's write lock
+  (re-read `FOR UPDATE`) — concurrent PATCHes no longer lose fields.
+  Widening a collection's `read` to every signed-in user (`user`) needs the
+  owner's confirmation, except for a new empty collection.
+- **Performance**: effective module configs are memoized by the stored
+  config's content, and the data module's compiled JSON Schemas by the
+  schema's content (before, every module request re-parsed the config and
+  recompiled every collection schema — ~2 ms each).
+
 ### Dashboard account area: API keys, OAuth connections, Activity filter, source footer (NSO-284)
 
 - **`/me/api-keys`**: create a personal `drk_` key (name + `read` / `write` /
