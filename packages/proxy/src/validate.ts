@@ -76,8 +76,10 @@ function safeDecode(seg: string): string {
 /**
  * Normalize the forwarded subpath (the route `*` splat) to a leading-slash path,
  * REJECTING any traversal. A single `.` segment is dropped; a `..` segment (raw
- * OR percent-encoded) or an encoded slash inside a segment is rejected outright —
- * a legitimate API subpath never needs to climb out of its prefix.
+ * OR percent-encoded), an encoded slash, a backslash (raw or `%5c` — the WHATWG
+ * URL parser treats `\` as `/`, so `/\evil.com` would become another host,
+ * NSO-322 R2) or a control character inside a segment is rejected outright — a
+ * legitimate API subpath never needs any of them.
  */
 export function normalizeForwardPath(rawSplat: string): string {
   const trimmed = String(rawSplat ?? '').replace(/^\/+/, '');
@@ -93,6 +95,14 @@ export function normalizeForwardPath(rawSplat: string): string {
     }
     if (dec.includes('/') || seg.toLowerCase().includes('%2f')) {
       throw new ProxyError('path_not_allowed', 'encoded path separators are not allowed');
+    }
+    if (seg.includes('\\') || dec.includes('\\') || seg.toLowerCase().includes('%5c')) {
+      throw new ProxyError('path_not_allowed', 'backslashes are not allowed in the path');
+    }
+    // (Raw ones only: the URL parser silently drops a raw tab / CR / LF, `.\t.` → `..`.)
+    // eslint-disable-next-line no-control-regex
+    if (/[\u0000-\u001f\u007f]/.test(seg)) {
+      throw new ProxyError('path_not_allowed', 'control characters are not allowed in the path');
     }
     keep.push(seg);
   }
@@ -204,6 +214,10 @@ export function validateBaseUrl(
  * Build the concrete target URL for a forward: base_url (origin + configured base
  * path) + the normalized subpath + the caller's query string. Path segments are
  * joined without doubling or dropping slashes.
+ *
+ * The parsed result is re-checked (NSO-322 R2): it must keep the base URL's
+ * origin and stay under its base path at a segment boundary — whatever the
+ * WHATWG parser made of the joined string — else `path_not_allowed`.
  */
 export function buildTargetUrl(
   baseUrl: string,
@@ -215,8 +229,37 @@ export function buildTargetUrl(
   const sub = subpath.startsWith('/') ? subpath : `/${subpath}`;
   const joined = `${basePath}${sub}` || '/';
   const target = new URL(joined, `${base.protocol}//${base.host}`);
+  if (target.origin !== base.origin || !pathMatchesPrefix(target.pathname, basePath || '/')) {
+    throw new ProxyError('path_not_allowed', 'the path leaves the upstream base URL');
+  }
   if (search && search !== '?') {
     target.search = search.startsWith('?') ? search : `?${search}`;
   }
+  return target;
+}
+
+/** The target's path relative to the upstream's base path (`/` for the base itself). */
+export function targetSubpath(target: URL, baseUrl: string): string {
+  const basePath = new URL(baseUrl).pathname.replace(/\/+$/, '');
+  const rel = target.pathname.slice(basePath.length);
+  return rel === '' ? '/' : rel;
+}
+
+/**
+ * The whole path pipeline of one forward: normalize the raw splat
+ * (traversal-proof), build the target, then check the allowed prefixes against
+ * the path the upstream will ACTUALLY receive (the parsed target's pathname
+ * minus the base path) — not the pre-parse string (NSO-322 R2).
+ */
+export function resolveForwardTarget(
+  baseUrl: string,
+  rawSubpath: string,
+  search: string,
+  prefixes: string[]
+): URL {
+  const normalized = normalizeForwardPath(rawSubpath);
+  assertPathAllowed(normalized, prefixes);
+  const target = buildTargetUrl(baseUrl, normalized, search);
+  assertPathAllowed(targetSubpath(target, baseUrl), prefixes);
   return target;
 }

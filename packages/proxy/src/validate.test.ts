@@ -5,6 +5,7 @@ import {
   assertPathAllowed,
   buildTargetUrl,
   normalizeForwardPath,
+  resolveForwardTarget,
   normalizeMethods,
   normalizePrefixes,
   pathMatchesPrefix,
@@ -121,6 +122,52 @@ describe('buildTargetUrl', () => {
     expect(buildTargetUrl('https://api.example.com', '/', '').href).toBe(
       'https://api.example.com/'
     );
+  });
+});
+
+describe('backslashes never escape the upstream (NSO-322 R2)', () => {
+  const codeOf = (fn: () => unknown): string | undefined => {
+    try {
+      fn();
+    } catch (err) {
+      return err instanceof ProxyError ? err.code : 'not-a-proxy-error';
+    }
+    return undefined;
+  };
+  const BASE = 'https://api.example.com/v1';
+
+  it('rejects a raw or encoded backslash in any segment', () => {
+    for (const raw of ['\\evil.com/x', '/\\evil.com/x', 'a/..\\..\\admin', 'a\\b', 'a%5cb', 'a%5Cb', '%5C%5Cevil.com/x', 'x/%5c..%5C/admin', 'ok/..%5c']) {
+      expect(codeOf(() => normalizeForwardPath(raw)), raw).toBe('path_not_allowed');
+      expect(codeOf(() => resolveForwardTarget(BASE, raw, '', ['/'])), raw).toBe('path_not_allowed');
+    }
+  });
+
+  it('rejects raw control characters (the URL parser drops tab / CR / LF)', () => {
+    expect(codeOf(() => normalizeForwardPath('a/.\t./admin'))).toBe('path_not_allowed');
+    expect(codeOf(() => normalizeForwardPath('a/b\nc'))).toBe('path_not_allowed');
+  });
+
+  it('buildTargetUrl refuses a result off the base origin or base path', () => {
+    // What the old join produced for these (the WHATWG parser reads `\` as `/`):
+    expect(new URL('/\\evil.com/x', 'https://api.example.com').origin).toBe('https://evil.com');
+    expect(codeOf(() => buildTargetUrl('https://api.example.com', '/\\evil.com/x', ''))).toBe('path_not_allowed');
+    expect(codeOf(() => buildTargetUrl(BASE, '/..\\..\\admin', ''))).toBe('path_not_allowed');
+    expect(codeOf(() => buildTargetUrl(BASE, '/../admin', ''))).toBe('path_not_allowed');
+    expect(codeOf(() => buildTargetUrl('https://api.example.com/v1', '/', ''))).toBeUndefined();
+  });
+
+  it('checks the allowed prefixes against the parsed target path', () => {
+    expect(resolveForwardTarget(BASE, 'users/1', '?q=1', ['/users']).href).toBe('https://api.example.com/v1/users/1?q=1');
+    expect(codeOf(() => resolveForwardTarget(BASE, 'admin', '', ['/users']))).toBe('path_not_allowed');
+    expect(resolveForwardTarget(BASE, '', '', ['/']).href).toBe('https://api.example.com/v1/');
+  });
+
+  it('legitimate encoded characters still pass', () => {
+    expect(resolveForwardTarget(BASE, 'search/hello%20world', '', ['/search']).pathname).toBe('/v1/search/hello%20world');
+    expect(resolveForwardTarget(BASE, 'files/a%2Bb%40c.txt', '', ['/files']).pathname).toBe('/v1/files/a%2Bb%40c.txt');
+    expect(resolveForwardTarget(BASE, 'names/%C4%8Dau', '', ['/names']).pathname).toBe('/v1/names/%C4%8Dau');
+    expect(resolveForwardTarget('https://api.example.com', 'a/b', '', ['/a']).href).toBe('https://api.example.com/a/b');
   });
 });
 

@@ -17,12 +17,7 @@ import { decryptSecret } from './crypto.server.js';
 import { ProxyError } from './errors.js';
 import { DEFAULT_FORWARD_DEADLINE_MS, ssrfSafeForward } from './ssrf.server.js';
 import type { UpstreamRecord } from './upstreams.server.js';
-import {
-  assertMethodAllowed,
-  assertPathAllowed,
-  buildTargetUrl,
-  normalizeForwardPath,
-} from './validate.js';
+import { assertMethodAllowed, resolveForwardTarget } from './validate.js';
 
 export interface ForwardInput {
   upstream: UpstreamRecord;
@@ -58,9 +53,7 @@ export async function forwardToUpstream(input: ForwardInput): Promise<ForwardRes
 
   // 1) Method + path allow-lists.
   assertMethodAllowed(method, upstream.allowedMethods);
-  const normalizedPath = normalizeForwardPath(input.subpath);
-  assertPathAllowed(normalizedPath, upstream.allowedPathPrefixes);
-  const target = buildTargetUrl(upstream.baseUrl, normalizedPath, input.search);
+  const target = resolveForwardTarget(upstream.baseUrl, input.subpath, input.search, upstream.allowedPathPrefixes);
 
   // 2) Decrypt the secret IN MEMORY (fail closed on a wrong/rotated KEK).
   let secret: string | null = null;

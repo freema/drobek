@@ -27,6 +27,8 @@ export {
   normalizeMethods,
   normalizePrefixes,
   pathMatchesPrefix,
+  resolveForwardTarget,
+  targetSubpath,
   validateBaseUrl,
   DEFAULT_PROXY_ALLOWED_PORTS,
   effectivePort,
