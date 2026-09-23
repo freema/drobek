@@ -17,6 +17,7 @@ is pending — Tomáš.**
 
 ## Quickstart (clean Ubuntu 24.04 + Docker)
 
+<!-- quickstart:start -->
 What you need:
 
 - a server with a public IPv4 (and/or IPv6), **linux/amd64** (there is no ARM
@@ -92,7 +93,8 @@ nano .env.production       # SMTP_PASS='…'   (single quotes if it has $, # or 
 again whenever you like (after changing TLS settings: then `task tls:reload`).
 The TLS default for a real domain is **on-demand** (one Let's Encrypt
 certificate per app host, gated by drobek); `TLS_MODE=wildcard-file` or
-`TLS_MODE=dns` pick a wildcard certificate instead — see [TLS](#tls).
+`TLS_MODE=dns` pick a wildcard certificate instead — see "TLS" in
+`docs/SELF-HOSTING.md`.
 
 **4. Start**
 
@@ -157,6 +159,7 @@ clients: `NODE_EXTRA_CA_CERTS=drobek-root.crt`). App hosts are
 `https://<slug>.apps.localhost`, which browsers resolve to the machine itself.
 `HTTPS_PORT=8443` (plus `HTTP_PORT=8080`) moves Caddy off 443 — every URL then
 carries the port.
+<!-- quickstart:end -->
 
 ## Hosts
 
@@ -212,7 +215,7 @@ built-ins.
 | `TLS_CUSTOM_DOMAINS`, `DOMAINS_MAX_PER_APP`, `DOMAINS_DNS_SERVERS`, `DOMAINS_RECHECK_INTERVAL_MS` | — | [custom domains](#custom-domains) (catch-all certificate on by default in on-demand mode; 3 per app) |
 | `TERMS_URL`, `ABUSE_REPORTS_PER_IP_HOUR`, `ABUSE_BRAND_WORDS` | — | [abuse handling](#abuse-and-takedowns) (terms link of the 451 page; 5 reports / IP / hour; publish-heuristic brand words) |
 | `EMAIL_SIGNIN_APP_HOURLY_SHARE` | — (25) | one app's percent of the sign-in e-mail budget — raise it on a single-app server (see [Production compose](#production-compose)) |
-| limits (`OTP_*`, `COMPILE_*`, `DATA_*`, `FILES_*`, `EMAIL_*`, …) | — | production defaults; the full list is in [`.env.example`](../.env.example) |
+| limits (`OTP_*`, `COMPILE_*`, `DATA_*`, `FILES_*`, `EMAIL_*`, …) | — | production defaults; every variable is in the [Environment reference](#environment-reference) |
 
 The file is read by `docker compose` and by `docker run --env-file` (the
 Caddyfile generator): one `KEY=value` per line, no inline comments; quote a
@@ -273,6 +276,123 @@ Volumes (named `drobek-prod_<name>`):
 | `caddy_data` | ACME account, issued certificates, Caddy's local CA — losing it means re-issuing every certificate | yes (tar) |
 | `caddy_config` | Caddy's autosaved config (rebuilt from the Caddyfile) | no |
 | `redis_data` | sessions, caches, rate limits, leases, un-flushed request counters (AOF) | no — after a restore everyone signs in again |
+
+## Environment reference
+
+Every variable drobek, its compose files and its tests read. The production
+compose file sets the ones marked *(compose)* itself; everything else is
+optional unless the table says otherwise, and every limit has a production
+default. The same variables, with longer comments, are in
+[`.env.example`](../.env.example) (the dev stack) and
+[`.env.production.example`](../.env.production.example) (self-host). A
+limit marked *(plan)* can also come per workspace from the limits provider.
+
+### Hosts, image and ports
+
+| Variable | Default | What |
+| --- | --- | --- |
+| `PUBLIC_APP_URL` | dev `http://localhost:3041` | **required** — the dashboard origin: OAuth issuer, dashboard, MCP at `/mcp`. Never serves an app |
+| `PUBLIC_MCP_URL` | `PUBLIC_APP_URL` + `/mcp` | the MCP resource identifier (the token audience, RFC 8707) |
+| `PUBLIC_ORIGIN` | `PUBLIC_APP_URL` | invite links and the Google `redirect_uri` base |
+| `APPS_DOMAIN` | dev `apps.localhost:3041` | **required in production** — apps live on `*.<APPS_DOMAIN>` (host[:port], no scheme) |
+| `APPS_URL_SCHEME` | `http` for `*.localhost`, else `https` *(compose: https)* | scheme of the app URLs drobek hands out |
+| `APPS_UNKNOWN_HOST_LIMIT` / `APPS_UNKNOWN_HOST_WINDOW_MS` | 60 / 60000 | "no app here" answers per client IP per window, then 429 |
+| `DROBEK_IMAGE_TAG` | `latest` | image tag of the production compose ([Image tags](#image-tags)) |
+| `HTTP_PORT` / `HTTPS_PORT` / `PUBLISH_IP` | 80 / 443 / all | ports and bind address Caddy publishes |
+| `TRUST_PROXY` | auto *(compose: `x-real-ip`)* | which client-IP header is trusted: `x-real-ip` = only Caddy's `X-Real-IP`; unset = `X-Real-IP`, else the rightmost `X-Forwarded-For` hop |
+| `NODE_ENV` | *(compose: production)* | `production` turns on `__Host-` cookies and the fail-closed secret checks, and ignores the dev-only switches below |
+| `PORT` | 3000 | the port drobek listens on inside the container (the dev compose maps `WEB_PORT` to it) |
+
+### Secrets and TLS
+
+| Variable | Default | What |
+| --- | --- | --- |
+| `DROBEK_MASTER_KEY` | — | **required, secret** — 64 hex; encrypts module and upstream secrets, keys the app-access cookie and the forms token. Keep it with your backups |
+| `POSTGRES_PASSWORD` | — | **required, secret** (production compose) — used when `pg_data` is first created |
+| `TLS_ASK_TOKEN` | — | secret, ≥ 32 URL-safe characters — the on-demand TLS `ask` token (drobek + Caddy); unset = every certificate refused |
+| `TLS_INTERNAL` | — | `1` = Caddy's local CA for every site (a test box, `task dev:tls`) |
+| `TLS_WILDCARD_CERT_FILE` / `TLS_WILDCARD_KEY_FILE` / `TLS_CERTS_DIR` | — / — / `./certs` | TLS path (a): your wildcard certificate files |
+| `TLS_DNS_PROVIDER` / `TLS_DNS_PROVIDER_ARGS` / `TLS_DNS_CHALLENGE_OVERRIDE_DOMAIN` | — | TLS path (b): ACME DNS-01 |
+| `CADDY_IMAGE` / `CADDY_BUILD_TARGET` / `CADDY_DNS_MODULE` | `caddy:2-alpine` / — / — | the DNS-01 Caddy build (`drobek-caddy:dns`, `dns`, `github.com/caddy-dns/<provider>`) |
+| `TLS_ACME_EMAIL` | — | ACME account e-mail for expiry notices |
+| `TLS_CUSTOM_DOMAINS` | on in on-demand mode | `1` / `0` — the on-demand catch-all for verified custom domains |
+
+### Sign-in, e-mail and the operator
+
+| Variable | Default | What |
+| --- | --- | --- |
+| `SUPERADMIN_EMAIL` | — | comma-separated sign-in addresses with super-admin rights over every workspace (the abuse queue, reports) |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_SECURE` / `SMTP_USER` / `SMTP_PASS` / `EMAIL_FROM` | — / 587 / 0 / — / — / — | **`SMTP_HOST` required** — the SMTP server for sign-in codes and module mail (`SMTP_SECURE=1` = implicit TLS) |
+| `OTP_IP_SHORT_LIMIT` / `OTP_IP_DAILY_LIMIT` | 5 per 15 min / 20 per 24 h | dashboard sign-in codes sent per client IP |
+| `OTP_EMAIL_HOURLY_LIMIT` / `OTP_EMAIL_COOLDOWN_MS` | 3 per hour / 60000 | codes per address, minimum gap per address |
+| `OTP_GLOBAL_HOURLY_MAX` | 100 | codes per hour server-wide, then sending pauses |
+| `OTP_VERIFY_IP_LIMIT` / `OTP_VERIFY_IP_WINDOW_S` | 30 / 900 | code checks per client IP per window (the per-code cap of 5 guesses always applies) |
+| `OTP_LOGIN_DISABLED` | 0 | `1` = kill switch: no sign-in codes are sent |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | — | optional Google sign-in for the dashboard (redirect URI `<PUBLIC_ORIGIN>/auth/google/callback`) |
+| `GOOGLE_AUTH_URL` / `GOOGLE_TOKEN_URL` / `GOOGLE_USERINFO_URL` | Google's endpoints | dev only: point Google sign-in at the mock provider (`task mock:google`) |
+| `OAUTH_DCR_MAX_UNUSED_CLIENTS` | 500 | MCP clients registered by DCR that never got consent, before registration answers 503 |
+| `OAUTH_CIMD_DEV_ORIGINS` | — | dev/test only, ignored in production: origins allowed to serve a Client ID Metadata Document over plain http |
+
+### Apps, compiler and serving
+
+| Variable | Default | What |
+| --- | --- | --- |
+| `COMPILE_MAX_FILES` / `COMPILE_MAX_FILE_BYTES` / `COMPILE_MAX_TOTAL_BYTES` | 200 / 524288 / 5242880 | per app version |
+| `COMPILE_MAX_IMPORT_DEPTH` | 50 | depth of a relative import chain |
+| `COMPILE_TIMEOUT_MS` / `COMPILE_CONCURRENCY` / `COMPILE_QUEUE_TIMEOUT_MS` | 10000 / 4 / 10000 | per build; builds at once; max queue wait (then `busy`) |
+| `BEACON_RATE_LIMIT` / `BEACON_APP_RATE_LIMIT` / `BEACON_RATE_WINDOW_MS` | 60 / 600 / 60000 | browser error reports per app+IP and per app per window |
+| `BEACON_MAX_EVENTS_PER_APP` / `BEACON_RETENTION_DAYS` / `BEACON_SAMPLE_RATE` | 500 / 14 / 1 | the per-app error buffer (newest N, max age) and sampling |
+| `DROBEK_MIGRATE_ON_START` | 1 | `0` = the server does not apply migrations on start (tests, tooling) |
+| `AUDIT_RETENTION_DAYS` | 365 | audit rows older than this are pruned daily |
+
+### Platform modules
+
+| Variable | Default | What |
+| --- | --- | --- |
+| `DROBEK_MODULES` | none *(compose: `auth,email,forms,data,proxy,files`)* | the modules this server runs; `x` loads `drobek-module-x` ([`MODULES.md`](./MODULES.md)) |
+| `DROBEK_MODULES_ROOT` | the server's directory | where module packages are resolved from |
+| `DROBEK_SKILLS_DIR` | `./skills` (image: `/app/skills`) | the general skills `skill_info` lists |
+| `LIMITS_PROVIDER_URL` / `LIMITS_PROVIDER_SECRET` | — | per-workspace limits from your own HMAC-signed endpoint (secret ≥ 32 characters) |
+| `AUTH_CODES_PER_IP_15MIN` / `AUTH_CODES_PER_IP_DAY` | 5 / 20 | `auth`: sign-in codes per client IP *(plan)* |
+| `AUTH_CODES_PER_EMAIL_HOUR` / `AUTH_CODES_PER_APP_HOUR` | 3 / 100 | `auth`: codes per address, per app *(plan)* |
+| `AUTH_ATTEMPTS_PER_IP_15MIN` / `END_USERS_MAX_PER_APP` | 30 / 1000 | `auth`: send + verify calls per IP; end users per app *(plan)* |
+| `EMAIL_PER_APP_PER_DAY` / `EMAIL_NOTIFY_ADMINS_PER_DAY` | 50 / 20 | `email`: notification mails per app per day; `notifyAdmins()` per user per day *(plan)* |
+| `EMAIL_GLOBAL_HOURLY_MAX` / `EMAIL_GLOBAL_PAUSE_MINUTES` | 500 / 15 | the operator-wide cap on all module mail (recipients per hour) and the pause length |
+| `EMAIL_SIGNIN_HOURLY_MAX` / `EMAIL_SIGNIN_APP_HOURLY_SHARE` | 20 % of the cap (at least 50, at most half) / 25 % | the sign-in part of the cap; one app's share of it |
+| `EMAIL_APP_HOURLY_SHARE` | 25 % | one app's share of the notification part |
+| `FORMS_SUBMITS_PER_IP_HOUR` / `FORMS_PER_APP_PER_DAY` | 10 / 200 | `forms` *(plan)* |
+| `DATA_MAX_DOCS_PER_APP` / `DATA_MAX_DOC_BYTES` / `DATA_MAX_BYTES_PER_APP` | 10000 / 102400 / 52428800 | `data`: records, bytes per record, bytes per app *(plan)* |
+| `DATA_WRITE_RATE_LIMIT` / `DATA_WRITE_RATE_WINDOW_MS` | 120 / 60000 | `data`: writes per app per window *(plan)* |
+| `FILES_DIR` | `/data/files` | `files`: upload storage (the `files_data` volume) |
+| `FILES_MAX_BYTES` / `FILES_QUOTA_PER_APP` / `FILES_UPLOAD_RATE_LIMIT` | 10 MiB / 500 MiB / 60 per min | `files` *(plan)* |
+| `PROXY_ALLOWED_PORTS` / `PROXY_ALLOWED_HOSTS` | 80,443 / empty | `proxy`: upstream ports; hostnames whose private IPs may be reached (keep empty) |
+| `PROXY_CONNECT_TIMEOUT_MS` / `PROXY_MAX_RESPONSE_BYTES` | 8000 / 5242880 | `proxy`: per upstream request |
+| `PROXY_CALLS_PER_MIN` / `PROXY_PUBLIC_CALLS_PER_MIN_PER_IP` | 60 / 10 | `proxy`: calls per app, per IP to `public` upstreams *(plan)* |
+| `HELLO_WAVES_PER_MINUTE` | 30 | the example module `drobek-module-hello` |
+
+### Custom domains and abuse
+
+| Variable | Default | What |
+| --- | --- | --- |
+| `DOMAINS_MAX_PER_APP` | 3 | custom domains per app, pending + verified |
+| `DOMAINS_DNS_SERVERS` | the system resolver | comma-separated resolver IPs for verification |
+| `DOMAINS_RECHECK_INTERVAL_MS` | 3600000 | how often the re-check sweep runs |
+| `DOMAINS_DNS_MOCK` | — | dev/test only, ignored in production: `redis` answers lookups from Redis keys |
+| `TERMS_URL` | `<PUBLIC_APP_URL>/terms` | linked from the 451 page of a taken-down app |
+| `ABUSE_REPORTS_PER_IP_HOUR` | 5 | valid abuse reports per client IP per hour |
+| `ABUSE_BRAND_WORDS` | a built-in list | the publish heuristic's brand words (comma-separated) |
+
+### Development and tests only
+
+| Variable | Default | What |
+| --- | --- | --- |
+| `WEB_PUBLISH` / `POSTGRES_PUBLISH` / `REDIS_PUBLISH` / `MAILPIT_PUBLISH` | 3041 / 5441 / 6391 / 8025 | host ports of the dev stack |
+| `WEB_PORT` | 3000 | drobek's listen port inside the dev container |
+| `DATABASE_URL` / `REDIS_URL` | the dev stack on localhost *(compose: the bundled services)* | datastores; host-side for tools and tests |
+| `GIT_SHA` | `dev` | the commit in `/api/version` and the footer (`task dev` and image builds set it) |
+| `BASE_URL_WEB` / `BASE_URL_MCP` | `http://localhost:3041` | e2e targets |
+| `TEST_ENV` | — | `local` = the e2e may use the local datastores |
+| `ALLOW_DESTRUCTIVE` | — | `1` (+ a local `DATABASE_URL` host) lets the e2e global setup truncate tables |
 
 ## Backup and restore
 

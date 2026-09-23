@@ -1,6 +1,6 @@
 /**
  * Sessions live in REDIS, not Postgres (ratified U2 + PHY-70 — the `sessions`
- * table in docs/TECHNICAL_DESIGN.md §1 is stale drift; do NOT create it).
+ * table in docs/archive/TECHNICAL_DESIGN.md §1 is stale drift; do NOT create it).
  *
  * Key `drobek:session:<token>`, value JSON {userId, email, createdAt},
  * token = randomBytes(48) hex. Rolling 30-day TTL — refreshed (GETEX) on

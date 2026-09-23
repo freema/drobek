@@ -1,8 +1,8 @@
 import type { CompileMessage } from './types.js';
 
 /**
- * Credential patterns refused in app source (plan §4 step 2). Apps are public
- * static bundles — a key in source is a leaked key. Secrets belong in the
+ * Credential patterns refused in app source (plan §4 step 2). Every app file
+ * ships to the browser — a key in source is a leaked key. Secrets belong in the
  * dashboard (module config / proxy upstreams), never in files.
  */
 const PATTERNS: Array<{ name: string; re: RegExp }> = [

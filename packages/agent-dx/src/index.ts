@@ -48,6 +48,7 @@ export {
   PLUGIN_REPO_URL,
 } from './plugin.js';
 export {
+  AGENT_GUIDE_URL,
   SKILL_INSTALL_COMMAND,
   DOCS_RESOURCE_LLMS_FULL,
   DOCS_RESOURCE_TOOLS,

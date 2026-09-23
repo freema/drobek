@@ -69,6 +69,11 @@ tasks:
     cmds:
       - pnpm lint
 
+  doc-lint:
+    desc: 'Docs gate (scripts/doc-lint.mjs): retired vocabulary outside docs/archive + CHANGELOG, README quickstart == SELF-HOSTING quickstart, every .env*.example key documented'
+    cmds:
+      - pnpm doc-lint
+
   typecheck:
     desc: Typecheck every workspace package
     cmds:
@@ -76,9 +81,10 @@ tasks:
       - pnpm typecheck
 
   check:
-    desc: Host-side gate — install, build packages, typecheck, lint, unit tests
+    desc: Host-side gate — install, doc-lint, build packages, typecheck, lint, unit tests
     cmds:
       - pnpm install
+      - pnpm doc-lint
       - pnpm build:packages
       - pnpm typecheck
       - pnpm lint

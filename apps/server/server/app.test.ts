@@ -132,6 +132,7 @@ describe('apps origin dispatch + dashboard CSRF (M0-06)', () => {
     expect(r.status).toBe(400);
   });
 
+  // doc-lint: allow — names the retired dashboard-host app path to assert it is gone
   it('the dashboard has no app route: /:ws/app/:slug goes to React Router (which 404s it)', async () => {
     const r = await raw('GET', '/acme/app/shop', { Host: 'drobek.test' });
     expect(JSON.parse(r.body)).toMatchObject({ rr: true, path: '/acme/app/shop' });

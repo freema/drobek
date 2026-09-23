@@ -12,6 +12,7 @@ describe('/llms.txt loader', () => {
     expect(body).toContain('list_apps');
     expect(body).toContain('claude plugin marketplace add freema/drobek-plugin');
     expect(body).toContain('claude plugin install drobek@drobek');
+    expect(body).toContain('https://github.com/freema/drobek/blob/main/docs/AGENT.md');
   });
 });
 

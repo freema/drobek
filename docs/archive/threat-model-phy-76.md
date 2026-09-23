@@ -1,3 +1,5 @@
+> **Superseded by [`docs/SECURITY.md`](../SECURITY.md).** This is the 2026-07 PHY-76 review of the pre-rebuild design, kept for history; every finding's current status is in SECURITY.md.
+
 # PHY-76 Threat-Model Report — drobek
 
 _Pre-design-partner security review. Surface: OAuth 2.1 Authorization Server, SSRF-guarded BFF proxy + envelope crypto, Data API, tenant isolation, audit log, agent error beacon, and the shared-origin serving model. 10 confirmed findings (each survived an adversarial refutation pass); 3 candidate findings were refuted as false-positives and dropped._

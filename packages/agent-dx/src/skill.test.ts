@@ -47,6 +47,7 @@ describe('skills/drobek/SKILL.md', () => {
 
   it('teaches the create → write → preview loop with every current tool, never a removed one', () => {
     for (const tool of TOOL_NAMES) expect(md, tool).toContain(tool);
+    // doc-lint: allow — retired tool names, asserted absent
     for (const gone of ['whoami', 'collection_define', 'record_create', 'app_errors', 'app_logs', 'deploy_init']) {
       expect(md, gone).not.toContain(gone);
     }

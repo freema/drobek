@@ -46,7 +46,7 @@ block, then `next` is pushed and the single MR opened.
   2026-09-22.
 - **M0-01 (NSO-279) — one process, one image.** `apps/web` + `apps/mcp-server`
   → `apps/server` (Express + `@react-router/express` + `mountMcpResource` at
-  `/mcp`). The BullMQ worker container and `scripts/worker.mjs` are gone; the
+  `/mcp`). The separate queue-worker container and `scripts/worker.mjs` are gone; the
   deploy consumer + audit prune run in-process (`apps/server/server/jobs.ts`)
   until M0-02 removes the upload pipeline. Root `Dockerfile` (`dev` + `runner`
   targets) → `ghcr.io/freema/drobek`. The server migrates itself on start
@@ -65,7 +65,7 @@ block, then `next` is pushed and the single MR opened.
   are now globally unique host labels (CHECK + rename of offenders).
   `@drobek/apps` = createApp / createVersion / publish / restore / blob GC
   (hourly, Redis lease, 7-day grace). `@drobek/deploy`, the deploy MCP tools,
-  `/__upload`, `/__blob`, `/:ws/app/:slug/*` (serving, REST data, beacon) and
+  `/__upload`, `/__blob`, the path-based app routes on the dashboard host (serving, REST data, beacon) and
   `UPLOAD_SIGNING_SECRET` / `BLOB_DIR` / `DEPLOY_MAX_*` are gone. The dashboard
   shows a version history with a Publish button (editor+). App serving and
   the beacon come back on the apps origin in M0-06.
@@ -268,6 +268,15 @@ block, then `next` is pushed and the single MR opened.
   - The auth and forms `INLINE_TYPES` now import `JSX` from react (a bug fix).
 
   The eval has NOT been run yet. The orchestrator runs it and posts the results table.
+- **M4-01 (NSO-298) — docs rewrite + doc-lint.** README / ARCHITECTURE /
+  SELF-HOSTING (full env reference) / MODULES (unchanged) / new SECURITY,
+  LICENSING, AGENT, root CLAUDE.md; POSITIONING updated for Macaly Cloud;
+  pre-rebuild docs in `docs/archive/`; `/llms.txt` links `docs/AGENT.md`.
+  `scripts/doc-lint.mjs` (`pnpm doc-lint`, first step of `task check` and the
+  CI quality job) = retired vocabulary + README/SELF-HOSTING quickstart parity
+  + env-reference completeness. `docs/navrh-drobek.md` stays as the Czech
+  one-page pitch (linked from README). The clean-VPS quickstart timing is
+  still Tomáš's step in NSO-304 — the docs do not claim it.
 
 ## Next
 
@@ -937,6 +946,19 @@ block, then `next` is pushed and the single MR opened.
   `X-Drobek-App` → takedown 451 → primary-domain 302 → visibility → file. A
   throttled client therefore gets 429, not 451, for a taken-down app the
   serve cache has not seen yet.
+
+- NSO-298 doc-lint: the README quickstart is a byte-for-byte copy of the
+  block between `<!-- quickstart:start -->` / `<!-- quickstart:end -->` in
+  `docs/SELF-HOSTING.md` — edit SELF-HOSTING and copy the block over (no
+  relative links inside it: they would break in one of the two files). A
+  new `KEY=` line in either `.env*.example` (commented ones count) fails
+  `task check` until the key is in the SELF-HOSTING environment reference.
+- doc-lint scans every file the repository tracks plus untracked, non-ignored
+  files, except `docs/archive/`, `CHANGELOG.md`, `pnpm-lock.yaml` and itself.
+  A test that must name a retired tool or path to assert it is gone carries
+  `doc-lint: allow` on the same line or the line above; prose and comments
+  get rephrased instead. The retired terms are listed only in
+  `scripts/doc-lint.mjs` (listing them elsewhere trips the lint).
 
 ## Failed approaches
 

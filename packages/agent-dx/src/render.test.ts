@@ -9,6 +9,7 @@ import {
   PLUGIN_REPO_URL,
 } from './plugin.js';
 import {
+  AGENT_GUIDE_URL,
   DOCS_RESOURCE_LLMS_FULL,
   SKILL_INSTALL_COMMAND,
   renderLlmsFull,
@@ -35,6 +36,8 @@ describe('renderLlmsTxt', () => {
     expect(txt).toContain('http://localhost:3041/llms-full.txt');
     expect(txt).toContain('http://localhost:3041/build-with-your-agent');
     expect(txt).toContain('http://localhost:3041/mcp');
+    expect(AGENT_GUIDE_URL).toBe('https://github.com/freema/drobek/blob/main/docs/AGENT.md');
+    expect(txt).toContain(`[Agent guide](${AGENT_GUIDE_URL})`);
     expect(txt).toContain(
       'http://localhost:3041/.well-known/oauth-protected-resource/mcp'
     );
@@ -130,6 +133,7 @@ describe('renderLlmsFull', () => {
   });
 
   it('no longer documents the removed upload/deploy pipeline', () => {
+    // doc-lint: allow — retired tool names, asserted absent
     for (const gone of ['deploy_init', 'deploy_commit', 'deploy_status', '/:ws/app/:slug']) {
       expect(full).not.toContain(gone);
       expect(renderLlmsTxt(ENV)).not.toContain(gone);

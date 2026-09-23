@@ -63,5 +63,4 @@ consent → token automatically. See the "Connect" section of llms-full.txt.
   `scripts/check-drobek.mjs` holds the same tool list and skills rule — update
   it together with `TOOL_DOCS`.
 
-> Operator note: also add this same maintenance line to `docs/ROADMAP.md`
-> section 5 (Definition of Done). It is intentionally NOT edited here.
+The same rule is one of the hard rules in the repository's `CLAUDE.md`.

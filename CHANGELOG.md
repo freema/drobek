@@ -2,6 +2,35 @@
 
 ## Unreleased (`next`)
 
+### Docs rewritten for the cloud workspace + doc-lint (NSO-298)
+
+- New: `docs/SECURITY.md` (threat model as shipped, status of every PHY-76
+  finding, known limitations, private vulnerability reporting through GitHub),
+  `docs/LICENSING.md` (AGPL-3.0 §13, the arm's-length boundary with
+  drobek-web; one licence — the old "dual-license" line is gone),
+  `docs/AGENT.md` (connecting Claude / Claude Code / Cursor / Codex, all 11
+  tools with scopes, the briefing, skills, llms.txt) and a root `CLAUDE.md`.
+- Rewritten: `README.md` (the loop, the self-host quickstart copied verbatim
+  from `docs/SELF-HOSTING.md`, agent connection, local development, e2e
+  tiers), `docs/ARCHITECTURE.md` (one process, origins, versions, compile,
+  serving order incl. 451/404/429 and the negative cache, modules, TLS,
+  jobs), `docs/POSITIONING.md` (Macaly Cloud comparison). `SELF-HOSTING.md`
+  gains a complete environment reference.
+- Archived to `docs/archive/`: TECHNICAL_DESIGN, ROADMAP, USER_FLOWS,
+  ANALYSIS, REVIEW*, ROADMAP-critique, prompt-oneshot-implementation,
+  fable-prompt-seo-visibility, research/04 (deploy pipeline — deploy_init /
+  deploy_commit, BullMQ, `/:ws/app/:slug`) and threat-model-phy-76
+  (superseded by SECURITY.md).
+- `/llms.txt` links `docs/AGENT.md` (`AGENT_GUIDE_URL` in `@drobek/agent-dx`).
+- **`pnpm doc-lint`** (`scripts/doc-lint.mjs`, first step of `task check`
+  and of the CI quality job): fails on retired vocabulary outside
+  `docs/archive/` and `CHANGELOG.md` (a deliberate negative assertion carries
+  `doc-lint: allow`), on a README quickstart that differs from
+  SELF-HOSTING's, and on any `.env.example` / `.env.production.example` key
+  missing from the SELF-HOSTING environment reference. `.env.example`
+  documents `DROBEK_MIGRATE_ON_START` and `AUDIT_RETENTION_DAYS`. No
+  migration.
+
 ### OTP rate limits: no shared "unknown" client-IP bucket (NSO-309)
 
 - **`/login/verify`**: a request without a resolvable client IP no longer

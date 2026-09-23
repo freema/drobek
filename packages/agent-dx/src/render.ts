@@ -24,6 +24,13 @@ import {
 /** The one-command skill install (self-host repo → Claude Code skills dir). */
 export const SKILL_INSTALL_COMMAND = 'cp -r skills/drobek ~/.claude/skills/drobek';
 
+/**
+ * The agent guide in the source repository (NSO-298): the tools with their
+ * scopes, the briefing, the skills and these surfaces, in one document.
+ * Linked from /llms.txt.
+ */
+export const AGENT_GUIDE_URL = 'https://github.com/freema/drobek/blob/main/docs/AGENT.md';
+
 /** MCP docs resource URIs (stable — referenced by agents + tests). */
 export const DOCS_RESOURCE_LLMS_FULL = 'drobek://docs/llms-full';
 export const DOCS_RESOURCE_TOOLS = 'drobek://docs/tools';
@@ -85,6 +92,7 @@ export function renderLlmsTxt(env: NodeJS.ProcessEnv = process.env): string {
     '## Docs',
     `- [Full contract](${app}/llms-full.txt): the MCP connect/OAuth flow, every tool with its inputs, result shape and an example, the app briefing (stack, files, import map, rules), limits, and the error catalogue.`,
     `- [Build with your agent](${app}/build-with-your-agent): install the drobek plugin, or connect the MCP server + install the drobek skill.`,
+    `- [Agent guide](${AGENT_GUIDE_URL}): docs/AGENT.md in the drobek source — how an agent connects, every tool with its scope, the briefing, the skills and llms.txt.`,
     '',
     '## Plugin (Claude Code, Codex, Cursor)',
     `- Claude Code: \`${PLUGIN_MARKETPLACE_ADD_COMMAND}\` then \`${PLUGIN_INSTALL_COMMAND}\`; build with \`${PLUGIN_BUILD_COMMAND} <idea>\`. The plugin connects ${PLUGIN_MCP_URL}.`,

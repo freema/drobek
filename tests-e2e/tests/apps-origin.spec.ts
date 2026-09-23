@@ -358,7 +358,7 @@ test('dashboard vs app origin: host-only session, no session on app hosts, origi
       expect(r.body, p).not.toContain(a.email);
     }
 
-    // The dashboard never serves an app (the old /:ws/app/:slug path is gone).
+    // The dashboard never serves an app (the old path-based app URL on the dashboard host is gone).
     const old = await page.request.get(`${BASE_URL_WEB}/${a.workspace}/app/${slug}`);
     expect(old.status()).toBe(404);
     expect(await old.text()).not.toContain('src="/main.js"');

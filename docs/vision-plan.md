@@ -1,5 +1,7 @@
 # drobek — vize, architektura a plán v Linearu (2026-09-22)
 
+> **Stav 2026-09-24:** plán z 2026-09-22 (ratifikovaný). Aktuální stav produktu popisují [`ARCHITECTURE.md`](./ARCHITECTURE.md), [`SECURITY.md`](./SECURITY.md), [`LICENSING.md`](./LICENSING.md), [`AGENT.md`](./AGENT.md) a [`SELF-HOSTING.md`](./SELF-HOSTING.md); tento dokument zůstává jako záznam rozhodnutí a plánu úkolů.
+
 Podklady: `cloud-en.md` (Macaly Cloud MCP), `llms-full.txt`, `macaly-code-plugin/`, `external-research.md` (+ part-a/b/c), `reuse-audit.md` (psaný pro širší směr git+sandbox; verdikty zde přehodnoceny pro jednoduchý rozsah), repa `freema/drobek` (HEAD `94271f2`), `freema/drobek-web` (HEAD `2c241d1`, submodule pin `9a56e3f`), `freema/codeforge` (vzor „jeden image, Taskfile, compose“).
 
 Cesty: `core/` = `/Users/tomasgrasl/projects/nodejs/drobek/`, `web/` = `/Users/tomasgrasl/projects/nodejs/drobek-web/`, `cf/` = `/Users/tomasgrasl/projects/golang/codeforge/`.
@@ -63,7 +65,7 @@ Rozhodnutí o jazyku (dle koordinátora 2026-09-22, čeká na finální potvrzen
 
 ### 3.1 Rozhodnutí: TypeScript zůstává, monorepo se zjednoduší na jeden proces
 
-**Rozhodnutí: backend zůstává v TypeScriptu a vyvíjí se stávající monorepo. Z tří procesů (web RR7 SSR + Express `mcp-server` + BullMQ worker) vznikne jeden Node proces v jednom image; kompilace je in-process esbuild; moduly jsou TS balíčky proti veřejnému kontraktu.** Go se nepoužije (příloha A říká, kdy by dávalo smysl).
+**Rozhodnutí: backend zůstává v TypeScriptu a vyvíjí se stávající monorepo. Z tří procesů (web RR7 SSR + Express `mcp-server` + frontový worker) vznikne jeden Node proces v jednom image; kompilace je in-process esbuild; moduly jsou TS balíčky proti veřejnému kontraktu.** Go se nepoužije (příloha A říká, kdy by dávalo smysl).
 
 Proč (poctivě, včetně toho, co mluvilo pro Go):
 1. **Moduly musí být v TS jako rozšiřovací bod** (rozhodnutí vlastníka). Modul = server routes + SDK kus + konfigurační schéma + dokumentace pro agenta. Kdyby jádro bylo v Go, moduly by potřebovaly IPC/plugin host a dva jazyky v jednom kontraktu — proti „velmi jednoduché“.
@@ -73,10 +75,10 @@ Proč (poctivě, včetně toho, co mluvilo pro Go):
 5. Cena: přepis ≈ 2–3 měsíce sólo práce bez nové funkce pro uživatele. Evoluce dá M0 smyčku za týdny.
 
 Co se v TS stacku **mění**:
-- **Jeden proces `apps/server`** (Express, protože už na něm stojí MCP RS a `@react-router/express` dává RR7 handler jako middleware): host-based dispatch → dashboard host (RR7 SSR + AS + dashboard API) │ `/mcp` │ apps hosty (serving verzí + `/__drobek/*` moduly) │ vlastní domény. `apps/web` a `apps/mcp-server` se slučují, `scripts/worker.mjs` a BullMQ mizí (kompilace je synchronní v requestu, GC blobů běží z `setInterval` v procesu s Redis lockem jako `worker.server.ts:156-182`).
+- **Jeden proces `apps/server`** (Express, protože už na něm stojí MCP RS a `@react-router/express` dává RR7 handler jako middleware): host-based dispatch → dashboard host (RR7 SSR + AS + dashboard API) │ `/mcp` │ apps hosty (serving verzí + `/__drobek/*` moduly) │ vlastní domény. `apps/web` a `apps/mcp-server` se slučují, `scripts/worker.mjs` a fronta jobů mizí (kompilace je synchronní v requestu, GC blobů běží z `setInterval` v procesu s Redis lockem jako `worker.server.ts:156-182`).
 - **Dashboard zůstává RR7 SSR aplikace** (`packages/dashboard` + routy). Nepřecházíme na SPA — bylo by to přepisování hotového UI bez užitku. Codeforge má UI v samostatném image s Expressem; drobek ho má v tomtéž procesu — to je „jeden image“ důsledněji než codeforge.
-- **Verzované soubory + esbuild** nahrazují `deploy_init/commit`, podepsané upload tokeny, lint gate a worker (`core/packages/deploy/` z většiny DROP, viz §7).
-- **Apps origin** nahrazuje `/:ws/app/:slug` na apexu (PHY-76 #2).
+- **Verzované soubory + esbuild** nahrazují dvoufázový upload přes deploy nástroje, podepsané upload tokeny, lint gate a worker (`core/packages/deploy/` z většiny DROP, viz §7).
+- **Apps origin** nahrazuje path-based servírování appek na apexu dashboardu (PHY-76 #2).
 - **`@drobek/sdk`** přestává být placeholder (`core/packages/sdk/src/index.ts` = 9 řádků) a skládá se z modulů (§3.5).
 - **Runtime image bez dev závislostí**: `pnpm deploy --filter server --prod` do runner stage (odstraní 17×4 COPY řádků z `core/apps/web/Dockerfile.prod`), `WORKDIR` fix z paměti (`assetsBuildDirectory` relativní) zůstává.
 
@@ -119,7 +121,7 @@ Vnější svět: esm.sh (CDN závislostí appek — načítá prohlížeč, ne s
 
 ### 3.3 Origin / doménový model (PHY-76 #2 HIGH) a TLS
 
-- **Dashboard origin** `drobek.app` (self-host: `PUBLIC_APP_URL`): SSR dashboard, dashboard API (cookie `drobek_session`, HttpOnly, Lax, host-only — `core/packages/auth/src/session.server.ts`), OAuth AS, MCP RS na `/mcp`. **Na tento origin nikdy nesmí žádný JS appky.** Dnešní `/:ws/app/:slug` na apexu (`core/packages/serving/src/csp.ts:16-22` to sama přiznává jako accepted risk) se ruší bez náhrady.
+- **Dashboard origin** `drobek.app` (self-host: `PUBLIC_APP_URL`): SSR dashboard, dashboard API (cookie `drobek_session`, HttpOnly, Lax, host-only — `core/packages/auth/src/session.server.ts`), OAuth AS, MCP RS na `/mcp`. **Na tento origin nikdy nesmí žádný JS appky.** Dnešní path-based servírování appek na apexu (`core/packages/serving/src/csp.ts:16-22` to sama přiznává jako accepted risk) se ruší bez náhrady.
 - **Apps origin** `<APPS_DOMAIN>` = **jiná registrovatelná doména** (ne subdoména drobek.app — cookies, PSL, phishing-vzhled). Každá appka má vlastní host = vlastní origin: `<slug>.<APPS_DOMAIN>` (prod), `<slug>--preview.<APPS_DOMAIN>` (pracovní kopie), `<slug>--v<N>.<APPS_DOMAIN>` (konkrétní verze). Slug regex zakazuje `--`, takže nekolidují; vše pokrývá **jeden wildcard `*.<APPS_DOMAIN>`**. Slug je globálně unikátní (ne per workspace, jak dnes v `apps.slug` + `unique(workspace_id, slug)`); kolizi řeší `create_app` návrhem `<name>-<4hex>`.
 - **Vlastní doména** = CNAME na `<slug>.<APPS_DOMAIN>` + TXT `_drobek.<doména>=<token>`; po verifikaci alias publikované verze.
 - **Modul API běží na app hostu** (`/__drobek/v1/*`): žádný CORS, end-user session cookie `drobek_eu` je host-only na dané appce, `connect-src 'self'` v CSP stačí. Data jsou per **app** (preview, verze i prod sdílí kolekce — je to jedna appka).
@@ -271,7 +273,7 @@ Změny vyžadující potvrzení v UI (`confirmRequired`): jakákoli operace → 
 
 ### 5.2 data — kolekce
 
-- **API** (`/__drobek/v1/data/:collection[/:id]`): `GET` list s `?filter=<json>&sort=&dir=&limit=&cursor=`, `GET/:id`, `POST`, `PATCH/:id`, `DELETE/:id`, `GET /export.csv` (admin). Přesně dnešní REST tvar (`core/packages/data/src/rest.server.ts`), jen bez `/:ws/app/:slug` prefixu a s principálem místo dashboard cookie (řeší PHY-76 #3 confused deputy — `resolve.server.ts:67-79` DROP).
+- **API** (`/__drobek/v1/data/:collection[/:id]`): `GET` list s `?filter=<json>&sort=&dir=&limit=&cursor=`, `GET/:id`, `POST`, `PATCH/:id`, `DELETE/:id`, `GET /export.csv` (admin). Přesně dnešní REST tvar (`core/packages/data/src/rest.server.ts`), jen bez path prefixu workspace/appky na dashboard hostu a s principálem místo dashboard cookie (řeší PHY-76 #3 confused deputy — `resolve.server.ts:67-79` DROP).
 - **SDK**: `drobek.data.collection('shifts').list({filter, sort, limit, cursor})`, `.get(id)`, `.create(doc)`, `.update(id, patch)`, `.remove(id)`, `.exportCsvUrl()`; typy generované z `schema` do `sdk.d.ts` výřezu v `module_info`.
 - **Konfigurace**: `{ collections: { [name]: { schema?, rules, ownerField? } } }` (§5.0). Agent ji nastavuje `configure_module('data', …)`; UI má editor kolekcí + pravidel a **data browser** s CSV (existující Data tab `core/packages/dashboard/src/routes/workspaces.$slug.apps.$appSlug.data.*`).
 - **Server-enforced**: schema validace (`schema-validate.ts`), injection-safe filtr (`query-build.ts`, operátory `eq, ne, gt, gte, lt, lte, in, contains`, max 8 podmínek), kvóty `DATA_MAX_DOC_BYTES 100 KiB / DATA_MAX_DOCS_PER_APP 10 000 / DATA_MAX_BYTES_PER_APP 50 MiB` (`quota.ts`), zápisy 120/min/app (`rate-limit.ts`), CSV formula-injection neutralizace (`columns.ts:163-166`, #5), `_owner` plní server.
@@ -325,7 +327,7 @@ Limity čte `ctx.limits(workspaceId)`: default env; drobek-web dodá `LIMITS_PRO
 
 ## 6. Bezpečnost (threat model pro jednoduchý design)
 
-Východisko: `core/docs/threat-model-phy-76.md` (10 nálezů). Sandbox kapitoly z reuse-auditu §3.3 (escape, egress, supply chain, tokens v env) **odpadají celé** — to je hlavní bezpečnostní dividenda rozhodnutí „server nespouští kód“.
+Východisko: `core/docs/archive/threat-model-phy-76.md` (10 nálezů). Sandbox kapitoly z reuse-auditu §3.3 (escape, egress, supply chain, tokens v env) **odpadají celé** — to je hlavní bezpečnostní dividenda rozhodnutí „server nespouští kód“.
 
 | Oblast | Hrozba | Opatření (server-enforced) |
 |---|---|---|
@@ -341,7 +343,7 @@ Východisko: `core/docs/threat-model-phy-76.md` (10 nálezů). Sandbox kapitoly 
 | **SSRF** (proxy, CIMD fetch) | únik na interní síť / metadata IP | `ip-classify` + pinned-IP forwarder (existuje), port 80/443 only (#8), CIMD fetch stejným klientem s cap 64 KiB a timeout 5 s, cache 1 h, jen `https://`. |
 | **OAuth / MCP auth** | token replay, DCR flood, chybný `resource` | RFC 8707 audience = `PUBLIC_MCP_URL` (existuje), refresh rotace s reuse-burn (existuje), DCR rate-limit 10/IP/h + max 500 klientů bez použití (#7), CIMD validace `redirect_uris` (https nebo loopback, `redirect-uri.ts`), `iss` v authorization response (RFC 9207), API klíče `drk_` hash-at-rest s `last_used`. |
 | **Moduly třetích stran** | škodlivý modul | Modul = server-side závislost instalovaná provozovatelem; drobek neběží cizí moduly per tenant. Dokumentace říká: instaluj jen důvěryhodné moduly; SaaS provozuje jen vestavěné. Kontrakt nedává modulům přístup k cizím `app_id` (ctx je app-scoped). |
-| **AGPL §13** | provoz upravené verze bez zveřejnění zdrojů | `/api/version` vrací `{sha, source_url}`; patička dashboardu „Source (AGPL-3.0) — commit sha“; SaaS provozuje **neupravený veřejný image** (drobek-web = samostatný proces + ops, ne fork), takže §13 je splněn triviálně; `LICENSING.md` popíše hranici (arm's length HTTP, žádné linkování). Kód hostovaných appek je uživatelův, AGPL se ho netýká (ToS). Vyřeší REVIEW.md CRIT-6 („dual-license“ v `docs/ARCHITECTURE.md:13` se škrtá — žádná non-AGPL výjimka není potřeba). |
+| **AGPL §13** | provoz upravené verze bez zveřejnění zdrojů | `/api/version` vrací `{sha, source_url}`; patička dashboardu „Source (AGPL-3.0) — commit sha“; SaaS provozuje **neupravený veřejný image** (drobek-web = samostatný proces + ops, ne fork), takže §13 je splněn triviálně; `LICENSING.md` popíše hranici (arm's length HTTP, žádné linkování). Kód hostovaných appek je uživatelův, AGPL se ho netýká (ToS). Vyřeší REVIEW.md CRIT-6 (zmínka o druhé, ne-AGPL licenci ve staré `docs/ARCHITECTURE.md:13` se škrtá — žádná non-AGPL výjimka není potřeba). |
 
 PHY-76 carry-over stav: #1 ✔ (port do modulu auth), #2 → M0-06, #3 → §5.2 (principál), #4 ✔, #5 ✔, #6 → M0-01 (fail-closed start), #7 → M0-04, #8 → M1-06, #9 → M1-02 (session epoch), #10 → M0-05 (untrusted obálka).
 
@@ -404,7 +406,7 @@ Verdikty reuse-auditu přehodnocené pro rozsah „bez gitu, bez sandboxu, TS z�
 | Auth do dashboardu | OTP + Google | totéž (žádný jiný IdP) |
 | Ops | `docker-compose.production.yaml` pro self-host | VPS specifika: nginx stream/SNI, sdílený Postgres/Redis s puls, deploy workflow, monitoring, zálohy, abuse mailbox, ToS/DPA |
 | Marketing | `README`, `/build-with-your-agent`, `llms.txt` | drobek.app landing, pricing, blog |
-| Licence | AGPL-3.0, `LICENSING.md` s §13 vysvětlením; **žádná dual-license, žádný CLA** (samostatný proces = žádná kombinovaná dílo otázka) | proprietární |
+| Licence | AGPL-3.0, `LICENSING.md` s §13 vysvětlením; **jen AGPL — žádná druhá licence, žádný CLA** (samostatný proces = žádná kombinovaná dílo otázka) | proprietární |
 
 Pravidlo: **cokoli, bez čeho self-hoster nemůže produkt používat kompletně, je v core.** Billing není potřeba k používání → private.
 
@@ -430,7 +432,7 @@ Pořadí: M0-01 → M0-02 → M0-03 → M0-04 ∥ M0-05 → M0-06 → M0-07 → 
 
 **M0-01 · Jeden proces, jeden image: sloučení `apps/web` + `apps/mcp-server`, odstranění workeru** — L, P1
 
-Sloučit RR7 dashboard, OAuth AS a MCP RS do jednoho Express procesu `apps/server` (`@react-router/express` request handler pro dashboard host, `mountMcpResource` na `/mcp`, host-based dispatch připravený pro apps origin). Odstranit BullMQ worker a `scripts/worker.mjs`. Jeden `Dockerfile` (deps → build → `pnpm deploy --filter server --prod` → runner node:22-alpine, non-root, `HEALTHCHECK /healthz`), jeden image `ghcr.io/freema/drobek`. `docker-compose.yml` = `drobek + postgres + redis + mailpit` (+ `caddy` profil `tls`), `Taskfile.yml` sladit s codeforge slovníkem (`dev/test/lint/typecheck/build/db:migrate/e2e`). Start selže na známých placeholder hodnotách (`change-me…`) pro `PROXY_KEK`, `SESSION_SECRET` apod. (PHY-76 #6).
+Sloučit RR7 dashboard, OAuth AS a MCP RS do jednoho Express procesu `apps/server` (`@react-router/express` request handler pro dashboard host, `mountMcpResource` na `/mcp`, host-based dispatch připravený pro apps origin). Odstranit frontový worker a `scripts/worker.mjs`. Jeden `Dockerfile` (deps → build → `pnpm deploy --filter server --prod` → runner node:22-alpine, non-root, `HEALTHCHECK /healthz`), jeden image `ghcr.io/freema/drobek`. `docker-compose.yml` = `drobek + postgres + redis + mailpit` (+ `caddy` profil `tls`), `Taskfile.yml` sladit s codeforge slovníkem (`dev/test/lint/typecheck/build/db:migrate/e2e`). Start selže na známých placeholder hodnotách (`change-me…`) pro `PROXY_KEK`, `SESSION_SECRET` apod. (PHY-76 #6).
 
 **Akceptace:** `task dev` spustí jednu službu `drobek`; `/healthz` vrací `{ok,db,redis}` (503 při výpadku), `/mcp` bez tokenu vrací 401 s `WWW-Authenticate: Bearer resource_metadata=…`, `/.well-known/oauth-protected-resource` a `/.well-known/oauth-authorization-server` odpovídají ze stejného procesu; existující e2e `auth-*`, `workspaces`, `mcp-oauth` procházejí beze změn; `docker build` vyrobí image < 250 MB bez devDependencies; `task prod:proof` (lokální běh prod image) zelený; start s placeholder KEK skončí exit 1 s jasnou hláškou; CI publikuje jeden image `drobek:sha`.
 
@@ -492,7 +494,7 @@ Balíček `packages/mcp` s tool bodies podle §4 (parametry, návratové tvary, 
 
 Host dispatch v `apps/server`: `<slug>.<APPS_DOMAIN>` → `published_version_id` (404 stránka „not published“ pokud null), `<slug>--preview.<APPS_DOMAIN>` → poslední `ok` verze, `<slug>--v<N>.<APPS_DOMAIN>` → verze N. Serving z `version_files` (`kind: built` má přednost před `source` na stejné cestě; `*.ts/tsx/jsx` zdroje se **neservírují**), `resolve.ts` (SPA fallback na `index.html` pro cesty bez přípony), `ETag = sha256`, `Cache-Control: public, max-age=0, must-revalidate` pro HTML / `immutable` pro `*.js|css` s hash query, LRU cache `sha256 → Buffer` 256 MiB, bust přes Redis pub/sub při novém publish/verzi. Nová CSP (§3.3), `X-Robots-Tag: noindex` na preview/verzních hostech, `Referrer-Policy: no-referrer`, `frame-ancestors 'none'` s per-app override polem `frame_ancestors` (zatím jen DB sloupec). Password gate (`password.ts`) jako volitelná ochrana appky (`apps.visibility: public|password`). MCP `publish(app_id, version?)` (scope `publish`, jen `ok` verze; audit `app.publish`). Dashboard host **nikdy** neservíruje appky; apps hosty **nikdy** nečtou `drobek_session`. Dev: `APPS_DOMAIN=apps.localhost:3041`.
 
-**Akceptace:** e2e: po `write_files` je `https://x--preview.apps.localhost:3041/` HTML se `<script src="/main.js">`, `/main.js` obsahuje esm.sh import, `/src/main.tsx` → 404; `publish` → `x.apps.localhost:3041` servíruje verzi, další `write_files` prod nemění; `publish(version:1)` = rollback prod; `x--v1.…` servíruje verzi 1; hlavičky CSP/nosniff/noindex/Referrer-Policy přesně dle snapshotu; dashboard cookie poslaná na apps host není nikde čtena (test: request s `drobek_session` na apps host nezmění chování a odpověď nemá `Set-Cookie`); `/:ws/app/:slug` na dashboard hostu → 404; cache: druhý GET vrací 304 při `If-None-Match`; po publish nové verze vrací první GET nový obsah (bust test); `visibility: password` → 401 stránka s formulářem, po heslu cookie host-only.
+**Akceptace:** e2e: po `write_files` je `https://x--preview.apps.localhost:3041/` HTML se `<script src="/main.js">`, `/main.js` obsahuje esm.sh import, `/src/main.tsx` → 404; `publish` → `x.apps.localhost:3041` servíruje verzi, další `write_files` prod nemění; `publish(version:1)` = rollback prod; `x--v1.…` servíruje verzi 1; hlavičky CSP/nosniff/noindex/Referrer-Policy přesně dle snapshotu; dashboard cookie poslaná na apps host není nikde čtena (test: request s `drobek_session` na apps host nezmění chování a odpověď nemá `Set-Cookie`); stará path-based cesta appky na dashboard hostu → 404; cache: druhý GET vrací 304 při `If-None-Match`; po publish nové verze vrací první GET nový obsah (bust test); `visibility: password` → 401 stránka s formulářem, po heslu cookie host-only.
 
 **Mimo rozsah:** TLS (M0-07), vlastní domény (M3), moduly `/__drobek/*` (M1-01), PSL registrace.
 
@@ -714,9 +716,9 @@ Podle rozhodnutí v otázce #2: (a) nginx `stream { ssl_preread on; map $ssl_pre
 
 **M4-01 · Přepis dokumentace repa na nový směr: README, ARCHITECTURE, SELF-HOSTING, MODULES, SECURITY, LICENSING, CLAUDE.md; archiv starých docs** — M, P1
 
-Přepsat `core/README.md` (co je drobek, smyčka, 5minutový self-host quickstart, MCP připojení pro Claude/Claude Code/Cursor/Codex, odkaz na moduly), `docs/ARCHITECTURE.md` (§3 tohoto dokumentu: jeden proces, origin model, verze, kompilace, moduly, TLS), `docs/SELF-HOSTING.md` (compose, env, TLS tři cesty, zálohy `pg_dump` + `/data/files`, upgrade, limity), `docs/MODULES.md` (z M1-01), `docs/SECURITY.md` (threat model §6 + reporting), `docs/LICENSING.md` (AGPL §13, hranice drobek-web, žádná dual-license — škrtnout `ARCHITECTURE.md:13`), `docs/AGENT.md` (briefing, nástroje, `llms.txt`), `CLAUDE.md` ve stylu codeforge. Do `docs/archive/` přesunout `TECHNICAL_DESIGN.md`, `ROADMAP.md`, `USER_FLOWS.md`, `ANALYSIS.md`, `research/04-*`, `prompt-oneshot-implementation.md`, `fable-prompt-seo-visibility.md` (untracked — commitnout do archivu), `REVIEW*.md`, `ROADMAP-critique.md`, `threat-model-phy-76.md` (s poznámkou „nahrazeno SECURITY.md“). `POSITIONING.md` aktualizovat o Macaly Cloud a §1 tabulku. Paměťový soubor `project_direction_macaly_2026-07.md` označit jako překonaný.
+Přepsat `core/README.md` (co je drobek, smyčka, 5minutový self-host quickstart, MCP připojení pro Claude/Claude Code/Cursor/Codex, odkaz na moduly), `docs/ARCHITECTURE.md` (§3 tohoto dokumentu: jeden proces, origin model, verze, kompilace, moduly, TLS), `docs/SELF-HOSTING.md` (compose, env, TLS tři cesty, zálohy `pg_dump` + `/data/files`, upgrade, limity), `docs/MODULES.md` (z M1-01), `docs/SECURITY.md` (threat model §6 + reporting), `docs/LICENSING.md` (AGPL §13, hranice drobek-web, jen AGPL, žádná druhá licence — škrtnout `ARCHITECTURE.md:13`), `docs/AGENT.md` (briefing, nástroje, `llms.txt`), `CLAUDE.md` ve stylu codeforge. Do `docs/archive/` přesunout `TECHNICAL_DESIGN.md`, `ROADMAP.md`, `USER_FLOWS.md`, `ANALYSIS.md`, `research/04-*`, `prompt-oneshot-implementation.md`, `fable-prompt-seo-visibility.md` (untracked — commitnout do archivu), `REVIEW*.md`, `ROADMAP-critique.md`, `threat-model-phy-76.md` (s poznámkou „nahrazeno SECURITY.md“). `POSITIONING.md` aktualizovat o Macaly Cloud a §1 tabulku. Paměťový soubor `project_direction_macaly_2026-07.md` označit jako překonaný.
 
-**Akceptace:** žádný dokument mimo `docs/archive/` nezmiňuje `deploy_init`, `deploy_commit`, manifest upload, BullMQ, `/:ws/app/:slug`, „static bundle“ ani „dual-license“ (grep v CI jako doc-lint); README quickstart ověřen na čistém VPS (M4-03) doslova; `llms.txt` odkazuje na `docs/AGENT.md`; `LICENSING.md` vysvětluje §13 a arm's-length hranici.
+**Akceptace:** žádný dokument mimo `docs/archive/` a `CHANGELOG.md` nepopisuje starou architekturu jako platnou — seznam zakázaných termínů drží `scripts/doc-lint.mjs` (běží v `task check` i v CI); README quickstart ověřen na čistém VPS (M4-03) doslova; `llms.txt` odkazuje na `docs/AGENT.md`; `LICENSING.md` vysvětluje §13 a arm's-length hranici.
 
 **Mimo rozsah:** marketing web drobek.app (drobek-web), překlady.
 
@@ -764,7 +766,7 @@ Zrušit git submodule `core` a `pnpm-workspace` nad ním, `bump-core.mjs`, route
 
 Smazat vše označené DROP v §7.1, co nezmizelo v M0-02 (staré MCP tool bodies, `packages/sdk` placeholder, `serving/serve.server.ts` staré větve, `docker-entrypoint.sh` MCP, GHCR images `drobek-selfhost-{web,mcp}` označit deprecated v README balíčků), `.env.example` bez mrtvých proměnných, doc-lint z M4-01 v CI, `pnpm audit` čisté, `knip`/`ts-prune` bez nepoužitých exportů.
 
-**Akceptace:** `knip` 0 nálezů; grep na `deploy_init|BLOB_DIR|bullmq|__upload` v repu prázdný (mimo archiv a CHANGELOG); CI < 10 min.
+**Akceptace:** `knip` 0 nálezů; `pnpm doc-lint` zelený a grep na `BLOB_DIR|__upload` v repu prázdný (mimo archiv a CHANGELOG); CI < 10 min.
 
 **Mimo rozsah:** refaktoring funkčního kódu.
 

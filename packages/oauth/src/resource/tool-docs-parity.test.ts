@@ -87,8 +87,8 @@ describe('MCP tools/list ↔ agent-dx TOOL_DOCS parity', () => {
       'record_query',
       'app_errors',
       'app_logs',
-      'deploy_init',
-      'deploy_commit',
+      'deploy_init', // doc-lint: allow — retired tool, asserted absent
+      'deploy_commit', // doc-lint: allow — retired tool, asserted absent
       'deploy_status',
       'rollback',
     ]) {

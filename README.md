@@ -1,63 +1,253 @@
 # drobek
 
 > An open-source cloud workspace for agent-built web apps. Your own agent
-> (Claude Code, Cursor, …) connects over MCP and works **directly in drobek** —
-> every write is compiled on the server, versioned, previewable and
-> publishable — with backend capabilities only through TypeScript platform
-> modules and a dashboard for the humans.
+> (Claude, Claude Code, Cursor, Codex, …) connects over MCP and works
+> **directly in drobek**: every write is compiled on the server, kept as a
+> version and previewable at once, and published when you say so. Apps get
+> their backend only through TypeScript platform modules — sign-in, data,
+> forms, e-mail, file uploads, external APIs — and the humans get a dashboard.
 
-**Status:** 🌱 Early — the cloud-workspace rebuild is in progress on `next`.
+**Status:** v1 in development on the `next` branch. Self-hostable today
+(AGPL-3.0); the hosted edition is [drobek.app](https://drobek.app).
 
----
+## The loop
 
-## Why
+1. Connect drobek to your agent (an MCP server with OAuth — you approve it in
+   the browser).
+2. Ask for an app: *"a shift planner for our warehouse"*. The agent calls
+   `create_app` and gets a compiling starter plus a briefing of the rules.
+3. It calls `write_files`. drobek compiles the files in-process with esbuild
+   and returns the compile errors **in the same response**; the agent fixes
+   them and writes again. Every write is an immutable version.
+4. Each successful compile is live at once on the app's preview host,
+   `https://<slug>--preview.<APPS_DOMAIN>` — the agent hands you the link.
+5. When you are happy, the agent calls `publish` and the version goes live on
+   `https://<slug>.<APPS_DOMAIN>` (or your own domain). Publishing an older
+   version is the rollback.
 
-People inside companies constantly need **tiny apps**: an internal dashboard,
-a form, a calculator, a demo for a client. An AI agent writes one in minutes —
-and then it has nowhere to live. Localhost disappears, a ZIP in Slack never
-runs, "real" hosting needs a repo, a build and an account.
+Why it is built this way:
 
-drobek gives the agent a place to work instead of a place to upload to: the
-files live in drobek, drobek compiles them (esbuild, in-process — **the server
-never executes app code**), keeps every change as an immutable version, and
-serves the result. Secrets never pass through the agent: they are set by the
-app owner in the dashboard.
+- **The server never executes app code.** It compiles and serves; the result
+  runs only in browsers. No sandbox per app, no `npm install`, no server-side
+  code of the agent's.
+- **Secrets never pass through the agent.** The app owner sets them in the
+  dashboard; modules use them server-side.
+- **Every app is its own origin** (`<slug>.<APPS_DOMAIN>`), separate from the
+  dashboard's.
+- **One process, one image** (`ghcr.io/freema/drobek`) + Postgres + Redis
+  (+ Caddy for TLS). It runs on an ordinary small server.
 
 ## Core concepts
 
 - **Workspace** — people with roles (workspace-admin / editor / viewer).
-- **App** — a globally unique slug (`<slug>.<APPS_DOMAIN>`), owned by a workspace.
-- **Version** — an immutable snapshot of the app's files, numbered per app.
-  Publishing moves one pointer; publishing an older version is the rollback.
-- **Modules** — the only backend an app gets: data collections, auth, forms,
-  email, files and a secret-injecting proxy. A module is platform code the
-  operator enables with `DROBEK_MODULES` (routes under `/__drobek/v1/<name>`,
-  `drobek.<name>` in the browser SDK, a per-app config, a skill for the agent);
-  the contract is [`docs/MODULES.md`](./docs/MODULES.md). Built in
-  (`modules/`, enable with `DROBEK_MODULES=auth,email,forms`):
-  - **`auth`** — the people who use an app sign in with an e-mailed 6-digit
-    code: an allowlist of addresses and domains, admins, a React
-    `<LoginGate>`, host-only 30-day sessions the owner can revoke at once.
-  - **`email`** — `drobek.email.notifyAdmins()` e-mails the app's owners; the
-    app's sender name, reply-to and daily mail limit. Apps can never e-mail an
-    arbitrary address; an operator-wide hourly cap pauses all module mail.
-  - **`forms`** — a React `<Form name="contact">` (or
-    `drobek.forms.submit()`): submissions stored and e-mailed to the owners,
-    with a honeypot, a time token and per-visitor limits; admins list and
-    export them as CSV. Requires `email`.
+- **App** — a globally unique slug, owned by a workspace. Its hosts:
+  `<slug>.<APPS_DOMAIN>` (published), `<slug>--preview.<APPS_DOMAIN>` (the
+  newest version that compiled), `<slug>--v<N>.<APPS_DOMAIN>` (exactly version
+  N), plus verified custom domains.
+- **Version** — an immutable, numbered snapshot of the app's sources and
+  compiled output. Publishing moves one pointer.
+- **Platform modules** — the only backend an app gets: routes under
+  `/__drobek/v1/<name>` on the app's host, `drobek.<name>` in the browser SDK,
+  a per-app config the agent proposes and the owner confirms when it is risky,
+  a skill the agent reads. Built in (`modules/`, enabled with
+  `DROBEK_MODULES`):
+  - **`auth`** — the app's users sign in with an e-mailed code (allowlist,
+    admins, `<LoginGate>`, sessions the owner can revoke);
+  - **`data`** — collections of records with per-operation rules
+    (`public` / `user` / `owner` / `admin`), JSON Schema, CSV;
+  - **`forms`** — `<Form>` submissions stored and e-mailed to the owners, with
+    bot protection;
+  - **`email`** — notifications to the app's owners (never to arbitrary
+    addresses), per-app and server-wide budgets;
+  - **`files`** — end-user uploads with types sniffed from the bytes and a
+    per-app quota;
+  - **`proxy`** — calls to external APIs with the secret injected
+    server-side, behind an SSRF guard.
 
-The full plan is [`docs/vision-plan.md`](./docs/vision-plan.md).
+  Operators can add their own modules against the public contract:
+  [`docs/MODULES.md`](./docs/MODULES.md).
 
 ## Self-host quickstart
 
-The whole stack builds **from source** and runs with one command — clone,
-copy the env, `docker compose up`, and you have a working drobek: email
-sign-in, workspaces, the MCP OAuth server, app versions,
-and the dashboard.
+<!-- quickstart:start -->
+What you need:
 
-Prereqs: **Docker** (compose v2). [go-task](https://taskfile.dev) 3 + Node 22 +
-pnpm 10 are only needed for the host-side `task check` / `task e2e` — not to run
-the stack.
+- a server with a public IPv4 (and/or IPv6), **linux/amd64** (there is no ARM
+  image in v1), ports **80** and **443** reachable from the internet;
+- a domain for the dashboard and a domain for the apps. Create these DNS
+  records **before** step 3 (Let's Encrypt checks them):
+
+  | Record | Points at | Example |
+  | --- | --- | --- |
+  | `A` (and/or `AAAA`) for the dashboard host | the server | `drobek.example.com` |
+  | wildcard `A`/`AAAA` `*.<APPS_DOMAIN>` | the server | `*.apps.example.net` |
+
+  A separate registrable domain for the apps (`example.net` next to
+  `example.com`) is the safer choice; `apps.<your dashboard domain>` works too.
+  No DNS at all (a test box)? Use `DOMAIN=localhost` in step 3 — Caddy's local
+  CA (`tls internal`), reachable only from the machine itself.
+- an SMTP account (host, port, user, password, a sender address) — sign-in
+  codes go out by e-mail.
+
+Every command runs as root (or prefix `sudo`).
+
+**1. Docker, git and go-task**
+
+```sh
+curl -fsSL https://get.docker.com | sh
+apt-get install -y git openssl
+snap install task --classic
+docker compose version     # → Docker Compose version v2.x (or newer)
+task --version             # → Task version: v3.x
+```
+
+**2. The drobek files** (the compose file, the scripts, the env template —
+the image itself comes from GHCR)
+
+```sh
+git clone https://github.com/freema/drobek /opt/drobek
+cd /opt/drobek
+git checkout "$(git tag -l 'v*' --sort=-v:refname | head -n 1)"   # the newest release (skip before the first one)
+```
+
+**3. Configuration** — generates every secret, writes `.env.production`
+(mode 600), renders `deployments/Caddyfile` with the image's own generator
+(no Node on the host):
+
+```sh
+DOMAIN=drobek.example.com APPS_DOMAIN=apps.example.net \
+TLS_ACME_EMAIL=you@example.com SUPERADMIN_EMAIL=you@example.com \
+SMTP_HOST=smtp.example.com SMTP_PORT=587 SMTP_USER=no-reply@example.com \
+EMAIL_FROM=no-reply@example.com \
+task selfhost:init
+```
+
+Expected output (abridged):
+
+```text
+✓ created .env.production from .env.production.example (mode 600)
+✓ generated POSTGRES_PASSWORD
+✓ generated DROBEK_MASTER_KEY
+✓ generated TLS_ASK_TOKEN
+✓ dashboard https://drobek.example.com · apps https://<slug>.apps.example.net
+✓ TLS mode for the app hosts: on-demand
+✓ rendered deployments/Caddyfile (on-demand)
+✓ docker compose config: OK
+```
+
+Then put the SMTP password in (never on the command line):
+
+```sh
+nano .env.production       # SMTP_PASS='…'   (single quotes if it has $, # or spaces)
+```
+
+`task selfhost:init` never asks anything and never overwrites a secret; run it
+again whenever you like (after changing TLS settings: then `task tls:reload`).
+The TLS default for a real domain is **on-demand** (one Let's Encrypt
+certificate per app host, gated by drobek); `TLS_MODE=wildcard-file` or
+`TLS_MODE=dns` pick a wildcard certificate instead — see "TLS" in
+`docs/SELF-HOSTING.md`.
+
+**4. Start**
+
+```sh
+docker compose --env-file .env.production -f docker-compose.production.yaml up -d --wait
+```
+
+The first start pulls the images and drobek applies every database
+migration. Expected: `Container drobek-prod-postgres-1
+Healthy`, `…-redis-1 Healthy`, `…-drobek-1 Healthy`, `…-caddy-1 Healthy`.
+
+```sh
+curl -s https://drobek.example.com/healthz      # → {"ok":true,"db":"up","redis":"up"}
+curl -s https://drobek.example.com/api/version  # → {"sha":"<commit>","version":"vX.Y.Z"}
+```
+
+Tip: `alias dc='docker compose --env-file .env.production -f docker-compose.production.yaml'`
+— the rest of this guide spells the command out.
+
+**5. Sign in** — open `https://drobek.example.com`, enter your
+`SUPERADMIN_EMAIL`, type the 6-digit code from the e-mail. You land on `/me`
+with a personal workspace.
+
+**6. Connect an agent (Claude Code)**
+
+```sh
+claude mcp add --transport http drobek https://drobek.example.com/mcp
+```
+
+Claude Code discovers drobek's OAuth server, opens the consent page in your
+browser (`read`, `write`, `publish`) and gets a token bound to you. Without a
+browser on the agent's machine, mint an API key on the server instead and
+pass it as a header:
+
+```sh
+docker compose --env-file .env.production -f docker-compose.production.yaml exec drobek \
+  node node_modules/@drobek/oauth/dist/cli/api-key-create.js \
+  --email you@example.com --name laptop --scopes read,write,publish
+# → drk_…   (shown once)
+claude mcp add --transport http drobek https://drobek.example.com/mcp \
+  --header "Authorization: Bearer drk_…"
+```
+
+**7. Publish an app** — ask the agent: *"Build a tip calculator on drobek and
+publish it."* It calls `create_app` → `write_files` → `publish`; open the
+`published_url` it returns (`https://tip-calculator.apps.example.net`). With
+on-demand TLS the very first request to a new app host waits a few seconds for
+its certificate.
+
+**A test box without DNS** — the same steps with Caddy's local CA:
+
+```sh
+DOMAIN=localhost SUPERADMIN_EMAIL=you@example.com SMTP_HOST=… task selfhost:init   # → TLS mode internal
+docker compose --env-file .env.production -f docker-compose.production.yaml up -d --wait
+docker compose --env-file .env.production -f docker-compose.production.yaml cp \
+  caddy:/data/caddy/pki/authorities/local/root.crt ./drobek-root.crt
+curl --cacert drobek-root.crt https://localhost/healthz
+```
+
+Trust `drobek-root.crt` in your browser / OS to use it without warnings (Node
+clients: `NODE_EXTRA_CA_CERTS=drobek-root.crt`). App hosts are
+`https://<slug>.apps.localhost`, which browsers resolve to the machine itself.
+`HTTPS_PORT=8443` (plus `HTTP_PORT=8080`) moves Caddy off 443 — every URL then
+carries the port.
+<!-- quickstart:end -->
+
+Backups (`task backup` / `task restore`), upgrades (`task selfhost:upgrade`),
+the three TLS paths, custom domains, abuse handling and every setting:
+[`docs/SELF-HOSTING.md`](./docs/SELF-HOSTING.md).
+
+## Connect your agent
+
+The MCP endpoint is `<PUBLIC_APP_URL>/mcp` (OAuth 2.1; the client discovers,
+registers and asks for your consent by itself). Scopes: `read`, `write`,
+`publish`; the token is bound to you and reaches every workspace you belong
+to, with your role in each.
+
+- **Claude Code:** `claude mcp add --transport http drobek https://drobek.example.com/mcp`,
+  then `/mcp` → sign in. For the hosted drobek:
+  `claude plugin marketplace add freema/drobek-plugin` and
+  `claude plugin install drobek@drobek` (MCP server + build skill +
+  `/drobek:build-app`).
+- **Claude (web / desktop):** add a custom connector with the `/mcp` URL.
+- **Cursor:** `~/.cursor/mcp.json` → `{ "mcpServers": { "drobek": { "url": "https://drobek.example.com/mcp" } } }`.
+- **Codex:** for the hosted drobek `codex plugin marketplace add freema/drobek-plugin`,
+  `codex plugin add drobek@drobek`, `codex mcp login drobek`.
+- **Scripts / CI:** a personal `drk_…` API key from `/me/api-keys` as
+  `Authorization: Bearer drk_…`.
+
+The agent gets eleven tools — `list_apps`, `create_app`, `get_app`,
+`read_file`, `write_files`, `restore_version`, `publish`, `skill_info`,
+`configure_module`, `query_data`, `get_logs`. The full agent contract (scopes,
+the briefing, skills, `/llms.txt`) is [`docs/AGENT.md`](./docs/AGENT.md); a
+running server serves it at `/llms.txt`, `/llms-full.txt` and
+`/build-with-your-agent`. To teach an agent the loop without the plugin:
+`cp -r skills/drobek ~/.claude/skills/drobek`.
+
+## Develop locally
+
+Prereqs: **Docker** (compose v2) for the stack; [go-task](https://taskfile.dev)
+3, Node 22 and pnpm 10 for the host-side `task check` / `task e2e`.
 
 ```sh
 git clone https://github.com/freema/drobek && cd drobek
@@ -65,135 +255,63 @@ cp .env.example .env
 # Two edits make it yours (the rest have working dev defaults):
 #   1. SUPERADMIN_EMAIL  → the email you'll sign in with (becomes super-admin)
 #   2. DROBEK_MASTER_KEY → a real key:  openssl rand -hex 32
-docker compose up -d --build     # or: task dev  (waits until healthy)
+task dev          # or: docker compose up -d --build
 ```
 
-drobek is **one Node process** (`apps/server`: Express + React Router 7 SSR +
-the OAuth 2.1 AS + the MCP Resource Server at `/mcp`), shipped as one image
-(`ghcr.io/freema/drobek`). It **applies the core Drizzle migrations itself on
-start** (journal `__drizzle_migrations_core`) and **refuses to start** while a
-secret still holds a `change-me…` placeholder. Next to it:
+| Service | Host port | Check |
+| ------- | --------- | ----- |
+| drobek (dashboard + OAuth AS + MCP `/mcp`) | [3041](http://localhost:3041) | `GET /healthz` → `{ok,db,redis}` (503 when a dependency is down); `GET /health` → `{ok:true}` |
+| postgres 17 | 5441 | `pg_isready` |
+| redis 7 | 6391 | `redis-cli ping` |
+| mailpit (dev SMTP sink) | [8025](http://localhost:8025) | the login codes land here |
 
-| Service | Host port | In-container | Check |
-| ------- | --------- | ------------ | ----- |
-| drobek (dashboard + OAuth AS + MCP `/mcp`) | [3041](http://localhost:3041) | 3000 | `GET /healthz` → `{ok,db,redis}`, 503 when a dependency is down; `GET /health` → `{ok:true}` |
-| postgres 17 | 5441 | 5432 | `pg_isready` |
-| redis 7 | 6391 | 6379 | `redis-cli ping` |
-| mailpit (dev SMTP sink) | [8025](http://localhost:8025) | 1025/8025 | `/mailpit readyz` |
+The dev stack runs every built-in module plus the example
+`drobek-module-hello`. Sign in at [localhost:3041](http://localhost:3041)
+(the code is in Mailpit), then point your agent at
+`http://localhost:3041/mcp`.
 
-**Connect your agent:**
-
-1. Open [localhost:3041](http://localhost:3041) and sign in with your email.
-   The dev stack sends the login code to the **mailpit** sink — read it at
-   [localhost:8025](http://localhost:8025) (production wires real SMTP instead).
-2. Point an MCP client (e.g. Claude Code) at `http://localhost:3041/mcp`. It
-   discovers the drobek OAuth Authorization Server (identifying itself with a
-   Client ID Metadata Document URL or by Dynamic Client Registration), you
-   approve the consent screen in your browser — three checkboxes: `read`,
-   `write`, `publish` — and it receives a token bound to **you**, not to one
-   workspace: it reaches every workspace you are a member of, with your role
-   in each.
-3. The agent now has nine tools: `list_apps` (your workspaces + apps),
-   `create_app` (an app with a compiling v1 from the `react-ts` or `html`
-   template, plus a briefing of the rules and the available skills),
-   `get_app`, `read_file`, `write_files` (1–20 changes → one new version,
-   compiled on the server; the compile errors come straight back),
-   `restore_version`, `skill_info` (how to use a backend: the skills of the
-   enabled modules), `configure_module` (an app's module config; risky changes
-   wait for your confirmation in the dashboard, and secrets are never set
-   through the agent) and `publish` (scope `publish`; only when you ask it to
-   go live). After each successful
-   compile it hands you the `preview_url`. One agent writes an app at a time
-   (a 3-minute lease). Browse the apps, their version history and publish a
-   version under `/workspaces/<slug>/apps`.
-
-The agent-facing contract is served at `/llms.txt` and `/llms-full.txt`, and
-`/build-with-your-agent` shows the setup. To teach your agent the build loop,
-install the skill from this repo (`cp -r skills/drobek ~/.claude/skills/drobek`)
-or, for the hosted drobek at `https://drobek.app/mcp`, the
-[drobek plugin](https://github.com/freema/drobek-plugin) for Claude Code, Codex
-and Cursor (MCP server + `build-app-on-drobek` skill + `/drobek:build-app`):
-`claude plugin marketplace add freema/drobek-plugin` then
-`claude plugin install drobek@drobek`.
-
-### Opening apps locally
-
-Every app is served on its own origin, never by the dashboard. Locally
-`APPS_DOMAIN=apps.localhost:3041`, and browsers resolve every `*.localhost`
-name to your machine, so there is nothing to add to `/etc/hosts`:
+**Opening apps locally.** `APPS_DOMAIN=apps.localhost:3041`, and browsers
+resolve every `*.localhost` name to your machine — nothing to add to
+`/etc/hosts`:
 
 | Host | Serves |
 | --- | --- |
-| `http://<slug>--preview.apps.localhost:3041` | the newest version that compiled (the working copy) |
-| `http://<slug>.apps.localhost:3041` | the published version (a "not published yet" page until the first publish) |
-| `http://<slug>--v<N>.apps.localhost:3041` | exactly version N (404 when it does not exist or did not compile) |
+| `http://<slug>--preview.apps.localhost:3041` | the newest version that compiled |
+| `http://<slug>.apps.localhost:3041` | the published version ("not published yet" until the first publish) |
+| `http://<slug>--v<N>.apps.localhost:3041` | exactly version N |
 
-Only the compiled output and plain assets are served — `*.ts`/`*.tsx`/`*.jsx`
-sources and `drobek.json` never are; any other path without a file falls back
-to `index.html` (client-side routing). Preview and version hosts send
-`X-Robots-Tag: noindex`; every app response carries the app CSP,
-`frame-ancestors 'none'` (per-app override: `apps.frame_ancestors`),
-`Referrer-Policy: no-referrer` and `nosniff`. A `password` app shows a password
-form and remembers the unlock in a host-only `__Host-drobek_app_access` cookie
-(its key is derived from `DROBEK_MASTER_KEY`).
-
-From a terminal, send the app host in the `Host` header — curl and Node do not
-resolve `*.localhost` on every system:
+curl and Node do not resolve `*.localhost` everywhere; send the app host in
+the `Host` header instead:
 
 ```sh
 curl -i -H 'Host: <slug>--preview.apps.localhost:3041' http://127.0.0.1:3041/
 ```
 
-The dashboard session cookie is `__Host-drobek_session` (host-only, `Secure`)
-in production and on any https origin. Browsers refuse `__Host-` cookies on
-plain `http://localhost`, so the http dev stack (NODE_ENV ≠ production) uses
-the unprefixed, still host-only `drobek_session` / `drobek_app_access` instead.
-
-For scripts and tests without an OAuth flow, create a personal `drk_…` API
-key in the dashboard at `/me/api-keys` (shown once; revocation is immediate)
-or with `task api-key:create EMAIL=you@example.com NAME=laptop
-SCOPES=read,write` on the local stack; send it as `Authorization: Bearer drk_…`
-to `/mcp`. `/me/connections` lists the OAuth clients you approved and revokes
-them (access + refresh tokens).
-
-**Production / TLS:** `docker-compose.production.yaml` runs the released
-image behind Caddy (dashboard + wildcard `*.<APPS_DOMAIN>`: on-demand per host
-behind an `ask` guard, your own wildcard cert, DNS-01 with a Caddy DNS module,
-or `tls internal`). On a server:
-
-```sh
-DOMAIN=drobek.example.com APPS_DOMAIN=apps.example.net task selfhost:init   # .env.production + Caddyfile
-docker compose --env-file .env.production -f docker-compose.production.yaml up -d --wait
-```
-
-`task backup` / `task restore BACKUP=…` and `task selfhost:upgrade` cover the
-rest; `task dev:tls` runs the dev stack on `https://localhost` /
-`https://<slug>--preview.apps.localhost` with Caddy's local CA. The full
-clean-VPS walkthrough is [`docs/SELF-HOSTING.md`](./docs/SELF-HOSTING.md).
-
-`docker compose down -v` wipes the volumes (postgres, redis) for a clean
-start; `docker compose down` keeps your data.
+Browsers refuse `__Host-` cookies on plain `http://localhost`, so the http dev
+stack (NODE_ENV ≠ production) uses the unprefixed, still host-only
+`drobek_session` / `drobek_app_access` / `drobek_eu`; production and every
+https origin use the `__Host-` names. `task dev:tls` runs the dev stack behind
+Caddy on `https://localhost` with its local CA. For scripts without an OAuth
+flow: `task api-key:create EMAIL=you@example.com NAME=laptop SCOPES=read,write`.
 
 Everyday commands:
 
 ```sh
 task dev          # build + start the stack, wait until healthy
-task health       # curl the health endpoints
+task check        # host-side gate: install, doc-lint, build packages, typecheck, lint, unit tests
 task logs         # tail the drobek service
-task check        # host-side: build packages, typecheck, lint, unit tests
-task build        # build the production image ghcr.io/freema/drobek:<sha>
-task prod:proof   # build + prove the prod image (size, non-root, fail-closed, live boot)
+task health       # curl the health endpoints
 task e2e          # Playwright suite (incl. @local specs) vs the stack
 task e2e:image    # what CI runs: the prod image behind Caddy + the whole suite
 task e2e:smoke    # @smoke specs only (safe against any target, prod included)
-task api-key:create EMAIL=… NAME=… SCOPES=read,write  # print a drk_ API key once (local stack)
-task dev:tls      # dev stack behind Caddy (tls internal) on https://localhost; task dev:tls:down to leave
-task caddy:config # generate deployments/Caddyfile from .env (production TLS)
-task tls:reload   # make the running Caddy re-read its config + certificate files
+task build        # build the production image ghcr.io/freema/drobek:<sha>
+task prod:proof   # build + prove the prod image (size, non-root, fail-closed, live boot)
+task dev:tls      # dev stack behind Caddy (tls internal); task dev:tls:down to leave
 task db:generate  # drizzle-kit generate (journal __drizzle_migrations_core)
-task db:migrate   # apply core migrations manually
-task down         # docker compose down
+task down         # stop the stack (docker compose down -v also wipes the data)
 ```
+
+Contributor rules and the repository map: [`CLAUDE.md`](./CLAUDE.md).
 
 ### End-to-end tests
 
@@ -207,14 +325,14 @@ task down         # docker compose down
   database, Redis or Mailpit. The MCP smoke loop (`mcp-loop.spec.ts`) signs in
   with a `drk_` key from `SMOKE_API_KEY` (read from the environment only),
   writes, previews and publishes a `smoke-*` app, and leaves nothing behind.
-  MCP has no delete tool (none is destructive), so the spec cleans up by
-  target: against the local stack (`TEST_ENV=local`) it creates a fresh
-  `smoke-<random>` app and deletes it at the end — also when the test fails —
-  through the dashboard delete action, signed in as the smoke user by e-mail
-  OTP (Mailpit); against any other target (production) it re-uses ONE stable
-  app per key, `smoke-<12 hex of a SHA-256 of the key>` (`list_apps` →
-  `get_app`, then a new version + publish), so production keeps exactly one
-  smoke app per smoke identity:
+  MCP has no delete tool, so the spec cleans up by target: against the local
+  stack (`TEST_ENV=local`) it creates a fresh `smoke-<random>` app and deletes
+  it at the end — also when the test fails — through the dashboard delete
+  action, signed in as the smoke user by e-mail OTP (Mailpit); against any
+  other target (production) it re-uses ONE stable app per key,
+  `smoke-<12 hex of a SHA-256 of the key>` (`list_apps` → `get_app`, then a
+  new version + publish), so production keeps exactly one smoke app per smoke
+  identity:
 
   ```sh
   BASE_URL_WEB=https://drobek.app SMOKE_API_KEY=drk_… task e2e:smoke
@@ -229,7 +347,7 @@ Playwright → token), then `list_apps` → `create_app` → `write_files` (comp
 error → fix) → preview host → `publish` → production host → `restore_version`
 → `get_app`, asserted under 90 s.
 
-`task e2e` runs against the dev stack (`task up`). **`task e2e:image`** is the
+`task e2e` runs against the dev stack (`task dev`). **`task e2e:image`** is the
 CI flow (`.github/workflows/ci.yml` runs the same `scripts/e2e-image.sh`):
 build the production image, start it with `docker-compose.e2e.yaml` (project
 `drobek-e2e`, its own loopback ports, so it runs next to the dev stack) behind
@@ -239,12 +357,23 @@ run `@smoke` + `@local` and tear everything down. `DROBEK_IMAGE=…` skips the
 build, `E2E_KEEP=1` keeps the stack, extra args go to Playwright
 (`task e2e:image -- tests/mcp-loop.spec.ts`).
 
-`/api/version` returns the git sha `task dev` bakes in via `GIT_SHA`
-(fallback `dev`). Monorepo layout: `apps/server` +
-`packages/{db,core,compile,apps,audit,auth,tenancy,mcp,oauth,data,proxy,insights,serving,dashboard,agent-dx,sdk}` +
-`tests-e2e` (pnpm workspace). Architecture and the ratified D1–D5 decisions:
-[`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md).
+## Documentation
+
+| Document | What |
+| --- | --- |
+| [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) | one process, origins, versions, the compiler, serving, modules, TLS, jobs |
+| [`docs/SELF-HOSTING.md`](./docs/SELF-HOSTING.md) | the quickstart, compose, every environment variable, TLS, backups, upgrades, custom domains, abuse |
+| [`docs/MODULES.md`](./docs/MODULES.md) | the platform module contract and the built-in modules |
+| [`docs/AGENT.md`](./docs/AGENT.md) | connecting agents, the tools and scopes, the briefing, skills, `llms.txt` |
+| [`docs/SECURITY.md`](./docs/SECURITY.md) | the threat model and how to report a vulnerability |
+| [`docs/LICENSING.md`](./docs/LICENSING.md) | AGPL-3.0 §13 and the boundary with the hosted drobek.app |
+| [`docs/POSITIONING.md`](./docs/POSITIONING.md) | the market and how drobek compares |
+| [`docs/progress.md`](./docs/progress.md) | the implementation log, gotchas and failed approaches |
+| [`docs/vision-plan.md`](./docs/vision-plan.md), [`docs/navrh-drobek.md`](./docs/navrh-drobek.md) | the ratified plan and the one-page pitch (Czech) |
+
+Older design documents are kept in [`docs/archive/`](./docs/archive/) for
+history; they describe the design before the cloud-workspace rebuild.
 
 ## License
 
-[AGPL-3.0](./LICENSE).
+[AGPL-3.0](./LICENSE) — see [`docs/LICENSING.md`](./docs/LICENSING.md).

@@ -30,8 +30,8 @@ const ALL_TOOLS = [
 
 /** Removed tools (deploy pipeline NSO-281, data/insight tools NSO-283) — never advertised. */
 const REMOVED_TOOLS = [
-  'deploy_init',
-  'deploy_commit',
+  'deploy_init', // doc-lint: allow — retired tool, asserted absent
+  'deploy_commit', // doc-lint: allow — retired tool, asserted absent
   'deploy_status',
   'whoami',
   'collection_define',
@@ -51,6 +51,7 @@ test('GET /llms.txt → 200 text/plain with the title + section links @smoke', a
   expect(body.startsWith('# drobek')).toBe(true);
   expect(body).toContain('## Docs');
   expect(body).toContain('/llms-full.txt');
+  expect(body).toContain('https://github.com/freema/drobek/blob/main/docs/AGENT.md');
   expect(body).toContain('/build-with-your-agent');
 });
 
@@ -67,6 +68,7 @@ test('GET /llms-full.txt → 200 with every tool, no deploy pipeline, the limits
   for (const name of REMOVED_TOOLS) expect(body, name).not.toContain(name);
 
   // No REST data API / upload routes.
+  // doc-lint: allow — retired path, asserted absent
   expect(body).not.toContain('/:ws/app/:slug');
   expect(body).not.toContain('__upload');
   expect(body).not.toContain('__beacon');

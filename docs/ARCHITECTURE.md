@@ -1,107 +1,278 @@
-# drobek — Architecture (v1 baseline)
+# drobek — architecture
 
-> 🌱 **Living doc.** Settled decisions marked plainly; **(open)** = still to specify. Canonical spec = the Linear project; this is the repo snapshot. Last sync: 2026-06-30.
+drobek is a cloud workspace for web apps that people build with their own AI
+agent. The agent connects over MCP and works **directly in drobek**: it writes
+files, drobek compiles them in-process with esbuild and returns the compile
+result in the same response, every write becomes an immutable version with an
+instant preview host, and a version goes live when the user asks for it. An
+app's backend is never code the agent writes: it is a set of **platform
+modules** (TypeScript, installed by the operator) that the app calls through a
+small browser SDK. The dashboard is for what does not belong in a chat with an
+LLM: secrets, confirmations, domains, data, users, logs.
 
-## ⚠️ Corrections (post-audit 2026-06-30) — authoritative; supersede anything below
+This document is the map of how that works. The neighbours:
+[`SELF-HOSTING.md`](./SELF-HOSTING.md) (running it),
+[`MODULES.md`](./MODULES.md) (the module contract and the built-in modules),
+[`AGENT.md`](./AGENT.md) (the agent-facing contract),
+[`SECURITY.md`](./SECURITY.md) (the threat model),
+[`LICENSING.md`](./LICENSING.md) (AGPL and the SaaS boundary). The decision
+record behind it is [`vision-plan.md`](./vision-plan.md) (Czech).
 
-- **Blobs = local-disk `BlobStore`** (content-hash files) — **no PG `bytea`, no MinIO**. `blobs(sha256, content_type, size, path)` + `blob_refs(sha256, deploy_id)` (refcount for safe GC). **Persistent volume** in the deploy compose (else every deploy wipes apps). Signed-upload endpoint **stream-hashes + verifies sha256** server-side.
-- **Serving origin:** apex same-origin accepted **only for single-user self-host / M0–M1a**; **before multi-tenant/public, move the dashboard to `app.drobek.app`** (apps keep the apex path). See PHY-98.
-- **App visibility = `public | team | password`** (not "always public").
-- **Milestones:** add **M0** (walking skeleton); **foundation = M0 + M1a only** (M1b/M1c post-dogfood). Pull `audit_log` + `team-only` into M1a.
-- **super-admin is GLOBAL** (env `SUPERADMIN_EMAIL`), not a `memberships` role row.
-- **OAuth AS = build, not port** (puls tokens are shopId-bound; no refresh/audience).
-- **License = dual-license** (core AGPL public; non-AGPL grant to drobek-web).
-- **DNS = Hostinger** (`*.dns-parking.com`) for future wildcard DNS-01.
-- Full audit & findings: `docs/REVIEW.md`.
+## 1. One process, one image
 
-drobek hosts small **client-side (static HTML/JS/CSS) "vibecoded"** micro-projects. Drop a folder → live URL. Headline = **MCP-native deploy** (the AI agent that built it deploys it). drobek also gives those static apps a **data API**, a **JS SDK** (data + their own end-user auth), and an **outbound proxy** — so they do real work without their own backend.
-
-**Shape:** a **single-box Node app** — Postgres (source of truth) + Redis (queue/cache/sessions) + two small services (`web`, `mcp-server`), same family as [`puls-mcp`](https://github.com/freema/puls-mcp). Batteries-included, but one box.
-
----
-
-## 1. Editions (open-core)
-- **`drobek`** (public, AGPL-3.0) — the engine: auth, workspaces, deploy, serving, data API, JS SDK, proxy, logger interface. Self-hostable.
-- **`drobek-web`** (private) — business edition: **imports the core `packages/*` and adds private modules** (no fork): billing/tiers, notifications, marketing, MCP feedback inbox, managed SMTP, click-to-add SSO, custom domains, Sentry.
-- **Tiers:** **Free** (personal workspace + a few apps) · **Enterprise** (contact-only): teams, proxy, SSO, custom domains, higher limits. No public pricing yet.
-
-## 2. Services, stack & repo
-- **web** — Remix / RR7 SSR: dashboard, hosted apps, data API, end-user auth, proxy, drobek auth/OAuth endpoints.
-- **mcp-server** — separate service (like puls): MCP tools; validates OAuth tokens issued by `web`'s AS.
-- **Postgres** (source of truth) + **Redis** (required, §14). Config via `.env` (12-factor).
-- **Monorepo (pnpm, mirrors puls):** `apps/web` + `apps/mcp-server` + `packages/{db, core, sdk}`. **ORM = Drizzle** (`drizzle-kit` + postgres.js) in `packages/db` (`db:generate/migrate/studio`; migrate step on deploy).
-- **CI/CD:** GitHub Actions on release → images → **GHCR** → `docker pull` on VPS (`deploy.yml`), like puls/metrifyr.
-
-## 3. Domain model (sketch)
 ```
-users(id, email, google_sub, ...)                roles: super-admin | workspace-admin | editor | viewer
-workspaces(id, kind: personal|team, slug)        memberships(user_id, workspace_id, role)
-apps(id, workspace_id, slug, active_deploy_id, routing_mode, visibility=public, status: live|hibernated)
-deploys(id, app_id, manifest jsonb, lint_report jsonb, created_at)     -- immutable
-blobs(sha256 PK, content_type, size, path)       -- content-addressed; BYTES ON LOCAL DISK (BlobStore), not PG
-blob_refs(sha256, deploy_id)                     -- refcount for cross-tenant-safe GC
-collections(app_id, name, json_schema jsonb, access_mode: public-read|public-write|locked|owner-only)
-app_documents(app_id, collection, id, owner_end_user_id?, doc jsonb, ...)
-workspace_end_users(workspace_id, id, email, provider, ...)  -- hosted apps' OWN users, workspace-scoped (SSO)
-workspace_end_user_sessions(...)                 -- HttpOnly cookie on the per-workspace apps-origin
-upstreams(...) / upstream_secrets(... envelope-encrypted, KEK from DROBEK_MASTER_KEY)
-oauth_clients / oauth_authorization_codes / oauth_access_tokens         -- ported from puls-mcp
-app_metrics(app_id, day, visits, ...)            -- lightweight PG counters, no PII
+                     dashboard host (PUBLIC_APP_URL)                  apps origin (*.APPS_DOMAIN + custom domains)
+                     ────────────────────────────────                 ─────────────────────────────────────────────
+  MCP client  ──►  /mcp  (Streamable HTTP, Bearer)                    <slug>.<APPS_DOMAIN>            published version
+  browser     ──►  /     (React Router 7 SSR dashboard)               <slug>--preview.<APPS_DOMAIN>   newest version that compiled
+  MCP client  ──►  /oauth/*, /.well-known/*  (OAuth 2.1 AS)           <slug>--v<N>.<APPS_DOMAIN>      exactly version N
+  browser     ──►  /api/*    (dashboard JSON API)                     shop.example.org (verified)     published version
+                                                                      /__drobek/sdk.js, /__drobek/v1/<module>/…
+ ┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+ │ caddy: TLS for the dashboard host, *.APPS_DOMAIN and verified custom domains  ──►  drobek:3000                │
+ ├──────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ drobek — one Node 22 process (apps/server, Express)                                                          │
+ │   1. apps-host middleware (@drobek/serving): an app host is answered here and never reaches the dashboard    │
+ │   2. origin check (@drobek/auth): mutating dashboard requests from app / null / foreign origins → 403        │
+ │   3. /health, /version, /api/internal/tls/ask (internal address only)                                        │
+ │   4. /mcp: @drobek/oauth resource server (Bearer → user, scopes, audience) + @drobek/mcp tool bodies          │
+ │   5. everything else: React Router (@drobek/dashboard routes, OAuth AS routes, /llms.txt, /report …)         │
+ │   in-process jobs (apps/server/server/jobs.ts): blob GC, slug release, domain re-check, audit retention      │
+ └──────────────┬───────────────────────────────────────────┬────────────────────────────────┬──────────────────┘
+                │ postgres-js + drizzle                     │ ioredis                        │ nodemailer SMTP
+          Postgres 17: users, workspaces, apps,       Redis 7: sessions, rate limits,     any SMTP server
+          versions + blobs, module data, OAuth,       OTP counters, leases, caches,       (Mailpit in dev)
+          API keys, domains, abuse, audit             serve-cache bust pub/sub
 ```
 
-## 4. URLs & routing
-Static (no-auth) app: **path-based** `(<host>)/<workspace>/app/<slug>`. **Auth app** (uses end-user auth): **per-workspace apps-origin** `<workspace>.apps.<host>/<slug>` (wildcard cert). Per-app **SPA-fallback toggle** (default **open**).
+- **`apps/server`** is the only process: Express with
+  `@react-router/express` for the dashboard, `mountMcpResource` for `/mcp` and
+  the apps-host middleware in front of everything. There is no worker
+  container and no job queue; background work runs on timers inside the
+  process, each under a Redis lease so only one replica does it.
+- **One image**, `ghcr.io/freema/drobek` (root `Dockerfile`, targets `dev` and
+  `runner`; linux/amd64 releases). The image applies every pending migration
+  on start (core journal `__drizzle_migrations_core`, one
+  `__drizzle_migrations_mod_<name>` per module) and **refuses to start** on a
+  placeholder secret, a weak `TLS_ASK_TOKEN`, a missing `APPS_DOMAIN` in
+  production or a module it cannot load.
+- **Feature logic lives in packages**, not in `apps/server`: the server wires
+  them together. The main ones:
 
-## 5. Serving origin & isolation
-⚠️ **Apex same-origin is unsafe with untrusted authors** (admin account-takeover): path-scoped cookies + CSP are NOT boundaries vs same-origin credentialed `fetch`. Accepted **only for single-user self-host / M0–M1a**; before multi-tenant/public, **move the dashboard to `app.drobek.app`** (apps keep the apex path) — see Corrections + PHY-98. **Auth apps** always get a **per-workspace apps-origin** (`<ws>.apps.<host>`, SSO + token isolation). **App visibility = `public | team | password`**, gated *before* serving blobs. Content-hash serving + caching (ETag, immutable).
+  | Package | Holds |
+  | --- | --- |
+  | `@drobek/apps` | apps, globally unique slugs, versions, publish/restore, host classification, single-writer lease, blob GC, takedown, deletion |
+  | `@drobek/compile` | the in-process esbuild compiler over an in-memory file map |
+  | `@drobek/serving` | the apps-host handler: host → app → version → file, CSP, caches, password gate, TLS `ask` |
+  | `@drobek/modules` | the module contract, registry, router, runtime, SDK build, limits provider, end-user sessions |
+  | `@drobek/mcp` | the MCP tool bodies; `@drobek/oauth` = OAuth 2.1 AS + MCP resource server + API keys |
+  | `@drobek/agent-dx` | the briefing, the tool manifest, limits, error catalogue, `/llms.txt` renderers |
+  | `@drobek/dashboard` | the dashboard routes and their server halves |
+  | `@drobek/auth`, `@drobek/tenancy`, `@drobek/audit` | dashboard sign-in (e-mail code, Google), sessions, rate limits, origin check; workspaces and roles; the audit log |
+  | `@drobek/domains`, `@drobek/email`, `@drobek/insights`, `@drobek/proxy` | custom domains; SMTP transport; the error beacon and request stats; upstream registry, envelope crypto, SSRF guard |
+  | `@drobek/core`, `@drobek/db`, `@drobek/sdk` | env/config, health, logger, Caddyfile generator; drizzle schema + migrations; the browser SDK core |
+  | `modules/{auth,email,forms,data,proxy,files}` | the built-in platform modules (`drobek-module-<name>`) |
 
-## 6. Auth — drobek accounts
-**Port the puls-mcp module:** email magic-code + Google OIDC + sessions + **OAuth 2.1 AS for MCP** (authorize/token/DCR/`.well-known`/PKCE). Workspaces **personal + team** (email-invite). **Fixed roles:** `super-admin` (via `SUPERADMIN_EMAIL`), `workspace-admin`, `editor`, `viewer`. Gate by **role + scope + workspace**.
+## 2. Workspaces, apps and versions
 
-## 7. Hosted-app end-user auth ("auth widgets")
-- **Workspace-scoped end-users** (`workspace_end_users`) → **SSO across the workspace's apps**. Separate from drobek accounts.
-- Methods: **email magic-code + Google + GitHub OAuth** (per-instance config). Signup **open + rate-limited**.
-- Session = **HttpOnly cookie on the per-workspace apps-origin**; mutations protected by **SameSite + Origin check + CSRF token**.
-- **Owner-only data:** server derives `owner = current end-user` from the session (client never sends it).
-- Ships in **M1c** via the SDK.
+- A **workspace** has members with a role: `workspace-admin`, `editor` or
+  `viewer`. Every user has a personal workspace. `SUPERADMIN_EMAIL` (a list)
+  names the operator's super-admins; super-admin is an env flag, not a role
+  row.
+- An **app** belongs to one workspace and has a **globally unique slug**
+  (a host label; `--` is not allowed in a slug, so the preview and version
+  host names never collide with another app). `create_app` picks a free slug
+  and falls back to `<name>-<4 hex>`. A deleted app keeps its slug for 30
+  days, then the slug is released.
+- A **version** is an immutable, numbered snapshot of the app's files
+  (`app_versions` + `version_files`): the sources the agent wrote AND the
+  compiled output, plus who made it, the agent's one-line `reasoning` and the
+  compile status. File bytes are content-addressed blobs in Postgres
+  (`blobs`, sha256, deduplicated across versions and apps); unreferenced blobs
+  are garbage-collected hourly after a 7-day grace period.
+- **Publishing** moves one pointer, `apps.published_version_id`, to a version
+  that compiled. Rolling production back is publishing an older version.
+  `restore_version` rolls the working copy back by writing a NEW version with
+  the old files — history is never rewritten. There is no git and there are
+  no branches.
+- **One writer at a time**: a write takes the app's Redis lease
+  (`drobek:applock:<app_id>`, 3 minutes, renewed per write). Another user's
+  agent gets `app_locked`; the same user's other sessions take the lease over.
 
-## 8. Deploy pipeline (MCP-native, async)
-**3 tools:** `deploy_init` (presigned `putUrl`s for missing files, content-hash dedup; auto-creates app from slug) → agent **PUTs local files out-of-band** → `deploy_commit` (BullMQ job) + `deploy_status` (live progress via Redis pub/sub → SSE). Job: **strict lint** (no chromium; hard errors **block**) → content-hash blobs → flip `active_deploy_id`. Immutable; **rollback** = repoint. Entry `index.html`. **No server-side build** — agent builds locally, deploys the static output.
+## 3. The compile step
 
-## 9. Serving model
-`active_deploy_id` → manifest path → blob by hash. ETag=sha256, immutable cache for hashed assets, revalidate entry HTML; Redis/in-memory cache. Fixed `path→content_type`, `nosniff`.
+`write_files` (1–20 changes) → validate the paths and limits → scan for
+secrets (a hit refuses the write and stores nothing) → compile → store the new
+version (also when the compile failed, so no work is lost) → notify the serve
+cache. The compile result is part of the tool response.
 
-## 10. Data API (Variant 1)
-**jsonb document collections.** **Required JSON Schema per collection** (via MCP `collection_define` **and** dashboard; writes validated — not yolo). **REST** + **JS SDK**. Query: list + filter + sort + limit. Access modes: public-read / public-write / locked / **owner-only**. Quotas + write rate-limits enforced regardless. v1 JSON only. MCP CRUD tools (`record_*`) land in **M1b**.
+- `@drobek/compile` runs esbuild **in-process** (`context()` + `rebuild()`)
+  over an in-memory file map. A virtual-filesystem plugin resolves relative
+  imports only inside that map — **never the disk**. Bare imports resolve
+  only through the app's `drobek.json` import map to pinned `https://` URLs
+  (esm.sh), marked external: the browser loads them, the server never fetches
+  them. `drobek` maps to the platform SDK (`/__drobek/sdk.js`);
+  `drobek/<module>` imports inline module components (compiled with the
+  app's own React).
+- `src/main.{tsx,ts,jsx,js}` → `/main.js`, the CSS it imports → `/main.css`,
+  `drobek.json` `entries` → more bundles. An app without `src/main.*` is plain
+  HTML served as written. The compiler prepends the error-beacon import to
+  every JS entry (`"beacon": false` opts out).
+- Limits (`COMPILE_*`): 200 files, 512 KiB per file, 5 MiB per version, an
+  import depth of 50, 10 s per build (cancelled with its own `ctx.cancel()`),
+  4 builds at once and a FIFO queue whose wait answers `busy`.
+- **The server never executes app code** — not at compile time (the esbuild
+  plugins are drobek's, not the author's), not to render, not to test. What it
+  produces is served to browsers and runs there only.
 
-## 11. JS SDK
-JS over the REST API: **data CRUD + query** and **end-user auth**. Delivered as a **versioned `<script>` from the drobek host** (`<host>/sdk@1.js`, no build); `@drobek/sdk` npm maybe later. In `packages/sdk`.
+## 4. Origins and hosts
 
-## 12. Proxy (Variant 2)
-BFF outbound proxy: a `workspace-admin`/`super-admin` (configurable per workspace) registers an upstream (`base_url` pinned, **envelope-encrypted secrets**, KEK from `DROBEK_MASTER_KEY`); the upstream is assigned per app through the `proxy` module (owner-confirmed), the app calls `/__drobek/v1/proxy/<name>/*` (NSO-297; ports 80/443 only), drobek injects auth, scopes to workspace+app, owns CORS, rate-limits. **SSRF-guarded** (allowlist host, resolve DNS once, block private ranges, no redirects). Built **right after** Data API (M2).
+| Origin | Serves | Never |
+| --- | --- | --- |
+| dashboard host (`PUBLIC_APP_URL`) | dashboard, dashboard API, OAuth AS, `/mcp`, `/llms.txt`, `/report` | any app file or app JavaScript |
+| `<slug>.<APPS_DOMAIN>` | the published version (indexable) | the dashboard session cookie is never read here |
+| `<slug>--preview.<APPS_DOMAIN>` | the newest version that compiled (`noindex`) | |
+| `<slug>--v<N>.<APPS_DOMAIN>` | exactly version N (`noindex`) | |
+| a verified custom domain | the published version (indexable) | |
 
-## 13. Quotas & lifecycle
-Conservative configurable quotas (≈ app 25 MB / 200 files / 5 MB per file / data 10 MB per app + write rate-limit). Lifecycle: inactive apps **hibernate → delete**, thresholds configurable.
+- `APPS_DOMAIN` should be a **different registrable domain** from the
+  dashboard's (cookies, the Public Suffix List, phishing optics); every app is
+  its own origin, so apps are isolated from each other and from the dashboard
+  by the browser's same-origin policy.
+- Host classification (`@drobek/apps` `classifyHost`) is shared by serving,
+  the origin check and the TLS `ask`. An unknown foreign host is the
+  dashboard's (and 404s there); a registered but unverified custom domain
+  answers 404 on the apps side.
+- A **custom domain** is a CNAME (or ALIAS / matching A/AAAA at an apex) to
+  `<slug>.<APPS_DOMAIN>` plus a TXT record `_drobek.<host>`; verified names are
+  re-checked daily and lose their verification on a definitive DNS failure.
+  One domain can be **primary**: the production host then answers 302 to it.
+- Dev: `APPS_DOMAIN=apps.localhost:3041` — browsers resolve `*.localhost` to
+  loopback, so there is nothing to put in `/etc/hosts`.
 
-## 14. Redis (required)
-BullMQ **queue** · **cache** · **sessions** · **rate limiting** · **live-progress** pub/sub. Postgres stays source of truth.
+## 5. Serving
 
-## 15. Observability
-**Logger interface in core** (pluggable, no vendor lock). **Sentry in drobek-web** (web + mcp-server). **Metrics** = lightweight Postgres counters per app/day (no PII/IP).
+`@drobek/serving` answers every app-host request in a fixed order, each step
+before any byte of the app is touched:
 
-## 16. drobek-web modules
-Tiers/billing (Free + Enterprise-contact; provider TBD) · Notifications email-first (managed **Resend/Postmark**; self-host = own SMTP) · Marketing (landing + blog/SEO + newsletter, routes in the drobek-web Remix app, à la metrifyr) · MCP feedback loop (rich deploy results + feedback tool → **admin inbox** + optional Linear issue).
+1. method: GET/HEAD (plus the password-unlock POST); else **405**;
+2. `/.well-known/drobek-report` → the report pointer (works for any host);
+3. the unknown-host limiter: a client IP past `APPS_UNKNOWN_HOST_LIMIT`
+   "no app here" answers per window gets **429** (without a lookup for hosts
+   the cache does not know as live apps);
+4. the app lookup — a miss is a counted **404** page; misses are kept in a
+   separate negative cache for 30 s, hits in the positive cache for 60 s;
+5. `X-Drobek-App: <slug>` on every response from here on;
+6. a taken-down app: **451** on every host and path (JSON 451 on platform
+   paths), before the redirect, the password gate and the modules;
+7. the primary-domain **302** (production host, GET/HEAD page requests);
+8. visibility: a `password` app shows the password page (**401**) until the
+   host-only `__Host-drobek_app_access` cookie (HMAC, key derived from
+   `DROBEK_MASTER_KEY`) is set;
+9. `/__drobek/*`: the SDK, the module routes and the beacon — handed to the
+   module runtime, never to the app's files;
+10. the version the host serves (**404** "not published" / "nothing compiled"),
+    then the file: built output wins over sources, `.ts/.tsx/.jsx` sources and
+    `drobek.json` are never served, extension-less paths fall back to
+    `index.html`, `ETag` = sha256 → **304**.
 
-## 17. Self-host
-**docker-compose** (`web` + `mcp-server` + `postgres` + `redis`) + **`.env`** (`SUPERADMIN_EMAIL`, SMTP, Google/GitHub OAuth, `DROBEK_MASTER_KEY`, session secret, limits, lifecycle, serving-origin + apps-domain). `docker compose up` → running. `.env.example` + docs. Env-first, no wizard.
+Every response carries the app CSP (`default-src 'self'`, scripts from the app
+and `https://esm.sh`, `connect-src 'self' https://esm.sh`,
+`frame-ancestors 'none'` unless the owner set `apps.frame_ancestors`),
+`nosniff` and `Referrer-Policy: no-referrer`; preview and version hosts add
+`X-Robots-Tag: noindex`. Bytes come from a 256 MiB in-memory LRU; the host
+and manifest caches are busted through a local event emitter first and Redis
+pub/sub (`drobek:app-changed`) for other replicas, so a write is visible on
+its preview host at once.
 
-## 18. Milestones
-- **M1 — MVP**, cut into:
-  - **M1a** = auth (email-code + Google + MCP OAuth) + workspaces + 4 roles + deploy + serving + dashboard apps-list + self-host compose. *Acceptance: deploy from Claude Code → live URL + rollback + visible in dashboard + `docker compose up` works.*
-  - **M1b** = Data API (jsonb + required schema) + MCP CRUD tools.
-  - **M1c** = JS SDK + hosted-app end-user auth.
-- **M2 — Data API (full runtime) + Proxy.**
-- **M3 — Full dashboard UI + ops** (metrics, teams, quotas, lifecycle, observability, drobek-web modules).
+## 6. Platform modules
 
-## 19. Open questions (remaining)
-Blob GC + binaries-on-disk threshold · backups (PG + blobs) · GDPR/PII export-delete (Enterprise) · brand/name. *Most former gaps now decided — see Linear PHY-74…80.*
+A module is an npm package whose default export comes from `defineModule()`
+(`@drobek/modules`, contract `1.0.0`). The operator enables modules with
+`DROBEK_MODULES`; a short name `x` loads `drobek-module-x`. A module
+contributes routes under `/__drobek/v1/<name>/…` on every app host, a slice of
+the browser SDK (`drobek.<name>`), a zod per-app config schema, access rules,
+secrets (names only), env-named limits, its own tables and migrations, and a
+skill the agent reads with `skill_info`. Built in: `auth` (end-user sign-in by
+e-mailed code), `email` (notifications to the app's owners), `forms`, `data`
+(collections with per-operation rules), `proxy` (external APIs with the
+secret injected server-side) and `files` (end-user uploads). The contract is
+[`MODULES.md`](./MODULES.md).
+
+- **Core resolves the caller** before a module sees the request: the
+  end-user session (`drobek_eu`, host-only on the app host, epoch per app) →
+  `ctx.principal` = anonymous, an end user with a role, or an app admin. The
+  dashboard session never exists on the apps origin. Mutating module calls
+  need the app's own origin and `X-Drobek-SDK: 1` (`csrf_rejected`).
+- **Configuration** comes from the agent (`configure_module`, a JSON merge
+  patch validated by the module's schema) or the dashboard form. A change the
+  module's `confirmRequired` names — opening a rule to `public`, a new
+  recipient, giving an app an upstream — is stored as **pending** and waits
+  for the owner on the dashboard's Modules tab (the tool returns
+  `confirm_url`; the owners get one e-mail per app per hour). Items marked
+  `confirmRole: 'admin'` (every proxy change) can only be confirmed by a
+  workspace admin. **Secrets never pass through MCP**: they are set
+  write-only in the dashboard and stored AES-256-GCM envelope-encrypted under
+  `DROBEK_MASTER_KEY`.
+- **Limits** are env numbers with defaults; `LIMITS_PROVIDER_URL` (+ an HMAC
+  secret) lets an operator with plans answer them per workspace
+  (`GET /limits/<workspace_id>`, cached 60 s; an outage falls back to the env
+  values). Module e-mail also passes the operator-wide mail guard (hourly
+  budgets per class and per app, pause + ALERT line).
+
+## 7. TLS
+
+Caddy runs next to drobek (`docker-compose.production.yaml`) and terminates
+TLS; drobek speaks plain HTTP on the internal network and trusts only
+Caddy's `X-Real-IP` (`TRUST_PROXY=x-real-ip`). The Caddyfile is **generated**
+from the environment (`@drobek/core` `caddy.ts`, `task selfhost:init` /
+`task caddy:config`) and contains no secrets. The dashboard host gets a
+normal ACME certificate; the app hosts use exactly one of three paths:
+
+- **(a) wildcard certificate files** the operator obtains and renews
+  (`task tls:reload` after each renewal);
+- **(b) ACME DNS-01** through a Caddy DNS module (a custom Caddy build), with
+  optional `_acme-challenge` CNAME delegation;
+- **(c) on-demand**, one certificate per app host, always gated by drobek's
+  `ask` endpoint (`/api/internal/tls/ask`, internal address + `TLS_ASK_TOKEN`
+  only): 200 for a host of a live app or a verified custom domain, 404 for
+  everything else.
+
+Verified custom domains get their certificates from an on-demand catch-all
+behind the same `ask` (on by default in mode (c), `TLS_CUSTOM_DOMAINS`).
+`tls internal` (Caddy's local CA) serves a test box and `task dev:tls`.
+Details: [`SELF-HOSTING.md` → TLS](./SELF-HOSTING.md#tls).
+
+## 8. Background jobs
+
+All in-process (`apps/server/server/jobs.ts`), started with the server:
+
+| Job | Interval | What |
+| --- | --- | --- |
+| blob GC | hourly, Redis lease | deletes blobs no version references, after 7 days |
+| slug release | hourly, Redis lease | a soft-deleted app's slug is free again after 30 days |
+| domain re-check | `DOMAINS_RECHECK_INTERVAL_MS` (1 h), Redis lease | re-verifies domains checked more than 24 h ago; unverifies + mails on a definitive failure |
+| audit retention | at start, then daily | deletes audit rows older than `AUDIT_RETENTION_DAYS` (365) — the only deletion of audit rows anywhere |
+
+Request counters for `get_logs('requests')` accumulate in Redis and are
+flushed into Postgres on read.
+
+## 9. Agents, the dashboard and abuse
+
+- **MCP** (`/mcp`, Streamable HTTP): OAuth 2.1 with PKCE, Client ID Metadata
+  Documents or Dynamic Client Registration, RFC 8707 audience, RFC 9207
+  `iss`, rotating refresh tokens; or a personal `drk_` API key. A grant is
+  bound to the **user** (every workspace they belong to) with the scopes
+  `read`, `write`, `publish`; the scope decides which tools exist, the role in
+  the app's workspace decides each call. Eleven tools; the contract and the
+  briefing are in [`AGENT.md`](./AGENT.md).
+- **The dashboard** (core, AGPL): sign-in by e-mail code (Google optional),
+  workspaces and members, apps with Overview / Files / Data / Modules /
+  Domains / Forms / Users / Uploads / Logs / Settings tabs, version history
+  and publish, upstreams, activity (the audit log, CSV), API keys and OAuth
+  connections, the super-admin abuse queue. All dashboard cookies are
+  `__Host-` in production.
+- **Abuse**: every app host points at the public report form; super-admins
+  take an app down (unpublish + lock → 451 everywhere, every write refused
+  with `app_locked_by_admin`) and restore it; a publish heuristic flags
+  password-field + brand-name pages into the queue without blocking.

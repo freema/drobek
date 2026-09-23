@@ -1,6 +1,6 @@
 # drobek (PUBLIC core) — CI (M0-08)
 #
-#   quality  lint → typecheck → unit tests (the `task check` pieces)
+#   quality  doc-lint → lint → typecheck → unit tests (the `task check` pieces)
 #   e2e      build the production image ONCE (Dockerfile `runner`) → run it
 #            with docker-compose.e2e.yaml behind Caddy (tls internal) with
 #            throwaway postgres / redis / mailpit / proxy-echo → the server
@@ -68,6 +68,9 @@ jobs:
 
       - name: Install (frozen lockfile)
         run: pnpm install --frozen-lockfile
+
+      - name: Doc-lint (retired vocabulary, quickstart parity, env reference)
+        run: pnpm doc-lint
 
       - name: Build workspace packages
         run: pnpm build:packages
