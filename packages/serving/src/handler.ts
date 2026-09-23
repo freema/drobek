@@ -21,6 +21,12 @@
  * password gate (that answers JSON 401 `password_required`). Any method may reach
  * it; the runtime answers 405 itself. The app's files are never involved.
  *
+ * CUSTOM DOMAINS (M3-01): a verified custom domain arrives as target
+ * `custom` and is served exactly like the production host (published
+ * version, indexable). When the app has a PRIMARY domain, its production host
+ * answers a GET/HEAD page request with 302 → the same path on that domain
+ * (after step 2; platform, beacon and unlock requests are never redirected).
+ *
  * ISOLATION: this handler reads exactly ONE cookie, the app-access cookie of
  * the password gate, and sets no other; the platform handler additionally
  * reads the app's end-user cookie (`drobek_eu`, M1-01). The dashboard session
@@ -108,6 +114,11 @@ export interface HandlerDeps {
   platform?: PlatformHandler;
   /** The browser error beacon at BEACON_PATH (absent → the path falls to `platform`). */
   beacon?: BeaconHandler;
+  /**
+   * M3-01: the origin of a custom domain, for the primary-domain redirect
+   * (default `https://<hostname>`; node.ts derives scheme + port from the apps origin).
+   */
+  customDomainOrigin?: (hostname: string) => string;
 }
 
 const HTML = 'text/html; charset=utf-8';
@@ -142,7 +153,8 @@ function safeNext(raw: string | null | undefined): string {
 
 export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Promise<AppResponse> {
   const method = req.method.toUpperCase();
-  const noindex = req.target?.kind !== 'prod';
+  const kind = req.target?.kind;
+  const noindex = kind !== 'prod' && kind !== 'custom';
   let security = appSecurityHeaders({ noindex });
 
   const page = (status: number, html: string, extra: Record<string, string> = {}): AppResponse => ({
@@ -166,6 +178,18 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
   if (!app) return missing('no-app');
   security = appSecurityHeaders({ noindex, frameAncestors: parseFrameAncestors(app.frameAncestors) });
   if (!isBeacon) deps.signal?.(app.id, 'request');
+
+  // ── primary custom domain: the production host redirects there (M3-01) ──
+  if (
+    req.target.kind === 'prod' &&
+    app.primaryDomain &&
+    (method === 'GET' || method === 'HEAD') &&
+    !req.path.startsWith(PLATFORM_PREFIX)
+  ) {
+    const origin = deps.customDomainOrigin?.(app.primaryDomain) ?? `https://${app.primaryDomain}`;
+    const location = `${origin}${req.path}${req.query ? `?${req.query}` : ''}`;
+    return { status: 302, headers: { ...security, Location: location, 'Cache-Control': NO_STORE }, body: null };
+  }
 
   // ── visibility gate ──
   if (isUnlock) return unlock(req, app, deps, page);
@@ -198,8 +222,8 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
 
   // ── the version this host serves ──
   if (!version) {
-    const kind = req.target.kind;
-    return missing(kind === 'prod' ? 'not-published' : kind === 'preview' ? 'nothing-compiled' : 'no-version');
+    const k = req.target.kind;
+    return missing(k === 'prod' || k === 'custom' ? 'not-published' : k === 'preview' ? 'nothing-compiled' : 'no-version');
   }
 
   // ── the file ──

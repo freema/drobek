@@ -11,6 +11,7 @@ import {
   TLS_ASK_PATH,
   decideTlsAsk,
   tlsAskConfigError,
+  tlsAskCustomHost,
   tlsAskSlug,
   tlsAskToken,
   tlsAskTokenMatches,
@@ -22,6 +23,9 @@ const TOKEN = 'a'.repeat(24) + '0123456789abcdef';
 const PROD_HOSTS: HostConfig = { appsDomain: 'drobek.app', dashboardHost: 'drobek.app' };
 const LIVE = new Set(['shop', 'my-app']);
 const appExists = async (slug: string) => LIVE.has(slug);
+/** M3-01: the verified custom domains (the domains table in production). */
+const VERIFIED = new Set(['firma.test', 'shop.firma.cz']);
+const customDomainAllowed = async (hostname: string) => VERIFIED.has(hostname);
 
 describe('tlsAskToken / tlsAskConfigError', () => {
   it('unset is allowed at startup but disables the endpoint', () => {
@@ -78,8 +82,21 @@ describe('tlsAskSlug', () => {
   });
 });
 
+describe('tlsAskCustomHost (M3-01)', () => {
+  it('a dotted public name outside APPS_DOMAIN and the dashboard is a custom-domain candidate', () => {
+    expect(tlsAskCustomHost('firma.test', PROD_HOSTS)).toBe('firma.test');
+    expect(tlsAskCustomHost('Shop.Firma.CZ.', PROD_HOSTS)).toBe('shop.firma.cz');
+  });
+
+  it('never for app hosts, the dashboard, IPs, ports, single labels or localhost', () => {
+    for (const d of ['shop.drobek.app', 'drobek.app', 'www.drobek.app', '203.0.113.7', 'firma.test:443', 'drobek', 'x.localhost', '', null]) {
+      expect(tlsAskCustomHost(d, PROD_HOSTS), String(d)).toBeNull();
+    }
+  });
+});
+
 describe('decideTlsAsk', () => {
-  const deps: TlsAskDeps = { expectedToken: TOKEN, hosts: PROD_HOSTS, appExists };
+  const deps: TlsAskDeps = { expectedToken: TOKEN, hosts: PROD_HOSTS, appExists, customDomainAllowed };
   const ask = (domain: string | null, token: string | null = TOKEN, requestHost = 'drobek:3000') =>
     decideTlsAsk({ domain, token, requestHost }, deps);
 
@@ -97,6 +114,15 @@ describe('decideTlsAsk', () => {
     expect(await ask('shop.drobek.app', null)).toBe(401);
     expect(await ask('shop.drobek.app', '')).toBe(401);
     expect(await ask('shop.drobek.app', 'b'.repeat(40))).toBe(401);
+  });
+
+  it('M3-01: a verified custom domain → 200; unverified / unknown → 404 (no certificate)', async () => {
+    expect(await ask('firma.test')).toBe(200);
+    expect(await ask('shop.firma.cz')).toBe(200);
+    expect(await ask('pending.firma.cz')).toBe(404);
+    expect(await ask('firma.test', 'wrong'.repeat(8))).toBe(401);
+    // Without the lookup (older wiring) nothing outside APPS_DOMAIN is allowed.
+    expect(await decideTlsAsk({ domain: 'firma.test', token: TOKEN, requestHost: 'drobek:3000' }, { ...deps, customDomainAllowed: undefined })).toBe(404);
   });
 
   it('hostname outside APPS_DOMAIN → 404 (and the dashboard host → 404)', async () => {
@@ -119,9 +145,15 @@ describe('decideTlsAsk', () => {
 
   it('does not touch the database before the token and the host check out', async () => {
     const seen: string[] = [];
-    const spy: TlsAskDeps = { ...deps, appExists: async (s) => (seen.push(s), true) };
+    const spy: TlsAskDeps = {
+      ...deps,
+      appExists: async (s) => (seen.push(s), true),
+      customDomainAllowed: async (h) => (seen.push(h), true),
+    };
     await decideTlsAsk({ domain: 'shop.drobek.app', token: 'wrong', requestHost: 'drobek:3000' }, spy);
-    await decideTlsAsk({ domain: 'shop.example.com', token: TOKEN, requestHost: 'drobek:3000' }, spy);
+    await decideTlsAsk({ domain: 'firma.test', token: 'wrong', requestHost: 'drobek:3000' }, spy);
+    await decideTlsAsk({ domain: 'firma.test', token: TOKEN, requestHost: 'drobek.app' }, spy);
+    await decideTlsAsk({ domain: '203.0.113.7', token: TOKEN, requestHost: 'drobek:3000' }, spy);
     expect(seen).toEqual([]);
   });
 });
@@ -139,6 +171,7 @@ describe('GET /api/internal/tls/ask over HTTP', () => {
         if (failing) throw new Error('db down');
         return LIVE.has(slug);
       },
+      customDomainAllowed,
       log: noopLogger,
     });
     server = createServer(handler);
@@ -188,8 +221,9 @@ describe('GET /api/internal/tls/ask over HTTP', () => {
     expect(r.status).toBe(200);
   });
 
-  it('hostname outside APPS_DOMAIN → 404', async () => {
+  it('hostname outside APPS_DOMAIN → 404 unless it is a verified custom domain (M3-01)', async () => {
     expect((await get(q('shop.example.com'))).status).toBe(404);
+    expect((await get(q('firma.test'))).status).toBe(200);
   });
 
   it('a repeated token or domain parameter is refused', async () => {
@@ -212,7 +246,7 @@ describe('GET /api/internal/tls/ask over HTTP', () => {
 
   it('TLS_ASK_TOKEN unset → 404 even with a token', async () => {
     const off = createServer(
-      createTlsAskHandler({ token: null, hosts: PROD_HOSTS, appExists, log: noopLogger })
+      createTlsAskHandler({ token: null, hosts: PROD_HOSTS, appExists, customDomainAllowed, log: noopLogger })
     );
     await new Promise<void>((r) => off.listen(0, '127.0.0.1', r));
     const offPort = (off.address() as { port: number }).port;

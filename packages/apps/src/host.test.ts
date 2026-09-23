@@ -86,7 +86,12 @@ describe('classifyHost (dev: apps.localhost:3041, dashboard localhost:3041)', ()
 
   it('a crafted Host never becomes an app host of drobek', () => {
     expect(classifyHost('shop--preview.apps.localhost:3041.attacker', DEV)).toEqual({ side: 'invalid' });
-    expect(classifyHost('shop--preview.apps.localhost.attacker.com:3041', DEV)).toEqual({ side: 'dashboard' });
+    // Not ours: at most a custom-domain CANDIDATE, which serving resolves through
+    // the domains table (unknown → the dashboard, as before).
+    expect(classifyHost('shop--preview.apps.localhost.attacker.com:3041', DEV)).toEqual({
+      side: 'custom',
+      hostname: 'shop--preview.apps.localhost.attacker.com',
+    });
     expect(classifyHost('evilapps.localhost:3041', DEV)).toEqual({ side: 'dashboard' });
     expect(classifyHost(null, DEV)).toEqual({ side: 'invalid' });
     expect(classifyHost('', DEV)).toEqual({ side: 'invalid' });
@@ -95,6 +100,17 @@ describe('classifyHost (dev: apps.localhost:3041, dashboard localhost:3041)', ()
   it('internal hosts (health checks) are the dashboard', () => {
     expect(classifyHost('127.0.0.1:3000', DEV)).toEqual({ side: 'dashboard' });
     expect(classifyHost('[::1]:3000', DEV)).toEqual({ side: 'dashboard' });
+  });
+
+  it('M3-01: a dotted public name on the apps port is a custom-domain candidate', () => {
+    expect(classifyHost('firma.test:3041', DEV)).toEqual({ side: 'custom', hostname: 'firma.test' });
+    expect(classifyHost('Shop.Firma.CZ.:3041', DEV)).toEqual({ side: 'custom', hostname: 'shop.firma.cz' });
+  });
+
+  it('M3-01: internal names, loopback, IPs and other ports are never candidates', () => {
+    for (const host of ['drobek:3000', 'localhost:3000', 'x.localhost:3041', '10.0.0.7:3041', '[::1]:3041', 'firma.test:3000', 'firma.test']) {
+      expect(classifyHost(host, DEV), host).toEqual({ side: 'dashboard' });
+    }
   });
 });
 
@@ -113,8 +129,11 @@ describe('classifyHost (prod: dashboard on the apex of APPS_DOMAIN)', () => {
     expect(classifyHost('drobek.app:8443', PROD)).toEqual({ side: 'apps', target: null });
   });
 
-  it('a foreign domain that merely ends in the same letters is not ours', () => {
-    expect(classifyHost('shopdrobek.app', PROD)).toEqual({ side: 'dashboard' });
+  it('a foreign domain that merely ends in the same letters is not ours (at most a custom-domain candidate)', () => {
+    expect(classifyHost('shopdrobek.app', PROD)).toEqual({ side: 'custom', hostname: 'shopdrobek.app' });
+    expect(classifyHost('firma.cz:443', PROD)).toEqual({ side: 'custom', hostname: 'firma.cz' });
+    expect(classifyHost('firma.cz:8080', PROD)).toEqual({ side: 'dashboard' });
+    expect(classifyHost('drobek:3000', PROD)).toEqual({ side: 'dashboard' });
   });
 });
 
@@ -141,5 +160,9 @@ describe('appHostOf', () => {
     ]) {
       expect(classifyHost(appHostOf(target, DEV.appsDomain), DEV)).toEqual({ side: 'apps', target });
     }
+  });
+
+  it('a custom-domain target is its own hostname', () => {
+    expect(appHostOf({ kind: 'custom', slug: 'shop', hostname: 'shop.firma.cz' }, DEV.appsDomain)).toBe('shop.firma.cz');
   });
 });

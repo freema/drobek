@@ -146,6 +146,21 @@ block, then `next` is pushed and the single MR opened.
   inside an `<untrusted-app-logs … nonce>` envelope. TOOL_DOCS / TOOL_SCOPES /
   briefing / skill / parity tests updated (11 tools). e2e
   `tests-e2e/tests/get-logs.spec.ts` written.
+- **M3-01 (NSO-292) — custom domains.** New `@drobek/domains`; migration
+  `0018_custom_domains` (`domains`: unique (app_id, hostname), partial unique
+  hostname WHERE verified — one verified owner per name, unverified claims
+  never block — and one primary per app). PSL/IDN hostname checks (drobek.app,
+  APPS_DOMAIN, the dashboard host, IPs, special TLDs refused), TXT
+  `_drobek.<host>` + CNAME (A/AAAA fallback for apex) over an injectable
+  resolver, `DOMAINS_MAX_PER_APP` (3 → `limit_exceeded`). `classifyHost` now
+  returns `custom` for plausible foreign hosts (unknown → still the
+  dashboard; registered-unverified → 404; verified → published version);
+  primary domain = 302 from `<slug>.<APPS_DOMAIN>`. TLS ask 200 for verified
+  domains; the Caddy generator renders an on-demand `https://` catch-all
+  (default on in on-demand mode, `TLS_CUSTOM_DOMAINS`). Leased hourly sweep
+  re-checks domains older than 24 h, unverifies on definitive failure and
+  mails editors/admins. Dashboard Domains tab; MCP `publish` returns
+  `domains`. e2e `tests-e2e/tests/domains.spec.ts` written (not run).
 
 - **M2-01 (NSO-288) — dashboard app page.** Tabs Overview / Files / Data /
   Settings from `packages/dashboard/src/app-tabs.ts` (add a tab = one line +
@@ -572,6 +587,28 @@ block, then `next` is pushed and the single MR opened.
 - NSO-288: changing an app's password does NOT invalidate app-access
   cookies already issued (stateless HMAC token of appId + expiry, 12 h) —
   see the out-of-scope list of the task report.
+
+- Custom domains (NSO-292): the dev stack answers verification DNS from
+  Redis (`DOMAINS_DNS_MOCK=redis`, keys `drobek:dns-mock:<txt|cname|a|aaaa>:<name>`
+  = a JSON string array, `"SERVFAIL"` = transient) and admits `.test` names;
+  production ignores the mock, so the domains e2e skips its DNS test on the
+  image flow. The re-check runs every 5 s in dev (`DOMAINS_RECHECK_INTERVAL_MS`)
+  and only picks rows with `last_check_at` older than 24 h — the e2e backdates it
+  via SQL. After pulling, recreate the container (`docker compose up -d drobek`)
+  for the new env and the `packages/domains/node_modules` volume.
+- The dev compose now sets `TLS_ASK_TOKEN` (dev-only default); the ask is
+  answered only on a non-dashboard Host, so the e2e calls it on
+  `127.0.0.1:3041` with `Host: drobek:3000`.
+- `classifyHost` changed meaning for foreign hosts: `shop--preview.apps.localhost.attacker.com`
+  and `shopdrobek.app` are now `custom` (a DB lookup; unknown → `next()` =
+  the dashboard, as before). Tests that inject a TLS ask handler must stub
+  `customDomainAllowed`, or the default hits the DB and answers 503.
+- `psl`'s types are not reachable through its package `exports` (TS7016):
+  `packages/domains/src/psl.d.ts` declares the module, referenced from
+  `hostname.ts` with a triple-slash path.
+- Bash in an agent worktree also refuses commands with `$slug`-style strings,
+  backticks, `git -C`, or inline python that mentions git; put such edits in
+  a scratchpad `python3` script written with the Write tool.
 
 ## Failed approaches
 

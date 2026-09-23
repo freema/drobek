@@ -88,6 +88,14 @@
       "types": "./src/pending-banner.server.ts",
       "default": "./dist/pending-banner.server.js"
     },
+    "./routes/workspaces.$slug.apps.$appSlug.domains": {
+      "types": "./src/routes/workspaces.$slug.apps.$appSlug.domains.tsx",
+      "default": "./dist/routes/workspaces.$slug.apps.$appSlug.domains.js"
+    },
+    "./routes/workspaces.$slug.apps.$appSlug.domains.server": {
+      "types": "./src/routes/workspaces.$slug.apps.$appSlug.domains.server.ts",
+      "default": "./dist/routes/workspaces.$slug.apps.$appSlug.domains.server.js"
+    },
     "./routes/workspaces.$slug.activity": {
       "types": "./src/routes/workspaces.$slug.activity.tsx",
       "default": "./dist/routes/workspaces.$slug.activity.js"
@@ -149,6 +157,7 @@
     "@drobek/auth": "workspace:*",
     "@drobek/core": "workspace:*",
     "@drobek/db": "workspace:*",
+    "@drobek/domains": "workspace:*",
     "@drobek/insights": "workspace:*",
     "@drobek/modules": "workspace:*",
     "@drobek/oauth": "workspace:*",

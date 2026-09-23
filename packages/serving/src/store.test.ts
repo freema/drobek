@@ -8,6 +8,7 @@ import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp, createVersion, notifyAppChanged, publish, type Actor } from '@drobek/apps';
 import { apps, users, workspaces } from '@drobek/db';
+import { addDomain, removeDomain, setPrimaryDomain, verifyDomain, type DnsResolver } from '@drobek/domains';
 import { handleAppRequest, type AppRequest, type HandlerDeps } from './handler.js';
 import { ServeStore, dbLoaders } from './store.server.js';
 import { subscribeServeCache } from './subscriber.server.js';
@@ -61,7 +62,7 @@ describe('dbLoaders.resolve', () => {
     await publish(app.id, v1.id, actor);
     const prod = await dbLoaders.resolve({ kind: 'prod', slug: 'loader-app' });
     expect(prod.version).toEqual(v1);
-    expect(prod.app).toEqual({ id: app.id, slug: 'loader-app', workspaceId: wsId, visibility: 'public', frameAncestors: null });
+    expect(prod.app).toEqual({ id: app.id, slug: 'loader-app', workspaceId: wsId, visibility: 'public', frameAncestors: null, primaryDomain: null });
   });
 
   it('a soft-deleted or hibernated app does not exist for the app hosts', async () => {
@@ -151,5 +152,43 @@ describe('cache bust on app-changed', () => {
     expect(String((await handleAppRequest(get(preview), deps)).body)).toContain('<h1>old</h1>');
     store.bust('stale-app');
     expect(String((await handleAppRequest(get(preview), deps)).body)).toContain('<h1>new</h1>');
+  });
+});
+
+describe('custom domains through the real loaders (M3-01)', () => {
+  const nodata = () => Promise.reject(Object.assign(new Error('nodata'), { code: 'ENODATA' }));
+
+  it('registered → 404 side, verified → the app, primary → prod redirect target, removed → dashboard; domain events bust', async () => {
+    const store = new ServeStore();
+    const sub = subscribeServeCache(store, { redis: null });
+    try {
+      const created = await createApp({ workspaceId: wsId, slug: 'domain-app', actor });
+      const app = { id: created.id, slug: created.slug, workspaceId: wsId };
+      const user = { userId: actor.userId, kind: 'user' as const };
+      expect(await store.resolveCustomHost('shop.firma.cz')).toBeNull();
+
+      const d = await addDomain(app, 'shop.firma.cz', user);
+      expect(await store.resolveCustomHost('shop.firma.cz')).toEqual({ slug: null });
+
+      const resolver: DnsResolver = {
+        resolveTxt: async (n) => (n === '_drobek.shop.firma.cz' ? [[d.instructions.txt.value]] : nodata()),
+        resolveCname: async (n) => (n === 'shop.firma.cz' ? [d.instructions.cname.value] : nodata()),
+        resolve4: nodata,
+        resolve6: nodata,
+      };
+      await verifyDomain(app, d.id, user, { resolver });
+      expect(await store.resolveCustomHost('shop.firma.cz')).toEqual({ slug: 'domain-app' });
+      expect((await store.resolve({ kind: 'prod', slug: 'domain-app' })).app?.primaryDomain).toBeNull();
+
+      await setPrimaryDomain(app, d.id, user);
+      expect((await store.resolve({ kind: 'prod', slug: 'domain-app' })).app?.primaryDomain).toBe('shop.firma.cz');
+      expect((await store.resolve({ kind: 'custom', slug: 'domain-app', hostname: 'shop.firma.cz' })).app?.primaryDomain).toBe('shop.firma.cz');
+
+      await removeDomain(app, d.id, user);
+      expect(await store.resolveCustomHost('shop.firma.cz')).toBeNull();
+      expect((await store.resolve({ kind: 'prod', slug: 'domain-app' })).app?.primaryDomain).toBeNull();
+    } finally {
+      await sub.stop();
+    }
   });
 });

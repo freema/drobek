@@ -10,9 +10,12 @@
  *        token rides in the ask URL — or the `X-Drobek-Tls-Ask-Token` header)
  *   200  `domain` is `<slug>`, `<slug>--preview` or `<slug>--v<N>` directly
  *        under APPS_DOMAIN and a live, non-deleted app owns `<slug>`
- *   404  everything else: hosts outside APPS_DOMAIN, the dashboard host,
- *        APPS_DOMAIN itself, deeper names, malformed labels, unknown slugs.
- *        (Verified custom domains join the 200 set in M3-01.)
+ *   200  (M3-01) `domain` is a VERIFIED custom domain of a live app (the
+ *        domains table; the lookup also records `cert_state = requested`)
+ *   404  everything else: other hosts outside APPS_DOMAIN (unknown or
+ *        unverified custom domains — Caddy never obtains a certificate for
+ *        them), the dashboard host, APPS_DOMAIN itself, deeper names,
+ *        malformed labels, unknown slugs, IP literals.
  *
  * `--v<N>` only checks that the app exists, not that version N does — a
  * certificate for a host that then 404s is harmless, and it keeps this a
@@ -88,6 +91,20 @@ export function tlsAskSlug(domain: string | null | undefined, hosts: HostConfig)
   return cls.target.slug;
 }
 
+/**
+ * The custom-domain name an ask `domain` would be (M3-01), or null: a dotted
+ * DNS name outside APPS_DOMAIN and the dashboard host, no port, not an IP.
+ */
+export function tlsAskCustomHost(domain: string | null | undefined, hosts: HostConfig): string | null {
+  if (typeof domain !== 'string') return null;
+  const host = splitHost(domain);
+  if (!host || host.port !== null || host.hostname.startsWith('[')) return null;
+  const appsDomain = withoutPort(hosts.appsDomain);
+  if (!appsDomain) return null;
+  const cls = classifyHost(host.hostname, { appsDomain, dashboardHost: withoutPort(hosts.dashboardHost) });
+  return cls.side === 'custom' ? cls.hostname : null;
+}
+
 export interface TlsAskInput {
   /** The `domain` query parameter. */
   domain: string | null;
@@ -103,6 +120,8 @@ export interface TlsAskDeps {
   hosts: HostConfig;
   /** True when a live, non-deleted app owns this slug. */
   appExists: (slug: string) => Promise<boolean>;
+  /** M3-01: true when `hostname` is a verified custom domain of a live app (absent → never). */
+  customDomainAllowed?: (hostname: string) => Promise<boolean>;
 }
 
 export type TlsAskStatus = 200 | 401 | 404;
@@ -117,6 +136,8 @@ export async function decideTlsAsk(input: TlsAskInput, deps: TlsAskDeps): Promis
   if (dashboard && reqHost.hostname === dashboard.hostname) return 404;
   if (!tlsAskTokenMatches(deps.expectedToken, input.token)) return 401;
   const slug = tlsAskSlug(input.domain, deps.hosts);
-  if (!slug) return 404;
-  return (await deps.appExists(slug)) ? 200 : 404;
+  if (slug) return (await deps.appExists(slug)) ? 200 : 404;
+  const custom = tlsAskCustomHost(input.domain, deps.hosts);
+  if (custom && deps.customDomainAllowed) return (await deps.customDomainAllowed(custom)) ? 200 : 404;
+  return 404;
 }

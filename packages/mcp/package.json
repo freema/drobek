@@ -23,6 +23,7 @@
     "@drobek/compile": "workspace:*",
     "@drobek/core": "workspace:*",
     "@drobek/db": "workspace:*",
+    "@drobek/domains": "workspace:*",
     "@drobek/insights": "workspace:*",
     "@drobek/modules": "workspace:*",
     "@drobek/tenancy": "workspace:*",

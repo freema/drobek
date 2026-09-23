@@ -54,7 +54,7 @@ const loaders: ServeLoaders = {
     const a = model.get(target.slug);
     if (!a) return { app: null, version: null };
     let n: number | null = null;
-    if (target.kind === 'prod') n = a.published;
+    if (target.kind === 'prod' || target.kind === 'custom') n = a.published;
     else if (target.kind === 'preview') n = Math.max(0, ...[...a.versions].filter(([, v]) => v.ok).map(([k]) => k)) || null;
     else n = a.versions.get(target.number)?.ok ? target.number : null;
     const v = n === null ? null : a.versions.get(n)!;
@@ -554,5 +554,45 @@ describe('the browser error beacon (/__drobek/v1/_beacon, M1-07)', () => {
     );
     expect(open.status).toBe(204);
     expect(beacons).toEqual(['app_vault']);
+  });
+});
+
+describe('custom domains (M3-01)', () => {
+  const custom = (slug: string, hostname = 'shop.firma.cz'): AppHostTarget => ({ kind: 'custom', slug, hostname });
+
+  it('a verified custom domain serves the PUBLISHED version, indexable, like the production host', async () => {
+    const r = await handleAppRequest(req(custom('shop')), deps);
+    expect(r.status).toBe(200);
+    expect(text(r.body)).toContain('<h1>v1</h1>');
+    expect(r.headers['X-Robots-Tag']).toBeUndefined();
+    expect(r.headers['Content-Security-Policy']).toBe(APP_CSP);
+    // Shares the production host's resolution (one cache entry per slug).
+    const before = calls.resolve;
+    await handleAppRequest(req(prod('shop')), deps);
+    expect(calls.resolve).toBe(before);
+  });
+
+  it('an unpublished app is "not published" on its custom domain; the password gate applies', async () => {
+    const draft = await handleAppRequest(req(custom('draft', 'draft.firma.cz')), deps);
+    expect(draft.status).toBe(404);
+    expect(text(draft.body)).toContain('Not published yet');
+    expect((await handleAppRequest(req(custom('vault', 'vault.firma.cz')), deps)).status).toBe(401);
+  });
+
+  it('with a primary domain the production host 302s there (path + query kept); nothing else redirects', async () => {
+    model.get('shop')!.app = { ...model.get('shop')!.app, primaryDomain: 'shop.firma.cz' };
+    const d: HandlerDeps = { ...deps, customDomainOrigin: (h) => `http://${h}:3041`, platform: async () => ({ status: 200, headers: {}, body: 'mod' }) };
+    const r = await handleAppRequest(req(prod('shop'), '/a/b', { query: 'x=1' }), d);
+    expect(r.status).toBe(302);
+    expect(r.headers.Location).toBe('http://shop.firma.cz:3041/a/b?x=1');
+    expect(r.headers['Content-Security-Policy']).toBe(APP_CSP);
+    expect((await handleAppRequest(req(prod('shop'), '/', { method: 'HEAD' }), d)).status).toBe(302);
+    // default origin: https, no port
+    expect((await handleAppRequest(req(prod('shop')), deps)).headers.Location).toBe('https://shop.firma.cz/');
+    // the custom domain itself, preview/version hosts, module paths and POSTs are served in place
+    expect((await handleAppRequest(req(custom('shop')), d)).status).toBe(200);
+    expect((await handleAppRequest(req(preview('shop')), d)).status).toBe(200);
+    expect((await handleAppRequest(req(ver('shop', 2)), d)).status).toBe(200);
+    expect(text((await handleAppRequest(req(prod('shop'), '/__drobek/v1/x', { method: 'POST' }), d)).body)).toBe('mod');
   });
 });

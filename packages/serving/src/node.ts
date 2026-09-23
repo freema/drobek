@@ -5,13 +5,18 @@
  *   - apps host     → answers here and never calls `next()`, so an app request
  *                     can never reach the dashboard, the MCP resource or any
  *                     session code;
- *   - invalid Host  → 400.
+ *   - invalid Host  → 400;
+ *   - custom-domain candidate (M3-01) → looked up in the domains table
+ *     (ServeStore, cached 60 s): a verified domain is served as the app's
+ *     production host, a registered-but-unverified one is an apps-side 404,
+ *     an unknown name goes to `next()` like before. A failed lookup is a 503 —
+ *     never the dashboard on a name that may belong to an app.
  * Typed on node:http only (Express req/res extend them), so any host app can
  * mount it without this package depending on Express.
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { Readable, pipeline } from 'node:stream';
-import { classifyHost, hostConfig, type HostConfig } from '@drobek/apps';
+import { appsOrigin, classifyHost, hostConfig, splitHost, type AppHostTarget, type HostConfig } from '@drobek/apps';
 import { getClientIp, rateLimitRedis } from '@drobek/auth';
 import { createConsoleLogger, type Logger } from '@drobek/core';
 import { handleBeacon, incrementServingSignal } from '@drobek/insights';
@@ -157,6 +162,19 @@ export interface AppsHostOptions {
   log?: Logger;
 }
 
+/** `<scheme>://<hostname>[:port]` of a custom domain: the apps origin's scheme and port. */
+function customDomainOriginFor(hosts: HostConfig): (hostname: string) => string {
+  let scheme: 'http' | 'https' = 'https';
+  try {
+    scheme = appsOrigin().scheme;
+  } catch {
+    // hostConfig() already validated APPS_DOMAIN when it came from the env.
+  }
+  const port = splitHost(hosts.appsDomain)?.port ?? null;
+  const suffix = port && !(scheme === 'https' && port === '443') && !(scheme === 'http' && port === '80') ? `:${port}` : '';
+  return (hostname) => `${scheme}://${hostname}${suffix}`;
+}
+
 export type NodeMiddleware = (req: IncomingMessage, res: ServerResponse, next: (err?: unknown) => void) => void;
 
 /** The production handler deps: HKDF'd access key, Redis limiter, insights counters + beacon. */
@@ -175,8 +193,24 @@ export function defaultHandlerDeps(store: ServeStore): HandlerDeps {
 export function createAppsHostMiddleware(opts: AppsHostOptions = {}): NodeMiddleware {
   const hosts = opts.hosts ?? hostConfig();
   const store = opts.store ?? new ServeStore();
-  const deps: HandlerDeps = { ...defaultHandlerDeps(store), ...opts.deps, store };
+  const deps: HandlerDeps = {
+    ...defaultHandlerDeps(store),
+    customDomainOrigin: customDomainOriginFor(hosts),
+    ...opts.deps,
+    store,
+  };
   const log = opts.log ?? createConsoleLogger('apps-host');
+
+  const plain = (res: ServerResponse, status: number, body: string) =>
+    send(res, {
+      status,
+      headers: {
+        ...appSecurityHeaders({ noindex: true }),
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Cache-Control': 'no-store',
+      },
+      body,
+    });
 
   return (req, res, next) => {
     const cls = classifyHost(headerOf(req, 'host'), hosts);
@@ -185,24 +219,35 @@ export function createAppsHostMiddleware(opts: AppsHostOptions = {}): NodeMiddle
       return;
     }
     if (cls.side === 'invalid') {
-      send(res, {
-        status: 400,
-        headers: {
-          ...appSecurityHeaders({ noindex: true }),
-          'Content-Type': 'text/plain; charset=utf-8',
-          'Cache-Control': 'no-store',
-        },
-        body: 'Bad Request',
-      });
+      plain(res, 400, 'Bad Request');
       return;
     }
+    if (cls.side === 'custom') {
+      store.resolveCustomHost(cls.hostname).then(
+        (r) => {
+          if (r === null) {
+            next();
+            return;
+          }
+          serve(req, res, r.slug ? { kind: 'custom', slug: r.slug, hostname: cls.hostname } : null);
+        },
+        (err: unknown) => {
+          log.error('custom host lookup failed', { error: String((err as Error)?.message ?? err) });
+          plain(res, 503, 'Service Unavailable');
+        }
+      );
+      return;
+    }
+    serve(req, res, cls.target);
+  };
 
+  function serve(req: IncomingMessage, res: ServerResponse, target: AppHostTarget | null): void {
     const rawUrl = req.url ?? '/';
     const q = rawUrl.indexOf('?');
     const path = q === -1 ? rawUrl : rawUrl.slice(0, q);
     const request: AppRequest = {
       method: req.method ?? 'GET',
-      target: cls.target,
+      target,
       path: path.startsWith('/') ? path : `/${path}`,
       query: q === -1 ? '' : rawUrl.slice(q + 1),
       header: (name) => headerOf(req, name),
@@ -250,5 +295,5 @@ export function createAppsHostMiddleware(opts: AppsHostOptions = {}): NodeMiddle
         });
       }
     );
-  };
+  }
 }

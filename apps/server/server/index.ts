@@ -2,7 +2,7 @@
  * drobek server entry — the ONE process of the self-hostable image (M0-01).
  *
  * Boot order: refuse insecure secrets (PHY-76 #6), an invalid APPS_DOMAIN,
- * TRUST_PROXY, TLS_ASK_TOKEN or LIMITS_PROVIDER_URL → apply core migrations →
+ * TRUST_PROXY, TLS_ASK_TOKEN, LIMITS_PROVIDER_URL or DOMAINS_* → apply core migrations →
  * load the platform modules (DROBEK_MODULES: their migrations, the composed
  * SDK, the skills — a bad module stops the start, M1-01) →
  * mount the app-host dispatcher (M0-06), then React Router (Vite middleware in
@@ -19,6 +19,7 @@ import { appsOriginConfigError } from '@drobek/apps';
 import { trustProxyConfigError } from '@drobek/auth';
 import { createConsoleLogger, secretsConfigError } from '@drobek/core';
 import { runCoreMigrations } from '@drobek/db';
+import { dnsMockWarning, domainsConfigError } from '@drobek/domains';
 import { limitsProviderConfigError, moduleRuntime } from '@drobek/modules';
 import {
   ServeStore,
@@ -36,7 +37,8 @@ const configError =
   appsOriginConfigError(process.env) ??
   trustProxyConfigError(process.env) ??
   tlsAskConfigError(process.env) ??
-  limitsProviderConfigError(process.env);
+  limitsProviderConfigError(process.env) ??
+  domainsConfigError(process.env);
 if (configError) {
   console.error(configError);
   process.exit(1);
@@ -46,6 +48,8 @@ if (configError) {
 const here = dirname(fileURLToPath(import.meta.url));
 const appRoot = resolve(here, basename(dirname(here)) === 'dist' ? '../..' : '..');
 const production = process.env.NODE_ENV === 'production';
+const dnsMock = dnsMockWarning(process.env);
+if (dnsMock) log.warn(dnsMock);
 
 if (process.env.DROBEK_MIGRATE_ON_START !== '0') {
   log.info('applying core migrations');

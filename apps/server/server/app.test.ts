@@ -1,6 +1,7 @@
 import { request as httpRequest, type Server } from 'node:http';
 import type { RequestHandler } from 'express';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createTlsAskHandler } from '@drobek/serving';
 import { createServerApp } from './app.js';
 
 const ASK_TOKEN = 't'.repeat(40);
@@ -21,7 +22,9 @@ beforeAll(async () => {
   process.env.APPS_DOMAIN = 'apps.drobek.test';
   delete process.env.PUBLIC_MCP_URL;
   process.env.TLS_ASK_TOKEN = ASK_TOKEN;
-  server = createServerApp({ rrHandler }).listen(0, '127.0.0.1');
+  // The custom-domain lookup (M3-01) is the domains table in production; no DB here.
+  const tlsAsk = createTlsAskHandler({ customDomainAllowed: async (h) => h === 'firma.example.com' }) as RequestHandler;
+  server = createServerApp({ rrHandler, tlsAsk }).listen(0, '127.0.0.1');
   await new Promise<void>((resolve) => server.once('listening', resolve));
   const address = server.address();
   if (address === null || typeof address === 'string') {
@@ -157,6 +160,9 @@ describe('Caddy TLS ask endpoint (M0-07)', () => {
     const foreign = await raw('GET', path(ASK_TOKEN, 'x.example.com'), { Host: 'drobek:3000' });
     expect(foreign.status).toBe(404);
     expect(foreign.body).toBe('not found');
+    // M3-01: a verified custom domain gets its certificate.
+    const custom = await raw('GET', path(ASK_TOKEN, 'firma.example.com'), { Host: 'drobek:3000' });
+    expect(custom.status).toBe(200);
   });
 
   it('is never answered on the public dashboard host or an app host', async () => {

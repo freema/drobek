@@ -6,7 +6,8 @@
  * Two feeds: the in-process emitter (this process's own changes, synchronous —
  * the first request after a publish already sees the new version) and a
  * dedicated Redis subscriber connection (changes made by any other process).
- * Busting twice is harmless.
+ * Busting twice is harmless. A `domain` event (M3-01) also drops every cached
+ * custom-host resolution.
  */
 import type { Redis } from 'ioredis';
 import {
@@ -31,7 +32,11 @@ export function subscribeServeCache(
   store: ServeStore,
   opts: { redis?: Redis | null; log?: Logger } = {}
 ): ServeCacheSubscription {
-  const offLocal = onLocalAppChanged((e) => store.bust(e.slug));
+  const offLocal = onLocalAppChanged((e) => {
+    store.bust(e.slug);
+    // M3-01: a domain change can move ANY custom hostname (added / verified / removed).
+    if (e.kind === 'domain') store.bustCustomHosts();
+  });
 
   const base = opts.redis === undefined ? getRedis() : opts.redis;
   let sub: Redis | null = null;

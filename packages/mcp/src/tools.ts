@@ -46,6 +46,7 @@ import {
   type VersionFileInput,
 } from '@drobek/apps';
 import { actorKindForSurface } from '@drobek/audit';
+import { verifiedDomainsOf } from '@drobek/domains';
 import { maskEmail } from '@drobek/auth';
 import {
   BINARY_EXTS,
@@ -662,7 +663,8 @@ export async function publishApp(ctx: CallContext, args: { app_id: string; versi
     published_version: result.number,
     previous_version: result.previousNumber,
     published_url: url,
-    domains: [new URL(url).host],
+    // The production host, then every VERIFIED custom domain (M3-01) — all serve this version now.
+    domains: [new URL(url).host, ...(await verifiedDomainsOf(app.id))],
   };
 }
 

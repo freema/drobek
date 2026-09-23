@@ -11,6 +11,11 @@
  *  - file bytes `sha256 → Buffer` — content-addressed, byte-capped LRU
  *    (256 MiB by default).
  *
+ *  - custom hosts (M3-01) `hostname → { slug | null } | null` — which app a
+ *    custom domain serves (null = not a custom domain at all → the dashboard;
+ *    `slug: null` = registered but unverified → 404). Same 60 s TTL; every
+ *    `domain` app-changed event drops the whole map (bustCustomHosts).
+ *
  * The password hash is never cached; the unlock POST reads it on demand.
  * The DB access sits behind `ServeLoaders`, so the unit tests run the real
  * caching logic against in-memory fakes.
@@ -18,6 +23,7 @@
 import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
 import type { AppHostTarget } from '@drobek/apps';
 import { appVersions, apps, blobs, getDb, versionFiles } from '@drobek/db';
+import { primaryDomainOf, resolveCustomHost, type CustomHostResolution } from '@drobek/domains';
 import { ByteLru, CountLru, DEFAULT_BLOB_CACHE_BYTES } from './lru.js';
 import { servedManifest, type ServedManifest, type StoredFile } from './manifest.js';
 import type { Visibility } from './visibility.js';
@@ -31,6 +37,12 @@ export interface ServeApp {
   visibility: Visibility;
   /** Raw `apps.frame_ancestors` (validated by the header builder). */
   frameAncestors: string | null;
+  /**
+   * M3-01: the app's verified PRIMARY custom domain — its production host
+   * (`<slug>.<APPS_DOMAIN>`) answers 302 there. Resolved for prod/custom
+   * targets only; absent/null = no redirect.
+   */
+  primaryDomain?: string | null;
 }
 
 export interface ServeVersion {
@@ -51,6 +63,8 @@ export interface ServeLoaders {
   loadFiles(versionId: string): Promise<StoredFile[]>;
   loadBlobs(sha256s: string[]): Promise<Map<string, Buffer>>;
   loadPasswordHash(appId: string): Promise<string | null>;
+  /** M3-01: what a custom-domain candidate host is (absent → never a custom domain). */
+  resolveCustomHost?(hostname: string): Promise<CustomHostResolution | null>;
 }
 
 export interface ServeStoreOptions {
@@ -66,7 +80,8 @@ const MAX_CACHED_SLUGS = 10_000;
 const MAX_CACHED_MANIFESTS = 2_000;
 
 function targetKey(t: AppHostTarget): string {
-  return t.kind === 'version' ? `v${t.number}` : t.kind;
+  // A custom domain serves exactly what the production host serves.
+  return t.kind === 'version' ? `v${t.number}` : t.kind === 'custom' ? 'prod' : t.kind;
 }
 
 export class ServeStore {
@@ -74,6 +89,7 @@ export class ServeStore {
   readonly blobs: ByteLru;
   private readonly resolved = new CountLru<Map<string, { expires: number; value: Resolved }>>(MAX_CACHED_SLUGS);
   private readonly manifests = new CountLru<ServedManifest>(MAX_CACHED_MANIFESTS);
+  private readonly customHosts = new CountLru<{ expires: number; value: CustomHostResolution | null }>(MAX_CACHED_SLUGS);
   private readonly ttlMs: number;
   private readonly now: () => number;
 
@@ -93,6 +109,15 @@ export class ServeStore {
     const entry = this.resolved.get(target.slug) ?? new Map();
     entry.set(key, { expires: this.now() + this.ttlMs, value });
     this.resolved.set(target.slug, entry);
+    return value;
+  }
+
+  /** M3-01: which app a custom-domain candidate serves (cached; see the module comment). */
+  async resolveCustomHost(hostname: string): Promise<CustomHostResolution | null> {
+    const hit = this.customHosts.get(hostname);
+    if (hit && hit.expires > this.now()) return hit.value;
+    const value = this.loaders.resolveCustomHost ? await this.loaders.resolveCustomHost(hostname) : null;
+    this.customHosts.set(hostname, { expires: this.now() + this.ttlMs, value });
     return value;
   }
 
@@ -121,8 +146,14 @@ export class ServeStore {
     this.resolved.delete(slug);
   }
 
+  /** Forget every custom-host resolution (a domain was added, verified, unverified or removed). */
+  bustCustomHosts(): void {
+    this.customHosts.clear();
+  }
+
   bustAll(): void {
     this.resolved.clear();
+    this.customHosts.clear();
   }
 }
 
@@ -161,7 +192,8 @@ async function resolveFromDb(target: AppHostTarget): Promise<Resolved> {
       .limit(1);
 
   let version: ServeVersion | null = null;
-  if (target.kind === 'prod') {
+  if (target.kind === 'prod' || target.kind === 'custom') {
+    app.primaryDomain = await primaryDomainOf(app.id);
     if (row.publishedVersionId) {
       [version = null] = await okVersion(
         and(eq(appVersions.id, row.publishedVersionId), eq(appVersions.appId, app.id))
@@ -183,6 +215,7 @@ async function resolveFromDb(target: AppHostTarget): Promise<Resolved> {
 
 export const dbLoaders: ServeLoaders = {
   resolve: resolveFromDb,
+  resolveCustomHost,
   async loadFiles(versionId) {
     const rows = await getDb()
       .select({

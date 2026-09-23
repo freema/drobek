@@ -646,3 +646,46 @@ export const moduleSecrets = pgTable(
   },
   (t) => [primaryKey({ columns: [t.appId, t.module, t.name] })]
 );
+
+// ── Custom domains (M3-01, NSO-292) ──────────────────────────────────────────
+//
+// A hostname an owner attached to an app. It serves the app's PUBLISHED
+// version once VERIFIED: `TXT _drobek.<hostname> = drobek-verify=<token>`
+// (proves control of the name) AND `<hostname> CNAME <slug>.<APPS_DOMAIN>`
+// (or the same addresses — apex ALIAS/flattening). Caddy's on-demand `ask`
+// answers 200 for verified rows only. A hostname is unique per app, and at
+// most ONE row per hostname can be verified instance-wide — an unverified
+// claim never blocks the real owner (anti-squatting: whoever proves DNS wins).
+// `is_primary` (≤ 1 per app, verified only) = redirect `<slug>.<APPS_DOMAIN>`
+// here with a 302. `cert_state`: `none` | `requested` (the ask said 200 — Caddy
+// is obtaining / holds a certificate). Deleting a row does not revoke Caddy's
+// certificate; it expires on its own (docs/SELF-HOSTING.md).
+
+export const domains = pgTable(
+  'domains',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    appId: text('app_id')
+      .notNull()
+      .references(() => apps.id, { onDelete: 'cascade' }),
+    /** Lower-case ASCII (IDNA) hostname, no trailing dot. */
+    hostname: text('hostname').notNull(),
+    /** The `drobek-verify=<token>` TXT value's token (random, not a secret). */
+    verificationToken: text('verification_token').notNull(),
+    verifiedAt: timestamp('verified_at'),
+    lastCheckAt: timestamp('last_check_at'),
+    /** The last check's human-readable problem (null when it passed). */
+    lastError: text('last_error'),
+    certState: text('cert_state').notNull().default('none'),
+    isPrimary: boolean('is_primary').notNull().default(false),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('domains_app_hostname_uq').on(t.appId, t.hostname),
+    uniqueIndex('domains_verified_hostname_uq').on(t.hostname).where(sql`${t.verifiedAt} IS NOT NULL`),
+    uniqueIndex('domains_primary_uq').on(t.appId).where(sql`${t.isPrimary}`),
+    index('domains_hostname_idx').on(t.hostname),
+  ]
+);

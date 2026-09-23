@@ -18,6 +18,15 @@
  *                     at the first TLS handshake — ALWAYS gated by drobek's
  *                     `ask` endpoint (never unbounded on-demand issuance)
  *    Ambiguous combinations are refused, not guessed.
+ *  - (M3-01) custom domains — a catch-all `https://` site for every OTHER
+ *    host name, `tls { on_demand }` behind the same `ask`: drobek answers 200
+ *    only for a VERIFIED custom domain of a live app, so an unknown SNI gets
+ *    no certificate (the handshake fails, no ACME attempt). On by default in
+ *    on-demand mode (the ask token is there anyway); TLS_CUSTOM_DOMAINS=1
+ *    turns it on in the other modes (then TLS_ASK_TOKEN is required too),
+ *    TLS_CUSTOM_DOMAINS=0 turns it off. Certificates of custom domains are
+ *    always per host (HTTP-01 / TLS-ALPN-01, or Caddy's local CA with
+ *    TLS_INTERNAL=1); removing a domain does not revoke its certificate.
  *
  * Proxy contract with drobek: the original Host passes through untouched
  * (drobek dispatches app vs dashboard on it and ignores X-Forwarded-Host);
@@ -44,6 +53,8 @@ export interface CaddyConfig {
   acmeEmail: string | null;
   wildcard: { certFile: string; keyFile: string } | null;
   dns: { provider: string; args: string[]; overrideDomain: string | null } | null;
+  /** M3-01: render the on-demand catch-all site for verified custom domains. */
+  customDomains: boolean;
 }
 
 export type CaddyConfigResult = { ok: true; config: CaddyConfig } | { ok: false; errors: string[] };
@@ -191,12 +202,20 @@ export function caddyConfigFromEnv(env: NodeJS.ProcessEnv = process.env): CaddyC
       `on-demand TLS (no TLS_INTERNAL / TLS_WILDCARD_CERT_FILE / TLS_DNS_PROVIDER) needs TLS_ASK_TOKEN — at least ${TLS_ASK_TOKEN_MIN_LENGTH} URL-safe characters, e.g. \`openssl rand -hex 32\`; it must be set for BOTH drobek and caddy`
     );
   }
+  // ── custom domains (M3-01) ──
+  const rawCustom = env.TLS_CUSTOM_DOMAINS?.trim();
+  const customDomains = rawCustom ? flag('TLS_CUSTOM_DOMAINS', rawCustom, errors) : mode === 'on-demand';
+  if (customDomains && mode !== 'on-demand' && !isValidTlsAskToken(val('TLS_ASK_TOKEN'))) {
+    errors.push(
+      `TLS_CUSTOM_DOMAINS=1 needs TLS_ASK_TOKEN — at least ${TLS_ASK_TOKEN_MIN_LENGTH} URL-safe characters, e.g. \`openssl rand -hex 32\`; it must be set for BOTH drobek and caddy`
+    );
+  }
   if (acmeEmail && mode === 'internal') {
     errors.push('TLS_ACME_EMAIL has no effect with TLS_INTERNAL=1 (no ACME) — unset one of them');
   }
 
   if (errors.length > 0) return { ok: false, errors };
-  return { ok: true, config: { mode, dashboardSite, appsDomain, upstream, acmeEmail, wildcard, dns } };
+  return { ok: true, config: { mode, dashboardSite, appsDomain, upstream, acmeEmail, wildcard, dns, customDomains } };
 }
 
 const MODE_NOTE: Record<CaddyTlsMode, string> = {
@@ -205,7 +224,7 @@ const MODE_NOTE: Record<CaddyTlsMode, string> = {
     'wildcard-file — operator-supplied wildcard certificate for the app hosts; after renewing the files run `task tls:reload`',
   dns: 'dns — wildcard certificate for the app hosts via ACME DNS-01 (Caddy must be built with the DNS module: deployments/Dockerfile.caddy)',
   'on-demand':
-    "on-demand — one certificate per app host, issued at the first handshake and ONLY when drobek's ask endpoint says the app exists",
+    "on-demand — one certificate per app host (and per verified custom domain), issued at the first handshake and ONLY when drobek's ask endpoint allows it",
 };
 
 /** Render the Caddyfile (tabs, like `caddy fmt`). */
@@ -224,10 +243,11 @@ export function renderCaddyfile(config: CaddyConfig): string {
     globals.push('\t# The root CA lives in the caddy_data volume; never touch the host trust store.');
     globals.push('\tskip_install_trust');
   }
-  if (mode === 'on-demand') {
+  if (mode === 'on-demand' || config.customDomains) {
     globals.push(
       '\t# Caddy asks drobek before EVERY new certificate; drobek answers 200 only for',
-      '\t# <slug>[--preview|--v<N>].<APPS_DOMAIN> of an existing app. {$TLS_ASK_TOKEN}',
+      '\t# <slug>[--preview|--v<N>].<APPS_DOMAIN> of an existing app and for VERIFIED',
+      '\t# custom domains (M3-01). {$TLS_ASK_TOKEN}',
       "\t# is substituted from Caddy's environment when the config is loaded.",
       '\ton_demand_tls {',
       `\t\task http://${upstream}${TLS_ASK_PATH}?token={$TLS_ASK_TOKEN}`,
@@ -281,6 +301,20 @@ export function renderCaddyfile(config: CaddyConfig): string {
       break;
   }
   out.push(`# Every app host: <slug>, <slug>--preview, <slug>--v<N> (APPS_DOMAIN).`, `*.${config.appsDomain} {`, ...appsTls, '\timport drobek', '}', '');
+
+  if (config.customDomains) {
+    const port = /:(\d+)$/.exec(config.appsDomain)?.[1] ?? null;
+    const customTls = mode === 'internal' ? ['\ttls internal {', '\t\ton_demand', '\t}'] : ['\ttls {', '\t\ton_demand', '\t}'];
+    out.push(
+      '# Custom domains (M3-01): every OTHER host name. A certificate is obtained only',
+      "# after drobek's ask confirms a VERIFIED custom domain; unknown names get none.",
+      port ? `https://:${port} {` : 'https:// {',
+      ...customTls,
+      '\timport drobek',
+      '}',
+      ''
+    );
+  }
   return out.join('\n');
 }
 

@@ -24,6 +24,7 @@
     "@drobek/auth": "workspace:*",
     "@drobek/core": "workspace:*",
     "@drobek/db": "workspace:*",
+    "@drobek/domains": "workspace:*",
     "@drobek/insights": "workspace:*",
     "drizzle-orm": "^0.41.0",
     "ioredis": "^5.6.0"

@@ -262,6 +262,101 @@ describe('POST /__drobek/v1/_beacon', () => {
   });
 });
 
+/** M3-01: custom-domain candidates are resolved through the domains table (faked here). */
+describe('custom domains', () => {
+  let customServer: Server;
+  let customPort: number;
+  let hits: string[];
+  let lookups: string[];
+  const customLoaders: ServeLoaders = {
+    ...loaders,
+    resolve: async (t) =>
+      t.slug === 'shop'
+        ? {
+            app: { id: 'a1', slug: 'shop', workspaceId: 'ws1', visibility: 'public', frameAncestors: null, primaryDomain: t.kind === 'prod' || t.kind === 'custom' ? 'firma.test' : null },
+            version: { id: 'v1', number: 1 },
+          }
+        : { app: null, version: null },
+    resolveCustomHost: async (hostname) => {
+      lookups.push(hostname);
+      if (hostname === 'boom.test') throw new Error('db down');
+      if (hostname === 'firma.test') return { slug: 'shop' };
+      if (hostname === 'pending.test') return { slug: null };
+      return null;
+    },
+  };
+
+  beforeAll(async () => {
+    const mw = createAppsHostMiddleware({
+      hosts: { appsDomain: 'apps.localhost:3041', dashboardHost: 'localhost:3041' },
+      store: new ServeStore({ loaders: customLoaders }),
+      deps: { accessSecret: null, allowUnlockAttempt: async () => true, signal: () => {} },
+    });
+    customServer = createServer((req, res) =>
+      mw(req, res, () => {
+        hits.push(String(req.headers.host));
+        res.end('dashboard');
+      })
+    );
+    await new Promise<void>((r) => customServer.listen(0, '127.0.0.1', r));
+    customPort = (customServer.address() as { port: number }).port;
+  });
+  afterAll(async () => {
+    await new Promise<void>((r) => customServer.close(() => r()));
+  });
+
+  function fetchHost(host: string, path = '/'): Promise<{ status: number; headers: Record<string, string | string[] | undefined>; body: string }> {
+    return new Promise((resolve, reject) => {
+      const req = httpRequest({ host: '127.0.0.1', port: customPort, path, method: 'GET', headers: { Host: host }, setHost: false }, (res) => {
+        let body = '';
+        res.setEncoding('utf8');
+        res.on('data', (c: string) => (body += c));
+        res.on('end', () => resolve({ status: res.statusCode ?? 0, headers: res.headers, body }));
+      });
+      req.on('error', reject);
+      req.end();
+    });
+  }
+
+  it('a verified domain serves the app (published, indexable); the lookup is cached', async () => {
+    hits = [];
+    lookups = [];
+    const r = await fetchHost('firma.test:3041');
+    expect(r.status).toBe(200);
+    expect(r.body).toBe(HTML);
+    expect(r.headers['x-robots-tag']).toBeUndefined();
+    await fetchHost('FIRMA.test.:3041', '/deep/link');
+    expect(lookups).toEqual(['firma.test']);
+    expect(hits).toEqual([]);
+  });
+
+  it('a registered but unverified domain is an apps-side 404; an unknown name stays the dashboard', async () => {
+    hits = [];
+    const pending = await fetchHost('pending.test:3041');
+    expect(pending.status).toBe(404);
+    expect(pending.headers['content-security-policy']).toBeTruthy();
+    expect((await fetchHost('unknown.test:3041')).body).toBe('dashboard');
+    // Not candidates at all: other ports, internal names.
+    expect((await fetchHost('firma.test:9999')).body).toBe('dashboard');
+    expect((await fetchHost('drobek:3000')).body).toBe('dashboard');
+    expect(hits).toEqual(['unknown.test:3041', 'firma.test:9999', 'drobek:3000']);
+  });
+
+  it('a failed lookup is a 503, never the dashboard', async () => {
+    hits = [];
+    const r = await fetchHost('boom.test:3041');
+    expect(r.status).toBe(503);
+    expect(hits).toEqual([]);
+  });
+
+  it('the production host of an app with a primary domain 302s to it (apps scheme + port)', async () => {
+    const r = await fetchHost('shop.apps.localhost:3041', '/p?q=1');
+    expect(r.status).toBe(302);
+    expect(r.headers.location).toBe('http://firma.test:3041/p?q=1');
+    expect((await fetchHost('shop--preview.apps.localhost:3041')).status).toBe(200);
+  });
+});
+
 describe('platform body streams + streamed responses (the files module)', () => {
   let platformServer: Server;
   let platformPort: number;

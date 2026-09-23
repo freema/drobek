@@ -7,6 +7,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { hostConfig, type HostConfig } from '@drobek/apps';
 import { createConsoleLogger, type Logger } from '@drobek/core';
 import { apps, getDb } from '@drobek/db';
+import { customDomainAskAllowed } from '@drobek/domains';
 import { TLS_ASK_TOKEN_HEADER, decideTlsAsk, tlsAskToken, type TlsAskStatus } from './tls-ask.js';
 
 /**
@@ -28,6 +29,8 @@ export interface TlsAskHandlerOptions {
   /** Default: from APPS_DOMAIN + PUBLIC_APP_URL. */
   hosts?: HostConfig;
   appExists?: (slug: string) => Promise<boolean>;
+  /** M3-01: default = a verified custom domain of a live app (@drobek/domains). */
+  customDomainAllowed?: (hostname: string) => Promise<boolean>;
   log?: Logger;
 }
 
@@ -53,6 +56,7 @@ export function createTlsAskHandler(
   const token = opts.token !== undefined ? opts.token : tlsAskToken();
   const hosts = opts.hosts ?? hostConfig();
   const appExists = opts.appExists ?? appSlugIsLive;
+  const customDomainAllowed = opts.customDomainAllowed ?? customDomainAskAllowed;
   const log = opts.log ?? createConsoleLogger('tls-ask');
   let warnedUnset = false;
 
@@ -71,7 +75,7 @@ export function createTlsAskHandler(
         token: one('token') ?? single(req.headers[TLS_ASK_TOKEN_HEADER]),
         requestHost: single(req.headers.host),
       },
-      { expectedToken: token, hosts, appExists }
+      { expectedToken: token, hosts, appExists, customDomainAllowed }
     ).then(
       (status) => {
         if (status === 200) log.info('tls ask: allowed', { domain: one('domain') });

@@ -97,6 +97,7 @@ export {
   TLS_ASK_TOKEN_MIN_LENGTH,
   decideTlsAsk,
   tlsAskConfigError,
+  tlsAskCustomHost,
   tlsAskSlug,
   tlsAskToken,
   tlsAskTokenMatches,

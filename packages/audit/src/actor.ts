@@ -101,6 +101,16 @@ export const AUDIT_ACTIONS = {
   appVisibilityPassword: 'app.visibility.password',
   /** M2-01: the app's CSP frame-ancestors override changed (meta: the new value). */
   appFrameAncestors: 'app.frame_ancestors.change',
+  /** M3-01: an owner attached a custom domain to an app (hostname in meta). */
+  domainAdd: 'domain.add',
+  /** M3-01: a custom domain passed its DNS verification (TXT + CNAME). */
+  domainVerify: 'domain.verify',
+  /** M3-01: the daily DNS re-check found the records gone and dropped the verification (system). */
+  domainUnverify: 'domain.unverify',
+  /** M3-01: an owner made a verified domain the primary one (or cleared it). */
+  domainPrimary: 'domain.primary',
+  /** M3-01: an owner removed a custom domain (Caddy's certificate expires on its own). */
+  domainRemove: 'domain.remove',
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
@@ -116,6 +126,8 @@ export const AUDIT_SUBJECT_TYPES = {
   apiKey: 'api_key',
   /** M2-04: an OAuth client (target = its public client_id). */
   oauthClient: 'oauth_client',
+  /** M3-01: a custom domain — `target` is the hostname, `meta.app` the app slug. */
+  domain: 'domain',
 } as const;
 
 export type AuditSubjectType =

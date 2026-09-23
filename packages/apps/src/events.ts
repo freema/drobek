@@ -19,7 +19,8 @@ export interface AppChangedEvent {
   slug: string;
   /** The version that was written / restored / published, when there is one. */
   version?: number;
-  kind?: 'version' | 'publish' | 'unpublish' | 'settings' | 'delete';
+  /** `domain` (M3-01): a custom domain of the app was added, verified, unverified, removed or made primary. */
+  kind?: 'version' | 'publish' | 'unpublish' | 'settings' | 'delete' | 'domain';
 }
 
 const local = new EventEmitter();

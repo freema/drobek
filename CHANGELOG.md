@@ -80,6 +80,36 @@
 - The lease key + value parsing moved from `@drobek/mcp` to `@drobek/apps`
   (`leaseKey`, `parseLease`, `readAppLease`, `releaseAppLease`; `@drobek/mcp`
   re-exports them); leases now carry `renewed_at`.
+### Custom domains (NSO-292)
+
+- **`@drobek/domains`** (new): `domains` table (migration `0018_custom_domains`
+  — per-app unique hostname, at most one VERIFIED row per hostname instance-wide,
+  one primary per app). Hostname checks (PSL via `psl`, IDN → punycode; names
+  under `APPS_DOMAIN`, the dashboard host or `drobek.app`, IP literals and
+  special-use TLDs refused with `hostname_not_allowed`), TXT
+  `_drobek.<host> = drobek-verify=<token>` + CNAME to `<slug>.<APPS_DOMAIN>`
+  (A/AAAA fallback for apex / ALIAS) against an injectable resolver, 5 s per
+  lookup; transient failures never drop a verification. `DOMAINS_MAX_PER_APP`
+  (default 3, then `limit_exceeded`), `DOMAINS_DNS_SERVERS`,
+  `DOMAINS_RECHECK_INTERVAL_MS`, dev-only `DOMAINS_DNS_MOCK=redis`.
+- **Daily re-check**: verified domains older than 24 h are re-checked by a
+  leased background sweep; a definitive failure unverifies the domain and
+  e-mails the workspace's editors and admins.
+- **Dashboard**: the app's **Domains** tab (`/workspaces/:slug/apps/:appSlug/domains`)
+  — add, DNS instructions, verify, make primary, remove.
+- **`@drobek/apps`**: `classifyHost` returns `custom` for a plausible host
+  outside `APPS_DOMAIN` (it used to be the dashboard's); `AppHostTarget`
+  `{ kind: 'custom' }`; the `domain` app-changed event.
+- **`@drobek/serving`**: a verified custom host serves the published version
+  (unknown → dashboard, registered-but-unverified → 404, lookup error → 503);
+  a primary domain makes `<slug>.<APPS_DOMAIN>` answer 302 to it; the TLS ask
+  answers 200 for verified custom domains of live apps.
+- **Caddy** (`@drobek/core` generator): an on-demand catch-all `https://` site
+  behind the ask — on by default in on-demand mode, `TLS_CUSTOM_DOMAINS=1|0`
+  otherwise (needs `TLS_ASK_TOKEN`).
+- **Audit**: `domain.add`, `domain.verify`, `domain.unverify`,
+  `domain.primary`, `domain.remove`. **MCP** `publish` returns
+  `domains: [<default host>, …verified custom domains]`.
 
 ### The built-in `proxy` module (NSO-297)
 

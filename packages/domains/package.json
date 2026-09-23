@@ -1,0 +1,37 @@
+{
+  "name": "@drobek/domains",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Custom domains for apps (M3-01): hostname validation (PSL), TXT + CNAME verification, the daily DNS re-check, the host lookup behind alias routing and Caddy's ask.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest",
+    "test:run": "vitest run"
+  },
+  "dependencies": {
+    "@drobek/apps": "workspace:*",
+    "@drobek/audit": "workspace:*",
+    "@drobek/core": "workspace:*",
+    "@drobek/db": "workspace:*",
+    "@drobek/email": "workspace:*",
+    "drizzle-orm": "^0.41.0",
+    "psl": "^1.15.0"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.2.17",
+    "@types/node": "^22",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.7"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

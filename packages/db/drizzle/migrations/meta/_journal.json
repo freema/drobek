@@ -106,6 +106,13 @@
       "when": 1790194823940,
       "tag": "0016_apps_slug_release",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1790194890971,
+      "tag": "0018_custom_domains",
+      "breakpoints": true
     }
   ]
 }

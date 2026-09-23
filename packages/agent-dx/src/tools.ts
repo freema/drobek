@@ -170,7 +170,7 @@ export const TOOL_DOCS: ToolDoc[] = [
         description: 'The version to put live; default the newest version that compiled (an older one = production rollback).',
       },
     ],
-    returns: '{ published_version, previous_version, published_url, domains:[host] }',
+    returns: '{ published_version, previous_version, published_url, domains:[host, …verified custom domains] }',
     example: { app_id: 'k3v9x0…' },
   },
   {

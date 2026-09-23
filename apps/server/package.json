@@ -20,6 +20,7 @@
     "@drobek/core": "workspace:*",
     "@drobek/dashboard": "workspace:*",
     "@drobek/db": "workspace:*",
+    "@drobek/domains": "workspace:*",
     "@drobek/insights": "workspace:*",
     "@drobek/modules": "workspace:*",
     "@drobek/oauth": "workspace:*",

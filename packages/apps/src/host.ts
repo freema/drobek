@@ -22,18 +22,29 @@
  *    at the apex of APPS_DOMAIN (drobek.app + *.drobek.app) keeps working;
  *  - ANY other host at or under APPS_DOMAIN is the apps side — a malformed
  *    label (`a.b.<domain>`, `x--beta.<domain>`, a reserved slug) is still
- *    answered by the apps handler (404), never by the dashboard.
+ *    answered by the apps handler (404), never by the dashboard;
+ *  - M3-01: any OTHER public-looking DNS name (a dot, not an IP literal, not
+ *    `localhost` / `*.localhost`, the same port rule as APPS_DOMAIN) is a
+ *    `custom` candidate — a possible custom domain. Only the domains table can
+ *    tell (@drobek/serving looks it up): a registered domain is the apps side
+ *    (verified → the app's published version, unverified → 404), an unknown
+ *    name stays the dashboard (a self-host reached under another name, as
+ *    before). Internal names (`drobek:3000`, `127.0.0.1`) never are candidates.
  */
 
 export type AppHostTarget =
   | { kind: 'prod'; slug: string }
   | { kind: 'preview'; slug: string }
-  | { kind: 'version'; slug: string; number: number };
+  | { kind: 'version'; slug: string; number: number }
+  /** M3-01: a verified custom domain of the app — serves what `prod` serves. */
+  | { kind: 'custom'; slug: string; hostname: string };
 
 export type HostClass =
   | { side: 'dashboard' }
   /** `target` null = a host under APPS_DOMAIN that names no valid app host → 404. */
   | { side: 'apps'; target: AppHostTarget | null }
+  /** M3-01: a public DNS name outside APPS_DOMAIN — a custom domain if the domains table knows it. */
+  | { side: 'custom'; hostname: string }
   | { side: 'invalid' };
 
 interface SplitHost {
@@ -109,7 +120,9 @@ export function classifyHost(rawHost: string | null | undefined, config: HostCon
   if (!apps) return { side: 'dashboard' };
   const suffix = `.${apps.hostname}`;
   const under = host.hostname === apps.hostname || host.hostname.endsWith(suffix);
-  if (!under) return { side: 'dashboard' };
+  if (!under) {
+    return isCustomCandidate(host, apps) ? { side: 'custom', hostname: host.hostname } : { side: 'dashboard' };
+  }
   // At or under APPS_DOMAIN: always the apps side, whatever else is wrong.
   if (!portMatches(apps.port, host.port) || host.hostname === apps.hostname) {
     return { side: 'apps', target: null };
@@ -118,6 +131,21 @@ export function classifyHost(rawHost: string | null | undefined, config: HostCon
   // Exactly one label in front of APPS_DOMAIN; deeper names are not app hosts.
   if (label.includes('.')) return { side: 'apps', target: null };
   return { side: 'apps', target: parseAppLabel(label) };
+}
+
+/**
+ * Could this host be a custom domain (M3-01)? A dotted DNS name — not an IP
+ * literal, not `localhost` / `*.localhost` — on the port the app hosts use.
+ * Everything else (internal service names, loopback, other ports) is left to
+ * the dashboard without a lookup.
+ */
+function isCustomCandidate(host: SplitHost, apps: SplitHost): boolean {
+  const name = host.hostname;
+  if (name.startsWith('[') || !name.includes('.')) return false;
+  if (name === 'localhost' || name.endsWith('.localhost')) return false;
+  // An IPv4 literal or anything whose last label is numeric is never a DNS name.
+  if (/(^|\.)\d+$/.test(name)) return false;
+  return portMatches(apps.port, host.port);
 }
 
 /**
@@ -138,6 +166,7 @@ export function isAppsOrigin(origin: string, config: HostConfig): boolean {
 
 /** The canonical host string of a target, e.g. `x--v3.drobek.app`. */
 export function appHostOf(target: AppHostTarget, appsDomain: string): string {
+  if (target.kind === 'custom') return target.hostname;
   const label =
     target.kind === 'prod'
       ? target.slug

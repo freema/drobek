@@ -204,6 +204,18 @@ services:
       FORMS_PER_APP_PER_DAY: ${FORMS_PER_APP_PER_DAY:-200}
       LIMITS_PROVIDER_URL: ${LIMITS_PROVIDER_URL:-}
       LIMITS_PROVIDER_SECRET: ${LIMITS_PROVIDER_SECRET:-}
+      # M3-01 (NSO-292): custom domains. DEV/TEST ONLY — DOMAINS_DNS_MOCK=redis
+      # answers the verification lookups from Redis keys
+      # `drobek:dns-mock:<txt|cname|a|aaaa>:<name>` (JSON string arrays) that the
+      # domains e2e writes, and admits the `.test` TLD; ignored when
+      # NODE_ENV=production. The re-check sweep runs every 5 s here (default 1 h)
+      # so the e2e sees a backdated domain re-checked quickly. TLS_ASK_TOKEN
+      # enables the internal ask endpoint on the dev stack (the e2e calls it on
+      # Host `drobek:3000`); the TLS override sets its own.
+      DOMAINS_DNS_MOCK: ${DOMAINS_DNS_MOCK:-redis}
+      DOMAINS_RECHECK_INTERVAL_MS: ${DOMAINS_RECHECK_INTERVAL_MS:-5000}
+      DOMAINS_MAX_PER_APP: ${DOMAINS_MAX_PER_APP:-3}
+      TLS_ASK_TOKEN: ${TLS_ASK_TOKEN:-dev-only-tls-ask-token-0123456789abcdef}
     extra_hosts:
       # linux portability: make host.docker.internal resolve everywhere
       # (Docker Desktop has it natively; host-gateway covers linux engines).
@@ -222,6 +234,7 @@ services:
       - /repo/packages/core/node_modules
       - /repo/packages/dashboard/node_modules
       - /repo/packages/db/node_modules
+      - /repo/packages/domains/node_modules
       - /repo/packages/email/node_modules
       - /repo/packages/insights/node_modules
       - /repo/packages/mcp/node_modules

@@ -87,6 +87,12 @@ export default [
     'workspaces/:slug/apps/:appSlug/modules/:module',
     'routes/workspaces.$slug.apps.$appSlug.modules.$module.tsx'
   ),
+  // M3-01 (NSO-292): the app's custom domains — add, DNS instructions,
+  // verify (TXT + CNAME), primary (redirect), remove. editor+ for changes.
+  route(
+    'workspaces/:slug/apps/:appSlug/domains',
+    'routes/workspaces.$slug.apps.$appSlug.domains.tsx'
+  ),
   // M1-01 (NSO-287): the owner confirms/rejects a pending platform-module
   // change (configure_module → confirm_url; the M2-02 page calls this API).
   route(

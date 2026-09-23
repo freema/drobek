@@ -16,6 +16,7 @@ everything to drobek on the internal network.
 | `<slug>.<APPS_DOMAIN>` | an app's published version | `https://shop.apps.example.com` |
 | `<slug>--preview.<APPS_DOMAIN>` | the working copy (newest version that compiled) | `https://shop--preview.apps.example.com` |
 | `<slug>--v<N>.<APPS_DOMAIN>` | exactly version N | `https://shop--v3.apps.example.com` |
+| a verified custom domain | the app's published version ([Custom domains](#custom-domains)) | `https://shop.example.org` |
 
 DNS: an `A`/`AAAA` record for the dashboard host and a **wildcard**
 `*.<APPS_DOMAIN>` record, both pointing at the server. The dashboard may sit on
@@ -228,8 +229,9 @@ TLS_ACME_EMAIL=ops@example.com
 | Answer | When |
 | --- | --- |
 | 200 | `<slug>`, `<slug>--preview` or `<slug>--v<N>` directly under `APPS_DOMAIN`, and a live, non-deleted app owns `<slug>` (for `--v<N>` the version itself is not checked) |
+| 200 | a **verified** custom domain of a live, non-deleted app (M3-01, [Custom domains](#custom-domains)) |
 | 401 | missing or wrong token (compared in constant time; also accepted as the `X-Drobek-Tls-Ask-Token` header) |
-| 404 | everything else: hosts outside `APPS_DOMAIN`, the dashboard host, deeper names, unknown slugs — and **every** request while `TLS_ASK_TOKEN` is unset (fail closed), or one that arrives on the public dashboard host |
+| 404 | everything else: other hosts outside `APPS_DOMAIN` (unknown or not yet verified custom domains), the dashboard host, deeper names, unknown slugs — and **every** request while `TLS_ASK_TOKEN` is unset (fail closed), or one that arrives on the public dashboard host |
 | 503 | the database lookup failed (no certificate) |
 
 The endpoint is internal: Caddy refuses `/api/internal/*` with 404 on every
@@ -271,3 +273,78 @@ The root CA stays in the `caddy_dev_data` volume; drobek never installs it
 anywhere (`skip_install_trust`). To make browsers trust it, import
 `.caddy/root.crt` into your OS or browser trust store yourself — or keep using
 `curl --cacert` / `NODE_EXTRA_CA_CERTS=.caddy/root.crt`.
+
+## Custom domains
+
+An app can also answer on a host name its owner controls (M3-01). The owner
+adds it on the app's **Domains** tab in the dashboard (editor or
+workspace-admin), creates two DNS records and clicks **Verify**:
+
+| Record | Name | Value |
+| --- | --- | --- |
+| `CNAME` | `shop.example.org` | `<slug>.<APPS_DOMAIN>` (e.g. `shop.apps.example.com`) |
+| `TXT` | `_drobek.shop.example.org` | `drobek-verify=<token>` (shown on the Domains tab) |
+
+- **Apex domains** (`example.org`) cannot carry a CNAME. Use the DNS
+  provider's `ALIAS` / `ANAME` / CNAME flattening to `<slug>.<APPS_DOMAIN>`, or
+  plain `A`/`AAAA` records with the server's addresses — verification accepts
+  a name whose addresses are all addresses of `<slug>.<APPS_DOMAIN>`.
+- **Refused names**: anything under `APPS_DOMAIN`, the dashboard host or
+  `drobek.app`; IP literals; names that are not a registrable domain or below
+  one per the Public Suffix List (`co.uk`, `github.io`); special-use TLDs
+  (`.localhost`, `.local`, `.internal`, …). Names are stored in lower-case
+  ASCII (IDN → punycode).
+- **Limits**: `DOMAINS_MAX_PER_APP` (default 3) per app, pending and verified
+  together; the next add fails with `limit_exceeded`. One host name is
+  verified for at most one app on the instance — an unverified claim never
+  blocks the real owner.
+- **Serving**: a verified domain serves the app's published version (indexable,
+  like `<slug>.<APPS_DOMAIN>`). Marking one domain **primary** makes
+  `<slug>.<APPS_DOMAIN>` answer `302` to it (GET/HEAD, outside
+  `/__drobek/`); preview and version hosts never redirect. A registered but
+  unverified name answers `404` on the apps side; an unknown name stays the
+  dashboard's.
+- **Re-check**: verified domains are re-checked once every 24 h (a sweep runs
+  every `DOMAINS_RECHECK_INTERVAL_MS`, default 1 h, under a Redis lease so only
+  one replica does it). A definitive failure — the TXT record gone or wrong,
+  the name no longer pointing at the app — drops the verification (audit
+  `domain.unverify`) and e-mails the app's workspace editors and admins. A
+  timeout or `SERVFAIL` never drops anything. Lookups use the system
+  resolver, or `DOMAINS_DNS_SERVERS` (comma-separated IPs), 5 s per lookup.
+- **Audit**: `domain.add`, `domain.verify`, `domain.unverify`,
+  `domain.primary`, `domain.remove`.
+- The MCP `publish` result lists the app's verified domains in `domains`.
+
+### TLS for custom domains
+
+The generated Caddyfile carries a catch-all site for every other host name,
+issued on demand behind the same ask endpoint:
+
+```caddyfile
+https:// {
+	tls {
+		on_demand
+	}
+	import drobek
+}
+```
+
+drobek's ask answers `200` only for a verified domain of a live app, so an
+unknown SNI never triggers an ACME order. The catch-all is **on by default in
+mode (c)**; in modes (a) and (b) set `TLS_CUSTOM_DOMAINS=1` (then
+`TLS_ASK_TOKEN` is required as well — the generator refuses otherwise);
+`TLS_CUSTOM_DOMAINS=0` turns it off. Re-run `task caddy:config` after changing
+it.
+
+Certificate lifecycle: Caddy obtains the certificate at the first HTTPS
+request after verification (HTTP-01 on port 80 or TLS-ALPN-01 on 443 — both
+must reach Caddy; the first request waits a few seconds) and renews it
+itself. Removing a domain or losing its verification stops serving it and
+refuses new certificates, but does **not** revoke the one already issued — it
+stays in `caddy_data` until it expires. Let's Encrypt's per-domain rate
+limits apply per customer domain.
+
+Development: the dev compose file sets `DOMAINS_DNS_MOCK=redis`, which
+answers the lookups from Redis keys `drobek:dns-mock:<txt|cname|a|aaaa>:<name>`
+(a JSON string array; `"SERVFAIL"` simulates a transient failure) and admits
+the `.test` TLD. It is ignored, with a warning, when `NODE_ENV=production`.

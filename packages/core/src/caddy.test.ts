@@ -107,6 +107,45 @@ describe('proxy + secret invariants (every mode)', () => {
   });
 });
 
+describe('custom domains (M3-01): the on-demand catch-all behind the ask', () => {
+  const CATCH_ALL = '\nhttps:// {\n\ttls {\n\t\ton_demand\n\t}\n\timport drobek\n}\n';
+
+  it('on by default in on-demand mode; TLS_CUSTOM_DOMAINS=0 turns it off', () => {
+    expect(render({ ...PROD, TLS_ASK_TOKEN: TOKEN })).toContain(CATCH_ALL);
+    const off = render({ ...PROD, TLS_ASK_TOKEN: TOKEN, TLS_CUSTOM_DOMAINS: '0' });
+    expect(off).not.toContain('https:// {');
+    expect(off).toContain('*.drobek.app {\n\ttls {\n\t\ton_demand');
+  });
+
+  it('off by default in the other modes; TLS_CUSTOM_DOMAINS=1 adds it together with the ask guard', () => {
+    const wild = { ...PROD, TLS_WILDCARD_CERT_FILE: '/certs/w.crt', TLS_WILDCARD_KEY_FILE: '/certs/w.key' };
+    expect(render(wild)).not.toContain('https:// {');
+    const on = render({ ...wild, TLS_CUSTOM_DOMAINS: '1', TLS_ASK_TOKEN: TOKEN });
+    expect(on).toContain(CATCH_ALL);
+    expect(on).toContain('ask http://drobek:3000/api/internal/tls/ask?token={$TLS_ASK_TOKEN}');
+    // the app hosts keep their wildcard certificate
+    expect(on).toContain('*.drobek.app {\n\ttls /certs/w.crt /certs/w.key');
+    expect(on).not.toContain(TOKEN);
+  });
+
+  it('TLS_INTERNAL=1: the local CA issues on demand; a non-443 port is carried over', () => {
+    const out = render({
+      PUBLIC_APP_URL: 'https://localhost:8443',
+      APPS_DOMAIN: 'apps.localhost:8443',
+      TLS_INTERNAL: '1',
+      TLS_CUSTOM_DOMAINS: '1',
+      TLS_ASK_TOKEN: TOKEN,
+    });
+    expect(out).toContain('\nhttps://:8443 {\n\ttls internal {\n\t\ton_demand\n\t}\n\timport drobek\n}\n');
+    expect(out).toContain('on_demand_tls {');
+  });
+
+  it('TLS_CUSTOM_DOMAINS=1 without a valid TLS_ASK_TOKEN is refused; a bad flag too', () => {
+    expect(errors({ ...PROD, TLS_INTERNAL: '1', TLS_CUSTOM_DOMAINS: '1' })[0]).toMatch(/TLS_CUSTOM_DOMAINS=1 needs TLS_ASK_TOKEN/);
+    expect(errors({ ...PROD, TLS_ASK_TOKEN: TOKEN, TLS_CUSTOM_DOMAINS: 'maybe' })[0]).toMatch(/TLS_CUSTOM_DOMAINS must be/);
+  });
+});
+
 describe('caddyConfigFromEnv — strict validation', () => {
   it('requires PUBLIC_APP_URL (https, bare origin) and APPS_DOMAIN', () => {
     expect(errors({ TLS_INTERNAL: '1' }).join('\n')).toMatch(/PUBLIC_APP_URL is not set[\s\S]*APPS_DOMAIN is not set/);
