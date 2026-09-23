@@ -173,7 +173,7 @@ test.describe('platform module proxy — workspace upstreams per app (M1-06) @lo
     expect(String(info.json.content).split('\n').length).toBeLessThanOrEqual(150);
     expect(JSON.stringify(info.json.sdk)).toContain('fetch(upstream: string, path?: string, init?: RequestInit): Promise<Response>');
 
-    app = (await callTool(mcp.client, 'create_app', { name: 'Proxy echo', template: 'react-ts' })).json as unknown as Created;
+    app = (await callTool(mcp.client, 'create_app', { name: 'Echo client', template: 'react-ts' })).json as unknown as Created;
     host = previewHost(app.slug);
     const got = await callTool(mcp.client, 'get_app', { app_id: app.app_id });
     expect(got.isError, JSON.stringify(got.json)).toBe(false);
@@ -183,6 +183,7 @@ test.describe('platform module proxy — workspace upstreams per app (M1-06) @lo
     ]);
     expect(got.text).not.toContain(SECRET);
     expect(JSON.stringify(got.json)).not.toContain(SECRET);
+    // The upstream's base URL (http://proxy-echo) never leaves the server (the app is named so its slug does not collide).
     expect(JSON.stringify(got.json)).not.toContain('proxy-echo');
   });
 

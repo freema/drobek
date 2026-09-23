@@ -95,6 +95,7 @@ test('data tab: collections → table → filter/sort round-trip → CSV → rec
   const { ws, app } = seeded;
 
   // ── COLLECTIONS LIST ────────────────────────────────────────────────────────
+  await page.waitForLoadState('networkidle');
   await page.goto(`/workspaces/${ws}/apps/${app}/data`);
   await expect(page.locator('[data-testid="collection-row"]')).toHaveCount(2);
 
@@ -127,6 +128,7 @@ test('data tab: collections → table → filter/sort round-trip → CSV → rec
   await expect(page.locator('[data-testid="records-empty"]')).toBeVisible();
 
   // ── COLLECTION TABLE (default: newest-first) ─────────────────────────────────
+  await page.waitForLoadState('networkidle');
   await page.goto(`/workspaces/${ws}/apps/${app}/data`);
   await todosRow.locator('[data-testid="collection-link"]').click();
   await page.waitForURL(new RegExp(`/apps/${app}/data/todos$`));

@@ -14,9 +14,16 @@ Opus 5.5 subagents, black-box verification by Sonnet, everything lands on
 | # | Task | State | Notes |
 |---|------|-------|-------|
 | 1 | NSO-300 M1-03 data | done (unit + data specs green) | squashed wip 8682b79 into the feat commit; full e2e at block end |
-| 2 | NSO-296 M1-05 files | running (worktree) | parallel wave 1; core migration slot 0013 |
-| 3 | NSO-297 M1-06 proxy | running (worktree) | parallel wave 1; slot 0015 |
-| 4 | NSO-290 M1-07 get_logs | running (worktree) | parallel wave 1; slot 0014 |
+| 2 | NSO-296 M1-05 files | merged b056d57, check green | module-owned migration; 13-file conflict merge by Opus |
+| 3 | NSO-297 M1-06 proxy | merged 9130f7e, check green | e2e spec written, runs at block end |
+| 4 | NSO-290 M1-07 get_logs | merged 2a7fe09, check green | migration 0014; e2e spec at block end |
+| 5 | NSO-320 e-mail budget split | merged 2199fa1, check green | no migration |
+| 6 | NSO-288 M2-01 app page | running (worktree, base 9130f7e) | slot 0016 |
+| 7 | NSO-291 M2-02 modules UI | running (worktree, base 9130f7e) | slot 0017 |
+| 8 | NSO-292 M3-01 domains | running (worktree, base 9130f7e) | slot 0018 |
+| 9 | NSO-284 M2-04 keys/connections | running (worktree, base 9130f7e) | slot 0019 |
+| 10 | NSO-308 M1-08 skills | running (worktree, base b056d57) | last M1 task |
+| 11 | NSO-301 M2-03 data/forms/users/uploads/logs tabs | running (worktree, base b056d57) | slot 0020 |
 
 **Mode change (Tomáš, 2026-09-23 evening):** speed over per-task proof. Per
 task = implementation + unit tests + e2e spec FILES + green `task check`;
@@ -468,6 +475,13 @@ block, then `next` is pushed and the single MR opened.
 - Deleting an app cascades its `mod_files` rows but leaves the blobs on disk
   (a blob may be shared with another app, and there is no sweeper yet) —
   M2-01's app deletion must remove blobs that no remaining row references.
+
+- Block-end e2e after parallel merges: expect stale expectations, not bugs —
+  the read-scope tools list (`get_logs`, `query_data`), the module `available`
+  list, and specs whose app NAME yields a slug that collides with a string the
+  test asserts is absent (`proxy-echo`). `docker compose up -d proxy-echo` is
+  needed after its compose env changed (`EXTRA_PORTS`), or the proxy module
+  answers 502 `upstream_error`.
 
 ## Failed approaches
 
