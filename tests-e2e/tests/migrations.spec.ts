@@ -11,14 +11,16 @@ const CORE_TABLES = [
   'version_files',
   'blobs',
   'audit_log',
-  'collections',
-  'app_documents',
   'app_errors',
   'app_daily_stats',
 ];
 
-/** The upload/deploy pipeline tables dropped by 0007_app_versions (NSO-281). */
-const DROPPED_TABLES = ['deploys', 'deploy_files', 'blob_refs'];
+/**
+ * The upload/deploy pipeline tables dropped by 0007_app_versions (NSO-281),
+ * and the pre-module Data API tables the data module imported and dropped
+ * (its migration 0000, M1-03).
+ */
+const DROPPED_TABLES = ['deploys', 'deploy_files', 'blob_refs', 'collections', 'app_documents'];
 
 // D4: core migrations live in the __drizzle_migrations_core journal
 // (drobek-web's private journal __drizzle_migrations_web arrives in P0-C).
@@ -63,6 +65,14 @@ test('core drizzle journal applied and core tables exist @local', async () => {
     expect(appCols).toContain('published_version_id');
     expect(appCols).not.toContain('active_deploy_id');
     expect(appCols).not.toContain('routing_mode');
+
+    // The data module owns its records table (its own journal).
+    const mod = await client.query(
+      `SELECT count(*)::int AS n FROM drizzle.__drizzle_migrations_mod_data`
+    );
+    expect(mod.rows[0].n).toBeGreaterThanOrEqual(1);
+    const records = await client.query(`SELECT to_regclass('public.mod_data_documents')::text AS t`);
+    expect(records.rows[0].t).toBe('mod_data_documents');
   } finally {
     await client.end();
   }

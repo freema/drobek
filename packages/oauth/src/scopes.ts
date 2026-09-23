@@ -5,7 +5,8 @@
  * bound to a USER; the scope decides WHICH tools exist for it, and the user's
  * membership role in the targeted workspace decides what each call may touch.
  *
- *   read    — look: list apps (+ who am I), get an app, read its files, read skills.
+ *   read    — look: list apps (+ who am I), get an app, read its files, read skills,
+ *             query an app's stored data.
  *   write   — change: create apps, write files (new versions), restore,
  *             configure platform modules.
  *   publish — make a version live at its public URL (the `publish` tool, M0-06).
@@ -70,6 +71,7 @@ export const TOOL_SCOPES = {
   get_app: 'read',
   read_file: 'read',
   skill_info: 'read',
+  query_data: 'read',
   create_app: 'write',
   write_files: 'write',
   restore_version: 'write',

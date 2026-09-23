@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { TOOL_DOCS, TOOL_NAMES, toolDoc } from './tools.js';
 
 describe('TOOL_DOCS manifest', () => {
-  it('documents exactly the 9 tools, in tools/list order', () => {
+  it('documents exactly the 10 tools, in tools/list order', () => {
     expect(TOOL_NAMES).toEqual([
       'list_apps',
       'create_app',
@@ -13,6 +13,7 @@ describe('TOOL_DOCS manifest', () => {
       'publish',
       'skill_info',
       'configure_module',
+      'query_data',
     ]);
   });
 
@@ -36,7 +37,7 @@ describe('TOOL_DOCS manifest', () => {
   });
 
   it('annotations follow the real effect (plan §4)', () => {
-    for (const name of ['list_apps', 'get_app', 'read_file', 'skill_info']) {
+    for (const name of ['list_apps', 'get_app', 'read_file', 'skill_info', 'query_data']) {
       expect(toolDoc(name).annotations.readOnlyHint, name).toBe(true);
     }
     expect(toolDoc('create_app').annotations).toEqual({
@@ -90,6 +91,13 @@ describe('TOOL_DOCS manifest', () => {
     expect(toolDoc('configure_module').scope).toMatch(/^write\b/);
     expect(toolDoc('configure_module').description).toMatch(/confirm_url/);
     expect(toolDoc('configure_module').description).toMatch(/Secrets are never set here/);
+  });
+
+  it('query_data reads (≤ 100 records) and marks the records untrusted (M1-03)', () => {
+    expect(toolDoc('query_data').scope).toMatch(/^read\b/);
+    expect(toolDoc('query_data').description).toMatch(/untrusted/);
+    expect(toolDoc('query_data').description).toMatch(/at most 100 records/);
+    expect(toolDoc('query_data').returns).toContain('untrusted:true');
   });
 
   it('toolDoc throws for an unknown tool', () => {

@@ -1,9 +1,9 @@
 /**
- * /workspaces/:slug/apps/:appSlug/data/:collection — client half (M1b, PHY-121):
+ * /workspaces/:slug/apps/:appSlug/data/:collection — client half:
  * the collection TABLE. Columns are the required-schema properties (schema
  * order); rows are records newest-first; non-schema keys sit under a per-row
  * expander. A field FILTER + a SORT submit as GET params (round-tripped through
- * the loader → the U10 query API). A read-only JSON viewer opens for one record.
+ * the loader → the data module's records query). A read-only JSON viewer opens for one record.
  * An editor+ may delete a record via a confirm step; a viewer sees no delete
  * control. All values arrive pre-shaped — this file stays client-safe (imports
  * only react-router + the server-free ../view.js).
@@ -196,7 +196,7 @@ export default function CollectionTableRoute() {
 
   const dataBase = `/workspaces/${workspace.slug}/apps/${appSlug}/data`;
   const collBase = `${dataBase}/${collection.name}`;
-  const sortOptions = [...columns.map((c) => c.key), 'createdAt', 'updatedAt'];
+  const sortOptions = [...columns.map((c) => c.key), '_created_at', '_updated_at'];
 
   return (
     <main style={styles.main}>
@@ -211,8 +211,8 @@ export default function CollectionTableRoute() {
 
       <div style={styles.headRow}>
         <h1 style={styles.h1}>{collection.name}</h1>
-        <span style={styles.badge} data-testid="collection-access">
-          {collection.accessMode}
+        <span style={{ ...styles.badge, textTransform: 'none', letterSpacing: 0 }} data-testid="collection-rules">
+          {collection.rules}
         </span>
       </div>
 

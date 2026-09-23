@@ -24,7 +24,21 @@ import { createConsoleLogger, getRedis, type Logger } from '@drobek/core';
 import { getDb, memberships, runJournalMigrations, users, type DB } from '@drobek/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
-import type { AnyModule, EmailMessage, EndUser, HookApp, Limits, MailEnvelope, ModuleContext, Principal, RateLimitResult } from './contract.js';
+import type {
+  AnyModule,
+  EmailMessage,
+  EndUser,
+  HookApp,
+  Limits,
+  MailEnvelope,
+  ModuleContext,
+  Principal,
+  RateLimitResult,
+  RecordsCollection,
+  RecordsPage,
+  RecordsQuery,
+  RecordsView,
+} from './contract.js';
 import { readConfigRow, readConfigRows, withLockedConfig, type PendingChange } from './configs.server.js';
 import { capEmailText, emailKind, redactAddresses, resolveRecipients, sanitizeSubject } from './email.js';
 import { ModuleError, isModuleError, issuePaths, skillHint } from './errors.js';
@@ -32,7 +46,7 @@ import { createLimitsProvider, type LimitsProvider } from './limits.js';
 import { mailGuardConfigFromEnv, redisMailGuard, type MailGuard, type MailGuardRedis } from './mail-guard.js';
 import { jsonEqual, mergePatch } from './merge-patch.js';
 import { cookiePrincipalResolver, endUserCookiesSecure, type PrincipalResolver } from './principal.js';
-import { ModuleLoadError, checkRequires, endUserAuthorityOf, loadModules, mailAuthorityOf, type ResolveOptions } from './registry.js';
+import { ModuleLoadError, checkRequires, endUserAuthorityOf, loadModules, mailAuthorityOf, recordsAuthorityOf, type ResolveOptions } from './registry.js';
 import { collectRoutes, errorResult, matchRoute, runRoute, type PipelineRequest, type PipelineResult, type Route } from './router.js';
 import { decideAccess } from './rules.js';
 import { SDK_PATH, SDK_TYPES_PATH, buildSdk, moduleTypes, toPath, type SdkBundle } from './sdk-build.js';
@@ -183,6 +197,17 @@ export interface ConfigureResult {
   unchanged?: true;
 }
 
+/** The records store of one app (the module that declares `records`, bound to the app's config). */
+export interface BoundRecords {
+  /** The module that stores the records (e.g. `data`). */
+  module: string;
+  collections(): Promise<RecordsCollection[]>;
+  query(query: RecordsQuery): Promise<RecordsPage>;
+  get(collection: string, id: string): Promise<Record<string, unknown> | null>;
+  remove(collection: string, id: string): Promise<boolean>;
+  csv(query: Omit<RecordsQuery, 'limit' | 'cursor'>): AsyncIterable<string>;
+}
+
 export interface DecisionInput {
   app: { id: string; slug: string; workspaceId: string };
   module: string;
@@ -242,6 +267,31 @@ export class ModuleRuntime {
     const row = await readConfigRow(app.id, m.name, db);
     const config = this.effectiveConfig(m, row.config);
     return m.endUsers.current({ app, user, config, db, log: this.deps.log });
+  }
+
+  // ── records ──
+
+  /**
+   * The app's records store (the module that declares `records`, e.g. data),
+   * bound to the app's effective config — null when no active module stores
+   * records. For the OWNER's view (query_data, the dashboard): the caller has
+   * authorized a drobek account for the app already.
+   */
+  async records(app: HookApp): Promise<BoundRecords | null> {
+    const m = recordsAuthorityOf(this.modules);
+    if (!m?.records) return null;
+    const db = this.deps.db();
+    const row = await readConfigRow(app.id, m.name, db);
+    const view: RecordsView = { app, config: this.effectiveConfig(m, row.config), db, log: this.deps.log };
+    const r = m.records;
+    return {
+      module: m.name,
+      collections: () => r.collections(view),
+      query: (q) => r.query(view, q),
+      get: (collection, id) => r.get(view, collection, id),
+      remove: (collection, id) => r.remove(view, collection, id),
+      csv: (q) => r.csv(view, q),
+    };
   }
 
   // ── skills ──
@@ -388,7 +438,9 @@ export class ModuleRuntime {
       if (jsonEqual(nextStored, row.config)) {
         return { applied: true, config: before, pending: waiting, unchanged: true as const };
       }
-      const changes = (m.confirmRequired?.(before, after) ?? []).filter((c) => typeof c === 'string' && c.length > 0);
+      const hookApp: HookApp = { id: input.app.id, slug: input.app.slug, workspaceId: input.app.workspaceId };
+      const required = m.confirmRequired ? await m.confirmRequired(before, after, { app: hookApp, db: tx as unknown as DB }) : [];
+      const changes = (Array.isArray(required) ? required : []).filter((c) => typeof c === 'string' && c.length > 0);
       if (changes.length === 0) {
         await write({ config: nextStored });
         await writeAudit(
@@ -733,6 +785,7 @@ export async function loadModuleRuntime(opts: LoadRuntimeOptions = {}): Promise<
   const modules = opts.modules ?? (await loadModules(env, opts));
   const authority = endUserAuthorityOf(modules);
   mailAuthorityOf(modules);
+  recordsAuthorityOf(modules);
   checkRequires(modules);
 
   if (env.DROBEK_MIGRATE_ON_START !== '0') {

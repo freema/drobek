@@ -270,44 +270,47 @@ export async function seedDailyStats(
 }
 
 /**
- * Insert a data collection (what the removed `collection_define` MCP tool
- * stored — the dashboard Data tab still reads it). Idempotent by (app, name).
+ * Declare data-module collections for an app (merged into its `module_configs`
+ * row for `data`, what configure_module('data') stores once applied).
  */
-export async function seedCollection(opts: {
-  appId: string;
-  name: string;
-  jsonSchema: Record<string, unknown>;
-  accessMode: 'public-read' | 'public-write' | 'locked' | 'owner-only';
-}): Promise<void> {
+export async function seedDataCollections(
+  appId: string,
+  collections: Record<string, { schema?: Record<string, unknown>; rules?: Record<string, string> }>
+): Promise<void> {
   await withDb((c) =>
     c.query(
-      `INSERT INTO collections (id, app_id, name, json_schema, access_mode)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (app_id, name) DO UPDATE
-         SET json_schema = EXCLUDED.json_schema, access_mode = EXCLUDED.access_mode, updated_at = now()`,
-      [newId('col'), opts.appId, opts.name, JSON.stringify(opts.jsonSchema), opts.accessMode]
+      `INSERT INTO module_configs (app_id, module, config)
+       VALUES ($1, 'data', jsonb_build_object('collections', $2::jsonb))
+       ON CONFLICT (app_id, module) DO UPDATE
+         SET config = module_configs.config || jsonb_build_object('collections',
+               coalesce(module_configs.config -> 'collections', '{}'::jsonb) || $2::jsonb),
+             updated_at = now()`,
+      [appId, JSON.stringify(collections)]
     )
   );
 }
 
 /**
- * Insert documents into a collection, oldest first (each one a millisecond
- * later, so newest-first ordering is deterministic). Returns their ids.
+ * Insert records into a data-module collection, oldest first (each one a
+ * millisecond later, so newest-first ordering is deterministic). Returns their
+ * ids.
  */
-export async function seedDocuments(
+export async function seedRecords(
   appId: string,
   collection: string,
-  docs: Record<string, unknown>[]
+  docs: Record<string, unknown>[],
+  ownerId: string | null = null
 ): Promise<string[]> {
   return withDb(async (c) => {
     const ids: string[] = [];
     for (let i = 0; i < docs.length; i++) {
-      const id = newId('doc');
+      const id = newId('rec');
+      const json = JSON.stringify(docs[i]);
       await c.query(
-        `INSERT INTO app_documents (id, app_id, collection, doc, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, now() - make_interval(secs => $5::double precision),
-                 now() - make_interval(secs => $5::double precision))`,
-        [id, appId, collection, JSON.stringify(docs[i]), (docs.length - i) / 1000]
+        `INSERT INTO mod_data_documents (id, app_id, collection, owner_id, doc, bytes, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5::jsonb, $6, now() - make_interval(secs => $7::double precision),
+                 now() - make_interval(secs => $7::double precision))`,
+        [id, appId, collection, ownerId, json, Buffer.byteLength(json, 'utf8'), (docs.length - i) / 1000]
       );
       ids.push(id);
     }

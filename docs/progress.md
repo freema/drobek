@@ -5,6 +5,24 @@ NSO-279..NSO-308). The plan is [`vision-plan.md`](./vision-plan.md); the
 one-page pitch is [`navrh-drobek.md`](./navrh-drobek.md). All work lands on the
 single long-lived `next` branch; pushes happen only at milestone end.
 
+## Orchestration run 2026-09-23 (Fable orchestrates, Opus 5.5 implements, Sonnet verifies)
+
+Tomáš asked for a fully orchestrated `/implement` run: production code by
+Opus 5.5 subagents, black-box verification by Sonnet, everything lands on
+`next`, ONE merge request at the end (no per-task PRs). Run log:
+
+| # | Task | State | Notes |
+|---|------|-------|-------|
+| 1 | NSO-300 M1-03 data | done (unit + data specs green) | squashed wip 8682b79 into the feat commit; full e2e at block end |
+| 2 | NSO-296 M1-05 files | running (worktree) | parallel wave 1; core migration slot 0013 |
+| 3 | NSO-297 M1-06 proxy | running (worktree) | parallel wave 1; slot 0015 |
+| 4 | NSO-290 M1-07 get_logs | running (worktree) | parallel wave 1; slot 0014 |
+
+**Mode change (Tomáš, 2026-09-23 evening):** speed over per-task proof. Per
+task = implementation + unit tests + e2e spec FILES + green `task check`;
+the full `task e2e` + Sonnet black-box pass runs ONCE at the end of the M1
+block, then `next` is pushed and the single MR opened.
+
 ## Current state
 
 - Branch `next` was created from `origin/main` (b0443d8, PR #1 merged) on
@@ -143,7 +161,16 @@ single long-lived `next` branch; pushes happen only at milestone end.
   `multipart.ts`). Dev + e2e compose run `DROBEK_MODULES=hello,auth,email,forms`.
   The dashboard view of submissions is M2 (the owner reaches them through
   the app as an admin today).
-- Next: M1-03 data.
+- M1-03 (NSO-300) done locally: built-in module `modules/data`
+  (`drobek-module-data`, own migration `0000_data_documents` incl. the legacy
+  `access_mode` → rules import), rules per collection/op (`public | user |
+  owner | admin`, `rules.test.ts` table), REST `/__drobek/v1/data/:collection`
+  (+ `export.csv` admin), inline SDK `drobek.data.collection()`, contract
+  `RecordsAuthority` (`records`) + `ConfirmContext` (3rd arg of
+  `confirmRequired`, async ok), MCP `query_data` (scope read, ≤ 100,
+  `untrusted`), dashboard Data tab on the records authority, `@drobek/data`
+  removed, core migration 0012. `t.confirm()` in `@drobek/modules` testing.
+- Next: M1-05 files, M1-06 proxy, M1-07 get_logs (parallel worktrees), then M1-08 skills.
 
 ## Notes and gotchas
 
@@ -319,6 +346,22 @@ single long-lived `next` branch; pushes happen only at milestone end.
   drobek` (works for the dev stack and `task e2e:image`, whose script exports
   `COMPOSE_FILE` / `COMPOSE_PROJECT_NAME`); match on a unique app id and
   start a minute back to tolerate clock skew.
+- esbuild compiles only what the entry reaches: a file nothing imports is
+  never resolved, so an e2e expecting `unresolved_import` (e.g. the firebase
+  hint) must put the import in `src/main.tsx` itself.
+- React Router's lazy route discovery fetches `/__manifest?paths=…` for the
+  links on a rendered page; a `page.goto` right after the render aborts it and
+  the browser logs `Failed to fetch manifest patches` — console-clean specs
+  must `await page.waitForLoadState('networkidle')` before navigating away.
+- Removing a workspace package leaves its anonymous-volume mountpoint
+  (`packages/<name>/node_modules`) on the host; `rmdir` fails with
+  "Permission denied" until the container is recreated without that volume
+  (`docker compose up -d drobek`).
+- The dev `DATA_MAX_DOCS_PER_APP=5` counts every collection of an app: an e2e
+  that writes records into one app must stay within 5 (delete one first).
+- drizzle's migrator tracks a journal entry by its `when`, not a hash: editing
+  an unreleased migration never re-runs it on a DB that already applied it —
+  recreate the DB (or test the SQL in PGlite) to see the change.
 
 ## Failed approaches
 

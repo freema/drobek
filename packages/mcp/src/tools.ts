@@ -1,7 +1,7 @@
 /**
  * The MCP tool bodies (plan §4): list_apps, create_app, get_app, read_file,
  * write_files, restore_version (M0-05), publish (M0-06), skill_info and
- * configure_module (M1-01). Each takes the caller + validated
+ * configure_module (M1-01), query_data (M1-03). Each takes the caller + validated
  * arguments and returns a plain JSON payload or throws a ToolError; the MCP
  * wiring (register.ts) turns that into a CallToolResult.
  *
@@ -14,7 +14,9 @@
  *    takes it too: a module config is part of what the app's agent edits;
  *  - secrets never pass through MCP: skill_info names a module's secrets,
  *    get_app says whether each is set (`hasSecret`), configure_module refuses
- *    credential-looking values. Only the dashboard sets them.
+ *    credential-looking values. Only the dashboard sets them;
+ *  - app data (query_data) is end-user input: returned marked `untrusted`
+ *    inside a nonce envelope, from the ONE app the call authorized.
  */
 import {
   APP_LOCK_TTL_SEC,
@@ -697,6 +699,75 @@ export async function configureModule(
         ...details,
         ...(err.hint ? { hint: err.hint } : {}),
       });
+    }
+    throw err;
+  }
+}
+
+// ── query_data ───────────────────────────────────────────────────────────────
+
+export const QUERY_DATA_DEFAULT_LIMIT = 20;
+export const QUERY_DATA_MAX_LIMIT = 100;
+
+export interface QueryDataResult {
+  app_id: string;
+  collection: string;
+  records: Record<string, unknown>[];
+  total: number;
+  next_cursor: string | null;
+  untrusted: true;
+}
+
+/**
+ * Read an app's stored records (M1-03) as its owner: viewer+ of the app's
+ * workspace, authorized per call; the end-user rules do not apply. The
+ * records module (the built-in `data`) answers for THIS app only, so another
+ * app's collections are simply not found. ≤ 100 records per call; the
+ * records are end-user input (`untrusted`).
+ */
+export async function queryData(
+  ctx: CallContext,
+  args: { app_id: string; collection: string; filter?: unknown; sort?: string; dir?: string; limit?: number; cursor?: string }
+): Promise<QueryDataResult> {
+  const { app } = await authorizeApp(ctx.principal, args.app_id, 'viewer');
+  if (typeof args.collection !== 'string' || args.collection.length === 0) {
+    throw new ToolError('invalid_params', '`collection` must be the name of a collection of the app (get_app lists the data config).');
+  }
+  const limit = args.limit ?? QUERY_DATA_DEFAULT_LIMIT;
+  if (!Number.isInteger(limit) || limit < 1 || limit > QUERY_DATA_MAX_LIMIT) {
+    throw new ToolError('invalid_params', `\`limit\` must be an integer from 1 to ${QUERY_DATA_MAX_LIMIT}.`);
+  }
+  if (args.dir !== undefined && args.dir !== 'asc' && args.dir !== 'desc') {
+    throw new ToolError('invalid_params', '`dir` must be "asc" or "desc".');
+  }
+  const records = await ctx.modules.records({ id: app.id, slug: app.slug, workspaceId: app.workspaceId });
+  if (!records) {
+    throw new ToolError('not_found', 'This server has no data module: apps here store no records.', { hint: 'skill_info()' });
+  }
+  try {
+    const page = await records.query({
+      collection: args.collection,
+      filter: args.filter,
+      sort: args.sort,
+      dir: args.dir as 'asc' | 'desc' | undefined,
+      limit,
+      cursor: args.cursor ?? null,
+    });
+    return {
+      app_id: app.id,
+      collection: args.collection,
+      records: page.records,
+      total: page.total,
+      next_cursor: page.next_cursor,
+      untrusted: true,
+    };
+  } catch (err) {
+    if (isModuleError(err) && err.code === 'not_found') {
+      const available = (await records.collections()).map((c) => c.name);
+      throw new ToolError('not_found', err.message, { available, hint: `skill_info('${records.module}')` });
+    }
+    if (isModuleError(err) && err.code === 'invalid_request') {
+      throw new ToolError('invalid_params', err.message, { hint: `skill_info('${records.module}')` });
     }
     throw err;
   }

@@ -567,3 +567,56 @@ describe('module e-mail (ctx.email.send through the runtime)', () => {
     await expect(setup([needy])).rejects.toThrow(/module "needy" requires the module "mailer"/);
   });
 });
+
+describe('the records authority (query_data, the dashboard Data tab)', () => {
+  const base = { version: '1.0.0', skill: { useWhen: 'x', markdown: '# x' } };
+
+  it('null without a module that stores records', async () => {
+    expect(await rt.records(app)).toBeNull();
+  });
+
+  it("binds the app's effective config; confirmRequired gets the app and a db", async () => {
+    const seen: { config: unknown; app: unknown }[] = [];
+    const contexts: unknown[] = [];
+    const store = defineModule({
+      ...base,
+      name: 'store',
+      configSchema: z.object({ tables: z.array(z.string()).default([]), open: z.boolean().default(false) }),
+      configDefaults: { tables: [], open: false },
+      confirmRequired(before, after, context) {
+        contexts.push({ app: context.app, hasDb: typeof context.db.select === 'function' });
+        return after.open && !before.open ? ['open: anyone'] : [];
+      },
+      records: {
+        collections: async (view) => {
+          seen.push({ config: view.config, app: view.app });
+          return [];
+        },
+        query: async () => ({ collection: { name: 'x', rules: {}, schema: null, columns: [], records: 0 }, records: [], total: 0, next_cursor: null }),
+        get: async () => null,
+        remove: async () => false,
+        csv: async function* () {
+          yield 'a';
+        },
+      },
+    });
+    const r = await loadModuleRuntime({
+      env: ENV,
+      log: noopLogger,
+      modules: [store],
+      skillsDir,
+      deps: { rateLimit: memoryRateLimiter(), principal: async () => ({ kind: 'anon' }), email: { send: async () => {} } },
+    });
+    await r.configure({ app, module: 'store', patch: { tables: ['todos'] }, actorUserId: userId });
+    const out = await r.configure({ app, module: 'store', patch: { open: true }, actorUserId: userId });
+    expect(out.pending_confirmation).toEqual(['open: anyone']);
+    expect(contexts.at(-1)).toEqual({ app: { id: app.id, slug: app.slug, workspaceId: app.workspaceId }, hasDb: true });
+    const bound = await r.records({ id: app.id, slug: app.slug, workspaceId: app.workspaceId });
+    expect(bound?.module).toBe('store');
+    await bound!.collections();
+    expect(seen).toEqual([{ config: { tables: ['todos'], open: false }, app: { id: app.id, slug: app.slug, workspaceId: app.workspaceId } }]);
+    const lines: string[] = [];
+    for await (const l of bound!.csv({ collection: 'x' })) lines.push(l);
+    expect(lines).toEqual(['a']);
+  });
+});

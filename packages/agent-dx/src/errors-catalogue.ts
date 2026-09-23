@@ -27,10 +27,10 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
   // ── MCP tools (isError: true, body { code, message, hint }) ───────────────
   {
     code: 'not_found',
-    surface: 'MCP tool isError',
+    surface: 'MCP tool isError; module route 404 (DrobekError)',
     meaning:
-      'The app, workspace, version or file does not exist — or you are not a member of its workspace (both answer the same, so ids cannot be probed). From skill_info / configure_module: no such skill or module on this server (`available` lists the ones that exist).',
-    fix: 'Call list_apps for the app ids and workspaces you can reach; get_app lists the files and versions of an app; skill_info() lists the skills and modules.',
+      'The app, workspace, version or file does not exist — or you are not a member of its workspace (both answer the same, so ids cannot be probed). From skill_info / configure_module: no such skill or module on this server (`available` lists the ones that exist). From query_data or a data route: the app declares no such collection (`available` lists its collections), or no such record.',
+    fix: 'Call list_apps for the app ids and workspaces you can reach; get_app lists the files and versions of an app; skill_info() lists the skills and modules. For data: declare the collection with configure_module(\'data\') first.',
   },
   {
     code: 'forbidden',
@@ -43,7 +43,7 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     code: 'invalid_params',
     surface: 'MCP tool isError',
     meaning:
-      'An argument breaks the tool contract: more than 20 files in one write_files, the same path twice, deleting a file that does not exist, reasoning over 300 characters, an empty name, a non-positive version number — or a configure_module config that fails the module\'s schema (`issues[]` carries each field path) or contains a credential.',
+      'An argument breaks the tool contract: more than 20 files in one write_files, the same path twice, deleting a file that does not exist, reasoning over 300 characters, an empty name, a non-positive version number — or a configure_module config that fails the module\'s schema (`issues[]` carries each field path) or contains a credential — or a query_data filter/sort/cursor the collection does not allow, or a limit outside 1–100.',
     fix: 'Read `message` (and `issues[].path`), fix the arguments and call again. Split large changes into several write_files calls of at most 20 files. For a module config, skill_info(module) shows the schema.',
   },
   {
@@ -168,8 +168,21 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
   {
     code: 'payload_too_large',
     surface: 'module route 413 (DrobekError)',
-    meaning: 'The request body is bigger than the route allows.',
+    meaning: 'The request body is bigger than the route allows — for data, one record over the per-record size limit (`details.limit`).',
     fix: 'Send less (the module skill states the size limits).',
+  },
+  {
+    code: 'validation_failed',
+    surface: 'module route (data) 422 (DrobekError)',
+    meaning: 'The record does not match the collection\'s JSON Schema; `details[]` lists each `{ path, message }`. Nothing was stored.',
+    fix: 'Send the fields the schema requires with the right types (get_app shows the data config), or change the schema with configure_module(\'data\').',
+  },
+  {
+    code: 'quota_exceeded',
+    surface: 'module route (data) 409 (DrobekError)',
+    meaning:
+      'The app reached a storage limit — the number of records across all its collections, or their total size (`details.limit` names it, `details.value` is the limit; skill_info(\'data\') lists them). Nothing was stored.',
+    fix: 'Delete records the app no longer needs (query_data finds them), or tell the user the app is full; the server operator sets the limits.',
   },
   {
     code: 'unsupported_media_type',

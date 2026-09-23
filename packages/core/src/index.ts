@@ -30,3 +30,4 @@ export {
   type CaddyConfigResult,
   type CaddyTlsMode,
 } from './caddy.js';
+export { csvEscape, csvLine } from './csv.js';

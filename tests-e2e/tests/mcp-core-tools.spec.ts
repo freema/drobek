@@ -26,12 +26,13 @@ const ALL_TOOLS = [
   'create_app',
   'get_app',
   'list_apps',
+  'query_data',
   'read_file',
   'restore_version',
   'skill_info',
   'write_files',
 ];
-const READ_TOOLS = new Set(['list_apps', 'get_app', 'read_file', 'skill_info']);
+const READ_TOOLS = new Set(['list_apps', 'get_app', 'read_file', 'skill_info', 'query_data']);
 
 const TEMPLATE_FILES = ['drobek.json', 'index.html', 'src/main.tsx', 'src/styles.css'];
 

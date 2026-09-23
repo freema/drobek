@@ -71,6 +71,13 @@ export interface ModuleTestContext {
   emails: ({ to: string[]; subject: string; text: string; kind: 'sign_in' | 'notification' } & MailEnvelope)[];
   /** Change who is calling. */
   setPrincipal(principal: Principal): void;
+  /**
+   * Run the module's `confirmRequired(before, after, context)` the way
+   * configure_module does — both configs merged over configDefaults and
+   * validated, the context naming the test app and `db` ([] without a
+   * confirmRequired).
+   */
+  confirm(before: Record<string, unknown>, after: Record<string, unknown>): Promise<string[]>;
 }
 
 function noDb(): DB {
@@ -165,6 +172,15 @@ export function createModuleTestContext(module: AnyModule, opts: ModuleTestOptio
     emails,
     setPrincipal(p) {
       principal = p;
+    },
+    async confirm(before, after) {
+      if (!module.confirmRequired) return [];
+      const parse = (patch: Record<string, unknown>) => {
+        const r = module.configSchema.safeParse(mergePatch(module.configDefaults, patch));
+        if (!r.success) throw new Error(`confirm: config does not pass ${module.name}.configSchema: ${r.error.message}`);
+        return r.data;
+      };
+      return await module.confirmRequired(parse(before), parse(after), { app, db: opts.db ?? noDb() });
     },
     async request(method, path, init = {}) {
       const upper = method.toUpperCase();

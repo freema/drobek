@@ -1,18 +1,17 @@
 /**
- * GET/POST /workspaces/:slug/apps/:appSlug/data/:collection — server half (M1b,
- * PHY-121). The collection TABLE view.
+ * GET/POST /workspaces/:slug/apps/:appSlug/data/:collection — server half. The
+ * collection TABLE view (the owner's view through the data module's records
+ * authority; the end-user rules do not apply to workspace members).
  *
- * GET (viewer+): rows flattened to the required-schema columns (schema order),
- * newest-first, with a field FILTER + a SORT passed THROUGH to the U10 query API
- * (queryRecordsForMember → the same whitelisted query builder — unknown fields
- * are dropped by mapFilterSort before they reach it). Keyset pagination via an
- * opaque cursor. A `?record=<id>` opens a read-only JSON viewer for one record.
+ * GET (viewer+): records flattened to the schema's columns (required first),
+ * newest first, with a field FILTER + a SORT passed to the records query
+ * (unknown fields are dropped by mapFilterSort before they reach it). Keyset
+ * pagination via an opaque cursor. A `?record=<id>` opens a read-only JSON
+ * viewer for one record.
  *
  * POST (editor+): the DELETE action. requireWorkspaceRole('editor') gates it
- * SERVER-SIDE — a viewer gets 403, a non-member 404 — before the soft-delete
- * (deleteRecordForMember, editor+). The member-view path (NOT the anon
- * access-mode gate) authorizes both: a workspace member may read/delete data in
- * ANY of their app's collections regardless of access_mode.
+ * SERVER-SIDE — a viewer gets 403, a non-member 404 — before the record is
+ * deleted (permanently).
  */
 import {
   data,
@@ -20,18 +19,9 @@ import {
   type ActionFunctionArgs,
   type LoaderFunctionArgs,
 } from 'react-router';
-import {
-  deleteRecordForMember,
-  getCollectionForMember,
-  mapFilterSort,
-  queryRecordsForMember,
-  readRecordForMember,
-  flattenDoc,
-  schemaColumns,
-  type SchemaColumn,
-} from '@drobek/data';
 import { requireWorkspaceRole } from '@drobek/tenancy';
-import { withDataErrors } from './data-http.server.js';
+import { flattenRecord, mapFilterSort, rulesText, type Column } from '../data-view.js';
+import { recordsOf, withDataErrors } from './data-http.server.js';
 
 /** Rows per page (keyset). Small: the LITE Data tab is for spot-checking. */
 export const PAGE_SIZE = 25;
@@ -81,6 +71,7 @@ export function baseSearch(q: {
 
 export interface DataTableRow {
   id: string;
+  owner: string | null;
   createdAt: string;
   updatedAt: string;
   cells: string[];
@@ -97,22 +88,15 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const appSlug = String(params.appSlug ?? '');
   const collection = String(params.collection ?? '');
   const q = parseDataQuery(new URL(request.url));
-
-  const ctx = {
-    wsSlug: access.workspace.slug,
-    appSlug,
-    workspaceId: access.workspace.id,
-    role: access.effectiveRole,
-  };
+  const records = await recordsOf(access.workspace.id, appSlug);
 
   return withDataErrors(async () => {
-    // Collection schema → the ordered display columns (member-gated: viewer+).
-    const meta = await getCollectionForMember(ctx, collection);
-    const columns: SchemaColumn[] = schemaColumns(meta.jsonSchema);
+    const meta = (await records.collections()).find((c) => c.name === collection);
+    if (!meta) throw data({ message: 'Not found' }, { status: 404 });
+    const columns: Column[] = meta.columns;
 
-    // Map the (whitelisted) filter + sort, then query with them applied THROUGH
-    // to the U10 query API. An unknown filter/sort field is dropped by
-    // mapFilterSort before it reaches the whitelist (never 500s the page).
+    // Map the (whitelisted) filter + sort; an unknown field is dropped by
+    // mapFilterSort before it reaches the query (never 500s the page).
     const fs = mapFilterSort({
       filterField: q.field,
       filterValue: q.value,
@@ -120,26 +104,29 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       dir: q.dir,
       columns,
     });
-    const applied = await queryRecordsForMember(ctx, collection, {
-      where: fs.where,
+    const page = await records.query({
+      collection,
+      filter: fs.filter,
       sort: fs.sort,
+      dir: fs.dir,
       limit: PAGE_SIZE,
-      cursor: q.cursor || undefined,
+      cursor: q.cursor || null,
     });
 
-    const rows: DataTableRow[] = applied.result.records.map((r) => {
-      const flat = flattenDoc(r.doc, columns);
+    const rows: DataTableRow[] = page.records.map((r) => {
+      const flat = flattenRecord(r, columns);
       return {
-        id: r.id,
-        createdAt: r.createdAt,
-        updatedAt: r.updatedAt,
+        id: String(r._id),
+        owner: r._owner == null ? null : String(r._owner),
+        createdAt: String(r._created_at),
+        updatedAt: String(r._updated_at),
         cells: flat.cells,
         hasExtra: flat.hasExtra,
         extraJson: flat.hasExtra ? JSON.stringify(flat.extra, null, 2) : null,
       };
     });
 
-    // The read-only record viewer (modal), if requested + still live.
+    // The read-only record viewer (modal), if requested + still there.
     let openRecord: {
       id: string;
       createdAt: string;
@@ -147,16 +134,14 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       json: string;
     } | null = null;
     if (q.record) {
-      try {
-        const rec = await readRecordForMember(ctx, collection, q.record);
+      const rec = await records.get(collection, q.record).catch(() => null);
+      if (rec) {
         openRecord = {
-          id: rec.id,
-          createdAt: rec.createdAt,
-          updatedAt: rec.updatedAt,
-          json: JSON.stringify(rec.doc, null, 2),
+          id: String(rec._id),
+          createdAt: String(rec._created_at),
+          updatedAt: String(rec._updated_at),
+          json: JSON.stringify(rec, null, 2),
         };
-      } catch {
-        openRecord = null; // deleted/unknown → just don't open the viewer.
       }
     }
 
@@ -165,11 +150,13 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       appSlug,
       collection: {
         name: meta.name,
-        accessMode: meta.accessMode,
+        rules: rulesText(meta.rules),
+        schemaless: meta.schema === null,
       },
       columns,
       rows,
-      nextCursor: applied.result.nextCursor,
+      total: page.total,
+      nextCursor: page.next_cursor,
       query: {
         field: q.field,
         value: q.value,
@@ -192,7 +179,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
 export async function action({ request, params }: ActionFunctionArgs) {
   // Delete GATE: editor+ (server-side). viewer → 403, non-member → 404,
-  // anonymous → /login — thrown here BEFORE the soft-delete runs.
+  // anonymous → /login — thrown here BEFORE the delete runs.
   const access = await requireWorkspaceRole(
     request,
     String(params.slug ?? ''),
@@ -210,18 +197,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
     return data({ error: 'Missing record id.' }, { status: 400 });
   }
 
-  await withDataErrors(() =>
-    deleteRecordForMember(
-      {
-        wsSlug: access.workspace.slug,
-        appSlug,
-        workspaceId: access.workspace.id,
-        role: access.effectiveRole,
-      },
-      collection,
-      id
-    )
-  );
+  const records = await recordsOf(access.workspace.id, appSlug);
+  const removed = await withDataErrors(() => records.remove(collection, id));
+  if (!removed) throw data({ message: 'Not found' }, { status: 404 });
 
   // Back to the table, preserving the active filter/sort (drop cursor → page 1).
   const search = baseSearch({

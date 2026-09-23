@@ -16,7 +16,7 @@ export function meta() {
 
 /** Human labels for the scope vocabulary shown on the consent screen. */
 const SCOPE_LABELS: Record<string, string> = {
-  read: 'See your workspaces and apps, read app files and the platform skills',
+  read: 'See your workspaces and apps, read app files, the platform skills and the data your apps store',
   write: 'Change apps: create apps, write files, restore versions and configure platform modules',
   publish: 'Publish app versions to their live URL',
 };

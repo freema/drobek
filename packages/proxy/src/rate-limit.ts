@@ -1,6 +1,6 @@
 /**
  * Per-(workspace, user, upstream) rate limit for proxy calls (PHY-59) — a
- * fixed-window Redis counter (the same primitive @drobek/data uses; "token
+ * fixed-window Redis counter (the same primitive the module rate limits use; "token
  * bucket" in the loose sense of a per-caller quota per window). Keys are
  * `drobek:rl:proxy:<workspaceId>:<userId>:<upstreamId>` — drobek-prefixed
  * because prod runs a SHARED redis.

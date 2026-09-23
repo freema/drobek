@@ -1,22 +1,20 @@
 {
-  "name": "@drobek/data",
-  "version": "0.1.0",
+  "name": "drobek-module-data",
+  "version": "1.0.0",
   "private": true,
+  "description": "Built-in drobek platform module: per-app collections of JSON records with per-operation rules (public/user/owner/admin), schema validation, quotas, CSV export and the records view behind MCP query_data.",
   "type": "module",
   "exports": {
     ".": {
       "types": "./src/index.ts",
       "default": "./dist/index.js"
-    },
-    "./rest": {
-      "types": "./src/rest.server.ts",
-      "default": "./dist/rest.server.js"
-    },
-    "./columns": {
-      "types": "./src/columns.ts",
-      "default": "./dist/columns.js"
     }
   },
+  "files": [
+    "dist",
+    "migrations",
+    "SKILL.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -24,16 +22,19 @@
     "test:run": "vitest run"
   },
   "dependencies": {
-    "@drobek/auth": "workspace:*",
     "@drobek/core": "workspace:*",
     "@drobek/db": "workspace:*",
-    "@drobek/serving": "workspace:*",
-    "@drobek/tenancy": "workspace:*",
+    "@drobek/modules": "workspace:*",
+    "@drobek/sdk": "workspace:*",
+    "@paralleldrive/cuid2": "^2.2.2",
     "ajv": "^8.17.1",
     "drizzle-orm": "^0.41.0"
   },
   "devDependencies": {
+    "@drobek/compile": "workspace:*",
+    "@electric-sql/pglite": "^0.2.17",
     "@types/node": "^22",
+    "drobek-module-auth": "workspace:*",
     "typescript": "^5.7.3",
     "vitest": "^3.0.7"
   },

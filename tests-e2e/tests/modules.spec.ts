@@ -189,7 +189,7 @@ test.describe('platform modules — the hello example (M1-01) @local', () => {
     expect(wrong.headers.allow).toBe('POST');
     const nope = await hostRequest(host, '/__drobek/v1/nope');
     expect(nope.status).toBe(404);
-    expect(JSON.parse(nope.body)).toMatchObject({ error: 'not_found', details: { available: ['hello', 'auth', 'email', 'forms'] } });
+    expect(JSON.parse(nope.body)).toMatchObject({ error: 'not_found', details: { available: ['hello', 'auth', 'email', 'forms', 'data'] } });
 
     // HELLO_WAVES_PER_MINUTE=5 per visitor IP (the browser test already waved once).
     const statuses: number[] = [];
@@ -341,8 +341,8 @@ test.describe('platform modules — the hello example (M1-01) @local', () => {
     });
     const err = (fb.json.compile as { errors: { code: string; hint?: string }[] }).errors[0];
     expect(err.code).toBe('unresolved_import');
-    // No `data` skill on this server → the hint points at the list.
-    expect(err.hint).toMatch(/^skill_info\((?:'data')?\)$/);
+    // The data module is active (M1-03) → the hint names its skill.
+    expect(err.hint).toBe("skill_info('data')");
   });
 
   test('skill_info and get_app never return a secret value (secret row in the DB)', async () => {

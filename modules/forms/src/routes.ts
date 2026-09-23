@@ -18,7 +18,7 @@
  * admins read them back (no-store).
  */
 import { dashboardOrigin } from '@drobek/apps';
-import { csvLine } from '@drobek/data/columns';
+import { csvLine } from '@drobek/core';
 import { ModuleError, isModuleError, respond, z, type EmailRecipient, type ModuleContext, type ModuleRouter } from '@drobek/modules';
 import { FORM_NAME_RE, formConfig, type FormConfig, type FormsConfig } from './config.js';
 import { fieldText, splitBody, validateFields } from './fields.js';

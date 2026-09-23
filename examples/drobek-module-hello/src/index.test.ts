@@ -92,10 +92,10 @@ describe('drobek-module-hello', () => {
     expect(JSON.stringify(res.body)).not.toContain('top-secret-signing-key');
   });
 
-  it('a greeting change needs confirmation; excited does not', () => {
-    const base = hello.configDefaults;
-    expect(hello.confirmRequired!(base, { ...base, excited: true })).toEqual([]);
-    expect(hello.confirmRequired!(base, { ...base, greeting: 'Ahoj' })).toEqual(['greeting: "Hello" → "Ahoj"']);
+  it('a greeting change needs confirmation; excited does not', async () => {
+    const t = createModuleTestContext(hello);
+    expect(await t.confirm({}, { excited: true })).toEqual([]);
+    expect(await t.confirm({}, { greeting: 'Ahoj' })).toEqual(['greeting: "Hello" → "Ahoj"']);
   });
 
   it('bundles into the SDK as drobek.hello with ping() + wave()', async () => {

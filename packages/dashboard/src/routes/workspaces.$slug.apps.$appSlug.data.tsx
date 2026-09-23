@@ -1,6 +1,6 @@
 /**
- * /workspaces/:slug/apps/:appSlug/data — client half (M1b, PHY-121): the Data
- * tab's COLLECTIONS list. Each collection links to its table view. Read-only,
+ * /workspaces/:slug/apps/:appSlug/data — client half: the Data
+ * tab's COLLECTIONS list (the data module's declared collections). Each collection links to its table view. Read-only,
  * minimal style (mirrors the apps/app-detail pages). Server code lives in the
  * .server.ts; all values arrive pre-shaped so this file stays client-safe.
  */
@@ -91,12 +91,12 @@ export default function AppDataRoute() {
 
       <h1 style={styles.h1}>Data</h1>
       <p style={styles.hint}>
-        Collections stored by <strong>{appSlug}</strong> via the drobek Data API.
+        Collections stored by <strong>{appSlug}</strong> (the data module; preview and production share them).
       </p>
 
       {collections.length === 0 ? (
         <p style={styles.empty} data-testid="collections-empty">
-          No collections yet — define one with the drobek MCP data tools.
+          No collections yet — an agent declares them with configure_module('data', …).
         </p>
       ) : (
         <ul style={styles.list} data-testid="collections-list">
@@ -117,8 +117,8 @@ export default function AppDataRoute() {
               <span style={styles.count} data-testid="collection-count">
                 {c.recordCount} {c.recordCount === 1 ? 'record' : 'records'}
               </span>
-              <span style={styles.badge} data-testid="collection-access">
-                {c.accessMode}
+              <span style={{ ...styles.badge, textTransform: 'none', letterSpacing: 0 }} data-testid="collection-rules">
+                {c.rules}
               </span>
               <span style={styles.summary} title="schema fields">
                 {c.schemaSummary}

@@ -1,6 +1,6 @@
 /**
  * Activity (audit) CSV serialization (PHY-85). Reuses the PHY-121 RFC-4180
- * escaping primitive (`csvLine` from @drobek/data) so the audit export escapes
+ * escaping primitive (`csvLine` from @drobek/core) so the audit export escapes
  * commas / quotes / newlines identically to the Data-tab export. Pure + unit
  * tested; imported only server-side (the export route streams these lines).
  *
@@ -9,7 +9,7 @@
  * invited email is never in an invite row's subject, so no PII leaks beyond the
  * actor email that the admin viewer is already entitled to see.
  */
-import { csvLine } from '@drobek/data';
+import { csvLine } from '@drobek/core';
 
 export const ACTIVITY_CSV_HEADER = [
   'time',

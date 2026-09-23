@@ -98,8 +98,9 @@ services:
       BEACON_RATE_LIMIT: '30'
       # M1-01: the example module, loaded from the image's own dependencies;
       # M1-02: the built-in auth module (relaxed sign-in limits, as in dev);
-      # M1-04: the built-in email + forms modules (limits as in dev).
-      DROBEK_MODULES: hello,auth,email,forms
+      # M1-04: the built-in email + forms modules (limits as in dev);
+      # M1-03: the built-in data module (DATA_MAX_DOCS_PER_APP 5 above).
+      DROBEK_MODULES: hello,auth,email,forms,data
       HELLO_WAVES_PER_MINUTE: '5'
       AUTH_CODES_PER_IP_15MIN: '100'
       AUTH_CODES_PER_IP_DAY: '500'

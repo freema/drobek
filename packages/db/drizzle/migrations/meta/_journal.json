@@ -85,6 +85,13 @@
       "when": 1790162052842,
       "tag": "0011_modules",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1790175801064,
+      "tag": "0012_data_module_tables",
+      "breakpoints": true
     }
   ]
 }

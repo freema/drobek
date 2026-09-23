@@ -1,5 +1,5 @@
 /**
- * tools/list snapshot (M0-05 + M0-06 + M1-01): exactly the 9 tools, in order, with
+ * tools/list snapshot (M0-05 + M0-06 + M1-01 + M1-03): exactly the 10 tools, in order, with
  * their titles, annotations and input schemas. Hand-written on purpose — a
  * change to the public tool surface must be a deliberate edit here.
  */
@@ -29,7 +29,7 @@ async function listTools(allow?: (t: string) => boolean) {
 const RO = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 
 describe('tools/list', () => {
-  it('is exactly the 9 tools with their annotations and inputs (snapshot)', async () => {
+  it('is exactly the 10 tools with their annotations and inputs (snapshot)', async () => {
     const tools = await listTools();
     const snapshot = tools.map((t) => ({
       name: t.name,
@@ -121,6 +121,13 @@ describe('tools/list', () => {
         },
         properties: ['app_id', 'module', 'config'],
         required: ['app_id', 'module', 'config'],
+      },
+      {
+        name: 'query_data',
+        title: "Query an app's data",
+        annotations: { title: "Query an app's data", ...RO },
+        properties: ['app_id', 'collection', 'filter', 'sort', 'dir', 'limit', 'cursor'],
+        required: ['app_id', 'collection'],
       },
     ]);
     const create = tools.find((t) => t.name === 'create_app')!;

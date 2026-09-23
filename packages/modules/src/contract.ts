@@ -220,6 +220,73 @@ export interface MailAuthority<Config = unknown> {
   prepare(input: MailPrepareInput<Config>): Promise<MailEnvelope>;
 }
 
+/** What `confirmRequired` gets besides the two configs. */
+export interface ConfirmContext {
+  app: HookApp;
+  /** Read-only use: the configure transaction (the config row is locked). */
+  db: DB;
+}
+
+// ── the records authority (data) ─────────────────────────────────────────────
+
+/** The app a records call is about, with the records module's effective config for it. */
+export interface RecordsView<Config = unknown> {
+  app: HookApp;
+  config: Config;
+  db: DB;
+  log: Logger;
+}
+
+/** One collection as the owner sees it. */
+export interface RecordsCollection {
+  name: string;
+  /** operation → rule, e.g. `{ read: 'public', create: 'admin', … }`. */
+  rules: Record<string, string>;
+  /** The collection's JSON Schema, or null (schemaless). */
+  schema: unknown;
+  /** Display columns from the schema: required properties first. [] without a schema. */
+  columns: { key: string; required: boolean }[];
+  /** Stored records. */
+  records: number;
+}
+
+export interface RecordsQuery {
+  collection: string;
+  /** The records filter (`{ field: value }` or `{ field: { op: value } }`, see the module's skill). */
+  filter?: unknown;
+  /** A sort field (a schema property or `_id` / `_created_at` / `_updated_at`). */
+  sort?: string;
+  dir?: 'asc' | 'desc';
+  limit?: number;
+  cursor?: string | null;
+}
+
+/** A page of records: every record is `{ _id, _owner, _created_at, _updated_at, …fields }`. */
+export interface RecordsPage {
+  collection: RecordsCollection;
+  records: Record<string, unknown>[];
+  /** Records matching the filter (all pages). */
+  total: number;
+  next_cursor: string | null;
+}
+
+/**
+ * The module that stores records (the built-in `data`) answers the OWNER's
+ * questions about an app's data, bypassing the end-user rules: core calls it
+ * only after it authorized a drobek account for the app (MCP membership, the
+ * dashboard's workspace role). Unknown collection → ModuleError `not_found`;
+ * a bad filter/sort → `invalid_request`.
+ */
+export interface RecordsAuthority<Config = unknown> {
+  collections(view: RecordsView<Config>): Promise<RecordsCollection[]>;
+  query(view: RecordsView<Config>, query: RecordsQuery): Promise<RecordsPage>;
+  get(view: RecordsView<Config>, collection: string, id: string): Promise<Record<string, unknown> | null>;
+  /** Delete one record (the dashboard, editor+); false when it did not exist. */
+  remove(view: RecordsView<Config>, collection: string, id: string): Promise<boolean>;
+  /** The CSV export of a collection (filter + sort applied): the header line, then one line per record (no line breaks). */
+  csv(view: RecordsView<Config>, query: Omit<RecordsQuery, 'limit' | 'cursor'>): AsyncIterable<string>;
+}
+
 // ── the module ───────────────────────────────────────────────────────────────
 
 export interface DrobekModule<Config = unknown> {
@@ -239,9 +306,12 @@ export interface DrobekModule<Config = unknown> {
    * The changes between two VALID configs that need the owner's confirmation
    * in the dashboard — e.g. an operation opened to `public`, a new e-mail
    * recipient. Non-empty → configure_module stores the change as pending.
-   * Each string is shown to the owner and the agent verbatim.
+   * Each string is shown to the owner and the agent verbatim. `context` names
+   * the app and gives read access to the database (inside the configure
+   * transaction), for rules that depend on stored data — e.g. removing the
+   * schema of a collection that holds records.
    */
-  confirmRequired?(before: Config, after: Config): string[];
+  confirmRequired?(before: Config, after: Config, context: ConfirmContext): string[] | Promise<string[]>;
   secrets?: ModuleSecretDoc[];
   rules?: RuleSurface;
   limits?: ModuleLimit[];
@@ -254,6 +324,12 @@ export interface DrobekModule<Config = unknown> {
   endUsers?: EndUserAuthority<Config>;
   /** Only the module that owns app e-mail (email): per-app limits + the envelope of every module e-mail. */
   mail?: MailAuthority<Config>;
+  /**
+   * Only the module that stores the app's records (data): the owner's
+   * read-mostly view for core — MCP `query_data` and the dashboard's data
+   * browser. Never called for an app host request.
+   */
+  records?: RecordsAuthority<Config>;
   /**
    * Other modules this one needs (by name), e.g. `forms` requires `email`.
    * The server refuses to start when one of them is not in DROBEK_MODULES.

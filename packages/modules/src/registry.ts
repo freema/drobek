@@ -149,6 +149,11 @@ export function validateModule(m: AnyModule): void {
   if (m.routes !== undefined && typeof m.routes !== 'function') fail('routes must be a function');
   if (m.endUsers !== undefined && typeof m.endUsers?.current !== 'function') fail('endUsers.current must be a function');
   if (m.mail !== undefined && typeof m.mail?.prepare !== 'function') fail('mail.prepare must be a function');
+  if (m.records !== undefined) {
+    for (const fn of ['collections', 'query', 'get', 'remove', 'csv'] as const) {
+      if (typeof m.records?.[fn] !== 'function') fail(`records.${fn} must be a function`);
+    }
+  }
   if (m.requires !== undefined) {
     if (!Array.isArray(m.requires) || m.requires.some((r) => typeof r !== 'string' || !MODULE_NAME_RE.test(r) || r === m.name)) {
       fail('requires must list the names of OTHER modules');
@@ -164,6 +169,19 @@ export function mailAuthorityOf(modules: AnyModule[]): AnyModule | null {
   const owners = modules.filter((m) => m.mail !== undefined);
   if (owners.length > 1) {
     throw new ModuleLoadError(`only one module may own app e-mail (mail); active: ${owners.map((m) => m.name).join(', ')}`);
+  }
+  return owners[0] ?? null;
+}
+
+/**
+ * The one active module that stores the app's records (`records`), or null.
+ * query_data and the dashboard's data browser must read ONE store: two are
+ * refused at start.
+ */
+export function recordsAuthorityOf(modules: AnyModule[]): AnyModule | null {
+  const owners = modules.filter((m) => m.records !== undefined);
+  if (owners.length > 1) {
+    throw new ModuleLoadError(`only one module may store app records (records); active: ${owners.map((m) => m.name).join(', ')}`);
   }
   return owners[0] ?? null;
 }
@@ -208,6 +226,7 @@ export async function loadModules(env: NodeJS.ProcessEnv = process.env, opts: Re
   }
   endUserAuthorityOf(modules);
   mailAuthorityOf(modules);
+  recordsAuthorityOf(modules);
   checkRequires(modules);
   const limitNames = new Map<string, string>();
   for (const m of modules) {

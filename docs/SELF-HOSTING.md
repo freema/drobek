@@ -62,8 +62,13 @@ short name `x` loads the package `drobek-module-x` from the server's
 dependencies). The server applies each module's migrations on start and
 refuses to start on a module it cannot load. Limits come from their env vars
 or, with `LIMITS_PROVIDER_URL` + `LIMITS_PROVIDER_SECRET`, from your own
-signed limits endpoint. The image ships the built-in `auth`, `email` and
-`forms` (`DROBEK_MODULES=auth,email,forms`; `forms` requires `email`). Module
+signed limits endpoint. The image ships the built-in `auth`, `email`,
+`forms` and `data` (`DROBEK_MODULES=auth,email,forms,data`; `forms` requires
+`email`). Enabling `data` on a server that stored records through the
+pre-module Data API imports them (collections → the app's data config,
+access modes → rules, live documents → records) and drops the old
+`collections` / `app_documents` tables in its first migration — back up the
+database first. An app's preview and production hosts share its records. Module
 e-mail uses the same SMTP settings as the dashboard login and is capped
 server-wide by `EMAIL_GLOBAL_HOURLY_MAX` (default 500 recipients per hour):
 past it, module e-mail pauses for `EMAIL_GLOBAL_PAUSE_MINUTES` and the log

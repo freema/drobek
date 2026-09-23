@@ -61,9 +61,8 @@ export function createServerApp(opts: ServerAppOptions): Express {
   });
   app.get(TLS_ASK_PATH, opts.tlsAsk ?? (createTlsAskHandler() as RequestHandler));
 
-  // Cap the MCP body above the data-layer per-document byte cap (+ JSON-RPC
-  // envelope headroom) so legitimate records reach the clean 413 from
-  // @drobek/data, while an abusive oversized body is rejected by the parser.
+  // Cap the MCP body (write_files batches + JSON-RPC envelope headroom) so an
+  // abusive oversized body is rejected by the parser.
   app.use('/mcp', express.json({ limit: '512kb' }));
   // RFC 9728 discovery + the Bearer-gated Streamable HTTP endpoint.
   mountMcpResource(app);

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { defineModule } from './contract.js';
-import { ModuleLoadError, checkRequires, endUserAuthorityOf, loadModules, mailAuthorityOf, packageNameFor, parseModuleList, resolveModule, validateModule } from './registry.js';
+import { ModuleLoadError, checkRequires, endUserAuthorityOf, loadModules, mailAuthorityOf, packageNameFor, parseModuleList, recordsAuthorityOf, resolveModule, validateModule } from './registry.js';
 import { echo, quiet } from './test/fixtures.js';
 
 const importer = (map: Record<string, unknown>) => async (pkg: string) => {
@@ -71,6 +71,26 @@ describe('registry', () => {
     expect(endUserAuthorityOf([quiet, one])).toBe(one);
     expect(endUserAuthorityOf([quiet])).toBeNull();
     expect(() => endUserAuthorityOf([one, two])).toThrow(/only one module may own end-user sessions/);
+    await expect(
+      loadModules({ DROBEK_MODULES: 'one,two' }, { importer: importer({ 'drobek-module-one': one, 'drobek-module-two': two }) })
+    ).rejects.toThrow(ModuleLoadError);
+  });
+
+  it('at most one module stores app records (records.* must be functions)', async () => {
+    const base = { version: '1.0.0', skill: { useWhen: 'x', markdown: '# x' }, configSchema: z.object({}), configDefaults: {} };
+    const records = {
+      collections: async () => [],
+      query: async () => ({ collection: { name: 'x', rules: {}, schema: null, columns: [], records: 0 }, records: [], total: 0, next_cursor: null }),
+      get: async () => null,
+      remove: async () => false,
+      csv: async function* () {},
+    };
+    const one = defineModule({ ...base, name: 'one', records });
+    const two = defineModule({ ...base, name: 'two', records });
+    expect(() => validateModule(defineModule({ ...base, name: 'bad', records: { ...records, csv: undefined } as never }))).toThrow(/records.csv/);
+    expect(recordsAuthorityOf([quiet, one])).toBe(one);
+    expect(recordsAuthorityOf([quiet])).toBeNull();
+    expect(() => recordsAuthorityOf([one, two])).toThrow(/only one module may store app records/);
     await expect(
       loadModules({ DROBEK_MODULES: 'one,two' }, { importer: importer({ 'drobek-module-one': one, 'drobek-module-two': two }) })
     ).rejects.toThrow(ModuleLoadError);

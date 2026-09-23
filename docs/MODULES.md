@@ -12,7 +12,7 @@ A module contributes, for every app on the server:
 | **Routes** | `/__drobek/v1/<name>/…` on every app host (preview and production) |
 | **SDK slice** | `drobek.<name>` in `/__drobek/sdk.js` (`import { drobek } from 'drobek'`) |
 | **Per-app config** | validated by a zod `configSchema`; set by agents with `configure_module` |
-| **Confirmation rules** | `confirmRequired(before, after)`: risky changes wait for the owner |
+| **Confirmation rules** | `confirmRequired(before, after, context)`: risky changes wait for the owner |
 | **Secrets** | names only; values are entered in the dashboard, never through MCP |
 | **Limits** | env-named numbers (`HELLO_WAVES_PER_MINUTE`), overridable per workspace |
 | **Tables** | a drizzle migrations folder with its own journal |
@@ -21,7 +21,7 @@ A module contributes, for every app on the server:
 ## Enabling modules
 
 ```sh
-DROBEK_MODULES=hello,auth,email,forms   # comma-separated; empty = no modules
+DROBEK_MODULES=hello,auth,email,forms,data   # comma-separated; empty = no modules
 ```
 
 Each entry resolves:
@@ -35,8 +35,9 @@ packages `drobek-module-<name>`, dependencies of `apps/server` (and so of the
 image). They load exactly like a third-party module: nothing in the registry
 knows them by name. Built in: [`auth`](#the-built-in-auth-module) (end-user
 sign-in), [`email`](#the-built-in-email-module) (notifications to the app's
-owners, the app's mail policy) and [`forms`](#the-built-in-forms-module)
-(form submissions; requires `email`).
+owners, the app's mail policy), [`forms`](#the-built-in-forms-module)
+(form submissions; requires `email`) and [`data`](#the-built-in-data-module)
+(collections of records with per-operation rules).
 
 Packages resolve from the **server's** install: `<cwd>/package.json` (`/app` in
 the image, `apps/server` in the dev stack), overridable with
@@ -49,14 +50,16 @@ export that is not a module, an invalid name, defaults that fail the schema,
 two modules with one name, a missing `sdk.entry`, a reserved name (`sdk`,
 `v1`, `drobek`, `internal`), a module whose `requires` is not enabled
 (`module "forms" requires the module "email": add it to DROBEK_MODULES
-(e.g. DROBEK_MODULES=…,email)`), two modules declaring `mail`. Nothing is
+(e.g. DROBEK_MODULES=…,email)`), two modules declaring `mail` (or
+`endUsers`, or `records`). Nothing is
 skipped silently. On start the log
 names the active modules (`platform modules ready`).
 
 The dev compose enables the example module and every built-in module
-(`DROBEK_MODULES=hello,auth,email,forms`, `HELLO_WAVES_PER_MINUTE=5`, relaxed
-`AUTH_*` limits because every local request shares one client IP); so does
-the e2e image compose.
+(`DROBEK_MODULES=hello,auth,email,forms,data`, `HELLO_WAVES_PER_MINUTE=5`,
+relaxed `AUTH_*` limits because every local request shares one client IP,
+`DATA_MAX_DOCS_PER_APP=5` so the quota e2e trips quickly); so does the e2e
+image compose.
 
 ## The contract
 
@@ -69,7 +72,7 @@ export default defineModule<Config>({
   skill: { useWhen, markdown },  // useWhen: ONE sentence starting with the situation
   configSchema,                  // zod; validates configure_module + the dashboard form
   configDefaults,                // the config of an app nobody configured (must pass the schema)
-  confirmRequired(before, after) { return [] }, // non-empty → the change waits for the owner
+  confirmRequired(before, after, { app, db }) { return [] }, // non-empty (or a Promise of it) → the change waits for the owner
   secrets: [{ name: 'HELLO_SIGNATURE', description, required?: boolean }],
   rules: { ops: { ping: 'public' } },           // operations shown in the rule editor
   limits: [{ env: 'HELLO_WAVES_PER_MINUTE', default: 30, meaning }],
@@ -82,6 +85,7 @@ export default defineModule<Config>({
   hooks: { onAppCreate(app, services) {}, onPublish(app, services) {} },
   endUsers: { current({ app, user, config, db, log }) {} },  // only the module that owns end-user sessions (auth)
   mail: { prepare(input) {} },   // only the module that owns the app's mail policy (email) — see "Module e-mail"
+  records: { collections, query, get, remove, csv }, // only the module that stores app records (data) — see "The records authority"
   requires: ['email'],           // other modules this one needs; missing → the server refuses to start
 });
 ```
@@ -262,6 +266,33 @@ Every `ctx.email.send` of every module goes through one path in core:
 5. an audit row `email.send` (actor end_user) with the module, the kind and
    the recipient count — never an address.
 
+### The records authority (the owner's view of app data)
+
+The one enabled module that declares `records` (the built-in `data`; two
+refuse the start) answers the app OWNER's questions about the app's stored
+records. Core calls it only after it authorized a drobek account for the app
+— MCP `query_data` (membership, viewer+) and the dashboard's Data tab (the
+workspace role; delete is editor+) — never for an app host request, so it
+bypasses the end-user rules. Each call gets a `RecordsView`: the ONE app,
+the module's effective config for it, `db` and `log`.
+
+```ts
+records: {
+  collections(view)          // → [{ name, rules, schema, columns, records }]
+  query(view, { collection, filter?, sort?, dir?, limit?, cursor? })
+                             // → { collection, records, total, next_cursor }
+  get(view, collection, id)  // → record | null
+  remove(view, collection, id) // → boolean (dashboard delete, editor+)
+  csv(view, { collection, filter?, sort?, dir? }) // → AsyncIterable of CSV lines (header first)
+}
+```
+
+An undeclared collection is a `not_found` ModuleError, a bad filter/sort an
+`invalid_request` (query_data maps them to `not_found` with the available
+collections and `invalid_params`). `ModuleRuntime.records(app)` binds the
+authority to one app (`BoundRecords`); without a records module it returns
+null and both surfaces answer 404.
+
 ## Per-app configuration
 
 Stored in `module_configs` (`app_id`, `module`, `config` jsonb, `pending`
@@ -284,6 +315,12 @@ single-writer lease, merges the patch, and validates the result. Then:
 - **something that looks like a secret value** (an API key, a private key, …)
   → `invalid_params`: secrets are set only in the dashboard;
 - **unchanged** → `{ applied: false, unchanged: true, … }`;
+`confirmRequired(before, after, context)` gets both configs VALID and
+effective, and `context = { app, db }`: the app (id, slug, workspace) and the
+configure transaction (the config row is locked) for read-only lookups — e.g.
+the data module asks whether a collection whose schema is being removed holds
+records. It may return a Promise.
+
 - **`confirmRequired` is empty** → written at once (audit `module.configure`,
   actor agent): `{ applied: true, config, pending_confirmation: [] }`;
 - **`confirmRequired` names changes** → stored as the app's pending change
@@ -412,6 +449,7 @@ expect(res).toMatchObject({ status: 200, body: { waves: 1 } });
 t.audits;   // [{ action: 'hello.…', meta }]
 t.emails;   // [{ to, subject, text, kind, fromName?, replyTo? }] (owners: ['…'] feeds { appOwners: true })
 t.setPrincipal({ kind: 'anon' });
+await t.confirm({}, { greeting: 'Ahoj' });   // confirmRequired over two config patches → ['greeting: …']
 ```
 
 Mutating requests send the app's `Origin` and `X-Drobek-SDK: 1` by default;
@@ -568,8 +606,8 @@ policy and a way to reach the app's owners. `skill_info('email')`.
     next_cursor }`, newest first;
   - `GET :form/submissions.csv` (rule `admin`) → `text/csv` attachment (≤ 10 000
     rows; columns `id, created_at` + every field name, sorted), cells through
-    `@drobek/data`'s CSV writer (formula prefixes `= + - @ tab CR` neutralized
-    with `'`); audit `forms.export` (form + row count).
+    `@drobek/core`'s CSV writer `csvLine` (formula prefixes `= + - @ tab CR`
+    neutralized with `'`); audit `forms.export` (form + row count).
   Every answer is `Cache-Control: no-store`; logs carry ids and counts, never
   field values.
 - **Config** `{ forms: { <name>: { rules: { submit }, notify: { emails,
@@ -590,6 +628,71 @@ policy and a way to reach the app's owners. `skill_info('email')`.
   `csvUrl(form)`; the inline source `drobek/forms`: `<Form name success
   onSuccess onError>` — a `<form>` with the hidden honeypot, the token fetched
   on mount, a `role="status"` success and a `role="alert"` error.
+
+## The built-in `data` module
+
+[`modules/data`](../modules/data) (`drobek-module-data`): per-app collections
+of JSON records with per-operation rules. `skill_info('data')`.
+
+- **Config** `{ collections: { <name>: { schema?, rules?: { read, create,
+  update, delete } } } }` (≤ 100 collections; names
+  `^[A-Za-z][A-Za-z0-9_-]{0,63}$`). Only declared collections exist —
+  anything else is `404 not_found`. A rule is `public | user | owner | admin
+  | none` joined with `|`; a rule left out takes the default
+  `{ read: 'owner|admin', create: 'user', update: 'owner|admin', delete:
+  'owner|admin' }` (each user sees and changes their own records, the app's
+  admins all). `schema` (optional JSON Schema, compiled with ajv at
+  configure time): every write is validated (`422 validation_failed` with
+  field `details`), and only its properties can be filtered and sorted on.
+- **Needs the owner's confirmation** (`confirmRequired`, uses the context's
+  db): any operation opened to `public` (except `read` of a NEW collection
+  that holds no records), `update` / `delete` opened to every signed-in user
+  (`user`), removing the `schema` of a collection that holds records.
+- **Routes** (`/__drobek/v1/data/…`, every app host; the preview and
+  production hosts share the app's records):
+  - `GET :collection?filter=<json>&sort=&dir=&limit=&cursor=` (rule `read`)
+    → `{ records, next_cursor }`, newest first by default, `limit` 1–200
+    (default 50), keyset cursor. Under a read rule with `owner` a signed-in
+    user who is not otherwise admitted lists exactly their own records;
+  - `POST :collection` (rule `create`) → `201` the record;
+  - `GET :collection/:id` (`read`), `PATCH :collection/:id` (`update`,
+    shallow merge), `DELETE :collection/:id` (`delete`) → the record /
+    `{ id, deleted: true }`;
+  - `GET :collection/export.csv?filter=&sort=&dir=` (rule `admin`) →
+    `text/csv` attachment through `@drobek/core` `csvLine` (formulas
+    neutralized), audit `data.export`.
+  A record is `{ _id, _owner, _created_at, _updated_at, …fields }`. The `_…`
+  fields are the server's: sent by a client they are dropped. `_owner` is the
+  principal's id at create time (null for a visitor) and never changes;
+  `owner` rules compare it with the caller's end-user id. For get / update /
+  delete a visitor gets `401` before the lookup when the rule can never admit
+  them; then `404` for a missing record; then the rule against the stored
+  owner (`403`).
+- **Filters** (injection-safe, `query-build.ts`): `{ field: value }` or
+  `{ field: { eq|ne|gt|gte|lt|lte|in|contains: value } }`, scalar values
+  (strings ≤ 500 characters, `in` ≤ 50 values), ≤ 8 conditions; with a
+  schema only its properties, without one identifier-shaped names, never
+  `_…`. Field names and values are always bound SQL parameters.
+- **Limits** (on every write, whatever the rules): `DATA_MAX_DOC_BYTES`
+  (100 KiB, `413 payload_too_large`), `DATA_MAX_DOCS_PER_APP` (10 000) and
+  `DATA_MAX_BYTES_PER_APP` (50 MiB) → `409 quota_exceeded` (exact under a
+  per-app advisory lock), `DATA_WRITE_RATE_LIMIT` per
+  `DATA_WRITE_RATE_WINDOW_MS` (120 / 60 s per app, `429 rate_limited`).
+- **Records authority** → MCP `query_data` (scope `read`, ≤ 100 records,
+  `untrusted: true` inside a nonce envelope) and the dashboard Data tab.
+- **Table** `mod_data_documents (id, app_id, collection, owner_id, doc jsonb,
+  bytes, created_at, updated_at)`, cascade on app delete. Its first migration
+  imports the pre-module Data API (core tables `collections` +
+  `app_documents`): every collection becomes a declared collection (schema
+  kept; `access_mode` → rules: `public-read` → `{read: public, create /
+  update / delete: admin}`, `public-write` → `{read: public, create: public,
+  update / delete: admin}`, `locked` → all `admin`, `owner-only` →
+  `{read: owner|admin, create: user, update / delete: owner|admin}`), every
+  live document a record; then the old tables and enum are dropped. Every
+  statement is re-runnable.
+- **SDK** `drobek.data.collection<T>(name)` → `list(opts)`, `get(id)`,
+  `create(fields)`, `update(id, fields)`, `remove(id)`, `exportCsvUrl(opts)`;
+  the types (`Doc<T>`, `Filter<T>`, `Page<T>`) are in `/__drobek/sdk.d.ts`.
 
 ## The example: `drobek-module-hello`
 

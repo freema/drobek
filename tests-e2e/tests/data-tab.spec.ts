@@ -9,16 +9,16 @@ import { type McpClient, mcpClient } from './helpers/mcp';
 import {
   addMembership,
   seedApp as seedAppRow,
-  seedCollection,
-  seedDocuments,
+  seedDataCollections,
+  seedRecords,
   userIdByEmail,
   workspaceIdBySlug,
 } from './helpers/seed';
 
 /**
- * M1b acceptance (PHY-121): the dashboard Data tab (lite). Seed a collection +
- * records straight into Postgres (the MCP data tools are gone since NSO-283;
- * the Data tab still reads the same tables) on an app SEEDED via SQL, then
+ * The dashboard Data tab — the owner's view of the data module's records
+ * (M1-03). Seed collections (the app's data config) + records straight into
+ * Postgres on an app SEEDED via SQL, then
  * drive the dashboard UI as the workspace admin: the collections list, the
  * collection table (schema columns, newest-first), a filter + sort round-trip
  * through the query API, a server-streamed CSV export of the filtered rows, a
@@ -49,21 +49,19 @@ interface SeededApp {
 
 /**
  * Seed a throwaway app in the user's personal workspace, a `todos` collection
- * (LOCKED — the member-view still reads it) + an owner-only `private_notes`
- * collection (the dashboard may list/read it regardless of mode), and 4 todos.
- * `delta` carries an extra non-schema key to exercise the per-row expander.
+ * (admin-only rules — the owner's view still reads it) + an owner-only
+ * `private_notes` collection (listed/read regardless of the end-user rules),
+ * and 4 todos. `delta` carries an extra non-schema key to exercise the
+ * per-row expander.
  */
 async function seedApp(mcp: McpClient): Promise<SeededApp> {
   const workspaceId = await workspaceIdBySlug(mcp.workspace);
   const row = await seedAppRow({ workspaceId });
-  await seedCollection({ appId: row.id, name: 'todos', jsonSchema: SCHEMA, accessMode: 'locked' });
-  await seedCollection({
-    appId: row.id,
-    name: 'private_notes',
-    jsonSchema: SCHEMA,
-    accessMode: 'owner-only',
+  await seedDataCollections(row.id, {
+    todos: { schema: SCHEMA, rules: { read: 'admin', create: 'admin', update: 'admin', delete: 'admin' } },
+    private_notes: { schema: SCHEMA, rules: { read: 'owner|admin', create: 'user', update: 'owner|admin', delete: 'owner|admin' } },
   });
-  const ids = await seedDocuments(row.id, 'todos', [
+  const ids = await seedRecords(row.id, 'todos', [
     { title: 'alpha', done: false, priority: 3 },
     { title: 'bravo', done: true, priority: 1 },
     { title: 'charlie', done: false, priority: 2 },
@@ -107,21 +105,24 @@ test('data tab: collections → table → filter/sort round-trip → CSV → rec
     '4'
   );
   await expect(
-    todosRow.locator('[data-testid="collection-access"]')
-  ).toContainText('locked');
+    todosRow.locator('[data-testid="collection-rules"]')
+  ).toContainText('read admin · create admin · update admin · delete admin');
 
-  // The owner-only collection is listed with its mode + 0 records — proof the
-  // member-view is NOT the anon access-mode gate (that path rejects owner-only).
+  // The owner-only collection is listed with its rules + 0 records — the
+  // owner's view is NOT the end-user rule gate.
   const ownerRow = page.locator(
     '[data-testid="collection-row"][data-collection="private_notes"]'
   );
   await expect(
-    ownerRow.locator('[data-testid="collection-access"]')
-  ).toContainText('owner-only');
+    ownerRow.locator('[data-testid="collection-rules"]')
+  ).toContainText('read owner|admin');
   await expect(ownerRow.locator('[data-testid="collection-count"]')).toContainText(
     '0'
   );
-  // …and its (empty) table opens rather than 501-ing.
+  // …and its (empty) table opens rather than 501-ing. Let React Router's
+  // lazy route discovery (/__manifest for the links on the page) settle first:
+  // a goto that aborts it logs "Failed to fetch manifest patches".
+  await page.waitForLoadState('networkidle');
   await page.goto(`/workspaces/${ws}/apps/${app}/data/private_notes`);
   await expect(page.locator('[data-testid="records-empty"]')).toBeVisible();
 
@@ -136,7 +137,7 @@ test('data tab: collections → table → filter/sort round-trip → CSV → rec
     'delta'
   );
 
-  // ── FILTER (done=true) + SORT (priority asc) round-trip via the U10 query ────
+  // ── FILTER (done=true) + SORT (priority asc) round-trip via the records query ─
   await page.locator('[data-testid="filter-field"]').selectOption('done');
   await page.locator('[data-testid="filter-value"]').fill('true');
   await page.locator('[data-testid="sort-field"]').selectOption('priority');
@@ -158,10 +159,10 @@ test('data tab: collections → table → filter/sort round-trip → CSV → rec
   expect(csvRes.headers()['content-type']).toContain('text/csv');
   expect(csvRes.headers()['content-disposition']).toContain('attachment');
   const lines = (await csvRes.text()).trim().split(/\r?\n/);
-  expect(lines[0]).toBe('title,done,priority');
+  expect(lines[0]).toBe('_id,_owner,_created_at,_updated_at,title,done,priority');
   expect(lines).toHaveLength(3); // header + the 2 filtered rows
-  expect(lines[1]).toBe('bravo,true,1');
-  expect(lines[2]).toBe('delta,true,4');
+  expect(lines[1]).toMatch(/^rec[0-9a-f]{24},,[^,]+,[^,]+,bravo,true,1$/);
+  expect(lines[2]).toMatch(/,delta,true,4$/);
 
   // ── RECORD VIEWER (read-only JSON) ───────────────────────────────────────────
   await filtered.nth(0).locator('[data-testid="record-view"]').click();
@@ -172,7 +173,7 @@ test('data tab: collections → table → filter/sort round-trip → CSV → rec
   await page.locator('[data-testid="record-close"]').click();
   await expect(page.locator('[data-testid="record-modal"]')).toHaveCount(0);
 
-  // ── DELETE (confirm) → bravo disappears (soft-deleted), filter preserved ─────
+  // ── DELETE (confirm) → bravo disappears (deleted), filter preserved ──────────
   await filtered.nth(0).locator('[data-testid="delete-link"]').click();
   await page.locator('[data-testid="delete-confirm"]').click();
   await page.waitForURL(/field=done/);
