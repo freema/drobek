@@ -1,7 +1,8 @@
 /**
  * drobek server entry — the ONE process of the self-hostable image (M0-01).
  *
- * Boot order: refuse insecure secrets (PHY-76 #6) or an invalid APPS_DOMAIN → apply core migrations →
+ * Boot order: refuse insecure secrets (PHY-76 #6), an invalid APPS_DOMAIN,
+ * TRUST_PROXY or TLS_ASK_TOKEN → apply core migrations →
  * mount the app-host dispatcher (M0-06), then React Router (Vite middleware in
  * dev, `build/server` in production) behind the MCP resource → start
  * background jobs + the serve-cache subscriber → listen.
@@ -13,15 +14,25 @@ import { createRequestHandler } from '@react-router/express';
 import type { RequestHandler } from 'express';
 import type { ServerBuild } from 'react-router';
 import { appsOriginConfigError } from '@drobek/apps';
+import { trustProxyConfigError } from '@drobek/auth';
 import { createConsoleLogger, secretsConfigError } from '@drobek/core';
 import { runCoreMigrations } from '@drobek/db';
-import { ServeStore, createAppsHostMiddleware, subscribeServeCache } from '@drobek/serving';
+import {
+  ServeStore,
+  createAppsHostMiddleware,
+  subscribeServeCache,
+  tlsAskConfigError,
+} from '@drobek/serving';
 import { createServerApp } from './app.js';
 import { startBackgroundJobs } from './jobs.js';
 
 const log = createConsoleLogger('drobek');
 
-const configError = secretsConfigError(process.env) ?? appsOriginConfigError(process.env);
+const configError =
+  secretsConfigError(process.env) ??
+  appsOriginConfigError(process.env) ??
+  trustProxyConfigError(process.env) ??
+  tlsAskConfigError(process.env);
 if (configError) {
   console.error(configError);
   process.exit(1);

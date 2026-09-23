@@ -12,6 +12,7 @@ export const SECRET_ENV_VARS = [
   'DROBEK_MASTER_KEY',
   'SMTP_PASS',
   'GOOGLE_CLIENT_SECRET',
+  'TLS_ASK_TOKEN',
 ] as const;
 
 /** Secrets a production instance cannot run without. */

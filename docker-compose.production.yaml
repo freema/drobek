@@ -1,0 +1,114 @@
+# drobek — production / self-host stack (M0-07): drobek + postgres + redis +
+# caddy (TLS). For self-hosters and the SaaS VPS (M0-09). See
+# docs/SELF-HOSTING.md.
+#
+#   1. .env next to this file (never committed): the variables below marked
+#      REQUIRED plus everything drobek needs (see .env.example).
+#   2. task caddy:config            → deployments/Caddyfile (from .env)
+#   3. docker compose -f docker-compose.production.yaml up -d --wait
+#
+# No secret is written in this file: values come from .env (interpolation and
+# env_file). Only Caddy publishes ports; drobek, postgres and redis are
+# reachable on the internal network only.
+name: drobek
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: drobek
+      POSTGRES_DB: drobek
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env (openssl rand -hex 24)}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U drobek -d drobek']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  drobek:
+    image: ${DROBEK_IMAGE:-ghcr.io/freema/drobek:latest}
+    restart: unless-stopped
+    # Everything drobek reads (DROBEK_MASTER_KEY, SMTP_*, PUBLIC_APP_URL,
+    # APPS_DOMAIN, TLS_ASK_TOKEN, …) comes from .env.
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://drobek:${POSTGRES_PASSWORD:?}@postgres:5432/drobek
+      REDIS_URL: redis://redis:6379
+      PORT: '3000'
+      # Behind Caddy: only its X-Real-IP (the TCP peer) identifies the client.
+      TRUST_PROXY: x-real-ip
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:?set PUBLIC_APP_URL in .env (https://your-dashboard-host)}
+      APPS_DOMAIN: ${APPS_DOMAIN:?set APPS_DOMAIN in .env (apps live on *.<APPS_DOMAIN>)}
+    # The image's own HEALTHCHECK probes /healthz (db + redis).
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  caddy:
+    # Stock Caddy by default. For DNS-01 (TLS_DNS_PROVIDER) set
+    # CADDY_BUILD_TARGET=dns and CADDY_DNS_MODULE=github.com/caddy-dns/<provider>,
+    # then `docker compose -f docker-compose.production.yaml build caddy`.
+    image: ${CADDY_IMAGE:-drobek-caddy:local}
+    build:
+      context: .
+      dockerfile: deployments/Dockerfile.caddy
+      target: ${CADDY_BUILD_TARGET:-official}
+      args:
+        CADDY_DNS_MODULE: ${CADDY_DNS_MODULE:-}
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    environment:
+      # Substituted into the on-demand `ask` URL when Caddy loads the config
+      # ({$TLS_ASK_TOKEN} in the Caddyfile). Must equal drobek's value.
+      TLS_ASK_TOKEN: ${TLS_ASK_TOKEN:-}
+    # DNS provider credentials ONLY (referenced as {env.NAME} in
+    # TLS_DNS_PROVIDER_ARGS) — Caddy never sees drobek's .env secrets.
+    env_file:
+      - path: .env.caddy
+        required: false
+    volumes:
+      - ./deployments/Caddyfile:/etc/caddy/Caddyfile:ro
+      # ACME account, issued certificates, the local CA — back this up.
+      - caddy_data:/data
+      - caddy_config:/config
+      # Operator-supplied wildcard certificate (TLS_WILDCARD_CERT_FILE /
+      # TLS_WILDCARD_KEY_FILE point inside /certs). After renewing the files:
+      # `task tls:reload`.
+      - ${TLS_CERTS_DIR:-./certs}:/certs:ro
+    healthcheck:
+      # The TLS listener is up (a port probe — polling the admin API would log
+      # every probe at info level).
+      test: ['CMD-SHELL', 'nc -z -w 3 127.0.0.1 443 || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    depends_on:
+      drobek:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
+  caddy_data:
+  caddy_config:

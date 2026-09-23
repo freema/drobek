@@ -16,3 +16,8 @@ coverage
 tests-e2e/playwright-report
 tests-e2e/test-results
 docs
+
+# TLS material + generated Caddy config (M0-07) — never in the image build context
+.caddy
+certs
+deployments/Caddyfile

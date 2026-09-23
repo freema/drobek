@@ -11,6 +11,7 @@ import { apps, users, workspaces } from '@drobek/db';
 import { handleAppRequest, type AppRequest, type HandlerDeps } from './handler.js';
 import { ServeStore, dbLoaders } from './store.server.js';
 import { subscribeServeCache } from './subscriber.server.js';
+import { appSlugIsLive } from './tls-ask.server.js';
 import { freshDb, type TestDb } from './test/db.js';
 
 let db: TestDb;
@@ -68,6 +69,18 @@ describe('dbLoaders.resolve', () => {
     await write(app.id, 'x');
     await db.update(apps).set({ deletedAt: new Date() }).where(eq(apps.id, app.id));
     expect(await dbLoaders.resolve({ kind: 'preview', slug: 'gone-app' })).toEqual({ app: null, version: null });
+  });
+
+  it('appSlugIsLive (the TLS ask lookup): live → true; deleted, hibernated, unknown → false', async () => {
+    const live = await createApp({ workspaceId: wsId, slug: 'ask-live', actor });
+    const gone = await createApp({ workspaceId: wsId, slug: 'ask-gone', actor });
+    const asleep = await createApp({ workspaceId: wsId, slug: 'ask-asleep', actor });
+    await db.update(apps).set({ deletedAt: new Date() }).where(eq(apps.id, gone.id));
+    await db.update(apps).set({ status: 'hibernated' }).where(eq(apps.id, asleep.id));
+    expect(await appSlugIsLive(live.slug)).toBe(true);
+    expect(await appSlugIsLive('ask-gone')).toBe(false);
+    expect(await appSlugIsLive('ask-asleep')).toBe(false);
+    expect(await appSlugIsLive('ask-never')).toBe(false);
   });
 
   it('loads files of both kinds, blobs by hash and the password hash', async () => {

@@ -29,6 +29,9 @@ export {
   createEmailLoginCode,
   consumeEmailLoginCode,
   getClientIp,
+  trustProxyConfigError,
+  trustProxyMode,
+  type TrustProxyMode,
 } from './email-code.server.js';
 export {
   otpGuardLimitsFromEnv,

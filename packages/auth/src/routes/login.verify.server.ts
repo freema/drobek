@@ -35,8 +35,8 @@ const GENERIC_CODE_ERROR =
 // holds even against botnets / spoofed X-Forwarded-For); this bounds how hard a
 // single source can hammer the endpoint for enumeration/load. Generous enough
 // never to reach a legitimate user (verifies follow an IP-throttled send).
-// NOTE: keyed on getClientIp, which currently trusts the leftmost XFF hop
-// (PHY-76 #4) — tighten alongside that fix.
+// Keyed on getClientIp (TRUST_PROXY decides which proxy header is trusted);
+// a request without a resolvable IP falls into one shared bucket (NSO-309).
 const VERIFY_IP_LIMIT = 30;
 const VERIFY_WINDOW_MS = 15 * 60_000;
 

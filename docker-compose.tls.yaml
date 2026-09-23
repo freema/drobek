@@ -1,0 +1,57 @@
+# `task dev:tls` — the dev stack (docker-compose.yml) behind Caddy with
+# `tls internal` (M0-07). An OVERRIDE file, never used alone:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.tls.yaml up -d --wait
+#
+# Caddy terminates TLS with its local CA on
+#   https://localhost              → the dashboard / OAuth / MCP
+#   https://<slug>--preview.apps.localhost  → the app hosts
+# and proxies to drobek:3000 with X-Real-IP set from the TCP peer. drobek is
+# switched to the https, port-less URLs and TRUST_PROXY=x-real-ip. Plain
+# `task up` (without this file) keeps the HTTP-only dev stack on :3041.
+#
+# DEV_TLS_PORT (default 443) is the host AND in-container TLS port; with a
+# port other than 443 every URL carries it (https://localhost:8443). The
+# Taskfile sets DEV_TLS_SUFFIX ("" or ":<port>") and generates
+# .caddy/Caddyfile.dev before starting.
+services:
+  drobek:
+    environment:
+      PUBLIC_APP_URL: https://localhost${DEV_TLS_SUFFIX:-}
+      PUBLIC_ORIGIN: https://localhost${DEV_TLS_SUFFIX:-}
+      APPS_DOMAIN: apps.localhost${DEV_TLS_SUFFIX:-}
+      APPS_URL_SCHEME: https
+      # Behind Caddy: only its X-Real-IP identifies the client (getClientIp).
+      TRUST_PROXY: x-real-ip
+      # Dev-only value (never use it anywhere else). The internal-CA Caddyfile
+      # does not use on-demand TLS, but the ask endpoint is live for testing:
+      #   docker compose exec caddy wget -qO- "http://drobek:3000/api/internal/tls/ask?token=$TOKEN&domain=x.apps.localhost"
+      TLS_ASK_TOKEN: ${DEV_TLS_ASK_TOKEN:-dev-only-tls-ask-token-0123456789abcdef}
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: drobek-caddy
+    ports:
+      - '${DEV_TLS_PORT:-443}:${DEV_TLS_PORT:-443}'
+    environment:
+      TLS_ASK_TOKEN: ${DEV_TLS_ASK_TOKEN:-dev-only-tls-ask-token-0123456789abcdef}
+    volumes:
+      - ./.caddy/Caddyfile.dev:/etc/caddy/Caddyfile:ro
+      - caddy_dev_data:/data
+      - caddy_dev_config:/config
+    healthcheck:
+      # The TLS listener is up (a port probe — polling the admin API would log
+      # every probe at info level).
+      test: ['CMD-SHELL', 'nc -z -w 3 127.0.0.1 ${DEV_TLS_PORT:-443} || exit 1']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    depends_on:
+      drobek:
+        condition: service_healthy
+
+volumes:
+  # Caddy's local CA (root.crt) + issued certs survive restarts, so a root you
+  # trusted once stays valid.
+  caddy_dev_data:
+  caddy_dev_config:

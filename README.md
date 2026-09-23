@@ -127,6 +127,13 @@ EMAIL=you@example.com NAME=laptop SCOPES=read,write` prints a personal `drk_…`
 API key once (for an existing user of the local stack); send it as
 `Authorization: Bearer drk_…` to `/mcp`.
 
+**Production / TLS:** `docker-compose.production.yaml` runs drobek behind
+Caddy (dashboard + wildcard `*.<APPS_DOMAIN>`: your own wildcard cert, DNS-01
+with a Caddy DNS module, or on-demand per host behind an `ask` guard). The
+Caddyfile is generated from `.env` by `task caddy:config`; `task dev:tls` runs
+the dev stack on `https://localhost` / `https://<slug>--preview.apps.localhost`
+with Caddy's local CA. See [`docs/SELF-HOSTING.md`](./docs/SELF-HOSTING.md).
+
 `docker compose down -v` wipes the volumes (postgres, redis) for a clean
 start; `docker compose down` keeps your data.
 
@@ -142,6 +149,9 @@ task prod:proof   # build + prove the prod image (size, non-root, fail-closed, l
 task e2e          # Playwright suite (incl. @local specs) vs the stack
 task e2e:smoke    # read-only @smoke specs only (safe against any target)
 task api-key:create EMAIL=… NAME=… SCOPES=read,write  # print a drk_ API key once (local stack)
+task dev:tls      # dev stack behind Caddy (tls internal) on https://localhost; task dev:tls:down to leave
+task caddy:config # generate deployments/Caddyfile from .env (production TLS)
+task tls:reload   # make the running Caddy re-read its config + certificate files
 task db:generate  # drizzle-kit generate (journal __drizzle_migrations_core)
 task db:migrate   # apply core migrations manually
 task down         # docker compose down

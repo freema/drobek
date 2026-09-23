@@ -3,6 +3,7 @@ import type { RequestHandler } from 'express';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createServerApp } from './app.js';
 
+const ASK_TOKEN = 't'.repeat(40);
 let server: Server;
 let baseUrl: string;
 
@@ -19,6 +20,7 @@ beforeAll(async () => {
   process.env.PUBLIC_APP_URL = 'http://drobek.test';
   process.env.APPS_DOMAIN = 'apps.drobek.test';
   delete process.env.PUBLIC_MCP_URL;
+  process.env.TLS_ASK_TOKEN = ASK_TOKEN;
   server = createServerApp({ rrHandler }).listen(0, '127.0.0.1');
   await new Promise<void>((resolve) => server.once('listening', resolve));
   const address = server.address();
@@ -141,5 +143,28 @@ describe('apps origin dispatch + dashboard CSRF (M0-06)', () => {
     // The token endpoint is exempt (native / web MCP clients call it cross-origin).
     const token = await raw('POST', '/oauth/token', { Host: 'drobek.test', Origin: 'https://claude.ai' });
     expect(JSON.parse(token.body)).toMatchObject({ rr: true });
+  });
+});
+
+describe('Caddy TLS ask endpoint (M0-07)', () => {
+  const path = (token: string, domain: string) =>
+    `/api/internal/tls/ask?token=${token}&domain=${encodeURIComponent(domain)}`;
+
+  it('is mounted before React Router on the internal host', async () => {
+    const wrong = await raw('GET', path('nope', 'x.apps.drobek.test'), { Host: 'drobek:3000' });
+    expect(wrong.status).toBe(401);
+    expect(wrong.body).not.toContain('"rr":true');
+    const foreign = await raw('GET', path(ASK_TOKEN, 'x.example.com'), { Host: 'drobek:3000' });
+    expect(foreign.status).toBe(404);
+    expect(foreign.body).toBe('not found');
+  });
+
+  it('is never answered on the public dashboard host or an app host', async () => {
+    const dash = await raw('GET', path(ASK_TOKEN, 'x.example.com'), { Host: 'drobek.test' });
+    expect(dash.status).toBe(404);
+    expect(dash.body).toBe('not found');
+    const appHost = await raw('GET', path(ASK_TOKEN, 'x.example.com'), { Host: 'apps.drobek.test' });
+    expect(appHost.status).toBe(404);
+    expect(appHost.body).not.toBe('not found');
   });
 });

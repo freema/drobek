@@ -1,7 +1,7 @@
 import { createOriginCheckMiddleware } from '@drobek/auth';
 import { coreVersion } from '@drobek/core';
 import { mountMcpResource } from '@drobek/oauth/resource';
-import { createAppsHostMiddleware } from '@drobek/serving';
+import { TLS_ASK_PATH, createAppsHostMiddleware, createTlsAskHandler } from '@drobek/serving';
 import express, {
   type Express,
   type NextFunction,
@@ -26,6 +26,8 @@ export interface ServerAppOptions {
    * app-changed events.
    */
   appsHost?: RequestHandler;
+  /** Caddy's on-demand TLS `ask` handler (M0-07). Default: from TLS_ASK_TOKEN. */
+  tlsAsk?: RequestHandler;
 }
 
 /**
@@ -38,7 +40,8 @@ export interface ServerAppOptions {
  *     never reaches anything below — no dashboard route, no /mcp, no session
  *     code. The dashboard host never serves app files (there is no app route).
  *  2. the Origin check (CSRF) for every mutating dashboard request;
- *  3. health/version, then `/mcp` (with `express.json()` scoped to it, because
+ *  3. health/version, Caddy's TLS `ask` endpoint (M0-07 — token-guarded,
+ *     internal network only, blocked by Caddy on every public site), then `/mcp` (with `express.json()` scoped to it, because
  *     React Router actions must read the raw body), then React Router.
  */
 export function createServerApp(opts: ServerAppOptions): Express {
@@ -56,6 +59,7 @@ export function createServerApp(opts: ServerAppOptions): Express {
   app.get('/version', (_req, res) => {
     res.json(coreVersion());
   });
+  app.get(TLS_ASK_PATH, opts.tlsAsk ?? (createTlsAskHandler() as RequestHandler));
 
   // Cap the MCP body above the data-layer per-document byte cap (+ JSON-RPC
   // envelope headroom) so legitimate records reach the clean 413 from

@@ -19,6 +19,8 @@ import {
   createEmailLoginCode,
   generateLoginCode,
   getClientIp,
+  trustProxyConfigError,
+  trustProxyMode,
   normalizeAuthEmail,
 } from './email-code.server.js';
 
@@ -218,5 +220,51 @@ describe('getClientIp (trusts the proxy, not the client — PHY-76 #4)', () => {
 
   it('returns undefined when no proxy header is present', () => {
     expect(getClientIp(req({}))).toBeUndefined();
+  });
+});
+
+describe('getClientIp with TRUST_PROXY=x-real-ip (behind Caddy — M0-07)', () => {
+  const caddy = { TRUST_PROXY: 'x-real-ip' } as NodeJS.ProcessEnv;
+  function req(headers: Record<string, string>): Request {
+    return new Request('https://drobek.app/login/verify', { headers });
+  }
+
+  it('returns the X-Real-IP Caddy set (IPv4 and IPv6)', () => {
+    expect(getClientIp(req({ 'x-real-ip': '203.0.113.7' }), caddy)).toBe('203.0.113.7');
+    expect(getClientIp(req({ 'x-real-ip': '2001:db8::1' }), caddy)).toBe('2001:db8::1');
+  });
+
+  it('never falls back to X-Forwarded-For (not even the rightmost hop)', () => {
+    expect(getClientIp(req({ 'x-forwarded-for': '1.1.1.1, 203.0.113.7' }), caddy)).toBeUndefined();
+  });
+
+  it('prefers X-Real-IP over any X-Forwarded-For chain', () => {
+    const r = req({ 'x-real-ip': '203.0.113.7', 'x-forwarded-for': '1.1.1.1' });
+    expect(getClientIp(r, caddy)).toBe('203.0.113.7');
+  });
+
+  it('rejects an X-Real-IP that is not a literal IP address', () => {
+    expect(getClientIp(req({ 'x-real-ip': '1.1.1.1, 2.2.2.2' }), caddy)).toBeUndefined();
+    expect(getClientIp(req({ 'x-real-ip': 'evil.example' }), caddy)).toBeUndefined();
+  });
+
+  it('unset / auto keeps the PHY-76 #4 behaviour', () => {
+    const r = req({ 'x-forwarded-for': '1.1.1.1, 203.0.113.7' });
+    expect(getClientIp(r, {})).toBe('203.0.113.7');
+    expect(getClientIp(r, { TRUST_PROXY: 'auto' })).toBe('203.0.113.7');
+  });
+});
+
+describe('trustProxyMode / trustProxyConfigError', () => {
+  it('accepts unset, auto and x-real-ip (case-insensitive)', () => {
+    expect(trustProxyMode({})).toBe('auto');
+    expect(trustProxyMode({ TRUST_PROXY: '' })).toBe('auto');
+    expect(trustProxyMode({ TRUST_PROXY: 'X-Real-IP' })).toBe('x-real-ip');
+    expect(trustProxyConfigError({ TRUST_PROXY: 'x-real-ip' })).toBeNull();
+  });
+
+  it('refuses an unknown value at startup', () => {
+    expect(trustProxyMode({ TRUST_PROXY: 'true' })).toBeNull();
+    expect(trustProxyConfigError({ TRUST_PROXY: 'true' })).toMatch(/TRUST_PROXY must be one of/);
   });
 });

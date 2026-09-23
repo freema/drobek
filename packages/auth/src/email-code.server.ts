@@ -17,6 +17,7 @@
  * the verify-side rate limit in login.verify.server.ts.
  */
 import { createHash, randomInt } from 'node:crypto';
+import { isIP } from 'node:net';
 import { getRedis } from '@drobek/core';
 
 export const CODE_TTL_S = 10 * 60;
@@ -129,6 +130,33 @@ export async function consumeEmailLoginCode(
 }
 
 /**
+ * How far the client-IP headers are trusted (`TRUST_PROXY`, M0-07):
+ *
+ * - `auto` (unset — the PHY-76 #4 behaviour): prefer `X-Real-IP`, fall back to
+ *   the RIGHTMOST `X-Forwarded-For` hop. Right for an nginx front that sets
+ *   `X-Real-IP $remote_addr` and appends to XFF.
+ * - `x-real-ip`: drobek sits behind the bundled Caddy (or any proxy that
+ *   OVERWRITES `X-Real-IP` with the TCP peer). Only `X-Real-IP` is read, it
+ *   must be a literal IP address, and `X-Forwarded-For` is ignored entirely.
+ */
+export type TrustProxyMode = 'auto' | 'x-real-ip';
+
+const TRUST_PROXY_MODES: readonly TrustProxyMode[] = ['auto', 'x-real-ip'];
+
+/** The configured mode; null when TRUST_PROXY holds an unknown value. */
+export function trustProxyMode(env: NodeJS.ProcessEnv = process.env): TrustProxyMode | null {
+  const raw = env.TRUST_PROXY?.trim().toLowerCase();
+  if (!raw) return 'auto';
+  return (TRUST_PROXY_MODES as readonly string[]).includes(raw) ? (raw as TrustProxyMode) : null;
+}
+
+/** Startup check: a human-readable error, or null when TRUST_PROXY is valid. */
+export function trustProxyConfigError(env: NodeJS.ProcessEnv = process.env): string | null {
+  if (trustProxyMode(env) !== null) return null;
+  return `drobek refuses to start: TRUST_PROXY must be one of ${TRUST_PROXY_MODES.join(', ')} (or unset).`;
+}
+
+/**
  * Best-effort client IP for per-IP rate limits. Trusts the reverse proxy, NOT
  * the client (PHY-76 #4):
  *
@@ -142,12 +170,22 @@ export async function consumeEmailLoginCode(
  *   (the old code returned exactly that leftmost entry, voiding every per-IP
  *   limit via a spoofed header).
  *
+ * With `TRUST_PROXY=x-real-ip` (behind the bundled Caddy, which sets
+ * `header_up X-Real-IP {remote_host}`) ONLY X-Real-IP counts, and only when it
+ * is a literal IP — the fallback chain is never consulted.
+ *
  * With no proxy in front (direct exposure), no header is trustworthy and this
  * returns whatever is present — per-IP limits are inherently weak there; the
- * recommended deployment runs behind nginx.
+ * recommended deployment runs behind Caddy or nginx.
  */
-export function getClientIp(request: Request): string | undefined {
+export function getClientIp(
+  request: Request,
+  env: NodeJS.ProcessEnv = process.env
+): string | undefined {
   const real = request.headers.get('x-real-ip')?.trim();
+  if (trustProxyMode(env) === 'x-real-ip') {
+    return real && isIP(real) !== 0 ? real : undefined;
+  }
   if (real) return real;
   const xff = request.headers.get('x-forwarded-for');
   if (xff) {

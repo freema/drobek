@@ -19,3 +19,14 @@ export {
   REQUIRED_PRODUCTION_SECRETS,
   type SecretProblem,
 } from './secrets-config.js';
+export {
+  TLS_ASK_PATH,
+  TLS_ASK_TOKEN_MIN_LENGTH,
+  caddyConfigFromEnv,
+  caddyfileFromEnv,
+  isValidTlsAskToken,
+  renderCaddyfile,
+  type CaddyConfig,
+  type CaddyConfigResult,
+  type CaddyTlsMode,
+} from './caddy.js';

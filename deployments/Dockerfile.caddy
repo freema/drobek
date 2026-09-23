@@ -1,0 +1,38 @@
+# syntax=docker/dockerfile:1.7
+# ============================================================================
+# Caddy for drobek (M0-07). Two targets:
+#
+#   official  — the stock Caddy image, unchanged (TLS_INTERNAL, wildcard cert
+#               files, or on-demand TLS need nothing else). Default.
+#   dns       — Caddy rebuilt with ONE DNS provider module via xcaddy, for a
+#               wildcard certificate over ACME DNS-01 (TLS_DNS_PROVIDER):
+#
+#     docker build -f deployments/Dockerfile.caddy --target dns \
+#       --build-arg CADDY_DNS_MODULE=github.com/caddy-dns/<provider> .
+#
+# Available modules: https://github.com/caddy-dns (check that your DNS host has
+# one BEFORE relying on it — if it does not, delegate `_acme-challenge` with a
+# CNAME to a zone at a provider that does; see docs/SELF-HOSTING.md).
+# BuildKit only builds the stages the chosen target needs, so `official` never
+# runs xcaddy.
+# ============================================================================
+ARG CADDY_VERSION=2
+
+FROM caddy:${CADDY_VERSION}-builder-alpine AS builder
+ARG CADDY_DNS_MODULE=
+# A Go module path, optionally @version — nothing else reaches the shell.
+RUN case "$CADDY_DNS_MODULE" in \
+      "") echo "CADDY_DNS_MODULE is required for the dns target (e.g. github.com/caddy-dns/<provider>)" >&2; exit 1 ;; \
+      *[!A-Za-z0-9._/@-]*) echo "CADDY_DNS_MODULE has unexpected characters" >&2; exit 1 ;; \
+    esac \
+ && xcaddy build --with "$CADDY_DNS_MODULE" --output /usr/bin/caddy
+
+FROM caddy:${CADDY_VERSION}-alpine AS official
+
+FROM official AS dns
+COPY --from=builder /usr/bin/caddy /usr/bin/caddy
+# Fail the build if the module did not register a DNS provider.
+RUN caddy list-modules | grep -q '^dns\.providers\.'
+
+# Default target when none is given: the stock image.
+FROM official

@@ -37,3 +37,8 @@ logs/
 .claude/
 *.local.md
 .local/
+
+# Generated TLS config (M0-07): deployment-specific, rebuilt by `task caddy:config` / `task dev:tls`
+/deployments/Caddyfile
+/.caddy/
+/certs/

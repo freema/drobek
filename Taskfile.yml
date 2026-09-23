@@ -131,6 +131,55 @@ tasks:
     cmds:
       - node tests-e2e/mock-google.mjs
 
+  # ── TLS / Caddy (M0-07) — see docs/SELF-HOSTING.md ─────────────────────────
+  caddy:config:
+    desc: 'Generate the Caddyfile from .env (PUBLIC_APP_URL, APPS_DOMAIN, TLS_*) → deployments/Caddyfile [OUT=path]'
+    cmds:
+      - test -f packages/core/dist/cli/caddy-config.js || pnpm --filter @drobek/core build
+      - node packages/core/dist/cli/caddy-config.js --out '{{.OUT | default "deployments/Caddyfile"}}'
+
+  tls:reload:
+    desc: 'Make the running Caddy re-read its config AND certificate files (after renewing the wildcard cert) [COMPOSE_ARGS="-f …"]'
+    cmds:
+      - >-
+        docker compose {{.COMPOSE_ARGS | default "-f docker-compose.production.yaml"}}
+        exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile --force
+
+  dev:tls:
+    desc: 'Dev stack behind Caddy with `tls internal` → https://localhost + https://<slug>--preview.apps.localhost [DEV_TLS_PORT=443]'
+    vars:
+      DEV_TLS_PORT: '{{.DEV_TLS_PORT | default "443"}}'
+      DEV_TLS_SUFFIX: '{{if eq .DEV_TLS_PORT "443"}}{{else}}:{{.DEV_TLS_PORT}}{{end}}'
+    env:
+      GIT_SHA: '{{.GIT_SHA}}'
+      DEV_TLS_PORT: '{{.DEV_TLS_PORT}}'
+      DEV_TLS_SUFFIX: '{{.DEV_TLS_SUFFIX}}'
+    cmds:
+      - test -f packages/core/dist/cli/caddy-config.js || pnpm --filter @drobek/core build
+      - >-
+        env -i PATH="$PATH" PUBLIC_APP_URL='https://localhost{{.DEV_TLS_SUFFIX}}'
+        APPS_DOMAIN='apps.localhost{{.DEV_TLS_SUFFIX}}' TLS_INTERNAL=1
+        node packages/core/dist/cli/caddy-config.js --out .caddy/Caddyfile.dev
+      - docker compose -f docker-compose.yml -f docker-compose.tls.yaml up -d --build --wait --wait-timeout 300
+      - task: dev:tls:ca
+      - echo "dashboard https://localhost{{.DEV_TLS_SUFFIX}}  ·  apps https://<slug>--preview.apps.localhost{{.DEV_TLS_SUFFIX}}  ·  CA .caddy/root.crt"
+
+  dev:tls:ca:
+    desc: "Copy Caddy's local root CA to .caddy/root.crt (curl --cacert .caddy/root.crt …; the host trust store is never touched)"
+    cmds:
+      - mkdir -p .caddy
+      - >-
+        for i in $(seq 1 20); do
+        docker compose -f docker-compose.yml -f docker-compose.tls.yaml exec -T caddy
+        test -f /data/caddy/pki/authorities/local/root.crt && break; sleep 0.5; done
+      - docker compose -f docker-compose.yml -f docker-compose.tls.yaml cp caddy:/data/caddy/pki/authorities/local/root.crt .caddy/root.crt
+
+  dev:tls:down:
+    desc: Remove the dev Caddy and put drobek back on the plain HTTP dev config (`task up`)
+    cmds:
+      - docker compose -f docker-compose.yml -f docker-compose.tls.yaml rm -sf caddy
+      - task: dev
+
   health:
     desc: Curl the health endpoints from the host
     cmds:

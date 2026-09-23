@@ -2,6 +2,45 @@
 
 ## Unreleased (`next`)
 
+### TLS for the apps origin: Caddy, wildcard cert, `ask` endpoint (NSO-286)
+
+- **Caddy in front** (`docker-compose.production.yaml`: drobek + postgres +
+  redis + caddy, only Caddy publishes 80/443, volumes `caddy_data` /
+  `caddy_config`, secrets only from `.env` / `.env.caddy`). The Caddyfile is
+  generated from the environment by **`task caddy:config`**
+  (`@drobek/core` `caddyfileFromEnv`, CLI `packages/core/dist/cli/caddy-config.js`
+  → `deployments/Caddyfile`, gitignored) and holds no secrets. The dashboard
+  host gets a normal ACME certificate; `*.<APPS_DOMAIN>` uses exactly one of:
+  a wildcard certificate file (`TLS_WILDCARD_CERT_FILE` /
+  `TLS_WILDCARD_KEY_FILE`, picked up after renewal by **`task tls:reload`** =
+  `caddy reload --force`), ACME DNS-01 with a Caddy DNS module
+  (`TLS_DNS_PROVIDER`, `TLS_DNS_PROVIDER_ARGS`,
+  `TLS_DNS_CHALLENGE_OVERRIDE_DOMAIN` for `_acme-challenge` CNAME delegation;
+  `deployments/Dockerfile.caddy` builds the module with xcaddy — there is no
+  Hostinger module), or on-demand per host, always behind the `ask` guard.
+  `TLS_INTERNAL=1` = Caddy's local CA (dev). Ambiguous combinations are
+  refused.
+- **`GET /api/internal/tls/ask?domain=<host>&token=…`** (`@drobek/serving`):
+  200 only for `<slug>[--preview|--v<N>].<APPS_DOMAIN>` of a live,
+  non-deleted app; 401 without / with a wrong `TLS_ASK_TOKEN`
+  (constant-time); 404 for anything else, for every request while the token
+  is unset, and on the public dashboard host; 503 when the lookup fails.
+  Caddy returns 404 for `/api/internal/*` on every public site. A set but weak
+  `TLS_ASK_TOKEN` (< 32 URL-safe chars, or a `change-me` placeholder) stops
+  the server from starting.
+- **`TRUST_PROXY`** (`auto` default | `x-real-ip`): with `x-real-ip`
+  `getClientIp` reads ONLY `X-Real-IP` (and only a literal IP) — never
+  `X-Forwarded-For`. Caddy overwrites `X-Real-IP` with the TCP peer, so
+  per-IP rate limits key on the real client behind Caddy. Unset keeps the
+  PHY-76 #4 behaviour for nginx fronts. An unknown value stops the server.
+- **`task dev:tls`** (`docker-compose.tls.yaml` override): the dev stack
+  behind Caddy with `tls internal` on `https://localhost` and
+  `https://<slug>--preview.apps.localhost`; Caddy's root CA is copied to
+  `.caddy/root.crt` (never installed into a trust store). `task dev:tls:down`
+  returns to the plain-HTTP dev stack, which is unchanged.
+- Docs: `docs/SELF-HOSTING.md` (production compose, the three TLS paths with a
+  CNAME delegation example, the ask contract and its limits, dev TLS).
+
 ### ⚠️ Breaking: apps on their own origin, `publish` tool, `__Host-` cookies (NSO-285)
 
 - **Everyone is signed out once.** The dashboard session cookie is renamed

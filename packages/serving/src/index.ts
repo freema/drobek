@@ -87,3 +87,17 @@ export {
   type NodeMiddleware,
 } from './node.js';
 export { resolveWorkspaceId } from './workspace.server.js';
+export {
+  TLS_ASK_PATH,
+  TLS_ASK_TOKEN_HEADER,
+  TLS_ASK_TOKEN_MIN_LENGTH,
+  decideTlsAsk,
+  tlsAskConfigError,
+  tlsAskSlug,
+  tlsAskToken,
+  tlsAskTokenMatches,
+  type TlsAskDeps,
+  type TlsAskInput,
+  type TlsAskStatus,
+} from './tls-ask.js';
+export { appSlugIsLive, createTlsAskHandler, type TlsAskHandlerOptions } from './tls-ask.server.js';

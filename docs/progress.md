@@ -72,9 +72,20 @@ single long-lived `next` branch; pushes happen only at milestone end.
   (scope `publish`, no lease). Migration 0010 (`team` → `password`,
   `apps.frame_ancestors`).
 
+- **M0-07 (NSO-286) — TLS: Caddy sidecar, wildcard cert, `ask`.**
+  `@drobek/core` `caddy.ts` renders the Caddyfile from env (modes
+  internal / wildcard-file / dns / on-demand, strict validation, snapshots in
+  `packages/core/src/__snapshots__/Caddyfile.*`); CLI
+  `packages/core/dist/cli/caddy-config.js` behind `task caddy:config`.
+  `@drobek/serving` `tls-ask.ts` (+ `.server.ts`) = the `ask` endpoint, mounted
+  in `apps/server` at `/api/internal/tls/ask`. `TRUST_PROXY=x-real-ip` in
+  `@drobek/auth` `getClientIp`. `docker-compose.production.yaml`,
+  `docker-compose.tls.yaml` (`task dev:tls`), `deployments/Dockerfile.caddy`,
+  `docs/SELF-HOSTING.md`.
+
 ## Next
 
-- M0-07 (NSO-286), M0-08 (NSO-289). M0-09 (NSO-299) is
+- M0-08 (NSO-289). M0-09 (NSO-299) is
   blocked on Tomáš (VPS/DNS); M0-10 (NSO-302) needs `freema/drobek-plugin`.
 
 ## Notes and gotchas
@@ -148,7 +159,10 @@ single long-lived `next` branch; pushes happen only at milestone end.
 - Locally every request shares the `unknown` client-IP bucket (NSO-309), so
   the DCR limit (10/h) would trip across specs: `registerClient` in
   `tests-e2e/tests/helpers/mcp.ts` clears the `oauth-register-ip` bucket
-  first, and global-setup truncates `oauth_clients`.
+  first, and global-setup truncates `oauth_clients`. Behind Caddy with
+  `TRUST_PROXY=x-real-ip` (`task dev:tls`, the production compose) requests
+  get per-client buckets again (M0-07); the plain-HTTP dev stack still shares
+  `unknown`.
 - An MCP tool that the grant does not allow is simply not registered; calling
   it yields the SDK's own `isError` "Tool … not found" result, not a
   drobek error code.
@@ -157,6 +171,23 @@ single long-lived `next` branch; pushes happen only at milestone end.
   running dev container can read a half-written file and crash-loop
   (`EACCES … packages/core/dist/health.js`). Don't run `task check` while
   someone is testing against the stack; `docker compose restart drobek` fixes it.
+
+- `task dev:tls` binds host port 443 (Docker Desktop allows it without
+  root); `DEV_TLS_PORT=8443` otherwise. curl needs `--cacert .caddy/root.crt`
+  and `--resolve <host>:443:127.0.0.1` for `*.localhost`; Node needs
+  `NODE_EXTRA_CA_CERTS=.caddy/root.crt`. Behind Docker Desktop, Caddy sees the
+  host's requests from a Docker Desktop proxy address (not 127.0.0.1) — that
+  is what lands in `X-Real-IP` / the rate-limit keys. Leave with
+  `task dev:tls:down` before `task e2e` (the override switches drobek to the
+  https, port-less URLs the e2e does not expect).
+- `caddy reload` is a no-op when the config text is unchanged; only
+  `--force` makes Caddy re-read a renewed certificate FILE (verified: the
+  served serial changes only after `reload --force`).
+- On-demand with a wildcard site address (`*.<APPS_DOMAIN> { tls { on_demand } }`)
+  issues a per-host certificate (SAN = the exact host) after the ask says 200;
+  Caddy merges `?domain=` into an ask URL that already has `?token=`.
+- The Caddy admin API logs every request at info level — don't poll it from
+  a healthcheck; the compose files probe the TLS port with `nc -z`.
 
 ## Failed approaches
 
