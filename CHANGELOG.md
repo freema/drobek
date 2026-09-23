@@ -2,6 +2,23 @@
 
 ## Unreleased (`next`)
 
+### OTP rate limits: no shared "unknown" client-IP bucket (NSO-309)
+
+- **`/login/verify`**: a request without a resolvable client IP no longer
+  lands in one instance-wide `otp-verify-ip:unknown` bucket (~30 sign-ins per
+  15 min used to lock everyone out with "That code is not valid"); the per-IP
+  bucket is skipped for it. The per-code cap (5 guesses, then the code is
+  destroyed) is unchanged and applies to every request.
+- The per-IP verify limit is configurable: `OTP_VERIFY_IP_LIMIT` (default 30)
+  and `OTP_VERIFY_IP_WINDOW_S` (default 900). `@drobek/auth` exports
+  `guardOtpVerify` / `otpVerifyLimitsFromEnv`.
+- **Code sends** (`guardOtpRequest`, the dashboard login and the platform
+  `auth` module): without a client IP the two per-IP windows are skipped
+  instead of shared; per-e-mail cooldown / hourly limits and the global brake
+  still apply.
+- e2e: the `otp-verify-ip` bucket reset is gone; the dev and e2e compose files
+  set `OTP_VERIFY_IP_LIMIT=500`. No migration.
+
 ### Dashboard account area: API keys, OAuth connections, Activity filter, source footer (NSO-284)
 
 - **`/me/api-keys`**: create a personal `drk_` key (name + `read` / `write` /

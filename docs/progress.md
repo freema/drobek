@@ -655,6 +655,31 @@ block, then `next` is pushed and the single MR opened.
 - Bash in an agent worktree also refuses commands with `$slug`-style strings,
   backticks, `git -C`, or inline python that mentions git; put such edits in
   a scratchpad `python3` script written with the Write tool.
+- NSO-309: the OTP guards never key on a shared `unknown` IP. Without a
+  resolvable client IP, `/login/verify` skips its per-IP bucket
+  (`guardOtpVerify`, `OTP_VERIFY_IP_LIMIT` / `OTP_VERIFY_IP_WINDOW_S`, default
+  30 / 900 s) and the send guard skips its two per-IP windows; the per-code
+  cap (5 guesses, then the code is gone), the per-e-mail send limits and the
+  global brake always apply. The e2e no longer clears `otp-verify-ip`: the dev
+  stack is IP-less (no bucket) and the dev/e2e compose files set the limit to
+  500 (behind the e2e Caddy every request has the same peer IP). Other
+  `?? 'unknown'` buckets still exist outside `@drobek/auth` (module router
+  `per: 'ip'`, `oauth.register`, serving `app-unlock`, proxy `public-ip`,
+  insights beacons) — the DCR/forms e2e resets remain for those.
+- NSO-309, production client IP (repo evidence only, not verified on the
+  VPS): `docker-compose.production.yaml` sets `TRUST_PROXY=x-real-ip`, Caddy
+  publishes 80/443 itself and the generated Caddyfile does
+  `header_up X-Real-IP {remote_host}` (`packages/core/src/caddy.ts`), so the
+  per-IP limits see the TCP peer Caddy sees. That is the real client only if
+  (1) nothing else (host nginx, CDN, load balancer) sits in front of Caddy —
+  otherwise every client shares that proxy's IP (`{remote_host}` is the
+  immediate peer; it would take `trusted_proxies` + `{client_ip}`, neither
+  generated today) — and (2) Docker preserves
+  the source address on the published ports: IPv4 via iptables DNAT does;
+  IPv6 clients on a host without Docker IPv6 go through `docker-proxy` and
+  all appear as the bridge gateway IP. Neither can be proven from the repo
+  (M0-09 / NSO-299 provisions the VPS); check `X-Real-IP` in the drobek logs
+  after the first prod deploy.
 
 - M4-02 (NSO-293): `publish()` in `@drobek/apps` now runs the phishing
   heuristic after the transaction (errors swallowed); pass `{ screen: false }`

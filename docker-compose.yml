@@ -110,6 +110,8 @@ services:
       OTP_EMAIL_HOURLY_LIMIT: ${OTP_EMAIL_HOURLY_LIMIT:-50}
       OTP_EMAIL_COOLDOWN_MS: ${OTP_EMAIL_COOLDOWN_MS:-5000}
       OTP_GLOBAL_HOURLY_MAX: ${OTP_GLOBAL_HOURLY_MAX:-1000}
+      # NSO-309: per-IP code checks on /login/verify (prod default 30 / 900 s).
+      OTP_VERIFY_IP_LIMIT: ${OTP_VERIFY_IP_LIMIT:-500}
       # U3: Google OIDC login — dev defaults point at the LOCAL MOCK provider
       # (tests-e2e/mock-google.mjs / `task mock:google`, host port 3049) with
       # dummy credentials. Empty GOOGLE_CLIENT_ID disables the feature.

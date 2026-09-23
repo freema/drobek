@@ -45,6 +45,12 @@ export {
   type OtpGuardDecision,
 } from './otp-guard.server.js';
 export {
+  guardOtpVerify,
+  otpVerifyLimitsFromEnv,
+  OTP_VERIFY_IP_BUCKET,
+  type OtpVerifyLimits,
+} from './otp-verify-guard.server.js';
+export {
   readSessionToken,
   sessionCookieHeader,
   getSessionUser,

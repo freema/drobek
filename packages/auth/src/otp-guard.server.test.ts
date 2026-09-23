@@ -151,6 +151,33 @@ describe('guardOtpRequest (strict defaults, injected)', () => {
     });
   });
 
+  it('no client IP (NSO-309): no shared "unknown" IP bucket — IP-less clients are not coupled', async () => {
+    // Far past ipShortLimit (5) and ipDailyLimit (20): distinct e-mails, no IP.
+    for (let i = 0; i < 30; i += 1) {
+      expect(await guardOtpRequest({ ip: undefined, email: `noip${i}@example.com`, limits: STRICT })).toEqual({
+        ok: true,
+      });
+    }
+    expect([...fake.store.keys()].some((k) => k.includes(':otp-ip-'))).toBe(false);
+  });
+
+  it('no client IP: the per-e-mail limits and the global brake still apply', async () => {
+    const email = 'noip-same@example.com';
+    expect(await guardOtpRequest({ ip: undefined, email, limits: STRICT })).toEqual({ ok: true });
+    expect(await guardOtpRequest({ ip: undefined, email, limits: STRICT })).toMatchObject({
+      ok: false,
+      kind: 'redirect_verify',
+      reason: 'cooldown',
+    });
+    const tiny = { ...STRICT, globalHourlyMax: 2 };
+    expect(await guardOtpRequest({ ip: undefined, email: 'g1@example.com', limits: tiny })).toEqual({ ok: true });
+    expect(await guardOtpRequest({ ip: undefined, email: 'g2@example.com', limits: tiny })).toMatchObject({
+      ok: false,
+      status: 503,
+      reason: 'global_brake',
+    });
+  });
+
   it('env kill switch OTP_LOGIN_DISABLED=1 blocks with 503', async () => {
     vi.stubEnv('OTP_LOGIN_DISABLED', '1');
     const d = await guardOtpRequest({

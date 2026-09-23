@@ -95,6 +95,8 @@ services:
       OTP_EMAIL_HOURLY_LIMIT: '50'
       OTP_EMAIL_COOLDOWN_MS: '5000'
       OTP_GLOBAL_HOURLY_MAX: '1000'
+      # NSO-309: every e2e request reaches drobek from Caddy's one peer IP.
+      OTP_VERIFY_IP_LIMIT: '500'
       DATA_MAX_DOCS_PER_APP: '5'
       BEACON_RATE_LIMIT: '30'
       # M1-01: the example module, loaded from the image's own dependencies;

@@ -76,9 +76,10 @@ const LOCAL_REDIS_HOSTS = ['localhost', '127.0.0.1', 'redis'];
 /**
  * Drop one per-IP rate-limit family (`drobek:rl:<bucket>:*`). Local-only
  * (TEST_ENV=local + a local REDIS_URL, mirroring the global-setup guard); a
- * no-op anywhere else. In the compose stack every request shares ONE client-IP
- * bucket, so a full run would trip the per-IP limits mid-suite. Remove with
- * NSO-309.
+ * no-op anywhere else. Behind the e2e Caddy every request comes from ONE client
+ * IP, so a full run would trip the low per-IP limits (DCR, forms) mid-suite.
+ * The OTP verify limit needs no reset (NSO-309): without a client IP there is
+ * no bucket, and the compose files relax OTP_VERIFY_IP_LIMIT.
  */
 export async function resetRateLimitBucket(bucket: string): Promise<void> {
   const url = process.env.REDIS_URL;
@@ -95,16 +96,6 @@ export async function resetRateLimitBucket(bucket: string): Promise<void> {
 }
 
 /**
- * The verify endpoint caps code checks per client IP (30 / 15 min, hard-coded in
- * @drobek/auth), so a CORRECT code would be answered with the generic "not
- * valid" error mid-suite: drop just that bucket before each sign-in. Never
- * touches the per-code attempt counter or the send-side guards.
- */
-async function resetVerifyIpRateLimit(): Promise<void> {
-  await resetRateLimitBucket('otp-verify-ip');
-}
-
-/**
  * /oauth/register allows 10 registrations per IP per hour (PHY-76 #7) and the
  * suite registers far more: drop that bucket before each registration.
  */
@@ -118,7 +109,6 @@ export async function loginViaEmail(
   request: APIRequestContext,
   email: string
 ): Promise<void> {
-  await resetVerifyIpRateLimit();
   await page.goto('/login');
   await page.getByLabel('Email').fill(email);
   await page.getByRole('button', { name: 'Send code' }).click();

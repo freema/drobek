@@ -176,7 +176,6 @@ async function pollCode(request: APIRequestContext, email: string, appName: stri
 
 /** send-code → the Mailpit code → verify; the Cookie header value. */
 async function apiSignIn(request: APIRequestContext, host: string, email: string, appName: string): Promise<string> {
-  await resetRateLimitBucket('otp-verify-ip');
   const sent = await post(host, '/auth/send-code', { email });
   expect(sent.status, sent.body).toBe(200);
   const code = await pollCode(request, email, appName);
@@ -444,7 +443,6 @@ test.describe('platform modules forms + email (M1-04) @local', () => {
     const ctx = await browser.newContext();
     const page = await ctx.newPage();
     try {
-      await resetRateLimitBucket('otp-verify-ip');
       await page.goto(urlOf(host));
       await page.getByLabel('Email').fill(mcp.email);
       await page.getByRole('button', { name: 'Send code' }).click();

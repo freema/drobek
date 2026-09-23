@@ -13,6 +13,12 @@
  *   4. per-e-mail hourly     (default 3 / h)
  *   5. global hourly brake   (OTP_GLOBAL_HOURLY_MAX / h) → auto-pause + ALERT
  *
+ * No resolvable client IP (`ip` undefined — no trusted proxy header) → steps 1
+ * and 2 are SKIPPED, never keyed on a shared `unknown` bucket (NSO-309): that
+ * bucket coupled every such client and ~5 sends per 15 min locked the whole
+ * instance out. Steps 3–5 (per-e-mail + the global brake) still apply, and a
+ * client able to hide its IP could equally rotate spoofed headers.
+ *
  * On Redis errors the decision is FAIL-CLOSED (better a temporarily
  * unavailable login than thousands of un-throttled e-mails).
  *
@@ -174,7 +180,6 @@ export async function guardOtpRequest(args: {
 }): Promise<OtpGuardDecision> {
   const { ip, email, scope } = args;
   const limits = args.limits ?? otpGuardLimitsFromEnv();
-  const ipKey = ip ?? 'unknown';
   const emailHash = hashEmail(email);
 
   try {
@@ -196,13 +201,10 @@ export async function guardOtpRequest(args: {
       };
     }
 
-    // 1. per-IP short window
-    const ipShort = await rateLimitRedis(
-      bucket('otp-ip-15m', scope),
-      ipKey,
-      limits.ipShortLimit,
-      IP_SHORT_WINDOW_MS
-    );
+    // 1. per-IP short window (skipped without a client IP — NSO-309)
+    const ipShort = ip
+      ? await rateLimitRedis(bucket('otp-ip-15m', scope), ip, limits.ipShortLimit, IP_SHORT_WINDOW_MS)
+      : { ok: true };
     if (!ipShort.ok) {
       logBlock('ip_short', { ip, email, scope, alert: true });
       return {
@@ -214,13 +216,10 @@ export async function guardOtpRequest(args: {
       };
     }
 
-    // 2. per-IP daily window
-    const ipDaily = await rateLimitRedis(
-      bucket('otp-ip-24h', scope),
-      ipKey,
-      limits.ipDailyLimit,
-      IP_DAILY_WINDOW_MS
-    );
+    // 2. per-IP daily window (skipped without a client IP — NSO-309)
+    const ipDaily = ip
+      ? await rateLimitRedis(bucket('otp-ip-24h', scope), ip, limits.ipDailyLimit, IP_DAILY_WINDOW_MS)
+      : { ok: true };
     if (!ipDaily.ok) {
       logBlock('ip_daily', { ip, email, scope, alert: true });
       return {
