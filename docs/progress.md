@@ -213,6 +213,17 @@ block, then `next` is pushed and the single MR opened.
   inside `@drobek/apps` `publish`): password field + a brand word
   (`ABUSE_BRAND_WORDS`) → a `heuristic` report in the queue (never blocks).
   e2e `tests-e2e/tests/abuse.spec.ts` written, not run.
+- **NSO-316 — the smoke tier cleans up after itself.** `mcp-loop.spec.ts`
+  `@smoke`: under TEST_ENV=local a fresh `smoke-<random>` app is deleted at
+  the end through the dashboard delete action (NSO-288) as the smoke user
+  (e-mail OTP via Mailpit), in a try/finally so a failed run cleans up too
+  (a cleanup error never masks the test's own failure). Against any other
+  target (production, API key only, no destructive MCP tool) the spec uses
+  ONE stable slug per key — `smoke-<first 12 hex of
+  sha256("drobek-smoke-app:" + key)>` — found via `list_apps` → `get_app` and
+  re-used (new version + publish) instead of a new app per run. One-time
+  production cleanup of older `smoke-*` apps = runbook step under Next →
+  M0-09. No migration; spec not run in the task (block-end e2e).
 
 ## Next
 
@@ -221,6 +232,18 @@ block, then `next` is pushed and the single MR opened.
   inside the prod container: `node node_modules/@drobek/oauth/dist/cli/api-key-create.js
   --email <smoke user> --name smoke --scopes read,write,publish`) and run
   `BASE_URL_WEB=https://… task e2e:smoke` after each deploy.
+  **Runbook — one-time smoke cleanup (NSO-316), manual, never from an agent:**
+  against production the smoke now re-uses one stable slug per key
+  (`smoke-<12 hex>`, see `stableSmokeSlug` in `tests-e2e/tests/mcp-loop.spec.ts`),
+  so apps from runs before that change (one `smoke-<random>` per run) stay
+  behind. After the first deploy that carries NSO-316 and its green smoke run:
+  sign in to the dashboard as the smoke user (e-mail OTP to that mailbox),
+  open the personal workspace's Apps list, and for every `smoke-*` app EXCEPT
+  the stable one use Settings → Delete (type the slug). The old per-run apps
+  are `smoke-<8 hex>` (or a `smoke-<8 hex>-xxxx` variant); the stable one is
+  `smoke-<12 hex>` and holds the newest version — keep it. Deleted slugs are released after 30 days.
+  Repeat this for the old key's slug whenever `SMOKE_API_KEY` is rotated (a
+  new key = a new stable slug).
 - M0-10 (NSO-302) is done locally: `freema/drobek-plugin` (PRIVATE until the
   new drobek.app is live — flip it public together with M0-09), local clone
   at `../drobek-plugin`, branch `next`, not pushed. Its `.mcp.json` targets
@@ -433,7 +456,8 @@ block, then `next` is pushed and the single MR opened.
   compiles the react-ts template.
 - There is no app deletion path outside the database (no MCP tool; the
   dashboard delete is M2-01), so the prod smoke leaves one `smoke-*` app per
-  run.
+  run. (Superseded by NSO-316: local runs delete via the dashboard, production
+  re-uses one stable slug.)
 - Validate the workflow without installing anything:
   `docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:latest`.
 
@@ -731,6 +755,14 @@ block, then `next` is pushed and the single MR opened.
   unpublish → 423 (pre-check on `AppDetail.lockedReason`, plus the AppsError
   code for a takedown that lands mid-request), and the NSO-291 module page
   action → 423 for everything except `reject` / `remove-secret`.
+- `@smoke` cleanup (NSO-316): the local branch uses Mailpit + Redis (OTP
+  sign-in for the dashboard delete) — allowed only because it runs under
+  TEST_ENV=local, like the SQL-minted key; the production branch stays
+  public-HTTP + MCP only. The stable production slug is derived from the key
+  (domain-separated SHA-256), not from the user e-mail (guessable → squattable)
+  nor the stored `key_hash` (that would publish a prefix of the credential
+  hash). If `create_app` ever returns a variant (`smoke-<hex>-xxxx`) the spec
+  fails instead of silently creating an app per run.
 
 ## Failed approaches
 

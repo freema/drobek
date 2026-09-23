@@ -197,9 +197,16 @@ task down         # docker compose down
   (`localhost`, `127.0.0.1`, `postgres`).
 - **`@smoke`** — public HTTP + MCP only, safe against production: never the
   database, Redis or Mailpit. The MCP smoke loop (`mcp-loop.spec.ts`) signs in
-  with a `drk_` key from `SMOKE_API_KEY` (read from the environment only), and
-  creates, writes, previews and publishes one `smoke-<random>` app (there is no
-  public app deletion yet, so each run leaves that one app behind):
+  with a `drk_` key from `SMOKE_API_KEY` (read from the environment only),
+  writes, previews and publishes a `smoke-*` app, and leaves nothing behind.
+  MCP has no delete tool (none is destructive), so the spec cleans up by
+  target: against the local stack (`TEST_ENV=local`) it creates a fresh
+  `smoke-<random>` app and deletes it at the end — also when the test fails —
+  through the dashboard delete action, signed in as the smoke user by e-mail
+  OTP (Mailpit); against any other target (production) it re-uses ONE stable
+  app per key, `smoke-<12 hex of a SHA-256 of the key>` (`list_apps` →
+  `get_app`, then a new version + publish), so production keeps exactly one
+  smoke app per smoke identity:
 
   ```sh
   BASE_URL_WEB=https://drobek.app SMOKE_API_KEY=drk_… task e2e:smoke

@@ -7,7 +7,7 @@ import type {
   OAuthClientMetadata,
   OAuthTokens,
 } from '@modelcontextprotocol/sdk/shared/auth.js';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { BASE_URL_MCP, BASE_URL_WEB, TEST_ENV } from '../playwright.config';
 import { getAppUrl, type Raw } from './helpers/apps-host';
 import { loginViaEmail, resetDcrIpRateLimit, skipUnlessLocal, uniqueEmail } from './helpers/auth';
@@ -26,12 +26,20 @@ import { withDb } from './helpers/seed';
  *    get_app. Must finish in < 90 s (asserted).
  * 2. `@smoke` — the same tool loop minus OAuth, safe against production
  *    (M0-09): a `drk_` API key from SMOKE_API_KEY (read from the environment
- *    only, never logged), one app named `smoke-<random>`, public HTTP + MCP
- *    only — no database, Redis or Mailpit. Locally (TEST_ENV=local, no key)
- *    the key is minted straight into the local DB for a throwaway user.
- *    There is no public deletion path for an app yet (no MCP tool, no
- *    dashboard action), so the smoke app stays behind; every one is named
- *    `smoke-*` and holds only a static marker page.
+ *    only, never logged), public HTTP + MCP only against a non-local target —
+ *    no database, Redis or Mailpit. Locally (TEST_ENV=local, no key) the key
+ *    is minted straight into the local DB for a throwaway user.
+ *    Cleanup (NSO-316) — MCP has no delete tool and gets none (no destructive
+ *    MCP tool), so the app never outlives the run where it can be deleted:
+ *    (a) TEST_ENV=local: a fresh `smoke-<random>` app, deleted at the end —
+ *        also when the test fails (try/finally) — through the dashboard
+ *        delete action (NSO-288) as the smoke user, signed in by e-mail OTP
+ *        via Mailpit;
+ *    (b) any other target (production): the smoke has only the API key, so
+ *        it uses ONE stable slug per key, `smoke-<12 hex of sha256(key)>`,
+ *        found via list_apps → get_app and re-used (a new version, published)
+ *        instead of creating an app per run — production holds exactly one
+ *        smoke app per smoke identity. It holds only a static marker page.
  */
 
 const LOOP_BUDGET_MS = 90_000;
@@ -310,7 +318,40 @@ async function smokeKey(): Promise<string | null> {
   return key;
 }
 
-test('smoke loop: API key → list → create smoke-* → write → preview → publish → prod host @smoke', async () => {
+/**
+ * The ONE slug a non-local smoke identity uses, run after run:
+ * `smoke-<12 hex>` of a domain-separated SHA-256 of the key. Derived from the
+ * secret (not from the key id or e-mail, which the client does not know or
+ * others could guess), so nobody can squat it; it is not the stored
+ * `key_hash` either (different input), so the public slug reveals nothing
+ * about that. A rotated key simply moves the smoke to a new slug — the old
+ * app is then deleted by hand (runbook, docs/progress.md → Next → M0-09).
+ */
+function stableSmokeSlug(key: string): string {
+  return `smoke-${createHash('sha256').update(`drobek-smoke-app:${key}`).digest('hex').slice(0, 12)}`;
+}
+
+/**
+ * Local cleanup: the dashboard delete (NSO-288) as the smoke user — e-mail
+ * OTP sign-in through Mailpit, Settings → type the slug → Delete. MCP has no
+ * delete tool, by design (no destructive MCP tool).
+ */
+async function deleteViaDashboard(
+  page: Page,
+  request: APIRequestContext,
+  app: { email: string; workspace: string; slug: string }
+): Promise<void> {
+  await loginViaEmail(page, request, app.email);
+  await page.goto(`/workspaces/${app.workspace}/apps/${app.slug}/settings`);
+  await page.getByTestId('delete-confirm-input').fill(app.slug);
+  await page.getByTestId('delete-button').click();
+  await page.waitForURL((url) => url.searchParams.get('deleted') === app.slug);
+}
+
+test('smoke loop: API key → list → create/reuse smoke-* → write → preview → publish → prod host → cleanup @smoke', async ({
+  page,
+  request,
+}) => {
   test.setTimeout(LOOP_BUDGET_MS);
   const key = await smokeKey();
   const web = new URL(BASE_URL_WEB);
@@ -323,31 +364,63 @@ test('smoke loop: API key → list → create smoke-* → write → preview → 
     );
     throw new Error('SMOKE_API_KEY is required for the @smoke MCP loop against a non-local target');
   }
+  // Local stack → a fresh `smoke-<random>` app, deleted through the dashboard
+  // at the end. Anywhere else (production) → the identity's one stable slug,
+  // reused every run: nothing to delete, nothing accumulates.
+  const mode: 'delete' | 'reuse' = TEST_ENV === 'local' ? 'delete' : 'reuse';
 
   const marker = `smoke-${randomBytes(4).toString('hex')}`;
   const { client, transport } = await connectBearer(key);
+  /** Set as soon as a (local) app exists, so cleanup runs even on failure. */
+  let toDelete: { email: string; workspace: string; slug: string } | null = null;
+  let failed = false;
   try {
     const listed = await callTool(client, 'list_apps', {});
     expect(listed.isError, listed.text).toBe(false);
-    expect((listed.json.user as { email?: string }).email).toBeTruthy();
+    const email = (listed.json.user as { email?: string }).email as string;
+    expect(email).toBeTruthy();
 
-    // The slug is derived from the name: `smoke-<random>` (or a free variant of it).
-    const created = await callTool(client, 'create_app', { name: marker });
-    expect(created.isError, created.text).toBe(false);
-    expect(created.json).toMatchObject({ version: 1, compile: { ok: true } });
-    const appId = created.json.app_id as string;
-    const slug = created.json.slug as string;
-    expect(slug.startsWith('smoke-')).toBe(true);
-    const previewUrl = created.json.preview_url as string;
+    let appId: string;
+    let previewUrl: string;
+    let baseVersion: number;
+    const stable = mode === 'reuse' ? stableSmokeSlug(key) : null;
+    const existing = stable
+      ? (listed.json.apps as { app_id: string; slug: string }[]).find((a) => a.slug === stable)
+      : undefined;
+    if (existing) {
+      const got = await callTool(client, 'get_app', { app_id: existing.app_id });
+      expect(got.isError, got.text).toBe(false);
+      appId = existing.app_id;
+      previewUrl = got.json.preview_url as string;
+      baseVersion = got.json.latest_version as number;
+    } else {
+      // The slug is derived from the name: `smoke-<random>` locally (or a
+      // free variant of it), the stable slug in production.
+      const created = await callTool(client, 'create_app', { name: stable ?? marker });
+      expect(created.isError, created.text).toBe(false);
+      expect(created.json).toMatchObject({ version: 1, compile: { ok: true } });
+      appId = created.json.app_id as string;
+      const slug = created.json.slug as string;
+      if (mode === 'delete') toDelete = { email, workspace: created.json.workspace as string, slug };
+      expect(slug.startsWith('smoke-')).toBe(true);
+      if (mode === 'reuse') {
+        // A variant would mean a new app every run — exactly what reuse avoids.
+        expect(slug, 'the stable smoke slug is free for this identity').toBe(stable);
+      }
+      previewUrl = created.json.preview_url as string;
+      baseVersion = 1;
+    }
 
-    const page = `<!doctype html><html lang="en"><head><meta charset="utf-8" /><title>${marker}</title></head><body><p id="marker">${marker}</p></body></html>\n`;
+    const html = `<!doctype html><html lang="en"><head><meta charset="utf-8" /><title>${marker}</title></head><body><p id="marker">${marker}</p></body></html>\n`;
     const written = await callTool(client, 'write_files', {
       app_id: appId,
-      files: [{ path: 'index.html', content: page }],
+      files: [{ path: 'index.html', content: html }],
       reasoning: 'drobek post-deploy smoke test',
     });
     expect(written.isError, written.text).toBe(false);
-    expect(written.json).toMatchObject({ version: 2, compile: { ok: true } });
+    expect(written.json).toMatchObject({ compile: { ok: true } });
+    const version = written.json.version as number;
+    expect(version).toBeGreaterThan(baseVersion);
 
     const preview = await getWhenUp(previewUrl);
     expect(preview.body).toContain(`<p id="marker">${marker}</p>`);
@@ -355,11 +428,27 @@ test('smoke loop: API key → list → create smoke-* → write → preview → 
 
     const published = await callTool(client, 'publish', { app_id: appId });
     expect(published.isError, published.text).toBe(false);
-    expect(published.json.published_version).toBe(2);
+    expect(published.json.published_version).toBe(version);
     const prod = await getWhenUp(published.json.published_url as string);
     expect(prod.body).toContain(`<p id="marker">${marker}</p>`);
     expect(prod.headers['content-security-policy']).toContain("frame-ancestors 'none'");
+  } catch (err) {
+    failed = true;
+    throw err;
   } finally {
-    await transport.close();
+    try {
+      if (toDelete) {
+        const app = toDelete;
+        await deleteViaDashboard(page, request, app);
+        const gone = await callTool(client, 'list_apps', {});
+        expect((gone.json.apps as { slug: string }[]).map((a) => a.slug)).not.toContain(app.slug);
+      }
+    } catch (cleanupErr) {
+      // Never mask the test's own failure with a cleanup failure.
+      if (!failed) throw cleanupErr;
+      console.error(`smoke cleanup failed: ${String(cleanupErr)}`);
+    } finally {
+      await transport.close();
+    }
   }
 });

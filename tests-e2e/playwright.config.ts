@@ -8,7 +8,9 @@ import { defineConfig } from '@playwright/test';
  *                   local docker compose stack). @smoke specs are safe against
  *                   any target, prod included: public HTTP + MCP only, never
  *                   the database, Redis or Mailpit (the MCP smoke loop signs
- *                   in with SMOKE_API_KEY and only touches `smoke-*` apps).
+ *                   in with SMOKE_API_KEY and only touches `smoke-*` apps:
+ *                   one stable slug per key; under TEST_ENV=local it deletes
+ *                   its throwaway app through the dashboard instead).
  * - E2E_TARGET_PRODUCTION=1 — the target runs NODE_ENV=production (the image
  *                   flow, `task e2e:image` / CI): dev-only allowances such as
  *                   OAUTH_CIMD_DEV_ORIGINS are off, so specs assert the refusal.

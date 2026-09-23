@@ -19,6 +19,17 @@
 - e2e: the `otp-verify-ip` bucket reset is gone; the dev and e2e compose files
   set `OTP_VERIFY_IP_LIMIT=500`. No migration.
 
+### e2e: the `@smoke` tier cleans up its `smoke-*` app (NSO-316)
+
+- `tests-e2e/tests/mcp-loop.spec.ts` `@smoke`: under `TEST_ENV=local` the
+  fresh `smoke-<random>` app is deleted at the end (try/finally, so failed
+  runs too) through the dashboard delete action as the smoke user (e-mail
+  OTP). Against production (API key only; MCP has no destructive tool) the
+  spec re-uses ONE stable app per key, `smoke-<12 hex of a SHA-256 of the
+  key>`, via `list_apps` → `get_app`, so deploys no longer accumulate smoke
+  apps. One-time cleanup of the older `smoke-*` apps is a manual runbook step
+  (docs/progress.md → Next → M0-09). No migration.
+
 ### Dashboard account area: API keys, OAuth connections, Activity filter, source footer (NSO-284)
 
 - **`/me/api-keys`**: create a personal `drk_` key (name + `read` / `write` /
