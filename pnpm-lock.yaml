@@ -582,6 +582,9 @@ importers:
       '@drobek/modules':
         specifier: workspace:*
         version: link:../modules
+      '@drobek/oauth':
+        specifier: workspace:*
+        version: link:../oauth
       '@drobek/proxy':
         specifier: workspace:*
         version: link:../proxy

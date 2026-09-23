@@ -1,7 +1,7 @@
 /**
  * GET /workspaces/:slug/activity/export.csv — the Activity (audit) CSV export
- * (PHY-85). Streams the workspace's audit trail (the SAME app + action filter the
- * table applies) as text/csv, RFC-4180 escaped (shared csvLine primitive, PHY-121).
+ * (PHY-85). Streams the workspace's audit trail (the SAME app + action + actor filter
+ * the table applies) as text/csv, RFC-4180 escaped (shared csvLine primitive, PHY-121).
  * A resource route (no component) returning a streaming Response.
  *
  * Authz + isolation: requireWorkspaceRole('workspace-admin') — admin/super-admin
@@ -45,6 +45,7 @@ export async function loader({
             workspaceId,
             action: q.action,
             subject: q.app,
+            actorKind: q.actor,
             cursor,
             limit: EXPORT_PAGE_SIZE,
           });

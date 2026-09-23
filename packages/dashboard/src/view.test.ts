@@ -185,6 +185,22 @@ describe('shapeActivity (PHY-85 audit-row shaping)', () => {
     expect(systemRow.actorBadge).toBe('user');
   });
 
+  it('labels an end-user row (M1-01 module request, no drobek actor) as an app end user', () => {
+    const [row] = shapeActivity([
+      {
+        id: 'e1',
+        actorEmail: null,
+        actorKind: 'end_user',
+        action: 'data.export',
+        subjectType: 'app',
+        subject: 'my-app',
+        createdAt: new Date('2026-09-23T10:00:00.000Z'),
+      },
+    ]);
+    expect(row.actorBadge).toBe('end_user');
+    expect(row.actorLabel).toBe('app end user');
+  });
+
   it('renders a deterministic UTC time and carries the subject', () => {
     const shaped = shapeActivity(rows);
     const rollback = shaped.find((r) => r.id === 'a1')!;

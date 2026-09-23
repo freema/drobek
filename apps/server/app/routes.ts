@@ -18,6 +18,9 @@ export default [
   route('auth/google', 'routes/auth.google.tsx'),
   route('auth/google/callback', 'routes/auth.google.callback.tsx'),
   route('me', 'routes/me.tsx'),
+  // M2-04 (NSO-284): the account area — personal API keys + OAuth connections.
+  route('me/api-keys', 'routes/me.api-keys.tsx'),
+  route('me/connections', 'routes/me.connections.tsx'),
   // U4 (PHY-54): workspaces (personal+team) + roles + Redis invites.
   route('workspaces', 'routes/workspaces.tsx'),
   route('workspaces/:slug', 'routes/workspaces.$slug.tsx'),

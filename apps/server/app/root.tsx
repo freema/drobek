@@ -7,9 +7,25 @@ import {
   Scripts,
   ScrollRestoration,
   useRouteError,
+  useRouteLoaderData,
 } from 'react-router';
+import { SourceFooter } from '@drobek/dashboard/footer';
+
+/**
+ * M2-04 (NSO-284): the build sha for the AGPL-3.0 §13 source link in the
+ * footer (the same GIT_SHA `/api/version` reports). Constant per process, so
+ * the root never revalidates for it.
+ */
+export function loader() {
+  return { sourceSha: process.env.GIT_SHA || 'dev' };
+}
+
+export function shouldRevalidate() {
+  return false;
+}
 
 export function Layout({ children }: { children: ReactNode }) {
+  const root = useRouteLoaderData<typeof loader>('root');
   return (
     <html lang="en">
       <head>
@@ -24,6 +40,7 @@ export function Layout({ children }: { children: ReactNode }) {
       </head>
       <body>
         {children}
+        <SourceFooter sha={root?.sourceSha} />
         <ScrollRestoration />
         <Scripts />
       </body>

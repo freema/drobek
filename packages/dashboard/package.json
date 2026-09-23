@@ -71,6 +71,26 @@
     "./routes/api.apps.$id.end-user-sessions.revoke.server": {
       "types": "./src/routes/api.apps.$id.end-user-sessions.revoke.server.ts",
       "default": "./dist/routes/api.apps.$id.end-user-sessions.revoke.server.js"
+    },
+    "./routes/me.api-keys": {
+      "types": "./src/routes/me.api-keys.tsx",
+      "default": "./dist/routes/me.api-keys.js"
+    },
+    "./routes/me.api-keys.server": {
+      "types": "./src/routes/me.api-keys.server.ts",
+      "default": "./dist/routes/me.api-keys.server.js"
+    },
+    "./routes/me.connections": {
+      "types": "./src/routes/me.connections.tsx",
+      "default": "./dist/routes/me.connections.js"
+    },
+    "./routes/me.connections.server": {
+      "types": "./src/routes/me.connections.server.ts",
+      "default": "./dist/routes/me.connections.server.js"
+    },
+    "./footer": {
+      "types": "./src/footer.tsx",
+      "default": "./dist/footer.js"
     }
   },
   "scripts": {
@@ -87,6 +107,7 @@
     "@drobek/db": "workspace:*",
     "@drobek/insights": "workspace:*",
     "@drobek/modules": "workspace:*",
+    "@drobek/oauth": "workspace:*",
     "@drobek/proxy": "workspace:*",
     "@drobek/tenancy": "workspace:*",
     "drizzle-orm": "^0.41.0"

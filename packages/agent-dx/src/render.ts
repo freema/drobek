@@ -133,7 +133,7 @@ export function renderLlmsFull(env: NodeJS.ProcessEnv = process.env): string {
       '',
       'The grant belongs to the USER, not to one workspace: list_apps lists every workspace with your role and the apps across them, and each tool call is authorized against your membership in the app\'s workspace (viewer+ reads, editor+ writes; a workspace or app you cannot reach answers not_found).',
       '',
-      '`drk_…` personal API keys are an alternative Bearer for the same endpoint (same scopes, no OAuth flow).',
+      `\`drk_…\` personal API keys are an alternative Bearer for the same endpoint (same scopes, no OAuth flow); the user creates and revokes them at ${app}/me/api-keys and revokes OAuth clients at ${app}/me/connections.`,
     ].join('\n')
   );
 

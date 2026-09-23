@@ -1,7 +1,8 @@
 /**
  * /workspaces/:slug/activity — client half of the workspace Activity view
  * (governance v1, PHY-85): the append-only audit trail as a table (time, action,
- * actor + agent/user badge, subject), newest-first, with an app + action FILTER
+ * actor + agent/user/end-user badge, subject), newest-first, with an app +
+ * action + actor-kind FILTER
  * (GET, round-tripped through the loader), keyset "Next page" pagination, and a
  * CSV export of the current filter. Admin/super-admin only (the server gates it).
  *
@@ -21,11 +22,16 @@ export function meta({
   ];
 }
 
-/** Build the current filter search string (app + action), sans cursor. */
-function filterSearch(filter: { action: string | null; app: string | null }): string {
+/** Build the current filter search string (app + action + actor), sans cursor. */
+function filterSearch(filter: {
+  action: string | null;
+  app: string | null;
+  actor: string | null;
+}): string {
   const sp = new URLSearchParams();
   if (filter.action) sp.set('action', filter.action);
   if (filter.app) sp.set('app', filter.app);
+  if (filter.actor) sp.set('actor', filter.actor);
   const s = sp.toString();
   return s ? `?${s}` : '';
 }
@@ -145,13 +151,26 @@ const styles = {
     border: '1px solid #bbf7d0',
     marginRight: '0.4rem',
   },
+  endUserBadge: {
+    display: 'inline-block',
+    padding: '0.1rem 0.5rem',
+    fontSize: '0.68rem',
+    fontWeight: 700,
+    letterSpacing: '0.04em',
+    textTransform: 'uppercase',
+    borderRadius: '999px',
+    color: '#92400e',
+    background: '#fef3c7',
+    border: '1px solid #fde68a',
+    marginRight: '0.4rem',
+  },
   pager: { display: 'flex', gap: '1rem', margin: '1rem 0', fontSize: '0.88rem' },
   empty: { color: '#555', fontStyle: 'italic', padding: '1rem 0' },
   back: { fontSize: '0.9rem', color: '#555', marginTop: '2rem' },
 } as const;
 
 export default function WorkspaceActivityRoute() {
-  const { workspace, items, nextCursor, filter, actionOptions, appOptions } =
+  const { workspace, items, nextCursor, filter, actionOptions, actorOptions, appOptions } =
     useLoaderData<typeof loader>();
 
   const base = `/workspaces/${workspace.slug}/activity`;
@@ -217,6 +236,25 @@ export default function WorkspaceActivityRoute() {
             ))}
           </select>
         </div>
+        <div style={styles.field}>
+          <label style={styles.label} htmlFor="actor">
+            Actor
+          </label>
+          <select
+            id="actor"
+            name="actor"
+            defaultValue={filter.actor ?? ''}
+            style={styles.input}
+            data-testid="filter-actor"
+          >
+            <option value="">— all actors —</option>
+            {actorOptions.map((k) => (
+              <option key={k} value={k}>
+                {k === 'end_user' ? 'end user' : k}
+              </option>
+            ))}
+          </select>
+        </div>
         <button type="submit" style={styles.applyBtn} data-testid="filter-apply">
           Apply
         </button>
@@ -267,11 +305,13 @@ export default function WorkspaceActivityRoute() {
                       style={
                         it.actorBadge === 'agent'
                           ? styles.agentBadge
-                          : styles.userBadge
+                          : it.actorBadge === 'end_user'
+                            ? styles.endUserBadge
+                            : styles.userBadge
                       }
                       data-testid="actor-badge"
                     >
-                      {it.actorBadge}
+                      {it.actorBadge === 'end_user' ? 'end user' : it.actorBadge}
                     </span>
                     {it.actorLabel}
                   </td>

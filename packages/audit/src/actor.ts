@@ -10,6 +10,15 @@
  */
 export type AuditActorKind = 'user' | 'agent' | 'end_user';
 
+/** Every actor kind, in display order — the Activity view's actor filter (M2-04). */
+export const AUDIT_ACTOR_KINDS: readonly AuditActorKind[] = ['user', 'agent', 'end_user'];
+
+/** Narrow untrusted input (a query param) to an actor kind, or null. */
+export function parseActorKind(raw: string | null | undefined): AuditActorKind | null {
+  const v = (raw ?? '').trim();
+  return (AUDIT_ACTOR_KINDS as readonly string[]).includes(v) ? (v as AuditActorKind) : null;
+}
+
 /**
  * Where an audited action originated. This is the SINGLE source of truth for
  * actor_kind, resolved SERVER-SIDE at the call site — an MCP tool handler passes
@@ -64,6 +73,20 @@ export const AUDIT_ACTIONS = {
   emailSend: 'email.send',
   /** M1-04: an app admin exported a form's submissions as CSV (form + row count, never values). */
   formsExport: 'forms.export',
+  /** M1-03: an app admin exported a data collection as CSV (collection + row count). */
+  dataExport: 'data.export',
+  /** PHY-59: a workspace admin registered a proxy upstream (@drobek/proxy PROXY_AUDIT_ACTIONS). */
+  proxyUpstreamCreate: 'proxy.upstream.create',
+  /** PHY-59: a workspace admin deleted a proxy upstream. */
+  proxyUpstreamDelete: 'proxy.upstream.delete',
+  /** M1-06: the proxy module refused a call (SSRF guard, port, rule) — upstream + reason. */
+  proxyBlocked: 'proxy.blocked',
+  /** M2-04: a user created a personal API key (name + scopes, never the key). Personal workspace. */
+  apiKeyCreate: 'api_key.create',
+  /** M2-04: a user revoked one of their API keys. Personal workspace. */
+  apiKeyRevoke: 'api_key.revoke',
+  /** M2-04: a user revoked an OAuth client's access (all its tokens for that user). Personal workspace. */
+  oauthClientRevoke: 'oauth_client.revoke',
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
@@ -75,6 +98,10 @@ export const AUDIT_ACTION_LIST: AuditAction[] = Object.values(AUDIT_ACTIONS);
 export const AUDIT_SUBJECT_TYPES = {
   app: 'app',
   member: 'member',
+  /** M2-04: a personal API key (target = its id). */
+  apiKey: 'api_key',
+  /** M2-04: an OAuth client (target = its public client_id). */
+  oauthClient: 'oauth_client',
 } as const;
 
 export type AuditSubjectType =

@@ -73,6 +73,15 @@ export default function MeRoute() {
         <a href="/workspaces" style={styles.navLink}>
           Workspaces
         </a>
+        {' · '}
+        {/* M2-04 (NSO-284): the account area (routes in @drobek/dashboard). */}
+        <a href="/me/api-keys" style={styles.navLink} data-testid="me-api-keys-link">
+          API keys
+        </a>
+        {' · '}
+        <a href="/me/connections" style={styles.navLink} data-testid="me-connections-link">
+          Connections
+        </a>
       </p>
 
       <Form method="post" action="/auth/logout">

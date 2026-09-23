@@ -5,8 +5,10 @@ import {
   createApiKey,
   generateApiKey,
   isApiKeyFormat,
+  listApiKeys,
   looksLikeApiKey,
   revokeApiKey,
+  revokeUserApiKey,
   validateApiKey,
 } from './api-keys.server.js';
 import { API_KEY_LAST_USED_THROTTLE_MS } from './constants.js';
@@ -88,5 +90,34 @@ describe('API keys in the database', () => {
   it('rejects an unknown or malformed key without a match', async () => {
     expect(await validateApiKey(generateApiKey())).toBeNull();
     expect(await validateApiKey('drk_nope')).toBeNull();
+  });
+
+  it("lists only the owner's keys (newest first, no secret) and revokes owner-scoped (M2-04)", async () => {
+    const [other] = await db.insert(users).values({ email: 'other-keys@example.test' }).returning();
+    const mine = await createApiKey({ userId, name: 'mine', scopes: ['read', 'publish'] });
+    const theirs = await createApiKey({ userId: other.id, name: 'theirs', scopes: ['read'] });
+
+    const listed = await listApiKeys(userId);
+    expect(listed.map((k) => k.id)).toContain(mine.id);
+    expect(listed.map((k) => k.id)).not.toContain(theirs.id);
+    expect(listed[0].id).toBe(mine.id);
+    expect(JSON.stringify(listed)).not.toContain(mine.key);
+    expect(JSON.stringify(listed)).not.toContain(hashToken(mine.key));
+    expect(listed[0]).toMatchObject({ name: 'mine', scopes: 'read publish', revokedAt: null });
+
+    // Another user's key id is indistinguishable from an unknown one.
+    expect(await revokeUserApiKey(userId, theirs.id)).toBeNull();
+    expect(await validateApiKey(theirs.key)).not.toBeNull();
+
+    // The owner's revoke is immediate: the very next validation fails (no cache).
+    expect(await validateApiKey(mine.key)).not.toBeNull();
+    const revoked = await revokeUserApiKey(userId, mine.id);
+    expect(revoked).toMatchObject({ id: mine.id, name: 'mine', scopes: 'read publish' });
+    expect(revoked?.revokedAt).toBeInstanceOf(Date);
+    expect(await validateApiKey(mine.key)).toBeNull();
+    // Idempotent: a second revoke finds no live key.
+    expect(await revokeUserApiKey(userId, mine.id)).toBeNull();
+    const after = (await listApiKeys(userId)).find((k) => k.id === mine.id);
+    expect(after?.revokedAt).toBeInstanceOf(Date);
   });
 });

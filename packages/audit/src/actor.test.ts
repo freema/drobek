@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   AUDIT_ACTIONS,
   AUDIT_ACTION_LIST,
+  AUDIT_ACTOR_KINDS,
   actorKindForSurface,
+  parseActorKind,
 } from './actor.js';
 
 describe('actorKindForSurface (PHY-85 actor_kind resolution)', () => {
@@ -39,5 +41,32 @@ describe('audit action vocabulary', () => {
 
   it('the action list has no duplicates', () => {
     expect(new Set(AUDIT_ACTION_LIST).size).toBe(AUDIT_ACTION_LIST.length);
+  });
+});
+
+describe('M2-04 dictionary + actor filter', () => {
+  it('lists the account actions and the module/proxy actions already written', () => {
+    for (const a of [
+      'api_key.create',
+      'api_key.revoke',
+      'oauth_client.revoke',
+      'data.export',
+      'forms.export',
+      'proxy.blocked',
+      'proxy.upstream.create',
+      'proxy.upstream.delete',
+      'auth.sign_in',
+    ]) {
+      expect(AUDIT_ACTION_LIST).toContain(a);
+    }
+  });
+
+  it('the actor filter knows exactly the three pg enum values', () => {
+    expect([...AUDIT_ACTOR_KINDS]).toEqual(['user', 'agent', 'end_user']);
+    expect(parseActorKind('end_user')).toBe('end_user');
+    expect(parseActorKind(' agent ')).toBe('agent');
+    expect(parseActorKind('admin')).toBeNull();
+    expect(parseActorKind('')).toBeNull();
+    expect(parseActorKind(null)).toBeNull();
   });
 });

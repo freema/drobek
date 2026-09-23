@@ -87,9 +87,18 @@ export {
   createApiKey,
   validateApiKey,
   revokeApiKey,
+  listApiKeys,
+  revokeUserApiKey,
   type CreatedApiKey,
   type ApiKeyClaims,
+  type ApiKeySummary,
 } from './api-keys.server.js';
+export {
+  listConnections,
+  revokeConnection,
+  type OAuthConnection,
+  type RevokedConnection,
+} from './connections.server.js';
 export {
   issueAuthCode,
   consumeAuthCode,

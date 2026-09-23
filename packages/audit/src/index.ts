@@ -6,6 +6,8 @@
  */
 export {
   actorKindForSurface,
+  parseActorKind,
+  AUDIT_ACTOR_KINDS,
   AUDIT_ACTIONS,
   AUDIT_ACTION_LIST,
   AUDIT_SUBJECT_TYPES,

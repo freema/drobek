@@ -2,6 +2,27 @@
 
 ## Unreleased (`next`)
 
+### Dashboard account area: API keys, OAuth connections, Activity filter, source footer (NSO-284)
+
+- **`/me/api-keys`**: create a personal `drk_` key (name + `read` / `write` /
+  `publish`), shown once in the create response (`Cache-Control: no-store`),
+  list with last use, revoke (immediate — the MCP endpoint reads the key row on
+  every request). At most 25 active keys per user.
+- **`/me/connections`**: the OAuth clients (DCR or CIMD) holding a live grant
+  for you — name, source, scopes, last token issued. Revoke deletes the
+  client's access tokens, refresh tokens and pending codes for you; its next
+  MCP call is 401 and its refresh token `invalid_grant`.
+- **Audit**: `api_key.create`, `api_key.revoke`, `oauth_client.revoke` (written
+  to the actor's personal workspace), and the dictionary now also lists the
+  actions modules/proxy already wrote (`data.export`, `proxy.blocked`,
+  `proxy.upstream.create|delete`). Activity + its CSV gain an actor filter
+  (`?actor=user|agent|end_user`); end-user rows get their own badge.
+- **Footer** on every dashboard page: `Source (AGPL-3.0) · <sha>` linking to
+  `https://github.com/freema/drobek/commit/<GIT_SHA>` (AGPL-3.0 §13); a build
+  without a sha links to the `main` tree.
+- `@drobek/oauth`: `listApiKeys`, `revokeUserApiKey`, `listConnections`,
+  `revokeConnection`. No migration.
+
 ### The built-in `proxy` module (NSO-297)
 
 - **`modules/proxy`** (`drobek-module-proxy`): `/__drobek/v1/proxy/:upstream/*`

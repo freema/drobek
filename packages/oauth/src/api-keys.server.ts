@@ -10,7 +10,7 @@
  * compared or logged. A revoked key stops working immediately.
  */
 import { randomBytes } from 'node:crypto';
-import { and, eq, isNull, lt, or } from 'drizzle-orm';
+import { and, desc, eq, isNull, lt, or } from 'drizzle-orm';
 import { apiKeys, getDb } from '@drobek/db';
 import { API_KEY_LAST_USED_THROTTLE_MS } from './constants.js';
 import { hashToken } from './crypto.server.js';
@@ -109,4 +109,51 @@ export async function revokeApiKey(id: string): Promise<boolean> {
     .where(and(eq(apiKeys.id, id), isNull(apiKeys.revokedAt)))
     .returning({ id: apiKeys.id });
   return updated.length > 0;
+}
+
+/** A key as the owner sees it in the dashboard — never the key or its hash. */
+export interface ApiKeySummary {
+  id: string;
+  name: string;
+  /** Space-delimited scopes (wire form). */
+  scopes: string;
+  createdAt: Date;
+  lastUsedAt: Date | null;
+  revokedAt: Date | null;
+}
+
+const SUMMARY_COLUMNS = {
+  id: apiKeys.id,
+  name: apiKeys.name,
+  scopes: apiKeys.scopes,
+  createdAt: apiKeys.createdAt,
+  lastUsedAt: apiKeys.lastUsedAt,
+  revokedAt: apiKeys.revokedAt,
+};
+
+/** Every key of `userId` (live and revoked), newest first (M2-04, /me/api-keys). */
+export async function listApiKeys(userId: string): Promise<ApiKeySummary[]> {
+  return getDb()
+    .select(SUMMARY_COLUMNS)
+    .from(apiKeys)
+    .where(eq(apiKeys.userId, userId))
+    .orderBy(desc(apiKeys.createdAt), desc(apiKeys.id));
+}
+
+/**
+ * Revoke one of `userId`'s own keys (M2-04). Owner-scoped: another user's key
+ * id is indistinguishable from an unknown one (null). Returns the revoked key,
+ * or null when it is unknown, not the user's, or already revoked. Takes effect
+ * on the very next request — validateApiKey reads the row every time (no cache).
+ */
+export async function revokeUserApiKey(
+  userId: string,
+  id: string
+): Promise<ApiKeySummary | null> {
+  const [row] = await getDb()
+    .update(apiKeys)
+    .set({ revokedAt: new Date() })
+    .where(and(eq(apiKeys.id, id), eq(apiKeys.userId, userId), isNull(apiKeys.revokedAt)))
+    .returning(SUMMARY_COLUMNS);
+  return row ?? null;
 }

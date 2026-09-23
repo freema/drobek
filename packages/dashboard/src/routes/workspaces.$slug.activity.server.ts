@@ -1,7 +1,8 @@
 /**
  * GET /workspaces/:slug/activity — server half of the workspace Activity view
  * (governance v1, PHY-85). Lists the append-only audit trail for THIS workspace,
- * newest-first, filterable by app (subject) + action, keyset-paginated.
+ * newest-first, filterable by app (subject) + action + actor kind (incl.
+ * `end_user`, M2-04), keyset-paginated.
  *
  * Authz: requireWorkspaceRole('workspace-admin') — the audit trail is
  * workspace-admin / super-admin ONLY. A viewer or editor → 403, a non-member →
@@ -13,7 +14,13 @@
  * for a DELETED / tombstoned app still list.
  */
 import { type LoaderFunctionArgs } from 'react-router';
-import { AUDIT_ACTION_LIST, listActivity } from '@drobek/audit';
+import {
+  AUDIT_ACTION_LIST,
+  AUDIT_ACTOR_KINDS,
+  listActivity,
+  parseActorKind,
+  type AuditActorKind,
+} from '@drobek/audit';
 import { requireWorkspaceRole } from '@drobek/tenancy';
 import { listWorkspaceApps } from '../apps.server.js';
 import { shapeActivity } from '../view.js';
@@ -25,6 +32,8 @@ export interface ActivityQuery {
   action: string | null;
   /** App slug filter → matches the audit row's subject id (target), or null. */
   app: string | null;
+  /** Actor-kind filter (`?actor=user|agent|end_user`), or null (M2-04). */
+  actor: AuditActorKind | null;
   /** Opaque keyset cursor for the next (older) page, or null. */
   cursor: string | null;
 }
@@ -32,8 +41,9 @@ export interface ActivityQuery {
 export function parseActivityQuery(url: URL): ActivityQuery {
   const action = (url.searchParams.get('action') ?? '').trim() || null;
   const app = (url.searchParams.get('app') ?? '').trim() || null;
+  const actor = parseActorKind(url.searchParams.get('actor'));
   const cursor = (url.searchParams.get('cursor') ?? '').trim() || null;
-  return { action, app, cursor };
+  return { action, app, actor, cursor };
 }
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
@@ -50,6 +60,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       workspaceId: access.workspace.id,
       action: q.action,
       subject: q.app,
+      actorKind: q.actor,
       cursor: q.cursor,
       limit: PAGE_SIZE,
     }),
@@ -70,8 +81,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       }))
     ),
     nextCursor: result.nextCursor,
-    filter: { action: q.action, app: q.app },
+    filter: { action: q.action, app: q.app, actor: q.actor },
     actionOptions: [...AUDIT_ACTION_LIST],
+    actorOptions: [...AUDIT_ACTOR_KINDS],
     appOptions: apps
       .map((a) => a.slug)
       .sort((x, y) => x.localeCompare(y)),

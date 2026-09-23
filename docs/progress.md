@@ -220,6 +220,14 @@ block, then `next` is pushed and the single MR opened.
   pipeline and `@drobek/serving`, `@drobek/sdk` sends `FormData` as-is.
   Compose: `DROBEK_MODULES=…,data,files`, the `files_data` volume (dev + prod),
   e2e `FILES_QUOTA_PER_APP` 2 MiB.
+- M2-04 (NSO-284) done locally: `/me/api-keys` + `/me/connections`
+  (`packages/dashboard` routes, audited mutations in `account.server.ts`,
+  listing/revocation in `@drobek/oauth` `api-keys.server.ts` /
+  `connections.server.ts`), audit dictionary `api_key.create|revoke`,
+  `oauth_client.revoke` (+ the module/proxy actions already written), the
+  Activity/CSV `?actor=` filter incl. `end_user`, and the root-layout footer
+  `Source (AGPL-3.0) · <sha>` (`@drobek/dashboard/footer`, sha = `GIT_SHA`
+  from the root loader). No migration. e2e `dashboard-account.spec.ts` written.
 
 ## Notes and gotchas
 
@@ -482,6 +490,23 @@ block, then `next` is pushed and the single MR opened.
   test asserts is absent (`proxy-echo`). `docker compose up -d proxy-echo` is
   needed after its compose env changed (`EXTRA_PORTS`), or the proxy module
   answers 502 `upstream_error`.
+- Account events (API keys, OAuth connections) are user-level but
+  `audit_log.workspace_id` is NOT NULL: they are written to the actor's
+  personal workspace (`ensurePersonalWorkspace`), so the user reads them in
+  that workspace's Activity. Keys minted by `task api-key:create` are NOT
+  audited (CLI, no session).
+- Revoking a connection DELETES the (user, client) access/refresh tokens and
+  codes, so the old refresh token answers `invalid_grant` "unknown refresh
+  token" — not the reuse path (reuse detection still applies to live
+  lineages). `rotated_to` is a self-FK without cascade; deleting the whole
+  pair in ONE statement is what keeps it satisfied.
+- `/me/connections` "last used" is the newest token issued to the pair
+  (consent or refresh), not a per-MCP-call stamp — access tokens have no
+  `last_used_at`.
+- The root route now has a loader (`sourceSha`) + `shouldRevalidate: false`;
+  the footer renders from `useRouteLoaderData('root')` in `Layout`, so it
+  falls back to the `main` tree link when the root loader did not run (error
+  document). drobek-web has its own root and needs the same footer.
 
 ## Failed approaches
 

@@ -149,10 +149,12 @@ in production and on any https origin. Browsers refuse `__Host-` cookies on
 plain `http://localhost`, so the http dev stack (NODE_ENV ≠ production) uses
 the unprefixed, still host-only `drobek_session` / `drobek_app_access` instead.
 
-For scripts and tests without an OAuth flow, `task api-key:create
-EMAIL=you@example.com NAME=laptop SCOPES=read,write` prints a personal `drk_…`
-API key once (for an existing user of the local stack); send it as
-`Authorization: Bearer drk_…` to `/mcp`.
+For scripts and tests without an OAuth flow, create a personal `drk_…` API
+key in the dashboard at `/me/api-keys` (shown once; revocation is immediate)
+or with `task api-key:create EMAIL=you@example.com NAME=laptop
+SCOPES=read,write` on the local stack; send it as `Authorization: Bearer drk_…`
+to `/mcp`. `/me/connections` lists the OAuth clients you approved and revokes
+them (access + refresh tokens).
 
 **Production / TLS:** `docker-compose.production.yaml` runs drobek behind
 Caddy (dashboard + wildcard `*.<APPS_DOMAIN>`: your own wildcard cert, DNS-01

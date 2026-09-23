@@ -30,6 +30,8 @@ export interface ListActivityInput {
   action?: string | null;
   /** Exact subject filter — the app slug, optional. */
   subject?: string | null;
+  /** Actor-kind filter (user | agent | end_user), optional (M2-04). */
+  actorKind?: AuditActorKind | null;
   /** Page size (rows returned); one extra row is probed for nextCursor. */
   limit?: number;
   /** Opaque keyset cursor from a prior page. */
@@ -78,6 +80,7 @@ function buildWhere(input: ListActivityInput) {
   const conds = [eq(auditLog.workspaceId, input.workspaceId)];
   if (input.action) conds.push(eq(auditLog.action, input.action));
   if (input.subject) conds.push(eq(auditLog.target, input.subject));
+  if (input.actorKind) conds.push(eq(auditLog.actorKind, input.actorKind));
 
   const ks = decodeCursor(input.cursor);
   if (ks) {

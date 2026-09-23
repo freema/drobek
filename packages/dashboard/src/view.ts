@@ -165,9 +165,12 @@ export interface ActivityItem {
   action: string;
   /** agent (an MCP tool ran on behalf of a connected agent) vs user (a human). */
   actorKind: AuditActorKind;
-  /** Badge text mirrors actorKind: 'agent' | 'user'. */
+  /** Badge text mirrors actorKind: 'agent' | 'user' | 'end_user'. */
   actorBadge: AuditActorKind;
-  /** Which human/agent: the actor's email, or 'system' when there is no actor. */
+  /**
+   * Which human/agent: the actor's email, 'app end user' for an end-user row
+   * (no drobek actor), or 'system' when there is no actor at all.
+   */
   actorLabel: string;
   subjectType: string | null;
   subject: string | null;
@@ -194,7 +197,8 @@ export function shapeActivity(rows: ActivityRowInput[]): ActivityItem[] {
       action: r.action,
       actorKind: r.actorKind,
       actorBadge: r.actorKind,
-      actorLabel: r.actorEmail ?? 'system',
+      // End users (M1-01) are not drobek users: their rows carry no actor id.
+      actorLabel: r.actorEmail ?? (r.actorKind === 'end_user' ? 'app end user' : 'system'),
       subjectType: r.subjectType,
       subject: r.subject,
       time: formatTimestamp(r.createdAt.toISOString()),
