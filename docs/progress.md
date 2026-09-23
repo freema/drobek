@@ -147,6 +147,22 @@ block, then `next` is pushed and the single MR opened.
   briefing / skill / parity tests updated (11 tools). e2e
   `tests-e2e/tests/get-logs.spec.ts` written.
 
+- **M2-01 (NSO-288) — dashboard app page.** Tabs Overview / Files / Data /
+  Settings from `packages/dashboard/src/app-tabs.ts` (add a tab = one line +
+  its route). Shared server half `app-page.server.ts`: `loadAppPage` (role
+  gate + live app), `appHeaderData`, and `appAction` — every app mutation
+  by `intent` (publish, restore, unpublish, unlock, visibility,
+  frame-ancestors, delete), editor gate first, each a `@drobek/apps` call
+  that audits, then `notifyAppChanged`. The header (`app-header.tsx`) posts
+  to the base route with `redirectTo`, so any tab can render it without an
+  action. Files tab + `/files/download?version=N` (ZIP of source + built,
+  own `zipStream`). `@drobek/apps`: `unpublishApp`, `softDeleteApp`,
+  `releaseDeletedAppSlugs` (+ `startSlugRelease`, wired in
+  `apps/server/server/jobs.ts`), `setAppVisibility`, `setFrameAncestors`,
+  `readAppLease` / `releaseAppLease`, `versionZip`. Migration
+  `0016_apps_slug_release`. e2e `tests-e2e/tests/dashboard-app.spec.ts`
+  written (not run in the task).
+
 ## Next
 
 - M0-09 (NSO-299) is blocked on Tomáš (VPS/DNS): it must provision
@@ -539,6 +555,23 @@ block, then `next` is pushed and the single MR opened.
   secret e2e greps both the HTML and that for the secret value.
 - `z.toJSONSchema(schema, { io: 'input' })` is what the dashboard form uses
   (defaulted keys optional); `skill_info` keeps the output-side schema.
+- NSO-288: a deleted app keeps its slug 30 days, then it is RENAMED to
+  `<slug>~deleted-<id>` (migration 0016 lets the slug CHECK admit that only
+  when `deleted_at` is set), not hard-deleted — versions, module data and
+  the audit rows (target = the original slug) stay. `createApp` releases the
+  one slug it asks for on demand, so "free after 30 days" is exact; the e2e
+  shifts `deleted_at` back 31 days in SQL and calls `create_app`.
+- NSO-288: every dashboard app mutation is `appAction` (`intent` field; a
+  form with only `versionId` still publishes — the older specs post that).
+  Failures return `{ error, intent }` (400; 409 for a restore under another
+  member's lease) rendered as `publish-error` (intent publish) or
+  `action-error`.
+- NSO-288: `app-published-version` now marks only the `v<N>` code (or the
+  "not published" text) in the header — the prod URL next to it could
+  contain "v<digit>" inside a slug.
+- NSO-288: changing an app's password does NOT invalidate app-access
+  cookies already issued (stateless HMAC token of appId + expiry, 12 h) —
+  see the out-of-scope list of the task report.
 
 ## Failed approaches
 

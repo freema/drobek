@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { AUDIT_ACTIONS, writeAudit } from '@drobek/audit';
 import { apps, getDb } from '@drobek/db';
 import { AppsError } from './errors.js';
+import { releaseDeletedAppSlugs } from './lifecycle.server.js';
 import { suggestSlug, validateAppSlug } from './slug.js';
 import type { Actor } from './types.js';
 
@@ -39,7 +40,8 @@ async function slugTaken(slug: string): Promise<AppsError> {
 
 /**
  * Create an app in a workspace. Slugs are global: a taken one fails with
- * `slug_taken` + a free `<slug>-<4hex>` suggestion. Audited as `app.create`.
+ * `slug_taken` + a free `<slug>-<4hex>` suggestion (a soft-deleted app holds
+ * its slug for 30 days). Audited as `app.create`.
  */
 export async function createApp(input: CreateAppInput): Promise<{ id: string; slug: string }> {
   const { workspaceId, slug, actor } = input;
@@ -51,6 +53,9 @@ export async function createApp(input: CreateAppInput): Promise<{ id: string; sl
       suggestion: validateAppSlug(suggestion) ? undefined : suggestion,
     });
   }
+  // A slug an app deleted 30+ days ago still holds is released right here,
+  // not only by the hourly sweep (NSO-288).
+  await releaseDeletedAppSlugs({ slug });
   if (await slugExists(slug)) throw await slugTaken(slug);
 
   try {

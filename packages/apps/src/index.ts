@@ -1,7 +1,9 @@
 /**
  * @drobek/apps — apps and their immutable versions (M0-02): create (global
  * slugs), write a version, publish (pointer move), restore (new version from
- * an old one), and blob GC. The MCP tools and the dashboard call these.
+ * an old one), and blob GC; since M2-01 also unpublish, soft delete + slug
+ * release, visibility / frame-ancestors settings, the single-writer lease
+ * read/release and version ZIPs. The MCP tools and the dashboard call these.
  */
 export { AppsError, type AppsErrorCode } from './errors.js';
 export {
@@ -23,8 +25,33 @@ export {
   readBlobs,
   readVersionFile,
   restore,
+  versionZip,
   type CreateVersionOptions,
 } from './versions.server.js';
+export { crc32, zipStream, type ZipEntry } from './zip.js';
+export {
+  SLUG_RELEASE_AFTER_MS,
+  SLUG_RELEASE_INTERVAL_MS,
+  releaseDeletedAppSlugs,
+  setAppVisibility,
+  setFrameAncestors,
+  slugReleaseAt,
+  softDeleteApp,
+  startSlugRelease,
+  tombstoneSlug,
+  unpublishApp,
+  type ReleasedSlug,
+  type VisibilityInput,
+} from './lifecycle.server.js';
+export {
+  LEASE_KEY_PREFIX,
+  leaseKey,
+  parseLease,
+  readAppLease,
+  releaseAppLease,
+  type Lease,
+  type LeaseRedis,
+} from './lease.server.js';
 export {
   BLOB_GC_GRACE_MS,
   BLOB_GC_INTERVAL_MS,

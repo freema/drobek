@@ -99,6 +99,13 @@
       "when": 1790192202963,
       "tag": "0014_get_logs",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1790194823940,
+      "tag": "0016_apps_slug_release",
+      "breakpoints": true
     }
   ]
 }

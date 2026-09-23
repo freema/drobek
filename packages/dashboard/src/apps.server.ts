@@ -15,6 +15,7 @@ export async function listWorkspaceApps(workspaceId: string): Promise<AppListRow
   const rows = await getDb()
     .select({
       slug: apps.slug,
+      name: apps.name,
       status: apps.status,
       visibility: apps.visibility,
       publishedVersionId: apps.publishedVersionId,
@@ -29,6 +30,7 @@ export async function listWorkspaceApps(workspaceId: string): Promise<AppListRow
 
   return rows.map((r) => ({
     slug: r.slug,
+    name: r.name,
     status: r.status as AppLiveStatus,
     visibility: r.visibility as AppVisibility,
     publishedVersionId: r.publishedVersionId,
@@ -41,8 +43,14 @@ export async function listWorkspaceApps(workspaceId: string): Promise<AppListRow
 export interface AppDetail {
   id: string;
   slug: string;
+  name: string | null;
+  workspaceId: string;
   status: AppLiveStatus;
   visibility: AppVisibility;
+  /** A password is stored (never the hash itself). */
+  hasPassword: boolean;
+  /** Raw `apps.frame_ancestors` override (null → no embedding). */
+  frameAncestors: string | null;
   publishedVersionId: string | null;
 }
 
@@ -55,8 +63,12 @@ export async function loadAppForView(
     .select({
       id: apps.id,
       slug: apps.slug,
+      name: apps.name,
+      workspaceId: apps.workspaceId,
       status: apps.status,
       visibility: apps.visibility,
+      hasPassword: sql<boolean>`${apps.passwordHash} IS NOT NULL`,
+      frameAncestors: apps.frameAncestors,
       publishedVersionId: apps.publishedVersionId,
     })
     .from(apps)
@@ -67,8 +79,12 @@ export async function loadAppForView(
   return {
     id: r.id,
     slug: r.slug,
+    name: r.name,
+    workspaceId: r.workspaceId,
     status: r.status as AppLiveStatus,
     visibility: r.visibility as AppVisibility,
+    hasPassword: Boolean(r.hasPassword),
+    frameAncestors: r.frameAncestors,
     publishedVersionId: r.publishedVersionId,
   };
 }

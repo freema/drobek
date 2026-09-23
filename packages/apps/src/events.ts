@@ -19,7 +19,7 @@ export interface AppChangedEvent {
   slug: string;
   /** The version that was written / restored / published, when there is one. */
   version?: number;
-  kind?: 'version' | 'publish' | 'settings';
+  kind?: 'version' | 'publish' | 'unpublish' | 'settings' | 'delete';
 }
 
 const local = new EventEmitter();

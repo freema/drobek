@@ -1,35 +1,30 @@
 /**
- * GET/POST /workspaces/:slug/apps/:appSlug — server half (PHY-74 slice).
+ * GET/POST /workspaces/:slug/apps/:appSlug — server half of the app page's
+ * Overview tab (NSO-288; PHY-74 slice before it).
  *
- * GET (viewer+): the app (status, visibility, published version) + its
- * VERSION HISTORY (number, author kind, compile status, reasoning, published
- * flag). A viewer sees everything but no publish control.
+ * GET (viewer+): the shared app header (URLs, compile state, lock) + the
+ * VERSION HISTORY (number, time, author, reasoning, compile status + first
+ * error, a link to `<slug>--v<N>`) + the insight panels (recent errors,
+ * traffic / 404s). A viewer sees everything but no controls.
  *
- * POST (editor+): PUBLISH a version — publishing an older version is the
- * rollback. The role gate is enforced SERVER-SIDE by
- * requireWorkspaceRole('editor') — a viewer gets 403, a non-member 404, an
- * anonymous request a /login redirect — BEFORE @drobek/apps publish runs
- * (which moves the pointer and writes the `app.publish` audit row).
+ * POST (editor+): `appAction` — publish (an older version = the rollback),
+ * restore to the working copy, and the header's unpublish / unlock; the
+ * role gate runs before anything else (viewer → 403, non-member → 404,
+ * anonymous → /login). A pre-NSO-288 form with only `versionId` still
+ * publishes.
  */
-import {
-  data,
-  redirect,
-  type ActionFunctionArgs,
-  type LoaderFunctionArgs,
-} from 'react-router';
-import { AppsError, listVersions, notifyAppChanged, publish } from '@drobek/apps';
-import { actorKindForSurface } from '@drobek/audit';
-import { moduleRuntime } from '@drobek/modules';
-import { requireWorkspaceRole } from '@drobek/tenancy';
+import { type LoaderFunctionArgs } from 'react-router';
+import { listVersions, versionUrl } from '@drobek/apps';
 import {
   queryAppErrors,
   queryAppLogs,
   type AppErrorsView,
   type AppLogsView,
 } from '@drobek/insights';
-import { loadAppForView } from '../apps.server.js';
+import { appAction, appHeaderData, emailsOf, loadAppPage } from '../app-page.server.js';
+import { compileSummary } from '../app-view.js';
 import { loadPendingBanner } from '../pending-banner.server.js';
-import { canPublish, shapeVersionHistory } from '../view.js';
+import { shapeVersionHistory } from '../view.js';
 
 const EMPTY_ERRORS: AppErrorsView = {
   totalEvents: 0,
@@ -44,91 +39,44 @@ const EMPTY_LOGS: AppLogsView = {
 };
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  const access = await requireWorkspaceRole(
-    request,
-    String(params.slug ?? ''),
-    'viewer'
-  );
+  const page = await loadAppPage(request, params, 'viewer');
+  const { app } = page;
 
-  const app = await loadAppForView(
-    access.workspace.id,
-    String(params.appSlug ?? '')
-  );
-  if (!app) {
-    throw data({ message: 'Not found' }, { status: 404 });
-  }
-
-  const versions = shapeVersionHistory(await listVersions(app.id, { limit: 100 }));
-  const published = versions.find((v) => v.published) ?? null;
-
-  // PHY-123 Overview panels — recent errors + a 404/traffic summary (read-only,
-  // viewer+). Best-effort: a signals hiccup degrades to empty, never 500s the
-  // app-detail page. Stored text is React-escaped on render (no stored XSS).
-  const [errors, logs] = await Promise.all([
+  const raw = await listVersions(app.id, { limit: 100 });
+  const [header, emails, errors, logs] = await Promise.all([
+    appHeaderData(page),
+    emailsOf(raw.map((v) => v.createdByUserId)),
+    // PHY-123 insight panels — best effort: a signals hiccup degrades to
+    // empty, never 500s the page. Stored text is React-escaped on render.
     queryAppErrors(app.id).catch(() => EMPTY_ERRORS),
     queryAppLogs(app.id).catch(() => EMPTY_LOGS),
   ]);
+  const byId = new Map(raw.map((v) => [v.id, v]));
+  const latestNumber = raw[0]?.number ?? 0;
+  const versions = shapeVersionHistory(raw).map((v) => {
+    const r = byId.get(v.id);
+    const compile = compileSummary(r?.compileErrors);
+    return {
+      ...v,
+      author: r?.createdByUserId ? (emails.get(r.createdByUserId) ?? null) : null,
+      compileErrorCount: compile.count,
+      compileFirstError: compile.first,
+      // The version host serves only versions that compiled.
+      openUrl: v.compileStatus === 'ok' ? versionUrl(app.slug, v.number) : null,
+      // Restoring the newest version would only duplicate it.
+      restorable: v.number !== latestNumber,
+    };
+  });
 
   return {
-    workspace: { slug: access.workspace.slug, name: access.workspace.name },
-    app: {
-      slug: app.slug,
-      status: app.status,
-      visibility: app.visibility,
-      publishedVersion: published?.number ?? null,
-    },
+    header,
     versions,
     errors,
     logs,
-    role: access.effectiveRole,
-    canPublish: canPublish(access.effectiveRole),
-    // M2-02: "N changes await confirmation" in the header (PendingBanner).
-    pendingBanner: await loadPendingBanner(app, access.workspace.slug, app.slug),
+    canPublish: header.canEdit,
+    // M2-02: "N changes await confirmation" (PendingBanner).
+    pendingBanner: await loadPendingBanner(app, header.workspace.slug, app.slug),
   };
 }
 
-export async function action({ request, params }: ActionFunctionArgs) {
-  // Role GATE (the PHY-74 acceptance): editor+ required. A viewer → 403, a
-  // non-member → 404, anonymous → /login — thrown by the middleware here,
-  // BEFORE any state changes.
-  const access = await requireWorkspaceRole(
-    request,
-    String(params.slug ?? ''),
-    'editor'
-  );
-
-  const appSlug = String(params.appSlug ?? '');
-  const app = await loadAppForView(access.workspace.id, appSlug);
-  if (!app) {
-    throw data({ message: 'Not found' }, { status: 404 });
-  }
-  const form = await request.formData();
-  const versionId = String(form.get('versionId') ?? '').trim();
-
-  try {
-    // Dashboard/web surface (PHY-85) → the publish audit is attributed to the
-    // human session user. Server-derived here; the client cannot set it.
-    const published = await publish(app.id, versionId, {
-      userId: access.user.id,
-      kind: actorKindForSurface('web'),
-    });
-    // M0-06: the production host serves the new version from the next request.
-    await notifyAppChanged({ app_id: app.id, slug: app.slug, version: published.number, kind: 'publish' });
-    // M1-01: platform modules react to a publish (best effort, errors logged).
-    await (await moduleRuntime()).runHook('onPublish', {
-      id: app.id,
-      slug: app.slug,
-      workspaceId: access.workspace.id,
-      version: published.number,
-    });
-  } catch (err) {
-    // Expected failures (not_found / not_publishable) carry a caller-safe message.
-    if (err instanceof AppsError) {
-      return data({ error: err.message }, { status: 400 });
-    }
-    throw err;
-  }
-
-  // Reflect the new published version: bounce back to the detail page.
-  return redirect(`/workspaces/${access.workspace.slug}/apps/${appSlug}`);
-}
+export const action = appAction;

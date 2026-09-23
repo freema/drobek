@@ -24,6 +24,26 @@
       "types": "./src/routes/workspaces.$slug.apps.$appSlug.server.ts",
       "default": "./dist/routes/workspaces.$slug.apps.$appSlug.server.js"
     },
+    "./routes/workspaces.$slug.apps.$appSlug.files": {
+      "types": "./src/routes/workspaces.$slug.apps.$appSlug.files.tsx",
+      "default": "./dist/routes/workspaces.$slug.apps.$appSlug.files.js"
+    },
+    "./routes/workspaces.$slug.apps.$appSlug.files.server": {
+      "types": "./src/routes/workspaces.$slug.apps.$appSlug.files.server.ts",
+      "default": "./dist/routes/workspaces.$slug.apps.$appSlug.files.server.js"
+    },
+    "./routes/workspaces.$slug.apps.$appSlug.files.download.server": {
+      "types": "./src/routes/workspaces.$slug.apps.$appSlug.files.download.server.ts",
+      "default": "./dist/routes/workspaces.$slug.apps.$appSlug.files.download.server.js"
+    },
+    "./routes/workspaces.$slug.apps.$appSlug.settings": {
+      "types": "./src/routes/workspaces.$slug.apps.$appSlug.settings.tsx",
+      "default": "./dist/routes/workspaces.$slug.apps.$appSlug.settings.js"
+    },
+    "./routes/workspaces.$slug.apps.$appSlug.settings.server": {
+      "types": "./src/routes/workspaces.$slug.apps.$appSlug.settings.server.ts",
+      "default": "./dist/routes/workspaces.$slug.apps.$appSlug.settings.server.js"
+    },
     "./routes/workspaces.$slug.apps.$appSlug.data": {
       "types": "./src/routes/workspaces.$slug.apps.$appSlug.data.tsx",
       "default": "./dist/routes/workspaces.$slug.apps.$appSlug.data.js"
@@ -133,6 +153,7 @@
     "@drobek/modules": "workspace:*",
     "@drobek/oauth": "workspace:*",
     "@drobek/proxy": "workspace:*",
+    "@drobek/serving": "workspace:*",
     "@drobek/tenancy": "workspace:*",
     "drizzle-orm": "^0.41.0"
   },

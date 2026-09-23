@@ -42,6 +42,7 @@ describe('shapeApps', () => {
     const [item] = shapeApps([row('todo', new Date('2026-01-01T00:00:00Z'))]);
     expect(item).toEqual({
       slug: 'todo',
+      name: null,
       status: 'live',
       visibility: 'public',
       published: true,

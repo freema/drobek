@@ -87,6 +87,20 @@ export const AUDIT_ACTIONS = {
   apiKeyRevoke: 'api_key.revoke',
   /** M2-04: a user revoked an OAuth client's access (all its tokens for that user). Personal workspace. */
   oauthClientRevoke: 'oauth_client.revoke',
+  /** M2-01: the production host stopped serving (published pointer cleared). */
+  appUnpublish: 'app.unpublish',
+  /** M2-01: the app was soft-deleted (invisible everywhere; slug held 30 days). */
+  appDelete: 'app.delete',
+  /** M2-01: a deleted app's slug was released (system; renamed to its tombstone). */
+  appSlugRelease: 'app.slug_release',
+  /** M2-01: a member removed an agent's single-writer lease (meta: the previous holder). */
+  appLockRelease: 'app.lock.release',
+  /** M2-01: the app was made public (no password gate). */
+  appVisibilityPublic: 'app.visibility.public',
+  /** M2-01: the app was put behind a password, or its password was changed. */
+  appVisibilityPassword: 'app.visibility.password',
+  /** M2-01: the app's CSP frame-ancestors override changed (meta: the new value). */
+  appFrameAncestors: 'app.frame_ancestors.change',
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];

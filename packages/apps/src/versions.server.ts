@@ -11,6 +11,7 @@ import { AUDIT_ACTIONS, writeAudit, type AuditExecutor } from '@drobek/audit';
 import { normalizeAppPath } from '@drobek/compile';
 import { appVersions, apps, blobs, getDb, versionFiles } from '@drobek/db';
 import { AppsError } from './errors.js';
+import { zipStream, type ZipEntry } from './zip.js';
 import type {
   Actor,
   CompileStatus,
@@ -322,4 +323,34 @@ export async function restore(
     });
     return { id: version.id, number: newNumber };
   });
+}
+
+const ZIP_BLOB_BATCH = 32;
+
+/**
+ * A version as a ZIP (the dashboard's "download", NSO-288): every source file
+ * under `<slug>-v<N>/source/`, every compiled output under
+ * `<slug>-v<N>/built/`. Streamed — blobs are read in small batches while the
+ * archive is written. null when the app has no such version.
+ */
+export async function versionZip(
+  app: { id: string; slug: string },
+  number: number
+): Promise<{ filename: string; stream: AsyncGenerator<Buffer> } | null> {
+  const version = await getVersion(app.id, { number });
+  if (!version) return null;
+  const root = `${app.slug}-v${version.number}`;
+  const { files, createdAt } = version;
+  async function* entries(): AsyncGenerator<ZipEntry> {
+    for (let i = 0; i < files.length; i += ZIP_BLOB_BATCH) {
+      const batch = files.slice(i, i + ZIP_BLOB_BATCH);
+      const bytes = await readBlobs([...new Set(batch.map((f) => f.sha256))]);
+      for (const f of batch) {
+        const b = bytes.get(f.sha256);
+        if (!b) throw new Error(`blob ${f.sha256} of ${root}/${f.kind}/${f.path} is missing`);
+        yield { name: `${root}/${f.kind}/${f.path}`, bytes: b, mtime: createdAt };
+      }
+    }
+  }
+  return { filename: `${root}.zip`, stream: zipStream(entries()) };
 }

@@ -22,6 +22,8 @@ export type CompileStatusName = 'pending' | 'ok' | 'error';
 /** A db row for the apps-list shaping (from apps.server.ts). */
 export interface AppListRow {
   slug: string;
+  /** create_app's human-readable name (null for older apps → show the slug). */
+  name?: string | null;
   status: AppLiveStatus;
   visibility: AppVisibility;
   publishedVersionId: string | null;
@@ -34,6 +36,7 @@ export interface AppListRow {
 
 export interface AppListItem {
   slug: string;
+  name: string | null;
   status: AppLiveStatus;
   visibility: AppVisibility;
   /** True once a version is published. */
@@ -56,6 +59,7 @@ export function shapeApps(rows: AppListRow[]): AppListItem[] {
     )
     .map((r) => ({
       slug: r.slug,
+      name: r.name ?? null,
       status: r.status,
       visibility: r.visibility,
       published: r.publishedVersionId !== null,

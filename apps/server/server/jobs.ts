@@ -1,4 +1,4 @@
-import { startBlobGc } from '@drobek/apps';
+import { startBlobGc, startSlugRelease } from '@drobek/apps';
 import { auditRetentionDays, pruneAuditLog } from '@drobek/audit';
 import type { Logger } from '@drobek/core';
 
@@ -13,14 +13,17 @@ export interface BackgroundJobs {
  *
  * - Blob GC (hourly, one replica at a time via a Redis lease): deletes blobs
  *   no version references, after a 7-day grace period.
+ * - Slug release (hourly, Redis lease; NSO-288): a soft-deleted app's slug is
+ *   free again 30 days after the delete (renamed to its tombstone).
  * - PHY-85 governance: the audit trail is append-only; the ONLY deletion is
  *   the age-based retention prune (startup, then daily). It never targets a
  *   specific row and is not exposed over any API/UI.
  */
 export function startBackgroundJobs(log: Logger): BackgroundJobs {
-  const stopBlobGc = startBlobGc((msg, err) =>
-    err ? log.error(msg, { error: (err as Error).message }) : log.info(msg)
-  );
+  const jobLog = (msg: string, err?: unknown) =>
+    err ? log.error(msg, { error: (err as Error).message }) : log.info(msg);
+  const stopBlobGc = startBlobGc(jobLog);
+  const stopSlugRelease = startSlugRelease(jobLog);
 
   const pruneAuditOnce = async (): Promise<void> => {
     try {
@@ -40,6 +43,7 @@ export function startBackgroundJobs(log: Logger): BackgroundJobs {
     async stop() {
       clearInterval(timer);
       stopBlobGc();
+      stopSlugRelease();
     },
   };
 }

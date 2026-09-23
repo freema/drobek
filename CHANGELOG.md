@@ -44,6 +44,42 @@
   `drobek:rl:modules:pending-mail:<app_id>`), listing everything that waits.
   `configure({ surface: 'web' })` audits as the user and sends no e-mail;
   `moduleView()`, `pendingSummary()`, `secretsStatus()`.
+### Dashboard: the app page (NSO-288)
+
+- **App page tabs** (`@drobek/dashboard`): Overview (header + versions +
+  health panels), Files, Data, Settings — listed in ONE data-driven array
+  (`app-tabs.ts`). The header shows the production / preview URLs (links,
+  never a frame), the newest version's compile state, the agent's
+  single-writer lease ("your agent / an agent of X is working, last write
+  N s ago") with **Unlock**, and **Unpublish**.
+- **Versions**: number, time, author, reasoning, compile status + first
+  error; **Publish** (an older version = the rollback), **Restore** (a new
+  version with that version's files → the preview; refused with 409 while
+  another member's agent holds the lease), **Open** `<slug>--v<N>`, Files.
+- **Files**: the version's tree (source + built), a read-only viewer with a
+  dependency-free highlighter (text only, never markup), **Download .zip** of
+  the version (`<slug>-v<N>/source/…` + `<slug>-v<N>/built/…`, streamed,
+  `@drobek/apps` `zipStream` on `node:zlib` — no new dependency).
+- **Settings**: visibility public / password (scrypt, the app-host gate's
+  hasher), the CSP `frame_ancestors` override (validated by
+  `parseFrameAncestors`), **Delete app** (type the slug).
+- **Apps list**: search (name / slug), published / not published, sort by
+  last change / newest / name; deleted apps never appear.
+- Everything is role-gated (editor+ mutations — a viewer gets no control and
+  403 on POST; viewer+ reads) and audited: new actions `app.unpublish`,
+  `app.delete`, `app.slug_release`, `app.lock.release`,
+  `app.visibility.public`, `app.visibility.password`,
+  `app.frame_ancestors.change`.
+- **Soft delete + slug release** (`@drobek/apps`): `softDeleteApp` hides the
+  app everywhere (dashboard, MCP `not_found`, every app host 404 — the serve
+  cache is busted at once); the slug stays taken for 30 days, then
+  `releaseDeletedAppSlugs` renames it to `<slug>~deleted-<id>` (hourly sweep
+  next to the blob GC, Redis lease; `createApp` also releases the one slug it
+  asks for). Migration **0016** lets the slug CHECK admit that tombstone on
+  deleted rows only and adds a partial index on `apps.deleted_at` (additive).
+- The lease key + value parsing moved from `@drobek/mcp` to `@drobek/apps`
+  (`leaseKey`, `parseLease`, `readAppLease`, `releaseAppLease`; `@drobek/mcp`
+  re-exports them); leases now carry `renewed_at`.
 
 ### The built-in `proxy` module (NSO-297)
 

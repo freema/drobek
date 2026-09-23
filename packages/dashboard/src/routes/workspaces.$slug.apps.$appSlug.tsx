@@ -1,125 +1,31 @@
 /**
- * /workspaces/:slug/apps/:appSlug — client half (PHY-74 slice): the app's
- * status / visibility / published version, plus its VERSION HISTORY. Each
- * version that compiled and is not published shows a "Publish" button — but
- * ONLY when the viewer may publish (editor+); publishing an older version is
- * the rollback. The button posts to this route's action, which re-enforces
- * the role server-side. Server code lives in the .server.ts.
+ * /workspaces/:slug/apps/:appSlug — the app page's Overview tab (NSO-288):
+ * the shared header (production / preview URLs, compile state, the agent
+ * lock + Unlock, Unpublish), the VERSION HISTORY with its actions and the
+ * health panels (recent errors, traffic / 404s).
+ *
+ * Per version: number, time, author (agent / user + e-mail), the agent's
+ * reasoning, compile status (+ the first error), and — editor+ only —
+ * "Publish" (a compiled, unpublished version; an older one IS the rollback)
+ * and "Restore" (a NEW version with that version's files becomes the working
+ * copy, i.e. the preview; production changes only on publish). "Open"
+ * links to `<slug>--v<N>` on the apps origin (a link, never a frame — the
+ * dashboard origin must not run app code). Server code lives in the .server.ts.
  */
-import {
-  Form,
-  Link,
-  useActionData,
-  useLoaderData,
-  useNavigation,
-} from 'react-router';
-import type {
-  action,
-  loader,
-} from './workspaces.$slug.apps.$appSlug.server.js';
-import { formatTimestamp } from '../view.js';
+import { Form, Link, useActionData, useLoaderData, useNavigation } from 'react-router';
+import type { action, loader } from './workspaces.$slug.apps.$appSlug.server.js';
+import { ActionError, AppHeader, appStyles } from '../app-header.js';
 import { PendingBanner } from '../pending-banner.js';
+import { formatTimestamp } from '../view.js';
 
-export function meta({
-  data,
-}: {
-  data?: Awaited<ReturnType<typeof loader>>;
-}) {
-  return [{ title: `${data?.app.slug ?? 'App'} — drobek` }];
+export function meta({ data }: { data?: Awaited<ReturnType<typeof loader>> }) {
+  return [{ title: `${data?.header.name ?? data?.header.slug ?? 'App'} — drobek` }];
 }
 
 const styles = {
-  main: {
-    fontFamily: 'system-ui, sans-serif',
-    maxWidth: '48rem',
-    margin: '0 auto',
-    padding: '4rem 1.5rem',
-    color: '#1a1a1a',
-    lineHeight: 1.6,
-  },
-  h1: { fontSize: '1.75rem', marginBottom: '0.25rem' },
   h2: { fontSize: '1.15rem', marginTop: '2.25rem', marginBottom: '0.5rem' },
-  nav: {
-    margin: '0 0 1.5rem',
-    fontSize: '0.9rem',
-    display: 'flex',
-    gap: '0.9rem',
-    flexWrap: 'wrap',
-  },
-  navLink: { color: '#1a1a1a', fontWeight: 600 },
-  headRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.6rem',
-    flexWrap: 'wrap',
-  },
-  urlRow: { margin: '0.75rem 0', fontSize: '0.95rem' },
-  badge: {
-    display: 'inline-block',
-    padding: '0.1rem 0.55rem',
-    fontSize: '0.72rem',
-    fontWeight: 700,
-    letterSpacing: '0.04em',
-    textTransform: 'uppercase',
-    borderRadius: '999px',
-    border: '1px solid #d4d4d8',
-    color: '#3f3f46',
-    background: '#fafafa',
-  },
-  activeBadge: {
-    display: 'inline-block',
-    padding: '0.1rem 0.55rem',
-    fontSize: '0.72rem',
-    fontWeight: 700,
-    letterSpacing: '0.04em',
-    textTransform: 'uppercase',
-    borderRadius: '999px',
-    color: '#166534',
-    background: '#dcfce7',
-    border: '1px solid #bbf7d0',
-  },
-  table: {
-    width: '100%',
-    borderCollapse: 'collapse',
-    fontSize: '0.9rem',
-  },
-  th: {
-    textAlign: 'left',
-    borderBottom: '1px solid #e4e4e7',
-    padding: '0.45rem 0.5rem 0.45rem 0',
-    color: '#555',
-    fontSize: '0.78rem',
-    textTransform: 'uppercase',
-    letterSpacing: '0.04em',
-  },
-  td: {
-    borderBottom: '1px solid #f0f0f2',
-    padding: '0.55rem 0.5rem 0.55rem 0',
-    verticalAlign: 'middle',
-  },
   mono: { fontFamily: 'ui-monospace, monospace', fontSize: '0.85rem' },
-  rbButton: {
-    padding: '0.35rem 0.75rem',
-    fontSize: '0.85rem',
-    fontFamily: 'inherit',
-    fontWeight: 600,
-    color: '#fff',
-    background: '#1a1a1a',
-    border: 'none',
-    borderRadius: '7px',
-    cursor: 'pointer',
-  },
-  error: {
-    background: '#fef2f2',
-    border: '1px solid #fecaca',
-    color: '#991b1b',
-    borderRadius: '8px',
-    padding: '0.6rem 0.75rem',
-    fontSize: '0.9rem',
-    marginTop: '1rem',
-  },
   muted: { color: '#8a8a8e' },
-  back: { fontSize: '0.9rem', color: '#555', marginTop: '2rem' },
   panelGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(18rem, 1fr))',
@@ -198,57 +104,121 @@ const COMPILE_LABEL: Record<string, string> = {
 };
 
 export default function AppDetailRoute() {
-  const { workspace, app, versions, errors, logs, canPublish, pendingBanner } =
-    useLoaderData<typeof loader>();
+  const { header, versions, errors, logs, canPublish, pendingBanner } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const nav = useNavigation();
   const submitting = nav.state !== 'idle';
+  const s = appStyles;
 
   return (
-    <main style={styles.main}>
-      <p style={styles.nav}>
-        <Link
-          to={`/workspaces/${workspace.slug}/apps`}
-          style={styles.navLink}
-        >
-          ← Apps
-        </Link>
-        <Link
-          to={`/workspaces/${workspace.slug}/apps/${app.slug}/data`}
-          style={styles.navLink}
-          data-testid="app-data-link"
-        >
-          Data
-        </Link>
-        <Link to={`/workspaces/${workspace.slug}/apps/${app.slug}/modules`} style={styles.navLink} data-testid="app-modules-link">Modules</Link>
-        <Link to={`/workspaces/${workspace.slug}`} style={styles.navLink}>
-          Members &amp; roles
-        </Link>
-      </p>
-
-      <div style={styles.headRow}>
-        <h1 style={styles.h1}>{app.slug}</h1>
-        {app.publishedVersion !== null ? (
-          <span style={styles.activeBadge}>published</span>
-        ) : (
-          <span style={styles.badge}>not published</span>
-        )}
-        <span style={styles.badge}>{app.status}</span>
-        <span style={styles.badge}>{app.visibility}</span>
-      </div>
-
+    <main style={s.main}>
+      <AppHeader header={header} />
+      <ActionError actionData={actionData} />
       <PendingBanner banner={pendingBanner} />
 
-      <p style={styles.urlRow} data-testid="app-published-version">
-        Published version:{' '}
-        {app.publishedVersion !== null ? (
-          <code style={styles.mono}>v{app.publishedVersion}</code>
-        ) : (
-          <span style={styles.muted}>none</span>
-        )}
-      </p>
+      <h2 style={styles.h2}>Versions</h2>
+      {versions.length === 0 ? (
+        <p style={styles.muted}>No versions yet — your agent writes the first one.</p>
+      ) : (
+        <table style={s.table} data-testid="version-history">
+          <thead>
+            <tr>
+              <th style={s.th}>Version</th>
+              <th style={s.th}>By</th>
+              <th style={s.th}>Compile</th>
+              <th style={s.th}>Note</th>
+              <th style={s.th}>Created</th>
+              <th style={s.th} />
+            </tr>
+          </thead>
+          <tbody>
+            {versions.map((v) => (
+              <tr key={v.id} data-testid="version-row" data-version={v.number}>
+                <td style={s.td}>
+                  <code style={styles.mono}>v{v.number}</code>{' '}
+                  {v.published ? (
+                    <span style={s.okBadge} data-testid="version-published">
+                      published
+                    </span>
+                  ) : null}
+                </td>
+                <td style={s.td}>
+                  {v.actorKind}
+                  {v.author ? <div style={{ ...styles.muted, fontSize: '0.78rem' }}>{v.author}</div> : null}
+                </td>
+                <td style={s.td} data-testid="version-compile" data-status={v.compileStatus}>
+                  {COMPILE_LABEL[v.compileStatus]}
+                  {v.compileErrorCount > 0 ? ` (${v.compileErrorCount})` : ''}
+                  {v.compileFirstError ? (
+                    // React escapes the compiler's message (it quotes app source).
+                    <div style={{ ...styles.mono, fontSize: '0.75rem', color: '#991b1b', wordBreak: 'break-word' }}>
+                      {v.compileFirstError}
+                    </div>
+                  ) : null}
+                </td>
+                {/* React escapes the agent-supplied reasoning. */}
+                <td style={s.td}>{v.reasoning ?? <span style={styles.muted}>—</span>}</td>
+                <td style={s.td}>{formatTimestamp(v.createdAt)}</td>
+                <td style={s.td}>
+                  <span style={s.inline}>
+                    {canPublish && v.publishable ? (
+                      <Form method="post">
+                        <input type="hidden" name="intent" value="publish" />
+                        <input type="hidden" name="versionId" value={v.id} />
+                        <button
+                          type="submit"
+                          style={s.button}
+                          disabled={submitting}
+                          data-testid="publish-button"
+                          data-version={v.number}
+                        >
+                          Publish
+                        </button>
+                      </Form>
+                    ) : null}
+                    {canPublish && v.restorable ? (
+                      <Form method="post">
+                        <input type="hidden" name="intent" value="restore" />
+                        <input type="hidden" name="version" value={v.number} />
+                        <button
+                          type="submit"
+                          style={s.secondaryButton}
+                          disabled={submitting}
+                          title="Create a new version with these files as the working copy (the preview)"
+                          data-testid="restore-button"
+                          data-version={v.number}
+                        >
+                          Restore
+                        </button>
+                      </Form>
+                    ) : null}
+                    {v.openUrl ? (
+                      <a
+                        href={v.openUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        data-testid="version-open-link"
+                        data-version={v.number}
+                      >
+                        Open
+                      </a>
+                    ) : null}
+                    <Link
+                      to={`${header.basePath}/files?version=${v.number}`}
+                      data-testid="version-files-link"
+                      data-version={v.number}
+                    >
+                      Files
+                    </Link>
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
 
-      <h2 style={styles.h2}>Overview</h2>
+      <h2 style={styles.h2}>Health</h2>
       <div style={styles.panelGrid}>
         <section
           style={styles.panel}
@@ -341,69 +311,6 @@ export default function AppDetailRoute() {
           )}
         </section>
       </div>
-
-      <h2 style={styles.h2}>Versions</h2>
-      {actionData?.error ? (
-        <div style={styles.error} role="alert" data-testid="publish-error">
-          {actionData.error}
-        </div>
-      ) : null}
-
-      {versions.length === 0 ? (
-        <p style={styles.muted}>No versions yet — your agent writes the first one.</p>
-      ) : (
-        <table style={styles.table} data-testid="version-history">
-          <thead>
-            <tr>
-              <th style={styles.th}>Version</th>
-              <th style={styles.th}>By</th>
-              <th style={styles.th}>Compile</th>
-              <th style={styles.th}>Note</th>
-              <th style={styles.th}>Created</th>
-              <th style={styles.th} />
-            </tr>
-          </thead>
-          <tbody>
-            {versions.map((v) => (
-              <tr key={v.id} data-testid="version-row" data-version={v.number}>
-                <td style={styles.td}>
-                  <code style={styles.mono}>v{v.number}</code>{' '}
-                  {v.published ? (
-                    <span style={styles.activeBadge} data-testid="version-published">
-                      published
-                    </span>
-                  ) : null}
-                </td>
-                <td style={styles.td}>{v.actorKind}</td>
-                <td style={styles.td}>{COMPILE_LABEL[v.compileStatus]}</td>
-                {/* React escapes the agent-supplied reasoning. */}
-                <td style={styles.td}>{v.reasoning ?? <span style={styles.muted}>—</span>}</td>
-                <td style={styles.td}>{formatTimestamp(v.createdAt)}</td>
-                <td style={styles.td}>
-                  {canPublish && v.publishable ? (
-                    <Form method="post">
-                      <input type="hidden" name="versionId" value={v.id} />
-                      <button
-                        type="submit"
-                        style={styles.rbButton}
-                        disabled={submitting}
-                        data-testid="publish-button"
-                        data-version={v.number}
-                      >
-                        Publish
-                      </button>
-                    </Form>
-                  ) : null}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-
-      <p style={styles.back}>
-        <Link to={`/workspaces/${workspace.slug}/apps`}>← All apps</Link>
-      </p>
     </main>
   );
 }

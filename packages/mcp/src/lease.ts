@@ -8,20 +8,12 @@
  * app can never both win: the script reads the holder and writes the new
  * value atomically inside Redis.
  */
+import { LEASE_KEY_PREFIX, leaseKey, parseLease, type Lease } from '@drobek/apps';
 import type { getRedis } from '@drobek/core';
 
-export const LEASE_KEY_PREFIX = 'drobek:applock:';
-
-export function leaseKey(appId: string): string {
-  return `${LEASE_KEY_PREFIX}${appId}`;
-}
-
-export interface Lease {
-  holder_user_id: string;
-  session_id: string;
-  /** ISO timestamp — informational; the key's TTL is what actually expires it. */
-  expires_at: string;
-}
+// The key format + value shape live in @drobek/apps (the dashboard reads and
+// releases the lease too, NSO-288); re-exported for the existing importers.
+export { LEASE_KEY_PREFIX, leaseKey, type Lease };
 
 export interface LeaseHolder {
   userId: string;
@@ -35,17 +27,6 @@ export interface LeaseStore {
   acquire(appId: string, holder: LeaseHolder, ttlMs: number): Promise<AcquireResult>;
   /** The live leases of these apps (missing = free). */
   get(appIds: string[]): Promise<Map<string, Lease>>;
-}
-
-function parseLease(raw: string | null): Lease | null {
-  if (!raw) return null;
-  try {
-    const v = JSON.parse(raw) as Partial<Lease>;
-    if (typeof v.holder_user_id !== 'string' || typeof v.expires_at !== 'string') return null;
-    return { holder_user_id: v.holder_user_id, session_id: String(v.session_id ?? ''), expires_at: v.expires_at };
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -74,6 +55,7 @@ export function redisLeaseStore(redis: () => RedisLike, now: () => number = Date
         holder_user_id: holder.userId,
         session_id: holder.sessionId,
         expires_at: new Date(now() + ttlMs).toISOString(),
+        renewed_at: new Date(now()).toISOString(),
       };
       const [won, raw] = (await redis().eval(
         ACQUIRE_LUA,
@@ -122,6 +104,7 @@ export function memoryLeaseStore(now: () => number = Date.now): LeaseStore & { c
         holder_user_id: holder.userId,
         session_id: holder.sessionId,
         expires_at: new Date(expiresAtMs).toISOString(),
+        renewed_at: new Date(now()).toISOString(),
       };
       leases.set(appId, { lease, expiresAtMs });
       return { acquired: true, lease };

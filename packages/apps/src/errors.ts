@@ -3,7 +3,9 @@ export type AppsErrorCode =
   | 'slug_taken'
   | 'invalid_path'
   | 'not_found'
-  | 'not_publishable';
+  | 'not_publishable'
+  | 'not_published'
+  | 'invalid_settings';
 
 /** A caller-facing failure; `code` is stable (MCP tools return it verbatim). */
 export class AppsError extends Error {

@@ -46,6 +46,21 @@ export default [
     'workspaces/:slug/apps/:appSlug',
     'routes/workspaces.$slug.apps.$appSlug.tsx'
   ),
+  // M2-01 (NSO-288): the app page's Files tab (tree, read-only viewer, ZIP of
+  // a version) and Settings tab (visibility + password, frame-ancestors,
+  // delete). Tabs are listed in @drobek/dashboard app-tabs.ts.
+  route(
+    'workspaces/:slug/apps/:appSlug/files',
+    'routes/workspaces.$slug.apps.$appSlug.files.tsx'
+  ),
+  route(
+    'workspaces/:slug/apps/:appSlug/files/download',
+    'routes/workspaces.$slug.apps.$appSlug.files.download.ts'
+  ),
+  route(
+    'workspaces/:slug/apps/:appSlug/settings',
+    'routes/workspaces.$slug.apps.$appSlug.settings.tsx'
+  ),
   // M1b (PHY-121): dashboard Data tab (lite) — collections list, collection
   // table (filter/sort/paginate through the U10 query API), streamed CSV export,
   // read-only record viewer, editor+ delete.

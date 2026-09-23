@@ -153,16 +153,24 @@ export const apps = pgTable(
     frameAncestors: text('frame_ancestors'),
     status: appStatusEnum('status').notNull().default('live'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
-    /** Soft-delete tombstone (PHY-101). */
+    /**
+     * Soft delete (PHY-101; dashboard delete NSO-288): a deleted app is
+     * invisible everywhere (dashboard, MCP, app hosts). It keeps its slug for
+     * 30 days; then @drobek/apps renames it to the tombstone
+     * `<slug>~deleted-<id>` so a new app can take the slug.
+     */
     deletedAt: timestamp('deleted_at'),
   },
   (t) => [
     uniqueIndex('apps_slug_uq').on(t.slug),
     index('apps_workspace_idx').on(t.workspaceId),
-    // Grammar mirrored by @drobek/apps validateAppSlug (which adds reserved words).
+    // The slug-release sweep reads deleted apps only.
+    index('apps_deleted_at_idx').on(t.deletedAt).where(sql`${t.deletedAt} IS NOT NULL`),
+    // Grammar mirrored by @drobek/apps validateAppSlug (which adds reserved
+    // words). A deleted app may carry its released-slug tombstone instead (0016).
     check(
       'apps_slug_format',
-      sql`${t.slug} ~ '^[a-z0-9]+(-[a-z0-9]+)*$' AND char_length(${t.slug}) BETWEEN 3 AND 40`
+      sql`(${t.slug} ~ '^[a-z0-9]+(-[a-z0-9]+)*$' AND char_length(${t.slug}) BETWEEN 3 AND 40) OR (${t.deletedAt} IS NOT NULL AND ${t.slug} ~ '^[a-z0-9]+(-[a-z0-9]+)*~deleted-[a-z0-9]+$')`
     ),
   ]
 );

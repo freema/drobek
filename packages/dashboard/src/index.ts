@@ -27,3 +27,17 @@ export {
   loadAppForView,
   type AppDetail,
 } from './apps.server.js';
+export { APP_TABS, activeAppTab, appBasePath, appTabHref, type AppTab } from './app-tabs.js';
+export {
+  buildFileTree,
+  compileSummary,
+  filterApps,
+  formatAgo,
+  parseAppListFilters,
+  safeRedirectTo,
+  shapeLock,
+  type AppListFilters,
+  type LockView,
+  type TreeNode,
+} from './app-view.js';
+export { highlight, languageOf, type Language, type Token, type TokenKind } from './highlight.js';

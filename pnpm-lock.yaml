@@ -588,6 +588,9 @@ importers:
       '@drobek/proxy':
         specifier: workspace:*
         version: link:../proxy
+      '@drobek/serving':
+        specifier: workspace:*
+        version: link:../serving
       '@drobek/tenancy':
         specifier: workspace:*
         version: link:../tenancy
