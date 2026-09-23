@@ -5,6 +5,7 @@
  */
 import { and, eq, inArray } from 'drizzle-orm';
 import { getDb, moduleConfigs, type DB } from '@drobek/db';
+import type { ConfirmRole } from './contract.js';
 
 /** A change held for the owner's confirmation (confirmRequired). */
 export interface PendingChange {
@@ -15,6 +16,8 @@ export interface PendingChange {
   proposed_at: string;
   /** The dashboard user whose agent proposed it. */
   proposed_by: string | null;
+  /** Who may confirm it (NSO-322 H3; missing on older rows = `editor`). */
+  confirm_role?: ConfirmRole;
 }
 
 export interface ConfigRow {
@@ -38,6 +41,7 @@ function asPending(v: unknown): PendingChange | null {
     changes: Array.isArray(o.changes) ? o.changes.map(String) : [],
     proposed_at: String(o.proposed_at ?? ''),
     proposed_by: typeof o.proposed_by === 'string' ? o.proposed_by : null,
+    confirm_role: o.confirm_role === 'admin' ? 'admin' : 'editor',
   };
 }
 

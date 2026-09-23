@@ -50,6 +50,7 @@ import { lockedByAdminView } from '../app-api.server.js';
 import { loadAppForView } from '../apps.server.js';
 import {
   configDiff,
+  confirmRoleOf,
   fieldErrors,
   fieldValues,
   formToConfig,
@@ -180,6 +181,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         invalid: view.pending.invalid ?? [],
         proposedAt: view.pending.proposed_at,
         proposedBy: await emailOf(view.pending.proposed_by),
+        confirmRole: view.pending.confirm_role,
+        canConfirm: view.pending.confirm_role !== 'admin' || confirmRoleOf(access.effectiveRole) === 'admin',
       }
     : null;
 
@@ -229,7 +232,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   // ── pending decision ──
   if (intent === 'confirm' || intent === 'reject') {
     try {
-      const input = { app: hookApp, module: name, userId: access.user.id };
+      const input = { app: hookApp, module: name, userId: access.user.id, role: confirmRoleOf(access.effectiveRole) };
       if (intent === 'confirm') await runtime.confirm(input);
       else await runtime.reject(input);
     } catch (err) {

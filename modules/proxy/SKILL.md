@@ -21,9 +21,10 @@ and never ask the user for a key in chat.
 { "app_id": "…", "module": "proxy", "config": { "upstreams": { "openai": { "rules": { "call": "user" } } } } }
 ```
 
-Assigning an upstream **needs the owner's confirmation**: the answer is
-`applied: false` with a `confirm_url` — give the user that link. Until they
-confirm, calls answer 403. `get_app` → `modules.proxy.info.upstreams` shows
+Assigning an upstream **needs a workspace admin's confirmation**: the answer
+is `applied: false`, `confirm_role: "admin"` and a `confirm_url` — give the
+user that link (an editor can only reject it). Until an admin confirms,
+calls answer 403. `get_app` → `modules.proxy.info.upstreams` shows
 every upstream of the workspace: `registered`, `assigned`, `call`,
 `hasSecret` (whether the key is set — never its value), `allowedMethods`,
 `allowedPathPrefixes`.
@@ -119,6 +120,7 @@ drobek.proxy.fetch(upstream: string, path?: string, init?: RequestInit): Promise
 | `unauthorized` (401) | `call: "user"` and nobody is signed in | wrap the UI in `<LoginGate>` |
 | `forbidden` (403) | the caller's role does not match `call` | show a friendly message |
 | `not_found` (404) `upstream_not_registered` | no such upstream in the workspace | ask the workspace admin to register it (name must match) |
+| `forbidden` (403) `upstream_not_allowed` | no admin confirmed this app for it (e.g. assigned before it was registered) | remove it from the config, add it again, an admin confirms |
 | `method_not_allowed` (405) / `path_not_allowed` (403) | outside the upstream's allow-lists | use an allowed method/path, or ask the admin to widen them |
 | `rate_limited` (429) | a per-minute limit | wait `Retry-After` seconds; never retry in a loop |
 | `csrf_rejected` (403) | plain `fetch('/__drobek/v1/proxy/…')` | use `drobek.proxy.fetch` |

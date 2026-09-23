@@ -14,14 +14,18 @@
  *  - `rateLimit` — calls per minute to THIS upstream from the whole app, on
  *    top of the app-wide PROXY_CALLS_PER_MIN (which always applies).
  *
- * Changes that need the owner's confirmation (confirmRequired):
+ * Changes that need the confirmation of a workspace ADMIN (confirmRequired
+ * with `confirmRole: 'admin'`, NSO-322 H3 — only admins register upstreams,
+ * so only they may let an app spend one's secret; an editor may reject):
  *  - assigning an upstream the app did not have (the app starts spending that
- *    upstream's secret — "povolení upstreamu appce");
+ *    upstream's secret — "povolení upstreamu appce"); confirming it puts the
+ *    app on the upstream's allow-list (`allowed_app_ids`, onConfirmed), which
+ *    the forward path checks;
  *  - opening `call` to `public` (then also limited per client IP:
  *    PROXY_PUBLIC_CALLS_PER_MIN_PER_IP).
  */
-import { isValidRule, parseRule, ruleIsPublic, z } from '@drobek/modules';
-import { UPSTREAM_NAME_RE } from '@drobek/proxy';
+import { isValidRule, parseRule, ruleIsPublic, z, type ConfirmItem, type ConfirmedContext } from '@drobek/modules';
+import { UPSTREAM_NAME_RE, allowAppOnUpstream } from '@drobek/proxy';
 
 export const MAX_UPSTREAMS_PER_APP = 20;
 export const DEFAULT_CALL_RULE = 'user';
@@ -72,23 +76,39 @@ export function callRuleOf(a: UpstreamAssignment): string {
   return a.rules?.call ?? DEFAULT_CALL_RULE;
 }
 
-/** The changes between two valid configs that wait for the owner (see the file header). */
-export function proxyConfirmRequired(before: ProxyConfig, after: ProxyConfig): string[] {
-  const out: string[] = [];
+/** The changes between two valid configs that wait for a workspace admin (see the file header). */
+export function proxyConfirmRequired(before: ProxyConfig, after: ProxyConfig): ConfirmItem[] {
+  const out: ConfirmItem[] = [];
+  const admin = (change: string): ConfirmItem => ({ change, confirmRole: 'admin' });
   for (const name of Object.keys(after.upstreams).sort()) {
     const a = assignmentOf(after, name)!;
     const b = assignmentOf(before, name);
     const rule = callRuleOf(a);
     if (!b) {
       out.push(
-        `proxy.upstreams.${name}: this app may call the workspace upstream "${name}" with its secret (callers: "${rule}")`
+        admin(`proxy.upstreams.${name}: this app may call the workspace upstream "${name}" with its secret (callers: "${rule}")`)
       );
     }
     if (ruleIsPublic(rule) && !(b && ruleIsPublic(callRuleOf(b)))) {
       out.push(
-        `proxy.upstreams.${name}.rules.call: ${b ? `"${callRuleOf(b)}"` : '(new)'} → "${rule}" (anyone, signed in or not, may call it — limited per client IP)`
+        admin(
+          `proxy.upstreams.${name}.rules.call: ${b ? `"${callRuleOf(b)}"` : '(new)'} → "${rule}" (anyone, signed in or not, may call it — limited per client IP)`
+        )
       );
     }
   }
   return out;
+}
+
+/**
+ * A workspace admin confirmed the change: every upstream the app newly has is
+ * allowed for the app (the upstream's `allowed_app_ids`) — in the confirm
+ * transaction, so both commit together. An upstream not registered yet stays
+ * closed: after registering it, remove the assignment and add it again.
+ */
+export async function proxyOnConfirmed(before: ProxyConfig, after: ProxyConfig, context: ConfirmedContext): Promise<void> {
+  for (const name of Object.keys(after.upstreams).sort()) {
+    if (assignmentOf(before, name)) continue;
+    await allowAppOnUpstream(context.app.workspaceId, name, context.app.id, context.db);
+  }
 }

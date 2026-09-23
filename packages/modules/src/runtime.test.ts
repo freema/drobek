@@ -313,6 +313,68 @@ describe('configure / confirm / reject', () => {
     const done = await rt.confirm({ app, module: 'echo', userId });
     expect(done.config).toMatchObject({ notify: ['b@example.com'] });
   });
+
+  it("confirmRole 'admin' (NSO-322 H3): an editor cannot confirm (403 admin_required) but may reject; an admin confirms and onConfirmed runs in the transaction", async () => {
+    const confirmed: unknown[] = [];
+    let failOnConfirm = false;
+    const vault = defineModule<{ keys: string[]; note: string }>({
+      name: 'vault',
+      version: '1.0.0',
+      skill: { useWhen: 'x', markdown: '# x' },
+      configSchema: z.object({ keys: z.array(z.string()), note: z.string() }),
+      configDefaults: { keys: [], note: '' },
+      confirmRequired: (before, after) => [
+        ...after.keys.filter((k) => !before.keys.includes(k)).map((k) => ({ change: `keys: ${k}`, confirmRole: 'admin' as const })),
+        ...(after.note !== before.note && after.note === 'loud' ? ['note: loud'] : []),
+      ],
+      onConfirmed: async (before, after, ctx) => {
+        confirmed.push({ before: before.keys, after: after.keys, app: ctx.app.id, userId: ctx.userId, role: ctx.role, hasDb: Boolean(ctx.db) });
+        if (failOnConfirm) throw new Error('grant failed');
+      },
+    });
+    const r = await loadModuleRuntime({
+      env: ENV,
+      log: noopLogger,
+      modules: [vault],
+      skillsDir,
+      deps: { rateLimit: memoryRateLimiter(), principal: async () => ({ kind: 'anon' }), email: { send: async () => {} } },
+    });
+    const hookApp = { id: app.id, slug: app.slug, workspaceId: app.workspaceId };
+
+    // A plain editor-level change: no confirm_role anywhere.
+    const plain = await r.configure({ app, module: 'vault', patch: { note: 'loud' }, actorUserId: userId });
+    expect(plain.applied).toBe(false);
+    expect(plain.confirm_role).toBeUndefined();
+    expect((await r.moduleView(hookApp, 'vault')).pending).toMatchObject({ confirm_role: 'editor' });
+    await r.confirm({ app, module: 'vault', userId }); // role defaults to editor: fine here
+    expect(confirmed).toHaveLength(1);
+
+    // Mixed with an admin item → the whole pending change needs an admin.
+    const held = await r.configure({ app, module: 'vault', patch: { keys: ['openai'], note: 'quiet' }, actorUserId: userId });
+    expect(held).toMatchObject({ applied: false, pending_confirmation: ['keys: openai'], confirm_role: 'admin' });
+    expect((await r.appModules(app.id)).vault).toMatchObject({ pending: true, confirm_role: 'admin' });
+    expect((await r.moduleView(hookApp, 'vault')).pending).toMatchObject({ confirm_role: 'admin', changes: ['keys: openai'] });
+    for (const role of [undefined, 'editor' as const]) {
+      const refused = await r.confirm({ app, module: 'vault', userId, role }).catch((e: unknown) => e);
+      expect(refused).toBeInstanceOf(ModuleError);
+      expect(refused).toMatchObject({ code: 'forbidden', status: 403, details: { reason: 'admin_required', confirm_role: 'admin' } });
+    }
+    expect((await r.moduleView(hookApp, 'vault')).config).toMatchObject({ keys: [] });
+
+    // A failing onConfirmed rolls the confirmation back.
+    failOnConfirm = true;
+    await expect(r.confirm({ app, module: 'vault', userId, role: 'admin' })).rejects.toThrow('grant failed');
+    expect((await r.moduleView(hookApp, 'vault')).pending).not.toBeNull();
+    failOnConfirm = false;
+
+    const done = await r.confirm({ app, module: 'vault', userId, role: 'admin' });
+    expect(done).toMatchObject({ config: { keys: ['openai'], note: 'quiet' }, confirmed: ['keys: openai'] });
+    expect(confirmed.at(-1)).toEqual({ before: [], after: ['openai'], app: app.id, userId, role: 'admin', hasDb: true });
+
+    // Editors may still reject an admin-only change.
+    await r.configure({ app, module: 'vault', patch: { keys: ['openai', 'stripe'] }, actorUserId: userId });
+    expect((await r.reject({ app, module: 'vault', userId, role: 'editor' })).rejected).toEqual(['keys: stripe']);
+  });
 });
 
 describe('the dashboard view (M2-02)', () => {

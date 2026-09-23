@@ -103,7 +103,11 @@ const proxy = defineModule<{ upstreams: Record<string, { rules: { call: string }
       .default({}),
   }),
   configDefaults: { upstreams: {} },
-  confirmRequired: (b, a) => Object.keys(a.upstreams).filter((n) => !b.upstreams[n]).map((n) => `proxy.upstreams.${n}: this app may call the workspace upstream "${n}" with its secret`),
+  // Like the real proxy module: assignments need a workspace ADMIN (NSO-322 H3).
+  confirmRequired: (b, a) =>
+    Object.keys(a.upstreams)
+      .filter((n) => !b.upstreams[n])
+      .map((n) => ({ change: `proxy.upstreams.${n}: this app may call the workspace upstream "${n}" with its secret`, confirmRole: 'admin' as const })),
   rules: { ops: { call: 'Call an assigned upstream' } },
   appInfo: ({ config }) => ({
     upstreams: [
@@ -345,7 +349,16 @@ describe('the module page (M2-02)', () => {
       { path: 'upstreams.weather.rateLimit', before: '(not set)', after: '30' },
       { path: 'upstreams.weather.rules.call', before: '(not set)', after: '"user"' },
     ]);
+    // Only a workspace admin confirms it (NSO-322 H3): the editor sees why, and confirm is refused.
+    expect(d.pending).toMatchObject({ confirmRole: 'admin', canConfirm: false });
+    const refused = failed(await post('proxy', { intent: 'confirm' }));
+    expect(refused.status).toBe(403);
+    expect(refused.errors.general[0]).toMatch(/Only a workspace admin can confirm/);
+    expect((await load('proxy')).upstreams[0]).toMatchObject({ assigned: false });
+    role.current = 'workspace-admin';
+    expect((await load('proxy')).pending).toMatchObject({ confirmRole: 'admin', canConfirm: true });
     expect(doneOf(await post('proxy', { intent: 'confirm' }))).toBe('confirmed');
+    role.current = 'editor';
     d = await load('proxy');
     expect(d.upstreams[0]).toMatchObject({ assigned: true, call: 'user', rateLimit: 30 });
     // Changing the rule of an assigned upstream applies at once here (the fake module confirms assignments only).

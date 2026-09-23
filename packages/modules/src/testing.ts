@@ -14,7 +14,7 @@
  */
 import { noopLogger, type Logger } from '@drobek/core';
 import type { DB } from '@drobek/db';
-import type { AnyModule, EmailMessage, HookApp, Limits, MailEnvelope, ModuleContext, Principal } from './contract.js';
+import { normalizeConfirmItems, type AnyModule, type EmailMessage, type HookApp, type Limits, type MailEnvelope, type ModuleContext, type Principal } from './contract.js';
 import { mergePatch } from './merge-patch.js';
 import { collectRoutes, errorResult, isReadable, matchRoute, runRoute, type PipelineResult } from './router.js';
 import { decideAccess } from './rules.js';
@@ -230,7 +230,7 @@ export function createModuleTestContext(module: AnyModule, opts: ModuleTestOptio
         if (!r.success) throw new Error(`confirm: config does not pass ${module.name}.configSchema: ${r.error.message}`);
         return r.data;
       };
-      return await module.confirmRequired(parse(before), parse(after), { app, db: opts.db ?? noDb() });
+      return normalizeConfirmItems(await module.confirmRequired(parse(before), parse(after), { app, db: opts.db ?? noDb() })).changes;
     },
     async request(method, path, init = {}) {
       const upper = method.toUpperCase();

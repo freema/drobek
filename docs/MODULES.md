@@ -452,7 +452,15 @@ single-writer lease, merges the patch, and validates the result. Then:
 effective, and `context = { app, db }`: the app (id, slug, workspace) and the
 configure transaction (the config row is locked) for read-only lookups — e.g.
 the data module asks whether a collection whose schema is being removed holds
-records. It may return a Promise.
+records. It may return a Promise. An item may be `{ change, confirmRole:
+'admin' }` instead of a string (NSO-322): then only a **workspace admin** (or
+a super-admin) can confirm the pending change — an editor gets `403
+forbidden` with `details.reason: admin_required` and may still reject it —
+and `configure_module` / `get_app` add `confirm_role: "admin"`. The proxy
+module marks every change this way (only admins register upstreams).
+`onConfirmed(before, after, { app, db, userId, role })` runs inside the
+confirm transaction after a confirmation (a throw rolls it back) — proxy
+puts the app on the upstream's allow-list there.
 
 - **`confirmRequired` is empty** → written at once (audit `module.configure`,
   actor agent): `{ applied: true, config, pending_confirmation: [] }`;
@@ -900,8 +908,10 @@ calls an external API without holding its secret. `skill_info('proxy')`.
 - **Config** `{ upstreams: { <name>: { rules: { call }, rateLimit? } } }` (≤ 20):
   assigns a workspace upstream to the app. `call` = `user` (default) | `admin`
   | `public` | `none` (alternatives with `|`; `owner` is refused). **Assigning
-  an upstream** and **opening `call` to `public`** need the owner's
-  confirmation.
+  an upstream** and **opening `call` to `public`** need the confirmation of a
+  **workspace admin** (`confirmRole: 'admin'` — an editor cannot let an app
+  spend a secret an admin registered). Confirming an assignment puts the app
+  on the upstream's allow-list (`allowed_app_ids`).
 - **Route** `GET|HEAD|POST|PUT|PATCH|DELETE /__drobek/v1/proxy/:upstream/*`
   (raw body ≤ 1 MiB). In order: `X-Drobek-SDK: 1` on every method (`403
   csrf_rejected` — a call spends the owner's key, so not even a cross-site GET);
@@ -910,7 +920,10 @@ calls an external API without holding its secret. `skill_info('proxy')`.
   `PROXY_PUBLIC_CALLS_PER_MIN_PER_IP` (10, `public` upstreams only),
   `PROXY_CALLS_PER_MIN` (60 per app, all upstreams) and the assignment's
   `rateLimit` (`429 rate_limited` + `Retry-After`); registered in the app's
-  workspace (`404 not_found`, `upstream_not_registered`); then
+  workspace (`404 not_found`, `upstream_not_registered`); the app on the
+  upstream's allow-list (`403 forbidden`, `upstream_not_allowed` — empty =
+  no app; an assignment confirmed before the upstream was registered is
+  removed and added again); then
   `@drobek/proxy` `forwardToUpstream`: the method/path allow-lists (`405
   method_not_allowed` / `403 path_not_allowed`, traversal-proof), the secret
   decrypted in memory and injected (`Authorization: Bearer …` or the named

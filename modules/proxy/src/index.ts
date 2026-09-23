@@ -25,6 +25,7 @@ import {
   PROXY_CONFIG_DEFAULTS,
   proxyConfigSchema,
   proxyConfirmRequired,
+  proxyOnConfirmed,
   type ProxyConfig,
 } from './config.js';
 import { proxyAppInfo } from './info.js';
@@ -40,6 +41,7 @@ export {
   callRuleOf,
   proxyConfigSchema,
   proxyConfirmRequired,
+  proxyOnConfirmed,
   upstreamAssignmentSchema,
   type ProxyConfig,
   type UpstreamAssignment,
@@ -79,6 +81,7 @@ export function createProxyModule(opts: ProxyRouteOptions = {}): DrobekModule<Pr
     configSchema: proxyConfigSchema,
     configDefaults: PROXY_CONFIG_DEFAULTS,
     confirmRequired: proxyConfirmRequired,
+    onConfirmed: proxyOnConfirmed,
     rules: {
       ops: {
         call: 'Call an assigned upstream through /__drobek/v1/proxy/<upstream>/…',

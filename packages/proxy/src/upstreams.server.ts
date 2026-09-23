@@ -4,7 +4,7 @@
  * envelope-encrypted at rest and is NEVER returned by any function here — the
  * safe view exposes only `hasSecret`.
  */
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { actorKindForSurface, writeAudit } from '@drobek/audit';
 import { getDb, upstreamSecrets, upstreams, type DB } from '@drobek/db';
 import type { WorkspaceRole } from '@drobek/tenancy';
@@ -318,6 +318,29 @@ export async function upstreamSummaries(
     allowedMethods: r.allowedMethods,
     allowedPathPrefixes: r.allowedPathPrefixes,
   }));
+}
+
+/** May app `appId` call this upstream? Only apps on its allow-list (empty = none) — NSO-322 H3. */
+export function upstreamAllowsApp(upstream: Pick<UpstreamRecord, 'allowedAppIds'>, appId: string): boolean {
+  return upstream.allowedAppIds.includes(appId);
+}
+
+/**
+ * Put `appId` on the allow-list of the upstream `name` of `workspaceId`
+ * (idempotent; false when no such upstream is registered). Called when a
+ * workspace ADMIN confirms the app's assignment of the upstream (the proxy
+ * module's onConfirmed, inside the confirm transaction) — the admin's
+ * confirmation is what lets an app spend the upstream's secret.
+ */
+export async function allowAppOnUpstream(workspaceId: string, name: string, appId: string, db: DB = getDb()): Promise<boolean> {
+  const rows = await db
+    .update(upstreams)
+    .set({
+      allowedAppIds: sql`CASE WHEN ${appId} = ANY(${upstreams.allowedAppIds}) THEN ${upstreams.allowedAppIds} ELSE array_append(${upstreams.allowedAppIds}, ${appId}) END`,
+    })
+    .where(and(eq(upstreams.workspaceId, workspaceId), eq(upstreams.name, name)))
+    .returning({ id: upstreams.id });
+  return rows.length > 0;
 }
 
 /**

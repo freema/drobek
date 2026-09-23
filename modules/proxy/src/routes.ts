@@ -11,14 +11,16 @@
  *      401 / 403;
  *   4. rate limits: per client IP on a `public` upstream, the app-wide
  *      PROXY_CALLS_PER_MIN, the assignment's own `rateLimit` — 429;
- *   5. the upstream is registered in the app's workspace — else 404;
+ *   5. the upstream is registered in the app's workspace — else 404 — and
+ *      THIS app is on its allow-list (`allowed_app_ids`, set when a workspace
+ *      admin confirmed the assignment; NSO-322 H3) — else 403;
  *   6. @drobek/proxy `forwardToUpstream`: method + path allow-lists, the
  *      secret injected server-side, Cookie/Authorization/browser headers
  *      stripped, SSRF guard (pinned IP, ports 80/443, no redirects, 20 s,
  *      5 MiB), the response relayed with `Cache-Control: no-store`.
  */
 import { ModuleError, respond, ruleIsPublic, type ModuleContext, type ModuleRequest, type ModuleRouter } from '@drobek/modules';
-import { ProxyError, forwardToUpstream, proxyErrorStatus, resolveUpstreamForForward, type ProxyErrorCode } from '@drobek/proxy';
+import { ProxyError, forwardToUpstream, proxyErrorStatus, resolveUpstreamForForward, upstreamAllowsApp, type ProxyErrorCode } from '@drobek/proxy';
 import { DEFAULT_CALLS_PER_MIN, DEFAULT_PUBLIC_CALLS_PER_MIN_PER_IP, assignmentOf, callRuleOf, type ProxyConfig } from './config.js';
 
 /** Max request body forwarded to an upstream (the apps host caps platform bodies at 1 MiB too). */
@@ -122,6 +124,13 @@ export function proxyHandler(opts: ProxyRouteOptions = {}) {
         }
         throw err;
       });
+      if (!upstreamAllowsApp(upstream, ctx.app.id)) {
+        throw new ModuleError(
+          'forbidden',
+          `A workspace admin has not allowed this app to call the upstream "${name}". An admin confirms the assignment in the drobek dashboard — if it was assigned before the upstream was registered, remove it from the proxy config and add it again.`,
+          { details: { reason: 'upstream_not_allowed', upstream: name } }
+        );
+      }
       const result = await forwardToUpstream({
         upstream,
         method: req.method,

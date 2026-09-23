@@ -394,6 +394,17 @@ export function ruleFromForm(form: FormReader, op: string, principals: readonly 
   return principalsToRule(principals.filter((p) => form.has(ruleInputName(op, p))));
 }
 
+// ── who may confirm ──────────────────────────────────────────────────────────
+
+/**
+ * A workspace role as the module runtime's confirming role (NSO-322 H3): a
+ * workspace admin (super-admins arrive as one) confirms `admin` changes too;
+ * everyone else is at most an `editor`.
+ */
+export function confirmRoleOf(role: string | null | undefined): 'editor' | 'admin' {
+  return role === 'workspace-admin' ? 'admin' : 'editor';
+}
+
 // ── risk notes ───────────────────────────────────────────────────────────────
 
 /**

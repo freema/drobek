@@ -275,6 +275,46 @@ export interface ConfirmContext {
   db: DB;
 }
 
+/**
+ * Who may confirm a pending change (NSO-322 H3): `editor` (the default —
+ * editors, workspace admins, super-admins) or `admin` (workspace admins and
+ * super-admins only), e.g. a change that spends a secret an admin registered.
+ */
+export type ConfirmRole = 'editor' | 'admin';
+
+/** One change that waits for the owner: its text, or the text + who may confirm it. */
+export type ConfirmItem = string | { change: string; confirmRole?: ConfirmRole };
+
+/** The texts of `items` and the role their confirmation needs (the highest any item asks for). */
+export function normalizeConfirmItems(items: readonly unknown[]): { changes: string[]; role: ConfirmRole } {
+  const changes: string[] = [];
+  let role: ConfirmRole = 'editor';
+  for (const item of items) {
+    if (typeof item === 'string') {
+      if (item.length > 0) changes.push(item);
+      continue;
+    }
+    if (item && typeof item === 'object' && typeof (item as { change?: unknown }).change === 'string') {
+      const { change, confirmRole } = item as { change: string; confirmRole?: unknown };
+      if (change.length === 0) continue;
+      changes.push(change);
+      if (confirmRole === 'admin') role = 'admin';
+    }
+  }
+  return { changes, role };
+}
+
+/** What `onConfirmed` gets: the confirm transaction and who confirmed. */
+export interface ConfirmedContext {
+  app: HookApp;
+  /** The confirm transaction (the config row is locked): writes commit with the confirmation. */
+  db: DB;
+  /** The dashboard user who confirmed. */
+  userId: string;
+  /** Their confirming role (`admin` = workspace admin or super-admin). */
+  role: ConfirmRole;
+}
+
 // ── the records authority (data) ─────────────────────────────────────────────
 
 /**
@@ -483,9 +523,17 @@ export interface DrobekModule<Config = unknown> {
    * Each string is shown to the owner and the agent verbatim. `context` names
    * the app and gives read access to the database (inside the configure
    * transaction), for rules that depend on stored data — e.g. removing the
-   * schema of a collection that holds records.
+   * schema of a collection that holds records. An item may be
+   * `{ change, confirmRole: 'admin' }`: only a workspace admin can confirm
+   * the pending change then (editors may still reject it).
    */
-  confirmRequired?(before: Config, after: Config, context: ConfirmContext): string[] | Promise<string[]>;
+  confirmRequired?(before: Config, after: Config, context: ConfirmContext): ConfirmItem[] | Promise<ConfirmItem[]>;
+  /**
+   * Runs INSIDE the confirm transaction once the owner confirmed a pending
+   * change (`before` / `after` = the effective configs). A throw rolls the
+   * confirmation back. E.g. proxy records the app on the upstream's allow-list.
+   */
+  onConfirmed?(before: Config, after: Config, context: ConfirmedContext): void | Promise<void>;
   secrets?: ModuleSecretDoc[];
   rules?: RuleSurface;
   limits?: ModuleLimit[];

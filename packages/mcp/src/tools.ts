@@ -751,7 +751,9 @@ export async function configureModule(
       ...out,
       ...(out.pending_confirmation.length > 0
         ? {
-            note: 'Give the user confirm_url and tell them what needs their confirmation. The pending change applies only after they confirm it in the drobek dashboard; until then the config above stays in force.',
+            note:
+              'Give the user confirm_url and tell them what needs their confirmation. The pending change applies only after they confirm it in the drobek dashboard; until then the config above stays in force.' +
+              (out.confirm_role === 'admin' ? ' Only a workspace admin of the app\'s workspace can confirm this one (confirm_role: admin).' : ''),
           }
         : {}),
       ...(out.secrets_missing?.length

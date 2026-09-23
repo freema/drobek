@@ -29,8 +29,10 @@ import { recordModuleRequest } from '@drobek/insights';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { Readable } from 'node:stream';
 import { z } from 'zod';
+import { normalizeConfirmItems } from './contract.js';
 import type {
   AnyModule,
+  ConfirmRole,
   EmailMessage,
   EndUser,
   EndUserListQuery,
@@ -203,6 +205,8 @@ export interface AppModuleState {
   config: unknown;
   pending: boolean;
   pending_confirmation?: string[];
+  /** Only a workspace admin can confirm the pending change (absent: any editor). */
+  confirm_role?: 'admin';
   confirm_url?: string;
   secrets?: { name: string; hasSecret: boolean }[];
   /** The module's `appInfo` (secret-free), when it declares one. */
@@ -230,6 +234,8 @@ export interface ConfigureResult {
   config: unknown;
   /** Changes waiting for the owner ([] when nothing waits). */
   pending_confirmation: string[];
+  /** Only a workspace admin can confirm the pending change (absent: any editor). */
+  confirm_role?: 'admin';
   confirm_url?: string;
   secrets_missing?: string[];
   unchanged?: true;
@@ -290,6 +296,8 @@ export interface PendingView {
   changes: string[];
   proposed_at: string;
   proposed_by: string | null;
+  /** Who may confirm it: any editor, or only a workspace admin (NSO-322 H3). */
+  confirm_role: ConfirmRole;
   /** The effective config once confirmed (null when it no longer validates). */
   after: unknown;
   /** Why confirming would fail now (the pending change no longer fits the config). */
@@ -323,6 +331,11 @@ export interface DecisionInput {
   app: { id: string; slug: string; workspaceId: string };
   module: string;
   userId: string;
+  /**
+   * The decider's role in the app's workspace: `admin` = workspace admin or
+   * super-admin. Default `editor` — a change that needs an admin is refused.
+   */
+  role?: ConfirmRole;
 }
 
 const IMMUTABLE_CACHE = 'public, max-age=31536000, immutable';
@@ -643,6 +656,7 @@ export class ModuleRuntime {
         changes: row.pending.changes,
         proposed_at: row.pending.proposed_at,
         proposed_by: row.pending.proposed_by,
+        confirm_role: row.pending.confirm_role ?? 'editor',
         after: r.success ? r.data : null,
       };
       if (!r.success) pending.invalid = issuePaths(r.error.issues);
@@ -730,6 +744,7 @@ export class ModuleRuntime {
       };
       if (row?.pending) {
         state.pending_confirmation = row.pending.changes;
+        if (row.pending.confirm_role === 'admin') state.confirm_role = 'admin';
         if (confirmLink) state.confirm_url = confirmLink(m.name);
       }
       if (m.secrets?.length) {
@@ -800,11 +815,11 @@ export class ModuleRuntime {
       const waiting = row.pending?.changes ?? [];
 
       if (jsonEqual(nextStored, row.config)) {
-        return { applied: true, config: before, pending: waiting, unchanged: true as const };
+        return { applied: true, config: before, pending: waiting, role: row.pending?.confirm_role, unchanged: true as const };
       }
       const hookApp: HookApp = { id: input.app.id, slug: input.app.slug, workspaceId: input.app.workspaceId };
       const required = m.confirmRequired ? await m.confirmRequired(before, after, { app: hookApp, db: tx as unknown as DB }) : [];
-      const changes = (Array.isArray(required) ? required : []).filter((c) => typeof c === 'string' && c.length > 0);
+      const { changes, role } = normalizeConfirmItems(Array.isArray(required) ? required : []);
       if (changes.length === 0) {
         await write({ config: nextStored });
         await writeAudit(
@@ -819,13 +834,14 @@ export class ModuleRuntime {
           },
           tx
         );
-        return { applied: true, config: after, pending: waiting };
+        return { applied: true, config: after, pending: waiting, role: row.pending?.confirm_role };
       }
       const pending: PendingChange = {
         patch: patch as Record<string, unknown>,
         changes,
         proposed_at: new Date().toISOString(),
         proposed_by: input.actorUserId,
+        confirm_role: role,
       };
       await write({ pending });
       await writeAudit(
@@ -836,11 +852,11 @@ export class ModuleRuntime {
           action: 'module.pending',
           subjectType: 'app',
           target: input.app.slug,
-          meta: { module: m.name, changes },
+          meta: { module: m.name, changes, ...(role === 'admin' ? { confirm_role: role } : {}) },
         },
         tx
       );
-      return { applied: false, config: before, pending: changes };
+      return { applied: false, config: before, pending: changes, role };
     });
 
     const out: ConfigureResult = {
@@ -849,7 +865,10 @@ export class ModuleRuntime {
       config: result.config,
       pending_confirmation: result.pending,
     };
-    if (result.pending.length > 0) out.confirm_url = link;
+    if (result.pending.length > 0) {
+      if (result.role === 'admin') out.confirm_role = 'admin';
+      out.confirm_url = link;
+    }
     if ('unchanged' in result && result.unchanged) out.unchanged = true;
     const missing = await this.missingSecrets(input.app.id, m);
     if (missing.length > 0) out.secrets_missing = missing;
@@ -905,6 +924,12 @@ export class ModuleRuntime {
     const m = this.requireModule(input.module);
     return withLockedConfig(input.app.id, m.name, async (row, write, tx) => {
       if (!row.pending) throw new ModuleError('conflict', `Nothing is waiting for confirmation in ${m.name}.`, { details: { reason: 'nothing_pending' } });
+      const role: ConfirmRole = input.role === 'admin' ? 'admin' : 'editor';
+      if (row.pending.confirm_role === 'admin' && role !== 'admin') {
+        throw new ModuleError('forbidden', `Only a workspace admin can confirm this ${m.name} change (an editor may reject it).`, {
+          details: { reason: 'admin_required', confirm_role: 'admin' },
+        });
+      }
       const nextStored = mergePatch(row.config, row.pending.patch) as Record<string, unknown>;
       const r = m.configSchema.safeParse(mergePatch(m.configDefaults, nextStored));
       if (!r.success) {
@@ -913,6 +938,14 @@ export class ModuleRuntime {
         });
       }
       await write({ config: nextStored, pending: null });
+      if (m.onConfirmed) {
+        await m.onConfirmed(this.effectiveConfig(m, row.config), r.data, {
+          app: { id: input.app.id, slug: input.app.slug, workspaceId: input.app.workspaceId },
+          db: tx as unknown as DB,
+          userId: input.userId,
+          role,
+        });
+      }
       await writeAudit(
         {
           workspaceId: input.app.workspaceId,

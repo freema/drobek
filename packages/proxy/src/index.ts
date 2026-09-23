@@ -69,6 +69,8 @@ export {
   getUpstream,
   listUpstreams,
   resolveUpstreamForForward,
+  allowAppOnUpstream,
+  upstreamAllowsApp,
   upstreamSummaries,
   UPSTREAM_NAME_RE,
   type ConfigureActor,

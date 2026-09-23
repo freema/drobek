@@ -8,14 +8,18 @@
  * Guards (app-api.server.ts, before anything changes): POST only; a dashboard
  * session (401); a REQUIRED dashboard Origin (403); the app's workspace role —
  * unknown app / not a member → the same 404, viewer → 403, editor,
- * workspace-admin and super-admin may decide. Then the module must be active;
- * nothing pending → 409 `nothing_pending`. The change is applied (or dropped)
- * in one transaction with the audit row `module.confirm` / `module.reject`,
- * actor_kind `user`.
+ * workspace-admin and super-admin may decide — except a change the module
+ * marks `confirmRole: 'admin'` (e.g. proxy upstream assignments, NSO-322 H3):
+ * only a workspace admin / super-admin confirms it (editor → 403
+ * `admin_required`; rejecting stays open to editors). Then the module must be
+ * active; nothing pending → 409 `nothing_pending`. The change is applied (or
+ * dropped) in one transaction with the audit row `module.confirm` /
+ * `module.reject`, actor_kind `user`.
  */
 import { data, type ActionFunctionArgs } from 'react-router';
 import { isModuleError, moduleRuntime } from '@drobek/modules';
 import { NO_STORE, apiError, authorizeAppApi } from '../app-api.server.js';
+import { confirmRoleOf } from '../module-config.js';
 
 const DECISIONS = new Set(['confirm', 'reject']);
 
@@ -38,10 +42,15 @@ export async function action({ request, params }: ActionFunctionArgs) {
     { refuseLocked: true }
   );
   if (!auth.ok) return auth.response;
-  const { app, user } = auth;
+  const { app, user, role } = auth;
 
   const runtime = await moduleRuntime();
-  const input = { app: { id: app.id, slug: app.slug, workspaceId: app.workspaceId }, module: String(params.module ?? ''), userId: user.id };
+  const input = {
+    app: { id: app.id, slug: app.slug, workspaceId: app.workspaceId },
+    module: String(params.module ?? ''),
+    userId: user.id,
+    role: confirmRoleOf(role),
+  };
   try {
     const out = decision === 'confirm' ? await runtime.confirm(input) : await runtime.reject(input);
     return data({ ok: true, decision, ...out }, { headers: NO_STORE });

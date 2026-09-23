@@ -205,7 +205,7 @@ export const TOOL_DOCS: ToolDoc[] = [
       },
     ],
     returns:
-      '{ module, applied, config (effective, now in force), pending_confirmation:[string], confirm_url?, secrets_missing?:[name], info? (the module\'s secret-free state, e.g. proxy upstreams with hasSecret), unchanged?, note? }',
+      '{ module, applied, config (effective, now in force), pending_confirmation:[string], confirm_role? (\'admin\': only a workspace admin can confirm), confirm_url?, secrets_missing?:[name], info? (the module\'s secret-free state, e.g. proxy upstreams with hasSecret), unchanged?, note? }',
     example: { app_id: 'k3v9x0…', module: 'hello', config: { excited: true } },
   },
   {

@@ -3,7 +3,9 @@
  * when, the module's own confirmRequired strings with a plain-language risk
  * note each, the readable before → after diff of the effective config, and
  * Confirm / Reject (editor+ only — a viewer sees the change, no button; the
- * action refuses a viewer with 403 anyway).
+ * action refuses a viewer with 403 anyway). A change the module marks
+ * `confirmRole: 'admin'` (NSO-322 H3) is confirmed by a workspace admin only:
+ * an editor sees why and can still reject it.
  */
 import { Form } from 'react-router';
 import { formatTimestamp } from '../view.js';
@@ -16,6 +18,10 @@ export interface PendingPanelData {
   invalid: { path: string; message: string }[];
   proposedAt: string;
   proposedBy: string | null;
+  /** Who may confirm: any editor, or only a workspace admin. */
+  confirmRole?: 'editor' | 'admin';
+  /** May THIS user confirm it (false: an editor facing an admin-only change)? */
+  canConfirm?: boolean;
 }
 
 export function PendingPanel({ pending, canEdit, busy }: { pending: PendingPanelData | null; canEdit: boolean; busy?: boolean }) {
@@ -80,11 +86,22 @@ export function PendingPanel({ pending, canEdit, busy }: { pending: PendingPanel
         </div>
       ) : null}
 
+      {pending.confirmRole === 'admin' ? (
+        <p style={ui.small} data-testid="pending-admin-only">
+          Only a workspace admin can confirm this change{pending.canConfirm === false ? ' — you can reject it, or ask an admin to confirm it.' : '.'}
+        </p>
+      ) : null}
+
       {canEdit ? (
         <div style={ui.row}>
           <Form method="post">
             <input type="hidden" name="intent" value="confirm" />
-            <button type="submit" style={ui.button} disabled={busy || pending.invalid.length > 0} data-testid="pending-confirm">
+            <button
+              type="submit"
+              style={ui.button}
+              disabled={busy || pending.invalid.length > 0 || pending.canConfirm === false}
+              data-testid="pending-confirm"
+            >
               Confirm
             </button>
           </Form>

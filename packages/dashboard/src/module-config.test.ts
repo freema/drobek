@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  confirmRoleOf,
   configDiff,
   fieldErrors,
   fieldName,
@@ -196,5 +197,14 @@ describe('rules', () => {
     expect(riskNote('replyTo: (none) → boss@example.com (replies to this app\'s e-mails go there)')).toMatch(/E-mail/);
     expect(riskNote('data.collections.notes.rules.update: "owner|admin" → "user" (every signed-in user may change every record, not only their own)')).toMatch(/other users/);
     expect(riskNote('greeting: "Hello" → "Ahoj"')).toMatch(/waits for your approval/);
+  });
+});
+
+describe('confirmRoleOf (NSO-322 H3)', () => {
+  it('only a workspace admin (super-admins arrive as one) confirms admin-only changes', () => {
+    expect(confirmRoleOf('workspace-admin')).toBe('admin');
+    expect(confirmRoleOf('editor')).toBe('editor');
+    expect(confirmRoleOf('viewer')).toBe('editor');
+    expect(confirmRoleOf(null)).toBe('editor');
   });
 });

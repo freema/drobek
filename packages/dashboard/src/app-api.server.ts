@@ -20,7 +20,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { dashboardOrigin, hostConfig, lockCategory, lockedMessage, reasonLabel } from '@drobek/apps';
 import { decideOriginCheck, getSessionUser, isSuperAdmin, type SessionUser } from '@drobek/auth';
 import { apps, getDb, workspaces } from '@drobek/db';
-import { decideWorkspaceAccess, getMembership } from '@drobek/tenancy';
+import { decideWorkspaceAccess, getMembership, type WorkspaceRole } from '@drobek/tenancy';
 
 export const NO_STORE = { 'Cache-Control': 'no-store' };
 
@@ -67,7 +67,7 @@ async function findLiveApp(appId: string): Promise<ApiApp | null> {
 }
 
 export type AppApiAuth =
-  | { ok: true; user: SessionUser; app: ApiApp }
+  | { ok: true; user: SessionUser; app: ApiApp; role: WorkspaceRole }
   | { ok: false; response: ReturnType<typeof apiError> };
 
 /**
@@ -110,5 +110,5 @@ export async function authorizeAppApi(
   if (!app || (!access.ok && access.status === 404)) return { ok: false, response: apiError(404, 'not_found', 'Not found') };
   if (!access.ok) return { ok: false, response: apiError(403, 'forbidden', forbidden) };
   if (opts.refuseLocked && app.lockedReason) return { ok: false, response: lockedByAdminResponse(app.lockedReason) };
-  return { ok: true, user, app };
+  return { ok: true, user, app, role: access.effectiveRole };
 }

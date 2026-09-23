@@ -13,6 +13,7 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { migrate } from 'drizzle-orm/pglite/migrator';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { apps, setDbForTests, upstreamSecrets, upstreams, users, workspaces, type DB } from '@drobek/db';
+import { and, eq, inArray } from 'drizzle-orm';
 import * as schema from '@drobek/db/schema';
 import { buildSdk, isDefinedModule, loadModules, type Principal } from '@drobek/modules';
 import { createModuleTestContext } from '@drobek/modules/testing';
@@ -24,6 +25,7 @@ import proxy, {
   proxyAppInfo,
   proxyConfigSchema,
   proxyConfirmRequired,
+  proxyOnConfirmed,
   type ProxyConfig,
 } from './index.js';
 import proxySdk from './sdk.js';
@@ -89,7 +91,18 @@ beforeAll(async () => {
   const add = async (workspaceId: string, name: string, over: Partial<typeof upstreams.$inferInsert>, secret?: string) => {
     const [row] = await d
       .insert(upstreams)
-      .values({ workspaceId, name, baseUrl: base, allowedMethods: ['GET', 'HEAD', 'POST'], allowedPathPrefixes: ['/'], authType: 'none', createdBy: u.id, ...over })
+      .values({
+        workspaceId,
+        name,
+        baseUrl: base,
+        allowedMethods: ['GET', 'HEAD', 'POST'],
+        allowedPathPrefixes: ['/'],
+        authType: 'none',
+        createdBy: u.id,
+        // An admin confirmed appA's assignments (onConfirmed) — the forward path checks it.
+        allowedAppIds: workspaceId === ws1 ? [appA] : [],
+        ...over,
+      })
       .returning();
     if (secret) await d.insert(upstreamSecrets).values({ upstreamId: row.id, ...encryptSecret(secret, env) });
   };
@@ -107,6 +120,25 @@ afterAll(async () => {
 });
 
 const mod = () => createProxyModule({ env: () => env });
+
+/** Upstreams of ws1 whose allow-list does NOT name appA (NSO-322 H3), for one test. */
+async function withNarrowUpstreams(fn: () => Promise<void>): Promise<void> {
+  const base = `http://127.0.0.1:${port}`;
+  const common = { workspaceId: ws1, baseUrl: base, allowedMethods: ['GET'], allowedPathPrefixes: ['/'], authType: 'bearer' as const };
+  const rows = await db
+    .insert(upstreams)
+    .values([
+      { ...common, name: 'closed', allowedAppIds: [] },
+      { ...common, name: 'theirs', allowedAppIds: ['app_someone_else'] },
+    ])
+    .returning();
+  for (const row of rows) await db.insert(upstreamSecrets).values({ upstreamId: row.id, ...encryptSecret(`${row.name}-secret-never-used-12345`, env) });
+  try {
+    await fn();
+  } finally {
+    await db.delete(upstreams).where(and(eq(upstreams.workspaceId, ws1), inArray(upstreams.name, ['closed', 'theirs'])));
+  }
+}
 
 function t(config: Record<string, unknown>, principal: Principal = USER, limits?: Record<string, number>) {
   return createModuleTestContext(mod(), { db, app: { id: appA, slug: 'chat', workspaceId: ws1 }, config, principal, limits });
@@ -191,19 +223,25 @@ describe('config + confirmRequired', () => {
     expect(proxyConfigSchema.safeParse({ upstreams: { echo: { rateLimit: 0 } } }).success).toBe(false);
   });
 
-  it('assigning an upstream and opening it to public need the owner; the rest applies at once', () => {
+  it('assigning an upstream and opening it to public need a workspace admin; the rest applies at once', async () => {
     const p = (c: unknown) => proxyConfigSchema.parse(c) as ProxyConfig;
     const none = p({});
     const user = p({ upstreams: { echo: {} } });
+    // Every one needs a workspace ADMIN (NSO-322 H3): only admins register upstreams.
+    const admin = (change: string) => ({ change, confirmRole: 'admin' });
     expect(proxyConfirmRequired(none, user)).toEqual([
-      'proxy.upstreams.echo: this app may call the workspace upstream "echo" with its secret (callers: "user")',
+      admin('proxy.upstreams.echo: this app may call the workspace upstream "echo" with its secret (callers: "user")'),
     ]);
     expect(proxyConfirmRequired(none, p({ upstreams: { echo: { rules: { call: 'public' } } } }))).toEqual([
-      'proxy.upstreams.echo: this app may call the workspace upstream "echo" with its secret (callers: "public")',
-      'proxy.upstreams.echo.rules.call: (new) → "public" (anyone, signed in or not, may call it — limited per client IP)',
+      admin('proxy.upstreams.echo: this app may call the workspace upstream "echo" with its secret (callers: "public")'),
+      admin('proxy.upstreams.echo.rules.call: (new) → "public" (anyone, signed in or not, may call it — limited per client IP)'),
     ]);
     expect(proxyConfirmRequired(user, p({ upstreams: { echo: { rules: { call: 'user|public' } } } }))).toEqual([
-      'proxy.upstreams.echo.rules.call: "user" → "user|public" (anyone, signed in or not, may call it — limited per client IP)',
+      admin('proxy.upstreams.echo.rules.call: "user" → "user|public" (anyone, signed in or not, may call it — limited per client IP)'),
+    ]);
+    // The module test context hands back the texts.
+    expect(await t({}).confirm({}, { upstreams: { echo: {} } })).toEqual([
+      'proxy.upstreams.echo: this app may call the workspace upstream "echo" with its secret (callers: "user")',
     ]);
     expect(proxyConfirmRequired(user, p({ upstreams: { echo: { rules: { call: 'admin' } }, } }))).toEqual([]);
     expect(proxyConfirmRequired(user, p({ upstreams: { echo: { rateLimit: 5 } } }))).toEqual([]);
@@ -293,6 +331,34 @@ describe('calls', () => {
     expect(Object.keys(c.headers).map((k) => k.toLowerCase())).not.toContain('set-cookie');
     expect(c.headers['Cache-Control']).toBe('no-store');
     expect(Object.keys(c.headers).filter((k) => k.toLowerCase() === 'cache-control')).toEqual(['Cache-Control']);
+  });
+
+  it("an upstream whose allow-list does not name the app → 403 upstream_not_allowed, nothing forwarded (NSO-322 H3)", async () => {
+    await withNarrowUpstreams(async () => {
+      for (const name of ['closed', 'theirs']) {
+        const res = await t({ upstreams: { [name]: {} } }).request('GET', `/${name}/x`, { headers: SDK });
+        expect(res.status, name).toBe(403);
+        expect(res.body).toMatchObject({ error: 'forbidden', details: { reason: 'upstream_not_allowed', upstream: name } });
+        expect(JSON.stringify(res.body)).not.toContain('secret-never-used');
+      }
+    });
+  });
+
+  it("an admin's confirmation puts the app on the allow-list of every upstream it newly assigns (onConfirmed; idempotent)", async () => {
+    const allowed = async (name: string) =>
+      (await db.select({ ids: upstreams.allowedAppIds }).from(upstreams).where(and(eq(upstreams.workspaceId, ws1), eq(upstreams.name, name))))[0].ids;
+    const p = (c: unknown) => proxyConfigSchema.parse(c) as ProxyConfig;
+    const context = { app: { id: appA, slug: 'chat', workspaceId: ws1 }, db, userId: 'u_admin', role: 'admin' as const };
+    await withNarrowUpstreams(async () => {
+      // An upstream the app already had is not touched; a new one (and one not registered) is.
+      await proxyOnConfirmed(p({ upstreams: { theirs: {} } }), p({ upstreams: { theirs: {}, closed: {}, ghost: {} } }), context);
+      expect(await allowed('closed')).toEqual([appA]);
+      expect(await allowed('theirs')).toEqual(['app_someone_else']);
+      await proxyOnConfirmed(p({}), p({ upstreams: { closed: {} } }), context);
+      expect(await allowed('closed')).toEqual([appA]);
+      const res = await t({ upstreams: { closed: {} } }).request('GET', '/closed/x', { headers: SDK });
+      expect(res.status).toBe(200);
+    });
   });
 
   it('the SSRF guard still applies: a registered upstream on a non-allowed port → 403 ssrf_blocked (+ audit)', async () => {
