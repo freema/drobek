@@ -12,7 +12,8 @@
  * manifest. A tool added without a doc (or a doc for a removed tool) fails CI.
  *
  * MAINTENANCE RULE: any change to the MCP tool surface updates THIS manifest +
- * the drobek skill (skills/drobek) in the SAME PR.
+ * the drobek skill (skills/drobek) in the SAME PR, and the plugin skills +
+ * scripts/check-drobek.mjs in freema/drobek-plugin.
  */
 
 /** One input field of a tool, described for a human/agent reader. */

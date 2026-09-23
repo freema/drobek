@@ -85,7 +85,7 @@ test('GET /llms-full.txt → 200 with every tool, no deploy pipeline, the limits
   expect(body).not.toContain('DEPLOY_MAX_');
 });
 
-test('build-with-your-agent page renders with the skill install command + MCP URL @local', async ({
+test('build-with-your-agent page renders with the plugin + skill install commands + MCP URL @local', async ({
   request,
 }) => {
   skipUnlessLocal();
@@ -93,6 +93,10 @@ test('build-with-your-agent page renders with the skill install command + MCP UR
   expect(res.status()).toBe(200);
   const html = await res.text();
   expect(html).toContain('cp -r skills/drobek ~/.claude/skills/drobek');
+  expect(html).toContain('claude plugin marketplace add freema/drobek-plugin');
+  expect(html).toContain('claude plugin install drobek@drobek');
+  expect(html).toContain('/drobek:build-app');
+  expect(html).toContain('https://github.com/freema/drobek-plugin');
   expect(html).toContain('/mcp');
   // The tool list is rendered on the page — the current tools, no removed ones.
   for (const name of ALL_TOOLS) expect(html, name).toContain(name);

@@ -2,6 +2,12 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import {
+  MODULE_INFO_RULE,
+  PLUGIN_INSTALL_COMMAND,
+  PLUGIN_MARKETPLACE_ADD_COMMAND,
+  PLUGIN_REPO_URL,
+} from './plugin.js';
 import { SKILL_INSTALL_COMMAND } from './render.js';
 import { TOOL_NAMES } from './tools.js';
 
@@ -50,12 +56,37 @@ describe('skills/drobek/SKILL.md', () => {
 
   it('links the authoritative schemas (llms.txt) rather than duplicating them', () => {
     expect(md).toContain('/llms-full.txt');
+    expect(md).toContain('https://drobek.app/llms-full.txt');
+  });
+
+  it('states the loop rules: preview_url, publish only on request, single writer, no secrets (M0-10)', () => {
+    expect(md).toContain('`compile.ok: true` → give the user the `preview_url`');
+    expect(md).toContain('Publish **only when the user explicitly asks**');
+    expect(md).toContain('Never publish on your own initiative');
+    expect(md).toContain('`app_locked`');
+    expect(md).toContain('3 minutes');
+    expect(md).toContain('`secret_in_source`');
+    expect(md).toContain('drobek dashboard');
+  });
+
+  it('states the module_info rule verbatim, in the present tense (M0-10)', () => {
+    expect(md).toContain(MODULE_INFO_RULE);
+    for (const future of ['later', 'phase 2', 'coming soon', 'will be available']) {
+      expect(md.toLowerCase(), future).not.toContain(future);
+    }
   });
 });
 
 describe('skills/drobek/README.md', () => {
+  const readme = readFileSync(SKILL_README, 'utf8');
+
   it('carries the one-command install advertised by the docs', () => {
-    const readme = readFileSync(SKILL_README, 'utf8');
     expect(readme).toContain(SKILL_INSTALL_COMMAND);
+  });
+
+  it('points at the drobek plugin with the exact Claude Code install commands', () => {
+    expect(readme).toContain(PLUGIN_MARKETPLACE_ADD_COMMAND);
+    expect(readme).toContain(PLUGIN_INSTALL_COMMAND);
+    expect(readme).toContain(PLUGIN_REPO_URL);
   });
 });

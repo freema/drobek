@@ -10,6 +10,8 @@ describe('/llms.txt loader', () => {
     const body = await res.text();
     expect(body.startsWith('# drobek')).toBe(true);
     expect(body).toContain('list_apps');
+    expect(body).toContain('claude plugin marketplace add freema/drobek-plugin');
+    expect(body).toContain('claude plugin install drobek@drobek');
   });
 });
 
@@ -26,6 +28,7 @@ describe('/llms-full.txt loader', () => {
       'read_file',
       'write_files',
       'restore_version',
+      'publish',
     ]) {
       expect(body).toContain(name);
     }

@@ -1,11 +1,17 @@
 /**
  * M1b Agent DX (PHY-124) — `/build-with-your-agent`: the human-readable page
- * that links llms.txt, shows the one-command skill install, and points at the
- * MCP endpoint. Env-derived URLs come from the loader (server-side process.env).
- * Minimal style, matching the index page.
+ * that shows the drobek plugin install (M0-10, NSO-302), the manual MCP connect
+ * + one-command skill install, and links llms.txt. Every command and URL comes
+ * from @drobek/agent-dx; env-derived URLs come from the loader (server-side
+ * process.env). Minimal style, matching the index page.
  */
 import { useLoaderData } from 'react-router';
 import {
+  PLUGIN_BUILD_COMMAND,
+  PLUGIN_INSTALL_COMMAND,
+  PLUGIN_MARKETPLACE_ADD_COMMAND,
+  PLUGIN_MCP_URL,
+  PLUGIN_REPO_URL,
   SKILL_INSTALL_COMMAND,
   TOOL_DOCS,
   mcpEndpoint,
@@ -18,7 +24,7 @@ export function meta() {
     {
       name: 'description',
       content:
-        'Connect the drobek MCP server, install the drobek skill, and let your agent build web apps directly in your drobek workspace.',
+        'Install the drobek plugin (or connect the drobek MCP server and install the drobek skill) and let your agent build web apps directly in your drobek workspace.',
     },
   ];
 }
@@ -28,6 +34,12 @@ export function loader() {
     mcpUrl: mcpEndpoint(),
     appUrl: publicAppUrl(),
     installCommand: SKILL_INSTALL_COMMAND,
+    plugin: {
+      commands: `${PLUGIN_MARKETPLACE_ADD_COMMAND}\n${PLUGIN_INSTALL_COMMAND}`,
+      buildExample: `${PLUGIN_BUILD_COMMAND} a tip calculator that splits the bill`,
+      mcpUrl: PLUGIN_MCP_URL,
+      repoUrl: PLUGIN_REPO_URL,
+    },
     tools: TOOL_DOCS.map((t) => ({
       name: t.name,
       title: t.title,
@@ -70,7 +82,7 @@ const styles = {
 } as const;
 
 export default function BuildWithYourAgent() {
-  const { mcpUrl, appUrl, installCommand, tools } =
+  const { mcpUrl, appUrl, installCommand, plugin, tools } =
     useLoaderData<typeof loader>();
   return (
     <main style={styles.main}>
@@ -84,13 +96,31 @@ export default function BuildWithYourAgent() {
       </nav>
       <h1 style={styles.h1}>Build with your agent</h1>
       <p style={styles.tagline}>
-        Point Claude Code or Cursor at the drobek MCP server, install the drobek
-        skill, and let your agent create an app, write its files and hand you a
-        live preview URL — drobek compiles every write and keeps it as a
-        version.
+        Point Claude Code, Codex or Cursor at the drobek MCP server and let your
+        agent create an app, write its files and hand you a live preview URL —
+        drobek compiles every write and keeps it as a version.
       </p>
 
-      <h2 style={styles.h2}>1. Connect the MCP server</h2>
+      <h2 style={styles.h2}>Claude Code: the drobek plugin</h2>
+      <p>
+        One plugin adds the drobek MCP server ({plugin.mcpUrl}), the
+        build-app-on-drobek skill and a build command:
+      </p>
+      <code style={styles.code}>{plugin.commands}</code>
+      <p>
+        Then run <code>/mcp</code> in Claude Code, sign in to the drobek server,
+        and ask for an app:
+      </p>
+      <code style={styles.code}>{plugin.buildExample}</code>
+      <p>
+        Codex and Cursor: the same plugin, with install instructions, is at{' '}
+        <a href={plugin.repoUrl} style={styles.link}>
+          {plugin.repoUrl}
+        </a>
+        .
+      </p>
+
+      <h2 style={styles.h2}>Or by hand: 1. Connect the MCP server</h2>
       <p>
         Add this OAuth 2.1 (PKCE S256) MCP endpoint to your agent&rsquo;s MCP
         client. Discovery, registration, and consent are automatic.

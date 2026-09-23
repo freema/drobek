@@ -2,13 +2,20 @@ import { describe, expect, it } from 'vitest';
 import { ERROR_CATALOGUE } from './errors-catalogue.js';
 import { LIMITS } from './limits.js';
 import {
+  PLUGIN_BUILD_COMMAND,
+  PLUGIN_INSTALL_COMMAND,
+  PLUGIN_MARKETPLACE_ADD_COMMAND,
+  PLUGIN_MCP_URL,
+  PLUGIN_REPO_URL,
+} from './plugin.js';
+import {
   DOCS_RESOURCE_LLMS_FULL,
   SKILL_INSTALL_COMMAND,
   renderLlmsFull,
   renderLlmsTxt,
   renderToolReference,
 } from './render.js';
-import { TOOL_NAMES } from './tools.js';
+import { TOOL_DOCS, TOOL_NAMES } from './tools.js';
 
 const ENV = {
   PUBLIC_APP_URL: 'http://localhost:3041',
@@ -36,10 +43,38 @@ describe('renderLlmsTxt', () => {
   it('lists every tool name', () => {
     for (const name of TOOL_NAMES) expect(txt).toContain(name);
   });
+
+  it('carries the plugin install for Claude Code + the Codex/Cursor pointer (M0-10)', () => {
+    expect(txt).toContain('## Plugin (Claude Code, Codex, Cursor)');
+    expect(txt).toContain(PLUGIN_MARKETPLACE_ADD_COMMAND);
+    expect(txt).toContain(PLUGIN_INSTALL_COMMAND);
+    expect(txt).toContain(PLUGIN_BUILD_COMMAND);
+    expect(txt).toContain(PLUGIN_MCP_URL);
+    expect(txt).toContain(PLUGIN_REPO_URL);
+    expect(PLUGIN_MARKETPLACE_ADD_COMMAND).toBe('claude plugin marketplace add freema/drobek-plugin');
+    expect(PLUGIN_INSTALL_COMMAND).toBe('claude plugin install drobek@drobek');
+    expect(PLUGIN_BUILD_COMMAND).toBe('/drobek:build-app');
+  });
 });
 
 describe('renderLlmsFull', () => {
   const full = renderLlmsFull(ENV);
+
+  it('documents every manifest tool completely: each input field, its result shape and an example (M0-10 parity)', () => {
+    // With the @drobek/oauth parity test (registered MCP tools == TOOL_DOCS),
+    // this closes the chain: tools/list == manifest == llms-full.txt.
+    for (const t of TOOL_DOCS) {
+      const start = full.indexOf(`### ${t.name} — ${t.title}`);
+      expect(start, t.name).toBeGreaterThan(-1);
+      const next = full.indexOf('\n### ', start + 1);
+      const section = full.slice(start, next === -1 ? undefined : next);
+      expect(section, t.name).toContain(`Scope: ${t.scope}`);
+      for (const f of t.fields) expect(section, `${t.name}.${f.name}`).toContain(`- ${f.name} — `);
+      if (t.fields.length === 0) expect(section, t.name).toContain('Input: (none)');
+      expect(section, t.name).toContain(`Returns: ${t.returns}`);
+      expect(section, t.name).toContain(`"name": "${t.name}"`);
+    }
+  });
 
   it('contains every current tool with annotations, result shape and an example call', () => {
     for (const name of TOOL_NAMES) expect(full).toContain(`### ${name} — `);
@@ -118,7 +153,9 @@ describe('renderLlmsFull', () => {
     expect(full).not.toContain('DATA_MAX_DOCS_PER_APP');
   });
 
-  it('surfaces the skill install command + docs resource uri consistency', () => {
+  it('surfaces the plugin + skill install commands + docs resource uri consistency', () => {
+    expect(full).toContain(`${PLUGIN_MARKETPLACE_ADD_COMMAND} && ${PLUGIN_INSTALL_COMMAND}`);
+    expect(full).toContain(PLUGIN_REPO_URL);
     expect(full).toContain(SKILL_INSTALL_COMMAND);
     expect(DOCS_RESOURCE_LLMS_FULL).toBe('drobek://docs/llms-full');
   });

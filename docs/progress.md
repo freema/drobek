@@ -105,8 +105,13 @@ single long-lived `next` branch; pushes happen only at milestone end.
   `SMOKE_API_KEY` (a `read,write,publish` key of a dedicated smoke user —
   inside the prod container: `node node_modules/@drobek/oauth/dist/cli/api-key-create.js
   --email <smoke user> --name smoke --scopes read,write,publish`) and run
-  `BASE_URL_WEB=https://… task e2e:smoke` after each deploy. M0-10 (NSO-302)
-  needs `freema/drobek-plugin`.
+  `BASE_URL_WEB=https://… task e2e:smoke` after each deploy.
+- M0-10 (NSO-302) is done locally: `freema/drobek-plugin` (PRIVATE until the
+  new drobek.app is live — flip it public together with M0-09), local clone
+  at `../drobek-plugin`, branch `next`, not pushed. Its `.mcp.json` targets
+  `https://drobek.app/mcp`; once M0-09 is deployed, re-run the calculator
+  test against production.
+- Next milestone: M1 (NSO-287 M1-01 module contract first).
 
 ## Notes and gotchas
 
@@ -230,6 +235,17 @@ single long-lived `next` branch; pushes happen only at milestone end.
   run.
 - Validate the workflow without installing anything:
   `docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:latest`.
+
+- Testing the plugin against the dev stack: copy `plugins/drobek` to a
+  scratch dir and replace its `.mcp.json` with the localhost URL plus
+  `"headers":{"Authorization":"Bearer ${DROBEK_API_KEY}"}` (Claude Code
+  expands the env var, so the key never lands in a file), then
+  `claude -p "/drobek:build-app a calculator" --plugin-dir <copy>
+  --allowedTools mcp__plugin_drobek_drobek__…`. Mint the key for a synthetic
+  user created through the normal OTP login (Mailpit), not an existing one.
+- `claude plugin validate` only parses skill/command frontmatter under the
+  conventional `skills/` + `commands/` layout; the plugin repo's
+  `scripts/validate-claude-components.mjs` stages each skill variant that way.
 
 ## Failed approaches
 

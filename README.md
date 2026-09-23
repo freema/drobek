@@ -89,6 +89,15 @@ secret still holds a `change-me…` placeholder. Next to it:
    (a 3-minute lease). Browse the apps, their version history and publish a
    version under `/workspaces/<slug>/apps`.
 
+The agent-facing contract is served at `/llms.txt` and `/llms-full.txt`, and
+`/build-with-your-agent` shows the setup. To teach your agent the build loop,
+install the skill from this repo (`cp -r skills/drobek ~/.claude/skills/drobek`)
+or, for the hosted drobek at `https://drobek.app/mcp`, the
+[drobek plugin](https://github.com/freema/drobek-plugin) for Claude Code, Codex
+and Cursor (MCP server + `build-app-on-drobek` skill + `/drobek:build-app`):
+`claude plugin marketplace add freema/drobek-plugin` then
+`claude plugin install drobek@drobek`.
+
 ### Opening apps locally
 
 Every app is served on its own origin, never by the dashboard. Locally

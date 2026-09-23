@@ -2,6 +2,30 @@
 
 ## Unreleased (`next`)
 
+### Agent DX v0: the drobek plugin, install lines, skill guard (NSO-302)
+
+- **`freema/drobek-plugin`** (new repo, MIT): marketplace `drobek` with plugin
+  `drobek` for Claude Code, Codex and Cursor — `.mcp.json` on
+  `https://drobek.app/mcp`, a `build-app-on-drobek` skill per host (the Claude
+  variant acts only once the user has chosen drobek), the Cursor rule
+  `route-app-builds-to-drobek.mdc` and the `/drobek:build-app` command.
+  `claude plugin validate --strict` plus the Codex/Cursor validators run in its
+  CI.
+- **`@drobek/agent-dx` `plugin.ts`**: the plugin's repo, marketplace, install
+  commands and MCP URL, and `MODULE_INFO_RULE` — the present-tense module rule
+  every drobek skill states verbatim. `/llms.txt` gains a "Plugin (Claude Code,
+  Codex, Cursor)" section; `/llms-full.txt` and `/build-with-your-agent` show
+  `claude plugin marketplace add freema/drobek-plugin` +
+  `claude plugin install drobek@drobek` and point Codex / Cursor at the plugin
+  repo, next to the manual MCP connect + skill install.
+- **`skills/drobek`**: SKILL.md states the module rule and the hosted
+  `https://drobek.app/llms-full.txt`; its README points at the plugin.
+  `skill.test.ts` now also guards the loop rules (preview_url, publish only on
+  an explicit request, single writer, no secrets) and the module rule;
+  `render.test.ts` asserts every input field, result shape and example of every
+  manifest tool is in llms-full.txt (with the `@drobek/oauth` parity test:
+  tools/list == TOOL_DOCS == llms-full.txt).
+
 ### e2e agent loop + CI against the production image (NSO-289)
 
 - **`tests-e2e/tests/mcp-loop.spec.ts`**: the agent loop through a real MCP

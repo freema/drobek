@@ -7,6 +7,13 @@
 import { renderBriefing } from './briefing.js';
 import { ERROR_CATALOGUE } from './errors-catalogue.js';
 import { LIMITS } from './limits.js';
+import {
+  PLUGIN_BUILD_COMMAND,
+  PLUGIN_INSTALL_COMMAND,
+  PLUGIN_MARKETPLACE_ADD_COMMAND,
+  PLUGIN_MCP_URL,
+  PLUGIN_REPO_URL,
+} from './plugin.js';
 import { TOOL_DOCS, type ToolDoc } from './tools.js';
 import {
   mcpEndpoint,
@@ -22,7 +29,7 @@ export const DOCS_RESOURCE_LLMS_FULL = 'drobek://docs/llms-full';
 export const DOCS_RESOURCE_TOOLS = 'drobek://docs/tools';
 
 const SUMMARY =
-  'drobek is an open-source cloud workspace for agent-built web apps. Connect the drobek MCP server from your agent (Claude Code, Cursor) and it works directly in your drobek workspace: create an app, write its files, get the compile result back on every write, and hand the user a live preview URL — every change is an immutable version.';
+  'drobek is an open-source cloud workspace for agent-built web apps. Connect the drobek MCP server from your agent (Claude Code, Codex, Cursor) and it works directly in your drobek workspace: create an app, write its files, get the compile result back on every write, and hand the user a live preview URL — every change is an immutable version.';
 
 function hints(tool: ToolDoc): string {
   const a = tool.annotations;
@@ -77,7 +84,11 @@ export function renderLlmsTxt(env: NodeJS.ProcessEnv = process.env): string {
     '',
     '## Docs',
     `- [Full contract](${app}/llms-full.txt): the MCP connect/OAuth flow, every tool with its inputs, result shape and an example, the app briefing (stack, files, import map, rules), limits, and the error catalogue.`,
-    `- [Build with your agent](${app}/build-with-your-agent): connect the MCP server + install the drobek skill.`,
+    `- [Build with your agent](${app}/build-with-your-agent): install the drobek plugin, or connect the MCP server + install the drobek skill.`,
+    '',
+    '## Plugin (Claude Code, Codex, Cursor)',
+    `- Claude Code: \`${PLUGIN_MARKETPLACE_ADD_COMMAND}\` then \`${PLUGIN_INSTALL_COMMAND}\`; build with \`${PLUGIN_BUILD_COMMAND} <idea>\`. The plugin connects ${PLUGIN_MCP_URL}.`,
+    `- Codex and Cursor: install instructions in ${PLUGIN_REPO_URL}`,
     '',
     '## Connect (MCP)',
     `- MCP endpoint: ${mcp} (OAuth 2.1, PKCE S256; discovery at ${prm})`,
@@ -160,7 +171,9 @@ export function renderLlmsFull(env: NodeJS.ProcessEnv = process.env): string {
     [
       '## Build with your agent',
       '',
-      `- Install the drobek skill: ${SKILL_INSTALL_COMMAND}`,
+      `- Claude Code plugin (MCP server ${PLUGIN_MCP_URL} + the build-app-on-drobek skill + the ${PLUGIN_BUILD_COMMAND} command): ${PLUGIN_MARKETPLACE_ADD_COMMAND} && ${PLUGIN_INSTALL_COMMAND}`,
+      `- Codex and Cursor variants of the plugin: ${PLUGIN_REPO_URL}`,
+      `- Install the drobek skill from a checkout of the drobek repo: ${SKILL_INSTALL_COMMAND}`,
       `- Human quickstart page: ${app}/build-with-your-agent`,
     ].join('\n')
   );
