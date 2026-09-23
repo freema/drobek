@@ -100,8 +100,9 @@ Errors reject with a `DrobekError` (`err.code`, `err.status`, `err.message`).
   `limits` of `skill_info('auth')`): `AUTH_CODES_PER_IP_15MIN` (5) and
   `AUTH_CODES_PER_IP_DAY` (20) codes per visitor IP,
   `AUTH_CODES_PER_EMAIL_HOUR` (3) per address (more requests answer "sent"
-  but send nothing new), `AUTH_CODES_PER_APP_HOUR` (100, then sign-in e-mails
-  pause 15 minutes), `AUTH_ATTEMPTS_PER_IP_15MIN` (30 send/verify calls),
+  but send nothing new), `AUTH_CODES_PER_APP_HOUR` (100, but never more
+  than the app's share of the server's sign-in budget — 25 by default; then
+  sign-in e-mails pause 15 minutes), `AUTH_ATTEMPTS_PER_IP_15MIN` (30 send/verify calls),
   `END_USERS_MAX_PER_APP` (1000 users).
 - Every request re-checks the user, in every module: removed from the
   allowlist or disabled → signed out at once; a role follows `adminEmails`

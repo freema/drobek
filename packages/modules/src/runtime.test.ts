@@ -711,17 +711,18 @@ describe('module e-mail (ctx.email.send through the runtime)', () => {
     );
     // Paused notifications are refused before anything is counted or sent…
     expect((await send({ config: 'notify' })).status).toBe(503);
-    // …but sign-in codes still go out, up to THEIR budget.
+    // …but sign-in codes still go out, up to THEIR budget (one of the two
+    // sent by another app: one app alone stops at its own share first).
+    await guard!.admit(1, { app_id: 'app_other', module: 'auth', kind: 'sign_in' });
     expect((await send({ signInAddress: 'a@example.com' })).status).toBe(200);
-    expect((await send({ signInAddress: 'b@example.com' })).status).toBe(200);
-    const codesOver = await send({ signInAddress: 'c@example.com' });
+    const codesOver = await send({ signInAddress: 'b@example.com' });
     expect(codesOver.status).toBe(503);
     expect(json(codesOver)).toMatchObject({ error: 'unavailable', details: { reason: 'email_paused', class: 'sign_in' } });
     expect(log.error).toHaveBeenLastCalledWith(
       'ALERT: module e-mail paused — the global hourly cap was reached',
       expect.objectContaining({ event: 'email_global_pause', class: 'sign_in', kind: 'sign_in' })
     );
-    expect(sent.map((m) => m.to)).toEqual(['team@example.com', 'a@example.com', 'b@example.com']);
+    expect(sent.map((m) => m.to)).toEqual(['team@example.com', 'a@example.com']);
   });
 
   it('one app past its share of the notification budget: its notifications are refused (email_paused naming the limit); sign-in codes are not', async () => {

@@ -118,6 +118,15 @@ function notAllowed(): ModuleError {
   return new ModuleError('email_not_allowed', 'This e-mail address may not sign in to this app.', { status: 403 });
 }
 
+/**
+ * The app's hourly code cap: AUTH_CODES_PER_APP_HOUR, but never more than the
+ * app's share of the server's sign-in e-mail budget (NSO-322 H2) — the app
+ * pauses on its own before it could eat into other apps' sign-in codes.
+ */
+export function appHourlyCodeCap(limit: number, signInShare: number | undefined): number {
+  return signInShare !== undefined && signInShare > 0 ? Math.min(limit, signInShare) : limit;
+}
+
 async function guardLimits(ctx: Ctx): Promise<OtpGuardLimits> {
   const l = await ctx.limits();
   return {
@@ -125,7 +134,7 @@ async function guardLimits(ctx: Ctx): Promise<OtpGuardLimits> {
     ipDailyLimit: l.AUTH_CODES_PER_IP_DAY,
     emailHourlyLimit: l.AUTH_CODES_PER_EMAIL_HOUR,
     emailCooldownMs: otpGuardLimitsFromEnv().emailCooldownMs,
-    globalHourlyMax: l.AUTH_CODES_PER_APP_HOUR,
+    globalHourlyMax: appHourlyCodeCap(l.AUTH_CODES_PER_APP_HOUR, ctx.email.signInShare),
   };
 }
 

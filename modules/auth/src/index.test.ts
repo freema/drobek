@@ -35,6 +35,7 @@ vi.mock('@drobek/core', async (importOriginal) => {
 });
 
 import auth, { AUTH_CONFIG_DEFAULTS, authConfigSchema, authConfirmRequired, decideSignIn, safeName, signInEmail } from './index.js';
+import { appHourlyCodeCap } from './routes.js';
 import { authUsers } from './schema.js';
 
 const CORE_MIGRATIONS = fileURLToPath(new URL('../../../packages/db/drizzle/migrations', import.meta.url));
@@ -210,23 +211,50 @@ describe('drobek-module-auth — sign-in', () => {
     await expect(guard.admit(1, forms)).rejects.toMatchObject({ details: { reason: 'email_paused', class: 'notification' } });
     await expect(guard.assertOpen(forms)).rejects.toMatchObject({ status: 503 });
 
+    // Another app already sent one of the two sign-in codes (one app alone
+    // stops at its own share of 2 first — the next test).
+    await guard.admit(1, { app_id: 'app_other', module: 'auth', kind: 'sign_in' });
+
     const t = createModuleTestContext(auth, { db, app: APP(), config: CONFIG, origin: `http://${HOST}`, mailGuard: guard });
-    for (const email of ['ana@example.com', 'jan@firma.cz']) {
-      const sent = await t.request('POST', '/send-code', { body: { email }, headers: { host: HOST } });
-      expect(sent.status, JSON.stringify(sent.body)).toBe(200);
-    }
-    expect(t.emails.map((m) => [m.to, m.kind])).toEqual([
-      [['ana@example.com'], 'sign_in'],
-      [['jan@firma.cz'], 'sign_in'],
-    ]);
+    const sent = await t.request('POST', '/send-code', { body: { email: 'ana@example.com' }, headers: { host: HOST } });
+    expect(sent.status, JSON.stringify(sent.body)).toBe(200);
+    expect(t.emails.map((m) => [m.to, m.kind])).toEqual([[['ana@example.com'], 'sign_in']]);
     // The sign-in budget (2) is used up too: the pause is passed on as it is.
     const refused = await t.request('POST', '/send-code', { body: { email: 'eva@firma.cz' }, headers: { host: HOST } });
     expect(refused.status).toBe(503);
     expect(refused.body).toMatchObject({ error: 'unavailable', details: { reason: 'email_paused', class: 'sign_in' } });
     expect(refused.headers['Retry-After']).toBe('900');
-    expect(t.emails).toHaveLength(2);
+    expect(t.emails).toHaveLength(1);
     // Nothing went out: the per-address cooldown is released for a retry.
     expect(await fake.get(`drobek:otp:eu:${appId}:cd:${emailHash('eva@firma.cz')}`)).toBeNull();
+  });
+
+  it("the app's hourly code cap is clamped to its share of the server's sign-in budget (NSO-322 H2)", async () => {
+    expect(appHourlyCodeCap(100, 25)).toBe(25);
+    expect(appHourlyCodeCap(10, 25)).toBe(10);
+    expect(appHourlyCodeCap(100, undefined)).toBe(100);
+    // Defaults: sign-in 100 an hour server-wide, one app 25 of them; AUTH_CODES_PER_APP_HOUR 100.
+    const guard = memoryMailGuard({ hourlyMax: 500, pauseMinutes: 15 }, noopLogger);
+    const t = createModuleTestContext(auth, {
+      db,
+      app: APP(),
+      config: { ...CONFIG, allow: { ...CONFIG.allow, anyone: true } },
+      origin: `http://${HOST}`,
+      mailGuard: guard,
+      limits: { AUTH_CODES_PER_IP_15MIN: 1000, AUTH_CODES_PER_IP_DAY: 1000, AUTH_ATTEMPTS_PER_IP_15MIN: 1000 },
+    });
+    for (let i = 0; i < 25; i++) {
+      const sent = await t.request('POST', '/send-code', { body: { email: `u${i}@example.org` }, headers: { host: HOST } });
+      expect(sent.status, JSON.stringify(sent.body)).toBe(200);
+    }
+    // The 26th: the app's own brake pauses THIS app (15 min) — the server's
+    // sign-in budget is not touched, so other apps keep signing people in.
+    const over = await t.request('POST', '/send-code', { body: { email: 'u25@example.org' }, headers: { host: HOST } });
+    expect(over.status).toBe(503);
+    expect(over.headers['Retry-After']).toBe('900');
+    expect(t.emails).toHaveLength(25);
+    await expect(guard.assertOpen({ app_id: 'app_other', module: 'auth', kind: 'sign_in' })).resolves.toBeUndefined();
+    await guard.admit(1, { app_id: 'app_other', module: 'auth', kind: 'sign_in' });
   });
 
   it('an allowed e-mail gets a code (scoped key, safe subject) → verify → session cookie + user → me', async () => {

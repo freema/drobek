@@ -618,6 +618,13 @@ export interface ModuleContext<Config = unknown> extends ModuleServices {
      * notifications, or no mail module is active).
      */
     send(message: EmailMessage): Promise<{ sent: number }>;
+    /**
+     * Sign-in codes (`{ signInAddress }`) this app may send per hour under the
+     * operator-wide budget (EMAIL_SIGNIN_APP_HOURLY_SHARE of the sign-in
+     * budget) — a module's own per-app cap must not exceed it (NSO-322 H2).
+     * Undefined when core runs no e-mail guard (tests).
+     */
+    signInShare?: number;
   };
 }
 

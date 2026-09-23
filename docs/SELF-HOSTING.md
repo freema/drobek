@@ -82,7 +82,9 @@ database first. An app's preview and production hosts share its records. Module
 e-mail uses the same SMTP settings as the dashboard login and is capped
 server-wide by `EMAIL_GLOBAL_HOURLY_MAX` (default 500 recipients per hour).
 End users' sign-in codes get a reserved part of it, `EMAIL_SIGNIN_HOURLY_MAX`
-(default 20 % of the cap, at least 50, at most half — 100 of 500);
+(default 20 % of the cap, at least 50, at most half — 100 of 500), one app
+at most `EMAIL_SIGNIN_APP_HOURLY_SHARE` percent of those (default 25, at
+least 10 — raise it on a single-app server);
 notifications (forms, `notifyAdmins`) get the rest, and one app at most
 `EMAIL_APP_HOURLY_SHARE` percent of that (default 25). Past its budget a
 class pauses for `EMAIL_GLOBAL_PAUSE_MINUTES` — notifications pausing never

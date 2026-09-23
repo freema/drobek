@@ -278,7 +278,11 @@ Every `ctx.email.send` of every module goes through one path in core:
    auth module's code) is `sign_in`, anything else is `notification`.
    - `sign_in` gets a reserved share, `EMAIL_SIGNIN_HOURLY_MAX` (default
      `min(max(50, ⌈20 % × cap⌉), ⌊cap / 2⌋)` — 100 of 500; an explicit value
-     is capped at cap − 1);
+     is capped at cap − 1), and ONE app at most
+     `EMAIL_SIGNIN_APP_HOURLY_SHARE` percent of it (default 25 → 25 of 100;
+     at least 10, at most the whole sign-in budget) — one app can never pause
+     sign-in for every app. `ctx.email.signInShare` tells a module that
+     number (the auth module clamps `AUTH_CODES_PER_APP_HOUR` to it);
    - `notification` gets the rest (cap − sign-in, 400 of 500), and ONE app
      at most `EMAIL_APP_HOURLY_SHARE` percent of it (default 25 → 100 of
      400).
@@ -293,9 +297,10 @@ Every `ctx.email.send` of every module goes through one path in core:
    `503 unavailable` (`details.reason: email_paused`, `details.class`,
    `Retry-After`); the other class keeps going — form notifications and
    `notifyAdmins` pausing never stops sign-in codes. Deleting the pause key
-   resumes early. An app past its share (`drobek:rl:mail:app:<app_id>`) gets
-   the same `503` with `details.limit: EMAIL_APP_HOURLY_SHARE` and `value`
-   until its hour ends — other apps continue, nothing pauses server-wide
+   resumes early. An app past its share (`drobek:rl:mail:app:<app_id>`,
+   sign-in: `drobek:rl:mail:app:<app_id>:sign_in`) gets the same `503` with
+   `details.limit: EMAIL_APP_HOURLY_SHARE` (or
+   `EMAIL_SIGNIN_APP_HOURLY_SHARE`) and `value` until its hour ends — other apps continue, nothing pauses server-wide
    (a `warn` line, `event: email_app_share_exceeded`). The budgets are not
    overridable by the limits provider, and a Redis error refuses the send
    (fail closed). `createModuleTestContext({ mailGuard: memoryMailGuard(…) })`
@@ -729,8 +734,10 @@ an app sign in with a 6-digit code e-mailed to them. Its `SKILL.md` is what
 - **me** makes the same decision, and also writes a changed role back to the
   row, rolls the session forward and clears the cookie of an ended session.
 - **Limits** (per app): `AUTH_CODES_PER_IP_15MIN` 5, `AUTH_CODES_PER_IP_DAY`
-  20, `AUTH_CODES_PER_EMAIL_HOUR` 3, `AUTH_CODES_PER_APP_HOUR` 100 (then the
-  app's sign-in e-mails pause for 15 minutes), `AUTH_ATTEMPTS_PER_IP_15MIN` 30
+  20, `AUTH_CODES_PER_EMAIL_HOUR` 3, `AUTH_CODES_PER_APP_HOUR` 100 (never
+  more than the app's share of the server's sign-in budget,
+  `EMAIL_SIGNIN_APP_HOURLY_SHARE` — 25 by default; then the app's sign-in
+  e-mails pause for 15 minutes), `AUTH_ATTEMPTS_PER_IP_15MIN` 30
   (send-code + verify calls), `END_USERS_MAX_PER_APP` 1000.
 - **SDK**: `drobek.auth.me() / sendCode(email) / verify(email, code) /
   logout() / onChange(cb)` in `sdk.js`, and the inline source `drobek/auth`:

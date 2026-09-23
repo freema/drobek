@@ -1201,6 +1201,7 @@ export class ModuleRuntime {
       },
       email: {
         send: (message) => this.sendEmail(m, hookApp, principal, config, getLimits, message),
+        signInShare: deps.mailGuard.budgets?.perAppSignIn,
       },
     };
   }

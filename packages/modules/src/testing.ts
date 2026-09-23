@@ -162,6 +162,7 @@ export function createModuleTestContext(module: AnyModule, opts: ModuleTestOptio
         emails.push({ to, subject: sanitizeSubject(message.subject), text: capEmailText(message.text), kind, ...envelope });
         return { sent: to.length };
       },
+      signInShare: opts.mailGuard?.budgets?.perAppSignIn,
     },
   });
 
