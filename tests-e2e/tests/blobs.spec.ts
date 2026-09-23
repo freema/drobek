@@ -66,7 +66,8 @@ test('blob round-trip: signed PUT then GET returns identical bytes @local', asyn
 
   const get = await request.get(`/__blob/${sha}`);
   expect(get.status()).toBe(200);
-  expect(get.headers()['content-type']).toBe('text/plain');
+  // Express (dev + prod since M0-01) appends `; charset=utf-8` to text types.
+  expect(get.headers()['content-type']).toMatch(/^text\/plain(;|$)/);
   expect(get.headers()['x-content-type-options']).toBe('nosniff');
   expect(get.headers()['etag']).toBe(`"${sha}"`);
   expect(Buffer.compare(await get.body(), body)).toBe(0);

@@ -5,49 +5,88 @@ dotenv: ['.env']
 vars:
   GIT_SHA:
     sh: git -C {{.ROOT_DIR}} rev-parse --short HEAD 2>/dev/null || echo dev
+  IMAGE: '{{.IMAGE | default "ghcr.io/freema/drobek"}}'
+  WEB_URL: 'http://localhost:{{.WEB_PUBLISH | default "3041"}}'
 
 tasks:
-  up:
-    desc: Build + start the dev stack (web+mcp+postgres+redis) and wait until healthy
+  dev:
+    desc: Build + start the dev stack (drobek + postgres + redis + mailpit) and wait until healthy
     env:
       GIT_SHA: '{{.GIT_SHA}}'
     cmds:
       - docker compose up -d --build --wait --wait-timeout 300
       - task: health
 
-  stop:
+  up:
+    desc: Alias of `task dev`
+    cmds:
+      - task: dev
+
+  down:
     desc: Stop the dev stack
     cmds:
       - docker compose down
 
-  logs:
-    desc: Tail web + mcp logs
+  stop:
+    desc: Alias of `task down`
     cmds:
-      - docker compose logs -f web mcp
+      - task: down
+
+  logs:
+    desc: Tail the drobek service logs
+    cmds:
+      - docker compose logs -f drobek
 
   status:
     desc: Container status
     cmds:
       - docker compose ps
 
-  db:generate:
-    desc: Generate Drizzle migrations from packages/db schema (journal __drizzle_migrations_core)
+  shell:
+    desc: Shell into the running drobek container
     cmds:
-      - docker compose exec web pnpm --filter @drobek/db db:generate
+      - docker compose exec drobek sh
 
-  db:migrate:
-    desc: Apply core Drizzle migrations (also runs automatically in the web entrypoint)
+  build:
+    desc: Build the production image ({{.IMAGE}}:<sha>)
     cmds:
-      - docker compose exec web pnpm --filter @drobek/db db:migrate
+      - docker build --target runner --build-arg GIT_SHA={{.GIT_SHA}} -t {{.IMAGE}}:{{.GIT_SHA}} -t {{.IMAGE}}:local .
+
+  test:
+    desc: Unit tests (all packages + the server)
+    cmds:
+      - pnpm build:packages
+      - pnpm test
+
+  lint:
+    desc: Lint
+    cmds:
+      - pnpm lint
+
+  typecheck:
+    desc: Typecheck every workspace package
+    cmds:
+      - pnpm build:packages
+      - pnpm typecheck
 
   check:
-    desc: Host-side gate — build packages, typecheck, lint, unit tests
+    desc: Host-side gate — install, build packages, typecheck, lint, unit tests
     cmds:
       - pnpm install
       - pnpm build:packages
       - pnpm typecheck
       - pnpm lint
       - pnpm test
+
+  db:generate:
+    desc: Generate Drizzle migrations from packages/db schema (journal __drizzle_migrations_core)
+    cmds:
+      - docker compose exec drobek pnpm --filter @drobek/db db:generate
+
+  db:migrate:
+    desc: Apply core Drizzle migrations (also runs automatically when the server starts)
+    cmds:
+      - docker compose exec drobek pnpm --filter @drobek/db db:migrate
 
   blob:sign:
     desc: 'Mint a signed upload token (PHY-100) — task blob:sign -- <sha256> <maxBytes> <ttl-sec>'
@@ -57,8 +96,8 @@ tasks:
   e2e:
     desc: Playwright suite against the local compose stack (includes @local specs)
     env:
-      BASE_URL_WEB: 'http://localhost:{{.WEB_PUBLISH | default "3041"}}'
-      BASE_URL_MCP: 'http://localhost:{{.MCP_PUBLISH | default "3042"}}'
+      BASE_URL_WEB: '{{.WEB_URL}}'
+      BASE_URL_MCP: '{{.WEB_URL}}'
       TEST_ENV: local
       DATABASE_URL: 'postgresql://drobek:drobek@localhost:{{.POSTGRES_PUBLISH | default "5441"}}/drobek'
       REDIS_URL: 'redis://localhost:{{.REDIS_PUBLISH | default "6391"}}'
@@ -67,15 +106,21 @@ tasks:
       # blob specs mint their own tokens — must sign with the stack's secret.
       UPLOAD_SIGNING_SECRET: '{{.UPLOAD_SIGNING_SECRET}}'
     cmds:
-      - pnpm -C tests-e2e exec playwright test
+      - pnpm -C tests-e2e exec playwright test {{.CLI_ARGS}}
 
   e2e:smoke:
     desc: Read-only @smoke specs only (safe against any target)
     env:
-      BASE_URL_WEB: 'http://localhost:{{.WEB_PUBLISH | default "3041"}}'
-      BASE_URL_MCP: 'http://localhost:{{.MCP_PUBLISH | default "3042"}}'
+      BASE_URL_WEB: '{{.WEB_URL}}'
+      BASE_URL_MCP: '{{.WEB_URL}}'
     cmds:
       - pnpm -C tests-e2e exec playwright test --grep "@smoke"
+
+  prod:proof:
+    desc: Build the production image and prove it boots, serves and fails closed (scripts/prod-proof.sh)
+    cmds:
+      - task: build
+      - IMAGE={{.IMAGE}}:{{.GIT_SHA}} ./scripts/prod-proof.sh
 
   mock:google:
     desc: Run the mock Google OIDC provider in the foreground (U3 — tests-e2e/mock-google.mjs, port 3049)
@@ -85,7 +130,7 @@ tasks:
       - node tests-e2e/mock-google.mjs
 
   health:
-    desc: Curl both health endpoints from the host
+    desc: Curl the health endpoints from the host
     cmds:
-      - curl -sf http://localhost:{{.WEB_PUBLISH | default "3041"}}/healthz && echo
-      - curl -sf http://localhost:{{.MCP_PUBLISH | default "3042"}}/health && echo
+      - curl -sf {{.WEB_URL}}/healthz && echo
+      - curl -sf {{.WEB_URL}}/health && echo

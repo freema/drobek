@@ -8,68 +8,7 @@ importers:
 
   .: {}
 
-  apps/mcp-server:
-    dependencies:
-      '@drobek/agent-dx':
-        specifier: workspace:*
-        version: link:../../packages/agent-dx
-      '@drobek/audit':
-        specifier: workspace:*
-        version: link:../../packages/audit
-      '@drobek/core':
-        specifier: workspace:*
-        version: link:../../packages/core
-      '@drobek/data':
-        specifier: workspace:*
-        version: link:../../packages/data
-      '@drobek/db':
-        specifier: workspace:*
-        version: link:../../packages/db
-      '@drobek/deploy':
-        specifier: workspace:*
-        version: link:../../packages/deploy
-      '@drobek/insights':
-        specifier: workspace:*
-        version: link:../../packages/insights
-      '@drobek/oauth':
-        specifier: workspace:*
-        version: link:../../packages/oauth
-      '@drobek/proxy':
-        specifier: workspace:*
-        version: link:../../packages/proxy
-      bullmq:
-        specifier: ^5.34.0
-        version: 5.79.2
-      drizzle-orm:
-        specifier: ^0.41.0
-        version: 0.41.0(@types/pg@8.20.0)(pg@8.22.0)(postgres@3.4.9)
-      express:
-        specifier: ^4.21.2
-        version: 4.22.2
-      ioredis:
-        specifier: ^5.6.0
-        version: 5.11.1
-      postgres:
-        specifier: ^3.4.5
-        version: 3.4.9
-    devDependencies:
-      '@types/express':
-        specifier: ^4.17.21
-        version: 4.17.25
-      '@types/node':
-        specifier: ^22
-        version: 22.20.0
-      tsx:
-        specifier: ^4.19.3
-        version: 4.22.4
-      typescript:
-        specifier: ^5.7.3
-        version: 5.9.3
-      vitest:
-        specifier: ^3.0.7
-        version: 3.2.6(@types/node@22.20.0)(tsx@4.22.4)
-
-  apps/web:
+  apps/server:
     dependencies:
       '@drobek/agent-dx':
         specifier: workspace:*
@@ -113,10 +52,10 @@ importers:
       '@paralleldrive/cuid2':
         specifier: ^2.2.2
         version: 2.3.1
-      '@react-router/node':
+      '@react-router/express':
         specifier: 7.14.0
-        version: 7.14.0(react-router@7.14.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(typescript@5.9.3)
-      '@react-router/serve':
+        version: 7.14.0(express@4.22.2)(react-router@7.14.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(typescript@5.9.3)
+      '@react-router/node':
         specifier: 7.14.0
         version: 7.14.0(react-router@7.14.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(typescript@5.9.3)
       bullmq:
@@ -125,6 +64,9 @@ importers:
       drizzle-orm:
         specifier: ^0.41.0
         version: 0.41.0(@types/pg@8.20.0)(pg@8.22.0)(postgres@3.4.9)
+      express:
+        specifier: ^4.21.2
+        version: 4.22.2
       ioredis:
         specifier: ^5.6.0
         version: 5.11.1
@@ -153,6 +95,9 @@ importers:
       '@react-router/dev':
         specifier: 7.14.0
         version: 7.14.0(@react-router/serve@7.14.0(react-router@7.14.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(typescript@5.9.3))(@types/node@22.20.0)(react-router@7.14.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(tsx@4.22.4)(typescript@5.9.3)(vite@6.4.3(@types/node@22.20.0)(tsx@4.22.4))
+      '@types/express':
+        specifier: ^4.17.21
+        version: 4.17.25
       '@types/node':
         specifier: ^22
         version: 22.20.0
@@ -177,6 +122,9 @@ importers:
       globals:
         specifier: ^15.15.0
         version: 15.15.0
+      tsx:
+        specifier: ^4.19.3
+        version: 4.22.4
       typescript:
         specifier: ^5.7.3
         version: 5.9.3
@@ -2232,6 +2180,7 @@ packages:
   eslint@9.39.4:
     resolution: {integrity: sha512-XoMjdBOwe/esVgEvLmNsD3IRHkm7fbKIUGvrleloJXUZgDHig2IPWNniv+GwjyJXzuNqVjlr5+4yVUZjycJwfQ==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+    deprecated: This version is no longer supported. Please see https://eslint.org/version-support for other options.
     hasBin: true
     peerDependencies:
       jiti: '*'
@@ -4144,6 +4093,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
       - typescript
+    optional: true
 
   '@remix-run/node-fetch-server@0.13.3': {}
 
@@ -4561,6 +4511,7 @@ snapshots:
   basic-auth@2.0.1:
     dependencies:
       safe-buffer: 5.1.2
+    optional: true
 
   body-parser@1.20.5:
     dependencies:
@@ -4678,6 +4629,7 @@ snapshots:
   compressible@2.0.18:
     dependencies:
       mime-db: 1.54.0
+    optional: true
 
   compression@1.8.1:
     dependencies:
@@ -4690,6 +4642,7 @@ snapshots:
       vary: 1.1.2
     transitivePeerDependencies:
       - supports-color
+    optional: true
 
   concat-map@0.0.1: {}
 
@@ -5302,7 +5255,8 @@ snapshots:
       hasown: 2.0.4
       math-intrinsics: 1.1.0
 
-  get-port@5.1.1: {}
+  get-port@5.1.1:
+    optional: true
 
   get-proto@1.0.1:
     dependencies:
@@ -5661,6 +5615,7 @@ snapshots:
       on-headers: 1.1.0
     transitivePeerDependencies:
       - supports-color
+    optional: true
 
   ms@2.0.0: {}
 
@@ -5688,7 +5643,8 @@ snapshots:
 
   negotiator@0.6.3: {}
 
-  negotiator@0.6.4: {}
+  negotiator@0.6.4:
+    optional: true
 
   negotiator@1.0.0: {}
 
@@ -5750,7 +5706,8 @@ snapshots:
     dependencies:
       ee-first: 1.1.1
 
-  on-headers@1.1.0: {}
+  on-headers@1.1.0:
+    optional: true
 
   once@1.4.0:
     dependencies:
@@ -6027,7 +5984,8 @@ snapshots:
       has-symbols: 1.1.0
       isarray: 2.0.5
 
-  safe-buffer@5.1.2: {}
+  safe-buffer@5.1.2:
+    optional: true
 
   safe-buffer@5.2.1: {}
 

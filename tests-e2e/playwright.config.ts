@@ -3,7 +3,7 @@ import { defineConfig } from '@playwright/test';
 /**
  * One suite, two targets, env-parameterized (ROADMAP §4):
  * - BASE_URL_WEB  — web app (default: local compose stack, host port 3041)
- * - BASE_URL_MCP  — mcp server (default: host port 3042)
+ * - BASE_URL_MCP  — MCP endpoint origin (default: same as BASE_URL_WEB — one process)
  * - TEST_ENV      — 'local' unlocks @local specs (destructive / needs the
  *                   local docker compose stack). @smoke specs are read-only
  *                   and safe against any target, prod included.
@@ -11,7 +11,7 @@ import { defineConfig } from '@playwright/test';
 export const BASE_URL_WEB =
   process.env.BASE_URL_WEB ?? 'http://localhost:3041';
 export const BASE_URL_MCP =
-  process.env.BASE_URL_MCP ?? 'http://localhost:3042';
+  process.env.BASE_URL_MCP ?? BASE_URL_WEB;
 export const TEST_ENV = process.env.TEST_ENV ?? '';
 
 export default defineConfig({

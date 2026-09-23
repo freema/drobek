@@ -2,9 +2,9 @@
  * @drobek/oauth/resource — the Express-mountable MCP OAuth 2.1 Protected
  * Resource + Streamable HTTP `/mcp` endpoint (U5, PHY-71/PHY-53).
  *
- * Extracted verbatim from apps/mcp-server so BOTH editions (selfhost core +
- * saas) can mount it thin: each edition owns only its `/health` + `/version`
- * and calls `mountMcpResource(app)` for everything OAuth/MCP.
+ * Mounted by the single drobek server process (apps/server) next to the
+ * dashboard; each edition owns only its `/health` + `/version` and calls
+ * `mountMcpResource(app)` for everything OAuth/MCP.
  *
  * This entry is PURE Node/Express — it imports NO react / react-router (it is
  * deliberately isolated from `../routes/*`), so an Express consumer never pulls
@@ -16,6 +16,7 @@ import { mountMcpEndpoint } from './mcp.js';
 
 export {
   mcpResourceUri,
+  resourceMetadataUrl,
   authorizationServer,
   protectedResourceMetadata,
   send401,

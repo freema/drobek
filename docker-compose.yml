@@ -1,7 +1,7 @@
-# drobek — local dev stack (M0): web + mcp + postgres + redis. No worker yet
-# (the BullMQ worker joins the deploy compose with U6). Ports 3041/3042 are
-# drobek's; postgres/redis publish on non-default host ports to avoid
-# colliding with other local stacks.
+# drobek — local dev stack (M0-01): ONE `drobek` service (dashboard + OAuth AS
+# + MCP at /mcp, one Node process) + postgres + redis + mailpit. Port 3041 is
+# drobek's; postgres/redis publish on non-default host ports to avoid colliding
+# with other local stacks. proxy-echo is an e2e-only helper.
 #
 # Bind-mounts + anonymous volumes on every node_modules dir: the host (macOS)
 # installs must never clobber the container's (linux) pnpm symlinks/binaries.
@@ -38,7 +38,7 @@ services:
       retries: 5
 
   mailpit:
-    # U2: local SMTP sink — web sends login codes to mailpit:1025 (in-network,
+    # U2: local SMTP sink — drobek sends login codes to mailpit:1025 (in-network,
     # no host publish needed); the web UI + REST API publish to the host for
     # e2e polling (tests-e2e/tests/auth-flow.spec.ts) and manual inspection.
     image: axllent/mailpit
@@ -57,7 +57,7 @@ services:
     # PHY-59 e2e: a tiny in-network HTTP echo target the proxy specs point an
     # upstream at (echoes headers → proves auth injection; /redirect → proves
     # no redirect following). Runs the repo's tests-e2e/proxy-echo.mjs on the
-    # drobek network; the web service allow-lists this hostname via
+    # drobek network; the drobek service allow-lists this hostname via
     # PROXY_ALLOWED_HOSTS so the SSRF guard permits its private Docker IP.
     image: node:22-alpine
     container_name: drobek-proxy-echo
@@ -73,12 +73,13 @@ services:
       timeout: 5s
       retries: 10
 
-  web:
+  drobek:
     build:
       context: .
-      dockerfile: apps/web/Dockerfile
-    container_name: drobek-web
-    working_dir: /repo/apps/web
+      dockerfile: Dockerfile
+      target: dev
+    container_name: drobek
+    working_dir: /repo
     ports:
       - '${WEB_PUBLISH:-3041}:${WEB_PORT:-3000}'
     environment:
@@ -121,7 +122,11 @@ services:
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-http://localhost:3041}
       # U5 (PHY-71): the OAuth 2.1 Authorization Server issuer advertised in
       # /.well-known/oauth-authorization-server (falls back to PUBLIC_ORIGIN).
+      # The MCP resource (token audience) is PUBLIC_APP_URL + /mcp.
       PUBLIC_APP_URL: ${PUBLIC_APP_URL:-http://localhost:3041}
+      # U6 (PHY-57): deploy_init quota (legacy upload pipeline until M0-02).
+      DEPLOY_MAX_APP_BYTES: ${DEPLOY_MAX_APP_BYTES:-104857600}
+      DEPLOY_MAX_FILE_BYTES: ${DEPLOY_MAX_FILE_BYTES:-10485760}
       # U10 (PHY-55): Data API storage quota + write rate-limit (enforced by the
       # REST data endpoints). DOCS_PER_APP is a deliberately LOW dev cap so the
       # data-api e2e quota case can exceed it quickly (prod defaults are far
@@ -161,21 +166,26 @@ services:
       - 'host.docker.internal:host-gateway'
     volumes:
       - .:/repo
-      # D2: persistent blob volume (survives container rebuilds; the deploy
-      # compose mounts the same-named volume into web+worker+mcp, P0-E).
+      # D2: persistent blob volume (survives container rebuilds).
       - drobek_blobs:/data/blobs
       # Anonymous volumes: keep container-installed deps out of the host tree
       # (and host-installed darwin binaries out of the container).
       - /repo/node_modules
-      - /repo/apps/web/node_modules
-      - /repo/apps/mcp-server/node_modules
-      - /repo/packages/db/node_modules
-      - /repo/packages/core/node_modules
-      - /repo/packages/insights/node_modules
-      - /repo/packages/deploy/node_modules
-      - /repo/packages/data/node_modules
+      - /repo/apps/server/node_modules
       - /repo/packages/agent-dx/node_modules
+      - /repo/packages/audit/node_modules
+      - /repo/packages/auth/node_modules
+      - /repo/packages/core/node_modules
+      - /repo/packages/dashboard/node_modules
+      - /repo/packages/data/node_modules
+      - /repo/packages/db/node_modules
+      - /repo/packages/deploy/node_modules
+      - /repo/packages/insights/node_modules
+      - /repo/packages/oauth/node_modules
+      - /repo/packages/proxy/node_modules
       - /repo/packages/sdk/node_modules
+      - /repo/packages/serving/node_modules
+      - /repo/packages/tenancy/node_modules
       - /repo/tests-e2e/node_modules
     healthcheck:
       test: ['CMD-SHELL', 'wget -q -T 5 -O - "http://127.0.0.1:$${PORT:-3000}/healthz" || exit 1']
@@ -189,130 +199,6 @@ services:
       redis:
         condition: service_healthy
       mailpit:
-        condition: service_healthy
-
-  mcp:
-    build:
-      context: .
-      dockerfile: apps/mcp-server/Dockerfile
-    container_name: drobek-mcp
-    working_dir: /repo/apps/mcp-server
-    ports:
-      - '${MCP_PUBLISH:-3042}:${MCP_PORT:-3001}'
-    environment:
-      PORT: '${MCP_PORT:-3001}'
-      NODE_ENV: development
-      DATABASE_URL: postgresql://drobek:drobek@postgres:5432/drobek
-      REDIS_URL: redis://redis:6379
-      GIT_SHA: ${GIT_SHA:-dev}
-      # D2: mcp shares the blob volume (deploy tooling reads blobs later).
-      BLOB_DIR: /data/blobs
-      # U5 (PHY-71): OAuth 2.1 Resource Server wiring. PUBLIC_MCP_URL is this
-      # server's canonical resource identifier (== the required token audience);
-      # PUBLIC_APP_URL is the drobek Authorization Server issuer advertised in
-      # the protected-resource metadata.
-      PUBLIC_MCP_URL: ${PUBLIC_MCP_URL:-http://localhost:3042}
-      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-http://localhost:3041}
-      # Global super-admin override for the per-tool-call membership re-check.
-      SUPERADMIN_EMAIL: ${SUPERADMIN_EMAIL:-}
-      # U6 (PHY-57): deploy_init mints signed upload tokens (needs the same
-      # HMAC secret as the web upload sink) and enforces the deploy quota.
-      UPLOAD_SIGNING_SECRET: ${UPLOAD_SIGNING_SECRET:?UPLOAD_SIGNING_SECRET must be set in .env (see .env.example)}
-      DEPLOY_MAX_APP_BYTES: ${DEPLOY_MAX_APP_BYTES:-104857600}
-      DEPLOY_MAX_FILE_BYTES: ${DEPLOY_MAX_FILE_BYTES:-10485760}
-      # U10 (PHY-55): the MCP data tools (collection_define / record_*) enforce
-      # the same Data API quota + write rate-limit as the REST endpoints. Keep
-      # these in lock-step with the web service (low dev DOCS_PER_APP cap).
-      DATA_MAX_DOCS_PER_APP: ${DATA_MAX_DOCS_PER_APP:-5}
-      DATA_MAX_DOC_BYTES: ${DATA_MAX_DOC_BYTES:-102400}
-      DATA_MAX_BYTES_PER_APP: ${DATA_MAX_BYTES_PER_APP:-52428800}
-      DATA_WRITE_RATE_LIMIT: ${DATA_WRITE_RATE_LIMIT:-120}
-      DATA_WRITE_RATE_WINDOW_MS: ${DATA_WRITE_RATE_WINDOW_MS:-60000}
-    volumes:
-      - .:/repo
-      - drobek_blobs:/data/blobs
-      - /repo/node_modules
-      - /repo/apps/web/node_modules
-      - /repo/apps/mcp-server/node_modules
-      - /repo/packages/db/node_modules
-      - /repo/packages/core/node_modules
-      - /repo/packages/insights/node_modules
-      - /repo/packages/deploy/node_modules
-      - /repo/packages/data/node_modules
-      - /repo/packages/agent-dx/node_modules
-      - /repo/packages/sdk/node_modules
-      - /repo/tests-e2e/node_modules
-    healthcheck:
-      test: ['CMD-SHELL', 'wget -q -T 5 -O - "http://127.0.0.1:$${PORT:-3001}/health" || exit 1']
-      interval: 5s
-      timeout: 10s
-      retries: 45
-      start_period: 20s
-    depends_on:
-      # web runs `pnpm install` + package builds + migrations into the shared
-      # bind mount first; serializing avoids two containers compiling
-      # packages/*/dist concurrently.
-      web:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-
-  worker:
-    # U6 (PHY-57): the BullMQ deploy consumer. Ships INSIDE the web image
-    # (apps/web/scripts/worker.mjs) — NO separate app — and shares the DB, redis
-    # and the drobek_blobs volume with web+mcp. Queue "deploys", prefix "drobek"
-    # (shared-redis isolation from puls). No published port, no HTTP healthcheck
-    # (a pgrep running-check). The web image ENTRYPOINT builds packages +
-    # migrates first, then execs the command below.
-    build:
-      context: .
-      dockerfile: apps/web/Dockerfile
-    container_name: drobek-worker
-    working_dir: /repo/apps/web
-    command: ['node', 'scripts/worker.mjs']
-    environment:
-      DATABASE_URL: postgresql://drobek:drobek@postgres:5432/drobek
-      REDIS_URL: redis://redis:6379
-      NODE_ENV: development
-      GIT_SHA: ${GIT_SHA:-dev}
-      SUPERADMIN_EMAIL: ${SUPERADMIN_EMAIL:-}
-      # D2: same blob volume the sink writes to — the worker reads bytes for lint.
-      BLOB_DIR: /data/blobs
-      # U6: PUBLIC_APP_URL is used to build the activated app URL in progress.
-      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-http://localhost:3041}
-      # U6: quota mirrors the mcp service (dev-generous defaults).
-      DEPLOY_MAX_APP_BYTES: ${DEPLOY_MAX_APP_BYTES:-104857600}
-      DEPLOY_MAX_FILE_BYTES: ${DEPLOY_MAX_FILE_BYTES:-10485760}
-    volumes:
-      - .:/repo
-      - drobek_blobs:/data/blobs
-      - /repo/node_modules
-      - /repo/apps/web/node_modules
-      - /repo/apps/mcp-server/node_modules
-      - /repo/packages/db/node_modules
-      - /repo/packages/core/node_modules
-      - /repo/packages/insights/node_modules
-      - /repo/packages/deploy/node_modules
-      - /repo/packages/data/node_modules
-      - /repo/packages/agent-dx/node_modules
-      - /repo/packages/sdk/node_modules
-      - /repo/tests-e2e/node_modules
-    healthcheck:
-      # No HTTP surface — assert the consumer process is alive (busybox pgrep).
-      test: ['CMD-SHELL', 'pgrep -f scripts/worker.mjs > /dev/null || exit 1']
-      interval: 10s
-      timeout: 5s
-      retries: 20
-      start_period: 60s
-    depends_on:
-      # Serialize behind web (shared bind-mount build) + require datastores.
-      web:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
 
 volumes:

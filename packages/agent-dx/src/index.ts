@@ -17,7 +17,11 @@ export {
 } from './tools.js';
 export { ERROR_CATALOGUE, type ErrorDoc } from './errors-catalogue.js';
 export { LIMITS, type LimitDoc } from './limits.js';
-export { publicAppUrl, publicMcpUrl, mcpEndpoint } from './urls.js';
+export {
+  publicAppUrl,
+  mcpEndpoint,
+  protectedResourceMetadataUrl,
+} from './urls.js';
 export {
   SKILL_INSTALL_COMMAND,
   DOCS_RESOURCE_LLMS_FULL,

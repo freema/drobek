@@ -20,7 +20,7 @@ agents can read `SKILL.md` directly.
 ## Connect the MCP server
 
 Point your agent's MCP client at the drobek MCP endpoint (default
-`http://localhost:3042/mcp`, or your deployment's `PUBLIC_MCP_URL` + `/mcp`).
+`http://localhost:3041/mcp`, i.e. your deployment's `PUBLIC_APP_URL` + `/mcp`).
 It is OAuth 2.1 (PKCE S256) — your MCP client drives discovery → registration →
 consent → token automatically. See the "Connect" section of llms-full.txt.
 

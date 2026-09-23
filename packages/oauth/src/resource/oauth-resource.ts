@@ -14,10 +14,16 @@ import { SCOPES } from '../scopes.js';
 import { validateAccessToken } from '../tokens.server.js';
 import type { OAuthRole } from '../store.server.js';
 
-/** Canonical resource identifier (also the required token audience). */
+/**
+ * Canonical resource identifier (also the required token audience) — the MCP
+ * endpoint URL itself. One process serves the dashboard, the AS and this RS,
+ * so it defaults to `PUBLIC_APP_URL + /mcp`; `PUBLIC_MCP_URL` (a full endpoint
+ * URL) overrides it.
+ */
 export function mcpResourceUri(): string {
-  const raw = process.env.PUBLIC_MCP_URL?.trim() || 'http://localhost:3042';
-  return raw.replace(/\/+$/, '');
+  const raw = process.env.PUBLIC_MCP_URL?.trim();
+  if (raw) return raw.replace(/\/+$/, '');
+  return `${authorizationServer()}/mcp`;
 }
 
 /** The drobek Authorization Server issuer origin. */
@@ -39,8 +45,14 @@ export function protectedResourceMetadata(): Record<string, unknown> {
   };
 }
 
-function resourceMetadataUrl(): string {
-  return `${mcpResourceUri()}/.well-known/oauth-protected-resource`;
+/**
+ * RFC 9728 §3.1: the well-known suffix is inserted between the origin and the
+ * resource path (`https://x/mcp` → `https://x/.well-known/oauth-protected-resource/mcp`).
+ */
+export function resourceMetadataUrl(): string {
+  const url = new URL(mcpResourceUri());
+  const path = url.pathname === '/' ? '' : url.pathname.replace(/\/+$/, '');
+  return `${url.origin}/.well-known/oauth-protected-resource${path}`;
 }
 
 /** MCP-spec 401: WWW-Authenticate Bearer + resource_metadata pointer. */

@@ -30,3 +30,10 @@ export {
   type UploadTokenPayload,
   type UploadTokenVerdict,
 } from './upload-token.js';
+export {
+  findSecretProblems,
+  secretsConfigError,
+  SECRET_ENV_VARS,
+  REQUIRED_PRODUCTION_SECRETS,
+  type SecretProblem,
+} from './secrets-config.js';

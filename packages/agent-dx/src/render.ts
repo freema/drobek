@@ -7,7 +7,11 @@
 import { ERROR_CATALOGUE } from './errors-catalogue.js';
 import { LIMITS } from './limits.js';
 import { TOOL_DOCS, type ToolDoc } from './tools.js';
-import { mcpEndpoint, publicAppUrl, publicMcpUrl } from './urls.js';
+import {
+  mcpEndpoint,
+  protectedResourceMetadataUrl,
+  publicAppUrl,
+} from './urls.js';
 
 /** The one-command skill install (self-host repo → Claude Code skills dir). */
 export const SKILL_INSTALL_COMMAND = 'cp -r skills/drobek ~/.claude/skills/drobek';
@@ -54,8 +58,8 @@ export function renderToolReference(): string {
 export function renderLlmsTxt(env: NodeJS.ProcessEnv = process.env): string {
   const app = publicAppUrl(env);
   const mcp = mcpEndpoint(env);
-  // RFC 9728 metadata lives on the resource ORIGIN, not the /mcp endpoint.
-  const mcpOrigin = publicMcpUrl(env);
+  // RFC 9728: the well-known suffix sits between the origin and the resource path.
+  const prm = protectedResourceMetadataUrl(env);
   const toolList = TOOL_DOCS.map((t) => `- ${t.name} — ${t.title} (${t.scope})`);
   return [
     '# drobek',
@@ -67,7 +71,7 @@ export function renderLlmsTxt(env: NodeJS.ProcessEnv = process.env): string {
     `- [Build with your agent](${app}/build-with-your-agent): connect the MCP server + install the drobek skill.`,
     '',
     '## Connect (MCP)',
-    `- MCP endpoint: ${mcp} (OAuth 2.1, PKCE S256; discovery at ${mcpOrigin}/.well-known/oauth-protected-resource)`,
+    `- MCP endpoint: ${mcp} (OAuth 2.1, PKCE S256; discovery at ${prm})`,
     `- Authorization server: ${app}`,
     '',
     '## Tools',
@@ -90,8 +94,8 @@ export function renderLlmsTxt(env: NodeJS.ProcessEnv = process.env): string {
 export function renderLlmsFull(env: NodeJS.ProcessEnv = process.env): string {
   const app = publicAppUrl(env);
   const mcp = mcpEndpoint(env);
-  // RFC 9728 metadata lives on the resource ORIGIN, not the /mcp endpoint.
-  const mcpOrigin = publicMcpUrl(env);
+  // RFC 9728: the well-known suffix sits between the origin and the resource path.
+  const prm = protectedResourceMetadataUrl(env);
   const sections: string[] = [];
 
   sections.push(['# drobek — full delivery-stack contract', '', `> ${SUMMARY}`].join('\n'));
@@ -103,7 +107,7 @@ export function renderLlmsFull(env: NodeJS.ProcessEnv = process.env): string {
       'drobek exposes an OAuth-2.1-protected Streamable HTTP MCP endpoint. The connect handshake:',
       '',
       `1. Unauthenticated POST ${mcp} → 401 with \`WWW-Authenticate: Bearer resource_metadata="…/.well-known/oauth-protected-resource"\`.`,
-      `2. GET ${mcpOrigin}/.well-known/oauth-protected-resource → { resource, authorization_servers } (RFC 9728).`,
+      `2. GET ${prm} → { resource, authorization_servers } (RFC 9728).`,
       `3. GET ${app}/.well-known/oauth-authorization-server → the AS metadata (authorize/token/register endpoints; code_challenge_methods_supported includes S256).`,
       `4. Dynamic Client Registration: POST ${app}/oauth/register { client_name, redirect_uris } → { client_id }.`,
       `5. GET ${app}/oauth/authorize?response_type=code&client_id=…&redirect_uri=…&code_challenge=…&code_challenge_method=S256&scope=…&resource=${mcp} → user consent → ?code=…`,

@@ -68,18 +68,18 @@ cp .env.example .env
 # Two edits make it yours (the rest have working dev defaults):
 #   1. SUPERADMIN_EMAIL  → the email you'll sign in with (becomes super-admin)
 #   2. UPLOAD_SIGNING_SECRET → a real secret:  openssl rand -hex 32
-docker compose up -d --build     # or: task up  (waits until healthy)
+docker compose up -d --build     # or: task dev  (waits until healthy)
 ```
 
-Six services come up, each with a healthcheck; the **web entrypoint applies the
-core Drizzle migrations automatically** (journal `__drizzle_migrations_core`,
-migrations `0000`→`0002`) before serving:
+drobek is **one Node process** (`apps/server`: Express + React Router 7 SSR +
+the OAuth 2.1 AS + the MCP Resource Server at `/mcp`), shipped as one image
+(`ghcr.io/freema/drobek`). It **applies the core Drizzle migrations itself on
+start** (journal `__drizzle_migrations_core`) and **refuses to start** while a
+secret still holds a `change-me…` placeholder. Next to it:
 
 | Service | Host port | In-container | Check |
 | ------- | --------- | ------------ | ----- |
-| web (React Router 7 SSR) | [3041](http://localhost:3041) | 3000 | `GET /healthz` → `{ok,db,redis}`, 503 when a dependency is down |
-| mcp-server (Express, OAuth 2.1 RS) | [3042](http://localhost:3042) | 3001 | `GET /health` → `{ok:true}` |
-| worker (BullMQ deploy consumer) | — | — | `pgrep scripts/worker.mjs` |
+| drobek (dashboard + OAuth AS + MCP `/mcp`) | [3041](http://localhost:3041) | 3000 | `GET /healthz` → `{ok,db,redis}`, 503 when a dependency is down; `GET /health` → `{ok:true}` |
 | postgres 17 | 5441 | 5432 | `pg_isready` |
 | redis 7 | 6391 | 6379 | `redis-cli ping` |
 | mailpit (dev SMTP sink) | [8025](http://localhost:8025) | 1025/8025 | `/mailpit readyz` |
@@ -89,12 +89,12 @@ migrations `0000`→`0002`) before serving:
 1. Open [localhost:3041](http://localhost:3041) and sign in with your email.
    The dev stack sends the login code to the **mailpit** sink — read it at
    [localhost:8025](http://localhost:8025) (production wires real SMTP instead).
-2. Point an MCP client (e.g. Claude Code) at `http://localhost:3042/mcp`. It
+2. Point an MCP client (e.g. Claude Code) at `http://localhost:3041/mcp`. It
    discovers the drobek OAuth Authorization Server, you approve the consent
    screen in your browser (choosing the workspace + granting `deploy:write`),
    and it receives a scoped token.
 3. Ask the agent to deploy your static app. It calls `deploy_init` → uploads the
-   files → `deploy_commit`; the worker lints, stores, and activates the version,
+   files → `deploy_commit`; the in-process deploy consumer lints, stores, and activates the version,
    and the app goes live at `http://localhost:3041/<workspace>/app/<slug>`.
 4. Roll back (the `rollback` tool or the dashboard) and browse the deploy
    history + apps list under `/workspaces/<slug>/apps`.
@@ -105,14 +105,17 @@ start; `docker compose down` keeps your data.
 Everyday commands:
 
 ```sh
-task health       # curl both health endpoints
-task logs         # tail web + mcp
+task dev          # build + start the stack, wait until healthy
+task health       # curl the health endpoints
+task logs         # tail the drobek service
 task check        # host-side: build packages, typecheck, lint, unit tests
+task build        # build the production image ghcr.io/freema/drobek:<sha>
+task prod:proof   # build + prove the prod image (size, non-root, fail-closed, live boot)
 task e2e          # Playwright suite (incl. @local + the M1a acceptance) vs the stack
 task e2e:smoke    # read-only @smoke specs only (safe against any target)
 task db:generate  # drizzle-kit generate (journal __drizzle_migrations_core)
 task db:migrate   # apply core migrations manually
-task stop         # docker compose down
+task down         # docker compose down
 ```
 
 The end-to-end M1a acceptance —
@@ -121,8 +124,8 @@ The end-to-end M1a acceptance —
 deploy → serve → v2 → rollback → dashboard) and is the canonical proof the
 self-hosted stack works.
 
-`/api/version` returns the git sha `task up` bakes in via `GIT_SHA`
-(fallback `dev`). Monorepo layout: `apps/{web,mcp-server}` +
+`/api/version` returns the git sha `task dev` bakes in via `GIT_SHA`
+(fallback `dev`). Monorepo layout: `apps/server` +
 `packages/{db,core,auth,tenancy,oauth,deploy,serving,dashboard,sdk}` +
 `tests-e2e` (pnpm workspace). Architecture and the ratified D1–D5 decisions:
 [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md).

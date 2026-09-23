@@ -12,7 +12,6 @@ import { TOOL_NAMES } from './tools.js';
 
 const ENV = {
   PUBLIC_APP_URL: 'http://localhost:3041',
-  PUBLIC_MCP_URL: 'http://localhost:3042',
 } satisfies NodeJS.ProcessEnv;
 
 describe('renderLlmsTxt', () => {
@@ -28,7 +27,10 @@ describe('renderLlmsTxt', () => {
   it('links llms-full and the build page and shows the MCP endpoint', () => {
     expect(txt).toContain('http://localhost:3041/llms-full.txt');
     expect(txt).toContain('http://localhost:3041/build-with-your-agent');
-    expect(txt).toContain('http://localhost:3042/mcp');
+    expect(txt).toContain('http://localhost:3041/mcp');
+    expect(txt).toContain(
+      'http://localhost:3041/.well-known/oauth-protected-resource/mcp'
+    );
   });
 
   it('lists every tool name', () => {

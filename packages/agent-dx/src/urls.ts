@@ -14,13 +14,26 @@ export function publicAppUrl(env: NodeJS.ProcessEnv = process.env): string {
   return raw.replace(/\/+$/, '');
 }
 
-/** The mcp-server origin (OAuth Resource Server + Streamable HTTP /mcp). */
-export function publicMcpUrl(env: NodeJS.ProcessEnv = process.env): string {
-  const raw = env.PUBLIC_MCP_URL?.trim() || 'http://localhost:3042';
-  return raw.replace(/\/+$/, '');
+/**
+ * The Streamable HTTP MCP endpoint agents connect to — also the canonical
+ * OAuth resource identifier (RFC 8707 token audience). One process serves the
+ * dashboard, the AS and the MCP RS, so it defaults to `PUBLIC_APP_URL + /mcp`;
+ * `PUBLIC_MCP_URL` (a full endpoint URL) overrides it.
+ */
+export function mcpEndpoint(env: NodeJS.ProcessEnv = process.env): string {
+  const raw = env.PUBLIC_MCP_URL?.trim();
+  if (raw) return raw.replace(/\/+$/, '');
+  return `${publicAppUrl(env)}/mcp`;
 }
 
-/** The Streamable HTTP MCP endpoint agents connect to. */
-export function mcpEndpoint(env: NodeJS.ProcessEnv = process.env): string {
-  return `${publicMcpUrl(env)}/mcp`;
+/**
+ * RFC 9728 protected-resource metadata URL for the MCP endpoint: the
+ * well-known suffix goes between the origin and the resource path.
+ */
+export function protectedResourceMetadataUrl(
+  env: NodeJS.ProcessEnv = process.env
+): string {
+  const url = new URL(mcpEndpoint(env));
+  const path = url.pathname === '/' ? '' : url.pathname.replace(/\/+$/, '');
+  return `${url.origin}/.well-known/oauth-protected-resource${path}`;
 }

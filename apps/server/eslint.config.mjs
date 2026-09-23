@@ -8,7 +8,7 @@ export default tseslint.config(
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    ignores: ['build/**', '.react-router/**'],
+    ignores: ['build/**', 'dist/**', '.react-router/**'],
   },
   {
     files: ['**/*.{js,mjs,cjs}'],
