@@ -4,6 +4,7 @@
  * `TOOL_ERROR_CODES`; a unit test asserts each one has a catalogue entry.
  */
 import { errorHint } from '@drobek/agent-dx';
+import { lockCategory, lockedMessage } from '@drobek/apps';
 
 export const TOOL_ERROR_CODES = [
   'not_found',
@@ -13,6 +14,7 @@ export const TOOL_ERROR_CODES = [
   'limit_exceeded',
   'secret_in_source',
   'app_locked',
+  'app_locked_by_admin',
   'busy',
   'slug_taken',
   'not_publishable',
@@ -43,6 +45,15 @@ export class ToolError extends Error {
  * bytes, so it is no enumeration oracle (NSO-282). The plan's `not_member`
  * code deliberately does not exist.
  */
+/**
+ * A super-admin took the app down (NSO-293): distinct from the single-writer
+ * lease `app_locked`. The message names the reason CATEGORY only.
+ */
+export function lockedByAdmin(lockedReason: string | null | undefined): ToolError {
+  const reason = lockCategory(lockedReason);
+  return new ToolError('app_locked_by_admin', lockedMessage(reason), { reason });
+}
+
 export function notFound(what: 'app' | 'workspace' = 'app'): ToolError {
   return new ToolError('not_found', `${what} not found`);
 }

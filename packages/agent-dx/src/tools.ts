@@ -61,13 +61,13 @@ export const TOOL_DOCS: ToolDoc[] = [
     title: 'List apps',
     scope: 'read (any role in the workspace)',
     description:
-      'Start here. Returns who you are, every workspace you belong to (slug + your role), and the apps in them: app_id, name, slug, workspace, preview_url, published_url/published_version (when published), latest_version, its compile_status, and locked_by when another agent is writing. Pass `workspace` to list one workspace only (a workspace you cannot reach answers not_found).',
+      'Start here. Returns who you are, every workspace you belong to (slug + your role), and the apps in them: app_id, name, slug, workspace, preview_url, published_url/published_version (when published), latest_version, its compile_status, locked_by when another agent is writing, and locked_by_admin + locked_reason when the server operator took the app down. Pass `workspace` to list one workspace only (a workspace you cannot reach answers not_found).',
     annotations: READ_ONLY,
     fields: [
       { name: 'workspace', type: 'string (optional)', required: false, description: 'Only this workspace (slug).' },
     ],
     returns:
-      '{ user:{email}, workspaces:[{slug,name,kind,role}], apps:[{app_id,name,slug,workspace,preview_url,published_url?,published_version?,latest_version,compile_status,locked_by?}] }',
+      '{ user:{email}, workspaces:[{slug,name,kind,role}], apps:[{app_id,name,slug,workspace,preview_url,published_url?,published_version?,latest_version,compile_status,locked_by?,locked_by_admin?,locked_reason?}] }',
     example: {},
   },
   {
@@ -94,7 +94,7 @@ export const TOOL_DOCS: ToolDoc[] = [
     annotations: READ_ONLY,
     fields: [{ name: 'app_id', type: 'string', required: true, description: 'The app id (from list_apps / create_app).' }],
     returns:
-      '{ app_id, name, slug, workspace, preview_url, published_url?, published_version?, latest_version, compile_status, compile_errors, briefing, files:[{path,size,sha256}], versions:[{number,created_at,actor_kind,reasoning,compile_status}], modules:{<name>:{configured,config,pending,pending_confirmation?,confirm_url?,secrets?:[{name,hasSecret}],info?}}, skills:[{name,use_when}], lock?:{holder,expires_at} }',
+      '{ app_id, name, slug, workspace, preview_url, published_url?, published_version?, latest_version, compile_status, compile_errors, briefing, files:[{path,size,sha256}], versions:[{number,created_at,actor_kind,reasoning,compile_status}], modules:{<name>:{configured,config,pending,pending_confirmation?,confirm_url?,secrets?:[{name,hasSecret}],info?}}, skills:[{name,use_when}], lock?:{holder,expires_at}, locked_by_admin?, locked_reason? }',
     example: { app_id: 'k3v9x0…' },
   },
   {

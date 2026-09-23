@@ -129,6 +129,28 @@
   `forms`, `files` implement them. `@drobek/core`: `parseCsv`, `csvUnguard`,
   `CsvParseError`.
 
+### Abuse and moderation (NSO-293)
+
+- **Report pointer + form**: `GET /.well-known/drobek-report` on every app host
+  → `{ report_url, app, terms_url }` (public, 1 h); the public form
+  `/report?host=` on the dashboard origin (no login, honeypot,
+  `ABUSE_REPORTS_PER_IP_HOUR` = 5) stores `abuse_reports`, audits
+  `abuse.report` and e-mails the super-admins (once per app per hour).
+  `X-Drobek-App: <slug>` on every app-host response.
+- **Takedown / restore** (`/admin/abuse`, super-admins only): unpublish + lock
+  (`apps.locked_reason`) → 451 on every host of the app (link to `TERMS_URL`),
+  `app_locked_by_admin` from `write_files` / `restore_version` / `publish` /
+  `configure_module` (and `@drobek/apps` createVersion / publish / restore),
+  423 from the module confirm API, `locked_by_admin` in `list_apps` /
+  `get_app`, owners e-mailed; audit `admin.takedown` / `admin.restore`.
+  Restore does not republish.
+- **Publish heuristic** (`@drobek/apps` `screenPublishedVersion`, run by every
+  `publish`): password field + a brand word (`ABUSE_BRAND_WORDS`) in the title
+  / h1 / text / JS strings → a `heuristic` report + a warn log line. Never
+  blocks.
+- Migration **0021_abuse_reports** (additive): `abuse_reports`,
+  `abuse_report_status`, `apps.locked_reason`.
+
 ### The built-in `proxy` module (NSO-297)
 
 - **`modules/proxy`** (`drobek-module-proxy`): `/__drobek/v1/proxy/:upstream/*`

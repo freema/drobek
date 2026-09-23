@@ -30,7 +30,13 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const decision = String(params.decision ?? '');
   if (!DECISIONS.has(decision)) return apiError(404, 'not_found', 'Not found');
 
-  const auth = await authorizeAppApi(request, String(params.id ?? ''), 'Confirming module changes needs the editor role in this workspace.');
+  const auth = await authorizeAppApi(
+    request,
+    String(params.id ?? ''),
+    'Confirming module changes needs the editor role in this workspace.',
+    // M4-02: a taken-down app's module config cannot change (423 app_locked_by_admin).
+    { refuseLocked: true }
+  );
   if (!auth.ok) return auth.response;
   const { app, user } = auth;
 

@@ -129,6 +129,12 @@ export const AUDIT_ACTIONS = {
   endUserEnable: 'end_users.enable',
   /** M1-05 / M2-03: an uploaded file was deleted (by the app's end user, or by the owner in the dashboard). */
   filesDelete: 'files.delete',
+  /** M4-02: someone reported an app through the public abuse form (report id + reason only). */
+  abuseReport: 'abuse.report',
+  /** M4-02: a super-admin took an app down (unpublished + locked; meta.reason = the category). */
+  adminTakedown: 'admin.takedown',
+  /** M4-02: a super-admin lifted a takedown (the app stays unpublished until its owner publishes). */
+  adminRestore: 'admin.restore',
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];

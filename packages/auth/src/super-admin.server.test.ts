@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isSuperAdmin } from './super-admin.server.js';
+import { isSuperAdmin, superAdminEmails } from './super-admin.server.js';
 
 describe('isSuperAdmin', () => {
   it('matches after normalization (trim + lowercase) on both sides', () => {
@@ -45,5 +45,11 @@ describe('isSuperAdmin', () => {
   it('keeps the single-value form working', () => {
     expect(isSuperAdmin('admin@drobek.app', 'admin@drobek.app')).toBe(true);
     expect(isSuperAdmin('user@drobek.app', 'admin@drobek.app')).toBe(false);
+  });
+
+  it('lists every configured address, normalized and deduped (abuse report e-mails)', () => {
+    expect(superAdminEmails(' A@x.cz , ,b@y.com,a@x.cz ')).toEqual(['a@x.cz', 'b@y.com']);
+    expect(superAdminEmails('')).toEqual([]);
+    expect(superAdminEmails(undefined)).toEqual([]);
   });
 });

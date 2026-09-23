@@ -195,6 +195,25 @@ block, then `next` is pushed and the single MR opened.
   `files.delete`. No migration. e2e `tests-e2e/tests/dashboard-app-data.spec.ts`
   written (not run).
 
+- **M4-02 (NSO-293) — abuse and moderation.** Migration `0021_abuse_reports`
+  (`abuse_reports` + `apps.locked_reason`). Every app host answers
+  `/.well-known/drobek-report` (JSON pointer to `<dashboard>/report?host=…`)
+  and sends `X-Drobek-App: <slug>`. Public form `/report` (honeypot, 5 valid
+  reports / IP / hour → 429, `ABUSE_REPORTS_PER_IP_HOUR`), audit
+  `abuse.report`, one mail per app per hour to `SUPERADMIN_EMAIL`. Super-admin
+  queue `/admin/abuse` (403 for everyone else): resolve / takedown / restore.
+  Takedown (`@drobek/apps` `takedownApp`) = lock + unpublish + resolve the
+  app's open reports + audit `admin.takedown` + owner mail; every app host
+  (prod, preview, `--vN`) answers 451 with a terms link (`TERMS_URL`),
+  platform paths 451 JSON; `write_files` / `publish` / `restore_version` /
+  `configure_module` → `app_locked_by_admin` (also enforced inside
+  `createVersion` / `publish` / `restore`), `get_app` / `list_apps` show
+  `locked_by_admin`. Restore (`restoreApp`) lifts the lock, does NOT
+  republish, audit `admin.restore`. Publish heuristic (`scanForPhishing`,
+  inside `@drobek/apps` `publish`): password field + a brand word
+  (`ABUSE_BRAND_WORDS`) → a `heuristic` report in the queue (never blocks).
+  e2e `tests-e2e/tests/abuse.spec.ts` written, not run.
+
 ## Next
 
 - M0-09 (NSO-299) is blocked on Tomáš (VPS/DNS): it must provision
@@ -636,6 +655,33 @@ block, then `next` is pushed and the single MR opened.
 - Bash in an agent worktree also refuses commands with `$slug`-style strings,
   backticks, `git -C`, or inline python that mentions git; put such edits in
   a scratchpad `python3` script written with the Write tool.
+
+- M4-02 (NSO-293): `publish()` in `@drobek/apps` now runs the phishing
+  heuristic after the transaction (errors swallowed); pass `{ screen: false }`
+  in tests that publish phishing-looking fixtures and do not want a queue row.
+  The heuristic's report host is built from the process env (`APPS_DOMAIN` via
+  `appsOrigin`), not from the request — unit tests set `APPS_DOMAIN` or assert
+  with `startsWith`.
+- A taken-down app refuses changes with `AppsError('app_locked_by_admin')`
+  from `createVersion` / `publish` / `restore` themselves: every caller that
+  maps AppsError codes (the dashboard app page publish/restore, NSO-288) must
+  map it (423 + `LockedByAdminNotice` via `lockedByAdminView(app.lockedReason)`
+  from `@drobek/dashboard`), or it surfaces as a 500.
+- Migration `0021_abuse_reports` was generated as 0015 and renamed; its
+  snapshot `prevId` points at 0014. If other units merged 0015–0020 first,
+  re-chain `prevId` / journal `when` (or regenerate) on merge.
+- The e2e super-admin `e2e-superadmin@drobek.test` is APPENDED to
+  `SUPERADMIN_EMAIL` in `docker-compose.yml` (dev) and set in
+  `docker-compose.e2e.yaml`; the e2e spec resets the `abuse-report-ip`
+  rate-limit bucket (5 / IP / hour) before and after itself — other specs that
+  post to `/report` must do the same.
+- `/.well-known/drobek-report` is answered BEFORE the "unknown host" check in
+  `handleAppRequest`, so it works on a slug that does not exist too (the form
+  then stores the report with `app_id` null).
+- Tooling: the scratchpad is shared between parallel agents — use unique log
+  names (a sibling agent overwrote `check.log` mid-run). The Write tool turned
+  `\u0300`-style escapes inside a regex into literal characters; use
+  `/\p{M}+/gu` for "strip combining marks".
 
 ## Failed approaches
 

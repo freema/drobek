@@ -65,6 +65,7 @@ export {
   UNLOCK_ATTEMPTS,
   UNLOCK_WINDOW_MS,
   handleAppRequest,
+  APP_HEADER,
   type AppRequest,
   type AppResponse,
   type HandlerDeps,

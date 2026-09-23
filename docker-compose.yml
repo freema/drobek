@@ -93,7 +93,9 @@ services:
       PORT: '${WEB_PORT:-3000}'
       NODE_ENV: development
       GIT_SHA: ${GIT_SHA:-dev}
-      SUPERADMIN_EMAIL: ${SUPERADMIN_EMAIL:-}
+      # M4-02: the e2e super-admin (tests-e2e abuse.spec) is always appended in
+      # dev; empty entries are ignored, so an unset SUPERADMIN_EMAIL is fine.
+      SUPERADMIN_EMAIL: ${SUPERADMIN_EMAIL:-},e2e-superadmin@drobek.test
       # U2: login-code e-mails go to the in-network mailpit sink (no auth).
       SMTP_HOST: mailpit
       SMTP_PORT: '1025'
@@ -202,6 +204,11 @@ services:
       EMAIL_APP_HOURLY_SHARE: ${EMAIL_APP_HOURLY_SHARE:-25}
       FORMS_SUBMITS_PER_IP_HOUR: ${FORMS_SUBMITS_PER_IP_HOUR:-10}
       FORMS_PER_APP_PER_DAY: ${FORMS_PER_APP_PER_DAY:-200}
+      # M4-02: abuse handling — report form rate limit, publish-heuristic brand
+      # words (empty = the built-in list) and the terms the 451 page links.
+      ABUSE_REPORTS_PER_IP_HOUR: ${ABUSE_REPORTS_PER_IP_HOUR:-5}
+      ABUSE_BRAND_WORDS: ${ABUSE_BRAND_WORDS:-}
+      TERMS_URL: ${TERMS_URL:-}
       LIMITS_PROVIDER_URL: ${LIMITS_PROVIDER_URL:-}
       LIMITS_PROVIDER_SECRET: ${LIMITS_PROVIDER_SECRET:-}
       # M3-01 (NSO-292): custom domains. DEV/TEST ONLY — DOMAINS_DNS_MOCK=redis

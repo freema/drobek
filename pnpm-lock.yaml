@@ -582,6 +582,9 @@ importers:
       '@drobek/domains':
         specifier: workspace:*
         version: link:../domains
+      '@drobek/email':
+        specifier: workspace:*
+        version: link:../email
       '@drobek/insights':
         specifier: workspace:*
         version: link:../insights

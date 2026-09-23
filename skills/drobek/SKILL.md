@@ -108,6 +108,11 @@ user's agent holds it you get `app_locked` with the (masked) `holder` and
 `expires_at`: tell the user who is working on the app and retry after
 `expires_at`. Your own other sessions never block you.
 
+`app_locked_by_admin` is different: the server operator took the app down
+(`reason` names the category; list_apps / get_app show `locked_by_admin`).
+Waiting does not help — stop changing the app and tell the user; only the
+operator can restore it.
+
 ## Roll back
 
 `get_app({ app_id })` lists the last 20 versions with their compile status and
@@ -134,8 +139,8 @@ progress. The owner can also publish from the drobek dashboard.
 
 A failed call returns `isError: true` with `{ code, message, hint }` — the
 `hint` says what to do (`not_found`, `forbidden`, `invalid_params`,
-`invalid_path`, `limit_exceeded`, `secret_in_source`, `app_locked`, `busy`,
-`not_publishable`, …).
+`invalid_path`, `limit_exceeded`, `secret_in_source`, `app_locked`,
+`app_locked_by_admin`, `busy`, `not_publishable`, …).
 Compile problems are not tool failures: they come back in `compile.errors`. The
 full code → meaning → fix table is the Error catalogue in llms-full.txt.
 

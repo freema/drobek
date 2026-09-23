@@ -348,3 +348,47 @@ Development: the dev compose file sets `DOMAINS_DNS_MOCK=redis`, which
 answers the lookups from Redis keys `drobek:dns-mock:<txt|cname|a|aaaa>:<name>`
 (a JSON string array; `"SERVFAIL"` simulates a transient failure) and admits
 the `.test` TLD. It is ignored, with a warning, when `NODE_ENV=production`.
+
+## Abuse and takedowns
+
+Anyone can publish on a public drobek, so the operator (every address in
+`SUPERADMIN_EMAIL`) gets a moderation queue. Nothing is blocked automatically.
+
+- **Report pointer.** Every app host answers `GET /.well-known/drobek-report`
+  with `{ report_url, app, terms_url }` — `report_url` is the public form on
+  the dashboard origin, `<PUBLIC_APP_URL>/report?host=<host>`. Every app-host
+  response also carries `X-Drobek-App: <slug>`, so a URL or a header in an
+  abuse complaint maps to one app.
+- **Report form** (`/report`, no login): host, reason (phishing, malware,
+  spam, copyright, illegal, other), details (≤ 2 000 characters), an optional
+  reporter e-mail and a honeypot. `ABUSE_REPORTS_PER_IP_HOUR` (default 5)
+  valid reports per client IP per hour. A report is stored in
+  `abuse_reports` (the reporter's IP only as a keyed hash), audited
+  `abuse.report` in the app's workspace, and e-mailed to the super-admins —
+  at most once per app per hour.
+- **Queue** (`/admin/abuse`, super-admins only, 403 for everyone else): the
+  open reports with the app and workspace behind each host.
+  - **Take down** (pick a reason category): the app is unpublished and
+    locked (`apps.locked_reason`). Its production, preview, version and
+    custom-domain hosts answer **451** with a link to `TERMS_URL` (default
+    `<PUBLIC_APP_URL>/terms`; set it when your dashboard origin has no terms
+    page); module routes answer JSON 451. The agent's `write_files`,
+    `restore_version`, `publish` and `configure_module` fail with
+    `app_locked_by_admin` (naming the category only); new versions, publish
+    and restore are refused for the dashboard too (the module-confirm API
+    answers 423). The owners (editors and workspace-admins of the workspace) get an
+    e-mail. Audited `admin.takedown`; the app's open reports are resolved.
+  - **Restore**: the lock is lifted — the app is NOT republished, its owner
+    publishes again. Owners get an e-mail; audited `admin.restore`.
+  - **Mark resolved**: closes a report without acting.
+- **Publish heuristic.** Every publish scans the published version (HTML +
+  JS): a password field AND a word from `ABUSE_BRAND_WORDS` (comma-separated;
+  unset = a built-in list of ~25 bank / payment / e-mail / social / crypto
+  names plus "bank") in the `<title>`, an `<h1>`, the page text or a JS string
+  files a `heuristic` report into the queue and logs
+  `event: abuse_heuristic_flag` at warn. The publish itself goes through; one
+  open heuristic report per app at a time.
+
+DMCA notices and the legal side of abuse handling belong to your terms of
+service, not to drobek.
+

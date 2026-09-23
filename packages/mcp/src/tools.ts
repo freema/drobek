@@ -19,7 +19,10 @@
  *    inside a nonce envelope, from the ONE app the call authorized. So are
  *    logs (get_logs): browser error texts come from the app and its users;
  *  - every compile a write runs lands in the app's compile history
- *    (get_logs 'compile'), refused ones included.
+ *    (get_logs 'compile'), refused ones included;
+ *  - an app a super-admin took down (NSO-293) refuses write_files,
+ *    restore_version, publish and configure_module with `app_locked_by_admin`
+ *    (the reason category only); list_apps / get_app show `locked_by_admin`.
  */
 import {
   APP_LOCK_TTL_SEC,
@@ -33,6 +36,7 @@ import {
   createVersion,
   deriveSlug,
   getVersion,
+  lockCategory,
   listVersions,
   previewUrl,
   publish as publishVersion,
@@ -61,7 +65,7 @@ import { ensurePersonalWorkspace, listUserWorkspaces } from '@drobek/tenancy';
 import { authorizeApp, authorizeWorkspace } from './access.js';
 import type { ToolDeps, ToolPrincipal } from './context.js';
 import { LOG_KINDS, logsWindowStart, type LogKind } from '@drobek/insights';
-import { ToolError } from './errors.js';
+import { ToolError, lockedByAdmin } from './errors.js';
 import type { Lease } from './lease.js';
 import {
   appsInWorkspace,
@@ -88,6 +92,11 @@ const utf8 = new TextDecoder('utf-8', { fatal: true });
 
 function actorOf(ctx: CallContext): Actor {
   return { userId: ctx.principal.userId, kind: actorKindForSurface('mcp') };
+}
+
+/** NSO-293: a taken-down app refuses every change (write, restore, publish, module config). */
+function refuseIfLockedByAdmin(app: AppRow): void {
+  if (app.lockedReason) throw lockedByAdmin(app.lockedReason);
 }
 
 function extOf(path: string): string {
@@ -184,6 +193,10 @@ export interface AppSummary {
   latest_version: number;
   compile_status: string | null;
   locked_by?: string;
+  /** NSO-293: taken down by a super-admin — nothing can be changed or published. */
+  locked_by_admin?: true;
+  /** The takedown category (with locked_by_admin). */
+  locked_reason?: string;
 }
 
 async function summarize(rows: AppRow[], deps: ToolDeps): Promise<{
@@ -216,6 +229,10 @@ async function summarize(rows: AppRow[], deps: ToolDeps): Promise<{
     }
     const lock = locks.get(r.id);
     if (lock) item.locked_by = lock.holder;
+    if (r.lockedReason) {
+      item.locked_by_admin = true;
+      item.locked_reason = lockCategory(r.lockedReason);
+    }
     return item;
   });
   return { items, latest, locks };
@@ -556,6 +573,7 @@ export async function writeFiles(
   args: { app_id: string; files: FileChange[]; reasoning: string }
 ) {
   const { app } = await authorizeApp(ctx.principal, args.app_id, 'editor');
+  refuseIfLockedByAdmin(app);
   const changes = validateChanges(args.files, args.reasoning);
   await takeLease(ctx, app.id);
 
@@ -590,6 +608,7 @@ export async function writeFiles(
 
 export async function restoreVersion(ctx: CallContext, args: { app_id: string; version: number }) {
   const { app } = await authorizeApp(ctx.principal, args.app_id, 'editor');
+  refuseIfLockedByAdmin(app);
   if (!Number.isInteger(args.version) || args.version < 1) {
     throw new ToolError('invalid_params', '`version` must be a positive integer.');
   }
@@ -631,6 +650,7 @@ export async function restoreVersion(ctx: CallContext, args: { app_id: string; v
  */
 export async function publishApp(ctx: CallContext, args: { app_id: string; version?: number }) {
   const { app } = await authorizeApp(ctx.principal, args.app_id, 'editor');
+  refuseIfLockedByAdmin(app);
   if (args.version !== undefined && (!Number.isInteger(args.version) || args.version < 1)) {
     throw new ToolError('invalid_params', '`version` must be a positive integer.');
   }
@@ -718,6 +738,7 @@ export async function configureModule(
   if (typeof args.module !== 'string' || args.module.length === 0) {
     throw new ToolError('invalid_params', '`module` must be the name of a platform module (see skill_info()).');
   }
+  refuseIfLockedByAdmin(app);
   await takeLease(ctx, app.id);
   try {
     const out = await ctx.modules.configure({

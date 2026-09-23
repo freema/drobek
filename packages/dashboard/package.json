@@ -183,6 +183,26 @@
     "./footer": {
       "types": "./src/footer.tsx",
       "default": "./dist/footer.js"
+    },
+    "./routes/report": {
+      "types": "./src/routes/report.tsx",
+      "default": "./dist/routes/report.js"
+    },
+    "./routes/report.server": {
+      "types": "./src/routes/report.server.ts",
+      "default": "./dist/routes/report.server.js"
+    },
+    "./routes/admin.abuse": {
+      "types": "./src/routes/admin.abuse.tsx",
+      "default": "./dist/routes/admin.abuse.js"
+    },
+    "./routes/admin.abuse.server": {
+      "types": "./src/routes/admin.abuse.server.ts",
+      "default": "./dist/routes/admin.abuse.server.js"
+    },
+    "./locked-notice": {
+      "types": "./src/locked-notice.tsx",
+      "default": "./dist/locked-notice.js"
     }
   },
   "scripts": {
@@ -198,6 +218,7 @@
     "@drobek/core": "workspace:*",
     "@drobek/db": "workspace:*",
     "@drobek/domains": "workspace:*",
+    "@drobek/email": "workspace:*",
     "@drobek/insights": "workspace:*",
     "@drobek/modules": "workspace:*",
     "@drobek/oauth": "workspace:*",

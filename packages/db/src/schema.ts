@@ -4,7 +4,7 @@
  * Identity + tenancy + apps and their immutable versions (M0-02, NSO-281),
  * plus the tables each later unit added (oauth_*, upstreams, audit_log,
  * app_errors, app_daily_stats, app_compiles, module_request_stats,
- * module_configs, module_secrets). Platform
+ * module_configs, module_secrets, abuse_reports). Platform
  * modules own their tables (`mod_<name>_*`, their own migration journals).
  *
  * Hard constraints encoded here:
@@ -160,6 +160,14 @@ export const apps = pgTable(
      * `<slug>~deleted-<id>` so a new app can take the slug.
      */
     deletedAt: timestamp('deleted_at'),
+    /**
+     * Super-admin takedown (M4-02, NSO-293): the reason CATEGORY
+     * (`phishing` | `malware` | `spam` | `copyright` | `illegal` | `other`,
+     * validated by @drobek/apps). Non-null = locked: every host of the app
+     * answers 451, and writes / publish / restore / module config are refused
+     * with `app_locked_by_admin`. Only a super-admin restore clears it.
+     */
+    lockedReason: text('locked_reason'),
   },
   (t) => [
     uniqueIndex('apps_slug_uq').on(t.slug),
@@ -687,5 +695,43 @@ export const domains = pgTable(
     uniqueIndex('domains_verified_hostname_uq').on(t.hostname).where(sql`${t.verifiedAt} IS NOT NULL`),
     uniqueIndex('domains_primary_uq').on(t.appId).where(sql`${t.isPrimary}`),
     index('domains_hostname_idx').on(t.hostname),
+  ]
+);
+
+// ── Abuse reports (M4-02, NSO-293) ───────────────────────────────────────────
+//
+// The moderation queue: a report from the public form on the dashboard origin
+// (`/report?host=`, no login, rate-limited per IP) or a flag raised by the
+// publish heuristic (`reason = 'heuristic'`, never a block). `app_id` is the
+// app behind `host` when it resolved (set null if the app row goes away — the
+// report stays); `ip_hash` is a keyed hash of the reporter's IP (never the
+// address). A super-admin resolves a report from the queue (takedown, or
+// just "mark resolved").
+
+export const abuseReportStatusEnum = pgEnum('abuse_report_status', ['open', 'resolved']);
+
+export const abuseReports = pgTable(
+  'abuse_reports',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    appId: text('app_id').references(() => apps.id, { onDelete: 'set null' }),
+    /** The host the report names, normalized (lower-case, no scheme/path). */
+    host: text('host').notNull(),
+    /** `phishing` | `malware` | `spam` | `copyright` | `illegal` | `other` | `heuristic`. */
+    reason: text('reason').notNull(),
+    /** Free text from the reporter (≤ 2 000 chars) or the heuristic's finding. */
+    details: text('details').notNull().default(''),
+    reporterEmail: text('reporter_email'),
+    ipHash: text('ip_hash'),
+    status: abuseReportStatusEnum('status').notNull().default('open'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    resolvedAt: timestamp('resolved_at'),
+    resolvedBy: text('resolved_by').references(() => users.id, { onDelete: 'set null' }),
+  },
+  (t) => [
+    index('abuse_reports_status_created_idx').on(t.status, t.createdAt),
+    index('abuse_reports_app_idx').on(t.appId),
   ]
 );

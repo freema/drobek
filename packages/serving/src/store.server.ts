@@ -43,6 +43,8 @@ export interface ServeApp {
    * targets only; absent/null = no redirect.
    */
   primaryDomain?: string | null;
+  /** `apps.locked_reason` (NSO-293): non-null = taken down → every host answers 451. */
+  lockedReason?: string | null;
 }
 
 export interface ServeVersion {
@@ -168,6 +170,7 @@ async function resolveFromDb(target: AppHostTarget): Promise<Resolved> {
       workspaceId: apps.workspaceId,
       visibility: apps.visibility,
       frameAncestors: apps.frameAncestors,
+      lockedReason: apps.lockedReason,
       status: apps.status,
       publishedVersionId: apps.publishedVersionId,
     })
@@ -181,6 +184,7 @@ async function resolveFromDb(target: AppHostTarget): Promise<Resolved> {
     workspaceId: row.workspaceId,
     visibility: row.visibility as Visibility,
     frameAncestors: row.frameAncestors,
+    lockedReason: row.lockedReason,
   };
 
   const okVersion = (where: ReturnType<typeof and>) =>

@@ -1,6 +1,6 @@
 /**
  * The few pages an app host renders itself (M0-06): not found, not published,
- * the password form. Plain HTML with one inline <style> (allowed by the app
+ * the password form, and the 451 "taken down" page (M4-02). Plain HTML with one inline <style> (allowed by the app
  * CSP's style-src 'unsafe-inline'), no script, and the form posts to the same
  * host (form-action 'self'). Every value is HTML-escaped.
  */
@@ -23,6 +23,7 @@ const STYLE = `
   input{width:100%;box-sizing:border-box;padding:.6rem .7rem;border-radius:8px;border:1px solid #d0d7de;font-size:1rem}
   button{margin-top:1rem;width:100%;padding:.65rem;border:0;border-radius:8px;background:#1f6feb;color:#fff;font-size:1rem;cursor:pointer}
   .err{color:#cf222e;font-size:.9rem;margin:.75rem 0 0}
+  a{color:#1f6feb}
 `;
 
 function layout(title: string, body: string): string {
@@ -82,4 +83,17 @@ export function passwordPage(opts: { next: string; error?: 'wrong' | 'rate_limit
 
 export function errorPage(title: string, text: string): string {
   return layout(title, `<h1>${escapeHtml(title)}</h1><p>${escapeHtml(text)}</p>`);
+}
+
+/**
+ * 451 Unavailable For Legal Reasons (RFC 7725) — a super-admin took the app
+ * down (NSO-293). Names the reason category only, links the operator's terms.
+ */
+export function lockedPage(opts: { reasonLabel: string; termsUrl: string }): string {
+  return layout(
+    'Unavailable',
+    `<h1>This app is unavailable</h1>
+  <p>It was taken down by the operator of this server for a violation of the terms of service (${escapeHtml(opts.reasonLabel.toLowerCase())}).</p>
+  <p><a href="${escapeHtml(opts.termsUrl)}" rel="noopener noreferrer">Terms of service</a></p>`
+  );
 }

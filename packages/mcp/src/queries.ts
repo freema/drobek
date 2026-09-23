@@ -13,6 +13,8 @@ export interface AppRow {
   workspaceId: string;
   workspaceSlug: string;
   publishedVersionId: string | null;
+  /** NSO-293: the super-admin takedown category; non-null = locked (app_locked_by_admin). */
+  lockedReason: string | null;
 }
 
 const appColumns = {
@@ -22,6 +24,7 @@ const appColumns = {
   workspaceId: apps.workspaceId,
   workspaceSlug: workspaces.slug,
   publishedVersionId: apps.publishedVersionId,
+  lockedReason: apps.lockedReason,
 };
 
 /** A live (not soft-deleted) app by id, or null. */

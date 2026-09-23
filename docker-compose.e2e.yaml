@@ -119,6 +119,9 @@ services:
       EMAIL_APP_HOURLY_SHARE: '25'
       FORMS_SUBMITS_PER_IP_HOUR: '10'
       FORMS_PER_APP_PER_DAY: '200'
+      # M4-02: the abuse spec signs in as this super-admin.
+      SUPERADMIN_EMAIL: e2e-superadmin@drobek.test
+      ABUSE_REPORTS_PER_IP_HOUR: '5'
       # Google OIDC → the mock the auth-google spec spawns on the host (:3049).
       GOOGLE_CLIENT_ID: local-dev-client
       GOOGLE_CLIENT_SECRET: local-dev-secret

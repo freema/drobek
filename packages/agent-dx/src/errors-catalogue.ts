@@ -75,6 +75,13 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     fix: 'Tell the user who holds the app and wait until `expires_at`, then retry. Your own other sessions never block you — they hand the lease over.',
   },
   {
+    code: 'app_locked_by_admin',
+    surface: 'MCP tool isError (write_files, restore_version, publish, configure_module); dashboard API 423; app host 451 (module routes: JSON)',
+    meaning:
+      'The server operator took this app down for a violation of the terms (`reason` is the category: phishing, malware, spam, copyright, illegal or other). Every host of the app answers 451, it is unpublished, and nothing can be written, published or reconfigured. Not the same as `app_locked` (another agent holding the write lease) — waiting does not help.',
+    fix: 'Stop changing the app and tell the user it was taken down by the operator (name the reason category). Only the operator can restore it; the user can contact them through the terms / report page linked from the app\'s address. Do not recreate the same content in another app.',
+  },
+  {
     code: 'busy',
     surface: 'MCP tool isError; compile.errors[]',
     meaning: 'The compiler is saturated (COMPILE_CONCURRENCY builds running, the queue wait exceeded COMPILE_QUEUE_TIMEOUT_MS). Nothing was stored.',

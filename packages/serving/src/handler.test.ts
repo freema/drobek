@@ -275,6 +275,7 @@ describe('headers on every response (snapshot)', () => {
     const r = await handleAppRequest(req(preview('shop')), deps);
     expect(r.headers).toEqual({
       ...PREVIEW_SECURITY,
+      'X-Drobek-App': 'shop',
       'Content-Type': 'text/html; charset=utf-8',
       ETag: `"${sha(INDEX_V2)}"`,
       'Cache-Control': 'public, max-age=0, must-revalidate',
@@ -288,6 +289,7 @@ describe('headers on every response (snapshot)', () => {
       'Content-Security-Policy': APP_CSP,
       'X-Content-Type-Options': 'nosniff',
       'Referrer-Policy': 'no-referrer',
+      'X-Drobek-App': 'shop',
       'Content-Type': 'text/html; charset=utf-8',
       ETag: `"${sha(INDEX_V1)}"`,
       'Cache-Control': 'public, max-age=0, must-revalidate',
@@ -301,7 +303,14 @@ describe('headers on every response (snapshot)', () => {
 
   it('404, 405 and the password page carry the CSP too', async () => {
     const r404 = await handleAppRequest(req(preview('shop'), '/src/main.tsx'), deps);
-    expect(r404.headers).toEqual({ ...PREVIEW_SECURITY, 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+    expect(r404.headers).toEqual({
+      ...PREVIEW_SECURITY,
+      'X-Drobek-App': 'shop',
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'no-store',
+    });
+    // No app behind the host → no X-Drobek-App.
+    expect((await handleAppRequest(req(prod('nope')), deps)).headers['X-Drobek-App']).toBeUndefined();
     const r405 = await handleAppRequest(req(preview('shop'), '/', { method: 'PUT' }), deps);
     expect(r405.status).toBe(405);
     expect(r405.headers).toMatchObject({ ...PREVIEW_SECURITY, Allow: 'GET, HEAD' });
@@ -594,5 +603,119 @@ describe('custom domains (M3-01)', () => {
     expect((await handleAppRequest(req(preview('shop')), d)).status).toBe(200);
     expect((await handleAppRequest(req(ver('shop', 2)), d)).status).toBe(200);
     expect(text((await handleAppRequest(req(prod('shop'), '/__drobek/v1/x', { method: 'POST' }), d)).body)).toBe('mod');
+  });
+});
+
+describe('abuse: report pointer, takedown 451, X-Drobek-App (M4-02)', () => {
+  const REPORT = '/.well-known/drobek-report';
+  const withReport = (d: HandlerDeps): HandlerDeps => ({
+    ...d,
+    reportUrl: (host) => `https://drobek.example/report?host=${encodeURIComponent(host)}`,
+    termsUrl: 'https://drobek.example/terms',
+  });
+
+  it('GET /.well-known/drobek-report on any app host → the report URL for that host (public, 1 h)', async () => {
+    const d = withReport(deps);
+    const r = await handleAppRequest(req(preview('shop'), REPORT, { headers: { Host: 'Shop--Preview.apps.example.' } }), d);
+    expect(r.status).toBe(200);
+    expect(r.headers).toMatchObject({
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'public, max-age=3600',
+      'X-Drobek-App': 'shop',
+      'Content-Security-Policy': APP_CSP,
+    });
+    expect(JSON.parse(text(r.body))).toEqual({
+      report_url: 'https://drobek.example/report?host=shop--preview.apps.example',
+      app: 'shop',
+      terms_url: 'https://drobek.example/terms',
+    });
+    // An unknown slug / a malformed host still gets the pointer (app: null).
+    const none = await handleAppRequest(req(null, REPORT, { headers: { Host: 'a.b.apps.example' } }), d);
+    expect(none.status).toBe(200);
+    expect(JSON.parse(text(none.body))).toMatchObject({ app: null, report_url: 'https://drobek.example/report?host=a.b.apps.example' });
+    // It sits in front of the password gate and the takedown.
+    expect((await handleAppRequest(req(prod('vault'), REPORT, { headers: { Host: 'vault.apps.example' } }), d)).status).toBe(200);
+    model.get('shop')!.app.lockedReason = 'phishing';
+    store.bust('shop');
+    expect((await handleAppRequest(req(prod('shop'), REPORT, { headers: { Host: 'shop.apps.example' } }), d)).status).toBe(200);
+    // HEAD: headers only.
+    expect((await handleAppRequest(req(prod('shop'), REPORT, { method: 'HEAD', headers: { Host: 'shop.apps.example' } }), d)).body).toBeNull();
+  });
+
+  it('a taken-down app answers 451 with the terms link on EVERY host and path, before the password gate', async () => {
+    model.get('shop')!.app.lockedReason = 'phishing';
+    model.get('vault')!.app.lockedReason = 'malware';
+    const d = withReport(deps);
+    const custom: AppHostTarget = { kind: 'custom', slug: 'shop', hostname: 'shop.firma.cz' };
+    for (const target of [prod('shop'), preview('shop'), ver('shop', 1), ver('shop', 2), custom]) {
+      for (const path of ['/', '/main.js', '/deep/link']) {
+        const r = await handleAppRequest(req(target, path), d);
+        expect(r.status, `${JSON.stringify(target)} ${path}`).toBe(451);
+        expect(r.headers).toMatchObject({
+          'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'no-store',
+          'X-Drobek-App': 'shop',
+          'Content-Security-Policy': APP_CSP,
+          Link: '<https://drobek.example/terms>; rel="blocked-by"',
+        });
+        expect(text(r.body)).toContain('href="https://drobek.example/terms"');
+        expect(text(r.body)).toContain('phishing or credential theft');
+      }
+    }
+    const vault = await handleAppRequest(req(prod('vault')), d);
+    expect(vault.status).toBe(451);
+    expect(text(vault.body)).not.toContain('password');
+    const unlock = await handleAppRequest(req(prod('vault'), UNLOCK_PATH, { method: 'POST', form: { password: 'open sesame' } }), d);
+    expect(unlock.status).toBe(451);
+    expect(unlock.headers['Set-Cookie']).toBeUndefined();
+    const head = await handleAppRequest(req(prod('shop'), '/', { method: 'HEAD' }), d);
+    expect(head.status).toBe(451);
+    expect(head.body).toBeNull();
+  });
+
+  it('platform paths and the beacon of a taken-down app → JSON 451 app_locked_by_admin; nothing reaches them', async () => {
+    model.get('shop')!.app.lockedReason = 'spam';
+    const hits: string[] = [];
+    const d: HandlerDeps = {
+      ...withReport(deps),
+      platform: async (r) => {
+        hits.push(r.path);
+        return { status: 200, headers: {}, body: '{}' };
+      },
+      beacon: async (r) => {
+        hits.push(r.path);
+        return { status: 204, headers: {}, body: null };
+      },
+    };
+    for (const [path, method] of [['/__drobek/v1/data/items', 'POST'], ['/__drobek/sdk.js', 'GET'], [BEACON_PATH, 'POST']] as const) {
+      const r = await handleAppRequest(req(preview('shop'), path, { method, body: '{}' }), d);
+      expect(r.status).toBe(451);
+      expect(r.headers['X-Drobek-App']).toBe('shop');
+      expect(JSON.parse(text(r.body))).toEqual({
+        error: 'app_locked_by_admin',
+        message: 'This app was taken down by the server operator.',
+        details: { reason: 'spam' },
+      });
+    }
+    expect(hits).toEqual([]);
+  });
+
+  it('an unknown stored reason shows as "other"; a restored app serves again after the cache bust', async () => {
+    model.get('shop')!.app.lockedReason = 'internal note that must not leak';
+    const d = withReport(deps);
+    const r = await handleAppRequest(req(prod('shop')), d);
+    expect(r.status).toBe(451);
+    expect(text(r.body)).not.toContain('internal note');
+    expect(text(r.body)).toContain('other violation of the terms');
+    model.get('shop')!.app.lockedReason = null;
+    store.bust('shop');
+    expect((await handleAppRequest(req(prod('shop')), d)).status).toBe(200);
+  });
+
+  it('a taken-down app with a primary custom domain is 451 on its production host, never a 302', async () => {
+    model.get('shop')!.app = { ...model.get('shop')!.app, primaryDomain: 'shop.firma.cz', lockedReason: 'phishing' };
+    const r = await handleAppRequest(req(prod('shop')), withReport(deps));
+    expect(r.status).toBe(451);
+    expect(r.headers.Location).toBeUndefined();
   });
 });

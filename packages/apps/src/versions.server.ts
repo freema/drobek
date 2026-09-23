@@ -12,6 +12,7 @@ import { normalizeAppPath } from '@drobek/compile';
 import { appVersions, apps, blobs, getDb, versionFiles } from '@drobek/db';
 import { AppsError } from './errors.js';
 import { zipStream, type ZipEntry } from './zip.js';
+import { lockedByAdminError, screenAfterPublish } from './moderation.server.js';
 import type {
   Actor,
   CompileStatus,
@@ -55,11 +56,19 @@ async function lockApp(tx: Tx, appId: string) {
       slug: apps.slug,
       workspaceId: apps.workspaceId,
       publishedVersionId: apps.publishedVersionId,
+      lockedReason: apps.lockedReason,
     })
     .from(apps)
     .where(eq(apps.id, appId))
     .for('update');
   if (!app) throw new AppsError('not_found', `App ${appId} does not exist.`);
+  return app;
+}
+
+/** Lock the app row AND refuse when a super-admin took the app down (NSO-293). */
+async function lockWritableApp(tx: Tx, appId: string) {
+  const app = await lockApp(tx, appId);
+  if (app.lockedReason !== null) throw lockedByAdminError(app.lockedReason);
   return app;
 }
 
@@ -120,7 +129,7 @@ export async function createVersion(
   }
 
   return getDb().transaction(async (tx) => {
-    const app = await lockApp(tx, appId);
+    const app = await lockWritableApp(tx, appId);
     if (bytesBySha.size > 0) {
       await tx
         .insert(blobs)
@@ -242,14 +251,18 @@ export async function readBlobs(sha256s: string[]): Promise<Map<string, Buffer>>
  * Point the app's production host at a version — one atomic pointer move,
  * audited as `app.publish` (with the previous version, so the audit log is
  * the publish history). Only a version that compiled `ok` is publishable.
+ * A taken-down app (NSO-293) refuses with `app_locked_by_admin`. After the
+ * pointer moved, the published version goes through the phishing heuristic
+ * (`screen: false` skips it).
  */
 export async function publish(
   appId: string,
   versionId: string,
-  actor: Actor
+  actor: Actor,
+  opts: { screen?: boolean } = {}
 ): Promise<{ versionId: string; number: number; previousNumber: number | null }> {
-  return getDb().transaction(async (tx) => {
-    const app = await lockApp(tx, appId);
+  const result = await getDb().transaction(async (tx) => {
+    const app = await lockWritableApp(tx, appId);
     const [version] = await tx
       .select({ id: appVersions.id, number: appVersions.number, status: appVersions.compileStatus })
       .from(appVersions)
@@ -276,6 +289,10 @@ export async function publish(
     });
     return { versionId: version.id, number: version.number, previousNumber };
   });
+  // NSO-293: the phishing heuristic — flags the app for the super-admin
+  // queue, never blocks (a scan failure is only logged).
+  if (opts.screen !== false) await screenAfterPublish(appId, result.versionId);
+  return result;
 }
 
 /**
@@ -289,7 +306,7 @@ export async function restore(
   opts: { reasoning?: string | null } = {}
 ): Promise<{ id: string; number: number }> {
   return getDb().transaction(async (tx) => {
-    const app = await lockApp(tx, appId);
+    const app = await lockWritableApp(tx, appId);
     const [source] = await tx
       .select({
         id: appVersions.id,

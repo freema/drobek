@@ -33,12 +33,28 @@
  * is never parsed, looked up or touched here, whatever the request carries.
  * Every response — 200, 304, 401, 404, 405, 429, 500 — carries the app CSP,
  * nosniff, Referrer-Policy and (preview/version hosts) X-Robots-Tag.
+ *
+ * ABUSE (M4-02, NSO-293): `GET /.well-known/drobek-report` on ANY app host
+ * answers `{ report_url, app, terms_url }` (public, cacheable 1 h) before
+ * anything else — where to report this host. A taken-down app
+ * (`lockedReason`) answers 451 on every host (prod, preview, version,
+ * custom domain) and every path right after step 2 — before the
+ * primary-domain redirect, the password gate, the platform and the beacon
+ * (JSON `app_locked_by_admin` there). Once the app resolved,
+ * every response carries `X-Drobek-App: <slug>` (tracing a report to an app).
  */
 import type { Readable } from 'node:stream';
-import type { AppHostTarget } from '@drobek/apps';
+import {
+  REPORT_WELL_KNOWN_PATH,
+  lockCategory,
+  reasonLabel,
+  reportFormUrl,
+  termsUrl,
+  type AppHostTarget,
+} from '@drobek/apps';
 import { contentTypeForPath } from './content-type.js';
 import { appSecurityHeaders, parseFrameAncestors } from './csp.js';
-import { UNLOCK_PATH, errorPage, missingPage, passwordPage, type MissingReason } from './pages.js';
+import { UNLOCK_PATH, errorPage, lockedPage, missingPage, passwordPage, type MissingReason } from './pages.js';
 import {
   appAccessCookieName,
   appAccessCookieHeader,
@@ -119,7 +135,14 @@ export interface HandlerDeps {
    * (default `https://<hostname>`; node.ts derives scheme + port from the apps origin).
    */
   customDomainOrigin?: (hostname: string) => string;
+  /** `host → report form URL` for the well-known report pointer (default: `<PUBLIC_APP_URL>/report?host=`). */
+  reportUrl?: (host: string) => string;
+  /** The terms the 451 page links (default: TERMS_URL, else `<PUBLIC_APP_URL>/terms`). */
+  termsUrl?: string;
 }
+
+/** Header naming the app behind an app-host response (M4-02). */
+export const APP_HEADER = 'X-Drobek-App';
 
 const HTML = 'text/html; charset=utf-8';
 const NO_STORE = 'no-store';
@@ -173,11 +196,39 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
     });
   }
 
+  // ── where to report this host (M4-02) — any app host, before anything else ──
+  if ((method === 'GET' || method === 'HEAD') && req.path === REPORT_WELL_KNOWN_PATH) {
+    return wellKnownReport(req, deps, method, security);
+  }
+
   if (!req.target) return missing('no-app');
   const { app, version } = await deps.store.resolve(req.target);
   if (!app) return missing('no-app');
-  security = appSecurityHeaders({ noindex, frameAncestors: parseFrameAncestors(app.frameAncestors) });
+  security = {
+    ...appSecurityHeaders({ noindex, frameAncestors: parseFrameAncestors(app.frameAncestors) }),
+    [APP_HEADER]: app.slug,
+  };
   if (!isBeacon) deps.signal?.(app.id, 'request');
+
+  // ── taken down by a super-admin (M4-02): 451 on every host and path ──
+  if (app.lockedReason) {
+    const category = lockCategory(app.lockedReason);
+    const terms = deps.termsUrl ?? termsUrl();
+    if (isPlatform || isBeacon) {
+      return {
+        status: 451,
+        headers: { ...security, 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': NO_STORE },
+        body: JSON.stringify({
+          error: 'app_locked_by_admin',
+          message: 'This app was taken down by the server operator.',
+          details: { reason: category },
+        }),
+      };
+    }
+    return page(451, lockedPage({ reasonLabel: reasonLabel(category), termsUrl: terms }), {
+      Link: `<${terms}>; rel="blocked-by"`,
+    });
+  }
 
   // ── primary custom domain: the production host redirects there (M3-01) ──
   if (
@@ -293,4 +344,31 @@ async function unlock(
   if (!ok) return page(401, passwordPage({ next, error: 'wrong' }));
   const token = mintAppAccessToken(app.id, deps.accessSecret, undefined, (deps.now ?? Date.now)());
   return redirect(appAccessCookieHeader(token, { secure: deps.secureCookies ?? true }));
+}
+
+/** `GET /.well-known/drobek-report` — the report form for this host (public, 1 h cacheable). */
+async function wellKnownReport(
+  req: AppRequest,
+  deps: HandlerDeps,
+  method: string,
+  security: Record<string, string>
+): Promise<AppResponse> {
+  const host = (req.header('host') ?? '').trim().toLowerCase().replace(/\.+(?=:|$)/, '');
+  const app = req.target ? (await deps.store.resolve(req.target)).app : null;
+  const body = JSON.stringify({
+    report_url: (deps.reportUrl ?? ((h: string) => reportFormUrl(h)))(host),
+    app: app?.slug ?? null,
+    terms_url: deps.termsUrl ?? termsUrl(),
+  });
+  return {
+    status: 200,
+    headers: {
+      ...security,
+      ...(app ? { [APP_HEADER]: app.slug } : {}),
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'public, max-age=3600',
+      'Access-Control-Allow-Origin': '*',
+    },
+    body: method === 'HEAD' ? null : body,
+  };
 }

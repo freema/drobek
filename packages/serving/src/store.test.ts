@@ -62,7 +62,7 @@ describe('dbLoaders.resolve', () => {
     await publish(app.id, v1.id, actor);
     const prod = await dbLoaders.resolve({ kind: 'prod', slug: 'loader-app' });
     expect(prod.version).toEqual(v1);
-    expect(prod.app).toEqual({ id: app.id, slug: 'loader-app', workspaceId: wsId, visibility: 'public', frameAncestors: null, primaryDomain: null });
+    expect(prod.app).toEqual({ id: app.id, slug: 'loader-app', workspaceId: wsId, visibility: 'public', frameAncestors: null, lockedReason: null, primaryDomain: null });
   });
 
   it('a soft-deleted or hibernated app does not exist for the app hosts', async () => {

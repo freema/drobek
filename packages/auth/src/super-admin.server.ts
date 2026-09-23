@@ -12,10 +12,21 @@ export function isSuperAdmin(
   email: string,
   superAdminEmail: string | undefined = process.env.SUPERADMIN_EMAIL
 ): boolean {
-  const targets = (superAdminEmail ?? '')
-    .split(',')
-    .map((entry) => entry.trim().toLowerCase())
-    .filter(Boolean);
+  const targets = superAdminEmails(superAdminEmail);
   if (targets.length === 0) return false;
   return targets.includes(email.trim().toLowerCase());
+}
+
+/** Every configured super-admin address, normalized and deduped (M4-02: abuse report e-mails). */
+export function superAdminEmails(
+  superAdminEmail: string | undefined = process.env.SUPERADMIN_EMAIL
+): string[] {
+  return [
+    ...new Set(
+      (superAdminEmail ?? '')
+        .split(',')
+        .map((entry) => entry.trim().toLowerCase())
+        .filter(Boolean)
+    ),
+  ];
 }

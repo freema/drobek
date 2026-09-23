@@ -122,6 +122,10 @@ export default [
   route('oauth/register', 'routes/oauth.register.ts'),
   route('oauth/authorize', 'routes/oauth.authorize.tsx'),
   route('oauth/token', 'routes/oauth.token.ts'),
+  // M4-02 (NSO-293): abuse — the public report form (every app host's
+  // /.well-known/drobek-report points here) and the super-admin queue.
+  route('report', 'routes/report.tsx'),
+  route('admin/abuse', 'routes/admin.abuse.tsx'),
   // NSO-297: the old dashboard-host proxy (`/:ws/api/proxy/:name/*`) is gone —
   // apps call upstreams on their own host through the `proxy` platform module
   // (`/__drobek/v1/proxy/:upstream/*`).

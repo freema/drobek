@@ -59,7 +59,7 @@ export {
   ensureUserFromGoogle,
   type GoogleUserStore,
 } from './ensure-user.server.js';
-export { isSuperAdmin } from './super-admin.server.js';
+export { isSuperAdmin, superAdminEmails } from './super-admin.server.js';
 export {
   GOOGLE_DEFAULT_AUTH_URL,
   GOOGLE_DEFAULT_TOKEN_URL,
