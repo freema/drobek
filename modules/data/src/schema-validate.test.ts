@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { DataError } from './errors.js';
+import { dataConfigSchema } from './config.js';
 import {
   compileSchema,
+  schemaCompileStats,
   schemaPropertyNames,
   validateDocument,
 } from './schema-validate.js';
@@ -89,5 +91,39 @@ describe('schemaPropertyNames', () => {
 
   it('returns an empty set when no properties are declared', () => {
     expect(schemaPropertyNames({ type: 'object' }).size).toBe(0);
+  });
+});
+
+describe('compiled validators are cached by content (NSO-322 H1)', () => {
+  it('the same schema JSON in fresh objects compiles once; key order does not matter', () => {
+    const before = schemaCompileStats.compiles;
+    const make = () => ({ type: 'object', properties: { h1cache: { type: 'string' } }, required: ['h1cache'] });
+    const a = compileSchema(make());
+    const b = compileSchema(JSON.parse(JSON.stringify(make())));
+    const c = compileSchema({ required: ['h1cache'], properties: { h1cache: { type: 'string' } }, type: 'object' });
+    expect(schemaCompileStats.compiles - before).toBe(1);
+    expect(b).toBe(a);
+    expect(c).toBe(a);
+    compileSchema({ ...make(), required: [] });
+    expect(schemaCompileStats.compiles - before).toBe(2);
+  });
+
+  it('parsing a data config twice compiles each collection schema once', () => {
+    const config = {
+      collections: Object.fromEntries(
+        Array.from({ length: 20 }, (_, i) => [`h1c${i}`, { schema: { type: 'object', properties: { [`f${i}`]: { type: 'number' } } } }])
+      ),
+    };
+    const before = schemaCompileStats.compiles;
+    expect(dataConfigSchema.safeParse(structuredClone(config)).success).toBe(true);
+    expect(dataConfigSchema.safeParse(structuredClone(config)).success).toBe(true);
+    expect(schemaCompileStats.compiles - before).toBe(20);
+  });
+
+  it('a malformed schema is refused every time without recompiling', () => {
+    const before = schemaCompileStats.compiles;
+    expect(() => compileSchema({ type: 'h1-bad' })).toThrow(DataError);
+    expect(() => compileSchema({ type: 'h1-bad' })).toThrow(DataError);
+    expect(schemaCompileStats.compiles - before).toBe(1);
   });
 });

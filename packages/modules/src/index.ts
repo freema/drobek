@@ -71,6 +71,7 @@ export {
 export { MODULE_ERROR_CODES, ModuleError, isModuleError, skillHint, issuePaths, type ModuleErrorBody, type ModuleErrorCode } from './errors.js';
 export { RULE_TOKENS, decideAccess, isValidRule, parseRule, ruleIsPublic } from './rules.js';
 export { mergePatch, jsonEqual } from './merge-patch.js';
+export { Lru, jsonKey, stableJson } from './memo.js';
 export {
   LIMITS_CACHE_TTL_SEC,
   LIMITS_SIGNATURE_HEADER,

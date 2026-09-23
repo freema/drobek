@@ -396,6 +396,34 @@ describe('HTTP on the app hosts', () => {
     expect((await rt.handle(req('GET', '/__drobek/other'), app)).status).toBe(404);
   });
 
+  it('the effective config is parsed once per stored content, and a configure is seen at once (NSO-322 H1)', async () => {
+    await rt.configure({ app, module: 'echo', patch: { access: 'public', greeting: 'memo-one' }, actorUserId: userId });
+    await rt.confirm({ app, module: 'echo', userId });
+    const spy = vi.spyOn(echo.configSchema, 'safeParse');
+    try {
+      for (let i = 0; i < 3; i++) {
+        const r = await rt.handle(req('GET', '/__drobek/v1/echo'), app);
+        expect(json(r)).toMatchObject({ greeting: 'memo-one' });
+      }
+      expect(spy).toHaveBeenCalledTimes(1);
+      spy.mockClear();
+      await rt.configure({ app, module: 'echo', patch: { greeting: 'memo-two' }, actorUserId: userId });
+      spy.mockClear(); // configure validates the candidate itself
+      expect(json(await rt.handle(req('GET', '/__drobek/v1/echo'), app))).toMatchObject({ greeting: 'memo-two' });
+      expect(json(await rt.handle(req('GET', '/__drobek/v1/echo'), app))).toMatchObject({ greeting: 'memo-two' });
+      expect(spy).toHaveBeenCalledTimes(1);
+      // A write the process never saw (another server) is a new stored content, too.
+      await db.update(moduleConfigs).set({ config: { access: 'public', greeting: 'memo-three' } }).where(eq(moduleConfigs.appId, app.id));
+      expect(json(await rt.handle(req('GET', '/__drobek/v1/echo'), app))).toMatchObject({ greeting: 'memo-three' });
+      // Each caller gets its own copy.
+      const a = rt.effectiveConfig(echo, { greeting: 'memo-copy' }) as { notify: string[] };
+      a.notify.push('mutated@example.com');
+      expect(rt.effectiveConfig(echo, { greeting: 'memo-copy' })).toMatchObject({ notify: [] });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('/__drobek/beacon.js (M1-07): the minified beacon, immutable with its ?v=, 304 on the ETag', async () => {
     expect(rt.sdk.beacon.url).toBe(`/__drobek/beacon.js?v=${rt.sdk.beacon.hash}`);
     const pinned = await rt.handle(req('GET', '/__drobek/beacon.js', { query: `v=${rt.sdk.beacon.hash}` }), app);

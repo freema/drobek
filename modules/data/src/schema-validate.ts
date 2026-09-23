@@ -6,6 +6,7 @@
  * secret-free field errors (422 validation_failed).
  */
 import { Ajv, type ValidateFunction } from 'ajv';
+import { Lru, jsonKey } from '@drobek/modules';
 import { DataError } from './errors.js';
 
 /**
@@ -18,7 +19,17 @@ function makeAjv(): InstanceType<typeof Ajv> {
   return new Ajv({ allErrors: true, strict: false, allowUnionTypes: true });
 }
 
-const cache = new WeakMap<object, ValidateFunction>();
+/**
+ * Compiled validators by the schema's CONTENT (sha256 of its stable JSON) —
+ * NSO-322 H1. The config is re-parsed into fresh objects, so an identity-keyed
+ * cache never hit and every parse recompiled every collection's schema (~2 ms
+ * each). A failed compile is cached too (as its message).
+ */
+export const SCHEMA_CACHE_ENTRIES = 500;
+const cache = new Lru<ValidateFunction | { error: string }>(SCHEMA_CACHE_ENTRIES);
+
+/** Compiles done so far (tests). */
+export const schemaCompileStats = { compiles: 0 };
 
 /** A JSON Schema must be a plain object. */
 export function assertSchemaShape(jsonSchema: unknown): Record<string, unknown> {
@@ -30,19 +41,24 @@ export function assertSchemaShape(jsonSchema: unknown): Record<string, unknown> 
 
 /**
  * Compile a collection schema, throwing `invalid_schema` if ajv cannot compile
- * it. Returns the validator (memoized per schema object).
+ * it. Returns the validator (memoized by the schema's content).
  */
 export function compileSchema(jsonSchema: unknown): ValidateFunction {
   const schema = assertSchemaShape(jsonSchema);
-  const hit = cache.get(schema);
-  if (hit) return hit;
-  try {
-    const fn = makeAjv().compile(schema);
-    cache.set(schema, fn);
-    return fn;
-  } catch (err) {
-    throw new DataError('invalid_schema', `schema does not compile: ${(err as Error).message}`);
+  const key = jsonKey(schema);
+  let entry = cache.get(key);
+  if (!entry) {
+    schemaCompileStats.compiles += 1;
+    try {
+      // ajv keeps a reference to the schema: compile a private copy.
+      entry = makeAjv().compile(structuredClone(schema));
+    } catch (err) {
+      entry = { error: (err as Error).message };
+    }
+    cache.set(key, entry);
   }
+  if (typeof entry !== 'function') throw new DataError('invalid_schema', `schema does not compile: ${entry.error}`);
+  return entry;
 }
 
 export interface FieldError {

@@ -57,6 +57,7 @@ import { capEmailText, emailKind, redactAddresses, resolveRecipients, sanitizeSu
 import { ModuleError, isModuleError, issuePaths, skillHint } from './errors.js';
 import { createLimitsProvider, type LimitsProvider } from './limits.js';
 import { mailGuardConfigFromEnv, redisMailGuard, type MailGuard, type MailGuardRedis } from './mail-guard.js';
+import { Lru, jsonKey } from './memo.js';
 import { jsonEqual, mergePatch } from './merge-patch.js';
 import { cookiePrincipalResolver, endUserCookiesSecure, type PrincipalResolver } from './principal.js';
 import {
@@ -340,6 +341,9 @@ function unsupported(module: string, what: string): ModuleError {
 
 // ── the runtime ──────────────────────────────────────────────────────────────
 
+/** Distinct (module, stored config) pairs kept parsed in memory. */
+const EFFECTIVE_CONFIG_MEMO_ENTRIES = 2000;
+
 export class ModuleRuntime {
   readonly modules: AnyModule[];
   readonly skills: SkillEntry[];
@@ -347,6 +351,14 @@ export class ModuleRuntime {
   readonly deps: RuntimeDeps;
   private readonly routes = new Map<string, Route[]>();
   private readonly byName = new Map<string, AnyModule>();
+  /**
+   * Effective configs by (module, content of the stored config) — NSO-322 H1:
+   * every module request used to re-run configSchema.safeParse (for data: an
+   * ajv compile per collection). Keyed on the stored JSON itself, so a
+   * configure / confirm (or a write by another process) is a new key and can
+   * never serve a stale config.
+   */
+  private readonly configMemo = new Lru<{ value: unknown }>(EFFECTIVE_CONFIG_MEMO_ENTRIES);
 
   constructor(input: { modules: AnyModule[]; skills: SkillEntry[]; sdk: SdkBundle; deps: RuntimeDeps }) {
     this.modules = input.modules;
@@ -661,12 +673,29 @@ export class ModuleRuntime {
     return view;
   }
 
-  /** The effective config of `module` for a stored (sparse) config. */
+  /**
+   * The effective config of `module` for a stored (sparse) config. Memoized
+   * by content (configMemo); every caller gets its own copy, so a handler that
+   * mutates `ctx.config` cannot change what the next request sees.
+   */
   effectiveConfig(m: AnyModule, stored: Record<string, unknown>): unknown {
+    const key = `${m.name}:${jsonKey(stored)}`;
+    const hit = this.configMemo.get(key);
+    if (hit) return structuredClone(hit.value);
     const r = m.configSchema.safeParse(mergePatch(m.configDefaults, stored));
-    if (r.success) return r.data;
-    this.deps.log.warn('stored module config no longer passes configSchema — using the defaults', { module: m.name });
-    return m.configDefaults;
+    let value: unknown;
+    if (r.success) value = r.data;
+    else {
+      this.deps.log.warn('stored module config no longer passes configSchema — using the defaults', { module: m.name });
+      value = m.configDefaults;
+    }
+    try {
+      const copy = structuredClone(value);
+      this.configMemo.set(key, { value: copy });
+      return structuredClone(copy);
+    } catch {
+      return value; // not cloneable (a module's transform made a function?): never memoized
+    }
   }
 
   /**
