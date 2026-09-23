@@ -6,6 +6,16 @@
 import { notifyAppChanged, type AppChangedEvent } from '@drobek/apps';
 import { Compiler, type CompileOptions, type SourceFiles } from '@drobek/compile';
 import { createConsoleLogger, getRedis, type Logger } from '@drobek/core';
+import {
+  queryCompileLog,
+  queryRequestLog,
+  queryRuntimeLog,
+  recordCompile,
+  type CompileEntry,
+  type RecordCompileInput,
+  type RequestsEntry,
+  type RuntimeEntry,
+} from '@drobek/insights';
 import { moduleRuntime, type ModuleRuntime } from '@drobek/modules';
 import { redisLeaseStore, type LeaseStore } from './lease.js';
 
@@ -17,6 +27,28 @@ export interface ToolPrincipal {
   email: string;
   /** Global SUPERADMIN_EMAIL override: reaches every workspace. */
   superAdmin: boolean;
+}
+
+/**
+ * get_logs storage (M1-07): the compile history written by create_app /
+ * write_files and the three read kinds. The default is @drobek/insights over
+ * Postgres (+ Redis for the daily serving counters).
+ */
+export interface LogStore {
+  recordCompile(input: RecordCompileInput): Promise<void>;
+  runtime(appId: string, since: Date): Promise<RuntimeEntry[]>;
+  compile(appId: string, since: Date): Promise<CompileEntry[]>;
+  requests(appId: string, since: Date): Promise<RequestsEntry[]>;
+}
+
+/** The @drobek/insights LogStore. `flushSignals: false` skips Redis (tests). */
+export function insightsLogStore(opts: { flushSignals?: boolean } = {}): LogStore {
+  return {
+    recordCompile: (input) => recordCompile(input),
+    runtime: (appId, since) => queryRuntimeLog(appId, since),
+    compile: (appId, since) => queryCompileLog(appId, since),
+    requests: (appId, since) => queryRequestLog(appId, since, { flush: opts.flushSignals !== false }),
+  };
 }
 
 export interface ToolDeps {
@@ -31,6 +63,8 @@ export interface ToolDeps {
   log: Logger;
   /** The process's platform modules + skills (M1-01): skill_info, configure_module, get_app.modules. */
   modules: () => Promise<ModuleRuntime>;
+  /** Compile history + get_logs reads (M1-07). */
+  logs: LogStore;
 }
 
 let sharedCompiler: Compiler | null = null;
@@ -54,6 +88,7 @@ export function defaultDeps(overrides: Partial<ToolDeps> = {}): ToolDeps {
     env: process.env,
     log,
     modules: () => moduleRuntime(),
+    logs: insightsLogStore(),
     ...overrides,
   };
 }

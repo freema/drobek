@@ -13,7 +13,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { classifyHost, hostConfig, type HostConfig } from '@drobek/apps';
 import { getClientIp, rateLimitRedis } from '@drobek/auth';
 import { createConsoleLogger, type Logger } from '@drobek/core';
-import { incrementServingSignal } from '@drobek/insights';
+import { handleBeacon, incrementServingSignal } from '@drobek/insights';
 import {
   UNLOCK_ATTEMPTS,
   UNLOCK_WINDOW_MS,
@@ -79,7 +79,7 @@ export interface AppsHostOptions {
 
 export type NodeMiddleware = (req: IncomingMessage, res: ServerResponse, next: (err?: unknown) => void) => void;
 
-/** The production handler deps: HKDF'd access key, Redis limiter, insights counters. */
+/** The production handler deps: HKDF'd access key, Redis limiter, insights counters + beacon. */
 export function defaultHandlerDeps(store: ServeStore): HandlerDeps {
   return {
     store,
@@ -88,6 +88,7 @@ export function defaultHandlerDeps(store: ServeStore): HandlerDeps {
     allowUnlockAttempt: async (appId, ip) =>
       (await rateLimitRedis('app-unlock', `${appId}:${ip ?? 'unknown'}`, UNLOCK_ATTEMPTS, UNLOCK_WINDOW_MS)).ok,
     signal: (appId, kind, path) => void incrementServingSignal(appId, kind, path),
+    beacon: (req, app) => handleBeacon(req, app.id),
   };
 }
 

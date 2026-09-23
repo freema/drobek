@@ -4,7 +4,9 @@
  * the rest of drobek calls:
  *
  *  - `handle()` — every `/__drobek/*` request on an app host (after the app
- *    and its visibility gate were resolved by @drobek/serving);
+ *    and its visibility gate were resolved by @drobek/serving): the SDK, the
+ *    beacon script, and the module routes — each response of an active
+ *    module is counted in `module_request_stats` (M1-07, get_logs requests);
  *  - `skillList()` / `skillInfo()` — the `skill_info` tool, create_app, get_app;
  *  - `configure()` / `confirm()` / `reject()` — configure_module and the
  *    dashboard's pending-change API;
@@ -22,6 +24,7 @@ import { renderTextEmailHtml, sendEmail } from '@drobek/email';
 import { scanForSecrets } from '@drobek/compile';
 import { createConsoleLogger, getRedis, type Logger } from '@drobek/core';
 import { getDb, memberships, runJournalMigrations, users, type DB } from '@drobek/db';
+import { recordModuleRequest } from '@drobek/insights';
 import { and, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import type {
@@ -49,7 +52,7 @@ import { cookiePrincipalResolver, endUserCookiesSecure, type PrincipalResolver }
 import { ModuleLoadError, checkRequires, endUserAuthorityOf, loadModules, mailAuthorityOf, recordsAuthorityOf, type ResolveOptions } from './registry.js';
 import { collectRoutes, errorResult, matchRoute, runRoute, type PipelineRequest, type PipelineResult, type Route } from './router.js';
 import { decideAccess } from './rules.js';
-import { SDK_PATH, SDK_TYPES_PATH, buildSdk, moduleTypes, toPath, type SdkBundle } from './sdk-build.js';
+import { BEACON_SCRIPT_PATH, SDK_PATH, SDK_TYPES_PATH, buildSdk, moduleTypes, toPath, type SdkBundle } from './sdk-build.js';
 import { getModuleSecret, secretsSet } from './secrets.server.js';
 import { generalSkillsDir, loadGeneralSkills, mergeSkills, moduleSkills, skillForImport, type SkillEntry } from './skills.js';
 
@@ -78,6 +81,11 @@ export interface RuntimeDeps {
   email: EmailTransport;
   /** The operator-wide hourly cap on module e-mail (auto-pause). */
   mailGuard: MailGuard;
+  /**
+   * Count one response of an ACTIVE module's route (M1-07 — get_logs
+   * `requests`). Best-effort: never awaited by the response, errors dropped.
+   */
+  requestStats?: (appId: string, module: string, status: number) => Promise<void> | void;
 }
 
 type RedisLike = ReturnType<typeof getRedis>;
@@ -639,8 +647,27 @@ export class ModuleRuntime {
 
   /** Answer one `/__drobek/*` request of `app` (never throws). */
   async handle(req: PlatformRequest, app: PlatformApp): Promise<PipelineResult> {
+    const seen: { module?: string } = {};
+    const res = await this.dispatch(req, app, seen);
+    if (seen.module) this.countRequest(app.id, seen.module, res.status);
+    return res;
+  }
+
+  /** get_logs `requests`: one response of an active module (fire-and-forget). */
+  private countRequest(appId: string, module: string, status: number): void {
+    const count = this.deps.requestStats;
+    if (!count) return;
+    try {
+      void Promise.resolve(count(appId, module, status)).catch(() => undefined);
+    } catch {
+      /* stats never affect the response */
+    }
+  }
+
+  private async dispatch(req: PlatformRequest, app: PlatformApp, seen: { module?: string }): Promise<PipelineResult> {
     try {
       if (req.path === SDK_PATH || req.path === SDK_TYPES_PATH) return this.serveSdk(req);
+      if (req.path === BEACON_SCRIPT_PATH) return this.serveBeaconScript(req);
       const match = V1_RE.exec(req.path);
       if (!match) {
         return errorResult(new ModuleError('not_found', 'No such drobek endpoint.', { hint: skillHint() }));
@@ -654,6 +681,7 @@ export class ModuleRuntime {
           })
         );
       }
+      seen.module = m.name;
       const hit = matchRoute(this.routes.get(m.name) ?? [], req.method, match[2] ?? '/');
       if (hit.kind === 'not_found') {
         return errorResult(new ModuleError('not_found', `${m.name} has no route ${req.method} ${match[2] ?? '/'}.`), m.name);
@@ -694,25 +722,38 @@ export class ModuleRuntime {
   }
 
   private serveSdk(req: PlatformRequest): PipelineResult {
+    const js = req.path === SDK_PATH;
+    return this.serveScript(req, {
+      body: js ? this.sdk.js : Buffer.from(this.sdk.dts, 'utf8'),
+      etag: `"${this.sdk.hash}${js ? '' : '-d'}"`,
+      hash: this.sdk.hash,
+      contentType: js ? 'text/javascript; charset=utf-8' : 'text/plain; charset=utf-8',
+    });
+  }
+
+  private serveBeaconScript(req: PlatformRequest): PipelineResult {
+    const b = this.sdk.beacon;
+    return this.serveScript(req, { body: b.js, etag: `"${b.hash}-b"`, hash: b.hash, contentType: 'text/javascript; charset=utf-8' });
+  }
+
+  /** A platform script: `?v=<hash>` → immutable, otherwise revalidated by ETag. */
+  private serveScript(req: PlatformRequest, s: { body: Buffer; etag: string; hash: string; contentType: string }): PipelineResult {
     const method = req.method.toUpperCase();
     if (method !== 'GET' && method !== 'HEAD') {
       return errorResult(new ModuleError('method_not_allowed', 'Use GET here.', { headers: { Allow: 'GET, HEAD' } }));
     }
-    const js = req.path === SDK_PATH;
-    const etag = `"${this.sdk.hash}${js ? '' : '-d'}"`;
     const v = new URLSearchParams(req.query).get('v');
     const headers: Record<string, string> = {
-      'Content-Type': js ? 'text/javascript; charset=utf-8' : 'text/plain; charset=utf-8',
-      ETag: etag,
-      'Cache-Control': v === this.sdk.hash ? IMMUTABLE_CACHE : REVALIDATE_CACHE,
+      'Content-Type': s.contentType,
+      ETag: s.etag,
+      'Cache-Control': v === s.hash ? IMMUTABLE_CACHE : REVALIDATE_CACHE,
     };
     const inm = req.header('if-none-match');
-    if (inm && inm.split(',').some((t) => t.trim() === etag || t.trim() === `W/${etag}`)) {
+    if (inm && inm.split(',').some((t) => t.trim() === s.etag || t.trim() === `W/${s.etag}`)) {
       return { status: 304, headers, body: null };
     }
-    const body = js ? this.sdk.js : Buffer.from(this.sdk.dts, 'utf8');
-    headers['Content-Length'] = String(body.length);
-    return { status: 200, headers, body: method === 'HEAD' ? null : body };
+    headers['Content-Length'] = String(s.body.length);
+    return { status: 200, headers, body: method === 'HEAD' ? null : s.body };
   }
 
   private async context(
@@ -822,6 +863,7 @@ export async function loadModuleRuntime(opts: LoadRuntimeOptions = {}): Promise<
       config: mailGuardConfigFromEnv(env),
       log,
     }),
+    requestStats: (appId, module, status) => recordModuleRequest(appId, module, status),
     ...opts.deps,
   };
   runtime = new ModuleRuntime({ modules, skills, sdk, deps });

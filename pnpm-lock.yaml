@@ -617,6 +617,9 @@ importers:
       '@drobek/db':
         specifier: workspace:*
         version: link:../db
+      '@drobek/insights':
+        specifier: workspace:*
+        version: link:../insights
       '@drobek/modules':
         specifier: workspace:*
         version: link:../modules
@@ -675,6 +678,9 @@ importers:
       '@drobek/email':
         specifier: workspace:*
         version: link:../email
+      '@drobek/insights':
+        specifier: workspace:*
+        version: link:../insights
       '@drobek/proxy':
         specifier: workspace:*
         version: link:../proxy

@@ -316,6 +316,47 @@ describe('HTTP on the app hosts', () => {
     expect((await rt.handle(req('GET', '/__drobek/other'), app)).status).toBe(404);
   });
 
+  it('/__drobek/beacon.js (M1-07): the minified beacon, immutable with its ?v=, 304 on the ETag', async () => {
+    expect(rt.sdk.beacon.url).toBe(`/__drobek/beacon.js?v=${rt.sdk.beacon.hash}`);
+    const pinned = await rt.handle(req('GET', '/__drobek/beacon.js', { query: `v=${rt.sdk.beacon.hash}` }), app);
+    expect(pinned.status).toBe(200);
+    expect(pinned.headers['Content-Type']).toBe('text/javascript; charset=utf-8');
+    expect(pinned.headers['Cache-Control']).toBe('public, max-age=31536000, immutable');
+    const js = String(pinned.body);
+    expect(js).toContain('/__drobek/v1/_beacon');
+    expect(js).toContain('unhandledrejection');
+    expect(js.length).toBeLessThan(8000);
+    expect((await rt.handle(req('GET', '/__drobek/beacon.js'), app)).headers['Cache-Control']).toBe('public, max-age=0, must-revalidate');
+    const etag = pinned.headers.ETag;
+    expect((await rt.handle(req('GET', '/__drobek/beacon.js', { headers: { 'if-none-match': etag } }), app)).status).toBe(304);
+    expect((await rt.handle(req('POST', '/__drobek/beacon.js'), app)).status).toBe(405);
+  });
+
+  it('counts every response of an ACTIVE module by status (M1-07); never an unknown module or the SDK', async () => {
+    const counted: [string, string, number][] = [];
+    const r = await runtime({ requestStats: (appId, module, status) => void counted.push([appId, module, status]) });
+    await r.handle(req('GET', '/__drobek/v1/echo/items/7'), app);
+    await r.handle(req('GET', '/__drobek/v1/echo/missing'), app);
+    await r.handle(req('PUT', '/__drobek/v1/echo/items/1'), app);
+    await r.handle(req('GET', '/__drobek/v1/echo/boom'), app);
+    await r.handle(req('GET', '/__drobek/v1/nope/x'), app);
+    await r.handle(req('GET', '/__drobek/sdk.js'), app);
+    await r.handle(req('GET', '/__drobek/beacon.js'), app);
+    expect(counted).toEqual([
+      [app.id, 'echo', 200],
+      [app.id, 'echo', 404],
+      [app.id, 'echo', 405],
+      [app.id, 'echo', 500],
+    ]);
+    // a failing counter never affects the response
+    const broken = await runtime({
+      requestStats: () => {
+        throw new Error('stats down');
+      },
+    });
+    expect((await broken.handle(req('GET', '/__drobek/v1/echo/items/7'), app)).status).toBe(200);
+  });
+
   it('an unexpected handler error → 500 internal_error without internals, logged', async () => {
     const log = logger();
     const r = await runtime({ log });

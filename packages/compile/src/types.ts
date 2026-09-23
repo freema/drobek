@@ -61,6 +61,13 @@ export interface CompileOptions {
    * refused. Read by the server from its own disk — never app input.
    */
   sdkSources?: Record<string, string>;
+  /**
+   * The browser error beacon script (M1-07), e.g. `/__drobek/beacon.js?v=…`:
+   * when set, every JS entry starts with `import "<beaconUrl>";` so the app
+   * reports its uncaught errors — unless the app's drobek.json has
+   * `"beacon": false`. Unset = nothing is added.
+   */
+  beaconUrl?: string;
 }
 
 export type SourceFiles = Map<string, string | Buffer>;

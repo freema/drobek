@@ -23,6 +23,7 @@
     "@drobek/compile": "workspace:*",
     "@drobek/core": "workspace:*",
     "@drobek/db": "workspace:*",
+    "@drobek/insights": "workspace:*",
     "@drobek/modules": "workspace:*",
     "@drobek/tenancy": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.19.0",

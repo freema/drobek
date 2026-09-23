@@ -11,6 +11,10 @@
  *   5. the file: built wins over source, TS/JSX sources never served, SPA
  *      fallback for extension-less paths, ETag = sha256 → 304.
  *
+ * BEACON (M1-07): `POST /__drobek/v1/_beacon` goes to `deps.beacon` (core, not
+ * a module — every app reports its browser errors without configuration),
+ * after steps 2 and 3 like a platform path; it is not counted as a request.
+ *
  * PLATFORM paths (M1-01): `/__drobek/*` (except the unlock POST) go to
  * `deps.platform` — the module runtime (SDK, module routes) — AFTER steps 2
  * and 3, so a module route never runs for a missing app or behind a locked
@@ -64,6 +68,12 @@ export interface AppRequest {
 /** Where the platform (module runtime) answers on every app host. */
 export const PLATFORM_PREFIX = '/__drobek/';
 
+/** The browser error beacon on every app host (M1-07; handled by core, not a module). */
+export const BEACON_PATH = '/__drobek/v1/_beacon';
+
+/** Answers the beacon POST for a resolved, visibility-cleared app. */
+export type BeaconHandler = (req: AppRequest, app: ServeApp) => Promise<AppResponse>;
+
 /** Answers a `/__drobek/*` request for a resolved, visibility-cleared app. */
 export type PlatformHandler = (req: AppRequest, ctx: { app: ServeApp; target: AppHostTarget }) => Promise<AppResponse>;
 
@@ -86,6 +96,8 @@ export interface HandlerDeps {
   secureCookies?: boolean;
   /** The module runtime for `/__drobek/*` (absent → those paths are plain 404s). */
   platform?: PlatformHandler;
+  /** The browser error beacon at BEACON_PATH (absent → the path falls to `platform`). */
+  beacon?: BeaconHandler;
 }
 
 const HTML = 'text/html; charset=utf-8';
@@ -131,8 +143,9 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
   const missing = (reason: MissingReason) => page(404, missingPage(reason));
 
   const isUnlock = method === 'POST' && req.path === UNLOCK_PATH;
-  const isPlatform = !isUnlock && deps.platform !== undefined && req.path.startsWith(PLATFORM_PREFIX);
-  if (method !== 'GET' && method !== 'HEAD' && !isUnlock && !isPlatform) {
+  const isBeacon = deps.beacon !== undefined && req.path === BEACON_PATH;
+  const isPlatform = !isUnlock && !isBeacon && deps.platform !== undefined && req.path.startsWith(PLATFORM_PREFIX);
+  if (method !== 'GET' && method !== 'HEAD' && !isUnlock && !isPlatform && !isBeacon) {
     return page(405, errorPage('Method not allowed', 'This address only serves files.'), {
       Allow: 'GET, HEAD',
     });
@@ -142,7 +155,7 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
   const { app, version } = await deps.store.resolve(req.target);
   if (!app) return missing('no-app');
   security = appSecurityHeaders({ noindex, frameAncestors: parseFrameAncestors(app.frameAncestors) });
-  deps.signal?.(app.id, 'request');
+  if (!isBeacon) deps.signal?.(app.id, 'request');
 
   // ── visibility gate ──
   if (isUnlock) return unlock(req, app, deps, page);
@@ -152,13 +165,17 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
       ? verifyAppAccessToken(token, app.id, deps.accessSecret, (deps.now ?? Date.now)())
       : false;
   const locked = decideVisibility({ visibility: app.visibility, hasAppAccess }).action === 'password';
-  if (isPlatform) {
+  if (isPlatform || isBeacon) {
     if (locked) {
       return {
         status: 401,
         headers: { ...security, 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': NO_STORE },
         body: JSON.stringify({ error: 'password_required', message: 'This app is password-protected — unlock it first.' }),
       };
+    }
+    if (isBeacon) {
+      const b = await deps.beacon!(req, app);
+      return { ...b, headers: { ...b.headers, ...security } };
     }
     const r = await deps.platform!(req, { app, target: req.target });
     if (r.status >= 500) deps.signal?.(app.id, '5xx');

@@ -1,7 +1,7 @@
 /**
  * @drobek/mcp — the MCP tool bodies (M0-05, plan §4): list_apps, create_app,
  * get_app, read_file, write_files, restore_version, publish, skill_info,
- * configure_module, query_data. @drobek/oauth keeps the
+ * configure_module, query_data, get_logs. @drobek/oauth keeps the
  * Streamable HTTP transport, sessions and Bearer auth and delegates tool
  * registration here (`registerAppTools`).
  */
@@ -11,13 +11,16 @@ export {
   registerAppTools,
   untrustedDataEnvelope,
   untrustedEnvelope,
+  untrustedLogsEnvelope,
   type AppToolName,
   type RegisterOptions,
 } from './register.js';
 export {
   APP_CHANGED_CHANNEL,
   defaultDeps,
+  insightsLogStore,
   type AppChangedEvent,
+  type LogStore,
   type ToolDeps,
   type ToolPrincipal,
 } from './context.js';

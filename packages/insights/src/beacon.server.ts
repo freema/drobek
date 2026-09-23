@@ -1,12 +1,13 @@
 /**
- * recordBeacon (PHY-123) — the core of the PUBLIC, UNAUTHENTICATED error beacon.
- * The HTTP handler (rest.server.ts) has already enforced the 8 KB size cap; this
- * function owns the rest of the contract:
- *   1. resolve the app (unknown/deleted → not_found, rejected),
- *   2. per-app + per-IP rate-limit (drobek:rl:beacon:*) → rate_limited,
- *   3. sample + SANITIZE each event (drop unknown fields, redact PII/secrets,
+ * recordBeacon (PHY-123, moved to the apps origin in M1-07) — the core of the
+ * PUBLIC, UNAUTHENTICATED error beacon `POST /__drobek/v1/_beacon`. The app
+ * host has already resolved the app (and its password gate) and the HTTP
+ * handler (rest.server.ts) enforced the 8 KiB size cap; this function owns
+ * the rest of the contract:
+ *   1. per-app aggregate + per-app+IP rate-limit (drobek:rl:beacon:*) → rate_limited,
+ *   2. sample + SANITIZE each event (drop unknown fields, redact PII/secrets,
  *      truncate) — see sanitize.ts,
- *   4. insert with a computed dedup_key, then RING-BUFFER prune (cap + age).
+ *   3. insert with a computed dedup_key, then RING-BUFFER prune (cap + age).
  */
 import { rateLimitRedis } from '@drobek/auth';
 import { appErrors, getDb } from '@drobek/db';
@@ -18,7 +19,6 @@ import {
   shouldSample,
   type BeaconLimits,
 } from './limits.js';
-import { resolveLiveApp } from './resolve.server.js';
 import {
   dedupKey,
   MAX_EVENTS_PER_BATCH,
@@ -27,8 +27,8 @@ import {
 } from './sanitize.js';
 
 export interface RecordBeaconInput {
-  wsSlug: string;
-  appSlug: string;
+  /** The app behind the host (resolved by @drobek/serving — never client input). */
+  appId: string;
   /** The parsed JSON body (untrusted: array, {events:[…]}, or a bare event). */
   batch: unknown;
   ip: string;
@@ -48,13 +48,9 @@ export async function recordBeacon(
   const limits = beaconLimitsFromEnv(env);
   const rng = input.rng ?? Math.random;
 
-  // 1. Resolve — unknown/deleted app is rejected (never stored).
-  const { appId } = await resolveLiveApp({
-    wsSlug: input.wsSlug,
-    appSlug: input.appSlug,
-  });
+  const appId = input.appId;
 
-  // 2. Rate-limit on TWO axes:
+  // 1. Rate-limit on TWO axes:
   //   a. per-app + per-IP — the normal per-client cap, AND
   //   b. per-app AGGREGATE (IP-independent) — bounds total ingest for one app
   //      even when an attacker rotates X-Forwarded-For to dodge the per-IP cap.
@@ -79,14 +75,14 @@ export async function recordBeacon(
     throw new InsightsError('rate_limited', 'too many beacons; slow down');
   }
 
-  // 3. Cap the batch, sanitize, sample.
+  // 2. Cap the batch, sanitize, sample.
   const raw = extractEvents(input.batch, MAX_EVENTS_PER_BATCH);
   const events: SanitizedEvent[] = raw
     .map(sanitizeEvent)
     .filter(() => shouldSample(limits.sampleRate, rng()));
   if (events.length === 0) return { stored: 0 };
 
-  // 4. Insert + ring-buffer prune.
+  // 3. Insert + ring-buffer prune.
   await getDb()
     .insert(appErrors)
     .values(

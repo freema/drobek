@@ -6,7 +6,7 @@
  * membership role in the targeted workspace decides what each call may touch.
  *
  *   read    — look: list apps (+ who am I), get an app, read its files, read skills,
- *             query an app's stored data.
+ *             query an app's stored data, read its logs.
  *   write   — change: create apps, write files (new versions), restore,
  *             configure platform modules.
  *   publish — make a version live at its public URL (the `publish` tool, M0-06).
@@ -72,6 +72,7 @@ export const TOOL_SCOPES = {
   read_file: 'read',
   skill_info: 'read',
   query_data: 'read',
+  get_logs: 'read',
   create_app: 'write',
   write_files: 'write',
   restore_version: 'write',

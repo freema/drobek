@@ -1,147 +1,112 @@
 /**
- * The public error-beacon HTTP handler (PHY-123): `POST /:ws/app/:slug/__beacon`.
- * A react-free web `Request`→`Response` core (mirrored by the saas web app with a
- * thin route), so the whole security contract lives here + in @drobek/insights:
+ * The public error-beacon HTTP handler (PHY-123; on the apps origin since
+ * M1-07): `POST /__drobek/v1/_beacon` on every app host. Framework-free — a
+ * plain request description in, a plain response out; @drobek/serving calls it
+ * for the app it resolved from the Host (after the password gate), so the app
+ * is never named by the client.
  *
- *   1. POST only; same-origin (called by the served app's own JS),
- *   2. 8 KB HARD cap enforced BEFORE fully reading/parsing the body — the
- *      Content-Length is a cheap pre-check, the mid-stream byte counter is
- *      authoritative (a chunked over-cap body aborts → 413),
- *   3. parse the JSON batch, then hand to recordBeacon with the client IP
- *      (X-Forwarded-For aware),
- *   4. return 204 fast + no-store. Unknown app → 404, over-cap → 413,
- *      rate-limited → 429.
+ *   1. POST only (405 otherwise);
+ *   2. same-origin only: an `Origin` must be the app host itself (`null` and
+ *      foreign origins → 403), and `Sec-Fetch-Site: cross-site|same-site` → 403
+ *      — another site cannot fill an app's error log from its visitors'
+ *      browsers;
+ *   3. 8 KiB HARD cap: a declared Content-Length over the cap → 413 before a
+ *      byte is read; otherwise the adapter's `readBody` counts the bytes and
+ *      answers 'too_large' past the cap while DRAINING the rest of the body
+ *      (never destroying/cancelling the request stream — see the regression
+ *      test in @drobek/serving node.test.ts: 9 KiB → 413, process alive);
+ *   4. parse the JSON batch → recordBeacon (rate limits, redaction, ring buffer);
+ *   5. 204 fast + no-store. Over-cap → 413, rate-limited → 429, bad JSON → 400.
  */
-import { getClientIp } from '@drobek/auth';
-import { recordBeacon } from './beacon.server.js';
+import { recordBeacon, type RecordBeaconInput, type RecordBeaconResult } from './beacon.server.js';
 import { InsightsError, insightsErrorStatus } from './errors.js';
 import { BEACON_MAX_BYTES } from './limits.js';
 
-export interface BeaconParams {
-  wsSlug: string;
-  appSlug: string;
+/** Where the beacon answers on every app host (core, not a module). */
+export const BEACON_PATH = '/__drobek/v1/_beacon';
+
+export interface BeaconRequest {
+  method: string;
+  header(name: string): string | null;
+  /**
+   * The raw body up to `limit` bytes; 'too_large' past it (the adapter keeps
+   * draining the rest of the body); null when the stream failed.
+   */
+  readBody(limit: number): Promise<Buffer | 'too_large' | null>;
+  clientIp: string | null;
 }
 
-function beaconResponse(status: number): Response {
-  return new Response(null, {
+export interface BeaconResponse {
+  status: number;
+  headers: Record<string, string>;
+  body: null;
+}
+
+export type BeaconRecorder = (input: RecordBeaconInput) => Promise<RecordBeaconResult>;
+
+export interface BeaconOptions {
+  /** Storage seam (tests); default recordBeacon. */
+  record?: BeaconRecorder;
+}
+
+function beaconResponse(status: number, extra: Record<string, string> = {}): BeaconResponse {
+  return {
     status,
-    headers: {
-      'Cache-Control': 'no-store',
-      'X-Content-Type-Options': 'nosniff',
-    },
-  });
+    headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...extra },
+    body: null,
+  };
 }
 
-class PayloadTooLarge extends Error {}
-class RequestAborted extends Error {}
-
-/**
- * Read the body as text with an 8 KB hard cap, DRAINING (not cancelling) an
- * over-cap body.
- *
- * SECURITY — do NOT call `reader.cancel()` on this stream. node-fetch-server
- * builds the request-body ReadableStream (request-listener.js `createRequest`)
- * with NO `cancel` handler and an unconditional
- * `req.on('end', () => controller.close())`. After a `reader.cancel()` closes
- * the controller, the underlying IncomingMessage still emits 'end' and calls
- * `controller.close()` on an already-closed controller → an UNCAUGHT
- * `ERR_INVALID_STATE` TypeError that exits the process. On a PUBLIC,
- * unauthenticated endpoint that is a one-request remote crash of the whole web
- * tier. Instead we DRAIN-and-DISCARD: keep reading to completion (memory stays
- * bounded — we stop accumulating and release the buffer once over cap) so the
- * stream closes naturally, then throw 413. We also bail if the request is
- * aborted (socket close / requestTimeout) so a stalled/endless chunked stream
- * cannot pin the drain loop.
- */
-async function readCappedText(request: Request, cap: number): Promise<string> {
-  const body = request.body;
-  if (!body) {
-    const text = await request.text();
-    if (new TextEncoder().encode(text).byteLength > cap) {
-      throw new PayloadTooLarge();
-    }
-    return text;
-  }
-  const signal = request.signal;
-  const reader = body.getReader();
-  let chunks: Uint8Array[] | null = [];
-  let received = 0;
-  let overCap = false;
+/** Is this POST from the app's own pages? (absent Origin = a non-browser client). */
+export function beaconSameOrigin(origin: string | null, host: string | null, fetchSite: string | null): boolean {
+  const site = fetchSite?.trim().toLowerCase();
+  if (site === 'cross-site' || site === 'same-site') return false;
+  const o = origin?.trim();
+  if (!o) return true;
+  if (o === 'null' || !host) return false;
   try {
-    for (;;) {
-      if (signal?.aborted) throw new RequestAborted();
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (!value) continue;
-      received += value.byteLength;
-      if (overCap) continue; // still draining to let the stream close cleanly
-      if (received > cap) {
-        // Over cap: stop accumulating and free what we buffered (bounded
-        // memory), but keep reading so the stream reaches 'end' and closes.
-        overCap = true;
-        chunks = null;
-        continue;
-      }
-      chunks!.push(value);
-    }
-  } finally {
-    reader.releaseLock();
+    return new URL(o).host.toLowerCase() === host.trim().toLowerCase().replace(/\.(?=:|$)/, '');
+  } catch {
+    return false;
   }
-  if (overCap) throw new PayloadTooLarge();
-  const merged = new Uint8Array(received);
-  let offset = 0;
-  for (const c of chunks!) {
-    merged.set(c, offset);
-    offset += c.byteLength;
-  }
-  return new TextDecoder().decode(merged);
 }
 
+/** Answer one beacon POST for the app `appId` (never throws). */
 export async function handleBeacon(
-  request: Request,
-  params: BeaconParams
-): Promise<Response> {
-  if (request.method !== 'POST') return beaconResponse(405);
-
-  // 2a. Cheap pre-check on the declared length.
-  const declared = Number(request.headers.get('content-length') ?? NaN);
-  if (Number.isFinite(declared) && declared > BEACON_MAX_BYTES) {
-    return beaconResponse(413);
+  req: BeaconRequest,
+  appId: string,
+  opts: BeaconOptions = {}
+): Promise<BeaconResponse> {
+  if (req.method.toUpperCase() !== 'POST') return beaconResponse(405, { Allow: 'POST' });
+  if (!beaconSameOrigin(req.header('origin'), req.header('host'), req.header('sec-fetch-site'))) {
+    return beaconResponse(403);
   }
 
-  // 2b. Authoritative mid-stream cap.
-  let bodyText: string;
+  const declared = Number(req.header('content-length') ?? NaN);
+  if (Number.isFinite(declared) && declared > BEACON_MAX_BYTES) return beaconResponse(413);
+
+  let body: Buffer | 'too_large' | null;
   try {
-    bodyText = await readCappedText(request, BEACON_MAX_BYTES);
-  } catch (err) {
-    if (err instanceof PayloadTooLarge) return beaconResponse(413);
-    // Socket aborted mid-read (client gone / requestTimeout): the response is
-    // moot, but return a benign status rather than throwing.
-    if (err instanceof RequestAborted) return beaconResponse(400);
-    return beaconResponse(400);
+    body = await req.readBody(BEACON_MAX_BYTES);
+  } catch {
+    body = null;
   }
+  if (body === 'too_large') return beaconResponse(413);
+  if (body === null) return beaconResponse(400);
 
   let batch: unknown;
   try {
-    batch = bodyText.trim() === '' ? {} : JSON.parse(bodyText);
+    const text = body.toString('utf8');
+    batch = text.trim() === '' ? {} : JSON.parse(text);
   } catch {
     return beaconResponse(400);
   }
 
-  const ip = getClientIp(request) ?? 'unknown';
-
   try {
-    await recordBeacon({
-      wsSlug: params.wsSlug,
-      appSlug: params.appSlug,
-      batch,
-      ip,
-    });
+    await (opts.record ?? recordBeacon)({ appId, batch, ip: req.clientIp ?? 'unknown' });
     return beaconResponse(204);
   } catch (err) {
-    if (err instanceof InsightsError) {
-      return beaconResponse(insightsErrorStatus(err.code));
-    }
+    if (err instanceof InsightsError) return beaconResponse(insightsErrorStatus(err.code));
     return beaconResponse(500);
   }
 }

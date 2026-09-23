@@ -22,6 +22,13 @@ export const DEFAULT_BEACON_WINDOW_MS = 60_000;
 export const DEFAULT_MAX_EVENTS_PER_APP = 500;
 /** Ring buffer: drop events older than this many days. */
 export const DEFAULT_RETENTION_DAYS = 14;
+/**
+ * get_logs (M1-07): how far back the compile history, the module request
+ * counters and the daily serving signals reach (days). Nothing older is kept.
+ */
+export const LOGS_RETENTION_DAYS = 30;
+/** get_logs (M1-07): compile-history rows kept per app (newest first). */
+export const COMPILE_HISTORY_KEEP = 200;
 /** 1 = store every event; <1 = randomly sample (bounds storage under floods). */
 export const DEFAULT_SAMPLE_RATE = 1;
 

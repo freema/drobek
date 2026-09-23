@@ -13,6 +13,8 @@ const CORE_TABLES = [
   'audit_log',
   'app_errors',
   'app_daily_stats',
+  'app_compiles',
+  'module_request_stats',
 ];
 
 /**

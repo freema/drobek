@@ -12,6 +12,10 @@
       "types": "./src/core.ts",
       "default": "./dist/core.js"
     },
+    "./beacon": {
+      "types": "./src/beacon.ts",
+      "default": "./dist/beacon.js"
+    },
     "./package.json": "./package.json"
   },
   "scripts": {

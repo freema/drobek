@@ -117,6 +117,26 @@ block, then `next` is pushed and the single MR opened.
   `next`/`main` only, concurrency cancel, quality → e2e, main pushes the tested
   image.
 
+- **M1-07 (NSO-290) — `get_logs`.** Core beacon `POST /__drobek/v1/_beacon`
+  on every app host (`@drobek/insights` `handleBeacon`, framework-free, routed
+  by `@drobek/serving` before the module runtime): same-origin only (403),
+  8 KiB cap on the declared length AND the drained stream (413, the process
+  keeps serving), per-app/IP Redis caps, PII redaction, then `app_errors`.
+  The compiler prepends `import "/__drobek/beacon.js?v=<hash>";` to every JS
+  entry (esbuild `banner`; `drobek.json` `"beacon": false` opts out); the
+  script (`@drobek/sdk/beacon`, built by `@drobek/modules` next to `sdk.js`)
+  hooks `error` / `unhandledrejection` and flushes with `sendBeacon` (fetch
+  keepalive fallback). Migration `0014_get_logs`: `app_compiles` (every
+  compile of `create_app` / `write_files`, refused ones
+  with `version: null`; 30 days, newest 200 per app) and
+  `module_request_stats (app_id, module, status_class, day, count)`, upserted
+  by the module runtime for active modules. MCP `get_logs({ app_id, kind:
+  runtime|compile|requests, since? })`: scope `read`, viewer+, ≤ 100 entries
+  (compile ≤ 50), window clamped to 30 days, `{ entries, untrusted: true }`
+  inside an `<untrusted-app-logs … nonce>` envelope. TOOL_DOCS / TOOL_SCOPES /
+  briefing / skill / parity tests updated (11 tools). e2e
+  `tests-e2e/tests/get-logs.spec.ts` written.
+
 ## Next
 
 - M0-09 (NSO-299) is blocked on Tomáš (VPS/DNS): it must provision
@@ -362,6 +382,24 @@ block, then `next` is pushed and the single MR opened.
 - drizzle's migrator tracks a journal entry by its `when`, not a hash: editing
   an unreleased migration never re-runs it on a DB that already applied it —
   recreate the DB (or test the SQL in PGlite) to see the change.
+- The beacon's PII redaction also masks any run of 32+ `[A-Za-z0-9_-]`
+  characters (opaque-token rule): a long app slug in a runtime error's URL or
+  stack comes back as `[redacted]` — e2e apps that assert on the URL use
+  a short name.
+- The runtime beacon is an esbuild `banner` import in front of every JS
+  entry, not part of `sdk.js`: an app need not import `drobek` to report
+  errors, and a plain-HTML app with no JS entry reports nothing.
+  `drobek.json` `"beacon": false` turns it off (a non-boolean is
+  `invalid_config`).
+- Migration `0014_get_logs` was built in parallel with 0013 (files) and 0015
+  (proxy): the journal has idx 14 with no 13 yet, and all three snapshots
+  point `prevId` at 0012 — when merging, re-chain `prevId` and keep the
+  journal `when` values ascending in file order.
+- `get_logs('requests')` flushes the Redis request counters into
+  `app_daily_stats` for each day of the window on read (keys live 31 days);
+  the MCP unit harness passes `flushSignals: false` (no Redis there).
+- `module_request_stats` counting is fire-and-forget after the response:
+  a unit test that reads it right after a request has to poll.
 
 ## Failed approaches
 

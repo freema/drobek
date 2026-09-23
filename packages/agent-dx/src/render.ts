@@ -129,7 +129,7 @@ export function renderLlmsFull(env: NodeJS.ProcessEnv = process.env): string {
       '',
       'The `resource` MUST be exactly the MCP endpoint (else `invalid_target`), and the token is accepted only there (else 401 invalid_token). Check that the `iss` in the authorization response equals the issuer (RFC 9207). Refresh tokens rotate; reuse of an old refresh token burns the lineage.',
       '',
-      'Scopes: read (list_apps, get_app, read_file, skill_info, query_data), write (create_app, write_files, restore_version, configure_module), publish (publish — make a version live on the production URL; call it only when the user explicitly asks). The consent screen offers the requested scopes (read + write when none are requested) and the user may uncheck any; tools/list shows exactly the granted tools.',
+      'Scopes: read (list_apps, get_app, read_file, skill_info, query_data, get_logs), write (create_app, write_files, restore_version, configure_module), publish (publish — make a version live on the production URL; call it only when the user explicitly asks). The consent screen offers the requested scopes (read + write when none are requested) and the user may uncheck any; tools/list shows exactly the granted tools.',
       '',
       'The grant belongs to the USER, not to one workspace: list_apps lists every workspace with your role and the apps across them, and each tool call is authorized against your membership in the app\'s workspace (viewer+ reads, editor+ writes; a workspace or app you cannot reach answers not_found).',
       '',

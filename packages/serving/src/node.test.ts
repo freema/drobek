@@ -6,6 +6,8 @@
  */
 import { request as httpRequest, createServer, type Server } from 'node:http';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { BEACON_PATH as INSIGHTS_BEACON_PATH, handleBeacon, type BeaconRecorder } from '@drobek/insights';
+import { BEACON_PATH } from './handler.js';
 import { createAppsHostMiddleware } from './node.js';
 import { ServeStore, type ServeLoaders } from './store.server.js';
 
@@ -146,5 +148,115 @@ describe('host dispatch', () => {
     });
     // shop is public → the unlock path just redirects home.
     expect(r).toBe(303);
+  });
+});
+
+/**
+ * The browser error beacon on the apps origin (M1-07) over a real socket —
+ * incl. the PHY-76 regression: an over-cap body (9 KiB, declared or chunked)
+ * answers 413 and the process keeps serving (no stream cancel / destroy crash).
+ */
+describe('POST /__drobek/v1/_beacon', () => {
+  let beaconServer: Server;
+  let beaconPort: number;
+  const stored: Parameters<BeaconRecorder>[0][] = [];
+  const record: BeaconRecorder = async (input) => {
+    stored.push(input);
+    return { stored: 1 };
+  };
+
+  beforeAll(async () => {
+    const mw = createAppsHostMiddleware({
+      hosts: { appsDomain: 'apps.localhost:3041', dashboardHost: 'localhost:3041' },
+      store: new ServeStore({ loaders }),
+      deps: {
+        accessSecret: null,
+        allowUnlockAttempt: async () => true,
+        signal: () => {},
+        beacon: (req, app) => handleBeacon(req, app.id, { record }),
+      },
+    });
+    beaconServer = createServer((req, res) => mw(req, res, () => res.end('dashboard')));
+    await new Promise<void>((r) => beaconServer.listen(0, '127.0.0.1', r));
+    beaconPort = (beaconServer.address() as { port: number }).port;
+  });
+  afterAll(async () => {
+    await new Promise<void>((r) => beaconServer.close(() => r()));
+  });
+
+  function post(body: Buffer | string, opts: { chunked?: boolean; headers?: Record<string, string> } = {}): Promise<number> {
+    return new Promise((resolve, reject) => {
+      const buf = Buffer.isBuffer(body) ? body : Buffer.from(body);
+      const headers: Record<string, string> = { Host: 'shop--preview.apps.localhost:3041', 'Content-Type': 'application/json', ...opts.headers };
+      if (!opts.chunked) headers['Content-Length'] = String(buf.length);
+      const req = httpRequest({ host: '127.0.0.1', port: beaconPort, path: BEACON_PATH, method: 'POST', headers, setHost: false }, (res) => {
+        res.resume();
+        res.on('end', () => resolve(res.statusCode ?? 0));
+      });
+      // The server may answer 413 and stop reading before we finish writing.
+      req.on('error', (err: NodeJS.ErrnoException) => (err.code === 'ECONNRESET' || err.code === 'EPIPE' ? resolve(-1) : reject(err)));
+      if (opts.chunked) {
+        for (let i = 0; i < buf.length; i += 1024) req.write(buf.subarray(i, i + 1024));
+        req.end();
+      } else {
+        req.end(buf);
+      }
+    });
+  }
+
+  function getIndex(): Promise<number> {
+    return new Promise((resolve, reject) => {
+      const req = httpRequest(
+        { host: '127.0.0.1', port: beaconPort, path: '/', method: 'GET', headers: { Host: 'shop.apps.localhost:3041' }, setHost: false },
+        (res) => {
+          res.resume();
+          res.on('end', () => resolve(res.statusCode ?? 0));
+        }
+      );
+      req.on('error', reject);
+      req.end();
+    });
+  }
+
+  it('is the same path in serving and insights', () => {
+    expect(BEACON_PATH).toBe(INSIGHTS_BEACON_PATH);
+  });
+
+  it('stores a batch for the app behind the Host (204)', async () => {
+    stored.length = 0;
+    const status = await post(JSON.stringify({ events: [{ type: 'error', message: 'boom' }] }), {
+      headers: { Origin: 'http://shop--preview.apps.localhost:3041' },
+    });
+    expect(status).toBe(204);
+    expect(stored.map((s) => s.appId)).toEqual(['a1']);
+  });
+
+  it('9 KiB declared → 413, 9 KiB chunked → 413, and the process keeps serving', async () => {
+    stored.length = 0;
+    const nine = Buffer.alloc(9 * 1024, 0x78);
+    expect(await post(nine)).toBe(413);
+    expect(await post(nine, { chunked: true })).toBe(413);
+    // Many at once: still no crash, still answering.
+    const burst = await Promise.all(Array.from({ length: 10 }, () => post(nine, { chunked: true })));
+    for (const s of burst) expect([413, -1]).toContain(s);
+    expect(await getIndex()).toBe(200);
+    expect(stored).toEqual([]);
+  });
+
+  it('a cross-origin POST is refused (403); GET is 405; an unknown app is a 404', async () => {
+    expect(await post('{}', { headers: { Origin: 'https://evil.example' } })).toBe(403);
+    const get = await new Promise<number>((resolve, reject) => {
+      const req = httpRequest(
+        { host: '127.0.0.1', port: beaconPort, path: BEACON_PATH, method: 'GET', headers: { Host: 'shop.apps.localhost:3041' }, setHost: false },
+        (res) => {
+          res.resume();
+          res.on('end', () => resolve(res.statusCode ?? 0));
+        }
+      );
+      req.on('error', reject);
+      req.end();
+    });
+    expect(get).toBe(405);
+    expect(await post('{}', { headers: { Host: 'nope-app.apps.localhost:3041' } })).toBe(404);
   });
 });

@@ -69,6 +69,8 @@ export {
   type AppResponse,
   type HandlerDeps,
   PLATFORM_PREFIX,
+  BEACON_PATH,
+  type BeaconHandler,
   type PlatformHandler,
 } from './handler.js';
 export {

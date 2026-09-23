@@ -15,6 +15,11 @@ export interface AppConfig {
    * is the basename.
    */
   entries: Record<string, string>;
+  /**
+   * `"beacon": false` in drobek.json turns the browser error beacon off
+   * (M1-07): the compiler then adds no beacon import. Default true.
+   */
+  beacon: boolean;
 }
 
 function configError(text: string): CompileMessage {
@@ -29,10 +34,10 @@ export function readAppConfig(
   files: Map<string, string>
 ): { config: AppConfig; errors: CompileMessage[] } {
   const errors: CompileMessage[] = [];
-  const config: AppConfig = { imports: {}, entries: {} };
+  const config: AppConfig = { imports: {}, entries: {}, beacon: true };
 
   const raw = files.get(CONFIG_FILE);
-  let parsed: { imports?: unknown; entries?: unknown } = {};
+  let parsed: { imports?: unknown; entries?: unknown; beacon?: unknown } = {};
   if (raw !== undefined) {
     try {
       const v = JSON.parse(raw) as unknown;
@@ -59,6 +64,14 @@ export function readAppConfig(
         }
         config.imports[name] = url;
       }
+    }
+  }
+
+  if (parsed.beacon !== undefined) {
+    if (typeof parsed.beacon !== 'boolean') {
+      errors.push(configError('"beacon" must be true or false (false turns off the browser error reports get_logs shows)'));
+    } else {
+      config.beacon = parsed.beacon;
     }
   }
 

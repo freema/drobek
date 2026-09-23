@@ -49,7 +49,7 @@ function allCombinations(): Scope[][] {
   return out;
 }
 
-const READ_TOOLS = ['list_apps', 'get_app', 'read_file', 'skill_info', 'query_data'];
+const READ_TOOLS = ['list_apps', 'get_app', 'read_file', 'skill_info', 'query_data', 'get_logs'];
 const WRITE_TOOLS = ['create_app', 'write_files', 'restore_version', 'configure_module'];
 const PUBLISH_TOOLS = ['publish'];
 

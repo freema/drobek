@@ -10,7 +10,7 @@
  */
 import { getRedis } from '@drobek/core';
 import { appDailyStats, getDb } from '@drobek/db';
-import { DEFAULT_RETENTION_DAYS } from './limits.js';
+import { LOGS_RETENTION_DAYS } from './limits.js';
 
 export type ServingSignalKind = 'request' | '5xx' | '404';
 
@@ -19,7 +19,9 @@ const MAX_404_KEYS = 200;
 const OTHER_404 = '__other__';
 const MAX_404_PATH_LEN = 256;
 
-const SIGNAL_TTL_SEC = (DEFAULT_RETENTION_DAYS + 1) * 24 * 60 * 60;
+// The hot counters outlive the get_logs window (M1-07) so every day of it can
+// still be flushed into app_daily_stats when it is read.
+const SIGNAL_TTL_SEC = (LOGS_RETENTION_DAYS + 1) * 24 * 60 * 60;
 
 /** UTC calendar day `YYYY-MM-DD` — the per-day bucket key. */
 export function utcDay(d: Date = new Date()): string {

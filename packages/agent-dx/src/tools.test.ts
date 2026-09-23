@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { TOOL_DOCS, TOOL_NAMES, toolDoc } from './tools.js';
 
 describe('TOOL_DOCS manifest', () => {
-  it('documents exactly the 10 tools, in tools/list order', () => {
+  it('documents exactly the 11 tools, in tools/list order', () => {
     expect(TOOL_NAMES).toEqual([
       'list_apps',
       'create_app',
@@ -14,6 +14,7 @@ describe('TOOL_DOCS manifest', () => {
       'skill_info',
       'configure_module',
       'query_data',
+      'get_logs',
     ]);
   });
 
@@ -37,7 +38,7 @@ describe('TOOL_DOCS manifest', () => {
   });
 
   it('annotations follow the real effect (plan §4)', () => {
-    for (const name of ['list_apps', 'get_app', 'read_file', 'skill_info', 'query_data']) {
+    for (const name of ['list_apps', 'get_app', 'read_file', 'skill_info', 'query_data', 'get_logs']) {
       expect(toolDoc(name).annotations.readOnlyHint, name).toBe(true);
     }
     expect(toolDoc('create_app').annotations).toEqual({
@@ -98,6 +99,17 @@ describe('TOOL_DOCS manifest', () => {
     expect(toolDoc('query_data').description).toMatch(/untrusted/);
     expect(toolDoc('query_data').description).toMatch(/at most 100 records/);
     expect(toolDoc('query_data').returns).toContain('untrusted:true');
+  });
+
+  it('get_logs reads runtime / compile / requests and marks the entries untrusted (M1-07)', () => {
+    const doc = toolDoc('get_logs');
+    expect(doc.scope).toMatch(/^read\b/);
+    expect(doc.annotations.readOnlyHint).toBe(true);
+    for (const kind of ['runtime', 'compile', 'requests']) expect(doc.description).toContain(`"${kind}"`);
+    expect(doc.description).toMatch(/last 50 compiles/);
+    expect(doc.description).toMatch(/untrusted/);
+    expect(doc.returns).toContain('untrusted:true');
+    expect(doc.fields.map((f) => f.name)).toEqual(['app_id', 'kind', 'since']);
   });
 
   it('toolDoc throws for an unknown tool', () => {

@@ -45,7 +45,7 @@ describe('MCP tools/list ↔ agent-dx TOOL_DOCS parity', () => {
   it('registers exactly the documented tools, in manifest order', async () => {
     const tools = await listedTools();
     expect(tools.map((t) => t.name)).toEqual(TOOL_NAMES);
-    expect(tools).toHaveLength(10);
+    expect(tools).toHaveLength(11);
   });
 
   it('each tool has the documented title, description, annotations and input fields', async () => {

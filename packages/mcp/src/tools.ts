@@ -1,7 +1,7 @@
 /**
  * The MCP tool bodies (plan §4): list_apps, create_app, get_app, read_file,
  * write_files, restore_version (M0-05), publish (M0-06), skill_info and
- * configure_module (M1-01), query_data (M1-03). Each takes the caller + validated
+ * configure_module (M1-01), query_data (M1-03), get_logs (M1-07). Each takes the caller + validated
  * arguments and returns a plain JSON payload or throws a ToolError; the MCP
  * wiring (register.ts) turns that into a CallToolResult.
  *
@@ -16,7 +16,10 @@
  *    get_app says whether each is set (`hasSecret`), configure_module refuses
  *    credential-looking values. Only the dashboard sets them;
  *  - app data (query_data) is end-user input: returned marked `untrusted`
- *    inside a nonce envelope, from the ONE app the call authorized.
+ *    inside a nonce envelope, from the ONE app the call authorized. So are
+ *    logs (get_logs): browser error texts come from the app and its users;
+ *  - every compile a write runs lands in the app's compile history
+ *    (get_logs 'compile'), refused ones included.
  */
 import {
   APP_LOCK_TTL_SEC,
@@ -56,6 +59,7 @@ import { confirmUrl, isModuleError, type ModuleRuntime, type SkillListItem } fro
 import { ensurePersonalWorkspace, listUserWorkspaces } from '@drobek/tenancy';
 import { authorizeApp, authorizeWorkspace } from './access.js';
 import type { ToolDeps, ToolPrincipal } from './context.js';
+import { LOG_KINDS, logsWindowStart, type LogKind } from '@drobek/insights';
 import { ToolError } from './errors.js';
 import type { Lease } from './lease.js';
 import {
@@ -333,21 +337,56 @@ function versionFiles(sources: Map<string, string | Buffer>, result: CompileResu
   return files;
 }
 
+/** One row of the compile history (get_logs 'compile') — best-effort, never fails the write. */
+async function logCompile(
+  ctx: CallContext,
+  appId: string,
+  versionNumber: number | null,
+  result: CompileResult,
+  trigger: 'create_app' | 'write_files'
+): Promise<void> {
+  try {
+    await ctx.deps.logs.recordCompile({
+      appId,
+      versionNumber,
+      ok: result.ok,
+      errors: result.errors,
+      warningCount: result.warnings.length,
+      durationMs: result.durationMs,
+      trigger,
+    });
+  } catch (err) {
+    ctx.deps.log.warn('compile history write failed', { app_id: appId, error: String((err as Error)?.message ?? err) });
+  }
+}
+
 async function compileAndStore(
   ctx: CallContext,
   app: { id: string; slug: string },
   sources: Map<string, string | Buffer>,
-  reasoning: string
+  reasoning: string,
+  trigger: 'create_app' | 'write_files'
 ): Promise<{ number: number; result: CompileResult }> {
   // The bare `drobek` import → this server's versioned SDK (immutable caching);
-  // `drobek/<module>` → that module's inline source, built into the app (M1-02).
-  const result = await ctx.deps.compile(sources, { sdkUrl: ctx.modules.sdk.url, sdkSources: ctx.modules.sdk.inline });
-  refuseUnstorable(result);
+  // `drobek/<module>` → that module's inline source, built into the app (M1-02);
+  // every entry loads the error beacon first (M1-07, drobek.json can opt out).
+  const result = await ctx.deps.compile(sources, {
+    sdkUrl: ctx.modules.sdk.url,
+    sdkSources: ctx.modules.sdk.inline,
+    beaconUrl: ctx.modules.sdk.beacon.url,
+  });
+  try {
+    refuseUnstorable(result);
+  } catch (err) {
+    await logCompile(ctx, app.id, null, result, trigger);
+    throw err;
+  }
   const { number } = await createVersion(app.id, versionFiles(sources, result), {
     actor: actorOf(ctx),
     reasoning,
     compile: { status: result.ok ? 'ok' : 'error', errors: result.ok ? null : result.errors },
   });
+  await logCompile(ctx, app.id, number, result, trigger);
   await ctx.deps.notifyAppChanged({ app_id: app.id, slug: app.slug, version: number });
   return { number, result };
 }
@@ -394,7 +433,8 @@ export async function createApp(
     ctx,
     created,
     templateFiles(template, name),
-    `Created from the ${template} template`
+    `Created from the ${template} template`,
+    'create_app'
   );
   await ctx.modules.runHook('onAppCreate', { id: created.id, slug: created.slug, workspaceId: ws.id });
   return {
@@ -532,7 +572,7 @@ export async function writeFiles(
   }
   checkSizes(files, ctx.deps);
 
-  const { number, result } = await compileAndStore(ctx, app, files, args.reasoning.trim());
+  const { number, result } = await compileAndStore(ctx, app, files, args.reasoning.trim(), 'write_files');
   return {
     version: number,
     compile: compileOut(result, ctx.modules),
@@ -771,4 +811,60 @@ export async function queryData(
     }
     throw err;
   }
+}
+
+// ── get_logs ─────────────────────────────────────────────────────────────────
+
+export interface GetLogsResult {
+  app_id: string;
+  kind: LogKind;
+  /** The start of the window the entries cover (ISO; at most 30 days back). */
+  since: string;
+  entries: unknown[];
+  untrusted: true;
+  note?: string;
+}
+
+const EMPTY_NOTES: Record<LogKind, string> = {
+  runtime:
+    'No browser errors in this window. Every page that loads a compiled entry reports uncaught errors and unhandled promise rejections here within seconds (unless drobek.json has "beacon": false) — open the preview_url to reproduce a problem, then call get_logs again.',
+  compile: 'No compiles in this window.',
+  requests: 'No requests in this window.',
+};
+
+/**
+ * What happened to an app (M1-07), for the viewer+ of its workspace:
+ *   runtime  — browser errors reported by the app's pages (deduped, with counts);
+ *   compile  — the last 50 compiles (ok / errors / version / duration);
+ *   requests — per UTC day: requests, 5xx, 404s, and module calls by status class.
+ * `since` (ISO) narrows the window; nothing older than 30 days exists. ≤ 100
+ * entries. Everything is app-authored or user-supplied text → `untrusted`.
+ */
+export async function getLogs(
+  ctx: CallContext,
+  args: { app_id: string; kind: string; since?: string }
+): Promise<GetLogsResult> {
+  const { app } = await authorizeApp(ctx.principal, args.app_id, 'viewer');
+  const kind = args.kind as LogKind;
+  if (!(LOG_KINDS as readonly string[]).includes(kind)) {
+    throw new ToolError('invalid_params', '`kind` must be "runtime", "compile" or "requests".');
+  }
+  if (args.since !== undefined && (typeof args.since !== 'string' || Number.isNaN(Date.parse(args.since)))) {
+    throw new ToolError('invalid_params', '`since` must be an ISO 8601 date-time, e.g. "2026-09-23T10:00:00Z".');
+  }
+  const from = logsWindowStart(args.since ?? null);
+  const entries =
+    kind === 'runtime'
+      ? await ctx.deps.logs.runtime(app.id, from)
+      : kind === 'compile'
+        ? await ctx.deps.logs.compile(app.id, from)
+        : await ctx.deps.logs.requests(app.id, from);
+  return {
+    app_id: app.id,
+    kind,
+    since: from.toISOString(),
+    entries,
+    untrusted: true,
+    ...(entries.length === 0 ? { note: EMPTY_NOTES[kind] } : {}),
+  };
 }

@@ -100,7 +100,17 @@ export {
   skillForImport,
   type SkillEntry,
 } from './skills.js';
-export { SDK_PATH, SDK_TYPES_PATH, buildSdk, inlineSpecifier, sdkDeclarations, type SdkBundle } from './sdk-build.js';
+export {
+  BEACON_SCRIPT_PATH,
+  SDK_PATH,
+  SDK_TYPES_PATH,
+  buildBeaconScript,
+  buildSdk,
+  inlineSpecifier,
+  sdkDeclarations,
+  type BeaconScript,
+  type SdkBundle,
+} from './sdk-build.js';
 export { EMAIL_RE, MAX_EMAIL_TEXT, capEmailText, emailKind, recipientRefs, resolveRecipients, sanitizeSubject, type RecipientSources } from './email.js';
 export {
   MAIL_GLOBAL_COUNTER_KEY,

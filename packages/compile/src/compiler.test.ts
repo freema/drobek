@@ -92,6 +92,46 @@ describe('compile — happy path', () => {
     expect(text(r.outputs.get('main.js'))).toContain('from "/__drobek/sdk.js?v=0123456789abcdef"');
   });
 
+  describe('the browser error beacon (M1-07)', () => {
+    const BEACON = '/__drobek/beacon.js?v=00112233aabbccdd';
+
+    it('every JS entry imports the beacon FIRST when a beaconUrl is given', async () => {
+      const r = await compile(
+        app([
+          ['src/admin.tsx', 'console.log("admin");'],
+          [
+            'drobek.json',
+            JSON.stringify({ imports: { react: 'https://esm.sh/react@19', 'react-dom': 'https://esm.sh/react-dom@19' }, entries: ['src/admin.tsx'] }),
+          ],
+        ]),
+        { beaconUrl: BEACON }
+      );
+      expect(r.ok).toBe(true);
+      for (const out of ['main.js', 'admin.js']) {
+        const js = text(r.outputs.get(out));
+        expect(js.startsWith(`import "${BEACON}";`), out).toBe(true);
+      }
+      expect(text(r.outputs.get('main.css'))).not.toContain('beacon');
+    });
+
+    it('no beaconUrl → nothing added; drobek.json "beacon": false → nothing added', async () => {
+      expect(text((await compile(app())).outputs.get('main.js'))).not.toContain('beacon.js');
+      const off = await compile(
+        app([['drobek.json', JSON.stringify({ imports: { react: 'https://esm.sh/react@19', 'react-dom': 'https://esm.sh/react-dom@19' }, beacon: false })]]),
+        { beaconUrl: BEACON }
+      );
+      expect(off.ok).toBe(true);
+      expect(text(off.outputs.get('main.js'))).not.toContain('beacon.js');
+    });
+
+    it('"beacon" must be a boolean', async () => {
+      const r = await compile(app([['drobek.json', JSON.stringify({ beacon: 'no' })]]), { beaconUrl: BEACON });
+      expect(r.ok).toBe(false);
+      expect(r.errors[0]).toMatchObject({ code: 'invalid_config', file: 'drobek.json' });
+      expect(r.errors[0].text).toContain('"beacon" must be true or false');
+    });
+  });
+
   describe('drobek/<module> platform sources (M1-02)', () => {
     const GATE = [
       "import { useState } from 'react';",

@@ -185,7 +185,7 @@ export class Compiler {
 
   private async build(
     files: Map<string, string | Buffer>,
-    config: { imports: Record<string, string>; entries: Record<string, string> },
+    config: { imports: Record<string, string>; entries: Record<string, string>; beacon?: boolean },
     opts: CompileOptions,
     hooks: CompileHooks,
     started: number
@@ -223,6 +223,8 @@ export class Compiler {
       tsconfigRaw: '{}',
       logLevel: 'silent',
       plugins: [virtualFsPlugin(state)],
+      // M1-07: every entry loads the error beacon first (ES imports run in order).
+      ...(opts.beaconUrl && config.beacon !== false ? { banner: { js: `import ${JSON.stringify(opts.beaconUrl)};` } } : {}),
     });
 
     let timer: NodeJS.Timeout | undefined;

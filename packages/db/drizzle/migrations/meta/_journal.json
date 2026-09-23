@@ -92,6 +92,13 @@
       "when": 1790175801064,
       "tag": "0012_data_module_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1790192202963,
+      "tag": "0014_get_logs",
+      "breakpoints": true
     }
   ]
 }

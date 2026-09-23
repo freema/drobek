@@ -27,6 +27,7 @@
     "@drobek/core": "workspace:*",
     "@drobek/db": "workspace:*",
     "@drobek/email": "workspace:*",
+    "@drobek/insights": "workspace:*",
     "@drobek/proxy": "workspace:*",
     "@drobek/sdk": "workspace:*",
     "drizzle-orm": "^0.41.0",

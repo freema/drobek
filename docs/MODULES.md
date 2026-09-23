@@ -205,6 +205,14 @@ Both are served on every app host (never on the dashboard origin):
 Changing `DROBEK_MODULES` changes the hash; apps pick up the new SDK on their
 next compile.
 
+Two core paths sit next to the modules and are never a module name: the error
+beacon script `/__drobek/beacon.js?v=<hash>` (same caching as `sdk.js`; the
+compiler imports it in front of every entry unless `drobek.json` has
+`"beacon": false`) and the beacon endpoint `POST /__drobek/v1/_beacon`
+(handled by core, 8 KiB cap). Every call to an active module's routes is
+counted per day and status class (`2xx`..`5xx`) in `module_request_stats`;
+`get_logs({ kind: "requests" })` reads it.
+
 #### Inline sources: `import … from 'drobek/<name>'`
 
 Some SDK code must share the app's own libraries, e.g. a React component that

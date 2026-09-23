@@ -5,11 +5,14 @@
  *
  *  - a PUBLIC error beacon (recordBeacon / handleBeacon) that ingests untrusted
  *    window.onerror + unhandledrejection events, size-capped + rate-limited +
- *    PII/secret-sanitized + ring-buffer-retained,
+ *    PII/secret-sanitized + ring-buffer-retained — since M1-07 at
+ *    `POST /__drobek/v1/_beacon` on every app host (@drobek/serving routes it),
  *  - cheap serving signals (incrementServingSignal) tallied on the U7 serving
  *    path — request volume / 5xx / 404-by-path,
- *  - read models (queryAppErrors / queryAppLogs) surfaced to the agent via the
- *    app_errors + app_logs MCP tools and to the dashboard Overview panels.
+ *  - read models (queryAppErrors / queryAppLogs) for the dashboard Overview
+ *    panels, and the get_logs side (M1-07): the compile history
+ *    (recordCompile), module request counters (recordModuleRequest) and the
+ *    three get_logs kinds (queryRuntimeLog / queryCompileLog / queryRequestLog).
  *
  * Depends only on @drobek/auth (rate-limit + client IP), @drobek/core (Redis)
  * and @drobek/db so @drobek/serving can import the signal hook with no cycle.
@@ -27,6 +30,8 @@ export {
   DEFAULT_MAX_EVENTS_PER_APP,
   DEFAULT_RETENTION_DAYS,
   DEFAULT_SAMPLE_RATE,
+  COMPILE_HISTORY_KEEP,
+  LOGS_RETENTION_DAYS,
   beaconLimitsFromEnv,
   beaconSizeVerdict,
   extractEvents,
@@ -78,4 +83,46 @@ export {
   queryAppLogsByLocator,
   type InsightsLocator,
 } from './query.server.js';
-export { handleBeacon, type BeaconParams } from './rest.server.js';
+export {
+  BEACON_PATH,
+  beaconSameOrigin,
+  handleBeacon,
+  type BeaconOptions,
+  type BeaconRecorder,
+  type BeaconRequest,
+  type BeaconResponse,
+} from './rest.server.js';
+export {
+  COMPILE_ERRORS_KEEP,
+  COMPILE_LOG_LIMIT,
+  LOG_ENTRIES_MAX,
+  LOG_KINDS,
+  STATUS_CLASSES,
+  capCompileErrors,
+  compileEntries,
+  daysBetween,
+  requestEntries,
+  runtimeEntries,
+  stackHead,
+  statusClass,
+  type CompileEntry,
+  type CompileRow,
+  type DailyRow,
+  type LogKind,
+  type ModuleCounts,
+  type ModuleStatRow,
+  type RequestsEntry,
+  type RuntimeEntry,
+  type StatusClass,
+  type StoredCompileError,
+} from './logs.js';
+export {
+  logsWindowStart,
+  queryCompileLog,
+  queryRequestLog,
+  queryRuntimeLog,
+  recordCompile,
+  recordModuleRequest,
+  type RecordCompileInput,
+  type RequestLogOptions,
+} from './logs.server.js';

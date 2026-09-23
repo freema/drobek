@@ -3,7 +3,8 @@
  *
  * Identity + tenancy + apps and their immutable versions (M0-02, NSO-281),
  * plus the tables each later unit added (oauth_*, upstreams, audit_log,
- * app_errors, app_daily_stats, module_configs, module_secrets). Platform
+ * app_errors, app_daily_stats, app_compiles, module_request_stats,
+ * module_configs, module_secrets). Platform
  * modules own their tables (`mod_<name>_*`, their own migration journals).
  *
  * Hard constraints encoded here:
@@ -460,6 +461,54 @@ export const appDailyStats = pgTable(
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.appId, t.day] })]
+);
+
+// ── get_logs (M1-07, NSO-290) — compile history + module request stats ────────
+//
+// `app_compiles` is a per-app history of every compile a write ran (create_app,
+// write_files — ok, failed or refused), newest kept: 30 days / the last 200
+// rows per app, pruned by @drobek/insights on insert. `module_request_stats`
+// counts the responses of `/__drobek/v1/<module>/…` per app, module, status
+// class (2xx…5xx) and UTC day, upserted by the module runtime; kept 30 days.
+// Both are read by the MCP `get_logs` tool (compile / requests).
+
+export const appCompiles = pgTable(
+  'app_compiles',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    appId: text('app_id')
+      .notNull()
+      .references(() => apps.id, { onDelete: 'cascade' }),
+    /** The version the compile produced; null when the write was refused (nothing stored). */
+    versionNumber: integer('version_number'),
+    ok: boolean('ok').notNull(),
+    /** `[{ code, file, line, column, text }]` — capped by @drobek/insights. */
+    errors: jsonb('errors').$type<unknown[]>().notNull().default([]),
+    warningCount: integer('warning_count').notNull().default(0),
+    durationMs: integer('duration_ms').notNull().default(0),
+    /** `create_app` | `write_files`. */
+    trigger: text('trigger').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (t) => [index('app_compiles_app_created_idx').on(t.appId, t.createdAt)]
+);
+
+export const moduleRequestStats = pgTable(
+  'module_request_stats',
+  {
+    appId: text('app_id')
+      .notNull()
+      .references(() => apps.id, { onDelete: 'cascade' }),
+    module: text('module').notNull(),
+    /** `2xx` | `3xx` | `4xx` | `5xx`. */
+    statusClass: text('status_class').notNull(),
+    /** UTC `YYYY-MM-DD`. */
+    day: text('day').notNull(),
+    count: integer('count').notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.appId, t.module, t.statusClass, t.day] })]
 );
 
 // ── BFF proxy v1 — authed-member gateway to a backend (PHY-59, U12 slice) ──────

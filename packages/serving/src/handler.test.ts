@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { AppHostTarget } from '@drobek/apps';
 import { APP_CSP, appCsp } from './csp.js';
-import { handleAppRequest, type AppRequest, type HandlerDeps } from './handler.js';
+import { BEACON_PATH, handleAppRequest, type AppRequest, type HandlerDeps } from './handler.js';
 import type { StoredFile } from './manifest.js';
 import { UNLOCK_PATH } from './pages.js';
 import { APP_ACCESS_COOKIE, hashAppPassword, mintAppAccessToken } from './password.js';
@@ -505,5 +505,54 @@ describe('platform paths (/__drobek/*, M1-01)', () => {
     expect(seen).toEqual([]);
     expect((await handleAppRequest(req(prod('shop'), '/__drobek/v1/hello', { method: 'POST' }), deps)).status).toBe(405);
     expect((await handleAppRequest(req(prod('shop'), '/__drobek/sdk.js'), deps)).status).toBe(404);
+  });
+});
+
+describe('the browser error beacon (/__drobek/v1/_beacon, M1-07)', () => {
+  function withBeacon(): { d: HandlerDeps; beacons: string[]; platform: string[]; signals: string[] } {
+    const beacons: string[] = [];
+    const platform: string[] = [];
+    const signals: string[] = [];
+    const d: HandlerDeps = {
+      ...deps,
+      signal: (appId, kind) => signals.push(`${appId}:${kind}`),
+      platform: async (r) => {
+        platform.push(r.path);
+        return { status: 200, headers: {}, body: '{}' };
+      },
+      beacon: async (_r, app) => {
+        beacons.push(app.id);
+        return { status: 204, headers: { 'Cache-Control': 'no-store', 'Content-Security-Policy': 'bogus' }, body: null };
+      },
+    };
+    return { d, beacons, platform, signals };
+  }
+
+  it('goes to core (never to a module) for the app behind the host; not counted as a request', async () => {
+    const { d, beacons, platform, signals } = withBeacon();
+    const r = await handleAppRequest(req(preview('shop'), BEACON_PATH, { method: 'POST', body: '{}' }), d);
+    expect(r.status).toBe(204);
+    expect(r.headers['Content-Security-Policy']).not.toBe('bogus');
+    expect(beacons).toEqual(['app_shop']);
+    expect(platform).toEqual([]);
+    expect(signals).toEqual([]);
+    // an app with no compiled version still reports (the page may be a cached one)
+    expect((await handleAppRequest(req(prod('draft'), BEACON_PATH, { method: 'POST', body: '{}' }), d)).status).toBe(204);
+  });
+
+  it('a missing app → 404; a locked app → JSON 401 password_required (never stored)', async () => {
+    const { d, beacons } = withBeacon();
+    expect((await handleAppRequest(req(prod('nope'), BEACON_PATH, { method: 'POST' }), d)).status).toBe(404);
+    const locked = await handleAppRequest(req(prod('vault'), BEACON_PATH, { method: 'POST', body: '{}' }), d);
+    expect(locked.status).toBe(401);
+    expect(JSON.parse(text(locked.body))).toMatchObject({ error: 'password_required' });
+    expect(beacons).toEqual([]);
+    const token = mintAppAccessToken('app_vault', SECRET);
+    const open = await handleAppRequest(
+      req(prod('vault'), BEACON_PATH, { method: 'POST', body: '{}', headers: { Cookie: `${APP_ACCESS_COOKIE}=${token}` } }),
+      d
+    );
+    expect(open.status).toBe(204);
+    expect(beacons).toEqual(['app_vault']);
   });
 });

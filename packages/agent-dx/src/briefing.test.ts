@@ -35,6 +35,11 @@ describe('renderBriefing', () => {
     expect(b).toContain('Never publish on your own initiative');
   });
 
+  it('points at get_logs for runtime errors and names the beacon opt-out (M1-07)', () => {
+    expect(b).toContain('get_logs({ app_id, kind: "runtime" })');
+    expect(b).toContain('"beacon": false');
+  });
+
   it('explains the hosts, what is (not) served and the CSP', () => {
     expect(b).toContain('## Hosts');
     expect(b).toContain('<slug>--preview.<APPS_DOMAIN>');

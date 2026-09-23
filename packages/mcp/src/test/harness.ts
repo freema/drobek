@@ -14,6 +14,7 @@ import { Compiler, type CompileLimits } from '@drobek/compile';
 import { noopLogger } from '@drobek/core';
 import { loadModuleRuntime, memoryRateLimiter, type ModuleRuntime } from '@drobek/modules';
 import type { AppChangedEvent, ToolDeps, ToolPrincipal } from '../context.js';
+import { insightsLogStore } from '../context.js';
 import { memoryLeaseStore } from '../lease.js';
 import { registerAppTools } from '../register.js';
 import { greet } from './modules.js';
@@ -80,6 +81,8 @@ export function testDeps(limits: Partial<CompileLimits> = {}): TestDeps {
     env: { APPS_DOMAIN: 'drobek.app' },
     log: noopLogger,
     modules: testModules,
+    // Postgres (PGlite) only — no Redis for the daily serving counters.
+    logs: insightsLogStore({ flushSignals: false }),
     events,
     clock,
   };
