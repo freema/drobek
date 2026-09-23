@@ -201,7 +201,7 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     code: 'unavailable',
     surface: 'module route 503 (DrobekError)',
     meaning:
-      'A service the module depends on is down or not configured on this server — e.g. module e-mail is paused because the server-wide hourly cap was reached (`details.reason: email_paused`, Retry-After), the server runs no `email` module, or it has no DROBEK_MASTER_KEY (forms).',
+      'A service the module depends on is down or not configured on this server — e.g. module e-mail is paused because the server-wide hourly budget of its class (notifications or sign-in codes, `details.class`) or the per-app hourly share of notifications (`details.limit: EMAIL_APP_HOURLY_SHARE`) was used up (`details.reason: email_paused`, Retry-After), the server runs no `email` module, or it has no DROBEK_MASTER_KEY (forms).',
     fix: 'Show the user a message and retry later; tell the app owner if it persists.',
   },
   {

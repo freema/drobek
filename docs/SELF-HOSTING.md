@@ -70,9 +70,14 @@ access modes → rules, live documents → records) and drops the old
 `collections` / `app_documents` tables in its first migration — back up the
 database first. An app's preview and production hosts share its records. Module
 e-mail uses the same SMTP settings as the dashboard login and is capped
-server-wide by `EMAIL_GLOBAL_HOURLY_MAX` (default 500 recipients per hour):
-past it, module e-mail pauses for `EMAIL_GLOBAL_PAUSE_MINUTES` and the log
-gets an `email_global_pause` ALERT line — alert on it. The contract and the
+server-wide by `EMAIL_GLOBAL_HOURLY_MAX` (default 500 recipients per hour).
+End users' sign-in codes get a reserved part of it, `EMAIL_SIGNIN_HOURLY_MAX`
+(default 20 % of the cap, at least 50, at most half — 100 of 500);
+notifications (forms, `notifyAdmins`) get the rest, and one app at most
+`EMAIL_APP_HOURLY_SHARE` percent of that (default 25). Past its budget a
+class pauses for `EMAIL_GLOBAL_PAUSE_MINUTES` — notifications pausing never
+blocks sign-in — and the log gets an `email_global_pause` ALERT line (with
+`class`) — alert on it. The contract and the
 provider protocol are in [`MODULES.md`](./MODULES.md).
 
 Volumes: `postgres_data`, `redis_data`, `caddy_data` (ACME account, issued

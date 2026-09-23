@@ -113,14 +113,20 @@ export {
 } from './sdk-build.js';
 export { EMAIL_RE, MAX_EMAIL_TEXT, capEmailText, emailKind, recipientRefs, resolveRecipients, sanitizeSubject, type RecipientSources } from './email.js';
 export {
-  MAIL_GLOBAL_COUNTER_KEY,
-  MAIL_PAUSE_KEY,
+  MAIL_COUNTER_KEYS,
+  MAIL_PAUSE_KEYS,
+  mailAppCounterKey,
+  mailBudgets,
   mailGuardConfigFromEnv,
   memoryMailGuard,
+  memoryMailGuardRedis,
   redisMailGuard,
+  type MailBudgets,
+  type MailClass,
   type MailGuard,
   type MailGuardConfig,
   type MailGuardMeta,
+  type MailGuardRedis,
 } from './mail-guard.js';
 export { multipartBoundary, parseMultipart } from './multipart.js';
 export { SDK_HEADER, DEFAULT_MAX_BODY_BYTES, type PipelineRequest, type PipelineResult } from './router.js';

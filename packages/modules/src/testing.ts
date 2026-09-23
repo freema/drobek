@@ -20,6 +20,7 @@ import { collectRoutes, errorResult, matchRoute, runRoute, type PipelineResult }
 import { decideAccess } from './rules.js';
 import { ModuleError } from './errors.js';
 import { capEmailText, emailKind, resolveRecipients, sanitizeSubject } from './email.js';
+import type { MailGuard } from './mail-guard.js';
 import { memoryRateLimiter } from './runtime.js';
 
 export interface ModuleTestOptions {
@@ -38,6 +39,12 @@ export interface ModuleTestOptions {
   now?: () => number;
   /** The app owners' addresses (`{ appOwners: true }` recipients; default none). */
   owners?: string[];
+  /**
+   * The operator-wide e-mail guard core runs around every `ctx.email.send`
+   * (e.g. `memoryMailGuard(...)`): pass one to test how the module behaves
+   * while module e-mail is paused. Default: no guard.
+   */
+  mailGuard?: MailGuard;
 }
 
 export interface TestRequestInit {
@@ -130,6 +137,8 @@ export function createModuleTestContext(module: AnyModule, opts: ModuleTestOptio
         const kind = emailKind(message.to);
         const to = await resolveRecipients(message.to, { principal, config, owners: async () => opts.owners ?? [] });
         if (to.length === 0) return { sent: 0 };
+        const guardMeta = { app_id: app.id, module: module.name, kind };
+        await opts.mailGuard?.assertOpen(guardMeta);
         let envelope: MailEnvelope = {};
         if (module.mail) {
           envelope = await module.mail.prepare({
@@ -143,6 +152,7 @@ export function createModuleTestContext(module: AnyModule, opts: ModuleTestOptio
             log: opts.log ?? noopLogger,
           });
         }
+        await opts.mailGuard?.admit(to.length, guardMeta);
         emails.push({ to, subject: sanitizeSubject(message.subject), text: capEmailText(message.text), kind, ...envelope });
         return { sent: to.length };
       },

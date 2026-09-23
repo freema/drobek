@@ -426,8 +426,10 @@ export interface ModuleContext<Config = unknown> extends ModuleServices {
     /**
      * Send to allowed recipients only (never an arbitrary address). Resolves
      * `{ sent }` (0 when no address resolved). Rejects with a ModuleError:
-     * `limit_exceeded` (the app's e-mail limits), `unavailable` (e-mail is
-     * paused by the operator-wide hourly cap, or no mail module is active).
+     * `limit_exceeded` (the app's e-mail limits), `unavailable` (e-mail of
+     * this class — sign-in codes or notifications — is paused by the
+     * operator-wide hourly budget, the app used its hourly share of
+     * notifications, or no mail module is active).
      */
     send(message: EmailMessage): Promise<{ sent: number }>;
   };

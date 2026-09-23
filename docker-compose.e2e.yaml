@@ -110,6 +110,8 @@ services:
       EMAIL_NOTIFY_ADMINS_PER_DAY: '20'
       EMAIL_GLOBAL_HOURLY_MAX: '1000'
       EMAIL_GLOBAL_PAUSE_MINUTES: '15'
+      EMAIL_SIGNIN_HOURLY_MAX: '200'
+      EMAIL_APP_HOURLY_SHARE: '25'
       FORMS_SUBMITS_PER_IP_HOUR: '10'
       FORMS_PER_APP_PER_DAY: '200'
       # Google OIDC → the mock the auth-google spec spawns on the host (:3049).

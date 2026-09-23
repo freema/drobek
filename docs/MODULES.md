@@ -251,16 +251,34 @@ Every `ctx.email.send` of every module goes through one path in core:
 
 1. resolve the recipients (above); nobody → `{ sent: 0 }`;
 2. the **operator-wide hourly cap** (`EMAIL_GLOBAL_HOURLY_MAX`, default 500
-   recipients per rolling hour across all apps and modules, sign-in codes
-   included; Redis `drobek:rl:mail:global`). Past it, module e-mail **pauses**
-   for `EMAIL_GLOBAL_PAUSE_MINUTES` (default 15, key `drobek:mail:paused`) and
-   the server logs one line for the super admin: `level: error`, `message:
-   "ALERT: module e-mail paused — …"`, `event: email_global_pause`, `alert:
-   true`, `audience: super_admin` (with the app and module that tripped it).
-   While paused, every send is refused with `503 unavailable` (`details.reason:
-   email_paused`, `Retry-After`); deleting the pause key resumes early. The cap
-   is not overridable by the limits provider, and a Redis error refuses the
-   send (fail closed);
+   recipients per hour across all apps and modules), split into two
+   **classes** so a flood of notifications never locks end users out. A
+   module does not choose its class: a message to `{ signInAddress }` (the
+   auth module's code) is `sign_in`, anything else is `notification`.
+   - `sign_in` gets a reserved share, `EMAIL_SIGNIN_HOURLY_MAX` (default
+     `min(max(50, ⌈20 % × cap⌉), ⌊cap / 2⌋)` — 100 of 500; an explicit value
+     is capped at cap − 1);
+   - `notification` gets the rest (cap − sign-in, 400 of 500), and ONE app
+     at most `EMAIL_APP_HOURLY_SHARE` percent of it (default 25 → 100 of
+     400).
+
+   Past a class budget (Redis `drobek:rl:mail:<class>`), THAT class
+   **pauses** for `EMAIL_GLOBAL_PAUSE_MINUTES` (default 15, key
+   `drobek:mail:paused:<class>`) and the server logs one line for the super
+   admin: `level: error`, `message: "ALERT: module e-mail paused — …"`,
+   `event: email_global_pause`, `alert: true`, `audience: super_admin`,
+   `max` (the global cap), `class`, `class_max` (with the app and module
+   that tripped it). While paused, every send of that class is refused with
+   `503 unavailable` (`details.reason: email_paused`, `details.class`,
+   `Retry-After`); the other class keeps going — form notifications and
+   `notifyAdmins` pausing never stops sign-in codes. Deleting the pause key
+   resumes early. An app past its share (`drobek:rl:mail:app:<app_id>`) gets
+   the same `503` with `details.limit: EMAIL_APP_HOURLY_SHARE` and `value`
+   until its hour ends — other apps continue, nothing pauses server-wide
+   (a `warn` line, `event: email_app_share_exceeded`). The budgets are not
+   overridable by the limits provider, and a Redis error refuses the send
+   (fail closed). `createModuleTestContext({ mailGuard: memoryMailGuard(…) })`
+   runs the same guard in a module's tests;
 3. the **mail authority**: the one enabled module that declares `mail` (the
    built-in `email`) runs `mail.prepare({ app, module, kind, recipients,
    config, limits, rateLimit, log })` with ITS config for the app. It applies

@@ -19,6 +19,7 @@ import {
   endUserSessionKey,
   isDefinedModule,
   loadModules,
+  memoryMailGuard,
   revokeEndUserSessions,
 } from '@drobek/modules';
 import { createModuleTestContext, type ModuleTestContext } from '@drobek/modules/testing';
@@ -197,6 +198,33 @@ describe('drobek-module-auth — sign-in', () => {
     expect(res.body).toMatchObject({ error: 'email_not_allowed', hint: "skill_info('auth')" });
     expect(t.emails).toEqual([]);
     expect([...fake.store.keys()].some((k) => k.includes(':code:'))).toBe(false);
+  });
+
+  it('notifications paused server-wide: codes still go out; the sign-in budget used up → 503 email_paused, the cooldown released', async () => {
+    // G = 4: sign-in codes 2, notifications 2 — which another app has used up (paused).
+    const guard = memoryMailGuard({ hourlyMax: 4, pauseMinutes: 15, appSharePercent: 100 }, noopLogger);
+    const forms = { app_id: 'app_other', module: 'forms', kind: 'notification' as const };
+    await guard.admit(2, forms);
+    await expect(guard.admit(1, forms)).rejects.toMatchObject({ details: { reason: 'email_paused', class: 'notification' } });
+    await expect(guard.assertOpen(forms)).rejects.toMatchObject({ status: 503 });
+
+    const t = createModuleTestContext(auth, { db, app: APP(), config: CONFIG, origin: `http://${HOST}`, mailGuard: guard });
+    for (const email of ['ana@example.com', 'jan@firma.cz']) {
+      const sent = await t.request('POST', '/send-code', { body: { email }, headers: { host: HOST } });
+      expect(sent.status, JSON.stringify(sent.body)).toBe(200);
+    }
+    expect(t.emails.map((m) => [m.to, m.kind])).toEqual([
+      [['ana@example.com'], 'sign_in'],
+      [['jan@firma.cz'], 'sign_in'],
+    ]);
+    // The sign-in budget (2) is used up too: the pause is passed on as it is.
+    const refused = await t.request('POST', '/send-code', { body: { email: 'eva@firma.cz' }, headers: { host: HOST } });
+    expect(refused.status).toBe(503);
+    expect(refused.body).toMatchObject({ error: 'unavailable', details: { reason: 'email_paused', class: 'sign_in' } });
+    expect(refused.headers['Retry-After']).toBe('900');
+    expect(t.emails).toHaveLength(2);
+    // Nothing went out: the per-address cooldown is released for a retry.
+    expect(await fake.get(`drobek:otp:eu:${appId}:cd:${emailHash('eva@firma.cz')}`)).toBeNull();
   });
 
   it('an allowed e-mail gets a code (scoped key, safe subject) → verify → session cookie + user → me', async () => {

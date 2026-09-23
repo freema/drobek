@@ -29,6 +29,7 @@ import { getRedis } from '@drobek/core';
 import {
   END_USER_SESSION_TTL_SEC,
   ModuleError,
+  isModuleError,
   createEndUserSession,
   destroyEndUserSession,
   endUserCookieHeader,
@@ -196,6 +197,9 @@ export function registerRoutes(r: ModuleRouter<AuthConfig>): void {
       if (out.sent !== 1) throw new Error('the address was not accepted');
     } catch (err) {
       await releaseOtpCooldown(email, scope);
+      // The server's sign-in e-mail budget is used up (NSO-320): pass the
+      // pause on as it is (details.reason email_paused + Retry-After).
+      if (isModuleError(err) && (err.details as { reason?: unknown } | undefined)?.reason === 'email_paused') throw err;
       ctx.log.error('auth: sign-in e-mail failed', { app_id: ctx.app.id, email: maskEmail(email), error: String((err as Error)?.message ?? err) });
       throw new ModuleError('unavailable', 'The sign-in e-mail could not be sent. Try again in a moment.');
     }

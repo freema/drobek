@@ -18,7 +18,7 @@ import { z } from 'zod';
 import { defineModule, type AnyModule } from './contract.js';
 import { cookiePrincipalResolver, createEndUserSession, loadEndUserSession } from './principal.js';
 import { ModuleRuntime, loadModuleRuntime, memoryRateLimiter, type PlatformRequest, type RuntimeDeps, type TransportMessage } from './runtime.js';
-import { memoryMailGuard } from './mail-guard.js';
+import { memoryMailGuard, type MailGuard, type MailGuardConfig } from './mail-guard.js';
 import { setModuleSecret } from './secrets.server.js';
 import { freshDb, type TestDb } from './test/db.js';
 import { echo, quiet } from './test/fixtures.js';
@@ -501,11 +501,22 @@ describe('module e-mail (ctx.email.send through the runtime)', () => {
     },
   });
 
-  async function setup(modules: AnyModule[], hourlyMax = 1000, fail?: (m: TransportMessage) => boolean) {
+  async function setup(
+    modules: AnyModule[],
+    opts: {
+      /** The mail guard's config (default hourlyMax 1000). */
+      guard?: Partial<MailGuardConfig>;
+      /** A guard built by the test (shares its counters with it). */
+      mailGuard?: (l: ReturnType<typeof logger>) => MailGuard;
+      fail?: (m: TransportMessage) => boolean;
+      env?: Record<string, string>;
+    } = {}
+  ) {
+    const { fail } = opts;
     const sent: TransportMessage[] = [];
     const l = logger();
     const r = await loadModuleRuntime({
-      env: ENV,
+      env: { ...ENV, ...opts.env },
       log: l,
       modules,
       skillsDir: null,
@@ -518,7 +529,7 @@ describe('module e-mail (ctx.email.send through the runtime)', () => {
             sent.push(m);
           },
         },
-        mailGuard: memoryMailGuard({ hourlyMax, pauseMinutes: 15 }, l),
+        mailGuard: opts.mailGuard?.(l) ?? memoryMailGuard({ hourlyMax: 1000, pauseMinutes: 15, ...opts.guard }, l),
       },
     });
     const send = async (to: unknown) =>
@@ -572,24 +583,53 @@ describe('module e-mail (ctx.email.send through the runtime)', () => {
     expect(sent.map((m) => m.to)).toEqual(['ana@example.com']);
   });
 
-  it('the global hourly cap covers every module message: auto-pause + the super-admin ALERT line', async () => {
-    const { send, sent, log } = await setup([sender, mailer], 1);
-    expect((await send({ signInAddress: 'a@example.com' })).status).toBe(200);
-    const over = await send({ signInAddress: 'b@example.com' });
+  it('notifications past their hourly budget pause (503 email_paused + the super-admin ALERT line); sign-in codes keep going to their own limit', async () => {
+    // G = 4: sign-in codes 2, notifications 2 (one app may use them all) — one
+    // of them already sent by another app.
+    let guard: MailGuard | undefined;
+    const { send, sent, log } = await setup([sender, mailer], {
+      mailGuard: (l) => (guard = memoryMailGuard({ hourlyMax: 4, pauseMinutes: 15, appSharePercent: 100 }, l)),
+      env: { MAILER_PER_DAY: '100' },
+    });
+    await guard!.admit(1, { app_id: 'app_other', module: 'forms', kind: 'notification' });
+    expect((await send({ config: 'notify' })).status).toBe(200);
+    const over = await send({ config: 'notify' });
     expect(over.status).toBe(503);
     expect(over.headers['Retry-After']).toBe('900');
-    expect(json(over)).toMatchObject({ error: 'unavailable', details: { reason: 'email_paused' } });
+    expect(json(over)).toMatchObject({ error: 'unavailable', details: { reason: 'email_paused', class: 'notification' } });
     expect(log.error).toHaveBeenCalledWith(
       'ALERT: module e-mail paused — the global hourly cap was reached',
-      expect.objectContaining({ event: 'email_global_pause', audience: 'super_admin', module: 'sender', kind: 'sign_in' })
+      expect.objectContaining({ event: 'email_global_pause', audience: 'super_admin', module: 'sender', kind: 'notification', class: 'notification', max: 4 })
     );
-    // Paused: refused before anything is counted or sent.
+    // Paused notifications are refused before anything is counted or sent…
     expect((await send({ config: 'notify' })).status).toBe(503);
-    expect(sent.map((m) => m.to)).toEqual(['a@example.com']);
+    // …but sign-in codes still go out, up to THEIR budget.
+    expect((await send({ signInAddress: 'a@example.com' })).status).toBe(200);
+    expect((await send({ signInAddress: 'b@example.com' })).status).toBe(200);
+    const codesOver = await send({ signInAddress: 'c@example.com' });
+    expect(codesOver.status).toBe(503);
+    expect(json(codesOver)).toMatchObject({ error: 'unavailable', details: { reason: 'email_paused', class: 'sign_in' } });
+    expect(log.error).toHaveBeenLastCalledWith(
+      'ALERT: module e-mail paused — the global hourly cap was reached',
+      expect.objectContaining({ event: 'email_global_pause', class: 'sign_in', kind: 'sign_in' })
+    );
+    expect(sent.map((m) => m.to)).toEqual(['team@example.com', 'a@example.com', 'b@example.com']);
+  });
+
+  it('one app past its share of the notification budget: its notifications are refused (email_paused naming the limit); sign-in codes are not', async () => {
+    // G = 100: notifications 50, one app 25 % → 12.
+    const { send, sent } = await setup([sender, mailer], { guard: { hourlyMax: 100 }, env: { MAILER_PER_DAY: '100' } });
+    for (let i = 0; i < 12; i++) expect((await send({ config: 'notify' })).status).toBe(200);
+    const over = await send({ config: 'notify' });
+    expect(over.status).toBe(503);
+    expect(json(over)).toMatchObject({ error: 'unavailable', details: { reason: 'email_paused', limit: 'EMAIL_APP_HOURLY_SHARE', value: 12 } });
+    expect(Number(over.headers['Retry-After'])).toBeGreaterThan(3500);
+    expect((await send({ signInAddress: 'a@example.com' })).status).toBe(200);
+    expect(sent).toHaveLength(13);
   });
 
   it('an SMTP failure → 503 unavailable, logged without the address; the messages already sent are audited', async () => {
-    const { send, sent, log } = await setup([sender, mailer], 1000, (m) => m.to === 'b@example.com');
+    const { send, sent, log } = await setup([sender, mailer], { fail: (m) => m.to === 'b@example.com' });
     const before = (await db.select().from(auditLog).where(eq(auditLog.action, 'email.send'))).length;
     const res = await send({ config: 'notify' });
     expect(res.status).toBe(200);

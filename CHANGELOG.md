@@ -31,9 +31,13 @@
 - **Module e-mail in core**: the recipient kind `{ appOwners: true }` and
   recipient lists (validated, de-duplicated, one message per address); the
   operator-wide cap `EMAIL_GLOBAL_HOURLY_MAX` (500 recipients per hour, all
-  module mail including sign-in codes) pauses module e-mail for
-  `EMAIL_GLOBAL_PAUSE_MINUTES` (15) with an `email_global_pause` ALERT log
-  line for the super admin (`503 unavailable`, fail closed); audit
+  module mail) is split into two budgets (NSO-320): sign-in codes
+  `EMAIL_SIGNIN_HOURLY_MAX` (default 20 % of the cap, ≥ 50, ≤ half) and
+  notifications (the rest; one app ≤ `EMAIL_APP_HOURLY_SHARE` %, default
+  25). Past its budget a class pauses for `EMAIL_GLOBAL_PAUSE_MINUTES` (15)
+  with an `email_global_pause` ALERT log line for the super admin (`503
+  unavailable`, `details.reason: email_paused`, fail closed) — notifications
+  pausing never blocks sign-in codes; audit
   `email.send` (counts, never addresses). Texts are capped at 20 000
   characters.
 - **Module contract** (additive): `requires` (missing dependency → the server

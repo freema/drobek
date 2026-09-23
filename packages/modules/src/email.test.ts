@@ -1,6 +1,17 @@
 import { describe, expect, it, vi } from 'vitest';
 import { capEmailText, emailKind, MAX_EMAIL_TEXT, resolveRecipients, sanitizeSubject } from './email.js';
-import { MAIL_GLOBAL_COUNTER_KEY, MAIL_PAUSE_KEY, mailGuardConfigFromEnv, memoryMailGuard, redisMailGuard, type MailGuardRedis } from './mail-guard.js';
+import {
+  MAIL_COUNTER_KEYS,
+  MAIL_PAUSE_KEYS,
+  mailAppCounterKey,
+  mailBudgets,
+  mailGuardConfigFromEnv,
+  memoryMailGuard,
+  memoryMailGuardRedis,
+  redisMailGuard,
+  type MailGuardMeta,
+  type MailGuardRedis,
+} from './mail-guard.js';
 
 const user = { kind: 'user' as const, id: 'u', email: 'Ana@Example.com', role: 'user' as const };
 const anon = { kind: 'anon' as const };
@@ -45,9 +56,187 @@ function log() {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 }
 
-/** A Redis double with the four commands the guard uses. */
-function fakeRedis(): MailGuardRedis & { store: Map<string, { v: number; exp: number | null }>; now: number } {
-  const store = new Map<string, { v: number; exp: number | null }>();
+const ALERT = 'ALERT: module e-mail paused — the global hourly cap was reached';
+
+describe('the operator-wide hourly budgets of module e-mail (sign-in codes vs notifications)', () => {
+  const notify = (app_id = 'app_1'): MailGuardMeta => ({ app_id, module: 'forms', kind: 'notification' });
+  const signIn = (app_id = 'app_1'): MailGuardMeta => ({ app_id, module: 'auth', kind: 'sign_in' });
+
+  it('env config with defaults', () => {
+    expect(mailGuardConfigFromEnv({})).toEqual({ hourlyMax: 500, pauseMinutes: 15, appSharePercent: 25 });
+    expect(
+      mailGuardConfigFromEnv({ EMAIL_GLOBAL_HOURLY_MAX: '3', EMAIL_GLOBAL_PAUSE_MINUTES: '2', EMAIL_SIGNIN_HOURLY_MAX: '1', EMAIL_APP_HOURLY_SHARE: '50' })
+    ).toEqual({ hourlyMax: 3, pauseMinutes: 2, signInHourlyMax: 1, appSharePercent: 50 });
+    expect(
+      mailGuardConfigFromEnv({ EMAIL_GLOBAL_HOURLY_MAX: '-1', EMAIL_GLOBAL_PAUSE_MINUTES: 'x', EMAIL_SIGNIN_HOURLY_MAX: '0', EMAIL_APP_HOURLY_SHARE: '250' })
+    ).toEqual({ hourlyMax: 500, pauseMinutes: 15, appSharePercent: 100 });
+  });
+
+  it('the budgets: sign-in reserves 20 % (≥ 50, ≤ half), notifications get the rest, one app 25 % of those', () => {
+    expect(mailBudgets({ hourlyMax: 500, pauseMinutes: 15 })).toEqual({ global: 500, sign_in: 100, notification: 400, perApp: 100 });
+    expect(mailBudgets({ hourlyMax: 1000, pauseMinutes: 15 })).toEqual({ global: 1000, sign_in: 200, notification: 800, perApp: 200 });
+    expect(mailBudgets({ hourlyMax: 100, pauseMinutes: 15 })).toEqual({ global: 100, sign_in: 50, notification: 50, perApp: 12 });
+    expect(mailBudgets({ hourlyMax: 60, pauseMinutes: 15 })).toEqual({ global: 60, sign_in: 30, notification: 30, perApp: 7 });
+    // Explicit values; a sign-in budget above the cap leaves notifications one.
+    expect(mailBudgets({ hourlyMax: 500, pauseMinutes: 15, signInHourlyMax: 20, appSharePercent: 50 })).toEqual({
+      global: 500,
+      sign_in: 20,
+      notification: 480,
+      perApp: 240,
+    });
+    expect(mailBudgets({ hourlyMax: 500, pauseMinutes: 15, signInHourlyMax: 9999 })).toMatchObject({ sign_in: 499, notification: 1, perApp: 1 });
+    // Degenerate caps still give each class one address.
+    expect(mailBudgets({ hourlyMax: 1, pauseMinutes: 15 })).toMatchObject({ sign_in: 1, notification: 1, perApp: 1 });
+  });
+
+  it('notifications past their budget: that class pauses + a super-admin ALERT line; sign-in codes keep going to their own limit', async () => {
+    const redis = fakeRedis();
+    const l = log();
+    // G = 10: sign-in 5, notifications 5; one app may use all of them (share 100 %).
+    const g = redisMailGuard({ redis: () => redis, config: { hourlyMax: 10, pauseMinutes: 15, appSharePercent: 100 }, log: l });
+    await g.assertOpen(notify());
+    await g.admit(3, notify());
+    await g.admit(2, notify('app_2'));
+    expect(await redis.pttl(MAIL_COUNTER_KEYS.notification)).toBe(3_600_000);
+    const over = await g.admit(1, notify('app_3')).catch((e: unknown) => e);
+    expect(over).toMatchObject({
+      code: 'unavailable',
+      status: 503,
+      headers: { 'Retry-After': '900' },
+      details: { reason: 'email_paused', class: 'notification' },
+    });
+    expect(l.error).toHaveBeenCalledTimes(1);
+    expect(l.error).toHaveBeenCalledWith(
+      ALERT,
+      expect.objectContaining({
+        event: 'email_global_pause',
+        alert: true,
+        audience: 'super_admin',
+        max: 10,
+        class: 'notification',
+        class_max: 5,
+        app_id: 'app_3',
+        module: 'forms',
+        resume: expect.stringContaining(MAIL_PAUSE_KEYS.notification),
+      })
+    );
+    // Every app's notifications are refused while paused…
+    for (const app of ['app_1', 'app_2', 'app_4']) {
+      await expect(g.assertOpen(notify(app))).rejects.toMatchObject({ code: 'unavailable', details: { reason: 'email_paused' } });
+    }
+    expect(l.warn).toHaveBeenCalledWith('module e-mail refused: paused', expect.objectContaining({ reason: 'global_pause', class: 'notification' }));
+    // …while sign-in codes go out, up to THEIR limit (5), then pause on their own.
+    for (let i = 0; i < 5; i++) {
+      await g.assertOpen(signIn(`app_${i}`));
+      await g.admit(1, signIn(`app_${i}`));
+    }
+    await expect(g.admit(1, signIn())).rejects.toMatchObject({ code: 'unavailable', details: { reason: 'email_paused', class: 'sign_in' } });
+    expect(l.error).toHaveBeenLastCalledWith(ALERT, expect.objectContaining({ event: 'email_global_pause', class: 'sign_in', class_max: 5, max: 10 }));
+    await expect(g.assertOpen(signIn())).rejects.toMatchObject({ details: { reason: 'email_paused', class: 'sign_in' } });
+
+    // Both pauses end on their own after EMAIL_GLOBAL_PAUSE_MINUTES.
+    redis.now += 15 * 60_000;
+    await expect(g.assertOpen(notify())).resolves.toBeUndefined();
+    await expect(g.assertOpen(signIn())).resolves.toBeUndefined();
+    // A pause set by hand (no expiry) is honoured — for its class only.
+    redis.store.set(MAIL_PAUSE_KEYS.notification, { v: '1', exp: null });
+    await expect(g.assertOpen(notify())).rejects.toMatchObject({ code: 'unavailable', headers: { 'Retry-After': '900' } });
+    await expect(g.assertOpen(signIn())).resolves.toBeUndefined();
+  });
+
+  it('sign-in codes exhausted first: sign-in pauses, notifications keep going', async () => {
+    const redis = fakeRedis();
+    const g = redisMailGuard({ redis: () => redis, config: { hourlyMax: 10, pauseMinutes: 1, signInHourlyMax: 2, appSharePercent: 100 }, log: log() });
+    await g.admit(2, signIn());
+    await expect(g.admit(1, signIn())).rejects.toMatchObject({ details: { reason: 'email_paused', class: 'sign_in' }, headers: { 'Retry-After': '60' } });
+    await expect(g.assertOpen(signIn())).rejects.toMatchObject({ code: 'unavailable' });
+    await g.assertOpen(notify());
+    await g.admit(8, notify());
+    expect(await redis.pttl(MAIL_PAUSE_KEYS.notification)).toBe(-2);
+  });
+
+  it('one app past its share of notifications: its mail is refused until its hour ends; other apps and sign-in continue; no ALERT', async () => {
+    const redis = fakeRedis();
+    const l = log();
+    // G = 100: sign-in 50, notifications 50, one app 25 % → 12.
+    const g = redisMailGuard({ redis: () => redis, config: { hourlyMax: 100, pauseMinutes: 15 }, log: l });
+    await g.admit(10, notify('greedy'));
+    redis.now += 10 * 60_000;
+    await g.admit(2, notify('greedy'));
+    await expect(g.assertOpen(notify('greedy'))).rejects.toMatchObject({
+      code: 'unavailable',
+      status: 503,
+      details: { reason: 'email_paused', class: 'notification', limit: 'EMAIL_APP_HOURLY_SHARE', value: 12 },
+      headers: { 'Retry-After': String(50 * 60) },
+    });
+    expect(l.warn).toHaveBeenCalledWith('module e-mail refused: the app used its hourly share', expect.objectContaining({ reason: 'app_share', app_id: 'greedy' }));
+    // A multi-recipient message that crosses the share is refused in admit and not counted server-wide.
+    await g.admit(10, notify('other'));
+    await expect(g.admit(5, notify('other'))).rejects.toMatchObject({ details: { limit: 'EMAIL_APP_HOURLY_SHARE', value: 12 } });
+    expect(l.warn).toHaveBeenCalledWith(
+      'module e-mail: an app used its hourly share of notifications',
+      expect.objectContaining({ event: 'email_app_share_exceeded', app_id: 'other' })
+    );
+    expect(Number(await redis.get(MAIL_COUNTER_KEYS.notification))).toBe(22);
+    expect(Number(await redis.get(mailAppCounterKey('other')))).toBe(15);
+    // Other apps and sign-in codes are not affected; the server is not paused.
+    await g.assertOpen(notify('third'));
+    await g.admit(12, notify('third'));
+    await g.assertOpen(signIn('greedy'));
+    await g.admit(1, signIn('greedy'));
+    expect(l.error).not.toHaveBeenCalled();
+    // The greedy app's hour ends → its notifications go out again.
+    redis.now += 50 * 60_000;
+    await expect(g.assertOpen(notify('greedy'))).resolves.toBeUndefined();
+  });
+
+  it('fails closed on a Redis error', async () => {
+    const down = async () => {
+      throw new Error('down');
+    };
+    const broken = { get: down, pttl: down, incrby: down, pexpire: down, set: down } as unknown as MailGuardRedis;
+    const l = log();
+    const g = redisMailGuard({ redis: () => broken, config: { hourlyMax: 3, pauseMinutes: 1 }, log: l });
+    for (const meta of [notify(), signIn()]) {
+      await expect(g.assertOpen(meta)).rejects.toMatchObject({ code: 'unavailable', headers: { 'Retry-After': '60' } });
+      await expect(g.admit(1, meta)).rejects.toMatchObject({ code: 'unavailable' });
+    }
+    expect(l.error).toHaveBeenCalledWith('module e-mail guard error — fail-closed', expect.objectContaining({ error: 'down' }));
+  });
+
+  it('the in-memory guard behaves the same (both classes, pause expiry, reset)', async () => {
+    let now = 0;
+    const g = memoryMailGuard({ hourlyMax: 4, pauseMinutes: 1, appSharePercent: 100 }, log(), () => now);
+    // G = 4: sign-in 2, notifications 2.
+    await g.admit(2, notify());
+    await expect(g.admit(1, notify())).rejects.toMatchObject({ code: 'unavailable', details: { class: 'notification' } });
+    await expect(g.assertOpen(notify())).rejects.toMatchObject({ code: 'unavailable' });
+    await g.assertOpen(signIn());
+    await g.admit(2, signIn());
+    await expect(g.admit(1, signIn())).rejects.toMatchObject({ details: { class: 'sign_in' } });
+    now += 60_000;
+    // The pauses are over; app_1 itself still sits at its hourly share (2).
+    await expect(g.assertOpen(notify())).rejects.toMatchObject({ details: { limit: 'EMAIL_APP_HOURLY_SHARE' } });
+    await g.assertOpen(notify('app_2'));
+    await g.assertOpen(signIn());
+    // The hourly class counter still runs: the next notification trips the pause again.
+    await expect(g.admit(1, notify('app_2'))).rejects.toMatchObject({ code: 'unavailable', details: { class: 'notification' } });
+    await expect(g.assertOpen(notify('app_2'))).rejects.toMatchObject({ details: { reason: 'email_paused' } });
+    g.reset();
+    await g.assertOpen(notify());
+    await g.admit(2, notify());
+    // The store alone: keys expire on the clock.
+    const r = memoryMailGuardRedis(() => now);
+    await r.set('k', '1', 'PX', 10);
+    expect(await r.pttl('k')).toBe(10);
+    now += 10;
+    expect(await r.get('k')).toBeNull();
+  });
+});
+
+/** A Redis double with the commands the guard uses (a clock you move by hand). */
+function fakeRedis(): MailGuardRedis & { store: Map<string, { v: string; exp: number | null }>; now: number } {
+  const store = new Map<string, { v: string; exp: number | null }>();
   const r = {
     store,
     now: 0,
@@ -56,16 +245,19 @@ function fakeRedis(): MailGuardRedis & { store: Map<string, { v: number; exp: nu
       if (e && e.exp !== null && e.exp <= r.now) store.delete(k);
       return store.get(k);
     },
+    async get(k: string) {
+      return r.live(k)?.v ?? null;
+    },
     async pttl(k: string) {
       const e = r.live(k);
       if (!e) return -2;
       return e.exp === null ? -1 : e.exp - r.now;
     },
     async incrby(k: string, n: number) {
-      const e = r.live(k) ?? { v: 0, exp: null };
-      e.v += n;
+      const e = r.live(k) ?? { v: '0', exp: null };
+      e.v = String(Number(e.v) + n);
       store.set(k, e);
-      return e.v;
+      return Number(e.v);
     },
     async pexpire(k: string, ms: number) {
       const e = r.live(k);
@@ -74,58 +266,9 @@ function fakeRedis(): MailGuardRedis & { store: Map<string, { v: number; exp: nu
       return 1;
     },
     async set(k: string, v: string, _px: 'PX', ms: number) {
-      store.set(k, { v: Number(v), exp: r.now + ms });
+      store.set(k, { v, exp: r.now + ms });
       return 'OK';
     },
   };
   return r;
 }
-
-describe('the global hourly cap on module e-mail', () => {
-  const meta = { app_id: 'app_1', module: 'forms', kind: 'notification' };
-
-  it('env config with defaults', () => {
-    expect(mailGuardConfigFromEnv({})).toEqual({ hourlyMax: 500, pauseMinutes: 15 });
-    expect(mailGuardConfigFromEnv({ EMAIL_GLOBAL_HOURLY_MAX: '3', EMAIL_GLOBAL_PAUSE_MINUTES: '2' })).toEqual({ hourlyMax: 3, pauseMinutes: 2 });
-    expect(mailGuardConfigFromEnv({ EMAIL_GLOBAL_HOURLY_MAX: '-1', EMAIL_GLOBAL_PAUSE_MINUTES: 'x' })).toEqual({ hourlyMax: 500, pauseMinutes: 15 });
-  });
-
-  it('counts recipients; past the cap: pause + a super-admin ALERT line; paused sends refused; the pause ends', async () => {
-    const redis = fakeRedis();
-    const l = log();
-    const g = redisMailGuard({ redis: () => redis, config: { hourlyMax: 3, pauseMinutes: 15 }, log: l });
-    await g.assertOpen(meta);
-    await g.admit(2, meta);
-    await g.admit(1, meta);
-    expect(await redis.pttl(MAIL_GLOBAL_COUNTER_KEY)).toBe(3_600_000);
-    await expect(g.admit(1, meta)).rejects.toMatchObject({ code: 'unavailable', status: 503, headers: { 'Retry-After': '900' } });
-    expect(l.error).toHaveBeenCalledWith(
-      'ALERT: module e-mail paused — the global hourly cap was reached',
-      expect.objectContaining({ event: 'email_global_pause', alert: true, audience: 'super_admin', max: 3, app_id: 'app_1', module: 'forms' })
-    );
-    await expect(g.assertOpen(meta)).rejects.toMatchObject({ code: 'unavailable', details: { reason: 'email_paused' } });
-    expect(l.warn).toHaveBeenCalledWith('module e-mail refused: paused', expect.objectContaining({ reason: 'global_pause' }));
-    redis.now += 15 * 60_000;
-    await expect(g.assertOpen(meta)).resolves.toBeUndefined();
-    // A pause set by hand (no expiry) is honoured.
-    redis.store.set(MAIL_PAUSE_KEY, { v: 1, exp: null });
-    await expect(g.assertOpen(meta)).rejects.toMatchObject({ code: 'unavailable' });
-  });
-
-  it('fails closed on a Redis error', async () => {
-    const broken = { pttl: async () => { throw new Error('down'); } } as unknown as MailGuardRedis;
-    const g = redisMailGuard({ redis: () => broken, config: { hourlyMax: 3, pauseMinutes: 1 }, log: log() });
-    await expect(g.assertOpen(meta)).rejects.toMatchObject({ code: 'unavailable' });
-    await expect(g.admit(1, meta)).rejects.toMatchObject({ code: 'unavailable' });
-  });
-
-  it('the in-memory guard behaves the same', async () => {
-    let now = 0;
-    const g = memoryMailGuard({ hourlyMax: 2, pauseMinutes: 1 }, log(), () => now);
-    await g.admit(2, meta);
-    await expect(g.admit(1, meta)).rejects.toMatchObject({ code: 'unavailable' });
-    await expect(g.assertOpen(meta)).rejects.toMatchObject({ code: 'unavailable' });
-    now += 60_000;
-    await g.assertOpen(meta);
-  });
-});

@@ -28,9 +28,11 @@ import { withDb } from './helpers/seed';
  *    no-store, audited); plain users and visitors are refused;
  *  - notifyAdmins through <LoginGate> in a browser, fromName applied; the
  *    21st call of the day → 429 limit_exceeded;
- *  - the operator-wide hourly e-mail cap → module e-mail pauses (503
- *    unavailable) with a super-admin ALERT line; a form submission is still
- *    stored while paused.
+ *  - the operator-wide hourly e-mail budgets (NSO-320): notifications past
+ *    theirs (forms of two apps) → notifications pause (503 email_paused)
+ *    with a super-admin ALERT line, a form submission is still stored, and
+ *    the auth module's send-code still delivers a code (own budget); one app
+ *    past its hourly share → only that app's notifications are refused.
  */
 
 interface Created {
@@ -56,6 +58,14 @@ const STAMP = `${Date.now()}${Math.floor(Math.random() * 1e4)}`;
 const SALES = `e2e-forms-sales-${STAMP}@example.com`;
 const ANA = `e2e-forms-ana-${STAMP}@example.com`;
 const CAROL = `e2e-forms-carol-${STAMP}@example.com`;
+const DAVE = `e2e-forms-dave-${STAMP}@example.com`;
+// The operator-wide e-mail budgets (NSO-320, mail-guard.ts): Redis keys and
+// the values both composes derive from EMAIL_GLOBAL_HOURLY_MAX 1000.
+const MAIL_NOTIFY_COUNTER = 'drobek:rl:mail:notification';
+const MAIL_NOTIFY_PAUSE = 'drobek:mail:paused:notification';
+const MAIL_SIGNIN_PAUSE = 'drobek:mail:paused:sign_in';
+const NOTIFY_BUDGET = 800;
+const APP_SHARE = 200;
 const FORMS_APP = `Forms bakery ${STAMP}`;
 const EMAIL_APP = `Stock ${STAMP}`;
 
@@ -474,58 +484,115 @@ test.describe('platform modules forms + email (M1-04) @local', () => {
     }
   });
 
-  test('the global hourly e-mail cap → module e-mail pauses (503) with a super-admin ALERT; submissions are still stored', async ({ request }) => {
+  // NSO-320: EMAIL_GLOBAL_HOURLY_MAX 1000 in both composes → 200 reserved for
+  // sign-in codes (EMAIL_SIGNIN_HOURLY_MAX), 800 for notifications, one app
+  // at most 25 % of those (EMAIL_APP_HOURLY_SHARE) = 200.
+  test('notifications past their hourly budget pause (503 email_paused + ALERT); sign-in codes keep going; submissions are still stored', async ({ request }) => {
     skipUnlessLocal();
-    const host = previewHost(formsApp.slug);
-    // A fresh allow-listed address: no sign-in cooldown can answer for the pause.
-    const allow = await callTool(mcp.client, 'configure_module', { app_id: formsApp.app_id, module: 'auth', config: { allow: { emails: [ANA, CAROL] } } });
+    const formsHost = previewHost(formsApp.slug);
+    const emailHost = previewHost(emailApp.slug);
+    // Fresh allow-listed addresses: no sign-in cooldown can answer for the send.
+    const allow = await callTool(mcp.client, 'configure_module', { app_id: formsApp.app_id, module: 'auth', config: { allow: { emails: [ANA, CAROL, DAVE] } } });
     expect(allow.json, JSON.stringify(allow.json)).toMatchObject({ applied: true });
+    await resetRateLimitBucket(`mod:forms:${formsApp.app_id}:submit-ip`);
+    await resetRateLimitBucket(`mod:forms:${emailApp.app_id}:submit-ip`);
     const redis = await redisClient();
     const since = logSince();
     try {
-      // Pretend the server already sent its hourly maximum.
-      await redis.set('drobek:rl:mail:global', '1000000', 'PX', 3_600_000);
-      const r = await post(host, '/email/notify-admins', { subject: 'Cap', text: 'x' }, { Cookie: ownerFormsCookie });
-      expect(r.status, r.body).toBe(503);
-      expect(JSON.parse(r.body)).toMatchObject({ error: 'unavailable', details: { reason: 'email_paused' } });
-      expect(Number(r.headers['retry-after'])).toBeGreaterThan(0);
-      expect(await redis.pttl('drobek:mail:paused')).toBeGreaterThan(0);
-      const [alert] = (await pollLog(since, '"email_global_pause"')).filter((l) => l.app_id === formsApp.app_id);
+      // Pretend the server already sent all its hourly notifications but one.
+      await redis.set(MAIL_NOTIFY_COUNTER, String(NOTIFY_BUDGET - 1), 'PX', 3_600_000);
+      const t1 = await formToken(formsHost, 'budget');
+      const t2 = await formToken(emailHost, 'budget');
+      await sleep(2_100);
+
+      // App 1's form: the last notification of the hour still goes out.
+      const first = await post(formsHost, '/forms/budget', { _t: t1, name: 'Last one' });
+      expect(first.status, first.body).toBe(200);
+      expect(await submissionsOf(formsApp.app_id, 'budget')).toEqual([expect.objectContaining({ notified: true })]);
+      expect(await pollMails(request, mcp.email, `New "budget" submission — ${FORMS_APP}`)).toHaveLength(1);
+
+      // App 2's form: over the budget → notifications pause, the super-admin
+      // ALERT line; the submission is stored, only its notification is skipped.
+      const second = await post(emailHost, '/forms/budget', { _t: t2, name: 'One too many' });
+      expect(second.status, second.body).toBe(200);
+      expect(await submissionsOf(emailApp.app_id, 'budget')).toEqual([expect.objectContaining({ notified: false })]);
+      expect(await redis.pttl(MAIL_NOTIFY_PAUSE)).toBeGreaterThan(0);
+      const [alert] = (await pollLog(since, '"email_global_pause"')).filter((l) => l.app_id === emailApp.app_id);
       expect(alert, 'an ALERT line for the super admin').toMatchObject({
         level: 'error',
         alert: true,
         audience: 'super_admin',
-        module: 'email',
+        module: 'forms',
+        kind: 'notification',
+        class: 'notification',
         max: 1000,
+        class_max: NOTIFY_BUDGET,
       });
       expect(String(alert.message)).toContain('ALERT');
+      expect((await pollLog(since, '"forms_notify_failed"')).filter((l) => l.app_id === emailApp.app_id)).not.toHaveLength(0);
 
-      // Paused: even with the counter gone, e-mail stays off until the pause ends.
-      await redis.del('drobek:rl:mail:global');
-      const again = await post(host, '/email/notify-admins', { subject: 'Cap', text: 'x' }, { Cookie: ownerFormsCookie });
+      // Every app's notifications are refused now: notifyAdmins on app 1 → 503 email_paused.
+      const r = await post(formsHost, '/email/notify-admins', { subject: 'Cap', text: 'x' }, { Cookie: ownerFormsCookie });
+      expect(r.status, r.body).toBe(503);
+      expect(JSON.parse(r.body)).toMatchObject({ error: 'unavailable', details: { reason: 'email_paused', class: 'notification' } });
+      expect(Number(r.headers['retry-after'])).toBeGreaterThan(0);
+      // Paused: even with the counter gone, notifications stay off until the pause ends.
+      await redis.del(MAIL_NOTIFY_COUNTER);
+      const again = await post(formsHost, '/email/notify-admins', { subject: 'Cap', text: 'x' }, { Cookie: ownerFormsCookie });
       expect(again.status).toBe(503);
-      const signIn = await post(host, '/auth/send-code', { email: CAROL });
-      expect(signIn.status, signIn.body).toBe(503);
-      expect(JSON.parse(signIn.body)).toMatchObject({ error: 'unavailable' });
+      expect(JSON.parse(again.body)).toMatchObject({ details: { reason: 'email_paused' } });
 
-      // A form submission is stored; only its notification is skipped.
-      const t = await formToken(host, 'contact');
-      await sleep(2_100);
-      const sub = await post(host, '/forms/contact', { _t: t, name: 'While paused' });
-      expect(sub.status, sub.body).toBe(200);
-      const row = (await submissionsOf(formsApp.app_id, 'contact')).find((s) => s.data.name === 'While paused');
-      expect(row).toMatchObject({ notified: false });
-      expect((await pollLog(since, '"forms_notify_failed"')).filter((l) => l.app_id === formsApp.app_id)).not.toHaveLength(0);
+      // Sign-in codes have their own budget: a fresh address still gets its code.
+      const signIn = await post(formsHost, '/auth/send-code', { email: CAROL });
+      expect(signIn.status, signIn.body).toBe(200);
+      expect(await pollCode(request, CAROL, FORMS_APP)).toMatch(/^\d{6}$/);
+      expect(await redis.pttl(MAIL_SIGNIN_PAUSE)).toBe(-2);
     } finally {
-      await redis.del('drobek:rl:mail:global', 'drobek:mail:paused');
+      await redis.del(MAIL_NOTIFY_COUNTER, MAIL_NOTIFY_PAUSE);
       redis.disconnect();
     }
     // Resumed. A header-injection attempt in the subject stays one line.
-    const ok = await post(host, '/email/notify-admins', { subject: 'Back\r\nBcc: e2e-bcc@example.com', text: 'x' }, { Cookie: ownerFormsCookie });
+    const ok = await post(formsHost, '/email/notify-admins', { subject: 'Back\r\nBcc: e2e-bcc@example.com', text: 'x' }, { Cookie: ownerFormsCookie });
     expect(ok.status, ok.body).toBe(200);
     const [back] = await pollMails(request, mcp.email, `[${FORMS_APP}] Back`);
     expect(back.Subject).toBe(`[${FORMS_APP}] Back Bcc: e2e-bcc@example.com`);
     expect(back.To.map((x) => x.Address)).toEqual([mcp.email]);
     expect(await mailpitMessagesFor(request, 'e2e-bcc@example.com')).toHaveLength(0);
+  });
+
+  test("one app past its hourly share of notifications → its mail is refused (email_paused, EMAIL_APP_HOURLY_SHARE); other apps and sign-in continue", async ({ request }) => {
+    skipUnlessLocal();
+    const formsHost = previewHost(formsApp.slug);
+    const emailHost = previewHost(emailApp.slug);
+    await resetRateLimitBucket(`mod:forms:${emailApp.app_id}:submit-ip`);
+    const appKey = `drobek:rl:mail:app:${formsApp.app_id}`;
+    const redis = await redisClient();
+    try {
+      // Pretend app 1 already sent its whole hourly share.
+      await redis.set(appKey, String(APP_SHARE), 'PX', 3_600_000);
+      const r = await post(formsHost, '/email/notify-admins', { subject: 'Share', text: 'x' }, { Cookie: ownerFormsCookie });
+      expect(r.status, r.body).toBe(503);
+      expect(JSON.parse(r.body)).toMatchObject({
+        error: 'unavailable',
+        details: { reason: 'email_paused', class: 'notification', limit: 'EMAIL_APP_HOURLY_SHARE', value: APP_SHARE },
+      });
+      expect(Number(r.headers['retry-after'])).toBeGreaterThan(0);
+      // The server is not paused: app 2's form notification goes out.
+      const t = await formToken(emailHost, 'share');
+      await sleep(2_100);
+      expect((await post(emailHost, '/forms/share', { _t: t, name: 'Other app' })).status).toBe(200);
+      expect(await submissionsOf(emailApp.app_id, 'share')).toEqual([expect.objectContaining({ notified: true })]);
+      expect(await pollMails(request, mcp.email, `New "share" submission — ${EMAIL_APP}`)).toHaveLength(1);
+      expect(await redis.pttl(MAIL_NOTIFY_PAUSE)).toBe(-2);
+      // Sign-in codes of app 1 are not part of its share.
+      const signIn = await post(formsHost, '/auth/send-code', { email: DAVE });
+      expect(signIn.status, signIn.body).toBe(200);
+      expect(await pollCode(request, DAVE, FORMS_APP)).toMatch(/^\d{6}$/);
+    } finally {
+      await redis.del(appKey);
+      redis.disconnect();
+    }
+    const ok = await post(formsHost, '/email/notify-admins', { subject: 'Share over', text: 'x' }, { Cookie: ownerFormsCookie });
+    expect(ok.status, ok.body).toBe(200);
   });
 });

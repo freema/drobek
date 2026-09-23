@@ -573,7 +573,9 @@ export class ModuleRuntime {
    * `ctx.email.send` of module `m` for `app`: resolve the allowed recipients,
    * refuse while module e-mail is paused, let the mail authority (the `email`
    * module) apply the app's policy and envelope, count against the
-   * operator-wide hourly cap, send one message per address, audit.
+   * operator-wide hourly budget of the message's class (sign-in codes vs
+   * notifications, plus the app's share of notifications — mail-guard.ts),
+   * send one message per address, audit.
    */
   private async sendEmail(
     m: AnyModule,

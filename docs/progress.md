@@ -400,6 +400,20 @@ block, then `next` is pushed and the single MR opened.
   the MCP unit harness passes `flushSignals: false` (no Redis there).
 - `module_request_stats` counting is fire-and-forget after the response:
   a unit test that reads it right after a request has to poll.
+- Module mail budgets (NSO-320, `mail-guard.ts`): the class is derived from
+  the recipient (`{ signInAddress }` = `sign_in`, else `notification`); Redis
+  keys are now `drobek:rl:mail:{notification,sign_in}`,
+  `drobek:mail:paused:{notification,sign_in}` and
+  `drobek:rl:mail:app:<app_id>` — the old `drobek:rl:mail:global` /
+  `drobek:mail:paused` are gone. The ALERT line keeps its message and
+  `max` (= the global cap) and adds `class` + `class_max`. With
+  `EMAIL_APP_HOURLY_SHARE=100` the per-app check refuses at the class budget
+  BEFORE the class pause trips (a unit test that wants the pause from one
+  app must pre-fill the class counter from another app). `memoryMailGuard`
+  is the Redis guard over an in-memory store (`memoryMailGuardRedis`).
+- The auth module's `send-code` now passes an `email_paused` refusal on
+  unchanged (503 with `details.class: sign_in` + Retry-After) instead of its
+  generic "could not be sent"; other mail errors still map to the generic 503.
 
 ## Failed approaches
 
