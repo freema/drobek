@@ -52,6 +52,8 @@ export interface AppDetail {
   /** Raw `apps.frame_ancestors` override (null → no embedding). */
   frameAncestors: string | null;
   publishedVersionId: string | null;
+  /** NSO-293: the takedown category; non-null = taken down by a super-admin. */
+  lockedReason: string | null;
 }
 
 /** A single app within a workspace, by slug (tombstones excluded). */
@@ -70,6 +72,7 @@ export async function loadAppForView(
       hasPassword: sql<boolean>`${apps.passwordHash} IS NOT NULL`,
       frameAncestors: apps.frameAncestors,
       publishedVersionId: apps.publishedVersionId,
+      lockedReason: apps.lockedReason,
     })
     .from(apps)
     .where(and(eq(apps.workspaceId, workspaceId), eq(apps.slug, slug), isNull(apps.deletedAt)))
@@ -86,5 +89,6 @@ export async function loadAppForView(
     hasPassword: Boolean(r.hasPassword),
     frameAncestors: r.frameAncestors,
     publishedVersionId: r.publishedVersionId,
+    lockedReason: r.lockedReason,
   };
 }

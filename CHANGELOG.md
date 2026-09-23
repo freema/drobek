@@ -150,6 +150,13 @@
   blocks.
 - Migration **0021_abuse_reports** (additive): `abuse_reports`,
   `abuse_report_status`, `apps.locked_reason`.
+- **With the app page and custom domains** (NSO-288 / NSO-292): the 451
+  also answers on a verified custom domain, and a taken-down app's production
+  host answers 451 instead of its primary-domain 302; a report naming a
+  verified custom domain attaches to its app. The app page shows the "taken
+  down by the operator" banner on every tab and answers publish / restore /
+  unpublish with 423; the module page refuses changes with 423 (reject and
+  removing a secret stay allowed).
 
 ### The built-in `proxy` module (NSO-297)
 

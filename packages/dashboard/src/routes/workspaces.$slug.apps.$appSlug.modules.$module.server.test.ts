@@ -8,6 +8,7 @@
  */
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
+import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { migrate } from 'drizzle-orm/pglite/migrator';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -303,6 +304,30 @@ describe('the module page (M2-02)', () => {
     }
     expect(await drizzleDb().select().from(moduleConfigs)).toEqual([]);
     expect(await drizzleDb().select().from(moduleSecrets)).toEqual([]);
+  });
+
+  it('a taken-down app (NSO-293): the banner, every change → 423 app_locked_by_admin, reject still allowed', async () => {
+    await drizzleDb().update(apps).set({ lockedReason: 'phishing' }).where(eq(apps.id, appId));
+    try {
+      expect((await load()).lockedByAdmin).toMatchObject({ reason: 'phishing' });
+      for (const body of [
+        { intent: 'save-config', [fieldName('greeting')]: 'Yo', [fieldName('access')]: 'user' },
+        { intent: 'set-secret', secret: 'SHOP_KEY', value: SECRET_VALUE },
+        { intent: 'confirm' },
+      ]) {
+        const r = failed(await post('shop', body));
+        expect(r.status).toBe(423);
+        expect(r.errors.general.join(' ')).toContain('taken down');
+      }
+      expect(await drizzleDb().select().from(moduleConfigs)).toEqual([]);
+      expect(await drizzleDb().select().from(moduleSecrets)).toEqual([]);
+      // reject only takes away: never refused as locked (nothing is pending here).
+      const rj = await post('shop', { intent: 'reject' });
+      if (!(rj instanceof Response)) expect(failed(rj).status).not.toBe(423);
+    } finally {
+      await drizzleDb().update(apps).set({ lockedReason: null }).where(eq(apps.id, appId));
+    }
+    expect((await load()).lockedByAdmin).toBeNull();
   });
 
   it('proxy: the workspace upstreams with assign (→ pending), call rule + rateLimit, unassign', async () => {

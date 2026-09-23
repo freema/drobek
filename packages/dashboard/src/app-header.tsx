@@ -3,7 +3,8 @@
  * name + badges, its preview / production URLs (links only — the dashboard
  * never frames an app: that would break the origin rules), the compile state
  * of the newest version, the single-writer lease banner with "Unlock", the
- * "Unpublish" control, and the tab bar (APP_TABS, data-driven).
+ * "Unpublish" control, the "taken down by the operator" banner (NSO-293),
+ * and the tab bar (APP_TABS, data-driven).
  *
  * The header's forms post to the app's BASE route (`appAction`, which every
  * app-page route may share) with `redirectTo` = the current page, so any tab
@@ -16,6 +17,7 @@ import { Form, Link, useLocation, useNavigation } from 'react-router';
 import type { AppHeaderData } from './app-page.server.js';
 import { APP_TABS, activeAppTab, appTabHref } from './app-tabs.js';
 import { formatAgo } from './app-view.js';
+import { LockedByAdminNotice } from './locked-notice.js';
 
 export const appStyles = {
   main: {
@@ -259,6 +261,8 @@ export function AppHeader({ header }: { header: AppHeaderData }) {
         </span>
       </div>
       {header.name && header.name !== header.slug ? <p style={s.sub}>{header.slug}</p> : null}
+      {/* NSO-293: taken down by the operator — on every tab. */}
+      <LockedByAdminNotice locked={header.lockedByAdmin} />
 
       <div style={s.urlGrid}>
         <span style={s.label}>Production</span>

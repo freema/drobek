@@ -27,9 +27,14 @@
  *    NAME only. The value is never logged, audited, echoed in the action data
  *    or rendered: a success redirects (PRG), a failure answers a message
  *    without it.
+ *
+ * A taken-down app (NSO-293, `apps.locked_reason`) refuses every change with
+ * 423 `app_locked_by_admin` (like configure_module and the module-confirm
+ * API); `reject` and `remove-secret` stay allowed (they only take away).
  */
 import { data, redirect, type ActionFunctionArgs, type LoaderFunctionArgs } from 'react-router';
 import { eq } from 'drizzle-orm';
+import { lockedByAdminError } from '@drobek/apps';
 import { writeAudit, actorKindForSurface } from '@drobek/audit';
 import { getDb, users } from '@drobek/db';
 import {
@@ -41,6 +46,7 @@ import {
   type ModuleRuntime,
 } from '@drobek/modules';
 import { requireWorkspaceRole } from '@drobek/tenancy';
+import { lockedByAdminView } from '../app-api.server.js';
 import { loadAppForView } from '../apps.server.js';
 import {
   configDiff,
@@ -193,6 +199,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     upstreams: editor?.kind === 'upstreams' ? upstreamsOf(view.config, view.info) : [],
     banner: await loadPendingBanner(app, access.workspace.slug, app.slug),
     canEdit: canPublish(access.effectiveRole),
+    // NSO-293: the "taken down by the operator" banner (changes answer 423).
+    lockedByAdmin: lockedByAdminView(app.lockedReason),
     done: done && /^[a-z-]{1,32}$/.test(done) ? done : null,
   };
 }
@@ -212,6 +220,11 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const intent = String(form.get('intent') ?? '');
   const ws = access.workspace.slug;
   const back = (done: string, anchor = '') => redirect(pageUrl(ws, app.slug, name, done, anchor));
+
+  // NSO-293: a taken-down app's module setup cannot change (reject / remove-secret only take away).
+  if (app.lockedReason && intent !== 'reject' && intent !== 'remove-secret') {
+    return failure(423, { intent, fields: {}, general: [lockedByAdminError(app.lockedReason).message] });
+  }
 
   // ── pending decision ──
   if (intent === 'confirm' || intent === 'reject') {

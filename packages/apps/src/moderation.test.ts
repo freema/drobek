@@ -4,7 +4,7 @@
  */
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { abuseReports, apps, auditLog, users, workspaces } from '@drobek/db';
+import { abuseReports, apps, auditLog, domains, users, workspaces } from '@drobek/db';
 import {
   AppsError,
   appLockState,
@@ -135,6 +135,22 @@ describe('abuse reports', () => {
     expect(await resolveAbuseReport(orphan.id, adminId)).toBe(false);
     const resolved = await listAbuseReports({ status: 'resolved' });
     expect(resolved.find((x) => x.id === orphan.id)?.resolvedByEmail).toBe('root@example.test');
+  });
+
+  it('a VERIFIED custom domain resolves to its app (M3-01); an unverified claim does not', async () => {
+    const a = await appWithVersion('custom-reported', CALC_INDEX);
+    const b = await appWithVersion('custom-squatter', CALC_INDEX);
+    await db.insert(domains).values([
+      { appId: a.id, hostname: 'shop.firma.cz', verificationToken: 't1', verifiedAt: new Date() },
+      { appId: b.id, hostname: 'shop.firma.cz', verificationToken: 't2' },
+      { appId: b.id, hostname: 'pending.firma.cz', verificationToken: 't3' },
+    ]);
+    expect((await findAppByReportedHost('shop.firma.cz', HOSTS))?.id).toBe(a.id);
+    expect(await findAppByReportedHost('pending.firma.cz', HOSTS)).toBeNull();
+    const r = await createAbuseReport({ host: 'https://Shop.Firma.cz/login', reason: 'phishing' }, { hosts: HOSTS });
+    expect(r.app?.id).toBe(a.id);
+    const [row] = await db.select().from(abuseReports).where(eq(abuseReports.id, r.id));
+    expect(row).toMatchObject({ appId: a.id, host: 'shop.firma.cz' });
   });
 });
 

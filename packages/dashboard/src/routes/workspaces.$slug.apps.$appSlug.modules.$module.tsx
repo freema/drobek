@@ -8,6 +8,7 @@
  */
 import { Link, useActionData, useLoaderData, useNavigation } from 'react-router';
 import type { action, loader } from './workspaces.$slug.apps.$appSlug.modules.$module.server.js';
+import { LockedByAdminNotice } from '../locked-notice.js';
 import { PendingBanner } from '../pending-banner.js';
 import { JsonSchemaForm } from '../module-ui/json-schema-form.js';
 import { PendingPanel } from '../module-ui/pending-panel.js';
@@ -74,6 +75,7 @@ export default function AppModuleRoute() {
         </p>
       ) : null}
 
+      <LockedByAdminNotice locked={d.lockedByAdmin} />
       <PendingBanner banner={d.banner} />
       {d.done && DONE[d.done] ? (
         <div style={ui.notice} role="status" data-testid="done-notice" data-done={d.done}>

@@ -14,12 +14,16 @@
  *    (createOriginCheckMiddleware) already refused cross-origin posts. Each
  *    mutation is a @drobek/apps function (the same ones the MCP tools use),
  *    which writes its audit row; the app hosts' cache is busted right after.
+ *    A taken-down app (NSO-293, `apps.locked_reason`) answers publish /
+ *    restore / unpublish with 423 `app_locked_by_admin`; the header carries
+ *    `lockedByAdmin` for <LockedByAdminNotice>.
  */
 import { data, redirect, type ActionFunctionArgs, type LoaderFunctionArgs } from 'react-router';
 import { and, desc, eq, inArray, max } from 'drizzle-orm';
 import {
   AppsError,
   getVersion,
+  lockedByAdminError,
   notifyAppChanged,
   previewUrl,
   publish,
@@ -38,9 +42,11 @@ import { appVersions, getDb, users } from '@drobek/db';
 import { moduleRuntime } from '@drobek/modules';
 import { hashAppPassword, parseFrameAncestors } from '@drobek/serving';
 import { requireWorkspaceRole, type WorkspaceAccess } from '@drobek/tenancy';
+import { lockedByAdminView } from './app-api.server.js';
 import { appBasePath } from './app-tabs.js';
 import { compileSummary, safeRedirectTo, shapeLock, type LockView } from './app-view.js';
 import { loadAppForView, type AppDetail } from './apps.server.js';
+import type { LockedByAdminView } from './locked-notice.js';
 import { canPublish, type CompileStatusName } from './view.js';
 
 export const APP_PASSWORD_MIN = 8;
@@ -85,6 +91,8 @@ export interface AppHeaderData {
   previewVersion: number | null;
   lock: LockView | null;
   canEdit: boolean;
+  /** NSO-293: set when a super-admin took the app down (the banner; publish/restore are refused). */
+  lockedByAdmin: LockedByAdminView | null;
 }
 
 /** Everything <AppHeader> renders. The lease read is best effort (Redis down → no banner). */
@@ -128,6 +136,7 @@ export async function appHeaderData({ access, app }: AppPage): Promise<AppHeader
     previewVersion: lastOk?.number ?? null,
     lock: shapeLock(lease, emails, access.user.id, Date.now()),
     canEdit: canPublish(access.effectiveRole),
+    lockedByAdmin: lockedByAdminView(app.lockedReason),
   };
 }
 
@@ -159,7 +168,8 @@ function versionNumber(raw: FormDataEntryValue | null): number | null {
  * to `redirectTo` when that is a tab of this app (the header's forms post
  * here from any tab), else to the posting page; `delete` lands on the apps
  * list. Expected failures come back as `{ error, intent }` with 400 (409 when
- * another member's agent holds the lease) for the page to show.
+ * another member's agent holds the lease, 423 when a super-admin took the app
+ * down) for the page to show.
  */
 export async function appAction({ request, params }: ActionFunctionArgs) {
   // The editor gate FIRST: a viewer gets 403 before anything is read or changed.
@@ -172,6 +182,13 @@ export async function appAction({ request, params }: ActionFunctionArgs) {
   const back = safeRedirectTo(form.get('redirectTo') ?? new URL(request.url).pathname, base);
   const changed = (kind: 'publish' | 'unpublish' | 'version' | 'settings' | 'delete', version?: number) =>
     notifyAppChanged({ app_id: app.id, slug: app.slug, kind, ...(version ? { version } : {}) });
+
+  // NSO-293: a taken-down app is not published, restored or unpublished from
+  // here (@drobek/apps refuses publish/restore itself; unpublish is checked
+  // here so all three answer the same 423).
+  if (app.lockedReason && (intent === 'publish' || intent === 'restore' || intent === 'unpublish')) {
+    return fail(423, intent, lockedByAdminError(app.lockedReason).message);
+  }
 
   try {
     switch (intent) {
@@ -270,6 +287,8 @@ export async function appAction({ request, params }: ActionFunctionArgs) {
   } catch (err) {
     // Expected failures (an unknown version, not_publishable, not_published,
     // invalid_settings) carry a caller-safe message.
+    // A takedown that landed after the page loaded → 423 like the pre-check.
+    if (err instanceof AppsError && err.code === 'app_locked_by_admin') return fail(423, intent, err.message);
     if (err instanceof AppsError) return fail(400, intent, err.message);
     throw err;
   }

@@ -682,6 +682,30 @@ block, then `next` is pushed and the single MR opened.
   names (a sibling agent overwrote `check.log` mid-run). The Write tool turned
   `\u0300`-style escapes inside a regex into literal characters; use
   `/\p{M}+/gu` for "strip combining marks".
+- NSO-293 × NSO-288/292 merge: the `0016_apps_slug_release` snapshot (and so
+  0018's) never picked up 0016's own changes (`apps_deleted_at_idx` + the
+  tombstone-aware `apps_slug_format` CHECK) — `drizzle-kit generate` against
+  them re-emits 0016. The `0021_snapshot.json` was rebuilt as 0018's snapshot
+  + `abuse_reports` / `abuse_report_status` / `apps.locked_reason`, with the
+  apps indexes + CHECK taken from a scratch `drizzle-kit generate` run, and
+  `prevId` = 0018's id; a check run (`drizzle-kit generate --out <scratch
+  copy>` from `packages/db` — the `--out` path must be RELATIVE, an absolute
+  one is prefixed with `./`) now says "No schema changes". The next snapshot
+  must start from 0021's, not 0016/0018's.
+- In `handleAppRequest` the takedown 451 runs BEFORE the primary-domain 302:
+  a taken-down app's production host answers 451 itself instead of
+  redirecting to its custom domain (which would 451 too). The custom target
+  shares the slug's `resolved` cache entry, so the takedown's `bust(slug)`
+  covers custom domains as well.
+- `findAppByReportedHost` (@drobek/apps) resolves custom domains by querying
+  the `domains` table directly — `@drobek/domains` depends on `@drobek/apps`,
+  so importing its `resolveCustomHost` would be a cycle. Same rule: only a
+  VERIFIED row of a non-deleted app attaches the report.
+- The dashboard's own mutation paths that bypass `@drobek/apps` lock checks
+  refuse a taken-down app themselves: `appAction` publish / restore /
+  unpublish → 423 (pre-check on `AppDetail.lockedReason`, plus the AppsError
+  code for a takedown that lands mid-request), and the NSO-291 module page
+  action → 423 for everything except `reject` / `remove-secret`.
 
 ## Failed approaches
 

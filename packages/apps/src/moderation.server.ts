@@ -23,7 +23,7 @@ import { createHmac } from 'node:crypto';
 import { and, desc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { AUDIT_ACTIONS, writeAudit } from '@drobek/audit';
 import { createConsoleLogger, type Logger } from '@drobek/core';
-import { abuseReports, appVersions, apps, blobs, getDb, users, versionFiles, workspaces } from '@drobek/db';
+import { abuseReports, appVersions, apps, blobs, domains, getDb, users, versionFiles, workspaces } from '@drobek/db';
 import { AppsError } from './errors.js';
 import { notifyAppChanged } from './events.js';
 import { brandWordsFromEnv, describeFinding, scanForPhishing, type HeuristicFinding } from './heuristic.js';
@@ -198,11 +198,24 @@ const reportedAppColumns = {
 
 /**
  * The live app a reported host belongs to (`<slug>`, `<slug>--preview`,
- * `<slug>--v<N>` under APPS_DOMAIN), or null — a host outside the apps
- * origin, a malformed label, or no such (live) app.
+ * `<slug>--v<N>` under APPS_DOMAIN, or a VERIFIED custom domain — M3-01), or
+ * null — a host outside the apps origin that no verified domain names, a
+ * malformed label, or no such (live) app.
  */
 export async function findAppByReportedHost(host: string, hosts: HostConfig = hostConfig()): Promise<ReportedApp | null> {
   const cls = classifyHost(host, hosts);
+  if (cls.side === 'custom') {
+    // The domains table directly (@drobek/domains depends on this package):
+    // the same rule as its resolveCustomHost — only a verified row serves the app.
+    const [row] = await getDb()
+      .select(reportedAppColumns)
+      .from(domains)
+      .innerJoin(apps, eq(apps.id, domains.appId))
+      .innerJoin(workspaces, eq(workspaces.id, apps.workspaceId))
+      .where(and(eq(domains.hostname, cls.hostname), isNotNull(domains.verifiedAt), isNull(apps.deletedAt)))
+      .limit(1);
+    return row ?? null;
+  }
   if (cls.side !== 'apps' || !cls.target) return null;
   const [row] = await getDb()
     .select(reportedAppColumns)

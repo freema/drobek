@@ -73,7 +73,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     versions,
     errors,
     logs,
-    canPublish: header.canEdit,
+    // NSO-293: a taken-down app shows no publish / restore controls (the action answers 423 anyway).
+    canPublish: header.canEdit && header.lockedByAdmin === null,
     // M2-02: "N changes await confirmation" (PendingBanner).
     pendingBanner: await loadPendingBanner(app, header.workspace.slug, app.slug),
   };
