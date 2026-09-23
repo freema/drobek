@@ -48,9 +48,15 @@ tasks:
       - docker compose exec drobek sh
 
   build:
-    desc: Build the production image ({{.IMAGE}}:<sha>)
+    desc: 'Build the production image ({{.IMAGE}}:<sha>, host platform — releases are linux/amd64); on a release tag checkout VERSION = the tag (vX.Y.Z) → /api/version'
+    vars:
+      VERSION:
+        sh: git -C {{.ROOT_DIR}} describe --tags --exact-match --match 'v*' 2>/dev/null || echo dev
     cmds:
-      - docker build --target runner --build-arg GIT_SHA={{.GIT_SHA}} -t {{.IMAGE}}:{{.GIT_SHA}} -t {{.IMAGE}}:local .
+      - >-
+        docker build --target runner
+        --build-arg GIT_SHA={{.GIT_SHA}} --build-arg VERSION={{.VERSION}}
+        -t {{.IMAGE}}:{{.GIT_SHA}} -t {{.IMAGE}}:local .
 
   test:
     desc: Unit tests (all packages + the server)
@@ -150,11 +156,80 @@ tasks:
       - node packages/core/dist/cli/caddy-config.js --out '{{.OUT | default "deployments/Caddyfile"}}'
 
   tls:reload:
-    desc: 'Make the running Caddy re-read its config AND certificate files (after renewing the wildcard cert) [COMPOSE_ARGS="-f …"]'
+    desc: 'Make the running Caddy re-read its config AND certificate files (after renewing the wildcard cert) — the production stack, or [COMPOSE_ARGS="-f …"]'
     cmds:
       - >-
-        docker compose {{.COMPOSE_ARGS | default "-f docker-compose.production.yaml"}}
+        {{if .COMPOSE_ARGS}}docker compose {{.COMPOSE_ARGS}}{{else}}./scripts/selfhost-compose.sh{{end}}
         exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile --force
+
+  # ── Self-host (M4-03) — docs/SELF-HOSTING.md ──────────────────────────────
+  # Every task below drives docker-compose.production.yaml with
+  # --env-file .env.production (ENV_FILE=… overrides; COMPOSE_PROJECT_NAME is
+  # honoured). None needs Node on the host.
+  selfhost:init:
+    desc: 'Create/complete .env.production (secrets via openssl, idempotent) + render deployments/Caddyfile [DOMAIN=… APPS_DOMAIN=… TLS_MODE=on-demand|internal|wildcard-file|dns HTTPS_PORT=…]'
+    env:
+      DOMAIN: '{{.DOMAIN}}'
+      APPS_DOMAIN: '{{.APPS_DOMAIN}}'
+      TLS_MODE: '{{.TLS_MODE}}'
+      HTTPS_PORT: '{{.HTTPS_PORT}}'
+      HTTP_PORT: '{{.HTTP_PORT}}'
+      PUBLISH_IP: '{{.PUBLISH_IP}}'
+      TLS_ACME_EMAIL: '{{.TLS_ACME_EMAIL}}'
+      DROBEK_IMAGE_TAG: '{{.DROBEK_IMAGE_TAG}}'
+      SMTP_HOST: '{{.SMTP_HOST}}'
+      SMTP_PORT: '{{.SMTP_PORT}}'
+      SMTP_SECURE: '{{.SMTP_SECURE}}'
+      SMTP_USER: '{{.SMTP_USER}}'
+      SMTP_PASS: '{{.SMTP_PASS}}'
+      EMAIL_FROM: '{{.EMAIL_FROM}}'
+      SUPERADMIN_EMAIL: '{{.SUPERADMIN_EMAIL}}'
+    cmds:
+      - ./scripts/selfhost-init.sh
+
+  selfhost:migrate:
+    desc: 'Apply every pending migration (core + DROBEK_MODULES) with the configured image and exit — the upgrade step; postgres must be up'
+    cmds:
+      - ./scripts/selfhost-compose.sh run --rm --no-deps -T drobek node dist/server/migrate.js
+
+  selfhost:upgrade:
+    desc: 'Upgrade in place: task backup → pull → stop drobek → migrate ×2 → up -d --wait (set DROBEK_IMAGE_TAG in .env.production first to pin a release)'
+    vars:
+      DC: ./scripts/selfhost-compose.sh
+    cmds:
+      - task: backup
+      - '{{.DC}} pull --ignore-buildable'
+      # The stock Caddy is pulled; a DNS-01 Caddy (CADDY_BUILD_TARGET=dns) is rebuilt on the newest base.
+      - >-
+        if grep -q '^CADDY_BUILD_TARGET=dns' {{.ENV_FILE | default ".env.production"}};
+        then {{.DC}} build --pull caddy; else {{.DC}} pull caddy; fi
+      - '{{.DC}} up -d --wait postgres redis'
+      - '{{.DC}} stop drobek'
+      - task: selfhost:migrate
+      - task: selfhost:migrate
+      - '{{.DC}} up -d --wait --wait-timeout 300'
+      - '{{.DC}} exec -T drobek wget -q -O - http://127.0.0.1:3000/api/version && echo'
+
+  backup:
+    desc: 'Back up the production stack → backups/drobek-<UTC>.tar.gz (pg_dump -Fc + files_data + caddy_data + manifest.json) [BACKUP_DIR=backups]'
+    cmds:
+      - ./scripts/selfhost-backup.sh
+
+  restore:
+    desc: 'Restore a `task backup` archive into this stack and start it (refuses a non-empty database unless FORCE=1) — BACKUP=backups/drobek-<ts>.tar.gz'
+    requires:
+      vars: [BACKUP]
+    env:
+      BACKUP: '{{.BACKUP}}'
+      FORCE: '{{.FORCE}}'
+      ALLOW_KEY_MISMATCH: '{{.ALLOW_KEY_MISMATCH}}'
+    cmds:
+      - ./scripts/selfhost-restore.sh
+
+  selfhost:rehearsal:
+    desc: 'The quickstart + backup → restore end to end on throwaway stacks (builds the image; NOT in check/CI) — scripts/selfhost-rehearsal.sh'
+    cmds:
+      - ./scripts/selfhost-rehearsal.sh
 
   dev:tls:
     desc: 'Dev stack behind Caddy with `tls internal` → https://localhost + https://<slug>--preview.apps.localhost [DEV_TLS_PORT=443]'

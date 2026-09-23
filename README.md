@@ -156,12 +156,20 @@ SCOPES=read,write` on the local stack; send it as `Authorization: Bearer drk_…
 to `/mcp`. `/me/connections` lists the OAuth clients you approved and revokes
 them (access + refresh tokens).
 
-**Production / TLS:** `docker-compose.production.yaml` runs drobek behind
-Caddy (dashboard + wildcard `*.<APPS_DOMAIN>`: your own wildcard cert, DNS-01
-with a Caddy DNS module, or on-demand per host behind an `ask` guard). The
-Caddyfile is generated from `.env` by `task caddy:config`; `task dev:tls` runs
-the dev stack on `https://localhost` / `https://<slug>--preview.apps.localhost`
-with Caddy's local CA. See [`docs/SELF-HOSTING.md`](./docs/SELF-HOSTING.md).
+**Production / TLS:** `docker-compose.production.yaml` runs the released
+image behind Caddy (dashboard + wildcard `*.<APPS_DOMAIN>`: on-demand per host
+behind an `ask` guard, your own wildcard cert, DNS-01 with a Caddy DNS module,
+or `tls internal`). On a server:
+
+```sh
+DOMAIN=drobek.example.com APPS_DOMAIN=apps.example.net task selfhost:init   # .env.production + Caddyfile
+docker compose --env-file .env.production -f docker-compose.production.yaml up -d --wait
+```
+
+`task backup` / `task restore BACKUP=…` and `task selfhost:upgrade` cover the
+rest; `task dev:tls` runs the dev stack on `https://localhost` /
+`https://<slug>--preview.apps.localhost` with Caddy's local CA. The full
+clean-VPS walkthrough is [`docs/SELF-HOSTING.md`](./docs/SELF-HOSTING.md).
 
 `docker compose down -v` wipes the volumes (postgres, redis) for a clean
 start; `docker compose down` keeps your data.

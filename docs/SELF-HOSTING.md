@@ -2,11 +2,161 @@
 
 drobek is one image (`ghcr.io/freema/drobek`) plus Postgres, Redis and Caddy.
 Caddy terminates TLS for the dashboard and for every app host, and proxies
-everything to drobek on the internal network.
+everything to drobek on the internal network. This guide takes a clean
+server to a working instance — dashboard over TLS, an agent connected over
+MCP, a published app — and covers backups, upgrades and every setting.
 
-> The full self-host guide (backups, upgrades, limits, a clean-VPS
-> walkthrough) arrives with M4. This document covers the production compose
-> file and **TLS** (M0-07).
+**Measured:** the whole quickstart below (init → TLS dashboard → user → MCP →
+published app with an uploaded file) took **33 s** in the
+local rehearsal (`task selfhost:rehearsal`, `tls internal`, image already
+built), a backup 7 s, a restore on a second "machine"
+(fresh checkout + `task selfhost:init` + `task restore`) 33 s; the image build
+itself 145 s (a VPS pulls it instead). Local = macOS, Docker Desktop, arm64,
+2026-09-23. **The clean-VPS measurement (Ubuntu 24.04, Let's Encrypt)
+is pending — Tomáš.**
+
+## Quickstart (clean Ubuntu 24.04 + Docker)
+
+What you need:
+
+- a server with a public IPv4 (and/or IPv6), **linux/amd64** (there is no ARM
+  image in v1), ports **80** and **443** reachable from the internet;
+- a domain for the dashboard and a domain for the apps. Create these DNS
+  records **before** step 3 (Let's Encrypt checks them):
+
+  | Record | Points at | Example |
+  | --- | --- | --- |
+  | `A` (and/or `AAAA`) for the dashboard host | the server | `drobek.example.com` |
+  | wildcard `A`/`AAAA` `*.<APPS_DOMAIN>` | the server | `*.apps.example.net` |
+
+  A separate registrable domain for the apps (`example.net` next to
+  `example.com`) is the safer choice; `apps.<your dashboard domain>` works too.
+  No DNS at all (a test box)? Use `DOMAIN=localhost` in step 3 — Caddy's local
+  CA (`tls internal`), reachable only from the machine itself.
+- an SMTP account (host, port, user, password, a sender address) — sign-in
+  codes go out by e-mail.
+
+Every command runs as root (or prefix `sudo`).
+
+**1. Docker, git and go-task**
+
+```sh
+curl -fsSL https://get.docker.com | sh
+apt-get install -y git openssl
+snap install task --classic
+docker compose version     # → Docker Compose version v2.x (or newer)
+task --version             # → Task version: v3.x
+```
+
+**2. The drobek files** (the compose file, the scripts, the env template —
+the image itself comes from GHCR)
+
+```sh
+git clone https://github.com/freema/drobek /opt/drobek
+cd /opt/drobek
+git checkout "$(git tag -l 'v*' --sort=-v:refname | head -n 1)"   # the newest release (skip before the first one)
+```
+
+**3. Configuration** — generates every secret, writes `.env.production`
+(mode 600), renders `deployments/Caddyfile` with the image's own generator
+(no Node on the host):
+
+```sh
+DOMAIN=drobek.example.com APPS_DOMAIN=apps.example.net \
+TLS_ACME_EMAIL=you@example.com SUPERADMIN_EMAIL=you@example.com \
+SMTP_HOST=smtp.example.com SMTP_PORT=587 SMTP_USER=no-reply@example.com \
+EMAIL_FROM=no-reply@example.com \
+task selfhost:init
+```
+
+Expected output (abridged):
+
+```text
+✓ created .env.production from .env.production.example (mode 600)
+✓ generated POSTGRES_PASSWORD
+✓ generated DROBEK_MASTER_KEY
+✓ generated TLS_ASK_TOKEN
+✓ dashboard https://drobek.example.com · apps https://<slug>.apps.example.net
+✓ TLS mode for the app hosts: on-demand
+✓ rendered deployments/Caddyfile (on-demand)
+✓ docker compose config: OK
+```
+
+Then put the SMTP password in (never on the command line):
+
+```sh
+nano .env.production       # SMTP_PASS='…'   (single quotes if it has $, # or spaces)
+```
+
+`task selfhost:init` never asks anything and never overwrites a secret; run it
+again whenever you like (after changing TLS settings: then `task tls:reload`).
+The TLS default for a real domain is **on-demand** (one Let's Encrypt
+certificate per app host, gated by drobek); `TLS_MODE=wildcard-file` or
+`TLS_MODE=dns` pick a wildcard certificate instead — see [TLS](#tls).
+
+**4. Start**
+
+```sh
+docker compose --env-file .env.production -f docker-compose.production.yaml up -d --wait
+```
+
+The first start pulls the images and drobek applies every database
+migration. Expected: `Container drobek-prod-postgres-1
+Healthy`, `…-redis-1 Healthy`, `…-drobek-1 Healthy`, `…-caddy-1 Healthy`.
+
+```sh
+curl -s https://drobek.example.com/healthz      # → {"ok":true,"db":"up","redis":"up"}
+curl -s https://drobek.example.com/api/version  # → {"sha":"<commit>","version":"vX.Y.Z"}
+```
+
+Tip: `alias dc='docker compose --env-file .env.production -f docker-compose.production.yaml'`
+— the rest of this guide spells the command out.
+
+**5. Sign in** — open `https://drobek.example.com`, enter your
+`SUPERADMIN_EMAIL`, type the 6-digit code from the e-mail. You land on `/me`
+with a personal workspace.
+
+**6. Connect an agent (Claude Code)**
+
+```sh
+claude mcp add --transport http drobek https://drobek.example.com/mcp
+```
+
+Claude Code discovers drobek's OAuth server, opens the consent page in your
+browser (`read`, `write`, `publish`) and gets a token bound to you. Without a
+browser on the agent's machine, mint an API key on the server instead and
+pass it as a header:
+
+```sh
+docker compose --env-file .env.production -f docker-compose.production.yaml exec drobek \
+  node node_modules/@drobek/oauth/dist/cli/api-key-create.js \
+  --email you@example.com --name laptop --scopes read,write,publish
+# → drk_…   (shown once)
+claude mcp add --transport http drobek https://drobek.example.com/mcp \
+  --header "Authorization: Bearer drk_…"
+```
+
+**7. Publish an app** — ask the agent: *"Build a tip calculator on drobek and
+publish it."* It calls `create_app` → `write_files` → `publish`; open the
+`published_url` it returns (`https://tip-calculator.apps.example.net`). With
+on-demand TLS the very first request to a new app host waits a few seconds for
+its certificate.
+
+**A test box without DNS** — the same steps with Caddy's local CA:
+
+```sh
+DOMAIN=localhost SUPERADMIN_EMAIL=you@example.com SMTP_HOST=… task selfhost:init   # → TLS mode internal
+docker compose --env-file .env.production -f docker-compose.production.yaml up -d --wait
+docker compose --env-file .env.production -f docker-compose.production.yaml cp \
+  caddy:/data/caddy/pki/authorities/local/root.crt ./drobek-root.crt
+curl --cacert drobek-root.crt https://localhost/healthz
+```
+
+Trust `drobek-root.crt` in your browser / OS to use it without warnings (Node
+clients: `NODE_EXTRA_CA_CERTS=drobek-root.crt`). App hosts are
+`https://<slug>.apps.localhost`, which browsers resolve to the machine itself.
+`HTTPS_PORT=8443` (plus `HTTP_PORT=8080`) moves Caddy off 443 — every URL then
+carries the port.
 
 ## Hosts
 
@@ -26,30 +176,49 @@ app — but a separate registrable domain for the apps is the safer choice.
 ## Production compose
 
 [`docker-compose.production.yaml`](../docker-compose.production.yaml) runs
-drobek, postgres, redis and caddy. Only Caddy publishes ports (80, 443,
-443/udp); drobek, postgres and redis stay on the internal network. Nothing
-secret is written in the file — values come from `.env` next to it.
+drobek, postgres 17, redis 7 and caddy, all `restart: unless-stopped` with a
+healthcheck each. Only Caddy publishes ports (80, 443, 443/udp —
+`HTTP_PORT` / `HTTPS_PORT` / `PUBLISH_IP` move them); drobek, postgres and
+redis stay on the internal network. Nothing secret is written in the file —
+every value comes from `.env.production` (`--env-file` for interpolation,
+`env_file` for drobek). A missing secret, host or `SMTP_HOST` stops
+`docker compose` before anything starts (`${VAR:?}`), and
+`docker compose --env-file .env.production -f docker-compose.production.yaml config`
+prints no warnings. The compose project is **`drobek-prod`** (not `drobek`,
+the dev stack's name in a checkout — a `down -v` here can never reach the dev
+volumes).
 
-```sh
-cp .env.example .env     # then fill in (at least):
-#   POSTGRES_PASSWORD   openssl rand -hex 24
-#   DROBEK_MASTER_KEY   openssl rand -hex 32
-#   PUBLIC_APP_URL      https://drobek.example.com
-#   APPS_DOMAIN         apps.example.com
-#   SMTP_*, EMAIL_FROM, SUPERADMIN_EMAIL
-#   + the TLS variables of ONE path below
-task caddy:config        # → deployments/Caddyfile (gitignored)
-docker compose -f docker-compose.production.yaml up -d --wait
-```
+[`.env.production.example`](../.env.production.example) documents every
+variable (what it is, how it is generated, which ones are secrets). The
+compose file fixes, for drobek: `NODE_ENV=production`,
+`TRUST_PROXY=x-real-ip`, `APPS_URL_SCHEME=https`, `FILES_DIR=/data/files`,
+`DATABASE_URL` / `REDIS_URL` of the bundled services, `PUBLIC_ORIGIN`
+defaulting to `PUBLIC_APP_URL`, and `DROBEK_MODULES` defaulting to all six
+built-ins.
 
-`task caddy:config` needs Node 22 and the built `@drobek/core` package on the
-machine that runs it (`pnpm install && pnpm --filter @drobek/core build` in a
-checkout; the task builds it when it is missing). It reads `.env`, refuses
-ambiguous or invalid settings instead of guessing, and writes a Caddyfile that
-contains **no secrets**: the ask token is referenced as `{$TLS_ASK_TOKEN}`
-and DNS credentials as `{env.NAME}` placeholders, both resolved from Caddy's
-own environment. Re-run it after every TLS-related `.env` change, then
-`task tls:reload`.
+| Variable | Required | What |
+| --- | --- | --- |
+| `DROBEK_IMAGE_TAG` | — (`latest`) | image tag, see [Image tags](#image-tags) |
+| `PUBLIC_APP_URL` | yes | `https://<dashboard host>[:<HTTPS_PORT>]` |
+| `APPS_DOMAIN` | yes | apps live on `*.<APPS_DOMAIN>` (`:<port>` when not 443) |
+| `POSTGRES_PASSWORD` | yes, secret | generated; only used when `pg_data` is first created |
+| `DROBEK_MASTER_KEY` | yes, secret | generated, 64 hex; encrypts upstream secrets, signs app cookies — keep it with your backups |
+| `TLS_ASK_TOKEN` | secret | generated; the on-demand TLS `ask` token (drobek + Caddy) |
+| `SMTP_HOST` | yes | SMTP server; `SMTP_PORT` (587), `SMTP_SECURE` (0 / 1 = implicit TLS), `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM` |
+| `SUPERADMIN_EMAIL` | recommended | your sign-in e-mail(s), super-admin over every workspace |
+| `TLS_*`, `CADDY_*` | per TLS path | see [TLS](#tls) |
+| `HTTP_PORT`, `HTTPS_PORT`, `PUBLISH_IP` | — | published ports / bind address |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | — | optional Google sign-in |
+| limits (`OTP_*`, `COMPILE_*`, `DATA_*`, `FILES_*`, `EMAIL_*`, …) | — | production defaults; the full list is in [`.env.example`](../.env.example) |
+
+The file is read by `docker compose` and by `docker run --env-file` (the
+Caddyfile generator): one `KEY=value` per line, no inline comments; quote a
+value that contains `$`, `#` or spaces with single quotes. Careful: `docker
+compose` lets a variable **exported in your shell** override the same key in
+`--env-file` — don't export drobek settings in the shell you run compose from.
+The `task` commands (`selfhost:*`, `backup`, `restore`, `tls:reload`) go
+through `scripts/selfhost-compose.sh`, which removes every key of
+`.env.production` from the environment first, so the file always wins there.
 
 The compose file sets `TRUST_PROXY=x-real-ip` for drobek: behind Caddy the
 client IP (every per-IP rate limit) comes only from the `X-Real-IP` header
@@ -58,15 +227,15 @@ Caddy sets from the TCP peer — a client-sent `X-Real-IP` or
 a different proxy (e.g. nginx with `X-Real-IP $remote_addr`) is in front.
 
 Platform modules (the backends apps use through `import { drobek } from
-'drobek'`) are enabled with `DROBEK_MODULES` in `.env` (comma-separated; a
+'drobek'`) are enabled with `DROBEK_MODULES` (comma-separated; a
 short name `x` loads the package `drobek-module-x` from the server's
 dependencies). The server applies each module's migrations on start and
 refuses to start on a module it cannot load. Limits come from their env vars
 or, with `LIMITS_PROVIDER_URL` + `LIMITS_PROVIDER_SECRET`, from your own
 signed limits endpoint. The image ships the built-in `auth`, `email`,
 `forms`, `data`, `proxy` and `files`
-(`DROBEK_MODULES=auth,email,forms,data,proxy,files`; `forms` requires
-`email`). Proxy upstreams may only use ports 80 and 443
+(`DROBEK_MODULES=auth,email,forms,data,proxy,files`, the compose default;
+`forms` requires `email`). Proxy upstreams may only use ports 80 and 443
 (`PROXY_ALLOWED_PORTS`); an upstream on a private address needs its hostname
 on `PROXY_ALLOWED_HOSTS` (keep it empty in production). The old
 `/<ws>/api/proxy/<name>/*` dashboard-host route is gone: an app calls
@@ -92,26 +261,168 @@ blocks sign-in — and the log gets an `email_global_pause` ALERT line (with
 `class`) — alert on it. The contract and the
 provider protocol are in [`MODULES.md`](./MODULES.md).
 
-Volumes: `postgres_data`, `redis_data`, `caddy_data` (ACME account, issued
-certificates, Caddy's local CA — back it up; losing it means re-issuing every
-certificate), `caddy_config` and `files_data` (the files module's uploads —
-back it up together with the database: `mod_files` rows point at its files).
+Volumes (named `drobek-prod_<name>`):
+
+| Volume | Holds | In `task backup` |
+| --- | --- | --- |
+| `pg_data` | the database: apps, every version's files (content-addressed blobs), users, keys, module data | yes (`pg_dump -Fc`) |
+| `files_data` | the files module's uploads (`/data/files`; `mod_files` rows point at them) | yes (tar) |
+| `caddy_data` | ACME account, issued certificates, Caddy's local CA — losing it means re-issuing every certificate | yes (tar) |
+| `caddy_config` | Caddy's autosaved config (rebuilt from the Caddyfile) | no |
+| `redis_data` | sessions, caches, rate limits, leases, un-flushed request counters (AOF) | no — after a restore everyone signs in again |
+
+## Backup and restore
+
+```sh
+task backup
+# ✓ backups/drobek-20260923T201500Z.tar.gz — 1234567 bytes in 4 s
+#   apps 12 · files 40 · core migrations 20 · image ghcr.io/freema/drobek:v1.2.0 (v1.2.0 abc1234)
+```
+
+One archive (mode 600, in `backups/`, override with `BACKUP_DIR=`):
+`db.dump` (`pg_dump -Fc` of the whole database — one consistent snapshot),
+`files.tar` (the `files_data` volume), `caddy_data.tar`, `SHA256SUMS` and a
+`manifest.json` with the image tag / id / version / commit, the checkout's
+commit, a fingerprint of `DROBEK_MASTER_KEY`, row counts and the size + sha256
+of every part. It runs online: postgres is started if it is not running,
+nothing else is touched; the uploads are archived **after** the dump, so every
+file row in the dump finds its blob (only a file deleted in between can be
+missing — stop drobek first for a quiesced backup). Schedule it with cron and
+copy the archives off the machine:
+
+```cron
+15 3 * * * cd /opt/drobek && task backup >> /var/log/drobek-backup.log 2>&1
+```
+
+**Not in the archive:** `.env.production` — it holds `DROBEK_MASTER_KEY`,
+without which the restored upstream secrets (proxy module) cannot be
+decrypted. Keep a copy of it somewhere safe, separately from the backups.
+Redis is not backed up (sessions, caches, rate-limit counters).
+
+**Restore** into a stack whose database is empty — a new machine, or this one
+after `docker compose … down -v`:
+
+```sh
+# on the new machine: steps 1–2 of the quickstart (the same or a newer release), then
+scp old-server:/opt/drobek/.env.production /opt/drobek/.env.production   # the SAME secrets
+task selfhost:init                                     # renders the Caddyfile, keeps every secret
+task restore BACKUP=backups/drobek-20260923T201500Z.tar.gz
+# ✓ …verified — created 2026-09-23T20:15:00Z, image ghcr.io/freema/drobek:v1.2.0 (v1.2.0 abc1234)
+# ✓ restored in 25 s — /healthz {"ok":true,"db":"up","redis":"up"}
+#   apps 12 · files 40 (backup: apps 12 · files 40)
+```
+
+`task restore` verifies the checksums, refuses a `DROBEK_MASTER_KEY` that does
+not match the backup's fingerprint (`ALLOW_KEY_MISMATCH=1` restores anyway,
+without usable upstream secrets), refuses a **non-empty database** (`FORCE=1`
+drops and recreates it — back it up first), stops drobek and caddy, restores
+the database, replaces `files_data` and `caddy_data`, and starts the stack
+(`up -d --wait`). Restore with the backup's image version or a newer one
+(`image_version` in `manifest.json`) — a newer image migrates the restored
+database forward on start; an older one does not know its migrations. Point
+the DNS records at the new machine; the restored `caddy_data` carries the
+certificates over. Sessions (dashboard users and apps' end users) live in
+Redis, which is not in the backup: after a restore on a new machine everyone
+signs in again; API keys and OAuth clients are in the database and keep
+working. A `FORCE=1` restore on the same machine leaves Redis as it is.
+
+## Upgrades and rollback
+
+The server applies pending migrations itself on every start (the core journal
+`drizzle.__drizzle_migrations_core`, then one `__drizzle_migrations_mod_<name>`
+per module). An upgrade still runs them as their own step first, so a failing
+migration stops the upgrade while nothing new is serving:
+
+```sh
+cd /opt/drobek
+git fetch --tags && git checkout vX.Y.Z      # the compose file + scripts of the new release
+sed -i 's/^DROBEK_IMAGE_TAG=.*/DROBEK_IMAGE_TAG=vX.Y.Z/' .env.production   # pin it (or keep latest)
+task selfhost:upgrade
+```
+
+`task selfhost:upgrade` is exactly:
+
+```sh
+task backup                                                   # the rollback point
+docker compose --env-file .env.production -f docker-compose.production.yaml pull --ignore-buildable
+docker compose --env-file .env.production -f docker-compose.production.yaml pull caddy     # (DNS-01 Caddy: build --pull caddy)
+docker compose --env-file .env.production -f docker-compose.production.yaml up -d --wait postgres redis
+docker compose --env-file .env.production -f docker-compose.production.yaml stop drobek
+task selfhost:migrate     # the new image: applies the release's migrations, exits
+task selfhost:migrate     # again: "migrations: nothing to apply (up to date)"
+docker compose --env-file .env.production -f docker-compose.production.yaml up -d --wait
+```
+
+`task selfhost:migrate` is `docker compose … run --rm --no-deps -T drobek node
+dist/server/migrate.js`: the server's start-up checks, then every migration,
+without listening. **Running migrations twice (and every later start) is
+safe:** drizzle records each applied migration in its journal table inside the
+same transaction as the migration itself, so a second run finds everything
+recorded and applies nothing — the second `migrate` is the proof that the
+first one completed, and the `up -d` that follows migrates nothing. A
+migration that fails rolls back its transaction and leaves the journal as it
+was; the old container is already stopped, so fix the cause (or roll back)
+before starting.
+
+**Rollback.** `previous` is the release that was `latest` before the newest
+one — but it moves with the next release, so roll back to the exact version:
+
+```sh
+sed -i 's/^DROBEK_IMAGE_TAG=.*/DROBEK_IMAGE_TAG=vX.Y.W/' .env.production    # the release you came from
+# the new release migrated the database? (the migrate output said "applied N")
+task restore FORCE=1 BACKUP=backups/<the backup task selfhost:upgrade just took>
+# it did not ("nothing to apply" on the first run too):
+docker compose --env-file .env.production -f docker-compose.production.yaml up -d --wait
+```
+
+Migrations only go forward; an older image on a database migrated by a newer
+one is not supported, which is why the upgrade takes a backup first.
+
+## Image tags
+
+`ghcr.io/freema/drobek` (linux/amd64 only in v1 — no ARM image):
+
+| Tag | What | Moves? |
+| --- | --- | --- |
+| `vX.Y.Z` | one release, built from the git tag `vX.Y.Z` | never |
+| `latest` | the newest release (the compose default) | on every release |
+| `previous` | the release `latest` pointed at before the newest one | on every release |
+| `edge` | the newest `main` commit that passed CI | on every `main` push |
+| `<sha>` | one commit that passed CI (`main` or a release tag) | never |
+
+A release is a pushed `vX.Y.Z` tag: CI runs the quality gate and the e2e suite
+against the image it builds from that tag (`GIT_SHA` = the tag's commit,
+`VERSION` = the tag, both in `/api/version`), pushes that exact image as
+`vX.Y.Z`, then retags in the registry: the former `latest` → `previous`,
+`vX.Y.Z` → `latest`. A pre-release tag (`vX.Y.Z-rc.1`) gets only its own tag.
+To rebuild a release image yourself: `git checkout vX.Y.Z && task build` (same
+sources and lockfile; the build args come from the checkout).
 
 ## TLS
 
 The dashboard host always gets a normal ACME certificate (Let's Encrypt via
 HTTP-01/TLS-ALPN — ports 80 and 443 must be reachable). The app hosts
 `*.<APPS_DOMAIN>` use **exactly one** of three paths; the Caddyfile generator
-picks it from the environment and refuses combinations:
+picks it from the environment and refuses combinations. `task selfhost:init
+TLS_MODE=<mode>` sets the variables below in `.env.production` and renders
+`deployments/Caddyfile` (gitignored) with the image's generator; after editing
+them by hand, re-run `task selfhost:init` and `task tls:reload`:
 
-| Set in `.env` | Path |
-| --- | --- |
-| `TLS_WILDCARD_CERT_FILE` + `TLS_WILDCARD_KEY_FILE` | (a) your wildcard certificate files |
-| `TLS_DNS_PROVIDER` (+ `TLS_DNS_PROVIDER_ARGS`, `TLS_DNS_CHALLENGE_OVERRIDE_DOMAIN`) | (b) wildcard via ACME DNS-01 |
-| none of them (+ `TLS_ASK_TOKEN`) | (c) on-demand, one certificate per app host |
-| `TLS_INTERNAL=1` | development only: Caddy's local CA for everything |
+| `TLS_MODE=` | Set in `.env.production` | Path |
+| --- | --- | --- |
+| `wildcard-file` | `TLS_WILDCARD_CERT_FILE` + `TLS_WILDCARD_KEY_FILE` | (a) your wildcard certificate files |
+| `dns` | `TLS_DNS_PROVIDER` (+ `TLS_DNS_PROVIDER_ARGS`, `TLS_DNS_CHALLENGE_OVERRIDE_DOMAIN`) | (b) wildcard via ACME DNS-01 |
+| `on-demand` (default for a real domain) | none of them (+ `TLS_ASK_TOKEN`) | (c) on-demand, one certificate per app host |
+| `internal` (default for `localhost`) | `TLS_INTERNAL=1` | a test box: Caddy's local CA for everything |
 
 `TLS_ACME_EMAIL` (optional) is the ACME account e-mail for expiry notices.
+
+The generator reads `.env.production`, refuses ambiguous or invalid settings
+instead of guessing, and writes a Caddyfile that contains **no secrets**: the
+ask token is referenced as `{$TLS_ASK_TOKEN}` and DNS credentials as
+`{env.NAME}` placeholders, both resolved from Caddy's own environment. In a
+development checkout `task caddy:config` runs the same generator on the host
+(Node 22 + the built `@drobek/core`) from `.env`.
 
 ### (a) Wildcard certificate files
 
@@ -119,10 +430,11 @@ You obtain a `*.<APPS_DOMAIN>` certificate yourself (any ACME client with
 DNS-01, or a commercial CA) and renew it yourself.
 
 ```sh
-# .env
-TLS_WILDCARD_CERT_FILE=/certs/wildcard.crt   # paths INSIDE the caddy container
-TLS_WILDCARD_KEY_FILE=/certs/wildcard.key
-TLS_CERTS_DIR=./certs                        # host directory mounted read-only at /certs
+task selfhost:init TLS_MODE=wildcard-file
+# .env.production now has (paths INSIDE the caddy container):
+#   TLS_WILDCARD_CERT_FILE=/certs/wildcard.crt
+#   TLS_WILDCARD_KEY_FILE=/certs/wildcard.key
+#   TLS_CERTS_DIR=./certs      (host directory mounted read-only at /certs)
 ```
 
 Put the full chain in `certs/wildcard.crt` and the key in
@@ -151,17 +463,16 @@ Caddy binary with a DNS provider module, which
 `xcaddy`:
 
 ```sh
-# .env
-CADDY_BUILD_TARGET=dns
-CADDY_DNS_MODULE=github.com/caddy-dns/<provider>
-TLS_DNS_PROVIDER=<provider>
-TLS_DNS_PROVIDER_ARGS={env.DNS_API_TOKEN}     # provider-specific, placeholders only
-TLS_ACME_EMAIL=ops@example.com
+task selfhost:init TLS_MODE=dns TLS_DNS_PROVIDER=<provider> \
+  CADDY_DNS_MODULE=github.com/caddy-dns/<provider>
+# .env.production now has CADDY_IMAGE=drobek-caddy:dns, CADDY_BUILD_TARGET=dns,
+# CADDY_DNS_MODULE, TLS_DNS_PROVIDER and TLS_DNS_PROVIDER_ARGS={env.DNS_API_TOKEN}
+# (provider-specific, placeholders only)
 
 # .env.caddy — credentials for Caddy ONLY (drobek never sees them)
 DNS_API_TOKEN=…
 
-docker compose -f docker-compose.production.yaml build caddy
+docker compose --env-file .env.production -f docker-compose.production.yaml build caddy
 ```
 
 Modules exist only for some DNS hosts — check
@@ -181,7 +492,7 @@ _acme-challenge.apps.example.com.  CNAME  _acme-challenge.acme-delegate.example.
 ```
 
 ```sh
-# .env — the delegate zone acme-delegate.example.net is hosted at <provider>
+# .env.production — the delegate zone acme-delegate.example.net is hosted at <provider>
 TLS_DNS_PROVIDER=<provider>
 TLS_DNS_PROVIDER_ARGS={env.DNS_API_TOKEN}
 TLS_DNS_CHALLENGE_OVERRIDE_DOMAIN=_acme-challenge.acme-delegate.example.net
@@ -205,12 +516,8 @@ the credentials only ever touch that small zone. Generated app block:
 With no wildcard, Caddy issues a certificate for each app host at its first
 TLS handshake. That is **always gated**: before every new certificate Caddy
 asks drobek, and drobek says yes only for a host of an existing app.
-
-```sh
-# .env — the same value reaches drobek (env_file) and caddy (environment)
-TLS_ASK_TOKEN=<paste the output of: openssl rand -hex 32>
-TLS_ACME_EMAIL=ops@example.com
-```
+`task selfhost:init` generates `TLS_ASK_TOKEN` (for every mode) and the
+compose file hands the same value to drobek and to Caddy.
 
 ```caddyfile
 {
@@ -250,7 +557,26 @@ one per version URL you open — fine for a self-host with a handful of apps,
 not for a busy multi-tenant instance (use (a) or (b) there). Certificates stay
 cached in `caddy_data` after an app is deleted until they expire.
 
-### Development: `task dev:tls`
+## The rehearsal (`task selfhost:rehearsal`)
+
+[`scripts/selfhost-rehearsal.sh`](../scripts/selfhost-rehearsal.sh) runs this
+guide end to end on throwaway stacks (unique `COMPOSE_PROJECT_NAME`s, every
+port on 127.0.0.1, a throwaway Mailpit as the SMTP server): it builds the
+image, copies only the self-host files into a fresh directory ("machine A"),
+runs `task selfhost:init` twice (idempotency) and `docker compose config`
+(no warnings), starts the stack, signs a user in over the e-mail code flow,
+mints an API key with the container CLI, creates + writes + publishes an app
+over MCP (the official SDK client) and uploads a file through the files
+module; then `task backup`, `down -v`, a second fresh directory ("machine B")
+with only machine A's `.env.production`, `task selfhost:init`, `task
+restore`, and asserts the app serves on its host, the file downloads byte for
+byte, the same API key works and Caddy's restored CA still validates; a
+second restore must be refused and a second `task selfhost:migrate` must
+apply nothing. It prints the wall-clock time of every phase. Not part of
+`task check` or CI (it takes minutes). Knobs: `REHEARSAL_HTTPS_PORT` (9443),
+`REHEARSAL_SKIP_BUILD=1`, `REHEARSAL_KEEP=1` (see the script header).
+
+## Development: `task dev:tls`
 
 The dev stack normally runs on plain HTTP (`task up`, `http://localhost:3041`,
 `http://<slug>--preview.apps.localhost:3041`). To run it behind Caddy with its

@@ -49,8 +49,15 @@ RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack 
     /usr/local/bin/yarn /usr/local/bin/yarnpkg
 ENV NODE_ENV=production \
     PORT=3000
+# M4-03: a release image is built from its tag (ci.yml, `v*`): GIT_SHA = the
+# tag's commit, VERSION = the tag (vX.Y.Z). Both surface in /api/version.
 ARG GIT_SHA=dev
-ENV GIT_SHA=$GIT_SHA
+ARG VERSION=dev
+ENV GIT_SHA=$GIT_SHA \
+    DROBEK_VERSION=$VERSION
+LABEL org.opencontainers.image.source="https://github.com/freema/drobek" \
+      org.opencontainers.image.revision=$GIT_SHA \
+      org.opencontainers.image.version=$VERSION
 WORKDIR /app
 COPY --from=builder --chown=node:node /out/package.json ./package.json
 COPY --from=builder --chown=node:node /out/node_modules ./node_modules

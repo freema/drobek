@@ -221,6 +221,50 @@
   unpublish with 423; the module page refuses changes with 423 (reject and
   removing a secret stay allowed).
 
+### Self-host packaging: production compose, `selfhost:init`, backup/restore, release tags (NSO-304)
+
+- **`docker-compose.production.yaml`** rewritten: drobek + postgres 17 +
+  redis 7 + caddy, `${VAR:?}` fail-fast for every secret, host and
+  `SMTP_HOST`, a healthcheck on all four, `restart: unless-stopped`, image
+  `ghcr.io/freema/drobek:${DROBEK_IMAGE_TAG:-latest}`, `DROBEK_MODULES`
+  defaulting to all six built-ins, configurable `HTTP_PORT` / `HTTPS_PORT` /
+  `PUBLISH_IP`, Caddy = the stock `caddy:2-alpine` unless DNS-01. ⚠️ It now
+  reads **`.env.production`** (`--env-file .env.production` + `env_file`),
+  the project is **`drobek-prod`** and the volumes are `pg_data`,
+  `redis_data`, `files_data`, `caddy_data`, `caddy_config` (were
+  `postgres_data`, … under project `drobek`, which collided with the dev
+  stack's project name) — an instance started from the M0-07 file must move
+  its data with `task backup` / `task restore`.
+- **`.env.production.example`**: every variable commented (what, how to
+  generate, secret or not), the four TLS paths.
+- **`task selfhost:init`** (`scripts/selfhost-init.sh`): non-interactive and
+  idempotent — `.env.production` (mode 600), `openssl rand -hex 32` for every
+  empty secret (never overwrites one), `DOMAIN` / `APPS_DOMAIN` / `TLS_MODE` /
+  `HTTPS_PORT` / SMTP from the environment, the Caddyfile rendered with the
+  image's own generator (no Node on the host), a `docker compose config` check
+  and the next steps.
+- **`task backup`** / **`task restore BACKUP=…`** (`scripts/selfhost-backup.sh`,
+  `scripts/selfhost-restore.sh`): `backups/drobek-<UTC>.tar.gz` with
+  `pg_dump -Fc`, the `files_data` and `caddy_data` volumes, `SHA256SUMS` and
+  a `manifest.json` (image tag / id / version / sha, checkout sha, master-key
+  fingerprint, counts, sizes, sha256s). Restore verifies, refuses a
+  non-empty database (`FORCE=1`) and a different `DROBEK_MASTER_KEY`
+  (`ALLOW_KEY_MISMATCH=1`), stops drobek + caddy, restores, starts.
+- **`task selfhost:migrate`** = `node dist/server/migrate.js` in the image
+  (new: the server's config checks + core and module migrations, then exit);
+  **`task selfhost:upgrade`** = backup → pull → stop drobek → migrate ×2 → up.
+- **Image versioning** (`ci.yml`): `v*` tags run the full pipeline and push the
+  tested image as `vX.Y.Z`; a `release` job retags in the registry (former
+  `latest` → `previous`, `vX.Y.Z` → `latest`; pre-releases get only their
+  tag). ⚠️ `main` now pushes `:<sha>` + **`:edge`** — no longer `:latest`,
+  which means "newest release". Builds are `linux/amd64` only.
+- **`/api/version`** returns `{ sha, version }` — `version` from the new
+  `VERSION` build arg (`DROBEK_VERSION`, the release tag; `dev` otherwise);
+  OCI labels `org.opencontainers.image.{source,revision,version}`.
+- **`task selfhost:rehearsal`** (`scripts/selfhost-rehearsal.sh` +
+  `tests-e2e/selfhost-rehearsal.mjs`, not in `check` / CI): the quickstart and
+  a backup → restore onto a second fresh stack, end to end, timed.
+
 ### The built-in `proxy` module (NSO-297)
 
 - **`modules/proxy`** (`drobek-module-proxy`): `/__drobek/v1/proxy/:upstream/*`

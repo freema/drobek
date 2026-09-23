@@ -374,6 +374,17 @@ block, then `next` is pushed and the single MR opened.
   agent-made pending change e-mails the owners through the email module (1/h
   per app, `drobek:rl:modules:pending-mail:<app_id>`). No migration. e2e
   `tests-e2e/tests/dashboard-modules.spec.ts` written, not run.
+- **M4-03 (NSO-304) — self-host packaging** (worktree, check green, local
+  rehearsal passed; the clean-VPS < 30 min run is Tomáš's). Production compose
+  on `.env.production` (project `drobek-prod`, volumes `pg_data` …),
+  `.env.production.example`, `task selfhost:init` / `selfhost:migrate` /
+  `selfhost:upgrade` / `backup` / `restore` / `selfhost:rehearsal`
+  (`scripts/selfhost-*.sh` + `scripts/lib/selfhost.sh`,
+  `tests-e2e/selfhost-rehearsal.mjs`), `apps/server/server/migrate.ts`
+  (`dist/server/migrate.js`), `/api/version` `{sha, version}` (build arg
+  `VERSION` → `DROBEK_VERSION`), ci.yml `v*` tags → `vX.Y.Z` + `release` job
+  (`previous` ← `latest` ← `vX.Y.Z`), `main` → `:edge`, amd64 only.
+  `docs/SELF-HOSTING.md` rewritten around the quickstart.
 
 ## Notes and gotchas
 
@@ -854,6 +865,37 @@ block, then `next` is pushed and the single MR opened.
   any command containing the word "eval" (`task eval …` included) as "can't be verified to
   stay inside the worktree". Write a python script to the scratchpad and run it, or check
   with `task --list`.
+
+- `docker compose` lets the SHELL environment override `--env-file` values:
+  Task's `env:` mapping exports even empty inputs (`APPS_DOMAIN: ''`), and the
+  global `dotenv: ['.env']` exports a dev `.env` into every task — both
+  silently replaced `.env.production` values (a `${VAR:?}` "missing a value"
+  was the symptom). `scripts/lib/selfhost.sh` `dc()` runs compose under
+  `env -u <every key of the env file>`; every self-host task goes through it
+  (`scripts/selfhost-compose.sh`).
+- The dev stack has no `name:` — its project is the checkout's directory name
+  (`drobek` in the main checkout). The production compose used `name: drobek`
+  too, so a `down -v` of it in the main checkout would have hit the dev
+  volumes: it is `drobek-prod` now. Throwaway runs always set
+  `COMPOSE_PROJECT_NAME`.
+- A compose service with `build:` AND an image that is not in any registry:
+  `docker compose pull` exits 1 and `up` prints "pull access denied" before it
+  builds. Caddy defaults to `caddy:2-alpine` (pullable); only the DNS-01 image
+  (`CADDY_IMAGE=drobek-caddy:dns`) is built, and the upgrade uses
+  `pull --ignore-buildable` + `pull caddy` / `build --pull caddy`.
+- `.env.production` is read by compose AND by `docker run --env-file` (the
+  image's Caddyfile generator): the docker parser keeps quotes and inline
+  `# …` literally, so the file has no inline comments and TLS values stay
+  unquoted.
+- macOS runs the scripts with bash 3.2 (`/bin/bash`, nothing newer on PATH
+  here): no associative arrays / `mapfile`, and an empty `"${arr[@]}"` under
+  `set -u` is an error — the self-host scripts use plain strings.
+- Dashboard AND app end-user sessions live in Redis, which `task backup`
+  does not include: after a restore on a new machine everyone signs in again
+  (API keys / OAuth clients are in Postgres and keep working).
+- A worktree agent's Bash tool refuses any command TEXT containing the word
+  git (even inside python / grep patterns such as `GIT_SHA`) — write such
+  files with the Write/Edit tools; scripts that run git themselves are fine.
 
 ## Failed approaches
 

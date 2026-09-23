@@ -1,36 +1,48 @@
-# drobek — production / self-host stack (M0-07): drobek + postgres + redis +
-# caddy (TLS). For self-hosters and the SaaS VPS (M0-09). See
+# drobek — production / self-host stack (M0-07, M4-03): drobek + postgres +
+# redis + caddy (TLS). For self-hosters and the SaaS VPS. The whole procedure
+# (clean VPS → dashboard with TLS → MCP → published app, backups, upgrades) is
 # docs/SELF-HOSTING.md.
 #
-#   1. .env next to this file (never committed): the variables below marked
-#      REQUIRED plus everything drobek needs (see .env.example).
-#   2. task caddy:config            → deployments/Caddyfile (from .env)
-#   3. docker compose -f docker-compose.production.yaml up -d --wait
+#   1. task selfhost:init          → .env.production (secrets generated) +
+#                                    deployments/Caddyfile
+#   2. docker compose --env-file .env.production -f docker-compose.production.yaml up -d --wait
 #
-# No secret is written in this file: values come from .env (interpolation and
-# env_file). Only Caddy publishes ports; drobek, postgres and redis are
-# reachable on the internal network only.
-name: drobek
+# Every value comes from .env.production (interpolation via --env-file AND
+# env_file for drobek); nothing secret is written here. A missing secret or
+# domain stops `docker compose` before anything starts (${VAR:?}). Only Caddy
+# publishes ports; drobek, postgres and redis stay on the internal network.
+#
+# The project name is `drobek-prod` (volumes drobek-prod_pg_data, …) — NOT
+# `drobek`, which is the dev stack's (docker-compose.yml in a checkout named
+# drobek): a `down -v` here must never reach the dev volumes, and vice versa.
+# COMPOSE_PROJECT_NAME overrides it (the rehearsal script runs throwaway ones).
+name: drobek-prod
+
+x-restart: &restart
+  restart: unless-stopped
 
 services:
   postgres:
+    <<: *restart
     image: postgres:17-alpine
-    restart: unless-stopped
     environment:
       POSTGRES_USER: drobek
       POSTGRES_DB: drobek
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env (openssl rand -hex 24)}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.production (task selfhost:init generates it)}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - pg_data:/var/lib/postgresql/data
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U drobek -d drobek']
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 12
 
   redis:
+    <<: *restart
     image: redis:7-alpine
-    restart: unless-stopped
+    # Sessions, caches, rate limits, leases, un-flushed request counters — not
+    # part of `task backup` (after a restore everyone signs in again); AOF keeps
+    # it across restarts.
     command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
@@ -38,29 +50,49 @@ services:
       test: ['CMD', 'redis-cli', 'ping']
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 12
 
   drobek:
-    image: ${DROBEK_IMAGE:-ghcr.io/freema/drobek:latest}
-    restart: unless-stopped
-    # Everything drobek reads (DROBEK_MASTER_KEY, SMTP_*, PUBLIC_APP_URL,
-    # APPS_DOMAIN, TLS_ASK_TOKEN, …) comes from .env.
-    env_file: .env
+    <<: *restart
+    # Release tags: vX.Y.Z (pin one), latest (newest release), previous (the
+    # release before it — the rollback target). linux/amd64 only.
+    image: ghcr.io/freema/drobek:${DROBEK_IMAGE_TAG:-latest}
+    # Everything drobek reads (SMTP_*, SUPERADMIN_EMAIL, limits, …) comes from
+    # .env.production; the entries below are the ones compose must see (fail
+    # fast) or that this topology fixes.
+    env_file: .env.production
     environment:
       NODE_ENV: production
+      PORT: '3000'
       DATABASE_URL: postgresql://drobek:${POSTGRES_PASSWORD:?}@postgres:5432/drobek
       REDIS_URL: redis://redis:6379
-      PORT: '3000'
+      DROBEK_MASTER_KEY: ${DROBEK_MASTER_KEY:?set DROBEK_MASTER_KEY in .env.production (openssl rand -hex 32)}
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:?set PUBLIC_APP_URL in .env.production (https://your-dashboard-host)}
+      # Invite links and the Google redirect_uri are built from PUBLIC_ORIGIN.
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-${PUBLIC_APP_URL}}
+      APPS_DOMAIN: ${APPS_DOMAIN:?set APPS_DOMAIN in .env.production (apps live on *.<APPS_DOMAIN>)}
+      APPS_URL_SCHEME: https
+      # Sign-in codes go out over SMTP; production refuses to send without it.
+      SMTP_HOST: ${SMTP_HOST:?set SMTP_HOST in .env.production (your SMTP server)}
+      # The same value reaches Caddy (on-demand TLS `ask`); unset = the ask
+      # endpoint refuses every certificate.
+      TLS_ASK_TOKEN: ${TLS_ASK_TOKEN:-}
       # Behind Caddy: only its X-Real-IP (the TCP peer) identifies the client.
       TRUST_PROXY: x-real-ip
-      PUBLIC_APP_URL: ${PUBLIC_APP_URL:?set PUBLIC_APP_URL in .env (https://your-dashboard-host)}
-      APPS_DOMAIN: ${APPS_DOMAIN:?set APPS_DOMAIN in .env (apps live on *.<APPS_DOMAIN>)}
+      # All six built-in platform modules (forms requires email).
+      DROBEK_MODULES: ${DROBEK_MODULES:-auth,email,forms,data,proxy,files}
       # The files module's uploads live on the files_data volume below.
       FILES_DIR: /data/files
     volumes:
-      # End-user uploads (files module, content-addressed) — back this up.
+      # End-user uploads (files module, content-addressed) — part of `task backup`.
       - files_data:/data/files
-    # The image's own HEALTHCHECK probes /healthz (db + redis).
+    healthcheck:
+      # /healthz = {ok, db, redis}; the first start applies every migration.
+      test: ['CMD-SHELL', 'wget -q -T 5 -O - http://127.0.0.1:3000/healthz || exit 1']
+      interval: 10s
+      timeout: 10s
+      start_period: 60s
+      retries: 6
     depends_on:
       postgres:
         condition: service_healthy
@@ -68,33 +100,38 @@ services:
         condition: service_healthy
 
   caddy:
-    # Stock Caddy by default. For DNS-01 (TLS_DNS_PROVIDER) set
-    # CADDY_BUILD_TARGET=dns and CADDY_DNS_MODULE=github.com/caddy-dns/<provider>,
-    # then `docker compose -f docker-compose.production.yaml build caddy`.
-    image: ${CADDY_IMAGE:-drobek-caddy:local}
+    <<: *restart
+    # The stock Caddy image, pulled like the others — unless you use DNS-01
+    # (TLS_DNS_PROVIDER): then CADDY_IMAGE=drobek-caddy:dns,
+    # CADDY_BUILD_TARGET=dns, CADDY_DNS_MODULE=github.com/caddy-dns/<provider>
+    # (task selfhost:init TLS_MODE=dns sets them) and `docker compose … build
+    # caddy` builds it from deployments/Dockerfile.caddy with xcaddy.
+    image: ${CADDY_IMAGE:-caddy:2-alpine}
     build:
       context: .
       dockerfile: deployments/Dockerfile.caddy
       target: ${CADDY_BUILD_TARGET:-official}
       args:
         CADDY_DNS_MODULE: ${CADDY_DNS_MODULE:-}
-    restart: unless-stopped
+    # HTTPS_PORT is the host AND in-container port (the site addresses carry
+    # it when it is not 443). PUBLISH_IP (optional) binds one address only.
     ports:
-      - '80:80'
-      - '443:443'
-      - '443:443/udp'
+      - '${PUBLISH_IP:+${PUBLISH_IP}:}${HTTP_PORT:-80}:80'
+      - '${PUBLISH_IP:+${PUBLISH_IP}:}${HTTPS_PORT:-443}:${HTTPS_PORT:-443}'
+      - '${PUBLISH_IP:+${PUBLISH_IP}:}${HTTPS_PORT:-443}:${HTTPS_PORT:-443}/udp'
     environment:
       # Substituted into the on-demand `ask` URL when Caddy loads the config
       # ({$TLS_ASK_TOKEN} in the Caddyfile). Must equal drobek's value.
       TLS_ASK_TOKEN: ${TLS_ASK_TOKEN:-}
     # DNS provider credentials ONLY (referenced as {env.NAME} in
-    # TLS_DNS_PROVIDER_ARGS) — Caddy never sees drobek's .env secrets.
+    # TLS_DNS_PROVIDER_ARGS) — Caddy never sees drobek's secrets.
     env_file:
       - path: .env.caddy
         required: false
     volumes:
+      # Rendered by `task selfhost:init` (the image's own generator).
       - ./deployments/Caddyfile:/etc/caddy/Caddyfile:ro
-      # ACME account, issued certificates, the local CA — back this up.
+      # ACME account, issued certificates, the local CA — part of `task backup`.
       - caddy_data:/data
       - caddy_config:/config
       # Operator-supplied wildcard certificate (TLS_WILDCARD_CERT_FILE /
@@ -104,7 +141,7 @@ services:
     healthcheck:
       # The TLS listener is up (a port probe — polling the admin API would log
       # every probe at info level).
-      test: ['CMD-SHELL', 'nc -z -w 3 127.0.0.1 443 || exit 1']
+      test: ['CMD-SHELL', 'nc -z -w 3 127.0.0.1 ${HTTPS_PORT:-443} || exit 1']
       interval: 10s
       timeout: 5s
       retries: 6
@@ -113,8 +150,8 @@ services:
         condition: service_healthy
 
 volumes:
-  postgres_data:
+  pg_data:
   redis_data:
+  files_data:
   caddy_data:
   caddy_config:
-  files_data:
