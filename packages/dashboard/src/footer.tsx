@@ -5,6 +5,9 @@
  */
 import { sourceLink } from './source-link.js';
 
+/** The repository URL, for pages that link the source outside the footer (the apex landing). */
+export { SOURCE_REPO_URL } from './source-link.js';
+
 const styles = {
   footer: {
     fontFamily: 'system-ui, sans-serif',

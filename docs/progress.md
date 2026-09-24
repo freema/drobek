@@ -998,6 +998,15 @@ block, then `next` is pushed and the single MR opened.
   upgraded): `nodemailer` 6.x (fixes need 7.x / 9.x — majors) and
   `drizzle-orm` 0.41 (fix in 0.45 — a breaking 0.x minor; drobek passes no
   runtime input to `sql.identifier()` / `.as()`, the advisory's precondition).
+- Route components are tested with `renderToStaticMarkup` (NSO-331,
+  `apps/server/app/routes/_index.test.tsx`): export the view as a pure
+  component taking the loader data (`Landing`) and let the default export do
+  only `useLoaderData`. Keep package imports that read `process.env` or are
+  server-only in the `loader` — React Router drops loader-only imports from
+  the client chunk (check `build/client/assets/_index-*.js`).
+- The e-mail layout footer (`packages/email/src/layout.server.ts`) still
+  carries the pre-rebuild tagline; NSO-331 left it alone (NSO-330 owned
+  `packages/email` in the same wave).
 
 ## Failed approaches
 

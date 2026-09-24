@@ -2,6 +2,20 @@
 
 ## Unreleased (`next`)
 
+### Apex landing describes the cloud workspace (NSO-331)
+
+- The anonymous landing at `/` (`apps/server/app/routes/_index.tsx`) no
+  longer talks about static micro-apps and dropping a folder. It describes
+  the current product in a neutral voice: an agent connected over MCP, the
+  write → compile (esbuild diagnostics) → instant preview → publish loop,
+  the built-in platform modules (auth, data, forms, email, files, proxy), the
+  dashboard (write-only secrets, confirmations, domains, data, users) and the
+  AGPL-3.0 self-hostable instance. It links sign-in, `/build-with-your-agent`,
+  `docs/AGENT.md` (`AGENT_GUIDE_URL`), `/llms.txt` and the GitHub repository
+  (`SOURCE_REPO_URL`, now re-exported from `@drobek/dashboard/footer`); the
+  `/healthz` and `/api/version` links stay. Unit test `_index.test.tsx`; the
+  `index-console` e2e spec asserts the new copy. No migration.
+
 ### Directory listing kit + explicit `idempotentHint` (NSO-307)
 
 - New `docs/listing/`: `README.md` is the submission kit for the Claude
