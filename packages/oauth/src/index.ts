@@ -115,6 +115,7 @@ export {
   type IssuedTokens,
   type RotateResult,
   type RotateOptions,
+  type IssueOptions,
   type AccessTokenClaims,
   type ValidateOptions,
 } from './tokens.server.js';
@@ -126,6 +127,7 @@ export {
   type AuthCodeRow,
   type AccessTokenRow,
   type RefreshTokenRow,
+  type RefreshTokenRecord,
   type GrantRecord,
   type GrantKey,
 } from './store.server.js';

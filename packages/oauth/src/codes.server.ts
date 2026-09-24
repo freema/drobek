@@ -3,10 +3,19 @@
  * its SHA-256 hash is stored. Consumption is atomic (markAuthCodeUsed flips
  * used false→true and reports whether THIS caller won the race), so a code is
  * usable exactly once even under concurrent /oauth/token calls.
+ *
+ * Presentation burns the code (NSO-332, RFC 6749 §4.1.2 / OAuth 2.1 §4.1.3):
+ * a FAILED exchange (wrong verifier, redirect_uri, client, expired) consumes
+ * it too, so a PKCE guess gets exactly one try. Presenting an already-consumed
+ * code is replay: the refresh-token lineage the code minted is revoked with
+ * the refresh-reuse mechanism (revokeLineage). The link is the lineage's first
+ * refresh-token id, derived from the code row id (authCodeRefreshTokenId) —
+ * no code→token column.
  */
 import { AUTH_CODE_TTL_MS } from './constants.js';
 import { generateOpaqueToken, hashToken, verifyPkceS256 } from './crypto.server.js';
 import { exactRedirectUriMatch } from './redirect-uri.js';
+import { revokeLineage } from './tokens.server.js';
 import {
   defaultOAuthStore,
   type AuthCodeRow,
@@ -44,8 +53,22 @@ export async function issueAuthCode(
   return code;
 }
 
+/**
+ * The row id of the first refresh token minted by exchanging the code `codeId`
+ * (its successors hang off it via rotated_to). Deterministic, so a replayed
+ * code finds the lineage it started.
+ */
+export function authCodeRefreshTokenId(codeId: string): string {
+  return `ac_${codeId}`;
+}
+
 export type ConsumeAuthCodeResult =
-  | { ok: true; row: AuthCodeRow }
+  | {
+      ok: true;
+      row: AuthCodeRow;
+      /** Pass to issueAccessAndRefresh so a replay of this code can revoke it. */
+      refreshTokenId: string;
+    }
   | { ok: false; error: 'invalid_grant' | 'invalid_request'; description: string };
 
 export interface ConsumeAuthCodeInput {
@@ -58,8 +81,9 @@ export interface ConsumeAuthCodeInput {
 
 /**
  * Validate + atomically consume an authorization code. Every failure collapses
- * to a generic invalid_grant (no oracle): unknown/expired/used code, redirect
- * mismatch, client mismatch, or PKCE failure.
+ * to invalid_grant: unknown/expired/used code, redirect mismatch, client
+ * mismatch, or PKCE failure. Any failure on a known code consumes it; a used
+ * code revokes the tokens it was exchanged for.
  */
 export async function consumeAuthCode(
   input: ConsumeAuthCodeInput,
@@ -71,28 +95,50 @@ export async function consumeAuthCode(
     return { ok: false, error: 'invalid_grant', description: 'invalid authorization code' };
   }
   if (row.used) {
+    await revokeCodeLineage(row, store);
     return { ok: false, error: 'invalid_grant', description: 'authorization code already used' };
-  }
-  if (row.expiresAt.getTime() <= now) {
-    return { ok: false, error: 'invalid_grant', description: 'authorization code expired' };
-  }
-  if (!exactRedirectUriMatch(input.redirectUri, [row.redirectUri])) {
-    return { ok: false, error: 'invalid_grant', description: 'redirect_uri mismatch' };
-  }
-  if (input.clientId !== undefined && input.clientId !== row.clientId) {
-    return { ok: false, error: 'invalid_grant', description: 'client_id mismatch' };
-  }
-  if (row.codeChallengeMethod !== 'S256') {
-    return { ok: false, error: 'invalid_grant', description: 'unsupported code_challenge_method' };
-  }
-  if (!verifyPkceS256(input.codeVerifier, row.codeChallenge)) {
-    return { ok: false, error: 'invalid_grant', description: 'PKCE verification failed' };
   }
 
-  // Atomic single-use flip — loses cleanly to a concurrent winner.
+  const failure = checkExchange(row, input, now);
+  // Atomic single-use flip on success AND failure — loses cleanly to a
+  // concurrent winner, which makes this call a replay of a consumed code.
   const won = await store.markAuthCodeUsed(row.id);
   if (!won) {
+    await revokeCodeLineage(row, store);
     return { ok: false, error: 'invalid_grant', description: 'authorization code already used' };
   }
-  return { ok: true, row };
+  if (failure) {
+    return { ok: false, error: 'invalid_grant', description: failure };
+  }
+  return { ok: true, row, refreshTokenId: authCodeRefreshTokenId(row.id) };
+}
+
+/** The reason an exchange of an unused code fails, or null when it is valid. */
+function checkExchange(
+  row: AuthCodeRow,
+  input: ConsumeAuthCodeInput,
+  now: number
+): string | null {
+  if (row.expiresAt.getTime() <= now) return 'authorization code expired';
+  if (!exactRedirectUriMatch(input.redirectUri, [row.redirectUri])) {
+    return 'redirect_uri mismatch';
+  }
+  if (input.clientId !== undefined && input.clientId !== row.clientId) {
+    return 'client_id mismatch';
+  }
+  if (row.codeChallengeMethod !== 'S256') return 'unsupported code_challenge_method';
+  if (!verifyPkceS256(input.codeVerifier, row.codeChallenge)) {
+    return 'PKCE verification failed';
+  }
+  return null;
+}
+
+/**
+ * Replay of a consumed code: burn the refresh lineage (and the grant's access
+ * tokens) it was exchanged for. A code consumed by a failed exchange minted
+ * nothing, so there is nothing to find.
+ */
+async function revokeCodeLineage(row: AuthCodeRow, store: OAuthStore): Promise<void> {
+  const first = await store.findRefreshTokenById(authCodeRefreshTokenId(row.id));
+  if (first) await revokeLineage(first, store);
 }

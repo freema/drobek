@@ -31,11 +31,21 @@ export interface IssuedTokens {
   scope: string;
 }
 
+export interface IssueOptions {
+  /**
+   * Row id for the new refresh token. The code exchange passes the id derived
+   * from the consumed code (consumeAuthCode's `refreshTokenId`) so a later
+   * replay of that code can revoke this lineage.
+   */
+  refreshTokenId?: string;
+}
+
 /** Issue a fresh access+refresh pair for a grant (used on the code exchange). */
 export async function issueAccessAndRefresh(
   grant: GrantInput,
   store: OAuthStore = defaultOAuthStore(),
-  now: number = Date.now()
+  now: number = Date.now(),
+  opts: IssueOptions = {}
 ): Promise<IssuedTokens> {
   const accessToken = generateOpaqueToken(32);
   const refreshToken = generateOpaqueToken(32);
@@ -46,6 +56,7 @@ export async function issueAccessAndRefresh(
     expiresAt: new Date(now + ACCESS_TTL_MS),
   });
   await store.insertRefreshToken({
+    ...(opts.refreshTokenId !== undefined ? { id: opts.refreshTokenId } : {}),
     tokenHash: hashToken(refreshToken),
     ...grant,
     expiresAt: new Date(now + REFRESH_TTL_MS),

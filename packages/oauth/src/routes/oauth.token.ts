@@ -5,7 +5,8 @@
  *    redirect_uri match, the presenting client_id (a DCR id or a CIMD URL —
  *    string-equal to the one the code was issued to), PKCE S256, atomically
  *    consume it, then issue a USER-bound, audience-bound access token (+
- *    rotating refresh token).
+ *    rotating refresh token). A failed exchange consumes the code as well;
+ *    replaying a consumed code revokes the tokens it minted.
  *  - refresh_token: rotate — issue a new access+refresh, invalidate the old
  *    refresh; reuse of an already-rotated token burns the lineage. A client
  *    that names itself must be the one the refresh token was issued to.
@@ -109,12 +110,17 @@ async function handleAuthorizationCode(
   const row = consumed.row;
   const client = await findClientByClientId(row.clientId);
 
-  const issued = await issueAccessAndRefresh({
-    userId: row.userId,
-    oauthClientId: client?.id ?? null,
-    scope: row.scope,
-    audience: row.resource,
-  });
+  const issued = await issueAccessAndRefresh(
+    {
+      userId: row.userId,
+      oauthClientId: client?.id ?? null,
+      scope: row.scope,
+      audience: row.resource,
+    },
+    undefined,
+    undefined,
+    { refreshTokenId: consumed.refreshTokenId }
+  );
 
   return tokenResponse({
     access_token: issued.accessToken,

@@ -242,7 +242,7 @@ test('MCP OAuth 2.1 end-to-end: discovery → register → consent → token →
   }
 });
 
-test('MCP OAuth negatives: no-token 401, invalid_target, deny, single-use code, refresh rotation + reuse @local', async ({
+test('MCP OAuth negatives: no-token 401, invalid_target, deny, refresh rotation + reuse, burned + replayed code @local', async ({
   page,
   request,
 }) => {
@@ -315,11 +315,6 @@ test('MCP OAuth negatives: no-token 401, invalid_target, deny, single-use code, 
     const first = await exchangeCode(request, { code, verifier, clientId });
     expect(first.status).toBe(200);
 
-    // Replaying the same code → invalid_grant (single-use).
-    const replay = await exchangeCode(request, { code, verifier, clientId });
-    expect(replay.status).toBe(400);
-    expect(replay.body.error).toBe('invalid_grant');
-
     // Rotate the refresh token once (ok)…
     const rot = await refresh(request, {
       refreshToken: first.body.refresh_token as string,
@@ -348,6 +343,65 @@ test('MCP OAuth negatives: no-token 401, invalid_target, deny, single-use code, 
     // …as is every access token of the grant.
     const dead = await rawInitialize(request, {
       Authorization: `Bearer ${rot.body.access_token}`,
+    });
+    expect(dead.status()).toBe(401);
+  }
+
+  // --- a failed exchange burns the code (NSO-332) ---
+  {
+    const { verifier, challenge } = pkcePair();
+    const code = await consentAndGetCode(page, {
+      clientId,
+      challenge,
+      resource,
+      state: 'neg-b',
+    });
+
+    const wrong = await exchangeCode(request, {
+      code,
+      verifier: pkcePair().verifier,
+      clientId,
+    });
+    expect(wrong.status).toBe(400);
+    expect(wrong.body.error).toBe('invalid_grant');
+
+    // The right verifier no longer helps: the code was consumed.
+    const right = await exchangeCode(request, { code, verifier, clientId });
+    expect(right.status).toBe(400);
+    expect(right.body.error).toBe('invalid_grant');
+  }
+
+  // --- replaying an exchanged code revokes what it minted (NSO-332) ---
+  {
+    const { verifier, challenge } = pkcePair();
+    const code = await consentAndGetCode(page, {
+      clientId,
+      challenge,
+      resource,
+      state: 'neg-c',
+    });
+
+    const first = await exchangeCode(request, { code, verifier, clientId });
+    expect(first.status).toBe(200);
+    const live = await rawInitialize(request, {
+      Authorization: `Bearer ${first.body.access_token}`,
+    });
+    expect(live.status()).toBe(200);
+
+    // Replaying the same code → invalid_grant (single-use)…
+    const replay = await exchangeCode(request, { code, verifier, clientId });
+    expect(replay.status).toBe(400);
+    expect(replay.body.error).toBe('invalid_grant');
+
+    // …and the refresh token + access token it was exchanged for are dead.
+    const burned = await refresh(request, {
+      refreshToken: first.body.refresh_token as string,
+      clientId,
+    });
+    expect(burned.status).toBe(400);
+    expect(burned.body.error).toBe('invalid_grant');
+    const dead = await rawInitialize(request, {
+      Authorization: `Bearer ${first.body.access_token}`,
     });
     expect(dead.status()).toBe(401);
   }

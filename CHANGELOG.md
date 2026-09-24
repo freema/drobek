@@ -2,6 +2,23 @@
 
 ## Unreleased (`next`)
 
+### A failed PKCE exchange burns the authorization code (NSO-332)
+
+- `/oauth/token` (`authorization_code`): the first exchange of a code now
+  consumes it whether it succeeds or fails — a wrong `code_verifier`,
+  `redirect_uri` or client, or an expired code answers `invalid_grant` and a
+  later attempt with the right verifier gets `invalid_grant` too (RFC 6749
+  §4.1.2, OAuth 2.1). Presenting an already-consumed code revokes the
+  refresh-token lineage it was exchanged for and the grant's access tokens,
+  with the refresh-reuse mechanism (`revokeLineage`). The link needs no
+  column: the lineage's first refresh token takes the id `ac_<code id>`
+  (`authCodeRefreshTokenId`; `issueAccessAndRefresh` accepts
+  `refreshTokenId`, `consumeAuthCode` returns it). Unit tests in
+  `codes.server.test.ts` (each failure shape, replay revocation) and the
+  PGlite route test `routes/oauth.token.test.ts`; `mcp-oauth.spec.ts` checks
+  the burn and the replay revocation. `docs/SECURITY.md` threat table row.
+  No migration.
+
 ### Apex landing describes the cloud workspace (NSO-331)
 
 - The anonymous landing at `/` (`apps/server/app/routes/_index.tsx`) no

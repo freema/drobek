@@ -46,6 +46,10 @@ export interface AccessTokenRow extends GrantRecord {
   createdAt: Date;
   revokedAt: Date | null;
 }
+export interface RefreshTokenRecord extends GrantRecord {
+  /** Explicit row id; omitted → a generated one. */
+  id?: string;
+}
 export interface RefreshTokenRow extends GrantRecord {
   id: string;
   rotatedTo: string | null;
@@ -70,8 +74,13 @@ export interface OAuthStore {
   findAccessTokenByHash(hash: string): Promise<AccessTokenRow | null>;
   revokeAccessTokensForGrant(grant: GrantKey): Promise<void>;
 
-  /** Returns the new row id (for rotated_to lineage links). */
-  insertRefreshToken(rec: GrantRecord): Promise<string>;
+  /**
+   * Returns the new row id (for rotated_to lineage links). `id` is set only by
+   * the code exchange: the first refresh token of a code's lineage takes an id
+   * derived from the code row (codes.server.ts), so a replayed code can find
+   * and burn the chain it minted without a code→token column.
+   */
+  insertRefreshToken(rec: RefreshTokenRecord): Promise<string>;
   findRefreshTokenByHash(hash: string): Promise<RefreshTokenRow | null>;
   findRefreshTokenById(id: string): Promise<RefreshTokenRow | null>;
   /**
@@ -143,10 +152,10 @@ export function createMemoryOAuthStore(): OAuthStore {
       }
     },
 
-    async insertRefreshToken(rec) {
+    async insertRefreshToken({ id: explicitId, ...rec }) {
       const row: RefreshTokenRow = {
         ...rec,
-        id: id(),
+        id: explicitId ?? id(),
         rotatedTo: null,
         usedAt: null,
         createdAt: new Date(),
@@ -264,6 +273,7 @@ export function createDbOAuthStore(db: DB): OAuthStore {
       const [row] = await db
         .insert(oauthRefreshTokens)
         .values({
+          ...(rec.id !== undefined ? { id: rec.id } : {}),
           tokenHash: rec.tokenHash,
           userId: rec.userId,
           oauthClientId: rec.oauthClientId,

@@ -1127,6 +1127,17 @@ block, then `next` is pushed and the single MR opened.
   `configSchema` (data keeps > 100 collections); `configure_module` then
   fails until the patch repairs the whole config (e.g. `{ collections: { x:
   null } }` down to 100).
+- NSO-332: an authorization code is burned by ANY exchange of a known code
+  (success or failure), and a used code presented again revokes the lineage
+  it minted. The code → refresh link is the lineage's first refresh-token row
+  id `ac_<code id>` (`authCodeRefreshTokenId`), set through
+  `issueAccessAndRefresh(..., { refreshTokenId })` — no column. Code
+  consumed by a failed exchange → no `ac_` row → a replay revokes nothing.
+  `revokeLineage` also revokes every live access token of the grant key
+  (user, client, audience), so a replay kills other sessions of the same
+  client for that user too (as refresh reuse always did). Tiny window: a
+  replay landing between the code flip and the refresh insert finds no row.
+  e2e: never replay a code and then keep using its tokens in the same flow.
 
 ## Failed approaches
 
