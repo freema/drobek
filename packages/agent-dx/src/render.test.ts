@@ -83,7 +83,7 @@ describe('renderLlmsFull', () => {
     for (const name of TOOL_NAMES) expect(full).toContain(`### ${name} — `);
     expect(full).toContain('Example call:');
     expect(full).toContain('Returns: ');
-    expect(full).toContain('Annotations: readOnlyHint=false, destructiveHint=true, openWorldHint=false');
+    expect(full).toContain('Annotations: readOnlyHint=false, destructiveHint=true, idempotentHint=false, openWorldHint=false');
   });
 
   it('carries the app briefing (stack, import map, rules)', () => {

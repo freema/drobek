@@ -116,11 +116,19 @@ answers `not_found`, the same as one that does not exist.
 | `read_file` | read, any role | read-only | A file of the latest (or a given) version, inside an untrusted envelope. |
 | `write_files` | write, editor+ | destructive | 1–20 changes → one new version → one compile; returns `{ version, compile: { ok, errors, warnings }, preview_url, changed }`. A secret in a file refuses the write. |
 | `restore_version` | write, editor+ | destructive | A new version with the files of an old one (rolls the working copy back). |
-| `publish` | publish, editor+ | destructive, open world | Puts a compiled version on `<slug>.<APPS_DOMAIN>` and the verified domains. Only when the user asks. |
+| `publish` | publish, editor+ | destructive, idempotent, open world | Puts a compiled version on `<slug>.<APPS_DOMAIN>` and the verified domains. Only when the user asks. |
 | `skill_info` | read, any signed-in user | read-only | `skill_info()` lists the server's skills; `skill_info('<name>')` returns one (for a module also its SDK types, config schema, limits, secret names). |
-| `configure_module` | write, editor+ | destructive | Sets an app's module config (a JSON merge patch). Risky changes come back as `pending_confirmation` with a `confirm_url` for the owner; secrets are refused. |
+| `configure_module` | write, editor+ | destructive, idempotent | Sets an app's module config (a JSON merge patch). Risky changes come back as `pending_confirmation` with a `confirm_url` for the owner; secrets are refused. |
 | `query_data` | read, viewer+ | read-only | Records of one collection of the app's data module (≤ 100 per call, filters, sort, cursor), inside an untrusted envelope. |
 | `get_logs` | read, viewer+ | read-only | `kind: runtime` (browser errors from the beacon), `compile` (the compile history) or `requests` (daily request and module-call stats), ≤ 100 entries, 30-day window, inside an untrusted envelope. |
+
+Every tool carries all four MCP annotations explicitly (`readOnlyHint`,
+`destructiveHint`, `idempotentHint`, `openWorldHint`; "idempotent" above means
+a repeated call with the same arguments has no further effect). They are
+hints for clients, never a security boundary — the scope and the role are.
+The per-tool values, checked against a running server, are in
+[`listing/inspector-log.md`](listing/inspector-log.md); the directory
+submission kit is [`listing/README.md`](listing/README.md).
 
 A failed call returns `isError: true` with `{ code, message, hint }` from the
 error catalogue (`@drobek/agent-dx` `errors-catalogue.ts`, rendered into

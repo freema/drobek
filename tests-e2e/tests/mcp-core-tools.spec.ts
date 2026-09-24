@@ -143,6 +143,8 @@ test('core tools: create → broken write → fix → limits → restore → rea
       expect(t.title ?? t.annotations?.title, `${t.name} title`).toBeTruthy();
       expect(t.annotations?.readOnlyHint, `${t.name} readOnlyHint`).toBe(READ_TOOLS.has(t.name));
       expect(t.annotations?.openWorldHint, `${t.name} openWorldHint`).toBe(false);
+      // NSO-307: explicit idempotentHint — reads and configure_module repeat safely; create/write/restore do not.
+      expect(t.annotations?.idempotentHint, `${t.name} idempotentHint`).toBe(READ_TOOLS.has(t.name) || t.name === 'configure_module');
     }
 
     // create_app → v1 from the react-ts template, compiled.

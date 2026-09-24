@@ -138,7 +138,7 @@ test('app hosts: preview / publish / rollback / --vN, served files, headers, cac
     // publish is advertised under the full scope, with its annotations.
     const listed = (await a.client.listTools()).tools;
     const publishTool = listed.find((t) => t.name === 'publish');
-    expect(publishTool?.annotations).toMatchObject({ destructiveHint: true, openWorldHint: true });
+    expect(publishTool?.annotations).toMatchObject({ destructiveHint: true, idempotentHint: true, openWorldHint: true });
 
     const created = await callTool(a.client, 'create_app', { name: 'Origin E2E' });
     expect(created.isError, created.text).toBe(false);

@@ -40,7 +40,7 @@ const SUMMARY =
 
 function hints(tool: ToolDoc): string {
   const a = tool.annotations;
-  return `readOnlyHint=${a.readOnlyHint}, destructiveHint=${a.destructiveHint}, openWorldHint=${a.openWorldHint}`;
+  return `readOnlyHint=${a.readOnlyHint}, destructiveHint=${a.destructiveHint}, idempotentHint=${a.idempotentHint}, openWorldHint=${a.openWorldHint}`;
 }
 
 function renderToolFull(tool: ToolDoc): string {

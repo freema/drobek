@@ -2,6 +2,28 @@
 
 ## Unreleased (`next`)
 
+### Directory listing kit + explicit `idempotentHint` (NSO-307)
+
+- New `docs/listing/`: `README.md` is the submission kit for the Claude
+  connectors directory, the Cursor Marketplace and the Codex plugin
+  marketplace (shared metadata, tagline, description, example prompts, the
+  tool permission summary, per-directory checklists incl. OAuth 2.1, the
+  negative-test protocol, the blockers and every `TODO(Tomáš)`);
+  `inspector-log.md` is an MCP Inspector (`@modelcontextprotocol/inspector`
+  CLI) pass over all 11 tools of a running server with one real call each,
+  the negative tests (a write never publishes; a dashboard secret never comes
+  back through any of 29 MCP results; credentials refused in files and
+  config) and the OAuth metadata checks on the local server.
+- Every tool now declares `idempotentHint` explicitly in `TOOL_DOCS`
+  (`true` for the reads, `publish` and `configure_module`; `false` for
+  `create_app`, `write_files`, `restore_version`); the other hints are
+  unchanged. `llms-full.txt` / `drobek://docs/tools` print it. The full hint
+  table is guarded in `packages/agent-dx/src/tools.test.ts`, the tools/list
+  snapshot and the e2e specs `mcp-core-tools` / `apps-origin`.
+- `docs/AGENT.md` and the README link the kit. The plugin
+  (`freema/drobek-plugin`, 0.2.0) names `query_data`, `get_logs` and the nine
+  skills. No migration.
+
 ### Docs rewritten for the cloud workspace + doc-lint (NSO-298)
 
 - New: `docs/SECURITY.md` (threat model as shipped, status of every PHY-76

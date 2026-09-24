@@ -26,10 +26,18 @@ export interface ToolField {
   description: string;
 }
 
-/** MCP tool annotations (hints for clients — never a security boundary). */
+/**
+ * MCP tool annotations (hints for clients — never a security boundary). All
+ * four are always explicit (NSO-307, the directory listings read them):
+ * `idempotentHint` = a repeated call with the same arguments has no further
+ * effect (true for every read, for publish — it moves the same pointer — and
+ * for configure_module — the same merge patch answers `unchanged`; false for
+ * the tools that create a new app or version on every call).
+ */
 export interface ToolAnnotations {
   readOnlyHint: boolean;
   destructiveHint: boolean;
+  idempotentHint: boolean;
   openWorldHint: boolean;
 }
 
@@ -53,7 +61,7 @@ export interface ToolDoc {
   example: Record<string, unknown>;
 }
 
-const READ_ONLY: ToolAnnotations = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
+const READ_ONLY: ToolAnnotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 
 export const TOOL_DOCS: ToolDoc[] = [
   {
@@ -76,7 +84,7 @@ export const TOOL_DOCS: ToolDoc[] = [
     scope: 'write (editor+ role in the workspace)',
     description:
       'Create an app and its version 1 from a template — `react-ts` (index.html, src/main.tsx, src/styles.css, drobek.json with a pinned React import map; the default) or `html` (a single index.html) — so the preview works immediately. The slug is derived from `name` (a free `-xxxx` suffix is added if it is taken). Returns the briefing (the stack, file rules, import map, limits and rules to follow — read it before writing files) and `skills`: the backends this server offers, each with a "use when…" sentence (call skill_info before using one).',
-    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     fields: [
       { name: 'name', type: 'string (1–80 chars)', required: true, description: 'Human-readable app name; the slug is derived from it.' },
       { name: 'workspace', type: 'string (optional)', required: false, description: 'Workspace slug; defaults to your personal workspace.' },
@@ -118,7 +126,7 @@ export const TOOL_DOCS: ToolDoc[] = [
     scope: 'write (editor+ role in the workspace)',
     description:
       'The core loop: apply 1–20 file changes on top of the latest version — `{path, content}` writes a text file, `{path, delete:true}` removes one — then the server compiles (esbuild; nothing is executed) and stores the result as ONE new version. The compile result comes back directly: `compile.ok`, and `errors[]` with file/line/column/text. On ok:false the version is still saved (nothing is lost) but the preview keeps serving the last version that compiled — fix the errors and write again. A credential in a file is refused (secret_in_source) and nothing is stored. Takes the app\'s single-writer lease for 3 minutes (renewed by every write).',
-    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     fields: [
       { name: 'app_id', type: 'string', required: true, description: 'The app id.' },
       {
@@ -146,7 +154,7 @@ export const TOOL_DOCS: ToolDoc[] = [
     scope: 'write (editor+ role in the workspace)',
     description:
       'Roll the working copy back: creates a NEW version whose files (and compile result) are an exact copy of `version`. History is never rewritten, so you can restore forward again. Takes the single-writer lease like write_files. Publishing stays a separate step.',
-    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     fields: [
       { name: 'app_id', type: 'string', required: true, description: 'The app id.' },
       { name: 'version', type: 'number', required: true, description: 'The version number to copy.' },
@@ -160,7 +168,7 @@ export const TOOL_DOCS: ToolDoc[] = [
     scope: 'publish (editor+ role in the workspace)',
     description:
       'Put a version live at the production URL `https://<slug>.<APPS_DOMAIN>` — by default the newest version that compiled; pass an older `version` to roll production back. Only versions that compiled can be published (not_publishable otherwise). The preview URL keeps following your writes; production changes only when you publish again. Call this ONLY when the user explicitly asks to publish / go live — never on your own initiative. Does not take the write lease.',
-    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
     fields: [
       { name: 'app_id', type: 'string', required: true, description: 'The app id.' },
       {
@@ -193,7 +201,7 @@ export const TOOL_DOCS: ToolDoc[] = [
     scope: 'write (editor+ role in the workspace)',
     description:
       'Set a platform module\'s config for one app. `config` is PARTIAL (a JSON merge patch): send only the keys you change; null resets a key to its default. It is validated against the module\'s schema (skill_info(module) shows it) — a wrong value answers invalid_params with the field paths. Changes the module marks as sensitive (e.g. opening data to the public, a new e-mail recipient) are NOT applied: the answer is applied:false with pending_confirmation and a confirm_url — give the user that link; the change applies once they confirm it in the drobek dashboard. Secrets are never set here (credential-looking values are refused): the app owner enters them in the dashboard, and secrets_missing names the ones still unset. Takes the app\'s single-writer lease like write_files.',
-    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     fields: [
       { name: 'app_id', type: 'string', required: true, description: 'The app id.' },
       { name: 'module', type: 'string', required: true, description: 'The platform module, e.g. "hello" (skill_info() lists them).' },

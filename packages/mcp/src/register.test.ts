@@ -26,7 +26,7 @@ async function listTools(allow?: (t: string) => boolean) {
   }
 }
 
-const RO = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
+const RO = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 
 describe('tools/list', () => {
   it('is exactly the 11 tools with their annotations and inputs (snapshot)', async () => {
@@ -49,7 +49,7 @@ describe('tools/list', () => {
       {
         name: 'create_app',
         title: 'Create an app',
-        annotations: { title: 'Create an app', readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+        annotations: { title: 'Create an app', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         properties: ['name', 'workspace', 'template'],
         required: ['name'],
       },
@@ -74,6 +74,7 @@ describe('tools/list', () => {
           title: 'Write files (new version)',
           readOnlyHint: false,
           destructiveHint: true,
+          idempotentHint: false,
           openWorldHint: false,
         },
         properties: ['app_id', 'files', 'reasoning'],
@@ -86,6 +87,7 @@ describe('tools/list', () => {
           title: 'Restore a version',
           readOnlyHint: false,
           destructiveHint: true,
+          idempotentHint: false,
           openWorldHint: false,
         },
         properties: ['app_id', 'version'],
@@ -98,6 +100,7 @@ describe('tools/list', () => {
           title: 'Publish a version',
           readOnlyHint: false,
           destructiveHint: true,
+          idempotentHint: true,
           openWorldHint: true,
         },
         properties: ['app_id', 'version'],
@@ -117,6 +120,7 @@ describe('tools/list', () => {
           title: 'Configure a platform module',
           readOnlyHint: false,
           destructiveHint: true,
+          idempotentHint: true,
           openWorldHint: false,
         },
         properties: ['app_id', 'module', 'config'],

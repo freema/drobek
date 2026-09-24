@@ -963,6 +963,21 @@ block, then `next` is pushed and the single MR opened.
   get rephrased instead. The retired terms are listed only in
   `scripts/doc-lint.mjs` (listing them elsewhere trips the lint).
 
+- NSO-307 listing: drobek's DCR accepts only `https://` redirect URIs or
+  `http://` loopback, so a client with a custom-scheme callback (Cursor's
+  `cursor://…/oauth/callback`) gets `400 invalid_redirect_uri` — tracked as
+  blocker 4 in `docs/listing/README.md`. A failed PKCE exchange does not
+  burn the code (the right verifier still works afterwards).
+- The MCP Inspector CLI works against the dev stack with an API key:
+  `npx @modelcontextprotocol/inspector --cli http://localhost:3041/mcp
+  --transport http --header "Authorization: Bearer drk_…" --method tools/list`
+  (`--strict` explains the two expected schema-portability warnings:
+  `z.record(z.string(), z.unknown())` becomes `additionalProperties: {}`).
+- The dashboard renders "secret set" upper-case through CSS: Playwright's
+  `innerText()` returns `SECRET SET` — compare case-insensitively.
+- The dev compose runs the example module `hello`, so `skill_info()` lists 10
+  skills there; the production default (six modules) lists 9.
+
 ## Failed approaches
 
 - `pnpm deploy --offline` in the Dockerfile builder: fails with

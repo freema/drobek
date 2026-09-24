@@ -366,6 +366,7 @@ build, `E2E_KEEP=1` keeps the stack, extra args go to Playwright
 | [`docs/MODULES.md`](./docs/MODULES.md) | the platform module contract and the built-in modules |
 | [`docs/AGENT.md`](./docs/AGENT.md) | connecting agents, the tools and scopes, the briefing, skills, `llms.txt` |
 | [`docs/SECURITY.md`](./docs/SECURITY.md) | the threat model and how to report a vulnerability |
+| [`docs/listing/`](./docs/listing/README.md) | the submission kit for the Claude connectors directory, the Cursor Marketplace and the Codex plugin marketplace, with the MCP Inspector log |
 | [`docs/LICENSING.md`](./docs/LICENSING.md) | AGPL-3.0 §13 and the boundary with the hosted drobek.app |
 | [`docs/POSITIONING.md`](./docs/POSITIONING.md) | the market and how drobek compares |
 | [`docs/progress.md`](./docs/progress.md) | the implementation log, gotchas and failed approaches |

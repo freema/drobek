@@ -31,34 +31,39 @@ describe('TOOL_DOCS manifest', () => {
       expect(t.example, t.name).toBeTypeOf('object');
       expect(Object.keys(t.annotations).sort(), t.name).toEqual([
         'destructiveHint',
+        'idempotentHint',
         'openWorldHint',
         'readOnlyHint',
       ]);
     }
   });
 
-  it('annotations follow the real effect (plan §4)', () => {
-    for (const name of ['list_apps', 'get_app', 'read_file', 'skill_info', 'query_data', 'get_logs']) {
-      expect(toolDoc(name).annotations.readOnlyHint, name).toBe(true);
+  it('annotations follow the real effect (plan §4; the full table, NSO-307)', () => {
+    // [readOnly, destructive, idempotent, openWorld] — every hint explicit, checked
+    // against the live server in docs/listing/inspector-log.md.
+    const table: Record<string, [boolean, boolean, boolean, boolean]> = {
+      list_apps: [true, false, true, false],
+      create_app: [false, false, false, false], // a new app on every call
+      get_app: [true, false, true, false],
+      read_file: [true, false, true, false],
+      write_files: [false, true, false, false], // a new version on every call; can delete files
+      restore_version: [false, true, false, false], // a new version on every call
+      publish: [false, true, true, true], // changes what the public internet sees; same pointer again
+      skill_info: [true, false, true, false],
+      configure_module: [false, true, true, false], // the same merge patch again answers unchanged
+      query_data: [true, false, true, false],
+      get_logs: [true, false, true, false],
+    };
+    expect(Object.keys(table)).toEqual(TOOL_NAMES);
+    for (const [name, [readOnlyHint, destructiveHint, idempotentHint, openWorldHint]] of Object.entries(table)) {
+      expect(toolDoc(name).annotations, name).toEqual({ readOnlyHint, destructiveHint, idempotentHint, openWorldHint });
     }
-    expect(toolDoc('create_app').annotations).toEqual({
-      readOnlyHint: false,
-      destructiveHint: false,
-      openWorldHint: false,
-    });
-    for (const name of ['write_files', 'restore_version', 'configure_module']) {
-      expect(toolDoc(name).annotations, name).toEqual({
-        readOnlyHint: false,
-        destructiveHint: true,
-        openWorldHint: false,
-      });
+    // Consistency rules a directory reviewer applies: a read-only tool is never
+    // destructive; only publish reaches the open world.
+    for (const t of TOOL_DOCS) {
+      if (t.annotations.readOnlyHint) expect(t.annotations.destructiveHint, t.name).toBe(false);
+      expect(t.annotations.openWorldHint, t.name).toBe(t.name === 'publish');
     }
-    // publish changes what the public internet sees.
-    expect(toolDoc('publish').annotations).toEqual({
-      readOnlyHint: false,
-      destructiveHint: true,
-      openWorldHint: true,
-    });
   });
 
   it('publish is documented as explicit-request only, with the publish scope', () => {
