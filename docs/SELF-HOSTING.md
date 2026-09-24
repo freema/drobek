@@ -209,6 +209,7 @@ built-ins.
 | `TLS_ASK_TOKEN` | secret | generated; the on-demand TLS `ask` token (drobek + Caddy) |
 | `SMTP_HOST` | yes | SMTP server; `SMTP_PORT` (587), `SMTP_SECURE` (0 / 1 = implicit TLS), `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM` |
 | `SUPERADMIN_EMAIL` | recommended | your sign-in e-mail(s), super-admin over every workspace |
+| `LANDING_URL` | — | your own website: `<PUBLIC_APP_URL>/` answers 301 there instead of the built-in landing page |
 | `TLS_*`, `CADDY_*` | per TLS path | see [TLS](#tls) |
 | `HTTP_PORT`, `HTTPS_PORT`, `PUBLISH_IP` | — | published ports / bind address |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | — | optional Google sign-in |
@@ -397,6 +398,7 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `DOMAINS_RECHECK_INTERVAL_MS` | 3600000 | how often the re-check sweep runs |
 | `DOMAINS_DNS_MOCK` | — | dev/test only, ignored in production: `redis` answers lookups from Redis keys |
 | `TERMS_URL` | `<PUBLIC_APP_URL>/terms` | linked from the 451 page of a taken-down app |
+| `LANDING_URL` | — (the built-in landing page) | `<PUBLIC_APP_URL>/` answers 301 to this URL — for an operator whose website lives elsewhere |
 | `ABUSE_REPORTS_PER_IP_HOUR` | 5 | valid abuse reports per client IP per hour |
 | `ABUSE_BRAND_WORDS` | a built-in list | the publish heuristic's brand words (comma-separated) |
 

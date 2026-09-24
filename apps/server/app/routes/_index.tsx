@@ -4,8 +4,12 @@
  * the agent loop over MCP, the platform modules, the dashboard — with links
  * to the agent guide, /llms.txt, the source repository and sign-in. External
  * URLs come from the packages that own them, through the loader.
+ *
+ * LANDING_URL: an operator with their own website (drobek.app's is on
+ * www.drobek.app) sends the apex `/` there with a 301 instead, so the
+ * dashboard host (noindex) never competes with the website in search.
  */
-import { useLoaderData } from 'react-router';
+import { redirect, useLoaderData } from 'react-router';
 import { AGENT_GUIDE_URL } from '@drobek/agent-dx';
 import { SOURCE_REPO_URL } from '@drobek/dashboard/footer';
 
@@ -19,7 +23,21 @@ export function meta() {
   ];
 }
 
+/** The LANDING_URL target when it is a valid http(s) URL, else null. */
+export function landingRedirectUrl(env: NodeJS.ProcessEnv = process.env): string | null {
+  const raw = env.LANDING_URL?.trim();
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
 export function loader() {
+  const target = landingRedirectUrl();
+  if (target) throw redirect(target, 301);
   return { agentGuideUrl: AGENT_GUIDE_URL, repoUrl: SOURCE_REPO_URL };
 }
 

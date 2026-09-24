@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { Landing, loader, meta } from './_index';
+import { Landing, landingRedirectUrl, loader, meta } from './_index';
 
 function render(): string {
   return renderToStaticMarkup(<Landing {...loader()} />);
@@ -69,5 +69,36 @@ describe('apex landing (NSO-331)', () => {
     expect(description && 'content' in description ? description.content : '').toContain(
       'open-source cloud workspace for agent-built web apps'
     );
+  });
+});
+
+describe('LANDING_URL', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('accepts only an http(s) URL', () => {
+    expect(landingRedirectUrl({})).toBeNull();
+    expect(landingRedirectUrl({ LANDING_URL: ' ' })).toBeNull();
+    expect(landingRedirectUrl({ LANDING_URL: 'not a url' })).toBeNull();
+    expect(landingRedirectUrl({ LANDING_URL: 'javascript:alert(1)' })).toBeNull();
+    expect(landingRedirectUrl({ LANDING_URL: 'https://www.drobek.app' })).toBe('https://www.drobek.app/');
+  });
+
+  it('sends the apex / to the website with a 301 when set', () => {
+    vi.stubEnv('LANDING_URL', 'https://www.drobek.app/');
+    let thrown: unknown;
+    try {
+      loader();
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(Response);
+    const res = thrown as Response;
+    expect(res.status).toBe(301);
+    expect(res.headers.get('Location')).toBe('https://www.drobek.app/');
+  });
+
+  it('renders the landing when unset', () => {
+    vi.stubEnv('LANDING_URL', '');
+    expect(loader()).toHaveProperty('repoUrl');
   });
 });
