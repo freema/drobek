@@ -116,6 +116,44 @@ describe('SSRF classifier — IPv6 internal ranges + embedded IPv4', () => {
   });
 });
 
+describe('SSRF classifier — 6to4, local-use NAT64, site-local, discard (NSO-326)', () => {
+  it('6to4 2002::/16 is blocked whole; a blocked embedded IPv4 (bytes 2..5) is named in the reason', () => {
+    // 2002:7f00:0001:: embeds 127.0.0.1, 2002:a9fe:a9fe:: embeds 169.254.169.254, 2002:0a00:0001:: 10.0.0.1.
+    expect(classifyForwardIp('2002:7f00:1::')).toEqual({ blocked: true, reason: '6to4-2002/16:loopback-127/8' });
+    expect(classifyForwardIp('2002:a9fe:a9fe::1')).toEqual({ blocked: true, reason: '6to4-2002/16:link-local-169.254/16' });
+    expect(classifyForwardIp('2002:a00:1::')).toEqual({ blocked: true, reason: '6to4-2002/16:private-10/8' });
+    // A public embedded IPv4 (8.8.8.8) is blocked too: a 6to4 relay would unwrap it anywhere.
+    expect(classifyForwardIp('2002:808:808::1')).toEqual({ blocked: true, reason: '6to4-2002/16' });
+    expect(isBlockedIp('2002:ffff:ffff:ffff:ffff:ffff:ffff:ffff')).toBe(true);
+  });
+
+  it('local-use NAT64 64:ff9b:1::/48 is blocked; the well-known 64:ff9b::/96 still unwraps', () => {
+    expect(classifyForwardIp('64:ff9b:1::8.8.8.8')).toEqual({ blocked: true, reason: 'nat64-local-64:ff9b:1::/48' });
+    expect(classifyForwardIp('64:ff9b:1:ffff::1')).toEqual({ blocked: true, reason: 'nat64-local-64:ff9b:1::/48' });
+    expect(isBlockedIp('64:ff9b::8.8.8.8')).toBe(false);
+    expect(classifyForwardIp('64:ff9b::127.0.0.1')).toEqual({ blocked: true, reason: 'loopback-127/8' });
+    // Just outside the /48.
+    expect(isBlockedIp('64:ff9b:2::1')).toBe(false);
+  });
+
+  it('site-local fec0::/10 is blocked (fec0:: … feff::), link-local keeps its own reason', () => {
+    expect(classifyForwardIp('fec0::1')).toEqual({ blocked: true, reason: 'site-local-fec0/10' });
+    expect(classifyForwardIp('feff:ffff::1')).toEqual({ blocked: true, reason: 'site-local-fec0/10' });
+    expect(classifyForwardIp('febf::1')).toEqual({ blocked: true, reason: 'link-local-fe80/10' });
+  });
+
+  it('discard-only 100::/64 is blocked; 100:0:0:1:: (outside the /64) is not', () => {
+    expect(classifyForwardIp('100::')).toEqual({ blocked: true, reason: 'discard-100::/64' });
+    expect(classifyForwardIp('100::ffff:ffff:ffff:ffff')).toEqual({ blocked: true, reason: 'discard-100::/64' });
+    expect(isBlockedIp('100:0:0:1::1')).toBe(false);
+  });
+
+  it('IPv4-mapped addresses still classify by the embedded IPv4', () => {
+    expect(classifyForwardIp('::ffff:192.168.1.1')).toEqual({ blocked: true, reason: 'private-192.168/16' });
+    expect(classifyForwardIp('::ffff:7f00:1')).toEqual({ blocked: true, reason: 'loopback-127/8' });
+  });
+});
+
 describe('SSRF classifier — fails closed on garbage', () => {
   it('blocks unparseable input', () => {
     expect(isBlockedIp('not-an-ip')).toBe(true);

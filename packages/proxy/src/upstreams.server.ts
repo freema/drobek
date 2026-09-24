@@ -327,12 +327,13 @@ export function upstreamAllowsApp(upstream: Pick<UpstreamRecord, 'allowedAppIds'
 
 /**
  * Put `appId` on the allow-list of the upstream `name` of `workspaceId`
- * (idempotent; false when no such upstream is registered). Called when a
+ * (idempotent). Returns the upstream's id — the record the app is now bound
+ * to (NSO-326) — or null when no such upstream is registered. Called when a
  * workspace ADMIN confirms the app's assignment of the upstream (the proxy
  * module's onConfirmed, inside the confirm transaction) — the admin's
  * confirmation is what lets an app spend the upstream's secret.
  */
-export async function allowAppOnUpstream(workspaceId: string, name: string, appId: string, db: DB = getDb()): Promise<boolean> {
+export async function allowAppOnUpstream(workspaceId: string, name: string, appId: string, db: DB = getDb()): Promise<string | null> {
   const rows = await db
     .update(upstreams)
     .set({
@@ -340,7 +341,7 @@ export async function allowAppOnUpstream(workspaceId: string, name: string, appI
     })
     .where(and(eq(upstreams.workspaceId, workspaceId), eq(upstreams.name, name)))
     .returning({ id: upstreams.id });
-  return rows.length > 0;
+  return rows[0]?.id ?? null;
 }
 
 /**

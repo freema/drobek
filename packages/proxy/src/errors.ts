@@ -11,6 +11,7 @@ export type ProxyErrorCode =
   | 'method_not_allowed'
   | 'path_not_allowed'
   | 'rate_limited'
+  | 'proxy_busy'
   | 'ssrf_blocked'
   | 'upstream_error'
   | 'config_error';
@@ -41,6 +42,8 @@ export function proxyErrorStatus(code: ProxyErrorCode): number {
     case 'method_not_allowed':
       return 405;
     case 'rate_limited':
+    case 'proxy_busy':
+      // proxy_busy: too many upstream calls in flight (PROXY_MAX_CONCURRENT[_PER_APP]).
       return 429;
     case 'upstream_error':
       // A bad gateway to the upstream (DNS fail, timeout, connection refused).

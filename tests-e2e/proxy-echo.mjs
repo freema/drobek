@@ -16,6 +16,7 @@
 // PRIVATE IP, the SSRF guard would block it — so the web service allow-lists this
 // exact hostname via PROXY_ALLOWED_HOSTS (empty in prod → fully strict).
 import http from 'node:http';
+import { gzipSync } from 'node:zlib';
 
 const PORT = Number(process.env.PORT || 8099);
 const EXTRA_PORTS = String(process.env.EXTRA_PORTS || '')
@@ -65,6 +66,26 @@ const server = http.createServer((req, res) => {
   if (url.pathname === '/redirect') {
     res.writeHead(302, { location: 'http://169.254.169.254/latest/meta-data/' });
     res.end('redirecting');
+    return;
+  }
+  // NSO-326: a RELATIVE redirect (relayed) …
+  if (url.pathname === '/redirect/relative') {
+    res.writeHead(302, { location: '/echo/next' });
+    res.end('redirecting');
+    return;
+  }
+  // … and a gzipped JSON answer sent despite Accept-Encoding: identity, with
+  // headers that must never reach the app origin.
+  if (url.pathname === '/echo/gzip') {
+    res.writeHead(200, {
+      'content-type': 'application/json',
+      'content-encoding': 'gzip',
+      'clear-site-data': '"*"',
+      'strict-transport-security': 'max-age=63072000',
+      link: '</evil.js>; rel=preload; as=script',
+      'x-request-id': 'echo-req-1',
+    });
+    res.end(gzipSync(Buffer.from(JSON.stringify({ gzipped: true, acceptEncoding: req.headers['accept-encoding'] ?? null }))));
     return;
   }
 

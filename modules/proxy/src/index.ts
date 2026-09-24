@@ -6,7 +6,7 @@
  *                             a dependency of the server).
  *
  *   ANY /__drobek/v1/proxy/:upstream/*   drobek.proxy.fetch(upstream, path, init?) → Response
- *   config { upstreams: { <name>: { rules: { call }, rateLimit? } } }
+ *   config { upstreams: { <name>: { rules: { call }, rateLimit?, id? } } }   (id: set by drobek)
  *
  * Upstreams (base_url, allowed methods + path prefixes, the auth header and
  * its envelope-encrypted secret) are registered per WORKSPACE in the

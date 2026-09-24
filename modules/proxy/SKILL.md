@@ -84,9 +84,14 @@ export interface Api {
   upstream's answer.
 - Your `Authorization` and `Cookie` headers are dropped (the server's key
   wins); other headers (e.g. `anthropic-version`) pass through.
+- The response body arrives decoded (gzip/br undone). Only safe headers come
+  back (`Content-Type`, caching, `Retry-After`, request ids, rate-limit
+  hints …); `Set-Cookie`, CORS and an absolute `Location` never do.
 - Config `upstreams.<name>`: `rules.call` (default `user`) = `user | admin |
   public | none`, joined with `|` (`owner` is refused); `rateLimit?` = calls
-  per minute from the whole app. Unassign: `{ "upstreams": { "openai": null } }`.
+  per minute from the whole app; `id` = the upstream record an admin
+  confirmed, set by drobek — never write it. Unassign: `{ "upstreams":
+  { "openai": null } }`.
 - `get_app` → `modules.proxy.info.upstreams[]`: `{ name, registered,
   assigned, call?, rateLimit?, hasSecret, allowedMethods?,
   allowedPathPrefixes? }` — never the key or the base URL.
@@ -99,7 +104,9 @@ export interface Api {
   prefer `user`.
 - Only assigned upstreams, only the admin's methods + path prefixes.
 - `PROXY_CALLS_PER_MIN` 60 per app (all upstreams);
-  `PROXY_PUBLIC_CALLS_PER_MIN_PER_IP` 10 for `public` upstreams.
+  `PROXY_PUBLIC_CALLS_PER_MIN_PER_IP` 10 for `public` upstreams;
+  `PROXY_MAX_CONCURRENT_PER_APP` 8 calls of one app in flight at once —
+  queue them, don't fire 20 in parallel.
 - No redirects followed (a 3xx comes back as-is); 20 s timeout; response
   ≤ 5 MiB; request body ≤ 1 MiB; streaming (SSE) arrives whole.
 - Private/internal addresses and ports other than 80/443 are unreachable.
@@ -111,12 +118,14 @@ export interface Api {
 |---|---|---|
 | `forbidden` (403) | `details.reason: upstream_not_assigned` (not configured / not confirmed), or the caller's role | `configure_module('proxy')`; an admin confirms |
 | `forbidden` (403) | `details.reason: upstream_not_allowed` (no admin confirmed this app, e.g. assigned before it was registered) | remove it from the config, add it again, an admin confirms |
+| `forbidden` (403) | `details.reason: upstream_replaced` (deleted and registered again since the confirmation) | remove it from the config, add it again, an admin confirms |
 | `unauthorized` (401) | `call: "user"` and nobody signed in | wrap the UI in `<LoginGate>` |
 | `not_found` (404) | `details.reason: upstream_not_registered` | ask the workspace admin to register it (same name) |
 | `method_not_allowed` (405) | method outside the allow-list | use an allowed method |
 | `path_not_allowed` (403) | path outside the allowed prefixes | use an allowed path, or ask the admin |
 | `rate_limited` (429) | a per-minute limit | wait `Retry-After`; never loop |
+| `proxy_busy` (429) | too many calls in flight (app or server) | wait `Retry-After`; fewer parallel calls |
 | `csrf_rejected` (403) | raw `fetch('/__drobek/v1/proxy/…')` | use `drobek.proxy.fetch` |
 | `ssrf_blocked` (403) | upstream resolves to a private address | the admin must use a public host |
-| `upstream_error` (502) | unreachable, timed out or > 5 MiB | show "try again later" |
+| `upstream_error` (502) | unreachable, timed out or > 5 MiB (decoded) | show "try again later" |
 | `config_error` (500) | the upstream's stored key is unusable | the admin re-enters it in the dashboard |

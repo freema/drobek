@@ -80,3 +80,4 @@ export {
   type UpstreamView,
 } from './upstreams.server.js';
 export { forwardToUpstream, type ForwardInput, type ForwardResult } from './forward.server.js';
+export { acquireProxySlot } from './concurrency.server.js';

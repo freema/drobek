@@ -13,7 +13,11 @@
  * 192.0.2/24, 192.168/16, 198.18/15, 198.51.100/24, 203.0.113/24, 224/4
  * (multicast), 240/4 (reserved incl. 255.255.255.255).
  * Blocked IPv6: :: (unspecified), ::1 (loopback), fc00::/7 (ULA), fe80::/10
- * (link-local), ff00::/8 (multicast), 2001:db8::/32 (doc). IPv4-mapped
+ * (link-local), fec0::/10 (deprecated site-local), ff00::/8 (multicast),
+ * 2001:db8::/32 (doc), 100::/64 (discard), 64:ff9b:1::/48 (local-use NAT64 —
+ * the translator is the operator's own) and 2002::/16 (6to4, deprecated by
+ * RFC 7526: a relay would unwrap the embedded IPv4, so the whole range is
+ * blocked; the reason names a blocked embedded IPv4). IPv4-mapped
  * (::ffff:0:0/96), IPv4-compatible (::/96) and NAT64 (64:ff9b::/96) unwrap to
  * the embedded IPv4 and are classified as that.
  */
@@ -144,12 +148,28 @@ function classifyV6(b: number[]): IpVerdict {
   }
   // IPv4-compatible (deprecated) ::a.b.c.d — first 12 bytes zero, non-zero tail.
   if (allZero(b, 0, 12)) return classifyV4(b.slice(12, 16));
+  // Local-use NAT64 64:ff9b:1::/48 (RFC 8215) — the operator's own translator.
+  if (b[0] === 0x00 && b[1] === 0x64 && b[2] === 0xff && b[3] === 0x9b && b[4] === 0x00 && b[5] === 0x01) {
+    return { blocked: true, reason: 'nat64-local-64:ff9b:1::/48' };
+  }
+  // 6to4 2002::/16 — the embedded IPv4 is bytes 2..5. Blocked whole (RFC 7526);
+  // a blocked embedded address is named in the reason.
+  if (b[0] === 0x20 && b[1] === 0x02) {
+    const inner = classifyV4(b.slice(2, 6));
+    return { blocked: true, reason: inner.blocked ? `6to4-2002/16:${inner.reason}` : '6to4-2002/16' };
+  }
+  // Discard-only 100::/64 (RFC 6666).
+  if (b[0] === 0x01 && b[1] === 0x00 && allZero(b, 2, 8)) return { blocked: true, reason: 'discard-100::/64' };
 
   // ULA fc00::/7
   if ((b[0] & 0xfe) === 0xfc) return { blocked: true, reason: 'ula-fc00/7' };
   // link-local fe80::/10
   if (b[0] === 0xfe && (b[1] & 0xc0) === 0x80) {
     return { blocked: true, reason: 'link-local-fe80/10' };
+  }
+  // site-local fec0::/10 (deprecated, RFC 3879 — still routed inside some networks)
+  if (b[0] === 0xfe && (b[1] & 0xc0) === 0xc0) {
+    return { blocked: true, reason: 'site-local-fec0/10' };
   }
   // multicast ff00::/8
   if (b[0] === 0xff) return { blocked: true, reason: 'multicast-ff00/8' };

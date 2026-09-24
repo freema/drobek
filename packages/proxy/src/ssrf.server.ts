@@ -18,7 +18,9 @@
  *   4. NO redirect following — a 3xx is returned verbatim, never auto-followed to
  *      an internal target.
  *   5. A per-request connect/idle timeout, an optional wall-clock deadline and
- *      a response-size cap.
+ *      a response-size cap (a HEAD / 204 / 304 answer's declared length is
+ *      not a body and is not held to it — NSO-326).
+ *   6. A buffered request body goes out with `Content-Length`, never chunked.
  */
 import { lookup as dnsLookup, type LookupAddress } from 'node:dns';
 import http from 'node:http';
@@ -43,10 +45,16 @@ export function proxyAllowedHosts(env: NodeJS.ProcessEnv = process.env): Set<str
   );
 }
 
-function intEnv(raw: string | undefined, fallback: number): number {
+/** A positive integer env value, or the fallback (unset / blank / invalid). */
+export function intEnv(raw: string | undefined, fallback: number): number {
   if (raw === undefined || raw.trim() === '') return fallback;
   const n = Number(raw);
   return Number.isInteger(n) && n > 0 ? n : fallback;
+}
+
+/** The response size cap (PROXY_MAX_RESPONSE_BYTES, default 5 MiB) — also the cap of a DECODED body. */
+export function proxyMaxResponseBytes(env: NodeJS.ProcessEnv = process.env): number {
+  return intEnv(env.PROXY_MAX_RESPONSE_BYTES, DEFAULT_MAX_RESPONSE_BYTES);
 }
 
 export interface SsrfForwardInput {
@@ -123,10 +131,18 @@ export async function ssrfSafeForward(
 
   const timeoutMs =
     input.timeoutMs ?? intEnv(env.PROXY_CONNECT_TIMEOUT_MS, DEFAULT_CONNECT_TIMEOUT_MS);
-  const maxBytes =
-    input.maxResponseBytes ??
-    intEnv(env.PROXY_MAX_RESPONSE_BYTES, DEFAULT_MAX_RESPONSE_BYTES);
+  const maxBytes = input.maxResponseBytes ?? proxyMaxResponseBytes(env);
   const lib = input.url.protocol === 'https:' ? https : http;
+  const bodyless = input.method.toUpperCase() === 'HEAD';
+  const hasBody = input.body !== undefined && input.body.length > 0;
+  // The body is fully buffered (≤ the route's cap): send it with its length,
+  // never chunked — some upstreams refuse `Transfer-Encoding: chunked`.
+  const headers: Record<string, string> = {};
+  for (const [k, v] of Object.entries(input.headers)) {
+    const name = k.toLowerCase();
+    if (name !== 'content-length' && name !== 'transfer-encoding') headers[k] = v;
+  }
+  if (hasBody) headers['content-length'] = String(input.body!.length);
 
   // Pin the DNS result: the socket connects to `address` (no re-resolution), but
   // node still derives the Host header + TLS servername from `input.url` (the
@@ -162,15 +178,18 @@ export async function ssrfSafeForward(
       input.url,
       {
         method: input.method,
-        headers: input.headers,
+        headers,
         lookup: pinnedLookup,
         timeout: timeoutMs,
         // Redirects are NEVER auto-followed by node's http.request — we return
         // any 3xx verbatim. (No agent-level redirect handling exists here.)
       },
       (res) => {
+        // A HEAD answer (and a 204/304) carries no body: its Content-Length
+        // describes the resource, so a large resource is no reason to refuse.
+        const noBody = bodyless || res.statusCode === 204 || res.statusCode === 304;
         const declared = Number(res.headers['content-length']);
-        if (Number.isFinite(declared) && declared > maxBytes) {
+        if (!noBody && Number.isFinite(declared) && declared > maxBytes) {
           res.destroy();
           reject(new ProxyError('upstream_error', 'upstream response exceeded the size cap'));
           return;
@@ -224,7 +243,7 @@ export async function ssrfSafeForward(
       );
     });
 
-    if (input.body && input.body.length > 0) req.write(input.body);
-    req.end();
+    if (hasBody) req.end(input.body);
+    else req.end();
   });
 }

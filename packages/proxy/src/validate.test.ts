@@ -171,6 +171,60 @@ describe('backslashes never escape the upstream (NSO-322 R2)', () => {
   });
 });
 
+describe('multiple percent-encoding never hides a traversal (NSO-326)', () => {
+  const codeOf = (fn: () => unknown): string | undefined => {
+    try {
+      fn();
+    } catch (err) {
+      return err instanceof ProxyError ? err.code : 'not-a-proxy-error';
+    }
+    return undefined;
+  };
+  const BASE = 'https://api.example.com/v1';
+
+  it('double and triple encoded "../", "/" and "\\" are refused (checked on the fully decoded segment)', () => {
+    for (const raw of [
+      '%252e%252e%252fadmin', // double: ../admin
+      'a/%252e%252e/admin', // double: ..
+      'a%252fb', // double: a/b
+      'x/%255c..%255c/admin', // double: \..\
+      '%25252e%25252e/admin', // triple: ..
+      'a%2525252fb', // 4 rounds → too deep
+      '%2525252e', // 4 rounds → too deep
+      'a%250ab', // double: a\nb (control character)
+      'a%00b', // once: NUL
+      '%25zz%252f', // a literal % next to a still-valid escape: ambiguous
+    ]) {
+      expect(codeOf(() => normalizeForwardPath(raw)), raw).toBe('path_not_allowed');
+      expect(codeOf(() => resolveForwardTarget(BASE, raw, '', ['/'])), raw).toBe('path_not_allowed');
+    }
+  });
+
+  it('the shapes refused before stay refused: ../, %2e%2e%2f, %5c..%5c, \\evil.com/x, malformed %', () => {
+    for (const raw of ['a/../b', '%2e%2e%2fadmin', 'a/%2e%2e/b', '%5c..%5c', '\\evil.com/x', 'a%zzb', 'a%']) {
+      expect(codeOf(() => normalizeForwardPath(raw)), raw).toBe('path_not_allowed');
+    }
+  });
+
+  it('a triple-encoded lone "." is just dropped like "." ', () => {
+    expect(normalizeForwardPath('a/%25252e/b')).toBe('/a/b');
+  });
+
+  it('a multiply encoded segment is forwarded as the canonical encoding of what was checked', () => {
+    // A literal percent sign: `a%2525b` → `a%25b` → `a%b`; the upstream gets `a%25b` (= "a%b").
+    expect(normalizeForwardPath('files/a%2525b')).toBe('/files/a%25b');
+    expect(resolveForwardTarget(BASE, 'files/a%2525b', '', ['/files']).pathname).toBe('/v1/files/a%25b');
+    // Double-encoded ordinary text is canonicalized too.
+    expect(normalizeForwardPath('q/hello%2520world')).toBe('/q/hello%20world');
+  });
+
+  it('a segment encoded at most once is forwarded as written (reserved-character choices kept)', () => {
+    expect(normalizeForwardPath('files/a%25b')).toBe('/files/a%25b');
+    expect(normalizeForwardPath('models/gemini-pro:generateContent')).toBe('/models/gemini-pro:generateContent');
+    expect(normalizeForwardPath('files/a%2Bb+c')).toBe('/files/a%2Bb+c');
+  });
+});
+
 describe('port allow-list (PHY-76 #8, NSO-297)', () => {
   const codeOf = (fn: () => unknown): string | undefined => {
     try {

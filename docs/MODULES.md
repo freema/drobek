@@ -960,13 +960,20 @@ calls an external API without holding its secret. `skill_info('proxy')`.
   allowed methods + path prefixes, `auth_type` `none | bearer | header` and
   the write-only secret (AES-256-GCM envelope under `DROBEK_MASTER_KEY`). Never
   over MCP.
-- **Config** `{ upstreams: { <name>: { rules: { call }, rateLimit? } } }` (≤ 20):
-  assigns a workspace upstream to the app. `call` = `user` (default) | `admin`
-  | `public` | `none` (alternatives with `|`; `owner` is refused). **Assigning
-  an upstream** and **opening `call` to `public`** need the confirmation of a
-  **workspace admin** (`confirmRole: 'admin'` — an editor cannot let an app
-  spend a secret an admin registered). Confirming an assignment puts the app
-  on the upstream's allow-list (`allowed_app_ids`).
+- **Config** `{ upstreams: { <name>: { rules: { call }, rateLimit?, id? } } }`
+  (≤ 20): assigns a workspace upstream to the app. `call` = `user` (default) |
+  `admin` | `public` | `none` (alternatives with `|`; `owner` is refused).
+  **Assigning an upstream** and **opening `call` to `public`** need the
+  confirmation of a **workspace admin** (`confirmRole: 'admin'` — an editor
+  cannot let an app spend a secret an admin registered). Confirming an
+  assignment puts the app on the upstream's allow-list (`allowed_app_ids`)
+  and binds it to that upstream RECORD: drobek writes the record's `id` into
+  the assignment (NSO-326; the agent never writes it — a written `id` that
+  differs from the bound one is a rebind and needs an admin too). A deleted
+  and re-registered upstream is a new record, so its old assignments stop
+  working until they are removed, added again and confirmed. A config from
+  before the binding (name only) is bound lazily by its first call, when the
+  app is on the current record's allow-list; no migration.
 - **Route** `GET|HEAD|POST|PUT|PATCH|DELETE /__drobek/v1/proxy/:upstream/*`
   (raw body ≤ 1 MiB). In order: `X-Drobek-SDK: 1` on every method (`403
   csrf_rejected` — a call spends the owner's key, so not even a cross-site GET);
@@ -974,22 +981,40 @@ calls an external API without holding its secret. `skill_info('proxy')`.
   upstream_not_assigned`); the `call` rule (`401` / `403`); rate limits —
   `PROXY_PUBLIC_CALLS_PER_MIN_PER_IP` (10, `public` upstreams only),
   `PROXY_CALLS_PER_MIN` (60 per app, all upstreams) and the assignment's
-  `rateLimit` (`429 rate_limited` + `Retry-After`); registered in the app's
-  workspace (`404 not_found`, `upstream_not_registered`); the app on the
-  upstream's allow-list (`403 forbidden`, `upstream_not_allowed` — empty =
-  no app; an assignment confirmed before the upstream was registered is
-  removed and added again); then
+  `rateLimit` (`429 rate_limited` + `Retry-After`); a slot among the calls in
+  flight — `PROXY_MAX_CONCURRENT` (32, the whole server) and
+  `PROXY_MAX_CONCURRENT_PER_APP` (8), each call holds up to 5 MiB for up to
+  20 s (`429 proxy_busy` + `Retry-After: 1`, nothing queues); registered in
+  the app's workspace (`404 not_found`, `upstream_not_registered`); the
+  record the assignment is bound to (`403 forbidden`, `upstream_replaced`);
+  the app on the upstream's allow-list (`403 forbidden`,
+  `upstream_not_allowed` — empty = no app; an assignment confirmed before the
+  upstream was registered is removed and added again); then
   `@drobek/proxy` `forwardToUpstream`: the method/path allow-lists (`405
-  method_not_allowed` / `403 path_not_allowed`, traversal-proof), the secret
+  method_not_allowed` / `403 path_not_allowed`, traversal-proof: each segment
+  is checked fully percent-decoded, up to 3 rounds, and a multiply encoded one
+  is forwarded re-encoded from its decoded value), the secret
   decrypted in memory and injected (`Authorization: Bearer …` or the named
   header), the client's `Cookie`, `Authorization`, hop-by-hop, `X-Forwarded-*`,
   `Forwarded`, `Via`, `Origin`, `Referer`, `Sec-*` and `X-Drobek-SDK` stripped,
-  `Accept-Encoding: identity`; the SSRF guard (DNS resolved once + pinned IP,
-  private/reserved ranges blocked unless on `PROXY_ALLOWED_HOSTS`, ports
-  80/443, **no redirects** — a 3xx is returned as-is, 20 s deadline, 5 MiB
-  response cap → `ssrf_blocked` 403 (audited as `proxy.blocked`) /
-  `upstream_error` 502). The response keeps the upstream's status and headers
-  minus `Set-Cookie`, `Access-Control-*` and framing headers, with
+  `Accept-Encoding: identity`, a request body sent with `Content-Length`
+  (never chunked); the SSRF guard (DNS resolved once + pinned IP,
+  private/reserved ranges blocked unless on `PROXY_ALLOWED_HOSTS` — IPv6
+  includes 6to4 `2002::/16`, local-use NAT64 `64:ff9b:1::/48`, site-local
+  `fec0::/10` and discard `100::/64` — ports 80/443, **no redirects** — a 3xx
+  is returned as-is, 20 s deadline, 5 MiB response cap; a HEAD answer's
+  `Content-Length` is not held to the cap → `ssrf_blocked` 403 (audited as
+  `proxy.blocked`) / `upstream_error` 502). A `Content-Encoding` the upstream
+  sends anyway (`gzip`, `deflate`, `br`) is decoded and the DECODED body must
+  fit the 5 MiB cap (else `upstream_error`). The response keeps the
+  upstream's status; its headers pass through an **allow-list**
+  (`Content-Type`, `Content-Language`, `Content-Range`, `Accept-Ranges`,
+  `ETag`, `Last-Modified`, `Expires`, `Pragma`, `Vary`, `Date`, `Age`,
+  `Retry-After`, request ids like `X-Request-Id`, rate-limit hints
+  `X-RateLimit-*` / `RateLimit-*`, `Content-Disposition` unless the answer is
+  HTML, `Location` only when relative) — so `Set-Cookie`, `Access-Control-*`,
+  `Clear-Site-Data`, `Refresh`, `Link`, HSTS, `Service-Worker-Allowed` and an
+  absolute `Location` never reach the app origin — with
   `Cache-Control: no-store`.
 - **Info**: `get_app` → `modules.proxy.info.upstreams: [{ name, registered,
   assigned, call?, rateLimit?, hasSecret, allowedMethods?, allowedPathPrefixes?

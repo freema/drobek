@@ -252,12 +252,27 @@ test.describe('platform module proxy — workspace upstreams per app (M1-06) @lo
     expect(traversal.status, traversal.body).toBe(403);
   });
 
-  test("the upstream's redirect is returned as-is, never followed", async () => {
+  test("the upstream's redirect is returned as-is, never followed; an absolute Location is dropped, a relative one relayed", async () => {
     skipUnlessLocal();
     const r = await call(host, '/echo/redirect', { cookie: user.cookie });
     expect(r.status, r.body).toBe(302);
-    expect(String(r.headers.location)).toContain('169.254.169.254');
+    // NSO-326: an absolute Location would reveal (or point past) the upstream — it never reaches the app origin.
+    expect(r.headers.location).toBeUndefined();
     expect(r.body).toBe('redirecting');
+    const rel = await call(host, '/echo/redirect/relative', { cookie: user.cookie });
+    expect(rel.status, rel.body).toBe(302);
+    expect(rel.headers.location).toBe('/echo/next');
+  });
+
+  test('NSO-326: a gzipped upstream answer arrives decoded; only allow-listed headers are relayed', async () => {
+    skipUnlessLocal();
+    const r = await call(host, '/echo/echo/gzip', { cookie: user.cookie });
+    expect(r.status, r.body).toBe(200);
+    expect(json(r)).toEqual({ gzipped: true, acceptEncoding: 'identity' });
+    expect(r.headers['content-encoding']).toBeUndefined();
+    expect(r.headers['x-request-id']).toBe('echo-req-1');
+    for (const gone of ['clear-site-data', 'link']) expect(r.headers[gone], gone).toBeUndefined();
+    expect(r.headers['cache-control']).toBe('no-store');
   });
 
   test('drobek.proxy.fetch in a real browser: the page gets the upstream response, the key stays on the server', async ({ browser }) => {

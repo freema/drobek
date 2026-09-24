@@ -117,6 +117,59 @@
   5 minutes. `modules/files/SKILL.md`, `docs/MODULES.md`, `docs/SECURITY.md`
   and the env reference updated. No migration.
 
+### Proxy hardening — M1 review low findings (NSO-326)
+
+- **Response headers are an allow-list** (`@drobek/proxy` `filterResponseHeaders`):
+  `Content-Type`, `Content-Language`, `Content-Range`, `Accept-Ranges`,
+  caching (`Cache-Control` — then `no-store` —, `ETag`, `Last-Modified`,
+  `Expires`, `Pragma`, `Vary`, `Date`, `Age`), `Retry-After`, request ids
+  (`X-Request-Id`, `X-Correlation-Id`, `X-Trace-Id`, `Request-Id`,
+  `X-Amzn-RequestId`), rate-limit hints (`X-RateLimit-*`, `RateLimit-*`),
+  `Content-Disposition` unless the answer is HTML, and `Location` only as a
+  relative reference. `Clear-Site-Data`, `Refresh`, `Link`,
+  `Strict-Transport-Security`, `Service-Worker-Allowed`, an absolute
+  `Location` (it revealed the upstream's base URL) and everything else no
+  longer reach the app origin.
+- **Encoded bodies are decoded**: an upstream that answers `gzip`, `deflate`
+  (zlib or raw) or `br` despite `Accept-Encoding: identity` is decoded, and
+  the DECODED size must fit `PROXY_MAX_RESPONSE_BYTES` (a small gzip bomb is
+  `upstream_error`); an unknown encoding is `upstream_error` instead of a
+  body the app cannot read.
+- **Double-encoded path traversal closed** (`normalizeForwardPath`, found by
+  the block black-box pass): every path segment is decoded FULLY (up to 3
+  rounds; a 4th that still changes it, a malformed escape in the raw
+  segment, or a valid escape left beside a literal `%` → `403
+  path_not_allowed`) and the `..` / encoded `/` / `\` / control-character
+  checks run on that value, so `%252e%252e%252f` (and triple encoding) is
+  refused like `../`. Only validated bytes are forwarded: a segment encoded
+  at most once goes as written (its one decoding is the checked value), a
+  multiply encoded one as `encodeURIComponent` of its decoded value — a
+  literal percent sent as `a%2525b` reaches the upstream as `a%25b`.
+- **HEAD** on a resource larger than the cap answers again (the declared
+  `Content-Length` of a HEAD / 204 / 304 is not a body).
+- **Request bodies** go out with `Content-Length`, never chunked.
+- **Assignments are bound to the upstream record** (`modules/proxy`): the
+  config gains `upstreams.<name>.id`, written by drobek when a workspace
+  admin confirms (never by the agent; a written `id` that differs is a
+  rebind and needs an admin). A deleted and re-registered upstream no longer
+  inherits the old assignments or their `public` rule: calls answer `403
+  forbidden` (`details.reason: upstream_replaced`) until the assignment is
+  removed, added again and confirmed. Configs from before (name only) keep
+  working and are bound lazily by their first call when the app is on the
+  current record's allow-list — no migration. `allowAppOnUpstream` returns
+  the record id.
+- **IPv6 SSRF ranges**: 6to4 `2002::/16` (blocked whole; a blocked embedded
+  IPv4 is named in the reason), local-use NAT64 `64:ff9b:1::/48`, site-local
+  `fec0::/10` and discard `100::/64`.
+- **Concurrency caps**: `PROXY_MAX_CONCURRENT` (32, the whole server) and
+  `PROXY_MAX_CONCURRENT_PER_APP` (8) calls in flight; over either → `429
+  proxy_busy` + `Retry-After: 1` (new catalogue code). Documented in
+  `.env.example`, `.env.production.example`, `docs/SELF-HOSTING.md` and
+  `docs/MODULES.md`; `modules/proxy/SKILL.md` names the new errors.
+- e2e: `proxy-module.spec.ts` expects the dropped absolute `Location`, a
+  relayed relative one and a decoded gzip answer (`proxy-echo` serves
+  `/redirect/relative` and `/echo/gzip`).
+
 ### Directory listing kit + explicit `idempotentHint` (NSO-307)
 
 - New `docs/listing/`: `README.md` is the submission kit for the Claude

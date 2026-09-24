@@ -126,7 +126,9 @@ describe('filterResponseHeaders', () => {
     ]);
     expect(out['Access-Control-Allow-Origin']).toBeUndefined();
     expect(out['access-control-allow-credentials']).toBeUndefined();
-    expect(out['location']).toBe('https://elsewhere.example/');
+    // An absolute Location is dropped (NSO-326).
+    expect(out['location']).toBeUndefined();
+    expect(out['content-type']).toBe('text/plain');
   });
 
   it('strips hop-by-hop + set-cookie from the upstream response', () => {
@@ -140,5 +142,94 @@ describe('filterResponseHeaders', () => {
     expect(out['set-cookie']).toBeUndefined();
     expect(out['transfer-encoding']).toBeUndefined();
     expect(out['content-encoding']).toBeUndefined();
+  });
+});
+
+describe('filterResponseHeaders — an allow-list (NSO-326)', () => {
+  const filter = (h: Record<string, string>) => filterResponseHeaders(Object.entries(h));
+
+  it('drops every header that would act on the app origin', () => {
+    const dropped = {
+      'Clear-Site-Data': '"cache", "cookies", "storage"',
+      Refresh: '0; url=https://evil.example/',
+      Link: '<https://evil.example/x.js>; rel=preload; as=script',
+      'Strict-Transport-Security': 'max-age=63072000; includeSubDomains; preload',
+      'Service-Worker-Allowed': '/',
+      'Set-Cookie': 'up=1; Path=/',
+      'Set-Cookie2': 'up=1',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Expose-Headers': '*',
+      'Content-Security-Policy': "default-src *",
+      'X-Frame-Options': 'ALLOWALL',
+      'WWW-Authenticate': 'Bearer realm="internal"',
+      'Alt-Svc': 'h3=":443"',
+      'Content-Location': 'https://upstream.internal/v1/x',
+      Server: 'upstream/1.0',
+      'X-Powered-By': 'Express',
+      'Transfer-Encoding': 'chunked',
+      Connection: 'keep-alive',
+      'Content-Length': '12',
+      'Content-Encoding': 'gzip',
+    };
+    expect(filter(dropped)).toEqual({});
+  });
+
+  it('keeps the representation, caching, rate-limit and request-id headers', () => {
+    const kept = {
+      'Content-Type': 'application/json',
+      'Content-Language': 'en',
+      'Content-Range': 'bytes 0-9/100',
+      'Accept-Ranges': 'bytes',
+      'Cache-Control': 'max-age=60',
+      Expires: 'Wed, 21 Oct 2026 07:28:00 GMT',
+      Pragma: 'no-cache',
+      ETag: '"abc"',
+      'Last-Modified': 'Wed, 21 Oct 2026 07:28:00 GMT',
+      Vary: 'Accept',
+      Date: 'Wed, 21 Oct 2026 07:28:00 GMT',
+      Age: '3',
+      'Retry-After': '30',
+      'X-Request-Id': 'req_1',
+      'X-Correlation-Id': 'c_1',
+      'X-Trace-Id': 't_1',
+      'Request-Id': 'r_1',
+      'x-amzn-RequestId': 'a_1',
+      'X-RateLimit-Remaining-Requests': '99',
+      'RateLimit-Limit': '100',
+      RateLimit: 'limit=100, remaining=99',
+      'RateLimit-Policy': '100;w=60',
+    };
+    expect(filter(kept)).toEqual(kept);
+  });
+
+  it('Location: a relative reference passes, anything absolute (or browser-absolute) is dropped', () => {
+    for (const rel of ['/v1/items/2', 'items/2', '../x?y=1', '?page=2', '#top']) {
+      expect(filter({ Location: rel }), rel).toEqual({ Location: rel });
+    }
+    for (const abs of [
+      'https://api.upstream.example/v1/items/2',
+      'http://169.254.169.254/latest/meta-data/',
+      '//evil.example/x',
+      '/\\evil.example/x',
+      'javascript:alert(1)',
+      'HTTPS://api.upstream.example/',
+      '/x\r\nSet-Cookie: a=1',
+      '',
+    ]) {
+      expect(filter({ Location: abs }), abs).toEqual({});
+    }
+  });
+
+  it('Content-Disposition passes for non-HTML answers only', () => {
+    expect(filter({ 'Content-Type': 'application/pdf', 'Content-Disposition': 'attachment; filename="a.pdf"' })).toEqual({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': 'attachment; filename="a.pdf"',
+    });
+    expect(filter({ 'Content-Type': 'text/html; charset=utf-8', 'Content-Disposition': 'inline; filename="x.html"' })).toEqual({
+      'Content-Type': 'text/html; charset=utf-8',
+    });
+    expect(filter({ 'content-disposition': 'attachment', 'content-type': 'application/xhtml+xml' })).toEqual({
+      'content-type': 'application/xhtml+xml',
+    });
   });
 });

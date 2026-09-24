@@ -393,6 +393,9 @@ importers:
       '@drobek/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
+      drizzle-orm:
+        specifier: ^0.41.0
+        version: 0.41.0(@electric-sql/pglite@0.2.17)(@types/pg@8.20.0)(pg@8.22.0)(postgres@3.4.9)
     devDependencies:
       '@drobek/compile':
         specifier: workspace:*
@@ -403,9 +406,6 @@ importers:
       '@types/node':
         specifier: ^22
         version: 22.20.0
-      drizzle-orm:
-        specifier: ^0.41.0
-        version: 0.41.0(@electric-sql/pglite@0.2.17)(@types/pg@8.20.0)(pg@8.22.0)(postgres@3.4.9)
       drobek-module-auth:
         specifier: workspace:*
         version: link:../auth

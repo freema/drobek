@@ -269,8 +269,16 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
   {
     code: 'upstream_error',
     surface: 'module route (proxy) 502',
-    meaning: 'The upstream could not be reached, timed out (20 s) or answered more than 5 MiB.',
+    meaning:
+      'The upstream could not be reached, timed out (20 s), answered more than 5 MiB (measured after undoing a gzip / deflate / br encoding) or used an encoding drobek cannot decode.',
     fix: 'Show "try again later" in the app; ask for smaller responses (pagination, limits). Never retry in a tight loop.',
+  },
+  {
+    code: 'proxy_busy',
+    surface: 'module route (proxy) 429, Retry-After',
+    meaning:
+      'Too many upstream calls are in flight — from this app (PROXY_MAX_CONCURRENT_PER_APP, default 8) or on the whole server (PROXY_MAX_CONCURRENT, default 32). Nothing was sent to the upstream.',
+    fix: 'Retry after `Retry-After` seconds; do not fire many proxy calls in parallel from one page (queue them, or batch in one upstream request).',
   },
   {
     code: 'config_error',

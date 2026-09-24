@@ -1066,6 +1066,35 @@ block, then `next` is pushed and the single MR opened.
   `get_logs`). Probe the shape with a PGlite insert that violates a unique
   index.
 
+- NSO-326 proxy binding: `upstreams.<name>.id` in the proxy config is written
+  by drobek OUTSIDE the runtime's configure path — `modules/proxy/src/binding.ts`
+  updates `module_configs.config` with `jsonb_set` (in onConfirmed, after the
+  runtime already wrote the confirmed config in the same transaction, and
+  lazily on a call of a name-only config). The runtime's config memo is keyed
+  by content, so nothing goes stale. The dashboard's `save-upstream` replaces
+  the whole assignment (its merge patch sends `id: null`): dropping `id` is
+  deliberately NOT a confirm trigger — the next call re-binds it lazily when
+  the app is still on the record's allow-list. A test that re-registers an
+  upstream row must give the rest of the suite a record that names the app.
+- NSO-326: `filterResponseHeaders` is an allow-list and drops an absolute
+  `Location` — an e2e/unit expectation that a 3xx carries the upstream's
+  absolute Location is stale. `proxy-echo.mjs` gained `/redirect/relative`
+  and `/echo/gzip`: `docker compose restart proxy-echo` before the block-end
+  e2e. Node's HTTP server adds `Date` to every answer (allow-listed), so a
+  header-equality test must leave it out.
+- NSO-326: zlib's `maxOutputLength` rejects with a `RangeError`
+  (`ERR_BUFFER_TOO_LARGE`) — that is how the decoded-size cap is detected;
+  `deflate` falls back to `inflateRaw` on any other error. The proxy
+  concurrency gate (`acquireProxySlot`) is process-wide: a unit test that
+  wants its own counters passes a fresh `ConcurrencyGate`.
+- NSO-326 path decoding: `normalizeForwardPath` decodes a segment until it is
+  stable (≤ 3 rounds). A `decodeURIComponent` failure on the RAW segment is a
+  403, but a failure in a later round means the remaining `%` is literal
+  (`a%2525b` → `a%b`) — unless a valid `%XX` is still left in it (refused as
+  ambiguous). Segments encoded at most once are forwarded raw on purpose: a
+  blanket `encodeURIComponent` would turn `models/x:generateContent` into
+  `%3A` and `+` into `%2B`, which some APIs treat differently.
+
 ## Failed approaches
 
 - `pnpm deploy --offline` in the Dockerfile builder: fails with

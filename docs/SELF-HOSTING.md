@@ -369,7 +369,8 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `FILES_MAX_BYTES` / `FILES_QUOTA_PER_APP` / `FILES_UPLOAD_RATE_LIMIT` | 10 MiB / 500 MiB / 60 per min | `files` *(plan)* |
 | `FILES_SWEEP_INTERVAL_MS` / `FILES_SWEEP_RETENTION_MS` | 3600000 / 86400000 | `files`: how often the sweep runs; it removes the uploads of apps deleted that long ago, temp uploads untouched that long and blobs that old no app references |
 | `PROXY_ALLOWED_PORTS` / `PROXY_ALLOWED_HOSTS` | 80,443 / empty | `proxy`: upstream ports; hostnames whose private IPs may be reached (keep empty) |
-| `PROXY_CONNECT_TIMEOUT_MS` / `PROXY_MAX_RESPONSE_BYTES` | 8000 / 5242880 | `proxy`: per upstream request |
+| `PROXY_CONNECT_TIMEOUT_MS` / `PROXY_MAX_RESPONSE_BYTES` | 8000 / 5242880 | `proxy`: per upstream request (the size cap also holds for a decoded gzip/br body) |
+| `PROXY_MAX_CONCURRENT` / `PROXY_MAX_CONCURRENT_PER_APP` | 32 / 8 | `proxy`: upstream calls in flight on the whole server / per app; over either → `429 proxy_busy` |
 | `PROXY_CALLS_PER_MIN` / `PROXY_PUBLIC_CALLS_PER_MIN_PER_IP` | 60 / 10 | `proxy`: calls per app, per IP to `public` upstreams *(plan)* |
 | `HELLO_WAVES_PER_MINUTE` | 30 | the example module `drobek-module-hello` |
 

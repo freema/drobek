@@ -64,22 +64,53 @@ export function normalizePrefixes(prefixes: string[]): string[] {
   return out;
 }
 
-function safeDecode(seg: string): string {
-  try {
-    return decodeURIComponent(seg);
-  } catch {
-    // A malformed %-escape is suspicious → treat as traversal.
-    return '..';
+/** Percent-decoding rounds a segment may need (`%25252e` = 3); a 4th that still changes it → refused. */
+const MAX_DECODE_ROUNDS = 3;
+
+/**
+ * Decode a path segment FULLY (NSO-326): `decodeURIComponent` until it no
+ * longer changes, so `%252e%252e%252f` is checked as `../`, not as the
+ * harmless-looking `%2e%2e%2f`. A malformed escape in the raw segment is
+ * refused; one that appears only after a round is a literal `%` (`a%2525b` →
+ * `a%25b` → `a%b`) and ends the decoding — but a valid escape left next to it
+ * (`%25zz%252f` → `%zz%2f`) would still mean something to an upstream that
+ * decodes leniently, so it is refused. Returns the value and how many rounds
+ * changed it.
+ */
+function fullyDecode(seg: string): { value: string; rounds: number } {
+  let cur = seg;
+  for (let rounds = 0; ; rounds++) {
+    let next: string;
+    try {
+      next = decodeURIComponent(cur);
+    } catch {
+      if (rounds === 0) throw new ProxyError('path_not_allowed', 'malformed percent-encoding in the path');
+      if (/%[0-9a-f]{2}/i.test(cur)) throw new ProxyError('path_not_allowed', 'ambiguous percent-encoding in the path');
+      return { value: cur, rounds };
+    }
+    if (next === cur) return { value: cur, rounds };
+    if (rounds === MAX_DECODE_ROUNDS) {
+      throw new ProxyError('path_not_allowed', 'the path is percent-encoded too many times');
+    }
+    cur = next;
   }
 }
 
 /**
  * Normalize the forwarded subpath (the route `*` splat) to a leading-slash path,
- * REJECTING any traversal. A single `.` segment is dropped; a `..` segment (raw
- * OR percent-encoded), an encoded slash, a backslash (raw or `%5c` — the WHATWG
- * URL parser treats `\` as `/`, so `/\evil.com` would become another host,
- * NSO-322 R2) or a control character inside a segment is rejected outright — a
- * legitimate API subpath never needs any of them.
+ * REJECTING any traversal. Every check runs on the FULLY decoded segment
+ * (NSO-326 — double / triple encoding does not hide anything) and on the raw
+ * one: a single `.` segment is dropped; a `..` segment, an encoded slash, a
+ * backslash (the WHATWG URL parser treats `\` as `/`, so `/\evil.com` would
+ * become another host, NSO-322 R2) or a control character is rejected
+ * outright — a legitimate API subpath never needs any of them.
+ *
+ * What is forwarded is only what was validated: a segment encoded at most
+ * once goes as the client wrote it (its one decoding IS the checked value, and
+ * the client's choice for reserved characters — `%2B` vs `+`, a raw `:` — is
+ * kept); a segment encoded more than once goes as `encodeURIComponent` of its
+ * fully decoded value — a literal percent written as `a%2525b` reaches the
+ * upstream as `a%25b` (it decodes to `a%b`).
  */
 export function normalizeForwardPath(rawSplat: string): string {
   const trimmed = String(rawSplat ?? '').replace(/^\/+/, '');
@@ -88,7 +119,12 @@ export function normalizeForwardPath(rawSplat: string): string {
   const keep: string[] = [];
   for (const seg of segments) {
     if (seg === '') continue; // collapse '//'
-    const dec = safeDecode(seg);
+    // (Raw ones first: the URL parser silently drops a raw tab / CR / LF, `.\t.` → `..`.)
+    // eslint-disable-next-line no-control-regex
+    if (/[\u0000-\u001f\u007f]/.test(seg)) {
+      throw new ProxyError('path_not_allowed', 'control characters are not allowed in the path');
+    }
+    const { value: dec, rounds } = fullyDecode(seg);
     if (dec === '.') continue;
     if (dec === '..' || seg === '..' || seg.toLowerCase().includes('%2e%2e')) {
       throw new ProxyError('path_not_allowed', 'path traversal is not allowed');
@@ -99,12 +135,11 @@ export function normalizeForwardPath(rawSplat: string): string {
     if (seg.includes('\\') || dec.includes('\\') || seg.toLowerCase().includes('%5c')) {
       throw new ProxyError('path_not_allowed', 'backslashes are not allowed in the path');
     }
-    // (Raw ones only: the URL parser silently drops a raw tab / CR / LF, `.\t.` → `..`.)
     // eslint-disable-next-line no-control-regex
-    if (/[\u0000-\u001f\u007f]/.test(seg)) {
+    if (/[\u0000-\u001f\u007f]/.test(dec)) {
       throw new ProxyError('path_not_allowed', 'control characters are not allowed in the path');
     }
-    keep.push(seg);
+    keep.push(rounds <= 1 ? seg : encodeURIComponent(dec));
   }
   return `/${keep.join('/')}`;
 }

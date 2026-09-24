@@ -29,7 +29,7 @@ const HOP_BY_HOP = new Set([
  * internal topology and the end user's IP; `origin` / `referer` / `sec-*` are the
  * BROWSER's view of the app host (APIs that refuse browser calls key on them);
  * `x-drobek-sdk` is drobek's own CSRF marker. `accept-encoding` is replaced by
- * `identity`: the gateway relays the body as-is and drops `content-encoding`.
+ * `identity`; an upstream that encodes anyway is decoded by the forward path.
  */
 const STRIP_TO_UPSTREAM = new Set([
   ...HOP_BY_HOP,
@@ -56,19 +56,56 @@ function strippedToUpstream(name: string): boolean {
 }
 
 /**
- * Upstream → client: strip hop-by-hop + framing headers (the drobek HTTP client
- * re-frames the response), any Set-Cookie from the upstream (it must not be
- * planted in the app's origin) and the upstream's CORS grants
- * (`access-control-*`: the upstream must not open the app host's proxy route
- * to other origins).
+ * Upstream → client: an ALLOW-LIST (NSO-326). The relay answers on the APP's
+ * origin, so nothing an upstream sends that acts on that origin may pass:
+ * `Set-Cookie`, the upstream's CORS grants (`access-control-*`),
+ * `Clear-Site-Data`, `Refresh`, `Link` (preload / prefetch), HSTS,
+ * `Service-Worker-Allowed`, … are dropped by not being listed.
+ * `content-length` and `content-encoding` are framing: the body may have been
+ * decoded (forward.server.ts) and the app host re-frames it. `cache-control`
+ * passes here and is then overwritten with `no-store` by the forward path.
  */
-const STRIP_FROM_UPSTREAM = new Set([
-  ...HOP_BY_HOP,
-  'content-length',
-  'content-encoding',
-  'set-cookie',
-  'set-cookie2',
+const ALLOWED_FROM_UPSTREAM = new Set([
+  'content-type',
+  'content-language',
+  'content-range',
+  'accept-ranges',
+  'cache-control',
+  'expires',
+  'pragma',
+  'etag',
+  'last-modified',
+  'vary',
+  'date',
+  'age',
+  'retry-after',
+  'request-id',
+  'x-amzn-requestid',
+  'x-amz-request-id',
+  'ratelimit',
+  'ratelimit-policy',
 ]);
+
+/** Request ids (`x-request-id`, `x-correlation-id`, `x-trace-id`) and rate-limit hints (`x-ratelimit-*`, `ratelimit-*`). */
+const ALLOWED_PATTERNS = [/^x-(request|correlation|trace)-id$/, /^x-ratelimit-[a-z0-9-]+$/, /^ratelimit-[a-z0-9-]+$/];
+
+/**
+ * A `Location` passes only as a RELATIVE reference — no scheme, no `//host`,
+ * no backslash (browsers read `/\host` as `//host`), no control characters.
+ * An absolute one would reveal the upstream's base URL (or point anywhere),
+ * so it is dropped.
+ */
+function relativeLocation(value: string): string | null {
+  const v = value.trim();
+  if (v === '' || v.includes('\\') || [...v].some((c) => c.charCodeAt(0) < 0x20 || c.charCodeAt(0) === 0x7f)) return null;
+  if (v.startsWith('//') || /^[a-z][a-z0-9+.-]*:/i.test(v)) return null;
+  return v;
+}
+
+function isHtml(contentType: string | undefined): boolean {
+  const type = (contentType ?? '').split(';')[0].trim().toLowerCase();
+  return type === 'text/html' || type === 'application/xhtml+xml';
+}
 
 export interface InjectAuthInput {
   authType: UpstreamAuthType;
@@ -91,7 +128,7 @@ export function buildForwardHeaders(
     const name = key.toLowerCase();
     if (!strippedToUpstream(name)) out[name] = value;
   });
-  // The body is relayed verbatim (never decoded), so ask for it unencoded.
+  // Ask for the body unencoded (an encoded answer is decoded within the cap anyway).
   out['accept-encoding'] = 'identity';
 
   if (inject.authType === 'bearer') {
@@ -113,14 +150,24 @@ export function buildForwardHeaders(
   return out;
 }
 
-/** Filter an upstream response's headers before relaying them to the client. */
+/** Filter an upstream response's headers before relaying them to the client (allow-list). */
 export function filterResponseHeaders(
   entries: Iterable<[string, string]>
 ): Record<string, string> {
+  const list = [...entries];
+  const contentType = list.find(([k]) => k.toLowerCase() === 'content-type')?.[1];
   const out: Record<string, string> = {};
-  for (const [k, v] of entries) {
+  for (const [k, v] of list) {
     const name = k.toLowerCase();
-    if (!STRIP_FROM_UPSTREAM.has(name) && !name.startsWith('access-control-')) out[k] = v;
+    if (name === 'location') {
+      const rel = relativeLocation(v);
+      if (rel !== null) out[k] = rel;
+    } else if (name === 'content-disposition') {
+      // An HTML answer is never turned into a named download on the app origin.
+      if (!isHtml(contentType)) out[k] = v;
+    } else if (ALLOWED_FROM_UPSTREAM.has(name) || ALLOWED_PATTERNS.some((re) => re.test(name))) {
+      out[k] = v;
+    }
   }
   return out;
 }
