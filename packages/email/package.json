@@ -17,11 +17,10 @@
     "test:run": "vitest run"
   },
   "dependencies": {
-    "nodemailer": "^6.9.16"
+    "nodemailer": "^10.0.10"
   },
   "devDependencies": {
     "@types/node": "^22",
-    "@types/nodemailer": "^6.4.17",
     "typescript": "^5.7.3",
     "vitest": "^3.0.7"
   },

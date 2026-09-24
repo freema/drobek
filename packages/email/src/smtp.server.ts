@@ -4,7 +4,7 @@
  * Env: SMTP_HOST, SMTP_PORT, SMTP_SECURE (0/1), SMTP_USER, SMTP_PASS,
  * EMAIL_FROM.
  */
-import type { Transporter } from 'nodemailer';
+import type { SMTPTransportOptions, Transporter } from 'nodemailer';
 
 let cached: Transporter | null = null;
 
@@ -15,11 +15,27 @@ export function smtpConfigured(
   return Boolean(env.SMTP_HOST?.trim());
 }
 
+/**
+ * The SMTP transport options from the env. SMTP_SECURE=1 is implicit TLS
+ * (port 465); otherwise the connection starts plain and nodemailer upgrades
+ * it with STARTTLS when the server offers it (port 587, Hostinger's default).
+ * No auth when SMTP_USER / SMTP_PASS are unset (mailpit).
+ */
+export function smtpTransportOptions(env: NodeJS.ProcessEnv): SMTPTransportOptions {
+  const user = env.SMTP_USER?.trim();
+  const pass = env.SMTP_PASS?.trim();
+  return {
+    host: env.SMTP_HOST?.trim(),
+    port: Number(env.SMTP_PORT ?? 587),
+    secure: String(env.SMTP_SECURE ?? '0') === '1',
+    ...(user && pass ? { auth: { user, pass } } : {}),
+  };
+}
+
 async function buildTransport(env: NodeJS.ProcessEnv): Promise<Transporter> {
   const nodemailer = (await import('nodemailer')).default;
-  const host = env.SMTP_HOST?.trim();
 
-  if (!host) {
+  if (!env.SMTP_HOST?.trim()) {
     if (env.NODE_ENV === 'production') {
       throw new Error('SMTP_HOST must be set in production');
     }
@@ -27,17 +43,7 @@ async function buildTransport(env: NodeJS.ProcessEnv): Promise<Transporter> {
     return nodemailer.createTransport({ jsonTransport: true });
   }
 
-  const port = Number(env.SMTP_PORT ?? 587);
-  const secure = String(env.SMTP_SECURE ?? '0') === '1';
-  const user = env.SMTP_USER?.trim();
-  const pass = env.SMTP_PASS?.trim();
-
-  return nodemailer.createTransport({
-    host,
-    port,
-    secure,
-    ...(user && pass ? { auth: { user, pass } } : {}),
-  });
+  return nodemailer.createTransport(smtpTransportOptions(env));
 }
 
 /** Lazy-load nodemailer so Vite SSR route graphs never eagerly bundle it. */

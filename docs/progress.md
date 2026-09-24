@@ -1023,6 +1023,26 @@ block, then `next` is pushed and the single MR opened.
   apps in one workspace hit the default of 50 — pass `maxApps` or use a
   fresh workspace.
 
+- NSO-330 (supersedes the NSO-306 audit note above for nodemailer):
+  `nodemailer` is 10.x and ships its own types (ESM + CJS builds, default
+  export kept) — do not re-add `@types/nodemailer` (it stops at 8.x). Its
+  high advisories needed 9.1+, not the 7.0.11 an older audit suggested:
+  read the advisory ranges in `pnpm audit --prod --json` before picking a
+  target major. After a bump, rebuild the server and check that
+  `build/server/assets/server-build-*.js` still does `import("nodemailer")`
+  and that it resolves from `apps/server` to the new version
+  (`node --input-type=module -e 'console.log(import.meta.resolve("nodemailer"))'`
+  in `apps/server`).
+- NSO-330 `drizzle-orm` 0.41 → 0.45 blockers (tests stay green, behaviour
+  does not): since 0.44 every driver error is a `DrizzleQueryError` whose
+  `code` is undefined (the Postgres code is on `err.cause.code`) and whose
+  message is `Failed query: <sql>\nparams: <values>`. Before upgrading:
+  make every unique-violation check read `cause` (tenancy's two
+  `isUniqueViolation` still read `err.code` only) and route logged DB errors
+  through a helper that drops the params (app logs reach the agent through
+  `get_logs`). Probe the shape with a PGlite insert that violates a unique
+  index.
+
 ## Failed approaches
 
 - `pnpm deploy --offline` in the Dockerfile builder: fails with

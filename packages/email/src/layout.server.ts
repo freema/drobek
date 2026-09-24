@@ -49,7 +49,7 @@ export function renderEmailLayout({
             </tr>
             <tr>
               <td style="padding:16px 4px 0 4px;color:${BRAND.faint};font-size:12px;line-height:1.55;">
-                ${footNote ?? 'This email was sent by drobek — MCP-native hosting for vibecoded static micro-apps. If you did not request it, you can safely ignore it.'}
+                ${footNote ?? 'This email was sent by drobek — a cloud workspace for agent-built web apps. If you did not request it, you can safely ignore it.'}
               </td>
             </tr>
           </table>

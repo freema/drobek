@@ -9,6 +9,7 @@
  * Without SMTP_HOST outside production nothing is sent (the caller logs it);
  * in production a missing SMTP config is an error.
  */
+import type { SendMailOptions } from 'nodemailer';
 import { getEmailFrom, getSmtpTransport, smtpConfigured } from './smtp.server.js';
 
 export interface OutgoingEmail {
@@ -50,6 +51,18 @@ export function fromHeader(fromName: string | undefined, env: NodeJS.ProcessEnv 
   return { name: name || base.name, address: base.address };
 }
 
+/** The nodemailer message for `mail`: sender and Reply-To as address objects, never header text. */
+export function messageFor(mail: OutgoingEmail, env: NodeJS.ProcessEnv = process.env): SendMailOptions {
+  return {
+    from: fromHeader(mail.fromName, env),
+    to: mail.to,
+    subject: mail.subject,
+    text: mail.text,
+    html: mail.html,
+    ...(mail.replyTo ? { replyTo: mail.replyTo } : {}),
+  };
+}
+
 /** Deliver `mail`; 'not_configured' when SMTP is not set up in dev (nothing was sent). */
 export async function sendEmail(mail: OutgoingEmail, env: NodeJS.ProcessEnv = process.env): Promise<'sent' | 'not_configured'> {
   if (!smtpConfigured(env)) {
@@ -57,13 +70,6 @@ export async function sendEmail(mail: OutgoingEmail, env: NodeJS.ProcessEnv = pr
     return 'not_configured';
   }
   const transport = await getSmtpTransport(env);
-  await transport.sendMail({
-    from: fromHeader(mail.fromName, env),
-    to: mail.to,
-    subject: mail.subject,
-    text: mail.text,
-    html: mail.html,
-    ...(mail.replyTo ? { replyTo: mail.replyTo } : {}),
-  });
+  await transport.sendMail(messageFor(mail, env));
   return 'sent';
 }

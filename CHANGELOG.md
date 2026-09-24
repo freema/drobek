@@ -39,6 +39,54 @@
   `plan-limits.spec.ts` (@local, fills a workspace to the default 50). No
   migration.
 
+### nodemailer 10, drizzle-orm 0.45 evaluated and deferred (NSO-330)
+
+- **`nodemailer` 6.10 → 10.0.10** (`@drobek/email`, and `apps/server`, which
+  keeps it as a direct dependency for the SSR bundle's `import("nodemailer")`).
+  7.x was not enough: of the three high advisories, only the recursive
+  address-parser DoS (GHSA-rcmh-qjqh-p98v) is fixed in 7.0.11; the quadratic
+  address-list parsing (GHSA-2x7j-588g-ccc2, fixed in 9.1.0) and the
+  message-level `raw` file access / SSRF (GHSA-p6gq-j5cr-w38f, fixed in
+  9.0.1) need 9.x, and the moderates (envelope/EHLO CRLF injection,
+  recipient-domain bypasses, `resolveContent` sandbox bypass) go up to 9.1.1.
+  10.x additionally makes the remaining address-parser paths linear
+  (10.0.5 / 10.0.6 / 10.0.9) and ships its own TypeScript declarations, so
+  `@types/nodemailer` (which stops at 8.x) is removed. The breaking changes
+  of 7–10 (SES SDK v2, `NoAuth` → `ENOAUTH`, TLS verification for remote
+  content fetches, Node ≥ 20) touch nothing drobek uses. The SMTP transport
+  is unchanged: `SMTP_SECURE=1` implicit TLS, otherwise STARTTLS on
+  `SMTP_PORT` (587), auth only when both `SMTP_USER` and `SMTP_PASS` are set;
+  the option mapping is now the tested `smtpTransportOptions()` and the
+  message the tested `messageFor()` (address objects for From / Reply-To,
+  rendered through nodemailer's stream transport in the unit test).
+- The default e-mail footer (`renderEmailLayout`) says "a cloud workspace for
+  agent-built web apps" instead of the retired static-micro-app tagline.
+- **`drizzle-orm` stays on 0.41** (evaluated, not upgraded). The bump to
+  0.45.3 builds, typechecks and passes every unit test, and the migrators
+  (`__drizzle_migrations_core`, `__drizzle_migrations_mod_<name>`, PGlite +
+  postgres-js), `pgTable` typings and relations need no change — but 0.44
+  wraps every driver error in `DrizzleQueryError`, which changes runtime
+  behaviour the tests do not cover: (1) `err.code` is undefined on the
+  wrapper (the Postgres code moves to `err.cause.code`), so the unique-
+  violation checks in `packages/tenancy/src/team-workspace.server.ts` and
+  `personal-workspace.server.ts` stop matching — a taken team slug would be
+  a 500 instead of `slug-taken` and the personal-workspace slug retry loop
+  would abort (`packages/apps` and `packages/domains` already check
+  `cause`); (2) the wrapper's message is `Failed query: <sql>\nparams:
+  <values>`, so every log line that records `err.message` / `err.stack` of a
+  failed query (about 25 sites, e.g. `modules/forms` notification failures
+  and `modules/auth` sign-in mail failures, which land in the app log that
+  `get_logs` returns to the agent, and `@drobek/auth`'s logger) would start
+  carrying bound values such as end-user e-mail addresses and token hashes.
+  Upgrading needs a shared DB-error helper (unwrap `cause` for codes, keep
+  params out of logs) applied across packages that other work is changing
+  now. Remaining high: GHSA-gpj5-g38j-94v9 (identifier escaping in
+  `sql.identifier()` / `.as()`) — not reachable, drobek never passes runtime
+  input to either; the only `sql.raw` calls (`modules/data` store) take
+  fixed literals.
+- `pnpm audit --prod` after this change: 1 high (`drizzle-orm`, above),
+  2 moderate (`qs` 6.15 through `express` 4). No migration, no new env var.
+
 ### Directory listing kit + explicit `idempotentHint` (NSO-307)
 
 - New `docs/listing/`: `README.md` is the submission kit for the Claude

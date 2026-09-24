@@ -39,7 +39,7 @@
     "express": "^4.21.2",
     "ioredis": "^5.6.0",
     "isbot": "^5.1.26",
-    "nodemailer": "^6.9.16",
+    "nodemailer": "^10.0.10",
     "postgres": "^3.4.5",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
