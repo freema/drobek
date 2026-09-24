@@ -126,13 +126,13 @@ tasks:
       - DROBEK_IMAGE={{.DROBEK_IMAGE | default (printf "%s:e2e" .IMAGE)}} ./scripts/e2e-image.sh {{.CLI_ARGS}}
 
   api-key:create:
-    desc: 'Create a drk_ API key for an EXISTING user in the local dev DB and print it once (EMAIL=… [NAME=cli] [SCOPES=read,write])'
+    desc: 'Create a drk_ API key for a user in the local dev DB and print it once (EMAIL=… [NAME=cli] [SCOPES=read,write] [CREATE_USER=1] creates a user that never signed in)'
     requires:
       vars: [EMAIL]
     cmds:
       - >-
         docker compose exec -T drobek node packages/oauth/dist/cli/api-key-create.js
-        --email '{{.EMAIL}}' --name '{{.NAME | default "cli"}}' --scopes '{{.SCOPES | default "read,write"}}'
+        --email '{{.EMAIL}}' --name '{{.NAME | default "cli"}}' --scopes '{{.SCOPES | default "read,write"}}'{{if .CREATE_USER}} --create-user{{end}}
 
   e2e:smoke:
     desc: '@smoke specs only — safe against any target (BASE_URL_WEB=https://… SMOKE_API_KEY=drk_… for production; never touches DB/Redis/Mailpit)'

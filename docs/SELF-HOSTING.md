@@ -521,6 +521,23 @@ docker compose --env-file .env.production -f docker-compose.production.yaml up -
 Migrations only go forward; an older image on a database migrated by a newer
 one is not supported, which is why the upgrade takes a backup first.
 
+**Check a live server end to end.** The @smoke suite drives the whole MCP loop
+against a running server over public HTTP only: `list_apps`, `create_app` (or
+re-use), `write_files`, the preview host, `publish` and the production host.
+Give it a service identity that needs no mailbox; `--create-user` creates the
+user when that e-mail never signed in:
+
+```sh
+docker compose --env-file .env.production -f docker-compose.production.yaml exec -T drobek \
+  node node_modules/@drobek/oauth/dist/cli/api-key-create.js \
+  --email smoke@drobek.example.com --name smoke --scopes read,write,publish --create-user
+# on the operator's machine, from a checkout of the same release:
+BASE_URL_WEB=https://drobek.example.com SMOKE_API_KEY=drk_… task e2e:smoke
+```
+
+The smoke key always works on one app, `smoke-<12 hex>`, derived from the key,
+and publishes a new version of it on every run, so nothing piles up.
+
 ## Image tags
 
 `ghcr.io/freema/drobek` (linux/amd64 only in v1 — no ARM image):

@@ -4,6 +4,11 @@
 
 _Nothing yet._
 
+## v0.1.3 — 2026-09-24
+
+### Added
+- `api-key-create --create-user` (`task api-key:create … CREATE_USER=1`) creates the user when the e-mail never signed in, so an operator can give a smoke test or a headless agent its own service identity without a mailbox. Without the flag the CLI still refuses an unknown e-mail. `docs/SELF-HOSTING.md` → Upgrades and rollback shows the live-server check: such a key plus `task e2e:smoke`, the whole MCP loop over public HTTP.
+
 ## v0.1.2 — 2026-09-24
 
 The first published image. It carries the v0.1.1 fix (v0.1.1 was tagged, its CI run was cancelled in favour of this release).
