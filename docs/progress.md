@@ -1008,6 +1008,21 @@ block, then `next` is pushed and the single MR opened.
   carries the pre-rebuild tagline; NSO-331 left it alone (NSO-330 owned
   `packages/email` in the same wave).
 
+- NSO-329 core limits: `APPS_MAX_PER_WORKSPACE` and `DOMAINS_MAX_PER_APP`
+  live in `CORE_LIMITS` (`packages/modules/src/limits.ts`), NOT in a module,
+  because `@drobek/apps` / `@drobek/domains` cannot import `@drobek/modules`
+  (modules depends on apps). The callers (MCP `create_app`, the dashboard
+  Domains route) ask `ModuleRuntime.workspaceLimits(ws)` and pass the value
+  down (`createApp({ maxApps })`, `addDomain(…, env, { maxPerApp })`); both
+  fall back to the env when called without it. `DOMAINS_MAX_PER_APP`'s
+  default is restated in `CORE_LIMITS` (modules does not depend on domains)
+  — `packages/mcp/src/tools.test.ts` guards it against
+  `DEFAULT_DOMAINS_MAX_PER_APP` and the agent-dx `LIMITS` doc strings.
+  Only a catalogue entry with `allowZero` takes 0 from env / provider;
+  module limits still need a positive integer. Unit tests that create many
+  apps in one workspace hit the default of 50 — pass `maxApps` or use a
+  fresh workspace.
+
 ## Failed approaches
 
 - `pnpm deploy --offline` in the Dockerfile builder: fails with

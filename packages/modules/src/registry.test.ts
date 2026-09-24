@@ -47,6 +47,7 @@ describe('registry', () => {
     expect(() => validateModule(defineModule({ ...base, name: 'ok', version: 'v1' }))).toThrow(/semver/);
     expect(() => validateModule(defineModule({ ...base, name: 'ok', configDefaults: { a: 'x' } as never }))).toThrow(/configDefaults/);
     expect(() => validateModule(defineModule({ ...base, name: 'ok', secrets: [{ name: 'lower', description: '' }] }))).toThrow(/UPPER_SNAKE/);
+    expect(() => validateModule(defineModule({ ...base, name: 'ok', limits: [{ env: 'APPS_MAX_PER_WORKSPACE', default: 5, meaning: 'x' }] }))).toThrow(/core limit/);
     expect(() => validateModule(defineModule({ ...base, name: 'ok', sdk: { entry: '/nope.js', types: 'interface Api {}' } }))).toThrow(/sdk.entry/);
     expect(() => validateModule(defineModule({ ...base, name: 'ok', skill: { useWhen: '', markdown: 'x' } }))).toThrow(/useWhen/);
     const sdk = echo.sdk!;

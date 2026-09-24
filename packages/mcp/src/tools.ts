@@ -436,14 +436,19 @@ export async function createApp(
   // a free `-xxxx` variant instead of an error round trip.
   const base = deriveSlug(name);
   let slug = validateAppSlug(base) ? suggestSlug(base || 'app') : base;
+  // The workspace's plan (limits provider) or the env default (NSO-329).
+  const maxApps = (await ctx.modules.workspaceLimits(ws.id)).APPS_MAX_PER_WORKSPACE;
   let created: { id: string; slug: string } | null = null;
   for (let attempt = 0; attempt < 4 && !created; attempt++) {
     try {
-      created = await createAppRow({ workspaceId: ws.id, slug, name, actor: actorOf(ctx) });
+      created = await createAppRow({ workspaceId: ws.id, slug, name, actor: actorOf(ctx), maxApps });
     } catch (err) {
       if (err instanceof AppsError && (err.code === 'slug_taken' || err.code === 'invalid_slug')) {
         slug = err.suggestion ?? suggestSlug(base || 'app');
         continue;
+      }
+      if (err instanceof AppsError && err.code === 'limit_exceeded') {
+        throw new ToolError('limit_exceeded', err.message, { ...err.details });
       }
       throw err;
     }

@@ -1,11 +1,14 @@
-import { eq } from 'drizzle-orm';
+import { and, count, eq, isNull } from 'drizzle-orm';
 import { AUDIT_ACTIONS, writeAudit } from '@drobek/audit';
-import { apps, getDb } from '@drobek/db';
+import { apps, getDb, workspaces } from '@drobek/db';
 import { AppsError } from './errors.js';
 import { notifyAppChanged } from './events.js';
 import { releaseDeletedAppSlugs } from './lifecycle.server.js';
 import { suggestSlug, validateAppSlug } from './slug.js';
 import type { Actor } from './types.js';
+
+/** Live (not deleted) apps one workspace may hold when neither the env nor the limits provider says otherwise. */
+export const DEFAULT_APPS_MAX_PER_WORKSPACE = 50;
 
 export interface CreateAppInput {
   workspaceId: string;
@@ -13,6 +16,18 @@ export interface CreateAppInput {
   /** Human-readable name (create_app's `name`); the slug is derived from it by the caller. */
   name?: string | null;
   actor: Actor;
+  /**
+   * The workspace's APPS_MAX_PER_WORKSPACE — callers pass the effective value
+   * (the limits provider's plan, `ModuleRuntime.workspaceLimits`). Omitted:
+   * the env var, else DEFAULT_APPS_MAX_PER_WORKSPACE.
+   */
+  maxApps?: number;
+}
+
+function appsMaxPerWorkspace(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.APPS_MAX_PER_WORKSPACE?.trim();
+  const n = raw ? Number(raw) : NaN;
+  return Number.isInteger(n) && n > 0 ? n : DEFAULT_APPS_MAX_PER_WORKSPACE;
 }
 
 function isUniqueViolation(err: unknown): boolean {
@@ -42,13 +57,16 @@ async function slugTaken(slug: string): Promise<AppsError> {
 /**
  * Create an app in a workspace. Slugs are global: a taken one fails with
  * `slug_taken` + a free `<slug>-<4hex>` suggestion (a soft-deleted app holds
- * its slug for 30 days). Audited as `app.create`. Announces itself as an
+ * its slug for 30 days). A workspace that already holds `maxApps` live apps
+ * fails with `limit_exceeded` (soft-deleted apps do not count; creates in one
+ * workspace are serialized on its row). Audited as `app.create`. Announces itself as an
  * app-changed `create` event (NSO-315) so an app host that cached the slug as
  * unknown serves the new app on the very next request.
  */
 export async function createApp(input: CreateAppInput): Promise<{ id: string; slug: string }> {
   const { workspaceId, slug, actor } = input;
   const name = input.name?.trim() || null;
+  const maxApps = input.maxApps ?? appsMaxPerWorkspace();
   const reason = validateAppSlug(slug);
   if (reason) {
     const suggestion = suggestSlug(slug);
@@ -64,6 +82,19 @@ export async function createApp(input: CreateAppInput): Promise<{ id: string; sl
   let created: { id: string; slug: string };
   try {
     created = await getDb().transaction(async (tx) => {
+      // Serialize creates per workspace so two concurrent calls cannot both pass the limit.
+      await tx.select({ id: workspaces.id }).from(workspaces).where(eq(workspaces.id, workspaceId)).for('update');
+      const [{ n }] = await tx
+        .select({ n: count() })
+        .from(apps)
+        .where(and(eq(apps.workspaceId, workspaceId), isNull(apps.deletedAt)));
+      if (Number(n) >= maxApps) {
+        throw new AppsError(
+          'limit_exceeded',
+          `This workspace already has ${Number(n)} app${Number(n) === 1 ? '' : 's'}; its limit (APPS_MAX_PER_WORKSPACE) is ${maxApps}. Delete an app it no longer needs, or ask for a higher limit.`,
+          { details: { limit: 'APPS_MAX_PER_WORKSPACE', value: maxApps } }
+        );
+      }
       const [row] = await tx
         .insert(apps)
         .values({ workspaceId, slug, name })

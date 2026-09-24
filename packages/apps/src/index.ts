@@ -15,7 +15,7 @@ export {
   suggestSlug,
   validateAppSlug,
 } from './slug.js';
-export { createApp, freeSlugSuggestion, type CreateAppInput } from './apps.server.js';
+export { DEFAULT_APPS_MAX_PER_WORKSPACE, createApp, freeSlugSuggestion, type CreateAppInput } from './apps.server.js';
 export {
   createVersion,
   getVersion,

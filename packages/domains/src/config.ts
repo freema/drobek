@@ -1,7 +1,10 @@
 /**
  * Custom-domain settings from the environment (M3-01):
  *
- *   DOMAINS_MAX_PER_APP          domains per app, pending + verified (default 3)
+ *   DOMAINS_MAX_PER_APP          domains per app, pending + verified (default 3;
+ *                                0 = custom domains off). A limits provider
+ *                                may set it per workspace (NSO-329): callers
+ *                                pass that value to addDomain.
  *   DOMAINS_DNS_SERVERS          optional nameservers for verification, comma-
  *                                separated IPs (default: the system resolver)
  *   DOMAINS_RECHECK_INTERVAL_MS  how often the re-check sweep looks for domains
@@ -27,8 +30,15 @@ function positiveInt(raw: string | undefined): number | null {
   return raw !== undefined && raw.trim() !== '' && Number.isInteger(n) && n > 0 ? n : null;
 }
 
+/** A non-negative integer (DOMAINS_MAX_PER_APP=0 turns custom domains off). */
+function nonNegativeInt(raw: string | undefined): number | null {
+  const n = Number(raw?.trim());
+  return raw !== undefined && raw.trim() !== '' && Number.isInteger(n) && n >= 0 ? n : null;
+}
+
+/** The server-wide DOMAINS_MAX_PER_APP (the limits provider may lower or raise it per workspace). */
 export function domainsMaxPerApp(env: NodeJS.ProcessEnv = process.env): number {
-  return positiveInt(env.DOMAINS_MAX_PER_APP) ?? DEFAULT_DOMAINS_MAX_PER_APP;
+  return nonNegativeInt(env.DOMAINS_MAX_PER_APP) ?? DEFAULT_DOMAINS_MAX_PER_APP;
 }
 
 export function recheckIntervalMs(env: NodeJS.ProcessEnv = process.env): number {
@@ -51,8 +61,8 @@ export function dnsMockWarning(env: NodeJS.ProcessEnv = process.env): string | n
 
 /** Startup check: a human-readable error for a malformed DOMAINS_* value, else null. */
 export function domainsConfigError(env: NodeJS.ProcessEnv = process.env): string | null {
-  if (env.DOMAINS_MAX_PER_APP?.trim() && positiveInt(env.DOMAINS_MAX_PER_APP) === null) {
-    return 'drobek refuses to start: DOMAINS_MAX_PER_APP must be a positive integer.';
+  if (env.DOMAINS_MAX_PER_APP?.trim() && nonNegativeInt(env.DOMAINS_MAX_PER_APP) === null) {
+    return 'drobek refuses to start: DOMAINS_MAX_PER_APP must be a whole number (0 turns custom domains off).';
   }
   const servers = dnsServers(env);
   if (servers.some((s) => isIP(s) === 0)) {

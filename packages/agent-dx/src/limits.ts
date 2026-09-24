@@ -53,6 +53,16 @@ export const LIMITS: LimitDoc[] = [
     meaning: 'Max wait for a compile slot when COMPILE_CONCURRENCY builds are running (→ busy).',
   },
   {
+    env: 'APPS_MAX_PER_WORKSPACE',
+    default: '50',
+    meaning: 'Max live (not deleted) apps in one workspace; the limits provider may set it per workspace (create_app → limit_exceeded).',
+  },
+  {
+    env: 'DOMAINS_MAX_PER_APP',
+    default: '3',
+    meaning: 'Max custom domains per app, set by the owner in the dashboard; 0 = custom domains off. The limits provider may set it per workspace.',
+  },
+  {
     env: 'tool: write_files files',
     default: String(WRITE_FILES_MAX),
     meaning: 'Max changed files per write_files call (more → invalid_params).',

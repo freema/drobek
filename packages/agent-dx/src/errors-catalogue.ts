@@ -57,8 +57,8 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     code: 'limit_exceeded',
     surface: 'MCP tool isError; compile.errors[]; module route 429 (DrobekError), Retry-After',
     meaning:
-      'The version would exceed a size limit (COMPILE_MAX_FILES files, COMPILE_MAX_FILE_BYTES per file, COMPILE_MAX_TOTAL_BYTES in total) or an import chain is deeper than COMPILE_MAX_IMPORT_DEPTH. On a module route: a quota of the app or the user is used up for the period (`details.limit`, e.g. FORMS_PER_APP_PER_DAY, EMAIL_PER_APP_PER_DAY, EMAIL_NOTIFY_ADMINS_PER_DAY).',
-    fix: 'Split big files, delete unused ones, load large libraries from esm.sh through drobek.json instead of copying them into the app. On a module route: show the user a message and stop — the quota resets after Retry-After; the app owner can ask the operator for a higher plan limit.',
+      'The version would exceed a size limit (COMPILE_MAX_FILES files, COMPILE_MAX_FILE_BYTES per file, COMPILE_MAX_TOTAL_BYTES in total) or an import chain is deeper than COMPILE_MAX_IMPORT_DEPTH. From create_app: the workspace already holds APPS_MAX_PER_WORKSPACE apps (`limit`, `value`; deleted apps do not count). On a module route: a quota of the app or the user is used up for the period (`details.limit`, e.g. FORMS_PER_APP_PER_DAY, EMAIL_PER_APP_PER_DAY, EMAIL_NOTIFY_ADMINS_PER_DAY). In the dashboard: DOMAINS_MAX_PER_APP custom domains per app (0 = custom domains are off for the workspace).',
+    fix: 'Split big files, delete unused ones, load large libraries from esm.sh through drobek.json instead of copying them into the app. From create_app (APPS_MAX_PER_WORKSPACE): do not retry — tell the user the workspace is full; they can delete an app they no longer need in the dashboard, work in another workspace, or ask the operator for a higher plan limit. On a module route: show the user a message and stop — the quota resets after Retry-After; the app owner can ask the operator for a higher plan limit.',
   },
   {
     code: 'secret_in_source',

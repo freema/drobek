@@ -16,6 +16,29 @@
   `/healthz` and `/api/version` links stay. Unit test `_index.test.tsx`; the
   `index-console` e2e spec asserts the new copy. No migration.
 
+### Plan limits: apps per workspace, custom domains per app (NSO-329)
+
+- **`APPS_MAX_PER_WORKSPACE`** (default 50): live apps one workspace may
+  hold. `create_app` beyond it answers `limit_exceeded` with
+  `limit: APPS_MAX_PER_WORKSPACE` and `value`; soft-deleted apps do not
+  count. Enforced in `@drobek/apps` `createApp` (the one create path —
+  creates in a workspace are serialized on its row), which takes the
+  workspace's effective value as `maxApps`.
+- **`DOMAINS_MAX_PER_APP`** is now per workspace too, and `0` is valid
+  (custom domains off): the Domains tab says why and hides the add form,
+  every add answers `limit_exceeded` (`value: 0`). The startup check accepts
+  0; `addDomain` takes the workspace's value as `opts.maxPerApp`.
+- Both are **core limits** (`CORE_LIMITS`, exported from `@drobek/modules`)
+  in the limits catalogue, so `LIMITS_PROVIDER_URL` can set them per
+  workspace (plans); a module may not declare either name.
+  `ModuleRuntime.workspaceLimits(workspaceId)` returns a workspace's
+  effective limits. `docs/MODULES.md` lists them (a unit test keeps that
+  table in sync with `CORE_LIMITS`), llms-full.txt's limits and the
+  `limit_exceeded` catalogue entry name them. New env var in `.env.example`,
+  `.env.production.example` and the SELF-HOSTING env reference. e2e:
+  `plan-limits.spec.ts` (@local, fills a workspace to the default 50). No
+  migration.
+
 ### Directory listing kit + explicit `idempotentHint` (NSO-307)
 
 - New `docs/listing/`: `README.md` is the submission kit for the Claude

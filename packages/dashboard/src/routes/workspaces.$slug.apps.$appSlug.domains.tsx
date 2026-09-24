@@ -167,8 +167,15 @@ export default function AppDomainsRoute() {
       <h1 style={styles.h1}>Custom domains</h1>
       <p style={styles.hint}>
         Serve the published version of <strong>{app.slug}</strong> on a domain you own. It stays available at{' '}
-        <code style={styles.mono}>{app.defaultUrl}</code>. Up to {maxPerApp} domain{maxPerApp === 1 ? '' : 's'} per app.
+        <code style={styles.mono}>{app.defaultUrl}</code>.
+        {maxPerApp > 0 ? ` Up to ${maxPerApp} domain${maxPerApp === 1 ? '' : 's'} per app.` : null}
       </p>
+      {maxPerApp === 0 ? (
+        <div style={styles.error} role="status" data-testid="domains-disabled">
+          Custom domains are not available for this workspace: its limit is 0 domains per app (DOMAINS_MAX_PER_APP).
+          The workspace&apos;s plan or the server operator decides it.
+        </div>
+      ) : null}
 
       {result ? (
         result.ok ? (
@@ -182,7 +189,7 @@ export default function AppDomainsRoute() {
         )
       ) : null}
 
-      {canEdit ? (
+      {canEdit && maxPerApp > 0 ? (
         <Form method="post" style={styles.addRow} data-testid="domain-add-form">
           <input type="hidden" name="intent" value="add" />
           <input

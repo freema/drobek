@@ -25,6 +25,7 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { MODULE_NAME_RE, isDefinedModule, type AnyModule } from './contract.js';
+import { CORE_LIMITS } from './limits.js';
 import { SECRET_NAME_RE } from './secrets.server.js';
 import { toPath } from './sdk-build.js';
 
@@ -131,6 +132,7 @@ export function validateModule(m: AnyModule): void {
   for (const l of m.limits ?? []) {
     if (!ENV_NAME_RE.test(l.env)) fail(`limit "${l.env}" must be an UPPER_SNAKE env name`);
     if (!Number.isInteger(l.default) || l.default <= 0) fail(`limit "${l.env}" needs a positive integer default`);
+    if (CORE_LIMITS.some((c) => c.env === l.env)) fail(`limit "${l.env}" is a core limit — pick another name`);
   }
   if (m.sdk) {
     if (typeof m.sdk.entry !== 'string' || !existsSync(toPath(m.sdk.entry))) fail(`sdk.entry does not exist: ${m.sdk.entry}`);

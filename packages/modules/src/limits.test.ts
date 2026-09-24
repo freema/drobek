@@ -1,6 +1,8 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { FakeRedis } from '@drobek/auth';
 import {
+  CORE_LIMITS,
   LIMITS_SIGNATURE_HEADER,
   LIMITS_TIMESTAMP_HEADER,
   createLimitsProvider,
@@ -86,5 +88,39 @@ describe('limits provider', () => {
     expect(limitsProviderConfigError({ LIMITS_PROVIDER_URL: 'ftp://x' })).toMatch(/http\(s\) URL/);
     expect(limitsProviderConfigError({ LIMITS_PROVIDER_URL: 'https://x', LIMITS_PROVIDER_SECRET: 'short' })).toMatch(/at least 32/);
     expect(limitsProviderConfigError({ LIMITS_PROVIDER_URL: 'https://x', LIMITS_PROVIDER_SECRET: SECRET })).toBeNull();
+  });
+});
+
+describe('core limits (NSO-329)', () => {
+  const core = [...CORE_LIMITS, ...catalogue];
+  const provider = (limits: Record<string, unknown>) =>
+    createLimitsProvider({ catalogue: core, env, fetch: async () => ({ ok: true, status: 200, json: async () => ({ limits }) }) });
+
+  it('APPS_MAX_PER_WORKSPACE (50) and DOMAINS_MAX_PER_APP (3) are in the catalogue with their defaults', () => {
+    const p = createLimitsProvider({ catalogue: core, env: {} });
+    expect(p.defaults()).toMatchObject({ APPS_MAX_PER_WORKSPACE: 50, DOMAINS_MAX_PER_APP: 3 });
+  });
+
+  it('the provider sets both per workspace; 0 is valid for DOMAINS_MAX_PER_APP only', async () => {
+    expect(await provider({ APPS_MAX_PER_WORKSPACE: 2, DOMAINS_MAX_PER_APP: 0 }).forWorkspace('free')).toMatchObject({
+      APPS_MAX_PER_WORKSPACE: 2,
+      DOMAINS_MAX_PER_APP: 0,
+    });
+    expect(await provider({ APPS_MAX_PER_WORKSPACE: 0, DOMAINS_MAX_PER_APP: -1 }).forWorkspace('bad')).toMatchObject({
+      APPS_MAX_PER_WORKSPACE: 50,
+      DOMAINS_MAX_PER_APP: 3,
+    });
+    // A module limit still refuses 0.
+    expect(await provider({ FORMS_PER_DAY: 0 }).forWorkspace('m')).toMatchObject({ FORMS_PER_DAY: 50 });
+  });
+
+  it('the env may set DOMAINS_MAX_PER_APP=0 (custom domains off server-wide)', () => {
+    const p = createLimitsProvider({ catalogue: core, env: { DOMAINS_MAX_PER_APP: '0', APPS_MAX_PER_WORKSPACE: '0' } });
+    expect(p.defaults()).toMatchObject({ DOMAINS_MAX_PER_APP: 0, APPS_MAX_PER_WORKSPACE: 50 });
+  });
+
+  it('docs/MODULES.md lists every core limit (the provider-side mirror)', () => {
+    const doc = readFileSync(new URL('../../../docs/MODULES.md', import.meta.url), 'utf8');
+    for (const l of CORE_LIMITS) expect(doc).toContain(`\`${l.env}\``);
   });
 });

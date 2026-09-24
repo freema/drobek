@@ -77,6 +77,7 @@ export { RULE_TOKENS, decideAccess, isValidRule, parseRule, ruleIsPublic } from 
 export { mergePatch, jsonEqual } from './merge-patch.js';
 export { Lru, jsonKey, stableJson } from './memo.js';
 export {
+  CORE_LIMITS,
   LIMITS_CACHE_TTL_SEC,
   LIMITS_SIGNATURE_HEADER,
   LIMITS_TIMESTAMP_HEADER,

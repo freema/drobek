@@ -10,10 +10,22 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createVersion, getVersion, publish, readVersionFile } from '@drobek/apps';
 import { appCompiles, appDailyStats, appErrors, apps, auditLog, memberships, moduleConfigs, moduleSecrets, users, workspaces } from '@drobek/db';
 import { dedupKey, sanitizeEvent } from '@drobek/insights';
-import { ModuleError, defineModule, loadModuleRuntime, memoryRateLimiter, setModuleSecret, z, type ModuleRuntime } from '@drobek/modules';
+import { DEFAULT_APPS_MAX_PER_WORKSPACE } from '@drobek/apps';
+import { DEFAULT_DOMAINS_MAX_PER_APP } from '@drobek/domains';
+import {
+  CORE_LIMITS,
+  ModuleError,
+  createLimitsProvider,
+  defineModule,
+  loadModuleRuntime,
+  memoryRateLimiter,
+  setModuleSecret,
+  z,
+  type ModuleRuntime,
+} from '@drobek/modules';
 import { noopLogger } from '@drobek/core';
 import { STORE_DATA, greet, store } from './test/modules.js';
-import { APP_LOCK_TTL_SEC } from '@drobek/agent-dx';
+import { APP_LOCK_TTL_SEC, LIMITS } from '@drobek/agent-dx';
 import type { ToolPrincipal } from './context.js';
 import { freshDb, type TestDb } from './test/db.js';
 import { connect, testDeps, type TestDeps } from './test/harness.js';
@@ -191,6 +203,60 @@ describe('create_app', () => {
     } finally {
       await alice.close();
       await vera.close();
+    }
+  });
+});
+
+describe('create_app — APPS_MAX_PER_WORKSPACE (NSO-329)', () => {
+  it('the core limits catalogue mirrors the package defaults', () => {
+    const d = Object.fromEntries(CORE_LIMITS.map((l) => [l.env, l.default]));
+    expect(d).toEqual({ APPS_MAX_PER_WORKSPACE: DEFAULT_APPS_MAX_PER_WORKSPACE, DOMAINS_MAX_PER_APP: DEFAULT_DOMAINS_MAX_PER_APP });
+    // llms-full.txt (agent-dx restates the defaults — it is a zero-dependency leaf).
+    for (const l of CORE_LIMITS) expect(LIMITS.find((x) => x.env === l.env)?.default).toBe(String(l.default));
+  });
+
+  it("the workspace's plan (limits provider) caps create_app with limit_exceeded; deleted apps do not count", async () => {
+    const [ws] = await db.insert(workspaces).values({ kind: 'team', slug: 'team-free', name: 'Free plan' }).returning();
+    await db.insert(memberships).values({ userId: P.alice.userId, workspaceId: ws.id, role: 'workspace-admin' });
+    const rt = await loadModuleRuntime({
+      env: { APPS_DOMAIN: 'drobek.app', PUBLIC_APP_URL: 'https://dash.drobek.test', DROBEK_MIGRATE_ON_START: '0', DROBEK_MASTER_KEY: '22'.repeat(32) },
+      log: noopLogger,
+      modules: [greet],
+      deps: {
+        rateLimit: memoryRateLimiter(),
+        principal: async () => ({ kind: 'anon' }),
+        email: { send: async () => {} },
+        limits: createLimitsProvider({
+          catalogue: CORE_LIMITS,
+          env: { LIMITS_PROVIDER_URL: 'https://plans.example', LIMITS_PROVIDER_SECRET: 'p'.repeat(40) },
+          fetch: async (url) => ({
+            ok: true,
+            status: 200,
+            json: async () => ({ limits: url.endsWith(`/${ws.id}`) ? { APPS_MAX_PER_WORKSPACE: 2 } : {} }),
+          }),
+        }),
+      },
+    });
+    const c = await connect(P.alice, { ...testDeps(), modules: async () => rt });
+    try {
+      const first = await c.call('create_app', { name: 'Free one', workspace: 'team-free', template: 'html' });
+      expect(first.isError, first.text).toBe(false);
+      expect((await c.call('create_app', { name: 'Free two', workspace: 'team-free', template: 'html' })).isError).toBe(false);
+      const third = await c.call('create_app', { name: 'Free three', workspace: 'team-free', template: 'html' });
+      expect(third.isError).toBe(true);
+      expect(third.body).toMatchObject({ code: 'limit_exceeded', limit: 'APPS_MAX_PER_WORKSPACE', value: 2 });
+      expect(String(third.body.message)).toContain('APPS_MAX_PER_WORKSPACE');
+      expect(String(third.body.hint)).toContain('APPS_MAX_PER_WORKSPACE');
+      // Nothing was created for the refused call.
+      const live = await db.select({ id: apps.id }).from(apps).where(and(eq(apps.workspaceId, ws.id), isNull(apps.deletedAt)));
+      expect(live).toHaveLength(2);
+      // Soft-delete one → room for another.
+      await db.update(apps).set({ deletedAt: new Date() }).where(eq(apps.id, (first.body as { app_id: string }).app_id));
+      expect((await c.call('create_app', { name: 'Free three', workspace: 'team-free', template: 'html' })).isError).toBe(false);
+      // Another workspace keeps the env default.
+      expect((await c.call('create_app', { name: 'Team app', workspace: 'team-x', template: 'html' })).isError).toBe(false);
+    } finally {
+      await c.close();
     }
   });
 });

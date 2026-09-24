@@ -643,7 +643,17 @@ skills?) is `tests-eval/` (`task eval`, manual, not CI).
 ## Limits and the limits provider
 
 Every limit is its env var (`HELLO_WAVES_PER_MINUTE=5`) or the module's
-default. An operator with plans sets:
+default. Besides every active module's `limits`, the catalogue holds the
+**core limits** (`CORE_LIMITS` from `@drobek/modules`, which core enforces
+itself and a module may not declare):
+
+| Name | Default | Semantics |
+| --- | --- | --- |
+| `APPS_MAX_PER_WORKSPACE` | 50 | live apps one workspace may hold (soft-deleted apps do not count); `create_app` beyond it answers `limit_exceeded` with `limit` / `value` |
+| `DOMAINS_MAX_PER_APP` | 3 | custom domains per app, pending + verified; the next add answers `limit_exceeded`. `0` is valid and turns custom domains off: the dashboard's Domains tab says so and every add is refused |
+
+`ModuleRuntime.workspaceLimits(workspaceId)` returns a workspace's effective
+limits (core and module) for core callers. An operator with plans sets:
 
 ```sh
 LIMITS_PROVIDER_URL=https://billing.internal
@@ -658,8 +668,10 @@ X-Drobek-Timestamp: <unix seconds>
 X-Drobek-Signature: v1=<hex HMAC-SHA256(LIMITS_PROVIDER_SECRET, "<ts>.GET./limits/<workspace_id>")>
 ```
 
-and expects `{ "limits": { "<ENV_NAME>": <positive integer>, … } }`. Known
-names override the env defaults; unknown names and bad values are ignored.
+and expects `{ "limits": { "<ENV_NAME>": <positive integer>, … } }` (`0`
+too for `DOMAINS_MAX_PER_APP`). Known names override the env defaults; unknown
+names and bad values are ignored. A provider mirrors the table above plus the
+`limits` of the modules the server runs (`skill_info(<module>).limits`).
 Answers are cached in Redis for 60 s (`drobek:limits:<workspace_id>`). When
 the provider is down, slower than 2 s or answers garbage, the env defaults
 apply for 10 s and a warning is logged: a provider outage never takes apps

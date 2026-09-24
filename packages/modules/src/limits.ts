@@ -11,11 +11,15 @@
  *
  * and expects `{ "limits": { "<ENV_NAME>": <positive integer>, … } }`. Known
  * names override the env defaults; unknown names and bad values are ignored.
+ * The catalogue is CORE_LIMITS (enforced by core: apps per workspace, custom
+ * domains per app) plus every active module's `limits`. A limit marked
+ * `allowZero` (DOMAINS_MAX_PER_APP) also takes 0 = the feature is off.
  * Answers are cached in Redis for 60 s (`drobek:limits:<workspace_id>`). When
  * the provider is down, slow (> 2 s) or answers garbage, the env defaults
  * apply and a warning is logged — a provider outage never takes apps down.
  */
 import { createHmac } from 'node:crypto';
+import { DEFAULT_APPS_MAX_PER_WORKSPACE } from '@drobek/apps';
 import type { Logger } from '@drobek/core';
 import type { Limits, ModuleLimit } from './contract.js';
 
@@ -27,6 +31,30 @@ const LIMITS_FAILURE_BACKOFF_MS = 10_000;
 
 export const LIMITS_SIGNATURE_HEADER = 'X-Drobek-Signature';
 export const LIMITS_TIMESTAMP_HEADER = 'X-Drobek-Timestamp';
+
+/** A catalogue entry: a module's limit, or a core limit that may take 0 (= off). */
+type CatalogueLimit = ModuleLimit & { allowZero?: boolean };
+
+/**
+ * The limits core enforces itself (NSO-329) — same env / provider mechanics
+ * as module limits, so a plan can set them per workspace. The SaaS limits
+ * provider mirrors this list (docs/MODULES.md "Limits"). DOMAINS_MAX_PER_APP's
+ * default must equal @drobek/domains DEFAULT_DOMAINS_MAX_PER_APP (guarded by
+ * a test in @drobek/mcp, which depends on both).
+ */
+export const CORE_LIMITS: readonly CatalogueLimit[] = Object.freeze([
+  {
+    env: 'APPS_MAX_PER_WORKSPACE',
+    default: DEFAULT_APPS_MAX_PER_WORKSPACE,
+    meaning: 'Live (not deleted) apps one workspace may hold; create_app beyond it answers limit_exceeded.',
+  },
+  {
+    env: 'DOMAINS_MAX_PER_APP',
+    default: 3,
+    meaning: 'Custom domains per app, pending + verified; 0 turns custom domains off for the workspace.',
+    allowZero: true,
+  },
+]);
 
 export interface LimitsProvider {
   forWorkspace(workspaceId: string): Promise<Limits>;
@@ -46,7 +74,7 @@ type FetchLike = (url: string, init: { headers: Record<string, string>; signal: 
 }>;
 
 export interface LimitsProviderOptions {
-  catalogue: ModuleLimit[];
+  catalogue: readonly CatalogueLimit[];
   env?: NodeJS.ProcessEnv;
   redis?: () => RedisLike;
   fetch?: FetchLike;
@@ -54,9 +82,10 @@ export interface LimitsProviderOptions {
   now?: () => number;
 }
 
-function positiveInt(raw: unknown): number | null {
+/** A valid limit value: a positive integer, or 0 as well where the limit allows it. */
+function limitValue(raw: unknown, allowZero = false): number | null {
   const n = typeof raw === 'string' && raw.trim() !== '' ? Number(raw) : raw;
-  return typeof n === 'number' && Number.isInteger(n) && n > 0 ? n : null;
+  return typeof n === 'number' && Number.isInteger(n) && (n > 0 || (allowZero && n === 0)) ? n : null;
 }
 
 /** HMAC-SHA256 signature of one provider request (exported for the provider side + tests). */
@@ -86,10 +115,10 @@ export function createLimitsProvider(opts: LimitsProviderOptions): LimitsProvide
   const now = opts.now ?? Date.now;
   const log = opts.log;
   const doFetch: FetchLike = opts.fetch ?? ((url, init) => fetch(url, init));
-  const known = new Set(opts.catalogue.map((l) => l.env));
+  const known = new Map(opts.catalogue.map((l) => [l.env, l.allowZero === true]));
 
   const envLimits: Record<string, number> = {};
-  for (const l of opts.catalogue) envLimits[l.env] = positiveInt(env[l.env]) ?? l.default;
+  for (const l of opts.catalogue) envLimits[l.env] = limitValue(env[l.env], l.allowZero) ?? l.default;
   const defaults = Object.freeze({ ...envLimits });
 
   const base = env.LIMITS_PROVIDER_URL?.trim().replace(/\/+$/, '') || null;
@@ -99,8 +128,9 @@ export function createLimitsProvider(opts: LimitsProviderOptions): LimitsProvide
   function merge(remote: Record<string, unknown>): Limits {
     const out: Record<string, number> = { ...envLimits };
     for (const [k, v] of Object.entries(remote)) {
-      const n = positiveInt(v);
-      if (known.has(k) && n !== null) out[k] = n;
+      if (!known.has(k)) continue;
+      const n = limitValue(v, known.get(k));
+      if (n !== null) out[k] = n;
     }
     return Object.freeze(out);
   }

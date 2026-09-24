@@ -57,7 +57,7 @@ import type {
 import { readConfigRow, readConfigRows, withLockedConfig, type PendingChange } from './configs.server.js';
 import { capEmailText, emailKind, redactAddresses, resolveRecipients, sanitizeSubject } from './email.js';
 import { ModuleError, isModuleError, issuePaths, skillHint } from './errors.js';
-import { createLimitsProvider, type LimitsProvider } from './limits.js';
+import { CORE_LIMITS, createLimitsProvider, type LimitsProvider } from './limits.js';
 import { mailGuardConfigFromEnv, redisMailGuard, type MailGuard, type MailGuardRedis } from './mail-guard.js';
 import { Lru, jsonKey } from './memo.js';
 import { jsonEqual, mergePatch } from './merge-patch.js';
@@ -452,6 +452,16 @@ export class ModuleRuntime {
         });
       },
     };
+  }
+
+  /**
+   * The effective limits of one workspace (NSO-329): the env defaults, or the
+   * limits provider's plan — CORE_LIMITS (APPS_MAX_PER_WORKSPACE,
+   * DOMAINS_MAX_PER_APP) and every module limit. For core callers: create_app
+   * and the dashboard's custom domains.
+   */
+  workspaceLimits(workspaceId: string): Promise<Limits> {
+    return this.deps.limits.forWorkspace(workspaceId);
   }
 
   /** The OwnerView of `app` for an owner-facing authority (limits of the app's workspace, loaded once). */
@@ -1291,7 +1301,7 @@ export async function loadModuleRuntime(opts: LoadRuntimeOptions = {}): Promise<
     env,
     log,
     db: getDb,
-    limits: createLimitsProvider({ catalogue: modules.flatMap((m) => m.limits ?? []), env, redis: getRedis, log }),
+    limits: createLimitsProvider({ catalogue: [...CORE_LIMITS, ...modules.flatMap((m) => m.limits ?? [])], env, redis: getRedis, log }),
     principal: cookiePrincipalResolver({
       redis: getRedis,
       secure: endUserCookiesSecure(env),

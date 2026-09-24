@@ -344,6 +344,7 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `BEACON_MAX_EVENTS_PER_APP` / `BEACON_RETENTION_DAYS` / `BEACON_SAMPLE_RATE` | 500 / 14 / 1 | the per-app error buffer (newest N, max age) and sampling |
 | `DROBEK_MIGRATE_ON_START` | 1 | `0` = the server does not apply migrations on start (tests, tooling) |
 | `AUDIT_RETENTION_DAYS` | 365 | audit rows older than this are pruned daily |
+| `APPS_MAX_PER_WORKSPACE` | 50 | live apps per workspace (deleted ones do not count); `create_app` beyond it answers `limit_exceeded` *(plan)* |
 
 ### Platform modules
 
@@ -374,7 +375,7 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 
 | Variable | Default | What |
 | --- | --- | --- |
-| `DOMAINS_MAX_PER_APP` | 3 | custom domains per app, pending + verified |
+| `DOMAINS_MAX_PER_APP` | 3 | custom domains per app, pending + verified; `0` = custom domains off *(plan)* |
 | `DOMAINS_DNS_SERVERS` | the system resolver | comma-separated resolver IPs for verification |
 | `DOMAINS_RECHECK_INTERVAL_MS` | 3600000 | how often the re-check sweep runs |
 | `DOMAINS_DNS_MOCK` | — | dev/test only, ignored in production: `redis` answers lookups from Redis keys |
@@ -701,7 +702,9 @@ workspace-admin), creates two DNS records and clicks **Verify**:
   (`.localhost`, `.local`, `.internal`, …). Names are stored in lower-case
   ASCII (IDN → punycode).
 - **Limits**: `DOMAINS_MAX_PER_APP` (default 3) per app, pending and verified
-  together; the next add fails with `limit_exceeded`. One host name is
+  together; the next add fails with `limit_exceeded`. `0` turns custom
+  domains off: the Domains tab says so and offers no add form. The limits
+  provider may set it per workspace (e.g. a plan without custom domains). One host name is
   verified for at most one app on the instance — an unverified claim never
   blocks the real owner.
 - **Serving**: a verified domain serves the app's published version (indexable,

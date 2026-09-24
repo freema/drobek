@@ -121,6 +121,24 @@ describe('addDomain', () => {
     expect((await err(addDomain(other, 'two.limit.cz', actor, { ...ENV, DOMAINS_MAX_PER_APP: '1' })))?.code).toBe('limit_exceeded');
   });
 
+  it('the workspace limit (limits provider) overrides the env; 0 turns custom domains off (NSO-329)', async () => {
+    const app = await newApp();
+    // A paid plan above the env default of 3.
+    for (const h of ['a.plan.cz', 'b.plan.cz', 'c.plan.cz', 'd.plan.cz']) await addDomain(app, h, actor, ENV, { maxPerApp: 4 });
+    expect((await err(addDomain(app, 'e.plan.cz', actor, ENV, { maxPerApp: 4 })))?.details).toEqual({ limit: 'DOMAINS_MAX_PER_APP', value: 4 });
+    // A free plan: nothing can be added, whatever the hostname.
+    const free = await newApp();
+    for (const h of ['ok.free.cz', 'not a hostname']) {
+      const e = await err(addDomain(free, h, actor, ENV, { maxPerApp: 0 }));
+      expect(e?.code, h).toBe('limit_exceeded');
+      expect(e?.message).toContain('DOMAINS_MAX_PER_APP');
+      expect(e?.details).toEqual({ limit: 'DOMAINS_MAX_PER_APP', value: 0 });
+    }
+    expect(await listDomains(free, ENV)).toEqual([]);
+    // The server-wide env may say 0 as well.
+    expect((await err(addDomain(free, 'ok.free.cz', actor, { ...ENV, DOMAINS_MAX_PER_APP: '0' })))?.code).toBe('limit_exceeded');
+  });
+
   it('the same name twice on one app is already_added', async () => {
     const app = await newApp();
     await addDomain(app, 'twice.cz', actor, ENV);

@@ -18,6 +18,9 @@
  *   remove   { id }        → detach (Caddy's certificate expires on its own)
  * Expected failures come back as `{ error, code }` with the DomainsError status
  * (e.g. 403 `limit_exceeded` for the (DOMAINS_MAX_PER_APP + 1)-th domain).
+ * DOMAINS_MAX_PER_APP is the WORKSPACE's value (NSO-329: the limits provider's
+ * plan, else the env); 0 = custom domains off — the page says so and every
+ * add answers `limit_exceeded`.
  */
 import { data, type ActionFunctionArgs, type LoaderFunctionArgs } from 'react-router';
 import { actorKindForSurface } from '@drobek/audit';
@@ -27,16 +30,21 @@ import {
   addDomain,
   cnameTarget,
   domainsErrorStatus,
-  domainsMaxPerApp,
   listDomains,
   removeDomain,
   setPrimaryDomain,
   verifyDomain,
   type DomainApp,
 } from '@drobek/domains';
+import { moduleRuntime } from '@drobek/modules';
 import { requireWorkspaceRole } from '@drobek/tenancy';
 import { loadAppForView } from '../apps.server.js';
 import { canPublish } from '../view.js';
+
+/** The workspace's DOMAINS_MAX_PER_APP (limits provider plan or env default; 0 = off). */
+async function maxDomainsPerApp(workspaceId: string): Promise<number> {
+  return (await (await moduleRuntime()).workspaceLimits(workspaceId)).DOMAINS_MAX_PER_APP;
+}
 
 async function appOf(workspaceId: string, appSlug: string): Promise<DomainApp> {
   const app = await loadAppForView(workspaceId, appSlug);
@@ -54,7 +62,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     app: { slug: app.slug, defaultUrl: publishedUrl(app.slug) },
     cnameTarget: cnameTarget(app.slug, appsOrigin().domain),
     scheme,
-    maxPerApp: domainsMaxPerApp(),
+    maxPerApp: await maxDomainsPerApp(access.workspace.id),
     canEdit: canPublish(access.effectiveRole),
     domains: domains.map((d) => ({
       id: d.id,
@@ -87,7 +95,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
   try {
     switch (intent) {
       case 'add': {
-        const d = await addDomain(app, form.get('hostname'), actor);
+        const d = await addDomain(app, form.get('hostname'), actor, process.env, {
+          maxPerApp: await maxDomainsPerApp(access.workspace.id),
+        });
         return done(`${d.hostname} added — create the two DNS records below, then click Verify.`, d.hostname);
       }
       case 'verify': {

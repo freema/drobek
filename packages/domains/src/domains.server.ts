@@ -130,19 +130,30 @@ export async function listDomains(app: DomainApp, env: NodeJS.ProcessEnv = proce
  * Attach `rawHostname` to the app (unverified). Refuses an invalid or
  * drobek-owned name, a name the app already has, a name another app has
  * VERIFIED (`domain_taken`) and the (DOMAINS_MAX_PER_APP + 1)-th domain
- * (`limit_exceeded`). An unverified claim elsewhere does not block: only DNS
- * decides who owns a name.
+ * (`limit_exceeded`; with a limit of 0 every add is refused — custom domains
+ * are off for the workspace). An unverified claim elsewhere does not block:
+ * only DNS decides who owns a name. `opts.maxPerApp` is the workspace's
+ * effective DOMAINS_MAX_PER_APP (the limits provider's plan); default: the env.
  */
+function domainsDisabled(): DomainsError {
+  return new DomainsError('limit_exceeded', 'Custom domains are not available for this workspace (DOMAINS_MAX_PER_APP is 0).', {
+    limit: 'DOMAINS_MAX_PER_APP',
+    value: 0,
+  });
+}
+
 export async function addDomain(
   app: DomainApp,
   rawHostname: unknown,
   actor: DomainActor,
-  env: NodeJS.ProcessEnv = process.env
+  env: NodeJS.ProcessEnv = process.env,
+  opts: { maxPerApp?: number } = {}
 ): Promise<DomainView> {
+  const max = opts.maxPerApp ?? domainsMaxPerApp(env);
+  if (max <= 0) throw domainsDisabled();
   const checked = checkHostname(rawHostname, hostnameRules(env));
   if (!checked.ok) throw new DomainsError(checked.code, checked.message);
   const hostname = checked.hostname;
-  const max = domainsMaxPerApp(env);
 
   let row: DomainRow;
   try {
@@ -163,7 +174,7 @@ export async function addDomain(
       if (taken) throw new DomainsError('domain_taken', `${hostname} is already verified for another app.`);
       const [{ n }] = await tx.select({ n: count() }).from(domains).where(eq(domains.appId, app.id));
       if (Number(n) >= max) {
-        throw new DomainsError('limit_exceeded', `An app can have at most ${max} custom domain${max === 1 ? '' : 's'}.`, {
+        throw new DomainsError('limit_exceeded', `An app can have at most ${max} custom domain${max === 1 ? '' : 's'} (DOMAINS_MAX_PER_APP).`, {
           limit: 'DOMAINS_MAX_PER_APP',
           value: max,
         });
