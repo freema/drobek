@@ -19,6 +19,34 @@
   the burn and the replay revocation. `docs/SECURITY.md` threat table row.
   No migration.
 
+### Per-IP limits never share an `unknown` bucket (NSO-328)
+
+- A request without a resolved client IP (no trusted `X-Real-IP` — a
+  misconfigured proxy, a request that bypassed it, the plain-HTTP dev stack)
+  no longer lands in one shared `…:unknown` bucket, which let a handful of
+  such clients lock each other out. Its per-IP bucket is skipped; the
+  per-code, per-address, per-app and per-user limits still apply.
+- One implementation: `perIpLimitKey(ip, bucket)` in `@drobek/core` (the IP,
+  or `null` = skip; one `rate_limit_no_client_ip` warning per bucket per
+  process). It replaces the copies in the module router (`per: 'ip'`, and
+  `per: 'principal'` for anonymous callers — the auth module's
+  `AUTH_ATTEMPTS_PER_IP_15MIN`, forms' `FORMS_SUBMITS_PER_IP_HOUR`), DCR
+  (`/oauth/register`), the app password gate, the proxy's `public-ip`
+  limit, the error beacon and the abuse report form, and `@drobek/auth`'s
+  OTP send and verify guards now use it too (their warning event is now
+  `rate_limit_no_client_ip`). `@drobek/modules` re-exports it for modules.
+- The password gate gains a per-app cap, `UNLOCK_APP_ATTEMPTS` (100 per
+  15 min over all clients), next to the 10 per app + IP, so attempts without
+  a client IP stay bounded. `createModuleTestContext().request` accepts
+  `clientIp: null`.
+- e2e: the specs that count a per-IP limit up to its 429 (hello wave, forms
+  burst, DCR, abuse report) send their own `X-Real-IP` (`ownClientIpHeaders`)
+  — on the dev stack a request without one has no bucket. The bucket resets
+  stay for the Caddy flow (`task e2e:image`), where every request is the
+  runner's one IP; the redundant reset before the first forms submit is gone.
+  `docs/SECURITY.md` and `docs/SELF-HOSTING.md` describe the behaviour. No
+  migration.
+
 ### Apex landing describes the cloud workspace (NSO-331)
 
 - The anonymous landing at `/` (`apps/server/app/routes/_index.tsx`) no

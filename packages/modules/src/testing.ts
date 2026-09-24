@@ -56,7 +56,8 @@ export interface TestRequestInit {
   chunkSize?: number;
   query?: Record<string, string>;
   headers?: Record<string, string>;
-  clientIp?: string;
+  /** Default `127.0.0.1`; `null` = no resolved client IP (per-IP limits are skipped). */
+  clientIp?: string | null;
 }
 
 export interface TestResponse {
@@ -260,7 +261,7 @@ export function createModuleTestContext(module: AnyModule, opts: ModuleTestOptio
           query: qs,
           header: (n) => headers[n.toLowerCase()] ?? null,
           headers: () => ({ ...headers }),
-          clientIp: init.clientIp ?? '127.0.0.1',
+          clientIp: init.clientIp === undefined ? '127.0.0.1' : init.clientIp,
           readBody: async (limit) => (raw && raw.length > limit ? 'too_large' : raw),
           bodyStream: () => chunked(raw, init.chunkSize ?? 64 * 1024, read),
         },

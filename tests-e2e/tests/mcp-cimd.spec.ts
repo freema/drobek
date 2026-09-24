@@ -3,6 +3,7 @@ import { expect, test } from '@playwright/test';
 import { BASE_URL_WEB, TARGET_PRODUCTION } from '../playwright.config';
 import {
   loginViaEmail,
+  ownClientIpHeaders,
   resetDcrIpRateLimit,
   skipUnlessLocal,
   uniqueEmail,
@@ -174,15 +175,20 @@ test('DCR: the 11th registration from one IP within the hour → 429 @local', as
 }) => {
   skipUnlessLocal();
   const tag = `e2e-dcr-limit-${randomBytes(4).toString('hex')}`;
+  // A client IP of its own (the dev stack has no per-IP bucket without one,
+  // NSO-328); behind Caddy the runner's IP registered before, hence the reset.
+  const headers = ownClientIpHeaders();
   await resetDcrIpRateLimit();
   try {
     for (let i = 1; i <= 10; i++) {
       const ok = await request.post(`${BASE_URL_WEB}/oauth/register`, {
+        headers,
         data: { client_name: tag, redirect_uris: [REDIRECT_URI] },
       });
       expect(ok.status(), `registration ${i}`).toBe(201);
     }
     const eleventh = await request.post(`${BASE_URL_WEB}/oauth/register`, {
+      headers,
       data: { client_name: tag, redirect_uris: [REDIRECT_URI] },
     });
     expect(eleventh.status()).toBe(429);

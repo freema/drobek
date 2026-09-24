@@ -1,3 +1,4 @@
+import { randomInt } from 'node:crypto';
 import {
   expect,
   test,
@@ -78,10 +79,13 @@ const LOCAL_REDIS_HOSTS = ['localhost', '127.0.0.1', 'redis'];
 /**
  * Drop one per-IP rate-limit family (`drobek:rl:<bucket>:*`). Local-only
  * (TEST_ENV=local + a local REDIS_URL, mirroring the global-setup guard); a
- * no-op anywhere else. Behind the e2e Caddy every request comes from ONE client
- * IP, so a full run would trip the low per-IP limits (DCR, forms) mid-suite.
- * The OTP verify limit needs no reset (NSO-309): without a client IP there is
- * no bucket, and the compose files relax OTP_VERIFY_IP_LIMIT.
+ * no-op anywhere else. Needed behind the e2e Caddy (`task e2e:image`, CI):
+ * Caddy sets X-Real-IP from the TCP peer, so every request of the run comes
+ * from ONE real client IP and would trip the low per-IP limits (DCR, forms,
+ * abuse reports) mid-suite. On the plain-HTTP dev stack a request without an
+ * X-Real-IP has no per-IP bucket at all (NSO-309/NSO-328) — there the resets
+ * find nothing to drop. The OTP verify limit needs no reset: the compose files
+ * relax OTP_VERIFY_IP_LIMIT.
  */
 export async function resetRateLimitBucket(bucket: string): Promise<void> {
   const url = process.env.REDIS_URL;
@@ -99,10 +103,25 @@ export async function resetRateLimitBucket(bucket: string): Promise<void> {
 
 /**
  * /oauth/register allows 10 registrations per IP per hour (PHY-76 #7) and the
- * suite registers far more: drop that bucket before each registration.
+ * suite registers far more — behind Caddy all from the runner's one IP: drop
+ * that bucket before each registration.
  */
 export async function resetDcrIpRateLimit(): Promise<void> {
   await resetRateLimitBucket('oauth-register-ip');
+}
+
+/**
+ * Headers giving a spec a client IP of its own, for a test that counts a
+ * per-IP limit up to its 429 (NSO-328). On the plain-HTTP dev stack
+ * (TRUST_PROXY unset) drobek honours a client-sent X-Real-IP, and a request
+ * without one has NO per-IP bucket — the limit would never trip. A random
+ * address from the IPv6 documentation prefix is shared with nobody, so no
+ * reset is needed there. Behind Caddy (TRUST_PROXY=x-real-ip) Caddy replaces
+ * the header with the runner's address, which is why those specs still call
+ * resetRateLimitBucket first.
+ */
+export function ownClientIpHeaders(): Record<string, string> {
+  return { 'X-Real-IP': `2001:db8::${randomInt(1, 0xffff).toString(16)}:${randomInt(1, 0xffff).toString(16)}` };
 }
 
 /** Full magic-code sign-in via the UI; leaves the page authenticated on /me. */

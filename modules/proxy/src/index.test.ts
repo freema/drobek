@@ -570,6 +570,16 @@ describe('rate limits', () => {
     expect((await tt.request('GET', '/open/x', { headers: SDK, clientIp: '198.51.100.2' })).status).toBe(200);
   });
 
+  it('a public upstream without a resolved client IP (NSO-328): no shared per-IP bucket, the app-wide limit still applies', async () => {
+    const tt = t({ upstreams: { open: { rules: { call: 'public' } } } }, ANON, { PROXY_CALLS_PER_MIN: 15 });
+    for (let i = 0; i < 15; i++) {
+      expect((await tt.request('GET', '/open/x', { headers: SDK, clientIp: null })).status, `call ${i + 1}`).toBe(200);
+    }
+    const r = await tt.request('GET', '/open/x', { headers: SDK, clientIp: null });
+    expect(r.status).toBe(429);
+    expect(r.body).toMatchObject({ error: 'rate_limited', details: { limit: 15 } });
+  });
+
   it("an assignment's own rateLimit caps that upstream", async () => {
     const tt = t({ upstreams: { open: { rateLimit: 2 } } });
     expect((await tt.request('GET', '/open/x', { headers: SDK })).status).toBe(200);

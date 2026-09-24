@@ -25,7 +25,7 @@
  *      5 MiB), an encoded body decoded within the cap, the response relayed
  *      with allow-listed headers and `Cache-Control: no-store`.
  */
-import { ModuleError, respond, ruleIsPublic, type ModuleContext, type ModuleRequest, type ModuleRouter } from '@drobek/modules';
+import { ModuleError, perIpLimitKey, respond, ruleIsPublic, type ModuleContext, type ModuleRequest, type ModuleRouter } from '@drobek/modules';
 import {
   ProxyError,
   acquireProxySlot,
@@ -120,9 +120,12 @@ export function proxyHandler(opts: ProxyRouteOptions = {}) {
     }
 
     // 4) Rate limits (independent of the rule).
-    if (ruleIsPublic(rule)) {
+    //    No resolved client IP → no per-IP bucket (never a shared `unknown`
+    //    one, NSO-328); the app-wide and per-upstream limits still apply.
+    const ip = ruleIsPublic(rule) ? perIpLimitKey(req.clientIp, 'mod:proxy:public-ip') : null;
+    if (ip !== null) {
       const perIp = await limitOf(ctx, 'PROXY_PUBLIC_CALLS_PER_MIN_PER_IP', DEFAULT_PUBLIC_CALLS_PER_MIN_PER_IP);
-      await enforce(ctx, 'public-ip', `${name}:${req.clientIp ?? 'unknown'}`, perIp);
+      await enforce(ctx, 'public-ip', `${name}:${ip}`, perIp);
     }
     await enforce(ctx, 'calls', 'app', await limitOf(ctx, 'PROXY_CALLS_PER_MIN', DEFAULT_CALLS_PER_MIN));
     if (assignment.rateLimit) await enforce(ctx, 'upstream', name, assignment.rateLimit);

@@ -21,6 +21,7 @@
  */
 import { Readable } from 'node:stream';
 import type { ZodType } from 'zod';
+import { perIpLimitKey } from '@drobek/core';
 import type {
   ModuleContext,
   ModuleResponse,
@@ -253,10 +254,17 @@ async function readRequestBody(req: PipelineRequest, limit: number, types: Reado
   }
 }
 
-function rateKey(per: 'ip' | 'app' | 'principal', req: PipelineRequest, principal: Principal): string {
+/**
+ * The counter key of a route rate limit, or null = skip it: a per-IP key (an
+ * `ip` limit, or `principal` for an anonymous caller) needs a resolved client
+ * IP — without one there is no bucket rather than a shared `unknown` one
+ * (NSO-328); the handler's own per-app / per-principal limits still apply.
+ */
+function rateKey(per: 'ip' | 'app' | 'principal', req: PipelineRequest, principal: Principal, label: string): string | null {
   if (per === 'app') return 'app';
-  if (per === 'principal') return principal.kind === 'user' ? `u:${principal.id}` : `ip:${req.clientIp ?? 'unknown'}`;
-  return `ip:${req.clientIp ?? 'unknown'}`;
+  if (per === 'principal' && principal.kind === 'user') return `u:${principal.id}`;
+  const ip = perIpLimitKey(req.clientIp, label);
+  return ip === null ? null : `ip:${ip}`;
 }
 
 /** A body stream over `readBody` for adapters without `bodyStream` (whole body, in memory). */
@@ -292,10 +300,11 @@ export async function runRoute(
       }
     }
 
-    if (opts.rateLimit) {
-      const rl = opts.rateLimit;
+    const rl = opts.rateLimit;
+    const rlKey = rl ? rateKey(rl.per ?? 'ip', req, principal, `mod:${deps.module}:${rl.bucket}`) : null;
+    if (rl && rlKey !== null) {
       const max = typeof rl.max === 'number' ? rl.max : await deps.limit(rl.max);
-      const r = await ctx.rateLimit(rl.bucket, rateKey(rl.per ?? 'ip', req, principal), max, rl.windowMs);
+      const r = await ctx.rateLimit(rl.bucket, rlKey, max, rl.windowMs);
       if (!r.ok) {
         throw new ModuleError('rate_limited', `Too many requests — at most ${max} per ${Math.round(rl.windowMs / 1000)} s.`, {
           details: { limit: max, window_seconds: Math.round(rl.windowMs / 1000) },

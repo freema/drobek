@@ -90,6 +90,41 @@ describe('pipeline', () => {
     expect((await t.request('POST', '/say', { body: { text: 'd' }, clientIp: '10.0.0.9' })).status).toBe(200);
   });
 
+  it("per: 'ip' without a resolved client IP (NSO-328): the bucket is skipped, never shared; known IPs stay limited", async () => {
+    const t = createModuleTestContext(echo, { limits: { ECHO_PER_MINUTE: 2 } });
+    for (let i = 0; i < 6; i += 1) {
+      expect((await t.request('POST', '/say', { body: { text: `n${i}` }, clientIp: null })).status).toBe(200);
+    }
+    // IP-less traffic spent no known client's budget, and known IPs are still limited.
+    expect((await t.request('POST', '/say', { body: { text: 'a' } })).status).toBe(200);
+    expect((await t.request('POST', '/say', { body: { text: 'b' } })).status).toBe(200);
+    expect((await t.request('POST', '/say', { body: { text: 'c' } })).status).toBe(429);
+  });
+
+  it("per: 'principal' without a client IP: anonymous callers skip the bucket, signed-in users keep theirs; per: 'app' always applies", async () => {
+    const { defineModule, z } = await import('./index.js');
+    const m = defineModule({
+      name: 'lim',
+      version: '1.0.0',
+      skill: { useWhen: 'x', markdown: '# x' },
+      configSchema: z.object({}),
+      configDefaults: {},
+      routes(r) {
+        r.post('/p', { rule: 'public', rateLimit: { bucket: 'p', max: 2, windowMs: 60_000, per: 'principal' } }, () => ({ ok: true }));
+        r.post('/a', { rule: 'public', rateLimit: { bucket: 'a', max: 2, windowMs: 60_000, per: 'app' } }, () => ({ ok: true }));
+      },
+    });
+    const t = createModuleTestContext(m);
+    for (let i = 0; i < 5; i += 1) expect((await t.request('POST', '/p', { clientIp: null })).status).toBe(200);
+    t.setPrincipal(user);
+    expect((await t.request('POST', '/p', { clientIp: null })).status).toBe(200);
+    expect((await t.request('POST', '/p', { clientIp: null })).status).toBe(200);
+    expect((await t.request('POST', '/p', { clientIp: null })).status).toBe(429);
+    expect((await t.request('POST', '/a', { clientIp: null })).status).toBe(200);
+    expect((await t.request('POST', '/a', { clientIp: null })).status).toBe(200);
+    expect((await t.request('POST', '/a', { clientIp: null })).status).toBe(429);
+  });
+
   it('a handler ModuleError keeps its own hint; audit is namespaced', async () => {
     const t = createModuleTestContext(echo);
     expect((await t.request('GET', '/teapot')).body).toEqual({ error: 'forbidden', message: 'no tea', hint: "skill_info('tea')" });

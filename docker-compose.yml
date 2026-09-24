@@ -181,12 +181,12 @@ services:
       # apps/server, loaded as the package `drobek-module-hello`). Its wave
       # limit is LOW so the modules e2e trips 429 quickly (module default 30).
       # M1-02 (NSO-294): the built-in `auth` module (modules/auth, package
-      # `drobek-module-auth`). Its sign-in limits are RELAXED: every local
-      # request shares one client-IP bucket, and the e2e signs in many times.
+      # `drobek-module-auth`). Its sign-in limits are RELAXED: the e2e signs in
+      # many times, behind Caddy (`task dev:tls`) all from one client IP.
       # M1-04 (NSO-295): the built-in `email` (notifyAdmins, the per-app mail
       # limit) and `forms` (requires email) modules. FORMS_SUBMITS_PER_IP_HOUR
-      # keeps its default 10 — every local request shares the `unknown` IP
-      # bucket, so the forms e2e resets that bucket before it counts.
+      # keeps its default 10 — a local request without X-Real-IP has no per-IP
+      # bucket (NSO-328), so the forms e2e sends its own X-Real-IP to count.
       # M1-06 (NSO-297): the built-in `proxy` (per-app upstream assignment;
       # PROXY_CALLS_PER_MIN keeps its default 60 — the e2e trips the 61st call).
       # M1-05 (NSO-296): the built-in `files` (uploads on the files_data volume).

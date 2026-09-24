@@ -1139,6 +1139,26 @@ block, then `next` is pushed and the single MR opened.
   replay landing between the code flip and the refresh insert finds no row.
   e2e: never replay a code and then keep using its tokens in the same flow.
 
+- NSO-328: every per-IP bucket keys on `perIpLimitKey(ip, label)` from
+  `@drobek/core` (`@drobek/modules` re-exports it for modules). `null` = no
+  resolved client IP → skip that check; never write `ip ?? 'unknown'` again.
+  The warning is once per LABEL per process (a module-level Set), so a unit
+  test asserting it must use a label no other test in the file skips first.
+  The OTP verify guard's event is now `rate_limit_no_client_ip` (was
+  `otp_verify_no_ip`).
+- NSO-328 e2e: on the plain-HTTP dev stack a request without `X-Real-IP` has
+  NO per-IP bucket, so a spec that expects the (limit + 1)th request to be
+  refused must send its own IP (`ownClientIpHeaders()` in
+  `tests-e2e/tests/helpers/auth.ts`, a random `2001:db8::` address). Behind
+  Caddy (`task e2e:image`, CI) Caddy overwrites that header with the runner's
+  IP, so the `resetRateLimitBucket` / `resetDcrIpRateLimit` calls stay — they
+  exist for the Caddy flow now, not for the old shared bucket.
+- NSO-328: the password gate counts `app-unlock` (per app + IP, 10) first and
+  only then `app-unlock-app` (per app, `UNLOCK_APP_ATTEMPTS` 100 / 15 min) —
+  one client over its own limit does not spend the app's budget.
+  `unlockAttemptAllowed` in `packages/serving/src/node.ts`; tests that inject
+  their own `allowUnlockAttempt` get neither.
+
 ## Failed approaches
 
 - `pnpm deploy --offline` in the Dockerfile builder: fails with

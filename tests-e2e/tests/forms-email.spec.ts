@@ -5,7 +5,7 @@ import { expect, test, type APIRequestContext, type BrowserContext } from '@play
 import { Redis } from 'ioredis';
 import { APPS_URL_SCHEME, BASE_URL_WEB } from '../playwright.config';
 import { hostRequest, previewHost, urlOf, type Raw } from './helpers/apps-host';
-import { MAILPIT_URL, mailpitMessagesFor, resetRateLimitBucket, skipUnlessLocal } from './helpers/auth';
+import { MAILPIT_URL, mailpitMessagesFor, ownClientIpHeaders, resetRateLimitBucket, skipUnlessLocal } from './helpers/auth';
 import { callTool, mcpClient, type McpClient } from './helpers/mcp';
 import { withDb } from './helpers/seed';
 
@@ -20,8 +20,10 @@ import { withDb } from './helpers/seed';
  *    notification to the app's owner, the HTML escaped;
  *  - a filled honeypot → 200 "ok", nothing stored or sent, a counter in the
  *    server log; a submit < 2 s after its token → 429 submitted_too_fast;
- *  - the 11th submit from one IP within an hour → 429 (locally every request
- *    shares one client-IP bucket: the spec resets it before it counts);
+ *  - the 11th submit from one IP within an hour → 429 (the spec sends its own
+ *    X-Real-IP — on the dev stack a request without one has no per-IP bucket;
+ *    behind Caddy every request is the runner's IP, so it resets the bucket
+ *    before it counts and after);
  *  - notify.emails changed by the agent → pending; the owner confirms it
  *    through the dashboard confirm API; the address then gets the mail;
  *  - admins list the submissions and export CSV (formula-neutralized,
@@ -258,7 +260,6 @@ test.describe('platform modules forms + email (M1-04) @local', () => {
 
   test('a browser submits <Form name="contact"> → a DB row + an escaped notification to the owner', async ({ browser, request }) => {
     skipUnlessLocal();
-    await resetRateLimitBucket(`mod:forms:${formsApp.app_id}:submit-ip`);
     const ctx = await browser.newContext();
     const page = await ctx.newPage();
     try {
@@ -335,13 +336,15 @@ test.describe('platform modules forms + email (M1-04) @local', () => {
       config: { forms: { burst: { notify: { owners: false } } } },
     });
     expect(cfg.json, JSON.stringify(cfg.json)).toMatchObject({ applied: true });
+    // Behind Caddy the earlier submits of this spec came from the same IP.
     await resetRateLimitBucket(`mod:forms:${formsApp.app_id}:submit-ip`);
+    const ip = ownClientIpHeaders();
     const t = await formToken(host, 'burst');
     await sleep(2_100);
     const statuses: number[] = [];
-    for (let i = 1; i <= 11; i++) statuses.push((await post(host, '/forms/burst', { _t: t, n: i })).status);
+    for (let i = 1; i <= 11; i++) statuses.push((await post(host, '/forms/burst', { _t: t, n: i }, ip)).status);
     expect(statuses).toEqual([200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 429]);
-    const over = await post(host, '/forms/burst', { _t: t, n: 12 });
+    const over = await post(host, '/forms/burst', { _t: t, n: 12 }, ip);
     expect(JSON.parse(over.body)).toMatchObject({ error: 'rate_limited', details: { limit: 10, window_seconds: 3600 } });
     expect(over.headers['retry-after']).toBeTruthy();
     expect(await submissionsOf(formsApp.app_id, 'burst')).toHaveLength(10);

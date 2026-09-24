@@ -155,6 +155,12 @@ const NO_STORE = 'no-store';
 
 /** Unlock attempts per app + client IP per window (see node.ts for the window). */
 export const UNLOCK_ATTEMPTS = 10;
+/**
+ * Unlock attempts per app over ALL clients per window — the per-password cap
+ * that also holds for a request without a resolved client IP, which has no
+ * per-IP bucket (NSO-328).
+ */
+export const UNLOCK_APP_ATTEMPTS = 100;
 export const UNLOCK_WINDOW_MS = 15 * 60 * 1000;
 const MAX_PASSWORD_CHARS = 1024;
 

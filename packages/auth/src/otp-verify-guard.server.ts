@@ -23,6 +23,7 @@
  *   OTP_VERIFY_IP_LIMIT     code checks per client IP per window (default 30)
  *   OTP_VERIFY_IP_WINDOW_S  window length in seconds (default 900 = 15 min)
  */
+import { perIpLimitKey } from '@drobek/core';
 import { logger } from './logger.server.js';
 import { rateLimitRedis } from './rate-limit.server.js';
 
@@ -46,27 +47,18 @@ export function otpVerifyLimitsFromEnv(env: NodeJS.ProcessEnv = process.env): Ot
   };
 }
 
-let warnedNoIp = false;
-
 /**
  * May this code check proceed? `ip` undefined/null → the per-IP bucket is
- * skipped (warned once per process so a misconfigured TRUST_PROXY is visible).
- * A Redis error propagates — the route fails, nothing is verified.
+ * skipped (`perIpLimitKey` warns once per process so a misconfigured
+ * TRUST_PROXY is visible). A Redis error propagates — the route fails,
+ * nothing is verified.
  */
 export async function guardOtpVerify(args: {
   ip: string | null | undefined;
   limits?: OtpVerifyLimits;
 }): Promise<{ ok: boolean }> {
-  if (!args.ip) {
-    if (!warnedNoIp) {
-      warnedNoIp = true;
-      logger.warn(
-        '[otp-verify] no client IP resolved — per-IP verify limit skipped (check TRUST_PROXY and the proxy X-Real-IP header)',
-        { event: 'otp_verify_no_ip' }
-      );
-    }
-    return { ok: true };
-  }
+  const key = perIpLimitKey(args.ip, OTP_VERIFY_IP_BUCKET, logger);
+  if (key === null) return { ok: true };
   const limits = args.limits ?? otpVerifyLimitsFromEnv();
-  return rateLimitRedis(OTP_VERIFY_IP_BUCKET, args.ip, limits.ipLimit, limits.windowMs);
+  return rateLimitRedis(OTP_VERIFY_IP_BUCKET, key, limits.ipLimit, limits.windowMs);
 }

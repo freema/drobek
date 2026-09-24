@@ -6,6 +6,7 @@ export {
 } from './health.js';
 export { coreVersion, CORE_VERSION, type CoreVersion } from './version.js';
 export { getRedis, healthRedisPing, closeRedis } from './redis.js';
+export { perIpLimitKey } from './client-ip.js';
 export {
   createConsoleLogger,
   noopLogger,

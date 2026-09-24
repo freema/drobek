@@ -103,7 +103,7 @@ export async function handleBeacon(
   }
 
   try {
-    await (opts.record ?? recordBeacon)({ appId, batch, ip: req.clientIp ?? 'unknown' });
+    await (opts.record ?? recordBeacon)({ appId, batch, ip: req.clientIp });
     return beaconResponse(204);
   } catch (err) {
     if (err instanceof InsightsError) return beaconResponse(insightsErrorStatus(err.code));

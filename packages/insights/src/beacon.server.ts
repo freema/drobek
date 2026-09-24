@@ -10,6 +10,7 @@
  *   3. insert with a computed dedup_key, then RING-BUFFER prune (cap + age).
  */
 import { rateLimitRedis } from '@drobek/auth';
+import { perIpLimitKey } from '@drobek/core';
 import { appErrors, getDb } from '@drobek/db';
 import { sql } from 'drizzle-orm';
 import { InsightsError } from './errors.js';
@@ -31,7 +32,8 @@ export interface RecordBeaconInput {
   appId: string;
   /** The parsed JSON body (untrusted: array, {events:[…]}, or a bare event). */
   batch: unknown;
-  ip: string;
+  /** The resolved client IP; null = none → no per-IP bucket (NSO-328). */
+  ip: string | null;
   env?: NodeJS.ProcessEnv;
   /** Sampler seam for tests; defaults to Math.random. */
   rng?: () => number;
@@ -65,12 +67,13 @@ export async function recordBeacon(
   if (!app.ok) {
     throw new InsightsError('rate_limited', 'too many beacons; slow down');
   }
-  const perIp = await rateLimitRedis(
-    'beacon',
-    `${appId}:${input.ip}`,
-    limits.rateLimit,
-    limits.windowMs
-  );
+  // No resolved client IP → only the aggregate applies (never a shared
+  // `unknown` per-IP bucket, NSO-328).
+  const ip = perIpLimitKey(input.ip, 'beacon');
+  const perIp =
+    ip === null
+      ? { ok: true }
+      : await rateLimitRedis('beacon', `${appId}:${ip}`, limits.rateLimit, limits.windowMs);
   if (!perIp.ok) {
     throw new InsightsError('rate_limited', 'too many beacons; slow down');
   }

@@ -30,7 +30,7 @@ export function pkcePair(): { verifier: string; challenge: string } {
   return { verifier, challenge };
 }
 
-/** DCR (after clearing the shared local per-IP registration bucket). */
+/** DCR (after clearing the per-IP registration bucket — behind Caddy the whole run is one client IP). */
 export async function registerClient(request: APIRequestContext): Promise<string> {
   await resetDcrIpRateLimit();
   const res = await request.post(`${BASE_URL_WEB}/oauth/register`, {

@@ -31,7 +31,7 @@
  * auto-pause.
  */
 import { createHash } from 'node:crypto';
-import { getRedis } from '@drobek/core';
+import { getRedis, perIpLimitKey } from '@drobek/core';
 import { otpKeyPrefix, type OtpScope } from './email-code.server.js';
 import { logger, serializeError } from './logger.server.js';
 import { maskEmail } from './mask-email.js';
@@ -201,9 +201,10 @@ export async function guardOtpRequest(args: {
       };
     }
 
-    // 1. per-IP short window (skipped without a client IP — NSO-309)
-    const ipShort = ip
-      ? await rateLimitRedis(bucket('otp-ip-15m', scope), ip, limits.ipShortLimit, IP_SHORT_WINDOW_MS)
+    // 1. per-IP short window (skipped without a client IP — NSO-309/328)
+    const ipKey = perIpLimitKey(ip, scope === undefined ? 'otp-ip' : 'eu:otp-ip', logger);
+    const ipShort = ipKey
+      ? await rateLimitRedis(bucket('otp-ip-15m', scope), ipKey, limits.ipShortLimit, IP_SHORT_WINDOW_MS)
       : { ok: true };
     if (!ipShort.ok) {
       logBlock('ip_short', { ip, email, scope, alert: true });
@@ -216,9 +217,9 @@ export async function guardOtpRequest(args: {
       };
     }
 
-    // 2. per-IP daily window (skipped without a client IP — NSO-309)
-    const ipDaily = ip
-      ? await rateLimitRedis(bucket('otp-ip-24h', scope), ip, limits.ipDailyLimit, IP_DAILY_WINDOW_MS)
+    // 2. per-IP daily window (skipped without a client IP — NSO-309/328)
+    const ipDaily = ipKey
+      ? await rateLimitRedis(bucket('otp-ip-24h', scope), ipKey, limits.ipDailyLimit, IP_DAILY_WINDOW_MS)
       : { ok: true };
     if (!ipDaily.ok) {
       logBlock('ip_daily', { ip, email, scope, alert: true });

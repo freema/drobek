@@ -54,6 +54,13 @@ describe('handleBeacon', () => {
     expect((calls[0].batch as { events: unknown[] }).events).toHaveLength(1);
   });
 
+  it('no resolved client IP → the recorder gets ip: null, never a shared "unknown" (NSO-328)', async () => {
+    const { calls, record } = recorder();
+    const req = { ...beaconReq(EVENT, { origin: 'http://shop--preview.apps.localhost:3041' }), clientIp: null };
+    expect((await handleBeacon(req, 'app_1', { record })).status).toBe(204);
+    expect(calls[0]).toMatchObject({ appId: 'app_1', ip: null });
+  });
+
   it('9 KiB declared → 413 before a byte is read', async () => {
     const { calls, record } = recorder();
     const req = beaconReq('x'.repeat(9 * 1024), { 'content-length': String(9 * 1024) });

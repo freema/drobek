@@ -7,7 +7,7 @@
  * stored); the input (`validateAbuseReport`: host, reason, details ≤ 2 000
  * chars, optional reporter e-mail → 400 with the field); the rate limit
  * (ABUSE_REPORTS_PER_IP_HOUR valid reports per client IP per hour, default 5
- * → 429); then the report is stored (`abuse_reports`, audit `abuse.report`
+ * → 429; skipped without a resolved client IP); then the report is stored (`abuse_reports`, audit `abuse.report`
  * when the host belongs to an app) and the super-admins are e-mailed (at most
  * once per app per hour).
  */
@@ -21,7 +21,7 @@ import {
   validateAbuseReport,
 } from '@drobek/apps';
 import { getClientIp, rateLimitRedis } from '@drobek/auth';
-import { createConsoleLogger } from '@drobek/core';
+import { createConsoleLogger, perIpLimitKey } from '@drobek/core';
 import { mailSuperAdminsAboutReport } from '../abuse-mail.server.js';
 
 const log = createConsoleLogger('abuse');
@@ -79,7 +79,10 @@ export async function action({ request }: ActionFunctionArgs) {
   if (!v.ok) return data<ActionResult>({ ok: false, field: v.field, error: v.message }, { status: 400 });
 
   const ip = getClientIp(request);
-  const limit = await rateLimitRedis(REPORT_RATE_BUCKET, ip ?? 'unknown', reportsPerIpHour(), HOUR_MS);
+  // No resolved client IP → no per-IP bucket, never a shared `unknown` one
+  // (NSO-328); the super-admin mail stays capped at one per app per hour.
+  const ipKey = perIpLimitKey(ip, REPORT_RATE_BUCKET);
+  const limit = ipKey === null ? { ok: true } : await rateLimitRedis(REPORT_RATE_BUCKET, ipKey, reportsPerIpHour(), HOUR_MS);
   if (!limit.ok) {
     return data<ActionResult>(
       { ok: false, error: 'Too many reports from your network in the last hour. Try again later.' },

@@ -1,7 +1,7 @@
 import { expect, test, type APIRequestContext, type BrowserContext } from '@playwright/test';
 import { BASE_URL_WEB } from '../playwright.config';
 import { hostRequest, previewHost, urlOf } from './helpers/apps-host';
-import { skipUnlessLocal } from './helpers/auth';
+import { ownClientIpHeaders, skipUnlessLocal } from './helpers/auth';
 import { callTool, mcpClient, type McpClient } from './helpers/mcp';
 import { withDb } from './helpers/seed';
 
@@ -191,11 +191,14 @@ test.describe('platform modules — the hello example (M1-01) @local', () => {
     expect(nope.status).toBe(404);
     expect(JSON.parse(nope.body)).toMatchObject({ error: 'not_found', details: { available: ['hello', 'auth', 'email', 'forms', 'data', 'proxy', 'files'] } });
 
-    // HELLO_WAVES_PER_MINUTE=5 per visitor IP (the browser test already waved once).
+    // HELLO_WAVES_PER_MINUTE=5 per visitor IP (behind Caddy the browser test
+    // already waved once from the same IP). A client IP of its own: on the
+    // dev stack a request without one has no per-IP bucket (NSO-328).
+    const ipHeaders = ownClientIpHeaders();
     const statuses: number[] = [];
     let limited: Awaited<ReturnType<typeof hostRequest>> | null = null;
     for (let i = 0; i < 6; i++) {
-      const r = await hostRequest(host, '/__drobek/v1/hello/wave', { method: 'POST', headers: sdk, body });
+      const r = await hostRequest(host, '/__drobek/v1/hello/wave', { method: 'POST', headers: { ...sdk, ...ipHeaders }, body });
       statuses.push(r.status);
       if (r.status === 429) {
         limited = r;

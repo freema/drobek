@@ -29,10 +29,11 @@ import type { Socket } from 'node:net';
 import { Readable, pipeline } from 'node:stream';
 import { appsOrigin, classifyHost, hostConfig, splitHost, type AppHostTarget, type HostConfig } from '@drobek/apps';
 import { getClientIp, rateLimitRedis } from '@drobek/auth';
-import { createConsoleLogger, type Logger } from '@drobek/core';
+import { createConsoleLogger, perIpLimitKey, type Logger } from '@drobek/core';
 import { handleBeacon, incrementServingSignal } from '@drobek/insights';
 import {
   PLATFORM_PREFIX,
+  UNLOCK_APP_ATTEMPTS,
   UNLOCK_ATTEMPTS,
   UNLOCK_WINDOW_MS,
   handleAppRequest,
@@ -241,6 +242,25 @@ function customDomainOriginFor(hosts: HostConfig): (hostname: string) => string 
 
 export type NodeMiddleware = (req: IncomingMessage, res: ServerResponse, next: (err?: unknown) => void) => void;
 
+type RateCounter = (bucket: string, key: string, limit: number, windowMs: number) => Promise<{ ok: boolean }>;
+
+/**
+ * The password gate's attempt limiter: per app + client IP (UNLOCK_ATTEMPTS)
+ * first, so one client cannot spend the app's budget, then per app over all
+ * clients (UNLOCK_APP_ATTEMPTS). Without a resolved client IP there is no
+ * per-IP bucket — never a shared `unknown` one — and only the per-app cap
+ * applies (NSO-328).
+ */
+export async function unlockAttemptAllowed(
+  appId: string,
+  clientIp: string | null,
+  counter: RateCounter = rateLimitRedis
+): Promise<boolean> {
+  const ip = perIpLimitKey(clientIp, 'app-unlock');
+  if (ip !== null && !(await counter('app-unlock', `${appId}:${ip}`, UNLOCK_ATTEMPTS, UNLOCK_WINDOW_MS)).ok) return false;
+  return (await counter('app-unlock-app', appId, UNLOCK_APP_ATTEMPTS, UNLOCK_WINDOW_MS)).ok;
+}
+
 /**
  * The production handler deps: HKDF'd access key, Redis limiters (unlock
  * attempts; NSO-315 unknown hosts per IP, APPS_UNKNOWN_HOST_LIMIT /
@@ -251,8 +271,7 @@ export function defaultHandlerDeps(store: ServeStore, log?: Logger): HandlerDeps
     store,
     accessSecret: appAccessSecret(),
     secureCookies: appCookiesSecure(),
-    allowUnlockAttempt: async (appId, ip) =>
-      (await rateLimitRedis('app-unlock', `${appId}:${ip ?? 'unknown'}`, UNLOCK_ATTEMPTS, UNLOCK_WINDOW_MS)).ok,
+    allowUnlockAttempt: (appId, ip) => unlockAttemptAllowed(appId, ip),
     signal: (appId, kind, path) => void incrementServingSignal(appId, kind, path),
     beacon: (req, app) => handleBeacon(req, app.id),
     unknownHosts: new UnknownHostLimiter({

@@ -16,6 +16,7 @@ vi.mock('./logger.server.js', () => ({
   serializeError: (err: unknown) => ({ message: String(err) }),
 }));
 
+import { logger } from './logger.server.js';
 import { guardOtpVerify, otpVerifyLimitsFromEnv, type OtpVerifyLimits } from './otp-verify-guard.server.js';
 
 const LIMITS: OtpVerifyLimits = { ipLimit: 3, windowMs: 60_000 };
@@ -65,6 +66,9 @@ describe('guardOtpVerify', () => {
     }
     // No shared "unknown" counter is ever written.
     expect([...fake.store.keys()].filter((k) => k.startsWith('drobek:rl:'))).toEqual([]);
+    // One warning per process (the shared @drobek/core perIpLimitKey, NSO-328).
+    expect(vi.mocked(logger.warn)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(logger.warn).mock.calls[0][1]).toEqual({ event: 'rate_limit_no_client_ip', bucket: 'otp-verify-ip' });
   });
 
   it('IP-less traffic does not consume a known IP budget either', async () => {

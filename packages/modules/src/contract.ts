@@ -762,7 +762,11 @@ export interface RouteRateLimit {
   /** Max calls per window: a number, or the env name of one of the module's limits. */
   max: number | string;
   windowMs: number;
-  /** What the counter keys on (default `ip`). */
+  /**
+   * What the counter keys on (default `ip`; `principal` = the signed-in user,
+   * the IP for an anonymous caller). A request without a resolved client IP
+   * skips an IP-keyed limit — no shared bucket (NSO-328).
+   */
   per?: 'ip' | 'app' | 'principal';
 }
 

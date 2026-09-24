@@ -232,6 +232,12 @@ client IP (every per-IP rate limit) comes only from the `X-Real-IP` header
 Caddy sets from the TCP peer — a client-sent `X-Real-IP` or
 `X-Forwarded-For` is overwritten/ignored. Leave `TRUST_PROXY` unset only when
 a different proxy (e.g. nginx with `X-Real-IP $remote_addr`) is in front.
+Per-IP limits need a resolved client IP: a request that arrives without a
+trusted header (a proxy that does not set `X-Real-IP`, a request that
+bypassed the proxy) gets no per-IP bucket at all — not a shared one — so only
+the per-app, per-user and per-code limits hold it. drobek logs one
+`rate_limit_no_client_ip` warning per limit (once per start) when that
+happens; seeing it in production means the proxy header is missing.
 
 Platform modules (the backends apps use through `import { drobek } from
 'drobek'`) are enabled with `DROBEK_MODULES` (comma-separated; a

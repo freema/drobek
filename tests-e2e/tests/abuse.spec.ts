@@ -5,6 +5,7 @@ import {
   MAILPIT_URL,
   loginViaEmail,
   mailpitMessagesFor,
+  ownClientIpHeaders,
   resetRateLimitBucket,
   skipUnlessLocal,
   uniqueEmail,
@@ -356,13 +357,16 @@ test.describe('abuse: reports, takedown/restore, publish heuristic (M4-02) @loca
     skipUnlessLocal();
     await resetRateLimitBucket(REPORT_BUCKET);
     const form = { host: prodHost(calc.slug), reason: 'spam', details: 'rate limit probe', email: '', website: '' };
+    // A client IP of its own: on the dev stack a request without one has no
+    // per-IP bucket (NSO-328); behind Caddy it is the runner's IP anyway.
+    const headers = ownClientIpHeaders();
     // An invalid submission is refused (400) and does not count.
-    const invalid = await request.post('/report', { form: { ...form, reason: 'not-a-reason' } });
+    const invalid = await request.post('/report', { headers, form: { ...form, reason: 'not-a-reason' } });
     expect(invalid.status()).toBe(400);
     let accepted = 0;
     let limited = 0;
     for (let i = 0; i < 6 && limited === 0; i++) {
-      const r = await request.post('/report', { form });
+      const r = await request.post('/report', { headers, form });
       if (r.status() === 429) limited = r.status();
       else {
         expect(r.status(), `report ${i + 1}`).toBe(200);

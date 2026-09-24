@@ -5,13 +5,15 @@
  * each URI is absolute https (or http on loopback for native/dev clients);
  * returns a client_id with token_endpoint_auth_method = "none". no-store.
  *
- * Abuse caps (PHY-76 #7): 10 registrations per client IP per hour (→ 429),
+ * Abuse caps (PHY-76 #7): 10 registrations per client IP per hour (→ 429;
+ * skipped when no client IP is resolved, NSO-328),
  * capped client_name / redirect_uris, and at most OAUTH_DCR_MAX_UNUSED_CLIENTS
  * (default 500) clients that never received a grant (→ 503) — abandoned
  * registrations older than a day are pruned first.
  */
 import type { ActionFunctionArgs } from 'react-router';
 import { getClientIp, rateLimitRedis } from '@drobek/auth';
+import { perIpLimitKey } from '@drobek/core';
 import {
   countUnusedDcrClients,
   createClient,
@@ -54,13 +56,13 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   // Per-IP fixed window, counted before any parsing so junk bodies pay too.
-  const ip = getClientIp(request) ?? 'unknown';
-  const limited = await rateLimitRedis(
-    'oauth-register-ip',
-    ip,
-    DCR_RATE_LIMIT,
-    DCR_RATE_WINDOW_MS
-  );
+  // Without a resolved client IP there is no per-IP bucket (NSO-328); the
+  // unused-client cap below still bounds what registrations can pile up.
+  const ip = perIpLimitKey(getClientIp(request), 'oauth-register-ip');
+  const limited =
+    ip === null
+      ? { ok: true }
+      : await rateLimitRedis('oauth-register-ip', ip, DCR_RATE_LIMIT, DCR_RATE_WINDOW_MS);
   if (!limited.ok) {
     return jsonError(
       'rate_limited',

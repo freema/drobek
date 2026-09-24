@@ -117,6 +117,14 @@ r.post(
 );
 ```
 
+`rateLimit.per` keys the counter on the client IP (`ip`, the default), the
+signed-in user (`principal`; the IP for an anonymous caller) or the app
+(`app`). An IP-keyed limit needs a resolved client IP: a request without one
+skips it instead of sharing one bucket with every other such client, so a
+public route that must stay bounded also keeps an app-wide limit. A module's
+own per-IP counter keys on `perIpLimitKey(req.clientIp, label)` (exported by
+`@drobek/modules`; `null` = no IP, skip the check).
+
 Patterns support `:param` segments (`/items/:id` → `req.params.id`) and a
 trailing `*` that captures the rest of the path RAW (percent-encoded, no
 leading slash) in `req.params['*']` (`/:upstream/*`, NSO-297). A handler also
