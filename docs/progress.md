@@ -28,10 +28,10 @@ Opus 5.5 subagents, black-box verification by Sonnet, everything lands on
 | 16 | NSO-309 OTP unknown-IP bucket | merged 6ffac11, check green | follow-up NSO-328 for the same pattern elsewhere |
 | 17 | NSO-316 smoke cleanup | merged 94d258f, check green | prod smoke reuses one stable slug |
 | 18 | NSO-315 unknown-host negative cache + limiter | merged 27e1436 (+98a5910), check green | 429 before lookup for throttled IPs |
-| 19 | NSO-305 drobek-web restructure (+318 folded) | running (repo ../drobek-web, branch next; first attempt hung with no changes, restarted 2026-09-24 02:25) | separate repo; image not yet published |
+| 19 | NSO-305 drobek-web restructure (+318 folded) | done: ../drobek-web `next` 7f1ad4f..a0c3d19 (not pushed), check green + full SaaS stack smoke with the rehearsal image | first attempt hung with no changes; 318 closed as folded in; core follow-up: `APPS_MAX_PER_WORKSPACE` + provider-overridable `DOMAINS_MAX_PER_APP` |
 | 20 | NSO-298 docs rewrite | merged aad3db1, check green (doc-lint: 789 files, 153 env keys) | doc-lint now in `task check` + CI; SDK licence wording + GitHub private vulnerability reporting = decisions for Tomáš |
-| 21 | NSO-306 dead code + knip + CI | running (worktree, base aad3db1) | last repo-wide task of M4 |
-| 22 | NSO-307 listing prep | running (worktree, base aad3db1; + ../drobek-plugin `next`) | submissions + prod OAuth check stay with Tomáš (blocked by NSO-304) |
+| 21 | NSO-306 dead code + knip + CI | merged 2706693 (+84b9584 CLAUDE.md), check green, knip 0 findings | react-router 7.14 → 7.18.4 (audit); nodemailer/drizzle majors left → follow-up |
+| 22 | NSO-307 listing prep | merged ae19c4c; ../drobek-plugin `next` 0d341da (not pushed) | kit in `docs/listing/`; explicit `idempotentHint`; Cursor custom-scheme callback = decision for Tomáš; task handed to Tomáš (blocked by NSO-304) |
 | – | M2/M3/M4 block-end e2e + eval + black-box | e2e 140/140 green (d7863da, after 2 spec fixes + 1 product fix: `isModuleError` symbol brand across package copies); `task eval` 3/3 PASS, 40 checks, 0 non-existent API (`tests-eval/results/2026-09-24-mueseyk18584.md`); Sonnet black-box running | Docker Desktop died once during the run; container hit an EACCES race on its own dist rebuild twice → `docker compose restart drobek` |
 | – | M1 block-end e2e + black-box | e2e green (99 + reruns, 8f25925); Sonnet black-box 25 PASS / 0 FAIL / 1 not testable (NSO-320 cap needs Redis seeding) | **M1 complete** → `next` pushed, draft MR opened |
 | 7 | NSO-291 M2-02 modules UI | merged 8d88040, check green | pending owner mail 1/h per app |
