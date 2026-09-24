@@ -28,7 +28,7 @@
     "@drobek/modules": "workspace:*",
     "@drobek/tenancy": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.19.0",
-    "drizzle-orm": "^0.41.0",
+    "drizzle-orm": "^0.45.3",
     "zod": "^4.4.3"
   },
   "peerDependencies": {

@@ -42,9 +42,12 @@ function str(v: unknown): string | undefined {
   return typeof v === 'string' && v !== '' ? v : undefined;
 }
 
-/** drizzle-orm ≥ 0.44 wraps every driver error in one of these. */
+/**
+ * drizzle-orm ≥ 0.44 wraps every driver error in one of these. It keeps
+ * `name === 'Error'`, so it is recognised by its class name or its shape.
+ */
 function isDrizzleQueryError(e: ErrorLike): boolean {
-  return e.name === 'DrizzleQueryError' || (typeof e.query === 'string' && Array.isArray(e.params));
+  return e.constructor?.name === 'DrizzleQueryError' || (typeof e.query === 'string' && Array.isArray(e.params));
 }
 
 /** A server-side Postgres error (postgres.js `PostgresError`, PGlite `DatabaseError`). */

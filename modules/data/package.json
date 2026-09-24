@@ -28,7 +28,7 @@
     "@drobek/sdk": "workspace:*",
     "@paralleldrive/cuid2": "^2.2.2",
     "ajv": "^8.17.1",
-    "drizzle-orm": "^0.41.0"
+    "drizzle-orm": "^0.45.3"
   },
   "devDependencies": {
     "@drobek/compile": "workspace:*",

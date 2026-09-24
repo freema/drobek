@@ -29,6 +29,7 @@ import {
 } from '@drobek/serving';
 import { createServerApp } from './app.js';
 import { startBackgroundJobs } from './jobs.js';
+import { withSafeRouteErrors } from './route-errors.js';
 
 const log = createConsoleLogger('drobek');
 
@@ -74,7 +75,7 @@ let clientDir: string | undefined;
 if (production) {
   const buildPath = resolve(appRoot, 'build/server/index.js');
   const build = (await import(buildPath)) as ServerBuild;
-  rrHandler = createRequestHandler({ build, mode: 'production' });
+  rrHandler = createRequestHandler({ build: withSafeRouteErrors(build), mode: 'production' });
   clientDir = resolve(appRoot, 'build/client');
 } else {
   const vite = await import('vite');
@@ -84,8 +85,8 @@ if (production) {
   });
   before.push(devServer.middlewares);
   rrHandler = createRequestHandler({
-    build: () =>
-      devServer.ssrLoadModule('virtual:react-router/server-build') as Promise<ServerBuild>,
+    build: async () =>
+      withSafeRouteErrors((await devServer.ssrLoadModule('virtual:react-router/server-build')) as ServerBuild),
     mode: 'development',
   });
 }

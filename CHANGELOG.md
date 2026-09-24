@@ -2,7 +2,7 @@
 
 ## Unreleased (`next`)
 
-### DB errors read and logged through one helper (NSO-333)
+### drizzle-orm 0.45; DB errors read and logged through one helper (NSO-333)
 
 - `@drobek/db` exports `pgErrorCode(err)` (the SQLSTATE wherever the driver
   or drizzle put it — `err.code`, or the `cause` of a `DrizzleQueryError`),
@@ -35,6 +35,24 @@
   failed-query log line whose parameters contain an e-mail does not contain
   it (`packages/db/src/errors.test.ts`, `packages/auth/src/logger.server.test.ts`).
   No migration, no new env var.
+- **`drizzle-orm` 0.41 → 0.45.3** in all 21 package.json and **`drizzle-kit`
+  0.31.10 → 0.31.11** (`@drobek/db`). Since 0.44 every driver error is a
+  `DrizzleQueryError` (class name only — its `name` stays `Error`) whose
+  `code` is undefined and whose message is `Failed query: <sql>\nparams:
+  <values>`; the helpers above read the `cause`, so behaviour is unchanged
+  (`errors.test.ts` asserts the real wrapper shape on PGlite). The migrators
+  are unchanged: both journals (`__drizzle_migrations_core`,
+  `__drizzle_migrations_mod_<name>`) apply on PGlite (every DB-backed unit
+  test) and through postgres-js (`runCoreMigrations` / `runJournalMigrations`
+  against a Postgres wire server, idempotent on a second run);
+  `drizzle-kit generate` over the existing core snapshots reports no schema
+  changes and rewrites nothing. Fixes the high advisory GHSA-gpj5-g38j-94v9.
+- Dashboard / OAuth routes: React Router's default `handleError` printed a
+  loader or action error whole (`console.error(error)` — a failed query's SQL,
+  parameters and Postgres `detail`); the server now installs
+  `logRouteError` (`apps/server/server/route-errors.ts`), which logs it
+  through `dbErrorForLog`.
+- `pnpm audit --prod`: no high; 2 moderate (`qs` via `express` 4, out of scope).
 
 ### A failed PKCE exchange burns the authorization code (NSO-332)
 

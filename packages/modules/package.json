@@ -30,7 +30,7 @@
     "@drobek/insights": "workspace:*",
     "@drobek/proxy": "workspace:*",
     "@drobek/sdk": "workspace:*",
-    "drizzle-orm": "^0.41.0",
+    "drizzle-orm": "^0.45.3",
     "esbuild": "^0.25.0",
     "zod": "^4.4.3"
   },

@@ -22,7 +22,7 @@
     "@drobek/core": "workspace:*",
     "@drobek/db": "workspace:*",
     "@drobek/email": "workspace:*",
-    "drizzle-orm": "^0.41.0",
+    "drizzle-orm": "^0.45.3",
     "psl": "^1.15.0"
   },
   "devDependencies": {

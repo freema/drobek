@@ -24,7 +24,7 @@
     "@drobek/db": "workspace:*",
     "@drobek/modules": "workspace:*",
     "@drobek/sdk": "workspace:*",
-    "drizzle-orm": "^0.41.0"
+    "drizzle-orm": "^0.45.3"
   },
   "devDependencies": {
     "@drobek/core": "workspace:*",

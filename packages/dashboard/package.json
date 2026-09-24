@@ -225,7 +225,7 @@
     "@drobek/proxy": "workspace:*",
     "@drobek/serving": "workspace:*",
     "@drobek/tenancy": "workspace:*",
-    "drizzle-orm": "^0.41.0"
+    "drizzle-orm": "^0.45.3"
   },
   "peerDependencies": {
     "react": "^19.0.0",

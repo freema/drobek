@@ -37,6 +37,16 @@ describe('real driver errors (PGlite through drizzle)', () => {
     expect(isUniqueViolation(err)).toBe(true);
   });
 
+  it('drizzle ≥ 0.44 wraps the driver error: no code on the wrapper, the bound values in its message', async () => {
+    const err = (await failing(sql`insert into people (id, email, n) values ('b', ${EMAIL}, 2)`)) as Error & { code?: unknown; cause?: { code?: unknown } };
+    expect(err.constructor.name).toBe('DrizzleQueryError');
+    expect(err.code).toBeUndefined();
+    expect(err.cause?.code).toBe('23505');
+    // Exactly what must never reach a log line.
+    expect(err.message).toContain(EMAIL);
+    expect(dbErrorForLog(err, { stack: true })).not.toContain(EMAIL);
+  });
+
   it('a failed-query log line keeps code, constraint and table but never the bound e-mail', async () => {
     const err = await failing(sql`insert into people (id, email, n) values ('b', ${EMAIL}, 2)`);
     const line = JSON.stringify({ level: 'error', message: 'insert failed', error: dbErrorForLog(err, { stack: true }) });
@@ -63,7 +73,6 @@ describe('driver / drizzle shapes', () => {
       query: string;
       params: unknown[];
     };
-    e.name = 'DrizzleQueryError';
     e.query = 'insert into "people" ("email") values ($1)';
     e.params = [EMAIL];
     return e;

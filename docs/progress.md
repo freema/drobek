@@ -1227,6 +1227,19 @@ block, then `next` is pushed and the single MR opened.
   for type integer: "<value>"`) and `detail` does for 23505, so the summary
   is code + constraint + table only. The field names differ per driver:
   postgres.js `constraint_name` / `table_name`, PGlite `constraint` / `table`.
+- NSO-333 drizzle-orm 0.45 (supersedes the NSO-306 / NSO-330 drizzle notes):
+  a `DrizzleQueryError` keeps `name === 'Error'` — recognise it by
+  `constructor.name` or its `query` + `params` shape, not by `name`. React
+  Router's default `handleError` `console.error`s a loader/action error
+  whole; `apps/server` wraps every server build with `withSafeRouteErrors`
+  (production build and the dev `ssrLoadModule` build alike). The
+  postgres-js migrator can be exercised without docker by serving an
+  in-memory PGlite over the wire protocol (`@electric-sql/pglite-socket`,
+  needs pglite ≥ 0.3 — installed in a scratch dir, not in the repo, whose
+  PGlite is 0.2.17) and pointing `runCoreMigrations(url)` /
+  `runJournalMigrations({ databaseUrl })` at it. Module migrations carry no
+  drizzle-kit snapshots (hand-written, `_journal.json` only), so
+  `drizzle-kit generate` is only meaningful for the core folder.
 
 ## Failed approaches
 
