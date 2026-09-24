@@ -28,8 +28,11 @@ Opus 5.5 subagents, black-box verification by Sonnet, everything lands on
 | 16 | NSO-309 OTP unknown-IP bucket | merged 6ffac11, check green | follow-up NSO-328 for the same pattern elsewhere |
 | 17 | NSO-316 smoke cleanup | merged 94d258f, check green | prod smoke reuses one stable slug |
 | 18 | NSO-315 unknown-host negative cache + limiter | merged 27e1436 (+98a5910), check green | 429 before lookup for throttled IPs |
-| 19 | NSO-305 drobek-web restructure (+318 folded) | running (repo ../drobek-web, branch next) | separate repo; image not yet published |
-| 20 | NSO-298 docs rewrite | running (worktree, base 98a5910) | adds doc-lint to `task check` |
+| 19 | NSO-305 drobek-web restructure (+318 folded) | running (repo ../drobek-web, branch next; first attempt hung with no changes, restarted 2026-09-24 02:25) | separate repo; image not yet published |
+| 20 | NSO-298 docs rewrite | merged aad3db1, check green (doc-lint: 789 files, 153 env keys) | doc-lint now in `task check` + CI; SDK licence wording + GitHub private vulnerability reporting = decisions for Tomáš |
+| 21 | NSO-306 dead code + knip + CI | running (worktree, base aad3db1) | last repo-wide task of M4 |
+| 22 | NSO-307 listing prep | running (worktree, base aad3db1; + ../drobek-plugin `next`) | submissions + prod OAuth check stay with Tomáš (blocked by NSO-304) |
+| – | M2/M3/M4 block-end e2e + eval + black-box | e2e 140/140 green (d7863da, after 2 spec fixes + 1 product fix: `isModuleError` symbol brand across package copies); `task eval` 3/3 PASS, 40 checks, 0 non-existent API (`tests-eval/results/2026-09-24-mueseyk18584.md`); Sonnet black-box running | Docker Desktop died once during the run; container hit an EACCES race on its own dist rebuild twice → `docker compose restart drobek` |
 | – | M1 block-end e2e + black-box | e2e green (99 + reruns, 8f25925); Sonnet black-box 25 PASS / 0 FAIL / 1 not testable (NSO-320 cap needs Redis seeding) | **M1 complete** → `next` pushed, draft MR opened |
 | 7 | NSO-291 M2-02 modules UI | merged 8d88040, check green | pending owner mail 1/h per app |
 | 9 | NSO-284 M2-04 keys/connections | merged 574cb76, check green | no migration |

@@ -1,0 +1,244 @@
+{
+  "date": "2026-09-24",
+  "stamp": "mueseyk18584",
+  "target": "http://localhost:3041",
+  "mode": "mcp",
+  "model": null,
+  "rows": [
+    {
+      "app": "contact-form",
+      "pass": true,
+      "writeFiles": 1,
+      "toolCalls": 6,
+      "toolErrors": 0,
+      "skills": [
+        "forms"
+      ],
+      "misuse": [],
+      "turns": 7,
+      "costUsd": 0.23684059999999998,
+      "durationMs": 21631,
+      "checks": [
+        {
+          "name": "the session finished",
+          "ok": true,
+          "detail": "The contact page compiled and is on the preview (not published): **http://eval-bakery-mueseyk18584--preview.apps.localhost:3041**\n\nI couldn't open it in a browser from here, so I haven't sent a test m"
+        },
+        {
+          "name": "the agent created an app",
+          "ok": true,
+          "detail": "eval-bakery-mueseyk18584 (v2, compile ok)"
+        },
+        {
+          "name": "pending module changes confirmed by the owner",
+          "ok": true,
+          "detail": "none pending"
+        },
+        {
+          "name": "the agent did not publish",
+          "ok": true
+        },
+        {
+          "name": "the preview answers 200",
+          "ok": true,
+          "detail": "HTTP 200"
+        },
+        {
+          "name": "the app submits a drobek form (<Form name> or drobek.forms.submit)",
+          "ok": true,
+          "detail": "contact"
+        },
+        {
+          "name": "a visitor submits the form in a browser → 200",
+          "ok": true,
+          "detail": "POST /__drobek/v1/forms/contact → 200"
+        },
+        {
+          "name": "the owner gets the submission by e-mail (Mailpit)",
+          "ok": true,
+          "detail": "New \"contact\" submission — Eval Bakery mueseyk18584"
+        },
+        {
+          "name": "no page errors in the browser",
+          "ok": true
+        },
+        {
+          "name": "get_logs runtime: no browser errors",
+          "ok": true
+        },
+        {
+          "name": "non-existent API uses = 0",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "app": "team-list-admin",
+      "pass": true,
+      "writeFiles": 1,
+      "toolCalls": 12,
+      "toolErrors": 0,
+      "skills": [
+        "auth",
+        "data"
+      ],
+      "misuse": [],
+      "turns": 13,
+      "costUsd": 0.2765576,
+      "durationMs": 33871,
+      "checks": [
+        {
+          "name": "the session finished",
+          "ok": true,
+          "detail": "The shopping list is ready in the preview at http://eval-list-mueseyk18584--preview.apps.localhost:3041, and there's nothing left for you to confirm in the drobek dashboard. None of my config changes "
+        },
+        {
+          "name": "the agent created an app",
+          "ok": true,
+          "detail": "eval-list-mueseyk18584 (v2, compile ok)"
+        },
+        {
+          "name": "pending module changes confirmed by the owner",
+          "ok": true,
+          "detail": "none pending"
+        },
+        {
+          "name": "the agent did not publish",
+          "ok": true
+        },
+        {
+          "name": "the preview answers 200",
+          "ok": true,
+          "detail": "HTTP 200"
+        },
+        {
+          "name": "an anonymous visitor sees the <LoginGate> sign-in form",
+          "ok": true
+        },
+        {
+          "name": "no page errors in the browser",
+          "ok": true
+        },
+        {
+          "name": "the owner signs in as admin",
+          "ok": true,
+          "detail": "role admin"
+        },
+        {
+          "name": "the member signs in as user",
+          "ok": true,
+          "detail": "role user"
+        },
+        {
+          "name": "the app stores the list in a drobek.data collection",
+          "ok": true,
+          "detail": "items"
+        },
+        {
+          "name": "anonymous → the list is not readable (401)",
+          "ok": true,
+          "detail": "GET → 401"
+        },
+        {
+          "name": "the member reads the list (200)",
+          "ok": true,
+          "detail": "GET → 200"
+        },
+        {
+          "name": "the member may NOT add items (403)",
+          "ok": true,
+          "detail": "POST → 403"
+        },
+        {
+          "name": "the admin passes the create rule (201, or 422 from the schema)",
+          "ok": true,
+          "detail": "POST → 201"
+        },
+        {
+          "name": "get_logs runtime: no browser errors",
+          "ok": true
+        },
+        {
+          "name": "non-existent API uses = 0",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "app": "proxy-call",
+      "pass": true,
+      "writeFiles": 1,
+      "toolCalls": 11,
+      "toolErrors": 1,
+      "skills": [
+        "proxy",
+        "login",
+        "auth"
+      ],
+      "misuse": [],
+      "turns": 12,
+      "costUsd": 0.2589908,
+      "durationMs": 27450,
+      "checks": [
+        {
+          "name": "the session finished",
+          "ok": true,
+          "detail": "The app is built and compiles, but the API call will be refused until a workspace admin confirms the upstream (link below).\n\n**Preview:** http://eval-echo-mueseyk18584--preview.apps.localhost:3041\n\n- "
+        },
+        {
+          "name": "the agent created an app",
+          "ok": true,
+          "detail": "eval-echo-mueseyk18584 (v2, compile ok)"
+        },
+        {
+          "name": "pending module changes confirmed by the owner",
+          "ok": true,
+          "detail": "proxy"
+        },
+        {
+          "name": "the agent did not publish",
+          "ok": true
+        },
+        {
+          "name": "the preview answers 200",
+          "ok": true,
+          "detail": "HTTP 200"
+        },
+        {
+          "name": "the member signs in",
+          "ok": true
+        },
+        {
+          "name": "GET /echo/hello through the proxy → 200",
+          "ok": true,
+          "detail": "→ 200"
+        },
+        {
+          "name": "the upstream gets the injected bearer secret (never the page)",
+          "ok": true
+        },
+        {
+          "name": "the page calls the upstream through drobek.proxy in a browser → 200",
+          "ok": true,
+          "detail": "/__drobek/v1/proxy/echo/echo/hello → 200"
+        },
+        {
+          "name": "the page shows the upstream response",
+          "ok": true
+        },
+        {
+          "name": "no page errors in the browser",
+          "ok": true
+        },
+        {
+          "name": "get_logs runtime: no browser errors",
+          "ok": true
+        },
+        {
+          "name": "non-existent API uses = 0",
+          "ok": true
+        }
+      ]
+    }
+  ]
+}
