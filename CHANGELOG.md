@@ -2,6 +2,40 @@
 
 ## Unreleased (`next`)
 
+### DB errors read and logged through one helper (NSO-333)
+
+- `@drobek/db` exports `pgErrorCode(err)` (the SQLSTATE wherever the driver
+  or drizzle put it — `err.code`, or the `cause` of a `DrizzleQueryError`),
+  `isUniqueViolation(err)` and `dbErrorForLog(err, { stack? })`: a DB error
+  anywhere in the `cause` chain becomes `db error <code> (constraint …,
+  table …)` — never its message, `detail`, SQL or bound parameters (a
+  Postgres message alone can quote the input, `invalid input syntax for type
+  integer: "<value>"`); any other error keeps its message, or its stack with
+  `stack: true` (for a DB error: the summary plus the stack frames).
+- The four local unique-violation checks (`@drobek/apps` slug,
+  `@drobek/domains` hostname, `@drobek/tenancy` team slug + personal-workspace
+  slug retry) use `isUniqueViolation`. Every log call that recorded a caught
+  error's `message` / `stack` / `String(err)` or the error object — serving,
+  domains re-check, MCP tool failures, dashboard abuse mail + logs section,
+  the module runtime (hooks, requests, e-mail, limits provider, mail guard),
+  moderation, app-changed events, the forms / auth / proxy modules, the
+  server's background jobs, migrate and the API-key CLI, `@drobek/auth`'s
+  `serializeError` — goes through `dbErrorForLog`. The background-job log
+  callbacks (`startBlobGc`, `startSlugRelease`, `startLogsPrune`,
+  `startFilesSweep`, `startDomainRecheck`) now take the log-safe error text
+  instead of the error.
+- Guard: `packages/db/src/error-guard.test.ts` (runs in `task check`; the
+  package now has unit tests) scans every package, module, example and the
+  server and fails with `file:line rule` for a SQLSTATE literal or a
+  `.cause.code` read outside `errors.ts`, and for a raw caught error in a log
+  call. An exempt line carries `db-error-guard: allow` with its reason.
+- Tests: a taken team slug returns `slug-taken` and a personal slug held by an
+  unrelated workspace retries with the next suffix, through PGlite and the
+  real constraint (`packages/tenancy/src/workspace-slug.server.test.ts`); a
+  failed-query log line whose parameters contain an e-mail does not contain
+  it (`packages/db/src/errors.test.ts`, `packages/auth/src/logger.server.test.ts`).
+  No migration, no new env var.
+
 ### A failed PKCE exchange burns the authorization code (NSO-332)
 
 - `/oauth/token` (`authorization_code`): the first exchange of a code now

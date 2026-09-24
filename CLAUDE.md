@@ -91,6 +91,9 @@ docs/                   ARCHITECTURE, SELF-HOSTING, MODULES, AGENT, SECURITY, LI
 - English in code, docs and commits. Errors are `{ code, message, hint }` from
   the catalogue; module routes answer `{ error, message, details? }`.
 - DB-backed unit tests use PGlite + `setDbForTests()` from `@drobek/db`.
+- DB errors: use `pgErrorCode` / `isUniqueViolation` / `dbErrorForLog` from
+  `@drobek/db`; never read `err.code` or log `err.message` of a query error
+  (guarded by `packages/db/src/error-guard.test.ts`).
 - Every operator-facing limit is an env var with a production default.
 - Working memory of the implement loop, gotchas and failed approaches:
   [`docs/progress.md`](docs/progress.md) — read "Notes and gotchas" before

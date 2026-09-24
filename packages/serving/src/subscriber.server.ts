@@ -19,6 +19,7 @@ import {
   parseAppChangedEvent,
 } from '@drobek/apps';
 import { getRedis, type Logger } from '@drobek/core';
+import { dbErrorForLog } from '@drobek/db';
 import type { ServeStore } from './store.server.js';
 
 export interface ServeCacheSubscription {
@@ -53,9 +54,9 @@ export function subscribeServeCache(
     // After a reconnect the subscription is restored by ioredis, but events may
     // have been missed meanwhile — drop every host resolution to be safe.
     sub.on('ready', () => store.bustAll());
-    sub.on('error', (err: Error) => opts.log?.warn('app-changed subscriber error', { error: String(err) }));
+    sub.on('error', (err: Error) => opts.log?.warn('app-changed subscriber error', { error: dbErrorForLog(err) }));
     sub.subscribe(APP_CHANGED_CHANNEL).catch((err: unknown) => {
-      opts.log?.warn('app-changed subscribe failed', { error: String(err) });
+      opts.log?.warn('app-changed subscribe failed', { error: dbErrorForLog(err) });
     });
   }
 

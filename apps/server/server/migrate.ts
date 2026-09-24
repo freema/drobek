@@ -15,7 +15,7 @@
 import { appsOriginConfigError } from '@drobek/apps';
 import { trustProxyConfigError } from '@drobek/auth';
 import { createConsoleLogger, secretsConfigError } from '@drobek/core';
-import { runCoreMigrations } from '@drobek/db';
+import { dbErrorForLog, runCoreMigrations } from '@drobek/db';
 import { domainsConfigError } from '@drobek/domains';
 import { limitsProviderConfigError, loadModuleRuntime } from '@drobek/modules';
 import { tlsAskConfigError } from '@drobek/serving';
@@ -71,6 +71,6 @@ try {
   });
   process.exit(0);
 } catch (err) {
-  console.error('migrate: failed —', err instanceof Error ? err.message : String(err));
+  console.error('migrate: failed —', dbErrorForLog(err));
   process.exit(1);
 }

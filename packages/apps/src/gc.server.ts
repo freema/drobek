@@ -6,7 +6,7 @@
  * and `createVersion` refreshes + row-locks every blob it reuses.
  */
 import { sql } from 'drizzle-orm';
-import { getDb } from '@drobek/db';
+import { dbErrorForLog, getDb } from '@drobek/db';
 import { withRedisLock } from './lock.server.js';
 
 export const BLOB_GC_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -46,7 +46,7 @@ export async function sweepUnreferencedBlobs(
  * Hourly sweep in the server process. A Redis lease makes sure only one
  * replica sweeps per hour. Returns a stop function.
  */
-export function startBlobGc(log: (msg: string, err?: unknown) => void): () => void {
+export function startBlobGc(log: (msg: string, error?: string) => void): () => void {
   const run = async () => {
     try {
       const out = await withRedisLock(LOCK_KEY, Math.floor(BLOB_GC_INTERVAL_MS / 1000) - 60, () =>
@@ -56,7 +56,7 @@ export function startBlobGc(log: (msg: string, err?: unknown) => void): () => vo
         log(`blob gc: deleted ${out.result.deleted} unreferenced blob(s)`);
       }
     } catch (err) {
-      log('blob gc failed', err);
+      log('blob gc failed', dbErrorForLog(err));
     }
   };
   const timer = setInterval(() => void run(), BLOB_GC_INTERVAL_MS);

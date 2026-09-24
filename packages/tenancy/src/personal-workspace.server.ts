@@ -19,19 +19,11 @@ import {
   SESSION_COOKIE,
   cookieName,
 } from '@drobek/auth';
-import { getDb, memberships, workspaces } from '@drobek/db';
+import { getDb, isUniqueViolation, memberships, workspaces } from '@drobek/db';
 import { personalSlugBase, personalSlugCandidate } from './slug.js';
 import type { WorkspaceSummary } from './membership.server.js';
 
 const MAX_SLUG_ATTEMPTS = 20;
-
-function isUniqueViolation(err: unknown): boolean {
-  return (
-    typeof err === 'object' &&
-    err !== null &&
-    (err as { code?: unknown }).code === '23505'
-  );
-}
 
 async function findPersonalWorkspace(
   db: Pick<ReturnType<typeof getDb>, 'select'>,

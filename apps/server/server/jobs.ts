@@ -4,6 +4,7 @@ import type { Logger } from '@drobek/core';
 import { startDomainRecheck } from '@drobek/domains';
 import { startLogsPrune } from '@drobek/insights';
 import { startFilesSweep } from 'drobek-module-files';
+import { dbErrorForLog } from '@drobek/db';
 
 const AUDIT_PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
@@ -34,15 +35,15 @@ export interface BackgroundJobs {
  *   specific row and is not exposed over any API/UI.
  */
 export function startBackgroundJobs(log: Logger, opts: { filesSweep?: boolean } = {}): BackgroundJobs {
-  const jobLog = (msg: string, err?: unknown) =>
-    err ? log.error(msg, { error: (err as Error).message }) : log.info(msg);
+  // The jobs hand over an already log-safe error text (dbErrorForLog at the source).
+  const jobLog = (msg: string, errorText?: string) => (errorText ? log.error(msg, { error: errorText }) : log.info(msg));
   const stopBlobGc = startBlobGc(jobLog);
   const stopSlugRelease = startSlugRelease(jobLog);
   const stopFilesSweep = opts.filesSweep ? startFilesSweep({ log: jobLog, lease: withRedisLock }) : () => {};
   const stopLogsPrune = startLogsPrune({ log: jobLog, lease: withRedisLock });
 
-  const stopDomainRecheck = startDomainRecheck((msg, meta, err) =>
-    err ? log.error(msg, { ...meta, error: (err as Error).message }) : log.info(msg, meta)
+  const stopDomainRecheck = startDomainRecheck((msg, meta, errorText) =>
+    errorText ? log.error(msg, { ...meta, error: errorText }) : log.info(msg, meta)
   );
 
   const pruneAuditOnce = async (): Promise<void> => {
@@ -52,7 +53,7 @@ export function startBackgroundJobs(log: Logger, opts: { filesSweep?: boolean } 
         log.info('audit retention prune', { deleted, retentionDays: auditRetentionDays() });
       }
     } catch (err) {
-      log.error('audit retention prune failed', { error: (err as Error).message });
+      log.error('audit retention prune failed', { error: dbErrorForLog(err) });
     }
   };
   void pruneAuditOnce();

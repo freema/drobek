@@ -13,6 +13,7 @@
 import { type LoaderFunctionArgs } from 'react-router';
 import { queryCompileLog, queryRequestLog, queryRuntimeLog } from '@drobek/insights';
 import { requireWorkspaceRole } from '@drobek/tenancy';
+import { dbErrorForLog } from '@drobek/db';
 import { ownerApp } from '../owner-http.server.js';
 import { SINCE_OPTIONS, sinceWindow } from '../owner-view.js';
 
@@ -22,7 +23,7 @@ async function section<T>(read: () => Promise<T[]>): Promise<Section<T>> {
   try {
     return { entries: await read(), error: null };
   } catch (err) {
-    console.error('[dashboard] logs section failed', err);
+    console.error('[dashboard] logs section failed', dbErrorForLog(err, { stack: true }));
     return { entries: [], error: 'This section could not be loaded — try Refresh.' };
   }
 }

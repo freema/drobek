@@ -11,7 +11,7 @@
  */
 import { parseArgs } from 'node:util';
 import { eq } from 'drizzle-orm';
-import { closeDb, getDb, users } from '@drobek/db';
+import { closeDb, dbErrorForLog, getDb, users } from '@drobek/db';
 import { createApiKey } from '../api-keys.server.js';
 import { isKnownScope, SCOPES, type Scope } from '../scopes.js';
 
@@ -61,7 +61,7 @@ main()
     process.exit(code);
   })
   .catch(async (err: unknown) => {
-    console.error(err instanceof Error ? err.message : String(err));
+    console.error(dbErrorForLog(err));
     await closeDb();
     process.exit(1);
   });

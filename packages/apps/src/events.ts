@@ -10,6 +10,7 @@
  */
 import { EventEmitter } from 'node:events';
 import { getRedis, type Logger } from '@drobek/core';
+import { dbErrorForLog } from '@drobek/db';
 
 /** Redis pub/sub channel the app hosts' serve cache listens on. */
 export const APP_CHANGED_CHANNEL = 'drobek:app-changed';
@@ -62,6 +63,6 @@ export async function notifyAppChanged(event: AppChangedEvent, log?: Logger): Pr
   try {
     await getRedis().publish(APP_CHANGED_CHANNEL, JSON.stringify(event));
   } catch (err) {
-    log?.warn('app-changed publish failed', { app_id: event.app_id, error: String(err) });
+    log?.warn('app-changed publish failed', { app_id: event.app_id, error: dbErrorForLog(err) });
   }
 }

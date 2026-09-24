@@ -31,6 +31,7 @@ import { appsOrigin, classifyHost, hostConfig, splitHost, type AppHostTarget, ty
 import { getClientIp, rateLimitRedis } from '@drobek/auth';
 import { createConsoleLogger, perIpLimitKey, type Logger } from '@drobek/core';
 import { handleBeacon, incrementServingSignal } from '@drobek/insights';
+import { dbErrorForLog } from '@drobek/db';
 import {
   PLATFORM_PREFIX,
   UNLOCK_APP_ATTEMPTS,
@@ -277,7 +278,7 @@ export function defaultHandlerDeps(store: ServeStore, log?: Logger): HandlerDeps
     unknownHosts: new UnknownHostLimiter({
       ...unknownHostLimitsFromEnv(),
       counter: async (ip, limit, windowMs) => (await rateLimitRedis('apps-unknown-host', ip, limit, windowMs)).ok,
-      onError: (err) => log?.warn('unknown-host limiter unavailable', { error: String((err as Error)?.message ?? err) }),
+      onError: (err) => log?.warn('unknown-host limiter unavailable', { error: dbErrorForLog(err) }),
     }),
   };
 }
@@ -325,7 +326,7 @@ export function createAppsHostMiddleware(opts: AppsHostOptions = {}): NodeMiddle
           serve(req, res, r.slug ? { kind: 'custom', slug: r.slug, hostname: cls.hostname } : null);
         },
         (err: unknown) => {
-          log.error('custom host lookup failed', { error: String((err as Error)?.message ?? err) });
+          log.error('custom host lookup failed', { error: dbErrorForLog(err) });
           plain(req, res, 503, 'Service Unavailable');
         }
       );
@@ -407,7 +408,7 @@ export function createAppsHostMiddleware(opts: AppsHostOptions = {}): NodeMiddle
 
     handleAppRequest(request, deps).then(answer, (err: unknown) => {
       if (answered) return; // the body timed out and was answered; the route then failed reading it
-      log.error('app host request failed', { error: String((err as Error)?.stack ?? err) });
+      log.error('app host request failed', { error: dbErrorForLog(err, { stack: true }) });
       if (res.headersSent) {
         res.destroy();
         return;

@@ -18,7 +18,7 @@ import type { ServerBuild } from 'react-router';
 import { appsOriginConfigError } from '@drobek/apps';
 import { trustProxyConfigError } from '@drobek/auth';
 import { createConsoleLogger, secretsConfigError } from '@drobek/core';
-import { runCoreMigrations } from '@drobek/db';
+import { dbErrorForLog, runCoreMigrations } from '@drobek/db';
 import { dnsMockWarning, domainsConfigError } from '@drobek/domains';
 import { limitsProviderConfigError, moduleRuntime } from '@drobek/modules';
 import {
@@ -59,7 +59,7 @@ if (process.env.DROBEK_MIGRATE_ON_START !== '0') {
 // M1-01: the platform modules. Loaded once per process (moduleRuntime() is
 // shared with the Vite-loaded dashboard routes through globalThis).
 const modules = await moduleRuntime({ log: createConsoleLogger('modules') }).catch((err: unknown) => {
-  console.error((err as Error)?.message ?? err);
+  console.error(dbErrorForLog(err));
   process.exit(1);
 });
 

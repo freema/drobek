@@ -17,7 +17,7 @@
 import { and, eq, inArray, isNotNull, isNull, lt, or } from 'drizzle-orm';
 import { appsOrigin, dashboardOrigin, notifyAppChanged, withRedisLock } from '@drobek/apps';
 import { AUDIT_ACTIONS, AUDIT_SUBJECT_TYPES, writeAudit } from '@drobek/audit';
-import { apps, domains, getDb, memberships, users, workspaces } from '@drobek/db';
+import { apps, dbErrorForLog, domains, getDb, memberships, users, workspaces } from '@drobek/db';
 import { renderTextEmailHtml, sendEmail } from '@drobek/email';
 import { RECHECK_AFTER_MS, domainsResolver, recheckIntervalMs } from './config.js';
 import { checkDomainDns, type DnsResolver } from './dns.js';
@@ -165,7 +165,7 @@ export async function recheckDueDomains(opts: RecheckOptions = {}): Promise<Rech
         try {
           await send({ to, ...message });
         } catch (err) {
-          opts.log?.('custom domain notice not sent', { app_id: d.appId, error: String((err as Error)?.message ?? err) });
+          opts.log?.('custom domain notice not sent', { app_id: d.appId, error: dbErrorForLog(err) });
         }
       }
     }
@@ -179,7 +179,7 @@ export async function recheckDueDomains(opts: RecheckOptions = {}): Promise<Rech
  * start, then every DOMAINS_RECHECK_INTERVAL_MS). Returns a stop function.
  */
 export function startDomainRecheck(
-  log: (msg: string, meta?: Record<string, unknown>, err?: unknown) => void,
+  log: (msg: string, meta?: Record<string, unknown>, error?: string) => void,
   env: NodeJS.ProcessEnv = process.env
 ): () => void {
   const interval = recheckIntervalMs(env);
@@ -194,7 +194,7 @@ export function startDomainRecheck(
         log('custom domain re-check', { ...out.result });
       }
     } catch (err) {
-      log('custom domain re-check failed', undefined, err);
+      log('custom domain re-check failed', undefined, dbErrorForLog(err));
     } finally {
       running = false;
     }

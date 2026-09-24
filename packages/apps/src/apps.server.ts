@@ -1,6 +1,6 @@
 import { and, count, eq, isNull } from 'drizzle-orm';
 import { AUDIT_ACTIONS, writeAudit } from '@drobek/audit';
-import { apps, getDb, workspaces } from '@drobek/db';
+import { apps, getDb, isUniqueViolation, workspaces } from '@drobek/db';
 import { AppsError } from './errors.js';
 import { notifyAppChanged } from './events.js';
 import { releaseDeletedAppSlugs } from './lifecycle.server.js';
@@ -28,11 +28,6 @@ function appsMaxPerWorkspace(env: NodeJS.ProcessEnv = process.env): number {
   const raw = env.APPS_MAX_PER_WORKSPACE?.trim();
   const n = raw ? Number(raw) : NaN;
   return Number.isInteger(n) && n > 0 ? n : DEFAULT_APPS_MAX_PER_WORKSPACE;
-}
-
-function isUniqueViolation(err: unknown): boolean {
-  const e = err as { code?: string; cause?: { code?: string } };
-  return e?.code === '23505' || e?.cause?.code === '23505';
 }
 
 async function slugExists(slug: string): Promise<boolean> {

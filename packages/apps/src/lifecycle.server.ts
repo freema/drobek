@@ -17,7 +17,7 @@
  */
 import { and, eq, isNotNull, isNull, lte, notLike, type SQL } from 'drizzle-orm';
 import { AUDIT_ACTIONS, writeAudit, type AuditExecutor } from '@drobek/audit';
-import { appVersions, apps, getDb } from '@drobek/db';
+import { appVersions, apps, dbErrorForLog, getDb } from '@drobek/db';
 import { AppsError } from './errors.js';
 import { withRedisLock } from './lock.server.js';
 import type { Actor } from './types.js';
@@ -189,7 +189,7 @@ export async function releaseDeletedAppSlugs(
  * Redis lease makes sure only one replica sweeps per hour. Returns a stop
  * function.
  */
-export function startSlugRelease(log: (msg: string, err?: unknown) => void): () => void {
+export function startSlugRelease(log: (msg: string, error?: string) => void): () => void {
   const run = async () => {
     try {
       const out = await withRedisLock(RELEASE_LOCK_KEY, Math.floor(SLUG_RELEASE_INTERVAL_MS / 1000) - 60, () =>
@@ -199,7 +199,7 @@ export function startSlugRelease(log: (msg: string, err?: unknown) => void): () 
         log(`slug release: released ${out.result.released.length} deleted app slug(s)`);
       }
     } catch (err) {
-      log('slug release failed', err);
+      log('slug release failed', dbErrorForLog(err));
     }
   };
   const timer = setInterval(() => void run(), SLUG_RELEASE_INTERVAL_MS);

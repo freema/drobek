@@ -23,7 +23,7 @@ import { createHmac } from 'node:crypto';
 import { and, desc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { AUDIT_ACTIONS, writeAudit } from '@drobek/audit';
 import { createConsoleLogger, type Logger } from '@drobek/core';
-import { abuseReports, appVersions, apps, blobs, domains, getDb, users, versionFiles, workspaces } from '@drobek/db';
+import { abuseReports, appVersions, apps, blobs, dbErrorForLog, domains, getDb, users, versionFiles, workspaces } from '@drobek/db';
 import { AppsError } from './errors.js';
 import { notifyAppChanged } from './events.js';
 import { brandWordsFromEnv, describeFinding, scanForPhishing, type HeuristicFinding } from './heuristic.js';
@@ -512,7 +512,7 @@ export async function screenAfterPublish(appId: string, versionId: string, log?:
   } catch (err) {
     (log ?? createConsoleLogger('abuse')).warn('publish heuristic failed (publish unaffected)', {
       app_id: appId,
-      error: String((err as Error)?.message ?? err),
+      error: dbErrorForLog(err),
     });
     return null;
   }

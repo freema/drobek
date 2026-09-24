@@ -20,6 +20,7 @@
 import { dashboardOrigin } from '@drobek/apps';
 import { csvLine } from '@drobek/core';
 import { ModuleError, isModuleError, respond, z, type EmailRecipient, type ModuleContext, type ModuleRouter } from '@drobek/modules';
+import { dbErrorForLog } from '@drobek/db';
 import { FORM_NAME_RE, formConfig, type FormConfig, type FormsConfig } from './config.js';
 import { fieldText, splitBody, validateFields } from './fields.js';
 import type { FieldValue } from './schema.js';
@@ -109,7 +110,7 @@ async function notify(ctx: Ctx, input: { form: string; fc: FormConfig; id: strin
       form: input.form,
       submission: input.id,
       reason: isModuleError(err) ? err.code : 'error',
-      ...(isModuleError(err) ? {} : { error: String((err as Error)?.message ?? err) }),
+      ...(isModuleError(err) ? {} : { error: dbErrorForLog(err) }),
     });
     return false;
   }

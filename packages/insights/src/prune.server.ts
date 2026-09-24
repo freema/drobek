@@ -15,7 +15,7 @@
  * LOGS_PRUNE_INTERVAL_MS (1 h) is the operator's.
  */
 import { lt, sql } from 'drizzle-orm';
-import { appCompiles, appDailyStats, appErrors, getDb, moduleRequestStats } from '@drobek/db';
+import { appCompiles, appDailyStats, appErrors, dbErrorForLog, getDb, moduleRequestStats } from '@drobek/db';
 import { LOGS_RETENTION_DAYS, beaconLimitsFromEnv } from './limits.js';
 import { utcDay } from './signals.server.js';
 
@@ -85,7 +85,7 @@ export type LogsPruneLease = <T>(key: string, ttlSec: number, fn: () => Promise<
  * Returns a stop function.
  */
 export function startLogsPrune(opts: {
-  log: (msg: string, err?: unknown) => void;
+  log: (msg: string, error?: string) => void;
   lease?: LogsPruneLease;
   env?: NodeJS.ProcessEnv;
 }): () => void {
@@ -105,7 +105,7 @@ export function startLogsPrune(opts: {
         }
       }
     } catch (err) {
-      opts.log('logs prune failed', err);
+      opts.log('logs prune failed', dbErrorForLog(err));
     }
   };
   const timer = setInterval(() => void run(), intervalMs);

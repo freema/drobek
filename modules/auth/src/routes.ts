@@ -44,6 +44,7 @@ import {
   type ModuleContext,
   type ModuleRouter,
 } from '@drobek/modules';
+import { dbErrorForLog } from '@drobek/db';
 import { decideSignIn, type AccessResult, type AuthConfig } from './config.js';
 import { currentUser } from './current.js';
 import type { AuthUserRow } from './schema.js';
@@ -214,7 +215,7 @@ export function registerRoutes(r: ModuleRouter<AuthConfig>): void {
       // The server's sign-in e-mail budget is used up (NSO-320): pass the
       // pause on as it is (details.reason email_paused + Retry-After).
       if (isModuleError(err) && (err.details as { reason?: unknown } | undefined)?.reason === 'email_paused') throw err;
-      ctx.log.error('auth: sign-in e-mail failed', { app_id: ctx.app.id, email: maskEmail(email), error: String((err as Error)?.message ?? err) });
+      ctx.log.error('auth: sign-in e-mail failed', { app_id: ctx.app.id, email: maskEmail(email), error: dbErrorForLog(err) });
       throw new ModuleError('unavailable', 'The sign-in e-mail could not be sent. Try again in a moment.');
     }
     await chargeOtpRequest({ ip, email, scope });

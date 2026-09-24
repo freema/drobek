@@ -21,6 +21,7 @@
 import { createHmac } from 'node:crypto';
 import { DEFAULT_APPS_MAX_PER_WORKSPACE } from '@drobek/apps';
 import type { Logger } from '@drobek/core';
+import { dbErrorForLog } from '@drobek/db';
 import type { Limits, ModuleLimit } from './contract.js';
 
 export const LIMITS_CACHE_TTL_SEC = 60;
@@ -179,7 +180,7 @@ export function createLimitsProvider(opts: LimitsProviderOptions): LimitsProvide
         backoffUntil = now() + LIMITS_FAILURE_BACKOFF_MS;
         log?.warn('limits provider unavailable — using the env defaults', {
           workspace_id: workspaceId,
-          error: String((err as Error)?.message ?? err),
+          error: dbErrorForLog(err),
         });
         return defaults;
       }

@@ -22,6 +22,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { toolDoc } from '@drobek/agent-dx';
 import { AppsError } from '@drobek/apps';
+import { dbErrorForLog } from '@drobek/db';
 import { defaultDeps, type ToolDeps, type ToolPrincipal } from './context.js';
 import { ToolError, lockedByAdmin } from './errors.js';
 import {
@@ -252,7 +253,7 @@ export function registerAppTools(
           if (err instanceof ToolError) return errorResult(err.toBody());
           // A takedown that landed between the tool's own check and the write (NSO-293).
           if (err instanceof AppsError && err.code === 'app_locked_by_admin') return errorResult(lockedByAdmin(err.reason).toBody());
-          d.log.error('mcp tool failed', { tool: name, error: String((err as Error)?.stack ?? err) });
+          d.log.error('mcp tool failed', { tool: name, error: dbErrorForLog(err, { stack: true }) });
           return errorResult(
             new ToolError('internal_error', 'drobek hit an internal error; nothing more is known to the agent. Retry once, then tell the user.').toBody()
           );

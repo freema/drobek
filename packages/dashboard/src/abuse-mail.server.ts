@@ -17,7 +17,7 @@
 import { ABUSE_QUEUE_PATH, dashboardOrigin, reasonLabel, termsUrl, type ReportedApp } from '@drobek/apps';
 import { superAdminEmails } from '@drobek/auth';
 import { getRedis, type Logger } from '@drobek/core';
-import { getDb } from '@drobek/db';
+import { dbErrorForLog, getDb } from '@drobek/db';
 import { renderTextEmailHtml, sendEmail } from '@drobek/email';
 import { appOwnerEmails } from '@drobek/modules';
 
@@ -32,7 +32,7 @@ async function firstInWindow(key: string, log: Logger): Promise<boolean> {
     const ok = await getRedis().set(reportMailDedupKey(key), '1', 'PX', REPORT_MAIL_DEDUP_MS, 'NX');
     return ok === 'OK';
   } catch (err) {
-    log.warn('abuse report mail dedup unavailable — sending', { error: String((err as Error)?.message ?? err) });
+    log.warn('abuse report mail dedup unavailable — sending', { error: dbErrorForLog(err) });
     return true;
   }
 }
@@ -45,7 +45,7 @@ async function deliver(to: string[], subject: string, text: string, log: Logger,
       if (r === 'sent') sent++;
       else log.info('abuse e-mail not sent (SMTP not configured in dev)', { ...meta, subject });
     } catch (err) {
-      log.error('abuse e-mail failed', { ...meta, error: String((err as Error)?.message ?? err) });
+      log.error('abuse e-mail failed', { ...meta, error: dbErrorForLog(err) });
     }
   }
   return sent;

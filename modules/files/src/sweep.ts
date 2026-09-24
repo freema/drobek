@@ -25,7 +25,7 @@
 import { readdir, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { and, eq, inArray, isNotNull, lt, sql } from 'drizzle-orm';
-import { apps, getDb, type DB } from '@drobek/db';
+import { apps, dbErrorForLog, getDb, type DB } from '@drobek/db';
 import { blobStore, type BlobStore } from './blob-store.js';
 import { files } from './schema.js';
 
@@ -173,7 +173,7 @@ export type SweepLease = <T>(
  * over FILES_DIR and the app database). Returns a stop function.
  */
 export function startFilesSweep(opts: {
-  log: (msg: string, err?: unknown) => void;
+  log: (msg: string, error?: string) => void;
   lease?: SweepLease;
   env?: NodeJS.ProcessEnv;
 }): () => void {
@@ -189,7 +189,7 @@ export function startFilesSweep(opts: {
         opts.log(`files sweep: removed ${r.rows} row(s) of deleted apps, ${r.blobs} unreferenced blob(s), ${r.tmp} stale temp upload(s)`);
       }
     } catch (err) {
-      opts.log('files sweep failed', err);
+      opts.log('files sweep failed', dbErrorForLog(err));
     }
   };
   const timer = setInterval(() => void run(), intervalMs);

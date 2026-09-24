@@ -47,6 +47,7 @@
  * Redis error is FAIL-CLOSED: no e-mail is sent.
  */
 import type { Logger } from '@drobek/core';
+import { dbErrorForLog } from '@drobek/db';
 import type { EmailKind } from './contract.js';
 import { ModuleError } from './errors.js';
 
@@ -238,7 +239,7 @@ export function redisMailGuard(opts: { redis: () => MailGuardRedis; config: Mail
   const budgets = mailBudgets(opts.config);
   const log = opts.log;
   const failClosed = (meta: MailGuardMeta, err: unknown): ModuleError => {
-    log.error('module e-mail guard error — fail-closed', { ...meta, error: String((err as Error)?.message ?? err) });
+    log.error('module e-mail guard error — fail-closed', { ...meta, error: dbErrorForLog(err) });
     return guardDown();
   };
   /** Seconds until `key` expires (a missing/eternal key → `fallbackSec`). */

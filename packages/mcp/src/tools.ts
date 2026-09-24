@@ -65,6 +65,7 @@ import { ensurePersonalWorkspace, listUserWorkspaces } from '@drobek/tenancy';
 import { authorizeApp, authorizeWorkspace } from './access.js';
 import type { ToolDeps, ToolPrincipal } from './context.js';
 import { LOG_KINDS, logsWindowStart, type LogKind } from '@drobek/insights';
+import { dbErrorForLog } from '@drobek/db';
 import { ToolError, lockedByAdmin } from './errors.js';
 import type { Lease } from './lease.js';
 import {
@@ -377,7 +378,7 @@ async function logCompile(
       trigger,
     });
   } catch (err) {
-    ctx.deps.log.warn('compile history write failed', { app_id: appId, error: String((err as Error)?.message ?? err) });
+    ctx.deps.log.warn('compile history write failed', { app_id: appId, error: dbErrorForLog(err) });
   }
 }
 

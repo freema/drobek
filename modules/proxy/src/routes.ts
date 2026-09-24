@@ -35,6 +35,7 @@ import {
   upstreamAllowsApp,
   type ProxyErrorCode,
 } from '@drobek/proxy';
+import { dbErrorForLog } from '@drobek/db';
 import { bindAssignment } from './binding.js';
 import { DEFAULT_CALLS_PER_MIN, DEFAULT_PUBLIC_CALLS_PER_MIN_PER_IP, assignmentOf, callRuleOf, type ProxyConfig } from './config.js';
 
@@ -165,7 +166,7 @@ export function proxyHandler(opts: ProxyRouteOptions = {}) {
         // An older (name-only) assignment: the app is on THIS record's allow-list,
         // so an admin confirmed this record — bind it (best effort, the call goes on).
         await bindAssignment(ctx.db, ctx.app.id, name, upstream.id, { onlyIfUnbound: true }).catch((err: unknown) =>
-          ctx.log.warn('proxy binding not stored', { app_id: ctx.app.id, upstream: name, error: String((err as Error)?.message ?? err) })
+          ctx.log.warn('proxy binding not stored', { app_id: ctx.app.id, upstream: name, error: dbErrorForLog(err) })
         );
       }
       const result = await forwardToUpstream({

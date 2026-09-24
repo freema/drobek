@@ -15,7 +15,7 @@ import { randomBytes } from 'node:crypto';
 import { and, count, eq, isNotNull, ne } from 'drizzle-orm';
 import { appsOrigin, notifyAppChanged, type AppChangedEvent } from '@drobek/apps';
 import { AUDIT_ACTIONS, AUDIT_SUBJECT_TYPES, writeAudit, type AuditActorKind } from '@drobek/audit';
-import { apps, domains, getDb } from '@drobek/db';
+import { apps, domains, getDb, isUniqueViolation } from '@drobek/db';
 import { domainsMaxPerApp, domainsResolver, hostnameRules } from './config.js';
 import { checkDomainDns, type DnsResolver, type DomainDnsResult } from './dns.js';
 import { DomainsError } from './errors.js';
@@ -79,11 +79,6 @@ function view(row: DomainRow, app: DomainApp, appsDomain: string): DomainView {
     createdAt: row.createdAt,
     instructions: instructionsFor(row, app.slug, appsDomain),
   };
-}
-
-function isUniqueViolation(err: unknown): boolean {
-  const e = err as { code?: string; cause?: { code?: string } };
-  return e?.code === '23505' || e?.cause?.code === '23505';
 }
 
 async function announce(app: DomainApp): Promise<void> {

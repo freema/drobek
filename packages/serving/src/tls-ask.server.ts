@@ -6,7 +6,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { and, eq, isNull } from 'drizzle-orm';
 import { hostConfig, type HostConfig } from '@drobek/apps';
 import { createConsoleLogger, type Logger } from '@drobek/core';
-import { apps, getDb } from '@drobek/db';
+import { apps, dbErrorForLog, getDb } from '@drobek/db';
 import { customDomainAskAllowed } from '@drobek/domains';
 import { TLS_ASK_TOKEN_HEADER, decideTlsAsk, tlsAskToken, type TlsAskStatus } from './tls-ask.js';
 
@@ -83,7 +83,7 @@ export function createTlsAskHandler(
       },
       (err: unknown) => {
         // Fail closed: a DB hiccup must never turn into a certificate.
-        log.error('tls ask failed', { error: String((err as Error)?.message ?? err) });
+        log.error('tls ask failed', { error: dbErrorForLog(err) });
         res.statusCode = 503;
         res.setHeader('Cache-Control', 'no-store');
         res.end('unavailable');

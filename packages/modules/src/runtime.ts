@@ -25,7 +25,7 @@ import { AUDIT_ACTIONS, actorKindForSurface, writeAudit } from '@drobek/audit';
 import { renderTextEmailHtml, sendEmail } from '@drobek/email';
 import { scanForSecrets } from '@drobek/compile';
 import { createConsoleLogger, getRedis, type Logger } from '@drobek/core';
-import { apps, getDb, memberships, runJournalMigrations, users, type DB } from '@drobek/db';
+import { apps, dbErrorForLog, getDb, memberships, runJournalMigrations, users, type DB } from '@drobek/db';
 import { recordModuleRequest } from '@drobek/insights';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { Readable } from 'node:stream';
@@ -740,7 +740,7 @@ export class ModuleRuntime {
       try {
         salvaged = m.salvageConfig ? m.salvageConfig(merged) : null;
       } catch (err) {
-        this.deps.log.error('module salvageConfig failed', { module: m.name, error: String((err as Error)?.message ?? err) });
+        this.deps.log.error('module salvageConfig failed', { module: m.name, error: dbErrorForLog(err) });
       }
       if (salvaged) {
         this.deps.log.warn('stored module config no longer passes configSchema — serving its valid part', {
@@ -772,7 +772,7 @@ export class ModuleRuntime {
     try {
       return await m.appInfo({ app, config, db: this.deps.db(), log: this.deps.log });
     } catch (err) {
-      this.deps.log.error('module appInfo failed', { module: m.name, app_id: app.id, error: String((err as Error)?.stack ?? err) });
+      this.deps.log.error('module appInfo failed', { module: m.name, app_id: app.id, error: dbErrorForLog(err, { stack: true }) });
       return undefined;
     }
   }
@@ -965,7 +965,7 @@ export class ModuleRuntime {
       deps.log.warn('pending-change e-mail not sent', {
         app_id: app.id,
         module: m.name,
-        error: isModuleError(err) ? err.code : redactAddresses(String((err as Error)?.message ?? err)),
+        error: isModuleError(err) ? err.code : redactAddresses(dbErrorForLog(err)),
       });
     }
   }
@@ -1060,7 +1060,7 @@ export class ModuleRuntime {
       try {
         await fn(app, { db: this.deps.db(), log: this.deps.log });
       } catch (err) {
-        this.deps.log.error('module hook failed', { module: m.name, hook, app_id: app.id, error: String((err as Error)?.stack ?? err) });
+        this.deps.log.error('module hook failed', { module: m.name, hook, app_id: app.id, error: dbErrorForLog(err, { stack: true }) });
       }
     }
   }
@@ -1124,7 +1124,7 @@ export class ModuleRuntime {
           await deps.email.send({ to: address, subject, text, ...envelope });
         } catch (err) {
           // SMTP errors can quote the recipient: log them without addresses, answer 503.
-          deps.log.error('module e-mail failed', { ...meta, sent, error: redactAddresses(String((err as Error)?.message ?? err)) });
+          deps.log.error('module e-mail failed', { ...meta, sent, error: redactAddresses(dbErrorForLog(err)) });
           throw new ModuleError('unavailable', 'The e-mail could not be sent. Try again later.');
         }
         sent += 1;
@@ -1139,7 +1139,7 @@ export class ModuleRuntime {
           subjectType: 'app',
           target: app.slug,
           meta: { module: m.name, kind, recipients: sent, end_user: principal.kind === 'user' ? principal.id : 'anon' },
-        }).catch((err: unknown) => deps.log.error('audit email.send failed', { app_id: app.id, error: String(err) }));
+        }).catch((err: unknown) => deps.log.error('audit email.send failed', { app_id: app.id, error: dbErrorForLog(err) }));
       }
     }
     return { sent };
@@ -1223,7 +1223,7 @@ export class ModuleRuntime {
       return res;
     } catch (err) {
       if (isModuleError(err)) return errorResult(err);
-      this.deps.log.error('module request failed', { app_id: app.id, path: req.path, error: String((err as Error)?.stack ?? err) });
+      this.deps.log.error('module request failed', { app_id: app.id, path: req.path, error: dbErrorForLog(err, { stack: true }) });
       return errorResult(new ModuleError('internal_error', 'drobek hit an internal error.'));
     }
   }

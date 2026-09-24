@@ -1215,6 +1215,18 @@ block, then `next` is pushed and the single MR opened.
 - NSO-324: `deleteCollectionRecords` takes the app's data write lock
   (`pg_advisory_xact_lock`) — only meaningful inside a transaction (core's
   config / confirm transactions); outside one the lock ends with the statement.
+- NSO-333 DB errors: decisions read `pgErrorCode(err)` / `isUniqueViolation(err)`
+  and logs record `dbErrorForLog(err)` (`@drobek/db`) — never `err.code`,
+  `err.message`, `err.stack`, `String(err)` or the error object in a log
+  call. `packages/db/src/error-guard.test.ts` greps the source for it: its
+  log-call detection is lexical (a callee ending in `log` / `Log`, or
+  `console.*` / `logger.*`), and an identifier named `err` / `error` / `e` /
+  `ex` / `cause` passed as-is to such a call counts as a raw error — name an
+  already log-safe string something else (`errorText`). Even on drizzle 0.41
+  a Postgres message can quote the bound value (22P02 `invalid input syntax
+  for type integer: "<value>"`) and `detail` does for 23505, so the summary
+  is code + constraint + table only. The field names differ per driver:
+  postgres.js `constraint_name` / `table_name`, PGlite `constraint` / `table`.
 
 ## Failed approaches
 

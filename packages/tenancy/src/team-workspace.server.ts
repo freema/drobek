@@ -4,21 +4,13 @@
  * global uniqueness is the workspaces.slug UNIQUE constraint — a lost race
  * surfaces as { ok: false, reason: 'slug-taken' }, never a 500.
  */
-import { getDb, memberships, workspaces } from '@drobek/db';
+import { getDb, isUniqueViolation, memberships, workspaces } from '@drobek/db';
 import { validateTeamSlug } from './slug.js';
 import type { WorkspaceSummary } from './membership.server.js';
 
 export type CreateTeamResult =
   | { ok: true; workspace: WorkspaceSummary }
   | { ok: false; reason: 'invalid-slug' | 'slug-taken'; message: string };
-
-function isUniqueViolation(err: unknown): boolean {
-  return (
-    typeof err === 'object' &&
-    err !== null &&
-    (err as { code?: unknown }).code === '23505'
-  );
-}
 
 export async function createTeamWorkspace(
   ownerUserId: string,

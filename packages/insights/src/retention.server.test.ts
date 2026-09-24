@@ -229,6 +229,6 @@ describe('the periodic logs prune', () => {
     });
     await vi.advanceTimersByTimeAsync(1000);
     failing();
-    expect(log).toHaveBeenCalledWith('logs prune failed', expect.any(Error));
+    expect(log).toHaveBeenCalledWith('logs prune failed', 'redis down');
   });
 });
