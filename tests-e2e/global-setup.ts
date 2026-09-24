@@ -1,5 +1,6 @@
 import { Redis } from 'ioredis';
 import pg from 'pg';
+import { BASE_URL_WEB } from './playwright.config';
 
 /**
  * Guarded-destructive seeding (ROADMAP §4, risk R4).
@@ -70,8 +71,51 @@ async function cleanupAuthRedisKeys(): Promise<void> {
   }
 }
 
+/**
+ * NSO-314 belt-and-braces: settle a Vite dev target before the first browser
+ * test. The dev server's client dep optimizer used to discover server-only
+ * deps lazily on the first SSR renders after a cold cache (lockfile change,
+ * `compose up -V`) and force a full page reload that wiped the first sign-in
+ * of the run. apps/server's vite.config now pins the optimizer
+ * (`noDiscovery`), so this normally returns after one round: render a few
+ * pages, then wait until the pre-bundle hash the client modules import
+ * (`.vite/deps/*?v=<hash>`) is stable. Production targets (no `/@vite/client`)
+ * are skipped.
+ */
+const WARMUP_PAGES = ['/healthz', '/', '/login', '/login/verify?email=warmup%40example.com', '/build-with-your-agent'];
+
+async function viteDepsHash(base: string): Promise<string> {
+  const res = await fetch(`${base}/app/root.tsx`).catch(() => null);
+  if (!res?.ok) return '';
+  return /\.vite\/deps\/[^"']*\?v=([0-9a-f]+)/.exec(await res.text())?.[1] ?? '';
+}
+
+async function warmUpViteDevServer(base: string): Promise<void> {
+  const probe = await fetch(`${base}/@vite/client`).catch(() => null);
+  await probe?.body?.cancel();
+  if (!probe?.ok) return;
+  const deadline = Date.now() + 30_000;
+  let previous = '';
+  for (;;) {
+    for (const path of WARMUP_PAGES) {
+      await fetch(`${base}${path}`, { redirect: 'manual' })
+        .then((r) => r.arrayBuffer())
+        .catch(() => undefined);
+    }
+    await new Promise((r) => setTimeout(r, 1_500));
+    const hash = await viteDepsHash(base);
+    if (hash !== '' && hash === previous) return;
+    if (Date.now() > deadline) {
+      console.warn('tests-e2e: the Vite dev optimizer did not settle within 30 s — continuing.');
+      return;
+    }
+    previous = hash;
+  }
+}
+
 export default async function globalSetup(): Promise<void> {
   await cleanupAuthRedisKeys();
+  await warmUpViteDevServer(BASE_URL_WEB);
 
   const url = process.env.DATABASE_URL;
   if (!url) {

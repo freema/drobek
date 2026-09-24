@@ -1241,8 +1241,53 @@ block, then `next` is pushed and the single MR opened.
   drizzle-kit snapshots (hand-written, `_journal.json` only), so
   `drizzle-kit generate` is only meaningful for the core folder.
 
+- NSO-314 (supersedes the "after a lockfile change the first dashboard page
+  load … full reload" note above): the first-sign-in flake after a fresh
+  boot was Vite's CLIENT dep optimizer, not the login form (a plain no-JS
+  POST to `/login` already answers 302 → `/login/verify?email=…`). React
+  Router's dev SSR render collects route CSS by walking the SSR module graph
+  and calling the client `moduleGraph.getModuleByUrl` on every dep, which
+  resolves server-only imports of the workspace packages in the client
+  environment and registers them as new client deps (seen via a wrapped
+  `depsOptimizer.registerMissingImport` stack: `tryNodeResolve` ←
+  `getModuleByUrl` ← React Router `findDeps`). On a cold cache (lockfile
+  change — every dependency merge —, `compose up -V`, an interrupted boot)
+  `drizzle-orm/postgres-js/migrator` (missing from the old hand-kept
+  `include`) was found on the first SSR request, the optimizer re-ran ~0.3 s
+  later and broadcast `{"type":"full-reload"}` over the HMR socket; the page
+  reloaded while the `POST /login.data` fetch was in flight → `/login` with
+  an empty field. Fix: `apps/server/vite.config.ts` sets
+  `optimizeDeps.noDiscovery: true` (explicit optimizer: only react,
+  react-dom, react-router from the React Router plugin); the old server-dep
+  `include` list is gone. `server/vite-config.test.ts` fails when client
+  sources (non-`.server` `.tsx` + their relative imports) import an npm
+  package outside `include`. Belt and braces: `tests-e2e/global-setup.ts`
+  renders a few pages on a Vite dev target (`/@vite/client` answers) and
+  waits until the `.vite/deps/*?v=<hash>` the client modules import is
+  stable. Reproduce: `docker exec drobek rm -rf
+  /repo/apps/server/node_modules/.vite`, restart, sign in — or run
+  `apps/server` on the host (`pnpm exec tsx server/index.ts` with
+  `DATABASE_URL=…localhost:5441`, `REDIS_URL=…localhost:6391`, no
+  `SMTP_HOST` → the code is logged) after deleting its `node_modules/.vite`.
+  Results: dev stack, 5 plain restarts → 4 pass, 1 fail (a boot after two
+  EACCES boots came up cold); 3 cold-cache boots (2 Playwright + 1 curl) →
+  the reload every time, both Playwright sign-ins failed; host server, cold,
+  unfixed → reload 7/7, sign-in failed 5/7; fixed → 8/8 pass, no optimizer
+  re-run, console-clean page walk. Full `task e2e` after 3 cold boots (stack
+  on `next` without the config fix, so the global-setup warm-up absorbed the
+  reload): 148/148 each time.
+- `task e2e` run from an agent worktree needs `COMPOSE_PROJECT_NAME=drobek`:
+  specs shell out to `docker compose exec|logs|stop|start`, and the project
+  name otherwise comes from the worktree directory ("service drobek is not
+  running" — domains, files, forms-email and healthz-degraded fail).
+
 ## Failed approaches
 
 - `pnpm deploy --offline` in the Dockerfile builder: fails with
   `ERR_PNPM_NO_OFFLINE_META` (deploy re-resolves peer ranges and needs registry
   metadata that `pnpm fetch` does not cache). Keep deploy online.
+- NSO-314: `server.warmup.clientFiles` over `app/root.tsx` + `app/routes/**`
+  does NOT stop the cold-cache reload — the stray deps are registered by
+  React Router's SSR-time CSS walk (`getModuleByUrl`), not by client
+  transforms of the route modules; the glob also warmed `*.test.tsx` and
+  pulled `vitest` into the client pre-bundle. Use `optimizeDeps.noDiscovery`.

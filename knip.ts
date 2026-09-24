@@ -42,6 +42,12 @@ const config: KnipConfig = {
         // from apps/server — i.e. be a direct dependency, although no source
         // file of this workspace imports it.
         'nodemailer',
+        // Same reason (NSO-314): build/server/index.js imports these through
+        // @drobek/db / @drobek/core. knip used to see them in vite.config's
+        // `optimizeDeps.include`, which the explicit dev optimizer dropped.
+        '@paralleldrive/cuid2',
+        'drizzle-orm',
+        'ioredis',
         // DROBEK_MODULES entries are resolved at runtime from the SERVER's
         // package.json (packages/modules registry.ts, createRequire): the
         // built-in modules and the example module are dependencies so the
