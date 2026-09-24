@@ -18,9 +18,19 @@
  * A download sends the SNIFFED type with `X-Content-Type-Options: nosniff`;
  * only raster images and PDF are `inline`, SVG and CSV are always
  * `attachment` (an SVG opened inline would run its scripts on the app's
- * origin). The ETag is the content's sha256 (304 on If-None-Match);
- * `read: public` files are `immutable` for a year, others `private, no-cache`
- * (revalidated, so a sign-out or a rule change applies at once).
+ * origin). Every type but PDF also carries `Content-Security-Policy: sandbox`
+ * — a backstop should a browser ever render one as a document: it runs in an
+ * opaque origin without scripts (the apps host sends it as a second policy
+ * next to the app CSP). PDF is left out: Chrome's and Firefox's PDF viewers
+ * refuse to render inside a sandbox, and a PDF runs no script on the app's
+ * origin anyway. The ETag is the content's sha256 (304 on If-None-Match).
+ * The URL carries the file's ID, not its content hash, so it is not content-
+ * addressed in the caching sense: the bytes of an ID never change, but the
+ * file can be deleted or its read rule tightened. `read: public` files are
+ * therefore `public, max-age=300, must-revalidate` (a shared cache serves
+ * them at most 5 minutes, then revalidates with the ETag and learns about a
+ * delete or a stricter rule), others `private, no-cache` (revalidated on
+ * every use, so a sign-out or a rule change applies at once).
  */
 import { MAX_FILE_HEAD_BYTES, decideAccess, respond, z, type ModuleContext, type ModuleRequest, type ModuleRouter, type Principal } from '@drobek/modules';
 import { blobStore } from './blob-store.js';
@@ -40,8 +50,11 @@ const UPLOAD_RATE_WINDOW_MS = 60_000;
 const FRAMING_ALLOWANCE = MAX_FILE_HEAD_BYTES + 1024;
 
 const INLINE_TYPES = new Set<string>(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'application/pdf']);
-const IMMUTABLE = 'public, max-age=31536000, immutable';
+/** Public files: shared caches may keep them 5 minutes, then revalidate (the ETag makes that a 304). */
+const PUBLIC_CACHE = 'public, max-age=300, must-revalidate';
 const REVALIDATE = 'private, no-cache';
+/** The backstop CSP of a served file (not PDF — see the file header). */
+const FILE_CSP = 'sandbox';
 
 function positive(v: number | undefined, fallback: number): number {
   return typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.floor(v) : fallback;
@@ -77,7 +90,8 @@ export function serveHeaders(row: Pick<FileRow, 'id' | 'sha256' | 'size' | 'type
     'Content-Disposition': contentDisposition(INLINE_TYPES.has(type) ? 'inline' : 'attachment', name),
     'X-Content-Type-Options': 'nosniff',
     ETag: `"${row.sha256}"`,
-    'Cache-Control': decideAccess(readRule, { kind: 'anon' }).ok ? IMMUTABLE : REVALIDATE,
+    'Cache-Control': decideAccess(readRule, { kind: 'anon' }).ok ? PUBLIC_CACHE : REVALIDATE,
+    ...(type === 'application/pdf' ? {} : { 'Content-Security-Policy': FILE_CSP }),
   };
 }
 

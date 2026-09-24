@@ -34,7 +34,8 @@
  * reads the app's end-user cookie (`drobek_eu`, M1-01). The dashboard session
  * is never parsed, looked up or touched here, whatever the request carries.
  * Every response — 200, 304, 401, 404, 405, 429, 500 — carries the app CSP,
- * nosniff, Referrer-Policy and (preview/version hosts) X-Robots-Tag.
+ * nosniff, Referrer-Policy and (preview/version hosts) X-Robots-Tag; a module
+ * response may add a stricter CSP of its own as a second policy (NSO-325).
  *
  * ABUSE (M4-02, NSO-293): `GET /.well-known/drobek-report` on ANY app host
  * answers `{ report_url, app, terms_url }` (public, cacheable 1 h) before
@@ -286,7 +287,7 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
     }
     const r = await deps.platform!(req, { app, target: req.target });
     if (r.status >= 500) deps.signal?.(app.id, '5xx');
-    return { ...r, headers: { ...r.headers, ...security } };
+    return { ...r, headers: withAppSecurity(r.headers, security) };
   }
   if (locked) {
     const next = safeNext(req.query ? `${req.path}?${req.query}` : req.path);
@@ -338,6 +339,29 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
   }
   headers['Content-Length'] = String(bytes.length);
   return { status: 200, headers, body: method === 'HEAD' ? null : bytes };
+}
+
+const CSP_HEADER = 'Content-Security-Policy';
+
+/**
+ * A module response under the app's security headers. The app's headers win
+ * (a module can never loosen them) — except that a module's own
+ * `Content-Security-Policy` is kept as a SECOND policy next to the app CSP
+ * (`<app csp>, <module csp>`: a browser enforces every policy of the list, so
+ * a module can only tighten it — e.g. the files module's `sandbox` on served
+ * files, NSO-325).
+ */
+function withAppSecurity(headers: Record<string, string>, security: Record<string, string>): Record<string, string> {
+  let moduleCsp: string | null = null;
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(headers)) {
+    if (k.toLowerCase() === CSP_HEADER.toLowerCase()) moduleCsp = v.trim() || null;
+    else out[k] = v;
+  }
+  Object.assign(out, security);
+  const appPolicy = security[CSP_HEADER];
+  if (moduleCsp) out[CSP_HEADER] = appPolicy ? `${appPolicy}, ${moduleCsp}` : moduleCsp;
+  return out;
 }
 
 async function unlock(

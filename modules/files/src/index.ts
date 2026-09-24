@@ -16,7 +16,9 @@
  * blob-store.ts); the type comes from the bytes (sniff.ts); a file is served
  * with nosniff, inline only for raster images and PDF. Opening `upload` to
  * `public`, or `read` to `public` while the app holds files, needs the owner's
- * confirmation. Out of scope in v1: image transformations, EXIF stripping,
+ * confirmation. `startFilesSweep` (sweep.ts, run by the server's background
+ * jobs) removes the files of long-deleted apps, unreferenced blobs and stale
+ * temp uploads. Out of scope in v1: image transformations, EXIF stripping,
  * object storage, public galleries.
  */
 import { existsSync, readFileSync } from 'node:fs';
@@ -51,6 +53,15 @@ export {
 } from './routes.js';
 export { files, type FileRow } from './schema.js';
 export * from './sniff.js';
+export {
+  DEFAULT_SWEEP_INTERVAL_MS,
+  DEFAULT_SWEEP_RETENTION_MS,
+  startFilesSweep,
+  sweepFiles,
+  sweepSettingsFromEnv,
+  type SweepLease,
+  type SweepResult,
+} from './sweep.js';
 export { FILE_ID_RE, commitUpload, countFiles, deleteFile, listFiles, loadFile, usedBytes } from './store.js';
 
 const here = (rel: string) => fileURLToPath(new URL(rel, import.meta.url));

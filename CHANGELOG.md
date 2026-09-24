@@ -87,6 +87,36 @@
 - `pnpm audit --prod` after this change: 1 high (`drizzle-orm`, above),
   2 moderate (`qs` 6.15 through `express` 4). No migration, no new env var.
 
+### files + serving: M1 security review, low findings (NSO-325)
+
+- **No drain after an early answer.** An app-host response sent before the
+  request body fully arrived (a `413` in the middle of an upload, a `401`
+  before a route read anything, an oversized beacon) now carries
+  `Connection: close`; once it is flushed the socket is half-closed, what the
+  client still sends is discarded for 2 s (so its kernel does not drop the
+  answer on a reset) and the socket is destroyed. Before, keep-alive read the
+  whole rest of the upload, for up to the server's 300 s `requestTimeout`.
+  New `APPS_MODULE_BODY_TIMEOUT_MS` (120000): a `/__drobek/*` request body
+  that does not arrive in time gets `408 request_timeout`.
+- **Files sweep** (`startFilesSweep` in `drobek-module-files`, started by the
+  server's background jobs when `files` is active, Redis lease): removes the
+  uploads of apps deleted `FILES_SWEEP_RETENTION_MS` (24 h) ago, stale
+  `tmp/*.part` files and old blobs that no `mod_files` row of any app
+  references (per-sha256 advisory lock + a fresh count, like a delete);
+  every `FILES_SWEEP_INTERVAL_MS` (1 h).
+- **Downloads** open the blob before any header: a file deleted during the
+  download still streams in full, one already gone is a clean `404` instead
+  of a connection reset.
+- **`Content-Security-Policy: sandbox`** on every served file type except
+  PDF. The apps host now keeps a module's CSP as a second policy after the
+  app CSP (`<app csp>, sandbox`) instead of overwriting it — a module can
+  only tighten the app's policy.
+- **Public files** are `public, max-age=300, must-revalidate` (was
+  `max-age=31536000, immutable`): the URL names the file id, not its
+  content, so a delete or a stricter `read` rule reaches shared caches within
+  5 minutes. `modules/files/SKILL.md`, `docs/MODULES.md`, `docs/SECURITY.md`
+  and the env reference updated. No migration.
+
 ### Directory listing kit + explicit `idempotentHint` (NSO-307)
 
 - New `docs/listing/`: `README.md` is the submission kit for the Claude

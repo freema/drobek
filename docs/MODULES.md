@@ -1024,8 +1024,15 @@ people who use an app upload. `skill_info('files')`.
     `X-Content-Type-Options: nosniff`, `Content-Disposition: inline` for
     PNG/JPEG/GIF/WebP/PDF and `attachment` for SVG and CSV (with an ASCII
     `filename` and a UTF-8 `filename*`), `ETag: "<sha256>"` (304 on
-    `If-None-Match`), `Cache-Control: public, max-age=31536000, immutable`
-    when the read rule is `public`, else `private, no-cache`;
+    `If-None-Match`), `Content-Security-Policy: sandbox` on every type but
+    PDF (browsers' PDF viewers refuse to render in a sandbox; the apps host
+    sends it as a second policy after the app CSP — a module CSP can only
+    tighten the app's), `Cache-Control: public, max-age=300,
+    must-revalidate` when the read rule is `public` (the URL names the file
+    id, not its content, so a delete or a stricter rule must reach shared
+    caches — within 5 minutes, then an ETag revalidation), else `private,
+    no-cache`. The blob is opened before any header: a file deleted during
+    the download still streams in full, one already gone is a clean `404`;
   - `DELETE /:id` (fixed rule `owner|admin`) → `{ id, deleted: true }`; the
     blob is unlinked only when no `mod_files` row of ANY app references its
     sha256 any more (under a per-sha256 advisory lock shared with uploads).
@@ -1049,9 +1056,22 @@ people who use an app upload. `skill_info('files')`.
   `FILES_UPLOAD_RATE_LIMIT` 60/min. The directory is `FILES_DIR` (default
   `/data/files`; the production compose mounts the `files_data` volume).
 - **Table** `mod_files (id, app_id, sha256, size, type, name, owner_id,
-  created_at)`, cascade on app delete (the blobs of a deleted app stay on
-  disk — see the known gaps in `docs/progress.md`), indexes `(app_id,
-  created_at DESC, id DESC)` and `(sha256)`.
+  created_at)`, cascade on app delete, indexes `(app_id, created_at DESC,
+  id DESC)` and `(sha256)`.
+- **Sweep** (`startFilesSweep`, run by the server's background jobs when
+  `files` is active; every `FILES_SWEEP_INTERVAL_MS` = 1 h, one replica per
+  interval via a Redis lease): removes the rows of apps deleted at least
+  `FILES_SWEEP_RETENTION_MS` (24 h) ago (an app delete is a soft delete),
+  temp uploads `FILES_DIR/tmp/*.part` untouched for that long, and blobs
+  older than that which no `mod_files` row of ANY app references — each
+  under its per-sha256 advisory lock with a fresh reference count, the
+  delete path's dedupe rule.
+- **Request bodies** (all module routes, `packages/serving`): an answer sent
+  before the body fully arrived (a `413` mid-upload, a `401` before the
+  route read anything) goes out with `Connection: close`; the connection
+  lingers 2 s after the answer, then closes — the rest of the upload is not
+  drained. A body that does not arrive within `APPS_MODULE_BODY_TIMEOUT_MS`
+  (2 min) gets `408 request_timeout`.
 - **SDK**: `drobek.files.upload(file, { name?, signal? })` (a `FormData`
   through the SDK core), `url(id)`, `remove(id)`, `list({ limit?, cursor? })`.
 - **Not in v1**: image transformations, EXIF stripping, object storage (S3),

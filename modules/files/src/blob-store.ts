@@ -8,11 +8,14 @@
  * An aborted, oversized, refused or failed upload removes its temp file:
  * nothing is left behind. The same bytes uploaded twice (by any app) are
  * stored once; the database (`mod_files.sha256`) holds the references.
+ * Content no row references any more (a deleted app's files, a commit that
+ * rolled back after its rename) and temp files left by a crash are removed by
+ * the periodic sweep (sweep.ts).
  *
  * Backup = the volume (rsync). No S3 backend in v1.
  */
 import { createHash, randomUUID, type Hash } from 'node:crypto';
-import { createReadStream, type ReadStream } from 'node:fs';
+import type { ReadStream } from 'node:fs';
 import { mkdir, open, rename, rm, stat, type FileHandle } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
@@ -109,10 +112,31 @@ export class BlobStore {
     }
   }
 
-  /** A read stream of a stored blob, or null when it is missing. */
+  /**
+   * A read stream of a stored blob, or null when it is missing. The file is
+   * OPENED here, before the caller sends any header: a blob deleted a moment
+   * later (a concurrent delete or the sweep) still streams in full from the
+   * open handle, and a blob already gone is a clean null (→ 404), never a
+   * connection reset in the middle of a 200. The stream closes the handle.
+   */
   async open(sha256: string): Promise<ReadStream | null> {
-    if (!(await this.has(sha256))) return null;
-    return createReadStream(this.pathOf(sha256));
+    let fh: FileHandle;
+    try {
+      fh = await open(this.pathOf(sha256), 'r');
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw err;
+    }
+    try {
+      if (!(await fh.stat()).isFile()) {
+        await fh.close();
+        return null;
+      }
+    } catch (err) {
+      await fh.close().catch(() => {});
+      throw err;
+    }
+    return fh.createReadStream();
   }
 
   /** Delete a blob (idempotent). */

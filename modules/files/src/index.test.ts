@@ -4,20 +4,35 @@
  * the core + files migrations, and a temporary FILES_DIR on disk.
  */
 import { createHash, randomBytes } from 'node:crypto';
-import { existsSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
 import { migrate } from 'drizzle-orm/pglite/migrator';
+import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { apps, workspaces, type DB } from '@drobek/db';
 import * as schema from '@drobek/db/schema';
 import { buildSdk, isDefinedModule, loadModules, type Principal } from '@drobek/modules';
 import { createModuleTestContext, type ModuleTestContext, type TestResponse } from '@drobek/modules/testing';
 import auth from 'drobek-module-auth';
-import filesModule, { FILES_CONFIG_DEFAULTS, blobStore, cleanName, files, filesAuthority, filesConfigSchema, filesConfirmRequired, type FilesConfig } from './index.js';
+import filesModule, {
+  DEFAULT_SWEEP_INTERVAL_MS,
+  DEFAULT_SWEEP_RETENTION_MS,
+  FILES_CONFIG_DEFAULTS,
+  blobStore,
+  cleanName,
+  files,
+  filesAuthority,
+  filesConfigSchema,
+  filesConfirmRequired,
+  serveHeaders,
+  sweepFiles,
+  sweepSettingsFromEnv,
+  type FilesConfig,
+} from './index.js';
 
 const CORE_MIGRATIONS = fileURLToPath(new URL('../../../packages/db/drizzle/migrations', import.meta.url));
 const MiB = 1024 * 1024;
@@ -211,6 +226,7 @@ describe('upload + download', () => {
       'Content-Disposition': `inline; filename="My cat.png"; filename*=UTF-8''My%20cat.png`,
       ETag: `"${h}"`,
       'Cache-Control': 'private, no-cache',
+      'Content-Security-Policy': 'sandbox',
     });
     const cached = await t.request('GET', `/${f.id}`, { headers: { 'if-none-match': `W/"${h}"` } });
     expect(cached.status).toBe(304);
@@ -277,15 +293,51 @@ describe('upload + download', () => {
     const s = await t.request('GET', `/${svg.id}`);
     expect(s.headers).toMatchObject({ 'Content-Type': 'image/svg+xml', 'X-Content-Type-Options': 'nosniff' });
     expect(s.headers['Content-Disposition']).toMatch(/^attachment; filename="logo\.svg"/);
+    expect(s.headers['Content-Security-Policy']).toBe('sandbox');
 
     const csv = await stored(t, CSV, { filename: 'people.csv', type: 'text/csv' });
     const c = await t.request('GET', `/${csv.id}`);
     expect(c.headers['Content-Type']).toBe('text/csv; charset=utf-8');
     expect(c.headers['Content-Disposition']).toMatch(/^attachment;/);
+    expect(c.headers['Content-Security-Policy']).toBe('sandbox');
 
     const pdf = await stored(t, PDF, { filename: 'Smlouva č. 1.pdf', type: 'application/pdf' });
     const p = await t.request('GET', `/${pdf.id}`);
     expect(p.headers['Content-Disposition']).toBe(`inline; filename="Smlouva _. 1.pdf"; filename*=UTF-8''Smlouva%20%C4%8D.%201.pdf`);
+    // Browsers' PDF viewers refuse to render in a sandbox: PDF keeps only the app CSP.
+    expect(p.headers['Content-Security-Policy']).toBeUndefined();
+  });
+
+  it('NSO-325: every type but PDF carries the sandbox CSP backstop (the 304 too)', async () => {
+    const row = { id: 'abcdefgh1', sha256: 'c'.repeat(64), size: 10, name: 'x' };
+    for (const type of ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml', 'text/csv']) {
+      expect(serveHeaders({ ...row, type }, 'user')['Content-Security-Policy'], type).toBe('sandbox');
+    }
+    expect(serveHeaders({ ...row, type: 'application/pdf' }, 'user')['Content-Security-Policy']).toBeUndefined();
+    const t = ctx();
+    const bytes = png(200);
+    const f = await stored(t, bytes);
+    const cached = await t.request('GET', `/${f.id}`, { headers: { 'if-none-match': `"${sha(bytes)}"` } });
+    expect(cached.status).toBe(304);
+    expect(cached.headers['Content-Security-Policy']).toBe('sandbox');
+  });
+
+  it('NSO-325: the blob is opened before any header — deleted mid-download it still streams; already gone → a clean 404', async () => {
+    const t = ctx();
+    const bytes = png(300_000);
+    const f = await stored(t, bytes);
+    const h = sha(bytes);
+    const stream = await blobStore().open(h);
+    expect(stream).not.toBeNull();
+    rmSync(blobStore().pathOf(h)); // deleted after the handle was opened
+    const chunks: Buffer[] = [];
+    for await (const c of stream!) chunks.push(c as Buffer);
+    expect(Buffer.concat(chunks).equals(bytes)).toBe(true);
+
+    expect(await blobStore().open(h)).toBeNull();
+    const gone = await t.request('GET', `/${f.id}`);
+    expect(gone.status).toBe(404);
+    expect(gone.body).toMatchObject({ error: 'not_found' });
   });
 
   it('refuses a non-multipart body (415), a missing file part and an empty file (400), a cross-site upload (403)', async () => {
@@ -326,11 +378,12 @@ describe('rules', () => {
     expect((await ctx({ principal: BOB }).request('GET', `/${f.id}`)).status).toBe(200);
   });
 
-  it('read: public — anyone downloads it, cached immutably', async () => {
+  it('read: public — anyone downloads it; shared caches keep it 5 minutes, then revalidate (the URL is not content-addressed)', async () => {
     const f = await stored(ctx({ config: { rules: { read: 'public' } } }), png(100));
     const r = await ctx({ principal: ANON, config: { rules: { read: 'public' } } }).request('GET', `/${f.id}`);
     expect(r.status).toBe(200);
-    expect(r.headers['Cache-Control']).toBe('public, max-age=31536000, immutable');
+    expect(r.headers['Cache-Control']).toBe('public, max-age=300, must-revalidate');
+    expect(r.headers['Cache-Control']).not.toContain('immutable');
   });
 
   it('read: owner|admin — another user 403, the uploader and an admin 200', async () => {
@@ -483,5 +536,73 @@ describe("the owner's view (files authority, M2-03)", () => {
     expect(await filesAuthority.remove(view(appA), a.id)).toBe(false);
     expect(await filesAuthority.remove(view(appB), b.id)).toBe(true);
     expect(await blobStore().has(h)).toBe(false);
+  });
+});
+
+describe('the sweep (NSO-325)', () => {
+  const MIN = 60_000;
+  const ago = (ms: number) => new Date(Date.now() - ms);
+  const age = (path: string, ms: number) => utimesSync(path, ago(ms), ago(ms));
+  const blobPath = (h: string) => blobStore().pathOf(h);
+
+  it('settings: FILES_SWEEP_INTERVAL_MS / FILES_SWEEP_RETENTION_MS with production defaults', () => {
+    expect(sweepSettingsFromEnv({})).toEqual({ intervalMs: DEFAULT_SWEEP_INTERVAL_MS, retentionMs: DEFAULT_SWEEP_RETENTION_MS });
+    expect(DEFAULT_SWEEP_INTERVAL_MS).toBe(60 * MIN);
+    expect(DEFAULT_SWEEP_RETENTION_MS).toBe(24 * 60 * MIN);
+    expect(sweepSettingsFromEnv({ FILES_SWEEP_INTERVAL_MS: '5000', FILES_SWEEP_RETENTION_MS: '60000' })).toEqual({ intervalMs: 5000, retentionMs: 60000 });
+    expect(sweepSettingsFromEnv({ FILES_SWEEP_INTERVAL_MS: '0', FILES_SWEEP_RETENTION_MS: 'soon' })).toEqual({ intervalMs: DEFAULT_SWEEP_INTERVAL_MS, retentionMs: DEFAULT_SWEEP_RETENTION_MS });
+  });
+
+  it("removes a long-deleted app's rows and the blobs no app references; keeps shared, fresh and live content; stale temp uploads go", async () => {
+    const [gone] = await db.insert(apps).values({ workspaceId, slug: 'gone', name: 'Gone' }).returning();
+    const [recent] = await db.insert(apps).values({ workspaceId, slug: 'recent', name: 'Recent' }).returning();
+    const shared = png(500); // in the live app A and the deleted app
+    const onlyGone = png(600);
+    const onlyRecent = png(700);
+    await stored(ctx({ app: appA }), shared);
+    await stored(ctx({ app: gone.id }), shared);
+    await stored(ctx({ app: gone.id }), onlyGone);
+    const keptRecent = await stored(ctx({ app: recent.id }), onlyRecent);
+    await db.update(apps).set({ deletedAt: ago(10 * MIN) }).where(eq(apps.id, gone.id));
+    await db.update(apps).set({ deletedAt: ago(10_000) }).where(eq(apps.id, recent.id)); // inside the retention
+
+    // An orphan blob (a commit that rolled back after its rename): old → swept; a fresh one → kept (a commit may be running).
+    const orphanOld = png(800);
+    const orphanFresh = png(900);
+    for (const b of [orphanOld, orphanFresh]) {
+      mkdirSync(join(blobPath(sha(b)), '..'), { recursive: true });
+      writeFileSync(blobPath(sha(b)), b);
+    }
+    for (const b of [shared, onlyGone, onlyRecent, orphanOld]) age(blobPath(sha(b)), 10 * MIN);
+    // Temp uploads a crash left behind: stale → swept; fresh (an upload in progress) → kept; not a .part → ignored.
+    const tmp = join(dir, 'tmp');
+    mkdirSync(tmp, { recursive: true });
+    writeFileSync(join(tmp, 'stale.part'), 'x');
+    writeFileSync(join(tmp, 'fresh.part'), 'y');
+    writeFileSync(join(tmp, 'note.txt'), 'z');
+    age(join(tmp, 'stale.part'), 10 * MIN);
+    age(join(tmp, 'note.txt'), 10 * MIN);
+
+    const out = await sweepFiles(db, blobStore(), { retentionMs: 5 * MIN });
+    expect(out).toEqual({ rows: 2, blobs: 2, tmp: 1 });
+
+    const left = await db.select({ appId: files.appId, sha256: files.sha256 }).from(files);
+    expect(left.map((r) => r.appId).sort()).toEqual([appA, recent.id].sort());
+    expect(await blobStore().has(sha(shared))).toBe(true); // app A still references it
+    expect(await blobStore().has(sha(onlyGone))).toBe(false);
+    expect(await blobStore().has(sha(onlyRecent))).toBe(true); // its app was deleted inside the retention
+    expect(await blobStore().has(sha(orphanOld))).toBe(false);
+    expect(await blobStore().has(sha(orphanFresh))).toBe(true);
+    expect(readdirSync(tmp).sort()).toEqual(['fresh.part', 'note.txt']);
+    const still = await ctx({ app: recent.id }).request('GET', `/${keptRecent.id}`);
+    expect(still.status).toBe(200);
+
+    // Idempotent: nothing more to do.
+    expect(await sweepFiles(db, blobStore(), { retentionMs: 5 * MIN })).toEqual({ rows: 0, blobs: 0, tmp: 0 });
+  });
+
+  it('a missing FILES_DIR is an empty sweep, not an error', async () => {
+    rmSync(dir, { recursive: true, force: true });
+    expect(await sweepFiles(db, blobStore(), { retentionMs: MIN })).toEqual({ rows: 0, blobs: 0, tmp: 0 });
   });
 });

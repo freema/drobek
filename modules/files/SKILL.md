@@ -112,7 +112,12 @@ ONE file part, `X-Drobek-SDK: 1`), `GET|DELETE /__drobek/v1/files/<id>`.
   `.png` is refused; no HTML, JS, ZIP or Office files. CSV must be sent as
   `.csv` / `text/csv` and be UTF-8 text.
 - Raster images and PDFs open inline; SVG and CSV always download. Every
-  file is sent with `nosniff`.
+  file is sent with `nosniff`, and every type but PDF with
+  `Content-Security-Policy: sandbox` (opened as a page it runs no script).
+- Caching: `read: "public"` files may sit in shared caches for 5 minutes
+  (`max-age=300, must-revalidate`, then an ETag check); other files are
+  revalidated on every use. A delete or a stricter `read` rule reaches
+  every visitor within those 5 minutes.
 - `FILES_MAX_BYTES` 10 MiB per file, `FILES_QUOTA_PER_APP` 500 MiB per app,
   `FILES_UPLOAD_RATE_LIMIT` 60 uploads per minute per app.
 - Preview and production share the files. No resizing/thumbnails, no EXIF

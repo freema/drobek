@@ -101,7 +101,7 @@ const appsHost = createAppsHostMiddleware({
 }) as RequestHandler;
 
 const app = createServerApp({ rrHandler, before, clientDir, appsHost });
-const jobs = startBackgroundJobs(log);
+const jobs = startBackgroundJobs(log, { filesSweep: modules.modules.some((m) => m.name === 'files') });
 
 httpServer.on('request', app);
 const port = Number(process.env.PORT ?? 3000);

@@ -37,7 +37,7 @@ record behind it is [`vision-plan.md`](./vision-plan.md) (Czech).
  │   3. /health, /version, /api/internal/tls/ask (internal address only)                                        │
  │   4. /mcp: @drobek/oauth resource server (Bearer → user, scopes, audience) + @drobek/mcp tool bodies          │
  │   5. everything else: React Router (@drobek/dashboard routes, OAuth AS routes, /llms.txt, /report …)         │
- │   in-process jobs (apps/server/server/jobs.ts): blob GC, slug release, domain re-check, audit retention      │
+ │   in-process jobs (apps/server/server/jobs.ts): blob GC, slug release, domain re-check, audit, files sweep   │
  └──────────────┬───────────────────────────────────────────┬────────────────────────────────┬──────────────────┘
                 │ postgres-js + drizzle                     │ ioredis                        │ nodemailer SMTP
           Postgres 17: users, workspaces, apps,       Redis 7: sessions, rate limits,     any SMTP server
@@ -252,6 +252,7 @@ All in-process (`apps/server/server/jobs.ts`), started with the server:
 | blob GC | hourly, Redis lease | deletes blobs no version references, after 7 days |
 | slug release | hourly, Redis lease | a soft-deleted app's slug is free again after 30 days |
 | domain re-check | `DOMAINS_RECHECK_INTERVAL_MS` (1 h), Redis lease | re-verifies domains checked more than 24 h ago; unverifies + mails on a definitive failure |
+| files sweep (only with the `files` module) | `FILES_SWEEP_INTERVAL_MS` (1 h), Redis lease | removes the uploads of apps deleted `FILES_SWEEP_RETENTION_MS` (24 h) ago, stale temp uploads and blobs no `mod_files` row references (`drobek-module-files`) |
 | audit retention | at start, then daily | deletes audit rows older than `AUDIT_RETENTION_DAYS` (365) — the only deletion of audit rows anywhere |
 
 Request counters for `get_logs('requests')` accumulate in Redis and are

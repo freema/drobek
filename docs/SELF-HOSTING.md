@@ -297,6 +297,7 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `APPS_DOMAIN` | dev `apps.localhost:3041` | **required in production** — apps live on `*.<APPS_DOMAIN>` (host[:port], no scheme) |
 | `APPS_URL_SCHEME` | `http` for `*.localhost`, else `https` *(compose: https)* | scheme of the app URLs drobek hands out |
 | `APPS_UNKNOWN_HOST_LIMIT` / `APPS_UNKNOWN_HOST_WINDOW_MS` | 60 / 60000 | "no app here" answers per client IP per window, then 429 |
+| `APPS_MODULE_BODY_TIMEOUT_MS` | 120000 | a `/__drobek/*` request (module routes, uploads, the beacon) must deliver its body within it, else 408; raise it with `FILES_MAX_BYTES` for big uploads over slow links |
 | `DROBEK_IMAGE_TAG` | `latest` | image tag of the production compose ([Image tags](#image-tags)) |
 | `HTTP_PORT` / `HTTPS_PORT` / `PUBLISH_IP` | 80 / 443 / all | ports and bind address Caddy publishes |
 | `TRUST_PROXY` | auto *(compose: `x-real-ip`)* | which client-IP header is trusted: `x-real-ip` = only Caddy's `X-Real-IP`; unset = `X-Real-IP`, else the rightmost `X-Forwarded-For` hop |
@@ -366,6 +367,7 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `DATA_WRITE_RATE_LIMIT` / `DATA_WRITE_RATE_WINDOW_MS` | 120 / 60000 | `data`: writes per app per window *(plan)* |
 | `FILES_DIR` | `/data/files` | `files`: upload storage (the `files_data` volume) |
 | `FILES_MAX_BYTES` / `FILES_QUOTA_PER_APP` / `FILES_UPLOAD_RATE_LIMIT` | 10 MiB / 500 MiB / 60 per min | `files` *(plan)* |
+| `FILES_SWEEP_INTERVAL_MS` / `FILES_SWEEP_RETENTION_MS` | 3600000 / 86400000 | `files`: how often the sweep runs; it removes the uploads of apps deleted that long ago, temp uploads untouched that long and blobs that old no app references |
 | `PROXY_ALLOWED_PORTS` / `PROXY_ALLOWED_HOSTS` | 80,443 / empty | `proxy`: upstream ports; hostnames whose private IPs may be reached (keep empty) |
 | `PROXY_CONNECT_TIMEOUT_MS` / `PROXY_MAX_RESPONSE_BYTES` | 8000 / 5242880 | `proxy`: per upstream request |
 | `PROXY_CALLS_PER_MIN` / `PROXY_PUBLIC_CALLS_PER_MIN_PER_IP` | 60 / 10 | `proxy`: calls per app, per IP to `public` upstreams *(plan)* |

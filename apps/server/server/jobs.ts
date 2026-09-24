@@ -1,7 +1,8 @@
-import { startBlobGc, startSlugRelease } from '@drobek/apps';
+import { startBlobGc, startSlugRelease, withRedisLock } from '@drobek/apps';
 import { auditRetentionDays, pruneAuditLog } from '@drobek/audit';
 import type { Logger } from '@drobek/core';
 import { startDomainRecheck } from '@drobek/domains';
+import { startFilesSweep } from 'drobek-module-files';
 
 const AUDIT_PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
@@ -19,15 +20,20 @@ export interface BackgroundJobs {
  * - M3-01 custom domains: the DNS re-check (hourly sweep, Redis lease) of every
  *   verified domain last checked 24 h+ ago — records gone → unverified + one
  *   e-mail to the app's owners.
+ * - NSO-325 files sweep (only when the `files` module is active;
+ *   FILES_SWEEP_INTERVAL_MS, Redis lease): the uploads of apps deleted
+ *   FILES_SWEEP_RETENTION_MS ago, blobs no `mod_files` row references and
+ *   stale temp uploads (logic in drobek-module-files).
  * - PHY-85 governance: the audit trail is append-only; the ONLY deletion is
  *   the age-based retention prune (startup, then daily). It never targets a
  *   specific row and is not exposed over any API/UI.
  */
-export function startBackgroundJobs(log: Logger): BackgroundJobs {
+export function startBackgroundJobs(log: Logger, opts: { filesSweep?: boolean } = {}): BackgroundJobs {
   const jobLog = (msg: string, err?: unknown) =>
     err ? log.error(msg, { error: (err as Error).message }) : log.info(msg);
   const stopBlobGc = startBlobGc(jobLog);
   const stopSlugRelease = startSlugRelease(jobLog);
+  const stopFilesSweep = opts.filesSweep ? startFilesSweep({ log: jobLog, lease: withRedisLock }) : () => {};
 
   const stopDomainRecheck = startDomainRecheck((msg, meta, err) =>
     err ? log.error(msg, { ...meta, error: (err as Error).message }) : log.info(msg, meta)
@@ -52,6 +58,7 @@ export function startBackgroundJobs(log: Logger): BackgroundJobs {
       clearInterval(timer);
       stopBlobGc();
       stopSlugRelease();
+      stopFilesSweep();
       stopDomainRecheck();
     },
   };

@@ -16,8 +16,9 @@ import { FULL_SCOPE, callTool, mcpClient, type McpClient } from './helpers/mcp';
  *  - skill_info('files') carries the <LoginGate> photo uploader; it compiles
  *    via write_files and uploads, shows and deletes a photo in a browser;
  *  - upload: public needs the owner's confirmation; a PNG is served with
- *    its sniffed type, nosniff, inline, an immutable public cache and an
- *    ETag (304); an SVG is served as an attachment; an HTML page named .png
+ *    its sniffed type, nosniff, inline, the `sandbox` CSP after the app CSP,
+ *    a 5-minute revalidated public cache and an ETag (304); an SVG is served
+ *    as an attachment (sandboxed too); an HTML page named .png
  *    → 415 unsupported_type; 10 MiB + 1 B → 413 (declared and chunked) with
  *    nothing on disk; no X-Drobek-SDK → 403;
  *  - read: user → a visitor's GET is 401, the signed-in user's 200;
@@ -245,7 +246,10 @@ test.describe('platform module files — end-user uploads (M1-05) @local', () =>
     expect(got.headers['content-type']).toBe('image/png');
     expect(got.headers['x-content-type-options']).toBe('nosniff');
     expect(String(got.headers['content-disposition'])).toMatch(/^inline; filename="dot\.png"/);
-    expect(got.headers['cache-control']).toBe('public, max-age=31536000, immutable');
+    // NSO-325: the URL names the file, not its content — shared caches revalidate after 5 minutes.
+    expect(got.headers['cache-control']).toBe('public, max-age=300, must-revalidate');
+    // NSO-325: the sandbox backstop is a second policy after the app CSP, never replacing it.
+    expect(String(got.headers['content-security-policy'])).toMatch(/^default-src 'self'.*, sandbox$/);
     expect(got.headers.etag).toBe(`"${sha256(TINY_PNG)}"`);
     expect((await get(app.host, f.id, { headers: { 'If-None-Match': String(got.headers.etag) } })).status).toBe(304);
     expect(blobOnDisk(sha256(TINY_PNG))).toBe(true);
@@ -255,6 +259,7 @@ test.describe('platform module files — end-user uploads (M1-05) @local', () =>
     const svgGot = await get(app.host, json<StoredFile>(svg).id);
     expect(svgGot.headers['content-type']).toBe('image/svg+xml');
     expect(svgGot.headers['x-content-type-options']).toBe('nosniff');
+    expect(String(svgGot.headers['content-security-policy'])).toMatch(/, sandbox$/);
     expect(String(svgGot.headers['content-disposition'])).toMatch(/^attachment; filename="logo\.svg"/);
 
     const before = filesOnDisk();

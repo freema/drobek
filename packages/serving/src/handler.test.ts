@@ -492,11 +492,37 @@ describe('platform paths (/__drobek/*, M1-01)', () => {
     const { d, seen } = withPlatform();
     const r = await handleAppRequest(req(preview('shop'), '/__drobek/v1/hello/wave', { method: 'POST', body: '{"name":"a"}' }), d);
     expect(r.status).toBe(200);
-    expect(r.headers['Content-Security-Policy']).not.toBe('bogus');
+    // A module CSP is only ever a SECOND policy next to the app's (NSO-325).
+    expect(r.headers['Content-Security-Policy']).toBe(`${APP_CSP}, bogus`);
     expect(r.headers['X-Content-Type-Options']).toBe('nosniff');
     expect(seen).toEqual([{ path: '/__drobek/v1/hello/wave', method: 'POST', app: 'app_shop', body: '{"name":"a"}' }]);
     // an app that has no version yet still reaches the platform (the SDK is independent of the app's files)
     expect((await handleAppRequest(req(prod('draft'), '/__drobek/sdk.js'), d)).status).toBe(200);
+  });
+
+  it('NSO-325: a module CSP (e.g. `sandbox` on served files) is added after the app CSP, whatever its casing; other security headers stay the app\'s', async () => {
+    const d: HandlerDeps = {
+      ...deps,
+      platform: async () => ({
+        status: 200,
+        headers: { 'Content-Type': 'image/png', 'content-security-policy': 'sandbox', 'X-Content-Type-Options': 'sniff-away', 'Referrer-Policy': 'unsafe-url' },
+        body: 'png',
+      }),
+    };
+    const r = await handleAppRequest(req(prod('shop'), '/__drobek/v1/files/abc12345'), d);
+    expect(r.headers['Content-Security-Policy']).toBe(`${APP_CSP}, sandbox`);
+    expect(Object.keys(r.headers).filter((k) => k.toLowerCase() === 'content-security-policy')).toEqual(['Content-Security-Policy']);
+    expect(r.headers['X-Content-Type-Options']).toBe('nosniff');
+    expect(r.headers['Referrer-Policy']).toBe('no-referrer');
+    // Without a module CSP the app CSP stands alone.
+    const plain = await handleAppRequest(req(prod('shop'), '/__drobek/v1/files/abc12345'), { ...deps, platform: async () => ({ status: 200, headers: {}, body: 'x' }) });
+    expect(plain.headers['Content-Security-Policy']).toBe(APP_CSP);
+    // An empty module CSP adds nothing.
+    const empty = await handleAppRequest(req(prod('shop'), '/__drobek/v1/x'), {
+      ...deps,
+      platform: async () => ({ status: 200, headers: { 'Content-Security-Policy': '  ' }, body: 'x' }),
+    });
+    expect(empty.headers['Content-Security-Policy']).toBe(APP_CSP);
   });
 
   it('a missing app never reaches the platform; a locked app answers JSON 401 password_required', async () => {

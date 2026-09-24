@@ -673,9 +673,9 @@ block, then `next` is pushed and the single MR opened.
   `node_modules` volume in `docker-compose.yml` and a recreated dev container
   (`task up`), like every module before it; the uploads live in the named
   volume `files_data` (`/data/files`), which `docker compose down -v` wipes.
-- Deleting an app cascades its `mod_files` rows but leaves the blobs on disk
-  (a blob may be shared with another app, and there is no sweeper yet) —
-  M2-01's app deletion must remove blobs that no remaining row references.
+- Deleting an app is a soft delete; the files sweep (NSO-325) removes its
+  `mod_files` rows after `FILES_SWEEP_RETENTION_MS` and then every blob no
+  remaining row references.
 - The auth module has no per-user session index, so the Users tab cannot
   sign ONE user out — blocking does (their sessions end on the next
   request); "sign everyone out" bumps the app's session epoch. An end user's
@@ -994,6 +994,29 @@ block, then `next` is pushed and the single MR opened.
   `drobek-module-*` deps (resolved at runtime by the module registry). Check
   the externals with `grep -oE 'import\("[a-z@][^"]+"\)'` on the built chunk
   before removing a server dependency.
+- NSO-325: a response with `Connection: close` makes Node call
+  `socket.destroySoon()` on `finish` (FIN, then destroy as soon as it is
+  written). While the client is still uploading, that destroy answers its
+  next segment with a RST and the client kernel drops the unread response —
+  measured on macOS: 15 of 20 early 413s lost, 20 of 20 with a plain
+  `socket.destroy()` on `finish`. `closeAfterResponse` (packages/serving
+  node.ts) therefore replaces `destroySoon` on that socket, half-closes it
+  itself and destroys it 2 s later (`CLOSE_LINGER_MS`) — 20 of 20 delivered.
+  A test client that uploads into an early answer must tolerate
+  `ECONNRESET`/`EPIPE` after the answer arrived.
+- NSO-325: app deletes are SOFT (`apps.deleted_at`), so the `mod_files`
+  cascade never fires; the files sweep deletes the rows of apps deleted
+  `FILES_SWEEP_RETENTION_MS` ago itself, then unlinks blobs by a disk walk
+  (mtime older than the retention — a blob renamed by a still-running commit
+  is fresh) under the per-sha256 advisory lock. A new module-side periodic
+  job: logic + `start*()` in the module, `apps/server/server/jobs.ts` only
+  starts it when the module is active (`modules.modules`), with
+  `withRedisLock` from `@drobek/apps` passed in as the lease.
+- NSO-325: a module response's `Content-Security-Policy` is merged as a
+  second policy (`<app csp>, <module csp>`) by `withAppSecurity` in
+  `packages/serving` handler.ts; every other security header stays the
+  app's. No `sandbox` on PDF — Chrome's/Firefox's viewers refuse to render
+  sandboxed PDFs.
 - Remaining `pnpm audit --prod` highs (NSO-306, documented in CHANGELOG, not
   upgraded): `nodemailer` 6.x (fixes need 7.x / 9.x — majors) and
   `drizzle-orm` 0.41 (fix in 0.45 — a breaking 0.x minor; drobek passes no
