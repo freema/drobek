@@ -4,6 +4,7 @@ import {
   MAIL_COUNTER_KEYS,
   MAIL_PAUSE_KEYS,
   mailAppCounterKey,
+  mailWorkspaceCounterKey,
   mailBudgets,
   mailGuardConfigFromEnv,
   memoryMailGuard,
@@ -59,11 +60,12 @@ function log() {
 const ALERT = 'ALERT: module e-mail paused — the global hourly cap was reached';
 
 describe('the operator-wide hourly budgets of module e-mail (sign-in codes vs notifications)', () => {
-  const notify = (app_id = 'app_1'): MailGuardMeta => ({ app_id, module: 'forms', kind: 'notification' });
-  const signIn = (app_id = 'app_1'): MailGuardMeta => ({ app_id, module: 'auth', kind: 'sign_in' });
+  // Every app in its own workspace unless a test names one.
+  const notify = (app_id = 'app_1', workspace_id = `ws_${app_id}`): MailGuardMeta => ({ app_id, workspace_id, module: 'forms', kind: 'notification' });
+  const signIn = (app_id = 'app_1', workspace_id = `ws_${app_id}`): MailGuardMeta => ({ app_id, workspace_id, module: 'auth', kind: 'sign_in' });
 
   it('env config with defaults', () => {
-    expect(mailGuardConfigFromEnv({})).toEqual({ hourlyMax: 500, pauseMinutes: 15, appSharePercent: 25, signInAppSharePercent: 25 });
+    expect(mailGuardConfigFromEnv({})).toEqual({ hourlyMax: 500, pauseMinutes: 15, appSharePercent: 25, signInAppSharePercent: 25, workspaceSharePercent: 50 });
     expect(
       mailGuardConfigFromEnv({
         EMAIL_GLOBAL_HOURLY_MAX: '3',
@@ -71,8 +73,9 @@ describe('the operator-wide hourly budgets of module e-mail (sign-in codes vs no
         EMAIL_SIGNIN_HOURLY_MAX: '1',
         EMAIL_APP_HOURLY_SHARE: '50',
         EMAIL_SIGNIN_APP_HOURLY_SHARE: '40',
+        EMAIL_WORKSPACE_HOURLY_SHARE: '75',
       })
-    ).toEqual({ hourlyMax: 3, pauseMinutes: 2, signInHourlyMax: 1, appSharePercent: 50, signInAppSharePercent: 40 });
+    ).toEqual({ hourlyMax: 3, pauseMinutes: 2, signInHourlyMax: 1, appSharePercent: 50, signInAppSharePercent: 40, workspaceSharePercent: 75 });
     expect(
       mailGuardConfigFromEnv({
         EMAIL_GLOBAL_HOURLY_MAX: '-1',
@@ -80,16 +83,21 @@ describe('the operator-wide hourly budgets of module e-mail (sign-in codes vs no
         EMAIL_SIGNIN_HOURLY_MAX: '0',
         EMAIL_APP_HOURLY_SHARE: '250',
         EMAIL_SIGNIN_APP_HOURLY_SHARE: '0',
+        EMAIL_WORKSPACE_HOURLY_SHARE: '400',
       })
-    ).toEqual({ hourlyMax: 500, pauseMinutes: 15, appSharePercent: 100, signInAppSharePercent: 25 });
+    ).toEqual({ hourlyMax: 500, pauseMinutes: 15, appSharePercent: 100, signInAppSharePercent: 25, workspaceSharePercent: 100 });
   });
 
-  it('the budgets: sign-in reserves 20 % (≥ 50, ≤ half), notifications get the rest, one app 25 % of those', () => {
-    expect(mailBudgets({ hourlyMax: 500, pauseMinutes: 15 })).toEqual({ global: 500, sign_in: 100, notification: 400, perApp: 100, perAppSignIn: 25 });
-    expect(mailBudgets({ hourlyMax: 1000, pauseMinutes: 15 })).toEqual({ global: 1000, sign_in: 200, notification: 800, perApp: 200, perAppSignIn: 50 });
-    expect(mailBudgets({ hourlyMax: 100, pauseMinutes: 15 })).toEqual({ global: 100, sign_in: 50, notification: 50, perApp: 12, perAppSignIn: 12 });
+  it('the budgets: sign-in reserves 20 % (≥ 50, ≤ half), notifications get the rest, one app 25 % of those, one workspace 50 %', () => {
+    const w = (perWorkspace: number, perWorkspaceSignIn: number) => ({ perWorkspace, perWorkspaceSignIn });
+    expect(mailBudgets({ hourlyMax: 500, pauseMinutes: 15 })).toEqual({ global: 500, sign_in: 100, notification: 400, perApp: 100, perAppSignIn: 25, ...w(200, 50) });
+    expect(mailBudgets({ hourlyMax: 1000, pauseMinutes: 15 })).toEqual({ global: 1000, sign_in: 200, notification: 800, perApp: 200, perAppSignIn: 50, ...w(400, 100) });
+    expect(mailBudgets({ hourlyMax: 100, pauseMinutes: 15 })).toEqual({ global: 100, sign_in: 50, notification: 50, perApp: 12, perAppSignIn: 12, ...w(25, 25) });
     // One app's sign-in share never drops below 10 codes (MIN_SIGN_IN_APP_SHARE)…
-    expect(mailBudgets({ hourlyMax: 60, pauseMinutes: 15 })).toEqual({ global: 60, sign_in: 30, notification: 30, perApp: 7, perAppSignIn: 10 });
+    expect(mailBudgets({ hourlyMax: 60, pauseMinutes: 15 })).toEqual({ global: 60, sign_in: 30, notification: 30, perApp: 7, perAppSignIn: 10, ...w(15, 15) });
+    // A workspace share is never below one app's share, never above the class.
+    expect(mailBudgets({ hourlyMax: 500, pauseMinutes: 15, workspaceSharePercent: 10 })).toMatchObject(w(100, 25));
+    expect(mailBudgets({ hourlyMax: 500, pauseMinutes: 15, workspaceSharePercent: 100 })).toMatchObject(w(400, 100));
     // …nor exceeds the sign-in budget; an explicit share applies.
     expect(mailBudgets({ hourlyMax: 500, pauseMinutes: 15, signInHourlyMax: 4 })).toMatchObject({ sign_in: 4, perAppSignIn: 4 });
     expect(mailBudgets({ hourlyMax: 500, pauseMinutes: 15, signInAppSharePercent: 100 })).toMatchObject({ sign_in: 100, perAppSignIn: 100 });
@@ -100,6 +108,8 @@ describe('the operator-wide hourly budgets of module e-mail (sign-in codes vs no
       notification: 480,
       perApp: 240,
       perAppSignIn: 10,
+      perWorkspace: 240,
+      perWorkspaceSignIn: 10,
     });
     expect(mailBudgets({ hourlyMax: 500, pauseMinutes: 15, signInHourlyMax: 9999 })).toMatchObject({ sign_in: 499, notification: 1, perApp: 1 });
     // Degenerate caps still give each class one address.
@@ -241,6 +251,50 @@ describe('the operator-wide hourly budgets of module e-mail (sign-in codes vs no
     await g.admit(1, signIn('other'));
     await g.assertOpen(notify('greedy'));
     await g.admit(1, notify('greedy'));
+  });
+
+  it('one workspace cannot take a whole class with several apps: its apps together stop at EMAIL_WORKSPACE_HOURLY_SHARE (NSO-323 M4)', async () => {
+    const redis = fakeRedis();
+    const l = log();
+    // Defaults: notifications 400 an hour, one app 100, one workspace 200; sign-in 100 / 25 / 50.
+    const g = redisMailGuard({ redis: () => redis, config: { hourlyMax: 500, pauseMinutes: 15 }, log: l });
+    expect(g.budgets).toMatchObject({ perApp: 100, perWorkspace: 200, perAppSignIn: 25, perWorkspaceSignIn: 50 });
+    // Two apps of workspace "big" use their full app shares = the workspace share.
+    await g.admit(100, notify('a1', 'big'));
+    await g.admit(100, notify('a2', 'big'));
+    // A third app of the same workspace is within ITS share, but the workspace is not.
+    await expect(g.assertOpen(notify('a3', 'big'))).rejects.toMatchObject({
+      code: 'unavailable',
+      status: 503,
+      details: { reason: 'email_paused', class: 'notification', limit: 'EMAIL_WORKSPACE_HOURLY_SHARE', value: 200 },
+      headers: { 'Retry-After': '3600' },
+    });
+    expect(l.warn).toHaveBeenCalledWith('module e-mail refused: the workspace used its hourly share', expect.objectContaining({ reason: 'workspace_share', workspace_id: 'big', app_id: 'a3' }));
+    const over = await g.admit(1, notify('a3', 'big')).catch((e: unknown) => e);
+    expect(over).toMatchObject({ details: { limit: 'EMAIL_WORKSPACE_HOURLY_SHARE', value: 200 } });
+    expect(l.warn).toHaveBeenCalledWith(
+      'module e-mail: a workspace used its hourly share of notifications',
+      expect.objectContaining({ event: 'email_workspace_share_exceeded', workspace_id: 'big', share_max: 200 })
+    );
+    // Refused mail never counts server-wide; nothing pauses; other workspaces go on.
+    expect(Number(await redis.get(MAIL_COUNTER_KEYS.notification))).toBe(200);
+    expect(Number(await redis.get(mailWorkspaceCounterKey('big')))).toBe(201);
+    expect(await redis.pttl(MAIL_PAUSE_KEYS.notification)).toBe(-2);
+    await g.assertOpen(notify('b1', 'small'));
+    await g.admit(100, notify('b1', 'small'));
+    // The app share still applies inside a workspace with room left.
+    await g.admit(100, notify('c1', 'third'));
+    await expect(g.admit(1, notify('c1', 'third'))).rejects.toMatchObject({ details: { limit: 'EMAIL_APP_HOURLY_SHARE' } });
+    expect(Number(await redis.get(mailWorkspaceCounterKey('third')))).toBe(100);
+    // Sign-in codes: the same brake on the sign-in class (50 per workspace), notifications of "big" do not count there.
+    for (const app of ['a1', 'a2']) for (let i = 0; i < 25; i++) await g.admit(1, signIn(app, 'big'));
+    await expect(g.admit(1, signIn('a3', 'big'))).rejects.toMatchObject({ details: { class: 'sign_in', limit: 'EMAIL_WORKSPACE_HOURLY_SHARE', value: 50 } });
+    await expect(g.assertOpen(signIn('a3', 'big'))).rejects.toMatchObject({ details: { class: 'sign_in', limit: 'EMAIL_WORKSPACE_HOURLY_SHARE' } });
+    await g.assertOpen(signIn('b1', 'small'));
+    expect(l.error).not.toHaveBeenCalled();
+    // The workspace's hour ends → its apps send again.
+    redis.now += 60 * 60_000;
+    await expect(g.assertOpen(notify('a3', 'big'))).resolves.toBeUndefined();
   });
 
   it('fails closed on a Redis error', async () => {

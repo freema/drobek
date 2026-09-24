@@ -151,6 +151,7 @@ export {
 } from './mail-guard.js';
 export { MAX_FILE_HEAD_BYTES, multipartBoundary, parseMultipart, streamMultipartFile } from './multipart.js';
 export { SDK_HEADER, DEFAULT_MAX_BODY_BYTES, isReadable, type PipelineRequest, type PipelineResult } from './router.js';
+export { csvChunks } from './csv-stream.js';
 export {
   ModuleLoadError,
   RESERVED_MODULE_NAMES,

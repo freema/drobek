@@ -206,14 +206,14 @@ describe('drobek-module-auth — sign-in', () => {
   it('notifications paused server-wide: codes still go out; the sign-in budget used up → 503 email_paused, the cooldown released', async () => {
     // G = 4: sign-in codes 2, notifications 2 — which another app has used up (paused).
     const guard = memoryMailGuard({ hourlyMax: 4, pauseMinutes: 15, appSharePercent: 100 }, noopLogger);
-    const forms = { app_id: 'app_other', module: 'forms', kind: 'notification' as const };
+    const forms = { app_id: 'app_other', workspace_id: 'ws_other', module: 'forms', kind: 'notification' as const };
     await guard.admit(2, forms);
     await expect(guard.admit(1, forms)).rejects.toMatchObject({ details: { reason: 'email_paused', class: 'notification' } });
     await expect(guard.assertOpen(forms)).rejects.toMatchObject({ status: 503 });
 
     // Another app already sent one of the two sign-in codes (one app alone
     // stops at its own share of 2 first — the next test).
-    await guard.admit(1, { app_id: 'app_other', module: 'auth', kind: 'sign_in' });
+    await guard.admit(1, { app_id: 'app_other', workspace_id: 'ws_other', module: 'auth', kind: 'sign_in' });
 
     const t = createModuleTestContext(auth, { db, app: APP(), config: CONFIG, origin: `http://${HOST}`, mailGuard: guard });
     const sent = await t.request('POST', '/send-code', { body: { email: 'ana@example.com' }, headers: { host: HOST } });
@@ -253,8 +253,8 @@ describe('drobek-module-auth — sign-in', () => {
     expect(over.status).toBe(503);
     expect(over.headers['Retry-After']).toBe('900');
     expect(t.emails).toHaveLength(25);
-    await expect(guard.assertOpen({ app_id: 'app_other', module: 'auth', kind: 'sign_in' })).resolves.toBeUndefined();
-    await guard.admit(1, { app_id: 'app_other', module: 'auth', kind: 'sign_in' });
+    await expect(guard.assertOpen({ app_id: 'app_other', workspace_id: 'ws_other', module: 'auth', kind: 'sign_in' })).resolves.toBeUndefined();
+    await guard.admit(1, { app_id: 'app_other', workspace_id: 'ws_other', module: 'auth', kind: 'sign_in' });
   });
 
   it('an allowed e-mail gets a code (scoped key, safe subject) → verify → session cookie + user → me', async () => {

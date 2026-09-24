@@ -11,7 +11,8 @@
  *    path — request volume / 5xx / 404-by-path,
  *  - read models (queryAppErrors / queryAppLogs) for the dashboard Overview
  *    panels, and the get_logs side (M1-07): the compile history
- *    (recordCompile), module request counters (recordModuleRequest) and the
+ *    (recordCompile), module request counters (recordModuleRequest — Redis,
+ *    flushed lazily into Postgres) and the
  *    three get_logs kinds (queryRuntimeLog / queryCompileLog / queryRequestLog).
  *
  * Depends only on @drobek/auth (rate-limit + client IP), @drobek/core (Redis)
@@ -122,7 +123,13 @@ export {
   queryRequestLog,
   queryRuntimeLog,
   recordCompile,
-  recordModuleRequest,
   type RecordCompileInput,
   type RequestLogOptions,
 } from './logs.server.js';
+export {
+  flushModuleRequests,
+  memoryModuleStatsRedis,
+  recordModuleRequest,
+  type ModuleStatsOptions,
+  type ModuleStatsRedis,
+} from './module-stats.server.js';

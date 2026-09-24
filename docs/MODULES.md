@@ -76,6 +76,7 @@ export default defineModule<Config>({
   skill: { useWhen, markdown },  // useWhen: ONE sentence starting with the situation
   configSchema,                  // zod; validates configure_module + the dashboard form
   configDefaults,                // the config of an app nobody configured (must pass the schema)
+  salvageConfig(merged) { return { config, issues } }, // optional: the usable part of a stored config that fails the schema
   confirmRequired(before, after, { app, db }) { return [] }, // non-empty (or a Promise of it) → the change waits for the owner
   secrets: [{ name: 'HELLO_SIGNATURE', description, required?: boolean }],
   rules: { ops: { ping: 'public' } },           // operations shown in the rule editor
@@ -230,9 +231,13 @@ Two core paths sit next to the modules and are never a module name: the error
 beacon script `/__drobek/beacon.js?v=<hash>` (same caching as `sdk.js`; the
 compiler imports it in front of every entry unless `drobek.json` has
 `"beacon": false`) and the beacon endpoint `POST /__drobek/v1/_beacon`
-(handled by core, 8 KiB cap). Every call to an active module's routes is
-counted per day and status class (`2xx`..`5xx`) in `module_request_stats`;
-`get_logs({ kind: "requests" })` reads it.
+(handled by core, 8 KiB cap). Every response of a MATCHED route of an active
+module is counted per day and status class (`2xx`..`5xx`) — never a 429 (a
+throttled flood costs nothing past the limiter) nor an unknown route or
+method. The counters live in Redis (`drobek:signals:mod:<app_id>:<day>`) and
+are written into `module_request_stats` lazily: at most once a minute per app
+and day, and on every `get_logs({ kind: "requests" })` read, which reads the
+table.
 
 #### Inline sources: `import … from 'drobek/<name>'`
 
@@ -285,7 +290,12 @@ Every `ctx.email.send` of every module goes through one path in core:
      number (the auth module clamps `AUTH_CODES_PER_APP_HOUR` to it);
    - `notification` gets the rest (cap − sign-in, 400 of 500), and ONE app
      at most `EMAIL_APP_HOURLY_SHARE` percent of it (default 25 → 100 of
-     400).
+     400);
+   - ONE workspace — all its apps together — at most
+     `EMAIL_WORKSPACE_HOURLY_SHARE` percent of each class (default 50 → 200
+     notifications and 50 sign-in codes of 500; never less than one app's
+     share, never more than the class), so a workspace with several apps
+     cannot take a whole class either. Both shares must pass.
 
    Past a class budget (Redis `drobek:rl:mail:<class>`), THAT class
    **pauses** for `EMAIL_GLOBAL_PAUSE_MINUTES` (default 15, key
@@ -301,7 +311,11 @@ Every `ctx.email.send` of every module goes through one path in core:
    sign-in: `drobek:rl:mail:app:<app_id>:sign_in`) gets the same `503` with
    `details.limit: EMAIL_APP_HOURLY_SHARE` (or
    `EMAIL_SIGNIN_APP_HOURLY_SHARE`) and `value` until its hour ends — other apps continue, nothing pauses server-wide
-   (a `warn` line, `event: email_app_share_exceeded`). The budgets are not
+   (a `warn` line, `event: email_app_share_exceeded`). A workspace past its
+   share (`drobek:rl:mail:ws:<workspace_id>`, sign-in:
+   `drobek:rl:mail:ws:<workspace_id>:sign_in`) gets the same with
+   `details.limit: EMAIL_WORKSPACE_HOURLY_SHARE` (`event:
+   email_workspace_share_exceeded`). The budgets are not
    overridable by the limits provider, and a Redis error refuses the send
    (fail closed). `createModuleTestContext({ mailGuard: memoryMailGuard(…) })`
    runs the same guard in a module's tests;
@@ -432,6 +446,13 @@ Stored in `module_configs` (`app_id`, `module`, `config` jsonb, `pending`
 jsonb, `updated_at`; primary key `(app_id, module)`, cascade on app delete).
 `config` holds only what was set, as a sparse **JSON merge patch** (RFC 7396)
 over `configDefaults`; the effective config is re-validated on every read.
+A stored config that no longer passes `configSchema` (a legacy import, a hand
+edit) is served through the module's optional `salvageConfig(merged)` — it
+returns `{ config, issues }`, the runtime logs the issues once per stored
+content (`warn`, "serving its valid part") — or, without it, as
+`configDefaults`. `configure_module` still validates the whole config, so the
+next change has to repair it. `data` keeps every collection that is valid on
+its own (even past its cap of 100) and drops only the invalid ones.
 Secret values never live here (they live encrypted in `module_secrets`).
 
 ### `configure_module` (MCP, scope `write`, role editor)

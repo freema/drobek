@@ -202,6 +202,7 @@ test.describe('get_logs — runtime errors, compile history, request stats (M1-0
     skipUnlessLocal();
     expect((await hostRequest(host, '/')).status).toBe(200);
     expect((await hostRequest(host, '/__drobek/v1/hello')).status).toBe(200);
+    // An unknown route (and a 429) is not counted — only matched routes are (NSO-323).
     expect((await hostRequest(host, '/__drobek/v1/hello/nope')).status).toBe(404);
     // A mutation without the SDK header → 403 (csrf_rejected), a 4xx of hello.
     expect((await hostRequest(host, '/__drobek/v1/hello/wave', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"name":"x"}' })).status).toBe(403);
@@ -216,7 +217,7 @@ test.describe('get_logs — runtime errors, compile history, request stats (M1-0
           expect(r.isError, JSON.stringify(r.json)).toBe(false);
           expect(r.json.untrusted).toBe(true);
           day = (r.json.entries as Day[]).find((d) => d.day === today);
-          return (day?.modules.hello?.['4xx'] ?? 0) >= 2 && (day?.modules.hello?.['2xx'] ?? 0) >= 1;
+          return (day?.modules.hello?.['4xx'] ?? 0) >= 1 && (day?.modules.hello?.['2xx'] ?? 0) >= 1;
         },
         { timeout: 5_000, intervals: [250] }
       )

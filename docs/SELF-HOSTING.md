@@ -215,6 +215,7 @@ built-ins.
 | `TLS_CUSTOM_DOMAINS`, `DOMAINS_MAX_PER_APP`, `DOMAINS_DNS_SERVERS`, `DOMAINS_RECHECK_INTERVAL_MS` | — | [custom domains](#custom-domains) (catch-all certificate on by default in on-demand mode; 3 per app) |
 | `TERMS_URL`, `ABUSE_REPORTS_PER_IP_HOUR`, `ABUSE_BRAND_WORDS` | — | [abuse handling](#abuse-and-takedowns) (terms link of the 451 page; 5 reports / IP / hour; publish-heuristic brand words) |
 | `EMAIL_SIGNIN_APP_HOURLY_SHARE` | — (25) | one app's percent of the sign-in e-mail budget — raise it on a single-app server (see [Production compose](#production-compose)) |
+| `EMAIL_WORKSPACE_HOURLY_SHARE` | — (50) | one workspace's percent of each module e-mail budget — raise it to 100 on a single-workspace server |
 | limits (`OTP_*`, `COMPILE_*`, `DATA_*`, `FILES_*`, `EMAIL_*`, …) | — | production defaults; every variable is in the [Environment reference](#environment-reference) |
 
 The file is read by `docker compose` and by `docker run --env-file` (the
@@ -261,7 +262,9 @@ End users' sign-in codes get a reserved part of it, `EMAIL_SIGNIN_HOURLY_MAX`
 at most `EMAIL_SIGNIN_APP_HOURLY_SHARE` percent of those (default 25, at
 least 10 — raise it on a single-app server);
 notifications (forms, `notifyAdmins`) get the rest, and one app at most
-`EMAIL_APP_HOURLY_SHARE` percent of that (default 25). Past its budget a
+`EMAIL_APP_HOURLY_SHARE` percent of that (default 25); one workspace (all
+its apps) at most `EMAIL_WORKSPACE_HOURLY_SHARE` percent of each (default
+50 — raise it to 100 on a single-workspace server). Past its budget a
 class pauses for `EMAIL_GLOBAL_PAUSE_MINUTES` — notifications pausing never
 blocks sign-in — and the log gets an `email_global_pause` ALERT line (with
 `class`) — alert on it. The contract and the
@@ -362,6 +365,7 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `EMAIL_GLOBAL_HOURLY_MAX` / `EMAIL_GLOBAL_PAUSE_MINUTES` | 500 / 15 | the operator-wide cap on all module mail (recipients per hour) and the pause length |
 | `EMAIL_SIGNIN_HOURLY_MAX` / `EMAIL_SIGNIN_APP_HOURLY_SHARE` | 20 % of the cap (at least 50, at most half) / 25 % | the sign-in part of the cap; one app's share of it |
 | `EMAIL_APP_HOURLY_SHARE` | 25 % | one app's share of the notification part |
+| `EMAIL_WORKSPACE_HOURLY_SHARE` | 50 % | one workspace's share (all its apps) of the notification and of the sign-in part; never below one app's share |
 | `FORMS_SUBMITS_PER_IP_HOUR` / `FORMS_PER_APP_PER_DAY` | 10 / 200 | `forms` *(plan)* |
 | `DATA_MAX_DOCS_PER_APP` / `DATA_MAX_DOC_BYTES` / `DATA_MAX_BYTES_PER_APP` | 10000 / 102400 / 52428800 | `data`: records, bytes per record, bytes per app *(plan)* |
 | `DATA_WRITE_RATE_LIMIT` / `DATA_WRITE_RATE_WINDOW_MS` | 120 / 60000 | `data`: writes per app per window *(plan)* |

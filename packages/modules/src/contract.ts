@@ -517,6 +517,17 @@ export interface DrobekModule<Config = unknown> {
   /** The configuration of an app nobody configured (must pass configSchema). */
   configDefaults: Config;
   /**
+   * Optional: the usable part of a STORED config that no longer passes
+   * configSchema as a whole (a legacy import, a hand edit, a lowered cap).
+   * Gets the merged config (defaults + stored) and returns the config to
+   * serve with plus one line per part it dropped or could not fix (logged
+   * once per stored content), or null to fall back to `configDefaults` — the
+   * behaviour without it. configure_module still validates the WHOLE config,
+   * so the next change has to repair it. E.g. data keeps every valid
+   * collection instead of answering 404 for all of them.
+   */
+  salvageConfig?(merged: unknown): { config: Config; issues: string[] } | null;
+  /**
    * The changes between two VALID configs that need the owner's confirmation
    * in the dashboard — e.g. an operation opened to `public`, a new e-mail
    * recipient. Non-empty → configure_module stores the change as pending.

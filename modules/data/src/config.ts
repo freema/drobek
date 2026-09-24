@@ -70,6 +70,38 @@ export type DataConfig = z.infer<typeof dataConfigSchema>;
 
 export const DATA_CONFIG_DEFAULTS: DataConfig = { collections: {} };
 
+/**
+ * The runtime's fallback for a stored config that fails dataConfigSchema
+ * (NSO-323 M6) — e.g. a legacy import of more than MAX_COLLECTIONS
+ * collections, or a hand-edited rule: every collection that is valid ON ITS
+ * OWN is kept (all of them, even past the cap — none of them goes dark), an
+ * invalid one is dropped (it answers 404) and named in `issues`. null when
+ * `collections` is not an object at all (the runtime then uses the defaults).
+ */
+export function salvageDataConfig(merged: unknown): { config: DataConfig; issues: string[] } | null {
+  const raw = merged && typeof merged === 'object' ? (merged as Record<string, unknown>).collections : undefined;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const issues: string[] = [];
+  for (const key of Object.keys(merged as object)) if (key !== 'collections') issues.push(`${key}: not a data setting (ignored)`);
+  const collections: Record<string, CollectionConfig> = {};
+  for (const [name, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!COLLECTION_NAME_RE.test(name)) {
+      issues.push(`collections.${name}: not a valid collection name (dropped)`);
+      continue;
+    }
+    const r = collectionConfigSchema.safeParse(value);
+    if (!r.success) {
+      const issue = r.error.issues[0];
+      issues.push(`collections.${name}${issue?.path.length ? `.${issue.path.join('.')}` : ''}: ${issue?.message ?? 'invalid'} (dropped)`);
+      continue;
+    }
+    collections[name] = r.data;
+  }
+  const n = Object.keys(collections).length;
+  if (n > MAX_COLLECTIONS) issues.push(`collections: ${n} declared, at most ${MAX_COLLECTIONS} — all kept; remove some before the next configure_module`);
+  return { config: { collections }, issues };
+}
+
 /** A declared collection's config, or null (undeclared → 404). */
 export function collectionConfig(config: DataConfig, name: string): CollectionConfig | null {
   return Object.prototype.hasOwnProperty.call(config.collections, name) ? config.collections[name] : null;

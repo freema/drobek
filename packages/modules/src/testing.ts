@@ -143,7 +143,7 @@ export function createModuleTestContext(module: AnyModule, opts: ModuleTestOptio
         const kind = emailKind(message.to);
         const to = await resolveRecipients(message.to, { principal, config, owners: async () => opts.owners ?? [] });
         if (to.length === 0) return { sent: 0 };
-        const guardMeta = { app_id: app.id, module: module.name, kind };
+        const guardMeta = { app_id: app.id, workspace_id: app.workspaceId, module: module.name, kind };
         await opts.mailGuard?.assertOpen(guardMeta);
         let envelope: MailEnvelope = {};
         if (module.mail) {

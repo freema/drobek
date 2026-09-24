@@ -8,7 +8,9 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { apps, auditLog, memberships, moduleConfigs, moduleSecrets, users, workspaces } from '@drobek/db';
+import { apps, auditLog, memberships, moduleConfigs, moduleRequestStats, moduleSecrets, users, workspaces } from '@drobek/db';
+import { flushModuleRequests, memoryModuleStatsRedis, queryRequestLog, recordModuleRequest } from '@drobek/insights';
+import type { PGlite } from '@electric-sql/pglite';
 import { eq } from 'drizzle-orm';
 import { noopLogger } from '@drobek/core';
 import { createLimitsProvider } from './limits.js';
@@ -35,6 +37,7 @@ const SECRET_VALUE = 'sk-live-THIS-MUST-NEVER-LEAK-0123456789';
 
 let db: TestDb;
 let close: () => Promise<void>;
+let pg: PGlite;
 let userId: string;
 let ws: { id: string; slug: string };
 let app: { id: string; slug: string; workspaceId: string; workspaceSlug: string };
@@ -83,6 +86,7 @@ function json(r: { body: unknown }): unknown {
 beforeAll(async () => {
   const fresh = await freshDb();
   db = fresh.db;
+  pg = fresh.pg;
   close = () => fresh.pg.close();
   [{ id: userId }] = await db.insert(users).values({ email: 'owner@example.com' }).returning();
   const [w] = await db.insert(workspaces).values({ kind: 'team', slug: 'acme', name: 'Acme' }).returning();
@@ -502,21 +506,25 @@ describe('HTTP on the app hosts', () => {
     expect((await rt.handle(req('POST', '/__drobek/beacon.js'), app)).status).toBe(405);
   });
 
-  it('counts every response of an ACTIVE module by status (M1-07); never an unknown module or the SDK', async () => {
+  it('counts every response of a MATCHED route by status (M1-07); never a 429, an unknown route/method/module or the SDK (NSO-323)', async () => {
     const counted: [string, string, number][] = [];
     const r = await runtime({ requestStats: (appId, module, status) => void counted.push([appId, module, status]) });
     await r.handle(req('GET', '/__drobek/v1/echo/items/7'), app);
     await r.handle(req('GET', '/__drobek/v1/echo/missing'), app);
     await r.handle(req('PUT', '/__drobek/v1/echo/items/1'), app);
     await r.handle(req('GET', '/__drobek/v1/echo/boom'), app);
+    await r.handle(req('GET', '/__drobek/v1/echo/teapot'), app);
     await r.handle(req('GET', '/__drobek/v1/nope/x'), app);
     await r.handle(req('GET', '/__drobek/sdk.js'), app);
     await r.handle(req('GET', '/__drobek/beacon.js'), app);
+    const statuses: number[] = [];
+    for (let i = 0; i < 7; i++) statuses.push((await r.handle(req('POST', '/__drobek/v1/echo/say', { headers: sdkPost, body: { text: 'x' } }), app)).status);
+    expect(statuses).toEqual([200, 200, 200, 200, 200, 429, 429]);
     expect(counted).toEqual([
       [app.id, 'echo', 200],
-      [app.id, 'echo', 404],
-      [app.id, 'echo', 405],
       [app.id, 'echo', 500],
+      [app.id, 'echo', 403],
+      ...Array.from({ length: 5 }, () => [app.id, 'echo', 200]),
     ]);
     // a failing counter never affects the response
     const broken = await runtime({
@@ -525,6 +533,60 @@ describe('HTTP on the app hosts', () => {
       },
     });
     expect((await broken.handle(req('GET', '/__drobek/v1/echo/items/7'), app)).status).toBe(200);
+  });
+
+  it('request stats cost no SQL per response: 1000 × 429 add no statement, 1000 counted responses reach Postgres on the read (NSO-323 M3)', async () => {
+    const statements: string[] = [];
+    const spies = (['query', 'exec'] as const).map((method) => {
+      const original = (pg[method] as (...a: unknown[]) => unknown).bind(pg);
+      return vi.spyOn(pg, method).mockImplementation(((sqlText: string, ...rest: unknown[]) => {
+        statements.push(sqlText);
+        return original(sqlText, ...rest);
+      }) as never);
+    });
+    const settle = () => new Promise((r) => setTimeout(r, 20));
+    const redis = memoryModuleStatsRedis();
+    const limiter = memoryRateLimiter();
+    const counting = await runtime({ rateLimit: limiter, requestStats: (a, m, st) => recordModuleRequest(a, m, st, { redis: () => redis }) });
+    const silent = await runtime({ rateLimit: limiter, requestStats: () => undefined });
+    const say = () => req('POST', '/__drobek/v1/echo/say', { headers: sdkPost, body: { text: 'x' } });
+    const today = new Date().toISOString().slice(0, 10);
+    await db.delete(moduleRequestStats);
+    try {
+      // Use up the limit (5 per minute): the first counted response flushes its day once.
+      for (let i = 0; i < 5; i++) expect((await counting.handle(say(), app)).status).toBe(200);
+      await settle();
+      expect(await db.select({ c: moduleRequestStats.count }).from(moduleRequestStats)).toEqual([{ c: 1 }]);
+
+      // The same 1000 throttled requests with and without stats run the same statements.
+      statements.length = 0;
+      for (let i = 0; i < 1000; i++) expect((await silent.handle(say(), app)).status).toBe(429);
+      await settle();
+      const baseline = statements.length;
+      statements.length = 0;
+      for (let i = 0; i < 1000; i++) expect((await counting.handle(say(), app)).status).toBe(429);
+      await settle();
+      expect(statements.length).toBe(baseline);
+      expect(statements.filter((q) => q.includes('module_request_stats'))).toEqual([]);
+
+      // 1000 counted responses inside the flush interval: Redis only, not one stats statement.
+      for (let i = 0; i < 1000; i++) expect((await counting.handle(req('GET', '/__drobek/v1/echo/items/7'), app)).status).toBe(200);
+      expect((await counting.handle(req('GET', '/__drobek/v1/echo/teapot'), app)).status).toBe(403);
+      await settle();
+      expect(statements.filter((q) => q.includes('module_request_stats'))).toEqual([]);
+      // The read's flush writes the whole day in ONE statement (and proves the spy sees statements).
+      await flushModuleRequests(app.id, today, { redis: () => redis });
+      expect(statements.filter((q) => q.includes('module_request_stats'))).toHaveLength(1);
+    } finally {
+      for (const s of spies) s.mockRestore();
+    }
+    // The read reports the counted classes exactly.
+    const days = await queryRequestLog(app.id, null, { flush: false });
+    expect(days).toEqual([{ day: today, requests: 0, count_5xx: 0, count_404: 0, modules: { echo: { '2xx': 1005, '3xx': 0, '4xx': 1, '5xx': 0 } } }]);
+    // A flush never lowers a stored count (Redis lost its counters → the row keeps its total).
+    await flushModuleRequests(app.id, today, { redis: () => memoryModuleStatsRedis() });
+    await recordModuleRequest(app.id, 'echo', 200, { redis: () => memoryModuleStatsRedis(), flushEverySec: 0 });
+    expect((await queryRequestLog(app.id, null, { flush: false }))[0].modules.echo['2xx']).toBe(1005);
   });
 
   it('an unexpected handler error → 500 internal_error without internals, logged', async () => {
@@ -761,7 +823,7 @@ describe('module e-mail (ctx.email.send through the runtime)', () => {
       mailGuard: (l) => (guard = memoryMailGuard({ hourlyMax: 4, pauseMinutes: 15, appSharePercent: 100 }, l)),
       env: { MAILER_PER_DAY: '100' },
     });
-    await guard!.admit(1, { app_id: 'app_other', module: 'forms', kind: 'notification' });
+    await guard!.admit(1, { app_id: 'app_other', workspace_id: 'ws_other', module: 'forms', kind: 'notification' });
     expect((await send({ config: 'notify' })).status).toBe(200);
     const over = await send({ config: 'notify' });
     expect(over.status).toBe(503);
@@ -775,7 +837,7 @@ describe('module e-mail (ctx.email.send through the runtime)', () => {
     expect((await send({ config: 'notify' })).status).toBe(503);
     // …but sign-in codes still go out, up to THEIR budget (one of the two
     // sent by another app: one app alone stops at its own share first).
-    await guard!.admit(1, { app_id: 'app_other', module: 'auth', kind: 'sign_in' });
+    await guard!.admit(1, { app_id: 'app_other', workspace_id: 'ws_other', module: 'auth', kind: 'sign_in' });
     expect((await send({ signInAddress: 'a@example.com' })).status).toBe(200);
     const codesOver = await send({ signInAddress: 'b@example.com' });
     expect(codesOver.status).toBe(503);

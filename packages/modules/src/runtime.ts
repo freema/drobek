@@ -5,8 +5,9 @@
  *
  *  - `handle()` — every `/__drobek/*` request on an app host (after the app
  *    and its visibility gate were resolved by @drobek/serving): the SDK, the
- *    beacon script, and the module routes — each response of an active
- *    module is counted in `module_request_stats` (M1-07, get_logs requests);
+ *    beacon script, and the module routes — each response of a matched route
+ *    of an active module (not a 429) is counted for get_logs `requests`
+ *    (M1-07; Redis counters flushed lazily, @drobek/insights);
  *  - `skillList()` / `skillInfo()` — the `skill_info` tool, create_app, get_app;
  *  - `configure()` / `confirm()` / `reject()` — configure_module and the
  *    dashboard's pending-change API;
@@ -106,8 +107,9 @@ export interface RuntimeDeps {
   /** The operator-wide hourly cap on module e-mail (auto-pause). */
   mailGuard: MailGuard;
   /**
-   * Count one response of an ACTIVE module's route (M1-07 — get_logs
-   * `requests`). Best-effort: never awaited by the response, errors dropped.
+   * Count one response of a MATCHED route of an active module (M1-07 — get_logs
+   * `requests`; never a 429, an unknown route or a wrong method). Best-effort:
+   * never awaited by the response, errors dropped.
    */
   requestStats?: (appId: string, module: string, status: number) => Promise<void> | void;
 }
@@ -700,18 +702,37 @@ export class ModuleRuntime {
   /**
    * The effective config of `module` for a stored (sparse) config. Memoized
    * by content (configMemo); every caller gets its own copy, so a handler that
-   * mutates `ctx.config` cannot change what the next request sees.
+   * mutates `ctx.config` cannot change what the next request sees. A stored
+   * config that fails configSchema is served through the module's
+   * `salvageConfig` when it has one, else as the defaults.
    */
   effectiveConfig(m: AnyModule, stored: Record<string, unknown>): unknown {
     const key = `${m.name}:${jsonKey(stored)}`;
     const hit = this.configMemo.get(key);
     if (hit) return structuredClone(hit.value);
-    const r = m.configSchema.safeParse(mergePatch(m.configDefaults, stored));
+    const merged = mergePatch(m.configDefaults, stored);
+    const r = m.configSchema.safeParse(merged);
     let value: unknown;
     if (r.success) value = r.data;
     else {
-      this.deps.log.warn('stored module config no longer passes configSchema — using the defaults', { module: m.name });
-      value = m.configDefaults;
+      // Logged once per stored content: the result is memoized below (NSO-323 M6).
+      let salvaged: { config: unknown; issues: string[] } | null = null;
+      try {
+        salvaged = m.salvageConfig ? m.salvageConfig(merged) : null;
+      } catch (err) {
+        this.deps.log.error('module salvageConfig failed', { module: m.name, error: String((err as Error)?.message ?? err) });
+      }
+      if (salvaged) {
+        this.deps.log.warn('stored module config no longer passes configSchema — serving its valid part', {
+          module: m.name,
+          issues: salvaged.issues.slice(0, 20),
+          issue_count: salvaged.issues.length,
+        });
+        value = salvaged.config;
+      } else {
+        this.deps.log.warn('stored module config no longer passes configSchema — using the defaults', { module: m.name });
+        value = m.configDefaults;
+      }
     }
     try {
       const copy = structuredClone(value);
@@ -1017,7 +1038,7 @@ export class ModuleRuntime {
    * refuse while module e-mail is paused, let the mail authority (the `email`
    * module) apply the app's policy and envelope, count against the
    * operator-wide hourly budget of the message's class (sign-in codes vs
-   * notifications, plus the app's share of notifications — mail-guard.ts),
+   * notifications, plus the app's and its workspace's shares — mail-guard.ts),
    * send one message per address, audit.
    */
   private async sendEmail(
@@ -1035,7 +1056,7 @@ export class ModuleRuntime {
     if (to.length === 0) return { sent: 0 };
     const subject = sanitizeSubject(message.subject);
     const text = capEmailText(message.text);
-    const meta = { app_id: app.id, module: m.name, kind };
+    const meta = { app_id: app.id, workspace_id: app.workspaceId, module: m.name, kind };
 
     await deps.mailGuard.assertOpen(meta);
     let envelope: MailEnvelope = {};
@@ -1094,11 +1115,12 @@ export class ModuleRuntime {
   async handle(req: PlatformRequest, app: PlatformApp): Promise<PipelineResult> {
     const seen: { module?: string } = {};
     const res = await this.dispatch(req, app, seen);
-    if (seen.module) this.countRequest(app.id, seen.module, res.status);
+    // A 429 is not counted: a throttled flood must cost nothing past the limiter (NSO-323 M3).
+    if (seen.module && res.status !== 429) this.countRequest(app.id, seen.module, res.status);
     return res;
   }
 
-  /** get_logs `requests`: one response of an active module (fire-and-forget). */
+  /** get_logs `requests`: one response of a matched route of an active module (fire-and-forget). */
   private countRequest(appId: string, module: string, status: number): void {
     const count = this.deps.requestStats;
     if (!count) return;
@@ -1126,7 +1148,6 @@ export class ModuleRuntime {
           })
         );
       }
-      seen.module = m.name;
       const hit = matchRoute(this.routes.get(m.name) ?? [], req.method, match[2] ?? '/');
       if (hit.kind === 'not_found') {
         return errorResult(new ModuleError('not_found', `${m.name} has no route ${req.method} ${match[2] ?? '/'}.`), m.name);
@@ -1137,6 +1158,8 @@ export class ModuleRuntime {
           m.name
         );
       }
+      // Only a matched route is counted: a flood of unknown routes or methods costs no stats (NSO-323 M3).
+      seen.module = m.name;
       const host = req.header('host');
       const selfOrigin = host ? `${appsOrigin(this.deps.env).scheme}://${host.trim().toLowerCase()}` : null;
       let limits: Limits | null = null;

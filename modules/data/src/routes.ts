@@ -4,7 +4,7 @@
  *
  *   GET    :collection              → { records, next_cursor }   (read; `owner` → the caller's own)
  *   POST   :collection              → 201 the record             (create)
- *   GET    :collection/export.csv   → text/csv attachment        (admin)
+ *   GET    :collection/export.csv   → text/csv attachment, streamed (admin)
  *   GET    :collection/:id          → the record                 (read)
  *   PATCH  :collection/:id          → the record (shallow merge) (update)
  *   DELETE :collection/:id          → { id, deleted: true }      (delete)
@@ -18,7 +18,8 @@
  * rate limit → the quota (records and bytes per app, exact under a per-app
  * lock) → stored. Every statement is scoped to this app (store.ts).
  */
-import { respond, z, type ModuleContext, type ModuleRouter } from '@drobek/modules';
+import { Readable } from 'node:stream';
+import { csvChunks, respond, z, type ModuleContext, type ModuleRouter } from '@drobek/modules';
 import { decideRecord, listScope, type Op } from './access.js';
 import { COLLECTION_NAME_RE, rulesOf, type CollectionConfig, type DataConfig } from './config.js';
 import { DataError } from './errors.js';
@@ -125,14 +126,30 @@ export function registerRoutes(r: ModuleRouter<DataConfig>): void {
   });
 
   // Before `:collection/:id` — the first matching route wins.
+  // Streamed (NSO-323 M5): one keyset page and one ~64 KiB chunk in memory,
+  // never the whole file. The header is pulled BEFORE the 200, so a bad
+  // filter / sort still answers a clean 400; the audit (with the row count)
+  // is written when the stream ends — `complete: false` when it was cut off.
   r.get('/:collection/export.csv', { rule: 'admin', query: exportQuery }, async (req, ctx) => {
     const { name, c } = collectionOf(ctx, req.params.collection);
-    const lines: string[] = [];
-    for await (const line of csvLines(ctx.db, ctx.app.id, name, c, { filter: parseFilterParam(req.query.filter), sort: req.query.sort, dir: req.query.dir })) {
-      lines.push(line);
+    const lines = csvLines(ctx.db, ctx.app.id, name, c, { filter: parseFilterParam(req.query.filter), sort: req.query.sort, dir: req.query.dir });
+    const header = await lines.next();
+    async function* body(): AsyncGenerator<string> {
+      let rows = 0;
+      let complete = false;
+      try {
+        if (!header.done) yield header.value;
+        for (let line = await lines.next(); !line.done; line = await lines.next()) {
+          rows += 1;
+          yield line.value;
+        }
+        complete = true;
+      } finally {
+        await lines.return(undefined);
+        await ctx.audit('export', complete ? { collection: name, rows } : { collection: name, rows, complete: false }).catch(() => undefined);
+      }
     }
-    await ctx.audit('export', { collection: name, rows: lines.length - 1 });
-    return respond(200, `${lines.join('\r\n')}\r\n`, {
+    return respond(200, Readable.from(csvChunks(body())), {
       'Content-Type': 'text/csv; charset=utf-8',
       'Content-Disposition': `attachment; filename="${name}.csv"`,
     });

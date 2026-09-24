@@ -248,6 +248,8 @@ test.describe('platform module data — collections with rules (M1-03) @local', 
     const csv = await data(hostA, '/todos/export.csv', { cookie: boss.cookie });
     expect(csv.status).toBe(200);
     expect(String(csv.headers['content-type'])).toContain('text/csv');
+    // Streamed (NSO-323 M5): no Content-Length, the body arrives in chunks.
+    expect(csv.headers['content-length']).toBeUndefined();
     const lines = csv.body.trimEnd().split('\r\n');
     expect(lines[0]).toBe('_id,_owner,_created_at,_updated_at,title,done');
     expect(csv.body).toContain(",'=1+1,false");

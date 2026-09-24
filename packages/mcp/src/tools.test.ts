@@ -9,7 +9,7 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createVersion, getVersion, publish, readVersionFile } from '@drobek/apps';
 import { appCompiles, appDailyStats, appErrors, apps, auditLog, memberships, moduleConfigs, moduleSecrets, users, workspaces } from '@drobek/db';
-import { dedupKey, sanitizeEvent } from '@drobek/insights';
+import { dedupKey, memoryModuleStatsRedis, recordModuleRequest, sanitizeEvent } from '@drobek/insights';
 import { DEFAULT_APPS_MAX_PER_WORKSPACE } from '@drobek/apps';
 import { DEFAULT_DOMAINS_MAX_PER_APP } from '@drobek/domains';
 import {
@@ -1206,6 +1206,7 @@ describe('get_logs (M1-07)', () => {
   });
 
   it('requests: daily totals + module calls by status class, counted by the module runtime', async () => {
+    const statsRedis = memoryModuleStatsRedis();
     const ping = defineModule({
       name: 'ping',
       version: '1.0.0',
@@ -1224,7 +1225,13 @@ describe('get_logs (M1-07)', () => {
       log: noopLogger,
       modules: [ping],
       skillsDir: null,
-      deps: { rateLimit: memoryRateLimiter(), principal: async () => ({ kind: 'anon' }), email: { send: async () => {} } },
+      deps: {
+        rateLimit: memoryRateLimiter(),
+        principal: async () => ({ kind: 'anon' }),
+        email: { send: async () => {} },
+        // No Redis here: an in-memory one, flushed on every count (the harness reads with flush off).
+        requestStats: (appId, module, status) => recordModuleRequest(appId, module, status, { redis: () => statsRedis, flushEverySec: 0 }),
+      },
     });
     const app = await newApp('Request Log');
     const hit = (path: string) =>
@@ -1234,7 +1241,7 @@ describe('get_logs (M1-07)', () => {
       );
     for (let i = 0; i < 3; i++) expect((await hit('/__drobek/v1/ping')).status).toBe(200);
     for (let i = 0; i < 2; i++) expect((await hit('/__drobek/v1/ping/bad')).status).toBe(400);
-    expect((await hit('/__drobek/v1/ping/missing')).status).toBe(404);
+    expect((await hit('/__drobek/v1/ping/missing')).status).toBe(404); // no such route → not counted (NSO-323)
     expect((await hit('/__drobek/v1/nope')).status).toBe(404); // not an active module → not counted
     const today = new Date().toISOString().slice(0, 10);
     await db.insert(appDailyStats).values({ appId: app.app_id, day: today, requestCount: 42, count5xx: 1, path404Counts: { '/x': 2 } });
@@ -1244,11 +1251,11 @@ describe('get_logs (M1-07)', () => {
       let entries: { day: string; requests: number; count_5xx: number; count_404: number; modules: Record<string, Record<string, number>> }[] = [];
       for (let i = 0; i < 50; i++) {
         entries = (await c.call('get_logs', { app_id: app.app_id, kind: 'requests' })).body.entries as typeof entries;
-        if ((entries[0]?.modules.ping?.['4xx'] ?? 0) === 3 && entries[0].modules.ping['2xx'] === 3) break;
+        if ((entries[0]?.modules.ping?.['4xx'] ?? 0) === 2 && entries[0].modules.ping['2xx'] === 3) break;
         await new Promise((r) => setTimeout(r, 20));
       }
       expect(entries).toEqual([
-        { day: today, requests: 42, count_5xx: 1, count_404: 2, modules: { ping: { '2xx': 3, '3xx': 0, '4xx': 3, '5xx': 0 } } },
+        { day: today, requests: 42, count_5xx: 1, count_404: 2, modules: { ping: { '2xx': 3, '3xx': 0, '4xx': 2, '5xx': 0 } } },
       ]);
     } finally {
       await c.close();

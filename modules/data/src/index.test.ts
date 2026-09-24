@@ -8,13 +8,34 @@ import { PGlite } from '@electric-sql/pglite';
 import { sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { migrate } from 'drizzle-orm/pglite/migrator';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { apps, moduleConfigs, workspaces, type DB } from '@drobek/db';
+import { Readable } from 'node:stream';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { apps, auditLog, moduleConfigs, setDbForTests, workspaces, type DB } from '@drobek/db';
 import * as schema from '@drobek/db/schema';
-import { RECORDS_IMPORT_MAX_ROWS, buildSdk, isDefinedModule, loadModules, type Principal, type RecordsView } from '@drobek/modules';
+import {
+  RECORDS_IMPORT_MAX_ROWS,
+  buildSdk,
+  csvChunks,
+  isDefinedModule,
+  loadModuleRuntime,
+  loadModules,
+  memoryMailGuard,
+  memoryRateLimiter,
+  type Principal,
+  type RecordsView,
+} from '@drobek/modules';
 import { createModuleTestContext, type ModuleTestContext } from '@drobek/modules/testing';
 import auth from 'drobek-module-auth';
-import data, { DATA_CONFIG_DEFAULTS, dataConfigSchema, dataConfirmRequired, dataRecords, recordsAuthority, type DataConfig } from './index.js';
+import data, {
+  DATA_CONFIG_DEFAULTS,
+  MAX_COLLECTIONS,
+  dataConfigSchema,
+  dataConfirmRequired,
+  dataRecords,
+  recordsAuthority,
+  salvageDataConfig,
+  type DataConfig,
+} from './index.js';
 
 const CORE_MIGRATIONS = fileURLToPath(new URL('../../../packages/db/drizzle/migrations', import.meta.url));
 
@@ -113,6 +134,40 @@ async function create(t: ModuleTestContext, collection: string, body: unknown): 
   const r = await t.request('POST', `/${collection}`, { body });
   expect(r.status, JSON.stringify(r.body)).toBe(201);
   return r.body as Rec;
+}
+
+/** `n` schemaless guestbook records of app A (~150 bytes each; every 7th has an `extra` key). */
+async function seedGuestbook(n: number): Promise<void> {
+  const rows = Array.from(
+    { length: n },
+    (_, i) =>
+      `('g${String(i).padStart(5, '0')}', '${appA}', 'guestbook', NULL, '{"text":"${'x'.repeat(100)}","n":${i}${i % 7 === 0 ? ',"extra":"@x"' : ''}}'::jsonb, 10, now() - interval '${i} seconds', now())`
+  );
+  await pg.query(`INSERT INTO mod_data_documents (id, app_id, collection, owner_id, doc, bytes, created_at, updated_at) VALUES ${rows.join(',')}`);
+}
+
+const runtimeLog = () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() });
+
+/** The real module runtime over this database (the path an app host request takes). */
+async function runtimeFor(principal: () => Promise<Principal>, log = runtimeLog()) {
+  return loadModuleRuntime({
+    env: { APPS_DOMAIN: 'apps.localhost', PUBLIC_APP_URL: 'http://localhost:3041', DROBEK_MIGRATE_ON_START: '0', DROBEK_MASTER_KEY: '33'.repeat(32) },
+    log,
+    modules: [data],
+    skillsDir: null,
+    deps: {
+      db: () => db,
+      rateLimit: memoryRateLimiter(),
+      principal,
+      email: { send: async () => {} },
+      mailGuard: memoryMailGuard({ hourlyMax: 100, pauseMinutes: 1 }, log),
+      requestStats: () => undefined,
+    },
+  });
+}
+
+function hostGet(path: string, slug: string) {
+  return { method: 'GET', path, query: '', header: (n: string) => (n === 'host' ? `${slug}--preview.apps.localhost` : null), clientIp: null, readBody: async () => null };
 }
 
 /** The workspace limits the owner's view sees (tests lower them). */
@@ -563,6 +618,65 @@ describe('CSV export', () => {
     const some = String((await t.request('GET', '/guestbook/export.csv', { query: { filter: JSON.stringify({ stars: 5 }) } })).body).trimEnd().split('\r\n');
     expect(some).toHaveLength(2);
   });
+
+  it('streams in chunks (never one joined string), identical to the joined lines; one read of a schemaless collection; a bad filter still answers 400 (NSO-323 M5)', async () => {
+    const t = ctx({ principal: ADMIN });
+    await seedGuestbook(1200);
+    const res = await t.request('GET', '/guestbook/export.csv');
+    expect(res.status).toBe(200);
+    const direct: string[] = [];
+    for await (const l of recordsAuthority.csv(view(), { collection: 'guestbook' })) direct.push(l);
+    expect(direct[0]).toBe('_id,_owner,_created_at,_updated_at,extra,n,text');
+    expect(direct).toHaveLength(1201);
+    expect(String(res.body)).toBe(`${direct.join('\r\n')}\r\n`);
+    expect(t.audits.at(-1)).toEqual({ action: 'data.export', meta: { collection: 'guestbook', rows: 1200 } });
+    // The shared chunker: bounded chunks that add up to the same bytes.
+    const chunks: string[] = [];
+    for await (const c of csvChunks(recordsAuthority.csv(view(), { collection: 'guestbook' }))) chunks.push(c);
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(Math.max(...chunks.map((c) => c.length))).toBeLessThan(64 * 1024 + 400);
+    expect(chunks.join('')).toBe(String(res.body));
+
+    // Schemaless columns come from ONE statement: the records are read once (3 pages of 500 + the keys).
+    const spy = vi.spyOn(pg, 'query');
+    try {
+      await t.request('GET', '/guestbook/export.csv');
+      const reads = spy.mock.calls.map((c) => String(c[0])).filter((q) => q.includes('mod_data_documents'));
+      expect(reads).toHaveLength(4);
+      expect(reads.filter((q) => q.includes('jsonb_object_keys'))).toHaveLength(1);
+    } finally {
+      spy.mockRestore();
+    }
+    expect((await t.request('GET', '/guestbook/export.csv', { query: { filter: '{"nope":' } })).status).toBe(400);
+  });
+
+  it('the app host gets a Readable body; a download cut off mid-stream is audited with complete: false', async () => {
+    await seedGuestbook(1200);
+    await db.insert(moduleConfigs).values({ appId: appA, module: 'data', config: CONFIG });
+    setDbForTests(db);
+    try {
+      const rt = await runtimeFor(async () => ADMIN);
+      const res = await rt.handle(hostGet('/__drobek/v1/data/guestbook/export.csv', 'notes'), { id: appA, slug: 'notes', workspaceId });
+      expect(res.status).toBe(200);
+      expect(res.headers['Content-Type']).toBe('text/csv; charset=utf-8');
+      expect(res.body).toBeInstanceOf(Readable);
+      const iter = (res.body as Readable)[Symbol.asyncIterator]();
+      const first = await iter.next();
+      expect(String(first.value)).toMatch(/^_id,_owner,_created_at,_updated_at,extra,n,text\r\n/);
+      expect(String(first.value).length).toBeLessThan(64 * 1024 + 400);
+      await iter.return!();
+      let meta: unknown = null;
+      for (let i = 0; i < 50 && !meta; i++) {
+        const [row] = await db.select().from(auditLog).where(sql`${auditLog.action} = 'data.export'`);
+        meta = row?.meta ?? null;
+        if (!meta) await new Promise((r) => setTimeout(r, 10));
+      }
+      expect(meta).toMatchObject({ collection: 'guestbook', complete: false, module: 'data' });
+    } finally {
+      await db.delete(moduleConfigs).where(sql`${moduleConfigs.appId} = ${appA}`);
+      await db.delete(auditLog);
+    }
+  });
 });
 
 describe("the owner's view (records authority)", () => {
@@ -678,6 +792,45 @@ describe("the owner's edits (records authority, M2-03)", () => {
     expect((await recordsAuthority.query(view(), { collection: 'guestbook' })).total).toBe(1);
     expect(await recordsAuthority.get(view(appB), 'todos', other._id)).toMatchObject({ title: 'other app' });
     await expect(recordsAuthority.dropCollection!(view(), 'nope')).rejects.toMatchObject({ code: 'not_found' });
+  });
+});
+
+describe('a stored config that fails the schema (legacy import past MAX_COLLECTIONS, hand edits — NSO-323 M6)', () => {
+  const PUBLIC = { read: 'public', create: 'public', update: 'admin', delete: 'admin' };
+  const many = (n: number) => Object.fromEntries(Array.from({ length: n }, (_, i) => [`c${i}`, { rules: PUBLIC }]));
+
+  it('salvage keeps every collection that is valid on its own (all 101), drops and names the invalid ones', () => {
+    const stored = { collections: { ...many(MAX_COLLECTIONS + 1), broken: { rules: { read: 'everyone' } }, 'bad name!': {} }, stray: 1 };
+    expect(dataConfigSchema.safeParse(stored).success).toBe(false);
+    const out = salvageDataConfig(stored)!;
+    expect(Object.keys(out.config.collections)).toHaveLength(101);
+    expect(out.config.collections.c100.rules).toEqual(PUBLIC);
+    expect(out.config.collections.broken).toBeUndefined();
+    expect(out.issues).toEqual([
+      'stray: not a data setting (ignored)',
+      expect.stringMatching(/^collections\.broken\.rules\.read: .* \(dropped\)$/),
+      'collections.bad name!: not a valid collection name (dropped)',
+      'collections: 101 declared, at most 100 — all kept; remove some before the next configure_module',
+    ]);
+    expect(salvageDataConfig({ collections: [] })).toBeNull();
+    expect(salvageDataConfig(null)).toBeNull();
+  });
+
+  it('the runtime serves the valid collections instead of 404 for all of them, and warns once', async () => {
+    await db.insert(moduleConfigs).values({ appId: appB, module: 'data', config: { collections: { ...many(MAX_COLLECTIONS + 1), broken: { rules: { read: 'everyone' } } } } });
+    const log = runtimeLog();
+    try {
+      const rt = await runtimeFor(async () => ANON, log);
+      const hit = (path: string) => rt.handle(hostGet(path, 'other'), { id: appB, slug: 'other', workspaceId });
+      expect((await hit('/__drobek/v1/data/c0')).status).toBe(200);
+      expect((await hit('/__drobek/v1/data/c100')).status).toBe(200);
+      expect((await hit('/__drobek/v1/data/broken')).status).toBe(404);
+      const warned = log.warn.mock.calls.filter(([m]) => String(m).includes('serving its valid part'));
+      expect(warned).toHaveLength(1);
+      expect(warned[0][1]).toMatchObject({ module: 'data', issue_count: 2 });
+    } finally {
+      await db.delete(moduleConfigs).where(sql`${moduleConfigs.appId} = ${appB}`);
+    }
   });
 });
 

@@ -20,7 +20,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { defineModule } from '@drobek/modules';
-import { DATA_CONFIG_DEFAULTS, dataConfigSchema, dataConfirmRequired, type DataConfig } from './config.js';
+import { DATA_CONFIG_DEFAULTS, dataConfigSchema, dataConfirmRequired, salvageDataConfig, type DataConfig } from './config.js';
 import { DEFAULT_MAX_BYTES_PER_APP, DEFAULT_MAX_DOC_BYTES, DEFAULT_MAX_DOCS_PER_APP } from './quota.js';
 import { recordsAuthority } from './records.js';
 import { DEFAULT_WRITE_RATE_LIMIT, DEFAULT_WRITE_RATE_WINDOW_MS, registerRoutes } from './routes.js';
@@ -36,6 +36,7 @@ export {
   dataConfigSchema,
   dataConfirmRequired,
   rulesOf,
+  salvageDataConfig,
   type CollectionConfig,
   type DataConfig,
 } from './config.js';
@@ -100,6 +101,7 @@ const data = defineModule<DataConfig>({
   },
   configSchema: dataConfigSchema,
   configDefaults: DATA_CONFIG_DEFAULTS,
+  salvageConfig: salvageDataConfig,
   confirmRequired: dataConfirmRequired,
   rules: {
     ops: {

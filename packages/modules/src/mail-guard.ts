@@ -13,14 +13,20 @@
  *    mail to the signed-in user): the rest of the global cap, and ONE app
  *    may use at most `EMAIL_APP_HOURLY_SHARE` percent of it (default 25).
  *
+ * On top of the per-app shares, ONE workspace (all its apps together) may use
+ * at most `EMAIL_WORKSPACE_HOURLY_SHARE` percent of each class (default 50,
+ * never less than one app's share) — so a workspace with four apps cannot
+ * take a whole class and pause it for every other workspace (NSO-323 M4).
+ * Both shares must pass.
+ *
  * The two class budgets add up to the global cap, so the operator's mailbox
  * never sees more than `EMAIL_GLOBAL_HOURLY_MAX` module recipients an hour.
  * Past a class budget, THAT class pauses for `EMAIL_GLOBAL_PAUSE_MINUTES`
  * and an ALERT line for the super-admin goes to the log (`event:
  * email_global_pause`, with the `class`): the mailbox is protected before
  * the SMTP provider suspends it. The other class keeps working. Past its
- * share of a class, one app's messages of that class are refused until its
- * hourly window ends; other apps continue. Pattern of the dashboard's
+ * share of a class, one app's (or one workspace's) messages of that class are
+ * refused until its hourly window ends; other apps (workspaces) continue. Pattern of the dashboard's
  * `OTP_GLOBAL_HOURLY_MAX` auto-pause (@drobek/auth otp-guard).
  *
  * These are operator knobs (env only): the limits provider does not override
@@ -29,7 +35,9 @@
  *
  * Redis keys: `drobek:rl:mail:<class>` (the hourly class counters),
  * `drobek:rl:mail:app:<app_id>` (one app's notification counter),
- * `drobek:rl:mail:app:<app_id>:sign_in` (one app's sign-in counter) and
+ * `drobek:rl:mail:app:<app_id>:sign_in` (one app's sign-in counter),
+ * `drobek:rl:mail:ws:<workspace_id>` / `drobek:rl:mail:ws:<workspace_id>:sign_in`
+ * (one workspace's counters) and
  * `drobek:mail:paused:<class>` (the pause; delete it to resume early). Any
  * Redis error is FAIL-CLOSED: no e-mail is sent.
  */
@@ -52,6 +60,10 @@ export const MAIL_PAUSE_KEYS: Readonly<Record<MailClass, string>> = {
 export function mailAppCounterKey(appId: string, cls: MailClass = 'notification'): string {
   return cls === 'notification' ? `drobek:rl:mail:app:${appId}` : `drobek:rl:mail:app:${appId}:${cls}`;
 }
+/** One workspace's counter of a class (the per-workspace share). */
+export function mailWorkspaceCounterKey(workspaceId: string, cls: MailClass = 'notification'): string {
+  return cls === 'notification' ? `drobek:rl:mail:ws:${workspaceId}` : `drobek:rl:mail:ws:${workspaceId}:${cls}`;
+}
 const HOUR_MS = 60 * 60_000;
 
 export interface MailGuardConfig {
@@ -65,6 +77,8 @@ export interface MailGuardConfig {
   appSharePercent?: number;
   /** Percent of the sign-in budget one app may use per hour (EMAIL_SIGNIN_APP_HOURLY_SHARE, default 25). */
   signInAppSharePercent?: number;
+  /** Percent of each class budget one workspace (all its apps) may use per hour (EMAIL_WORKSPACE_HOURLY_SHARE, default 50). */
+  workspaceSharePercent?: number;
 }
 
 /** The least sign-in codes one app may send per hour, whatever the share (capped at the sign-in budget). */
@@ -79,6 +93,10 @@ export interface MailBudgets {
   perApp: number;
   /** Sign-in codes per app per hour. */
   perAppSignIn: number;
+  /** Notifications per workspace per hour (all its apps). */
+  perWorkspace: number;
+  /** Sign-in codes per workspace per hour (all its apps). */
+  perWorkspaceSignIn: number;
 }
 
 /**
@@ -86,7 +104,9 @@ export interface MailBudgets {
  * ⌊G / 2⌋); an explicit value is capped at G − 1. notification = G − sign_in
  * (at least 1). perApp = ⌊notification × share / 100⌋ (at least 1).
  * perAppSignIn = ⌊sign_in × sign-in share / 100⌋, at least
- * MIN_SIGN_IN_APP_SHARE, never more than sign_in.
+ * MIN_SIGN_IN_APP_SHARE, never more than sign_in. perWorkspace /
+ * perWorkspaceSignIn = ⌊class × workspace share / 100⌋, never less than the
+ * app share of that class, never more than the class.
  */
 export function mailBudgets(c: MailGuardConfig): MailBudgets {
   const g = c.hourlyMax;
@@ -95,12 +115,17 @@ export function mailBudgets(c: MailGuardConfig): MailBudgets {
   const notification = Math.max(1, g - signIn);
   const share = Math.min(100, Math.max(1, c.appSharePercent ?? 25));
   const signInShare = Math.min(100, Math.max(1, c.signInAppSharePercent ?? 25));
+  const wsShare = Math.min(100, Math.max(1, c.workspaceSharePercent ?? 50));
+  const perApp = Math.max(1, Math.floor((notification * share) / 100));
+  const perAppSignIn = Math.min(signIn, Math.max(MIN_SIGN_IN_APP_SHARE, Math.floor((signIn * signInShare) / 100)));
   return {
     global: g,
     sign_in: signIn,
     notification,
-    perApp: Math.max(1, Math.floor((notification * share) / 100)),
-    perAppSignIn: Math.min(signIn, Math.max(MIN_SIGN_IN_APP_SHARE, Math.floor((signIn * signInShare) / 100))),
+    perApp,
+    perAppSignIn,
+    perWorkspace: Math.min(notification, Math.max(perApp, Math.floor((notification * wsShare) / 100))),
+    perWorkspaceSignIn: Math.min(signIn, Math.max(perAppSignIn, Math.floor((signIn * wsShare) / 100))),
   };
 }
 
@@ -117,12 +142,15 @@ export function mailGuardConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Ma
     ...(signIn !== undefined ? { signInHourlyMax: signIn } : {}),
     appSharePercent: Math.min(100, envInt(env, 'EMAIL_APP_HOURLY_SHARE') ?? 25),
     signInAppSharePercent: Math.min(100, envInt(env, 'EMAIL_SIGNIN_APP_HOURLY_SHARE') ?? 25),
+    workspaceSharePercent: Math.min(100, envInt(env, 'EMAIL_WORKSPACE_HOURLY_SHARE') ?? 50),
   };
 }
 
 /** Which message the guard is asked about (logged; never an address). */
 export interface MailGuardMeta {
   app_id: string;
+  /** The app's workspace (its apps share the per-workspace budget). */
+  workspace_id: string;
   module: string;
   /** `sign_in` counts against the sign-in budget; anything else is a notification. */
   kind: EmailKind;
@@ -131,9 +159,9 @@ export interface MailGuardMeta {
 export interface MailGuard {
   /** The hourly budgets it enforces (modules clamp their own per-app caps to them). */
   readonly budgets?: MailBudgets;
-  /** Refuse (ModuleError `unavailable`, 503) while the message's class — or its app's share — is paused. */
+  /** Refuse (ModuleError `unavailable`, 503) while the message's class — or its app's or workspace's share — is used up. */
   assertOpen(meta: MailGuardMeta): Promise<void>;
-  /** Count `recipients` against the app's share and the class budget; past it: pause, ALERT, refuse. */
+  /** Count `recipients` against the app's share, its workspace's share and the class budget; past it: pause, ALERT, refuse. */
   admit(recipients: number, meta: MailGuardMeta): Promise<void>;
 }
 
@@ -172,9 +200,25 @@ function appShareUsed(cls: MailClass, perApp: number, retryAfterSec: number): Mo
   });
 }
 
+function workspaceShareUsed(cls: MailClass, perWorkspace: number, retryAfterSec: number): ModuleError {
+  const message =
+    cls === 'sign_in'
+      ? "This workspace's apps have sent their share of sign-in e-mails for this hour. Try again later."
+      : "This workspace's apps have sent their share of e-mail for this hour. Try again later.";
+  return new ModuleError('unavailable', message, {
+    details: { reason: 'email_paused', class: cls, limit: 'EMAIL_WORKSPACE_HOURLY_SHARE', value: perWorkspace },
+    headers: { 'Retry-After': String(Math.max(1, Math.ceil(retryAfterSec))) },
+  });
+}
+
 /** One app's hourly budget of a class. */
 function appShareOf(budgets: MailBudgets, cls: MailClass): number {
   return cls === 'sign_in' ? budgets.perAppSignIn : budgets.perApp;
+}
+
+/** One workspace's hourly budget of a class. */
+function workspaceShareOf(budgets: MailBudgets, cls: MailClass): number {
+  return cls === 'sign_in' ? budgets.perWorkspaceSignIn : budgets.perWorkspace;
 }
 
 function guardDown(): ModuleError {
@@ -229,6 +273,19 @@ export function redisMailGuard(opts: { redis: () => MailGuardRedis; config: Mail
               ...meta,
             });
             refusal = appShareUsed(cls, share, await ttlSec(r, key, HOUR_MS / 1000));
+          } else {
+            const wsKey = mailWorkspaceCounterKey(meta.workspace_id, cls);
+            const wsShare = workspaceShareOf(budgets, cls);
+            if (Number((await r.get(wsKey)) ?? 0) >= wsShare) {
+              log.warn('module e-mail refused: the workspace used its hourly share', {
+                event: 'email_send_blocked',
+                reason: 'workspace_share',
+                class: cls,
+                share_max: wsShare,
+                ...meta,
+              });
+              refusal = workspaceShareUsed(cls, wsShare, await ttlSec(r, wsKey, HOUR_MS / 1000));
+            }
           }
         }
       } catch (err) {
@@ -256,6 +313,22 @@ export function redisMailGuard(opts: { redis: () => MailGuardRedis; config: Mail
               });
             }
             refusal = appShareUsed(cls, share, await ttlSec(r, key, HOUR_MS / 1000));
+          }
+        }
+        if (!refusal) {
+          const key = mailWorkspaceCounterKey(meta.workspace_id, cls);
+          const share = workspaceShareOf(budgets, cls);
+          const used = await count(r, key, recipients);
+          if (used > share) {
+            if (used - recipients <= share) {
+              log.warn(`module e-mail: a workspace used its hourly share of ${cls === 'sign_in' ? 'sign-in codes' : 'notifications'}`, {
+                event: 'email_workspace_share_exceeded',
+                class: cls,
+                share_max: share,
+                ...meta,
+              });
+            }
+            refusal = workspaceShareUsed(cls, share, await ttlSec(r, key, HOUR_MS / 1000));
           }
         }
         if (!refusal) {

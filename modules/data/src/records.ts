@@ -21,6 +21,7 @@ import {
   countsByCollection,
   deleteCollectionRecords,
   deleteRecord,
+  docKeysMatching,
   insertRecords,
   loadRecord,
   patchRecord,
@@ -95,9 +96,10 @@ export async function pageOf(
 const CSV_PAGE = 500;
 
 /**
- * The CSV lines of a collection (header first; filter + sort applied). A
- * schema gives the columns; without one, every key any matching record has
- * (sorted — a first pass collects them).
+ * The CSV lines of a collection (header first; filter + sort applied), one
+ * keyset page in memory at a time. A schema gives the columns; without one,
+ * every key any matching record has (sorted — one SQL statement collects them,
+ * so the records are read once).
  */
 export async function* csvLines(
   db: DB,
@@ -108,24 +110,16 @@ export async function* csvLines(
   ownerId: string | null = null
 ): AsyncGenerator<string> {
   const { conditions, sort } = normalizeQuery(c, q);
-  const pages = async function* () {
-    let cursor = null;
-    do {
-      const page = await queryRecords(db, { appId, collection: name, ownerId, conditions, sort, limit: CSV_PAGE, cursor });
-      yield page.rows.map(toRecord);
-      cursor = page.nextCursor ? decodeCursor(page.nextCursor) : null;
-    } while (cursor);
-  };
-  let keys: string[];
-  if (c.schema) {
-    keys = schemaColumns(c.schema).map((col) => col.key);
-  } else {
-    const seen = new Set<string>();
-    for await (const records of pages()) for (const r of records) for (const k of Object.keys(r)) if (!k.startsWith('_')) seen.add(k);
-    keys = [...seen].sort();
-  }
+  const keys = c.schema
+    ? schemaColumns(c.schema).map((col) => col.key)
+    : await docKeysMatching(db, { appId, collection: name, ownerId, conditions });
   yield csvHeader(keys);
-  for await (const records of pages()) for (const r of records) yield csvRecordLine(r, keys);
+  let cursor = null;
+  do {
+    const page = await queryRecords(db, { appId, collection: name, ownerId, conditions, sort, limit: CSV_PAGE, cursor });
+    for (const row of page.rows) yield csvRecordLine(toRecord(row), keys);
+    cursor = page.nextCursor ? decodeCursor(page.nextCursor) : null;
+  } while (cursor);
 }
 
 function describe(name: string, c: CollectionConfig, records: number): RecordsCollection {

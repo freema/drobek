@@ -5,8 +5,8 @@
  *  - recordCompile       — one `app_compiles` row per compile a write ran
  *                          (create_app / write_files; ok, failed or refused),
  *                          pruned to 30 days / the newest 200 per app;
- *  - recordModuleRequest — `module_request_stats` += 1 for (app, module,
- *                          status class, UTC day); best-effort, never throws;
+ *  - (module request counters live in module-stats.server.ts — Redis, flushed
+ *    into `module_request_stats` lazily and by queryRequestLog);
  *  - queryRuntimeLog / queryCompileLog / queryRequestLog — the three kinds.
  *
  * Every read is bounded to the retention window (30 days) and ≤ 100 entries.
@@ -21,12 +21,12 @@ import {
   daysBetween,
   requestEntries,
   runtimeEntries,
-  statusClass,
   type CompileEntry,
   type RequestsEntry,
   type RuntimeEntry,
 } from './logs.js';
 import { dedupErrors } from './shape.js';
+import { flushModuleRequests } from './module-stats.server.js';
 import { flushDay, utcDay } from './signals.server.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -84,30 +84,6 @@ export async function recordCompile(input: RecordCompileInput): Promise<void> {
   }
 }
 
-/**
- * Count one module response (`/__drobek/v1/<module>/…`) of `appId`. Called by
- * the module runtime for every response of an ACTIVE module; best-effort —
- * a failed upsert is swallowed so the module response is never affected.
- */
-export async function recordModuleRequest(
-  appId: string,
-  module: string,
-  status: number,
-  now: Date = new Date()
-): Promise<void> {
-  try {
-    await getDb()
-      .insert(moduleRequestStats)
-      .values({ appId, module, statusClass: statusClass(status), day: utcDay(now), count: 1 })
-      .onConflictDoUpdate({
-        target: [moduleRequestStats.appId, moduleRequestStats.module, moduleRequestStats.statusClass, moduleRequestStats.day],
-        set: { count: sql`${moduleRequestStats.count} + 1` },
-      });
-  } catch {
-    /* stats are best-effort */
-  }
-}
-
 // ── reads ────────────────────────────────────────────────────────────────────
 
 /** Browser errors since `since` (deduped by message + stack head, with counts). */
@@ -154,7 +130,7 @@ export async function queryCompileLog(appId: string, since?: Date | string | nul
 
 export interface RequestLogOptions {
   now?: Date;
-  /** Mirror the Redis day counters into app_daily_stats first (default true; tests without Redis pass false). */
+  /** Mirror the Redis day counters into app_daily_stats / module_request_stats first (default true; tests without Redis pass false). */
   flush?: boolean;
 }
 
@@ -169,7 +145,10 @@ export async function queryRequestLog(
   const today = utcDay(now);
   if (opts.flush !== false) {
     // The hot counters of every day in the window that still lives in Redis.
-    for (const day of daysBetween(fromDay, today)) await flushDay(appId, day);
+    for (const day of daysBetween(fromDay, today)) {
+      await flushDay(appId, day);
+      await flushModuleRequests(appId, day);
+    }
   }
   const db = getDb();
   const oldest = utcDay(new Date(now.getTime() - LOGS_RETENTION_DAYS * DAY_MS));

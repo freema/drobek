@@ -1095,6 +1095,31 @@ block, then `next` is pushed and the single MR opened.
   blanket `encodeURIComponent` would turn `models/x:generateContent` into
   `%3A` and `+` into `%2B`, which some APIs treat differently.
 
+- NSO-323 M3: module request counters are Redis-first. `recordModuleRequest`
+  without a Redis (unit tests with no `REDIS_URL`) throws inside and is
+  swallowed — nothing is counted; a test that reads `get_logs('requests')`
+  passes `requestStats: (a, m, s) => recordModuleRequest(a, m, s, { redis: ()
+  => memoryModuleStatsRedis(), flushEverySec: 0 })` (0 = flush on every
+  count, because the MCP harness reads with `flush: false`). Only matched
+  routes are counted: `/__drobek/v1/<module>/nope` (404) and 405 / 429 never
+  show up in `4xx` any more.
+- NSO-323 M3: to count SQL statements on PGlite spy on `pg.query` AND
+  `pg.exec` (drizzle's pglite session calls `client.query`); statements
+  inside `db.transaction` go through the transaction object and are not seen.
+- NSO-323 M4: `MailGuardMeta.workspace_id` is required. Guard unit tests that
+  use several apps must give each its own workspace (the email.test helpers
+  default to `ws_<app_id>`) or the new 50 % workspace share refuses before
+  the per-app share they test.
+- NSO-323 M5: a streamed module response runs its generator AFTER the handler
+  returned — `ctx.audit` in the generator's `finally` works (the test harness
+  drains the Readable before it returns, so `t.audits` is complete), but a
+  runtime-level test must `setDbForTests(db)` because `writeAudit` uses
+  `getDb()`, not `deps.db`.
+- NSO-323 M6: an effective config served through `salvageConfig` may NOT pass
+  `configSchema` (data keeps > 100 collections); `configure_module` then
+  fails until the patch repairs the whole config (e.g. `{ collections: { x:
+  null } }` down to 100).
+
 ## Failed approaches
 
 - `pnpm deploy --offline` in the Dockerfile builder: fails with

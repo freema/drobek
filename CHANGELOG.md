@@ -170,6 +170,48 @@
   relayed relative one and a decoded gzip answer (`proxy-echo` serves
   `/redirect/relative` and `/echo/gzip`).
 
+### Module runtime follow-ups of the M1 security review (NSO-323)
+
+- **Request stats no longer write per response (M3).** The module runtime
+  counts a response only for a MATCHED route of an active module — never a
+  429 and never an unknown route or method — and the count goes to Redis
+  (`drobek:signals:mod:<app_id>:<day>`, one hash field per module and status
+  class, 31-day TTL), not to Postgres. `module_request_stats` is written
+  lazily: at most once a minute per app and day (a `SET NX EX` marker) and on
+  every `get_logs('requests')` / dashboard Logs read, one statement per day
+  (`greatest()` so a restarted Redis never lowers a stored count). A cheap
+  429 flood therefore costs no SQL at all. The daily numbers of the counted
+  classes are unchanged; a 404 of an unknown module route no longer shows up
+  in `4xx`. New `@drobek/insights` exports `flushModuleRequests`,
+  `memoryModuleStatsRedis`; `recordModuleRequest` takes `{ now, redis,
+  flushEverySec }`.
+- **Module e-mail budget per workspace (M4).** On top of the per-app shares,
+  one workspace (all its apps together) may use at most
+  `EMAIL_WORKSPACE_HOURLY_SHARE` percent of each class (notifications and
+  sign-in codes; default 50, never less than one app's share) — four apps of
+  one workspace can no longer take a whole class. Both shares must pass;
+  refusals are `503 unavailable` with `details.limit:
+  EMAIL_WORKSPACE_HOURLY_SHARE` (log event `email_workspace_share_exceeded`,
+  Redis `drobek:rl:mail:ws:<workspace_id>[:sign_in]`). `MailGuardMeta` has a
+  required `workspace_id`. New env var in `.env.example`,
+  `.env.production.example` and the SELF-HOSTING reference — raise it to 100
+  on a single-workspace server.
+- **Streamed CSV export (M5).** `GET /__drobek/v1/data/:collection/export.csv`
+  answers a `Readable` of ~64 KiB chunks (the new shared `csvChunks` of
+  `@drobek/modules`, which the dashboard's Data export now uses too) instead
+  of one string of the whole file; a schemaless collection's columns come
+  from one `jsonb_object_keys` statement, so the records are read once. The
+  header is pulled before the 200 (a bad filter is still a clean 400); the
+  `data.export` audit is written when the stream ends, with `complete:
+  false` when the download was cut off. The CSV bytes are unchanged.
+- **A stored config that fails its schema degrades per part (M6).** New
+  optional module contract field `salvageConfig(merged)` → `{ config, issues
+  }`: the runtime serves it (logging the issues once per stored content)
+  instead of silently falling back to the defaults. The data module keeps
+  every collection that is valid on its own — also a legacy import of more
+  than 100 collections, which used to make EVERY collection answer 404 — and
+  drops only the invalid ones. No migration.
+
 ### Directory listing kit + explicit `idempotentHint` (NSO-307)
 
 - New `docs/listing/`: `README.md` is the submission kit for the Claude

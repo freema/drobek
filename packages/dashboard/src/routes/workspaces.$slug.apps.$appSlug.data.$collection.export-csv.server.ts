@@ -12,7 +12,7 @@
  * the module pulls one keyset page at a time.
  */
 import { type LoaderFunctionArgs } from 'react-router';
-import { isModuleError } from '@drobek/modules';
+import { csvChunks, isModuleError } from '@drobek/modules';
 import { requireWorkspaceRole } from '@drobek/tenancy';
 import { mapFilterSort } from '../data-view.js';
 import { recordsOf } from './data-http.server.js';
@@ -46,19 +46,16 @@ export async function loader({ request, params }: LoaderFunctionArgs): Promise<R
     return unavailable(isModuleError(err) && err.code === 'not_found' ? 404 : isModuleError(err) ? 400 : 500);
   }
 
+  async function* all(): AsyncGenerator<string> {
+    if (!first.done) yield first.value;
+    for (let r = await lines.next(); !r.done; r = await lines.next()) yield r.value;
+  }
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
-        let chunk = first.done ? '' : `${first.value}\r\n`;
-        for (let r = await lines.next(); !r.done; r = await lines.next()) {
-          chunk += `${r.value}\r\n`;
-          if (chunk.length > 64 * 1024) {
-            controller.enqueue(encoder.encode(chunk));
-            chunk = '';
-          }
-        }
-        if (chunk) controller.enqueue(encoder.encode(chunk));
+        // The same ~64 KiB chunks as the app host's export.csv (csvChunks).
+        for await (const chunk of csvChunks(all())) controller.enqueue(encoder.encode(chunk));
         controller.close();
       } catch (err) {
         controller.error(err);

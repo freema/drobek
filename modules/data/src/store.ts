@@ -303,3 +303,16 @@ export async function countMatching(db: DB, input: Omit<QueryInput, 'sort' | 'li
   const [row] = await db.select({ n: sql<string>`count(*)` }).from(dataRecords).where(and(...whereOf(input)));
   return Number(row?.n ?? 0);
 }
+
+/**
+ * The distinct own keys of every matching record (the columns of a schemaless
+ * CSV export), in JS sort order — one statement, so the export reads the
+ * records once (NSO-323 M5).
+ */
+export async function docKeysMatching(db: DB, input: Omit<QueryInput, 'sort' | 'limit' | 'cursor'>): Promise<string[]> {
+  const rows = await db
+    .selectDistinct({ key: sql<string>`jsonb_object_keys(${dataRecords.doc})` })
+    .from(dataRecords)
+    .where(and(...whereOf(input), sql`jsonb_typeof(${dataRecords.doc}) = 'object'`));
+  return rows.map((r) => r.key).filter((k) => !k.startsWith('_')).sort();
+}
