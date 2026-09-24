@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { isSuperAdmin, superAdminEmails } from './super-admin.server.js';
 
 describe('isSuperAdmin', () => {
@@ -50,6 +50,13 @@ describe('isSuperAdmin', () => {
   it('lists every configured address, normalized and deduped (abuse report e-mails)', () => {
     expect(superAdminEmails(' A@x.cz , ,b@y.com,a@x.cz ')).toEqual(['a@x.cz', 'b@y.com']);
     expect(superAdminEmails('')).toEqual([]);
-    expect(superAdminEmails(undefined)).toEqual([]);
+    // `undefined` falls back to process.env — pin it (a local .env loaded by
+    // the Taskfile carries a real SUPERADMIN_EMAIL).
+    vi.stubEnv('SUPERADMIN_EMAIL', '');
+    try {
+      expect(superAdminEmails(undefined)).toEqual([]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
