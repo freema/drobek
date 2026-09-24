@@ -12,6 +12,8 @@ import type { ServerBuild } from 'react-router';
  * host is added to the build's `allowedActionOrigins` at runtime: the same
  * host is accepted whatever the scheme the proxy hop used. Any other origin
  * is still refused. Without a valid `PUBLIC_APP_URL` the build is unchanged.
+ * A build without the option carries `allowedActionOrigins: false`, which
+ * React Router treats as an empty list (the check still runs), not as "off".
  */
 export function withPublicActionOrigin(build: ServerBuild, env: NodeJS.ProcessEnv = process.env): ServerBuild {
   const raw = env.PUBLIC_APP_URL?.trim();
@@ -24,6 +26,6 @@ export function withPublicActionOrigin(build: ServerBuild, env: NodeJS.ProcessEn
   }
   if (!host) return build;
   const existing = Array.isArray(build.allowedActionOrigins) ? build.allowedActionOrigins : [];
-  if (build.allowedActionOrigins === false || existing.includes(host)) return build;
+  if (existing.includes(host)) return build;
   return { ...build, allowedActionOrigins: [...existing, host] };
 }

@@ -24,11 +24,16 @@ describe('withPublicActionOrigin', () => {
     expect(again).toBe(out);
   });
 
-  it('leaves the build alone without a valid PUBLIC_APP_URL or when the check is off', () => {
+  it('leaves the build alone without a valid PUBLIC_APP_URL', () => {
     const b = build();
     expect(withPublicActionOrigin(b, {})).toBe(b);
     expect(withPublicActionOrigin(b, { PUBLIC_APP_URL: 'not a url' })).toBe(b);
-    const off = build({ allowedActionOrigins: false });
-    expect(withPublicActionOrigin(off, { PUBLIC_APP_URL: 'https://drobek.app' })).toBe(off);
+  });
+
+  it('treats `false` (what a real build carries when nothing is configured) as an empty list', () => {
+    const out = withPublicActionOrigin(build({ allowedActionOrigins: false }), {
+      PUBLIC_APP_URL: 'https://drobek.app',
+    });
+    expect(out.allowedActionOrigins).toEqual(['drobek.app']);
   });
 });
