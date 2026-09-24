@@ -4,6 +4,11 @@
 
 _Nothing yet._
 
+## v0.1.1 — 2026-09-24
+
+### Fixed
+- **Sign-in and every dashboard form behind a TLS proxy** — React Router 7.18 (the NSO-333 dependency update) refuses an action whose `Origin` differs from the origin of `request.url`; behind Caddy drobek builds `http://…` while browsers send `Origin: https://…`, so every POST answered 400. The host of `PUBLIC_APP_URL` is now an allowed action origin. v0.1.0 was tagged but never published as an image (its CI e2e run caught this).
+
 ## v0.1.0 — 2026-09-24
 
 ### Release summary
