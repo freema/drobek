@@ -17,7 +17,10 @@ import { FULL_SCOPE, callTool, mcpClient, type McpClient } from './helpers/mcp';
  *  - compile: the last compiles with ok / errors / version (≤ 50);
  *  - requests: today's totals + module calls by status class (hello: 2xx, 4xx);
  *  - the beacon: 9 KiB (declared or chunked) → 413 and the server keeps
- *    answering (the PHY-76 #10 regression); a cross-origin POST → 403.
+ *    answering (the PHY-76 #10 regression); a cross-origin POST → 403;
+ *  - NSO-327: the page URL is stored as origin + path — the SDK never sends
+ *    the query string or fragment (`?code=…`), and a client that does has
+ *    them stripped by the server.
  */
 
 interface Created {
@@ -134,7 +137,8 @@ test.describe('get_logs — runtime errors, compile history, request stats (M1-0
     const ctx = await browser.newContext();
     try {
       const tab = await ctx.newPage();
-      await tab.goto(urlOf(host));
+      // A one-time code in the query and a token in the fragment must never reach the log (NSO-327).
+      await tab.goto(`${urlOf(host)}/?code=123456&e=${encodeURIComponent(LEAKED_EMAIL)}#token=${STAMP}`);
       await expect(tab.getByRole('heading', { name: 'Logs demo ready' })).toBeVisible();
       const loadedAt = Date.now();
 
@@ -160,6 +164,9 @@ test.describe('get_logs — runtime errors, compile history, request stats (M1-0
       expect(err.message).toContain('[redacted-email]');
       expect(err.message).not.toContain(LEAKED_EMAIL);
       expect(err.url).toContain(host);
+      expect(err.url).not.toMatch(/[?#]/);
+      expect(text).not.toContain('123456');
+      expect(text).not.toContain(`token=${STAMP}`);
       expect(err.file_hint).toContain('main.js');
       expect(entries.find((e) => e.type === 'unhandledrejection')!.message).toContain('async boom');
 
@@ -254,5 +261,29 @@ test.describe('get_logs — runtime errors, compile history, request stats (M1-0
     expect(foreign.status).toBe(403);
     const r = await callTool(mcp.client, 'get_logs', { app_id: app.app_id, kind: 'runtime' });
     expect(JSON.stringify(r.json.entries)).not.toContain('forged');
+  });
+
+  test('beacon: a client that sends the query string and fragment has them stripped server-side (NSO-327)', async () => {
+    skipUnlessLocal();
+    const marker = `raw-client-${STAMP}`;
+    const posted = await hostRequest(host, '/__drobek/v1/_beacon', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ events: [{ type: 'error', message: marker, url: `${urlOf(host)}/checkout?code=654321#otp=${STAMP}`, ts: Date.now() }] }),
+    });
+    expect(posted.status).toBeLessThan(300);
+    let entry: RuntimeEntry | undefined;
+    await expect
+      .poll(
+        async () => {
+          const r = await callTool(mcp.client, 'get_logs', { app_id: app.app_id, kind: 'runtime' });
+          entry = (r.json.entries as RuntimeEntry[]).find((e) => e.message.includes(marker));
+          return entry !== undefined;
+        },
+        { timeout: 5_000, intervals: [250] }
+      )
+      .toBe(true);
+    expect(entry!.url).toBe(`${urlOf(host)}/checkout`);
+    expect(entry!.url).not.toContain('654321');
   });
 });

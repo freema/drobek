@@ -200,7 +200,7 @@ Everything a handler gets is scoped to **one app and one module**:
 | `rateLimit(bucket, key, max, windowMs)` | fixed-window counter in Redis, namespaced to the module and app |
 | `secrets.get(name)` | the plaintext of a **declared** secret of this app, or `null`; reading an undeclared name throws |
 | `audit(action, meta?)` | an audit row `<module>.<action>` for this app, actor kind `end_user` |
-| `email.send({ to, subject, text })` → `{ sent }` | `to` is one reference or a list: `{ config: 'dotted.path' }` (addresses in this app's owner-confirmed config), `{ principal: true }` (the signed-in end user), `{ appOwners: true }` (the editors and workspace-admins of the app's drobek workspace) or `{ signInAddress }` (the address a visitor typed into a sign-in form: always alone, for a sign-in code only; the module decides first that it may sign in). Never an arbitrary address. Addresses are validated, lowercased and de-duplicated; each gets its own message. The subject is one line (control and line-separator characters become spaces, 200 characters at most); the text (≤ 20 000 characters) is escaped into the drobek layout. Rejects with `limit_exceeded` / `unavailable` — see [Module e-mail](#module-e-mail). |
+| `email.send({ to, subject, text })` → `{ sent }` | `to` is one reference or a list: `{ config: 'dotted.path' }` (addresses in this app's owner-confirmed config), `{ principal: true }` (the signed-in end user), `{ appOwners: true }` (the editors and workspace-admins of the app's drobek workspace) or `{ signInAddress }` (the address a visitor typed into a sign-in form: always alone, for a sign-in code only; the module decides first that it may sign in; only the module that owns end-user sessions — `endUsers`, the built-in `auth` — may use it, any other module gets `403 forbidden` with `details.reason: sign_in_address_not_allowed`). Never an arbitrary address. Addresses are validated, lowercased and de-duplicated; each gets its own message. The subject is one line (control and line-separator characters become spaces, 200 characters at most); the text (≤ 20 000 characters) is escaped into the drobek layout. Rejects with `limit_exceeded` / `unavailable` — see [Module e-mail](#module-e-mail). |
 | `db`, `log` | the database (drizzle) and a logger |
 
 ### The SDK
@@ -244,8 +244,18 @@ module is counted per day and status class (`2xx`..`5xx`) — never a 429 (a
 throttled flood costs nothing past the limiter) nor an unknown route or
 method. The counters live in Redis (`drobek:signals:mod:<app_id>:<day>`) and
 are written into `module_request_stats` lazily: at most once a minute per app
-and day, and on every `get_logs({ kind: "requests" })` read, which reads the
-table.
+and day, and on every `get_logs({ kind: "requests" })` read, which flushes
+its whole window (up to 31 days) in one pipelined Redis round trip and one
+statement per table, then reads the table.
+
+Everything `get_logs` returns is kept **30 days**: browser errors (at most
+the newest `BEACON_MAX_EVENTS_PER_APP` = 500 per app, `BEACON_RETENTION_DAYS`
+= 30), compiles (the newest 200 per app) and the daily request and
+module-call stats. Reads never delete: a periodic prune in the server process
+(`LOGS_PRUNE_INTERVAL_MS`, default 1 h, one replica at a time via a Redis
+lease) removes older rows for every app, also for apps nobody inspects. The
+beacon stores a page URL as origin + path only: the SDK never sends the query
+string or fragment, and the server strips them again.
 
 #### Inline sources: `import … from 'drobek/<name>'`
 
@@ -306,8 +316,11 @@ Every `ctx.email.send` of every module goes through one path in core:
      cannot take a whole class either. Both shares must pass.
 
    Past a class budget (Redis `drobek:rl:mail:<class>`), THAT class
-   **pauses** for `EMAIL_GLOBAL_PAUSE_MINUTES` (default 15, key
-   `drobek:mail:paused:<class>`) and the server logs one line for the super
+   **pauses** for exactly `EMAIL_GLOBAL_PAUSE_MINUTES` (default 15, key
+   `drobek:mail:paused:<class>`): tripping the pause restarts the class
+   budget, so the first message after it starts a fresh hour instead of
+   pausing again until the old hour ends (the apps and workspaces that used
+   up their shares stay refused until their own hour ends). The server logs one line for the super
    admin: `level: error`, `message: "ALERT: module e-mail paused — …"`,
    `event: email_global_pause`, `alert: true`, `audience: super_admin`,
    `max` (the global cap), `class`, `class_max` (with the app and module
@@ -810,7 +823,11 @@ an app sign in with a 6-digit code e-mailed to them. Its `SKILL.md` is what
   gets `403 email_not_allowed` and no e-mail. Within the per-address cooldown
   and hourly share it answers like a send and sends nothing. The e-mail names
   the app (a one-line, capped name) and goes to `{ signInAddress }`; logs mask
-  addresses (`maskEmail`).
+  addresses (`maskEmail`). The per-IP, per-address and per-app code counters
+  are only read before the send and charged after the code went out
+  (`checkOtpRequest` / `chargeOtpRequest`): an attempt the module e-mail
+  guard refuses (paused, a share used up) costs nothing, so a user who
+  retried during a pause is not limited after it.
 - **verify** decides the allowlist again (it may have changed since the code
   was sent), upserts the user (role from the config), creates the session and
   writes the audit `auth.sign_in` (actor end_user).

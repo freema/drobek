@@ -20,8 +20,11 @@ export const DEFAULT_BEACON_APP_RATE_LIMIT = 600;
 export const DEFAULT_BEACON_WINDOW_MS = 60_000;
 /** Ring buffer: keep at most the newest N events per app (oldest evicted). */
 export const DEFAULT_MAX_EVENTS_PER_APP = 500;
-/** Ring buffer: drop events older than this many days. */
-export const DEFAULT_RETENTION_DAYS = 14;
+/**
+ * Ring buffer: drop events older than this many days — the get_logs window
+ * (30 days), enforced on insert and by the periodic prune (NSO-327).
+ */
+export const DEFAULT_RETENTION_DAYS = 30;
 /**
  * get_logs (M1-07): how far back the compile history, the module request
  * counters and the daily serving signals reach (days). Nothing older is kept.

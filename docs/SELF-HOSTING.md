@@ -271,7 +271,8 @@ notifications (forms, `notifyAdmins`) get the rest, and one app at most
 `EMAIL_APP_HOURLY_SHARE` percent of that (default 25); one workspace (all
 its apps) at most `EMAIL_WORKSPACE_HOURLY_SHARE` percent of each (default
 50 — raise it to 100 on a single-workspace server). Past its budget a
-class pauses for `EMAIL_GLOBAL_PAUSE_MINUTES` — notifications pausing never
+class pauses for exactly `EMAIL_GLOBAL_PAUSE_MINUTES`, then starts a fresh
+hourly budget — notifications pausing never
 blocks sign-in — and the log gets an `email_global_pause` ALERT line (with
 `class`) — alert on it. The contract and the
 provider protocol are in [`MODULES.md`](./MODULES.md).
@@ -351,7 +352,8 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `COMPILE_MAX_IMPORT_DEPTH` | 50 | depth of a relative import chain |
 | `COMPILE_TIMEOUT_MS` / `COMPILE_CONCURRENCY` / `COMPILE_QUEUE_TIMEOUT_MS` | 10000 / 4 / 10000 | per build; builds at once; max queue wait (then `busy`) |
 | `BEACON_RATE_LIMIT` / `BEACON_APP_RATE_LIMIT` / `BEACON_RATE_WINDOW_MS` | 60 / 600 / 60000 | browser error reports per app+IP and per app per window |
-| `BEACON_MAX_EVENTS_PER_APP` / `BEACON_RETENTION_DAYS` / `BEACON_SAMPLE_RATE` | 500 / 14 / 1 | the per-app error buffer (newest N, max age) and sampling |
+| `BEACON_MAX_EVENTS_PER_APP` / `BEACON_RETENTION_DAYS` / `BEACON_SAMPLE_RATE` | 500 / 30 / 1 | the per-app error buffer (newest N, max age) and sampling |
+| `LOGS_PRUNE_INTERVAL_MS` | 3600000 | how often the server removes `get_logs` rows past their retention for every app (errors past the buffer above, compiles and daily request stats older than 30 days) |
 | `DROBEK_MIGRATE_ON_START` | 1 | `0` = the server does not apply migrations on start (tests, tooling) |
 | `AUDIT_RETENTION_DAYS` | 365 | audit rows older than this are pruned daily |
 | `APPS_MAX_PER_WORKSPACE` | 50 | live apps per workspace (deleted ones do not count); `create_app` beyond it answers `limit_exceeded` *(plan)* |
@@ -368,7 +370,7 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `AUTH_CODES_PER_EMAIL_HOUR` / `AUTH_CODES_PER_APP_HOUR` | 3 / 100 | `auth`: codes per address, per app *(plan)* |
 | `AUTH_ATTEMPTS_PER_IP_15MIN` / `END_USERS_MAX_PER_APP` | 30 / 1000 | `auth`: send + verify calls per IP; end users per app *(plan)* |
 | `EMAIL_PER_APP_PER_DAY` / `EMAIL_NOTIFY_ADMINS_PER_DAY` | 50 / 20 | `email`: notification mails per app per day; `notifyAdmins()` per user per day *(plan)* |
-| `EMAIL_GLOBAL_HOURLY_MAX` / `EMAIL_GLOBAL_PAUSE_MINUTES` | 500 / 15 | the operator-wide cap on all module mail (recipients per hour) and the pause length |
+| `EMAIL_GLOBAL_HOURLY_MAX` / `EMAIL_GLOBAL_PAUSE_MINUTES` | 500 / 15 | the operator-wide cap on all module mail (recipients per hour) and the pause length (a fixed window: the class budget restarts after it) |
 | `EMAIL_SIGNIN_HOURLY_MAX` / `EMAIL_SIGNIN_APP_HOURLY_SHARE` | 20 % of the cap (at least 50, at most half) / 25 % | the sign-in part of the cap; one app's share of it |
 | `EMAIL_APP_HOURLY_SHARE` | 25 % | one app's share of the notification part |
 | `EMAIL_WORKSPACE_HOURLY_SHARE` | 50 % | one workspace's share (all its apps) of the notification and of the sign-in part; never below one app's share |

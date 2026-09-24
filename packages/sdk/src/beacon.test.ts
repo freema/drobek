@@ -7,20 +7,21 @@ import {
   describeError,
   installBeacon,
   packBatches,
+  pageUrl,
   type BeaconEnv,
   type BeaconEvent,
 } from './beacon.js';
 
 type Listener = (e: unknown) => void;
 
-function fakeWindow(opts: { sendBeacon?: boolean } = {}) {
+function fakeWindow(opts: { sendBeacon?: boolean; href?: string } = {}) {
   const listeners = new Map<string, Listener[]>();
   const timers: { fn: () => void; ms: number }[] = [];
   const beacons: { url: string; data: Blob }[] = [];
   const fetches: { url: string; init: RequestInit }[] = [];
   const env: BeaconEnv = {
     addEventListener: (type, l) => listeners.set(type, [...(listeners.get(type) ?? []), l]),
-    location: { href: 'https://shop--preview.apps.example/cart' },
+    location: { href: opts.href ?? 'https://shop--preview.apps.example/cart' },
     navigator: {
       userAgent: 'TestBrowser/1.0',
       ...(opts.sendBeacon === false
@@ -82,6 +83,16 @@ describe('installBeacon', () => {
     });
     expect(b.events[0].stack).toContain('TypeError');
     expect(b.events[1]).toMatchObject({ type: 'unhandledrejection', message: 'Unhandled rejection: {"code":42}', stack: null });
+  });
+
+  it('reports the page as origin + path: no query string, fragment or credentials leave the browser (NSO-327)', async () => {
+    const w = fakeWindow({ href: 'https://ann:pw@shop.apps.example/login/verify?code=123456&email=ann%40example.com#token=abc' });
+    installBeacon(w.env);
+    w.dispatch('error', { message: 'boom' });
+    w.runTimers();
+    const [b] = await bodies(w.beacons);
+    expect(b.events[0].url).toBe('https://shop.apps.example/login/verify');
+    expect(JSON.stringify(b)).not.toMatch(/123456|ann%40|token=|pw@/);
   });
 
   it('is idempotent per window', () => {
@@ -157,5 +168,20 @@ describe('describeError', () => {
     expect(describeError('error', { message: 'Script error.' }, 'u', null, 1)).toMatchObject({ message: 'Script error.', stack: null });
     expect(describeError('unhandledrejection', { reason: new Error('nope') }, 'u', null, 1).message).toBe('Error: nope');
     expect(describeError('error', {}, 'u', null, 1).message).toBe('(no message)');
+  });
+});
+
+describe('pageUrl', () => {
+  it('keeps origin + path of an http(s) page and drops query, fragment and credentials', () => {
+    expect(pageUrl('https://shop--preview.apps.example/cart?code=123456#x')).toBe('https://shop--preview.apps.example/cart');
+    expect(pageUrl('http://u:p@shop.apps.localhost:3041/a/b/?q=1')).toBe('http://shop.apps.localhost:3041/a/b/');
+    expect(pageUrl('https://shop.apps.example')).toBe('https://shop.apps.example/');
+  });
+
+  it('cuts anything else at the first ? or #, and a non-string is empty', () => {
+    expect(pageUrl('/relative/path?code=123456')).toBe('/relative/path');
+    expect(pageUrl('about:blank#frag')).toBe('about:blank');
+    expect(pageUrl(undefined)).toBe('');
+    expect(pageUrl(42)).toBe('');
   });
 });

@@ -56,7 +56,7 @@ import type {
   RecordsView,
 } from './contract.js';
 import { readConfigRow, readConfigRows, withLockedConfig, type PendingChange } from './configs.server.js';
-import { capEmailText, emailKind, redactAddresses, resolveRecipients, sanitizeSubject } from './email.js';
+import { assertSignInSender, capEmailText, emailKind, redactAddresses, resolveRecipients, sanitizeSubject } from './email.js';
 import { ModuleError, isModuleError, issuePaths, skillHint } from './errors.js';
 import { CORE_LIMITS, createLimitsProvider, type LimitsProvider } from './limits.js';
 import { mailGuardConfigFromEnv, redisMailGuard, type MailGuard, type MailGuardRedis } from './mail-guard.js';
@@ -1034,7 +1034,8 @@ export class ModuleRuntime {
   // ── e-mail ──
 
   /**
-   * `ctx.email.send` of module `m` for `app`: resolve the allowed recipients,
+   * `ctx.email.send` of module `m` for `app`: refuse `{ signInAddress }` from
+   * any module but the sign-in provider (`endUsers`), resolve the allowed recipients,
    * refuse while module e-mail is paused, let the mail authority (the `email`
    * module) apply the app's policy and envelope, count against the
    * operator-wide hourly budget of the message's class (sign-in codes vs
@@ -1052,6 +1053,7 @@ export class ModuleRuntime {
     const deps = this.deps;
     const db = deps.db();
     const kind = emailKind(message.to);
+    assertSignInSender(kind, m.name, endUserAuthorityOf(this.modules)?.name ?? null);
     const to = await resolveRecipients(message.to, { principal, config, owners: () => appOwnerEmails(db, app.workspaceId) });
     if (to.length === 0) return { sent: 0 };
     const subject = sanitizeSubject(message.subject);

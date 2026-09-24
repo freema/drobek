@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { capEmailText, emailKind, MAX_EMAIL_TEXT, resolveRecipients, sanitizeSubject } from './email.js';
+import { z } from 'zod';
+import { defineModule } from './contract.js';
+import { createModuleTestContext } from './testing.js';
+import { assertSignInSender, capEmailText, emailKind, MAX_EMAIL_TEXT, resolveRecipients, sanitizeSubject } from './email.js';
 import {
   MAIL_COUNTER_KEYS,
   MAIL_PAUSE_KEYS,
@@ -42,6 +45,44 @@ describe('module e-mail recipients', () => {
     expect(emailKind([{ appOwners: true }, { config: 'x' }])).toBe('notification');
     expect(() => emailKind([{ signInAddress: 'a@b.cz' }, { appOwners: true }])).toThrow(/only recipient/);
     expect(() => emailKind([])).toThrow(/no recipient/);
+  });
+
+  it('only the sign-in provider may send to { signInAddress }: any other module → forbidden (NSO-327)', () => {
+    expect(() => assertSignInSender('sign_in', 'auth', 'auth')).not.toThrow();
+    expect(() => assertSignInSender('notification', 'forms', 'auth')).not.toThrow();
+    expect(() => assertSignInSender('notification', 'forms', null)).not.toThrow();
+    for (const [module, provider] of [['forms', 'auth'], ['evil', null]] as const) {
+      let err: unknown;
+      try {
+        assertSignInSender('sign_in', module, provider);
+      } catch (e) {
+        err = e;
+      }
+      expect(err).toMatchObject({ code: 'forbidden', status: 403, details: { reason: 'sign_in_address_not_allowed', module } });
+    }
+  });
+
+  it('createModuleTestContext applies the same rule: a module without endUsers gets 403 for { signInAddress }', async () => {
+    const make = (name: string, withEndUsers: boolean) =>
+      defineModule<Record<string, never>>({
+        name,
+        version: '1.0.0',
+        skill: { useWhen: 'x', markdown: '# x' },
+        configSchema: z.object({}),
+        configDefaults: {},
+        ...(withEndUsers ? { endUsers: { current: async ({ user }) => user } } : {}),
+        routes(r) {
+          r.post('/code', { rule: 'public' }, async (_q, ctx) => ctx.email.send({ to: { signInAddress: 'ann@example.com' }, subject: 's', text: 't' }));
+        },
+      });
+    const fake = createModuleTestContext(make('fake', false));
+    const refused = await fake.request('POST', '/code');
+    expect(refused.status).toBe(403);
+    expect(refused.body).toMatchObject({ error: 'forbidden', details: { reason: 'sign_in_address_not_allowed', module: 'fake' } });
+    expect(fake.emails).toEqual([]);
+    const provider = createModuleTestContext(make('signer', true));
+    expect((await provider.request('POST', '/code')).status).toBe(200);
+    expect(provider.emails.map((m) => m.kind)).toEqual(['sign_in']);
   });
 
   it('subjects are one line (no header injection), capped at 200; texts capped', () => {
@@ -169,6 +210,37 @@ describe('the operator-wide hourly budgets of module e-mail (sign-in codes vs no
     redis.store.set(MAIL_PAUSE_KEYS.notification, { v: '1', exp: null });
     await expect(g.assertOpen(notify())).rejects.toMatchObject({ code: 'unavailable', headers: { 'Retry-After': '900' } });
     await expect(g.assertOpen(signIn())).resolves.toBeUndefined();
+  });
+
+  it('the pause is a FIXED window (NSO-327): EMAIL_GLOBAL_PAUSE_MINUTES later the class starts a fresh budget, not at the end of the old hour', async () => {
+    const redis = fakeRedis();
+    const l = log();
+    // G = 10: notifications 5, one app may use them all.
+    const g = redisMailGuard({ redis: () => redis, config: { hourlyMax: 10, pauseMinutes: 15, appSharePercent: 100 }, log: l });
+    for (let i = 1; i <= 5; i++) await g.admit(1, notify(`app_${i}`));
+    await expect(g.admit(1, notify('app_6'))).rejects.toMatchObject({ details: { reason: 'email_paused', class: 'notification' }, headers: { 'Retry-After': '900' } });
+    expect(await redis.pttl(MAIL_PAUSE_KEYS.notification)).toBe(15 * 60_000);
+    // Tripping restarted the class counter: nothing of the old hour carries over.
+    expect(await redis.get(MAIL_COUNTER_KEYS.notification)).toBe('0');
+    // A message racing past assertOpen during the pause is refused and NOT counted.
+    await expect(g.admit(1, notify('app_7'))).rejects.toMatchObject({ details: { reason: 'email_paused' } });
+    expect(await redis.get(MAIL_COUNTER_KEYS.notification)).toBe('0');
+    expect(l.error).toHaveBeenCalledTimes(1);
+
+    // 15 minutes later — 45 minutes before the old hour would end — mail flows again.
+    redis.now += 15 * 60_000;
+    await expect(g.assertOpen(notify('app_8'))).resolves.toBeUndefined();
+    for (let i = 8; i <= 12; i++) await g.admit(1, notify(`app_${i}`));
+    expect(await redis.pttl(MAIL_COUNTER_KEYS.notification)).toBe(3_600_000);
+    expect(l.error).toHaveBeenCalledTimes(1);
+    // The fresh budget (5) is full again: the next message pauses the class once more.
+    await expect(g.admit(1, notify('app_13'))).rejects.toMatchObject({ details: { reason: 'email_paused', class: 'notification' } });
+    expect(l.error).toHaveBeenCalledTimes(2);
+    // The per-app shares stay hourly: the apps that filled a budget stay at theirs.
+    redis.now += 15 * 60_000;
+    const hog = redisMailGuard({ redis: () => redis, config: { hourlyMax: 100, pauseMinutes: 15 }, log: l });
+    for (let i = 0; i < 12; i++) await hog.admit(1, notify('app_hog'));
+    await expect(hog.assertOpen(notify('app_hog'))).rejects.toMatchObject({ details: { limit: 'EMAIL_APP_HOURLY_SHARE' } });
   });
 
   it('sign-in codes exhausted first: sign-in pauses, notifications keep going', async () => {
@@ -328,7 +400,10 @@ describe('the operator-wide hourly budgets of module e-mail (sign-in codes vs no
     await expect(g.assertOpen(signIn())).rejects.toMatchObject({ details: { limit: 'EMAIL_SIGNIN_APP_HOURLY_SHARE' } });
     await g.assertOpen(notify('app_2'));
     await g.assertOpen(signIn('app_2'));
-    // The hourly class counter still runs: the next notification trips the pause again.
+    // The sign-in pause restarted that class's budget (NSO-327): app_2's code goes out.
+    await g.admit(1, signIn('app_2'));
+    // Notifications never paused (app_1 hit its share first): their hourly
+    // class counter still runs, and the next notification trips the pause.
     await expect(g.admit(1, notify('app_2'))).rejects.toMatchObject({ code: 'unavailable', details: { class: 'notification' } });
     await expect(g.assertOpen(notify('app_2'))).rejects.toMatchObject({ details: { reason: 'email_paused' } });
     g.reset();

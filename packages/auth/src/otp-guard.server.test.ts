@@ -17,6 +17,8 @@ vi.mock('./logger.server.js', () => ({
 }));
 
 import {
+  chargeOtpRequest,
+  checkOtpRequest,
   guardOtpRequest,
   isOtpSendingPaused,
   otpGuardLimitsFromEnv,
@@ -296,5 +298,82 @@ describe('scoped guard (M1-02: one app\'s end users)', () => {
     expect(await guardOtpRequest({ ip: '10.0.0.8', email: 'c@example.com', limits: STRICT })).toEqual({ ok: true });
     await releaseOtpCooldown('c@example.com', SCOPE);
     expect(await guardOtpRequest({ ip: '10.0.0.8', email: 'c@example.com', limits: STRICT, scope: SCOPE })).toEqual({ ok: true });
+  });
+});
+
+describe('checkOtpRequest + chargeOtpRequest (NSO-327: charge only what was sent)', () => {
+  const SCOPE = 'eu:app_9';
+
+  it('a check reads the counters without charging them; only the cooldown is claimed', async () => {
+    for (let i = 0; i < 10; i += 1) {
+      expect(await checkOtpRequest({ ip: '10.1.0.1', email: `n${i}@example.com`, limits: STRICT, scope: SCOPE })).toEqual({ ok: true });
+    }
+    expect(await fake.get(`drobek:rl:${SCOPE}:otp-ip-15m:10.1.0.1`)).toBeNull();
+    expect(await fake.get(`drobek:rl:${SCOPE}:otp-global-1h:all`)).toBeNull();
+    // The cooldown still dedups a double-click.
+    expect(await checkOtpRequest({ ip: '10.1.0.1', email: 'n0@example.com', limits: STRICT, scope: SCOPE })).toMatchObject({
+      kind: 'redirect_verify',
+      reason: 'cooldown',
+    });
+  });
+
+  it('charged sends hit the same limits as guardOtpRequest (per IP, per address, the scope brake)', async () => {
+    const ip = '10.1.0.2';
+    for (let i = 0; i < 5; i += 1) {
+      const email = `c${i}@example.com`;
+      expect(await checkOtpRequest({ ip, email, limits: STRICT, scope: SCOPE })).toEqual({ ok: true });
+      await chargeOtpRequest({ ip, email, scope: SCOPE });
+    }
+    expect(await checkOtpRequest({ ip, email: 'c9@example.com', limits: STRICT, scope: SCOPE })).toMatchObject({ status: 429, reason: 'ip_short' });
+    // Per address: 3 an hour, then "sent" without a send.
+    const other = { ...STRICT, ipShortLimit: 100, ipDailyLimit: 100, emailCooldownMs: 1 };
+    for (let i = 0; i < 3; i += 1) {
+      await new Promise((r) => setTimeout(r, 2));
+      expect(await checkOtpRequest({ ip: '10.1.0.3', email: 'same@example.com', limits: other, scope: SCOPE })).toEqual({ ok: true });
+      await chargeOtpRequest({ ip: '10.1.0.3', email: 'same@example.com', scope: SCOPE });
+    }
+    await new Promise((r) => setTimeout(r, 2));
+    expect(await checkOtpRequest({ ip: '10.1.0.3', email: 'same@example.com', limits: other, scope: SCOPE })).toMatchObject({
+      kind: 'redirect_verify',
+      reason: 'email_hourly',
+    });
+    // The scope brake: 5 + 3 codes charged; a cap of 8 → auto-pause on the next check.
+    expect(await checkOtpRequest({ ip: '10.1.0.4', email: 'b@example.com', limits: { ...other, globalHourlyMax: 8 }, scope: SCOPE })).toMatchObject({
+      status: 503,
+      reason: 'global_brake',
+    });
+    expect(await isOtpSendingPaused(SCOPE)).toEqual({ paused: true, reason: 'scope_autopause' });
+  });
+
+  it('attempts that were never charged (the send was refused) leave the user unlimited afterwards', async () => {
+    const ip = '10.1.0.5';
+    // Ten attempts while e-mail is paused downstream: checked, cooldown released, never charged.
+    for (let i = 0; i < 10; i += 1) {
+      expect(await checkOtpRequest({ ip, email: 'retry@example.com', limits: STRICT, scope: SCOPE })).toEqual({ ok: true });
+      await releaseOtpCooldown('retry@example.com', SCOPE);
+    }
+    // The pause is over: the first real send goes through and is charged once.
+    expect(await checkOtpRequest({ ip, email: 'retry@example.com', limits: STRICT, scope: SCOPE })).toEqual({ ok: true });
+    await chargeOtpRequest({ ip, email: 'retry@example.com', scope: SCOPE });
+    expect(await fake.get(`drobek:rl:${SCOPE}:otp-ip-15m:${ip}`)).toBe('1');
+    expect(await fake.get(`drobek:rl:${SCOPE}:otp-ip-24h:${ip}`)).toBe('1');
+    expect(await fake.get(`drobek:rl:${SCOPE}:otp-global-1h:all`)).toBe('1');
+  });
+
+  it('no client IP: the per-IP windows are neither read nor charged (NSO-309)', async () => {
+    expect(await checkOtpRequest({ ip: undefined, email: 'x@example.com', limits: STRICT, scope: SCOPE })).toEqual({ ok: true });
+    await chargeOtpRequest({ ip: undefined, email: 'x@example.com', scope: SCOPE });
+    expect([...fake.store.keys()].filter((k) => k.includes('otp-ip-'))).toEqual([]);
+    expect(await fake.get(`drobek:rl:${SCOPE}:otp-global-1h:all`)).toBe('1');
+  });
+
+  it('check fails closed on a Redis error; charge only logs it', async () => {
+    fake.failing = true;
+    expect(await checkOtpRequest({ ip: '10.1.0.6', email: 'f@example.com', limits: STRICT, scope: SCOPE })).toMatchObject({
+      ok: false,
+      status: 503,
+      reason: 'guard_error',
+    });
+    await expect(chargeOtpRequest({ ip: '10.1.0.6', email: 'f@example.com', scope: SCOPE })).resolves.toBeUndefined();
   });
 });

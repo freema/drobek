@@ -47,6 +47,53 @@
   `docs/SECURITY.md` and `docs/SELF-HOSTING.md` describe the behaviour. No
   migration.
 
+### Beacon, get_logs and e-mail guard: M1 review low findings (NSO-327)
+
+- **Beacon bucket order**: `recordBeacon` checks the per-app+IP bucket
+  BEFORE the per-app aggregate. A request the per-IP bucket refuses never
+  reaches the app bucket, so one client can no longer spend the app's
+  600/min and silence its error log; rotating IPs is still bounded by the
+  aggregate.
+- **Beacon URLs without query or fragment**: the SDK beacon reports the page
+  as origin + path (`pageUrl`), and `sanitizeEvent` strips the query string,
+  fragment and credentials again server-side — `?code=123456` was too short
+  for the redaction.
+- **`{ signInAddress }` is reserved for the sign-in provider**: only the
+  module that owns end-user sessions (`endUsers`, the built-in `auth`) may
+  send to it; any other module gets `403 forbidden`
+  (`details.reason: sign_in_address_not_allowed`) and nothing is sent or
+  counted — in the runtime and in `createModuleTestContext`
+  (`assertSignInSender`).
+- **The e-mail pause is a fixed window**: tripping a class pause also resets
+  that class's hourly counter, so after `EMAIL_GLOBAL_PAUSE_MINUTES` (15, the
+  existing env var) the class starts a fresh budget instead of pausing again
+  until the old hour ends; `admit` refuses (uncounted) a message that raced
+  past `assertOpen` during a pause. Per-app and per-workspace shares stay
+  hourly. Sign-in codes still work while notifications are paused (NSO-320).
+- **Auth charges OTP counters only after a send**: the auth module's
+  `send-code` uses the new `@drobek/auth` `checkOtpRequest` (all layers,
+  counters only read, the cooldown still claimed) and `chargeOtpRequest`
+  after the code went out. Retries while sign-in mail is paused cost
+  nothing, so the user is not rate-limited after the pause. The dashboard
+  login keeps `guardOtpRequest`.
+- **Periodic get_logs prune instead of prune-on-read**: `startLogsPrune`
+  (`@drobek/insights`, started from `apps/server/server/jobs.ts` under the
+  Redis lease) removes browser errors older than `BEACON_RETENTION_DAYS` or
+  past the newest `BEACON_MAX_EVENTS_PER_APP` per app, and compiles and
+  daily request / module-call stats older than 30 days, for every app. New
+  env var `LOGS_PRUNE_INTERVAL_MS` (default 3600000) in `.env.example`,
+  `.env.production.example` and the SELF-HOSTING env reference.
+  `queryRequestLog` no longer deletes. Retention aligned to **30 days / 500
+  errors per app**: `BEACON_RETENTION_DAYS` defaults to 30 (was 14), and the
+  `get_logs` description, `docs/MODULES.md` and `skills/debug` say so.
+- **`get_logs('requests')` flushes in one round trip**: the whole window (up
+  to 31 days) is read in one Redis pipeline and written with at most one
+  statement per table (was 2 × 31 serial flushes).
+- Unit tests: beacon bucket order + IP rotation, SDK `pageUrl`, server URL
+  stripping, `assertSignInSender` (runtime, test context), the fixed pause,
+  `checkOtpRequest` / `chargeOtpRequest`, the auth retry-during-pause flow,
+  the prune and the batched flush (Redis/SQL call counts). No migration.
+
 ### Apex landing describes the cloud workspace (NSO-331)
 
 - The anonymous landing at `/` (`apps/server/app/routes/_index.tsx`) no

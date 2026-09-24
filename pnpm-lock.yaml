@@ -38,6 +38,9 @@ importers:
       '@drobek/domains':
         specifier: workspace:*
         version: link:../../packages/domains
+      '@drobek/insights':
+        specifier: workspace:*
+        version: link:../../packages/insights
       '@drobek/modules':
         specifier: workspace:*
         version: link:../../packages/modules
@@ -707,6 +710,9 @@ importers:
         specifier: ^0.41.0
         version: 0.41.0(@electric-sql/pglite@0.2.17)(@types/pg@8.20.0)(pg@8.22.0)(postgres@3.4.9)
     devDependencies:
+      '@electric-sql/pglite':
+        specifier: ^0.2.17
+        version: 0.2.17
       '@types/node':
         specifier: ^22
         version: 22.20.0

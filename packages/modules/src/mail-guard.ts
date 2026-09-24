@@ -20,11 +20,16 @@
  * Both shares must pass.
  *
  * The two class budgets add up to the global cap, so the operator's mailbox
- * never sees more than `EMAIL_GLOBAL_HOURLY_MAX` module recipients an hour.
- * Past a class budget, THAT class pauses for `EMAIL_GLOBAL_PAUSE_MINUTES`
- * and an ALERT line for the super-admin goes to the log (`event:
- * email_global_pause`, with the `class`): the mailbox is protected before
- * the SMTP provider suspends it. The other class keeps working. Past its
+ * sees at most `EMAIL_GLOBAL_HOURLY_MAX` module recipients per budget window.
+ * Past a class budget, THAT class pauses for exactly
+ * `EMAIL_GLOBAL_PAUSE_MINUTES` and an ALERT line for the super-admin goes to
+ * the log (`event: email_global_pause`, with the `class`): the mailbox is
+ * protected before the SMTP provider suspends it. The pause is a FIXED window
+ * (NSO-327): tripping it also resets the class counter, so the first message
+ * after the pause starts a fresh hourly budget instead of re-tripping the
+ * pause until the old hour ends — the per-app and per-workspace shares stay
+ * hourly, so the apps that filled the class stay refused until THEIR hour
+ * ends. The other class keeps working. Past its
  * share of a class, one app's (or one workspace's) messages of that class are
  * refused until its hourly window ends; other apps (workspaces) continue. Pattern of the dashboard's
  * `OTP_GLOBAL_HOURLY_MAX` auto-pause (@drobek/auth otp-guard).
@@ -161,7 +166,7 @@ export interface MailGuard {
   readonly budgets?: MailBudgets;
   /** Refuse (ModuleError `unavailable`, 503) while the message's class — or its app's or workspace's share — is used up. */
   assertOpen(meta: MailGuardMeta): Promise<void>;
-  /** Count `recipients` against the app's share, its workspace's share and the class budget; past it: pause, ALERT, refuse. */
+  /** Count `recipients` against the app's share, its workspace's share and the class budget; past it: pause (fixed window, class counter reset), ALERT, refuse. */
   admit(recipients: number, meta: MailGuardMeta): Promise<void>;
 }
 
@@ -299,7 +304,11 @@ export function redisMailGuard(opts: { redis: () => MailGuardRedis; config: Mail
       let tripped = false;
       try {
         const r = opts.redis();
-        {
+        // A message that raced past assertOpen while the pause tripped is
+        // refused without counting (the class counter restarted at the trip).
+        const pauseTtl = await r.pttl(MAIL_PAUSE_KEYS[cls]);
+        if (pauseTtl !== -2) refusal = paused(cls, pauseTtl > 0 ? pauseTtl / 1000 : pauseMs / 1000);
+        if (!refusal) {
           const key = mailAppCounterKey(meta.app_id, cls);
           const share = appShareOf(budgets, cls);
           const used = await count(r, key, recipients);
@@ -335,6 +344,8 @@ export function redisMailGuard(opts: { redis: () => MailGuardRedis; config: Mail
           const used = await count(r, MAIL_COUNTER_KEYS[cls], recipients);
           if (used > budgets[cls]) {
             await r.set(MAIL_PAUSE_KEYS[cls], '1', 'PX', pauseMs);
+            // A fixed pause: the class budget restarts with the first message after it.
+            await r.set(MAIL_COUNTER_KEYS[cls], '0', 'PX', pauseMs);
             tripped = true;
             refusal = paused(cls, pauseMs / 1000);
           }

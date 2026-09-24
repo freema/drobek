@@ -8,6 +8,7 @@
  * incrementServingSignal is called from @drobek/serving and MUST never throw or
  * block the response — every path is wrapped and swallows its own errors.
  */
+import { sql } from 'drizzle-orm';
 import { getRedis } from '@drobek/core';
 import { appDailyStats, getDb } from '@drobek/db';
 import { LOGS_RETENTION_DAYS } from './limits.js';
@@ -36,6 +37,55 @@ function fault5xxKey(appId: string, day: string): string {
 }
 function paths404Key(appId: string, day: string): string {
   return `drobek:signals:404:${appId}:${day}`;
+}
+
+/** The three Redis counters of one app and day (request count, 5xx count, 404-by-path hash). */
+export function servingSignalKeys(appId: string, day: string): { req: string; fault5xx: string; paths404: string } {
+  return { req: reqKey(appId, day), fault5xx: fault5xxKey(appId, day), paths404: paths404Key(appId, day) };
+}
+
+/** One `app_daily_stats` row. */
+export interface DailyStatsRow {
+  appId: string;
+  day: string;
+  requestCount: number;
+  count5xx: number;
+  path404Counts: Record<string, number>;
+}
+
+/** The row of one day's Redis counters, or null when nothing was recorded that day. */
+export function dailyStatsRow(
+  appId: string,
+  day: string,
+  req: string | null,
+  c5: string | null,
+  p404: Record<string, string> | null
+): DailyStatsRow | null {
+  const path404Counts: Record<string, number> = {};
+  for (const [k, v] of Object.entries(p404 ?? {})) path404Counts[k] = Number(v) || 0;
+  if (req === null && c5 === null && Object.keys(path404Counts).length === 0) return null;
+  return { appId, day, requestCount: Number(req) || 0, count5xx: Number(c5) || 0, path404Counts };
+}
+
+/**
+ * Upsert day rows into app_daily_stats in ONE statement (idempotent on
+ * (app_id, day)). The Redis counters are cumulative for the day, so the row
+ * takes the totals.
+ */
+export async function upsertDailyStats(rows: DailyStatsRow[]): Promise<void> {
+  if (rows.length === 0) return;
+  await getDb()
+    .insert(appDailyStats)
+    .values(rows)
+    .onConflictDoUpdate({
+      target: [appDailyStats.appId, appDailyStats.day],
+      set: {
+        requestCount: sql`excluded.request_count`,
+        count5xx: sql`excluded.count_5xx`,
+        path404Counts: sql`excluded.path_404_counts`,
+        updatedAt: new Date(),
+      },
+    });
 }
 
 /** Normalize an untrusted request path into a bounded 404 hash field. */
@@ -89,25 +139,10 @@ export async function incrementServingSignal(
 export async function flushDay(appId: string, day: string): Promise<void> {
   try {
     const r = getRedis();
-    const [req, c5, p404] = await Promise.all([
-      r.get(reqKey(appId, day)),
-      r.get(fault5xxKey(appId, day)),
-      r.hgetall(paths404Key(appId, day)),
-    ]);
-    const path404Counts: Record<string, number> = {};
-    for (const [k, v] of Object.entries(p404)) path404Counts[k] = Number(v) || 0;
-    if (req === null && c5 === null && Object.keys(path404Counts).length === 0) {
-      return; // nothing recorded for this day
-    }
-    const requestCount = Number(req) || 0;
-    const count5xx = Number(c5) || 0;
-    await getDb()
-      .insert(appDailyStats)
-      .values({ appId, day, requestCount, count5xx, path404Counts })
-      .onConflictDoUpdate({
-        target: [appDailyStats.appId, appDailyStats.day],
-        set: { requestCount, count5xx, path404Counts, updatedAt: new Date() },
-      });
+    const k = servingSignalKeys(appId, day);
+    const [req, c5, p404] = await Promise.all([r.get(k.req), r.get(k.fault5xx), r.hgetall(k.paths404)]);
+    const row = dailyStatsRow(appId, day, req, c5, p404);
+    if (row) await upsertDailyStats([row]);
   } catch {
     /* durability backstop — a flush miss is bounded by the Redis window */
   }

@@ -10,8 +10,11 @@
  *  - queryRuntimeLog / queryCompileLog / queryRequestLog — the three kinds.
  *
  * Every read is bounded to the retention window (30 days) and ≤ 100 entries.
+ * Reads never delete: the periodic prune (prune.server.ts) keeps every table
+ * inside its retention, also for apps nobody inspects (NSO-327).
  */
 import { and, desc, eq, gte, lt, sql } from 'drizzle-orm';
+import { getRedis } from '@drobek/core';
 import { appCompiles, appDailyStats, appErrors, getDb, moduleRequestStats } from '@drobek/db';
 import { COMPILE_HISTORY_KEEP, LOGS_RETENTION_DAYS } from './limits.js';
 import {
@@ -26,8 +29,8 @@ import {
   type RuntimeEntry,
 } from './logs.js';
 import { dedupErrors } from './shape.js';
-import { flushModuleRequests } from './module-stats.server.js';
-import { flushDay, utcDay } from './signals.server.js';
+import { moduleCountersKey, moduleStatRows, upsertModuleStats, type ModuleStatsRow } from './module-stats.server.js';
+import { dailyStatsRow, servingSignalKeys, upsertDailyStats, utcDay, type DailyStatsRow } from './signals.server.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** Rows scanned for the runtime dedup — the ring buffer keeps ≤ 500 per app anyway. */
@@ -128,10 +131,60 @@ export async function queryCompileLog(appId: string, since?: Date | string | nul
   return compileEntries(rows);
 }
 
+/** The pipelined Redis reads of the request-log flush (ioredis satisfies it). */
+export interface RequestLogPipeline {
+  get(key: string): RequestLogPipeline;
+  hgetall(key: string): RequestLogPipeline;
+  exec(): Promise<[Error | null, unknown][] | null>;
+}
+
+export interface RequestLogRedis {
+  pipeline(): RequestLogPipeline;
+}
+
 export interface RequestLogOptions {
   now?: Date;
   /** Mirror the Redis day counters into app_daily_stats / module_request_stats first (default true; tests without Redis pass false). */
   flush?: boolean;
+  /** The Redis to flush from (default: the shared client). */
+  redis?: () => RequestLogRedis;
+}
+
+/**
+ * Mirror the Redis counters of `days` (serving signals + module calls) into
+ * app_daily_stats and module_request_stats: ONE pipelined Redis round trip
+ * and at most one statement per table, however many days (NSO-327 — the
+ * window is up to 31 days). Best-effort: a miss is caught up by the next
+ * flush, the counters are cumulative.
+ */
+async function flushRequestDays(appId: string, days: string[], redis: () => RequestLogRedis): Promise<void> {
+  if (days.length === 0) return;
+  let results: [Error | null, unknown][];
+  try {
+    const p = redis().pipeline();
+    for (const day of days) {
+      const k = servingSignalKeys(appId, day);
+      p.get(k.req).get(k.fault5xx).hgetall(k.paths404).hgetall(moduleCountersKey(appId, day));
+    }
+    results = (await p.exec()) ?? [];
+  } catch {
+    return;
+  }
+  const at = (i: number): unknown => {
+    const r = results[i];
+    return r && !r[0] ? r[1] : null;
+  };
+  const str = (v: unknown) => (typeof v === 'string' ? v : null);
+  const hash = (v: unknown) => (v && typeof v === 'object' ? (v as Record<string, string>) : null);
+  const daily: DailyStatsRow[] = [];
+  const modules: ModuleStatsRow[] = [];
+  days.forEach((day, d) => {
+    const row = dailyStatsRow(appId, day, str(at(4 * d)), str(at(4 * d + 1)), hash(at(4 * d + 2)));
+    if (row) daily.push(row);
+    modules.push(...moduleStatRows(appId, day, hash(at(4 * d + 3))));
+  });
+  await upsertDailyStats(daily).catch(() => undefined);
+  await upsertModuleStats(modules).catch(() => undefined);
 }
 
 /** Daily totals (requests / 5xx / 404) + module calls by status class, newest day first. */
@@ -145,19 +198,9 @@ export async function queryRequestLog(
   const today = utcDay(now);
   if (opts.flush !== false) {
     // The hot counters of every day in the window that still lives in Redis.
-    for (const day of daysBetween(fromDay, today)) {
-      await flushDay(appId, day);
-      await flushModuleRequests(appId, day);
-    }
+    await flushRequestDays(appId, daysBetween(fromDay, today), opts.redis ?? (() => getRedis() as unknown as RequestLogRedis));
   }
   const db = getDb();
-  const oldest = utcDay(new Date(now.getTime() - LOGS_RETENTION_DAYS * DAY_MS));
-  try {
-    await db.delete(moduleRequestStats).where(and(eq(moduleRequestStats.appId, appId), lt(moduleRequestStats.day, oldest)));
-    await db.delete(appDailyStats).where(and(eq(appDailyStats.appId, appId), lt(appDailyStats.day, oldest)));
-  } catch {
-    /* retention sweep is best-effort */
-  }
   const [daily, modules] = await Promise.all([
     db
       .select({

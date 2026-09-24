@@ -5,7 +5,8 @@
  * TTL'd like the serving signals) — never with a SQL statement per request.
  * The durable `module_request_stats` rows are written lazily:
  *
- *  - by the read (`queryRequestLog` flushes every day of its window), and
+ *  - by the read (`queryRequestLog` flushes every day of its window in one
+ *    Redis pipeline and one statement per table — NSO-327), and
  *  - by the counter itself at most once per `MODULE_STATS_FLUSH_SEC` per app
  *    and day (a `SET NX EX` marker, `drobek:signals:modflush:<app_id>:<day>`),
  *    so the table stays fresh without a reader.
@@ -46,7 +47,8 @@ export interface ModuleStatsOptions {
 
 const sharedRedis = () => getRedis() as unknown as ModuleStatsRedis;
 
-function countersKey(appId: string, day: string): string {
+/** The Redis hash of one app's module counters on one UTC day (field `<module>:<status class>`). */
+export function moduleCountersKey(appId: string, day: string): string {
   return `drobek:signals:mod:${appId}:${day}`;
 }
 function flushMarkerKey(appId: string, day: string): string {
@@ -62,7 +64,7 @@ export async function recordModuleRequest(appId: string, module: string, status:
   try {
     const r = (opts.redis ?? sharedRedis)();
     const day = utcDay(opts.now ?? new Date());
-    const key = countersKey(appId, day);
+    const key = moduleCountersKey(appId, day);
     if ((await r.hincrby(key, `${module}:${statusClass(status)}`, 1)) === 1) await r.expire(key, MODULE_STATS_TTL_SEC);
     const every = opts.flushEverySec ?? MODULE_STATS_FLUSH_SEC;
     if (every <= 0 || (await r.set(flushMarkerKey(appId, day), '1', 'EX', every, 'NX')) === 'OK') {
@@ -73,30 +75,52 @@ export async function recordModuleRequest(appId: string, module: string, status:
   }
 }
 
+/** One `module_request_stats` row. */
+export interface ModuleStatsRow {
+  appId: string;
+  module: string;
+  statusClass: StatusClass;
+  day: string;
+  count: number;
+}
+
+/** The rows of one day's counter hash (malformed fields are skipped). */
+export function moduleStatRows(appId: string, day: string, counters: Record<string, string> | null): ModuleStatsRow[] {
+  const rows: ModuleStatsRow[] = [];
+  for (const [field, raw] of Object.entries(counters ?? {})) {
+    const at = field.lastIndexOf(':');
+    const module = field.slice(0, at);
+    const cls = field.slice(at + 1) as StatusClass;
+    const count = Number(raw);
+    if (at <= 0 || !STATUS_CLASSES.includes(cls) || !Number.isInteger(count) || count <= 0) continue;
+    rows.push({ appId, module, statusClass: cls, day, count });
+  }
+  return rows;
+}
+
+/**
+ * Upsert counter rows into `module_request_stats` in ONE statement;
+ * `greatest()` keeps a row from going backwards after Redis lost its counters.
+ */
+export async function upsertModuleStats(rows: ModuleStatsRow[]): Promise<void> {
+  if (rows.length === 0) return;
+  await getDb()
+    .insert(moduleRequestStats)
+    .values(rows)
+    .onConflictDoUpdate({
+      target: [moduleRequestStats.appId, moduleRequestStats.module, moduleRequestStats.statusClass, moduleRequestStats.day],
+      set: { count: sql`greatest(${moduleRequestStats.count}, excluded.count)` },
+    });
+}
+
 /**
  * Write the Redis totals of one app and day into `module_request_stats` (one
  * statement, idempotent). Best-effort; a day with no counters writes nothing.
  */
 export async function flushModuleRequests(appId: string, day: string, opts: Pick<ModuleStatsOptions, 'redis'> = {}): Promise<void> {
   try {
-    const counters = await (opts.redis ?? sharedRedis)().hgetall(countersKey(appId, day));
-    const rows: { appId: string; module: string; statusClass: StatusClass; day: string; count: number }[] = [];
-    for (const [field, raw] of Object.entries(counters ?? {})) {
-      const at = field.lastIndexOf(':');
-      const module = field.slice(0, at);
-      const cls = field.slice(at + 1) as StatusClass;
-      const count = Number(raw);
-      if (at <= 0 || !STATUS_CLASSES.includes(cls) || !Number.isInteger(count) || count <= 0) continue;
-      rows.push({ appId, module, statusClass: cls, day, count });
-    }
-    if (rows.length === 0) return;
-    await getDb()
-      .insert(moduleRequestStats)
-      .values(rows)
-      .onConflictDoUpdate({
-        target: [moduleRequestStats.appId, moduleRequestStats.module, moduleRequestStats.statusClass, moduleRequestStats.day],
-        set: { count: sql`greatest(${moduleRequestStats.count}, excluded.count)` },
-      });
+    const counters = await (opts.redis ?? sharedRedis)().hgetall(moduleCountersKey(appId, day));
+    await upsertModuleStats(moduleStatRows(appId, day, counters));
   } catch {
     /* a flush miss is caught up by the next flush (the counters are cumulative) */
   }

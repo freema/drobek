@@ -253,10 +253,12 @@ All in-process (`apps/server/server/jobs.ts`), started with the server:
 | slug release | hourly, Redis lease | a soft-deleted app's slug is free again after 30 days |
 | domain re-check | `DOMAINS_RECHECK_INTERVAL_MS` (1 h), Redis lease | re-verifies domains checked more than 24 h ago; unverifies + mails on a definitive failure |
 | files sweep (only with the `files` module) | `FILES_SWEEP_INTERVAL_MS` (1 h), Redis lease | removes the uploads of apps deleted `FILES_SWEEP_RETENTION_MS` (24 h) ago, stale temp uploads and blobs no `mod_files` row references (`drobek-module-files`) |
+| logs prune | `LOGS_PRUNE_INTERVAL_MS` (1 h), Redis lease | removes `get_logs` rows past their retention for every app: browser errors older than 30 days or past the newest 500 per app, compiles and daily request stats older than 30 days (`@drobek/insights`) |
 | audit retention | at start, then daily | deletes audit rows older than `AUDIT_RETENTION_DAYS` (365) — the only deletion of audit rows anywhere |
 
 Request counters for `get_logs('requests')` accumulate in Redis and are
-flushed into Postgres on read.
+flushed into Postgres on read (the whole window in one pipelined round trip)
+and at most once a minute per app and day; reads never delete.
 
 ## 9. Agents, the dashboard and abuse
 

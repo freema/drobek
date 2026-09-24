@@ -61,6 +61,22 @@ export function emailKind(to: EmailMessage['to']): EmailKind {
   return recipientRefs(to).some((r) => 'signInAddress' in r) ? 'sign_in' : 'notification';
 }
 
+/**
+ * `{ signInAddress }` reaches an address nobody confirmed and spends the
+ * server's sign-in budget, so only the sign-in provider may use it (NSO-327):
+ * the one active module that owns end-user sessions (`endUsers` — the `auth`
+ * module). Any other module gets `forbidden` (403) and nothing is sent.
+ * `signInProvider` = that module's name, or null when none is active.
+ */
+export function assertSignInSender(kind: EmailKind, module: string, signInProvider: string | null): void {
+  if (kind !== 'sign_in' || module === signInProvider) return;
+  throw new ModuleError(
+    'forbidden',
+    `Module "${module}" may not send sign-in codes: { signInAddress } is reserved for the module that signs end users in${signInProvider ? ` ("${signInProvider}")` : ''}.`,
+    { details: { reason: 'sign_in_address_not_allowed', module } }
+  );
+}
+
 export interface RecipientSources {
   principal: Principal;
   /** The sending module's effective config for this app. */

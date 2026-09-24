@@ -4,7 +4,7 @@
  * host has already resolved the app (and its password gate) and the HTTP
  * handler (rest.server.ts) enforced the 8 KiB size cap; this function owns
  * the rest of the contract:
- *   1. per-app aggregate + per-app+IP rate-limit (drobek:rl:beacon:*) → rate_limited,
+ *   1. per-app+IP, then per-app aggregate rate-limit (drobek:rl:beacon:*) → rate_limited,
  *   2. sample + SANITIZE each event (drop unknown fields, redact PII/secrets,
  *      truncate) — see sanitize.ts,
  *   3. insert with a computed dedup_key, then RING-BUFFER prune (cap + age).
@@ -56,17 +56,9 @@ export async function recordBeacon(
   //   a. per-app + per-IP — the normal per-client cap, AND
   //   b. per-app AGGREGATE (IP-independent) — bounds total ingest for one app
   //      even when an attacker rotates X-Forwarded-For to dodge the per-IP cap.
-  // Evaluate the aggregate cap first so IP-rotation floods are throttled before
-  // they can each spend a fresh per-IP bucket.
-  const app = await rateLimitRedis(
-    'beacon',
-    `app:${appId}`,
-    limits.appRateLimit,
-    limits.windowMs
-  );
-  if (!app.ok) {
-    throw new InsightsError('rate_limited', 'too many beacons; slow down');
-  }
+  // The per-IP bucket is checked FIRST (NSO-327): a request it refuses never
+  // reaches the app bucket, so one client can spend at most its own per-IP
+  // share of the app's budget and can never silence the app's error log.
   // No resolved client IP → only the aggregate applies (never a shared
   // `unknown` per-IP bucket, NSO-328).
   const ip = perIpLimitKey(input.ip, 'beacon');
@@ -75,6 +67,15 @@ export async function recordBeacon(
       ? { ok: true }
       : await rateLimitRedis('beacon', `${appId}:${ip}`, limits.rateLimit, limits.windowMs);
   if (!perIp.ok) {
+    throw new InsightsError('rate_limited', 'too many beacons; slow down');
+  }
+  const app = await rateLimitRedis(
+    'beacon',
+    `app:${appId}`,
+    limits.appRateLimit,
+    limits.windowMs
+  );
+  if (!app.ok) {
     throw new InsightsError('rate_limited', 'too many beacons; slow down');
   }
 

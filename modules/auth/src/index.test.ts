@@ -229,6 +229,37 @@ describe('drobek-module-auth — sign-in', () => {
     expect(await fake.get(`drobek:otp:eu:${appId}:cd:${emailHash('eva@firma.cz')}`)).toBeNull();
   });
 
+  it('retries while sign-in mail is paused cost nothing: 15 minutes later the same user and IP get a code (NSO-327)', async () => {
+    let now = Date.now();
+    // G = 4: sign-in codes 2 — used up by two other apps, so sign-in mail pauses.
+    const guard = memoryMailGuard({ hourlyMax: 4, pauseMinutes: 15, appSharePercent: 100 }, noopLogger, () => now);
+    await guard.admit(2, { app_id: 'app_a', workspace_id: 'ws_a', module: 'auth', kind: 'sign_in' });
+    await expect(guard.admit(1, { app_id: 'app_b', workspace_id: 'ws_b', module: 'auth', kind: 'sign_in' })).rejects.toMatchObject({
+      details: { reason: 'email_paused', class: 'sign_in' },
+    });
+    const t = createModuleTestContext(auth, { db, app: APP(), config: CONFIG, origin: `http://${HOST}`, mailGuard: guard });
+    const send = () => t.request('POST', '/send-code', { body: { email: 'ana@example.com' }, headers: { host: HOST }, clientIp: '198.51.100.7' });
+    // More attempts than AUTH_CODES_PER_IP_15MIN (5) and AUTH_CODES_PER_EMAIL_HOUR (3):
+    // every one is the pause, never 429 — nothing was sent, nothing is charged.
+    for (let i = 0; i < 7; i++) {
+      const res = await send();
+      expect(res.status, JSON.stringify(res.body)).toBe(503);
+      expect(res.body).toMatchObject({ details: { reason: 'email_paused', class: 'sign_in' } });
+    }
+    expect(t.emails).toEqual([]);
+    expect(await fake.get(`drobek:rl:eu:${appId}:otp-ip-15m:198.51.100.7`)).toBeNull();
+    expect(await fake.get(`drobek:rl:eu:${appId}:otp-email-1h:${emailHash('ana@example.com')}`)).toBeNull();
+
+    // The pause is a fixed 15 minutes, and the sign-in budget restarted with it.
+    now += 15 * 60_000;
+    const ok = await send();
+    expect(ok.status, JSON.stringify(ok.body)).toBe(200);
+    expect(t.emails.map((m) => m.to)).toEqual([['ana@example.com']]);
+    // The one code that went out is charged once.
+    expect(await fake.get(`drobek:rl:eu:${appId}:otp-ip-15m:198.51.100.7`)).toBe('1');
+    expect(await fake.get(`drobek:rl:eu:${appId}:otp-email-1h:${emailHash('ana@example.com')}`)).toBe('1');
+  });
+
   it("the app's hourly code cap is clamped to its share of the server's sign-in budget (NSO-322 H2)", async () => {
     expect(appHourlyCodeCap(100, 25)).toBe(25);
     expect(appHourlyCodeCap(10, 25)).toBe(10);

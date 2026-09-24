@@ -10,7 +10,9 @@
  * same-origin, JSON `{ events: [{ type, message, stack, url, ua, ts }] }`,
  * ≤ 20 events and ≤ 8 KiB per POST (over-cap → 413). The server redacts
  * e-mails / tokens and truncates again — the client caps are only there so a
- * POST fits.
+ * POST fits. The page `url` is only its origin + path (NSO-327): a query
+ * string or fragment can carry one-time codes, tokens or PII the redaction
+ * cannot recognise (`?code=123456`), so it never leaves the browser.
  *
  * Never throws, never recurses (an error while reporting is dropped), sends
  * at most 100 events per page load and at most 3 copies of the same error.
@@ -82,6 +84,22 @@ function str(value: unknown): string {
 
 function utf8Length(s: string): number {
   return new TextEncoder().encode(s).byteLength;
+}
+
+/**
+ * The page address the beacon reports: origin + path only — no query string,
+ * no fragment, no credentials. Anything unparsable is cut at the first `?`/`#`.
+ */
+export function pageUrl(href: unknown): string {
+  const raw = typeof href === 'string' ? href : '';
+  try {
+    const u = new URL(raw);
+    if (u.protocol === 'http:' || u.protocol === 'https:') return `${u.origin}${u.pathname}`;
+  } catch {
+    /* fall through to the plain cut */
+  }
+  const cut = raw.search(/[?#]/);
+  return cut === -1 ? raw : raw.slice(0, cut);
 }
 
 /** An ErrorEvent / a rejection reason → the event the server stores. */
@@ -190,7 +208,7 @@ export function installBeacon(env: BeaconEnv = globalThis as unknown as BeaconEn
     busy = true;
     try {
       if (sent >= BEACON_MAX_PER_PAGE) return;
-      const ev = describeError(type, raw, String(env.location?.href ?? ''), env.navigator?.userAgent ?? null, now());
+      const ev = describeError(type, raw, pageUrl(env.location?.href), env.navigator?.userAgent ?? null, now());
       const key = `${ev.type}\n${ev.message}\n${(ev.stack ?? '').split('\n').slice(0, 2).join('\n')}`;
       const n = (seen.get(key) ?? 0) + 1;
       seen.set(key, n);

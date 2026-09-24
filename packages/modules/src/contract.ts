@@ -627,7 +627,8 @@ export type EmailRecipient =
    * The ONE address someone is signing in with — the one-time code of the
    * auth module, sent only after the address passed the app's owner-confirmed
    * allowlist and the sign-in rate limits. Not for anything else (and never
-   * combined with another recipient).
+   * combined with another recipient). Only the module that owns end-user
+   * sessions (`endUsers`) may use it; any other module gets `forbidden`.
    */
   | { signInAddress: string };
 

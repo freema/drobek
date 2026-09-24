@@ -19,7 +19,7 @@ import { mergePatch } from './merge-patch.js';
 import { collectRoutes, errorResult, isReadable, matchRoute, runRoute, type PipelineResult } from './router.js';
 import { decideAccess } from './rules.js';
 import { ModuleError } from './errors.js';
-import { capEmailText, emailKind, resolveRecipients, sanitizeSubject } from './email.js';
+import { assertSignInSender, capEmailText, emailKind, resolveRecipients, sanitizeSubject } from './email.js';
 import type { MailGuard } from './mail-guard.js';
 import { memoryRateLimiter } from './runtime.js';
 
@@ -142,6 +142,8 @@ export function createModuleTestContext(module: AnyModule, opts: ModuleTestOptio
     email: {
       send: async (message: EmailMessage) => {
         const kind = emailKind(message.to);
+        // Core's rule: only the module that owns end-user sessions sends sign-in codes.
+        assertSignInSender(kind, module.name, module.endUsers ? module.name : null);
         const to = await resolveRecipients(message.to, { principal, config, owners: async () => opts.owners ?? [] });
         if (to.length === 0) return { sent: 0 };
         const guardMeta = { app_id: app.id, workspace_id: app.workspaceId, module: module.name, kind };

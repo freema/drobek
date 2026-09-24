@@ -12,8 +12,9 @@
  *  - read models (queryAppErrors / queryAppLogs) for the dashboard Overview
  *    panels, and the get_logs side (M1-07): the compile history
  *    (recordCompile), module request counters (recordModuleRequest — Redis,
- *    flushed lazily into Postgres) and the
- *    three get_logs kinds (queryRuntimeLog / queryCompileLog / queryRequestLog).
+ *    flushed lazily into Postgres), the
+ *    three get_logs kinds (queryRuntimeLog / queryCompileLog / queryRequestLog)
+ *    and the periodic retention prune (startLogsPrune, NSO-327).
  *
  * Depends only on @drobek/auth (rate-limit + client IP), @drobek/core (Redis)
  * and @drobek/db so @drobek/serving can import the signal hook with no cycle.
@@ -126,6 +127,12 @@ export {
   type RecordCompileInput,
   type RequestLogOptions,
 } from './logs.server.js';
+export {
+  pruneLogs,
+  startLogsPrune,
+  type LogsPruneLease,
+  type LogsPruneResult,
+} from './prune.server.js';
 export {
   flushModuleRequests,
   memoryModuleStatsRedis,

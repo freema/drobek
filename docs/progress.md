@@ -1159,6 +1159,34 @@ block, then `next` is pushed and the single MR opened.
   `unlockAttemptAllowed` in `packages/serving/src/node.ts`; tests that inject
   their own `allowUnlockAttempt` get neither.
 
+- NSO-327: the module e-mail class pause is a FIXED window — tripping it
+  also sets the class counter to `0` (PX = the pause), and `admit` now starts
+  with a `pttl` of the pause key (refuses uncounted). A guard test that
+  expects "the next message after the pause trips it again" is stale for a
+  class that actually PAUSED; a class that never paused (an app hit its share
+  first) still runs its old hourly counter. `EMAIL_GLOBAL_PAUSE_MINUTES`
+  already existed (15), so no new pause env var was added.
+- NSO-327: the auth module's `send-code` uses `checkOtpRequest` (counters
+  only READ, cooldown claimed) + `chargeOtpRequest` after the send; the
+  dashboard login keeps `guardOtpRequest` (charge on check). A test that
+  counts `drobek:rl:eu:<app>:otp-*` keys must send successfully first — a
+  refused send leaves them absent. The scope's own OTP autopause (15 min) is
+  unchanged and still re-trips while its hourly counter is full; with the
+  defaults the mail guard's per-app sign-in share refuses first anyway.
+- NSO-327: `{ signInAddress }` is only for the module that declares
+  `endUsers` (`assertSignInSender` in the runtime and in
+  `createModuleTestContext`). A test module that sends sign-in codes must
+  declare `endUsers: { current: async ({ user }) => user }` — and only one
+  active module may declare it.
+- NSO-327: `@drobek/insights` has DB-backed tests now (`src/test/db.ts`,
+  PGlite devDependency, excluded from the build). `queryRequestLog({ redis })`
+  takes a pipeline seam (`RequestLogRedis`: `pipeline().get/hgetall/exec`);
+  a count of 4 SQL statements for a 31-day flush = 2 upserts + 2 reads.
+  Reads never delete any more — the retention lives in `startLogsPrune`
+  (jobs.ts, Redis lease `drobek:lock:logs-prune`), so a test that expected
+  `queryRequestLog` to drop 31-day-old rows needs `pruneLogs()`.
+  `BEACON_RETENTION_DAYS` defaults to 30 (docker-compose.yml too).
+
 ## Failed approaches
 
 - `pnpm deploy --offline` in the Dockerfile builder: fails with

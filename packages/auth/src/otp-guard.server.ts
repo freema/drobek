@@ -22,6 +22,17 @@
  * On Redis errors the decision is FAIL-CLOSED (better a temporarily
  * unavailable login than thousands of un-throttled e-mails).
  *
+ * CHARGE AFTER SEND (NSO-327): `guardOtpRequest` charges the counters as it
+ * checks them (the dashboard login). The platform `auth` module sends its
+ * codes through the module e-mail path, which can refuse a send (e-mail
+ * paused, the app's share used up) AFTER the guard said yes — so it runs
+ * `checkOtpRequest` (same layers, counters only READ; the cooldown is still
+ * claimed so a double-click sends once) and `chargeOtpRequest` once the code
+ * went out. A user who retries while e-mail is paused is not left limited
+ * after the pause by attempts that sent nothing. Two concurrent checks may
+ * both pass the last free slot of a counter; the module e-mail budgets
+ * (per app and per workspace, @drobek/modules mail-guard) bound that.
+ *
  * SCOPES (M1-02): `scope` undefined = the dashboard login (the original keys);
  * `eu:<app_id>` = the end users of one app (platform module `auth`). A scoped
  * request has its OWN per-IP, per-e-mail and hourly counters, cooldown and
@@ -170,6 +181,116 @@ export async function releaseOtpCooldown(email: string, scope?: OtpScope): Promi
   }
 }
 
+/** Step 0 of both guards: the kill switch / auto-pause as a refusal, or null. */
+async function pausedDecision(ip: string | undefined, email: string, scope?: OtpScope): Promise<OtpGuardDecision | null> {
+  const paused = await isOtpSendingPaused(scope);
+  if (!paused.paused) return null;
+  logBlock(paused.reason, {
+    ip,
+    email,
+    scope,
+    alert: paused.reason === 'global_autopause' || paused.reason === 'scope_autopause',
+  });
+  return { ok: false, kind: 'error', status: 503, reason: paused.reason, message: MSG_PAUSED };
+}
+
+/** The current value of a fixed-window counter of `rateLimitRedis` (0 when absent). */
+async function counterValue(bucketName: string, key: string): Promise<number> {
+  return Number((await getRedis().get(`drobek:rl:${bucketName}:${key}`)) ?? 0) || 0;
+}
+
+/**
+ * Every layer of `guardOtpRequest`, but the per-IP, per-e-mail and per-scope
+ * hourly counters are only READ — nothing is charged until
+ * `chargeOtpRequest` runs after the code went out. The per-e-mail cooldown
+ * IS claimed (release it with `releaseOtpCooldown` when the send fails).
+ * FAIL-CLOSED on Redis errors.
+ */
+export async function checkOtpRequest(args: {
+  ip: string | undefined;
+  email: string;
+  limits?: OtpGuardLimits;
+  scope?: OtpScope;
+}): Promise<OtpGuardDecision> {
+  const { ip, email, scope } = args;
+  const limits = args.limits ?? otpGuardLimitsFromEnv();
+  const emailHash = hashEmail(email);
+  try {
+    const paused = await pausedDecision(ip, email, scope);
+    if (paused) return paused;
+
+    // 1 + 2. per-IP windows (skipped without a client IP — NSO-309)
+    if (ip && (await counterValue(bucket('otp-ip-15m', scope), ip)) >= limits.ipShortLimit) {
+      logBlock('ip_short', { ip, email, scope, alert: true });
+      return { ok: false, kind: 'error', status: 429, reason: 'ip_short', message: MSG_IP };
+    }
+    if (ip && (await counterValue(bucket('otp-ip-24h', scope), ip)) >= limits.ipDailyLimit) {
+      logBlock('ip_daily', { ip, email, scope, alert: true });
+      return { ok: false, kind: 'error', status: 429, reason: 'ip_daily', message: MSG_IP };
+    }
+
+    // 3. per-e-mail cooldown — claimed now, so a double-click sends once.
+    const acquired = await getRedis().set(cooldownKey(emailHash, scope), '1', 'PX', limits.emailCooldownMs, 'NX');
+    if (acquired === null) {
+      logBlock('cooldown', { ip, email, scope });
+      return { ok: false, kind: 'redirect_verify', reason: 'cooldown' };
+    }
+
+    // 4. per-e-mail hourly limit
+    if ((await counterValue(bucket('otp-email-1h', scope), emailHash)) >= limits.emailHourlyLimit) {
+      logBlock('email_hourly', { ip, email, scope });
+      return { ok: false, kind: 'redirect_verify', reason: 'email_hourly' };
+    }
+
+    // 5. the scope's hourly brake: full → auto-pause, as in guardOtpRequest.
+    if ((await counterValue(bucket('otp-global-1h', scope), 'all')) >= limits.globalHourlyMax) {
+      await getRedis().set(autopauseKey(scope), '1', 'PX', GLOBAL_AUTOPAUSE_MS);
+      logger.warn('[otp-guard] ALERT: global hourly OTP cap exceeded — auto-pausing sends', {
+        event: 'otp_global_brake',
+        ...(scope ? { scope } : {}),
+        max: limits.globalHourlyMax,
+        autopauseMs: GLOBAL_AUTOPAUSE_MS,
+        alert: true,
+      });
+      logBlock('global_brake', { ip, email, scope, alert: true });
+      return { ok: false, kind: 'error', status: 503, reason: 'global_brake', message: MSG_PAUSED };
+    }
+    return { ok: true };
+  } catch (err) {
+    logger.error('[otp-guard] guard error — fail-closed', {
+      ...(scope ? { scope } : {}),
+      err: serializeError(err),
+      email: maskEmail(email),
+    });
+    return { ok: false, kind: 'error', status: 503, reason: 'guard_error', message: MSG_BUSY };
+  }
+}
+
+/**
+ * Charge one sent code to the counters `checkOtpRequest` read: the per-IP
+ * windows (when the IP is known), the per-e-mail hour and the scope's hour.
+ * Call it only after the code went out. Best-effort: the code is already
+ * sent, so a Redis error is logged, not thrown.
+ */
+export async function chargeOtpRequest(args: { ip: string | undefined; email: string; scope?: OtpScope }): Promise<void> {
+  const { ip, email, scope } = args;
+  const uncapped = Number.MAX_SAFE_INTEGER;
+  try {
+    if (ip) {
+      await rateLimitRedis(bucket('otp-ip-15m', scope), ip, uncapped, IP_SHORT_WINDOW_MS);
+      await rateLimitRedis(bucket('otp-ip-24h', scope), ip, uncapped, IP_DAILY_WINDOW_MS);
+    }
+    await rateLimitRedis(bucket('otp-email-1h', scope), hashEmail(email), uncapped, EMAIL_HOURLY_WINDOW_MS);
+    await rateLimitRedis(bucket('otp-global-1h', scope), 'all', uncapped, GLOBAL_WINDOW_MS);
+  } catch (err) {
+    logger.error('[otp-guard] could not charge a sent code', {
+      ...(scope ? { scope } : {}),
+      err: serializeError(err),
+      email: maskEmail(email),
+    });
+  }
+}
+
 /** Run all protection layers. Limits injectable for unit tests. */
 export async function guardOtpRequest(args: {
   ip: string | undefined;
@@ -184,22 +305,8 @@ export async function guardOtpRequest(args: {
 
   try {
     // 0. Kill switch / auto-pause
-    const paused = await isOtpSendingPaused(scope);
-    if (paused.paused) {
-      logBlock(paused.reason, {
-        ip,
-        email,
-        scope,
-        alert: paused.reason === 'global_autopause' || paused.reason === 'scope_autopause',
-      });
-      return {
-        ok: false,
-        kind: 'error',
-        status: 503,
-        reason: paused.reason,
-        message: MSG_PAUSED,
-      };
-    }
+    const paused = await pausedDecision(ip, email, scope);
+    if (paused) return paused;
 
     // 1. per-IP short window (skipped without a client IP — NSO-309/328)
     const ipKey = perIpLimitKey(ip, scope === undefined ? 'otp-ip' : 'eu:otp-ip', logger);

@@ -155,12 +155,12 @@ services:
       # limit is a deliberately LOW dev cap so the beacon-flood e2e trips 429
       # quickly (prod default is 60). BEACON_APP_RATE_LIMIT is a second,
       # IP-INDEPENDENT per-app cap so an attacker rotating X-Forwarded-For cannot
-      # dodge the per-IP bucket. Ring-buffer retention: newest 500 / 14 days.
+      # dodge the per-IP bucket. Ring-buffer retention: newest 500 / 30 days.
       BEACON_RATE_LIMIT: ${BEACON_RATE_LIMIT:-30}
       BEACON_APP_RATE_LIMIT: ${BEACON_APP_RATE_LIMIT:-600}
       BEACON_RATE_WINDOW_MS: ${BEACON_RATE_WINDOW_MS:-60000}
       BEACON_MAX_EVENTS_PER_APP: ${BEACON_MAX_EVENTS_PER_APP:-500}
-      BEACON_RETENTION_DAYS: ${BEACON_RETENTION_DAYS:-14}
+      BEACON_RETENTION_DAYS: ${BEACON_RETENTION_DAYS:-30}
       BEACON_SAMPLE_RATE: ${BEACON_SAMPLE_RATE:-1}
       # PHY-59 (BFF proxy v1): KEK that wraps every upstream secret's DEK
       # (AES-256-GCM envelope). REQUIRED for the proxy secret store; fail-closed

@@ -16,9 +16,10 @@
  */
 import {
   CODE_TTL_S,
+  chargeOtpRequest,
+  checkOtpRequest,
   consumeEmailLoginCode,
   createEmailLoginCode,
-  guardOtpRequest,
   logOtpSent,
   maskEmail,
   otpGuardLimitsFromEnv,
@@ -183,7 +184,11 @@ export function registerRoutes(r: ModuleRouter<AuthConfig>): void {
     const scope = otpScope(ctx.app.id);
     const ip = req.clientIp ?? undefined;
     const sent = { sent: true as const, email, expires_in: CODE_TTL_S };
-    const decision = await guardOtpRequest({ ip, email, limits: await guardLimits(ctx), scope });
+    // The OTP counters are only READ here and charged once the code went out
+    // (NSO-327): a send the module e-mail guard refuses (paused, the app's
+    // share used up) costs the user nothing, so retries during a pause do not
+    // leave them limited after it.
+    const decision = await checkOtpRequest({ ip, email, limits: await guardLimits(ctx), scope });
     if (!decision.ok) {
       // A code went out a moment ago (cooldown) or this address had its
       // hourly share: answer exactly like a send and send nothing new.
@@ -212,6 +217,7 @@ export function registerRoutes(r: ModuleRouter<AuthConfig>): void {
       ctx.log.error('auth: sign-in e-mail failed', { app_id: ctx.app.id, email: maskEmail(email), error: String((err as Error)?.message ?? err) });
       throw new ModuleError('unavailable', 'The sign-in e-mail could not be sent. Try again in a moment.');
     }
+    await chargeOtpRequest({ ip, email, scope });
     logOtpSent({ ip, email, scope });
     return sent;
   });

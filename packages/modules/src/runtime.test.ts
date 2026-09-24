@@ -705,15 +705,32 @@ describe('HTTP on the app hosts', () => {
 
 describe('module e-mail (ctx.email.send through the runtime)', () => {
   const base = { version: '1.0.0', skill: { useWhen: 'x', markdown: '# x' } };
-  /** A sender module: POST /mail { to } sends to that recipient reference. */
+  /**
+   * A sender module: POST /mail { to } sends to that recipient reference. It
+   * owns end-user sessions (`endUsers`), so it is the sign-in provider that
+   * may send `{ signInAddress }` (NSO-327).
+   */
   const sender = defineModule<{ notify: string[] }>({
     ...base,
     name: 'sender',
     configSchema: z.object({ notify: z.array(z.string()) }),
     configDefaults: { notify: ['team@example.com'] },
+    endUsers: { current: async ({ user }) => user },
     routes(r) {
       r.post('/mail', { rule: 'public', body: z.object({ to: z.any() }) }, async (q, ctx) =>
         ctx.email.send({ to: q.body.to, subject: 'Hello\r\nBcc: x@evil.example', text: '<b>hi</b>' })
+      );
+    },
+  });
+  /** Any other module: sends like `sender`, but is not the sign-in provider. */
+  const intruder = defineModule<Record<string, never>>({
+    ...base,
+    name: 'intruder',
+    configSchema: z.object({}),
+    configDefaults: {},
+    routes(r) {
+      r.post('/mail', { rule: 'public', body: z.object({ to: z.any() }) }, async (q, ctx) =>
+        ctx.email.send({ to: q.body.to, subject: 'Your code', text: '123456' })
       );
     },
   });
@@ -797,6 +814,34 @@ describe('module e-mail (ctx.email.send through the runtime)', () => {
     expect(third.status).toBe(429);
     expect(json(third)).toMatchObject({ error: 'limit_exceeded', details: { module: 'sender', kind: 'notification' } });
     expect(sent).toHaveLength(3);
+  });
+
+  it('{ signInAddress } is reserved for the sign-in provider: another module gets 403 forbidden, nothing is sent or counted (NSO-327)', async () => {
+    let guard: MailGuard | undefined;
+    const { r, sent, send } = await setup([sender, mailer, intruder], {
+      mailGuard: (l) => (guard = memoryMailGuard({ hourlyMax: 1000, pauseMinutes: 15 }, l)),
+    });
+    const spy = vi.spyOn(guard!, 'admit');
+    const res = await r.handle(
+      req('POST', '/__drobek/v1/intruder/mail', { headers: { ...sdkPost }, body: { to: { signInAddress: 'victim@example.com' } } }),
+      app
+    );
+    expect(res.status).toBe(403);
+    expect(json(res)).toMatchObject({ error: 'forbidden', details: { reason: 'sign_in_address_not_allowed', module: 'intruder' } });
+    expect(sent).toEqual([]);
+    expect(spy).not.toHaveBeenCalled();
+    // Its other recipients resolve as before (anon → { principal } is 401), and the provider still sends codes.
+    const note = await r.handle(req('POST', '/__drobek/v1/intruder/mail', { headers: { ...sdkPost }, body: { to: { principal: true } } }), app);
+    expect(note.status).toBe(401);
+    expect((await send({ signInAddress: 'ana@example.com' })).status).toBe(200);
+    expect(sent.map((m) => m.to)).toEqual(['ana@example.com']);
+  });
+
+  it('without a sign-in provider no module may send { signInAddress }', async () => {
+    const { r, sent } = await setup([mailer, intruder]);
+    const res = await r.handle(req('POST', '/__drobek/v1/intruder/mail', { headers: { ...sdkPost }, body: { to: { signInAddress: 'a@example.com' } } }), app);
+    expect(res.status).toBe(403);
+    expect(sent).toEqual([]);
   });
 
   it('no recipient resolved → sent 0, nothing counted', async () => {
