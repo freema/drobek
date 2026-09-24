@@ -2,6 +2,12 @@
 
 ## Unreleased (`next`)
 
+_Nothing yet._
+
+## v0.1.2 — 2026-09-24
+
+The first published image. It carries the v0.1.1 fix (v0.1.1 was tagged, its CI run was cancelled in favour of this release).
+
 ### Added
 - `LANDING_URL` — an operator with their own website sends the dashboard's `/` there with a 301 instead of the built-in landing page (drobek.app → www.drobek.app), so the noindex dashboard host never competes with the website in search.
 
