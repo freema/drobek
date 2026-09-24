@@ -11,7 +11,7 @@
  * when the host belongs to an app) and the super-admins are e-mailed (at most
  * once per app per hour).
  */
-import { data, type ActionFunctionArgs, type LoaderFunctionArgs } from 'react-router';
+import { data, type ActionFunctionArgs, type HeadersArgs, type LoaderFunctionArgs } from 'react-router';
 import {
   LOCK_REASONS,
   REPORT_DETAILS_MAX,
@@ -34,6 +34,14 @@ export function reportsPerIpHour(env: NodeJS.ProcessEnv = process.env): number {
 const HOUR_MS = 60 * 60 * 1000;
 
 export const REPORT_RATE_BUCKET = 'abuse-report-ip';
+
+/**
+ * Without a `headers` export React Router drops the headers an action puts on
+ * `data()` — the 429 must reach the wire with its `Retry-After` (M4-02).
+ */
+export function headers({ actionHeaders }: HeadersArgs) {
+  return actionHeaders;
+}
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const url = new URL(request.url);
