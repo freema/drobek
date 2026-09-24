@@ -2,6 +2,45 @@
 
 ## Unreleased (`next`)
 
+_Nothing yet._
+
+## v0.1.0 — 2026-09-24
+
+### Release summary
+
+First release of drobek as a cloud workspace for agent-built web apps. An agent connects over MCP, writes files, drobek compiles them in-process with esbuild, keeps every write as a version with a preview host and publishes on request. App backends are TypeScript platform modules; a dashboard covers secrets, confirmations, domains, data and users. One Node process, one image (`ghcr.io/freema/drobek`), Postgres + Redis, Caddy for TLS.
+
+This release replaces the earlier static-bundle upload product entirely (see the ⚠️ Breaking sections in `CHANGELOG.md`: NSO-281, 282, 283, 285).
+
+#### Highlights
+- **Agent loop over MCP** (Streamable HTTP): `list_apps`, `create_app`, `get_app`, `read_file`, `write_files` (esbuild diagnostics back), `publish`, `restore_version`, `get_logs`, `query_data`, `configure_module`, `skill_info`. OAuth 2.1 (user-bound tokens, scopes read/write/publish, CIMD + DCR) and `drk_` API keys.
+- **Apps on their own origin** — `<slug>.<APPS_DOMAIN>` (production), `<slug>--preview` and `<slug>--v<N>` hosts, `__Host-` cookies, CSP, password gate, on-demand TLS (`ask` endpoint) with Caddy.
+- **Platform modules** (`@drobek/modules` contract, `defineModule`, owner confirmations): built-in `auth` (end-user sign-in), `data`, `forms`, `email`, `files`, `proxy`; external modules via `DROBEK_MODULES` (example: `drobek-module-hello`).
+- **Dashboard**: app page (publish / restore / unpublish, versions, zip download), Modules tab with confirmations, owner tabs (Data with CSV import/export, Forms, Users, Uploads, Logs), custom domains with DNS verification and re-check, account area (API keys, OAuth connections, Activity), abuse queue for super-admins.
+- **Agent DX**: `@drobek/agent-dx` briefing, tool manifest, limits and error catalogue, `llms.txt`; the `drobek` plugin and skills; directory listing kit.
+- **Self-hosting**: production compose, `task selfhost:init`, backup/restore, release image tags, `docs/SELF-HOSTING.md` env reference (kept in sync by `pnpm doc-lint`).
+- **Plan limits** (`APPS_MAX_PER_WORKSPACE`, `DOMAINS_MAX_PER_APP`) with an optional HMAC-signed limits provider (`LIMITS_PROVIDER_URL`).
+
+#### Security (M1 review + follow-ups)
+- SVG sniffer ReDoS and proxy escape fixed; proxy header allow-list, decoding to a fixed point (double-encoded traversal refused), HEAD, IPv6 private ranges, concurrency caps.
+- A failed PKCE exchange burns the authorization code; a replayed code revokes its tokens.
+- Per-IP rate limits never share an `unknown` bucket; per-principal write limits in `data` and `files`; per-app password-gate cap.
+- MCP `read_file`, `query_data`, `get_logs` answer only inside the untrusted envelope (no `structuredContent`); `_owner` hidden from anonymous callers; removed data collections are purged (with confirmation and audit), never orphaned.
+- Beacon URLs stored as origin + path only; e-mail guard pause vs OTP quota fixed; `signInAddress` reserved for the auth module.
+- DB errors are read and logged through one helper (`@drobek/db`: `pgErrorCode`, `isUniqueViolation`, `dbErrorForLog`) — no bound query parameters in logs; drizzle-orm 0.45.3, nodemailer 10.
+- `docs/SECURITY.md` threat table; `/.well-known/drobek-report` and `/report` abuse flow with takedown (451).
+
+#### Operator notes (new / changed env)
+- New: `LOGS_PRUNE_INTERVAL_MS` (3600000), `DATA_WRITES_PER_PRINCIPAL_PER_MIN` (60), `FILES_UPLOADS_PER_PRINCIPAL_PER_MIN` (20), `EMAIL_WORKSPACE_HOURLY_SHARE` (50; single-workspace servers may set 100), `APPS_MAX_PER_WORKSPACE` (50), `DOMAINS_MAX_PER_APP` (3), `LIMITS_PROVIDER_URL` (+ secret), `TRUST_PROXY`.
+- Changed: `BEACON_RETENTION_DAYS` default 14 → 30 (errors also capped at the newest 500 per app); logs/stats are pruned by a periodic job instead of on read.
+- Migrations run on start (`__drizzle_migrations_core` + one journal per module). Back up before upgrading: `task backup`.
+- Full list and defaults: `docs/SELF-HOSTING.md` → Environment reference.
+
+#### Verification
+`task check` (doc-lint, build, typecheck, lint, knip, ~1 700 unit tests), Playwright e2e against the dev stack and against the production image behind Caddy (`task e2e:image`), an agent eval over three reference apps, and Sonnet black-box passes per milestone block.
+
+The sections below are the detailed change log of this release, newest first.
+
 ### drizzle-orm 0.45; DB errors read and logged through one helper (NSO-333)
 
 - `@drobek/db` exports `pgErrorCode(err)` (the SQLSTATE wherever the driver
