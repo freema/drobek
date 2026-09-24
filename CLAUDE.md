@@ -22,7 +22,7 @@ Map: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
    the dashboard and stored envelope-encrypted; tools return names +
    `hasSecret`. Never log a secret.
 5. **`task check` is the gate** (Taskfile, go-task — there is no Makefile).
-   It runs `pnpm install`, the doc-lint, build, typecheck, lint and unit tests.
+   It runs `pnpm install`, the doc-lint, build, typecheck, lint, knip and unit tests.
 6. **One long-lived branch, `next`.** Commits end with `(NSO-xxx)`; push only
    at milestone end; one MR per milestone.
 7. **Migrations:** core migrations live in `packages/db/drizzle/migrations`
@@ -50,7 +50,7 @@ Map: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ```sh
 task dev            # build + start the dev stack (drobek, postgres, redis, mailpit), wait until healthy
-task check          # host-side gate: install, doc-lint, build packages, typecheck, lint, unit tests
+task check          # host-side gate: install, doc-lint, build packages, typecheck, lint, knip, unit tests
 task test           # unit tests only (builds packages first)
 task e2e            # Playwright vs the dev stack (@local + @smoke) — block end
 task e2e:image      # the CI flow: prod image behind Caddy + the whole suite
