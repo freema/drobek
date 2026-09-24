@@ -21,9 +21,9 @@ import { getDb } from '@drobek/db';
 import { renderTextEmailHtml, sendEmail } from '@drobek/email';
 import { appOwnerEmails } from '@drobek/modules';
 
-export const REPORT_MAIL_DEDUP_MS = 60 * 60 * 1000;
+const REPORT_MAIL_DEDUP_MS = 60 * 60 * 1000;
 
-export function reportMailDedupKey(key: string): string {
+function reportMailDedupKey(key: string): string {
   return `drobek:abuse:mail:${key}`;
 }
 

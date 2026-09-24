@@ -20,7 +20,7 @@
  *    confirmRequired string.
  */
 
-export type FieldKind = 'object' | 'string' | 'enum' | 'number' | 'integer' | 'boolean' | 'string-list' | 'json';
+type FieldKind = 'object' | 'string' | 'enum' | 'number' | 'integer' | 'boolean' | 'string-list' | 'json';
 
 export interface FormField {
   /** Dotted config path, e.g. `allow.emails`. */
@@ -41,7 +41,7 @@ export interface FormField {
 }
 
 /** Form input names are the config path under this prefix. */
-export const FIELD_PREFIX = 'cfg.';
+const FIELD_PREFIX = 'cfg.';
 
 export function fieldName(path: string): string {
   return `${FIELD_PREFIX}${path}`;
@@ -125,7 +125,7 @@ export function leafFields(fields: readonly FormField[]): FormField[] {
   return fields.flatMap((f) => (f.kind === 'object' ? leafFields(f.children ?? []) : [f]));
 }
 
-export function valueAt(obj: unknown, path: string): unknown {
+function valueAt(obj: unknown, path: string): unknown {
   let cur: unknown = obj;
   for (const seg of path.split('.')) {
     if (!isObject(cur) || !Object.prototype.hasOwnProperty.call(cur, seg)) return undefined;
@@ -239,7 +239,7 @@ export function formToConfig(fields: readonly FormField[], form: FormReader): Fo
 }
 
 /** The JSON value equality of two config values (key order ignored). */
-export function jsonEqualValue(a: unknown, b: unknown): boolean {
+function jsonEqualValue(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (Array.isArray(a) || Array.isArray(b)) {
     if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
@@ -294,7 +294,7 @@ function flatten(v: unknown, prefix: string, out: Map<string, unknown>): void {
 }
 
 /** How a config value reads in the diff. */
-export function showValue(v: unknown): string {
+function showValue(v: unknown): string {
   if (v === undefined) return '(not set)';
   if (isObject(v) && Object.keys(v).length === 0) return '{}';
   return JSON.stringify(v);

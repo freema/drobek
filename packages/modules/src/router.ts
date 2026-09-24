@@ -52,7 +52,7 @@ function splitPath(path: string): string[] {
 }
 
 /** The rest-of-path segment: only as the LAST segment of a pattern (`/:upstream/*`). */
-export const WILDCARD = '*';
+const WILDCARD = '*';
 
 export function normalizePattern(pattern: string): string {
   const segs = splitPath(pattern);
@@ -194,7 +194,7 @@ export function errorResult(err: ModuleError, module?: string): PipelineResult {
 }
 
 /** Enforce the CSRF guard for one request (throws ModuleError). */
-export function checkCsrf(req: PipelineRequest, mode: 'sdk-header' | 'same-origin', selfOrigin: string | null): void {
+function checkCsrf(req: PipelineRequest, mode: 'sdk-header' | 'same-origin', selfOrigin: string | null): void {
   if (!MUTATING.has(req.method.toUpperCase())) return;
   const origin = req.header('origin')?.trim();
   if (origin) {

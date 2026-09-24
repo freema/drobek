@@ -65,7 +65,7 @@ export type Rule = string;
 export type AccessDecision = { ok: true } | { ok: false; status: 401 | 403 };
 
 /** The operations a module exposes to rules, for the dashboard's rule editor. */
-export interface RuleSurface {
+interface RuleSurface {
   /** operation → one-line meaning, e.g. `{ read: 'List and get records' }`. */
   ops: Record<string, string>;
 }

@@ -18,7 +18,7 @@ import forms from 'drobek-module-forms';
 import proxy from 'drobek-module-proxy';
 
 export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
-export const SKILLS_DIR = join(REPO_ROOT, 'skills');
+const SKILLS_DIR = join(REPO_ROOT, 'skills');
 
 /** The built-in modules in the dev compose's DROBEK_MODULES order. */
 export const BUILTIN_MODULES: AnyModule[] = [auth, email, forms, data, proxy, files] as AnyModule[];

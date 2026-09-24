@@ -124,8 +124,8 @@ export function formatBytes(n: number): string {
 
 // ── apps list filters ────────────────────────────────────────────────────────
 
-export type AppStatusFilter = 'all' | 'published' | 'unpublished';
-export type AppSort = 'updated' | 'created' | 'name';
+type AppStatusFilter = 'all' | 'published' | 'unpublished';
+type AppSort = 'updated' | 'created' | 'name';
 
 export interface AppListFilters {
   q: string;

@@ -20,10 +20,10 @@ import type { Logger } from '@drobek/core';
 import type { Limits, ModuleLimit } from './contract.js';
 
 export const LIMITS_CACHE_TTL_SEC = 60;
-export const LIMITS_PROVIDER_TIMEOUT_MS = 2_000;
-export const LIMITS_PROVIDER_SECRET_MIN_LENGTH = 32;
+const LIMITS_PROVIDER_TIMEOUT_MS = 2_000;
+const LIMITS_PROVIDER_SECRET_MIN_LENGTH = 32;
 /** After a provider failure, env defaults are used for this long before retrying. */
-export const LIMITS_FAILURE_BACKOFF_MS = 10_000;
+const LIMITS_FAILURE_BACKOFF_MS = 10_000;
 
 export const LIMITS_SIGNATURE_HEADER = 'X-Drobek-Signature';
 export const LIMITS_TIMESTAMP_HEADER = 'X-Drobek-Timestamp';

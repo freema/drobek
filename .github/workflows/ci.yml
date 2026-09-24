@@ -1,6 +1,6 @@
 # drobek (PUBLIC core) — CI (M0-08)
 #
-#   quality  doc-lint → lint → typecheck → unit tests (the `task check` pieces)
+#   quality  doc-lint → lint → typecheck → knip → unit tests (the `task check` pieces)
 #   e2e      build the production image ONCE (Dockerfile `runner`) → run it
 #            with docker-compose.e2e.yaml behind Caddy (tls internal) with
 #            throwaway postgres / redis / mailpit / proxy-echo → the server
@@ -80,6 +80,9 @@ jobs:
 
       - name: Typecheck
         run: pnpm typecheck
+
+      - name: Knip (unused files, exports, dependencies)
+        run: pnpm knip
 
       - name: Unit tests
         run: pnpm test

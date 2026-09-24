@@ -65,7 +65,7 @@ export function toPath(pathOrUrl: string): string {
 }
 
 /** The SDK core source: `@drobek/sdk` dist/core.js (src/core.ts in a source checkout). */
-export function sdkCoreEntry(): string {
+function sdkCoreEntry(): string {
   const require = createRequire(import.meta.url);
   const root = dirname(require.resolve('@drobek/sdk/package.json'));
   for (const candidate of [join(root, 'dist/core.js'), join(root, 'src/core.ts')]) {
@@ -75,7 +75,7 @@ export function sdkCoreEntry(): string {
 }
 
 /** The beacon entry: `@drobek/sdk` dist/beacon-entry.js (src/beacon-entry.ts in a source checkout). */
-export function sdkBeaconEntry(): string {
+function sdkBeaconEntry(): string {
   const require = createRequire(import.meta.url);
   const root = dirname(require.resolve('@drobek/sdk/package.json'));
   for (const candidate of [join(root, 'dist/beacon-entry.js'), join(root, 'src/beacon-entry.ts')]) {

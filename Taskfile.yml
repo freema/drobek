@@ -80,14 +80,20 @@ tasks:
       - pnpm build:packages
       - pnpm typecheck
 
+  knip:
+    desc: 'Dead-code gate (knip.ts): unused files, exports, types and dependencies across the workspace — 0 findings'
+    cmds:
+      - pnpm knip
+
   check:
-    desc: Host-side gate — install, doc-lint, build packages, typecheck, lint, unit tests
+    desc: Host-side gate — install, doc-lint, build packages, typecheck, lint, knip, unit tests
     cmds:
       - pnpm install
       - pnpm doc-lint
       - pnpm build:packages
       - pnpm typecheck
       - pnpm lint
+      - pnpm knip
       - pnpm test
 
   db:generate:

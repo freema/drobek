@@ -17,7 +17,7 @@ export interface Token {
 }
 
 /** Above this size the viewer shows plain text (tokenizing stays cheap). */
-export const HIGHLIGHT_MAX_CHARS = 200_000;
+const HIGHLIGHT_MAX_CHARS = 200_000;
 
 const EXT_LANG: Record<string, Language> = {
   js: 'js',

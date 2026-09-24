@@ -42,7 +42,7 @@ export function requireCollection(config: DataConfig, name: string): CollectionC
 }
 
 /** With a schema, the only fields a query may use; null (any identifier) without one. */
-export function docFieldsOf(c: CollectionConfig): Set<string> | null {
+function docFieldsOf(c: CollectionConfig): Set<string> | null {
   return c.schema ? schemaPropertyNames(c.schema) : null;
 }
 
@@ -55,17 +55,17 @@ export interface PageQuery {
 }
 
 /** The sort of a query: `sort` (+ `dir`, default asc), or `_created_at` in `dir` (default newest first). */
-export function sortOf(q: { sort?: string; dir?: 'asc' | 'desc' }, docFields: Set<string> | null): SortSpec {
+function sortOf(q: { sort?: string; dir?: 'asc' | 'desc' }, docFields: Set<string> | null): SortSpec {
   if (q.sort) return normalizeSort({ field: q.sort, dir: q.dir }, docFields);
   return normalizeSort(q.dir ? { field: '_created_at', dir: q.dir } : undefined, docFields);
 }
 
-export interface Normalized {
+interface Normalized {
   conditions: Condition[];
   sort: SortSpec;
 }
 
-export function normalizeQuery(c: CollectionConfig, q: PageQuery): Normalized {
+function normalizeQuery(c: CollectionConfig, q: PageQuery): Normalized {
   const docFields = docFieldsOf(c);
   return { conditions: normalizeFilter(q.filter, docFields), sort: sortOf(q, docFields) };
 }
@@ -133,7 +133,7 @@ function describe(name: string, c: CollectionConfig, records: number): RecordsCo
 }
 
 /** A record's own fields: every key but the server's `_…` ones. */
-export function ownFields(fields: Record<string, unknown>): Record<string, unknown> {
+function ownFields(fields: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(fields)) if (!k.startsWith('_') && v !== undefined) out[k] = v;
   return out;
@@ -156,7 +156,7 @@ const NUMBER_RE = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/;
  * `array` from JSON; anything else stays text (the schema then refuses it
  * with a clear field error). Without a declared type a cell stays text.
  */
-export function cellValue(raw: string, types: string[]): unknown {
+function cellValue(raw: string, types: string[]): unknown {
   const nonText = types.filter((t) => t !== 'string');
   for (const t of nonText) {
     if ((t === 'number' || t === 'integer') && NUMBER_RE.test(raw.trim())) return Number(raw.trim());
@@ -180,7 +180,7 @@ function rowError(line: number, message: string, errors?: unknown): DataError {
 }
 
 /** Parse + validate an import (everything before a write): the records with the CSV line each starts on. */
-export function importDocs(c: CollectionConfig, text: string): { line: number; doc: Record<string, unknown> }[] {
+function importDocs(c: CollectionConfig, text: string): { line: number; doc: Record<string, unknown> }[] {
   let rows;
   try {
     rows = parseCsv(text, { maxRows: RECORDS_IMPORT_MAX_ROWS + 1 });

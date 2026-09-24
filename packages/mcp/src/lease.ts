@@ -15,12 +15,12 @@ import type { getRedis } from '@drobek/core';
 // releases the lease too, NSO-288); re-exported for the existing importers.
 export { LEASE_KEY_PREFIX, leaseKey, type Lease };
 
-export interface LeaseHolder {
+interface LeaseHolder {
   userId: string;
   sessionId: string;
 }
 
-export type AcquireResult = { acquired: true; lease: Lease } | { acquired: false; lease: Lease };
+type AcquireResult = { acquired: true; lease: Lease } | { acquired: false; lease: Lease };
 
 export interface LeaseStore {
   /** Take (free / expired / own) or renew the lease; report the holder otherwise. */

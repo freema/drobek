@@ -24,6 +24,43 @@
   (`freema/drobek-plugin`, 0.2.0) names `query_data`, `get_logs` and the nine
   skills. No migration.
 
+### Dead code removal, knip gate, dependency audit (NSO-306)
+
+- **`pnpm knip`** (`knip.ts`, knip 6) runs in `task check` (after lint) and
+  in the CI quality job; the gate is 0 unused files, exports, types and
+  dependencies across the whole workspace. Entry points the plugins cannot
+  see (CLIs run by path, the module SDK entries esbuild bundles, scripts
+  started from compose / shell) are declared per workspace; every ignore
+  carries its reason. New `task knip`.
+- Deleted dead code: `inlineSpecifiers` (`@drobek/skills-check`),
+  `normalizeEmail` (`modules/auth` config), the `migrationsUpTo` test helper
+  (`packages/domains`), the `AppActionIntent` type (`@drobek/dashboard`), the
+  `Json` type (`@drobek/modules` merge-patch). About 70 exports that only
+  their own file used are module-local now (no behaviour change).
+- Removed unused dependencies: `@drobek/insights`, `@drobek/proxy` and
+  `@types/nodemailer` from `apps/server`; `@drobek/core` from
+  `@drobek/proxy` and `drobek-module-proxy`; the root
+  `@electric-sql/pglite`. `apps/server` keeps `nodemailer` (the SSR bundle
+  imports it) and the `drobek-module-*` packages (loaded by the registry).
+- The DROP list of the plan was already gone after M0-02 and was verified,
+  not re-deleted: the old MCP tool bodies (`@drobek/oauth` keeps only the
+  transport), the old `serve.server.ts` branches, the MCP part of the dev
+  entrypoint, the per-service GHCR images (no mention left), dead
+  `.env.example` keys (every key is read by code or compose). `@drobek/sdk`
+  is the browser SDK now, not a placeholder, and stays.
+- Security updates (`pnpm audit --prod`): `react-router`,
+  `@react-router/{node,express,dev}` 7.14.0 → 7.18.4 (Framework Mode DoS /
+  turbo-stream advisories); lockfile refresh within the existing ranges for
+  `fast-uri` 3.1.8, `ip-address` 10.7.2, `hono` 4.13.8,
+  `@hono/node-server` 1.19.17, `body-parser` 1.20.8.
+- **Known, not upgraded** (the fixes are major upgrades, left for a
+  deliberate change): `nodemailer` 6.10 — high advisories fixed only in 7.x
+  / 9.x (address-parser DoS, message-level `raw` file access) plus moderate
+  ones; `drizzle-orm` 0.41 — identifier-escaping SQL injection fixed in 0.45
+  (a breaking 0.x minor), exploitable only when runtime input reaches
+  `sql.identifier()` / `.as()`, which drobek never does; `qs` 6.15 through
+  `express` 4 (moderate). No migration.
+
 ### Docs rewritten for the cloud workspace + doc-lint (NSO-298)
 
 - New: `docs/SECURITY.md` (threat model as shipped, status of every PHY-76

@@ -160,7 +160,7 @@ export async function rawInitialize(
   });
 }
 
-export interface ListedWorkspace {
+interface ListedWorkspace {
   slug: string;
   name: string;
   kind: 'personal' | 'team';
@@ -227,7 +227,7 @@ export async function mcpClient(
   };
 }
 
-export interface ToolCall {
+interface ToolCall {
   isError: boolean;
   json: Record<string, unknown>;
 }

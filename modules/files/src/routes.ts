@@ -35,7 +35,7 @@ type Ctx = ModuleContext<FilesConfig>;
 export const DEFAULT_MAX_BYTES = 10 * 1024 * 1024; // 10 MiB per file
 export const DEFAULT_QUOTA_PER_APP = 500 * 1024 * 1024; // 500 MiB per app
 export const DEFAULT_UPLOAD_RATE_LIMIT = 60; // uploads per minute per app
-export const UPLOAD_RATE_WINDOW_MS = 60_000;
+const UPLOAD_RATE_WINDOW_MS = 60_000;
 /** Multipart framing on top of the file a declared Content-Length may carry. */
 const FRAMING_ALLOWANCE = MAX_FILE_HEAD_BYTES + 1024;
 

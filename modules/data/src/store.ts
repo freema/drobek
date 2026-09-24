@@ -33,7 +33,7 @@ export function toRecord(row: Pick<DataRecordRow, 'id' | 'ownerId' | 'doc' | 'cr
   return out;
 }
 
-export function newRecordId(): string {
+function newRecordId(): string {
   return createId();
 }
 
@@ -220,7 +220,7 @@ function containsSql(field: string, value: ScalarValue): SQL {
   return sql`(${inArray} OR (jsonb_typeof(${f}) = 'string' AND strpos(lower(${dataRecords.doc} ->> ${field}::text), lower(${value}::text)) > 0))`;
 }
 
-export function conditionSql(c: Condition): SQL {
+function conditionSql(c: Condition): SQL {
   switch (c.op) {
     case 'eq':
       return eqSql(c.field, c.value as ScalarValue);

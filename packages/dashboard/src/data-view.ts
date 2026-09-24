@@ -11,10 +11,10 @@ export interface Column {
 }
 
 /** The server's record fields (the table shows them separately). */
-export const SYSTEM_FIELDS = new Set(['_id', '_owner', '_created_at', '_updated_at']);
+const SYSTEM_FIELDS = new Set(['_id', '_owner', '_created_at', '_updated_at']);
 
 /** The server's fields a query may sort on. */
-export const META_SORT_FIELDS = new Set(['_id', '_created_at', '_updated_at']);
+const META_SORT_FIELDS = new Set(['_id', '_created_at', '_updated_at']);
 
 /** A short one-line summary of the columns (required keys marked `*`). */
 export function schemaSummary(columns: Column[], max = 6): string {

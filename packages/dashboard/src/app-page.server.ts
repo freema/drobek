@@ -140,16 +140,7 @@ export async function appHeaderData({ access, app }: AppPage): Promise<AppHeader
   };
 }
 
-export type AppActionIntent =
-  | 'publish'
-  | 'restore'
-  | 'unpublish'
-  | 'unlock'
-  | 'visibility'
-  | 'frame-ancestors'
-  | 'delete';
-
-export interface AppActionError {
+interface AppActionError {
   error: string;
   intent: string;
 }

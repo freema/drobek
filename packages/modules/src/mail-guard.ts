@@ -68,7 +68,7 @@ export interface MailGuardConfig {
 }
 
 /** The least sign-in codes one app may send per hour, whatever the share (capped at the sign-in budget). */
-export const MIN_SIGN_IN_APP_SHARE = 10;
+const MIN_SIGN_IN_APP_SHARE = 10;
 
 /** The effective hourly budgets (recipients) derived from the config. */
 export interface MailBudgets {

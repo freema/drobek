@@ -28,7 +28,7 @@ export function apiError(status: number, error: string, message: string, extra: 
   return data({ ok: false, error, message, ...extra }, { status, headers: NO_STORE });
 }
 
-export interface ApiApp {
+interface ApiApp {
   id: string;
   slug: string;
   workspaceId: string;

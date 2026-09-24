@@ -10,9 +10,9 @@ import { ModuleError } from '@drobek/modules';
 import type { FieldValue } from './schema.js';
 
 export const MAX_FIELDS = 50;
-export const MAX_VALUE_CHARS = 10_000;
-export const MAX_LIST_ITEMS = 50;
-export const MAX_LIST_ITEM_CHARS = 1_000;
+const MAX_VALUE_CHARS = 10_000;
+const MAX_LIST_ITEMS = 50;
+const MAX_LIST_ITEM_CHARS = 1_000;
 const NAME_BAD = /[\u0000-\u001f\u007f\u2028\u2029]/;
 
 export interface SplitBody {

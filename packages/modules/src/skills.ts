@@ -21,7 +21,7 @@ import type { AnyModule } from './contract.js';
 
 /** The platform skill (installed into the agent) — never listed by skill_info. */
 export const PLATFORM_SKILL_NAME = 'drobek';
-export const SKILL_NAME_RE = /^[a-z][a-z0-9-]{1,40}$/;
+const SKILL_NAME_RE = /^[a-z][a-z0-9-]{1,40}$/;
 
 export interface SkillEntry {
   name: string;

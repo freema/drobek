@@ -774,8 +774,8 @@ export async function configureModule(
 
 // ── query_data ───────────────────────────────────────────────────────────────
 
-export const QUERY_DATA_DEFAULT_LIMIT = 20;
-export const QUERY_DATA_MAX_LIMIT = 100;
+const QUERY_DATA_DEFAULT_LIMIT = 20;
+const QUERY_DATA_MAX_LIMIT = 100;
 
 export interface QueryDataResult {
   app_id: string;

@@ -7,7 +7,7 @@ import { and, count, eq, inArray } from 'drizzle-orm';
 import { apps, memberships, users, type DB } from '@drobek/db';
 import { authUsers, type AuthUserRow } from './schema.js';
 
-export function newUserId(): string {
+function newUserId(): string {
   return `eu_${randomBytes(12).toString('hex')}`;
 }
 

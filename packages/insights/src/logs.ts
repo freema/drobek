@@ -14,9 +14,9 @@ export const LOG_ENTRIES_MAX = 100;
 export const COMPILE_LOG_LIMIT = 50;
 /** Stored per compile: at most this many errors, each text capped. */
 export const COMPILE_ERRORS_KEEP = 20;
-export const COMPILE_ERROR_TEXT_MAX = 500;
+const COMPILE_ERROR_TEXT_MAX = 500;
 /** A runtime entry carries the head of the latest stack (lines). */
-export const STACK_HEAD_LINES = 6;
+const STACK_HEAD_LINES = 6;
 
 export type StatusClass = '2xx' | '3xx' | '4xx' | '5xx';
 export const STATUS_CLASSES: readonly StatusClass[] = ['2xx', '3xx', '4xx', '5xx'];

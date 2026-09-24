@@ -68,8 +68,8 @@ block, then `next` is pushed and the single MR opened.
   are now globally unique host labels (CHECK + rename of offenders).
   `@drobek/apps` = createApp / createVersion / publish / restore / blob GC
   (hourly, Redis lease, 7-day grace). `@drobek/deploy`, the deploy MCP tools,
-  `/__upload`, `/__blob`, the path-based app routes on the dashboard host (serving, REST data, beacon) and
-  `UPLOAD_SIGNING_SECRET` / `BLOB_DIR` / `DEPLOY_MAX_*` are gone. The dashboard
+  the upload and blob routes, the path-based app routes on the dashboard host (serving, REST data, beacon) and
+  the upload-signing / blob-directory / deploy-limit env vars are gone. The dashboard
   shows a version history with a Publish button (editor+). App serving and
   the beacon come back on the apps origin in M0-06.
 - **M0-04 (NSO-282) — user-bound tokens, scopes, CIMD, API keys.** Migration
@@ -977,6 +977,27 @@ block, then `next` is pushed and the single MR opened.
   `innerText()` returns `SECRET SET` — compare case-insensitively.
 - The dev compose runs the example module `hello`, so `skill_info()` lists 10
   skills there; the production default (six modules) lists 9.
+
+- NSO-306 knip (`knip.ts`, `pnpm knip`, in `task check` + CI quality): the
+  gate is 0 findings. Test files are knip entries, so an export used only by
+  a test is fine; an export used only inside its own file is a finding — drop
+  the `export`. A file loaded by PATH rather than imported (a CLI run as
+  `node <pkg>/dist/cli/*.js`, a module `sdk.entry` / `sdk.inline.entry`, a
+  script started from compose or a shell script) must be added to that
+  workspace's `entry` in `knip.ts`, or knip reports it as unused. Every
+  ignore in `knip.ts` carries a comment with its reason.
+- `apps/server` must keep `nodemailer` as a DIRECT dependency although no
+  source file imports it: the React Router SSR build bundles the linked
+  workspace packages and leaves their npm deps external, so
+  `build/server/assets/server-build-*.js` does `import("nodemailer")`
+  (through `@drobek/email`) and resolves it from `apps/server`. Same for the
+  `drobek-module-*` deps (resolved at runtime by the module registry). Check
+  the externals with `grep -oE 'import\("[a-z@][^"]+"\)'` on the built chunk
+  before removing a server dependency.
+- Remaining `pnpm audit --prod` highs (NSO-306, documented in CHANGELOG, not
+  upgraded): `nodemailer` 6.x (fixes need 7.x / 9.x — majors) and
+  `drizzle-orm` 0.41 (fix in 0.45 — a breaking 0.x minor; drobek passes no
+  runtime input to `sql.identifier()` / `.as()`, the advisory's precondition).
 
 ## Failed approaches
 

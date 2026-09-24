@@ -298,7 +298,7 @@ Everyday commands:
 
 ```sh
 task dev          # build + start the stack, wait until healthy
-task check        # host-side gate: install, doc-lint, build packages, typecheck, lint, unit tests
+task check        # host-side gate: install, doc-lint, build packages, typecheck, lint, knip, unit tests
 task logs         # tail the drobek service
 task health       # curl the health endpoints
 task e2e          # Playwright suite (incl. @local specs) vs the stack

@@ -34,12 +34,12 @@ function newId(prefix: string): string {
   return `${prefix}${randomBytes(12).toString('hex')}`;
 }
 
-export function sha256Hex(bytes: Buffer): string {
+function sha256Hex(bytes: Buffer): string {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
 /** A unique, grammar-valid (^[a-z0-9]+(-[a-z0-9]+)*$, 3–40 chars) app slug. */
-export function uniqueAppSlug(tag = 'app'): string {
+function uniqueAppSlug(tag = 'app'): string {
   const base = tag.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
   const suffix = `${Date.now().toString(36)}-${randomBytes(3).toString('hex')}`;
   // "e2e-" + base + "-" + suffix must stay ≤ 40 chars; never end base on "-".
@@ -213,7 +213,7 @@ export async function publishVersion(appId: string, versionId: string): Promise<
 }
 
 /** Mirrors @drobek/insights dedupKey: sha256(message NUL first-two-stack-lines)[0:32]. */
-export function errorDedupKey(message: string, stack: string | null): string {
+function errorDedupKey(message: string, stack: string | null): string {
   const head = (stack ?? '').split('\n').slice(0, 2).join('\n').trim();
   return createHash('sha256').update(`${message}\0${head}`).digest('hex').slice(0, 32);
 }

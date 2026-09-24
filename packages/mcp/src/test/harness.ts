@@ -36,7 +36,7 @@ function testSkillsDir(): string {
  * The test module runtime: the `greet` module + one general skill (`data`), a
  * fixed dashboard origin (confirm_url), in-memory rate limiting.
  */
-export function testModules(): Promise<ModuleRuntime> {
+function testModules(): Promise<ModuleRuntime> {
   sharedRuntime ??= loadModuleRuntime({
     env: { APPS_DOMAIN: 'drobek.app', PUBLIC_APP_URL: 'https://dash.drobek.test', DROBEK_MIGRATE_ON_START: '0', DROBEK_MASTER_KEY: '22'.repeat(32) },
     log: noopLogger,
@@ -51,12 +51,12 @@ export function testModules(): Promise<ModuleRuntime> {
   return sharedRuntime;
 }
 
-export interface TestClock {
+interface TestClock {
   now: () => number;
   advance: (ms: number) => void;
 }
 
-export function testClock(start = Date.UTC(2026, 8, 23, 12, 0, 0)): TestClock {
+function testClock(start = Date.UTC(2026, 8, 23, 12, 0, 0)): TestClock {
   let t = start;
   return { now: () => t, advance: (ms) => (t += ms) };
 }

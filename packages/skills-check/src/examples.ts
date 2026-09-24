@@ -30,13 +30,13 @@ import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 import { TEMPLATE_IMPORTS } from '@drobek/agent-dx';
 import { Compiler, readAppConfig, type CompileMessage } from '@drobek/compile';
-import { buildSdk, inlineSpecifier, mergePatch, type AnyModule, type SdkBundle } from '@drobek/modules';
+import { buildSdk, mergePatch, type AnyModule, type SdkBundle } from '@drobek/modules';
 import { codeBlocks, type CodeBlock } from './markdown.js';
 import type { SkillSource } from './skills.js';
 
-export const CODE_LANGS = ['ts', 'tsx', 'js', 'jsx'] as const;
-export const CHECKED_LANGS = [...CODE_LANGS, 'json', 'html', 'css'] as const;
-export const PROSE_LANGS = ['sh', 'text'] as const;
+const CODE_LANGS = ['ts', 'tsx', 'js', 'jsx'] as const;
+const CHECKED_LANGS = [...CODE_LANGS, 'json', 'html', 'css'] as const;
+const PROSE_LANGS = ['sh', 'text'] as const;
 
 const PKG_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 /** Virtual files live "inside" this package so bare imports resolve its node_modules (@types/react). */
@@ -439,9 +439,4 @@ export async function checkExamples(skills: SkillSource[], modules: AnyModule[],
     }
   }
   return { problems, counts };
-}
-
-/** `drobek/<module>` specifiers this SDK offers (for messages). */
-export function inlineSpecifiers(modules: AnyModule[]): string[] {
-  return modules.filter((m) => m.sdk?.inline).map((m) => inlineSpecifier(m.name));
 }

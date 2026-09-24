@@ -15,7 +15,7 @@ import {
   type DB,
 } from '@drobek/db';
 
-export interface AuthCodeRecord {
+interface AuthCodeRecord {
   codeHash: string;
   clientId: string;
   userId: string;

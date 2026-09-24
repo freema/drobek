@@ -10,7 +10,7 @@
 export const SOURCE_REPO_URL = 'https://github.com/freema/drobek';
 
 /** Where a build without a commit sha points. */
-export const SOURCE_FALLBACK_BRANCH = 'main';
+const SOURCE_FALLBACK_BRANCH = 'main';
 
 const SHA_RE = /^[0-9a-f]{7,40}$/;
 

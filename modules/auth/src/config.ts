@@ -38,10 +38,6 @@ export function authConfirmRequired(before: AuthConfig, after: AuthConfig): stri
   return [];
 }
 
-export function normalizeEmail(input: string): string {
-  return input.trim().toLowerCase();
-}
-
 export function domainOf(email: string): string {
   return email.slice(email.lastIndexOf('@') + 1);
 }

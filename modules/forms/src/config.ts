@@ -11,12 +11,12 @@ import { z } from '@drobek/modules';
 
 /** Form names: URL-, config-path- and file-name-safe. */
 export const FORM_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,39}$/;
-export const MAX_FORMS = 50;
-export const MAX_NOTIFY_EMAILS = 10;
+const MAX_FORMS = 50;
+const MAX_NOTIFY_EMAILS = 10;
 
 const email = z.string().trim().toLowerCase().max(254).pipe(z.email({ message: 'must be an e-mail address' }));
 
-export const formConfigSchema = z.strictObject({
+const formConfigSchema = z.strictObject({
   rules: z
     .strictObject({
       /** Who may submit: anyone, or only signed-in users (auth module). */

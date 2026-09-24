@@ -17,7 +17,6 @@
   },
   "dependencies": {
     "@drobek/audit": "workspace:*",
-    "@drobek/core": "workspace:*",
     "@drobek/db": "workspace:*",
     "@drobek/tenancy": "workspace:*",
     "drizzle-orm": "^0.41.0"

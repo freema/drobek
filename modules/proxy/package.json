@@ -21,7 +21,6 @@
     "test:run": "vitest run"
   },
   "dependencies": {
-    "@drobek/core": "workspace:*",
     "@drobek/db": "workspace:*",
     "@drobek/modules": "workspace:*",
     "@drobek/proxy": "workspace:*",

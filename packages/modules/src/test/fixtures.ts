@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { defineModule, respond } from '../contract.js';
 import { ModuleError } from '../errors.js';
 
-export const echoConfig = z.object({
+const echoConfig = z.object({
   greeting: z.string().min(1).max(40),
   access: z.enum(['public', 'user']),
   notify: z.array(z.string().email()).max(5),

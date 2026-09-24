@@ -3,8 +3,6 @@
  * objects merge recursively, `null` removes a key, anything else (arrays,
  * scalars) replaces. Pure; never mutates its inputs.
  */
-export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
-
 function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }

@@ -110,7 +110,7 @@ export function issuePaths(issues: ReadonlyArray<{ path: ReadonlyArray<PropertyK
   return issues.map((i) => ({ path: formatPath(i.path), message: i.message }));
 }
 
-export function formatPath(path: ReadonlyArray<PropertyKey>): string {
+function formatPath(path: ReadonlyArray<PropertyKey>): string {
   let out = '';
   for (const seg of path) {
     if (typeof seg === 'number') out += `[${seg}]`;

@@ -36,7 +36,7 @@ function splitHost(host: string, scheme: 'http' | 'https'): { hostname: string; 
 }
 
 /** A request to `host` (+ optional :port) over `scheme`. */
-export function rawRequest(
+function rawRequest(
   scheme: 'http' | 'https',
   host: string,
   path = '/',

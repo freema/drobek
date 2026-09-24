@@ -25,14 +25,14 @@ function makeAjv(): InstanceType<typeof Ajv> {
  * cache never hit and every parse recompiled every collection's schema (~2 ms
  * each). A failed compile is cached too (as its message).
  */
-export const SCHEMA_CACHE_ENTRIES = 500;
+const SCHEMA_CACHE_ENTRIES = 500;
 const cache = new Lru<ValidateFunction | { error: string }>(SCHEMA_CACHE_ENTRIES);
 
 /** Compiles done so far (tests). */
 export const schemaCompileStats = { compiles: 0 };
 
 /** A JSON Schema must be a plain object. */
-export function assertSchemaShape(jsonSchema: unknown): Record<string, unknown> {
+function assertSchemaShape(jsonSchema: unknown): Record<string, unknown> {
   if (typeof jsonSchema !== 'object' || jsonSchema === null || Array.isArray(jsonSchema)) {
     throw new DataError('invalid_schema', 'schema must be a JSON Schema object');
   }
@@ -61,7 +61,7 @@ export function compileSchema(jsonSchema: unknown): ValidateFunction {
   return entry;
 }
 
-export interface FieldError {
+interface FieldError {
   path: string;
   message: string;
 }

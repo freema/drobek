@@ -213,7 +213,7 @@ function HeaderForm({
   );
 }
 
-export function AppTabs({ header }: { header: AppHeaderData }) {
+function AppTabs({ header }: { header: AppHeaderData }) {
   const location = useLocation();
   const active = activeAppTab(location.pathname, header.workspace.slug, header.slug);
   return (

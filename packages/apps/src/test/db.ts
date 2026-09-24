@@ -13,7 +13,7 @@ import { migrate } from 'drizzle-orm/pglite/migrator';
 import * as schema from '@drobek/db/schema';
 import { setDbForTests } from '@drobek/db';
 
-export const MIGRATIONS_DIR = fileURLToPath(
+const MIGRATIONS_DIR = fileURLToPath(
   new URL('../../../db/drizzle/migrations', import.meta.url)
 );
 

@@ -77,7 +77,7 @@ function headerOf(req: IncomingMessage, name: string): string | null {
  * never buffered, and the connection stays usable for the response. A client
  * that goes away mid-body makes `next()` throw.
  */
-export function requestBodyStream(req: IncomingMessage): AsyncIterableIterator<Buffer> {
+function requestBodyStream(req: IncomingMessage): AsyncIterableIterator<Buffer> {
   let ended = false;
   let failure: Error | null = null;
   let finished = false;
