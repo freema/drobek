@@ -23,7 +23,12 @@ import { FULL_SCOPE, callTool, mcpClient, type McpClient } from './helpers/mcp';
  *  - CSV exports (the app's admin, the dashboard) neutralize `=1+1`;
  *  - query_data: untrusted records, ≤ 100, another app's collections are
  *    not_found; app B reads none of app A's records through REST or the SDK;
- *  - the preview and production hosts of an app share its records.
+ *  - the preview and production hosts of an app share its records;
+ *  - NSO-324: a visitor never gets `_owner`; removing a collection that holds
+ *    records waits for the owner, and the confirmation purges them; one
+ *    signed-in user's write flood hits their own bucket
+ *    (DATA_WRITES_PER_PRINCIPAL_PER_MIN) while another user still writes;
+ *    query_data answers no structuredContent (the envelope text only).
  */
 
 interface Created {
@@ -176,7 +181,8 @@ test.describe('platform module data — collections with rules (M1-03) @local', 
 
     const after = await data(hostA, '/x', { method: 'POST', body: { text: 'hello from a visitor', _owner: 'spoofed' } });
     expect(after.status, after.body).toBe(201);
-    expect(json(after)).toMatchObject({ _owner: null, text: 'hello from a visitor' });
+    expect(json(after)).toMatchObject({ text: 'hello from a visitor' });
+    expect(json(after)).not.toHaveProperty('_owner'); // a visitor never sees _owner (NSO-324)
     const csrf = await hostRequest(hostA, '/__drobek/v1/data/x', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"text":"x"}' });
     expect(csrf.status).toBe(403);
     expect((await data(hostA, '/nope')).status).toBe(404);
@@ -276,6 +282,7 @@ test.describe('platform module data — collections with rules (M1-03) @local', 
     const r = await callTool(mcp.client, 'query_data', { app_id: appA.app_id, collection: 'todos', filter: { title: { contains: 'todo' } }, sort: 'title', dir: 'asc' });
     expect(r.isError, JSON.stringify(r.json)).toBe(false);
     expect(r.json).toMatchObject({ app_id: appA.app_id, collection: 'todos', total: 2, next_cursor: null, untrusted: true });
+    expect(r.structured).toBe(false); // NSO-324: only the envelope text, no structuredContent
     expect((r.json.records as Rec[]).map((x) => x.title)).toEqual(['Ana todo', 'Bob todo']);
     expect(r.text.startsWith('UNTRUSTED CONTENT:')).toBe(true);
     const nonce = /<untrusted-app-data [^>]*nonce="([0-9a-f]{16})">/.exec(r.text)![1];
@@ -350,5 +357,55 @@ test.describe('platform module data — collections with rules (M1-03) @local', 
     const sixth = await data(host, '/log', { method: 'POST', body: { n: 6 } });
     expect(sixth.status, sixth.body).toBe(409);
     expect(json(sixth)).toMatchObject({ error: 'quota_exceeded', details: { limit: 'DATA_MAX_DOCS_PER_APP', value: 5 }, hint: "skill_info('data')" });
+  });
+
+  test('NSO-324: removing a collection that holds records waits for the owner; confirming purges them', async () => {
+    skipUnlessLocal();
+    const held = await configure(mcp, appA.app_id, 'data', { collections: { todos: null } });
+    expect(held.applied).toBe(false);
+    expect(held.pending_confirmation).toEqual([expect.stringMatching(/^data\.collections\.todos: removed while it holds \d+ records? \(confirming deletes them permanently\)$/)]);
+    expect((await callTool(mcp.client, 'query_data', { app_id: appA.app_id, collection: 'todos' })).isError).toBe(false);
+    const ok = await owner.request.post(`${BASE_URL_WEB}/api/apps/${appA.app_id}/modules/data/confirm`, { headers: { Origin: BASE_URL_WEB }, maxRedirects: 0 });
+    expect(ok.status(), await ok.text()).toBe(200);
+    expect((await callTool(mcp.client, 'query_data', { app_id: appA.app_id, collection: 'todos' })).json).toMatchObject({ code: 'not_found' });
+    const tab = await owner.newPage();
+    try {
+      await tab.goto(`${BASE_URL_WEB}/workspaces/${appA.workspace}/apps/${appA.slug}/data`);
+      await expect(tab.locator('[data-testid="collection-row"][data-collection="todos"]')).toHaveCount(0);
+      await expect(tab.locator('[data-testid="orphans"]')).toHaveCount(0);
+    } finally {
+      await tab.close();
+    }
+  });
+
+  test('NSO-324: a visitor never gets _owner; a signed-in user does', async () => {
+    skipUnlessLocal();
+    const created = await data(hostA, '/x', { method: 'POST', cookie: ana.cookie, body: { text: 'by Ana' } });
+    expect(created.status, created.body).toBe(201);
+    const anon = json<{ records: Rec[] }>(await data(hostA, '/x')).records;
+    expect(anon.length).toBeGreaterThan(0);
+    for (const r of anon) expect(r).not.toHaveProperty('_owner');
+    const byAna = json<Rec>(created);
+    expect(json<Rec>(await data(hostA, `/x/${byAna._id}`))).not.toHaveProperty('_owner');
+    expect(json<Rec>(await data(hostA, `/x/${byAna._id}`, { cookie: bob.cookie }))._owner).toBe(ana.id);
+  });
+
+  test('NSO-324: one signed-in user’s write flood hits their own bucket; another user still writes', async () => {
+    skipUnlessLocal();
+    const created = await data(hostA, '/members', { method: 'POST', cookie: bob.cookie, body: { name: 'Bob' } });
+    expect(created.status, created.body).toBe(201);
+    const id = json<Rec>(created)._id;
+    let refused: Raw | null = null;
+    // DATA_WRITES_PER_PRINCIPAL_PER_MIN = 60 (default); a window may roll over once while looping.
+    for (let i = 0; i < 130 && !refused; i++) {
+      const r = await data(hostA, `/members/${id}`, { method: 'PATCH', cookie: bob.cookie, body: { n: i } });
+      if (r.status === 429) refused = r;
+      else expect(r.status, r.body).toBe(200);
+    }
+    expect(refused, 'no 429 within 130 writes').not.toBeNull();
+    expect(json(refused!)).toMatchObject({ error: 'rate_limited', details: { limit: 'DATA_WRITES_PER_PRINCIPAL_PER_MIN', value: 60 } });
+    expect(refused!.headers['retry-after']).toBeDefined();
+    const other = await data(hostA, '/members', { method: 'POST', cookie: ana.cookie, body: { name: 'Ana again' } });
+    expect(other.status, other.body).toBe(201);
   });
 });

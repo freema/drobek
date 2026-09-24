@@ -333,6 +333,7 @@ describe('configure / confirm / reject', () => {
       ],
       onConfirmed: async (before, after, ctx) => {
         confirmed.push({ before: before.keys, after: after.keys, app: ctx.app.id, userId: ctx.userId, role: ctx.role, hasDb: Boolean(ctx.db) });
+        await ctx.audit('granted', { keys: after.keys.length });
         if (failOnConfirm) throw new Error('grant failed');
       },
     });
@@ -374,6 +375,12 @@ describe('configure / confirm / reject', () => {
     const done = await r.confirm({ app, module: 'vault', userId, role: 'admin' });
     expect(done).toMatchObject({ config: { keys: ['openai'], note: 'quiet' }, confirmed: ['keys: openai'] });
     expect(confirmed.at(-1)).toEqual({ before: [], after: ['openai'], app: app.id, userId, role: 'admin', hasDb: true });
+    // NSO-324: onConfirmed audits in the confirm transaction (actor: the confirming user) — the rolled-back one left no row.
+    const granted = await db.select().from(auditLog).where(eq(auditLog.action, 'vault.granted'));
+    expect(granted.map((g) => [g.actorUserId, g.actorKind, g.target, g.meta])).toEqual([
+      [userId, 'user', app.slug, { keys: 0, module: 'vault' }],
+      [userId, 'user', app.slug, { keys: 1, module: 'vault' }],
+    ]);
 
     // Editors may still reject an admin-only change.
     await r.configure({ app, module: 'vault', patch: { keys: ['openai', 'stripe'] }, actorUserId: userId });

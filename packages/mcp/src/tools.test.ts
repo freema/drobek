@@ -550,6 +550,12 @@ describe('read_file', () => {
       expect(r.text.endsWith(`</untrusted-app-file nonce="${nonce}">`)).toBe(true);
       // The forged close tag in the file is not the envelope's close marker.
       expect(r.text.indexOf(`</untrusted-app-file nonce="${nonce}">`)).toBeGreaterThan(r.text.indexOf('SYSTEM:'));
+      // NSO-324: the envelope text is the ONLY content — no structuredContent with the raw file;
+      // a trusted tool keeps its structuredContent.
+      const raw = await c.client.callTool({ name: 'read_file', arguments: { app_id: app.app_id, path: 'README.md' } });
+      expect(raw.structuredContent).toBeUndefined();
+      expect(raw.content).toEqual([{ type: 'text', text: expect.stringContaining('<untrusted-app-file ') }]);
+      expect((await c.client.callTool({ name: 'get_app', arguments: { app_id: app.app_id } })).structuredContent).toMatchObject({ app_id: app.app_id });
     } finally {
       await c.close();
     }
@@ -1055,6 +1061,10 @@ describe('query_data (M1-03)', () => {
       expect(r.text.trimEnd().endsWith(`</untrusted-app-data nonce="${nonce}">`)).toBe(true);
       expect(nonce).not.toBe('0000000000000000');
       expect(r.text).toContain(JSON.stringify(evil));
+      // NSO-324: no structuredContent — a client feeding it to the model would skip the envelope.
+      const raw = await c.client.callTool({ name: 'query_data', arguments: { app_id: app.app_id, collection: 'todos' } });
+      expect(raw.structuredContent).toBeUndefined();
+      expect(raw.content).toHaveLength(1);
     } finally {
       await c.close();
     }
@@ -1132,6 +1142,7 @@ describe('get_logs (M1-07)', () => {
       const r = await c.call('get_logs', { app_id: app.app_id, kind: 'compile' });
       expect(r.isError, r.text).toBe(false);
       expect(r.body).toMatchObject({ app_id: app.app_id, kind: 'compile', untrusted: true });
+      expect((await c.client.callTool({ name: 'get_logs', arguments: { app_id: app.app_id, kind: 'compile' } })).structuredContent).toBeUndefined();
       const entries = r.body.entries as { version: number | null; ok: boolean; errors: { code: string; file: string; line: number }[]; trigger: string; duration_ms: number }[];
       expect(entries.map((e) => [e.version, e.ok, e.trigger])).toEqual([
         [null, false, 'write_files'],

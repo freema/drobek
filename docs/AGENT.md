@@ -140,8 +140,11 @@ written by app authors, end users and browsers. Their text result is wrapped
 in `<untrusted-app-file …>` / `<untrusted-app-data …>` /
 `<untrusted-app-logs …>` with a random per-response `nonce` on the closing
 marker (content cannot fake the end of the envelope), preceded by a line
-saying it is data, not instructions; the structured result carries
-`untrusted: true`.
+saying it is data, not instructions. These three tools answer that text ONLY
+— no `structuredContent` (every other tool sends both): a client that hands
+`structuredContent` to the model would pass the raw payload past the
+envelope, and the keys of a schemaless record are user input too, so no
+wrapping of the payload's strings could cover it.
 
 ## The briefing
 

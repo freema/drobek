@@ -24,7 +24,10 @@ import { FULL_SCOPE, callTool, mcpClient, type McpClient } from './helpers/mcp';
  *  - read: user → a visitor's GET is 401, the signed-in user's 200;
  *  - the same bytes in two apps are stored once; deleting one app's file
  *    keeps the blob until the other app's file is deleted too;
- *  - the 2 MiB quota → 409 quota_exceeded.
+ *  - the 2 MiB quota → 409 quota_exceeded;
+ *  - NSO-324: one signed-in user's upload flood hits their own bucket
+ *    (FILES_UPLOADS_PER_PRINCIPAL_PER_MIN, 20/min) while another user of the
+ *    app still uploads.
  *
  * Disk assertions run `docker compose exec -T drobek …` (the compose project
  * of this run: the dev stack, or the one scripts/e2e-image.sh exports).
@@ -350,5 +353,23 @@ test.describe('platform module files — end-user uploads (M1-05) @local', () =>
     expect(filesOnDisk()).toEqual(before);
     // Still room for a small one.
     expect((await upload(app.host, png(90_000), { cookie: user.cookie })).status).toBe(201);
+  });
+
+  test("NSO-324: one user's upload flood hits their own bucket (FILES_UPLOADS_PER_PRINCIPAL_PER_MIN); another user still uploads", async ({ request }) => {
+    skipUnlessLocal();
+    const app = await freshApp('Files flood');
+    await configure(app.app_id, 'auth', { allow: { emails: [email('fay'), email('gus')] } });
+    const fay = await signIn(request, app.host, email('fay'));
+    const gus = await signIn(request, app.host, email('gus'));
+    let refused: Raw | null = null;
+    // 20 per minute (default); a window may roll over once while looping.
+    for (let i = 0; i < 45 && !refused; i++) {
+      const r = await upload(app.host, png(200), { cookie: fay.cookie });
+      if (r.status === 429) refused = r;
+      else expect(r.status, r.body).toBe(201);
+    }
+    expect(refused, 'no 429 within 45 uploads').not.toBeNull();
+    expect(json(refused!)).toMatchObject({ error: 'rate_limited', details: { limit: 'FILES_UPLOADS_PER_PRINCIPAL_PER_MIN', value: 20 } });
+    expect((await upload(app.host, png(200), { cookie: gus.cookie })).status).toBe(201);
   });
 });

@@ -118,8 +118,9 @@ ONE file part, `X-Drobek-SDK: 1`), `GET|DELETE /__drobek/v1/files/<id>`.
   (`max-age=300, must-revalidate`, then an ETag check); other files are
   revalidated on every use. A delete or a stricter `read` rule reaches
   every visitor within those 5 minutes.
-- `FILES_MAX_BYTES` 10 MiB per file, `FILES_QUOTA_PER_APP` 500 MiB per app,
-  `FILES_UPLOAD_RATE_LIMIT` 60 uploads per minute per app.
+- `FILES_MAX_BYTES` 10 MiB per file, `FILES_QUOTA_PER_APP` 500 MiB per app;
+  uploads: `FILES_UPLOADS_PER_PRINCIPAL_PER_MIN` 20 per minute per user (or
+  visitor IP), then `FILES_UPLOAD_RATE_LIMIT` 60 per minute per app.
 - Preview and production share the files. No resizing/thumbnails, no EXIF
   stripping (photos keep their metadata).
 

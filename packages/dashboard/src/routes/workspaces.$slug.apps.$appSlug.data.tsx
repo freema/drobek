@@ -1,11 +1,14 @@
 /**
  * /workspaces/:slug/apps/:appSlug/data — client half: the Data
- * tab's COLLECTIONS list (the data module's declared collections). Each collection links to its table view. Read-only,
- * minimal style (mirrors the apps/app-detail pages). Server code lives in the
- * .server.ts; all values arrive pre-shaped so this file stays client-safe.
+ * tab's COLLECTIONS list (the data module's declared collections). Each
+ * collection links to its table view. Below it, ORPHANS (NSO-324): records of
+ * collections the config no longer declares, with a purge form (editor+, the
+ * owner types the name). Minimal style (mirrors the apps/app-detail pages).
+ * Server code lives in the .server.ts; all values arrive pre-shaped so this
+ * file stays client-safe.
  */
-import { Link, useLoaderData } from 'react-router';
-import type { loader } from './workspaces.$slug.apps.$appSlug.data.server.js';
+import { Form, Link, useActionData, useLoaderData } from 'react-router';
+import type { action, loader } from './workspaces.$slug.apps.$appSlug.data.server.js';
 import { AppSubnav, ui } from '../owner-ui.js';
 
 export function meta({
@@ -67,11 +70,27 @@ const styles = {
     marginLeft: 'auto',
   },
   empty: { color: '#555', fontStyle: 'italic', padding: '1rem 0' },
+  h2: { fontSize: '1.1rem', margin: '2rem 0 0.25rem' },
+  purgeForm: { display: 'flex', gap: '0.4rem', alignItems: 'center', marginLeft: 'auto', flexWrap: 'wrap' },
+  input: { fontFamily: 'inherit', fontSize: '0.85rem', padding: '0.3rem 0.45rem', border: '1px solid #d4d4d8', borderRadius: '6px' },
+  purgeBtn: {
+    padding: '0.3rem 0.7rem',
+    fontSize: '0.82rem',
+    fontFamily: 'inherit',
+    fontWeight: 600,
+    color: '#fff',
+    background: '#b91c1c',
+    border: 'none',
+    borderRadius: '7px',
+    cursor: 'pointer',
+  },
+  error: { color: '#b91c1c', fontSize: '0.9rem' },
   back: { fontSize: '0.9rem', color: '#555', marginTop: '2rem' },
 } as const;
 
 export default function AppDataRoute() {
-  const { workspace, appSlug, collections, dropped } = useLoaderData<typeof loader>();
+  const { workspace, appSlug, collections, dropped, orphans, canPurge, purged } = useLoaderData<typeof loader>();
+  const failed = useActionData<typeof action>();
 
   return (
     <main style={styles.main}>
@@ -85,6 +104,12 @@ export default function AppDataRoute() {
       {dropped ? (
         <div style={ui.notice} role="status" data-testid="collection-dropped">
           Collection <strong>{dropped}</strong> deleted.
+        </div>
+      ) : null}
+
+      {purged ? (
+        <div style={ui.notice} role="status" data-testid="orphan-purged">
+          Orphan records of <strong>{purged}</strong> purged.
         </div>
       ) : null}
 
@@ -121,6 +146,48 @@ export default function AppDataRoute() {
           ))}
         </ul>
       )}
+
+      {orphans.length > 0 ? (
+        <section data-testid="orphans">
+          <h2 style={styles.h2}>Orphan records</h2>
+          <p style={styles.hint}>
+            Records of collections the data config no longer declares. The app cannot read them, but they count towards its storage
+            limits. Purging deletes them permanently.
+          </p>
+          {failed && 'error' in failed ? (
+            <p style={styles.error} role="alert" data-testid="orphan-error">
+              {failed.error}
+            </p>
+          ) : null}
+          <ul style={styles.list}>
+            {orphans.map((o) => (
+              <li key={o.name} style={styles.item} data-testid="orphan-row" data-collection={o.name}>
+                <strong>{o.name}</strong>
+                <span style={styles.count} data-testid="orphan-count">
+                  {o.records} {o.records === 1 ? 'record' : 'records'}
+                </span>
+                {canPurge ? (
+                  <Form method="post" style={styles.purgeForm} data-testid="orphan-purge-form">
+                    <input type="hidden" name="intent" value="purge-orphan" />
+                    <input type="hidden" name="collection" value={o.name} />
+                    <input
+                      name="confirm_name"
+                      autoComplete="off"
+                      placeholder={`type ${o.name} to confirm`}
+                      aria-label={`Type ${o.name} to confirm`}
+                      style={styles.input}
+                      data-testid="orphan-confirm-name"
+                    />
+                    <button type="submit" style={styles.purgeBtn} data-testid="orphan-purge">
+                      Purge
+                    </button>
+                  </Form>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       <p style={styles.back}>
         <Link to={`/workspaces/${workspace.slug}/apps/${appSlug}`}>

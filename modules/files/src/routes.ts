@@ -7,7 +7,9 @@
  *   GET    /:id   → the bytes                                                                    (read)
  *   DELETE /:id   → { id, deleted: true }                                                        (owner|admin)
  *
- * An upload, in order: the `upload` rule → the per-app upload rate limit →
+ * An upload, in order: the `upload` rule → the uploader's own rate limit
+ * (the signed-in user, or the visitor's IP — NSO-324) → the per-app upload
+ * rate limit →
  * the declared Content-Length and the app's quota (early refusals, nothing
  * read) → the file streams to a temp file while it is counted (past the
  * per-file cap: 413, the rest of the request is discarded, the temp file
@@ -34,6 +36,7 @@
  */
 import { MAX_FILE_HEAD_BYTES, decideAccess, respond, z, type ModuleContext, type ModuleRequest, type ModuleRouter, type Principal } from '@drobek/modules';
 import { blobStore } from './blob-store.js';
+import { principalBucketKey } from './principal-bucket.js';
 import { DELETE_RULE, type FilesConfig } from './config.js';
 import { FilesError } from './errors.js';
 import { TypeSniffer, extensionOf, typeAllowed, type FileType } from './sniff.js';
@@ -45,6 +48,7 @@ type Ctx = ModuleContext<FilesConfig>;
 export const DEFAULT_MAX_BYTES = 10 * 1024 * 1024; // 10 MiB per file
 export const DEFAULT_QUOTA_PER_APP = 500 * 1024 * 1024; // 500 MiB per app
 export const DEFAULT_UPLOAD_RATE_LIMIT = 60; // uploads per minute per app
+export const DEFAULT_UPLOADS_PER_PRINCIPAL_PER_MIN = 20; // uploads per minute per user / visitor IP
 const UPLOAD_RATE_WINDOW_MS = 60_000;
 /** Multipart framing on top of the file a declared Content-Length may carry. */
 const FRAMING_ALLOWANCE = MAX_FILE_HEAD_BYTES + 1024;
@@ -127,6 +131,18 @@ async function upload(req: ModuleRequest<unknown>, ctx: Ctx) {
   if (!allowed.ok) deny(allowed.status, 'upload files to this app', config.rules.upload);
 
   const limits = await ctx.limits();
+  const key = principalBucketKey(principal, req.clientIp);
+  if (key) {
+    const own = positive(limits.FILES_UPLOADS_PER_PRINCIPAL_PER_MIN, DEFAULT_UPLOADS_PER_PRINCIPAL_PER_MIN);
+    const mine = await ctx.rateLimit('uploads-principal', key, own, UPLOAD_RATE_WINDOW_MS);
+    if (!mine.ok) {
+      const who = principal.kind === 'user' ? 'this user' : 'this client';
+      throw new FilesError('rate_limited', `Too many uploads from ${who} (${own} per minute). Slow down and retry.`, {
+        details: { limit: 'FILES_UPLOADS_PER_PRINCIPAL_PER_MIN', value: own },
+        headers: { 'Retry-After': String(mine.retryAfterSec) },
+      });
+    }
+  }
   const rate = positive(limits.FILES_UPLOAD_RATE_LIMIT, DEFAULT_UPLOAD_RATE_LIMIT);
   const rl = await ctx.rateLimit('uploads', 'app', rate, UPLOAD_RATE_WINDOW_MS);
   if (!rl.ok) {

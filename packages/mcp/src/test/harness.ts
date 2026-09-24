@@ -88,9 +88,43 @@ export function testDeps(limits: Partial<CompileLimits> = {}): TestDeps {
   };
 }
 
+/**
+ * The payload of an untrusted envelope (read_file, query_data, get_logs answer
+ * no structuredContent — NSO-324): the attributes of the opening marker plus
+ * the body, rebuilt into the tool's result shape so tests can assert on it.
+ * null when `text` is not an envelope.
+ */
+function decodeUntrusted(text: string): Record<string, unknown> | null {
+  const open = /^<untrusted-app-(file|data|logs) (.*)>$/m.exec(text);
+  if (!open) return null;
+  const attrs: Record<string, string> = {};
+  for (const m of open[2].matchAll(/(\w+)=("(?:[^"\\]|\\.)*")/g)) attrs[m[1]] = JSON.parse(m[2]) as string;
+  const start = open.index + open[0].length + 1;
+  const closing = `\n</untrusted-app-${open[1]} nonce="${attrs.nonce}">`;
+  const end = text.indexOf(closing, start - 1);
+  const body = text.slice(start, end);
+  const after = text.slice(end + closing.length).replace(/^\n+/, '');
+  if (open[1] === 'file') {
+    const binary = /^\(binary file, (\d+) bytes — no text content\)$/.exec(body);
+    const base = { path: attrs.path, version: Number(attrs.version), untrusted: true };
+    return binary ? { ...base, binary: true, size: Number(binary[1]) } : { ...base, content: body };
+  }
+  if (open[1] === 'data') {
+    return {
+      app_id: attrs.app_id,
+      collection: attrs.collection,
+      records: JSON.parse(body) as unknown,
+      total: Number(attrs.total),
+      next_cursor: attrs.next_cursor || null,
+      untrusted: true,
+    };
+  }
+  return { app_id: attrs.app_id, kind: attrs.kind, since: attrs.since, entries: JSON.parse(body) as unknown, untrusted: true, ...(after ? { note: after } : {}) };
+}
+
 export interface ToolCall {
   isError: boolean;
-  /** structuredContent (every drobek tool returns it). */
+  /** structuredContent — or, for the untrusted tools, the payload decoded from the envelope text. */
   body: Record<string, unknown>;
   /** The first text content block. */
   text: string;
@@ -113,7 +147,7 @@ export async function connect(principal: ToolPrincipal, deps: ToolDeps): Promise
     call: async (name, args = {}) => {
       const res = await client.callTool({ name, arguments: args });
       const text = (res.content as { type: string; text: string }[])[0]?.text ?? '';
-      const body = (res.structuredContent as Record<string, unknown> | undefined) ?? { text };
+      const body = (res.structuredContent as Record<string, unknown> | undefined) ?? decodeUntrusted(text) ?? { text };
       return { isError: Boolean(res.isError), body, text };
     },
   };

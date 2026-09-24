@@ -313,6 +313,12 @@ export interface ConfirmedContext {
   userId: string;
   /** Their confirming role (`admin` = workspace admin or super-admin). */
   role: ConfirmRole;
+  /**
+   * Append an audit row for this app IN the confirm transaction (actor: the
+   * confirming user; the action is prefixed with the module name, e.g.
+   * `collection.purge` → `data.collection.purge`). `meta`: ids and counts only.
+   */
+  audit(action: string, meta?: Record<string, unknown>): Promise<void>;
 }
 
 // ── the records authority (data) ─────────────────────────────────────────────
@@ -407,6 +413,18 @@ export interface RecordsAuthority<Config = unknown> {
    * removes its declaration (core writes it in the same transaction).
    */
   dropCollection?(view: RecordsView<Config>, collection: string): Promise<{ records: number; configPatch: Record<string, unknown> }>;
+  /**
+   * Collections that hold records but are not declared in the config any
+   * more (orphans — e.g. a write that landed while its collection was being
+   * removed), with their record counts. They still count towards the quotas.
+   */
+  orphans?(view: RecordsView<Config>): Promise<{ name: string; records: number }[]>;
+  /**
+   * Delete the records of an ORPHAN collection (in `view.db`, core's config
+   * transaction). A collection the config declares → ModuleError `conflict`
+   * (the owner deletes a declared one with dropCollection).
+   */
+  purgeOrphan?(view: RecordsView<Config>, collection: string): Promise<{ records: number }>;
 }
 
 /** The most rows (without the header) one CSV import may carry. */

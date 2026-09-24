@@ -9,8 +9,8 @@ import { sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { migrate } from 'drizzle-orm/pglite/migrator';
 import { Readable } from 'node:stream';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { apps, auditLog, moduleConfigs, setDbForTests, workspaces, type DB } from '@drobek/db';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { apps, auditLog, moduleConfigs, setDbForTests, users, workspaces, type DB } from '@drobek/db';
 import * as schema from '@drobek/db/schema';
 import {
   RECORDS_IMPORT_MAX_ROWS,
@@ -306,6 +306,18 @@ describe('confirmRequired', () => {
     expect(await confirm({ collections: { todos: { schema: TODO_SCHEMA } } }, { collections: { todos: {} } }, appB)).toEqual([]);
   });
 
+  it('removing a collection that holds records (not an empty one) — NSO-324', async () => {
+    expect(await confirm({ collections: { todos: {}, members: {} } }, { collections: { members: {} } })).toEqual([]);
+    await create(ctx({ principal: A }), 'todos', { title: 'one' });
+    await create(ctx({ principal: B }), 'todos', { title: 'two' });
+    expect(await confirm({ collections: { todos: {}, members: {} } }, { collections: { members: {} } })).toEqual([
+      'data.collections.todos: removed while it holds 2 records (confirming deletes them permanently)',
+    ]);
+    expect(await confirm({ collections: { todos: {} } }, { collections: { todos: {} } })).toEqual([]);
+    // Records of ANOTHER app do not count.
+    expect(await confirm({ collections: { todos: {} } }, {}, appB)).toEqual([]);
+  });
+
   it('tightening or an unchanged public rule needs nothing', async () => {
     const pub = { collections: { g: { rules: { read: 'public', create: 'public' } } } };
     expect(await confirm(pub, pub)).toEqual([]);
@@ -418,7 +430,8 @@ describe('REST: rules', () => {
 
   it('create: public — a visitor adds a record without an owner; update/delete stay admin', async () => {
     const rec = await create(ctx(), 'guestbook', { text: 'hi' });
-    expect(rec._owner).toBeNull();
+    expect(rec).not.toHaveProperty('_owner'); // a visitor never sees _owner (NSO-324)
+    expect((await ctx({ principal: ADMIN }).request('GET', `/guestbook/${rec._id}`)).body).toMatchObject({ _owner: null });
     expect((await ctx().request('GET', '/guestbook')).status).toBe(200);
     expect((await ctx().request('PATCH', `/guestbook/${rec._id}`, { body: { text: 'x' } })).status).toBe(401);
     expect((await ctx({ principal: A }).request('DELETE', `/guestbook/${rec._id}`)).status).toBe(403);
@@ -867,6 +880,158 @@ describe('the legacy Data API import (module migration 0000)', () => {
     const t = createModuleTestContext(data, { db, app: { id: legacyApp, slug: 'legacy', workspaceId }, config: row.config as Record<string, unknown> });
     const r = await t.request('GET', '/wall');
     expect(r.status).toBe(200);
-    expect((r.body as { records: Rec[] }).records).toMatchObject([{ _id: 'doc_live', title: 'hello', _owner: null }]);
+    expect((r.body as { records: Rec[] }).records).toMatchObject([{ _id: 'doc_live', title: 'hello' }]);
   });
 });
+
+describe('NSO-324: the caller’s own write bucket', () => {
+  const OWN = { DATA_WRITES_PER_PRINCIPAL_PER_MIN: 3, DATA_WRITE_RATE_LIMIT: 6 };
+
+  it('an anonymous flood from one IP hits 429 on its own bucket; a signed-in user (and another visitor) still write', async () => {
+    const t = ctx({ limits: OWN });
+    const post = (ip?: string) => t.request('POST', '/guestbook', { body: { text: 'x' }, clientIp: ip });
+    for (let i = 0; i < 3; i++) expect((await post('10.0.0.1')).status).toBe(201);
+    for (let i = 0; i < 7; i++) {
+      const refused = await post('10.0.0.1');
+      expect(refused.status).toBe(429);
+      expect(refused.body).toMatchObject({ error: 'rate_limited', details: { limit: 'DATA_WRITES_PER_PRINCIPAL_PER_MIN', value: 3 } });
+      expect(refused.headers['retry-after'] ?? refused.headers['Retry-After']).toBeDefined();
+    }
+    // The refused writes did not use up the app's budget (6): 3 used, 3 left.
+    t.setPrincipal(A);
+    expect((await post('10.0.0.1')).status).toBe(201);
+    expect((await post('10.0.0.1')).status).toBe(201);
+    t.setPrincipal(ANON);
+    expect((await post('10.0.0.2')).status).toBe(201);
+    // Now the app's own limit applies to everyone.
+    t.setPrincipal(B);
+    const app = await post('10.0.0.3');
+    expect(app.status).toBe(429);
+    expect(app.body).toMatchObject({ details: { limit: 'DATA_WRITE_RATE_LIMIT', value: 6 } });
+  });
+
+  it('a signed-in user is counted by their id (every IP, every write op); another user is not affected', async () => {
+    const t = ctx({ principal: A, limits: OWN });
+    const rec = await create(t, 'members', { n: 1 });
+    expect((await t.request('PATCH', `/members/${rec._id}`, { body: { n: 2 }, clientIp: '10.0.0.8' })).status).toBe(200);
+    expect((await t.request('DELETE', `/members/${rec._id}`, { clientIp: '10.0.0.9' })).status).toBe(200);
+    const fourth = await t.request('POST', '/members', { body: { n: 4 } });
+    expect(fourth).toMatchObject({ status: 429, body: { details: { limit: 'DATA_WRITES_PER_PRINCIPAL_PER_MIN' } } });
+    t.setPrincipal(B);
+    expect((await t.request('POST', '/members', { body: { n: 5 } })).status).toBe(201);
+    // Reads are never limited.
+    t.setPrincipal(A);
+    expect((await t.request('GET', '/members')).status).toBe(200);
+  });
+
+  it('a visitor without a resolvable IP gets no shared bucket (only the per-app limit)', async () => {
+    const t = ctx({ limits: { DATA_WRITES_PER_PRINCIPAL_PER_MIN: 1, DATA_WRITE_RATE_LIMIT: 3 } });
+    for (let i = 0; i < 3; i++) expect((await t.request('POST', '/guestbook', { body: { text: 'x' }, clientIp: '' })).status).toBe(201);
+    const fourth = await t.request('POST', '/guestbook', { body: { text: 'x' }, clientIp: '' });
+    expect(fourth.body).toMatchObject({ details: { limit: 'DATA_WRITE_RATE_LIMIT' } });
+  });
+
+  it('DATA_WRITES_PER_PRINCIPAL_PER_MIN is a declared limit with a production default', () => {
+    expect(data.limits?.find((l) => l.env === 'DATA_WRITES_PER_PRINCIPAL_PER_MIN')).toMatchObject({ default: 60 });
+  });
+});
+
+describe('NSO-324: _owner is hidden from visitors', () => {
+  it('read: public list and get answer no _owner to a visitor; a signed-in user and the owner’s view keep it', async () => {
+    const rec = await create(ctx({ principal: A }), 'guestbook', { text: 'from Ana' });
+    expect(rec._owner).toBe('eu_a');
+    const anon = ctx();
+    const list = (await anon.request('GET', '/guestbook')).body as { records: Rec[] };
+    expect(list.records).toHaveLength(1);
+    expect(list.records[0]).not.toHaveProperty('_owner');
+    expect(list.records[0]).toMatchObject({ _id: rec._id, text: 'from Ana' });
+    const one = (await anon.request('GET', `/guestbook/${rec._id}`)).body as Rec;
+    expect(Object.keys(one).sort()).toEqual(['_created_at', '_id', '_updated_at', 'text']);
+    expect(((await ctx({ principal: B }).request('GET', '/guestbook')).body as { records: Rec[] }).records[0]._owner).toBe('eu_a');
+    expect((await recordsAuthority.query(view(), { collection: 'guestbook' })).records[0]._owner).toBe('eu_a');
+  });
+});
+
+describe('NSO-324: removed collections do not leave orphan records', () => {
+  let owner: string;
+  const app = () => ({ id: appA, slug: 'notes', workspaceId, workspaceSlug: 'data-ws' });
+
+  beforeAll(async () => {
+    [{ id: owner }] = await db.insert(users).values({ email: 'data-owner@example.com' }).returning();
+  });
+
+  beforeEach(async () => {
+    setDbForTests(db);
+    await db.insert(moduleConfigs).values({ appId: appA, module: 'data', config: { collections: { todos: {}, members: {} } } });
+  });
+
+  afterEach(async () => {
+    await db.delete(moduleConfigs).where(sql`${moduleConfigs.appId} = ${appA}`);
+    await db.delete(auditLog);
+  });
+
+  const purges = async () =>
+    (await db.select().from(auditLog).where(sql`${auditLog.action} = 'data.collection.purge'`)).map((r) => ({ actor: r.actorUserId, target: r.target, meta: r.meta }));
+
+  it('removing an EMPTY collection applies at once; a non-empty one waits, and the confirmation purges its records (audited)', async () => {
+    const rt = await runtimeFor(async () => ANON);
+    const empty = await rt.configure({ app: app(), module: 'data', patch: { collections: { members: null } }, actorUserId: owner });
+    expect(empty).toMatchObject({ applied: true });
+
+    await create(ctx({ principal: A }), 'todos', { title: 'one' });
+    await create(ctx({ principal: A }), 'todos', { title: 'two' });
+    const other = await create(ctx({ principal: A, app: appB }), 'todos', { title: 'other app' });
+    const held = await rt.configure({ app: app(), module: 'data', patch: { collections: { todos: null } }, actorUserId: owner });
+    expect(held).toMatchObject({
+      applied: false,
+      pending_confirmation: ['data.collections.todos: removed while it holds 2 records (confirming deletes them permanently)'],
+    });
+    expect(await countRows(appA, 'todos')).toBe(2);
+
+    await create(ctx({ principal: A }), 'todos', { title: 'three' }); // lands while the change waits
+    await rt.confirm({ app: app(), module: 'data', userId: owner });
+    expect(await countRows(appA, 'todos')).toBe(0);
+    expect(await countRows(appB, 'todos')).toBe(1);
+    expect(await recordsAuthority.get(view(appB), 'todos', other._id)).toMatchObject({ title: 'other app' });
+    expect(await purges()).toEqual([{ actor: owner, target: 'notes', meta: { collection: 'todos', records: 3, module: 'data' } }]);
+    expect(await (await rt.records({ id: appA, slug: 'notes', workspaceId }))!.orphans()).toEqual([]);
+  });
+
+  it('a rejected removal keeps the records', async () => {
+    const rt = await runtimeFor(async () => ANON);
+    await create(ctx({ principal: A }), 'todos', { title: 'one' });
+    await rt.configure({ app: app(), module: 'data', patch: { collections: { todos: null } }, actorUserId: owner });
+    await rt.reject({ app: app(), module: 'data', userId: owner });
+    expect(await countRows(appA, 'todos')).toBe(1);
+    expect(await purges()).toEqual([]);
+  });
+
+  it('orphans (rows of an undeclared collection) are listed with counts and purged by the owner (audited; a declared one → conflict)', async () => {
+    await pg.query(
+      `INSERT INTO mod_data_documents (id, app_id, collection, owner_id, doc, bytes, created_at, updated_at) VALUES
+        ('o1', $1, 'ghost', NULL, '{"a":1}', 7, now(), now()), ('o2', $1, 'ghost', NULL, '{"a":2}', 7, now(), now()),
+        ('o3', $1, 'attic', NULL, '{"a":3}', 7, now(), now()), ('o4', $2, 'ghost', NULL, '{"a":4}', 7, now(), now())`,
+      [appA, appB]
+    );
+    await create(ctx({ principal: A }), 'todos', { title: 'declared' });
+    const rt = await runtimeFor(async () => ANON);
+    const records = (await rt.records({ id: appA, slug: 'notes', workspaceId }))!;
+    expect(await records.orphans()).toEqual([
+      { name: 'attic', records: 1 },
+      { name: 'ghost', records: 2 },
+    ]);
+    // Still hidden everywhere else.
+    expect((await records.collections()).map((c) => c.name)).toEqual(['members', 'todos']);
+    await expect(records.purgeOrphan('todos', owner)).rejects.toMatchObject({ code: 'conflict', status: 409 });
+    expect(await records.purgeOrphan('ghost', owner)).toEqual({ records: 2 });
+    expect(await records.orphans()).toEqual([{ name: 'attic', records: 1 }]);
+    expect(await countRows(appB, 'ghost')).toBe(1);
+    expect(await countRows(appA, 'todos')).toBe(1);
+    expect(await purges()).toEqual([{ actor: owner, target: 'notes', meta: { module: 'data', collection: 'ghost', records: 2, orphan: true } }]);
+  });
+});
+
+async function countRows(app: string, collection: string): Promise<number> {
+  const rows = await db.select().from(dataRecords).where(sql`${dataRecords.appId} = ${app} AND ${dataRecords.collection} = ${collection}`);
+  return rows.length;
+}

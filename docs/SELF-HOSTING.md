@@ -377,8 +377,10 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `FORMS_SUBMITS_PER_IP_HOUR` / `FORMS_PER_APP_PER_DAY` | 10 / 200 | `forms` *(plan)* |
 | `DATA_MAX_DOCS_PER_APP` / `DATA_MAX_DOC_BYTES` / `DATA_MAX_BYTES_PER_APP` | 10000 / 102400 / 52428800 | `data`: records, bytes per record, bytes per app *(plan)* |
 | `DATA_WRITE_RATE_LIMIT` / `DATA_WRITE_RATE_WINDOW_MS` | 120 / 60000 | `data`: writes per app per window *(plan)* |
+| `DATA_WRITES_PER_PRINCIPAL_PER_MIN` | 60 | `data`: writes per minute of one signed-in user (or one visitor IP), checked before the per-app limit *(plan)* |
 | `FILES_DIR` | `/data/files` | `files`: upload storage (the `files_data` volume) |
 | `FILES_MAX_BYTES` / `FILES_QUOTA_PER_APP` / `FILES_UPLOAD_RATE_LIMIT` | 10 MiB / 500 MiB / 60 per min | `files` *(plan)* |
+| `FILES_UPLOADS_PER_PRINCIPAL_PER_MIN` | 20 | `files`: uploads per minute of one signed-in user (or one visitor IP), checked before the per-app limit *(plan)* |
 | `FILES_SWEEP_INTERVAL_MS` / `FILES_SWEEP_RETENTION_MS` | 3600000 / 86400000 | `files`: how often the sweep runs; it removes the uploads of apps deleted that long ago, temp uploads untouched that long and blobs that old no app references |
 | `PROXY_ALLOWED_PORTS` / `PROXY_ALLOWED_HOSTS` | 80,443 / empty | `proxy`: upstream ports; hostnames whose private IPs may be reached (keep empty) |
 | `PROXY_CONNECT_TIMEOUT_MS` / `PROXY_MAX_RESPONSE_BYTES` | 8000 / 5242880 | `proxy`: per upstream request (the size cap also holds for a decoded gzip/br body) |

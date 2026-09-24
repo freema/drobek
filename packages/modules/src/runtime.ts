@@ -264,6 +264,13 @@ export interface BoundRecords {
    * `data.collection_delete` (actor user).
    */
   dropCollection(collection: string, actorUserId: string): Promise<{ records: number }>;
+  /** Collections with records but no declaration (orphans); [] when the module cannot tell. */
+  orphans(): Promise<{ name: string; records: number }[]>;
+  /**
+   * Purge the records of an orphan collection, under the config lock (so it
+   * cannot be declared meanwhile); audited `data.collection.purge` (actor user).
+   */
+  purgeOrphan(collection: string, actorUserId: string): Promise<{ records: number }>;
 }
 
 /** The end users of one app (the module that declares `endUsers`, bound to the app's config). */
@@ -450,6 +457,19 @@ export class ModuleRuntime {
             patch: out.configPatch,
             result: { records: out.records },
             audit: { action: AUDIT_ACTIONS.dataCollectionDelete, meta: { module: m.name, collection, records: out.records } },
+          };
+        });
+      },
+      orphans: async () => (r.orphans ? r.orphans(view) : []),
+      purgeOrphan: async (collection, actorUserId) => {
+        const purge = r.purgeOrphan?.bind(r);
+        if (!purge) throw unsupported(m.name, 'purging orphan collections');
+        return this.ownerConfigChange(m, app, actorUserId, async (config, tx) => {
+          const out = await purge(this.ownerView(app, config, tx), collection);
+          return {
+            patch: null,
+            result: { records: out.records },
+            audit: { action: AUDIT_ACTIONS.dataCollectionPurge, meta: { module: m.name, collection, records: out.records, orphan: true } },
           };
         });
       },
@@ -975,6 +995,20 @@ export class ModuleRuntime {
           db: tx as unknown as DB,
           userId: input.userId,
           role,
+          audit: async (action, meta = {}) => {
+            await writeAudit(
+              {
+                workspaceId: input.app.workspaceId,
+                actorUserId: input.userId,
+                actorKind: actorKindForSurface('web'),
+                action: action.startsWith(`${m.name}.`) ? action : `${m.name}.${action}`,
+                subjectType: 'app',
+                target: input.app.slug,
+                meta: { ...meta, module: m.name },
+              },
+              tx
+            );
+          },
         });
       }
       await writeAudit(

@@ -7,7 +7,7 @@ import type { SdkCore } from '@drobek/sdk/core';
 
 type Scalar = string | number | boolean | null;
 
-export type Doc<T> = T & { _id: string; _owner: string | null; _created_at: string; _updated_at: string };
+export type Doc<T> = T & { _id: string; _owner?: string | null; _created_at: string; _updated_at: string };
 
 export type Condition =
   | Scalar

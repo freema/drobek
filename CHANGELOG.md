@@ -94,6 +94,50 @@
   `checkOtpRequest` / `chargeOtpRequest`, the auth retry-during-pause flow,
   the prune and the batched flush (Redis/SQL call counts). No migration.
 
+### Data + files: per-user write limits, no orphan records, text-only untrusted MCP output (NSO-324)
+
+- **Per-principal rate limits** before the per-app ones: one anonymous
+  client on `create: public` could use up an app's whole write budget for
+  every user. `DATA_WRITES_PER_PRINCIPAL_PER_MIN` (default 60) and
+  `FILES_UPLOADS_PER_PRINCIPAL_PER_MIN` (default 20) count per signed-in end
+  user, or per client IP for a visitor; a visitor without a resolvable IP
+  gets no shared bucket (NSO-309), the per-app limits
+  (`DATA_WRITE_RATE_LIMIT`, `FILES_UPLOAD_RATE_LIMIT`) still hold, and a
+  refused write counts only against its own bucket. `429 rate_limited` with
+  `details.limit` naming the limit that tripped. A small helper in each
+  module (`principal-bucket.ts`), not the router. New env vars in
+  `.env.example`, `.env.production.example` and the SELF-HOSTING env
+  reference; skills and `docs/MODULES.md` updated.
+- **Removing a collection no longer orphans its records.** Removing a
+  collection that holds records is `confirmRequired` (the pending summary
+  names the count); on confirmation `onConfirmed` purges them in the confirm
+  transaction, audited `data.collection.purge` (collection + count). An empty
+  collection is removed at once. `ConfirmedContext` gains `audit(action,
+  meta)` (written in the confirm transaction, actor: the confirming user).
+  Stragglers — rows of an undeclared collection — are listed on the Data tab
+  as orphan records with a purge form (editor+, the owner types the name;
+  `RecordsAuthority.orphans` / `purgeOrphan`, `BoundRecords.orphans` /
+  `purgeOrphan` under the config lock, audited `data.collection.purge` with
+  `orphan: true`).
+- **`_owner` is hidden from visitors**: a caller who is not signed in gets
+  records without `_owner` (list, get, create, update) — the opaque id linked
+  one user's records for anyone reading a `public` collection. Signed-in
+  users, `query_data` and the Data tab keep it; the SDK type is now
+  `_owner?: string | null`.
+- **`read_file`, `query_data`, `get_logs` answer text only**: no
+  `structuredContent`, so a client that feeds `structuredContent` to the
+  model can no longer skip the nonce envelope (wrapping the payload's
+  strings could not cover it — the keys of a schemaless record are user
+  input too). Every other tool keeps both. Tool descriptions (agent-dx),
+  `docs/AGENT.md` and `docs/SECURITY.md` say so; the unit harness and the
+  e2e `callTool` decode the envelope for assertions.
+- The dashboard record delete was already audited (`data.record_delete`,
+  NSO-301); it now has a unit test.
+- Unit tests in `modules/data`, `modules/files`, `@drobek/modules`
+  (runtime), `@drobek/mcp`, `@drobek/agent-dx` and the dashboard Data routes;
+  e2e: `data-module.spec.ts`, `files-module.spec.ts`,
+  `dashboard-app-data.spec.ts`. No migration.
+
 ### Apex landing describes the cloud workspace (NSO-331)
 
 - The anonymous landing at `/` (`apps/server/app/routes/_index.tsx`) no

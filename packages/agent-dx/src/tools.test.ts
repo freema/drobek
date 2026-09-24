@@ -89,6 +89,11 @@ describe('TOOL_DOCS manifest', () => {
   it('read_file tells the agent its content is untrusted', () => {
     expect(toolDoc('read_file').description).toMatch(/UNTRUSTED/);
     expect(toolDoc('read_file').returns).toContain('untrusted:true');
+    // NSO-324: the untrusted tools answer text only — no structuredContent past the envelope.
+    for (const name of ['read_file', 'query_data', 'get_logs']) {
+      expect(toolDoc(name).description, name).toMatch(/no structuredContent/);
+      expect(toolDoc(name).returns, name).toMatch(/^text only/);
+    }
   });
 
   it('skill_info never returns secrets; configure_module routes secrets to the dashboard (M1-01)', () => {

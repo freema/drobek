@@ -9,7 +9,7 @@
  */
 import { CsvParseError, csvUnguard, parseCsv } from '@drobek/core';
 import type { DB } from '@drobek/db';
-import { RECORDS_IMPORT_MAX_ROWS, isModuleError, type RecordsAuthority, type RecordsCollection, type RecordsQuery, type RecordsView } from '@drobek/modules';
+import { ModuleError, RECORDS_IMPORT_MAX_ROWS, isModuleError, type RecordsAuthority, type RecordsCollection, type RecordsQuery, type RecordsView } from '@drobek/modules';
 import { schemaColumns, csvHeader, csvRecordLine } from './columns.js';
 import { collectionConfig, rulesOf, type CollectionConfig, type DataConfig } from './config.js';
 import { DataError } from './errors.js';
@@ -296,5 +296,23 @@ export const recordsAuthority: RecordsAuthority<DataConfig> = {
     requireCollection(view.config, collection);
     const records = await deleteCollectionRecords(view.db, view.app.id, collection);
     return { records, configPatch: { collections: { [collection]: null } } };
+  },
+
+  // NSO-324: records whose collection is no longer declared (a write that
+  // landed while the collection was removed) — invisible to every other view,
+  // yet counted by the quota until the owner purges them.
+  async orphans(view) {
+    const counts = await countsByCollection(view.db, view.app.id);
+    return [...counts.entries()]
+      .filter(([name, n]) => n > 0 && !collectionConfig(view.config, name))
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([name, records]) => ({ name, records }));
+  },
+
+  async purgeOrphan(view, collection) {
+    if (collectionConfig(view.config, collection)) {
+      throw new ModuleError('conflict', `"${collection}" is a declared collection — delete it from its own page instead.`, { details: { reason: 'declared' } });
+    }
+    return { records: await deleteCollectionRecords(view.db, view.app.id, collection) };
   },
 };

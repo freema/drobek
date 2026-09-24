@@ -15,12 +15,15 @@
  *    `read` again except for a NEW collection that holds no records yet
  *    (NSO-322 M2: widening `owner|admin` to `user` shows every user's
  *    records to everyone signed in);
- *  - removing the schema of a collection that holds records.
+ *  - removing the schema of a collection that holds records;
+ *  - removing a collection that holds records (NSO-324): confirming it
+ *    purges them (onConfirmed, audited `data.collection.purge`). An empty
+ *    collection goes without a confirmation.
  */
-import { isValidRule, ruleIsPublic, z, type ConfirmContext } from '@drobek/modules';
+import { isValidRule, ruleIsPublic, z, type ConfirmContext, type ConfirmedContext } from '@drobek/modules';
 import { DEFAULT_RULES, OPS, ruleAdmits, type Op, type Rules } from './access.js';
 import { compileSchema } from './schema-validate.js';
-import { countRecords } from './store.js';
+import { countRecords, deleteCollectionRecords } from './store.js';
 
 /** Collection names: URL-, config-path- and CSV-file-name-safe. */
 export const COLLECTION_NAME_RE = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
@@ -153,5 +156,29 @@ export async function dataConfirmRequired(before: DataConfig, after: DataConfig,
       if (n > 0) out.push(`data.collections.${name}.schema: removed while the collection holds ${n} record${n === 1 ? '' : 's'} (any shape can be stored afterwards)`);
     }
   }
+  for (const name of removedCollections(before, after)) {
+    const n = await count(name);
+    if (n > 0) out.push(`data.collections.${name}: removed while it holds ${n} record${n === 1 ? '' : 's'} (confirming deletes them permanently)`);
+  }
   return out;
+}
+
+/** Collections `before` declares and `after` does not, sorted. */
+function removedCollections(before: DataConfig, after: DataConfig): string[] {
+  return Object.keys(before.collections)
+    .filter((name) => !collectionConfig(after, name))
+    .sort();
+}
+
+/**
+ * The owner confirmed a change (in the confirm transaction): the records of
+ * every collection it removed are purged, so they neither linger invisibly
+ * nor keep counting towards the quota — audited `data.collection.purge` with
+ * the count (what is stored NOW, which may differ from the pending summary).
+ */
+export async function dataOnConfirmed(before: DataConfig, after: DataConfig, context: ConfirmedContext): Promise<void> {
+  for (const collection of removedCollections(before, after)) {
+    const records = await deleteCollectionRecords(context.db, context.app.id, collection);
+    if (records > 0) await context.audit('collection.purge', { collection, records });
+  }
 }

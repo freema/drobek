@@ -1187,6 +1187,35 @@ block, then `next` is pushed and the single MR opened.
   `queryRequestLog` to drop 31-day-old rows needs `pruneLogs()`.
   `BEACON_RETENTION_DAYS` defaults to 30 (docker-compose.yml too).
 
+- NSO-324: `read_file`, `query_data` and `get_logs` answer NO
+  `structuredContent` (only the envelope text). Test clients that read
+  `structuredContent` get nothing for them: the MCP unit harness
+  (`packages/mcp/src/test/harness.ts`) and the e2e `callTool`
+  (`tests-e2e/tests/helpers/mcp.ts`) decode the envelope back into the old
+  payload shape (`body` / `json`); `callTool` also returns `structured`.
+  A new client of these tools must parse the envelope the same way.
+- NSO-324: the per-principal write buckets (`DATA_WRITES_PER_PRINCIPAL_PER_MIN`,
+  `FILES_UPLOADS_PER_PRINCIPAL_PER_MIN`) skip a visitor without a resolvable
+  IP — the plain-HTTP dev stack is IP-less, so an ANONYMOUS flood only meets
+  the per-app limit there; only a signed-in flood is testable in the dev e2e
+  (behind Caddy every visitor has an IP bucket). The dev compose does not
+  pass the two env vars through (defaults 60 / 20 apply); add them to the
+  `drobek` service env to override locally. `createModuleTestContext`
+  sends `clientIp: '127.0.0.1'` by default — pass `clientIp: ''` to test the
+  IP-less path, and reuse ONE test context (`setPrincipal`) to share a rate
+  limiter between callers.
+- NSO-324: a visitor's data responses carry no `_owner` (list, get, create,
+  update); assertions of `_owner: null` for an anonymous create must read the
+  record as a signed-in user / the owner's view instead.
+- NSO-324: removing a non-empty data collection is now a pending change; an
+  e2e that removes a collection with records (or `{ collections: { x: null } }`
+  in the dashboard collections editor) must confirm it. The purge runs in
+  `onConfirmed` — `ConfirmedContext.audit` writes in the confirm transaction,
+  so a failing `onConfirmed` rolls the audit row back too.
+- NSO-324: `deleteCollectionRecords` takes the app's data write lock
+  (`pg_advisory_xact_lock`) — only meaningful inside a transaction (core's
+  config / confirm transactions); outside one the lock ends with the statement.
+
 ## Failed approaches
 
 - `pnpm deploy --offline` in the Dockerfile builder: fails with

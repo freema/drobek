@@ -365,6 +365,44 @@ describe('upload + download', () => {
     expect(third.body).toMatchObject({ error: 'rate_limited', details: { limit: 'FILES_UPLOAD_RATE_LIMIT', value: 2 } });
     expect(Number(third.headers['Retry-After'])).toBeGreaterThan(0);
   });
+
+  it('NSO-324: an anonymous flood from one IP hits 429 on its own bucket (FILES_UPLOADS_PER_PRINCIPAL_PER_MIN); signed-in users still upload', async () => {
+    const t = ctx({ principal: ANON, config: { rules: { upload: 'public' } }, limits: { FILES_UPLOADS_PER_PRINCIPAL_PER_MIN: 2, FILES_UPLOAD_RATE_LIMIT: 4 } });
+    const up = (clientIp: string) => {
+      const f = form(png(10));
+      return t.request('POST', '/', { rawBody: f.rawBody, headers: f.headers, clientIp });
+    };
+    expect((await up('10.0.0.1')).status).toBe(201);
+    expect((await up('10.0.0.1')).status).toBe(201);
+    for (let i = 0; i < 5; i++) {
+      const refused = await up('10.0.0.1');
+      expect(refused.status).toBe(429);
+      expect(refused.body).toMatchObject({ error: 'rate_limited', details: { limit: 'FILES_UPLOADS_PER_PRINCIPAL_PER_MIN', value: 2 } });
+      expect(Number(refused.headers['Retry-After'])).toBeGreaterThan(0);
+    }
+    // The refused uploads left the app's budget (4) alone: two signed-in uploads still fit.
+    t.setPrincipal(ANA);
+    expect((await up('10.0.0.1')).status).toBe(201);
+    t.setPrincipal(BOB);
+    expect((await up('10.0.0.1')).status).toBe(201);
+    const app = await up('10.0.0.2');
+    expect(app).toMatchObject({ status: 429, body: { details: { limit: 'FILES_UPLOAD_RATE_LIMIT', value: 4 } } });
+    expect(onDisk().tmp).toEqual([]);
+  });
+
+  it('NSO-324: a signed-in uploader is counted by their id; a visitor without a resolvable IP only by the app', async () => {
+    const t = ctx({ config: { rules: { upload: 'public' } }, limits: { FILES_UPLOADS_PER_PRINCIPAL_PER_MIN: 1, FILES_UPLOAD_RATE_LIMIT: 10 } });
+    const up = (clientIp: string) => {
+      const f = form(png(10));
+      return t.request('POST', '/', { rawBody: f.rawBody, headers: f.headers, clientIp });
+    };
+    expect((await up('10.0.0.1')).status).toBe(201);
+    expect((await up('10.0.0.2')).body).toMatchObject({ details: { limit: 'FILES_UPLOADS_PER_PRINCIPAL_PER_MIN' } });
+    t.setPrincipal(ANON);
+    expect((await up('')).status).toBe(201);
+    expect((await up('')).status).toBe(201);
+    expect(filesModule.limits?.find((l) => l.env === 'FILES_UPLOADS_PER_PRINCIPAL_PER_MIN')).toMatchObject({ default: 20 });
+  });
 });
 
 describe('rules', () => {

@@ -235,12 +235,49 @@ interface ToolCall {
 export interface ToolCallWithText extends ToolCall {
   /** The first text content block, verbatim (read_file: the untrusted envelope). */
   text: string;
+  /** Whether the answer carried structuredContent (never for read_file / query_data / get_logs). */
+  structured: boolean;
 }
 
 /**
- * Call a tool. `json` is the structuredContent every drobek tool returns
- * (falls back to parsing the text; non-JSON text — e.g. the SDK's "Tool …
- * not found" — is kept as `{ text }`).
+ * The payload of an untrusted envelope: read_file, query_data and get_logs
+ * answer ONLY the envelope text, no structuredContent (NSO-324). Rebuilt from
+ * the opening marker's attributes and the body into the tool's result shape;
+ * null when `text` is not an envelope.
+ */
+function decodeUntrusted(text: string): Record<string, unknown> | null {
+  const open = /^<untrusted-app-(file|data|logs) (.*)>$/m.exec(text);
+  if (!open) return null;
+  const attrs: Record<string, string> = {};
+  for (const m of open[2].matchAll(/(\w+)=("(?:[^"\\]|\\.)*")/g)) attrs[m[1]] = JSON.parse(m[2]) as string;
+  const start = open.index + open[0].length + 1;
+  const closing = `\n</untrusted-app-${open[1]} nonce="${attrs.nonce}">`;
+  const end = text.indexOf(closing, start - 1);
+  const body = text.slice(start, end);
+  const after = text.slice(end + closing.length).replace(/^\n+/, '');
+  if (open[1] === 'file') {
+    const binary = /^\(binary file, (\d+) bytes — no text content\)$/.exec(body);
+    const base = { path: attrs.path, version: Number(attrs.version), untrusted: true };
+    return binary ? { ...base, binary: true, size: Number(binary[1]) } : { ...base, content: body };
+  }
+  if (open[1] === 'data') {
+    return {
+      app_id: attrs.app_id,
+      collection: attrs.collection,
+      records: JSON.parse(body) as unknown,
+      total: Number(attrs.total),
+      next_cursor: attrs.next_cursor || null,
+      untrusted: true,
+    };
+  }
+  return { app_id: attrs.app_id, kind: attrs.kind, since: attrs.since, entries: JSON.parse(body) as unknown, untrusted: true, ...(after ? { note: after } : {}) };
+}
+
+/**
+ * Call a tool. `json` is the structuredContent (the untrusted tools: the
+ * payload decoded from their envelope text; otherwise falls back to parsing
+ * the text; non-JSON text — e.g. the SDK's "Tool … not found" — is kept as
+ * `{ text }`). `structured` tells whether the answer carried structuredContent.
  */
 export async function callTool(
   client: Client,
@@ -249,7 +286,8 @@ export async function callTool(
 ): Promise<ToolCallWithText> {
   const res = await client.callTool({ name, arguments: args });
   const text = (res.content as { type: string; text: string }[])[0]?.text ?? '';
-  let json = res.structuredContent as Record<string, unknown> | undefined;
+  const structured = res.structuredContent !== undefined;
+  let json = (res.structuredContent as Record<string, unknown> | undefined) ?? decodeUntrusted(text) ?? undefined;
   if (!json) {
     try {
       json = JSON.parse(text) as Record<string, unknown>;
@@ -257,5 +295,5 @@ export async function callTool(
       json = { text };
     }
   }
-  return { isError: Boolean(res.isError), json, text };
+  return { isError: Boolean(res.isError), json, text, structured };
 }

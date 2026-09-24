@@ -12,11 +12,14 @@
  * A record is `{ _id, _owner, _created_at, _updated_at, …fields }`. The `_…`
  * fields are the server's: sent by a client they are dropped. `_owner` is the
  * signed-in creator (null for an anonymous create) and never changes; `owner`
- * rules compare it.
+ * rules compare it. A visitor who is not signed in never gets `_owner` back
+ * (NSO-324): the opaque id would link the records of one user for anyone
+ * reading a `public` collection.
  *
- * A write, in order: the collection's rule → the schema → the per-app write
- * rate limit → the quota (records and bytes per app, exact under a per-app
- * lock) → stored. Every statement is scoped to this app (store.ts).
+ * A write, in order: the collection's rule → the schema → the caller's own
+ * write rate limit (the signed-in user, or the visitor's IP) → the per-app
+ * write rate limit → the quota (records and bytes per app, exact under a
+ * per-app lock) → stored. Every statement is scoped to this app (store.ts).
  */
 import { Readable } from 'node:stream';
 import { csvChunks, respond, z, type ModuleContext, type ModuleRouter } from '@drobek/modules';
@@ -27,12 +30,15 @@ import { dataQuotaFromLimits } from './quota.js';
 import { csvLines, pageOf, requireCollection } from './records.js';
 import { parseFilterParam } from './query-build.js';
 import { validateDocument } from './schema-validate.js';
-import { deleteRecord, insertRecord, loadRecord, patchRecord, toRecord } from './store.js';
+import { principalBucketKey } from './principal-bucket.js';
+import { deleteRecord, insertRecord, loadRecord, patchRecord, toRecord, type DataRecord } from './store.js';
 
 type Ctx = ModuleContext<DataConfig>;
 
 export const DEFAULT_WRITE_RATE_LIMIT = 120;
 export const DEFAULT_WRITE_RATE_WINDOW_MS = 60_000;
+export const DEFAULT_WRITES_PER_PRINCIPAL_PER_MIN = 60;
+const PRINCIPAL_WINDOW_MS = 60_000;
 /** A write body (the per-record limit DATA_MAX_DOC_BYTES decides the rest). */
 const MAX_WRITE_BODY = 256 * 1024;
 const RECORD_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
@@ -70,8 +76,21 @@ export function clientFields(body: unknown): Record<string, unknown> {
   return out;
 }
 
-async function writeAllowed(ctx: Ctx): Promise<void> {
+/** The caller's own bucket first (see principal-bucket.ts), then the app's. */
+async function writeAllowed(ctx: Ctx, clientIp: string | null): Promise<void> {
   const limits = await ctx.limits();
+  const key = principalBucketKey(ctx.principal, clientIp);
+  if (key) {
+    const own = limits.DATA_WRITES_PER_PRINCIPAL_PER_MIN ?? DEFAULT_WRITES_PER_PRINCIPAL_PER_MIN;
+    const r = await ctx.rateLimit('writes-principal', key, own, PRINCIPAL_WINDOW_MS);
+    if (!r.ok) {
+      const who = ctx.principal.kind === 'user' ? 'this user' : 'this client';
+      throw new DataError('rate_limited', `Too many data writes from ${who} (${own} per minute). Slow down and retry.`, {
+        details: { limit: 'DATA_WRITES_PER_PRINCIPAL_PER_MIN', value: own },
+        headers: { 'Retry-After': String(r.retryAfterSec) },
+      });
+    }
+  }
   const max = limits.DATA_WRITE_RATE_LIMIT ?? DEFAULT_WRITE_RATE_LIMIT;
   const windowMs = limits.DATA_WRITE_RATE_WINDOW_MS ?? DEFAULT_WRITE_RATE_WINDOW_MS;
   const r = await ctx.rateLimit('writes', 'app', max, windowMs);
@@ -81,6 +100,14 @@ async function writeAllowed(ctx: Ctx): Promise<void> {
       headers: { 'Retry-After': String(r.retryAfterSec) },
     });
   }
+}
+
+/** A record as this caller may see it: without `_owner` for a visitor who is not signed in. */
+function forCaller(ctx: Ctx, record: DataRecord): Record<string, unknown> {
+  if (ctx.principal.kind === 'user') return record;
+  const { _owner: _hidden, ...rest } = record;
+  void _hidden;
+  return rest;
 }
 
 const listQuery = z.object({
@@ -104,7 +131,7 @@ export function registerRoutes(r: ModuleRouter<DataConfig>): void {
       ownerId: scope.ownerId,
       maxLimit: 200,
     });
-    return { records: page.records, next_cursor: page.next_cursor };
+    return { records: page.records.map((rec) => forCaller(ctx, rec)), next_cursor: page.next_cursor };
   });
 
   r.post('/:collection', { maxBodyBytes: MAX_WRITE_BODY }, async (req, ctx) => {
@@ -114,7 +141,7 @@ export function registerRoutes(r: ModuleRouter<DataConfig>): void {
     if (!d.ok) deny(d.status, 'create', name, rule);
     const doc = clientFields(req.body);
     if (c.schema) validateDocument(c.schema, doc);
-    await writeAllowed(ctx);
+    await writeAllowed(ctx, req.clientIp);
     const row = await insertRecord(ctx.db, {
       appId: ctx.app.id,
       collection: name,
@@ -122,7 +149,7 @@ export function registerRoutes(r: ModuleRouter<DataConfig>): void {
       doc,
       limits: dataQuotaFromLimits(await ctx.limits()),
     });
-    return respond(201, toRecord(row));
+    return respond(201, forCaller(ctx, toRecord(row)));
   });
 
   // Before `:collection/:id` — the first matching route wins.
@@ -170,7 +197,7 @@ export function registerRoutes(r: ModuleRouter<DataConfig>): void {
 
   r.get('/:collection/:id', async (req, ctx) => {
     const { row } = await target(ctx, req.params.collection, req.params.id, 'read');
-    return toRecord(row);
+    return forCaller(ctx, toRecord(row));
   });
 
   r.patch('/:collection/:id', { maxBodyBytes: MAX_WRITE_BODY }, async (req, ctx) => {
@@ -183,16 +210,16 @@ export function registerRoutes(r: ModuleRouter<DataConfig>): void {
       return doc;
     };
     merged(row.doc ?? {}); // fail fast (422) before the write counts
-    await writeAllowed(ctx);
+    await writeAllowed(ctx, req.clientIp);
     // Merged again onto the row as it is INSIDE the write lock — never the copy read above (NSO-322 M1).
     const updated = await patchRecord(ctx.db, { appId: ctx.app.id, collection: name, id: row.id, limits: dataQuotaFromLimits(await ctx.limits()), next: merged });
     if (!updated) throw new DataError('not_found', `No record "${row.id}" in "${name}".`);
-    return toRecord(updated);
+    return forCaller(ctx, toRecord(updated));
   });
 
   r.delete('/:collection/:id', async (req, ctx) => {
     const { name, row } = await target(ctx, req.params.collection, req.params.id, 'delete');
-    await writeAllowed(ctx);
+    await writeAllowed(ctx, req.clientIp);
     await deleteRecord(ctx.db, ctx.app.id, name, row.id);
     return { id: row.id, deleted: true };
   });

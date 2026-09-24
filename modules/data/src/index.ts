@@ -13,17 +13,18 @@
  *   records authority → MCP query_data and the dashboard Data tab (the owner's view).
  *
  * Opening an operation to `public`, `update`/`delete` to every signed-in
- * user, or dropping the schema of a collection that holds records needs the
+ * user, dropping the schema of a collection that holds records, or removing
+ * such a collection (its records are purged on confirmation) needs the
  * owner's confirmation. Records of an app are shared by its preview and
  * production hosts.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { defineModule } from '@drobek/modules';
-import { DATA_CONFIG_DEFAULTS, dataConfigSchema, dataConfirmRequired, salvageDataConfig, type DataConfig } from './config.js';
+import { DATA_CONFIG_DEFAULTS, dataConfigSchema, dataConfirmRequired, dataOnConfirmed, salvageDataConfig, type DataConfig } from './config.js';
 import { DEFAULT_MAX_BYTES_PER_APP, DEFAULT_MAX_DOC_BYTES, DEFAULT_MAX_DOCS_PER_APP } from './quota.js';
 import { recordsAuthority } from './records.js';
-import { DEFAULT_WRITE_RATE_LIMIT, DEFAULT_WRITE_RATE_WINDOW_MS, registerRoutes } from './routes.js';
+import { DEFAULT_WRITES_PER_PRINCIPAL_PER_MIN, DEFAULT_WRITE_RATE_LIMIT, DEFAULT_WRITE_RATE_WINDOW_MS, registerRoutes } from './routes.js';
 
 export { DEFAULT_RULES, LEGACY_ACCESS_MODES, OPS, accessModeToRules, decideRecord, listScope, ruleAdmits, type Op, type Rules } from './access.js';
 export { SYSTEM_COLUMNS, cellText, csvHeader, csvRecordLine, schemaColumns, type SchemaColumn } from './columns.js';
@@ -56,8 +57,8 @@ const sdkEntry = existsSync(here('./sdk.js')) ? here('./sdk.js') : here('./sdk.t
 
 export const SDK_TYPES = `
 export type Scalar = string | number | boolean | null;
-/** A stored record: the server's fields (_…) plus yours. */
-export type Doc<T> = T & { _id: string; _owner: string | null; _created_at: string; _updated_at: string };
+/** A stored record: the server's fields (_…) plus yours. _owner is left out for a visitor who is not signed in. */
+export type Doc<T> = T & { _id: string; _owner?: string | null; _created_at: string; _updated_at: string };
 /** A value (equality) or operators: eq ne gt gte lt lte in contains. */
 export type Condition =
   | Scalar
@@ -103,6 +104,7 @@ const data = defineModule<DataConfig>({
   configDefaults: DATA_CONFIG_DEFAULTS,
   salvageConfig: salvageDataConfig,
   confirmRequired: dataConfirmRequired,
+  onConfirmed: dataOnConfirmed,
   rules: {
     ops: {
       read: 'List and get records (owner = only the caller’s own)',
@@ -117,6 +119,11 @@ const data = defineModule<DataConfig>({
     { env: 'DATA_MAX_BYTES_PER_APP', default: DEFAULT_MAX_BYTES_PER_APP, meaning: 'bytes of records one app may store' },
     { env: 'DATA_WRITE_RATE_LIMIT', default: DEFAULT_WRITE_RATE_LIMIT, meaning: 'record writes (create, update, delete) one app may take per window' },
     { env: 'DATA_WRITE_RATE_WINDOW_MS', default: DEFAULT_WRITE_RATE_WINDOW_MS, meaning: 'the write rate-limit window in milliseconds' },
+    {
+      env: 'DATA_WRITES_PER_PRINCIPAL_PER_MIN',
+      default: DEFAULT_WRITES_PER_PRINCIPAL_PER_MIN,
+      meaning: 'record writes one signed-in user (or one visitor IP) may make per minute, checked before the per-app limit',
+    },
   ],
   routes: registerRoutes,
   records: recordsAuthority,

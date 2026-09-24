@@ -267,6 +267,40 @@ test.describe("dashboard: the owner's app tabs — data edits + import, forms, u
     expect(await auditActions(dataApp.slug)).toEqual(expect.arrayContaining(['data.import', 'data.record_update', 'data.collection_delete']));
   });
 
+  test('data (NSO-324): a record delete is audited; orphan records (an undeclared collection) are listed and purged after typing the name', async () => {
+    skipUnlessLocal();
+    const p = ownerPage;
+    await seedDataCollections(dataApp.id, { notes: { rules: { read: 'admin', create: 'admin', update: 'admin', delete: 'admin' } } });
+    const [noteId] = await seedRecords(dataApp.id, 'notes', [{ text: 'delete me' }]);
+    await p.goto(`/workspaces/${ws}/apps/${dataApp.slug}/data/notes?confirm=${noteId}`);
+    await p.locator('[data-testid="delete-confirm"]').click();
+    await p.waitForURL(/\/data\/notes$/);
+    expect(await countRecords(dataApp.id, 'notes')).toBe(0);
+    const deleted = await withDb(async (c) =>
+      (await c.query(`SELECT meta FROM audit_log WHERE action = 'data.record_delete' AND target = $1`, [dataApp.slug])).rows as { meta: Record<string, unknown> }[]
+    );
+    expect(deleted.map((d) => d.meta)).toContainEqual(expect.objectContaining({ collection: 'notes', id: noteId }));
+
+    // Rows of a collection the config does not declare: invisible to the app, counted by the quota.
+    await seedRecords(dataApp.id, 'ghost', [{ n: 1 }, { n: 2 }]);
+    const tab = `/workspaces/${ws}/apps/${dataApp.slug}/data`;
+    await p.goto(tab);
+    const row = p.locator('[data-testid="orphan-row"][data-collection="ghost"]');
+    await expect(row.locator('[data-testid="orphan-count"]')).toContainText('2 records');
+    await expect(p.locator('[data-testid="collection-row"][data-collection="ghost"]')).toHaveCount(0);
+    await row.locator('[data-testid="orphan-confirm-name"]').fill('ghos');
+    await row.locator('[data-testid="orphan-purge"]').click();
+    await expect(p.locator('[data-testid="orphan-error"]')).toBeVisible();
+    expect(await countRecords(dataApp.id, 'ghost')).toBe(2);
+    await p.locator('[data-testid="orphan-row"][data-collection="ghost"] [data-testid="orphan-confirm-name"]').fill('ghost');
+    await p.locator('[data-testid="orphan-row"][data-collection="ghost"] [data-testid="orphan-purge"]').click();
+    await p.waitForURL(/\/data\?purged=ghost$/);
+    await expect(p.locator('[data-testid="orphan-purged"]')).toContainText('ghost');
+    await expect(p.locator('[data-testid="orphans"]')).toHaveCount(0);
+    expect(await countRecords(dataApp.id, 'ghost')).toBe(0);
+    expect(await auditActions(dataApp.slug)).toEqual(expect.arrayContaining(['data.record_delete', 'data.collection.purge']));
+  });
+
   test('forms: filter by form + date range, CSV of the filter, delete (audited)', async () => {
     skipUnlessLocal();
     const p = ownerPage;

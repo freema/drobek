@@ -119,6 +119,12 @@ export const AUDIT_ACTIONS = {
   dataImport: 'data.import',
   /** M2-03: the owner deleted a collection (its records and its declaration). */
   dataCollectionDelete: 'data.collection_delete',
+  /**
+   * NSO-324: the records of a removed collection were purged — on the owner's
+   * confirmation of the config change that removed it, or of an orphan
+   * collection from the Data tab (meta: collection + record count).
+   */
+  dataCollectionPurge: 'data.collection.purge',
   /** M2-03: the owner deleted a form submission. */
   formsSubmissionDelete: 'forms.submission_delete',
   /** M2-03: the owner changed an end user's role (end-user id + role, never the address). */

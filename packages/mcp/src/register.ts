@@ -8,6 +8,14 @@
  * limits (1–20 files, reasoning ≤ 300 chars, …) are enforced in the handlers
  * so a violation answers with drobek's own `invalid_params` + hint instead of
  * the SDK's generic validation text.
+ *
+ * Every tool answers its JSON as text AND as `structuredContent` — except the
+ * three that return app- or user-written content (read_file, query_data,
+ * get_logs, NSO-324): they answer ONLY the text inside the untrusted envelope
+ * with its per-response nonce. A client that hands `structuredContent` to the
+ * model would otherwise pass the raw payload past the envelope, and no
+ * wrapping of the payload's strings can cover it: the keys of a schemaless
+ * record are user input too.
  */
 import { randomBytes } from 'node:crypto';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -125,11 +133,18 @@ export const INPUT_SCHEMAS = {
 
 type Payload = Record<string, unknown>;
 
-function jsonResult(payload: Payload) {
+type ToolResult = { content: { type: 'text'; text: string }[]; structuredContent?: Payload };
+
+function jsonResult(payload: Payload): ToolResult {
   return {
     content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }],
     structuredContent: payload,
   };
+}
+
+/** An untrusted payload: the envelope text only, never `structuredContent` (see the file header). */
+function untrustedResult(envelope: string): ToolResult {
+  return { content: [{ type: 'text' as const, text: envelope }] };
 }
 
 function errorResult(body: Payload) {
@@ -209,7 +224,7 @@ export function registerAppTools(
   function register<A>(
     name: AppToolName,
     run: (ctx: CallContext, args: A) => Promise<unknown>,
-    shape: (payload: unknown, args: A) => ReturnType<typeof jsonResult> = (p) => jsonResult(p as Payload)
+    shape: (payload: unknown, args: A) => ToolResult = (p) => jsonResult(p as Payload)
   ): void {
     if (!allow(name)) return;
     registered += 1;
@@ -249,33 +264,16 @@ export function registerAppTools(
   register('list_apps', listApps);
   register('create_app', createApp);
   register('get_app', getApp);
-  register<{ app_id: string; path: string; version?: number }>('read_file', readFile, (p, args) => {
-    const r = p as ReadFileResult;
-    return {
-      content: [{ type: 'text' as const, text: untrustedEnvelope(args.app_id, r) }],
-      structuredContent: r as unknown as Payload,
-    };
-  });
+  register<{ app_id: string; path: string; version?: number }>('read_file', readFile, (p, args) =>
+    untrustedResult(untrustedEnvelope(args.app_id, p as ReadFileResult))
+  );
   register('write_files', writeFiles);
   register('restore_version', restoreVersion);
   register('publish', publishApp);
   register('skill_info', skillInfo);
   register('configure_module', configureModule);
-  register<{ app_id: string; collection: string }>('query_data', queryData, (p) => {
-    const r = p as QueryDataResult;
-    return {
-      content: [{ type: 'text' as const, text: untrustedDataEnvelope(r) }],
-      structuredContent: r as unknown as Payload,
-    };
-  });
-
-  register<{ app_id: string; kind: string; since?: string }>('get_logs', getLogs, (p) => {
-    const r = p as GetLogsResult;
-    return {
-      content: [{ type: 'text' as const, text: untrustedLogsEnvelope(r) }],
-      structuredContent: r as unknown as Payload,
-    };
-  });
+  register<{ app_id: string; collection: string }>('query_data', queryData, (p) => untrustedResult(untrustedDataEnvelope(p as QueryDataResult)));
+  register<{ app_id: string; kind: string; since?: string }>('get_logs', getLogs, (p) => untrustedResult(untrustedLogsEnvelope(p as GetLogsResult)));
 
   if (registered === 0) {
     // A grant with no tool scope (e.g. none of read/write/publish) must still get an

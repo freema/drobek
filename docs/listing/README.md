@@ -109,7 +109,7 @@ link from claude.com / support.claude.com)**.
       (examples in the log: `not_found` with the available names,
       `secret_in_source`, `invalid_params`).
 - [x] Untrusted output (files, records, logs) is enveloped with a
-      per-response nonce and marked `untrusted: true`.
+      per-response nonce and sent as text only (no `structuredContent`).
 - [ ] `TODO(Tomáš)`: connect `https://drobek.app/mcp` as a custom connector
       in Claude (web and desktop), complete OAuth, run every example prompt.
 

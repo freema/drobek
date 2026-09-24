@@ -26,7 +26,7 @@ import { fileURLToPath } from 'node:url';
 import { defineModule } from '@drobek/modules';
 import { FILES_CONFIG_DEFAULTS, filesConfigSchema, filesConfirmRequired, type FilesConfig } from './config.js';
 import { filesAuthority } from './owner.js';
-import { DEFAULT_MAX_BYTES, DEFAULT_QUOTA_PER_APP, DEFAULT_UPLOAD_RATE_LIMIT, registerRoutes } from './routes.js';
+import { DEFAULT_MAX_BYTES, DEFAULT_QUOTA_PER_APP, DEFAULT_UPLOADS_PER_PRINCIPAL_PER_MIN, DEFAULT_UPLOAD_RATE_LIMIT, registerRoutes } from './routes.js';
 
 export { BlobStore, BlobWriter, DEFAULT_FILES_DIR, blobStore, filesDir } from './blob-store.js';
 export {
@@ -117,6 +117,11 @@ const filesModule = defineModule<FilesConfig>({
     { env: 'FILES_MAX_BYTES', default: DEFAULT_MAX_BYTES, meaning: 'bytes of one uploaded file (an app config can only lower it)' },
     { env: 'FILES_QUOTA_PER_APP', default: DEFAULT_QUOTA_PER_APP, meaning: 'bytes of files one app may store' },
     { env: 'FILES_UPLOAD_RATE_LIMIT', default: DEFAULT_UPLOAD_RATE_LIMIT, meaning: 'uploads one app may take per minute' },
+    {
+      env: 'FILES_UPLOADS_PER_PRINCIPAL_PER_MIN',
+      default: DEFAULT_UPLOADS_PER_PRINCIPAL_PER_MIN,
+      meaning: 'uploads one signed-in user (or one visitor IP) may make per minute, checked before the per-app limit',
+    },
   ],
   routes: registerRoutes,
   files: filesAuthority,

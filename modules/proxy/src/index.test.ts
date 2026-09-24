@@ -396,7 +396,7 @@ describe('calls', () => {
     const allowed = async (name: string) =>
       (await db.select({ ids: upstreams.allowedAppIds }).from(upstreams).where(and(eq(upstreams.workspaceId, ws1), eq(upstreams.name, name))))[0].ids;
     const p = (c: unknown) => proxyConfigSchema.parse(c) as ProxyConfig;
-    const context = { app: { id: appA, slug: 'chat', workspaceId: ws1 }, db, userId: 'u_admin', role: 'admin' as const };
+    const context = { app: { id: appA, slug: 'chat', workspaceId: ws1 }, db, userId: 'u_admin', role: 'admin' as const, audit: async () => {} };
     await withNarrowUpstreams(async () => {
       // An upstream the app already had is not touched; a new one (and one not registered) is.
       await proxyOnConfirmed(p({ upstreams: { theirs: {} } }), p({ upstreams: { theirs: {}, closed: {}, ghost: {} } }), context);
@@ -489,7 +489,7 @@ describe('assignments are bound to the upstream RECORD, not its name (NSO-326)',
 
   it("an admin's confirmation binds a new assignment to the record's id; a rebind moves it to the record registered now", async () => {
     const p = (c: unknown) => proxyConfigSchema.parse(c) as ProxyConfig;
-    const context = { app: { id: appA, slug: 'chat', workspaceId: ws1 }, db, userId: 'u_admin', role: 'admin' as const };
+    const context = { app: { id: appA, slug: 'chat', workspaceId: ws1 }, db, userId: 'u_admin', role: 'admin' as const, audit: async () => {} };
     await withNarrowUpstreams(async () => {
       // The runtime has written the confirmed config (without an id) before onConfirmed runs.
       await setStored({ upstreams: { closed: {}, ghost: {} } });

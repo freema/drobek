@@ -390,14 +390,16 @@ or writes a module's tables. Every authority call gets an `OwnerView`
 Loaders are viewer+, mutations editor+ (and the dashboard origin check);
 core writes the audit row (actor kind `user`).
 
-Optional `records` methods (the built-in `data` has all three; a module
-without one answers `unavailable`):
+Optional `records` methods (the built-in `data` has all five; a module
+without one answers `unavailable`, and `orphans` lists nothing):
 
 ```ts
 records: {
   update?(view, collection, id, fields)  // → record | null; the module validates (schema, size, quota)
   importCsv?(view, collection, csv)      // → { imported }; ALL or nothing
   dropCollection?(view, collection)      // → { records, configPatch }
+  orphans?(view)                         // → [{ name, records }]: rows of undeclared collections
+  purgeOrphan?(view, collection)         // → { records }; a declared collection → conflict
 }
 ```
 
@@ -416,6 +418,12 @@ records: {
   `configure_module` (config lock, merge-patch, `validateConfig`) and writes
   the records deletion, the config and the `data.collection_delete` audit in
   ONE transaction. The dashboard asks the owner to type the collection name.
+- `orphans` / `purgeOrphan` (NSO-324): records whose collection the config no
+  longer declares — e.g. a write that landed while the collection was being
+  removed — are invisible to every other view but still count towards the
+  quotas. The Data tab lists them with their counts; an editor purges one
+  after typing its name (under the config lock, so it cannot be declared
+  meanwhile; audit `data.collection.purge` with `orphan: true`).
 
 Optional `endUsers` owner methods (the built-in `auth` has them):
 
@@ -500,9 +508,11 @@ a super-admin) can confirm the pending change — an editor gets `403
 forbidden` with `details.reason: admin_required` and may still reject it —
 and `configure_module` / `get_app` add `confirm_role: "admin"`. The proxy
 module marks every change this way (only admins register upstreams).
-`onConfirmed(before, after, { app, db, userId, role })` runs inside the
-confirm transaction after a confirmation (a throw rolls it back) — proxy
-puts the app on the upstream's allow-list there.
+`onConfirmed(before, after, { app, db, userId, role, audit })` runs inside
+the confirm transaction after a confirmation (a throw rolls it back) — proxy
+puts the app on the upstream's allow-list there, data purges the records of
+a removed collection. `audit(action, meta)` writes `<module>.<action>` in that
+transaction (actor: the confirming user).
 
 - **`confirmRequired` is empty** → written at once (audit `module.configure`,
   actor agent): `{ applied: true, config, pending_confirmation: [] }`;
@@ -947,7 +957,12 @@ of JSON records with per-operation rules. `skill_info('data')`.
   db): any operation opened to `public` (except `read` of a NEW collection
   that holds no records), `read` / `update` / `delete` opened to every
   signed-in user (`user`; `read` again except for a NEW empty collection),
-  removing the `schema` of a collection that holds records.
+  removing the `schema` of a collection that holds records, removing a
+  collection that holds records (the pending summary names the count). On
+  confirmation (`onConfirmed`) the removed collections' records are purged in
+  the confirm transaction (audit `data.collection.purge`, collection + count);
+  an empty collection is removed at once. Nothing is left behind to count
+  towards the quota invisibly (stragglers show up as orphans, above).
 - **Routes** (`/__drobek/v1/data/…`, every app host; the preview and
   production hosts share the app's records):
   - `GET :collection?filter=<json>&sort=&dir=&limit=&cursor=` (rule `read`)
@@ -964,7 +979,11 @@ of JSON records with per-operation rules. `skill_info('data')`.
   A record is `{ _id, _owner, _created_at, _updated_at, …fields }`. The `_…`
   fields are the server's: sent by a client they are dropped. `_owner` is the
   principal's id at create time (null for a visitor) and never changes;
-  `owner` rules compare it with the caller's end-user id. For get / update /
+  `owner` rules compare it with the caller's end-user id. A visitor who is
+  not signed in gets every record WITHOUT `_owner` (list, get, create,
+  update): the opaque id would link one user's records for anyone reading a
+  `public` collection; signed-in users, `query_data` and the Data tab keep
+  it (the SDK type has `_owner?`). For get / update /
   delete a visitor gets `401` before the lookup when the rule can never admit
   them; then `404` for a missing record; then the rule against the stored
   owner (`403`).
@@ -976,10 +995,16 @@ of JSON records with per-operation rules. `skill_info('data')`.
 - **Limits** (on every write, whatever the rules): `DATA_MAX_DOC_BYTES`
   (100 KiB, `413 payload_too_large`), `DATA_MAX_DOCS_PER_APP` (10 000) and
   `DATA_MAX_BYTES_PER_APP` (50 MiB) → `409 quota_exceeded` (exact under a
-  per-app advisory lock), `DATA_WRITE_RATE_LIMIT` per
-  `DATA_WRITE_RATE_WINDOW_MS` (120 / 60 s per app, `429 rate_limited`).
+  per-app advisory lock). Rate limits (`429 rate_limited` + `Retry-After`,
+  `details.limit` names the one that tripped): first the caller's own
+  bucket, `DATA_WRITES_PER_PRINCIPAL_PER_MIN` (60 per minute per signed-in
+  user, or per client IP for a visitor; a visitor without a resolvable IP has
+  none), then `DATA_WRITE_RATE_LIMIT` per `DATA_WRITE_RATE_WINDOW_MS` (120 /
+  60 s per app) — so one anonymous client on `create: public` cannot use up
+  the app's budget for everyone (a refused write counts only against its own
+  bucket).
 - **Records authority** → MCP `query_data` (scope `read`, ≤ 100 records,
-  `untrusted: true` inside a nonce envelope) and the dashboard Data tab.
+  text only inside a nonce envelope) and the dashboard Data tab.
 - **Table** `mod_data_documents (id, app_id, collection, owner_id, doc jsonb,
   bytes, created_at, updated_at)`, cascade on app delete. Its first migration
   imports the pre-module Data API (core tables `collections` +
@@ -1077,8 +1102,10 @@ people who use an app upload. `skill_info('files')`.
 - **Routes** (`/__drobek/v1/files/…`):
   - `POST /` (`bodyTypes: ['file']`, rule `rules.upload`; `owner` admits the
     uploader like data's create) → `201 { id, url, size, type, name, owner,
-    created_at }`. In order: the rule; `FILES_UPLOAD_RATE_LIMIT` (60 uploads
-    per minute per app, `429 rate_limited`); a declared `Content-Length` over
+    created_at }`. In order: the rule; `FILES_UPLOADS_PER_PRINCIPAL_PER_MIN`
+    (20 per minute per signed-in uploader, or per client IP for a visitor;
+    none without a resolvable IP), then `FILES_UPLOAD_RATE_LIMIT` (60 uploads
+    per minute per app) — `429 rate_limited`; a declared `Content-Length` over
     the per-file cap (+ 65 KiB of framing) → `413` before anything is read;
     the app already at its quota → `409 quota_exceeded` before anything is
     read; then the file streams to `FILES_DIR/tmp/<uuid>.part` while it is
@@ -1124,7 +1151,8 @@ people who use an app upload. `skill_info('files')`.
   while the app holds files, needs the owner's confirmation.
 - **Limits**: `FILES_MAX_BYTES` 10 MiB, `FILES_QUOTA_PER_APP` 500 MiB (the
   sum of the app's `mod_files.size`, per row even when content is shared),
-  `FILES_UPLOAD_RATE_LIMIT` 60/min. The directory is `FILES_DIR` (default
+  `FILES_UPLOADS_PER_PRINCIPAL_PER_MIN` 20/min per user or visitor IP,
+  `FILES_UPLOAD_RATE_LIMIT` 60/min per app. The directory is `FILES_DIR` (default
   `/data/files`; the production compose mounts the `files_data` volume).
 - **Table** `mod_files (id, app_id, sha256, size, type, name, owner_id,
   created_at)`, cascade on app delete, indexes `(app_id, created_at DESC,

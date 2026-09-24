@@ -180,8 +180,13 @@ export async function insertRecords(
   });
 }
 
-/** Delete every record of one collection of an app; how many were deleted. */
+/**
+ * Delete every record of one collection of an app; how many were deleted.
+ * Run it in a transaction (core's config transaction): it takes the app's
+ * write lock first, so a write in flight lands before the purge, not after.
+ */
 export async function deleteCollectionRecords(db: DB, appId: string, collection: string): Promise<number> {
+  await db.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`drobek:mod_data:${appId}`}::text))`);
   const rows = await db.delete(dataRecords).where(scope(appId, collection)).returning({ id: dataRecords.id });
   return rows.length;
 }
