@@ -2,6 +2,10 @@
 
 ## Unreleased (`next`)
 
+_Nothing yet._
+
+## v0.1.4 — 2026-09-25
+
 ### Changed
 - **One dashboard layout** — every workspace and app page has a breadcrumb (`Workspaces › <workspace> › <app> › <section>`, every part a link except the last) in place of the "← back" links, and every page has the same width. The workspace pages share a header with the workspace tabs (Apps, Members, Activity, Upstreams). The app header and its tabs are now on every app page, including Modules and the module detail page. Inputs, selects, buttons and link-buttons share one height, border and radius, so the Activity filters (with Clear and Export CSV) and the app-list filters line up on one row. Wide tables scroll inside their box on a phone instead of scrolling the page.
 - **App-list thumbnails** — a public, live app with a published or compiled version shows a small, non-interactive preview of its page. It is a sandboxed, lazy, `inert` iframe (`credentialless` where the browser supports it) of the app's own host, which is never the dashboard origin. Password-protected, taken-down, inactive and never-compiled apps show a placeholder. To make this possible an app's `frame-ancestors` now always includes the dashboard origin (`PUBLIC_APP_URL`), next to the owner's embedding setting. See `docs/SECURITY.md`.
@@ -10,6 +14,7 @@
 
 ### Fixed
 - **App slugs keep accented letters** — `create_app` derived the slug by dropping every non-ASCII letter, so "Podzimní obloha" became `podzimn-obloha`. Accents are now transliterated (`podzimni-obloha`, ß → ss, ł → l, ø → o). Existing slugs do not change.
+- `.gitguardian.yaml` marks the dev and e2e stacks' throwaway Postgres login as test-only, so secret scanners stop reporting it.
 
 ## v0.1.3 — 2026-09-24
 
