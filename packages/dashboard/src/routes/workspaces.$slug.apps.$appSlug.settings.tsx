@@ -7,7 +7,7 @@
  */
 import { Form, useActionData, useLoaderData, useNavigation } from 'react-router';
 import type { action, loader } from './workspaces.$slug.apps.$appSlug.settings.server.js';
-import { ActionError, AppHeader, appStyles } from '../app-header.js';
+import { ActionError, AppPage, appStyles } from '../app-header.js';
 
 export function meta({ data }: { data?: Awaited<ReturnType<typeof loader>> }) {
   return [{ title: `Settings — ${data?.header.name ?? data?.header.slug ?? 'App'} — drobek` }];
@@ -38,8 +38,7 @@ export default function AppSettingsRoute() {
   const canEdit = header.canEdit;
 
   return (
-    <main style={s.main}>
-      <AppHeader header={header} />
+    <AppPage header={header}>
       <ActionError actionData={actionData} />
 
       <section style={styles.section} data-testid="settings-visibility">
@@ -106,7 +105,8 @@ export default function AppSettingsRoute() {
         <p style={styles.hint}>
           By default no site may embed the app in a frame. List the origins that may (e.g. your intranet), separated by
           spaces: <code style={s.mono}>&apos;self&apos;</code> or <code style={s.mono}>https://intranet.example.com</code>.
-          Leave empty to forbid embedding.
+          Leave empty to forbid embedding. The dashboard itself always may: its app list shows a small, sandboxed,
+          non-interactive preview of the app.
         </p>
         <p style={s.inline}>
           Now:{' '}
@@ -123,7 +123,7 @@ export default function AppSettingsRoute() {
                 name="frameAncestors"
                 defaultValue={settings.frameAncestors ?? ''}
                 placeholder="https://intranet.example.com"
-                style={{ ...s.input, minWidth: '22rem' }}
+                style={{ ...s.input, flex: '1 1 18rem', minWidth: 'min(18rem, 100%)' }}
                 aria-label="Allowed frame ancestors"
                 data-testid="frame-ancestors-input"
               />
@@ -162,6 +162,6 @@ export default function AppSettingsRoute() {
           </div>
         </section>
       ) : null}
-    </main>
+    </AppPage>
   );
 }

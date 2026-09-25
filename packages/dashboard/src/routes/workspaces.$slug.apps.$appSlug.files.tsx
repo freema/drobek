@@ -9,7 +9,8 @@
  */
 import { Form, Link, useLoaderData } from 'react-router';
 import type { loader } from './workspaces.$slug.apps.$appSlug.files.server.js';
-import { AppHeader, appStyles } from '../app-header.js';
+import { controls } from '@drobek/tenancy/layout';
+import { AppPage, appStyles } from '../app-header.js';
 import { formatBytes, type TreeNode } from '../app-view.js';
 import { highlight, type TokenKind } from '../highlight.js';
 import { formatTimestamp } from '../view.js';
@@ -82,7 +83,7 @@ const styles = {
     tabSize: 2,
   },
   toolbar: { display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap', marginTop: '1.25rem' },
-  select: { padding: '0.3rem 0.4rem', fontSize: '0.88rem', fontFamily: 'inherit' },
+  select: controls.select,
 } as const;
 
 function Tree({
@@ -132,8 +133,7 @@ export default function AppFilesRoute() {
   const tokens = file && file.text !== null ? highlight(file.text, file.language) : [];
 
   return (
-    <main style={s.main}>
-      <AppHeader header={header} />
+    <AppPage header={header}>
 
       {version === null ? (
         <p style={{ ...s.muted, marginTop: '1.25rem' }} data-testid="files-empty">
@@ -230,6 +230,6 @@ export default function AppFilesRoute() {
           </div>
         </>
       )}
-    </main>
+    </AppPage>
   );
 }

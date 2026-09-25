@@ -210,6 +210,7 @@ built-ins.
 | `SMTP_HOST` | yes | SMTP server; `SMTP_PORT` (587), `SMTP_SECURE` (0 / 1 = implicit TLS), `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM` |
 | `SUPERADMIN_EMAIL` | recommended | your sign-in e-mail(s), super-admin over every workspace |
 | `LANDING_URL` | — | your own website: `<PUBLIC_APP_URL>/` answers 301 there instead of the built-in landing page |
+| `DASHBOARD_GITHUB_STARS` | — (on) | `off` = the dashboard footer makes no call to `api.github.com` for the repository's star count |
 | `TLS_*`, `CADDY_*` | per TLS path | see [TLS](#tls) |
 | `HTTP_PORT`, `HTTPS_PORT`, `PUBLISH_IP` | — | published ports / bind address |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | — | optional Google sign-in |
@@ -344,6 +345,7 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `GOOGLE_AUTH_URL` / `GOOGLE_TOKEN_URL` / `GOOGLE_USERINFO_URL` | Google's endpoints | dev only: point Google sign-in at the mock provider (`task mock:google`) |
 | `OAUTH_DCR_MAX_UNUSED_CLIENTS` | 500 | MCP clients registered by DCR that never got consent, before registration answers 503 |
 | `OAUTH_CIMD_DEV_ORIGINS` | — | dev/test only, ignored in production: origins allowed to serve a Client ID Metadata Document over plain http |
+| `DASHBOARD_GITHUB_STARS` | on | the dashboard footer shows the source repository's GitHub star count, fetched server-side from `api.github.com` (unauthenticated, 3 s timeout, cached 1 h, never delays a page); `off` = no outbound call, no stars |
 
 ### Apps, compiler and serving
 

@@ -140,6 +140,17 @@ export async function appHeaderData({ access, app }: AppPage): Promise<AppHeader
   };
 }
 
+/**
+ * NSO-342: the header of an app sub-page whose loader resolved the access
+ * itself (Data, Forms, Users, Uploads, Logs, Modules, Domains) — the same
+ * app lookup (a deleted app / another workspace's → 404) + appHeaderData.
+ */
+export async function appHeaderFor(access: WorkspaceAccess, appSlug: string): Promise<AppHeaderData> {
+  const app = await loadAppForView(access.workspace.id, appSlug);
+  if (!app) throw data({ message: 'Not found' }, { status: 404 });
+  return appHeaderData({ access, app });
+}
+
 interface AppActionError {
   error: string;
   intent: string;

@@ -1287,6 +1287,19 @@ block, then `next` is pushed and the single MR opened.
   specs shell out to `docker compose exec|logs|stop|start`, and the project
   name otherwise comes from the worktree directory ("service drobek is not
   running" — domains, files, forms-email and healthz-degraded fail).
+- NSO-342: an EXPORTED style object built with a spread of `CSSProperties`
+  (`{ ...controls.input, width: '100%' }`) fails declaration emit with TS2742
+  (the inferred type names csstype internals). Use `mergeStyles(a, b)` from
+  `@drobek/tenancy/layout` or give the object an explicit type. Plain
+  spreads inside JSX `style={{…}}` are fine.
+- NSO-342: a `.ts` module reachable from a package's main entry must not
+  import a `.tsx` file (even for a type re-export): packages that compile
+  without `jsx` (e.g. @drobek/proxy importing @drobek/tenancy) fail with
+  TS6142. Keep shared types in a `.ts` file (`workspace-nav.ts`) and let the
+  `.tsx` import from it.
+- NSO-342: an app's CSP `frame-ancestors` always carries the dashboard origin
+  (the app-list thumbnail); an UNKNOWN app host keeps `frame-ancestors 'none'`
+  (no app → no dashboard frame). e2e specs assert both.
 
 ## Failed approaches
 

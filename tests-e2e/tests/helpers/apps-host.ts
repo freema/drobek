@@ -1,6 +1,6 @@
 import { request as httpRequest, type IncomingHttpHeaders } from 'node:http';
 import { request as httpsRequest } from 'node:https';
-import { APPS_DOMAIN, APPS_URL_SCHEME } from '../../playwright.config';
+import { APPS_DOMAIN, APPS_URL_SCHEME, BASE_URL_WEB } from '../../playwright.config';
 
 /**
  * Raw requests to app hosts (`<slug>[--preview|--v<N>].<APPS_DOMAIN>`).
@@ -14,6 +14,14 @@ import { APPS_DOMAIN, APPS_URL_SCHEME } from '../../playwright.config';
  * CA through NODE_EXTRA_CA_CERTS. No cookie jar: every header is explicit.
  * Not a spec file — Playwright never collects it.
  */
+
+/**
+ * NSO-342: every app host lets the dashboard origin (PUBLIC_APP_URL = the
+ * e2e's BASE_URL_WEB) frame it, for the app-list thumbnail — the CSP's
+ * `frame-ancestors` is this origin instead of `'none'` (plus the app's own
+ * override, when one is set).
+ */
+export const DASHBOARD_ORIGIN = new URL(BASE_URL_WEB).origin;
 
 export interface Raw {
   status: number;

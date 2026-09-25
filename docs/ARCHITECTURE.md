@@ -178,7 +178,9 @@ before any byte of the app is touched:
 
 Every response carries the app CSP (`default-src 'self'`, scripts from the app
 and `https://esm.sh`, `connect-src 'self' https://esm.sh`,
-`frame-ancestors 'none'` unless the owner set `apps.frame_ancestors`),
+`frame-ancestors` = the dashboard origin only, plus the origins the owner
+set in `apps.frame_ancestors` — the dashboard frames an app solely for the
+app-list thumbnail, see [`SECURITY.md`](./SECURITY.md)),
 `nosniff` and `Referrer-Policy: no-referrer`; preview and version hosts add
 `X-Robots-Tag: noindex`. Bytes come from a 256 MiB in-memory LRU; the host
 and manifest caches are busted through a local event emitter first and Redis
@@ -270,11 +272,17 @@ and at most once a minute per app and day; reads never delete.
   the app's workspace decides each call. Eleven tools; the contract and the
   briefing are in [`AGENT.md`](./AGENT.md).
 - **The dashboard** (core, AGPL): sign-in by e-mail code (Google optional),
-  workspaces and members, apps with Overview / Files / Data / Modules /
-  Domains / Forms / Users / Uploads / Logs / Settings tabs, version history
-  and publish, upstreams, activity (the audit log, CSV), API keys and OAuth
-  connections, the super-admin abuse queue. All dashboard cookies are
-  `__Host-` in production.
+  workspaces (Apps / Members / Activity / Upstreams tabs), apps with Overview
+  / Files / Data / Modules / Forms / Users / Uploads / Logs / Domains /
+  Settings tabs, version history and publish, activity (the audit log, CSV),
+  API keys and OAuth connections, the super-admin abuse queue. Every page
+  shares one layout (`@drobek/tenancy/layout`: one width, a breadcrumb
+  `Workspaces › <workspace> › <app> › <section>`, one set of form controls);
+  every app page shows the app header and its tabs. The workspace app list
+  shows each app as a small sandboxed iframe thumbnail. The footer names the
+  release, the commit (the AGPL source link) and the repository's GitHub
+  stars (fetched server-side, cached 1 h, `DASHBOARD_GITHUB_STARS=off`
+  disables it). All dashboard cookies are `__Host-` in production.
 - **Abuse**: every app host points at the public report form; super-admins
   take an app down (unpublish + lock → 451 everywhere, every write refused
   with `app_locked_by_admin`) and restore it; a publish heuristic flags

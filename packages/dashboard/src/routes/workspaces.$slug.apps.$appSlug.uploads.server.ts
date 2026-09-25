@@ -15,6 +15,7 @@
 import { data, redirect, type ActionFunctionArgs, type LoaderFunctionArgs } from 'react-router';
 import { AUDIT_ACTIONS } from '@drobek/audit';
 import { requireWorkspaceRole } from '@drobek/tenancy';
+import { appHeaderFor } from '../app-page.server.js';
 import { auditOwner, filesOf, ownerApp, ownerError } from '../owner-http.server.js';
 import { PREVIEW_TYPES, formatBytes } from '../owner-view.js';
 
@@ -27,6 +28,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const base = {
     workspace: { slug: access.workspace.slug, name: access.workspace.name },
     appSlug: app.slug,
+    /** NSO-342: the app header + tabs on every app sub-page. */
+    header: await appHeaderFor(access, app.slug),
     canDelete: access.effectiveRole !== 'viewer',
     confirmId: (url.searchParams.get('confirm') ?? '').slice(0, 64),
   };

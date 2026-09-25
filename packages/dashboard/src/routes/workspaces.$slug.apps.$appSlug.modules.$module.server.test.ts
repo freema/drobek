@@ -313,7 +313,7 @@ describe('the module page (M2-02)', () => {
   it('a taken-down app (NSO-293): the banner, every change → 423 app_locked_by_admin, reject still allowed', async () => {
     await drizzleDb().update(apps).set({ lockedReason: 'phishing' }).where(eq(apps.id, appId));
     try {
-      expect((await load()).lockedByAdmin).toMatchObject({ reason: 'phishing' });
+      expect((await load()).header.lockedByAdmin).toMatchObject({ reason: 'phishing' });
       for (const body of [
         { intent: 'save-config', [fieldName('greeting')]: 'Yo', [fieldName('access')]: 'user' },
         { intent: 'set-secret', secret: 'SHOP_KEY', value: SECRET_VALUE },
@@ -331,7 +331,7 @@ describe('the module page (M2-02)', () => {
     } finally {
       await drizzleDb().update(apps).set({ lockedReason: null }).where(eq(apps.id, appId));
     }
-    expect((await load()).lockedByAdmin).toBeNull();
+    expect((await load()).header.lockedByAdmin).toBeNull();
   });
 
   it('proxy: the workspace upstreams with assign (→ pending), call rule + rateLimit, unassign', async () => {

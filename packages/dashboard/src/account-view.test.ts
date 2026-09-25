@@ -99,13 +99,12 @@ describe('sourceLink (AGPL-3.0 §13 footer)', () => {
   it('links a build sha to its commit in freema/drobek', () => {
     expect(sourceLink('9130f7e')).toEqual({
       href: 'https://github.com/freema/drobek/commit/9130f7e',
-      label: 'Source (AGPL-3.0) · 9130f7e',
       sha: '9130f7e',
     });
     const full = '9130f7e0123456789abcdef0123456789abcdef0';
     expect(sourceLink(full)).toMatchObject({
       href: `${SOURCE_REPO_URL}/commit/${full}`,
-      label: 'Source (AGPL-3.0) · 9130f7e',
+      sha: '9130f7e',
     });
   });
 
@@ -113,7 +112,6 @@ describe('sourceLink (AGPL-3.0 §13 footer)', () => {
     for (const raw of ['dev', '', undefined, null, 'abc', '"><script>', 'zzzzzzz']) {
       expect(sourceLink(raw)).toEqual({
         href: 'https://github.com/freema/drobek/tree/main',
-        label: 'Source (AGPL-3.0) · dev',
         sha: null,
       });
     }

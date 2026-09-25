@@ -6,7 +6,9 @@
  * there). Controls render for editor+ only; the action re-enforces the role.
  * Server code lives in the .server.ts.
  */
-import { Form, Link, useActionData, useLoaderData, useNavigation } from 'react-router';
+import { Form, useActionData, useLoaderData, useNavigation } from 'react-router';
+import { controls } from '@drobek/tenancy/layout';
+import { AppPage } from '../app-header.js';
 import type { DomainsActionData, loader } from './workspaces.$slug.apps.$appSlug.domains.server.js';
 import { formatTimestamp } from '../view.js';
 
@@ -15,61 +17,14 @@ export function meta({ data }: { data?: Awaited<ReturnType<typeof loader>> }) {
 }
 
 const styles = {
-  main: {
-    fontFamily: 'system-ui, sans-serif',
-    maxWidth: '48rem',
-    margin: '0 auto',
-    padding: '4rem 1.5rem',
-    color: '#1a1a1a',
-    lineHeight: 1.6,
-  },
-  h1: { fontSize: '1.75rem', marginBottom: '0.25rem' },
+  title: { fontSize: '1.15rem', margin: '1.75rem 0 0.25rem' },
   h2: { fontSize: '1.15rem', marginTop: '2rem', marginBottom: '0.5rem' },
-  nav: { margin: '0 0 1.5rem', fontSize: '0.9rem', display: 'flex', gap: '0.9rem', flexWrap: 'wrap' },
-  navLink: { color: '#1a1a1a', fontWeight: 600 },
   hint: { color: '#555', marginTop: 0, fontSize: '0.95rem' },
   addRow: { display: 'flex', gap: '0.5rem', flexWrap: 'wrap', margin: '1rem 0' },
-  input: {
-    flex: '1 1 16rem',
-    padding: '0.45rem 0.6rem',
-    fontSize: '0.95rem',
-    fontFamily: 'inherit',
-    border: '1px solid #d4d4d8',
-    borderRadius: '7px',
-  },
-  button: {
-    padding: '0.4rem 0.8rem',
-    fontSize: '0.85rem',
-    fontFamily: 'inherit',
-    fontWeight: 600,
-    color: '#fff',
-    background: '#1a1a1a',
-    border: 'none',
-    borderRadius: '7px',
-    cursor: 'pointer',
-  },
-  ghost: {
-    padding: '0.35rem 0.7rem',
-    fontSize: '0.82rem',
-    fontFamily: 'inherit',
-    fontWeight: 600,
-    color: '#1a1a1a',
-    background: '#fff',
-    border: '1px solid #d4d4d8',
-    borderRadius: '7px',
-    cursor: 'pointer',
-  },
-  danger: {
-    padding: '0.35rem 0.7rem',
-    fontSize: '0.82rem',
-    fontFamily: 'inherit',
-    fontWeight: 600,
-    color: '#991b1b',
-    background: '#fff',
-    border: '1px solid #fecaca',
-    borderRadius: '7px',
-    cursor: 'pointer',
-  },
+  input: { ...controls.input, flex: '1 1 16rem' },
+  button: controls.button,
+  ghost: controls.secondaryButton,
+  danger: { ...controls.secondaryButton, color: '#991b1b', border: '1px solid #fecaca' },
   card: { border: '1px solid #e4e4e7', borderRadius: '10px', padding: '0.9rem 1rem', marginBottom: '0.9rem', background: '#fcfcfd' },
   cardHead: { display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' },
   host: { fontWeight: 700, fontFamily: 'ui-monospace, monospace', fontSize: '0.95rem' },
@@ -143,28 +98,17 @@ const styles = {
     marginTop: '1rem',
   },
   muted: { color: '#8a8a8e' },
-  back: { fontSize: '0.9rem', color: '#555', marginTop: '2rem' },
 } as const;
 
 export default function AppDomainsRoute() {
-  const { workspace, app, cnameTarget, maxPerApp, canEdit, domains } = useLoaderData<typeof loader>();
+  const { app, header, cnameTarget, maxPerApp, canEdit, domains } = useLoaderData<typeof loader>();
   const result = useActionData<DomainsActionData>();
   const nav = useNavigation();
   const busy = nav.state !== 'idle';
-  const appUrl = `/workspaces/${workspace.slug}/apps/${app.slug}`;
 
   return (
-    <main style={styles.main}>
-      <p style={styles.nav}>
-        <Link to={appUrl} style={styles.navLink}>
-          ← {app.slug}
-        </Link>
-        <Link to={`${appUrl}/data`} style={styles.navLink}>
-          Data
-        </Link>
-      </p>
-
-      <h1 style={styles.h1}>Custom domains</h1>
+    <AppPage header={header}>
+      <h2 style={styles.title}>Custom domains</h2>
       <p style={styles.hint}>
         Serve the published version of <strong>{app.slug}</strong> on a domain you own. It stays available at{' '}
         <code style={styles.mono}>{app.defaultUrl}</code>.
@@ -331,10 +275,6 @@ export default function AppDomainsRoute() {
           </section>
         ))
       )}
-
-      <p style={styles.back}>
-        <Link to={appUrl}>← Back to {app.slug}</Link>
-      </p>
-    </main>
+    </AppPage>
   );
 }

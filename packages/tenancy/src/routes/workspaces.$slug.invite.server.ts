@@ -21,6 +21,7 @@ import {
 } from '../invites.server.js';
 import { sendInviteEmail } from '../email/invite-email.server.js';
 import { isWorkspaceRole } from '../roles.js';
+import { workspaceNav } from '../workspace-nav.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -33,6 +34,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   return {
     workspaceSlug: access.workspace.slug,
     workspaceName: access.workspace.name,
+    /** NSO-342: the shared workspace chrome. */
+    nav: workspaceNav(access),
   };
 }
 

@@ -9,6 +9,7 @@
 import { data, type LoaderFunctionArgs } from 'react-router';
 import { moduleRuntime } from '@drobek/modules';
 import { requireWorkspaceRole } from '@drobek/tenancy';
+import { appHeaderData } from '../app-page.server.js';
 import { loadAppForView } from '../apps.server.js';
 import { loadPendingBanner } from '../pending-banner.server.js';
 import { canPublish } from '../view.js';
@@ -39,6 +40,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   return {
     workspace: { slug: access.workspace.slug, name: access.workspace.name },
     app: { slug: app.slug },
+    /** NSO-342: the app header + tabs on every app sub-page. */
+    header: await appHeaderData({ access, app }),
     modules,
     banner: await loadPendingBanner(app, access.workspace.slug, app.slug),
     canEdit: canPublish(access.effectiveRole),

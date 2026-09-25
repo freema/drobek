@@ -48,47 +48,50 @@ function RuleTable({
   testPrefix: string;
 }) {
   return (
-    <table style={ui.table}>
-      <thead>
-        <tr>
-          <th style={ui.th}>Operation</th>
-          {principals.map((p) => (
-            <th key={p} style={{ ...ui.th, ...ui.center }}>
-              {PRINCIPAL_LABEL[p]}
-            </th>
-          ))}
-          <th style={ui.th}>Rule</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((r) => {
-          const on = new Set(ruleToPrincipals(r.rule));
-          return (
-            <tr key={r.op}>
-              <td style={ui.td}>
-                <strong>{r.op}</strong>
-                {r.meaning ? <span style={ui.desc}>{r.meaning}</span> : null}
-              </td>
-              {principals.map((p) => (
-                <td key={p} style={{ ...ui.td, ...ui.center }}>
-                  <input
-                    type="checkbox"
-                    name={ruleInputName(r.op, p)}
-                    defaultChecked={on.has(p)}
-                    disabled={readOnly}
-                    aria-label={`${r.op}: ${PRINCIPAL_LABEL[p]}`}
-                    data-testid={`${testPrefix}-${r.op}-${p}`}
-                  />
+    // On a phone the table scrolls inside its box, never the page (NSO-342).
+    <div style={ui.tableWrap}>
+      <table style={ui.table}>
+        <thead>
+          <tr>
+            <th style={ui.th}>Operation</th>
+            {principals.map((p) => (
+              <th key={p} style={{ ...ui.th, ...ui.center }}>
+                {PRINCIPAL_LABEL[p]}
+              </th>
+            ))}
+            <th style={ui.th}>Rule</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => {
+            const on = new Set(ruleToPrincipals(r.rule));
+            return (
+              <tr key={r.op}>
+                <td style={ui.td}>
+                  <strong>{r.op}</strong>
+                  {r.meaning ? <span style={ui.desc}>{r.meaning}</span> : null}
                 </td>
-              ))}
-              <td style={{ ...ui.td, ...ui.mono }} data-testid={`${testPrefix}-${r.op}-rule`}>
-                {r.rule}
-              </td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
+                {principals.map((p) => (
+                  <td key={p} style={{ ...ui.td, ...ui.center }}>
+                    <input
+                      type="checkbox"
+                      name={ruleInputName(r.op, p)}
+                      defaultChecked={on.has(p)}
+                      disabled={readOnly}
+                      aria-label={`${r.op}: ${PRINCIPAL_LABEL[p]}`}
+                      data-testid={`${testPrefix}-${r.op}-${p}`}
+                    />
+                  </td>
+                ))}
+                <td style={{ ...ui.td, ...ui.mono }} data-testid={`${testPrefix}-${r.op}-rule`}>
+                  {r.rule}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

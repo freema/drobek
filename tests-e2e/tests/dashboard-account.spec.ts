@@ -258,6 +258,7 @@ test('account: OAuth connection is listed; revoke kills access + refresh (reuse 
   // ── AGPL-3.0 §13 footer: every dashboard page links to the running commit ─
   const version = (await (await request.get(`${BASE_URL_WEB}/api/version`)).json()) as {
     sha: string;
+    version: string;
   };
   for (const path of ['/', '/me', '/me/api-keys', '/me/connections', `/workspaces/${ws.slug}/activity`]) {
     await page.goto(path);
@@ -265,13 +266,18 @@ test('account: OAuth connection is listed; revoke kills access + refresh (reuse 
     await expect(link, `footer on ${path}`).toBeVisible();
     const href = (await link.getAttribute('href')) ?? '';
     expect(href).toMatch(SOURCE_HREF_RE);
+    // NSO-342: `drobek <version> · <sha> · Source (AGPL-3.0) [· ★ n]`.
+    await expect(link).toHaveText('Source (AGPL-3.0)');
+    await expect(page.getByTestId('footer-version')).toHaveText(`drobek ${version.version}`);
     if (/^[0-9a-f]{7,40}$/.test(version.sha)) {
       expect(href).toBe(`https://github.com/freema/drobek/commit/${version.sha}`);
-      await expect(link).toHaveText(`Source (AGPL-3.0) · ${version.sha.slice(0, 7)}`);
+      await expect(page.getByTestId('footer-sha')).toHaveText(version.sha.slice(0, 7));
     } else {
       expect(href).toBe('https://github.com/freema/drobek/tree/main');
-      await expect(link).toHaveText('Source (AGPL-3.0) · dev');
+      await expect(page.getByTestId('footer-sha')).toHaveCount(0);
     }
+    const stars = page.getByTestId('footer-stars');
+    if ((await stars.count()) > 0) await expect(stars).toHaveText(/^★ [\d,]+$/);
   }
   await page.waitForLoadState('networkidle');
 });

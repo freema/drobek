@@ -6,6 +6,7 @@
  */
 import { Link, useLoaderData } from 'react-router';
 import type { loader } from './workspaces.$slug.apps.$appSlug.modules.server.js';
+import { AppPage } from '../app-header.js';
 import { PendingBanner } from '../pending-banner.js';
 import { ui } from '../module-ui/styles.js';
 
@@ -14,20 +15,12 @@ export function meta({ data }: { data?: Awaited<ReturnType<typeof loader>> }) {
 }
 
 export default function AppModulesRoute() {
-  const { workspace, app, modules, banner } = useLoaderData<typeof loader>();
+  const { workspace, app, header, modules, banner } = useLoaderData<typeof loader>();
   const base = `/workspaces/${workspace.slug}/apps/${app.slug}`;
 
   return (
-    <main style={ui.main}>
-      <p style={ui.nav}>
-        <Link to={base} style={ui.navLink}>
-          ← {app.slug}
-        </Link>
-        <Link to={`${base}/data`} style={ui.navLink}>
-          Data
-        </Link>
-      </p>
-      <h1 style={ui.h1}>Modules</h1>
+    <AppPage header={header}>
+      <h2 style={ui.title}>Modules</h2>
       <p style={ui.hint}>
         The backend features this server offers your app. Your agent configures them; changes that widen access wait here for your
         confirmation, and secrets are entered only here.
@@ -66,6 +59,6 @@ export default function AppModulesRoute() {
           ))}
         </ul>
       )}
-    </main>
+    </AppPage>
   );
 }

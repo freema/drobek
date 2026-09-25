@@ -13,7 +13,8 @@
  *   connect-src 'self' https://esm.sh                   — fetch only back to the app itself
  *                                                          (modules live at /__drobek/*, M1)
  *   object-src 'none'; base-uri 'self'; form-action 'self'
- *   frame-ancestors 'none'                              — or the app's validated override
+ *   frame-ancestors 'none'                              — or the app's validated override;
+ *                                                          plus the dashboard origin (NSO-342)
  *
  * Plus `X-Content-Type-Options: nosniff` (the Content-Type comes from the path
  * extension only), `Referrer-Policy: no-referrer` (an app URL never leaks to a
@@ -62,6 +63,25 @@ export function parseFrameAncestors(raw: string | null | undefined): string | nu
   if (tokens.length === 1 && tokens[0] === "'none'") return DEFAULT_FRAME_ANCESTORS;
   if (!tokens.every((t) => SOURCE_RE.test(t))) return null;
   return [...new Set(tokens)].join(' ');
+}
+
+/**
+ * NSO-342: the dashboard origin (PUBLIC_APP_URL) is ALWAYS a frame ancestor,
+ * next to the owner's override or instead of `'none'` — the workspace app list
+ * shows each app as a small, sandboxed, non-interactive iframe thumbnail. The
+ * origin must pass the same source check as an override (a bare http(s)
+ * origin); anything else is ignored and the value stays as it was.
+ */
+export function withDashboardAncestor(
+  frameAncestors: string | null | undefined,
+  dashboardOrigin: string | null | undefined
+): string | null {
+  const own = frameAncestors ?? null;
+  const dashboard = (dashboardOrigin ?? '').trim().toLowerCase().replace(/\/+$/, '');
+  if (!/^https?:\/\//.test(dashboard) || !SOURCE_RE.test(dashboard) || dashboard.includes('*')) return own;
+  if (own === null || own === DEFAULT_FRAME_ANCESTORS) return dashboard;
+  const tokens = own.split(' ');
+  return tokens.includes(dashboard) ? own : [...tokens, dashboard].join(' ');
 }
 
 export interface SecurityHeaderInput {

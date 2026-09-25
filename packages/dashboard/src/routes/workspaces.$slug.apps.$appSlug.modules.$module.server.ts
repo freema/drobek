@@ -46,7 +46,7 @@ import {
   type ModuleRuntime,
 } from '@drobek/modules';
 import { requireWorkspaceRole } from '@drobek/tenancy';
-import { lockedByAdminView } from '../app-api.server.js';
+import { appHeaderData } from '../app-page.server.js';
 import { loadAppForView } from '../apps.server.js';
 import {
   configDiff,
@@ -190,8 +190,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   return {
     workspace: { slug: access.workspace.slug, name: access.workspace.name },
     app: { slug: app.slug },
+    /** NSO-342: the app header + tabs (and the "taken down" banner, NSO-293). */
+    header: await appHeaderData({ access, app }),
     module: { name: view.name, version: view.version, useWhen: view.use_when, confirms: view.confirms },
-    otherModules: runtime.modules.map((m) => m.name),
     fields,
     values: fieldValues(fields, view.config),
     pending,
@@ -202,8 +203,6 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     upstreams: editor?.kind === 'upstreams' ? upstreamsOf(view.config, view.info) : [],
     banner: await loadPendingBanner(app, access.workspace.slug, app.slug),
     canEdit: canPublish(access.effectiveRole),
-    // NSO-293: the "taken down by the operator" banner (changes answer 423).
-    lockedByAdmin: lockedByAdminView(app.lockedReason),
     done: done && /^[a-z-]{1,32}$/.test(done) ? done : null,
   };
 }

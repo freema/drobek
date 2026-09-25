@@ -2,7 +2,7 @@ import { inflateRawSync } from 'node:zlib';
 import { expect, test, type Page } from '@playwright/test';
 import { Redis } from 'ioredis';
 import { TEST_ENV } from '../playwright.config';
-import { hostRequest, prodHost, previewHost, urlOf, versionHost } from './helpers/apps-host';
+import { DASHBOARD_ORIGIN, hostRequest, prodHost, previewHost, urlOf, versionHost } from './helpers/apps-host';
 import { loginViaEmail, logout, skipUnlessLocal, uniqueEmail } from './helpers/auth';
 import { callTool, mcpClient } from './helpers/mcp';
 import {
@@ -422,12 +422,13 @@ test('app page: Settings — password visibility and frame-ancestors change the 
   await page.getByTestId('frame-ancestors-save').click();
   await expect(page.getByTestId('settings-frame-ancestors-current')).toHaveText('https://intranet.example.com');
   const csp = String((await hostRequest(prodHost(app.slug))).headers['content-security-policy']);
-  expect(csp).toContain('frame-ancestors https://intranet.example.com');
+  // NSO-342: the dashboard origin stays allowed next to the override (the app-list thumbnail).
+  expect(csp).toContain(`frame-ancestors https://intranet.example.com ${DASHBOARD_ORIGIN};`);
   await page.getByTestId('frame-ancestors-input').fill('');
   await page.getByTestId('frame-ancestors-save').click();
   await expect(page.getByTestId('settings-frame-ancestors-current')).toHaveText("'none'");
   expect(String((await hostRequest(prodHost(app.slug))).headers['content-security-policy'])).toContain(
-    "frame-ancestors 'none'"
+    `frame-ancestors ${DASHBOARD_ORIGIN};`
   );
 
   const actions = (await auditActions(app.slug)).map((a) => a.action);

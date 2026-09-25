@@ -1,10 +1,12 @@
 /**
- * The app page chrome every tab renders (NSO-288): breadcrumbs, the app's
- * name + badges, its preview / production URLs (links only — the dashboard
- * never frames an app: that would break the origin rules), the compile state
- * of the newest version, the single-writer lease banner with "Unlock", the
- * "Unpublish" control, the "taken down by the operator" banner (NSO-293),
- * and the tab bar (APP_TABS, data-driven).
+ * The app page chrome every tab renders (NSO-288; NSO-342: <AppPage> puts it
+ * inside the shared dashboard layout with the breadcrumb
+ * `Workspaces › <workspace> › <app> › <section>`): the app's name + badges,
+ * its preview / production URLs (links; the only place the dashboard frames
+ * an app is the small sandboxed thumbnail of the workspace app list), the
+ * compile state of the newest version, the single-writer lease banner with
+ * "Unlock", the "Unpublish" control, the "taken down by the operator" banner
+ * (NSO-293), and the tab bar (APP_TABS, data-driven).
  *
  * The header's forms post to the app's BASE route (`appAction`, which every
  * app-page route may share) with `redirectTo` = the current page, so any tab
@@ -14,24 +16,15 @@
  */
 import type { CSSProperties, ReactNode } from 'react';
 import { Form, Link, useLocation, useNavigation } from 'react-router';
+import { DashboardPage, controls, mergeStyles, tabStyles, workspaceCrumbs, type Crumb } from '@drobek/tenancy/layout';
 import type { AppHeaderData } from './app-page.server.js';
 import { APP_TABS, activeAppTab, appTabHref } from './app-tabs.js';
 import { formatAgo } from './app-view.js';
 import { LockedByAdminNotice } from './locked-notice.js';
 
 export const appStyles = {
-  main: {
-    fontFamily: 'system-ui, sans-serif',
-    maxWidth: '60rem',
-    margin: '0 auto',
-    padding: '3rem 1.5rem 4rem',
-    color: '#1a1a1a',
-    lineHeight: 1.6,
-  },
   h1: { fontSize: '1.75rem', margin: 0 },
   h2: { fontSize: '1.15rem', marginTop: '2rem', marginBottom: '0.5rem' },
-  nav: { margin: '0 0 1.25rem', fontSize: '0.9rem', display: 'flex', gap: '0.9rem', flexWrap: 'wrap' },
-  navLink: { color: '#1a1a1a', fontWeight: 600 },
   headRow: { display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' },
   sub: { color: '#71717a', fontSize: '0.9rem', margin: '0.15rem 0 0' },
   badge: {
@@ -72,7 +65,7 @@ export const appStyles = {
   },
   urlGrid: {
     display: 'grid',
-    gridTemplateColumns: 'max-content 1fr',
+    gridTemplateColumns: 'max-content minmax(0, 1fr)',
     gap: '0.25rem 0.9rem',
     margin: '0.9rem 0 0',
     fontSize: '0.92rem',
@@ -81,40 +74,10 @@ export const appStyles = {
   label: { color: '#71717a', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.04em' },
   mono: { fontFamily: 'ui-monospace, monospace', fontSize: '0.85rem' },
   muted: { color: '#8a8a8e' },
-  inline: { display: 'inline-flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' },
-  button: {
-    padding: '0.3rem 0.7rem',
-    fontSize: '0.82rem',
-    fontFamily: 'inherit',
-    fontWeight: 600,
-    color: '#fff',
-    background: '#1a1a1a',
-    border: 'none',
-    borderRadius: '7px',
-    cursor: 'pointer',
-  },
-  secondaryButton: {
-    padding: '0.3rem 0.7rem',
-    fontSize: '0.82rem',
-    fontFamily: 'inherit',
-    fontWeight: 600,
-    color: '#1a1a1a',
-    background: '#fff',
-    border: '1px solid #d4d4d8',
-    borderRadius: '7px',
-    cursor: 'pointer',
-  },
-  dangerButton: {
-    padding: '0.35rem 0.8rem',
-    fontSize: '0.85rem',
-    fontFamily: 'inherit',
-    fontWeight: 600,
-    color: '#fff',
-    background: '#b91c1c',
-    border: 'none',
-    borderRadius: '7px',
-    cursor: 'pointer',
-  },
+  inline: { display: 'inline-flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap', minWidth: 0, overflowWrap: 'anywhere' },
+  button: controls.button,
+  secondaryButton: controls.secondaryButton,
+  dangerButton: controls.dangerButton,
   lock: {
     display: 'flex',
     alignItems: 'center',
@@ -138,31 +101,8 @@ export const appStyles = {
     fontSize: '0.9rem',
     marginTop: '1rem',
   },
-  tabs: {
-    display: 'flex',
-    gap: '0.25rem',
-    borderBottom: '1px solid #e4e4e7',
-    margin: '1.5rem 0 0',
-    flexWrap: 'wrap',
-  },
-  tab: {
-    padding: '0.45rem 0.85rem',
-    fontSize: '0.9rem',
-    fontWeight: 600,
-    color: '#52525b',
-    textDecoration: 'none',
-    borderBottom: '2px solid transparent',
-    marginBottom: '-1px',
-  },
-  tabActive: {
-    padding: '0.45rem 0.85rem',
-    fontSize: '0.9rem',
-    fontWeight: 700,
-    color: '#1a1a1a',
-    textDecoration: 'none',
-    borderBottom: '2px solid #1a1a1a',
-    marginBottom: '-1px',
-  },
+  /** On a phone a wide table scrolls inside this box, never the page. */
+  tableWrap: { overflowX: 'auto', maxWidth: '100%' },
   table: { width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem' },
   th: {
     textAlign: 'left',
@@ -181,14 +121,7 @@ export const appStyles = {
     background: '#fcfcfd',
     marginTop: '0.75rem',
   },
-  input: {
-    padding: '0.4rem 0.55rem',
-    fontSize: '0.9rem',
-    fontFamily: 'inherit',
-    border: '1px solid #d4d4d8',
-    borderRadius: '7px',
-    minWidth: '16rem',
-  },
+  input: mergeStyles(controls.input, { minWidth: 'min(16rem, 100%)' }),
 } satisfies Record<string, CSSProperties>;
 
 const s = appStyles;
@@ -217,12 +150,12 @@ function AppTabs({ header }: { header: AppHeaderData }) {
   const location = useLocation();
   const active = activeAppTab(location.pathname, header.workspace.slug, header.slug);
   return (
-    <nav style={s.tabs} aria-label="App sections" data-testid="app-tabs">
+    <nav style={tabStyles.bar} aria-label="App sections" data-testid="app-tabs">
       {APP_TABS.map((t) => (
         <Link
           key={t.key}
           to={appTabHref(header.workspace.slug, header.slug, t)}
-          style={t.key === active ? s.tabActive : s.tab}
+          style={t.key === active ? tabStyles.active : tabStyles.tab}
           aria-current={t.key === active ? 'page' : undefined}
           data-testid="app-tab"
           data-tab={t.key}
@@ -234,21 +167,12 @@ function AppTabs({ header }: { header: AppHeaderData }) {
   );
 }
 
-export function AppHeader({ header }: { header: AppHeaderData }) {
+function AppHeader({ header }: { header: AppHeaderData }) {
   const nav = useNavigation();
   const busy = nav.state !== 'idle';
   const { latest, lock } = header;
   return (
     <header data-testid="app-header">
-      <p style={s.nav}>
-        <Link to={`/workspaces/${header.workspace.slug}/apps`} style={s.navLink}>
-          ← Apps
-        </Link>
-        <Link to={`/workspaces/${header.workspace.slug}`} style={s.navLink}>
-          {header.workspace.name}
-        </Link>
-      </p>
-
       <div style={s.headRow}>
         <h1 style={s.h1}>{header.name ?? header.slug}</h1>
         {header.publishedVersion !== null ? (
@@ -352,6 +276,35 @@ export function AppHeader({ header }: { header: AppHeaderData }) {
 
       <AppTabs header={header} />
     </header>
+  );
+}
+
+/**
+ * An app page (NSO-342): the shared layout, the breadcrumb
+ * `Workspaces › <workspace> › <app> › <section> › …trail`, the app header with
+ * its tabs, then the tab's content. The section is the active tab (none on
+ * Overview); `trail` names what lies below it (a collection, a module).
+ */
+export function AppPage({
+  header,
+  trail = [],
+  children,
+}: {
+  header: AppHeaderData;
+  trail?: readonly Crumb[];
+  children: ReactNode;
+}) {
+  const location = useLocation();
+  const active = activeAppTab(location.pathname, header.workspace.slug, header.slug);
+  const tab = APP_TABS.find((t) => t.key === active);
+  const crumbs: Crumb[] = [...workspaceCrumbs(header.workspace), { label: header.slug, to: header.basePath }];
+  if (tab && tab.to) crumbs.push({ label: tab.label, to: appTabHref(header.workspace.slug, header.slug, tab) });
+  crumbs.push(...trail);
+  return (
+    <DashboardPage crumbs={crumbs}>
+      <AppHeader header={header} />
+      {children}
+    </DashboardPage>
   );
 }
 

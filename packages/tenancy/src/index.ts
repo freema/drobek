@@ -63,3 +63,4 @@ export {
   type InviteEmailVars,
   type RenderedInviteEmail,
 } from './email/invite-email.server.js';
+export { workspaceNav, type WorkspaceNav } from './workspace-nav.js';

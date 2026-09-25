@@ -3,6 +3,7 @@ import { expect, test } from '@playwright/test';
 import { Redis } from 'ioredis';
 import { APPS_URL_SCHEME, BASE_URL_WEB, TEST_ENV } from '../playwright.config';
 import {
+  DASHBOARD_ORIGIN,
   hostRequest,
   prodHost,
   previewHost,
@@ -22,7 +23,8 @@ import { userIdByEmail, withDb } from './helpers/seed';
  *     <slug>--v<N>.<APPS_DOMAIN> = exactly version N;
  *   - built files win, sources (*.tsx) are never served, SPA fallback, ETag/304,
  *     the Cache-Control policy, the security header set (CSP, noindex on
- *     preview/version hosts, no-referrer, nosniff, frame-ancestors 'none');
+ *     preview/version hosts, no-referrer, nosniff, frame-ancestors = only the
+ *     dashboard origin (NSO-342, the app-list thumbnail));
  *   - MCP publish (scope `publish`, only ok versions, rollback, audited);
  *   - the cache is busted on publish / a new version (no stale first request);
  *   - the dashboard never serves an app, app hosts never read or set the
@@ -60,11 +62,15 @@ function cookieNames(header: string): string[] {
     .filter(Boolean);
 }
 
-const EXPECTED_CSP =
+/** An app's CSP: only the dashboard may frame it (the app-list thumbnail, NSO-342). */
+const cspWithAncestors = (frameAncestors: string): string =>
   "default-src 'self'; script-src 'self' https://esm.sh 'unsafe-inline'; " +
   "style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https:; " +
   "font-src 'self' data: https:; connect-src 'self' https://esm.sh; object-src 'none'; " +
-  "base-uri 'self'; frame-ancestors 'none'; form-action 'self'";
+  `base-uri 'self'; frame-ancestors ${frameAncestors}; form-action 'self'`;
+const EXPECTED_CSP = cspWithAncestors(DASHBOARD_ORIGIN);
+/** A host that is no app (an unknown slug) is framed by nobody. */
+const NO_APP_CSP = cspWithAncestors("'none'");
 
 /** Seed a `drk_` API key for `email` (only its SHA-256 is stored). */
 async function seedApiKey(email: string, scopes: string): Promise<string> {
@@ -108,8 +114,8 @@ async function announceAppChanged(appId: string, slug: string): Promise<void> {
   await new Promise((r) => setTimeout(r, 150));
 }
 
-function expectAppSecurityHeaders(r: Raw, opts: { noindex: boolean }): void {
-  expect(r.headers['content-security-policy']).toBe(EXPECTED_CSP);
+function expectAppSecurityHeaders(r: Raw, opts: { noindex: boolean; csp?: string }): void {
+  expect(r.headers['content-security-policy']).toBe(opts.csp ?? EXPECTED_CSP);
   expect(r.headers['x-content-type-options']).toBe('nosniff');
   expect(r.headers['referrer-policy']).toBe('no-referrer');
   if (opts.noindex) expect(r.headers['x-robots-tag']).toBe('noindex');
@@ -264,7 +270,7 @@ test('app hosts: preview / publish / rollback / --vN, served files, headers, cac
     // Unknown app / malformed app labels: an apps-side 404, never the dashboard.
     const unknown = await hostRequest(previewHost(`${slug}-nope`));
     expect(unknown.status).toBe(404);
-    expectAppSecurityHeaders(unknown, { noindex: true });
+    expectAppSecurityHeaders(unknown, { noindex: true, csp: NO_APP_CSP });
     if (APPS_URL_SCHEME === 'https') {
       // Behind Caddy a nested label matches no certificate (`*.<APPS_DOMAIN>`
       // covers one label): the handshake is refused before drobek sees it.

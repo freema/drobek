@@ -6,9 +6,9 @@
  * secrets. Viewers see the same page without controls. Server code lives in
  * the .server.ts; values arrive pre-shaped and secret-free.
  */
-import { Link, useActionData, useLoaderData, useNavigation } from 'react-router';
+import { useActionData, useLoaderData, useNavigation } from 'react-router';
 import type { action, loader } from './workspaces.$slug.apps.$appSlug.modules.$module.server.js';
-import { LockedByAdminNotice } from '../locked-notice.js';
+import { AppPage } from '../app-header.js';
 import { PendingBanner } from '../pending-banner.js';
 import { JsonSchemaForm } from '../module-ui/json-schema-form.js';
 import { PendingPanel } from '../module-ui/pending-panel.js';
@@ -40,7 +40,6 @@ export default function AppModuleRoute() {
   const nav = useNavigation();
   const busy = nav.state !== 'idle';
   const errors = actionData && 'errors' in actionData ? actionData.errors : null;
-  const base = `/workspaces/${d.workspace.slug}/apps/${d.app.slug}`;
   const configErrors = errors?.intent === 'save-config' ? errors : null;
   const configValues = configErrors?.values ?? d.values;
   const decisionErrors = errors && (errors.intent === 'confirm' || errors.intent === 'reject') ? errors.general : [];
@@ -48,26 +47,10 @@ export default function AppModuleRoute() {
     errors && (errors.intent === 'set-secret' || errors.intent === 'remove-secret') ? { target: errors.target, messages: errors.general } : null;
 
   return (
-    <main style={ui.main}>
-      <p style={ui.nav}>
-        <Link to={base} style={ui.navLink}>
-          ← {d.app.slug}
-        </Link>
-        <Link to={`${base}/modules`} style={ui.navLink} data-testid="modules-tab-link">
-          All modules
-        </Link>
-        {d.otherModules
-          .filter((m) => m !== d.module.name)
-          .map((m) => (
-            <Link key={m} to={`${base}/modules/${m}`} style={{ color: '#555' }}>
-              {m}
-            </Link>
-          ))}
-      </p>
-
-      <h1 style={ui.h1}>
+    <AppPage header={d.header} trail={[{ label: d.module.name }]}>
+      <h2 style={ui.title}>
         {d.module.name} <span style={{ ...ui.small, fontWeight: 400 }}>v{d.module.version}</span>
-      </h1>
+      </h2>
       <p style={ui.hint}>Use when {d.module.useWhen}</p>
       {!d.canEdit ? (
         <p style={ui.small} data-testid="readonly-note">
@@ -75,7 +58,6 @@ export default function AppModuleRoute() {
         </p>
       ) : null}
 
-      <LockedByAdminNotice locked={d.lockedByAdmin} />
       <PendingBanner banner={d.banner} />
       {d.done && DONE[d.done] ? (
         <div style={ui.notice} role="status" data-testid="done-notice" data-done={d.done}>
@@ -148,6 +130,6 @@ export default function AppModuleRoute() {
       {d.fields.length === 0 && !d.editor && d.secrets.length === 0 ? (
         <p style={ui.muted}>This module has nothing to configure.</p>
       ) : null}
-    </main>
+    </AppPage>
   );
 }

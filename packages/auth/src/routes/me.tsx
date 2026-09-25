@@ -10,11 +10,13 @@ export function meta() {
 }
 
 const styles = {
+  // The dashboard's page frame (NSO-342: @drobek/tenancy/layout's
+  // PAGE_MAX_WIDTH + padding; auth sits below tenancy and cannot import it).
   main: {
     fontFamily: 'system-ui, sans-serif',
-    maxWidth: '38rem',
+    maxWidth: '60rem',
     margin: '0 auto',
-    padding: '4rem 1.5rem',
+    padding: '2rem 1.25rem 3rem',
     color: '#1a1a1a',
     lineHeight: 1.6,
   },

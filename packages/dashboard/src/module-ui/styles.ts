@@ -1,17 +1,14 @@
-/** Shared inline styles of the Modules tab (M2-02) — the dashboard's minimal look. */
+/**
+ * Shared inline styles of the Modules tab (M2-02) — the dashboard's minimal
+ * look; form controls from the shared layout (NSO-342). The pages render
+ * inside <AppPage>.
+ */
+import { controls, mergeStyles } from '@drobek/tenancy/layout';
+
 export const ui = {
-  main: {
-    fontFamily: 'system-ui, sans-serif',
-    maxWidth: '52rem',
-    margin: '0 auto',
-    padding: '4rem 1.5rem',
-    color: '#1a1a1a',
-    lineHeight: 1.6,
-  },
-  h1: { fontSize: '1.75rem', marginBottom: '0.25rem' },
+  /** The tab's own title under the app header. */
+  title: { fontSize: '1.15rem', margin: '1.75rem 0 0.25rem' },
   h2: { fontSize: '1.15rem', marginTop: '2.25rem', marginBottom: '0.5rem' },
-  nav: { margin: '0 0 1.5rem', fontSize: '0.9rem', display: 'flex', gap: '0.9rem', flexWrap: 'wrap' },
-  navLink: { color: '#1a1a1a', fontWeight: 600 },
   hint: { color: '#555', marginTop: 0, fontSize: '0.95rem' },
   muted: { color: '#8a8a8e' },
   small: { fontSize: '0.82rem', color: '#71717a' },
@@ -57,16 +54,7 @@ export const ui = {
   field: { display: 'block', marginBottom: '0.85rem' },
   label: { display: 'block', fontWeight: 600, fontSize: '0.9rem' },
   desc: { display: 'block', fontSize: '0.8rem', color: '#71717a' },
-  input: {
-    width: '100%',
-    boxSizing: 'border-box',
-    padding: '0.4rem 0.55rem',
-    fontSize: '0.9rem',
-    fontFamily: 'inherit',
-    border: '1px solid #d4d4d8',
-    borderRadius: '7px',
-    background: '#fff',
-  },
+  input: mergeStyles(controls.input, { width: '100%' }),
   textarea: {
     width: '100%',
     boxSizing: 'border-box',
@@ -100,40 +88,20 @@ export const ui = {
     fontSize: '0.9rem',
     margin: '0.5rem 0 1rem',
   },
-  button: {
-    padding: '0.35rem 0.8rem',
-    fontSize: '0.85rem',
-    fontFamily: 'inherit',
-    fontWeight: 600,
-    color: '#fff',
-    background: '#1a1a1a',
-    border: 'none',
-    borderRadius: '7px',
-    cursor: 'pointer',
-  },
-  secondaryButton: {
-    padding: '0.35rem 0.8rem',
-    fontSize: '0.85rem',
-    fontFamily: 'inherit',
-    fontWeight: 600,
-    color: '#1a1a1a',
-    background: '#fff',
-    border: '1px solid #d4d4d8',
-    borderRadius: '7px',
-    cursor: 'pointer',
-  },
-  dangerButton: {
-    padding: '0.35rem 0.8rem',
-    fontSize: '0.85rem',
-    fontFamily: 'inherit',
-    fontWeight: 600,
+  button: controls.button,
+  secondaryButton: controls.secondaryButton,
+  // Long labels ("Remove collection (its records become unreachable)") wrap on a phone.
+  dangerButton: mergeStyles(controls.secondaryButton, {
     color: '#991b1b',
-    background: '#fff',
     border: '1px solid #fecaca',
-    borderRadius: '7px',
-    cursor: 'pointer',
-  },
+    whiteSpace: 'normal',
+    height: 'auto',
+    minHeight: controls.secondaryButton.height,
+    padding: '0.3rem 0.9rem',
+    maxWidth: '100%',
+  }),
   row: { display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' },
+  tableWrap: { overflowX: 'auto', maxWidth: '100%' },
   table: { width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem', margin: '0.4rem 0 0.6rem' },
   th: {
     textAlign: 'left',

@@ -137,6 +137,8 @@ describe('apps list filters', () => {
     latestVersion: 1,
     createdAt: '2026-09-01T00:00:00.000Z',
     lastChangeAt: null,
+    compiled: true,
+    takenDown: false,
     ...o,
   });
   const apps = [

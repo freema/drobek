@@ -15,7 +15,9 @@ import type {
   action,
   loader,
 } from './workspaces.$slug.apps.$appSlug.data.$collection.server.js';
-import { AppSubnav } from '../owner-ui.js';
+import { controls } from '@drobek/tenancy/layout';
+import { AppPage } from '../app-header.js';
+import { ui } from '../owner-ui.js';
 import { formatTimestamp } from '../view.js';
 
 export function meta({
@@ -37,29 +39,12 @@ function toSearch(base: string, extra: Record<string, string> = {}): string {
 }
 
 const styles = {
-  main: {
-    fontFamily: 'system-ui, sans-serif',
-    maxWidth: '60rem',
-    margin: '0 auto',
-    padding: '3rem 1.5rem',
-    color: '#1a1a1a',
-    lineHeight: 1.6,
-  },
-  nav: {
-    margin: '0 0 1.5rem',
-    fontSize: '0.9rem',
-    display: 'flex',
-    gap: '0.9rem',
-    flexWrap: 'wrap',
-  },
-  navLink: { color: '#1a1a1a', fontWeight: 600 },
   headRow: {
     display: 'flex',
     alignItems: 'center',
     gap: '0.6rem',
     flexWrap: 'wrap',
   },
-  h1: { fontSize: '1.6rem', margin: 0 },
   badge: {
     display: 'inline-block',
     padding: '0.1rem 0.55rem',
@@ -72,45 +57,13 @@ const styles = {
     color: '#3f3f46',
     background: '#fafafa',
   },
-  toolbar: {
-    display: 'flex',
-    gap: '0.5rem',
-    alignItems: 'flex-end',
-    flexWrap: 'wrap',
-    margin: '1.25rem 0 0.75rem',
-    padding: '0.75rem',
-    border: '1px solid #e4e4e7',
-    borderRadius: '10px',
-    background: '#fafafa',
-  },
-  field: { display: 'flex', flexDirection: 'column', gap: '0.2rem' },
-  label: {
-    fontSize: '0.68rem',
-    textTransform: 'uppercase',
-    letterSpacing: '0.04em',
-    color: '#71717a',
-    fontWeight: 700,
-  },
-  input: {
-    fontFamily: 'inherit',
-    fontSize: '0.85rem',
-    padding: '0.3rem 0.45rem',
-    border: '1px solid #d4d4d8',
-    borderRadius: '6px',
-  },
-  applyBtn: {
-    padding: '0.4rem 0.85rem',
-    fontSize: '0.85rem',
-    fontFamily: 'inherit',
-    fontWeight: 600,
-    color: '#fff',
-    background: '#1a1a1a',
-    border: 'none',
-    borderRadius: '7px',
-    cursor: 'pointer',
-  },
-  clearLink: { fontSize: '0.85rem', color: '#555', alignSelf: 'center' },
-  csvLink: { fontSize: '0.85rem', color: '#1e3a8a', marginLeft: 'auto', alignSelf: 'center' },
+  toolbar: ui.toolbar,
+  field: controls.field,
+  label: controls.label,
+  input: controls.input,
+  applyBtn: controls.button,
+  clearLink: controls.link,
+  csvLink: { ...controls.link, color: '#1e3a8a', marginLeft: 'auto' },
   tableWrap: { overflowX: 'auto', margin: '0.5rem 0' },
   table: { width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' },
   th: {
@@ -142,17 +95,7 @@ const styles = {
   },
   actionLink: { color: '#1e3a8a', fontSize: '0.8rem', marginRight: '0.6rem' },
   delLink: { color: '#b91c1c', fontSize: '0.8rem', cursor: 'pointer' },
-  delBtn: {
-    padding: '0.25rem 0.6rem',
-    fontSize: '0.78rem',
-    fontFamily: 'inherit',
-    fontWeight: 600,
-    color: '#fff',
-    background: '#b91c1c',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-  },
+  delBtn: controls.dangerButton,
   pager: { display: 'flex', gap: '1rem', margin: '1rem 0', fontSize: '0.88rem' },
   empty: { color: '#555', fontStyle: 'italic', padding: '1rem 0' },
   error: {
@@ -206,23 +149,14 @@ const styles = {
     borderRadius: '8px',
     boxSizing: 'border-box',
   },
-  editBtn: {
-    padding: '0.35rem 0.8rem',
-    fontSize: '0.85rem',
-    fontFamily: 'inherit',
-    fontWeight: 600,
-    color: '#fff',
-    background: '#1a1a1a',
-    border: 'none',
-    borderRadius: '7px',
-    cursor: 'pointer',
-  },
+  editBtn: controls.button,
 } as const;
 
 export default function CollectionTableRoute() {
   const {
     workspace,
     appSlug,
+    header,
     collection,
     columns,
     rows,
@@ -247,16 +181,9 @@ export default function CollectionTableRoute() {
   const editJson = failed?.intent === 'update' && 'json' in failed ? String(failed.json) : editRecord?.json ?? '';
 
   return (
-    <main style={styles.main}>
-      <AppSubnav workspaceSlug={workspace.slug} appSlug={appSlug} current="data" />
-      <p style={styles.nav}>
-        <Link to={dataBase} style={styles.navLink}>
-          ← All collections
-        </Link>
-      </p>
-
-      <div style={styles.headRow}>
-        <h1 style={styles.h1}>{collection.name}</h1>
+    <AppPage header={header} trail={[{ label: collection.name }]}>
+      <div style={{ ...styles.headRow, margin: '1.75rem 0 0.25rem' }}>
+        <h2 style={{ ...ui.title, margin: 0 }}>{collection.name}</h2>
         <span style={{ ...styles.badge, textTransform: 'none', letterSpacing: 0 }} data-testid="collection-rules">
           {collection.rules}
         </span>
@@ -553,10 +480,6 @@ export default function CollectionTableRoute() {
           </Link>
         ) : null}
       </div>
-
-      <p style={styles.back}>
-        <Link to={dataBase}>← All collections</Link>
-      </p>
-    </main>
+    </AppPage>
   );
 }

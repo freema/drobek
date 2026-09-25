@@ -27,7 +27,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Socket } from 'node:net';
 import { Readable, pipeline } from 'node:stream';
-import { appsOrigin, classifyHost, hostConfig, splitHost, type AppHostTarget, type HostConfig } from '@drobek/apps';
+import { appsOrigin, classifyHost, dashboardOrigin, hostConfig, splitHost, type AppHostTarget, type HostConfig } from '@drobek/apps';
 import { getClientIp, rateLimitRedis } from '@drobek/auth';
 import { createConsoleLogger, perIpLimitKey, type Logger } from '@drobek/core';
 import { handleBeacon, incrementServingSignal } from '@drobek/insights';
@@ -265,7 +265,8 @@ export async function unlockAttemptAllowed(
 /**
  * The production handler deps: HKDF'd access key, Redis limiters (unlock
  * attempts; NSO-315 unknown hosts per IP, APPS_UNKNOWN_HOST_LIMIT /
- * APPS_UNKNOWN_HOST_WINDOW_MS), insights counters + beacon.
+ * APPS_UNKNOWN_HOST_WINDOW_MS), insights counters + beacon, and the dashboard
+ * origin every app host lets frame it (NSO-342, the app-list thumbnail).
  */
 export function defaultHandlerDeps(store: ServeStore, log?: Logger): HandlerDeps {
   return {
@@ -275,6 +276,7 @@ export function defaultHandlerDeps(store: ServeStore, log?: Logger): HandlerDeps
     allowUnlockAttempt: (appId, ip) => unlockAttemptAllowed(appId, ip),
     signal: (appId, kind, path) => void incrementServingSignal(appId, kind, path),
     beacon: (req, app) => handleBeacon(req, app.id),
+    dashboardOrigin: dashboardOrigin(),
     unknownHosts: new UnknownHostLimiter({
       ...unknownHostLimitsFromEnv(),
       counter: async (ip, limit, windowMs) => (await rateLimitRedis('apps-unknown-host', ip, limit, windowMs)).ok,

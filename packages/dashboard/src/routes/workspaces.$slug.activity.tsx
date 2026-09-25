@@ -10,6 +10,7 @@
  * (imports only react-router + the server-free ../view.js).
  */
 import { Form, Link, useLoaderData } from 'react-router';
+import { WorkspacePage, controls } from '@drobek/tenancy/layout';
 import type { loader } from './workspaces.$slug.activity.server.js';
 
 export function meta({
@@ -45,68 +46,21 @@ function withParam(base: string, key: string, value: string): string {
 }
 
 const styles = {
-  main: {
-    fontFamily: 'system-ui, sans-serif',
-    maxWidth: '60rem',
-    margin: '0 auto',
-    padding: '3rem 1.5rem',
-    color: '#1a1a1a',
-    lineHeight: 1.6,
-  },
-  nav: {
-    margin: '0 0 1.5rem',
-    fontSize: '0.9rem',
-    display: 'flex',
-    gap: '0.9rem',
-    flexWrap: 'wrap',
-  },
-  navLink: { color: '#1a1a1a', fontWeight: 600 },
-  h1: { fontSize: '1.6rem', margin: 0 },
-  hint: { color: '#555', marginTop: '0.25rem', fontSize: '0.95rem' },
+  hint: { color: '#555', margin: '1.25rem 0 0', fontSize: '0.95rem' },
   toolbar: {
-    display: 'flex',
-    gap: '0.5rem',
-    alignItems: 'flex-end',
-    flexWrap: 'wrap',
+    ...controls.row,
     margin: '1.25rem 0 0.75rem',
     padding: '0.75rem',
     border: '1px solid #e4e4e7',
     borderRadius: '10px',
     background: '#fafafa',
   },
-  field: { display: 'flex', flexDirection: 'column', gap: '0.2rem' },
-  label: {
-    fontSize: '0.68rem',
-    textTransform: 'uppercase',
-    letterSpacing: '0.04em',
-    color: '#71717a',
-    fontWeight: 700,
-  },
-  input: {
-    fontFamily: 'inherit',
-    fontSize: '0.85rem',
-    padding: '0.3rem 0.45rem',
-    border: '1px solid #d4d4d8',
-    borderRadius: '6px',
-  },
-  applyBtn: {
-    padding: '0.4rem 0.85rem',
-    fontSize: '0.85rem',
-    fontFamily: 'inherit',
-    fontWeight: 600,
-    color: '#fff',
-    background: '#1a1a1a',
-    border: 'none',
-    borderRadius: '7px',
-    cursor: 'pointer',
-  },
-  clearLink: { fontSize: '0.85rem', color: '#555', alignSelf: 'center' },
-  csvLink: {
-    fontSize: '0.85rem',
-    color: '#1e3a8a',
-    marginLeft: 'auto',
-    alignSelf: 'center',
-  },
+  field: controls.field,
+  label: controls.label,
+  input: controls.select,
+  applyBtn: controls.button,
+  clearLink: controls.link,
+  csvLink: { ...controls.link, color: '#1e3a8a', marginLeft: 'auto' },
   tableWrap: { overflowX: 'auto', margin: '0.5rem 0' },
   table: { width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' },
   th: {
@@ -166,31 +120,17 @@ const styles = {
   },
   pager: { display: 'flex', gap: '1rem', margin: '1rem 0', fontSize: '0.88rem' },
   empty: { color: '#555', fontStyle: 'italic', padding: '1rem 0' },
-  back: { fontSize: '0.9rem', color: '#555', marginTop: '2rem' },
 } as const;
 
 export default function WorkspaceActivityRoute() {
-  const { workspace, items, nextCursor, filter, actionOptions, actorOptions, appOptions } =
+  const { nav, workspace, items, nextCursor, filter, actionOptions, actorOptions, appOptions } =
     useLoaderData<typeof loader>();
 
   const base = `/workspaces/${workspace.slug}/activity`;
   const search = filterSearch(filter);
 
   return (
-    <main style={styles.main}>
-      <p style={styles.nav}>
-        <Link to="/workspaces" style={styles.navLink}>
-          ← Workspaces
-        </Link>
-        <Link to={`/workspaces/${workspace.slug}`} style={styles.navLink}>
-          Members &amp; roles
-        </Link>
-        <Link to={`/workspaces/${workspace.slug}/apps`} style={styles.navLink}>
-          Apps
-        </Link>
-      </p>
-
-      <h1 style={styles.h1}>Activity</h1>
+    <WorkspacePage workspace={nav} section="activity">
       <p style={styles.hint}>
         Who deployed what, when — and whether it was you or your agent. Append-only
         audit trail for {workspace.name}.
@@ -347,10 +287,6 @@ export default function WorkspaceActivityRoute() {
           </Link>
         ) : null}
       </div>
-
-      <p style={styles.back}>
-        <Link to={`/workspaces/${workspace.slug}`}>← {workspace.name}</Link>
-      </p>
-    </main>
+    </WorkspacePage>
   );
 }

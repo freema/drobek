@@ -32,6 +32,10 @@ export interface AppListRow {
   latestVersion: number | null;
   /** When the newest version was written. */
   lastChangeAt: Date | null;
+  /** NSO-342: some version compiled (the preview host has something to serve). */
+  compiled?: boolean;
+  /** NSO-293: the takedown category; non-null = taken down by a super-admin. */
+  lockedReason?: string | null;
 }
 
 export interface AppListItem {
@@ -44,6 +48,10 @@ export interface AppListItem {
   latestVersion: number | null;
   createdAt: string;
   lastChangeAt: string | null;
+  /** Some version compiled. */
+  compiled: boolean;
+  /** Taken down by a super-admin (the app hosts answer 451). */
+  takenDown: boolean;
 }
 
 /**
@@ -66,7 +74,31 @@ export function shapeApps(rows: AppListRow[]): AppListItem[] {
       latestVersion: r.latestVersion,
       createdAt: r.createdAt.toISOString(),
       lastChangeAt: r.lastChangeAt ? r.lastChangeAt.toISOString() : null,
+      compiled: r.compiled ?? false,
+      takenDown: (r.lockedReason ?? null) !== null,
     }));
+}
+
+/**
+ * The app-list thumbnail (NSO-342): the URL the dashboard frames — the
+ * published host, else the preview host — or why it shows a placeholder
+ * instead: a password gate (the frame would only show the password page), a
+ * takedown (451), an app that is not live, or nothing compiled yet.
+ */
+export type AppThumbnail =
+  | { kind: 'frame'; url: string }
+  | { kind: 'placeholder'; reason: 'password' | 'taken-down' | 'inactive' | 'nothing-compiled' };
+
+export function appThumbnail(
+  app: Pick<AppListItem, 'status' | 'visibility' | 'published' | 'compiled' | 'takenDown'>,
+  urls: { published: string; preview: string }
+): AppThumbnail {
+  if (app.takenDown) return { kind: 'placeholder', reason: 'taken-down' };
+  if (app.status !== 'live') return { kind: 'placeholder', reason: 'inactive' };
+  if (app.visibility === 'password') return { kind: 'placeholder', reason: 'password' };
+  if (app.published) return { kind: 'frame', url: urls.published };
+  if (app.compiled) return { kind: 'frame', url: urls.preview };
+  return { kind: 'placeholder', reason: 'nothing-compiled' };
 }
 
 // ── Version history ──────────────────────────────────────────────────────────

@@ -22,6 +22,9 @@ export async function listWorkspaceApps(workspaceId: string): Promise<AppListRow
       createdAt: apps.createdAt,
       latestVersion: sql<number | null>`max(${appVersions.number})`,
       lastChangeAt: sql<Date | null>`max(${appVersions.createdAt})`.mapWith(appVersions.createdAt),
+      // NSO-342: the thumbnail needs a compiled version (preview) and the takedown state.
+      compiled: sql<boolean | null>`bool_or(${appVersions.compileStatus} = 'ok')`,
+      lockedReason: apps.lockedReason,
     })
     .from(apps)
     .leftJoin(appVersions, eq(appVersions.appId, apps.id))
@@ -37,6 +40,8 @@ export async function listWorkspaceApps(workspaceId: string): Promise<AppListRow
     createdAt: r.createdAt,
     latestVersion: r.latestVersion === null ? null : Number(r.latestVersion),
     lastChangeAt: r.lastChangeAt,
+    compiled: r.compiled === true,
+    lockedReason: r.lockedReason,
   }));
 }
 

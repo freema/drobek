@@ -5,6 +5,7 @@ import {
   canReadActivity,
   formatTimestamp,
   shapeActivity,
+  appThumbnail,
   shapeApps,
   shapeVersionHistory,
   type ActivityRowInput,
@@ -49,6 +50,8 @@ describe('shapeApps', () => {
       latestVersion: 3,
       createdAt: '2026-01-01T00:00:00.000Z',
       lastChangeAt: '2026-01-02T00:00:00.000Z',
+      compiled: false,
+      takenDown: false,
     });
   });
 
@@ -214,5 +217,42 @@ describe('shapeActivity (PHY-85 audit-row shaping)', () => {
     const input = [...rows];
     shapeActivity(input);
     expect(input.map((r) => r.id)).toEqual(['a1', 'a2', 'a3']);
+  });
+});
+
+describe('appThumbnail (NSO-342)', () => {
+  const urls = { published: 'https://shop.apps.example.com', preview: 'https://shop--preview.apps.example.com' };
+  const app = { status: 'live', visibility: 'public', published: true, compiled: true, takenDown: false } as const;
+
+  it('frames the published host, else the preview once something compiled', () => {
+    expect(appThumbnail(app, urls)).toEqual({ kind: 'frame', url: urls.published });
+    expect(appThumbnail({ ...app, published: false }, urls)).toEqual({ kind: 'frame', url: urls.preview });
+  });
+
+  it('shows a placeholder for a password gate, a takedown, an inactive app and nothing compiled', () => {
+    expect(appThumbnail({ ...app, visibility: 'password' }, urls)).toEqual({ kind: 'placeholder', reason: 'password' });
+    expect(appThumbnail({ ...app, takenDown: true }, urls)).toEqual({ kind: 'placeholder', reason: 'taken-down' });
+    expect(appThumbnail({ ...app, status: 'hibernated' }, urls)).toEqual({ kind: 'placeholder', reason: 'inactive' });
+    expect(appThumbnail({ ...app, published: false, compiled: false }, urls)).toEqual({
+      kind: 'placeholder',
+      reason: 'nothing-compiled',
+    });
+  });
+
+  it('shapeApps carries the compile + takedown state', () => {
+    const [item] = shapeApps([
+      {
+        slug: 'x',
+        status: 'live',
+        visibility: 'public',
+        publishedVersionId: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        latestVersion: 1,
+        lastChangeAt: null,
+        compiled: true,
+        lockedReason: 'phishing',
+      },
+    ]);
+    expect(item).toMatchObject({ compiled: true, takenDown: true });
   });
 });

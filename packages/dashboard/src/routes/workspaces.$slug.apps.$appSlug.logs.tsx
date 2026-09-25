@@ -5,7 +5,8 @@
  */
 import { Form, useLoaderData, useNavigation } from 'react-router';
 import type { loader } from './workspaces.$slug.apps.$appSlug.logs.server.js';
-import { AppSubnav, ui } from '../owner-ui.js';
+import { ui } from '../owner-ui.js';
+import { AppPage } from '../app-header.js';
 import { formatTimestamp } from '../view.js';
 
 export function meta({ data }: { data?: Awaited<ReturnType<typeof loader>> }) {
@@ -28,9 +29,8 @@ export default function AppLogsRoute() {
   const busy = useNavigation().state !== 'idle';
 
   return (
-    <main style={ui.main}>
-      <AppSubnav workspaceSlug={d.workspace.slug} appSlug={d.appSlug} current="logs" />
-      <h1 style={ui.h1}>Logs</h1>
+    <AppPage header={d.header}>
+      <h2 style={ui.title}>Logs</h2>
       <p style={ui.hint}>
         What <strong>{d.appSlug}</strong> reported — the same data the agent reads with <code>get_logs</code>. Loaded{' '}
         <span data-testid="logs-loaded-at">{formatTimestamp(d.loadedAt)}</span>.
@@ -173,6 +173,6 @@ export default function AppLogsRoute() {
           </table>
         </div>
       )}
-    </main>
+    </AppPage>
   );
 }

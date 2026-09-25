@@ -10,14 +10,21 @@ import {
   useRouteLoaderData,
 } from 'react-router';
 import { SourceFooter } from '@drobek/dashboard/footer';
+import { githubStars } from '@drobek/dashboard/github-stars.server';
 
 /**
  * M2-04 (NSO-284): the build sha for the AGPL-3.0 §13 source link in the
- * footer (the same GIT_SHA `/api/version` reports). Constant per process, so
- * the root never revalidates for it.
+ * footer (the same GIT_SHA `/api/version` reports); NSO-342: plus the release
+ * version (DROBEK_VERSION) and the repository's GitHub stars — answered from
+ * memory, never awaited (null while unknown or when DASHBOARD_GITHUB_STARS is
+ * off). The root never revalidates for them: they change once per document.
  */
 export function loader() {
-  return { sourceSha: process.env.GIT_SHA || 'dev' };
+  return {
+    sourceSha: process.env.GIT_SHA || 'dev',
+    version: process.env.DROBEK_VERSION || 'dev',
+    stars: githubStars(),
+  };
 }
 
 export function shouldRevalidate() {
@@ -40,7 +47,7 @@ export function Layout({ children }: { children: ReactNode }) {
       </head>
       <body>
         {children}
-        <SourceFooter sha={root?.sourceSha} />
+        <SourceFooter sha={root?.sourceSha} version={root?.version} stars={root?.stars} />
         <ScrollRestoration />
         <Scripts />
       </body>

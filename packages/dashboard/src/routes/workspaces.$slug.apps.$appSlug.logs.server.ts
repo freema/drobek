@@ -13,6 +13,7 @@
 import { type LoaderFunctionArgs } from 'react-router';
 import { queryCompileLog, queryRequestLog, queryRuntimeLog } from '@drobek/insights';
 import { requireWorkspaceRole } from '@drobek/tenancy';
+import { appHeaderFor } from '../app-page.server.js';
 import { dbErrorForLog } from '@drobek/db';
 import { ownerApp } from '../owner-http.server.js';
 import { SINCE_OPTIONS, sinceWindow } from '../owner-view.js';
@@ -41,6 +42,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   return {
     workspace: { slug: access.workspace.slug, name: access.workspace.name },
     appSlug: app.slug,
+    /** NSO-342: the app header + tabs on every app sub-page. */
+    header: await appHeaderFor(access, app.slug),
     since: key,
     sinceOptions: SINCE_OPTIONS.map((o) => ({ key: o.key, label: o.label })),
     loadedAt: now.toISOString(),

@@ -5,6 +5,7 @@
  * The server gate (super-admin only) is the source of truth.
  */
 import { Form, Link, useActionData, useLoaderData } from 'react-router';
+import { DashboardPage, controls } from '@drobek/tenancy/layout';
 import type { action, loader } from './admin.abuse.server.js';
 
 export function meta() {
@@ -12,14 +13,6 @@ export function meta() {
 }
 
 const styles = {
-  main: {
-    fontFamily: 'system-ui, sans-serif',
-    maxWidth: '56rem',
-    margin: '0 auto',
-    padding: '4rem 1.5rem',
-    color: '#1a1a1a',
-    lineHeight: 1.6,
-  },
   h1: { fontSize: '1.75rem', marginBottom: '0.25rem' },
   h2: { fontSize: '1.15rem', marginTop: '2.25rem', marginBottom: '0.5rem' },
   nav: { margin: '0 0 1.5rem', fontSize: '0.9rem', color: '#555', display: 'flex', gap: '0.9rem', flexWrap: 'wrap' },
@@ -65,36 +58,9 @@ const styles = {
     border: '1px solid #fecaca',
   },
   actions: { display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', marginTop: '0.6rem' },
-  select: {
-    padding: '0.35rem 0.5rem',
-    fontSize: '0.85rem',
-    fontFamily: 'inherit',
-    border: '1px solid #d4d4d8',
-    borderRadius: '8px',
-    background: '#fff',
-  },
-  danger: {
-    padding: '0.35rem 0.8rem',
-    fontSize: '0.85rem',
-    fontFamily: 'inherit',
-    fontWeight: 600,
-    color: '#fff',
-    background: '#b91c1c',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-  },
-  secondary: {
-    padding: '0.35rem 0.8rem',
-    fontSize: '0.85rem',
-    fontFamily: 'inherit',
-    fontWeight: 600,
-    color: '#1a1a1a',
-    background: '#fff',
-    border: '1px solid #d4d4d8',
-    borderRadius: '8px',
-    cursor: 'pointer',
-  },
+  select: controls.select,
+  danger: controls.dangerButton,
+  secondary: controls.secondaryButton,
   ok: {
     background: '#f0fdf4',
     border: '1px solid #bbf7d0',
@@ -125,11 +91,8 @@ export default function AbuseQueueRoute() {
   const result = useActionData<typeof action>();
 
   return (
-    <main style={styles.main}>
+    <DashboardPage crumbs={[{ label: 'Workspaces', to: '/workspaces' }, { label: 'Moderation queue' }]}>
       <p style={styles.nav}>
-        <Link to="/workspaces" style={styles.navLink}>
-          ← Workspaces
-        </Link>
         <Link to={status === 'open' ? '/admin/abuse?status=resolved' : '/admin/abuse'} style={styles.navLink} data-testid="abuse-toggle">
           {status === 'open' ? 'Resolved reports' : 'Open reports'}
         </Link>
@@ -254,6 +217,6 @@ export default function AbuseQueueRoute() {
           ))}
         </ul>
       )}
-    </main>
+    </DashboardPage>
   );
 }

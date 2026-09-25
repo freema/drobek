@@ -5,7 +5,8 @@
  * field is WRITE-ONLY. workspace-admin / super-admin only (the server gate is the
  * source of truth; the workspace page hides the link for everyone else).
  */
-import { Form, Link, useActionData, useLoaderData } from 'react-router';
+import { Form, useActionData, useLoaderData } from 'react-router';
+import { WorkspacePage, controls } from '@drobek/tenancy/layout';
 import type { action, loader } from './workspaces.$slug.upstreams.server.js';
 
 export function meta({
@@ -19,26 +20,9 @@ export function meta({
 }
 
 const styles = {
-  main: {
-    fontFamily: 'system-ui, sans-serif',
-    maxWidth: '46rem',
-    margin: '0 auto',
-    padding: '4rem 1.5rem',
-    color: '#1a1a1a',
-    lineHeight: 1.6,
-  },
-  h1: { fontSize: '1.75rem', marginBottom: '0.25rem' },
   h2: { fontSize: '1.15rem', marginTop: '2.25rem', marginBottom: '0.5rem' },
-  nav: {
-    margin: '0 0 1.5rem',
-    fontSize: '0.9rem',
-    color: '#555',
-    display: 'flex',
-    gap: '0.9rem',
-    flexWrap: 'wrap',
-  },
-  navLink: { color: '#1a1a1a', fontWeight: 600 },
-  hint: { color: '#555', marginTop: 0, fontSize: '0.95rem' },
+  intro: { color: '#3f3f46', margin: '1.25rem 0 0', fontSize: '0.95rem', maxWidth: '46rem' },
+  hint: { color: '#71717a', margin: '0.5rem 0 0', fontSize: '0.85rem', maxWidth: '46rem' },
   list: { listStyle: 'none', padding: 0, margin: '1.25rem 0' },
   item: {
     padding: '0.75rem 0.9rem',
@@ -86,49 +70,11 @@ const styles = {
     marginBottom: '0.35rem',
     marginTop: '0.9rem',
   },
-  input: {
-    width: '100%',
-    boxSizing: 'border-box',
-    padding: '0.6rem 0.75rem',
-    fontSize: '1rem',
-    fontFamily: 'inherit',
-    border: '1px solid #d4d4d8',
-    borderRadius: '8px',
-  },
-  select: {
-    width: '100%',
-    boxSizing: 'border-box',
-    padding: '0.6rem 0.75rem',
-    fontSize: '1rem',
-    fontFamily: 'inherit',
-    border: '1px solid #d4d4d8',
-    borderRadius: '8px',
-    background: '#fff',
-  },
-  button: {
-    marginTop: '0.9rem',
-    padding: '0.6rem 1.1rem',
-    fontSize: '1rem',
-    fontFamily: 'inherit',
-    fontWeight: 600,
-    color: '#fff',
-    background: '#1a1a1a',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-  },
-  deleteBtn: {
-    marginLeft: 'auto',
-    padding: '0.3rem 0.7rem',
-    fontSize: '0.8rem',
-    fontFamily: 'inherit',
-    fontWeight: 600,
-    color: '#b91c1c',
-    background: '#fff',
-    border: '1px solid #fecaca',
-    borderRadius: '8px',
-    cursor: 'pointer',
-  },
+  form: { maxWidth: '32rem' },
+  input: { ...controls.input, width: '100%' },
+  select: { ...controls.select, width: '100%' },
+  button: { ...controls.button, marginTop: '0.9rem' },
+  deleteBtn: { ...controls.secondaryButton, color: '#b91c1c', border: '1px solid #fecaca' },
   error: {
     background: '#fef2f2',
     border: '1px solid #fecaca',
@@ -139,33 +85,26 @@ const styles = {
     fontSize: '0.9rem',
   },
   empty: { color: '#555', fontStyle: 'italic', padding: '1rem 0' },
-  back: { fontSize: '0.9rem', color: '#555', marginTop: '2rem' },
 } as const;
 
 export default function UpstreamsRoute() {
-  const { workspace, upstreams, allowedPorts } = useLoaderData<typeof loader>();
+  const { nav, upstreams, allowedPorts } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const error = actionData && 'error' in actionData ? actionData.error : null;
   const errorCode = actionData && 'code' in actionData ? actionData.code : undefined;
 
   return (
-    <main style={styles.main}>
-      <p style={styles.nav}>
-        <Link to="/workspaces" style={styles.navLink}>
-          ← Workspaces
-        </Link>
-        <Link to={`/workspaces/${workspace.slug}`} style={styles.navLink}>
-          {workspace.name}
-        </Link>
+    <WorkspacePage workspace={nav} section="upstreams">
+      <p style={styles.intro} data-testid="upstreams-intro">
+        An upstream is an external API your apps may call, such as a weather service, your CRM or a payment provider.
+        You register its base URL and the methods and paths apps may use; your agent then gives an app access through
+        the proxy module (you confirm that on the app&apos;s Modules page), and the app calls it through its own
+        address. The secret is entered only here, by you: drobek adds it to every forwarded request, and neither the
+        app&apos;s code nor the agent ever sees it.
       </p>
-
-      <h1 style={styles.h1}>Upstreams</h1>
       <p style={styles.hint}>
-        Register a backend your apps can reach through drobek WITHOUT holding the
-        secret. drobek is the SSRF-guarded gateway: it injects the credential and
-        forwards only the methods + path prefixes you allow, to ports {allowedPorts.join('/')} only.
-        An app may call an upstream once its proxy config assigns it (you confirm
-        that per app); the config also says which of the app’s users may call it.
+        drobek forwards only the methods and path prefixes you allow, to public hosts on ports {allowedPorts.join('/')}{' '}
+        only; the proxy config of each app also says which of its users may call the upstream.
       </p>
 
       {error ? (
@@ -227,7 +166,7 @@ export default function UpstreamsRoute() {
 
       <section data-testid="add-upstream">
         <h2 style={styles.h2}>Register an upstream</h2>
-        <Form method="post">
+        <Form method="post" style={styles.form}>
           <input type="hidden" name="intent" value="create" />
           <label htmlFor="up-name" style={styles.label}>
             Name
@@ -309,10 +248,6 @@ export default function UpstreamsRoute() {
           </button>
         </Form>
       </section>
-
-      <p style={styles.back}>
-        <Link to={`/workspaces/${workspace.slug}`}>← {workspace.name}</Link>
-      </p>
-    </main>
+    </WorkspacePage>
   );
 }

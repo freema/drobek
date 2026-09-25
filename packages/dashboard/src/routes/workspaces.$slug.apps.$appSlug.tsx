@@ -14,7 +14,7 @@
  */
 import { Form, Link, useActionData, useLoaderData, useNavigation } from 'react-router';
 import type { action, loader } from './workspaces.$slug.apps.$appSlug.server.js';
-import { ActionError, AppHeader, appStyles } from '../app-header.js';
+import { ActionError, AppPage, appStyles } from '../app-header.js';
 import { PendingBanner } from '../pending-banner.js';
 import { formatTimestamp } from '../view.js';
 
@@ -111,8 +111,7 @@ export default function AppDetailRoute() {
   const s = appStyles;
 
   return (
-    <main style={s.main}>
-      <AppHeader header={header} />
+    <AppPage header={header}>
       <ActionError actionData={actionData} />
       <PendingBanner banner={pendingBanner} />
 
@@ -120,102 +119,104 @@ export default function AppDetailRoute() {
       {versions.length === 0 ? (
         <p style={styles.muted}>No versions yet — your agent writes the first one.</p>
       ) : (
-        <table style={s.table} data-testid="version-history">
-          <thead>
-            <tr>
-              <th style={s.th}>Version</th>
-              <th style={s.th}>By</th>
-              <th style={s.th}>Compile</th>
-              <th style={s.th}>Note</th>
-              <th style={s.th}>Created</th>
-              <th style={s.th} />
-            </tr>
-          </thead>
-          <tbody>
-            {versions.map((v) => (
-              <tr key={v.id} data-testid="version-row" data-version={v.number}>
-                <td style={s.td}>
-                  <code style={styles.mono}>v{v.number}</code>{' '}
-                  {v.published ? (
-                    <span style={s.okBadge} data-testid="version-published">
-                      published
-                    </span>
-                  ) : null}
-                </td>
-                <td style={s.td}>
-                  {v.actorKind}
-                  {v.author ? <div style={{ ...styles.muted, fontSize: '0.78rem' }}>{v.author}</div> : null}
-                </td>
-                <td style={s.td} data-testid="version-compile" data-status={v.compileStatus}>
-                  {COMPILE_LABEL[v.compileStatus]}
-                  {v.compileErrorCount > 0 ? ` (${v.compileErrorCount})` : ''}
-                  {v.compileFirstError ? (
-                    // React escapes the compiler's message (it quotes app source).
-                    <div style={{ ...styles.mono, fontSize: '0.75rem', color: '#991b1b', wordBreak: 'break-word' }}>
-                      {v.compileFirstError}
-                    </div>
-                  ) : null}
-                </td>
-                {/* React escapes the agent-supplied reasoning. */}
-                <td style={s.td}>{v.reasoning ?? <span style={styles.muted}>—</span>}</td>
-                <td style={s.td}>{formatTimestamp(v.createdAt)}</td>
-                <td style={s.td}>
-                  <span style={s.inline}>
-                    {canPublish && v.publishable ? (
-                      <Form method="post">
-                        <input type="hidden" name="intent" value="publish" />
-                        <input type="hidden" name="versionId" value={v.id} />
-                        <button
-                          type="submit"
-                          style={s.button}
-                          disabled={submitting}
-                          data-testid="publish-button"
+        <div style={s.tableWrap}>
+          <table style={s.table} data-testid="version-history">
+            <thead>
+              <tr>
+                <th style={s.th}>Version</th>
+                <th style={s.th}>By</th>
+                <th style={s.th}>Compile</th>
+                <th style={s.th}>Note</th>
+                <th style={s.th}>Created</th>
+                <th style={s.th} />
+              </tr>
+            </thead>
+            <tbody>
+              {versions.map((v) => (
+                <tr key={v.id} data-testid="version-row" data-version={v.number}>
+                  <td style={s.td}>
+                    <code style={styles.mono}>v{v.number}</code>{' '}
+                    {v.published ? (
+                      <span style={s.okBadge} data-testid="version-published">
+                        published
+                      </span>
+                    ) : null}
+                  </td>
+                  <td style={s.td}>
+                    {v.actorKind}
+                    {v.author ? <div style={{ ...styles.muted, fontSize: '0.78rem' }}>{v.author}</div> : null}
+                  </td>
+                  <td style={s.td} data-testid="version-compile" data-status={v.compileStatus}>
+                    {COMPILE_LABEL[v.compileStatus]}
+                    {v.compileErrorCount > 0 ? ` (${v.compileErrorCount})` : ''}
+                    {v.compileFirstError ? (
+                      // React escapes the compiler's message (it quotes app source).
+                      <div style={{ ...styles.mono, fontSize: '0.75rem', color: '#991b1b', wordBreak: 'break-word' }}>
+                        {v.compileFirstError}
+                      </div>
+                    ) : null}
+                  </td>
+                  {/* React escapes the agent-supplied reasoning. */}
+                  <td style={s.td}>{v.reasoning ?? <span style={styles.muted}>—</span>}</td>
+                  <td style={s.td}>{formatTimestamp(v.createdAt)}</td>
+                  <td style={s.td}>
+                    <span style={{ ...s.inline, flexWrap: 'nowrap', overflowWrap: 'normal' }}>
+                      {canPublish && v.publishable ? (
+                        <Form method="post">
+                          <input type="hidden" name="intent" value="publish" />
+                          <input type="hidden" name="versionId" value={v.id} />
+                          <button
+                            type="submit"
+                            style={s.button}
+                            disabled={submitting}
+                            data-testid="publish-button"
+                            data-version={v.number}
+                          >
+                            Publish
+                          </button>
+                        </Form>
+                      ) : null}
+                      {canPublish && v.restorable ? (
+                        <Form method="post">
+                          <input type="hidden" name="intent" value="restore" />
+                          <input type="hidden" name="version" value={v.number} />
+                          <button
+                            type="submit"
+                            style={s.secondaryButton}
+                            disabled={submitting}
+                            title="Create a new version with these files as the working copy (the preview)"
+                            data-testid="restore-button"
+                            data-version={v.number}
+                          >
+                            Restore
+                          </button>
+                        </Form>
+                      ) : null}
+                      {v.openUrl ? (
+                        <a
+                          href={v.openUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          data-testid="version-open-link"
                           data-version={v.number}
                         >
-                          Publish
-                        </button>
-                      </Form>
-                    ) : null}
-                    {canPublish && v.restorable ? (
-                      <Form method="post">
-                        <input type="hidden" name="intent" value="restore" />
-                        <input type="hidden" name="version" value={v.number} />
-                        <button
-                          type="submit"
-                          style={s.secondaryButton}
-                          disabled={submitting}
-                          title="Create a new version with these files as the working copy (the preview)"
-                          data-testid="restore-button"
-                          data-version={v.number}
-                        >
-                          Restore
-                        </button>
-                      </Form>
-                    ) : null}
-                    {v.openUrl ? (
-                      <a
-                        href={v.openUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        data-testid="version-open-link"
+                          Open
+                        </a>
+                      ) : null}
+                      <Link
+                        to={`${header.basePath}/files?version=${v.number}`}
+                        data-testid="version-files-link"
                         data-version={v.number}
                       >
-                        Open
-                      </a>
-                    ) : null}
-                    <Link
-                      to={`${header.basePath}/files?version=${v.number}`}
-                      data-testid="version-files-link"
-                      data-version={v.number}
-                    >
-                      Files
-                    </Link>
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                        Files
+                      </Link>
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
       <h2 style={styles.h2}>Health</h2>
@@ -311,6 +312,6 @@ export default function AppDetailRoute() {
           )}
         </section>
       </div>
-    </main>
+    </AppPage>
   );
 }

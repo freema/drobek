@@ -32,6 +32,7 @@ import {
 import { AUDIT_ACTIONS } from '@drobek/audit';
 import { RECORDS_IMPORT_MAX_ROWS } from '@drobek/modules';
 import { requireWorkspaceRole } from '@drobek/tenancy';
+import { appHeaderFor } from '../app-page.server.js';
 import { flattenRecord, mapFilterSort, rulesText, type Column } from '../data-view.js';
 import { auditOwner, ownerError } from '../owner-http.server.js';
 import { IMPORT_MAX_BYTES, editableJson, parseRecordJson } from '../owner-view.js';
@@ -109,6 +110,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const collection = String(params.collection ?? '');
   const q = parseDataQuery(new URL(request.url));
   const records = await recordsOf(access.workspace.id, appSlug);
+  // NSO-342: the app header + tabs on every app sub-page.
+  const header = await appHeaderFor(access, appSlug);
 
   return withDataErrors(async () => {
     const meta = (await records.collections()).find((c) => c.name === collection);
@@ -175,6 +178,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     return {
       workspace: { slug: access.workspace.slug, name: access.workspace.name },
       appSlug,
+      header,
       collection: {
         name: meta.name,
         rules: rulesText(meta.rules),

@@ -7,7 +7,8 @@
  */
 import { Form, Link, useActionData, useLoaderData } from 'react-router';
 import type { action, loader } from './workspaces.$slug.apps.$appSlug.forms.server.js';
-import { AppSubnav, ModuleMissing, ui } from '../owner-ui.js';
+import { ModuleMissing, ui } from '../owner-ui.js';
+import { AppPage } from '../app-header.js';
 import { formatTimestamp } from '../view.js';
 
 export function meta({ data }: { data?: Awaited<ReturnType<typeof loader>> }) {
@@ -27,9 +28,8 @@ export default function AppFormsRoute() {
   const base = `/workspaces/${d.workspace.slug}/apps/${d.appSlug}/forms`;
 
   return (
-    <main style={ui.main}>
-      <AppSubnav workspaceSlug={d.workspace.slug} appSlug={d.appSlug} current="forms" />
-      <h1 style={ui.h1}>Forms</h1>
+    <AppPage header={d.header}>
+      <h2 style={ui.title}>Forms</h2>
       <p style={ui.hint}>
         Submissions of <strong>{d.appSlug}</strong>&apos;s forms (the forms module; preview and production share them).
       </p>
@@ -78,10 +78,10 @@ export default function AppFormsRoute() {
             <button type="submit" style={ui.button} data-testid="forms-filter-apply">
               Apply
             </button>
-            <Link to={base} style={{ ...ui.link, alignSelf: 'center' }}>
+            <Link to={base} style={ui.controlLink}>
               Clear
             </Link>
-            <a href={`${base}/export.csv${d.search ? `?${d.search}` : ''}`} style={{ ...ui.link, marginLeft: 'auto', alignSelf: 'center' }} data-testid="forms-csv">
+            <a href={`${base}/export.csv${d.search ? `?${d.search}` : ''}`} style={{ ...ui.controlLink, color: '#1e3a8a', marginLeft: 'auto' }} data-testid="forms-csv">
               ↓ Export CSV
             </a>
           </Form>
@@ -164,6 +164,6 @@ export default function AppFormsRoute() {
           </div>
         </>
       )}
-    </main>
+    </AppPage>
   );
 }

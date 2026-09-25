@@ -6,7 +6,8 @@
  */
 import { Form, Link, useActionData, useLoaderData, useNavigation } from 'react-router';
 import type { action, loader } from './workspaces.$slug.apps.$appSlug.end-users.server.js';
-import { AppSubnav, ModuleMissing, ui } from '../owner-ui.js';
+import { ModuleMissing, ui } from '../owner-ui.js';
+import { AppPage } from '../app-header.js';
 import { formatTimestamp } from '../view.js';
 
 export function meta({ data }: { data?: Awaited<ReturnType<typeof loader>> }) {
@@ -23,9 +24,8 @@ export default function AppEndUsersRoute() {
   const qs = d.q ? `?q=${encodeURIComponent(d.q)}` : '';
 
   return (
-    <main style={ui.main}>
-      <AppSubnav workspaceSlug={d.workspace.slug} appSlug={d.appSlug} current="end-users" />
-      <h1 style={ui.h1}>Users</h1>
+    <AppPage header={d.header}>
+      <h2 style={ui.title}>Users</h2>
       <p style={ui.hint}>
         People who signed in to <strong>{d.appSlug}</strong> (the auth module). A role or block applies to their next request;
         editors of this workspace are always admins.
@@ -163,6 +163,6 @@ export default function AppEndUsersRoute() {
           </div>
         </>
       )}
-    </main>
+    </AppPage>
   );
 }

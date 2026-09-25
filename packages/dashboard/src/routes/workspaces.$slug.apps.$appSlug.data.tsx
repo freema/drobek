@@ -8,8 +8,10 @@
  * file stays client-safe.
  */
 import { Form, Link, useActionData, useLoaderData } from 'react-router';
+import { controls } from '@drobek/tenancy/layout';
 import type { action, loader } from './workspaces.$slug.apps.$appSlug.data.server.js';
-import { AppSubnav, ui } from '../owner-ui.js';
+import { ui } from '../owner-ui.js';
+import { AppPage } from '../app-header.js';
 
 export function meta({
   data,
@@ -20,23 +22,6 @@ export function meta({
 }
 
 const styles = {
-  main: {
-    fontFamily: 'system-ui, sans-serif',
-    maxWidth: '48rem',
-    margin: '0 auto',
-    padding: '4rem 1.5rem',
-    color: '#1a1a1a',
-    lineHeight: 1.6,
-  },
-  h1: { fontSize: '1.75rem', marginBottom: '0.25rem' },
-  nav: {
-    margin: '0 0 1.5rem',
-    fontSize: '0.9rem',
-    display: 'flex',
-    gap: '0.9rem',
-    flexWrap: 'wrap',
-  },
-  navLink: { color: '#1a1a1a', fontWeight: 600 },
   hint: { color: '#555', marginTop: 0, fontSize: '0.95rem' },
   list: { listStyle: 'none', padding: 0, margin: '1.25rem 0' },
   item: {
@@ -72,31 +57,18 @@ const styles = {
   empty: { color: '#555', fontStyle: 'italic', padding: '1rem 0' },
   h2: { fontSize: '1.1rem', margin: '2rem 0 0.25rem' },
   purgeForm: { display: 'flex', gap: '0.4rem', alignItems: 'center', marginLeft: 'auto', flexWrap: 'wrap' },
-  input: { fontFamily: 'inherit', fontSize: '0.85rem', padding: '0.3rem 0.45rem', border: '1px solid #d4d4d8', borderRadius: '6px' },
-  purgeBtn: {
-    padding: '0.3rem 0.7rem',
-    fontSize: '0.82rem',
-    fontFamily: 'inherit',
-    fontWeight: 600,
-    color: '#fff',
-    background: '#b91c1c',
-    border: 'none',
-    borderRadius: '7px',
-    cursor: 'pointer',
-  },
+  input: controls.input,
+  purgeBtn: controls.dangerButton,
   error: { color: '#b91c1c', fontSize: '0.9rem' },
-  back: { fontSize: '0.9rem', color: '#555', marginTop: '2rem' },
 } as const;
 
 export default function AppDataRoute() {
-  const { workspace, appSlug, collections, dropped, orphans, canPurge, purged } = useLoaderData<typeof loader>();
+  const { workspace, appSlug, header, collections, dropped, orphans, canPurge, purged } = useLoaderData<typeof loader>();
   const failed = useActionData<typeof action>();
 
   return (
-    <main style={styles.main}>
-      <AppSubnav workspaceSlug={workspace.slug} appSlug={appSlug} current="data" />
-
-      <h1 style={styles.h1}>Data</h1>
+    <AppPage header={header}>
+      <h2 style={ui.title}>Data</h2>
       <p style={styles.hint}>
         Collections stored by <strong>{appSlug}</strong> (the data module; preview and production share them).
       </p>
@@ -188,12 +160,6 @@ export default function AppDataRoute() {
           </ul>
         </section>
       ) : null}
-
-      <p style={styles.back}>
-        <Link to={`/workspaces/${workspace.slug}/apps/${appSlug}`}>
-          ← Back to {appSlug}
-        </Link>
-      </p>
-    </main>
+    </AppPage>
   );
 }

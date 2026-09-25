@@ -16,6 +16,7 @@
 import { data, redirect, type ActionFunctionArgs, type LoaderFunctionArgs } from 'react-router';
 import { isModuleError } from '@drobek/modules';
 import { requireWorkspaceRole } from '@drobek/tenancy';
+import { appHeaderFor } from '../app-page.server.js';
 import { rulesText, schemaSummary } from '../data-view.js';
 import { recordsOf, withDataErrors } from './data-http.server.js';
 
@@ -30,6 +31,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   return {
     workspace: { slug: access.workspace.slug, name: access.workspace.name },
     appSlug,
+    /** NSO-342: the app header + tabs on every app sub-page. */
+    header: await appHeaderFor(access, appSlug),
     collections: collections.map((c) => ({
       name: c.name,
       recordCount: c.records,

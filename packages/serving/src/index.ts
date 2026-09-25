@@ -31,6 +31,7 @@ export {
   appCsp,
   appSecurityHeaders,
   parseFrameAncestors,
+  withDashboardAncestor,
   type SecurityHeaderInput,
 } from './csp.js';
 export {

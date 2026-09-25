@@ -3,7 +3,8 @@
  * created invite link (always) and whether the email went out. Reached by
  * submitting the invite form on the workspace page.
  */
-import { Link, useActionData, useLoaderData } from 'react-router';
+import { useActionData, useLoaderData } from 'react-router';
+import { WorkspacePage } from '../layout.js';
 import type { action, loader } from './workspaces.$slug.invite.server.js';
 
 export function meta() {
@@ -11,15 +12,7 @@ export function meta() {
 }
 
 const styles = {
-  main: {
-    fontFamily: 'system-ui, sans-serif',
-    maxWidth: '42rem',
-    margin: '0 auto',
-    padding: '4rem 1.5rem',
-    color: '#1a1a1a',
-    lineHeight: 1.6,
-  },
-  h1: { fontSize: '1.75rem', marginBottom: '0.25rem' },
+  h2: { fontSize: '1.15rem', marginTop: '2rem', marginBottom: '0.5rem' },
   hint: { color: '#555', marginTop: 0, fontSize: '0.95rem' },
   linkBox: {
     display: 'block',
@@ -52,16 +45,15 @@ const styles = {
     fontSize: '0.9rem',
     margin: '1rem 0',
   },
-  back: { fontSize: '0.9rem', color: '#555', marginTop: '2rem' },
 } as const;
 
 export default function InviteCreatedRoute() {
-  const { workspaceSlug, workspaceName } = useLoaderData<typeof loader>();
+  const { nav } = useLoaderData<typeof loader>();
   const result = useActionData<typeof action>();
 
   return (
-    <main style={styles.main}>
-      <h1 style={styles.h1}>Invite to {workspaceName}</h1>
+    <WorkspacePage workspace={nav} section="members" trail={[{ label: 'Invite' }]}>
+      <h2 style={styles.h2}>Invite</h2>
 
       {!result ? (
         <p style={styles.hint}>
@@ -96,10 +88,6 @@ export default function InviteCreatedRoute() {
           )}
         </>
       )}
-
-      <p style={styles.back}>
-        <Link to={`/workspaces/${workspaceSlug}`}>← Back to workspace</Link>
-      </p>
-    </main>
+    </WorkspacePage>
   );
 }

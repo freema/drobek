@@ -21,7 +21,7 @@ import {
   parseActorKind,
   type AuditActorKind,
 } from '@drobek/audit';
-import { requireWorkspaceRole } from '@drobek/tenancy';
+import { requireWorkspaceRole, workspaceNav } from '@drobek/tenancy';
 import { listWorkspaceApps } from '../apps.server.js';
 import { shapeActivity } from '../view.js';
 
@@ -69,6 +69,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   return {
     workspace: { slug: access.workspace.slug, name: access.workspace.name },
+    /** NSO-342: the shared workspace chrome (breadcrumb, badges, tabs). */
+    nav: workspaceNav(access),
     items: shapeActivity(
       result.rows.map((r) => ({
         id: r.id,

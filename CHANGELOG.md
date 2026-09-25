@@ -2,6 +2,12 @@
 
 ## Unreleased (`next`)
 
+### Changed
+- **One dashboard layout** — every workspace and app page has a breadcrumb (`Workspaces › <workspace> › <app> › <section>`, every part a link except the last) in place of the "← back" links, and every page has the same width. The workspace pages share a header with the workspace tabs (Apps, Members, Activity, Upstreams). The app header and its tabs are now on every app page, including Modules and the module detail page. Inputs, selects, buttons and link-buttons share one height, border and radius, so the Activity filters (with Clear and Export CSV) and the app-list filters line up on one row. Wide tables scroll inside their box on a phone instead of scrolling the page.
+- **App-list thumbnails** — a public, live app with a published or compiled version shows a small, non-interactive preview of its page. It is a sandboxed, lazy, `inert` iframe (`credentialless` where the browser supports it) of the app's own host, which is never the dashboard origin. Password-protected, taken-down, inactive and never-compiled apps show a placeholder. To make this possible an app's `frame-ancestors` now always includes the dashboard origin (`PUBLIC_APP_URL`), next to the owner's embedding setting. See `docs/SECURITY.md`.
+- **Footer** — it now reads `drobek <version> · <sha> · Source (AGPL-3.0) · ★ <stars>`. The star count is read server-side from api.github.com (unauthenticated, 3 s timeout) and kept in memory for an hour. A page never waits for it: a failure just omits the stars. `DASHBOARD_GITHUB_STARS=off` turns the lookup off.
+- **Upstreams page** — a short introduction explains what an upstream is, how an app gets access, and that the secret is entered only there: neither the app nor the agent ever sees it.
+
 ### Fixed
 - **App slugs keep accented letters** — `create_app` derived the slug by dropping every non-ASCII letter, so "Podzimní obloha" became `podzimn-obloha`. Accents are now transliterated (`podzimni-obloha`, ß → ss, ł → l, ø → o). Existing slugs do not change.
 

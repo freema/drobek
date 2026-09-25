@@ -184,6 +184,10 @@
       "types": "./src/footer.tsx",
       "default": "./dist/footer.js"
     },
+    "./github-stars.server": {
+      "types": "./src/github-stars.server.ts",
+      "default": "./dist/github-stars.server.js"
+    },
     "./routes/report": {
       "types": "./src/routes/report.tsx",
       "default": "./dist/routes/report.js"

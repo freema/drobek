@@ -5,7 +5,8 @@
  * and a list with last use + a revoke button. Client-safe: everything arrives
  * pre-shaped from ./me.api-keys.server.ts.
  */
-import { Form, Link, useActionData, useLoaderData } from 'react-router';
+import { Form, useActionData, useLoaderData } from 'react-router';
+import { DashboardPage, controls } from '@drobek/tenancy/layout';
 import type { action, loader } from './me.api-keys.server.js';
 
 export function meta() {
@@ -19,16 +20,6 @@ const SCOPE_HINT: Record<string, string> = {
 };
 
 const styles = {
-  main: {
-    fontFamily: 'system-ui, sans-serif',
-    maxWidth: '46rem',
-    margin: '0 auto',
-    padding: '4rem 1.5rem 2rem',
-    color: '#1a1a1a',
-    lineHeight: 1.6,
-  },
-  nav: { margin: '0 0 1.5rem', fontSize: '0.9rem', display: 'flex', gap: '0.9rem', flexWrap: 'wrap' },
-  navLink: { color: '#1a1a1a', fontWeight: 600 },
   h1: { fontSize: '1.75rem', marginBottom: '0.25rem' },
   h2: { fontSize: '1.15rem', marginTop: '2.25rem', marginBottom: '0.5rem' },
   hint: { color: '#555', marginTop: 0, fontSize: '0.95rem' },
@@ -70,38 +61,10 @@ const styles = {
     background: '#fafafa',
   },
   label: { fontWeight: 600, fontSize: '0.9rem' },
-  input: {
-    fontFamily: 'inherit',
-    fontSize: '0.95rem',
-    padding: '0.4rem 0.55rem',
-    border: '1px solid #d4d4d8',
-    borderRadius: '6px',
-    maxWidth: '24rem',
-  },
+  input: { ...controls.input, maxWidth: '24rem' },
   check: { display: 'flex', gap: '0.45rem', alignItems: 'baseline', fontSize: '0.9rem' },
-  button: {
-    alignSelf: 'flex-start',
-    padding: '0.45rem 0.95rem',
-    fontSize: '0.9rem',
-    fontFamily: 'inherit',
-    fontWeight: 600,
-    color: '#fff',
-    background: '#1a1a1a',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-  },
-  revoke: {
-    padding: '0.3rem 0.7rem',
-    fontSize: '0.8rem',
-    fontFamily: 'inherit',
-    fontWeight: 600,
-    color: '#991b1b',
-    background: '#fff',
-    border: '1px solid #fca5a5',
-    borderRadius: '7px',
-    cursor: 'pointer',
-  },
+  button: { ...controls.button, alignSelf: 'flex-start' },
+  revoke: { ...controls.secondaryButton, color: '#991b1b', border: '1px solid #fca5a5' },
   list: { listStyle: 'none', padding: 0, margin: '1rem 0' },
   item: {
     display: 'flex',
@@ -137,15 +100,7 @@ export default function ApiKeysRoute() {
   const error = actionData && !actionData.ok ? actionData.error : null;
 
   return (
-    <main style={styles.main}>
-      <p style={styles.nav}>
-        <Link to="/me" style={styles.navLink}>
-          ← Your account
-        </Link>
-        <Link to="/me/connections" style={styles.navLink}>
-          Connections
-        </Link>
-      </p>
+    <DashboardPage crumbs={[{ label: 'Account', to: '/me' }, { label: 'API keys' }]}>
 
       <h1 style={styles.h1}>API keys</h1>
       <p style={styles.hint}>
@@ -250,6 +205,6 @@ export default function ApiKeysRoute() {
           ))}
         </ul>
       )}
-    </main>
+    </DashboardPage>
   );
 }

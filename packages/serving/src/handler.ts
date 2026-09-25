@@ -56,7 +56,7 @@ import {
   type AppHostTarget,
 } from '@drobek/apps';
 import { contentTypeForPath } from './content-type.js';
-import { appSecurityHeaders, parseFrameAncestors } from './csp.js';
+import { appSecurityHeaders, parseFrameAncestors, withDashboardAncestor } from './csp.js';
 import { UNLOCK_PATH, errorPage, lockedPage, missingPage, passwordPage, type MissingReason } from './pages.js';
 import {
   appAccessCookieName,
@@ -145,6 +145,12 @@ export interface HandlerDeps {
   termsUrl?: string;
   /** NSO-315: per-IP budget of "no app here" answers (absent → never throttled). */
   unknownHosts?: UnknownHostLimiter;
+  /**
+   * NSO-342: the dashboard origin (PUBLIC_APP_URL), always allowed in
+   * `frame-ancestors` so the workspace app list can show a sandboxed,
+   * non-interactive thumbnail of the app (absent → only the app's own setting).
+   */
+  dashboardOrigin?: string | null;
 }
 
 /** Header naming the app behind an app-host response (M4-02). */
@@ -234,7 +240,10 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
   const { app, version } = await deps.store.resolve(req.target);
   if (!app) return unknownApp();
   security = {
-    ...appSecurityHeaders({ noindex, frameAncestors: parseFrameAncestors(app.frameAncestors) }),
+    ...appSecurityHeaders({
+      noindex,
+      frameAncestors: withDashboardAncestor(parseFrameAncestors(app.frameAncestors), deps.dashboardOrigin),
+    }),
     [APP_HEADER]: app.slug,
   };
   if (!isBeacon) deps.signal?.(app.id, 'request');

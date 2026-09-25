@@ -12,6 +12,10 @@
       "types": "./src/roles.ts",
       "default": "./dist/roles.js"
     },
+    "./layout": {
+      "types": "./src/layout.tsx",
+      "default": "./dist/layout.js"
+    },
     "./routes/workspaces": {
       "types": "./src/routes/workspaces.tsx",
       "default": "./dist/routes/workspaces.js"

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { APP_CSP, appCsp, appSecurityHeaders, parseFrameAncestors } from './csp.js';
+import { APP_CSP, appCsp, appSecurityHeaders, parseFrameAncestors, withDashboardAncestor } from './csp.js';
 
 describe('app CSP (plan §3.3)', () => {
   it('is exactly the documented policy', () => {
@@ -67,5 +67,34 @@ describe('appSecurityHeaders (snapshot)', () => {
   it('carries a validated frame-ancestors override', () => {
     const h = appSecurityHeaders({ noindex: false, frameAncestors: 'https://intranet.example.com' });
     expect(h['Content-Security-Policy']).toBe(appCsp('https://intranet.example.com'));
+  });
+});
+
+describe('withDashboardAncestor (NSO-342, the app-list thumbnail)', () => {
+  const dash = 'https://drobek.example.com';
+
+  it("replaces 'none' / no override with the dashboard origin alone", () => {
+    expect(withDashboardAncestor(null, dash)).toBe(dash);
+    expect(withDashboardAncestor("'none'", dash)).toBe(dash);
+    expect(withDashboardAncestor(undefined, 'http://localhost:3041/')).toBe('http://localhost:3041');
+  });
+
+  it("appends it to the owner's override once", () => {
+    expect(withDashboardAncestor("'self' https://intranet.example.com", dash)).toBe(
+      `'self' https://intranet.example.com ${dash}`
+    );
+    expect(withDashboardAncestor(`https://a.example.com ${dash}`, dash)).toBe(`https://a.example.com ${dash}`);
+  });
+
+  it('ignores a missing or unsafe dashboard origin (the value stays as it was)', () => {
+    for (const bad of [null, undefined, '', "'self'", '*', 'https:', 'https://*.example.com', 'https://a.example.com/path', 'https://a.example.com; x']) {
+      expect(withDashboardAncestor(null, bad), String(bad)).toBeNull();
+      expect(withDashboardAncestor('https://a.example.com', bad), String(bad)).toBe('https://a.example.com');
+    }
+  });
+
+  it('ends up in the CSP as the only extra ancestor', () => {
+    const h = appSecurityHeaders({ noindex: false, frameAncestors: withDashboardAncestor(parseFrameAncestors(null), dash) });
+    expect(h['Content-Security-Policy']).toContain(`frame-ancestors ${dash};`);
   });
 });

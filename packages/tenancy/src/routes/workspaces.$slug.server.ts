@@ -9,6 +9,7 @@ import {
   listWorkspaceMembers,
   requireWorkspaceRole,
 } from '../membership.server.js';
+import { workspaceNav } from '../workspace-nav.js';
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const access = await requireWorkspaceRole(
@@ -25,6 +26,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       name: access.workspace.name,
       kind: access.workspace.kind,
     },
+    /** NSO-342: the shared workspace chrome (breadcrumb, badges, tabs). */
+    nav: workspaceNav(access),
     members,
     role: access.effectiveRole,
     superAdmin: access.superAdmin,

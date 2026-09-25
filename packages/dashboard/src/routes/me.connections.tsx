@@ -3,7 +3,8 @@
  * agents, IDEs) that hold access to the user's account, with a revoke button
  * per client. Client-safe: data arrives shaped from ./me.connections.server.ts.
  */
-import { Form, Link, useActionData, useLoaderData } from 'react-router';
+import { Form, useActionData, useLoaderData } from 'react-router';
+import { DashboardPage, controls } from '@drobek/tenancy/layout';
 import type { action, loader } from './me.connections.server.js';
 
 export function meta() {
@@ -11,16 +12,6 @@ export function meta() {
 }
 
 const styles = {
-  main: {
-    fontFamily: 'system-ui, sans-serif',
-    maxWidth: '46rem',
-    margin: '0 auto',
-    padding: '4rem 1.5rem 2rem',
-    color: '#1a1a1a',
-    lineHeight: 1.6,
-  },
-  nav: { margin: '0 0 1.5rem', fontSize: '0.9rem', display: 'flex', gap: '0.9rem', flexWrap: 'wrap' },
-  navLink: { color: '#1a1a1a', fontWeight: 600 },
   h1: { fontSize: '1.75rem', marginBottom: '0.25rem' },
   hint: { color: '#555', marginTop: 0, fontSize: '0.95rem' },
   error: {
@@ -61,17 +52,7 @@ const styles = {
     background: '#dbeafe',
     border: '1px solid #bfdbfe',
   },
-  revoke: {
-    padding: '0.3rem 0.7rem',
-    fontSize: '0.8rem',
-    fontFamily: 'inherit',
-    fontWeight: 600,
-    color: '#991b1b',
-    background: '#fff',
-    border: '1px solid #fca5a5',
-    borderRadius: '7px',
-    cursor: 'pointer',
-  },
+  revoke: { ...controls.secondaryButton, color: '#991b1b', border: '1px solid #fca5a5' },
   empty: { color: '#555', fontStyle: 'italic' },
 } as const;
 
@@ -81,15 +62,7 @@ export default function ConnectionsRoute() {
   const error = actionData && !actionData.ok ? actionData.error : null;
 
   return (
-    <main style={styles.main}>
-      <p style={styles.nav}>
-        <Link to="/me" style={styles.navLink}>
-          ← Your account
-        </Link>
-        <Link to="/me/api-keys" style={styles.navLink}>
-          API keys
-        </Link>
-      </p>
+    <DashboardPage crumbs={[{ label: 'Account', to: '/me' }, { label: 'Connections' }]}>
 
       <h1 style={styles.h1}>Connections</h1>
       <p style={styles.hint}>
@@ -145,6 +118,6 @@ export default function ConnectionsRoute() {
           ))}
         </ul>
       )}
-    </main>
+    </DashboardPage>
   );
 }

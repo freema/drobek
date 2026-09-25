@@ -15,6 +15,7 @@
 import { data, redirect, type ActionFunctionArgs, type LoaderFunctionArgs } from 'react-router';
 import { AUDIT_ACTIONS } from '@drobek/audit';
 import { requireWorkspaceRole } from '@drobek/tenancy';
+import { appHeaderFor } from '../app-page.server.js';
 import { auditOwner, ownerApp, ownerError, submissionsOf } from '../owner-http.server.js';
 import { dayRange, parseDay, submissionFields } from '../owner-view.js';
 
@@ -56,6 +57,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const base = {
     workspace: { slug: access.workspace.slug, name: access.workspace.name },
     appSlug: app.slug,
+    /** NSO-342: the app header + tabs on every app sub-page. */
+    header: await appHeaderFor(access, app.slug),
     filter: { form: f.form, from: f.from, to: f.to },
     search: formsSearch(f),
     confirmId: f.confirm,

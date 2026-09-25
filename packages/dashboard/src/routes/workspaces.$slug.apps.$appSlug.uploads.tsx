@@ -7,7 +7,8 @@
  */
 import { Form, Link, useLoaderData } from 'react-router';
 import type { loader } from './workspaces.$slug.apps.$appSlug.uploads.server.js';
-import { AppSubnav, ModuleMissing, ui } from '../owner-ui.js';
+import { ModuleMissing, ui } from '../owner-ui.js';
+import { AppPage } from '../app-header.js';
 import { formatTimestamp } from '../view.js';
 
 export function meta({ data }: { data?: Awaited<ReturnType<typeof loader>> }) {
@@ -21,9 +22,8 @@ export default function AppUploadsRoute() {
   const base = `/workspaces/${d.workspace.slug}/apps/${d.appSlug}/uploads`;
 
   return (
-    <main style={ui.main}>
-      <AppSubnav workspaceSlug={d.workspace.slug} appSlug={d.appSlug} current="uploads" />
-      <h1 style={ui.h1}>Uploads</h1>
+    <AppPage header={d.header}>
+      <h2 style={ui.title}>Uploads</h2>
       <p style={ui.hint}>
         Files the users of <strong>{d.appSlug}</strong> uploaded (the files module). Types are decided from the bytes.
       </p>
@@ -121,6 +121,6 @@ export default function AppUploadsRoute() {
           </div>
         </>
       )}
-    </main>
+    </AppPage>
   );
 }

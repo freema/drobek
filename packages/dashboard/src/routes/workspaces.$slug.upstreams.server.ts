@@ -21,7 +21,7 @@ import {
   ProxyError,
   proxyErrorStatus,
 } from '@drobek/proxy';
-import { requireWorkspaceRole } from '@drobek/tenancy';
+import { requireWorkspaceRole, workspaceNav } from '@drobek/tenancy';
 
 function splitList(raw: string): string[] {
   return String(raw ?? '')
@@ -44,6 +44,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   });
   return {
     workspace: { slug: access.workspace.slug, name: access.workspace.name },
+    /** NSO-342: the shared workspace chrome (breadcrumb, badges, tabs). */
+    nav: workspaceNav(access),
     upstreams,
     role: access.effectiveRole,
     // PHY-76 #8: the destination ports a base_url may use (PROXY_ALLOWED_PORTS, default 80/443).

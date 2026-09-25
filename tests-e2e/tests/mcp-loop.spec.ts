@@ -9,7 +9,7 @@ import type {
 } from '@modelcontextprotocol/sdk/shared/auth.js';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { BASE_URL_MCP, BASE_URL_WEB, TEST_ENV } from '../playwright.config';
-import { getAppUrl, type Raw } from './helpers/apps-host';
+import { DASHBOARD_ORIGIN, getAppUrl, type Raw } from './helpers/apps-host';
 import { loginViaEmail, resetDcrIpRateLimit, skipUnlessLocal, uniqueEmail } from './helpers/auth';
 import { callTool, connectBearer } from './helpers/mcp';
 import { withDb } from './helpers/seed';
@@ -431,7 +431,8 @@ test('smoke loop: API key → list → create/reuse smoke-* → write → previe
     expect(published.json.published_version).toBe(version);
     const prod = await getWhenUp(published.json.published_url as string);
     expect(prod.body).toContain(`<p id="marker">${marker}</p>`);
-    expect(prod.headers['content-security-policy']).toContain("frame-ancestors 'none'");
+    // NSO-342: only the dashboard (its app-list thumbnail) may frame the app.
+    expect(prod.headers['content-security-policy']).toContain(`frame-ancestors ${DASHBOARD_ORIGIN};`);
   } catch (err) {
     failed = true;
     throw err;

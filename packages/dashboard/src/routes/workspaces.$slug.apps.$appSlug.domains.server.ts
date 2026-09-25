@@ -38,6 +38,7 @@ import {
 } from '@drobek/domains';
 import { moduleRuntime } from '@drobek/modules';
 import { requireWorkspaceRole } from '@drobek/tenancy';
+import { appHeaderFor } from '../app-page.server.js';
 import { loadAppForView } from '../apps.server.js';
 import { canPublish } from '../view.js';
 
@@ -60,6 +61,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   return {
     workspace: { slug: access.workspace.slug, name: access.workspace.name },
     app: { slug: app.slug, defaultUrl: publishedUrl(app.slug) },
+    /** NSO-342: the app header + tabs on every app sub-page. */
+    header: await appHeaderFor(access, app.slug),
     cnameTarget: cnameTarget(app.slug, appsOrigin().domain),
     scheme,
     maxPerApp: await maxDomainsPerApp(access.workspace.id),

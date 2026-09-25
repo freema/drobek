@@ -340,6 +340,24 @@ describe('headers on every response (snapshot)', () => {
     r = await handleAppRequest(req(prod('shop')), deps);
     expect(r.headers['Content-Security-Policy']).toBe(APP_CSP);
   });
+
+  it('NSO-342: the dashboard origin may always frame the app (thumbnail), next to an override', async () => {
+    const withDash = { ...deps, dashboardOrigin: 'https://drobek.example.com' };
+    store.bust('shop');
+    model.get('shop')!.app.frameAncestors = null;
+    let r = await handleAppRequest(req(prod('shop')), withDash);
+    expect(r.headers['Content-Security-Policy']).toBe(appCsp('https://drobek.example.com'));
+    // The password page and the 404 of a missing version carry it too (one header set per app).
+    r = await handleAppRequest(req(prod('vault')), withDash);
+    expect(r.status).toBe(401);
+    expect(r.headers['Content-Security-Policy']).toBe(appCsp('https://drobek.example.com'));
+    store.bust('shop');
+    model.get('shop')!.app.frameAncestors = 'https://intranet.example.com';
+    r = await handleAppRequest(req(prod('shop')), withDash);
+    expect(r.headers['Content-Security-Policy']).toBe(appCsp('https://intranet.example.com https://drobek.example.com'));
+    store.bust('shop');
+    model.get('shop')!.app.frameAncestors = null;
+  });
 });
 
 describe('isolation from the dashboard session', () => {

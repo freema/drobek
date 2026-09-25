@@ -16,8 +16,6 @@ const SHA_RE = /^[0-9a-f]{7,40}$/;
 
 export interface SourceLink {
   href: string;
-  /** Footer text, e.g. `Source (AGPL-3.0) · 9130f7e`. */
-  label: string;
   /** The short sha, or null for the branch fallback. */
   sha: string | null;
 }
@@ -29,13 +27,11 @@ export function sourceLink(rawSha: string | null | undefined): SourceLink {
     const short = sha.slice(0, 7);
     return {
       href: `${SOURCE_REPO_URL}/commit/${sha}`,
-      label: `Source (AGPL-3.0) · ${short}`,
       sha: short,
     };
   }
   return {
     href: `${SOURCE_REPO_URL}/tree/${SOURCE_FALLBACK_BRANCH}`,
-    label: 'Source (AGPL-3.0) · dev',
     sha: null,
   };
 }

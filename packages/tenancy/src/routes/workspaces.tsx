@@ -10,6 +10,7 @@ import {
   useLoaderData,
   useNavigation,
 } from 'react-router';
+import { DashboardPage, controls, workspaceHref } from '../layout.js';
 import type { action, loader } from './workspaces.server.js';
 
 export function meta() {
@@ -17,15 +18,7 @@ export function meta() {
 }
 
 const styles = {
-  main: {
-    fontFamily: 'system-ui, sans-serif',
-    maxWidth: '42rem',
-    margin: '0 auto',
-    padding: '4rem 1.5rem',
-    color: '#1a1a1a',
-    lineHeight: 1.6,
-  },
-  h1: { fontSize: '1.75rem', marginBottom: '0.25rem' },
+  h1: { fontSize: '1.75rem', margin: 0, lineHeight: 1.25 },
   h2: { fontSize: '1.15rem', marginTop: '2.5rem', marginBottom: '0.5rem' },
   hint: { color: '#555', marginTop: 0, fontSize: '0.95rem' },
   list: { listStyle: 'none', padding: 0, margin: '1rem 0' },
@@ -73,27 +66,7 @@ const styles = {
     marginBottom: '0.35rem',
     marginTop: '0.9rem',
   },
-  input: {
-    width: '100%',
-    boxSizing: 'border-box',
-    padding: '0.6rem 0.75rem',
-    fontSize: '1rem',
-    fontFamily: 'inherit',
-    border: '1px solid #d4d4d8',
-    borderRadius: '8px',
-  },
-  button: {
-    marginTop: '0.9rem',
-    padding: '0.6rem 1.1rem',
-    fontSize: '1rem',
-    fontFamily: 'inherit',
-    fontWeight: 600,
-    color: '#fff',
-    background: '#1a1a1a',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-  },
+  form: { maxWidth: '28rem' },
   error: {
     background: '#fef2f2',
     border: '1px solid #fecaca',
@@ -114,7 +87,7 @@ export default function WorkspacesRoute() {
   const submitting = nav.state !== 'idle';
 
   return (
-    <main style={styles.main}>
+    <DashboardPage>
       <h1 style={styles.h1}>Workspaces</h1>
       <p style={styles.hint}>
         Your workspaces and your role in each of them.
@@ -123,7 +96,7 @@ export default function WorkspacesRoute() {
       <ul style={styles.list} data-testid="my-workspaces">
         {workspaces.map((ws) => (
           <li key={ws.slug} style={styles.item} data-testid="workspace-item">
-            <Link to={`/workspaces/${ws.slug}`} style={styles.wsLink}>
+            <Link to={workspaceHref(ws.slug)} style={styles.wsLink}>
               {ws.name}
             </Link>
             <span style={styles.slug}>/{ws.slug}</span>
@@ -141,7 +114,7 @@ export default function WorkspacesRoute() {
           {actionData.error}
         </div>
       ) : null}
-      <Form method="post">
+      <Form method="post" style={styles.form}>
         <label htmlFor="team-name" style={styles.label}>
           Team name
         </label>
@@ -152,7 +125,7 @@ export default function WorkspacesRoute() {
           required
           maxLength={80}
           placeholder="Acme Crew"
-          style={styles.input}
+          style={{ ...controls.input, width: '100%' }}
         />
         <label htmlFor="team-slug" style={styles.label}>
           Slug
@@ -166,9 +139,9 @@ export default function WorkspacesRoute() {
           maxLength={40}
           pattern="[a-z0-9-]+"
           placeholder="acme-crew"
-          style={styles.input}
+          style={{ ...controls.input, width: '100%' }}
         />
-        <button type="submit" disabled={submitting} style={styles.button}>
+        <button type="submit" disabled={submitting} style={{ ...controls.button, marginTop: '0.9rem' }}>
           {submitting ? 'Creating…' : 'Create team'}
         </button>
       </Form>
@@ -179,7 +152,7 @@ export default function WorkspacesRoute() {
           <ul style={styles.list} data-testid="all-workspaces">
             {allWorkspaces.map((ws) => (
               <li key={ws.slug} style={styles.item}>
-                <Link to={`/workspaces/${ws.slug}`} style={styles.wsLink}>
+                <Link to={workspaceHref(ws.slug)} style={styles.wsLink}>
                   {ws.name}
                 </Link>
                 <span style={styles.slug}>/{ws.slug}</span>
@@ -191,8 +164,8 @@ export default function WorkspacesRoute() {
       ) : null}
 
       <p style={styles.back}>
-        <Link to="/me">← Your account</Link>
+        <Link to="/me">Your account</Link>
       </p>
-    </main>
+    </DashboardPage>
   );
 }

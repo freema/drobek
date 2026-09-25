@@ -211,7 +211,8 @@ test.describe("dashboard: the owner's app tabs — data edits + import, forms, u
 
     await p.goto(coll);
     await expect(p.locator('[data-testid="owner-tools"]')).toBeVisible();
-    await expect(p.locator('[data-testid="app-subnav"]')).toBeVisible();
+    await expect(p.locator('[data-testid="app-header"]')).toBeVisible();
+    await expect(p.locator('[data-testid="app-tab"][data-tab="data"]')).toHaveAttribute('aria-current', 'page');
 
     // ── 5 001 rows → refused before any write ─────────────────────────────────
     const big = ['title,done', ...Array.from({ length: 5001 }, (_, i) => `row ${i},true`)].join('\n');

@@ -74,7 +74,8 @@ describe('host dispatch', () => {
     const r = await get('shop--preview.apps.localhost:3041', '/');
     expect(r.status).toBe(200);
     expect(r.body).toBe(HTML);
-    expect(r.headers['content-security-policy']).toContain("frame-ancestors 'none'");
+    // NSO-342: only the dashboard origin (PUBLIC_APP_URL, default localhost:3041) may frame it.
+    expect(r.headers['content-security-policy']).toContain('frame-ancestors http://localhost:3041;');
     expect(r.headers['x-robots-tag']).toBe('noindex');
     // Dashboard paths on an app host are app paths, not dashboard routes.
     for (const p of ['/mcp', '/login', '/oauth/token', '/workspaces', '/health']) {
