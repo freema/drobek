@@ -21,6 +21,11 @@ describe('app slugs', () => {
   it('derives slug grammar from a name', () => {
     expect(deriveSlug('  My Todo App!! ')).toBe('my-todo-app');
     expect(deriveSlug('a--b__c')).toBe('a-b-c');
+    // Accents are transliterated, not dropped.
+    expect(deriveSlug('Podzimní obloha')).toBe('podzimni-obloha');
+    expect(deriveSlug('Žluťoučký kůň úpěl ďábelské ódy')).toBe('zlutoucky-kun-upel-dabelske-ody');
+    expect(deriveSlug('Straße Łódź Ærø')).toBe('strasse-lodz-aero');
+    expect(deriveSlug('日本語')).toBe('');
     expect(deriveSlug('x'.repeat(60))).toHaveLength(APP_SLUG_MAX);
   });
 

@@ -36,14 +36,21 @@ export function validateAppSlug(slug: string): string | null {
   return null;
 }
 
+/** Latin letters that Unicode NFKD does not decompose into base + accent. */
+const LATIN_EXTRA: Record<string, string> = { ß: 'ss', æ: 'ae', œ: 'oe', ø: 'o', ł: 'l', đ: 'd', ð: 'd', þ: 'th', ı: 'i' };
+
 /**
- * Sanitize an arbitrary app name into slug grammar (lowercase, dash runs
- * collapsed, edges trimmed, truncated). Short or reserved results are not
- * fixed here — `validateAppSlug` reports them.
+ * Sanitize an arbitrary app name into slug grammar: accents transliterated
+ * ("Podzimní obloha" → `podzimni-obloha`, not `podzimn-obloha`), lowercase,
+ * dash runs collapsed, edges trimmed, truncated. Short or reserved results
+ * are not fixed here — `validateAppSlug` reports them.
  */
 export function deriveSlug(input: string): string {
   let base = input
     .toLowerCase()
+    .normalize('NFKD')
+    .replace(/\p{M}+/gu, '')
+    .replace(/[ßæœøłđðþı]/g, (ch) => LATIN_EXTRA[ch] ?? ch)
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
   if (base.length > APP_SLUG_MAX) base = base.slice(0, APP_SLUG_MAX).replace(/-+$/, '');

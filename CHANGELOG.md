@@ -2,7 +2,8 @@
 
 ## Unreleased (`next`)
 
-_Nothing yet._
+### Fixed
+- **App slugs keep accented letters** — `create_app` derived the slug by dropping every non-ASCII letter, so "Podzimní obloha" became `podzimn-obloha`. Accents are now transliterated (`podzimni-obloha`, ß → ss, ł → l, ø → o). Existing slugs do not change.
 
 ## v0.1.3 — 2026-09-24
 
