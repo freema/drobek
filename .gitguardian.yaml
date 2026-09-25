@@ -1,0 +1,16 @@
+# GitGuardian / ggshield: paths that hold only throwaway test credentials.
+# The dev and e2e stacks use the local Postgres login drobek:drobek; production
+# generates its own secrets (docs/SELF-HOSTING.md) and never uses these.
+version: 2
+secret:
+  ignored_paths:
+    - .env.example
+    - Taskfile.yml
+    - docker-compose.yml
+    - docker-compose.e2e.yaml
+    - scripts/e2e-image.sh
+    - scripts/prod-proof.sh
+    - tests-e2e/**
+    - tests-eval/fixtures/**
+    - "**/*.test.ts"
+    - "**/*.test.tsx"
