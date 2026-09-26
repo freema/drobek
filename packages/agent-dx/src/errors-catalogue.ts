@@ -1,8 +1,17 @@
 /**
- * ERROR_CATALOGUE — every stable error `code` an agent can meet: MCP tool
- * failures (`isError: true` with `{ code, message, hint }`), the per-error
- * codes inside `compile.errors[]`, the platform module routes an app calls
+ * ERROR_CATALOGUE — the CORE error catalogue: every stable error `code` of
+ * drobek itself an agent can meet: MCP tool failures (`isError: true` with
+ * `{ code, message, hint }`), the per-error codes inside `compile.errors[]`,
+ * the codes core answers on the platform module routes an app calls
  * (`/__drobek/v1/…`, M1-01) and the OAuth connect flow (M0-05, NSO-283).
+ *
+ * A module's OWN codes (e.g. auth's `invalid_code`, proxy's
+ * `upstream_error`) are not here: each module declares them in its
+ * `errors` (`defineModule`), `skill_info('<module>')` returns them and
+ * /llms-full.txt renders them in one section per active module
+ * (`renderLlmsFull(env, modules)`). @drobek/modules `CORE_ERROR_CODES` lists
+ * the code-shaped entries of this catalogue (a module may not declare one);
+ * a test in @drobek/mcp keeps the two equal.
  *
  * The MCP tools take their `hint` from HERE (`errorHint`), and a unit test in
  * @drobek/mcp asserts that every code the tools can emit — and every
@@ -34,9 +43,9 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
   },
   {
     code: 'forbidden',
-    surface: 'MCP tool isError; module route 403 (DrobekError)',
+    surface: 'MCP tool isError; module route 403 (DrobekError); upload URL 403',
     meaning:
-      'You are a member of the workspace, but your role is viewer — changing apps needs editor or workspace-admin. From a module route: the signed-in end user may not do this (the module\'s rule, e.g. owner or admin only).',
+      'You are a member of the workspace, but your role is viewer — changing apps needs editor or workspace-admin. From a module route: the signed-in end user may not do this (the module\'s rule, e.g. owner or admin only). From an upload URL: the user it was issued for is no longer an editor of the app (removed or demoted since), so it cannot be used.',
     fix: 'Ask a workspace admin for the editor role (the write scope alone does not raise your role), or work in a workspace where you are an editor. In an app: show the end user a friendly message.',
   },
   {
@@ -99,6 +108,79 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     meaning:
       'The version you asked publish to put live did not compile (only versions with compile_status ok can be published), or the app has no version that compiled yet. Nothing changed on the production URL.',
     fix: 'Publish a version that compiled: omit `version` to publish the newest one that did, or fix compile.errors with write_files first.',
+  },
+  {
+    code: 'not_published',
+    surface: 'MCP tool isError (set_gallery_listing)',
+    meaning: 'Only a published app can be listed in the public gallery, and this app has no version on its production URL.',
+    fix: 'Publish the app first — but only when the user explicitly asks to publish — then ask again whether they want it in the gallery.',
+  },
+  {
+    code: 'user_confirmation_required',
+    surface: 'MCP tool isError (set_gallery_listing)',
+    meaning:
+      'Listing an app in the public gallery shows its name, a description and its production link to everyone, so the call needs `user_confirmed: true` — set only after the user explicitly said yes to exactly this listing. Nothing changed.',
+    fix: 'Ask the user: "Do you want <app name> shown in the public gallery with the description \"<description>\"?" Call again with user_confirmed:true only if they clearly say yes; otherwise leave the app unlisted.',
+  },
+  {
+    code: 'gallery_hidden',
+    surface: 'MCP tool isError (set_gallery_listing); dashboard 400',
+    meaning: 'The server operator hid this app from the public gallery; neither the owner nor an agent can list it until the operator shows it again. Nothing changed.',
+    fix: 'Do not retry and do not work around it. Tell the user the operator hid the app from the gallery; they can contact the operator.',
+  },
+  {
+    code: 'gallery_disabled',
+    surface: 'MCP tool isError (set_gallery_listing)',
+    meaning: 'This server runs no public gallery (its operator left GALLERY_ENABLED off). Nothing changed.',
+    fix: 'Tell the user this server has no public gallery; do not retry.',
+  },
+  {
+    code: 'asset_too_large',
+    surface: 'MCP tool isError (create_asset_upload); upload URL 413',
+    meaning:
+      'The file is bigger than one asset may be (APP_ASSET_MAX_BYTES, default 100 MiB; `limit`, `value`). Nothing was stored.',
+    fix: 'Compress or shorten the file (e.g. re-encode the video at a lower bitrate or resolution) and ask for a new upload URL with the new size. Transcoding is not done by drobek.',
+  },
+  {
+    code: 'asset_type_not_allowed',
+    surface: 'MCP tool isError (create_asset_upload); upload URL 415',
+    meaning:
+      'The declared content_type does not fit the path\'s extension, or the uploaded bytes are not an allowed asset type for it (`allowed`; `type` = what the bytes are). The type comes from the file\'s content, never its name: an HTML page named film.mp4 is refused. Allowed: PNG, JPEG, GIF, WebP, SVG, MP4 (H.264/AAC), WebM, M4A, MP3, Ogg, WAV, WOFF, WOFF2.',
+    fix: 'Upload the real file with the matching extension (a .mov or .mkv must be converted to MP4 or WebM first). Text files (HTML, JS, CSS, JSON) go through write_files instead.',
+  },
+  {
+    code: 'asset_quota_exceeded',
+    surface: 'MCP tool isError (create_asset_upload); upload URL 413',
+    meaning:
+      'The app\'s assets would exceed APP_ASSETS_QUOTA (default 1 GiB; `limit`, `value`, `used_bytes`). The quota counts each unique file of the draft and of the published set once: a file uploaded to an existing path replaces the draft\'s, but the one production serves still counts until the next publish.',
+    fix: 'list_assets shows what the app holds; delete_asset what is no longer used (a file production still serves is freed by the next publish, when the user asks for one), then ask for a new upload URL.',
+  },
+  {
+    code: 'asset_path_taken',
+    surface: 'MCP tool isError (create_asset_upload); upload URL 409',
+    meaning:
+      'A file of the app (written with write_files, in its latest or published version) already sits at that path, and an app file always wins over an asset at the same path (`path`).',
+    fix: 'Upload the asset under another path and point the page at it, or delete the text file with write_files first (e.g. a placeholder SVG).',
+  },
+  {
+    code: 'asset_size_mismatch',
+    surface: 'upload URL 400',
+    meaning:
+      'The uploaded body is not exactly the `size` the upload URL was created for (`declared`, `received`), or Content-Length disagrees with it. Nothing was stored; the URL is used up.',
+    fix: 'Check the size (`stat -c %s <file>` / `stat -f %z <file>`), then call create_asset_upload again with the exact byte count.',
+  },
+  {
+    code: 'asset_not_found',
+    surface: 'MCP tool isError (delete_asset)',
+    meaning: 'The app has no asset at that path (`path`).',
+    fix: 'list_assets shows the app\'s asset paths.',
+  },
+  {
+    code: 'upload_token_invalid',
+    surface: 'upload URL 404',
+    meaning:
+      'The upload URL is unknown, already used (every URL takes exactly one upload, successful or not) or older than 30 minutes.',
+    fix: 'Call create_asset_upload again for a fresh URL (or, in the dashboard, pick the file again on the Assets tab).',
   },
   {
     code: 'internal_error',
@@ -168,9 +250,9 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
   },
   {
     code: 'rate_limited',
-    surface: 'module route 429 (DrobekError), Retry-After',
-    meaning: 'A module limit was hit (per visitor, per user or per app — `details.limit` per `details.window_seconds`).',
-    fix: 'Show the user a message and retry after Retry-After seconds; never loop.',
+    surface: 'module route 429 (DrobekError), Retry-After; MCP tool isError (create_asset_upload)',
+    meaning: 'A module limit was hit (per visitor, per user or per app — `details.limit` per `details.window_seconds`). From create_asset_upload: the app has asked for APP_ASSET_UPLOADS_PER_HOUR upload URLs within the last hour.',
+    fix: 'Show the user a message and retry after Retry-After seconds; never loop. For upload URLs: upload the files you already have URLs for, and ask for more after the hour.',
   },
   {
     code: 'payload_too_large',
@@ -179,14 +261,8 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     fix: 'Send less (the module skill states the size limits).',
   },
   {
-    code: 'validation_failed',
-    surface: 'module route (data) 422 (DrobekError)',
-    meaning: 'The record does not match the collection\'s JSON Schema; `details[]` lists each `{ path, message }`. Nothing was stored.',
-    fix: 'Send the fields the schema requires with the right types (get_app shows the data config), or change the schema with configure_module(\'data\').',
-  },
-  {
     code: 'quota_exceeded',
-    surface: 'module route (data, files) 409 (DrobekError)',
+    surface: 'module route 409 (DrobekError)',
     meaning:
       'The app reached a storage limit — for files, FILES_QUOTA_PER_APP (the total bytes of its stored files, `details.used`); for data, the number of records across all its collections, or their total size (`details.limit` names it, `details.value` is the limit; skill_info(\'data\') lists them). Nothing was stored.',
     fix: 'Delete records the app no longer needs (query_data finds them), or tell the user the app is full; the server operator sets the limits.',
@@ -197,13 +273,6 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     meaning:
       'A body was sent that is not JSON (routes that also take multipart/form-data, like forms, accept text fields only — a file part is refused).',
     fix: 'Use the SDK, which sends JSON; with fetch set Content-Type: application/json. Forms take no files; a files upload must be multipart/form-data with one file (drobek.files.upload does that).',
-  },
-  {
-    code: 'unsupported_type',
-    surface: 'module route (files) 415 (DrobekError)',
-    meaning:
-      'The uploaded file is not a type the app accepts. The type is decided from the bytes (PNG, JPEG, GIF, WebP, PDF, SVG, CSV), never from the name or the declared type — an HTML page renamed to .png is refused (`details.allowed` lists the accepted types; `details.type` is the detected type when it is known but not allowed). Nothing was stored.',
-    fix: "Upload an image, a PDF or a CSV; to accept fewer types set allowedTypes with configure_module('files').",
   },
   {
     code: 'conflict',
@@ -219,72 +288,17 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     fix: 'Show the user a message and retry later; tell the app owner if it persists.',
   },
   {
+    code: 'module_not_enabled',
+    surface: 'MCP tool isError (configure_module); module route 404 (DrobekError)',
+    meaning:
+      'The platform module is opt-in (skill_info lists it with availability: "opt-in") and is not enabled for the app\'s workspace (`details.module` / `module` names it). get_app shows it with `enabled: false` and leaves it out of the app\'s skills.',
+    fix: 'Do not use that module in this app — build the feature another way or leave it out, and tell the user that the server operator enables opt-in modules per workspace. skill_info(\'<module>\', app_id) says whether it is enabled for the app\'s workspace.',
+  },
+  {
     code: 'method_not_allowed',
     surface: 'module route 405 (DrobekError), Allow',
     meaning: 'The route exists but not for this HTTP method.',
     fix: 'Use the SDK call from the module skill.',
-  },
-  {
-    code: 'email_not_allowed',
-    surface: 'module route (auth) 403 (DrobekError)',
-    meaning: 'The address may not sign in to this app: it is not in `allow` / `adminEmails` of the auth config, or the user is disabled. No code was sent.',
-    fix: "Add the address or its domain with configure_module('auth'), or tell the user who may sign in.",
-  },
-  {
-    code: 'invalid_code',
-    surface: 'module route (auth) 400 (DrobekError)',
-    meaning: 'The sign-in code is wrong, expired (10 minutes) or already used.',
-    fix: 'Re-enter the code from the e-mail, or request a new one with drobek.auth.sendCode.',
-  },
-  {
-    code: 'submitted_too_fast',
-    surface: 'module route (forms) 429 (DrobekError), Retry-After',
-    meaning: 'The form was sent less than 2 s after its token was issued (`details.min_wait_ms`) — the bot check. Nothing was stored.',
-    fix: 'Use <Form> or drobek.forms.submit (they fetch the token early and wait); with your own fetch, call GET /__drobek/v1/forms/<form>/token when the form is shown, not on submit.',
-  },
-  {
-    code: 'invalid_form_token',
-    surface: 'module route (forms) 400 (DrobekError)',
-    meaning: 'The `_t` field is missing, forged, for another form/app, or older than 2 hours (`details.reason`: invalid | expired). Nothing was stored.',
-    fix: 'Use <Form> or drobek.forms.submit — they fetch a fresh token and retry once by themselves.',
-  },
-  {
-    code: 'too_many_attempts',
-    surface: 'module route (auth) 429 (DrobekError)',
-    meaning: 'Five wrong codes were entered for this address; the code is dead.',
-    fix: 'Request a new code (drobek.auth.sendCode); <LoginGate> goes back to the e-mail step by itself.',
-  },
-  {
-    code: 'path_not_allowed',
-    surface: 'module route (proxy) 403',
-    meaning: "The path is outside the upstream's allowed path prefixes (or climbs out of them with ../ or an encoded slash).",
-    fix: "get_app → modules.proxy.info.upstreams[].allowedPathPrefixes lists the allowed prefixes; ask the workspace admin to widen them in the dashboard if the app really needs another path.",
-  },
-  {
-    code: 'ssrf_blocked',
-    surface: 'module route (proxy) 403',
-    meaning: 'The upstream resolves to a private/internal address or uses a port other than 80/443 — drobek never connects there.',
-    fix: 'The workspace admin must register the upstream with a public host on port 80/443. Nothing to fix in the app code.',
-  },
-  {
-    code: 'upstream_error',
-    surface: 'module route (proxy) 502',
-    meaning:
-      'The upstream could not be reached, timed out (20 s), answered more than 5 MiB (measured after undoing a gzip / deflate / br encoding) or used an encoding drobek cannot decode.',
-    fix: 'Show "try again later" in the app; ask for smaller responses (pagination, limits). Never retry in a tight loop.',
-  },
-  {
-    code: 'proxy_busy',
-    surface: 'module route (proxy) 429, Retry-After',
-    meaning:
-      'Too many upstream calls are in flight — from this app (PROXY_MAX_CONCURRENT_PER_APP, default 8) or on the whole server (PROXY_MAX_CONCURRENT, default 32). Nothing was sent to the upstream.',
-    fix: 'Retry after `Retry-After` seconds; do not fire many proxy calls in parallel from one page (queue them, or batch in one upstream request).',
-  },
-  {
-    code: 'config_error',
-    surface: 'module route (proxy) 500',
-    meaning: "The upstream's stored secret cannot be used (missing, or the server's master key changed).",
-    fix: 'The workspace admin re-registers the upstream with its secret in the dashboard. Never ask for the secret in chat.',
   },
   // ── OAuth 2.1 connect flow ────────────────────────────────────────────────
   {

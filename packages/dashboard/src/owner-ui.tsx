@@ -133,11 +133,15 @@ export const ui = {
   pager: { display: 'flex', gap: '1rem', margin: '1rem 0', fontSize: '0.88rem' },
 } as const;
 
-/** Shown when the module that owns a tab's data is not in DROBEK_MODULES. */
-export function ModuleMissing({ module }: { module: string }) {
+/**
+ * Shown when no active module owns a tab's data (the authority — e.g. the
+ * module that stores uploads). Named by what it does, not by a module name:
+ * any module declaring the authority serves the tab (NSO-347).
+ */
+export function ModuleMissing({ does }: { does: string }) {
   return (
     <p style={ui.empty} data-testid="module-missing">
-      The <code>{module}</code> platform module is not enabled on this server (the operator lists modules in <code>DROBEK_MODULES</code>).
+      No platform module on this server {does} (the operator lists modules in <code>DROBEK_MODULES</code>).
     </p>
   );
 }

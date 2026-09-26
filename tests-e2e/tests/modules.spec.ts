@@ -187,6 +187,13 @@ test.describe('platform modules — the hello example (M1-01) @local', () => {
     const wrong = await hostRequest(host, '/__drobek/v1/hello/wave');
     expect(wrong.status).toBe(405);
     expect(wrong.headers.allow).toBe('POST');
+    // The slot hello.greeter (NSO-344): no module contributes a greeter on the dev stack.
+    const greet = await hostRequest(host, '/__drobek/v1/hello/greet?name=Ada');
+    expect(JSON.parse(greet.body)).toEqual({ text: 'Hello, Ada', greeter: null });
+    const robot = await hostRequest(host, '/__drobek/v1/hello/greet?name=Ada&greeter=robot');
+    expect(robot.status).toBe(404);
+    expect(JSON.parse(robot.body)).toMatchObject({ error: 'unknown_greeter', details: { available: [] }, hint: "skill_info('hello')" });
+
     const nope = await hostRequest(host, '/__drobek/v1/nope');
     expect(nope.status).toBe(404);
     expect(JSON.parse(nope.body)).toMatchObject({ error: 'not_found', details: { available: ['hello', 'auth', 'email', 'forms', 'data', 'proxy', 'files'] } });
@@ -330,6 +337,9 @@ test.describe('platform modules — the hello example (M1-01) @local', () => {
       config: { defaults: { greeting: 'Hello', excited: false } },
       limits: [{ name: 'HELLO_WAVES_PER_MINUTE', value: 5 }],
       secrets: [{ name: 'HELLO_SIGNATURE', required: false }],
+      // Module contract 1.1 (NSO-344): the module's own error codes + its availability.
+      errors: [{ code: 'unknown_greeter' }],
+      availability: 'default',
     });
     expect(String(one.json.content)).toContain('drobek.hello.ping()');
 

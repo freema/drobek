@@ -5,16 +5,17 @@
  * GET (viewer+): the shared app header (URLs, compile state, lock) + the
  * VERSION HISTORY (number, time, author, reasoning, compile status + first
  * error, a link to `<slug>--v<N>`) + the insight panels (recent errors,
- * traffic / 404s). A viewer sees everything but no controls.
+ * traffic / 404s) + the public gallery section (NSO-340; absent unless
+ * GALLERY_ENABLED). A viewer sees everything but no controls.
  *
  * POST (editor+): `appAction` — publish (an older version = the rollback),
- * restore to the working copy, and the header's unpublish / unlock; the
- * role gate runs before anything else (viewer → 403, non-member → 404,
- * anonymous → /login). A pre-NSO-288 form with only `versionId` still
+ * restore to the working copy, the gallery listing, and the header's
+ * unpublish / unlock; the role gate runs before anything else (viewer → 403,
+ * non-member → 404, anonymous → /login). A pre-NSO-288 form with only `versionId` still
  * publishes.
  */
 import { type LoaderFunctionArgs } from 'react-router';
-import { listVersions, versionUrl } from '@drobek/apps';
+import { GALLERY_DESCRIPTION_MAX, galleryEnabled, galleryState, listVersions, versionUrl } from '@drobek/apps';
 import {
   queryAppErrors,
   queryAppLogs,
@@ -77,6 +78,15 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     canPublish: header.canEdit && header.lockedByAdmin === null,
     // M2-02: "N changes await confirmation" (PendingBanner).
     pendingBanner: await loadPendingBanner(app, header.workspace.slug, app.slug),
+    // NSO-340: the public gallery section (null = the server runs no gallery).
+    gallery: galleryEnabled()
+      ? {
+          ...galleryState(app),
+          published: app.publishedVersionId !== null,
+          passwordProtected: app.visibility === 'password',
+          descriptionMax: GALLERY_DESCRIPTION_MAX,
+        }
+      : null,
   };
 }
 

@@ -1,3 +1,4 @@
+import { ASSET_UPLOAD_PATH_PREFIX } from '@drobek/apps';
 import { createOriginCheckMiddleware } from '@drobek/auth';
 import { coreVersion } from '@drobek/core';
 import { mountMcpResource } from '@drobek/oauth/resource';
@@ -28,6 +29,11 @@ export interface ServerAppOptions {
   appsHost?: RequestHandler;
   /** Caddy's on-demand TLS `ask` handler (M0-07). Default: from TLS_ASK_TOKEN. */
   tlsAsk?: RequestHandler;
+  /**
+   * NSO-358: the asset upload URL endpoint (`/api/assets/upload/<token>`,
+   * @drobek/apps createAssetUploadHandler). Absent → not mounted.
+   */
+  assetUpload?: RequestHandler;
 }
 
 /**
@@ -39,8 +45,11 @@ export interface ServerAppOptions {
  *     app host (`<slug>[--preview|--v<N>].<APPS_DOMAIN>`) is answered there and
  *     never reaches anything below — no dashboard route, no /mcp, no session
  *     code. The dashboard host never serves app files (there is no app route).
- *  2. the Origin check (CSRF) for every mutating dashboard request;
- *  3. health/version, Caddy's TLS `ask` endpoint (M0-07 — token-guarded,
+ *  2. the asset upload URLs (NSO-358, `/api/assets/upload/<token>`): the
+ *     token in the path is the whole authorization (single use, no cookie is
+ *     read), so they sit before the Origin check — `curl -T` sends no Origin;
+ *  3. the Origin check (CSRF) for every mutating dashboard request;
+ *  4. health/version, Caddy's TLS `ask` endpoint (M0-07 — token-guarded,
  *     internal network only, blocked by Caddy on every public site), then `/mcp` (with `express.json()` scoped to it, because
  *     React Router actions must read the raw body), then React Router.
  */
@@ -49,6 +58,7 @@ export function createServerApp(opts: ServerAppOptions): Express {
   app.disable('x-powered-by');
 
   app.use(opts.appsHost ?? (createAppsHostMiddleware() as RequestHandler));
+  if (opts.assetUpload) app.all(`${ASSET_UPLOAD_PATH_PREFIX}:token`, opts.assetUpload);
   app.use(createOriginCheckMiddleware() as RequestHandler);
 
   // Static liveness (D3) — no dependency checks; `/healthz` (React Router)

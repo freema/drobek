@@ -18,6 +18,7 @@ describe('app tabs (data-driven)', () => {
     expect(APP_TABS.map((t) => appTabHref('ws', 'todo', t))).toEqual([
       '/workspaces/ws/apps/todo',
       '/workspaces/ws/apps/todo/files',
+      '/workspaces/ws/apps/todo/assets',
       '/workspaces/ws/apps/todo/data',
       '/workspaces/ws/apps/todo/modules',
       '/workspaces/ws/apps/todo/forms',
@@ -32,6 +33,7 @@ describe('app tabs (data-driven)', () => {
   it.each([
     ['/workspaces/ws/apps/todo', 'overview'],
     ['/workspaces/ws/apps/todo/files', 'files'],
+    ['/workspaces/ws/apps/todo/assets', 'assets'],
     ['/workspaces/ws/apps/todo/data/tasks', 'data'],
     ['/workspaces/ws/apps/todo/modules/forms', 'modules'],
     ['/workspaces/ws/apps/todo/domains', 'domains'],

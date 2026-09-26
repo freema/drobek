@@ -25,9 +25,11 @@ const REQUIRED_SECTIONS = [
   '## Your workspace',
   '## Create an app',
   '## Write files, read the compile result',
+  '## Port a Claude artifact',
   '## One writer at a time',
   '## Roll back',
   '## Publishing',
+  '## Gallery',
   '## Errors',
   '## Authoritative schemas',
 ];
@@ -68,6 +70,24 @@ describe('skills/drobek/SKILL.md', () => {
     expect(md).toContain('3 minutes');
     expect(md).toContain('`secret_in_source`');
     expect(md).toContain('drobek dashboard');
+  });
+
+  it('lists an app in the gallery only after the user said yes (NSO-340)', () => {
+    expect(md).toContain('**only after the user explicitly said yes**');
+    expect(md).toContain('user_confirmed: true');
+    expect(md).toContain('Never list on your own');
+  });
+
+  it('ports a Claude artifact: text via write_files, binaries via create_asset_upload at the same path, never base64 (NSO-359)', () => {
+    const port = md.slice(md.indexOf('## Port a Claude artifact'), md.indexOf('## One writer at a time'));
+    expect(port).toContain("skill_info('port-artifact')");
+    expect(port).toContain('the server\nfetches nothing from claude.ai');
+    for (const tool of ['create_app', 'write_files', 'create_asset_upload', 'list_assets', 'publish', 'set_gallery_listing']) {
+      expect(port, tool).toContain(`\`${tool}\``);
+    }
+    expect(port).toContain('SAME relative path');
+    expect(port).toContain('never base64 through a tool call');
+    expect(port).toContain('`window.claude.*`');
   });
 
   it('states the skill_info rule verbatim, in the present tense (M1-01)', () => {

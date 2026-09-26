@@ -175,6 +175,13 @@ export interface PipelineDeps {
   context(principal: Principal): Promise<ModuleContext<unknown>>;
   /** Resolve a limit name to its value for this app's workspace. */
   limit(name: string): Promise<number>;
+  /**
+   * The error codes the module may answer with (the core catalogue + its own
+   * `errors`). A ModuleError with another code is not answered: it is
+   * rethrown as an internal error (the runtime logs it and answers
+   * `500 internal_error`). Undefined = any code (no check).
+   */
+  errorCodes?: ReadonlySet<string>;
 }
 
 function isResponse(v: unknown): v is ModuleResponse {
@@ -364,7 +371,14 @@ export async function runRoute(
     }
     return json(200, out === undefined ? null : out);
   } catch (err) {
-    if (isModuleError(err)) return errorResult(err, deps.module);
+    if (isModuleError(err)) {
+      if (deps.errorCodes && !deps.errorCodes.has(err.code)) {
+        throw new Error(
+          `module "${deps.module}" answered the error code "${err.code}", which is neither a core code nor declared in its errors (defineModule({ errors }))`
+        );
+      }
+      return errorResult(err, deps.module);
+    }
     throw err;
   }
 }

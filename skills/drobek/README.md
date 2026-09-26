@@ -22,7 +22,8 @@ agents can read `SKILL.md` directly.
 For the hosted drobek (`https://drobek.app/mcp`), the
 [drobek plugin](https://github.com/freema/drobek-plugin) bundles the MCP server,
 a `build-app-on-drobek` skill (Claude Code, Codex and Cursor variants that follow
-this skill's loop and rules) and the `/drobek:build-app` command. Claude Code:
+this skill's loop and rules), the `/drobek:build-app` command and
+`/drobek:port-artifact` (move a Claude artifact to drobek). Claude Code:
 
 ```sh
 claude plugin marketplace add freema/drobek-plugin

@@ -23,7 +23,11 @@
  *
  * Anything else — an HTML page named `.png`, an executable, a ZIP — is
  * `unsupported_type`. SVG and CSV are served as attachments only (serve.ts).
+ *
+ * The signatures and the SVG root check live in @drobek/core (shared with app
+ * assets, NSO-358); this file narrows them to the module's types.
  */
+import { hasControlBytes, looksLikeSvg, sniffSignature } from '@drobek/modules';
 
 export const FILE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml', 'application/pdf', 'text/csv'] as const;
 export type FileType = (typeof FILE_TYPES)[number];
@@ -40,90 +44,20 @@ export function typeAllowed(type: FileType, allowed: readonly string[]): boolean
 /** Bytes of the head the markup checks look at. */
 export const SNIFF_HEAD_BYTES = 16 * 1024;
 
-const startsWith = (b: Buffer, sig: number[] | string, at = 0): boolean => {
-  const bytes = typeof sig === 'string' ? Buffer.from(sig, 'latin1') : Buffer.from(sig);
-  return b.length >= at + bytes.length && b.subarray(at, at + bytes.length).equals(bytes);
-};
+const FILE_TYPE_SET: ReadonlySet<string> = new Set(FILE_TYPES);
 
-/** The binary type of a file from its first bytes, or null. */
+/** The binary type of a file from its first bytes, or null (the shared sniffer, narrowed to the files module's types). */
 export function sniffBinary(head: Buffer): FileType | null {
-  if (startsWith(head, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) return 'image/png';
-  if (startsWith(head, [0xff, 0xd8, 0xff])) return 'image/jpeg';
-  if (startsWith(head, 'GIF87a') || startsWith(head, 'GIF89a')) return 'image/gif';
-  if (startsWith(head, 'RIFF') && startsWith(head, 'WEBP', 8)) return 'image/webp';
-  if (startsWith(head, '%PDF-')) return 'application/pdf';
-  return null;
+  const type = sniffSignature(head);
+  return type !== null && FILE_TYPE_SET.has(type) ? (type as FileType) : null;
 }
 
 /** Enough bytes to tell every binary signature apart. */
 const MAGIC_BYTES = 12;
 
-/** Most prolog items (declaration, PIs, comments) looked past before `<svg`. */
-const SVG_PROLOG_MAX_ITEMS = 64;
-// Sticky (`y`): matched at `lastIndex`, never scanning ahead.
-const SVG_ROOT_RE = /<svg[\s>/]/iy;
-const DOCTYPE_SVG_RE = /<!DOCTYPE[ \t\r\n]+svg(?=[ \t\r\n>[])/iy;
+/** The SVG root check is shared with app assets (@drobek/core, NSO-358). */
+export { looksLikeSvg };
 
-const matchesAt = (re: RegExp, s: string, at: number): boolean => {
-  re.lastIndex = at;
-  return re.test(s);
-};
-
-const isXmlSpace = (c: string): boolean => c === ' ' || c === '\t' || c === '\n' || c === '\r';
-
-/**
- * Does the (BOM-stripped) head start with an `<svg` root? Whitespace, then any
- * mix of XML declarations / processing instructions (`<?…?>`) and comments
- * (`<!--…-->`) — at most SVG_PROLOG_MAX_ITEMS — and one `<!DOCTYPE svg …>`
- * (with an optional `[…]` internal subset), then `<svg`.
- *
- * A linear scanner on purpose: the regex it replaces backtracked
- * exponentially on repeated `<?xml?>` (NSO-322 R1). Every step moves `i`
- * forward through `indexOf`, so the cost is O(head length). An unterminated
- * item is not an SVG.
- */
-export function looksLikeSvg(head: string): boolean {
-  let i = 0;
-  const skipSpace = (): void => {
-    while (i < head.length && isXmlSpace(head[i])) i++;
-  };
-  let doctype = false;
-  for (let items = 0; items <= SVG_PROLOG_MAX_ITEMS; items++) {
-    skipSpace();
-    if (head.startsWith('<?', i)) {
-      const end = head.indexOf('?>', i + 2);
-      if (end < 0) return false;
-      i = end + 2;
-      continue;
-    }
-    if (head.startsWith('<!--', i)) {
-      const end = head.indexOf('-->', i + 4);
-      if (end < 0) return false;
-      i = end + 3;
-      continue;
-    }
-    if (!doctype && matchesAt(DOCTYPE_SVG_RE, head, i)) {
-      doctype = true;
-      const gt = head.indexOf('>', i);
-      const bracket = head.indexOf('[', i);
-      if (gt < 0) return false;
-      if (bracket < 0 || gt < bracket) {
-        i = gt + 1;
-        continue;
-      }
-      // An internal subset: `[` … `]`, optional whitespace, `>`.
-      const close = head.indexOf(']', bracket + 1);
-      if (close < 0) return false;
-      i = close + 1;
-      skipSpace();
-      if (head[i] !== '>') return false;
-      i++;
-      continue;
-    }
-    return matchesAt(SVG_ROOT_RE, head, i);
-  }
-  return false;
-}
 const MARKUP_RE = /<!doctype|<html|<script|<\?xml|<svg|<body|<iframe/i;
 
 const CSV_TYPES = new Set(['text/csv', 'application/csv', 'text/comma-separated-values', 'application/vnd.ms-excel', 'text/x-csv']);
@@ -132,15 +66,6 @@ const CSV_TYPES = new Set(['text/csv', 'application/csv', 'text/comma-separated-
 export function claimsCsv(declaredType: string | null, filename: string): boolean {
   const t = (declaredType ?? '').split(';')[0].trim().toLowerCase();
   return CSV_TYPES.has(t) || /\.csv$/i.test(filename.trim());
-}
-
-/** A C0 control character other than tab, LF, CR (never in a text file we accept). */
-function hasControlBytes(chunk: Buffer): boolean {
-  for (let i = 0; i < chunk.length; i++) {
-    const c = chunk[i];
-    if (c < 0x20 && c !== 0x09 && c !== 0x0a && c !== 0x0d) return true;
-  }
-  return false;
 }
 
 /**

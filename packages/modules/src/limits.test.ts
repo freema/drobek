@@ -7,6 +7,8 @@ import {
   LIMITS_TIMESTAMP_HEADER,
   createLimitsProvider,
   limitsProviderConfigError,
+  moduleEnabledLimit,
+  moduleEnabledLimitName,
   signLimitsRequest,
 } from './limits.js';
 
@@ -122,5 +124,33 @@ describe('core limits (NSO-329)', () => {
   it('docs/MODULES.md lists every core limit (the provider-side mirror)', () => {
     const doc = readFileSync(new URL('../../../docs/MODULES.md', import.meta.url), 'utf8');
     for (const l of CORE_LIMITS) expect(doc).toContain(`\`${l.env}\``);
+  });
+});
+
+describe('MODULE_ENABLED_<NAME> (NSO-346)', () => {
+  const cat = [...catalogue, moduleEnabledLimit('vault')];
+
+  it('the pseudo-limit: env default 0, env 1 enables, anything but 0/1 is ignored', () => {
+    expect(moduleEnabledLimitName('vault')).toBe('MODULE_ENABLED_VAULT');
+    expect(createLimitsProvider({ catalogue: cat, env: {} }).defaults().MODULE_ENABLED_VAULT).toBe(0);
+    expect(createLimitsProvider({ catalogue: cat, env: { MODULE_ENABLED_VAULT: '1' } }).defaults().MODULE_ENABLED_VAULT).toBe(1);
+    expect(createLimitsProvider({ catalogue: cat, env: { MODULE_ENABLED_VAULT: '2' } }).defaults().MODULE_ENABLED_VAULT).toBe(0);
+  });
+
+  it('fromPlan: only what the provider sets (validated); null without a provider or while it is down', async () => {
+    const answer = (limits: unknown) =>
+      createLimitsProvider({ catalogue: cat, env, fetch: async () => ({ ok: true, status: 200, json: async () => ({ limits }) }) });
+    expect(await answer({ MODULE_ENABLED_VAULT: 0, FORMS_PER_DAY: 9, X: 1 }).fromPlan!('ws')).toEqual({ MODULE_ENABLED_VAULT: 0, FORMS_PER_DAY: 9 });
+    expect(await answer({ MODULE_ENABLED_VAULT: 3 }).fromPlan!('ws')).toEqual({});
+    expect(await answer({ MODULE_ENABLED_VAULT: 1 }).forWorkspace('ws')).toMatchObject({ MODULE_ENABLED_VAULT: 1, FORMS_PER_DAY: 50 });
+    expect(await createLimitsProvider({ catalogue: cat, env: {} }).fromPlan!('ws')).toBeNull();
+    const down = createLimitsProvider({
+      catalogue: cat,
+      env,
+      fetch: async () => {
+        throw new Error('ECONNREFUSED');
+      },
+    });
+    expect(await down.fromPlan!('ws')).toBeNull();
   });
 });

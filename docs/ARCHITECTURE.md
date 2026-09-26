@@ -39,9 +39,9 @@ record behind it is [`vision-plan.md`](./vision-plan.md) (Czech).
  │   5. everything else: React Router (@drobek/dashboard routes, OAuth AS routes, /llms.txt, /report …)         │
  │   in-process jobs (apps/server/server/jobs.ts): blob GC, slug release, domain re-check, audit, files sweep   │
  └──────────────┬───────────────────────────────────────────┬────────────────────────────────┬──────────────────┘
-                │ postgres-js + drizzle                     │ ioredis                        │ nodemailer SMTP
+                │ postgres-js + drizzle                     │ ioredis                        │ SMTP (nodemailer) or Resend
           Postgres 17: users, workspaces, apps,       Redis 7: sessions, rate limits,     any SMTP server
-          versions + blobs, module data, OAuth,       OTP counters, leases, caches,       (Mailpit in dev)
+          versions + blobs, module data, OAuth,       OTP counters, leases, caches,       (EMAIL_TRANSPORT; Mailpit in dev)
           API keys, domains, abuse, audit             serve-cache bust pub/sub
 ```
 
@@ -61,7 +61,7 @@ record behind it is [`vision-plan.md`](./vision-plan.md) (Czech).
 
   | Package | Holds |
   | --- | --- |
-  | `@drobek/apps` | apps, globally unique slugs, versions, publish/restore, host classification, single-writer lease, blob GC, takedown, deletion |
+  | `@drobek/apps` | apps, globally unique slugs, versions, publish/restore, host classification, single-writer lease, blob GC, takedown, deletion, the public gallery |
   | `@drobek/compile` | the in-process esbuild compiler over an in-memory file map |
   | `@drobek/serving` | the apps-host handler: host → app → version → file, CSP, caches, password gate, TLS `ask` |
   | `@drobek/modules` | the module contract, registry, router, runtime, SDK build, limits provider, end-user sessions |
@@ -69,9 +69,10 @@ record behind it is [`vision-plan.md`](./vision-plan.md) (Czech).
   | `@drobek/agent-dx` | the briefing, the tool manifest, limits, error catalogue, `/llms.txt` renderers |
   | `@drobek/dashboard` | the dashboard routes and their server halves |
   | `@drobek/auth`, `@drobek/tenancy`, `@drobek/audit` | dashboard sign-in (e-mail code, Google), sessions, rate limits, origin check; workspaces and roles; the audit log |
-  | `@drobek/domains`, `@drobek/email`, `@drobek/insights`, `@drobek/proxy` | custom domains; SMTP transport; the error beacon and request stats; upstream registry, envelope crypto, SSRF guard |
+  | `@drobek/domains`, `@drobek/email`, `@drobek/insights`, `@drobek/proxy` | custom domains; the one mail transport of the dashboard and the modules (`EMAIL_TRANSPORT=smtp` via nodemailer, or `resend` via the Resend HTTP API over `fetch`); the error beacon and request stats; upstream registry, envelope crypto, SSRF guard |
   | `@drobek/core`, `@drobek/db`, `@drobek/sdk` | env/config, health, logger, Caddyfile generator; drizzle schema + migrations; the browser SDK core |
   | `modules/{auth,email,forms,data,proxy,files}` | the built-in platform modules (`drobek-module-<name>`) |
+  | `create-drobek-module` | the scaffold for external modules; with `@drobek/modules` + `@drobek/sdk` published to npm from each release tag (`scripts/npm-packages.mjs` bundles the private packages in) |
 
 ## 2. Workspaces, apps and versions
 
@@ -95,6 +96,16 @@ record behind it is [`vision-plan.md`](./vision-plan.md) (Czech).
   `restore_version` rolls the working copy back by writing a NEW version with
   the old files — history is never rewritten. There is no git and there are
   no branches.
+- **The public gallery** (`GALLERY_ENABLED`, off by default): an editor+
+  lists a PUBLISHED app with a ≤ 160-character public description
+  (`apps.gallery_listed` / `gallery_description`) in the dashboard, or an
+  agent does with `set_gallery_listing` and the user's explicit yes
+  (`user_confirmed: true`). `GET /api/public/gallery` on the dashboard host
+  returns name, description, production URL and `apps.published_at` (set by
+  every publish), newest first with a cursor, CORS `*`, cached 60 s — no
+  owner data. It filters at query time (listed, published, public, not
+  taken down, not deleted, not hidden by a super-admin); unpublish and
+  takedown also clear the flag.
 - **One writer at a time**: a write takes the app's Redis lease
   (`drobek:applock:<app_id>`, 3 minutes, renewed per write). Another user's
   agent gets `app_locked`; the same user's other sessions take the lease over.
@@ -174,10 +185,60 @@ before any byte of the app is touched:
 10. the version the host serves (**404** "not published" / "nothing compiled"),
     then the file: built output wins over sources, `.ts/.tsx/.jsx` sources and
     `drobek.json` are never served, extension-less paths fall back to
-    `index.html`, `ETag` = sha256 → **304**.
+    `index.html`, `ETag` = sha256 → **304**;
+11. no such file: the app's **asset** at that path, if any (see below).
+
+**Assets** (video, audio, images, fonts) share the app's URL space: the
+asset `img/s1.jpg` answers `/img/s1.jpg`, so a page keeps its own relative
+paths (`<video src="film.mp4" poster="poster.jpg">`). The app's own file at
+the same path wins; an asset path always has a media extension, so the SPA
+fallback never swallows one. Assets honour publish: `app_assets` is the
+**draft** — uploads, replacements and deletes change only it, and the preview
+host serves it; `publish` freezes a set for the version it puts live
+(`app_version_assets`, `app_versions.assets_frozen_at`) and the production
+host and custom domains serve only the live version's set; a version host
+serves its version's set, or the draft when it was never published.
+Publishing the newest version that compiled freezes the draft; publishing an
+older one (the rollback) keeps the set it had when it was last live;
+`restore_version` of a published version resets the draft to its set. The
+bytes live on disk under `ASSETS_DIR` (`/data/assets/<app_id>/<sha256>` —
+content-addressed and never rewritten, so the draft and any number of sets
+share a file; files from before this keep a random key; the `assets_data`
+volume). `APP_ASSETS_QUOTA` counts unique files: what the draft and the live
+set need must fit; the sets of up to ten earlier publishes are kept for a
+rollback while they fit besides, the oldest dropped first.
+Serving: the sniffed `Content-Type`, `Accept-Ranges: bytes`, one byte range
+→ **206** (`Content-Range`) or **416**, `ETag` (sha256) / `Last-Modified` →
+**304**, `If-Range`, HEAD; `public, max-age=300, must-revalidate` on the
+published and custom hosts, revalidate-always on preview and version hosts,
+`private` for a password app; SVG as an attachment with a second CSP
+`sandbox`. Takedown, the password gate and "not published" answer first,
+like for any file.
+
+Uploading never goes through MCP or the model: `create_asset_upload` (or the
+dashboard's Assets tab) checks the path, the declared size and type, the
+quota and the hourly budget, then mints a **single-use upload URL** on the
+dashboard host — `PUT /api/assets/upload/<token>`, 32 random bytes, only
+its sha256 stored in Redis for 30 minutes, bound to the app, the path, the
+size, the type family and the user who asked (the upload is audited as
+theirs). The PUT takes the token before reading a byte, streams the body to
+a temp file while it counts (over `APP_ASSET_MAX_BYTES` or past the declared
+size → stop), hashes and sniffs it (png, jpeg, gif, webp, svg, mp4, webm,
+m4a, mp3, ogg, wav, woff, woff2 — the bytes decide, never the name), renames
+it into place under its sha256, and writes the draft row under a per-app
+advisory lock that re-checks `APP_ASSETS_QUOTA` — and that the user the URL
+was issued for is still an editor of the app. A browser GET on the URL shows
+a small upload page (strict CSP, the token never in the page). A delete or
+replace removes a file nothing references any more; an hourly sweep removes
+the assets of apps deleted 24 h ago, stale temp files and files neither the
+draft nor a kept set references.
 
 Every response carries the app CSP (`default-src 'self'`, scripts from the app
-and `https://esm.sh`, `connect-src 'self' https://esm.sh`,
+and `https://esm.sh`, `connect-src 'self' https://esm.sh`, images, fonts,
+styles and `media-src` (`<video>`, `<audio>`) from the app, `blob:` or any
+https URL, `frame-src` only the curated embeds — YouTube
+(`www.youtube-nocookie.com`, `www.youtube.com`), `player.vimeo.com`,
+`drive.google.com` — plus the operator's `APP_FRAME_SRC_EXTRA`,
 `frame-ancestors` = the dashboard origin only, plus the origins the owner
 set in `apps.frame_ancestors` — the dashboard frames an app solely for the
 app-list thumbnail, see [`SECURITY.md`](./SECURITY.md)),
@@ -190,13 +251,28 @@ its preview host at once.
 ## 6. Platform modules
 
 A module is an npm package whose default export comes from `defineModule()`
-(`@drobek/modules`, contract `1.0.0`). The operator enables modules with
-`DROBEK_MODULES`; a short name `x` loads `drobek-module-x`. A module
-contributes routes under `/__drobek/v1/<name>/…` on every app host, a slice of
-the browser SDK (`drobek.<name>`), a zod per-app config schema, access rules,
-secrets (names only), env-named limits, its own tables and migrations, and a
-skill the agent reads with `skill_info`. Built in: `auth` (end-user sign-in by
-e-mailed code), `email` (notifications to the app's owners), `forms`, `data`
+(`@drobek/modules`, contract `1.1.0`; a module states the versions it works
+with in `contract`, e.g. `'^1.1'`, and one this server does not satisfy
+refuses the start). The operator enables modules with `DROBEK_MODULES`; a
+short name `x` loads `drobek-module-x` (which must export the module `x`), a
+full package name may replace a built-in. Each entry is looked up first in
+`DROBEK_MODULES_DIR` (the `modules_data` volume: modules installed without a
+new image, each listed with its integrity in `modules.lock.json`, given the
+server's own `@drobek/*` / `zod` / `drizzle-orm` through a `node:module`
+resolve hook, migrations linted to `mod_<name>[_*]`), then among the server's
+dependencies; `/healthz` and `/api/version` list the active modules with
+their source (`dir` | `builtin`). A module contributes routes under
+`/__drobek/v1/<name>/…` on every app host, a slice of the browser SDK
+(`drobek.<name>`), a zod per-app config schema (its defaults overridable per
+server with `DROBEK_MODULE_<NAME>_DEFAULTS`), access rules, secrets (names
+only), env-named limits, its own error codes, its own tables and migrations,
+and a skill the agent reads with `skill_info`. Modules extend each other
+through typed **slots**: a host module declares one with a zod schema, other
+modules contribute values, checked at start and read with
+`contributions(slot)` (a host may `compose` its config schema, confirm
+rules and secrets from the contributions at start). Built in: `auth`
+(end-user sign-in by e-mailed code, plus the sign-in providers other
+modules contribute to its `auth.provider` slot), `email` (notifications to the app's owners), `forms`, `data`
 (collections with per-operation rules), `proxy` (external APIs with the
 secret injected server-side) and `files` (end-user uploads). The contract is
 [`MODULES.md`](./MODULES.md).
@@ -206,6 +282,13 @@ secret injected server-side) and `files` (end-user uploads). The contract is
   `ctx.principal` = anonymous, an end user with a role, or an app admin. The
   dashboard session never exists on the apps origin. Mutating module calls
   need the app's own origin and `X-Drobek-SDK: 1` (`csrf_rejected`).
+- **Sign-in providers** (OIDC, SAML, … as modules) never share a cookie
+  between hosts: the app host starts the sign-in (`begin`: a state HMAC'd
+  under `DROBEK_MASTER_KEY`, PKCE, a flow cookie), the IdP calls back the ONE
+  redirect URI on the dashboard host (`/__drobek/auth/callback/<id>`, routed
+  to the `endUsers` authority's `callback`), which issues a 60-second
+  handoff code bound to the app host; `complete` on the app host redeems it
+  and sets the host-only session. The dashboard session is never touched.
 - **Configuration** comes from the agent (`configure_module`, a JSON merge
   patch validated by the module's schema) or the dashboard form. A change the
   module's `confirmRequired` names — opening a rule to `public`, a new
@@ -221,6 +304,14 @@ secret injected server-side) and `files` (end-user uploads). The contract is
   (`GET /limits/<workspace_id>`, cached 60 s; an outage falls back to the env
   values). Module e-mail also passes the operator-wide mail guard (hourly
   budgets per class and per app, pause + ALERT line).
+- **Opt-in modules** (`availability: 'opt-in'`) are active only for the
+  workspaces they are enabled for: by the limits provider's plan
+  (`MODULE_ENABLED_<NAME>`: `1` on, `0` off — it wins), by the env value
+  `MODULE_ENABLED_<NAME>=1` (every workspace), or by a super-admin's switch
+  on the dashboard's Workspace → Modules page (`workspace_modules`, audited).
+  Elsewhere their routes answer `404 module_not_enabled`, `configure_module`
+  refuses, `get_app` shows `enabled: false` and the app's skills leave them
+  out; the SDK stays one bundle per server.
 
 ## 7. TLS
 
@@ -255,6 +346,7 @@ All in-process (`apps/server/server/jobs.ts`), started with the server:
 | slug release | hourly, Redis lease | a soft-deleted app's slug is free again after 30 days |
 | domain re-check | `DOMAINS_RECHECK_INTERVAL_MS` (1 h), Redis lease | re-verifies domains checked more than 24 h ago; unverifies + mails on a definitive failure |
 | files sweep (only with the `files` module) | `FILES_SWEEP_INTERVAL_MS` (1 h), Redis lease | removes the uploads of apps deleted `FILES_SWEEP_RETENTION_MS` (24 h) ago, stale temp uploads and blobs no `mod_files` row references (`drobek-module-files`) |
+| assets sweep | hourly, Redis lease | removes the asset files and rows of apps deleted 24 h ago, stale temp uploads and files neither the draft (`app_assets`) nor a kept published set (`app_version_assets`) references (`@drobek/apps`) |
 | logs prune | `LOGS_PRUNE_INTERVAL_MS` (1 h), Redis lease | removes `get_logs` rows past their retention for every app: browser errors older than 30 days or past the newest 500 per app, compiles and daily request stats older than 30 days (`@drobek/insights`) |
 | audit retention | at start, then daily | deletes audit rows older than `AUDIT_RETENTION_DAYS` (365) — the only deletion of audit rows anywhere |
 
@@ -269,12 +361,14 @@ and at most once a minute per app and day; reads never delete.
   `iss`, rotating refresh tokens; or a personal `drk_` API key. A grant is
   bound to the **user** (every workspace they belong to) with the scopes
   `read`, `write`, `publish`; the scope decides which tools exist, the role in
-  the app's workspace decides each call. Eleven tools; the contract and the
-  briefing are in [`AGENT.md`](./AGENT.md).
+  the app's workspace decides each call. Fifteen tools (among them the
+  gallery listing and the asset upload URLs); the contract and the briefing
+  are in [`AGENT.md`](./AGENT.md).
 - **The dashboard** (core, AGPL): sign-in by e-mail code (Google optional),
   workspaces (Apps / Members / Activity / Upstreams tabs), apps with Overview
-  / Files / Data / Modules / Forms / Users / Uploads / Logs / Domains /
-  Settings tabs, version history and publish, activity (the audit log, CSV),
+  / Files / Assets / Data / Modules / Forms / Users / Uploads / Logs /
+  Domains / Settings tabs (Assets: list, upload with a progress bar, delete —
+  the same checks and upload URL as `create_asset_upload`), version history and publish, activity (the audit log, CSV),
   API keys and OAuth connections, the super-admin abuse queue. Every page
   shares one layout (`@drobek/tenancy/layout`: one width, a breadcrumb
   `Workspaces › <workspace> › <app> › <section>`, one set of form controls);
@@ -286,4 +380,5 @@ and at most once a minute per app and day; reads never delete.
 - **Abuse**: every app host points at the public report form; super-admins
   take an app down (unpublish + lock → 451 everywhere, every write refused
   with `app_locked_by_admin`) and restore it; a publish heuristic flags
-  password-field + brand-name pages into the queue without blocking.
+  password-field + brand-name pages into the queue without blocking; the
+  same queue lists the gallery entries, which a super-admin can hide.

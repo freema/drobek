@@ -1,7 +1,8 @@
 /**
  * @drobek/mcp — the MCP tool bodies (M0-05, plan §4): list_apps, create_app,
  * get_app, read_file, write_files, restore_version, publish, skill_info,
- * configure_module, query_data, get_logs. @drobek/oauth keeps the
+ * configure_module, query_data, get_logs, create_asset_upload, list_assets,
+ * delete_asset. @drobek/oauth keeps the
  * Streamable HTTP transport, sessions and Bearer auth and delegates tool
  * registration here (`registerAppTools`).
  */
@@ -25,6 +26,7 @@ export {
   type ToolPrincipal,
 } from './context.js';
 export { TOOL_ERROR_CODES, ToolError, type ToolErrorCode } from './errors.js';
+export type { AssetDeps } from './assets.js';
 export {
   LEASE_KEY_PREFIX,
   leaseKey,

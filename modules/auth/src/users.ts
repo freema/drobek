@@ -3,8 +3,8 @@
  * filtered by the app id the runtime scoped the context to.
  */
 import { randomBytes } from 'node:crypto';
-import { and, count, eq, inArray } from 'drizzle-orm';
-import { apps, memberships, users, type DB } from '@drobek/db';
+import { and, count, eq, inArray, isNull } from 'drizzle-orm';
+import { apps, isUniqueViolation, memberships, users, type DB } from '@drobek/db';
 import { authUsers, type AuthUserRow } from './schema.js';
 
 function newUserId(): string {
@@ -25,6 +25,15 @@ export async function findUserById(db: DB, appId: string, id: string): Promise<A
     .select()
     .from(authUsers)
     .where(and(eq(authUsers.appId, appId), eq(authUsers.id, id)))
+    .limit(1);
+  return row ?? null;
+}
+
+async function findUserByIdentity(db: DB, appId: string, provider: string, subject: string): Promise<AuthUserRow | null> {
+  const [row] = await db
+    .select()
+    .from(authUsers)
+    .where(and(eq(authUsers.appId, appId), eq(authUsers.provider, provider), eq(authUsers.subject, subject)))
     .limit(1);
   return row ?? null;
 }
@@ -76,4 +85,75 @@ export async function isWorkspaceEditor(db: DB, workspaceId: string, email: stri
 export async function appDisplayName(db: DB, appId: string, fallback: string): Promise<string> {
   const [row] = await db.select({ name: apps.name }).from(apps).where(eq(apps.id, appId)).limit(1);
   return row?.name?.trim() || fallback;
+}
+
+/** What a provider sign-in did to `mod_auth_users` — or why it was refused. */
+export type ProviderSignIn =
+  | { ok: true; row: AuthUserRow; isNew: boolean; linked: boolean }
+  | { ok: false; reason: 'disabled' | 'linked_elsewhere' | 'email_taken' | 'limit' };
+
+/**
+ * A provider sign-in of a VERIFIED identity the allowlist admitted (NSO-348):
+ *
+ *  1. the user linked to (provider, subject) — their address follows the
+ *     IdP's (refused when another user of the app has the new one);
+ *  2. else the user with that address and no link yet (an e-mail user) —
+ *     LINKED in place: same id, `provider` / `subject` set;
+ *     one linked to another identity → refused (`linked_elsewhere`);
+ *  3. else a new user (within `maxUsers`).
+ * A disabled user is refused in every case. Two callbacks racing to create
+ * the same user: the loser's insert hits a unique index and it starts over
+ * once (then finds the winner's row).
+ */
+export async function providerSignIn(
+  db: DB,
+  appId: string,
+  identity: { provider: string; subject: string; email: string; role: 'user' | 'admin' },
+  maxUsers: number,
+  retry = true
+): Promise<ProviderSignIn> {
+  const now = new Date();
+  const { provider, subject, email, role } = identity;
+  const linked = await findUserByIdentity(db, appId, provider, subject);
+  if (linked) {
+    if (linked.disabledAt) return { ok: false, reason: 'disabled' };
+    if (linked.email !== email) {
+      const other = await findUserByEmail(db, appId, email);
+      if (other && other.id !== linked.id) return { ok: false, reason: 'email_taken' };
+    }
+    try {
+      const [row] = await db
+        .update(authUsers)
+        .set({ email, role, lastLoginAt: now })
+        .where(and(eq(authUsers.appId, appId), eq(authUsers.id, linked.id)))
+        .returning();
+      return { ok: true, row, isNew: false, linked: false };
+    } catch (err) {
+      if (isUniqueViolation(err)) return { ok: false, reason: 'email_taken' };
+      throw err;
+    }
+  }
+  const byEmail = await findUserByEmail(db, appId, email);
+  if (byEmail) {
+    if (byEmail.disabledAt) return { ok: false, reason: 'disabled' };
+    if (byEmail.subject !== null) return { ok: false, reason: 'linked_elsewhere' };
+    const [row] = await db
+      .update(authUsers)
+      .set({ provider, subject, role, lastLoginAt: now, verifiedAt: byEmail.verifiedAt ?? now })
+      .where(and(eq(authUsers.appId, appId), eq(authUsers.id, byEmail.id), isNull(authUsers.subject)))
+      .returning();
+    if (!row) return retry ? providerSignIn(db, appId, identity, maxUsers, false) : { ok: false, reason: 'linked_elsewhere' };
+    return { ok: true, row, isNew: false, linked: true };
+  }
+  if ((await countUsers(db, appId)) >= maxUsers) return { ok: false, reason: 'limit' };
+  try {
+    const [row] = await db
+      .insert(authUsers)
+      .values({ id: newUserId(), appId, email, role, provider, subject, verifiedAt: now, lastLoginAt: now })
+      .returning();
+    return { ok: true, row, isNew: true, linked: false };
+  } catch (err) {
+    if (retry && isUniqueViolation(err)) return providerSignIn(db, appId, identity, maxUsers, false);
+    throw err;
+  }
 }

@@ -12,6 +12,8 @@
  *    `drobek/<m>` inline exports, root exports);
  *  - findApiMisuse: written files × that index → every use of an API that
  *    does not exist (unknown module / member / inline import / route);
+ *  - relativeRefs / binaryWrites: the artifact-port checks (NSO-359) — the
+ *    page keeps its relative paths, no binary travels through write_files;
  *  - renderResults: the Markdown table for the Linear comment.
  */
 
@@ -291,6 +293,43 @@ export function formNameOf(files) {
 }
 
 /**
+ * NSO-359 (port an artifact): the relative references of an HTML page —
+ * `src`, `href` and `poster` values that are not a URL, a `data:` URI, a
+ * fragment or root-absolute — in document order, deduplicated. The port keeps
+ * every one of them unchanged.
+ * @param {string} html
+ * @returns {string[]}
+ */
+export function relativeRefs(html) {
+  const out = new Set();
+  for (const m of html.matchAll(/\b(?:src|href|poster)\s*=\s*["']([^"']+)["']/gi)) {
+    const ref = m[1].trim();
+    if (!ref || /^(?:[a-z][a-z0-9+.-]*:|\/\/|\/|#)/i.test(ref)) continue;
+    out.add(ref);
+  }
+  return [...out];
+}
+
+/** Text extensions write_files takes; anything else in a ported folder is an asset (create_asset_upload). */
+export const TEXT_FILE_EXTS = ['.html', '.css', '.js', '.mjs', '.json', '.svg', '.txt', '.md', '.jsx', '.tsx', '.ts', '.webmanifest'];
+
+/**
+ * Every write that carried a binary through the model: a media path sent to
+ * write_files, or a text file with an inlined base64 blob of more than 1 KiB.
+ * @param {{ path: string, content: string }[]} writes
+ * @returns {string[]} the offending paths
+ */
+export function binaryWrites(writes) {
+  /** @type {string[]} */
+  const out = [];
+  for (const w of writes) {
+    const ext = w.path.slice(w.path.lastIndexOf('.')).toLowerCase();
+    if (!TEXT_FILE_EXTS.includes(ext) || /;base64,[A-Za-z0-9+/=]{1024,}/.test(w.content)) out.push(w.path);
+  }
+  return out;
+}
+
+/**
  * @typedef {{
  *   app: string, pass: boolean, writeFiles: number, toolCalls: number, toolErrors: number,
  *   skills: string[], misuse: string[], turns: number | null, costUsd: number | null,
@@ -309,7 +348,7 @@ export function renderResults(run) {
   const out = [
     `# drobek agent eval — ${run.date}`,
     '',
-    `Target \`${run.target}\`, mode \`${run.mode}\`, model \`${run.model}\`. Each app = one clean \`claude -p\` session with only the drobek MCP.`,
+    `Target \`${run.target}\`, mode \`${run.mode}\`, model \`${run.model}\`. Each app = one clean \`claude -p\` session with only the drobek MCP (the artifact port also gets file reads and curl).`,
     '',
     '| app | result | write_files | tool calls (errors) | skills read | non-existent API | turns | cost | time |',
     '|---|---|---|---|---|---|---|---|---|',

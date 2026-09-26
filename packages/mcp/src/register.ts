@@ -35,6 +35,7 @@ import {
   queryData,
   readFile,
   restoreVersion,
+  setGalleryListingTool,
   skillInfo,
   writeFiles,
   type CallContext,
@@ -42,9 +43,10 @@ import {
   type QueryDataResult,
   type ReadFileResult,
 } from './tools.js';
+import { createAssetUpload, deleteAssetTool, listAssetsTool } from './assets.js';
 import { TEMPLATES } from './templates.js';
 
-/** The tool set, in tools/list order (M0-05 + publish, M0-06 + skill_info/configure_module, M1-01 + query_data, M1-03 + get_logs, M1-07). */
+/** The tool set, in tools/list order (M0-05 + publish, M0-06 + skill_info/configure_module, M1-01 + query_data, M1-03 + get_logs, M1-07 + set_gallery_listing, NSO-340 + the asset tools, NSO-358). */
 export const APP_TOOL_NAMES = [
   'list_apps',
   'create_app',
@@ -53,10 +55,14 @@ export const APP_TOOL_NAMES = [
   'write_files',
   'restore_version',
   'publish',
+  'set_gallery_listing',
   'skill_info',
   'configure_module',
   'query_data',
   'get_logs',
+  'create_asset_upload',
+  'list_assets',
+  'delete_asset',
 ] as const;
 
 export type AppToolName = (typeof APP_TOOL_NAMES)[number];
@@ -103,8 +109,24 @@ export const INPUT_SCHEMAS = {
       .optional()
       .describe('The version number to put live; default the newest version that compiled. An older one = production rollback.'),
   },
+  set_gallery_listing: {
+    app_id: appId,
+    listed: z.boolean().describe('true lists the app in the public gallery (or changes its description); false removes it.'),
+    description: z
+      .string()
+      .optional()
+      .describe('Listing only: the public description, plain text, one or two sentences, at most 160 characters.'),
+    user_confirmed: z
+      .boolean()
+      .optional()
+      .describe('Listing only: true ONLY after the user explicitly said yes to this listing and description.'),
+  },
   skill_info: {
     name: z.string().optional().describe('A skill name from the list; omit to list every skill.'),
+    app_id: z
+      .string()
+      .optional()
+      .describe('An app id: then each opt-in module also says enabled_for_workspace (active for that app\'s workspace).'),
   },
   configure_module: {
     app_id: appId,
@@ -129,6 +151,17 @@ export const INPUT_SCHEMAS = {
     app_id: appId,
     kind: z.string().describe('"runtime" (browser errors), "compile" (the last 50 compiles) or "requests" (daily totals + module calls by status).'),
     since: z.string().optional().describe('ISO 8601 date-time: only entries from then on (at most 30 days back).'),
+  },
+  create_asset_upload: {
+    app_id: appId,
+    path: z.string().describe('Where the app serves the file — the path the page already uses, e.g. film.mp4 or img/s1.jpg.'),
+    size: z.number().describe('The exact file size in bytes.'),
+    content_type: z.string().optional().describe('The file\'s MIME type, e.g. video/mp4 (optional; the bytes decide).'),
+  },
+  list_assets: { app_id: appId },
+  delete_asset: {
+    app_id: appId,
+    path: z.string().describe('The asset path, e.g. film.mp4 (as list_assets shows it, with or without the leading /).'),
   },
 } as const;
 
@@ -271,10 +304,14 @@ export function registerAppTools(
   register('write_files', writeFiles);
   register('restore_version', restoreVersion);
   register('publish', publishApp);
+  register('set_gallery_listing', setGalleryListingTool);
   register('skill_info', skillInfo);
   register('configure_module', configureModule);
   register<{ app_id: string; collection: string }>('query_data', queryData, (p) => untrustedResult(untrustedDataEnvelope(p as QueryDataResult)));
   register<{ app_id: string; kind: string; since?: string }>('get_logs', getLogs, (p) => untrustedResult(untrustedLogsEnvelope(p as GetLogsResult)));
+  register('create_asset_upload', createAssetUpload);
+  register('list_assets', listAssetsTool);
+  register('delete_asset', deleteAssetTool);
 
   if (registered === 0) {
     // A grant with no tool scope (e.g. none of read/write/publish) must still get an

@@ -1300,6 +1300,299 @@ block, then `next` is pushed and the single MR opened.
 - NSO-342: an app's CSP `frame-ancestors` always carries the dashboard origin
   (the app-list thumbnail); an UNKNOWN app host keeps `frame-ancestors 'none'`
   (no app → no dashboard frame). e2e specs assert both.
+- NSO-340: `GALLERY_ENABLED` is read from `process.env`, so a running dev
+  container picks it up only after it is recreated
+  (`docker compose up -d drobek`), not restarted.
+- NSO-340: `apps.published_at` is written at millisecond precision (the
+  migration backfill uses `date_trunc('milliseconds', …)`). The gallery cursor
+  is base64url(`<ms>.<slug>`) and must round-trip through a JS `Date`, because
+  a microsecond value would skip or repeat rows at a page boundary.
+- NSO-340: in `packages/mcp` tests the tool deps are resolved once per MCP
+  connection. To flip an env flag mid-test, mutate the same `deps.env` object
+  (`delete deps.env.X`); reassigning `deps.env` has no effect.
+- NSO-340: in a worktree the Bash guard refuses a heredoc'd python script
+  whose text contains the word `git`. Write the script into the scratchpad
+  and run `python3 <path>` instead.
+- NSO-344 (contract 1.1): `@drobek/modules` and `@drobek/sdk` `exports` point
+  their `types` at `dist/*.d.ts` — typecheck and IDEs see the BUILT
+  declarations, so run `pnpm build:packages` (or the package's build) after
+  changing their sources before typechecking a consumer. knip does not map
+  `dist/` back to `src/`: both packages list their public entries in
+  `knip.ts`.
+- NSO-344: a module route may answer only `CORE_ERROR_CODES` + its own
+  `errors`; any other ModuleError code becomes `500 internal_error` (logged
+  `module request failed`) and makes `createModuleTestContext().request()`
+  REJECT. A new code a module throws goes into its `errors` in the same
+  change. `quota_exceeded` stayed a core code (data AND files answer it, and a
+  code may have one owner). `CORE_ERROR_CODES` must equal the code-shaped
+  entries of agent-dx `ERROR_CATALOGUE` (guarded in @drobek/mcp
+  errors.test.ts).
+- NSO-344: `DROBEK_MODULE_<NAME>_DEFAULTS` is applied by `checkModuleSet`,
+  which returns a NEW frozen module object (`{ ...m, configDefaults }`) for a
+  module with an override — compare modules by `name`, not identity, after
+  loading. `checkModuleSet` also runs for `loadModuleRuntime({ modules })`
+  (tests), so slot / error-code / env checks apply there too.
+- NSO-344: a short name in `DROBEK_MODULES` must load a module of that name —
+  test fixtures that load one module under several short names now fail;
+  use full package names (`drobek-module-a`, `@acme/b`) there.
+- NSO-344: `onAppDelete` is run by the dashboard's delete action (the only
+  caller of `softDeleteApp`; `@drobek/apps` cannot import the module runtime
+  — @drobek/modules depends on it). A new delete path must call
+  `runHook('onAppDelete', …)` too.
+- NSO-358: app assets share the app's URL space (`/<path>`, no prefix). The
+  version's own file wins (checked first, from the in-memory manifest);
+  the asset lookup runs only when no file matched, and an asset path always
+  has a media extension, so the SPA fallback (extension-less paths only)
+  never swallows one. `asset_path_taken` is checked against the latest AND
+  the published version, when the URL is minted and again when it is used.
+- NSO-358: the upload URL `PUT /api/assets/upload/<token>` is mounted BEFORE
+  the Origin (CSRF) check — `curl -T` sends no Origin and the path token is
+  the whole authorization. The token is consumed at the start of the PUT
+  (single use even when the body is refused).
+- NSO-358: Node's default `server.requestTimeout` (300 s) caps an upload: a
+  100 MiB file needs about 2.8 Mbit/s. Documented next to the env vars.
+- NSO-358: the MCP test harness runs on a fixed test clock (2026-09-23
+  12:00); a test that PUTs to `createAssetUploadHandler` must pass
+  `now: deps.clock.now`, or the token minted on the test clock is already
+  expired against the real clock (404 `upload_token_invalid`).
+- NSO-358: a new `CORE_LIMITS` key needs the exact default string in the
+  agent-dx `LIMITS` table (guarded by the mcp tools test).
+- NSO-358: `APP_FRAME_SRC_EXTRA` accepts only bare `https://host[:port]`
+  origins; anything else stops the server at start (`frameSrcConfigError`
+  in index.ts AND migrate.ts), so it can never widen `frame-src`.
+- Agent worktrees: the Bash tool refuses heredocs and long compound
+  commands; write a small Python edit script to the scratchpad and run it.
+- NSO-358 × NSO-340/344 merge: `0024_app_assets` was generated on top of
+  0021; its snapshot was regenerated from 0022's (a scratch `drizzle-kit
+  generate` over a copy of the folder without 0024 emitted the same SQL) and
+  keeps its id with `prevId` = 0022's id, so it carries the gallery columns.
+  0023 (NSO-346) is not on `next` yet: when it lands, 0024's snapshot must be
+  rebuilt from 0023's and re-chained again. The asset codes are core codes, so
+  they are in `CORE_ERROR_CODES` too; `skills/start` stays ≤ 150 lines and
+  must show every tool as `` `name(` ``.
+- NSO-345: modules from `DROBEK_MODULES_DIR` are imported by Node itself
+  (their path contains `/node_modules/`, so vitest externalizes them too):
+  their `@drobek/modules` is the BUILT `dist/` (the peer hook resolves it
+  from registry.ts's own package), not the vitest-transformed `src/` the
+  test sees. Brands are `Symbol.for`, so `isDefinedModule` / `isModuleError`
+  still agree; instance identity (`instanceof ModuleError`, same zod) is
+  asserted in `peers.test.ts` in a spawned plain `node` — run
+  `pnpm build:packages` before it.
+- NSO-345: the peer hook compares REAL paths — macOS `/tmp` / `os.tmpdir()`
+  are symlinks (`/private/…`), `registerHostPeers` realpaths the directory.
+  An `npm install <folder>` symlinks the package out of the directory: the
+  hook then does not apply and `hashModuleTree` refuses the escaping link —
+  install a tarball (`npm pack`) instead.
+- NSO-345: `module.register()` hooks see ESM `import` only; a CommonJS
+  `require('zod')` inside a dir module keeps its own copy.
+- NSO-345: the lint of dir-module migrations blanks comments, string literals
+  and `$tag$` delimiters (keeping line numbers) and scans the SQL inside a
+  `DO $$ … $$` block like any other; the generic `ALTER|DROP <kind>` rule
+  only fires at a statement start (`ALTER TABLE t ALTER c` is a clause).
+- NSO-347: the dashboard must not decide by a built-in module's NAME — a
+  guard (`packages/dashboard/src/module-names-guard.test.ts`) refuses a
+  `'data'` / `'proxy'` literal and any comparison / `case` / runtime lookup
+  by a built-in name; a deliberate exception (a tab's route segment) carries
+  `module-name-guard: allow` on the line or the line above. Editors follow
+  `view.editor` (`dashboard.editor`), tabs follow the authorities.
+- NSO-347: generic-form inputs of a record / object-list entry are named
+  `cfg.<path>[<i>].<entry path>` (+ `.$key`, `.$remove`, `.$new`, and
+  `cfg.<path>.$count`). The one empty "add" entry is skipped when its values
+  equal `blankEntryValues()` (the schema defaults) — so a new entry starts
+  from the defaults, and a filled record entry without a name is an error,
+  not silently dropped. Input errors inside an entry are keyed by the
+  TOP-LEVEL record / list path (fieldErrors does the same for schema issues).
+- NSO-347: `ModuleRuntime.moduleFacts()` is the single source of the
+  workspace Modules page, the module page's About and the `skill_info`
+  facts. `source` is read in ONE place, `ModuleRuntime.sourceOf(name)`:
+  the `ModuleOrigin` the DROBEK_MODULES_DIR loader (NSO-345,
+  `loadModuleSet`) recorded (`dir`), else `builtin` — also what
+  `summary()` (/healthz) serves. Tests that load `{ modules }` directly pass
+  `loadModuleRuntime({ modules, origins: { x: { source: 'dir', path } } })`.
+
+- NSO-346: an opt-in module's state comes from `ModuleRuntime.enabledModules(ws)`
+  (plan → env `MODULE_ENABLED_<NAME>=1` → `workspace_modules` row). Compute
+  it ONCE per request and pass it to `skillList(enabled)`,
+  `compileHint(msg, enabled)` and `appModules(app, link, enabled)` — each
+  call without it re-reads the provider cache and the table. It does no I/O
+  on a server without opt-in modules. `LimitsProvider.fromPlan` is optional
+  (test fakes need not implement it) and returns only what the plan SET, so
+  an explicit `0` can be told from the env default `0`.
+- NSO-346: `runHook('onAppCreate' | 'onPublish')` skips an opt-in module that
+  is off for the workspace; `onAppDelete` always runs. A test module declared
+  `availability: 'opt-in'` with hooks must be enabled (insert a
+  `workspace_modules` row) to see its create/publish hooks.
+- NSO-346 × NSO-347 merge: ONE Workspace → Modules page. The route
+  (`workspaces.$slug.modules.server.ts`) is NSO-347's viewer+ overview; its
+  loader adds `optIn` (`loadWorkspaceModuleToggles`, with
+  `dashboard.enabled_by` blanked below workspace-admin) and its action is
+  `workspaceModuleToggleAction` (403 for anyone but a super-admin, null for
+  other intents → 400). `WorkspaceModuleOptIn`
+  (`workspace-modules-toggle.tsx`) renders one opt-in module's state + switch
+  and is mounted per card through `availabilityControls`; the e2e test ids
+  (`workspace-module-row` / `-state` / `-toggle` / `-source`) live on it.
+  There is no `canViewModules`: the tab shows for every member.
+- NSO-346 × NSO-358 merge: journal order is 0022 → 0023_workspace_modules
+  (`when` moved from 1790434949568 to 1790432800000, before 0024's
+  1790433136356) → 0024_app_assets; 0024's snapshot was rebuilt from a scratch
+  `drizzle-kit generate --dialect postgresql --schema ./src/schema.ts --out
+  .scratch-mig` over the folder without 0024 (identical SQL) and keeps its id
+  with `prevId` = 0023's id; a drift check says "No schema changes". drizzle
+  applies a journal entry only when its `when` is newer than the DB's last
+  applied one, so a dev DB that already ran 0024 never gets 0023 —
+  recreate it (`docker compose down -v`) or apply 0023's SQL by hand.
+- NSO-349: the PUBLISHED `@drobek/modules` is generated, not the workspace
+  package: `scripts/npm-packages.mjs` (root devDeps esbuild, rollup,
+  rollup-plugin-dts, typescript) bundles dist/index.js + dist/testing.js
+  with esbuild (private `@drobek/*` inlined and marked side-effect free so
+  unused packages — @drobek/auth's react-router routes — drop out; npm
+  deps = what the OUTPUT still imports, from the esbuild metafile) and rolls
+  the .d.ts up with rollup-plugin-dts. Two traps: the dts plugin resolves
+  bare imports with node10 unless it gets `tsconfig` (the workspace packages
+  have no `types`/`main`, only `exports`), and pnpm links one workspace
+  package under several paths — without the realpath resolver `@drobek/db`
+  is inlined twice. The leak check refuses any `@drobek/*` import but
+  `@drobek/sdk` in the rolled-up declarations.
+- NSO-349: a new export a module author needs must be reachable from
+  `packages/modules/src/index.ts` or `testing.ts` — nothing else is in the
+  npm package. A new npm import in any package the modules bundle reaches
+  becomes a dependency of the published package automatically (range from
+  the importing workspace package.json); a new host-provided one goes into
+  `PEERS` in the script.
+- NSO-349: `checkSkill` (packages/modules/src/skill-check) loads TypeScript
+  with a dynamic import — `typescript` is only a devDependency of
+  @drobek/modules (an optional peer of the npm package), and the prod image
+  never has it. Its virtual files live under `<root>/.drobek-skill-check`
+  (never written); `root` decides which `node_modules` resolve the examples'
+  bare imports — the repo gate passes packages/skills-check (it has
+  @types/react).
+- NSO-349: create-drobek-module's template maps only `_gitignore` →
+  `.gitignore` (npm pack drops a real .gitignore). Do not generalise to
+  "every `_` prefix": `migrations/meta/_journal.json` must keep its name.
+  packages/create-drobek-module's vitest `include` is `src/**` (template/
+  has its own tests) and knip ignores `template/**`.
+- NSO-349: packages/create-drobek-module/src/scaffold.test.ts stages and
+  `npm pack`s the three packages, generates a module with the PACKED CLI in
+  the OS temp dir and installs it OFFLINE (our tarballs untarred, npm
+  packages symlinked from the workspace store) — it needs `npm` and `tar` on
+  PATH and built packages (`pnpm build:packages`). It also guards that
+  examples/drobek-module-hello keeps the scaffold's files, boilerplate and
+  scripts: a template change goes into the example in the same change.
+- NSO-349: the example's `exports.types` now points at dist (like a
+  scaffold), so knip lists `examples/*/src/index.ts` as an entry, and the
+  root test script runs it with `pnpm --filter drobek-module-hello test`
+  (`vitest run`, the scaffold's script name).
+
+- EXT batch merge onto `next` (after NSO-358): NSO-345 (4bf80e5) → NSO-347
+  (8f19ab3) → NSO-346 (043c9a9) → NSO-349 (5dfe06c), `task check` green
+  after each. Resolutions: backup/restore archive both `assets.tar` and
+  `modules.tar` (manifest `parts` has five entries); `ModuleSource` is
+  registry.ts's (NSO-345) and the runtime reads it through `sourceOf()`;
+  one Workspace → Modules page (see the NSO-346 × NSO-347 note above);
+  `SkillInfo` carries NSO-347's facts AND NSO-346's `enabled_for_workspace`
+  (`skill_info` takes `app_id`); journal 0022 → 0023 → 0024 re-chained (see
+  the NSO-346 × NSO-358 note). `@drobek/modules/lock` stays an in-image
+  subpath: the npm `@drobek/modules` (NSO-349) publishes only `.` and
+  `./testing`.
+- NSO-348 (auth providers): the app CSP has `form-action 'self'`, so a
+  provider's `begin` can only answer `{ url }` (a redirect) — an
+  auto-posting HTML form to an IdP would be blocked on the app host. SAML
+  requests go out with the HTTP-Redirect binding; the IdP's POST back to
+  `/__drobek/auth/callback/<id>` works (dashboard host, Origin-check exempt).
+- NSO-348: a slot host whose config depends on contributions uses the
+  contract's `compose` (applied in `checkModuleSet` and in
+  `createModuleTestContext({ contributions })`). Code that holds the
+  DECLARED module (e.g. `import auth from 'drobek-module-auth'` in a test)
+  sees the provider-less schema; use the runtime's module or `t.module`.
+- NSO-348: `PipelineResult` headers are a `Record<string,string>` — one
+  `Set-Cookie` per module response. `complete` sets the session cookie and
+  leaves the flow cookie to expire (10 min, its hash is single-use anyway).
+- NSO-348: React Router resource routes skip RR's own action CSRF check,
+  but the Express Origin-check middleware still runs — a cross-site IdP
+  POST needs its path in `ORIGIN_CHECK_EXEMPT_PATHS`.
+- NSO-361: every drobek e-mail goes through `sendEmail` in `@drobek/email`
+  (the login code and invite senders no longer touch `getSmtpTransport`); the
+  transport is `emailTransportKind(env)`. `emailConfigError` runs in the
+  server's boot chain and now also refuses production `smtp` without
+  `SMTP_HOST` (the prod compose dropped its `${SMTP_HOST:?}`). Resend errors
+  are `EmailSendError { code, status, retryable }` and never carry the key or
+  Resend's `message` text (it can quote the recipient) — keep it that way.
+  `@drobek/tenancy` gets `sendEmail` through the `@drobek/auth` re-export (no
+  direct dependency); `apps/server` depends on `@drobek/email` directly.
+- NSO-359 (port a Claude artifact): a new general skill is a new entry of
+  `skill_info()` — `EXPECTED_SKILLS` in `packages/skills-check/src/skills.ts`
+  is sorted like the loader (modules, then general skills by name:
+  `debug, port-artifact, start, ui`) and its `description` is ≤ 220 chars.
+  A plain page's relative `<script src="x.js">` is served as written (only
+  `src/main.*` and `entries` are bundled; `.ts/.tsx/.jsx` sources are never
+  served). `tests-eval/run.mjs` is typechecked by skills-check with
+  `lib: ES2022` only — no DOM: pass `page.evaluate` a string expression.
+  The artifact fixture (`tests-eval/fixtures/artifact/`) is regenerated with
+  ffmpeg (64x36, 2 s, H.264 baseline, `+faststart`, `-fflags +bitexact`);
+  `--self-check` keeps it < 16 KiB with an `ftyp` box. Playwright's Chromium
+  may not play H.264: the e2e and the eval assert playback only when
+  `canPlayType('video/mp4; codecs="avc1.42E01E"')` is non-empty.
+- NSO-362: assets are a DRAFT (`app_assets`, preview) plus per-version sets
+  a publish freezes (`app_version_assets` + `app_versions.assets_frozen_at`,
+  production/custom). `publish` of the newest ok version (what the preview
+  shows) always re-freezes the draft; an older version with a set keeps it
+  (rollback, `assets: 'kept'`). A test that publishes the same newest version
+  twice therefore gets `draft` both times. Everything touching assets takes
+  `lockAssets` (advisory, `drobek:assets:<app_id>`) AFTER the app row lock
+  (publish/restore) — keep that order. Files are `<app_id>/<sha256>` and
+  shared: never `disk.remove` a key without `releaseAssetFiles` (it re-checks
+  references under the lock). Migration 0025 is hand-extended (data copy for
+  published apps) after `drizzle-kit generate`; re-chain its snapshot on 0023
+  when that lands.
+- NSO-362: the upload URL PUT re-checks the uploader's role
+  (`uploaderMayEdit`: membership editor+, or SUPERADMIN_EMAIL — @drobek/apps
+  cannot import @drobek/auth). A PGlite test that PUTs must insert a
+  `memberships` row for the grant's user.
+
+- Second EXT batch merge onto `next`: NSO-348 (1d7b303) → NSO-361
+  (76e9ccf) → NSO-359 (19b780b) → NSO-362 (2a0cd71), `task check` green
+  after each. Resolutions: the auth module's COMPOSED config renders in the
+  generic form without a dedicated editor — `providers` is a nested object
+  (`providers.emailCode.enabled`, `providers.<id>.<field>` +
+  `providers.<id>.enabled`) and a form → `formToConfig` → configSchema round
+  trip with a test provider parses; `checkModuleSet` composes dir-loaded
+  modules too, so `moduleFacts` / `skill_info` show the `auth.provider` /
+  `auth.signedIn` slots and the auth error codes; `defineAuthProvider` & co.
+  are exported from `packages/modules/src/index.ts` and reach the staged npm
+  `@drobek/modules`. `ModuleRuntime.callbackApp` returns null when the
+  end-user authority is an opt-in module that is off for the app's workspace
+  (like its routes). Slot contributions stay server-wide (a provider from an
+  opt-in module is still gated by the app's `providers.<id>.enabled`). All
+  mail goes through `sendEmail` (NSO-361); `@drobek/auth` still re-exports
+  `getSmtpTransport` for outside consumers, nothing in the repo calls it.
+  Journal 0022 (1790432415711) → 0023 (1790432800000) → 0024
+  (1790433136356) → 0025_app_asset_snapshots (1790437501780): 0025's
+  snapshot was rebuilt from 0024's (now carrying `workspace_modules`) with a
+  scratch `drizzle-kit generate` over the folder without 0025 (the generated
+  SQL equals the committed file's generated part; the data copy stays
+  hand-written), keeps its id 88a014a2-b732-4596-ae74-3b246a8fb875 with
+  `prevId` = 0024's 80f81487-bb75-4833-b283-86f6ef3652e1; the drift check says
+  "No schema changes" — this supersedes the "re-chain on 0023 when it lands"
+  parts of the NSO-358 and NSO-362 notes above.
+- NSO-350 (`task selfhost:module:*`): the installer logic is
+  `packages/modules/src/install.ts`, the CLI `src/cli/module-lock.ts` (a knip
+  entry); `scripts/selfhost-module.sh` only runs npm (throwaway
+  `node:22-alpine`, root for `apk add git` on git specs, then `chown -R
+  1000:1000` of the staging prefix) and the CLI (`dc run --rm --no-deps drobek`,
+  or the host's node with `--dev`). Gotchas: (1) Node scans argv for
+  `--env-file` even AFTER the script name — a script option of that name makes
+  `node` try to load the file (`.env: not found`, exit 9), so the CLI's option
+  is `--env-name`; (2) the module name comes from importing the package
+  (`create-drobek-module acme-erp` → package `drobek-module-acme-erp`, module
+  `acmeerp`), so `add` imports it twice (staging, then the final prefix via
+  `findDirModule`/`verifyDirModule`/`checkDirModule`); (3) npm writes the
+  staging directory's name into `package-lock.json` (`"name":
+  ".staging-<id>"`), so re-adding the same spec gives a different integrity —
+  expected, the lock is rewritten each time; (4) `--legacy-peer-deps` is there
+  because the template's `@drobek/modules` peer is not optional and npm would
+  otherwise resolve it against the registry even with `--omit=peer`; (5)
+  the peer range is accepted when it matches the module contract version OR
+  the image release (`DROBEK_VERSION`) — the two are different number lines.
 
 ## Failed approaches
 
@@ -1311,3 +1604,16 @@ block, then `next` is pushed and the single MR opened.
   React Router's SSR-time CSS walk (`getModuleByUrl`), not by client
   transforms of the route modules; the glob also warmed `*.test.tsx` and
   pulled `vitest` into the client pre-bundle. Use `optimizeDeps.noDiscovery`.
+- **Client code must never import a package index that re-exports `*.server.*`** (2026-09-26, NSO-342). The mascot went into `root.tsx` and `<DrobekMark>` through `@drobek/auth` / `@drobek/email` (their indexes re-export `smtp.server`, `return-to.server`, …). The dev server then failed every client bundle at runtime ("Server-only module referenced by client"), so 61 e2e tests failed, while `task check` stayed green. Fixed by a client-safe subpath, `@drobek/email/mascot` (re-exported from `@drobek/auth/mark`). Ratchet: `task check` now runs `pnpm --filter server build`, which refuses this at build time.
+- Block-end e2e of the NSO-340…362 merge batch: every failure was a stale
+  test expectation, not a product bug — the NSO-358 CSP (`media-src` +
+  curated `frame-src`) and `list_assets` in the read scope, the NSO-362
+  `assets` field on the publish result and the `app.publish` audit meta,
+  NSO-347's workspace-page loop order, and a same-address re-sign-in inside
+  the dev OTP cooldown (5 s): `loginViaEmail` now waits for a code mail it
+  has not seen and asks again after the cooldown. A spec that greps dev
+  HTML for `node_modules` must drop Vite's `/@fs/…` URLs first. The
+  `@drobek/modules` unit test "request stats cost no SQL per response" once
+  counted 1001 vs 1000 statements under the full `task check` load (passes
+  alone and on rerun) — a late async statement landing inside its 20 ms
+  settle window.

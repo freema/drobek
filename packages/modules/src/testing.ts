@@ -11,17 +11,76 @@
  *
  * `db` is whatever drizzle database the test passes (e.g. PGlite with the
  * module's migrations applied); a module that never touches `ctx.db` needs none.
+ * `coreMigrationsDir()` + `createTestApp()` build that database without any
+ * other drobek package (NSO-349):
+ *
+ *   const pg = new PGlite();
+ *   const db = drizzle(pg);
+ *   await migrate(db, { migrationsFolder: coreMigrationsDir(), migrationsTable: '__drizzle_migrations_core', migrationsSchema: 'drizzle' });
+ *   await migrate(db, { migrationsFolder: erp.migrations!.folder, migrationsTable: '__drizzle_migrations_mod_erp', migrationsSchema: 'drizzle' });
+ *   const app = await createTestApp(db);
+ *
+ * `checkSkill(module)` checks the module's SKILL.md like the built-in
+ * modules' (skill-check/).
  */
+import { existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { noopLogger, type Logger } from '@drobek/core';
-import type { DB } from '@drobek/db';
-import { normalizeConfirmItems, type AnyModule, type EmailMessage, type HookApp, type Limits, type MailEnvelope, type ModuleContext, type Principal } from './contract.js';
+import { apps, workspaces, type DB } from '@drobek/db';
+import {
+  normalizeConfirmItems,
+  type AnyModule,
+  type EmailMessage,
+  type EndUserCallbackResult,
+  type HookApp,
+  type Limits,
+  type MailEnvelope,
+  type ModuleContext,
+  type Principal,
+} from './contract.js';
 import { mergePatch } from './merge-patch.js';
 import { collectRoutes, errorResult, isReadable, matchRoute, runRoute, type PipelineResult } from './router.js';
 import { decideAccess } from './rules.js';
-import { ModuleError } from './errors.js';
+import { CORE_ERROR_CODES, ModuleError } from './errors.js';
 import { assertSignInSender, capEmailText, emailKind, resolveRecipients, sanitizeSubject } from './email.js';
 import type { MailGuard } from './mail-guard.js';
 import { memoryRateLimiter } from './runtime.js';
+import { composeModule } from './registry.js';
+
+export { checkSkill, checkSkillSources, knownErrorCodes, moduleSkillSource, type CheckSkillOptions, type CheckSkillSourcesOptions } from './skill-check/index.js';
+export { checkExamples, type ExamplesOptions, type ExamplesReport } from './skill-check/examples.js';
+export { SKILL_MAX_LINES, SKILL_SECTIONS, skillFormatIssues } from './skill-check/format.js';
+export { codeBlocks, headings, proseOf, sectionText, type CodeBlock, type Heading } from './skill-check/markdown.js';
+export { formatSkillIssue, type SkillIssue, type SkillSource } from './skill-check/source.js';
+
+/**
+ * The folder of drobek's core migrations (journal `__drizzle_migrations_core`):
+ * apply it before a module's own migrations, whose tables reference
+ * `apps(id)`. The published package ships a copy (`dist/migrations/core`);
+ * in the drobek repository it is `packages/db/drizzle/migrations`.
+ */
+export function coreMigrationsDir(): string {
+  const here = dirname(fileURLToPath(import.meta.url));
+  for (const candidate of [join(here, 'migrations/core'), join(here, '../migrations/core')]) {
+    if (existsSync(join(candidate, 'meta/_journal.json'))) return candidate;
+  }
+  const db = dirname(createRequire(import.meta.url).resolve('@drobek/db'));
+  return join(db, '../drizzle/migrations');
+}
+
+/**
+ * A workspace + an app in a database with the core migrations applied — the
+ * `app` to pass to createModuleTestContext (module rows reference its id).
+ */
+export async function createTestApp(db: unknown, opts: { slug?: string } = {}): Promise<HookApp> {
+  const d = db as DB;
+  const slug = opts.slug ?? `test-${Math.random().toString(36).slice(2, 10)}`;
+  const [ws] = await d.insert(workspaces).values({ kind: 'team', slug: `${slug}-ws`, name: slug }).returning();
+  const [app] = await d.insert(apps).values({ workspaceId: ws.id, slug }).returning();
+  return { id: app.id, slug: app.slug, workspaceId: ws.id };
+}
 
 export interface ModuleTestOptions {
   /** A partial config (merged over configDefaults, then validated). */
@@ -45,6 +104,22 @@ export interface ModuleTestOptions {
    * while module e-mail is paused. Default: no guard.
    */
   mailGuard?: MailGuard;
+  /**
+   * Slot → the contributions `ctx.contributions(slot)` returns (as the
+   * slot's schema would have parsed them; default: none — `[]`). A slot
+   * host's `compose` runs with them first, as at server start.
+   */
+  contributions?: Record<string, unknown[]>;
+}
+
+/** One request to the module's `endUsers.callback` (the dashboard-host IdP callback). */
+export interface TestCallbackInit {
+  provider: string;
+  method?: 'GET' | 'POST';
+  query?: Record<string, string>;
+  body?: Record<string, string> | null;
+  /** Default `127.0.0.1`; `null` = no resolved client IP. */
+  clientIp?: string | null;
 }
 
 export interface TestRequestInit {
@@ -73,7 +148,13 @@ export interface TestResponse {
 
 export interface ModuleTestContext {
   ctx: ModuleContext<any>;
-  /** Run `method path` through the production pipeline. SDK header + same Origin are sent by default. */
+  /**
+   * Run `method path` through the production pipeline. SDK header + same
+   * Origin are sent by default. Rejects — where production answers
+   * `500 internal_error` — when the handler throws something other than a
+   * ModuleError, or a ModuleError whose code is neither a core code nor in
+   * the module's `errors`.
+   */
   request(method: string, path: string, init?: TestRequestInit): Promise<TestResponse>;
   /** Audit rows the module wrote (`<module>.<action>`). */
   audits: { action: string; meta: Record<string, unknown> }[];
@@ -92,6 +173,16 @@ export interface ModuleTestContext {
    * confirmRequired).
    */
   confirm(before: Record<string, unknown>, after: Record<string, unknown>): Promise<string[]>;
+  /**
+   * Run the module's `endUsers.callback` the way core runs it for
+   * `/__drobek/auth/callback/:provider` on the dashboard host: the test app
+   * is the only live app (`services.app(id)` answers it for its id, null for
+   * any other), with the test config, secrets, limits and audits; the rate
+   * limiter shares the test clock. Rejects when the module has no callback.
+   */
+  endUserCallback(init: TestCallbackInit): Promise<EndUserCallbackResult>;
+  /** The module as the test runs it (composed from `contributions` when it hosts slots). */
+  module: AnyModule;
 }
 
 function noDb(): DB {
@@ -102,7 +193,8 @@ function noDb(): DB {
   });
 }
 
-export function createModuleTestContext(module: AnyModule, opts: ModuleTestOptions = {}): ModuleTestContext {
+export function createModuleTestContext(declared: AnyModule, opts: ModuleTestOptions = {}): ModuleTestContext {
+  const module = composeModule(declared, <T,>(slot: string) => [...(opts.contributions?.[slot] ?? [])] as T[]);
   const parsed = module.configSchema.safeParse(mergePatch(module.configDefaults, opts.config ?? {}));
   if (!parsed.success) {
     throw new Error(`createModuleTestContext: config does not pass ${module.name}.configSchema: ${parsed.error.message}`);
@@ -117,7 +209,7 @@ export function createModuleTestContext(module: AnyModule, opts: ModuleTestOptio
   const rateLimit = memoryRateLimiter(opts.now);
   const audits: ModuleTestContext['audits'] = [];
   const emails: ModuleTestContext['emails'] = [];
-  const declared = new Set((module.secrets ?? []).map((s) => s.name));
+  const secretNames = new Set((module.secrets ?? []).map((s) => s.name));
   let principal: Principal = opts.principal ?? { kind: 'anon' };
 
   const buildCtx = (): ModuleContext<any> => ({
@@ -127,12 +219,13 @@ export function createModuleTestContext(module: AnyModule, opts: ModuleTestOptio
     config,
     db: opts.db ?? noDb(),
     log: opts.log ?? noopLogger,
+    contributions: <T,>(slot: string) => [...(opts.contributions?.[slot] ?? [])] as T[],
     rules: { decide: (rule, ownerId) => decideAccess(rule, principal, ownerId) },
     limits: async () => limits,
     rateLimit: (bucket, key, max, windowMs) => rateLimit(`${bucket}:${key}`, max, windowMs),
     secrets: {
       get: async (name) => {
-        if (!declared.has(name)) throw new Error(`module "${module.name}" reads undeclared secret "${name}"`);
+        if (!secretNames.has(name)) throw new Error(`module "${module.name}" reads undeclared secret "${name}"`);
         return opts.secrets?.[name] ?? null;
       },
     },
@@ -170,6 +263,8 @@ export function createModuleTestContext(module: AnyModule, opts: ModuleTestOptio
   });
 
   const routes = collectRoutes(module.routes?.bind(module) as never);
+  // As in production: a route may answer the core codes and the module's own `errors` only.
+  const errorCodes = new Set([...CORE_ERROR_CODES, ...(module.errors ?? []).map((e) => e.code)]);
 
   const toResponse = async (r: PipelineResult, bodyBytesRead = 0): Promise<TestResponse> => {
     let bytes: Buffer;
@@ -221,6 +316,7 @@ export function createModuleTestContext(module: AnyModule, opts: ModuleTestOptio
     get ctx() {
       return buildCtx();
     },
+    module,
     audits,
     emails,
     setPrincipal(p) {
@@ -234,6 +330,27 @@ export function createModuleTestContext(module: AnyModule, opts: ModuleTestOptio
         return r.data;
       };
       return normalizeConfirmItems(await module.confirmRequired(parse(before), parse(after), { app, db: opts.db ?? noDb() })).changes;
+    },
+    async endUserCallback(init) {
+      const callback = module.endUsers?.callback?.bind(module.endUsers);
+      if (!callback) throw new Error(`module "${module.name}" has no endUsers.callback`);
+      const base = buildCtx();
+      return callback({
+        provider: init.provider,
+        method: init.method ?? 'GET',
+        query: { ...(init.query ?? {}) },
+        body: init.body ?? null,
+        clientIp: init.clientIp === undefined ? '127.0.0.1' : init.clientIp,
+        services: {
+          db: base.db,
+          log: base.log,
+          contributions: base.contributions,
+          rateLimit: (bucket, key, max, windowMs) => rateLimit(`callback:${bucket}:${key}`, max, windowMs),
+          limits: () => limits,
+          app: async (appId) =>
+            appId === app.id ? { app, config, limits: async () => limits, secrets: base.secrets, audit: base.audit } : null,
+        },
+      });
     },
     async request(method, path, init = {}) {
       const upper = method.toUpperCase();
@@ -271,6 +388,7 @@ export function createModuleTestContext(module: AnyModule, opts: ModuleTestOptio
         hit.params,
         {
           module: module.name,
+          errorCodes,
           selfOrigin: origin,
           principal: async () => principal,
           context: async () => buildCtx(),

@@ -3,7 +3,8 @@
  * slugs), write a version, publish (pointer move), restore (new version from
  * an old one), and blob GC; since M2-01 also unpublish, soft delete + slug
  * release, visibility / frame-ancestors settings, the single-writer lease
- * read/release and version ZIPs. The MCP tools and the dashboard call these.
+ * read/release and version ZIPs; since NSO-358 app assets (binary files at
+ * `/<name>` next to the app's files, upload URLs). The MCP tools and the dashboard call these.
  */
 export { AppsError, type AppsErrorCode } from './errors.js';
 export {
@@ -138,6 +139,8 @@ export {
   type ReportedApp,
   type ScreenResult,
 } from './moderation.server.js';
+// NSO-358: app assets — binary files served at /<name> next to the app's files, upload URLs, the sweep.
+export * from './assets/index.js';
 export type {
   Actor,
   CompileStatus,
@@ -147,3 +150,28 @@ export type {
   VersionFileKind,
   VersionSummary,
 } from './types.js';
+// NSO-340: the public gallery (owner opt-in, super-admin hide, the public list).
+export {
+  GALLERY_DESCRIPTION_MAX,
+  GALLERY_PAGE_MAX,
+  GALLERY_PAGE_SIZE,
+  decodeGalleryCursor,
+  encodeGalleryCursor,
+  galleryEnabled,
+  galleryPageSize,
+  galleryState,
+  normalizeGalleryDescription,
+  type GalleryCursor,
+  type GalleryDescriptionResult,
+  type GalleryState,
+} from './gallery.js';
+export {
+  listGallery,
+  listGalleryForModeration,
+  setGalleryHidden,
+  setGalleryListing,
+  type GalleryItem,
+  type GalleryListingInput,
+  type GalleryListingResult,
+  type GalleryModerationEntry,
+} from './gallery.server.js';

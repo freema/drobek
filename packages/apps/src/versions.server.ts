@@ -4,6 +4,10 @@
  * no matter how many versions (or apps) contain it. Publishing moves one
  * pointer (`apps.published_version_id`); restore copies an old file list into
  * a NEW version, so history is never rewritten.
+ *
+ * NSO-362: publish also freezes the app's assets for the version it puts
+ * live, and restore brings back the assets a version had when it was last
+ * live (assets/snapshots.server.ts).
  */
 import { createHash } from 'node:crypto';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
@@ -13,6 +17,7 @@ import { appVersions, apps, blobs, getDb, versionFiles } from '@drobek/db';
 import { AppsError } from './errors.js';
 import { zipStream, type ZipEntry } from './zip.js';
 import { lockedByAdminError, screenAfterPublish } from './moderation.server.js';
+import { freezeAssetsForPublish, pruneAssetSnapshots, restoreDraftAssets } from './assets/snapshots.server.js';
 import type {
   Actor,
   CompileStatus,
@@ -254,13 +259,18 @@ export async function readBlobs(sha256s: string[]): Promise<Map<string, Buffer>>
  * A taken-down app (NSO-293) refuses with `app_locked_by_admin`. After the
  * pointer moved, the published version goes through the phishing heuristic
  * (`screen: false` skips it).
+ *
+ * The app's assets are frozen for the version in the same transaction
+ * (NSO-362): `assets: 'draft'` — the draft went live (the version the preview
+ * shows, or one that never had a set); `'kept'` — a rollback to a version
+ * that serves the set it had when it was last live.
  */
 export async function publish(
   appId: string,
   versionId: string,
   actor: Actor,
   opts: { screen?: boolean } = {}
-): Promise<{ versionId: string; number: number; previousNumber: number | null }> {
+): Promise<{ versionId: string; number: number; previousNumber: number | null; assets: 'draft' | 'kept' }> {
   const result = await getDb().transaction(async (tx) => {
     const app = await lockWritableApp(tx, appId);
     const [version] = await tx
@@ -282,12 +292,16 @@ export async function publish(
         .where(eq(appVersions.id, app.publishedVersionId));
       previousNumber = prev?.number ?? null;
     }
-    await tx.update(apps).set({ publishedVersionId: version.id }).where(eq(apps.id, appId));
+    const assets = await freezeAssetsForPublish(tx, appId, version.id);
+    // published_at orders the public gallery (NSO-340); ms precision like its cursor.
+    await tx.update(apps).set({ publishedVersionId: version.id, publishedAt: new Date() }).where(eq(apps.id, appId));
+    await pruneAssetSnapshots(tx, appId);
     await audit(tx, app, actor, AUDIT_ACTIONS.appPublish, {
       version: version.number,
       previousVersion: previousNumber,
+      assets,
     });
-    return { versionId: version.id, number: version.number, previousNumber };
+    return { versionId: version.id, number: version.number, previousNumber, assets };
   });
   // NSO-293: the phishing heuristic — flags the app for the super-admin
   // queue, never blocks (a scan failure is only logged).
@@ -298,13 +312,16 @@ export async function publish(
 /**
  * Restore = a NEW version with exactly the file list (and compile result) of
  * version `number`. Nothing is rewritten; publishing it is a separate step.
+ * NSO-362: when version `number` was published and its asset set is still
+ * kept, the draft assets are reset to that set too (`assetsRestored`), so
+ * the preview — and the next publish — show the version's old assets.
  */
 export async function restore(
   appId: string,
   number: number,
   actor: Actor,
   opts: { reasoning?: string | null } = {}
-): Promise<{ id: string; number: number }> {
+): Promise<{ id: string; number: number; assetsRestored: boolean }> {
   return getDb().transaction(async (tx) => {
     const app = await lockWritableApp(tx, appId);
     const [source] = await tx
@@ -334,11 +351,13 @@ export async function restore(
       INSERT INTO ${versionFiles} (version_id, path, sha256, size, kind)
       SELECT ${version.id}, path, sha256, size, kind FROM ${versionFiles}
       WHERE version_id = ${source.id}`);
+    const assetsRestored = await restoreDraftAssets(tx, appId, source.id, actor.userId);
     await audit(tx, app, actor, AUDIT_ACTIONS.appVersionRestore, {
       version: newNumber,
       restoredFrom: number,
+      assetsRestored,
     });
-    return { id: version.id, number: newNumber };
+    return { id: version.id, number: newNumber, assetsRestored };
   });
 }
 

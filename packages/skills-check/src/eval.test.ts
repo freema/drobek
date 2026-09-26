@@ -2,8 +2,8 @@ import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { findApiMisuse, parseSdkDts } from '../../../tests-eval/lib.mjs';
-import { sdkFor } from './examples.js';
-import { codeBlocks } from './markdown.js';
+import { buildSdk } from '@drobek/modules';
+import { codeBlocks } from '@drobek/modules/testing';
 import { BUILTIN_MODULES, REPO_ROOT, skillSources } from './skills.js';
 
 /**
@@ -14,7 +14,7 @@ import { BUILTIN_MODULES, REPO_ROOT, skillSources } from './skills.js';
  */
 let dts: string;
 beforeAll(async () => {
-  dts = (await sdkFor(BUILTIN_MODULES)).dts;
+  dts = (await buildSdk(BUILTIN_MODULES)).dts;
 });
 
 describe('tests-eval parsers against the live SDK', () => {

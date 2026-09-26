@@ -51,6 +51,7 @@ async function lockLiveApp(tx: Tx, appId: string) {
       visibility: apps.visibility,
       passwordHash: apps.passwordHash,
       frameAncestors: apps.frameAncestors,
+      galleryListed: apps.galleryListed,
     })
     .from(apps)
     .where(and(eq(apps.id, appId), isNull(apps.deletedAt)))
@@ -86,7 +87,9 @@ async function audit(
  * Take the app off its production host: `published_version_id = null` →
  * `<slug>.<APPS_DOMAIN>` answers 404 "not published"; the preview and the
  * version hosts keep serving. Audited `app.unpublish` with the version that
- * was live. `not_published` when nothing is published.
+ * was live. A gallery listing ends with it (NSO-340, audited
+ * `app.gallery_unlisted`, reason `unpublish`). `not_published` when nothing
+ * is published.
  */
 export async function unpublishApp(appId: string, actor: Actor): Promise<{ previousNumber: number }> {
   return getDb().transaction(async (tx) => {
@@ -98,9 +101,15 @@ export async function unpublishApp(appId: string, actor: Actor): Promise<{ previ
       .select({ number: appVersions.number })
       .from(appVersions)
       .where(eq(appVersions.id, app.publishedVersionId));
-    await tx.update(apps).set({ publishedVersionId: null }).where(eq(apps.id, appId));
+    // NSO-340: an unpublished app leaves the public gallery; the owner lists
+    // it again after publishing again.
+    await tx
+      .update(apps)
+      .set({ publishedVersionId: null, publishedAt: null, galleryListed: false })
+      .where(eq(apps.id, appId));
     const previousNumber = prev?.number ?? 0;
     await audit(tx, app, actor, AUDIT_ACTIONS.appUnpublish, { previousVersion: previousNumber });
+    if (app.galleryListed) await audit(tx, app, actor, AUDIT_ACTIONS.appGalleryUnlisted, { reason: 'unpublish' });
     return { previousNumber };
   });
 }

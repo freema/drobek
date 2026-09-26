@@ -102,6 +102,7 @@ export {
   getSmtpTransport,
   getEmailFrom,
   resetSmtpTransportForTests,
+  sendEmail,
   renderEmailLayout,
   escapeHtml,
   emailBrand,

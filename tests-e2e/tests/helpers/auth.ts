@@ -130,11 +130,20 @@ export async function loginViaEmail(
   request: APIRequestContext,
   email: string
 ): Promise<void> {
-  await page.goto('/login');
-  await page.getByLabel('Email').fill(email);
-  await page.getByRole('button', { name: 'Send code' }).click();
-  await page.waitForURL(/\/login\/verify/);
-  const code = await pollLoginCode(request, email);
+  const seen = new Set((await mailpitMessagesFor(request, email)).map((m) => m.ID));
+  const deadline = Date.now() + 30_000;
+  let code: string | null = null;
+  while (code === null) {
+    await page.goto('/login');
+    await page.getByLabel('Email').fill(email);
+    await page.getByRole('button', { name: 'Send code' }).click();
+    await page.waitForURL(/\/login\/verify/);
+    try {
+      code = await pollLoginCode(request, email, seen.size > 0 ? 3_000 : 30_000, seen);
+    } catch (err) {
+      if (seen.size === 0 || Date.now() > deadline) throw err;
+    }
+  }
   await page.getByLabel('Code').fill(code);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await page.waitForURL(/\/me$/);

@@ -3,7 +3,8 @@
 A **platform module** is the only way an app on drobek gets a backend. It is
 platform code the **operator** installs, never code an app author or agent
 uploads: the server still never executes app code. The contract is the
-TypeScript package `@drobek/modules` (contract version `1.0.0`, semver).
+TypeScript package `@drobek/modules` (contract version `1.1.0`, semver:
+`MODULE_CONTRACT_VERSION`).
 
 A module contributes, for every app on the server:
 
@@ -17,6 +18,8 @@ A module contributes, for every app on the server:
 | **Limits** | env-named numbers (`HELLO_WAVES_PER_MINUTE`), overridable per workspace |
 | **Tables** | a drizzle migrations folder with its own journal |
 | **Skill** | the agent-facing Markdown `skill_info('<name>')` returns |
+| **Error codes** | its own codes with meaning and fix: `skill_info('<name>').errors`, `/llms-full.txt` |
+| **Slots** | typed extension points other modules contribute to (see [Slots](#slots)) |
 
 ## Enabling modules
 
@@ -26,9 +29,13 @@ DROBEK_MODULES=hello,auth,email,forms,data   # comma-separated; empty = no modul
 
 Each entry resolves:
 
-1. a short name `x` → the npm package **`drobek-module-x`**;
+1. a short name `x` → the npm package **`drobek-module-x`**, which must
+   export a module named `x`;
 2. a full package name (`drobek-module-x`, `@scope/pkg`, anything with a `/`)
-   → exactly that package.
+   → exactly that package, whatever `name` its module has. This is how an
+   operator replaces a built-in module: `DROBEK_MODULES=@acme/drobek-module-auth,email,…`
+   loads Acme's module named `auth` instead of `drobek-module-auth` (two
+   entries loading one name still refuse the start).
 
 The built-in modules of this repo live in `modules/<name>` as the workspace
 packages `drobek-module-<name>`, dependencies of `apps/server` (and so of the
@@ -43,27 +50,234 @@ upstreams, secret injected server-side) and
 [`files`](#the-built-in-files-module) (end-user uploads, sniffed types,
 per-app quota).
 
-Packages resolve from the **server's** install: `<cwd>/package.json` (`/app` in
-the image, `apps/server` in the dev stack), overridable with
-`DROBEK_MODULES_ROOT`. So adding a third-party module means adding a
-dependency to the server and listing it. The package's default export (or its
-`module` export) must come from `defineModule()`.
+A package is looked up in two places, in this order:
+
+1. **`DROBEK_MODULES_DIR`** (default `/data/modules`, the `modules_data`
+   volume): a module the operator installed there, checked against
+   `modules.lock.json` — `source: 'dir'`, see
+   [Installing an external module](#installing-an-external-module);
+2. the **server's** install: `<cwd>/package.json` (`/app` in the image,
+   `apps/server` in the dev stack), overridable with `DROBEK_MODULES_ROOT` —
+   the built-in modules, or a dependency added in a derived image —
+   `source: 'builtin'`.
+
+The package's default export (or its `module` export) must come from
+`defineModule()`.
 
 The server **refuses to start** when anything is off: an unknown package, an
-export that is not a module, an invalid name, defaults that fail the schema,
-two modules with one name, a missing `sdk.entry`, a reserved name (`sdk`,
-`v1`, `drobek`, `internal`), a module whose `requires` is not enabled
+export that is not a module, an invalid name, a short name whose package
+exports another name, defaults that fail the schema, a `contract` range the
+server's `MODULE_CONTRACT_VERSION` does not satisfy (`module "crm": it needs
+module contract ^2.0, but this server implements 1.1.0 — …`), two modules
+with one name, a missing `sdk.entry`, a reserved name (`sdk`, `v1`,
+`drobek`, `internal`), a module whose `requires` is not enabled
 (`module "forms" requires the module "email": add it to DROBEK_MODULES
 (e.g. DROBEK_MODULES=…,email)`), two modules declaring `mail` (or
-`endUsers`, or `records`). Nothing is
-skipped silently. On start the log
-names the active modules (`platform modules ready`).
+`endUsers`, or `records`), one limit or error code declared by two modules,
+a slot contribution that breaks the [slot rules](#slots), an invalid
+`DROBEK_MODULE_<NAME>_DEFAULTS`, and for a module from `DROBEK_MODULES_DIR`:
+a missing or mismatching `modules.lock.json` entry, changed files, a
+migration outside its namespace. Nothing is skipped silently. A module
+without `contract` still loads, with a warning naming the range to add. On
+start the log `platform modules ready` lists every module as
+`{ name, version, source, contract }` (`source`: `builtin` | `dir`) next to
+the server's contract version; `/healthz` and `/api/version` serve the same
+`modules` list (never a path on disk).
+
+### Operator defaults: `DROBEK_MODULE_<NAME>_DEFAULTS`
+
+An operator changes a module's `configDefaults` for the whole server with a
+JSON merge patch in `DROBEK_MODULE_<NAME>_DEFAULTS` (`<NAME>` = the module's
+name in upper case), e.g. every app's sign-in open to one company:
+
+```sh
+DROBEK_MODULE_AUTH_DEFAULTS='{"allow":{"domains":["acme.com"]}}'
+```
+
+The patched defaults must pass the module's `configSchema` — otherwise the
+server refuses to start with the issue paths
+(`DROBEK_MODULE_AUTH_DEFAULTS: … — allow.domains: …`). They replace the
+module's `configDefaults` everywhere: the effective config of every app that
+did not set those keys, `skill_info('<name>').config.defaults` and the
+dashboard's defaults. A variable naming no active module is ignored with a
+warning.
+
+### Per-workspace enabling (opt-in modules)
+
+A module declared `availability: 'opt-in'` (a company module for one
+customer, an experimental one for one team) is installed for the whole
+server but **active only for the workspaces it is enabled for**. It is
+active for a workspace when, in this order:
+
+1. the [limits provider](#limits-and-the-limits-provider) answers
+   `MODULE_ENABLED_<NAME>` for that workspace (`<NAME>` = the module name in
+   upper case): `1` enables it, `0` disables it — also where a super-admin
+   enabled it (a plan wins in both directions);
+2. the operator's env sets `MODULE_ENABLED_<NAME>=1`: every workspace;
+3. a super-admin enabled it in the dashboard (Workspace → Modules → Enable;
+   the `workspace_modules` table, audited `module.workspace_enable` /
+   `module.workspace_disable` with `meta.module`). Every other member sees
+   the state on the same page read-only (who switched it on: workspace
+   admins only), and the switch answers them 403. There is no self-service
+   switch and no MCP tool.
+
+`ModuleRuntime.isEnabled(workspaceId, name)` answers it (a default module:
+always `true`); `enabledModules(workspaceId)` returns the whole set once per
+request. The provider answer is cached like every limit (60 s); the
+dashboard switch is a primary-key read, so it applies at once. For a
+workspace where the module is **not** active:
+
+- its routes on the app hosts answer `404 module_not_enabled` (`details.module`,
+  `hint: "skill_info('<name>')"`) whatever the path, and are not counted
+  in `get_logs requests`;
+- `configure_module` answers `isError` `module_not_enabled`; the owner's
+  confirm of a change pending from before does too (reject still works);
+- `get_app.modules.<name>.enabled` is `false` (a default module: always
+  `true`); `create_app` / `get_app` `skills` and the briefing leave it out,
+  and an `unresolved_import` compile hint does not point at its skill;
+- `skill_info()` lists it with `availability: "opt-in"` (it is
+  server-wide); with `app_id` the entry also carries
+  `enabled_for_workspace`;
+- the app's module page in the dashboard says "not enabled for this
+  workspace" instead of the forms, and refuses changes;
+- its `onAppCreate` / `onPublish` hooks do not run (`onAppDelete` always
+  does).
+
+The SDK stays one bundle per server (`/__drobek/sdk.js` includes opt-in
+modules); an app just gets `module_not_enabled` from their calls. Per app a
+module is "used" through its configuration, as for every module — there is
+no per-app switch.
 
 The dev compose enables the example module and every built-in module
 (`DROBEK_MODULES=hello,auth,email,forms,data,proxy,files`, `HELLO_WAVES_PER_MINUTE=5`,
 relaxed `AUTH_*` limits because every local request shares one client IP,
 `DATA_MAX_DOCS_PER_APP=5` so the quota e2e trips quickly); so does the e2e
 image compose.
+
+## Installing an external module
+
+An operator adds a module without building an image by installing it into
+`DROBEK_MODULES_DIR` (default `/data/modules`; the production compose mounts
+the named volume `modules_data` there, part of `task backup`; the dev compose
+bind-mounts `./.modules`):
+
+```sh
+task selfhost:module:add -- @acme/drobek-module-erp@1.2.0   # any spec npm accepts: version, tarball URL or path, git URL
+task selfhost:module:list
+task selfhost:module:remove -- erp
+```
+
+The runtime image has no package manager and never installs anything: npm
+runs in a throwaway `node:22-alpine` container over the volume with
+`--ignore-scripts` (no install script runs), then the drobek image's own
+installer (`node node_modules/@drobek/modules/dist/cli/module-lock.js`)
+checks the package, moves it to `<dir>/<name>` and records it in
+`modules.lock.json`. The procedure, upgrades, rollback and a derived image
+for operators with their own CI:
+[`SELF-HOSTING.md` → Third-party modules](./SELF-HOSTING.md#third-party-modules).
+The dev stack's `task module:add|remove|list` do the same over `./.modules`
+with the host's npm.
+
+```
+/data/modules/
+  modules.lock.json
+  erp/                                  one install prefix per module, named after its `name`
+    package.json  package-lock.json     what `npm install --prefix /data/modules/erp …` writes
+    node_modules/@acme/drobek-module-erp/…
+```
+
+An entry of `DROBEK_MODULES` is found in `<dir>/<name>/node_modules/<package>`,
+where `<name>` is the key of the lockfile entry for that package, or the short
+name itself (`erp` → `<dir>/erp`), or the `<x>` of `drobek-module-<x>` /
+`@scope/drobek-module-<x>`. The module loaded from there must be named
+`<name>`. Only when none of these exists does the server fall back to its own
+dependencies — so a module in the directory **wins** over a built-in package
+of the same name.
+
+**`modules.lock.json`** (in the root of the directory) records every
+installed module:
+
+```json
+{
+  "lockfileVersion": 1,
+  "modules": {
+    "erp": {
+      "package": "@acme/drobek-module-erp",
+      "version": "1.2.0",
+      "resolved": "@acme/drobek-module-erp@1.2.0",
+      "integrity": "sha512-…",
+      "contract": "^1.1",
+      "installedAt": "2026-09-26T12:00:00.000Z"
+    }
+  }
+}
+```
+
+Before the server imports a module from the directory it checks that its
+`package.json` names the package, that the lockfile lists `<name>` with the
+same package and version, and that `integrity` equals the hash of the whole
+install prefix `<dir>/<name>` (the package, its dependencies, package.json,
+package-lock.json). Anything else refuses the start, naming the path and the
+fix. The hash is `hashModuleTree()` from `@drobek/modules/lock` (the same
+function writes and checks it): every file and symlink under the prefix,
+sorted by its `/`-separated relative path, as `F <path>\0<sha512 hex>\n` or
+`L <path>\0<link target>\n`, hashed with sha512 → `sha512-<base64>`; modes,
+timestamps and empty directories do not count, a symlink leaving the prefix is
+refused. `task selfhost:module:add` writes the entry with that function inside
+the image, so the hash it records is the one the server computes.
+
+**What `add` checks** before it records anything (a refusal leaves the
+directory and the lockfile as they were; a failure after the move restores the
+previous install):
+
+- the package declares `@drobek/modules` in `peerDependencies`, and the range
+  accepts the server's module contract version or its release version;
+- nested copies of the host-provided peers (`@drobek/*`, `zod`,
+  `drizzle-orm`, below) are deleted from its `node_modules`;
+- the module is imported once to read its `name` (the directory name) and
+  passes the server's `validateModule` — the `contract` range against
+  `MODULE_CONTRACT_VERSION` included;
+- after the move and the lockfile write it is loaded exactly as at start
+  (lockfile + integrity, import, the migration lint below).
+
+The `DROBEK_MODULES` entry it prints is the short name when the package is
+`drobek-module-<name>`, else the full package name.
+
+`DROBEK_MODULES_UNLOCKED=1` skips the lockfile check while developing a module
+(the dev stack: put it into `./.modules/<name>/node_modules/<package>`, add it
+to `DROBEK_MODULES`, `docker compose up -d drobek` — or use `task module:add`,
+which writes the lockfile); with `NODE_ENV=production` the variable is ignored
+with a warning.
+
+**Host-provided peers.** Before the first module from the directory is
+imported, the server registers a `node:module` resolve hook: every `import` of
+`@drobek/*`, `zod`, `drizzle-orm` (and their subpaths) from a file under the
+directory resolves to the **server's** instance — one `ModuleError` class, one
+zod, one drizzle, whatever copies the module's `node_modules` holds. Imports
+from anywhere else are untouched. So a module is an ES module (`"type":
+"module"`; a CommonJS `require()` is not redirected) and declares these as
+`peerDependencies`, best marked optional in `peerDependenciesMeta` so npm does
+not install copies at all.
+
+**Migration lint.** The migrations of a module from the directory are checked
+at start (built-in modules are not — the `data` module's first migration
+imports older core tables): `CREATE TABLE` / `CREATE INDEX … ON` /
+`CREATE VIEW|SEQUENCE|TYPE` only for `mod_<name>` or `mod_<name>_*`;
+`REFERENCES` only to its own tables, `apps(id)` or `workspaces(id)`;
+`ALTER` / `DROP` / `TRUNCATE` only of its own objects; no
+`CREATE FUNCTION|TRIGGER|EXTENSION|SCHEMA|ROLE|…`, no `GRANT` / `REVOKE` /
+`COPY`. A violation refuses the start with the file and line
+(`0000_init.sql:3: DROP TABLE: "users" is not a table of this module …`). Its
+`migrations.folder` and SDK entries must lie inside its install prefix (the
+part the integrity covers).
+
+The lint keeps a module's schema in its namespace; it is not a sandbox. A
+module runs in the server process with the whole database — install only
+modules you trust ([`SECURITY.md`](./SECURITY.md)). An operator with their
+own CI can instead bake the modules directory into a derived image
+([`SELF-HOSTING.md` → Derived image](./SELF-HOSTING.md#derived-image)) — same
+lockfile and lint — or add the module as a dependency of `/app`, where it
+loads as `source: 'builtin'`, without lockfile or lint.
 
 ## The contract
 
@@ -73,6 +287,7 @@ import { defineModule, z } from '@drobek/modules';
 export default defineModule<Config>({
   name: 'hello',                 // /^[a-z][a-z0-9]{1,30}$/: URL, drobek.<name>, config key, skill name
   version: '1.0.0',              // the module's own semver
+  contract: '^1.1',              // the contract versions it works with (semver range vs MODULE_CONTRACT_VERSION)
   skill: { useWhen, markdown },  // useWhen: ONE sentence starting with the situation
   configSchema,                  // zod; validates configure_module + the dashboard form
   configDefaults,                // the config of an app nobody configured (must pass the schema)
@@ -87,17 +302,58 @@ export default defineModule<Config>({
     inline: { entry: '/abs/path/ui.tsx', types: '…' },       // optional: `import … from 'drobek/<name>'`
   },
   migrations: { folder: '/abs/path/migrations' },
-  hooks: { onAppCreate(app, services) {}, onPublish(app, services) {} },
+  hooks: { onAppCreate(app, services) {}, onPublish(app, services) {}, onAppDelete(app, services) {} },
   endUsers: { current({ app, user, config, db, log }) {} },  // only the module that owns end-user sessions (auth)
   mail: { prepare(input) {} },   // only the module that owns the app's mail policy (email) — see "Module e-mail"
   records: { collections, query, get, remove, csv }, // only the module that stores app records (data) — see "The records authority"
   requires: ['email'],           // other modules this one needs; missing → the server refuses to start
+  errors: [{ code: 'unknown_greeter', meaning, fix }], // its own error codes (see "Error codes")
+  slots: { 'hello.greeter': { schema, unique: 'id', description } }, // extension points it offers (see "Slots")
+  contributes: { 'auth.provider': { … } },        // its contributions to other modules' slots
+  availability: 'default',       // 'default' (every workspace) | 'opt-in'
+  dashboard: { editor: 'collections' },           // the dedicated dashboard editor its config fits
 });
 ```
 
-Hooks run after `create_app` stored version 1 and after a version was
-published (MCP or dashboard). They are best effort: a failure is logged and
-never fails the tool call.
+`@drobek/modules` also exports the types a module needs from the rest of
+drobek — `DB`, `Logger`, `SdkCore` — so a module depends on
+`@drobek/modules` alone. Its `exports` point at the built `dist/` (with
+declarations), like `@drobek/sdk`'s.
+
+Hooks run after `create_app` stored version 1, after a version was published
+(MCP or dashboard) and after the app was deleted (`onAppDelete`, the
+dashboard's delete: soft-deleted, its hosts answer 404 — the place to clean
+up what the module keeps outside the database). They are best effort: a
+failure is logged and never fails the call. `services` is
+`{ db, log, contributions }` (see [Slots](#slots)).
+
+The contract fields of 1.1:
+
+| Field | Rules |
+| ----- | ----- |
+| `contract` | a semver range matched against `MODULE_CONTRACT_VERSION` (`1.1.0`); not satisfied → the start is refused; missing → a warning. The built-in modules and the example declare `'^1.1'` |
+| `errors` | `[{ code, meaning, fix }]`: `code` matches `^[a-z][a-z0-9_]{2,40}$`, is not a core code (`CORE_ERROR_CODES`, the catalogue in `/llms-full.txt`) and is declared by no other active module; meaning and fix are required |
+| `slots` / `contributes` | see [Slots](#slots) |
+| `availability` | `'default'` (the default: every workspace of the server) or `'opt-in'` (only the workspaces it is enabled for — [Per-workspace enabling](#per-workspace-enabling-opt-in-modules)); returned by `skill_info('<name>')` and the dashboard's module view |
+| `dashboard.editor` | `'collections'` (a `collections` config shaped like `data`'s) or `'upstreams'` (an `upstreams` config shaped like `proxy`'s): declares which dedicated dashboard editor the config fits; `data` and `proxy` declare theirs. The dashboard picks the editor by this capability only, never by the module's name — a replacement module that declares it gets the same editor, a module without it gets the generic form |
+| `hooks.onAppDelete` | `(app, services)` after the app was deleted, best effort |
+
+### Error codes
+
+A route answers the core codes (`not_found`, `invalid_request`, `forbidden`,
+`quota_exceeded`, … — `CORE_ERROR_CODES`) and the codes its module declares
+in `errors`. A ModuleError with any other code is not sent: the server logs
+it (`module request failed`, naming the code) and answers
+`500 internal_error`, exactly like an unexpected exception —
+`createModuleTestContext().request()` rejects on it, so a module's own tests
+catch an undeclared code. `skill_info('<name>')` returns the module's
+`errors`, and `/llms-full.txt` renders them after the core catalogue, one
+section per active module. The built-in modules declare theirs: `auth`
+(`email_not_allowed`, `invalid_code`, `too_many_attempts`), `forms`
+(`submitted_too_fast`, `invalid_form_token`), `data` (`validation_failed`,
+`invalid_schema`), `files` (`unsupported_type`), `proxy`
+(`path_not_allowed`, `ssrf_blocked`, `upstream_error`, `proxy_busy`,
+`config_error`).
 
 ### Routes: `ModuleRouter`
 
@@ -284,7 +540,9 @@ A module with tables ships a drizzle migrations folder
 **own journal**, `drizzle.__drizzle_migrations_mod_<name>`, after the core
 migrations (`DROBEK_MIGRATE_ON_START=0` turns both off). Conventions:
 
-- table names start with `mod_<name>_` (e.g. `mod_hello_waves`);
+- table names start with `mod_<name>_` (e.g. `mod_hello_waves`) — for a
+  module from `DROBEK_MODULES_DIR` the [migration lint](#installing-an-external-module)
+  enforces it;
 - every per-app row references `apps(id)` with `ON DELETE CASCADE`, so deleting
   an app deletes its module data;
 - a handler always filters by `ctx.app.id`.
@@ -469,6 +727,71 @@ the module's sniffed type, `nosniff`, `Content-Security-Policy: default-src
 'none'; sandbox`, and `inline` only for PNG / JPEG / GIF / WebP (everything
 else, SVG and PDF included, is an attachment).
 
+## Slots
+
+A slot is a typed extension point one module (the **host**) offers the
+others: the host declares it with a zod schema, other modules contribute a
+value to it, and the host reads the contributions. It is how a module is
+extended without forking it — e.g. another module adding a way to greet to
+the example's `hello.greeter`.
+
+```ts
+// the host (the example module hello)
+slots: {
+  'hello.greeter': {
+    schema: z.object({ id: z.string(), greet: z.custom<(name: string) => string>((v) => typeof v === 'function') }),
+    unique: 'id',                                  // optional: a key whose value must be unique in the slot
+    description: 'Another way to greet: greet(name) returns the text.',
+  },
+},
+routes(r) {
+  r.get('/greet', { rule: 'public' }, (req, ctx) => {
+    const greeters = ctx.contributions<Greeter>('hello.greeter'); // [] when nobody contributes
+    // …
+  });
+},
+
+// a contributor (any other active module)
+contributes: {
+  'hello.greeter': { id: 'pirate', greet: (name) => `Ahoy, ${name}!` },
+},
+```
+
+The rules, all checked when the server starts (a violation refuses the start
+with a message naming the module and the slot):
+
+- a slot name is `<host name>.<name>` (`^[a-z][a-z0-9]*\.[a-z][a-zA-Z0-9]*$`)
+  and starts with the name of the module that declares it; a slot has a
+  `schema` and a `description`;
+- a module contributes at most one value per slot (`contributes` maps slot
+  name → value); the slot must be declared by an ACTIVE module — a
+  contribution to a slot of a module that is not in `DROBEK_MODULES`, or that
+  it does not declare, refuses the start;
+- every contribution must pass the slot's schema;
+- with `unique: '<key>'`, two contributions with the same value of that key
+  refuse the start (`modules "a" and "b" both contribute id "x" to the slot
+  "…"`). Without `unique`, contributions never conflict.
+
+`contributions<T>(slot)` is on `ModuleServices` — the request's `ctx`, the
+`services` of every hook — and returns the values as the slot's schema
+parsed them (a `z.object` drops unknown keys; use `z.looseObject` to keep
+them), in `DROBEK_MODULES` order. A slot nobody contributes to, or that no
+active module declares, gives `[]`. The generic types the value; the schema
+is what guarantees it.
+
+**`compose`** — a host whose config, confirm rules or secrets depend on the
+contributions (the auth module: one `providers.<id>` entry, identity-field
+confirmations and secrets per sign-in provider) declares
+`compose({ contributions }) → { configSchema?, configDefaults?,
+salvageConfig?, confirmRequired?, secrets? }`. Core runs it once at start,
+after the contributions are collected (`checkModuleSet`, and
+`createModuleTestContext` with its `contributions` option), and the returned
+parts replace the declared ones — validated like a declared module (a zod
+schema, defaults that pass it, unique UPPER_SNAKE secret names, functions).
+Only a module that declares slots may compose; any other key, or a throw,
+refuses the start. The declared parts stay the module's view of a server
+without contributions.
+
 ## Per-app configuration
 
 Stored in `module_configs` (`app_id`, `module`, `config` jsonb, `pending`
@@ -571,6 +894,12 @@ the tool call. A change the owner makes in the dashboard form sends no e-mail.
 
 ### The dashboard Modules tab (M2-02)
 
+The dashboard knows no built-in module by name: dedicated editors follow
+`dashboard.editor`, the Data / Forms / Users / Uploads tabs follow the
+authorities (`records`, `submissions`, `endUsers`, `files`). A replacement
+module or a third-party one gets the same pages (a grep guard in
+`@drobek/dashboard` keeps it that way).
+
 `/workspaces/<ws>/apps/<slug>/modules` lists the active modules for the app
 (configured or defaults, what waits, missing required secrets); the app page
 shows a "N changes await confirmation" banner (`PendingBanner` +
@@ -583,29 +912,68 @@ shows a "N changes await confirmation" banner (`PendingBanner` +
   Confirm / Reject (the same `runtime.confirm` / `reject` as the API above);
 - **the configuration form**, generated from the module's `configSchema`
   (zod → JSON Schema, input side) by the dashboard's own renderer: objects
-  (nested), string, string enum, number, integer, boolean, arrays of strings
-  (one per line); anything else — a record of named entries, arrays of
-  objects, unions — is a JSON field. The form posts plain fields; the server
+  (nested), string, string enum (a select), number / integer (with
+  `min` / `max`), boolean, arrays of strings (one per line), arrays of a
+  string enum (checkboxes), **records of named entries**
+  (`z.record(…)` — `additionalProperties`) and **arrays of objects**. A
+  record or list renders each entry with its own fields (recursively), a
+  "Remove" checkbox per entry and one empty entry to add a new one (a record
+  entry needs a name); entries nest up to 3 levels deep, below that a value
+  is a JSON field. Anything else — unions, a record of anything
+  (`z.record(z.string(), z.unknown())`) — is a JSON field. The zod
+  `.describe()` text (JSON Schema `description`) is shown under the field.
+  No client JS: the form posts plain fields; the server
   rebuilds the config, turns it into a merge patch against the config in
   force and runs **the same configure path as `configure_module`**
   (`surface: 'web'`: audit actor `user`), so a relaxation becomes a pending
   change there too. The module's schema is the only validator: its issues
-  come back at their fields (`allow.emails[0]` → the `allow.emails` field).
-  Give fields a `title` / `description` in zod (`.meta()`) to label them;
-- the built-in **data** module gets a collections editor instead of a JSON
-  field: per collection a table operation × principal (Anyone, Signed-in
-  users, Record owner, App admins; nothing checked = `none`) and the JSON
-  Schema textarea; add / remove a collection. The built-in **proxy** module
-  gets the workspace's upstreams (registered, secret set — never the value
-  or base URL) with assign / unassign, the `call` rule and `rateLimit`;
+  come back at their fields (`allow.emails[0]` → the `allow.emails` field;
+  an issue inside a record / list entry at the record / list, naming the
+  entry). Give fields a `title` / `description` in zod (`.meta()` /
+  `.describe()`) to label them;
+- a module declaring **`dashboard.editor: 'collections'`** (the built-in
+  data module) gets a collections editor instead of form fields for its
+  `collections` key: per collection a table operation × principal (Anyone,
+  Signed-in users, Record owner, App admins; nothing checked = `none`) and
+  the JSON Schema textarea; add / remove a collection. A module declaring
+  **`'upstreams'`** (the built-in proxy module) gets the workspace's
+  upstreams for its `upstreams` key (registered, secret set — never the
+  value or base URL) with assign / unassign, the `call` rule and
+  `rateLimit`;
 - **the secrets** the module declares: write-only. The page shows the name,
   the description, `required`, whether it is set and when — never the value.
   Set / Rotate / Remove (`setModuleSecret` / `deleteModuleSecret`, audit
   `module.secret_set` `{ module, name, rotated }` / `module.secret_remove`).
-  A stored value is followed by a redirect, so it appears in no response.
+  A stored value is followed by a redirect, so it appears in no response;
+- **About this module**: version, source (`builtin` / `dir`), the declared
+  contract range, availability, the modules it requires, the dedicated
+  editor it declares, the slots it offers (and who contributes) and its
+  contributions to other modules' slots, with a link to the workspace
+  Modules page; then **its error codes** (code, meaning, fix).
 
 Viewers see all of it without a single control; every POST needs the editor
 role (viewer → 403).
+
+### The workspace Modules page
+
+`/workspaces/<ws>/modules` (the workspace's **Modules** tab, every member —
+viewer+, read-only) lists every active module of the server: name, version,
+source (`builtin` — a package of the server; `dir` — installed by the
+operator), the contract range it declares, availability, the modules it
+requires, the slots it offers with their contributors (and the unique
+value of each contribution), its own contributions, the limits it declares
+with the value in force for this workspace (the limits provider's plan,
+else the server's env / default) and its error codes. Never a path on disk,
+never a secret. The facts come from `ModuleRuntime.moduleFacts()`; agents
+get the same fields from `skill_info('<name>')`.
+
+An opt-in module's card also shows its state for this workspace — enabled
+or not, and what decides it (the plan, the env, or a super-admin's switch) —
+and, for a super-admin only, the Enable / Disable switch
+([Per-workspace enabling](#per-workspace-enabling-opt-in-modules)). The
+switch is mounted through `<WorkspaceModules availabilityControls={…}>`
+(`workspace-modules-toggle.tsx`); its POST answers every non-super-admin
+403.
 
 ## Skills: `skill_info`
 
@@ -616,8 +984,13 @@ needs one:
   `create_app` and `get_app` (`skills`) and in the briefing;
 - `skill_info('<name>')` → `{ name, kind, use_when, content }`, and for a
   module also `sdk { import, types }`, `config { schema (JSON Schema),
-  defaults, confirm_required }`, `limits [{ name, value, meaning }]` and
-  `secrets [{ name, description, required }]`;
+  defaults, confirm_required }`, `limits [{ name, value, meaning }]`,
+  `secrets [{ name, description, required }]`, `errors [{ code, meaning,
+  fix }]` (its own codes, `[]` when none), `availability`, and the facts the
+  workspace Modules page shows: `version`, `source` (`builtin` / `dir`),
+  `contract` (the declared range, `null` when none), `requires`, `slots
+  [{ name, description, unique, contributions [{ module, key }] }]` and
+  `contributes [{ slot, host, key }]`;
 - an unknown name → `not_found` with `available` and `hint: "skill_info()"`.
 
 It never returns a secret value or any app's config.
@@ -646,14 +1019,17 @@ verbatim:
 > external APIs), call `skill_info` and follow the skill; `create_app`/`get_app`
 > list the available skills.
 
-The repo ships three general skills: `start` (how an app works: files,
+The repo ships four general skills: `start` (how an app works: files,
 `drobek.json`, the write_files → compile → preview → publish loop, the lease,
 what the server never runs), `debug` (reading `compile.errors` and
-`get_logs`, typical causes and fixes) and `ui` (Tailwind v4's browser build
+`get_logs`, typical causes and fixes), `ui` (Tailwind v4's browser build
 from esm.sh, responsive layout, the accessibility minimum, forms and
-loading/error states). With every built-in module enabled `skill_info()`
-lists 9 skills: `auth, email, forms, data, proxy, files, debug, start, ui`
-(plus `hello` in the dev stack).
+loading/error states) and `port-artifact` (moving a Claude artifact to
+drobek: text files unchanged with `write_files`, every binary through
+`create_asset_upload` at the same path, what the app CSP changes, no
+`window.claude.*`). With every built-in module enabled `skill_info()` lists
+10 skills: `auth, email, forms, data, proxy, files, debug, port-artifact,
+start, ui` (plus `hello` in the dev stack).
 
 ### The skill format (NSO-308)
 
@@ -672,8 +1048,12 @@ lines (frontmatter included) and exactly these `##` sections under one
 5. `## 5. Errors → fix` — a table `| error | cause | fix |`; a backticked
    code in the first column must exist in the error catalogue.
 
-`@drobek/skills-check` (part of `task check`) enforces the format and that
-the code does not rot: every fenced block is checked by its info string —
+`checkSkill(module)` from `@drobek/modules/testing` enforces the format
+(and a one-sentence "use when" of 30–220 characters) and that the code does
+not rot. The repo gate `@drobek/skills-check` (part of `task check`) runs
+the same library over the built-in modules and the general skills; an
+external module runs it in its own tests ([Writing a module](#writing-a-module)).
+Every fenced block is checked by its info string —
 `tsx`/`ts`/`jsx`/`js` are compiled with `@drobek/compile` exactly like
 `write_files` (the skill's import map, the SDK, the inline sources, the
 secret scan) AND typechecked with the TypeScript compiler against the
@@ -703,6 +1083,8 @@ itself and a module may not declare):
 | --- | --- | --- |
 | `APPS_MAX_PER_WORKSPACE` | 50 | live apps one workspace may hold (soft-deleted apps do not count); `create_app` beyond it answers `limit_exceeded` with `limit` / `value` |
 | `DOMAINS_MAX_PER_APP` | 3 | custom domains per app, pending + verified; the next add answers `limit_exceeded`. `0` is valid and turns custom domains off: the dashboard's Domains tab says so and every add is refused |
+| `APP_ASSET_MAX_BYTES` | 104857600 | bytes of one app asset (100 MiB — video, audio, image, font at `/<path>`); `create_asset_upload` / the upload URL answer `asset_too_large` |
+| `APP_ASSETS_QUOTA` | 1073741824 | bytes of all assets of one app (1 GiB); past it `asset_quota_exceeded` |
 
 `ModuleRuntime.workspaceLimits(workspaceId)` returns a workspace's effective
 limits (core and module) for core callers. An operator with plans sets:
@@ -724,6 +1106,11 @@ and expects `{ "limits": { "<ENV_NAME>": <positive integer>, … } }` (`0`
 too for `DOMAINS_MAX_PER_APP`). Known names override the env defaults; unknown
 names and bad values are ignored. A provider mirrors the table above plus the
 `limits` of the modules the server runs (`skill_info(<module>).limits`).
+For every opt-in module the catalogue also holds the pseudo-limit
+`MODULE_ENABLED_<NAME>` (`0` or `1`, env default `0`): a plan maps to it to
+enable (`1`) or disable (`0`) that module for the workspace — see
+[Per-workspace enabling](#per-workspace-enabling-opt-in-modules). The
+protocol is the same; a value other than `0` / `1` is ignored.
 Answers are cached in Redis for 60 s (`drobek:limits:<workspace_id>`). When
 the provider is down, slower than 2 s or answers garbage, the env defaults
 apply for 10 s and a warning is logged: a provider outage never takes apps
@@ -756,7 +1143,118 @@ await t.confirm({}, { greeting: 'Ahoj' });   // confirmRequired over two config 
 ```
 
 Mutating requests send the app's `Origin` and `X-Drobek-SDK: 1` by default;
-pass `headers` to test the CSRF guard.
+pass `headers` to test the CSRF guard. `contributions: { '<slot>': [value, …] }`
+sets what `ctx.contributions(slot)` returns. `request()` rejects where
+production answers `500 internal_error`: an exception that is not a
+ModuleError, or a ModuleError with a code that is neither core nor in the
+module's `errors`.
+
+The database for `db` needs no other drobek package:
+
+```ts
+import { PGlite } from '@electric-sql/pglite';
+import { drizzle } from 'drizzle-orm/pglite';
+import { migrate } from 'drizzle-orm/pglite/migrator';
+import { checkSkill, coreMigrationsDir, createTestApp, formatSkillIssue } from '@drobek/modules/testing';
+
+const d = drizzle(new PGlite());
+await migrate(d, { migrationsFolder: coreMigrationsDir(), migrationsTable: '__drizzle_migrations_core', migrationsSchema: 'drizzle' });
+await migrate(d, { migrationsFolder: hello.migrations!.folder, migrationsTable: '__drizzle_migrations_mod_hello', migrationsSchema: 'drizzle' });
+const app = await createTestApp(d);            // a workspace + an app row → { id, slug, workspaceId }
+
+expect((await checkSkill(hello)).map(formatSkillIssue)).toEqual([]);   // the SKILL.md gate
+```
+
+`coreMigrationsDir()` is the core migrations folder (`packages/db/drizzle/migrations`
+in this repo, a copy inside the published package). `checkSkill(module,
+{ modules?, file?, root? })` returns the issues of the module's skill:
+`modules` adds other modules whose SDK the examples use (e.g. the `auth`
+module for `drobek.auth`), `root` is the directory whose `node_modules`
+resolve the examples' bare imports (default: the working directory; an
+unresolved one is typed `any`). It needs `typescript` installed (an
+optional peer dependency).
+
+## Writing a module
+
+A module outside this repository is an npm package written against the
+published contract. Every drobek release publishes, with the image's
+version, three npm packages: **`@drobek/modules`** (the contract, the
+registry's checks, the test kit `@drobek/modules/testing`),
+**`@drobek/sdk`** (the browser `SdkCore` a module's SDK entry receives) and
+**`create-drobek-module`** (the scaffold). All three are AGPL-3.0-only, like
+the rest of drobek ([`LICENSING.md`](./LICENSING.md) → Modules).
+
+### Scaffold
+
+```sh
+npm create drobek-module@latest erp        # → drobek-module-erp/, the module "erp"
+cd drobek-module-erp && npm install && npm test
+```
+
+`<name>` is a short name (`erp` → the package `drobek-module-erp`), a full
+`drobek-module-<x>` or a scoped package (`@acme/drobek-module-erp`). The
+module name is the package name without `drobek-module-` and dashes
+(`acme-erp` → `acmeerp`; `--module <name>` sets it). The output is a working
+module: `src/index.ts` (`defineModule` with `contract: '^1.1'`, config with
+an owner confirmation, a secret, a limit, an own error code, a GET/POST pair
+of routes), `src/sdk.ts`, `src/schema.ts` + `migrations/0000_init.sql` (the
+table `mod_<name>_items`), `SKILL.md`, `src/index.test.ts`
+(`createModuleTestContext` over PGlite with the core migrations),
+`src/skill.test.ts` (`checkSkill`) and a README with the install steps.
+Scripts: `build` (tsc → `dist/`, also run by `prepack`), `typecheck`, `test`,
+`check` (the skill gate alone). [`examples/drobek-module-hello`](../examples/drobek-module-hello)
+is the scaffold's output plus the slot demo.
+
+### Contract and peers
+
+- `contract` is a semver range against the server's `MODULE_CONTRACT_VERSION`;
+  a server whose version does not satisfy it refuses to start. Declare the
+  lowest contract whose fields the module uses (`'^1.1'` for `errors`,
+  `slots`, `contributes`, `availability`, `dashboard`, `onAppDelete`).
+- `@drobek/modules` and `drizzle-orm` are **peer dependencies** (and dev
+  dependencies for the tests); `zod` comes as `z` from `@drobek/modules`.
+  On a server the module uses the server's instances — never bundle them:
+  a second copy of the contract breaks the brand checks (`isModuleError`).
+- Everything a module needs is exported by `@drobek/modules`
+  (`defineModule`, `z`, `respond`, `ModuleError`, the types incl. `DB`,
+  `Logger`, `SdkCore`, `HookApp`); the published declarations name no
+  private drobek package.
+- The module is operator-installed server code with the whole database
+  (`ctx.db`). It keeps to its own tables (`mod_<name>` / `mod_<name>_*`,
+  foreign keys only to `apps(id)` / `workspaces(id)`), never alters another
+  table, never reads secrets of other modules, and never executes app code.
+
+### Publish
+
+Publish to npm (`npm publish`; `prepack` builds `dist/`) or ship the
+tarball `npm pack` writes (`drobek-module-erp-0.1.0.tgz`) from any URL. The
+package contains `dist/`, `migrations/` and `SKILL.md`. A git URL works
+only with a committed `dist/` (installs run without lifecycle scripts).
+
+### Install on a server
+
+The operator installs the package — any spec `npm install` accepts (a
+registry version, a tarball URL, a git URL) — with
+`task selfhost:module:add -- <spec>` ([`SELF-HOSTING.md`](./SELF-HOSTING.md#third-party-modules)),
+then adds its entry to `DROBEK_MODULES` (the short name when the package is
+`drobek-module-<name>`, else the full package name) and restarts drobek.
+The start refuses a module whose `contract` range does not match. An
+operator with an own image build can instead add the package as a
+dependency of the server (see [Enabling modules](#enabling-modules)).
+
+### Compatibility
+
+| Module contract (`MODULE_CONTRACT_VERSION`) | drobek image / npm packages | A module declaring |
+| --- | --- | --- |
+| `1.0.0` | v0.1.0 – v0.1.4 | `'^1.0'` (or no `contract`) |
+| `1.1.0` | v0.2.0 – | `'^1.1'` or `'^1.0'` |
+
+`@drobek/modules@X.Y.Z` is the contract of the image `ghcr.io/freema/drobek:vX.Y.Z`
+(both come from one tag). Additive contract changes raise the minor version
+(`1.1` → `1.2`): a module declaring `'^1.1'` keeps loading. A breaking
+change raises the major, and such a server refuses `'^1.x'` modules with a
+message naming both versions. The server logs the version at start
+(`platform modules ready`, `contract`).
 
 ## End-user sessions (core)
 
@@ -768,8 +1266,10 @@ auth module:
   (no `Domain`), `Path=/`, `HttpOnly`, `SameSite=Lax`, `Secure` in production
   or when the apps origin is https; the value is 64 hex characters;
 - the record: Redis `drobek:eu:<app_id>:<token>` →
-  `{ id, email, role, epoch }`, 30 days, rolled forward by the auth module's
-  `me`;
+  `{ id, email, role, epoch, provider? }`, 30 days, rolled forward by the
+  auth module's `me`; `provider` is the sign-in method the session was made
+  with (`email` or a sign-in provider id) and reaches `endUsers.current` as
+  `user.provider`;
 - the app's epoch `drobek:eu-epoch:<app_id>`: a session whose epoch differs is
   dead. Raising it signs every user of the app out on every host of the app
   (preview, production, version hosts);
@@ -783,6 +1283,15 @@ auth module:
   `me`. A failing lookup makes that request anonymous (fail closed). At most
   one active module may declare `endUsers` (two refuse the start); with none,
   no session is honoured;
+- `endUsers.callback` (optional): the IdP callback of end-user sign-in
+  providers, `GET|POST /__drobek/auth/callback/:provider` on the DASHBOARD
+  host (`runtime.endUserCallback`, see "Auth providers" below). Core hands
+  it the query, a urlencoded POST body (≤ 256 KiB), the client IP and
+  services: a callback-namespaced rate limiter, the server's default
+  limits, and `app(id)` — a live app (not deleted, not taken down) with the
+  authority's effective config, its declared secrets and an audit writer.
+  It answers `{ kind: 'redirect', location }` or `{ kind: 'page', status,
+  title, message, link? }`; a throw is a generic 500 page;
 - helpers: `createEndUserSession`, `loadEndUserSession`,
   `renewEndUserSession`, `destroyEndUserSession`, `revokeEndUserSessions`,
   `endUserCookieHeader`, `readEndUserToken`, `cookiePrincipalResolver({
@@ -810,17 +1319,23 @@ an app sign in with a 6-digit code e-mailed to them. Its `SKILL.md` is what
 - **Routes** (`/__drobek/v1/auth/…`, all `public`, CSRF `sdk-header`):
   `POST send-code { email }`, `POST verify { email, code }` → `{ user }` +
   the session cookie, `GET me` → `{ user | null }` (+ rolls the session and
-  its cookie), `POST logout`.
-- **Config** `{ allow: { emails, domains, anyone }, adminEmails }`: exact
-  addresses (lowercased), exact domains, and `anyone: true`, which **needs the
-  owner's confirmation**. `adminEmails` may sign in and get the role `admin`.
-  The editors and workspace-admins of the app's workspace may always sign in
-  with their own address, as `admin` (the preview works before any config);
-  viewers may not.
+  its cookie), `POST logout`, `GET providers` → `{ providers: [{ id, label
+  }] }` (the methods that are on), `POST begin { provider, return_to? }` →
+  `{ url }` and `GET complete?code=` (provider sign-in, below).
+- **Config** `{ allow: { emails, domains, anyone }, adminEmails, providers
+  }`: exact addresses (lowercased), exact domains, and `anyone: true`, which
+  **needs the owner's confirmation**. `adminEmails` may sign in and get the
+  role `admin`. The editors and workspace-admins of the app's workspace may
+  always sign in with their own address, as `admin` (the preview works
+  before any config); viewers may not. `providers` (below) turns the sign-in
+  methods on and off.
 - **Table** `mod_auth_users (id, app_id, email, role, verified_at,
-  last_login_at, disabled_at, created_at)`, unique `(app_id, email)`, cascade
-  on app delete. A user with `disabled_at` cannot sign in, and their next `me`
-  signs them out.
+  last_login_at, disabled_at, created_at, provider, subject)`, unique
+  `(app_id, email)` and — for provider users — `(app_id, provider,
+  subject)`, cascade on app delete. `provider` is `email` (no `subject`) or
+  the sign-in provider the user is linked to (with the IdP's `subject`). A
+  user with `disabled_at` cannot sign in, and their next `me` signs them
+  out.
 - **Codes**: the dashboard login's own machinery from `@drobek/auth`
   (`createEmailLoginCode` / `consumeEmailLoginCode`, the atomic guess counter
   of PHY-76 #1, the OTP guard layers) with the scope `eu:<app_id>`: keys
@@ -842,7 +1357,8 @@ an app sign in with a 6-digit code e-mailed to them. Its `SKILL.md` is what
   was sent), upserts the user (role from the config), creates the session and
   writes the audit `auth.sign_in` (actor end_user).
 - **Who is signed in, now** (`src/current.ts`, the module's
-  `endUsers.current`): the `mod_auth_users` row exists and is not disabled,
+  `endUsers.current`): the session's sign-in method is still on, the
+  `mod_auth_users` row exists and is not disabled,
   the current config still lets the address in (allowlist, `adminEmails`, or
   an editor / workspace-admin of the app's workspace), and the role follows
   the config. Core runs it for every module request with a session (two
@@ -856,11 +1372,130 @@ an app sign in with a 6-digit code e-mailed to them. Its `SKILL.md` is what
   more than the app's share of the server's sign-in budget,
   `EMAIL_SIGNIN_APP_HOURLY_SHARE` — 25 by default; then the app's sign-in
   e-mails pause for 15 minutes), `AUTH_ATTEMPTS_PER_IP_15MIN` 30
-  (send-code + verify calls), `END_USERS_MAX_PER_APP` 1000.
+  (send-code, verify, begin and complete calls), `END_USERS_MAX_PER_APP`
+  1000; server-wide `AUTH_PROVIDER_CALLBACKS_PER_IP_15MIN` 60 (IdP callbacks
+  per client IP on the dashboard host — the app is not known yet, so the
+  server default applies, never a workspace override).
 - **SDK**: `drobek.auth.me() / sendCode(email) / verify(email, code) /
-  logout() / onChange(cb)` in `sdk.js`, and the inline source `drobek/auth`:
-  `<LoginGate title requireAdmin loading>` and `useAuth()`, React components
-  built into the app with the app's React.
+  logout() / onChange(cb) / providers() / signIn(provider, { returnTo? })`
+  in `sdk.js`, and the inline source `drobek/auth`: `<LoginGate title
+  requireAdmin loading>` (the e-mail form when `emailCode` is on, a
+  "Continue with <label>" button per enabled provider) and `useAuth()`,
+  React components built into the app with the app's React.
+- **Observers**: after every successful sign-in (e-mail code or provider)
+  the module tells each `auth.signedIn` contribution — `onSignIn({ app,
+  user, provider, isNew, db, log })`, in parallel, each cut off after 5 s;
+  a failure is logged (observer id + error name) and never blocks or fails
+  the sign-in.
+
+### Auth providers
+
+Other modules add ways to sign in through the auth module's slot
+`auth.provider` (`defineAuthProvider` from `@drobek/modules`). A provider
+only **proves an identity**; auth keeps the allowlist, roles, users,
+sessions and audits.
+
+```ts
+contributes: {
+  'auth.provider': defineAuthProvider({
+    id: 'oidc',                         // ^[a-z][a-z0-9]{1,15}$, not "email"
+    label: 'Company SSO',               // "Continue with Company SSO"
+    configSchema: z.strictObject({ issuer: z.url(), clientId: z.string() }), // no `enabled`
+    configDefaults: { },                // optional, must pass configSchema.partial()
+    identityFields: ['issuer', 'clientId'], // changing them waits for the owner
+    secrets: [{ name: 'OIDC_CLIENT_SECRET', description: '…', env: 'AUTH_OIDC_CLIENT_SECRET' }],
+    async begin({ config, secrets, env, redirectUri, state, nonce, codeChallenge }) {
+      return { url: '…the IdP authorize URL…' };
+    },
+    async callback({ query, body, codeVerifier, state, nonce, config, secrets }) {
+      return { subject, email, emailVerified, name };  // a VERIFIED identity, or throw
+    },
+  }),
+},
+```
+
+**Config.** `providers` holds `emailCode: { enabled }` (default on) and one
+entry per `auth.provider` contribution of the server: `{ enabled, …the
+provider's configSchema }`. The schema is composed at start (`compose`):
+while a provider is off its fields are optional; enabling it validates the
+whole provider schema. Enabling a provider, and changing one of its
+`identityFields` while it is on, **needs the owner's confirmation** (the
+item lists the identity fields); turning a method off never waits.
+`emailCode` off with no provider on is `invalid_params`
+(`providers.emailCode.enabled`). A stored config naming a provider the
+server no longer runs is salvaged: that entry is dropped (or a broken one
+turned off), never the e-mail code switched back on — with nothing on,
+nobody can sign in until the owner fixes it.
+
+**Secrets.** A provider's secrets are per-app secrets of the auth module
+(set in the dashboard, never through MCP); names start with `<ID>_`. A
+provider reads only its own declared names: the app's value first, else
+the operator's env var it declared as `env` (`AUTH_<ID>_…`). `begin` and
+`callback` also get `env` — the operator's `AUTH_<ID>_*` variables only.
+
+**The flow** (`modules/auth/src/flow.ts`):
+
+```
+app host                          dashboard host                        IdP
+POST /__drobek/v1/auth/begin ──► (none)
+  state id, nonce, PKCE verifier, flow token → Redis drobek:eu-oauth:<id> (10 min)
+  state = <id>.<HMAC(app, host, provider, nonce)>, flow cookie (Path=complete)
+  ◄── { url }  ─────────────────────────────────────────────────────────► authorize
+                                  GET|POST /__drobek/auth/callback/<id> ◄──
+                                  state: GETDEL + HMAC + provider check
+                                  provider.callback() → verified identity
+                                  allowlist → upsert / link user
+                                  handoff code → Redis (60 s)
+GET /__drobek/v1/auth/complete?code= ◄── 302
+  code: GETDEL, same app + host, flow cookie hash matches
+  decide again → session cookie (host-only) → 302 return_to
+```
+
+- the state is `<id>.<HMAC-SHA256>`; the key is HKDF over
+  `DROBEK_MASTER_KEY` (label `drobek/eu-oauth-state/v1`); without a valid
+  master key provider sign-in answers `unavailable`. The state record
+  holds the app, host, provider, nonce, PKCE verifier, `return_to` and the
+  SHA-256 of the flow token; it is consumed on the first callback, valid or
+  not;
+- the app comes **only from the state**; the callback never reads the
+  dashboard session or cookie. The redirect URI of provider `<id>` is
+  `<PUBLIC_APP_URL>/__drobek/auth/callback/<id>` — one per server, registered
+  once at the IdP;
+- `return_to` must be a path on the app host (`safeReturnPath`: one leading
+  `/`, no `//`, `/\`, scheme or control characters), else `invalid_request`;
+- the handoff code (32 random bytes) lives 60 s, works once, and only on the
+  app host that began the sign-in, in the browser holding the flow cookie
+  (`__Secure-drobek_eu_flow`, host-only, `Path=/__drobek/v1/auth/complete`,
+  HttpOnly, SameSite=Lax, 10 min) — a callback link handed to someone else
+  signs nobody in;
+- a provider identity must be **verified** (`emailVerified: true`), else
+  `email_not_verified`; the allowlist and `adminEmails` then decide as for
+  the e-mail code. A known (provider, subject) is the same user (the address
+  follows the IdP); else a user with that address and no link is **linked**
+  (same id); a user linked to another identity is refused; else a new user;
+- complete decides again (allowlist, disabled, the provider still on),
+  creates the session with `provider`, audits `auth.sign_in { provider }`
+  and tells the observers. Every refusal is audited `auth.sign_in_denied {
+  provider, reason }` and answers a small page with a link back to the app;
+- a provider call is cut off after 15 s; its errors are logged by name
+  only (a message may quote tokens or IdP answers) and answer
+  `provider_error` / a "Sign-in failed" page;
+- `begin` answers only `{ url }`: the app host's CSP (`form-action 'self'`)
+  forbids posting a form to an IdP, so a SAML provider sends its request
+  with the HTTP-Redirect binding; the IdP may POST its answer to the
+  callback (urlencoded, ≤ 256 KiB; the dashboard's Origin check exempts
+  `/__drobek/auth/callback`).
+
+**Sessions.** A session remembers its method; turning a method off ends its
+sessions on the next request (`current`), and the Users tab shows users
+whose method is off as `not_allowed`. The e-mail code (while on) works for
+every user, linked ones included.
+
+**Testing.** `createModuleTestContext(auth, { contributions: {
+'auth.provider': [provider] } })` composes the module; `t.endUserCallback({
+provider, query, body })` runs the callback as core does
+(`modules/auth/src/providers.test.ts` drives the whole flow with a fake
+IdP).
 
 ## The built-in `email` module
 
@@ -1181,7 +1816,9 @@ people who use an app upload. `skill_info('files')`.
 [`examples/drobek-module-hello`](../examples/drobek-module-hello) is an
 external workspace package, loaded exactly as a third-party module would be
 (`DROBEK_MODULES=hello` → `drobek-module-hello`, a dependency of
-`apps/server`):
+`apps/server`). It is what `npm create drobek-module@latest hello` generates
+(the files, scripts and tests; a unit test regenerates the scaffold and
+compares) plus the slot demo:
 
 - `GET /__drobek/v1/hello` → `{ greeting, message, waves, signed, signature? }`;
 - `POST /__drobek/v1/hello/wave` `{ name }` → `{ waves }`, rate-limited per
@@ -1192,7 +1829,11 @@ external workspace package, loaded exactly as a third-party module would be
 - table `mod_hello_waves` (its own migrations and journal);
 - `GET /__drobek/v1/hello/whoami` → the visitor as `ctx.principal` (signed in
   through the auth module with the current role, or `{ signed_in: false }`);
-- `drobek.hello.ping()` / `drobek.hello.wave(name)` / `drobek.hello.whoami()`
+- `GET /__drobek/v1/hello/greet?name=Ada&greeter=<id>` → `{ text, greeter }`:
+  the configured greeting, or a greeter another module contributes to the
+  slot `hello.greeter` (`{ id, greet(name) }`, unique by `id`); an unknown id
+  answers the module's own error `unknown_greeter` (404, `details.available`);
+- `drobek.hello.ping()` / `wave(name)` / `whoami()` / `greet(name, greeter?)`
   in the browser;
 - its `SKILL.md` is what `skill_info('hello')` returns.
 

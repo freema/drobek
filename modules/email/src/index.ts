@@ -44,6 +44,7 @@ export interface Api {
 const email = defineModule<EmailConfig>({
   name: 'email',
   version: '1.0.0',
+  contract: '^1.1',
   skill: {
     useWhen: 'the app must tell its owners about something by e-mail (a request, an alert), or you want to set the sender name of the app\'s e-mails',
     markdown: readFileSync(here('../SKILL.md'), 'utf8'),

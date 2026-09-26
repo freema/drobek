@@ -29,7 +29,7 @@ export default function AppUploadsRoute() {
       </p>
 
       {!d.enabled ? (
-        <ModuleMissing module="files" />
+        <ModuleMissing does="stores end-user uploads" />
       ) : (
         <>
           {d.error ? (

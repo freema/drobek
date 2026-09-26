@@ -8,6 +8,10 @@
       "types": "./src/index.ts",
       "default": "./dist/index.js"
     },
+    "./mark": {
+      "types": "./src/mark.tsx",
+      "default": "./dist/mark.js"
+    },
     "./routes/login": {
       "types": "./src/routes/login.tsx",
       "default": "./dist/routes/login.js"

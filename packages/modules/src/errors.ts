@@ -10,11 +10,13 @@ export type ModuleErrorCode =
   | 'unauthorized'
   | 'forbidden'
   | 'not_found'
+  | 'module_not_enabled'
   | 'method_not_allowed'
   | 'payload_too_large'
   | 'unsupported_media_type'
   | 'rate_limited'
   | 'limit_exceeded'
+  | 'quota_exceeded'
   | 'conflict'
   | 'csrf_rejected'
   | 'password_required'
@@ -28,12 +30,14 @@ const STATUS: Record<string, number> = {
   forbidden: 403,
   csrf_rejected: 403,
   not_found: 404,
+  module_not_enabled: 404,
   method_not_allowed: 405,
   conflict: 409,
   payload_too_large: 413,
   unsupported_media_type: 415,
   rate_limited: 429,
   limit_exceeded: 429,
+  quota_exceeded: 409,
   password_required: 401,
   unavailable: 503,
   internal_error: 500,
@@ -41,6 +45,48 @@ const STATUS: Record<string, number> = {
 
 /** Every code the platform answers module routes with (each has an agent-dx catalogue entry). */
 export const MODULE_ERROR_CODES: readonly string[] = Object.keys(STATUS);
+
+/**
+ * Every code of the CORE error catalogue (`@drobek/agent-dx`
+ * `ERROR_CATALOGUE`, code-shaped entries): the module-route codes above plus
+ * the MCP tool, compile and OAuth codes. A module may not declare one of
+ * these in `errors`, and a module route may answer any of them. A unit test
+ * in @drobek/mcp keeps this list equal to the catalogue.
+ */
+export const CORE_ERROR_CODES: readonly string[] = [
+  ...MODULE_ERROR_CODES,
+  // MCP tools
+  'invalid_params',
+  'invalid_path',
+  'secret_in_source',
+  'app_locked',
+  'app_locked_by_admin',
+  'busy',
+  'slug_taken',
+  'not_publishable',
+  'compile_error',
+  'not_published',
+  'user_confirmation_required',
+  'gallery_hidden',
+  'gallery_disabled',
+  // app assets (MCP asset tools, the upload URL)
+  'asset_too_large',
+  'asset_type_not_allowed',
+  'asset_quota_exceeded',
+  'asset_path_taken',
+  'asset_size_mismatch',
+  'asset_not_found',
+  'upload_token_invalid',
+  // compile.errors[]
+  'build_error',
+  'unresolved_import',
+  'invalid_config',
+  'timeout',
+  // OAuth
+  'invalid_grant',
+  'invalid_client',
+  'invalid_target',
+];
 
 export interface ModuleErrorBody {
   error: string;
@@ -98,6 +144,19 @@ export function isModuleError(err: unknown): err is ModuleError {
   const e = err as Partial<ModuleError> & { [MODULE_ERROR_BRAND]?: unknown };
   if (typeof e.status !== 'number' || typeof e.body !== 'function') return false;
   return e[MODULE_ERROR_BRAND] === true || e.name === 'ModuleError';
+}
+
+/**
+ * NSO-346: an opt-in module (`availability: 'opt-in'`) that is not enabled
+ * for the app's workspace — the module route (404), configure_module and the
+ * owner's confirm answer this.
+ */
+export function moduleNotEnabled(name: string): ModuleError {
+  return new ModuleError(
+    'module_not_enabled',
+    `The platform module "${name}" is not enabled for this app's workspace. Only the server operator can enable it.`,
+    { details: { module: name }, hint: skillHint(name) }
+  );
 }
 
 /** `skill_info('<name>')` — the hint every module error carries by default. */

@@ -99,8 +99,11 @@ The loop (tool → result):
 4. `compile.ok: true` → give the user `preview_url`. `false` → fix `compile.errors`, write again (`skill_info('debug')`).
 5. `get_logs({ app_id, kind: "runtime" })` after the page ran in a browser.
 6. `publish({ app_id, version? })` ONLY when the user explicitly asks → `published_url`.
+   Public gallery: `set_gallery_listing({ app_id, listed, description, user_confirmed })` — show the
+   user the description first; `user_confirmed: true` ONLY after they explicitly said yes.
 7. `get_app({ app_id })` = files, versions, lock, modules; `restore_version({ app_id, version })` = new version copying an old one.
 8. Backends: `skill_info({ name })`, `configure_module({ app_id, module, config })`, `query_data({ app_id, collection })`.
+9. Binaries: `create_asset_upload({ app_id, path, size })` → `upload_url` + `curl -T`; `list_assets({ app_id })`, `delete_asset({ app_id, path })`.
 
 `drobek.json`: `{ "imports": { "<bare>": "https://…" }, "entries"?: ["src/admin.tsx"], "beacon"?: false }`.
 Add a package as a pinned esm.sh URL, e.g. `"date-fns": "https://esm.sh/date-fns@4.1.0"`;
@@ -113,6 +116,8 @@ Add a package as a pinned esm.sh URL, e.g. `"date-fns": "https://esm.sh/date-fns
 - JSX = automatic runtime (no `import React`). Types are stripped, NOT checked.
 - Paths app-relative (`src/App.tsx`), no `/` prefix, no `..`. Text files
   only: .tsx .ts .jsx .js .mjs .css .json .html .txt .md .svg .webmanifest.
+  Video, audio, images, fonts: `create_asset_upload` (an upload URL, never
+  base64) → the preview serves it at `/<path>`, production after `publish`.
 - 1–20 changes per write; `reasoning` ≤ 300 chars. Per version (defaults;
   the briefing has this server's): 200 files, 512 KiB per file, 5 MiB total,
   10 s build.
@@ -139,6 +144,7 @@ Add a package as a pinned esm.sh URL, e.g. `"date-fns": "https://esm.sh/date-fns
 | `app_locked` | another user's agent writes the app | tell the user; retry after `expires_at` |
 | `busy` | the compiler queue is full | retry the same call in a few seconds |
 | `not_publishable` | that version did not compile | publish the newest version that compiled |
+| `user_confirmation_required` | `set_gallery_listing` without the user's yes | ask the user; call again with `user_confirmed: true` only if they say yes |
 | `invalid_params` | > 20 files, same path twice, long reasoning | split the change; fix the arguments |
 | `not_found` | wrong `app_id` or no access | `list_apps` |
 | `forbidden` | viewer role | ask for the editor role |

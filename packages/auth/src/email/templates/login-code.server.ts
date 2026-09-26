@@ -15,27 +15,12 @@ export function renderLoginCodeEmail(vars: LoginCodeVars): RenderedEmail {
   // Subject includes the 6-digit code (spec §5) — visible without opening.
   const subject = `drobek — your sign-in code: ${code}`;
 
-  const codeChars = code
-    .split('')
-    .map(
-      (ch) =>
-        `<span style="display:inline-block;min-width:36px;padding:10px 4px;margin:0 3px;border:1px solid ${emailBrand.line};border-radius:8px;background:#fafafa;font-family:'SF Mono',Menlo,Consolas,monospace;font-size:24px;font-weight:600;color:${emailBrand.ink};">${escapeHtml(ch)}</span>`
-    )
-    .join('');
-
+  // One string, not a box per digit: it copies and autofills as a whole.
   const body = `
-    <h1 style="margin:0 0 12px;font-size:22px;line-height:1.3;font-weight:600;color:${emailBrand.ink};">
-      Your sign-in code
-    </h1>
-    <p style="margin:0 0 24px;font-size:14px;line-height:1.55;color:${emailBrand.muted};">
-      Enter this code on the drobek sign-in page. It is valid for 10 minutes and can be used once.
-    </p>
-    <div style="text-align:center;margin:8px 0 24px;">
-      ${codeChars}
-    </div>
-    <div style="border-top:1px solid ${emailBrand.line};padding-top:16px;font-size:12.5px;line-height:1.55;color:${emailBrand.muted};">
-      If you did not request this, you can safely ignore this email — nothing happens without the code.
-    </div>
+    <h1 style="margin:0 0 8px;font-size:20px;line-height:1.3;font-weight:600;color:${emailBrand.ink};">Your sign-in code</h1>
+    <p style="margin:0 0 24px;color:${emailBrand.muted};">Enter it on the drobek sign-in page. It works once, for 10 minutes.</p>
+    <p style="margin:0 0 24px;font-family:'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;font-size:32px;line-height:1.2;font-weight:600;letter-spacing:0.25em;color:${emailBrand.ink};">${escapeHtml(code)}</p>
+    <p style="margin:0;font-size:13px;color:${emailBrand.faint};">Didn&#39;t ask for it? Ignore this e-mail — nobody can sign in without the code.</p>
   `;
 
   const html = renderEmailLayout({
@@ -46,9 +31,9 @@ export function renderLoginCodeEmail(vars: LoginCodeVars): RenderedEmail {
   const text = [
     `Your drobek sign-in code: ${code}`,
     '',
-    'It is valid for 10 minutes and can be used once.',
+    'It works once, for 10 minutes.',
     '',
-    'If you did not request this, you can safely ignore this email.',
+    "Didn't ask for it? Ignore this e-mail: nobody can sign in without the code.",
   ].join('\n');
 
   return { subject, html, text };

@@ -12,6 +12,7 @@
 import { redirect, useLoaderData } from 'react-router';
 import { AGENT_GUIDE_URL } from '@drobek/agent-dx';
 import { SOURCE_REPO_URL } from '@drobek/dashboard/footer';
+import { DrobekMark } from '@drobek/auth/mark';
 
 const DESCRIPTION =
   'drobek is an open-source cloud workspace for agent-built web apps: your agent connects over MCP, writes files, gets the compile result back and hands you a live preview to publish.';
@@ -77,6 +78,7 @@ export function Landing({ agentGuideUrl, repoUrl }: ReturnType<typeof loader>) {
           Sign in
         </a>
       </nav>
+      <DrobekMark size={64} idle />
       <h1 style={styles.h1}>drobek</h1>
       <p style={styles.tagline}>
         A cloud workspace for agent-built web apps. Your agent connects over MCP

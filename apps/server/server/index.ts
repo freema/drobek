@@ -2,7 +2,9 @@
  * drobek server entry — the ONE process of the self-hostable image (M0-01).
  *
  * Boot order: refuse insecure secrets (PHY-76 #6), an invalid APPS_DOMAIN,
- * TRUST_PROXY, TLS_ASK_TOKEN, LIMITS_PROVIDER_URL or DOMAINS_* → apply core migrations →
+ * TRUST_PROXY, TLS_ASK_TOKEN, LIMITS_PROVIDER_URL, DOMAINS_*,
+ * APP_FRAME_SRC_EXTRA or e-mail transport (EMAIL_TRANSPORT / RESEND_API_KEY /
+ * SMTP_HOST) → apply core migrations →
  * load the platform modules (DROBEK_MODULES: their migrations, the composed
  * SDK, the skills — a bad module stops the start, M1-01) →
  * mount the app-host dispatcher (M0-06), then React Router (Vite middleware in
@@ -15,15 +17,18 @@ import { basename, dirname, resolve } from 'node:path';
 import { createRequestHandler } from '@react-router/express';
 import type { RequestHandler } from 'express';
 import type { ServerBuild } from 'react-router';
-import { appsOriginConfigError } from '@drobek/apps';
+import { errorHint } from '@drobek/agent-dx';
+import { appsOriginConfigError, assetLimitsOf, createAssetUploadHandler, previewUrl } from '@drobek/apps';
 import { trustProxyConfigError } from '@drobek/auth';
 import { createConsoleLogger, secretsConfigError } from '@drobek/core';
 import { dbErrorForLog, runCoreMigrations } from '@drobek/db';
 import { dnsMockWarning, domainsConfigError } from '@drobek/domains';
+import { emailConfigError } from '@drobek/email';
 import { limitsProviderConfigError, moduleRuntime } from '@drobek/modules';
 import {
   ServeStore,
   createAppsHostMiddleware,
+  frameSrcConfigError,
   subscribeServeCache,
   tlsAskConfigError,
 } from '@drobek/serving';
@@ -40,7 +45,9 @@ const configError =
   trustProxyConfigError(process.env) ??
   tlsAskConfigError(process.env) ??
   limitsProviderConfigError(process.env) ??
-  domainsConfigError(process.env);
+  domainsConfigError(process.env) ??
+  frameSrcConfigError(process.env) ??
+  emailConfigError(process.env);
 if (configError) {
   console.error(configError);
   process.exit(1);
@@ -104,7 +111,15 @@ const appsHost = createAppsHostMiddleware({
   deps: { platform: (req, { app }) => modules.handle(req, app) },
 }) as RequestHandler;
 
-const app = createServerApp({ rrHandler, before, clientDir, appsHost });
+// NSO-358: the asset upload URLs (create_asset_upload / the Assets tab).
+const assetUpload = createAssetUploadHandler({
+  limits: async (workspaceId) => assetLimitsOf(await modules.workspaceLimits(workspaceId)),
+  hint: errorHint,
+  assetUrl: (slug, path) => `${previewUrl(slug)}${path}`,
+  log: createConsoleLogger('assets'),
+}) as RequestHandler;
+
+const app = createServerApp({ rrHandler, before, clientDir, appsHost, assetUpload });
 const jobs = startBackgroundJobs(log, { filesSweep: modules.modules.some((m) => m.name === 'files') });
 
 httpServer.on('request', app);

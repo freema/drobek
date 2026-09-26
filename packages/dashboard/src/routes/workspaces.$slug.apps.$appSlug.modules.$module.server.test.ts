@@ -4,7 +4,11 @@
  * stubbed — requireWorkspaceRole has its own tests in @drobek/tenancy):
  * form errors per field, pending via the configure path + confirm with audit,
  * write-only secrets (the value in no response, loader data or audit row),
- * the data collections editor, a viewer refused before anything changes.
+ * the collections / upstreams editors — chosen by the module's declared
+ * `dashboard.editor`, never by its name (NSO-347: the fixtures are NOT named
+ * data / proxy, and a module named `proxy` without the declaration gets the
+ * generic form) — "About this module" + error codes, a viewer refused before
+ * anything changes.
  */
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
@@ -13,7 +17,7 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { migrate } from 'drizzle-orm/pglite/migrator';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as schema from '@drobek/db/schema';
-import { apps, auditLog, moduleConfigs, moduleSecrets, setDbForTests, users, workspaces } from '@drobek/db';
+import { apps, auditLog, moduleConfigs, moduleSecrets, setDbForTests, users, workspaceModules, workspaces } from '@drobek/db';
 import { noopLogger } from '@drobek/core';
 import {
   defineModule,
@@ -24,7 +28,7 @@ import {
   z,
   type ModuleRuntime,
 } from '@drobek/modules';
-import { fieldName, ruleInputName } from '../module-config.js';
+import { entryInputs, fieldName, ruleInputName } from '../module-config.js';
 
 const role = vi.hoisted(() => ({ current: 'editor' as 'viewer' | 'editor' | 'workspace-admin', user: { id: '', email: 'owner@example.com' }, ws: { id: '', slug: 'acme', name: 'Acme' } }));
 
@@ -62,9 +66,13 @@ const shop = defineModule<{ greeting: string; access: 'public' | 'user'; loud: b
 });
 
 const rule = z.string().regex(/^(public|user|owner|admin|none)(\|(public|user|owner|admin|none))*$/);
-const data = defineModule<{ collections: Record<string, { schema?: Record<string, unknown>; rules: Record<string, string> }> }>({
-  name: 'data',
+// A records module under another name: the collections editor follows `dashboard.editor`.
+const store = defineModule<{ collections: Record<string, { schema?: Record<string, unknown>; rules: Record<string, string> }> }>({
+  name: 'store',
   version: '1.0.0',
+  contract: '^1.1',
+  dashboard: { editor: 'collections' },
+  errors: [{ code: 'store_full', meaning: 'The store holds no more records.', fix: 'Delete records first.' }],
   skill: { useWhen: 'you store records', markdown: '# data' },
   configSchema: z.strictObject({
     collections: z
@@ -87,9 +95,11 @@ const data = defineModule<{ collections: Record<string, { schema?: Record<string
   rules: { ops: { read: 'List', create: 'Add', update: 'Change', delete: 'Delete' } },
 });
 
-const proxy = defineModule<{ upstreams: Record<string, { rules: { call: string }; rateLimit?: number }> }>({
-  name: 'proxy',
+// An upstreams module under another name: the upstreams editor follows `dashboard.editor`.
+const gateway = defineModule<{ upstreams: Record<string, { rules: { call: string }; rateLimit?: number }> }>({
+  name: 'gateway',
   version: '1.0.0',
+  dashboard: { editor: 'upstreams' },
   skill: { useWhen: 'you call an API', markdown: '# proxy' },
   configSchema: z.strictObject({
     upstreams: z
@@ -114,6 +124,30 @@ const proxy = defineModule<{ upstreams: Record<string, { rules: { call: string }
       { name: 'weather', registered: true, assigned: Boolean(config.upstreams.weather), hasSecret: true, allowedMethods: ['GET'], allowedPathPrefixes: ['/v1/'] },
     ],
   }),
+});
+
+// Named like the built-in, but WITHOUT `dashboard.editor`: the generic form, its `upstreams` a record of entries.
+const proxy = defineModule<{ upstreams: Record<string, { url: string; retries?: number; verbs: string[] }>; slow: boolean }>({
+  name: 'proxy',
+  version: '2.0.0',
+  skill: { useWhen: 'you pretend to be the proxy', markdown: '# proxy' },
+  configSchema: z.strictObject({
+    upstreams: z
+      .record(z.string().regex(/^[a-z]+$/), z.strictObject({ url: z.url(), retries: z.int().min(0).max(3).optional(), verbs: z.array(z.enum(['GET', 'POST'])).default(['GET']) }))
+      .default({}),
+    slow: z.boolean().default(false),
+  }),
+  configDefaults: { upstreams: {}, slow: false },
+});
+
+/** NSO-346: an opt-in module — off for the workspace until a workspace_modules row enables it. */
+const vault = defineModule<{ shelf: string }>({
+  name: 'vault',
+  version: '1.0.0',
+  availability: 'opt-in',
+  skill: { useWhen: 'the app needs the firm vault', markdown: '# vault' },
+  configSchema: z.strictObject({ shelf: z.string().max(20) }),
+  configDefaults: { shelf: 'main' },
 });
 
 let pg: PGlite;
@@ -170,7 +204,7 @@ beforeAll(async () => {
   rt = await loadModuleRuntime({
     env: ENV,
     log: noopLogger,
-    modules: [shop, data, proxy],
+    modules: [shop, store, gateway, proxy, vault],
     skillsDir: null,
     deps: {
       rateLimit: memoryRateLimiter(),
@@ -334,16 +368,16 @@ describe('the module page (M2-02)', () => {
     expect((await load()).header.lockedByAdmin).toBeNull();
   });
 
-  it('proxy: the workspace upstreams with assign (→ pending), call rule + rateLimit, unassign', async () => {
-    let d = await load('proxy');
+  it('upstreams editor (a module declaring dashboard.editor upstreams): assign (→ pending), call rule + rateLimit, unassign', async () => {
+    let d = await load('gateway');
     expect(d.editor).toBe('upstreams');
     expect(d.upstreams).toEqual([
       { name: 'weather', registered: true, assigned: false, call: 'user', rateLimit: null, hasSecret: true, methods: ['GET'], prefixes: ['/v1/'] },
     ]);
-    const bad = failed(await post('proxy', { intent: 'save-upstream', upstream: 'weather', [ruleInputName('call', 'user')]: 'on', rateLimit: 'lots' }));
+    const bad = failed(await post('gateway', { intent: 'save-upstream', upstream: 'weather', [ruleInputName('call', 'user')]: 'on', rateLimit: 'lots' }));
     expect(bad.errors.fields['upstreams.weather.rateLimit']).toEqual(['Enter a whole number of calls per minute.']);
-    expect(doneOf(await post('proxy', { intent: 'save-upstream', upstream: 'weather', [ruleInputName('call', 'user')]: 'on', rateLimit: '30' }))).toBe('pending');
-    d = await load('proxy');
+    expect(doneOf(await post('gateway', { intent: 'save-upstream', upstream: 'weather', [ruleInputName('call', 'user')]: 'on', rateLimit: '30' }))).toBe('pending');
+    d = await load('gateway');
     expect(d.pending?.changes[0].risk).toMatch(/external service/);
     expect(d.pending?.diff).toEqual([
       { path: 'upstreams.weather.rateLimit', before: '(not set)', after: '30' },
@@ -351,32 +385,32 @@ describe('the module page (M2-02)', () => {
     ]);
     // Only a workspace admin confirms it (NSO-322 H3): the editor sees why, and confirm is refused.
     expect(d.pending).toMatchObject({ confirmRole: 'admin', canConfirm: false });
-    const refused = failed(await post('proxy', { intent: 'confirm' }));
+    const refused = failed(await post('gateway', { intent: 'confirm' }));
     expect(refused.status).toBe(403);
     expect(refused.errors.general[0]).toMatch(/Only a workspace admin can confirm/);
-    expect((await load('proxy')).upstreams[0]).toMatchObject({ assigned: false });
+    expect((await load('gateway')).upstreams[0]).toMatchObject({ assigned: false });
     role.current = 'workspace-admin';
-    expect((await load('proxy')).pending).toMatchObject({ confirmRole: 'admin', canConfirm: true });
-    expect(doneOf(await post('proxy', { intent: 'confirm' }))).toBe('confirmed');
+    expect((await load('gateway')).pending).toMatchObject({ confirmRole: 'admin', canConfirm: true });
+    expect(doneOf(await post('gateway', { intent: 'confirm' }))).toBe('confirmed');
     role.current = 'editor';
-    d = await load('proxy');
+    d = await load('gateway');
     expect(d.upstreams[0]).toMatchObject({ assigned: true, call: 'user', rateLimit: 30 });
     // Changing the rule of an assigned upstream applies at once here (the fake module confirms assignments only).
-    expect(doneOf(await post('proxy', { intent: 'save-upstream', upstream: 'weather', [ruleInputName('call', 'admin')]: 'on', rateLimit: '' }))).toBe('applied');
-    expect((await load('proxy')).upstreams[0]).toMatchObject({ call: 'admin', rateLimit: null });
-    expect(doneOf(await post('proxy', { intent: 'unassign-upstream', upstream: 'weather' }))).toBe('applied');
-    expect((await load('proxy')).upstreams[0]).toMatchObject({ assigned: false });
+    expect(doneOf(await post('gateway', { intent: 'save-upstream', upstream: 'weather', [ruleInputName('call', 'admin')]: 'on', rateLimit: '' }))).toBe('applied');
+    expect((await load('gateway')).upstreams[0]).toMatchObject({ call: 'admin', rateLimit: null });
+    expect(doneOf(await post('gateway', { intent: 'unassign-upstream', upstream: 'weather' }))).toBe('applied');
+    expect((await load('gateway')).upstreams[0]).toMatchObject({ assigned: false });
   });
 
-  it('data: add a collection, rules from the op × principal table (public → pending), schema JSON validated', async () => {
-    expect(doneOf(await post('data', { intent: 'add-collection', collection: 'notes' }))).toBe('applied');
-    let d = await load('data');
+  it('collections editor (a module declaring dashboard.editor collections): add, rules from the op × principal table (public → pending), schema JSON validated', async () => {
+    expect(doneOf(await post('store', { intent: 'add-collection', collection: 'notes' }))).toBe('applied');
+    let d = await load('store');
     expect(d.editor).toBe('collections');
     expect(d.fields).toEqual([]);
     expect(d.collections).toEqual([
       { name: 'notes', rules: { read: 'owner|admin', create: 'user', update: 'owner|admin', delete: 'owner|admin' }, schemaText: '' },
     ]);
-    expect(failed(await post('data', { intent: 'add-collection', collection: 'notes' })).errors.general[0]).toMatch(/already exists/);
+    expect(failed(await post('store', { intent: 'add-collection', collection: 'notes' })).errors.general[0]).toMatch(/already exists/);
 
     const checks = {
       [ruleInputName('read', 'owner')]: 'on',
@@ -384,25 +418,105 @@ describe('the module page (M2-02)', () => {
       [ruleInputName('create', 'public')]: 'on',
       [ruleInputName('update', 'admin')]: 'on',
     };
-    const broken = failed(await post('data', { intent: 'save-collection', collection: 'notes', schema: '{ nope', ...checks }));
+    const broken = failed(await post('store', { intent: 'save-collection', collection: 'notes', schema: '{ nope', ...checks }));
     expect(broken.errors.fields['collections.notes.schema']?.[0]).toMatch(/Not a valid JSON Schema/);
-    const wrong = failed(await post('data', { intent: 'save-collection', collection: 'notes', schema: '{"type":"array"}', ...checks }));
+    const wrong = failed(await post('store', { intent: 'save-collection', collection: 'notes', schema: '{"type":"array"}', ...checks }));
     expect(wrong.errors.fields['collections.notes.schema']).toEqual(['schema.type must be "object"']);
 
-    expect(doneOf(await post('data', { intent: 'save-collection', collection: 'notes', schema: '{"type":"object"}', ...checks }))).toBe('pending');
-    d = await load('data');
+    expect(doneOf(await post('store', { intent: 'save-collection', collection: 'notes', schema: '{"type":"object"}', ...checks }))).toBe('pending');
+    d = await load('store');
     expect(d.pending?.diff).toEqual([
       { path: 'collections.notes.rules.create', before: '"user"', after: '"public"' },
       { path: 'collections.notes.rules.delete', before: '"owner|admin"', after: '"none"' },
       { path: 'collections.notes.rules.update', before: '"owner|admin"', after: '"admin"' },
       { path: 'collections.notes.schema.type', before: '(not set)', after: '"object"' },
     ]);
-    expect(doneOf(await post('data', { intent: 'confirm' }))).toBe('confirmed');
-    d = await load('data');
+    expect(doneOf(await post('store', { intent: 'confirm' }))).toBe('confirmed');
+    d = await load('store');
     expect(d.collections[0]).toMatchObject({ rules: { create: 'public', delete: 'none' }, schemaText: '{\n  "type": "object"\n}' });
 
-    expect(doneOf(await post('data', { intent: 'remove-collection', collection: 'notes' }))).toBe('applied');
-    expect((await load('data')).collections).toEqual([]);
+    expect(doneOf(await post('store', { intent: 'remove-collection', collection: 'notes' }))).toBe('applied');
+    expect((await load('store')).collections).toEqual([]);
+  });
+
+  it('the editor follows dashboard.editor, not the name: a module named proxy without it gets the generic form (record entries round-trip)', async () => {
+    let d = await load('proxy');
+    expect(d.editor).toBeNull();
+    expect(d.upstreams).toEqual([]);
+    expect(d.fields.map((f) => [f.path, f.kind])).toEqual([
+      ['upstreams', 'record'],
+      ['slow', 'boolean'],
+    ]);
+    // The browser posts the rendered record: no entries yet + the empty "add" entry (index 0).
+    const add = {
+      intent: 'save-config',
+      [entryInputs.count('upstreams')]: '1',
+      [entryInputs.isNew('upstreams', 0)]: '1',
+      [entryInputs.key('upstreams', 0)]: 'erp',
+      [fieldName('upstreams[0].url')]: 'https://erp.example/api',
+      [fieldName('upstreams[0].retries')]: '2',
+      [fieldName('upstreams[0].verbs[1]')]: 'on',
+    };
+    expect(doneOf(await post('proxy', add))).toBe('applied');
+    d = await load('proxy');
+    expect(d.values.upstreams).toEqual({
+      entries: [{ key: 'erp', values: { url: 'https://erp.example/api', retries: '2', verbs: ['POST'] } }],
+    });
+    const stored = await rt.moduleView({ id: appId, slug: 'shop-app', workspaceId: role.ws.id }, 'proxy');
+    expect(stored.config).toEqual({ upstreams: { erp: { url: 'https://erp.example/api', retries: 2, verbs: ['POST'] } }, slow: false });
+
+    // The module's schema stays the one validator: a bad URL inside an entry comes back at the record.
+    const bad = failed(
+      await post('proxy', {
+        intent: 'save-config',
+        [entryInputs.count('upstreams')]: '2',
+        [entryInputs.key('upstreams', 0)]: 'erp',
+        [fieldName('upstreams[0].url')]: 'not a url',
+        [fieldName('upstreams[0].verbs[0]')]: 'on',
+        [entryInputs.isNew('upstreams', 1)]: '1',
+        [entryInputs.key('upstreams', 1)]: '',
+        [fieldName('upstreams[1].verbs[0]')]: 'on',
+      })
+    );
+    expect(bad.status).toBe(400);
+    expect(Object.keys(bad.errors.fields)).toEqual(['upstreams']);
+    expect(bad.errors.fields.upstreams[0]).toMatch(/^erp\.url: /);
+
+    // Removing the entry (its checkbox) → the merge patch sets it to null.
+    expect(
+      doneOf(await post('proxy', { intent: 'save-config', [entryInputs.count('upstreams')]: '1', [entryInputs.key('upstreams', 0)]: 'erp', [entryInputs.remove('upstreams', 0)]: 'on' }))
+    ).toBe('applied');
+    expect((await rt.moduleView({ id: appId, slug: 'shop-app', workspaceId: role.ws.id }, 'proxy')).config).toEqual({ upstreams: {}, slow: false });
+    // The collections / upstreams intents are refused for a module without the editor.
+    expect(failed(await post('proxy', { intent: 'save-upstream', upstream: 'erp' })).status).toBe(400);
+  });
+
+  it('"About this module": version, source, contract, availability, the error codes; a link to the workspace Modules page', async () => {
+    const d = await load('store');
+    expect(d.about).toMatchObject({ version: '1.0.0', source: 'builtin', contract: '^1.1', availability: 'default', requires: [], slots: [], contributes: [], editor: 'collections' });
+    expect(d.errors).toEqual([{ code: 'store_full', meaning: 'The store holds no more records.', fix: 'Delete records first.' }]);
+    expect(d.modulesHref).toBe('/workspaces/acme/modules#module-store');
+    expect((await load('shop')).about).toMatchObject({ contract: null, editor: null });
+    expect((await load('shop')).errors).toEqual([]);
   });
 });
 
+describe('an opt-in module not enabled for the workspace (NSO-346)', () => {
+  it('the page says so instead of the form, and every change answers 404 until it is enabled', async () => {
+    const db = drizzleDb();
+    expect((await load('vault')).enabled).toBe(false);
+    const refused = failed(await post('vault', { intent: 'save-config', [fieldName('shelf')]: 'side' }));
+    expect(refused.status).toBe(404);
+    expect(refused.errors.general[0]).toMatch(/not enabled for this app's workspace/);
+    expect(await db.select().from(moduleConfigs).where(eq(moduleConfigs.module, 'vault'))).toEqual([]);
+
+    await db.insert(workspaceModules).values({ workspaceId: role.ws.id, module: 'vault' });
+    try {
+      expect((await load('vault')).enabled).toBe(true);
+      expect(doneOf(await post('vault', { intent: 'save-config', [fieldName('shelf')]: 'side' }))).toBe('applied');
+      expect((await load('shop')).enabled).toBe(true);
+    } finally {
+      await db.delete(workspaceModules);
+    }
+  });
+});

@@ -59,6 +59,10 @@ export interface AppDetail {
   publishedVersionId: string | null;
   /** NSO-293: the takedown category; non-null = taken down by a super-admin. */
   lockedReason: string | null;
+  /** NSO-340: the owner's gallery opt-in, its public description, the super-admin hide. */
+  galleryListed: boolean;
+  galleryDescription: string | null;
+  galleryHiddenAt: Date | null;
 }
 
 /** A single app within a workspace, by slug (tombstones excluded). */
@@ -78,6 +82,9 @@ export async function loadAppForView(
       frameAncestors: apps.frameAncestors,
       publishedVersionId: apps.publishedVersionId,
       lockedReason: apps.lockedReason,
+      galleryListed: apps.galleryListed,
+      galleryDescription: apps.galleryDescription,
+      galleryHiddenAt: apps.galleryHiddenAt,
     })
     .from(apps)
     .where(and(eq(apps.workspaceId, workspaceId), eq(apps.slug, slug), isNull(apps.deletedAt)))
@@ -95,5 +102,8 @@ export async function loadAppForView(
     frameAncestors: r.frameAncestors,
     publishedVersionId: r.publishedVersionId,
     lockedReason: r.lockedReason,
+    galleryListed: r.galleryListed,
+    galleryDescription: r.galleryDescription,
+    galleryHiddenAt: r.galleryHiddenAt,
   };
 }

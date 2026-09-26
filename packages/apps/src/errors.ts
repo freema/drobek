@@ -11,7 +11,11 @@ export type AppsErrorCode =
   /** NSO-293: an unknown takedown / report reason category. */
   | 'invalid_reason'
   /** NSO-329: the workspace holds APPS_MAX_PER_WORKSPACE live apps (`details.limit` / `details.value`). */
-  | 'limit_exceeded';
+  | 'limit_exceeded'
+  /** NSO-340: the public gallery is off on this server (GALLERY_ENABLED). */
+  | 'gallery_disabled'
+  /** NSO-340: a super-admin hid the app's gallery entry; neither the owner nor an agent can list it. */
+  | 'gallery_hidden';
 
 /** A caller-facing failure; `code` is stable (MCP tools return it verbatim). */
 export class AppsError extends Error {

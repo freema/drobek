@@ -9,6 +9,7 @@ import { ERROR_CATALOGUE } from './errors-catalogue.js';
 import { LIMITS } from './limits.js';
 import {
   PLUGIN_BUILD_COMMAND,
+  PLUGIN_PORT_COMMAND,
   PLUGIN_INSTALL_COMMAND,
   PLUGIN_MARKETPLACE_ADD_COMMAND,
   PLUGIN_MCP_URL,
@@ -95,7 +96,7 @@ export function renderLlmsTxt(env: NodeJS.ProcessEnv = process.env): string {
     `- [Agent guide](${AGENT_GUIDE_URL}): docs/AGENT.md in the drobek source — how an agent connects, every tool with its scope, the briefing, the skills and llms.txt.`,
     '',
     '## Plugin (Claude Code, Codex, Cursor)',
-    `- Claude Code: \`${PLUGIN_MARKETPLACE_ADD_COMMAND}\` then \`${PLUGIN_INSTALL_COMMAND}\`; build with \`${PLUGIN_BUILD_COMMAND} <idea>\`. The plugin connects ${PLUGIN_MCP_URL}.`,
+    `- Claude Code: \`${PLUGIN_MARKETPLACE_ADD_COMMAND}\` then \`${PLUGIN_INSTALL_COMMAND}\`; build with \`${PLUGIN_BUILD_COMMAND} <idea>\`, move a Claude artifact with \`${PLUGIN_PORT_COMMAND}\`. The plugin connects ${PLUGIN_MCP_URL}.`,
     `- Codex and Cursor: install instructions in ${PLUGIN_REPO_URL}`,
     '',
     '## Connect (MCP)',
@@ -108,11 +109,19 @@ export function renderLlmsTxt(env: NodeJS.ProcessEnv = process.env): string {
   ].join('\n');
 }
 
+/** One active module's own error codes (its `errors`), rendered as a section of the catalogue. */
+export interface ModuleErrorsDoc {
+  module: string;
+  errors: { code: string; meaning: string; fix: string }[];
+}
+
 /**
  * /llms-full.txt — the full agent contract. Rendered from the same
- * manifest as /llms.txt so it never drifts from the real tools.
+ * manifest as /llms.txt so it never drifts from the real tools. `modules`:
+ * the active platform modules' own error codes (the module runtime's
+ * `errorCatalogue()`), one catalogue section per module after the core codes.
  */
-export function renderLlmsFull(env: NodeJS.ProcessEnv = process.env): string {
+export function renderLlmsFull(env: NodeJS.ProcessEnv = process.env, modules: readonly ModuleErrorsDoc[] = []): string {
   const app = publicAppUrl(env);
   const mcp = mcpEndpoint(env);
   // RFC 9728: the well-known suffix sits between the origin and the resource path.
@@ -137,7 +146,7 @@ export function renderLlmsFull(env: NodeJS.ProcessEnv = process.env): string {
       '',
       'The `resource` MUST be exactly the MCP endpoint (else `invalid_target`), and the token is accepted only there (else 401 invalid_token). Check that the `iss` in the authorization response equals the issuer (RFC 9207). Refresh tokens rotate; reuse of an old refresh token burns the lineage.',
       '',
-      'Scopes: read (list_apps, get_app, read_file, skill_info, query_data, get_logs), write (create_app, write_files, restore_version, configure_module), publish (publish — make a version live on the production URL; call it only when the user explicitly asks). The consent screen offers the requested scopes (read + write when none are requested) and the user may uncheck any; tools/list shows exactly the granted tools.',
+      'Scopes: read (list_apps, get_app, read_file, skill_info, query_data, get_logs, list_assets), write (create_app, write_files, restore_version, configure_module, create_asset_upload, delete_asset), publish (publish — make a version live on the production URL; call it only when the user explicitly asks — and set_gallery_listing — list a published app in the public gallery, only after the user said yes). The consent screen offers the requested scopes (read + write when none are requested) and the user may uncheck any; tools/list shows exactly the granted tools.',
       '',
       'The grant belongs to the USER, not to one workspace: list_apps lists every workspace with your role and the apps across them, and each tool call is authorized against your membership in the app\'s workspace (viewer+ reads, editor+ writes; a workspace or app you cannot reach answers not_found).',
       '',
@@ -172,6 +181,16 @@ export function renderLlmsFull(env: NodeJS.ProcessEnv = process.env): string {
       ...ERROR_CATALOGUE.map(
         (e) => `- ${e.code} — ${e.surface} — ${e.meaning} FIX: ${e.fix}`
       ),
+      ...modules
+        .filter((m) => m.errors.length > 0)
+        .flatMap((m) => [
+          '',
+          `### Module ${m.module}`,
+          '',
+          `The ${m.module} module's own codes (module route, DrobekError; also in skill_info('${m.module}').errors):`,
+          '',
+          ...m.errors.map((e) => `- ${e.code} — module route (${m.module}) — ${e.meaning} FIX: ${e.fix}`),
+        ]),
     ].join('\n')
   );
 
@@ -179,7 +198,7 @@ export function renderLlmsFull(env: NodeJS.ProcessEnv = process.env): string {
     [
       '## Build with your agent',
       '',
-      `- Claude Code plugin (MCP server ${PLUGIN_MCP_URL} + the build-app-on-drobek skill + the ${PLUGIN_BUILD_COMMAND} command): ${PLUGIN_MARKETPLACE_ADD_COMMAND} && ${PLUGIN_INSTALL_COMMAND}`,
+      `- Claude Code plugin (MCP server ${PLUGIN_MCP_URL} + the build-app-on-drobek skill + the ${PLUGIN_BUILD_COMMAND} and ${PLUGIN_PORT_COMMAND} commands): ${PLUGIN_MARKETPLACE_ADD_COMMAND} && ${PLUGIN_INSTALL_COMMAND}`,
       `- Codex and Cursor variants of the plugin: ${PLUGIN_REPO_URL}`,
       `- Install the drobek skill from a checkout of the drobek repo: ${SKILL_INSTALL_COMMAND}`,
       `- Human quickstart page: ${app}/build-with-your-agent`,

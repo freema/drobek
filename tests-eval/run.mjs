@@ -3,26 +3,27 @@
 /**
  * tests-eval/run.mjs (NSO-308) — the MANUAL agent eval: a clean Claude Code
  * session with ONLY the drobek MCP builds three reference apps against a
- * running drobek stack, then the harness checks what came out. Never in CI
- * (it costs model tokens and needs the local stack + Mailpit).
+ * running drobek stack, then the harness checks what came out; a fourth
+ * session ports a multi-file Claude artifact (NSO-359). Never in CI (it costs
+ * model tokens and needs the local stack + Mailpit).
  *
  *   node tests-eval/run.mjs --self-check   parsers on the fixtures (no network, no Claude)
  *   node tests-eval/run.mjs --dry-run      prerequisites + the plan (no writes anywhere)
- *   node tests-eval/run.mjs [--only a,b,c] [--mode mcp|plugin]
+ *   node tests-eval/run.mjs [--only a,b,c,d] [--mode mcp|plugin]
  *
  * See tests-eval/README.md for the prerequisites, the environment and the metrics.
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { cpSync, createWriteStream, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, createWriteStream, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { findApiMisuse, formNameOf, parseSdkDts, parseTranscript, renderResults, unknownToolCalls } from './lib.mjs';
+import { TEXT_FILE_EXTS, binaryWrites, findApiMisuse, formNameOf, parseSdkDts, parseTranscript, relativeRefs, renderResults, unknownToolCalls } from './lib.mjs';
 
 /**
  * @typedef {import('./lib.mjs').Transcript} Transcript
@@ -31,7 +32,11 @@ import { findApiMisuse, formNameOf, parseSdkDts, parseTranscript, renderResults,
  * @typedef {{ status: number, headers: import('node:http').IncomingHttpHeaders, body: string }} Raw
  * @typedef {{ app_id: string, name: string, slug: string, workspace: string, preview_url: string, published_url?: string, latest_version: number, compile_status: string | null }} AppSummary
  * @typedef {{ owner: string, member: string, stamp: string, workspace: string, secret: string, mcp: Mcp, dashboard: any, browser: any }} Ctx
- * @typedef {{ id: string, app: string, prompt: (ctx: Ctx) => string, verify: (ctx: Ctx, app: AppSummary, files: Map<string, string>) => Promise<Check[]> }} Scenario
+ * @typedef {{
+ *   id: string, app: string, prompt: (ctx: Ctx) => string,
+ *   verify: (ctx: Ctx, app: AppSummary, files: Map<string, string>, t: Transcript) => Promise<Check[]>,
+ *   fixture?: string, tools?: string, allowedTools?: string[],
+ * }} Scenario
  * @typedef {{ call: (name: string, args: Record<string, unknown>) => Promise<{ isError: boolean, json: any, text: string }>, tools: string[], close: () => Promise<void> }} Mcp
  */
 
@@ -46,7 +51,7 @@ const { values: flags } = parseArgs({
     'self-check': { type: 'boolean', default: false },
     'dry-run': { type: 'boolean', default: false },
     mode: { type: 'string', default: 'mcp' },
-    only: { type: 'string', default: 'a,b,c' },
+    only: { type: 'string', default: 'a,b,c,d' },
     keep: { type: 'boolean', default: false },
     help: { type: 'boolean', short: 'h', default: false },
   },
@@ -97,6 +102,20 @@ const SCENARIOS = [
     prompt: (c) =>
       `My drobek workspace already has an external API registered as the upstream "echo" (its key is set). Build an app "Eval Echo ${c.stamp}" in drobek: after signing in (only ${c.member} may sign in), the user presses "Call the API" and sees the JSON that GET /echo/hello on that upstream returns, with a loading and an error state. ${TAIL}`,
     verify: verifyProxy,
+  },
+  {
+    // NSO-359: port a Claude artifact. The session gets the artifact folder
+    // (./artifact, copied from fixtures/artifact) plus file reads and curl —
+    // the binaries go up through create_asset_upload's upload URL, never
+    // through the model.
+    id: 'd',
+    app: 'port-artifact',
+    prompt: (c) =>
+      `The folder ./artifact is a Claude artifact I made: a page for our family film with its video, poster, stills, stylesheet and chapter script. Move it to drobek as a new app "Eval Film ${c.stamp}", exactly as it is — keep its file paths. Read the files with your file tools; upload the binary files with curl. Do not publish. When the preview works, reply with its preview URL.`,
+    verify: verifyPort,
+    fixture: 'artifact',
+    tools: 'Read,Glob,Bash',
+    allowedTools: ['Read', 'Glob', 'Bash(curl:*)', 'Bash(ls:*)', 'Bash(stat:*)', 'Bash(wc:*)'],
   },
 ];
 
@@ -466,16 +485,86 @@ async function verifyProxy(c, app) {
   return out;
 }
 
+/** The artifact fixture: its text files (write_files) and its binaries (create_asset_upload). */
+function artifactFixture() {
+  const dir = join(FIXTURES, 'artifact');
+  const names = readdirSync(dir).sort();
+  const isText = (/** @type {string} */ n) => TEXT_FILE_EXTS.includes(extname(n).toLowerCase());
+  return {
+    dir,
+    text: names.filter(isText),
+    binaries: names.filter((n) => !isText(n)),
+    read: (/** @type {string} */ n) => readFileSync(join(dir, n)),
+  };
+}
+
+/** @type {Scenario['verify']} */
+async function verifyPort(c, app, files, t) {
+  /** @type {Check[]} */
+  const out = [];
+  const fx = artifactFixture();
+  const html = fx.read('index.html').toString('utf8');
+  const written = files.get('index.html') ?? '';
+  const missingText = fx.text.filter((n) => !files.has(n));
+  out.push(check('every text file of the artifact was written', missingText.length === 0, missingText.join(', ') || fx.text.join(', ')));
+  const lost = relativeRefs(html).filter((ref) => !relativeRefs(written).includes(ref));
+  out.push(check('index.html keeps every relative path of the artifact', written !== '' && lost.length === 0, lost.length ? `missing: ${lost.join(', ')}` : relativeRefs(html).join(', ')));
+  const changed = fx.text.filter((n) => files.has(n) && (files.get(n) ?? '').trimEnd() !== fx.read(n).toString('utf8').trimEnd());
+  out.push(check('the text files are unchanged', changed.length === 0, changed.join(', ')));
+  const smuggled = binaryWrites(t.writes.filter((w) => w.appId === app.app_id));
+  out.push(check('no binary went through write_files (no media path, no base64 blob)', smuggled.length === 0, smuggled.join(', ')));
+  out.push(check('the agent asked for upload URLs', t.toolCalls.some((x) => x.tool === 'create_asset_upload')));
+
+  const listed = await c.mcp.call('list_assets', { app_id: app.app_id });
+  /** @type {{ path: string, size: number }[]} */
+  const assets = listed.json?.assets ?? [];
+  const wrong = fx.binaries.filter((n) => assets.find((a) => a.path === `/${n}`)?.size !== fx.read(n).length);
+  out.push(check('every binary is an asset at its own path with its exact size', wrong.length === 0, wrong.length ? `missing or wrong size: ${wrong.join(', ')}` : assets.map((a) => a.path).join(', ')));
+
+  const ranged = await http(`${app.preview_url}/film.mp4`, { headers: { Range: 'bytes=0-99' } });
+  out.push(check('film.mp4 with Range → 206 video/mp4', ranged.status === 206 && ranged.headers['content-type'] === 'video/mp4', `→ ${ranged.status} ${ranged.headers['content-type'] ?? ''} ${ranged.headers['content-range'] ?? ''}`));
+  const s1 = await http(`${app.preview_url}/s1.jpg`);
+  out.push(check('s1.jpg → 200 image/jpeg', s1.status === 200 && s1.headers['content-type'] === 'image/jpeg', `→ ${s1.status}`));
+  const script = await http(`${app.preview_url}/chapters.js`);
+  out.push(check('chapters.js → 200', script.status === 200, `→ ${script.status}`));
+
+  const { ctx, page, errors } = await openPreview(c.browser, app.preview_url);
+  try {
+    await page.goto(app.preview_url, { waitUntil: 'load' });
+    await page.locator('#chapters button').first().waitFor({ timeout: 15_000 });
+    out.push(check('the chapter script runs (two chapter buttons)', (await page.locator('#chapters button').count()) === 2));
+    // String expressions: this file is typechecked without the DOM lib.
+    const h264 = await page.evaluate("document.createElement('video').canPlayType('video/mp4; codecs=\"avc1.42E01E\"')");
+    if (h264 === '') {
+      out.push(check('the video plays in the browser', true, 'this browser build plays no H.264 — covered by the 206 check only'));
+    } else {
+      await page.waitForFunction("document.getElementById('film').readyState >= 1", null, { timeout: 15_000 });
+      const duration = Number(await page.evaluate("document.getElementById('film').duration"));
+      out.push(check('the video plays in the browser (metadata loaded)', duration > 1.5 && duration < 2.5, `duration ${duration}`));
+    }
+    await sleep(500);
+    out.push(check('no page errors in the browser', errors.length === 0, errors.slice(0, 3).join(' | ')));
+  } catch (err) {
+    out.push(check('the ported page works in a browser', false, msg(err)));
+  } finally {
+    await ctx.close();
+  }
+  return out;
+}
+
 // ── one Claude Code session ─────────────────────────────────────────────────
 
 /**
  * The claude CLI arguments for one clean session. The API key never lands in
  * a file: the MCP config says `${DROBEK_API_KEY}` and the child gets it in its
  * environment.
+ * A scenario may widen the built-in tools (the artifact port reads files
+ * and runs curl).
  * @param {string} prompt @param {string} dir the session's empty working directory
+ * @param {Scenario} [s]
  */
-function claudeArgs(prompt, dir) {
-  const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--no-session-persistence', '--setting-sources', 'project', '--tools', ENV.tools, '--allowedTools', SERVER, '--max-budget-usd', ENV.budgetUsd];
+function claudeArgs(prompt, dir, s) {
+  const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--no-session-persistence', '--setting-sources', 'project', '--tools', s?.tools ?? ENV.tools, '--allowedTools', SERVER, ...(s?.allowedTools ?? []), '--max-budget-usd', ENV.budgetUsd];
   if (ENV.model) args.push('--model', ENV.model);
   if (ENV.bare) args.push('--bare');
   if (MODE === 'mcp') args.push('--strict-mcp-config', '--mcp-config', join(dir, 'mcp.json'), '--disable-slash-commands');
@@ -485,8 +574,9 @@ function claudeArgs(prompt, dir) {
 
 const MCP_SERVER = () => ({ type: 'http', url: `${ENV.url}/mcp`, headers: { Authorization: 'Bearer ${DROBEK_API_KEY}' } });
 
-/** @param {string} dir */
-function prepareSessionDir(dir) {
+/** @param {string} dir @param {Scenario} s */
+function prepareSessionDir(dir, s) {
+  if (s.fixture) cpSync(join(FIXTURES, s.fixture), join(dir, s.fixture), { recursive: true });
   if (MODE === 'mcp') {
     writeFileSync(join(dir, 'mcp.json'), `${JSON.stringify({ mcpServers: { drobek: MCP_SERVER() } }, null, 2)}\n`);
     return;
@@ -559,6 +649,7 @@ function selfCheck() {
     ['sdk root exports', ['drobek', 'DrobekError'].every((n) => sdk.root.has(n)), true],
     ['results table row', md.includes('| contact-form | PASS | 2 | 5 (1) | forms |'), true],
     ['results total', md.includes('Non-existent API uses in total: **3** (must be 0).'), true],
+    ...artifactCases(),
   ];
   let failed = 0;
   for (const [name, actual, expected] of cases) {
@@ -568,6 +659,35 @@ function selfCheck() {
   }
   console.log(failed === 0 ? `self-check: all ${cases.length} passed` : `self-check: ${failed} of ${cases.length} FAILED`);
   return failed === 0 ? 0 : 1;
+}
+
+/**
+ * NSO-359: the artifact fixture stays what scenario d and port-artifact.spec.ts
+ * need — relative paths that all exist, a real MP4 (`ftyp` box) and JPEGs,
+ * tiny — and the port checks catch a rewritten path and a smuggled binary.
+ * @returns {[string, unknown, unknown][]}
+ */
+function artifactCases() {
+  const fx = artifactFixture();
+  const html = fx.read('index.html').toString('utf8');
+  const refs = relativeRefs(html);
+  const all = [...fx.text, ...fx.binaries];
+  const total = all.reduce((n, f) => n + fx.read(f).length, 0);
+  return [
+    ['artifact: text files', fx.text, ['chapters.js', 'index.html', 'style.css']],
+    ['artifact: binaries', fx.binaries, ['film.mp4', 'poster.jpg', 's1.jpg', 's2.jpg']],
+    ['artifact: relative refs of index.html', refs, ['style.css', 'film.mp4', 'poster.jpg', 's1.jpg', 's2.jpg', 'chapters.js']],
+    ['artifact: every ref is a fixture file', refs.every((r) => all.includes(r)), true],
+    ['artifact: film.mp4 starts with an ftyp box', fx.read('film.mp4').subarray(4, 8).toString('latin1'), 'ftyp'],
+    ['artifact: the images are JPEGs', fx.binaries.filter((f) => f.endsWith('.jpg')).every((f) => fx.read(f).subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))), true],
+    ['artifact: tiny (< 16 KiB in total)', total < 16 * 1024, true],
+    ['port check: a rewritten path is lost', relativeRefs(html.replace('src="film.mp4"', 'src="https://cdn.example/film.mp4"')).includes('film.mp4'), false],
+    ['port check: binaries through write_files', binaryWrites([
+      { path: 'index.html', content: html },
+      { path: 'film.mp4', content: 'AAAA' },
+      { path: 'inline.html', content: `<img src="data:image/jpeg;base64,${'A'.repeat(2048)}">` },
+    ]), ['film.mp4', 'inline.html']],
+  ];
 }
 
 // ── --dry-run ───────────────────────────────────────────────────────────────
@@ -611,7 +731,7 @@ async function dryRun() {
   console.log(`  2. ${ENV.apiKey ? 'use DROBEK_API_KEY' : `mint a read,write,publish key (docker exec ${ENV.container} … api-key-create.js), kept in memory only`}`);
   console.log(`  3. register the workspace upstream "echo" → ${ENV.echoBase} (bearer secret, generated per run)`);
   for (const s of SCENARIOS.filter((x) => ONLY.includes(x.id))) {
-    console.log(`  (${s.id}) ${s.app}: ${ENV.claude} ${claudeArgs('<prompt>', '<tmp>').map((a) => (a === '' ? '""' : a)).join(' ')}`);
+    console.log(`  (${s.id}) ${s.app}: ${ENV.claude} ${claudeArgs('<prompt>', '<tmp>', s).map((a) => (a === '' ? '""' : a)).join(' ')}`);
     console.log(`      prompt: ${s.prompt(ctx)}`);
   }
   console.log(`  then: confirm pending module changes, check the preview, write tests-eval/results/<date>.md`);
@@ -654,10 +774,10 @@ async function fullRun() {
       console.log(`\n(${s.id}) ${s.app} — claude session …`);
       const before = new Set(((await mcp.call('list_apps', {})).json?.apps ?? []).map((/** @type {AppSummary} */ a) => a.app_id));
       const dir = mkdtempSync(join(tmpdir(), `drobek-eval-${s.id}-`));
-      prepareSessionDir(dir);
+      prepareSessionDir(dir, s);
       const transcriptPath = join(RESULTS, `${date}-${stamp}-${s.app}.jsonl`);
       const started = Date.now();
-      const run = /** @type {{ code: number | null, stdout: string, stderr: string }} */ (await runClaude(claudeArgs(s.prompt(ctx), dir), dir, key, transcriptPath));
+      const run = /** @type {{ code: number | null, stdout: string, stderr: string }} */ (await runClaude(claudeArgs(s.prompt(ctx), dir, s), dir, key, transcriptPath));
       if (!flags.keep) rmSync(dir, { recursive: true, force: true });
       const t = parseTranscript(run.stdout);
       /** @type {Check[]} */
@@ -680,7 +800,7 @@ async function fullRun() {
         const preview = await http(`${app.preview_url}/`);
         checks.push(check('the preview answers 200', preview.status === 200, `HTTP ${preview.status}`));
         try {
-          checks.push(...(await s.verify(ctx, app, t.files.get(app.app_id) ?? new Map())));
+          checks.push(...(await s.verify(ctx, app, t.files.get(app.app_id) ?? new Map(), t)));
         } catch (err) {
           checks.push(check('the app checks ran', false, msg(err)));
         }

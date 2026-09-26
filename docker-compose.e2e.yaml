@@ -124,6 +124,8 @@ services:
       # M4-02: the abuse spec signs in as this super-admin.
       SUPERADMIN_EMAIL: e2e-superadmin@drobek.test
       ABUSE_REPORTS_PER_IP_HOUR: '5'
+      # NSO-340: the gallery spec lists apps and reads GET /api/public/gallery.
+      GALLERY_ENABLED: 'true'
       # Google OIDC → the mock the auth-google spec spawns on the host (:3049).
       GOOGLE_CLIENT_ID: local-dev-client
       GOOGLE_CLIENT_SECRET: local-dev-secret
@@ -139,6 +141,11 @@ services:
     volumes:
       # M1-05: the files module's uploads (FILES_DIR default; throwaway).
       - /data/files
+      # NSO-358: app assets (ASSETS_DIR default; throwaway).
+      - /data/assets
+      # NSO-345: DROBEK_MODULES_DIR (default /data/modules) — a named volume, so
+      # a module can be installed into it before the stack starts.
+      - modules_data:/data/modules
     # The image's own HEALTHCHECK probes /healthz (db + redis) — `up --wait` uses it.
     depends_on:
       postgres:
@@ -167,3 +174,6 @@ services:
     depends_on:
       drobek:
         condition: service_healthy
+
+volumes:
+  modules_data:

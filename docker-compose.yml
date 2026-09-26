@@ -148,6 +148,8 @@ services:
       # files e2e quota case exceeds it quickly; the per-file cap stays the
       # production 10 MiB (prod quota default: 500 MiB — see .env.example).
       FILES_DIR: ${FILES_DIR:-/data/files}
+      # NSO-358: app assets (video, audio, images, fonts) on the assets_data volume.
+      ASSETS_DIR: ${ASSETS_DIR:-/data/assets}
       FILES_MAX_BYTES: ${FILES_MAX_BYTES:-10485760}
       FILES_QUOTA_PER_APP: ${FILES_QUOTA_PER_APP:-2097152}
       FILES_UPLOAD_RATE_LIMIT: ${FILES_UPLOAD_RATE_LIMIT:-60}
@@ -191,6 +193,9 @@ services:
       # PROXY_CALLS_PER_MIN keeps its default 60 — the e2e trips the 61st call).
       # M1-05 (NSO-296): the built-in `files` (uploads on the files_data volume).
       DROBEK_MODULES: ${DROBEK_MODULES:-hello,auth,email,forms,data,proxy,files}
+      # NSO-345: the operator's installed modules (the ./.modules bind below).
+      DROBEK_MODULES_DIR: ${DROBEK_MODULES_DIR:-/data/modules}
+      DROBEK_MODULES_UNLOCKED: ${DROBEK_MODULES_UNLOCKED:-}
       HELLO_WAVES_PER_MINUTE: ${HELLO_WAVES_PER_MINUTE:-5}
       AUTH_CODES_PER_IP_15MIN: ${AUTH_CODES_PER_IP_15MIN:-100}
       AUTH_CODES_PER_IP_DAY: ${AUTH_CODES_PER_IP_DAY:-500}
@@ -211,6 +216,9 @@ services:
       ABUSE_REPORTS_PER_IP_HOUR: ${ABUSE_REPORTS_PER_IP_HOUR:-5}
       ABUSE_BRAND_WORDS: ${ABUSE_BRAND_WORDS:-}
       TERMS_URL: ${TERMS_URL:-}
+      # NSO-340: the public gallery is on in dev (the gallery e2e lists apps).
+      GALLERY_ENABLED: ${GALLERY_ENABLED:-true}
+      GALLERY_API_PER_IP_MINUTE: ${GALLERY_API_PER_IP_MINUTE:-60}
       # NSO-342: the footer's GitHub star count (empty = on; `off` = no call).
       DASHBOARD_GITHUB_STARS: ${DASHBOARD_GITHUB_STARS:-}
       LIMITS_PROVIDER_URL: ${LIMITS_PROVIDER_URL:-}
@@ -257,6 +265,7 @@ services:
       - /repo/packages/tenancy/node_modules
       - /repo/tests-e2e/node_modules
       - /repo/examples/drobek-module-hello/node_modules
+      - /repo/packages/create-drobek-module/node_modules
       - /repo/modules/auth/node_modules
       - /repo/modules/email/node_modules
       - /repo/modules/forms/node_modules
@@ -265,6 +274,11 @@ services:
       - /repo/modules/files/node_modules
       # M1-05: the files module's uploads (FILES_DIR).
       - files_data:/data/files
+      # NSO-358: app assets (ASSETS_DIR).
+      - assets_data:/data/assets
+      # NSO-345: DROBEK_MODULES_DIR — modules installed on the host into
+      # ./.modules/<name>/ (+ modules.lock.json); ignored by git.
+      - ./.modules:/data/modules
     healthcheck:
       test: ['CMD-SHELL', 'wget -q -T 5 -O - "http://127.0.0.1:$${PORT:-3000}/healthz" || exit 1']
       interval: 5s
@@ -283,3 +297,4 @@ volumes:
   postgres_data:
   redis_data:
   files_data:
+  assets_data:

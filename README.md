@@ -65,7 +65,9 @@ Why it is built this way:
     server-side, behind an SSRF guard.
 
   Operators can add their own modules against the public contract:
-  [`docs/MODULES.md`](./docs/MODULES.md).
+  `npm create drobek-module@latest <name>` scaffolds one against the npm
+  packages `@drobek/modules` + `@drobek/sdk` —
+  [`docs/MODULES.md` → Writing a module](./docs/MODULES.md#writing-a-module).
 
 ## Self-host quickstart
 
@@ -86,8 +88,8 @@ What you need:
   `example.com`) is the safer choice; `apps.<your dashboard domain>` works too.
   No DNS at all (a test box)? Use `DOMAIN=localhost` in step 3 — Caddy's local
   CA (`tls internal`), reachable only from the machine itself.
-- an SMTP account (host, port, user, password, a sender address) — sign-in
-  codes go out by e-mail.
+- an SMTP account (host, port, user, password, a sender address) or a
+  Resend API key — sign-in codes go out by e-mail.
 
 Every command runs as root (or prefix `sudo`).
 
@@ -236,9 +238,12 @@ to, with your role in each.
 - **Scripts / CI:** a personal `drk_…` API key from `/me/api-keys` as
   `Authorization: Bearer drk_…`.
 
-The agent gets eleven tools — `list_apps`, `create_app`, `get_app`,
-`read_file`, `write_files`, `restore_version`, `publish`, `skill_info`,
-`configure_module`, `query_data`, `get_logs`. The full agent contract (scopes,
+The agent gets fifteen tools — `list_apps`, `create_app`, `get_app`,
+`read_file`, `write_files`, `restore_version`, `publish`,
+`set_gallery_listing`, `skill_info`, `configure_module`, `query_data`,
+`get_logs`, and for video, audio, images and fonts `create_asset_upload`,
+`list_assets`, `delete_asset` (an upload URL — the file never passes through
+the model). The full agent contract (scopes,
 the briefing, skills, `/llms.txt`) is [`docs/AGENT.md`](./docs/AGENT.md); a
 running server serves it at `/llms.txt`, `/llms-full.txt` and
 `/build-with-your-agent`. To teach an agent the loop without the plugin:
@@ -298,7 +303,7 @@ Everyday commands:
 
 ```sh
 task dev          # build + start the stack, wait until healthy
-task check        # host-side gate: install, doc-lint, build packages, typecheck, lint, knip, unit tests
+task check        # host-side gate: install, doc-lint, build packages + app bundle, typecheck, lint, knip, unit tests
 task logs         # tail the drobek service
 task health       # curl the health endpoints
 task e2e          # Playwright suite (incl. @local specs) vs the stack

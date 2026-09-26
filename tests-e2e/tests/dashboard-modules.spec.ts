@@ -24,6 +24,15 @@ import { addMembership, userIdByEmail, withDb, workspaceIdBySlug } from './helpe
  *    error at the field (nothing stored), then saves a valid one;
  *  - a viewer sees the configuration, the pending change and the secret
  *    status, but no button or input; a direct POST is 403.
+ *
+ * NSO-347 (EXT-05):
+ *  - the workspace Modules page (a workspace tab, viewer+): every active
+ *    module with version, source, contract, availability, slots, limits for
+ *    the workspace and error codes — secret-free, no path on disk; its
+ *    opt-in switch (NSO-346) answers a viewer 403;
+ *  - the module page's "About this module" + error codes, linking there;
+ *  - the generic form edits a record of named entries (the forms module's
+ *    `forms`) without client JS: fill the empty entry, save, it is stored.
  */
 
 interface Created {
@@ -278,6 +287,68 @@ test.describe('dashboard Modules tab (M2-02) @local', () => {
     await expect(ownerPage.getByTestId('field-error-greeting')).toBeVisible();
   });
 
+  test('NSO-347: the workspace Modules page lists every module with its facts — secret-free, no path on disk', async () => {
+    skipUnlessLocal();
+    await ownerPage.goto(`/workspaces/${app.workspace}/apps`);
+    await ownerPage.locator('[data-testid="workspace-tab"][data-tab="modules"]').click();
+    await expect(ownerPage).toHaveURL(new RegExp(`/workspaces/${app.workspace}/modules$`));
+    await expect(ownerPage.locator('[data-testid="workspace-tab"][data-tab="modules"]')).toHaveAttribute('aria-current', 'page');
+    await expect(ownerPage.getByTestId('breadcrumb-item').last()).toHaveText(/Modules/);
+    for (const m of ['hello', 'auth', 'email', 'forms', 'data', 'proxy']) {
+      await expect(ownerPage.locator(`[data-testid="workspace-module"][data-module="${m}"]`)).toBeVisible();
+    }
+    const hello = ownerPage.locator('[data-testid="workspace-module"][data-module="hello"]');
+    await expect(hello.getByTestId('fact-contract')).toHaveText('^1.1');
+    await expect(hello.getByTestId('fact-source').locator('[data-source]')).toHaveAttribute('data-source', 'builtin');
+    await expect(hello.locator('[data-testid="slot-row"][data-slot="hello.greeter"]')).toBeVisible();
+    await expect(hello.locator('[data-testid="limit-row"][data-limit="HELLO_WAVES_PER_MINUTE"] [data-testid="limit-value"]')).toHaveText(/^\d+$/);
+    await expect(hello.locator('[data-testid="error-row"][data-code="unknown_greeter"]')).toBeVisible();
+    // The dedicated editors are a declared capability, shown per module.
+    await expect(ownerPage.locator('[data-testid="workspace-module"][data-module="data"] [data-testid="fact-editor"]')).toHaveText('collections');
+    await expect(ownerPage.locator('[data-testid="workspace-module"][data-module="proxy"] [data-testid="fact-editor"]')).toHaveText('upstreams');
+
+    const sources = await pageSources(ownerPage.request, `/workspaces/${app.workspace}/modules`);
+    expect(sources).not.toContain(SECRET);
+    expect(sources).not.toContain(ROTATED);
+    expect(sources.replace(/\/@fs\/[^"'\s]+/g, '')).not.toMatch(/node_modules|\/data\/modules/);
+
+    // The same facts reach agents through skill_info (MCP parity).
+    const info = await callTool(mcp.client, 'skill_info', { name: 'hello' });
+    expect(info.json).toMatchObject({ contract: '^1.1', source: 'builtin', availability: 'default', slots: [expect.objectContaining({ name: 'hello.greeter' })] });
+  });
+
+  test("NSO-347: the module page's About section + error codes, linking to the workspace page", async () => {
+    skipUnlessLocal();
+    await ownerPage.goto(modulePath(app, 'hello'));
+    const about = ownerPage.getByTestId('module-about');
+    await expect(about.getByTestId('fact-contract')).toHaveText('^1.1');
+    await expect(about.getByTestId('fact-version')).toHaveText(/^\d+\.\d+\.\d+/);
+    await expect(about.locator('[data-testid="slot-row"][data-slot="hello.greeter"]')).toBeVisible();
+    await expect(ownerPage.locator('[data-testid="error-row"][data-code="unknown_greeter"]')).toBeVisible();
+    await about.getByTestId('workspace-modules-link').click();
+    await expect(ownerPage).toHaveURL(new RegExp(`/workspaces/${app.workspace}/modules#module-hello$`));
+  });
+
+  test('NSO-347: the generic form adds a named entry to a record (forms.forms) without client JS', async () => {
+    skipUnlessLocal();
+    await ownerPage.goto(modulePath(app, 'forms'));
+    const record = ownerPage.getByTestId('field-forms');
+    await expect(record).toBeVisible();
+    const fresh = ownerPage.getByTestId('entry-new-forms');
+    await fresh.locator('input[name="cfg.forms[0].$key"]').fill('contact');
+    await fresh.locator('select[name="cfg.forms[0].rules.submit"]').selectOption('user');
+    await ownerPage.getByTestId('config-save').click();
+    await expect(ownerPage.getByTestId('done-notice')).toHaveAttribute('data-done', /^(applied|pending)$/);
+    const got = await callTool(mcp.client, 'get_app', { app_id: app.app_id });
+    const forms = (got.json.modules as Record<string, { config: { forms?: Record<string, unknown> }; pending: boolean }>).forms;
+    if (!forms.pending) expect(forms.config.forms?.contact).toMatchObject({ rules: { submit: 'user' } });
+    // The saved entry is rendered as an entry (with its remove box) plus a new empty one.
+    if (!forms.pending) {
+      await expect(ownerPage.getByTestId('entry-forms')).toHaveCount(1);
+      await expect(ownerPage.getByTestId('entry-key-forms-0')).toHaveValue('contact');
+    }
+  });
+
   test('a viewer sees the configuration, the pending change and the secret status — no buttons; a POST is 403', async ({ browser, request }) => {
     skipUnlessLocal();
     const viewerEmail = uniqueEmail('dash-modules-viewer');
@@ -302,6 +373,18 @@ test.describe('dashboard Modules tab (M2-02) @local', () => {
       await expect(page.locator('[data-name="HELLO_SIGNATURE"] [data-testid="secret-status"]')).toHaveText('set');
       await expect(page.getByTestId('secret-input-HELLO_SIGNATURE')).toHaveCount(0);
       await expect(page.locator('main button')).toHaveCount(0);
+
+      // NSO-347: the workspace Modules page is read-only for every member.
+      await page.goto(`/workspaces/${app.workspace}/modules`);
+      await expect(page.locator('[data-testid="workspace-module"][data-module="hello"]')).toBeVisible();
+      await expect(page.locator('main button, main input:not([type="hidden"])')).toHaveCount(0);
+      // NSO-346: the opt-in switch on that page is super-admin only.
+      const toggle = await page.request.post(`${BASE_URL_WEB}/workspaces/${app.workspace}/modules`, {
+        headers: { Origin: BASE_URL_WEB },
+        form: { intent: 'workspace-module', module: 'hello', enabled: '1' },
+        maxRedirects: 0,
+      });
+      expect(toggle.status()).toBe(403);
 
       await page.goto(modulePath(app, 'data'));
       await expect(page.getByTestId('rule-notes-create-public')).toBeDisabled();

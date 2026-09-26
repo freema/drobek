@@ -69,6 +69,14 @@ export const ui = {
   inputError: { borderColor: '#f87171', background: '#fef2f2' },
   fieldset: { border: '1px solid #e4e4e7', borderRadius: '8px', padding: '0.6rem 0.8rem 0.2rem', margin: '0 0 0.85rem' },
   legend: { fontWeight: 700, fontSize: '0.85rem', padding: '0 0.3rem' },
+  /** One entry of a record / list field in the generic form (NSO-347). */
+  entry: { border: '1px solid #e4e4e7', borderRadius: '8px', padding: '0.6rem 0.8rem', margin: '0.4rem 0 0.7rem', background: '#fff' },
+  /** The empty "add" entry. */
+  newEntry: { border: '1px dashed #d4d4d8', borderRadius: '8px', padding: '0.6rem 0.8rem', margin: '0.4rem 0 0.7rem', background: '#fcfcfd' },
+  entryBody: { paddingLeft: '0.6rem', borderLeft: '2px solid #f0f0f2' },
+  /** A key → value list (the module facts). */
+  facts: { display: 'grid', gridTemplateColumns: 'max-content 1fr', gap: '0.3rem 1rem', margin: '0.4rem 0 0.6rem', fontSize: '0.9rem' },
+  factKey: { color: '#71717a', fontWeight: 600 },
   fieldError: { color: '#991b1b', fontSize: '0.82rem', margin: '0.2rem 0 0' },
   error: {
     background: '#fef2f2',

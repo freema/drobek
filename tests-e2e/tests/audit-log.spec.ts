@@ -123,8 +123,8 @@ test('audit: dashboard publish is user-attributed (not spoofable); Activity view
   expect(rows.every((r) => r.actor_kind === 'user')).toBe(true);
   expect(rows.every((r) => r.actor_user_id === ownerId)).toBe(true);
   expect(rows.map((r) => r.meta)).toEqual([
-    { version: 2, previousVersion: null },
-    { version: 1, previousVersion: 2 },
+    { version: 2, previousVersion: null, assets: 'draft' },
+    { version: 1, previousVersion: 2, assets: 'draft' },
   ]);
 
   // ── Activity view (admin) — filterable by app + action, user badges ───────

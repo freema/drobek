@@ -7,13 +7,19 @@
  * sets with `configure_module`, and a skill the agent reads with `skill_info`.
  * App code is never executed by the server — only modules are.
  *
- * Module authors: `defineModule`, `z`, `respond`, `ModuleError` (+ types);
- * tests: `@drobek/modules/testing`. The contract is docs/MODULES.md.
+ * Module authors: `defineModule`, `z`, `respond`, `ModuleError` (+ types,
+ * including `DB`, `Logger` and `SdkCore`, so a module needs no other drobek
+ * package); tests: `@drobek/modules/testing`. The contract is docs/MODULES.md.
  */
 export { z } from 'zod';
+export type { DB } from '@drobek/db';
+export type { Logger } from '@drobek/core';
+export type { SdkCore } from '@drobek/sdk';
 export {
   MODULE_CONTRACT_VERSION,
+  MODULE_ERROR_CODE_RE,
   MODULE_NAME_RE,
+  SLOT_NAME_RE,
   RECORDS_IMPORT_MAX_ROWS,
   defineModule,
   isDefinedModule,
@@ -25,12 +31,16 @@ export {
   type ConfirmItem,
   type ConfirmRole,
   type ConfirmedContext,
+  type ComposedModuleParts,
   type DrobekModule,
   type EmailKind,
   type EmailMessage,
   type EmailRecipient,
   type EndUser,
   type EndUserAuthority,
+  type EndUserCallbackApp,
+  type EndUserCallbackInput,
+  type EndUserCallbackResult,
   type EndUserListQuery,
   type EndUserPage,
   type EndUserRecord,
@@ -47,7 +57,12 @@ export {
   type MailAuthority,
   type MailEnvelope,
   type MailPrepareInput,
+  type ModuleAvailability,
+  type ModuleComposeInput,
   type ModuleContext,
+  type ModuleDashboard,
+  type ModuleDashboardEditor,
+  type ModuleErrorDoc,
   type ModuleHooks,
   type ModuleAppView,
   type ModuleLimit,
@@ -59,6 +74,7 @@ export {
   type ModuleSecretDoc,
   type ModuleServices,
   type ModuleSkill,
+  type ModuleSlot,
   type Principal,
   type RateLimitResult,
   type RecordsAuthority,
@@ -72,10 +88,30 @@ export {
   type Rule,
   type UploadedFile,
 } from './contract.js';
-export { MODULE_ERROR_CODES, ModuleError, isModuleError, skillHint, issuePaths, type ModuleErrorBody, type ModuleErrorCode } from './errors.js';
+export {
+  AUTH_PROVIDER_ID_RE,
+  EMAIL_PROVIDER_ID,
+  authIdentitySchema,
+  authProviderSchema,
+  authSignedInObserverSchema,
+  defineAuthProvider,
+  defineSignInObserver,
+  type AuthIdentity,
+  type AuthProvider,
+  type AuthProviderBeginInput,
+  type AuthProviderBeginResult,
+  type AuthProviderCallbackInput,
+  type AuthProviderSecretDoc,
+  type AuthProviderSecrets,
+  type AuthSignInEvent,
+  type AuthSignedInObserver,
+} from './auth-provider.js';
+export { CORE_ERROR_CODES, MODULE_ERROR_CODES, ModuleError, isModuleError, moduleNotEnabled, skillHint, issuePaths, type ModuleErrorBody, type ModuleErrorCode } from './errors.js';
 export { RULE_TOKENS, decideAccess, isValidRule, parseRule, ruleIsPublic } from './rules.js';
 /** Per-client-IP bucket keys for a module's own per-IP limits (null = no resolved IP → skip it; NSO-328). */
 export { perIpLimitKey } from '@drobek/core';
+/** Byte sniffing shared with app assets (NSO-358): a module decides a stored file's type from its bytes. */
+export { hasControlBytes, looksLikeSvg, sniffSignature, type SniffedType } from '@drobek/core';
 export { mergePatch, jsonEqual } from './merge-patch.js';
 export { Lru, jsonKey, stableJson } from './memo.js';
 export {
@@ -85,6 +121,7 @@ export {
   LIMITS_TIMESTAMP_HEADER,
   createLimitsProvider,
   limitsProviderConfigError,
+  moduleEnabledLimitName,
   signLimitsRequest,
   type LimitsProvider,
 } from './limits.js';
@@ -157,18 +194,31 @@ export { csvChunks } from './csv-stream.js';
 export {
   ModuleLoadError,
   RESERVED_MODULE_NAMES,
+  checkErrorCodes,
+  checkModuleSet,
   checkRequires,
+  collectContributions,
+  composeModule,
+  effectiveConfigDefaults,
+  moduleDefaultsEnvName,
   endUserAuthorityOf,
   mailAuthorityOf,
   recordsAuthorityOf,
   submissionsAuthorityOf,
   filesAuthorityOf,
   loadModules,
+  loadModuleSet,
   packageNameFor,
   parseModuleList,
+  type LoadedModules,
+  type ModuleOrigin,
+  type ModuleSource,
+  type SlotContribution,
 } from './registry.js';
+export { DEFAULT_MODULES_DIR } from './dir-modules.js';
 export {
   ModuleRuntime,
+  activeModules,
   appOwnerEmails,
   confirmUrl,
   loadModuleRuntime,
@@ -191,10 +241,15 @@ export {
   type PendingView,
   type TransportMessage,
   type LoadRuntimeOptions,
+  type ModuleErrorSection,
+  type ModuleSummary,
+  type ModuleFacts,
   type PlatformApp,
   type PlatformRequest,
   type RateLimiter,
   type RuntimeDeps,
   type SkillInfo,
   type SkillListItem,
+  type WorkspaceModuleSource,
+  type WorkspaceModuleState,
 } from './runtime.js';

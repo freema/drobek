@@ -2,15 +2,19 @@
  * /workspaces/:slug/apps/:appSlug/modules/:module — client half (M2-02,
  * NSO-291), the page configure_module's `confirm_url` points at: the pending
  * change (diff, risk notes, Confirm / Reject), the config form generated from
- * the module's JSON Schema, the built-in data/proxy editors and the write-only
- * secrets. Viewers see the same page without controls. Server code lives in
- * the .server.ts; values arrive pre-shaped and secret-free.
+ * the module's JSON Schema, the dedicated editor the module declares
+ * (`dashboard.editor`: collections / upstreams), the write-only secrets and
+ * "About this module" (version, source, contract, slots, contributions, its
+ * own error codes — NSO-347). Viewers see the same page without controls.
+ * Server code lives in the .server.ts; values arrive pre-shaped and
+ * secret-free.
  */
-import { useActionData, useLoaderData, useNavigation } from 'react-router';
+import { Link, useActionData, useLoaderData, useNavigation } from 'react-router';
 import type { action, loader } from './workspaces.$slug.apps.$appSlug.modules.$module.server.js';
 import { AppPage } from '../app-header.js';
 import { PendingBanner } from '../pending-banner.js';
 import { JsonSchemaForm } from '../module-ui/json-schema-form.js';
+import { ContributesTable, ErrorsTable, ModuleFactsList, SlotsTable } from '../module-ui/module-facts.js';
 import { PendingPanel } from '../module-ui/pending-panel.js';
 import { CollectionsEditor, UpstreamsEditor } from '../module-ui/rules-editors.js';
 import { SecretsForm } from '../module-ui/secrets-form.js';
@@ -45,6 +49,22 @@ export default function AppModuleRoute() {
   const decisionErrors = errors && (errors.intent === 'confirm' || errors.intent === 'reject') ? errors.general : [];
   const secretError =
     errors && (errors.intent === 'set-secret' || errors.intent === 'remove-secret') ? { target: errors.target, messages: errors.general } : null;
+
+  if (!d.enabled) {
+    // NSO-346: an opt-in module the operator has not enabled for this workspace.
+    return (
+      <AppPage header={d.header} trail={[{ label: d.module.name }]}>
+        <h2 style={ui.title}>
+          {d.module.name} <span style={{ ...ui.small, fontWeight: 400 }}>v{d.module.version}</span>
+        </h2>
+        <p style={ui.hint}>Use when {d.module.useWhen}</p>
+        <div style={ui.notice} role="status" data-testid="module-not-enabled">
+          This module is not enabled for this workspace. It is an opt-in module: the server operator enables it per
+          workspace. Until then the app cannot use it and its configuration cannot be changed.
+        </div>
+      </AppPage>
+    );
+  }
 
   return (
     <AppPage header={d.header} trail={[{ label: d.module.name }]}>
@@ -130,6 +150,25 @@ export default function AppModuleRoute() {
       {d.fields.length === 0 && !d.editor && d.secrets.length === 0 ? (
         <p style={ui.muted}>This module has nothing to configure.</p>
       ) : null}
+
+      <section id="about" aria-label="About this module" data-testid="module-about">
+        <h2 style={ui.h2}>About this module</h2>
+        <ModuleFactsList facts={d.about} />
+        <SlotsTable slots={d.about.slots} />
+        <ContributesTable contributes={d.about.contributes} />
+        <p style={ui.small}>
+          <Link to={d.modulesHref} data-testid="workspace-modules-link">
+            Every module of this server
+          </Link>{' '}
+          — versions, slots, limits for this workspace.
+        </p>
+      </section>
+
+      <section id="errors" aria-label="Error codes">
+        <h2 style={ui.h2}>Error codes</h2>
+        <p style={ui.hint}>What this module’s routes may answer besides the core codes — the app’s code and the agent see these.</p>
+        <ErrorsTable errors={d.errors} />
+      </section>
     </AppPage>
   );
 }

@@ -49,3 +49,8 @@ tests-eval/results/*.jsonl
 
 # Self-host backups (M4-03, task backup): database dumps + uploads — never commit
 /backups/
+
+# DROBEK_MODULES_DIR of the dev stack (NSO-345): modules installed locally
+/.modules/
+# npm packages for module authors (NSO-349): node scripts/npm-packages.mjs stage|pack
+/dist-npm/

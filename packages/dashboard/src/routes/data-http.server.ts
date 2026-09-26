@@ -2,8 +2,9 @@
  * Shared server glue for the Data-tab routes. The Data tab is the app
  * OWNER's view of the records the app's data module stores: it resolves the
  * app inside the caller's workspace (another workspace's app → 404) and asks
- * the module runtime's records authority (the built-in `data` module), which
- * is scoped to that one app. No data module on this server → 404.
+ * the module runtime's records authority (whichever active module declares
+ * `records` — the built-in data module by default), which is scoped to that
+ * one app. No records authority on this server → 404.
  *
  * `withDataErrors` maps a module `not_found` → 404 and `invalid_request` →
  * 400 (the react-router `data(...)` throw the dashboard uses elsewhere).
@@ -16,7 +17,7 @@ export async function recordsOf(workspaceId: string, appSlug: string): Promise<B
   const app = await loadAppForView(workspaceId, appSlug);
   if (!app) throw data({ message: 'Not found' }, { status: 404 });
   const records = await (await moduleRuntime()).records({ id: app.id, slug: app.slug, workspaceId });
-  if (!records) throw data({ message: 'The data module is not enabled on this server.' }, { status: 404 });
+  if (!records) throw data({ message: 'No platform module on this server stores records.' }, { status: 404 });
   return records;
 }
 

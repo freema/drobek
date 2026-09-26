@@ -63,7 +63,7 @@ const styles = {
 } as const;
 
 export default function AppDataRoute() {
-  const { workspace, appSlug, header, collections, dropped, orphans, canPurge, purged } = useLoaderData<typeof loader>();
+  const { workspace, appSlug, header, recordsModule, collections, dropped, orphans, canPurge, purged } = useLoaderData<typeof loader>();
   const failed = useActionData<typeof action>();
 
   return (
@@ -87,7 +87,7 @@ export default function AppDataRoute() {
 
       {collections.length === 0 ? (
         <p style={styles.empty} data-testid="collections-empty">
-          No collections yet — an agent declares them with configure_module('data', …).
+          No collections yet — an agent declares them with configure_module(&apos;{recordsModule}&apos;, …).
         </p>
       ) : (
         <ul style={styles.list} data-testid="collections-list">

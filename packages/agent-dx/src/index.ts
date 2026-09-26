@@ -39,6 +39,7 @@ export {
 export {
   SKILL_INFO_RULE,
   PLUGIN_BUILD_COMMAND,
+  PLUGIN_PORT_COMMAND,
   PLUGIN_INSTALL_COMMAND,
   PLUGIN_MARKETPLACE,
   PLUGIN_MARKETPLACE_ADD_COMMAND,
@@ -55,4 +56,5 @@ export {
   renderLlmsTxt,
   renderLlmsFull,
   renderToolReference,
+  type ModuleErrorsDoc,
 } from './render.js';

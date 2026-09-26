@@ -4,14 +4,16 @@ A **manual** check that the agent skills work in practice. It is never run in CI
 costs model tokens and needs the local stack.
 
 Three clean Claude Code sessions each build one reference app. Each session sees nothing but
-the drobek MCP server: no files, no shell, no project settings, no other MCP servers. Then
-the harness checks the result like a user would, in a real browser and against Mailpit.
+the drobek MCP server: no files, no shell, no project settings, no other MCP servers. A fourth
+session ports a Claude artifact: it also gets the artifact folder, file reads and `curl`.
+Then the harness checks the result like a user would, in a real browser and against Mailpit.
 
 | id | app | what the agent is asked | what the harness checks |
 |---|---|---|---|
 | a | contact-form | a contact page whose messages are e-mailed to the owner | a browser fills in and submits the form → 200 → Mailpit has the owner's `New "…" submission` mail with the run's stamp |
 | b | team-list-admin | a shared list: two people may sign in, only admins add/remove | an anonymous visitor sees `<LoginGate>`; the owner signs in as `admin` and the member as `user`; the collection is 401 to anonymous visitors and 200 to the member; the member's POST is 403; the admin passes the create rule |
 | c | proxy-call | show what `GET /echo/hello` on the workspace upstream `echo` returns | the member signs in; `/__drobek/v1/proxy/echo/echo/hello` → 200 and the upstream receives the injected bearer secret; in a browser the page calls the proxy (200) and shows the response |
+| d | port-artifact | move the Claude artifact in `./artifact` (a copy of `fixtures/artifact/`: `index.html` with relative paths, `style.css`, `chapters.js`, a 2 s H.264 `film.mp4`, `poster.jpg`, `s1.jpg`, `s2.jpg`) to drobek as it is | every text file written unchanged and `index.html` keeps every relative path; no binary went through `write_files` (no media path, no base64 blob) and the agent asked for upload URLs; `list_assets` holds every binary at its own path with its exact size; `film.mp4` with Range → 206, `s1.jpg` → 200 `image/jpeg`, `chapters.js` → 200; in a browser the chapter buttons render and the video loads its metadata (when the browser build plays H.264) |
 
 Every app is also checked for these:
 
@@ -57,8 +59,9 @@ never touches Linear.
 ```sh
 task eval -- --self-check        # the parsers on fixtures/ (no network, no Claude): exit 0
 task eval -- --dry-run           # prerequisites + the exact claude command lines; creates nothing
-task eval                        # all three apps (a,b,c); ~10–30 min, a few dollars
+task eval                        # all four sessions (a,b,c,d); ~15–40 min, a few dollars
 task eval -- --only b            # one app
+task eval -- --only d --mode plugin   # the artifact port by a fresh agent with only the plugin
 task eval -- --mode plugin       # through the drobek plugin instead of a bare MCP config
 ```
 
@@ -78,7 +81,9 @@ A full run does these steps:
 4. **For each app it runs one session:** `claude -p "<prompt>" --output-format stream-json
    --verbose --no-session-persistence --setting-sources project --tools "" --allowedTools
    mcp__drobek --strict-mcp-config --mcp-config <tmp>/mcp.json --disable-slash-commands
-   --max-budget-usd 5`. It runs in an empty temp directory.
+   --max-budget-usd 5`. It runs in an empty temp directory. Session d gets `artifact/` copied
+   into it, `--tools Read,Glob,Bash`, and `--allowedTools` adds `Read Glob Bash(curl:*)
+   Bash(ls:*) Bash(stat:*) Bash(wc:*)`, so it can read the files and upload the binaries.
 5. **It checks the app.** It confirms the app's pending module changes as the owner, through
    `POST /api/apps/:id/modules/:m/confirm`, just as the owner would with the agent's
    `confirm_url`. Then it runs the checks.
@@ -99,7 +104,7 @@ The exit code is 0 only when every app passes.
 | `EVAL_MODEL` | CLI default | `--model` for the sessions |
 | `EVAL_MAX_BUDGET_USD` | `5` | `--max-budget-usd` per session |
 | `EVAL_TIMEOUT_MS` | `1200000` | the session is killed after this long |
-| `EVAL_TOOLS` | `""` | `--tools` (built-in tools; empty = none, so the agent can only use drobek) |
+| `EVAL_TOOLS` | `""` | `--tools` (built-in tools; empty = none, so the agent can only use drobek); session d sets its own |
 | `EVAL_BARE` | — | `1` adds `--bare`: no user CLAUDE.md, hooks or auto-memory. It then needs `ANTHROPIC_API_KEY`, because `--bare` skips keychain reads |
 | `DROBEK_PLUGIN_DIR` | `../drobek-plugin/plugins/drobek` | `--mode plugin`: the plugin is copied and its `.mcp.json` pointed at `DROBEK_URL` with the key header |
 
@@ -119,6 +124,7 @@ The exit code is 0 only when every app passes.
   non-existent APIs, and render the results. The `@drobek/skills-check` unit tests run them
   on the real generated SDK and on every skill example, so `task check` keeps them honest.
 - `fixtures/` holds a synthetic stream-json transcript and a generated `sdk.d.ts` for
-  `--self-check`.
+  `--self-check`, and `artifact/`, the Claude artifact of session d (also used by
+  `tests-e2e/tests/port-artifact.spec.ts`; `--self-check` keeps it valid and tiny).
 - `results/` holds the run outputs: `.md` / `.json` for the task comment, and the git-ignored
   `.jsonl` transcripts.

@@ -1,7 +1,7 @@
 /**
  * Unit-test helper: minimal in-memory Redis covering exactly the subset the
- * auth stack uses (GET/MGET/SET EX|PX|NX/GETEX/DEL/TTL/EXPIRE/PEXPIRE/INCR/
- * EXISTS) — also the end-user sessions of the platform `auth` module (M1-02).
+ * auth stack uses (GET/MGET/SET EX|PX|NX/GETEX/GETDEL/DEL/TTL/EXPIRE/PEXPIRE/
+ * INCR/EXISTS) — also the end-user sessions of the platform `auth` module (M1-02).
  * Set `failing = true` to make every op throw (fail-closed tests).
  * Not a *.test.ts file — vitest never collects it as a suite.
  */
@@ -73,6 +73,14 @@ export class FakeRedis {
       if (a === 'EX') e.expiresAt = Date.now() + Number(args[(i += 1)]) * 1000;
       else if (a === 'PX') e.expiresAt = Date.now() + Number(args[(i += 1)]);
     }
+    return e.value;
+  }
+
+  async getdel(key: string): Promise<string | null> {
+    this.throwIfFailing();
+    const e = this.live(key);
+    if (!e) return null;
+    this.store.delete(key);
     return e.value;
   }
 

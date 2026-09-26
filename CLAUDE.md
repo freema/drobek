@@ -50,7 +50,7 @@ Map: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ```sh
 task dev            # build + start the dev stack (drobek, postgres, redis, mailpit), wait until healthy
-task check          # host-side gate: install, doc-lint, build packages, typecheck, lint, knip, unit tests
+task check          # host-side gate: install, doc-lint, build packages + app bundle, typecheck, lint, knip, unit tests
 task test           # unit tests only (builds packages first)
 task e2e            # Playwright vs the dev stack (@local + @smoke) — block end
 task e2e:image      # the CI flow: prod image behind Caddy + the whole suite
@@ -78,7 +78,7 @@ packages/dashboard      dashboard routes + server halves
 packages/{auth,tenancy,audit,domains,email,insights,proxy,core,db,sdk}
 packages/skills-check   compiles + typechecks every skill code block (test-only)
 modules/<name>          built-in platform modules (auth, email, forms, data, proxy, files) + SKILL.md
-skills/                 general skills (start, debug, ui) + the platform skill skills/drobek
+skills/                 general skills (start, debug, ui, port-artifact) + the platform skill skills/drobek
 examples/               drobek-module-hello (an external module)
 tests-e2e/              Playwright (@local needs the dev stack, @smoke is safe anywhere)
 tests-eval/             manual agent eval (`task eval`, never CI)

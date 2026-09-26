@@ -24,16 +24,19 @@ import {
 const ALL_TOOLS = [
   'configure_module',
   'create_app',
+  'create_asset_upload',
+  'delete_asset',
   'get_app',
   'get_logs',
   'list_apps',
+  'list_assets',
   'query_data',
   'read_file',
   'restore_version',
   'skill_info',
   'write_files',
 ];
-const READ_TOOLS = new Set(['list_apps', 'get_app', 'read_file', 'skill_info', 'query_data', 'get_logs']);
+const READ_TOOLS = new Set(['list_apps', 'get_app', 'read_file', 'skill_info', 'query_data', 'get_logs', 'list_assets']);
 
 const TEMPLATE_FILES = ['drobek.json', 'index.html', 'src/main.tsx', 'src/styles.css'];
 
@@ -136,15 +139,17 @@ test('core tools: create → broken write → fix → limits → restore → rea
   skipUnlessLocal();
   const a = await mcpClient(page, request, { tag: 'core', scope: 'read write' });
   try {
-    // tools/list under `read write`: exactly the 10 non-publish tools, each with a title + annotations.
+    // tools/list under `read write`: exactly the 13 non-publish tools, each with a title + annotations.
     const listed = (await a.client.listTools()).tools;
     expect(listed.map((t) => t.name).sort()).toEqual(ALL_TOOLS);
     for (const t of listed) {
       expect(t.title ?? t.annotations?.title, `${t.name} title`).toBeTruthy();
       expect(t.annotations?.readOnlyHint, `${t.name} readOnlyHint`).toBe(READ_TOOLS.has(t.name));
       expect(t.annotations?.openWorldHint, `${t.name} openWorldHint`).toBe(false);
-      // NSO-307: explicit idempotentHint — reads and configure_module repeat safely; create/write/restore do not.
-      expect(t.annotations?.idempotentHint, `${t.name} idempotentHint`).toBe(READ_TOOLS.has(t.name) || t.name === 'configure_module');
+      // NSO-307: explicit idempotentHint — reads, configure_module and delete_asset repeat safely; create/write/restore/upload URLs do not.
+      expect(t.annotations?.idempotentHint, `${t.name} idempotentHint`).toBe(
+        READ_TOOLS.has(t.name) || t.name === 'configure_module' || t.name === 'delete_asset'
+      );
     }
 
     // create_app → v1 from the react-ts template, compiled.

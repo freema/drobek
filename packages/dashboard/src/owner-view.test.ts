@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dayRange, editableJson, formatBytes, parseDay, parseRecordJson, safeFilename, sinceWindow, submissionFields } from './owner-view.js';
+import { dayRange, editableJson, formatBytes, parseDay, parseRecordJson, safeFilename, sinceWindow, submissionFields, suggestAssetPath } from './owner-view.js';
 
 describe('owner-view helpers (M2-03)', () => {
   it('the record editor round-trips the own fields only', () => {
@@ -36,5 +36,15 @@ describe('owner-view helpers (M2-03)', () => {
     ]);
     expect(safeFilename('../ev"ilé.png', 'f')).toBe('.._ev_il_.png');
     expect(safeFilename('', 'file-1.png')).toBe('file-1.png');
+  });
+});
+
+describe('suggestAssetPath (NSO-358, the Assets tab)', () => {
+  it('turns a file name into a valid asset path', () => {
+    expect(suggestAssetPath('film.mp4')).toBe('film.mp4');
+    expect(suggestAssetPath('Rodinné video (1).MP4')).toBe('Rodinne-video-1-.MP4');
+    expect(suggestAssetPath('C:\\Users\\me\\s1.jpg')).toBe('s1.jpg');
+    expect(suggestAssetPath('.hidden.png')).toBe('hidden.png');
+    expect(suggestAssetPath('x'.repeat(150) + '.png')).toHaveLength(100);
   });
 });

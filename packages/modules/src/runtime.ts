@@ -14,28 +14,45 @@
  *  - `appModules()` — get_app's `modules` (configured, pending, hasSecret, the
  *    module's secret-free `info`);
  *  - `compileHint()` — the skill an `unresolved_import` should point at;
- *  - `runHook()` — onAppCreate / onPublish.
+ *  - `runHook()` — onAppCreate / onPublish / onAppDelete;
+ *  - `contributions()` — the slot contributions of the active modules
+ *    (`ModuleServices.contributions`); `errorCatalogue()` — the modules'
+ *    own error codes (skill_info, /llms-full.txt);
+ *  - `isEnabled()` / `enabledModules()` / `workspaceModules()` /
+ *    `setWorkspaceModule()` — NSO-346: an `availability: 'opt-in'` module
+ *    is active for a workspace when the limits provider's plan says
+ *    `MODULE_ENABLED_<NAME>: 1` (0 = off, whatever else says), else when the
+ *    env sets `MODULE_ENABLED_<NAME>=1` (every workspace), else when a
+ *    super-admin enabled it in the dashboard (`workspace_modules`). An
+ *    inactive one answers `404 module_not_enabled` on its routes and in
+ *    configure_module / confirm, is left out of an app's skills and runs no
+ *    onAppCreate / onPublish hook. The SDK stays one per server.
+ *  - `endUserCallback()` — the end-user sign-in providers' IdP callback on
+ *    the dashboard host (the `endUsers` authority's `callback`, NSO-348).
  *
  * `moduleRuntime()` is the process-wide instance, loaded once from
  * `DROBEK_MODULES` (memoised on globalThis, so the dev server's Vite-loaded
  * route modules share the instance the server entry created).
  */
 import { appsOrigin, dashboardOrigin } from '@drobek/apps';
-import { AUDIT_ACTIONS, actorKindForSurface, writeAudit } from '@drobek/audit';
+import { AUDIT_ACTIONS, AUDIT_SUBJECT_TYPES, actorKindForSurface, writeAudit } from '@drobek/audit';
 import { renderTextEmailHtml, sendEmail } from '@drobek/email';
 import { scanForSecrets } from '@drobek/compile';
 import { createConsoleLogger, getRedis, type Logger } from '@drobek/core';
-import { apps, dbErrorForLog, getDb, memberships, runJournalMigrations, users, type DB } from '@drobek/db';
+import { apps, dbErrorForLog, getDb, memberships, runJournalMigrations, users, workspaceModules, type DB } from '@drobek/db';
 import { recordModuleRequest } from '@drobek/insights';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { Readable } from 'node:stream';
 import { z } from 'zod';
-import { normalizeConfirmItems } from './contract.js';
+import { MODULE_CONTRACT_VERSION, normalizeConfirmItems } from './contract.js';
 import type {
   AnyModule,
   ConfirmRole,
   EmailMessage,
   EndUser,
+  EndUserCallbackApp,
+  EndUserCallbackInput,
+  EndUserCallbackResult,
   EndUserListQuery,
   EndUserPage,
   EndUserRecord,
@@ -47,7 +64,11 @@ import type {
   SubmissionsQuery,
   Limits,
   MailEnvelope,
+  ModuleAvailability,
   ModuleContext,
+  ModuleDashboardEditor,
+  ModuleErrorDoc,
+  ModuleServices,
   Principal,
   RateLimitResult,
   RecordsCollection,
@@ -57,22 +78,26 @@ import type {
 } from './contract.js';
 import { readConfigRow, readConfigRows, withLockedConfig, type PendingChange } from './configs.server.js';
 import { assertSignInSender, capEmailText, emailKind, redactAddresses, resolveRecipients, sanitizeSubject } from './email.js';
-import { ModuleError, isModuleError, issuePaths, skillHint } from './errors.js';
-import { CORE_LIMITS, createLimitsProvider, type LimitsProvider } from './limits.js';
+import { CORE_ERROR_CODES, ModuleError, isModuleError, issuePaths, moduleNotEnabled, skillHint } from './errors.js';
+import { CORE_LIMITS, createLimitsProvider, moduleEnabledLimit, moduleEnabledLimitName, type CatalogueLimit, type LimitsProvider } from './limits.js';
 import { mailGuardConfigFromEnv, redisMailGuard, type MailGuard, type MailGuardRedis } from './mail-guard.js';
 import { Lru, jsonKey } from './memo.js';
 import { jsonEqual, mergePatch } from './merge-patch.js';
 import { cookiePrincipalResolver, endUserCookiesSecure, type PrincipalResolver } from './principal.js';
 import {
   ModuleLoadError,
-  checkRequires,
+  checkModuleSet,
+  collectContributions,
   endUserAuthorityOf,
   filesAuthorityOf,
-  loadModules,
+  loadModuleSet,
   mailAuthorityOf,
   recordsAuthorityOf,
   submissionsAuthorityOf,
+  type ModuleOrigin,
+  type ModuleSource,
   type ResolveOptions,
+  type SlotContribution,
 } from './registry.js';
 import { collectRoutes, errorResult, isReadable, matchRoute, runRoute, type PipelineRequest, type PipelineResult, type Route } from './router.js';
 import { decideAccess } from './rules.js';
@@ -149,7 +174,7 @@ export function memoryRateLimiter(now: () => number = Date.now): RateLimiter & {
   return fn;
 }
 
-/** Plain-text mail through the operator's SMTP (@drobek/email — the transport of the login codes too). */
+/** Plain-text mail through the operator's transport (@drobek/email: SMTP or Resend per EMAIL_TRANSPORT — the transport of the login codes too). */
 export function smtpEmailTransport(log: Logger, env: NodeJS.ProcessEnv = process.env): EmailTransport {
   return {
     async send({ to, subject, text, fromName, replyTo }) {
@@ -189,7 +214,33 @@ export interface PlatformApp {
 export interface SkillListItem {
   name: string;
   use_when: string;
+  /** NSO-346: only on an opt-in module's skill — it is active only for the workspaces it is enabled for. */
+  availability?: 'opt-in';
+  /** NSO-346: skill_info() with an app, on an opt-in module's skill: active for the app's workspace. */
+  enabled_for_workspace?: boolean;
 }
+
+/** NSO-346: what decides that an opt-in module is on or off for a workspace. */
+export type WorkspaceModuleSource = 'dashboard' | 'plan' | 'env';
+
+/** NSO-346: one opt-in module for one workspace (the dashboard's Workspace → Modules). */
+export interface WorkspaceModuleState {
+  name: string;
+  version: string;
+  use_when: string;
+  /** Active for the workspace now. */
+  enabled: boolean;
+  /**
+   * What decides it: the limits provider's plan (`MODULE_ENABLED_<NAME>`, 1 or
+   * 0), the operator's env (`MODULE_ENABLED_<NAME>=1`), or the super-admin's
+   * switch; null = nothing enables it.
+   */
+  source: WorkspaceModuleSource | null;
+  /** The super-admin's switch (a `workspace_modules` row) — a plan value overrides it. */
+  dashboard: { enabled: boolean; enabled_by: string | null; enabled_at: string | null };
+}
+
+type OptInState = { enabled: boolean; source: WorkspaceModuleSource | null; row: { enabledBy: string | null; enabledAt: Date } | null };
 
 export interface SkillInfo {
   name: string;
@@ -200,9 +251,65 @@ export interface SkillInfo {
   config?: { schema: unknown; defaults: unknown; confirm_required: string };
   limits?: { name: string; value: number; meaning: string }[];
   secrets?: { name: string; description: string; required: boolean }[];
+  /** A module's own error codes (the core ones are in the catalogue of /llms-full.txt); [] when it declares none. */
+  errors?: ModuleErrorDoc[];
+  /** Who the module is for: every workspace (`default`) or the workspaces it is enabled for (`opt-in`). */
+  availability?: ModuleAvailability;
+  /** A module's own semver, where it was loaded from, the contract range it declares (null: none) and the modules it requires. */
+  version?: string;
+  source?: ModuleSource;
+  contract?: string | null;
+  requires?: string[];
+  /** The extension points the module offers (with who contributes) and its own contributions to other modules' slots. */
+  slots?: ModuleFacts['slots'];
+  contributes?: ModuleFacts['contributes'];
+  /** NSO-346: skill_info with an app: whether this opt-in module is active for the app's workspace. */
+  enabled_for_workspace?: boolean;
+}
+
+/**
+ * The operator-facing facts of one active module, app-independent (NSO-347):
+ * the dashboard's workspace Modules page and the module page's "About", and
+ * the same fields in `skill_info(name)`. Never a path on disk, never a
+ * secret, never an app's config.
+ */
+export interface ModuleFacts {
+  name: string;
+  version: string;
+  source: ModuleSource;
+  /** The contract range the module declares (`contract`), null when it declares none. */
+  contract: string | null;
+  availability: ModuleAvailability;
+  requires: string[];
+  /** Its slots: name, what a contribution does, the unique key, and the active modules contributing (with their unique value). */
+  slots: { name: string; description: string; unique: string | null; contributions: { module: string; key: string | null }[] }[];
+  /** Its contributions to other modules' slots: the slot, the host module and the contribution's unique value (null without one). */
+  contributes: { slot: string; host: string; key: string | null }[];
+  /** The limits it declares with the server's values (env or the module default; a workspace's plan may differ: workspaceLimits). */
+  limits: { name: string; default: number; meaning: string }[];
+  /** Its own error codes (beyond the core catalogue). */
+  errors: ModuleErrorDoc[];
+  /** The dedicated dashboard editor its config declares it fits (`dashboard.editor`), null for the generic form. */
+  editor: ModuleDashboardEditor | null;
+}
+
+/** A slot contribution's unique value as text (null when the slot has no unique key or the value is missing). */
+function uniqueKeyOf(value: unknown, unique: string | undefined): string | null {
+  if (unique === undefined || typeof value !== 'object' || value === null) return null;
+  const k = (value as Record<string, unknown>)[unique];
+  if (k === undefined || k === null) return null;
+  return typeof k === 'string' ? k : JSON.stringify(k);
+}
+
+/** One module's own error codes (a section of the error catalogue). */
+export interface ModuleErrorSection {
+  module: string;
+  errors: ModuleErrorDoc[];
 }
 
 export interface AppModuleState {
+  /** NSO-346: active for the app's workspace (always true for a default module). */
+  enabled: boolean;
   configured: boolean;
   config: unknown;
   pending: boolean;
@@ -334,6 +441,19 @@ export interface ModuleDashboardView {
   confirms: boolean;
   /** The module's secret-free appInfo. */
   info?: Record<string, unknown>;
+  /** Who the module is for (`default`: every workspace; `opt-in`: the workspaces it is enabled for). */
+  availability: ModuleAvailability;
+  /** The dedicated config editor the module declares (`dashboard.editor`), or null for the generic form. */
+  editor: ModuleDashboardEditor | null;
+  /** NSO-347 — the module's facts for the page's "About this module": where it came from, its contract range, requires, slots, contributions and error codes. */
+  source: ModuleSource;
+  contract: string | null;
+  requires: string[];
+  slots: ModuleFacts['slots'];
+  contributes: ModuleFacts['contributes'];
+  errors: ModuleErrorDoc[];
+  /** NSO-346: active for the app's workspace (an opt-in module may not be — the page then shows no form). */
+  enabled: boolean;
 }
 
 export interface DecisionInput {
@@ -366,6 +486,15 @@ function unsupported(module: string, what: string): ModuleError {
 /** Distinct (module, stored config) pairs kept parsed in memory. */
 const EFFECTIVE_CONFIG_MEMO_ENTRIES = 2000;
 
+/** One active module as /healthz, /api/version and the start log show it — never a path on disk. */
+export interface ModuleSummary {
+  name: string;
+  version: string;
+  source: ModuleSource;
+  /** The contract range the module declares (null: none). */
+  contract: string | null;
+}
+
 export class ModuleRuntime {
   readonly modules: AnyModule[];
   readonly skills: SkillEntry[];
@@ -373,6 +502,10 @@ export class ModuleRuntime {
   readonly deps: RuntimeDeps;
   private readonly routes = new Map<string, Route[]>();
   private readonly byName = new Map<string, AnyModule>();
+  /** Slot name → the contributions to it, in module order (checked at load). */
+  private readonly slotContributions: Map<string, SlotContribution[]>;
+  /** Module → the error codes its routes may answer (the core catalogue + its own `errors`). */
+  private readonly errorCodes = new Map<string, ReadonlySet<string>>();
   /**
    * Effective configs by (module, content of the stored config) — NSO-322 H1:
    * every module request used to re-run configSchema.safeParse (for data: an
@@ -381,14 +514,25 @@ export class ModuleRuntime {
    * never serve a stale config.
    */
   private readonly configMemo = new Lru<{ value: unknown }>(EFFECTIVE_CONFIG_MEMO_ENTRIES);
+  /** Module name → where it was loaded from (absent: builtin). */
+  private readonly origins: Record<string, ModuleOrigin>;
 
-  constructor(input: { modules: AnyModule[]; skills: SkillEntry[]; sdk: SdkBundle; deps: RuntimeDeps }) {
+  constructor(input: {
+    modules: AnyModule[];
+    skills: SkillEntry[];
+    sdk: SdkBundle;
+    deps: RuntimeDeps;
+    origins?: Record<string, ModuleOrigin>;
+  }) {
     this.modules = input.modules;
+    this.origins = input.origins ?? {};
     this.skills = input.skills;
     this.sdk = input.sdk;
     this.deps = input.deps;
+    this.slotContributions = collectContributions(input.modules);
     for (const m of input.modules) {
       this.byName.set(m.name, m);
+      this.errorCodes.set(m.name, new Set([...CORE_ERROR_CODES, ...(m.errors ?? []).map((e) => e.code)]));
       try {
         this.routes.set(m.name, collectRoutes(m.routes?.bind(m) as never));
       } catch (err) {
@@ -399,6 +543,217 @@ export class ModuleRuntime {
 
   get(name: string): AnyModule | undefined {
     return this.byName.get(name);
+  }
+
+  /**
+   * Where the active module `name` was loaded from — the single place that
+   * answers it (summary, moduleFacts, skill_info): `dir` when the
+   * DROBEK_MODULES_DIR loader found it in the operator's directory (its
+   * ModuleOrigin), `builtin` otherwise. Never a path on disk.
+   */
+  sourceOf(name: string): ModuleSource {
+    return this.origins[name]?.source ?? 'builtin';
+  }
+
+  /** The active modules (name, version, source, contract) in DROBEK_MODULES order — for /healthz and /api/version. */
+  summary(): ModuleSummary[] {
+    return this.modules.map((m) => ({
+      name: m.name,
+      version: m.version,
+      source: this.sourceOf(m.name),
+      contract: m.contract ?? null,
+    }));
+  }
+
+  // ── slots, services, error codes ──
+
+  /**
+   * The contributions of the active modules to `slot`, in DROBEK_MODULES
+   * order, as the slot's schema parsed them ([] when nobody contributes or no
+   * active module declares the slot).
+   */
+  contributions<T = unknown>(slot: string): T[] {
+    return (this.slotContributions.get(slot) ?? []).map((c) => c.value as T);
+  }
+
+  /** The app-independent services a hook (or a request context) gets. */
+  services(): ModuleServices {
+    return { db: this.deps.db(), log: this.deps.log, contributions: (slot) => this.contributions(slot) };
+  }
+
+  /** The active modules' own error codes, one section per module that declares any (DROBEK_MODULES order). */
+  errorCatalogue(): ModuleErrorSection[] {
+    return this.modules
+      .filter((m) => (m.errors ?? []).length > 0)
+      .map((m) => ({ module: m.name, errors: m.errors!.map((e) => ({ code: e.code, meaning: e.meaning, fix: e.fix })) }));
+  }
+
+  /** The facts of one active module (see ModuleFacts), or null when no such module is active. */
+  moduleFacts(name: string): ModuleFacts | null {
+    const m = this.byName.get(name);
+    if (!m) return null;
+    const hostOf = (slot: string) => this.modules.find((h) => h.slots && Object.prototype.hasOwnProperty.call(h.slots, slot));
+    const contributes: ModuleFacts['contributes'] = [];
+    for (const [slot, list] of this.slotContributions) {
+      const host = hostOf(slot);
+      for (const c of list) {
+        if (c.module === m.name) contributes.push({ slot, host: host?.name ?? '', key: uniqueKeyOf(c.value, host?.slots?.[slot]?.unique) });
+      }
+    }
+    return {
+      name: m.name,
+      version: m.version,
+      source: this.sourceOf(m.name),
+      contract: typeof m.contract === 'string' ? m.contract : null,
+      availability: m.availability ?? 'default',
+      requires: [...(m.requires ?? [])],
+      slots: Object.entries(m.slots ?? {}).map(([slot, def]) => ({
+        name: slot,
+        description: def.description,
+        unique: def.unique ?? null,
+        contributions: (this.slotContributions.get(slot) ?? []).map((c) => ({ module: c.module, key: uniqueKeyOf(c.value, def.unique) })),
+      })),
+      contributes,
+      limits: (m.limits ?? []).map((l) => ({ name: l.env, default: this.deps.limits.defaults()[l.env] ?? l.default, meaning: l.meaning })),
+      errors: (m.errors ?? []).map((e) => ({ code: e.code, meaning: e.meaning, fix: e.fix })),
+      editor: m.dashboard?.editor ?? null,
+    };
+  }
+
+  /** The facts of every active module, in DROBEK_MODULES order. */
+  moduleFactsList(): ModuleFacts[] {
+    return this.modules.map((m) => this.moduleFacts(m.name)!);
+  }
+
+  // ── per-workspace availability (NSO-346) ──
+
+  /** The active modules declared `availability: 'opt-in'`. */
+  private optInModules(): AnyModule[] {
+    return this.modules.filter((m) => m.availability === 'opt-in');
+  }
+
+  /**
+   * Whether and why each opt-in module is on for `workspaceId`: the plan
+   * (limits provider, cached 60 s like every limit) wins in both directions,
+   * then the env value 1, then the super-admin's `workspace_modules` row
+   * (a primary-key read, so a toggle applies at once).
+   */
+  private async optInStates(workspaceId: string, modules: AnyModule[] = this.optInModules()): Promise<Map<string, OptInState>> {
+    const out = new Map<string, OptInState>();
+    if (modules.length === 0) return out;
+    const plan = (await this.deps.limits.fromPlan?.(workspaceId)) ?? null;
+    const env = this.deps.limits.defaults();
+    const rows = workspaceId
+      ? await this.deps
+          .db()
+          .select({ module: workspaceModules.module, enabledBy: workspaceModules.enabledBy, enabledAt: workspaceModules.enabledAt })
+          .from(workspaceModules)
+          .where(and(eq(workspaceModules.workspaceId, workspaceId), inArray(workspaceModules.module, modules.map((m) => m.name))))
+      : [];
+    const byModule = new Map(rows.map((r) => [r.module, { enabledBy: r.enabledBy, enabledAt: r.enabledAt }]));
+    for (const m of modules) {
+      const key = moduleEnabledLimitName(m.name);
+      const row = byModule.get(m.name) ?? null;
+      const planned = plan?.[key];
+      if (typeof planned === 'number') out.set(m.name, { enabled: planned === 1, source: 'plan', row });
+      else if (env[key] === 1) out.set(m.name, { enabled: true, source: 'env', row });
+      else out.set(m.name, { enabled: row !== null, source: row ? 'dashboard' : null, row });
+    }
+    return out;
+  }
+
+  /** NSO-346: is module `name` active for `workspaceId`? A default module always is; an unknown one never. */
+  async isEnabled(workspaceId: string, name: string): Promise<boolean> {
+    const m = this.byName.get(name);
+    if (!m) return false;
+    if (m.availability !== 'opt-in') return true;
+    return (await this.optInStates(workspaceId, [m])).get(m.name)?.enabled === true;
+  }
+
+  /**
+   * NSO-346: the names of the active modules that are on for `workspaceId`
+   * (every default module + the enabled opt-in ones). No I/O when the server
+   * has no opt-in module. Compute it once per request and pass it on.
+   */
+  async enabledModules(workspaceId: string): Promise<ReadonlySet<string>> {
+    const optIn = this.optInModules();
+    const out = new Set(this.modules.filter((m) => m.availability !== 'opt-in').map((m) => m.name));
+    if (optIn.length === 0) return out;
+    for (const [name, st] of await this.optInStates(workspaceId, optIn)) if (st.enabled) out.add(name);
+    return out;
+  }
+
+  /** NSO-346: every opt-in module with its state for `workspaceId` (the dashboard's Workspace → Modules). */
+  async workspaceModules(workspaceId: string): Promise<WorkspaceModuleState[]> {
+    const optIn = this.optInModules();
+    const states = await this.optInStates(workspaceId, optIn);
+    const userIds = [...new Set([...states.values()].map((s) => s.row?.enabledBy).filter((v): v is string => !!v))];
+    const emails = new Map<string, string>();
+    if (userIds.length > 0) {
+      const rows = await this.deps.db().select({ id: users.id, email: users.email }).from(users).where(inArray(users.id, userIds));
+      for (const r of rows) emails.set(r.id, r.email);
+    }
+    return optIn.map((m) => {
+      const st = states.get(m.name)!;
+      return {
+        name: m.name,
+        version: m.version,
+        use_when: m.skill.useWhen,
+        enabled: st.enabled,
+        source: st.source,
+        dashboard: {
+          enabled: st.row !== null,
+          enabled_by: st.row?.enabledBy ? (emails.get(st.row.enabledBy) ?? null) : null,
+          enabled_at: st.row ? st.row.enabledAt.toISOString() : null,
+        },
+      };
+    });
+  }
+
+  /**
+   * NSO-346: a super-admin turns an opt-in module on or off for a workspace
+   * (the dashboard's switch — the caller has checked super-admin). Audited
+   * `module.workspace_enable` / `module.workspace_disable` (meta: module) when
+   * it changes anything. A plan value (`MODULE_ENABLED_<NAME>`) still wins.
+   */
+  async setWorkspaceModule(input: { workspaceId: string; module: string; enabled: boolean; actorUserId: string }): Promise<{ changed: boolean }> {
+    const m = this.byName.get(input.module);
+    if (!m || m.availability !== 'opt-in') {
+      throw new ModuleError('not_found', `No opt-in platform module "${String(input.module)}" is active on this server.`, {
+        details: { available: this.optInModules().map((x) => x.name) },
+      });
+    }
+    return this.deps.db().transaction(async (tx) => {
+      const changed = input.enabled
+        ? (
+            await tx
+              .insert(workspaceModules)
+              .values({ workspaceId: input.workspaceId, module: m.name, enabledBy: input.actorUserId })
+              .onConflictDoNothing()
+              .returning({ module: workspaceModules.module })
+          ).length > 0
+        : (
+            await tx
+              .delete(workspaceModules)
+              .where(and(eq(workspaceModules.workspaceId, input.workspaceId), eq(workspaceModules.module, m.name)))
+              .returning({ module: workspaceModules.module })
+          ).length > 0;
+      if (changed) {
+        await writeAudit(
+          {
+            workspaceId: input.workspaceId,
+            actorUserId: input.actorUserId,
+            actorKind: actorKindForSurface('web'),
+            action: input.enabled ? AUDIT_ACTIONS.moduleWorkspaceEnable : AUDIT_ACTIONS.moduleWorkspaceDisable,
+            subjectType: AUDIT_SUBJECT_TYPES.module,
+            target: m.name,
+            meta: { module: m.name },
+          },
+          tx as unknown as DB
+        );
+      }
+      return { changed };
+    });
   }
 
   // ── end users ──
@@ -416,6 +771,78 @@ export class ModuleRuntime {
     const row = await readConfigRow(app.id, m.name, db);
     const config = this.effectiveConfig(m, row.config);
     return m.endUsers.current({ app, user, config, db, log: this.deps.log });
+  }
+
+  /**
+   * The IdP callback of the end-user sign-in providers
+   * (`/__drobek/auth/callback/:provider` on the dashboard host): hands the
+   * request to the `endUsers` authority's `callback` with services that
+   * know no app yet — a callback-scoped rate limiter, the server's default
+   * limits and `app(id)`, which the authority calls once its own signed state
+   * named the app. No authority / no callback → 404 page; a throw → a
+   * generic 500 page (logged without the error's text).
+   */
+  async endUserCallback(input: Omit<EndUserCallbackInput, 'services'>): Promise<EndUserCallbackResult> {
+    const m = endUserAuthorityOf(this.modules);
+    const callback = m?.endUsers?.callback?.bind(m.endUsers);
+    if (!m || !callback) {
+      return { kind: 'page', status: 404, title: 'Not found', message: 'This server has no end-user sign-in providers.' };
+    }
+    const deps = this.deps;
+    try {
+      return await callback({
+        ...input,
+        services: {
+          ...this.services(),
+          rateLimit: (bucket, key, max, windowMs) => deps.rateLimit(`mod:${m.name}:callback:${bucket}:${key}`, max, windowMs),
+          limits: () => deps.limits.defaults(),
+          app: (appId) => this.callbackApp(m, appId),
+        },
+      });
+    } catch (err) {
+      deps.log.error('end-user sign-in callback failed', { module: m.name, error: dbErrorForLog(err) });
+      return { kind: 'page', status: 500, title: 'Sign-in failed', message: 'drobek hit an internal error. Start the sign-in again from the app.' };
+    }
+  }
+
+  /** A live app (not deleted, not taken down) as the end-user authority sees it in a callback, or null. */
+  private async callbackApp(m: AnyModule, appId: string): Promise<EndUserCallbackApp | null> {
+    if (typeof appId !== 'string' || appId.length === 0 || appId.length > 64) return null;
+    const deps = this.deps;
+    const db = deps.db();
+    const [row] = await db
+      .select({ id: apps.id, slug: apps.slug, workspaceId: apps.workspaceId, deletedAt: apps.deletedAt, lockedReason: apps.lockedReason })
+      .from(apps)
+      .where(eq(apps.id, appId))
+      .limit(1);
+    if (!row || row.deletedAt || row.lockedReason) return null;
+    const app: HookApp = { id: row.id, slug: row.slug, workspaceId: row.workspaceId };
+    if (!(await this.isEnabled(app.workspaceId, m.name))) return null;
+    const config = this.effectiveConfig(m, (await readConfigRow(app.id, m.name, db)).config);
+    const declared = new Set((m.secrets ?? []).map((s) => s.name));
+    let limits: Promise<Limits> | null = null;
+    return {
+      app,
+      config,
+      limits: () => (limits ??= deps.limits.forWorkspace(app.workspaceId)),
+      secrets: {
+        get: async (name) => {
+          if (!declared.has(name)) throw new Error(`module "${m.name}" reads undeclared secret "${name}"`);
+          return getModuleSecret(app.id, m.name, name, deps.env);
+        },
+      },
+      audit: async (action, meta = {}) => {
+        await writeAudit({
+          workspaceId: app.workspaceId,
+          actorUserId: null,
+          actorKind: actorKindForSurface('apps'),
+          action: action.startsWith(`${m.name}.`) ? action : `${m.name}.${action}`,
+          subjectType: 'app',
+          target: app.slug,
+          meta: { ...meta, module: m.name, end_user: 'anon' },
+        });
+      },
+    };
   }
 
   // ── records ──
@@ -597,8 +1024,20 @@ export class ModuleRuntime {
 
   // ── skills ──
 
-  skillList(): SkillListItem[] {
-    return this.skills.map((s) => ({ name: s.name, use_when: s.useWhen }));
+  /**
+   * The skills list (skill_info(), create_app, get_app). Without `enabled`:
+   * every skill, an opt-in module's marked `availability: 'opt-in'`. With the
+   * app workspace's `enabled` set (enabledModules): the opt-in modules that
+   * are off for it are left out (NSO-346).
+   */
+  skillList(enabled?: ReadonlySet<string>): SkillListItem[] {
+    const out: SkillListItem[] = [];
+    for (const s of this.skills) {
+      const optIn = s.module?.availability === 'opt-in';
+      if (optIn && enabled && !enabled.has(s.module!.name)) continue;
+      out.push(optIn ? { name: s.name, use_when: s.useWhen, availability: 'opt-in' } : { name: s.name, use_when: s.useWhen });
+    }
+    return out;
   }
 
   /** One skill's documentation, or null (the caller answers not_found + the list). */
@@ -638,15 +1077,33 @@ export class ModuleRuntime {
     if (m.secrets?.length) {
       out.secrets = m.secrets.map((x) => ({ name: x.name, description: x.description, required: x.required === true }));
     }
+    const facts = this.moduleFacts(m.name);
+    out.errors = (m.errors ?? []).map((e) => ({ code: e.code, meaning: e.meaning, fix: e.fix }));
+    out.availability = m.availability ?? 'default';
+    if (facts) {
+      out.version = facts.version;
+      out.source = facts.source;
+      out.contract = facts.contract;
+      out.requires = facts.requires;
+      out.slots = facts.slots;
+      out.contributes = facts.contributes;
+    }
     return out;
   }
 
-  /** The hint for a compile message: backend imports point at the skill that replaces them. */
-  compileHint(msg: { code?: string; specifier?: string }): string | undefined {
+  /**
+   * The hint for a compile message: backend imports point at the skill that
+   * replaces them — only when that skill is on the server and, given the app
+   * workspace's `enabled` set, its module is active there (NSO-346).
+   */
+  compileHint(msg: { code?: string; specifier?: string }, enabled?: ReadonlySet<string>): string | undefined {
     if (msg.code !== 'unresolved_import' || !msg.specifier) return undefined;
     const skill = skillForImport(msg.specifier);
     if (!skill) return undefined;
-    return this.skills.some((s) => s.name === skill) ? skillHint(skill) : skillHint();
+    const entry = this.skills.find((s) => s.name === skill);
+    if (!entry) return skillHint();
+    if (entry.module?.availability === 'opt-in' && enabled && !enabled.has(entry.module.name)) return skillHint();
+    return skillHint(skill);
   }
 
   // ── config ──
@@ -695,6 +1152,7 @@ export class ModuleRuntime {
     }
     const docs = m.secrets ?? [];
     const status = await secretsStatus(app.id, m.name, docs.map((s) => s.name));
+    const facts = this.moduleFacts(m.name)!;
     const view: ModuleDashboardView = {
       name: m.name,
       version: m.version,
@@ -713,6 +1171,15 @@ export class ModuleRuntime {
       })),
       ops: { ...(m.rules?.ops ?? {}) },
       confirms: Boolean(m.confirmRequired),
+      availability: m.availability ?? 'default',
+      editor: m.dashboard?.editor ?? null,
+      source: facts.source,
+      contract: facts.contract,
+      requires: facts.requires,
+      slots: facts.slots,
+      contributes: facts.contributes,
+      errors: facts.errors,
+      enabled: await this.isEnabled(app.workspaceId, m.name),
     };
     const info = await this.appInfo(m, app, config);
     if (info) view.info = info;
@@ -779,16 +1246,23 @@ export class ModuleRuntime {
 
   /**
    * get_app's `modules`. Pass the app (not only its id) to include each
-   * module's `info` (it needs the app's workspace).
+   * module's `info` (it needs the app's workspace). `enabled` = the app
+   * workspace's enabledModules() when the caller has it already.
    */
-  async appModules(app: string | HookApp, confirmLink?: (module: string) => string): Promise<Record<string, AppModuleState>> {
+  async appModules(
+    app: string | HookApp,
+    confirmLink?: (module: string) => string,
+    enabled?: ReadonlySet<string>
+  ): Promise<Record<string, AppModuleState>> {
     const appId = typeof app === 'string' ? app : app.id;
     const rows = await readConfigRows(appId, this.modules.map((m) => m.name));
+    const on = enabled ?? (await this.enabledModules(typeof app === 'string' ? await this.workspaceOf(app) : app.workspaceId));
     const out: Record<string, AppModuleState> = {};
     for (const m of this.modules) {
       const row = rows.get(m.name);
       const stored = row?.config ?? {};
       const state: AppModuleState = {
+        enabled: on.has(m.name),
         configured: Object.keys(stored).length > 0,
         config: this.effectiveConfig(m, stored),
         pending: Boolean(row?.pending),
@@ -809,6 +1283,13 @@ export class ModuleRuntime {
       out[m.name] = state;
     }
     return out;
+  }
+
+  /** The workspace of an app id ('' when it does not exist: then only default modules are on). */
+  private async workspaceOf(appId: string): Promise<string> {
+    if (this.optInModules().length === 0) return '';
+    const [row] = await this.deps.db().select({ workspaceId: apps.workspaceId }).from(apps).where(eq(apps.id, appId)).limit(1);
+    return row?.workspaceId ?? '';
   }
 
   private requireModule(name: string): AnyModule {
@@ -843,6 +1324,7 @@ export class ModuleRuntime {
   /** configure_module: validate a partial config; apply it, or hold it for the owner. */
   async configure(input: ConfigureInput): Promise<ConfigureResult> {
     const m = this.requireModule(input.module);
+    if (!(await this.isEnabled(input.app.workspaceId, m.name))) throw moduleNotEnabled(m.name);
     const patch = input.patch;
     if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
       throw new ModuleError('invalid_params', '`config` must be a JSON object (a partial config; null removes a key).', {
@@ -973,6 +1455,7 @@ export class ModuleRuntime {
   /** The owner confirms the pending change (dashboard): apply it on top of the current config. */
   async confirm(input: DecisionInput): Promise<{ module: string; config: unknown; confirmed: string[] }> {
     const m = this.requireModule(input.module);
+    if (!(await this.isEnabled(input.app.workspaceId, m.name))) throw moduleNotEnabled(m.name);
     return withLockedConfig(input.app.id, m.name, async (row, write, tx) => {
       if (!row.pending) throw new ModuleError('conflict', `Nothing is waiting for confirmation in ${m.name}.`, { details: { reason: 'nothing_pending' } });
       const role: ConfirmRole = input.role === 'admin' ? 'admin' : 'editor';
@@ -1051,14 +1534,26 @@ export class ModuleRuntime {
 
   // ── hooks ──
 
-  async runHook(hook: 'onAppCreate', app: HookApp): Promise<void>;
+  async runHook(hook: 'onAppCreate' | 'onAppDelete', app: HookApp): Promise<void>;
   async runHook(hook: 'onPublish', app: HookApp & { version: number }): Promise<void>;
-  async runHook(hook: 'onAppCreate' | 'onPublish', app: HookApp & { version?: number }): Promise<void> {
+  async runHook(hook: 'onAppCreate' | 'onPublish' | 'onAppDelete', app: HookApp & { version?: number }): Promise<void> {
+    // NSO-346: an opt-in module that is off for the workspace gets no create /
+    // publish hook; onAppDelete always runs (it cleans up what it kept then).
+    let enabled: ReadonlySet<string> | null = null;
     for (const m of this.modules) {
-      const fn = m.hooks?.[hook] as ((a: typeof app, s: { db: DB; log: Logger }) => unknown) | undefined;
+      const fn = m.hooks?.[hook] as ((a: typeof app, s: ModuleServices) => unknown) | undefined;
       if (!fn) continue;
+      if (hook !== 'onAppDelete' && m.availability === 'opt-in') {
+        try {
+          enabled ??= await this.enabledModules(app.workspaceId);
+        } catch (err) {
+          this.deps.log.error('module availability check failed', { module: m.name, hook, app_id: app.id, error: dbErrorForLog(err) });
+          continue;
+        }
+        if (!enabled.has(m.name)) continue;
+      }
       try {
-        await fn(app, { db: this.deps.db(), log: this.deps.log });
+        await fn(app, this.services());
       } catch (err) {
         this.deps.log.error('module hook failed', { module: m.name, hook, app_id: app.id, error: dbErrorForLog(err, { stack: true }) });
       }
@@ -1184,6 +1679,10 @@ export class ModuleRuntime {
           })
         );
       }
+      // NSO-346: an opt-in module off for the app's workspace answers nothing else (not counted).
+      if (m.availability === 'opt-in' && !(await this.isEnabled(app.workspaceId, m.name))) {
+        return errorResult(moduleNotEnabled(m.name), m.name);
+      }
       const hit = matchRoute(this.routes.get(m.name) ?? [], req.method, match[2] ?? '/');
       if (hit.kind === 'not_found') {
         return errorResult(new ModuleError('not_found', `${m.name} has no route ${req.method} ${match[2] ?? '/'}.`), m.name);
@@ -1202,6 +1701,7 @@ export class ModuleRuntime {
       const getLimits = async () => (limits ??= await this.deps.limits.forWorkspace(app.workspaceId));
       const res = await runRoute({ ...req, path: match[2] ?? '/' }, hit.route, hit.params, {
         module: m.name,
+        errorCodes: this.errorCodes.get(m.name),
         selfOrigin,
         principal: () =>
           this.deps.principal({
@@ -1279,8 +1779,7 @@ export class ModuleRuntime {
       module: m.name,
       principal,
       config,
-      db: deps.db(),
-      log: deps.log,
+      ...this.services(),
       rules: { decide: (rule, ownerId) => decideAccess(rule, principal, ownerId) },
       limits: getLimits,
       rateLimit: (bucket, key, max, windowMs) => deps.rateLimit(`mod:${m.name}:${app.id}:${bucket}:${key}`, max, windowMs),
@@ -1316,11 +1815,25 @@ export interface LoadRuntimeOptions extends ResolveOptions {
   log?: Logger;
   /** Use these modules instead of resolving DROBEK_MODULES (tests). */
   modules?: AnyModule[];
+  /** Where the given `modules` came from (tests; absent: builtin). Ignored without `modules`. */
+  origins?: Record<string, ModuleOrigin>;
   /** Directory of the general skills (default: generalSkillsDir()). null = none. */
   skillsDir?: string | null;
   /** Apply a module's migrations (default: runJournalMigrations against DATABASE_URL). */
   migrate?: (folder: string, table: string) => Promise<void>;
   deps?: Partial<RuntimeDeps>;
+}
+
+/**
+ * The limits catalogue of a module set: CORE_LIMITS, every module's `limits`
+ * and, per opt-in module, its `MODULE_ENABLED_<NAME>` pseudo-limit (NSO-346).
+ */
+export function limitsCatalogue(modules: readonly AnyModule[]): CatalogueLimit[] {
+  return [
+    ...CORE_LIMITS,
+    ...modules.flatMap((m) => m.limits ?? []),
+    ...modules.filter((m) => m.availability === 'opt-in').map((m) => moduleEnabledLimit(m.name)),
+  ];
 }
 
 export function moduleJournalTable(name: string): string {
@@ -1331,13 +1844,10 @@ export function moduleJournalTable(name: string): string {
 export async function loadModuleRuntime(opts: LoadRuntimeOptions = {}): Promise<ModuleRuntime> {
   const env = opts.env ?? process.env;
   const log = opts.log ?? opts.deps?.log ?? createConsoleLogger('modules');
-  const modules = opts.modules ?? (await loadModules(env, opts));
+  const { modules, origins } = opts.modules
+    ? { modules: checkModuleSet(opts.modules, env, log), origins: opts.origins ?? {} }
+    : await loadModuleSet(env, { ...opts, log });
   const authority = endUserAuthorityOf(modules);
-  mailAuthorityOf(modules);
-  recordsAuthorityOf(modules);
-  submissionsAuthorityOf(modules);
-  filesAuthorityOf(modules);
-  checkRequires(modules);
 
   if (env.DROBEK_MIGRATE_ON_START !== '0') {
     const migrate =
@@ -1360,7 +1870,7 @@ export async function loadModuleRuntime(opts: LoadRuntimeOptions = {}): Promise<
     env,
     log,
     db: getDb,
-    limits: createLimitsProvider({ catalogue: [...CORE_LIMITS, ...modules.flatMap((m) => m.limits ?? [])], env, redis: getRedis, log }),
+    limits: createLimitsProvider({ catalogue: limitsCatalogue(modules), env, redis: getRedis, log }),
     principal: cookiePrincipalResolver({
       redis: getRedis,
       secure: endUserCookiesSecure(env),
@@ -1376,9 +1886,10 @@ export async function loadModuleRuntime(opts: LoadRuntimeOptions = {}): Promise<
     requestStats: (appId, module, status) => recordModuleRequest(appId, module, status),
     ...opts.deps,
   };
-  runtime = new ModuleRuntime({ modules, skills, sdk, deps });
+  runtime = new ModuleRuntime({ modules, skills, sdk, deps, origins });
   log.info('platform modules ready', {
-    modules: modules.map((m) => `${m.name}@${m.version}`),
+    modules: runtime.summary(),
+    contract: MODULE_CONTRACT_VERSION,
     skills: skills.map((s) => s.name),
     sdk: sdk.url,
   });
@@ -1403,6 +1914,17 @@ export function moduleRuntime(opts?: LoadRuntimeOptions): Promise<ModuleRuntime>
     });
   }
   return g[GLOBAL_KEY];
+}
+
+/**
+ * The active modules (name, version, source, contract) for `/healthz` and
+ * `/api/version` — never a path. The server entry loads the runtime at boot,
+ * so this only misses in tooling: then [].
+ */
+export function activeModules(): Promise<ModuleSummary[]> {
+  return moduleRuntime()
+    .then((rt) => rt.summary())
+    .catch(() => []);
 }
 
 /** Tests: install a runtime (or null to reset). */

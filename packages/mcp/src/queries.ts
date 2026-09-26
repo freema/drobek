@@ -15,6 +15,11 @@ export interface AppRow {
   publishedVersionId: string | null;
   /** NSO-293: the super-admin takedown category; non-null = locked (app_locked_by_admin). */
   lockedReason: string | null;
+  /** NSO-340: what get_app's `gallery` reports. */
+  visibility: string;
+  galleryListed: boolean;
+  galleryDescription: string | null;
+  galleryHiddenAt: Date | null;
 }
 
 const appColumns = {
@@ -25,6 +30,10 @@ const appColumns = {
   workspaceSlug: workspaces.slug,
   publishedVersionId: apps.publishedVersionId,
   lockedReason: apps.lockedReason,
+  visibility: apps.visibility,
+  galleryListed: apps.galleryListed,
+  galleryDescription: apps.galleryDescription,
+  galleryHiddenAt: apps.galleryHiddenAt,
 };
 
 /** A live (not soft-deleted) app by id, or null. */

@@ -48,6 +48,8 @@ const config: KnipConfig = {
         '@paralleldrive/cuid2',
         'drizzle-orm',
         'ioredis',
+        // Same reason: @drobek/modules builds the SDK with it (NSO-347).
+        'esbuild',
         // DROBEK_MODULES entries are resolved at runtime from the SERVER's
         // package.json (packages/modules registry.ts, createRequire): the
         // built-in modules and the example module are dependencies so the
@@ -69,9 +71,44 @@ const config: KnipConfig = {
     },
 
     'packages/sdk': {
-      // Bundled by path by packages/modules sdk-build.ts into
-      // /__drobek/beacon.js (sdkBeaconEntry).
-      entry: ['src/beacon-entry.ts'],
+      // src/beacon-entry.ts: bundled by path by packages/modules sdk-build.ts
+      // into /__drobek/beacon.js (sdkBeaconEntry). The rest: the package's
+      // public entry points — its package.json `exports` point at dist/
+      // (publishable for external module authors, NSO-344), which knip does
+      // not map back to the sources; their exports are public API.
+      entry: ['src/beacon-entry.ts', 'src/index.ts', 'src/core.ts', 'src/beacon.ts'],
+    },
+
+    'packages/modules': {
+      // The package's public entry points (`.`, `./testing` and `./lock`):
+      // its package.json `exports` point at dist/ (publishable for external
+      // module authors, NSO-344), which knip does not map back to the
+      // sources; their exports are the contract external modules (and the
+      // modules.lock.json writer, NSO-345) use. src/cli/module-lock.ts is
+      // `node …/@drobek/modules/dist/cli/module-lock.js`, the installer half of
+      // `task selfhost:module:*` (scripts/selfhost-module.sh, NSO-350).
+      entry: ['src/index.ts', 'src/testing.ts', 'src/lock.ts', 'src/cli/*.ts'],
+      // NSO-345: test-fixtures/ holds an EXTERNAL module package (plain ESM)
+      // that tests copy into a temporary DROBEK_MODULES_DIR by path — never
+      // imported, its imports resolve to the server's instances at runtime.
+      ignore: ['test-fixtures/**'],
+    },
+
+    'packages/create-drobek-module': {
+      // `bin` / `exports` point at dist/ (published to npm, NSO-349).
+      entry: ['src/index.ts', 'src/cli.ts'],
+      // template/ is the scaffold's OUTPUT (a module with its own
+      // package.json and tests), copied with placeholders — never imported
+      // or run here; src/scaffold.test.ts generates and tests it.
+      ignore: ['template/**'],
+      ignoreDependencies: [
+        // Linked into the generated module's node_modules by
+        // src/scaffold.test.ts (the template's own dev dependencies — the
+        // test installs offline from this workspace); no file here imports them.
+        '@electric-sql/pglite',
+        'drizzle-orm',
+        'zod',
+      ],
     },
 
     'packages/skills-check': {
@@ -100,8 +137,10 @@ const config: KnipConfig = {
     },
 
     'examples/*': {
-      // Same contract as modules/*: the SDK entry is loaded by path.
-      entry: ['src/sdk.ts'],
+      // Same contract as modules/*: the SDK entry is loaded by path. The
+      // package `exports` point at dist/ like a create-drobek-module output
+      // (NSO-349), so src/index.ts is listed as the public entry.
+      entry: ['src/index.ts', 'src/sdk.ts'],
     },
 
     'tests-e2e': {

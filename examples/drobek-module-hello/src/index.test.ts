@@ -1,19 +1,15 @@
 /**
  * The hello module under createModuleTestContext(): real routes through the
- * production pipeline, a PGlite database with the core + hello migrations.
+ * production pipeline, a PGlite database with the core + hello migrations —
+ * set up exactly like a create-drobek-module scaffold (no other drobek package).
  */
-import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
 import { migrate } from 'drizzle-orm/pglite/migrator';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { apps, workspaces, type DB } from '@drobek/db';
-import * as schema from '@drobek/db/schema';
-import { buildSdk, isDefinedModule, loadModules } from '@drobek/modules';
-import { createModuleTestContext } from '@drobek/modules/testing';
+import { buildSdk, collectContributions, defineModule, isDefinedModule, loadModules, z, type DB } from '@drobek/modules';
+import { coreMigrationsDir, createModuleTestContext, createTestApp } from '@drobek/modules/testing';
 import hello from './index.js';
-
-const CORE_MIGRATIONS = fileURLToPath(new URL('../../../packages/db/drizzle/migrations', import.meta.url));
 
 let pg: PGlite;
 let db: DB;
@@ -21,16 +17,10 @@ let appId: string;
 
 beforeAll(async () => {
   pg = new PGlite();
-  const d = drizzle(pg, { schema });
-  await migrate(d, { migrationsFolder: CORE_MIGRATIONS, migrationsTable: '__drizzle_migrations_core', migrationsSchema: 'drizzle' });
-  await migrate(d, {
-    migrationsFolder: hello.migrations!.folder,
-    migrationsTable: '__drizzle_migrations_mod_hello',
-    migrationsSchema: 'drizzle',
-  });
-  const [ws] = await d.insert(workspaces).values({ kind: 'team', slug: 'hello-ws', name: 'Hello' }).returning();
-  const [app] = await d.insert(apps).values({ workspaceId: ws.id, slug: 'hello-app' }).returning();
-  appId = app.id;
+  const d = drizzle(pg);
+  await migrate(d, { migrationsFolder: coreMigrationsDir(), migrationsTable: '__drizzle_migrations_core', migrationsSchema: 'drizzle' });
+  await migrate(d, { migrationsFolder: hello.migrations!.folder, migrationsTable: '__drizzle_migrations_mod_hello', migrationsSchema: 'drizzle' });
+  appId = (await createTestApp(d, { slug: 'hello-app' })).id;
   db = d as unknown as DB;
 });
 
@@ -43,6 +33,33 @@ describe('drobek-module-hello', () => {
     expect(isDefinedModule(hello)).toBe(true);
     const mods = await loadModules({ DROBEK_MODULES: 'hello' }, { importer: async (pkg) => (pkg === 'drobek-module-hello' ? { default: hello } : null) });
     expect(mods.map((m) => m.name)).toEqual(['hello']);
+  });
+
+  it('declares contract ^1.1, the slot hello.greeter and its own error code', () => {
+    expect(hello.contract).toBe('^1.1');
+    expect(Object.keys(hello.slots ?? {})).toEqual(['hello.greeter']);
+    expect(hello.errors?.map((e) => e.code)).toEqual(['unknown_greeter']);
+  });
+
+  it('another module contributes a greeter: validated by the slot schema, unique by id', async () => {
+    const base = { version: '1.0.0', contract: '^1.1', skill: { useWhen: 'x', markdown: '# x' }, configSchema: z.object({}), configDefaults: {} };
+    const pirate = defineModule({ ...base, name: 'pirate', contributes: { 'hello.greeter': { id: 'pirate', greet: (n: string) => `Ahoy, ${n}!` } } });
+    const mods = await loadModules(
+      { DROBEK_MODULES: 'hello,pirate' },
+      { importer: async (pkg) => ({ 'drobek-module-hello': hello, 'drobek-module-pirate': pirate })[pkg] ?? null }
+    );
+    expect(collectContributions(mods).get('hello.greeter')!.map((c) => c.module)).toEqual(['pirate']);
+    const broken = defineModule({ ...base, name: 'broken', contributes: { 'hello.greeter': { id: 'Broken!', greet: 'hi' } } });
+    expect(() => collectContributions([hello, broken])).toThrow(/does not pass the slot's schema/);
+  });
+
+  it('GET /greet uses the config greeting, or a contributed greeter; an unknown one is unknown_greeter', async () => {
+    const t = createModuleTestContext(hello, { contributions: { 'hello.greeter': [{ id: 'pirate', greet: (n: string) => `Ahoy, ${n}!` }] } });
+    expect((await t.request('GET', '/greet', { query: { name: 'Ada' } })).body).toEqual({ text: 'Hello, Ada', greeter: null });
+    expect((await t.request('GET', '/greet', { query: { name: 'Ada', greeter: 'pirate' } })).body).toEqual({ text: 'Ahoy, Ada!', greeter: 'pirate' });
+    const unknown = await t.request('GET', '/greet', { query: { name: 'Ada', greeter: 'robot' } });
+    expect(unknown.status).toBe(404);
+    expect(unknown.body).toMatchObject({ error: 'unknown_greeter', details: { available: ['pirate'] }, hint: "skill_info('hello')" });
   });
 
   it('GET / greets with the config and counts waves', async () => {
@@ -107,5 +124,7 @@ describe('drobek-module-hello', () => {
     expect(sdk.dts).toContain('ping(): Promise<Hello>;');
     expect(sdk.dts).toContain('whoami(): Promise<Visitor>;');
     expect(js).toContain('/whoami');
+    expect(js).toContain('/greet');
+    expect(sdk.dts).toContain('greet(name: string, greeter?: string)');
   });
 });

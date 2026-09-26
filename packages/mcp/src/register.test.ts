@@ -1,5 +1,5 @@
 /**
- * tools/list snapshot (M0-05 + M0-06 + M1-01 + M1-03 + M1-07): exactly the 11 tools, in order, with
+ * tools/list snapshot (M0-05 + M0-06 + M1-01 + M1-03 + M1-07 + NSO-340 + NSO-358): exactly the 15 tools, in order, with
  * their titles, annotations and input schemas. Hand-written on purpose — a
  * change to the public tool surface must be a deliberate edit here.
  */
@@ -29,7 +29,7 @@ async function listTools(allow?: (t: string) => boolean) {
 const RO = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 
 describe('tools/list', () => {
-  it('is exactly the 11 tools with their annotations and inputs (snapshot)', async () => {
+  it('is exactly the 15 tools with their annotations and inputs (snapshot)', async () => {
     const tools = await listTools();
     const snapshot = tools.map((t) => ({
       name: t.name,
@@ -107,10 +107,23 @@ describe('tools/list', () => {
         required: ['app_id'],
       },
       {
+        name: 'set_gallery_listing',
+        title: 'List an app in the public gallery',
+        annotations: {
+          title: 'List an app in the public gallery',
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: true,
+        },
+        properties: ['app_id', 'listed', 'description', 'user_confirmed'],
+        required: ['app_id', 'listed'],
+      },
+      {
         name: 'skill_info',
         title: 'Read a skill',
         annotations: { title: 'Read a skill', ...RO },
-        properties: ['name'],
+        properties: ['name', 'app_id'],
         required: [],
       },
       {
@@ -139,6 +152,39 @@ describe('tools/list', () => {
         annotations: { title: "Read an app's logs", ...RO },
         properties: ['app_id', 'kind', 'since'],
         required: ['app_id', 'kind'],
+      },
+      {
+        name: 'create_asset_upload',
+        title: 'Get an upload URL for a big file',
+        annotations: {
+          title: 'Get an upload URL for a big file',
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: false,
+          openWorldHint: false,
+        },
+        properties: ['app_id', 'path', 'size', 'content_type'],
+        required: ['app_id', 'path', 'size'],
+      },
+      {
+        name: 'list_assets',
+        title: "List an app's uploaded files",
+        annotations: { title: "List an app's uploaded files", ...RO },
+        properties: ['app_id'],
+        required: ['app_id'],
+      },
+      {
+        name: 'delete_asset',
+        title: 'Delete an uploaded file',
+        annotations: {
+          title: 'Delete an uploaded file',
+          readOnlyHint: false,
+          destructiveHint: true,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
+        properties: ['app_id', 'path'],
+        required: ['app_id', 'path'],
       },
     ]);
     const create = tools.find((t) => t.name === 'create_app')!;

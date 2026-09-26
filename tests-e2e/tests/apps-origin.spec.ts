@@ -66,7 +66,9 @@ function cookieNames(header: string): string[] {
 const cspWithAncestors = (frameAncestors: string): string =>
   "default-src 'self'; script-src 'self' https://esm.sh 'unsafe-inline'; " +
   "style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https:; " +
-  "font-src 'self' data: https:; connect-src 'self' https://esm.sh; object-src 'none'; " +
+  "font-src 'self' data: https:; connect-src 'self' https://esm.sh; media-src 'self' blob: https:; " +
+  'frame-src https://www.youtube-nocookie.com https://www.youtube.com https://player.vimeo.com https://drive.google.com; ' +
+  "object-src 'none'; " +
   `base-uri 'self'; frame-ancestors ${frameAncestors}; form-action 'self'`;
 const EXPECTED_CSP = cspWithAncestors(DASHBOARD_ORIGIN);
 /** A host that is no app (an unknown slug) is framed by nobody. */
@@ -213,6 +215,7 @@ test('app hosts: preview / publish / rollback / --vN, served files, headers, cac
       previous_version: null,
       published_url: urlOf(prodHost(slug)),
       domains: [prodHost(slug)],
+      assets: 'draft',
     });
     const prod1 = await hostRequest(prodHost(slug));
     expect(prod1.status).toBe(200);

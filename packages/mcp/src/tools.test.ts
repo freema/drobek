@@ -10,7 +10,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createVersion, getVersion, publish, readVersionFile } from '@drobek/apps';
 import { appCompiles, appDailyStats, appErrors, apps, auditLog, memberships, moduleConfigs, moduleSecrets, users, workspaces } from '@drobek/db';
 import { dedupKey, memoryModuleStatsRedis, recordModuleRequest, sanitizeEvent } from '@drobek/insights';
-import { DEFAULT_APPS_MAX_PER_WORKSPACE } from '@drobek/apps';
+import { DEFAULT_APPS_MAX_PER_WORKSPACE, DEFAULT_APP_ASSETS_QUOTA, DEFAULT_APP_ASSET_MAX_BYTES } from '@drobek/apps';
 import { DEFAULT_DOMAINS_MAX_PER_APP } from '@drobek/domains';
 import {
   CORE_LIMITS,
@@ -210,7 +210,12 @@ describe('create_app', () => {
 describe('create_app — APPS_MAX_PER_WORKSPACE (NSO-329)', () => {
   it('the core limits catalogue mirrors the package defaults', () => {
     const d = Object.fromEntries(CORE_LIMITS.map((l) => [l.env, l.default]));
-    expect(d).toEqual({ APPS_MAX_PER_WORKSPACE: DEFAULT_APPS_MAX_PER_WORKSPACE, DOMAINS_MAX_PER_APP: DEFAULT_DOMAINS_MAX_PER_APP });
+    expect(d).toEqual({
+      APPS_MAX_PER_WORKSPACE: DEFAULT_APPS_MAX_PER_WORKSPACE,
+      DOMAINS_MAX_PER_APP: DEFAULT_DOMAINS_MAX_PER_APP,
+      APP_ASSET_MAX_BYTES: DEFAULT_APP_ASSET_MAX_BYTES,
+      APP_ASSETS_QUOTA: DEFAULT_APP_ASSETS_QUOTA,
+    });
     // llms-full.txt (agent-dx restates the defaults — it is a zero-dependency leaf).
     for (const l of CORE_LIMITS) expect(LIMITS.find((x) => x.env === l.env)?.default).toBe(String(l.default));
   });
@@ -499,7 +504,7 @@ describe('restore_version', () => {
       });
       const r = await c.call('restore_version', { app_id: app.app_id, version: 1 });
       expect(r.isError, r.text).toBe(false);
-      expect(r.body).toMatchObject({ version: 4, restored_from: 1, compile: { ok: true, errors: [] } });
+      expect(r.body).toMatchObject({ version: 4, restored_from: 1, assets_restored: false, compile: { ok: true, errors: [] } });
       expect(r.body.preview_url).toBe(`https://${app.slug}--preview.drobek.app`);
 
       const v1 = await c.call('read_file', { app_id: app.app_id, path: 'src/main.tsx', version: 1 });
@@ -704,12 +709,17 @@ describe('publish', () => {
         previous_version: null,
         published_url: `https://${app.slug}.drobek.app`,
         domains: [`${app.slug}.drobek.app`],
+        assets: 'draft',
       });
       expect(deps.events).toEqual([{ app_id: app.app_id, slug: app.slug, version: 2, kind: 'publish' }]);
 
       // Rollback of production = publish an older version.
       const back = await alice.call('publish', { app_id: app.app_id, version: 1 });
-      expect(back.body).toMatchObject({ published_version: 1, previous_version: 2 });
+      // v1 was never published: it goes live with the draft assets (NSO-362).
+      expect(back.body).toMatchObject({ published_version: 1, previous_version: 2, assets: 'draft' });
+      // v2 is what the preview shows: it always goes live with the draft; v1 now has a frozen set.
+      expect((await alice.call('publish', { app_id: app.app_id, version: 2 })).body).toMatchObject({ assets: 'draft' });
+      expect((await alice.call('publish', { app_id: app.app_id, version: 1 })).body).toMatchObject({ assets: 'as_last_published' });
       const got = await alice.call('get_app', { app_id: app.app_id });
       expect(got.body).toMatchObject({ published_version: 1, published_url: `https://${app.slug}.drobek.app` });
 
@@ -727,7 +737,7 @@ describe('publish', () => {
         .select({ action: auditLog.action, actorKind: auditLog.actorKind, meta: auditLog.meta })
         .from(auditLog)
         .where(and(eq(auditLog.target, app.slug), eq(auditLog.action, 'app.publish')));
-      expect(rows.map((x) => (x.meta as { version: number }).version)).toEqual([2, 1]);
+      expect(rows.map((x) => (x.meta as { version: number }).version)).toEqual([2, 1, 2, 1]);
       for (const row of rows) expect(row.actorKind).toBe('agent');
     } finally {
       await alice.close();
@@ -830,7 +840,16 @@ describe('skill_info (M1-01)', () => {
         content: '# greet\n\nCall `drobek.greet.hi()`.\n',
         config: { defaults: { greeting: 'Hi', audience: 'user', emoji: false } },
         secrets: [{ name: 'GREET_KEY', description: 'signs greetings', required: true }],
+        // NSO-347: the facts the dashboard's workspace Modules page shows.
+        source: 'builtin',
+        availability: 'default',
+        requires: [],
+        slots: [],
+        contributes: [],
+        errors: [],
       });
+      expect(r.body).toHaveProperty('version');
+      expect(r.body).toHaveProperty('contract');
       expect(r.text).not.toContain(SECRET);
       expect(r.text).not.toContain('"emoji": true');
       // get_app shows only whether the secret is set

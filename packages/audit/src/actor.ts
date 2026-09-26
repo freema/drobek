@@ -135,12 +135,28 @@ export const AUDIT_ACTIONS = {
   endUserEnable: 'end_users.enable',
   /** M1-05 / M2-03: an uploaded file was deleted (by the app's end user, or by the owner in the dashboard). */
   filesDelete: 'files.delete',
+  /** NSO-358: an app asset was uploaded or replaced (name, size, sniffed type, how — never a token). */
+  assetUpload: 'asset.upload',
+  /** NSO-358: an app asset was deleted (name + size). */
+  assetDelete: 'asset.delete',
   /** M4-02: someone reported an app through the public abuse form (report id + reason only). */
   abuseReport: 'abuse.report',
   /** M4-02: a super-admin took an app down (unpublished + locked; meta.reason = the category). */
   adminTakedown: 'admin.takedown',
   /** M4-02: a super-admin lifted a takedown (the app stays unpublished until its owner publishes). */
   adminRestore: 'admin.restore',
+  /** NSO-340: the app was listed in the public gallery, or its gallery description changed (meta: description). */
+  appGalleryListed: 'app.gallery_listed',
+  /** NSO-340: the app left the public gallery (meta.reason: owner | unpublish | takedown). */
+  appGalleryUnlisted: 'app.gallery_unlisted',
+  /** NSO-340: a super-admin hid the app's gallery entry. */
+  appGalleryHidden: 'app.gallery_hidden',
+  /** NSO-340: a super-admin showed a hidden gallery entry again. */
+  appGalleryUnhidden: 'app.gallery_unhidden',
+  /** NSO-346: a super-admin enabled an opt-in platform module for the workspace (meta: module). */
+  moduleWorkspaceEnable: 'module.workspace_enable',
+  /** NSO-346: a super-admin disabled an opt-in platform module for the workspace (meta: module). */
+  moduleWorkspaceDisable: 'module.workspace_disable',
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
@@ -158,6 +174,8 @@ export const AUDIT_SUBJECT_TYPES = {
   oauthClient: 'oauth_client',
   /** M3-01: a custom domain — `target` is the hostname, `meta.app` the app slug. */
   domain: 'domain',
+  /** NSO-346: a platform module of the workspace (target = the module name). */
+  module: 'module',
 } as const;
 
 export type AuditSubjectType =

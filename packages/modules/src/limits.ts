@@ -12,14 +12,18 @@
  * and expects `{ "limits": { "<ENV_NAME>": <positive integer>, … } }`. Known
  * names override the env defaults; unknown names and bad values are ignored.
  * The catalogue is CORE_LIMITS (enforced by core: apps per workspace, custom
- * domains per app) plus every active module's `limits`. A limit marked
+ * domains per app, asset size and quota per app) plus every active module's `limits`. A limit marked
  * `allowZero` (DOMAINS_MAX_PER_APP) also takes 0 = the feature is off.
+ * NSO-346: every `availability: 'opt-in'` module adds the pseudo-limit
+ * `MODULE_ENABLED_<NAME>` (0/1, env default 0): a plan answering 1 enables the
+ * module for the workspace, 0 disables it even where a super-admin enabled
+ * it (`fromPlan` tells an explicit plan value from the env default).
  * Answers are cached in Redis for 60 s (`drobek:limits:<workspace_id>`). When
  * the provider is down, slow (> 2 s) or answers garbage, the env defaults
  * apply and a warning is logged — a provider outage never takes apps down.
  */
 import { createHmac } from 'node:crypto';
-import { DEFAULT_APPS_MAX_PER_WORKSPACE } from '@drobek/apps';
+import { DEFAULT_APPS_MAX_PER_WORKSPACE, DEFAULT_APP_ASSETS_QUOTA, DEFAULT_APP_ASSET_MAX_BYTES } from '@drobek/apps';
 import type { Logger } from '@drobek/core';
 import { dbErrorForLog } from '@drobek/db';
 import type { Limits, ModuleLimit } from './contract.js';
@@ -33,8 +37,27 @@ const LIMITS_FAILURE_BACKOFF_MS = 10_000;
 export const LIMITS_SIGNATURE_HEADER = 'X-Drobek-Signature';
 export const LIMITS_TIMESTAMP_HEADER = 'X-Drobek-Timestamp';
 
-/** A catalogue entry: a module's limit, or a core limit that may take 0 (= off). */
-type CatalogueLimit = ModuleLimit & { allowZero?: boolean };
+/**
+ * A catalogue entry: a module's limit, or a core limit that may take 0 (= off)
+ * and/or has a ceiling (`max`, the opt-in pseudo-limits: 0/1).
+ */
+export type CatalogueLimit = ModuleLimit & { allowZero?: boolean; max?: number };
+
+/** NSO-346: the pseudo-limit that enables an opt-in module for a workspace. */
+export function moduleEnabledLimitName(module: string): string {
+  return `MODULE_ENABLED_${module.toUpperCase()}`;
+}
+
+/** NSO-346: the catalogue entry of an opt-in module's `MODULE_ENABLED_<NAME>`. */
+export function moduleEnabledLimit(module: string): CatalogueLimit {
+  return {
+    env: moduleEnabledLimitName(module),
+    default: 0,
+    allowZero: true,
+    max: 1,
+    meaning: `1 enables the opt-in platform module "${module}" for the workspace, 0 disables it (also where a super-admin enabled it). Unset: the super-admin's per-workspace switch decides; the env value 1 enables it on every workspace.`,
+  };
+}
 
 /**
  * The limits core enforces itself (NSO-329) — same env / provider mechanics
@@ -55,12 +78,28 @@ export const CORE_LIMITS: readonly CatalogueLimit[] = Object.freeze([
     meaning: 'Custom domains per app, pending + verified; 0 turns custom domains off for the workspace.',
     allowZero: true,
   },
+  {
+    env: 'APP_ASSET_MAX_BYTES',
+    default: DEFAULT_APP_ASSET_MAX_BYTES,
+    meaning: 'Bytes of one app asset (video, audio, image, font served at /<path>); a bigger upload answers asset_too_large.',
+  },
+  {
+    env: 'APP_ASSETS_QUOTA',
+    default: DEFAULT_APP_ASSETS_QUOTA,
+    meaning: 'Bytes of all assets of one app; an upload past it answers asset_quota_exceeded.',
+  },
 ]);
 
 export interface LimitsProvider {
   forWorkspace(workspaceId: string): Promise<Limits>;
   /** The env-level values (no workspace): what skill_info documents. */
   defaults(): Limits;
+  /**
+   * NSO-346: only the values the limits provider's plan sets for the workspace
+   * (validated, known names only) — null without a provider, or while it is
+   * unavailable. Tells an explicit plan value from the env default.
+   */
+  fromPlan?(workspaceId: string): Promise<Limits | null>;
 }
 
 type RedisLike = {
@@ -83,10 +122,12 @@ export interface LimitsProviderOptions {
   now?: () => number;
 }
 
-/** A valid limit value: a positive integer, or 0 as well where the limit allows it. */
-function limitValue(raw: unknown, allowZero = false): number | null {
+/** A valid limit value: a positive integer (≤ max when set), or 0 as well where the limit allows it. */
+function limitValue(raw: unknown, allowZero = false, max?: number): number | null {
   const n = typeof raw === 'string' && raw.trim() !== '' ? Number(raw) : raw;
-  return typeof n === 'number' && Number.isInteger(n) && (n > 0 || (allowZero && n === 0)) ? n : null;
+  if (typeof n !== 'number' || !Number.isInteger(n)) return null;
+  if (max !== undefined && n > max) return null;
+  return n > 0 || (allowZero && n === 0) ? n : null;
 }
 
 /** HMAC-SHA256 signature of one provider request (exported for the provider side + tests). */
@@ -116,24 +157,30 @@ export function createLimitsProvider(opts: LimitsProviderOptions): LimitsProvide
   const now = opts.now ?? Date.now;
   const log = opts.log;
   const doFetch: FetchLike = opts.fetch ?? ((url, init) => fetch(url, init));
-  const known = new Map(opts.catalogue.map((l) => [l.env, l.allowZero === true]));
+  const known = new Map(opts.catalogue.map((l) => [l.env, l]));
 
   const envLimits: Record<string, number> = {};
-  for (const l of opts.catalogue) envLimits[l.env] = limitValue(env[l.env], l.allowZero) ?? l.default;
+  for (const l of opts.catalogue) envLimits[l.env] = limitValue(env[l.env], l.allowZero, l.max) ?? l.default;
   const defaults = Object.freeze({ ...envLimits });
 
   const base = env.LIMITS_PROVIDER_URL?.trim().replace(/\/+$/, '') || null;
   const secret = env.LIMITS_PROVIDER_SECRET?.trim() ?? '';
   let backoffUntil = 0;
 
-  function merge(remote: Record<string, unknown>): Limits {
-    const out: Record<string, number> = { ...envLimits };
+  /** The valid, known values of a provider answer. */
+  function planValues(remote: Record<string, unknown>): Record<string, number> {
+    const out: Record<string, number> = {};
     for (const [k, v] of Object.entries(remote)) {
-      if (!known.has(k)) continue;
-      const n = limitValue(v, known.get(k));
+      const l = known.get(k);
+      if (!l) continue;
+      const n = limitValue(v, l.allowZero, l.max);
       if (n !== null) out[k] = n;
     }
-    return Object.freeze(out);
+    return out;
+  }
+
+  function merge(remote: Record<string, unknown>): Limits {
+    return Object.freeze({ ...envLimits, ...planValues(remote) });
   }
 
   async function fromProvider(workspaceId: string): Promise<Record<string, unknown>> {
@@ -155,35 +202,45 @@ export function createLimitsProvider(opts: LimitsProviderOptions): LimitsProvide
     return body.limits as Record<string, unknown>;
   }
 
+  /** The provider's raw answer for a workspace (cached 60 s), or null: no provider, backoff, failure. */
+  async function remoteFor(workspaceId: string): Promise<Record<string, unknown> | null> {
+    if (!base) return null;
+    if (now() < backoffUntil) return null;
+    const key = `drobek:limits:${workspaceId}`;
+    const redis = opts.redis?.();
+    try {
+      const cached = redis ? await redis.get(key) : null;
+      if (cached) return JSON.parse(cached) as Record<string, unknown>;
+    } catch {
+      // cache miss on a Redis hiccup — ask the provider
+    }
+    try {
+      const remote = await fromProvider(workspaceId);
+      try {
+        await redis?.set(key, JSON.stringify(remote), 'EX', LIMITS_CACHE_TTL_SEC);
+      } catch {
+        // caching is best effort
+      }
+      return remote;
+    } catch (err) {
+      backoffUntil = now() + LIMITS_FAILURE_BACKOFF_MS;
+      log?.warn('limits provider unavailable — using the env defaults', {
+        workspace_id: workspaceId,
+        error: dbErrorForLog(err),
+      });
+      return null;
+    }
+  }
+
   return {
     defaults: () => defaults,
     async forWorkspace(workspaceId) {
-      if (!base) return defaults;
-      if (now() < backoffUntil) return defaults;
-      const key = `drobek:limits:${workspaceId}`;
-      const redis = opts.redis?.();
-      try {
-        const cached = redis ? await redis.get(key) : null;
-        if (cached) return merge(JSON.parse(cached) as Record<string, unknown>);
-      } catch {
-        // cache miss on a Redis hiccup — ask the provider
-      }
-      try {
-        const remote = await fromProvider(workspaceId);
-        try {
-          await redis?.set(key, JSON.stringify(remote), 'EX', LIMITS_CACHE_TTL_SEC);
-        } catch {
-          // caching is best effort
-        }
-        return merge(remote);
-      } catch (err) {
-        backoffUntil = now() + LIMITS_FAILURE_BACKOFF_MS;
-        log?.warn('limits provider unavailable — using the env defaults', {
-          workspace_id: workspaceId,
-          error: dbErrorForLog(err),
-        });
-        return defaults;
-      }
+      const remote = await remoteFor(workspaceId);
+      return remote ? merge(remote) : defaults;
+    },
+    async fromPlan(workspaceId) {
+      const remote = await remoteFor(workspaceId);
+      return remote ? Object.freeze(planValues(remote)) : null;
     },
   };
 }

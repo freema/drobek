@@ -95,3 +95,19 @@ export function safeFilename(name: string, fallback: string): string {
   const clean = name.replace(/[^\x20-\x7e]/g, '_').replace(/[\\/"%;]/g, '_').trim().slice(0, 150);
   return clean || fallback;
 }
+
+/**
+ * NSO-358: a file name → a valid asset path (the Assets tab prefills it):
+ * characters outside `[A-Za-z0-9._-]` become `-`, a leading non-alphanumeric
+ * run is dropped, at most 100 characters (`Rodinné video (1).MP4` →
+ * `Rodinne-video-1-.MP4`, accents dropped). The owner may still edit it (e.g. `media/film.mp4`).
+ */
+export function suggestAssetPath(fileName: string): string {
+  const base = fileName.split(/[\\/]/).pop() ?? '';
+  return base
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Za-z0-9._-]+/g, '-')
+    .replace(/^[^A-Za-z0-9]+/, '')
+    .slice(0, 100);
+}

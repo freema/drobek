@@ -6,10 +6,11 @@
  * membership role in the targeted workspace decides what each call may touch.
  *
  *   read    — look: list apps (+ who am I), get an app, read its files, read skills,
- *             query an app's stored data, read its logs.
+ *             query an app's stored data, read its logs, list its assets.
  *   write   — change: create apps, write files (new versions), restore,
- *             configure platform modules.
- *   publish — make a version live at its public URL (the `publish` tool, M0-06).
+ *             configure platform modules, upload (upload URLs) and delete assets.
+ *   publish — make a version live at its public URL (the `publish` tool, M0-06)
+ *             and list it in the public gallery (`set_gallery_listing`, NSO-340).
  *
  * `TOOL_SCOPES` is the ONE table both `tools/list` filtering and per-call
  * enforcement read (resource/mcp.ts).
@@ -73,11 +74,16 @@ export const TOOL_SCOPES = {
   skill_info: 'read',
   query_data: 'read',
   get_logs: 'read',
+  list_assets: 'read',
   create_app: 'write',
   write_files: 'write',
   restore_version: 'write',
   configure_module: 'write',
+  create_asset_upload: 'write',
+  delete_asset: 'write',
   publish: 'publish',
+  // NSO-340: listing in the public gallery is public exposure, like publishing.
+  set_gallery_listing: 'publish',
 } as const satisfies Record<string, Scope | null>;
 
 export type ToolName = keyof typeof TOOL_SCOPES;

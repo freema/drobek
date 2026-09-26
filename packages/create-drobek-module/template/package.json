@@ -1,0 +1,44 @@
+{
+  "name": "{{package}}",
+  "version": "0.1.0",
+  "description": "A drobek platform module: GET/POST /__drobek/v1/{{module}}/items, drobek.{{module}}.list() / add(title).",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "migrations",
+    "SKILL.md"
+  ],
+  "keywords": [
+    "drobek-module"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "check": "vitest run src/skill.test.ts",
+    "prepack": "npm run build"
+  },
+  "peerDependencies": {
+    "@drobek/modules": ">={{drobekVersion}}",
+    "drizzle-orm": ">=0.45.0"
+  },
+  "devDependencies": {
+    "@drobek/modules": "^{{drobekVersion}}",
+    "@electric-sql/pglite": "^0.2.17",
+    "@types/node": "^22",
+    "drizzle-orm": "^0.45.3",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.6",
+    "zod": "^4.4.3"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

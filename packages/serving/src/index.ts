@@ -28,12 +28,24 @@ export {
 export {
   APP_CSP,
   DEFAULT_FRAME_ANCESTORS,
+  DEFAULT_FRAME_SRC,
   appCsp,
   appSecurityHeaders,
+  frameSrcConfigError,
+  frameSrcFromEnv,
   parseFrameAncestors,
+  parseFrameSrcExtra,
   withDashboardAncestor,
   type SecurityHeaderInput,
 } from './csp.js';
+export {
+  ASSET_PUBLIC_CACHE,
+  assetNameOf,
+  assetResponsePlan,
+  type AssetServeInput,
+  type AssetSource,
+  type ServedAsset,
+} from './assets.js';
 export {
   decideVisibility,
   type Visibility,

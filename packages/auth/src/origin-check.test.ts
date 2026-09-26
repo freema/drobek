@@ -61,6 +61,12 @@ describe('decideOriginCheck', () => {
     expect(check({ path: '/oauth/tokenx', origin: 'https://evil.drobek.app' }).ok).toBe(false);
   });
 
+  it('exempts the end-user sign-in callback (an IdP posts from its own origin, NSO-348) — only that path', () => {
+    expect(check({ path: '/__drobek/auth/callback/saml', origin: 'https://idp.example', secFetchSite: 'cross-site' })).toEqual({ ok: true });
+    expect(check({ path: '/__drobek/auth/callbackx', origin: 'https://idp.example' }).ok).toBe(false);
+    expect(check({ path: '/__drobek/auth/other', origin: 'https://idp.example' }).ok).toBe(false);
+  });
+
   it('no Origin: allowed for non-browser clients, refused when the browser says cross/same-site', () => {
     expect(check({ origin: null, secFetchSite: null })).toEqual({ ok: true });
     expect(check({ origin: null, secFetchSite: 'same-origin' })).toEqual({ ok: true });

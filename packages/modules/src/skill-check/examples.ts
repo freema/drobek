@@ -1,6 +1,7 @@
 /**
- * "The code in the examples does not rot" (NSO-308): every fenced block of
- * every skill is checked against THIS repo's compiler and SDK types.
+ * "The code in the examples does not rot" (NSO-308, a library since NSO-349):
+ * every fenced block of a skill is checked against drobek's compiler and the
+ * SDK types of the given modules.
  *
  * By the block's info string:
  *
@@ -26,39 +27,44 @@
  *  - ```sh / ```text — prose, not checked. A block without a language fails.
  */
 import { dirname, join, posix, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import ts from 'typescript';
+import type TS from 'typescript';
 import { TEMPLATE_IMPORTS } from '@drobek/agent-dx';
 import { Compiler, readAppConfig, type CompileMessage } from '@drobek/compile';
-import { buildSdk, mergePatch, type AnyModule, type SdkBundle } from '@drobek/modules';
+import type { AnyModule } from '../contract.js';
+import { mergePatch } from '../merge-patch.js';
+import { buildSdk, type SdkBundle } from '../sdk-build.js';
 import { codeBlocks, type CodeBlock } from './markdown.js';
-import type { SkillSource } from './skills.js';
+import type { SkillIssue, SkillSource } from './source.js';
+
+/**
+ * The TypeScript compiler, loaded on the first check: `typescript` is an
+ * (optional) peer of the published package, and nothing else in
+ * @drobek/modules needs it.
+ */
+let ts: typeof TS;
+async function loadTypescript(): Promise<void> {
+  ts ??= ((await import('typescript')) as unknown as { default: typeof TS }).default;
+}
 
 const CODE_LANGS = ['ts', 'tsx', 'js', 'jsx'] as const;
 const CHECKED_LANGS = [...CODE_LANGS, 'json', 'html', 'css'] as const;
 const PROSE_LANGS = ['sh', 'text'] as const;
 
-const PKG_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-/** Virtual files live "inside" this package so bare imports resolve its node_modules (@types/react). */
-const VROOT = join(PKG_DIR, '.virtual');
+/**
+ * Virtual files live "inside" `root` (never written to disk) so the examples'
+ * bare imports resolve that directory's node_modules (e.g. @types/react).
+ */
+let VROOT = '';
 
-export interface Problem {
-  skill: string;
-  /** The SKILL.md (repo-relative). */
-  file: string;
-  /** 0-based index of the code block in the file. */
-  block: number;
-  /** 1-based line in the SKILL.md. */
-  line: number;
-  message: string;
-}
-
-export function formatProblem(p: Problem): string {
-  return `${p.file}:${p.line} (skill "${p.skill}", code block #${p.block}): ${p.message}`;
+export interface ExamplesOptions {
+  /** The SDK bundle of `modules` (built when omitted). */
+  sdk?: SdkBundle;
+  /** The directory whose node_modules resolve the examples' bare imports (default: the working directory). */
+  root?: string;
 }
 
 export interface ExamplesReport {
-  problems: Problem[];
+  problems: SkillIssue[];
   counts: { blocks: number; compiled: number; typechecked: number; apiChecked: number; configChecked: number };
 }
 
@@ -84,7 +90,7 @@ interface ApiUnit {
 
 const PATH_COMMENT_RE = /^\/\/\s*(src\/[\w./-]+\.(?:tsx|ts|jsx|js))\s*$/;
 
-function problem(skill: SkillSource, block: CodeBlock, message: string, lineInBlock = 0): Problem {
+function problem(skill: SkillSource, block: CodeBlock, message: string, lineInBlock = 0): SkillIssue {
   return { skill: skill.name, file: skill.file, block: block.index, line: block.line + lineInBlock, message };
 }
 
@@ -136,7 +142,7 @@ interface Exported {
 function exportedDeclarations(code: string): Exported[] {
   const sf = ts.createSourceFile('doc.d.ts', code, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TS);
   const out: Exported[] = [];
-  const isExported = (n: ts.Node) =>
+  const isExported = (n: TS.Node) =>
     ts.canHaveModifiers(n) && (ts.getModifiers(n) ?? []).some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
   for (const st of sf.statements) {
     if (!isExported(st)) continue;
@@ -169,7 +175,7 @@ function apiCheckSource(target: { kind: 'ns' | 'inline'; name: string }, exporte
   return { check: lines.join('\n') + '\n', names };
 }
 
-function checkHtml(skill: SkillSource, block: CodeBlock, problems: Problem[]): void {
+function checkHtml(skill: SkillSource, block: CodeBlock, problems: SkillIssue[]): void {
   for (const m of block.code.matchAll(/<script\b([^>]*)>/gi)) {
     const attrs = m[1];
     const src = /\bsrc\s*=\s*["']([^"']+)["']/i.exec(attrs)?.[1];
@@ -184,7 +190,7 @@ function checkHtml(skill: SkillSource, block: CodeBlock, problems: Problem[]): v
   }
 }
 
-function checkConfigure(skill: SkillSource, block: CodeBlock, value: Record<string, unknown>, modules: AnyModule[], problems: Problem[]): boolean {
+function checkConfigure(skill: SkillSource, block: CodeBlock, value: Record<string, unknown>, modules: AnyModule[], problems: SkillIssue[]): boolean {
   const name = value.module;
   const m = modules.find((x) => x.name === name);
   if (!m) {
@@ -202,8 +208,8 @@ function checkConfigure(skill: SkillSource, block: CodeBlock, value: Record<stri
 }
 
 /** A TypeScript host over real files (cached) + the virtual unit files. */
-const sourceFileCache = new Map<string, ts.SourceFile>();
-function virtualHost(options: ts.CompilerOptions, vfiles: Map<string, string>): ts.CompilerHost {
+const sourceFileCache = new Map<string, TS.SourceFile>();
+function virtualHost(options: TS.CompilerOptions, vfiles: Map<string, string>): TS.CompilerHost {
   const base = ts.createCompilerHost(options, true);
   const vdirs = new Set<string>();
   for (const f of vfiles.keys()) {
@@ -228,7 +234,7 @@ function virtualHost(options: ts.CompilerOptions, vfiles: Map<string, string>): 
   };
 }
 
-function tsOptions(): ts.CompilerOptions {
+function tsOptions(): TS.CompilerOptions {
   return {
     target: ts.ScriptTarget.ES2022,
     module: ts.ModuleKind.ESNext,
@@ -247,14 +253,15 @@ function tsOptions(): ts.CompilerOptions {
   };
 }
 
-/** The SDK bundle of the given modules (sdk.js URL, sdk.d.ts, inline sources). */
-export async function sdkFor(modules: AnyModule[]): Promise<SdkBundle> {
-  return buildSdk(modules);
-}
-
-export async function checkExamples(skills: SkillSource[], modules: AnyModule[], sdk?: SdkBundle): Promise<ExamplesReport> {
-  const bundle = sdk ?? (await sdkFor(modules));
-  const problems: Problem[] = [];
+/**
+ * Compile and typecheck every code block of `skills` against the SDK of
+ * `modules` (the server's sdk.d.ts + the inline declarations).
+ */
+export async function checkExamples(skills: SkillSource[], modules: AnyModule[], opts: ExamplesOptions = {}): Promise<ExamplesReport> {
+  await loadTypescript();
+  VROOT = join(resolve(opts.root ?? process.cwd()), '.drobek-skill-check');
+  const bundle = opts.sdk ?? (await buildSdk(modules));
+  const problems: SkillIssue[] = [];
   const counts = { blocks: 0, compiled: 0, typechecked: 0, apiChecked: 0, configChecked: 0 };
   const codeUnits: CodeUnit[] = [];
   const apiUnits: ApiUnit[] = [];
@@ -349,9 +356,9 @@ export async function checkExamples(skills: SkillSource[], modules: AnyModule[],
 
   // 1. compile — exactly the write_files compiler with this server's SDK.
   const compiler = new Compiler();
-  const opts = { sdkUrl: bundle.url, sdkSources: bundle.inline, beaconUrl: bundle.beacon.url };
+  const compileOpts = { sdkUrl: bundle.url, sdkSources: bundle.inline, beaconUrl: bundle.beacon.url };
   for (const u of [...codeUnits, ...staticUnits]) {
-    const r = await compiler.compile(u.files, opts);
+    const r = await compiler.compile(u.files, compileOpts);
     counts.compiled++;
     for (const e of r.errors) {
       const inBlock = 'path' in u && e.file === u.path && e.line ? e.line : 0;
@@ -392,12 +399,12 @@ export async function checkExamples(skills: SkillSource[], modules: AnyModule[],
   for (const d of [...program.getOptionsDiagnostics(), ...program.getGlobalDiagnostics()]) {
     problems.push({ skill: '(typescript)', file: '(program)', block: -1, line: 0, message: ts.flattenDiagnosticMessageText(d.messageText, '\n') });
   }
-  const diagnosticsOf = (path: string): ts.Diagnostic[] => {
+  const diagnosticsOf = (path: string): TS.Diagnostic[] => {
     const sf = program.getSourceFile(path);
     if (!sf) return [];
     return [...program.getSyntacticDiagnostics(sf), ...program.getSemanticDiagnostics(sf)];
   };
-  const lineOf = (d: ts.Diagnostic) => (d.file && d.start !== undefined ? d.file.getLineAndCharacterOfPosition(d.start).line : 0);
+  const lineOf = (d: TS.Diagnostic) => (d.file && d.start !== undefined ? d.file.getLineAndCharacterOfPosition(d.start).line : 0);
 
   // The SDK declarations themselves must be valid (e.g. no global JSX under React 19 types).
   for (const [path] of vfiles) {

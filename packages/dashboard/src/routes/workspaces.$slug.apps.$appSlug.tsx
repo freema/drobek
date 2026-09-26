@@ -1,8 +1,9 @@
 /**
  * /workspaces/:slug/apps/:appSlug — the app page's Overview tab (NSO-288):
  * the shared header (production / preview URLs, compile state, the agent
- * lock + Unlock, Unpublish), the VERSION HISTORY with its actions and the
- * health panels (recent errors, traffic / 404s).
+ * lock + Unlock, Unpublish), the VERSION HISTORY with its actions, the
+ * public gallery section (NSO-340, when the server runs one) and the health
+ * panels (recent errors, traffic / 404s).
  *
  * Per version: number, time, author (agent / user + e-mail), the agent's
  * reasoning, compile status (+ the first error), and — editor+ only —
@@ -15,6 +16,7 @@
 import { Form, Link, useActionData, useLoaderData, useNavigation } from 'react-router';
 import type { action, loader } from './workspaces.$slug.apps.$appSlug.server.js';
 import { ActionError, AppPage, appStyles } from '../app-header.js';
+import { GallerySection } from '../gallery-section.js';
 import { PendingBanner } from '../pending-banner.js';
 import { formatTimestamp } from '../view.js';
 
@@ -104,7 +106,7 @@ const COMPILE_LABEL: Record<string, string> = {
 };
 
 export default function AppDetailRoute() {
-  const { header, versions, errors, logs, canPublish, pendingBanner } = useLoaderData<typeof loader>();
+  const { header, versions, errors, logs, canPublish, pendingBanner, gallery } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const nav = useNavigation();
   const submitting = nav.state !== 'idle';
@@ -218,6 +220,8 @@ export default function AppDetailRoute() {
           </table>
         </div>
       )}
+
+      {gallery ? <GallerySection gallery={gallery} canEdit={header.canEdit} busy={submitting} /> : null}
 
       <h2 style={styles.h2}>Health</h2>
       <div style={styles.panelGrid}>

@@ -3,6 +3,7 @@ import { ERROR_CATALOGUE } from './errors-catalogue.js';
 import { LIMITS } from './limits.js';
 import {
   PLUGIN_BUILD_COMMAND,
+  PLUGIN_PORT_COMMAND,
   PLUGIN_INSTALL_COMMAND,
   PLUGIN_MARKETPLACE_ADD_COMMAND,
   PLUGIN_MCP_URL,
@@ -57,6 +58,8 @@ describe('renderLlmsTxt', () => {
     expect(PLUGIN_MARKETPLACE_ADD_COMMAND).toBe('claude plugin marketplace add freema/drobek-plugin');
     expect(PLUGIN_INSTALL_COMMAND).toBe('claude plugin install drobek@drobek');
     expect(PLUGIN_BUILD_COMMAND).toBe('/drobek:build-app');
+    expect(txt).toContain(PLUGIN_PORT_COMMAND);
+    expect(PLUGIN_PORT_COMMAND).toBe('/drobek:port-artifact');
   });
 });
 
@@ -149,6 +152,20 @@ describe('renderLlmsFull', () => {
     }
     expect(full).toContain('redirect_uri');
     expect(full).toContain('{ code, message, hint }');
+  });
+
+  it("renders each active module's own codes as a section after the core catalogue (NSO-344)", () => {
+    const withModules = renderLlmsFull(ENV, [
+      { module: 'auth', errors: [{ code: 'invalid_code', meaning: 'The code is wrong.', fix: 'Request a new one.' }] },
+      { module: 'quiet', errors: [] },
+    ]);
+    const catalogue = withModules.slice(withModules.indexOf('## Error catalogue'));
+    expect(catalogue).toContain('### Module auth');
+    expect(catalogue).toContain("skill_info('auth').errors");
+    expect(catalogue).toContain('- invalid_code — module route (auth) — The code is wrong. FIX: Request a new one.');
+    expect(catalogue.indexOf('### Module auth')).toBeGreaterThan(catalogue.indexOf('- internal_error — '));
+    expect(withModules).not.toContain('### Module quiet');
+    expect(full).not.toContain('### Module ');
   });
 
   it('contains the limits (every env cap)', () => {

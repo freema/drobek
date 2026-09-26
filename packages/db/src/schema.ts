@@ -4,7 +4,8 @@
  * Identity + tenancy + apps and their immutable versions (M0-02, NSO-281),
  * plus the tables each later unit added (oauth_*, upstreams, audit_log,
  * app_errors, app_daily_stats, app_compiles, module_request_stats,
- * module_configs, module_secrets, abuse_reports). Platform
+ * module_configs, module_secrets, workspace_modules, abuse_reports,
+ * app_assets, app_version_assets). Platform
  * modules own their tables (`mod_<name>_*`, their own migration journals).
  *
  * Hard constraints encoded here:
@@ -21,6 +22,7 @@
 import { createId } from '@paralleldrive/cuid2';
 import {
   type AnyPgColumn,
+  bigint,
   boolean,
   check,
   customType,
@@ -168,9 +170,28 @@ export const apps = pgTable(
      * with `app_locked_by_admin`. Only a super-admin restore clears it.
      */
     lockedReason: text('locked_reason'),
+    /**
+     * When the production host last started serving a version (NSO-340):
+     * every publish sets it, unpublish / takedown clear it. The public
+     * gallery lists the newest first.
+     */
+    publishedAt: timestamp('published_at'),
+    /**
+     * NSO-340: the owner's opt-in to the public gallery — changed in the
+     * dashboard by an editor+ of a PUBLISHED app, never through MCP.
+     * Unpublish / takedown turn it off. The gallery also filters at query
+     * time (published, not taken down, not deleted, not hidden).
+     */
+    galleryListed: boolean('gallery_listed').notNull().default(false),
+    /** NSO-340: the gallery's one-line public description (plain text, ≤ 160 chars). */
+    galleryDescription: text('gallery_description'),
+    /** NSO-340: a super-admin hid the gallery entry (non-null = hidden, whatever the owner sets). */
+    galleryHiddenAt: timestamp('gallery_hidden_at'),
   },
   (t) => [
     uniqueIndex('apps_slug_uq').on(t.slug),
+    // The public gallery page reads listed apps newest-published first (NSO-340).
+    index('apps_gallery_idx').on(t.publishedAt.desc(), t.slug.desc()).where(sql`${t.galleryListed}`),
     index('apps_workspace_idx').on(t.workspaceId),
     // The slug-release sweep reads deleted apps only.
     index('apps_deleted_at_idx').on(t.deletedAt).where(sql`${t.deletedAt} IS NOT NULL`),
@@ -211,6 +232,12 @@ export const appVersions = pgTable(
     compileStatus: compileStatusEnum('compile_status').notNull().default('pending'),
     /** @drobek/compile messages when compile_status = 'error'. */
     compileErrors: jsonb('compile_errors'),
+    /**
+     * NSO-362: set when a publish froze the app's assets for this version
+     * (its `app_version_assets` rows — possibly none); null = never frozen,
+     * or the snapshot was pruned.
+     */
+    assetsFrozenAt: timestamp('assets_frozen_at'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
   },
   (t) => [uniqueIndex('app_versions_app_number_uq').on(t.appId, t.number)]
@@ -655,6 +682,26 @@ export const moduleSecrets = pgTable(
   (t) => [primaryKey({ columns: [t.appId, t.module, t.name] })]
 );
 
+/**
+ * NSO-346: an opt-in platform module (`availability: 'opt-in'`) a super-admin
+ * enabled for one workspace in the dashboard. A default module never has a
+ * row (it is on everywhere). The limits provider's `MODULE_ENABLED_<NAME>`
+ * (plan) overrides the row in both directions; `enabled_by` turns null when
+ * the user row goes away.
+ */
+export const workspaceModules = pgTable(
+  'workspace_modules',
+  {
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    module: text('module').notNull(),
+    enabledBy: text('enabled_by').references(() => users.id, { onDelete: 'set null' }),
+    enabledAt: timestamp('enabled_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.workspaceId, t.module] })]
+);
+
 // ── Custom domains (M3-01, NSO-292) ──────────────────────────────────────────
 //
 // A hostname an owner attached to an app. It serves the app's PUBLISHED
@@ -734,4 +781,65 @@ export const abuseReports = pgTable(
     index('abuse_reports_status_created_idx').on(t.status, t.createdAt),
     index('abuse_reports_app_idx').on(t.appId),
   ]
+);
+
+// ── App assets (NSO-358, NSO-362) ────────────────────────────────────────────
+//
+// Binary files an app serves at `/<path>` (images, video, audio, fonts) —
+// the same URL space as its files, where an app file at the same path wins.
+// Uploaded outside the LLM through a one-time upload URL or the dashboard,
+// typed from their bytes. The bytes live on disk
+// (`ASSETS_DIR/<app_id>/<storage_key>`, not in Postgres — up to
+// APP_ASSET_MAX_BYTES each), content-addressed: an upload is stored under its
+// sha256 (rows from before NSO-362 keep their random key) and a file is never
+// rewritten, so several rows may share one.
+//
+// `app_assets` is the DRAFT: what uploads, replacements and deletes change,
+// and what the preview host serves. `app_version_assets` is the set a publish
+// FROZE for a version (NSO-362): the production host and custom domains serve
+// only the live published version's rows, so an asset change reaches the
+// public URL only with a publish. A soft-deleted app's rows and files, and
+// files no row references, are removed by the assets sweep.
+
+export const appAssets = pgTable(
+  'app_assets',
+  {
+    appId: text('app_id')
+      .notNull()
+      .references(() => apps.id, { onDelete: 'cascade' }),
+    /** A relative path of 1–4 segments with an allowed extension (`film.mp4`, `img/s1.jpg`); served at `/<name>`. */
+    name: text('name').notNull(),
+    /** The type sniffed from the bytes (served as Content-Type, with nosniff). */
+    contentType: text('content_type').notNull(),
+    size: bigint('size', { mode: 'number' }).notNull(),
+    /** Content hash — the strong ETag. */
+    sha256: text('sha256').notNull(),
+    /** The file name under `ASSETS_DIR/<app_id>/` (the sha256; a random key for rows from before NSO-362). */
+    storageKey: text('storage_key').notNull(),
+    createdByUserId: text('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.appId, t.name] })]
+);
+
+/** NSO-362: the assets a publish froze for one version (see the section comment). */
+export const appVersionAssets = pgTable(
+  'app_version_assets',
+  {
+    versionId: text('version_id')
+      .notNull()
+      .references(() => appVersions.id, { onDelete: 'cascade' }),
+    appId: text('app_id')
+      .notNull()
+      .references(() => apps.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    contentType: text('content_type').notNull(),
+    size: bigint('size', { mode: 'number' }).notNull(),
+    sha256: text('sha256').notNull(),
+    storageKey: text('storage_key').notNull(),
+    /** The draft row's upload time (Last-Modified). */
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.versionId, t.name] }), index('app_version_assets_app_idx').on(t.appId)]
 );

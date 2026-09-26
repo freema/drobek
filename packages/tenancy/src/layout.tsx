@@ -14,6 +14,7 @@
  */
 import type { CSSProperties, ReactNode } from 'react';
 import { Link } from 'react-router';
+import { DrobekMark } from '@drobek/auth/mark';
 import type { WorkspaceNav } from './workspace-nav.js';
 
 /** The content width of every dashboard page. */
@@ -97,13 +98,15 @@ const styles = {
     color: '#1a1a1a',
     lineHeight: 1.6,
   },
+  crumbNav: { display: 'flex', alignItems: 'center', gap: '0.7rem', margin: '0 0 1.5rem' },
+  markLink: { display: 'block', flex: 'none' },
   crumbs: {
     listStyle: 'none',
     display: 'flex',
     flexWrap: 'wrap',
     alignItems: 'baseline',
     gap: '0.15rem 0.45rem',
-    margin: '0 0 1.5rem',
+    margin: 0,
     padding: 0,
     fontSize: '0.88rem',
     color: '#71717a',
@@ -175,10 +178,13 @@ export interface Crumb {
   to?: string;
 }
 
-/** `Workspaces › …` — every part a link except the last. */
+/** The mascot (home) then `Workspaces › …` — every part a link except the last. */
 export function Breadcrumb({ items }: { items: readonly Crumb[] }) {
   return (
-    <nav aria-label="Breadcrumb" data-testid="breadcrumb">
+    <nav aria-label="Breadcrumb" data-testid="breadcrumb" style={styles.crumbNav}>
+      <Link to="/workspaces" aria-label="drobek — workspaces" style={styles.markLink}>
+        <DrobekMark size={24} />
+      </Link>
       <ol style={styles.crumbs}>
         {items.map((c, i) => {
           const last = i === items.length - 1;
@@ -216,7 +222,7 @@ export function DashboardPage({ crumbs, children }: { crumbs?: readonly Crumb[];
   );
 }
 
-export type WorkspaceSection = 'apps' | 'members' | 'activity' | 'upstreams';
+export type WorkspaceSection = 'apps' | 'members' | 'activity' | 'upstreams' | 'modules';
 
 /** The workspace's landing page — its apps (the breadcrumb's workspace link). */
 export function workspaceHref(slug: string): string {
@@ -236,6 +242,8 @@ const SECTIONS: readonly { key: WorkspaceSection; label: string; path: string }[
   { key: 'members', label: 'Members', path: '' },
   { key: 'activity', label: 'Activity', path: 'activity' },
   { key: 'upstreams', label: 'Upstreams', path: 'upstreams' },
+  // NSO-347: the server's platform modules, read-only for every member.
+  { key: 'modules', label: 'Modules', path: 'modules' },
 ];
 
 function sectionHref(slug: string, path: string): string {

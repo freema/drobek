@@ -38,6 +38,11 @@ export default [
   // delete secret-injecting upstreams (workspace-admin/super-admin only). Apps
   // call them through the `proxy` platform module (NSO-297).
   route('workspaces/:slug/upstreams', 'routes/workspaces.$slug.upstreams.tsx'),
+  // NSO-347 + NSO-346: the platform modules this server runs (version, source,
+  // contract, slots, limits for the workspace, error codes) — read-only,
+  // viewer+ — with each opt-in module's state for the workspace and its
+  // enable switch (super-admin only).
+  route('workspaces/:slug/modules', 'routes/workspaces.$slug.modules.tsx'),
   // U8 (PHY-74 slice / PHY-62): minimal dashboard — apps list, per-app version
   // history + role-gated publish. Static `apps` segment keeps these specific
   // enough not to shadow `/workspaces/:slug/invite`.
@@ -99,6 +104,7 @@ export default [
   route('workspaces/:slug/apps/:appSlug/forms', 'routes/workspaces.$slug.apps.$appSlug.forms.tsx'),
   route('workspaces/:slug/apps/:appSlug/forms/export.csv', 'routes/workspaces.$slug.apps.$appSlug.forms.export-csv.ts'),
   route('workspaces/:slug/apps/:appSlug/end-users', 'routes/workspaces.$slug.apps.$appSlug.end-users.tsx'),
+  route('workspaces/:slug/apps/:appSlug/assets', 'routes/workspaces.$slug.apps.$appSlug.assets.tsx'),
   route('workspaces/:slug/apps/:appSlug/uploads', 'routes/workspaces.$slug.apps.$appSlug.uploads.tsx'),
   route('workspaces/:slug/apps/:appSlug/uploads/:fileId', 'routes/workspaces.$slug.apps.$appSlug.uploads.$fileId.ts'),
   route('workspaces/:slug/apps/:appSlug/logs', 'routes/workspaces.$slug.apps.$appSlug.logs.tsx'),
@@ -126,6 +132,13 @@ export default [
   // /.well-known/drobek-report points here) and the super-admin queue.
   route('report', 'routes/report.tsx'),
   route('admin/abuse', 'routes/admin.abuse.tsx'),
+  // NSO-340: the public gallery list (read-only JSON, CORS *, 404 unless
+  // GALLERY_ENABLED) — the operator's website renders it.
+  route('api/public/gallery', 'routes/api.public.gallery.ts'),
+  // NSO-348: the IdP callback of an end-user sign-in provider (the auth
+  // module's `auth.provider` slot) — one redirect URI per server; answers a
+  // 302 with a handoff code to the app host, never touches the dashboard session.
+  route('__drobek/auth/callback/:provider', 'routes/drobek.auth.callback.$provider.ts'),
   // NSO-297: the old dashboard-host proxy (`/:ws/api/proxy/:name/*`) is gone —
   // apps call upstreams on their own host through the `proxy` platform module
   // (`/__drobek/v1/proxy/:upstream/*`).

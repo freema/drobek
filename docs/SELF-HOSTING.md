@@ -12,8 +12,7 @@ local rehearsal (`task selfhost:rehearsal`, `tls internal`, image already
 built), a backup 7 s, a restore on a second "machine"
 (fresh checkout + `task selfhost:init` + `task restore`) 33 s; the image build
 itself 145 s (a VPS pulls it instead). Local = macOS, Docker Desktop, arm64,
-2026-09-23. **The clean-VPS measurement (Ubuntu 24.04, Let's Encrypt)
-is pending — Tomáš.**
+2026-09-23.
 
 ## Quickstart (clean Ubuntu 24.04 + Docker)
 
@@ -34,8 +33,8 @@ What you need:
   `example.com`) is the safer choice; `apps.<your dashboard domain>` works too.
   No DNS at all (a test box)? Use `DOMAIN=localhost` in step 3 — Caddy's local
   CA (`tls internal`), reachable only from the machine itself.
-- an SMTP account (host, port, user, password, a sender address) — sign-in
-  codes go out by e-mail.
+- an SMTP account (host, port, user, password, a sender address) or a
+  Resend API key — sign-in codes go out by e-mail.
 
 Every command runs as root (or prefix `sudo`).
 
@@ -184,8 +183,10 @@ healthcheck each. Only Caddy publishes ports (80, 443, 443/udp —
 `HTTP_PORT` / `HTTPS_PORT` / `PUBLISH_IP` move them); drobek, postgres and
 redis stay on the internal network. Nothing secret is written in the file —
 every value comes from `.env.production` (`--env-file` for interpolation,
-`env_file` for drobek). A missing secret, host or `SMTP_HOST` stops
-`docker compose` before anything starts (`${VAR:?}`), and
+`env_file` for drobek). A missing secret or host stops
+`docker compose` before anything starts (`${VAR:?}`); a missing mail
+transport (`SMTP_HOST`, or `RESEND_API_KEY` with `EMAIL_TRANSPORT=resend`)
+stops drobek itself at start, and
 `docker compose --env-file .env.production -f docker-compose.production.yaml config`
 prints no warnings. The compose project is **`drobek-prod`** (not `drobek`,
 the dev stack's name in a checkout — a `down -v` here can never reach the dev
@@ -195,6 +196,7 @@ volumes).
 variable (what it is, how it is generated, which ones are secrets). The
 compose file fixes, for drobek: `NODE_ENV=production`,
 `TRUST_PROXY=x-real-ip`, `APPS_URL_SCHEME=https`, `FILES_DIR=/data/files`,
+`ASSETS_DIR=/data/assets`,
 `DATABASE_URL` / `REDIS_URL` of the bundled services, `PUBLIC_ORIGIN`
 defaulting to `PUBLIC_APP_URL`, and `DROBEK_MODULES` defaulting to all six
 built-ins.
@@ -207,7 +209,8 @@ built-ins.
 | `POSTGRES_PASSWORD` | yes, secret | generated; only used when `pg_data` is first created |
 | `DROBEK_MASTER_KEY` | yes, secret | generated, 64 hex; encrypts upstream secrets, signs app cookies — keep it with your backups |
 | `TLS_ASK_TOKEN` | secret | generated; the on-demand TLS `ask` token (drobek + Caddy) |
-| `SMTP_HOST` | yes | SMTP server; `SMTP_PORT` (587), `SMTP_SECURE` (0 / 1 = implicit TLS), `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM` |
+| `SMTP_HOST` | yes (smtp) | SMTP server; `SMTP_PORT` (587), `SMTP_SECURE` (0 / 1 = implicit TLS), `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM` |
+| `EMAIL_TRANSPORT` / `RESEND_API_KEY` | — (`smtp`) / secret | `resend` sends through the Resend API instead of SMTP (then `SMTP_*` is not needed and `RESEND_API_KEY` is) |
 | `SUPERADMIN_EMAIL` | recommended | your sign-in e-mail(s), super-admin over every workspace |
 | `LANDING_URL` | — | your own website: `<PUBLIC_APP_URL>/` answers 301 there instead of the built-in landing page |
 | `DASHBOARD_GITHUB_STARS` | — (on) | `off` = the dashboard footer makes no call to `api.github.com` for the repository's star count |
@@ -216,6 +219,7 @@ built-ins.
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | — | optional Google sign-in |
 | `TLS_CUSTOM_DOMAINS`, `DOMAINS_MAX_PER_APP`, `DOMAINS_DNS_SERVERS`, `DOMAINS_RECHECK_INTERVAL_MS` | — | [custom domains](#custom-domains) (catch-all certificate on by default in on-demand mode; 3 per app) |
 | `TERMS_URL`, `ABUSE_REPORTS_PER_IP_HOUR`, `ABUSE_BRAND_WORDS` | — | [abuse handling](#abuse-and-takedowns) (terms link of the 451 page; 5 reports / IP / hour; publish-heuristic brand words) |
+| `GALLERY_ENABLED`, `GALLERY_API_PER_IP_MINUTE` | — (off) | [the public gallery](#public-gallery) (`true` = owners may list published apps; `GET /api/public/gallery`; 60 requests / IP / minute) |
 | `EMAIL_SIGNIN_APP_HOURLY_SHARE` | — (25) | one app's percent of the sign-in e-mail budget — raise it on a single-app server (see [Production compose](#production-compose)) |
 | `EMAIL_WORKSPACE_HOURLY_SHARE` | — (50) | one workspace's percent of each module e-mail budget — raise it to 100 on a single-workspace server |
 | limits (`OTP_*`, `COMPILE_*`, `DATA_*`, `FILES_*`, `EMAIL_*`, …) | — | production defaults; every variable is in the [Environment reference](#environment-reference) |
@@ -244,7 +248,8 @@ happens; seeing it in production means the proxy header is missing.
 Platform modules (the backends apps use through `import { drobek } from
 'drobek'`) are enabled with `DROBEK_MODULES` (comma-separated; a
 short name `x` loads the package `drobek-module-x` from the server's
-dependencies). The server applies each module's migrations on start and
+dependencies, or from `DROBEK_MODULES_DIR` for a module you installed with
+`task selfhost:module:add` — [Third-party modules](#third-party-modules)). The server applies each module's migrations on start and
 refuses to start on a module it cannot load. Limits come from their env vars
 or, with `LIMITS_PROVIDER_URL` + `LIMITS_PROVIDER_SECRET`, from your own
 signed limits endpoint. The image ships the built-in `auth`, `email`,
@@ -285,6 +290,8 @@ Volumes (named `drobek-prod_<name>`):
 | --- | --- | --- |
 | `pg_data` | the database: apps, every version's files (content-addressed blobs), users, keys, module data | yes (`pg_dump -Fc`) |
 | `files_data` | the files module's uploads (`/data/files`; `mod_files` rows point at them) | yes (tar) |
+| `assets_data` | app assets — video, audio, images, fonts served at `/<path>` (`/data/assets`; `app_assets` rows point at them) | yes (tar) |
+| `modules_data` | modules you installed (`/data/modules` = `DROBEK_MODULES_DIR`: one directory per module + `modules.lock.json`, [Third-party modules](#third-party-modules)) | yes (tar) |
 | `caddy_data` | ACME account, issued certificates, Caddy's local CA — losing it means re-issuing every certificate | yes (tar) |
 | `caddy_config` | Caddy's autosaved config (rebuilt from the Caddyfile) | no |
 | `redis_data` | sessions, caches, rate limits, leases, un-flushed request counters (AOF) | no — after a restore everyone signs in again |
@@ -335,7 +342,9 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | Variable | Default | What |
 | --- | --- | --- |
 | `SUPERADMIN_EMAIL` | — | comma-separated sign-in addresses with super-admin rights over every workspace (the abuse queue, reports) |
-| `SMTP_HOST` / `SMTP_PORT` / `SMTP_SECURE` / `SMTP_USER` / `SMTP_PASS` / `EMAIL_FROM` | — / 587 / 0 / — / — / — | **`SMTP_HOST` required** — the SMTP server for sign-in codes and module mail (`SMTP_SECURE=1` = implicit TLS) |
+| `EMAIL_TRANSPORT` | smtp | how all mail goes out (sign-in codes, invites, module mail): `smtp` or `resend`; an unknown value stops the server at start |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_SECURE` / `SMTP_USER` / `SMTP_PASS` / `EMAIL_FROM` | — / 587 / 0 / — / — / — | **`SMTP_HOST` required with `smtp`** (production refuses to start without it) — the SMTP server for sign-in codes and module mail (`SMTP_SECURE=1` = implicit TLS); `EMAIL_FROM` is the sender for both transports |
+| `RESEND_API_KEY` | — | **required with `resend`**, a secret (the server refuses to start without it; it is never logged or shown) — mail goes to `POST https://api.resend.com/emails` with a 10 s timeout; `EMAIL_FROM` must be on a domain verified in Resend |
 | `OTP_IP_SHORT_LIMIT` / `OTP_IP_DAILY_LIMIT` | 5 per 15 min / 20 per 24 h | dashboard sign-in codes sent per client IP |
 | `OTP_EMAIL_HOURLY_LIMIT` / `OTP_EMAIL_COOLDOWN_MS` | 3 per hour / 60000 | codes per address, minimum gap per address |
 | `OTP_GLOBAL_HOURLY_MAX` | 100 | codes per hour server-wide, then sending pauses |
@@ -360,18 +369,27 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `DROBEK_MIGRATE_ON_START` | 1 | `0` = the server does not apply migrations on start (tests, tooling) |
 | `AUDIT_RETENTION_DAYS` | 365 | audit rows older than this are pruned daily |
 | `APPS_MAX_PER_WORKSPACE` | 50 | live apps per workspace (deleted ones do not count); `create_app` beyond it answers `limit_exceeded` *(plan)* |
+| `ASSETS_DIR` | `/data/assets` *(compose)* | app asset storage (the `assets_data` volume) |
+| `APP_ASSET_MAX_BYTES` / `APP_ASSETS_QUOTA` | 104857600 / 1073741824 | one app asset (100 MiB) / all assets of one app (1 GiB); `asset_too_large` / `asset_quota_exceeded` *(plan)*. An upload must arrive within Node's 300 s request timeout |
+| `APP_ASSET_UPLOADS_PER_HOUR` | 60 | upload URLs (`create_asset_upload`, the Assets tab) per app per hour, then `rate_limited` |
+| `APP_FRAME_SRC_EXTRA` | — | extra `https://host[:port]` origins (comma or space separated) every app may show in an `<iframe>`, besides YouTube, Vimeo and Google Drive; an invalid entry stops the server at start |
 
 ### Platform modules
 
 | Variable | Default | What |
 | --- | --- | --- |
 | `DROBEK_MODULES` | none *(compose: `auth,email,forms,data,proxy,files`)* | the modules this server runs; `x` loads `drobek-module-x` ([`MODULES.md`](./MODULES.md)) |
-| `DROBEK_MODULES_ROOT` | the server's directory | where module packages are resolved from |
+| `DROBEK_MODULES_ROOT` | the server's directory | where module packages are resolved from when they are not in `DROBEK_MODULES_DIR` |
+| `DROBEK_MODULES_DIR` | `/data/modules` *(compose: the `modules_data` volume; dev: `./.modules`)* | modules the operator installed (`task selfhost:module:add`, dev: `task module:add`): `<dir>/<name>/node_modules/<package>` + `modules.lock.json`; looked up BEFORE the server's dependencies; a module there that the lockfile does not list, or whose files changed, refuses the start ([Third-party modules](#third-party-modules)). Change it only for a [derived image](#derived-image) that bakes its modules elsewhere |
+| `DROBEK_MODULES_UNLOCKED` | — | `1` = load modules from `DROBEK_MODULES_DIR` without the `modules.lock.json` check — for developing a module locally; ignored (with a warning) when `NODE_ENV=production` |
+| `DROBEK_MODULE_<NAME>_DEFAULTS` (e.g. `DROBEK_MODULE_AUTH_DEFAULTS`) | — | server-wide config defaults of the module `<name>`: a JSON merge patch over its defaults (`{"allow":{"domains":["acme.com"]}}`), validated by its schema at start — invalid refuses the start ([`MODULES.md`](./MODULES.md#operator-defaults-drobek_module_name_defaults)) |
+| `MODULE_ENABLED_<NAME>` (e.g. `MODULE_ENABLED_CRM`) | 0 | only for an opt-in module (`availability: 'opt-in'`): `1` enables it on every workspace; unset / `0` = a super-admin enables it per workspace in the dashboard (Workspace → Modules). A limits provider may answer it per workspace (`1` on, `0` off — also over the dashboard switch) ([`MODULES.md`](./MODULES.md#per-workspace-enabling-opt-in-modules)) *(plan)* |
 | `DROBEK_SKILLS_DIR` | `./skills` (image: `/app/skills`) | the general skills `skill_info` lists |
 | `LIMITS_PROVIDER_URL` / `LIMITS_PROVIDER_SECRET` | — | per-workspace limits from your own HMAC-signed endpoint (secret ≥ 32 characters) |
 | `AUTH_CODES_PER_IP_15MIN` / `AUTH_CODES_PER_IP_DAY` | 5 / 20 | `auth`: sign-in codes per client IP *(plan)* |
 | `AUTH_CODES_PER_EMAIL_HOUR` / `AUTH_CODES_PER_APP_HOUR` | 3 / 100 | `auth`: codes per address, per app *(plan)* |
-| `AUTH_ATTEMPTS_PER_IP_15MIN` / `END_USERS_MAX_PER_APP` | 30 / 1000 | `auth`: send + verify calls per IP; end users per app *(plan)* |
+| `AUTH_ATTEMPTS_PER_IP_15MIN` / `END_USERS_MAX_PER_APP` | 30 / 1000 | `auth`: send-code, verify and provider begin/complete calls per IP; end users per app *(plan)* |
+| `AUTH_PROVIDER_CALLBACKS_PER_IP_15MIN` | 60 | `auth`: sign-in provider callbacks (`/__drobek/auth/callback/<provider>` on the dashboard host) per client IP per 15 min — server-wide, never a plan value (the app is not known yet) |
 | `EMAIL_PER_APP_PER_DAY` / `EMAIL_NOTIFY_ADMINS_PER_DAY` | 50 / 20 | `email`: notification mails per app per day; `notifyAdmins()` per user per day *(plan)* |
 | `EMAIL_GLOBAL_HOURLY_MAX` / `EMAIL_GLOBAL_PAUSE_MINUTES` | 500 / 15 | the operator-wide cap on all module mail (recipients per hour) and the pause length (a fixed window: the class budget restarts after it) |
 | `EMAIL_SIGNIN_HOURLY_MAX` / `EMAIL_SIGNIN_APP_HOURLY_SHARE` | 20 % of the cap (at least 50, at most half) / 25 % | the sign-in part of the cap; one app's share of it |
@@ -391,7 +409,7 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `PROXY_CALLS_PER_MIN` / `PROXY_PUBLIC_CALLS_PER_MIN_PER_IP` | 60 / 10 | `proxy`: calls per app, per IP to `public` upstreams *(plan)* |
 | `HELLO_WAVES_PER_MINUTE` | 30 | the example module `drobek-module-hello` |
 
-### Custom domains and abuse
+### Custom domains, abuse and the gallery
 
 | Variable | Default | What |
 | --- | --- | --- |
@@ -403,6 +421,8 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `LANDING_URL` | — (the built-in landing page) | `<PUBLIC_APP_URL>/` answers 301 to this URL — for an operator whose website lives elsewhere |
 | `ABUSE_REPORTS_PER_IP_HOUR` | 5 | valid abuse reports per client IP per hour |
 | `ABUSE_BRAND_WORDS` | a built-in list | the publish heuristic's brand words (comma-separated) |
+| `GALLERY_ENABLED` | off | `true` = the [public gallery](#public-gallery): owners (and, on their explicit yes, their agents) may list published apps; `GET /api/public/gallery` answers. Off = no switch in the dashboard, the endpoint answers 404 |
+| `GALLERY_API_PER_IP_MINUTE` | 60 | requests to `GET /api/public/gallery` per client IP per minute (429 over it) |
 
 ### Development and tests only
 
@@ -421,18 +441,20 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 ```sh
 task backup
 # ✓ backups/drobek-20260923T201500Z.tar.gz — 1234567 bytes in 4 s
-#   apps 12 · files 40 · core migrations 20 · image ghcr.io/freema/drobek:v1.2.0 (v1.2.0 abc1234)
+#   apps 12 · files 40 · assets 3 · core migrations 20 · image ghcr.io/freema/drobek:v1.2.0 (v1.2.0 abc1234)
 ```
 
 One archive (mode 600, in `backups/`, override with `BACKUP_DIR=`):
 `db.dump` (`pg_dump -Fc` of the whole database — one consistent snapshot),
-`files.tar` (the `files_data` volume), `caddy_data.tar`, `SHA256SUMS` and a
+`files.tar` (the `files_data` volume), `assets.tar` (the `assets_data`
+volume), `modules.tar` (the `modules_data` volume), `caddy_data.tar`, `SHA256SUMS` and a
 `manifest.json` with the image tag / id / version / commit, the checkout's
 commit, a fingerprint of `DROBEK_MASTER_KEY`, row counts and the size + sha256
 of every part. It runs online: postgres is started if it is not running,
-nothing else is touched; the uploads are archived **after** the dump, so every
-file row in the dump finds its blob (only a file deleted in between can be
-missing — stop drobek first for a quiesced backup). Schedule it with cron and
+nothing else is touched; the uploads and assets are archived **after** the
+dump, so every file and asset row in the dump finds its bytes (only one
+deleted or replaced in between can be missing — stop drobek first for a
+quiesced backup). Schedule it with cron and
 copy the archives off the machine:
 
 ```cron
@@ -461,7 +483,8 @@ task restore BACKUP=backups/drobek-20260923T201500Z.tar.gz
 not match the backup's fingerprint (`ALLOW_KEY_MISMATCH=1` restores anyway,
 without usable upstream secrets), refuses a **non-empty database** (`FORCE=1`
 drops and recreates it — back it up first), stops drobek and caddy, restores
-the database, replaces `files_data` and `caddy_data`, and starts the stack
+the database, replaces `files_data`, `assets_data` (left empty when the
+archive has no `assets.tar`) and `caddy_data`, and starts the stack
 (`up -d --wait`). Restore with the backup's image version or a newer one
 (`image_version` in `manifest.json`) — a newer image migrates the restored
 database forward on start; an older one does not know its migrations. Point
@@ -540,6 +563,112 @@ BASE_URL_WEB=https://drobek.example.com SMOKE_API_KEY=drk_… task e2e:smoke
 The smoke key always works on one app, `smoke-<12 hex>`, derived from the key,
 and publishes a new version of it on every run, so nothing piles up.
 
+## Third-party modules
+
+A platform module that does not ship in the image (your company's, one from
+npm) is installed into the `modules_data` volume (`/data/modules` =
+`DROBEK_MODULES_DIR`) — no image build, no package manager in the running
+server:
+
+```sh
+task selfhost:module:add -- drobek-module-acme-erp@1.2.0
+# · npm install drobek-module-acme-erp@1.2.0 → drobek-prod_modules_data:/data/modules/.staging-1a2b3c4d (node:22-alpine, --ignore-scripts)
+# ✓ drobek-module-acme-erp@1.2.0 installed as the module "acmeerp" (contract ^1.1) → /data/modules/acmeerp
+#   modules.lock.json: sha512-…
+#
+# Next: enable it in .env.production and restart drobek (it applies the module's migrations on start):
+#   DROBEK_MODULES=auth,email,forms,data,proxy,files,drobek-module-acme-erp
+#   ./scripts/selfhost-compose.sh up -d --wait drobek
+```
+
+The spec is anything `npm install` accepts: a registry version
+(`drobek-module-acme-erp@1.2.0`, `@acme/drobek-module-erp@^1`), a tarball URL
+or a local `.tgz` path (`npm pack` output; mounted read-only into the npm
+container), a git URL (`git+https://…/x.git#v1.2.0` — the package must have
+its `dist/` committed). `add` runs in two steps:
+
+1. **npm in a throwaway container** — `docker run --rm node:22-alpine` over
+   the volume: `npm install --prefix /data/modules/.staging-<id> --omit=dev
+   --omit=peer --legacy-peer-deps --ignore-scripts <spec>`;
+2. **the image's own installer** — `./scripts/selfhost-compose.sh run --rm
+   --no-deps drobek node node_modules/@drobek/modules/dist/cli/module-lock.js
+   add …`: the package must declare `@drobek/modules` as a peer dependency
+   in a range this server satisfies; nested copies of `@drobek/*`, `zod` and
+   `drizzle-orm` are deleted (the server provides them); the module is
+   imported once for its `name` and checked like at start (its `contract`
+   against the server's module contract); it moves to `/data/modules/<name>`
+   and is recorded in `modules.lock.json` with the server's
+   `hashModuleTree()` — the same function checks it at every start — then
+   loaded the way the server will load it, the migration lint included.
+   Anything failing leaves the previous install and lockfile in place.
+
+Then put the printed `DROBEK_MODULES` line into `.env.production` (the short
+name for a `drobek-module-<name>` package, else the full package name) and
+restart drobek; the start applies the module's migrations and `/api/version`
+lists it with `"source":"dir"`. The script prints this and stops: it never
+edits `.env.production` and never restarts anything.
+
+```sh
+task selfhost:module:list
+# NAME     PACKAGE                 VERSION  CONTRACT  INTEGRITY           IN DROBEK_MODULES  STATUS
+# acmeerp  drobek-module-acme-erp  1.2.0    ^1.1      sha512-q8vN0Lr2Xc…  yes                ok
+task selfhost:module:remove -- acmeerp
+```
+
+`list` reads the lockfile and hashes every module again: `changed` (files
+edited after the install), `missing` (a lock entry without its directory) and
+`unrecorded` (a directory the lockfile does not list) refuse the start when
+`DROBEK_MODULES` names them — add the module again or remove it. `remove`
+deletes `/data/modules/<name>` and its lock entry and warns when
+`DROBEK_MODULES` still names it (take it out before drobek restarts). **It
+never touches the database:** the module's tables (`mod_<name>`,
+`mod_<name>_*`) and its journal `drizzle.__drizzle_migrations_mod_<name>`
+stay, so adding the module again finds its data. To drop them for good, take
+a `task backup` first, list them with the query `remove` prints and `DROP
+TABLE` each in `psql` (`./scripts/selfhost-compose.sh exec postgres psql -U
+drobek -d drobek`).
+
+**Upgrade** = `add` with the new version (it replaces the directory and the
+lock entry; the output names the version it replaced), then restart drobek.
+**Rollback** = `add` of the old version, or `task restore` of the backup taken
+before (`modules_data` is part of every `task backup`, the lockfile with it).
+What the script never does: run a package's install scripts, change the image,
+edit `.env.production` or restart drobek. A module runs inside the server
+with the whole database — install only modules you trust
+([`MODULES.md` → Installing an external module](./MODULES.md#installing-an-external-module)).
+
+### Derived image
+
+An operator with their own CI can bake the modules into an image instead —
+the same layout, lockfile and start-time checks, built by the image's own
+installer:
+
+```dockerfile
+# Dockerfile.drobek — drobek + your modules
+ARG DROBEK_TAG=vX.Y.Z
+FROM node:22-alpine AS modules
+RUN npm install --prefix /modules/.staging-erp --omit=dev --omit=peer --legacy-peer-deps \
+      --ignore-scripts --no-audit --no-fund @acme/drobek-module-erp@1.2.0
+
+FROM ghcr.io/freema/drobek:${DROBEK_TAG}
+COPY --from=modules --chown=node:node /modules/ /opt/drobek-modules/
+RUN node node_modules/@drobek/modules/dist/cli/module-lock.js add \
+      --dir /opt/drobek-modules --staging .staging-erp --spec @acme/drobek-module-erp@1.2.0
+```
+
+One `RUN npm install` + `module-lock.js add` pair per module (the build
+fails on anything `add` refuses). Build it where the stack runs (or `docker
+load` it from your CI) under a local tag — `docker build -f Dockerfile.drobek
+--build-arg DROBEK_TAG=vX.Y.Z -t ghcr.io/freema/drobek:vX.Y.Z-acme .` — and
+set in `.env.production`: `DROBEK_IMAGE_TAG=vX.Y.Z-acme`,
+`DROBEK_MODULES_DIR=/opt/drobek-modules` and the `DROBEK_MODULES` entries.
+The directory is outside `/data/modules` on purpose: the compose file mounts
+the `modules_data` volume there, which would hide the image's copy. A local
+tag cannot be pulled, so an upgrade is a rebuild with the new `DROBEK_TAG`
+followed by the `task selfhost:upgrade` steps without `pull`.
+`task selfhost:module:*` refuse to run with such a `DROBEK_MODULES_DIR`: the
+image is the source of its modules.
+
 ## Image tags
 
 `ghcr.io/freema/drobek` (linux/amd64 only in v1 — no ARM image):
@@ -559,6 +688,13 @@ against the image it builds from that tag (`GIT_SHA` = the tag's commit,
 `vX.Y.Z` → `latest`. A pre-release tag (`vX.Y.Z-rc.1`) gets only its own tag.
 To rebuild a release image yourself: `git checkout vX.Y.Z && task build` (same
 sources and lockfile; the build args come from the checkout).
+
+The same tag publishes the npm packages for module authors at its version:
+`@drobek/modules`, `@drobek/sdk` and `create-drobek-module`
+([`MODULES.md`](./MODULES.md) → Writing a module) — `@drobek/modules@X.Y.Z`
+is the module contract of the image `vX.Y.Z`. `node scripts/npm-packages.mjs
+pack` (after `pnpm build:packages`) writes the same tarballs into
+`dist-npm/`.
 
 ## TLS
 
@@ -839,6 +975,39 @@ Anyone can publish on a public drobek, so the operator (every address in
 DMCA notices and the legal side of abuse handling belong to your terms of
 service, not to drobek.
 
+## Public gallery
+
+With `GALLERY_ENABLED=true` the server keeps a public list of apps whose
+owners chose to show them. Off by default: a fresh server publishes no app
+list.
+
+- **Listing.** On an app's Overview an editor or workspace-admin of a
+  **published** app ticks "Show in the gallery" and writes a public
+  description (plain text, one or two sentences, at most 160 characters).
+  An agent can do the same with the MCP tool `set_gallery_listing` (scope
+  `publish`), but only with `user_confirmed: true` — its instructions allow
+  that only after the user explicitly said yes. Viewers cannot list (403).
+  Audited `app.gallery_listed` / `app.gallery_unlisted`.
+- **Leaving the gallery.** Unlisting takes effect at once. Unpublishing the
+  app or a takedown also ends the listing (the owner lists again after the
+  next publish), and a deleted app is gone with it. The public list filters
+  at query time: only apps that are listed, published, public (no password
+  gate), not taken down, not deleted and not hidden appear.
+- **Hiding.** A super-admin sees every listed app in the Gallery section of
+  `/admin/abuse` and can **hide** an entry (or show it again). A hidden app
+  is off the list and neither its owner nor an agent can list it. Audited
+  `app.gallery_hidden` / `app.gallery_unhidden`.
+- **`GET /api/public/gallery`** on the dashboard host, no login:
+  `{ items: [{ name, description, url, publishedAt }], next? }` — `url` is
+  the production host `https://<slug>.<APPS_DOMAIN>`, newest publish first,
+  `?limit=` 1–48 (default 24), `?cursor=` the previous page's `next`. No
+  owner data (no e-mail, workspace or id). `Cache-Control: public,
+  max-age=60`, `Access-Control-Allow-Origin: *`, `GALLERY_API_PER_IP_MINUTE`
+  requests per client IP per minute. Render it on your own website — a
+  server-side fetch or a reverse proxy works as well as the browser.
+
+There are no screenshots: drobek never runs an app's code on the server.
+
 ## The rehearsal (`task selfhost:rehearsal`)
 
 [`scripts/selfhost-rehearsal.sh`](../scripts/selfhost-rehearsal.sh) runs this
@@ -849,10 +1018,12 @@ runs `task selfhost:init` twice (idempotency) and `docker compose config`
 (no warnings), starts the stack, signs a user in over the e-mail code flow,
 mints an API key with the container CLI, creates + writes + publishes an app
 over MCP (the official SDK client) and uploads a file through the files
-module; then `task backup`, `down -v`, a second fresh directory ("machine B")
+module; installs a packed module with `task selfhost:module:add`, enables it
+and checks `/api/version` loads it from the modules directory; then `task backup`, `down -v`, a second fresh directory ("machine B")
 with only machine A's `.env.production`, `task selfhost:init`, `task
 restore`, and asserts the app serves on its host, the file downloads byte for
-byte, the same API key works and Caddy's restored CA still validates; a
+byte, the same API key works, Caddy's restored CA still validates and the
+server starts with the same `modules.lock.json` and the module; a
 second restore must be refused and a second `task selfhost:migrate` must
 apply nothing. It prints the wall-clock time of every phase. Not part of
 `task check` or CI (it takes minutes). Knobs: `REHEARSAL_HTTPS_PORT` (9443),

@@ -10,19 +10,26 @@
  *    `admin.takedown`, e-mail the owners;
  *  - `restore` (app): clear the lock — NOT republished — audit
  *    `admin.restore`, e-mail the owners;
- *  - `resolve` (report): mark one report resolved, nothing else.
+ *  - `resolve` (report): mark one report resolved, nothing else;
+ *  - `gallery-hide` / `gallery-show` (app, NSO-340): hide an app's entry in
+ *    the public gallery (or show it again) — audited `app.gallery_hidden` /
+ *    `app.gallery_unhidden`; the owner cannot list a hidden app. The gallery
+ *    section lists every listed or hidden app (only when GALLERY_ENABLED).
  */
 import { data, type ActionFunctionArgs, type LoaderFunctionArgs } from 'react-router';
 import {
   AppsError,
   LOCK_REASONS,
   findModerationApp,
+  galleryEnabled,
   listAbuseReports,
+  listGalleryForModeration,
   listLockedApps,
   lockCategory,
   reasonLabel,
   resolveAbuseReport,
   restoreApp,
+  setGalleryHidden,
   takedownApp,
 } from '@drobek/apps';
 import { isSuperAdmin, requireSessionUser, type SessionUser } from '@drobek/auth';
@@ -42,7 +49,12 @@ async function requireSuperAdmin(request: Request): Promise<SessionUser> {
 export async function loader({ request }: LoaderFunctionArgs) {
   await requireSuperAdmin(request);
   const status = new URL(request.url).searchParams.get('status') === 'resolved' ? 'resolved' : 'open';
-  const [reports, locked] = await Promise.all([listAbuseReports({ status }), listLockedApps()]);
+  const gallery = galleryEnabled();
+  const [reports, locked, listed] = await Promise.all([
+    listAbuseReports({ status }),
+    listLockedApps(),
+    gallery ? listGalleryForModeration() : Promise.resolve(null),
+  ]);
   return data(
     {
       status,
@@ -76,6 +88,18 @@ export async function loader({ request }: LoaderFunctionArgs) {
         reason: lockCategory(a.lockedReason),
         reasonLabel: reasonLabel(lockCategory(a.lockedReason)),
       })),
+      // NSO-340: null = this server runs no gallery.
+      gallery: listed
+        ? listed.map((g) => ({
+            id: g.id,
+            slug: g.slug,
+            name: g.name,
+            description: g.description,
+            workspaceSlug: g.workspaceSlug,
+            hidden: g.hiddenAt !== null,
+            visible: g.visible,
+          }))
+        : null,
     },
     { headers: { 'Cache-Control': 'no-store' } }
   );
@@ -115,6 +139,22 @@ export async function action({ request }: ActionFunctionArgs) {
       log.warn('app restored by a super-admin', { event: 'admin_restore', app_id: app.id, slug: app.slug, reason: out.reason });
       await mailOwnersAboutModeration({ kind: 'restore', app, reason: out.reason ?? 'other' }, log);
       return data<ActionResult>({ ok: true, message: `${app.slug} was restored. It stays unpublished until its owner publishes.` });
+    }
+    if (intent === 'gallery-hide' || intent === 'gallery-show') {
+      const app = await findModerationApp(String(form.get('appId') ?? ''));
+      if (!app) return data<ActionResult>({ ok: false, error: 'No such app.' }, { status: 404 });
+      const hide = intent === 'gallery-hide';
+      const out = await setGalleryHidden(app.id, hide, user.id);
+      log.warn(hide ? 'gallery entry hidden by a super-admin' : 'gallery entry shown again by a super-admin', {
+        event: hide ? 'admin_gallery_hide' : 'admin_gallery_show',
+        app_id: app.id,
+        slug: app.slug,
+        changed: out.changed,
+      });
+      return data<ActionResult>({
+        ok: true,
+        message: hide ? `${app.slug} is hidden from the gallery.` : `${app.slug} may be shown in the gallery again.`,
+      });
     }
     return data<ActionResult>({ ok: false, error: 'Unsupported action.' }, { status: 400 });
   } catch (err) {

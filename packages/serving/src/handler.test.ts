@@ -4,6 +4,7 @@
  * loaders are covered by store.test.ts (PGlite).
  */
 import { createHash } from 'node:crypto';
+import { Readable } from 'node:stream';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { AppHostTarget } from '@drobek/apps';
 import { APP_CSP, appCsp } from './csp.js';
@@ -945,5 +946,165 @@ describe('unknown hosts: per-IP limit (NSO-315)', () => {
     const { d, keys } = limited(1);
     for (let i = 0; i < 5; i++) await handleAppRequest(req(prod('shop'), `/missing-${i}.png`), d);
     expect(keys).toEqual([]);
+  });
+});
+
+describe('app assets at /<name> (NSO-358)', () => {
+  const FILM = Buffer.concat([Buffer.from('....ftypisom'), Buffer.alloc(988, 7)]); // 1000 bytes
+  const LOGO = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>');
+  const UPDATED = new Date('2026-09-20T10:00:00.123Z');
+  let opened: Array<{ appId: string; key: string; range?: { start: number; end: number } }>;
+
+  const assetDeps = (d: HandlerDeps = deps): HandlerDeps => ({
+    ...d,
+    assets: {
+      async find(_appId, name) {
+        if (name === 'film.mp4') {
+          return { name, contentType: 'video/mp4', size: FILM.length, sha256: 'f'.repeat(64), storageKey: 'k'.repeat(32), updatedAt: UPDATED };
+        }
+        if (name === 'img/logo.svg') {
+          return { name, contentType: 'image/svg+xml', size: LOGO.length, sha256: 'a'.repeat(64), storageKey: 's'.repeat(32), updatedAt: UPDATED };
+        }
+        if (name === 'gone.mp4') {
+          return { name, contentType: 'video/mp4', size: 10, sha256: 'b'.repeat(64), storageKey: 'g'.repeat(32), updatedAt: UPDATED };
+        }
+        return null;
+      },
+      async open(appId, key, range) {
+        opened.push({ appId, key, range });
+        if (key === 'g'.repeat(32)) return null;
+        const bytes = key === 'k'.repeat(32) ? FILM : LOGO;
+        return Readable.from([range ? bytes.subarray(range.start, range.end + 1) : bytes]);
+      },
+    },
+  });
+  const bodyOf = async (b: unknown): Promise<Buffer> => {
+    const parts: Buffer[] = [];
+    for await (const c of b as Readable) parts.push(Buffer.from(c as Buffer));
+    return Buffer.concat(parts);
+  };
+
+  beforeEach(() => {
+    opened = [];
+  });
+
+  it('serves the whole file with the sniffed type, Accept-Ranges, ETag and Last-Modified on every host', async () => {
+    for (const target of [prod('shop'), preview('shop'), ver('shop', 1)]) {
+      const r = await handleAppRequest(req(target, '/film.mp4'), assetDeps());
+      expect(r.status).toBe(200);
+      expect(r.headers).toMatchObject({
+        'Content-Type': 'video/mp4',
+        'Content-Length': '1000',
+        'Accept-Ranges': 'bytes',
+        ETag: `"${'f'.repeat(64)}"`,
+        'Last-Modified': UPDATED.toUTCString(),
+        'X-Content-Type-Options': 'nosniff',
+        'X-Drobek-App': 'shop',
+      });
+      expect(await bodyOf(r.body)).toEqual(FILM);
+    }
+    expect(opened.every((o) => o.appId === 'app_shop')).toBe(true);
+  });
+
+  it('Range → 206 with Content-Range; suffix and open-ended; unsatisfiable → 416', async () => {
+    const r = await handleAppRequest(req(prod('shop'), '/film.mp4', { headers: { Range: 'bytes=0-99' } }), assetDeps());
+    expect(r.status).toBe(206);
+    expect(r.headers).toMatchObject({ 'Content-Range': 'bytes 0-99/1000', 'Content-Length': '100' });
+    expect(await bodyOf(r.body)).toEqual(FILM.subarray(0, 100));
+    const tail = await handleAppRequest(req(prod('shop'), '/film.mp4', { headers: { Range: 'bytes=-10' } }), assetDeps());
+    expect(tail.headers['Content-Range']).toBe('bytes 990-999/1000');
+    const open = await handleAppRequest(req(prod('shop'), '/film.mp4', { headers: { Range: 'bytes=900-' } }), assetDeps());
+    expect(open.headers['Content-Length']).toBe('100');
+    const bad = await handleAppRequest(req(prod('shop'), '/film.mp4', { headers: { Range: 'bytes=5000-' } }), assetDeps());
+    expect(bad.status).toBe(416);
+    expect(bad.headers['Content-Range']).toBe('bytes */1000');
+    expect(bad.body).toBeNull();
+  });
+
+  it('HEAD sends headers only; If-None-Match / If-Modified-Since → 304; a stale If-Range → the whole file', async () => {
+    const head = await handleAppRequest(req(prod('shop'), '/film.mp4', { method: 'HEAD' }), assetDeps());
+    expect(head.status).toBe(200);
+    expect(head.body).toBeNull();
+    expect(head.headers['Content-Length']).toBe('1000');
+    const inm = await handleAppRequest(
+      req(prod('shop'), '/film.mp4', { headers: { 'If-None-Match': `"${'f'.repeat(64)}"` } }),
+      assetDeps()
+    );
+    expect(inm.status).toBe(304);
+    const ims = await handleAppRequest(
+      req(prod('shop'), '/film.mp4', { headers: { 'If-Modified-Since': UPDATED.toUTCString() } }),
+      assetDeps()
+    );
+    expect(ims.status).toBe(304);
+    const stale = await handleAppRequest(
+      req(prod('shop'), '/film.mp4', { headers: { Range: 'bytes=0-9', 'If-Range': '"old"' } }),
+      assetDeps()
+    );
+    expect(stale.status).toBe(200);
+    expect(opened.filter((o) => o.range === undefined)).toHaveLength(1);
+  });
+
+  it('caching: published hosts 5 minutes, preview / version revalidate, a password app private', async () => {
+    expect((await handleAppRequest(req(prod('shop'), '/film.mp4'), assetDeps())).headers['Cache-Control']).toBe(
+      'public, max-age=300, must-revalidate'
+    );
+    expect((await handleAppRequest(req(preview('shop'), '/film.mp4'), assetDeps())).headers['Cache-Control']).toBe(
+      'public, max-age=0, must-revalidate'
+    );
+    const token = mintAppAccessToken('app_vault', SECRET);
+    const vault = await handleAppRequest(
+      req(prod('vault'), '/film.mp4', { headers: { Cookie: `${APP_ACCESS_COOKIE}=${token}` } }),
+      assetDeps()
+    );
+    expect(vault.status).toBe(200);
+    expect(vault.headers['Cache-Control']).toBe('private, max-age=300, must-revalidate');
+  });
+
+  it('SVG is an attachment with a second CSP sandbox', async () => {
+    const r = await handleAppRequest(req(prod('shop'), '/img/logo.svg'), assetDeps());
+    expect(r.headers['Content-Disposition']).toBe('attachment; filename="logo.svg"');
+    expect(r.headers['Content-Security-Policy']).toBe(`${APP_CSP}, sandbox`);
+  });
+
+  it('takedown 451, password gate 401 and not-published 404 come first; unknown or invalid names are 404', async () => {
+    model.get('shop')!.app.lockedReason = 'phishing';
+    store.bust('shop');
+    expect((await handleAppRequest(req(prod('shop'), '/film.mp4'), assetDeps())).status).toBe(451);
+    expect((await handleAppRequest(req(preview('shop'), '/film.mp4'), assetDeps())).status).toBe(451);
+    expect((await handleAppRequest(req(prod('vault'), '/film.mp4'), assetDeps())).status).toBe(401);
+    expect((await handleAppRequest(req(prod('draft'), '/film.mp4'), assetDeps())).status).toBe(404);
+    expect(opened).toEqual([]);
+    for (const path of ['/missing.mp4', '/Film.mp4', '/img/a%2Fb.svg', '/page.html', '/gone.mp4', '/.hidden.mp4', '/img/../film.mp4']) {
+      expect((await handleAppRequest(req(preview('draft'), path), assetDeps())).status, path).toBe(404);
+    }
+  });
+
+  it("the app's own file at the same path wins; the SPA fallback never answers an asset path; without deps.assets it is a plain 404", async () => {
+    model.get('shop')!.versions.get(1)!.files['img/logo.svg'] = { content: '<svg id="own"/>', kind: 'source' };
+    store.bust('shop');
+    const own = await handleAppRequest(req(prod('shop'), '/img/logo.svg'), assetDeps());
+    expect(text(own.body)).toBe('<svg id="own"/>');
+    expect((await handleAppRequest(req(prod('shop'), '/film.mp4'), deps)).status).toBe(404);
+    // An extension-less path still falls back to index.html; nested asset paths resolve.
+    expect(text((await handleAppRequest(req(prod('shop'), '/deep/link'), assetDeps())).body)).toContain('<h1>v1</h1>');
+    expect((await handleAppRequest(req(prod('shop'), '/media/film.mp4'), assetDeps())).status).toBe(404);
+  });
+
+  it('NSO-362: production and custom hosts look assets up in the published version’s frozen set, preview in the draft, a version host in its set or the draft', async () => {
+    const scopes: unknown[] = [];
+    const d = assetDeps();
+    const find = d.assets!.find;
+    d.assets = { ...d.assets!, find: (appId, name, scope) => (scopes.push(scope), find(appId, name, scope)) };
+    const custom: AppHostTarget = { kind: 'custom', slug: 'shop', hostname: 'shop.firma.cz' };
+    for (const target of [prod('shop'), custom, preview('shop'), ver('shop', 2)]) {
+      expect((await handleAppRequest(req(target, '/film.mp4'), d)).status).toBe(200);
+    }
+    expect(scopes).toEqual([{ versionId: 'v_1' }, { versionId: 'v_1' }, 'draft', { versionId: 'v_2', orDraft: true }]);
+  });
+
+  it('a Range header without "=" is not a range: the whole file (200), not 416 (RFC 9110)', async () => {
+    const r = await handleAppRequest(req(prod('shop'), '/film.mp4', { headers: { Range: 'bytes' } }), assetDeps());
+    expect(r.status).toBe(200);
+    expect(r.headers['Content-Length']).toBe('1000');
   });
 });

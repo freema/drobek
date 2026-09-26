@@ -1,8 +1,9 @@
 /**
  * The files module's errors: a ModuleError (the router answers it with the
  * uniform `{ error, message, details?, hint }` shape) with the files-specific
- * codes and their HTTP statuses. `quota_exceeded` is the data module's code
- * and status (409).
+ * codes and their HTTP statuses. `unsupported_type` is this module's own
+ * code (declared in its `errors`); `quota_exceeded` is a core code (409),
+ * shared with the data module.
  */
 import { ModuleError } from '@drobek/modules';
 

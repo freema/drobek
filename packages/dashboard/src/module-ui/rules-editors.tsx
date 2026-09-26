@@ -14,7 +14,7 @@
  * disabled, with no button.
  */
 import { Form } from 'react-router';
-import { PRINCIPALS, PRINCIPAL_LABEL, ruleInputName, ruleToPrincipals, type PrincipalName } from '../module-config.js';
+import { PRINCIPALS, PRINCIPAL_LABEL, ruleInputName, ruleToPrincipals, type FieldValue, type PrincipalName } from '../module-config.js';
 import { ui } from './styles.js';
 
 export interface EditorError {
@@ -22,7 +22,7 @@ export interface EditorError {
   target?: string;
   fields: Record<string, string[]>;
   general: string[];
-  values?: Record<string, string | boolean>;
+  values?: Record<string, FieldValue>;
 }
 
 function Errors({ messages, testId }: { messages: string[]; testId: string }) {

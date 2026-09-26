@@ -14,6 +14,13 @@
 #            image the e2e job pushed: the former `latest` → `previous` (the
 #            rollback target), vX.Y.Z → `latest`. A pre-release tag
 #            (vX.Y.Z-rc.1) gets its own tag only, never `latest`.
+#   npm      (tags only, and only while the repository variable NPM_PUBLISH
+#            is `true`; NSO-349) publishes @drobek/sdk, @drobek/modules and
+#            create-drobek-module at the tag's version (a pre-release under
+#            the dist-tag `next`) with npm Trusted Publishing — OIDC, no
+#            token, provenance attached — skipping a version npm already has
+#            (scripts/npm-packages.mjs publish). After the e2e job, so only a
+#            tested tag publishes.
 #
 # Images are linux/amd64 only (no ARM image in v1). A release image is built
 # from the tag with GIT_SHA = the tag's commit and VERSION = the tag, both
@@ -30,6 +37,17 @@
 #
 # The GHCR package must be PUBLIC so `docker compose pull` works without auth:
 # a ONE-TIME operator action after the first publish (package → settings).
+#
+# npm, ONE-TIME (before setting NPM_PUBLISH): create the npm organisation
+# `drobek`; publish each package once by hand from a checkout of a release
+# tag — `pnpm install && pnpm build:packages && node scripts/npm-packages.mjs
+# stage --version X.Y.Z`, then `npm publish dist-npm/drobek-sdk --access
+# public`, the same for dist-npm/drobek-modules and
+# dist-npm/create-drobek-module; on npmjs.com, for each of the three
+# packages, Settings → Trusted Publisher → GitHub Actions: repository
+# `freema/drobek`, workflow `ci.yml` (no environment); then set the
+# repository variable NPM_PUBLISH=true (Settings → Secrets and variables →
+# Actions → Variables). Without the variable the npm job is skipped.
 name: CI
 
 on:
@@ -53,7 +71,7 @@ jobs:
   quality:
     name: Lint · typecheck · unit
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -91,7 +109,7 @@ jobs:
     name: Prod image · compose · e2e (@smoke + @local)
     runs-on: ubuntu-latest
     needs: quality
-    timeout-minutes: 30
+    timeout-minutes: 10
     permissions:
       contents: read
       packages: write # only used by the main-branch / tag push steps below
@@ -255,3 +273,40 @@ jobs:
           fi
           docker buildx imagetools create -t "$IMAGE:latest" "$IMAGE@$new"
           echo "latest → $VERSION ($new)"
+
+  npm:
+    name: npm packages (@drobek/modules, @drobek/sdk, create-drobek-module)
+    runs-on: ubuntu-latest
+    needs: e2e
+    if: github.ref_type == 'tag' && vars.NPM_PUBLISH == 'true'
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write # npm Trusted Publishing (OIDC) + provenance
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      # Trusted Publishing needs npm >= 11.5.1 (Node 22 ships npm 10).
+      - name: npm with Trusted Publishing
+        run: npm install -g npm@^11.5.1
+
+      - name: Install (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace packages
+        run: pnpm build:packages
+
+      - name: Publish (skips a version npm already has)
+        env:
+          VERSION: ${{ needs.e2e.outputs.version }}
+        run: node scripts/npm-packages.mjs publish --version "$VERSION"

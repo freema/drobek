@@ -120,6 +120,34 @@
       "when": 1790196335795,
       "tag": "0021_abuse_reports",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1790432415711,
+      "tag": "0022_gallery",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1790432800000,
+      "tag": "0023_workspace_modules",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1790433136356,
+      "tag": "0024_app_assets",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1790437501780,
+      "tag": "0025_app_asset_snapshots",
+      "breakpoints": true
     }
   ]
 }
