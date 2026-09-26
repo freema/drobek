@@ -117,7 +117,7 @@ test('CIMD: a metadata-document client → consent → token → tools/list filt
   const { client, transport } = await connectBearer(tok.body.access_token as string);
   try {
     const names = (await client.listTools()).tools.map((t) => t.name).sort();
-    expect(names).toEqual(['get_app', 'get_logs', 'list_apps', 'query_data', 'read_file', 'skill_info']);
+    expect(names).toEqual(['get_app', 'get_logs', 'list_apps', 'list_assets', 'query_data', 'read_file', 'skill_info']);
     const who = await callTool(client, 'list_apps', {});
     expect(who.json.user).toEqual({ email });
     // A write tool is not callable with this grant.

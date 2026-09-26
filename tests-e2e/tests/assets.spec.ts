@@ -278,7 +278,7 @@ test.describe('app assets — video, images, upload URLs (NSO-358) @local', () =
     const tab = await owner.newPage();
     const base = `${BASE_URL_WEB}/workspaces/${app.workspace}/apps/${app.slug}/assets`;
     await tab.goto(base);
-    await expect(tab.getByRole('heading', { name: 'Assets' })).toBeVisible();
+    await expect(tab.getByRole('heading', { name: 'Assets', exact: true })).toBeVisible();
     const rows = tab.getByTestId('asset-row');
     await expect(rows).toHaveCount(3);
     await expect(tab.locator('[data-testid="asset-row"][data-path="/s1.jpg"]')).toContainText('image/jpeg');

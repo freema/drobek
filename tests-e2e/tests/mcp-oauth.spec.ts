@@ -228,7 +228,7 @@ test('MCP OAuth 2.1 end-to-end: discovery → register → consent → token →
     const tools = await client.listTools();
     const names = tools.tools.map((t) => t.name);
     // read was granted → the read tools are exposed; write was not → no write tools.
-    expect(names.sort()).toEqual(['get_app', 'get_logs', 'list_apps', 'query_data', 'read_file', 'skill_info']);
+    expect(names.sort()).toEqual(['get_app', 'get_logs', 'list_apps', 'list_assets', 'query_data', 'read_file', 'skill_info']);
 
     const listed = await callTool(client, 'list_apps', {});
     expect(listed.isError).toBe(false);
