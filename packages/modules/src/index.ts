@@ -7,13 +7,19 @@
  * sets with `configure_module`, and a skill the agent reads with `skill_info`.
  * App code is never executed by the server — only modules are.
  *
- * Module authors: `defineModule`, `z`, `respond`, `ModuleError` (+ types);
- * tests: `@drobek/modules/testing`. The contract is docs/MODULES.md.
+ * Module authors: `defineModule`, `z`, `respond`, `ModuleError` (+ types,
+ * including `DB`, `Logger` and `SdkCore`, so a module needs no other drobek
+ * package); tests: `@drobek/modules/testing`. The contract is docs/MODULES.md.
  */
 export { z } from 'zod';
+export type { DB } from '@drobek/db';
+export type { Logger } from '@drobek/core';
+export type { SdkCore } from '@drobek/sdk';
 export {
   MODULE_CONTRACT_VERSION,
+  MODULE_ERROR_CODE_RE,
   MODULE_NAME_RE,
+  SLOT_NAME_RE,
   RECORDS_IMPORT_MAX_ROWS,
   defineModule,
   isDefinedModule,
@@ -47,7 +53,11 @@ export {
   type MailAuthority,
   type MailEnvelope,
   type MailPrepareInput,
+  type ModuleAvailability,
   type ModuleContext,
+  type ModuleDashboard,
+  type ModuleDashboardEditor,
+  type ModuleErrorDoc,
   type ModuleHooks,
   type ModuleAppView,
   type ModuleLimit,
@@ -59,6 +69,7 @@ export {
   type ModuleSecretDoc,
   type ModuleServices,
   type ModuleSkill,
+  type ModuleSlot,
   type Principal,
   type RateLimitResult,
   type RecordsAuthority,
@@ -72,7 +83,7 @@ export {
   type Rule,
   type UploadedFile,
 } from './contract.js';
-export { MODULE_ERROR_CODES, ModuleError, isModuleError, skillHint, issuePaths, type ModuleErrorBody, type ModuleErrorCode } from './errors.js';
+export { CORE_ERROR_CODES, MODULE_ERROR_CODES, ModuleError, isModuleError, skillHint, issuePaths, type ModuleErrorBody, type ModuleErrorCode } from './errors.js';
 export { RULE_TOKENS, decideAccess, isValidRule, parseRule, ruleIsPublic } from './rules.js';
 /** Per-client-IP bucket keys for a module's own per-IP limits (null = no resolved IP → skip it; NSO-328). */
 export { perIpLimitKey } from '@drobek/core';
@@ -157,7 +168,12 @@ export { csvChunks } from './csv-stream.js';
 export {
   ModuleLoadError,
   RESERVED_MODULE_NAMES,
+  checkErrorCodes,
+  checkModuleSet,
   checkRequires,
+  collectContributions,
+  effectiveConfigDefaults,
+  moduleDefaultsEnvName,
   endUserAuthorityOf,
   mailAuthorityOf,
   recordsAuthorityOf,
@@ -166,6 +182,7 @@ export {
   loadModules,
   packageNameFor,
   parseModuleList,
+  type SlotContribution,
 } from './registry.js';
 export {
   ModuleRuntime,
@@ -191,6 +208,7 @@ export {
   type PendingView,
   type TransportMessage,
   type LoadRuntimeOptions,
+  type ModuleErrorSection,
   type PlatformApp,
   type PlatformRequest,
   type RateLimiter,

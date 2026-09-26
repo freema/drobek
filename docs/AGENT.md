@@ -118,7 +118,7 @@ answers `not_found`, the same as one that does not exist.
 | `restore_version` | write, editor+ | destructive | A new version with the files of an old one (rolls the working copy back). |
 | `publish` | publish, editor+ | destructive, idempotent, open world | Puts a compiled version on `<slug>.<APPS_DOMAIN>` and the verified domains. Only when the user asks. |
 | `set_gallery_listing` | publish, editor+ | idempotent, open world | Lists a published app in the server's public gallery with a ≤ 160-character description, changes the description, or unlists it. Listing needs `user_confirmed: true` — the user's explicit yes (else `user_confirmation_required`); unlisting needs none. `gallery_disabled` when the server runs no gallery, `gallery_hidden` when the operator hid the app. |
-| `skill_info` | read, any signed-in user | read-only | `skill_info()` lists the server's skills; `skill_info('<name>')` returns one (for a module also its SDK types, config schema, limits, secret names). |
+| `skill_info` | read, any signed-in user | read-only | `skill_info()` lists the server's skills; `skill_info('<name>')` returns one (for a module also its SDK types, config schema, limits, secret names, its own error codes and its availability). |
 | `configure_module` | write, editor+ | destructive, idempotent | Sets an app's module config (a JSON merge patch). Risky changes come back as `pending_confirmation` with a `confirm_url` for the owner; secrets are refused. |
 | `query_data` | read, viewer+ | read-only | Records of one collection of the app's data module (≤ 100 per call, filters, sort, cursor), inside an untrusted envelope. |
 | `get_logs` | read, viewer+ | read-only | `kind: runtime` (browser errors from the beacon), `compile` (the compile history) or `requests` (daily request and module-call stats), ≤ 100 entries, 30-day window, inside an untrusted envelope. |
@@ -133,7 +133,10 @@ submission kit is [`listing/README.md`](listing/README.md).
 
 A failed call returns `isError: true` with `{ code, message, hint }` from the
 error catalogue (`@drobek/agent-dx` `errors-catalogue.ts`, rendered into
-`/llms-full.txt`). A compile error is not a tool failure: it is
+`/llms-full.txt`). A platform module's own route codes are declared by the
+module (`errors`): `skill_info('<module>').errors` returns them and
+`/llms-full.txt` lists them after the core codes, one section per active
+module. A compile error is not a tool failure: it is
 `compile.ok: false` with `compile.errors[]`, and the version is stored.
 
 **Untrusted output.** `read_file`, `query_data` and `get_logs` return content

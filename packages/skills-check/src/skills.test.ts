@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ERROR_CATALOGUE, TAILWIND_BROWSER_URL, TEMPLATE_IMPORTS, TOOL_NAMES, renderBriefing } from '@drobek/agent-dx';
 import { codeBlocks, headings, proseOf, sectionText } from './markdown.js';
-import { EXPECTED_SKILLS, skillSources, skillsRuntime } from './skills.js';
+import { BUILTIN_MODULES, EXPECTED_SKILLS, skillSources, skillsRuntime } from './skills.js';
 
 /**
  * NSO-308: the content `skill_info` serves. Written for the AGENT only, one
@@ -14,7 +14,12 @@ import { EXPECTED_SKILLS, skillSources, skillsRuntime } from './skills.js';
  */
 export const SECTIONS = ['1. When to use', '2. Minimal working code', '3. API and types', '4. Rules and limits', '5. Errors → fix'];
 const MAX_LINES = 150;
-const KNOWN_CODES = new Set(ERROR_CATALOGUE.map((e) => e.code));
+const CORE_CODES = ERROR_CATALOGUE.map((e) => e.code);
+/** The codes a skill may name: the core catalogue + the module's own `errors` (a general skill: every built-in module's). */
+function knownCodes(src: { kind: 'module' | 'general'; module?: { errors?: { code: string }[] } }): Set<string> {
+  const own = src.kind === 'module' ? (src.module?.errors ?? []) : BUILTIN_MODULES.flatMap((m) => m.errors ?? []);
+  return new Set([...CORE_CODES, ...own.map((e) => e.code)]);
+}
 
 const sources = await skillSources();
 
@@ -29,6 +34,20 @@ describe('skill_info() with every built-in module', () => {
       expect(s.use_when, s.name).not.toMatch(/\n|\.\s+[A-Z]|\.$/); // one sentence, no trailing period
       expect(s.use_when.length, s.name).toBeGreaterThanOrEqual(30);
       expect(s.use_when.length, s.name).toBeLessThanOrEqual(220);
+    }
+  });
+
+  it('the merged error catalogue (core + every built-in module) has one owner per code; skill_info returns the module codes (NSO-344)', async () => {
+    const rt = await skillsRuntime();
+    const moduleCodes = rt.errorCatalogue().flatMap((s) => s.errors.map((e) => e.code));
+    const all = [...CORE_CODES, ...moduleCodes];
+    expect(new Set(all).size).toBe(all.length);
+    for (const code of ['email_not_allowed', 'invalid_code', 'too_many_attempts', 'invalid_form_token', 'submitted_too_fast', 'validation_failed', 'unsupported_type', 'ssrf_blocked', 'proxy_busy', 'path_not_allowed', 'upstream_error']) {
+      expect(moduleCodes, code).toContain(code);
+    }
+    for (const m of BUILTIN_MODULES) {
+      expect(m.contract, m.name).toBe('^1.1');
+      expect(rt.skillInfo(m.name)!.errors, m.name).toEqual(m.errors ?? []);
     }
   });
 
@@ -63,13 +82,14 @@ describe.each(sources.map((s) => [s.name, s] as const))('skill %s', (name, src) 
   });
 
   it('lists only real error codes in "Errors → fix"', () => {
+    const known = knownCodes(src);
     const rows = sectionText(src.content, SECTIONS[4])
       .split('\n')
       .filter((l) => l.startsWith('|') && !/^\|\s*-/.test(l) && !/^\|\s*error\s*\|/.test(l));
     expect(rows.length).toBeGreaterThanOrEqual(4);
     for (const row of rows) {
       const code = /^\|\s*`([^`]+)`/.exec(row)?.[1];
-      if (code && /^[a-z][a-z_]*$/.test(code)) expect(KNOWN_CODES.has(code), `${name}: unknown error code \`${code}\``).toBe(true);
+      if (code && /^[a-z][a-z_]*$/.test(code)) expect(known.has(code), `${name}: unknown error code \`${code}\``).toBe(true);
     }
   });
 

@@ -16,7 +16,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { defineModule } from '@drobek/modules';
+import { defineModule, type ModuleErrorDoc } from '@drobek/modules';
 import { FORMS_CONFIG_DEFAULTS, formsConfigSchema, formsConfirmRequired, type FormsConfig } from './config.js';
 import { submissionsAuthority } from './owner.js';
 import { registerRoutes } from './routes.js';
@@ -81,9 +81,25 @@ export interface FormProps extends Omit<FormHTMLAttributes<HTMLFormElement>, 'on
 export function Form(props: FormProps): JSX.Element;
 `;
 
+/** The module's own error codes (skill_info('forms').errors, the forms section of the error catalogue). */
+const FORMS_ERRORS: ModuleErrorDoc[] = [
+  {
+    code: 'submitted_too_fast',
+    meaning: "HTTP 429 with Retry-After. The form was sent less than 2 s after its token was issued (`details.min_wait_ms`) — the bot check. Nothing was stored.",
+    fix: "Use <Form> or drobek.forms.submit (they fetch the token early and wait); with your own fetch, call GET /__drobek/v1/forms/<form>/token when the form is shown, not on submit.",
+  },
+  {
+    code: 'invalid_form_token',
+    meaning: "HTTP 400. The `_t` field is missing, forged, for another form/app, or older than 2 hours (`details.reason`: invalid | expired). Nothing was stored.",
+    fix: "Use <Form> or drobek.forms.submit — they fetch a fresh token and retry once by themselves.",
+  },
+];
+
 const forms = defineModule<FormsConfig>({
   name: 'forms',
   version: '1.0.0',
+  contract: '^1.1',
+  errors: FORMS_ERRORS,
   requires: ['email'],
   skill: {
     useWhen: 'visitors fill in a form (contact, order, sign-up, feedback) and the answers must be kept or e-mailed to the owner',

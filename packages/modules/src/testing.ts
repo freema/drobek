@@ -18,7 +18,7 @@ import { normalizeConfirmItems, type AnyModule, type EmailMessage, type HookApp,
 import { mergePatch } from './merge-patch.js';
 import { collectRoutes, errorResult, isReadable, matchRoute, runRoute, type PipelineResult } from './router.js';
 import { decideAccess } from './rules.js';
-import { ModuleError } from './errors.js';
+import { CORE_ERROR_CODES, ModuleError } from './errors.js';
 import { assertSignInSender, capEmailText, emailKind, resolveRecipients, sanitizeSubject } from './email.js';
 import type { MailGuard } from './mail-guard.js';
 import { memoryRateLimiter } from './runtime.js';
@@ -45,6 +45,11 @@ export interface ModuleTestOptions {
    * while module e-mail is paused. Default: no guard.
    */
   mailGuard?: MailGuard;
+  /**
+   * Slot → the contributions `ctx.contributions(slot)` returns (as the
+   * slot's schema would have parsed them; default: none — `[]`).
+   */
+  contributions?: Record<string, unknown[]>;
 }
 
 export interface TestRequestInit {
@@ -73,7 +78,13 @@ export interface TestResponse {
 
 export interface ModuleTestContext {
   ctx: ModuleContext<any>;
-  /** Run `method path` through the production pipeline. SDK header + same Origin are sent by default. */
+  /**
+   * Run `method path` through the production pipeline. SDK header + same
+   * Origin are sent by default. Rejects — where production answers
+   * `500 internal_error` — when the handler throws something other than a
+   * ModuleError, or a ModuleError whose code is neither a core code nor in
+   * the module's `errors`.
+   */
   request(method: string, path: string, init?: TestRequestInit): Promise<TestResponse>;
   /** Audit rows the module wrote (`<module>.<action>`). */
   audits: { action: string; meta: Record<string, unknown> }[];
@@ -127,6 +138,7 @@ export function createModuleTestContext(module: AnyModule, opts: ModuleTestOptio
     config,
     db: opts.db ?? noDb(),
     log: opts.log ?? noopLogger,
+    contributions: <T,>(slot: string) => [...(opts.contributions?.[slot] ?? [])] as T[],
     rules: { decide: (rule, ownerId) => decideAccess(rule, principal, ownerId) },
     limits: async () => limits,
     rateLimit: (bucket, key, max, windowMs) => rateLimit(`${bucket}:${key}`, max, windowMs),
@@ -170,6 +182,8 @@ export function createModuleTestContext(module: AnyModule, opts: ModuleTestOptio
   });
 
   const routes = collectRoutes(module.routes?.bind(module) as never);
+  // As in production: a route may answer the core codes and the module's own `errors` only.
+  const errorCodes = new Set([...CORE_ERROR_CODES, ...(module.errors ?? []).map((e) => e.code)]);
 
   const toResponse = async (r: PipelineResult, bodyBytesRead = 0): Promise<TestResponse> => {
     let bytes: Buffer;
@@ -271,6 +285,7 @@ export function createModuleTestContext(module: AnyModule, opts: ModuleTestOptio
         hit.params,
         {
           module: module.name,
+          errorCodes,
           selfOrigin: origin,
           principal: async () => principal,
           context: async () => buildCtx(),

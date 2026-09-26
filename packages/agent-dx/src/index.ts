@@ -55,4 +55,5 @@ export {
   renderLlmsTxt,
   renderLlmsFull,
   renderToolReference,
+  type ModuleErrorsDoc,
 } from './render.js';

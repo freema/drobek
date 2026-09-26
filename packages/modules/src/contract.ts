@@ -15,6 +15,12 @@
  * it can use (values only ever entered in the dashboard), limits, and a SKILL:
  * the agent-facing documentation `skill_info` returns.
  *
+ * Contract 1.1 adds: `contract` (the contract versions a module works
+ * with), `errors` (its own error codes), typed `slots` other modules
+ * contribute to (`contributes`, read with `services.contributions()`),
+ * `availability`, `dashboard.editor` and `hooks.onAppDelete` — all
+ * optional, so a 1.0 module loads unchanged.
+ *
  * Everything a handler needs arrives in a per-request, APP-SCOPED
  * ModuleContext: the caller (principal from the `drobek_eu` end-user cookie),
  * the rule evaluator, limits, a rate limiter, this app's secrets for this
@@ -26,11 +32,22 @@ import type { Logger } from '@drobek/core';
 import type { DB } from '@drobek/db';
 import type { ZodType } from 'zod';
 
-/** The contract version this package implements (the `DrobekModule` shape). */
-export const MODULE_CONTRACT_VERSION = '1.0.0';
+/**
+ * The contract version this package implements (the `DrobekModule` shape).
+ * A module states the versions it works with in `contract` (a semver range,
+ * e.g. `'^1.1'`); the server refuses to start a module whose range this
+ * version does not satisfy.
+ */
+export const MODULE_CONTRACT_VERSION = '1.1.0';
 
 /** Module names: lowercase, URL-, JS-property- and env-safe. */
 export const MODULE_NAME_RE = /^[a-z][a-z0-9]{1,30}$/;
+
+/** Error codes a module declares in `errors`: lowercase snake case, 3–41 characters. */
+export const MODULE_ERROR_CODE_RE = /^[a-z][a-z0-9_]{2,40}$/;
+
+/** Slot names: `<host module name>.<camelCase name>`, e.g. `auth.provider`. */
+export const SLOT_NAME_RE = /^[a-z][a-z0-9]*\.[a-z][a-zA-Z0-9]*$/;
 
 // ── the caller ───────────────────────────────────────────────────────────────
 
@@ -157,6 +174,68 @@ export interface ModuleHooks {
   onAppCreate?: (app: HookApp, services: ModuleServices) => Promise<void> | void;
   /** After a version was published (MCP publish or the dashboard). */
   onPublish?: (app: HookApp & { version: number }, services: ModuleServices) => Promise<void> | void;
+  /**
+   * After the app was soft-deleted (the dashboard's delete; best effort — a
+   * failure is logged). For clean-up outside the database cascade, e.g. data
+   * the module keeps in another system.
+   */
+  onAppDelete?: (app: HookApp, services: ModuleServices) => Promise<void> | void;
+}
+
+/**
+ * One error code a module's routes answer with (`{ error: code, … }`),
+ * documented for agents: `skill_info('<name>').errors` and the module's
+ * section of the error catalogue in `/llms-full.txt`. A route may answer only
+ * the core codes (`CORE_ERROR_CODES`) and the codes its own module declares
+ * here — any other code becomes `500 internal_error` (logged).
+ */
+export interface ModuleErrorDoc {
+  /** `MODULE_ERROR_CODE_RE`; unique across the core catalogue and every active module. */
+  code: string;
+  /** What happened, for the agent (one or two sentences). */
+  meaning: string;
+  /** What to do about it. */
+  fix: string;
+}
+
+/**
+ * A typed extension point a module (the HOST) offers other modules: each
+ * active module may contribute one value to it (`contributes`), validated
+ * by `schema` at server start. The host reads them with
+ * `services.contributions(slot)`, in `DROBEK_MODULES` order.
+ */
+export interface ModuleSlot<T = unknown> {
+  /** Validates every contribution; the host gets the parsed value. */
+  schema: ZodType<T>;
+  /**
+   * A key of the contribution whose value must be unique within the slot
+   * (e.g. `id`): two contributions with the same value refuse the start.
+   */
+  unique?: string;
+  /** What a contribution does, for module authors and the dashboard. */
+  description: string;
+}
+
+/**
+ * Who the module is for: `default` — every workspace of the server (the
+ * behaviour without the field); `opt-in` — the workspaces it is enabled for.
+ * The value is validated and reported (skill_info, the dashboard's module
+ * view); core does not restrict a module by it.
+ */
+export type ModuleAvailability = 'default' | 'opt-in';
+
+/** The dedicated dashboard editors a module's config can declare it fits. */
+export type ModuleDashboardEditor = 'collections' | 'upstreams';
+
+/** How the dashboard presents the module. */
+export interface ModuleDashboard {
+  /**
+   * The dedicated dashboard editor this module's config fits (a capability
+   * declaration, validated at start and reported in the dashboard's module
+   * view): `collections` (a `collections` config shaped like the built-in
+   * `data`'s) or `upstreams` (an `upstreams` config shaped like `proxy`'s).
+   */
+  editor?: ModuleDashboardEditor;
 }
 
 /**
@@ -526,6 +605,12 @@ export interface DrobekModule<Config = unknown> {
   name: string;
   /** The module's own semver. */
   version: string;
+  /**
+   * The contract versions this module works with: a semver range matched
+   * against `MODULE_CONTRACT_VERSION` (e.g. `'^1.1'`). Not satisfied → the
+   * server refuses to start; missing → a start-up warning.
+   */
+  contract?: string;
   skill: ModuleSkill;
   /**
    * Per-app configuration (zod). Validates every configure_module call and
@@ -598,6 +683,26 @@ export interface DrobekModule<Config = unknown> {
    * The server refuses to start when one of them is not in DROBEK_MODULES.
    */
   requires?: string[];
+  /**
+   * The module's own error codes (beyond the core catalogue) with their
+   * meaning and fix — see ModuleErrorDoc.
+   */
+  errors?: ModuleErrorDoc[];
+  /**
+   * Extension points this module offers other modules, by slot name
+   * (`<this module's name>.<name>`, e.g. `auth.provider`) — see ModuleSlot.
+   */
+  slots?: Record<string, ModuleSlot>;
+  /**
+   * This module's contribution to other modules' slots, by slot name
+   * (e.g. `{ 'auth.provider': { id: 'oidc', … } }`). The slot must belong to
+   * an active module and the value must pass its schema.
+   */
+  contributes?: Record<string, unknown>;
+  /** Who the module is for (default `default`: every workspace) — see ModuleAvailability. */
+  availability?: ModuleAvailability;
+  /** How the dashboard presents the module. */
+  dashboard?: ModuleDashboard;
 }
 
 /** A module of any config type (what the registry holds). */
@@ -663,6 +768,13 @@ export interface EmailMessage {
 export interface ModuleServices {
   db: DB;
   log: Logger;
+  /**
+   * The contributions of the active modules to `slot` (a slot THIS module
+   * declares, or any other active module's), in `DROBEK_MODULES` order, as
+   * the slot's schema parsed them; [] when nobody contributes. Type it with
+   * the slot's value type: `contributions<Provider>('auth.provider')`.
+   */
+  contributions<T = unknown>(slot: string): T[];
 }
 
 /** Everything a route handler gets — scoped to ONE app and ONE module. */

@@ -295,6 +295,8 @@ export async function appAction({ request, params }: ActionFunctionArgs) {
         await softDeleteApp(app.id, actor);
         // Every host of the app answers 404 from the next request.
         await changed('delete');
+        // Platform modules clean up after the app (best effort, errors logged).
+        await (await moduleRuntime()).runHook('onAppDelete', { id: app.id, slug: app.slug, workspaceId: access.workspace.id });
         return redirect(`/workspaces/${access.workspace.slug}/apps?deleted=${encodeURIComponent(app.slug)}`);
       }
       default:

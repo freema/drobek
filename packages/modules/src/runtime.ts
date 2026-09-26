@@ -14,7 +14,10 @@
  *  - `appModules()` — get_app's `modules` (configured, pending, hasSecret, the
  *    module's secret-free `info`);
  *  - `compileHint()` — the skill an `unresolved_import` should point at;
- *  - `runHook()` — onAppCreate / onPublish.
+ *  - `runHook()` — onAppCreate / onPublish / onAppDelete;
+ *  - `contributions()` — the slot contributions of the active modules
+ *    (`ModuleServices.contributions`); `errorCatalogue()` — the modules'
+ *    own error codes (skill_info, /llms-full.txt).
  *
  * `moduleRuntime()` is the process-wide instance, loaded once from
  * `DROBEK_MODULES` (memoised on globalThis, so the dev server's Vite-loaded
@@ -30,7 +33,7 @@ import { recordModuleRequest } from '@drobek/insights';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { Readable } from 'node:stream';
 import { z } from 'zod';
-import { normalizeConfirmItems } from './contract.js';
+import { MODULE_CONTRACT_VERSION, normalizeConfirmItems } from './contract.js';
 import type {
   AnyModule,
   ConfirmRole,
@@ -47,7 +50,11 @@ import type {
   SubmissionsQuery,
   Limits,
   MailEnvelope,
+  ModuleAvailability,
   ModuleContext,
+  ModuleDashboardEditor,
+  ModuleErrorDoc,
+  ModuleServices,
   Principal,
   RateLimitResult,
   RecordsCollection,
@@ -57,7 +64,7 @@ import type {
 } from './contract.js';
 import { readConfigRow, readConfigRows, withLockedConfig, type PendingChange } from './configs.server.js';
 import { assertSignInSender, capEmailText, emailKind, redactAddresses, resolveRecipients, sanitizeSubject } from './email.js';
-import { ModuleError, isModuleError, issuePaths, skillHint } from './errors.js';
+import { CORE_ERROR_CODES, ModuleError, isModuleError, issuePaths, skillHint } from './errors.js';
 import { CORE_LIMITS, createLimitsProvider, type LimitsProvider } from './limits.js';
 import { mailGuardConfigFromEnv, redisMailGuard, type MailGuard, type MailGuardRedis } from './mail-guard.js';
 import { Lru, jsonKey } from './memo.js';
@@ -65,7 +72,8 @@ import { jsonEqual, mergePatch } from './merge-patch.js';
 import { cookiePrincipalResolver, endUserCookiesSecure, type PrincipalResolver } from './principal.js';
 import {
   ModuleLoadError,
-  checkRequires,
+  checkModuleSet,
+  collectContributions,
   endUserAuthorityOf,
   filesAuthorityOf,
   loadModules,
@@ -73,6 +81,7 @@ import {
   recordsAuthorityOf,
   submissionsAuthorityOf,
   type ResolveOptions,
+  type SlotContribution,
 } from './registry.js';
 import { collectRoutes, errorResult, isReadable, matchRoute, runRoute, type PipelineRequest, type PipelineResult, type Route } from './router.js';
 import { decideAccess } from './rules.js';
@@ -200,6 +209,16 @@ export interface SkillInfo {
   config?: { schema: unknown; defaults: unknown; confirm_required: string };
   limits?: { name: string; value: number; meaning: string }[];
   secrets?: { name: string; description: string; required: boolean }[];
+  /** A module's own error codes (the core ones are in the catalogue of /llms-full.txt); [] when it declares none. */
+  errors?: ModuleErrorDoc[];
+  /** Who the module is for: every workspace (`default`) or the workspaces it is enabled for (`opt-in`). */
+  availability?: ModuleAvailability;
+}
+
+/** One module's own error codes (a section of the error catalogue). */
+export interface ModuleErrorSection {
+  module: string;
+  errors: ModuleErrorDoc[];
 }
 
 export interface AppModuleState {
@@ -334,6 +353,10 @@ export interface ModuleDashboardView {
   confirms: boolean;
   /** The module's secret-free appInfo. */
   info?: Record<string, unknown>;
+  /** Who the module is for (`default`: every workspace; `opt-in`: the workspaces it is enabled for). */
+  availability: ModuleAvailability;
+  /** The dedicated config editor the module declares (`dashboard.editor`), or null for the generic form. */
+  editor: ModuleDashboardEditor | null;
 }
 
 export interface DecisionInput {
@@ -373,6 +396,10 @@ export class ModuleRuntime {
   readonly deps: RuntimeDeps;
   private readonly routes = new Map<string, Route[]>();
   private readonly byName = new Map<string, AnyModule>();
+  /** Slot name → the contributions to it, in module order (checked at load). */
+  private readonly slotContributions: Map<string, SlotContribution[]>;
+  /** Module → the error codes its routes may answer (the core catalogue + its own `errors`). */
+  private readonly errorCodes = new Map<string, ReadonlySet<string>>();
   /**
    * Effective configs by (module, content of the stored config) — NSO-322 H1:
    * every module request used to re-run configSchema.safeParse (for data: an
@@ -387,8 +414,10 @@ export class ModuleRuntime {
     this.skills = input.skills;
     this.sdk = input.sdk;
     this.deps = input.deps;
+    this.slotContributions = collectContributions(input.modules);
     for (const m of input.modules) {
       this.byName.set(m.name, m);
+      this.errorCodes.set(m.name, new Set([...CORE_ERROR_CODES, ...(m.errors ?? []).map((e) => e.code)]));
       try {
         this.routes.set(m.name, collectRoutes(m.routes?.bind(m) as never));
       } catch (err) {
@@ -399,6 +428,29 @@ export class ModuleRuntime {
 
   get(name: string): AnyModule | undefined {
     return this.byName.get(name);
+  }
+
+  // ── slots, services, error codes ──
+
+  /**
+   * The contributions of the active modules to `slot`, in DROBEK_MODULES
+   * order, as the slot's schema parsed them ([] when nobody contributes or no
+   * active module declares the slot).
+   */
+  contributions<T = unknown>(slot: string): T[] {
+    return (this.slotContributions.get(slot) ?? []).map((c) => c.value as T);
+  }
+
+  /** The app-independent services a hook (or a request context) gets. */
+  services(): ModuleServices {
+    return { db: this.deps.db(), log: this.deps.log, contributions: (slot) => this.contributions(slot) };
+  }
+
+  /** The active modules' own error codes, one section per module that declares any (DROBEK_MODULES order). */
+  errorCatalogue(): ModuleErrorSection[] {
+    return this.modules
+      .filter((m) => (m.errors ?? []).length > 0)
+      .map((m) => ({ module: m.name, errors: m.errors!.map((e) => ({ code: e.code, meaning: e.meaning, fix: e.fix })) }));
   }
 
   // ── end users ──
@@ -638,6 +690,8 @@ export class ModuleRuntime {
     if (m.secrets?.length) {
       out.secrets = m.secrets.map((x) => ({ name: x.name, description: x.description, required: x.required === true }));
     }
+    out.errors = (m.errors ?? []).map((e) => ({ code: e.code, meaning: e.meaning, fix: e.fix }));
+    out.availability = m.availability ?? 'default';
     return out;
   }
 
@@ -713,6 +767,8 @@ export class ModuleRuntime {
       })),
       ops: { ...(m.rules?.ops ?? {}) },
       confirms: Boolean(m.confirmRequired),
+      availability: m.availability ?? 'default',
+      editor: m.dashboard?.editor ?? null,
     };
     const info = await this.appInfo(m, app, config);
     if (info) view.info = info;
@@ -1051,14 +1107,14 @@ export class ModuleRuntime {
 
   // ── hooks ──
 
-  async runHook(hook: 'onAppCreate', app: HookApp): Promise<void>;
+  async runHook(hook: 'onAppCreate' | 'onAppDelete', app: HookApp): Promise<void>;
   async runHook(hook: 'onPublish', app: HookApp & { version: number }): Promise<void>;
-  async runHook(hook: 'onAppCreate' | 'onPublish', app: HookApp & { version?: number }): Promise<void> {
+  async runHook(hook: 'onAppCreate' | 'onPublish' | 'onAppDelete', app: HookApp & { version?: number }): Promise<void> {
     for (const m of this.modules) {
-      const fn = m.hooks?.[hook] as ((a: typeof app, s: { db: DB; log: Logger }) => unknown) | undefined;
+      const fn = m.hooks?.[hook] as ((a: typeof app, s: ModuleServices) => unknown) | undefined;
       if (!fn) continue;
       try {
-        await fn(app, { db: this.deps.db(), log: this.deps.log });
+        await fn(app, this.services());
       } catch (err) {
         this.deps.log.error('module hook failed', { module: m.name, hook, app_id: app.id, error: dbErrorForLog(err, { stack: true }) });
       }
@@ -1202,6 +1258,7 @@ export class ModuleRuntime {
       const getLimits = async () => (limits ??= await this.deps.limits.forWorkspace(app.workspaceId));
       const res = await runRoute({ ...req, path: match[2] ?? '/' }, hit.route, hit.params, {
         module: m.name,
+        errorCodes: this.errorCodes.get(m.name),
         selfOrigin,
         principal: () =>
           this.deps.principal({
@@ -1279,8 +1336,7 @@ export class ModuleRuntime {
       module: m.name,
       principal,
       config,
-      db: deps.db(),
-      log: deps.log,
+      ...this.services(),
       rules: { decide: (rule, ownerId) => decideAccess(rule, principal, ownerId) },
       limits: getLimits,
       rateLimit: (bucket, key, max, windowMs) => deps.rateLimit(`mod:${m.name}:${app.id}:${bucket}:${key}`, max, windowMs),
@@ -1331,13 +1387,8 @@ export function moduleJournalTable(name: string): string {
 export async function loadModuleRuntime(opts: LoadRuntimeOptions = {}): Promise<ModuleRuntime> {
   const env = opts.env ?? process.env;
   const log = opts.log ?? opts.deps?.log ?? createConsoleLogger('modules');
-  const modules = opts.modules ?? (await loadModules(env, opts));
+  const modules = opts.modules ? checkModuleSet(opts.modules, env, log) : await loadModules(env, { ...opts, log });
   const authority = endUserAuthorityOf(modules);
-  mailAuthorityOf(modules);
-  recordsAuthorityOf(modules);
-  submissionsAuthorityOf(modules);
-  filesAuthorityOf(modules);
-  checkRequires(modules);
 
   if (env.DROBEK_MIGRATE_ON_START !== '0') {
     const migrate =
@@ -1379,6 +1430,7 @@ export async function loadModuleRuntime(opts: LoadRuntimeOptions = {}): Promise<
   runtime = new ModuleRuntime({ modules, skills, sdk, deps });
   log.info('platform modules ready', {
     modules: modules.map((m) => `${m.name}@${m.version}`),
+    contract: MODULE_CONTRACT_VERSION,
     skills: skills.map((s) => s.name),
     sdk: sdk.url,
   });

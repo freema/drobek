@@ -1,18 +1,22 @@
 {
   "name": "@drobek/modules",
   "version": "1.0.0",
-  "private": true,
+  "private": false,
+  "description": "The drobek platform module contract, registry and runtime: defineModule, the ModuleContext and the test kit (@drobek/modules/testing).",
   "type": "module",
   "exports": {
     ".": {
-      "types": "./src/index.ts",
+      "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
     "./testing": {
-      "types": "./src/testing.ts",
+      "types": "./dist/testing.d.ts",
       "default": "./dist/testing.js"
     }
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -32,11 +36,13 @@
     "@drobek/sdk": "workspace:*",
     "drizzle-orm": "^0.45.3",
     "esbuild": "^0.25.0",
+    "semver": "^7.8.5",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.2.17",
     "@types/node": "^22",
+    "@types/semver": "^7.8.0",
     "typescript": "^5.7.3",
     "vitest": "^3.0.7"
   },

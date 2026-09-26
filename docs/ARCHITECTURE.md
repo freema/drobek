@@ -200,12 +200,19 @@ its preview host at once.
 ## 6. Platform modules
 
 A module is an npm package whose default export comes from `defineModule()`
-(`@drobek/modules`, contract `1.0.0`). The operator enables modules with
-`DROBEK_MODULES`; a short name `x` loads `drobek-module-x`. A module
-contributes routes under `/__drobek/v1/<name>/…` on every app host, a slice of
-the browser SDK (`drobek.<name>`), a zod per-app config schema, access rules,
-secrets (names only), env-named limits, its own tables and migrations, and a
-skill the agent reads with `skill_info`. Built in: `auth` (end-user sign-in by
+(`@drobek/modules`, contract `1.1.0`; a module states the versions it works
+with in `contract`, e.g. `'^1.1'`, and one this server does not satisfy
+refuses the start). The operator enables modules with `DROBEK_MODULES`; a
+short name `x` loads `drobek-module-x` (which must export the module `x`), a
+full package name may replace a built-in. A module contributes routes under
+`/__drobek/v1/<name>/…` on every app host, a slice of the browser SDK
+(`drobek.<name>`), a zod per-app config schema (its defaults overridable per
+server with `DROBEK_MODULE_<NAME>_DEFAULTS`), access rules, secrets (names
+only), env-named limits, its own error codes, its own tables and migrations,
+and a skill the agent reads with `skill_info`. Modules extend each other
+through typed **slots**: a host module declares one with a zod schema, other
+modules contribute values, checked at start and read with
+`contributions(slot)`. Built in: `auth` (end-user sign-in by
 e-mailed code), `email` (notifications to the app's owners), `forms`, `data`
 (collections with per-operation rules), `proxy` (external APIs with the
 secret injected server-side) and `files` (end-user uploads). The contract is

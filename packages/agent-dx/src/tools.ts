@@ -213,13 +213,13 @@ export const TOOL_DOCS: ToolDoc[] = [
     title: 'Read a skill',
     scope: 'read (any signed-in user)',
     description:
-      'The documentation of the backends this server offers. Without `name`: the list of skills — each platform module (login, stored data, forms, email, file uploads, external APIs… whatever this server has active) and each general guide — with a one-sentence "use when…". With `name`: that skill\'s Markdown — when to use it, minimal working code, the exact SDK calls (`import { drobek } from \'drobek\'`) and their types, limits, server-enforced rules and common errors; for a module also its config schema and defaults and the names of its secrets. Call it BEFORE using a backend and follow it. Never returns secret values or any app\'s config. An unknown name answers not_found with the available names.',
+      'The documentation of the backends this server offers. Without `name`: the list of skills — each platform module (login, stored data, forms, email, file uploads, external APIs… whatever this server has active) and each general guide — with a one-sentence "use when…". With `name`: that skill\'s Markdown — when to use it, minimal working code, the exact SDK calls (`import { drobek } from \'drobek\'`) and their types, limits, server-enforced rules and common errors; for a module also its config schema and defaults, the names of its secrets and its own error codes (`errors`: code, meaning, fix). Call it BEFORE using a backend and follow it. Never returns secret values or any app\'s config. An unknown name answers not_found with the available names.',
     annotations: READ_ONLY,
     fields: [
       { name: 'name', type: 'string (optional)', required: false, description: 'A skill name from the list; omit to list every skill.' },
     ],
     returns:
-      'no name: { skills:[{name,use_when}], note } — with name: { name, kind:"module"|"general", use_when, content, sdk?:{import,types}, config?:{schema,defaults,confirm_required}, limits?:[{name,value,meaning}], secrets?:[{name,description,required}] }',
+      'no name: { skills:[{name,use_when}], note } — with name: { name, kind:"module"|"general", use_when, content, sdk?:{import,types}, config?:{schema,defaults,confirm_required}, limits?:[{name,value,meaning}], secrets?:[{name,description,required}], errors?:[{code,meaning,fix}], availability?:"default"|"opt-in" }',
     example: { name: 'hello' },
   },
   {

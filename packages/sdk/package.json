@@ -1,23 +1,27 @@
 {
   "name": "@drobek/sdk",
   "version": "1.0.0",
-  "private": true,
+  "private": false,
+  "description": "The drobek browser SDK core: the SdkCore a platform module's SDK entry receives, DrobekError, the error beacon.",
   "type": "module",
   "exports": {
     ".": {
-      "types": "./src/index.ts",
+      "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
     "./core": {
-      "types": "./src/core.ts",
+      "types": "./dist/core.d.ts",
       "default": "./dist/core.js"
     },
     "./beacon": {
-      "types": "./src/beacon.ts",
+      "types": "./dist/beacon.d.ts",
       "default": "./dist/beacon.js"
     },
     "./package.json": "./package.json"
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",

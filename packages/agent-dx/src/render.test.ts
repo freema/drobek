@@ -151,6 +151,20 @@ describe('renderLlmsFull', () => {
     expect(full).toContain('{ code, message, hint }');
   });
 
+  it("renders each active module's own codes as a section after the core catalogue (NSO-344)", () => {
+    const withModules = renderLlmsFull(ENV, [
+      { module: 'auth', errors: [{ code: 'invalid_code', meaning: 'The code is wrong.', fix: 'Request a new one.' }] },
+      { module: 'quiet', errors: [] },
+    ]);
+    const catalogue = withModules.slice(withModules.indexOf('## Error catalogue'));
+    expect(catalogue).toContain('### Module auth');
+    expect(catalogue).toContain("skill_info('auth').errors");
+    expect(catalogue).toContain('- invalid_code — module route (auth) — The code is wrong. FIX: Request a new one.');
+    expect(catalogue.indexOf('### Module auth')).toBeGreaterThan(catalogue.indexOf('- internal_error — '));
+    expect(withModules).not.toContain('### Module quiet');
+    expect(full).not.toContain('### Module ');
+  });
+
   it('contains the limits (every env cap)', () => {
     for (const l of LIMITS) expect(full).toContain(l.env);
     expect(full).toContain('COMPILE_MAX_TOTAL_BYTES');

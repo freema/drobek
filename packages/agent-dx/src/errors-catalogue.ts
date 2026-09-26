@@ -1,8 +1,17 @@
 /**
- * ERROR_CATALOGUE — every stable error `code` an agent can meet: MCP tool
- * failures (`isError: true` with `{ code, message, hint }`), the per-error
- * codes inside `compile.errors[]`, the platform module routes an app calls
+ * ERROR_CATALOGUE — the CORE error catalogue: every stable error `code` of
+ * drobek itself an agent can meet: MCP tool failures (`isError: true` with
+ * `{ code, message, hint }`), the per-error codes inside `compile.errors[]`,
+ * the codes core answers on the platform module routes an app calls
  * (`/__drobek/v1/…`, M1-01) and the OAuth connect flow (M0-05, NSO-283).
+ *
+ * A module's OWN codes (e.g. auth's `invalid_code`, proxy's
+ * `upstream_error`) are not here: each module declares them in its
+ * `errors` (`defineModule`), `skill_info('<module>')` returns them and
+ * /llms-full.txt renders them in one section per active module
+ * (`renderLlmsFull(env, modules)`). @drobek/modules `CORE_ERROR_CODES` lists
+ * the code-shaped entries of this catalogue (a module may not declare one);
+ * a test in @drobek/mcp keeps the two equal.
  *
  * The MCP tools take their `hint` from HERE (`errorHint`), and a unit test in
  * @drobek/mcp asserts that every code the tools can emit — and every
@@ -204,14 +213,8 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     fix: 'Send less (the module skill states the size limits).',
   },
   {
-    code: 'validation_failed',
-    surface: 'module route (data) 422 (DrobekError)',
-    meaning: 'The record does not match the collection\'s JSON Schema; `details[]` lists each `{ path, message }`. Nothing was stored.',
-    fix: 'Send the fields the schema requires with the right types (get_app shows the data config), or change the schema with configure_module(\'data\').',
-  },
-  {
     code: 'quota_exceeded',
-    surface: 'module route (data, files) 409 (DrobekError)',
+    surface: 'module route 409 (DrobekError)',
     meaning:
       'The app reached a storage limit — for files, FILES_QUOTA_PER_APP (the total bytes of its stored files, `details.used`); for data, the number of records across all its collections, or their total size (`details.limit` names it, `details.value` is the limit; skill_info(\'data\') lists them). Nothing was stored.',
     fix: 'Delete records the app no longer needs (query_data finds them), or tell the user the app is full; the server operator sets the limits.',
@@ -222,13 +225,6 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     meaning:
       'A body was sent that is not JSON (routes that also take multipart/form-data, like forms, accept text fields only — a file part is refused).',
     fix: 'Use the SDK, which sends JSON; with fetch set Content-Type: application/json. Forms take no files; a files upload must be multipart/form-data with one file (drobek.files.upload does that).',
-  },
-  {
-    code: 'unsupported_type',
-    surface: 'module route (files) 415 (DrobekError)',
-    meaning:
-      'The uploaded file is not a type the app accepts. The type is decided from the bytes (PNG, JPEG, GIF, WebP, PDF, SVG, CSV), never from the name or the declared type — an HTML page renamed to .png is refused (`details.allowed` lists the accepted types; `details.type` is the detected type when it is known but not allowed). Nothing was stored.',
-    fix: "Upload an image, a PDF or a CSV; to accept fewer types set allowedTypes with configure_module('files').",
   },
   {
     code: 'conflict',
@@ -248,68 +244,6 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     surface: 'module route 405 (DrobekError), Allow',
     meaning: 'The route exists but not for this HTTP method.',
     fix: 'Use the SDK call from the module skill.',
-  },
-  {
-    code: 'email_not_allowed',
-    surface: 'module route (auth) 403 (DrobekError)',
-    meaning: 'The address may not sign in to this app: it is not in `allow` / `adminEmails` of the auth config, or the user is disabled. No code was sent.',
-    fix: "Add the address or its domain with configure_module('auth'), or tell the user who may sign in.",
-  },
-  {
-    code: 'invalid_code',
-    surface: 'module route (auth) 400 (DrobekError)',
-    meaning: 'The sign-in code is wrong, expired (10 minutes) or already used.',
-    fix: 'Re-enter the code from the e-mail, or request a new one with drobek.auth.sendCode.',
-  },
-  {
-    code: 'submitted_too_fast',
-    surface: 'module route (forms) 429 (DrobekError), Retry-After',
-    meaning: 'The form was sent less than 2 s after its token was issued (`details.min_wait_ms`) — the bot check. Nothing was stored.',
-    fix: 'Use <Form> or drobek.forms.submit (they fetch the token early and wait); with your own fetch, call GET /__drobek/v1/forms/<form>/token when the form is shown, not on submit.',
-  },
-  {
-    code: 'invalid_form_token',
-    surface: 'module route (forms) 400 (DrobekError)',
-    meaning: 'The `_t` field is missing, forged, for another form/app, or older than 2 hours (`details.reason`: invalid | expired). Nothing was stored.',
-    fix: 'Use <Form> or drobek.forms.submit — they fetch a fresh token and retry once by themselves.',
-  },
-  {
-    code: 'too_many_attempts',
-    surface: 'module route (auth) 429 (DrobekError)',
-    meaning: 'Five wrong codes were entered for this address; the code is dead.',
-    fix: 'Request a new code (drobek.auth.sendCode); <LoginGate> goes back to the e-mail step by itself.',
-  },
-  {
-    code: 'path_not_allowed',
-    surface: 'module route (proxy) 403',
-    meaning: "The path is outside the upstream's allowed path prefixes (or climbs out of them with ../ or an encoded slash).",
-    fix: "get_app → modules.proxy.info.upstreams[].allowedPathPrefixes lists the allowed prefixes; ask the workspace admin to widen them in the dashboard if the app really needs another path.",
-  },
-  {
-    code: 'ssrf_blocked',
-    surface: 'module route (proxy) 403',
-    meaning: 'The upstream resolves to a private/internal address or uses a port other than 80/443 — drobek never connects there.',
-    fix: 'The workspace admin must register the upstream with a public host on port 80/443. Nothing to fix in the app code.',
-  },
-  {
-    code: 'upstream_error',
-    surface: 'module route (proxy) 502',
-    meaning:
-      'The upstream could not be reached, timed out (20 s), answered more than 5 MiB (measured after undoing a gzip / deflate / br encoding) or used an encoding drobek cannot decode.',
-    fix: 'Show "try again later" in the app; ask for smaller responses (pagination, limits). Never retry in a tight loop.',
-  },
-  {
-    code: 'proxy_busy',
-    surface: 'module route (proxy) 429, Retry-After',
-    meaning:
-      'Too many upstream calls are in flight — from this app (PROXY_MAX_CONCURRENT_PER_APP, default 8) or on the whole server (PROXY_MAX_CONCURRENT, default 32). Nothing was sent to the upstream.',
-    fix: 'Retry after `Retry-After` seconds; do not fire many proxy calls in parallel from one page (queue them, or batch in one upstream request).',
-  },
-  {
-    code: 'config_error',
-    surface: 'module route (proxy) 500',
-    meaning: "The upstream's stored secret cannot be used (missing, or the server's master key changed).",
-    fix: 'The workspace admin re-registers the upstream with its secret in the dashboard. Never ask for the secret in chat.',
   },
   // ── OAuth 2.1 connect flow ────────────────────────────────────────────────
   {

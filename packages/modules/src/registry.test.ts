@@ -36,7 +36,7 @@ describe('registry', () => {
       /does not export a drobek module/
     );
     await expect(
-      loadModules({ DROBEK_MODULES: 'a,b' }, { importer: importer({ 'drobek-module-a': echo, 'drobek-module-b': { default: echo } }) })
+      loadModules({ DROBEK_MODULES: 'drobek-module-a,@acme/b' }, { importer: importer({ 'drobek-module-a': echo, '@acme/b': { default: echo } }) })
     ).rejects.toThrow(/two entries .* "echo"/);
   });
 

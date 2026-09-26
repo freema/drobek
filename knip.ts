@@ -69,9 +69,20 @@ const config: KnipConfig = {
     },
 
     'packages/sdk': {
-      // Bundled by path by packages/modules sdk-build.ts into
-      // /__drobek/beacon.js (sdkBeaconEntry).
-      entry: ['src/beacon-entry.ts'],
+      // src/beacon-entry.ts: bundled by path by packages/modules sdk-build.ts
+      // into /__drobek/beacon.js (sdkBeaconEntry). The rest: the package's
+      // public entry points — its package.json `exports` point at dist/
+      // (publishable for external module authors, NSO-344), which knip does
+      // not map back to the sources; their exports are public API.
+      entry: ['src/beacon-entry.ts', 'src/index.ts', 'src/core.ts', 'src/beacon.ts'],
+    },
+
+    'packages/modules': {
+      // The package's public entry points (`.` and `./testing`): its
+      // package.json `exports` point at dist/ (publishable for external
+      // module authors, NSO-344), which knip does not map back to the
+      // sources; their exports are the contract external modules use.
+      entry: ['src/index.ts', 'src/testing.ts'],
     },
 
     'packages/skills-check': {

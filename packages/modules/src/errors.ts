@@ -15,6 +15,7 @@ export type ModuleErrorCode =
   | 'unsupported_media_type'
   | 'rate_limited'
   | 'limit_exceeded'
+  | 'quota_exceeded'
   | 'conflict'
   | 'csrf_rejected'
   | 'password_required'
@@ -34,6 +35,7 @@ const STATUS: Record<string, number> = {
   unsupported_media_type: 415,
   rate_limited: 429,
   limit_exceeded: 429,
+  quota_exceeded: 409,
   password_required: 401,
   unavailable: 503,
   internal_error: 500,
@@ -41,6 +43,36 @@ const STATUS: Record<string, number> = {
 
 /** Every code the platform answers module routes with (each has an agent-dx catalogue entry). */
 export const MODULE_ERROR_CODES: readonly string[] = Object.keys(STATUS);
+
+/**
+ * Every code of the CORE error catalogue (`@drobek/agent-dx`
+ * `ERROR_CATALOGUE`, code-shaped entries): the module-route codes above plus
+ * the MCP tool, compile and OAuth codes. A module may not declare one of
+ * these in `errors`, and a module route may answer any of them. A unit test
+ * in @drobek/mcp keeps this list equal to the catalogue.
+ */
+export const CORE_ERROR_CODES: readonly string[] = [
+  ...MODULE_ERROR_CODES,
+  // MCP tools
+  'invalid_params',
+  'invalid_path',
+  'secret_in_source',
+  'app_locked',
+  'app_locked_by_admin',
+  'busy',
+  'slug_taken',
+  'not_publishable',
+  'compile_error',
+  // compile.errors[]
+  'build_error',
+  'unresolved_import',
+  'invalid_config',
+  'timeout',
+  // OAuth
+  'invalid_grant',
+  'invalid_client',
+  'invalid_target',
+];
 
 export interface ModuleErrorBody {
   error: string;

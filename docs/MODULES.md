@@ -3,7 +3,8 @@
 A **platform module** is the only way an app on drobek gets a backend. It is
 platform code the **operator** installs, never code an app author or agent
 uploads: the server still never executes app code. The contract is the
-TypeScript package `@drobek/modules` (contract version `1.0.0`, semver).
+TypeScript package `@drobek/modules` (contract version `1.1.0`, semver:
+`MODULE_CONTRACT_VERSION`).
 
 A module contributes, for every app on the server:
 
@@ -17,6 +18,8 @@ A module contributes, for every app on the server:
 | **Limits** | env-named numbers (`HELLO_WAVES_PER_MINUTE`), overridable per workspace |
 | **Tables** | a drizzle migrations folder with its own journal |
 | **Skill** | the agent-facing Markdown `skill_info('<name>')` returns |
+| **Error codes** | its own codes with meaning and fix: `skill_info('<name>').errors`, `/llms-full.txt` |
+| **Slots** | typed extension points other modules contribute to (see [Slots](#slots)) |
 
 ## Enabling modules
 
@@ -26,9 +29,13 @@ DROBEK_MODULES=hello,auth,email,forms,data   # comma-separated; empty = no modul
 
 Each entry resolves:
 
-1. a short name `x` → the npm package **`drobek-module-x`**;
+1. a short name `x` → the npm package **`drobek-module-x`**, which must
+   export a module named `x`;
 2. a full package name (`drobek-module-x`, `@scope/pkg`, anything with a `/`)
-   → exactly that package.
+   → exactly that package, whatever `name` its module has. This is how an
+   operator replaces a built-in module: `DROBEK_MODULES=@acme/drobek-module-auth,email,…`
+   loads Acme's module named `auth` instead of `drobek-module-auth` (two
+   entries loading one name still refuse the start).
 
 The built-in modules of this repo live in `modules/<name>` as the workspace
 packages `drobek-module-<name>`, dependencies of `apps/server` (and so of the
@@ -50,14 +57,38 @@ dependency to the server and listing it. The package's default export (or its
 `module` export) must come from `defineModule()`.
 
 The server **refuses to start** when anything is off: an unknown package, an
-export that is not a module, an invalid name, defaults that fail the schema,
-two modules with one name, a missing `sdk.entry`, a reserved name (`sdk`,
-`v1`, `drobek`, `internal`), a module whose `requires` is not enabled
+export that is not a module, an invalid name, a short name whose package
+exports another name, defaults that fail the schema, a `contract` range the
+server's `MODULE_CONTRACT_VERSION` does not satisfy (`module "crm": it needs
+module contract ^2.0, but this server implements 1.1.0 — …`), two modules
+with one name, a missing `sdk.entry`, a reserved name (`sdk`, `v1`,
+`drobek`, `internal`), a module whose `requires` is not enabled
 (`module "forms" requires the module "email": add it to DROBEK_MODULES
 (e.g. DROBEK_MODULES=…,email)`), two modules declaring `mail` (or
-`endUsers`, or `records`). Nothing is
-skipped silently. On start the log
-names the active modules (`platform modules ready`).
+`endUsers`, or `records`), one limit or error code declared by two modules,
+a slot contribution that breaks the [slot rules](#slots), an invalid
+`DROBEK_MODULE_<NAME>_DEFAULTS`. Nothing is skipped silently. A module
+without `contract` still loads, with a warning naming the range to add. On
+start the log names the active modules and the contract version
+(`platform modules ready`).
+
+### Operator defaults: `DROBEK_MODULE_<NAME>_DEFAULTS`
+
+An operator changes a module's `configDefaults` for the whole server with a
+JSON merge patch in `DROBEK_MODULE_<NAME>_DEFAULTS` (`<NAME>` = the module's
+name in upper case), e.g. every app's sign-in open to one company:
+
+```sh
+DROBEK_MODULE_AUTH_DEFAULTS='{"allow":{"domains":["acme.com"]}}'
+```
+
+The patched defaults must pass the module's `configSchema` — otherwise the
+server refuses to start with the issue paths
+(`DROBEK_MODULE_AUTH_DEFAULTS: … — allow.domains: …`). They replace the
+module's `configDefaults` everywhere: the effective config of every app that
+did not set those keys, `skill_info('<name>').config.defaults` and the
+dashboard's defaults. A variable naming no active module is ignored with a
+warning.
 
 The dev compose enables the example module and every built-in module
 (`DROBEK_MODULES=hello,auth,email,forms,data,proxy,files`, `HELLO_WAVES_PER_MINUTE=5`,
@@ -73,6 +104,7 @@ import { defineModule, z } from '@drobek/modules';
 export default defineModule<Config>({
   name: 'hello',                 // /^[a-z][a-z0-9]{1,30}$/: URL, drobek.<name>, config key, skill name
   version: '1.0.0',              // the module's own semver
+  contract: '^1.1',              // the contract versions it works with (semver range vs MODULE_CONTRACT_VERSION)
   skill: { useWhen, markdown },  // useWhen: ONE sentence starting with the situation
   configSchema,                  // zod; validates configure_module + the dashboard form
   configDefaults,                // the config of an app nobody configured (must pass the schema)
@@ -87,17 +119,58 @@ export default defineModule<Config>({
     inline: { entry: '/abs/path/ui.tsx', types: '…' },       // optional: `import … from 'drobek/<name>'`
   },
   migrations: { folder: '/abs/path/migrations' },
-  hooks: { onAppCreate(app, services) {}, onPublish(app, services) {} },
+  hooks: { onAppCreate(app, services) {}, onPublish(app, services) {}, onAppDelete(app, services) {} },
   endUsers: { current({ app, user, config, db, log }) {} },  // only the module that owns end-user sessions (auth)
   mail: { prepare(input) {} },   // only the module that owns the app's mail policy (email) — see "Module e-mail"
   records: { collections, query, get, remove, csv }, // only the module that stores app records (data) — see "The records authority"
   requires: ['email'],           // other modules this one needs; missing → the server refuses to start
+  errors: [{ code: 'unknown_greeter', meaning, fix }], // its own error codes (see "Error codes")
+  slots: { 'hello.greeter': { schema, unique: 'id', description } }, // extension points it offers (see "Slots")
+  contributes: { 'auth.provider': { … } },        // its contributions to other modules' slots
+  availability: 'default',       // 'default' (every workspace) | 'opt-in'
+  dashboard: { editor: 'collections' },           // the dedicated dashboard editor its config fits
 });
 ```
 
-Hooks run after `create_app` stored version 1 and after a version was
-published (MCP or dashboard). They are best effort: a failure is logged and
-never fails the tool call.
+`@drobek/modules` also exports the types a module needs from the rest of
+drobek — `DB`, `Logger`, `SdkCore` — so a module depends on
+`@drobek/modules` alone. Its `exports` point at the built `dist/` (with
+declarations), like `@drobek/sdk`'s.
+
+Hooks run after `create_app` stored version 1, after a version was published
+(MCP or dashboard) and after the app was deleted (`onAppDelete`, the
+dashboard's delete: soft-deleted, its hosts answer 404 — the place to clean
+up what the module keeps outside the database). They are best effort: a
+failure is logged and never fails the call. `services` is
+`{ db, log, contributions }` (see [Slots](#slots)).
+
+The contract fields of 1.1:
+
+| Field | Rules |
+| ----- | ----- |
+| `contract` | a semver range matched against `MODULE_CONTRACT_VERSION` (`1.1.0`); not satisfied → the start is refused; missing → a warning. The built-in modules and the example declare `'^1.1'` |
+| `errors` | `[{ code, meaning, fix }]`: `code` matches `^[a-z][a-z0-9_]{2,40}$`, is not a core code (`CORE_ERROR_CODES`, the catalogue in `/llms-full.txt`) and is declared by no other active module; meaning and fix are required |
+| `slots` / `contributes` | see [Slots](#slots) |
+| `availability` | `'default'` (the default: every workspace of the server) or `'opt-in'`; returned by `skill_info('<name>')` and the dashboard's module view |
+| `dashboard.editor` | `'collections'` (a `collections` config shaped like `data`'s) or `'upstreams'` (an `upstreams` config shaped like `proxy`'s): declares which dedicated dashboard editor the config fits; `data` and `proxy` declare theirs |
+| `hooks.onAppDelete` | `(app, services)` after the app was deleted, best effort |
+
+### Error codes
+
+A route answers the core codes (`not_found`, `invalid_request`, `forbidden`,
+`quota_exceeded`, … — `CORE_ERROR_CODES`) and the codes its module declares
+in `errors`. A ModuleError with any other code is not sent: the server logs
+it (`module request failed`, naming the code) and answers
+`500 internal_error`, exactly like an unexpected exception —
+`createModuleTestContext().request()` rejects on it, so a module's own tests
+catch an undeclared code. `skill_info('<name>')` returns the module's
+`errors`, and `/llms-full.txt` renders them after the core catalogue, one
+section per active module. The built-in modules declare theirs: `auth`
+(`email_not_allowed`, `invalid_code`, `too_many_attempts`), `forms`
+(`submitted_too_fast`, `invalid_form_token`), `data` (`validation_failed`,
+`invalid_schema`), `files` (`unsupported_type`), `proxy`
+(`path_not_allowed`, `ssrf_blocked`, `upstream_error`, `proxy_busy`,
+`config_error`).
 
 ### Routes: `ModuleRouter`
 
@@ -469,6 +542,58 @@ the module's sniffed type, `nosniff`, `Content-Security-Policy: default-src
 'none'; sandbox`, and `inline` only for PNG / JPEG / GIF / WebP (everything
 else, SVG and PDF included, is an attachment).
 
+## Slots
+
+A slot is a typed extension point one module (the **host**) offers the
+others: the host declares it with a zod schema, other modules contribute a
+value to it, and the host reads the contributions. It is how a module is
+extended without forking it — e.g. another module adding a way to greet to
+the example's `hello.greeter`.
+
+```ts
+// the host (the example module hello)
+slots: {
+  'hello.greeter': {
+    schema: z.object({ id: z.string(), greet: z.custom<(name: string) => string>((v) => typeof v === 'function') }),
+    unique: 'id',                                  // optional: a key whose value must be unique in the slot
+    description: 'Another way to greet: greet(name) returns the text.',
+  },
+},
+routes(r) {
+  r.get('/greet', { rule: 'public' }, (req, ctx) => {
+    const greeters = ctx.contributions<Greeter>('hello.greeter'); // [] when nobody contributes
+    // …
+  });
+},
+
+// a contributor (any other active module)
+contributes: {
+  'hello.greeter': { id: 'pirate', greet: (name) => `Ahoy, ${name}!` },
+},
+```
+
+The rules, all checked when the server starts (a violation refuses the start
+with a message naming the module and the slot):
+
+- a slot name is `<host name>.<name>` (`^[a-z][a-z0-9]*\.[a-z][a-zA-Z0-9]*$`)
+  and starts with the name of the module that declares it; a slot has a
+  `schema` and a `description`;
+- a module contributes at most one value per slot (`contributes` maps slot
+  name → value); the slot must be declared by an ACTIVE module — a
+  contribution to a slot of a module that is not in `DROBEK_MODULES`, or that
+  it does not declare, refuses the start;
+- every contribution must pass the slot's schema;
+- with `unique: '<key>'`, two contributions with the same value of that key
+  refuse the start (`modules "a" and "b" both contribute id "x" to the slot
+  "…"`). Without `unique`, contributions never conflict.
+
+`contributions<T>(slot)` is on `ModuleServices` — the request's `ctx`, the
+`services` of every hook — and returns the values as the slot's schema
+parsed them (a `z.object` drops unknown keys; use `z.looseObject` to keep
+them), in `DROBEK_MODULES` order. A slot nobody contributes to, or that no
+active module declares, gives `[]`. The generic types the value; the schema
+is what guarantees it.
+
 ## Per-app configuration
 
 Stored in `module_configs` (`app_id`, `module`, `config` jsonb, `pending`
@@ -616,8 +741,9 @@ needs one:
   `create_app` and `get_app` (`skills`) and in the briefing;
 - `skill_info('<name>')` → `{ name, kind, use_when, content }`, and for a
   module also `sdk { import, types }`, `config { schema (JSON Schema),
-  defaults, confirm_required }`, `limits [{ name, value, meaning }]` and
-  `secrets [{ name, description, required }]`;
+  defaults, confirm_required }`, `limits [{ name, value, meaning }]`,
+  `secrets [{ name, description, required }]`, `errors [{ code, meaning,
+  fix }]` (its own codes, `[]` when none) and `availability`;
 - an unknown name → `not_found` with `available` and `hint: "skill_info()"`.
 
 It never returns a secret value or any app's config.
@@ -756,7 +882,11 @@ await t.confirm({}, { greeting: 'Ahoj' });   // confirmRequired over two config 
 ```
 
 Mutating requests send the app's `Origin` and `X-Drobek-SDK: 1` by default;
-pass `headers` to test the CSRF guard.
+pass `headers` to test the CSRF guard. `contributions: { '<slot>': [value, …] }`
+sets what `ctx.contributions(slot)` returns. `request()` rejects where
+production answers `500 internal_error`: an exception that is not a
+ModuleError, or a ModuleError with a code that is neither core nor in the
+module's `errors`.
 
 ## End-user sessions (core)
 
@@ -1192,7 +1322,11 @@ external workspace package, loaded exactly as a third-party module would be
 - table `mod_hello_waves` (its own migrations and journal);
 - `GET /__drobek/v1/hello/whoami` → the visitor as `ctx.principal` (signed in
   through the auth module with the current role, or `{ signed_in: false }`);
-- `drobek.hello.ping()` / `drobek.hello.wave(name)` / `drobek.hello.whoami()`
+- `GET /__drobek/v1/hello/greet?name=Ada&greeter=<id>` → `{ text, greeter }`:
+  the configured greeting, or a greeter another module contributes to the
+  slot `hello.greeter` (`{ id, greet(name) }`, unique by `id`); an unknown id
+  answers the module's own error `unknown_greeter` (404, `details.available`);
+- `drobek.hello.ping()` / `wave(name)` / `whoami()` / `greet(name, greeter?)`
   in the browser;
 - its `SKILL.md` is what `skill_info('hello')` returns.
 

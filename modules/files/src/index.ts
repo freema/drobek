@@ -23,7 +23,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { defineModule } from '@drobek/modules';
+import { defineModule, type ModuleErrorDoc } from '@drobek/modules';
 import { FILES_CONFIG_DEFAULTS, filesConfigSchema, filesConfirmRequired, type FilesConfig } from './config.js';
 import { filesAuthority } from './owner.js';
 import { DEFAULT_MAX_BYTES, DEFAULT_QUOTA_PER_APP, DEFAULT_UPLOADS_PER_PRINCIPAL_PER_MIN, DEFAULT_UPLOAD_RATE_LIMIT, registerRoutes } from './routes.js';
@@ -97,9 +97,20 @@ export interface Api {
 }
 `;
 
+/** The module's own error codes (skill_info('files').errors, the files section of the error catalogue). */
+const FILES_ERRORS: ModuleErrorDoc[] = [
+  {
+    code: 'unsupported_type',
+    meaning: "HTTP 415. The uploaded file is not a type the app accepts. The type is decided from the bytes (PNG, JPEG, GIF, WebP, PDF, SVG, CSV), never from the name or the declared type — an HTML page renamed to .png is refused (`details.allowed` lists the accepted types; `details.type` is the detected type when it is known but not allowed). Nothing was stored.",
+    fix: "Upload an image, a PDF or a CSV; to accept fewer types set allowedTypes with configure_module('files').",
+  },
+];
+
 const filesModule = defineModule<FilesConfig>({
   name: 'files',
   version: '1.0.0',
+  contract: '^1.1',
+  errors: FILES_ERRORS,
   skill: {
     useWhen: 'the user uploads files (photos, avatars, PDFs, CSVs) the app stores and shows or downloads later — instead of Firebase Storage, S3, Cloudinary or UploadThing',
     markdown: readFileSync(here('../SKILL.md'), 'utf8'),

@@ -35,10 +35,17 @@ document.querySelector('#wave').addEventListener('click', async () => {
 drobek.hello.ping(): Promise<{ greeting: string; message: string; waves: number; signed: boolean; signature?: string }>
 drobek.hello.wave(name: string): Promise<{ waves: number }>   // name: 1–40 characters
 drobek.hello.whoami(): Promise<{ signed_in: false } | { signed_in: true; id: string; email: string; role: 'user' | 'admin' }>
+drobek.hello.greet(name: string, greeter?: string): Promise<{ text: string; greeter: string | null }>
 ```
 
+`greet(name)` answers `"<greeting>, <name>"`. Other modules on the server may
+contribute greeters (the slot `hello.greeter`); `greet(name, id)` uses the one
+with that id — an id nobody contributes fails with `unknown_greeter` and
+`details.available` lists the ids there are.
+
 HTTP (what the SDK calls): `GET /__drobek/v1/hello`, `POST /__drobek/v1/hello/wave`
-with `{ "name": "Ada" }`, `GET /__drobek/v1/hello/whoami` (the visitor signed in
+with `{ "name": "Ada" }`, `GET /__drobek/v1/hello/greet?name=Ada&greeter=<id>`,
+`GET /__drobek/v1/hello/whoami` (the visitor signed in
 through the `auth` module, if the server has it). Only the app itself may call them (same origin; the
 SDK sends the `X-Drobek-SDK: 1` header).
 
@@ -73,5 +80,6 @@ keys you change; `null` resets a key to its default.
 |---|---|---|
 | `invalid_request` + `details[].path = "name"` | wave name empty or over 40 chars | send 1–40 characters |
 | `rate_limited` | too many waves from one visitor | show a friendly message; retry after `Retry-After` seconds |
+| `unknown_greeter` (404) | `greet(name, id)` with an id no module contributes | omit the greeter, or use one of `details.available` |
 | `csrf_rejected` | called with fetch from another origin or without the SDK | call through `drobek.hello` from the app itself |
 | `invalid_params` from configure_module | config key has the wrong type/length | see the `issues[].path` in the error |

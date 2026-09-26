@@ -108,11 +108,19 @@ export function renderLlmsTxt(env: NodeJS.ProcessEnv = process.env): string {
   ].join('\n');
 }
 
+/** One active module's own error codes (its `errors`), rendered as a section of the catalogue. */
+export interface ModuleErrorsDoc {
+  module: string;
+  errors: { code: string; meaning: string; fix: string }[];
+}
+
 /**
  * /llms-full.txt — the full agent contract. Rendered from the same
- * manifest as /llms.txt so it never drifts from the real tools.
+ * manifest as /llms.txt so it never drifts from the real tools. `modules`:
+ * the active platform modules' own error codes (the module runtime's
+ * `errorCatalogue()`), one catalogue section per module after the core codes.
  */
-export function renderLlmsFull(env: NodeJS.ProcessEnv = process.env): string {
+export function renderLlmsFull(env: NodeJS.ProcessEnv = process.env, modules: readonly ModuleErrorsDoc[] = []): string {
   const app = publicAppUrl(env);
   const mcp = mcpEndpoint(env);
   // RFC 9728: the well-known suffix sits between the origin and the resource path.
@@ -172,6 +180,16 @@ export function renderLlmsFull(env: NodeJS.ProcessEnv = process.env): string {
       ...ERROR_CATALOGUE.map(
         (e) => `- ${e.code} — ${e.surface} — ${e.meaning} FIX: ${e.fix}`
       ),
+      ...modules
+        .filter((m) => m.errors.length > 0)
+        .flatMap((m) => [
+          '',
+          `### Module ${m.module}`,
+          '',
+          `The ${m.module} module's own codes (module route, DrobekError; also in skill_info('${m.module}').errors):`,
+          '',
+          ...m.errors.map((e) => `- ${e.code} — module route (${m.module}) — ${e.meaning} FIX: ${e.fix}`),
+        ]),
     ].join('\n')
   );
 

@@ -84,6 +84,11 @@ test('GET /llms-full.txt → 200 with every tool, no deploy pipeline, the limits
   expect(body).toContain('app_locked');
   expect(body).toContain('secret_in_source');
   expect(body).toContain('redirect_uri');
+  // …then one section per active module with its own codes (NSO-344).
+  expect(body).toContain('### Module auth');
+  expect(body).toContain('- invalid_code — module route (auth) — ');
+  expect(body).toContain('### Module proxy');
+  expect(body).toContain('- upstream_error — module route (proxy) — ');
 
   // Limits: the compile caps + the tool contract limits.
   expect(body).toContain('COMPILE_MAX_FILES');

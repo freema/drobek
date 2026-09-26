@@ -21,5 +21,7 @@ export default function hello(core: SdkCore) {
     ping: () => core.request<Hello>('GET', '/'),
     whoami: () => core.request<Visitor>('GET', '/whoami'),
     wave: (name: string) => core.request<{ waves: number }>('POST', '/wave', { body: { name } }),
+    greet: (name: string, greeter?: string) =>
+      core.request<{ text: string; greeter: string | null }>('GET', '/greet', { query: greeter === undefined ? { name } : { name, greeter } }),
   };
 }

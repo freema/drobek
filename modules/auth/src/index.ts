@@ -19,7 +19,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { defineModule } from '@drobek/modules';
+import { defineModule, type ModuleErrorDoc } from '@drobek/modules';
 import { AUTH_CONFIG_DEFAULTS, authConfigSchema, authConfirmRequired, type AuthConfig } from './config.js';
 import { currentUser } from './current.js';
 import { ownerMethods } from './owner.js';
@@ -72,9 +72,30 @@ export function LoginGate(props: LoginGateProps): JSX.Element;
 export function useAuth(): { user: User | null; loading: boolean; error: string | null; logout(): Promise<void>; refresh(): Promise<void> };
 `;
 
+/** The module's own error codes (skill_info('auth').errors, the auth section of the error catalogue). */
+const AUTH_ERRORS: ModuleErrorDoc[] = [
+  {
+    code: 'email_not_allowed',
+    meaning: "HTTP 403. The address may not sign in to this app: it is not in `allow` / `adminEmails` of the auth config, or the user is disabled. No code was sent.",
+    fix: "Add the address or its domain with configure_module('auth'), or tell the user who may sign in.",
+  },
+  {
+    code: 'invalid_code',
+    meaning: "HTTP 400. The sign-in code is wrong, expired (10 minutes) or already used.",
+    fix: "Re-enter the code from the e-mail, or request a new one with drobek.auth.sendCode.",
+  },
+  {
+    code: 'too_many_attempts',
+    meaning: "HTTP 429. Five wrong codes were entered for this address; the code is dead.",
+    fix: "Request a new code (drobek.auth.sendCode); <LoginGate> goes back to the e-mail step by itself.",
+  },
+];
+
 const auth = defineModule<AuthConfig>({
   name: 'auth',
   version: '1.0.0',
+  contract: '^1.1',
+  errors: AUTH_ERRORS,
   skill: {
     useWhen: 'people must sign in to the app (only some e-mails or a company domain, admins, per-user data)',
     markdown: readFileSync(here('../SKILL.md'), 'utf8'),

@@ -59,7 +59,8 @@ Before using a backend (login, stored data, forms, email, file uploads, external
   means this server has no backends — build a self-contained front-end and
   keep state in the browser (e.g. `localStorage`).
 - `skill_info({ name })` returns the skill: minimal working code, the exact
-  SDK calls and types, the module's config schema, limits and common errors.
+  SDK calls and types, the module's config schema, limits and common errors;
+  `errors` lists the module's own error codes with their meaning and fix.
 - Besides the module skills (`auth`, `data`, `forms`, `email`, `files`,
   `proxy`, …) the list has general skills: `start` (files, drobek.json, the
   write → preview → publish loop), `debug` (compile errors, `get_logs`,
@@ -172,7 +173,9 @@ A failed call returns `isError: true` with `{ code, message, hint }` — the
 `app_locked_by_admin`, `busy`, `not_publishable`, `not_published`,
 `user_confirmation_required`, `gallery_hidden`, `gallery_disabled`, …).
 Compile problems are not tool failures: they come back in `compile.errors`. The
-full code → meaning → fix table is the Error catalogue in llms-full.txt.
+full code → meaning → fix table is the Error catalogue in llms-full.txt (core
+codes, then one section per module); a module's own codes are also in
+`skill_info('<module>').errors`.
 
 ## Authoritative schemas
 

@@ -19,6 +19,7 @@ import {
   renderLlmsFull,
   renderToolReference,
 } from '@drobek/agent-dx';
+import { moduleRuntime } from '@drobek/modules';
 
 /** Register the drobek docs resources + guided prompts on an MCP server. */
 export function registerDocs(server: McpServer): void {
@@ -31,11 +32,17 @@ export function registerDocs(server: McpServer): void {
         'Every MCP tool with its inputs, result shape and an example, the app briefing, limits, and the error catalogue.',
       mimeType: 'text/plain',
     },
-    (uri) => ({
-      contents: [
-        { uri: uri.href, mimeType: 'text/plain', text: renderLlmsFull() },
-      ],
-    })
+    async (uri) => {
+      // The catalogue gets one section per active module (their own error codes).
+      const modules = await moduleRuntime()
+        .then((rt) => rt.errorCatalogue())
+        .catch(() => []);
+      return {
+        contents: [
+          { uri: uri.href, mimeType: 'text/plain', text: renderLlmsFull(process.env, modules) },
+        ],
+      };
+    }
   );
 
   server.registerResource(

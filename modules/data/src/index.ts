@@ -20,7 +20,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { defineModule } from '@drobek/modules';
+import { defineModule, type ModuleErrorDoc } from '@drobek/modules';
 import { DATA_CONFIG_DEFAULTS, dataConfigSchema, dataConfirmRequired, dataOnConfirmed, salvageDataConfig, type DataConfig } from './config.js';
 import { DEFAULT_MAX_BYTES_PER_APP, DEFAULT_MAX_DOC_BYTES, DEFAULT_MAX_DOCS_PER_APP } from './quota.js';
 import { recordsAuthority } from './records.js';
@@ -93,9 +93,26 @@ export interface Api {
 }
 `;
 
+/** The module's own error codes (skill_info('data').errors, the data section of the error catalogue). */
+const DATA_ERRORS: ModuleErrorDoc[] = [
+  {
+    code: 'validation_failed',
+    meaning: "HTTP 422. The record does not match the collection's JSON Schema; `details[]` lists each `{ path, message }`. Nothing was stored.",
+    fix: "Send the fields the schema requires with the right types (get_app shows the data config), or change the schema with configure_module('data').",
+  },
+  {
+    code: 'invalid_schema',
+    meaning: "HTTP 400. The collection's stored JSON Schema is not a schema object or does not compile, so records cannot be checked against it. Nothing was stored.",
+    fix: "Set a valid JSON Schema for the collection with configure_module('data') (skill_info('data') shows the supported keywords).",
+  },
+];
+
 const data = defineModule<DataConfig>({
   name: 'data',
   version: '1.0.0',
+  contract: '^1.1',
+  dashboard: { editor: 'collections' },
+  errors: DATA_ERRORS,
   skill: {
     useWhen: 'the app stores records (lists, todos, entries, votes, a shared or per-user database) — instead of Firebase, Supabase or localStorage',
     markdown: readFileSync(here('../SKILL.md'), 'utf8'),

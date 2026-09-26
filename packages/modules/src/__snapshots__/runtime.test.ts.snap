@@ -2,6 +2,7 @@
 
 exports[`skills > skillInfo(module): content + sdk + config schema + limits + secret NAMES 1`] = `
 {
+  "availability": "default",
   "config": {
     "confirm_required": "Some changes need the app owner's confirmation in the dashboard: configure_module then answers applied:false with pending_confirmation and a confirm_url for the user.",
     "defaults": {
@@ -52,6 +53,7 @@ exports[`skills > skillInfo(module): content + sdk + config schema + limits + se
 
 Echoes.
 ",
+  "errors": [],
   "kind": "module",
   "limits": [
     {

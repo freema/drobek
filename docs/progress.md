@@ -1313,6 +1313,32 @@ block, then `next` is pushed and the single MR opened.
 - NSO-340: in a worktree the Bash guard refuses a heredoc'd python script
   whose text contains the word `git`. Write the script into the scratchpad
   and run `python3 <path>` instead.
+- NSO-344 (contract 1.1): `@drobek/modules` and `@drobek/sdk` `exports` point
+  their `types` at `dist/*.d.ts` — typecheck and IDEs see the BUILT
+  declarations, so run `pnpm build:packages` (or the package's build) after
+  changing their sources before typechecking a consumer. knip does not map
+  `dist/` back to `src/`: both packages list their public entries in
+  `knip.ts`.
+- NSO-344: a module route may answer only `CORE_ERROR_CODES` + its own
+  `errors`; any other ModuleError code becomes `500 internal_error` (logged
+  `module request failed`) and makes `createModuleTestContext().request()`
+  REJECT. A new code a module throws goes into its `errors` in the same
+  change. `quota_exceeded` stayed a core code (data AND files answer it, and a
+  code may have one owner). `CORE_ERROR_CODES` must equal the code-shaped
+  entries of agent-dx `ERROR_CATALOGUE` (guarded in @drobek/mcp
+  errors.test.ts).
+- NSO-344: `DROBEK_MODULE_<NAME>_DEFAULTS` is applied by `checkModuleSet`,
+  which returns a NEW frozen module object (`{ ...m, configDefaults }`) for a
+  module with an override — compare modules by `name`, not identity, after
+  loading. `checkModuleSet` also runs for `loadModuleRuntime({ modules })`
+  (tests), so slot / error-code / env checks apply there too.
+- NSO-344: a short name in `DROBEK_MODULES` must load a module of that name —
+  test fixtures that load one module under several short names now fail;
+  use full package names (`drobek-module-a`, `@acme/b`) there.
+- NSO-344: `onAppDelete` is run by the dashboard's delete action (the only
+  caller of `softDeleteApp`; `@drobek/apps` cannot import the module runtime
+  — @drobek/modules depends on it). A new delete path must call
+  `runHook('onAppDelete', …)` too.
 
 ## Failed approaches
 
