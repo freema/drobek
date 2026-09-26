@@ -48,6 +48,8 @@ const config: KnipConfig = {
         '@paralleldrive/cuid2',
         'drizzle-orm',
         'ioredis',
+        // Same reason: @drobek/modules builds the SDK with it (NSO-347).
+        'esbuild',
         // DROBEK_MODULES entries are resolved at runtime from the SERVER's
         // package.json (packages/modules registry.ts, createRequire): the
         // built-in modules and the example module are dependencies so the
