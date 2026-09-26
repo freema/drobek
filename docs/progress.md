@@ -1605,3 +1605,15 @@ block, then `next` is pushed and the single MR opened.
   transforms of the route modules; the glob also warmed `*.test.tsx` and
   pulled `vitest` into the client pre-bundle. Use `optimizeDeps.noDiscovery`.
 - **Client code must never import a package index that re-exports `*.server.*`** (2026-09-26, NSO-342). The mascot went into `root.tsx` and `<DrobekMark>` through `@drobek/auth` / `@drobek/email` (their indexes re-export `smtp.server`, `return-to.server`, …). The dev server then failed every client bundle at runtime ("Server-only module referenced by client"), so 61 e2e tests failed, while `task check` stayed green. Fixed by a client-safe subpath, `@drobek/email/mascot` (re-exported from `@drobek/auth/mark`). Ratchet: `task check` now runs `pnpm --filter server build`, which refuses this at build time.
+- Block-end e2e of the NSO-340…362 merge batch: every failure was a stale
+  test expectation, not a product bug — the NSO-358 CSP (`media-src` +
+  curated `frame-src`) and `list_assets` in the read scope, the NSO-362
+  `assets` field on the publish result and the `app.publish` audit meta,
+  NSO-347's workspace-page loop order, and a same-address re-sign-in inside
+  the dev OTP cooldown (5 s): `loginViaEmail` now waits for a code mail it
+  has not seen and asks again after the cooldown. A spec that greps dev
+  HTML for `node_modules` must drop Vite's `/@fs/…` URLs first. The
+  `@drobek/modules` unit test "request stats cost no SQL per response" once
+  counted 1001 vs 1000 statements under the full `task check` load (passes
+  alone and on rerun) — a late async statement landing inside its 20 ms
+  settle window.
