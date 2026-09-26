@@ -63,6 +63,10 @@ export const CORE_ERROR_CODES: readonly string[] = [
   'slug_taken',
   'not_publishable',
   'compile_error',
+  'not_published',
+  'user_confirmation_required',
+  'gallery_hidden',
+  'gallery_disabled',
   // compile.errors[]
   'build_error',
   'unresolved_import',
