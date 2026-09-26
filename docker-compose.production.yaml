@@ -87,8 +87,10 @@ services:
       # App assets (video, audio, images, fonts; NSO-358) on the assets_data volume.
       ASSETS_DIR: /data/assets
       # Modules the operator installed (<name>/ + modules.lock.json), checked
-      # against the lockfile at start — the modules_data volume below.
-      DROBEK_MODULES_DIR: /data/modules
+      # against the lockfile at start — the modules_data volume below
+      # (`task selfhost:module:add`). A derived image that bakes its modules
+      # into another directory sets DROBEK_MODULES_DIR in .env.production.
+      DROBEK_MODULES_DIR: ${DROBEK_MODULES_DIR:-/data/modules}
     volumes:
       # End-user uploads (files module, content-addressed) — part of `task backup`.
       - files_data:/data/files

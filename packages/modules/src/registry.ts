@@ -118,7 +118,8 @@ interface Resolved {
   origin: ModuleOrigin;
 }
 
-function exportedModule(ns: unknown): unknown {
+/** The module a package namespace exports (default, `module`, or the namespace itself), else null. */
+export function exportedModule(ns: unknown): unknown {
   if (isDefinedModule(ns)) return ns;
   const o = ns as Record<string, unknown> | null;
   if (o && isDefinedModule(o.default)) return o.default;

@@ -159,9 +159,24 @@ image compose.
 An operator adds a module without building an image by installing it into
 `DROBEK_MODULES_DIR` (default `/data/modules`; the production compose mounts
 the named volume `modules_data` there, part of `task backup`; the dev compose
-bind-mounts `./.modules`). The runtime image has no package manager and never
-installs anything: installing is an operator step outside the running server,
-with npm's `--ignore-scripts` (no install scripts run).
+bind-mounts `./.modules`):
+
+```sh
+task selfhost:module:add -- @acme/drobek-module-erp@1.2.0   # any spec npm accepts: version, tarball URL or path, git URL
+task selfhost:module:list
+task selfhost:module:remove -- erp
+```
+
+The runtime image has no package manager and never installs anything: npm
+runs in a throwaway `node:22-alpine` container over the volume with
+`--ignore-scripts` (no install script runs), then the drobek image's own
+installer (`node node_modules/@drobek/modules/dist/cli/module-lock.js`)
+checks the package, moves it to `<dir>/<name>` and records it in
+`modules.lock.json`. The procedure, upgrades, rollback and a derived image
+for operators with their own CI:
+[`SELF-HOSTING.md` → Third-party modules](./SELF-HOSTING.md#third-party-modules).
+The dev stack's `task module:add|remove|list` do the same over `./.modules`
+with the host's npm.
 
 ```
 /data/modules/
@@ -208,25 +223,31 @@ function writes and checks it): every file and symlink under the prefix,
 sorted by its `/`-separated relative path, as `F <path>\0<sha512 hex>\n` or
 `L <path>\0<link target>\n`, hashed with sha512 → `sha512-<base64>`; modes,
 timestamps and empty directories do not count, a symlink leaving the prefix is
-refused. Installing and recording a module by hand (npm runs in a throwaway
-container over the volume, the hash comes from the image's own function):
+refused. `task selfhost:module:add` writes the entry with that function inside
+the image, so the hash it records is the one the server computes.
 
-```sh
-docker run --rm -u node -v drobek-prod_modules_data:/data/modules node:22-alpine \
-  npm install --prefix /data/modules/erp --omit=dev --ignore-scripts @acme/drobek-module-erp@1.2.0
-./scripts/selfhost-compose.sh run --rm --no-deps drobek node --input-type=module -e '
-  import { hashModuleTree, readModulesLock, formatModulesLock } from "@drobek/modules/lock";
-  import { writeFileSync } from "node:fs";
-  const lock = readModulesLock("/data/modules") ?? { lockfileVersion: 1, modules: {} };
-  lock.modules.erp = { package: "@acme/drobek-module-erp", version: "1.2.0", resolved: "@acme/drobek-module-erp@1.2.0",
-    integrity: hashModuleTree("/data/modules/erp"), contract: "^1.1", installedAt: new Date().toISOString() };
-  writeFileSync("/data/modules/modules.lock.json", formatModulesLock(lock));'
-```
+**What `add` checks** before it records anything (a refusal leaves the
+directory and the lockfile as they were; a failure after the move restores the
+previous install):
+
+- the package declares `@drobek/modules` in `peerDependencies`, and the range
+  accepts the server's module contract version or its release version;
+- nested copies of the host-provided peers (`@drobek/*`, `zod`,
+  `drizzle-orm`, below) are deleted from its `node_modules`;
+- the module is imported once to read its `name` (the directory name) and
+  passes the server's `validateModule` — the `contract` range against
+  `MODULE_CONTRACT_VERSION` included;
+- after the move and the lockfile write it is loaded exactly as at start
+  (lockfile + integrity, import, the migration lint below).
+
+The `DROBEK_MODULES` entry it prints is the short name when the package is
+`drobek-module-<name>`, else the full package name.
 
 `DROBEK_MODULES_UNLOCKED=1` skips the lockfile check while developing a module
 (the dev stack: put it into `./.modules/<name>/node_modules/<package>`, add it
-to `DROBEK_MODULES`, `docker compose up -d drobek`); with `NODE_ENV=production`
-the variable is ignored with a warning.
+to `DROBEK_MODULES`, `docker compose up -d drobek` — or use `task module:add`,
+which writes the lockfile); with `NODE_ENV=production` the variable is ignored
+with a warning.
 
 **Host-provided peers.** Before the first module from the directory is
 imported, the server registers a `node:module` resolve hook: every `import` of
@@ -252,10 +273,11 @@ part the integrity covers).
 
 The lint keeps a module's schema in its namespace; it is not a sandbox. A
 module runs in the server process with the whole database — install only
-modules you trust ([`SECURITY.md`](./SECURITY.md)). Alternatively, an operator
-with their own CI builds a derived image (`FROM ghcr.io/freema/drobek`, the
-module added as a dependency of `/app`): such a module loads as `source:
-'builtin'`, without lockfile or lint.
+modules you trust ([`SECURITY.md`](./SECURITY.md)). An operator with their
+own CI can instead bake the modules directory into a derived image
+([`SELF-HOSTING.md` → Derived image](./SELF-HOSTING.md#derived-image)) — same
+lockfile and lint — or add the module as a dependency of `/app`, where it
+loads as `source: 'builtin'`, without lockfile or lint.
 
 ## The contract
 
@@ -1213,7 +1235,7 @@ only with a committed `dist/` (installs run without lifecycle scripts).
 
 The operator installs the package — any spec `npm install` accepts (a
 registry version, a tarball URL, a git URL) — with
-`task selfhost:module:add -- <spec>` ([`SELF-HOSTING.md`](./SELF-HOSTING.md)),
+`task selfhost:module:add -- <spec>` ([`SELF-HOSTING.md`](./SELF-HOSTING.md#third-party-modules)),
 then adds its entry to `DROBEK_MODULES` (the short name when the package is
 `drobek-module-<name>`, else the full package name) and restarts drobek.
 The start refuses a module whose `contract` range does not match. An

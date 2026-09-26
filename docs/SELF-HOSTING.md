@@ -248,7 +248,8 @@ happens; seeing it in production means the proxy header is missing.
 Platform modules (the backends apps use through `import { drobek } from
 'drobek'`) are enabled with `DROBEK_MODULES` (comma-separated; a
 short name `x` loads the package `drobek-module-x` from the server's
-dependencies). The server applies each module's migrations on start and
+dependencies, or from `DROBEK_MODULES_DIR` for a module you installed with
+`task selfhost:module:add` — [Third-party modules](#third-party-modules)). The server applies each module's migrations on start and
 refuses to start on a module it cannot load. Limits come from their env vars
 or, with `LIMITS_PROVIDER_URL` + `LIMITS_PROVIDER_SECRET`, from your own
 signed limits endpoint. The image ships the built-in `auth`, `email`,
@@ -290,7 +291,7 @@ Volumes (named `drobek-prod_<name>`):
 | `pg_data` | the database: apps, every version's files (content-addressed blobs), users, keys, module data | yes (`pg_dump -Fc`) |
 | `files_data` | the files module's uploads (`/data/files`; `mod_files` rows point at them) | yes (tar) |
 | `assets_data` | app assets — video, audio, images, fonts served at `/<path>` (`/data/assets`; `app_assets` rows point at them) | yes (tar) |
-| `modules_data` | modules you installed (`/data/modules` = `DROBEK_MODULES_DIR`: one directory per module + `modules.lock.json`, [`MODULES.md`](./MODULES.md#installing-an-external-module)) | yes (tar) |
+| `modules_data` | modules you installed (`/data/modules` = `DROBEK_MODULES_DIR`: one directory per module + `modules.lock.json`, [Third-party modules](#third-party-modules)) | yes (tar) |
 | `caddy_data` | ACME account, issued certificates, Caddy's local CA — losing it means re-issuing every certificate | yes (tar) |
 | `caddy_config` | Caddy's autosaved config (rebuilt from the Caddyfile) | no |
 | `redis_data` | sessions, caches, rate limits, leases, un-flushed request counters (AOF) | no — after a restore everyone signs in again |
@@ -379,7 +380,7 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | --- | --- | --- |
 | `DROBEK_MODULES` | none *(compose: `auth,email,forms,data,proxy,files`)* | the modules this server runs; `x` loads `drobek-module-x` ([`MODULES.md`](./MODULES.md)) |
 | `DROBEK_MODULES_ROOT` | the server's directory | where module packages are resolved from when they are not in `DROBEK_MODULES_DIR` |
-| `DROBEK_MODULES_DIR` | `/data/modules` *(compose: the `modules_data` volume; dev: `./.modules`)* | modules the operator installed: `<dir>/<name>/node_modules/<package>` + `modules.lock.json`; looked up BEFORE the server's dependencies; a module there that the lockfile does not list, or whose files changed, refuses the start ([`MODULES.md`](./MODULES.md#installing-an-external-module)) |
+| `DROBEK_MODULES_DIR` | `/data/modules` *(compose: the `modules_data` volume; dev: `./.modules`)* | modules the operator installed (`task selfhost:module:add`, dev: `task module:add`): `<dir>/<name>/node_modules/<package>` + `modules.lock.json`; looked up BEFORE the server's dependencies; a module there that the lockfile does not list, or whose files changed, refuses the start ([Third-party modules](#third-party-modules)). Change it only for a [derived image](#derived-image) that bakes its modules elsewhere |
 | `DROBEK_MODULES_UNLOCKED` | — | `1` = load modules from `DROBEK_MODULES_DIR` without the `modules.lock.json` check — for developing a module locally; ignored (with a warning) when `NODE_ENV=production` |
 | `DROBEK_MODULE_<NAME>_DEFAULTS` (e.g. `DROBEK_MODULE_AUTH_DEFAULTS`) | — | server-wide config defaults of the module `<name>`: a JSON merge patch over its defaults (`{"allow":{"domains":["acme.com"]}}`), validated by its schema at start — invalid refuses the start ([`MODULES.md`](./MODULES.md#operator-defaults-drobek_module_name_defaults)) |
 | `MODULE_ENABLED_<NAME>` (e.g. `MODULE_ENABLED_CRM`) | 0 | only for an opt-in module (`availability: 'opt-in'`): `1` enables it on every workspace; unset / `0` = a super-admin enables it per workspace in the dashboard (Workspace → Modules). A limits provider may answer it per workspace (`1` on, `0` off — also over the dashboard switch) ([`MODULES.md`](./MODULES.md#per-workspace-enabling-opt-in-modules)) *(plan)* |
@@ -561,6 +562,112 @@ BASE_URL_WEB=https://drobek.example.com SMOKE_API_KEY=drk_… task e2e:smoke
 
 The smoke key always works on one app, `smoke-<12 hex>`, derived from the key,
 and publishes a new version of it on every run, so nothing piles up.
+
+## Third-party modules
+
+A platform module that does not ship in the image (your company's, one from
+npm) is installed into the `modules_data` volume (`/data/modules` =
+`DROBEK_MODULES_DIR`) — no image build, no package manager in the running
+server:
+
+```sh
+task selfhost:module:add -- drobek-module-acme-erp@1.2.0
+# · npm install drobek-module-acme-erp@1.2.0 → drobek-prod_modules_data:/data/modules/.staging-1a2b3c4d (node:22-alpine, --ignore-scripts)
+# ✓ drobek-module-acme-erp@1.2.0 installed as the module "acmeerp" (contract ^1.1) → /data/modules/acmeerp
+#   modules.lock.json: sha512-…
+#
+# Next: enable it in .env.production and restart drobek (it applies the module's migrations on start):
+#   DROBEK_MODULES=auth,email,forms,data,proxy,files,drobek-module-acme-erp
+#   ./scripts/selfhost-compose.sh up -d --wait drobek
+```
+
+The spec is anything `npm install` accepts: a registry version
+(`drobek-module-acme-erp@1.2.0`, `@acme/drobek-module-erp@^1`), a tarball URL
+or a local `.tgz` path (`npm pack` output; mounted read-only into the npm
+container), a git URL (`git+https://…/x.git#v1.2.0` — the package must have
+its `dist/` committed). `add` runs in two steps:
+
+1. **npm in a throwaway container** — `docker run --rm node:22-alpine` over
+   the volume: `npm install --prefix /data/modules/.staging-<id> --omit=dev
+   --omit=peer --legacy-peer-deps --ignore-scripts <spec>`;
+2. **the image's own installer** — `./scripts/selfhost-compose.sh run --rm
+   --no-deps drobek node node_modules/@drobek/modules/dist/cli/module-lock.js
+   add …`: the package must declare `@drobek/modules` as a peer dependency
+   in a range this server satisfies; nested copies of `@drobek/*`, `zod` and
+   `drizzle-orm` are deleted (the server provides them); the module is
+   imported once for its `name` and checked like at start (its `contract`
+   against the server's module contract); it moves to `/data/modules/<name>`
+   and is recorded in `modules.lock.json` with the server's
+   `hashModuleTree()` — the same function checks it at every start — then
+   loaded the way the server will load it, the migration lint included.
+   Anything failing leaves the previous install and lockfile in place.
+
+Then put the printed `DROBEK_MODULES` line into `.env.production` (the short
+name for a `drobek-module-<name>` package, else the full package name) and
+restart drobek; the start applies the module's migrations and `/api/version`
+lists it with `"source":"dir"`. The script prints this and stops: it never
+edits `.env.production` and never restarts anything.
+
+```sh
+task selfhost:module:list
+# NAME     PACKAGE                 VERSION  CONTRACT  INTEGRITY           IN DROBEK_MODULES  STATUS
+# acmeerp  drobek-module-acme-erp  1.2.0    ^1.1      sha512-q8vN0Lr2Xc…  yes                ok
+task selfhost:module:remove -- acmeerp
+```
+
+`list` reads the lockfile and hashes every module again: `changed` (files
+edited after the install), `missing` (a lock entry without its directory) and
+`unrecorded` (a directory the lockfile does not list) refuse the start when
+`DROBEK_MODULES` names them — add the module again or remove it. `remove`
+deletes `/data/modules/<name>` and its lock entry and warns when
+`DROBEK_MODULES` still names it (take it out before drobek restarts). **It
+never touches the database:** the module's tables (`mod_<name>`,
+`mod_<name>_*`) and its journal `drizzle.__drizzle_migrations_mod_<name>`
+stay, so adding the module again finds its data. To drop them for good, take
+a `task backup` first, list them with the query `remove` prints and `DROP
+TABLE` each in `psql` (`./scripts/selfhost-compose.sh exec postgres psql -U
+drobek -d drobek`).
+
+**Upgrade** = `add` with the new version (it replaces the directory and the
+lock entry; the output names the version it replaced), then restart drobek.
+**Rollback** = `add` of the old version, or `task restore` of the backup taken
+before (`modules_data` is part of every `task backup`, the lockfile with it).
+What the script never does: run a package's install scripts, change the image,
+edit `.env.production` or restart drobek. A module runs inside the server
+with the whole database — install only modules you trust
+([`MODULES.md` → Installing an external module](./MODULES.md#installing-an-external-module)).
+
+### Derived image
+
+An operator with their own CI can bake the modules into an image instead —
+the same layout, lockfile and start-time checks, built by the image's own
+installer:
+
+```dockerfile
+# Dockerfile.drobek — drobek + your modules
+ARG DROBEK_TAG=vX.Y.Z
+FROM node:22-alpine AS modules
+RUN npm install --prefix /modules/.staging-erp --omit=dev --omit=peer --legacy-peer-deps \
+      --ignore-scripts --no-audit --no-fund @acme/drobek-module-erp@1.2.0
+
+FROM ghcr.io/freema/drobek:${DROBEK_TAG}
+COPY --from=modules --chown=node:node /modules/ /opt/drobek-modules/
+RUN node node_modules/@drobek/modules/dist/cli/module-lock.js add \
+      --dir /opt/drobek-modules --staging .staging-erp --spec @acme/drobek-module-erp@1.2.0
+```
+
+One `RUN npm install` + `module-lock.js add` pair per module (the build
+fails on anything `add` refuses). Build it where the stack runs (or `docker
+load` it from your CI) under a local tag — `docker build -f Dockerfile.drobek
+--build-arg DROBEK_TAG=vX.Y.Z -t ghcr.io/freema/drobek:vX.Y.Z-acme .` — and
+set in `.env.production`: `DROBEK_IMAGE_TAG=vX.Y.Z-acme`,
+`DROBEK_MODULES_DIR=/opt/drobek-modules` and the `DROBEK_MODULES` entries.
+The directory is outside `/data/modules` on purpose: the compose file mounts
+the `modules_data` volume there, which would hide the image's copy. A local
+tag cannot be pulled, so an upgrade is a rebuild with the new `DROBEK_TAG`
+followed by the `task selfhost:upgrade` steps without `pull`.
+`task selfhost:module:*` refuse to run with such a `DROBEK_MODULES_DIR`: the
+image is the source of its modules.
 
 ## Image tags
 
@@ -911,10 +1018,12 @@ runs `task selfhost:init` twice (idempotency) and `docker compose config`
 (no warnings), starts the stack, signs a user in over the e-mail code flow,
 mints an API key with the container CLI, creates + writes + publishes an app
 over MCP (the official SDK client) and uploads a file through the files
-module; then `task backup`, `down -v`, a second fresh directory ("machine B")
+module; installs a packed module with `task selfhost:module:add`, enables it
+and checks `/api/version` loads it from the modules directory; then `task backup`, `down -v`, a second fresh directory ("machine B")
 with only machine A's `.env.production`, `task selfhost:init`, `task
 restore`, and asserts the app serves on its host, the file downloads byte for
-byte, the same API key works and Caddy's restored CA still validates; a
+byte, the same API key works, Caddy's restored CA still validates and the
+server starts with the same `modules.lock.json` and the module; a
 second restore must be refused and a second `task selfhost:migrate` must
 apply nothing. It prints the wall-clock time of every phase. Not part of
 `task check` or CI (it takes minutes). Knobs: `REHEARSAL_HTTPS_PORT` (9443),

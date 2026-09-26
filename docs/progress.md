@@ -1574,6 +1574,25 @@ block, then `next` is pushed and the single MR opened.
   `prevId` = 0024's 80f81487-bb75-4833-b283-86f6ef3652e1; the drift check says
   "No schema changes" — this supersedes the "re-chain on 0023 when it lands"
   parts of the NSO-358 and NSO-362 notes above.
+- NSO-350 (`task selfhost:module:*`): the installer logic is
+  `packages/modules/src/install.ts`, the CLI `src/cli/module-lock.ts` (a knip
+  entry); `scripts/selfhost-module.sh` only runs npm (throwaway
+  `node:22-alpine`, root for `apk add git` on git specs, then `chown -R
+  1000:1000` of the staging prefix) and the CLI (`dc run --rm --no-deps drobek`,
+  or the host's node with `--dev`). Gotchas: (1) Node scans argv for
+  `--env-file` even AFTER the script name — a script option of that name makes
+  `node` try to load the file (`.env: not found`, exit 9), so the CLI's option
+  is `--env-name`; (2) the module name comes from importing the package
+  (`create-drobek-module acme-erp` → package `drobek-module-acme-erp`, module
+  `acmeerp`), so `add` imports it twice (staging, then the final prefix via
+  `findDirModule`/`verifyDirModule`/`checkDirModule`); (3) npm writes the
+  staging directory's name into `package-lock.json` (`"name":
+  ".staging-<id>"`), so re-adding the same spec gives a different integrity —
+  expected, the lock is rewritten each time; (4) `--legacy-peer-deps` is there
+  because the template's `@drobek/modules` peer is not optional and npm would
+  otherwise resolve it against the registry even with `--omit=peer`; (5)
+  the peer range is accepted when it matches the module contract version OR
+  the image release (`DROBEK_VERSION`) — the two are different number lines.
 
 ## Failed approaches
 

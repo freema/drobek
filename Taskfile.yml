@@ -239,10 +239,52 @@ tasks:
     cmds:
       - ./scripts/selfhost-restore.sh
 
+  selfhost:module:add:
+    desc: 'Install a third-party module into the modules_data volume + record it in modules.lock.json (npm in a throwaway node:22-alpine, --ignore-scripts; the lock by the image) — task selfhost:module:add -- <npm spec | tarball URL or path | git URL>'
+    env:
+      MODULE_SPEC: '{{.CLI_ARGS}}'
+    cmds:
+      - ./scripts/selfhost-module.sh add "$MODULE_SPEC"
+
+  selfhost:module:remove:
+    desc: 'Delete an installed module and its modules.lock.json entry (its tables stay) — task selfhost:module:remove -- <name>'
+    env:
+      MODULE_NAME: '{{.CLI_ARGS}}'
+    cmds:
+      - ./scripts/selfhost-module.sh remove "$MODULE_NAME"
+
+  selfhost:module:list:
+    desc: 'The installed modules: name, package, version, contract, integrity, in DROBEK_MODULES, status'
+    cmds:
+      - ./scripts/selfhost-module.sh list
+
   selfhost:rehearsal:
     desc: 'The quickstart + backup → restore end to end on throwaway stacks (builds the image; NOT in check/CI) — scripts/selfhost-rehearsal.sh'
     cmds:
       - ./scripts/selfhost-rehearsal.sh
+
+  # ── Dev stack: modules in ./.modules (NSO-350) — host npm + node ─────────
+  module:add:
+    desc: 'Dev stack: install a module into ./.modules + modules.lock.json (as selfhost:module:add, with the host npm) — task module:add -- <spec>'
+    env:
+      MODULE_SPEC: '{{.CLI_ARGS}}'
+    cmds:
+      - test -f packages/modules/dist/cli/module-lock.js || pnpm build:packages
+      - ./scripts/selfhost-module.sh --dev add "$MODULE_SPEC"
+
+  module:remove:
+    desc: 'Dev stack: delete a module from ./.modules and modules.lock.json — task module:remove -- <name>'
+    env:
+      MODULE_NAME: '{{.CLI_ARGS}}'
+    cmds:
+      - test -f packages/modules/dist/cli/module-lock.js || pnpm build:packages
+      - ./scripts/selfhost-module.sh --dev remove "$MODULE_NAME"
+
+  module:list:
+    desc: 'Dev stack: the modules in ./.modules'
+    cmds:
+      - test -f packages/modules/dist/cli/module-lock.js || pnpm build:packages
+      - ./scripts/selfhost-module.sh --dev list
 
   dev:tls:
     desc: 'Dev stack behind Caddy with `tls internal` → https://localhost + https://<slug>--preview.apps.localhost [DEV_TLS_PORT=443]'

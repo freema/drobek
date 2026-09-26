@@ -82,8 +82,10 @@ const config: KnipConfig = {
       // its package.json `exports` point at dist/ (publishable for external
       // module authors, NSO-344), which knip does not map back to the
       // sources; their exports are the contract external modules (and the
-      // modules.lock.json writer, NSO-345) use.
-      entry: ['src/index.ts', 'src/testing.ts', 'src/lock.ts'],
+      // modules.lock.json writer, NSO-345) use. src/cli/module-lock.ts is
+      // `node …/@drobek/modules/dist/cli/module-lock.js`, the installer half of
+      // `task selfhost:module:*` (scripts/selfhost-module.sh, NSO-350).
+      entry: ['src/index.ts', 'src/testing.ts', 'src/lock.ts', 'src/cli/*.ts'],
       // NSO-345: test-fixtures/ holds an EXTERNAL module package (plain ESM)
       // that tests copy into a temporary DROBEK_MODULES_DIR by path — never
       // imported, its imports resolve to the server's instances at runtime.

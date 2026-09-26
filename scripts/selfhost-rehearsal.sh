@@ -12,11 +12,15 @@
 #        POST /login/verify → GET /me)
 #     4. a drk_ API key with the container CLI → MCP: create_app → write_files
 #        → publish → the production host serves it; an end user uploads a file
+#    4b. task selfhost:module:add -- <a packed module (the guestbook fixture)>
+#        → task selfhost:module:list → DROBEK_MODULES → drobek restarts and
+#        /api/version lists it with source "dir" (NSO-350)
 #     5. task backup → docker compose down -v (every volume gone)
 #   machine B (another fresh copy + A's .env.production, nothing else)
 #     6. task selfhost:init (renders the Caddyfile, keeps every secret)
 #     7. task restore BACKUP=… → the app serves on its host, the file downloads,
-#        the same API key works, Caddy's restored local CA still validates
+#        the same API key works, Caddy's restored local CA still validates, the
+#        server starts with the same modules.lock.json and loads the module
 #     8. a second restore is refused (non-empty database), FORCE=1 replaces
 #        it; the upgrade's migrate step twice (the second applies nothing)
 #
@@ -32,7 +36,7 @@ cd "$ROOT"
 # shellcheck source=scripts/lib/selfhost.sh
 . "$ROOT/scripts/lib/selfhost.sh"
 
-for tool in docker task node curl openssl; do
+for tool in docker task node npm curl openssl; do
   command -v "$tool" >/dev/null 2>&1 || die "$tool is required for the rehearsal"
 done
 [ -d "$ROOT/tests-e2e/node_modules/@modelcontextprotocol/sdk" ] || die "run pnpm install first (tests-e2e needs @modelcontextprotocol/sdk)"
@@ -193,6 +197,32 @@ BASE_URL="$BASE" APPS_DOMAIN="apps.localhost:$HTTPS_PORT" API_KEY="$KEY" MAILPIT
 QUICKSTART_S=$(( $(now) - TQ ))
 ok "quickstart done: init → TLS dashboard → user → MCP → published app + file in ${QUICKSTART_S}s"
 
+step "4b. task selfhost:module:add (a packed module) → DROBEK_MODULES → loaded from the volume"
+(cd "$SCRATCH" && npm pack --silent "$ROOT/packages/modules/test-fixtures/drobek-module-guestbook" >/dev/null)
+tgz="$SCRATCH/drobek-module-guestbook-1.0.0.tgz"
+[ -f "$tgz" ] || die "npm pack of the guestbook fixture wrote no $tgz"
+(cd "$A" && COMPOSE_PROJECT_NAME="$PROJECT_A" task selfhost:module:add -- "$tgz") >"$SCRATCH/module-add.log" 2>&1 \
+  || { cat "$SCRATCH/module-add.log" >&2; die "task selfhost:module:add failed"; }
+grep -q 'DROBEK_MODULES=auth,email,forms,data,proxy,files,guestbook' "$SCRATCH/module-add.log" \
+  || { cat "$SCRATCH/module-add.log" >&2; die "selfhost:module:add did not print the DROBEK_MODULES line"; }
+ok "installed into ${PROJECT_A}_modules_data, the next-step DROBEK_MODULES line printed"
+listed="$(cd "$A" && COMPOSE_PROJECT_NAME="$PROJECT_A" task selfhost:module:list 2>/dev/null)"
+printf '%s\n' "$listed" | grep -Eq '^guestbook +drobek-module-guestbook +1\.0\.0 +\^1\.1 +sha512-.* +no +ok$' \
+  || { printf '%s\n' "$listed" >&2; die "selfhost:module:list does not show guestbook as ok"; }
+ok "task selfhost:module:list: guestbook 1.0.0 ok"
+# guestbook contributes to the slot of the example module `hello` (in the image).
+ENV_FILE="$A/.env.production" env_set DROBEK_MODULES auth,email,forms,data,proxy,files,hello,guestbook
+on "$A" "$PROJECT_A" up -d --wait --wait-timeout 300 drobek </dev/null >/dev/null 2>&1 || die "drobek did not come back with the module"
+version="$(curl -sf --cacert "$CA" "$BASE/api/version")"
+case "$version" in
+  *'"name":"guestbook","version":"1.0.0","source":"dir"'*) ok "/api/version lists guestbook 1.0.0 from the modules directory" ;;
+  *) die "/api/version does not list the installed module: $version" ;;
+esac
+LOCK_A="$(on "$A" "$PROJECT_A" run --rm --no-deps -T drobek cat /data/modules/modules.lock.json </dev/null 2>/dev/null)"
+case "$LOCK_A" in *'"guestbook"'*) ;; *) die "modules.lock.json on machine A does not record guestbook" ;; esac
+# machine B gets this .env.production (with DROBEK_MODULES) — the new baseline.
+before_env="$(sha256_of "$A/.env.production")"
+
 step "5. task backup → docker compose down -v (machine A)"
 TB=$(now)
 archive="$(cd "$A" && COMPOSE_PROJECT_NAME="$PROJECT_A" task backup 2>"$SCRATCH/backup.log" | tail -n 1)" \
@@ -226,6 +256,12 @@ curl -sf --cacert "$CA" "$BASE/healthz" >/dev/null || die "machine B /healthz (w
 ok "/healthz through Caddy with machine A's root CA → caddy_data restored"
 BASE_URL="$BASE" APPS_DOMAIN="apps.localhost:$HTTPS_PORT" API_KEY="$KEY" MAILPIT_URL="$MAILPIT_URL" \
   STATE_FILE="$STATE" CA_FILE="$CA" NODE_EXTRA_CA_CERTS="$CA" node "$ROOT/tests-e2e/selfhost-rehearsal.mjs" verify
+LOCK_B="$(on "$B" "$PROJECT_B" run --rm --no-deps -T drobek cat /data/modules/modules.lock.json </dev/null 2>/dev/null)"
+[ "$LOCK_B" = "$LOCK_A" ] || die "modules.lock.json after the restore differs from machine A's"
+case "$(curl -sf --cacert "$CA" "$BASE/api/version")" in
+  *'"name":"guestbook","version":"1.0.0","source":"dir"'*) ok "modules_data restored: the same modules.lock.json, guestbook loads from the directory" ;;
+  *) die "machine B does not load the restored module" ;;
+esac
 
 step "8. guard rails: a second restore is refused, FORCE=1 replaces; migrate twice"
 if (cd "$B" && COMPOSE_PROJECT_NAME="$PROJECT_B" task restore BACKUP="backups/$(basename "$archive")" >"$SCRATCH/refuse.log" 2>&1); then
