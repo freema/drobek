@@ -98,11 +98,11 @@ test.describe('opt-in modules per workspace (NSO-346) @local', () => {
     request,
   }) => {
     skipUnlessLocal();
-    await loginViaEmail(page, request, owner.email);
     const listed = await callTool(owner.client, 'skill_info', {});
     const optIn = (listed.json.skills as SkillItem[]).find((s) => s.availability === 'opt-in');
     test.skip(!optIn, 'the stack runs no opt-in module (the EXT-09 example module adds one)');
     const name = optIn!.name;
+    await loginViaEmail(page, request, owner.email);
 
     const created = await callTool(owner.client, 'create_app', { name: 'Opt-in probe', workspace: owner.workspace, template: 'html' });
     expect(created.isError, created.text).toBe(false);
