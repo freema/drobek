@@ -1549,6 +1549,32 @@ block, then `next` is pushed and the single MR opened.
   cannot import @drobek/auth). A PGlite test that PUTs must insert a
   `memberships` row for the grant's user.
 
+- Second EXT batch merge onto `next`: NSO-348 (1d7b303) → NSO-361
+  (76e9ccf) → NSO-359 (19b780b) → NSO-362 (2a0cd71), `task check` green
+  after each. Resolutions: the auth module's COMPOSED config renders in the
+  generic form without a dedicated editor — `providers` is a nested object
+  (`providers.emailCode.enabled`, `providers.<id>.<field>` +
+  `providers.<id>.enabled`) and a form → `formToConfig` → configSchema round
+  trip with a test provider parses; `checkModuleSet` composes dir-loaded
+  modules too, so `moduleFacts` / `skill_info` show the `auth.provider` /
+  `auth.signedIn` slots and the auth error codes; `defineAuthProvider` & co.
+  are exported from `packages/modules/src/index.ts` and reach the staged npm
+  `@drobek/modules`. `ModuleRuntime.callbackApp` returns null when the
+  end-user authority is an opt-in module that is off for the app's workspace
+  (like its routes). Slot contributions stay server-wide (a provider from an
+  opt-in module is still gated by the app's `providers.<id>.enabled`). All
+  mail goes through `sendEmail` (NSO-361); `@drobek/auth` still re-exports
+  `getSmtpTransport` for outside consumers, nothing in the repo calls it.
+  Journal 0022 (1790432415711) → 0023 (1790432800000) → 0024
+  (1790433136356) → 0025_app_asset_snapshots (1790437501780): 0025's
+  snapshot was rebuilt from 0024's (now carrying `workspace_modules`) with a
+  scratch `drizzle-kit generate` over the folder without 0025 (the generated
+  SQL equals the committed file's generated part; the data copy stays
+  hand-written), keeps its id 88a014a2-b732-4596-ae74-3b246a8fb875 with
+  `prevId` = 0024's 80f81487-bb75-4833-b283-86f6ef3652e1; the drift check says
+  "No schema changes" — this supersedes the "re-chain on 0023 when it lands"
+  parts of the NSO-358 and NSO-362 notes above.
+
 ## Failed approaches
 
 - `pnpm deploy --offline` in the Dockerfile builder: fails with
