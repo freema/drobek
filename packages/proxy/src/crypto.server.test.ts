@@ -33,10 +33,11 @@ describe('envelope round-trip', () => {
   });
 
   it('captures the kek_id and uses a fresh DEK per secret', () => {
-    const a = encryptSecret('x', envA);
-    const b = encryptSecret('x', envA);
+    const a = encryptSecret('same-plaintext-for-both', envA);
+    const b = encryptSecret('same-plaintext-for-both', envA);
     expect(a.kekId).toBe(kekFromEnv(envA).id);
-    // Same plaintext + same KEK → DIFFERENT ciphertext (random DEK + IV).
+    // Same plaintext + same KEK → DIFFERENT ciphertext (random DEK + IV). A 1-byte
+    // plaintext would collide 1 in 256 runs, so the plaintext is long.
     expect(a.ciphertext).not.toBe(b.ciphertext);
     expect(a.wrappedDek).not.toBe(b.wrappedDek);
   });
