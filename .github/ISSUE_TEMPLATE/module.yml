@@ -1,0 +1,22 @@
+name: Module
+description: Writing or installing a platform module, or a gap in the module contract.
+labels: [question]
+body:
+  - type: input
+    id: module
+    attributes:
+      label: Module
+      description: The package and version, or the built-in module.
+      placeholder: 'drobek-module-acme-erp@1.2.0'
+  - type: input
+    id: contract
+    attributes:
+      label: Server version and module contract
+      placeholder: 'v0.2.0, contract ^1.1'
+  - type: textarea
+    id: details
+    attributes:
+      label: What you need or what fails
+      description: The contract field, slot or hook involved, and the error at start (`task selfhost:module:list`) if there is one.
+    validations:
+      required: true

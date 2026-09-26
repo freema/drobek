@@ -1256,6 +1256,16 @@ change raises the major, and such a server refuses `'^1.x'` modules with a
 message naming both versions. The server logs the version at start
 (`platform modules ready`, `contract`).
 
+### Published modules
+
+Modules anyone can install with `task selfhost:module:add -- <spec>`. To add
+yours, open a pull request that adds a row: the package on npm (or a tarball
+URL), what it does, the contract it declares and where its source is.
+
+| Package | What it does | Contract | Source |
+| --- | --- | --- | --- |
+| `drobek-module-hello` | the scaffold's output plus the slot demo — a starting point, not for production; not on npm, install it from a tarball `npm pack` writes in the example | `^1.1` | [`examples/drobek-module-hello`](../examples/drobek-module-hello) |
+
 ## End-user sessions (core)
 
 The end-user session belongs to core (`@drobek/modules`), not to a module, so

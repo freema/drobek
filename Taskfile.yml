@@ -70,7 +70,7 @@ tasks:
       - pnpm lint
 
   doc-lint:
-    desc: 'Docs gate (scripts/doc-lint.mjs): retired vocabulary outside docs/archive + CHANGELOG, README quickstart == SELF-HOSTING quickstart, every .env*.example key documented'
+    desc: 'Docs gate (scripts/doc-lint.mjs): retired vocabulary outside CHANGELOG, README quickstart == SELF-HOSTING quickstart, every .env*.example key documented'
     cmds:
       - pnpm doc-lint
 

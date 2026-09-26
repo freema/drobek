@@ -325,7 +325,7 @@ async function smokeKey(): Promise<string | null> {
  * others could guess), so nobody can squat it; it is not the stored
  * `key_hash` either (different input), so the public slug reveals nothing
  * about that. A rotated key simply moves the smoke to a new slug — the old
- * app is then deleted by hand (runbook, docs/progress.md → Next → M0-09).
+ * app is then deleted by hand.
  */
 function stableSmokeSlug(key: string): string {
   return `smoke-${createHash('sha256').update(`drobek-smoke-app:${key}`).digest('hex').slice(0, 12)}`;

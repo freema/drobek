@@ -15,8 +15,7 @@ This document is the map of how that works. The neighbours:
 [`MODULES.md`](./MODULES.md) (the module contract and the built-in modules),
 [`AGENT.md`](./AGENT.md) (the agent-facing contract),
 [`SECURITY.md`](./SECURITY.md) (the threat model),
-[`LICENSING.md`](./LICENSING.md) (AGPL and the SaaS boundary). The decision
-record behind it is [`vision-plan.md`](./vision-plan.md) (Czech).
+[`LICENSING.md`](./LICENSING.md) (AGPL and the SaaS boundary).
 
 ## 1. One process, one image
 

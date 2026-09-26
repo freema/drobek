@@ -23,21 +23,21 @@ Map: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
    `hasSecret`. Never log a secret.
 5. **`task check` is the gate** (Taskfile, go-task — there is no Makefile).
    It runs `pnpm install`, the doc-lint, build, typecheck, lint, knip and unit tests.
-6. **One long-lived branch, `next`.** Commits end with `(NSO-xxx)`; push only
-   at milestone end; one MR per milestone.
+6. **One branch, `main`.** Commits end with `(NSO-xxx)`. Actions capacity is
+   limited: push only what `task check` proved locally, and run
+   `task e2e:image` before a release tag.
 7. **Migrations:** core migrations live in `packages/db/drizzle/migrations`
    (journal `__drizzle_migrations_core`), each module has its own folder and
    journal (`__drizzle_migrations_mod_<name>`). Numbers are pre-assigned per
    task when work runs in parallel — never pick the next free number
    yourself; after a merge re-chain the snapshot `prevId` and keep the
-   journal `when` values ascending (see `docs/progress.md` gotchas).
+   journal `when` values ascending (see the progress log's gotchas).
 8. **e2e at block end.** Per task: unit tests + e2e spec files + green
    `task check`. `task e2e` (and the black-box pass) runs once per milestone
    block against the dev stack.
 9. **v1 scope only.** No "later" features, no roadmap sections in docs.
 10. **Docs describe the current design.** `pnpm doc-lint` (in `task check`
-    and CI) refuses retired vocabulary outside `docs/archive/` and
-    `CHANGELOG.md`, keeps the README quickstart identical to
+    and CI) refuses retired vocabulary outside `CHANGELOG.md`, keeps the README quickstart identical to
     `docs/SELF-HOSTING.md`'s and requires every `.env*.example` key in the
     SELF-HOSTING env reference.
 11. **Agent surface in sync.** A change to the MCP tools or the SDK updates the
@@ -83,7 +83,7 @@ examples/               drobek-module-hello (an external module)
 tests-e2e/              Playwright (@local needs the dev stack, @smoke is safe anywhere)
 tests-eval/             manual agent eval (`task eval`, never CI)
 scripts/                self-host scripts, e2e image flow, prod proof, doc-lint
-docs/                   ARCHITECTURE, SELF-HOSTING, MODULES, AGENT, SECURITY, LICENSING, progress, vision-plan; archive/ = history
+docs/                   ARCHITECTURE, SELF-HOSTING, MODULES, AGENT, SECURITY, LICENSING
 ```
 
 ## Conventions
@@ -95,6 +95,7 @@ docs/                   ARCHITECTURE, SELF-HOSTING, MODULES, AGENT, SECURITY, LI
   `@drobek/db`; never read `err.code` or log `err.message` of a query error
   (guarded by `packages/db/src/error-guard.test.ts`).
 - Every operator-facing limit is an env var with a production default.
-- Working memory of the implement loop, gotchas and failed approaches:
-  [`docs/progress.md`](docs/progress.md) — read "Notes and gotchas" before
+- Working memory of the implement loop, gotchas and failed approaches: the
+  progress log in the private drobek-web checkout next to this one,
+  `../drobek-web/docs/internal/progress.md` — read "Notes and gotchas" before
   touching an unfamiliar area, append to it after.

@@ -27,9 +27,9 @@
 # visible in /api/version; `git checkout vX.Y.Z && task build` rebuilds it
 # from the same sources and lockfile.
 #
-# Triggers: pushes to `next` and `main` and `v*` tags only (Actions capacity is
-# limited — `next` is pushed at milestone end; no PR / schedule triggers). A
-# newer push to the same ref cancels the running one.
+# Triggers: pushes to `main` and `v*` tags only (Actions capacity is limited —
+# push what `task check` proved; no PR / schedule triggers). A newer push to
+# the same ref cancels the running one.
 #
 # No repository secrets are used except the automatic GITHUB_TOKEN (GHCR push
 # on main and tags). The e2e stack's DROBEK_MASTER_KEY / TLS_ASK_TOKEN are
@@ -52,7 +52,7 @@ name: CI
 
 on:
   push:
-    branches: [main, next]
+    branches: [main]
     tags: ['v*']
 
 concurrency:

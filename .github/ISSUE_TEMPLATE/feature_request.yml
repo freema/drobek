@@ -1,0 +1,20 @@
+name: Feature request
+description: A change to the core — the MCP tools, the dashboard, serving or self-hosting.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you are trying to do and what stops you today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: How it could work. Could it be a module instead of a core change?
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and workarounds

@@ -1,0 +1,41 @@
+name: Bug report
+description: Something in drobek does not work as documented.
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: '`GET /api/version` on your instance, or the image tag.'
+      placeholder: 'v0.2.0 (abc1234)'
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where
+      options:
+        - Self-hosted
+        - drobek.app
+        - Local dev stack
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: What you or your agent did — MCP tool calls, dashboard actions, config.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or error response
+      description: The `{ code, message, hint }` error or the server log lines. Remove secrets, keys and personal data.
+      render: text

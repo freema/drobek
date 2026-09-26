@@ -8,8 +8,7 @@
  * 1. Retired vocabulary. The pre-rebuild design (an upload pipeline with a
  *    job queue, path-based app URLs on the dashboard host, a second licence)
  *    is gone; no file may describe it as current. The terms are below in
- *    RETIRED. `docs/archive/` (history) and `CHANGELOG.md` (history) are
- *    exempt. A line that has to name a retired term on purpose (a test that
+ *    RETIRED. `CHANGELOG.md` (history) is exempt. A line that has to name a retired term on purpose (a test that
  *    asserts the term is GONE) carries the marker `doc-lint: allow` on the
  *    same line or on the line directly above it.
  * 2. The README quickstart is the SELF-HOSTING quickstart, byte for byte:
@@ -41,7 +40,6 @@ const RETIRED = [
   ['dual license', /dual[ -]licen[cs]/i],
 ];
 
-const EXEMPT_PREFIXES = ['docs/archive/'];
 const EXEMPT_FILES = new Set(['CHANGELOG.md', SELF, 'pnpm-lock.yaml']);
 const BINARY_EXT = /\.(png|jpe?g|gif|webp|ico|pdf|woff2?|ttf|otf|zip|gz|tgz|wasm)$/i;
 
@@ -68,7 +66,7 @@ function read(rel) {
 // ── 1. retired vocabulary ────────────────────────────────────────────────────
 let scanned = 0;
 for (const rel of listFiles()) {
-  if (EXEMPT_FILES.has(rel) || EXEMPT_PREFIXES.some((p) => rel.startsWith(p))) continue;
+  if (EXEMPT_FILES.has(rel)) continue;
   if (BINARY_EXT.test(rel)) continue;
   const abs = join(ROOT, rel);
   if (!existsSync(abs)) continue; // deleted in the working tree
@@ -85,7 +83,7 @@ for (const rel of listFiles()) {
     for (const [label, re] of RETIRED) {
       if (!re.test(line)) continue;
       if (line.includes(ALLOW_MARKER) || (i > 0 && lines[i - 1].includes(ALLOW_MARKER))) continue;
-      findings.push(`${rel}:${i + 1}: retired term "${label}" (describe the current design, or move the file to docs/archive/)`);
+      findings.push(`${rel}:${i + 1}: retired term "${label}" (describe the current design)`);
     }
   });
 }

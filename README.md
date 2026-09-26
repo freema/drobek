@@ -1,5 +1,10 @@
 # drobek
 
+[![CI](https://github.com/freema/drobek/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/freema/drobek/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/freema/drobek)](https://github.com/freema/drobek/releases/latest)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](./LICENSE)
+[![Image](https://img.shields.io/badge/image-ghcr.io%2Ffreema%2Fdrobek-2496ed)](https://github.com/freema/drobek/pkgs/container/drobek)
+
 > An open-source cloud workspace for agent-built web apps. Your own agent
 > (Claude, Claude Code, Cursor, Codex, …) connects over MCP and works
 > **directly in drobek**: every write is compiled on the server, kept as a
@@ -7,8 +12,9 @@
 > their backend only through TypeScript platform modules — sign-in, data,
 > forms, e-mail, file uploads, external APIs — and the humans get a dashboard.
 
-**Status:** v1 in development on the `next` branch. Self-hostable today
-(AGPL-3.0); the hosted edition is [drobek.app](https://drobek.app).
+**Status:** [latest release](https://github.com/freema/drobek/releases/latest),
+self-hostable (AGPL-3.0); the hosted edition is [drobek.app](https://drobek.app).
+Apps built with it: the [gallery](https://www.drobek.app/gallery).
 
 ## The loop
 
@@ -362,6 +368,45 @@ run `@smoke` + `@local` and tear everything down. `DROBEK_IMAGE=…` skips the
 build, `E2E_KEEP=1` keeps the stack, extra args go to Playwright
 (`task e2e:image -- tests/mcp-loop.spec.ts`).
 
+## Versions and upgrades
+
+drobek follows semantic versioning; while it is at 0.x, a minor release may
+need an operator step, and its release notes say which. Every release is a git tag `vX.Y.Z`, an
+immutable image `ghcr.io/freema/drobek:vX.Y.Z`, a
+[GitHub release](https://github.com/freema/drobek/releases) and an entry in
+[`CHANGELOG.md`](./CHANGELOG.md); `latest` and `previous` move with each
+release ([`docs/SELF-HOSTING.md` → Image tags](./docs/SELF-HOSTING.md#image-tags)).
+Migrations only go forward and run as their own step of
+`task selfhost:upgrade`; a rollback is the previous image plus, when the
+release migrated the database, the backup taken before it
+([Upgrades and rollback](./docs/SELF-HOSTING.md#upgrades-and-rollback)).
+Modules declare the contract range they need, and the server refuses to start
+with a module it cannot satisfy
+([`docs/MODULES.md` → Compatibility](./docs/MODULES.md#compatibility)).
+
+## Extend drobek: write a module
+
+An app's backend is a set of platform modules, and anyone can write one: an
+npm package against the published contract, installed by the operator
+without building an image.
+
+```sh
+npm create drobek-module@latest erp   # routes, SDK slice, migration, SKILL.md, tests
+```
+
+[`docs/MODULES.md` → Writing a module](./docs/MODULES.md#writing-a-module)
+walks through the contract, publishing and installing;
+[`examples/drobek-module-hello`](./examples/drobek-module-hello) is a working
+one, and [Published modules](./docs/MODULES.md#published-modules) lists the
+modules others can install.
+
+## Contributing
+
+Issues, questions and pull requests are welcome — see
+[`CONTRIBUTING.md`](./CONTRIBUTING.md). Questions and ideas go to
+[Discussions](https://github.com/freema/drobek/discussions); security issues
+are reported privately ([`SECURITY.md`](./SECURITY.md)).
+
 ## Documentation
 
 | Document | What |
@@ -371,14 +416,8 @@ build, `E2E_KEEP=1` keeps the stack, extra args go to Playwright
 | [`docs/MODULES.md`](./docs/MODULES.md) | the platform module contract and the built-in modules |
 | [`docs/AGENT.md`](./docs/AGENT.md) | connecting agents, the tools and scopes, the briefing, skills, `llms.txt` |
 | [`docs/SECURITY.md`](./docs/SECURITY.md) | the threat model and how to report a vulnerability |
-| [`docs/listing/`](./docs/listing/README.md) | the submission kit for the Claude connectors directory, the Cursor Marketplace and the Codex plugin marketplace, with the MCP Inspector log |
 | [`docs/LICENSING.md`](./docs/LICENSING.md) | AGPL-3.0 §13 and the boundary with the hosted drobek.app |
-| [`docs/POSITIONING.md`](./docs/POSITIONING.md) | the market and how drobek compares |
-| [`docs/progress.md`](./docs/progress.md) | the implementation log, gotchas and failed approaches |
-| [`docs/vision-plan.md`](./docs/vision-plan.md), [`docs/navrh-drobek.md`](./docs/navrh-drobek.md) | the ratified plan and the one-page pitch (Czech) |
-
-Older design documents are kept in [`docs/archive/`](./docs/archive/) for
-history; they describe the design before the cloud-workspace rebuild.
+| [`CHANGELOG.md`](./CHANGELOG.md) | every release |
 
 ## License
 
