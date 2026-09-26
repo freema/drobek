@@ -34,19 +34,17 @@ export function renderInviteEmail(vars: InviteEmailVars): RenderedInviteEmail {
   const safeUrl = escapeHtml(vars.acceptUrl);
 
   const body = `
-    <h1 style="margin:0 0 12px;font-size:22px;line-height:1.3;font-weight:600;color:${emailBrand.ink};">
-      You&#39;re invited
-    </h1>
-    <p style="margin:0 0 20px;font-size:14px;line-height:1.55;color:${emailBrand.muted};">
+    <h1 style="margin:0 0 8px;font-size:20px;line-height:1.3;font-weight:600;color:${emailBrand.ink};">You&#39;re invited</h1>
+    <p style="margin:0 0 24px;color:${emailBrand.muted};">
       You have been invited to join the workspace <strong style="color:${emailBrand.ink};">${safeName}</strong>
       on drobek as <strong style="color:${emailBrand.ink};">${safeRole}</strong>.
     </p>
-    <p style="margin:0 0 20px;">
-      <a href="${safeUrl}" style="display:inline-block;padding:10px 18px;background:${emailBrand.ink};color:#ffffff;text-decoration:none;border-radius:8px;font-size:14px;font-weight:600;">
+    <p style="margin:0 0 24px;">
+      <a href="${safeUrl}" style="display:inline-block;padding:10px 18px;background:${emailBrand.ink};color:#ffffff;text-decoration:none;border-radius:6px;font-size:14px;font-weight:600;">
         Accept invitation
       </a>
     </p>
-    <p style="margin:0;font-size:12px;line-height:1.55;color:${emailBrand.faint};word-break:break-all;">
+    <p style="margin:0;font-size:13px;line-height:1.55;color:${emailBrand.faint};word-break:break-all;">
       Or open this link: ${safeUrl}<br />
       The invitation expires in 7 days and can be used once.
     </p>`;

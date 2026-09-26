@@ -8,6 +8,9 @@
   - The new MCP tool `set_gallery_listing` (publish scope) lists or unlists an app. Listing requires `user_confirmed: true`, which the agent may send only after the user explicitly said yes to the description it showed them. `get_app` returns the gallery state.
   - Migration 0022 adds `apps.published_at` (set by every publish, backfilled from the audit log) and the gallery columns.
 
+### Changed
+- **Minimal e-mails** — every drobek e-mail (sign-in code, workspace invite, module mail) uses one plain white layout: the wordmark with the crumb, the text, a one-line footer, and no grey card. The sign-in code is one copyable string instead of a box per digit, and "ignore this e-mail if you did not ask" is said once instead of twice.
+
 ## v0.1.4 — 2026-09-25
 
 ### Changed
