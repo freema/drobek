@@ -757,6 +757,19 @@ them), in `DROBEK_MODULES` order. A slot nobody contributes to, or that no
 active module declares, gives `[]`. The generic types the value; the schema
 is what guarantees it.
 
+**`compose`** — a host whose config, confirm rules or secrets depend on the
+contributions (the auth module: one `providers.<id>` entry, identity-field
+confirmations and secrets per sign-in provider) declares
+`compose({ contributions }) → { configSchema?, configDefaults?,
+salvageConfig?, confirmRequired?, secrets? }`. Core runs it once at start,
+after the contributions are collected (`checkModuleSet`, and
+`createModuleTestContext` with its `contributions` option), and the returned
+parts replace the declared ones — validated like a declared module (a zod
+schema, defaults that pass it, unique UPPER_SNAKE secret names, functions).
+Only a module that declares slots may compose; any other key, or a throw,
+refuses the start. The declared parts stay the module's view of a server
+without contributions.
+
 ## Per-app configuration
 
 Stored in `module_configs` (`app_id`, `module`, `config` jsonb, `pending`
@@ -1228,8 +1241,10 @@ auth module:
   (no `Domain`), `Path=/`, `HttpOnly`, `SameSite=Lax`, `Secure` in production
   or when the apps origin is https; the value is 64 hex characters;
 - the record: Redis `drobek:eu:<app_id>:<token>` →
-  `{ id, email, role, epoch }`, 30 days, rolled forward by the auth module's
-  `me`;
+  `{ id, email, role, epoch, provider? }`, 30 days, rolled forward by the
+  auth module's `me`; `provider` is the sign-in method the session was made
+  with (`email` or a sign-in provider id) and reaches `endUsers.current` as
+  `user.provider`;
 - the app's epoch `drobek:eu-epoch:<app_id>`: a session whose epoch differs is
   dead. Raising it signs every user of the app out on every host of the app
   (preview, production, version hosts);
@@ -1243,6 +1258,15 @@ auth module:
   `me`. A failing lookup makes that request anonymous (fail closed). At most
   one active module may declare `endUsers` (two refuse the start); with none,
   no session is honoured;
+- `endUsers.callback` (optional): the IdP callback of end-user sign-in
+  providers, `GET|POST /__drobek/auth/callback/:provider` on the DASHBOARD
+  host (`runtime.endUserCallback`, see "Auth providers" below). Core hands
+  it the query, a urlencoded POST body (≤ 256 KiB), the client IP and
+  services: a callback-namespaced rate limiter, the server's default
+  limits, and `app(id)` — a live app (not deleted, not taken down) with the
+  authority's effective config, its declared secrets and an audit writer.
+  It answers `{ kind: 'redirect', location }` or `{ kind: 'page', status,
+  title, message, link? }`; a throw is a generic 500 page;
 - helpers: `createEndUserSession`, `loadEndUserSession`,
   `renewEndUserSession`, `destroyEndUserSession`, `revokeEndUserSessions`,
   `endUserCookieHeader`, `readEndUserToken`, `cookiePrincipalResolver({
@@ -1270,17 +1294,23 @@ an app sign in with a 6-digit code e-mailed to them. Its `SKILL.md` is what
 - **Routes** (`/__drobek/v1/auth/…`, all `public`, CSRF `sdk-header`):
   `POST send-code { email }`, `POST verify { email, code }` → `{ user }` +
   the session cookie, `GET me` → `{ user | null }` (+ rolls the session and
-  its cookie), `POST logout`.
-- **Config** `{ allow: { emails, domains, anyone }, adminEmails }`: exact
-  addresses (lowercased), exact domains, and `anyone: true`, which **needs the
-  owner's confirmation**. `adminEmails` may sign in and get the role `admin`.
-  The editors and workspace-admins of the app's workspace may always sign in
-  with their own address, as `admin` (the preview works before any config);
-  viewers may not.
+  its cookie), `POST logout`, `GET providers` → `{ providers: [{ id, label
+  }] }` (the methods that are on), `POST begin { provider, return_to? }` →
+  `{ url }` and `GET complete?code=` (provider sign-in, below).
+- **Config** `{ allow: { emails, domains, anyone }, adminEmails, providers
+  }`: exact addresses (lowercased), exact domains, and `anyone: true`, which
+  **needs the owner's confirmation**. `adminEmails` may sign in and get the
+  role `admin`. The editors and workspace-admins of the app's workspace may
+  always sign in with their own address, as `admin` (the preview works
+  before any config); viewers may not. `providers` (below) turns the sign-in
+  methods on and off.
 - **Table** `mod_auth_users (id, app_id, email, role, verified_at,
-  last_login_at, disabled_at, created_at)`, unique `(app_id, email)`, cascade
-  on app delete. A user with `disabled_at` cannot sign in, and their next `me`
-  signs them out.
+  last_login_at, disabled_at, created_at, provider, subject)`, unique
+  `(app_id, email)` and — for provider users — `(app_id, provider,
+  subject)`, cascade on app delete. `provider` is `email` (no `subject`) or
+  the sign-in provider the user is linked to (with the IdP's `subject`). A
+  user with `disabled_at` cannot sign in, and their next `me` signs them
+  out.
 - **Codes**: the dashboard login's own machinery from `@drobek/auth`
   (`createEmailLoginCode` / `consumeEmailLoginCode`, the atomic guess counter
   of PHY-76 #1, the OTP guard layers) with the scope `eu:<app_id>`: keys
@@ -1302,7 +1332,8 @@ an app sign in with a 6-digit code e-mailed to them. Its `SKILL.md` is what
   was sent), upserts the user (role from the config), creates the session and
   writes the audit `auth.sign_in` (actor end_user).
 - **Who is signed in, now** (`src/current.ts`, the module's
-  `endUsers.current`): the `mod_auth_users` row exists and is not disabled,
+  `endUsers.current`): the session's sign-in method is still on, the
+  `mod_auth_users` row exists and is not disabled,
   the current config still lets the address in (allowlist, `adminEmails`, or
   an editor / workspace-admin of the app's workspace), and the role follows
   the config. Core runs it for every module request with a session (two
@@ -1316,11 +1347,130 @@ an app sign in with a 6-digit code e-mailed to them. Its `SKILL.md` is what
   more than the app's share of the server's sign-in budget,
   `EMAIL_SIGNIN_APP_HOURLY_SHARE` — 25 by default; then the app's sign-in
   e-mails pause for 15 minutes), `AUTH_ATTEMPTS_PER_IP_15MIN` 30
-  (send-code + verify calls), `END_USERS_MAX_PER_APP` 1000.
+  (send-code, verify, begin and complete calls), `END_USERS_MAX_PER_APP`
+  1000; server-wide `AUTH_PROVIDER_CALLBACKS_PER_IP_15MIN` 60 (IdP callbacks
+  per client IP on the dashboard host — the app is not known yet, so the
+  server default applies, never a workspace override).
 - **SDK**: `drobek.auth.me() / sendCode(email) / verify(email, code) /
-  logout() / onChange(cb)` in `sdk.js`, and the inline source `drobek/auth`:
-  `<LoginGate title requireAdmin loading>` and `useAuth()`, React components
-  built into the app with the app's React.
+  logout() / onChange(cb) / providers() / signIn(provider, { returnTo? })`
+  in `sdk.js`, and the inline source `drobek/auth`: `<LoginGate title
+  requireAdmin loading>` (the e-mail form when `emailCode` is on, a
+  "Continue with <label>" button per enabled provider) and `useAuth()`,
+  React components built into the app with the app's React.
+- **Observers**: after every successful sign-in (e-mail code or provider)
+  the module tells each `auth.signedIn` contribution — `onSignIn({ app,
+  user, provider, isNew, db, log })`, in parallel, each cut off after 5 s;
+  a failure is logged (observer id + error name) and never blocks or fails
+  the sign-in.
+
+### Auth providers
+
+Other modules add ways to sign in through the auth module's slot
+`auth.provider` (`defineAuthProvider` from `@drobek/modules`). A provider
+only **proves an identity**; auth keeps the allowlist, roles, users,
+sessions and audits.
+
+```ts
+contributes: {
+  'auth.provider': defineAuthProvider({
+    id: 'oidc',                         // ^[a-z][a-z0-9]{1,15}$, not "email"
+    label: 'Company SSO',               // "Continue with Company SSO"
+    configSchema: z.strictObject({ issuer: z.url(), clientId: z.string() }), // no `enabled`
+    configDefaults: { },                // optional, must pass configSchema.partial()
+    identityFields: ['issuer', 'clientId'], // changing them waits for the owner
+    secrets: [{ name: 'OIDC_CLIENT_SECRET', description: '…', env: 'AUTH_OIDC_CLIENT_SECRET' }],
+    async begin({ config, secrets, env, redirectUri, state, nonce, codeChallenge }) {
+      return { url: '…the IdP authorize URL…' };
+    },
+    async callback({ query, body, codeVerifier, state, nonce, config, secrets }) {
+      return { subject, email, emailVerified, name };  // a VERIFIED identity, or throw
+    },
+  }),
+},
+```
+
+**Config.** `providers` holds `emailCode: { enabled }` (default on) and one
+entry per `auth.provider` contribution of the server: `{ enabled, …the
+provider's configSchema }`. The schema is composed at start (`compose`):
+while a provider is off its fields are optional; enabling it validates the
+whole provider schema. Enabling a provider, and changing one of its
+`identityFields` while it is on, **needs the owner's confirmation** (the
+item lists the identity fields); turning a method off never waits.
+`emailCode` off with no provider on is `invalid_params`
+(`providers.emailCode.enabled`). A stored config naming a provider the
+server no longer runs is salvaged: that entry is dropped (or a broken one
+turned off), never the e-mail code switched back on — with nothing on,
+nobody can sign in until the owner fixes it.
+
+**Secrets.** A provider's secrets are per-app secrets of the auth module
+(set in the dashboard, never through MCP); names start with `<ID>_`. A
+provider reads only its own declared names: the app's value first, else
+the operator's env var it declared as `env` (`AUTH_<ID>_…`). `begin` and
+`callback` also get `env` — the operator's `AUTH_<ID>_*` variables only.
+
+**The flow** (`modules/auth/src/flow.ts`):
+
+```
+app host                          dashboard host                        IdP
+POST /__drobek/v1/auth/begin ──► (none)
+  state id, nonce, PKCE verifier, flow token → Redis drobek:eu-oauth:<id> (10 min)
+  state = <id>.<HMAC(app, host, provider, nonce)>, flow cookie (Path=complete)
+  ◄── { url }  ─────────────────────────────────────────────────────────► authorize
+                                  GET|POST /__drobek/auth/callback/<id> ◄──
+                                  state: GETDEL + HMAC + provider check
+                                  provider.callback() → verified identity
+                                  allowlist → upsert / link user
+                                  handoff code → Redis (60 s)
+GET /__drobek/v1/auth/complete?code= ◄── 302
+  code: GETDEL, same app + host, flow cookie hash matches
+  decide again → session cookie (host-only) → 302 return_to
+```
+
+- the state is `<id>.<HMAC-SHA256>`; the key is HKDF over
+  `DROBEK_MASTER_KEY` (label `drobek/eu-oauth-state/v1`); without a valid
+  master key provider sign-in answers `unavailable`. The state record
+  holds the app, host, provider, nonce, PKCE verifier, `return_to` and the
+  SHA-256 of the flow token; it is consumed on the first callback, valid or
+  not;
+- the app comes **only from the state**; the callback never reads the
+  dashboard session or cookie. The redirect URI of provider `<id>` is
+  `<PUBLIC_APP_URL>/__drobek/auth/callback/<id>` — one per server, registered
+  once at the IdP;
+- `return_to` must be a path on the app host (`safeReturnPath`: one leading
+  `/`, no `//`, `/\`, scheme or control characters), else `invalid_request`;
+- the handoff code (32 random bytes) lives 60 s, works once, and only on the
+  app host that began the sign-in, in the browser holding the flow cookie
+  (`__Secure-drobek_eu_flow`, host-only, `Path=/__drobek/v1/auth/complete`,
+  HttpOnly, SameSite=Lax, 10 min) — a callback link handed to someone else
+  signs nobody in;
+- a provider identity must be **verified** (`emailVerified: true`), else
+  `email_not_verified`; the allowlist and `adminEmails` then decide as for
+  the e-mail code. A known (provider, subject) is the same user (the address
+  follows the IdP); else a user with that address and no link is **linked**
+  (same id); a user linked to another identity is refused; else a new user;
+- complete decides again (allowlist, disabled, the provider still on),
+  creates the session with `provider`, audits `auth.sign_in { provider }`
+  and tells the observers. Every refusal is audited `auth.sign_in_denied {
+  provider, reason }` and answers a small page with a link back to the app;
+- a provider call is cut off after 15 s; its errors are logged by name
+  only (a message may quote tokens or IdP answers) and answer
+  `provider_error` / a "Sign-in failed" page;
+- `begin` answers only `{ url }`: the app host's CSP (`form-action 'self'`)
+  forbids posting a form to an IdP, so a SAML provider sends its request
+  with the HTTP-Redirect binding; the IdP may POST its answer to the
+  callback (urlencoded, ≤ 256 KiB; the dashboard's Origin check exempts
+  `/__drobek/auth/callback`).
+
+**Sessions.** A session remembers its method; turning a method off ends its
+sessions on the next request (`current`), and the Users tab shows users
+whose method is off as `not_allowed`. The e-mail code (while on) works for
+every user, linked ones included.
+
+**Testing.** `createModuleTestContext(auth, { contributions: {
+'auth.provider': [provider] } })` composes the module; `t.endUserCallback({
+provider, query, body })` runs the callback as core does
+(`modules/auth/src/providers.test.ts` drives the whole flow with a fake
+IdP).
 
 ## The built-in `email` module
 

@@ -70,6 +70,12 @@ export interface EndUser {
   id: string;
   email: string;
   role: 'user' | 'admin';
+  /**
+   * How the session signed in: `email` (the e-mail code) or an auth
+   * provider's id (NSO-348). Absent = `email` (a session from before
+   * providers existed). Never part of the principal a module sees.
+   */
+  provider?: string;
 }
 
 /**
@@ -274,7 +280,57 @@ export interface EndUserAuthority<Config = unknown> {
   setRole?(view: OwnerView<Config>, id: string, role: 'user' | 'admin'): Promise<{ user: EndUserRecord; configPatch: Record<string, unknown> | null }>;
   /** Block (true) or unblock a user; a blocked user is anonymous — and signed out — on the next request. */
   setDisabled?(view: OwnerView<Config>, id: string, disabled: boolean): Promise<EndUserRecord | null>;
+
+  /**
+   * The IdP callback of the end-user sign-in providers (NSO-348): core routes
+   * `GET|POST /__drobek/auth/callback/:provider` on the DASHBOARD host here —
+   * the one redirect URI an IdP client registers for every app. No dashboard
+   * session is read and no origin check applies (the IdP redirects or posts
+   * the browser here): the authority must authenticate the request by its
+   * own signed, single-use state, find the app from that state (never from
+   * the request) and answer a redirect to the app host or a page. A throw is
+   * logged and answers a generic error page.
+   */
+  callback?(input: EndUserCallbackInput<Config>): Promise<EndUserCallbackResult>;
 }
+
+/** One app as the end-user authority sees it in a sign-in callback (once it found the app in its own state). */
+export interface EndUserCallbackApp<Config = unknown> {
+  app: HookApp;
+  /** The authority module's effective config for the app. */
+  config: Config;
+  /** Limits of the app's workspace. */
+  limits(): Promise<Limits>;
+  /** This app's secrets of the authority module (declared names only), plaintext in memory. */
+  secrets: { get(name: string): Promise<string | null> };
+  /** Append an audit row for this app (actor: the anonymous visitor; action prefixed with the module name). */
+  audit(action: string, meta?: Record<string, unknown>): Promise<void>;
+}
+
+/** What the end-user authority's `callback` gets. */
+export interface EndUserCallbackInput<Config = unknown> {
+  /** The `:provider` path segment as the request sent it (unvalidated). */
+  provider: string;
+  method: 'GET' | 'POST';
+  /** Query parameters (first value of each). */
+  query: Record<string, string>;
+  /** The form fields of a POST (`application/x-www-form-urlencoded`, ≤ 256 KiB), else null. */
+  body: Record<string, string> | null;
+  clientIp: string | null;
+  services: ModuleServices & {
+    /** Fixed-window counter namespaced to the module's callback (no app is known yet). */
+    rateLimit(bucket: string, key: string, max: number, windowMs: number): Promise<RateLimitResult>;
+    /** The server's default limits (env / catalogue defaults — no workspace is known yet). */
+    limits(): Limits;
+    /** A live app by id (not deleted, not taken down) with the authority's config for it, or null. */
+    app(appId: string): Promise<EndUserCallbackApp<Config> | null>;
+  };
+}
+
+/** The callback's answer: send the browser on (to the app host), or show a page on the dashboard host. */
+export type EndUserCallbackResult =
+  | { kind: 'redirect'; location: string }
+  | { kind: 'page'; status: number; title: string; message: string; link?: { href: string; label: string } };
 
 /** One end user as the owner sees them. */
 export interface EndUserRecord {
@@ -286,6 +342,8 @@ export interface EndUserRecord {
   roleSource: 'workspace' | 'config' | null;
   /** `active`, `disabled` by the owner, or `not_allowed` any more by the config (signed out on their next request). */
   status: 'active' | 'disabled' | 'not_allowed';
+  /** How the user signs in: `email` (the e-mail code) or the auth provider their account is linked to. */
+  provider?: string;
   created_at: string;
   last_sign_in_at: string | null;
 }
@@ -699,6 +757,17 @@ export interface DrobekModule<Config = unknown> {
    * an active module and the value must pass its schema.
    */
   contributes?: Record<string, unknown>;
+  /**
+   * Optional, for a slot HOST whose config or secrets depend on what other
+   * modules contribute (e.g. `auth` adds `providers.<id>` and the providers'
+   * secrets for each `auth.provider` contribution). Called once at start,
+   * after the contributions were checked and before
+   * `DROBEK_MODULE_<NAME>_DEFAULTS` is applied; the parts it returns replace
+   * the declared ones everywhere (configure_module, the dashboard, skill_info,
+   * the test kit). The composed `configDefaults` must pass the composed
+   * `configSchema`. A throw refuses the start.
+   */
+  compose?(input: ModuleComposeInput): ComposedModuleParts<Config>;
   /** Who the module is for (default `default`: every workspace) — see ModuleAvailability. */
   availability?: ModuleAvailability;
   /** How the dashboard presents the module. */
@@ -710,6 +779,16 @@ export interface DrobekModule<Config = unknown> {
 export type AnyModule = DrobekModule<any>;
 
 const BRAND = Symbol.for('drobek.module');
+
+/** What a slot host's `compose` gets at start: the checked contributions to every slot. */
+export interface ModuleComposeInput {
+  contributions<T = unknown>(slot: string): T[];
+}
+
+/** The parts of a module its `compose` may replace (the rest of the module stays as declared). */
+export type ComposedModuleParts<Config = unknown> = Partial<
+  Pick<DrobekModule<Config>, 'configSchema' | 'configDefaults' | 'salvageConfig' | 'confirmRequired' | 'secrets'>
+>;
 
 /** Declare a module (typed identity + a brand the registry checks). */
 export function defineModule<Config>(module: DrobekModule<Config>): DrobekModule<Config> {

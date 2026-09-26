@@ -20,12 +20,16 @@
  *
  * EXEMPT (not cookie-authenticated; called cross-origin by native and web
  * MCP clients by design): `/oauth/token`, `/oauth/register` and `/mcp`
- * (Bearer-authenticated, mounted before this check anyway).
+ * (Bearer-authenticated, mounted before this check anyway), and
+ * `/__drobek/auth/callback/*` — the end-user sign-in providers' IdP callback
+ * (NSO-348): an IdP may POST the browser there from its own origin (SAML,
+ * `form_post`); it reads no dashboard cookie and is authenticated by its
+ * signed, single-use state.
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { dashboardOrigin, hostConfig, isAppsOrigin, type HostConfig } from '@drobek/apps';
 
-export const ORIGIN_CHECK_EXEMPT_PATHS: readonly string[] = ['/oauth/token', '/oauth/register', '/mcp'];
+export const ORIGIN_CHECK_EXEMPT_PATHS: readonly string[] = ['/oauth/token', '/oauth/register', '/mcp', '/__drobek/auth/callback'];
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 

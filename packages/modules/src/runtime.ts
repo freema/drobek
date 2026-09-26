@@ -27,6 +27,8 @@
  *    inactive one answers `404 module_not_enabled` on its routes and in
  *    configure_module / confirm, is left out of an app's skills and runs no
  *    onAppCreate / onPublish hook. The SDK stays one per server.
+ *  - `endUserCallback()` — the end-user sign-in providers' IdP callback on
+ *    the dashboard host (the `endUsers` authority's `callback`, NSO-348).
  *
  * `moduleRuntime()` is the process-wide instance, loaded once from
  * `DROBEK_MODULES` (memoised on globalThis, so the dev server's Vite-loaded
@@ -48,6 +50,9 @@ import type {
   ConfirmRole,
   EmailMessage,
   EndUser,
+  EndUserCallbackApp,
+  EndUserCallbackInput,
+  EndUserCallbackResult,
   EndUserListQuery,
   EndUserPage,
   EndUserRecord,
@@ -766,6 +771,78 @@ export class ModuleRuntime {
     const row = await readConfigRow(app.id, m.name, db);
     const config = this.effectiveConfig(m, row.config);
     return m.endUsers.current({ app, user, config, db, log: this.deps.log });
+  }
+
+  /**
+   * The IdP callback of the end-user sign-in providers
+   * (`/__drobek/auth/callback/:provider` on the dashboard host): hands the
+   * request to the `endUsers` authority's `callback` with services that
+   * know no app yet — a callback-scoped rate limiter, the server's default
+   * limits and `app(id)`, which the authority calls once its own signed state
+   * named the app. No authority / no callback → 404 page; a throw → a
+   * generic 500 page (logged without the error's text).
+   */
+  async endUserCallback(input: Omit<EndUserCallbackInput, 'services'>): Promise<EndUserCallbackResult> {
+    const m = endUserAuthorityOf(this.modules);
+    const callback = m?.endUsers?.callback?.bind(m.endUsers);
+    if (!m || !callback) {
+      return { kind: 'page', status: 404, title: 'Not found', message: 'This server has no end-user sign-in providers.' };
+    }
+    const deps = this.deps;
+    try {
+      return await callback({
+        ...input,
+        services: {
+          ...this.services(),
+          rateLimit: (bucket, key, max, windowMs) => deps.rateLimit(`mod:${m.name}:callback:${bucket}:${key}`, max, windowMs),
+          limits: () => deps.limits.defaults(),
+          app: (appId) => this.callbackApp(m, appId),
+        },
+      });
+    } catch (err) {
+      deps.log.error('end-user sign-in callback failed', { module: m.name, error: dbErrorForLog(err) });
+      return { kind: 'page', status: 500, title: 'Sign-in failed', message: 'drobek hit an internal error. Start the sign-in again from the app.' };
+    }
+  }
+
+  /** A live app (not deleted, not taken down) as the end-user authority sees it in a callback, or null. */
+  private async callbackApp(m: AnyModule, appId: string): Promise<EndUserCallbackApp | null> {
+    if (typeof appId !== 'string' || appId.length === 0 || appId.length > 64) return null;
+    const deps = this.deps;
+    const db = deps.db();
+    const [row] = await db
+      .select({ id: apps.id, slug: apps.slug, workspaceId: apps.workspaceId, deletedAt: apps.deletedAt, lockedReason: apps.lockedReason })
+      .from(apps)
+      .where(eq(apps.id, appId))
+      .limit(1);
+    if (!row || row.deletedAt || row.lockedReason) return null;
+    const app: HookApp = { id: row.id, slug: row.slug, workspaceId: row.workspaceId };
+    if (!(await this.isEnabled(app.workspaceId, m.name))) return null;
+    const config = this.effectiveConfig(m, (await readConfigRow(app.id, m.name, db)).config);
+    const declared = new Set((m.secrets ?? []).map((s) => s.name));
+    let limits: Promise<Limits> | null = null;
+    return {
+      app,
+      config,
+      limits: () => (limits ??= deps.limits.forWorkspace(app.workspaceId)),
+      secrets: {
+        get: async (name) => {
+          if (!declared.has(name)) throw new Error(`module "${m.name}" reads undeclared secret "${name}"`);
+          return getModuleSecret(app.id, m.name, name, deps.env);
+        },
+      },
+      audit: async (action, meta = {}) => {
+        await writeAudit({
+          workspaceId: app.workspaceId,
+          actorUserId: null,
+          actorKind: actorKindForSurface('apps'),
+          action: action.startsWith(`${m.name}.`) ? action : `${m.name}.${action}`,
+          subjectType: 'app',
+          target: app.slug,
+          meta: { ...meta, module: m.name, end_user: 'anon' },
+        });
+      },
+    };
   }
 
   // ── records ──

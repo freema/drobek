@@ -29,7 +29,17 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { noopLogger, type Logger } from '@drobek/core';
 import { apps, workspaces, type DB } from '@drobek/db';
-import { normalizeConfirmItems, type AnyModule, type EmailMessage, type HookApp, type Limits, type MailEnvelope, type ModuleContext, type Principal } from './contract.js';
+import {
+  normalizeConfirmItems,
+  type AnyModule,
+  type EmailMessage,
+  type EndUserCallbackResult,
+  type HookApp,
+  type Limits,
+  type MailEnvelope,
+  type ModuleContext,
+  type Principal,
+} from './contract.js';
 import { mergePatch } from './merge-patch.js';
 import { collectRoutes, errorResult, isReadable, matchRoute, runRoute, type PipelineResult } from './router.js';
 import { decideAccess } from './rules.js';
@@ -37,6 +47,7 @@ import { CORE_ERROR_CODES, ModuleError } from './errors.js';
 import { assertSignInSender, capEmailText, emailKind, resolveRecipients, sanitizeSubject } from './email.js';
 import type { MailGuard } from './mail-guard.js';
 import { memoryRateLimiter } from './runtime.js';
+import { composeModule } from './registry.js';
 
 export { checkSkill, checkSkillSources, knownErrorCodes, moduleSkillSource, type CheckSkillOptions, type CheckSkillSourcesOptions } from './skill-check/index.js';
 export { checkExamples, type ExamplesOptions, type ExamplesReport } from './skill-check/examples.js';
@@ -95,9 +106,20 @@ export interface ModuleTestOptions {
   mailGuard?: MailGuard;
   /**
    * Slot → the contributions `ctx.contributions(slot)` returns (as the
-   * slot's schema would have parsed them; default: none — `[]`).
+   * slot's schema would have parsed them; default: none — `[]`). A slot
+   * host's `compose` runs with them first, as at server start.
    */
   contributions?: Record<string, unknown[]>;
+}
+
+/** One request to the module's `endUsers.callback` (the dashboard-host IdP callback). */
+export interface TestCallbackInit {
+  provider: string;
+  method?: 'GET' | 'POST';
+  query?: Record<string, string>;
+  body?: Record<string, string> | null;
+  /** Default `127.0.0.1`; `null` = no resolved client IP. */
+  clientIp?: string | null;
 }
 
 export interface TestRequestInit {
@@ -151,6 +173,16 @@ export interface ModuleTestContext {
    * confirmRequired).
    */
   confirm(before: Record<string, unknown>, after: Record<string, unknown>): Promise<string[]>;
+  /**
+   * Run the module's `endUsers.callback` the way core runs it for
+   * `/__drobek/auth/callback/:provider` on the dashboard host: the test app
+   * is the only live app (`services.app(id)` answers it for its id, null for
+   * any other), with the test config, secrets, limits and audits; the rate
+   * limiter shares the test clock. Rejects when the module has no callback.
+   */
+  endUserCallback(init: TestCallbackInit): Promise<EndUserCallbackResult>;
+  /** The module as the test runs it (composed from `contributions` when it hosts slots). */
+  module: AnyModule;
 }
 
 function noDb(): DB {
@@ -161,7 +193,8 @@ function noDb(): DB {
   });
 }
 
-export function createModuleTestContext(module: AnyModule, opts: ModuleTestOptions = {}): ModuleTestContext {
+export function createModuleTestContext(declared: AnyModule, opts: ModuleTestOptions = {}): ModuleTestContext {
+  const module = composeModule(declared, <T,>(slot: string) => [...(opts.contributions?.[slot] ?? [])] as T[]);
   const parsed = module.configSchema.safeParse(mergePatch(module.configDefaults, opts.config ?? {}));
   if (!parsed.success) {
     throw new Error(`createModuleTestContext: config does not pass ${module.name}.configSchema: ${parsed.error.message}`);
@@ -176,7 +209,7 @@ export function createModuleTestContext(module: AnyModule, opts: ModuleTestOptio
   const rateLimit = memoryRateLimiter(opts.now);
   const audits: ModuleTestContext['audits'] = [];
   const emails: ModuleTestContext['emails'] = [];
-  const declared = new Set((module.secrets ?? []).map((s) => s.name));
+  const secretNames = new Set((module.secrets ?? []).map((s) => s.name));
   let principal: Principal = opts.principal ?? { kind: 'anon' };
 
   const buildCtx = (): ModuleContext<any> => ({
@@ -192,7 +225,7 @@ export function createModuleTestContext(module: AnyModule, opts: ModuleTestOptio
     rateLimit: (bucket, key, max, windowMs) => rateLimit(`${bucket}:${key}`, max, windowMs),
     secrets: {
       get: async (name) => {
-        if (!declared.has(name)) throw new Error(`module "${module.name}" reads undeclared secret "${name}"`);
+        if (!secretNames.has(name)) throw new Error(`module "${module.name}" reads undeclared secret "${name}"`);
         return opts.secrets?.[name] ?? null;
       },
     },
@@ -283,6 +316,7 @@ export function createModuleTestContext(module: AnyModule, opts: ModuleTestOptio
     get ctx() {
       return buildCtx();
     },
+    module,
     audits,
     emails,
     setPrincipal(p) {
@@ -296,6 +330,27 @@ export function createModuleTestContext(module: AnyModule, opts: ModuleTestOptio
         return r.data;
       };
       return normalizeConfirmItems(await module.confirmRequired(parse(before), parse(after), { app, db: opts.db ?? noDb() })).changes;
+    },
+    async endUserCallback(init) {
+      const callback = module.endUsers?.callback?.bind(module.endUsers);
+      if (!callback) throw new Error(`module "${module.name}" has no endUsers.callback`);
+      const base = buildCtx();
+      return callback({
+        provider: init.provider,
+        method: init.method ?? 'GET',
+        query: { ...(init.query ?? {}) },
+        body: init.body ?? null,
+        clientIp: init.clientIp === undefined ? '127.0.0.1' : init.clientIp,
+        services: {
+          db: base.db,
+          log: base.log,
+          contributions: base.contributions,
+          rateLimit: (bucket, key, max, windowMs) => rateLimit(`callback:${bucket}:${key}`, max, windowMs),
+          limits: () => limits,
+          app: async (appId) =>
+            appId === app.id ? { app, config, limits: async () => limits, secrets: base.secrets, audit: base.audit } : null,
+        },
+      });
     },
     async request(method, path, init = {}) {
       const upper = method.toUpperCase();

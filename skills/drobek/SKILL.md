@@ -72,6 +72,10 @@ Before using a backend (login, stored data, forms, email, file uploads, external
   write → preview → publish loop), `debug` (compile errors, `get_logs`,
   401/403 from a module) and `ui` (Tailwind from esm.sh, responsive and
   accessible screens, loading and error states).
+- Sign-in (`auth`) is the e-mail code plus any sign-in provider the server
+  runs (company SSO): `drobek.auth.providers()` lists the methods that are
+  on, `<LoginGate>` offers them. Enabling a provider waits for the owner's
+  confirmation; its secrets are set in the dashboard.
 - `configure_module({ app_id, module, config })` sets a module's config for
   the app (`config` is partial: only the keys you change). A sensitive change
   comes back `applied: false` with `pending_confirmation` and a `confirm_url`:

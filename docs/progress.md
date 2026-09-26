@@ -1494,6 +1494,22 @@ block, then `next` is pushed and the single MR opened.
   the NSO-346 × NSO-358 note). `@drobek/modules/lock` stays an in-image
   subpath: the npm `@drobek/modules` (NSO-349) publishes only `.` and
   `./testing`.
+- NSO-348 (auth providers): the app CSP has `form-action 'self'`, so a
+  provider's `begin` can only answer `{ url }` (a redirect) — an
+  auto-posting HTML form to an IdP would be blocked on the app host. SAML
+  requests go out with the HTTP-Redirect binding; the IdP's POST back to
+  `/__drobek/auth/callback/<id>` works (dashboard host, Origin-check exempt).
+- NSO-348: a slot host whose config depends on contributions uses the
+  contract's `compose` (applied in `checkModuleSet` and in
+  `createModuleTestContext({ contributions })`). Code that holds the
+  DECLARED module (e.g. `import auth from 'drobek-module-auth'` in a test)
+  sees the provider-less schema; use the runtime's module or `t.module`.
+- NSO-348: `PipelineResult` headers are a `Record<string,string>` — one
+  `Set-Cookie` per module response. `complete` sets the session cookie and
+  leaves the flow cookie to expire (10 min, its hash is single-use anyway).
+- NSO-348: React Router resource routes skip RR's own action CSRF check,
+  but the Express Origin-check middleware still runs — a cross-site IdP
+  POST needs its path in `ORIGIN_CHECK_EXEMPT_PATHS`.
 
 ## Failed approaches
 

@@ -4,6 +4,10 @@
  * no token (the session is an HttpOnly cookie on the app host). Keeps the
  * last known user so `onChange` listeners (e.g. `<LoginGate>`) stay in sync
  * across `me` / `verify` / `logout`.
+ *
+ * `providers()` lists the sign-in methods that are on; `signIn(id)` starts a
+ * provider sign-in (NSO-348): it asks the app host for the IdP URL and leaves
+ * the page — the browser comes back signed in (see flow.ts).
  */
 import type { SdkCore } from '@drobek/sdk';
 
@@ -20,12 +24,26 @@ export interface SentCode {
   expires_in: number;
 }
 
+/** A sign-in method that is on: `emailCode` (the e-mail code) or a provider id for signIn(). */
+export interface SignInMethod {
+  id: string;
+  label: string;
+}
+
 export interface AuthApi {
   me(): Promise<User | null>;
   sendCode(email: string): Promise<SentCode>;
   verify(email: string, code: string): Promise<User>;
   logout(): Promise<void>;
   onChange(listener: (user: User | null) => void): () => void;
+  providers(): Promise<SignInMethod[]>;
+  signIn(provider: string, options?: { returnTo?: string }): Promise<void>;
+}
+
+/** The current page as a same-host path (the default place to come back to). */
+function herePath(): string {
+  const l = globalThis.location;
+  return l ? `${l.pathname}${l.search}${l.hash}` : '/';
 }
 
 function sameUser(a: User | null | undefined, b: User | null): boolean {
@@ -68,6 +86,16 @@ export default function auth(core: SdkCore): AuthApi {
     async logout() {
       await core.request('POST', '/logout');
       set(null);
+    },
+    async providers() {
+      const r = await core.request<{ providers: SignInMethod[] }>('GET', '/providers');
+      return r.providers;
+    },
+    async signIn(provider, options) {
+      const r = await core.request<{ url: string }>('POST', '/begin', {
+        body: { provider, return_to: options?.returnTo ?? herePath() },
+      });
+      globalThis.location.assign(r.url);
     },
     onChange(listener) {
       listeners.add(listener);

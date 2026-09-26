@@ -5,6 +5,11 @@
  *   POST verify    { email, code }  → session cookie + { user }
  *   GET  me                         → { user | null } (+ rolls the session)
  *   POST logout                     → { ok: true } (+ clears the cookie)
+ *   GET  providers                  → { providers: [{ id, label }] } — the
+ *                                     sign-in methods that are on (NSO-348)
+ *   POST begin { provider, return_to? } → { url } of the IdP (+ flow cookie)
+ *   GET  complete?code=             → session cookie + 302 return_to
+ *                                     (provider sign-in, see flow.ts)
  *
  * The code and its limits are the dashboard login's own machinery from
  * @drobek/auth (atomic INCR guess counter, PHY-76 #1; the OTP guard layers),
@@ -45,8 +50,11 @@ import {
   type ModuleRouter,
 } from '@drobek/modules';
 import { dbErrorForLog } from '@drobek/db';
-import { decideSignIn, type AccessResult, type AuthConfig } from './config.js';
+import type { AuthSignedInObserver } from '@drobek/modules';
+import { decideSignIn, methodEnabled, type AccessResult, type AuthConfig } from './config.js';
 import { currentUser } from './current.js';
+import { begin, beginBody, complete } from './flow.js';
+import { SIGNED_IN_SLOT, notifySignedIn, signInMethods } from './providers.js';
 import type { AuthUserRow } from './schema.js';
 import {
   appDisplayName,
@@ -116,6 +124,15 @@ export function signInEmail(input: { appName: string; host: string | null; code:
   };
 }
 
+/** The e-mail code is turned off for this app (`providers.emailCode.enabled: false`). */
+function assertEmailCodeOn(ctx: Ctx): void {
+  if (!methodEnabled(ctx.config, 'email')) {
+    throw new ModuleError('provider_not_enabled', 'Sign-in with an e-mail code is turned off for this app — use drobek.auth.signIn(<provider>).', {
+      status: 404,
+    });
+  }
+}
+
 function notAllowed(): ModuleError {
   return new ModuleError('email_not_allowed', 'This e-mail address may not sign in to this app.', { status: 403 });
 }
@@ -180,6 +197,7 @@ export function registerRoutes(r: ModuleRouter<AuthConfig>): void {
 
   r.post('/send-code', { rule: 'public', body: sendCodeBody, rateLimit: attempts, maxBodyBytes: 1024 }, async (req, ctx) => {
     const email = req.body.email;
+    assertEmailCodeOn(ctx);
     await checkSignIn(ctx, email);
 
     const scope = otpScope(ctx.app.id);
@@ -225,6 +243,7 @@ export function registerRoutes(r: ModuleRouter<AuthConfig>): void {
 
   r.post('/verify', { rule: 'public', body: verifyBody, rateLimit: attempts, maxBodyBytes: 1024 }, async (req, ctx) => {
     const { email, code } = req.body;
+    assertEmailCodeOn(ctx);
     const consumed = await consumeEmailLoginCode(email, code, otpScope(ctx.app.id));
     if (!consumed.ok) {
       if (consumed.reason === 'too_many_attempts') {
@@ -235,8 +254,16 @@ export function registerRoutes(r: ModuleRouter<AuthConfig>): void {
     // The allowlist may have changed since the code was sent — decide again.
     const { access, existing } = await checkSignIn(ctx, email);
     const row = await recordSignIn(ctx.db, ctx.app.id, email, access.role);
-    const token = await createEndUserSession(redis(), ctx.app.id, publicUser(row));
-    await ctx.audit('sign_in', { user_id: row.id, role: row.role, new_user: !existing });
+    const token = await createEndUserSession(redis(), ctx.app.id, { ...publicUser(row), provider: 'email' });
+    await ctx.audit('sign_in', { user_id: row.id, role: row.role, new_user: !existing, provider: 'email' });
+    void notifySignedIn(ctx.contributions<AuthSignedInObserver>(SIGNED_IN_SLOT), {
+      app: ctx.app,
+      user: publicUser(row),
+      provider: 'email',
+      isNew: !existing,
+      db: ctx.db,
+      log: ctx.log,
+    });
     return respond(200, { user: publicUser(row) }, sessionCookie(token));
   });
 
@@ -250,7 +277,7 @@ export function registerRoutes(r: ModuleRouter<AuthConfig>): void {
     // The same decision core makes for every module request (current.ts):
     // removed from the allowlist, disabled or deleted → signed out; the role
     // follows the config (and is written back to the row here).
-    const now = await currentUser(ctx.db, ctx.app, ctx.config, session.id);
+    const now = await currentUser(ctx.db, ctx.app, ctx.config, session.id, session.provider ?? 'email');
     if (!now) {
       await destroyEndUserSession(store, ctx.app.id, token);
       return respond(200, { user: null }, clearedCookie());
@@ -266,4 +293,19 @@ export function registerRoutes(r: ModuleRouter<AuthConfig>): void {
     if (token) await destroyEndUserSession(redis(), ctx.app.id, token);
     return respond(200, { ok: true }, clearedCookie());
   });
+
+  // ── sign-in providers (NSO-348, flow.ts) ──
+
+  r.get('/providers', { rule: 'public' }, (_req, ctx) => ({ providers: signInMethods(ctx.contributions, ctx.config) }));
+
+  r.post('/begin', { rule: 'public', body: beginBody, rateLimit: attempts, maxBodyBytes: 4096 }, (req, ctx) =>
+    begin(ctx, { provider: req.body.provider, return_to: req.body.return_to, host: req.header('host') })
+  );
+
+  // A top-level navigation from the dashboard host's redirect: no SDK header
+  // (GET is never CSRF-checked). The single-use code bound to this app host
+  // and the flow cookie of the browser that began the sign-in protect it.
+  r.get('/complete', { rule: 'public', rateLimit: attempts }, (req, ctx) =>
+    complete(ctx, { code: req.query.code, host: req.header('host'), cookie: req.header('cookie') })
+  );
 }

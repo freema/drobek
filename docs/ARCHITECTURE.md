@@ -255,8 +255,10 @@ only), env-named limits, its own error codes, its own tables and migrations,
 and a skill the agent reads with `skill_info`. Modules extend each other
 through typed **slots**: a host module declares one with a zod schema, other
 modules contribute values, checked at start and read with
-`contributions(slot)`. Built in: `auth` (end-user sign-in by
-e-mailed code), `email` (notifications to the app's owners), `forms`, `data`
+`contributions(slot)` (a host may `compose` its config schema, confirm
+rules and secrets from the contributions at start). Built in: `auth`
+(end-user sign-in by e-mailed code, plus the sign-in providers other
+modules contribute to its `auth.provider` slot), `email` (notifications to the app's owners), `forms`, `data`
 (collections with per-operation rules), `proxy` (external APIs with the
 secret injected server-side) and `files` (end-user uploads). The contract is
 [`MODULES.md`](./MODULES.md).
@@ -266,6 +268,13 @@ secret injected server-side) and `files` (end-user uploads). The contract is
   `ctx.principal` = anonymous, an end user with a role, or an app admin. The
   dashboard session never exists on the apps origin. Mutating module calls
   need the app's own origin and `X-Drobek-SDK: 1` (`csrf_rejected`).
+- **Sign-in providers** (OIDC, SAML, … as modules) never share a cookie
+  between hosts: the app host starts the sign-in (`begin`: a state HMAC'd
+  under `DROBEK_MASTER_KEY`, PKCE, a flow cookie), the IdP calls back the ONE
+  redirect URI on the dashboard host (`/__drobek/auth/callback/<id>`, routed
+  to the `endUsers` authority's `callback`), which issues a 60-second
+  handoff code bound to the app host; `complete` on the app host redeems it
+  and sets the host-only session. The dashboard session is never touched.
 - **Configuration** comes from the agent (`configure_module`, a JSON merge
   patch validated by the module's schema) or the dashboard form. A change the
   module's `confirmRequired` names — opening a rule to `public`, a new

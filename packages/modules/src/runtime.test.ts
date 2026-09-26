@@ -1128,3 +1128,71 @@ describe("the owner's authorities (M2-03): owner config changes, end users, subm
     expect((await one.submissions(hook()))?.module).toBe('formsa');
   });
 });
+
+describe('endUserCallback — the IdP callback on the dashboard host (NSO-348)', () => {
+  const base = { version: '1.0.0', skill: { useWhen: 'x', markdown: '# x' } };
+  const call = (r: ModuleRuntime, query: Record<string, string>) => r.endUserCallback({ provider: 'idp', method: 'GET', query, body: null, clientIp: '203.0.113.7' });
+  const idp = defineModule<{ greeting: string }>({
+    ...base,
+    name: 'idp',
+    configSchema: z.object({ greeting: z.string() }),
+    configDefaults: { greeting: 'hi' },
+    secrets: [{ name: 'IDP_KEY', description: 'the key' }],
+    limits: [{ env: 'IDP_CALLBACKS', default: 7, meaning: 'callbacks' }],
+    endUsers: {
+      current: async ({ user }) => user,
+      callback: async ({ query, services }) => {
+        if (query.mode === 'throw') throw new Error('boom');
+        const view = await services.app(query.app ?? '');
+        if (!view) return { kind: 'page', status: 404, title: 'gone', message: 'no such app' };
+        if (query.mode === 'undeclared') await view.secrets.get('ECHO_TOKEN');
+        await view.audit('sign_in_denied', { reason: 'test' });
+        const first = await services.rateLimit('ip', 'k', 1, 60_000);
+        const second = await services.rateLimit('ip', 'k', 1, 60_000);
+        const key = await view.secrets.get('IDP_KEY');
+        return { kind: 'redirect', location: `https://x.example/${view.config.greeting}/${key}/${services.limits().IDP_CALLBACKS}/${first.ok}/${second.ok}` };
+      },
+    },
+  });
+
+  it('without an end-user authority with a callback → a 404 page', async () => {
+    expect(await call(rt, {})).toMatchObject({ kind: 'page', status: 404 });
+  });
+
+  it('the authority gets a live app (effective config, declared secrets, audit, default limits); deleted / taken-down apps are null; a throw → a generic 500 page', async () => {
+    const log = logger();
+    const r = await loadModuleRuntime({
+      env: ENV,
+      log,
+      modules: [echo, quiet, idp],
+      skillsDir,
+      deps: {
+        rateLimit: memoryRateLimiter(),
+        principal: async () => ({ kind: 'anon' }),
+        email: { send: async () => {} },
+        mailGuard: memoryMailGuard({ hourlyMax: 1000, pauseMinutes: 1 }, noopLogger),
+        log,
+      },
+    });
+    await r.configure({ app, module: 'idp', patch: { greeting: 'ahoj' }, actorUserId: userId });
+    await setModuleSecret({ appId: app.id, module: 'idp', name: 'IDP_KEY', value: 'k-1', env: ENV });
+    expect(await call(r, { app: app.id })).toEqual({ kind: 'redirect', location: 'https://x.example/ahoj/k-1/7/true/false' });
+    const audit = await db.select().from(auditLog).where(eq(auditLog.action, 'idp.sign_in_denied'));
+    expect(audit).toHaveLength(1);
+    expect(audit[0]).toMatchObject({ actorKind: 'end_user', actorUserId: null, target: 'shop', meta: { reason: 'test', module: 'idp', end_user: 'anon' } });
+
+    const [gone] = await db.insert(apps).values({ workspaceId: ws.id, slug: 'gone-app', deletedAt: new Date() }).returning();
+    const [locked] = await db.insert(apps).values({ workspaceId: ws.id, slug: 'locked-app', lockedReason: 'abuse' }).returning();
+    expect(await call(r, { app: gone.id })).toMatchObject({ kind: 'page', status: 404 });
+    expect(await call(r, { app: locked.id })).toMatchObject({ kind: 'page', status: 404 });
+    expect(await call(r, { app: 'x'.repeat(65) })).toMatchObject({ kind: 'page', status: 404 });
+
+    // another module's secret is out of reach; a throw never leaks its message
+    const undeclared = await call(r, { app: app.id, mode: 'undeclared' });
+    expect(undeclared).toMatchObject({ kind: 'page', status: 500, title: 'Sign-in failed' });
+    const thrown = await call(r, { mode: 'throw' });
+    expect(thrown).toMatchObject({ kind: 'page', status: 500 });
+    expect(JSON.stringify(thrown)).not.toContain('boom');
+    expect(log.error).toHaveBeenCalledWith('end-user sign-in callback failed', expect.objectContaining({ module: 'idp' }));
+  });
+});

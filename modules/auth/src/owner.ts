@@ -19,7 +19,7 @@
 import { and, count, desc, eq, ilike, inArray, lt, or, type SQL } from 'drizzle-orm';
 import { memberships, users, type DB } from '@drobek/db';
 import { ModuleError, type EndUserRecord, type EndUserAuthority } from '@drobek/modules';
-import { decideSignIn, domainOf, type AuthConfig } from './config.js';
+import { decideSignIn, domainOf, methodEnabled, type AuthConfig } from './config.js';
 import { authUsers, type AuthUserRow } from './schema.js';
 import { findUserById } from './users.js';
 
@@ -41,6 +41,15 @@ export async function workspaceEditorEmails(db: DB, workspaceId: string): Promis
   return new Set(rows.map((r) => r.email.toLowerCase()));
 }
 
+/**
+ * Can the account still sign in by some method that is on — the provider it
+ * is linked to, or the e-mail code (which proves the address, so any
+ * account may use it)?
+ */
+function canSignIn(row: Pick<AuthUserRow, 'provider'>, config: AuthConfig): boolean {
+  return methodEnabled(config, 'email') || methodEnabled(config, row.provider);
+}
+
 /** One user as the owner sees them, under `config` (the same decision as `current`). */
 export function endUserRecord(row: AuthUserRow, config: AuthConfig, workspaceEditor: boolean): EndUserRecord {
   const access = decideSignIn({ config, email: row.email, workspaceEditor });
@@ -50,7 +59,8 @@ export function endUserRecord(row: AuthUserRow, config: AuthConfig, workspaceEdi
     email: row.email,
     role,
     roleSource: role !== 'admin' ? null : workspaceEditor ? 'workspace' : 'config',
-    status: row.disabledAt ? 'disabled' : access.allowed ? 'active' : 'not_allowed',
+    status: row.disabledAt ? 'disabled' : access.allowed && canSignIn(row, config) ? 'active' : 'not_allowed',
+    provider: row.provider,
     created_at: row.createdAt.toISOString(),
     last_sign_in_at: row.lastLoginAt ? row.lastLoginAt.toISOString() : null,
   };

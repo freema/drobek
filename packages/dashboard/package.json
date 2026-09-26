@@ -224,6 +224,10 @@
       "types": "./src/routes/api.public.gallery.server.ts",
       "default": "./dist/routes/api.public.gallery.server.js"
     },
+    "./routes/end-user-callback.server": {
+      "types": "./src/routes/end-user-callback.server.ts",
+      "default": "./dist/routes/end-user-callback.server.js"
+    },
     "./locked-notice": {
       "types": "./src/locked-notice.tsx",
       "default": "./dist/locked-notice.js"

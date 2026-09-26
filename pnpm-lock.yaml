@@ -193,6 +193,9 @@ importers:
 
   modules/auth:
     dependencies:
+      '@drobek/apps':
+        specifier: workspace:*
+        version: link:../../packages/apps
       '@drobek/auth':
         specifier: workspace:*
         version: link:../../packages/auth

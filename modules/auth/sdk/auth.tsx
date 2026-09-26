@@ -6,6 +6,11 @@
  * server's SDK (the same `drobek.auth` instance the app sees).
  *
  * Self-contained on purpose: it may import only `react` and `drobek`.
+ *
+ * The form offers the sign-in methods that are on (drobek.auth.providers(),
+ * NSO-348): "Continue with <label>" per sign-in provider and the e-mail code
+ * form when `emailCode` is on (also when the list cannot be loaded — the
+ * server still refuses a method that is off).
  */
 import { useCallback, useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import { drobek } from 'drobek';
@@ -16,10 +21,15 @@ export interface User {
   role: 'user' | 'admin';
 }
 
+interface SignInMethod {
+  id: string;
+  label: string;
+}
+
 export interface LoginGateProps {
   /** What signed-in users see; a function gets the user. */
   children: ReactNode | ((user: User) => ReactNode);
-  /** Heading of the sign-in form (default "Sign in"). */
+  /** Heading of the sign-in form (default "Sign in"). Shows the e-mail form and/or "Continue with <label>" per enabled provider. */
   title?: string;
   /** Only admins get through; other signed-in users see "no access" and a sign-out button. */
   requireAdmin?: boolean;
@@ -42,14 +52,34 @@ function loadUser(): Promise<User | null> {
   return inflight;
 }
 
+const EMAIL_CODE: SignInMethod = { id: 'emailCode', label: 'E-mail code' };
+
+// The sign-in methods, loaded once per page (a failure is retried next time).
+let methods: Promise<SignInMethod[]> | null = null;
+function loadMethods(): Promise<SignInMethod[]> {
+  methods ??= drobek.auth.providers().catch(() => {
+    methods = null;
+    return [EMAIL_CODE];
+  });
+  return methods;
+}
+
 function errorCode(err: unknown): string {
   return typeof err === 'object' && err !== null && typeof (err as { code?: unknown }).code === 'string'
     ? (err as { code: string }).code
     : '';
 }
 
-function messageFor(err: unknown, step: 'email' | 'code' | 'session'): string {
+function messageFor(err: unknown, step: 'email' | 'code' | 'session' | 'provider'): string {
   switch (errorCode(err)) {
+    case 'provider_not_enabled':
+      return 'This sign-in method is turned off for this app.';
+    case 'provider_error':
+      return 'The sign-in service is not responding. Try again in a moment.';
+    case 'email_not_verified':
+      return 'Your e-mail address is not verified with the sign-in service.';
+    case 'invalid_state':
+      return 'The sign-in link expired. Start again.';
     case 'email_not_allowed':
       return 'This e-mail address cannot sign in to this app.';
     case 'rate_limited':
@@ -128,12 +158,35 @@ function Box(props: { title: string; children: ReactNode }) {
 }
 
 function LoginForm({ title }: { title: string }) {
+  const [available, setAvailable] = useState<SignInMethod[] | null>(null);
   const [step, setStep] = useState<'email' | 'code'>('email');
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    void loadMethods().then((list) => {
+      if (live) setAvailable(list);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  async function signIn(provider: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      await drobek.auth.signIn(provider);
+      // The page is leaving for the provider; stay busy.
+    } catch (err) {
+      setError(messageFor(err, 'provider'));
+      setBusy(false);
+    }
+  }
 
   async function sendCode(e?: FormEvent) {
     e?.preventDefault();
@@ -170,31 +223,48 @@ function LoginForm({ title }: { title: string }) {
     }
   }
 
+  if (available === null) return <Box title={title}>{null}</Box>;
+  const providers = available.filter((m) => m.id !== EMAIL_CODE.id);
+  const emailCode = providers.length === 0 || available.some((m) => m.id === EMAIL_CODE.id);
+
   if (step === 'email') {
     return (
       <Box title={title}>
-        <form onSubmit={sendCode} style={{ display: 'grid', gap: 12 }}>
-          <label style={S.label}>
-            Email
-            <input
-              style={S.input}
-              type="email"
-              name="email"
-              autoComplete="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </label>
-          {error && (
-            <p role="alert" style={S.error}>
-              {error}
-            </p>
-          )}
-          <button type="submit" style={S.button} disabled={busy}>
-            {busy ? 'Sending…' : 'Send code'}
+        {providers.map((p) => (
+          <button key={p.id} type="button" style={S.button} disabled={busy} onClick={() => void signIn(p.id)}>
+            Continue with {p.label}
           </button>
-        </form>
+        ))}
+        {providers.length > 0 && emailCode && <p style={S.note}>or with an e-mail code</p>}
+        {!emailCode && error && (
+          <p role="alert" style={S.error}>
+            {error}
+          </p>
+        )}
+        {emailCode && (
+          <form onSubmit={sendCode} style={{ display: 'grid', gap: 12 }}>
+            <label style={S.label}>
+              Email
+              <input
+                style={S.input}
+                type="email"
+                name="email"
+                autoComplete="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </label>
+            {error && (
+              <p role="alert" style={S.error}>
+                {error}
+              </p>
+            )}
+            <button type="submit" style={S.button} disabled={busy}>
+              {busy ? 'Sending…' : 'Send code'}
+            </button>
+          </form>
+        )}
       </Box>
     );
   }
@@ -245,7 +315,7 @@ function LoginForm({ title }: { title: string }) {
   );
 }
 
-/** Shows `children` to signed-in users of this app host, the e-mail code sign-in to everyone else. */
+/** Shows `children` to signed-in users of this app host, the sign-in (providers and/or the e-mail code) to everyone else. */
 export function LoginGate({ children, title = 'Sign in', requireAdmin = false, loading = null }: LoginGateProps) {
   const auth = useAuth();
   if (auth.loading) return <>{loading}</>;

@@ -4,8 +4,9 @@
 
 Only some people may use the app (invited e-mails, a company domain), some
 of them are admins, or records must belong to the signed-in person. Sign-in
-is a 6-digit code e-mailed by drobek; no passwords. Never build your own
-login; Firebase Auth, Auth0, Clerk, NextAuth cannot run here.
+is a 6-digit code e-mailed by drobek, or a sign-in provider the server runs
+(company SSO; `drobek.auth.providers()` lists them); no passwords. Never
+build your own login; Firebase Auth, Auth0, Clerk, NextAuth cannot run here.
 
 ## 2. Minimal working code
 
@@ -38,9 +39,10 @@ createRoot(document.getElementById('root')!).render(
 );
 ```
 
-- `<LoginGate>` shows the e-mail → code form (labels "Email", "Code") to
-  signed-out visitors, its children to signed-in users. `requireAdmin`
-  lets only admins through.
+- `<LoginGate>` shows the e-mail → code form (labels "Email", "Code") and a
+  "Continue with <label>" button per enabled provider to signed-out
+  visitors, its children to signed-in users. `requireAdmin` lets only
+  admins through.
 - `drobek/auth` is compiled into the app with the app's React: `drobek.json`
   must map `react` and `react/jsx-runtime` (the react-ts template does).
 - The editors of the app's workspace (you, the user you build for) can
@@ -74,7 +76,11 @@ export interface Api {
   verify(email: string, code: string): Promise<User>; // sets the session cookie
   logout(): Promise<void>;
   onChange(listener: (user: User | null) => void): () => void; // returns unsubscribe
+  providers(): Promise<SignInMethod[]>; // the methods that are on: 'emailCode' first, then providers
+  // leaves the page for the provider; comes back signed in to returnTo (a path, default: this page)
+  signIn(provider: string, options?: { returnTo?: string }): Promise<void>;
 }
+export interface SignInMethod { id: string; label: string } // show "Continue with <label>"
 ```
 
 ```ts api
@@ -93,13 +99,19 @@ export function useAuth(): { user: User | null; loading: boolean; error: string 
 
 Config (`configure_module`, a JSON merge patch; lists are replaced whole):
 `allow.emails` exact addresses, `allow.domains` exact domains (not
-subdomains), `allow.anyone` everybody, `adminEmails` may sign in as `admin`.
-Failures reject with `DrobekError` (`code`, `status`, `message`).
+subdomains), `allow.anyone` everybody, `adminEmails` may sign in as `admin`,
+`providers.emailCode.enabled` the e-mail code (default on),
+`providers.<id>` `{ enabled, …the provider's fields }` (`skill_info('auth')`
+config lists the server's providers). Failures reject with `DrobekError`.
 
 ## 4. Rules and limits
 
-- `allow.anyone: true` needs the owner's confirmation: `configure_module`
-  answers `applied: false` + `confirm_url`; give the user the link.
+- `allow.anyone: true`, enabling a provider and changing its identity fields
+  (e.g. `issuer`) need the owner's confirmation: `configure_module` answers
+  `applied: false` + `confirm_url`; give the user the link. At least one
+  method stays on. Provider secrets are set in the dashboard, never by you.
+- The allowlist decides for every method; a provider must confirm the
+  address. Turning a method off signs its sessions out.
 - The session is an HttpOnly cookie of THIS host (30 days); the app never
   sees a token. Preview (`<slug>--preview.…`) and production (`<slug>.…`)
   are different hosts: sign in on each. Users (ids) are shared.
@@ -111,7 +123,8 @@ Failures reject with `DrobekError` (`code`, `status`, `message`).
   `AUTH_CODES_PER_EMAIL_HOUR` 3 (more requests answer "sent", send nothing),
   `AUTH_CODES_PER_APP_HOUR` 100 (never above the app's share of the server's
   sign-in budget, 25 by default; then sign-in mail pauses 15 min),
-  `AUTH_ATTEMPTS_PER_IP_15MIN` 30, `END_USERS_MAX_PER_APP` 1000.
+  `AUTH_ATTEMPTS_PER_IP_15MIN` 30, `END_USERS_MAX_PER_APP` 1000;
+  server-wide `AUTH_PROVIDER_CALLBACKS_PER_IP_15MIN` 60.
   `skill_info('auth').limits` has this server's values.
 - Only the app's own pages can call the routes (the SDK sends `X-Drobek-SDK: 1`).
 
@@ -126,5 +139,8 @@ Failures reject with `DrobekError` (`code`, `status`, `message`).
 | `unavailable` (503) | sign-in mail paused or SMTP down | try later |
 | `limit_exceeded` (429) | `END_USERS_MAX_PER_APP` reached | the owner removes users |
 | `csrf_rejected` (403) | raw `fetch` or another origin | use `drobek.auth` / `<LoginGate>` |
+| `provider_not_enabled` (404) | `signIn(id)` of a method that is off, or `sendCode` with the e-mail code off | offer only `providers()` |
+| `provider_error` (502) | the provider failed | retry; the owner checks its config and secrets |
+| `email_not_verified`, `invalid_state` | pages after the IdP: unverified address; link expired or used | verify at the IdP; start again |
 | `unresolved_import` | `drobek.json` lacks `react` for `drobek/auth` | map `react` + `react/jsx-runtime` |
 | `invalid_params` | configure_module: bad address/domain, unknown key | read `issues[].path` |

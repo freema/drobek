@@ -32,7 +32,8 @@
  * a `contract` range this server does not satisfy, two modules with one name,
  * a missing sdk.entry, a module whose `requires` is not active, a clashing
  * limit or error code, a contribution to an unknown slot or one that fails
- * the slot's schema, an invalid `DROBEK_MODULE_<NAME>_DEFAULTS` — stops the
+ * the slot's schema, a slot host's `compose` that throws or returns an
+ * invalid config, an invalid `DROBEK_MODULE_<NAME>_DEFAULTS` — stops the
  * server at start with a message that names the module. Nothing is skipped
  * silently.
  */
@@ -305,6 +306,10 @@ export function validateModule(m: AnyModule): void {
       if (typeof slot.description !== 'string' || !slot.description.trim()) fail(`slot "${name}" needs a description`);
     }
   }
+  if (m.compose !== undefined) {
+    if (typeof m.compose !== 'function') fail('compose must be a function ({ contributions }) → module parts');
+    if (!m.slots || Object.keys(m.slots).length === 0) fail('compose needs slots: only a slot host composes itself from contributions');
+  }
   if (m.contributes !== undefined) {
     if (!isPlainObject(m.contributes)) fail('contributes must be an object: slot name → contribution');
     for (const name of Object.keys(m.contributes ?? {})) {
@@ -387,6 +392,48 @@ export function collectContributions(modules: AnyModule[]): Map<string, SlotCont
   return out;
 }
 
+/**
+ * A slot host's module as composed from the contributions (`compose`): the
+ * parts it returns replace the declared ones (validated like a declared
+ * module: a zod configSchema, defaults that pass it, UPPER_SNAKE unique
+ * secret names). A module without `compose` is returned as is. Throws
+ * ModuleLoadError naming the module.
+ */
+export function composeModule(m: AnyModule, contributions: <T = unknown>(slot: string) => T[]): AnyModule {
+  if (typeof m.compose !== 'function') return m;
+  const who = `module "${m.name}"`;
+  let parts: ReturnType<NonNullable<AnyModule['compose']>>;
+  try {
+    parts = m.compose({ contributions });
+  } catch (err) {
+    throw new ModuleLoadError(`${who}: compose failed — ${(err as Error)?.message ?? String(err)}`);
+  }
+  if (!isPlainObject(parts)) throw new ModuleLoadError(`${who}: compose must return an object of module parts`);
+  const allowed = new Set(['configSchema', 'configDefaults', 'salvageConfig', 'confirmRequired', 'secrets']);
+  for (const k of Object.keys(parts)) {
+    if (!allowed.has(k)) throw new ModuleLoadError(`${who}: compose may not replace "${k}"`);
+  }
+  const next = { ...m, ...parts } as AnyModule;
+  if (typeof (next.configSchema as { safeParse?: unknown } | undefined)?.safeParse !== 'function') {
+    throw new ModuleLoadError(`${who}: the composed configSchema must be a zod schema`);
+  }
+  const d = next.configSchema.safeParse(next.configDefaults);
+  if (!d.success) {
+    const issues = issuePaths(d.error.issues).map((i) => `${i.path}: ${i.message}`).join('; ');
+    throw new ModuleLoadError(`${who}: the composed configDefaults do not pass the composed configSchema — ${issues}`);
+  }
+  const names = new Set<string>();
+  for (const s of next.secrets ?? []) {
+    if (!SECRET_NAME_RE.test(s?.name)) throw new ModuleLoadError(`${who}: composed secret name "${String(s?.name)}" must be UPPER_SNAKE`);
+    if (names.has(s.name)) throw new ModuleLoadError(`${who}: secret "${s.name}" is declared twice`);
+    names.add(s.name);
+  }
+  for (const fn of ['salvageConfig', 'confirmRequired'] as const) {
+    if (next[fn] !== undefined && typeof next[fn] !== 'function') throw new ModuleLoadError(`${who}: the composed ${fn} must be a function`);
+  }
+  return Object.freeze(next) as AnyModule;
+}
+
 /** An error code may be declared by one active module only (a clash refuses the start). */
 export function checkErrorCodes(modules: AnyModule[]): void {
   const owners = new Map<string, string>();
@@ -436,10 +483,10 @@ export function effectiveConfigDefaults(m: AnyModule, env: NodeJS.ProcessEnv = p
 
 /**
  * Every rule ACROSS the active modules (one owner per authority, `requires`,
- * limit names, error codes, slots and contributions) plus the operator's
- * config-defaults overrides. Returns the modules with their effective
- * `configDefaults` (a module without an override is returned as is), in the
- * same order. Throws ModuleLoadError.
+ * limit names, error codes, slots and contributions), the slot hosts'
+ * `compose`, then the operator's config-defaults overrides. Returns the
+ * modules composed and with their effective `configDefaults` (a module with
+ * neither is returned as is), in the same order. Throws ModuleLoadError.
  */
 export function checkModuleSet(modules: AnyModule[], env: NodeJS.ProcessEnv = process.env, log?: Logger): AnyModule[] {
   endUserAuthorityOf(modules);
@@ -459,7 +506,9 @@ export function checkModuleSet(modules: AnyModule[], env: NodeJS.ProcessEnv = pr
     }
   }
   checkErrorCodes(modules);
-  collectContributions(modules);
+  const slots = collectContributions(modules);
+  const contributions = <T,>(slot: string): T[] => (slots.get(slot) ?? []).map((c) => c.value as T);
+  const composed = modules.map((m) => composeModule(m, contributions));
   const active = new Set(modules.map((m) => m.name.toUpperCase()));
   for (const key of Object.keys(env)) {
     const hit = DEFAULTS_ENV_RE.exec(key);
@@ -467,7 +516,7 @@ export function checkModuleSet(modules: AnyModule[], env: NodeJS.ProcessEnv = pr
       log?.warn(`${key} is set, but no active module is named "${hit[1].toLowerCase()}" — it is ignored`, { env: key });
     }
   }
-  return modules.map((m) => {
+  return composed.map((m) => {
     const defaults = effectiveConfigDefaults(m, env);
     return defaults === m.configDefaults ? m : (Object.freeze({ ...m, configDefaults: defaults }) as AnyModule);
   });
