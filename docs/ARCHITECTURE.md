@@ -240,7 +240,13 @@ A module is an npm package whose default export comes from `defineModule()`
 with in `contract`, e.g. `'^1.1'`, and one this server does not satisfy
 refuses the start). The operator enables modules with `DROBEK_MODULES`; a
 short name `x` loads `drobek-module-x` (which must export the module `x`), a
-full package name may replace a built-in. A module contributes routes under
+full package name may replace a built-in. Each entry is looked up first in
+`DROBEK_MODULES_DIR` (the `modules_data` volume: modules installed without a
+new image, each listed with its integrity in `modules.lock.json`, given the
+server's own `@drobek/*` / `zod` / `drizzle-orm` through a `node:module`
+resolve hook, migrations linted to `mod_<name>[_*]`), then among the server's
+dependencies; `/healthz` and `/api/version` list the active modules with
+their source (`dir` | `builtin`). A module contributes routes under
 `/__drobek/v1/<name>/…` on every app host, a slice of the browser SDK
 (`drobek.<name>`), a zod per-app config schema (its defaults overridable per
 server with `DROBEK_MODULE_<NAME>_DEFAULTS`), access rules, secrets (names

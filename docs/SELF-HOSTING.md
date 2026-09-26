@@ -288,6 +288,7 @@ Volumes (named `drobek-prod_<name>`):
 | `pg_data` | the database: apps, every version's files (content-addressed blobs), users, keys, module data | yes (`pg_dump -Fc`) |
 | `files_data` | the files module's uploads (`/data/files`; `mod_files` rows point at them) | yes (tar) |
 | `assets_data` | app assets — video, audio, images, fonts served at `/<path>` (`/data/assets`; `app_assets` rows point at them) | yes (tar) |
+| `modules_data` | modules you installed (`/data/modules` = `DROBEK_MODULES_DIR`: one directory per module + `modules.lock.json`, [`MODULES.md`](./MODULES.md#installing-an-external-module)) | yes (tar) |
 | `caddy_data` | ACME account, issued certificates, Caddy's local CA — losing it means re-issuing every certificate | yes (tar) |
 | `caddy_config` | Caddy's autosaved config (rebuilt from the Caddyfile) | no |
 | `redis_data` | sessions, caches, rate limits, leases, un-flushed request counters (AOF) | no — after a restore everyone signs in again |
@@ -373,7 +374,9 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | Variable | Default | What |
 | --- | --- | --- |
 | `DROBEK_MODULES` | none *(compose: `auth,email,forms,data,proxy,files`)* | the modules this server runs; `x` loads `drobek-module-x` ([`MODULES.md`](./MODULES.md)) |
-| `DROBEK_MODULES_ROOT` | the server's directory | where module packages are resolved from |
+| `DROBEK_MODULES_ROOT` | the server's directory | where module packages are resolved from when they are not in `DROBEK_MODULES_DIR` |
+| `DROBEK_MODULES_DIR` | `/data/modules` *(compose: the `modules_data` volume; dev: `./.modules`)* | modules the operator installed: `<dir>/<name>/node_modules/<package>` + `modules.lock.json`; looked up BEFORE the server's dependencies; a module there that the lockfile does not list, or whose files changed, refuses the start ([`MODULES.md`](./MODULES.md#installing-an-external-module)) |
+| `DROBEK_MODULES_UNLOCKED` | — | `1` = load modules from `DROBEK_MODULES_DIR` without the `modules.lock.json` check — for developing a module locally; ignored (with a warning) when `NODE_ENV=production` |
 | `DROBEK_MODULE_<NAME>_DEFAULTS` (e.g. `DROBEK_MODULE_AUTH_DEFAULTS`) | — | server-wide config defaults of the module `<name>`: a JSON merge patch over its defaults (`{"allow":{"domains":["acme.com"]}}`), validated by its schema at start — invalid refuses the start ([`MODULES.md`](./MODULES.md#operator-defaults-drobek_module_name_defaults)) |
 | `DROBEK_SKILLS_DIR` | `./skills` (image: `/app/skills`) | the general skills `skill_info` lists |
 | `LIMITS_PROVIDER_URL` / `LIMITS_PROVIDER_SECRET` | — | per-workspace limits from your own HMAC-signed endpoint (secret ≥ 32 characters) |
@@ -437,7 +440,7 @@ task backup
 One archive (mode 600, in `backups/`, override with `BACKUP_DIR=`):
 `db.dump` (`pg_dump -Fc` of the whole database — one consistent snapshot),
 `files.tar` (the `files_data` volume), `assets.tar` (the `assets_data`
-volume), `caddy_data.tar`, `SHA256SUMS` and a
+volume), `modules.tar` (the `modules_data` volume), `caddy_data.tar`, `SHA256SUMS` and a
 `manifest.json` with the image tag / id / version / commit, the checkout's
 commit, a fingerprint of `DROBEK_MASTER_KEY`, row counts and the size + sha256
 of every part. It runs online: postgres is started if it is not running,

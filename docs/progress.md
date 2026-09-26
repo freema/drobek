@@ -1370,6 +1370,25 @@ block, then `next` is pushed and the single MR opened.
   rebuilt from 0023's and re-chained again. The asset codes are core codes, so
   they are in `CORE_ERROR_CODES` too; `skills/start` stays ≤ 150 lines and
   must show every tool as `` `name(` ``.
+- NSO-345: modules from `DROBEK_MODULES_DIR` are imported by Node itself
+  (their path contains `/node_modules/`, so vitest externalizes them too):
+  their `@drobek/modules` is the BUILT `dist/` (the peer hook resolves it
+  from registry.ts's own package), not the vitest-transformed `src/` the
+  test sees. Brands are `Symbol.for`, so `isDefinedModule` / `isModuleError`
+  still agree; instance identity (`instanceof ModuleError`, same zod) is
+  asserted in `peers.test.ts` in a spawned plain `node` — run
+  `pnpm build:packages` before it.
+- NSO-345: the peer hook compares REAL paths — macOS `/tmp` / `os.tmpdir()`
+  are symlinks (`/private/…`), `registerHostPeers` realpaths the directory.
+  An `npm install <folder>` symlinks the package out of the directory: the
+  hook then does not apply and `hashModuleTree` refuses the escaping link —
+  install a tarball (`npm pack`) instead.
+- NSO-345: `module.register()` hooks see ESM `import` only; a CommonJS
+  `require('zod')` inside a dir module keeps its own copy.
+- NSO-345: the lint of dir-module migrations blanks comments, string literals
+  and `$tag$` delimiters (keeping line numbers) and scans the SQL inside a
+  `DO $$ … $$` block like any other; the generic `ALTER|DROP <kind>` rule
+  only fires at a statement start (`ALTER TABLE t ALTER c` is a clause).
 
 ## Failed approaches
 

@@ -50,11 +50,19 @@ upstreams, secret injected server-side) and
 [`files`](#the-built-in-files-module) (end-user uploads, sniffed types,
 per-app quota).
 
-Packages resolve from the **server's** install: `<cwd>/package.json` (`/app` in
-the image, `apps/server` in the dev stack), overridable with
-`DROBEK_MODULES_ROOT`. So adding a third-party module means adding a
-dependency to the server and listing it. The package's default export (or its
-`module` export) must come from `defineModule()`.
+A package is looked up in two places, in this order:
+
+1. **`DROBEK_MODULES_DIR`** (default `/data/modules`, the `modules_data`
+   volume): a module the operator installed there, checked against
+   `modules.lock.json` — `source: 'dir'`, see
+   [Installing an external module](#installing-an-external-module);
+2. the **server's** install: `<cwd>/package.json` (`/app` in the image,
+   `apps/server` in the dev stack), overridable with `DROBEK_MODULES_ROOT` —
+   the built-in modules, or a dependency added in a derived image —
+   `source: 'builtin'`.
+
+The package's default export (or its `module` export) must come from
+`defineModule()`.
 
 The server **refuses to start** when anything is off: an unknown package, an
 export that is not a module, an invalid name, a short name whose package
@@ -67,10 +75,14 @@ with one name, a missing `sdk.entry`, a reserved name (`sdk`, `v1`,
 (e.g. DROBEK_MODULES=…,email)`), two modules declaring `mail` (or
 `endUsers`, or `records`), one limit or error code declared by two modules,
 a slot contribution that breaks the [slot rules](#slots), an invalid
-`DROBEK_MODULE_<NAME>_DEFAULTS`. Nothing is skipped silently. A module
+`DROBEK_MODULE_<NAME>_DEFAULTS`, and for a module from `DROBEK_MODULES_DIR`:
+a missing or mismatching `modules.lock.json` entry, changed files, a
+migration outside its namespace. Nothing is skipped silently. A module
 without `contract` still loads, with a warning naming the range to add. On
-start the log names the active modules and the contract version
-(`platform modules ready`).
+start the log `platform modules ready` lists every module as
+`{ name, version, source, contract }` (`source`: `builtin` | `dir`) next to
+the server's contract version; `/healthz` and `/api/version` serve the same
+`modules` list (never a path on disk).
 
 ### Operator defaults: `DROBEK_MODULE_<NAME>_DEFAULTS`
 
@@ -95,6 +107,109 @@ The dev compose enables the example module and every built-in module
 relaxed `AUTH_*` limits because every local request shares one client IP,
 `DATA_MAX_DOCS_PER_APP=5` so the quota e2e trips quickly); so does the e2e
 image compose.
+
+## Installing an external module
+
+An operator adds a module without building an image by installing it into
+`DROBEK_MODULES_DIR` (default `/data/modules`; the production compose mounts
+the named volume `modules_data` there, part of `task backup`; the dev compose
+bind-mounts `./.modules`). The runtime image has no package manager and never
+installs anything: installing is an operator step outside the running server,
+with npm's `--ignore-scripts` (no install scripts run).
+
+```
+/data/modules/
+  modules.lock.json
+  erp/                                  one install prefix per module, named after its `name`
+    package.json  package-lock.json     what `npm install --prefix /data/modules/erp …` writes
+    node_modules/@acme/drobek-module-erp/…
+```
+
+An entry of `DROBEK_MODULES` is found in `<dir>/<name>/node_modules/<package>`,
+where `<name>` is the key of the lockfile entry for that package, or the short
+name itself (`erp` → `<dir>/erp`), or the `<x>` of `drobek-module-<x>` /
+`@scope/drobek-module-<x>`. The module loaded from there must be named
+`<name>`. Only when none of these exists does the server fall back to its own
+dependencies — so a module in the directory **wins** over a built-in package
+of the same name.
+
+**`modules.lock.json`** (in the root of the directory) records every
+installed module:
+
+```json
+{
+  "lockfileVersion": 1,
+  "modules": {
+    "erp": {
+      "package": "@acme/drobek-module-erp",
+      "version": "1.2.0",
+      "resolved": "@acme/drobek-module-erp@1.2.0",
+      "integrity": "sha512-…",
+      "contract": "^1.1",
+      "installedAt": "2026-09-26T12:00:00.000Z"
+    }
+  }
+}
+```
+
+Before the server imports a module from the directory it checks that its
+`package.json` names the package, that the lockfile lists `<name>` with the
+same package and version, and that `integrity` equals the hash of the whole
+install prefix `<dir>/<name>` (the package, its dependencies, package.json,
+package-lock.json). Anything else refuses the start, naming the path and the
+fix. The hash is `hashModuleTree()` from `@drobek/modules/lock` (the same
+function writes and checks it): every file and symlink under the prefix,
+sorted by its `/`-separated relative path, as `F <path>\0<sha512 hex>\n` or
+`L <path>\0<link target>\n`, hashed with sha512 → `sha512-<base64>`; modes,
+timestamps and empty directories do not count, a symlink leaving the prefix is
+refused. Installing and recording a module by hand (npm runs in a throwaway
+container over the volume, the hash comes from the image's own function):
+
+```sh
+docker run --rm -u node -v drobek-prod_modules_data:/data/modules node:22-alpine \
+  npm install --prefix /data/modules/erp --omit=dev --ignore-scripts @acme/drobek-module-erp@1.2.0
+./scripts/selfhost-compose.sh run --rm --no-deps drobek node --input-type=module -e '
+  import { hashModuleTree, readModulesLock, formatModulesLock } from "@drobek/modules/lock";
+  import { writeFileSync } from "node:fs";
+  const lock = readModulesLock("/data/modules") ?? { lockfileVersion: 1, modules: {} };
+  lock.modules.erp = { package: "@acme/drobek-module-erp", version: "1.2.0", resolved: "@acme/drobek-module-erp@1.2.0",
+    integrity: hashModuleTree("/data/modules/erp"), contract: "^1.1", installedAt: new Date().toISOString() };
+  writeFileSync("/data/modules/modules.lock.json", formatModulesLock(lock));'
+```
+
+`DROBEK_MODULES_UNLOCKED=1` skips the lockfile check while developing a module
+(the dev stack: put it into `./.modules/<name>/node_modules/<package>`, add it
+to `DROBEK_MODULES`, `docker compose up -d drobek`); with `NODE_ENV=production`
+the variable is ignored with a warning.
+
+**Host-provided peers.** Before the first module from the directory is
+imported, the server registers a `node:module` resolve hook: every `import` of
+`@drobek/*`, `zod`, `drizzle-orm` (and their subpaths) from a file under the
+directory resolves to the **server's** instance — one `ModuleError` class, one
+zod, one drizzle, whatever copies the module's `node_modules` holds. Imports
+from anywhere else are untouched. So a module is an ES module (`"type":
+"module"`; a CommonJS `require()` is not redirected) and declares these as
+`peerDependencies`, best marked optional in `peerDependenciesMeta` so npm does
+not install copies at all.
+
+**Migration lint.** The migrations of a module from the directory are checked
+at start (built-in modules are not — the `data` module's first migration
+imports older core tables): `CREATE TABLE` / `CREATE INDEX … ON` /
+`CREATE VIEW|SEQUENCE|TYPE` only for `mod_<name>` or `mod_<name>_*`;
+`REFERENCES` only to its own tables, `apps(id)` or `workspaces(id)`;
+`ALTER` / `DROP` / `TRUNCATE` only of its own objects; no
+`CREATE FUNCTION|TRIGGER|EXTENSION|SCHEMA|ROLE|…`, no `GRANT` / `REVOKE` /
+`COPY`. A violation refuses the start with the file and line
+(`0000_init.sql:3: DROP TABLE: "users" is not a table of this module …`). Its
+`migrations.folder` and SDK entries must lie inside its install prefix (the
+part the integrity covers).
+
+The lint keeps a module's schema in its namespace; it is not a sandbox. A
+module runs in the server process with the whole database — install only
+modules you trust ([`SECURITY.md`](./SECURITY.md)). Alternatively, an operator
+with their own CI builds a derived image (`FROM ghcr.io/freema/drobek`, the
+module added as a dependency of `/app`): such a module loads as `source:
+'builtin'`, without lockfile or lint.
 
 ## The contract
 
@@ -357,7 +472,9 @@ A module with tables ships a drizzle migrations folder
 **own journal**, `drizzle.__drizzle_migrations_mod_<name>`, after the core
 migrations (`DROBEK_MIGRATE_ON_START=0` turns both off). Conventions:
 
-- table names start with `mod_<name>_` (e.g. `mod_hello_waves`);
+- table names start with `mod_<name>_` (e.g. `mod_hello_waves`) — for a
+  module from `DROBEK_MODULES_DIR` the [migration lint](#installing-an-external-module)
+  enforces it;
 - every per-app row references `apps(id)` with `ON DELETE CASCADE`, so deleting
   an app deletes its module data;
 - a handler always filters by `ctx.app.id`.

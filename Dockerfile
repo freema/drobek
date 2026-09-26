@@ -67,9 +67,10 @@ COPY --from=builder --chown=node:node /out/dist ./dist
 # skill skills/drobek is shipped too but never listed).
 COPY --from=builder --chown=node:node /repo/skills ./skills
 # M1-05: FILES_DIR of the files module; NSO-358: ASSETS_DIR (app assets —
-# video, audio, images, fonts). Owned by `node`, so a fresh named volume
-# mounted here inherits a writable directory.
-RUN mkdir -p /data/files /data/assets && chown node:node /data/files /data/assets
+# video, audio, images, fonts); NSO-345: DROBEK_MODULES_DIR, the operator's
+# installed modules (+ modules.lock.json). Owned by `node`, so a fresh named
+# volume mounted here inherits a writable directory.
+RUN mkdir -p /data/files /data/assets /data/modules && chown node:node /data/files /data/assets /data/modules
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \

@@ -85,11 +85,16 @@ services:
       FILES_DIR: /data/files
       # App assets (video, audio, images, fonts; NSO-358) on the assets_data volume.
       ASSETS_DIR: /data/assets
+      # Modules the operator installed (<name>/ + modules.lock.json), checked
+      # against the lockfile at start — the modules_data volume below.
+      DROBEK_MODULES_DIR: /data/modules
     volumes:
       # End-user uploads (files module, content-addressed) — part of `task backup`.
       - files_data:/data/files
       # App assets (create_asset_upload / the Assets tab) — part of `task backup`.
       - assets_data:/data/assets
+      # Installed platform modules (DROBEK_MODULES_DIR) — part of `task backup`.
+      - modules_data:/data/modules
     healthcheck:
       # /healthz = {ok, db, redis}; the first start applies every migration.
       test: ['CMD-SHELL', 'wget -q -T 5 -O - http://127.0.0.1:3000/healthz || exit 1']
@@ -158,5 +163,6 @@ volumes:
   redis_data:
   files_data:
   assets_data:
+  modules_data:
   caddy_data:
   caddy_config:

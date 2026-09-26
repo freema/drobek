@@ -223,7 +223,7 @@ tasks:
       - '{{.DC}} exec -T drobek wget -q -O - http://127.0.0.1:3000/api/version && echo'
 
   backup:
-    desc: 'Back up the production stack → backups/drobek-<UTC>.tar.gz (pg_dump -Fc + files_data + assets_data + caddy_data + manifest.json) [BACKUP_DIR=backups]'
+    desc: 'Back up the production stack → backups/drobek-<UTC>.tar.gz (pg_dump -Fc + files_data + assets_data + modules_data + caddy_data + manifest.json) [BACKUP_DIR=backups]'
     cmds:
       - ./scripts/selfhost-backup.sh
 

@@ -182,12 +182,18 @@ export {
   submissionsAuthorityOf,
   filesAuthorityOf,
   loadModules,
+  loadModuleSet,
   packageNameFor,
   parseModuleList,
+  type LoadedModules,
+  type ModuleOrigin,
+  type ModuleSource,
   type SlotContribution,
 } from './registry.js';
+export { DEFAULT_MODULES_DIR } from './dir-modules.js';
 export {
   ModuleRuntime,
+  activeModules,
   appOwnerEmails,
   confirmUrl,
   loadModuleRuntime,
@@ -211,6 +217,7 @@ export {
   type TransportMessage,
   type LoadRuntimeOptions,
   type ModuleErrorSection,
+  type ModuleSummary,
   type PlatformApp,
   type PlatformRequest,
   type RateLimiter,

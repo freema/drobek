@@ -12,6 +12,10 @@
     "./testing": {
       "types": "./dist/testing.d.ts",
       "default": "./dist/testing.js"
+    },
+    "./lock": {
+      "types": "./dist/lock.d.ts",
+      "default": "./dist/lock.js"
     }
   },
   "files": [

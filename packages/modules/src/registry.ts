@@ -6,10 +6,19 @@
  *   - a full package name (`drobek-module-x`, `@scope/pkg`, anything with a
  *     `/`) → exactly that package.
  *
- * Packages resolve from the SERVER's install (`<cwd>/package.json` — `/app`
- * in the image, `apps/server` in the dev stack; override with
- * `DROBEK_MODULES_ROOT`), so an operator adds one with a plain dependency of
- * the server. The BUILT-IN modules of this repo (`modules/<name>`, e.g.
+ * Each entry is looked up in two places, in this order (NSO-345):
+ *
+ *   1. `DROBEK_MODULES_DIR` (default `/data/modules`): a module the operator
+ *      installed into `<dir>/<name>/node_modules/<package>` — checked against
+ *      `modules.lock.json` (integrity), given the host's own `@drobek/*`,
+ *      `zod` and `drizzle-orm` (./peers.ts) and its migrations linted
+ *      (./dir-modules.ts) — `source: 'dir'`;
+ *   2. the SERVER's install (`<cwd>/package.json` — `/app` in the image,
+ *      `apps/server` in the dev stack; override with `DROBEK_MODULES_ROOT`),
+ *      so an operator can also add one as a plain dependency of the server
+ *      (a derived image) — `source: 'builtin'`.
+ *
+ * The BUILT-IN modules of this repo (`modules/<name>`, e.g.
  * `modules/auth` = `drobek-module-auth`) are workspace packages the server
  * depends on, so they resolve exactly like a third-party module. The
  * package's default export (or its `module` export) must come from
@@ -41,9 +50,11 @@ import {
   isDefinedModule,
   type AnyModule,
 } from './contract.js';
+import { checkDirModule, findDirModule, modulesDirState, packageEntryFile, verifyDirModule, type ModulesDirState } from './dir-modules.js';
 import { CORE_ERROR_CODES, issuePaths } from './errors.js';
 import { CORE_LIMITS } from './limits.js';
 import { mergePatch } from './merge-patch.js';
+import { registerHostPeers } from './peers.js';
 import { SECRET_NAME_RE } from './secrets.server.js';
 import { toPath } from './sdk-build.js';
 
@@ -88,6 +99,22 @@ export interface ResolveOptions {
   importer?: (specifier: string) => Promise<unknown>;
   /** Start-up warnings (a module without `contract`, an unused DROBEK_MODULE_<NAME>_DEFAULTS). */
   log?: Logger;
+  /** The operator's modules directory (default: DROBEK_MODULES_DIR, else /data/modules). */
+  modulesDir?: string;
+}
+
+/** Where a module was loaded from: the modules directory or the server's own dependencies. */
+export type ModuleSource = 'builtin' | 'dir';
+
+export interface ModuleOrigin {
+  source: ModuleSource;
+  /** The install prefix `<DROBEK_MODULES_DIR>/<name>` of a dir module (null: builtin). Logs only — never served. */
+  path: string | null;
+}
+
+interface Resolved {
+  module: AnyModule;
+  origin: ModuleOrigin;
 }
 
 function exportedModule(ns: unknown): unknown {
@@ -101,16 +128,51 @@ function exportedModule(ns: unknown): unknown {
   return null;
 }
 
+function serverRoot(opts: ResolveOptions): string {
+  return resolve(opts.root ?? process.env.DROBEK_MODULES_ROOT ?? process.cwd());
+}
+
+const firstLine = (err: unknown) => String((err as Error)?.message ?? err).split('\n')[0];
+
 /** Import one DROBEK_MODULES entry → its module (throws ModuleLoadError). */
 export async function resolveModule(entry: string, opts: ResolveOptions = {}): Promise<AnyModule> {
-  let ns: unknown;
+  const log = opts.log ?? createConsoleLogger('modules');
+  return (await resolveEntry(entry, opts, modulesDirState(process.env, opts.modulesDir, log))).module;
+}
+
+async function resolveEntry(entry: string, opts: ResolveOptions, dir: ModulesDirState): Promise<Resolved> {
   const pkg = packageNameFor(entry);
+  const loc = findDirModule(entry, pkg, dir);
+  if (loc) {
+    const refuse = (err: unknown): never => {
+      throw new ModuleLoadError(`DROBEK_MODULES names "${entry}" (from DROBEK_MODULES_DIR): ${firstLine(err)}`);
+    };
+    let file = '';
+    try {
+      verifyDirModule(loc, dir);
+      file = packageEntryFile(loc.packageDir);
+    } catch (err) {
+      refuse(err);
+    }
+    // Before the first import from the directory: its @drobek/*, zod and
+    // drizzle-orm imports resolve to the server's instances.
+    registerHostPeers(dir.dir, serverRoot(opts));
+    let ns: unknown;
+    try {
+      ns = await import(/* @vite-ignore */ pathToFileURL(file).href);
+    } catch (err) {
+      refuse(new Error(`${file} cannot be loaded (${firstLine(err)})`));
+    }
+    const mod = exportedModule(ns);
+    if (!mod) throw new ModuleLoadError(`"${entry}" (${loc.prefix}) does not export a drobek module (default export from defineModule()).`);
+    return { module: mod as AnyModule, origin: { source: 'dir', path: loc.prefix } };
+  }
+  let ns: unknown;
   try {
     if (opts.importer) {
       ns = await opts.importer(pkg);
     } else {
-      const root = resolve(opts.root ?? process.env.DROBEK_MODULES_ROOT ?? process.cwd());
-      const manifest = resolve(root, 'package.json');
+      const manifest = resolve(serverRoot(opts), 'package.json');
       let url: string | null = null;
       if (existsSync(manifest)) {
         try {
@@ -123,14 +185,14 @@ export async function resolveModule(entry: string, opts: ResolveOptions = {}): P
     }
   } catch (err) {
     throw new ModuleLoadError(
-      `DROBEK_MODULES names "${entry}", but the package "${pkg}" cannot be loaded (${String((err as Error)?.message ?? err).split('\n')[0]}). Install it as a dependency of the server or remove it from DROBEK_MODULES.`
+      `DROBEK_MODULES names "${entry}", but the package "${pkg}" cannot be loaded (${firstLine(err)}). Install it into DROBEK_MODULES_DIR (task selfhost:module:add -- ${pkg}) or as a dependency of the server, or remove it from DROBEK_MODULES.`
     );
   }
   const mod = exportedModule(ns);
   if (!mod) {
     throw new ModuleLoadError(`"${entry}" does not export a drobek module (default export from defineModule()).`);
   }
-  return mod as AnyModule;
+  return { module: mod as AnyModule, origin: { source: 'builtin', path: null } };
 }
 
 /** Every structural rule of the contract (throws ModuleLoadError naming the module). */
@@ -480,17 +542,26 @@ export function endUserAuthorityOf(modules: AnyModule[]): AnyModule | null {
   return owners[0] ?? null;
 }
 
+/** The active modules and where each came from (by module name). */
+export interface LoadedModules {
+  modules: AnyModule[];
+  origins: Record<string, ModuleOrigin>;
+}
+
 /**
  * Resolve + validate every DROBEK_MODULES entry (no duplicates, a short name
- * loads a module of that name), then check the set (`checkModuleSet`).
- * Returns the modules in DROBEK_MODULES order, with their effective config
- * defaults.
+ * loads a module of that name; a dir module also passes checkDirModule), then
+ * check the set (`checkModuleSet`). Returns the modules in DROBEK_MODULES
+ * order, with their effective config defaults, and their origins.
  */
-export async function loadModules(env: NodeJS.ProcessEnv = process.env, opts: ResolveOptions = {}): Promise<AnyModule[]> {
+export async function loadModuleSet(env: NodeJS.ProcessEnv = process.env, opts: ResolveOptions = {}): Promise<LoadedModules> {
   const log = opts.log ?? createConsoleLogger('modules');
+  const entries = parseModuleList(env.DROBEK_MODULES);
+  const dir = modulesDirState(env, opts.modulesDir, log);
   const modules: AnyModule[] = [];
-  for (const entry of parseModuleList(env.DROBEK_MODULES)) {
-    const m = await resolveModule(entry, opts);
+  const origins: Record<string, ModuleOrigin> = {};
+  for (const entry of entries) {
+    const { module: m, origin } = await resolveEntry(entry, opts, dir);
     validateModule(m);
     if (packageNameFor(entry) !== entry && m.name !== entry) {
       throw new ModuleLoadError(
@@ -500,6 +571,13 @@ export async function loadModules(env: NodeJS.ProcessEnv = process.env, opts: Re
     if (modules.some((x) => x.name === m.name)) {
       throw new ModuleLoadError(`two entries of DROBEK_MODULES load a module named "${m.name}"`);
     }
+    if (origin.source === 'dir') {
+      try {
+        checkDirModule(m, findDirModule(entry, packageNameFor(entry), dir)!);
+      } catch (err) {
+        throw new ModuleLoadError(`DROBEK_MODULES names "${entry}" (from DROBEK_MODULES_DIR): ${(err as Error).message}`);
+      }
+    }
     if (m.contract === undefined) {
       const range = `^${semver.major(MODULE_CONTRACT_VERSION)}.${semver.minor(MODULE_CONTRACT_VERSION)}`;
       log.warn(`module "${m.name}" declares no contract range — add contract: '${range}' to its defineModule()`, {
@@ -507,7 +585,14 @@ export async function loadModules(env: NodeJS.ProcessEnv = process.env, opts: Re
         contract: MODULE_CONTRACT_VERSION,
       });
     }
+    if (origin.path !== null) log.info('module loaded from DROBEK_MODULES_DIR', { module: m.name, version: m.version, path: origin.path });
     modules.push(m);
+    origins[m.name] = origin;
   }
-  return checkModuleSet(modules, env, log);
+  return { modules: checkModuleSet(modules, env, log), origins };
+}
+
+/** `loadModuleSet` without the origins: the active modules in DROBEK_MODULES order. */
+export async function loadModules(env: NodeJS.ProcessEnv = process.env, opts: ResolveOptions = {}): Promise<AnyModule[]> {
+  return (await loadModuleSet(env, opts)).modules;
 }

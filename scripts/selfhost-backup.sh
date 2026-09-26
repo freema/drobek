@@ -11,6 +11,8 @@
 #     files.tar        the files_data volume (/data/files, end-user uploads)
 #     assets.tar       the assets_data volume (/data/assets, app assets — video,
 #                      audio, images, fonts)
+#     modules.tar      the modules_data volume (/data/modules, installed modules
+#                      + modules.lock.json — DROBEK_MODULES_DIR)
 #     caddy_data.tar   the caddy_data volume (ACME account, certificates, local CA)
 #
 # Online: postgres is started if it is not running (nothing else is touched)
@@ -58,6 +60,10 @@ say "· assets_data (/data/assets)"
 dc run --rm --no-deps -T --entrypoint tar drobek -C /data/assets -cf - . > "$work/assets.tar" </dev/null 2>"$work/run.log" \
   || { cat "$work/run.log" >&2; die "could not archive the assets_data volume"; }
 
+say "· modules_data (/data/modules)"
+dc run --rm --no-deps -T --entrypoint tar drobek -C /data/modules -cf - . > "$work/modules.tar" </dev/null 2>"$work/run.log" \
+  || { cat "$work/run.log" >&2; die "could not archive the modules_data volume"; }
+
 say "· caddy_data (/data)"
 dc run --rm --no-deps -T --entrypoint tar caddy -C /data -cf - . > "$work/caddy_data.tar" </dev/null 2>"$work/run.log" \
   || { cat "$work/run.log" >&2; die "could not archive the caddy_data volume"; }
@@ -69,7 +75,7 @@ image_sha="$(printf '%s\n' "$image_env" | sed -n 's/^GIT_SHA=//p')"
 image_version="$(printf '%s\n' "$image_env" | sed -n 's/^DROBEK_VERSION=//p')"
 checkout_sha="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
 
-(cd "$work" && for f in db.dump files.tar assets.tar caddy_data.tar; do printf '%s  %s\n' "$(sha256_of "$f")" "$f"; done > SHA256SUMS)
+(cd "$work" && for f in db.dump files.tar assets.tar modules.tar caddy_data.tar; do printf '%s  %s\n' "$(sha256_of "$f")" "$f"; done > SHA256SUMS)
 part() { printf '"%s": { "bytes": %s, "sha256": "%s" }' "$1" "$(bytes_of "$work/$1")" "$(sha256_of "$work/$1")"; }
 {
   printf '{\n'
@@ -84,12 +90,12 @@ part() { printf '"%s": { "bytes": %s, "sha256": "%s" }' "$1" "$(bytes_of "$work/
   printf '  "checkout_git_sha": "%s",\n' "$checkout_sha"
   printf '  "master_key_fingerprint": "%s",\n' "$(master_key_fingerprint)"
   printf '  "counts": { "apps": %s, "files": %s, "assets": %s, "core_migrations": %s },\n' "$apps" "$files_rows" "$asset_rows" "$core_migrations"
-  printf '  "parts": {\n    %s,\n    %s,\n    %s,\n    %s\n  }\n' "$(part db.dump)" "$(part files.tar)" "$(part assets.tar)" "$(part caddy_data.tar)"
+  printf '  "parts": {\n    %s,\n    %s,\n    %s,\n    %s,\n    %s\n  }\n' "$(part db.dump)" "$(part files.tar)" "$(part assets.tar)" "$(part modules.tar)" "$(part caddy_data.tar)"
   printf '}\n'
 } > "$work/manifest.json"
 
 tmp_archive="$archive.partial"
-(umask 077 && tar -C "$work" -czf "$tmp_archive" manifest.json SHA256SUMS db.dump files.tar assets.tar caddy_data.tar)
+(umask 077 && tar -C "$work" -czf "$tmp_archive" manifest.json SHA256SUMS db.dump files.tar assets.tar modules.tar caddy_data.tar)
 chmod 600 "$tmp_archive"
 mv "$tmp_archive" "$archive"
 

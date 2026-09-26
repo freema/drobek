@@ -143,6 +143,9 @@ services:
       - /data/files
       # NSO-358: app assets (ASSETS_DIR default; throwaway).
       - /data/assets
+      # NSO-345: DROBEK_MODULES_DIR (default /data/modules) — a named volume, so
+      # a module can be installed into it before the stack starts.
+      - modules_data:/data/modules
     # The image's own HEALTHCHECK probes /healthz (db + redis) — `up --wait` uses it.
     depends_on:
       postgres:
@@ -171,3 +174,6 @@ services:
     depends_on:
       drobek:
         condition: service_healthy
+
+volumes:
+  modules_data:

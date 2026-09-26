@@ -193,6 +193,9 @@ services:
       # PROXY_CALLS_PER_MIN keeps its default 60 — the e2e trips the 61st call).
       # M1-05 (NSO-296): the built-in `files` (uploads on the files_data volume).
       DROBEK_MODULES: ${DROBEK_MODULES:-hello,auth,email,forms,data,proxy,files}
+      # NSO-345: the operator's installed modules (the ./.modules bind below).
+      DROBEK_MODULES_DIR: ${DROBEK_MODULES_DIR:-/data/modules}
+      DROBEK_MODULES_UNLOCKED: ${DROBEK_MODULES_UNLOCKED:-}
       HELLO_WAVES_PER_MINUTE: ${HELLO_WAVES_PER_MINUTE:-5}
       AUTH_CODES_PER_IP_15MIN: ${AUTH_CODES_PER_IP_15MIN:-100}
       AUTH_CODES_PER_IP_DAY: ${AUTH_CODES_PER_IP_DAY:-500}
@@ -272,6 +275,9 @@ services:
       - files_data:/data/files
       # NSO-358: app assets (ASSETS_DIR).
       - assets_data:/data/assets
+      # NSO-345: DROBEK_MODULES_DIR — modules installed on the host into
+      # ./.modules/<name>/ (+ modules.lock.json); ignored by git.
+      - ./.modules:/data/modules
     healthcheck:
       test: ['CMD-SHELL', 'wget -q -T 5 -O - "http://127.0.0.1:$${PORT:-3000}/healthz" || exit 1']
       interval: 5s

@@ -76,10 +76,12 @@ import {
   collectContributions,
   endUserAuthorityOf,
   filesAuthorityOf,
-  loadModules,
+  loadModuleSet,
   mailAuthorityOf,
   recordsAuthorityOf,
   submissionsAuthorityOf,
+  type ModuleOrigin,
+  type ModuleSource,
   type ResolveOptions,
   type SlotContribution,
 } from './registry.js';
@@ -389,6 +391,15 @@ function unsupported(module: string, what: string): ModuleError {
 /** Distinct (module, stored config) pairs kept parsed in memory. */
 const EFFECTIVE_CONFIG_MEMO_ENTRIES = 2000;
 
+/** One active module as /healthz, /api/version and the start log show it — never a path on disk. */
+export interface ModuleSummary {
+  name: string;
+  version: string;
+  source: ModuleSource;
+  /** The contract range the module declares (null: none). */
+  contract: string | null;
+}
+
 export class ModuleRuntime {
   readonly modules: AnyModule[];
   readonly skills: SkillEntry[];
@@ -408,9 +419,18 @@ export class ModuleRuntime {
    * never serve a stale config.
    */
   private readonly configMemo = new Lru<{ value: unknown }>(EFFECTIVE_CONFIG_MEMO_ENTRIES);
+  /** Module name → where it was loaded from (absent: builtin). */
+  private readonly origins: Record<string, ModuleOrigin>;
 
-  constructor(input: { modules: AnyModule[]; skills: SkillEntry[]; sdk: SdkBundle; deps: RuntimeDeps }) {
+  constructor(input: {
+    modules: AnyModule[];
+    skills: SkillEntry[];
+    sdk: SdkBundle;
+    deps: RuntimeDeps;
+    origins?: Record<string, ModuleOrigin>;
+  }) {
     this.modules = input.modules;
+    this.origins = input.origins ?? {};
     this.skills = input.skills;
     this.sdk = input.sdk;
     this.deps = input.deps;
@@ -428,6 +448,16 @@ export class ModuleRuntime {
 
   get(name: string): AnyModule | undefined {
     return this.byName.get(name);
+  }
+
+  /** The active modules (name, version, source, contract) in DROBEK_MODULES order — for /healthz and /api/version. */
+  summary(): ModuleSummary[] {
+    return this.modules.map((m) => ({
+      name: m.name,
+      version: m.version,
+      source: this.origins[m.name]?.source ?? 'builtin',
+      contract: m.contract ?? null,
+    }));
   }
 
   // ── slots, services, error codes ──
@@ -1387,7 +1417,9 @@ export function moduleJournalTable(name: string): string {
 export async function loadModuleRuntime(opts: LoadRuntimeOptions = {}): Promise<ModuleRuntime> {
   const env = opts.env ?? process.env;
   const log = opts.log ?? opts.deps?.log ?? createConsoleLogger('modules');
-  const modules = opts.modules ? checkModuleSet(opts.modules, env, log) : await loadModules(env, { ...opts, log });
+  const { modules, origins } = opts.modules
+    ? { modules: checkModuleSet(opts.modules, env, log), origins: {} }
+    : await loadModuleSet(env, { ...opts, log });
   const authority = endUserAuthorityOf(modules);
 
   if (env.DROBEK_MIGRATE_ON_START !== '0') {
@@ -1427,9 +1459,9 @@ export async function loadModuleRuntime(opts: LoadRuntimeOptions = {}): Promise<
     requestStats: (appId, module, status) => recordModuleRequest(appId, module, status),
     ...opts.deps,
   };
-  runtime = new ModuleRuntime({ modules, skills, sdk, deps });
+  runtime = new ModuleRuntime({ modules, skills, sdk, deps, origins });
   log.info('platform modules ready', {
-    modules: modules.map((m) => `${m.name}@${m.version}`),
+    modules: runtime.summary(),
     contract: MODULE_CONTRACT_VERSION,
     skills: skills.map((s) => s.name),
     sdk: sdk.url,
@@ -1455,6 +1487,17 @@ export function moduleRuntime(opts?: LoadRuntimeOptions): Promise<ModuleRuntime>
     });
   }
   return g[GLOBAL_KEY];
+}
+
+/**
+ * The active modules (name, version, source, contract) for `/healthz` and
+ * `/api/version` — never a path. The server entry loads the runtime at boot,
+ * so this only misses in tooling: then [].
+ */
+export function activeModules(): Promise<ModuleSummary[]> {
+  return moduleRuntime()
+    .then((rt) => rt.summary())
+    .catch(() => []);
 }
 
 /** Tests: install a runtime (or null to reset). */
