@@ -18,6 +18,11 @@ export const TOOL_ERROR_CODES = [
   'busy',
   'slug_taken',
   'not_publishable',
+  // NSO-340: set_gallery_listing.
+  'not_published',
+  'user_confirmation_required',
+  'gallery_hidden',
+  'gallery_disabled',
   'internal_error',
 ] as const;
 

@@ -13,8 +13,8 @@ immutable **version**; the working copy is served at the app's `preview_url`.
 
 Connect the MCP server first (OAuth 2.1, PKCE — or a `drk_…` API key). The
 user approves scopes on the consent screen: `read` (look), `write` (create and
-change apps) and `publish` (make a version live); you only see the tools your
-grant allows. The AUTHORITATIVE, always-current tool schemas live in
+change apps) and `publish` (make a version live, list it in the gallery); you
+only see the tools your grant allows. The AUTHORITATIVE, always-current tool schemas live in
 llms-full.txt and the MCP docs resource — link to them, do not hand-copy them.
 
 ## Your workspace
@@ -141,12 +141,36 @@ Publish **only when the user explicitly asks** ("publish it", "make it live").
 Never publish on your own initiative — the preview URL is for showing work in
 progress. The owner can also publish from the drobek dashboard.
 
+## Gallery
+
+A server can run a public gallery: a list of published apps, each with its
+name, a one- or two-sentence description and its production URL, visible to
+everyone (on drobek.app it is shown at www.drobek.app/gallery).
+
+- List an app there **only after the user explicitly said yes** to it. Ask
+  first ("Do you want <app> in the public gallery with the description
+  "…"?") and show them the exact description. Never list on your own
+  initiative.
+- `set_gallery_listing({ app_id, listed: true, description, user_confirmed:
+  true })` (scope `publish`) lists a PUBLISHED app — `description` is plain
+  text, at most 160 characters. `user_confirmed: true` means the user said
+  yes; without it the answer is `user_confirmation_required` and nothing
+  changes. The same call with a new description changes it.
+- `set_gallery_listing({ app_id, listed: false })` takes the app out at once
+  — no confirmation needed. Unpublishing the app does that too.
+- `get_app` shows the state (`gallery`: `listed`, `description`,
+  `hidden_by_admin`, `visible`; `enabled: false` when the server has no
+  gallery). `not_published`, `gallery_hidden` (the operator hid the app) and
+  `gallery_disabled` mean: tell the user, do not retry. The owner can do all
+  of this in the drobek dashboard as well.
+
 ## Errors
 
 A failed call returns `isError: true` with `{ code, message, hint }` — the
 `hint` says what to do (`not_found`, `forbidden`, `invalid_params`,
 `invalid_path`, `limit_exceeded`, `secret_in_source`, `app_locked`,
-`app_locked_by_admin`, `busy`, `not_publishable`, …).
+`app_locked_by_admin`, `busy`, `not_publishable`, `not_published`,
+`user_confirmation_required`, `gallery_hidden`, `gallery_disabled`, …).
 Compile problems are not tool failures: they come back in `compile.errors`. The
 full code → meaning → fix table is the Error catalogue in llms-full.txt.
 

@@ -282,7 +282,8 @@ export async function publish(
         .where(eq(appVersions.id, app.publishedVersionId));
       previousNumber = prev?.number ?? null;
     }
-    await tx.update(apps).set({ publishedVersionId: version.id }).where(eq(apps.id, appId));
+    // published_at orders the public gallery (NSO-340); ms precision like its cursor.
+    await tx.update(apps).set({ publishedVersionId: version.id, publishedAt: new Date() }).where(eq(apps.id, appId));
     await audit(tx, app, actor, AUDIT_ACTIONS.appPublish, {
       version: version.number,
       previousVersion: previousNumber,

@@ -36,7 +36,7 @@ async function connect(scopes: Scope[]): Promise<Client> {
 
 const READ = ['get_app', 'get_logs', 'list_apps', 'query_data', 'read_file', 'skill_info'];
 const WRITE = ['configure_module', 'create_app', 'restore_version', 'write_files'];
-const PUBLISH = ['publish'];
+const PUBLISH = ['publish', 'set_gallery_listing'];
 
 const EXPECTED: Array<[Scope[], string[]]> = [
   [[], []],
@@ -65,6 +65,20 @@ describe('tools/list reflects the granted scope', () => {
       }
     });
   }
+
+  it('a read + write grant cannot list an app in the gallery (publish scope, NSO-340)', async () => {
+    const client = await connect(['read', 'write']);
+    try {
+      const res = await client.callTool({
+        name: 'set_gallery_listing',
+        arguments: { app_id: 'a', listed: true, description: 'x', user_confirmed: true },
+      });
+      expect(res.isError).toBe(true);
+      expect((res.content as { text: string }[])[0].text).toContain('set_gallery_listing not found');
+    } finally {
+      await client.close();
+    }
+  });
 
   it('a read-only grant cannot call a write tool', async () => {
     const client = await connect(['read']);

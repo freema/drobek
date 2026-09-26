@@ -126,6 +126,9 @@ export default [
   // /.well-known/drobek-report points here) and the super-admin queue.
   route('report', 'routes/report.tsx'),
   route('admin/abuse', 'routes/admin.abuse.tsx'),
+  // NSO-340: the public gallery list (read-only JSON, CORS *, 404 unless
+  // GALLERY_ENABLED) — the operator's website renders it.
+  route('api/public/gallery', 'routes/api.public.gallery.ts'),
   // NSO-297: the old dashboard-host proxy (`/:ws/api/proxy/:name/*`) is gone —
   // apps call upstreams on their own host through the `proxy` platform module
   // (`/__drobek/v1/proxy/:upstream/*`).

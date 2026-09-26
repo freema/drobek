@@ -216,6 +216,7 @@ built-ins.
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | — | optional Google sign-in |
 | `TLS_CUSTOM_DOMAINS`, `DOMAINS_MAX_PER_APP`, `DOMAINS_DNS_SERVERS`, `DOMAINS_RECHECK_INTERVAL_MS` | — | [custom domains](#custom-domains) (catch-all certificate on by default in on-demand mode; 3 per app) |
 | `TERMS_URL`, `ABUSE_REPORTS_PER_IP_HOUR`, `ABUSE_BRAND_WORDS` | — | [abuse handling](#abuse-and-takedowns) (terms link of the 451 page; 5 reports / IP / hour; publish-heuristic brand words) |
+| `GALLERY_ENABLED`, `GALLERY_API_PER_IP_MINUTE` | — (off) | [the public gallery](#public-gallery) (`true` = owners may list published apps; `GET /api/public/gallery`; 60 requests / IP / minute) |
 | `EMAIL_SIGNIN_APP_HOURLY_SHARE` | — (25) | one app's percent of the sign-in e-mail budget — raise it on a single-app server (see [Production compose](#production-compose)) |
 | `EMAIL_WORKSPACE_HOURLY_SHARE` | — (50) | one workspace's percent of each module e-mail budget — raise it to 100 on a single-workspace server |
 | limits (`OTP_*`, `COMPILE_*`, `DATA_*`, `FILES_*`, `EMAIL_*`, …) | — | production defaults; every variable is in the [Environment reference](#environment-reference) |
@@ -391,7 +392,7 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `PROXY_CALLS_PER_MIN` / `PROXY_PUBLIC_CALLS_PER_MIN_PER_IP` | 60 / 10 | `proxy`: calls per app, per IP to `public` upstreams *(plan)* |
 | `HELLO_WAVES_PER_MINUTE` | 30 | the example module `drobek-module-hello` |
 
-### Custom domains and abuse
+### Custom domains, abuse and the gallery
 
 | Variable | Default | What |
 | --- | --- | --- |
@@ -403,6 +404,8 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `LANDING_URL` | — (the built-in landing page) | `<PUBLIC_APP_URL>/` answers 301 to this URL — for an operator whose website lives elsewhere |
 | `ABUSE_REPORTS_PER_IP_HOUR` | 5 | valid abuse reports per client IP per hour |
 | `ABUSE_BRAND_WORDS` | a built-in list | the publish heuristic's brand words (comma-separated) |
+| `GALLERY_ENABLED` | off | `true` = the [public gallery](#public-gallery): owners (and, on their explicit yes, their agents) may list published apps; `GET /api/public/gallery` answers. Off = no switch in the dashboard, the endpoint answers 404 |
+| `GALLERY_API_PER_IP_MINUTE` | 60 | requests to `GET /api/public/gallery` per client IP per minute (429 over it) |
 
 ### Development and tests only
 
@@ -838,6 +841,39 @@ Anyone can publish on a public drobek, so the operator (every address in
 
 DMCA notices and the legal side of abuse handling belong to your terms of
 service, not to drobek.
+
+## Public gallery
+
+With `GALLERY_ENABLED=true` the server keeps a public list of apps whose
+owners chose to show them. Off by default: a fresh server publishes no app
+list.
+
+- **Listing.** On an app's Overview an editor or workspace-admin of a
+  **published** app ticks "Show in the gallery" and writes a public
+  description (plain text, one or two sentences, at most 160 characters).
+  An agent can do the same with the MCP tool `set_gallery_listing` (scope
+  `publish`), but only with `user_confirmed: true` — its instructions allow
+  that only after the user explicitly said yes. Viewers cannot list (403).
+  Audited `app.gallery_listed` / `app.gallery_unlisted`.
+- **Leaving the gallery.** Unlisting takes effect at once. Unpublishing the
+  app or a takedown also ends the listing (the owner lists again after the
+  next publish), and a deleted app is gone with it. The public list filters
+  at query time: only apps that are listed, published, public (no password
+  gate), not taken down, not deleted and not hidden appear.
+- **Hiding.** A super-admin sees every listed app in the Gallery section of
+  `/admin/abuse` and can **hide** an entry (or show it again). A hidden app
+  is off the list and neither its owner nor an agent can list it. Audited
+  `app.gallery_hidden` / `app.gallery_unhidden`.
+- **`GET /api/public/gallery`** on the dashboard host, no login:
+  `{ items: [{ name, description, url, publishedAt }], next? }` — `url` is
+  the production host `https://<slug>.<APPS_DOMAIN>`, newest publish first,
+  `?limit=` 1–48 (default 24), `?cursor=` the previous page's `next`. No
+  owner data (no e-mail, workspace or id). `Cache-Control: public,
+  max-age=60`, `Access-Control-Allow-Origin: *`, `GALLERY_API_PER_IP_MINUTE`
+  requests per client IP per minute. Render it on your own website — a
+  server-side fetch or a reverse proxy works as well as the browser.
+
+There are no screenshots: drobek never runs an app's code on the server.
 
 ## The rehearsal (`task selfhost:rehearsal`)
 

@@ -211,6 +211,9 @@ services:
       ABUSE_REPORTS_PER_IP_HOUR: ${ABUSE_REPORTS_PER_IP_HOUR:-5}
       ABUSE_BRAND_WORDS: ${ABUSE_BRAND_WORDS:-}
       TERMS_URL: ${TERMS_URL:-}
+      # NSO-340: the public gallery is on in dev (the gallery e2e lists apps).
+      GALLERY_ENABLED: ${GALLERY_ENABLED:-true}
+      GALLERY_API_PER_IP_MINUTE: ${GALLERY_API_PER_IP_MINUTE:-60}
       # NSO-342: the footer's GitHub star count (empty = on; `off` = no call).
       DASHBOARD_GITHUB_STARS: ${DASHBOARD_GITHUB_STARS:-}
       LIMITS_PROVIDER_URL: ${LIMITS_PROVIDER_URL:-}

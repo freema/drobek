@@ -18,7 +18,7 @@ export function meta() {
 const SCOPE_LABELS: Record<string, string> = {
   read: 'See your workspaces and apps, read app files, the platform skills and the data your apps store',
   write: 'Change apps: create apps, write files, restore versions and configure platform modules',
-  publish: 'Publish app versions to their live URL',
+  publish: 'Publish app versions to their live URL and list apps in the public gallery (after you say yes)',
 };
 
 const styles = {

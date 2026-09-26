@@ -101,6 +101,31 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     fix: 'Publish a version that compiled: omit `version` to publish the newest one that did, or fix compile.errors with write_files first.',
   },
   {
+    code: 'not_published',
+    surface: 'MCP tool isError (set_gallery_listing)',
+    meaning: 'Only a published app can be listed in the public gallery, and this app has no version on its production URL.',
+    fix: 'Publish the app first — but only when the user explicitly asks to publish — then ask again whether they want it in the gallery.',
+  },
+  {
+    code: 'user_confirmation_required',
+    surface: 'MCP tool isError (set_gallery_listing)',
+    meaning:
+      'Listing an app in the public gallery shows its name, a description and its production link to everyone, so the call needs `user_confirmed: true` — set only after the user explicitly said yes to exactly this listing. Nothing changed.',
+    fix: 'Ask the user: "Do you want <app name> shown in the public gallery with the description \"<description>\"?" Call again with user_confirmed:true only if they clearly say yes; otherwise leave the app unlisted.',
+  },
+  {
+    code: 'gallery_hidden',
+    surface: 'MCP tool isError (set_gallery_listing); dashboard 400',
+    meaning: 'The server operator hid this app from the public gallery; neither the owner nor an agent can list it until the operator shows it again. Nothing changed.',
+    fix: 'Do not retry and do not work around it. Tell the user the operator hid the app from the gallery; they can contact the operator.',
+  },
+  {
+    code: 'gallery_disabled',
+    surface: 'MCP tool isError (set_gallery_listing)',
+    meaning: 'This server runs no public gallery (its operator left GALLERY_ENABLED off). Nothing changed.',
+    fix: 'Tell the user this server has no public gallery; do not retry.',
+  },
+  {
     code: 'internal_error',
     surface: 'MCP tool isError',
     meaning: 'drobek failed unexpectedly while handling the call (the details are in the server log, never in the response).',

@@ -1,7 +1,8 @@
 /**
  * TOOL_DOCS — the declarative documentation manifest for the drobek MCP tools
  * (M0-05 NSO-283; publish M0-06 NSO-285; skill_info + configure_module M1-01
- * NSO-287; query_data M1-03 NSO-300; get_logs M1-07 NSO-290). This is the SINGLE SOURCE OF TRUTH the agent-facing docs
+ * NSO-287; query_data M1-03 NSO-300; get_logs M1-07 NSO-290; set_gallery_listing
+ * NSO-340). This is the SINGLE SOURCE OF TRUTH the agent-facing docs
  * render from (llms.txt / llms-full.txt / MCP docs resources / the build page),
  * and @drobek/mcp registers each tool with THIS title, description and
  * annotations — so the published docs cannot drift from the real tools.
@@ -98,11 +99,11 @@ export const TOOL_DOCS: ToolDoc[] = [
     title: 'Get an app',
     scope: 'read (any role in the workspace)',
     description:
-      'Snapshot of one app: everything list_apps shows plus the briefing, the source files of the latest version ({path,size,sha256}), the last 20 versions (number, created_at, actor_kind, reasoning, compile_status), the latest compile errors, the platform modules (per module: its effective config, whether a change waits for the owner\'s confirmation, which secrets are set — names and hasSecret only, never values — and the module\'s info, e.g. proxy: the workspace upstreams with registered/assigned/call/hasSecret), the skills list, and the write lock (holder + expires_at) if someone holds it. Use it to re-orient before editing.',
+      'Snapshot of one app: everything list_apps shows plus the briefing, the source files of the latest version ({path,size,sha256}), the last 20 versions (number, created_at, actor_kind, reasoning, compile_status), the latest compile errors, the platform modules (per module: its effective config, whether a change waits for the owner\'s confirmation, which secrets are set — names and hasSecret only, never values — and the module\'s info, e.g. proxy: the workspace upstreams with registered/assigned/call/hasSecret), the skills list, the public gallery state (listed, description, hidden_by_admin, visible — or enabled:false when the server has no gallery), and the write lock (holder + expires_at) if someone holds it. Use it to re-orient before editing.',
     annotations: READ_ONLY,
     fields: [{ name: 'app_id', type: 'string', required: true, description: 'The app id (from list_apps / create_app).' }],
     returns:
-      '{ app_id, name, slug, workspace, preview_url, published_url?, published_version?, latest_version, compile_status, compile_errors, briefing, files:[{path,size,sha256}], versions:[{number,created_at,actor_kind,reasoning,compile_status}], modules:{<name>:{configured,config,pending,pending_confirmation?,confirm_url?,secrets?:[{name,hasSecret}],info?}}, skills:[{name,use_when}], lock?:{holder,expires_at}, locked_by_admin?, locked_reason? }',
+      '{ app_id, name, slug, workspace, preview_url, published_url?, published_version?, latest_version, compile_status, compile_errors, briefing, files:[{path,size,sha256}], versions:[{number,created_at,actor_kind,reasoning,compile_status}], modules:{<name>:{configured,config,pending,pending_confirmation?,confirm_url?,secrets?:[{name,hasSecret}],info?}}, skills:[{name,use_when}], gallery:{enabled,listed?,description?,hidden_by_admin?,visible?}, lock?:{holder,expires_at}, locked_by_admin?, locked_reason? }',
     example: { app_id: 'k3v9x0…' },
   },
   {
@@ -180,6 +181,32 @@ export const TOOL_DOCS: ToolDoc[] = [
     ],
     returns: '{ published_version, previous_version, published_url, domains:[host, …verified custom domains] }',
     example: { app_id: 'k3v9x0…' },
+  },
+  {
+    name: 'set_gallery_listing',
+    title: 'List an app in the public gallery',
+    scope: 'publish (editor+ role in the workspace)',
+    description:
+      'Show a published app in this server\'s public gallery (its name, a one- or two-sentence description and its production URL, visible to everyone), change that description, or take the app out of the gallery. Listing (`listed: true`) needs a published app, a plain-text `description` of at most 160 characters and `user_confirmed: true` — set it ONLY after the user explicitly said yes to exactly this listing: ask them first and show them the description. Never list an app on your own initiative. Without the confirmation the answer is user_confirmation_required and nothing changes. Unlisting (`listed: false`) needs no confirmation and works at once. Refused when the server has no gallery (gallery_disabled), when the app is not published (not_published) and when the server operator hid the app from the gallery (gallery_hidden). Unpublishing the app also takes it out of the gallery. get_app shows the current state (`gallery`).',
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    fields: [
+      { name: 'app_id', type: 'string', required: true, description: 'The app id.' },
+      { name: 'listed', type: 'boolean', required: true, description: 'true lists the app (or changes its description); false removes it from the gallery.' },
+      {
+        name: 'description',
+        type: 'string (listing only, ≤ 160 chars)',
+        required: false,
+        description: 'The public description: plain text, one or two sentences.',
+      },
+      {
+        name: 'user_confirmed',
+        type: 'boolean (listing only)',
+        required: false,
+        description: 'true ONLY after the user explicitly said yes to this listing and description.',
+      },
+    ],
+    returns: '{ app_id, listed, description, changed, visible, note? }',
+    example: { app_id: 'k3v9x0…', listed: true, description: 'Plan weekly shifts for a small team.', user_confirmed: true },
   },
   {
     name: 'skill_info',

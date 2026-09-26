@@ -35,6 +35,7 @@ import {
   queryData,
   readFile,
   restoreVersion,
+  setGalleryListingTool,
   skillInfo,
   writeFiles,
   type CallContext,
@@ -44,7 +45,7 @@ import {
 } from './tools.js';
 import { TEMPLATES } from './templates.js';
 
-/** The tool set, in tools/list order (M0-05 + publish, M0-06 + skill_info/configure_module, M1-01 + query_data, M1-03 + get_logs, M1-07). */
+/** The tool set, in tools/list order (M0-05 + publish, M0-06 + skill_info/configure_module, M1-01 + query_data, M1-03 + get_logs, M1-07 + set_gallery_listing, NSO-340). */
 export const APP_TOOL_NAMES = [
   'list_apps',
   'create_app',
@@ -53,6 +54,7 @@ export const APP_TOOL_NAMES = [
   'write_files',
   'restore_version',
   'publish',
+  'set_gallery_listing',
   'skill_info',
   'configure_module',
   'query_data',
@@ -102,6 +104,18 @@ export const INPUT_SCHEMAS = {
       .number()
       .optional()
       .describe('The version number to put live; default the newest version that compiled. An older one = production rollback.'),
+  },
+  set_gallery_listing: {
+    app_id: appId,
+    listed: z.boolean().describe('true lists the app in the public gallery (or changes its description); false removes it.'),
+    description: z
+      .string()
+      .optional()
+      .describe('Listing only: the public description, plain text, one or two sentences, at most 160 characters.'),
+    user_confirmed: z
+      .boolean()
+      .optional()
+      .describe('Listing only: true ONLY after the user explicitly said yes to this listing and description.'),
   },
   skill_info: {
     name: z.string().optional().describe('A skill name from the list; omit to list every skill.'),
@@ -271,6 +285,7 @@ export function registerAppTools(
   register('write_files', writeFiles);
   register('restore_version', restoreVersion);
   register('publish', publishApp);
+  register('set_gallery_listing', setGalleryListingTool);
   register('skill_info', skillInfo);
   register('configure_module', configureModule);
   register<{ app_id: string; collection: string }>('query_data', queryData, (p) => untrustedResult(untrustedDataEnvelope(p as QueryDataResult)));

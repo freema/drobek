@@ -28,6 +28,7 @@ const REQUIRED_SECTIONS = [
   '## One writer at a time',
   '## Roll back',
   '## Publishing',
+  '## Gallery',
   '## Errors',
   '## Authoritative schemas',
 ];
@@ -68,6 +69,12 @@ describe('skills/drobek/SKILL.md', () => {
     expect(md).toContain('3 minutes');
     expect(md).toContain('`secret_in_source`');
     expect(md).toContain('drobek dashboard');
+  });
+
+  it('lists an app in the gallery only after the user said yes (NSO-340)', () => {
+    expect(md).toContain('**only after the user explicitly said yes**');
+    expect(md).toContain('user_confirmed: true');
+    expect(md).toContain('Never list on your own');
   });
 
   it('states the skill_info rule verbatim, in the present tense (M1-01)', () => {

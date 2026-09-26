@@ -141,6 +141,14 @@ export const AUDIT_ACTIONS = {
   adminTakedown: 'admin.takedown',
   /** M4-02: a super-admin lifted a takedown (the app stays unpublished until its owner publishes). */
   adminRestore: 'admin.restore',
+  /** NSO-340: the app was listed in the public gallery, or its gallery description changed (meta: description). */
+  appGalleryListed: 'app.gallery_listed',
+  /** NSO-340: the app left the public gallery (meta.reason: owner | unpublish | takedown). */
+  appGalleryUnlisted: 'app.gallery_unlisted',
+  /** NSO-340: a super-admin hid the app's gallery entry. */
+  appGalleryHidden: 'app.gallery_hidden',
+  /** NSO-340: a super-admin showed a hidden gallery entry again. */
+  appGalleryUnhidden: 'app.gallery_unhidden',
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];

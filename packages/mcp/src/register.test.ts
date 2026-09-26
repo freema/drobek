@@ -1,5 +1,5 @@
 /**
- * tools/list snapshot (M0-05 + M0-06 + M1-01 + M1-03 + M1-07): exactly the 11 tools, in order, with
+ * tools/list snapshot (M0-05 + M0-06 + M1-01 + M1-03 + M1-07 + NSO-340): exactly the 12 tools, in order, with
  * their titles, annotations and input schemas. Hand-written on purpose — a
  * change to the public tool surface must be a deliberate edit here.
  */
@@ -29,7 +29,7 @@ async function listTools(allow?: (t: string) => boolean) {
 const RO = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 
 describe('tools/list', () => {
-  it('is exactly the 11 tools with their annotations and inputs (snapshot)', async () => {
+  it('is exactly the 12 tools with their annotations and inputs (snapshot)', async () => {
     const tools = await listTools();
     const snapshot = tools.map((t) => ({
       name: t.name,
@@ -105,6 +105,19 @@ describe('tools/list', () => {
         },
         properties: ['app_id', 'version'],
         required: ['app_id'],
+      },
+      {
+        name: 'set_gallery_listing',
+        title: 'List an app in the public gallery',
+        annotations: {
+          title: 'List an app in the public gallery',
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: true,
+        },
+        properties: ['app_id', 'listed', 'description', 'user_confirmed'],
+        required: ['app_id', 'listed'],
       },
       {
         name: 'skill_info',

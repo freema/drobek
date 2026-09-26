@@ -1,7 +1,9 @@
 /**
  * /admin/abuse — client half (M4-02, NSO-293): the super-admin moderation
  * queue. Open reports (host → app, workspace, reason, details, created) with
- * Take down / Mark resolved, and the list of taken-down apps with Restore.
+ * Take down / Mark resolved, the list of taken-down apps with Restore, and
+ * (NSO-340, when the server runs a gallery) the gallery entries with Hide /
+ * Show again.
  * The server gate (super-admin only) is the source of truth.
  */
 import { Form, Link, useActionData, useLoaderData } from 'react-router';
@@ -87,7 +89,7 @@ function when(iso: string): string {
 }
 
 export default function AbuseQueueRoute() {
-  const { status, reasons, reports, locked } = useLoaderData<typeof loader>();
+  const { status, reasons, reports, locked, gallery } = useLoaderData<typeof loader>();
   const result = useActionData<typeof action>();
 
   return (
@@ -217,6 +219,55 @@ export default function AbuseQueueRoute() {
           ))}
         </ul>
       )}
+
+      {gallery ? (
+        <>
+          <h2 style={styles.h2}>Gallery</h2>
+          <p style={styles.hint}>
+            Apps their owners listed in the public gallery. Hiding one takes it off the gallery at once; its owner cannot
+            list it again until you show it again.
+          </p>
+          {gallery.length === 0 ? (
+            <p style={styles.empty} data-testid="gallery-empty">
+              No app is listed.
+            </p>
+          ) : (
+            <ul style={styles.list} data-testid="gallery-entries">
+              {gallery.map((g) => (
+                <li key={g.id} style={styles.item} data-testid="gallery-entry" data-app-slug={g.slug}>
+                  <div style={styles.head}>
+                    <span style={styles.host}>{g.name ?? g.slug}</span>
+                    {g.hidden ? (
+                      <span style={styles.lockedBadge} data-testid="gallery-entry-hidden">
+                        hidden
+                      </span>
+                    ) : g.visible ? (
+                      <span style={styles.badge}>shown</span>
+                    ) : (
+                      <span style={styles.badge}>not shown</span>
+                    )}
+                    <Form method="post" style={{ marginLeft: 'auto' }}>
+                      <input type="hidden" name="intent" value={g.hidden ? 'gallery-show' : 'gallery-hide'} />
+                      <input type="hidden" name="appId" value={g.id} />
+                      <button
+                        type="submit"
+                        style={g.hidden ? styles.secondary : styles.danger}
+                        data-testid={g.hidden ? 'gallery-show' : 'gallery-hide'}
+                      >
+                        {g.hidden ? 'Show again' : 'Hide from gallery'}
+                      </button>
+                    </Form>
+                  </div>
+                  {g.description ? <div style={styles.details}>{g.description}</div> : null}
+                  <div style={styles.meta}>
+                    app <strong>{g.slug}</strong> in workspace <Link to={`/workspaces/${g.workspaceSlug}`}>{g.workspaceSlug}</Link>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      ) : null}
     </DashboardPage>
   );
 }

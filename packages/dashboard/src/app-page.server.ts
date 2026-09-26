@@ -9,8 +9,9 @@
  *    single-writer lease ("an agent of X is working, last write N s ago");
  *  - `appAction` — EVERY app mutation of the dashboard, dispatched on the
  *    form's `intent`: publish, restore, unpublish, unlock, visibility,
- *    frame-ancestors, delete. The editor gate runs FIRST (a viewer → 403,
- *    before the form is even read); the global origin check
+ *    frame-ancestors, gallery (NSO-340: list / relist / unlist), delete.
+ *    The editor gate runs FIRST (a viewer → 403, before the form is even
+ *    read); the global origin check
  *    (createOriginCheckMiddleware) already refused cross-origin posts. Each
  *    mutation is a @drobek/apps function (the same ones the MCP tools use),
  *    which writes its audit row; the app hosts' cache is busted right after.
@@ -33,6 +34,7 @@ import {
   restore,
   setAppVisibility,
   setFrameAncestors,
+  setGalleryListing,
   softDeleteApp,
   unpublishApp,
   type Actor,
@@ -274,6 +276,18 @@ export async function appAction({ request, params }: ActionFunctionArgs) {
         await changed('settings');
         break;
       }
+      case 'gallery': {
+        // NSO-340: "Show in the gallery" + the public description. Listing
+        // needs a published app (@drobek/apps refuses otherwise); unchecking
+        // unlists. The same function backs the MCP tool set_gallery_listing.
+        const listed = form.get('listed') === 'on' || form.get('listed') === 'true';
+        await setGalleryListing(
+          app.id,
+          listed ? { listed: true, description: String(form.get('description') ?? '') } : { listed: false },
+          actor
+        );
+        break;
+      }
       case 'delete': {
         if (String(form.get('confirm') ?? '').trim() !== app.slug) {
           return fail(400, intent, `Type the app's address "${app.slug}" to confirm the delete.`);
@@ -288,9 +302,11 @@ export async function appAction({ request, params }: ActionFunctionArgs) {
     }
   } catch (err) {
     // Expected failures (an unknown version, not_publishable, not_published,
-    // invalid_settings) carry a caller-safe message.
+    // invalid_settings, gallery_hidden) carry a caller-safe message; the
+    // gallery switch of a server without a gallery is not there at all (404).
     // A takedown that landed after the page loaded → 423 like the pre-check.
     if (err instanceof AppsError && err.code === 'app_locked_by_admin') return fail(423, intent, err.message);
+    if (err instanceof AppsError && err.code === 'gallery_disabled') return fail(404, intent, err.message);
     if (err instanceof AppsError) return fail(400, intent, err.message);
     throw err;
   }

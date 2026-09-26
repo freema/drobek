@@ -168,9 +168,28 @@ export const apps = pgTable(
      * with `app_locked_by_admin`. Only a super-admin restore clears it.
      */
     lockedReason: text('locked_reason'),
+    /**
+     * When the production host last started serving a version (NSO-340):
+     * every publish sets it, unpublish / takedown clear it. The public
+     * gallery lists the newest first.
+     */
+    publishedAt: timestamp('published_at'),
+    /**
+     * NSO-340: the owner's opt-in to the public gallery — changed in the
+     * dashboard by an editor+ of a PUBLISHED app, never through MCP.
+     * Unpublish / takedown turn it off. The gallery also filters at query
+     * time (published, not taken down, not deleted, not hidden).
+     */
+    galleryListed: boolean('gallery_listed').notNull().default(false),
+    /** NSO-340: the gallery's one-line public description (plain text, ≤ 160 chars). */
+    galleryDescription: text('gallery_description'),
+    /** NSO-340: a super-admin hid the gallery entry (non-null = hidden, whatever the owner sets). */
+    galleryHiddenAt: timestamp('gallery_hidden_at'),
   },
   (t) => [
     uniqueIndex('apps_slug_uq').on(t.slug),
+    // The public gallery page reads listed apps newest-published first (NSO-340).
+    index('apps_gallery_idx').on(t.publishedAt.desc(), t.slug.desc()).where(sql`${t.galleryListed}`),
     index('apps_workspace_idx').on(t.workspaceId),
     // The slug-release sweep reads deleted apps only.
     index('apps_deleted_at_idx').on(t.deletedAt).where(sql`${t.deletedAt} IS NOT NULL`),

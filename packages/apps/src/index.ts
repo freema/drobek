@@ -147,3 +147,28 @@ export type {
   VersionFileKind,
   VersionSummary,
 } from './types.js';
+// NSO-340: the public gallery (owner opt-in, super-admin hide, the public list).
+export {
+  GALLERY_DESCRIPTION_MAX,
+  GALLERY_PAGE_MAX,
+  GALLERY_PAGE_SIZE,
+  decodeGalleryCursor,
+  encodeGalleryCursor,
+  galleryEnabled,
+  galleryPageSize,
+  galleryState,
+  normalizeGalleryDescription,
+  type GalleryCursor,
+  type GalleryDescriptionResult,
+  type GalleryState,
+} from './gallery.js';
+export {
+  listGallery,
+  listGalleryForModeration,
+  setGalleryHidden,
+  setGalleryListing,
+  type GalleryItem,
+  type GalleryListingInput,
+  type GalleryListingResult,
+  type GalleryModerationEntry,
+} from './gallery.server.js';

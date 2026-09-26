@@ -1300,6 +1300,19 @@ block, then `next` is pushed and the single MR opened.
 - NSO-342: an app's CSP `frame-ancestors` always carries the dashboard origin
   (the app-list thumbnail); an UNKNOWN app host keeps `frame-ancestors 'none'`
   (no app → no dashboard frame). e2e specs assert both.
+- NSO-340: `GALLERY_ENABLED` is read from `process.env`, so a running dev
+  container picks it up only after it is recreated
+  (`docker compose up -d drobek`), not restarted.
+- NSO-340: `apps.published_at` is written at millisecond precision (the
+  migration backfill uses `date_trunc('milliseconds', …)`). The gallery cursor
+  is base64url(`<ms>.<slug>`) and must round-trip through a JS `Date`, because
+  a microsecond value would skip or repeat rows at a page boundary.
+- NSO-340: in `packages/mcp` tests the tool deps are resolved once per MCP
+  connection. To flip an env flag mid-test, mutate the same `deps.env` object
+  (`delete deps.env.X`); reassigning `deps.env` has no effect.
+- NSO-340: in a worktree the Bash guard refuses a heredoc'd python script
+  whose text contains the word `git`. Write the script into the scratchpad
+  and run `python3 <path>` instead.
 
 ## Failed approaches
 

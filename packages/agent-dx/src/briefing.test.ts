@@ -35,6 +35,11 @@ describe('renderBriefing', () => {
     expect(b).toContain('Never publish on your own initiative');
   });
 
+  it('lists in the gallery only after the user said yes (NSO-340)', () => {
+    expect(b).toContain('`set_gallery_listing` ONLY after the user explicitly said yes');
+    expect(b).toContain('`user_confirmed: true`');
+  });
+
   it('points at get_logs for runtime errors and names the beacon opt-out (M1-07)', () => {
     expect(b).toContain('get_logs({ app_id, kind: "runtime" })');
     expect(b).toContain('"beacon": false');

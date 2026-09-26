@@ -74,8 +74,9 @@ export interface ModerationTarget {
 /**
  * Take an app down: `locked_reason = reason`, `published_version_id = null`
  * (the production host stops serving; preview/version hosts answer 451 like
- * it), every open report of the app resolved — one transaction, audited
- * `admin.takedown` (meta: reason, the unpublished version id). Idempotent:
+ * it), every open report of the app resolved, a gallery listing ended
+ * (NSO-340, `app.gallery_unlisted` reason `takedown`) — one transaction,
+ * audited `admin.takedown` (meta: reason, the unpublished version id). Idempotent:
  * taking a locked app down again only updates the category.
  */
 export async function takedownApp(input: {
@@ -96,12 +97,17 @@ export async function takedownApp(input: {
         workspaceId: apps.workspaceId,
         publishedVersionId: apps.publishedVersionId,
         lockedReason: apps.lockedReason,
+        galleryListed: apps.galleryListed,
       })
       .from(apps)
       .where(and(eq(apps.id, input.appId), isNull(apps.deletedAt)))
       .for('update');
     if (!app) throw new AppsError('not_found', `App ${input.appId} does not exist.`);
-    await tx.update(apps).set({ lockedReason: reason, publishedVersionId: null }).where(eq(apps.id, app.id));
+    // NSO-340: a taken-down app also leaves the public gallery.
+    await tx
+      .update(apps)
+      .set({ lockedReason: reason, publishedVersionId: null, publishedAt: null, galleryListed: false })
+      .where(eq(apps.id, app.id));
     const resolved = await tx
       .update(abuseReports)
       .set({ status: 'resolved', resolvedAt: sql`now()`, resolvedBy: input.actorUserId })
@@ -124,6 +130,20 @@ export async function takedownApp(input: {
       },
       tx
     );
+    if (app.galleryListed) {
+      await writeAudit(
+        {
+          workspaceId: app.workspaceId,
+          actorUserId: input.actorUserId,
+          actorKind: 'user',
+          action: AUDIT_ACTIONS.appGalleryUnlisted,
+          subjectType: 'app',
+          target: app.slug,
+          meta: { reason: 'takedown' },
+        },
+        tx
+      );
+    }
     return {
       appId: app.id,
       slug: app.slug,

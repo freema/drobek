@@ -61,7 +61,7 @@ record behind it is [`vision-plan.md`](./vision-plan.md) (Czech).
 
   | Package | Holds |
   | --- | --- |
-  | `@drobek/apps` | apps, globally unique slugs, versions, publish/restore, host classification, single-writer lease, blob GC, takedown, deletion |
+  | `@drobek/apps` | apps, globally unique slugs, versions, publish/restore, host classification, single-writer lease, blob GC, takedown, deletion, the public gallery |
   | `@drobek/compile` | the in-process esbuild compiler over an in-memory file map |
   | `@drobek/serving` | the apps-host handler: host → app → version → file, CSP, caches, password gate, TLS `ask` |
   | `@drobek/modules` | the module contract, registry, router, runtime, SDK build, limits provider, end-user sessions |
@@ -95,6 +95,16 @@ record behind it is [`vision-plan.md`](./vision-plan.md) (Czech).
   `restore_version` rolls the working copy back by writing a NEW version with
   the old files — history is never rewritten. There is no git and there are
   no branches.
+- **The public gallery** (`GALLERY_ENABLED`, off by default): an editor+
+  lists a PUBLISHED app with a ≤ 160-character public description
+  (`apps.gallery_listed` / `gallery_description`) in the dashboard, or an
+  agent does with `set_gallery_listing` and the user's explicit yes
+  (`user_confirmed: true`). `GET /api/public/gallery` on the dashboard host
+  returns name, description, production URL and `apps.published_at` (set by
+  every publish), newest first with a cursor, CORS `*`, cached 60 s — no
+  owner data. It filters at query time (listed, published, public, not
+  taken down, not deleted, not hidden by a super-admin); unpublish and
+  takedown also clear the flag.
 - **One writer at a time**: a write takes the app's Redis lease
   (`drobek:applock:<app_id>`, 3 minutes, renewed per write). Another user's
   agent gets `app_locked`; the same user's other sessions take the lease over.
@@ -269,7 +279,7 @@ and at most once a minute per app and day; reads never delete.
   `iss`, rotating refresh tokens; or a personal `drk_` API key. A grant is
   bound to the **user** (every workspace they belong to) with the scopes
   `read`, `write`, `publish`; the scope decides which tools exist, the role in
-  the app's workspace decides each call. Eleven tools; the contract and the
+  the app's workspace decides each call. Twelve tools; the contract and the
   briefing are in [`AGENT.md`](./AGENT.md).
 - **The dashboard** (core, AGPL): sign-in by e-mail code (Google optional),
   workspaces (Apps / Members / Activity / Upstreams tabs), apps with Overview
@@ -286,4 +296,5 @@ and at most once a minute per app and day; reads never delete.
 - **Abuse**: every app host points at the public report form; super-admins
   take an app down (unpublish + lock → 451 everywhere, every write refused
   with `app_locked_by_admin`) and restore it; a publish heuristic flags
-  password-field + brand-name pages into the queue without blocking.
+  password-field + brand-name pages into the queue without blocking; the
+  same queue lists the gallery entries, which a super-admin can hide.

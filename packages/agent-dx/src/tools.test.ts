@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { TOOL_DOCS, TOOL_NAMES, toolDoc } from './tools.js';
 
 describe('TOOL_DOCS manifest', () => {
-  it('documents exactly the 11 tools, in tools/list order', () => {
+  it('documents exactly the 12 tools, in tools/list order', () => {
     expect(TOOL_NAMES).toEqual([
       'list_apps',
       'create_app',
@@ -11,6 +11,7 @@ describe('TOOL_DOCS manifest', () => {
       'write_files',
       'restore_version',
       'publish',
+      'set_gallery_listing',
       'skill_info',
       'configure_module',
       'query_data',
@@ -49,6 +50,7 @@ describe('TOOL_DOCS manifest', () => {
       write_files: [false, true, false, false], // a new version on every call; can delete files
       restore_version: [false, true, false, false], // a new version on every call
       publish: [false, true, true, true], // changes what the public internet sees; same pointer again
+      set_gallery_listing: [false, false, true, true], // a public listing; the same call again answers changed:false
       skill_info: [true, false, true, false],
       configure_module: [false, true, true, false], // the same merge patch again answers unchanged
       query_data: [true, false, true, false],
@@ -59,11 +61,20 @@ describe('TOOL_DOCS manifest', () => {
       expect(toolDoc(name).annotations, name).toEqual({ readOnlyHint, destructiveHint, idempotentHint, openWorldHint });
     }
     // Consistency rules a directory reviewer applies: a read-only tool is never
-    // destructive; only publish reaches the open world.
+    // destructive; only publish and the gallery listing reach the open world.
     for (const t of TOOL_DOCS) {
       if (t.annotations.readOnlyHint) expect(t.annotations.destructiveHint, t.name).toBe(false);
-      expect(t.annotations.openWorldHint, t.name).toBe(t.name === 'publish');
+      expect(t.annotations.openWorldHint, t.name).toBe(t.name === 'publish' || t.name === 'set_gallery_listing');
     }
+  });
+
+  it('set_gallery_listing lists only on the user\'s explicit yes, with the publish scope (NSO-340)', () => {
+    const doc = toolDoc('set_gallery_listing');
+    expect(doc.scope).toMatch(/^publish\b/);
+    expect(doc.description).toMatch(/user_confirmed: true/);
+    expect(doc.description).toMatch(/ONLY after the user explicitly said yes/);
+    expect(doc.description).toMatch(/Never list an app on your own initiative/);
+    expect(doc.fields.map((f) => f.name)).toEqual(['app_id', 'listed', 'description', 'user_confirmed']);
   });
 
   it('publish is documented as explicit-request only, with the publish scope', () => {

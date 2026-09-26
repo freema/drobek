@@ -2,7 +2,11 @@
 
 ## Unreleased (`next`)
 
-_Nothing yet._
+### Added
+- **Public gallery** (`GALLERY_ENABLED`, off by default). An editor or above can list a published app from its Overview page. The listing needs a public description of plain text, at most 160 characters. `GET /api/public/gallery` on the dashboard host returns `{ items: [{ name, description, url, publishedAt }], next? }`, newest first. It takes `?limit` (24 by default, at most 48) and `?cursor`, allows CORS from any origin, is cached publicly for 60 s and limits each IP to `GALLERY_API_PER_IP_MINUTE` requests a minute (default 60). It never includes owner data.
+  - An app drops out of the list as soon as it is unpublished, taken down, deleted, password-protected or hidden by a super-admin. A super-admin hides or re-shows an entry in `/admin/abuse`. Every change is audited (`app.gallery_listed`, `app.gallery_unlisted`, `app.gallery_hidden`, `app.gallery_unhidden`).
+  - The new MCP tool `set_gallery_listing` (publish scope) lists or unlists an app. Listing requires `user_confirmed: true`, which the agent may send only after the user explicitly said yes to the description it showed them. `get_app` returns the gallery state.
+  - Migration 0022 adds `apps.published_at` (set by every publish, backfilled from the audit log) and the gallery columns.
 
 ## v0.1.4 — 2026-09-25
 

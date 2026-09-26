@@ -81,6 +81,7 @@ The values the server declares (all four hints explicit on every tool; see
 | `write_files`, `restore_version` | `destructiveHint: true` | Create a new version of an app (history is kept, but the working copy the preview serves changes, and files can be removed). |
 | `configure_module` | `destructiveHint: true`, `idempotentHint: true` | Changes an app's platform-module config. Sensitive changes (opening data to the public, a new e-mail recipient, an upstream with a secret) wait for the owner's confirmation in the dashboard. Secrets are refused. |
 | `publish` | `destructiveHint: true`, `idempotentHint: true`, `openWorldHint: true` | Puts a compiled version on the public production URL. Its own `publish` scope; the description says to call it only when the user explicitly asks. |
+| `set_gallery_listing` | `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: true` | Lists a published app in the server's public gallery (name, a short description, the production URL) or unlists it. `publish` scope; listing needs `user_confirmed: true`, which the description allows only after the user explicitly said yes. |
 
 No tool deletes an app, reads the user's machine, executes app code on the
 server or returns a secret value.
@@ -174,8 +175,9 @@ at the repository root, `plugins/drobek/.cursor-plugin/plugin.json`
 - [x] Manifest and structure pass `npm run validate:cursor` (schema +
       structure; the only warning is "no hooks/hooks.json", which the plugin
       does not use).
-- [x] The skill, the rule `route-app-builds-to-drobek.mdc` and the
-      `build-app` command name all 11 tools and keep local work local.
+- [ ] The skill, the rule `route-app-builds-to-drobek.mdc` and the
+      `build-app` command name all 12 tools and keep local work local
+      (`TODO(Tomáš)`: add `set_gallery_listing` in freema/drobek-plugin).
 - [x] Public repository with a README, a licence (MIT) and a logo.
 - [ ] **Blocker 4** — Cursor's OAuth callback against drobek's DCR policy.
       Test it first: add `https://drobek.app/mcp` in Cursor (the one-click
@@ -203,7 +205,9 @@ which drobek's DCR policy accepts.
 **Checklist**
 
 - [x] `npm run validate:codex` passes.
-- [x] The skill names all 11 tools; `publish` only on an explicit request.
+- [ ] The skill names all 12 tools; `publish` only on an explicit request,
+      `set_gallery_listing` only after the user said yes (`TODO(Tomáš)`: add
+      it in freema/drobek-plugin).
 - [ ] `TODO(Tomáš)`: the OpenAI plugins directory submission ("With MCP",
       the production endpoint) **(unverified process — the Macaly notes
       describe it for ChatGPT + Codex)**: name, short description, category,
