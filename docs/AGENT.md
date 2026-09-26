@@ -115,16 +115,16 @@ answers `not_found`, the same as one that does not exist.
 | `get_app` | read, any role | read-only | One app: the briefing, its files, the last 20 versions, the lock, the module configs (secrets as `hasSecret` only), the gallery state. |
 | `read_file` | read, any role | read-only | A file of the latest (or a given) version, inside an untrusted envelope. |
 | `write_files` | write, editor+ | destructive | 1–20 changes → one new version → one compile; returns `{ version, compile: { ok, errors, warnings }, preview_url, changed }`. A secret in a file refuses the write. |
-| `restore_version` | write, editor+ | destructive | A new version with the files of an old one (rolls the working copy back). |
-| `publish` | publish, editor+ | destructive, idempotent, open world | Puts a compiled version on `<slug>.<APPS_DOMAIN>` and the verified domains. Only when the user asks. |
-| `set_gallery_listing` | publish, editor+ | idempotent, open world | Lists a published app in the server's public gallery with a ≤ 160-character description, changes the description, or unlists it. Listing needs `user_confirmed: true` — the user's explicit yes (else `user_confirmation_required`); unlisting needs none. `gallery_disabled` when the server runs no gallery, `gallery_hidden` when the operator hid the app. |
+| `restore_version` | write, editor+ | destructive | A new version with the files of an old one (rolls the working copy back); when that version was published, the draft assets go back to the ones it served then (`assets_restored`). |
+| `publish` | publish, editor+ | destructive, idempotent, open world | Puts a compiled version on `<slug>.<APPS_DOMAIN>` and the verified domains, with the app's current assets frozen for it (an older version: the assets it served when it was last published). Only when the user asks. |
+| `set_gallery_listing` | publish, editor+ | not destructive, idempotent, open world | Lists a published app in the server's public gallery with a ≤ 160-character description, changes the description, or unlists it. Listing needs `user_confirmed: true` — the user's explicit yes (else `user_confirmation_required`); unlisting needs none. `gallery_disabled` when the server runs no gallery, `gallery_hidden` when the operator hid the app. |
 | `skill_info` | read, any signed-in user | read-only | `skill_info()` lists the server's skills; `skill_info('<name>')` returns one (for a module also its SDK types, config schema, limits, secret names, its own error codes, and the facts the dashboard's workspace Modules page shows: version, source, contract range, availability, required modules, slots with their contributors and its own contributions). An opt-in module carries `availability: "opt-in"`; with `app_id` it also says `enabled_for_workspace` for that app's workspace. |
 | `configure_module` | write, editor+ | destructive, idempotent | Sets an app's module config (a JSON merge patch). Risky changes come back as `pending_confirmation` with a `confirm_url` for the owner; secrets are refused. |
 | `query_data` | read, viewer+ | read-only | Records of one collection of the app's data module (≤ 100 per call, filters, sort, cursor), inside an untrusted envelope. |
 | `get_logs` | read, viewer+ | read-only | `kind: runtime` (browser errors from the beacon), `compile` (the compile history) or `requests` (daily request and module-call stats), ≤ 100 entries, 30-day window, inside an untrusted envelope. |
-| `create_asset_upload` | write, editor+ | not destructive | A single-use upload URL (30 min) for ONE binary file — video, audio, image, font — at `path`, plus a `curl -T <file> '<url>'` line. The file never passes through the model; the app serves it at `/<path>` next to its files. |
-| `list_assets` | read, viewer+ | read-only | The app's assets (path, sniffed type, size, time) and the quota usage. |
-| `delete_asset` | write, editor+ | destructive, idempotent | Removes one asset; the app stops serving it. |
+| `create_asset_upload` | write, editor+ | not destructive | A single-use upload URL (30 min) for ONE binary file — video, audio, image, font — at `path`, plus a `curl -T <file> '<url>'` line. The file never passes through the model; the preview serves it at `/<path>` next to the app's files, production after the next `publish`. |
+| `list_assets` | read, viewer+ | read-only | The app's draft assets (path, sniffed type, size, time, `published`), the paths production serves that the draft deleted (`published_only`), `changes_pending_publish` and the quota usage. |
+| `delete_asset` | write, editor+ | destructive, idempotent | Removes one asset from the draft; the preview stops serving it, production after the next `publish`. |
 
 Every tool carries all four MCP annotations explicitly (`readOnlyHint`,
 `destructiveHint`, `idempotentHint`, `openWorldHint`; "idempotent" above means
@@ -158,12 +158,24 @@ on it shows an upload page, so the agent can hand the link to the user. The
 PUT streams the body to disk, sniffs the bytes (the type is the content's,
 never the name's) and answers `201 { name, path, size, type, replaced, url }`
 or `{ code, message, hint }` (`asset_size_mismatch`, `upload_token_invalid`,
-…). The upload is audited as the user who asked for the URL. Assets share
+…, `forbidden` when that user is no longer an editor of the app). The
+upload is audited as the user who asked for the URL. Assets share
 the app's URL space — `<video src="film.mp4" poster="poster.jpg">` and
 `img/s1.jpg` work unchanged, so a Claude artifact ports by writing its
 HTML/JS with `write_files` and uploading each binary at the relative path the
 page uses; the app's own file wins over an asset at the same path. Videos
 seek (HTTP Range). The dashboard's Assets tab does the same for the owner.
+
+**Assets honour publish.** An upload, a replacement or a `delete_asset`
+changes the app's DRAFT assets: the preview shows it at once, the production
+URL (and the custom domains) only after `publish` — so a `write`-scoped agent
+never changes what a published app serves. `publish` freezes the draft for
+the version it puts live; publishing an older version (the rollback) brings
+back the assets it served when it was last published, and `restore_version`
+of a published version resets the draft assets to those. `list_assets` marks
+each asset `published` or not. The quota counts every unique file of the
+draft and the published set once; sets of earlier publishes are kept for a
+rollback while they fit.
 
 **Porting a Claude artifact.** drobek hosts what a Claude artifact is. The
 agent that has the artifact's files does the port; the server fetches

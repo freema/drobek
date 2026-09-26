@@ -4,9 +4,11 @@
  * served at `/<path>` next to its files — the dashboard side of
  * create_asset_upload / list_assets / delete_asset (UI and MCP parity).
  *
- * GET (viewer+): every asset (path, sniffed type, size, time, a link on the
- * preview host) and the usage against APP_ASSETS_QUOTA / APP_ASSET_MAX_BYTES
- * (the workspace's limits).
+ * GET (viewer+): every draft asset (path, sniffed type, size, time, a link on
+ * the preview host, whether production already serves it — NSO-362), the
+ * files production serves that the draft deleted, and the usage against
+ * APP_ASSETS_QUOTA / APP_ASSET_MAX_BYTES (the workspace's limits). Uploads
+ * and deletes change the draft; production follows at the next publish.
  *
  * POST (editor+):
  *   - `intent=upload-url` (`path`, `size`, `type`): the same checks as the MCP
@@ -33,6 +35,7 @@ import {
   deleteAsset,
   isAssetsError,
   listAssets,
+  listPublishedOnlyAssets,
   previewUrl,
   redisUploadTokenStore,
   type UploadTokenStore,
@@ -69,7 +72,12 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const access = await requireWorkspaceRole(request, String(params.slug ?? ''), 'viewer');
   const app = await appOf(access.workspace.id, String(params.appSlug ?? ''));
   const url = new URL(request.url);
-  const [assets, used, limits] = await Promise.all([listAssets(app.id), assetUsage(app.id), limitsOf(access.workspace.id)]);
+  const [assets, publishedOnly, used, limits] = await Promise.all([
+    listAssets(app.id),
+    listPublishedOnlyAssets(app.id),
+    assetUsage(app.id),
+    limitsOf(access.workspace.id),
+  ]);
   const preview = previewUrl(app.slug, assetsTabDeps.env());
   return {
     workspace: { slug: access.workspace.slug, name: access.workspace.name },
@@ -84,7 +92,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       sizeText: formatBytes(a.size),
       updatedAt: a.updatedAt.toISOString(),
       url: `${preview}${a.path}`,
+      published: a.published,
     })),
+    publishedOnly: publishedOnly.map((a) => a.path),
+    isPublished: app.publishedVersionId !== null,
     used: formatBytes(used),
     quota: formatBytes(limits.quota),
     maxBytes: limits.maxBytes,

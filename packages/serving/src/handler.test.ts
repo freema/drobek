@@ -1089,4 +1089,22 @@ describe('app assets at /<name> (NSO-358)', () => {
     expect(text((await handleAppRequest(req(prod('shop'), '/deep/link'), assetDeps())).body)).toContain('<h1>v1</h1>');
     expect((await handleAppRequest(req(prod('shop'), '/media/film.mp4'), assetDeps())).status).toBe(404);
   });
+
+  it('NSO-362: production and custom hosts look assets up in the published version’s frozen set, preview in the draft, a version host in its set or the draft', async () => {
+    const scopes: unknown[] = [];
+    const d = assetDeps();
+    const find = d.assets!.find;
+    d.assets = { ...d.assets!, find: (appId, name, scope) => (scopes.push(scope), find(appId, name, scope)) };
+    const custom: AppHostTarget = { kind: 'custom', slug: 'shop', hostname: 'shop.firma.cz' };
+    for (const target of [prod('shop'), custom, preview('shop'), ver('shop', 2)]) {
+      expect((await handleAppRequest(req(target, '/film.mp4'), d)).status).toBe(200);
+    }
+    expect(scopes).toEqual([{ versionId: 'v_1' }, { versionId: 'v_1' }, 'draft', { versionId: 'v_2', orDraft: true }]);
+  });
+
+  it('a Range header without "=" is not a range: the whole file (200), not 416 (RFC 9110)', async () => {
+    const r = await handleAppRequest(req(prod('shop'), '/film.mp4', { headers: { Range: 'bytes' } }), assetDeps());
+    expect(r.status).toBe(200);
+    expect(r.headers['Content-Length']).toBe('1000');
+  });
 });

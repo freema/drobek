@@ -141,6 +141,13 @@
       "when": 1790433136356,
       "tag": "0024_app_assets",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1790437501780,
+      "tag": "0025_app_asset_snapshots",
+      "breakpoints": true
     }
   ]
 }

@@ -199,11 +199,11 @@ export function defaultHandlerDeps(store: ServeStore, log?: Logger): HandlerDeps
   };
 }
 
-/** The app_assets rows + the files under ASSETS_DIR (NSO-358). */
+/** The draft / frozen asset rows + the files under ASSETS_DIR (NSO-358, NSO-362). */
 function defaultAssetSource(): AssetSource {
   const disk = assetDisk();
   return {
-    find: (appId, name) => findServedAsset(appId, name),
+    find: (appId, name, scope) => findServedAsset(appId, name, scope),
     open: (appId, key, range) => disk.open(appId, key, range),
   };
 }

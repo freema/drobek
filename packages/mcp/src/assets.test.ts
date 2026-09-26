@@ -138,14 +138,17 @@ describe('create_asset_upload → PUT → list_assets → delete_asset', () => {
     expect(listed.isError, listed.text).toBe(false);
     expect(listed.body).toMatchObject({
       app_id: app.app_id,
-      assets: [{ path: '/film.mp4', type: 'video/mp4', size: 4096 }],
+      assets: [{ path: '/film.mp4', type: 'video/mp4', size: 4096, published: false }],
+      published_only: [],
+      changes_pending_publish: true,
       used_bytes: 4096,
       quota_bytes: 1024 * 1024 * 1024,
     });
 
     expect((await call('vera', 'delete_asset', { app_id: app.app_id, path: 'film.mp4' })).body.code).toBe('forbidden');
     const del = await call('alice', 'delete_asset', { app_id: app.app_id, path: '/film.mp4' });
-    expect(del.body).toEqual({ deleted: '/film.mp4' });
+    expect(del.body).toMatchObject({ deleted: '/film.mp4' });
+    expect(String(del.body.note)).toContain('next publish');
     const gone = await call('alice', 'delete_asset', { app_id: app.app_id, path: 'film.mp4' });
     expect(gone.body).toMatchObject({ code: 'asset_not_found', path: '/film.mp4', hint: errorHint('asset_not_found') });
     expect((await call('alice', 'list_assets', { app_id: app.app_id })).body).toMatchObject({ assets: [], used_bytes: 0 });

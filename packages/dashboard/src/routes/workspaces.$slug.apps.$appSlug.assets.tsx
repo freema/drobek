@@ -1,9 +1,11 @@
 /**
  * /workspaces/:slug/apps/:appSlug/assets — client half of the Assets tab
  * (NSO-358): the app's video, audio, images and fonts, served at `/<path>`
- * next to its files. A list (path, type, size, copy path, open on the
- * preview host) with the quota; upload and (after a confirm step) delete for
- * editors, read-only for viewers.
+ * next to its files. A list (path, type, size, live or waiting for a publish,
+ * copy path, open on the preview host) with the quota; upload and (after a
+ * confirm step) delete for editors, read-only for viewers. NSO-362: uploads
+ * and deletes change the draft the preview serves; production follows at the
+ * next publish.
  *
  * Upload: pick or drop a file → the action mints a single-use upload URL →
  * the browser PUTs the file to it with a progress bar (the bytes never go
@@ -198,9 +200,16 @@ export default function AppAssetsRoute() {
     <AppPage header={d.header}>
       <h2 style={ui.title}>Assets</h2>
       <p style={ui.hint}>
-        Video, audio, images and fonts of <strong>{d.appSlug}</strong>, served at their path next to the app&apos;s files on every host. Types are decided
-        from the bytes. Agents upload them with <code style={ui.mono}>create_asset_upload</code>.
+        Video, audio, images and fonts of <strong>{d.appSlug}</strong>, served at their path next to the app&apos;s files. Uploads and deletes show in
+        the preview at once and reach the production URL with the next publish. Types are decided from the bytes. Agents upload them with{' '}
+        <code style={ui.mono}>create_asset_upload</code>.
       </p>
+      {d.isPublished && (d.publishedOnly.length > 0 || d.assets.some((a) => !a.published)) ? (
+        <p style={ui.muted} data-testid="assets-pending">
+          Asset changes are waiting for a publish
+          {d.publishedOnly.length > 0 ? ` — production still serves ${d.publishedOnly.join(', ')}` : ''}.
+        </p>
+      ) : null}
       <p style={ui.muted} data-testid="assets-usage">
         {d.used} of {d.quota} used · up to {d.maxText} per file
       </p>
@@ -234,6 +243,7 @@ export default function AppAssetsRoute() {
                 <th style={ui.th}>Type</th>
                 <th style={ui.th}>Size</th>
                 <th style={ui.th}>Uploaded</th>
+                <th style={ui.th}>Production</th>
                 <th style={ui.th} />
               </tr>
             </thead>
@@ -250,6 +260,9 @@ export default function AppAssetsRoute() {
                   </td>
                   <td style={{ ...ui.td, whiteSpace: 'nowrap' }}>{a.sizeText}</td>
                   <td style={{ ...ui.td, whiteSpace: 'nowrap' }}>{formatTimestamp(a.updatedAt)}</td>
+                  <td style={{ ...ui.td, whiteSpace: 'nowrap' }} data-testid="asset-published">
+                    {a.published ? 'live' : 'after publish'}
+                  </td>
                   <td style={{ ...ui.td, whiteSpace: 'nowrap' }}>
                     <CopyPath path={a.path} />{' '}
                     {d.canEdit ? (

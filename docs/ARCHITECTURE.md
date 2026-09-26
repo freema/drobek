@@ -188,14 +188,25 @@ before any byte of the app is touched:
     `index.html`, `ETag` = sha256 → **304**;
 11. no such file: the app's **asset** at that path, if any (see below).
 
-**Assets** (video, audio, images, fonts) are per app, not per version, and
-share the app's URL space: the asset `img/s1.jpg` answers `/img/s1.jpg` on
-every host that serves a version (published, preview, version N), so a page
-keeps its own relative paths (`<video src="film.mp4" poster="poster.jpg">`).
-The app's own file at the same path wins; an asset path always has a media
-extension, so the SPA fallback never swallows one. The bytes live on disk
-under `ASSETS_DIR` (`/data/assets/<app_id>/<random key>`, the `assets_data`
-volume), the rows in `app_assets` (path, sniffed type, size, sha256).
+**Assets** (video, audio, images, fonts) share the app's URL space: the
+asset `img/s1.jpg` answers `/img/s1.jpg`, so a page keeps its own relative
+paths (`<video src="film.mp4" poster="poster.jpg">`). The app's own file at
+the same path wins; an asset path always has a media extension, so the SPA
+fallback never swallows one. Assets honour publish: `app_assets` is the
+**draft** — uploads, replacements and deletes change only it, and the preview
+host serves it; `publish` freezes a set for the version it puts live
+(`app_version_assets`, `app_versions.assets_frozen_at`) and the production
+host and custom domains serve only the live version's set; a version host
+serves its version's set, or the draft when it was never published.
+Publishing the newest version that compiled freezes the draft; publishing an
+older one (the rollback) keeps the set it had when it was last live;
+`restore_version` of a published version resets the draft to its set. The
+bytes live on disk under `ASSETS_DIR` (`/data/assets/<app_id>/<sha256>` —
+content-addressed and never rewritten, so the draft and any number of sets
+share a file; files from before this keep a random key; the `assets_data`
+volume). `APP_ASSETS_QUOTA` counts unique files: what the draft and the live
+set need must fit; the sets of up to ten earlier publishes are kept for a
+rollback while they fit besides, the oldest dropped first.
 Serving: the sniffed `Content-Type`, `Accept-Ranges: bytes`, one byte range
 → **206** (`Content-Range`) or **416**, `ETag` (sha256) / `Last-Modified` →
 **304**, `If-Range`, HEAD; `public, max-age=300, must-revalidate` on the
@@ -214,10 +225,13 @@ theirs). The PUT takes the token before reading a byte, streams the body to
 a temp file while it counts (over `APP_ASSET_MAX_BYTES` or past the declared
 size → stop), hashes and sniffs it (png, jpeg, gif, webp, svg, mp4, webm,
 m4a, mp3, ogg, wav, woff, woff2 — the bytes decide, never the name), renames
-it into place, and writes the row under a per-app advisory lock that
-re-checks `APP_ASSETS_QUOTA`. A browser GET on the URL shows a small upload
-page (strict CSP, the token never in the page). An hourly sweep removes the
-assets of apps deleted 24 h ago, stale temp files and unreferenced files.
+it into place under its sha256, and writes the draft row under a per-app
+advisory lock that re-checks `APP_ASSETS_QUOTA` — and that the user the URL
+was issued for is still an editor of the app. A browser GET on the URL shows
+a small upload page (strict CSP, the token never in the page). A delete or
+replace removes a file nothing references any more; an hourly sweep removes
+the assets of apps deleted 24 h ago, stale temp files and files neither the
+draft nor a kept set references.
 
 Every response carries the app CSP (`default-src 'self'`, scripts from the app
 and `https://esm.sh`, `connect-src 'self' https://esm.sh`, images, fonts,
@@ -332,7 +346,7 @@ All in-process (`apps/server/server/jobs.ts`), started with the server:
 | slug release | hourly, Redis lease | a soft-deleted app's slug is free again after 30 days |
 | domain re-check | `DOMAINS_RECHECK_INTERVAL_MS` (1 h), Redis lease | re-verifies domains checked more than 24 h ago; unverifies + mails on a definitive failure |
 | files sweep (only with the `files` module) | `FILES_SWEEP_INTERVAL_MS` (1 h), Redis lease | removes the uploads of apps deleted `FILES_SWEEP_RETENTION_MS` (24 h) ago, stale temp uploads and blobs no `mod_files` row references (`drobek-module-files`) |
-| assets sweep | hourly, Redis lease | removes the asset files and rows of apps deleted 24 h ago, stale temp uploads and files no `app_assets` row references (`@drobek/apps`) |
+| assets sweep | hourly, Redis lease | removes the asset files and rows of apps deleted 24 h ago, stale temp uploads and files neither the draft (`app_assets`) nor a kept published set (`app_version_assets`) references (`@drobek/apps`) |
 | logs prune | `LOGS_PRUNE_INTERVAL_MS` (1 h), Redis lease | removes `get_logs` rows past their retention for every app: browser errors older than 30 days or past the newest 500 per app, compiles and daily request stats older than 30 days (`@drobek/insights`) |
 | audit retention | at start, then daily | deletes audit rows older than `AUDIT_RETENTION_DAYS` (365) — the only deletion of audit rows anywhere |
 

@@ -1,7 +1,8 @@
 /**
  * App assets (NSO-358): binary files an app serves at `/<name>` next to its files —
- * names and types, the byte sniffer, HTTP ranges, disk storage, the rows,
- * upload URLs (tokens + the node endpoint) and the sweep.
+ * names and types, the byte sniffer, HTTP ranges, disk storage, the rows
+ * (the draft and the sets publish freezes, NSO-362), upload URLs (tokens +
+ * the node endpoint) and the sweep.
  */
 export {
   ASSET_EXTENSIONS,
@@ -42,13 +43,17 @@ export {
   deleteAsset,
   findServedAsset,
   listAssets,
+  listPublishedOnlyAssets,
   storeAsset,
   type AssetApp,
   type AssetInfo,
+  type AssetScope,
+  type PublishedOnlyAsset,
   type ServedAssetRow,
   type StoreAssetInput,
   type StoredAsset,
 } from './assets.server.js';
+export { ASSET_SNAPSHOTS_KEPT } from './snapshots.server.js';
 export {
   ASSET_UPLOAD_PATH_PREFIX,
   assetUploadAllowed,
@@ -63,6 +68,6 @@ export {
   type UploadGrant,
   type UploadTokenStore,
 } from './tokens.server.js';
-export { createAssetUploadHandler, type AssetUploadHandlerOptions } from './upload-http.server.js';
+export { createAssetUploadHandler, uploaderMayEdit, type AssetUploadHandlerOptions } from './upload-http.server.js';
 export { uploadGonePage, uploadPage, type UploadPageInput } from './upload-page.js';
 export { ASSETS_SWEEP_INTERVAL_MS, ASSETS_SWEEP_RETENTION_MS, startAssetsSweep, sweepAssets, type AssetsSweepResult } from './sweep.server.js';

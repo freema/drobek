@@ -1532,6 +1532,22 @@ block, then `next` is pushed and the single MR opened.
   `--self-check` keeps it < 16 KiB with an `ftyp` box. Playwright's Chromium
   may not play H.264: the e2e and the eval assert playback only when
   `canPlayType('video/mp4; codecs="avc1.42E01E"')` is non-empty.
+- NSO-362: assets are a DRAFT (`app_assets`, preview) plus per-version sets
+  a publish freezes (`app_version_assets` + `app_versions.assets_frozen_at`,
+  production/custom). `publish` of the newest ok version (what the preview
+  shows) always re-freezes the draft; an older version with a set keeps it
+  (rollback, `assets: 'kept'`). A test that publishes the same newest version
+  twice therefore gets `draft` both times. Everything touching assets takes
+  `lockAssets` (advisory, `drobek:assets:<app_id>`) AFTER the app row lock
+  (publish/restore) — keep that order. Files are `<app_id>/<sha256>` and
+  shared: never `disk.remove` a key without `releaseAssetFiles` (it re-checks
+  references under the lock). Migration 0025 is hand-extended (data copy for
+  published apps) after `drizzle-kit generate`; re-chain its snapshot on 0023
+  when that lands.
+- NSO-362: the upload URL PUT re-checks the uploader's role
+  (`uploaderMayEdit`: membership editor+, or SUPERADMIN_EMAIL — @drobek/apps
+  cannot import @drobek/auth). A PGlite test that PUTs must insert a
+  `memberships` row for the grant's user.
 
 ## Failed approaches
 

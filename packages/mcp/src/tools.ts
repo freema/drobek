@@ -643,7 +643,7 @@ export async function restoreVersion(ctx: CallContext, args: { app_id: string; v
     throw new ToolError('invalid_params', '`version` must be a positive integer.');
   }
   await takeLease(ctx, app.id);
-  let created: { id: string; number: number };
+  let created: { id: string; number: number; assetsRestored: boolean };
   try {
     created = await restore(app.id, args.version, actorOf(ctx));
   } catch (err) {
@@ -658,6 +658,8 @@ export async function restoreVersion(ctx: CallContext, args: { app_id: string; v
   return {
     version: created.number,
     restored_from: args.version,
+    // NSO-362: true = the draft assets were reset to the set that version had when it was last published.
+    assets_restored: created.assetsRestored,
     compile: {
       ok,
       errors: ok ? [] : toCompileOut(v?.compileErrors, ctx.modules, await ctx.modules.enabledModules(app.workspaceId)),
@@ -694,7 +696,7 @@ export async function publishApp(ctx: CallContext, args: { app_id: string; versi
   const version = await getVersion(app.id, { number });
   if (!version) throw new ToolError('not_found', `Version ${number} does not exist.`);
 
-  let result: { number: number; previousNumber: number | null };
+  let result: { number: number; previousNumber: number | null; assets: 'draft' | 'kept' };
   try {
     result = await publishVersion(app.id, version.id, actorOf(ctx));
   } catch (err) {
@@ -715,6 +717,9 @@ export async function publishApp(ctx: CallContext, args: { app_id: string; versi
     published_url: url,
     // The production host, then every VERIFIED custom domain (M3-01) — all serve this version now.
     domains: [new URL(url).host, ...(await verifiedDomainsOf(app.id))],
+    // NSO-362: which asset set went live with it — the draft (what the preview shows) or, for a
+    // rollback, the set the version had when it was last published.
+    assets: result.assets === 'draft' ? 'draft' : 'as_last_published',
   };
 }
 

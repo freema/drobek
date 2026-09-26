@@ -7,13 +7,15 @@
  * counted and sniffed — never buffered in memory — and only a complete,
  * accepted upload is renamed to its final place (atomic: tmp is on the same
  * filesystem). An aborted, oversized or refused upload removes its temp file.
- * The storage key is random, so replacing an asset never overwrites the file
- * a reader may have open: the row moves to the new key, then the old file is
- * removed (an open read stream keeps its bytes until it ends).
+ * The storage key is the bytes' sha256 (NSO-362; rows from before it keep a
+ * random key), so a file is never rewritten with other bytes: replacing an
+ * asset points its row at another file, and the old one is removed only when
+ * neither the draft nor a published set references it (an open read stream
+ * keeps its bytes until it ends).
  */
 import { createHash, randomBytes, randomUUID, type Hash } from 'node:crypto';
 import type { ReadStream } from 'node:fs';
-import { mkdir, open, rename, rm, type FileHandle } from 'node:fs/promises';
+import { mkdir, open, rename, rm, stat, type FileHandle } from 'node:fs/promises';
 import { join } from 'node:path';
 import { assetsDir } from './config.js';
 
@@ -117,6 +119,16 @@ export class AssetDisk {
       throw err;
     }
     return fh.createReadStream(range ? { start: range.start, end: range.end } : {});
+  }
+
+  /** Is a file stored under `<app_id>/<key>`? */
+  async has(appId: string, key: string): Promise<boolean> {
+    try {
+      return (await stat(this.pathOf(appId, key))).isFile();
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false;
+      throw err;
+    }
   }
 
   /** Delete one stored file (idempotent). */

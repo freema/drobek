@@ -176,9 +176,10 @@ describe('versions', () => {
       .where(eq(auditLog.target, app.slug))
       .orderBy(auditLog.createdAt, auditLog.id);
     expect(history.filter((h) => h.action === 'app.publish')).toEqual([
-      { action: 'app.publish', meta: { version: 1, previousVersion: null }, actorKind: 'agent' },
-      { action: 'app.publish', meta: { version: 2, previousVersion: 1 }, actorKind: 'agent' },
-      { action: 'app.publish', meta: { version: 1, previousVersion: 2 }, actorKind: 'user' },
+      { action: 'app.publish', meta: { version: 1, previousVersion: null, assets: 'draft' }, actorKind: 'agent' },
+      { action: 'app.publish', meta: { version: 2, previousVersion: 1, assets: 'draft' }, actorKind: 'agent' },
+      // The rollback keeps the (empty) asset set v1 was published with.
+      { action: 'app.publish', meta: { version: 1, previousVersion: 2, assets: 'kept' }, actorKind: 'user' },
     ]);
   });
 

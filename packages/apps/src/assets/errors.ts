@@ -16,6 +16,8 @@ export type AssetsErrorCode =
   | 'upload_token_invalid'
   | 'rate_limited'
   | 'app_locked_by_admin'
+  /** The user an upload URL was issued for is no longer an editor of the app (NSO-362). */
+  | 'forbidden'
   /** The app was deleted (or never existed) while the upload ran. */
   | 'not_found';
 
@@ -31,6 +33,7 @@ const STATUS: Record<AssetsErrorCode, number> = {
   upload_token_invalid: 404,
   rate_limited: 429,
   app_locked_by_admin: 423,
+  forbidden: 403,
 };
 
 export class AssetsError extends Error {

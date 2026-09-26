@@ -4,27 +4,35 @@
  * files; an app file at the same path wins, so an upload to a path the app's
  * latest or published version occupies is refused (`asset_path_taken`).
  *
+ * The rows here are the DRAFT (NSO-362): an upload, a replacement or a
+ * delete changes what the preview host serves; the production host serves
+ * the set the last publish froze (snapshots.server.ts).
+ *
  * storeAsset streams an upload to disk — never buffering it — while it
  * counts the bytes (over APP_ASSET_MAX_BYTES or past the declared size → it
  * stops at once), hashes them and sniffs the type (no asset type → it stops
  * as soon as that is certain). Only a complete upload whose sniffed type fits
- * the name's extension is renamed into place; the row is then written under
- * a per-app advisory lock that re-checks the quota (APP_ASSETS_QUOTA, the
- * replaced asset's bytes excluded) against the real size, together with its
- * audit row. A replaced asset's old file is removed after the commit.
+ * the name's extension is kept: under the app's assets lock the quota
+ * (APP_ASSETS_QUOTA — unique files of the draft and the live set, the
+ * replaced asset excluded) is re-checked against the real size, older
+ * published sets are pruned if they no longer fit, the file is moved to its
+ * content address `<app_id>/<sha256>` (or dropped when the app already stores
+ * those bytes) and the row is written with its audit row. A replaced asset's
+ * old file is removed after the commit when nothing references it any more.
  *
  * Nothing here executes or parses the bytes beyond the signature check: the
  * server stores and serves them (hard rule 3).
  */
-import { and, asc, eq, ne, or, sql } from 'drizzle-orm';
+import { and, asc, eq, or, sql } from 'drizzle-orm';
 import { AUDIT_ACTIONS, writeAudit } from '@drobek/audit';
-import { appAssets, appVersions, apps, getDb, versionFiles, type DB } from '@drobek/db';
+import { appAssets, appVersionAssets, appVersions, apps, getDb, versionFiles, type DB } from '@drobek/db';
 import type { Actor } from '../types.js';
 import type { AssetLimits } from './config.js';
-import { assetDisk, newStorageKey, type AssetDisk } from './disk.server.js';
+import { assetDisk, type AssetDisk } from './disk.server.js';
 import { AssetsError } from './errors.js';
 import { assetNameProblem, assetPath, assetTypesForName, declaredTypeFits, normalizeContentType, typeFamily } from './names.js';
 import { AssetSniffer } from './sniff.js';
+import { lockAssets, publishedOnlyAssetNames, pruneAssetSnapshots, releaseAssetFiles, storedKeyOf, uniqueAssetBytes } from './snapshots.server.js';
 
 /** The app an asset operation acts on (resolved and authorized by the caller). */
 export interface AssetApp {
@@ -33,7 +41,7 @@ export interface AssetApp {
   workspaceId: string;
 }
 
-/** One asset as listed (dashboard, list_assets). */
+/** One draft asset as listed (dashboard, list_assets). */
 export interface AssetInfo {
   name: string;
   path: string;
@@ -41,6 +49,16 @@ export interface AssetInfo {
   size: number;
   sha256: string;
   updatedAt: Date;
+  /** NSO-362: the production host serves exactly these bytes at this path (else the change waits for a publish). */
+  published: boolean;
+}
+
+/** A file the production host still serves that the draft deleted (it goes with the next publish). */
+export interface PublishedOnlyAsset {
+  name: string;
+  path: string;
+  type: string;
+  size: number;
 }
 
 /** What the app hosts need to serve an asset. */
@@ -61,11 +79,9 @@ function bytesText(n: number): string {
   return `${n} bytes`;
 }
 
-function lockKey(appId: string): string {
-  return `drobek:assets:${appId}`;
-}
-
+/** The draft assets, each marked whether the production host serves the same bytes at its path. */
 export async function listAssets(appId: string): Promise<AssetInfo[]> {
+  const live = getDb().select({ id: apps.publishedVersionId }).from(apps).where(eq(apps.id, appId));
   const rows = await getDb()
     .select({
       name: appAssets.name,
@@ -73,34 +89,71 @@ export async function listAssets(appId: string): Promise<AssetInfo[]> {
       size: appAssets.size,
       sha256: appAssets.sha256,
       updatedAt: appAssets.updatedAt,
+      liveSha256: appVersionAssets.sha256,
     })
     .from(appAssets)
+    .leftJoin(appVersionAssets, and(eq(appVersionAssets.versionId, live), eq(appVersionAssets.name, appAssets.name)))
     .where(eq(appAssets.appId, appId))
     .orderBy(asc(appAssets.name));
-  return rows.map((r) => ({ ...r, path: assetPath(r.name) }));
+  return rows.map(({ liveSha256, ...r }) => ({ ...r, path: assetPath(r.name), published: liveSha256 === r.sha256 }));
 }
 
-/** Bytes all assets of `appId` hold, optionally without the asset `exceptName`. */
-export async function assetUsage(appId: string, exceptName?: string, executor: Pick<DB, 'select'> = getDb()): Promise<number> {
-  const where = exceptName === undefined ? eq(appAssets.appId, appId) : and(eq(appAssets.appId, appId), ne(appAssets.name, exceptName));
-  const [row] = await executor
-    .select({ used: sql<string>`coalesce(sum(${appAssets.size}), 0)` })
-    .from(appAssets)
-    .where(where);
-  return Number(row?.used ?? 0);
+/** The files the production host serves that the draft deleted (NSO-362). */
+export async function listPublishedOnlyAssets(appId: string): Promise<PublishedOnlyAsset[]> {
+  return (await publishedOnlyAssetNames(appId)).map((r) => ({ name: r.name, path: assetPath(r.name), type: r.contentType, size: r.size }));
 }
 
-/** The asset `name` of `appId` as the app hosts serve it, or null. */
-export async function findServedAsset(appId: string, name: string): Promise<ServedAssetRow | null> {
+/**
+ * Bytes the quota counts (NSO-362): the unique files of the draft (without
+ * the asset `exceptName`, which an upload replaces) and of the live published
+ * set. Sets of earlier publishes are kept only while they fit besides.
+ */
+export async function assetUsage(appId: string, exceptName?: string, executor: Pick<DB, 'execute'> = getDb()): Promise<number> {
+  return uniqueAssetBytes(executor, appId, { scope: 'live', exceptName });
+}
+
+/**
+ * Which assets a host serves (NSO-362): `'draft'` (the preview host), or the
+ * set frozen for a version (`versionId` — the production host and custom
+ * domains serve the live one's; a version host passes `orDraft`, so a
+ * version never published shows the draft).
+ */
+export type AssetScope = 'draft' | { versionId: string; orDraft?: boolean };
+
+const SERVED_DRAFT = {
+  name: appAssets.name,
+  contentType: appAssets.contentType,
+  size: appAssets.size,
+  sha256: appAssets.sha256,
+  storageKey: appAssets.storageKey,
+  updatedAt: appAssets.updatedAt,
+};
+
+/** The asset `name` of `appId` in `scope` (default the draft), or null. */
+export async function findServedAsset(appId: string, name: string, scope: AssetScope = 'draft'): Promise<ServedAssetRow | null> {
+  if (scope !== 'draft') {
+    const [hit] = await getDb()
+      .select({
+        frozenAt: appVersions.assetsFrozenAt,
+        name: appVersionAssets.name,
+        contentType: appVersionAssets.contentType,
+        size: appVersionAssets.size,
+        sha256: appVersionAssets.sha256,
+        storageKey: appVersionAssets.storageKey,
+        updatedAt: appVersionAssets.updatedAt,
+      })
+      .from(appVersions)
+      .leftJoin(appVersionAssets, and(eq(appVersionAssets.versionId, appVersions.id), eq(appVersionAssets.name, name)))
+      .where(and(eq(appVersions.id, scope.versionId), eq(appVersions.appId, appId)))
+      .limit(1);
+    if (hit?.frozenAt) {
+      const { frozenAt: _f, ...row } = hit;
+      return row.name === null ? null : (row as ServedAssetRow);
+    }
+    if (!scope.orDraft) return null;
+  }
   const [row] = await getDb()
-    .select({
-      name: appAssets.name,
-      contentType: appAssets.contentType,
-      size: appAssets.size,
-      sha256: appAssets.sha256,
-      storageKey: appAssets.storageKey,
-      updatedAt: appAssets.updatedAt,
-    })
+    .select(SERVED_DRAFT)
     .from(appAssets)
     .where(and(eq(appAssets.appId, appId), eq(appAssets.name, name)))
     .limit(1);
@@ -264,12 +317,10 @@ export async function storeAsset(input: StoreAssetInput): Promise<StoredAsset> {
     throw err;
   }
 
-  const key = newStorageKey();
-  await writer.commit(app.id, key);
-  let previousKey: string | null = null;
+  let committed: { key: string; previousKey: string | null };
   try {
-    previousKey = await getDb().transaction(async (tx) => {
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${lockKey(app.id)}::text))`);
+    committed = await getDb().transaction(async (tx) => {
+      await lockAssets(tx, app.id);
       const [row] = await tx
         .select({ deletedAt: apps.deletedAt, lockedReason: apps.lockedReason })
         .from(apps)
@@ -282,23 +333,21 @@ export async function storeAsset(input: StoreAssetInput): Promise<StoredAsset> {
         .from(appAssets)
         .where(and(eq(appAssets.appId, app.id), eq(appAssets.name, name)))
         .limit(1);
-      const used = await assetUsage(app.id, name, tx);
-      if (used + size > limits.quota) throw overQuota(limits.quota, used);
+      // Content-addressed: the app may already store these bytes (in the draft or a published set).
+      const stored = await storedKeyOf(tx, app.id, sha256);
+      const reuse = stored !== null && (await disk.has(app.id, stored));
+      const key = reuse ? (stored as string) : sha256;
+      const extra = { key, size };
+      if ((await uniqueAssetBytes(tx, app.id, { scope: 'live', exceptName: name, extra })) > limits.quota) {
+        throw overQuota(limits.quota, await assetUsage(app.id, name, tx));
+      }
+      await pruneAssetSnapshots(tx, app.id, { quota: limits.quota, exceptName: name, extra });
+      if (reuse) await writer.abort();
+      else await writer.commit(app.id, key);
       const now = new Date();
-      const values = {
-        appId: app.id,
-        name,
-        contentType: type,
-        size,
-        sha256,
-        storageKey: key,
-        createdByUserId: input.actor.userId,
-        createdAt: now,
-        updatedAt: now,
-      };
       await tx
         .insert(appAssets)
-        .values(values)
+        .values({ appId: app.id, name, contentType: type, size, sha256, storageKey: key, createdByUserId: input.actor.userId, createdAt: now, updatedAt: now })
         .onConflictDoUpdate({
           target: [appAssets.appId, appAssets.name],
           set: { contentType: type, size, sha256, storageKey: key, createdByUserId: input.actor.userId, updatedAt: now },
@@ -315,17 +364,22 @@ export async function storeAsset(input: StoreAssetInput): Promise<StoredAsset> {
         },
         tx
       );
-      return prev?.storageKey ?? null;
+      return { key, previousKey: prev?.storageKey ?? null };
     });
   } catch (err) {
-    await disk.remove(app.id, key).catch(() => {});
+    // A file already moved into place stays for the sweep: another row may reference those bytes.
+    await writer.abort();
     throw err;
   }
-  if (previousKey) await disk.remove(app.id, previousKey).catch(() => {});
-  return { name, path: assetPath(name), size, type, sha256, replaced: previousKey !== null };
+  if (committed.previousKey && committed.previousKey !== committed.key) await releaseAssetFiles(app.id, [committed.previousKey], disk);
+  return { name, path: assetPath(name), size, type, sha256, replaced: committed.previousKey !== null };
 }
 
-/** Delete one asset (row, audit, then its file). false when there is no such asset. */
+/**
+ * Delete one asset from the draft (row + audit; its file goes when nothing
+ * else references it). The production host keeps serving it until the next
+ * publish. false when the draft has no such asset.
+ */
 export async function deleteAsset(input: {
   app: AssetApp;
   name: string;
@@ -335,7 +389,7 @@ export async function deleteAsset(input: {
 }): Promise<boolean> {
   const disk = input.disk ?? assetDisk();
   const removed = await getDb().transaction(async (tx) => {
-    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${lockKey(input.app.id)}::text))`);
+    await lockAssets(tx, input.app.id);
     const [row] = await tx
       .delete(appAssets)
       .where(and(eq(appAssets.appId, input.app.id), eq(appAssets.name, input.name)))
@@ -356,6 +410,6 @@ export async function deleteAsset(input: {
     return row;
   });
   if (!removed) return false;
-  await disk.remove(input.app.id, removed.storageKey).catch(() => {});
+  await releaseAssetFiles(input.app.id, [removed.storageKey], disk);
   return true;
 }

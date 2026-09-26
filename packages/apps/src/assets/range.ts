@@ -11,8 +11,9 @@
  *
  * A malformed `bytes=` value, a start past the end, an end before the start
  * and a zero-length suffix are unsatisfiable (416 with `Content-Range:
- * bytes * /<size>`). Another unit (`items=…`) and a multi-range list are
- * ignored: the whole file is served (200), which RFC 9110 allows.
+ * bytes * /<size>`). A header that is not a range at all (no `=`), another
+ * unit (`items=…`) and a multi-range list are ignored: the whole file is
+ * served (200) — RFC 9110 §14.2 lets a server ignore an invalid Range.
  */
 
 export interface ByteRange {
@@ -32,7 +33,7 @@ export function parseRange(header: string | null | undefined, size: number): Ran
   const raw = header.trim();
   if (raw === '') return null;
   const eq = raw.indexOf('=');
-  if (eq === -1) return 'unsatisfiable';
+  if (eq === -1) return null;
   if (raw.slice(0, eq).trim().toLowerCase() !== 'bytes') return null;
   const specs = raw.slice(eq + 1).split(',').map((s) => s.trim());
   if (specs.length !== 1) return specs.every((s) => SPEC_RE.test(s) && s !== '-') ? null : 'unsatisfiable';

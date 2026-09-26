@@ -14,10 +14,12 @@
  *      fallback for extension-less paths, ETag = sha256 → 304;
  *   6. no such file and the path can name an asset (`/film.mp4`,
  *      `/img/s1.jpg`): the app's uploaded asset (NSO-358, `deps.assets` —
- *      video/audio/images/fonts, Range 206, see assets.ts). Assets are per
- *      app, so every host that serves a version serves them; the version's
- *      own file at the same path wins. Asset paths always carry a media
- *      extension, so the SPA fallback never answers for one.
+ *      video/audio/images/fonts, Range 206, see assets.ts). NSO-362: the
+ *      production host and custom domains serve the set the publish froze,
+ *      the preview host the draft, a version host that version's set (or
+ *      the draft) — `assetScopeFor`. The version's own file at the same path
+ *      wins. Asset paths always carry a media extension, so the SPA fallback
+ *      never answers for one.
  *
  * BEACON (M1-07): `POST /__drobek/v1/_beacon` goes to `deps.beacon` (core, not
  * a module — every app reports its browser errors without configuration),
@@ -60,6 +62,7 @@ import {
   reportFormUrl,
   termsUrl,
   type AppHostTarget,
+  type AssetScope,
 } from '@drobek/apps';
 import { assetNameOf, assetResponsePlan, type AssetSource } from './assets.js';
 import { contentTypeForPath } from './content-type.js';
@@ -342,7 +345,13 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
   if (hit.kind !== 'file' || !entry) {
     const assetName = deps.assets ? assetNameOf(decoded) : null;
     if (assetName !== null) {
-      const served = await serveAsset(req, deps.assets!, { app, name: assetName, security, published: !noindex });
+      const served = await serveAsset(req, deps.assets!, {
+        app,
+        name: assetName,
+        scope: assetScopeFor(req.target.kind, version.id),
+        security,
+        published: !noindex,
+      });
       if (served) return served;
     }
     deps.signal?.(app.id, '404', req.path);
@@ -373,13 +382,24 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
   return { status: 200, headers, body: method === 'HEAD' ? null : bytes };
 }
 
+/**
+ * Which asset set a host serves (NSO-362): the production host and custom
+ * domains only the set the publish of their version froze; the preview host
+ * the draft; a version host that version's set, or the draft when it was
+ * never published.
+ */
+function assetScopeFor(kind: AppHostTarget['kind'], versionId: string): AssetScope {
+  if (kind === 'preview') return 'draft';
+  return kind === 'version' ? { versionId, orDraft: true } : { versionId };
+}
+
 /** An uploaded asset of the app (NSO-358), or null when the app has none by that name. */
 async function serveAsset(
   req: AppRequest,
   assets: AssetSource,
-  input: { app: ServeApp; name: string; security: Record<string, string>; published: boolean }
+  input: { app: ServeApp; name: string; scope: AssetScope; security: Record<string, string>; published: boolean }
 ): Promise<AppResponse | null> {
-  const asset = await assets.find(input.app.id, input.name);
+  const asset = await assets.find(input.app.id, input.name, input.scope);
   if (!asset) return null;
   const plan = assetResponsePlan({
     method: req.method,

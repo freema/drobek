@@ -2,21 +2,26 @@
  * The assets sweep (NSO-358): hourly, one replica at a time (Redis lease).
  *
  *   1. apps deleted more than ASSETS_SWEEP_RETENTION_MS (24 h) ago: their
- *      `app_assets` rows and their directory `ASSETS_DIR/<app_id>/` go
+ *      `app_assets` and `app_version_assets` rows and their directory
+ *      `ASSETS_DIR/<app_id>/` go
  *      (a soft delete never fires the FK cascade; serving stopped at the
  *      delete — a deleted app has no host);
  *   2. temp uploads (`ASSETS_DIR/tmp/*.part`) older than the retention —
  *      what a crash mid-upload left behind;
- *   3. files in an app directory that no row references and that are older
- *      than an hour (a replace that crashed between the rename and the old
- *      file's removal; a fresh file may belong to an upload still committing).
+ *   3. files in an app directory that neither the draft nor a kept published
+ *      set references (NSO-362: a set pruned or replaced by a publish, a
+ *      restore that reset the draft, an upload that failed after its file
+ *      was moved into place) and that are older than an hour — decided and
+ *      removed under the app's assets lock, so an upload reusing the bytes
+ *      cannot interleave.
  */
 import { readdir, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { and, eq, inArray, isNotNull, lt } from 'drizzle-orm';
-import { appAssets, apps, dbErrorForLog, getDb } from '@drobek/db';
+import { and, eq, isNotNull, lt } from 'drizzle-orm';
+import { appAssets, appVersionAssets, apps, dbErrorForLog, getDb } from '@drobek/db';
 import { withRedisLock } from '../lock.server.js';
 import { assetDisk, type AssetDisk } from './disk.server.js';
+import { lockAssets, unreferencedKeys } from './snapshots.server.js';
 
 export const ASSETS_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
 export const ASSETS_SWEEP_RETENTION_MS = 24 * 60 * 60 * 1000;
@@ -56,13 +61,14 @@ export async function sweepAssets(opts: { disk?: AssetDisk; now?: Date; retentio
   const out: AssetsSweepResult = { apps: 0, tmp: 0, orphans: 0 };
 
   // 1. deleted apps (rows first: once they are gone nothing serves or lists the files)
-  const gone = await db
-    .selectDistinct({ appId: appAssets.appId })
-    .from(appAssets)
-    .innerJoin(apps, eq(apps.id, appAssets.appId))
-    .where(and(isNotNull(apps.deletedAt), lt(apps.deletedAt, new Date(now - retentionMs))));
-  for (const { appId } of gone) {
+  const expired = and(isNotNull(apps.deletedAt), lt(apps.deletedAt, new Date(now - retentionMs)));
+  const [draftGone, frozenGone] = await Promise.all([
+    db.selectDistinct({ appId: appAssets.appId }).from(appAssets).innerJoin(apps, eq(apps.id, appAssets.appId)).where(expired),
+    db.selectDistinct({ appId: appVersionAssets.appId }).from(appVersionAssets).innerJoin(apps, eq(apps.id, appVersionAssets.appId)).where(expired),
+  ]);
+  for (const appId of new Set([...draftGone, ...frozenGone].map((r) => r.appId))) {
     await db.delete(appAssets).where(eq(appAssets.appId, appId));
+    await db.delete(appVersionAssets).where(eq(appVersionAssets.appId, appId));
     await disk.removeApp(appId);
     out.apps += 1;
   }
@@ -81,19 +87,18 @@ export async function sweepAssets(opts: { disk?: AssetDisk; now?: Date; retentio
     if (appId === 'tmp' || !/^[a-z0-9]{1,64}$/.test(appId)) continue;
     const files = await entries(join(disk.root, appId));
     if (files.length === 0) continue;
-    const rows = await db
-      .select({ key: appAssets.storageKey })
-      .from(appAssets)
-      .where(and(eq(appAssets.appId, appId), inArray(appAssets.storageKey, files)));
-    const referenced = new Set(rows.map((r) => r.key));
-    for (const key of files) {
-      if (referenced.has(key)) continue;
-      const path = join(disk.root, appId, key);
-      if (await olderThan(path, now - ORPHAN_GRACE_MS)) {
-        await rm(path, { force: true });
-        out.orphans += 1;
+    out.orphans += await db.transaction(async (tx) => {
+      await lockAssets(tx, appId);
+      let removed = 0;
+      for (const key of await unreferencedKeys(tx, appId, files)) {
+        const path = join(disk.root, appId, key);
+        if (await olderThan(path, now - ORPHAN_GRACE_MS)) {
+          await rm(path, { force: true });
+          removed += 1;
+        }
       }
-    }
+      return removed;
+    });
   }
   return out;
 }

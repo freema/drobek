@@ -103,7 +103,7 @@ export function renderBriefing(opts: { limits?: Partial<BriefingLimits>; skills?
     '',
     '## Video, audio and big files (assets)',
     '- write_files is text-only — never paste a binary as base64. For a video, audio file, image or font call `create_asset_upload({ app_id, path, size })`: it returns a single-use upload URL (30 minutes) and a `curl -T <file> \'<url>\'` line to run in your sandbox — or give the link to the user, a browser shows an upload page.',
-    '- The app serves the file at `/<path>` next to its own files, on every host: keep the paths your HTML already uses (`<video src="film.mp4" controls>`, `img/s1.jpg`). Porting a Claude artifact: write the HTML/JS with write_files, upload each binary at the same relative path (`skill_info(\'port-artifact\')` has the whole procedure). Videos seek (HTTP Range). `list_assets` / `delete_asset` manage them; an app file at the same path wins (`asset_path_taken`).',
+    '- The app serves the file at `/<path>` next to its own files — the preview at once, the production URL after the next publish (uploads and deletes never change a published app on their own): keep the paths your HTML already uses (`<video src="film.mp4" controls>`, `img/s1.jpg`). Porting a Claude artifact: write the HTML/JS with write_files, upload each binary at the same relative path (`skill_info(\'port-artifact\')` has the whole procedure). Videos seek (HTTP Range). `list_assets` / `delete_asset` manage them; an app file at the same path wins (`asset_path_taken`).',
     '',
     '## Files',
     '- Paths are app-relative (`src/App.tsx`): no leading `/`, no `..`. Text files only: .tsx .ts .jsx .js .mjs .css .json .html .txt .md .svg .webmanifest.',

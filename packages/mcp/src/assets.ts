@@ -11,6 +11,11 @@
  * which sniffs, caps and stores them; the app serves them at `/<path>` —
  * the same path the page already uses (`<video src="film.mp4">`).
  *
+ * NSO-362: an upload, a replacement or a delete changes the app's DRAFT
+ * assets — the preview shows it at once, the production URL only after
+ * `publish` (which needs the publish scope and the user's explicit request).
+ * list_assets says per asset whether production already serves it.
+ *
  * Every check that needs no bytes runs HERE, before a URL exists: the path
  * rule, no app file at that path (`asset_path_taken`), the declared type fits
  * the extension, the size cap (APP_ASSET_MAX_BYTES) and the app's quota
@@ -31,6 +36,7 @@ import {
   deleteAsset,
   isAssetsError,
   listAssets,
+  listPublishedOnlyAssets,
   previewUrl,
   type AssetDisk,
   type UploadTokenStore,
@@ -119,16 +125,24 @@ export async function createAssetUpload(
     asset_path: assetPath(name),
     asset_url: `${previewUrl(app.slug, ctx.deps.env)}${assetPath(name)}`,
     curl: curlUploadCommand(url),
-    note: 'Single use, valid 30 minutes. Run the curl line with the real file (its size must be exactly `size` bytes), or give the link to the user — opening it in a browser shows an upload page. The app serves the file at asset_path on every host once the upload answers 201.',
+    note: 'Single use, valid 30 minutes. Run the curl line with the real file (its size must be exactly `size` bytes), or give the link to the user — opening it in a browser shows an upload page. Once the upload answers 201 the preview serves the file at asset_path; the production URL serves it after the next publish.',
   };
 }
 
 export async function listAssetsTool(ctx: CallContext, args: { app_id: string }) {
   const { app } = await authorizeApp(ctx.principal, args.app_id, 'viewer');
-  const [assets, used, limits] = await Promise.all([listAssets(app.id), assetUsage(app.id), limitsFor(ctx, app)]);
+  const [assets, publishedOnly, used, limits] = await Promise.all([
+    listAssets(app.id),
+    listPublishedOnlyAssets(app.id),
+    assetUsage(app.id),
+    limitsFor(ctx, app),
+  ]);
   return {
     app_id: app.id,
-    assets: assets.map((a) => ({ path: a.path, type: a.type, size: a.size, updated_at: a.updatedAt.toISOString() })),
+    assets: assets.map((a) => ({ path: a.path, type: a.type, size: a.size, updated_at: a.updatedAt.toISOString(), published: a.published })),
+    // Deleted from the draft, still on the production URL until the next publish.
+    published_only: publishedOnly.map((a) => a.path),
+    changes_pending_publish: publishedOnly.length > 0 || assets.some((a) => !a.published),
     used_bytes: used,
     quota_bytes: limits.quota,
     max_bytes: limits.maxBytes,
@@ -149,5 +163,5 @@ export async function deleteAssetTool(ctx: CallContext, args: { app_id: string; 
   if (!removed) {
     throw new ToolError('asset_not_found', `This app has no asset at ${assetPath(name)}.`, { path: assetPath(name) });
   }
-  return { deleted: assetPath(name) };
+  return { deleted: assetPath(name), note: 'Gone from the preview now; a published app keeps serving it until the next publish.' };
 }

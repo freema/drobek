@@ -4,11 +4,16 @@
  * Router. Typed on node:http only, so Express req/res fit.
  *
  *   PUT  the bytes (curl -T, or the page below). The token is the only
- *        credential: it is taken (single use) before a byte is read, then
- *        the body streams through storeAsset (size, type, quota, audit as
- *        the user who created the link). 201 `{ name, path, size, type,
- *        replaced }`; a refusal is `{ code, message, hint, …details }` with
- *        its status (404 upload_token_invalid, 413 asset_too_large /
+ *        credential: it is taken (single use) before a byte is read; the
+ *        user it was issued for must STILL be an editor of the app's
+ *        workspace (or a super-admin) — a member removed or demoted since
+ *        cannot complete an upload with an earlier link (403 forbidden,
+ *        NSO-362). Then the body streams through storeAsset (size, type,
+ *        quota, audit as that user) into the app's DRAFT assets — the
+ *        production host shows it after the next publish. 201 `{ name, path,
+ *        size, type, replaced }`; a refusal is `{ code, message, hint,
+ *        …details }` with its status (404 upload_token_invalid, 403
+ *        forbidden, 413 asset_too_large /
  *        asset_quota_exceeded, 415 asset_type_not_allowed, 400
  *        asset_size_mismatch, 423 app_locked_by_admin). A refusal sent while
  *        the body is still arriving closes the connection after the answer
@@ -21,13 +26,14 @@
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { closeAfterResponse, createConsoleLogger, requestBodyStream, type Logger } from '@drobek/core';
-import { dbErrorForLog } from '@drobek/db';
+import { and, eq, inArray } from 'drizzle-orm';
+import { dbErrorForLog, getDb, memberships, users } from '@drobek/db';
 import type { AssetLimits } from './config.js';
 import type { AssetDisk } from './disk.server.js';
 import { AssetsError } from './errors.js';
 import { storeAsset } from './assets.server.js';
 import { assetPath } from './names.js';
-import { consumeUploadToken, peekUploadToken, redisUploadTokenStore, type UploadTokenStore } from './tokens.server.js';
+import { consumeUploadToken, peekUploadToken, redisUploadTokenStore, type UploadGrant, type UploadTokenStore } from './tokens.server.js';
 import { uploadGonePage, uploadPage } from './upload-page.js';
 
 export interface AssetUploadHandlerOptions {
@@ -37,6 +43,8 @@ export interface AssetUploadHandlerOptions {
   hint: (code: string) => string;
   /** Where the uploaded asset will be visible (the app's preview URL + path), for the page and the answer. */
   assetUrl?: (appSlug: string, path: string) => string | null;
+  /** May the user the grant was issued for still change the app's assets? Default: uploaderMayEdit. */
+  mayUpload?: (grant: UploadGrant) => Promise<boolean>;
   tokens?: UploadTokenStore;
   disk?: AssetDisk;
   log?: Logger;
@@ -44,6 +52,28 @@ export interface AssetUploadHandlerOptions {
 }
 
 type NodeHandler = (req: IncomingMessage, res: ServerResponse) => void;
+
+/**
+ * Is `userId` still an editor+ of `workspaceId` — or a super-admin
+ * (SUPERADMIN_EMAIL, the global flag; @drobek/auth cannot be imported here)?
+ * Checked when an upload URL is USED, not only when it was issued (NSO-362).
+ */
+export async function uploaderMayEdit(userId: string, workspaceId: string, env: NodeJS.ProcessEnv = process.env): Promise<boolean> {
+  const db = getDb();
+  const [member] = await db
+    .select({ role: memberships.role })
+    .from(memberships)
+    .where(and(eq(memberships.userId, userId), eq(memberships.workspaceId, workspaceId), inArray(memberships.role, ['workspace-admin', 'editor'])))
+    .limit(1);
+  if (member) return true;
+  const admins = (env.SUPERADMIN_EMAIL ?? '')
+    .split(',')
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+  if (admins.length === 0) return false;
+  const [user] = await db.select({ email: users.email }).from(users).where(eq(users.id, userId)).limit(1);
+  return user !== undefined && admins.includes(user.email.trim().toLowerCase());
+}
 
 function tokenOf(req: IncomingMessage): string {
   const url = req.url ?? '';
@@ -86,6 +116,7 @@ export function createAssetUploadHandler(opts: AssetUploadHandlerOptions): NodeH
   const tokens = opts.tokens ?? redisUploadTokenStore();
   const log = opts.log ?? createConsoleLogger('assets');
   const now = opts.now ?? Date.now;
+  const mayUpload = opts.mayUpload ?? ((grant: UploadGrant) => uploaderMayEdit(grant.userId, grant.workspaceId));
   const refuse = (req: IncomingMessage, res: ServerResponse, err: AssetsError) =>
     sendJson(req, res, err.status, { code: err.code, message: err.message, hint: opts.hint(err.code), ...err.details });
 
@@ -93,6 +124,10 @@ export function createAssetUploadHandler(opts: AssetUploadHandlerOptions): NodeH
     const grant = await consumeUploadToken(tokens, tokenOf(req), now);
     if (!grant) {
       refuse(req, res, new AssetsError('upload_token_invalid', 'This upload URL is unknown, already used or expired (they work once, for 30 minutes).'));
+      return;
+    }
+    if (!(await mayUpload(grant))) {
+      refuse(req, res, new AssetsError('forbidden', 'The user this upload URL was issued for is no longer an editor of the app, so it cannot be used.'));
       return;
     }
     const declaredLength = req.headers['content-length'];

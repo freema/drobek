@@ -135,15 +135,19 @@ audio file, image or font:
    byte count. It returns a single-use `upload_url` (30 minutes) and a `curl`
    line: run `curl -T film.mp4 '<upload_url>'` in your sandbox, or give the
    link to the user — a browser shows an upload page.
-2. The app serves the file at `/<path>` on every host, next to its own files.
-   Keep the paths your HTML already uses: `<video src="film.mp4" controls>`
-   seeks (HTTP Range).
+2. The app serves the file at `/<path>`, next to its own files: the preview at
+   once, the production URL after the next `publish` — uploads, replacements
+   and deletes never change a published app on their own. Keep the paths your
+   HTML already uses: `<video src="film.mp4" controls>` seeks (HTTP Range).
 
-`list_assets({ app_id })` shows them with the quota; `delete_asset({ app_id,
-path })` removes one; uploading to the same path replaces it. Refusals:
-`asset_too_large`, `asset_type_not_allowed` (the bytes decide the type),
-`asset_quota_exceeded`, `asset_path_taken` (an app file at that path wins). No
-transcoding: send MP4 (H.264/AAC) or WebM.
+`list_assets({ app_id })` shows them with the quota and `published` per file
+(`changes_pending_publish` = production still serves the old set);
+`delete_asset({ app_id, path })` removes one from the preview; uploading to the
+same path replaces it. `publish` of an older version brings back the assets it
+served then; `restore_version` of a published version resets the assets too
+(`assets_restored`). Refusals: `asset_too_large`, `asset_type_not_allowed` (the
+bytes decide the type), `asset_quota_exceeded`, `asset_path_taken` (an app file
+at that path wins). No transcoding: send MP4 (H.264/AAC) or WebM.
 
 ## Port a Claude artifact
 

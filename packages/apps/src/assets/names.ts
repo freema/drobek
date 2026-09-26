@@ -2,7 +2,8 @@
  * App asset paths and types (NSO-358). PURE.
  *
  * An asset lives in the SAME URL space as the app's files: the asset
- * `img/s1.jpg` is served at `/img/s1.jpg` on every host of its app, so a page
+ * `img/s1.jpg` is served at `/img/s1.jpg` by its app (the preview at once,
+ * production after a publish — snapshots.server.ts), so a page
  * ported from elsewhere (a Claude artifact with `<video src="film.mp4">` and
  * relative `s1.jpg` thumbnails) needs no path rewriting. Its name is a
  * relative path of 1–4 segments, each `[A-Za-z0-9][A-Za-z0-9._-]{0,99}` (no

@@ -43,9 +43,9 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
   },
   {
     code: 'forbidden',
-    surface: 'MCP tool isError; module route 403 (DrobekError)',
+    surface: 'MCP tool isError; module route 403 (DrobekError); upload URL 403',
     meaning:
-      'You are a member of the workspace, but your role is viewer — changing apps needs editor or workspace-admin. From a module route: the signed-in end user may not do this (the module\'s rule, e.g. owner or admin only).',
+      'You are a member of the workspace, but your role is viewer — changing apps needs editor or workspace-admin. From a module route: the signed-in end user may not do this (the module\'s rule, e.g. owner or admin only). From an upload URL: the user it was issued for is no longer an editor of the app (removed or demoted since), so it cannot be used.',
     fix: 'Ask a workspace admin for the editor role (the write scope alone does not raise your role), or work in a workspace where you are an editor. In an app: show the end user a friendly message.',
   },
   {
@@ -152,8 +152,8 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     code: 'asset_quota_exceeded',
     surface: 'MCP tool isError (create_asset_upload); upload URL 413',
     meaning:
-      'The app\'s assets would exceed APP_ASSETS_QUOTA (default 1 GiB; `limit`, `value`, `used_bytes`). A file uploaded to an existing path only counts its difference.',
-    fix: 'list_assets shows what the app holds; delete_asset what is no longer used, then ask for a new upload URL.',
+      'The app\'s assets would exceed APP_ASSETS_QUOTA (default 1 GiB; `limit`, `value`, `used_bytes`). The quota counts each unique file of the draft and of the published set once: a file uploaded to an existing path replaces the draft\'s, but the one production serves still counts until the next publish.',
+    fix: 'list_assets shows what the app holds; delete_asset what is no longer used (a file production still serves is freed by the next publish, when the user asks for one), then ask for a new upload URL.',
   },
   {
     code: 'asset_path_taken',

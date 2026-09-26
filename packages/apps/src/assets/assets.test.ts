@@ -109,6 +109,10 @@ describe('parseRange (RFC 9110, one range)', () => {
     expect(parseRange('bytes=0-10, 20-30', size)).toBeNull();
   });
 
+  it('a header without `=` is not a range at all → ignored, the whole file (RFC 9110, NSO-362)', () => {
+    for (const invalid of ['bytes', '0-99', 'bytes 0-99', 'garbage']) expect(parseRange(invalid, size), invalid).toBeNull();
+  });
+
   it('closed, open-ended and suffix ranges', () => {
     expect(parseRange('bytes=0-99', size)).toEqual({ start: 0, end: 99 });
     expect(parseRange('bytes=500-', size)).toEqual({ start: 500, end: 999 });
@@ -119,7 +123,7 @@ describe('parseRange (RFC 9110, one range)', () => {
   });
 
   it('malformed or unsatisfiable → 416', () => {
-    for (const bad of ['bytes=abc', 'bytes=-', 'bytes=', 'bytes=5-2', 'bytes=1000-', 'bytes=1000-1001', 'bytes=-0', 'bytes', 'bytes=1.5-2', 'bytes=0-10, x']) {
+    for (const bad of ['bytes=abc', 'bytes=-', 'bytes=', 'bytes=5-2', 'bytes=1000-', 'bytes=1000-1001', 'bytes=-0', 'bytes=1.5-2', 'bytes=0-10, x']) {
       expect(parseRange(bad, size), bad).toBe('unsatisfiable');
     }
     expect(parseRange('bytes=0-10', 0)).toBe('unsatisfiable');

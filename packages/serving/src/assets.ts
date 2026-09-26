@@ -5,7 +5,9 @@
  * a ported page keeps its paths (`<video src="film.mp4">`, `img/s1.jpg`).
  * Reached from handler.ts only after the app, takedown, password gate and
  * version steps, and only when the version itself has no file at that path
- * (the app's own file wins — a version stays immutable). An asset path always
+ * (the app's own file wins — a version stays immutable). NSO-362: the
+ * production host and custom domains look the name up in the set the last
+ * publish froze, the preview host in the draft. An asset path always
  * has a media extension, so the SPA fallback (extension-less paths only) never
  * swallows one.
  *
@@ -17,14 +19,14 @@
  *     time (304 on If-Modified-Since when no If-None-Match); `If-Range` with a
  *     different validator falls back to the whole file.
  *   - Cache-Control: published / custom hosts `public, max-age=300,
- *     must-revalidate` (a replaced asset shows within 5 minutes), preview and
+ *     must-revalidate` (an asset a publish replaced shows within 5 minutes), preview and
  *     version hosts revalidate on every use; a password app is `private`.
  *   - SVG (the one text type) is `attachment` with a second CSP `sandbox`,
  *     exactly like the files module: `<img src>` still shows it, opening it as
  *     a document runs no script on the app's origin.
  */
 import type { Readable } from 'node:stream';
-import { assetFileName, assetNameProblem, contentRange, parseRange, unsatisfiedRange, type ByteRange } from '@drobek/apps';
+import { assetFileName, assetNameProblem, contentRange, parseRange, unsatisfiedRange, type AssetScope, type ByteRange } from '@drobek/apps';
 import { REVALIDATE_CACHE, etagFor, isNotModified } from './resolve.js';
 
 /** One stored asset as the serving path needs it. */
@@ -37,9 +39,9 @@ export interface ServedAsset {
   updatedAt: Date;
 }
 
-/** Where assets come from (node.ts: the app_assets rows + the ASSETS_DIR disk). */
+/** Where assets come from (node.ts: the draft / frozen rows + the ASSETS_DIR disk). */
 export interface AssetSource {
-  find(appId: string, name: string): Promise<ServedAsset | null>;
+  find(appId: string, name: string, scope: AssetScope): Promise<ServedAsset | null>;
   /** Bytes `range` (inclusive; default all) of a stored file, or null when it is gone. */
   open(appId: string, storageKey: string, range?: ByteRange): Promise<Readable | null>;
 }
