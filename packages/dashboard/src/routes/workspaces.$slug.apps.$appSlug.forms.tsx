@@ -35,7 +35,7 @@ export default function AppFormsRoute() {
       </p>
 
       {!d.enabled ? (
-        <ModuleMissing module="forms" />
+        <ModuleMissing does="stores form submissions" />
       ) : (
         <>
           {actionData && 'error' in actionData ? (

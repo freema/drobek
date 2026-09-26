@@ -835,7 +835,16 @@ describe('skill_info (M1-01)', () => {
         content: '# greet\n\nCall `drobek.greet.hi()`.\n',
         config: { defaults: { greeting: 'Hi', audience: 'user', emoji: false } },
         secrets: [{ name: 'GREET_KEY', description: 'signs greetings', required: true }],
+        // NSO-347: the facts the dashboard's workspace Modules page shows.
+        source: 'builtin',
+        availability: 'default',
+        requires: [],
+        slots: [],
+        contributes: [],
+        errors: [],
       });
+      expect(r.body).toHaveProperty('version');
+      expect(r.body).toHaveProperty('contract');
       expect(r.text).not.toContain(SECRET);
       expect(r.text).not.toContain('"emoji": true');
       // get_app shows only whether the secret is set

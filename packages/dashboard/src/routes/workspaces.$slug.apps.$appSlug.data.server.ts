@@ -31,6 +31,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   return {
     workspace: { slug: access.workspace.slug, name: access.workspace.name },
     appSlug,
+    /** The module that stores the records (the records authority) — its name, for the configure_module hint. */
+    recordsModule: records.module,
     /** NSO-342: the app header + tabs on every app sub-page. */
     header: await appHeaderFor(access, appSlug),
     collections: collections.map((c) => ({

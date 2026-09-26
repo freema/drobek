@@ -63,7 +63,10 @@ Before using a backend (login, stored data, forms, email, file uploads, external
   keep state in the browser (e.g. `localStorage`).
 - `skill_info({ name })` returns the skill: minimal working code, the exact
   SDK calls and types, the module's config schema, limits and common errors;
-  `errors` lists the module's own error codes with their meaning and fix.
+  `errors` lists the module's own error codes with their meaning and fix;
+  `version`, `source`, `contract`, `availability`, `requires`, `slots` and
+  `contributes` describe the module itself (what the dashboard's workspace
+  Modules page shows).
 - Besides the module skills (`auth`, `data`, `forms`, `email`, `files`,
   `proxy`, …) the list has general skills: `start` (files, drobek.json, the
   write → preview → publish loop), `debug` (compile errors, `get_logs`,

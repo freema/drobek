@@ -54,7 +54,7 @@ function form(entries: Record<string, string>): FormReader {
 }
 
 describe('schemaFields', () => {
-  it('maps the subset the modules use; records become JSON fields; skip leaves dedicated keys out', () => {
+  it('maps the subset the modules use; a record of anything stays a JSON field; skip leaves dedicated keys out', () => {
     const fields = schemaFields(MIXED_SCHEMA, ['collections']);
     expect(fields.map((f) => [f.path, f.kind, f.required])).toEqual([
       ['fromName', 'string', false],

@@ -32,7 +32,7 @@ export default function AppEndUsersRoute() {
       </p>
 
       {!d.enabled ? (
-        <ModuleMissing module="auth" />
+        <ModuleMissing does="signs end users in" />
       ) : (
         <>
           {actionData && 'error' in actionData ? (

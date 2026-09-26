@@ -387,4 +387,59 @@ describe('the runtime (contributions, hooks, errors, skill_info, the dashboard v
     expect(await rt.moduleView(app, 'watcher')).toMatchObject({ availability: 'opt-in', editor: 'collections' });
     expect(await rt.moduleView(app, 'host')).toMatchObject({ availability: 'default', editor: null });
   });
+
+  it('moduleFacts (NSO-347): version, source, contract, requires, slots with their contributors, contributions, limits, errors', () => {
+    expect(rt.moduleFacts('host')).toEqual({
+      name: 'host',
+      version: '1.0.0',
+      source: 'builtin',
+      contract: '^1.1',
+      availability: 'default',
+      requires: [],
+      slots: [
+        {
+          name: 'host.greeter',
+          description: 'a way to greet someone',
+          unique: 'id',
+          contributions: [
+            { module: 'formal', key: 'formal' },
+            { module: 'pirate', key: 'pirate' },
+          ],
+        },
+      ],
+      contributes: [],
+      limits: [],
+      errors: host.errors,
+      editor: null,
+    });
+    expect(rt.moduleFacts('pirate')).toMatchObject({ slots: [], contributes: [{ slot: 'host.greeter', host: 'host', key: 'pirate' }] });
+    expect(rt.moduleFacts('watcher')).toMatchObject({ availability: 'opt-in', editor: 'collections', contributes: [] });
+    expect(rt.moduleFacts('nope')).toBeNull();
+    expect(rt.moduleFactsList().map((f) => f.name)).toEqual(['formal', 'failing', 'host', 'watcher', 'pirate']);
+    // Never a path on disk: the facts are plain names and versions.
+    expect(JSON.stringify(rt.moduleFactsList())).not.toMatch(/node_modules|\/(?:data|app|home|Users)\//);
+  });
+
+  it('skill_info and the dashboard view carry the same facts (the MCP twin of the dashboard page)', async () => {
+    const facts = rt.moduleFacts('pirate')!;
+    expect(rt.skillInfo('pirate')).toMatchObject({
+      version: facts.version,
+      source: facts.source,
+      contract: facts.contract,
+      availability: facts.availability,
+      requires: facts.requires,
+      slots: facts.slots,
+      contributes: facts.contributes,
+      errors: facts.errors,
+    });
+    expect(rt.skillInfo('host')?.slots).toEqual(rt.moduleFacts('host')!.slots);
+    expect(await rt.moduleView(app, 'host')).toMatchObject({
+      source: 'builtin',
+      contract: '^1.1',
+      requires: [],
+      slots: rt.moduleFacts('host')!.slots,
+      contributes: [],
+      errors: host.errors,
+    });
+  });
 });

@@ -38,6 +38,9 @@ export default [
   // delete secret-injecting upstreams (workspace-admin/super-admin only). Apps
   // call them through the `proxy` platform module (NSO-297).
   route('workspaces/:slug/upstreams', 'routes/workspaces.$slug.upstreams.tsx'),
+  // NSO-347: the platform modules this server runs (version, source, contract,
+  // slots, limits for the workspace, error codes) — read-only, viewer+.
+  route('workspaces/:slug/modules', 'routes/workspaces.$slug.modules.tsx'),
   // U8 (PHY-74 slice / PHY-62): minimal dashboard — apps list, per-app version
   // history + role-gated publish. Static `apps` segment keeps these specific
   // enough not to shadow `/workspaces/:slug/invite`.

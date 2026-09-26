@@ -215,6 +215,48 @@ export interface SkillInfo {
   errors?: ModuleErrorDoc[];
   /** Who the module is for: every workspace (`default`) or the workspaces it is enabled for (`opt-in`). */
   availability?: ModuleAvailability;
+  /** A module's own semver, where it was loaded from, the contract range it declares (null: none) and the modules it requires. */
+  version?: string;
+  source?: ModuleSource;
+  contract?: string | null;
+  requires?: string[];
+  /** The extension points the module offers (with who contributes) and its own contributions to other modules' slots. */
+  slots?: ModuleFacts['slots'];
+  contributes?: ModuleFacts['contributes'];
+}
+
+/**
+ * The operator-facing facts of one active module, app-independent (NSO-347):
+ * the dashboard's workspace Modules page and the module page's "About", and
+ * the same fields in `skill_info(name)`. Never a path on disk, never a
+ * secret, never an app's config.
+ */
+export interface ModuleFacts {
+  name: string;
+  version: string;
+  source: ModuleSource;
+  /** The contract range the module declares (`contract`), null when it declares none. */
+  contract: string | null;
+  availability: ModuleAvailability;
+  requires: string[];
+  /** Its slots: name, what a contribution does, the unique key, and the active modules contributing (with their unique value). */
+  slots: { name: string; description: string; unique: string | null; contributions: { module: string; key: string | null }[] }[];
+  /** Its contributions to other modules' slots: the slot, the host module and the contribution's unique value (null without one). */
+  contributes: { slot: string; host: string; key: string | null }[];
+  /** The limits it declares with the server's values (env or the module default; a workspace's plan may differ: workspaceLimits). */
+  limits: { name: string; default: number; meaning: string }[];
+  /** Its own error codes (beyond the core catalogue). */
+  errors: ModuleErrorDoc[];
+  /** The dedicated dashboard editor its config declares it fits (`dashboard.editor`), null for the generic form. */
+  editor: ModuleDashboardEditor | null;
+}
+
+/** A slot contribution's unique value as text (null when the slot has no unique key or the value is missing). */
+function uniqueKeyOf(value: unknown, unique: string | undefined): string | null {
+  if (unique === undefined || typeof value !== 'object' || value === null) return null;
+  const k = (value as Record<string, unknown>)[unique];
+  if (k === undefined || k === null) return null;
+  return typeof k === 'string' ? k : JSON.stringify(k);
 }
 
 /** One module's own error codes (a section of the error catalogue). */
@@ -359,6 +401,13 @@ export interface ModuleDashboardView {
   availability: ModuleAvailability;
   /** The dedicated config editor the module declares (`dashboard.editor`), or null for the generic form. */
   editor: ModuleDashboardEditor | null;
+  /** NSO-347 — the module's facts for the page's "About this module": where it came from, its contract range, requires, slots, contributions and error codes. */
+  source: ModuleSource;
+  contract: string | null;
+  requires: string[];
+  slots: ModuleFacts['slots'];
+  contributes: ModuleFacts['contributes'];
+  errors: ModuleErrorDoc[];
 }
 
 export interface DecisionInput {
@@ -450,12 +499,22 @@ export class ModuleRuntime {
     return this.byName.get(name);
   }
 
+  /**
+   * Where the active module `name` was loaded from — the single place that
+   * answers it (summary, moduleFacts, skill_info): `dir` when the
+   * DROBEK_MODULES_DIR loader found it in the operator's directory (its
+   * ModuleOrigin), `builtin` otherwise. Never a path on disk.
+   */
+  sourceOf(name: string): ModuleSource {
+    return this.origins[name]?.source ?? 'builtin';
+  }
+
   /** The active modules (name, version, source, contract) in DROBEK_MODULES order — for /healthz and /api/version. */
   summary(): ModuleSummary[] {
     return this.modules.map((m) => ({
       name: m.name,
       version: m.version,
-      source: this.origins[m.name]?.source ?? 'builtin',
+      source: this.sourceOf(m.name),
       contract: m.contract ?? null,
     }));
   }
@@ -481,6 +540,43 @@ export class ModuleRuntime {
     return this.modules
       .filter((m) => (m.errors ?? []).length > 0)
       .map((m) => ({ module: m.name, errors: m.errors!.map((e) => ({ code: e.code, meaning: e.meaning, fix: e.fix })) }));
+  }
+
+  /** The facts of one active module (see ModuleFacts), or null when no such module is active. */
+  moduleFacts(name: string): ModuleFacts | null {
+    const m = this.byName.get(name);
+    if (!m) return null;
+    const hostOf = (slot: string) => this.modules.find((h) => h.slots && Object.prototype.hasOwnProperty.call(h.slots, slot));
+    const contributes: ModuleFacts['contributes'] = [];
+    for (const [slot, list] of this.slotContributions) {
+      const host = hostOf(slot);
+      for (const c of list) {
+        if (c.module === m.name) contributes.push({ slot, host: host?.name ?? '', key: uniqueKeyOf(c.value, host?.slots?.[slot]?.unique) });
+      }
+    }
+    return {
+      name: m.name,
+      version: m.version,
+      source: this.sourceOf(m.name),
+      contract: typeof m.contract === 'string' ? m.contract : null,
+      availability: m.availability ?? 'default',
+      requires: [...(m.requires ?? [])],
+      slots: Object.entries(m.slots ?? {}).map(([slot, def]) => ({
+        name: slot,
+        description: def.description,
+        unique: def.unique ?? null,
+        contributions: (this.slotContributions.get(slot) ?? []).map((c) => ({ module: c.module, key: uniqueKeyOf(c.value, def.unique) })),
+      })),
+      contributes,
+      limits: (m.limits ?? []).map((l) => ({ name: l.env, default: this.deps.limits.defaults()[l.env] ?? l.default, meaning: l.meaning })),
+      errors: (m.errors ?? []).map((e) => ({ code: e.code, meaning: e.meaning, fix: e.fix })),
+      editor: m.dashboard?.editor ?? null,
+    };
+  }
+
+  /** The facts of every active module, in DROBEK_MODULES order. */
+  moduleFactsList(): ModuleFacts[] {
+    return this.modules.map((m) => this.moduleFacts(m.name)!);
   }
 
   // ── end users ──
@@ -720,8 +816,17 @@ export class ModuleRuntime {
     if (m.secrets?.length) {
       out.secrets = m.secrets.map((x) => ({ name: x.name, description: x.description, required: x.required === true }));
     }
+    const facts = this.moduleFacts(m.name);
     out.errors = (m.errors ?? []).map((e) => ({ code: e.code, meaning: e.meaning, fix: e.fix }));
     out.availability = m.availability ?? 'default';
+    if (facts) {
+      out.version = facts.version;
+      out.source = facts.source;
+      out.contract = facts.contract;
+      out.requires = facts.requires;
+      out.slots = facts.slots;
+      out.contributes = facts.contributes;
+    }
     return out;
   }
 
@@ -779,6 +884,7 @@ export class ModuleRuntime {
     }
     const docs = m.secrets ?? [];
     const status = await secretsStatus(app.id, m.name, docs.map((s) => s.name));
+    const facts = this.moduleFacts(m.name)!;
     const view: ModuleDashboardView = {
       name: m.name,
       version: m.version,
@@ -799,6 +905,12 @@ export class ModuleRuntime {
       confirms: Boolean(m.confirmRequired),
       availability: m.availability ?? 'default',
       editor: m.dashboard?.editor ?? null,
+      source: facts.source,
+      contract: facts.contract,
+      requires: facts.requires,
+      slots: facts.slots,
+      contributes: facts.contributes,
+      errors: facts.errors,
     };
     const info = await this.appInfo(m, app, config);
     if (info) view.info = info;
@@ -1402,6 +1514,8 @@ export interface LoadRuntimeOptions extends ResolveOptions {
   log?: Logger;
   /** Use these modules instead of resolving DROBEK_MODULES (tests). */
   modules?: AnyModule[];
+  /** Where the given `modules` came from (tests; absent: builtin). Ignored without `modules`. */
+  origins?: Record<string, ModuleOrigin>;
   /** Directory of the general skills (default: generalSkillsDir()). null = none. */
   skillsDir?: string | null;
   /** Apply a module's migrations (default: runJournalMigrations against DATABASE_URL). */
@@ -1418,7 +1532,7 @@ export async function loadModuleRuntime(opts: LoadRuntimeOptions = {}): Promise<
   const env = opts.env ?? process.env;
   const log = opts.log ?? opts.deps?.log ?? createConsoleLogger('modules');
   const { modules, origins } = opts.modules
-    ? { modules: checkModuleSet(opts.modules, env, log), origins: {} }
+    ? { modules: checkModuleSet(opts.modules, env, log), origins: opts.origins ?? {} }
     : await loadModuleSet(env, { ...opts, log });
   const authority = endUserAuthorityOf(modules);
 

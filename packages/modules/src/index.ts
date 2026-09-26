@@ -218,6 +218,7 @@ export {
   type LoadRuntimeOptions,
   type ModuleErrorSection,
   type ModuleSummary,
+  type ModuleFacts,
   type PlatformApp,
   type PlatformRequest,
   type RateLimiter,

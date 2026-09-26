@@ -6,10 +6,14 @@
  * GET (viewer+): the module's config as a form generated from its JSON
  * Schema, the pending change (a before → after diff per path, the module's
  * own confirmRequired strings + a plain-language risk note each), the
- * declared secrets (`hasSecret` + when set — NEVER a value), and for the
- * built-in `data` / `proxy` modules the collections + rules editor / the
- * per-app upstream assignments. A viewer gets the same page without any
- * control.
+ * declared secrets (`hasSecret` + when set — NEVER a value), the module's
+ * facts ("About this module": version, source, contract range, requires,
+ * slots, contributions, its own error codes — NSO-347), and a dedicated
+ * editor for a module that declares one in `dashboard.editor` — the
+ * collections + rules editor (`collections`) or the per-app upstream
+ * assignments (`upstreams`). The editor follows the declared capability,
+ * never the module's name: a replacement module with the same capability
+ * gets the same editor. A viewer gets the same page without any control.
  *
  * POST (editor+, `requireWorkspaceRole('editor')` BEFORE anything is read
  * from the form: a viewer → 403, a non-member → 404, anonymous → /login):
@@ -43,6 +47,7 @@ import {
   isModuleError,
   moduleRuntime,
   setModuleSecret,
+  type ModuleDashboardEditor,
   type ModuleRuntime,
 } from '@drobek/modules';
 import { requireWorkspaceRole } from '@drobek/tenancy';
@@ -65,11 +70,20 @@ import {
 import { loadPendingBanner } from '../pending-banner.server.js';
 import { canPublish } from '../view.js';
 
-/** Built-in modules whose top-level config key has its own editor instead of a JSON field. */
-const DEDICATED_EDITORS: Record<string, { kind: 'collections' | 'upstreams'; key: string }> = {
-  data: { kind: 'collections', key: 'collections' },
-  proxy: { kind: 'upstreams', key: 'upstreams' },
+/**
+ * The top-level config key each dedicated editor edits (instead of a form
+ * field). A module opts in with `dashboard.editor` — a capability
+ * declaration; the module's name plays no part.
+ */
+const EDITOR_CONFIG_KEY: Record<ModuleDashboardEditor, string> = {
+  collections: 'collections',
+  upstreams: 'upstreams',
 };
+
+/** The dedicated editor a module view declares, with the config key it takes over (null: the generic form only). */
+function dedicatedEditor(view: { editor: ModuleDashboardEditor | null }): { kind: ModuleDashboardEditor; key: string } | null {
+  return view.editor ? { kind: view.editor, key: EDITOR_CONFIG_KEY[view.editor] } : null;
+}
 
 /** Who may call a proxied upstream (`owner` has no meaning there). */
 const CALL_PRINCIPALS = ['public', 'user', 'admin'] as const;
@@ -170,7 +184,7 @@ function upstreamsOf(config: unknown, info: Record<string, unknown> | undefined)
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const { access, app, runtime, name, hookApp } = await context(request, params, 'viewer');
   const view = await runtime.moduleView(hookApp, name);
-  const editor = DEDICATED_EDITORS[name] ?? null;
+  const editor = dedicatedEditor(view);
   const fields = schemaFields(view.schema, editor ? [editor.key] : []);
   const ops = Object.keys(view.ops);
 
@@ -193,6 +207,20 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     /** NSO-342: the app header + tabs (and the "taken down" banner, NSO-293). */
     header: await appHeaderData({ access, app }),
     module: { name: view.name, version: view.version, useWhen: view.use_when, confirms: view.confirms },
+    /** NSO-347: "About this module" — never a path on disk, never a secret. */
+    about: {
+      version: view.version,
+      source: view.source,
+      contract: view.contract,
+      availability: view.availability,
+      requires: view.requires,
+      slots: view.slots,
+      contributes: view.contributes,
+      editor: view.editor,
+    },
+    errors: view.errors,
+    /** The workspace Modules page (the same facts for every module of the server). */
+    modulesHref: `/workspaces/${encodeURIComponent(access.workspace.slug)}/modules#module-${encodeURIComponent(view.name)}`,
     fields,
     values: fieldValues(fields, view.config),
     pending,
@@ -251,7 +279,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   // ── config (through the configure path) ──
   const view = await runtime.moduleView(hookApp, name);
   const config = asObject(view.config);
-  const editor = DEDICATED_EDITORS[name] ?? null;
+  const editor = dedicatedEditor(view);
   const configure = async (
     patch: unknown,
     err: { target?: string; fieldPaths: string[]; values?: Record<string, FieldValue>; anchor: string }

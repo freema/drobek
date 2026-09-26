@@ -1389,6 +1389,26 @@ block, then `next` is pushed and the single MR opened.
   and `$tag$` delimiters (keeping line numbers) and scans the SQL inside a
   `DO $$ … $$` block like any other; the generic `ALTER|DROP <kind>` rule
   only fires at a statement start (`ALTER TABLE t ALTER c` is a clause).
+- NSO-347: the dashboard must not decide by a built-in module's NAME — a
+  guard (`packages/dashboard/src/module-names-guard.test.ts`) refuses a
+  `'data'` / `'proxy'` literal and any comparison / `case` / runtime lookup
+  by a built-in name; a deliberate exception (a tab's route segment) carries
+  `module-name-guard: allow` on the line or the line above. Editors follow
+  `view.editor` (`dashboard.editor`), tabs follow the authorities.
+- NSO-347: generic-form inputs of a record / object-list entry are named
+  `cfg.<path>[<i>].<entry path>` (+ `.$key`, `.$remove`, `.$new`, and
+  `cfg.<path>.$count`). The one empty "add" entry is skipped when its values
+  equal `blankEntryValues()` (the schema defaults) — so a new entry starts
+  from the defaults, and a filled record entry without a name is an error,
+  not silently dropped. Input errors inside an entry are keyed by the
+  TOP-LEVEL record / list path (fieldErrors does the same for schema issues).
+- NSO-347: `ModuleRuntime.moduleFacts()` is the single source of the
+  workspace Modules page, the module page's About and the `skill_info`
+  facts. `source` is read in ONE place, `ModuleRuntime.sourceOf(name)`:
+  the `ModuleOrigin` the DROBEK_MODULES_DIR loader (NSO-345,
+  `loadModuleSet`) recorded (`dir`), else `builtin` — also what
+  `summary()` (/healthz) serves. Tests that load `{ modules }` directly pass
+  `loadModuleRuntime({ modules, origins: { x: { source: 'dir', path } } })`.
 
 ## Failed approaches
 

@@ -14,10 +14,13 @@ export interface AppTab {
   label: string;
 }
 
+// The keys / paths below are route segments; the Data, Forms, Users and
+// Uploads tabs are served by whichever module declares the authority.
 export const APP_TABS: readonly AppTab[] = [
   { key: 'overview', to: '', label: 'Overview' },
   { key: 'files', to: 'files', label: 'Files' },
   { key: 'assets', to: 'assets', label: 'Assets' },
+  // module-name-guard: allow — the Data tab's route segment, not a module name.
   { key: 'data', to: 'data', label: 'Data' },
   { key: 'modules', to: 'modules', label: 'Modules' },
   { key: 'forms', to: 'forms', label: 'Forms' },

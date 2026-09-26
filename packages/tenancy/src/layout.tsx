@@ -222,7 +222,7 @@ export function DashboardPage({ crumbs, children }: { crumbs?: readonly Crumb[];
   );
 }
 
-export type WorkspaceSection = 'apps' | 'members' | 'activity' | 'upstreams';
+export type WorkspaceSection = 'apps' | 'members' | 'activity' | 'upstreams' | 'modules';
 
 /** The workspace's landing page — its apps (the breadcrumb's workspace link). */
 export function workspaceHref(slug: string): string {
@@ -242,6 +242,8 @@ const SECTIONS: readonly { key: WorkspaceSection; label: string; path: string }[
   { key: 'members', label: 'Members', path: '' },
   { key: 'activity', label: 'Activity', path: 'activity' },
   { key: 'upstreams', label: 'Upstreams', path: 'upstreams' },
+  // NSO-347: the server's platform modules, read-only for every member.
+  { key: 'modules', label: 'Modules', path: 'modules' },
 ];
 
 function sectionHref(slug: string, path: string): string {

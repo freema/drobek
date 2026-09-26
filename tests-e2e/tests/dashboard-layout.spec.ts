@@ -180,6 +180,7 @@ test('one layout: breadcrumb, app header + tabs on every app page, aligned filte
   for (const [path, tab, label] of [
     ['', 'members', 'Members'],
     ['/upstreams', 'upstreams', 'Upstreams'],
+    ['/modules', 'modules', 'Modules'],
   ] as const) {
     await page.goto(`/workspaces/${ws.slug}${path}`);
     expect((await crumbs(page)).map((c) => c.label), path).toEqual(['Workspaces', wsName, label]);

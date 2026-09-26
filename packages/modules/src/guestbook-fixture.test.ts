@@ -84,6 +84,15 @@ describe('the guestbook fixture from DROBEK_MODULES_DIR', () => {
     expect(JSON.stringify(runtime.summary())).not.toContain(dir);
   });
 
+  it('moduleFacts and skill_info report the source from the loader (dir for the directory, builtin for the server), without the path', () => {
+    expect(runtime.sourceOf('guestbook')).toBe('dir');
+    expect(runtime.sourceOf('hello')).toBe('builtin');
+    expect(runtime.moduleFacts('guestbook')).toMatchObject({ name: 'guestbook', source: 'dir', contract: '^1.1' });
+    expect(runtime.moduleFacts('hello')).toMatchObject({ name: 'hello', source: 'builtin' });
+    expect(runtime.skillInfo('guestbook')).toMatchObject({ source: 'dir' });
+    expect(JSON.stringify([runtime.moduleFacts('guestbook'), runtime.skillInfo('guestbook')])).not.toContain(dir);
+  });
+
   it('applied its migrations under its own journal', async () => {
     const r = await pg.query<{ n: number }>(`SELECT count(*)::int AS n FROM drizzle.${moduleJournalTable('guestbook')}`);
     expect(r.rows[0].n).toBe(1);

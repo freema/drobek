@@ -267,7 +267,7 @@ The contract fields of 1.1:
 | `errors` | `[{ code, meaning, fix }]`: `code` matches `^[a-z][a-z0-9_]{2,40}$`, is not a core code (`CORE_ERROR_CODES`, the catalogue in `/llms-full.txt`) and is declared by no other active module; meaning and fix are required |
 | `slots` / `contributes` | see [Slots](#slots) |
 | `availability` | `'default'` (the default: every workspace of the server) or `'opt-in'`; returned by `skill_info('<name>')` and the dashboard's module view |
-| `dashboard.editor` | `'collections'` (a `collections` config shaped like `data`'s) or `'upstreams'` (an `upstreams` config shaped like `proxy`'s): declares which dedicated dashboard editor the config fits; `data` and `proxy` declare theirs |
+| `dashboard.editor` | `'collections'` (a `collections` config shaped like `data`'s) or `'upstreams'` (an `upstreams` config shaped like `proxy`'s): declares which dedicated dashboard editor the config fits; `data` and `proxy` declare theirs. The dashboard picks the editor by this capability only, never by the module's name — a replacement module that declares it gets the same editor, a module without it gets the generic form |
 | `hooks.onAppDelete` | `(app, services)` after the app was deleted, best effort |
 
 ### Error codes
@@ -813,6 +813,12 @@ the tool call. A change the owner makes in the dashboard form sends no e-mail.
 
 ### The dashboard Modules tab (M2-02)
 
+The dashboard knows no built-in module by name: dedicated editors follow
+`dashboard.editor`, the Data / Forms / Users / Uploads tabs follow the
+authorities (`records`, `submissions`, `endUsers`, `files`). A replacement
+module or a third-party one gets the same pages (a grep guard in
+`@drobek/dashboard` keeps it that way).
+
 `/workspaces/<ws>/apps/<slug>/modules` lists the active modules for the app
 (configured or defaults, what waits, missing required secrets); the app page
 shows a "N changes await confirmation" banner (`PendingBanner` +
@@ -825,29 +831,60 @@ shows a "N changes await confirmation" banner (`PendingBanner` +
   Confirm / Reject (the same `runtime.confirm` / `reject` as the API above);
 - **the configuration form**, generated from the module's `configSchema`
   (zod → JSON Schema, input side) by the dashboard's own renderer: objects
-  (nested), string, string enum, number, integer, boolean, arrays of strings
-  (one per line); anything else — a record of named entries, arrays of
-  objects, unions — is a JSON field. The form posts plain fields; the server
+  (nested), string, string enum (a select), number / integer (with
+  `min` / `max`), boolean, arrays of strings (one per line), arrays of a
+  string enum (checkboxes), **records of named entries**
+  (`z.record(…)` — `additionalProperties`) and **arrays of objects**. A
+  record or list renders each entry with its own fields (recursively), a
+  "Remove" checkbox per entry and one empty entry to add a new one (a record
+  entry needs a name); entries nest up to 3 levels deep, below that a value
+  is a JSON field. Anything else — unions, a record of anything
+  (`z.record(z.string(), z.unknown())`) — is a JSON field. The zod
+  `.describe()` text (JSON Schema `description`) is shown under the field.
+  No client JS: the form posts plain fields; the server
   rebuilds the config, turns it into a merge patch against the config in
   force and runs **the same configure path as `configure_module`**
   (`surface: 'web'`: audit actor `user`), so a relaxation becomes a pending
   change there too. The module's schema is the only validator: its issues
-  come back at their fields (`allow.emails[0]` → the `allow.emails` field).
-  Give fields a `title` / `description` in zod (`.meta()`) to label them;
-- the built-in **data** module gets a collections editor instead of a JSON
-  field: per collection a table operation × principal (Anyone, Signed-in
-  users, Record owner, App admins; nothing checked = `none`) and the JSON
-  Schema textarea; add / remove a collection. The built-in **proxy** module
-  gets the workspace's upstreams (registered, secret set — never the value
-  or base URL) with assign / unassign, the `call` rule and `rateLimit`;
+  come back at their fields (`allow.emails[0]` → the `allow.emails` field;
+  an issue inside a record / list entry at the record / list, naming the
+  entry). Give fields a `title` / `description` in zod (`.meta()` /
+  `.describe()`) to label them;
+- a module declaring **`dashboard.editor: 'collections'`** (the built-in
+  data module) gets a collections editor instead of form fields for its
+  `collections` key: per collection a table operation × principal (Anyone,
+  Signed-in users, Record owner, App admins; nothing checked = `none`) and
+  the JSON Schema textarea; add / remove a collection. A module declaring
+  **`'upstreams'`** (the built-in proxy module) gets the workspace's
+  upstreams for its `upstreams` key (registered, secret set — never the
+  value or base URL) with assign / unassign, the `call` rule and
+  `rateLimit`;
 - **the secrets** the module declares: write-only. The page shows the name,
   the description, `required`, whether it is set and when — never the value.
   Set / Rotate / Remove (`setModuleSecret` / `deleteModuleSecret`, audit
   `module.secret_set` `{ module, name, rotated }` / `module.secret_remove`).
-  A stored value is followed by a redirect, so it appears in no response.
+  A stored value is followed by a redirect, so it appears in no response;
+- **About this module**: version, source (`builtin` / `dir`), the declared
+  contract range, availability, the modules it requires, the dedicated
+  editor it declares, the slots it offers (and who contributes) and its
+  contributions to other modules' slots, with a link to the workspace
+  Modules page; then **its error codes** (code, meaning, fix).
 
 Viewers see all of it without a single control; every POST needs the editor
 role (viewer → 403).
+
+### The workspace Modules page
+
+`/workspaces/<ws>/modules` (the workspace's **Modules** tab, every member —
+viewer+, read-only) lists every active module of the server: name, version,
+source (`builtin` — a package of the server; `dir` — installed by the
+operator), the contract range it declares, availability, the modules it
+requires, the slots it offers with their contributors (and the unique
+value of each contribution), its own contributions, the limits it declares
+with the value in force for this workspace (the limits provider's plan,
+else the server's env / default) and its error codes. Never a path on disk,
+never a secret. The facts come from `ModuleRuntime.moduleFacts()`; agents
+get the same fields from `skill_info('<name>')`.
 
 ## Skills: `skill_info`
 
@@ -860,7 +897,11 @@ needs one:
   module also `sdk { import, types }`, `config { schema (JSON Schema),
   defaults, confirm_required }`, `limits [{ name, value, meaning }]`,
   `secrets [{ name, description, required }]`, `errors [{ code, meaning,
-  fix }]` (its own codes, `[]` when none) and `availability`;
+  fix }]` (its own codes, `[]` when none), `availability`, and the facts the
+  workspace Modules page shows: `version`, `source` (`builtin` / `dir`),
+  `contract` (the declared range, `null` when none), `requires`, `slots
+  [{ name, description, unique, contributions [{ module, key }] }]` and
+  `contributes [{ slot, host, key }]`;
 - an unknown name → `not_found` with `available` and `hint: "skill_info()"`.
 
 It never returns a secret value or any app's config.
