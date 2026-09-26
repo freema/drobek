@@ -1,6 +1,6 @@
 # Changelog — drobek (core)
 
-## Unreleased (`next`)
+## v0.2.0 — 2026-09-26
 
 ### Added
 - **Resend as the mail transport** (`EMAIL_TRANSPORT=resend`). Every drobek e-mail (dashboard sign-in codes, workspace invites, abuse notices, module mail) goes through one transport: `smtp` (the default, unchanged, Mailpit in dev) or `resend`, which posts each message to `https://api.resend.com/emails` with `fetch` (no vendor SDK, no new dependency, 10 s timeout). `resend` needs `RESEND_API_KEY`; without it, or with an unknown `EMAIL_TRANSPORT`, the server refuses to start. `EMAIL_FROM` stays the sender and must be on a domain verified in Resend. A Resend 429, 4xx or 5xx is reported like any failed send (module mail answers 503); the error names the HTTP status and Resend's error name, never the key or the response text. The rate limits (`OTP_*`, `EMAIL_GLOBAL_*`, …) apply above the transport, the same for both.

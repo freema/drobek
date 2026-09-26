@@ -1247,7 +1247,7 @@ dependency of the server (see [Enabling modules](#enabling-modules)).
 | Module contract (`MODULE_CONTRACT_VERSION`) | drobek image / npm packages | A module declaring |
 | --- | --- | --- |
 | `1.0.0` | v0.1.0 – v0.1.4 | `'^1.0'` (or no `contract`) |
-| `1.1.0` | the first release after v0.1.4 (on `next`) | `'^1.1'` or `'^1.0'` |
+| `1.1.0` | v0.2.0 – | `'^1.1'` or `'^1.0'` |
 
 `@drobek/modules@X.Y.Z` is the contract of the image `ghcr.io/freema/drobek:vX.Y.Z`
 (both come from one tag). Additive contract changes raise the minor version
