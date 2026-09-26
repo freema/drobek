@@ -215,6 +215,7 @@ test('app hosts: preview / publish / rollback / --vN, served files, headers, cac
       previous_version: null,
       published_url: urlOf(prodHost(slug)),
       domains: [prodHost(slug)],
+      assets: 'draft',
     });
     const prod1 = await hostRequest(prodHost(slug));
     expect(prod1.status).toBe(200);
