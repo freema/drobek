@@ -88,8 +88,8 @@ What you need:
   `example.com`) is the safer choice; `apps.<your dashboard domain>` works too.
   No DNS at all (a test box)? Use `DOMAIN=localhost` in step 3 — Caddy's local
   CA (`tls internal`), reachable only from the machine itself.
-- an SMTP account (host, port, user, password, a sender address) — sign-in
-  codes go out by e-mail.
+- an SMTP account (host, port, user, password, a sender address) or a
+  Resend API key — sign-in codes go out by e-mail.
 
 Every command runs as root (or prefix `sudo`).
 

@@ -34,8 +34,8 @@ What you need:
   `example.com`) is the safer choice; `apps.<your dashboard domain>` works too.
   No DNS at all (a test box)? Use `DOMAIN=localhost` in step 3 — Caddy's local
   CA (`tls internal`), reachable only from the machine itself.
-- an SMTP account (host, port, user, password, a sender address) — sign-in
-  codes go out by e-mail.
+- an SMTP account (host, port, user, password, a sender address) or a
+  Resend API key — sign-in codes go out by e-mail.
 
 Every command runs as root (or prefix `sudo`).
 
@@ -184,8 +184,10 @@ healthcheck each. Only Caddy publishes ports (80, 443, 443/udp —
 `HTTP_PORT` / `HTTPS_PORT` / `PUBLISH_IP` move them); drobek, postgres and
 redis stay on the internal network. Nothing secret is written in the file —
 every value comes from `.env.production` (`--env-file` for interpolation,
-`env_file` for drobek). A missing secret, host or `SMTP_HOST` stops
-`docker compose` before anything starts (`${VAR:?}`), and
+`env_file` for drobek). A missing secret or host stops
+`docker compose` before anything starts (`${VAR:?}`); a missing mail
+transport (`SMTP_HOST`, or `RESEND_API_KEY` with `EMAIL_TRANSPORT=resend`)
+stops drobek itself at start, and
 `docker compose --env-file .env.production -f docker-compose.production.yaml config`
 prints no warnings. The compose project is **`drobek-prod`** (not `drobek`,
 the dev stack's name in a checkout — a `down -v` here can never reach the dev
@@ -208,7 +210,8 @@ built-ins.
 | `POSTGRES_PASSWORD` | yes, secret | generated; only used when `pg_data` is first created |
 | `DROBEK_MASTER_KEY` | yes, secret | generated, 64 hex; encrypts upstream secrets, signs app cookies — keep it with your backups |
 | `TLS_ASK_TOKEN` | secret | generated; the on-demand TLS `ask` token (drobek + Caddy) |
-| `SMTP_HOST` | yes | SMTP server; `SMTP_PORT` (587), `SMTP_SECURE` (0 / 1 = implicit TLS), `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM` |
+| `SMTP_HOST` | yes (smtp) | SMTP server; `SMTP_PORT` (587), `SMTP_SECURE` (0 / 1 = implicit TLS), `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM` |
+| `EMAIL_TRANSPORT` / `RESEND_API_KEY` | — (`smtp`) / secret | `resend` sends through the Resend API instead of SMTP (then `SMTP_*` is not needed and `RESEND_API_KEY` is) |
 | `SUPERADMIN_EMAIL` | recommended | your sign-in e-mail(s), super-admin over every workspace |
 | `LANDING_URL` | — | your own website: `<PUBLIC_APP_URL>/` answers 301 there instead of the built-in landing page |
 | `DASHBOARD_GITHUB_STARS` | — (on) | `off` = the dashboard footer makes no call to `api.github.com` for the repository's star count |
@@ -339,7 +342,9 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | Variable | Default | What |
 | --- | --- | --- |
 | `SUPERADMIN_EMAIL` | — | comma-separated sign-in addresses with super-admin rights over every workspace (the abuse queue, reports) |
-| `SMTP_HOST` / `SMTP_PORT` / `SMTP_SECURE` / `SMTP_USER` / `SMTP_PASS` / `EMAIL_FROM` | — / 587 / 0 / — / — / — | **`SMTP_HOST` required** — the SMTP server for sign-in codes and module mail (`SMTP_SECURE=1` = implicit TLS) |
+| `EMAIL_TRANSPORT` | smtp | how all mail goes out (sign-in codes, invites, module mail): `smtp` or `resend`; an unknown value stops the server at start |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_SECURE` / `SMTP_USER` / `SMTP_PASS` / `EMAIL_FROM` | — / 587 / 0 / — / — / — | **`SMTP_HOST` required with `smtp`** (production refuses to start without it) — the SMTP server for sign-in codes and module mail (`SMTP_SECURE=1` = implicit TLS); `EMAIL_FROM` is the sender for both transports |
+| `RESEND_API_KEY` | — | **required with `resend`**, a secret (the server refuses to start without it; it is never logged or shown) — mail goes to `POST https://api.resend.com/emails` with a 10 s timeout; `EMAIL_FROM` must be on a domain verified in Resend |
 | `OTP_IP_SHORT_LIMIT` / `OTP_IP_DAILY_LIMIT` | 5 per 15 min / 20 per 24 h | dashboard sign-in codes sent per client IP |
 | `OTP_EMAIL_HOURLY_LIMIT` / `OTP_EMAIL_COOLDOWN_MS` | 3 per hour / 60000 | codes per address, minimum gap per address |
 | `OTP_GLOBAL_HOURLY_MAX` | 100 | codes per hour server-wide, then sending pauses |

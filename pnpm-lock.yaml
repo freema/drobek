@@ -50,6 +50,9 @@ importers:
       '@drobek/domains':
         specifier: workspace:*
         version: link:../../packages/domains
+      '@drobek/email':
+        specifier: workspace:*
+        version: link:../../packages/email
       '@drobek/insights':
         specifier: workspace:*
         version: link:../../packages/insights

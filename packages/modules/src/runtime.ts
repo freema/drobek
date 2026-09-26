@@ -174,7 +174,7 @@ export function memoryRateLimiter(now: () => number = Date.now): RateLimiter & {
   return fn;
 }
 
-/** Plain-text mail through the operator's SMTP (@drobek/email — the transport of the login codes too). */
+/** Plain-text mail through the operator's transport (@drobek/email: SMTP or Resend per EMAIL_TRANSPORT — the transport of the login codes too). */
 export function smtpEmailTransport(log: Logger, env: NodeJS.ProcessEnv = process.env): EmailTransport {
   return {
     async send({ to, subject, text, fromName, replyTo }) {

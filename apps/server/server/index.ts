@@ -2,8 +2,9 @@
  * drobek server entry — the ONE process of the self-hostable image (M0-01).
  *
  * Boot order: refuse insecure secrets (PHY-76 #6), an invalid APPS_DOMAIN,
- * TRUST_PROXY, TLS_ASK_TOKEN, LIMITS_PROVIDER_URL, DOMAINS_* or
- * APP_FRAME_SRC_EXTRA → apply core migrations →
+ * TRUST_PROXY, TLS_ASK_TOKEN, LIMITS_PROVIDER_URL, DOMAINS_*,
+ * APP_FRAME_SRC_EXTRA or e-mail transport (EMAIL_TRANSPORT / RESEND_API_KEY /
+ * SMTP_HOST) → apply core migrations →
  * load the platform modules (DROBEK_MODULES: their migrations, the composed
  * SDK, the skills — a bad module stops the start, M1-01) →
  * mount the app-host dispatcher (M0-06), then React Router (Vite middleware in
@@ -22,6 +23,7 @@ import { trustProxyConfigError } from '@drobek/auth';
 import { createConsoleLogger, secretsConfigError } from '@drobek/core';
 import { dbErrorForLog, runCoreMigrations } from '@drobek/db';
 import { dnsMockWarning, domainsConfigError } from '@drobek/domains';
+import { emailConfigError } from '@drobek/email';
 import { limitsProviderConfigError, moduleRuntime } from '@drobek/modules';
 import {
   ServeStore,
@@ -44,7 +46,8 @@ const configError =
   tlsAskConfigError(process.env) ??
   limitsProviderConfigError(process.env) ??
   domainsConfigError(process.env) ??
-  frameSrcConfigError(process.env);
+  frameSrcConfigError(process.env) ??
+  emailConfigError(process.env);
 if (configError) {
   console.error(configError);
   process.exit(1);

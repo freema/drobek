@@ -1510,6 +1510,15 @@ block, then `next` is pushed and the single MR opened.
 - NSO-348: React Router resource routes skip RR's own action CSRF check,
   but the Express Origin-check middleware still runs — a cross-site IdP
   POST needs its path in `ORIGIN_CHECK_EXEMPT_PATHS`.
+- NSO-361: every drobek e-mail goes through `sendEmail` in `@drobek/email`
+  (the login code and invite senders no longer touch `getSmtpTransport`); the
+  transport is `emailTransportKind(env)`. `emailConfigError` runs in the
+  server's boot chain and now also refuses production `smtp` without
+  `SMTP_HOST` (the prod compose dropped its `${SMTP_HOST:?}`). Resend errors
+  are `EmailSendError { code, status, retryable }` and never carry the key or
+  Resend's `message` text (it can quote the recipient) — keep it that way.
+  `@drobek/tenancy` gets `sendEmail` through the `@drobek/auth` re-export (no
+  direct dependency); `apps/server` depends on `@drobek/email` directly.
 
 ## Failed approaches
 

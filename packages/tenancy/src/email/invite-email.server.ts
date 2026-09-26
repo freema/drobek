@@ -1,18 +1,10 @@
 /**
  * Workspace-invite email (U4, PHY-54) — rendered with the shared @drobek/auth
- * layout and delivered over the SAME generic SMTP transport (Hostinger in
- * prod, mailpit locally). Addresses are masked in every log line.
+ * layout and delivered over the SAME operator transport as the sign-in codes
+ * (@drobek/email: SMTP or Resend per EMAIL_TRANSPORT, mailpit locally).
+ * Addresses are masked in every log line.
  */
-import {
-  emailBrand,
-  escapeHtml,
-  getEmailFrom,
-  getSmtpTransport,
-  logger,
-  maskEmail,
-  renderEmailLayout,
-  smtpConfigured,
-} from '@drobek/auth';
+import { emailBrand, escapeHtml, logger, maskEmail, renderEmailLayout, sendEmail } from '@drobek/auth';
 import type { WorkspaceRole } from '../roles.js';
 
 export interface InviteEmailVars {
@@ -67,7 +59,7 @@ export function renderInviteEmail(vars: InviteEmailVars): RenderedInviteEmail {
   };
 }
 
-/** Deliver the invite via SMTP (dev fallback without SMTP: log the link). */
+/** Deliver the invite through the operator's transport (dev fallback without SMTP: log the link). */
 export async function sendInviteEmail(args: {
   email: string;
   workspaceName: string;
@@ -80,30 +72,16 @@ export async function sendInviteEmail(args: {
     acceptUrl: args.acceptUrl,
   });
 
-  if (smtpConfigured()) {
-    const t = await getSmtpTransport();
-    await t.sendMail({
-      from: getEmailFrom(),
-      to: args.email,
-      subject,
-      text,
-      html,
-    });
+  // 'not_configured' only happens outside production (SMTP without SMTP_HOST).
+  const r = await sendEmail({ to: args.email, subject, text, html });
+  if (r === 'sent') {
     logger.info('[mail] workspace invite sent', {
       email: maskEmail(args.email),
     });
     return;
   }
-
-  if (process.env.NODE_ENV !== 'production') {
-    logger.info('[mail] SMTP not configured — dev fallback, logging invite', {
-      email: maskEmail(args.email),
-      acceptUrl: args.acceptUrl,
-    });
-    return;
-  }
-
-  throw new Error(
-    'Configure SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS for production'
-  );
+  logger.info('[mail] SMTP not configured — dev fallback, logging invite', {
+    email: maskEmail(args.email),
+    acceptUrl: args.acceptUrl,
+  });
 }

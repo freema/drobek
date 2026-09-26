@@ -39,9 +39,9 @@ record behind it is [`vision-plan.md`](./vision-plan.md) (Czech).
  │   5. everything else: React Router (@drobek/dashboard routes, OAuth AS routes, /llms.txt, /report …)         │
  │   in-process jobs (apps/server/server/jobs.ts): blob GC, slug release, domain re-check, audit, files sweep   │
  └──────────────┬───────────────────────────────────────────┬────────────────────────────────┬──────────────────┘
-                │ postgres-js + drizzle                     │ ioredis                        │ nodemailer SMTP
+                │ postgres-js + drizzle                     │ ioredis                        │ SMTP (nodemailer) or Resend
           Postgres 17: users, workspaces, apps,       Redis 7: sessions, rate limits,     any SMTP server
-          versions + blobs, module data, OAuth,       OTP counters, leases, caches,       (Mailpit in dev)
+          versions + blobs, module data, OAuth,       OTP counters, leases, caches,       (EMAIL_TRANSPORT; Mailpit in dev)
           API keys, domains, abuse, audit             serve-cache bust pub/sub
 ```
 
@@ -69,7 +69,7 @@ record behind it is [`vision-plan.md`](./vision-plan.md) (Czech).
   | `@drobek/agent-dx` | the briefing, the tool manifest, limits, error catalogue, `/llms.txt` renderers |
   | `@drobek/dashboard` | the dashboard routes and their server halves |
   | `@drobek/auth`, `@drobek/tenancy`, `@drobek/audit` | dashboard sign-in (e-mail code, Google), sessions, rate limits, origin check; workspaces and roles; the audit log |
-  | `@drobek/domains`, `@drobek/email`, `@drobek/insights`, `@drobek/proxy` | custom domains; SMTP transport; the error beacon and request stats; upstream registry, envelope crypto, SSRF guard |
+  | `@drobek/domains`, `@drobek/email`, `@drobek/insights`, `@drobek/proxy` | custom domains; the one mail transport of the dashboard and the modules (`EMAIL_TRANSPORT=smtp` via nodemailer, or `resend` via the Resend HTTP API over `fetch`); the error beacon and request stats; upstream registry, envelope crypto, SSRF guard |
   | `@drobek/core`, `@drobek/db`, `@drobek/sdk` | env/config, health, logger, Caddyfile generator; drizzle schema + migrations; the browser SDK core |
   | `modules/{auth,email,forms,data,proxy,files}` | the built-in platform modules (`drobek-module-<name>`) |
   | `create-drobek-module` | the scaffold for external modules; with `@drobek/modules` + `@drobek/sdk` published to npm from each release tag (`scripts/npm-packages.mjs` bundles the private packages in) |

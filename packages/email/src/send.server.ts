@@ -1,16 +1,20 @@
 /**
- * Send one message through the operator's SMTP (EMAIL_FROM is always the
- * sender address — SPF/DKIM belong to the operator's domain). A caller may
- * set a display NAME for the sender and a Reply-To; both are passed to
- * nodemailer as structured address objects, never as header text, and the
- * name is reduced to one plain line first — so nothing a caller passes can
- * inject a header.
+ * Send one message through the operator's transport — SMTP (nodemailer) or
+ * Resend (HTTP API), chosen by EMAIL_TRANSPORT (transport.server.ts).
+ * EMAIL_FROM is always the sender address (SPF/DKIM belong to the operator's
+ * domain; with Resend it must be on a domain verified there). A caller may
+ * set a display NAME for the sender and a Reply-To; both are passed as
+ * structured values, never as header text, and the name is reduced to one
+ * plain line first — so nothing a caller passes can inject a header.
  *
- * Without SMTP_HOST outside production nothing is sent (the caller logs it);
- * in production a missing SMTP config is an error.
+ * SMTP without SMTP_HOST outside production sends nothing (the caller logs
+ * it); in production a missing SMTP config is an error. Resend without
+ * RESEND_API_KEY is always an error (the server refuses to start that way).
  */
 import type { SendMailOptions } from 'nodemailer';
+import { sendViaResend } from './resend.server.js';
 import { getEmailFrom, getSmtpTransport, smtpConfigured } from './smtp.server.js';
+import { emailTransportKind } from './transport.server.js';
 
 export interface OutgoingEmail {
   /** One address (one message per recipient: recipients never see each other). */
@@ -65,6 +69,10 @@ export function messageFor(mail: OutgoingEmail, env: NodeJS.ProcessEnv = process
 
 /** Deliver `mail`; 'not_configured' when SMTP is not set up in dev (nothing was sent). */
 export async function sendEmail(mail: OutgoingEmail, env: NodeJS.ProcessEnv = process.env): Promise<'sent' | 'not_configured'> {
+  if (emailTransportKind(env) === 'resend') {
+    await sendViaResend(mail, fromHeader(mail.fromName, env), env);
+    return 'sent';
+  }
   if (!smtpConfigured(env)) {
     if (env.NODE_ENV === 'production') throw new Error('SMTP is not configured (set SMTP_HOST)');
     return 'not_configured';

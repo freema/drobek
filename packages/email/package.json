@@ -2,7 +2,7 @@
   "name": "@drobek/email",
   "version": "0.1.0",
   "private": true,
-  "description": "The operator's outgoing e-mail: the SMTP transport (nodemailer), the drobek layout and plain-text messages. Shared by the dashboard login, workspace invites and the platform module e-mail.",
+  "description": "The operator's outgoing e-mail: the transport (SMTP via nodemailer, or the Resend HTTP API over fetch — EMAIL_TRANSPORT), the drobek layout and plain-text messages. Shared by the dashboard login, workspace invites and the platform module e-mail.",
   "type": "module",
   "exports": {
     ".": {

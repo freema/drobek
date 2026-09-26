@@ -72,8 +72,9 @@ services:
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-${PUBLIC_APP_URL}}
       APPS_DOMAIN: ${APPS_DOMAIN:?set APPS_DOMAIN in .env.production (apps live on *.<APPS_DOMAIN>)}
       APPS_URL_SCHEME: https
-      # Sign-in codes go out over SMTP; production refuses to send without it.
-      SMTP_HOST: ${SMTP_HOST:?set SMTP_HOST in .env.production (your SMTP server)}
+      # Sign-in codes go out over SMTP_HOST (EMAIL_TRANSPORT=smtp, the default)
+      # or Resend (EMAIL_TRANSPORT=resend + RESEND_API_KEY), both read from
+      # .env.production; drobek refuses to start with neither configured.
       # The same value reaches Caddy (on-demand TLS `ask`); unset = the ask
       # endpoint refuses every certificate.
       TLS_ASK_TOKEN: ${TLS_ASK_TOKEN:-}
