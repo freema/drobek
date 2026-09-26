@@ -9,6 +9,7 @@
   - Migration 0022 adds `apps.published_at` (set by every publish, backfilled from the audit log) and the gallery columns.
 
 ### Changed
+- **The drobek mascot** — the pixel crumb from www is the logo in the core too, from one shared pixel map in `@drobek/email`: the favicon (a `data:` SVG), the breadcrumb (it links to your workspaces), the sign-in pages and the landing page (with the www idle loop, still for reduced motion), the error page, and the e-mail header (drawn with table cells, so it shows where a client blocks images).
 - **Minimal e-mails** — every drobek e-mail (sign-in code, workspace invite, module mail) uses one plain white layout: the wordmark with the crumb, the text, a one-line footer, and no grey card. The sign-in code is one copyable string instead of a box per digit, and "ignore this e-mail if you did not ask" is said once instead of twice.
 
 ## v0.1.4 — 2026-09-25

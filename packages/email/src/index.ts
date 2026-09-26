@@ -10,5 +10,6 @@
  */
 export { smtpConfigured, getSmtpTransport, getEmailFrom, resetSmtpTransportForTests } from './smtp.server.js';
 export { renderEmailLayout, escapeHtml, emailBrand, type EmailLayoutInput } from './layout.server.js';
+export { MASCOT_COLORS, MASCOT_HEIGHT, MASCOT_RECTS, MASCOT_WIDTH, mascotDataUri, mascotEmailHtml, mascotSvg, type MascotRect } from './mascot.js';
 export { renderTextEmailHtml, type TextEmailInput } from './text-email.js';
 export { emailFromParts, fromHeader, safeDisplayName, sendEmail, type OutgoingEmail } from './send.server.js';

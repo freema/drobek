@@ -11,6 +11,7 @@ import {
   useNavigation,
 } from 'react-router';
 import type { action, loader } from './login.verify.server.js';
+import { DrobekMark } from '../mark.js';
 
 export function meta() {
   return [{ title: 'Enter code — drobek' }];
@@ -83,6 +84,9 @@ export default function LoginVerifyRoute() {
 
   return (
     <main style={styles.main}>
+      <div style={{ marginBottom: '1.5rem' }}>
+        <DrobekMark size={48} idle title="drobek" />
+      </div>
       <h1 style={styles.h1}>Enter your code</h1>
       <p style={styles.hint}>
         We sent a 6-digit code to <b>{masked}</b>. It is valid for 10 minutes.

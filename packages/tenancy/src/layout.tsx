@@ -14,6 +14,7 @@
  */
 import type { CSSProperties, ReactNode } from 'react';
 import { Link } from 'react-router';
+import { DrobekMark } from '@drobek/auth/mark';
 import type { WorkspaceNav } from './workspace-nav.js';
 
 /** The content width of every dashboard page. */
@@ -97,13 +98,15 @@ const styles = {
     color: '#1a1a1a',
     lineHeight: 1.6,
   },
+  crumbNav: { display: 'flex', alignItems: 'center', gap: '0.7rem', margin: '0 0 1.5rem' },
+  markLink: { display: 'block', flex: 'none' },
   crumbs: {
     listStyle: 'none',
     display: 'flex',
     flexWrap: 'wrap',
     alignItems: 'baseline',
     gap: '0.15rem 0.45rem',
-    margin: '0 0 1.5rem',
+    margin: 0,
     padding: 0,
     fontSize: '0.88rem',
     color: '#71717a',
@@ -175,10 +178,13 @@ export interface Crumb {
   to?: string;
 }
 
-/** `Workspaces › …` — every part a link except the last. */
+/** The mascot (home) then `Workspaces › …` — every part a link except the last. */
 export function Breadcrumb({ items }: { items: readonly Crumb[] }) {
   return (
-    <nav aria-label="Breadcrumb" data-testid="breadcrumb">
+    <nav aria-label="Breadcrumb" data-testid="breadcrumb" style={styles.crumbNav}>
+      <Link to="/workspaces" aria-label="drobek — workspaces" style={styles.markLink}>
+        <DrobekMark size={24} />
+      </Link>
       <ol style={styles.crumbs}>
         {items.map((c, i) => {
           const last = i === items.length - 1;

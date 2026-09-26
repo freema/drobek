@@ -10,6 +10,7 @@ import {
   useNavigation,
 } from 'react-router';
 import type { action, loader } from './login.server.js';
+import { DrobekMark } from '../mark.js';
 
 export function meta() {
   return [{ title: 'Sign in — drobek' }];
@@ -101,6 +102,9 @@ export default function LoginRoute() {
 
   return (
     <main style={styles.main}>
+      <div style={{ marginBottom: '1.5rem' }}>
+        <DrobekMark size={48} idle title="drobek" />
+      </div>
       <h1 style={styles.h1}>Sign in</h1>
       <p style={styles.hint}>
         Enter your email and we&apos;ll send you a one-time 6-digit code. No

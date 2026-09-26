@@ -2,8 +2,10 @@
  * The drobek e-mail layout: minimal, white, one narrow column, no card —
  * the wordmark with the crumb, the body, a one-line footer. Table-based and
  * inline-styled for mail clients; no images (they are blocked by default in
- * most clients), so the crumb is a plain coloured cell.
+ * most clients), so the mascot is drawn with table cells.
  */
+import { mascotEmailHtml } from './mascot.js';
+
 const BRAND = {
   bg: '#ffffff',
   ink: '#1a1a1a',
@@ -46,8 +48,8 @@ export function renderEmailLayout({
               <td style="padding:0 0 32px;">
                 <table role="presentation" cellpadding="0" cellspacing="0" border="0">
                   <tr>
-                    <td style="vertical-align:middle;"><div style="width:10px;height:10px;background:${BRAND.crumb};font-size:0;line-height:0;"></div></td>
-                    <td style="padding-left:8px;font-size:17px;font-weight:600;letter-spacing:-0.02em;color:${BRAND.ink};">drobek</td>
+                    <td style="vertical-align:middle;">${mascotEmailHtml(2)}</td>
+                    <td style="padding-left:10px;vertical-align:middle;font-size:17px;font-weight:600;letter-spacing:-0.02em;color:${BRAND.ink};">drobek</td>
                   </tr>
                 </table>
               </td>

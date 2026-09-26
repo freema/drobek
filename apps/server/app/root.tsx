@@ -9,7 +9,11 @@ import {
   useRouteError,
   useRouteLoaderData,
 } from 'react-router';
+import { mascotDataUri } from '@drobek/auth';
+import { DrobekMark } from '@drobek/auth/mark';
 import { SourceFooter } from '@drobek/dashboard/footer';
+
+const FAVICON = mascotDataUri();
 import { githubStars } from '@drobek/dashboard/github-stars.server';
 
 /**
@@ -40,8 +44,8 @@ export function Layout({ children }: { children: ReactNode }) {
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         {/* D1: noindex during beta */}
         <meta name="robots" content="noindex" />
-        {/* data: favicon — no external assets, no favicon 404 console noise */}
-        <link rel="icon" href="data:," />
+        {/* data: favicon (the mascot) — no external assets, no favicon 404 console noise */}
+        <link rel="icon" href={FAVICON} type="image/svg+xml" />
         <Meta />
         <Links />
       </head>
@@ -66,6 +70,7 @@ export function ErrorBoundary() {
     : 'Unexpected error';
   return (
     <main style={{ fontFamily: 'system-ui, sans-serif', padding: '3rem' }}>
+      <DrobekMark size={48} />
       <h1>drobek</h1>
       <p>{message}</p>
     </main>
