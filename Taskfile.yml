@@ -86,11 +86,12 @@ tasks:
       - pnpm knip
 
   check:
-    desc: Host-side gate — install, doc-lint, build packages, typecheck, lint, knip, unit tests
+    desc: Host-side gate — install, doc-lint, build packages + the server app bundle, typecheck, lint, knip, unit tests
     cmds:
       - pnpm install
       - pnpm doc-lint
       - pnpm build:packages
+      - pnpm --filter server build
       - pnpm typecheck
       - pnpm lint
       - pnpm knip

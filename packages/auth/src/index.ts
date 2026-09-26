@@ -106,7 +106,6 @@ export {
   renderEmailLayout,
   escapeHtml,
   emailBrand,
-  mascotDataUri,
   type EmailLayoutInput,
 } from '@drobek/email';
 export { sendLoginCodeEmail } from './email/send-login-code.server.js';

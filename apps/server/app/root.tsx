@@ -9,12 +9,11 @@ import {
   useRouteError,
   useRouteLoaderData,
 } from 'react-router';
-import { mascotDataUri } from '@drobek/auth';
-import { DrobekMark } from '@drobek/auth/mark';
+import { DrobekMark, mascotDataUri } from '@drobek/auth/mark';
 import { SourceFooter } from '@drobek/dashboard/footer';
+import { githubStars } from '@drobek/dashboard/github-stars.server';
 
 const FAVICON = mascotDataUri();
-import { githubStars } from '@drobek/dashboard/github-stars.server';
 
 /**
  * M2-04 (NSO-284): the build sha for the AGPL-3.0 §13 source link in the

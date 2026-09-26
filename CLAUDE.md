@@ -50,7 +50,7 @@ Map: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ```sh
 task dev            # build + start the dev stack (drobek, postgres, redis, mailpit), wait until healthy
-task check          # host-side gate: install, doc-lint, build packages, typecheck, lint, knip, unit tests
+task check          # host-side gate: install, doc-lint, build packages + app bundle, typecheck, lint, knip, unit tests
 task test           # unit tests only (builds packages first)
 task e2e            # Playwright vs the dev stack (@local + @smoke) — block end
 task e2e:image      # the CI flow: prod image behind Caddy + the whole suite

@@ -1585,3 +1585,4 @@ block, then `next` is pushed and the single MR opened.
   React Router's SSR-time CSS walk (`getModuleByUrl`), not by client
   transforms of the route modules; the glob also warmed `*.test.tsx` and
   pulled `vitest` into the client pre-bundle. Use `optimizeDeps.noDiscovery`.
+- **Client code must never import a package index that re-exports `*.server.*`** (2026-09-26, NSO-342). The mascot went into `root.tsx` and `<DrobekMark>` through `@drobek/auth` / `@drobek/email` (their indexes re-export `smtp.server`, `return-to.server`, …). The dev server then failed every client bundle at runtime ("Server-only module referenced by client"), so 61 e2e tests failed, while `task check` stayed green. Fixed by a client-safe subpath, `@drobek/email/mascot` (re-exported from `@drobek/auth/mark`). Ratchet: `task check` now runs `pnpm --filter server build`, which refuses this at build time.

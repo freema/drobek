@@ -1,12 +1,15 @@
 /**
  * <DrobekMark>: the drobek mascot as inline SVG, drawn from the shared pixel
- * map in @drobek/email (the same crumb www, the favicon and the e-mails show).
+ * map in @drobek/email/mascot (the same crumb www, the favicon and the e-mails
+ * show).
  * `idle` adds the www idle loop — a hop every 3.2 s with the crumb bouncing
  * on landing, blinks and glances on their own clocks — and is off for anyone
  * who prefers reduced motion. Decorative: hidden from assistive tech unless
  * a `title` is given.
  */
-import { MASCOT_HEIGHT, MASCOT_RECTS, MASCOT_WIDTH } from '@drobek/email';
+import { MASCOT_HEIGHT, MASCOT_RECTS, MASCOT_WIDTH } from '@drobek/email/mascot';
+
+export { mascotDataUri } from '@drobek/email/mascot';
 
 const IDLE_CSS = `@media (prefers-reduced-motion: no-preference){
 .dm-idle .dm-body,.dm-idle .dm-crumb,.dm-idle .dm-eyes,.dm-idle .dm-lid{animation:3.2s step-end infinite}
