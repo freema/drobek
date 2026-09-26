@@ -12,8 +12,7 @@ local rehearsal (`task selfhost:rehearsal`, `tls internal`, image already
 built), a backup 7 s, a restore on a second "machine"
 (fresh checkout + `task selfhost:init` + `task restore`) 33 s; the image build
 itself 145 s (a VPS pulls it instead). Local = macOS, Docker Desktop, arm64,
-2026-09-23. **The clean-VPS measurement (Ubuntu 24.04, Let's Encrypt)
-is pending — Tomáš.**
+2026-09-23.
 
 ## Quickstart (clean Ubuntu 24.04 + Docker)
 
