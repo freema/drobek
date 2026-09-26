@@ -1,19 +1,15 @@
 /**
  * The hello module under createModuleTestContext(): real routes through the
- * production pipeline, a PGlite database with the core + hello migrations.
+ * production pipeline, a PGlite database with the core + hello migrations —
+ * set up exactly like a create-drobek-module scaffold (no other drobek package).
  */
-import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
 import { migrate } from 'drizzle-orm/pglite/migrator';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { apps, workspaces, type DB } from '@drobek/db';
-import * as schema from '@drobek/db/schema';
-import { buildSdk, collectContributions, defineModule, isDefinedModule, loadModules, z } from '@drobek/modules';
-import { createModuleTestContext } from '@drobek/modules/testing';
+import { buildSdk, collectContributions, defineModule, isDefinedModule, loadModules, z, type DB } from '@drobek/modules';
+import { coreMigrationsDir, createModuleTestContext, createTestApp } from '@drobek/modules/testing';
 import hello from './index.js';
-
-const CORE_MIGRATIONS = fileURLToPath(new URL('../../../packages/db/drizzle/migrations', import.meta.url));
 
 let pg: PGlite;
 let db: DB;
@@ -21,16 +17,10 @@ let appId: string;
 
 beforeAll(async () => {
   pg = new PGlite();
-  const d = drizzle(pg, { schema });
-  await migrate(d, { migrationsFolder: CORE_MIGRATIONS, migrationsTable: '__drizzle_migrations_core', migrationsSchema: 'drizzle' });
-  await migrate(d, {
-    migrationsFolder: hello.migrations!.folder,
-    migrationsTable: '__drizzle_migrations_mod_hello',
-    migrationsSchema: 'drizzle',
-  });
-  const [ws] = await d.insert(workspaces).values({ kind: 'team', slug: 'hello-ws', name: 'Hello' }).returning();
-  const [app] = await d.insert(apps).values({ workspaceId: ws.id, slug: 'hello-app' }).returning();
-  appId = app.id;
+  const d = drizzle(pg);
+  await migrate(d, { migrationsFolder: coreMigrationsDir(), migrationsTable: '__drizzle_migrations_core', migrationsSchema: 'drizzle' });
+  await migrate(d, { migrationsFolder: hello.migrations!.folder, migrationsTable: '__drizzle_migrations_mod_hello', migrationsSchema: 'drizzle' });
+  appId = (await createTestApp(d, { slug: 'hello-app' })).id;
   db = d as unknown as DB;
 });
 

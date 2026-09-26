@@ -3,7 +3,7 @@
  * `drobek.hello` by the drobek server at start. Runs in the app's page — keep
  * it dependency-free (type imports only).
  */
-import type { SdkCore } from '@drobek/sdk';
+import type { SdkCore } from '@drobek/modules';
 
 export interface Hello {
   greeting: string;

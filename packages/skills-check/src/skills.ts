@@ -1,4 +1,7 @@
 /**
+ * The repo gate of the skills (NSO-308; the checks themselves are the
+ * `checkSkill` library of @drobek/modules/testing since NSO-349).
+ *
  * The skills of a server running every built-in module — exactly what
  * `skill_info()` serves in the dev stack and the image (minus the `hello`
  * example module): the module skills of auth, email, forms, data, proxy,
@@ -10,6 +13,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { noopLogger } from '@drobek/core';
 import { loadModuleRuntime, memoryRateLimiter, type AnyModule, type ModuleRuntime } from '@drobek/modules';
+import type { SkillSource } from '@drobek/modules/testing';
 import auth from 'drobek-module-auth';
 import data from 'drobek-module-data';
 import email from 'drobek-module-email';
@@ -18,6 +22,8 @@ import forms from 'drobek-module-forms';
 import proxy from 'drobek-module-proxy';
 
 export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
+/** The examples' bare imports (`react`, `react-dom`) resolve this package's node_modules (@types/react). */
+export const PKG_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const SKILLS_DIR = join(REPO_ROOT, 'skills');
 
 /** The built-in modules in the dev compose's DROBEK_MODULES order. */
@@ -25,18 +31,6 @@ export const BUILTIN_MODULES: AnyModule[] = [auth, email, forms, data, proxy, fi
 
 /** The 9 skills an agent can read on a server with every built-in module. */
 export const EXPECTED_SKILLS = ['auth', 'email', 'forms', 'data', 'proxy', 'files', 'debug', 'start', 'ui'] as const;
-
-export interface SkillSource {
-  name: string;
-  kind: 'module' | 'general';
-  useWhen: string;
-  /** The markdown skill_info returns (frontmatter stripped). */
-  content: string;
-  /** The SKILL.md file on disk (repo-relative) and its full text. */
-  file: string;
-  fileText: string;
-  module?: AnyModule;
-}
 
 let runtime: Promise<ModuleRuntime> | null = null;
 

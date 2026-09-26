@@ -90,6 +90,23 @@ const config: KnipConfig = {
       ignore: ['test-fixtures/**'],
     },
 
+    'packages/create-drobek-module': {
+      // `bin` / `exports` point at dist/ (published to npm, NSO-349).
+      entry: ['src/index.ts', 'src/cli.ts'],
+      // template/ is the scaffold's OUTPUT (a module with its own
+      // package.json and tests), copied with placeholders — never imported
+      // or run here; src/scaffold.test.ts generates and tests it.
+      ignore: ['template/**'],
+      ignoreDependencies: [
+        // Linked into the generated module's node_modules by
+        // src/scaffold.test.ts (the template's own dev dependencies — the
+        // test installs offline from this workspace); no file here imports them.
+        '@electric-sql/pglite',
+        'drizzle-orm',
+        'zod',
+      ],
+    },
+
     'packages/skills-check': {
       ignoreDependencies: [
         // The skill code examples are typechecked as VIRTUAL files placed in
@@ -116,8 +133,10 @@ const config: KnipConfig = {
     },
 
     'examples/*': {
-      // Same contract as modules/*: the SDK entry is loaded by path.
-      entry: ['src/sdk.ts'],
+      // Same contract as modules/*: the SDK entry is loaded by path. The
+      // package `exports` point at dist/ like a create-drobek-module output
+      // (NSO-349), so src/index.ts is listed as the public entry.
+      entry: ['src/index.ts', 'src/sdk.ts'],
     },
 
     'tests-e2e': {

@@ -265,6 +265,7 @@ services:
       - /repo/packages/tenancy/node_modules
       - /repo/tests-e2e/node_modules
       - /repo/examples/drobek-module-hello/node_modules
+      - /repo/packages/create-drobek-module/node_modules
       - /repo/modules/auth/node_modules
       - /repo/modules/email/node_modules
       - /repo/modules/forms/node_modules

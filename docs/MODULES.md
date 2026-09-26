@@ -1010,8 +1010,12 @@ lines (frontmatter included) and exactly these `##` sections under one
 5. `## 5. Errors → fix` — a table `| error | cause | fix |`; a backticked
    code in the first column must exist in the error catalogue.
 
-`@drobek/skills-check` (part of `task check`) enforces the format and that
-the code does not rot: every fenced block is checked by its info string —
+`checkSkill(module)` from `@drobek/modules/testing` enforces the format
+(and a one-sentence "use when" of 30–220 characters) and that the code does
+not rot. The repo gate `@drobek/skills-check` (part of `task check`) runs
+the same library over the built-in modules and the general skills; an
+external module runs it in its own tests ([Writing a module](#writing-a-module)).
+Every fenced block is checked by its info string —
 `tsx`/`ts`/`jsx`/`js` are compiled with `@drobek/compile` exactly like
 `write_files` (the skill's import map, the SDK, the inline sources, the
 secret scan) AND typechecked with the TypeScript compiler against the
@@ -1106,6 +1110,113 @@ sets what `ctx.contributions(slot)` returns. `request()` rejects where
 production answers `500 internal_error`: an exception that is not a
 ModuleError, or a ModuleError with a code that is neither core nor in the
 module's `errors`.
+
+The database for `db` needs no other drobek package:
+
+```ts
+import { PGlite } from '@electric-sql/pglite';
+import { drizzle } from 'drizzle-orm/pglite';
+import { migrate } from 'drizzle-orm/pglite/migrator';
+import { checkSkill, coreMigrationsDir, createTestApp, formatSkillIssue } from '@drobek/modules/testing';
+
+const d = drizzle(new PGlite());
+await migrate(d, { migrationsFolder: coreMigrationsDir(), migrationsTable: '__drizzle_migrations_core', migrationsSchema: 'drizzle' });
+await migrate(d, { migrationsFolder: hello.migrations!.folder, migrationsTable: '__drizzle_migrations_mod_hello', migrationsSchema: 'drizzle' });
+const app = await createTestApp(d);            // a workspace + an app row → { id, slug, workspaceId }
+
+expect((await checkSkill(hello)).map(formatSkillIssue)).toEqual([]);   // the SKILL.md gate
+```
+
+`coreMigrationsDir()` is the core migrations folder (`packages/db/drizzle/migrations`
+in this repo, a copy inside the published package). `checkSkill(module,
+{ modules?, file?, root? })` returns the issues of the module's skill:
+`modules` adds other modules whose SDK the examples use (e.g. the `auth`
+module for `drobek.auth`), `root` is the directory whose `node_modules`
+resolve the examples' bare imports (default: the working directory; an
+unresolved one is typed `any`). It needs `typescript` installed (an
+optional peer dependency).
+
+## Writing a module
+
+A module outside this repository is an npm package written against the
+published contract. Every drobek release publishes, with the image's
+version, three npm packages: **`@drobek/modules`** (the contract, the
+registry's checks, the test kit `@drobek/modules/testing`),
+**`@drobek/sdk`** (the browser `SdkCore` a module's SDK entry receives) and
+**`create-drobek-module`** (the scaffold). All three are AGPL-3.0-only, like
+the rest of drobek ([`LICENSING.md`](./LICENSING.md) → Modules).
+
+### Scaffold
+
+```sh
+npm create drobek-module@latest erp        # → drobek-module-erp/, the module "erp"
+cd drobek-module-erp && npm install && npm test
+```
+
+`<name>` is a short name (`erp` → the package `drobek-module-erp`), a full
+`drobek-module-<x>` or a scoped package (`@acme/drobek-module-erp`). The
+module name is the package name without `drobek-module-` and dashes
+(`acme-erp` → `acmeerp`; `--module <name>` sets it). The output is a working
+module: `src/index.ts` (`defineModule` with `contract: '^1.1'`, config with
+an owner confirmation, a secret, a limit, an own error code, a GET/POST pair
+of routes), `src/sdk.ts`, `src/schema.ts` + `migrations/0000_init.sql` (the
+table `mod_<name>_items`), `SKILL.md`, `src/index.test.ts`
+(`createModuleTestContext` over PGlite with the core migrations),
+`src/skill.test.ts` (`checkSkill`) and a README with the install steps.
+Scripts: `build` (tsc → `dist/`, also run by `prepack`), `typecheck`, `test`,
+`check` (the skill gate alone). [`examples/drobek-module-hello`](../examples/drobek-module-hello)
+is the scaffold's output plus the slot demo.
+
+### Contract and peers
+
+- `contract` is a semver range against the server's `MODULE_CONTRACT_VERSION`;
+  a server whose version does not satisfy it refuses to start. Declare the
+  lowest contract whose fields the module uses (`'^1.1'` for `errors`,
+  `slots`, `contributes`, `availability`, `dashboard`, `onAppDelete`).
+- `@drobek/modules` and `drizzle-orm` are **peer dependencies** (and dev
+  dependencies for the tests); `zod` comes as `z` from `@drobek/modules`.
+  On a server the module uses the server's instances — never bundle them:
+  a second copy of the contract breaks the brand checks (`isModuleError`).
+- Everything a module needs is exported by `@drobek/modules`
+  (`defineModule`, `z`, `respond`, `ModuleError`, the types incl. `DB`,
+  `Logger`, `SdkCore`, `HookApp`); the published declarations name no
+  private drobek package.
+- The module is operator-installed server code with the whole database
+  (`ctx.db`). It keeps to its own tables (`mod_<name>` / `mod_<name>_*`,
+  foreign keys only to `apps(id)` / `workspaces(id)`), never alters another
+  table, never reads secrets of other modules, and never executes app code.
+
+### Publish
+
+Publish to npm (`npm publish`; `prepack` builds `dist/`) or ship the
+tarball `npm pack` writes (`drobek-module-erp-0.1.0.tgz`) from any URL. The
+package contains `dist/`, `migrations/` and `SKILL.md`. A git URL works
+only with a committed `dist/` (installs run without lifecycle scripts).
+
+### Install on a server
+
+The operator installs the package — any spec `npm install` accepts (a
+registry version, a tarball URL, a git URL) — with
+`task selfhost:module:add -- <spec>` ([`SELF-HOSTING.md`](./SELF-HOSTING.md)),
+then adds its entry to `DROBEK_MODULES` (the short name when the package is
+`drobek-module-<name>`, else the full package name) and restarts drobek.
+The start refuses a module whose `contract` range does not match. An
+operator with an own image build can instead add the package as a
+dependency of the server (see [Enabling modules](#enabling-modules)).
+
+### Compatibility
+
+| Module contract (`MODULE_CONTRACT_VERSION`) | drobek image / npm packages | A module declaring |
+| --- | --- | --- |
+| `1.0.0` | v0.1.0 – v0.1.4 | `'^1.0'` (or no `contract`) |
+| `1.1.0` | the first release after v0.1.4 (on `next`) | `'^1.1'` or `'^1.0'` |
+
+`@drobek/modules@X.Y.Z` is the contract of the image `ghcr.io/freema/drobek:vX.Y.Z`
+(both come from one tag). Additive contract changes raise the minor version
+(`1.1` → `1.2`): a module declaring `'^1.1'` keeps loading. A breaking
+change raises the major, and such a server refuses `'^1.x'` modules with a
+message naming both versions. The server logs the version at start
+(`platform modules ready`, `contract`).
 
 ## End-user sessions (core)
 
@@ -1530,7 +1641,9 @@ people who use an app upload. `skill_info('files')`.
 [`examples/drobek-module-hello`](../examples/drobek-module-hello) is an
 external workspace package, loaded exactly as a third-party module would be
 (`DROBEK_MODULES=hello` → `drobek-module-hello`, a dependency of
-`apps/server`):
+`apps/server`). It is what `npm create drobek-module@latest hello` generates
+(the files, scripts and tests; a unit test regenerates the scaffold and
+compares) plus the slot demo:
 
 - `GET /__drobek/v1/hello` → `{ greeting, message, waves, signed, signature? }`;
 - `POST /__drobek/v1/hello/wave` `{ name }` → `{ waves }`, rate-limited per

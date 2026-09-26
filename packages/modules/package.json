@@ -3,6 +3,12 @@
   "version": "1.0.0",
   "private": false,
   "description": "The drobek platform module contract, registry and runtime: defineModule, the ModuleContext and the test kit (@drobek/modules/testing).",
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/freema/drobek.git",
+    "directory": "packages/modules"
+  },
   "type": "module",
   "exports": {
     ".": {
@@ -19,8 +25,12 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -28,6 +38,7 @@
     "test:run": "vitest run"
   },
   "dependencies": {
+    "@drobek/agent-dx": "workspace:*",
     "@drobek/apps": "workspace:*",
     "@drobek/audit": "workspace:*",
     "@drobek/auth": "workspace:*",

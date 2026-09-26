@@ -1441,6 +1441,47 @@ block, then `next` is pushed and the single MR opened.
   applies a journal entry only when its `when` is newer than the DB's last
   applied one, so a dev DB that already ran 0024 never gets 0023 —
   recreate it (`docker compose down -v`) or apply 0023's SQL by hand.
+- NSO-349: the PUBLISHED `@drobek/modules` is generated, not the workspace
+  package: `scripts/npm-packages.mjs` (root devDeps esbuild, rollup,
+  rollup-plugin-dts, typescript) bundles dist/index.js + dist/testing.js
+  with esbuild (private `@drobek/*` inlined and marked side-effect free so
+  unused packages — @drobek/auth's react-router routes — drop out; npm
+  deps = what the OUTPUT still imports, from the esbuild metafile) and rolls
+  the .d.ts up with rollup-plugin-dts. Two traps: the dts plugin resolves
+  bare imports with node10 unless it gets `tsconfig` (the workspace packages
+  have no `types`/`main`, only `exports`), and pnpm links one workspace
+  package under several paths — without the realpath resolver `@drobek/db`
+  is inlined twice. The leak check refuses any `@drobek/*` import but
+  `@drobek/sdk` in the rolled-up declarations.
+- NSO-349: a new export a module author needs must be reachable from
+  `packages/modules/src/index.ts` or `testing.ts` — nothing else is in the
+  npm package. A new npm import in any package the modules bundle reaches
+  becomes a dependency of the published package automatically (range from
+  the importing workspace package.json); a new host-provided one goes into
+  `PEERS` in the script.
+- NSO-349: `checkSkill` (packages/modules/src/skill-check) loads TypeScript
+  with a dynamic import — `typescript` is only a devDependency of
+  @drobek/modules (an optional peer of the npm package), and the prod image
+  never has it. Its virtual files live under `<root>/.drobek-skill-check`
+  (never written); `root` decides which `node_modules` resolve the examples'
+  bare imports — the repo gate passes packages/skills-check (it has
+  @types/react).
+- NSO-349: create-drobek-module's template maps only `_gitignore` →
+  `.gitignore` (npm pack drops a real .gitignore). Do not generalise to
+  "every `_` prefix": `migrations/meta/_journal.json` must keep its name.
+  packages/create-drobek-module's vitest `include` is `src/**` (template/
+  has its own tests) and knip ignores `template/**`.
+- NSO-349: packages/create-drobek-module/src/scaffold.test.ts stages and
+  `npm pack`s the three packages, generates a module with the PACKED CLI in
+  the OS temp dir and installs it OFFLINE (our tarballs untarred, npm
+  packages symlinked from the workspace store) — it needs `npm` and `tar` on
+  PATH and built packages (`pnpm build:packages`). It also guards that
+  examples/drobek-module-hello keeps the scaffold's files, boilerplate and
+  scripts: a template change goes into the example in the same change.
+- NSO-349: the example's `exports.types` now points at dist (like a
+  scaffold), so knip lists `examples/*/src/index.ts` as an entry, and the
+  root test script runs it with `pnpm --filter drobek-module-hello test`
+  (`vitest run`, the scaffold's script name).
 
 ## Failed approaches
 

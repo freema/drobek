@@ -65,7 +65,9 @@ Why it is built this way:
     server-side, behind an SSRF guard.
 
   Operators can add their own modules against the public contract:
-  [`docs/MODULES.md`](./docs/MODULES.md).
+  `npm create drobek-module@latest <name>` scaffolds one against the npm
+  packages `@drobek/modules` + `@drobek/sdk` —
+  [`docs/MODULES.md` → Writing a module](./docs/MODULES.md#writing-a-module).
 
 ## Self-host quickstart
 

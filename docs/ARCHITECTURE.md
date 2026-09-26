@@ -72,6 +72,7 @@ record behind it is [`vision-plan.md`](./vision-plan.md) (Czech).
   | `@drobek/domains`, `@drobek/email`, `@drobek/insights`, `@drobek/proxy` | custom domains; SMTP transport; the error beacon and request stats; upstream registry, envelope crypto, SSRF guard |
   | `@drobek/core`, `@drobek/db`, `@drobek/sdk` | env/config, health, logger, Caddyfile generator; drizzle schema + migrations; the browser SDK core |
   | `modules/{auth,email,forms,data,proxy,files}` | the built-in platform modules (`drobek-module-<name>`) |
+  | `create-drobek-module` | the scaffold for external modules; with `@drobek/modules` + `@drobek/sdk` published to npm from each release tag (`scripts/npm-packages.mjs` bundles the private packages in) |
 
 ## 2. Workspaces, apps and versions
 

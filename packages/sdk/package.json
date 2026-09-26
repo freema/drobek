@@ -3,6 +3,12 @@
   "version": "1.0.0",
   "private": false,
   "description": "The drobek browser SDK core: the SdkCore a platform module's SDK entry receives, DrobekError, the error beacon.",
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/freema/drobek.git",
+    "directory": "packages/sdk"
+  },
   "type": "module",
   "exports": {
     ".": {
@@ -20,8 +26,12 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",

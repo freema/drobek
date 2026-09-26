@@ -11,9 +11,24 @@
  *
  * `db` is whatever drizzle database the test passes (e.g. PGlite with the
  * module's migrations applied); a module that never touches `ctx.db` needs none.
+ * `coreMigrationsDir()` + `createTestApp()` build that database without any
+ * other drobek package (NSO-349):
+ *
+ *   const pg = new PGlite();
+ *   const db = drizzle(pg);
+ *   await migrate(db, { migrationsFolder: coreMigrationsDir(), migrationsTable: '__drizzle_migrations_core', migrationsSchema: 'drizzle' });
+ *   await migrate(db, { migrationsFolder: erp.migrations!.folder, migrationsTable: '__drizzle_migrations_mod_erp', migrationsSchema: 'drizzle' });
+ *   const app = await createTestApp(db);
+ *
+ * `checkSkill(module)` checks the module's SKILL.md like the built-in
+ * modules' (skill-check/).
  */
+import { existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { noopLogger, type Logger } from '@drobek/core';
-import type { DB } from '@drobek/db';
+import { apps, workspaces, type DB } from '@drobek/db';
 import { normalizeConfirmItems, type AnyModule, type EmailMessage, type HookApp, type Limits, type MailEnvelope, type ModuleContext, type Principal } from './contract.js';
 import { mergePatch } from './merge-patch.js';
 import { collectRoutes, errorResult, isReadable, matchRoute, runRoute, type PipelineResult } from './router.js';
@@ -22,6 +37,39 @@ import { CORE_ERROR_CODES, ModuleError } from './errors.js';
 import { assertSignInSender, capEmailText, emailKind, resolveRecipients, sanitizeSubject } from './email.js';
 import type { MailGuard } from './mail-guard.js';
 import { memoryRateLimiter } from './runtime.js';
+
+export { checkSkill, checkSkillSources, knownErrorCodes, moduleSkillSource, type CheckSkillOptions, type CheckSkillSourcesOptions } from './skill-check/index.js';
+export { checkExamples, type ExamplesOptions, type ExamplesReport } from './skill-check/examples.js';
+export { SKILL_MAX_LINES, SKILL_SECTIONS, skillFormatIssues } from './skill-check/format.js';
+export { codeBlocks, headings, proseOf, sectionText, type CodeBlock, type Heading } from './skill-check/markdown.js';
+export { formatSkillIssue, type SkillIssue, type SkillSource } from './skill-check/source.js';
+
+/**
+ * The folder of drobek's core migrations (journal `__drizzle_migrations_core`):
+ * apply it before a module's own migrations, whose tables reference
+ * `apps(id)`. The published package ships a copy (`dist/migrations/core`);
+ * in the drobek repository it is `packages/db/drizzle/migrations`.
+ */
+export function coreMigrationsDir(): string {
+  const here = dirname(fileURLToPath(import.meta.url));
+  for (const candidate of [join(here, 'migrations/core'), join(here, '../migrations/core')]) {
+    if (existsSync(join(candidate, 'meta/_journal.json'))) return candidate;
+  }
+  const db = dirname(createRequire(import.meta.url).resolve('@drobek/db'));
+  return join(db, '../drizzle/migrations');
+}
+
+/**
+ * A workspace + an app in a database with the core migrations applied — the
+ * `app` to pass to createModuleTestContext (module rows reference its id).
+ */
+export async function createTestApp(db: unknown, opts: { slug?: string } = {}): Promise<HookApp> {
+  const d = db as DB;
+  const slug = opts.slug ?? `test-${Math.random().toString(36).slice(2, 10)}`;
+  const [ws] = await d.insert(workspaces).values({ kind: 'team', slug: `${slug}-ws`, name: slug }).returning();
+  const [app] = await d.insert(apps).values({ workspaceId: ws.id, slug }).returning();
+  return { id: app.id, slug: app.slug, workspaceId: ws.id };
+}
 
 export interface ModuleTestOptions {
   /** A partial config (merged over configDefaults, then validated). */

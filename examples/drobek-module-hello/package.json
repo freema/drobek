@@ -2,11 +2,12 @@
   "name": "drobek-module-hello",
   "version": "1.0.0",
   "private": true,
-  "description": "Example drobek platform module: GET /__drobek/v1/hello, drobek.hello.ping(), config { greeting, excited }.",
+  "description": "Example drobek platform module (the create-drobek-module output + the slot demo): GET /__drobek/v1/hello, drobek.hello.ping(), config { greeting, excited }.",
+  "license": "AGPL-3.0-only",
   "type": "module",
   "exports": {
     ".": {
-      "types": "./src/index.ts",
+      "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     }
   },
@@ -18,16 +19,15 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest",
-    "test:run": "vitest run"
+    "test": "vitest run",
+    "check": "vitest run src/skill.test.ts",
+    "prepack": "npm run build"
   },
   "dependencies": {
     "@drobek/modules": "workspace:*",
-    "@drobek/sdk": "workspace:*",
     "drizzle-orm": "^0.45.3"
   },
   "devDependencies": {
-    "@drobek/db": "workspace:*",
     "@electric-sql/pglite": "^0.2.17",
     "@types/node": "^22",
     "typescript": "^5.7.3",

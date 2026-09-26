@@ -225,6 +225,15 @@ the dev stack). `@drobek/skills-check` compiles and typechecks every code
 block of every skill against the current SDK types in `task check`, so a skill
 cannot drift from the code.
 
+A module an operator adds from outside this repository brings its own skill
+the same way: `skill_info('<module>')` serves its `SKILL.md`, and the error
+codes it declares (`errors`) appear in `skill_info('<module>').errors` and in
+its own section of `/llms-full.txt`. Its author runs the same gate in the
+module's tests — `checkSkill(module)` from `@drobek/modules/testing`, which
+the `create-drobek-module` scaffold wires into `npm test` — so an external
+skill is held to the format and the compile + typecheck rules of the
+built-in ones ([`MODULES.md`](./MODULES.md) → Writing a module).
+
 `skills/drobek` is different: it is the platform skill an agent installs to
 reach drobek in the first place (`cp -r skills/drobek ~/.claude/skills/drobek`),
 so `skill_info` does not list it. The plugin (`freema/drobek-plugin`) ships

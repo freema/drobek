@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import type { SdkBundle } from '@drobek/modules';
-import { checkExamples, formatProblem, sdkFor } from './examples.js';
-import { BUILTIN_MODULES, skillSources, type SkillSource } from './skills.js';
+import { buildSdk, type SdkBundle } from '@drobek/modules';
+import { checkExamples, formatSkillIssue, type SkillSource } from '@drobek/modules/testing';
+import { BUILTIN_MODULES, PKG_DIR, skillSources } from './skills.js';
 
 /**
  * NSO-308 acceptance: "the code in the examples does not rot". Every code block
@@ -12,15 +12,15 @@ import { BUILTIN_MODULES, skillSources, type SkillSource } from './skills.js';
  */
 let sdk: SdkBundle;
 beforeAll(async () => {
-  sdk = await sdkFor(BUILTIN_MODULES);
+  sdk = await buildSdk(BUILTIN_MODULES);
 });
 
 describe('skill examples compile and typecheck against the live SDK', () => {
   it('every code block of every skill passes', async () => {
     const started = Date.now();
-    const report = await checkExamples(await skillSources(), BUILTIN_MODULES, sdk);
+    const report = await checkExamples(await skillSources(), BUILTIN_MODULES, { sdk, root: PKG_DIR });
     const ms = Date.now() - started;
-    expect(report.problems.map(formatProblem), 'broken skill examples').toEqual([]);
+    expect(report.problems.map(formatSkillIssue), 'broken skill examples').toEqual([]);
     // Every skill contributes examples; the suite really compiled and typechecked something.
     expect(report.counts.compiled).toBeGreaterThanOrEqual(12);
     expect(report.counts.typechecked).toBeGreaterThanOrEqual(9);
@@ -36,7 +36,7 @@ function fakeSkill(markdown: string): SkillSource {
 }
 
 async function problemsOf(markdown: string): Promise<string[]> {
-  return (await checkExamples([fakeSkill(markdown)], BUILTIN_MODULES, sdk)).problems.map((p) => p.message);
+  return (await checkExamples([fakeSkill(markdown)], BUILTIN_MODULES, { sdk, root: PKG_DIR })).problems.map((p) => p.message);
 }
 
 const fence = (info: string, code: string) => '```' + info + '\n' + code + '\n```\n';

@@ -577,6 +577,13 @@ against the image it builds from that tag (`GIT_SHA` = the tag's commit,
 To rebuild a release image yourself: `git checkout vX.Y.Z && task build` (same
 sources and lockfile; the build args come from the checkout).
 
+The same tag publishes the npm packages for module authors at its version:
+`@drobek/modules`, `@drobek/sdk` and `create-drobek-module`
+([`MODULES.md`](./MODULES.md) → Writing a module) — `@drobek/modules@X.Y.Z`
+is the module contract of the image `vX.Y.Z`. `node scripts/npm-packages.mjs
+pack` (after `pnpm build:packages`) writes the same tarballs into
+`dist-npm/`.
+
 ## TLS
 
 The dashboard host always gets a normal ACME certificate (Let's Encrypt via
