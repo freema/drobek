@@ -102,6 +102,52 @@ did not set those keys, `skill_info('<name>').config.defaults` and the
 dashboard's defaults. A variable naming no active module is ignored with a
 warning.
 
+### Per-workspace enabling (opt-in modules)
+
+A module declared `availability: 'opt-in'` (a company module for one
+customer, an experimental one for one team) is installed for the whole
+server but **active only for the workspaces it is enabled for**. It is
+active for a workspace when, in this order:
+
+1. the [limits provider](#limits-and-the-limits-provider) answers
+   `MODULE_ENABLED_<NAME>` for that workspace (`<NAME>` = the module name in
+   upper case): `1` enables it, `0` disables it — also where a super-admin
+   enabled it (a plan wins in both directions);
+2. the operator's env sets `MODULE_ENABLED_<NAME>=1`: every workspace;
+3. a super-admin enabled it in the dashboard (Workspace → Modules → Enable;
+   the `workspace_modules` table, audited `module.workspace_enable` /
+   `module.workspace_disable` with `meta.module`). Every other member sees
+   the state on the same page read-only (who switched it on: workspace
+   admins only), and the switch answers them 403. There is no self-service
+   switch and no MCP tool.
+
+`ModuleRuntime.isEnabled(workspaceId, name)` answers it (a default module:
+always `true`); `enabledModules(workspaceId)` returns the whole set once per
+request. The provider answer is cached like every limit (60 s); the
+dashboard switch is a primary-key read, so it applies at once. For a
+workspace where the module is **not** active:
+
+- its routes on the app hosts answer `404 module_not_enabled` (`details.module`,
+  `hint: "skill_info('<name>')"`) whatever the path, and are not counted
+  in `get_logs requests`;
+- `configure_module` answers `isError` `module_not_enabled`; the owner's
+  confirm of a change pending from before does too (reject still works);
+- `get_app.modules.<name>.enabled` is `false` (a default module: always
+  `true`); `create_app` / `get_app` `skills` and the briefing leave it out,
+  and an `unresolved_import` compile hint does not point at its skill;
+- `skill_info()` lists it with `availability: "opt-in"` (it is
+  server-wide); with `app_id` the entry also carries
+  `enabled_for_workspace`;
+- the app's module page in the dashboard says "not enabled for this
+  workspace" instead of the forms, and refuses changes;
+- its `onAppCreate` / `onPublish` hooks do not run (`onAppDelete` always
+  does).
+
+The SDK stays one bundle per server (`/__drobek/sdk.js` includes opt-in
+modules); an app just gets `module_not_enabled` from their calls. Per app a
+module is "used" through its configuration, as for every module — there is
+no per-app switch.
+
 The dev compose enables the example module and every built-in module
 (`DROBEK_MODULES=hello,auth,email,forms,data,proxy,files`, `HELLO_WAVES_PER_MINUTE=5`,
 relaxed `AUTH_*` limits because every local request shares one client IP,
@@ -266,7 +312,7 @@ The contract fields of 1.1:
 | `contract` | a semver range matched against `MODULE_CONTRACT_VERSION` (`1.1.0`); not satisfied → the start is refused; missing → a warning. The built-in modules and the example declare `'^1.1'` |
 | `errors` | `[{ code, meaning, fix }]`: `code` matches `^[a-z][a-z0-9_]{2,40}$`, is not a core code (`CORE_ERROR_CODES`, the catalogue in `/llms-full.txt`) and is declared by no other active module; meaning and fix are required |
 | `slots` / `contributes` | see [Slots](#slots) |
-| `availability` | `'default'` (the default: every workspace of the server) or `'opt-in'`; returned by `skill_info('<name>')` and the dashboard's module view |
+| `availability` | `'default'` (the default: every workspace of the server) or `'opt-in'` (only the workspaces it is enabled for — [Per-workspace enabling](#per-workspace-enabling-opt-in-modules)); returned by `skill_info('<name>')` and the dashboard's module view |
 | `dashboard.editor` | `'collections'` (a `collections` config shaped like `data`'s) or `'upstreams'` (an `upstreams` config shaped like `proxy`'s): declares which dedicated dashboard editor the config fits; `data` and `proxy` declare theirs. The dashboard picks the editor by this capability only, never by the module's name — a replacement module that declares it gets the same editor, a module without it gets the generic form |
 | `hooks.onAppDelete` | `(app, services)` after the app was deleted, best effort |
 
@@ -886,6 +932,14 @@ else the server's env / default) and its error codes. Never a path on disk,
 never a secret. The facts come from `ModuleRuntime.moduleFacts()`; agents
 get the same fields from `skill_info('<name>')`.
 
+An opt-in module's card also shows its state for this workspace — enabled
+or not, and what decides it (the plan, the env, or a super-admin's switch) —
+and, for a super-admin only, the Enable / Disable switch
+([Per-workspace enabling](#per-workspace-enabling-opt-in-modules)). The
+switch is mounted through `<WorkspaceModules availabilityControls={…}>`
+(`workspace-modules-toggle.tsx`); its POST answers every non-super-admin
+403.
+
 ## Skills: `skill_info`
 
 `skill_info` (MCP, scope `read`) is how an agent learns a backend when it
@@ -1010,6 +1064,11 @@ and expects `{ "limits": { "<ENV_NAME>": <positive integer>, … } }` (`0`
 too for `DOMAINS_MAX_PER_APP`). Known names override the env defaults; unknown
 names and bad values are ignored. A provider mirrors the table above plus the
 `limits` of the modules the server runs (`skill_info(<module>).limits`).
+For every opt-in module the catalogue also holds the pseudo-limit
+`MODULE_ENABLED_<NAME>` (`0` or `1`, env default `0`): a plan maps to it to
+enable (`1`) or disable (`0`) that module for the workspace — see
+[Per-workspace enabling](#per-workspace-enabling-opt-in-modules). The
+protocol is the same; a value other than `0` / `1` is ignored.
 Answers are cached in Redis for 60 s (`drobek:limits:<workspace_id>`). When
 the provider is down, slower than 2 s or answers garbage, the env defaults
 apply for 10 s and a warning is logged: a provider outage never takes apps

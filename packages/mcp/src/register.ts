@@ -123,6 +123,10 @@ export const INPUT_SCHEMAS = {
   },
   skill_info: {
     name: z.string().optional().describe('A skill name from the list; omit to list every skill.'),
+    app_id: z
+      .string()
+      .optional()
+      .describe('An app id: then each opt-in module also says enabled_for_workspace (active for that app\'s workspace).'),
   },
   configure_module: {
     app_id: appId,

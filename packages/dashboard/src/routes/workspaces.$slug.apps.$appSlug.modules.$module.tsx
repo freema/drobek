@@ -50,6 +50,22 @@ export default function AppModuleRoute() {
   const secretError =
     errors && (errors.intent === 'set-secret' || errors.intent === 'remove-secret') ? { target: errors.target, messages: errors.general } : null;
 
+  if (!d.enabled) {
+    // NSO-346: an opt-in module the operator has not enabled for this workspace.
+    return (
+      <AppPage header={d.header} trail={[{ label: d.module.name }]}>
+        <h2 style={ui.title}>
+          {d.module.name} <span style={{ ...ui.small, fontWeight: 400 }}>v{d.module.version}</span>
+        </h2>
+        <p style={ui.hint}>Use when {d.module.useWhen}</p>
+        <div style={ui.notice} role="status" data-testid="module-not-enabled">
+          This module is not enabled for this workspace. It is an opt-in module: the server operator enables it per
+          workspace. Until then the app cannot use it and its configuration cannot be changed.
+        </div>
+      </AppPage>
+    );
+  }
+
   return (
     <AppPage header={d.header} trail={[{ label: d.module.name }]}>
       <h2 style={ui.title}>

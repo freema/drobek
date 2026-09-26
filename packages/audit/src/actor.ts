@@ -153,6 +153,10 @@ export const AUDIT_ACTIONS = {
   appGalleryHidden: 'app.gallery_hidden',
   /** NSO-340: a super-admin showed a hidden gallery entry again. */
   appGalleryUnhidden: 'app.gallery_unhidden',
+  /** NSO-346: a super-admin enabled an opt-in platform module for the workspace (meta: module). */
+  moduleWorkspaceEnable: 'module.workspace_enable',
+  /** NSO-346: a super-admin disabled an opt-in platform module for the workspace (meta: module). */
+  moduleWorkspaceDisable: 'module.workspace_disable',
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
@@ -170,6 +174,8 @@ export const AUDIT_SUBJECT_TYPES = {
   oauthClient: 'oauth_client',
   /** M3-01: a custom domain — `target` is the hostname, `meta.app` the app slug. */
   domain: 'domain',
+  /** NSO-346: a platform module of the workspace (target = the module name). */
+  module: 'module',
 } as const;
 
 export type AuditSubjectType =

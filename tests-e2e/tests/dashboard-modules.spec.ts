@@ -28,7 +28,8 @@ import { addMembership, userIdByEmail, withDb, workspaceIdBySlug } from './helpe
  * NSO-347 (EXT-05):
  *  - the workspace Modules page (a workspace tab, viewer+): every active
  *    module with version, source, contract, availability, slots, limits for
- *    the workspace and error codes — secret-free, no path on disk;
+ *    the workspace and error codes — secret-free, no path on disk; its
+ *    opt-in switch (NSO-346) answers a viewer 403;
  *  - the module page's "About this module" + error codes, linking there;
  *  - the generic form edits a record of named entries (the forms module's
  *    `forms`) without client JS: fill the empty entry, save, it is stored.
@@ -377,6 +378,13 @@ test.describe('dashboard Modules tab (M2-02) @local', () => {
       await page.goto(`/workspaces/${app.workspace}/modules`);
       await expect(page.locator('[data-testid="workspace-module"][data-module="hello"]')).toBeVisible();
       await expect(page.locator('main button, main input:not([type="hidden"])')).toHaveCount(0);
+      // NSO-346: the opt-in switch on that page is super-admin only.
+      const toggle = await page.request.post(`${BASE_URL_WEB}/workspaces/${app.workspace}/modules`, {
+        headers: { Origin: BASE_URL_WEB },
+        form: { intent: 'workspace-module', module: 'hello', enabled: '1' },
+        maxRedirects: 0,
+      });
+      expect(toggle.status()).toBe(403);
 
       await page.goto(modulePath(app, 'data'));
       await expect(page.getByTestId('rule-notes-create-public')).toBeDisabled();

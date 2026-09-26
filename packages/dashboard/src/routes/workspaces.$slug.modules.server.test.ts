@@ -76,6 +76,21 @@ beforeAll(async () => {
   });
   // This workspace's plan (the limits provider) raises one limit.
   vi.spyOn(rt, 'workspaceLimits').mockImplementation(async (id): Promise<Record<string, number>> => (id === role.ws.id ? { HOST_GREETINGS_PER_DAY: 1000, HOST_GREETERS_MAX: 7 } : {}));
+  // NSO-346: the opt-in state (a DB read in the runtime — its own tests use PGlite); a super-admin switched pirate on.
+  vi.spyOn(rt, 'workspaceModules').mockImplementation(async (id) =>
+    id === role.ws.id
+      ? [
+          {
+            name: 'pirate',
+            version: '0.9.1',
+            use_when: 'x',
+            enabled: true,
+            source: 'dashboard' as const,
+            dashboard: { enabled: true, enabled_by: 'root@example.com', enabled_at: '2026-09-26T10:00:00.000Z' },
+          },
+        ]
+      : []
+  );
   setModuleRuntimeForTests(rt);
 });
 
@@ -110,6 +125,17 @@ describe('the workspace Modules page (NSO-347)', () => {
     });
     expect(p).toMatchObject({ version: '0.9.1', availability: 'opt-in', requires: ['host'], contract: null, contributes: [{ slot: 'host.greeter', host: 'host', key: 'arr' }] });
     expect(c).toMatchObject({ source: 'dir', version: '3.0.0' });
+  });
+
+  it('NSO-346: each opt-in module carries its state for the workspace; only a super-admin may toggle; who switched it is for workspace admins', async () => {
+    role.current = 'viewer';
+    let d = await load();
+    expect(d.optIn.canToggle).toBe(false);
+    expect(d.optIn.modules).toEqual([expect.objectContaining({ name: 'pirate', enabled: true, source: 'dashboard', dashboard: expect.objectContaining({ enabled: true, enabled_by: null }) })]);
+    role.current = 'workspace-admin';
+    d = await load();
+    expect(d.optIn.modules[0].dashboard.enabled_by).toBe('root@example.com');
+    role.current = 'viewer';
   });
 
   it('never a secret, never a path on disk; a non-member → 404', async () => {

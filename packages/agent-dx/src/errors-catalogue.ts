@@ -288,6 +288,13 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     fix: 'Show the user a message and retry later; tell the app owner if it persists.',
   },
   {
+    code: 'module_not_enabled',
+    surface: 'MCP tool isError (configure_module); module route 404 (DrobekError)',
+    meaning:
+      'The platform module is opt-in (skill_info lists it with availability: "opt-in") and is not enabled for the app\'s workspace (`details.module` / `module` names it). get_app shows it with `enabled: false` and leaves it out of the app\'s skills.',
+    fix: 'Do not use that module in this app — build the feature another way or leave it out, and tell the user that the server operator enables opt-in modules per workspace. skill_info(\'<module>\', app_id) says whether it is enabled for the app\'s workspace.',
+  },
+  {
     code: 'method_not_allowed',
     surface: 'module route 405 (DrobekError), Allow',
     meaning: 'The route exists but not for this HTTP method.',

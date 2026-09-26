@@ -4,7 +4,8 @@
  * Identity + tenancy + apps and their immutable versions (M0-02, NSO-281),
  * plus the tables each later unit added (oauth_*, upstreams, audit_log,
  * app_errors, app_daily_stats, app_compiles, module_request_stats,
- * module_configs, module_secrets, abuse_reports, app_assets). Platform
+ * module_configs, module_secrets, workspace_modules, abuse_reports,
+ * app_assets). Platform
  * modules own their tables (`mod_<name>_*`, their own migration journals).
  *
  * Hard constraints encoded here:
@@ -673,6 +674,26 @@ export const moduleSecrets = pgTable(
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.appId, t.module, t.name] })]
+);
+
+/**
+ * NSO-346: an opt-in platform module (`availability: 'opt-in'`) a super-admin
+ * enabled for one workspace in the dashboard. A default module never has a
+ * row (it is on everywhere). The limits provider's `MODULE_ENABLED_<NAME>`
+ * (plan) overrides the row in both directions; `enabled_by` turns null when
+ * the user row goes away.
+ */
+export const workspaceModules = pgTable(
+  'workspace_modules',
+  {
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    module: text('module').notNull(),
+    enabledBy: text('enabled_by').references(() => users.id, { onDelete: 'set null' }),
+    enabledAt: timestamp('enabled_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.workspaceId, t.module] })]
 );
 
 // ── Custom domains (M3-01, NSO-292) ──────────────────────────────────────────

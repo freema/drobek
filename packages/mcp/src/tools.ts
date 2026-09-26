@@ -26,7 +26,10 @@
  *    (the reason category only); list_apps / get_app show `locked_by_admin`;
  *  - listing an app in the public gallery (NSO-340) needs the publish scope,
  *    a published app and `user_confirmed: true` — the user's explicit yes;
- *    unlisting needs none of that. get_app shows the gallery state.
+ *    unlisting needs none of that. get_app shows the gallery state;
+ *  - an opt-in module (NSO-346) that is off for the app's workspace is left
+ *    out of the app's skills and compile hints, get_app says
+ *    `enabled: false` and configure_module answers `module_not_enabled`.
  */
 import {
   APP_LOCK_TTL_SEC,
@@ -127,7 +130,7 @@ export interface CompileErrorOut {
   hint?: string;
 }
 
-function toCompileOut(messages: unknown, modules?: ModuleRuntime): CompileErrorOut[] {
+function toCompileOut(messages: unknown, modules?: ModuleRuntime, enabled?: ReadonlySet<string>): CompileErrorOut[] {
   if (!Array.isArray(messages)) return [];
   return (messages as Partial<CompileMessage>[]).map((m) => {
     const out: CompileErrorOut = {
@@ -137,13 +140,14 @@ function toCompileOut(messages: unknown, modules?: ModuleRuntime): CompileErrorO
       column: m.column ?? null,
       text: String(m.text ?? ''),
     };
-    const hint = modules?.compileHint({ code: out.code, specifier: m.specifier });
+    const hint = modules?.compileHint({ code: out.code, specifier: m.specifier }, enabled);
     if (hint) out.hint = hint;
     return out;
   });
 }
 
-function briefing(ctx: CallContext): string {
+/** The briefing of an app: `enabled` = its workspace's enabledModules() (NSO-346). */
+function briefing(ctx: CallContext, enabled: ReadonlySet<string>): string {
   const L = ctx.deps.limits;
   return renderBriefing({
     limits: {
@@ -152,12 +156,13 @@ function briefing(ctx: CallContext): string {
       maxTotalBytes: L.maxTotalBytes,
       timeoutMs: L.timeoutMs,
     },
-    skills: ctx.modules.skillList(),
+    skills: ctx.modules.skillList(enabled),
   });
 }
 
-function skills(ctx: CallContext): SkillListItem[] {
-  return ctx.modules.skillList();
+/** The skills of an app: the opt-in modules off for its workspace are left out (NSO-346). */
+function skills(ctx: CallContext, enabled: ReadonlySet<string>): SkillListItem[] {
+  return ctx.modules.skillList(enabled);
 }
 
 // ── leases ───────────────────────────────────────────────────────────────────
@@ -272,14 +277,16 @@ export async function getApp(ctx: CallContext, args: { app_id: string }) {
   const head = latest.get(app.id);
   const detail = head ? await getVersion(app.id, { id: head.id }) : null;
   const lock = locks.get(app.id);
+  const enabled = await ctx.modules.enabledModules(app.workspaceId);
   const modules = await ctx.modules.appModules(
     { id: app.id, slug: app.slug, workspaceId: app.workspaceId },
-    (m) => confirmUrl(ctx.modules.deps.env, app.workspaceSlug, app.slug, m)
+    (m) => confirmUrl(ctx.modules.deps.env, app.workspaceSlug, app.slug, m),
+    enabled
   );
   return {
     ...items[0],
-    compile_errors: head?.compileStatus === 'error' ? toCompileOut(head.compileErrors, ctx.modules) : [],
-    briefing: briefing(ctx),
+    compile_errors: head?.compileStatus === 'error' ? toCompileOut(head.compileErrors, ctx.modules, enabled) : [],
+    briefing: briefing(ctx, enabled),
     files: (detail?.files ?? [])
       .filter((f) => f.kind === 'source')
       .map((f) => ({ path: f.path, size: f.size, sha256: f.sha256 })),
@@ -291,7 +298,7 @@ export async function getApp(ctx: CallContext, args: { app_id: string }) {
       compile_status: v.compileStatus,
     })),
     modules,
-    skills: skills(ctx),
+    skills: skills(ctx, enabled),
     gallery: galleryOut(app, ctx.deps.env),
     ...(lock ? { lock } : {}),
   };
@@ -348,8 +355,8 @@ export async function readFile(
 
 // ── compile + store (create_app v1, write_files) ─────────────────────────────
 
-function compileOut(r: Pick<CompileResult, 'ok' | 'errors' | 'warnings'>, modules?: ModuleRuntime) {
-  return { ok: r.ok, errors: toCompileOut(r.errors, modules), warnings: toCompileOut(r.warnings, modules) };
+function compileOut(r: Pick<CompileResult, 'ok' | 'errors' | 'warnings'>, modules: ModuleRuntime, enabled: ReadonlySet<string>) {
+  return { ok: r.ok, errors: toCompileOut(r.errors, modules, enabled), warnings: toCompileOut(r.warnings, modules, enabled) };
 }
 
 /** Refuse (nothing stored) on a secret or a saturated compiler; everything else is stored. */
@@ -480,6 +487,7 @@ export async function createApp(
     'create_app'
   );
   await ctx.modules.runHook('onAppCreate', { id: created.id, slug: created.slug, workspaceId: ws.id });
+  const enabled = await ctx.modules.enabledModules(ws.id);
   return {
     app_id: created.id,
     name,
@@ -487,10 +495,10 @@ export async function createApp(
     workspace: ws.slug,
     template,
     version: number,
-    compile: compileOut(result, ctx.modules),
+    compile: compileOut(result, ctx.modules, enabled),
     preview_url: previewUrl(created.slug, ctx.deps.env),
-    briefing: briefing(ctx),
-    skills: skills(ctx),
+    briefing: briefing(ctx, enabled),
+    skills: skills(ctx, enabled),
   };
 }
 
@@ -619,7 +627,7 @@ export async function writeFiles(
   const { number, result } = await compileAndStore(ctx, app, files, args.reasoning.trim(), 'write_files');
   return {
     version: number,
-    compile: compileOut(result, ctx.modules),
+    compile: compileOut(result, ctx.modules, await ctx.modules.enabledModules(app.workspaceId)),
     preview_url: previewUrl(app.slug, ctx.deps.env),
     changed,
     ...(await previewNote(app.id, result.ok)),
@@ -652,7 +660,7 @@ export async function restoreVersion(ctx: CallContext, args: { app_id: string; v
     restored_from: args.version,
     compile: {
       ok,
-      errors: ok ? [] : toCompileOut(v?.compileErrors, ctx.modules),
+      errors: ok ? [] : toCompileOut(v?.compileErrors, ctx.modules, await ctx.modules.enabledModules(app.workspaceId)),
       warnings: [],
     },
     preview_url: previewUrl(app.slug, ctx.deps.env),
@@ -791,11 +799,20 @@ export async function setGalleryListingTool(
  * `skill_info()` lists every skill (active modules + general skills) with its
  * "use when…" sentence; `skill_info(name)` returns one skill's Markdown (for a
  * module also its SDK types, config schema/defaults, limits and the NAMES of
- * its secrets). Server-wide, app-independent: it never returns a secret value
- * or any app's config.
+ * its secrets). Server-wide: it never returns a secret value or any app's
+ * config. An opt-in module's skill carries `availability: 'opt-in'`; with
+ * `app_id` (viewer+ of that app) it also says `enabled_for_workspace` — is
+ * the module active for the app's workspace (NSO-346).
  */
-export async function skillInfo(ctx: CallContext, args: { name?: string }) {
-  const list = ctx.modules.skillList();
+export async function skillInfo(ctx: CallContext, args: { name?: string; app_id?: string }) {
+  let enabled: ReadonlySet<string> | null = null;
+  if (args.app_id !== undefined && args.app_id !== '') {
+    const { app } = await authorizeApp(ctx.principal, args.app_id, 'viewer');
+    enabled = await ctx.modules.enabledModules(app.workspaceId);
+  }
+  const list = ctx.modules.skillList().map((s) =>
+    enabled && s.availability === 'opt-in' ? { ...s, enabled_for_workspace: enabled.has(s.name) } : s
+  );
   if (args.name === undefined || args.name === '') {
     return {
       skills: list,
@@ -812,6 +829,7 @@ export async function skillInfo(ctx: CallContext, args: { name?: string }) {
       hint: 'skill_info()',
     });
   }
+  if (enabled && info.availability === 'opt-in') info.enabled_for_workspace = enabled.has(info.name);
   return info;
 }
 
@@ -857,9 +875,10 @@ export async function configureModule(
         : {}),
     };
   } catch (err) {
-    if (isModuleError(err) && (err.code === 'invalid_params' || err.code === 'not_found')) {
+    if (isModuleError(err) && (err.code === 'invalid_params' || err.code === 'not_found' || err.code === 'module_not_enabled')) {
       const details = (err.details && typeof err.details === 'object' ? err.details : {}) as Record<string, unknown>;
-      throw new ToolError(err.code === 'not_found' ? 'not_found' : 'invalid_params', err.message, {
+      const code = err.code === 'not_found' ? 'not_found' : err.code === 'module_not_enabled' ? 'module_not_enabled' : 'invalid_params';
+      throw new ToolError(code, err.message, {
         ...details,
         ...(err.hint ? { hint: err.hint } : {}),
       });

@@ -17,7 +17,7 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { migrate } from 'drizzle-orm/pglite/migrator';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as schema from '@drobek/db/schema';
-import { apps, auditLog, moduleConfigs, moduleSecrets, setDbForTests, users, workspaces } from '@drobek/db';
+import { apps, auditLog, moduleConfigs, moduleSecrets, setDbForTests, users, workspaceModules, workspaces } from '@drobek/db';
 import { noopLogger } from '@drobek/core';
 import {
   defineModule,
@@ -140,6 +140,16 @@ const proxy = defineModule<{ upstreams: Record<string, { url: string; retries?: 
   configDefaults: { upstreams: {}, slow: false },
 });
 
+/** NSO-346: an opt-in module — off for the workspace until a workspace_modules row enables it. */
+const vault = defineModule<{ shelf: string }>({
+  name: 'vault',
+  version: '1.0.0',
+  availability: 'opt-in',
+  skill: { useWhen: 'the app needs the firm vault', markdown: '# vault' },
+  configSchema: z.strictObject({ shelf: z.string().max(20) }),
+  configDefaults: { shelf: 'main' },
+});
+
 let pg: PGlite;
 let rt: ModuleRuntime;
 let appId: string;
@@ -194,7 +204,7 @@ beforeAll(async () => {
   rt = await loadModuleRuntime({
     env: ENV,
     log: noopLogger,
-    modules: [shop, store, gateway, proxy],
+    modules: [shop, store, gateway, proxy, vault],
     skillsDir: null,
     deps: {
       rateLimit: memoryRateLimiter(),
@@ -488,5 +498,25 @@ describe('the module page (M2-02)', () => {
     expect(d.modulesHref).toBe('/workspaces/acme/modules#module-store');
     expect((await load('shop')).about).toMatchObject({ contract: null, editor: null });
     expect((await load('shop')).errors).toEqual([]);
+  });
+});
+
+describe('an opt-in module not enabled for the workspace (NSO-346)', () => {
+  it('the page says so instead of the form, and every change answers 404 until it is enabled', async () => {
+    const db = drizzleDb();
+    expect((await load('vault')).enabled).toBe(false);
+    const refused = failed(await post('vault', { intent: 'save-config', [fieldName('shelf')]: 'side' }));
+    expect(refused.status).toBe(404);
+    expect(refused.errors.general[0]).toMatch(/not enabled for this app's workspace/);
+    expect(await db.select().from(moduleConfigs).where(eq(moduleConfigs.module, 'vault'))).toEqual([]);
+
+    await db.insert(workspaceModules).values({ workspaceId: role.ws.id, module: 'vault' });
+    try {
+      expect((await load('vault')).enabled).toBe(true);
+      expect(doneOf(await post('vault', { intent: 'save-config', [fieldName('shelf')]: 'side' }))).toBe('applied');
+      expect((await load('shop')).enabled).toBe(true);
+    } finally {
+      await db.delete(workspaceModules);
+    }
   });
 });

@@ -275,7 +275,7 @@ describe('configure / confirm / reject', () => {
     });
     const mods = await rt.appModules(app.id, (m) => `link/${m}`);
     expect(mods.echo).toMatchObject({ pending: true, pending_confirmation: out.pending_confirmation, confirm_url: 'link/echo' });
-    expect(mods.quiet).toEqual({ configured: false, config: { on: false }, pending: false });
+    expect(mods.quiet).toEqual({ enabled: true, configured: false, config: { on: false }, pending: false });
 
     // a safe change meanwhile applies and keeps the pending
     const safe = await rt.configure({ app, module: 'echo', patch: { loud: true }, actorUserId: userId });

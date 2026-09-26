@@ -1,6 +1,6 @@
 {
-  "id": "80f81487-bb75-4833-b283-86f6ef3652e1",
-  "prevId": "dece0903-363c-4a86-8b2c-8c30c8b25105",
+  "id": "dece0903-363c-4a86-8b2c-8c30c8b25105",
+  "prevId": "37c3e639-107d-495c-95a2-2439f9f2eca4",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -231,110 +231,6 @@
           ]
         }
       },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.app_assets": {
-      "name": "app_assets",
-      "schema": "",
-      "columns": {
-        "app_id": {
-          "name": "app_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "content_type": {
-          "name": "content_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "size": {
-          "name": "size",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "sha256": {
-          "name": "sha256",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "storage_key": {
-          "name": "storage_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_by_user_id": {
-          "name": "created_by_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "app_assets_app_id_apps_id_fk": {
-          "name": "app_assets_app_id_apps_id_fk",
-          "tableFrom": "app_assets",
-          "tableTo": "apps",
-          "columnsFrom": [
-            "app_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "app_assets_created_by_user_id_users_id_fk": {
-          "name": "app_assets_created_by_user_id_users_id_fk",
-          "tableFrom": "app_assets",
-          "tableTo": "users",
-          "columnsFrom": [
-            "created_by_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "app_assets_app_id_name_pk": {
-          "name": "app_assets_app_id_name_pk",
-          "columns": [
-            "app_id",
-            "name"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false

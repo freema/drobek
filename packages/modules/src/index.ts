@@ -83,7 +83,7 @@ export {
   type Rule,
   type UploadedFile,
 } from './contract.js';
-export { CORE_ERROR_CODES, MODULE_ERROR_CODES, ModuleError, isModuleError, skillHint, issuePaths, type ModuleErrorBody, type ModuleErrorCode } from './errors.js';
+export { CORE_ERROR_CODES, MODULE_ERROR_CODES, ModuleError, isModuleError, moduleNotEnabled, skillHint, issuePaths, type ModuleErrorBody, type ModuleErrorCode } from './errors.js';
 export { RULE_TOKENS, decideAccess, isValidRule, parseRule, ruleIsPublic } from './rules.js';
 /** Per-client-IP bucket keys for a module's own per-IP limits (null = no resolved IP → skip it; NSO-328). */
 export { perIpLimitKey } from '@drobek/core';
@@ -98,6 +98,7 @@ export {
   LIMITS_TIMESTAMP_HEADER,
   createLimitsProvider,
   limitsProviderConfigError,
+  moduleEnabledLimitName,
   signLimitsRequest,
   type LimitsProvider,
 } from './limits.js';
@@ -225,4 +226,6 @@ export {
   type RuntimeDeps,
   type SkillInfo,
   type SkillListItem,
+  type WorkspaceModuleSource,
+  type WorkspaceModuleState,
 } from './runtime.js';

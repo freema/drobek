@@ -99,11 +99,11 @@ export const TOOL_DOCS: ToolDoc[] = [
     title: 'Get an app',
     scope: 'read (any role in the workspace)',
     description:
-      'Snapshot of one app: everything list_apps shows plus the briefing, the source files of the latest version ({path,size,sha256}), the last 20 versions (number, created_at, actor_kind, reasoning, compile_status), the latest compile errors, the platform modules (per module: its effective config, whether a change waits for the owner\'s confirmation, which secrets are set — names and hasSecret only, never values — and the module\'s info, e.g. proxy: the workspace upstreams with registered/assigned/call/hasSecret), the skills list, the public gallery state (listed, description, hidden_by_admin, visible — or enabled:false when the server has no gallery), and the write lock (holder + expires_at) if someone holds it. Use it to re-orient before editing.',
+      'Snapshot of one app: everything list_apps shows plus the briefing, the source files of the latest version ({path,size,sha256}), the last 20 versions (number, created_at, actor_kind, reasoning, compile_status), the latest compile errors, the platform modules (per module: whether it is enabled for the app\'s workspace — an opt-in module the operator has not enabled says enabled:false and cannot be used —, its effective config, whether a change waits for the owner\'s confirmation, which secrets are set — names and hasSecret only, never values — and the module\'s info, e.g. proxy: the workspace upstreams with registered/assigned/call/hasSecret), the skills list (without the opt-in modules that are off for the workspace), the public gallery state (listed, description, hidden_by_admin, visible — or enabled:false when the server has no gallery), and the write lock (holder + expires_at) if someone holds it. Use it to re-orient before editing.',
     annotations: READ_ONLY,
     fields: [{ name: 'app_id', type: 'string', required: true, description: 'The app id (from list_apps / create_app).' }],
     returns:
-      '{ app_id, name, slug, workspace, preview_url, published_url?, published_version?, latest_version, compile_status, compile_errors, briefing, files:[{path,size,sha256}], versions:[{number,created_at,actor_kind,reasoning,compile_status}], modules:{<name>:{configured,config,pending,pending_confirmation?,confirm_url?,secrets?:[{name,hasSecret}],info?}}, skills:[{name,use_when}], gallery:{enabled,listed?,description?,hidden_by_admin?,visible?}, lock?:{holder,expires_at}, locked_by_admin?, locked_reason? }',
+      '{ app_id, name, slug, workspace, preview_url, published_url?, published_version?, latest_version, compile_status, compile_errors, briefing, files:[{path,size,sha256}], versions:[{number,created_at,actor_kind,reasoning,compile_status}], modules:{<name>:{enabled,configured,config,pending,pending_confirmation?,confirm_url?,secrets?:[{name,hasSecret}],info?}}, skills:[{name,use_when}], gallery:{enabled,listed?,description?,hidden_by_admin?,visible?}, lock?:{holder,expires_at}, locked_by_admin?, locked_reason? }',
     example: { app_id: 'k3v9x0…' },
   },
   {
@@ -213,13 +213,19 @@ export const TOOL_DOCS: ToolDoc[] = [
     title: 'Read a skill',
     scope: 'read (any signed-in user)',
     description:
-      'The documentation of the backends this server offers. Without `name`: the list of skills — each platform module (login, stored data, forms, email, file uploads, external APIs… whatever this server has active) and each general guide — with a one-sentence "use when…". With `name`: that skill\'s Markdown — when to use it, minimal working code, the exact SDK calls (`import { drobek } from \'drobek\'`) and their types, limits, server-enforced rules and common errors; for a module also its config schema and defaults, the names of its secrets, its own error codes (`errors`: code, meaning, fix) and the facts the dashboard\'s workspace Modules page shows (version, source, contract range, availability, required modules, the slots it offers with who contributes, its own contributions). Call it BEFORE using a backend and follow it. Never returns secret values or any app\'s config. An unknown name answers not_found with the available names.',
+      'The documentation of the backends this server offers. Without `name`: the list of skills — each platform module (login, stored data, forms, email, file uploads, external APIs… whatever this server has active) and each general guide — with a one-sentence "use when…". An opt-in module (enabled by the server operator per workspace) carries `availability: "opt-in"`; with `app_id` it also says `enabled_for_workspace` — use it only when that is true. With `name`: that skill\'s Markdown — when to use it, minimal working code, the exact SDK calls (`import { drobek } from \'drobek\'`) and their types, limits, server-enforced rules and common errors; for a module also its config schema and defaults, the names of its secrets, its own error codes (`errors`: code, meaning, fix) and the facts the dashboard\'s workspace Modules page shows (version, source, contract range, availability, required modules, the slots it offers with who contributes, its own contributions). Call it BEFORE using a backend and follow it. Never returns secret values or any app\'s config. An unknown name answers not_found with the available names.',
     annotations: READ_ONLY,
     fields: [
       { name: 'name', type: 'string (optional)', required: false, description: 'A skill name from the list; omit to list every skill.' },
+      {
+        name: 'app_id',
+        type: 'string (optional)',
+        required: false,
+        description: 'An app id: then each opt-in module also says enabled_for_workspace (active for that app\'s workspace).',
+      },
     ],
     returns:
-      'no name: { skills:[{name,use_when}], note } — with name: { name, kind:"module"|"general", use_when, content, sdk?:{import,types}, config?:{schema,defaults,confirm_required}, limits?:[{name,value,meaning}], secrets?:[{name,description,required}], errors?:[{code,meaning,fix}], availability?:"default"|"opt-in", version?, source?:"builtin"|"dir", contract?:string|null, requires?:[name], slots?:[{name,description,unique,contributions:[{module,key}]}], contributes?:[{slot,host,key}] }',
+      'no name: { skills:[{name,use_when,availability?:"opt-in",enabled_for_workspace? (with app_id)}], note } — with name: { name, kind:"module"|"general", use_when, content, sdk?:{import,types}, config?:{schema,defaults,confirm_required}, limits?:[{name,value,meaning}], secrets?:[{name,description,required}], errors?:[{code,meaning,fix}], availability?:"default"|"opt-in", version?, source?:"builtin"|"dir", contract?:string|null, requires?:[name], slots?:[{name,description,unique,contributions:[{module,key}]}], contributes?:[{slot,host,key}], enabled_for_workspace? (opt-in, with app_id) }',
     example: { name: 'hello' },
   },
   {
@@ -227,7 +233,7 @@ export const TOOL_DOCS: ToolDoc[] = [
     title: 'Configure a platform module',
     scope: 'write (editor+ role in the workspace)',
     description:
-      'Set a platform module\'s config for one app. `config` is PARTIAL (a JSON merge patch): send only the keys you change; null resets a key to its default. It is validated against the module\'s schema (skill_info(module) shows it) — a wrong value answers invalid_params with the field paths. Changes the module marks as sensitive (e.g. opening data to the public, a new e-mail recipient) are NOT applied: the answer is applied:false with pending_confirmation and a confirm_url — give the user that link; the change applies once they confirm it in the drobek dashboard. Secrets are never set here (credential-looking values are refused): the app owner enters them in the dashboard, and secrets_missing names the ones still unset. Takes the app\'s single-writer lease like write_files.',
+      'Set a platform module\'s config for one app. `config` is PARTIAL (a JSON merge patch): send only the keys you change; null resets a key to its default. It is validated against the module\'s schema (skill_info(module) shows it) — a wrong value answers invalid_params with the field paths. Changes the module marks as sensitive (e.g. opening data to the public, a new e-mail recipient) are NOT applied: the answer is applied:false with pending_confirmation and a confirm_url — give the user that link; the change applies once they confirm it in the drobek dashboard. Secrets are never set here (credential-looking values are refused): the app owner enters them in the dashboard, and secrets_missing names the ones still unset. An opt-in module that is not enabled for the app\'s workspace answers module_not_enabled. Takes the app\'s single-writer lease like write_files.',
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     fields: [
       { name: 'app_id', type: 'string', required: true, description: 'The app id.' },

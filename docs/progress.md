@@ -1410,6 +1410,38 @@ block, then `next` is pushed and the single MR opened.
   `summary()` (/healthz) serves. Tests that load `{ modules }` directly pass
   `loadModuleRuntime({ modules, origins: { x: { source: 'dir', path } } })`.
 
+- NSO-346: an opt-in module's state comes from `ModuleRuntime.enabledModules(ws)`
+  (plan → env `MODULE_ENABLED_<NAME>=1` → `workspace_modules` row). Compute
+  it ONCE per request and pass it to `skillList(enabled)`,
+  `compileHint(msg, enabled)` and `appModules(app, link, enabled)` — each
+  call without it re-reads the provider cache and the table. It does no I/O
+  on a server without opt-in modules. `LimitsProvider.fromPlan` is optional
+  (test fakes need not implement it) and returns only what the plan SET, so
+  an explicit `0` can be told from the env default `0`.
+- NSO-346: `runHook('onAppCreate' | 'onPublish')` skips an opt-in module that
+  is off for the workspace; `onAppDelete` always runs. A test module declared
+  `availability: 'opt-in'` with hooks must be enabled (insert a
+  `workspace_modules` row) to see its create/publish hooks.
+- NSO-346 × NSO-347 merge: ONE Workspace → Modules page. The route
+  (`workspaces.$slug.modules.server.ts`) is NSO-347's viewer+ overview; its
+  loader adds `optIn` (`loadWorkspaceModuleToggles`, with
+  `dashboard.enabled_by` blanked below workspace-admin) and its action is
+  `workspaceModuleToggleAction` (403 for anyone but a super-admin, null for
+  other intents → 400). `WorkspaceModuleOptIn`
+  (`workspace-modules-toggle.tsx`) renders one opt-in module's state + switch
+  and is mounted per card through `availabilityControls`; the e2e test ids
+  (`workspace-module-row` / `-state` / `-toggle` / `-source`) live on it.
+  There is no `canViewModules`: the tab shows for every member.
+- NSO-346 × NSO-358 merge: journal order is 0022 → 0023_workspace_modules
+  (`when` moved from 1790434949568 to 1790432800000, before 0024's
+  1790433136356) → 0024_app_assets; 0024's snapshot was rebuilt from a scratch
+  `drizzle-kit generate --dialect postgresql --schema ./src/schema.ts --out
+  .scratch-mig` over the folder without 0024 (identical SQL) and keeps its id
+  with `prevId` = 0023's id; a drift check says "No schema changes". drizzle
+  applies a journal entry only when its `when` is newer than the DB's last
+  applied one, so a dev DB that already ran 0024 never gets 0023 —
+  recreate it (`docker compose down -v`) or apply 0023's SQL by hand.
+
 ## Failed approaches
 
 - `pnpm deploy --offline` in the Dockerfile builder: fails with

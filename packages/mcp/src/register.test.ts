@@ -123,7 +123,7 @@ describe('tools/list', () => {
         name: 'skill_info',
         title: 'Read a skill',
         annotations: { title: 'Read a skill', ...RO },
-        properties: ['name'],
+        properties: ['name', 'app_id'],
         required: [],
       },
       {

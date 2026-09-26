@@ -10,6 +10,7 @@ export type ModuleErrorCode =
   | 'unauthorized'
   | 'forbidden'
   | 'not_found'
+  | 'module_not_enabled'
   | 'method_not_allowed'
   | 'payload_too_large'
   | 'unsupported_media_type'
@@ -29,6 +30,7 @@ const STATUS: Record<string, number> = {
   forbidden: 403,
   csrf_rejected: 403,
   not_found: 404,
+  module_not_enabled: 404,
   method_not_allowed: 405,
   conflict: 409,
   payload_too_large: 413,
@@ -142,6 +144,19 @@ export function isModuleError(err: unknown): err is ModuleError {
   const e = err as Partial<ModuleError> & { [MODULE_ERROR_BRAND]?: unknown };
   if (typeof e.status !== 'number' || typeof e.body !== 'function') return false;
   return e[MODULE_ERROR_BRAND] === true || e.name === 'ModuleError';
+}
+
+/**
+ * NSO-346: an opt-in module (`availability: 'opt-in'`) that is not enabled
+ * for the app's workspace — the module route (404), configure_module and the
+ * owner's confirm answer this.
+ */
+export function moduleNotEnabled(name: string): ModuleError {
+  return new ModuleError(
+    'module_not_enabled',
+    `The platform module "${name}" is not enabled for this app's workspace. Only the server operator can enable it.`,
+    { details: { module: name }, hint: skillHint(name) }
+  );
 }
 
 /** `skill_info('<name>')` — the hint every module error carries by default. */

@@ -38,7 +38,15 @@ export default function AppModulesRoute() {
                   {m.name}
                 </Link>
                 <span style={ui.small}>v{m.version}</span>
-                {m.configured ? <span style={ui.okBadge}>configured</span> : <span style={ui.badge}>defaults</span>}
+                {!m.enabled ? (
+                  <span style={ui.badge} data-testid="module-not-enabled">
+                    not enabled for this workspace
+                  </span>
+                ) : m.configured ? (
+                  <span style={ui.okBadge}>configured</span>
+                ) : (
+                  <span style={ui.badge}>defaults</span>
+                )}
                 {m.pending.length > 0 ? (
                   <span style={ui.warnBadge} data-testid="module-pending">
                     {m.pending.length} awaiting confirmation

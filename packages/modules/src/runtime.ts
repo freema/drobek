@@ -17,18 +17,27 @@
  *  - `runHook()` — onAppCreate / onPublish / onAppDelete;
  *  - `contributions()` — the slot contributions of the active modules
  *    (`ModuleServices.contributions`); `errorCatalogue()` — the modules'
- *    own error codes (skill_info, /llms-full.txt).
+ *    own error codes (skill_info, /llms-full.txt);
+ *  - `isEnabled()` / `enabledModules()` / `workspaceModules()` /
+ *    `setWorkspaceModule()` — NSO-346: an `availability: 'opt-in'` module
+ *    is active for a workspace when the limits provider's plan says
+ *    `MODULE_ENABLED_<NAME>: 1` (0 = off, whatever else says), else when the
+ *    env sets `MODULE_ENABLED_<NAME>=1` (every workspace), else when a
+ *    super-admin enabled it in the dashboard (`workspace_modules`). An
+ *    inactive one answers `404 module_not_enabled` on its routes and in
+ *    configure_module / confirm, is left out of an app's skills and runs no
+ *    onAppCreate / onPublish hook. The SDK stays one per server.
  *
  * `moduleRuntime()` is the process-wide instance, loaded once from
  * `DROBEK_MODULES` (memoised on globalThis, so the dev server's Vite-loaded
  * route modules share the instance the server entry created).
  */
 import { appsOrigin, dashboardOrigin } from '@drobek/apps';
-import { AUDIT_ACTIONS, actorKindForSurface, writeAudit } from '@drobek/audit';
+import { AUDIT_ACTIONS, AUDIT_SUBJECT_TYPES, actorKindForSurface, writeAudit } from '@drobek/audit';
 import { renderTextEmailHtml, sendEmail } from '@drobek/email';
 import { scanForSecrets } from '@drobek/compile';
 import { createConsoleLogger, getRedis, type Logger } from '@drobek/core';
-import { apps, dbErrorForLog, getDb, memberships, runJournalMigrations, users, type DB } from '@drobek/db';
+import { apps, dbErrorForLog, getDb, memberships, runJournalMigrations, users, workspaceModules, type DB } from '@drobek/db';
 import { recordModuleRequest } from '@drobek/insights';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { Readable } from 'node:stream';
@@ -64,8 +73,8 @@ import type {
 } from './contract.js';
 import { readConfigRow, readConfigRows, withLockedConfig, type PendingChange } from './configs.server.js';
 import { assertSignInSender, capEmailText, emailKind, redactAddresses, resolveRecipients, sanitizeSubject } from './email.js';
-import { CORE_ERROR_CODES, ModuleError, isModuleError, issuePaths, skillHint } from './errors.js';
-import { CORE_LIMITS, createLimitsProvider, type LimitsProvider } from './limits.js';
+import { CORE_ERROR_CODES, ModuleError, isModuleError, issuePaths, moduleNotEnabled, skillHint } from './errors.js';
+import { CORE_LIMITS, createLimitsProvider, moduleEnabledLimit, moduleEnabledLimitName, type CatalogueLimit, type LimitsProvider } from './limits.js';
 import { mailGuardConfigFromEnv, redisMailGuard, type MailGuard, type MailGuardRedis } from './mail-guard.js';
 import { Lru, jsonKey } from './memo.js';
 import { jsonEqual, mergePatch } from './merge-patch.js';
@@ -200,7 +209,33 @@ export interface PlatformApp {
 export interface SkillListItem {
   name: string;
   use_when: string;
+  /** NSO-346: only on an opt-in module's skill — it is active only for the workspaces it is enabled for. */
+  availability?: 'opt-in';
+  /** NSO-346: skill_info() with an app, on an opt-in module's skill: active for the app's workspace. */
+  enabled_for_workspace?: boolean;
 }
+
+/** NSO-346: what decides that an opt-in module is on or off for a workspace. */
+export type WorkspaceModuleSource = 'dashboard' | 'plan' | 'env';
+
+/** NSO-346: one opt-in module for one workspace (the dashboard's Workspace → Modules). */
+export interface WorkspaceModuleState {
+  name: string;
+  version: string;
+  use_when: string;
+  /** Active for the workspace now. */
+  enabled: boolean;
+  /**
+   * What decides it: the limits provider's plan (`MODULE_ENABLED_<NAME>`, 1 or
+   * 0), the operator's env (`MODULE_ENABLED_<NAME>=1`), or the super-admin's
+   * switch; null = nothing enables it.
+   */
+  source: WorkspaceModuleSource | null;
+  /** The super-admin's switch (a `workspace_modules` row) — a plan value overrides it. */
+  dashboard: { enabled: boolean; enabled_by: string | null; enabled_at: string | null };
+}
+
+type OptInState = { enabled: boolean; source: WorkspaceModuleSource | null; row: { enabledBy: string | null; enabledAt: Date } | null };
 
 export interface SkillInfo {
   name: string;
@@ -223,6 +258,8 @@ export interface SkillInfo {
   /** The extension points the module offers (with who contributes) and its own contributions to other modules' slots. */
   slots?: ModuleFacts['slots'];
   contributes?: ModuleFacts['contributes'];
+  /** NSO-346: skill_info with an app: whether this opt-in module is active for the app's workspace. */
+  enabled_for_workspace?: boolean;
 }
 
 /**
@@ -266,6 +303,8 @@ export interface ModuleErrorSection {
 }
 
 export interface AppModuleState {
+  /** NSO-346: active for the app's workspace (always true for a default module). */
+  enabled: boolean;
   configured: boolean;
   config: unknown;
   pending: boolean;
@@ -408,6 +447,8 @@ export interface ModuleDashboardView {
   slots: ModuleFacts['slots'];
   contributes: ModuleFacts['contributes'];
   errors: ModuleErrorDoc[];
+  /** NSO-346: active for the app's workspace (an opt-in module may not be — the page then shows no form). */
+  enabled: boolean;
 }
 
 export interface DecisionInput {
@@ -577,6 +618,137 @@ export class ModuleRuntime {
   /** The facts of every active module, in DROBEK_MODULES order. */
   moduleFactsList(): ModuleFacts[] {
     return this.modules.map((m) => this.moduleFacts(m.name)!);
+  }
+
+  // ── per-workspace availability (NSO-346) ──
+
+  /** The active modules declared `availability: 'opt-in'`. */
+  private optInModules(): AnyModule[] {
+    return this.modules.filter((m) => m.availability === 'opt-in');
+  }
+
+  /**
+   * Whether and why each opt-in module is on for `workspaceId`: the plan
+   * (limits provider, cached 60 s like every limit) wins in both directions,
+   * then the env value 1, then the super-admin's `workspace_modules` row
+   * (a primary-key read, so a toggle applies at once).
+   */
+  private async optInStates(workspaceId: string, modules: AnyModule[] = this.optInModules()): Promise<Map<string, OptInState>> {
+    const out = new Map<string, OptInState>();
+    if (modules.length === 0) return out;
+    const plan = (await this.deps.limits.fromPlan?.(workspaceId)) ?? null;
+    const env = this.deps.limits.defaults();
+    const rows = workspaceId
+      ? await this.deps
+          .db()
+          .select({ module: workspaceModules.module, enabledBy: workspaceModules.enabledBy, enabledAt: workspaceModules.enabledAt })
+          .from(workspaceModules)
+          .where(and(eq(workspaceModules.workspaceId, workspaceId), inArray(workspaceModules.module, modules.map((m) => m.name))))
+      : [];
+    const byModule = new Map(rows.map((r) => [r.module, { enabledBy: r.enabledBy, enabledAt: r.enabledAt }]));
+    for (const m of modules) {
+      const key = moduleEnabledLimitName(m.name);
+      const row = byModule.get(m.name) ?? null;
+      const planned = plan?.[key];
+      if (typeof planned === 'number') out.set(m.name, { enabled: planned === 1, source: 'plan', row });
+      else if (env[key] === 1) out.set(m.name, { enabled: true, source: 'env', row });
+      else out.set(m.name, { enabled: row !== null, source: row ? 'dashboard' : null, row });
+    }
+    return out;
+  }
+
+  /** NSO-346: is module `name` active for `workspaceId`? A default module always is; an unknown one never. */
+  async isEnabled(workspaceId: string, name: string): Promise<boolean> {
+    const m = this.byName.get(name);
+    if (!m) return false;
+    if (m.availability !== 'opt-in') return true;
+    return (await this.optInStates(workspaceId, [m])).get(m.name)?.enabled === true;
+  }
+
+  /**
+   * NSO-346: the names of the active modules that are on for `workspaceId`
+   * (every default module + the enabled opt-in ones). No I/O when the server
+   * has no opt-in module. Compute it once per request and pass it on.
+   */
+  async enabledModules(workspaceId: string): Promise<ReadonlySet<string>> {
+    const optIn = this.optInModules();
+    const out = new Set(this.modules.filter((m) => m.availability !== 'opt-in').map((m) => m.name));
+    if (optIn.length === 0) return out;
+    for (const [name, st] of await this.optInStates(workspaceId, optIn)) if (st.enabled) out.add(name);
+    return out;
+  }
+
+  /** NSO-346: every opt-in module with its state for `workspaceId` (the dashboard's Workspace → Modules). */
+  async workspaceModules(workspaceId: string): Promise<WorkspaceModuleState[]> {
+    const optIn = this.optInModules();
+    const states = await this.optInStates(workspaceId, optIn);
+    const userIds = [...new Set([...states.values()].map((s) => s.row?.enabledBy).filter((v): v is string => !!v))];
+    const emails = new Map<string, string>();
+    if (userIds.length > 0) {
+      const rows = await this.deps.db().select({ id: users.id, email: users.email }).from(users).where(inArray(users.id, userIds));
+      for (const r of rows) emails.set(r.id, r.email);
+    }
+    return optIn.map((m) => {
+      const st = states.get(m.name)!;
+      return {
+        name: m.name,
+        version: m.version,
+        use_when: m.skill.useWhen,
+        enabled: st.enabled,
+        source: st.source,
+        dashboard: {
+          enabled: st.row !== null,
+          enabled_by: st.row?.enabledBy ? (emails.get(st.row.enabledBy) ?? null) : null,
+          enabled_at: st.row ? st.row.enabledAt.toISOString() : null,
+        },
+      };
+    });
+  }
+
+  /**
+   * NSO-346: a super-admin turns an opt-in module on or off for a workspace
+   * (the dashboard's switch — the caller has checked super-admin). Audited
+   * `module.workspace_enable` / `module.workspace_disable` (meta: module) when
+   * it changes anything. A plan value (`MODULE_ENABLED_<NAME>`) still wins.
+   */
+  async setWorkspaceModule(input: { workspaceId: string; module: string; enabled: boolean; actorUserId: string }): Promise<{ changed: boolean }> {
+    const m = this.byName.get(input.module);
+    if (!m || m.availability !== 'opt-in') {
+      throw new ModuleError('not_found', `No opt-in platform module "${String(input.module)}" is active on this server.`, {
+        details: { available: this.optInModules().map((x) => x.name) },
+      });
+    }
+    return this.deps.db().transaction(async (tx) => {
+      const changed = input.enabled
+        ? (
+            await tx
+              .insert(workspaceModules)
+              .values({ workspaceId: input.workspaceId, module: m.name, enabledBy: input.actorUserId })
+              .onConflictDoNothing()
+              .returning({ module: workspaceModules.module })
+          ).length > 0
+        : (
+            await tx
+              .delete(workspaceModules)
+              .where(and(eq(workspaceModules.workspaceId, input.workspaceId), eq(workspaceModules.module, m.name)))
+              .returning({ module: workspaceModules.module })
+          ).length > 0;
+      if (changed) {
+        await writeAudit(
+          {
+            workspaceId: input.workspaceId,
+            actorUserId: input.actorUserId,
+            actorKind: actorKindForSurface('web'),
+            action: input.enabled ? AUDIT_ACTIONS.moduleWorkspaceEnable : AUDIT_ACTIONS.moduleWorkspaceDisable,
+            subjectType: AUDIT_SUBJECT_TYPES.module,
+            target: m.name,
+            meta: { module: m.name },
+          },
+          tx as unknown as DB
+        );
+      }
+      return { changed };
+    });
   }
 
   // ── end users ──
@@ -775,8 +947,20 @@ export class ModuleRuntime {
 
   // ── skills ──
 
-  skillList(): SkillListItem[] {
-    return this.skills.map((s) => ({ name: s.name, use_when: s.useWhen }));
+  /**
+   * The skills list (skill_info(), create_app, get_app). Without `enabled`:
+   * every skill, an opt-in module's marked `availability: 'opt-in'`. With the
+   * app workspace's `enabled` set (enabledModules): the opt-in modules that
+   * are off for it are left out (NSO-346).
+   */
+  skillList(enabled?: ReadonlySet<string>): SkillListItem[] {
+    const out: SkillListItem[] = [];
+    for (const s of this.skills) {
+      const optIn = s.module?.availability === 'opt-in';
+      if (optIn && enabled && !enabled.has(s.module!.name)) continue;
+      out.push(optIn ? { name: s.name, use_when: s.useWhen, availability: 'opt-in' } : { name: s.name, use_when: s.useWhen });
+    }
+    return out;
   }
 
   /** One skill's documentation, or null (the caller answers not_found + the list). */
@@ -830,12 +1014,19 @@ export class ModuleRuntime {
     return out;
   }
 
-  /** The hint for a compile message: backend imports point at the skill that replaces them. */
-  compileHint(msg: { code?: string; specifier?: string }): string | undefined {
+  /**
+   * The hint for a compile message: backend imports point at the skill that
+   * replaces them — only when that skill is on the server and, given the app
+   * workspace's `enabled` set, its module is active there (NSO-346).
+   */
+  compileHint(msg: { code?: string; specifier?: string }, enabled?: ReadonlySet<string>): string | undefined {
     if (msg.code !== 'unresolved_import' || !msg.specifier) return undefined;
     const skill = skillForImport(msg.specifier);
     if (!skill) return undefined;
-    return this.skills.some((s) => s.name === skill) ? skillHint(skill) : skillHint();
+    const entry = this.skills.find((s) => s.name === skill);
+    if (!entry) return skillHint();
+    if (entry.module?.availability === 'opt-in' && enabled && !enabled.has(entry.module.name)) return skillHint();
+    return skillHint(skill);
   }
 
   // ── config ──
@@ -911,6 +1102,7 @@ export class ModuleRuntime {
       slots: facts.slots,
       contributes: facts.contributes,
       errors: facts.errors,
+      enabled: await this.isEnabled(app.workspaceId, m.name),
     };
     const info = await this.appInfo(m, app, config);
     if (info) view.info = info;
@@ -977,16 +1169,23 @@ export class ModuleRuntime {
 
   /**
    * get_app's `modules`. Pass the app (not only its id) to include each
-   * module's `info` (it needs the app's workspace).
+   * module's `info` (it needs the app's workspace). `enabled` = the app
+   * workspace's enabledModules() when the caller has it already.
    */
-  async appModules(app: string | HookApp, confirmLink?: (module: string) => string): Promise<Record<string, AppModuleState>> {
+  async appModules(
+    app: string | HookApp,
+    confirmLink?: (module: string) => string,
+    enabled?: ReadonlySet<string>
+  ): Promise<Record<string, AppModuleState>> {
     const appId = typeof app === 'string' ? app : app.id;
     const rows = await readConfigRows(appId, this.modules.map((m) => m.name));
+    const on = enabled ?? (await this.enabledModules(typeof app === 'string' ? await this.workspaceOf(app) : app.workspaceId));
     const out: Record<string, AppModuleState> = {};
     for (const m of this.modules) {
       const row = rows.get(m.name);
       const stored = row?.config ?? {};
       const state: AppModuleState = {
+        enabled: on.has(m.name),
         configured: Object.keys(stored).length > 0,
         config: this.effectiveConfig(m, stored),
         pending: Boolean(row?.pending),
@@ -1007,6 +1206,13 @@ export class ModuleRuntime {
       out[m.name] = state;
     }
     return out;
+  }
+
+  /** The workspace of an app id ('' when it does not exist: then only default modules are on). */
+  private async workspaceOf(appId: string): Promise<string> {
+    if (this.optInModules().length === 0) return '';
+    const [row] = await this.deps.db().select({ workspaceId: apps.workspaceId }).from(apps).where(eq(apps.id, appId)).limit(1);
+    return row?.workspaceId ?? '';
   }
 
   private requireModule(name: string): AnyModule {
@@ -1041,6 +1247,7 @@ export class ModuleRuntime {
   /** configure_module: validate a partial config; apply it, or hold it for the owner. */
   async configure(input: ConfigureInput): Promise<ConfigureResult> {
     const m = this.requireModule(input.module);
+    if (!(await this.isEnabled(input.app.workspaceId, m.name))) throw moduleNotEnabled(m.name);
     const patch = input.patch;
     if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
       throw new ModuleError('invalid_params', '`config` must be a JSON object (a partial config; null removes a key).', {
@@ -1171,6 +1378,7 @@ export class ModuleRuntime {
   /** The owner confirms the pending change (dashboard): apply it on top of the current config. */
   async confirm(input: DecisionInput): Promise<{ module: string; config: unknown; confirmed: string[] }> {
     const m = this.requireModule(input.module);
+    if (!(await this.isEnabled(input.app.workspaceId, m.name))) throw moduleNotEnabled(m.name);
     return withLockedConfig(input.app.id, m.name, async (row, write, tx) => {
       if (!row.pending) throw new ModuleError('conflict', `Nothing is waiting for confirmation in ${m.name}.`, { details: { reason: 'nothing_pending' } });
       const role: ConfirmRole = input.role === 'admin' ? 'admin' : 'editor';
@@ -1252,9 +1460,21 @@ export class ModuleRuntime {
   async runHook(hook: 'onAppCreate' | 'onAppDelete', app: HookApp): Promise<void>;
   async runHook(hook: 'onPublish', app: HookApp & { version: number }): Promise<void>;
   async runHook(hook: 'onAppCreate' | 'onPublish' | 'onAppDelete', app: HookApp & { version?: number }): Promise<void> {
+    // NSO-346: an opt-in module that is off for the workspace gets no create /
+    // publish hook; onAppDelete always runs (it cleans up what it kept then).
+    let enabled: ReadonlySet<string> | null = null;
     for (const m of this.modules) {
       const fn = m.hooks?.[hook] as ((a: typeof app, s: ModuleServices) => unknown) | undefined;
       if (!fn) continue;
+      if (hook !== 'onAppDelete' && m.availability === 'opt-in') {
+        try {
+          enabled ??= await this.enabledModules(app.workspaceId);
+        } catch (err) {
+          this.deps.log.error('module availability check failed', { module: m.name, hook, app_id: app.id, error: dbErrorForLog(err) });
+          continue;
+        }
+        if (!enabled.has(m.name)) continue;
+      }
       try {
         await fn(app, this.services());
       } catch (err) {
@@ -1381,6 +1601,10 @@ export class ModuleRuntime {
             hint: skillHint(),
           })
         );
+      }
+      // NSO-346: an opt-in module off for the app's workspace answers nothing else (not counted).
+      if (m.availability === 'opt-in' && !(await this.isEnabled(app.workspaceId, m.name))) {
+        return errorResult(moduleNotEnabled(m.name), m.name);
       }
       const hit = matchRoute(this.routes.get(m.name) ?? [], req.method, match[2] ?? '/');
       if (hit.kind === 'not_found') {
@@ -1523,6 +1747,18 @@ export interface LoadRuntimeOptions extends ResolveOptions {
   deps?: Partial<RuntimeDeps>;
 }
 
+/**
+ * The limits catalogue of a module set: CORE_LIMITS, every module's `limits`
+ * and, per opt-in module, its `MODULE_ENABLED_<NAME>` pseudo-limit (NSO-346).
+ */
+export function limitsCatalogue(modules: readonly AnyModule[]): CatalogueLimit[] {
+  return [
+    ...CORE_LIMITS,
+    ...modules.flatMap((m) => m.limits ?? []),
+    ...modules.filter((m) => m.availability === 'opt-in').map((m) => moduleEnabledLimit(m.name)),
+  ];
+}
+
 export function moduleJournalTable(name: string): string {
   return `__drizzle_migrations_mod_${name}`;
 }
@@ -1557,7 +1793,7 @@ export async function loadModuleRuntime(opts: LoadRuntimeOptions = {}): Promise<
     env,
     log,
     db: getDb,
-    limits: createLimitsProvider({ catalogue: [...CORE_LIMITS, ...modules.flatMap((m) => m.limits ?? [])], env, redis: getRedis, log }),
+    limits: createLimitsProvider({ catalogue: limitsCatalogue(modules), env, redis: getRedis, log }),
     principal: cookiePrincipalResolver({
       redis: getRedis,
       secure: endUserCookiesSecure(env),

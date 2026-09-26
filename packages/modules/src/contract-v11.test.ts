@@ -5,7 +5,7 @@
  * `dashboard.editor`, `hooks.onAppDelete` and `DROBEK_MODULE_<NAME>_DEFAULTS`.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { apps, workspaces } from '@drobek/db';
+import { apps, workspaceModules, workspaces } from '@drobek/db';
 import { noopLogger } from '@drobek/core';
 import { z } from 'zod';
 import { MODULE_CONTRACT_VERSION, defineModule, type AnyModule, type HookApp, type ModuleServices } from './contract.js';
@@ -290,6 +290,7 @@ describe('the runtime (contributions, hooks, errors, skill_info, the dashboard v
   let close: () => Promise<void>;
   let app: HookApp;
   let rt: ModuleRuntime;
+  let enableWatcher: () => Promise<unknown>;
   const log = logger();
   const seen: { hook: string; app: HookApp; greeters: string[] }[] = [];
   const watcher: AnyModule = defineModule({
@@ -318,6 +319,7 @@ describe('the runtime (contributions, hooks, errors, skill_info, the dashboard v
     const [w] = await fresh.db.insert(workspaces).values({ kind: 'team', slug: 'acme', name: 'Acme' }).returning();
     const [a] = await fresh.db.insert(apps).values({ workspaceId: w.id, slug: 'shop' }).returning();
     app = { id: a.id, slug: a.slug, workspaceId: w.id };
+    enableWatcher = () => fresh.db.insert(workspaceModules).values({ workspaceId: w.id, module: 'watcher' });
     rt = await loadModuleRuntime({
       env: ENV,
       log,
@@ -368,6 +370,12 @@ describe('the runtime (contributions, hooks, errors, skill_info, the dashboard v
   it('hooks get the services with contributions; onAppDelete runs for every module, a failure is logged', async () => {
     seen.length = 0;
     log.error.mockClear();
+    // NSO-346: the opt-in watcher is off for the workspace — no onAppCreate, but onAppDelete still runs.
+    await rt.runHook('onAppCreate', app);
+    await rt.runHook('onAppDelete', app);
+    expect(seen).toEqual([{ hook: 'delete', app, greeters: ['formal', 'pirate'] }]);
+    seen.length = 0;
+    await enableWatcher();
     await rt.runHook('onAppCreate', app);
     await rt.runHook('onAppDelete', app);
     expect(seen).toEqual([

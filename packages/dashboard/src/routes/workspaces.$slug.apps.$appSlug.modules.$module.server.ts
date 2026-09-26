@@ -35,6 +35,11 @@
  * A taken-down app (NSO-293, `apps.locked_reason`) refuses every change with
  * 423 `app_locked_by_admin` (like configure_module and the module-confirm
  * API); `reject` and `remove-secret` stay allowed (they only take away).
+ *
+ * NSO-346: an opt-in module that is not enabled for the workspace shows
+ * "not enabled for this workspace" instead of the forms, and refuses every
+ * change with 404 `module_not_enabled` (again except `reject` and
+ * `remove-secret`).
  */
 import { data, redirect, type ActionFunctionArgs, type LoaderFunctionArgs } from 'react-router';
 import { eq } from 'drizzle-orm';
@@ -45,6 +50,7 @@ import {
   SecretStoreError,
   deleteModuleSecret,
   isModuleError,
+  moduleNotEnabled,
   moduleRuntime,
   setModuleSecret,
   type ModuleDashboardEditor,
@@ -221,6 +227,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     errors: view.errors,
     /** The workspace Modules page (the same facts for every module of the server). */
     modulesHref: `/workspaces/${encodeURIComponent(access.workspace.slug)}/modules#module-${encodeURIComponent(view.name)}`,
+    /** NSO-346: an opt-in module off for this workspace — the page shows a notice instead of the forms. */
+    enabled: view.enabled,
     fields,
     values: fieldValues(fields, view.config),
     pending,
@@ -254,6 +262,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
   // NSO-293: a taken-down app's module setup cannot change (reject / remove-secret only take away).
   if (app.lockedReason && intent !== 'reject' && intent !== 'remove-secret') {
     return failure(423, { intent, fields: {}, general: [lockedByAdminError(app.lockedReason).message] });
+  }
+  // NSO-346: an opt-in module off for the workspace takes no change (reject / remove-secret only take away).
+  if (intent !== 'reject' && intent !== 'remove-secret' && !(await runtime.isEnabled(hookApp.workspaceId, name))) {
+    return failure(404, { intent, fields: {}, general: [moduleNotEnabled(name).message] });
   }
 
   // ── pending decision ──

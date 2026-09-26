@@ -280,6 +280,14 @@ secret injected server-side) and `files` (end-user uploads). The contract is
   (`GET /limits/<workspace_id>`, cached 60 s; an outage falls back to the env
   values). Module e-mail also passes the operator-wide mail guard (hourly
   budgets per class and per app, pause + ALERT line).
+- **Opt-in modules** (`availability: 'opt-in'`) are active only for the
+  workspaces they are enabled for: by the limits provider's plan
+  (`MODULE_ENABLED_<NAME>`: `1` on, `0` off — it wins), by the env value
+  `MODULE_ENABLED_<NAME>=1` (every workspace), or by a super-admin's switch
+  on the dashboard's Workspace → Modules page (`workspace_modules`, audited).
+  Elsewhere their routes answer `404 module_not_enabled`, `configure_module`
+  refuses, `get_app` shows `enabled: false` and the app's skills leave them
+  out; the SDK stays one bundle per server.
 
 ## 7. TLS
 

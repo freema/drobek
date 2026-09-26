@@ -20,7 +20,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   if (!app) throw data({ message: 'Not found' }, { status: 404 });
 
   const runtime = await moduleRuntime();
-  const states = await runtime.appModules(app.id);
+  const states = await runtime.appModules({ id: app.id, slug: app.slug, workspaceId: access.workspace.id });
   const modules = runtime.modules.map((m) => {
     const s = states[m.name];
     const secrets = s?.secrets ?? [];
@@ -29,6 +29,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       name: m.name,
       version: m.version,
       useWhen: m.skill.useWhen,
+      /** NSO-346: false for an opt-in module the workspace does not have enabled. */
+      enabled: s?.enabled !== false,
       configured: Boolean(s?.configured),
       pending: s?.pending_confirmation ?? [],
       secretsSet: secrets.filter((x) => x.hasSecret).length,

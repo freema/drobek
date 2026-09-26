@@ -230,6 +230,7 @@ export function validateModule(m: AnyModule): void {
     if (!ENV_NAME_RE.test(l.env)) fail(`limit "${l.env}" must be an UPPER_SNAKE env name`);
     if (!Number.isInteger(l.default) || l.default <= 0) fail(`limit "${l.env}" needs a positive integer default`);
     if (CORE_LIMITS.some((c) => c.env === l.env)) fail(`limit "${l.env}" is a core limit — pick another name`);
+    if (l.env.startsWith('MODULE_ENABLED_')) fail(`limit "${l.env}": MODULE_ENABLED_* is reserved for the opt-in switch of a module`);
   }
   if (m.sdk) {
     if (typeof m.sdk.entry !== 'string' || !existsSync(toPath(m.sdk.entry))) fail(`sdk.entry does not exist: ${m.sdk.entry}`);
