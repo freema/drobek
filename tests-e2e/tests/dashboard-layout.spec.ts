@@ -179,8 +179,8 @@ test('one layout: breadcrumb, app header + tabs on every app page, aligned filte
   // ── the other workspace pages share the chrome ─────────────────────────────
   for (const [path, tab, label] of [
     ['', 'members', 'Members'],
-    ['/upstreams', 'upstreams', 'Upstreams'],
     ['/modules', 'modules', 'Modules'],
+    ['/upstreams', 'upstreams', 'Upstreams'],
   ] as const) {
     await page.goto(`/workspaces/${ws.slug}${path}`);
     expect((await crumbs(page)).map((c) => c.label), path).toEqual(['Workspaces', wsName, label]);

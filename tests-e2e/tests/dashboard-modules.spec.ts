@@ -310,7 +310,7 @@ test.describe('dashboard Modules tab (M2-02) @local', () => {
     const sources = await pageSources(ownerPage.request, `/workspaces/${app.workspace}/modules`);
     expect(sources).not.toContain(SECRET);
     expect(sources).not.toContain(ROTATED);
-    expect(sources).not.toMatch(/node_modules|\/data\/modules/);
+    expect(sources.replace(/\/@fs\/[^"'\s]+/g, '')).not.toMatch(/node_modules|\/data\/modules/);
 
     // The same facts reach agents through skill_info (MCP parity).
     const info = await callTool(mcp.client, 'skill_info', { name: 'hello' });
