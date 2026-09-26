@@ -997,14 +997,17 @@ verbatim:
 > external APIs), call `skill_info` and follow the skill; `create_app`/`get_app`
 > list the available skills.
 
-The repo ships three general skills: `start` (how an app works: files,
+The repo ships four general skills: `start` (how an app works: files,
 `drobek.json`, the write_files → compile → preview → publish loop, the lease,
 what the server never runs), `debug` (reading `compile.errors` and
-`get_logs`, typical causes and fixes) and `ui` (Tailwind v4's browser build
+`get_logs`, typical causes and fixes), `ui` (Tailwind v4's browser build
 from esm.sh, responsive layout, the accessibility minimum, forms and
-loading/error states). With every built-in module enabled `skill_info()`
-lists 9 skills: `auth, email, forms, data, proxy, files, debug, start, ui`
-(plus `hello` in the dev stack).
+loading/error states) and `port-artifact` (moving a Claude artifact to
+drobek: text files unchanged with `write_files`, every binary through
+`create_asset_upload` at the same path, what the app CSP changes, no
+`window.claude.*`). With every built-in module enabled `skill_info()` lists
+10 skills: `auth, email, forms, data, proxy, files, debug, port-artifact,
+start, ui` (plus `hello` in the dev stack).
 
 ### The skill format (NSO-308)
 

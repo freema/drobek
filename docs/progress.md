@@ -1519,6 +1519,19 @@ block, then `next` is pushed and the single MR opened.
   Resend's `message` text (it can quote the recipient) — keep it that way.
   `@drobek/tenancy` gets `sendEmail` through the `@drobek/auth` re-export (no
   direct dependency); `apps/server` depends on `@drobek/email` directly.
+- NSO-359 (port a Claude artifact): a new general skill is a new entry of
+  `skill_info()` — `EXPECTED_SKILLS` in `packages/skills-check/src/skills.ts`
+  is sorted like the loader (modules, then general skills by name:
+  `debug, port-artifact, start, ui`) and its `description` is ≤ 220 chars.
+  A plain page's relative `<script src="x.js">` is served as written (only
+  `src/main.*` and `entries` are bundled; `.ts/.tsx/.jsx` sources are never
+  served). `tests-eval/run.mjs` is typechecked by skills-check with
+  `lib: ES2022` only — no DOM: pass `page.evaluate` a string expression.
+  The artifact fixture (`tests-eval/fixtures/artifact/`) is regenerated with
+  ffmpeg (64x36, 2 s, H.264 baseline, `+faststart`, `-fflags +bitexact`);
+  `--self-check` keeps it < 16 KiB with an `ftyp` box. Playwright's Chromium
+  may not play H.264: the e2e and the eval assert playback only when
+  `canPlayType('video/mp4; codecs="avc1.42E01E"')` is non-empty.
 
 ## Failed approaches
 

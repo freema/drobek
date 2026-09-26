@@ -1,7 +1,9 @@
 /**
  * The drobek agent plugin (M0-10, NSO-302) — `freema/drobek-plugin` (MIT) ships
  * the drobek MCP server, the `build-app-on-drobek` skill (Claude Code, Codex and
- * Cursor variants), a Cursor routing rule and the `/drobek:build-app` command.
+ * Cursor variants), a Cursor routing rule and the `/drobek:build-app` command;
+ * NSO-359 adds `/drobek:port-artifact` (a Claude artifact → a drobek app; the
+ * Codex variant is the `port-artifact-to-drobek` skill).
  * The install lines rendered on /llms.txt, /llms-full.txt and
  * /build-with-your-agent come from HERE, so every surface names the same
  * marketplace and plugin.
@@ -22,6 +24,8 @@ export const PLUGIN_MARKETPLACE_ADD_COMMAND = `claude plugin marketplace add ${P
 export const PLUGIN_INSTALL_COMMAND = `claude plugin install ${PLUGIN_NAME}@${PLUGIN_MARKETPLACE}`;
 /** The plugin's build command (Claude Code). */
 export const PLUGIN_BUILD_COMMAND = `/${PLUGIN_NAME}:build-app`;
+/** The plugin's port command (Claude Code): a Claude artifact → a drobek app (NSO-359). */
+export const PLUGIN_PORT_COMMAND = `/${PLUGIN_NAME}:port-artifact`;
 
 /**
  * The skills rule every drobek skill states VERBATIM (skills/drobek and the

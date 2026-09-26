@@ -5,7 +5,7 @@ import { BUILTIN_MODULES, PKG_DIR, skillSources } from './skills.js';
 
 /**
  * NSO-308 acceptance: "the code in the examples does not rot". Every code block
- * of the 9 skills is compiled with @drobek/compile and typechecked against the
+ * of the 10 skills is compiled with @drobek/compile and typechecked against the
  * CURRENT sdk.d.ts; a renamed SDK method, a wrong prop, a config the module's
  * schema refuses or a script the CSP blocks turns `task check` red, naming the
  * SKILL.md line, the skill and the block.

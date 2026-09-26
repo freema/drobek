@@ -5,8 +5,9 @@
  * The skills of a server running every built-in module — exactly what
  * `skill_info()` serves in the dev stack and the image (minus the `hello`
  * example module): the module skills of auth, email, forms, data, proxy,
- * files and the general skills of the repo's `skills/` directory (start,
- * debug, ui; `skills/drobek` is the platform skill and never listed).
+ * files and the general skills of the repo's `skills/` directory (debug,
+ * port-artifact, start, ui; `skills/drobek` is the platform skill and never
+ * listed).
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -29,8 +30,8 @@ const SKILLS_DIR = join(REPO_ROOT, 'skills');
 /** The built-in modules in the dev compose's DROBEK_MODULES order. */
 export const BUILTIN_MODULES: AnyModule[] = [auth, email, forms, data, proxy, files] as AnyModule[];
 
-/** The 9 skills an agent can read on a server with every built-in module. */
-export const EXPECTED_SKILLS = ['auth', 'email', 'forms', 'data', 'proxy', 'files', 'debug', 'start', 'ui'] as const;
+/** The 10 skills an agent can read on a server with every built-in module. */
+export const EXPECTED_SKILLS = ['auth', 'email', 'forms', 'data', 'proxy', 'files', 'debug', 'port-artifact', 'start', 'ui'] as const;
 
 let runtime: Promise<ModuleRuntime> | null = null;
 

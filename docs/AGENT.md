@@ -27,7 +27,7 @@ plugin bundles the server, the build skill and a command:
 ```sh
 claude plugin marketplace add freema/drobek-plugin
 claude plugin install drobek@drobek
-# then: /drobek:build-app <idea>
+# then: /drobek:build-app <idea>, or /drobek:port-artifact to move a Claude artifact
 ```
 
 **Claude (web and desktop)** — add a custom connector with the URL
@@ -165,6 +165,25 @@ HTML/JS with `write_files` and uploading each binary at the relative path the
 page uses; the app's own file wins over an asset at the same path. Videos
 seek (HTTP Range). The dashboard's Assets tab does the same for the owner.
 
+**Porting a Claude artifact.** drobek hosts what a Claude artifact is. The
+agent that has the artifact's files does the port; the server fetches
+nothing from claude.ai (there is no API for it, and a private artifact sits
+behind the user's sign-in). The general skill `port-artifact`
+(`skill_info('port-artifact')`) is the procedure: ask the user →
+`create_app` → every text file with `write_files`, paths and content
+unchanged → every binary with `create_asset_upload` at the same relative
+path (`curl -T` from the agent's sandbox, or the link for the user) → check
+`compile.ok`, `list_assets` and the preview → `publish` only when the user
+asks → offer the gallery (`set_gallery_listing` only after the user's
+explicit yes). It lists what changes on the way: scripts only from the app
+and esm.sh (a CDN `<script src>` becomes an esm.sh import or a copied file),
+`fetch` only to the app (external APIs through the proxy module), `<iframe>`
+only the curated embeds, and no `window.claude.*` runtime API
+(`window.storage` → `localStorage` or the data module). The plugin carries
+the same procedure as `/drobek:port-artifact` (Claude Code, Cursor) and the
+`port-artifact-to-drobek` skill (Codex). `task eval -- --only d` has a
+fresh agent port a fixture artifact and checks the result.
+
 **Untrusted output.** `read_file`, `query_data` and `get_logs` return content
 written by app authors, end users and browsers. Their text result is wrapped
 in `<untrusted-app-file …>` / `<untrusted-app-data …>` /
@@ -218,9 +237,10 @@ lines). `skill_info` serves two kinds:
 - **general skills** — `skills/<name>/SKILL.md` (`DROBEK_SKILLS_DIR`):
   `start` (how an app works and the write → compile → preview → publish
   loop), `debug` (compile errors and `get_logs`), `ui` (Tailwind's browser
-  build, layout, accessibility, forms).
+  build, layout, accessibility, forms), `port-artifact` (moving a Claude
+  artifact to drobek).
 
-With every built-in module enabled `skill_info()` lists nine (plus `hello` in
+With every built-in module enabled `skill_info()` lists ten (plus `hello` in
 the dev stack). `@drobek/skills-check` compiles and typechecks every code
 block of every skill against the current SDK types in `task check`, so a skill
 cannot drift from the code.

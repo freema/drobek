@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Summer at Grandma's</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;700&display=swap" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Summer at Grandma's</h1>
+      <p>A short family film in two chapters.</p>
+    </header>
+    <main>
+      <video id="film" src="film.mp4" poster="poster.jpg" controls preload="metadata" playsinline></video>
+      <nav id="chapters" aria-label="Chapters"></nav>
+      <section class="stills" aria-label="Stills">
+        <figure><img src="s1.jpg" alt="The garden" /><figcaption>The garden</figcaption></figure>
+        <figure><img src="s2.jpg" alt="The lake" /><figcaption>The lake</figcaption></figure>
+      </section>
+    </main>
+    <script src="chapters.js"></script>
+  </body>
+</html>

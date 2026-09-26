@@ -9,6 +9,7 @@ import { ERROR_CATALOGUE } from './errors-catalogue.js';
 import { LIMITS } from './limits.js';
 import {
   PLUGIN_BUILD_COMMAND,
+  PLUGIN_PORT_COMMAND,
   PLUGIN_INSTALL_COMMAND,
   PLUGIN_MARKETPLACE_ADD_COMMAND,
   PLUGIN_MCP_URL,
@@ -95,7 +96,7 @@ export function renderLlmsTxt(env: NodeJS.ProcessEnv = process.env): string {
     `- [Agent guide](${AGENT_GUIDE_URL}): docs/AGENT.md in the drobek source — how an agent connects, every tool with its scope, the briefing, the skills and llms.txt.`,
     '',
     '## Plugin (Claude Code, Codex, Cursor)',
-    `- Claude Code: \`${PLUGIN_MARKETPLACE_ADD_COMMAND}\` then \`${PLUGIN_INSTALL_COMMAND}\`; build with \`${PLUGIN_BUILD_COMMAND} <idea>\`. The plugin connects ${PLUGIN_MCP_URL}.`,
+    `- Claude Code: \`${PLUGIN_MARKETPLACE_ADD_COMMAND}\` then \`${PLUGIN_INSTALL_COMMAND}\`; build with \`${PLUGIN_BUILD_COMMAND} <idea>\`, move a Claude artifact with \`${PLUGIN_PORT_COMMAND}\`. The plugin connects ${PLUGIN_MCP_URL}.`,
     `- Codex and Cursor: install instructions in ${PLUGIN_REPO_URL}`,
     '',
     '## Connect (MCP)',
@@ -197,7 +198,7 @@ export function renderLlmsFull(env: NodeJS.ProcessEnv = process.env, modules: re
     [
       '## Build with your agent',
       '',
-      `- Claude Code plugin (MCP server ${PLUGIN_MCP_URL} + the build-app-on-drobek skill + the ${PLUGIN_BUILD_COMMAND} command): ${PLUGIN_MARKETPLACE_ADD_COMMAND} && ${PLUGIN_INSTALL_COMMAND}`,
+      `- Claude Code plugin (MCP server ${PLUGIN_MCP_URL} + the build-app-on-drobek skill + the ${PLUGIN_BUILD_COMMAND} and ${PLUGIN_PORT_COMMAND} commands): ${PLUGIN_MARKETPLACE_ADD_COMMAND} && ${PLUGIN_INSTALL_COMMAND}`,
       `- Codex and Cursor variants of the plugin: ${PLUGIN_REPO_URL}`,
       `- Install the drobek skill from a checkout of the drobek repo: ${SKILL_INSTALL_COMMAND}`,
       `- Human quickstart page: ${app}/build-with-your-agent`,

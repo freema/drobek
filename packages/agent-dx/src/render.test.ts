@@ -3,6 +3,7 @@ import { ERROR_CATALOGUE } from './errors-catalogue.js';
 import { LIMITS } from './limits.js';
 import {
   PLUGIN_BUILD_COMMAND,
+  PLUGIN_PORT_COMMAND,
   PLUGIN_INSTALL_COMMAND,
   PLUGIN_MARKETPLACE_ADD_COMMAND,
   PLUGIN_MCP_URL,
@@ -57,6 +58,8 @@ describe('renderLlmsTxt', () => {
     expect(PLUGIN_MARKETPLACE_ADD_COMMAND).toBe('claude plugin marketplace add freema/drobek-plugin');
     expect(PLUGIN_INSTALL_COMMAND).toBe('claude plugin install drobek@drobek');
     expect(PLUGIN_BUILD_COMMAND).toBe('/drobek:build-app');
+    expect(txt).toContain(PLUGIN_PORT_COMMAND);
+    expect(PLUGIN_PORT_COMMAND).toBe('/drobek:port-artifact');
   });
 });
 

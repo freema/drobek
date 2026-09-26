@@ -6,7 +6,7 @@ import { BUILTIN_MODULES, EXPECTED_SKILLS, skillSources, skillsRuntime } from '.
 
 /**
  * NSO-308: the content `skill_info` serves. Written for the AGENT only, one
- * format for all 9 skills (docs/MODULES.md "Skills"):
+ * format for all 10 skills (docs/MODULES.md "Skills"):
  *
  *   ## 1. When to use / ## 2. Minimal working code / ## 3. API and types /
  *   ## 4. Rules and limits / ## 5. Errors → fix — at most 150 lines.
@@ -20,7 +20,7 @@ const CORE_CODES = ERROR_CATALOGUE.map((e) => e.code);
 const sources = await skillSources();
 
 describe('skill_info() with every built-in module', () => {
-  it('lists exactly the 9 skills — modules first, then the general skills', async () => {
+  it('lists exactly the 10 skills — modules first, then the general skills', async () => {
     const rt = await skillsRuntime();
     expect(rt.skillList().map((s) => s.name)).toEqual([...EXPECTED_SKILLS]);
   });

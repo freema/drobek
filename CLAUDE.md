@@ -78,7 +78,7 @@ packages/dashboard      dashboard routes + server halves
 packages/{auth,tenancy,audit,domains,email,insights,proxy,core,db,sdk}
 packages/skills-check   compiles + typechecks every skill code block (test-only)
 modules/<name>          built-in platform modules (auth, email, forms, data, proxy, files) + SKILL.md
-skills/                 general skills (start, debug, ui) + the platform skill skills/drobek
+skills/                 general skills (start, debug, ui, port-artifact) + the platform skill skills/drobek
 examples/               drobek-module-hello (an external module)
 tests-e2e/              Playwright (@local needs the dev stack, @smoke is safe anywhere)
 tests-eval/             manual agent eval (`task eval`, never CI)

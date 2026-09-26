@@ -70,8 +70,9 @@ Before using a backend (login, stored data, forms, email, file uploads, external
 - Besides the module skills (`auth`, `data`, `forms`, `email`, `files`,
   `proxy`, …) the list has general skills: `start` (files, drobek.json, the
   write → preview → publish loop), `debug` (compile errors, `get_logs`,
-  401/403 from a module) and `ui` (Tailwind from esm.sh, responsive and
-  accessible screens, loading and error states).
+  401/403 from a module), `ui` (Tailwind from esm.sh, responsive and
+  accessible screens, loading and error states) and `port-artifact` (moving
+  a Claude artifact to drobek).
 - Sign-in (`auth`) is the e-mail code plus any sign-in provider the server
   runs (company SSO): `drobek.auth.providers()` lists the methods that are
   on, `<LoginGate>` offers them. Enabling a provider waits for the owner's
@@ -138,13 +139,36 @@ audio file, image or font:
    Keep the paths your HTML already uses: `<video src="film.mp4" controls>`
    seeks (HTTP Range).
 
-Porting a Claude artifact: write the HTML/JS with write_files, upload each
-binary file (video, images, audio, fonts) with create_asset_upload at the same
-relative path the page uses. `list_assets({ app_id })` shows them with the
-quota; `delete_asset({ app_id, path })` removes one; uploading to the same path
-replaces it. Refusals: `asset_too_large`, `asset_type_not_allowed` (the bytes
-decide the type), `asset_quota_exceeded`, `asset_path_taken` (an app file at
-that path wins). No transcoding: send MP4 (H.264/AAC) or WebM.
+`list_assets({ app_id })` shows them with the quota; `delete_asset({ app_id,
+path })` removes one; uploading to the same path replaces it. Refusals:
+`asset_too_large`, `asset_type_not_allowed` (the bytes decide the type),
+`asset_quota_exceeded`, `asset_path_taken` (an app file at that path wins). No
+transcoding: send MP4 (H.264/AAC) or WebM.
+
+## Port a Claude artifact
+
+drobek hosts what a Claude artifact is — a page with its script, images and
+video — at its own URL. You do the port from the files you have; the server
+fetches nothing from claude.ai. `skill_info('port-artifact')` is the full
+procedure; in short:
+
+1. Ask the user first, then `create_app` (`html` for a page, `react-ts` for a
+   React component).
+2. Write every text file (HTML, JS, CSS) with `write_files`, paths and content
+   unchanged.
+3. Upload every binary (video, images, audio, fonts) with `create_asset_upload`
+   at the SAME relative path the page uses (`curl -T` from your sandbox, or
+   give the user the link) — never base64 through a tool call.
+4. Check `compile.ok`, `list_assets` and the `preview_url` (the video plays).
+5. `publish` only when the user asks; offer the gallery and call
+   `set_gallery_listing` only after their explicit yes.
+
+What changes on the way: scripts load only from the app and esm.sh (a CDN
+`<script src>` → an esm.sh import or a copied file), `fetch` reaches only the
+app (external APIs → the proxy module), `<iframe>` only YouTube, Vimeo and
+Google Drive, and there is no `window.claude.*` runtime API — `window.storage`
+becomes `localStorage` or the data module, `window.claude.complete` is dropped
+or goes through the proxy module.
 
 ## One writer at a time
 
