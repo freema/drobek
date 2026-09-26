@@ -17,6 +17,7 @@ export interface AppTab {
 export const APP_TABS: readonly AppTab[] = [
   { key: 'overview', to: '', label: 'Overview' },
   { key: 'files', to: 'files', label: 'Files' },
+  { key: 'assets', to: 'assets', label: 'Assets' },
   { key: 'data', to: 'data', label: 'Data' },
   { key: 'modules', to: 'modules', label: 'Modules' },
   { key: 'forms', to: 'forms', label: 'Forms' },

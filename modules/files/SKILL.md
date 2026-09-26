@@ -12,6 +12,8 @@ signed-in user by default (`skill_info('auth')`).
 
 Works without configuration (signed-in users upload and read; images, PDF,
 CSV). Keep the ids in a record (`skill_info('data')`) to list them later.
+This is for files the app's USERS upload; the app's own video, audio, images
+and fonts are assets (`create_asset_upload`, served at `/<path>`).
 
 ```tsx
 // src/main.tsx

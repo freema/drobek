@@ -2,7 +2,7 @@
  * TOOL_DOCS — the declarative documentation manifest for the drobek MCP tools
  * (M0-05 NSO-283; publish M0-06 NSO-285; skill_info + configure_module M1-01
  * NSO-287; query_data M1-03 NSO-300; get_logs M1-07 NSO-290; set_gallery_listing
- * NSO-340). This is the SINGLE SOURCE OF TRUTH the agent-facing docs
+ * NSO-340; the asset tools NSO-358). This is the SINGLE SOURCE OF TRUTH the agent-facing docs
  * render from (llms.txt / llms-full.txt / MCP docs resources / the build page),
  * and @drobek/mcp registers each tool with THIS title, description and
  * annotations — so the published docs cannot drift from the real tools.
@@ -277,6 +277,48 @@ export const TOOL_DOCS: ToolDoc[] = [
     returns:
       'text only, untrusted:true — `<untrusted-app-logs app_id kind since entries nonce>`, the entries as JSON, `</untrusted-app-logs nonce>`, then a trusted note? — runtime entries: { type, message, count, first_seen, last_seen, url, file_hint, stack }; compile: { at, version, ok, errors:[{code,file,line,column,text}], warning_count, duration_ms, trigger }; requests: { day, requests, count_5xx, count_404, modules:{ <module>:{ "2xx","3xx","4xx","5xx" } } }',
     example: { app_id: 'k3v9x0…', kind: 'runtime', since: '2026-09-23T10:00:00Z' },
+  },
+  {
+    name: 'create_asset_upload',
+    title: 'Get an upload URL for a big file',
+    scope: 'write (editor+ role in the workspace)',
+    description:
+      'How a video, audio file, image or font reaches the app — write_files is text-only, and a binary must NEVER be pasted as base64. Returns a single-use upload URL (valid 30 minutes) for ONE file at `path`: run the returned `curl` line (`curl -T <file> \'<url>\'`) with the real file in your own sandbox, or give the link to the user — opening it in a browser shows an upload page. The app then serves the file at `/<path>` on every host (preview, published, versions), in the same URL space as its own files: keep the paths your HTML already uses (`<video src="film.mp4" poster="poster.jpg">`, `img/s1.jpg`). Porting a Claude artifact: write the HTML/JS with write_files, then upload each binary at the relative path the page uses. Checked before the URL exists: the path (1–4 segments, letters/digits/._-, an allowed extension: png jpg jpeg gif webp svg mp4 m4v m4a webm mp3 ogg oga wav woff woff2), no app file at that path (asset_path_taken), `size` within APP_ASSET_MAX_BYTES (asset_too_large) and the app\'s APP_ASSETS_QUOTA (asset_quota_exceeded), a `content_type` that fits the extension (asset_type_not_allowed). The upload itself is sniffed: the bytes decide the type (an HTML file named film.mp4 is refused). Uploading to an existing asset path replaces it. Videos play and seek (HTTP Range).',
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    fields: [
+      { name: 'app_id', type: 'string', required: true, description: 'The app id.' },
+      { name: 'path', type: 'string', required: true, description: 'Where the app serves the file, e.g. film.mp4 or img/s1.jpg (the path the page already uses).' },
+      { name: 'size', type: 'number', required: true, description: 'The exact file size in bytes (e.g. `stat -c %s film.mp4`).' },
+      { name: 'content_type', type: 'string (optional)', required: false, description: 'The MIME type, e.g. video/mp4; the bytes decide in the end.' },
+    ],
+    returns:
+      '{ upload_url, method:"PUT", expires_at, max_bytes, asset_path:"/<path>", asset_url, curl:"curl -T <file> \'<upload_url>\'", note } — the PUT answers 201 { name, path, size, type, replaced, url } or { code, message, hint }',
+    example: { app_id: 'k3v9x0…', path: 'film.mp4', size: 26214400, content_type: 'video/mp4' },
+  },
+  {
+    name: 'list_assets',
+    title: 'List an app\'s uploaded files',
+    scope: 'read (viewer+ role in the workspace)',
+    description:
+      'The binary files (assets) the app serves next to its own files: each one\'s path, sniffed type, size and upload time, plus the bytes used against APP_ASSETS_QUOTA and the per-file APP_ASSET_MAX_BYTES. Read-only.',
+    annotations: READ_ONLY,
+    fields: [{ name: 'app_id', type: 'string', required: true, description: 'The app id.' }],
+    returns: '{ app_id, assets:[{ path, type, size, updated_at }], used_bytes, quota_bytes, max_bytes }',
+    example: { app_id: 'k3v9x0…' },
+  },
+  {
+    name: 'delete_asset',
+    title: 'Delete an uploaded file',
+    scope: 'write (editor+ role in the workspace)',
+    description:
+      'Remove one asset: the app stops serving it at once (404) and its bytes leave the quota. Deleting a path that holds no asset answers asset_not_found. To change a file, upload again to the same path instead (create_asset_upload replaces it).',
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    fields: [
+      { name: 'app_id', type: 'string', required: true, description: 'The app id.' },
+      { name: 'path', type: 'string', required: true, description: 'The asset path, e.g. film.mp4 (as list_assets shows it, with or without the leading /).' },
+    ],
+    returns: '{ deleted: "/<path>" }',
+    example: { app_id: 'k3v9x0…', path: 'film.mp4' },
   },
 ];
 

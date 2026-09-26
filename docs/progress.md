@@ -1339,6 +1339,29 @@ block, then `next` is pushed and the single MR opened.
   caller of `softDeleteApp`; `@drobek/apps` cannot import the module runtime
   — @drobek/modules depends on it). A new delete path must call
   `runHook('onAppDelete', …)` too.
+- NSO-358: app assets share the app's URL space (`/<path>`, no prefix). The
+  version's own file wins (checked first, from the in-memory manifest);
+  the asset lookup runs only when no file matched, and an asset path always
+  has a media extension, so the SPA fallback (extension-less paths only)
+  never swallows one. `asset_path_taken` is checked against the latest AND
+  the published version, when the URL is minted and again when it is used.
+- NSO-358: the upload URL `PUT /api/assets/upload/<token>` is mounted BEFORE
+  the Origin (CSRF) check — `curl -T` sends no Origin and the path token is
+  the whole authorization. The token is consumed at the start of the PUT
+  (single use even when the body is refused).
+- NSO-358: Node's default `server.requestTimeout` (300 s) caps an upload: a
+  100 MiB file needs about 2.8 Mbit/s. Documented next to the env vars.
+- NSO-358: the MCP test harness runs on a fixed test clock (2026-09-23
+  12:00); a test that PUTs to `createAssetUploadHandler` must pass
+  `now: deps.clock.now`, or the token minted on the test clock is already
+  expired against the real clock (404 `upload_token_invalid`).
+- NSO-358: a new `CORE_LIMITS` key needs the exact default string in the
+  agent-dx `LIMITS` table (guarded by the mcp tools test).
+- NSO-358: `APP_FRAME_SRC_EXTRA` accepts only bare `https://host[:port]`
+  origins; anything else stops the server at start (`frameSrcConfigError`
+  in index.ts AND migrate.ts), so it can never widen `frame-src`.
+- Agent worktrees: the Bash tool refuses heredocs and long compound
+  commands; write a small Python edit script to the scratchpad and run it.
 
 ## Failed approaches
 

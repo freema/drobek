@@ -23,6 +23,12 @@ export const TOOL_ERROR_CODES = [
   'user_confirmation_required',
   'gallery_hidden',
   'gallery_disabled',
+  'asset_too_large',
+  'asset_type_not_allowed',
+  'asset_quota_exceeded',
+  'asset_path_taken',
+  'asset_not_found',
+  'rate_limited',
   'internal_error',
 ] as const;
 

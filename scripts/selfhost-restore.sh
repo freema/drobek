@@ -8,7 +8,8 @@
 #      unreadable) — ALLOW_KEY_MISMATCH=1 restores anyway
 #   3. postgres up; the database must be EMPTY — FORCE=1 drops and recreates it
 #   4. drobek + caddy stopped (no writer while the data is replaced)
-#   5. pg_restore; files_data and caddy_data replaced by the archive's copies
+#   5. pg_restore; files_data, assets_data and caddy_data replaced by the
+#      archive's copies (a backup without assets.tar leaves assets_data empty)
 #   6. docker compose up -d --wait (a newer image migrates the restored
 #      database forward on start) + /healthz + the restored row counts
 #
@@ -83,6 +84,12 @@ say "· files_data (/data/files)"
 dc run --rm --no-deps -T --entrypoint sh drobek -c \
   'find /data/files -mindepth 1 -delete && tar -C /data/files -xf -' < "$work/files.tar" 2>"$work/run.log" \
   || { cat "$work/run.log" >&2; die "could not restore the files_data volume"; }
+
+say "· assets_data (/data/assets)"
+[ -f "$work/assets.tar" ] || tar -cf "$work/assets.tar" -T /dev/null
+dc run --rm --no-deps -T --entrypoint sh drobek -c \
+  'find /data/assets -mindepth 1 -delete && tar -C /data/assets -xf -' < "$work/assets.tar" 2>"$work/run.log" \
+  || { cat "$work/run.log" >&2; die "could not restore the assets_data volume"; }
 
 say "· caddy_data (/data)"
 dc run --rm --no-deps -T --entrypoint sh caddy -c \

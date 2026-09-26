@@ -4,7 +4,7 @@
  * Identity + tenancy + apps and their immutable versions (M0-02, NSO-281),
  * plus the tables each later unit added (oauth_*, upstreams, audit_log,
  * app_errors, app_daily_stats, app_compiles, module_request_stats,
- * module_configs, module_secrets, abuse_reports). Platform
+ * module_configs, module_secrets, abuse_reports, app_assets). Platform
  * modules own their tables (`mod_<name>_*`, their own migration journals).
  *
  * Hard constraints encoded here:
@@ -21,6 +21,7 @@
 import { createId } from '@paralleldrive/cuid2';
 import {
   type AnyPgColumn,
+  bigint,
   boolean,
   check,
   customType,
@@ -753,4 +754,38 @@ export const abuseReports = pgTable(
     index('abuse_reports_status_created_idx').on(t.status, t.createdAt),
     index('abuse_reports_app_idx').on(t.appId),
   ]
+);
+
+// ── App assets (NSO-358) ─────────────────────────────────────────────────────
+//
+// Binary files an app serves at `/assets/<name>` on every one of its hosts
+// (images, video, audio, fonts): uploaded outside the LLM through a one-time
+// upload URL or the dashboard, typed from their bytes. Assets belong to the
+// APP, not to a version — every host of the app (published, preview, --v<N>)
+// serves the current set, and uploading a name again replaces it. The bytes
+// live on disk (`ASSETS_DIR/<app_id>/<storage_key>`, not in Postgres — up to
+// APP_ASSET_MAX_BYTES each); a replace writes a new storage key and removes
+// the old file after the row points at the new one. A soft-deleted app's rows
+// and files are removed by the assets sweep.
+
+export const appAssets = pgTable(
+  'app_assets',
+  {
+    appId: text('app_id')
+      .notNull()
+      .references(() => apps.id, { onDelete: 'cascade' }),
+    /** `[a-z0-9][a-z0-9._-]{0,99}` with an allowed extension; the URL is `/assets/<name>`. */
+    name: text('name').notNull(),
+    /** The type sniffed from the bytes (served as Content-Type, with nosniff). */
+    contentType: text('content_type').notNull(),
+    size: bigint('size', { mode: 'number' }).notNull(),
+    /** Content hash — the strong ETag. */
+    sha256: text('sha256').notNull(),
+    /** The file name under `ASSETS_DIR/<app_id>/` (random; a replace gets a new one). */
+    storageKey: text('storage_key').notNull(),
+    createdByUserId: text('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.appId, t.name] })]
 );

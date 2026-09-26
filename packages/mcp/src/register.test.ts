@@ -1,5 +1,5 @@
 /**
- * tools/list snapshot (M0-05 + M0-06 + M1-01 + M1-03 + M1-07 + NSO-340): exactly the 12 tools, in order, with
+ * tools/list snapshot (M0-05 + M0-06 + M1-01 + M1-03 + M1-07 + NSO-340 + NSO-358): exactly the 15 tools, in order, with
  * their titles, annotations and input schemas. Hand-written on purpose — a
  * change to the public tool surface must be a deliberate edit here.
  */
@@ -29,7 +29,7 @@ async function listTools(allow?: (t: string) => boolean) {
 const RO = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 
 describe('tools/list', () => {
-  it('is exactly the 12 tools with their annotations and inputs (snapshot)', async () => {
+  it('is exactly the 15 tools with their annotations and inputs (snapshot)', async () => {
     const tools = await listTools();
     const snapshot = tools.map((t) => ({
       name: t.name,
@@ -152,6 +152,39 @@ describe('tools/list', () => {
         annotations: { title: "Read an app's logs", ...RO },
         properties: ['app_id', 'kind', 'since'],
         required: ['app_id', 'kind'],
+      },
+      {
+        name: 'create_asset_upload',
+        title: 'Get an upload URL for a big file',
+        annotations: {
+          title: 'Get an upload URL for a big file',
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: false,
+          openWorldHint: false,
+        },
+        properties: ['app_id', 'path', 'size', 'content_type'],
+        required: ['app_id', 'path', 'size'],
+      },
+      {
+        name: 'list_assets',
+        title: "List an app's uploaded files",
+        annotations: { title: "List an app's uploaded files", ...RO },
+        properties: ['app_id'],
+        required: ['app_id'],
+      },
+      {
+        name: 'delete_asset',
+        title: 'Delete an uploaded file',
+        annotations: {
+          title: 'Delete an uploaded file',
+          readOnlyHint: false,
+          destructiveHint: true,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
+        properties: ['app_id', 'path'],
+        required: ['app_id', 'path'],
       },
     ]);
     const create = tools.find((t) => t.name === 'create_app')!;

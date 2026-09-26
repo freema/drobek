@@ -76,7 +76,9 @@ The values the server declares (all four hints explicit on every tool; see
 
 | Tools | Hints | Behaviour |
 | --- | --- | --- |
-| `list_apps`, `get_app`, `read_file`, `skill_info`, `query_data`, `get_logs` | `readOnlyHint: true` | Read the user's workspaces, apps, files, skills, stored records and logs. File, record and log content is returned inside an untrusted envelope. |
+| `list_apps`, `get_app`, `read_file`, `skill_info`, `query_data`, `get_logs`, `list_assets` | `readOnlyHint: true` | Read the user's workspaces, apps, files, skills, stored records, logs and uploaded assets. File, record and log content is returned inside an untrusted envelope. |
+| `create_asset_upload` | `readOnlyHint: false`, `destructiveHint: false` | Returns a single-use, 30-minute upload URL for one video, audio, image or font file of an app; the file goes straight to drobek, never through the model. |
+| `delete_asset` | `destructiveHint: true`, `idempotentHint: true` | Removes one uploaded asset of an app. |
 | `create_app` | `readOnlyHint: false`, `destructiveHint: false` | Creates a new private app with a preview; nothing is published. |
 | `write_files`, `restore_version` | `destructiveHint: true` | Create a new version of an app (history is kept, but the working copy the preview serves changes, and files can be removed). |
 | `configure_module` | `destructiveHint: true`, `idempotentHint: true` | Changes an app's platform-module config. Sensitive changes (opening data to the public, a new e-mail recipient, an upstream with a secret) wait for the owner's confirmation in the dashboard. Secrets are refused. |
@@ -176,8 +178,9 @@ at the repository root, `plugins/drobek/.cursor-plugin/plugin.json`
       structure; the only warning is "no hooks/hooks.json", which the plugin
       does not use).
 - [ ] The skill, the rule `route-app-builds-to-drobek.mdc` and the
-      `build-app` command name all 12 tools and keep local work local
-      (`TODO(Tomáš)`: add `set_gallery_listing` in freema/drobek-plugin).
+      `build-app` command name all 15 tools and keep local work local
+      (`TODO(Tomáš)`: add `set_gallery_listing` and the asset tools of
+      NSO-358 in freema/drobek-plugin).
 - [x] Public repository with a README, a licence (MIT) and a logo.
 - [ ] **Blocker 4** — Cursor's OAuth callback against drobek's DCR policy.
       Test it first: add `https://drobek.app/mcp` in Cursor (the one-click
@@ -205,9 +208,9 @@ which drobek's DCR policy accepts.
 **Checklist**
 
 - [x] `npm run validate:codex` passes.
-- [ ] The skill names all 12 tools; `publish` only on an explicit request,
+- [ ] The skill names all 15 tools; `publish` only on an explicit request,
       `set_gallery_listing` only after the user said yes (`TODO(Tomáš)`: add
-      it in freema/drobek-plugin).
+      it and the asset tools of NSO-358 in freema/drobek-plugin).
 - [ ] `TODO(Tomáš)`: the OpenAI plugins directory submission ("With MCP",
       the production endpoint) **(unverified process — the Macaly notes
       describe it for ChatGPT + Codex)**: name, short description, category,

@@ -3,7 +3,7 @@
  * side-effect seams the tools use (lease store, change notifications, compiler,
  * clock) — injectable so unit tests run without Redis and without sleeping.
  */
-import { notifyAppChanged, type AppChangedEvent } from '@drobek/apps';
+import { assetDisk, assetUploadAllowed, notifyAppChanged, redisUploadTokenStore, type AppChangedEvent } from '@drobek/apps';
 import { Compiler, type CompileOptions, type SourceFiles } from '@drobek/compile';
 import { createConsoleLogger, getRedis, type Logger } from '@drobek/core';
 import {
@@ -17,6 +17,7 @@ import {
   type RuntimeEntry,
 } from '@drobek/insights';
 import { moduleRuntime, type ModuleRuntime } from '@drobek/modules';
+import type { AssetDeps } from './assets.js';
 import { redisLeaseStore, type LeaseStore } from './lease.js';
 
 export { APP_CHANGED_CHANNEL, type AppChangedEvent } from '@drobek/apps';
@@ -65,6 +66,8 @@ export interface ToolDeps {
   modules: () => Promise<ModuleRuntime>;
   /** Compile history + get_logs reads (M1-07). */
   logs: LogStore;
+  /** Upload tokens, the hourly upload-URL budget and the asset disk (NSO-358). */
+  assets: AssetDeps;
 }
 
 let sharedCompiler: Compiler | null = null;
@@ -89,6 +92,11 @@ export function defaultDeps(overrides: Partial<ToolDeps> = {}): ToolDeps {
     log,
     modules: () => moduleRuntime(),
     logs: insightsLogStore(),
+    assets: {
+      tokens: redisUploadTokenStore(),
+      uploadAllowed: (appId) => assetUploadAllowed(appId),
+      disk: assetDisk(),
+    },
     ...overrides,
   };
 }

@@ -195,6 +195,7 @@ volumes).
 variable (what it is, how it is generated, which ones are secrets). The
 compose file fixes, for drobek: `NODE_ENV=production`,
 `TRUST_PROXY=x-real-ip`, `APPS_URL_SCHEME=https`, `FILES_DIR=/data/files`,
+`ASSETS_DIR=/data/assets`,
 `DATABASE_URL` / `REDIS_URL` of the bundled services, `PUBLIC_ORIGIN`
 defaulting to `PUBLIC_APP_URL`, and `DROBEK_MODULES` defaulting to all six
 built-ins.
@@ -286,6 +287,7 @@ Volumes (named `drobek-prod_<name>`):
 | --- | --- | --- |
 | `pg_data` | the database: apps, every version's files (content-addressed blobs), users, keys, module data | yes (`pg_dump -Fc`) |
 | `files_data` | the files module's uploads (`/data/files`; `mod_files` rows point at them) | yes (tar) |
+| `assets_data` | app assets — video, audio, images, fonts served at `/<path>` (`/data/assets`; `app_assets` rows point at them) | yes (tar) |
 | `caddy_data` | ACME account, issued certificates, Caddy's local CA — losing it means re-issuing every certificate | yes (tar) |
 | `caddy_config` | Caddy's autosaved config (rebuilt from the Caddyfile) | no |
 | `redis_data` | sessions, caches, rate limits, leases, un-flushed request counters (AOF) | no — after a restore everyone signs in again |
@@ -361,6 +363,10 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `DROBEK_MIGRATE_ON_START` | 1 | `0` = the server does not apply migrations on start (tests, tooling) |
 | `AUDIT_RETENTION_DAYS` | 365 | audit rows older than this are pruned daily |
 | `APPS_MAX_PER_WORKSPACE` | 50 | live apps per workspace (deleted ones do not count); `create_app` beyond it answers `limit_exceeded` *(plan)* |
+| `ASSETS_DIR` | `/data/assets` *(compose)* | app asset storage (the `assets_data` volume) |
+| `APP_ASSET_MAX_BYTES` / `APP_ASSETS_QUOTA` | 104857600 / 1073741824 | one app asset (100 MiB) / all assets of one app (1 GiB); `asset_too_large` / `asset_quota_exceeded` *(plan)*. An upload must arrive within Node's 300 s request timeout |
+| `APP_ASSET_UPLOADS_PER_HOUR` | 60 | upload URLs (`create_asset_upload`, the Assets tab) per app per hour, then `rate_limited` |
+| `APP_FRAME_SRC_EXTRA` | — | extra `https://host[:port]` origins (comma or space separated) every app may show in an `<iframe>`, besides YouTube, Vimeo and Google Drive; an invalid entry stops the server at start |
 
 ### Platform modules
 
@@ -425,18 +431,20 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 ```sh
 task backup
 # ✓ backups/drobek-20260923T201500Z.tar.gz — 1234567 bytes in 4 s
-#   apps 12 · files 40 · core migrations 20 · image ghcr.io/freema/drobek:v1.2.0 (v1.2.0 abc1234)
+#   apps 12 · files 40 · assets 3 · core migrations 20 · image ghcr.io/freema/drobek:v1.2.0 (v1.2.0 abc1234)
 ```
 
 One archive (mode 600, in `backups/`, override with `BACKUP_DIR=`):
 `db.dump` (`pg_dump -Fc` of the whole database — one consistent snapshot),
-`files.tar` (the `files_data` volume), `caddy_data.tar`, `SHA256SUMS` and a
+`files.tar` (the `files_data` volume), `assets.tar` (the `assets_data`
+volume), `caddy_data.tar`, `SHA256SUMS` and a
 `manifest.json` with the image tag / id / version / commit, the checkout's
 commit, a fingerprint of `DROBEK_MASTER_KEY`, row counts and the size + sha256
 of every part. It runs online: postgres is started if it is not running,
-nothing else is touched; the uploads are archived **after** the dump, so every
-file row in the dump finds its blob (only a file deleted in between can be
-missing — stop drobek first for a quiesced backup). Schedule it with cron and
+nothing else is touched; the uploads and assets are archived **after** the
+dump, so every file and asset row in the dump finds its bytes (only one
+deleted or replaced in between can be missing — stop drobek first for a
+quiesced backup). Schedule it with cron and
 copy the archives off the machine:
 
 ```cron
@@ -465,7 +473,8 @@ task restore BACKUP=backups/drobek-20260923T201500Z.tar.gz
 not match the backup's fingerprint (`ALLOW_KEY_MISMATCH=1` restores anyway,
 without usable upstream secrets), refuses a **non-empty database** (`FORCE=1`
 drops and recreates it — back it up first), stops drobek and caddy, restores
-the database, replaces `files_data` and `caddy_data`, and starts the stack
+the database, replaces `files_data`, `assets_data` (left empty when the
+archive has no `assets.tar`) and `caddy_data`, and starts the stack
 (`up -d --wait`). Restore with the backup's image version or a newer one
 (`image_version` in `manifest.json`) — a newer image migrates the restored
 database forward on start; an older one does not know its migrations. Point

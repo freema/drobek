@@ -184,10 +184,46 @@ before any byte of the app is touched:
 10. the version the host serves (**404** "not published" / "nothing compiled"),
     then the file: built output wins over sources, `.ts/.tsx/.jsx` sources and
     `drobek.json` are never served, extension-less paths fall back to
-    `index.html`, `ETag` = sha256 → **304**.
+    `index.html`, `ETag` = sha256 → **304**;
+11. no such file: the app's **asset** at that path, if any (see below).
+
+**Assets** (video, audio, images, fonts) are per app, not per version, and
+share the app's URL space: the asset `img/s1.jpg` answers `/img/s1.jpg` on
+every host that serves a version (published, preview, version N), so a page
+keeps its own relative paths (`<video src="film.mp4" poster="poster.jpg">`).
+The app's own file at the same path wins; an asset path always has a media
+extension, so the SPA fallback never swallows one. The bytes live on disk
+under `ASSETS_DIR` (`/data/assets/<app_id>/<random key>`, the `assets_data`
+volume), the rows in `app_assets` (path, sniffed type, size, sha256).
+Serving: the sniffed `Content-Type`, `Accept-Ranges: bytes`, one byte range
+→ **206** (`Content-Range`) or **416**, `ETag` (sha256) / `Last-Modified` →
+**304**, `If-Range`, HEAD; `public, max-age=300, must-revalidate` on the
+published and custom hosts, revalidate-always on preview and version hosts,
+`private` for a password app; SVG as an attachment with a second CSP
+`sandbox`. Takedown, the password gate and "not published" answer first,
+like for any file.
+
+Uploading never goes through MCP or the model: `create_asset_upload` (or the
+dashboard's Assets tab) checks the path, the declared size and type, the
+quota and the hourly budget, then mints a **single-use upload URL** on the
+dashboard host — `PUT /api/assets/upload/<token>`, 32 random bytes, only
+its sha256 stored in Redis for 30 minutes, bound to the app, the path, the
+size, the type family and the user who asked (the upload is audited as
+theirs). The PUT takes the token before reading a byte, streams the body to
+a temp file while it counts (over `APP_ASSET_MAX_BYTES` or past the declared
+size → stop), hashes and sniffs it (png, jpeg, gif, webp, svg, mp4, webm,
+m4a, mp3, ogg, wav, woff, woff2 — the bytes decide, never the name), renames
+it into place, and writes the row under a per-app advisory lock that
+re-checks `APP_ASSETS_QUOTA`. A browser GET on the URL shows a small upload
+page (strict CSP, the token never in the page). An hourly sweep removes the
+assets of apps deleted 24 h ago, stale temp files and unreferenced files.
 
 Every response carries the app CSP (`default-src 'self'`, scripts from the app
-and `https://esm.sh`, `connect-src 'self' https://esm.sh`,
+and `https://esm.sh`, `connect-src 'self' https://esm.sh`, images, fonts,
+styles and `media-src` (`<video>`, `<audio>`) from the app, `blob:` or any
+https URL, `frame-src` only the curated embeds — YouTube
+(`www.youtube-nocookie.com`, `www.youtube.com`), `player.vimeo.com`,
+`drive.google.com` — plus the operator's `APP_FRAME_SRC_EXTRA`,
 `frame-ancestors` = the dashboard origin only, plus the origins the owner
 set in `apps.frame_ancestors` — the dashboard frames an app solely for the
 app-list thumbnail, see [`SECURITY.md`](./SECURITY.md)),
@@ -272,6 +308,7 @@ All in-process (`apps/server/server/jobs.ts`), started with the server:
 | slug release | hourly, Redis lease | a soft-deleted app's slug is free again after 30 days |
 | domain re-check | `DOMAINS_RECHECK_INTERVAL_MS` (1 h), Redis lease | re-verifies domains checked more than 24 h ago; unverifies + mails on a definitive failure |
 | files sweep (only with the `files` module) | `FILES_SWEEP_INTERVAL_MS` (1 h), Redis lease | removes the uploads of apps deleted `FILES_SWEEP_RETENTION_MS` (24 h) ago, stale temp uploads and blobs no `mod_files` row references (`drobek-module-files`) |
+| assets sweep | hourly, Redis lease | removes the asset files and rows of apps deleted 24 h ago, stale temp uploads and files no `app_assets` row references (`@drobek/apps`) |
 | logs prune | `LOGS_PRUNE_INTERVAL_MS` (1 h), Redis lease | removes `get_logs` rows past their retention for every app: browser errors older than 30 days or past the newest 500 per app, compiles and daily request stats older than 30 days (`@drobek/insights`) |
 | audit retention | at start, then daily | deletes audit rows older than `AUDIT_RETENTION_DAYS` (365) — the only deletion of audit rows anywhere |
 
@@ -286,12 +323,14 @@ and at most once a minute per app and day; reads never delete.
   `iss`, rotating refresh tokens; or a personal `drk_` API key. A grant is
   bound to the **user** (every workspace they belong to) with the scopes
   `read`, `write`, `publish`; the scope decides which tools exist, the role in
-  the app's workspace decides each call. Twelve tools; the contract and the
-  briefing are in [`AGENT.md`](./AGENT.md).
+  the app's workspace decides each call. Fifteen tools (among them the
+  gallery listing and the asset upload URLs); the contract and the briefing
+  are in [`AGENT.md`](./AGENT.md).
 - **The dashboard** (core, AGPL): sign-in by e-mail code (Google optional),
   workspaces (Apps / Members / Activity / Upstreams tabs), apps with Overview
-  / Files / Data / Modules / Forms / Users / Uploads / Logs / Domains /
-  Settings tabs, version history and publish, activity (the audit log, CSV),
+  / Files / Assets / Data / Modules / Forms / Users / Uploads / Logs /
+  Domains / Settings tabs (Assets: list, upload with a progress bar, delete —
+  the same checks and upload URL as `create_asset_upload`), version history and publish, activity (the audit log, CSV),
   API keys and OAuth connections, the super-admin abuse queue. Every page
   shares one layout (`@drobek/tenancy/layout`: one width, a breadcrumb
   `Workspaces › <workspace> › <app> › <section>`, one set of form controls);

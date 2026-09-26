@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { AssetDisk, memoryUploadTokenStore } from '@drobek/apps';
 import { Compiler, type CompileLimits } from '@drobek/compile';
 import { noopLogger } from '@drobek/core';
 import { loadModuleRuntime, memoryRateLimiter, type ModuleRuntime } from '@drobek/modules';
@@ -64,12 +65,17 @@ function testClock(start = Date.UTC(2026, 8, 23, 12, 0, 0)): TestClock {
 export interface TestDeps extends ToolDeps {
   events: AppChangedEvent[];
   clock: TestClock;
+  /** NSO-358: the in-memory upload tokens and the upload-URL budget left (set it to test rate_limited). */
+  uploadTokens: ReturnType<typeof memoryUploadTokenStore>;
+  uploadBudget: { left: number };
 }
 
 export function testDeps(limits: Partial<CompileLimits> = {}): TestDeps {
   const clock = testClock();
   const compiler = new Compiler(limits);
   const events: AppChangedEvent[] = [];
+  const uploadTokens = memoryUploadTokenStore(clock.now);
+  const uploadBudget = { left: 1000 };
   return {
     leases: memoryLeaseStore(clock.now),
     notifyAppChanged: async (e) => {
@@ -83,8 +89,15 @@ export function testDeps(limits: Partial<CompileLimits> = {}): TestDeps {
     modules: testModules,
     // Postgres (PGlite) only — no Redis for the daily serving counters.
     logs: insightsLogStore({ flushSignals: false }),
+    assets: {
+      tokens: uploadTokens,
+      uploadAllowed: async () => uploadBudget.left-- > 0,
+      disk: new AssetDisk(mkdtempSync(join(tmpdir(), 'drobek-mcp-assets-'))),
+    },
     events,
     clock,
+    uploadTokens,
+    uploadBudget,
   };
 }
 

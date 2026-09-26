@@ -25,11 +25,27 @@
  * already on its way, the connection is closed).
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { Socket } from 'node:net';
 import { Readable, pipeline } from 'node:stream';
-import { appsOrigin, classifyHost, dashboardOrigin, hostConfig, splitHost, type AppHostTarget, type HostConfig } from '@drobek/apps';
+import {
+  appsOrigin,
+  assetDisk,
+  classifyHost,
+  dashboardOrigin,
+  findServedAsset,
+  hostConfig,
+  splitHost,
+  type AppHostTarget,
+  type HostConfig,
+} from '@drobek/apps';
 import { getClientIp, rateLimitRedis } from '@drobek/auth';
-import { createConsoleLogger, perIpLimitKey, type Logger } from '@drobek/core';
+import {
+  CLOSE_LINGER_MS,
+  closeAfterResponse,
+  createConsoleLogger,
+  perIpLimitKey,
+  requestBodyStream,
+  type Logger,
+} from '@drobek/core';
 import { handleBeacon, incrementServingSignal } from '@drobek/insights';
 import { dbErrorForLog } from '@drobek/db';
 import {
@@ -42,7 +58,8 @@ import {
   type AppResponse,
   type HandlerDeps,
 } from './handler.js';
-import { appSecurityHeaders } from './csp.js';
+import type { AssetSource } from './assets.js';
+import { appSecurityHeaders, frameSrcFromEnv } from './csp.js';
 import { appAccessSecret, appCookiesSecure } from './password.js';
 import { ServeStore } from './store.server.js';
 import { UnknownHostLimiter, unknownHostLimitsFromEnv } from './unknown-host.js';
@@ -53,11 +70,8 @@ const MAX_FORM_BYTES = 4096;
 /** Platform (module) request bodies are capped by the route; this is the hard ceiling. */
 const MAX_PLATFORM_BODY_BYTES = 1024 * 1024;
 
-/**
- * How long a connection closed under an unread body keeps discarding what the
- * client still sends after the answer went out (see closeAfterResponse).
- */
-export const CLOSE_LINGER_MS = 2000;
+/** Re-exported for the tests and callers of this module (the helper lives in @drobek/core since NSO-358). */
+export { CLOSE_LINGER_MS };
 
 /** Default APPS_MODULE_BODY_TIMEOUT_MS: how long a `/__drobek/*` request may take to deliver its body. */
 export const DEFAULT_MODULE_BODY_TIMEOUT_MS = 120_000;
@@ -99,109 +113,6 @@ function headerOf(req: IncomingMessage, name: string): string | null {
   const v = req.headers[name.toLowerCase()];
   if (v === undefined) return null;
   return Array.isArray(v) ? v.join(', ') : v;
-}
-
-/**
- * The request body as a pull stream (paused mode — nothing is read ahead of
- * the consumer, so a slow disk write back-pressures the client). `return()`
- * stops reading and lets the rest flow into the void: the upload is discarded,
- * never buffered, until the response is flushed and the connection closed
- * (`send` → closeAfterResponse). A client that goes away mid-body makes
- * `next()` throw.
- */
-function requestBodyStream(req: IncomingMessage): AsyncIterableIterator<Buffer> {
-  let ended = false;
-  let failure: Error | null = null;
-  let finished = false;
-  let wake: (() => void) | null = null;
-  const notify = () => {
-    const w = wake;
-    wake = null;
-    w?.();
-  };
-  const onEnd = () => {
-    ended = true;
-    notify();
-  };
-  const onError = (err: Error) => {
-    failure = err;
-    notify();
-  };
-  const onClose = () => {
-    if (!req.readableEnded) failure ??= new Error('the client aborted the request body');
-    notify();
-  };
-  req.on('readable', notify);
-  req.on('end', onEnd);
-  req.on('error', onError);
-  req.on('close', onClose);
-  const cleanup = () => {
-    finished = true;
-    req.off('readable', notify);
-    req.off('end', onEnd);
-    req.off('error', onError);
-    req.off('close', onClose);
-  };
-  const iter: AsyncIterableIterator<Buffer> = {
-    [Symbol.asyncIterator]() {
-      return iter;
-    },
-    async next() {
-      for (;;) {
-        if (finished) return { value: undefined, done: true };
-        const chunk = req.read() as Buffer | null;
-        if (chunk !== null) return { value: chunk, done: false };
-        if (failure) {
-          const err: Error = failure;
-          cleanup();
-          throw err;
-        }
-        if (ended || req.readableEnded) {
-          cleanup();
-          return { value: undefined, done: true };
-        }
-        await new Promise<void>((resolve) => (wake = resolve));
-      }
-    },
-    async return() {
-      if (!finished) {
-        cleanup();
-        if (!req.readableEnded) req.resume();
-      }
-      return { value: undefined, done: true };
-    },
-  };
-  return iter;
-}
-
-/**
- * The request body is still arriving while we answer: close the connection
- * instead of draining the rest. `Connection: close` tells the client. Once
- * the response is flushed (`finish` = the last byte handed to the OS — never
- * under a half-written response) the socket is half-closed (FIN after the
- * answer), what the client still sends is discarded, and CLOSE_LINGER_MS
- * later the socket is destroyed — once.
- *
- * Why the linger: destroying at once while the client is still sending makes
- * the kernel answer its next segment with a RST, and a client kernel that
- * gets the RST drops the response it has not read yet — the uploader sees
- * "connection reset" instead of the 413. Node's own close for a
- * `Connection: close` response (`socket.destroySoon()`: FIN, then destroy as
- * soon as it is written) has exactly that race, so it is replaced for this
- * socket.
- */
-function closeAfterResponse(req: IncomingMessage, res: ServerResponse): void {
-  if (!res.headersSent) res.setHeader('Connection', 'close');
-  const socket = req.socket as (Socket & { destroySoon?: () => void }) | null | undefined;
-  if (!socket) return;
-  socket.destroySoon = () => {}; // Node calls it on `finish` of a Connection: close response; we linger instead
-  res.once('finish', () => {
-    socket.end();
-    req.resume();
-    const timer = setTimeout(() => socket.destroy(), CLOSE_LINGER_MS);
-    timer.unref?.();
-    socket.once('close', () => clearTimeout(timer));
-  });
 }
 
 function send(req: IncomingMessage, res: ServerResponse, r: AppResponse): void {
@@ -265,8 +176,9 @@ export async function unlockAttemptAllowed(
 /**
  * The production handler deps: HKDF'd access key, Redis limiters (unlock
  * attempts; NSO-315 unknown hosts per IP, APPS_UNKNOWN_HOST_LIMIT /
- * APPS_UNKNOWN_HOST_WINDOW_MS), insights counters + beacon, and the dashboard
- * origin every app host lets frame it (NSO-342, the app-list thumbnail).
+ * APPS_UNKNOWN_HOST_WINDOW_MS), insights counters + beacon, the dashboard
+ * origin every app host lets frame it (NSO-342, the app-list thumbnail), the
+ * frame-src list (APP_FRAME_SRC_EXTRA) and the app assets on ASSETS_DIR (NSO-358).
  */
 export function defaultHandlerDeps(store: ServeStore, log?: Logger): HandlerDeps {
   return {
@@ -277,11 +189,22 @@ export function defaultHandlerDeps(store: ServeStore, log?: Logger): HandlerDeps
     signal: (appId, kind, path) => void incrementServingSignal(appId, kind, path),
     beacon: (req, app) => handleBeacon(req, app.id),
     dashboardOrigin: dashboardOrigin(),
+    frameSrc: frameSrcFromEnv(),
+    assets: defaultAssetSource(),
     unknownHosts: new UnknownHostLimiter({
       ...unknownHostLimitsFromEnv(),
       counter: async (ip, limit, windowMs) => (await rateLimitRedis('apps-unknown-host', ip, limit, windowMs)).ok,
       onError: (err) => log?.warn('unknown-host limiter unavailable', { error: dbErrorForLog(err) }),
     }),
+  };
+}
+
+/** The app_assets rows + the files under ASSETS_DIR (NSO-358). */
+function defaultAssetSource(): AssetSource {
+  const disk = assetDisk();
+  return {
+    find: (appId, name) => findServedAsset(appId, name),
+    open: (appId, key, range) => disk.open(appId, key, range),
   };
 }
 

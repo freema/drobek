@@ -87,6 +87,8 @@ export { CORE_ERROR_CODES, MODULE_ERROR_CODES, ModuleError, isModuleError, skill
 export { RULE_TOKENS, decideAccess, isValidRule, parseRule, ruleIsPublic } from './rules.js';
 /** Per-client-IP bucket keys for a module's own per-IP limits (null = no resolved IP → skip it; NSO-328). */
 export { perIpLimitKey } from '@drobek/core';
+/** Byte sniffing shared with app assets (NSO-358): a module decides a stored file's type from its bytes. */
+export { hasControlBytes, looksLikeSvg, sniffSignature, type SniffedType } from '@drobek/core';
 export { mergePatch, jsonEqual } from './merge-patch.js';
 export { Lru, jsonKey, stableJson } from './memo.js';
 export {

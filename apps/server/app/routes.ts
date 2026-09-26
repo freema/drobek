@@ -99,6 +99,7 @@ export default [
   route('workspaces/:slug/apps/:appSlug/forms', 'routes/workspaces.$slug.apps.$appSlug.forms.tsx'),
   route('workspaces/:slug/apps/:appSlug/forms/export.csv', 'routes/workspaces.$slug.apps.$appSlug.forms.export-csv.ts'),
   route('workspaces/:slug/apps/:appSlug/end-users', 'routes/workspaces.$slug.apps.$appSlug.end-users.tsx'),
+  route('workspaces/:slug/apps/:appSlug/assets', 'routes/workspaces.$slug.apps.$appSlug.assets.tsx'),
   route('workspaces/:slug/apps/:appSlug/uploads', 'routes/workspaces.$slug.apps.$appSlug.uploads.tsx'),
   route('workspaces/:slug/apps/:appSlug/uploads/:fileId', 'routes/workspaces.$slug.apps.$appSlug.uploads.$fileId.ts'),
   route('workspaces/:slug/apps/:appSlug/logs', 'routes/workspaces.$slug.apps.$appSlug.logs.tsx'),

@@ -135,6 +135,54 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     fix: 'Tell the user this server has no public gallery; do not retry.',
   },
   {
+    code: 'asset_too_large',
+    surface: 'MCP tool isError (create_asset_upload); upload URL 413',
+    meaning:
+      'The file is bigger than one asset may be (APP_ASSET_MAX_BYTES, default 100 MiB; `limit`, `value`). Nothing was stored.',
+    fix: 'Compress or shorten the file (e.g. re-encode the video at a lower bitrate or resolution) and ask for a new upload URL with the new size. Transcoding is not done by drobek.',
+  },
+  {
+    code: 'asset_type_not_allowed',
+    surface: 'MCP tool isError (create_asset_upload); upload URL 415',
+    meaning:
+      'The declared content_type does not fit the path\'s extension, or the uploaded bytes are not an allowed asset type for it (`allowed`; `type` = what the bytes are). The type comes from the file\'s content, never its name: an HTML page named film.mp4 is refused. Allowed: PNG, JPEG, GIF, WebP, SVG, MP4 (H.264/AAC), WebM, M4A, MP3, Ogg, WAV, WOFF, WOFF2.',
+    fix: 'Upload the real file with the matching extension (a .mov or .mkv must be converted to MP4 or WebM first). Text files (HTML, JS, CSS, JSON) go through write_files instead.',
+  },
+  {
+    code: 'asset_quota_exceeded',
+    surface: 'MCP tool isError (create_asset_upload); upload URL 413',
+    meaning:
+      'The app\'s assets would exceed APP_ASSETS_QUOTA (default 1 GiB; `limit`, `value`, `used_bytes`). A file uploaded to an existing path only counts its difference.',
+    fix: 'list_assets shows what the app holds; delete_asset what is no longer used, then ask for a new upload URL.',
+  },
+  {
+    code: 'asset_path_taken',
+    surface: 'MCP tool isError (create_asset_upload); upload URL 409',
+    meaning:
+      'A file of the app (written with write_files, in its latest or published version) already sits at that path, and an app file always wins over an asset at the same path (`path`).',
+    fix: 'Upload the asset under another path and point the page at it, or delete the text file with write_files first (e.g. a placeholder SVG).',
+  },
+  {
+    code: 'asset_size_mismatch',
+    surface: 'upload URL 400',
+    meaning:
+      'The uploaded body is not exactly the `size` the upload URL was created for (`declared`, `received`), or Content-Length disagrees with it. Nothing was stored; the URL is used up.',
+    fix: 'Check the size (`stat -c %s <file>` / `stat -f %z <file>`), then call create_asset_upload again with the exact byte count.',
+  },
+  {
+    code: 'asset_not_found',
+    surface: 'MCP tool isError (delete_asset)',
+    meaning: 'The app has no asset at that path (`path`).',
+    fix: 'list_assets shows the app\'s asset paths.',
+  },
+  {
+    code: 'upload_token_invalid',
+    surface: 'upload URL 404',
+    meaning:
+      'The upload URL is unknown, already used (every URL takes exactly one upload, successful or not) or older than 30 minutes.',
+    fix: 'Call create_asset_upload again for a fresh URL (or, in the dashboard, pick the file again on the Assets tab).',
+  },
+  {
     code: 'internal_error',
     surface: 'MCP tool isError',
     meaning: 'drobek failed unexpectedly while handling the call (the details are in the server log, never in the response).',
@@ -202,9 +250,9 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
   },
   {
     code: 'rate_limited',
-    surface: 'module route 429 (DrobekError), Retry-After',
-    meaning: 'A module limit was hit (per visitor, per user or per app — `details.limit` per `details.window_seconds`).',
-    fix: 'Show the user a message and retry after Retry-After seconds; never loop.',
+    surface: 'module route 429 (DrobekError), Retry-After; MCP tool isError (create_asset_upload)',
+    meaning: 'A module limit was hit (per visitor, per user or per app — `details.limit` per `details.window_seconds`). From create_asset_upload: the app has asked for APP_ASSET_UPLOADS_PER_HOUR upload URLs within the last hour.',
+    fix: 'Show the user a message and retry after Retry-After seconds; never loop. For upload URLs: upload the files you already have URLs for, and ask for more after the hour.',
   },
   {
     code: 'payload_too_large',

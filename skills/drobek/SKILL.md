@@ -50,6 +50,9 @@ The essentials:
   (Firebase, Supabase, …) cannot work. The server's backends are platform
   modules, used through the bare import `drobek` (`import { drobek } from
   'drobek'`, no import-map entry).
+- Images, fonts (Google Fonts works), CSS, `<video>` and `<audio>` may come
+  from any https URL; `<iframe>` only for YouTube (`youtube-nocookie.com`),
+  Vimeo and Google Drive embeds (plus what the operator allows).
 
 ## Backends: skills and modules
 
@@ -107,6 +110,28 @@ files that depend on each other in the SAME call. `reasoning` is one line
 - Never put secrets in files: writes are scanned and refused with
   `secret_in_source` (nothing is stored). Remove the value and tell the user to
   set the secret in the drobek dashboard — never ask them to paste it to you.
+
+## Video, audio and big files
+
+`write_files` is text-only — never paste a binary as base64. For a video,
+audio file, image or font:
+
+1. `create_asset_upload({ app_id, path, size, content_type? })` — `path` is
+   where the app serves the file (`film.mp4`, `img/s1.jpg`), `size` its exact
+   byte count. It returns a single-use `upload_url` (30 minutes) and a `curl`
+   line: run `curl -T film.mp4 '<upload_url>'` in your sandbox, or give the
+   link to the user — a browser shows an upload page.
+2. The app serves the file at `/<path>` on every host, next to its own files.
+   Keep the paths your HTML already uses: `<video src="film.mp4" controls>`
+   seeks (HTTP Range).
+
+Porting a Claude artifact: write the HTML/JS with write_files, upload each
+binary file (video, images, audio, fonts) with create_asset_upload at the same
+relative path the page uses. `list_assets({ app_id })` shows them with the
+quota; `delete_asset({ app_id, path })` removes one; uploading to the same path
+replaces it. Refusals: `asset_too_large`, `asset_type_not_allowed` (the bytes
+decide the type), `asset_quota_exceeded`, `asset_path_taken` (an app file at
+that path wins). No transcoding: send MP4 (H.264/AAC) or WebM.
 
 ## One writer at a time
 
@@ -171,7 +196,8 @@ A failed call returns `isError: true` with `{ code, message, hint }` — the
 `hint` says what to do (`not_found`, `forbidden`, `invalid_params`,
 `invalid_path`, `limit_exceeded`, `secret_in_source`, `app_locked`,
 `app_locked_by_admin`, `busy`, `not_publishable`, `not_published`,
-`user_confirmation_required`, `gallery_hidden`, `gallery_disabled`, …).
+`user_confirmation_required`, `gallery_hidden`, `gallery_disabled`,
+`asset_too_large`, …).
 Compile problems are not tool failures: they come back in `compile.errors`. The
 full code → meaning → fix table is the Error catalogue in llms-full.txt (core
 codes, then one section per module); a module's own codes are also in

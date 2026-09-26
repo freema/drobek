@@ -141,6 +141,8 @@ services:
     volumes:
       # M1-05: the files module's uploads (FILES_DIR default; throwaway).
       - /data/files
+      # NSO-358: app assets (ASSETS_DIR default; throwaway).
+      - /data/assets
     # The image's own HEALTHCHECK probes /healthz (db + redis) — `up --wait` uses it.
     depends_on:
       postgres:

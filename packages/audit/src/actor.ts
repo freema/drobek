@@ -135,6 +135,10 @@ export const AUDIT_ACTIONS = {
   endUserEnable: 'end_users.enable',
   /** M1-05 / M2-03: an uploaded file was deleted (by the app's end user, or by the owner in the dashboard). */
   filesDelete: 'files.delete',
+  /** NSO-358: an app asset was uploaded or replaced (name, size, sniffed type, how — never a token). */
+  assetUpload: 'asset.upload',
+  /** NSO-358: an app asset was deleted (name + size). */
+  assetDelete: 'asset.delete',
   /** M4-02: someone reported an app through the public abuse form (report id + reason only). */
   abuseReport: 'abuse.report',
   /** M4-02: a super-admin took an app down (unpublished + locked; meta.reason = the category). */

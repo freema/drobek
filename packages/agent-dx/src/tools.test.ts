@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { TOOL_DOCS, TOOL_NAMES, toolDoc } from './tools.js';
 
 describe('TOOL_DOCS manifest', () => {
-  it('documents exactly the 12 tools, in tools/list order', () => {
+  it('documents exactly the 15 tools, in tools/list order', () => {
     expect(TOOL_NAMES).toEqual([
       'list_apps',
       'create_app',
@@ -16,6 +16,9 @@ describe('TOOL_DOCS manifest', () => {
       'configure_module',
       'query_data',
       'get_logs',
+      'create_asset_upload',
+      'list_assets',
+      'delete_asset',
     ]);
   });
 
@@ -55,6 +58,9 @@ describe('TOOL_DOCS manifest', () => {
       configure_module: [false, true, true, false], // the same merge patch again answers unchanged
       query_data: [true, false, true, false],
       get_logs: [true, false, true, false],
+      create_asset_upload: [false, false, false, false], // a new single-use URL on every call; the PUT stores
+      list_assets: [true, false, true, false],
+      delete_asset: [false, true, true, false], // removes a file; a second delete changes nothing more
     };
     expect(Object.keys(table)).toEqual(TOOL_NAMES);
     for (const [name, [readOnlyHint, destructiveHint, idempotentHint, openWorldHint]] of Object.entries(table)) {

@@ -63,6 +63,26 @@ export const LIMITS: LimitDoc[] = [
     meaning: 'Max custom domains per app, set by the owner in the dashboard; 0 = custom domains off. The limits provider may set it per workspace.',
   },
   {
+    env: 'APP_ASSET_MAX_BYTES',
+    default: '104857600',
+    meaning: 'Max bytes (100 MiB) of one app asset — a video, audio, image or font uploaded with create_asset_upload (→ asset_too_large). The limits provider may set it per workspace.',
+  },
+  {
+    env: 'APP_ASSETS_QUOTA',
+    default: '1073741824',
+    meaning: 'Max bytes (1 GiB) of all assets of one app (→ asset_quota_exceeded). The limits provider may set it per workspace.',
+  },
+  {
+    env: 'APP_ASSET_UPLOADS_PER_HOUR',
+    default: '60',
+    meaning: 'Upload URLs one app may get per hour (create_asset_upload → rate_limited).',
+  },
+  {
+    env: 'tool: asset upload URL',
+    default: '30 min, single use',
+    meaning: 'How long a create_asset_upload URL stays valid; it takes exactly one PUT (a used or expired URL → upload_token_invalid).',
+  },
+  {
     env: 'tool: write_files files',
     default: String(WRITE_FILES_MAX),
     meaning: 'Max changed files per write_files call (more → invalid_params).',

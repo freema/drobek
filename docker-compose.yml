@@ -148,6 +148,8 @@ services:
       # files e2e quota case exceeds it quickly; the per-file cap stays the
       # production 10 MiB (prod quota default: 500 MiB — see .env.example).
       FILES_DIR: ${FILES_DIR:-/data/files}
+      # NSO-358: app assets (video, audio, images, fonts) on the assets_data volume.
+      ASSETS_DIR: ${ASSETS_DIR:-/data/assets}
       FILES_MAX_BYTES: ${FILES_MAX_BYTES:-10485760}
       FILES_QUOTA_PER_APP: ${FILES_QUOTA_PER_APP:-2097152}
       FILES_UPLOAD_RATE_LIMIT: ${FILES_UPLOAD_RATE_LIMIT:-60}
@@ -268,6 +270,8 @@ services:
       - /repo/modules/files/node_modules
       # M1-05: the files module's uploads (FILES_DIR).
       - files_data:/data/files
+      # NSO-358: app assets (ASSETS_DIR).
+      - assets_data:/data/assets
     healthcheck:
       test: ['CMD-SHELL', 'wget -q -T 5 -O - "http://127.0.0.1:$${PORT:-3000}/healthz" || exit 1']
       interval: 5s
@@ -286,3 +290,4 @@ volumes:
   postgres_data:
   redis_data:
   files_data:
+  assets_data:

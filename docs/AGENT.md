@@ -102,8 +102,8 @@ answers `not_found`, the same as one that does not exist.
 
 | Scope | Tools |
 | --- | --- |
-| `read` | `list_apps`, `get_app`, `read_file`, `skill_info`, `query_data`, `get_logs` |
-| `write` | `create_app`, `write_files`, `restore_version`, `configure_module` |
+| `read` | `list_apps`, `get_app`, `read_file`, `skill_info`, `query_data`, `get_logs`, `list_assets` |
+| `write` | `create_app`, `write_files`, `restore_version`, `configure_module`, `create_asset_upload`, `delete_asset` |
 | `publish` | `publish`, `set_gallery_listing` |
 
 ## Tools
@@ -122,6 +122,9 @@ answers `not_found`, the same as one that does not exist.
 | `configure_module` | write, editor+ | destructive, idempotent | Sets an app's module config (a JSON merge patch). Risky changes come back as `pending_confirmation` with a `confirm_url` for the owner; secrets are refused. |
 | `query_data` | read, viewer+ | read-only | Records of one collection of the app's data module (≤ 100 per call, filters, sort, cursor), inside an untrusted envelope. |
 | `get_logs` | read, viewer+ | read-only | `kind: runtime` (browser errors from the beacon), `compile` (the compile history) or `requests` (daily request and module-call stats), ≤ 100 entries, 30-day window, inside an untrusted envelope. |
+| `create_asset_upload` | write, editor+ | not destructive | A single-use upload URL (30 min) for ONE binary file — video, audio, image, font — at `path`, plus a `curl -T <file> '<url>'` line. The file never passes through the model; the app serves it at `/<path>` next to its files. |
+| `list_assets` | read, viewer+ | read-only | The app's assets (path, sniffed type, size, time) and the quota usage. |
+| `delete_asset` | write, editor+ | destructive, idempotent | Removes one asset; the app stops serving it. |
 
 Every tool carries all four MCP annotations explicitly (`readOnlyHint`,
 `destructiveHint`, `idempotentHint`, `openWorldHint`; "idempotent" above means
@@ -138,6 +141,29 @@ module (`errors`): `skill_info('<module>').errors` returns them and
 `/llms-full.txt` lists them after the core codes, one section per active
 module. A compile error is not a tool failure: it is
 `compile.ok: false` with `compile.errors[]`, and the version is stored.
+
+**Video, audio and big files (assets).** `write_files` is text-only, and a
+binary must never travel through the model as base64. `create_asset_upload({
+app_id, path, size, content_type? })` checks everything that needs no bytes —
+the path (1–4 segments of `[A-Za-z0-9._-]`, an allowed extension: png jpg
+jpeg gif webp svg mp4 m4v m4a webm mp3 ogg oga wav woff woff2), no app file
+at that path (`asset_path_taken`), `APP_ASSET_MAX_BYTES` (`asset_too_large`),
+`APP_ASSETS_QUOTA` (`asset_quota_exceeded`), a `content_type` that fits the
+extension (`asset_type_not_allowed`), `APP_ASSET_UPLOADS_PER_HOUR`
+(`rate_limited`) — and returns `{ upload_url, method: "PUT", expires_at,
+max_bytes, asset_path, asset_url, curl }`. The URL is on the dashboard host
+(`PUT /api/assets/upload/<token>`), valid 30 minutes, good for exactly ONE
+upload of exactly `size` bytes, and needs no other credential; a browser GET
+on it shows an upload page, so the agent can hand the link to the user. The
+PUT streams the body to disk, sniffs the bytes (the type is the content's,
+never the name's) and answers `201 { name, path, size, type, replaced, url }`
+or `{ code, message, hint }` (`asset_size_mismatch`, `upload_token_invalid`,
+…). The upload is audited as the user who asked for the URL. Assets share
+the app's URL space — `<video src="film.mp4" poster="poster.jpg">` and
+`img/s1.jpg` work unchanged, so a Claude artifact ports by writing its
+HTML/JS with `write_files` and uploading each binary at the relative path the
+page uses; the app's own file wins over an asset at the same path. Videos
+seek (HTTP Range). The dashboard's Assets tab does the same for the owner.
 
 **Untrusted output.** `read_file`, `query_data` and `get_logs` return content
 written by app authors, end users and browsers. Their text result is wrapped

@@ -3,7 +3,8 @@
  * slugs), write a version, publish (pointer move), restore (new version from
  * an old one), and blob GC; since M2-01 also unpublish, soft delete + slug
  * release, visibility / frame-ancestors settings, the single-writer lease
- * read/release and version ZIPs. The MCP tools and the dashboard call these.
+ * read/release and version ZIPs; since NSO-358 app assets (binary files at
+ * `/<name>` next to the app's files, upload URLs). The MCP tools and the dashboard call these.
  */
 export { AppsError, type AppsErrorCode } from './errors.js';
 export {
@@ -138,6 +139,8 @@ export {
   type ReportedApp,
   type ScreenResult,
 } from './moderation.server.js';
+// NSO-358: app assets — binary files served at /<name> next to the app's files, upload URLs, the sweep.
+export * from './assets/index.js';
 export type {
   Actor,
   CompileStatus,

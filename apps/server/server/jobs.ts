@@ -1,4 +1,4 @@
-import { startBlobGc, startSlugRelease, withRedisLock } from '@drobek/apps';
+import { startAssetsSweep, startBlobGc, startSlugRelease, withRedisLock } from '@drobek/apps';
 import { auditRetentionDays, pruneAuditLog } from '@drobek/audit';
 import type { Logger } from '@drobek/core';
 import { startDomainRecheck } from '@drobek/domains';
@@ -30,6 +30,9 @@ export interface BackgroundJobs {
  *   browser errors, compiles and daily request stats older than their
  *   retention (30 days) and errors past the newest 500 per app, for every app
  *   (logic in @drobek/insights).
+ * - NSO-358 assets sweep (hourly, Redis lease): the asset files of apps
+ *   deleted 24 h+ ago, stale temp uploads and files no `app_assets` row
+ *   references (logic in @drobek/apps).
  * - PHY-85 governance: the audit trail is append-only; the ONLY deletion is
  *   the age-based retention prune (startup, then daily). It never targets a
  *   specific row and is not exposed over any API/UI.
@@ -41,6 +44,7 @@ export function startBackgroundJobs(log: Logger, opts: { filesSweep?: boolean } 
   const stopSlugRelease = startSlugRelease(jobLog);
   const stopFilesSweep = opts.filesSweep ? startFilesSweep({ log: jobLog, lease: withRedisLock }) : () => {};
   const stopLogsPrune = startLogsPrune({ log: jobLog, lease: withRedisLock });
+  const stopAssetsSweep = startAssetsSweep({ log: jobLog });
 
   const stopDomainRecheck = startDomainRecheck((msg, meta, errorText) =>
     errorText ? log.error(msg, { ...meta, error: errorText }) : log.info(msg, meta)
@@ -67,6 +71,7 @@ export function startBackgroundJobs(log: Logger, opts: { filesSweep?: boolean } 
       stopSlugRelease();
       stopFilesSweep();
       stopLogsPrune();
+      stopAssetsSweep();
       stopDomainRecheck();
     },
   };

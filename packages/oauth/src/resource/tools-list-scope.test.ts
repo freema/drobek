@@ -34,8 +34,8 @@ async function connect(scopes: Scope[]): Promise<Client> {
   return client;
 }
 
-const READ = ['get_app', 'get_logs', 'list_apps', 'query_data', 'read_file', 'skill_info'];
-const WRITE = ['configure_module', 'create_app', 'restore_version', 'write_files'];
+const READ = ['get_app', 'get_logs', 'list_apps', 'list_assets', 'query_data', 'read_file', 'skill_info'];
+const WRITE = ['configure_module', 'create_app', 'create_asset_upload', 'delete_asset', 'restore_version', 'write_files'];
 const PUBLISH = ['publish', 'set_gallery_listing'];
 
 const EXPECTED: Array<[Scope[], string[]]> = [

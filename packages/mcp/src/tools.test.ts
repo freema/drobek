@@ -10,7 +10,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createVersion, getVersion, publish, readVersionFile } from '@drobek/apps';
 import { appCompiles, appDailyStats, appErrors, apps, auditLog, memberships, moduleConfigs, moduleSecrets, users, workspaces } from '@drobek/db';
 import { dedupKey, memoryModuleStatsRedis, recordModuleRequest, sanitizeEvent } from '@drobek/insights';
-import { DEFAULT_APPS_MAX_PER_WORKSPACE } from '@drobek/apps';
+import { DEFAULT_APPS_MAX_PER_WORKSPACE, DEFAULT_APP_ASSETS_QUOTA, DEFAULT_APP_ASSET_MAX_BYTES } from '@drobek/apps';
 import { DEFAULT_DOMAINS_MAX_PER_APP } from '@drobek/domains';
 import {
   CORE_LIMITS,
@@ -210,7 +210,12 @@ describe('create_app', () => {
 describe('create_app — APPS_MAX_PER_WORKSPACE (NSO-329)', () => {
   it('the core limits catalogue mirrors the package defaults', () => {
     const d = Object.fromEntries(CORE_LIMITS.map((l) => [l.env, l.default]));
-    expect(d).toEqual({ APPS_MAX_PER_WORKSPACE: DEFAULT_APPS_MAX_PER_WORKSPACE, DOMAINS_MAX_PER_APP: DEFAULT_DOMAINS_MAX_PER_APP });
+    expect(d).toEqual({
+      APPS_MAX_PER_WORKSPACE: DEFAULT_APPS_MAX_PER_WORKSPACE,
+      DOMAINS_MAX_PER_APP: DEFAULT_DOMAINS_MAX_PER_APP,
+      APP_ASSET_MAX_BYTES: DEFAULT_APP_ASSET_MAX_BYTES,
+      APP_ASSETS_QUOTA: DEFAULT_APP_ASSETS_QUOTA,
+    });
     // llms-full.txt (agent-dx restates the defaults — it is a zero-dependency leaf).
     for (const l of CORE_LIMITS) expect(LIMITS.find((x) => x.env === l.env)?.default).toBe(String(l.default));
   });

@@ -49,8 +49,8 @@ function allCombinations(): Scope[][] {
   return out;
 }
 
-const READ_TOOLS = ['list_apps', 'get_app', 'read_file', 'skill_info', 'query_data', 'get_logs'];
-const WRITE_TOOLS = ['create_app', 'write_files', 'restore_version', 'configure_module'];
+const READ_TOOLS = ['list_apps', 'get_app', 'read_file', 'skill_info', 'query_data', 'get_logs', 'list_assets'];
+const WRITE_TOOLS = ['create_app', 'write_files', 'restore_version', 'configure_module', 'create_asset_upload', 'delete_asset'];
 const PUBLISH_TOOLS = ['publish', 'set_gallery_listing'];
 
 /** The exact tools/list per combination, spelled out (not derived from the table). */

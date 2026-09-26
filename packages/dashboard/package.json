@@ -36,6 +36,14 @@
       "types": "./src/routes/workspaces.$slug.apps.$appSlug.files.download.server.ts",
       "default": "./dist/routes/workspaces.$slug.apps.$appSlug.files.download.server.js"
     },
+    "./routes/workspaces.$slug.apps.$appSlug.assets": {
+      "types": "./src/routes/workspaces.$slug.apps.$appSlug.assets.tsx",
+      "default": "./dist/routes/workspaces.$slug.apps.$appSlug.assets.js"
+    },
+    "./routes/workspaces.$slug.apps.$appSlug.assets.server": {
+      "types": "./src/routes/workspaces.$slug.apps.$appSlug.assets.server.ts",
+      "default": "./dist/routes/workspaces.$slug.apps.$appSlug.assets.server.js"
+    },
     "./routes/workspaces.$slug.apps.$appSlug.settings": {
       "types": "./src/routes/workspaces.$slug.apps.$appSlug.settings.tsx",
       "default": "./dist/routes/workspaces.$slug.apps.$appSlug.settings.js"

@@ -12,14 +12,14 @@
  * and expects `{ "limits": { "<ENV_NAME>": <positive integer>, … } }`. Known
  * names override the env defaults; unknown names and bad values are ignored.
  * The catalogue is CORE_LIMITS (enforced by core: apps per workspace, custom
- * domains per app) plus every active module's `limits`. A limit marked
+ * domains per app, asset size and quota per app) plus every active module's `limits`. A limit marked
  * `allowZero` (DOMAINS_MAX_PER_APP) also takes 0 = the feature is off.
  * Answers are cached in Redis for 60 s (`drobek:limits:<workspace_id>`). When
  * the provider is down, slow (> 2 s) or answers garbage, the env defaults
  * apply and a warning is logged — a provider outage never takes apps down.
  */
 import { createHmac } from 'node:crypto';
-import { DEFAULT_APPS_MAX_PER_WORKSPACE } from '@drobek/apps';
+import { DEFAULT_APPS_MAX_PER_WORKSPACE, DEFAULT_APP_ASSETS_QUOTA, DEFAULT_APP_ASSET_MAX_BYTES } from '@drobek/apps';
 import type { Logger } from '@drobek/core';
 import { dbErrorForLog } from '@drobek/db';
 import type { Limits, ModuleLimit } from './contract.js';
@@ -54,6 +54,16 @@ export const CORE_LIMITS: readonly CatalogueLimit[] = Object.freeze([
     default: 3,
     meaning: 'Custom domains per app, pending + verified; 0 turns custom domains off for the workspace.',
     allowZero: true,
+  },
+  {
+    env: 'APP_ASSET_MAX_BYTES',
+    default: DEFAULT_APP_ASSET_MAX_BYTES,
+    meaning: 'Bytes of one app asset (video, audio, image, font at /assets/<name>); a bigger upload answers asset_too_large.',
+  },
+  {
+    env: 'APP_ASSETS_QUOTA',
+    default: DEFAULT_APP_ASSETS_QUOTA,
+    meaning: 'Bytes of all assets of one app; an upload past it answers asset_quota_exceeded.',
   },
 ]);
 

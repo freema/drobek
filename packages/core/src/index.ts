@@ -32,3 +32,5 @@ export {
   type CaddyTlsMode,
 } from './caddy.js';
 export { CsvParseError, csvEscape, csvLine, csvUnguard, parseCsv, type CsvRow } from './csv.js';
+export { SIGNATURE_HEAD_BYTES, hasControlBytes, looksLikeSvg, sniffSignature, type SniffedType } from './sniff.js';
+export { CLOSE_LINGER_MS, closeAfterResponse, requestBodyStream } from './http-body.js';

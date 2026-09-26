@@ -83,9 +83,13 @@ services:
       DROBEK_MODULES: ${DROBEK_MODULES:-auth,email,forms,data,proxy,files}
       # The files module's uploads live on the files_data volume below.
       FILES_DIR: /data/files
+      # App assets (video, audio, images, fonts; NSO-358) on the assets_data volume.
+      ASSETS_DIR: /data/assets
     volumes:
       # End-user uploads (files module, content-addressed) — part of `task backup`.
       - files_data:/data/files
+      # App assets (create_asset_upload / the Assets tab) — part of `task backup`.
+      - assets_data:/data/assets
     healthcheck:
       # /healthz = {ok, db, redis}; the first start applies every migration.
       test: ['CMD-SHELL', 'wget -q -T 5 -O - http://127.0.0.1:3000/healthz || exit 1']
@@ -153,5 +157,6 @@ volumes:
   pg_data:
   redis_data:
   files_data:
+  assets_data:
   caddy_data:
   caddy_config:

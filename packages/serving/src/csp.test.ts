@@ -1,17 +1,73 @@
 import { describe, expect, it } from 'vitest';
-import { APP_CSP, appCsp, appSecurityHeaders, parseFrameAncestors, withDashboardAncestor } from './csp.js';
+import {
+  APP_CSP,
+  DEFAULT_FRAME_SRC,
+  appCsp,
+  appSecurityHeaders,
+  frameSrcConfigError,
+  frameSrcFromEnv,
+  parseFrameAncestors,
+  parseFrameSrcExtra,
+  withDashboardAncestor,
+} from './csp.js';
 
 describe('app CSP (plan §3.3)', () => {
   it('is exactly the documented policy', () => {
     expect(APP_CSP).toBe(
       "default-src 'self'; script-src 'self' https://esm.sh 'unsafe-inline'; style-src 'self' 'unsafe-inline' https:; " +
         "img-src 'self' data: blob: https:; font-src 'self' data: https:; connect-src 'self' https://esm.sh; " +
+        "media-src 'self' blob: https:; " +
+        "frame-src https://www.youtube-nocookie.com https://www.youtube.com https://player.vimeo.com https://drive.google.com; " +
         "object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
     );
   });
 
   it('takes a frame-ancestors override', () => {
     expect(appCsp('https://intranet.example.com')).toContain('frame-ancestors https://intranet.example.com;');
+  });
+
+  it('takes a frame-src list (NSO-358)', () => {
+    expect(appCsp(undefined, `${DEFAULT_FRAME_SRC} https://embed.example.com`)).toContain(
+      `frame-src ${DEFAULT_FRAME_SRC} https://embed.example.com;`
+    );
+  });
+});
+
+describe('APP_FRAME_SRC_EXTRA (NSO-358)', () => {
+  it('accepts comma / space separated https origins, lower-cased, de-duplicated', () => {
+    expect(parseFrameSrcExtra('https://Embed.Example.com, https://tube.example.org:8443  https://embed.example.com/')).toEqual({
+      sources: ['https://embed.example.com', 'https://tube.example.org:8443'],
+    });
+    expect(parseFrameSrcExtra(undefined)).toEqual({ sources: [] });
+    expect(parseFrameSrcExtra('  ')).toEqual({ sources: [] });
+  });
+
+  it('refuses anything that is not a bare https origin', () => {
+    for (const bad of [
+      'http://embed.example.com',
+      'https://*.example.com',
+      'https:',
+      '*',
+      "'self'",
+      'https://embed.example.com/player',
+      'https://embed.example.com?x=1',
+      "https://a.example.com;script-src 'unsafe-eval'",
+      'https://a.example.com:99999',
+      'javascript:alert(1)',
+      Array.from({ length: 21 }, (_, i) => `https://a${i}.example.com`).join(','),
+    ]) {
+      expect(parseFrameSrcExtra(bad), bad).toHaveProperty('error');
+    }
+  });
+
+  it('an invalid value is a startup error; a valid one extends the curated list', () => {
+    expect(frameSrcConfigError({ APP_FRAME_SRC_EXTRA: 'http://x.example.com' })).toMatch(/refuses to start: APP_FRAME_SRC_EXTRA/);
+    expect(frameSrcConfigError({ APP_FRAME_SRC_EXTRA: 'https://x.example.com' })).toBeNull();
+    expect(frameSrcConfigError({})).toBeNull();
+    expect(frameSrcFromEnv({})).toBe(DEFAULT_FRAME_SRC);
+    expect(frameSrcFromEnv({ APP_FRAME_SRC_EXTRA: 'https://x.example.com https://player.vimeo.com' })).toBe(
+      `${DEFAULT_FRAME_SRC} https://x.example.com`
+    );
   });
 });
 
