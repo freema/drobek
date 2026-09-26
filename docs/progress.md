@@ -1483,6 +1483,18 @@ block, then `next` is pushed and the single MR opened.
   root test script runs it with `pnpm --filter drobek-module-hello test`
   (`vitest run`, the scaffold's script name).
 
+- EXT batch merge onto `next` (after NSO-358): NSO-345 (4bf80e5) → NSO-347
+  (8f19ab3) → NSO-346 (043c9a9) → NSO-349 (5dfe06c), `task check` green
+  after each. Resolutions: backup/restore archive both `assets.tar` and
+  `modules.tar` (manifest `parts` has five entries); `ModuleSource` is
+  registry.ts's (NSO-345) and the runtime reads it through `sourceOf()`;
+  one Workspace → Modules page (see the NSO-346 × NSO-347 note above);
+  `SkillInfo` carries NSO-347's facts AND NSO-346's `enabled_for_workspace`
+  (`skill_info` takes `app_id`); journal 0022 → 0023 → 0024 re-chained (see
+  the NSO-346 × NSO-358 note). `@drobek/modules/lock` stays an in-image
+  subpath: the npm `@drobek/modules` (NSO-349) publishes only `.` and
+  `./testing`.
+
 ## Failed approaches
 
 - `pnpm deploy --offline` in the Dockerfile builder: fails with
