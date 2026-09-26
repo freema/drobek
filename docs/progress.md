@@ -1362,6 +1362,14 @@ block, then `next` is pushed and the single MR opened.
   in index.ts AND migrate.ts), so it can never widen `frame-src`.
 - Agent worktrees: the Bash tool refuses heredocs and long compound
   commands; write a small Python edit script to the scratchpad and run it.
+- NSO-358 × NSO-340/344 merge: `0024_app_assets` was generated on top of
+  0021; its snapshot was regenerated from 0022's (a scratch `drizzle-kit
+  generate` over a copy of the folder without 0024 emitted the same SQL) and
+  keeps its id with `prevId` = 0022's id, so it carries the gallery columns.
+  0023 (NSO-346) is not on `next` yet: when it lands, 0024's snapshot must be
+  rebuilt from 0023's and re-chained again. The asset codes are core codes, so
+  they are in `CORE_ERROR_CODES` too; `skills/start` stays ≤ 150 lines and
+  must show every tool as `` `name(` ``.
 
 ## Failed approaches
 

@@ -67,6 +67,14 @@ export const CORE_ERROR_CODES: readonly string[] = [
   'user_confirmation_required',
   'gallery_hidden',
   'gallery_disabled',
+  // app assets (MCP asset tools, the upload URL)
+  'asset_too_large',
+  'asset_type_not_allowed',
+  'asset_quota_exceeded',
+  'asset_path_taken',
+  'asset_size_mismatch',
+  'asset_not_found',
+  'upload_token_invalid',
   // compile.errors[]
   'build_error',
   'unresolved_import',

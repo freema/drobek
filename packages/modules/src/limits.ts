@@ -58,7 +58,7 @@ export const CORE_LIMITS: readonly CatalogueLimit[] = Object.freeze([
   {
     env: 'APP_ASSET_MAX_BYTES',
     default: DEFAULT_APP_ASSET_MAX_BYTES,
-    meaning: 'Bytes of one app asset (video, audio, image, font at /assets/<name>); a bigger upload answers asset_too_large.',
+    meaning: 'Bytes of one app asset (video, audio, image, font served at /<path>); a bigger upload answers asset_too_large.',
   },
   {
     env: 'APP_ASSETS_QUOTA',

@@ -103,8 +103,7 @@ The loop (tool → result):
    user the description first; `user_confirmed: true` ONLY after they explicitly said yes.
 7. `get_app({ app_id })` = files, versions, lock, modules; `restore_version({ app_id, version })` = new version copying an old one.
 8. Backends: `skill_info({ name })`, `configure_module({ app_id, module, config })`, `query_data({ app_id, collection })`.
-9. Binaries: `create_asset_upload({ app_id, path, size })` → `upload_url` + a `curl -T` line (the file never goes through you);
-   `list_assets({ app_id })`, `delete_asset({ app_id, path })`.
+9. Binaries: `create_asset_upload({ app_id, path, size })` → `upload_url` + `curl -T`; `list_assets({ app_id })`, `delete_asset({ app_id, path })`.
 
 `drobek.json`: `{ "imports": { "<bare>": "https://…" }, "entries"?: ["src/admin.tsx"], "beacon"?: false }`.
 Add a package as a pinned esm.sh URL, e.g. `"date-fns": "https://esm.sh/date-fns@4.1.0"`;
