@@ -101,6 +101,9 @@ importers:
       drobek-module-proxy:
         specifier: workspace:*
         version: link:../../modules/proxy
+      esbuild:
+        specifier: ^0.25.0
+        version: 0.25.12
       express:
         specifier: ^4.21.2
         version: 4.22.2
