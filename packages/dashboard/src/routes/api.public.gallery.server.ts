@@ -4,16 +4,23 @@
  * www.drobek.app/gallery, through its own proxy or straight from the
  * browser).
  *
- *   cursor mode (default):  200 { items: [{ name, description, url, publishedAt, modules }], next? }
+ *   cursor mode (default):  200 { items: [{ name, description, url, publishedAt, modules,
+ *                                           likes, opens, openUrl, likeUrl }], next? }
  *   page mode:              200 { items: [...], page, pages, total, previews }
  *
- * `url` is the production host `https://<slug>.<APPS_DOMAIN>`; `?limit` 1–48
+ * `url` is the production host `https://<slug>.<APPS_DOMAIN>`; `likes` =
+ * signed-in accounts that like the app; `opens` = opens through `openUrl`
+ * (the counting link `/gallery/open/<slug>` on this host, which redirects to
+ * `url`) in the last 30 UTC days; `likeUrl` = `/gallery/like/<slug>` on this
+ * host, where a signed-in account likes the app (`?back=` a
+ * GALLERY_FRAME_ANCESTORS URL to return to). `?limit` 1–48
  * (default 24); `?q` = case- and accent-insensitive substring of the name or the
  * description (trimmed, at most 100 characters; `%` `_` `\` match
- * themselves); `?sort` = `new` (newest publish first, the default) or `name`
- * (A→Z). Cursor mode (`sort=new` without `page`, or with a `cursor`):
- * `?cursor` = the previous page's `next`. Page mode (`?page=<n>` 1-based
- * without a cursor, and always with `sort=name` — a cursor is ignored there):
+ * themselves); `?sort` = `new` (newest publish first, the default), `name`
+ * (A→Z) or `popular` (5 × likes + opens, highest first). Cursor mode
+ * (`sort=new` without `page`, or with a `cursor`): `?cursor` = the previous
+ * page's `next`. Page mode (`?page=<n>` 1-based without a cursor, and always
+ * with `sort=name` / `popular` — a cursor is ignored there):
  * `pages` / `total` count the filtered list; an invalid page is page 1, a
  * page past the last has no items. `previews` = GALLERY_FRAME_ANCESTORS is
  * set, so a listed app's production host may be framed by the gallery.
@@ -87,7 +94,7 @@ export async function loader({ request }: LoaderFunctionArgs): Promise<Response>
   const cursor = params.get('cursor');
   const pageNumber = galleryPageNumber(params.get('page'));
   const cache = { 'Cache-Control': 'public, max-age=60' };
-  if (sort === 'name' || (pageNumber !== null && !cursor)) {
+  if (sort !== 'new' || (pageNumber !== null && !cursor)) {
     const previews = galleryFrameAncestorsFromEnv().length > 0;
     return json({ ...(await listGalleryPage({ limit, page: pageNumber ?? 1, q, sort })), previews }, 200, cache);
   }

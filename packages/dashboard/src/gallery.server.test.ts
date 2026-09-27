@@ -184,6 +184,10 @@ describe('GET /api/public/gallery (NSO-340)', () => {
           url: 'https://shift-plan.apps.example.test',
           publishedAt: '2026-09-20T10:00:00.000Z',
           modules: [],
+          likes: 0,
+          opens: 0,
+          openUrl: 'http://localhost:3041/gallery/open/shift-plan',
+          likeUrl: 'http://localhost:3041/gallery/like/shift-plan',
         },
       ],
     });

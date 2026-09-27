@@ -1,5 +1,10 @@
 # Changelog — drobek (core)
 
+## Unreleased
+
+### Added
+- **Likes and opens in the public gallery** (NSO-340). Each `GET /api/public/gallery` item carries `likes` (signed-in accounts that like the app, one per account), `opens` (visits through the gallery in the last 30 days), `openUrl` and `likeUrl`; `?sort=popular` orders by 5 × likes + opens (page mode). `/gallery/open/<slug>` counts a visit per app and day — no prefetch, no `HEAD`, at most `GALLERY_OPENS_PER_IP_HOUR` (60) per IP — and redirects to the app; nothing about the visitor is stored. `/gallery/like/<slug>` asks the visitor to sign in, then likes or unlikes (`GALLERY_LIKES_PER_USER_HOUR`, 30) and returns to `?back=` when its origin is in `GALLERY_FRAME_ANCESTORS`. `get_app` shows `likes` and `opens` read-only. Migration `0029_gallery_likes`.
+
 ## v0.4.0 — 2026-09-27
 
 ### Added

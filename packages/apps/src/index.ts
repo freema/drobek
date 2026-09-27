@@ -153,8 +153,10 @@ export type {
 // NSO-340: the public gallery (owner opt-in, super-admin hide, the public list).
 export {
   GALLERY_DESCRIPTION_MAX,
+  GALLERY_OPENS_WINDOW_DAYS,
   GALLERY_PAGE_MAX,
   GALLERY_PAGE_SIZE,
+  GALLERY_POPULAR_LIKE_WEIGHT,
   decodeGalleryCursor,
   encodeGalleryCursor,
   galleryEnabled,
@@ -163,6 +165,7 @@ export {
   gallerySort,
   galleryState,
   isGalleryVisible,
+  isPrefetchRequest,
   normalizeGalleryDescription,
   type GalleryCursor,
   type GalleryDescriptionResult,
@@ -170,6 +173,7 @@ export {
   type GalleryState,
 } from './gallery.js';
 export {
+  galleryLinks,
   listGallery,
   listGalleryForModeration,
   listGalleryPage,
@@ -181,6 +185,15 @@ export {
   type GalleryPage,
   type GalleryModerationEntry,
 } from './gallery.server.js';
+// NSO-340: gallery likes (signed-in accounts) and opens (the counting link).
+export {
+  galleryCounts,
+  galleryEntryBySlug,
+  galleryLikeState,
+  recordGalleryOpen,
+  setGalleryLike,
+  type GalleryEntry,
+} from './gallery-engagement.server.js';
 // NSO-366: who may publish (PUBLISH_APPROVAL + a super-admin's per-workspace state) and the operator's publish e-mails (PUBLISH_NOTIFY).
 export {
   PUBLISH_APPROVAL_MODES,

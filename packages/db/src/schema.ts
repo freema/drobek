@@ -215,6 +215,34 @@ export const apps = pgTable(
   ]
 );
 
+/** NSO-340: a signed-in drobek account likes a gallery app — one row per account and app. */
+export const galleryLikes = pgTable(
+  'gallery_likes',
+  {
+    appId: text('app_id')
+      .notNull()
+      .references(() => apps.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.appId, t.userId] })]
+);
+
+/** NSO-340: opens of a gallery app through the gallery's counting link, per UTC day (`YYYY-MM-DD`); no visitor data. */
+export const galleryOpens = pgTable(
+  'gallery_opens',
+  {
+    appId: text('app_id')
+      .notNull()
+      .references(() => apps.id, { onDelete: 'cascade' }),
+    day: text('day').notNull(),
+    count: integer('count').notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.appId, t.day] })]
+);
+
 /** Content-addressed file bytes, shared by every version (and app) that uses them. */
 export const blobs = pgTable('blobs', {
   sha256: text('sha256').primaryKey(),

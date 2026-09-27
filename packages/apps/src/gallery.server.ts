@@ -25,21 +25,23 @@
  */
 import { and, asc, desc, eq, isNotNull, isNull, sql, type SQL } from 'drizzle-orm';
 import { AUDIT_ACTIONS, writeAudit } from '@drobek/audit';
-import { apps, getDb, moduleConfigs, workspaces } from '@drobek/db';
+import { apps, galleryLikes, galleryOpens, getDb, moduleConfigs, workspaces } from '@drobek/db';
 import { AppsError } from './errors.js';
 import { notifyAppChanged } from './events.js';
 import {
   GALLERY_PAGE_SIZE,
+  GALLERY_POPULAR_LIKE_WEIGHT,
   decodeGalleryCursor,
   encodeGalleryCursor,
   galleryEnabled,
   galleryLikePattern,
+  galleryOpensSince,
   galleryQuery,
   normalizeGalleryDescription,
   type GallerySort,
 } from './gallery.js';
 import { lockedByAdminError } from './moderation.server.js';
-import { publishedUrl } from './origin.js';
+import { dashboardOrigin, publishedUrl } from './origin.js';
 import type { Actor } from './types.js';
 
 function refuseWhenDisabled(env: NodeJS.ProcessEnv): void {
@@ -193,10 +195,18 @@ export interface GalleryItem {
   publishedAt: string;
   /** Module names with a non-empty saved config; not pending proposals or a usage/availability claim. */
   modules: string[];
+  /** Signed-in drobek accounts that like the app. */
+  likes: number;
+  /** Opens through `openUrl` in the last GALLERY_OPENS_WINDOW_DAYS UTC days. */
+  opens: number;
+  /** The counting link to the app: `<dashboard>/gallery/open/<slug>` redirects to `url`. */
+  openUrl: string;
+  /** Where a signed-in account likes (or unlikes) the app: `<dashboard>/gallery/like/<slug>`. */
+  likeUrl: string;
 }
 
 /** Listed AND published AND public AND not taken down AND not deleted AND not hidden. */
-function visibleInGallery(): SQL[] {
+export function visibleInGallery(): SQL[] {
   return [
     eq(apps.galleryListed, true),
     isNotNull(apps.publishedVersionId),
@@ -222,7 +232,20 @@ function galleryWhere(q: string | null | undefined): SQL[] {
   return where;
 }
 
-const itemColumns = {
+function likesOf(): SQL<number> {
+  return sql<number>`(select count(*)::int from ${galleryLikes} where ${galleryLikes.appId} = ${apps.id})`;
+}
+
+function opensOf(since: string): SQL<number> {
+  return sql<number>`(select coalesce(sum(${galleryOpens.count}), 0)::int from ${galleryOpens}
+    where ${galleryOpens.appId} = ${apps.id} and ${galleryOpens.day} >= ${since})`;
+}
+
+function itemColumns(now: Date) {
+  return { ...baseColumns, likes: likesOf(), opens: opensOf(galleryOpensSince(now)) };
+}
+
+const baseColumns = {
   slug: apps.slug,
   name: apps.name,
   description: apps.galleryDescription,
@@ -235,8 +258,22 @@ const itemColumns = {
     and jsonb_typeof(${moduleConfigs.config}) = 'object' and ${moduleConfigs.config} <> '{}'::jsonb)`,
 };
 
+/** The dashboard's counting link and like page for an app (both public paths, keyed by slug). */
+export function galleryLinks(slug: string, env?: NodeJS.ProcessEnv): { openUrl: string; likeUrl: string } {
+  const origin = dashboardOrigin(env);
+  return { openUrl: `${origin}/gallery/open/${slug}`, likeUrl: `${origin}/gallery/like/${slug}` };
+}
+
 function toItem(
-  r: { slug: string; name: string | null; description: string | null; publishedAt: Date | null; modules: string[] },
+  r: {
+    slug: string;
+    name: string | null;
+    description: string | null;
+    publishedAt: Date | null;
+    modules: string[];
+    likes: number;
+    opens: number;
+  },
   env: NodeJS.ProcessEnv | undefined
 ): GalleryItem {
   return {
@@ -245,6 +282,9 @@ function toItem(
     url: publishedUrl(r.slug, env),
     publishedAt: (r.publishedAt as Date).toISOString(),
     modules: r.modules,
+    likes: Number(r.likes),
+    opens: Number(r.opens),
+    ...galleryLinks(r.slug, env),
   };
 }
 
@@ -255,7 +295,7 @@ function toItem(
  * cursor pages within the same `q`.
  */
 export async function listGallery(
-  opts: { limit?: number; cursor?: string | null; q?: string | null; env?: NodeJS.ProcessEnv } = {}
+  opts: { limit?: number; cursor?: string | null; q?: string | null; env?: NodeJS.ProcessEnv; now?: Date } = {}
 ): Promise<{ items: GalleryItem[]; next: string | null }> {
   const limit = opts.limit ?? GALLERY_PAGE_SIZE;
   const cursor = decodeGalleryCursor(opts.cursor);
@@ -264,7 +304,7 @@ export async function listGallery(
     where.push(sql`(${apps.publishedAt}, ${apps.slug}) < (${cursor.publishedAt.toISOString()}::timestamp, ${cursor.slug})`);
   }
   const rows = await getDb()
-    .select(itemColumns)
+    .select(itemColumns(opts.now ?? new Date()))
     .from(apps)
     .where(and(...where))
     .orderBy(desc(apps.publishedAt), desc(apps.slug))
@@ -291,23 +331,32 @@ export interface GalleryPage {
 /**
  * Numbered pagination of the public gallery: page `page` (1-based) of `limit`
  * entries, the filtered total and the page count. `sort` = `new` (newest
- * publish first, ties by slug) or `name` (name A→Z case-insensitively, ties
- * by slug); `q` narrows both the items and the count. A page past the last
- * one has no items (and still the right `pages` / `total`).
+ * publish first, ties by slug), `name` (name A→Z case-insensitively, ties
+ * by slug) or `popular` (GALLERY_POPULAR_LIKE_WEIGHT × likes + opens in the
+ * window, highest first; ties newest first); `q` narrows both the items and
+ * the count. A page past the last one has no items (and still the right
+ * `pages` / `total`).
  */
 export async function listGalleryPage(
-  opts: { limit?: number; page?: number; q?: string | null; sort?: GallerySort; env?: NodeJS.ProcessEnv } = {}
+  opts: { limit?: number; page?: number; q?: string | null; sort?: GallerySort; env?: NodeJS.ProcessEnv; now?: Date } = {}
 ): Promise<GalleryPage> {
   const limit = opts.limit ?? GALLERY_PAGE_SIZE;
   const page = Math.max(1, Math.trunc(opts.page ?? 1));
   const where = and(...galleryWhere(opts.q));
+  const now = opts.now ?? new Date();
   const order =
     opts.sort === 'name'
       ? [sql`lower(coalesce(${apps.name}, ${apps.slug})) ASC`, asc(apps.slug)]
-      : [desc(apps.publishedAt), desc(apps.slug)];
+      : opts.sort === 'popular'
+        ? [
+            sql`(${likesOf()} * ${GALLERY_POPULAR_LIKE_WEIGHT} + ${opensOf(galleryOpensSince(now))}) DESC`,
+            desc(apps.publishedAt),
+            desc(apps.slug),
+          ]
+        : [desc(apps.publishedAt), desc(apps.slug)];
   const [rows, [count]] = await Promise.all([
     getDb()
-      .select(itemColumns)
+      .select(itemColumns(now))
       .from(apps)
       .where(where)
       .orderBy(...order)

@@ -113,6 +113,8 @@ describe('set_gallery_listing', () => {
         description: 'Plan weekly shifts for a small team.',
         hidden_by_admin: false,
         visible: true,
+        likes: 0,
+        opens: 0,
       });
 
       const audit = await db

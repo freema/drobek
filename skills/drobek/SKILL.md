@@ -245,8 +245,9 @@ everyone (on drobek.app it is shown at www.drobek.app/gallery).
 - `set_gallery_listing({ app_id, listed: false })` takes the app out at once
   — no confirmation needed. Unpublishing the app does that too.
 - `get_app` shows the state (`gallery`: `listed`, `description`,
-  `hidden_by_admin`, `visible`; `enabled: false` when the server has no
-  gallery). `not_published`, `gallery_hidden` (the operator hid the app) and
+  `hidden_by_admin`, `visible`, `likes`, `opens` in the last 30 days;
+  `enabled: false` when the server has no gallery). Liking is for signed-in
+  people on the gallery, never through MCP. `not_published`, `gallery_hidden` (the operator hid the app) and
   `gallery_disabled` mean: tell the user, do not retry. The owner can do all
   of this in the drobek dashboard as well.
 

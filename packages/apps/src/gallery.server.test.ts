@@ -138,8 +138,14 @@ describe('listGallery (the public list)', () => {
     const { items } = await listGallery({ limit: 48, env: ON });
     const item = items.find((i) => i.url === `https://${app.slug}.apps.example.test`);
     expect(item).toBeDefined();
-    expect(Object.keys(item!).sort()).toEqual(['description', 'modules', 'name', 'publishedAt', 'url']);
+    expect(Object.keys(item!).sort()).toEqual(['description', 'likeUrl', 'likes', 'modules', 'name', 'openUrl', 'opens', 'publishedAt', 'url']);
     expect(item!.modules).toEqual([]);
+    expect(item).toMatchObject({
+      likes: 0,
+      opens: 0,
+      openUrl: `http://localhost:3041/gallery/open/${app.slug}`,
+      likeUrl: `http://localhost:3041/gallery/like/${app.slug}`,
+    });
     expect(item).toMatchObject({ name: 'Gallery app', description: 'Counts things.' });
     expect(new Date(item!.publishedAt).toISOString()).toBe(item!.publishedAt);
     // No owner data anywhere in the payload.
