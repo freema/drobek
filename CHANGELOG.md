@@ -1,5 +1,11 @@
 # Changelog — drobek (core)
 
+## Unreleased
+
+### Fixed
+
+- **E-mail sender name**: a bare `EMAIL_FROM` address is sent as `drobek <address>`, so inboxes show *drobek* instead of the address's local part (*no-reply*). `Name <address>` still sets any other name.
+
 ## v0.2.1 — 2026-09-27
 
 ### Added

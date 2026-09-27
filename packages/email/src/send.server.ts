@@ -29,14 +29,15 @@ export interface OutgoingEmail {
 
 const ANGLE_ADDR = /<\s*([^<>\s]+@[^<>\s]+)\s*>\s*$/;
 const MAX_NAME = 80;
+const DEFAULT_NAME = 'drobek';
 
-/** EMAIL_FROM → `{ name, address }` (`drobek <no-reply@drobek.app>` or a bare address). */
+/** EMAIL_FROM → `{ name, address }`; a bare address is sent under the name `drobek`. */
 export function emailFromParts(env: NodeJS.ProcessEnv = process.env): { name: string; address: string } {
   const raw = getEmailFrom(env);
   const m = ANGLE_ADDR.exec(raw);
-  if (!m) return { name: '', address: raw.trim() };
+  if (!m) return { name: DEFAULT_NAME, address: raw.trim() };
   const name = raw.slice(0, m.index).trim().replace(/^"(.*)"$/, '$1');
-  return { name, address: m[1] };
+  return { name: name || DEFAULT_NAME, address: m[1] };
 }
 
 /** A display name that is one plain line: no control characters, no quotes/angle brackets/@, capped. */

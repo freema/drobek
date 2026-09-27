@@ -33,7 +33,9 @@ describe('layout', () => {
 describe('sender', () => {
   it('EMAIL_FROM parts, bare or with a name', () => {
     expect(emailFromParts({ EMAIL_FROM: 'drobek <no-reply@drobek.app>' })).toEqual({ name: 'drobek', address: 'no-reply@drobek.app' });
-    expect(emailFromParts({ EMAIL_FROM: 'no-reply@x.cz' })).toEqual({ name: '', address: 'no-reply@x.cz' });
+    expect(emailFromParts({ EMAIL_FROM: 'no-reply@x.cz' })).toEqual({ name: 'drobek', address: 'no-reply@x.cz' });
+    expect(emailFromParts({ EMAIL_FROM: '<no-reply@x.cz>' })).toEqual({ name: 'drobek', address: 'no-reply@x.cz' });
+    expect(emailFromParts({ EMAIL_FROM: 'Acme Apps <no-reply@x.cz>' })).toEqual({ name: 'Acme Apps', address: 'no-reply@x.cz' });
     expect(emailFromParts({})).toEqual({ name: 'drobek', address: 'no-reply@drobek.app' });
   });
 
