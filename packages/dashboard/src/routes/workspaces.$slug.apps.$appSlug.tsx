@@ -100,9 +100,9 @@ const styles = {
 } as const;
 
 const COMPILE_LABEL: Record<string, string> = {
-  ok: 'compiled ✓',
-  error: 'errors ✗',
-  pending: 'not compiled',
+  ok: 'build succeeded',
+  error: 'build failed',
+  pending: 'not built',
 };
 
 export default function AppDetailRoute() {
@@ -127,7 +127,7 @@ export default function AppDetailRoute() {
               <tr>
                 <th style={s.th}>Version</th>
                 <th style={s.th}>By</th>
-                <th style={s.th}>Compile</th>
+                <th style={s.th}>Build</th>
                 <th style={s.th}>Note</th>
                 <th style={s.th}>Created</th>
                 <th style={s.th} />
@@ -198,7 +198,7 @@ export default function AppDetailRoute() {
                             type="submit"
                             style={s.secondaryButton}
                             disabled={submitting}
-                            title="Create a new version with these files as the working copy (the preview)"
+                            title="Copy these files into a new preview version. The published version stays unchanged."
                             data-testid="restore-button"
                             data-version={v.number}
                           >

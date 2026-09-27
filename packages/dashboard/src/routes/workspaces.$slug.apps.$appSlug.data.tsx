@@ -63,14 +63,14 @@ const styles = {
 } as const;
 
 export default function AppDataRoute() {
-  const { workspace, appSlug, header, recordsModule, collections, dropped, orphans, canPurge, purged } = useLoaderData<typeof loader>();
+  const { workspace, appSlug, header, collections, dropped, orphans, canPurge, purged } = useLoaderData<typeof loader>();
   const failed = useActionData<typeof action>();
 
   return (
     <AppPage header={header}>
       <h2 style={ui.title}>Data</h2>
       <p style={styles.hint}>
-        Collections stored by <strong>{appSlug}</strong> (the data module; preview and production share them).
+        Data collections used by <strong>{appSlug}</strong>. The preview and published app share the same records.
       </p>
 
       {dropped ? (
@@ -87,7 +87,7 @@ export default function AppDataRoute() {
 
       {collections.length === 0 ? (
         <p style={styles.empty} data-testid="collections-empty">
-          No collections yet — an agent declares them with configure_module(&apos;{recordsModule}&apos;, …).
+          No collections yet. Ask your agent to add a collection for the records your app needs to store.
         </p>
       ) : (
         <ul style={styles.list} data-testid="collections-list">

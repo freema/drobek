@@ -31,7 +31,7 @@ export default function AppFormsRoute() {
     <AppPage header={d.header}>
       <h2 style={ui.title}>Forms</h2>
       <p style={ui.hint}>
-        Submissions of <strong>{d.appSlug}</strong>&apos;s forms (the forms module; preview and production share them).
+        Form submissions received by <strong>{d.appSlug}</strong>. Submissions from the preview and published app appear together here.
       </p>
 
       {!d.enabled ? (

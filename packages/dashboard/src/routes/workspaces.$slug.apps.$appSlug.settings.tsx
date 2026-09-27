@@ -44,8 +44,8 @@ export default function AppSettingsRoute() {
       <section style={styles.section} data-testid="settings-visibility">
         <h2 style={styles.h2}>Visibility</h2>
         <p style={styles.hint}>
-          Public apps open for anyone with the link. A password-protected app asks every visitor for the password on
-          all its hosts (production, preview, versions) — members too.
+          Anyone with the link can open a public app. Password protection applies to the published app, preview and
+          saved versions, including visits by workspace members.
         </p>
         <p style={s.inline}>
           Now: <strong data-testid="settings-visibility-current">{settings.visibility}</strong>
@@ -103,10 +103,10 @@ export default function AppSettingsRoute() {
       <section style={styles.section} data-testid="settings-frame-ancestors">
         <h2 style={styles.h2}>Embedding</h2>
         <p style={styles.hint}>
-          By default no site may embed the app in a frame. List the origins that may (e.g. your intranet), separated by
-          spaces: <code style={s.mono}>&apos;self&apos;</code> or <code style={s.mono}>https://intranet.example.com</code>.
-          Leave empty to forbid embedding. The dashboard itself always may: its app list shows a small, sandboxed,
-          non-interactive preview of the app.
+          Choose which websites may embed this app. Enter their origins (protocol, domain and optional port), separated
+          by spaces, for example <code style={s.mono}>https://intranet.example.com</code>.
+          Use <code style={s.mono}>&apos;self&apos;</code> to allow the app&apos;s own origin.
+          Leave empty to block other websites. Dashboard previews remain allowed.
         </p>
         <p style={s.inline}>
           Now:{' '}
@@ -124,7 +124,7 @@ export default function AppSettingsRoute() {
                 defaultValue={settings.frameAncestors ?? ''}
                 placeholder="https://intranet.example.com"
                 style={{ ...s.input, flex: '1 1 18rem', minWidth: 'min(18rem, 100%)' }}
-                aria-label="Allowed frame ancestors"
+                aria-label="Websites allowed to embed this app"
                 data-testid="frame-ancestors-input"
               />
               <button type="submit" style={s.button} disabled={busy} data-testid="frame-ancestors-save">
@@ -140,9 +140,10 @@ export default function AppSettingsRoute() {
           <h2 style={styles.h2}>Delete app</h2>
           <div style={styles.danger}>
             <p style={{ ...styles.hint, color: '#7f1d1d' }}>
-              The app disappears from the dashboard and from your agents, and all its addresses answer 404 at once. Its
-              address <code style={s.mono}>{header.slug}</code> stays reserved for {settings.slugReleaseDays} days, then
-              anyone can take it. Type the address to confirm.
+              This removes the app from the dashboard and your agents. Its published, preview and saved-version links
+              stop working immediately. Its identifier <code style={s.mono}>{header.slug}</code> stays reserved for{' '}
+              {settings.slugReleaseDays} days, then becomes available to other apps.
+              Type <code style={s.mono}>{header.slug}</code> to confirm deletion.
             </p>
             <Form method="post" style={styles.row}>
               <input type="hidden" name="intent" value="delete" />
@@ -152,7 +153,7 @@ export default function AppSettingsRoute() {
                 autoComplete="off"
                 placeholder={header.slug}
                 style={s.input}
-                aria-label="Type the app's address to confirm"
+                aria-label={`Type ${header.slug} to confirm deletion`}
                 data-testid="delete-confirm-input"
               />
               <button type="submit" style={s.dangerButton} disabled={busy} data-testid="delete-button">

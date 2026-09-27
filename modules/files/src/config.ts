@@ -10,9 +10,9 @@
  *  - Deleting a file is always `owner|admin` (the uploader or an app admin).
  *  - `maxBytes` — this app's per-file cap; it can only LOWER the operator's
  *    FILES_MAX_BYTES (the smaller one wins).
- *  - `allowedTypes` — a subset of image/*, image/png, image/jpeg, image/gif,
- *    image/webp, image/svg+xml, application/pdf, text/csv (the type is always
- *    sniffed from the bytes).
+ *  - `allowedTypes` — a subset of TYPE_PATTERNS in sniff.ts, including
+ *    image/* and the supported image, PDF and CSV MIME types. The type is
+ *    sniffed from the bytes, not inferred from the filename.
  *
  * Changes that need the owner's confirmation (confirmRequired):
  *  - `upload` opened to `public` (anyone can fill the app's storage);

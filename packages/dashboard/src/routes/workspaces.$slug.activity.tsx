@@ -132,8 +132,8 @@ export default function WorkspaceActivityRoute() {
   return (
     <WorkspacePage workspace={nav} section="activity">
       <p style={styles.hint}>
-        Who deployed what, when — and whether it was you or your agent. Append-only
-        audit trail for {workspace.name}.
+        Changes and actions in {workspace.name}, including publishing, settings and access changes.
+        Each entry shows who performed the action and when.
       </p>
 
       {/* FILTER — GET form, round-tripped through the loader. */}
@@ -212,7 +212,7 @@ export default function WorkspaceActivityRoute() {
 
       {items.length === 0 ? (
         <p style={styles.empty} data-testid="activity-empty">
-          No activity yet.
+          {search ? 'No activity matches these filters. Clear the filters to see more.' : 'No activity to show.'}
         </p>
       ) : (
         <div style={styles.tableWrap}>

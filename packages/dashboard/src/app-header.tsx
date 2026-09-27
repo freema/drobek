@@ -232,7 +232,7 @@ function AppHeader({ header }: { header: AppHeaderData }) {
           {header.previewVersion !== null ? (
             <code style={s.mono}>v{header.previewVersion}</code>
           ) : (
-            <span style={s.muted}>nothing compiled yet</span>
+            <span style={s.muted}>no successful build yet</span>
           )}
         </span>
 
@@ -244,13 +244,13 @@ function AppHeader({ header }: { header: AppHeaderData }) {
             <>
               <code style={s.mono}>v{latest.number}</code>
               {latest.compileStatus === 'ok' ? (
-                <span style={s.okBadge}>compiled</span>
+                <span style={s.okBadge}>build succeeded</span>
               ) : latest.compileStatus === 'error' ? (
                 <span style={s.errBadge}>
-                  {latest.errorCount} compile error{latest.errorCount === 1 ? '' : 's'}
+                  {latest.errorCount} build error{latest.errorCount === 1 ? '' : 's'}
                 </span>
               ) : (
-                <span style={s.badge}>not compiled</span>
+                <span style={s.badge}>not built</span>
               )}
               {latest.compileStatus !== 'ok' && header.previewVersion !== null ? (
                 <span style={s.muted}>the preview keeps serving v{header.previewVersion}</span>

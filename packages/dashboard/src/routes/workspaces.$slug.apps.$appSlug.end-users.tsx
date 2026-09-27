@@ -27,8 +27,8 @@ export default function AppEndUsersRoute() {
     <AppPage header={d.header}>
       <h2 style={ui.title}>Users</h2>
       <p style={ui.hint}>
-        People who signed in to <strong>{d.appSlug}</strong> (the auth module). A role or block applies to their next request;
-        editors of this workspace are always admins.
+        People who have signed in to <strong>{d.appSlug}</strong>. Role changes and blocks take effect on their next request.
+        Workspace editors and administrators have administrator access to this app.
       </p>
 
       {!d.enabled ? (
@@ -47,7 +47,7 @@ export default function AppEndUsersRoute() {
           ) : null}
           {d.revoked ? (
             <div style={ui.notice} role="status" data-testid="users-revoked">
-              Everyone was signed out. Users sign in again with a new code.
+              Existing sessions have been revoked. Users must sign in again with an enabled sign-in method.
             </div>
           ) : null}
 
@@ -68,7 +68,7 @@ export default function AppEndUsersRoute() {
                 <Form method="post" style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem', alignItems: 'center' }} data-testid="revoke-form">
                   <input type="hidden" name="intent" value="revoke-all" />
                   <input type="hidden" name="q" value={d.q} />
-                  <span style={{ fontSize: '0.85rem' }}>Sign every user of this app out, on every host?</span>
+                  <span style={{ fontSize: '0.85rem' }}>Sign all users out of the published app, preview and saved versions?</span>
                   <button type="submit" style={ui.dangerButton} disabled={busy} data-testid="revoke-confirm">
                     Sign everyone out
                   </button>
@@ -84,13 +84,15 @@ export default function AppEndUsersRoute() {
             ) : null}
           </div>
 
-          <p style={ui.muted} data-testid="users-total">
-            {d.total} {d.total === 1 ? 'user' : 'users'}
-          </p>
+          {!d.error ? (
+            <p style={ui.muted} data-testid="users-total">
+              {d.total} {d.total === 1 ? 'user' : 'users'}
+            </p>
+          ) : null}
 
-          {d.users.length === 0 ? (
+          {d.error ? null : d.users.length === 0 ? (
             <p style={ui.empty} data-testid="users-empty">
-              No users yet — they appear after their first sign-in.
+              {d.q ? 'No users match this email search. Try another address or clear the search.' : 'No users yet. People appear here after their first sign-in.'}
             </p>
           ) : (
             <div style={ui.tableWrap}>

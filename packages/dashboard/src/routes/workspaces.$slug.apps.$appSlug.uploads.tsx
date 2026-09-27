@@ -25,7 +25,7 @@ export default function AppUploadsRoute() {
     <AppPage header={d.header}>
       <h2 style={ui.title}>Uploads</h2>
       <p style={ui.hint}>
-        Files the users of <strong>{d.appSlug}</strong> uploaded (the files module). Types are decided from the bytes.
+        Files uploaded by people using <strong>{d.appSlug}</strong>. The preview and published app share these files.
       </p>
 
       {!d.enabled ? (
