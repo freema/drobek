@@ -1,7 +1,7 @@
 /**
  * GET /workspaces/:slug/activity/export.csv — the Activity (audit) CSV export
- * (PHY-85). Streams the workspace's audit trail (the SAME app + action + actor filter
- * the table applies) as text/csv, RFC-4180 escaped (shared csvLine primitive, PHY-121).
+ * (PHY-85). Streams the workspace's audit trail (the SAME app + action + actor +
+ * time-range filter the table applies, NSO-371) as text/csv, RFC-4180 escaped (shared csvLine primitive, PHY-121).
  * A resource route (no component) returning a streaming Response.
  *
  * Authz + isolation: requireWorkspaceRole('workspace-admin') — admin/super-admin
@@ -18,6 +18,7 @@ import {
   activityCsvHeaderLine,
   activityCsvRowLine,
 } from '../activity-csv.server.js';
+import { activitySummary } from '../activity-view.js';
 import { parseActivityQuery } from './workspaces.$slug.activity.server.js';
 
 const EXPORT_PAGE_SIZE = 200;
@@ -46,6 +47,8 @@ export async function loader({
             action: q.action,
             subject: q.app,
             actorKind: q.actor,
+            from: q.start,
+            until: q.until,
             cursor,
             limit: EXPORT_PAGE_SIZE,
           });
@@ -58,6 +61,7 @@ export async function loader({
               actor: r.actorEmail ?? '',
               subjectType: r.subjectType,
               subject: r.target,
+              summary: activitySummary({ action: r.action, subjectType: r.subjectType, subject: r.target, meta: r.meta }),
             })}\r\n`;
           }
           if (chunk) controller.enqueue(encoder.encode(chunk));

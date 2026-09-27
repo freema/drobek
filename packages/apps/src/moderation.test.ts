@@ -205,6 +205,24 @@ describe('takedown / restore', () => {
     expect(await restoreApp({ appId: a.id, actorUserId: adminId })).toMatchObject({ wasLocked: false });
   });
 
+  it('taking an app down again for the same reason changes nothing (a double submit is one takedown)', async () => {
+    const a = await appWithVersion('twice-bank', BANK_INDEX);
+    await publish(a.id, a.versionId, actor, { screen: false });
+    const first = await takedownApp({ appId: a.id, reason: 'spam', actorUserId: adminId });
+    expect(first).toMatchObject({ changed: true, alreadyLocked: false });
+    const events: AppChangedEvent[] = [];
+    const off = onLocalAppChanged((e) => events.push(e));
+    const second = await takedownApp({ appId: a.id, reason: 'spam', actorUserId: adminId });
+    off();
+    expect(second).toMatchObject({ changed: false, alreadyLocked: true, unpublishedVersionId: null });
+    expect(events).toEqual([]);
+    const rows = await db.select().from(auditLog).where(eq(auditLog.target, 'twice-bank'));
+    expect(rows.filter((r) => r.action === 'admin.takedown')).toHaveLength(1);
+    // Another category still updates the recorded reason.
+    expect(await takedownApp({ appId: a.id, reason: 'malware', actorUserId: adminId })).toMatchObject({ changed: true, alreadyLocked: true });
+    expect(await appLockState(a.id)).toEqual({ locked: true, reason: 'malware' });
+  });
+
   it('refuses an unknown reason and an unknown app', async () => {
     const a = await appWithVersion('fine-app', CALC_INDEX);
     await expect(takedownApp({ appId: a.id, reason: 'because', actorUserId: adminId })).rejects.toMatchObject({

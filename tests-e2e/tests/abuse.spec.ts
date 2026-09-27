@@ -272,8 +272,21 @@ test.describe('abuse: reports, takedown/restore, publish heuristic (M4-02) @loca
     await expect(row).toBeVisible();
     await expect(row.getByTestId('abuse-app')).toHaveText(bank.slug);
     await expect(row.getByTestId('abuse-details')).toContainText('Fake bank login page');
+    await expect(row.getByTestId('abuse-app')).toHaveAttribute('href', new RegExp(`/apps/${bank.slug}$`));
+    await expect(row.getByTestId('moderation-app-public')).toHaveAttribute('href', new RegExp(`${bank.slug}\\.`));
+    await row.getByTestId('takedown-reason').selectOption('phishing');
+    // NSO-371: the first click only opens the confirm panel; Cancel changes nothing.
+    await row.getByTestId('takedown').click();
+    const confirm = ap.getByTestId('takedown-confirm');
+    await expect(confirm).toHaveAttribute('data-app-slug', bank.slug);
+    await expect(confirm.getByTestId('takedown-confirm-reason')).toHaveText('Phishing or credential theft');
+    await expect(confirm.getByTestId('takedown-confirm-effects')).toContainText('451');
+    await confirm.getByTestId('takedown-confirm-cancel').click();
+    await expect(ap.getByTestId('takedown-confirm')).toHaveCount(0);
+    expect((await hostRequest(prodHost(bank.slug), '/')).status, 'cancel leaves it online').toBe(200);
     await row.getByTestId('takedown-reason').selectOption('phishing');
     await row.getByTestId('takedown').click();
+    await ap.getByTestId('takedown-confirm-submit').click();
     await expect(ap.getByTestId('abuse-result')).toContainText(`${bank.slug} was taken down`);
     await expect(ap.locator(`[data-testid="locked-app"][data-app-slug="${bank.slug}"]`)).toBeVisible();
 

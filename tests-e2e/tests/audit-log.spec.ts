@@ -141,6 +141,9 @@ test('audit: dashboard publish is user-attributed (not spoofable); Activity view
     await expect(row).toHaveAttribute('data-action', 'app.publish');
     await expect(row.getByTestId('activity-actor')).toContainText(email);
     await expect(row.getByTestId('activity-subject')).toContainText(appSlug);
+    // NSO-371: a readable summary and a link to the (still existing) app.
+    await expect(row.getByTestId('activity-summary')).toContainText('Published version');
+    await expect(row.getByTestId('activity-link').first()).toHaveAttribute('href', `/workspaces/${ws.slug}/apps/${appSlug}`);
   }
 
   // ── CSV export matches the filtered rows ──────────────────────────────────
@@ -152,7 +155,7 @@ test('audit: dashboard publish is user-attributed (not spoofable); Activity view
   const csvLines = (await csvRes.text())
     .split('\r\n')
     .filter((l) => l.length > 0);
-  expect(csvLines[0]).toBe('time,action,actor_kind,actor,subject_type,subject');
+  expect(csvLines[0]).toBe('time,action,actor_kind,actor,subject_type,subject,summary');
   expect(csvLines).toHaveLength(3); // header + the two publish rows
   for (const line of csvLines.slice(1)) {
     const cols = line.split(',');
@@ -181,6 +184,9 @@ test('audit: dashboard publish is user-attributed (not spoofable); Activity view
   await page.goto(`/workspaces/${ws.slug}/activity?app=${appSlug}`);
   await expect(page.getByTestId('activity-table')).toBeVisible();
   await expect(page.locator('[data-testid="activity-row"]')).toHaveCount(2);
+  // NSO-371: the deleted app is plain text with a note, never a dead link.
+  await expect(page.getByTestId('activity-link')).toHaveCount(0);
+  await expect(page.getByTestId('activity-unlinked').first()).toContainText('app deleted');
 
   await page.waitForTimeout(300);
   expect(problems).toEqual([]);

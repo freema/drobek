@@ -130,6 +130,7 @@ export {
   screenAfterPublish,
   screenPublishedVersion,
   takedownApp,
+  takedownPreview,
   validateAbuseReport,
   type AbuseReportInput,
   type AbuseReportRow,
@@ -138,6 +139,7 @@ export {
   type ModerationTarget,
   type ReportedApp,
   type ScreenResult,
+  type TakedownPreview,
 } from './moderation.server.js';
 // NSO-358: app assets — binary files served at /<name> next to the app's files, upload URLs, the sweep.
 export * from './assets/index.js';

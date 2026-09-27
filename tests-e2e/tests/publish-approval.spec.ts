@@ -144,6 +144,9 @@ test.describe('publish approval and blocking (NSO-366) @local', () => {
     const row = ap.locator(`[data-testid="publishing-workspace"][data-slug="${ws.slug}"]`);
     await expect(row).toHaveAttribute('data-publishing', 'default');
     await row.getByTestId('publishing-block').click();
+    // NSO-371: Block opens a confirm panel naming the workspace; only its button blocks.
+    await expect(ap.getByTestId('block-confirm')).toHaveAttribute('data-slug', ws.slug);
+    await ap.getByTestId('block-confirm-submit').click();
     await expect(ap.getByTestId('publishing-result')).toHaveText(
       `${ws.slug} can no longer publish. Its live apps keep serving; its editors and admins were e-mailed.`
     );

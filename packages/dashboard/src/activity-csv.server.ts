@@ -5,7 +5,8 @@
  * tested; imported only server-side (the export route streams these lines).
  *
  * Columns are fixed (governance, not a user schema): the ISO instant, the action,
- * the actor_kind (agent|user), the actor email, and the subject (type + id). The
+ * the actor_kind (agent|user), the actor email, the subject (type + id) and the
+ * readable summary the Activity table shows (NSO-371, secret-free). The
  * invited email is never in an invite row's subject, so no PII leaks beyond the
  * actor email that the admin viewer is already entitled to see.
  */
@@ -18,6 +19,7 @@ export const ACTIVITY_CSV_HEADER = [
   'actor',
   'subject_type',
   'subject',
+  'summary',
 ] as const;
 
 /** A minimal, db-free row for CSV serialization (from the raw audit read). */
@@ -30,6 +32,7 @@ export interface ActivityCsvRow {
   actor: string;
   subjectType: string | null;
   subject: string | null;
+  summary: string;
 }
 
 /** The header line (RFC-4180). */
@@ -46,5 +49,6 @@ export function activityCsvRowLine(row: ActivityCsvRow): string {
     row.actor,
     row.subjectType ?? '',
     row.subject ?? '',
+    row.summary,
   ]);
 }

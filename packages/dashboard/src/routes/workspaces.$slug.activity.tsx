@@ -2,9 +2,12 @@
  * /workspaces/:slug/activity — client half of the workspace Activity view
  * (governance v1, PHY-85): the append-only audit trail as a table (time, action,
  * actor + agent/user/end-user badge, subject), newest-first, with an app +
- * action + actor-kind FILTER
+ * action + actor-kind + time-range FILTER
  * (GET, round-tripped through the loader), keyset "Next page" pagination, and a
  * CSV export of the current filter. Admin/super-admin only (the server gates it).
+ * Each row reads as a sentence, links the objects that still exist (a deleted
+ * one is plain text with a note) and keeps the stored record under
+ * "Technical details".
  *
  * All values arrive pre-shaped from the loader — this file stays client-safe
  * (imports only react-router + the server-free ../view.js).
@@ -23,16 +26,20 @@ export function meta({
   ];
 }
 
-/** Build the current filter search string (app + action + actor), sans cursor. */
+/** Build the current filter search string (app + action + actor + range), sans cursor. */
 function filterSearch(filter: {
   action: string | null;
   app: string | null;
   actor: string | null;
+  from: string | null;
+  to: string | null;
 }): string {
   const sp = new URLSearchParams();
   if (filter.action) sp.set('action', filter.action);
   if (filter.app) sp.set('app', filter.app);
   if (filter.actor) sp.set('actor', filter.actor);
+  if (filter.from) sp.set('from', filter.from);
+  if (filter.to) sp.set('to', filter.to);
   const s = sp.toString();
   return s ? `?${s}` : '';
 }
@@ -58,6 +65,7 @@ const styles = {
   field: controls.field,
   label: controls.label,
   input: controls.select,
+  date: { ...controls.input, width: '9.5rem' },
   applyBtn: controls.button,
   clearLink: controls.link,
   csvLink: { ...controls.link, color: '#1e3a8a', marginLeft: 'auto' },
@@ -79,6 +87,25 @@ const styles = {
     verticalAlign: 'top',
   },
   mono: { fontFamily: 'ui-monospace, monospace', fontSize: '0.8rem' },
+  summary: { fontWeight: 600, overflowWrap: 'anywhere' },
+  code: { fontFamily: 'ui-monospace, monospace', fontSize: '0.72rem', color: '#71717a' },
+  links: { display: 'flex', flexWrap: 'wrap', gap: '0.15rem 0.7rem' },
+  link: { color: '#1e3a8a', overflowWrap: 'anywhere' },
+  gone: { color: '#52525b', overflowWrap: 'anywhere' },
+  note: { color: '#71717a', fontSize: '0.75rem' },
+  detailsSummary: { cursor: 'pointer', color: '#52525b', fontSize: '0.75rem', marginTop: '0.2rem' },
+  pre: {
+    whiteSpace: 'pre-wrap',
+    overflowWrap: 'anywhere',
+    background: '#fafafa',
+    border: '1px solid #f0f0f2',
+    borderRadius: '6px',
+    padding: '0.4rem 0.55rem',
+    margin: '0.3rem 0 0',
+    fontSize: '0.75rem',
+    maxWidth: '36rem',
+  },
+  exportNote: { color: '#71717a', fontSize: '0.8rem', margin: '-0.25rem 0 0.75rem' },
   agentBadge: {
     display: 'inline-block',
     padding: '0.1rem 0.5rem',
@@ -196,6 +223,34 @@ export default function WorkspaceActivityRoute() {
             ))}
           </select>
         </div>
+        <div style={styles.field}>
+          <label style={styles.label} htmlFor="from">
+            From (UTC)
+          </label>
+          <input
+            id="from"
+            name="from"
+            type="date"
+            defaultValue={filter.from ?? ''}
+            max={filter.to ?? undefined}
+            style={styles.date}
+            data-testid="filter-from"
+          />
+        </div>
+        <div style={styles.field}>
+          <label style={styles.label} htmlFor="to">
+            To (UTC)
+          </label>
+          <input
+            id="to"
+            name="to"
+            type="date"
+            defaultValue={filter.to ?? ''}
+            min={filter.from ?? undefined}
+            style={styles.date}
+            data-testid="filter-to"
+          />
+        </div>
         <button type="submit" style={styles.applyBtn} data-testid="filter-apply">
           Apply
         </button>
@@ -210,6 +265,11 @@ export default function WorkspaceActivityRoute() {
           ↓ Export CSV
         </a>
       </Form>
+      <p style={styles.exportNote} data-testid="csv-export-note">
+        {search
+          ? 'Export CSV downloads every entry that matches these filters, not only this page. Clear resets the filters for both.'
+          : 'Export CSV downloads every entry of this workspace, not only this page.'}
+      </p>
 
       {items.length === 0 ? (
         <p style={styles.empty} data-testid="activity-empty">
@@ -231,9 +291,9 @@ export default function WorkspaceActivityRoute() {
             <thead>
               <tr>
                 <th style={styles.th}>time</th>
-                <th style={styles.th}>action</th>
+                <th style={styles.th}>what happened</th>
                 <th style={styles.th}>actor</th>
-                <th style={styles.th}>subject</th>
+                <th style={styles.th}>about</th>
               </tr>
             </thead>
             <tbody>
@@ -245,11 +305,29 @@ export default function WorkspaceActivityRoute() {
                   data-actor-kind={it.actorKind}
                   data-subject={it.subject ?? ''}
                 >
-                  <td style={styles.td} data-testid="activity-time">
-                    {it.time}
+                  <td style={{ ...styles.td, whiteSpace: 'nowrap' }} data-testid="activity-time">
+                    <time dateTime={it.at}>{it.time}</time>
                   </td>
-                  <td style={styles.td} data-testid="activity-action">
-                    <span style={styles.mono}>{it.action}</span>
+                  <td style={styles.td}>
+                    <div style={styles.summary} data-testid="activity-summary">
+                      {it.summary}
+                    </div>
+                    <div style={styles.code} data-testid="activity-action">
+                      {it.action}
+                    </div>
+                    <details data-testid="activity-details">
+                      <summary style={styles.detailsSummary}>Technical details</summary>
+                      <pre style={styles.pre}>
+                        {[
+                          `event   ${it.id}`,
+                          `time    ${it.at}`,
+                          `action  ${it.action}`,
+                          `actor   ${it.actorKind}${it.actorLabel ? ` · ${it.actorLabel}` : ''}`,
+                          `subject ${it.subjectType ?? '—'}${it.subject ? `: ${it.subject}` : ''}`,
+                        ].join('\n')}
+                        {it.details ? `\ncontext ${it.details}` : ''}
+                      </pre>
+                    </details>
                   </td>
                   <td style={styles.td} data-testid="activity-actor">
                     <span
@@ -267,11 +345,25 @@ export default function WorkspaceActivityRoute() {
                     {it.actorLabel}
                   </td>
                   <td style={styles.td} data-testid="activity-subject">
-                    {it.subjectType ? (
-                      <span style={styles.mono}>
-                        {it.subjectType}
-                        {it.subject ? `: ${it.subject}` : ''}
-                      </span>
+                    {it.links.length > 0 ? (
+                      <div style={styles.links}>
+                        {it.links.map((l, i) =>
+                          l.href ? (
+                            <Link key={i} to={l.href} style={styles.link} data-testid="activity-link">
+                              {l.label}
+                            </Link>
+                          ) : (
+                            <span key={i} style={styles.gone} data-testid="activity-unlinked">
+                              {l.label}
+                              {l.note ? <span style={styles.note}> ({l.note})</span> : null}
+                            </span>
+                          )
+                        )}
+                      </div>
+                    ) : it.subjectType === 'workspace' ? (
+                      'this workspace'
+                    ) : it.subject ? (
+                      <span style={styles.mono}>{it.subject}</span>
                     ) : (
                       '—'
                     )}

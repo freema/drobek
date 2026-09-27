@@ -8,7 +8,7 @@
  * stored in the row); the subject is plain text with no join to `apps`, so
  * events for a DELETED / tombstoned app still list.
  */
-import { and, desc, eq, lt, or } from 'drizzle-orm';
+import { and, desc, eq, gte, lt, or } from 'drizzle-orm';
 import { auditLog, getDb, users } from '@drobek/db';
 import type { AuditActorKind } from './actor.js';
 
@@ -32,6 +32,10 @@ export interface ListActivityInput {
   subject?: string | null;
   /** Actor-kind filter (user | agent | end_user), optional (M2-04). */
   actorKind?: AuditActorKind | null;
+  /** Only rows at or after this instant (inclusive), optional. */
+  from?: Date | null;
+  /** Only rows before this instant (exclusive), optional. */
+  until?: Date | null;
   /** Page size (rows returned); one extra row is probed for nextCursor. */
   limit?: number;
   /** Opaque keyset cursor from a prior page. */
@@ -81,6 +85,8 @@ function buildWhere(input: ListActivityInput) {
   if (input.action) conds.push(eq(auditLog.action, input.action));
   if (input.subject) conds.push(eq(auditLog.target, input.subject));
   if (input.actorKind) conds.push(eq(auditLog.actorKind, input.actorKind));
+  if (input.from) conds.push(gte(auditLog.createdAt, input.from));
+  if (input.until) conds.push(lt(auditLog.createdAt, input.until));
 
   const ks = decodeCursor(input.cursor);
   if (ks) {

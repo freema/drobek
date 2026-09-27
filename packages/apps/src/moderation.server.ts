@@ -76,15 +76,17 @@ export interface ModerationTarget {
  * (the production host stops serving; preview/version hosts answer 451 like
  * it), every open report of the app resolved, a gallery listing ended
  * (NSO-340, `app.gallery_unlisted` reason `takedown`) — one transaction,
- * audited `admin.takedown` (meta: reason, the unpublished version id). Idempotent:
- * taking a locked app down again only updates the category.
+ * audited `admin.takedown` (meta: reason, the unpublished version id).
+ * Idempotent: taking an app down again with the category it already has
+ * changes nothing (`changed: false`, no audit, no cache bust) — a double
+ * submit performs one takedown; another category only updates it.
  */
 export async function takedownApp(input: {
   appId: string;
   reason: string;
   actorUserId: string;
   log?: Logger;
-}): Promise<ModerationTarget & { unpublishedVersionId: string | null; alreadyLocked: boolean }> {
+}): Promise<ModerationTarget & { unpublishedVersionId: string | null; alreadyLocked: boolean; changed: boolean }> {
   if (!isLockReason(input.reason)) {
     throw new AppsError('invalid_reason', `Unknown takedown reason "${input.reason}".`);
   }
@@ -103,6 +105,9 @@ export async function takedownApp(input: {
       .where(and(eq(apps.id, input.appId), isNull(apps.deletedAt)))
       .for('update');
     if (!app) throw new AppsError('not_found', `App ${input.appId} does not exist.`);
+    if (app.lockedReason !== null && lockCategory(app.lockedReason) === reason) {
+      return { appId: app.id, slug: app.slug, workspaceId: app.workspaceId, unpublishedVersionId: null, alreadyLocked: true, changed: false };
+    }
     // NSO-340: a taken-down app also leaves the public gallery.
     await tx
       .update(apps)
@@ -150,9 +155,10 @@ export async function takedownApp(input: {
       workspaceId: app.workspaceId,
       unpublishedVersionId: app.publishedVersionId,
       alreadyLocked: app.lockedReason !== null,
+      changed: true,
     };
   });
-  await notifyAppChanged({ app_id: out.appId, slug: out.slug, kind: 'settings' }, input.log);
+  if (out.changed) await notifyAppChanged({ app_id: out.appId, slug: out.slug, kind: 'settings' }, input.log);
   return out;
 }
 
@@ -205,6 +211,8 @@ export interface ReportedApp {
   workspaceId: string;
   workspaceSlug: string;
   lockedReason: string | null;
+  /** The production host serves a version (a moderator can open it). */
+  published: boolean;
 }
 
 const reportedAppColumns = {
@@ -214,6 +222,7 @@ const reportedAppColumns = {
   workspaceId: apps.workspaceId,
   workspaceSlug: workspaces.slug,
   lockedReason: apps.lockedReason,
+  published: sql<boolean>`(${apps.publishedVersionId} IS NOT NULL)`.mapWith(Boolean),
 };
 
 /**
@@ -363,6 +372,7 @@ export async function listAbuseReports(opts: { status?: 'open' | 'resolved'; lim
       workspaceId: apps.workspaceId,
       workspaceSlug: workspaces.slug,
       lockedReason: apps.lockedReason,
+      publishedVersionId: apps.publishedVersionId,
     })
     .from(abuseReports)
     .leftJoin(apps, eq(apps.id, abuseReports.appId))
@@ -390,6 +400,7 @@ export async function listAbuseReports(opts: { status?: 'open' | 'resolved'; lim
             workspaceId: r.workspaceId,
             workspaceSlug: r.workspaceSlug,
             lockedReason: r.lockedReason,
+            published: r.publishedVersionId !== null,
           }
         : null,
   }));
@@ -413,6 +424,39 @@ export async function listLockedApps(): Promise<ReportedApp[]> {
     .innerJoin(workspaces, eq(workspaces.id, apps.workspaceId))
     .where(and(isNotNull(apps.lockedReason), isNull(apps.deletedAt)))
     .orderBy(apps.slug);
+}
+
+/** What a takedown of one app would affect — the confirm step shows it before anything changes. */
+export interface TakedownPreview extends ReportedApp {
+  workspaceName: string;
+  /** Verified custom domains (they answer 451 too). */
+  domains: string[];
+  openReports: number;
+  galleryListed: boolean;
+}
+
+/** The takedown preview of a live app, or null (unknown or deleted app). Reads only. */
+export async function takedownPreview(appId: string): Promise<TakedownPreview | null> {
+  const db = getDb();
+  const [row] = await db
+    .select({ ...reportedAppColumns, workspaceName: workspaces.name, galleryListed: apps.galleryListed })
+    .from(apps)
+    .innerJoin(workspaces, eq(workspaces.id, apps.workspaceId))
+    .where(and(eq(apps.id, appId), isNull(apps.deletedAt)))
+    .limit(1);
+  if (!row) return null;
+  const [verified, [open]] = await Promise.all([
+    db
+      .select({ hostname: domains.hostname })
+      .from(domains)
+      .where(and(eq(domains.appId, appId), isNotNull(domains.verifiedAt)))
+      .orderBy(domains.hostname),
+    db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(abuseReports)
+      .where(and(eq(abuseReports.appId, appId), eq(abuseReports.status, 'open'))),
+  ]);
+  return { ...row, domains: verified.map((d) => d.hostname), openReports: open?.n ?? 0 };
 }
 
 /** An app by id for the queue actions (live), or null. */

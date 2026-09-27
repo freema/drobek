@@ -161,7 +161,7 @@ test('one layout: breadcrumb, app header + tabs on every app page, aligned filte
   ]);
   await expect(page.getByTestId('app-locked-by-admin')).toHaveCount(0);
 
-  // ── Activity: selects, Apply, Clear and Export CSV on one line ────────────
+  // ── Activity: selects + date range on one line, Apply, Clear and Export CSV aligned ──
   await page.goto(`/workspaces/${ws.slug}/activity`);
   expect((await crumbs(page)).map((c) => c.label)).toEqual(['Workspaces', wsName, 'Activity']);
   await expect(page.locator('[data-testid="workspace-tab"][data-tab="activity"]')).toHaveAttribute('aria-current', 'page');
@@ -169,10 +169,10 @@ test('one layout: breadcrumb, app header + tabs on every app page, aligned filte
     page.getByTestId('filter-app'),
     page.getByTestId('filter-action'),
     page.getByTestId('filter-actor'),
-    page.getByTestId('filter-apply'),
-    page.getByTestId('filter-clear'),
-    page.getByTestId('csv-export'),
+    page.getByTestId('filter-from'),
+    page.getByTestId('filter-to'),
   ]);
+  await expectAligned([page.getByTestId('filter-apply'), page.getByTestId('filter-clear'), page.getByTestId('csv-export')]);
   expect(await height(page.getByTestId('filter-app'))).toBe(await height(page.getByTestId('filter-apply')));
   expect(await mainWidth(page)).toBe(listWidth);
 

@@ -13,6 +13,14 @@
  * default) — @drobek/apps `setWorkspacePublishing`, audited, blocking and
  * unblocking e-mail the workspace's editors and admins. The MCP tool
  * set_workspace_publishing is the same function.
+ *
+ * Blocking has a confirm step (NSO-371): "Block publishing…" is a GET to
+ * `?workspace=<slug>&confirm=block`, which renders the workspace, who gets
+ * e-mailed and what keeps serving; only the panel's POST carries
+ * `confirmed=1`, and a block without it is refused (400) before anything
+ * changes. Approve / Revoke / Unblock stay one click: they send no mail
+ * (Unblock only tells people they may publish again) and are undone by the
+ * opposite button. A repeated block is a no-op (no audit, no second mail).
  */
 import { data, type ActionFunctionArgs, type LoaderFunctionArgs } from 'react-router';
 import {
@@ -31,6 +39,7 @@ import {
 import { actorKindForSurface } from '@drobek/audit';
 import { isSuperAdmin, requireSessionUser, type SessionUser } from '@drobek/auth';
 import { createConsoleLogger } from '@drobek/core';
+import { isConfirmed } from '../moderation-confirm.js';
 
 const log = createConsoleLogger('publish-approval');
 
@@ -55,9 +64,31 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const workspace = rawWorkspace && /^[a-z0-9-]{1,64}$/.test(rawWorkspace) ? rawWorkspace : null;
   const state = workspace ? filterOf(params.get('state'), 'all') : filterOf(params.get('state'), fallback);
   const entries = await listWorkspacePublishing({ filter: state, workspace });
+  const wantsBlock = params.get('confirm') === 'block' && workspace !== null;
+  const target = wantsBlock ? entries.find((e) => e.slug === workspace) : undefined;
+  const blockConfirm =
+    target && target.publishing !== 'blocked'
+      ? {
+          workspaceId: target.id,
+          slug: target.slug,
+          name: target.name,
+          admins: target.admins,
+          liveApps: target.liveApps.length,
+          back: `/admin/publishing?workspace=${target.slug}`,
+        }
+      : null;
+  const blockConfirmError = !wantsBlock
+    ? null
+    : !target
+      ? `No workspace has the slug ${workspace}, so there is nothing to block.`
+      : target.publishing === 'blocked'
+        ? `${target.slug} is already blocked. Nothing changed.`
+        : null;
   return data(
     {
       state,
+      blockConfirm,
+      blockConfirmError,
       defaultState: fallback,
       states: PUBLISHING_FILTERS,
       workspace,
@@ -126,6 +157,12 @@ export async function action({ request }: ActionFunctionArgs) {
   const intent = String(form.get('intent') ?? '');
   const to = Object.hasOwn(INTENT_STATE, intent) ? INTENT_STATE[intent] : undefined;
   if (!to) return data<ActionResult>({ ok: false, error: 'Unknown action.' }, { status: 400 });
+  if (intent === 'block' && !isConfirmed(form)) {
+    return data<ActionResult>(
+      { ok: false, error: 'Nothing was blocked: confirm it first. Choose Block publishing, check the workspace, then confirm.' },
+      { status: 400 }
+    );
+  }
   try {
     const out = await setWorkspacePublishing({
       workspaceId: String(form.get('workspaceId') ?? ''),
