@@ -1,6 +1,6 @@
 # Changelog — drobek (core)
 
-## Unreleased
+## v0.3.0 — 2026-09-27
 
 ### Added
 - **Publish approval** (`PUBLISH_APPROVAL=open|approval`, `OPERATOR_EMAIL`). Sign-up stays open: anyone can create workspaces and build and preview apps. With `approval` a workspace may publish only after a super-admin approved it (or when a super-admin is its member); `open`, the default, changes nothing. An invalid value, `approval` without `SUPERADMIN_EMAIL` or an `OPERATOR_EMAIL` that is not one address stops the server at start.
