@@ -13,6 +13,8 @@
   - Workspaces: a super-admin gets cards linking to Publishing and the Moderation queue, and can filter the list of all workspaces. The create-team form fits on one row.
   - App Files: the tree and the viewer stack on a phone instead of overflowing the page.
   - Empty lists on these pages say what would appear there and what to do next.
+- **App pages on a phone** (NSO-371). The app, workspace and publishing tabs are one row that scrolls sideways, with the current tab scrolled into view; long app addresses in the header end in "…"; the version history shows one card per version with its actions below 640 px; long names, file paths and notes wrap instead of widening the page (a long code line scrolls inside the file viewer).
+- **Gallery and Settings point to each other** (NSO-371). Settings shows the app's gallery state with a link to the Gallery section on Overview, and the Gallery section links to Settings for visibility and embedding. The Embedding copy says what the list does not control: the dashboard's app-list preview and, while the app is shown in the gallery, the gallery website's preview of the production address.
 
 ### Docs
 - **Module directory and submission form** (NSO-340). The published modules are also listed at [www.drobek.app/modules](https://www.drobek.app/modules); authors submit theirs through the GitHub issue form `module-submission` (package, repository, contract, license and the module rules) instead of a pull request to `docs/MODULES.md`.

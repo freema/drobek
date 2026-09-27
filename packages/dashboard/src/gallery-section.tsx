@@ -6,7 +6,7 @@
  * Listing needs a published app; a super-admin's hide overrides the owner.
  * Rendered only when the server runs a gallery (GALLERY_ENABLED).
  */
-import { Form } from 'react-router';
+import { Form, Link } from 'react-router';
 import { controls } from '@drobek/tenancy/layout';
 import { appStyles } from './app-header.js';
 
@@ -41,25 +41,41 @@ const styles = {
 
 type GalleryStatus = 'visible' | 'listed' | 'unlisted' | 'hidden';
 
-function status(g: GallerySectionData): { state: GalleryStatus; text: string } {
+export function galleryStatus(g: Pick<GallerySectionData, 'hiddenByAdmin' | 'visible' | 'listed'>): { state: GalleryStatus; text: string } {
   if (g.hiddenByAdmin) return { state: 'hidden', text: 'Hidden by the server operator' };
   if (g.visible) return { state: 'visible', text: 'Shown in the gallery' };
   if (g.listed) return { state: 'listed', text: 'Listed, but not shown right now' };
   return { state: 'unlisted', text: 'Not in the gallery' };
 }
 
-export function GallerySection({ gallery, canEdit, busy }: { gallery: GallerySectionData; canEdit: boolean; busy: boolean }) {
-  const now = status(gallery);
+export function GallerySection({
+  gallery,
+  canEdit,
+  busy,
+  settingsHref,
+}: {
+  gallery: GallerySectionData;
+  canEdit: boolean;
+  busy: boolean;
+  /** The app's Settings tab (who may open the app, where it may be embedded). */
+  settingsHref: string;
+}) {
+  const now = galleryStatus(gallery);
   // A hidden entry can still be unlisted; listing it (or listing an unpublished app) is refused.
   const canList = gallery.published && !gallery.hiddenByAdmin;
   const editable = canEdit && (canList || gallery.listed);
   return (
-    <section style={styles.section} data-testid="gallery-section">
+    <section id="gallery" style={styles.section} data-testid="gallery-section">
       <h2 style={styles.h2}>Gallery</h2>
       <p style={styles.hint}>
         List the app in this server&apos;s public gallery. Anyone can see its name, the description below and a link to
         its production address; the gallery may also show a live preview of that page. Unpublishing the app, or a
-        takedown, removes it from the gallery.
+        takedown, removes it from the gallery. Who may open the app (public or password) and which websites may embed it
+        are set on the{' '}
+        <Link to={settingsHref} data-testid="gallery-settings-link">
+          Settings tab
+        </Link>
+        .
       </p>
       <p style={s.inline}>
         Now:{' '}
@@ -75,7 +91,8 @@ export function GallerySection({ gallery, canEdit, busy }: { gallery: GallerySec
       ) : null}
       {gallery.listed && !gallery.visible && !gallery.hiddenByAdmin && gallery.passwordProtected ? (
         <p style={styles.notice} role="status">
-          Password-protected apps are not shown in the gallery. Make the app public in Settings to show it.
+          Password-protected apps are not shown in the gallery. To show it, make the app public on the{' '}
+          <Link to={settingsHref}>Settings tab</Link>.
         </p>
       ) : null}
       {canEdit ? (
