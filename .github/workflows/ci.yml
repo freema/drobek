@@ -4,20 +4,21 @@
 #   module-compatibility  (module-compatibility.yml) the pinned external
 #            drobek-module-counter typechecked, built, tested, packed and
 #            loaded against this checkout's packed public packages
-#            (scripts/check-external-module.mjs); e2e waits for it.
+#            (scripts/check-external-module.mjs).
 #   e2e      build the production image ONCE (Dockerfile `runner`) → run it
 #            with docker-compose.e2e.yaml behind Caddy (tls internal) with
 #            throwaway postgres / redis / mailpit / proxy-echo → the server
 #            migrates the fresh DB on start → /healthz → Playwright @smoke +
 #            @local (guarded TRUNCATE, host allow-list) — scripts/e2e-image.sh,
-#            the same script `task e2e:image` runs locally.
-#            The exact image that passed is pushed to GHCR:
-#              main       ghcr.io/freema/drobek:{<sha>,edge}
-#              tag vX.Y.Z ghcr.io/freema/drobek:{<sha>,vX.Y.Z}
-#   release  (tags vX.Y.Z only, M4-03) no rebuild — registry-side retags of the
-#            image the e2e job pushed: the former `latest` → `previous` (the
-#            rollback target), vX.Y.Z → `latest`. A pre-release tag
-#            (vX.Y.Z-rc.1) gets its own tag only, never `latest`.
+#            the same script `task e2e:image` runs locally. On main and tags
+#            the image that passed is pushed as ghcr.io/freema/drobek:<sha>.
+#   quality, module-compatibility and e2e run in parallel.
+#   promote  (main and tags, after all three pass) no rebuild — registry-side
+#            tags of the <sha> image the e2e job tested:
+#              main       edge
+#              tag vX.Y.Z vX.Y.Z; the former `latest` → `previous` (the
+#                         rollback target), vX.Y.Z → `latest`. A pre-release
+#                         tag (vX.Y.Z-rc.1) gets its own tag only.
 #   npm      (tags only, and only while the repository variable NPM_PUBLISH
 #            is `true`; NSO-349) publishes @freema/drobek-sdk,
 #            @freema/drobek-modules (the workspace @drobek/sdk and
@@ -26,7 +27,7 @@
 #            pre-release under the dist-tag `next`) with npm Trusted
 #            Publishing — OIDC, no token, provenance attached — skipping a
 #            version npm already has (scripts/npm-packages.mjs publish). After
-#            the e2e job, so only a tested tag publishes.
+#            promote, so only a tested tag publishes.
 #
 # Images are linux/amd64 only (no ARM image in v1). A release image is built
 # from the tag with GIT_SHA = the tag's commit and VERSION = the tag, both
@@ -114,18 +115,17 @@ jobs:
 
   module-compatibility:
     name: External consumer
-    needs: quality
     uses: ./.github/workflows/module-compatibility.yml
 
   e2e:
     name: Prod image · compose · e2e (@smoke + @local)
     runs-on: ubuntu-latest
-    needs: [quality, module-compatibility]
     timeout-minutes: 10
     permissions:
       contents: read
-      packages: write # only used by the main-branch / tag push steps below
+      packages: write # only used by the main-branch / tag push step below
     outputs:
+      short: ${{ steps.sha.outputs.short }}
       version: ${{ steps.sha.outputs.version }}
       prerelease: ${{ steps.sha.outputs.prerelease }}
     steps:
@@ -227,30 +227,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Push the tested image (main → edge)
-        if: github.ref == 'refs/heads/main'
+      - name: Push the tested image (<sha>)
+        if: github.ref == 'refs/heads/main' || github.ref_type == 'tag'
         env:
           SHA: ${{ steps.sha.outputs.short }}
-        run: |
-          docker tag "$IMAGE:$SHA" "$IMAGE:edge"
-          docker push "$IMAGE:$SHA"
-          docker push "$IMAGE:edge"
+        run: docker push "$IMAGE:$SHA"
 
-      - name: Push the tested image (tag → vX.Y.Z)
-        if: github.ref_type == 'tag'
-        env:
-          SHA: ${{ steps.sha.outputs.short }}
-          VERSION: ${{ steps.sha.outputs.version }}
-        run: |
-          docker tag "$IMAGE:$SHA" "$IMAGE:$VERSION"
-          docker push "$IMAGE:$SHA"
-          docker push "$IMAGE:$VERSION"
-
-  release:
-    name: Release tags (latest, previous)
+  promote:
+    name: Image tags (edge, vX.Y.Z, latest, previous)
     runs-on: ubuntu-latest
-    needs: e2e
-    if: github.ref_type == 'tag' && needs.e2e.outputs.prerelease != 'true'
+    needs: [quality, module-compatibility, e2e]
+    if: github.ref == 'refs/heads/main' || github.ref_type == 'tag'
     timeout-minutes: 10
     permissions:
       contents: read
@@ -265,17 +252,27 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Registry-side retags (no pull, no rebuild): the image the e2e job
-      # tested and pushed as vX.Y.Z becomes `latest`; the image `latest`
-      # pointed at before becomes `previous`. Re-running the job for the same
-      # tag keeps `previous` (it never points at the release itself).
-      - name: previous ← latest, latest ← vX.Y.Z
+      # Registry-side tags (no pull, no rebuild) of the <sha> image the e2e
+      # job tested. Re-running the job for the same tag keeps `previous` (it
+      # never points at the release itself).
+      - name: edge | vX.Y.Z, previous ← latest, latest ← vX.Y.Z
         env:
+          SHA: ${{ needs.e2e.outputs.short }}
           VERSION: ${{ needs.e2e.outputs.version }}
+          PRERELEASE: ${{ needs.e2e.outputs.prerelease }}
+          REF_TYPE: ${{ github.ref_type }}
         run: |
           digest() { docker buildx imagetools inspect "$1" --format '{{json .Manifest}}' 2>/dev/null | jq -r '.digest // empty'; }
-          new="$(digest "$IMAGE:$VERSION")"
-          [ -n "$new" ] || { echo "::error::$IMAGE:$VERSION not found"; exit 1; }
+          new="$(digest "$IMAGE:$SHA")"
+          [ -n "$new" ] || { echo "::error::$IMAGE:$SHA not found"; exit 1; }
+          if [ "$REF_TYPE" != tag ]; then
+            docker buildx imagetools create -t "$IMAGE:edge" "$IMAGE@$new"
+            echo "edge → $SHA ($new)"
+            exit 0
+          fi
+          docker buildx imagetools create -t "$IMAGE:$VERSION" "$IMAGE@$new"
+          echo "$VERSION → $SHA ($new)"
+          [ "$PRERELEASE" = true ] && exit 0
           old="$(digest "$IMAGE:latest" || true)"
           if [ -n "$old" ] && [ "$old" != "$new" ]; then
             docker buildx imagetools create -t "$IMAGE:previous" "$IMAGE@$old"
@@ -289,7 +286,7 @@ jobs:
   npm:
     name: npm packages (@freema/drobek-modules, @freema/drobek-sdk, create-drobek-module)
     runs-on: ubuntu-latest
-    needs: e2e
+    needs: [e2e, promote]
     if: github.ref_type == 'tag' && vars.NPM_PUBLISH == 'true'
     timeout-minutes: 10
     permissions:
