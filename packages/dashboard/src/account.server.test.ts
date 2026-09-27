@@ -26,6 +26,7 @@ import {
   revokeAccountConnection,
 } from './account.server.js';
 import { activityCsvHeaderLine, activityCsvRowLine } from './activity-csv.server.js';
+import { activitySummary } from './activity-view.js';
 
 const MIGRATIONS_DIR = fileURLToPath(new URL('../../db/drizzle/migrations', import.meta.url));
 
@@ -84,10 +85,11 @@ describe('audited account mutations (M2-04)', () => {
         actor: r.actorEmail ?? '',
         subjectType: r.subjectType,
         subject: r.target,
+        summary: activitySummary({ action: r.action, subjectType: r.subjectType, subject: r.target, meta: r.meta }),
       }))
     ].join('\n');
-    expect(csv).toContain(`,api_key.create,user,${user.email},api_key,${created.id}`);
-    expect(csv).toContain(`,api_key.revoke,user,${user.email},api_key,${created.id}`);
+    expect(csv).toContain(`,api_key.create,user,${user.email},api_key,${created.id},Created the API key CI`);
+    expect(csv).toContain(`,api_key.revoke,user,${user.email},api_key,${created.id},Revoked the API key CI`);
   });
 
   it("another user's key cannot be revoked (404, nothing audited)", async () => {

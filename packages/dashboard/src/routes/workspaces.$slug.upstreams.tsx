@@ -123,6 +123,7 @@ export default function UpstreamsRoute() {
           {upstreams.map((u) => (
             <li
               key={u.id}
+              id={`upstream-${u.id}`}
               style={styles.item}
               data-testid="upstream-row"
               data-upstream-name={u.name}

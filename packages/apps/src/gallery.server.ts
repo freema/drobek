@@ -408,6 +408,8 @@ export interface GalleryModerationEntry {
   hiddenAt: Date | null;
   /** Shown on the public list right now. */
   visible: boolean;
+  /** The production host serves a version. */
+  published: boolean;
 }
 
 /**
@@ -425,11 +427,12 @@ export async function listGalleryForModeration(opts: { limit?: number } = {}): P
       publishedAt: apps.publishedAt,
       hiddenAt: apps.galleryHiddenAt,
       visible: sql<boolean>`(${and(...visibleInGallery())})`,
+      published: sql<boolean>`(${apps.publishedVersionId} IS NOT NULL)`,
     })
     .from(apps)
     .innerJoin(workspaces, eq(workspaces.id, apps.workspaceId))
     .where(and(isNull(apps.deletedAt), sql`(${apps.galleryListed} OR ${apps.galleryHiddenAt} IS NOT NULL)`))
     .orderBy(sql`${apps.publishedAt} DESC NULLS LAST`, desc(apps.slug))
     .limit(Math.min(Math.max(opts.limit ?? 200, 1), 500));
-  return rows.map((r) => ({ ...r, visible: Boolean(r.visible) }));
+  return rows.map((r) => ({ ...r, visible: Boolean(r.visible), published: Boolean(r.published) }));
 }

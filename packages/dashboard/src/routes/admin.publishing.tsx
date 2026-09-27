@@ -3,9 +3,11 @@
  * who may publish. Workspaces with their state (blocked, allowed, waiting,
  * default) and mode-aware actions — `open`: Block / Unblock first;
  * `approval`: Approve / Revoke / Block — plus each workspace's live apps
- * with the moderation queue's takedown form. The server gate (super-admin
- * only) is the source of truth.
+ * with the moderation queue's takedown form. Block and Take down open a
+ * confirm panel first (a GET, works without JavaScript). The server gate
+ * (super-admin only) is the source of truth.
  */
+import { useEffect, useRef } from 'react';
 import { Form, Link, useActionData, useLoaderData, useNavigation } from 'react-router';
 import { DashboardPage, controls, mergeStyles, tabStyles } from '@drobek/tenancy/layout';
 import type { action, loader } from './admin.publishing.server.js';
@@ -91,6 +93,9 @@ const styles = {
     fontSize: '0.9rem',
   },
   empty: { color: '#555', fontStyle: 'italic', padding: '0.5rem 0' },
+  confirm: { border: '2px solid #b91c1c', borderRadius: '10px', padding: '0.9rem 1rem', margin: '1.25rem 0', background: '#fff' },
+  confirmH: { fontSize: '1.1rem', margin: '0 0 0.4rem', overflowWrap: 'anywhere' },
+  effects: { margin: '0.5rem 0 0.75rem', paddingLeft: '1.2rem', fontSize: '0.92rem', overflowWrap: 'anywhere' },
 } as const;
 
 function when(iso: string): string {
@@ -102,7 +107,7 @@ type Intent = 'approve' | 'revoke' | 'block' | 'unblock';
 const INTENT_UI: Record<Intent, { label: string; style: object; testId: string }> = {
   approve: { label: 'Approve', style: controls.button, testId: 'publishing-approve' },
   revoke: { label: 'Revoke approval', style: controls.secondaryButton, testId: 'publishing-revoke' },
-  block: { label: 'Block publishing', style: controls.dangerButton, testId: 'publishing-block' },
+  block: { label: 'Block publishing…', style: controls.dangerButton, testId: 'publishing-block' },
   unblock: { label: 'Unblock', style: controls.button, testId: 'publishing-unblock' },
 };
 
@@ -114,9 +119,14 @@ function intentsFor(publishing: string, mode: string): Intent[] {
 }
 
 export default function PublishingRoute() {
-  const { state, defaultState, states, workspace, mode, contact, reasons, workspaces } = useLoaderData<typeof loader>();
+  const { state, defaultState, states, workspace, mode, contact, reasons, workspaces, blockConfirm, blockConfirmError } =
+    useLoaderData<typeof loader>();
   const result = useActionData<typeof action>();
   const busy = useNavigation().state !== 'idle';
+  const confirmRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    confirmRef.current?.focus();
+  }, [blockConfirm?.workspaceId]);
 
   return (
     <DashboardPage crumbs={[{ label: 'Workspaces', to: '/workspaces' }, { label: 'Publishing' }]}>
@@ -194,6 +204,53 @@ export default function PublishingRoute() {
         )
       ) : null}
 
+      {blockConfirmError ? (
+        <p style={styles.error} role="alert" data-testid="block-confirm-error">
+          {blockConfirmError}
+        </p>
+      ) : null}
+      {blockConfirm ? (
+        <section
+          ref={confirmRef}
+          tabIndex={-1}
+          style={styles.confirm}
+          aria-labelledby="block-confirm-title"
+          data-testid="block-confirm"
+          data-slug={blockConfirm.slug}
+        >
+          <h2 id="block-confirm-title" style={styles.confirmH}>
+            Block publishing for {blockConfirm.name} (/{blockConfirm.slug})?
+          </h2>
+          <ul style={styles.effects} data-testid="block-confirm-effects">
+            <li>Nobody in it can publish an app or a new version, whatever the server mode or an earlier approval.</li>
+            <li>
+              {blockConfirm.liveApps === 0
+                ? 'It has no live app, so nothing goes offline.'
+                : `Its ${blockConfirm.liveApps} live app${blockConfirm.liveApps === 1 ? ' keeps' : 's keep'} serving — take one down separately if it must go offline.`}
+            </li>
+            <li>
+              Its editors and admins get an e-mail that publishing is turned off
+              {blockConfirm.admins.length > 0 ? ` (admins: ${blockConfirm.admins.join(', ')})` : ''}
+              {contact ? `, naming ${contact} as the contact` : ''}.
+            </li>
+            <li>Unblock turns it back on and e-mails them again.</li>
+          </ul>
+          <div style={controls.row}>
+            <Form method="post" action={blockConfirm.back}>
+              <input type="hidden" name="intent" value="block" />
+              <input type="hidden" name="workspaceId" value={blockConfirm.workspaceId} />
+              <input type="hidden" name="confirmed" value="1" />
+              <button type="submit" style={controls.dangerButton} disabled={busy} data-testid="block-confirm-submit">
+                {busy ? 'Working…' : `Block publishing for ${blockConfirm.slug}`}
+              </button>
+            </Form>
+            <Link to={blockConfirm.back} style={controls.link} data-testid="block-confirm-cancel">
+              Cancel, change nothing
+            </Link>
+          </div>
+        </section>
+      ) : null}
+
       {workspaces.length === 0 ? (
         <p style={styles.empty} data-testid="publishing-empty">
           {workspace
@@ -261,21 +318,32 @@ export default function PublishingRoute() {
                 </div>
               ) : null}
               <div style={styles.actions}>
-                {intentsFor(w.publishing, mode).map((intent) => (
-                  <Form method="post" key={intent}>
-                    <input type="hidden" name="workspaceId" value={w.id} />
-                    <button
-                      type="submit"
-                      name="intent"
-                      value={intent}
-                      style={INTENT_UI[intent].style}
-                      disabled={busy}
-                      data-testid={INTENT_UI[intent].testId}
+                {intentsFor(w.publishing, mode).map((intent) =>
+                  intent === 'block' ? (
+                    <Link
+                      key={intent}
+                      to={`/admin/publishing?workspace=${w.slug}&confirm=block`}
+                      style={{ ...INTENT_UI.block.style, textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
+                      data-testid={INTENT_UI.block.testId}
                     >
-                      {INTENT_UI[intent].label}
-                    </button>
-                  </Form>
-                ))}
+                      {INTENT_UI.block.label}
+                    </Link>
+                  ) : (
+                    <Form method="post" key={intent}>
+                      <input type="hidden" name="workspaceId" value={w.id} />
+                      <button
+                        type="submit"
+                        name="intent"
+                        value={intent}
+                        style={INTENT_UI[intent].style}
+                        disabled={busy}
+                        data-testid={INTENT_UI[intent].testId}
+                      >
+                        {INTENT_UI[intent].label}
+                      </button>
+                    </Form>
+                  )
+                )}
               </div>
               {w.liveApps.length > 0 ? (
                 <>
@@ -286,9 +354,10 @@ export default function PublishingRoute() {
                       <a href={a.url} target="_blank" rel="noreferrer noopener" style={styles.appLink}>
                         {a.name}
                       </a>
-                      <Form method="post" action="/admin/abuse" style={styles.appForm}>
-                        <input type="hidden" name="intent" value="takedown" />
-                        <input type="hidden" name="appId" value={a.id} />
+                      <Form method="get" action="/admin/abuse" style={styles.appForm}>
+                        <input type="hidden" name="confirm" value="takedown" />
+                        <input type="hidden" name="app" value={a.id} />
+                        <input type="hidden" name="back" value={`/admin/publishing?workspace=${w.slug}`} />
                         <select name="reason" defaultValue="other" style={controls.select} aria-label={`Takedown reason for ${a.slug}`}>
                           {reasons.map((x) => (
                             <option key={x.value} value={x.value}>
@@ -296,8 +365,8 @@ export default function PublishingRoute() {
                             </option>
                           ))}
                         </select>
-                        <button type="submit" style={controls.dangerButton} disabled={busy} data-testid="publishing-takedown">
-                          Take down
+                        <button type="submit" style={controls.dangerButton} data-testid="publishing-takedown">
+                          Take down…
                         </button>
                       </Form>
                     </li>

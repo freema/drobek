@@ -166,9 +166,28 @@ describe('/admin/publishing', () => {
 
   it('block shows the operator\'s notice to the owner, records no request; unblock takes it back; ?workspace= shows one', async () => {
     who.user = { id: bossId, email: 'boss@example.com' };
-    expect(result(await adminPost({ intent: 'block', workspaceId: who.ws.id })).data).toMatchObject({
+    // NSO-371: Block goes through a confirm step. The panel only reads.
+    const panel = result(await adminLoad('?workspace=acme&confirm=block'));
+    expect(panel.data.blockConfirm).toMatchObject({ workspaceId: who.ws.id, slug: 'acme', name: 'Acme', liveApps: 0, back: '/admin/publishing?workspace=acme' });
+    expect(panel.data.blockConfirmError).toBeNull();
+    expect((await db.select().from(workspaces).where(eq(workspaces.id, who.ws.id)))[0].publishBlockedAt).toBeNull();
+    // A block that skipped the panel changes nothing.
+    const unconfirmed = result(await adminPost({ intent: 'block', workspaceId: who.ws.id }));
+    expect(unconfirmed.status).toBe(400);
+    expect(unconfirmed.data.error).toContain('Nothing was blocked');
+    expect((await db.select().from(workspaces).where(eq(workspaces.id, who.ws.id)))[0].publishBlockedAt).toBeNull();
+    expect(result(await adminPost({ intent: 'block', workspaceId: who.ws.id, confirmed: '1' })).data).toMatchObject({
       ok: true,
       message: 'acme can no longer publish. Its live apps keep serving; its editors and admins were e-mailed.',
+    });
+    // A double submit is one block: no second audit row.
+    expect(result(await adminPost({ intent: 'block', workspaceId: who.ws.id, confirmed: '1' })).data).toMatchObject({
+      ok: true,
+      message: 'acme was already blocked.',
+    });
+    expect(result(await adminLoad('?workspace=acme&confirm=block')).data).toMatchObject({
+      blockConfirm: null,
+      blockConfirmError: 'acme is already blocked. Nothing changed.',
     });
     const one = result(await adminLoad('?workspace=acme'));
     expect(one.data).toMatchObject({ workspace: 'acme', state: 'all' });
