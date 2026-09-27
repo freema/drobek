@@ -998,7 +998,8 @@ With `GALLERY_ENABLED=true` the server keeps a public list of apps whose
 owners chose to show them. Off by default: a fresh server publishes no app
 list.
 
-- **Listing.** On an app's Overview an editor or workspace-admin of a
+- **Listing.** On an app's Overview tab (Gallery section; the Settings tab,
+  where visibility and embedding live, links to it) an editor or workspace-admin of a
   **published** app ticks "Show in the gallery" and writes a public
   description (plain text, one or two sentences, at most 160 characters).
   An agent can do the same with the MCP tool `set_gallery_listing` (scope

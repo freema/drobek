@@ -26,6 +26,14 @@ export function meta({ data }: { data?: Awaited<ReturnType<typeof loader>> }) {
 }
 
 const styles = {
+  visuallyHidden: {
+    position: 'absolute',
+    width: '1px',
+    height: '1px',
+    overflow: 'hidden',
+    clip: 'rect(0 0 0 0)',
+    whiteSpace: 'nowrap',
+  },
   h2: { fontSize: '1.15rem', marginTop: '2.25rem', marginBottom: '0.5rem' },
   mono: { fontFamily: 'ui-monospace, monospace', fontSize: '0.85rem' },
   muted: { color: '#8a8a8e' },
@@ -124,7 +132,7 @@ export default function AppDetailRoute() {
         <p style={styles.muted}>No versions yet — your agent writes the first one.</p>
       ) : (
         <div style={s.tableWrap}>
-          <table style={s.table} data-testid="version-history">
+          <table style={s.table} className="dk-cards dk-versions" data-testid="version-history">
             <thead>
               <tr>
                 <th style={s.th}>Version</th>
@@ -132,13 +140,15 @@ export default function AppDetailRoute() {
                 <th style={s.th}>Build</th>
                 <th style={s.th}>Note</th>
                 <th style={s.th}>Created</th>
-                <th style={s.th} />
+                <th style={s.th}>
+                  <span style={styles.visuallyHidden}>Actions</span>
+                </th>
               </tr>
             </thead>
             <tbody>
               {versions.map((v) => (
                 <tr key={v.id} data-testid="version-row" data-version={v.number}>
-                  <td style={s.td}>
+                  <td style={s.td} data-cell="version">
                     <code style={styles.mono}>v{v.number}</code>{' '}
                     {v.published ? (
                       <span style={s.okBadge} data-testid="version-published">
@@ -146,11 +156,11 @@ export default function AppDetailRoute() {
                       </span>
                     ) : null}
                   </td>
-                  <td style={s.td}>
+                  <td style={s.td} data-cell="by" data-label="By">
                     {v.actorKind}
                     {v.author ? <div style={{ ...styles.muted, fontSize: '0.78rem' }}>{v.author}</div> : null}
                   </td>
-                  <td style={s.td} data-testid="version-compile" data-status={v.compileStatus}>
+                  <td style={s.td} data-cell="build" data-label="Build" data-testid="version-compile" data-status={v.compileStatus}>
                     {COMPILE_LABEL[v.compileStatus]}
                     {v.compileErrorCount > 0 ? ` (${v.compileErrorCount})` : ''}
                     {v.compileFirstError ? (
@@ -161,9 +171,11 @@ export default function AppDetailRoute() {
                     ) : null}
                   </td>
                   {/* React escapes the agent-supplied reasoning. */}
-                  <td style={s.td}>{v.reasoning ?? <span style={styles.muted}>—</span>}</td>
-                  <td style={s.td}>{formatTimestamp(v.createdAt)}</td>
-                  <td style={s.td}>
+                  <td style={s.td} data-cell="note" data-label="Note">{v.reasoning ?? <span style={styles.muted}>—</span>}</td>
+                  <td style={s.td} data-cell="created" data-label="Created">
+                    {formatTimestamp(v.createdAt)}
+                  </td>
+                  <td style={s.td} data-cell="actions">
                     <span style={{ ...s.inline, flexWrap: 'nowrap', overflowWrap: 'normal' }}>
                       {canPublish && v.publishable && header.publishApproval ? (
                         <button
@@ -235,7 +247,14 @@ export default function AppDetailRoute() {
         </div>
       )}
 
-      {gallery ? <GallerySection gallery={gallery} canEdit={header.canEdit} busy={submitting} /> : null}
+      {gallery ? (
+        <GallerySection
+          gallery={gallery}
+          canEdit={header.canEdit}
+          busy={submitting}
+          settingsHref={`${header.basePath}/settings`}
+        />
+      ) : null}
 
       <h2 style={styles.h2}>Health</h2>
       <div style={styles.panelGrid}>

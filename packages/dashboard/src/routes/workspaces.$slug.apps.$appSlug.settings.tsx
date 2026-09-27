@@ -1,13 +1,15 @@
 /**
  * /workspaces/:slug/apps/:appSlug/settings — the Settings tab (NSO-288):
  * who may open the app (public / password gate on the app hosts), where it
- * may be embedded (the CSP frame-ancestors override) and the danger zone
- * (delete). Editors and admins get the forms; a viewer reads the current
+ * may be embedded (the CSP frame-ancestors override, and what it does not
+ * cover), where the public gallery listing lives (Overview, NSO-340) and the
+ * danger zone (delete). Editors and admins get the forms; a viewer reads the current
  * values only (the action refuses them with 403 anyway).
  */
-import { Form, useActionData, useLoaderData, useNavigation } from 'react-router';
+import { Form, Link, useActionData, useLoaderData, useNavigation } from 'react-router';
 import type { action, loader } from './workspaces.$slug.apps.$appSlug.settings.server.js';
 import { ActionError, AppPage, appStyles } from '../app-header.js';
+import { galleryStatus } from '../gallery-section.js';
 
 export function meta({ data }: { data?: Awaited<ReturnType<typeof loader>> }) {
   return [{ title: `Settings — ${data?.header.name ?? data?.header.slug ?? 'App'} — drobek` }];
@@ -26,16 +28,19 @@ const styles = {
     borderRadius: '10px',
     padding: '0.9rem 1rem',
     background: '#fff7f7',
+    overflowWrap: 'anywhere',
     marginTop: '0.75rem',
   },
 } as const;
 
 export default function AppSettingsRoute() {
-  const { header, settings } = useLoaderData<typeof loader>();
+  const { header, settings, gallery } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const nav = useNavigation();
   const busy = nav.state !== 'idle';
   const canEdit = header.canEdit;
+  const galleryHref = `${header.basePath}#gallery`;
+  const galleryNow = gallery ? galleryStatus(gallery) : null;
 
   return (
     <AppPage header={header}>
@@ -103,10 +108,22 @@ export default function AppSettingsRoute() {
       <section style={styles.section} data-testid="settings-frame-ancestors">
         <h2 style={styles.h2}>Embedding</h2>
         <p style={styles.hint}>
-          Choose which websites may embed this app. Enter their origins (protocol, domain and optional port), separated
-          by spaces, for example <code style={s.mono}>https://intranet.example.com</code>.
+          Choose which other websites may show this app in a frame. Enter their origins (protocol, domain and optional
+          port), separated by spaces, for example <code style={s.mono}>https://intranet.example.com</code>.
           Use <code style={s.mono}>&apos;self&apos;</code> to allow the app&apos;s own origin.
-          Leave empty to block other websites. Dashboard previews remain allowed.
+          Leave it empty to block every other website.
+        </p>
+        <p style={styles.hint} data-testid="embedding-exceptions">
+          This list does not change what drobek itself shows: the dashboard always shows the small preview in your
+          workspace&apos;s app list
+          {gallery?.previews ? (
+            <>
+              , and while the app is shown in the public gallery, the gallery website may show a live preview of its
+              production address (never of the preview or saved versions). To stop that, remove the app from the gallery
+              on the <Link to={galleryHref}>Overview tab</Link>
+            </>
+          ) : null}
+          .
         </p>
         <p style={s.inline}>
           Now:{' '}
@@ -134,6 +151,26 @@ export default function AppSettingsRoute() {
           </Form>
         ) : null}
       </section>
+
+      {gallery ? (
+        <section style={styles.section} data-testid="settings-gallery">
+          <h2 style={styles.h2}>Public gallery</h2>
+          <p style={styles.hint}>
+            Showing the app in this server&apos;s public gallery, its public description and whether others may
+            duplicate it are set in the Gallery section of the Overview tab, next to the versions you publish. Only a
+            published, public app is shown there.
+          </p>
+          <p style={s.inline}>
+            Now:{' '}
+            <strong data-testid="settings-gallery-status" data-state={galleryNow?.state}>
+              {galleryNow?.text}
+            </strong>
+            <Link to={galleryHref} data-testid="settings-gallery-link">
+              Open the gallery settings
+            </Link>
+          </p>
+        </section>
+      ) : null}
 
       {canEdit ? (
         <section style={styles.section} data-testid="settings-danger">

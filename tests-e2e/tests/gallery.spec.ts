@@ -149,6 +149,16 @@ test.describe('gallery: list from the dashboard and over MCP, public API, admin 
     await expect(page.getByTestId('gallery-status')).toHaveAttribute('data-state', 'visible');
     expect(await listedFlag(app.app_id)).toEqual({ gallery_listed: true, gallery_description: description });
 
+    // NSO-371: Overview and Settings name each other — the listing lives on
+    // Overview, visibility and embedding on Settings.
+    await page.getByTestId('gallery-settings-link').click();
+    await page.waitForURL(new RegExp(`${overview}/settings$`));
+    await expect(page.getByTestId('settings-gallery-status')).toHaveAttribute('data-state', 'visible');
+    await expect(page.getByTestId('embedding-exceptions')).toContainText('the dashboard always shows the small preview');
+    await page.getByTestId('settings-gallery-link').click();
+    await page.waitForURL(new RegExp(`${overview}#gallery$`));
+    await expect(page.getByTestId('gallery-section')).toBeInViewport();
+
     // The public API: CORS *, a 60 s public cache, public metadata only.
     const res = await request.get(GALLERY);
     expect(res.status()).toBe(200);

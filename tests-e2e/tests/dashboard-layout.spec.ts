@@ -203,18 +203,51 @@ test('one layout: breadcrumb, app header + tabs on every app page, aligned filte
   }
 
   // ── (6) phone width: no horizontal scroll, the breadcrumb wraps ────────────
-  await page.setViewportSize({ width: 390, height: 844 });
-  for (const path of [
-    `/workspaces/${ws.slug}/apps`,
-    base,
-    `${base}/data`,
-    `${base}/modules`,
-    `${base}/modules/data`,
-    `/workspaces/${ws.slug}/activity`,
-  ]) {
-    await page.goto(path);
-    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
-    expect(overflow, `horizontal overflow on ${path}`).toBeLessThanOrEqual(0);
+  // NSO-371: the app tabs stay one scrollable row with the current tab in
+  // view; the Files viewer and the version cards stay inside the page.
+  const longLine = `<script>const s = "${'x'.repeat(600)}";</script>`;
+  await seedVersion({
+    appId: live.id,
+    files: [
+      { path: 'index.html', content: `<!doctype html>\n${longLine}` },
+      { path: 'src/components/a-very-long-component-file-name-that-never-ends-VeryLongComponentName.tsx', content: 'export {};' },
+    ],
+    reasoning: 'A long note that explains the change in a lot of words, so the card has to wrap it.',
+  });
+  for (const width of [360, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    for (const path of [
+      `/workspaces/${ws.slug}/apps`,
+      base,
+      `${base}/files?version=2&kind=source&path=index.html`,
+      `${base}/data`,
+      `${base}/modules`,
+      `${base}/modules/data`,
+      `${base}/settings`,
+      `/workspaces/${ws.slug}/activity`,
+    ]) {
+      await page.goto(path);
+      await page.waitForLoadState('networkidle');
+      const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+      expect(overflow, `horizontal overflow on ${path} at ${width}px`).toBeLessThanOrEqual(0);
+      if (!path.startsWith(base)) continue;
+      const tabs = await page.getByTestId('app-tabs').evaluate((bar) => {
+        const current = bar.querySelector('[aria-current="page"]') as HTMLElement;
+        const b = bar.getBoundingClientRect();
+        const c = current.getBoundingClientRect();
+        const tops = new Set([...bar.querySelectorAll('a')].map((a) => Math.round(a.getBoundingClientRect().top)));
+        return { rows: tops.size, inView: c.left >= b.left - 1 && c.right <= b.right + 1 };
+      });
+      expect(tabs, `app tabs on ${path} at ${width}px`).toEqual({ rows: 1, inView: true });
+    }
+    await page.goto(base);
+    const actions = page.locator('[data-testid="version-row"] [data-testid="version-files-link"]');
+    for (const box of await actions.evaluateAll((els) => els.map((e) => e.getBoundingClientRect().right))) {
+      expect(box, `version actions reachable at ${width}px`).toBeLessThanOrEqual(width);
+    }
   }
+  await page.goto(`${base}/files?version=2&kind=source&path=index.html`);
+  const pre = await page.getByTestId('file-content').evaluate((p) => ({ scrolls: p.scrollWidth > p.clientWidth }));
+  expect(pre.scrolls, 'a long code line scrolls inside the viewer').toBe(true);
   await page.waitForLoadState('networkidle');
 });

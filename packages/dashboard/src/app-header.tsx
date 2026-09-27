@@ -17,7 +17,7 @@
  */
 import type { CSSProperties, ReactNode } from 'react';
 import { Form, Link, useLocation, useNavigation } from 'react-router';
-import { DashboardPage, controls, mergeStyles, tabStyles, workspaceCrumbs, type Crumb } from '@drobek/tenancy/layout';
+import { DashboardPage, TabStrip, controls, mergeStyles, tabStyles, workspaceCrumbs, type Crumb } from '@drobek/tenancy/layout';
 import type { AppHeaderData } from './app-page.server.js';
 import { APP_TABS, activeAppTab, appTabHref } from './app-tabs.js';
 import { formatAgo } from './app-view.js';
@@ -25,7 +25,7 @@ import { LockedByAdminNotice } from './locked-notice.js';
 import { PublishApprovalNotice } from './publish-approval-notice.js';
 
 export const appStyles = {
-  h1: { fontSize: '1.75rem', margin: 0 },
+  h1: { fontSize: 'clamp(1.35rem, 5vw, 1.75rem)', lineHeight: 1.25, margin: 0, minWidth: 0, overflowWrap: 'anywhere' },
   h2: { fontSize: '1.15rem', marginTop: '2rem', marginBottom: '0.5rem' },
   headRow: { display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' },
   sub: { color: '#71717a', fontSize: '0.9rem', margin: '0.15rem 0 0' },
@@ -75,6 +75,8 @@ export const appStyles = {
   },
   label: { color: '#71717a', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.04em' },
   mono: { fontFamily: 'ui-monospace, monospace', fontSize: '0.85rem' },
+  /** An app address on one line: a long one ends in "…" (the full address is its title and its target). */
+  urlLink: { minWidth: 0, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   muted: { color: '#8a8a8e' },
   inline: { display: 'inline-flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap', minWidth: 0, overflowWrap: 'anywhere' },
   button: controls.button,
@@ -128,6 +130,30 @@ export const appStyles = {
 
 const s = appStyles;
 
+/**
+ * The few rules inline styles cannot express (a media query). Below 40rem a
+ * table marked `dk-cards` shows each row as a card: every cell with a
+ * `data-label` gets that label above its value, and a row can place its
+ * cells with `data-cell` grid areas (the version history does). The
+ * stylesheet overrides the inline cell borders and paddings, hence
+ * `!important`.
+ */
+const APP_PAGE_CSS = `@media (max-width: 40rem) {
+.dk-cards, .dk-cards > tbody { display: block; width: 100%; }
+.dk-cards > thead { display: none; }
+.dk-cards > tbody > tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.45rem 0.9rem; border: 1px solid #e4e4e7; border-radius: 10px; padding: 0.7rem 0.85rem; margin-bottom: 0.6rem; background: #fcfcfd; }
+.dk-cards > tbody > tr > td { display: block; min-width: 0; grid-column: 1 / -1; border: 0 !important; padding: 0 !important; overflow-wrap: anywhere; }
+.dk-cards > tbody > tr > td[data-label]::before { content: attr(data-label); display: block; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: #71717a; }
+.dk-versions > tbody > tr { grid-template-areas: "version created" "by build" "note note" "actions actions"; }
+.dk-versions > tbody > tr > td[data-cell="version"] { grid-area: version; }
+.dk-versions > tbody > tr > td[data-cell="created"] { grid-area: created; }
+.dk-versions > tbody > tr > td[data-cell="by"] { grid-area: by; }
+.dk-versions > tbody > tr > td[data-cell="build"] { grid-area: build; }
+.dk-versions > tbody > tr > td[data-cell="note"] { grid-area: note; }
+.dk-versions > tbody > tr > td[data-cell="actions"] { grid-area: actions; }
+.dk-versions td[data-cell="actions"] > span { flex-wrap: wrap !important; }
+}`;
+
 /** A small POST form to the app's base action (hidden intent + redirectTo). */
 function HeaderForm({
   base,
@@ -152,7 +178,7 @@ function AppTabs({ header }: { header: AppHeaderData }) {
   const location = useLocation();
   const active = activeAppTab(location.pathname, header.workspace.slug, header.slug);
   return (
-    <nav style={tabStyles.bar} aria-label="App sections" data-testid="app-tabs">
+    <TabStrip label="App sections" testId="app-tabs" current={active}>
       {APP_TABS.map((t) => (
         <Link
           key={t.key}
@@ -165,7 +191,7 @@ function AppTabs({ header }: { header: AppHeaderData }) {
           {t.label}
         </Link>
       ))}
-    </nav>
+    </TabStrip>
   );
 }
 
@@ -204,7 +230,14 @@ function AppHeader({ header }: { header: AppHeaderData }) {
         <span style={s.inline}>
           {header.publishedVersion !== null ? (
             <>
-              <a href={header.publishedUrl} target="_blank" rel="noopener noreferrer" data-testid="app-prod-url">
+              <a
+                href={header.publishedUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={header.publishedUrl}
+                style={s.urlLink}
+                data-testid="app-prod-url"
+              >
                 {header.publishedUrl}
               </a>
               <code style={s.mono} data-testid="app-published-version">
@@ -231,7 +264,14 @@ function AppHeader({ header }: { header: AppHeaderData }) {
 
         <span style={s.label}>Preview</span>
         <span style={s.inline}>
-          <a href={header.previewUrl} target="_blank" rel="noopener noreferrer" data-testid="app-preview-url">
+          <a
+            href={header.previewUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={header.previewUrl}
+            style={s.urlLink}
+            data-testid="app-preview-url"
+          >
             {header.previewUrl}
           </a>
           {header.previewVersion !== null ? (
@@ -317,6 +357,7 @@ export function AppPage({
   crumbs.push(...trail);
   return (
     <DashboardPage crumbs={crumbs}>
+      <style>{APP_PAGE_CSS}</style>
       <AppHeader header={header} />
       {children}
     </DashboardPage>

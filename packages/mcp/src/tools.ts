@@ -983,7 +983,7 @@ export async function setGalleryListingTool(
     changed: result.changed,
     visible: state.visible,
     ...(result.listed && app.visibility === 'password'
-      ? { note: 'The app is password-protected: the gallery shows it only once the owner makes it public in the dashboard.' }
+      ? { note: 'The app is password-protected: the gallery shows it only once the owner makes it public on the app\'s Settings tab in the dashboard.' }
       : {}),
   };
 }
