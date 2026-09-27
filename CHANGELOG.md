@@ -1,5 +1,12 @@
 # Changelog — drobek (core)
 
+## v0.3.4 — 2026-09-27
+
+### Changed
+- **Sign-in and account pages point to the next step** (NSO-366). `/login` says that a new email gets an account and what drobek does, with a link to the docs (`<DOCS_URL>/overview`, or the README when `DOCS_URL` is unset). `/me` adds **Start building**: this server's MCP address, the Claude Code `claude mcp add` line and a link to the agent guide.
+- **CI runs the lint, typecheck and unit job, the external module check and the image e2e in parallel** instead of one after another. The e2e job pushes the tested image as `ghcr.io/freema/drobek:<sha>` on `main` and tags; a new job tags that image `edge` (main) or `vX.Y.Z`, `latest` and `previous` (tags) once all three pass — no rebuild. The npm job runs after it.
+- The external module check pins `drobek-module-counter` at the commit that installs the published `@freema/drobek-modules` / `@freema/drobek-sdk` 0.3.3.
+
 ## v0.3.3 — 2026-09-27
 
 ### Added
