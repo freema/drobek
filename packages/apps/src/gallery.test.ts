@@ -140,12 +140,14 @@ describe('galleryState', () => {
     galleryListed: true,
     galleryDescription: 'Hi.',
     galleryHiddenAt: null,
+    galleryAllowDuplicate: false,
     publishedVersionId: 'v1',
     lockedReason: null,
     visibility: 'public',
   };
   it('is visible only when listed, published, public, not taken down and not hidden', () => {
-    expect(galleryState(base)).toEqual({ listed: true, description: 'Hi.', hiddenByAdmin: false, visible: true });
+    expect(galleryState(base)).toEqual({ listed: true, description: 'Hi.', hiddenByAdmin: false, allowDuplicate: false, visible: true });
+    expect(galleryState({ ...base, galleryAllowDuplicate: true }).allowDuplicate).toBe(true);
     expect(galleryState({ ...base, galleryListed: false }).visible).toBe(false);
     expect(galleryState({ ...base, publishedVersionId: null }).visible).toBe(false);
     expect(galleryState({ ...base, visibility: 'password' }).visible).toBe(false);

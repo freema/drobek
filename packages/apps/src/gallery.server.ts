@@ -12,7 +12,9 @@
  *  - `listGallery` (cursor pages) / `listGalleryPage` (numbered pages, sort by
  *    newest or name; both searchable) — the public list behind
  *    `GET /api/public/gallery`: name, description, production URL, publish
- *    time and configured module names — never config, an owner, workspace or id. It filters at QUERY time
+ *    time, configured module names, whether it may be duplicated (and the
+ *    dashboard link that does it) and how many copies exist — never config,
+ *    an owner, workspace or id. It filters at QUERY time
  *    (listed AND published AND public AND not taken down AND not deleted AND
  *    not hidden), so an unpublish, a takedown or a delete takes the entry off
  *    the list with the very next request, whatever the flag says. unpublishApp / takedownApp also clear the flag
@@ -39,8 +41,13 @@ import {
   type GallerySort,
 } from './gallery.js';
 import { lockedByAdminError } from './moderation.server.js';
-import { publishedUrl } from './origin.js';
+import { dashboardOrigin, publishedUrl } from './origin.js';
 import type { Actor } from './types.js';
+
+/** The dashboard page where a signed-in person duplicates the gallery app `slug`. */
+export function duplicatePageUrl(slug: string, env: NodeJS.ProcessEnv = process.env): string {
+  return `${dashboardOrigin(env)}/duplicate/${encodeURIComponent(slug)}`;
+}
 
 function refuseWhenDisabled(env: NodeJS.ProcessEnv): void {
   if (!galleryEnabled(env)) {
@@ -48,13 +55,15 @@ function refuseWhenDisabled(env: NodeJS.ProcessEnv): void {
   }
 }
 
-export type GalleryListingInput = { listed: true; description: string } | { listed: false };
+export type GalleryListingInput = { listed: true; description: string; allowDuplicate?: boolean } | { listed: false };
 
 export interface GalleryListingResult {
   /** false = the app already was in that state (nothing written, no audit). */
   changed: boolean;
   listed: boolean;
   description: string | null;
+  /** The owner lets signed-in people duplicate the app (kept while unlisted, like the description). */
+  allowDuplicate: boolean;
   slug: string;
 }
 
@@ -91,11 +100,13 @@ export async function setGalleryListing(
         galleryListed: apps.galleryListed,
         galleryDescription: apps.galleryDescription,
         galleryHiddenAt: apps.galleryHiddenAt,
+        galleryAllowDuplicate: apps.galleryAllowDuplicate,
       })
       .from(apps)
       .where(and(eq(apps.id, appId), isNull(apps.deletedAt)))
       .for('update');
     if (!app) throw new AppsError('not_found', `App ${appId} does not exist.`);
+    const allowDuplicate = input.listed ? (input.allowDuplicate ?? app.galleryAllowDuplicate) : app.galleryAllowDuplicate;
     const audit = (action: string, meta: Record<string, unknown>) =>
       writeAudit(
         {
@@ -111,10 +122,10 @@ export async function setGalleryListing(
       );
 
     if (!input.listed) {
-      if (!app.galleryListed) return { changed: false, listed: false, description: app.galleryDescription, slug: app.slug };
+      if (!app.galleryListed) return { changed: false, listed: false, description: app.galleryDescription, allowDuplicate, slug: app.slug };
       await tx.update(apps).set({ galleryListed: false }).where(eq(apps.id, app.id));
       await audit(AUDIT_ACTIONS.appGalleryUnlisted, { reason: 'owner' });
-      return { changed: true, listed: false, description: app.galleryDescription, slug: app.slug };
+      return { changed: true, listed: false, description: app.galleryDescription, allowDuplicate, slug: app.slug };
     }
 
     if (app.lockedReason) throw lockedByAdminError(app.lockedReason);
@@ -127,15 +138,19 @@ export async function setGalleryListing(
     if (!app.publishedVersionId) {
       throw new AppsError('not_published', 'Only a published app can be listed in the gallery — publish it first.');
     }
-    if (app.galleryListed && app.galleryDescription === description) {
-      return { changed: false, listed: true, description, slug: app.slug };
+    if (app.galleryListed && app.galleryDescription === description && app.galleryAllowDuplicate === allowDuplicate) {
+      return { changed: false, listed: true, description, allowDuplicate, slug: app.slug };
     }
-    await tx.update(apps).set({ galleryListed: true, galleryDescription: description }).where(eq(apps.id, app.id));
+    await tx
+      .update(apps)
+      .set({ galleryListed: true, galleryDescription: description, galleryAllowDuplicate: allowDuplicate })
+      .where(eq(apps.id, app.id));
     await audit(AUDIT_ACTIONS.appGalleryListed, {
       description,
+      allowDuplicate,
       ...(app.galleryListed ? { previousDescription: app.galleryDescription } : {}),
     });
-    return { changed: true, listed: true, description, slug: app.slug };
+    return { changed: true, listed: true, description, allowDuplicate, slug: app.slug };
   });
   if (out.changed) await notifyAppChanged({ app_id: appId, slug: out.slug, kind: 'settings' });
   return out;
@@ -193,6 +208,12 @@ export interface GalleryItem {
   publishedAt: string;
   /** Module names with a non-empty saved config; not pending proposals or a usage/availability claim. */
   modules: string[];
+  /** The owner lets signed-in people duplicate the app into their own workspace. */
+  duplicable: boolean;
+  /** The dashboard page that duplicates it (sign-in first), null when not duplicable. */
+  duplicateUrl: string | null;
+  /** How many live apps were duplicated from this one. */
+  duplicates: number;
 }
 
 /** Listed AND published AND public AND not taken down AND not deleted AND not hidden. */
@@ -233,10 +254,21 @@ const itemColumns = {
   modules: sql<string[]>`(select coalesce(jsonb_agg(${moduleConfigs.module} order by ${moduleConfigs.module}), '[]'::jsonb)
     from ${moduleConfigs} where ${moduleConfigs.appId} = ${apps.id}
     and jsonb_typeof(${moduleConfigs.config}) = 'object' and ${moduleConfigs.config} <> '{}'::jsonb)`,
+  duplicable: apps.galleryAllowDuplicate,
+  // Live copies; the alias keeps the outer "apps" row in reach of the subquery.
+  duplicates: sql<number>`(select count(*)::int from "apps" as "copies" where "copies"."duplicated_from_app_id" = "apps"."id" and "copies"."deleted_at" is null)`,
 };
 
 function toItem(
-  r: { slug: string; name: string | null; description: string | null; publishedAt: Date | null; modules: string[] },
+  r: {
+    slug: string;
+    name: string | null;
+    description: string | null;
+    publishedAt: Date | null;
+    modules: string[];
+    duplicable: boolean;
+    duplicates: number;
+  },
   env: NodeJS.ProcessEnv | undefined
 ): GalleryItem {
   return {
@@ -245,6 +277,9 @@ function toItem(
     url: publishedUrl(r.slug, env),
     publishedAt: (r.publishedAt as Date).toISOString(),
     modules: r.modules,
+    duplicable: r.duplicable,
+    duplicateUrl: r.duplicable ? duplicatePageUrl(r.slug, env) : null,
+    duplicates: Number(r.duplicates),
   };
 }
 

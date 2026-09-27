@@ -153,6 +153,10 @@ export const AUDIT_ACTIONS = {
   appGalleryHidden: 'app.gallery_hidden',
   /** NSO-340: a super-admin showed a hidden gallery entry again. */
   appGalleryUnhidden: 'app.gallery_unhidden',
+  /** NSO-340: this app was created as a copy of a gallery app (meta: from = the source slug, version). */
+  appDuplicate: 'app.duplicate',
+  /** NSO-340: someone duplicated this gallery app into their own workspace (no details about them). */
+  appDuplicated: 'app.duplicated',
   /** NSO-346: a super-admin enabled an opt-in platform module for the workspace (meta: module). */
   moduleWorkspaceEnable: 'module.workspace_enable',
   /** NSO-346: a super-admin disabled an opt-in platform module for the workspace (meta: module). */

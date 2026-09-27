@@ -170,6 +170,7 @@ export {
   type GalleryState,
 } from './gallery.js';
 export {
+  duplicatePageUrl,
   listGallery,
   listGalleryForModeration,
   listGalleryPage,
@@ -181,6 +182,18 @@ export {
   type GalleryPage,
   type GalleryModerationEntry,
 } from './gallery.server.js';
+// NSO-340: duplicating a gallery app into the caller's workspace (the files half).
+export {
+  DEFAULT_DUPLICATES_PER_USER_HOUR,
+  DUPLICATE_NAME_MAX,
+  copyName,
+  defaultCopyName,
+  duplicateAppFiles,
+  duplicatesPerUserHour,
+  duplicationSource,
+  type DuplicateFilesInput,
+  type DuplicationSource,
+} from './duplicate.server.js';
 // NSO-366: who may publish (PUBLISH_APPROVAL + a super-admin's per-workspace state) and the operator's publish e-mails (PUBLISH_NOTIFY).
 export {
   PUBLISH_APPROVAL_MODES,
