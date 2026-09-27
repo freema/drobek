@@ -55,7 +55,7 @@ async function deliver(to: string[], subject: string, text: string, log: Logger,
 /** Who hears about a report: every super-admin plus OPERATOR_EMAIL, once each (case-insensitive). */
 function reportMailRecipients(env: NodeJS.ProcessEnv = process.env): string[] {
   const operator = (env.OPERATOR_EMAIL ?? '').trim().toLowerCase();
-  return [...new Set([...superAdminEmails(env.SUPERADMIN_EMAIL), ...(operator ? [operator] : [])])];
+  return [...new Set([...superAdminEmails(env.SUPERADMIN_EMAIL ?? ''), ...(operator ? [operator] : [])])];
 }
 
 export interface ReportMailInput {
