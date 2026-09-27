@@ -21,7 +21,82 @@ A module contributes, for every app on the server:
 | **Error codes** | its own codes with meaning and fix: `skill_info('<name>').errors`, `/llms-full.txt` |
 | **Slots** | typed extension points other modules contribute to (see [Slots](#slots)) |
 
-## Enabling modules
+This page has three audiences: **app authors** (you, or the agent building
+your app) start at [Using modules in an app](#using-modules-in-an-app);
+**operators** choose which modules their server runs in
+[Enabling modules on your server (operators)](#enabling-modules-on-your-server-operators);
+**module authors** read [The contract](#the-contract) and
+[Writing a module](#writing-a-module).
+
+## Using modules in an app
+
+An app gets sign-in, stored records, forms or file uploads from the modules
+the server runs; there is nothing to install. Each app uses them through the
+SDK and configures them for itself.
+
+**1. See what is available.** The built-in modules are
+[`auth`](#the-built-in-auth-module) (sign-in with an e-mailed code or a
+sign-in provider), [`data`](#the-built-in-data-module) (collections of
+records with per-operation rules), [`forms`](#the-built-in-forms-module)
+(submissions stored and e-mailed to the app's owners),
+[`files`](#the-built-in-files-module) (end-user uploads),
+[`email`](#the-built-in-email-module) (e-mails to the app's owners) and
+[`proxy`](#the-built-in-proxy-module) (calls to an external API with its key
+added server-side). A server may run fewer or more:
+`skill_info()` over MCP and the workspace's **Modules** tab in the dashboard
+list the ones this server runs. `skill_info('<name>')` gives the agent the
+module's code examples, SDK types, config schema, limits and error codes.
+
+**2. Configure it for one app**, when the defaults are not enough. `forms`
+and `files` work without configuration; `data` needs its collections
+declared, `auth` its allow-list (the workspace's editors and admins can
+always sign in), `proxy` a registered upstream. Either:
+
+- the agent calls [`configure_module`](#configure_module-mcp-scope-write-role-editor)
+  with a JSON merge patch, e.g.
+  `{ "app_id": "…", "module": "data", "config": { "collections": { "todos": {} } } }`;
+- or you open the app in the dashboard → **Modules** → the module, and edit
+  the form ([The dashboard Modules tab](#the-dashboard-modules-tab-m2-02)).
+
+`get_app` shows each module's config in force (`modules.<name>`).
+
+**3. Confirm risky changes.** A change that opens the app up — sign-in to
+anyone, data readable by the public, a new proxy upstream — is not applied
+at once. `configure_module` answers `pending_confirmation` with a
+`confirm_url`, and the workspace's editors and admins are told by e-mail
+(when the server sends mail). One of them reviews the change on that
+dashboard page and confirms or rejects it; a proxy change needs a workspace
+admin ([Confirming a pending change](#confirming-a-pending-change)). Each module's
+section below lists what waits for confirmation.
+
+**4. Set secrets in the dashboard.** A secret value (a sign-in provider's
+client secret, an API key for the proxy) is never an MCP argument: you enter
+it on the module's page or, for a proxy upstream, on the workspace's
+**Upstreams** page. Tools return only its name and `hasSecret`.
+
+**5. Use the SDK.** The app imports `drobek`; the compiler resolves it to the
+server's SDK, so there is no package to add:
+
+```tsx
+import { drobek } from 'drobek';
+
+const user = await drobek.auth.me(); // null when signed out
+const todos = await drobek.data.collection('todos').list();
+await drobek.forms.submit('contact', { email: 'ana@example.com', message: 'Hi' });
+const photo = await drobek.files.upload(file); // a File from <input type="file">
+await drobek.email.notifyAdmins('Stock is low', 'Only 3 left.');
+const res = await drobek.proxy.fetch('weather', '/v1/today');
+```
+
+Ready-made React pieces come from `drobek/auth` (`<LoginGate>`) and
+`drobek/forms` (`<Form>`). A failed call rejects with a `DrobekError`
+(`code`, `message`, `hint`); the codes and their fixes are in
+`skill_info('<name>').errors`. A module the server runs but has not enabled
+for your workspace answers `module_not_enabled`: ask the operator.
+
+## Enabling modules on your server (operators)
+
+Which modules a server runs is the operator's choice, made in its environment:
 
 ```sh
 DROBEK_MODULES=hello,auth,email,forms,data   # comma-separated; empty = no modules
@@ -1275,7 +1350,7 @@ then adds its entry to `DROBEK_MODULES` (the short name when the package is
 `drobek-module-<name>`, else the full package name) and restarts drobek.
 The start refuses a module whose `contract` range does not match. An
 operator with an own image build can instead add the package as a
-dependency of the server (see [Enabling modules](#enabling-modules)).
+dependency of the server (see [Enabling modules on your server](#enabling-modules-on-your-server-operators)).
 
 ### Compatibility
 
@@ -1293,6 +1368,12 @@ pinned counter module against candidate core packages before release.
 change raises the major, and such a server refuses `'^1.x'` modules with a
 message naming both versions. The server logs the version at start
 (`platform modules ready`, `contract`).
+
+One change within `1.1.0` is not additive: since v0.3.0 a sign-in provider's
+`callback()` must return `issuer` (see
+[Auth providers](#auth-providers)). A provider module written for v0.2.x
+still loads, but its sign-ins fail with `provider_error`; add `issuer` to its
+identity before upgrading the server.
 
 ### Published modules
 
