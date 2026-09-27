@@ -6,7 +6,7 @@
  *
  * `providers` (NSO-348): `emailCode` (the e-mail code, on by default) plus
  * one entry per `auth.provider` contribution of the server — `{ enabled,
- * …the provider's own config }`. The schema is COMPOSED at start from the
+ * relinkByEmail?, …the provider's own config }`. The schema is COMPOSED at start from the
  * contributions (`composeAuthConfig`, the module's `compose`); the static
  * `authConfigSchema` is the one of a server without providers.
  */
@@ -20,9 +20,15 @@ const domain = z.string().trim().toLowerCase().regex(DOMAIN_RE, 'must be a domai
 /** The config key of the e-mail code in `providers` (the provider id `email` in rows and sessions). */
 export const EMAIL_CODE_KEY = 'emailCode';
 
-/** One provider's entry in `providers`: `enabled` + the provider's own config. */
+/** One provider's entry in `providers`: `enabled`, `relinkByEmail` + the provider's own config. */
 export interface ProviderEntry {
   enabled: boolean;
+  /**
+   * An issuer migration (owner-confirmed): a verified sign-in at a new issuer
+   * takes over the account whose only identity is of this provider at another
+   * issuer, by the address. Off by default — then that is `linked_elsewhere`.
+   */
+  relinkByEmail?: boolean;
   [key: string]: unknown;
 }
 
@@ -57,11 +63,11 @@ function providerEntrySchema(p: AuthProvider): z.ZodType {
   const object = p.configSchema as unknown as z.ZodObject;
   return object
     .partial()
-    .extend({ enabled: z.boolean() })
+    .extend({ enabled: z.boolean(), relinkByEmail: z.boolean().optional() })
     .superRefine((value, ctx) => {
       const v = value as ProviderEntry;
       if (!v.enabled) return;
-      const { enabled: _enabled, ...rest } = v;
+      const { enabled: _enabled, relinkByEmail: _relink, ...rest } = v;
       const r = p.configSchema.safeParse(rest);
       if (!r.success) for (const issue of r.error.issues) ctx.addIssue({ code: 'custom', path: issue.path, message: issue.message });
     });
@@ -110,9 +116,9 @@ function shown(value: unknown): string {
 
 /**
  * The changes that wait for the owner (§5.0): opening sign-in to anyone,
- * enabling a sign-in provider, and changing a provider's identity fields
- * (e.g. `issuer`, `clientId` — they decide whose accounts get in) while it is
- * enabled. Turning a method OFF never waits.
+ * enabling a sign-in provider, changing a provider's identity fields (e.g.
+ * `issuer`, `clientId` — they decide whose accounts get in) while it is
+ * enabled, and turning on `relinkByEmail`. Turning a method OFF never waits.
  */
 export function confirmRequiredFor(providers: readonly AuthProvider[]): (before: AuthConfig, after: AuthConfig) => ConfirmItem[] {
   return (before, after) => {
@@ -123,6 +129,11 @@ export function confirmRequiredFor(providers: readonly AuthProvider[]): (before:
     for (const p of providers) {
       const b = before.providers?.[p.id];
       const a = after.providers?.[p.id];
+      if (a?.relinkByEmail === true && b?.relinkByEmail !== true) {
+        out.push(
+          `providers.${p.id}.relinkByEmail: false → true (a ${p.label} sign-in from a new issuer takes over the account of the same address that is linked to another issuer)`
+        );
+      }
       if (!a?.enabled) continue;
       const fields = p.identityFields ?? [];
       if (!b?.enabled) {
@@ -195,6 +206,12 @@ export function composeAuthConfig(providers: readonly AuthProvider[]): ComposedM
       return { config: r.data, issues };
     },
   };
+}
+
+/** Is `relinkByEmail` on for provider `id`? */
+export function relinkByEmail(config: Pick<AuthConfig, 'providers'>, id: string): boolean {
+  if (id === EMAIL_CODE_KEY || !Object.hasOwn(config.providers ?? {}, id)) return false;
+  return config.providers[id]?.relinkByEmail === true;
 }
 
 /** Is sign-in method `provider` (`email` = the e-mail code, else a provider id) on in `config`? */

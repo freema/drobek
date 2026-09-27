@@ -307,6 +307,9 @@ secret injected server-side) and `files` (end-user uploads). The contract is
   to the `endUsers` authority's `callback`), which issues a 60-second
   handoff code bound to the app host; `complete` on the app host redeems it
   and sets the host-only session. The dashboard session is never touched.
+  A provider account is (provider, issuer, subject) in `mod_auth_identities`,
+  bound to one local user; the provider's identity config is bound into the
+  flow and the session.
 - **Configuration** comes from the agent (`configure_module`, a JSON merge
   patch validated by the module's schema) or the dashboard form. A change the
   module's `confirmRequired` names — opening a rule to `public`, a new

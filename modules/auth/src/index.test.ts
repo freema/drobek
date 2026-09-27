@@ -88,7 +88,7 @@ function resolver(config: Record<string, unknown> = CONFIG) {
   return cookiePrincipalResolver({
     redis: () => fake,
     secure: false,
-    current: (app, user) => auth.endUsers!.current({ app, user, config: parsed, db, log: noopLogger }),
+    current: (app, user) => auth.endUsers!.current({ app, user, config: parsed, db, log: noopLogger, contributions: () => [] }),
   });
 }
 const APP = () => ({ id: appId, slug: 'team-board', workspaceId });
@@ -516,7 +516,7 @@ describe("drobek-module-auth — the owner's view (M2-03)", () => {
     await db.insert(authUsers).values({ id, appId, email, role: 'user', createdAt: new Date(at), lastLoginAt: new Date(at), ...extra });
     return id;
   }
-  const now = async (config: Config, id: string, email: string) => owner.current({ app: APP(), user: { id, email, role: 'user' }, config, db, log: noopLogger });
+  const now = async (config: Config, id: string, email: string) => owner.current({ app: APP(), user: { id, email, role: 'user' }, config, db, log: noopLogger, contributions: () => [] });
 
   it('list: role and why, status, search, keyset pages (newest first)', async () => {
     const config = authConfigSchema.parse(CONFIG);

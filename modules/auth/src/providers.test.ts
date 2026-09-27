@@ -8,6 +8,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
+import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { migrate } from 'drizzle-orm/pglite/migrator';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -17,6 +18,7 @@ import * as schema from '@drobek/db/schema';
 import {
   checkModuleSet,
   collectContributions,
+  createEndUserSession,
   defineAuthProvider,
   defineModule,
   defineSignInObserver,
@@ -37,8 +39,8 @@ vi.mock('@drobek/core', async (importOriginal) => {
 
 import auth, { type AuthConfig } from './index.js';
 import { COMPLETE_PATH, handoffKey, stateKey } from './flow.js';
-import { notifySignedIn, providerSecrets } from './providers.js';
-import { authUsers } from './schema.js';
+import { connectionOf, notifySignedIn, providerSecrets } from './providers.js';
+import { authIdentities, authUsers } from './schema.js';
 import { providerSignIn } from './users.js';
 
 const CORE_MIGRATIONS = fileURLToPath(new URL('../../../packages/db/drizzle/migrations', import.meta.url));
@@ -53,7 +55,8 @@ const sha256url = (v: string) => createHash('sha256').update(v).digest('base64ur
 
 /** state → the PKCE challenge begin() got (what a real IdP keeps). */
 const challenges = new Map<string, string>();
-let identity: AuthIdentity;
+/** What the fake IdP answers; `issuer` defaults to the configured one (a real provider's verified `iss`). */
+let identity: Omit<AuthIdentity, 'issuer'> & { issuer?: string };
 let beginFails = false;
 let lastState = '';
 const seenSecrets: (string | null)[] = [];
@@ -76,12 +79,12 @@ const testProvider = defineAuthProvider({
     u.searchParams.set('client_id', config.clientId);
     return { url: u.toString() };
   },
-  async callback({ query, state, codeVerifier }) {
+  async callback({ query, state, codeVerifier, config, env }) {
     const challenge = challenges.get(state);
     challenges.delete(state);
     if (!challenge || sha256url(codeVerifier) !== challenge) throw new Error('pkce mismatch');
     if (query.code !== 'idp-code') throw new Error('bad code');
-    return identity;
+    return { issuer: env.AUTH_AUTHTEST_ISSUER ?? config.issuer, ...identity };
   },
 });
 
@@ -93,7 +96,7 @@ const otherProvider = defineAuthProvider({
     return { url: 'https://two.example/authorize' };
   },
   async callback() {
-    return identity;
+    return { issuer: 'https://two.example', ...identity };
   },
 });
 
@@ -127,6 +130,8 @@ const fixture2 = defineModule<Record<string, never>>({
 
 const slots = collectContributions([auth, fixture, fixture2]);
 const CONTRIBUTIONS = Object.fromEntries([...slots].map(([name, list]) => [name, list.map((c) => c.value)]));
+const all = <T,>(slot: string) => [...(CONTRIBUTIONS[slot] ?? [])] as T[];
+const IDP_A = { provider: 'authtest', issuer: 'https://idp.example' };
 
 // ── DB ───────────────────────────────────────────────────────────────────────
 
@@ -158,6 +163,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   fake = new FakeRedis();
+  await db.delete(authIdentities);
   await db.delete(authUsers);
   challenges.clear();
   events.length = 0;
@@ -337,7 +343,8 @@ describe('auth providers — the full flow', () => {
     const user = await me(t, cookieOf(res));
     expect(user).toMatchObject({ email: 'ana@example.com', role: 'user' });
     const [row] = await db.select().from(authUsers);
-    expect(row).toMatchObject({ email: 'ana@example.com', provider: 'authtest', subject: 'sub-ana' });
+    expect(row).toMatchObject({ email: 'ana@example.com', provider: 'authtest' });
+    expect(await db.select().from(authIdentities)).toMatchObject([{ userId: row.id, provider: 'authtest', issuer: 'https://idp.example', subject: 'sub-ana' }]);
     expect(t.audits).toContainEqual({ action: 'auth.sign_in', meta: { user_id: row.id, role: 'user', new_user: true, provider: 'authtest' } });
 
     await vi.waitFor(() => expect(events).toHaveLength(2));
@@ -602,7 +609,8 @@ describe('auth providers — accounts and sessions', () => {
     const user = await me(t, await signInWithProvider(t));
     expect(user!.id).toBe(id);
     const [row] = await db.select().from(authUsers);
-    expect(row).toMatchObject({ provider: 'authtest', subject: 'sub-ana' });
+    expect(row).toMatchObject({ provider: 'authtest' });
+    expect(await db.select().from(authIdentities)).toMatchObject([{ userId: id, provider: 'authtest', issuer: 'https://idp.example', subject: 'sub-ana' }]);
 
     identity = { ...identity, subject: 'sub-impostor' };
     const b = await begin(t);
@@ -612,25 +620,37 @@ describe('auth providers — accounts and sessions', () => {
 
   it('providerSignIn: the IdP moving an identity onto an address another user has → email_taken; a disabled user → disabled', async () => {
     await emailUser('eva@firma.cz');
-    const first = await providerSignIn(db, appId, { provider: 'authtest', subject: 's1', email: 'ana@example.com', role: 'user' }, 10);
+    const first = await providerSignIn(db, appId, { ...IDP_A, subject: 's1', email: 'ana@example.com', role: 'user' }, { maxUsers: 10 });
     expect(first).toMatchObject({ ok: true, isNew: true, linked: false });
-    expect(await providerSignIn(db, appId, { provider: 'authtest', subject: 's1', email: 'eva@firma.cz', role: 'user' }, 10)).toEqual({ ok: false, reason: 'email_taken' });
+    expect(await providerSignIn(db, appId, { ...IDP_A, subject: 's1', email: 'eva@firma.cz', role: 'user' }, { maxUsers: 10 })).toEqual({ ok: false, reason: 'email_taken' });
     await db.update(authUsers).set({ disabledAt: new Date() });
-    expect(await providerSignIn(db, appId, { provider: 'authtest', subject: 's1', email: 'ana@example.com', role: 'user' }, 10)).toEqual({ ok: false, reason: 'disabled' });
+    expect(await providerSignIn(db, appId, { ...IDP_A, subject: 's1', email: 'ana@example.com', role: 'user' }, { maxUsers: 10 })).toEqual({ ok: false, reason: 'disabled' });
   });
 
   it('providerSignIn: the per-app user cap', async () => {
     await emailUser('eva@firma.cz');
-    expect(await providerSignIn(db, appId, { provider: 'authtest', subject: 's2', email: 'ana@example.com', role: 'user' }, 1)).toEqual({ ok: false, reason: 'limit' });
+    expect(await providerSignIn(db, appId, { ...IDP_A, subject: 's2', email: 'ana@example.com', role: 'user' }, { maxUsers: 1 })).toEqual({ ok: false, reason: 'limit' });
   });
 
-  it('the schema: an e-mail row has no subject, a provider row has one; (app, provider, subject) is unique', async () => {
-    await expect(db.insert(authUsers).values({ id: newId(), appId, email: 'x@firma.cz', role: 'user', provider: 'email', subject: 's' })).rejects.toThrow();
-    await expect(db.insert(authUsers).values({ id: newId(), appId, email: 'x@firma.cz', role: 'user', provider: 'authtest' })).rejects.toThrow();
-    await expect(db.insert(authUsers).values({ id: newId(), appId, email: 'x@firma.cz', role: 'user', provider: 'Bad', subject: 's' })).rejects.toThrow();
-    await db.insert(authUsers).values({ id: newId(), appId, email: 'x@firma.cz', role: 'user', provider: 'authtest', subject: 's' });
-    await expect(db.insert(authUsers).values({ id: newId(), appId, email: 'y@firma.cz', role: 'user', provider: 'authtest', subject: 's' })).rejects.toThrow();
-    await db.insert(authUsers).values({ id: newId(), appId: otherAppId, email: 'x@firma.cz', role: 'user', provider: 'authtest', subject: 's' });
+  it('the schema: an identity is unique per (app, provider, issuer, subject) and per (user, provider); never the e-mail code', async () => {
+    const u1 = await emailUser('x@firma.cz');
+    const u2 = await emailUser('y@firma.cz');
+    const ident = (userId: string, extra: Record<string, unknown> = {}) => ({ id: newId(), appId, userId, provider: 'authtest', issuer: 'https://a.example', subject: 's', ...extra });
+    await expect(db.insert(authIdentities).values(ident(u1, { provider: 'email' }))).rejects.toThrow();
+    await expect(db.insert(authIdentities).values(ident(u1, { provider: 'Bad' }))).rejects.toThrow();
+    await db.insert(authIdentities).values(ident(u1));
+    await expect(db.insert(authIdentities).values(ident(u2))).rejects.toThrow();
+    // the same subject at another issuer is another identity
+    await db.insert(authIdentities).values(ident(u2, { issuer: 'https://b.example' }));
+    await expect(db.insert(authIdentities).values(ident(u1, { issuer: 'https://c.example', subject: 'other' }))).rejects.toThrow();
+    // pre-issuer identities: one per (app, provider, subject)
+    const u3 = await emailUser('z@firma.cz');
+    const u4 = await emailUser('w@firma.cz');
+    await db.insert(authIdentities).values(ident(u3, { issuer: null, subject: 'legacy' }));
+    await expect(db.insert(authIdentities).values(ident(u4, { issuer: null, subject: 'legacy' }))).rejects.toThrow();
+    // deleting the user deletes its identities
+    await db.delete(authUsers).where(eq(authUsers.id, u1));
+    expect((await db.select().from(authIdentities)).map((r) => r.userId).sort()).toEqual([u2, u3].sort());
   });
 
   it('current: a provider session ends when the provider is turned off (the e-mail code still on)', async () => {
@@ -642,20 +662,23 @@ describe('auth providers — accounts and sessions', () => {
     // and endUsers.current (what every module request resolves) agrees
     const [row] = await db.select().from(authUsers);
     const cfg = off.module.configSchema.parse(off.module.configDefaults) as AuthConfig;
-    expect(await auth.endUsers!.current({ app: { id: appId, slug: 'team-board', workspaceId }, user: { id: row.id, email: row.email, role: 'user', provider: 'authtest' }, config: { ...cfg, allow: { ...cfg.allow, anyone: true } }, db, log: capture() })).toBeNull();
+    const anyone = { ...cfg, allow: { ...cfg.allow, anyone: true } };
+    const user = { id: row.id, email: row.email, role: 'user' as const, provider: 'authtest', connection: connectionOf(testProvider, anyone) };
+    expect(await auth.endUsers!.current({ app: { id: appId, slug: 'team-board', workspaceId }, user, config: anyone, db, log: capture(), contributions: all })).toBeNull();
   });
 
   it('current: an e-mail session ends when the e-mail code is turned off', async () => {
     const id = await emailUser('ana@example.com');
     const cfg = { ...(ON as unknown as AuthConfig), providers: { emailCode: { enabled: false }, authtest: { enabled: true, ...ISSUER } } };
     const app = { id: appId, slug: 'team-board', workspaceId };
-    expect(await auth.endUsers!.current({ app, user: { id, email: 'ana@example.com', role: 'user' }, config: cfg, db, log: capture() })).toBeNull();
-    expect(await auth.endUsers!.current({ app, user: { id, email: 'ana@example.com', role: 'user', provider: 'authtest' }, config: cfg, db, log: capture() })).not.toBeNull();
+    const connection = connectionOf(testProvider, cfg);
+    expect(await auth.endUsers!.current({ app, user: { id, email: 'ana@example.com', role: 'user' }, config: cfg, db, log: capture(), contributions: all })).toBeNull();
+    expect(await auth.endUsers!.current({ app, user: { id, email: 'ana@example.com', role: 'user', provider: 'authtest', connection }, config: cfg, db, log: capture(), contributions: all })).not.toBeNull();
   });
 
   it("the owner's Users tab: a user whose sign-in method is off is not_allowed", async () => {
     await emailUser('eva@firma.cz');
-    await providerSignIn(db, appId, { provider: 'authtest', subject: 's1', email: 'ana@example.com', role: 'user' }, 10);
+    await providerSignIn(db, appId, { ...IDP_A, subject: 's1', email: 'ana@example.com', role: 'user' }, { maxUsers: 10 });
     const cfg = { ...(ON as unknown as AuthConfig), providers: { emailCode: { enabled: false }, authtwo: { enabled: true }, authtest: { enabled: false, ...ISSUER } } };
     const view: OwnerView<AuthConfig> = { app: { id: appId, slug: 'team-board', workspaceId }, config: cfg, db, log: capture(), limits: async () => ({}) };
     const list = await auth.endUsers!.list!(view as never, {});
@@ -675,5 +698,187 @@ describe('auth providers — accounts and sessions', () => {
     const own = providerSecrets(testProvider, async () => 'app-value', { AUTH_AUTHTEST_CLIENT_SECRET: 'env' });
     expect(await own.get('AUTHTEST_CLIENT_SECRET')).toBe('app-value');
     expect(await providerSecrets(testProvider, async () => null, {}).get('AUTHTEST_CLIENT_SECRET')).toBeNull();
+  });
+});
+
+describe('auth providers — an identity is (provider, issuer, subject) (NSO-360)', () => {
+  const ISSUER_B = { issuer: 'https://other-idp.example', clientId: 'drobek-test' };
+  const ON_B = { ...ON, providers: { ...ON.providers, authtest: { enabled: true, ...ISSUER_B } } };
+  const PROMPT = { ...ON, providers: { ...ON.providers, authtest: { enabled: true, ...ISSUER, prompt: 'login' } } };
+  const identities = () => db.select().from(authIdentities);
+
+  it('the same subject from another issuer never inherits the user (or what it owns); back at issuer A it is still the first user', async () => {
+    const a = ctx();
+    const ana = await me(a, await signInWithProvider(a));
+
+    identity = { subject: 'sub-ana', email: 'different-person@firma.cz', emailVerified: true };
+    const b = ctx({ config: ON_B });
+    const stranger = await me(b, await signInWithProvider(b));
+    expect(stranger!.id).not.toBe(ana!.id);
+    expect(stranger!.email).toBe('different-person@firma.cz');
+    const rows = await db.select().from(authUsers);
+    expect(rows).toHaveLength(2);
+    expect(rows.find((r) => r.id === ana!.id)).toMatchObject({ email: 'ana@example.com' });
+    expect((await identities()).map((i) => [i.userId === ana!.id ? 'ana' : 'stranger', i.issuer, i.subject]).sort()).toEqual([
+      ['ana', 'https://idp.example', 'sub-ana'],
+      ['stranger', 'https://other-idp.example', 'sub-ana'],
+    ]);
+
+    identity = { subject: 'sub-ana', email: 'ana@example.com', emailVerified: true };
+    const again = ctx();
+    expect((await me(again, await signInWithProvider(again)))!.id).toBe(ana!.id);
+  });
+
+  it('another issuer asserting the address of an account linked elsewhere → 409 page, audited, never re-linked by the address', async () => {
+    const a = ctx();
+    const ana = await me(a, await signInWithProvider(a));
+    for (const subject of ['sub-ana', 'sub-new']) {
+      identity = { subject, email: 'ana@example.com', emailVerified: true };
+      const b = ctx({ config: ON_B });
+      const r = await callback(b, (await begin(b)).state);
+      expect(r).toMatchObject({ kind: 'page', status: 409, title: 'Account already linked' });
+      expect(b.audits).toContainEqual({ action: 'auth.sign_in_denied', meta: { provider: 'authtest', reason: 'linked_elsewhere' } });
+    }
+    expect(await identities()).toMatchObject([{ userId: ana!.id, issuer: 'https://idp.example', subject: 'sub-ana' }]);
+    expect(await db.select().from(authUsers)).toHaveLength(1);
+  });
+
+  it('relinkByEmail (owner-confirmed): an issuer migration moves the account to the new identity — same user, audited', async () => {
+    const a = ctx();
+    const ana = await me(a, await signInWithProvider(a));
+    identity = { subject: 'sub-ana-at-b', email: 'ana@example.com', emailVerified: true };
+    const migrating = { ...ON_B, providers: { ...ON_B.providers, authtest: { ...ON_B.providers.authtest, relinkByEmail: true } } };
+    const b = ctx({ config: migrating });
+    const moved = await me(b, await signInWithProvider(b));
+    expect(moved!.id).toBe(ana!.id);
+    expect(await identities()).toMatchObject([{ userId: ana!.id, issuer: 'https://other-idp.example', subject: 'sub-ana-at-b' }]);
+    expect(b.audits).toContainEqual({ action: 'auth.identity_relinked', meta: { provider: 'authtest', user_id: ana!.id } });
+
+    // the old identity is gone: back at issuer A (no relink) the address is linked elsewhere
+    identity = { subject: 'sub-ana', email: 'ana@example.com', emailVerified: true };
+    const back = ctx();
+    expect(await callback(back, (await begin(back)).state)).toMatchObject({ kind: 'page', status: 409 });
+    // relink never moves an identity of the SAME issuer to another subject
+    identity = { subject: 'sub-impostor', email: 'ana@example.com', emailVerified: true };
+    expect(await callback(b, (await begin(b)).state)).toMatchObject({ kind: 'page', status: 409 });
+    expect(await identities()).toMatchObject([{ userId: ana!.id, issuer: 'https://other-idp.example', subject: 'sub-ana-at-b' }]);
+  });
+
+  it('relinkByEmail never moves an account linked to ANOTHER provider', async () => {
+    const a = ctx();
+    const ana = await me(a, await signInWithProvider(a));
+    const out = await providerSignIn(
+      db,
+      appId,
+      { provider: 'authtwo', issuer: 'https://two.example', subject: 'sub-ana', email: 'ana@example.com', role: 'user' },
+      { maxUsers: 10, relinkByEmail: true }
+    );
+    expect(out).toEqual({ ok: false, reason: 'linked_elsewhere' });
+    expect(await identities()).toMatchObject([{ userId: ana!.id, provider: 'authtest' }]);
+  });
+
+  it('confirmRequired: turning relinkByEmail on waits for the owner, off does not', async () => {
+    const t = ctx();
+    const on = { providers: { authtest: { enabled: true, ...ISSUER } } };
+    const relink = { providers: { authtest: { enabled: true, ...ISSUER, relinkByEmail: true } } };
+    expect(await t.confirm(on, relink)).toEqual([
+      'providers.authtest.relinkByEmail: false → true (a Test IdP sign-in from a new issuer takes over the account of the same address that is linked to another issuer)',
+    ]);
+    expect(await t.confirm(relink, on)).toEqual([]);
+    expect(await t.confirm(relink, { providers: { authtest: { enabled: true, ...ISSUER, relinkByEmail: false } } })).toEqual([]);
+  });
+
+  it('the provider must name the issuer: an identity without one → 502 page, nobody created', async () => {
+    identity = { ...identity, issuer: '' };
+    const t = ctx();
+    expect(await callback(t, (await begin(t)).state)).toMatchObject({ kind: 'page', status: 502 });
+    expect(await db.select().from(authUsers)).toHaveLength(0);
+  });
+
+  it('identity settings changed between begin and callback, or callback and complete → "Start again", audited, no user, no session', async () => {
+    const t = ctx();
+    const b = await begin(t);
+    const changed = ctx({ config: ON_B });
+    expect(await callback(changed, b.state)).toMatchObject({ kind: 'page', status: 400, title: 'Start again' });
+    expect(changed.audits).toContainEqual({ action: 'auth.sign_in_denied', meta: { provider: 'authtest', reason: 'settings_changed' } });
+    expect(await db.select().from(authUsers)).toHaveLength(0);
+
+    const b2 = await begin(t);
+    const code = codeOf(await callback(t, b2.state));
+    const res = await complete(changed, code, b2.flow);
+    expect(res.status).toBe(400);
+    expect(String(res.body)).toContain('Start again');
+    expect(res.headers['Set-Cookie']).toBeUndefined();
+    expect(changed.audits.filter((x) => x.meta.reason === 'settings_changed')).toHaveLength(2);
+
+    // a field that does not decide who signs in may change mid-flow
+    const b3 = await begin(t);
+    const prompt = ctx({ config: PROMPT });
+    expect((await complete(prompt, codeOf(await callback(prompt, b3.state)), b3.flow)).status).toBe(302);
+  });
+
+  it("the provider's env fallbacks are part of its authority: AUTH_<ID>_ISSUER picks the issuer, and changing it mid-flow is refused (a secret env var is not)", async () => {
+    vi.stubEnv('AUTH_AUTHTEST_ISSUER', 'https://env-a.example');
+    const t = ctx();
+    const ana = await me(t, await signInWithProvider(t));
+    expect(await identities()).toMatchObject([{ userId: ana!.id, issuer: 'https://env-a.example' }]);
+
+    const b = await begin(t);
+    vi.stubEnv('AUTH_AUTHTEST_CLIENT_SECRET', 'rotated');
+    expect((await callback(t, b.state)).kind).toBe('redirect');
+
+    const b2 = await begin(t);
+    vi.stubEnv('AUTH_AUTHTEST_ISSUER', 'https://env-b.example');
+    expect(await callback(t, b2.state)).toMatchObject({ kind: 'page', status: 400, title: 'Start again' });
+
+    identity = { subject: 'sub-ana', email: 'different-person@firma.cz', emailVerified: true };
+    const stranger = await me(t, await signInWithProvider(t));
+    expect(stranger!.id).not.toBe(ana!.id);
+  });
+
+  it('a provider session ends when whose accounts it admits changes (config or env) — not on other changes', async () => {
+    const t = ctx();
+    const cookie = await signInWithProvider(t);
+    expect(await me(ctx({ config: PROMPT }), cookie)).not.toBeNull();
+    vi.stubEnv('AUTH_AUTHTEST_CLIENT_SECRET', 'rotated');
+    expect(await me(t, cookie)).not.toBeNull();
+    expect(await me(ctx({ config: ON_B }), cookie)).toBeNull();
+    expect(await me(t, cookie)).toBeNull();
+
+    const second = await signInWithProvider(t);
+    vi.stubEnv('AUTH_AUTHTEST_ISSUER', 'https://env-b.example');
+    expect(await me(t, second)).toBeNull();
+  });
+
+  it('a provider session from before connections were recorded is signed out; an e-mail session is not', async () => {
+    const out = await providerSignIn(db, appId, { ...IDP_A, subject: 'sub-ana', email: 'ana@example.com', role: 'user' }, { maxUsers: 10 });
+    expect(out.ok).toBe(true);
+    const id = (out as { row: { id: string } }).row.id;
+    const legacy = await createEndUserSession(fake, appId, { id, email: 'ana@example.com', role: 'user', provider: 'authtest' });
+    const mail = await createEndUserSession(fake, appId, { id, email: 'ana@example.com', role: 'user', provider: 'email' });
+    const t = ctx();
+    expect(await me(t, `drobek_eu=${legacy}`)).toBeNull();
+    expect(await me(t, `drobek_eu=${mail}`)).toMatchObject({ id });
+  });
+
+  it("a pre-issuer identity (auth 0001) is claimed once, by the same subject asserting the account's own address; another address → 409, nothing claimed", async () => {
+    const id = newId();
+    await db.insert(authUsers).values({ id, appId, email: 'ana@example.com', role: 'user', provider: 'authtest' });
+    await db.insert(authIdentities).values({ id: newId(), appId, userId: id, provider: 'authtest', issuer: null, subject: 'sub-ana' });
+
+    identity = { subject: 'sub-ana', email: 'eva@firma.cz', emailVerified: true };
+    const t = ctx();
+    expect(await callback(t, (await begin(t)).state)).toMatchObject({ kind: 'page', status: 409, title: 'Account does not match' });
+    expect(t.audits).toContainEqual({ action: 'auth.sign_in_denied', meta: { provider: 'authtest', reason: 'identity_mismatch' } });
+    expect(await identities()).toMatchObject([{ userId: id, issuer: null }]);
+    expect(await db.select().from(authUsers)).toHaveLength(1);
+
+    identity = { subject: 'sub-ana', email: 'ana@example.com', emailVerified: true };
+    expect((await me(t, await signInWithProvider(t)))!.id).toBe(id);
+    expect(await identities()).toMatchObject([{ userId: id, issuer: 'https://idp.example', subject: 'sub-ana' }]);
+
+    // claimed: the same subject from another issuer is another person now
+    const b = ctx({ config: ON_B });
+    expect(await callback(b, (await begin(b)).state)).toMatchObject({ kind: 'page', status: 409, title: 'Account already linked' });
   });
 });

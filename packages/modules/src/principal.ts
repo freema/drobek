@@ -13,9 +13,10 @@
  * even `Secure` there). Value: 64 hex chars.
  *
  * Session record: Redis `drobek:eu:<app_id>:<token>` = JSON
- * `{ id, email, role: 'user'|'admin', epoch, provider? }` (`provider` = how
- * the session signed in: `email` or an auth provider id; absent = `email`),
- * TTL 30 days, rolled forward
+ * `{ id, email, role: 'user'|'admin', epoch, provider?, connection? }`
+ * (`provider` = how the session signed in: `email` or an auth provider id;
+ * absent = `email`; `connection` = the authority's fingerprint of that
+ * provider's identity config), TTL 30 days, rolled forward
  * by the auth module on every `me`. The key embeds the app id, so a token is
  * only ever valid on the app that issued it.
  *
@@ -86,10 +87,14 @@ export interface EndUserSession {
   epoch: number;
   /** How it signed in (`email` or an auth provider id); absent = `email`. */
   provider?: string;
+  /** A provider session's connection fingerprint (see EndUser.connection). */
+  connection?: string;
 }
 
 /** A session's `provider`: `email` or an auth provider id. */
 const SESSION_PROVIDER_RE = /^[a-z][a-z0-9]{1,15}$/;
+/** A session's `connection`: base64url. */
+const SESSION_CONNECTION_RE = /^[A-Za-z0-9_-]{16,64}$/;
 
 /** The Redis subset the session helpers use (ioredis-compatible). */
 export interface EndUserRedis {
@@ -124,8 +129,10 @@ export function parseEndUserSession(raw: string | null): EndUserSession | null {
     if (v.role !== 'user' && v.role !== 'admin') return null;
     if (typeof v.epoch !== 'number' || !Number.isInteger(v.epoch) || v.epoch < 0) return null;
     if (v.provider !== undefined && (typeof v.provider !== 'string' || !SESSION_PROVIDER_RE.test(v.provider))) return null;
+    if (v.connection !== undefined && (typeof v.connection !== 'string' || !SESSION_CONNECTION_RE.test(v.connection))) return null;
     const s: EndUserSession = { id: v.id, email: v.email, role: v.role, epoch: v.epoch };
     if (v.provider !== undefined) s.provider = v.provider;
+    if (v.connection !== undefined) s.connection = v.connection;
     return s;
   } catch {
     return null;
@@ -149,13 +156,15 @@ export async function loadEndUserSession(redis: Pick<EndUserRedis, 'mget'>, appI
 export async function createEndUserSession(
   redis: Pick<EndUserRedis, 'get' | 'set'>,
   appId: string,
-  user: { id: string; email: string; role: 'user' | 'admin'; provider?: string }
+  user: { id: string; email: string; role: 'user' | 'admin'; provider?: string; connection?: string }
 ): Promise<string> {
   if (user.provider !== undefined && !SESSION_PROVIDER_RE.test(user.provider)) throw new Error('invalid session provider');
+  if (user.connection !== undefined && !SESSION_CONNECTION_RE.test(user.connection)) throw new Error('invalid session connection');
   const token = randomBytes(32).toString('hex');
   const epoch = epochOf(await redis.get(endUserEpochKey(appId)));
   const record: EndUserSession = { id: user.id, email: user.email, role: user.role, epoch };
   if (user.provider !== undefined) record.provider = user.provider;
+  if (user.connection !== undefined) record.connection = user.connection;
   await redis.set(endUserSessionKey(appId, token), JSON.stringify(record), 'EX', END_USER_SESSION_TTL_SEC);
   return token;
 }
@@ -210,7 +219,13 @@ export function cookiePrincipalResolver(opts: {
     if (!s) return { kind: 'anon' };
     let now: EndUser | null;
     try {
-      now = await opts.current(app, { id: s.id, email: s.email, role: s.role, ...(s.provider !== undefined ? { provider: s.provider } : {}) });
+      now = await opts.current(app, {
+        id: s.id,
+        email: s.email,
+        role: s.role,
+        ...(s.provider !== undefined ? { provider: s.provider } : {}),
+        ...(s.connection !== undefined ? { connection: s.connection } : {}),
+      });
     } catch {
       return { kind: 'anon' };
     }

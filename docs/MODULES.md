@@ -1340,13 +1340,17 @@ an app sign in with a 6-digit code e-mailed to them. Its `SKILL.md` is what
   always sign in with their own address, as `admin` (the preview works
   before any config); viewers may not. `providers` (below) turns the sign-in
   methods on and off.
-- **Table** `mod_auth_users (id, app_id, email, role, verified_at,
-  last_login_at, disabled_at, created_at, provider, subject)`, unique
-  `(app_id, email)` and — for provider users — `(app_id, provider,
-  subject)`, cascade on app delete. `provider` is `email` (no `subject`) or
-  the sign-in provider the user is linked to (with the IdP's `subject`). A
-  user with `disabled_at` cannot sign in, and their next `me` signs them
-  out.
+- **Tables** `mod_auth_users (id, app_id, email, role, verified_at,
+  last_login_at, disabled_at, created_at, provider)`, unique `(app_id,
+  email)`; `provider` is `email` or the sign-in provider the user is linked
+  to. `mod_auth_identities (id, app_id, user_id, provider, issuer, subject,
+  created_at, last_login_at)` — who a provider proved, bound to one user:
+  unique `(app_id, provider, issuer, subject)` and `(user_id, provider)`;
+  `issuer` NULL marks an identity linked before issuers were recorded (auth
+  migration 0002 moved the 0001 subjects there; see [Auth
+  providers](#auth-providers)). Both cascade on app delete, identities also
+  with their user. A user with `disabled_at` cannot sign in, and their next
+  `me` signs them out.
 - **Codes**: the dashboard login's own machinery from `@drobek/auth`
   (`createEmailLoginCode` / `consumeEmailLoginCode`, the atomic guess counter
   of PHY-76 #1, the OTP guard layers) with the scope `eu:<app_id>`: keys
@@ -1418,20 +1422,23 @@ contributes: {
     async begin({ config, secrets, env, redirectUri, state, nonce, codeChallenge }) {
       return { url: '…the IdP authorize URL…' };
     },
-    async callback({ query, body, codeVerifier, state, nonce, config, secrets }) {
-      return { subject, email, emailVerified, name };  // a VERIFIED identity, or throw
+    async callback({ query, body, codeVerifier, state, nonce, config, secrets, env }) {
+      return { issuer, subject, email, emailVerified, name };  // a VERIFIED identity, or throw
     },
   }),
 },
 ```
 
 **Config.** `providers` holds `emailCode: { enabled }` (default on) and one
-entry per `auth.provider` contribution of the server: `{ enabled, …the
-provider's configSchema }`. The schema is composed at start (`compose`):
+entry per `auth.provider` contribution of the server: `{ enabled,
+relinkByEmail?, …the provider's configSchema }` (a configSchema may not
+declare `enabled` or `relinkByEmail`; the provider gets its config without
+them). The schema is composed at start (`compose`):
 while a provider is off its fields are optional; enabling it validates the
-whole provider schema. Enabling a provider, and changing one of its
-`identityFields` while it is on, **needs the owner's confirmation** (the
-item lists the identity fields); turning a method off never waits.
+whole provider schema. Enabling a provider, changing one of its
+`identityFields` while it is on, and turning `relinkByEmail` on **need the
+owner's confirmation** (the item lists the identity fields); turning a
+method off never waits.
 `emailCode` off with no provider on is `invalid_params`
 (`providers.emailCode.enabled`). A stored config naming a provider the
 server no longer runs is salvaged: that entry is dropped (or a broken one
@@ -1481,12 +1488,18 @@ GET /__drobek/v1/auth/complete?code= ◄── 302
   signs nobody in;
 - a provider identity must be **verified** (`emailVerified: true`), else
   `email_not_verified`; the allowlist and `adminEmails` then decide as for
-  the e-mail code. A known (provider, subject) is the same user (the address
-  follows the IdP); else a user with that address and no link is **linked**
-  (same id); a user linked to another identity is refused; else a new user;
-- complete decides again (allowlist, disabled, the provider still on),
-  creates the session with `provider`, audits `auth.sign_in { provider }`
-  and tells the observers. Every refusal is audited `auth.sign_in_denied {
+  the e-mail code. Who the person is: **Identities** below;
+- the provider's **connection** — a SHA-256 over its `identityFields` in the
+  app's effective config and the operator's `AUTH_<ID>_*` variables (its
+  env fallbacks; not the secret ones it declared) — is recorded at `begin`
+  and must be the same at the callback and at `complete`: a sign-in in
+  flight while the owner changes whose accounts the provider admits answers
+  "Start again" (audited `sign_in_denied { reason: settings_changed }`,
+  error `invalid_state`);
+- complete decides again (allowlist, disabled, the provider still on and
+  on the same connection), creates the session with `provider` and
+  `connection`, audits `auth.sign_in { provider }` and tells the
+  observers. Every refusal is audited `auth.sign_in_denied {
   provider, reason }` and answers a small page with a link back to the app;
 - a provider call is cut off after 15 s; its errors are logged by name
   only (a message may quote tokens or IdP answers) and answer
@@ -1497,10 +1510,40 @@ GET /__drobek/v1/auth/complete?code= ◄── 302
   callback (urlencoded, ≤ 256 KiB; the dashboard's Origin check exempts
   `/__drobek/auth/callback`).
 
-**Sessions.** A session remembers its method; turning a method off ends its
-sessions on the next request (`current`), and the Users tab shows users
-whose method is off as `not_allowed`. The e-mail code (while on) works for
-every user, linked ones included.
+**Identities.** `callback()` answers `issuer` — the authority that asserted
+`subject`, as the provider verified it (OIDC: the validated ID token's `iss`,
+whether the issuer came from the app's config or the operator's env; SAML:
+the assertion's Issuer). A person is **(provider, issuer, subject)** ([OIDC
+Core §5.7](https://openid.net/specs/openid-connect-core-1_0.html#ClaimStability)):
+the same subject from another issuer is another person and never inherits a
+user or the records it owns. An identity without an issuer is a
+`provider_error`. The callback decides, in order:
+
+1. the identity is bound → its user (the address follows the IdP; refused
+   when another user of the app has the new one);
+2. an identity linked before issuers were recorded (`issuer` NULL, auth
+   0001) with this provider + subject → **claimed** for this issuer, only
+   when the IdP asserts the user's own address; another address →
+   `account_linked` ("Account does not match", `identity_mismatch`);
+3. a user with this address and no identity (an e-mail user) → **linked**
+   (same id); a user whose only identity is of this provider at another
+   issuer → moved to the new identity **only** with `relinkByEmail` (an
+   owner-confirmed issuer migration, audited `auth.identity_relinked`; turn
+   it off afterwards); any other user with this address → `account_linked`
+   ("Account already linked", `linked_elsewhere`) — an account is never
+   re-linked by an address alone;
+4. else a new user with this identity (within `END_USERS_MAX_PER_APP`).
+
+A user has one identity per provider; linking a second provider to one
+account is not offered.
+
+**Sessions.** A session remembers its method and, for a provider, its
+connection; turning a method off, or changing the provider's connection
+(an identity field or its `AUTH_<ID>_*` variables), ends its sessions on the
+next request (`current`); a provider session from before connections were
+recorded ends too. The Users tab shows users whose method is off as
+`not_allowed`. The e-mail code (while on) works for every user, linked ones
+included.
 
 **Testing.** `createModuleTestContext(auth, { contributions: {
 'auth.provider': [provider] } })` composes the module; `t.endUserCallback({

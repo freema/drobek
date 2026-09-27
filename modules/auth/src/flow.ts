@@ -7,8 +7,10 @@
  *                 (SDK CSRF header) → a random state id, a nonce, a PKCE
  *                 verifier and a FLOW token are made; Redis
  *                 `drobek:eu-oauth:<id>` = { app_id, host, provider, nonce,
- *                 code_verifier, return_to, flow: SHA-256(flow token) }
- *                 (10 min); the state sent to the IdP is `<id>.<HMAC>` — the
+ *                 code_verifier, return_to, flow: SHA-256(flow token),
+ *                 connection } (10 min; `connection` = the provider's
+ *                 identity config, connectionOf); the state sent to the IdP
+ *                 is `<id>.<HMAC>` — the
  *                 HMAC (key: HKDF of DROBEK_MASTER_KEY) binds the id to the
  *                 app, host, provider and nonce; the flow token goes to the
  *                 browser as a host-only HttpOnly cookie scoped to
@@ -17,18 +19,22 @@
  *   2. IdP → dashboard host  GET|POST /__drobek/auth/callback/<provider>:
  *                 the state is consumed (GETDEL — single use) and its HMAC
  *                 and provider checked; the app comes from the STATE only;
- *                 `provider.callback()` answers the identity; a verified
- *                 address the allowlist admits is upserted / linked; a
+ *                 the provider's connection must be the one begin saw;
+ *                 `provider.callback()` answers the identity (issuer +
+ *                 subject); a verified address the allowlist admits signs
+ *                 in the user bound to that identity (users.ts); a
  *                 one-time handoff code (32 random bytes) is stored for 60 s
  *                 as `drobek:eu-handoff:<code>` = { app_id, host, user_id,
- *                 provider, flow, return_to } → 302 to
+ *                 provider, flow, connection, return_to } → 302 to
  *                 `<apps scheme>://<host>/__drobek/v1/auth/complete?code=…`.
  *   3. app host   GET /__drobek/v1/auth/complete?code= → the code is consumed
  *                 (GETDEL); it must name THIS app and THIS host, and the
  *                 browser must hold the flow cookie of step 1 (a callback URL
  *                 an attacker hands a victim signs nobody in — login CSRF);
- *                 the user is decided again (`currentUser`) → the host-only
- *                 session cookie + 302 to `return_to` (a path on this host).
+ *                 the connection is checked again and the user decided
+ *                 again (`currentUser`) → the host-only session cookie (it
+ *                 remembers the provider and its connection) + 302 to
+ *                 `return_to` (a path on this host).
  *
  * The dashboard session is never read or written. Failures answer small HTML
  * pages without IdP details.
@@ -39,6 +45,7 @@ import { safeReturnPath } from '@drobek/auth';
 import { getRedis } from '@drobek/core';
 import {
   AUTH_PROVIDER_ID_RE,
+  EMAIL_PROVIDER_ID,
   END_USER_SESSION_TTL_SEC,
   ModuleError,
   authIdentitySchema,
@@ -55,11 +62,12 @@ import {
   type ModuleContext,
   type ModuleResponse,
 } from '@drobek/modules';
-import { decideSignIn, type AuthConfig } from './config.js';
+import { decideSignIn, relinkByEmail, type AuthConfig } from './config.js';
 import { currentUser } from './current.js';
 import {
   PROVIDER_CALL_TIMEOUT_MS,
   SIGNED_IN_SLOT,
+  connectionOf,
   enabledProvider,
   errorKind,
   notifySignedIn,
@@ -174,8 +182,10 @@ function idpUrl(value: unknown, env: NodeJS.ProcessEnv = process.env): string | 
 
 // ── records ──────────────────────────────────────────────────────────────────
 
+const CONNECTION_RE = /^[A-Za-z0-9_-]{43}$/;
+
 const stateRecordSchema = z.object({
-  v: z.literal(1),
+  v: z.literal(2),
   app_id: z.string().min(1),
   host: z.string().min(1),
   provider: z.string().regex(AUTH_PROVIDER_ID_RE),
@@ -183,17 +193,19 @@ const stateRecordSchema = z.object({
   code_verifier: z.string().regex(TOKEN_RE),
   return_to: z.string(),
   flow: z.string().regex(TOKEN_RE),
+  connection: z.string().regex(CONNECTION_RE),
 });
 type StateRecord = z.infer<typeof stateRecordSchema>;
 
 const handoffRecordSchema = z.object({
-  v: z.literal(1),
+  v: z.literal(2),
   app_id: z.string().min(1),
   host: z.string().min(1),
   user_id: z.string().min(1),
-  provider: z.string().regex(AUTH_PROVIDER_ID_RE),
+  provider: z.string().regex(AUTH_PROVIDER_ID_RE).refine((p) => p !== EMAIL_PROVIDER_ID),
   is_new: z.boolean(),
   flow: z.string().regex(TOKEN_RE),
+  connection: z.string().regex(CONNECTION_RE),
   return_to: z.string(),
   name: z.string().max(200).optional(),
 });
@@ -299,7 +311,7 @@ export async function begin(ctx: Ctx, input: { provider: string; return_to?: str
   const codeVerifier = token();
   const flow = token();
   const record: StateRecord = {
-    v: 1,
+    v: 2,
     app_id: ctx.app.id,
     host,
     provider: provider.id,
@@ -307,6 +319,7 @@ export async function begin(ctx: Ctx, input: { provider: string; return_to?: str
     code_verifier: codeVerifier,
     return_to: returnTo,
     flow: sha256(flow),
+    connection: connectionOf(provider, ctx.config),
   };
   const state = `${id}.${signState(secret, { id, app_id: ctx.app.id, host, provider: provider.id, nonce })}`;
   const store = flowRedis();
@@ -360,6 +373,8 @@ function page(status: number, title: string, message: string, link?: Page['link'
 const INVALID_STATE = (): Page =>
   page(400, 'Sign-in expired', 'This sign-in link is not valid any more (it expired or was already used). Start the sign-in again from the app.');
 
+const SETTINGS_CHANGED = 'The app changed its sign-in settings while you were signing in. Start the sign-in again from the app.';
+
 /** The `endUsers.callback` of the auth module: the IdP's answer → a handoff code on the app host (or a page). */
 export async function providerCallback(input: EndUserCallbackInput<AuthConfig>): Promise<EndUserCallbackResult> {
   const { services } = input;
@@ -391,6 +406,10 @@ export async function providerCallback(input: EndUserCallbackInput<AuthConfig>):
   const back = { href: `${hostOrigin(record.host)}${record.return_to}`, label: 'Back to the app' };
   const provider = enabledProvider(services.contributions, view.config, record.provider);
   if (!provider) return page(404, 'Sign-in method turned off', 'This sign-in method is not turned on for this app any more.', back);
+  if (!sameText(connectionOf(provider, view.config), record.connection)) {
+    await view.audit('sign_in_denied', { provider: provider.id, reason: 'settings_changed' });
+    return page(400, 'Start again', SETTINGS_CHANGED, back);
+  }
 
   let identity: z.infer<typeof authIdentitySchema>;
   try {
@@ -435,30 +454,38 @@ export async function providerCallback(input: EndUserCallbackInput<AuthConfig>):
   const out = await providerSignIn(
     services.db,
     view.app.id,
-    { provider: provider.id, subject: identity.subject, email: identity.email, role: access.role },
-    limits.END_USERS_MAX_PER_APP ?? 1000
+    { provider: provider.id, issuer: identity.issuer, subject: identity.subject, email: identity.email, role: access.role },
+    { maxUsers: limits.END_USERS_MAX_PER_APP ?? 1000, relinkByEmail: relinkByEmail(view.config, provider.id) }
   );
   if (!out.ok) {
     await denied(out.reason);
     if (out.reason === 'limit') return page(429, 'App is full', 'This app cannot take new users right now.', back);
     if (out.reason === 'disabled') return page(403, 'Not allowed', 'This address may not sign in to this app.', back);
+    if (out.reason === 'identity_mismatch') {
+      return page(409, 'Account does not match', `This ${provider.label} account is not the one this app's account is linked to. Ask the app owner.`, back);
+    }
     return page(409, 'Account already linked', 'This address already signs in to this app another way. Use that sign-in, or ask the app owner.', back);
   }
 
   const code = token();
   const handoff: HandoffRecord = {
-    v: 1,
+    v: 2,
     app_id: view.app.id,
     host: record.host,
     user_id: out.row.id,
     provider: provider.id,
     is_new: out.isNew,
     flow: record.flow,
+    connection: record.connection,
     return_to: record.return_to,
     ...(identity.name ? { name: identity.name.replace(/[\u0000-\u001f\u007f\u2028\u2029]+/g, ' ').trim().slice(0, 200) } : {}),
   };
   await flowRedis().set(handoffKey(code), JSON.stringify(handoff), 'EX', HANDOFF_TTL_SEC);
-  if (out.linked) log.info('auth: account linked to a sign-in provider', { app_id: view.app.id, provider: provider.id, user_id: out.row.id });
+  if (out.linked || out.claimed) {
+    const how = out.relinked ? 'moved to a new issuer' : out.claimed ? 'bound to its issuer' : 'linked';
+    log.info(`auth: account ${how} (sign-in provider)`, { app_id: view.app.id, provider: provider.id, user_id: out.row.id });
+    if (out.relinked) await view.audit('identity_relinked', { provider: provider.id, user_id: out.row.id });
+  }
   return { kind: 'redirect', location: `${hostOrigin(record.host)}${COMPLETE_PATH}?code=${code}` };
 }
 
@@ -484,13 +511,18 @@ export async function complete(ctx: Ctx, input: { code: string | undefined; host
   }
 
   // Decide again: the allowlist, the user or the provider may have changed since the callback.
-  const now = await currentUser(ctx.db, ctx.app, ctx.config, record.user_id, record.provider);
+  const provider = enabledProvider(ctx.contributions, ctx.config, record.provider);
+  if (provider && !sameText(connectionOf(provider, ctx.config), record.connection)) {
+    await ctx.audit('sign_in_denied', { provider: record.provider, reason: 'settings_changed' });
+    return pageResponse(400, 'Start again', SETTINGS_CHANGED);
+  }
+  const now = await currentUser(ctx.db, ctx.app, ctx.config, { id: record.user_id, provider: record.provider, connection: record.connection }, ctx.contributions);
   if (!now) {
     await ctx.audit('sign_in_denied', { provider: record.provider, reason: 'not_allowed' });
     return pageResponse(403, 'Not allowed', 'This address may not sign in to this app.');
   }
   if (now.row.role !== now.user.role) await setUserRole(ctx.db, ctx.app.id, now.user.id, now.user.role);
-  const sessionToken = await createEndUserSession(sessionRedis(), ctx.app.id, { ...now.user, provider: record.provider });
+  const sessionToken = await createEndUserSession(sessionRedis(), ctx.app.id, { ...now.user, provider: record.provider, connection: record.connection });
   await ctx.audit('sign_in', { user_id: now.user.id, role: now.user.role, new_user: record.is_new, provider: record.provider });
   void notifySignedIn(ctx.contributions<AuthSignedInObserver>(SIGNED_IN_SLOT), {
     app: ctx.app,

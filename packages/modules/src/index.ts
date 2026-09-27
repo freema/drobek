@@ -90,6 +90,7 @@ export {
 } from './contract.js';
 export {
   AUTH_PROVIDER_ID_RE,
+  AUTH_RESERVED_CONFIG_KEYS,
   EMAIL_PROVIDER_ID,
   authIdentitySchema,
   authProviderSchema,

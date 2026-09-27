@@ -13,6 +13,11 @@
 ### Fixed
 - **E-mail sender name**: a bare `EMAIL_FROM` address is sent as `drobek <address>`, so inboxes show *drobek* instead of the address's local part (*no-reply*). `Name <address>` still sets any other name.
 
+### Security
+- **Sign-in provider identities are scoped to their issuer** (NSO-360) — a provider account was found by (provider, subject) alone, so after the owner pointed a provider at another issuer (or the operator changed its env fallback) a different person with the same subject there signed in as the existing user, with its data. A person is now (provider, issuer, subject) in the new table `mod_auth_identities`: the same subject from another issuer is a new user, and an address held by an account linked to another identity is refused (`account_linked`, a 409 page) instead of being re-linked. `providers.<id>.relinkByEmail` (owner-confirmed, off by default) moves such accounts to the new issuer by their verified address for an issuer migration, audited `auth.identity_relinked`. The provider's connection — its identity fields and the operator's non-secret `AUTH_<ID>_*` variables — is bound into the sign-in state, the handoff and the session: a change refuses sign-ins in flight ("Start again", `sign_in_denied { reason: settings_changed }`) and signs that provider's sessions out.
+  - **Provider authors:** `callback()` must return `issuer` (the verified OIDC `iss` / SAML Issuer) — an identity without it is a `provider_error`. A provider's configSchema may not declare `relinkByEmail`. `endUsers.current` gets `contributions`; a session record may carry `connection`.
+  - **Upgrade:** auth migration 0002 creates `mod_auth_identities`, moves every linked `mod_auth_users.subject` there with an unknown issuer and drops the column. Such an identity is claimed once by the same provider + subject asserting the user's own address; any other address is refused. Provider sessions from before this release end (sign in again); e-mail sessions stay. Provider sign-ins in flight during the upgrade answer "Start again".
+
 ## v0.2.1 — 2026-09-27
 
 ### Added

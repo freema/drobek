@@ -53,13 +53,13 @@ export {
   type AuthConfig,
   type ProviderEntry,
 } from './config.js';
-export { currentUser } from './current.js';
+export { currentUser, type SessionClaim } from './current.js';
 export { COMPLETE_PATH, HANDOFF_TTL_SEC, STATE_TTL_SEC, callbackUrl, flowCookieName, handoffKey, stateKey, stateSecret } from './flow.js';
-export { OBSERVER_TIMEOUT_MS, PROVIDER_CALL_TIMEOUT_MS, PROVIDER_SLOT, SIGNED_IN_SLOT, notifySignedIn, signInMethods, type SignInMethod } from './providers.js';
-export { providerSignIn, type ProviderSignIn } from './users.js';
+export { OBSERVER_TIMEOUT_MS, PROVIDER_CALL_TIMEOUT_MS, PROVIDER_SLOT, SIGNED_IN_SLOT, connectionOf, notifySignedIn, signInMethods, type SignInMethod } from './providers.js';
+export { providerSignIn, type ProviderIdentityInput, type ProviderSignIn, type ProviderSignInOptions } from './users.js';
 export { endUserRecord, ownerMethods, workspaceEditorEmails } from './owner.js';
 export { otpScope, safeName, signInEmail, type PublicUser } from './routes.js';
-export { authUsers, type AuthUserRow } from './schema.js';
+export { authIdentities, authUsers, type AuthIdentityRow, type AuthUserRow } from './schema.js';
 
 const here = (rel: string) => fileURLToPath(new URL(rel, import.meta.url));
 
@@ -150,8 +150,13 @@ const AUTH_ERRORS: ModuleErrorDoc[] = [
   },
   {
     code: 'invalid_state',
-    meaning: "HTTP 400 (a page). A provider sign-in link expired (10 minutes to sign in at the IdP, 60 seconds to come back), was already used, came from another app host, or reached a browser that did not start it.",
+    meaning: "HTTP 400 (a page). A provider sign-in link expired (10 minutes to sign in at the IdP, 60 seconds to come back), was already used, came from another app host, reached a browser that did not start it, or the provider's identity settings (its identity fields or the operator's AUTH_<ID>_* variables) changed while it was in flight.",
     fix: "Start the sign-in again from the app (drobek.auth.signIn / <LoginGate>) in the same browser.",
+  },
+  {
+    code: 'account_linked',
+    meaning: "HTTP 409 (a page). The provider proved an identity (issuer + subject) that is not linked to the account of its address: that account is linked to another identity — another provider, another issuer or another subject — or was linked before issuers were recorded and the provider now asserts another address. An account is never re-linked by an address alone.",
+    fix: "Sign in the way the account is linked, or with the e-mail code. When the app moves to a new identity provider (a new issuer), the owner confirms providers.<id>.relinkByEmail: true for the migration and turns it off afterwards.",
   },
 ];
 
@@ -209,7 +214,7 @@ const auth = defineModule<AuthConfig>({
   ],
   routes: registerRoutes,
   endUsers: {
-    current: async ({ app, user, config, db }) => (await currentUser(db, app, config, user.id, user.provider ?? 'email'))?.user ?? null,
+    current: async ({ app, user, config, db, contributions }) => (await currentUser(db, app, config, user, contributions))?.user ?? null,
     // The sign-in providers' IdP callback on the dashboard host (flow.ts).
     callback: providerCallback,
     // The owner's view (the dashboard Users tab): list, role, block.

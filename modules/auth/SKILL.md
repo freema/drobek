@@ -101,17 +101,19 @@ Config (`configure_module`, a JSON merge patch; lists are replaced whole):
 `allow.emails` exact addresses, `allow.domains` exact domains (not
 subdomains), `allow.anyone` everybody, `adminEmails` may sign in as `admin`,
 `providers.emailCode.enabled` the e-mail code (default on),
-`providers.<id>` `{ enabled, …the provider's fields }` (`skill_info('auth')`
-config lists the server's providers). Failures reject with `DrobekError`.
+`providers.<id>` `{ enabled, relinkByEmail?, …the provider's fields }`
+(`skill_info('auth')` lists them). Failures reject with `DrobekError`.
 
 ## 4. Rules and limits
 
-- `allow.anyone: true`, enabling a provider and changing its identity fields
-  (e.g. `issuer`) need the owner's confirmation: `configure_module` answers
-  `applied: false` + `confirm_url`; give the user the link. At least one
-  method stays on. Provider secrets are set in the dashboard, never by you.
+- `allow.anyone: true`, enabling a provider, changing its identity fields
+  (e.g. `issuer`) and `relinkByEmail: true` wait for the owner: you get
+  `applied: false` + `confirm_url` — give the user the link. One method
+  stays on. Provider secrets are set in the dashboard, never by you.
 - The allowlist decides for every method; a provider must confirm the
-  address. Turning a method off signs its sessions out.
+  address. Turning a method off or changing a provider's identity fields
+  signs its sessions out. After an issuer change its users get
+  `account_linked` unless the owner confirms `relinkByEmail` (migration).
 - The session is an HttpOnly cookie of THIS host (30 days); the app never
   sees a token. Preview (`<slug>--preview.…`) and production (`<slug>.…`)
   are different hosts: sign in on each. Users (ids) are shared.
@@ -138,6 +140,7 @@ config lists the server's providers). Failures reject with `DrobekError`.
 | `rate_limited` (429) | too many codes/attempts from one IP | wait `Retry-After`; show a message |
 | `unavailable` (503) | sign-in mail paused or SMTP down | try later |
 | `limit_exceeded` (429) | `END_USERS_MAX_PER_APP` reached | the owner removes users |
+| `account_linked` (409 page) | the provider account (issuer + subject) is not the one the user's account is linked to | sign in the linked way or with the e-mail code; for an issuer migration the owner confirms `relinkByEmail` |
 | `csrf_rejected` (403) | raw `fetch` or another origin | use `drobek.auth` / `<LoginGate>` |
 | `provider_not_enabled` (404) | `signIn(id)` of a method that is off, or `sendCode` with the e-mail code off | offer only `providers()` |
 | `provider_error` (502) | the provider failed | retry; the owner checks its config and secrets |

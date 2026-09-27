@@ -277,7 +277,7 @@ export function registerRoutes(r: ModuleRouter<AuthConfig>): void {
     // The same decision core makes for every module request (current.ts):
     // removed from the allowlist, disabled or deleted → signed out; the role
     // follows the config (and is written back to the row here).
-    const now = await currentUser(ctx.db, ctx.app, ctx.config, session.id, session.provider ?? 'email');
+    const now = await currentUser(ctx.db, ctx.app, ctx.config, session, ctx.contributions);
     if (!now) {
       await destroyEndUserSession(store, ctx.app.id, token);
       return respond(200, { user: null }, clearedCookie());

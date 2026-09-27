@@ -10,6 +10,7 @@
  * declared) and the operator's `AUTH_<ID>_*` env vars, and the time limits
  * of provider and observer calls.
  */
+import { createHash } from 'node:crypto';
 import type { Logger } from '@drobek/core';
 import type { AuthProvider, AuthProviderSecrets, AuthSignInEvent, AuthSignedInObserver } from '@drobek/modules';
 import { EMAIL_CODE_KEY, methodEnabled, type AuthConfig } from './config.js';
@@ -46,10 +47,27 @@ export function signInMethods(contributions: Contributions, config: AuthConfig):
   return out;
 }
 
-/** The provider's own part of the app's config: `providers.<id>` without `enabled`. */
+/** The provider's own part of the app's config: `providers.<id>` without the keys auth adds. */
 export function providerConfig(config: AuthConfig, id: string): Record<string, unknown> {
-  const { enabled: _enabled, ...rest } = config.providers[id] ?? { enabled: false };
+  const { enabled: _enabled, relinkByEmail: _relink, ...rest } = config.providers[id] ?? { enabled: false };
   return rest;
+}
+
+/**
+ * The provider's CONNECTION for one app: a fingerprint of what decides whose
+ * accounts it admits — its `identityFields` in the app's effective config and
+ * the operator's `AUTH_<ID>_*` env vars (the provider's env fallbacks; not the
+ * secret ones it declared). A sign-in in flight must finish under the
+ * connection it began with, and a provider session lives only while it holds.
+ */
+export function connectionOf(provider: AuthProvider, config: AuthConfig, env: NodeJS.ProcessEnv = process.env): string {
+  const entry = config.providers[provider.id] ?? { enabled: false };
+  const secretEnv = new Set((provider.secrets ?? []).map((s) => s.env).filter((v): v is string => typeof v === 'string'));
+  const fields = [...(provider.identityFields ?? [])].sort().map((f) => [f, entry[f] ?? null]);
+  const vars = Object.entries(providerEnv(provider.id, env))
+    .filter(([k]) => !secretEnv.has(k))
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  return createHash('sha256').update(JSON.stringify(['v1', provider.id, fields, vars])).digest('base64url');
 }
 
 /** The operator's `AUTH_<ID>_*` env vars (non-empty ones), for a provider's own env fallback. */

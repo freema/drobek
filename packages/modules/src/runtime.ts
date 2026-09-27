@@ -770,7 +770,7 @@ export class ModuleRuntime {
     const db = this.deps.db();
     const row = await readConfigRow(app.id, m.name, db);
     const config = this.effectiveConfig(m, row.config);
-    return m.endUsers.current({ app, user, config, db, log: this.deps.log });
+    return m.endUsers.current({ app, user, config, db, log: this.deps.log, contributions: (slot) => this.contributions(slot) });
   }
 
   /**

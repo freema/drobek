@@ -82,6 +82,19 @@ describe('sessions + epoch', () => {
     expect(parseEndUserSession(JSON.stringify({ ...USER, role: 'owner', epoch: 0 }))).toBeNull();
     expect(parseEndUserSession('{')).toBeNull();
   });
+
+  it('a provider session keeps its provider and connection; the resolver hands both to the session owner (NSO-360)', async () => {
+    const r = new FakeRedis();
+    const connection = 'c'.repeat(43);
+    const token = await createEndUserSession(r, 'app1', { ...USER, provider: 'oidc', connection });
+    expect(await loadEndUserSession(r, 'app1', token)).toEqual({ ...USER, provider: 'oidc', connection, epoch: 0 });
+    expect(parseEndUserSession(JSON.stringify({ ...USER, epoch: 0, connection: 'bad value!' }))).toBeNull();
+    await expect(createEndUserSession(r, 'app1', { ...USER, connection: 'x' })).rejects.toThrow(/connection/);
+    const seen: EndUser[] = [];
+    const resolve = cookiePrincipalResolver({ redis: () => r, secure: false, current: async (_app, u) => (seen.push(u), u) });
+    expect(await resolve({ app: { id: 'app1', slug: 'one', workspaceId: 'ws1' }, cookieHeader: `drobek_eu=${token}` })).toEqual({ kind: 'user', ...USER });
+    expect(seen).toEqual([{ ...USER, provider: 'oidc', connection }]);
+  });
 });
 
 describe('cookiePrincipalResolver', () => {

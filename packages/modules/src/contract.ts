@@ -76,6 +76,12 @@ export interface EndUser {
    * providers existed). Never part of the principal a module sees.
    */
   provider?: string;
+  /**
+   * A provider session's connection: the end-user authority's fingerprint of
+   * the provider's identity config when the session began (`auth` ends the
+   * session once it differs). Never part of the principal a module sees.
+   */
+  connection?: string;
 }
 
 /**
@@ -259,7 +265,15 @@ export interface EndUserAuthority<Config = unknown> {
    * module request that carries a session; keep it to indexed lookups. A throw
    * makes that request anonymous (fail closed) without ending the session.
    */
-  current(input: { app: HookApp; user: EndUser; config: Config; db: DB; log: Logger }): Promise<EndUser | null>;
+  current(input: {
+    app: HookApp;
+    user: EndUser;
+    config: Config;
+    db: DB;
+    log: Logger;
+    /** The slot contributions of the modules that are on for the app's workspace (a disabled opt-in module contributes nothing). */
+    contributions<T = unknown>(slot: string): T[];
+  }): Promise<EndUser | null>;
 
   // ── the owner's view (the dashboard Users tab, M2-03) — optional ──
   // Core calls these only after it authorized a drobek account for the app

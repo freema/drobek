@@ -1,14 +1,19 @@
 /**
- * `mod_auth_users` and the few core lookups the sign-in needs. Every query is
- * filtered by the app id the runtime scoped the context to.
+ * `mod_auth_users`, `mod_auth_identities` and the few core lookups the
+ * sign-in needs. Every query is filtered by the app id the runtime scoped the
+ * context to.
  */
 import { randomBytes } from 'node:crypto';
 import { and, count, eq, inArray, isNull } from 'drizzle-orm';
 import { apps, isUniqueViolation, memberships, users, type DB } from '@drobek/db';
-import { authUsers, type AuthUserRow } from './schema.js';
+import { authIdentities, authUsers, type AuthIdentityRow, type AuthUserRow } from './schema.js';
 
 function newUserId(): string {
   return `eu_${randomBytes(12).toString('hex')}`;
+}
+
+function newIdentityId(): string {
+  return `ei_${randomBytes(12).toString('hex')}`;
 }
 
 export async function findUserByEmail(db: DB, appId: string, email: string): Promise<AuthUserRow | null> {
@@ -25,15 +30,6 @@ export async function findUserById(db: DB, appId: string, id: string): Promise<A
     .select()
     .from(authUsers)
     .where(and(eq(authUsers.appId, appId), eq(authUsers.id, id)))
-    .limit(1);
-  return row ?? null;
-}
-
-async function findUserByIdentity(db: DB, appId: string, provider: string, subject: string): Promise<AuthUserRow | null> {
-  const [row] = await db
-    .select()
-    .from(authUsers)
-    .where(and(eq(authUsers.appId, appId), eq(authUsers.provider, provider), eq(authUsers.subject, subject)))
     .limit(1);
   return row ?? null;
 }
@@ -87,73 +83,198 @@ export async function appDisplayName(db: DB, appId: string, fallback: string): P
   return row?.name?.trim() || fallback;
 }
 
-/** What a provider sign-in did to `mod_auth_users` — or why it was refused. */
+// ── provider identities (NSO-360) ────────────────────────────────────────────
+
+/** A provider identity the callback proved (a verified address the allowlist admitted). */
+export interface ProviderIdentityInput {
+  provider: string;
+  issuer: string;
+  subject: string;
+  email: string;
+  role: 'user' | 'admin';
+}
+
+export interface ProviderSignInOptions {
+  /** END_USERS_MAX_PER_APP. */
+  maxUsers: number;
+  /**
+   * `providers.<id>.relinkByEmail` (owner-confirmed): a user whose only
+   * identity is of THIS provider at another issuer (or a pre-issuer one) is
+   * moved to the new identity by the verified address — an issuer migration.
+   */
+  relinkByEmail?: boolean;
+}
+
+/** What a provider sign-in did — or why it was refused. */
 export type ProviderSignIn =
-  | { ok: true; row: AuthUserRow; isNew: boolean; linked: boolean }
-  | { ok: false; reason: 'disabled' | 'linked_elsewhere' | 'email_taken' | 'limit' };
+  | { ok: true; row: AuthUserRow; isNew: boolean; linked: boolean; relinked: boolean; claimed: boolean }
+  | { ok: false; reason: 'disabled' | 'linked_elsewhere' | 'email_taken' | 'limit' | 'identity_mismatch' };
+
+type Refusal = Extract<ProviderSignIn, { ok: false }>;
+type Outcome = { linked: boolean; relinked: boolean; claimed: boolean };
+
+async function findIdentity(db: DB, appId: string, provider: string, issuer: string, subject: string): Promise<AuthIdentityRow | null> {
+  const [row] = await db
+    .select()
+    .from(authIdentities)
+    .where(
+      and(
+        eq(authIdentities.appId, appId),
+        eq(authIdentities.provider, provider),
+        eq(authIdentities.issuer, issuer),
+        eq(authIdentities.subject, subject)
+      )
+    )
+    .limit(1);
+  return row ?? null;
+}
+
+async function findLegacyIdentity(db: DB, appId: string, provider: string, subject: string): Promise<AuthIdentityRow | null> {
+  const [row] = await db
+    .select()
+    .from(authIdentities)
+    .where(
+      and(eq(authIdentities.appId, appId), eq(authIdentities.provider, provider), isNull(authIdentities.issuer), eq(authIdentities.subject, subject))
+    )
+    .limit(1);
+  return row ?? null;
+}
+
+/** The identities linked to one user of the app. */
+async function identitiesOf(db: DB, appId: string, userId: string): Promise<AuthIdentityRow[]> {
+  return db
+    .select()
+    .from(authIdentities)
+    .where(and(eq(authIdentities.appId, appId), eq(authIdentities.userId, userId)));
+}
+
+/** The user an identity is bound to signs in: the address follows the IdP (unless another user has it). */
+async function signInBound(db: DB, appId: string, identity: AuthIdentityRow, input: ProviderIdentityInput, outcome: Outcome): Promise<ProviderSignIn> {
+  const user = await findUserById(db, appId, identity.userId);
+  if (!user || user.disabledAt) return { ok: false, reason: 'disabled' };
+  if (user.email !== input.email) {
+    const other = await findUserByEmail(db, appId, input.email);
+    if (other && other.id !== user.id) return { ok: false, reason: 'email_taken' };
+  }
+  const now = new Date();
+  try {
+    const [row] = await db
+      .update(authUsers)
+      .set({ email: input.email, role: input.role, provider: identity.provider, lastLoginAt: now, verifiedAt: user.verifiedAt ?? now })
+      .where(and(eq(authUsers.appId, appId), eq(authUsers.id, user.id)))
+      .returning();
+    await db.update(authIdentities).set({ lastLoginAt: now }).where(eq(authIdentities.id, identity.id));
+    return { ok: true, row, isNew: false, ...outcome };
+  } catch (err) {
+    if (isUniqueViolation(err)) return { ok: false, reason: 'email_taken' };
+    throw err;
+  }
+}
 
 /**
- * A provider sign-in of a VERIFIED identity the allowlist admitted (NSO-348):
+ * A provider sign-in of a VERIFIED identity the allowlist admitted. The
+ * identity is (provider, issuer, subject) — never the subject alone:
  *
- *  1. the user linked to (provider, subject) — their address follows the
- *     IdP's (refused when another user of the app has the new one);
- *  2. else the user with that address and no link yet (an e-mail user) —
- *     LINKED in place: same id, `provider` / `subject` set;
- *     one linked to another identity → refused (`linked_elsewhere`);
- *  3. else a new user (within `maxUsers`).
- * A disabled user is refused in every case. Two callbacks racing to create
- * the same user: the loser's insert hits a unique index and it starts over
- * once (then finds the winner's row).
+ *  1. the identity is bound → its user (the address follows the IdP; refused
+ *     when another user of the app has the new one);
+ *  2. a pre-issuer identity (0001) of this provider + subject → claimed for
+ *     this issuer, only when the IdP asserts the user's own address (else
+ *     `identity_mismatch`);
+ *  3. a user with this address and NO identity (an e-mail user) → linked;
+ *     with `relinkByEmail`, a user whose only identity is of this provider at
+ *     another issuer → moved to this identity (an owner-confirmed issuer
+ *     migration); any other user with this address → `linked_elsewhere`
+ *     (never re-linked by an address alone);
+ *  4. else a new user (within `maxUsers`) with this identity.
+ * A disabled user is refused in every case. A race (a unique index) starts
+ * over once.
  */
 export async function providerSignIn(
   db: DB,
   appId: string,
-  identity: { provider: string; subject: string; email: string; role: 'user' | 'admin' },
-  maxUsers: number,
+  input: ProviderIdentityInput,
+  opts: ProviderSignInOptions,
   retry = true
 ): Promise<ProviderSignIn> {
-  const now = new Date();
-  const { provider, subject, email, role } = identity;
-  const linked = await findUserByIdentity(db, appId, provider, subject);
-  if (linked) {
-    if (linked.disabledAt) return { ok: false, reason: 'disabled' };
-    if (linked.email !== email) {
-      const other = await findUserByEmail(db, appId, email);
-      if (other && other.id !== linked.id) return { ok: false, reason: 'email_taken' };
-    }
+  const again = async (fallback: Refusal): Promise<ProviderSignIn> => (retry ? providerSignIn(db, appId, input, opts, false) : fallback);
+  const { provider, issuer, subject, email, role } = input;
+
+  const bound = await findIdentity(db, appId, provider, issuer, subject);
+  if (bound) return signInBound(db, appId, bound, input, { linked: false, relinked: false, claimed: false });
+
+  const legacy = await findLegacyIdentity(db, appId, provider, subject);
+  if (legacy) {
+    const owner = await findUserById(db, appId, legacy.userId);
+    if (!owner || owner.disabledAt) return { ok: false, reason: 'disabled' };
+    if (owner.email !== email) return { ok: false, reason: 'identity_mismatch' };
     try {
-      const [row] = await db
-        .update(authUsers)
-        .set({ email, role, lastLoginAt: now })
-        .where(and(eq(authUsers.appId, appId), eq(authUsers.id, linked.id)))
+      const [claimed] = await db
+        .update(authIdentities)
+        .set({ issuer })
+        .where(and(eq(authIdentities.id, legacy.id), isNull(authIdentities.issuer)))
         .returning();
-      return { ok: true, row, isNew: false, linked: false };
+      if (!claimed) return again({ ok: false, reason: 'identity_mismatch' });
+      return signInBound(db, appId, claimed, input, { linked: false, relinked: false, claimed: true });
     } catch (err) {
-      if (isUniqueViolation(err)) return { ok: false, reason: 'email_taken' };
+      if (isUniqueViolation(err)) return again({ ok: false, reason: 'identity_mismatch' });
       throw err;
     }
   }
+
   const byEmail = await findUserByEmail(db, appId, email);
   if (byEmail) {
     if (byEmail.disabledAt) return { ok: false, reason: 'disabled' };
-    if (byEmail.subject !== null) return { ok: false, reason: 'linked_elsewhere' };
-    const [row] = await db
-      .update(authUsers)
-      .set({ provider, subject, role, lastLoginAt: now, verifiedAt: byEmail.verifiedAt ?? now })
-      .where(and(eq(authUsers.appId, appId), eq(authUsers.id, byEmail.id), isNull(authUsers.subject)))
-      .returning();
-    if (!row) return retry ? providerSignIn(db, appId, identity, maxUsers, false) : { ok: false, reason: 'linked_elsewhere' };
-    return { ok: true, row, isNew: false, linked: true };
+    const own = await identitiesOf(db, appId, byEmail.id);
+    if (own.length === 0) {
+      try {
+        const [identity] = await db
+          .insert(authIdentities)
+          .values({ id: newIdentityId(), appId, userId: byEmail.id, provider, issuer, subject })
+          .returning();
+        return signInBound(db, appId, identity, input, { linked: true, relinked: false, claimed: false });
+      } catch (err) {
+        if (isUniqueViolation(err)) return again({ ok: false, reason: 'linked_elsewhere' });
+        throw err;
+      }
+    }
+    const [only] = own;
+    if (opts.relinkByEmail && own.length === 1 && only.provider === provider && only.issuer !== issuer) {
+      try {
+        const [moved] = await db
+          .update(authIdentities)
+          .set({ issuer, subject })
+          .where(
+            and(
+              eq(authIdentities.id, only.id),
+              only.issuer === null ? isNull(authIdentities.issuer) : eq(authIdentities.issuer, only.issuer),
+              eq(authIdentities.subject, only.subject)
+            )
+          )
+          .returning();
+        if (!moved) return again({ ok: false, reason: 'linked_elsewhere' });
+        return signInBound(db, appId, moved, input, { linked: true, relinked: true, claimed: false });
+      } catch (err) {
+        if (isUniqueViolation(err)) return again({ ok: false, reason: 'linked_elsewhere' });
+        throw err;
+      }
+    }
+    return { ok: false, reason: 'linked_elsewhere' };
   }
-  if ((await countUsers(db, appId)) >= maxUsers) return { ok: false, reason: 'limit' };
+
+  if ((await countUsers(db, appId)) >= opts.maxUsers) return { ok: false, reason: 'limit' };
+  const now = new Date();
   try {
-    const [row] = await db
-      .insert(authUsers)
-      .values({ id: newUserId(), appId, email, role, provider, subject, verifiedAt: now, lastLoginAt: now })
-      .returning();
-    return { ok: true, row, isNew: true, linked: false };
+    const row = await db.transaction(async (tx) => {
+      const [user] = await tx
+        .insert(authUsers)
+        .values({ id: newUserId(), appId, email, role, provider, verifiedAt: now, lastLoginAt: now })
+        .returning();
+      await tx.insert(authIdentities).values({ id: newIdentityId(), appId, userId: user.id, provider, issuer, subject, lastLoginAt: now });
+      return user;
+    });
+    return { ok: true, row, isNew: true, linked: false, relinked: false, claimed: false };
   } catch (err) {
-    if (retry && isUniqueViolation(err)) return providerSignIn(db, appId, identity, maxUsers, false);
+    if (isUniqueViolation(err)) return again({ ok: false, reason: 'email_taken' });
     throw err;
   }
 }

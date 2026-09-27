@@ -20,7 +20,7 @@ const provider = defineAuthProvider({
   identityFields: ['issuer', 'clientId'],
   secrets: [{ name: 'OIDC_CLIENT_SECRET', description: 'client secret', env: 'AUTH_OIDC_CLIENT_SECRET' }],
   begin: async () => ({ url: 'https://idp.example/authorize' }),
-  callback: async () => ({ subject: 's', email: 'a@b.cz', emailVerified: true }),
+  callback: async () => ({ issuer: 'https://idp.example', subject: 's', email: 'a@b.cz', emailVerified: true }),
 });
 
 const issuesOf = (value: unknown) => {
@@ -44,6 +44,7 @@ describe('authProviderSchema', () => {
     [{ label: 'a\nb' }, /one trimmed line/],
     [{ configSchema: z.string() }, /zod object schema/],
     [{ configSchema: z.strictObject({ enabled: z.boolean() }) }, /may not declare `enabled`/],
+    [{ configSchema: z.strictObject({ relinkByEmail: z.boolean() }) }, /may not declare `relinkByEmail`/],
     [{ identityFields: ['tenant'] }, /does not declare/],
     [{ secrets: [{ name: 'CLIENT_SECRET', description: 'x' }] }, /start with "OIDC_"/],
     [{ secrets: [{ name: 'OIDC_X', description: 'x', env: 'OIDC_X' }] }, /AUTH_OIDC_/],
@@ -58,11 +59,16 @@ describe('authProviderSchema', () => {
     expect(authSignedInObserverSchema.safeParse({ id: 'crm-sync', onSignIn: () => undefined }).success).toBe(true);
     expect(authSignedInObserverSchema.safeParse({ id: 'CRM', onSignIn: () => undefined }).success).toBe(false);
     expect(authSignedInObserverSchema.safeParse({ id: 'crm' }).success).toBe(false);
-    expect(authIdentitySchema.parse({ subject: 's-1', email: ' Ana@Example.COM ', emailVerified: true })).toEqual({ subject: 's-1', email: 'ana@example.com', emailVerified: true });
-    expect(authIdentitySchema.safeParse({ subject: 'a\u0000b', email: 'a@b.cz', emailVerified: true }).success).toBe(false);
-    expect(authIdentitySchema.safeParse({ subject: 'x'.repeat(256), email: 'a@b.cz', emailVerified: true }).success).toBe(false);
-    expect(authIdentitySchema.safeParse({ subject: 's', email: 'a@b.cz', emailVerified: 'yes' }).success).toBe(false);
-    expect(authIdentitySchema.safeParse({ subject: 's', email: 'nope', emailVerified: true }).success).toBe(false);
+    const iss = 'https://idp.example';
+    expect(authIdentitySchema.parse({ issuer: iss, subject: 's-1', email: ' Ana@Example.COM ', emailVerified: true })).toEqual({ issuer: iss, subject: 's-1', email: 'ana@example.com', emailVerified: true });
+    expect(authIdentitySchema.safeParse({ issuer: iss, subject: 'a\u0000b', email: 'a@b.cz', emailVerified: true }).success).toBe(false);
+    expect(authIdentitySchema.safeParse({ issuer: iss, subject: 'x'.repeat(256), email: 'a@b.cz', emailVerified: true }).success).toBe(false);
+    expect(authIdentitySchema.safeParse({ issuer: iss, subject: 's', email: 'a@b.cz', emailVerified: 'yes' }).success).toBe(false);
+    expect(authIdentitySchema.safeParse({ issuer: iss, subject: 's', email: 'nope', emailVerified: true }).success).toBe(false);
+    // the issuer is part of the identity (NSO-360): required, one trimmed line
+    for (const issuer of [undefined, '', ' https://idp.example', 'https://a\nb', 'x'.repeat(2049)]) {
+      expect(authIdentitySchema.safeParse({ issuer, subject: 's', email: 'a@b.cz', emailVerified: true }).success, String(issuer)).toBe(false);
+    }
   });
 });
 

@@ -3,8 +3,8 @@
  * the two slots the built-in `auth` module offers other modules.
  *
  *   `auth.provider` — a way to sign in besides the e-mail code (OIDC, SAML, …).
- *     The provider only proves an identity `{ subject, email, emailVerified,
- *     name? }`; `auth` keeps everything else — the allowlist, roles,
+ *     The provider only proves an identity `{ issuer, subject, email,
+ *     emailVerified, name? }`; `auth` keeps everything else — the allowlist, roles,
  *     `mod_auth_users`, the session, `drobek.auth`, `<LoginGate>`.
  *   `auth.signedIn` — an observer told about every successful sign-in (e.g.
  *     a CRM sync); its failure is logged and never blocks the sign-in.
@@ -39,9 +39,21 @@ export const AUTH_PROVIDER_ID_RE = /^[a-z][a-z0-9]{1,15}$/;
 /** The provider id of the e-mail code (in `mod_auth_users.provider` and sessions) — no contribution may take it. */
 export const EMAIL_PROVIDER_ID = 'email';
 
+/** The keys `auth` adds to every provider's config entry — a provider's configSchema may not declare them. */
+export const AUTH_RESERVED_CONFIG_KEYS = ['enabled', 'relinkByEmail'] as const;
+
 /** The identity a provider proved (the IdP's verified answer — never a value the browser sent). */
 export interface AuthIdentity {
-  /** The IdP's stable, unique id of the person (OIDC `sub`, SAML NameID) — max 255 characters. */
+  /**
+   * The authority that asserted `subject`, as the provider VERIFIED it: OIDC —
+   * the `iss` of the validated ID token (the configured or discovered issuer,
+   * env fallbacks included); SAML — the assertion's Issuer. `auth` binds a
+   * person to (provider, issuer, subject) (OIDC Core §5.7): the same subject
+   * from another issuer is another person. Never a constant or a value the
+   * browser sent — max 2048 characters.
+   */
+  issuer: string;
+  /** The IdP's stable, unique id of the person at `issuer` (OIDC `sub`, SAML NameID) — max 255 characters. */
   subject: string;
   /** Their e-mail address (normalized to lower case by `auth`). */
   email: string;
@@ -76,7 +88,7 @@ export interface AuthProviderSecrets {
 
 interface AuthProviderInput<Config> {
   app: HookApp;
-  /** The app's config of THIS provider (`auth.providers.<id>` without `enabled`), as its configSchema parsed it. */
+  /** The app's config of THIS provider (`auth.providers.<id>` without the keys auth adds), as its configSchema parsed it. */
   config: Config;
   secrets: AuthProviderSecrets;
   /**
@@ -135,9 +147,9 @@ export interface AuthProvider<Config = any> {
   label: string;
   /**
    * The per-app config of the provider (`auth.providers.<id>`), a zod OBJECT
-   * schema (`z.object` / `z.strictObject`) without an `enabled` key — `auth`
-   * adds `enabled: boolean`. While disabled, every field is optional; enabling
-   * the provider validates the whole schema.
+   * schema (`z.object` / `z.strictObject`) without the keys `auth` adds:
+   * `enabled: boolean` and `relinkByEmail?: boolean`. While disabled, every
+   * field is optional; enabling the provider validates the whole schema.
    */
   configSchema: ZodType<Config>;
   /** Defaults merged under the app's config (optional; must pass `configSchema.partial()`). */
@@ -145,7 +157,9 @@ export interface AuthProvider<Config = any> {
   /**
    * Config keys that decide WHO can sign in (e.g. `issuer`, `clientId`):
    * changing one while the provider is enabled — and enabling it — waits for
-   * the app owner's confirmation.
+   * the app owner's confirmation. Their values and the operator's non-secret
+   * `AUTH_<ID>_*` env vars make the provider's connection: a change of either
+   * refuses the sign-ins in flight and ends the provider's sessions.
    */
   identityFields?: string[];
   secrets?: AuthProviderSecretDoc[];
@@ -233,7 +247,9 @@ export const authProviderSchema = z
   .superRefine((p, ctx) => {
     if (!AUTH_PROVIDER_ID_RE.test(p.id) || !isObjectSchema(p.configSchema)) return;
     const shape = p.configSchema.shape as Record<string, unknown>;
-    if ('enabled' in shape) ctx.addIssue({ code: 'custom', path: ['configSchema'], message: 'configSchema may not declare `enabled` (auth adds it)' });
+    for (const key of AUTH_RESERVED_CONFIG_KEYS) {
+      if (key in shape) ctx.addIssue({ code: 'custom', path: ['configSchema'], message: `configSchema may not declare \`${key}\` (auth adds it)` });
+    }
     for (const f of p.identityFields ?? []) {
       if (!(f in shape)) ctx.addIssue({ code: 'custom', path: ['identityFields'], message: `identityFields names "${f}", which configSchema does not declare` });
     }
@@ -263,6 +279,7 @@ export const authSignedInObserverSchema = z.looseObject({
 
 /** What `auth` accepts from `callback()` (the address normalized to lower case). */
 export const authIdentitySchema = z.object({
+  issuer: z.string().min(1).max(2048).refine((s) => !CONTROL.test(s) && s.trim() === s, 'issuer must be one trimmed line'),
   subject: z.string().min(1).max(255).refine((s) => !CONTROL.test(s), 'subject may not contain control characters'),
   email: z.string().trim().toLowerCase().max(254).pipe(z.email({ message: 'must be an e-mail address' })),
   emailVerified: z.boolean(),
