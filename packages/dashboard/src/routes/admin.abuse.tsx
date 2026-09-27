@@ -59,7 +59,7 @@ const styles = {
     background: '#fee2e2',
     border: '1px solid #fecaca',
   },
-  actions: { display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', marginTop: '0.6rem' },
+  actions: { display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'flex-end', marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid #f0f0f2' },
   select: controls.select,
   danger: controls.dangerButton,
   secondary: controls.secondaryButton,
@@ -123,7 +123,9 @@ export default function AbuseQueueRoute() {
       <h2 style={styles.h2}>{status === 'open' ? 'Open reports' : 'Resolved reports'}</h2>
       {reports.length === 0 ? (
         <p style={styles.empty} data-testid="abuse-empty">
-          Nothing here.
+          {status === 'open'
+            ? 'No open reports. Reports from the public form and apps the publish check flags appear here.'
+            : 'No resolved reports yet. A report you mark resolved or act on moves here.'}
         </p>
       ) : (
         <ul style={styles.list} data-testid="abuse-reports">
@@ -160,28 +162,31 @@ export default function AbuseQueueRoute() {
               {status === 'open' ? (
                 <div style={styles.actions}>
                   {r.app && !r.app.locked ? (
-                    <Form method="post" style={styles.actions}>
+                    <Form method="post" style={controls.row}>
                       <input type="hidden" name="intent" value="takedown" />
                       <input type="hidden" name="appId" value={r.app.id} />
-                      <select
-                        name="reason"
-                        defaultValue={r.reason === 'heuristic' ? 'phishing' : r.reason}
-                        style={styles.select}
-                        aria-label="Takedown reason"
-                        data-testid="takedown-reason"
-                      >
-                        {reasons.map((x) => (
-                          <option key={x.value} value={x.value}>
-                            {x.label}
-                          </option>
-                        ))}
-                      </select>
+                      <label style={controls.field}>
+                        <span style={controls.label}>Takedown reason</span>
+                        <select
+                          name="reason"
+                          defaultValue={r.reason === 'heuristic' ? 'phishing' : r.reason}
+                          style={styles.select}
+                          aria-label="Takedown reason"
+                          data-testid="takedown-reason"
+                        >
+                          {reasons.map((x) => (
+                            <option key={x.value} value={x.value}>
+                              {x.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
                       <button type="submit" style={styles.danger} data-testid="takedown">
                         Take down
                       </button>
                     </Form>
                   ) : null}
-                  <Form method="post">
+                  <Form method="post" style={controls.row}>
                     <input type="hidden" name="intent" value="resolve" />
                     <input type="hidden" name="reportId" value={r.id} />
                     <button type="submit" style={styles.secondary} data-testid="resolve">
@@ -198,7 +203,7 @@ export default function AbuseQueueRoute() {
       <h2 style={styles.h2}>Taken-down apps</h2>
       {locked.length === 0 ? (
         <p style={styles.empty} data-testid="locked-empty">
-          None.
+          No app is taken down. An app you take down from a report appears here, with Restore to lift the lock.
         </p>
       ) : (
         <ul style={styles.list} data-testid="locked-apps">
@@ -232,7 +237,7 @@ export default function AbuseQueueRoute() {
           </p>
           {gallery.length === 0 ? (
             <p style={styles.empty} data-testid="gallery-empty">
-              No app is listed.
+              No app is listed in the gallery yet. Owners list an app from its settings; it appears here once listed.
             </p>
           ) : (
             <ul style={styles.list} data-testid="gallery-entries">
