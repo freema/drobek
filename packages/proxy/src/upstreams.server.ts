@@ -5,7 +5,7 @@
  * safe view exposes only `hasSecret`.
  */
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import { actorKindForSurface, writeAudit } from '@drobek/audit';
+import { actorKindForSurface, writeAudit, type AuditActorKind } from '@drobek/audit';
 import { getDb, upstreamSecrets, upstreams, type DB } from '@drobek/db';
 import type { WorkspaceRole } from '@drobek/tenancy';
 import { PROXY_AUDIT_ACTIONS, PROXY_SUBJECT_TYPE } from './audit-actions.js';
@@ -56,6 +56,8 @@ export interface ConfigureActor {
   actorUserId: string;
   role: WorkspaceRole | null;
   superAdmin?: boolean;
+  /** Who the audit row names (default: a user in the dashboard). */
+  actorKind?: AuditActorKind;
 }
 
 export interface CreateUpstreamInput extends ConfigureActor {
@@ -97,12 +99,20 @@ function toView(row: typeof upstreams.$inferSelect, hasSecret: boolean): Upstrea
   };
 }
 
-/** Register a new upstream (workspace-admin+). Encrypts the secret in-txn. */
-export async function createUpstream(
-  input: CreateUpstreamInput
-): Promise<UpstreamView> {
-  assertConfigure(input);
+/** The fields of a registration, checked and normalized (everything but the secret). */
+export interface CheckedUpstreamFields {
+  name: string;
+  baseUrl: string;
+  allowedMethods: string[];
+  allowedPathPrefixes: string[];
+  authType: UpstreamAuthType;
+  authHeaderName: string | null;
+}
 
+/** Check a registration's fields as createUpstream does, without the secret (throws ProxyError invalid_request). */
+export function checkUpstreamFields(
+  input: Pick<CreateUpstreamInput, 'name' | 'baseUrl' | 'allowedMethods' | 'allowedPathPrefixes' | 'authType' | 'authHeaderName' | 'env'>
+): CheckedUpstreamFields {
   const name = String(input.name ?? '').trim();
   if (!NAME_RE.test(name)) {
     throw new ProxyError(
@@ -119,22 +129,30 @@ export async function createUpstream(
   }
   const authType = input.authType;
   let authHeaderName: string | null = null;
+  if (authType === 'header') {
+    authHeaderName = String(input.authHeaderName ?? '').trim();
+    if (!/^[A-Za-z0-9-]{1,64}$/.test(authHeaderName)) {
+      throw new ProxyError('invalid_request', 'authHeaderName must be a valid header token');
+    }
+  }
+  return { name, baseUrl, allowedMethods, allowedPathPrefixes, authType, authHeaderName };
+}
+
+/** Register a new upstream (workspace-admin+). Encrypts the secret in-txn. */
+export async function createUpstream(
+  input: CreateUpstreamInput
+): Promise<UpstreamView> {
+  assertConfigure(input);
+
+  const { name, baseUrl, allowedMethods, allowedPathPrefixes, authType, authHeaderName } = checkUpstreamFields(input);
   const secretPlain = (input.secret ?? '').trim();
 
   if (authType === 'none') {
     if (secretPlain !== '') {
       throw new ProxyError('invalid_request', 'authType none takes no secret');
     }
-  } else {
-    if (secretPlain === '') {
-      throw new ProxyError('invalid_request', 'a secret is required for this auth type');
-    }
-    if (authType === 'header') {
-      authHeaderName = String(input.authHeaderName ?? '').trim();
-      if (!/^[A-Za-z0-9-]{1,64}$/.test(authHeaderName)) {
-        throw new ProxyError('invalid_request', 'authHeaderName must be a valid header token');
-      }
-    }
+  } else if (secretPlain === '') {
+    throw new ProxyError('invalid_request', 'a secret is required for this auth type');
   }
 
   const envelope = secretPlain !== '' ? encryptSecret(secretPlain, input.env) : null;
@@ -180,7 +198,7 @@ export async function createUpstream(
       {
         workspaceId: input.workspaceId,
         actorUserId: input.actorUserId,
-        actorKind: actorKindForSurface('web'),
+        actorKind: input.actorKind ?? actorKindForSurface('web'),
         action: PROXY_AUDIT_ACTIONS.upstreamCreate,
         subjectType: PROXY_SUBJECT_TYPE,
         target: created.id,
@@ -264,7 +282,7 @@ export async function deleteUpstream(
       {
         workspaceId: actor.workspaceId,
         actorUserId: actor.actorUserId,
-        actorKind: actorKindForSurface('web'),
+        actorKind: actor.actorKind ?? actorKindForSurface('web'),
         action: PROXY_AUDIT_ACTIONS.upstreamDelete,
         subjectType: PROXY_SUBJECT_TYPE,
         target: row.id,

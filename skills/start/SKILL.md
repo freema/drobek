@@ -97,16 +97,16 @@ The loop (tool → result):
 3. `write_files({ app_id, files, reasoning })` → `{ version, compile: { ok, errors: [{ code, file, line, column, text, hint? }], warnings }, preview_url, changed }`.
 4. `compile.ok: true` → give the user `preview_url`. `false` → fix `compile.errors`, write again (`skill_info('debug')`).
 5. `get_logs({ app_id, kind: "runtime" })` after the page ran in a browser.
-6. `publish({ app_id, version? })` ONLY when the user explicitly asks → `published_url`. Public gallery:
-   `set_gallery_listing({ app_id, listed, description, user_confirmed })` — show the user the description
-   first; `user_confirmed: true` ONLY after they explicitly said yes. A super-admin allows or blocks a
-   workspace's publishing with `set_workspace_publishing({ workspace, publishing, user_confirmed })`, same rule.
+6. `publish({ app_id, version? })` ONLY when the user explicitly asks → `published_url`. Public gallery: `set_gallery_listing({ app_id,
+   listed, description, user_confirmed })` — show the user the description first; `user_confirmed: true` ONLY after they explicitly
+   said yes. A super-admin allows or blocks a workspace's publishing with `set_workspace_publishing({ workspace, publishing, user_confirmed })`, same rule.
 7. `get_app({ app_id })` = files, versions, lock, modules; `restore_version({ app_id, version })` = new version copying an old one.
 8. Backends: `skill_info({ name })`, `configure_module({ app_id, module, config })`, `query_data({ app_id, collection })`.
 9. Binaries: `create_asset_upload({ app_id, path, size })` → `upload_url` + `curl -T`; `list_assets({ app_id })`, `delete_asset({ app_id, path })`.
-10. Custom domain: `add_domain({ app_id, host })` → show the user the CNAME + TXT `records` → `verify_domain({ app_id, host })`
-    after they created them (DNS can take hours); `list_domains({ app_id })`. `set_primary_domain({ app_id, host, user_confirmed })`
-    and `remove_domain({ app_id, host, user_confirmed })` of a verified domain: only after the user's explicit yes.
+10. Custom domain: `add_domain({ app_id, host })` → show the user the CNAME + TXT `records` → `verify_domain({ app_id, host })` after they created
+    them (DNS can take hours); `list_domains({ app_id })`. `set_primary_domain({ app_id, host, user_confirmed })` and `remove_domain({ app_id, host, user_confirmed })` of a verified domain: only after the user's explicit yes.
+11. External API (a workspace admin): `register_upstream({ workspace, name, base_url, allowed_methods, allowed_path_prefixes, auth_type })` — a key goes only
+    through the returned `secret_url`, never chat — then assign it with `configure_module` (`proxy`); `list_upstreams({ workspace })`, `remove_upstream({ workspace, name, user_confirmed })`.
 
 `drobek.json`: `{ "imports": { "<bare>": "https://…" }, "entries"?: ["src/admin.tsx"], "beacon"?: false }`.
 Add a package as a pinned esm.sh URL, e.g. `"date-fns": "https://esm.sh/date-fns@4.1.0"`;

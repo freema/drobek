@@ -64,6 +64,7 @@ export {
   type ProxyAuditAction,
 } from './audit-actions.js';
 export {
+  checkUpstreamFields,
   createUpstream,
   deleteUpstream,
   getUpstream,
@@ -73,6 +74,7 @@ export {
   upstreamAllowsApp,
   upstreamSummaries,
   UPSTREAM_NAME_RE,
+  type CheckedUpstreamFields,
   type ConfigureActor,
   type CreateUpstreamInput,
   type UpstreamRecord,

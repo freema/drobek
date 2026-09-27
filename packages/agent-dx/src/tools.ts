@@ -4,7 +4,7 @@
  * NSO-287; query_data M1-03 NSO-300; get_logs M1-07 NSO-290; set_gallery_listing
  * NSO-340; the asset tools NSO-358, assets honour publish NSO-362; the
  * super-admin-only set_workspace_publishing and the custom-domain tools
- * NSO-366). This is the SINGLE SOURCE OF TRUTH the agent-facing docs
+ * NSO-366; the proxy upstream tools NSO-372). This is the SINGLE SOURCE OF TRUTH the agent-facing docs
  * render from (llms.txt / llms-full.txt / MCP docs resources / the build page),
  * and @drobek/mcp registers each tool with THIS title, description and
  * annotations — so the published docs cannot drift from the real tools.
@@ -397,6 +397,53 @@ export const TOOL_DOCS: ToolDoc[] = [
     ],
     returns: '{ removed:host, was_verified, was_primary, note }',
     example: { app_id: 'k3v9x0…', host: 'shop.example.com', user_confirmed: true },
+  },
+  {
+    name: 'list_upstreams',
+    title: 'List a workspace\'s proxy upstreams',
+    scope: 'read (workspace-admin role in the workspace)',
+    description:
+      'The external APIs registered for the proxy module in one workspace — the dashboard\'s workspace → Upstreams page: per upstream its `name` (what apps call it by), `base_url`, `allowed_methods`, `allowed_path_prefixes`, `auth_type` (none | bearer | header), `auth_header_name`, `has_secret` (never the secret) and `apps` — the apps whose assignment a workspace admin confirmed. Plus `upstreams_url`, the dashboard page. Workspace admins only (forbidden otherwise); get_app → modules.proxy.info shows any editor what one app may call. Read-only.',
+    annotations: READ_ONLY,
+    fields: [{ name: 'workspace', type: 'string', required: true, description: 'The workspace slug.' }],
+    returns:
+      '{ workspace, upstreams:[{ name, base_url, allowed_methods, allowed_path_prefixes, auth_type:"none"|"bearer"|"header", auth_header_name, has_secret, apps:[slug], created_at }], upstreams_url }',
+    example: { workspace: 'acme-crew' },
+  },
+  {
+    name: 'register_upstream',
+    title: 'Register a proxy upstream',
+    scope: 'write (workspace-admin role in the workspace)',
+    description:
+      'Register an external API for the proxy module in a workspace — what the dashboard\'s Upstreams page does, with the same checks: a public https or http base URL on port 80/443 (never a private address), the allowed HTTP methods and path prefixes apps may call under it. `auth_type: "none"` (an API without a key, e.g. https://pokeapi.co) registers at once. `bearer` / `header` need a key, and a key never passes through MCP: the answer is `registered: false` with `secret_url` — the Upstreams page with every field filled in; give the user that link, they paste the key and click Register. Never ask for the key in chat. A registered upstream does nothing yet: assign it to an app with configure_module(\'proxy\', { upstreams: { <name>: { rules: { call: "user" } } } }) — a workspace admin confirms that in the dashboard. A name the workspace already has answers upstream_already_registered.',
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    fields: [
+      { name: 'workspace', type: 'string', required: true, description: 'The workspace slug.' },
+      { name: 'name', type: 'string', required: true, description: 'The name apps call it by, e.g. pokeapi.' },
+      { name: 'base_url', type: 'string', required: true, description: 'The base URL, e.g. https://pokeapi.co.' },
+      { name: 'allowed_methods', type: 'string[]', required: true, description: 'e.g. ["GET"].' },
+      { name: 'allowed_path_prefixes', type: 'string[]', required: true, description: 'e.g. ["/api/v2/"].' },
+      { name: 'auth_type', type: '"none" | "bearer" | "header"', required: true, description: 'none registers now; bearer / header answer secret_url.' },
+      { name: 'auth_header_name', type: 'string (header only)', required: false, description: 'The header that carries the key, e.g. X-Api-Key.' },
+    ],
+    returns:
+      '{ registered:true, upstream:{ name, base_url, allowed_methods, allowed_path_prefixes, auth_type, auth_header_name, has_secret, apps, created_at }, next } — or { registered:false, name, secret_url, note } for bearer / header',
+    example: { workspace: 'acme-crew', name: 'pokeapi', base_url: 'https://pokeapi.co', allowed_methods: ['GET'], allowed_path_prefixes: ['/api/v2/'], auth_type: 'none' },
+  },
+  {
+    name: 'remove_upstream',
+    title: 'Remove a proxy upstream',
+    scope: 'write (workspace-admin role in the workspace)',
+    description:
+      'Delete a registered upstream and its stored key — the dashboard\'s Delete on the Upstreams page. Every app that calls it gets 404 upstream_not_registered at once, so it needs `user_confirmed: true` — set it ONLY after the user explicitly said yes to removing exactly this upstream; without it the answer is user_confirmation_required with the `apps` that use it, and nothing changes. Registering the name again creates a new record: each app\'s assignment then needs a new confirmation.',
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    fields: [
+      { name: 'workspace', type: 'string', required: true, description: 'The workspace slug.' },
+      { name: 'name', type: 'string', required: true, description: 'A registered upstream (list_upstreams lists them).' },
+      { name: 'user_confirmed', type: 'boolean', required: false, description: 'true ONLY after the user explicitly said yes to removing it.' },
+    ],
+    returns: '{ removed:name, apps:[slug], note }',
+    example: { workspace: 'acme-crew', name: 'pokeapi', user_confirmed: true },
   },
   {
     name: 'set_workspace_publishing',

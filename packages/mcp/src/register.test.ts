@@ -30,7 +30,7 @@ async function listTools(allow?: (t: string) => boolean, superAdmin = false) {
 const RO = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 
 describe('tools/list', () => {
-  it('is exactly the 20 tools with their annotations and inputs (snapshot)', async () => {
+  it('is exactly the 23 tools with their annotations and inputs (snapshot)', async () => {
     const tools = await listTools();
     const snapshot = tools.map((t) => ({
       name: t.name,
@@ -228,6 +228,27 @@ describe('tools/list', () => {
         properties: ['app_id', 'host', 'user_confirmed'],
         required: ['app_id', 'host'],
       },
+      {
+        name: 'list_upstreams',
+        title: 'List a workspace\'s proxy upstreams',
+        annotations: { title: 'List a workspace\'s proxy upstreams', ...RO },
+        properties: ['workspace'],
+        required: ['workspace'],
+      },
+      {
+        name: 'register_upstream',
+        title: 'Register a proxy upstream',
+        annotations: { title: 'Register a proxy upstream', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        properties: ['workspace', 'name', 'base_url', 'allowed_methods', 'allowed_path_prefixes', 'auth_type', 'auth_header_name'],
+        required: ['workspace', 'name', 'base_url', 'allowed_methods', 'allowed_path_prefixes', 'auth_type'],
+      },
+      {
+        name: 'remove_upstream',
+        title: 'Remove a proxy upstream',
+        annotations: { title: 'Remove a proxy upstream', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+        properties: ['workspace', 'name', 'user_confirmed'],
+        required: ['workspace', 'name'],
+      },
     ]);
     const create = tools.find((t) => t.name === 'create_app')!;
     expect((create.inputSchema.properties as Record<string, { enum?: string[] }>).template.enum).toEqual([
@@ -239,8 +260,8 @@ describe('tools/list', () => {
 
   it('a super-admin also gets set_workspace_publishing, last (NSO-366)', async () => {
     const tools = await listTools(undefined, true);
-    expect(tools).toHaveLength(21);
-    const last = tools[20];
+    expect(tools).toHaveLength(24);
+    const last = tools[23];
     expect(last.name).toBe('set_workspace_publishing');
     expect(last.annotations).toEqual({
       title: 'Set a workspace\'s publishing',

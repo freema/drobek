@@ -223,14 +223,14 @@ describe('set_gallery_listing', () => {
       await c.call('write_files', { app_id: app.app_id, files: [{ path: 'src/a.ts', content: 'export {}' }], reasoning: 'x' });
       await c.call('publish', { app_id: app.app_id });
       expect(await listedRow(app.app_id)).toMatchObject({ listed: false });
-      // Of every tool, only set_gallery_listing takes a gallery argument (the domain tools' user_confirmed is theirs, NSO-366).
+      // Of every tool, only set_gallery_listing takes a gallery argument (the domain and upstream tools' user_confirmed is theirs, NSO-366, NSO-372).
       const tools = (await c.client.listTools()).tools;
       const withGallery = tools.filter((t) =>
         Object.keys((t.inputSchema.properties ?? {}) as object).some((k) => /listed|gallery/i.test(k))
       );
       expect(withGallery.map((t) => t.name)).toEqual(['set_gallery_listing']);
       const confirmed = tools.filter((t) => Object.keys((t.inputSchema.properties ?? {}) as object).includes('user_confirmed'));
-      expect(confirmed.map((t) => t.name)).toEqual(['set_gallery_listing', 'set_primary_domain', 'remove_domain']);
+      expect(confirmed.map((t) => t.name)).toEqual(['set_gallery_listing', 'set_primary_domain', 'remove_domain', 'remove_upstream']);
     } finally {
       await c.close();
     }

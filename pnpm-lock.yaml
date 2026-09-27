@@ -806,6 +806,9 @@ importers:
       '@drobek/modules':
         specifier: workspace:*
         version: link:../modules
+      '@drobek/proxy':
+        specifier: workspace:*
+        version: link:../proxy
       '@drobek/tenancy':
         specifier: workspace:*
         version: link:../tenancy

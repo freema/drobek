@@ -7,10 +7,12 @@
  *
  *   read    — look: list apps (+ who am I), get an app, read its files, read skills,
  *             query an app's stored data, read its logs, list its assets and
- *             its custom domains.
+ *             its custom domains, and (workspace admins) the workspace's proxy
+ *             upstreams (NSO-372).
  *   write   — change: create apps, write files (new versions), restore,
  *             configure platform modules, upload (upload URLs) and delete assets,
- *             add, verify and remove custom domains (NSO-366).
+ *             add, verify and remove custom domains (NSO-366), register and
+ *             remove proxy upstreams without a secret (NSO-372).
  *   publish — make a version live at its public URL (the `publish` tool, M0-06),
  *             list it in the public gallery (`set_gallery_listing`, NSO-340) and
  *             choose the primary domain the production address redirects to
@@ -82,6 +84,7 @@ export const TOOL_SCOPES = {
   get_logs: 'read',
   list_assets: 'read',
   list_domains: 'read',
+  list_upstreams: 'read',
   create_app: 'write',
   write_files: 'write',
   restore_version: 'write',
@@ -91,6 +94,8 @@ export const TOOL_SCOPES = {
   add_domain: 'write',
   verify_domain: 'write',
   remove_domain: 'write',
+  register_upstream: 'write',
+  remove_upstream: 'write',
   publish: 'publish',
   // NSO-340: listing in the public gallery is public exposure, like publishing.
   set_gallery_listing: 'publish',

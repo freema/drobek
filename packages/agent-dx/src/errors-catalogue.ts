@@ -237,6 +237,12 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     fix: 'Try verify_domain again in a few minutes; if it keeps failing, the domain\'s DNS servers may be down — tell the user.',
   },
   {
+    code: 'upstream_already_registered',
+    surface: 'MCP tool isError (register_upstream)',
+    meaning: 'The workspace already has an upstream with this name. Nothing changed.',
+    fix: 'list_upstreams shows it; use it as it is, pick another name, or remove_upstream it first (the user confirms) and register it again.',
+  },
+  {
     code: 'internal_error',
     surface: 'MCP tool isError',
     meaning: 'drobek failed unexpectedly while handling the call (the details are in the server log, never in the response).',

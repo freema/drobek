@@ -245,10 +245,15 @@ describe('config + confirmRequired', () => {
     const user = p({ upstreams: { echo: {} } });
     // Every one needs a workspace ADMIN (NSO-322 H3): only admins register upstreams.
     const admin = (change: string) => ({ change, confirmRole: 'admin' });
-    expect(proxyConfirmRequired(none, user)).toEqual([
+    const secret = new Map([['echo', true]]);
+    expect(proxyConfirmRequired(none, user, secret)).toEqual([
       admin('proxy.upstreams.echo: this app may call the workspace upstream "echo" with its secret (callers: "user")'),
     ]);
-    expect(proxyConfirmRequired(none, p({ upstreams: { echo: { rules: { call: 'public' } } } }))).toEqual([
+    // No secret stored: the text does not claim one (NSO-372).
+    expect(proxyConfirmRequired(none, user, new Map([['echo', false]]))).toEqual([
+      admin('proxy.upstreams.echo: this app may call the workspace upstream "echo" (callers: "user")'),
+    ]);
+    expect(proxyConfirmRequired(none, p({ upstreams: { echo: { rules: { call: 'public' } } } }), secret)).toEqual([
       admin('proxy.upstreams.echo: this app may call the workspace upstream "echo" with its secret (callers: "public")'),
       admin('proxy.upstreams.echo.rules.call: (new) → "public" (anyone, signed in or not, may call it — limited per client IP)'),
     ]);
@@ -259,6 +264,12 @@ describe('config + confirmRequired', () => {
     expect(await t({}).confirm({}, { upstreams: { echo: {} } })).toEqual([
       'proxy.upstreams.echo: this app may call the workspace upstream "echo" with its secret (callers: "user")',
     ]);
+    // A name nobody registered cannot be assigned (it could never be confirmed); removing one still can (NSO-372).
+    await expect(t({}).confirm({}, { upstreams: { ghost: {} } })).rejects.toMatchObject({
+      code: 'invalid_params',
+      details: { reason: 'upstream_not_registered', upstreams: ['ghost'] },
+    });
+    expect(await t({}).confirm({ upstreams: { ghost: {} } }, {})).toEqual([]);
     expect(proxyConfirmRequired(user, p({ upstreams: { echo: { rules: { call: 'admin' } }, } }))).toEqual([]);
     expect(proxyConfirmRequired(user, p({ upstreams: { echo: { rateLimit: 5 } } }))).toEqual([]);
     expect(proxyConfirmRequired(user, none)).toEqual([]);
@@ -277,7 +288,7 @@ describe('config + confirmRequired', () => {
     expect(proxyConfigSchema.safeParse({ upstreams: { echo: { id: 5 } } }).success).toBe(false);
 
     const bound = p({ upstreams: { echo: { id: 'rec_1' } } });
-    expect(proxyConfirmRequired(bound, p({ upstreams: { echo: { id: 'rec_2' } } }))).toEqual([
+    expect(proxyConfirmRequired(bound, p({ upstreams: { echo: { id: 'rec_2' } } }), new Map([['echo', true]]))).toEqual([
       { change: 'proxy.upstreams.echo.id: this app may call the upstream registered as "echo" now with its secret (callers: "user")', confirmRole: 'admin' },
     ]);
     // Binding a legacy (unbound) assignment by hand is a rebind too.

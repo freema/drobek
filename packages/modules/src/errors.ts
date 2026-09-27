@@ -86,6 +86,8 @@ export const CORE_ERROR_CODES: readonly string[] = [
   'domain_taken',
   'domain_not_verified',
   'dns_unavailable',
+  // proxy upstreams (MCP upstream tools)
+  'upstream_already_registered',
   // compile.errors[]
   'build_error',
   'unresolved_import',

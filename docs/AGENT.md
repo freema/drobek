@@ -102,8 +102,8 @@ answers `not_found`, the same as one that does not exist.
 
 | Scope | Tools |
 | --- | --- |
-| `read` | `list_apps`, `get_app`, `read_file`, `skill_info`, `query_data`, `get_logs`, `list_assets`, `list_domains` |
-| `write` | `create_app`, `write_files`, `restore_version`, `configure_module`, `create_asset_upload`, `delete_asset`, `add_domain`, `verify_domain`, `remove_domain` |
+| `read` | `list_apps`, `get_app`, `read_file`, `skill_info`, `query_data`, `get_logs`, `list_assets`, `list_domains`, `list_upstreams` |
+| `write` | `create_app`, `write_files`, `restore_version`, `configure_module`, `create_asset_upload`, `delete_asset`, `add_domain`, `verify_domain`, `remove_domain`, `register_upstream`, `remove_upstream` |
 | `publish` | `publish`, `set_gallery_listing`, `set_primary_domain`, `set_workspace_publishing` (super-admins only) |
 
 ## Tools
@@ -131,6 +131,9 @@ answers `not_found`, the same as one that does not exist.
 | `verify_domain` | write, editor+ | not destructive, idempotent, open world | Looks both records up now. Verified → the domain serves the published version. Otherwise `domain_not_verified` with `cname` / `txt` = `ok` / `missing` / `wrong` and the expected `records` (DNS can take up to 48 hours), or `dns_unavailable` (a lookup failed; nothing changed). |
 | `set_primary_domain` | publish, editor+ | not destructive, idempotent, open world | Makes a verified domain primary — `<slug>.<APPS_DOMAIN>` answers 302 to it — or clears it (`host: null`). Needs `user_confirmed: true`. |
 | `remove_domain` | write, editor+ | destructive, idempotent, open world | Detaches a domain; a verified one stops serving at once and needs `user_confirmed: true`, a pending one does not. |
+| `list_upstreams` | read, workspace-admin | read-only | The workspace's proxy upstreams (the dashboard's Upstreams page): `name`, `base_url`, allowed methods and path prefixes, `auth_type`, `auth_header_name`, `has_secret` (never the key), the `apps` whose assignment was confirmed; plus `upstreams_url`. |
+| `register_upstream` | write, workspace-admin | not destructive, idempotent | Registers an external API for the proxy module with the dashboard's checks (public host, port 80/443, allowed methods and path prefixes). `auth_type: "none"` registers at once. `bearer` / `header` need a key, which never passes through MCP: the answer is `registered: false` with `secret_url`, the Upstreams page with the fields filled in, where the user pastes the key. A taken name answers `upstream_already_registered`. |
+| `remove_upstream` | write, workspace-admin | destructive, idempotent | Deletes an upstream and its key; every app calling it breaks at once, so it needs `user_confirmed: true` (without it: `user_confirmation_required` with the `apps` using it). |
 
 Every tool carries all four MCP annotations explicitly (`readOnlyHint`,
 `destructiveHint`, `idempotentHint`, `openWorldHint`; "idempotent" above means

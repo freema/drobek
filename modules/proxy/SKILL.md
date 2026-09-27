@@ -11,12 +11,14 @@ drobek adds the key server-side and forwards. Never put a key in app files
 
 ## 2. Minimal working code
 
-Setup has two steps. (1) A workspace admin registers the upstream in the
-drobek dashboard (workspace → Upstreams): name, base URL (public host, port
-80/443), allowed methods + path prefixes, auth (`Bearer` or a named header)
-and the key. Not possible over MCP — tell the user exactly what to register.
-Check with `get_app` → `modules.proxy.info.upstreams`. (2) Assign it to the
-app:
+Setup has two steps. (1) A workspace admin registers the upstream:
+`register_upstream({ workspace, name, base_url, allowed_methods,
+allowed_path_prefixes, auth_type })` (base URL: public host, port 80/443).
+`auth_type: "none"` registers at once. `bearer` / a named `header` need a key,
+which never goes through MCP: the answer carries `secret_url` (the
+dashboard's Upstreams form, filled in) — give it to the user to paste the key.
+Check with `list_upstreams` or `get_app` → `modules.proxy.info.upstreams`.
+(2) Assign it to the app (an unregistered name is refused):
 
 ```json
 { "app_id": "…", "module": "proxy", "config": { "upstreams": { "openai": { "rules": { "call": "user" } } } } }
@@ -120,7 +122,8 @@ export interface Api {
 | `forbidden` (403) | `details.reason: upstream_not_allowed` (no admin confirmed this app, e.g. assigned before it was registered) | remove it from the config, add it again, an admin confirms |
 | `forbidden` (403) | `details.reason: upstream_replaced` (deleted and registered again since the confirmation) | remove it from the config, add it again, an admin confirms |
 | `unauthorized` (401) | `call: "user"` and nobody signed in | wrap the UI in `<LoginGate>` |
-| `not_found` (404) | `details.reason: upstream_not_registered` | ask the workspace admin to register it (same name) |
+| `not_found` (404) | `details.reason: upstream_not_registered` | `register_upstream` (a workspace admin), same name |
+| `invalid_params` (configure_module) | `upstream_not_registered`: the name is not registered | register it first, then assign |
 | `method_not_allowed` (405) | method outside the allow-list | use an allowed method |
 | `path_not_allowed` (403) | path outside the allowed prefixes | use an allowed path, or ask the admin |
 | `rate_limited` (429) | a per-minute limit | wait `Retry-After`; never loop |

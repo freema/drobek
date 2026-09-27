@@ -6,6 +6,11 @@
  * requireWorkspaceRole('workspace-admin'). The secret input is WRITE-ONLY — it is
  * accepted on create, encrypted by @drobek/proxy, and NEVER read back: the loader
  * returns only `hasSecret`, never the value.
+ *
+ * NSO-372: register_upstream over MCP links an upstream that needs a key here
+ * with its fields in the query (`name`, `baseUrl`, `methods`, `paths`,
+ * `authType`, `header`) — the form starts filled in; a secret is never read
+ * from the URL.
  */
 import {
   data,
@@ -30,6 +35,21 @@ function splitList(raw: string): string[] {
     .filter((s) => s !== '');
 }
 
+const PREFILL_KEYS = ['name', 'baseUrl', 'methods', 'paths', 'authType', 'header'] as const;
+
+type Prefill = Partial<Record<(typeof PREFILL_KEYS)[number], string>>;
+
+function prefillOf(url: string): Prefill | null {
+  const q = new URL(url).searchParams;
+  const out: Prefill = {};
+  for (const k of PREFILL_KEYS) {
+    const v = q.get(k);
+    if (v !== null && v.length <= 2048) out[k] = v;
+  }
+  if (out.authType !== undefined && !['none', 'bearer', 'header'].includes(out.authType)) delete out.authType;
+  return Object.keys(out).length > 0 ? out : null;
+}
+
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const access = await requireWorkspaceRole(
     request,
@@ -47,6 +67,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     /** NSO-342: the shared workspace chrome (breadcrumb, badges, tabs). */
     nav: workspaceNav(access),
     upstreams,
+    prefill: prefillOf(request.url),
     role: access.effectiveRole,
     // PHY-76 #8: the destination ports a base_url may use (PROXY_ALLOWED_PORTS, default 80/443).
     allowedPorts: [...proxyAllowedPorts()].sort((a, b) => a - b),
