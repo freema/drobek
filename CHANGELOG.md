@@ -1,5 +1,10 @@
 # Changelog — drobek (core)
 
+## Unreleased
+
+### Changed
+- **Dashboard copy** ([#12](https://github.com/freema/drobek/pull/12)) — the Users tab tells an empty list, an email search with no match and a failed load apart (a failed load shows no false user count); signing everyone out points to the app's enabled sign-in methods, not only a new code; the app header, history and logs say *build* (identifiers unchanged); settings explain password protection, embedding and deletion in plain terms, and the delete asks for the app's identifier by name.
+
 ## v0.3.1 — 2026-09-27
 
 ### Changed

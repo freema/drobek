@@ -306,7 +306,7 @@ export async function appAction({ request, params }: ActionFunctionArgs) {
       }
       case 'delete': {
         if (String(form.get('confirm') ?? '').trim() !== app.slug) {
-          return fail(400, intent, `Type the app's address "${app.slug}" to confirm the delete.`);
+          return fail(400, intent, `Type ${app.slug} to confirm deletion.`);
         }
         await softDeleteApp(app.id, actor);
         // Every host of the app answers 404 from the next request.
