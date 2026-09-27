@@ -15,6 +15,7 @@
   - Empty lists on these pages say what would appear there and what to do next.
 
 ### Docs
+- **Using modules in an app** (NSO-371). `docs/MODULES.md` opens with the app author's steps — available modules, per-app configuration in the dashboard or with `configure_module`, confirming risky changes, secrets, the SDK — and names the operator's `DROBEK_MODULES` section "Enabling modules on your server (operators)". The Compatibility section notes that a sign-in provider must return `issuer` since v0.3.0.
 - **Module directory and submission form** (NSO-340). The published modules are also listed at [www.drobek.app/modules](https://www.drobek.app/modules); authors submit theirs through the GitHub issue form `module-submission` (package, repository, contract, license and the module rules) instead of a pull request to `docs/MODULES.md`.
 
 ## v0.4.0 — 2026-09-27

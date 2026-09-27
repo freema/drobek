@@ -269,7 +269,8 @@ lines). `skill_info` serves two kinds:
 
 - **module skills** — each enabled module's own `SKILL.md`
   (`modules/<name>/SKILL.md`): `auth`, `email`, `forms`, `data`, `proxy`,
-  `files`;
+  `files` (the steps for one app, from configuration to the SDK:
+  [Using modules in an app](./MODULES.md#using-modules-in-an-app));
 - **general skills** — `skills/<name>/SKILL.md` (`DROBEK_SKILLS_DIR`):
   `start` (how an app works and the write → compile → preview → publish
   loop), `debug` (compile errors and `get_logs`), `ui` (Tailwind's browser
