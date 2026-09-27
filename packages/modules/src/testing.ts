@@ -348,7 +348,7 @@ export function createModuleTestContext(declared: AnyModule, opts: ModuleTestOpt
           rateLimit: (bucket, key, max, windowMs) => rateLimit(`callback:${bucket}:${key}`, max, windowMs),
           limits: () => limits,
           app: async (appId) =>
-            appId === app.id ? { app, config, limits: async () => limits, secrets: base.secrets, audit: base.audit } : null,
+            appId === app.id ? { app, config, limits: async () => limits, secrets: base.secrets, audit: base.audit, contributions: base.contributions } : null,
         },
       });
     },

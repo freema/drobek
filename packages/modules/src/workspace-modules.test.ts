@@ -3,7 +3,10 @@
  * default vs opt-in, the super-admin's `workspace_modules` row, the limits
  * provider's `MODULE_ENABLED_<NAME>` overriding the row in both directions,
  * the env default, `module_not_enabled` on the route / configure / confirm,
- * get_app's `enabled`, the skills filter, the compile hint and the hooks.
+ * get_app's `enabled`, the skills filter, the compile hint and the hooks;
+ * NSO-360: a module that is off contributes nothing to the slots of the
+ * modules that are on (routes and create / publish hooks), onAppDelete still
+ * sees every contribution.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { apps, auditLog, moduleConfigs, users, workspaceModules, workspaces } from '@drobek/db';
@@ -60,7 +63,8 @@ let appB: { id: string; slug: string; workspaceId: string; workspaceSlug: string
 let plan: Record<string, Record<string, unknown>> = {};
 let fetches = 0;
 
-function runtime(env: Record<string, string> = {}, opts: { provider?: boolean } = {}): Promise<ModuleRuntime> {
+function runtime(env: Record<string, string> = {}, opts: { provider?: boolean; modules?: AnyModule[] } = {}): Promise<ModuleRuntime> {
+  const modules = opts.modules ?? MODULES;
   const fullEnv = {
     ...ENV,
     ...env,
@@ -69,7 +73,7 @@ function runtime(env: Record<string, string> = {}, opts: { provider?: boolean } 
   return loadModuleRuntime({
     env: fullEnv,
     log: noopLogger,
-    modules: MODULES,
+    modules,
     skillsDir: null,
     deps: {
       rateLimit: memoryRateLimiter(),
@@ -77,7 +81,7 @@ function runtime(env: Record<string, string> = {}, opts: { provider?: boolean } 
       email: { send: async () => {} },
       mailGuard: memoryMailGuard({ hourlyMax: 1000, pauseMinutes: 1 }, noopLogger),
       limits: createLimitsProvider({
-        catalogue: limitsCatalogue(MODULES),
+        catalogue: limitsCatalogue(modules),
         env: fullEnv,
         fetch: async (url) => {
           fetches += 1;
@@ -320,5 +324,103 @@ describe('get_app, skills, compile hints, hooks', () => {
     rt.compileHint({ code: 'unresolved_import', specifier: 'cloudinary' }, enabled);
     await rt.appModules({ id: appA.id, slug: appA.slug, workspaceId: appA.workspaceId }, undefined, enabled);
     expect(fetches).toBe(1);
+  });
+});
+
+// ── NSO-360: contributions follow the workspace switch ──────────────────────
+
+/** Who ran: `<contributor>@<where>`. */
+const ran: string[] = [];
+type Observe = { id: string; observe: (where: string) => string };
+const hub = defineModule({
+  name: 'hub',
+  version: '1.0.0',
+  skill: { useWhen: 'a slot host (fixture)', markdown: '# hub' },
+  configSchema: z.object({}),
+  configDefaults: {},
+  slots: { 'hub.observe': { schema: z.object({ id: z.string(), observe: z.custom<Observe['observe']>((v) => typeof v === 'function') }), description: 'observers' } },
+  routes(r) {
+    r.get('/call', { rule: 'public' }, (_req, ctx) => ({ called: ctx.contributions<Observe>('hub.observe').map((c) => c.observe('route')) }));
+  },
+  hooks: {
+    onAppCreate: (_a: HookApp, s) => void s.contributions<Observe>('hub.observe').map((c) => c.observe('create')),
+    onPublish: (_a: HookApp, s) => void s.contributions<Observe>('hub.observe').map((c) => c.observe('publish')),
+    onAppDelete: (_a: HookApp, s) => void s.contributions<Observe>('hub.observe').map((c) => c.observe('delete')),
+  },
+});
+const contributor = (name: string, availability?: 'opt-in') =>
+  defineModule({
+    name,
+    version: '1.0.0',
+    ...(availability ? { availability } : {}),
+    skill: { useWhen: `a contributor (${name})`, markdown: `# ${name}` },
+    configSchema: z.object({}),
+    configDefaults: {},
+    contributes: { 'hub.observe': { id: name, observe: (where: string) => (ran.push(`${name}@${where}`), name) } },
+    routes(r) {
+      r.get('/ping', { rule: 'public' }, () => ({ ok: true }));
+    },
+  });
+const HUB_MODULES = [hub, contributor('always'), contributor('plug', 'opt-in')];
+const PLUG_KEY = moduleEnabledLimitName('plug');
+
+describe('contributions follow the workspace switch (NSO-360)', () => {
+  beforeEach(() => {
+    ran.length = 0;
+  });
+
+  it('a disabled contributor does not run through an enabled host: its route is 404 and the host never sees it', async () => {
+    const rt = await runtime({}, { provider: false, modules: HUB_MODULES });
+    expect(await rt.isEnabled(wsA.id, 'plug')).toBe(false);
+    expect((await rt.handle(req('/__drobek/v1/plug/ping'), appA)).status).toBe(404);
+    const off = await rt.handle(req('/__drobek/v1/hub/call'), appA);
+    expect(off.status).toBe(200);
+    expect(JSON.parse(String(off.body))).toEqual({ called: ['always'] });
+    expect(ran).toEqual(['always@route']);
+
+    await rt.setWorkspaceModule({ workspaceId: wsA.id, module: 'plug', enabled: true, actorUserId: userId });
+    expect(JSON.parse(String((await rt.handle(req('/__drobek/v1/hub/call'), appA)).body))).toEqual({ called: ['always', 'plug'] });
+    // workspace B is untouched
+    expect(JSON.parse(String((await rt.handle(req('/__drobek/v1/hub/call'), appB)).body))).toEqual({ called: ['always'] });
+    // switched off again: gone at once
+    await rt.setWorkspaceModule({ workspaceId: wsA.id, module: 'plug', enabled: false, actorUserId: userId });
+    expect(JSON.parse(String((await rt.handle(req('/__drobek/v1/hub/call'), appA)).body))).toEqual({ called: ['always'] });
+  });
+
+  it('plan, env and dashboard precedence decide the contributions too', async () => {
+    const rt = await runtime({ [PLUG_KEY]: '1' }, { modules: HUB_MODULES });
+    const called = async (app: typeof appA) => (JSON.parse(String((await rt.handle(req('/__drobek/v1/hub/call'), app)).body)) as { called: string[] }).called;
+    // env 1 → every workspace; a plan 0 still wins
+    expect(await called(appA)).toEqual(['always', 'plug']);
+    plan[wsB.id] = { [PLUG_KEY]: 0 };
+    expect(await called(appB)).toEqual(['always']);
+    // a plan 1 beats a missing row; a plan 0 beats the dashboard row
+    const noEnv = await runtime({}, { modules: HUB_MODULES });
+    const calledNoEnv = async (app: typeof appA) => (JSON.parse(String((await noEnv.handle(req('/__drobek/v1/hub/call'), app)).body)) as { called: string[] }).called;
+    plan = { [wsA.id]: { [PLUG_KEY]: 1 } };
+    expect(await calledNoEnv(appA)).toEqual(['always', 'plug']);
+    await noEnv.setWorkspaceModule({ workspaceId: wsB.id, module: 'plug', enabled: true, actorUserId: userId });
+    plan[wsB.id] = { [PLUG_KEY]: 0 };
+    expect(await calledNoEnv(appB)).toEqual(['always']);
+  });
+
+  it('create / publish hooks see only the enabled contributors; onAppDelete sees every one (cleanup)', async () => {
+    const rt = await runtime({}, { provider: false, modules: HUB_MODULES });
+    const hook = { id: appA.id, slug: appA.slug, workspaceId: appA.workspaceId };
+    await rt.runHook('onAppCreate', hook);
+    await rt.runHook('onPublish', { ...hook, version: 1 });
+    await rt.runHook('onAppDelete', hook);
+    expect(ran).toEqual(['always@create', 'always@publish', 'always@delete', 'plug@delete']);
+    ran.length = 0;
+    await rt.setWorkspaceModule({ workspaceId: wsA.id, module: 'plug', enabled: true, actorUserId: userId });
+    await rt.runHook('onPublish', { ...hook, version: 2 });
+    expect(ran).toEqual(['always@publish', 'plug@publish']);
+  });
+
+  it('services() without a workspace (startup, onAppDelete) lists every contribution; with enabledModules only those', async () => {
+    const rt = await runtime({}, { provider: false, modules: HUB_MODULES });
+    expect(rt.contributions<Observe>('hub.observe').map((c) => c.id)).toEqual(['always', 'plug']);
+    expect(rt.contributions<Observe>('hub.observe', await rt.enabledModules(wsA.id)).map((c) => c.id)).toEqual(['always']);
+    expect(rt.services(await rt.enabledModules(wsB.id)).contributions<Observe>('hub.observe').map((c) => c.id)).toEqual(['always']);
   });
 });

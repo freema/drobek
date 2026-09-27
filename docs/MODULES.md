@@ -141,7 +141,13 @@ workspace where the module is **not** active:
 - the app's module page in the dashboard says "not enabled for this
   workspace" instead of the forms, and refuses changes;
 - its `onAppCreate` / `onPublish` hooks do not run (`onAppDelete` always
-  does).
+  does);
+- it contributes nothing to the [slots](#slots) of the modules that are on:
+  their routes, `onAppCreate` / `onPublish` hooks and the end-user session
+  check do not see its contributions — e.g. its sign-in provider is not
+  listed, cannot begin, call back or complete a sign-in, its sign-in
+  observer is not told, and a session it signed in ends on the next
+  request.
 
 The SDK stays one bundle per server (`/__drobek/sdk.js` includes opt-in
 modules); an app just gets `module_not_enabled` from their calls. Per app a
@@ -777,7 +783,14 @@ with a message naming the module and the slot):
 parsed them (a `z.object` drops unknown keys; use `z.looseObject` to keep
 them), in `DROBEK_MODULES` order. A slot nobody contributes to, or that no
 active module declares, gives `[]`. The generic types the value; the schema
-is what guarantees it.
+is what guarantees it. At run time only the modules that are on for the
+app's workspace contribute ([opt-in](#per-workspace-enabling-opt-in-modules)
+modules switched off there are left out) — in a route's `ctx`, the
+`onAppCreate` / `onPublish` services, `endUsers.current` and the end-user
+callback's `app()` view; the callback's own `services` (no app known yet)
+hold the default modules' only. `onAppDelete` gets every contribution, so a
+module switched off since can still clean up. `compose` (below) sees all of
+them: the config schema is one per server.
 
 **`compose`** — a host whose config, confirm rules or secrets depend on the
 contributions (the auth module: one `providers.<id>` entry, identity-field

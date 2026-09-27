@@ -214,7 +214,9 @@ export interface ModuleErrorDoc {
  * A typed extension point a module (the HOST) offers other modules: each
  * active module may contribute one value to it (`contributes`), validated
  * by `schema` at server start. The host reads them with
- * `services.contributions(slot)`, in `DROBEK_MODULES` order.
+ * `services.contributions(slot)`, in `DROBEK_MODULES` order — at run time
+ * only those of modules that are on for the app's workspace (an opt-in
+ * module switched off there contributes nothing); `compose` sees them all.
  */
 export interface ModuleSlot<T = unknown> {
   /** Validates every contribution; the host gets the parsed value. */
@@ -319,6 +321,8 @@ export interface EndUserCallbackApp<Config = unknown> {
   secrets: { get(name: string): Promise<string | null> };
   /** Append an audit row for this app (actor: the anonymous visitor; action prefixed with the module name). */
   audit(action: string, meta?: Record<string, unknown>): Promise<void>;
+  /** The slot contributions of the modules that are on for the app's workspace (a disabled opt-in module contributes nothing). */
+  contributions<T = unknown>(slot: string): T[];
 }
 
 /** What the end-user authority's `callback` gets. */
@@ -864,8 +868,13 @@ export interface ModuleServices {
   /**
    * The contributions of the active modules to `slot` (a slot THIS module
    * declares, or any other active module's), in `DROBEK_MODULES` order, as
-   * the slot's schema parsed them; [] when nobody contributes. Type it with
-   * the slot's value type: `contributions<Provider>('auth.provider')`.
+   * the slot's schema parsed them; [] when nobody contributes. In a route,
+   * `endUsers.current` and the create / publish hooks: only the modules that
+   * are on for the app's workspace (an opt-in module switched off there
+   * contributes nothing); with no app known (the end-user callback before
+   * `app()`): only the default modules; in `onAppDelete`: every active
+   * module. Type it with the slot's value type:
+   * `contributions<Provider>('auth.provider')`.
    */
   contributions<T = unknown>(slot: string): T[];
 }

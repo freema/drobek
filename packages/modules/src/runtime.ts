@@ -16,8 +16,10 @@
  *  - `compileHint()` — the skill an `unresolved_import` should point at;
  *  - `runHook()` — onAppCreate / onPublish / onAppDelete;
  *  - `contributions()` — the slot contributions of the active modules
- *    (`ModuleServices.contributions`); `errorCatalogue()` — the modules'
- *    own error codes (skill_info, /llms-full.txt);
+ *    (`ModuleServices.contributions`; routes, `endUsers.current`, the
+ *    end-user callback's `app()` and create / publish hooks get those of the
+ *    workspace's enabled modules only — NSO-360); `errorCatalogue()` — the
+ *    modules' own error codes (skill_info, /llms-full.txt);
  *  - `isEnabled()` / `enabledModules()` / `workspaceModules()` /
  *    `setWorkspaceModule()` — NSO-346: an `availability: 'opt-in'` module
  *    is active for a workspace when the limits provider's plan says
@@ -25,8 +27,9 @@
  *    env sets `MODULE_ENABLED_<NAME>=1` (every workspace), else when a
  *    super-admin enabled it in the dashboard (`workspace_modules`). An
  *    inactive one answers `404 module_not_enabled` on its routes and in
- *    configure_module / confirm, is left out of an app's skills and runs no
- *    onAppCreate / onPublish hook. The SDK stays one per server.
+ *    configure_module / confirm, is left out of an app's skills, runs no
+ *    onAppCreate / onPublish hook and contributes to no other module's slot
+ *    there. The SDK stays one per server.
  *  - `endUserCallback()` — the end-user sign-in providers' IdP callback on
  *    the dashboard host (the `endUsers` authority's `callback`, NSO-348).
  *
@@ -570,15 +573,22 @@ export class ModuleRuntime {
   /**
    * The contributions of the active modules to `slot`, in DROBEK_MODULES
    * order, as the slot's schema parsed them ([] when nobody contributes or no
-   * active module declares the slot).
+   * active module declares the slot). With `enabled` (a workspace's
+   * enabledModules()) only those of the modules in it (NSO-360).
    */
-  contributions<T = unknown>(slot: string): T[] {
-    return (this.slotContributions.get(slot) ?? []).map((c) => c.value as T);
+  contributions<T = unknown>(slot: string, enabled?: ReadonlySet<string>): T[] {
+    const all = this.slotContributions.get(slot) ?? [];
+    return (enabled ? all.filter((c) => enabled.has(c.module)) : all).map((c) => c.value as T);
   }
 
-  /** The app-independent services a hook (or a request context) gets. */
-  services(): ModuleServices {
-    return { db: this.deps.db(), log: this.deps.log, contributions: (slot) => this.contributions(slot) };
+  /** The services a hook (or a request context) gets; `enabled` scopes the contributions to a workspace's modules. */
+  services(enabled?: ReadonlySet<string>): ModuleServices {
+    return { db: this.deps.db(), log: this.deps.log, contributions: (slot) => this.contributions(slot, enabled) };
+  }
+
+  /** The default (not opt-in) active modules: what is on when no workspace is known. */
+  private defaultModules(): ReadonlySet<string> {
+    return new Set(this.modules.filter((m) => m.availability !== 'opt-in').map((m) => m.name));
   }
 
   /** The active modules' own error codes, one section per module that declares any (DROBEK_MODULES order). */
@@ -677,7 +687,7 @@ export class ModuleRuntime {
    */
   async enabledModules(workspaceId: string): Promise<ReadonlySet<string>> {
     const optIn = this.optInModules();
-    const out = new Set(this.modules.filter((m) => m.availability !== 'opt-in').map((m) => m.name));
+    const out = new Set(this.defaultModules());
     if (optIn.length === 0) return out;
     for (const [name, st] of await this.optInStates(workspaceId, optIn)) if (st.enabled) out.add(name);
     return out;
@@ -761,16 +771,19 @@ export class ModuleRuntime {
   /**
    * Who the user of a live session of `app` is NOW, according to the module
    * that owns end-user sessions (its `endUsers.current` with this app's
-   * effective config) — null when no active module owns sessions, or the user
-   * may not be signed in any more.
+   * effective config and the contributions of the modules on for its
+   * workspace) — null when no active module owns sessions, it is off for the
+   * workspace, or the user may not be signed in any more.
    */
   async currentEndUser(app: HookApp, user: EndUser): Promise<EndUser | null> {
     const m = endUserAuthorityOf(this.modules);
     if (!m?.endUsers) return null;
+    const enabled = await this.enabledModules(app.workspaceId);
+    if (!enabled.has(m.name)) return null;
     const db = this.deps.db();
     const row = await readConfigRow(app.id, m.name, db);
     const config = this.effectiveConfig(m, row.config);
-    return m.endUsers.current({ app, user, config, db, log: this.deps.log, contributions: (slot) => this.contributions(slot) });
+    return m.endUsers.current({ app, user, config, db, log: this.deps.log, contributions: (slot) => this.contributions(slot, enabled) });
   }
 
   /**
@@ -778,9 +791,10 @@ export class ModuleRuntime {
    * (`/__drobek/auth/callback/:provider` on the dashboard host): hands the
    * request to the `endUsers` authority's `callback` with services that
    * know no app yet — a callback-scoped rate limiter, the server's default
-   * limits and `app(id)`, which the authority calls once its own signed state
-   * named the app. No authority / no callback → 404 page; a throw → a
-   * generic 500 page (logged without the error's text).
+   * limits, the default modules' contributions and `app(id)`, which the
+   * authority calls once its own signed state named the app (it carries the
+   * contributions of the app's workspace). No authority / no callback → 404
+   * page; a throw → a generic 500 page (logged without the error's text).
    */
   async endUserCallback(input: Omit<EndUserCallbackInput, 'services'>): Promise<EndUserCallbackResult> {
     const m = endUserAuthorityOf(this.modules);
@@ -793,7 +807,7 @@ export class ModuleRuntime {
       return await callback({
         ...input,
         services: {
-          ...this.services(),
+          ...this.services(this.defaultModules()),
           rateLimit: (bucket, key, max, windowMs) => deps.rateLimit(`mod:${m.name}:callback:${bucket}:${key}`, max, windowMs),
           limits: () => deps.limits.defaults(),
           app: (appId) => this.callbackApp(m, appId),
@@ -817,7 +831,8 @@ export class ModuleRuntime {
       .limit(1);
     if (!row || row.deletedAt || row.lockedReason) return null;
     const app: HookApp = { id: row.id, slug: row.slug, workspaceId: row.workspaceId };
-    if (!(await this.isEnabled(app.workspaceId, m.name))) return null;
+    const enabled = await this.enabledModules(app.workspaceId);
+    if (!enabled.has(m.name)) return null;
     const config = this.effectiveConfig(m, (await readConfigRow(app.id, m.name, db)).config);
     const declared = new Set((m.secrets ?? []).map((s) => s.name));
     let limits: Promise<Limits> | null = null;
@@ -842,6 +857,7 @@ export class ModuleRuntime {
           meta: { ...meta, module: m.name, end_user: 'anon' },
         });
       },
+      contributions: (slot) => this.contributions(slot, enabled),
     };
   }
 
@@ -1538,22 +1554,24 @@ export class ModuleRuntime {
   async runHook(hook: 'onPublish', app: HookApp & { version: number }): Promise<void>;
   async runHook(hook: 'onAppCreate' | 'onPublish' | 'onAppDelete', app: HookApp & { version?: number }): Promise<void> {
     // NSO-346: an opt-in module that is off for the workspace gets no create /
-    // publish hook; onAppDelete always runs (it cleans up what it kept then).
-    let enabled: ReadonlySet<string> | null = null;
+    // publish hook, and contributes nothing to the others' (NSO-360);
+    // onAppDelete always runs, with every contribution (it cleans up what a
+    // module kept while it was on).
+    let enabled: ReadonlySet<string> | undefined;
+    if (hook !== 'onAppDelete') {
+      try {
+        enabled = await this.enabledModules(app.workspaceId);
+      } catch (err) {
+        this.deps.log.error('module availability check failed', { hook, app_id: app.id, error: dbErrorForLog(err) });
+        enabled = this.defaultModules();
+      }
+    }
     for (const m of this.modules) {
       const fn = m.hooks?.[hook] as ((a: typeof app, s: ModuleServices) => unknown) | undefined;
       if (!fn) continue;
-      if (hook !== 'onAppDelete' && m.availability === 'opt-in') {
-        try {
-          enabled ??= await this.enabledModules(app.workspaceId);
-        } catch (err) {
-          this.deps.log.error('module availability check failed', { module: m.name, hook, app_id: app.id, error: dbErrorForLog(err) });
-          continue;
-        }
-        if (!enabled.has(m.name)) continue;
-      }
+      if (enabled && !enabled.has(m.name)) continue;
       try {
-        await fn(app, this.services());
+        await fn(app, this.services(enabled));
       } catch (err) {
         this.deps.log.error('module hook failed', { module: m.name, hook, app_id: app.id, error: dbErrorForLog(err, { stack: true }) });
       }
@@ -1679,8 +1697,10 @@ export class ModuleRuntime {
           })
         );
       }
-      // NSO-346: an opt-in module off for the app's workspace answers nothing else (not counted).
-      if (m.availability === 'opt-in' && !(await this.isEnabled(app.workspaceId, m.name))) {
+      // NSO-346: an opt-in module off for the app's workspace answers nothing else (not counted);
+      // NSO-360: nor does it contribute to the modules that are on.
+      const enabled = await this.enabledModules(app.workspaceId);
+      if (!enabled.has(m.name)) {
         return errorResult(moduleNotEnabled(m.name), m.name);
       }
       const hit = matchRoute(this.routes.get(m.name) ?? [], req.method, match[2] ?? '/');
@@ -1708,7 +1728,7 @@ export class ModuleRuntime {
             app: { id: app.id, slug: app.slug, workspaceId: app.workspaceId },
             cookieHeader: req.header('cookie'),
           }),
-        context: (principal) => this.context(m, app, principal, getLimits),
+        context: (principal) => this.context(m, app, principal, getLimits, enabled),
         limit: async (name) => {
           const l = await getLimits();
           const v = l[name];
@@ -1767,7 +1787,8 @@ export class ModuleRuntime {
     m: AnyModule,
     app: PlatformApp,
     principal: Principal,
-    getLimits: () => Promise<Limits>
+    getLimits: () => Promise<Limits>,
+    enabled: ReadonlySet<string>
   ): Promise<ModuleContext<unknown>> {
     const deps = this.deps;
     const row = await readConfigRow(app.id, m.name, deps.db());
@@ -1779,7 +1800,7 @@ export class ModuleRuntime {
       module: m.name,
       principal,
       config,
-      ...this.services(),
+      ...this.services(enabled),
       rules: { decide: (rule, ownerId) => decideAccess(rule, principal, ownerId) },
       limits: getLimits,
       rateLimit: (bucket, key, max, windowMs) => deps.rateLimit(`mod:${m.name}:${app.id}:${bucket}:${key}`, max, windowMs),

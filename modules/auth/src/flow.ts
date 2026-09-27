@@ -409,7 +409,7 @@ export async function providerCallback(input: EndUserCallbackInput<AuthConfig>):
   const view = await services.app(record.app_id);
   if (!view) return page(404, 'App not available', 'This app does not exist any more.');
   const back = { href: `${hostOrigin(record.host)}${record.return_to}`, label: 'Back to the app' };
-  const provider = enabledProvider(services.contributions, view.config, record.provider);
+  const provider = enabledProvider(view.contributions, view.config, record.provider);
   if (!provider) return page(404, 'Sign-in method turned off', 'This sign-in method is not turned on for this app any more.', back);
   if (!sameText(connectionOf(provider, view.config), record.connection)) {
     await view.audit('sign_in_denied', { provider: provider.id, reason: 'settings_changed' });

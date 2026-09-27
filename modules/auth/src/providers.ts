@@ -8,7 +8,9 @@
  * `providers.<id>` without `enabled`), its secrets (its own declared names:
  * the app's value, else the operator's `AUTH_<ID>_…` env fallback it
  * declared) and the operator's `AUTH_<ID>_*` env vars, and the time limits
- * of provider and observer calls.
+ * of provider and observer calls. Both slots are read through the request's
+ * (or the callback app's) contributions: only the modules on for the app's
+ * workspace.
  */
 import { createHash } from 'node:crypto';
 import type { Logger } from '@drobek/core';
