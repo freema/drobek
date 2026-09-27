@@ -22,9 +22,9 @@
  *
  * Changes that need the confirmation of a workspace ADMIN (confirmRequired
  * with `confirmRole: 'admin'`, NSO-322 H3 — only admins register upstreams,
- * so only they may let an app spend one's secret; an editor may reject):
- *  - assigning an upstream the app did not have (the app starts spending that
- *    upstream's secret — "povolení upstreamu appce"); confirming it puts the
+ * so only they may let an app use an upstream's credentials; an editor may reject):
+ *  - assigning an upstream the app did not have (the app gains access using
+ *    that upstream's credentials); confirming it puts the
  *    app on the upstream's allow-list (`allowed_app_ids`, onConfirmed), which
  *    the forward path checks, and binds the assignment to the record's id;
  *  - pointing an assignment at another upstream record (a written `id` that

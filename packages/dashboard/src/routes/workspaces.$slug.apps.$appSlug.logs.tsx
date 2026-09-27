@@ -32,14 +32,14 @@ export default function AppLogsRoute() {
     <AppPage header={d.header}>
       <h2 style={ui.title}>Logs</h2>
       <p style={ui.hint}>
-        What <strong>{d.appSlug}</strong> reported — the same data the agent reads with <code>get_logs</code>. Loaded{' '}
+        App errors, build results and request totals for <strong>{d.appSlug}</strong>. Last refreshed{' '}
         <span data-testid="logs-loaded-at">{formatTimestamp(d.loadedAt)}</span>.
       </p>
 
       <Form method="get" style={ui.toolbar} data-testid="logs-filter">
         <div style={ui.field}>
           <label style={ui.label} htmlFor="since">
-            Since
+            Time range
           </label>
           <select id="since" name="since" defaultValue={d.since} style={ui.input} data-testid="logs-since">
             {d.sinceOptions.map((o) => (
@@ -54,11 +54,11 @@ export default function AppLogsRoute() {
         </button>
       </Form>
 
-      <h2 style={h2}>Runtime errors</h2>
+      <h2 style={h2}>App errors</h2>
       <SectionError error={d.runtime.error} testId="runtime-error" />
       {d.runtime.entries.length === 0 && !d.runtime.error ? (
         <p style={ui.empty} data-testid="runtime-empty">
-          No browser errors in this window.
+          No browser errors reported in this time range.
         </p>
       ) : (
         <div style={ui.tableWrap}>
@@ -89,11 +89,11 @@ export default function AppLogsRoute() {
         </div>
       )}
 
-      <h2 style={h2}>Compiles</h2>
+      <h2 style={h2}>Builds</h2>
       <SectionError error={d.compile.error} testId="compile-error" />
       {d.compile.entries.length === 0 && !d.compile.error ? (
         <p style={ui.empty} data-testid="compile-empty">
-          No compiles in this window.
+          No builds in this time range.
         </p>
       ) : (
         <div style={ui.tableWrap}>
@@ -113,8 +113,8 @@ export default function AppLogsRoute() {
                   <td style={{ ...ui.td, whiteSpace: 'nowrap' }}>{formatTimestamp(c.at)}</td>
                   <td style={ui.td}>{c.version === null ? <span style={ui.muted}>not stored</span> : `v${c.version}`}</td>
                   <td style={ui.td}>
-                    <span style={c.ok ? ui.okBadge : ui.badBadge}>{c.ok ? 'ok' : 'failed'}</span>
-                    {c.warning_count > 0 ? <span style={ui.muted}> · {c.warning_count} warnings</span> : null}
+                    <span style={c.ok ? ui.okBadge : ui.badBadge}>{c.ok ? 'succeeded' : 'failed'}</span>
+                    {c.warning_count > 0 ? <span style={ui.muted}> · {c.warning_count} {c.warning_count === 1 ? 'warning' : 'warnings'}</span> : null}
                     {c.errors.map((e, j) => (
                       <div key={j} style={ui.mono}>
                         {e.file ? `${e.file}${e.line !== null ? `:${e.line}` : ''} ` : ''}
@@ -135,7 +135,7 @@ export default function AppLogsRoute() {
       <SectionError error={d.requests.error} testId="requests-error" />
       {d.requests.entries.length === 0 && !d.requests.error ? (
         <p style={ui.empty} data-testid="requests-empty">
-          No requests in this window.
+          No requests recorded in this time range.
         </p>
       ) : (
         <div style={ui.tableWrap}>

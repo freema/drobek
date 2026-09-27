@@ -1,6 +1,6 @@
 /**
- * @drobek/dashboard — pure view shaping for the U8 minimal dashboard (PHY-74
- * slice / PHY-62). These functions are db-free and unit-tested: the loaders in
+ * @drobek/dashboard — pure view shaping for dashboard pages.
+ * These functions are db-free and unit-tested: the loaders in
  * ./routes/* fetch rows (apps.server.ts) and hand them here for shaping, so the
  * ordering / field-mapping / authz decisions are testable without a database.
  */

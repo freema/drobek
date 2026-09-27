@@ -41,7 +41,7 @@ const PLACEHOLDER_TEXT: Record<Exclude<AppThumbnail, { kind: 'frame' }>['reason'
   password: 'password protected',
   'taken-down': 'taken down',
   inactive: 'not live',
-  'nothing-compiled': 'nothing compiled yet',
+  'nothing-compiled': 'no successful build yet',
 };
 
 const styles = {
@@ -243,7 +243,7 @@ export default function WorkspaceAppsRoute() {
 
       {total === 0 ? (
         <p style={styles.empty} data-testid="apps-empty">
-          No apps yet — ask your agent to create one with the drobek MCP tools.
+          No apps yet. Ask your connected coding agent to create an app in this workspace.
         </p>
       ) : apps.length === 0 ? (
         <p style={styles.empty} data-testid="apps-no-match">
