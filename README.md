@@ -1,3 +1,5 @@
+![The drobek pixel mascot](./docs/assets/drobek.svg)
+
 # drobek
 
 [![CI](https://github.com/freema/drobek/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/freema/drobek/actions/workflows/ci.yml)
@@ -5,16 +7,57 @@
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](./LICENSE)
 [![Image](https://img.shields.io/badge/image-ghcr.io%2Ffreema%2Fdrobek-2496ed)](https://github.com/freema/drobek/pkgs/container/drobek)
 
-> An open-source cloud workspace for agent-built web apps. Your own agent
-> (Claude, Claude Code, Cursor, Codex, …) connects over MCP and works
-> **directly in drobek**: every write is compiled on the server, kept as a
-> version and previewable at once, and published when you say so. Apps get
-> their backend only through TypeScript platform modules — sign-in, data,
-> forms, e-mail, file uploads, external APIs — and the humans get a dashboard.
+> Open-source hosting for small web apps your own AI agent builds.
 
-**Status:** [latest release](https://github.com/freema/drobek/releases/latest),
-self-hostable (AGPL-3.0); the hosted edition is [drobek.app](https://drobek.app).
-Apps built with it: the [gallery](https://www.drobek.app/gallery).
+Bring Claude, Claude Code, Cursor or Codex. Your agent connects over MCP,
+writes the app directly into a workspace and gets compile feedback and a
+live preview. You decide when to publish. Platform modules supply sign-in,
+data, forms, e-mail, uploads and external APIs; a dashboard gives you control
+over the app, its users and its secrets.
+
+**[Try drobek.app](https://drobek.app/login)** ·
+**[Self-host](#self-host-quickstart)** ·
+**[Gallery](https://www.drobek.app/gallery)** ·
+**[Docs](https://www.drobek.app/docs)**
+
+## Choose where to run it
+
+| | Get started |
+| --- | --- |
+| **drobek.app** | The maintainer's hosted instance. [Sign in](https://drobek.app/login) and [connect your agent](https://drobek.app/build-with-your-agent). |
+| **Your own server** | Run the same public image with Postgres, Redis and Caddy. Follow the [self-host quickstart](#self-host-quickstart), then connect your agent to your server's `/mcp` endpoint. |
+
+The core is **AGPL-3.0**. Building, testing and self-hosting need no access
+to the private repository that operates drobek.app. The
+[agent plugins](https://github.com/freema/drobek-plugin) are **MIT** and can
+connect to either instance.
+
+## See what people build
+
+- [Pixel Crumbs](https://pixel-crumbs.drobek.app/) — a browser pixel-art and animation editor.
+- [Drobek Skok](https://drobek-skok.drobek.app/) — a pixel platformer with a leaderboard.
+- [Pekárna Drobek](https://pek-rna-drobek.drobek.app/) — a small bakery's demo website.
+
+These are public apps on drobek.app. [Browse the gallery](https://www.drobek.app/gallery)
+for more examples.
+
+## Build your first app
+
+1. Choose an instance above and [connect your agent](#connect-your-agent).
+2. Ask for a small app, for example:
+
+   ```text
+   Build a shift planner for our team on drobek.
+   Let people sign in and see their own shifts.
+   Give me a preview to try before publishing.
+   ```
+
+3. Open the preview, ask for changes, then ask the agent to publish when ready.
+
+Apps run in the browser. Their backend comes from installed platform
+modules; arbitrary app server code and per-app `npm install` are outside
+the execution model. For your own backend integration,
+[write a platform module](#extend-drobek-write-a-module).
 
 ## The loop
 
@@ -44,6 +87,11 @@ Why it is built this way:
   (+ Caddy for TLS). It runs on an ordinary small server.
 
 ## Core concepts
+
+**Agent plugins and platform modules do different jobs.** A plugin teaches
+your agent how to build on drobek. A module runs on the drobek server and
+adds backend capabilities for apps. Installing a plugin does not install
+server modules. See the [repository and compatibility map](./docs/ECOSYSTEM.md).
 
 - **Workspace** — people with roles (workspace-admin / editor / viewer).
 - **App** — a globally unique slug, owned by a workspace. Its hosts:
