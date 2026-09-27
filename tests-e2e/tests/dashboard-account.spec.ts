@@ -243,13 +243,13 @@ test('account: OAuth connection is listed; revoke kills access + refresh (reuse 
   const csvRes = await page.request.get(`/workspaces/${ws.slug}/activity/export.csv?actor=user`);
   expect(csvRes.status()).toBe(200);
   const csvLines = (await csvRes.text()).split('\r\n').filter((l) => l.length > 0);
-  expect(csvLines[0]).toBe('time,action,actor_kind,actor,subject_type,subject');
+  expect(csvLines[0]).toBe('time,action,actor_kind,actor,subject_type,subject,summary');
   const actions = csvLines.slice(1).map((l) => l.split(',')[1]);
   expect(actions).toEqual(
     expect.arrayContaining(['api_key.create', 'api_key.revoke', 'oauth_client.revoke'])
   );
   const revokeLine = csvLines.find((l) => l.split(',')[1] === 'oauth_client.revoke') as string;
-  expect(revokeLine.split(',').slice(2)).toEqual(['user', email, 'oauth_client', clientId]);
+  expect(revokeLine.split(',').slice(2, 6)).toEqual(['user', email, 'oauth_client', clientId]);
   const endUserCsv = await (
     await page.request.get(`/workspaces/${ws.slug}/activity/export.csv?actor=end_user`)
   ).text();
