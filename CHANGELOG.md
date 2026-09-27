@@ -1,6 +1,6 @@
 # Changelog — drobek (core)
 
-## Unreleased
+## v0.3.1 — 2026-09-27
 
 ### Changed
 - **Who may publish is per workspace, in both modes** (NSO-366). A super-admin sets each workspace to `default` (the `PUBLISH_APPROVAL` mode decides), `allowed` (may publish in both modes — what v0.3.0 called approved; approved workspaces stay allowed) or `blocked` (may not publish in either mode); setting one clears the other. For one publish: a super-admin publisher is always allowed, a blocked workspace is refused, an allowed one or one with a super-admin member may publish, otherwise `open` allows and `approval` refuses as before. `PUBLISH_APPROVAL` still defaults to `open`, so a server lets everyone publish and the operator turns a workspace off when needed.
