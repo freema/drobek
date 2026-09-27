@@ -250,6 +250,34 @@ everyone (on drobek.app it is shown at www.drobek.app/gallery).
   `gallery_disabled` mean: tell the user, do not retry. The owner can do all
   of this in the drobek dashboard as well.
 
+## Custom domains
+
+An app can also answer on a domain the user owns — the same as the dashboard's
+Domains tab:
+
+1. `add_domain({ app_id, host })` (scope `write`) → the domain, pending, with
+   the two DNS `records` the user creates at their DNS provider: CNAME
+   `<host>` → `<slug>.<APPS_DOMAIN>` (an apex name: ALIAS / ANAME / CNAME
+   flattening to the same target) and TXT `_drobek.<host>` =
+   `drobek-verify=<token>`. Show the user both, exactly.
+2. `verify_domain({ app_id, host })` once they created them. Verified → the
+   domain serves the published version. `domain_not_verified` says which
+   record is missing or wrong (`cname`, `txt`, `records`): tell the user —
+   DNS can take up to 48 hours, so verify again after a while, not in a loop.
+   `dns_unavailable` = a lookup failed; try again in a few minutes.
+3. `list_domains({ app_id })` shows every domain with its status, records and
+   last check; `get_app` has them in short.
+
+What changes the public site needs the user's explicit yes
+(`user_confirmed: true`, else `user_confirmation_required`):
+`set_primary_domain({ app_id, host, user_confirmed })` (scope `publish`; the
+production address then redirects to that verified domain; `host: null`
+clears it) and `remove_domain({ app_id, host, user_confirmed })` of a
+verified domain (it stops serving at once; a pending one goes without
+confirmation). Refusals: `invalid_hostname`, `hostname_not_allowed`,
+`domain_already_added`, `domain_taken`, `limit_exceeded`
+(DOMAINS_MAX_PER_APP; 0 = custom domains are off for the workspace).
+
 ## Errors
 
 A failed call returns `isError: true` with `{ code, message, hint }` — the
@@ -257,7 +285,8 @@ A failed call returns `isError: true` with `{ code, message, hint }` — the
 `invalid_path`, `limit_exceeded`, `secret_in_source`, `app_locked`,
 `app_locked_by_admin`, `busy`, `not_publishable`, `not_published`,
 `user_confirmation_required`, `gallery_hidden`, `gallery_disabled`,
-`publish_not_approved`, `publish_blocked`, `asset_too_large`, `module_not_enabled`, …).
+`publish_not_approved`, `publish_blocked`, `asset_too_large`, `module_not_enabled`,
+`domain_not_verified`, `dns_unavailable`, …).
 Compile problems are not tool failures: they come back in `compile.errors`. The
 full code → meaning → fix table is the Error catalogue in llms-full.txt (core
 codes, then one section per module); a module's own codes are also in

@@ -7,12 +7,11 @@ description: you create a new app or change one — its files, the drobek.json i
 
 ## 1. When to use
 
-Before the first `write_files` of an app. A drobek app is a static web app:
-the server compiles your sources with esbuild on every write and serves the
-result. It never RUNS anything: no Node, no `npm install`, no
-`package.json` scripts, no server routes, no `process.env`, no backend code
-of yours. Every backend (sign-in, records, forms, e-mail, uploads, external
-APIs) is a platform module: `skill_info()` lists them.
+Before the first `write_files` of an app. A drobek app is a static web app: the server compiles
+your sources with esbuild on every write and serves the result. It never RUNS anything: no Node, no
+`npm install`, no `package.json` scripts, no server routes, no `process.env`, no backend code of
+yours. Every backend (sign-in, records, forms, e-mail, uploads, external APIs) is a platform module:
+`skill_info()` lists them.
 
 ## 2. Minimal working code
 
@@ -105,6 +104,9 @@ The loop (tool → result):
 7. `get_app({ app_id })` = files, versions, lock, modules; `restore_version({ app_id, version })` = new version copying an old one.
 8. Backends: `skill_info({ name })`, `configure_module({ app_id, module, config })`, `query_data({ app_id, collection })`.
 9. Binaries: `create_asset_upload({ app_id, path, size })` → `upload_url` + `curl -T`; `list_assets({ app_id })`, `delete_asset({ app_id, path })`.
+10. Custom domain: `add_domain({ app_id, host })` → show the user the CNAME + TXT `records` → `verify_domain({ app_id, host })`
+    after they created them (DNS can take hours); `list_domains({ app_id })`. `set_primary_domain({ app_id, host, user_confirmed })`
+    and `remove_domain({ app_id, host, user_confirmed })` of a verified domain: only after the user's explicit yes.
 
 `drobek.json`: `{ "imports": { "<bare>": "https://…" }, "entries"?: ["src/admin.tsx"], "beacon"?: false }`.
 Add a package as a pinned esm.sh URL, e.g. `"date-fns": "https://esm.sh/date-fns@4.1.0"`;
@@ -112,18 +114,15 @@ Add a package as a pinned esm.sh URL, e.g. `"date-fns": "https://esm.sh/date-fns
 
 ## 4. Rules and limits
 
-- `src/main.tsx|ts|jsx|js` → `/main.js` + imported CSS → `/main.css`; each
-  `entries` file → `/<name>.js`. No `src/main.*` = plain HTML served as written.
-- JSX = automatic runtime (no `import React`). Types are stripped, NOT checked.
-- Paths app-relative (`src/App.tsx`), no `/` prefix, no `..`. Text files
-  only: .tsx .ts .jsx .js .mjs .css .json .html .txt .md .svg .webmanifest.
-  Video, audio, images, fonts: `create_asset_upload` (an upload URL, never
-  base64) → the preview serves it at `/<path>`, production after `publish`.
+- `src/main.tsx|ts|jsx|js` → `/main.js` + imported CSS → `/main.css`; each `entries` file → `/<name>.js`. No
+  `src/main.*` = plain HTML served as written. JSX = automatic runtime (no `import React`); types stripped, NOT checked.
+- Paths app-relative (`src/App.tsx`), no `/` prefix, no `..`. Text files only: .tsx .ts .jsx .js
+  .mjs .css .json .html .txt .md .svg .webmanifest. Video, audio, images, fonts: `create_asset_upload`
+  (an upload URL, never base64) → the preview serves it at `/<path>`, production after `publish`.
 - 1–20 changes per write; `reasoning` ≤ 300 chars. Per version (defaults; the briefing has
   this server's): 200 files, 512 KiB per file, 5 MiB total, 10 s build.
-- Secrets in files → the write is refused (`secret_in_source`); the owner
-  sets secrets in the drobek dashboard. Never ask for their values.
-- Lease: a write holds the app for 3 minutes (renewed per write).
+- Secrets in files → the write is refused (`secret_in_source`); the owner sets secrets in the drobek
+  dashboard. Never ask for their values. Lease: a write holds the app for 3 minutes (renewed per write).
 - Hosts: `<slug>--preview.<APPS_DOMAIN>` follows every write that compiled; `<slug>.<APPS_DOMAIN>`
   changes only on publish; `<slug>--v<N>.…` = version N. Sources and `drobek.json` are not
   served; unknown extension-less paths get `index.html` (client routing works).
@@ -144,7 +143,8 @@ Add a package as a pinned esm.sh URL, e.g. `"date-fns": "https://esm.sh/date-fns
 | `busy` | the compiler queue is full | retry the same call in a few seconds |
 | `not_publishable` | that version did not compile | publish the newest version that compiled |
 | `publish_blocked` / `publish_not_approved` | the operator turned publishing off for the workspace / has not approved it (a request was e-mailed) | tell the user (`contact`), share `preview_url`; do not retry |
-| `user_confirmation_required` | `set_gallery_listing` / `set_workspace_publishing` without the user's yes | ask the user; call again with `user_confirmed: true` only if they say yes |
+| `user_confirmation_required` | gallery listing, workspace publishing, primary domain or removing a live domain without the user's yes | ask the user; call again with `user_confirmed: true` only if they say yes |
+| `domain_not_verified` | the CNAME or TXT record of a custom domain is missing or wrong (`cname`, `txt`) | tell the user which record to fix; `verify_domain` again after a while |
 | `invalid_params` | > 20 files, same path twice, long reasoning | split the change; fix the arguments |
 | `not_found` | wrong `app_id` or no access | `list_apps` |
 | `forbidden` | viewer role | ask for the editor role |

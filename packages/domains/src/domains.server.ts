@@ -114,6 +114,24 @@ async function loadRow(app: DomainApp, domainId: string): Promise<DomainRow> {
   return row;
 }
 
+/**
+ * One domain of the app by its hostname (normalised like addDomain: a pasted
+ * URL, upper case or a trailing dot still match), or null. The MCP domain
+ * tools address a domain by hostname; the dashboard by id.
+ */
+export async function domainByHostname(app: DomainApp, rawHostname: unknown, env: NodeJS.ProcessEnv = process.env): Promise<DomainView | null> {
+  if (typeof rawHostname !== 'string') return null;
+  const checked = checkHostname(rawHostname, hostnameRules(env));
+  const hostname = checked.ok ? checked.hostname : rawHostname.trim().toLowerCase().replace(/\.+$/, '');
+  if (hostname === '') return null;
+  const [row] = await getDb()
+    .select()
+    .from(domains)
+    .where(and(eq(domains.appId, app.id), eq(domains.hostname, hostname)))
+    .limit(1);
+  return row ? view(row, app, appsOrigin(env).domain) : null;
+}
+
 /** The app's domains, oldest first, with their DNS instructions. */
 export async function listDomains(app: DomainApp, env: NodeJS.ProcessEnv = process.env): Promise<DomainView[]> {
   const rows = await getDb().select().from(domains).where(eq(domains.appId, app.id)).orderBy(domains.createdAt, domains.hostname);

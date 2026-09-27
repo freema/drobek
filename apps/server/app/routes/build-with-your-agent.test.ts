@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { mcpEndpoint } from '@drobek/agent-dx';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { AGENT_GUIDE_URL, mcpEndpoint } from '@drobek/agent-dx';
 import { loader } from './build-with-your-agent';
 
 describe('/build-with-your-agent loader', () => {
@@ -18,5 +18,21 @@ describe('/build-with-your-agent loader', () => {
     expect(data.mcpUrl).toBe(mcpEndpoint());
     expect(data.installCommand).toBe('cp -r skills/drobek ~/.claude/skills/drobek');
     expect(data.tools.map((t) => t.name)).toContain('publish');
+  });
+});
+
+describe('/build-with-your-agent agent guide link (NSO-366)', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('links the agent guide on GitHub without DOCS_URL', () => {
+    vi.stubEnv('DOCS_URL', '');
+    expect(loader().guideUrl).toBe(AGENT_GUIDE_URL);
+  });
+
+  it('links <DOCS_URL>/agent when DOCS_URL is set', () => {
+    vi.stubEnv('DOCS_URL', 'https://www.drobek.app/docs');
+    expect(loader().guideUrl).toBe('https://www.drobek.app/docs/agent');
   });
 });

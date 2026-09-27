@@ -34,6 +34,13 @@ export const TOOL_ERROR_CODES = [
   'rate_limited',
   // NSO-346: configure_module on an opt-in module that is off for the workspace.
   'module_not_enabled',
+  // NSO-366: the custom-domain tools.
+  'invalid_hostname',
+  'hostname_not_allowed',
+  'domain_already_added',
+  'domain_taken',
+  'domain_not_verified',
+  'dns_unavailable',
   'internal_error',
 ] as const;
 

@@ -17,7 +17,7 @@ import { basename, dirname, resolve } from 'node:path';
 import { createRequestHandler } from '@react-router/express';
 import type { RequestHandler } from 'express';
 import type { ServerBuild } from 'react-router';
-import { errorHint } from '@drobek/agent-dx';
+import { docsUrlConfigError, errorHint } from '@drobek/agent-dx';
 import { appsOriginConfigError, assetLimitsOf, createAssetUploadHandler, previewUrl, publishApprovalConfigError } from '@drobek/apps';
 import { trustProxyConfigError } from '@drobek/auth';
 import { createConsoleLogger, secretsConfigError } from '@drobek/core';
@@ -50,6 +50,7 @@ const configError =
   frameSrcConfigError(process.env) ??
   galleryFrameAncestorsConfigError(process.env) ??
   publishApprovalConfigError(process.env) ??
+  docsUrlConfigError(process.env) ??
   emailConfigError(process.env);
 if (configError) {
   console.error(configError);

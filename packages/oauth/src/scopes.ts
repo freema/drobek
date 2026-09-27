@@ -6,11 +6,15 @@
  * membership role in the targeted workspace decides what each call may touch.
  *
  *   read    — look: list apps (+ who am I), get an app, read its files, read skills,
- *             query an app's stored data, read its logs, list its assets.
+ *             query an app's stored data, read its logs, list its assets and
+ *             its custom domains.
  *   write   — change: create apps, write files (new versions), restore,
- *             configure platform modules, upload (upload URLs) and delete assets.
- *   publish — make a version live at its public URL (the `publish` tool, M0-06)
- *             and list it in the public gallery (`set_gallery_listing`, NSO-340);
+ *             configure platform modules, upload (upload URLs) and delete assets,
+ *             add, verify and remove custom domains (NSO-366).
+ *   publish — make a version live at its public URL (the `publish` tool, M0-06),
+ *             list it in the public gallery (`set_gallery_listing`, NSO-340) and
+ *             choose the primary domain the production address redirects to
+ *             (`set_primary_domain`, NSO-366);
  *             a super-admin also allows or blocks a workspace's publishing
  *             (`set_workspace_publishing`, NSO-366 — registered for super-admins only).
  *
@@ -77,15 +81,21 @@ export const TOOL_SCOPES = {
   query_data: 'read',
   get_logs: 'read',
   list_assets: 'read',
+  list_domains: 'read',
   create_app: 'write',
   write_files: 'write',
   restore_version: 'write',
   configure_module: 'write',
   create_asset_upload: 'write',
   delete_asset: 'write',
+  add_domain: 'write',
+  verify_domain: 'write',
+  remove_domain: 'write',
   publish: 'publish',
   // NSO-340: listing in the public gallery is public exposure, like publishing.
   set_gallery_listing: 'publish',
+  // NSO-366: the primary domain decides where the production address sends every visitor.
+  set_primary_domain: 'publish',
   // NSO-366: who may publish is decided under the publish scope; @drobek/mcp registers it for super-admins only.
   set_workspace_publishing: 'publish',
 } as const satisfies Record<string, Scope | null>;

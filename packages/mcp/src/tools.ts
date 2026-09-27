@@ -68,7 +68,7 @@ import {
   type WorkspacePublishing,
 } from '@drobek/apps';
 import { actorKindForSurface } from '@drobek/audit';
-import { verifiedDomainsOf } from '@drobek/domains';
+import { listDomains, verifiedDomainsOf } from '@drobek/domains';
 import { maskEmail } from '@drobek/auth';
 import {
   BINARY_EXTS,
@@ -340,6 +340,12 @@ export async function getApp(ctx: CallContext, args: { app_id: string }) {
     modules,
     skills: skills(ctx, enabled),
     gallery: galleryOut(app, ctx.deps.env),
+    // NSO-366: the custom domains in short; list_domains has the DNS records and the last check.
+    domains: (await listDomains({ id: app.id, slug: app.slug, workspaceId: app.workspaceId }, ctx.deps.env)).map((d) => ({
+      host: d.hostname,
+      status: d.verified ? 'verified' : 'pending',
+      primary: d.isPrimary,
+    })),
     ...publishOut(permission),
     ...(lock ? { lock } : {}),
   };

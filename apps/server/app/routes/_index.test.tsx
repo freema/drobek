@@ -45,6 +45,15 @@ describe('apex landing (NSO-331)', () => {
     expect(html).toContain('href="/build-with-your-agent"');
   });
 
+  it('links the agent guide on the docs site when DOCS_URL is set (NSO-366)', () => {
+    vi.stubEnv('DOCS_URL', 'https://www.drobek.app/docs');
+    try {
+      expect(render()).toContain('href="https://www.drobek.app/docs/agent"');
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('has exactly one h1, then h2s only', () => {
     const html = render();
     const headings = [...html.matchAll(/<h([1-6])\b/g)].map((m) => Number(m[1]));

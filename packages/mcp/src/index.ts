@@ -2,8 +2,9 @@
  * @drobek/mcp — the MCP tool bodies (M0-05, plan §4): list_apps, create_app,
  * get_app, read_file, write_files, restore_version, publish, skill_info,
  * configure_module, query_data, get_logs, create_asset_upload, list_assets,
- * delete_asset, set_gallery_listing and — for a super-admin only —
- * set_workspace_publishing. @drobek/oauth keeps the
+ * delete_asset, set_gallery_listing, the custom-domain tools (list_domains,
+ * add_domain, verify_domain, set_primary_domain, remove_domain) and — for a
+ * super-admin only — set_workspace_publishing. @drobek/oauth keeps the
  * Streamable HTTP transport, sessions and Bearer auth and delegates tool
  * registration here (`registerAppTools`).
  */

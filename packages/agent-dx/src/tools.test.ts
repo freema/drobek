@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { TOOL_DOCS, TOOL_NAMES, toolDoc } from './tools.js';
 
 describe('TOOL_DOCS manifest', () => {
-  it('documents exactly the 16 tools, in tools/list order', () => {
+  it('documents exactly the 21 tools, in tools/list order', () => {
     expect(TOOL_NAMES).toEqual([
       'list_apps',
       'create_app',
@@ -19,6 +19,11 @@ describe('TOOL_DOCS manifest', () => {
       'create_asset_upload',
       'list_assets',
       'delete_asset',
+      'list_domains',
+      'add_domain',
+      'verify_domain',
+      'set_primary_domain',
+      'remove_domain',
       'set_workspace_publishing',
     ]);
   });
@@ -62,6 +67,11 @@ describe('TOOL_DOCS manifest', () => {
       create_asset_upload: [false, false, false, false], // a new single-use URL on every call; the PUT stores
       list_assets: [true, false, true, false],
       delete_asset: [false, true, true, false], // removes a file; a second delete changes nothing more
+      list_domains: [true, false, true, false],
+      add_domain: [false, false, true, false], // a second add answers domain_already_added
+      verify_domain: [false, false, true, true], // asks public DNS; the same records give the same verdict
+      set_primary_domain: [false, false, true, true], // where the production address sends the public
+      remove_domain: [false, true, true, true], // a verified domain stops serving the public
       set_workspace_publishing: [false, false, true, false], // who may publish; the same call again answers changed:false
     };
     expect(Object.keys(table)).toEqual(TOOL_NAMES);
@@ -69,10 +79,12 @@ describe('TOOL_DOCS manifest', () => {
       expect(toolDoc(name).annotations, name).toEqual({ readOnlyHint, destructiveHint, idempotentHint, openWorldHint });
     }
     // Consistency rules a directory reviewer applies: a read-only tool is never
-    // destructive; only publish and the gallery listing reach the open world.
+    // destructive; only publish, the gallery listing and the domain tools that touch public DNS
+    // or the public site reach the open world.
+    const openWorld = ['publish', 'set_gallery_listing', 'verify_domain', 'set_primary_domain', 'remove_domain'];
     for (const t of TOOL_DOCS) {
       if (t.annotations.readOnlyHint) expect(t.annotations.destructiveHint, t.name).toBe(false);
-      expect(t.annotations.openWorldHint, t.name).toBe(t.name === 'publish' || t.name === 'set_gallery_listing');
+      expect(t.annotations.openWorldHint, t.name).toBe(openWorld.includes(t.name));
     }
   });
 
@@ -97,6 +109,28 @@ describe('TOOL_DOCS manifest', () => {
     expect(toolDoc('list_apps').returns).toContain('can_publish');
     expect(toolDoc('list_apps').returns).toContain('publishing');
     expect(toolDoc('get_app').returns).toContain('publishing');
+  });
+
+  it('the custom-domain tools mirror the Domains tab; what changes the public site needs the user\'s yes (NSO-366)', () => {
+    expect(toolDoc('list_domains').scope).toMatch(/^read \(viewer\+/);
+    for (const name of ['add_domain', 'verify_domain', 'remove_domain']) expect(toolDoc(name).scope, name).toMatch(/^write \(editor\+/);
+    expect(toolDoc('set_primary_domain').scope).toMatch(/^publish \(editor\+/);
+    expect(toolDoc('list_domains').returns).toContain('records');
+    expect(toolDoc('add_domain').description).toContain('_drobek.<host>');
+    expect(toolDoc('verify_domain').description).toMatch(/domain_not_verified/);
+    expect(toolDoc('verify_domain').description).toMatch(/48 hours/);
+    for (const name of ['set_primary_domain', 'remove_domain']) {
+      const doc = toolDoc(name);
+      expect(doc.description, name).toMatch(/user_confirmed: true/);
+      expect(doc.description, name).toMatch(/ONLY after the user explicitly said yes/);
+      expect(doc.fields.map((f) => f.name), name).toEqual(['app_id', 'host', 'user_confirmed']);
+    }
+    for (const name of ['add_domain', 'verify_domain']) {
+      expect(toolDoc(name).fields.map((f) => f.name), name).toEqual(['app_id', 'host']);
+      expect(toolDoc(name).description, name).not.toMatch(/user_confirmed/);
+    }
+    expect(toolDoc('get_app').returns).toContain('domains:[{host,status');
+    expect(toolDoc('publish').returns).toContain('verified custom domains');
   });
 
   it('publish is documented as explicit-request only, with the publish scope', () => {

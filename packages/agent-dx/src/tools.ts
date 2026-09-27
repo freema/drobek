@@ -3,7 +3,8 @@
  * (M0-05 NSO-283; publish M0-06 NSO-285; skill_info + configure_module M1-01
  * NSO-287; query_data M1-03 NSO-300; get_logs M1-07 NSO-290; set_gallery_listing
  * NSO-340; the asset tools NSO-358, assets honour publish NSO-362; the
- * super-admin-only set_workspace_publishing NSO-366). This is the SINGLE SOURCE OF TRUTH the agent-facing docs
+ * super-admin-only set_workspace_publishing and the custom-domain tools
+ * NSO-366). This is the SINGLE SOURCE OF TRUTH the agent-facing docs
  * render from (llms.txt / llms-full.txt / MCP docs resources / the build page),
  * and @drobek/mcp registers each tool with THIS title, description and
  * annotations — so the published docs cannot drift from the real tools.
@@ -100,11 +101,11 @@ export const TOOL_DOCS: ToolDoc[] = [
     title: 'Get an app',
     scope: 'read (any role in the workspace)',
     description:
-      'Snapshot of one app: everything list_apps shows plus the briefing, the source files of the latest version ({path,size,sha256}), the last 20 versions (number, created_at, actor_kind, reasoning, compile_status), the latest compile errors, the platform modules (per module: whether it is enabled for the app\'s workspace — an opt-in module the operator has not enabled says enabled:false and cannot be used —, its effective config, whether a change waits for the owner\'s confirmation, which secrets are set — names and hasSecret only, never values — and the module\'s info, e.g. proxy: the workspace upstreams with registered/assigned/call/hasSecret), the skills list (without the opt-in modules that are off for the workspace), the public gallery state (listed, description, hidden_by_admin, visible — or enabled:false when the server has no gallery), `can_publish` (+ `publish_contact` when the workspace may not publish: the operator blocked it or has not approved it yet) and the workspace\'s `publishing` state (default | allowed | blocked), and the write lock (holder + expires_at) if someone holds it. Use it to re-orient before editing.',
+      'Snapshot of one app: everything list_apps shows plus the briefing, the source files of the latest version ({path,size,sha256}), the last 20 versions (number, created_at, actor_kind, reasoning, compile_status), the latest compile errors, the platform modules (per module: whether it is enabled for the app\'s workspace — an opt-in module the operator has not enabled says enabled:false and cannot be used —, its effective config, whether a change waits for the owner\'s confirmation, which secrets are set — names and hasSecret only, never values — and the module\'s info, e.g. proxy: the workspace upstreams with registered/assigned/call/hasSecret), the skills list (without the opt-in modules that are off for the workspace), the public gallery state (listed, description, hidden_by_admin, visible — or enabled:false when the server has no gallery), the custom domains in short (host, status pending | verified, primary — list_domains has their DNS records), `can_publish` (+ `publish_contact` when the workspace may not publish: the operator blocked it or has not approved it yet) and the workspace\'s `publishing` state (default | allowed | blocked), and the write lock (holder + expires_at) if someone holds it. Use it to re-orient before editing.',
     annotations: READ_ONLY,
     fields: [{ name: 'app_id', type: 'string', required: true, description: 'The app id (from list_apps / create_app).' }],
     returns:
-      '{ app_id, name, slug, workspace, preview_url, published_url?, published_version?, latest_version, compile_status, compile_errors, briefing, files:[{path,size,sha256}], versions:[{number,created_at,actor_kind,reasoning,compile_status}], modules:{<name>:{enabled,configured,config,pending,pending_confirmation?,confirm_url?,secrets?:[{name,hasSecret}],info?}}, skills:[{name,use_when}], gallery:{enabled,listed?,description?,hidden_by_admin?,visible?}, can_publish, publish_contact?, publishing, lock?:{holder,expires_at}, locked_by_admin?, locked_reason? }',
+      '{ app_id, name, slug, workspace, preview_url, published_url?, published_version?, latest_version, compile_status, compile_errors, briefing, files:[{path,size,sha256}], versions:[{number,created_at,actor_kind,reasoning,compile_status}], modules:{<name>:{enabled,configured,config,pending,pending_confirmation?,confirm_url?,secrets?:[{name,hasSecret}],info?}}, skills:[{name,use_when}], gallery:{enabled,listed?,description?,hidden_by_admin?,visible?}, domains:[{host,status:"pending"|"verified",primary}], can_publish, publish_contact?, publishing, lock?:{holder,expires_at}, locked_by_admin?, locked_reason? }',
     example: { app_id: 'k3v9x0…' },
   },
   {
@@ -169,7 +170,7 @@ export const TOOL_DOCS: ToolDoc[] = [
     title: 'Publish a version',
     scope: 'publish (editor+ role in the workspace)',
     description:
-      'Put a version live at the production URL `https://<slug>.<APPS_DOMAIN>` — by default the newest version that compiled; pass an older `version` to roll production back. Only versions that compiled can be published (not_publishable otherwise). The preview URL keeps following your writes and asset uploads; production changes only when you publish again. Publishing the newest version that compiled puts the current assets live with it; an older version brings back the assets it served when it was last published. Call this ONLY when the user explicitly asks to publish / go live — never on your own initiative. Does not take the write lease. A workspace whose publishing the operator turned off answers publish_blocked; on a server whose operator approves each workspace for publishing, an unapproved workspace answers publish_not_approved (drobek has already sent the operator an approval request). Both carry the operator\'s e-mail in `contact` — do not retry; tell the user and give them the preview_url.',
+      'Put a version live at the production URL `https://<slug>.<APPS_DOMAIN>` and on every verified custom domain (list_domains) — by default the newest version that compiled; pass an older `version` to roll production back. Only versions that compiled can be published (not_publishable otherwise). The preview URL keeps following your writes and asset uploads; production changes only when you publish again. Publishing the newest version that compiled puts the current assets live with it; an older version brings back the assets it served when it was last published. Call this ONLY when the user explicitly asks to publish / go live — never on your own initiative. Does not take the write lease. A workspace whose publishing the operator turned off answers publish_blocked; on a server whose operator approves each workspace for publishing, an unapproved workspace answers publish_not_approved (drobek has already sent the operator an approval request). Both carry the operator\'s e-mail in `contact` — do not retry; tell the user and give them the preview_url.',
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
     fields: [
       { name: 'app_id', type: 'string', required: true, description: 'The app id.' },
@@ -326,6 +327,76 @@ export const TOOL_DOCS: ToolDoc[] = [
     ],
     returns: '{ deleted: "/<path>", note }',
     example: { app_id: 'k3v9x0…', path: 'film.mp4' },
+  },
+  {
+    name: 'list_domains',
+    title: 'List an app\'s custom domains',
+    scope: 'read (viewer+ role in the workspace)',
+    description:
+      'The custom domains of one app — the dashboard\'s Domains tab: per domain its `host`, `status` (pending = added, DNS not verified yet; verified = it serves the app\'s published version), `primary` (the production address `<slug>.<APPS_DOMAIN>` redirects there), the exact two DNS `records` to create (CNAME `<host>` → `<slug>.<APPS_DOMAIN>`; TXT `_drobek.<host>` = `drobek-verify=<token>`), `verified_at`, the last check (`last_check_at`, `last_error`: what was missing) and the certificate state. Plus the app\'s `cname_target` and `max_per_app` (DOMAINS_MAX_PER_APP for the workspace; 0 = custom domains are off). Read-only.',
+    annotations: READ_ONLY,
+    fields: [{ name: 'app_id', type: 'string', required: true, description: 'The app id.' }],
+    returns:
+      '{ app_id, cname_target, max_per_app, domains:[{ host, status:"pending"|"verified", primary, records:{ cname:{type,name,value}, txt:{type,name,value} }, verified_at, last_check_at, last_error, certificate }], note? }',
+    example: { app_id: 'k3v9x0…' },
+  },
+  {
+    name: 'add_domain',
+    title: 'Add a custom domain',
+    scope: 'write (editor+ role in the workspace)',
+    description:
+      'Attach a domain name the user owns to the app (pending until verified) and get the two DNS records the user creates at their DNS provider: CNAME `<host>` → `<slug>.<APPS_DOMAIN>` (an apex name like example.com: the provider\'s ALIAS / ANAME / CNAME flattening to the same target) and TXT `_drobek.<host>` = `drobek-verify=<token>`. Show the user both records, then call verify_domain once they created them. The same checks as the dashboard: a registrable domain or a subdomain of one — not an IP, not a bare public suffix, not a special-use name (invalid_hostname / hostname_not_allowed), never a name of this drobek server; at most DOMAINS_MAX_PER_APP domains per app, pending and verified together (limit_exceeded; 0 = custom domains are off for the workspace); a name the app already has answers domain_already_added, a name another app verified domain_taken. Nothing is served until the domain is verified.',
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    fields: [
+      { name: 'app_id', type: 'string', required: true, description: 'The app id.' },
+      { name: 'host', type: 'string', required: true, description: 'The domain name, e.g. shop.example.com (a pasted URL is reduced to its host).' },
+    ],
+    returns: '{ domain:{ host, status:"pending", primary:false, records:{ cname:{type,name,value}, txt:{type,name,value} }, verified_at:null, last_check_at:null, last_error:null, certificate }, next }',
+    example: { app_id: 'k3v9x0…', host: 'shop.example.com' },
+  },
+  {
+    name: 'verify_domain',
+    title: 'Verify a custom domain',
+    scope: 'write (editor+ role in the workspace)',
+    description:
+      'Look the domain\'s two DNS records up now — exactly what the dashboard\'s Verify button does. Both in place → the domain is verified and serves the app\'s published version at once (HTTPS: the certificate is issued at the first request). Otherwise the answer is domain_not_verified with `cname` and `txt` each "ok" | "missing" | "wrong" (and `records`, the values expected) — tell the user which record is missing or wrong; DNS changes can take from minutes up to 48 hours to be seen, so verify again after a while rather than in a loop. dns_unavailable = a lookup timed out or failed; nothing changed, try again in a few minutes. A verified domain whose records are gone loses its verification here too (`unverified: true`). The result is stored: list_domains shows `last_check_at` and `last_error`.',
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    fields: [
+      { name: 'app_id', type: 'string', required: true, description: 'The app id.' },
+      { name: 'host', type: 'string', required: true, description: 'A domain of the app (list_domains lists them).' },
+    ],
+    returns: '{ domain:{ host, status:"verified", primary, records, verified_at, last_check_at, last_error:null, certificate }, newly_verified, note } — or isError domain_not_verified / dns_unavailable with { host, cname, txt, records, unverified? }',
+    example: { app_id: 'k3v9x0…', host: 'shop.example.com' },
+  },
+  {
+    name: 'set_primary_domain',
+    title: 'Set the primary custom domain',
+    scope: 'publish (editor+ role in the workspace)',
+    description:
+      'Make a VERIFIED domain the app\'s primary address — the production address `<slug>.<APPS_DOMAIN>` then answers every visitor with a 302 redirect to it (preview and version hosts never redirect) — or pass `host: null` to clear it, so the production address serves the app itself again. It changes where the public is sent, so it needs `user_confirmed: true` — set it ONLY after the user explicitly said yes to exactly this change; without it the answer is user_confirmation_required and nothing changes. A domain that is not verified answers domain_not_verified.',
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    fields: [
+      { name: 'app_id', type: 'string', required: true, description: 'The app id.' },
+      { name: 'host', type: 'string | null', required: true, description: 'A verified domain of the app; null clears the primary domain.' },
+      { name: 'user_confirmed', type: 'boolean', required: false, description: 'true ONLY after the user explicitly said yes to this change.' },
+    ],
+    returns: '{ app_id, primary:host|null, previous_primary:host|null, note }',
+    example: { app_id: 'k3v9x0…', host: 'shop.example.com', user_confirmed: true },
+  },
+  {
+    name: 'remove_domain',
+    title: 'Remove a custom domain',
+    scope: 'write (editor+ role in the workspace)',
+    description:
+      'Detach a domain from the app. A pending domain goes at once. A VERIFIED domain serves the app, and removing it takes the app off that address immediately (a primary one also stops the redirect), so it needs `user_confirmed: true` — set it ONLY after the user explicitly said yes to removing exactly this domain; without it the answer is user_confirmation_required and nothing changes. The user can delete the DNS records afterwards; a certificate already issued expires on its own.',
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+    fields: [
+      { name: 'app_id', type: 'string', required: true, description: 'The app id.' },
+      { name: 'host', type: 'string', required: true, description: 'A domain of the app (list_domains lists them).' },
+      { name: 'user_confirmed', type: 'boolean (verified domains)', required: false, description: 'true ONLY after the user explicitly said yes to removing this domain.' },
+    ],
+    returns: '{ removed:host, was_verified, was_primary, note }',
+    example: { app_id: 'k3v9x0…', host: 'shop.example.com', user_confirmed: true },
   },
   {
     name: 'set_workspace_publishing',

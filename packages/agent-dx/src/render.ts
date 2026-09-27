@@ -17,6 +17,8 @@ import {
 } from './plugin.js';
 import { TOOL_DOCS, type ToolDoc } from './tools.js';
 import {
+  DOC_PAGES,
+  docPageUrl,
   mcpEndpoint,
   protectedResourceMetadataUrl,
   publicAppUrl,
@@ -28,9 +30,18 @@ export const SKILL_INSTALL_COMMAND = 'cp -r skills/drobek ~/.claude/skills/drobe
 /**
  * The agent guide in the source repository (NSO-298): the tools with their
  * scopes, the briefing, the skills and these surfaces, in one document.
- * Linked from /llms.txt.
+ * Linked from /llms.txt when DOCS_URL is unset.
  */
-export const AGENT_GUIDE_URL = 'https://github.com/freema/drobek/blob/main/docs/AGENT.md';
+export const AGENT_GUIDE_URL = DOC_PAGES.agent;
+
+/**
+ * The agent guide this server links: `<DOCS_URL>/agent` (`markdown`:
+ * `<DOCS_URL>/agent.md`, for agents) when DOCS_URL is set, else
+ * AGENT_GUIDE_URL.
+ */
+export function agentGuideUrl(env: NodeJS.ProcessEnv = process.env, opts: { markdown?: boolean } = {}): string {
+  return docPageUrl('agent', env, opts);
+}
 
 /** MCP docs resource URIs (stable — referenced by agents + tests). */
 export const DOCS_RESOURCE_LLMS_FULL = 'drobek://docs/llms-full';
@@ -85,6 +96,7 @@ export function renderLlmsTxt(env: NodeJS.ProcessEnv = process.env): string {
   // RFC 9728: the well-known suffix sits between the origin and the resource path.
   const prm = protectedResourceMetadataUrl(env);
   const toolList = TOOL_DOCS.map((t) => `- ${t.name} — ${t.title} (${t.scope})`);
+  const md = { markdown: true };
   return [
     '# drobek',
     '',
@@ -93,7 +105,10 @@ export function renderLlmsTxt(env: NodeJS.ProcessEnv = process.env): string {
     '## Docs',
     `- [Full contract](${app}/llms-full.txt): the MCP connect/OAuth flow, every tool with its inputs, result shape and an example, the app briefing (stack, files, import map, rules), limits, and the error catalogue.`,
     `- [Build with your agent](${app}/build-with-your-agent): install the drobek plugin, or connect the MCP server + install the drobek skill.`,
-    `- [Agent guide](${AGENT_GUIDE_URL}): docs/AGENT.md in the drobek source — how an agent connects, every tool with its scope, the briefing, the skills and llms.txt.`,
+    `- [Agent guide](${docPageUrl('agent', env, md)}): how an agent connects, every tool with its scope, the briefing, the skills and llms.txt.`,
+    `- [Platform modules](${docPageUrl('modules', env, md)}): the backends an app uses through the SDK (sign-in, data, forms, e-mail, files, external APIs) and how a module is written.`,
+    `- [Self-hosting](${docPageUrl('self-hosting', env, md)}): running a drobek server — configuration, TLS, custom domains, limits.`,
+    `- [Security](${docPageUrl('security', env, md)}): the threat model and what the platform enforces.`,
     '',
     '## Plugin (Claude Code, Codex, Cursor)',
     `- Claude Code: \`${PLUGIN_MARKETPLACE_ADD_COMMAND}\` then \`${PLUGIN_INSTALL_COMMAND}\`; build with \`${PLUGIN_BUILD_COMMAND} <idea>\`, move a Claude artifact with \`${PLUGIN_PORT_COMMAND}\`. The plugin connects ${PLUGIN_MCP_URL}.`,
@@ -146,7 +161,7 @@ export function renderLlmsFull(env: NodeJS.ProcessEnv = process.env, modules: re
       '',
       'The `resource` MUST be exactly the MCP endpoint (else `invalid_target`), and the token is accepted only there (else 401 invalid_token). Check that the `iss` in the authorization response equals the issuer (RFC 9207). Refresh tokens rotate; reuse of an old refresh token burns the lineage.',
       '',
-      'Scopes: read (list_apps, get_app, read_file, skill_info, query_data, get_logs, list_assets), write (create_app, write_files, restore_version, configure_module, create_asset_upload, delete_asset), publish (publish — make a version live on the production URL; call it only when the user explicitly asks — and set_gallery_listing — list a published app in the public gallery, only after the user said yes). The consent screen offers the requested scopes (read + write when none are requested) and the user may uncheck any; tools/list shows exactly the granted tools.',
+      'Scopes: read (list_apps, get_app, read_file, skill_info, query_data, get_logs, list_assets, list_domains), write (create_app, write_files, restore_version, configure_module, create_asset_upload, delete_asset, add_domain, verify_domain, remove_domain), publish (publish — make a version live on the production URL; call it only when the user explicitly asks —, set_gallery_listing — list a published app in the public gallery, only after the user said yes — and set_primary_domain — make the production URL redirect to a verified custom domain, only after the user said yes; a super-admin also gets set_workspace_publishing). The consent screen offers the requested scopes (read + write when none are requested) and the user may uncheck any; tools/list shows exactly the granted tools.',
       '',
       'The grant belongs to the USER, not to one workspace: list_apps lists every workspace with your role and the apps across them, and each tool call is authorized against your membership in the app\'s workspace (viewer+ reads, editor+ writes; a workspace or app you cannot reach answers not_found).',
       '',
@@ -202,6 +217,7 @@ export function renderLlmsFull(env: NodeJS.ProcessEnv = process.env, modules: re
       `- Codex and Cursor variants of the plugin: ${PLUGIN_REPO_URL}`,
       `- Install the drobek skill from a checkout of the drobek repo: ${SKILL_INSTALL_COMMAND}`,
       `- Human quickstart page: ${app}/build-with-your-agent`,
+      `- Agent guide (every tool with its scope, the briefing, the skills): ${docPageUrl('agent', env, { markdown: true })}`,
     ].join('\n')
   );
 

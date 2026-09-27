@@ -12,6 +12,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { AssetDisk, memoryUploadTokenStore } from '@drobek/apps';
 import { Compiler, type CompileLimits } from '@drobek/compile';
+import type { DnsResolver } from '@drobek/domains';
 import { noopLogger } from '@drobek/core';
 import { loadModuleRuntime, memoryRateLimiter, type ModuleRuntime } from '@drobek/modules';
 import type { AppChangedEvent, ToolDeps, ToolPrincipal } from '../context.js';
@@ -62,12 +63,37 @@ function testClock(start = Date.UTC(2026, 8, 23, 12, 0, 0)): TestClock {
   return { now: () => t, advance: (ms) => (t += ms) };
 }
 
+/** A mutable DNS zone for verify_domain (a missing name = NODATA, a name in `fail` = SERVFAIL). */
+interface TestZone {
+  txt: Record<string, string[]>;
+  cname: Record<string, string[]>;
+  fail: Set<string>;
+}
+
+function zoneResolver(zone: TestZone): DnsResolver {
+  const read = async (map: Record<string, string[]>, name: string) => {
+    if (zone.fail.has(name)) throw Object.assign(new Error('servfail'), { code: 'ESERVFAIL' });
+    const v = map[name];
+    if (!v) throw Object.assign(new Error('nodata'), { code: 'ENODATA' });
+    return v;
+  };
+  const nodata = () => Promise.reject(Object.assign(new Error('nodata'), { code: 'ENODATA' }));
+  return {
+    resolveTxt: async (name) => (await read(zone.txt, name)).map((v) => [v]),
+    resolveCname: (name) => read(zone.cname, name),
+    resolve4: nodata,
+    resolve6: nodata,
+  };
+}
+
 export interface TestDeps extends ToolDeps {
   events: AppChangedEvent[];
   clock: TestClock;
   /** NSO-358: the in-memory upload tokens and the upload-URL budget left (set it to test rate_limited). */
   uploadTokens: ReturnType<typeof memoryUploadTokenStore>;
   uploadBudget: { left: number };
+  /** NSO-366: what verify_domain's lookups answer. */
+  zone: TestZone;
 }
 
 export function testDeps(limits: Partial<CompileLimits> = {}): TestDeps {
@@ -76,6 +102,7 @@ export function testDeps(limits: Partial<CompileLimits> = {}): TestDeps {
   const events: AppChangedEvent[] = [];
   const uploadTokens = memoryUploadTokenStore(clock.now);
   const uploadBudget = { left: 1000 };
+  const zone: TestZone = { txt: {}, cname: {}, fail: new Set() };
   return {
     leases: memoryLeaseStore(clock.now),
     notifyAppChanged: async (e) => {
@@ -94,10 +121,12 @@ export function testDeps(limits: Partial<CompileLimits> = {}): TestDeps {
       uploadAllowed: async () => uploadBudget.left-- > 0,
       disk: new AssetDisk(mkdtempSync(join(tmpdir(), 'drobek-mcp-assets-'))),
     },
+    dns: () => zoneResolver(zone),
     events,
     clock,
     uploadTokens,
     uploadBudget,
+    zone,
   };
 }
 

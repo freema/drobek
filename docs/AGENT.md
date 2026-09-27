@@ -102,9 +102,9 @@ answers `not_found`, the same as one that does not exist.
 
 | Scope | Tools |
 | --- | --- |
-| `read` | `list_apps`, `get_app`, `read_file`, `skill_info`, `query_data`, `get_logs`, `list_assets` |
-| `write` | `create_app`, `write_files`, `restore_version`, `configure_module`, `create_asset_upload`, `delete_asset` |
-| `publish` | `publish`, `set_gallery_listing`, `set_workspace_publishing` (super-admins only) |
+| `read` | `list_apps`, `get_app`, `read_file`, `skill_info`, `query_data`, `get_logs`, `list_assets`, `list_domains` |
+| `write` | `create_app`, `write_files`, `restore_version`, `configure_module`, `create_asset_upload`, `delete_asset`, `add_domain`, `verify_domain`, `remove_domain` |
+| `publish` | `publish`, `set_gallery_listing`, `set_primary_domain`, `set_workspace_publishing` (super-admins only) |
 
 ## Tools
 
@@ -112,7 +112,7 @@ answers `not_found`, the same as one that does not exist.
 | --- | --- | --- | --- |
 | `list_apps` | read, any role | read-only | Who you are, your workspaces with your role, `can_publish` (+ `publish_contact` when the workspace may not publish) and the operator's `publishing` state (`default` / `allowed` / `blocked`), and the apps in them (preview/published URL, latest version, compile status, lock). Start here. |
 | `create_app` | write, editor+ | not destructive | A new app with a compiling version 1 from the `react-ts` (default) or `html` template, its `preview_url`, the **briefing** and the skills list. |
-| `get_app` | read, any role | read-only | One app: the briefing, its files, the last 20 versions, the lock, the module configs (secrets as `hasSecret` only), the gallery state, `can_publish`, `publishing`. |
+| `get_app` | read, any role | read-only | One app: the briefing, its files, the last 20 versions, the lock, the module configs (secrets as `hasSecret` only), the gallery state, its custom domains in short (`domains`: host, status, primary), `can_publish`, `publishing`. |
 | `read_file` | read, any role | read-only | A file of the latest (or a given) version, inside an untrusted envelope. |
 | `write_files` | write, editor+ | destructive | 1–20 changes → one new version → one compile; returns `{ version, compile: { ok, errors, warnings }, preview_url, changed }`. A secret in a file refuses the write. |
 | `restore_version` | write, editor+ | destructive | A new version with the files of an old one (rolls the working copy back); when that version was published, the draft assets go back to the ones it served then (`assets_restored`). |
@@ -126,6 +126,11 @@ answers `not_found`, the same as one that does not exist.
 | `create_asset_upload` | write, editor+ | not destructive | A single-use upload URL (30 min) for ONE binary file — video, audio, image, font — at `path`, plus a `curl -T <file> '<url>'` line. The file never passes through the model; the preview serves it at `/<path>` next to the app's files, production after the next `publish`. |
 | `list_assets` | read, viewer+ | read-only | The app's draft assets (path, sniffed type, size, time, `published`), the paths production serves that the draft deleted (`published_only`), `changes_pending_publish` and the quota usage. |
 | `delete_asset` | write, editor+ | destructive, idempotent | Removes one asset from the draft; the preview stops serving it, production after the next `publish`. |
+| `list_domains` | read, viewer+ | read-only | The app's custom domains (the dashboard's Domains tab): per domain `host`, `status` (`pending` / `verified`), `primary`, the two DNS `records` to create, `verified_at`, `last_check_at`, `last_error`, the certificate state; plus `cname_target` and `max_per_app`. |
+| `add_domain` | write, editor+ | not destructive, idempotent | Attaches a domain the user owns (pending) and returns the two records: CNAME `<host>` → `<slug>.<APPS_DOMAIN>` and TXT `_drobek.<host>` = `drobek-verify=<token>`. Same validation and `DOMAINS_MAX_PER_APP` as the dashboard (`invalid_hostname`, `hostname_not_allowed`, `limit_exceeded`, `domain_already_added`, `domain_taken`). |
+| `verify_domain` | write, editor+ | not destructive, idempotent, open world | Looks both records up now. Verified → the domain serves the published version. Otherwise `domain_not_verified` with `cname` / `txt` = `ok` / `missing` / `wrong` and the expected `records` (DNS can take up to 48 hours), or `dns_unavailable` (a lookup failed; nothing changed). |
+| `set_primary_domain` | publish, editor+ | not destructive, idempotent, open world | Makes a verified domain primary — `<slug>.<APPS_DOMAIN>` answers 302 to it — or clears it (`host: null`). Needs `user_confirmed: true`. |
+| `remove_domain` | write, editor+ | destructive, idempotent, open world | Detaches a domain; a verified one stops serving at once and needs `user_confirmed: true`, a pending one does not. |
 
 Every tool carries all four MCP annotations explicitly (`readOnlyHint`,
 `destructiveHint`, `idempotentHint`, `openWorldHint`; "idempotent" above means
@@ -177,6 +182,21 @@ of a published version resets the draft assets to those. `list_assets` marks
 each asset `published` or not. The quota counts every unique file of the
 draft and the published set once; sets of earlier publishes are kept for a
 rollback while they fit.
+
+**Custom domains.** The domain tools are the dashboard's Domains tab over
+MCP and call the same `@drobek/domains` operations: the same checks and
+limits, the same audit rows (`domain.add`, `domain.verify`,
+`domain.unverify`, `domain.primary`, `domain.remove`, actor kind `agent`).
+The flow: `add_domain({ app_id, host })` → show the user the CNAME and TXT
+records → `verify_domain` once they created them (`domain_not_verified` says
+which record is missing or wrong; verify again after a while, not in a loop) → a
+verified domain serves the published version and appears in `publish`'s
+`domains`. What changes the public site asks for the user's explicit yes
+(`user_confirmed: true`, else `user_confirmation_required`):
+`set_primary_domain` (set or clear) and removing a verified domain. A
+taken-down app refuses adding, verifying and a primary domain; removing
+stays possible. See [SELF-HOSTING.md](SELF-HOSTING.md#custom-domains) for
+apex names, TLS and the daily re-check.
 
 **Porting a Claude artifact.** drobek hosts what a Claude artifact is. The
 agent that has the artifact's files does the port; the server fetches
@@ -280,6 +300,11 @@ Claude Code, Codex and Cursor variants of the same loop.
 | `/llms-full.txt` | the full contract: the OAuth flow, every tool with inputs, result shape and an example, the briefing, the limits, the error catalogue |
 | `/build-with-your-agent` | the human setup page (plugin, MCP endpoint, skill install) |
 | MCP resources `drobek://docs/llms-full`, `drobek://docs/tools` | the same content for a connected agent without web access |
+
+The docs links (this guide, the modules, self-hosting and security docs)
+point at the Markdown files in the GitHub repository, or — when the operator
+sets `DOCS_URL` — at `<DOCS_URL>/<page>` (`/llms.txt` links the `.md` twins,
+e.g. `<DOCS_URL>/agent.md`).
 
 All of them render from the `@drobek/agent-dx` manifest (`TOOL_DOCS`, the
 briefing, `LIMITS`, the error catalogue). The drift guard

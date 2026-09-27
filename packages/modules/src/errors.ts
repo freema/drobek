@@ -79,6 +79,13 @@ export const CORE_ERROR_CODES: readonly string[] = [
   'asset_size_mismatch',
   'asset_not_found',
   'upload_token_invalid',
+  // custom domains (MCP domain tools, the dashboard)
+  'invalid_hostname',
+  'hostname_not_allowed',
+  'domain_already_added',
+  'domain_taken',
+  'domain_not_verified',
+  'dns_unavailable',
   // compile.errors[]
   'build_error',
   'unresolved_import',

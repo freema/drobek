@@ -34,9 +34,19 @@ async function connect(scopes: Scope[], superAdmin = false): Promise<Client> {
   return client;
 }
 
-const READ = ['get_app', 'get_logs', 'list_apps', 'list_assets', 'query_data', 'read_file', 'skill_info'];
-const WRITE = ['configure_module', 'create_app', 'create_asset_upload', 'delete_asset', 'restore_version', 'write_files'];
-const PUBLISH = ['publish', 'set_gallery_listing'];
+const READ = ['get_app', 'get_logs', 'list_apps', 'list_assets', 'list_domains', 'query_data', 'read_file', 'skill_info'];
+const WRITE = [
+  'add_domain',
+  'configure_module',
+  'create_app',
+  'create_asset_upload',
+  'delete_asset',
+  'remove_domain',
+  'restore_version',
+  'verify_domain',
+  'write_files',
+];
+const PUBLISH = ['publish', 'set_gallery_listing', 'set_primary_domain'];
 
 const EXPECTED: Array<[Scope[], string[]]> = [
   [[], []],
@@ -91,6 +101,20 @@ describe('tools/list reflects the granted scope', () => {
       });
       expect(res.isError).toBe(true);
       expect((res.content as { text: string }[])[0].text).toContain('set_gallery_listing not found');
+    } finally {
+      await client.close();
+    }
+  });
+
+  it('a read + write grant cannot set the primary domain (publish scope, NSO-366)', async () => {
+    const client = await connect(['read', 'write']);
+    try {
+      const res = await client.callTool({
+        name: 'set_primary_domain',
+        arguments: { app_id: 'a', host: 'shop.example.com', user_confirmed: true },
+      });
+      expect(res.isError).toBe(true);
+      expect((res.content as { text: string }[])[0].text).toContain('set_primary_domain not found');
     } finally {
       await client.close();
     }

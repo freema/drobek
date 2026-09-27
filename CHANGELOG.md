@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Added
+- **Custom domains over MCP** (NSO-366) — everything the dashboard's Domains tab does, through the same `@drobek/domains` operations (validation, `DOMAINS_MAX_PER_APP` from the workspace's limits, DNS verification, audit rows as the agent):
+  - `list_domains({ app_id })` (read, viewer+): per domain `host`, `status` (`pending` / `verified`), `primary`, the two DNS `records` (CNAME `<host>` → `<slug>.<APPS_DOMAIN>`, TXT `_drobek.<host>` = `drobek-verify=<token>`), `verified_at`, `last_check_at`, `last_error`, `certificate`; plus `cname_target` and `max_per_app`.
+  - `add_domain({ app_id, host })` (write, editor+): returns the records to create.
+  - `verify_domain({ app_id, host })` (write, editor+): on failure `domain_not_verified` with `cname` / `txt` = `ok` / `missing` / `wrong` and the expected `records` (the message says DNS can take up to 48 hours), or `dns_unavailable` when a lookup failed (nothing changes).
+  - `set_primary_domain({ app_id, host | null, user_confirmed })` (publish, editor+) and `remove_domain({ app_id, host, user_confirmed })` (write, editor+): setting or clearing the primary domain and removing a verified domain need `user_confirmed: true` — the user's explicit yes (else `user_confirmation_required`); removing a pending domain does not.
+  - A taken-down app refuses adding, verifying and a primary domain; removing stays possible. `get_app` adds `domains` (`host`, `status`, `primary`).
+  - New error codes `invalid_hostname`, `hostname_not_allowed`, `domain_already_added`, `domain_taken`, `domain_not_verified`, `dns_unavailable`. The manifest, the briefing (a custom-domain flow), `skills/drobek`, `skills/start` and docs/AGENT.md describe them.
+- **`DOCS_URL`** — the base of a website with the drobek docs (e.g. `https://www.drobek.app/docs`, each page at `<DOCS_URL>/<slug>` with a Markdown twin `<DOCS_URL>/<slug>.md`). When set, `/llms.txt` links the agent guide, the modules, self-hosting and security docs as `.md` pages there, `/llms-full.txt` the agent guide's `.md`, and `/build-with-your-agent` and the landing page `<DOCS_URL>/agent`; unset, they link the Markdown files on GitHub. `/llms.txt` now lists those docs, and `/llms-full.txt` and `/build-with-your-agent` link the agent guide. A value that is not an http(s) URL (or has a query or fragment) stops the server at start.
+
 ### Changed
 - **npm packages are published under the maintainer's npm scope** (NSO-366): `@freema/drobek-modules`, `@freema/drobek-sdk` and `create-drobek-module` (unscoped; `npm create drobek-module@latest` is unchanged) — there is no `@drobek` npm organisation. Module code keeps importing `@drobek/modules` / `@drobek/sdk`, installed through an npm alias (`"@drobek/modules": "npm:@freema/drobek-modules@^X.Y.Z"`, which `create-drobek-module` writes), and keeps the peer `"@drobek/modules": ">=X.Y.Z"` the server's installer checks; `@freema/drobek-modules` depends on `@drobek/sdk` the same way. The workspace package names are unchanged.
 

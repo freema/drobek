@@ -44,10 +44,11 @@ import {
   type ReadFileResult,
 } from './tools.js';
 import { createAssetUpload, deleteAssetTool, listAssetsTool } from './assets.js';
+import { addDomainTool, listDomainsTool, removeDomainTool, setPrimaryDomainTool, verifyDomainTool } from './domains.js';
 import { setWorkspacePublishingTool } from './workspace-publishing.js';
 import { TEMPLATES } from './templates.js';
 
-/** The tool set, in tools/list order (M0-05 + publish, M0-06 + skill_info/configure_module, M1-01 + query_data, M1-03 + get_logs, M1-07 + set_gallery_listing, NSO-340 + the asset tools, NSO-358 + set_workspace_publishing, NSO-366 — super-admins only). */
+/** The tool set, in tools/list order (M0-05 + publish, M0-06 + skill_info/configure_module, M1-01 + query_data, M1-03 + get_logs, M1-07 + set_gallery_listing, NSO-340 + the asset tools, NSO-358 + set_workspace_publishing, NSO-366 — super-admins only, and the custom-domain tools, NSO-366). */
 export const APP_TOOL_NAMES = [
   'list_apps',
   'create_app',
@@ -64,6 +65,11 @@ export const APP_TOOL_NAMES = [
   'create_asset_upload',
   'list_assets',
   'delete_asset',
+  'list_domains',
+  'add_domain',
+  'verify_domain',
+  'set_primary_domain',
+  'remove_domain',
   'set_workspace_publishing',
 ] as const;
 
@@ -167,6 +173,31 @@ export const INPUT_SCHEMAS = {
   delete_asset: {
     app_id: appId,
     path: z.string().describe('The asset path, e.g. film.mp4 (as list_assets shows it, with or without the leading /).'),
+  },
+  list_domains: { app_id: appId },
+  add_domain: {
+    app_id: appId,
+    host: z.string().describe('The domain name the user owns, e.g. shop.example.com (a pasted URL is reduced to its host).'),
+  },
+  verify_domain: {
+    app_id: appId,
+    host: z.string().describe('A domain of the app (list_domains lists them).'),
+  },
+  set_primary_domain: {
+    app_id: appId,
+    host: z
+      .string()
+      .nullable()
+      .describe('A VERIFIED domain of the app that the production address should redirect to; null clears the primary domain.'),
+    user_confirmed: z.boolean().optional().describe('true ONLY after the user explicitly said yes to this change.'),
+  },
+  remove_domain: {
+    app_id: appId,
+    host: z.string().describe('A domain of the app (list_domains lists them).'),
+    user_confirmed: z
+      .boolean()
+      .optional()
+      .describe('A verified domain only: true ONLY after the user explicitly said yes to removing it.'),
   },
   set_workspace_publishing: {
     workspace: z.string().describe('The workspace slug (list_apps all_workspaces lists every workspace).'),
@@ -325,6 +356,11 @@ export function registerAppTools(
   register('create_asset_upload', createAssetUpload);
   register('list_assets', listAssetsTool);
   register('delete_asset', deleteAssetTool);
+  register('list_domains', listDomainsTool);
+  register('add_domain', addDomainTool);
+  register('verify_domain', verifyDomainTool);
+  register('set_primary_domain', setPrimaryDomainTool);
+  register('remove_domain', removeDomainTool);
   register('set_workspace_publishing', setWorkspacePublishingTool);
 
   if (registered === 0) {

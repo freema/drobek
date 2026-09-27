@@ -4,6 +4,7 @@ import { Redis } from 'ioredis';
 import { APPS_DOMAIN, APPS_URL_SCHEME, BASE_URL_WEB, TARGET_PRODUCTION } from '../playwright.config';
 import { hostRequest, prodHost, type Raw } from './helpers/apps-host';
 import { loginViaEmail, mailpitMessagesFor, skipUnlessLocal, uniqueEmail } from './helpers/auth';
+import { callTool, mcpClient } from './helpers/mcp';
 import { personalWorkspaceOf, publishVersion, seedApp, seedVersion, withDb } from './helpers/seed';
 
 /**
@@ -24,8 +25,11 @@ import { personalWorkspaceOf, publishVersion, seedApp, seedVersion, withDb } fro
  *     the 4th domain of an app → limit_exceeded (DOMAINS_MAX_PER_APP=3);
  *   - audit rows domain.add / domain.verify / domain.primary / domain.unverify /
  *     domain.remove.
+ *   - NSO-366: the same over MCP — list_domains / add_domain / verify_domain /
+ *     set_primary_domain / remove_domain, the confirmation gates and the audit
+ *     rows as the agent.
  * The image flow (E2E_TARGET_PRODUCTION=1) ignores the DNS mock, so only the
- * DNS-free checks (refused names, the limit) run there.
+ * DNS-free checks (refused names, the limit, add/list/remove over MCP) run there.
  */
 
 test.describe.configure({ mode: 'serial' });
@@ -362,5 +366,88 @@ test.describe('custom domains (M3-01) @local', () => {
     expect(added).toBe(3);
 
     await withDb((c) => c.query(`DELETE FROM domains WHERE app_id = $1`, [app.id]));
+  });
+
+  test('over MCP: list → add → verify (what is missing) → primary + remove with the user\'s yes, audited as the agent (NSO-366)', async ({
+    page,
+    request,
+  }) => {
+    skipUnlessLocal();
+    test.setTimeout(120_000);
+    const mcp = await mcpClient(page, request, { tag: 'domains-mcp' });
+    try {
+      const app = await seedPublishedApp(mcp.email, `e2e-domains-mcp-${Date.now()}`);
+      const cnameTarget = `${app.slug}.${APPS_DOMAIN.replace(/:\d+$/, '')}`;
+      const call = (name: string, args: Record<string, unknown>) => callTool(mcp.client, name, { app_id: app.id, ...args });
+
+      const empty = await call('list_domains', {});
+      expect(empty.isError, empty.text).toBe(false);
+      expect(empty.json).toMatchObject({ app_id: app.id, cname_target: cnameTarget, domains: [] });
+
+      const refused = await call('add_domain', { host: 'www.drobek.app' });
+      expect(refused.isError).toBe(true);
+      expect(refused.json).toMatchObject({ code: 'hostname_not_allowed' });
+
+      // The DNS mock (dev stack only) admits the .test TLD; the image flow uses a real, PSL-listed name.
+      const mock = !TARGET_PRODUCTION;
+      const tag = `${Date.now().toString(36)}${Math.floor(Math.random() * 1e4)}`;
+      const host = mock ? `mcp-${tag}.test` : `e2e-mcp-${tag}.example.com`;
+
+      const added = await call('add_domain', { host: host.toUpperCase() });
+      expect(added.isError, added.text).toBe(false);
+      const domain = added.json.domain as { host: string; status: string; records: { cname: { name: string; value: string }; txt: { name: string; value: string } } };
+      expect(domain).toMatchObject({ host, status: 'pending', records: { cname: { name: host, value: cnameTarget }, txt: { name: `_drobek.${host}` } } });
+      expect(domain.records.txt.value).toMatch(/^drobek-verify=[0-9a-f]{32}$/);
+      const dup = await call('add_domain', { host });
+      expect(dup.json).toMatchObject({ code: 'domain_already_added' });
+      const listed = await call('list_domains', {});
+      expect((listed.json.domains as { host: string }[]).map((d) => d.host)).toEqual([host]);
+
+      if (mock) {
+        const none = await call('verify_domain', { host });
+        expect(none.isError).toBe(true);
+        expect(none.json).toMatchObject({ code: 'domain_not_verified', cname: 'missing', txt: 'missing' });
+
+        await setMock('txt', domain.records.txt.name, [domain.records.txt.value]);
+        const onlyTxt = await call('verify_domain', { host });
+        expect(onlyTxt.json).toMatchObject({ code: 'domain_not_verified', cname: 'missing', txt: 'ok' });
+        expect(String(onlyTxt.json.message)).toContain(`CNAME ${host}`);
+
+        await setMock('cname', host, [cnameTarget]);
+        const verified = await call('verify_domain', { host });
+        expect(verified.isError, verified.text).toBe(false);
+        expect(verified.json).toMatchObject({ newly_verified: true, domain: { host, status: 'verified' } });
+
+        const ask = await call('set_primary_domain', { host });
+        expect(ask.json).toMatchObject({ code: 'user_confirmation_required' });
+        const primary = await call('set_primary_domain', { host, user_confirmed: true });
+        expect(primary.isError, primary.text).toBe(false);
+        expect(primary.json).toMatchObject({ primary: host });
+
+        const askRemove = await call('remove_domain', { host });
+        expect(askRemove.json).toMatchObject({ code: 'user_confirmation_required', primary: true });
+        const removed = await call('remove_domain', { host, user_confirmed: true });
+        expect(removed.json).toMatchObject({ removed: host, was_verified: true, was_primary: true });
+        await setMock('txt', domain.records.txt.name, null);
+        await setMock('cname', host, null);
+      } else {
+        const removed = await call('remove_domain', { host });
+        expect(removed.isError, removed.text).toBe(false);
+        expect(removed.json).toMatchObject({ removed: host, was_verified: false });
+      }
+      const after = await call('list_domains', {});
+      expect(after.json.domains).toEqual([]);
+
+      const rows = await withDb(async (c) => {
+        const res = await c.query(`SELECT action, actor_kind FROM audit_log WHERE target = $1 ORDER BY created_at`, [host]);
+        return res.rows as { action: string; actor_kind: string }[];
+      });
+      expect(rows.map((r) => r.action)).toEqual(
+        mock ? ['domain.add', 'domain.verify', 'domain.primary', 'domain.remove'] : ['domain.add', 'domain.remove']
+      );
+      expect(rows.every((r) => r.actor_kind === 'agent')).toBe(true);
+    } finally {
+      await mcp.client.close();
+    }
   });
 });

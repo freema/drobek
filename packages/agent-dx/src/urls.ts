@@ -37,3 +37,56 @@ export function protectedResourceMetadataUrl(
   const path = url.pathname === '/' ? '' : url.pathname.replace(/\/+$/, '');
   return `${url.origin}/.well-known/oauth-protected-resource${path}`;
 }
+
+/**
+ * DOCS_URL — the base of a docs website with this server's docs (e.g.
+ * https://www.drobek.app/docs), or null when unset. Each page lives at
+ * `<DOCS_URL>/<slug>` with a Markdown twin at `<DOCS_URL>/<slug>.md`.
+ * Unset: the docs link the Markdown files in the source repository. An
+ * invalid value stops the server at start (`docsUrlConfigError`).
+ */
+export function docsUrl(env: NodeJS.ProcessEnv = process.env): string | null {
+  const raw = env.DOCS_URL?.trim();
+  if (!raw || docsUrlConfigError(env)) return null;
+  return raw.replace(/\/+$/, '');
+}
+
+/** Startup check: a human-readable error for a DOCS_URL that is not a plain http(s) URL, else null. */
+export function docsUrlConfigError(env: NodeJS.ProcessEnv = process.env): string | null {
+  const raw = env.DOCS_URL?.trim();
+  if (!raw) return null;
+  let url: URL | null = null;
+  try {
+    url = new URL(raw);
+  } catch {
+    url = null;
+  }
+  if (!url || (url.protocol !== 'https:' && url.protocol !== 'http:') || url.username || url.password || url.search || url.hash) {
+    return 'drobek refuses to start: DOCS_URL must be an http(s) URL without a query or fragment, e.g. https://docs.example.com/docs.';
+  }
+  return null;
+}
+
+/** The documentation pages the agent docs link: their slug on a DOCS_URL site and their file in the source repository. */
+export const DOC_PAGES = {
+  overview: 'https://github.com/freema/drobek#readme',
+  agent: 'https://github.com/freema/drobek/blob/main/docs/AGENT.md',
+  modules: 'https://github.com/freema/drobek/blob/main/docs/MODULES.md',
+  'self-hosting': 'https://github.com/freema/drobek/blob/main/docs/SELF-HOSTING.md',
+  architecture: 'https://github.com/freema/drobek/blob/main/docs/ARCHITECTURE.md',
+  security: 'https://github.com/freema/drobek/blob/main/docs/SECURITY.md',
+  licensing: 'https://github.com/freema/drobek/blob/main/docs/LICENSING.md',
+} as const;
+
+export type DocPage = keyof typeof DOC_PAGES;
+
+/**
+ * The URL of one docs page: `<DOCS_URL>/<slug>` (`.md` = its Markdown twin,
+ * what an agent should fetch) when DOCS_URL is set, else the file in the
+ * source repository (Markdown either way).
+ */
+export function docPageUrl(page: DocPage, env: NodeJS.ProcessEnv = process.env, opts: { markdown?: boolean } = {}): string {
+  const base = docsUrl(env);
+  if (!base) return DOC_PAGES[page];
+  return `${base}/${page}${opts.markdown ? '.md' : ''}`;
+}

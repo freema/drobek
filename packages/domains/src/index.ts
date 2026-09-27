@@ -41,6 +41,7 @@ export {
 } from './config.js';
 export {
   addDomain,
+  domainByHostname,
   instructionsFor,
   listDomains,
   newVerificationToken,

@@ -10,7 +10,7 @@
  * dashboard host (noindex) never competes with the website in search.
  */
 import { redirect, useLoaderData } from 'react-router';
-import { AGENT_GUIDE_URL } from '@drobek/agent-dx';
+import { agentGuideUrl } from '@drobek/agent-dx';
 import { SOURCE_REPO_URL } from '@drobek/dashboard/footer';
 import { DrobekMark } from '@drobek/auth/mark';
 
@@ -39,7 +39,7 @@ export function landingRedirectUrl(env: NodeJS.ProcessEnv = process.env): string
 export function loader() {
   const target = landingRedirectUrl();
   if (target) throw redirect(target, 301);
-  return { agentGuideUrl: AGENT_GUIDE_URL, repoUrl: SOURCE_REPO_URL };
+  return { agentGuideUrl: agentGuideUrl(), repoUrl: SOURCE_REPO_URL };
 }
 
 const styles = {

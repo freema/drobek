@@ -32,9 +32,14 @@ export {
   type BriefingLimits,
 } from './briefing.js';
 export {
+  DOC_PAGES,
+  docPageUrl,
+  docsUrl,
+  docsUrlConfigError,
   publicAppUrl,
   mcpEndpoint,
   protectedResourceMetadataUrl,
+  type DocPage,
 } from './urls.js';
 export {
   SKILL_INFO_RULE,
@@ -51,6 +56,7 @@ export {
 export {
   AGENT_GUIDE_URL,
   SKILL_INSTALL_COMMAND,
+  agentGuideUrl,
   DOCS_RESOURCE_LLMS_FULL,
   DOCS_RESOURCE_TOOLS,
   renderLlmsTxt,

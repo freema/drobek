@@ -13,6 +13,7 @@ import {
   AGENT_GUIDE_URL,
   DOCS_RESOURCE_LLMS_FULL,
   SKILL_INSTALL_COMMAND,
+  agentGuideUrl,
   renderLlmsFull,
   renderLlmsTxt,
   renderToolReference,
@@ -60,6 +61,33 @@ describe('renderLlmsTxt', () => {
     expect(PLUGIN_BUILD_COMMAND).toBe('/drobek:build-app');
     expect(txt).toContain(PLUGIN_PORT_COMMAND);
     expect(PLUGIN_PORT_COMMAND).toBe('/drobek:port-artifact');
+  });
+});
+
+describe('docs links: DOCS_URL set or unset (NSO-366)', () => {
+  const DOCS = { ...ENV, DOCS_URL: 'https://www.drobek.app/docs' };
+
+  it('unset: llms.txt and llms-full.txt link the Markdown files on GitHub', () => {
+    const txt = renderLlmsTxt(ENV);
+    expect(txt).toContain('[Agent guide](https://github.com/freema/drobek/blob/main/docs/AGENT.md)');
+    expect(txt).toContain('[Platform modules](https://github.com/freema/drobek/blob/main/docs/MODULES.md)');
+    expect(txt).toContain('[Self-hosting](https://github.com/freema/drobek/blob/main/docs/SELF-HOSTING.md)');
+    expect(txt).toContain('[Security](https://github.com/freema/drobek/blob/main/docs/SECURITY.md)');
+    expect(txt).not.toContain('www.drobek.app');
+    expect(renderLlmsFull(ENV)).toContain(`Agent guide (every tool with its scope, the briefing, the skills): ${AGENT_GUIDE_URL}`);
+    expect(agentGuideUrl(ENV)).toBe(AGENT_GUIDE_URL);
+  });
+
+  it('set: llms.txt links the .md twins on the docs site, llms-full.txt the agent guide\'s, humans get the page', () => {
+    const txt = renderLlmsTxt(DOCS);
+    expect(txt).toContain('[Agent guide](https://www.drobek.app/docs/agent.md)');
+    expect(txt).toContain('[Platform modules](https://www.drobek.app/docs/modules.md)');
+    expect(txt).toContain('[Self-hosting](https://www.drobek.app/docs/self-hosting.md)');
+    expect(txt).toContain('[Security](https://www.drobek.app/docs/security.md)');
+    expect(txt).not.toContain('github.com/freema/drobek/blob');
+    expect(renderLlmsFull(DOCS)).toContain('Agent guide (every tool with its scope, the briefing, the skills): https://www.drobek.app/docs/agent.md');
+    expect(agentGuideUrl(DOCS)).toBe('https://www.drobek.app/docs/agent');
+    expect(agentGuideUrl(DOCS, { markdown: true })).toBe('https://www.drobek.app/docs/agent.md');
   });
 });
 

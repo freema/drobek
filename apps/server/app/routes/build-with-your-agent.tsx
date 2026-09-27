@@ -14,6 +14,7 @@ import {
   PLUGIN_REPO_URL,
   SKILL_INSTALL_COMMAND,
   TOOL_DOCS,
+  agentGuideUrl,
   mcpEndpoint,
   publicAppUrl,
 } from '@drobek/agent-dx';
@@ -33,6 +34,7 @@ export function loader() {
   return {
     mcpUrl: mcpEndpoint(),
     appUrl: publicAppUrl(),
+    guideUrl: agentGuideUrl(),
     installCommand: SKILL_INSTALL_COMMAND,
     plugin: {
       commands: `${PLUGIN_MARKETPLACE_ADD_COMMAND}\n${PLUGIN_INSTALL_COMMAND}`,
@@ -82,7 +84,7 @@ const styles = {
 } as const;
 
 export default function BuildWithYourAgent() {
-  const { mcpUrl, appUrl, installCommand, plugin, tools } =
+  const { mcpUrl, appUrl, guideUrl, installCommand, plugin, tools } =
     useLoaderData<typeof loader>();
   return (
     <main style={styles.main}>
@@ -145,6 +147,13 @@ export default function BuildWithYourAgent() {
           </a>{' '}
           — the full contract: every tool with its inputs and result, the app
           briefing, limits, and the error catalogue.
+        </li>
+        <li>
+          <a href={guideUrl} style={styles.link}>
+            Agent guide
+          </a>{' '}
+          — how an agent connects, every tool with its scope, the briefing and
+          the skills.
         </li>
       </ul>
       <p style={styles.scope}>

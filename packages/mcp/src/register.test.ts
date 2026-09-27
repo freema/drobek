@@ -1,5 +1,5 @@
 /**
- * tools/list snapshot (M0-05 + M0-06 + M1-01 + M1-03 + M1-07 + NSO-340 + NSO-358): exactly the 15 tools of a
+ * tools/list snapshot (M0-05 + M0-06 + M1-01 + M1-03 + M1-07 + NSO-340 + NSO-358 + the domain tools of NSO-366): exactly the 20 tools of a
  * user who is not a super-admin (a super-admin also gets set_workspace_publishing, NSO-366), in order, with
  * their titles, annotations and input schemas. Hand-written on purpose — a
  * change to the public tool surface must be a deliberate edit here.
@@ -30,7 +30,7 @@ async function listTools(allow?: (t: string) => boolean, superAdmin = false) {
 const RO = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 
 describe('tools/list', () => {
-  it('is exactly the 15 tools with their annotations and inputs (snapshot)', async () => {
+  it('is exactly the 20 tools with their annotations and inputs (snapshot)', async () => {
     const tools = await listTools();
     const snapshot = tools.map((t) => ({
       name: t.name,
@@ -187,6 +187,47 @@ describe('tools/list', () => {
         properties: ['app_id', 'path'],
         required: ['app_id', 'path'],
       },
+      {
+        name: 'list_domains',
+        title: "List an app's custom domains",
+        annotations: { title: "List an app's custom domains", ...RO },
+        properties: ['app_id'],
+        required: ['app_id'],
+      },
+      {
+        name: 'add_domain',
+        title: 'Add a custom domain',
+        annotations: { title: 'Add a custom domain', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        properties: ['app_id', 'host'],
+        required: ['app_id', 'host'],
+      },
+      {
+        name: 'verify_domain',
+        title: 'Verify a custom domain',
+        annotations: { title: 'Verify a custom domain', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+        properties: ['app_id', 'host'],
+        required: ['app_id', 'host'],
+      },
+      {
+        name: 'set_primary_domain',
+        title: 'Set the primary custom domain',
+        annotations: {
+          title: 'Set the primary custom domain',
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: true,
+        },
+        properties: ['app_id', 'host', 'user_confirmed'],
+        required: ['app_id', 'host'],
+      },
+      {
+        name: 'remove_domain',
+        title: 'Remove a custom domain',
+        annotations: { title: 'Remove a custom domain', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+        properties: ['app_id', 'host', 'user_confirmed'],
+        required: ['app_id', 'host'],
+      },
     ]);
     const create = tools.find((t) => t.name === 'create_app')!;
     expect((create.inputSchema.properties as Record<string, { enum?: string[] }>).template.enum).toEqual([
@@ -198,8 +239,8 @@ describe('tools/list', () => {
 
   it('a super-admin also gets set_workspace_publishing, last (NSO-366)', async () => {
     const tools = await listTools(undefined, true);
-    expect(tools).toHaveLength(16);
-    const last = tools[15];
+    expect(tools).toHaveLength(21);
+    const last = tools[20];
     expect(last.name).toBe('set_workspace_publishing');
     expect(last.annotations).toEqual({
       title: 'Set a workspace\'s publishing',

@@ -213,6 +213,7 @@ built-ins.
 | `EMAIL_TRANSPORT` / `RESEND_API_KEY` | — (`smtp`) / secret | `resend` sends through the Resend API instead of SMTP (then `SMTP_*` is not needed and `RESEND_API_KEY` is) |
 | `SUPERADMIN_EMAIL` | recommended | your sign-in e-mail(s), super-admin over every workspace |
 | `LANDING_URL` | — | your own website: `<PUBLIC_APP_URL>/` answers 301 there instead of the built-in landing page |
+| `DOCS_URL` | — | a website with the drobek docs: the agent docs link `<DOCS_URL>/<page>` instead of the files on GitHub |
 | `DASHBOARD_GITHUB_STARS` | — (on) | `off` = the dashboard footer makes no call to `api.github.com` for the repository's star count |
 | `TLS_*`, `CADDY_*` | per TLS path | see [TLS](#tls) |
 | `HTTP_PORT`, `HTTPS_PORT`, `PUBLISH_IP` | — | published ports / bind address |
@@ -420,6 +421,7 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `DOMAINS_DNS_MOCK` | — | dev/test only, ignored in production: `redis` answers lookups from Redis keys |
 | `TERMS_URL` | `<PUBLIC_APP_URL>/terms` | linked from the 451 page of a taken-down app |
 | `LANDING_URL` | — (the built-in landing page) | `<PUBLIC_APP_URL>/` answers 301 to this URL — for an operator whose website lives elsewhere |
+| `DOCS_URL` | — (the Markdown files in the GitHub repository) | the base of a website with the drobek docs, each page at `<DOCS_URL>/<slug>` (`overview`, `agent`, `modules`, `self-hosting`, `architecture`, `security`, `licensing`) with a Markdown twin at `<DOCS_URL>/<slug>.md`: `/llms.txt` links the `.md` pages, `/llms-full.txt` the agent guide's `.md`, `/build-with-your-agent` and the landing page the agent guide. Not an http(s) URL (or one with a query or fragment) stops the server at start |
 | `ABUSE_REPORTS_PER_IP_HOUR` | 5 | valid abuse reports per client IP per hour |
 | `ABUSE_BRAND_WORDS` | a built-in list | the publish heuristic's brand words (comma-separated) |
 | `GALLERY_ENABLED` | off | `true` = the [public gallery](#public-gallery): owners (and, on their explicit yes, their agents) may list published apps; `GET /api/public/gallery` answers. Off = no switch in the dashboard, the endpoint answers 404 |
@@ -902,7 +904,13 @@ workspace-admin), creates two DNS records and clicks **Verify**:
   resolver, or `DOMAINS_DNS_SERVERS` (comma-separated IPs), 5 s per lookup.
 - **Audit**: `domain.add`, `domain.verify`, `domain.unverify`,
   `domain.primary`, `domain.remove`.
-- The MCP `publish` result lists the app's verified domains in `domains`.
+- **Over MCP** an agent does the same as the Domains tab (see
+  [`AGENT.md`](AGENT.md)): `list_domains`, `add_domain` (returns both
+  records), `verify_domain`, `set_primary_domain` and `remove_domain` — same
+  checks, limits and audit rows (actor kind `agent`). Setting or clearing the
+  primary domain and removing a verified one need the user's explicit yes
+  (`user_confirmed: true`). The `publish` result lists the app's verified
+  domains in `domains`.
 
 ### TLS for custom domains
 

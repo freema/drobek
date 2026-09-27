@@ -12,6 +12,7 @@
  * nothing to apply. The config checks of the server entry run first, so an
  * image that would refuse to start never touches the database.
  */
+import { docsUrlConfigError } from '@drobek/agent-dx';
 import { appsOriginConfigError, publishApprovalConfigError } from '@drobek/apps';
 import { trustProxyConfigError } from '@drobek/auth';
 import { createConsoleLogger, secretsConfigError } from '@drobek/core';
@@ -32,7 +33,8 @@ const configError =
   domainsConfigError(process.env) ??
   frameSrcConfigError(process.env) ??
   galleryFrameAncestorsConfigError(process.env) ??
-  publishApprovalConfigError(process.env);
+  publishApprovalConfigError(process.env) ??
+  docsUrlConfigError(process.env);
 if (configError) {
   console.error(configError);
   process.exit(1);

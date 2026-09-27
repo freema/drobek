@@ -16,6 +16,7 @@ import {
   type RequestsEntry,
   type RuntimeEntry,
 } from '@drobek/insights';
+import { domainsResolver, type DnsResolver } from '@drobek/domains';
 import { moduleRuntime, type ModuleRuntime } from '@drobek/modules';
 import type { AssetDeps } from './assets.js';
 import { redisLeaseStore, type LeaseStore } from './lease.js';
@@ -68,6 +69,8 @@ export interface ToolDeps {
   logs: LogStore;
   /** Upload tokens, the hourly upload-URL budget and the asset disk (NSO-358). */
   assets: AssetDeps;
+  /** The resolver verify_domain looks the custom-domain records up with (DOMAINS_DNS_SERVERS / the dev mock). */
+  dns: () => DnsResolver;
 }
 
 let sharedCompiler: Compiler | null = null;
@@ -97,6 +100,7 @@ export function defaultDeps(overrides: Partial<ToolDeps> = {}): ToolDeps {
       uploadAllowed: (appId) => assetUploadAllowed(appId),
       disk: assetDisk(),
     },
+    dns: () => domainsResolver(overrides.env ?? process.env),
     ...overrides,
   };
 }

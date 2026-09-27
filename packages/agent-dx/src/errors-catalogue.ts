@@ -38,8 +38,8 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     code: 'not_found',
     surface: 'MCP tool isError; module route 404 (DrobekError)',
     meaning:
-      'The app, workspace, version or file does not exist — or you are not a member of its workspace (both answer the same, so ids cannot be probed). From skill_info / configure_module: no such skill or module on this server (`available` lists the ones that exist). From query_data or a data route: the app declares no such collection (`available` lists its collections), or no such record.',
-    fix: 'Depending on what was missing: an app or workspace → list_apps shows the ones you can reach; a file or version → get_app lists them; a skill or module → skill_info(); a data collection → declare it with configure_module(\'data\') first.',
+      'The app, workspace, version or file does not exist — or you are not a member of its workspace (both answer the same, so ids cannot be probed). From skill_info / configure_module: no such skill or module on this server (`available` lists the ones that exist). From query_data or a data route: the app declares no such collection (`available` lists its collections), or no such record. From verify_domain, set_primary_domain or remove_domain: the app has no such custom domain.',
+    fix: 'Depending on what was missing: an app or workspace → list_apps shows the ones you can reach; a file or version → get_app lists them; a skill or module → skill_info(); a data collection → declare it with configure_module(\'data\') first; a custom domain → list_domains.',
   },
   {
     code: 'forbidden',
@@ -66,8 +66,8 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     code: 'limit_exceeded',
     surface: 'MCP tool isError; compile.errors[]; module route 429 (DrobekError), Retry-After',
     meaning:
-      'The version would exceed a size limit (COMPILE_MAX_FILES files, COMPILE_MAX_FILE_BYTES per file, COMPILE_MAX_TOTAL_BYTES in total) or an import chain is deeper than COMPILE_MAX_IMPORT_DEPTH. From create_app: the workspace already holds APPS_MAX_PER_WORKSPACE apps (`limit`, `value`; deleted apps do not count). On a module route: a quota of the app or the user is used up for the period (`details.limit`, e.g. FORMS_PER_APP_PER_DAY, EMAIL_PER_APP_PER_DAY, EMAIL_NOTIFY_ADMINS_PER_DAY). In the dashboard: DOMAINS_MAX_PER_APP custom domains per app (0 = custom domains are off for the workspace).',
-    fix: 'Split big files, delete unused ones, load large libraries from esm.sh through drobek.json instead of copying them into the app. From create_app (APPS_MAX_PER_WORKSPACE): do not retry — tell the user the workspace is full; they can delete an app they no longer need in the dashboard, work in another workspace, or ask the operator for a higher plan limit. On a module route: show the user a message and stop — the quota resets after Retry-After; the app owner can ask the operator for a higher plan limit.',
+      'The version would exceed a size limit (COMPILE_MAX_FILES files, COMPILE_MAX_FILE_BYTES per file, COMPILE_MAX_TOTAL_BYTES in total) or an import chain is deeper than COMPILE_MAX_IMPORT_DEPTH. From create_app: the workspace already holds APPS_MAX_PER_WORKSPACE apps (`limit`, `value`; deleted apps do not count). On a module route: a quota of the app or the user is used up for the period (`details.limit`, e.g. FORMS_PER_APP_PER_DAY, EMAIL_PER_APP_PER_DAY, EMAIL_NOTIFY_ADMINS_PER_DAY). From add_domain (and in the dashboard): the app already has DOMAINS_MAX_PER_APP custom domains, pending and verified together (`limit`, `value`; 0 = custom domains are off for the workspace).',
+    fix: 'Split big files, delete unused ones, load large libraries from esm.sh through drobek.json instead of copying them into the app. From create_app (APPS_MAX_PER_WORKSPACE): do not retry — tell the user the workspace is full; they can delete an app they no longer need in the dashboard, work in another workspace, or ask the operator for a higher plan limit. On a module route: show the user a message and stop — the quota resets after Retry-After; the app owner can ask the operator for a higher plan limit. From add_domain: remove a domain the app no longer needs (remove_domain) or ask the operator for a higher limit; with 0, tell the user this server offers no custom domains for the workspace.',
   },
   {
     code: 'secret_in_source',
@@ -117,10 +117,10 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
   },
   {
     code: 'user_confirmation_required',
-    surface: 'MCP tool isError (set_gallery_listing, set_workspace_publishing)',
+    surface: 'MCP tool isError (set_gallery_listing, set_workspace_publishing, set_primary_domain, remove_domain)',
     meaning:
-      'set_workspace_publishing: allowing, blocking or resetting a workspace\'s publishing needs the super-admin\'s explicit yes. set_gallery_listing: listing an app in the public gallery shows its name, a description and its production link to everyone, so the call needs `user_confirmed: true` — set only after the user explicitly said yes to exactly this listing. Nothing changed.',
-    fix: 'Ask the user: "Do you want <app name> shown in the public gallery with the description \"<description>\"?" (set_workspace_publishing: "Turn publishing off for <slug>?" / "Allow <slug> to publish?" / "Reset <slug> to the server default?"). Call again with user_confirmed:true only if they clearly say yes; otherwise change nothing.',
+      'set_primary_domain: making a domain primary redirects every visitor of the production address there, and clearing it changes that too. remove_domain: a verified domain serves the app, and removing it takes the app off that address. set_workspace_publishing: allowing, blocking or resetting a workspace\'s publishing needs the super-admin\'s explicit yes. set_gallery_listing: listing an app in the public gallery shows its name, a description and its production link to everyone, so the call needs `user_confirmed: true` — set only after the user explicitly said yes to exactly this listing. Nothing changed.',
+    fix: 'Ask the user: "Do you want <app name> shown in the public gallery with the description \"<description>\"?" (set_workspace_publishing: "Turn publishing off for <slug>?" / "Allow <slug> to publish?" / "Reset <slug> to the server default?"; set_primary_domain: "Should <app> redirect to <host>?"; remove_domain: "Remove <host> — the app stops answering there?"). Call again with user_confirmed:true only if they clearly say yes; otherwise change nothing.',
   },
   {
     code: 'gallery_hidden',
@@ -195,6 +195,46 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     meaning:
       'The upload URL is unknown, already used (every URL takes exactly one upload, successful or not) or older than 30 minutes.',
     fix: 'Call create_asset_upload again for a fresh URL (or, in the dashboard, pick the file again on the Assets tab).',
+  },
+  {
+    code: 'invalid_hostname',
+    surface: 'MCP tool isError (add_domain); dashboard 400',
+    meaning:
+      'The custom domain is not a usable domain name: empty, an IP address, a URL with a port, path or credentials, a label with characters other than letters, digits and inner dashes, or longer than 253 characters. Nothing was added.',
+    fix: 'Pass just the host name the user owns, e.g. shop.example.com (a full https:// URL without a path is fine).',
+  },
+  {
+    code: 'hostname_not_allowed',
+    surface: 'MCP tool isError (add_domain); dashboard 400',
+    meaning:
+      'The name cannot be a custom domain: it belongs to this drobek server (under APPS_DOMAIN, the dashboard host or drobek.app), it is a bare public suffix (co.uk, github.io) or not under a public TLD, or it is a special-use name (.localhost, .local, .internal, …). Nothing was added.',
+    fix: 'Use a registrable domain the user owns or a subdomain of one (example.com, shop.example.com). The app\'s own drobek address needs no domain.',
+  },
+  {
+    code: 'domain_already_added',
+    surface: 'MCP tool isError (add_domain)',
+    meaning: 'The app already has this custom domain (pending or verified). Nothing changed.',
+    fix: 'list_domains shows it with its DNS records and status; verify_domain checks it again.',
+  },
+  {
+    code: 'domain_taken',
+    surface: 'MCP tool isError (add_domain, verify_domain); dashboard 409',
+    meaning:
+      'Another app on this server has already verified this host name — a name serves one app only. An unverified claim elsewhere never blocks: only DNS decides who owns a name.',
+    fix: 'Tell the user the name is in use by another app on this server; they remove it there first (or use a different subdomain).',
+  },
+  {
+    code: 'domain_not_verified',
+    surface: 'MCP tool isError (verify_domain, set_primary_domain)',
+    meaning:
+      'verify_domain: the DNS records are not in place yet — `cname` and `txt` each say "ok", "missing" or "wrong" (`records` has the expected name and value of both; `unverified: true` = a domain that was verified before lost its verification, its records are gone). set_primary_domain: only a verified domain can be primary. The result of the check is stored (list_domains `last_error`).',
+    fix: 'Tell the user exactly which record is missing or wrong and its expected name and value (CNAME <host> → <slug>.<APPS_DOMAIN>, or ALIAS/ANAME at an apex; TXT _drobek.<host> = drobek-verify=<token>). DNS changes can take from minutes up to 48 hours to be seen: call verify_domain again after the user changed the records, not in a loop.',
+  },
+  {
+    code: 'dns_unavailable',
+    surface: 'MCP tool isError (verify_domain); dashboard',
+    meaning: 'A DNS lookup timed out or the resolver failed (SERVFAIL, network), so the records could not be checked. Nothing changed — an existing verification is kept.',
+    fix: 'Try verify_domain again in a few minutes; if it keeps failing, the domain\'s DNS servers may be down — tell the user.',
   },
   {
     code: 'internal_error',
