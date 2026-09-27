@@ -13,9 +13,9 @@
  *                 is `<id>.<HMAC>` — the
  *                 HMAC (key: HKDF of DROBEK_MASTER_KEY) binds the id to the
  *                 app, host, provider and nonce; the flow token goes to the
- *                 browser as a host-only HttpOnly cookie scoped to
- *                 `/__drobek/v1/auth/complete`; `provider.begin()` answers
- *                 the IdP URL.
+ *                 browser as `__Host-drobek_eu_flow` (Secure, Path=/, no
+ *                 Domain, HttpOnly, SameSite=Lax: a sibling app host cannot
+ *                 plant it); `provider.begin()` answers the IdP URL.
  *   2. IdP → dashboard host  GET|POST /__drobek/auth/callback/<provider>:
  *                 the state is consumed (GETDEL — single use) and its HMAC
  *                 and provider checked; the app comes from the STATE only;
@@ -84,7 +84,7 @@ type Ctx = ModuleContext<AuthConfig>;
 export const STATE_TTL_SEC = 10 * 60;
 /** How long the handoff code of a finished callback lives. */
 export const HANDOFF_TTL_SEC = 60;
-/** The path the flow cookie is scoped to (the only request that reads it). */
+/** The app-host path the callback redirects to; it reads the flow cookie. */
 export const COMPLETE_PATH = '/__drobek/v1/auth/complete';
 /** Per client IP, per 15 minutes: IdP callbacks on the dashboard host (the server default — no workspace is known yet). */
 export const CALLBACK_LIMIT = 'AUTH_PROVIDER_CALLBACKS_PER_IP_15MIN';
@@ -92,7 +92,7 @@ const CALLBACK_WINDOW_MS = 15 * 60_000;
 
 const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
 const STATE_RE = /^([A-Za-z0-9_-]{43})\.([A-Za-z0-9_-]{43})$/;
-const FLOW_COOKIE = '__Secure-drobek_eu_flow';
+const FLOW_COOKIE = '__Host-drobek_eu_flow';
 const FLOW_COOKIE_INSECURE = 'drobek_eu_flow';
 
 export function stateKey(id: string): string {
@@ -227,11 +227,14 @@ export function flowCookieName(secure: boolean): string {
   return secure ? FLOW_COOKIE : FLOW_COOKIE_INSECURE;
 }
 
-/** The flow cookie: host-only (no Domain), scoped to the complete path, HttpOnly, SameSite=Lax, 10 minutes. */
+/**
+ * The flow cookie: `__Host-` (Secure, Path=/, no Domain — a sibling app host
+ * under APPS_DOMAIN cannot set it), HttpOnly, SameSite=Lax, 10 minutes.
+ */
 function flowCookieHeader(value: string, secure: boolean): string {
   return [
     `${flowCookieName(secure)}=${value}`,
-    `Path=${COMPLETE_PATH}`,
+    'Path=/',
     'HttpOnly',
     'SameSite=Lax',
     ...(secure ? ['Secure'] : []),
@@ -239,16 +242,18 @@ function flowCookieHeader(value: string, secure: boolean): string {
   ].join('; ');
 }
 
-function readFlowCookie(header: string | null, secure: boolean): string | null {
-  if (!header) return null;
+/** Every well-formed value the browser sent under the flow cookie's exact name. */
+function readFlowCookies(header: string | null, secure: boolean): string[] {
+  if (!header) return [];
   const name = flowCookieName(secure);
+  const values: string[] = [];
   for (const part of header.split(';')) {
     const eq = part.indexOf('=');
     if (eq === -1 || part.slice(0, eq).trim() !== name) continue;
     const v = part.slice(eq + 1).trim();
-    return TOKEN_RE.test(v) ? v : null;
+    if (TOKEN_RE.test(v)) values.push(v);
   }
-  return null;
+  return values;
 }
 
 function escapeHtml(s: string): string {
@@ -504,8 +509,7 @@ export async function complete(ctx: Ctx, input: { code: string | undefined; host
     return pageResponse(400, 'Sign-in expired', EXPIRED);
   }
   const secure = endUserCookiesSecure();
-  const flow = readFlowCookie(input.cookie, secure);
-  if (!flow || !sameText(sha256(flow), record.flow)) {
+  if (!readFlowCookies(input.cookie, secure).some((flow) => sameText(sha256(flow), record.flow))) {
     ctx.log.warn('auth: a handoff code arrived without the flow cookie of its sign-in', { app_id: ctx.app.id, provider: record.provider });
     return pageResponse(400, 'Start again', 'Sign-in has to finish in the browser it started in. Start the sign-in again from the app.');
   }

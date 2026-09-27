@@ -317,11 +317,11 @@ describe('auth providers — the full flow', () => {
   it('begin → IdP → callback (dashboard host) → handoff → complete → a session on the app host', async () => {
     const t = ctx({ secrets: { AUTHTEST_CLIENT_SECRET: 's3cret' } });
     const b = await begin(t);
-    // begin: the IdP URL, a signed state, the ONE callback URL, a flow cookie scoped to complete
+    // begin: the IdP URL, a signed state, the ONE callback URL, a host-only flow cookie
     expect(b.url.origin).toBe('https://idp.example');
     expect(b.url.searchParams.get('redirect_uri')).toBe('http://localhost:3041/__drobek/auth/callback/authtest');
     expect(b.state).toMatch(/^[A-Za-z0-9_-]{43}\.[A-Za-z0-9_-]{43}$/);
-    expect(b.setCookie).toMatch(/^drobek_eu_flow=[A-Za-z0-9_-]{43}; Path=\/__drobek\/v1\/auth\/complete; HttpOnly; SameSite=Lax; Max-Age=600$/);
+    expect(b.setCookie).toMatch(/^drobek_eu_flow=[A-Za-z0-9_-]{43}; Path=\/; HttpOnly; SameSite=Lax; Max-Age=600$/);
     expect(b.setCookie).not.toMatch(/Domain=/i);
     expect(seenSecrets).toEqual(['s3cret']);
     // the state record never holds the flow token itself
@@ -408,6 +408,51 @@ describe('auth providers — the full flow', () => {
     expect(res.status).toBe(200);
     expect(t.audits.at(-1)).toMatchObject({ action: 'auth.sign_in', meta: { provider: 'email' } });
     await vi.waitFor(() => expect(events.map((e) => e.provider).sort()).toEqual(['copy:email', 'email']));
+  });
+
+  it('https: the flow cookie is __Host- (no sibling app host can set it); the names a sibling can plant are never read (NSO-360)', async () => {
+    vi.stubEnv('APPS_URL_SCHEME', 'https');
+    const t = ctx();
+    const signIn = async () => {
+      const b = await begin(t);
+      const result = await callback(t, b.state);
+      expect(result.kind, JSON.stringify(result)).toBe('redirect');
+      const loc = new URL((result as { location: string }).location);
+      expect(loc.origin).toBe(`https://${HOST}`);
+      return { code: loc.searchParams.get('code')!, token: b.flow.slice(b.flow.indexOf('=') + 1), setCookie: b.setCookie };
+    };
+    const first = await signIn();
+    expect(first.setCookie).toMatch(/^__Host-drobek_eu_flow=[A-Za-z0-9_-]{43}; Path=\/; HttpOnly; SameSite=Lax; Secure; Max-Age=600$/);
+    expect(first.setCookie).not.toMatch(/Domain=/i);
+    for (const name of ['__Secure-drobek_eu_flow', 'drobek_eu_flow']) {
+      const s = await signIn();
+      const res = await complete(t, s.code, `${name}=${s.token}`);
+      expect(res.status, name).toBe(400);
+      expect(res.headers['Set-Cookie']).toBeUndefined();
+    }
+    const own = await signIn();
+    const res = await complete(t, own.code, `__Host-drobek_eu_flow=${'x'.repeat(43)}; __Host-drobek_eu_flow=${own.token}`);
+    expect(res.status).toBe(302);
+    expect(res.headers['Set-Cookie']).toMatch(/^__Host-drobek_eu=/);
+  });
+
+  it('a sign-in begun before this release (a v1 state or handoff record) is refused, never finished (NSO-360)', async () => {
+    const t = ctx();
+    const b = await begin(t);
+    const id = b.state.split('.')[0];
+    const v1State = Object.assign(JSON.parse((await fake.get(stateKey(id)))!) as Record<string, unknown>, { v: 1 });
+    delete v1State.connection;
+    await fake.set(stateKey(id), JSON.stringify(v1State), 'EX', 600);
+    expect(await callback(t, b.state)).toMatchObject({ kind: 'page', status: 400, title: 'Sign-in expired' });
+
+    const b2 = await begin(t);
+    const code = codeOf(await callback(t, b2.state));
+    const v1Handoff = Object.assign(JSON.parse((await fake.get(handoffKey(code)))!) as Record<string, unknown>, { v: 1 });
+    delete v1Handoff.connection;
+    await fake.set(handoffKey(code), JSON.stringify(v1Handoff), 'EX', 60);
+    const res = await complete(t, code, b2.flow);
+    expect(res.status).toBe(400);
+    expect(res.headers['Set-Cookie']).toBeUndefined();
   });
 });
 

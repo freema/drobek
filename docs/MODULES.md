@@ -1457,7 +1457,7 @@ the operator's env var it declared as `env` (`AUTH_<ID>_…`). `begin` and
 app host                          dashboard host                        IdP
 POST /__drobek/v1/auth/begin ──► (none)
   state id, nonce, PKCE verifier, flow token → Redis drobek:eu-oauth:<id> (10 min)
-  state = <id>.<HMAC(app, host, provider, nonce)>, flow cookie (Path=complete)
+  state = <id>.<HMAC(app, host, provider, nonce)>, flow cookie (__Host-)
   ◄── { url }  ─────────────────────────────────────────────────────────► authorize
                                   GET|POST /__drobek/auth/callback/<id> ◄──
                                   state: GETDEL + HMAC + provider check
@@ -1483,9 +1483,13 @@ GET /__drobek/v1/auth/complete?code= ◄── 302
   `/`, no `//`, `/\`, scheme or control characters), else `invalid_request`;
 - the handoff code (32 random bytes) lives 60 s, works once, and only on the
   app host that began the sign-in, in the browser holding the flow cookie
-  (`__Secure-drobek_eu_flow`, host-only, `Path=/__drobek/v1/auth/complete`,
-  HttpOnly, SameSite=Lax, 10 min) — a callback link handed to someone else
-  signs nobody in;
+  (`__Host-drobek_eu_flow`: Secure, `Path=/`, no `Domain`, HttpOnly,
+  SameSite=Lax, 10 min; `drobek_eu_flow` on plain-http dev) — a callback
+  link handed to someone else signs nobody in, and another app host under
+  `APPS_DOMAIN` cannot plant the cookie: a browser refuses a `__Host-`
+  cookie with a `Domain`, and `complete` reads no other name. A sign-in begun
+  before a release that changes the state or handoff record answers "Sign-in
+  expired" / "Start again";
 - a provider identity must be **verified** (`emailVerified: true`), else
   `email_not_verified`; the allowlist and `adminEmails` then decide as for
   the e-mail code. Who the person is: **Identities** below;
