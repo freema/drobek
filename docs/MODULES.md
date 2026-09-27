@@ -1296,9 +1296,11 @@ message naming both versions. The server logs the version at start
 
 ### Published modules
 
-Modules anyone can install with `task selfhost:module:add -- <spec>`. To add
-yours, open a pull request that adds a row: the package on npm (or a tarball
-URL), what it does, the contract it declares and where its source is.
+Modules anyone can install with `task selfhost:module:add -- <spec>`, also
+listed in the directory at [www.drobek.app/modules](https://www.drobek.app/modules).
+To add yours, fill in the [module submission form](https://github.com/freema/drobek/issues/new?template=module-submission.yml):
+the package on npm (or a tarball URL), what it does, the contract it declares,
+its license and where its source is.
 
 | Package | What it does | Contract | Source |
 | --- | --- | --- | --- |

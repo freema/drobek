@@ -1,5 +1,10 @@
 # Changelog — drobek (core)
 
+## Unreleased
+
+### Docs
+- **Module directory and submission form** (NSO-340). The published modules are also listed at [www.drobek.app/modules](https://www.drobek.app/modules); authors submit theirs through the GitHub issue form `module-submission` (package, repository, contract, license and the module rules) instead of a pull request to `docs/MODULES.md`.
+
 ## v0.4.0 — 2026-09-27
 
 ### Added
