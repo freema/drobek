@@ -7,7 +7,7 @@
  * Authz: requireWorkspaceRole('workspace-admin') — the audit trail is
  * workspace-admin / super-admin ONLY. A viewer or editor → 403, a non-member →
  * 404, an anonymous request → /login redirect, all thrown by the middleware
- * BEFORE any read. (The pure rule is canReadActivity in ../view.ts.)
+ * BEFORE any read.
  *
  * The read is strictly workspace-scoped (listActivity filters by the authorized
  * workspaceId) and the subject is plain text with no join to `apps`, so events
@@ -28,7 +28,7 @@ import { shapeActivity } from '../view.js';
 const PAGE_SIZE = 50;
 
 export interface ActivityQuery {
-  /** Exact action filter (e.g. 'deploy.rollback'), or null. */
+  /** Exact action filter (e.g. 'app.restore'), or null. */
   action: string | null;
   /** App slug filter → matches the audit row's subject id (target), or null. */
   app: string | null;

@@ -61,6 +61,7 @@
  * every response carries `X-Drobek-App: <slug>` (tracing a report to an app).
  */
 import type { Readable } from 'node:stream';
+import { readCookieValue } from '@drobek/core';
 import {
   REPORT_WELL_KNOWN_PATH,
   lockCategory,
@@ -198,16 +199,6 @@ export const UNLOCK_APP_ATTEMPTS = 100;
 export const UNLOCK_WINDOW_MS = 15 * 60 * 1000;
 const MAX_PASSWORD_CHARS = 1024;
 
-function readCookie(header: string | null, name: string): string | null {
-  if (!header) return null;
-  for (const part of header.split(';')) {
-    const eq = part.indexOf('=');
-    if (eq === -1) continue;
-    if (part.slice(0, eq).trim() === name) return part.slice(eq + 1).trim();
-  }
-  return null;
-}
-
 /** A same-host relative path to return to after unlocking (never `//host` or a URL). */
 function safeNext(raw: string | null | undefined): string {
   if (!raw || raw.length > 2000 || !raw.startsWith('/') || raw.startsWith('//') || raw.startsWith('/\\')) {
@@ -315,7 +306,7 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
 
   // ── visibility gate ──
   if (isUnlock) return unlock(req, app, deps, page);
-  const token = readCookie(req.header('cookie'), appAccessCookieName(deps.secureCookies ?? true));
+  const token = readCookieValue(req.header('cookie'), appAccessCookieName(deps.secureCookies ?? true));
   const hasAppAccess =
     app.visibility === 'password' && token !== null && deps.accessSecret !== null
       ? verifyAppAccessToken(token, app.id, deps.accessSecret, (deps.now ?? Date.now)())

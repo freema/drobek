@@ -1,3 +1,4 @@
+export { readCookieValue } from './cookies.js';
 export {
   runHealthChecks,
   type HealthBody,
