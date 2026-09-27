@@ -1,6 +1,6 @@
 # Repositories and compatibility
 
-Drobek has three public repositories with separate release lifecycles.
+drobek has three public repositories with separate release lifecycles.
 The hosted service has a separate private deployment repository. Building,
 testing or self-hosting the public platform needs no access to that repository.
 
@@ -11,7 +11,7 @@ testing or self-hosting the public platform needs no access to that repository.
 | [drobek-module-counter](https://github.com/freema/drobek-module-counter) | Optional server-side counters | Public module contract, own migrations and SDK contribution |
 | Private hosted-service repository | Website, deployment configuration and service-specific integrations | Released core image and documented extension interfaces |
 
-An **agent plugin** teaches an agent how to use Drobek. A **platform module**
+An **agent plugin** teaches an agent how to use drobek. A **platform module**
 adds backend behavior to the server. Installing an agent plugin does not
 install server modules. The operator installs trusted module packages and
 chooses `DROBEK_MODULES`; workspace availability and per-app configuration
@@ -44,9 +44,10 @@ does not add an administrator login method. See [end-user sessions](MODULES.md#e
 ## External-consumer check
 
 The `External module compatibility` workflow tests a pinned counter source
-revision against packages built from the candidate core checkout. It runs
-for relevant pull requests, can be dispatched manually, and is called by
-the main/tag CI before image/release publication. It requires no private
+revision against packages built from the candidate core checkout. The
+main/tag CI calls it before the image e2e and release publication, and it
+can be dispatched manually (Actions → External module compatibility) for a
+branch. It requires no private
 repository, publishing credentials or production service.
 
 To run it locally with a trusted counter checkout:

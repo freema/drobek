@@ -83,4 +83,4 @@ await buildSdk(modules);
 console.log('Packed module loads and its SDK builds:', mod.name, mod.version, mod.contract);
 `);
 run(consumer, process.execPath, ['check.mjs']);
-console.log(`PASS: ${original.name}@${original.version} against @drobek/modules@${staged[1].version}`);
+console.log(`PASS: ${original.name}@${original.version} against @drobek/modules@${staged.find((pkg) => pkg.name === '@drobek/modules').version}`);
