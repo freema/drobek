@@ -234,10 +234,13 @@ export default function WorkspaceAppsRoute() {
             Filter
           </button>
           {filtered ? (
-            <span style={styles.meta} data-testid="apps-filter-count">
-              {apps.length} of {total}
-            </span>
+            <Link to={`/workspaces/${workspace.slug}/apps`} style={controls.link} data-testid="apps-filter-clear">
+              Clear filters
+            </Link>
           ) : null}
+          <span style={styles.meta} data-testid="apps-filter-count" aria-live="polite">
+            {filtered ? `${apps.length} of ${total} apps` : `${total} ${total === 1 ? 'app' : 'apps'}`}
+          </span>
         </Form>
       ) : null}
 
@@ -247,7 +250,13 @@ export default function WorkspaceAppsRoute() {
         </p>
       ) : apps.length === 0 ? (
         <p style={styles.empty} data-testid="apps-no-match">
-          No app matches the filter.
+          No app matches {filters.q ? <>&ldquo;{filters.q}&rdquo;</> : 'the filter'}
+          {filters.status !== 'all' ? ` among ${filters.status === 'published' ? 'published' : 'unpublished'} apps` : ''}.
+          The search looks at app names and addresses and ignores accents and case.{' '}
+          <Link to={`/workspaces/${workspace.slug}/apps`} data-testid="apps-no-match-clear">
+            Clear filters
+          </Link>{' '}
+          to see all {total} {total === 1 ? 'app' : 'apps'}.
         </p>
       ) : (
         <ul style={styles.list} data-testid="apps-list">

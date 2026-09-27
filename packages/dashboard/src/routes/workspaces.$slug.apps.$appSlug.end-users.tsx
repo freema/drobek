@@ -92,7 +92,17 @@ export default function AppEndUsersRoute() {
 
           {d.error ? null : d.users.length === 0 ? (
             <p style={ui.empty} data-testid="users-empty">
-              {d.q ? 'No users match this email search. Try another address or clear the search.' : 'No users yet. People appear here after their first sign-in.'}
+              {d.q ? (
+                <>
+                  No users match this email search. Try another address or{' '}
+                  <Link to={base} data-testid="users-empty-clear">
+                    clear the search
+                  </Link>
+                  .
+                </>
+              ) : (
+                'No users yet. People appear here after their first sign-in.'
+              )}
             </p>
           ) : (
             <div style={ui.tableWrap}>

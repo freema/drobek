@@ -368,7 +368,17 @@ export default function CollectionTableRoute() {
 
       {rows.length === 0 ? (
         <p style={styles.empty} data-testid="records-empty">
-          No records match.
+          {query.field ? (
+            <>
+              No record matches this filter.{' '}
+              <Link to={collBase} data-testid="records-empty-clear">
+                Clear filters
+              </Link>{' '}
+              to see every record.
+            </>
+          ) : (
+            'This collection has no records yet. They appear here when the app saves some (or after a CSV import).'
+          )}
         </p>
       ) : (
         <div style={styles.tableWrap}>

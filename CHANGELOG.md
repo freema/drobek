@@ -7,6 +7,9 @@
 - **Likes and opens in the public gallery** (NSO-340). Each `GET /api/public/gallery` item carries `likes` (signed-in accounts that like the app, one per account), `opens` (visits through the gallery in the last 30 days), `openUrl` and `likeUrl`; `?sort=popular` orders by 5 × likes + opens (page mode). `/gallery/open/<slug>` counts a visit per app and day — no prefetch, no `HEAD`, at most `GALLERY_OPENS_PER_IP_HOUR` (60) per IP — and redirects to the app; nothing about the visitor is stored. `/gallery/like/<slug>` asks the visitor to sign in, then likes or unlikes (`GALLERY_LIKES_PER_USER_HOUR`, 30) and returns to `?back=` when its origin is in `GALLERY_FRAME_ANCESTORS`. `get_app` shows `likes` and `opens` read-only. Migration `0029_gallery_likes`.
 
 ### Changed
+- **The workspace app search ignores accents and case** like the public gallery (one shared helper, `@drobek/apps/search`): "podzimni" finds "Podzimní obloha"; `%` and `_` match literally (NSO-371).
+- **Filtered dashboard lists offer "Clear filters"** with the count after the reset (apps, Forms, Activity, data records, end users) (NSO-371).
+- **The Forms tab tells its empty states apart**: no forms yet (with a copyable prompt for the coding agent naming the workspace and app; viewers are told to ask an editor), no submissions yet, no match for the filters, and a loading error (NSO-371).
 - **Admin pages tidied** (NSO-371).
   - Publishing: the states are tabs, and a workspace slug search sits under them. Each workspace groups its live apps with the takedown form.
   - Moderation queue: the takedown reason, Take down and Mark resolved are labelled and on one row.

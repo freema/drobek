@@ -6,6 +6,8 @@
  * hide, the public query) is gallery.server.ts.
  */
 
+import { searchLikePattern } from './search.js';
+
 /** The public description: plain text, one or two sentences. */
 export const GALLERY_DESCRIPTION_MAX = 160;
 /** Entries per page of the public list by default, and at most (`?limit`). */
@@ -68,14 +70,9 @@ export function galleryQuery(raw: string | null | undefined): string | null {
   return [...text].slice(0, GALLERY_QUERY_MAX).join('').trim() || null;
 }
 
-/**
- * Strip combining accents (matching the SQL normalization) and build an
- * ILIKE pattern `%<text>%` with the LIKE wildcards
- * `%`, `_` and the escape character `\` escaped, so every character of the
- * text matches itself (used with `ESCAPE '\'`).
- */
+/** The `?q` search text as an accent- and case-folded ILIKE pattern (search.ts). */
 export function galleryLikePattern(text: string): string {
-  return `%${text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[\\%_]/g, '\\$&')}%`;
+  return searchLikePattern(text);
 }
 
 /**

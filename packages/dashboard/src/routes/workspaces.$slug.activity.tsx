@@ -212,7 +212,17 @@ export default function WorkspaceActivityRoute() {
 
       {items.length === 0 ? (
         <p style={styles.empty} data-testid="activity-empty">
-          {search ? 'No activity matches these filters. Clear the filters to see more.' : 'No activity to show.'}
+          {search ? (
+            <>
+              No activity matches these filters.{' '}
+              <Link to={base} data-testid="activity-empty-clear">
+                Clear filters
+              </Link>{' '}
+              to see all activity.
+            </>
+          ) : (
+            'No activity to show.'
+          )}
         </p>
       ) : (
         <div style={styles.tableWrap}>

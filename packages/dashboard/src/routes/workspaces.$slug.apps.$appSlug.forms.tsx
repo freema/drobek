@@ -5,9 +5,10 @@
  * the loader), a CSV export of the filtered rows, and (editor+) a delete with
  * a confirm step. Submitted values are visitor input: React escapes them.
  */
-import { Form, Link, useActionData, useLoaderData } from 'react-router';
+import { Form, Link, useActionData, useLoaderData, useNavigation } from 'react-router';
 import type { action, loader } from './workspaces.$slug.apps.$appSlug.forms.server.js';
-import { ModuleMissing, ui } from '../owner-ui.js';
+import { AgentPrompt, ModuleMissing, ui } from '../owner-ui.js';
+import { formsAgentPrompt, formsListState } from '../owner-view.js';
 import { AppPage } from '../app-header.js';
 import { formatTimestamp } from '../view.js';
 
@@ -25,13 +26,19 @@ function withParams(base: string, extra: Record<string, string>): string {
 export default function AppFormsRoute() {
   const d = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
+  const navigation = useNavigation();
   const base = `/workspaces/${d.workspace.slug}/apps/${d.appSlug}/forms`;
+  const filtered = d.search !== '';
+  const state = formsListState({ error: d.error, forms: d.forms, rows: d.rows.length, filtered });
+  const loading = navigation.state === 'loading' && navigation.location?.pathname === base;
+  const received = d.forms.reduce((n, f) => n + f.submissions, 0);
 
   return (
     <AppPage header={d.header}>
       <h2 style={ui.title}>Forms</h2>
       <p style={ui.hint}>
-        Form submissions received by <strong>{d.appSlug}</strong>. Submissions from the preview and published app appear together here.
+        Form submissions received by <strong>{d.appSlug}</strong>. The preview and the published app share their data, forms and
+        uploads, so submissions from both appear together here.
       </p>
 
       {!d.enabled ? (
@@ -49,6 +56,28 @@ export default function AppFormsRoute() {
             </div>
           ) : null}
 
+          {state === 'no-forms' ? (
+            <>
+              <p style={ui.empty} data-testid="forms-none">
+                This app has no forms yet: nothing was submitted and no form is configured. Once the app has a form (for
+                example <code>&lt;Form name=&quot;contact&quot;&gt;</code>), every submission from the preview or the published
+                app is listed here and e-mailed to the app&apos;s owners.
+              </p>
+              {d.canDelete ? (
+                <AgentPrompt prompt={formsAgentPrompt(d.workspace.slug, d.appSlug)} testId="forms-agent-prompt" />
+              ) : (
+                <p style={ui.hint} data-testid="forms-ask-editor">
+                  Adding a form changes the app&apos;s files: ask an editor of this workspace (or their coding agent) to add one.
+                </p>
+              )}
+              {filtered ? (
+                <Link to={base} style={ui.controlLink} data-testid="forms-clear-filters">
+                  Clear filters
+                </Link>
+              ) : null}
+            </>
+          ) : (
+            <>
           <Form method="get" style={ui.toolbar} data-testid="forms-filter">
             <div style={ui.field}>
               <label style={ui.label} htmlFor="form">
@@ -78,21 +107,37 @@ export default function AppFormsRoute() {
             <button type="submit" style={ui.button} data-testid="forms-filter-apply">
               Apply
             </button>
-            <Link to={base} style={ui.controlLink}>
-              Clear
-            </Link>
+            {filtered ? (
+              <Link to={base} style={ui.controlLink} data-testid="forms-clear-filters">
+                Clear filters
+              </Link>
+            ) : null}
             <a href={`${base}/export.csv${d.search ? `?${d.search}` : ''}`} style={{ ...ui.controlLink, color: '#1e3a8a', marginLeft: 'auto' }} data-testid="forms-csv">
               ↓ Export CSV
             </a>
           </Form>
 
-          <p style={ui.muted} data-testid="forms-total">
-            {d.total} {d.total === 1 ? 'submission' : 'submissions'}
-          </p>
+          {state === 'error' ? null : (
+            <p style={ui.muted} data-testid="forms-total" aria-live="polite">
+              {loading
+                ? 'Loading submissions…'
+                : filtered
+                  ? `${d.total} of ${received} ${received === 1 ? 'submission' : 'submissions'} match the filters`
+                  : `${d.total} ${d.total === 1 ? 'submission' : 'submissions'}`}
+            </p>
+          )}
 
-          {d.rows.length === 0 ? (
+          {state === 'error' ? null : state === 'no-submissions' ? (
             <p style={ui.empty} data-testid="submissions-empty">
-              No submissions match.
+              No submissions yet. They appear here as soon as a visitor sends a form on the preview or the published app.
+            </p>
+          ) : state === 'no-match' ? (
+            <p style={ui.empty} data-testid="submissions-no-match">
+              No submission matches these filters.{' '}
+              <Link to={base} style={ui.link} data-testid="submissions-no-match-clear">
+                Clear filters
+              </Link>{' '}
+              to see all {received} {received === 1 ? 'submission' : 'submissions'}.
             </p>
           ) : (
             <div style={ui.tableWrap}>
@@ -162,6 +207,8 @@ export default function AppFormsRoute() {
               </>
             ) : null}
           </div>
+            </>
+          )}
         </>
       )}
     </AppPage>

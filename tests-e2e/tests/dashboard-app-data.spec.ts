@@ -318,7 +318,7 @@ test.describe("dashboard: the owner's app tabs — data edits + import, forms, u
     await p.locator('[data-testid="forms-filter-apply"]').click();
     await p.waitForURL(/form=contact/);
     await expect(p.locator('[data-testid="submission-row"]')).toHaveCount(1);
-    await expect(p.locator('[data-testid="forms-total"]')).toContainText('1 submission');
+    await expect(p.locator('[data-testid="forms-total"]')).toContainText('1 of 3 submissions match the filters');
     await expect(p.locator('[data-testid="submission-fields"]')).toContainText('new@example.com');
 
     // The CSV carries the same filter; formula cells are neutralized.
@@ -337,8 +337,9 @@ test.describe("dashboard: the owner's app tabs — data edits + import, forms, u
     // Delete behind a confirm step.
     await p.locator('[data-testid="submission-delete"]').click();
     await p.locator('[data-testid="submission-delete-confirm"]').click();
-    await expect(p.locator('[data-testid="submissions-empty"]')).toBeVisible();
-    await p.goto(base);
+    await expect(p.locator('[data-testid="submissions-no-match"]')).toContainText('see all 2 submissions');
+    await p.locator('[data-testid="submissions-no-match-clear"]').click();
+    await p.waitForURL((u) => u.pathname === base && u.search === '');
     await expect(p.locator('[data-testid="submission-row"]')).toHaveCount(2);
     expect(await auditActions(dataApp.slug)).toEqual(expect.arrayContaining(['forms.submission_delete', 'forms.export']));
   });
