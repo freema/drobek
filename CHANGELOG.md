@@ -1,6 +1,6 @@
 # Changelog — drobek (core)
 
-## Unreleased
+## v0.3.3 — 2026-09-27
 
 ### Added
 - **Custom domains over MCP** (NSO-366) — everything the dashboard's Domains tab does, through the same `@drobek/domains` operations (validation, `DOMAINS_MAX_PER_APP` from the workspace's limits, DNS verification, audit rows as the agent):
