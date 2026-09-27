@@ -7,7 +7,7 @@
  * only) is the source of truth.
  */
 import { Form, Link, useActionData, useLoaderData, useNavigation } from 'react-router';
-import { DashboardPage, controls, mergeStyles, tabStyles } from '@drobek/tenancy/layout';
+import { DashboardPage, TabStrip, controls, mergeStyles, tabStyles } from '@drobek/tenancy/layout';
 import type { action, loader } from './admin.publishing.server.js';
 
 export function meta() {
@@ -143,7 +143,7 @@ export default function PublishingRoute() {
           super-admin member). A refused publish e-mails you an approval request, at most once a day per workspace.
         </p>
       )}
-      <nav style={tabStyles.bar} aria-label="Publishing states" data-testid="publishing-states">
+      <TabStrip label="Publishing states" testId="publishing-states" current={workspace ? null : state}>
         {states.map((s) => (
           <Link
             key={s}
@@ -156,7 +156,7 @@ export default function PublishingRoute() {
             {stateLabel(s, mode)}
           </Link>
         ))}
-      </nav>
+      </TabStrip>
       <Form method="get" style={styles.search} role="search">
         <label style={controls.field}>
           <span style={controls.label}>Workspace slug</span>

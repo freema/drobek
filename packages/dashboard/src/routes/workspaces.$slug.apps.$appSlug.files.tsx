@@ -70,6 +70,7 @@ const styles = {
     color: '#52525b',
     marginBottom: '0.4rem',
   },
+  viewerPath: { fontFamily: 'ui-monospace, monospace', fontSize: '0.85rem', minWidth: 0, overflowWrap: 'anywhere' },
   pre: {
     margin: 0,
     padding: '0.8rem 0.9rem',
@@ -199,7 +200,7 @@ export default function AppFilesRoute() {
               ) : (
                 <>
                   <div style={styles.viewerHead}>
-                    <code style={s.mono} data-testid="file-viewer-path">
+                    <code style={styles.viewerPath} data-testid="file-viewer-path">
                       {file.kind}/{file.path}
                     </code>
                     <span>

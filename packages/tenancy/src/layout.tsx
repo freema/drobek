@@ -12,7 +12,7 @@
  * filter row lines up on one line. Plain inline styles, the dashboard's
  * minimal look (system font, zinc borders, one dark accent).
  */
-import type { CSSProperties, ReactNode } from 'react';
+import { useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { DrobekMark } from '@drobek/auth/mark';
 import type { WorkspaceNav } from './workspace-nav.js';
@@ -143,34 +143,83 @@ const styles = {
   },
 } satisfies Record<string, CSSProperties>;
 
-/** The tab bar look shared by the workspace tabs and the app tabs. */
+/**
+ * The tab bar look shared by the workspace tabs, the app tabs and the admin
+ * publishing states: one line that scrolls sideways when the tabs do not fit
+ * (a phone) instead of wrapping into several rows. The bottom rule is an
+ * inset shadow, so the active underline covers it without a negative margin
+ * (which the scroll box would clip); the focus ring sits inside the tab for
+ * the same reason.
+ */
 export const tabStyles = {
   bar: {
+    position: 'relative',
     display: 'flex',
+    flexWrap: 'nowrap',
     gap: '0.25rem',
-    borderBottom: '1px solid #e4e4e7',
+    overflowX: 'auto',
+    overflowY: 'hidden',
+    scrollbarWidth: 'thin',
+    boxShadow: 'inset 0 -1px 0 #e4e4e7',
     margin: '1.5rem 0 0',
-    flexWrap: 'wrap',
   },
   tab: {
+    flex: 'none',
+    whiteSpace: 'nowrap',
     padding: '0.45rem 0.85rem',
     fontSize: '0.9rem',
     fontWeight: 600,
     color: '#52525b',
     textDecoration: 'none',
     borderBottom: '2px solid transparent',
-    marginBottom: '-1px',
+    outlineOffset: '-2px',
   },
   active: {
+    flex: 'none',
+    whiteSpace: 'nowrap',
     padding: '0.45rem 0.85rem',
     fontSize: '0.9rem',
     fontWeight: 700,
     color: '#1a1a1a',
     textDecoration: 'none',
     borderBottom: '2px solid #1a1a1a',
-    marginBottom: '-1px',
+    outlineOffset: '-2px',
   },
 } satisfies Record<string, CSSProperties>;
+
+/**
+ * A tab bar (tabStyles) of links, the current one marked
+ * `aria-current="page"`. When the bar scrolls sideways, the current tab is
+ * brought into view after every navigation, so a phone shows where you are.
+ */
+export function TabStrip({
+  label,
+  testId,
+  current,
+  children,
+}: {
+  label: string;
+  testId: string;
+  /** The current tab's key; the strip scrolls to it when it changes. */
+  current: string | null;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const bar = ref.current;
+    const tab = bar?.querySelector<HTMLElement>('[aria-current="page"]');
+    if (!bar || !tab) return;
+    const start = tab.offsetLeft;
+    const end = start + tab.offsetWidth;
+    if (start >= bar.scrollLeft && end <= bar.scrollLeft + bar.clientWidth) return;
+    bar.scrollLeft = Math.max(0, start - (bar.clientWidth - tab.offsetWidth) / 2);
+  }, [current]);
+  return (
+    <nav ref={ref} style={tabStyles.bar} aria-label={label} data-testid={testId}>
+      {children}
+    </nav>
+  );
+}
 
 export interface Crumb {
   label: string;
@@ -284,7 +333,7 @@ export function WorkspacePage({
             {workspace.role}
           </span>
         </div>
-        <nav style={tabStyles.bar} aria-label="Workspace sections" data-testid="workspace-tabs">
+        <TabStrip label="Workspace sections" testId="workspace-tabs" current={section}>
           {tabs.map((t) => (
             <Link
               key={t.key}
@@ -297,7 +346,7 @@ export function WorkspacePage({
               {t.label}
             </Link>
           ))}
-        </nav>
+        </TabStrip>
       </header>
       {children}
     </DashboardPage>
