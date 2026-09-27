@@ -136,9 +136,8 @@ Every tool carries all four MCP annotations explicitly (`readOnlyHint`,
 `destructiveHint`, `idempotentHint`, `openWorldHint`; "idempotent" above means
 a repeated call with the same arguments has no further effect). They are
 hints for clients, never a security boundary — the scope and the role are.
-The per-tool values, checked against a running server, are in
-[`listing/inspector-log.md`](listing/inspector-log.md); the directory
-submission kit is [`listing/README.md`](listing/README.md).
+The per-tool values are in the tool manifest
+(`@drobek/agent-dx` `tools.ts`) and in every `tools/list` answer.
 
 A failed call returns `isError: true` with `{ code, message, hint }` from the
 error catalogue (`@drobek/agent-dx` `errors-catalogue.ts`, rendered into
