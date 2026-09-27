@@ -8,7 +8,7 @@
 
 ### Changed
 - **The workspace app search ignores accents and case** like the public gallery (one shared helper, `@drobek/apps/search`): "podzimni" finds "Podzimní obloha"; `%` and `_` match literally (NSO-371).
-- **Filtered dashboard lists offer "Clear filters"** with the count after the reset (apps, Forms, Activity, data records, end users) (NSO-371).
+- **Filtered dashboard lists offer "Clear filters"** with the count after the reset (apps, Forms, Activity, data records, end users); the search and filter fields reset with it and follow back/forward, so the next search does not bring a cleared filter back (NSO-371).
 - **The Forms tab tells its empty states apart**: no forms yet (with a copyable prompt for the coding agent naming the workspace and app; viewers are told to ask an editor), no submissions yet, no match for the filters, and a loading error (NSO-371).
 - **Admin pages tidied** (NSO-371).
   - Publishing: the states are tabs, and a workspace slug search sits under them. Each workspace groups its live apps with the takedown form.

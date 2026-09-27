@@ -5,7 +5,7 @@
  * the loader), a CSV export of the filtered rows, and (editor+) a delete with
  * a confirm step. Submitted values are visitor input: React escapes them.
  */
-import { Form, Link, useActionData, useLoaderData, useNavigation } from 'react-router';
+import { Form, Link, useActionData, useLoaderData, useLocation, useNavigation } from 'react-router';
 import type { action, loader } from './workspaces.$slug.apps.$appSlug.forms.server.js';
 import { AgentPrompt, ModuleMissing, ui } from '../owner-ui.js';
 import { formsAgentPrompt, formsListState } from '../owner-view.js';
@@ -25,6 +25,7 @@ function withParams(base: string, extra: Record<string, string>): string {
 
 export default function AppFormsRoute() {
   const d = useLoaderData<typeof loader>();
+  const location = useLocation();
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
   const base = `/workspaces/${d.workspace.slug}/apps/${d.appSlug}/forms`;
@@ -78,7 +79,7 @@ export default function AppFormsRoute() {
             </>
           ) : (
             <>
-          <Form method="get" style={ui.toolbar} data-testid="forms-filter">
+          <Form key={location.search} method="get" style={ui.toolbar} data-testid="forms-filter">
             <div style={ui.field}>
               <label style={ui.label} htmlFor="form">
                 Form

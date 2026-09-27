@@ -9,7 +9,7 @@
  * All values arrive pre-shaped from the loader — this file stays client-safe
  * (imports only react-router + the server-free ../view.js).
  */
-import { Form, Link, useLoaderData } from 'react-router';
+import { Form, Link, useLoaderData, useLocation } from 'react-router';
 import { WorkspacePage, controls } from '@drobek/tenancy/layout';
 import type { loader } from './workspaces.$slug.activity.server.js';
 
@@ -125,6 +125,7 @@ const styles = {
 export default function WorkspaceActivityRoute() {
   const { nav, workspace, items, nextCursor, filter, actionOptions, actorOptions, appOptions } =
     useLoaderData<typeof loader>();
+  const location = useLocation();
 
   const base = `/workspaces/${workspace.slug}/activity`;
   const search = filterSearch(filter);
@@ -136,8 +137,8 @@ export default function WorkspaceActivityRoute() {
         Each entry shows who performed the action and when.
       </p>
 
-      {/* FILTER — GET form, round-tripped through the loader. */}
-      <Form method="get" style={styles.toolbar} data-testid="activity-filter-form">
+      {/* FILTER — GET form, round-tripped through the loader; keyed by the query string so its uncontrolled fields follow the URL (Clear filters, back/forward). */}
+      <Form key={location.search} method="get" style={styles.toolbar} data-testid="activity-filter-form">
         <div style={styles.field}>
           <label style={styles.label} htmlFor="app">
             App

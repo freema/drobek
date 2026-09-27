@@ -17,7 +17,7 @@
  * placeholder (its initial) instead. See docs/SECURITY.md.
  */
 import type { IframeHTMLAttributes } from 'react';
-import { Form, Link, useLoaderData } from 'react-router';
+import { Form, Link, useLoaderData, useLocation } from 'react-router';
 import { WorkspacePage, controls } from '@drobek/tenancy/layout';
 import type { loader } from './workspaces.$slug.apps.server.js';
 import { formatTimestamp, type AppThumbnail } from '../view.js';
@@ -192,6 +192,7 @@ function Thumbnail({ slug, thumbnail, to }: { slug: string; thumbnail: AppThumbn
 export default function WorkspaceAppsRoute() {
   const { nav, workspace, apps, total, filters, deletedSlug, slugReleaseDays, publishApproval, canRequestApproval } =
     useLoaderData<typeof loader>();
+  const location = useLocation();
   const filtered = filters.q !== '' || filters.status !== 'all';
 
   return (
@@ -204,7 +205,8 @@ export default function WorkspaceAppsRoute() {
       ) : null}
 
       {total > 0 ? (
-        <Form method="get" style={styles.filters} data-testid="apps-filters">
+        // Keyed by the query string: the uncontrolled fields follow the URL on Clear filters and back/forward.
+        <Form key={location.search} method="get" style={styles.filters} data-testid="apps-filters">
           <input
             type="search"
             name="q"

@@ -10,7 +10,7 @@
  * of these controls. All values arrive pre-shaped — this file stays
  * client-safe (imports only react-router + server-free helpers).
  */
-import { Form, Link, useActionData, useLoaderData } from 'react-router';
+import { Form, Link, useActionData, useLoaderData, useLocation } from 'react-router';
 import type {
   action,
   loader,
@@ -171,6 +171,7 @@ export default function CollectionTableRoute() {
     imported,
     importMaxRows,
   } = useLoaderData<typeof loader>();
+  const location = useLocation();
   const actionData = useActionData<typeof action>();
 
   const dataBase = `/workspaces/${workspace.slug}/apps/${appSlug}/data`;
@@ -264,8 +265,8 @@ export default function CollectionTableRoute() {
         </Form>
       ) : null}
 
-      {/* FILTER + SORT — GET form, round-tripped through the loader. */}
-      <Form method="get" style={styles.toolbar} data-testid="filter-form">
+      {/* FILTER + SORT — GET form, round-tripped through the loader; keyed by the query string so its uncontrolled fields follow the URL (Clear filters, back/forward). */}
+      <Form key={location.search} method="get" style={styles.toolbar} data-testid="filter-form">
         <div style={styles.field}>
           <label style={styles.label} htmlFor="field">
             Filter field
