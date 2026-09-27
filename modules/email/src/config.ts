@@ -17,9 +17,23 @@ export const emailConfigSchema = z.strictObject({
     .min(1)
     .max(60)
     .refine((v) => !NAME_FORBIDDEN.test(v), 'one plain line without quotes, angle brackets, @ or backslashes')
-    .optional(),
+    .optional()
+    .meta({
+      title: 'Sender name',
+      description: 'The name recipients see, e.g. “Acme bakery”. The sender address stays the server’s. Empty: the server’s default name.',
+    }),
   /** Where replies to the app's e-mails go (needs the owner's confirmation). */
-  replyTo: z.string().trim().toLowerCase().max(254).pipe(z.email({ message: 'must be an e-mail address' })).optional(),
+  replyTo: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .max(254)
+    .pipe(z.email({ message: 'must be an e-mail address' }))
+    .optional()
+    .meta({
+      title: 'Reply-To address',
+      description: 'Where replies to the app’s e-mails go. A new address waits for the owner’s confirmation. Empty: replies go to the server’s sender address.',
+    }),
 });
 
 export type EmailConfig = z.infer<typeof emailConfigSchema>;

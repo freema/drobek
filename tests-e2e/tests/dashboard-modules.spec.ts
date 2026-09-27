@@ -279,6 +279,12 @@ test.describe('dashboard Modules tab (M2-02) @local', () => {
     // The agent's Reply-To still waits (a safe change keeps the pending one).
     expect(email.pending).toBe(true);
     await expect(ownerPage.getByTestId('pending-panel')).toContainText('replyTo');
+    // Saved vs default vs waiting for confirmation, at the field (the value in force stays until confirmed).
+    await expect(ownerPage.getByTestId('field-origin-fromName')).toHaveAttribute('data-origin', 'saved');
+    await expect(ownerPage.getByTestId('field-origin-replyTo')).toHaveAttribute('data-origin', 'default');
+    await expect(ownerPage.getByTestId('field-pending-replyTo')).toContainText('e2e-replies@example.com');
+    await expect(ownerPage.getByTestId('field-replyTo')).toHaveValue('');
+    await expect(ownerPage.locator('label[for="cfg-fromName"]')).toContainText('Sender name');
 
     // hello: an empty greeting violates min(1) — the error sits at the field.
     await ownerPage.goto(modulePath(app, 'hello'));
@@ -300,9 +306,48 @@ test.describe('dashboard Modules tab (M2-02) @local', () => {
     const hello = ownerPage.locator('[data-testid="workspace-module"][data-module="hello"]');
     await expect(hello.getByTestId('fact-contract')).toHaveText('^1.1');
     await expect(hello.getByTestId('fact-source').locator('[data-source]')).toHaveAttribute('data-source', 'builtin');
+    // Limits and technical facts are collapsed sections.
+    await expect(hello.locator('[data-testid="slot-row"][data-slot="hello.greeter"]')).toBeHidden();
+    await hello.getByTestId('module-technical').locator('summary').click();
     await expect(hello.locator('[data-testid="slot-row"][data-slot="hello.greeter"]')).toBeVisible();
-    await expect(hello.locator('[data-testid="limit-row"][data-limit="HELLO_WAVES_PER_MINUTE"] [data-testid="limit-value"]')).toHaveText(/^\d+$/);
     await expect(hello.locator('[data-testid="error-row"][data-code="unknown_greeter"]')).toBeVisible();
+    await hello.getByTestId('module-limits').locator('summary').click();
+    await expect(hello.locator('[data-testid="limit-row"][data-limit="HELLO_WAVES_PER_MINUTE"] [data-testid="limit-value"]')).toHaveAttribute('data-value', /^\d+$/);
+    // A byte limit reads in human units, the exact value underneath.
+    const files = ownerPage.locator('[data-testid="workspace-module"][data-module="files"]');
+    if ((await files.count()) > 0) {
+      const bytes = files.locator('[data-testid="limit-row"][data-limit="FILES_MAX_BYTES"]');
+      await expect(bytes.getByTestId('limit-value')).toHaveText(/^\d+(\.\d)? (KB|MB|GB)$/);
+      await expect(bytes.getByTestId('limit-exact')).toHaveText(/^[\d,]+ bytes$/);
+    }
+
+    // Search: a match narrows the list, no match says so and offers the whole list back.
+    await ownerPage.getByTestId('modules-search-input').fill('greeter');
+    await ownerPage.getByTestId('modules-search-submit').click();
+    await expect(ownerPage).toHaveURL(/[?&]q=greeter/);
+    await expect(ownerPage.locator('[data-testid="workspace-module"]')).toHaveCount(1);
+    await expect(ownerPage.getByTestId('modules-count')).toContainText('1 of');
+    await ownerPage.getByTestId('modules-search-input').fill('no-such-module-xyz');
+    await ownerPage.getByTestId('modules-search-submit').click();
+    await expect(ownerPage.getByTestId('modules-no-match')).toBeVisible();
+    await expect(ownerPage.locator('[data-testid="workspace-module"]')).toHaveCount(0);
+    await ownerPage.getByTestId('modules-search-clear').click();
+    await expect(ownerPage.locator('[data-testid="workspace-module"][data-module="hello"]')).toBeVisible();
+    const all = await ownerPage.locator('[data-testid="workspace-module"]').count();
+    // The input follows the URL, so the next Search does not bring the cleared query back.
+    await expect(ownerPage.getByTestId('modules-search-input')).toHaveValue('');
+    await ownerPage.getByTestId('modules-search-submit').click();
+    await expect(ownerPage).toHaveURL(/[?&]q=(&|$)/);
+    await expect(ownerPage.locator('[data-testid="workspace-module"]')).toHaveCount(all);
+    await ownerPage.goBack();
+    await ownerPage.goBack();
+    await expect(ownerPage).toHaveURL(/[?&]q=no-such-module-xyz/);
+    await expect(ownerPage.getByTestId('modules-search-input')).toHaveValue('no-such-module-xyz');
+    await expect(ownerPage.getByTestId('modules-no-match')).toBeVisible();
+    await ownerPage.goForward();
+    await expect(ownerPage).not.toHaveURL(/[?&]q=/);
+    await expect(ownerPage.getByTestId('modules-search-input')).toHaveValue('');
+    await expect(ownerPage.locator('[data-testid="workspace-module"]')).toHaveCount(all);
     // The dedicated editors are a declared capability, shown per module.
     await expect(ownerPage.locator('[data-testid="workspace-module"][data-module="data"] [data-testid="fact-editor"]')).toHaveText('collections');
     await expect(ownerPage.locator('[data-testid="workspace-module"][data-module="proxy"] [data-testid="fact-editor"]')).toHaveText('upstreams');
@@ -323,10 +368,27 @@ test.describe('dashboard Modules tab (M2-02) @local', () => {
     const about = ownerPage.getByTestId('module-about');
     await expect(about.getByTestId('fact-contract')).toHaveText('^1.1');
     await expect(about.getByTestId('fact-version')).toHaveText(/^\d+\.\d+\.\d+/);
+    await about.getByTestId('module-technical').locator('summary').click();
     await expect(about.locator('[data-testid="slot-row"][data-slot="hello.greeter"]')).toBeVisible();
+    await ownerPage.getByTestId('module-error-codes').locator('summary').click();
     await expect(ownerPage.locator('[data-testid="error-row"][data-code="unknown_greeter"]')).toBeVisible();
     await about.getByTestId('workspace-modules-link').click();
     await expect(ownerPage).toHaveURL(new RegExp(`/workspaces/${app.workspace}/modules#module-hello$`));
+  });
+
+  test('the auth form: labelled settings, lists that may stay empty, config keys behind a disclosure', async () => {
+    skipUnlessLocal();
+    await ownerPage.goto(modulePath(app, 'auth'));
+    const label = ownerPage.locator('label[for="cfg-allow-emails"]');
+    await expect(label).toContainText('Allowed e-mail addresses');
+    await expect(label).not.toContainText('*');
+    await expect(label).not.toContainText('allow.emails');
+    await expect(ownerPage.getByTestId('field-origin-allow-emails')).toHaveAttribute('data-origin', /^(default|saved)$/);
+    await expect(ownerPage.getByTestId('config-form')).toContainText('Can be left empty');
+    const paths = ownerPage.getByTestId('config-paths');
+    await expect(paths.locator('[data-testid="config-path-row"][data-path="allow.emails"]')).toBeHidden();
+    await paths.locator('summary').click();
+    await expect(paths.locator('[data-testid="config-path-row"][data-path="allow.emails"]')).toBeVisible();
   });
 
   test('NSO-347: the generic form adds a named entry to a record (forms.forms) without client JS', async () => {
@@ -377,7 +439,8 @@ test.describe('dashboard Modules tab (M2-02) @local', () => {
       // NSO-347: the workspace Modules page is read-only for every member.
       await page.goto(`/workspaces/${app.workspace}/modules`);
       await expect(page.locator('[data-testid="workspace-module"][data-module="hello"]')).toBeVisible();
-      await expect(page.locator('main button, main input:not([type="hidden"])')).toHaveCount(0);
+      // The search is the one control (a GET form, it changes nothing).
+      await expect(page.locator('main button:not([data-testid="modules-search-submit"]), main input:not([type="hidden"]):not([type="search"])')).toHaveCount(0);
       // NSO-346: the opt-in switch on that page is super-admin only.
       const toggle = await page.request.post(`${BASE_URL_WEB}/workspaces/${app.workspace}/modules`, {
         headers: { Origin: BASE_URL_WEB },

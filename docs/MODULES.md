@@ -1018,7 +1018,17 @@ shows a "N changes await confirmation" banner (`PendingBanner` +
   come back at their fields (`allow.emails[0]` → the `allow.emails` field;
   an issue inside a record / list entry at the record / list, naming the
   entry). Give fields a `title` / `description` in zod (`.meta()` /
-  `.describe()`) to label them;
+  `.describe()`) to label them — the label is the `title`, the config key
+  itself is listed only under the collapsed "Config keys for agents". Each
+  top-level setting is tagged **Default** (nothing saved for the app, the
+  module's default applies) or **Saved for this app**, and a setting a
+  pending change touches shows its value after confirming next to the
+  value in force. The `*` mark means "must have a value" and appears only
+  on text, number and select fields: a list, record or checkbox the schema
+  requires is always sent (an empty list, `false`), so its hint says
+  instead whether it can be left empty (`minItems`) and how many items it
+  takes (`maxItems`). Saving sends only what differs from the config in
+  force, so an untouched default stays a default;
 - a module declaring **`dashboard.editor: 'collections'`** (the built-in
   data module) gets a collections editor instead of form fields for its
   `collections` key: per collection a table operation × principal (Anyone,
@@ -1033,11 +1043,12 @@ shows a "N changes await confirmation" banner (`PendingBanner` +
   Set / Rotate / Remove (`setModuleSecret` / `deleteModuleSecret`, audit
   `module.secret_set` `{ module, name, rotated }` / `module.secret_remove`).
   A stored value is followed by a redirect, so it appears in no response;
-- **About this module**: version, source (`builtin` / `dir`), the declared
-  contract range, availability, the modules it requires, the dedicated
-  editor it declares, the slots it offers (and who contributes) and its
-  contributions to other modules' slots, with a link to the workspace
-  Modules page; then **its error codes** (code, meaning, fix).
+- **About this module**: version, availability and the modules it
+  requires; under a collapsed "Technical details" the source (`builtin` /
+  `dir`), the declared contract range, the dedicated editor it declares,
+  the slots it offers (and who contributes) and its contributions to other
+  modules' slots; a link to the workspace Modules page; then **its error
+  codes** (code, meaning, fix), collapsed too.
 
 Viewers see all of it without a single control; every POST needs the editor
 role (viewer → 403).
@@ -1054,6 +1065,15 @@ with the value in force for this workspace (the limits provider's plan,
 else the server's env / default) and its error codes. Never a path on disk,
 never a secret. The facts come from `ModuleRuntime.moduleFacts()`; agents
 get the same fields from `skill_info('<name>')`.
+
+The page leads with a search (`?q=`, every word must appear in the name,
+"use when", a slot or a limit name — a GET form, no client JS) and a jump
+list. Each card shows what the module is for, its version, availability
+and requirements; the limits and the technical facts (source, contract,
+slots, contributions, error codes) are collapsed sections. A limit's value
+is shown in human units read from its env name or meaning (`…_BYTES` /
+`…QUOTA…` → `10 MB`, `…_MS` → `1 min`) with the exact value and unit
+underneath (`10,485,760 bytes`); a count is shown as is.
 
 An opt-in module's card also shows its state for this workspace — enabled
 or not, and what decides it (the plan, the env, or a super-admin's switch) —

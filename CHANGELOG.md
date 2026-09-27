@@ -18,6 +18,12 @@
   - Workspaces: a super-admin gets cards linking to Publishing and the Moderation queue, and can filter the list of all workspaces. The create-team form fits on one row.
   - App Files: the tree and the viewer stack on a phone instead of overflowing the page.
   - Empty lists on these pages say what would appear there and what to do next.
+- **Module settings read as settings** (NSO-371).
+  - The config form labels each field with the schema's title and description (the built-in auth, email, forms and files modules now declare them). The config keys moved to a collapsed "Config keys for agents" table.
+  - Each setting is tagged "Default" or "Saved for this app". A field touched by a change awaiting confirmation shows the new value next to the one in force.
+  - `*` marks only text, number and select fields that need a value. A list says whether it can be left empty and how many items it takes.
+  - A module's source, contract, slots, contributions and error codes are collapsed "Technical details" on the module page and the workspace Modules page.
+  - The workspace Modules page has a search (`?q=`) and a jump list, whose field follows the URL ("Show all", back/forward), and collapses limits and technical facts. Limits read in human units (`10 MB`, `1 min`) with the exact value underneath.
 
 ### Fixed
 - **Every release tag gets its GitHub Release**: CI's new `release` job (tags, after the image is promoted) creates it from the tag's CHANGELOG section with the image name, Latest or pre-release. The releases v0.2.1–v0.4.0 were missing and have been added by hand.

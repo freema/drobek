@@ -63,6 +63,7 @@ import {
   configDiff,
   confirmRoleOf,
   fieldErrors,
+  fieldStates,
   fieldValues,
   formToConfig,
   leafFields,
@@ -231,6 +232,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     enabled: view.enabled,
     fields,
     values: fieldValues(fields, view.config),
+    /** Per field: the module's default or saved for this app, and its value once the pending change is confirmed. */
+    states: fieldStates(fields, { stored: view.stored, config: view.config, pendingAfter: view.pending?.after }),
     pending,
     secrets: view.secrets.map((s) => ({ name: s.name, description: s.description, required: s.required, hasSecret: s.hasSecret, updatedAt: s.updated_at })),
     editor: editor?.kind ?? null,

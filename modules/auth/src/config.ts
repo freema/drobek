@@ -47,11 +47,26 @@ export interface AuthConfig {
   providers: { emailCode: { enabled: boolean }; [id: string]: ProviderEntry | undefined };
 }
 
-const allowSchema = z.strictObject({
-  emails: z.array(email).max(500),
-  domains: z.array(domain).max(50),
-  anyone: z.boolean(),
-});
+const allowSchema = z
+  .strictObject({
+    emails: z.array(email).max(500).meta({
+      title: 'Allowed e-mail addresses',
+      description: 'These addresses may sign in as users. An empty list lets nobody in by address.',
+    }),
+    domains: z.array(domain).max(50).meta({
+      title: 'Allowed domains',
+      description:
+        'Every address at these domains may sign in as a user — the exact domain, like example.com (no @, subdomains not included). An empty list lets nobody in by domain.',
+    }),
+    anyone: z.boolean().meta({
+      title: 'Anyone may sign in',
+      description: 'Anyone with an e-mail address can sign in, without being listed. Turning it on waits for the owner’s confirmation.',
+    }),
+  })
+  .meta({
+    title: 'Who may sign in',
+    description: 'The allowlist for every sign-in method. People who edit the app in this workspace can always sign in, as admins.',
+  });
 
 const EMAIL_CODE_DEFAULT = { enabled: true };
 
@@ -63,14 +78,24 @@ function providerEntrySchema(p: AuthProvider): z.ZodType {
   const object = p.configSchema as unknown as z.ZodObject;
   return object
     .partial()
-    .extend({ enabled: z.boolean(), relinkByEmail: z.boolean().optional() })
+    .extend({
+      enabled: z.boolean().meta({ title: 'On', description: `People the allowlist admits can sign in with ${p.label}. Turning it on waits for the owner’s confirmation.` }),
+      relinkByEmail: z
+        .boolean()
+        .optional()
+        .meta({
+          title: 'Move accounts to a new issuer by address',
+          description: `A verified ${p.label} sign-in from a new issuer takes over the account of the same address linked to another issuer. Off: that sign-in is refused. Turning it on waits for the owner’s confirmation.`,
+        }),
+    })
     .superRefine((value, ctx) => {
       const v = value as ProviderEntry;
       if (!v.enabled) return;
       const { enabled: _enabled, relinkByEmail: _relink, ...rest } = v;
       const r = p.configSchema.safeParse(rest);
       if (!r.success) for (const issue of r.error.issues) ctx.addIssue({ code: 'custom', path: issue.path, message: issue.message });
-    });
+    })
+    .meta({ title: p.label });
 }
 
 function hasSignInMethod(config: Pick<AuthConfig, 'providers'>): boolean {
@@ -83,10 +108,21 @@ function buildSchemas(providers: readonly AuthProvider[]): { base: z.ZodType<Aut
   const entries = Object.fromEntries(providers.map((p) => [p.id, providerEntrySchema(p).optional()]));
   const base = z.strictObject({
     allow: allowSchema,
-    adminEmails: z.array(email).max(50),
+    adminEmails: z.array(email).max(50).meta({
+      title: 'App admins',
+      description: 'These addresses may sign in and are admins of the app. An empty list adds no admins beyond the workspace’s editors.',
+    }),
     providers: z
-      .strictObject({ [EMAIL_CODE_KEY]: z.strictObject({ enabled: z.boolean() }), ...entries })
-      .default({ [EMAIL_CODE_KEY]: { ...EMAIL_CODE_DEFAULT } }),
+      .strictObject({
+        [EMAIL_CODE_KEY]: z
+          .strictObject({
+            enabled: z.boolean().meta({ title: 'On', description: 'People the allowlist admits sign in with a one-time code sent to their address.' }),
+          })
+          .meta({ title: 'E-mail code' }),
+        ...entries,
+      })
+      .default({ [EMAIL_CODE_KEY]: { ...EMAIL_CODE_DEFAULT } })
+      .meta({ title: 'Sign-in methods', description: 'At least one method must stay on, or nobody can sign in.' }),
   }) as unknown as z.ZodType<AuthConfig>;
   const full = base.superRefine((config, ctx) => {
     if (!hasSignInMethod(config)) {
