@@ -90,8 +90,7 @@ test.describe('gallery likes and opens (NSO-340) @local', () => {
       await page.goto(`${likePath}?back=${encodeURIComponent(`${GALLERY_ORIGIN}/`)}`);
       await expect(page).toHaveURL(new RegExp(`/login\\?returnTo=${encodeURIComponent(likePath).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
 
-      await loginViaEmail(page, request, uniqueEmail('gallery-liker'));
-      await page.goto(likePath);
+      await loginViaEmail(page, request, uniqueEmail('gallery-liker'), new RegExp(`${likePath}$`));
       await expect(page.getByTestId('gallery-like-count')).toContainText('0');
       await page.getByTestId('gallery-like').click();
       await expect(page.getByTestId('gallery-unlike')).toBeVisible();

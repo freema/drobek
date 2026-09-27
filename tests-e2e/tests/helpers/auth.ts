@@ -124,11 +124,15 @@ export function ownClientIpHeaders(): Record<string, string> {
   return { 'X-Real-IP': `2001:db8::${randomInt(1, 0xffff).toString(16)}:${randomInt(1, 0xffff).toString(16)}` };
 }
 
-/** Full magic-code sign-in via the UI; leaves the page authenticated on /me. */
+/**
+ * Full magic-code sign-in via the UI; leaves the page authenticated on /me, or
+ * on `landing` when an earlier `/login?returnTo=` visit set where to come back.
+ */
 export async function loginViaEmail(
   page: Page,
   request: APIRequestContext,
-  email: string
+  email: string,
+  landing: RegExp = /\/me$/
 ): Promise<void> {
   const seen = new Set((await mailpitMessagesFor(request, email)).map((m) => m.ID));
   const deadline = Date.now() + 30_000;
@@ -146,7 +150,7 @@ export async function loginViaEmail(
   }
   await page.getByLabel('Code').fill(code);
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await page.waitForURL(/\/me$/);
+  await page.waitForURL(landing);
 }
 
 /** Sign out the current session; leaves the page on the home route. */

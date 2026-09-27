@@ -87,8 +87,7 @@ test.describe('gallery: duplicate an app from the dashboard and over MCP (NSO-34
     try {
       await page.goto(`${BASE_URL_WEB}/duplicate/${app.slug}`);
       await expect(page).toHaveURL(/\/login\?returnTo=/);
-      await loginViaEmail(page, request, uniqueEmail('dup-copier'));
-      await page.goto(`${BASE_URL_WEB}/duplicate/${app.slug}`);
+      await loginViaEmail(page, request, uniqueEmail('dup-copier'), new RegExp(`/duplicate/${app.slug}$`));
       await expect(page.getByRole('heading', { level: 1 })).toContainText('Duplicable Pixel Wall');
       await expect(page.getByTestId('duplicate-what')).toContainText('Secrets and API keys');
       await expect(page.getByTestId('duplicate-name')).toHaveValue('Duplicable Pixel Wall copy');
