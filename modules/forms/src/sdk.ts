@@ -12,6 +12,7 @@ export type FieldValue = string | number | boolean | null | string[];
 export interface SubmitResult {
   ok: true;
   id: string;
+  notified: boolean;
 }
 
 export interface Submission {

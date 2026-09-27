@@ -2,7 +2,7 @@
  * `/__drobek/v1/forms/…` on every app host:
  *
  *   GET  :form/token             → { token, min_wait_ms, expires_in }   (public)
- *   POST :form                   → { ok: true, id }                    (the form's rule: public | user)
+ *   POST :form                   → { ok: true, id, notified }          (the form's rule: public | user)
  *   GET  :form/submissions       → { submissions, next_cursor }        (admin)
  *   GET  :form/submissions.csv   → text/csv attachment                 (admin)
  *
@@ -12,7 +12,8 @@
  * app + form, ≥ 2 s old) → field validation → the per-app daily limit →
  * stored → the notification e-mail (to the owner-confirmed `notify.emails`
  * and/or the app's owners, through the email module). A notification that
- * cannot be sent (limits, pause, SMTP) never loses the submission.
+ * cannot be sent (limits, pause, SMTP) never loses the submission; the
+ * answer's `notified` says whether the e-mail went out.
  *
  * Field values are end-user data: they are never logged, and only the app's
  * admins read them back (no-store).
@@ -159,7 +160,7 @@ export function registerRoutes(r: ModuleRouter<FormsConfig>): void {
           form,
           dropped_today: c.count,
         });
-        return { ok: true, id: newSubmissionId() };
+        return { ok: true, id: newSubmissionId(), notified: recipientsOf(form, fc).length > 0 };
       }
 
       const t = checkFormToken(k, token, ctx.app.id, form);
@@ -199,11 +200,10 @@ export function registerRoutes(r: ModuleRouter<FormsConfig>): void {
         ipHash: ipHash(k, ctx.app.id, req.clientIp),
         userId: ctx.principal.kind === 'user' ? ctx.principal.id : null,
       });
-      if (await notify(ctx, { form, fc, id, fields, host: safeHost(req.header('host')) })) {
-        await markNotified(ctx.db, ctx.app.id, id);
-      }
+      const notified = await notify(ctx, { form, fc, id, fields, host: safeHost(req.header('host')) });
+      if (notified) await markNotified(ctx.db, ctx.app.id, id);
       ctx.log.info('forms: submission stored', { app_id: ctx.app.id, form, submission: id, fields: Object.keys(fields).length });
-      return { ok: true, id };
+      return { ok: true, id, notified };
     }
   );
 

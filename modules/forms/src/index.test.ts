@@ -10,7 +10,7 @@ import { migrate } from 'drizzle-orm/pglite/migrator';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { apps, workspaces, type DB } from '@drobek/db';
 import * as schema from '@drobek/db/schema';
-import { buildSdk, defineModule, isDefinedModule, loadModules, z } from '@drobek/modules';
+import { buildSdk, defineModule, isDefinedModule, loadModules, ModuleError, z, type MailGuard } from '@drobek/modules';
 import { createModuleTestContext, type ModuleTestContext } from '@drobek/modules/testing';
 import forms, {
   FORMS_CONFIG_DEFAULTS,
@@ -61,7 +61,7 @@ beforeEach(async () => {
 const ADMIN = { kind: 'user', id: 'eu_admin', email: 'boss@example.com', role: 'admin' } as const;
 const USER = { kind: 'user', id: 'eu_user', email: 'ana@example.com', role: 'user' } as const;
 
-function ctx(opts: { config?: Record<string, unknown>; limits?: Record<string, number>; log?: ReturnType<typeof logger> } = {}): ModuleTestContext {
+function ctx(opts: { config?: Record<string, unknown>; limits?: Record<string, number>; log?: ReturnType<typeof logger>; mailGuard?: MailGuard } = {}): ModuleTestContext {
   return createModuleTestContext(forms, {
     db,
     app: { id: appId, slug: 'shop', workspaceId },
@@ -70,6 +70,7 @@ function ctx(opts: { config?: Record<string, unknown>; limits?: Record<string, n
     owners: ['owner@example.com'],
     origin: `http://${HOST}`,
     ...(opts.log ? { log: opts.log } : {}),
+    ...(opts.mailGuard ? { mailGuard: opts.mailGuard } : {}),
   });
 }
 
@@ -230,7 +231,7 @@ describe('submissions', () => {
     expect((await t.request('GET', '/Bad%20Name/token')).status).toBe(400);
   });
 
-  it('a submission is stored and e-mailed to the owners (+ the confirmed notify.emails); answers { ok, id }', async () => {
+  it('a submission is stored and e-mailed to the owners (+ the confirmed notify.emails); answers { ok, id, notified }', async () => {
     const t = ctx({ config: { forms: { contact: { notify: { emails: ['sales@example.com'] } } } } });
     const r = await t.request('POST', '/contact', {
       body: { _t: token(), _hp: '', name: 'Ana', message: '<script>alert(1)</script>' },
@@ -239,7 +240,7 @@ describe('submissions', () => {
     });
     expect(r.status, JSON.stringify(r.body)).toBe(200);
     const { id } = r.body as { ok: true; id: string };
-    expect(r.body).toEqual({ ok: true, id: expect.stringMatching(/^fs_[0-9a-f]{24}$/) });
+    expect(r.body).toEqual({ ok: true, id: expect.stringMatching(/^fs_[0-9a-f]{24}$/), notified: true });
     const [row] = await rows();
     expect(row).toMatchObject({ id, appId, form: 'contact', data: { name: 'Ana', message: '<script>alert(1)</script>' }, userId: null });
     expect(row.ipHash).toBe(ipHash(formsKey()!, appId, '203.0.113.7'));
@@ -254,9 +255,28 @@ describe('submissions', () => {
     const t = ctx({ config: { forms: { quiet: { notify: { owners: false } } } } });
     const r = await t.request('POST', '/quiet', { body: { _t: token('quiet'), a: '1' } });
     expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ ok: true, notified: false });
     expect(t.emails).toHaveLength(0);
     const [row] = await rows();
     expect(row.notifiedAt).toBeNull();
+  });
+
+  it('a notification that cannot be sent → stored, notified: false, a forms_notify_failed line', async () => {
+    const log = logger();
+    const paused: MailGuard = {
+      assertOpen: async () => {
+        throw new ModuleError('unavailable', 'App e-mail is paused.');
+      },
+      admit: async () => {},
+    };
+    const t = ctx({ log, mailGuard: paused });
+    const r = await t.request('POST', '/contact', { body: { _t: token(), name: 'Ana' } });
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    expect(r.body).toMatchObject({ ok: true, notified: false });
+    expect(t.emails).toHaveLength(0);
+    const [row] = await rows();
+    expect(row.notifiedAt).toBeNull();
+    expect(log.warn).toHaveBeenCalledWith('forms: notification not sent (the submission is stored)', expect.objectContaining({ event: 'forms_notify_failed', submission: row.id }));
   });
 
   it('a filled honeypot → 200 "ok", nothing stored or sent, a counter in the log', async () => {
@@ -265,7 +285,7 @@ describe('submissions', () => {
     for (let i = 1; i <= 2; i++) {
       const r = await t.request('POST', '/contact', { body: { _t: token(), _hp: 'http://spam.example', name: 'bot' } });
       expect(r.status).toBe(200);
-      expect(r.body).toEqual({ ok: true, id: expect.stringMatching(/^fs_/) });
+      expect(r.body).toEqual({ ok: true, id: expect.stringMatching(/^fs_/), notified: true });
       expect(log.info).toHaveBeenLastCalledWith('forms: honeypot submission dropped', { event: 'forms_honeypot_drop', app_id: appId, form: 'contact', dropped_today: i });
     }
     // Even without a token: a bot is answered like a success.

@@ -1,5 +1,10 @@
 # Changelog — drobek (core)
 
+## Unreleased
+
+### Changed
+- **A form submission says whether its e-mail went out** (NSO-370). `POST /__drobek/v1/forms/:form` answers `{ ok, id, notified }` and `drobek.forms.submit` / `<Form onSuccess>` pass `notified` on. It is `false` when nobody is to be notified, a mail limit or the pause refused the message, or the transport failed; the submission is stored either way.
+
 ## v0.3.4 — 2026-09-27
 
 ### Changed

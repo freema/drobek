@@ -272,7 +272,8 @@ test.describe('platform modules forms + email (M1-04) @local', () => {
       await page.getByRole('button', { name: 'Send' }).click();
       const submitted = await res;
       expect(submitted.status()).toBe(200);
-      const { id } = (await submitted.json()) as { ok: true; id: string };
+      const { id, notified } = (await submitted.json()) as { ok: true; id: string; notified: boolean };
+      expect(notified).toBe(true);
       await expect(page.locator('#thanks')).toHaveText('Thanks, we will get back to you.');
 
       const rows = await submissionsOf(formsApp.app_id, 'contact');
@@ -307,7 +308,7 @@ test.describe('platform modules forms + email (M1-04) @local', () => {
     await sleep(2_100);
     const bot = await post(host, '/forms/contact', { _t: t, _hp: 'https://spam.example', name: 'bot-field-value' });
     expect(bot.status, bot.body).toBe(200);
-    expect(JSON.parse(bot.body)).toEqual({ ok: true, id: expect.stringMatching(/^fs_[0-9a-f]{24}$/) });
+    expect(JSON.parse(bot.body)).toEqual({ ok: true, id: expect.stringMatching(/^fs_[0-9a-f]{24}$/), notified: true });
     const [line] = await pollLog(since, `"forms_honeypot_drop"`).then((l) => l.filter((x) => x.app_id === formsApp.app_id));
     expect(line, 'a honeypot log line').toMatchObject({ level: 'info', event: 'forms_honeypot_drop', form: 'contact', dropped_today: 1 });
     expect(JSON.stringify(serverLogLines(since, formsApp.app_id))).not.toContain('bot-field-value');

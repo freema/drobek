@@ -1627,8 +1627,9 @@ policy and a way to reach the app's owners. `skill_info('email')`.
     and the form, keyed by HKDF(`DROBEK_MASTER_KEY`, `drobek/forms-token/v1`) —
     no separate secret; without the master key forms answer `503`;
   - `POST :form` (rule `rules.submit`: `public` default or `user`; JSON or
-    text-only multipart; 32 KiB) → `{ ok: true, id }`. In order: the
-    honeypot `_hp` — non-empty → answered `{ ok: true, id }` like a success,
+    text-only multipart; 32 KiB) → `{ ok: true, id, notified }` (`notified`:
+    the notification e-mail went out). In order: the
+    honeypot `_hp` — non-empty → answered like a success,
     nothing stored or sent, and a log line `forms_honeypot_drop` with the
     per-app daily counter `dropped_today` (never the values); the token —
     missing/forged/other form/expired → `400 invalid_form_token`
@@ -1639,8 +1640,8 @@ policy and a way to reach the app's owners. `skill_info('email')`.
     IP per app, `rate_limited`) and `FORMS_PER_APP_PER_DAY` (200,
     `limit_exceeded`); then the row and the notification. A failed
     notification (the app's mail limit, the global pause) never loses the
-    submission: it stays stored with `notified_at` null and a
-    `forms_notify_failed` log line (error code only);
+    submission: it stays stored with `notified_at` null, the answer says
+    `notified: false`, and a `forms_notify_failed` log line (error code only);
   - `GET :form/submissions?limit=1..100&before=<cursor>` (rule `admin`) →
     `{ submissions: [{ id, created_at, data, user_id, notified }],
     next_cursor }`, newest first;

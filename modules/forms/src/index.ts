@@ -55,10 +55,11 @@ export interface Api {
   prepare(form: string): Promise<void>;
   /**
    * Store a submission (and e-mail the owners). Waits until the token is ≥ 2 s old.
+   * notified: the notification e-mail went out (false: nobody to notify, or it could not be sent — the submission is stored either way).
    * FormData or a flat object; no files. Rejects: invalid_request (400), unauthorized (401),
    * rate_limited / limit_exceeded (429).
    */
-  submit(form: string, data: Record<string, FieldValue> | FormData): Promise<{ ok: true; id: string }>;
+  submit(form: string, data: Record<string, FieldValue> | FormData): Promise<{ ok: true; id: string; notified: boolean }>;
   /** Newest first, ≤ 100 per page (admins only). */
   submissions(form: string, opts?: { limit?: number; before?: string }): Promise<{ submissions: Submission[]; next_cursor: string | null }>;
   /** The CSV export URL (admins only), e.g. for <a href download>. */
@@ -75,7 +76,7 @@ export interface FormProps extends Omit<FormHTMLAttributes<HTMLFormElement>, 'on
   children: ReactNode;
   /** Shown instead of the fields after a successful submit (default "Thank you — sent."). */
   success?: ReactNode;
-  onSuccess?: (result: { id: string }) => void;
+  onSuccess?: (result: { id: string; notified: boolean }) => void;
   onError?: (error: { code: string; message: string }) => void;
 }
 export function Form(props: FormProps): JSX.Element;

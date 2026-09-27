@@ -55,7 +55,7 @@ export declare namespace forms {
      * FormData or a flat object; no files. Rejects: invalid_request (400), unauthorized (401),
      * rate_limited / limit_exceeded (429).
      */
-    submit(form: string, data: Record<string, FieldValue> | FormData): Promise<{ ok: true; id: string }>;
+    submit(form: string, data: Record<string, FieldValue> | FormData): Promise<{ ok: true; id: string; notified: boolean }>;
     /** Newest first, ≤ 100 per page (admins only). */
     submissions(form: string, opts?: { limit?: number; before?: string }): Promise<{ submissions: Submission[]; next_cursor: string | null }>;
     /** The CSV export URL (admins only), e.g. for <a href download>. */
@@ -185,7 +185,7 @@ export default drobek;
 //   children: ReactNode;
 //   /** Shown instead of the fields after a successful submit (default "Thank you — sent."). */
 //   success?: ReactNode;
-//   onSuccess?: (result: { id: string }) => void;
+//   onSuccess?: (result: { id: string; notified: boolean }) => void;
 //   onError?: (error: { code: string; message: string }) => void;
 // }
 // export function Form(props: FormProps): JSX.Element;

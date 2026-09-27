@@ -22,7 +22,7 @@ export interface FormProps extends Omit<FormHTMLAttributes<HTMLFormElement>, 'on
   children: ReactNode;
   /** Shown instead of the fields after a successful submit (default "Thank you — sent."). */
   success?: ReactNode;
-  onSuccess?: (result: { id: string }) => void;
+  onSuccess?: (result: { id: string; notified: boolean }) => void;
   onError?: (error: { code: string; message: string }) => void;
 }
 
@@ -69,7 +69,7 @@ export function Form({ name, children, success, onSuccess, onError, ...rest }: F
     try {
       const result = await drobek.forms.submit(name, new FormData(e.currentTarget));
       setStatus({ state: 'sent' });
-      onSuccess?.({ id: result.id });
+      onSuccess?.({ id: result.id, notified: result.notified });
     } catch (err) {
       const info = errorInfo(err);
       setStatus({ state: 'error', message: messageFor(info.code) });

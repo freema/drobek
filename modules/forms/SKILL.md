@@ -77,7 +77,7 @@ export type FieldValue = string | number | boolean | null | string[];
 export interface Submission { id: string; created_at: string; data: Record<string, FieldValue>; user_id: string | null; notified: boolean }
 export interface Api {
   prepare(form: string): Promise<void>; // fetch the time token early
-  submit(form: string, data: Record<string, FieldValue> | FormData): Promise<{ ok: true; id: string }>; // waits ≥ 2 s after the token
+  submit(form: string, data: Record<string, FieldValue> | FormData): Promise<{ ok: true; id: string; notified: boolean }>; // waits ≥ 2 s after the token
   submissions(form: string, opts?: { limit?: number; before?: string }): Promise<{ submissions: Submission[]; next_cursor: string | null }>; // admins
   csvUrl(form: string): string; // admins: <a href={…} download>
 }
@@ -90,7 +90,7 @@ export interface FormProps extends Omit<FormHTMLAttributes<HTMLFormElement>, 'on
   name: string; // ^[a-z0-9][a-z0-9_-]{0,39}$
   children: ReactNode;
   success?: ReactNode;
-  onSuccess?: (result: { id: string }) => void;
+  onSuccess?: (result: { id: string; notified: boolean }) => void;
   onError?: (error: { code: string; message: string }) => void;
 }
 export function Form(props: FormProps): JSX.Element;
@@ -112,6 +112,9 @@ Config per form name: `rules.submit` `public` (default) | `user`;
 - `FORMS_SUBMITS_PER_IP_HOUR` 10 per visitor per app,
   `FORMS_PER_APP_PER_DAY` 200 per app. Notifications also count against
   `EMAIL_PER_APP_PER_DAY`; past it submissions are still stored.
+- `submit` answers `notified: false` when no e-mail went out (nobody to
+  notify, a mail limit, the transport failed): the submission is stored —
+  tell the visitor it was saved, not that it was e-mailed.
 - Submissions are personal data: only app admins (auth, role `admin`) can
   list/export them; the owner also sees them in drobek.
 
