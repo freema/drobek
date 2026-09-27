@@ -1,0 +1,67 @@
+name: Submit a module
+description: List your drobek platform module in the directory at www.drobek.app/modules.
+title: 'Module: '
+labels: [module-submission]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Modules listed at [www.drobek.app/modules](https://www.drobek.app/modules) must install with `task selfhost:module:add -- <spec>` and follow [docs/MODULES.md → Writing a module](https://github.com/freema/drobek/blob/main/docs/MODULES.md#writing-a-module). A maintainer reviews the package and adds it to the directory, or answers here with what is missing.
+  - type: input
+    id: name
+    attributes:
+      label: Module name
+      description: The short name drobek loads it under (`erp` for `drobek-module-erp`).
+      placeholder: 'erp'
+    validations:
+      required: true
+  - type: input
+    id: package
+    attributes:
+      label: npm package or tarball URL
+      description: The spec an operator passes to `task selfhost:module:add`.
+      placeholder: 'drobek-module-erp@1.2.0'
+    validations:
+      required: true
+  - type: input
+    id: repository
+    attributes:
+      label: Source repository
+      placeholder: 'https://github.com/acme/drobek-module-erp'
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What it does
+      description: One line for the directory, then what it adds — routes, the SDK an app imports, config, secrets, its skill.
+    validations:
+      required: true
+  - type: input
+    id: contract
+    attributes:
+      label: Module contract
+      description: The `contract` range in its `defineModule()`.
+      placeholder: '^1.1'
+    validations:
+      required: true
+  - type: input
+    id: license
+    attributes:
+      label: License
+      placeholder: 'AGPL-3.0-only'
+    validations:
+      required: true
+  - type: checkboxes
+    id: rules
+    attributes:
+      label: Module rules
+      options:
+        - label: It declares `@drobek/modules` and `drizzle-orm` as peer dependencies and ships `dist/`, `migrations/` and `SKILL.md`.
+          required: true
+        - label: It keeps to its own tables (`mod_<name>` / `mod_<name>_*`), never alters another table and never reads other modules' secrets.
+          required: true
+        - label: It never logs a secret or end-user data and never executes app code.
+          required: true
+        - label: '`npm test` passes, including its skill check.'
+          required: true
