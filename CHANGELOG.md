@@ -18,7 +18,7 @@
   - Each setting is tagged "Default" or "Saved for this app". A field touched by a change awaiting confirmation shows the new value next to the one in force.
   - `*` marks only text, number and select fields that need a value. A list says whether it can be left empty and how many items it takes.
   - A module's source, contract, slots, contributions and error codes are collapsed "Technical details" on the module page and the workspace Modules page.
-  - The workspace Modules page has a search (`?q=`) and a jump list, and collapses limits and technical facts. Limits read in human units (`10 MB`, `1 min`) with the exact value underneath.
+  - The workspace Modules page has a search (`?q=`) and a jump list, whose field follows the URL ("Show all", back/forward), and collapses limits and technical facts. Limits read in human units (`10 MB`, `1 min`) with the exact value underneath.
 
 ### Docs
 - **Module directory and submission form** (NSO-340). The published modules are also listed at [www.drobek.app/modules](https://www.drobek.app/modules); authors submit theirs through the GitHub issue form `module-submission` (package, repository, contract, license and the module rules) instead of a pull request to `docs/MODULES.md`.

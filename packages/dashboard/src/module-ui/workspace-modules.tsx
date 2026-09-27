@@ -101,7 +101,8 @@ export function WorkspaceModules({
   const shown = filterModules(modules, q);
   return (
     <>
-      <Form method="get" role="search" style={styles.search} data-testid="modules-search">
+      {/* Keyed by the query: the uncontrolled input follows the URL on "Show all" and back/forward. */}
+      <Form key={query} method="get" role="search" style={styles.search} data-testid="modules-search">
         <div style={styles.searchField}>
           <label htmlFor="modules-q" style={ui.label}>
             Search modules

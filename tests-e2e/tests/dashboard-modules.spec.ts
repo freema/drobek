@@ -333,6 +333,21 @@ test.describe('dashboard Modules tab (M2-02) @local', () => {
     await expect(ownerPage.locator('[data-testid="workspace-module"]')).toHaveCount(0);
     await ownerPage.getByTestId('modules-search-clear').click();
     await expect(ownerPage.locator('[data-testid="workspace-module"][data-module="hello"]')).toBeVisible();
+    const all = await ownerPage.locator('[data-testid="workspace-module"]').count();
+    // The input follows the URL, so the next Search does not bring the cleared query back.
+    await expect(ownerPage.getByTestId('modules-search-input')).toHaveValue('');
+    await ownerPage.getByTestId('modules-search-submit').click();
+    await expect(ownerPage).toHaveURL(/[?&]q=(&|$)/);
+    await expect(ownerPage.locator('[data-testid="workspace-module"]')).toHaveCount(all);
+    await ownerPage.goBack();
+    await ownerPage.goBack();
+    await expect(ownerPage).toHaveURL(/[?&]q=no-such-module-xyz/);
+    await expect(ownerPage.getByTestId('modules-search-input')).toHaveValue('no-such-module-xyz');
+    await expect(ownerPage.getByTestId('modules-no-match')).toBeVisible();
+    await ownerPage.goForward();
+    await expect(ownerPage).not.toHaveURL(/[?&]q=/);
+    await expect(ownerPage.getByTestId('modules-search-input')).toHaveValue('');
+    await expect(ownerPage.locator('[data-testid="workspace-module"]')).toHaveCount(all);
     // The dedicated editors are a declared capability, shown per module.
     await expect(ownerPage.locator('[data-testid="workspace-module"][data-module="data"] [data-testid="fact-editor"]')).toHaveText('collections');
     await expect(ownerPage.locator('[data-testid="workspace-module"][data-module="proxy"] [data-testid="fact-editor"]')).toHaveText('upstreams');
