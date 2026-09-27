@@ -9,7 +9,7 @@
  */
 import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { apps, auditLog, users, workspaces } from '@drobek/db';
+import { apps, auditLog, moduleConfigs, users, workspaces } from '@drobek/db';
 import {
   AppsError,
   createApp,
@@ -133,12 +133,13 @@ describe('setGalleryListing', () => {
 });
 
 describe('listGallery (the public list)', () => {
-  it('shows listed apps with name, description, production URL and publish time — nothing else', async () => {
+  it('shows only public metadata and configured module names', async () => {
     const app = await listed('Counts things.');
     const { items } = await listGallery({ limit: 48, env: ON });
     const item = items.find((i) => i.url === `https://${app.slug}.apps.example.test`);
     expect(item).toBeDefined();
-    expect(Object.keys(item!).sort()).toEqual(['description', 'name', 'publishedAt', 'url']);
+    expect(Object.keys(item!).sort()).toEqual(['description', 'modules', 'name', 'publishedAt', 'url']);
+    expect(item!.modules).toEqual([]);
     expect(item).toMatchObject({ name: 'Gallery app', description: 'Counts things.' });
     expect(new Date(item!.publishedAt).toISOString()).toBe(item!.publishedAt);
     // No owner data anywhere in the payload.
@@ -146,6 +147,41 @@ describe('listGallery (the public list)', () => {
     expect(json).not.toContain('owner@example.test');
     expect(json).not.toContain(wsId);
     expect(json).not.toContain(app.id);
+  });
+
+  it('lists saved module names without config, pending proposals or another app’s modules', async () => {
+    const app = await listed('Module metadata fixture.');
+    const other = await publishedApp();
+    await db.insert(moduleConfigs).values([
+      { appId: app.id, module: 'data', config: { collections: { privateRecords: {} } } },
+      { appId: app.id, module: 'counter', config: { counters: { plays: {} } }, pending: { patch: { secretName: 'pending-only' } } },
+      { appId: app.id, module: 'auth', config: {}, pending: { patch: { allowlist: ['private@example.test'] } } },
+      { appId: app.id, module: 'email', config: {} },
+      { appId: other.id, module: 'files', config: { maxBytes: 123 } },
+    ]);
+    for (const result of [await listGallery({ q: 'Module metadata fixture', env: ON }), await listGalleryPage({ q: 'Module metadata fixture', env: ON })]) {
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].modules).toEqual(['counter', 'data']);
+      const payload = JSON.stringify(result);
+      for (const privateValue of ['privateRecords', 'pending-only', 'private@example.test', app.id, other.id, 'maxBytes']) {
+        expect(payload).not.toContain(privateValue);
+      }
+    }
+  });
+
+  it('matches Czech names and descriptions with either spelling, including decomposed accents and literal wildcards', async () => {
+    const app = await publishedApp('Podzimní obloha');
+    await setGalleryListing(app.id, { listed: true, description: 'Příliš žluťoučký kůň, 37%_review.' }, actor, { env: ON });
+    for (const q of ['podzimni', 'PODZIMNÍ', 'podzimní'.normalize('NFD'), 'prilis zlutoucky kun', 'PŘÍLIŠ', '37%_review']) {
+      const cursor = await listGallery({ q, env: ON });
+      const page = await listGalleryPage({ q, limit: 1, page: 1, env: ON });
+      expect(cursor.items.map((i) => i.name), q).toEqual(['Podzimní obloha']);
+      expect(page, q).toMatchObject({ total: 1, pages: 1, items: [{ name: 'Podzimní obloha' }] });
+    }
+    expect((await listGallery({ q: '37X_review', env: ON })).items).toEqual([]);
+    const plain = await publishedApp('Letni obloha');
+    await setGalleryListing(plain.id, { listed: true, description: 'Ascii name.' }, actor, { env: ON });
+    expect((await listGallery({ q: 'letní', env: ON })).items.map((i) => i.name)).toEqual(['Letni obloha']);
   });
 
   it('unpublish takes the app off at once and clears the flag (audited, reason unpublish)', async () => {

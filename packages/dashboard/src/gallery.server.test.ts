@@ -168,7 +168,7 @@ describe('GET /api/public/gallery (NSO-340)', () => {
     expect(await res.json()).toMatchObject({ error: 'not_found' });
   });
 
-  it('lists the listed app — name, description, url, publishedAt only; public cache + CORS *', async () => {
+  it('lists public metadata and module names; public cache + CORS *', async () => {
     await post('shift-plan', { intent: 'gallery', listed: 'on', description: 'Plans shifts.' });
     const res = await getGallery('', { 'x-real-ip': '203.0.113.9' });
     expect(res.status).toBe(200);
@@ -183,6 +183,7 @@ describe('GET /api/public/gallery (NSO-340)', () => {
           description: 'Plans shifts.',
           url: 'https://shift-plan.apps.example.test',
           publishedAt: '2026-09-20T10:00:00.000Z',
+          modules: [],
         },
       ],
     });

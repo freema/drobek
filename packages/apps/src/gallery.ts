@@ -69,12 +69,13 @@ export function galleryQuery(raw: string | null | undefined): string | null {
 }
 
 /**
- * The search text as an ILIKE pattern `%<text>%` with the LIKE wildcards
+ * Strip combining accents (matching the SQL normalization) and build an
+ * ILIKE pattern `%<text>%` with the LIKE wildcards
  * `%`, `_` and the escape character `\` escaped, so every character of the
  * text matches itself (used with `ESCAPE '\'`).
  */
 export function galleryLikePattern(text: string): string {
-  return `%${text.replace(/[\\%_]/g, '\\$&')}%`;
+  return `%${text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[\\%_]/g, '\\$&')}%`;
 }
 
 /** The public list's order: `new` = newest publish first (the default), `name` = name A→Z. */

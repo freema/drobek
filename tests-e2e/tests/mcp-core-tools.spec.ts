@@ -32,18 +32,21 @@ const ALL_TOOLS = [
   'list_apps',
   'list_assets',
   'list_domains',
+  'list_upstreams',
   'query_data',
   'read_file',
+  'register_upstream',
   'remove_domain',
+  'remove_upstream',
   'restore_version',
   'skill_info',
   'verify_domain',
   'write_files',
 ];
-const READ_TOOLS = new Set(['list_apps', 'get_app', 'read_file', 'skill_info', 'query_data', 'get_logs', 'list_assets', 'list_domains']);
+const READ_TOOLS = new Set(['list_apps', 'get_app', 'read_file', 'skill_info', 'query_data', 'get_logs', 'list_assets', 'list_domains', 'list_upstreams']);
 /** NSO-366: the domain tools that ask public DNS or change the public site. */
 const OPEN_WORLD_TOOLS = new Set(['verify_domain', 'remove_domain']);
-const IDEMPOTENT_WRITES = new Set(['configure_module', 'delete_asset', 'add_domain', 'verify_domain', 'remove_domain']);
+const IDEMPOTENT_WRITES = new Set(['configure_module', 'delete_asset', 'add_domain', 'verify_domain', 'remove_domain', 'register_upstream', 'remove_upstream']);
 
 const TEMPLATE_FILES = ['drobek.json', 'index.html', 'src/main.tsx', 'src/styles.css'];
 
@@ -146,14 +149,14 @@ test('core tools: create → broken write → fix → limits → restore → rea
   skipUnlessLocal();
   const a = await mcpClient(page, request, { tag: 'core', scope: 'read write' });
   try {
-    // tools/list under `read write`: exactly the 17 non-publish tools, each with a title + annotations.
+    // tools/list under `read write`: exactly the 20 non-publish tools, each with a title + annotations.
     const listed = (await a.client.listTools()).tools;
     expect(listed.map((t) => t.name).sort()).toEqual(ALL_TOOLS);
     for (const t of listed) {
       expect(t.title ?? t.annotations?.title, `${t.name} title`).toBeTruthy();
       expect(t.annotations?.readOnlyHint, `${t.name} readOnlyHint`).toBe(READ_TOOLS.has(t.name));
       expect(t.annotations?.openWorldHint, `${t.name} openWorldHint`).toBe(OPEN_WORLD_TOOLS.has(t.name));
-      // NSO-307: explicit idempotentHint — reads, configure_module, delete_asset and the domain tools repeat safely; create/write/restore/upload URLs do not.
+      // NSO-307: explicit idempotentHint — reads, configure_module, delete_asset and the domain/upstream tools repeat safely; create/write/restore/upload URLs do not.
       expect(t.annotations?.idempotentHint, `${t.name} idempotentHint`).toBe(READ_TOOLS.has(t.name) || IDEMPOTENT_WRITES.has(t.name));
     }
 
