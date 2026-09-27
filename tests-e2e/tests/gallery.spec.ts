@@ -40,6 +40,7 @@ interface GalleryItem {
   description: string;
   url: string;
   publishedAt: string;
+  modules: string[];
 }
 
 interface Created {
@@ -141,7 +142,7 @@ test.describe('gallery: list from the dashboard and over MCP, public API, admin 
     await expect(page.getByTestId('gallery-status')).toHaveAttribute('data-state', 'visible');
     expect(await listedFlag(app.app_id)).toEqual({ gallery_listed: true, gallery_description: description });
 
-    // The public API: CORS *, a 60 s public cache, the four fields only.
+    // The public API: CORS *, a 60 s public cache, public metadata only.
     const res = await request.get(GALLERY);
     expect(res.status()).toBe(200);
     expect(res.headers()['access-control-allow-origin']).toBe('*');
@@ -154,9 +155,10 @@ test.describe('gallery: list from the dashboard and over MCP, public API, admin 
       description,
       url: urlOf(prodHost(app.slug)),
       publishedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/),
+      modules: [],
     });
     const all = await galleryItems(request);
-    for (const item of all) expect(Object.keys(item).sort()).toEqual(['description', 'name', 'publishedAt', 'url']);
+    for (const item of all) expect(Object.keys(item).sort()).toEqual(['description', 'modules', 'name', 'publishedAt', 'url']);
     const text = JSON.stringify(all);
     const ws = await personalWorkspaceOf(owner.email);
     for (const secret of [owner.email, ws.id, app.app_id, await userIdByEmail(owner.email)]) expect(text).not.toContain(secret);
@@ -269,7 +271,7 @@ test.describe('gallery: list from the dashboard and over MCP, public API, admin 
     const listed = await callTool(owner.client, 'set_gallery_listing', {
       app_id: app.app_id,
       listed: true,
-      description: `Live preview ${token}.`,
+      description: `Podzimní obloha ${token}.`,
       user_confirmed: true,
     });
     expect(listed.isError, listed.text).toBe(false);
@@ -277,6 +279,8 @@ test.describe('gallery: list from the dashboard and over MCP, public API, admin 
     const found = await request.get(`${GALLERY}?q=${token.toUpperCase()}`);
     expect(found.headers()['cache-control']).toBe('public, max-age=60');
     expect(((await found.json()) as { items: GalleryItem[] }).items.map((i) => i.url)).toEqual([urlOf(prodHost(app.slug))]);
+    const accents = await request.get(`${GALLERY}?q=${encodeURIComponent(`podzimni obloha ${token}`)}&page=1`);
+    expect(await accents.json()).toMatchObject({ total: 1, items: [{ url: urlOf(prodHost(app.slug)), modules: [] }] });
     const paged = await request.get(`${GALLERY}?q=${token}&page=1&sort=name`);
     expect(await paged.json()).toMatchObject({ page: 1, pages: 1, total: 1, items: [{ url: urlOf(prodHost(app.slug)) }] });
     expect(await (await request.get(`${GALLERY}?q=${token}&page=2`)).json()).toEqual({ items: [], page: 2, pages: 1, total: 1, previews: true });

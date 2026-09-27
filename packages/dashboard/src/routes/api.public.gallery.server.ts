@@ -4,11 +4,11 @@
  * www.drobek.app/gallery, through its own proxy or straight from the
  * browser).
  *
- *   cursor mode (default):  200 { items: [{ name, description, url, publishedAt }], next? }
+ *   cursor mode (default):  200 { items: [{ name, description, url, publishedAt, modules }], next? }
  *   page mode:              200 { items: [...], page, pages, total, previews }
  *
  * `url` is the production host `https://<slug>.<APPS_DOMAIN>`; `?limit` 1–48
- * (default 24); `?q` = case-insensitive substring of the name or the
+ * (default 24); `?q` = case- and accent-insensitive substring of the name or the
  * description (trimmed, at most 100 characters; `%` `_` `\` match
  * themselves); `?sort` = `new` (newest publish first, the default) or `name`
  * (A→Z). Cursor mode (`sort=new` without `page`, or with a `cursor`):
@@ -20,7 +20,9 @@
  * Only apps whose owner listed them AND that are published, public (no
  * password gate), not taken down, not deleted and not hidden by a super-admin
  * (@drobek/apps listGallery filters at query time). No owner data: no
- * e-mail, workspace, user or app id.
+ * e-mail, workspace, user or app id. `modules` contains only names with a
+ * non-empty saved config, never config values or pending proposals; it does
+ * not claim that a configured module is currently enabled or used.
  *
  * Read-only public data: `Access-Control-Allow-Origin: *`,
  * `Cache-Control: public, max-age=60`. Per client IP at most

@@ -116,9 +116,12 @@ This document is the map of how that works. The neighbours:
   (`apps.gallery_listed` / `gallery_description`) in the dashboard, or an
   agent does with `set_gallery_listing` and the user's explicit yes
   (`user_confirmed: true`). `GET /api/public/gallery` on the dashboard host
-  returns name, description, production URL and `apps.published_at` (set by
-  every publish), newest first with a cursor or in numbered pages (`?page`,
-  with `pages` / `total`), searchable (`?q`, name or description) and
+  returns name, description, production URL, `apps.published_at` (set by
+  every publish) and `modules` (names with non-empty saved configurations,
+  without config values or pending proposals; not a claim of current usage
+  or availability), newest first with a cursor or in numbered pages (`?page`,
+  with `pages` / `total`), searchable (`?q`, name or description, ignoring case
+  and combining accents) and
   sortable by name (`?sort=name`), CORS `*`, cached 60 s — no owner data. It
   filters at query time (listed, published, public, not taken down, not
   deleted, not hidden by a super-admin); unpublish and takedown also clear

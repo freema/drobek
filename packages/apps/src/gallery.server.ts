@@ -12,7 +12,7 @@
  *  - `listGallery` (cursor pages) / `listGalleryPage` (numbered pages, sort by
  *    newest or name; both searchable) — the public list behind
  *    `GET /api/public/gallery`: name, description, production URL, publish
- *    time — never an owner, workspace or id. It filters at QUERY time
+ *    time and configured module names — never config, an owner, workspace or id. It filters at QUERY time
  *    (listed AND published AND public AND not taken down AND not deleted AND
  *    not hidden), so an unpublish, a takedown or a delete takes the entry off
  *    the list with the very next request, whatever the flag says. unpublishApp / takedownApp also clear the flag
@@ -25,7 +25,7 @@
  */
 import { and, asc, desc, eq, isNotNull, isNull, sql, type SQL } from 'drizzle-orm';
 import { AUDIT_ACTIONS, writeAudit } from '@drobek/audit';
-import { apps, getDb, workspaces } from '@drobek/db';
+import { apps, getDb, moduleConfigs, workspaces } from '@drobek/db';
 import { AppsError } from './errors.js';
 import { notifyAppChanged } from './events.js';
 import {
@@ -191,6 +191,8 @@ export interface GalleryItem {
   url: string;
   /** ISO 8601, when the production host last started serving a version. */
   publishedAt: string;
+  /** Module names with a non-empty saved config; not pending proposals or a usage/availability claim. */
+  modules: string[];
 }
 
 /** Listed AND published AND public AND not taken down AND not deleted AND not hidden. */
@@ -207,23 +209,34 @@ function visibleInGallery(): SQL[] {
   ];
 }
 
-/** The visible entries, narrowed by the search text (name or description, case-insensitive substring). */
+/** The visible entries, narrowed by a case- and accent-insensitive substring. */
 function galleryWhere(q: string | null | undefined): SQL[] {
   const where = visibleInGallery();
   const text = galleryQuery(q);
   if (text) {
     const pattern = galleryLikePattern(text);
     where.push(
-      sql`(coalesce(${apps.name}, ${apps.slug}) ILIKE ${pattern} ESCAPE '\\' OR ${apps.galleryDescription} ILIKE ${pattern} ESCAPE '\\')`
+      sql`(regexp_replace(normalize(coalesce(${apps.name}, ${apps.slug}), NFD), '[\u0300-\u036f]', '', 'g') ILIKE ${pattern} ESCAPE '\\' OR regexp_replace(normalize(${apps.galleryDescription}, NFD), '[\u0300-\u036f]', '', 'g') ILIKE ${pattern} ESCAPE '\\')`
     );
   }
   return where;
 }
 
-const itemColumns = { slug: apps.slug, name: apps.name, description: apps.galleryDescription, publishedAt: apps.publishedAt };
+const itemColumns = {
+  slug: apps.slug,
+  name: apps.name,
+  description: apps.galleryDescription,
+  publishedAt: apps.publishedAt,
+  // Names only, from the current saved configuration. A correlated aggregate
+  // keeps pagination/counts intact and avoids a query per card. No extension
+  // or module runtime dependency is needed by this public core API.
+  modules: sql<string[]>`(select coalesce(jsonb_agg(${moduleConfigs.module} order by ${moduleConfigs.module}), '[]'::jsonb)
+    from ${moduleConfigs} where ${moduleConfigs.appId} = ${apps.id}
+    and jsonb_typeof(${moduleConfigs.config}) = 'object' and ${moduleConfigs.config} <> '{}'::jsonb)`,
+};
 
 function toItem(
-  r: { slug: string; name: string | null; description: string | null; publishedAt: Date | null },
+  r: { slug: string; name: string | null; description: string | null; publishedAt: Date | null; modules: string[] },
   env: NodeJS.ProcessEnv | undefined
 ): GalleryItem {
   return {
@@ -231,6 +244,7 @@ function toItem(
     description: r.description ?? '',
     url: publishedUrl(r.slug, env),
     publishedAt: (r.publishedAt as Date).toISOString(),
+    modules: r.modules,
   };
 }
 
