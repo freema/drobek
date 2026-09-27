@@ -25,7 +25,7 @@ import {
   revokeAccountApiKey,
   revokeAccountConnection,
 } from './account.server.js';
-import { activityCsvLines } from './activity-csv.server.js';
+import { activityCsvHeaderLine, activityCsvRowLine } from './activity-csv.server.js';
 
 const MIGRATIONS_DIR = fileURLToPath(new URL('../../db/drizzle/migrations', import.meta.url));
 
@@ -75,8 +75,9 @@ describe('audited account mutations (M2-04)', () => {
     expect((await listActivity({ workspaceId: ws.id, actorKind: 'end_user' })).rows).toEqual([]);
 
     // The Activity CSV carries the new actions.
-    const csv = activityCsvLines(
-      rows.map((r) => ({
+    const csv = [
+      activityCsvHeaderLine(),
+      ...rows.map((r) => activityCsvRowLine({
         createdAt: r.createdAt.toISOString(),
         action: r.action,
         actorKind: r.actorKind,
@@ -84,7 +85,7 @@ describe('audited account mutations (M2-04)', () => {
         subjectType: r.subjectType,
         subject: r.target,
       }))
-    ).join('\n');
+    ].join('\n');
     expect(csv).toContain(`,api_key.create,user,${user.email},api_key,${created.id}`);
     expect(csv).toContain(`,api_key.revoke,user,${user.email},api_key,${created.id}`);
   });

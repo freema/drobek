@@ -33,6 +33,7 @@
  * takes effect on the next request.
  */
 import { randomBytes } from 'node:crypto';
+import { readCookieValue } from '@drobek/core';
 import { appsOrigin } from '@drobek/apps';
 import type { EndUser, HookApp, Principal } from './contract.js';
 
@@ -105,19 +106,9 @@ export interface EndUserRedis {
   incr(key: string): Promise<number>;
 }
 
-function readCookie(header: string | null, name: string): string | null {
-  if (!header) return null;
-  for (const part of header.split(';')) {
-    const eq = part.indexOf('=');
-    if (eq === -1) continue;
-    if (part.slice(0, eq).trim() === name) return part.slice(eq + 1).trim();
-  }
-  return null;
-}
-
 /** The end-user token of a Cookie header, or null (never a malformed value). */
 export function readEndUserToken(cookieHeader: string | null, secure: boolean): string | null {
-  const token = readCookie(cookieHeader, endUserCookieName(secure));
+  const token = readCookieValue(cookieHeader, endUserCookieName(secure));
   return token && END_USER_TOKEN_RE.test(token) ? token : null;
 }
 

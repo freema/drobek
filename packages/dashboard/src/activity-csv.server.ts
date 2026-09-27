@@ -48,10 +48,3 @@ export function activityCsvRowLine(row: ActivityCsvRow): string {
     row.subject ?? '',
   ]);
 }
-
-/** Header + every row, as an array of escaped CSV lines (no trailing newline). */
-export function activityCsvLines(rows: ActivityCsvRow[]): string[] {
-  const lines = [activityCsvHeaderLine()];
-  for (const row of rows) lines.push(activityCsvRowLine(row));
-  return lines;
-}

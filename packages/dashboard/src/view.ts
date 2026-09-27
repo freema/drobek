@@ -173,18 +173,6 @@ export function canDeleteRecord(effectiveRole: WorkspaceRole | null): boolean {
 
 // ── Activity / audit view (PHY-85) ───────────────────────────────────────────
 
-/**
- * Governance read authorization, as a pure function: the workspace Activity view
- * (the audit trail) is workspace-admin / super-admin ONLY. A super-admin's
- * effective workspace role is 'workspace-admin', so this one rule covers it; an
- * editor, viewer, or non-member (null effective role) is DENIED. The route
- * re-enforces this server-side via requireWorkspaceRole('workspace-admin') — a
- * viewer/editor → 403, a non-member → 404, anonymous → /login redirect.
- */
-export function canReadActivity(effectiveRole: WorkspaceRole | null): boolean {
-  return effectiveRole !== null && roleAtLeast(effectiveRole, 'workspace-admin');
-}
-
 /** A raw audit row handed to the Activity shaping (db-free; from listActivity). */
 export interface ActivityRowInput {
   id: string;

@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   ACTIVITY_CSV_HEADER,
   activityCsvHeaderLine,
-  activityCsvLines,
   activityCsvRowLine,
   type ActivityCsvRow,
 } from './activity-csv.server.js';
@@ -44,22 +43,4 @@ describe('activity CSV serialization (PHY-85; reuses PHY-121 csvLine)', () => {
     );
   });
 
-  it('activityCsvLines prepends the header before the rows', () => {
-    const rows: ActivityCsvRow[] = [
-      {
-        createdAt: '2026-07-04T12:00:00.000Z',
-        action: 'app.create',
-        actorKind: 'agent',
-        actor: '',
-        subjectType: 'app',
-        subject: 'my-app',
-      },
-    ];
-    const lines = activityCsvLines(rows);
-    expect(lines).toHaveLength(2);
-    expect(lines[0]).toBe(activityCsvHeaderLine());
-    expect(lines[1]).toBe(
-      '2026-07-04T12:00:00.000Z,app.create,agent,,app,my-app'
-    );
-  });
 });

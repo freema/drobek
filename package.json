@@ -4,7 +4,10 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "esbuild"
-    ]
+    ],
+    "overrides": {
+      "express@4>qs": "^6.16.0"
+    }
   },
   "scripts": {
     "build:packages": "pnpm --filter @drobek/agent-dx build && pnpm --filter @drobek/db build && pnpm --filter @drobek/core build && pnpm --filter @drobek/compile build && pnpm --filter @drobek/audit build && pnpm --filter @drobek/apps build && pnpm --filter @drobek/email build && pnpm --filter @drobek/domains build && pnpm --filter @drobek/auth build && pnpm --filter @drobek/tenancy build && pnpm --filter @drobek/insights build && pnpm --filter @drobek/serving build && pnpm --filter @drobek/proxy build && pnpm --filter @drobek/sdk build && pnpm --filter @drobek/modules build && pnpm --filter drobek-module-auth build && pnpm --filter drobek-module-email build && pnpm --filter drobek-module-forms build && pnpm --filter drobek-module-data build && pnpm --filter drobek-module-proxy build && pnpm --filter drobek-module-files build && pnpm --filter drobek-module-hello build && pnpm --filter create-drobek-module build && pnpm --filter @drobek/mcp build && pnpm --filter @drobek/dashboard build && pnpm --filter @drobek/oauth build",

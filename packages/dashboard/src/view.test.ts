@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   canDeleteRecord,
   canPublish,
-  canReadActivity,
   formatTimestamp,
   shapeActivity,
   appThumbnail,
@@ -125,17 +124,6 @@ describe('canDeleteRecord (Data-tab delete authorization)', () => {
   it('allows editor and workspace-admin', () => {
     expect(canDeleteRecord('editor')).toBe(true);
     expect(canDeleteRecord('workspace-admin')).toBe(true);
-  });
-});
-
-describe('canReadActivity (PHY-85 audit read authorization — pure)', () => {
-  it('allows only workspace-admin (super-admin collapses to it)', () => {
-    expect(canReadActivity('workspace-admin')).toBe(true);
-  });
-  it('denies editor, viewer, and a non-member', () => {
-    expect(canReadActivity('editor')).toBe(false);
-    expect(canReadActivity('viewer')).toBe(false);
-    expect(canReadActivity(null)).toBe(false);
   });
 });
 
