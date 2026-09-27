@@ -114,7 +114,7 @@ test('dashboard: apps list → version history → UI publish of an older versio
   await expect(row(1)).toContainText('first cut');
   await expect(row(1)).toContainText('agent');
   await expect(row(2)).toContainText('user');
-  await expect(row(3)).toContainText('errors');
+  await expect(row(3)).toContainText('build failed');
 
   // Publish is offered ONLY on v1: v2 is already published, v3 did not compile.
   const buttons = page.getByTestId('publish-button');

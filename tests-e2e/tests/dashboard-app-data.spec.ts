@@ -446,7 +446,7 @@ test.describe("dashboard: the owner's app tabs — data edits + import, forms, u
 
     const base = `/workspaces/${ws}/apps/${created.slug}/logs`;
     await p.goto(base);
-    await expect(p.locator('[data-testid="compile-row"]').first()).toContainText('ok');
+    await expect(p.locator('[data-testid="compile-row"]').first()).toContainText('succeeded');
     await expect(p.locator('[data-testid="runtime-empty"]')).toBeVisible();
 
     const ctx = await browser.newContext();
