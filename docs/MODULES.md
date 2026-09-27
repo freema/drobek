@@ -1265,6 +1265,7 @@ URL), what it does, the contract it declares and where its source is.
 | Package | What it does | Contract | Source |
 | --- | --- | --- | --- |
 | `drobek-module-hello` | the scaffold's output plus the slot demo — a starting point, not for production; not on npm, install it from a tarball `npm pack` writes in the example | `^1.1` | [`examples/drobek-module-hello`](../examples/drobek-module-hello) |
+| `drobek-module-counter` | named counters per app (page views, likes, downloads): `drobek.counter.hit(key)` / `get(key)` / `list()`, per-IP and per-app hit limits, `maxKeys`; not on npm yet, install the tarball from its [GitHub release](https://github.com/freema/drobek-module-counter/releases) | `^1.1` | [`freema/drobek-module-counter`](https://github.com/freema/drobek-module-counter) |
 
 ## End-user sessions (core)
 
