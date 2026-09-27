@@ -3,9 +3,9 @@
  * a `v*` tag) with a fake `npm` — nothing reaches a registry.
  */
 import { describe, expect, it } from 'vitest';
-import { NPM_PACKAGES, packageOf, privateImports, publishPackages } from '../../../scripts/npm-packages.mjs';
+import { NPM_PACKAGES, npmAlias, packageOf, privateImports, publishPackages } from '../../../scripts/npm-packages.mjs';
 
-const staged = (version: string) => NPM_PACKAGES.map((p) => ({ name: p.name, version, dir: `/out/${p.dir}` }));
+const staged = (version: string) => NPM_PACKAGES.map((p) => ({ name: p.published, workspace: p.name, version, dir: `/out/${p.dir}` }));
 
 /** A fake `npm`: `view` answers from `published`, every call is recorded. */
 function fakeNpm(published: string[]) {
@@ -22,12 +22,12 @@ function fakeNpm(published: string[]) {
 }
 
 describe('publishPackages', () => {
-  it('publishes @drobek/sdk, @drobek/modules and create-drobek-module in that order, publicly', () => {
+  it('publishes @freema/drobek-sdk, @freema/drobek-modules and create-drobek-module in that order, publicly', () => {
     const npm = fakeNpm([]);
     const r = publishPackages(staged('0.2.0'), { exec: npm.exec, log: () => {} });
     expect(r).toEqual([
-      { name: '@drobek/sdk', action: 'published' },
-      { name: '@drobek/modules', action: 'published' },
+      { name: '@freema/drobek-sdk', action: 'published' },
+      { name: '@freema/drobek-modules', action: 'published' },
       { name: 'create-drobek-module', action: 'published' },
     ]);
     expect(npm.calls.filter((c) => c[1] === 'publish')).toEqual([
@@ -38,7 +38,7 @@ describe('publishPackages', () => {
   });
 
   it('skips a version that is already on the registry (a re-run of the tag)', () => {
-    const npm = fakeNpm(['@drobek/sdk@0.2.0']);
+    const npm = fakeNpm(['@freema/drobek-sdk@0.2.0']);
     const r = publishPackages(staged('0.2.0'), { exec: npm.exec, log: () => {} });
     expect(r.map((x) => x.action)).toEqual(['skipped', 'published', 'published']);
     expect(npm.calls.some((c) => c[1] === 'publish' && c[2] === '/out/drobek-sdk')).toBe(false);
@@ -75,5 +75,17 @@ describe('the declaration leak check', () => {
     expect(packageOf('drizzle-orm/pg-core')).toBe('drizzle-orm');
     expect(packageOf('@paralleldrive/cuid2')).toBe('@paralleldrive/cuid2');
     expect(packageOf('@drobek/modules/testing')).toBe('@drobek/modules');
+  });
+});
+
+describe('the published names', () => {
+  it('map the workspace packages to @freema/* and create-drobek-module, installed under the workspace name by an npm alias', () => {
+    expect(NPM_PACKAGES.map((p) => [p.name, p.published])).toEqual([
+      ['@drobek/sdk', '@freema/drobek-sdk'],
+      ['@drobek/modules', '@freema/drobek-modules'],
+      ['create-drobek-module', 'create-drobek-module'],
+    ]);
+    expect(npmAlias('@drobek/modules', '^0.3.3')).toBe('npm:@freema/drobek-modules@^0.3.3');
+    expect(() => npmAlias('@drobek/core', '1.0.0')).toThrow(/not published/);
   });
 });

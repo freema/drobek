@@ -6,6 +6,11 @@ path, { body, query })`), `DrobekError` and the error beacon. The drobek
 server bundles it with the SDK entries of its modules into
 `/__drobek/sdk.js`, which apps import as `drobek`.
 
+Published on npm as `@freema/drobek-sdk`. `@drobek/modules` re-exports
+`SdkCore`, so most modules never install it; one that imports
+`@drobek/sdk` directly adds it under that name with an npm alias:
+`"@drobek/sdk": "npm:@freema/drobek-sdk@^X.Y.Z"`.
+
 A module's SDK entry needs only the type:
 
 ```ts
@@ -16,6 +21,6 @@ export default function erp(core: SdkCore) {
 }
 ```
 
-`SdkCore` is re-exported by `@drobek/modules` too. The guide is
+The guide is
 [Writing a module](https://github.com/freema/drobek/blob/main/docs/MODULES.md#writing-a-module).
 Licence: AGPL-3.0-only.

@@ -26,7 +26,9 @@ const packages = join(root, 'packages');
 const version = process.argv[3]?.replace(/^v/, '') || undefined;
 const staged = await stagePackages({ out: packages, ...(version ? { version } : {}) });
 const packed = packPackages(staged, packages);
-const tarballs = Object.fromEntries(staged.map((pkg, i) => [pkg.name, `file:${packed[i]}`]));
+// Keyed by the workspace name: a `file:` tarball installs under the dependency's key, as the
+// published `npm:@freema/drobek-*` aliases do, so the module's `@drobek/*` imports resolve.
+const tarballs = Object.fromEntries(staged.map((pkg, i) => [pkg.workspace, `file:${packed[i]}`]));
 const project = join(root, 'module');
 const excluded = new Set(['node_modules', '.git', '.drobek', '.drobek-npm', 'dist', 'coverage']);
 cpSync(moduleDir, project, { recursive: true, filter: (path) => path === moduleDir || !excluded.has(basename(path)) });
@@ -83,4 +85,4 @@ await buildSdk(modules);
 console.log('Packed module loads and its SDK builds:', mod.name, mod.version, mod.contract);
 `);
 run(consumer, process.execPath, ['check.mjs']);
-console.log(`PASS: ${original.name}@${original.version} against @drobek/modules@${staged.find((pkg) => pkg.name === '@drobek/modules').version}`);
+console.log(`PASS: ${original.name}@${original.version} against @drobek/modules (@freema/drobek-modules@${staged.find((pkg) => pkg.workspace === '@drobek/modules').version})`);

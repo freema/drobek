@@ -1191,11 +1191,32 @@ optional peer dependency).
 
 A module outside this repository is an npm package written against the
 published contract. Every drobek release publishes, with the image's
-version, three npm packages: **`@drobek/modules`** (the contract, the
-registry's checks, the test kit `@drobek/modules/testing`),
-**`@drobek/sdk`** (the browser `SdkCore` a module's SDK entry receives) and
-**`create-drobek-module`** (the scaffold). All three are AGPL-3.0-only, like
-the rest of drobek ([`LICENSING.md`](./LICENSING.md) → Modules).
+version, three npm packages: **`@freema/drobek-modules`** (the contract,
+the registry's checks, the test kit), **`@freema/drobek-sdk`** (the browser
+`SdkCore` a module's SDK entry receives) and **`create-drobek-module`**
+(the scaffold). All three are AGPL-3.0-only, like the rest of drobek
+([`LICENSING.md`](./LICENSING.md) → Modules).
+
+Module code imports them as `@drobek/modules` (and
+`@drobek/modules/testing`) and `@drobek/sdk`: a module installs the
+published packages under those names with an npm alias, which is what the
+scaffold writes:
+
+```sh
+npm install --save-dev @drobek/modules@npm:@freema/drobek-modules@^X.Y.Z
+# only when the module imports @drobek/sdk itself (@drobek/modules re-exports SdkCore):
+npm install --save-dev @drobek/sdk@npm:@freema/drobek-sdk@^X.Y.Z
+```
+
+```json
+{
+  "peerDependencies": { "@drobek/modules": ">=X.Y.Z", "drizzle-orm": ">=0.45.0" },
+  "devDependencies": { "@drobek/modules": "npm:@freema/drobek-modules@^X.Y.Z" }
+}
+```
+
+The peer stays on `@drobek/modules`: that is the name the server's
+installer checks and the server provides.
 
 ### Scaffold
 
@@ -1225,7 +1246,8 @@ is the scaffold's output plus the slot demo.
   lowest contract whose fields the module uses (`'^1.1'` for `errors`,
   `slots`, `contributes`, `availability`, `dashboard`, `onAppDelete`).
 - `@drobek/modules` and `drizzle-orm` are **peer dependencies** (and dev
-  dependencies for the tests); `zod` comes as `z` from `@drobek/modules`.
+  dependencies for the tests — `@drobek/modules` through the npm alias);
+  `zod` comes as `z` from `@drobek/modules`.
   On a server the module uses the server's instances — never bundle them:
   a second copy of the contract breaks the brand checks (`isModuleError`).
 - Everything a module needs is exported by `@drobek/modules`
@@ -1265,7 +1287,7 @@ pinned counter module against candidate core packages before release.
 | `1.0.0` | v0.1.0 – v0.1.4 | `'^1.0'` (or no `contract`) |
 | `1.1.0` | v0.2.0 – | `'^1.1'` or `'^1.0'` |
 
-`@drobek/modules@X.Y.Z` is the contract of the image `ghcr.io/freema/drobek:vX.Y.Z`
+`@freema/drobek-modules@X.Y.Z` is the contract of the image `ghcr.io/freema/drobek:vX.Y.Z`
 (both come from one tag). Additive contract changes raise the minor version
 (`1.1` → `1.2`): a module declaring `'^1.1'` keeps loading. A breaking
 change raises the major, and such a server refuses `'^1.x'` modules with a
@@ -1281,7 +1303,7 @@ URL), what it does, the contract it declares and where its source is.
 | Package | What it does | Contract | Source |
 | --- | --- | --- | --- |
 | `drobek-module-hello` | the scaffold's output plus the slot demo — a starting point, not for production; not on npm, install it from a tarball `npm pack` writes in the example | `^1.1` | [`examples/drobek-module-hello`](../examples/drobek-module-hello) |
-| `drobek-module-counter` | named counters per app (page views, likes, downloads): `drobek.counter.hit(key)` / `get(key)` / `list()`, per-IP and per-app hit limits, `maxKeys`; not on npm yet, install the tarball from its [GitHub release](https://github.com/freema/drobek-module-counter/releases) | `^1.1` | [`freema/drobek-module-counter`](https://github.com/freema/drobek-module-counter) |
+| `drobek-module-counter` | named counters per app (page views, likes, downloads): `drobek.counter.hit(key)` / `get(key)` / `list()`, per-IP and per-app hit limits, `maxKeys`; on npm as `drobek-module-counter` (`task selfhost:module:add -- drobek-module-counter@<version>`), each version also as a tarball on its [GitHub release](https://github.com/freema/drobek-module-counter/releases) | `^1.1` | [`freema/drobek-module-counter`](https://github.com/freema/drobek-module-counter) |
 
 ## End-user sessions (core)
 

@@ -72,7 +72,8 @@ Why it is built this way:
 
   Operators can add their own modules against the public contract:
   `npm create drobek-module@latest <name>` scaffolds one against the npm
-  packages `@drobek/modules` + `@drobek/sdk` —
+  packages `@freema/drobek-modules` + `@freema/drobek-sdk` (imported as
+  `@drobek/modules` / `@drobek/sdk` through npm aliases) —
   [`docs/MODULES.md` → Writing a module](./docs/MODULES.md#writing-a-module).
 
 ## Self-host quickstart
@@ -395,6 +396,10 @@ without building an image.
 ```sh
 npm create drobek-module@latest erp   # routes, SDK slice, migration, SKILL.md, tests
 ```
+
+The contract is on npm as `@freema/drobek-modules`; the scaffold installs
+it under the name module code imports, `@drobek/modules`
+(`"@drobek/modules": "npm:@freema/drobek-modules@^X.Y.Z"`).
 
 [`docs/MODULES.md` → Writing a module](./docs/MODULES.md#writing-a-module)
 walks through the contract, publishing and installing;

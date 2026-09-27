@@ -28,6 +28,11 @@ The output is a working module against the module contract `^1.1`:
 - `README.md` — building, publishing and installing it on a server
   (`task selfhost:module:add`).
 
+The generated `package.json` installs the contract from npm under the name
+the code imports — `"@drobek/modules": "npm:@freema/drobek-modules@^X.Y.Z"`
+in `devDependencies` — and declares the peer `"@drobek/modules": ">=X.Y.Z"`
+the server's installer checks.
+
 The guide is
 [Writing a module](https://github.com/freema/drobek/blob/main/docs/MODULES.md#writing-a-module).
 Licence: AGPL-3.0-only.

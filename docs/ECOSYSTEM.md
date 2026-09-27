@@ -6,7 +6,7 @@ testing or self-hosting the public platform needs no access to that repository.
 
 | Repository | Responsibility | Integration boundary |
 | --- | --- | --- |
-| [drobek](https://github.com/freema/drobek) | Server, dashboard, MCP, built-in modules and public module-author packages | Versioned image, MCP protocol, `@drobek/modules`, `@drobek/sdk`, `create-drobek-module` |
+| [drobek](https://github.com/freema/drobek) | Server, dashboard, MCP, built-in modules and public module-author packages | Versioned image, MCP protocol, npm `@freema/drobek-modules` + `@freema/drobek-sdk` (imported as `@drobek/modules` / `@drobek/sdk` via npm aliases), `create-drobek-module` |
 | [drobek-plugin](https://github.com/freema/drobek-plugin) | Agent installation, commands and skills | MCP endpoint and documented tools; no server implementation imports |
 | [drobek-module-counter](https://github.com/freema/drobek-module-counter) | Optional server-side counters | Public module contract, own migrations and SDK contribution |
 | Private hosted-service repository | Website, deployment configuration and service-specific integrations | Released core image and documented extension interfaces |

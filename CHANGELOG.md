@@ -1,5 +1,10 @@
 # Changelog — drobek (core)
 
+## Unreleased
+
+### Changed
+- **npm packages are published under the maintainer's npm scope** (NSO-366): `@freema/drobek-modules`, `@freema/drobek-sdk` and `create-drobek-module` (unscoped; `npm create drobek-module@latest` is unchanged) — there is no `@drobek` npm organisation. Module code keeps importing `@drobek/modules` / `@drobek/sdk`, installed through an npm alias (`"@drobek/modules": "npm:@freema/drobek-modules@^X.Y.Z"`, which `create-drobek-module` writes), and keeps the peer `"@drobek/modules": ">=X.Y.Z"` the server's installer checks; `@freema/drobek-modules` depends on `@drobek/sdk` the same way. The workspace package names are unchanged.
+
 ## v0.3.2 — 2026-09-27
 
 ### Changed

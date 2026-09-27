@@ -695,11 +695,12 @@ To rebuild a release image yourself: `git checkout vX.Y.Z && task build` (same
 sources and lockfile; the build args come from the checkout).
 
 The same tag publishes the npm packages for module authors at its version:
-`@drobek/modules`, `@drobek/sdk` and `create-drobek-module`
-([`MODULES.md`](./MODULES.md) → Writing a module) — `@drobek/modules@X.Y.Z`
-is the module contract of the image `vX.Y.Z`. `node scripts/npm-packages.mjs
-pack` (after `pnpm build:packages`) writes the same tarballs into
-`dist-npm/`.
+`@freema/drobek-modules`, `@freema/drobek-sdk` and `create-drobek-module`
+([`MODULES.md`](./MODULES.md) → Writing a module; module code imports the
+first two as `@drobek/modules` / `@drobek/sdk` through npm aliases) —
+`@freema/drobek-modules@X.Y.Z` is the module contract of the image `vX.Y.Z`.
+`node scripts/npm-packages.mjs pack` (after `pnpm build:packages`) writes
+the same tarballs into `dist-npm/`.
 
 ## TLS
 

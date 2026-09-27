@@ -26,6 +26,12 @@ npm run build       # dist/ — what a drobek server loads
 - `SKILL.md` — five sections, at most 150 lines; every code block is
   compiled and typechecked by `npm run check`.
 
+The contract is published on npm as `@freema/drobek-modules` and installed
+under the name the code imports, `@drobek/modules`, through an npm alias in
+`devDependencies` (`"@drobek/modules": "npm:@freema/drobek-modules@^X.Y.Z"`).
+A module that imports `@drobek/sdk` directly adds
+`"@drobek/sdk": "npm:@freema/drobek-sdk@^X.Y.Z"` the same way.
+
 ## Install on a drobek server
 
 Publish the package (`npm publish`) or pack it (`npm pack` → a tarball the

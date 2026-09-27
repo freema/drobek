@@ -1,24 +1,34 @@
 #!/usr/bin/env node
 /**
- * The npm packages for external module authors (NSO-349): `@drobek/sdk`,
- * `@drobek/modules` and `create-drobek-module`.
+ * The npm packages for external module authors (NSO-349), published under
+ * the npm user scope `@freema` (there is no `@drobek` npm organisation):
+ *
+ *   workspace `@drobek/sdk`      → npm `@freema/drobek-sdk`
+ *   workspace `@drobek/modules`  → npm `@freema/drobek-modules`
+ *   `create-drobek-module`       → npm `create-drobek-module`
+ *
+ * Module code keeps importing `@drobek/modules` / `@drobek/sdk`: a module
+ * installs them through an npm alias
+ * (`"@drobek/modules": "npm:@freema/drobek-modules@^X.Y.Z"`), so they land in
+ * `node_modules/@drobek/*`, and keeps the peer `"@drobek/modules": ">=X.Y.Z"`
+ * the server's installer checks.
  *
  * The workspace manifests stay what the server needs (`workspace:*` links to
  * private packages). This script derives the PUBLISHED packages from the
  * built workspace (`pnpm build:packages` first) into `dist-npm/<dir>/`:
  *
- *  - `@drobek/sdk`: its `dist/` as built (no dependencies).
- *  - `@drobek/modules`: `dist/index.js` + `dist/testing.js` bundled with
- *    esbuild — the private workspace packages (`@drobek/db`, `@drobek/core`,
- *    `@drobek/compile`, …) are inlined, every npm package stays an import.
- *    The declarations are rolled up with rollup-plugin-dts, so the `.d.ts`
- *    never names a private package. `zod` + `drizzle-orm` are
+ *  - `@freema/drobek-sdk`: the sdk's `dist/` as built (no dependencies).
+ *  - `@freema/drobek-modules`: `dist/index.js` + `dist/testing.js` bundled
+ *    with esbuild — the private workspace packages (`@drobek/db`,
+ *    `@drobek/core`, `@drobek/compile`, …) are inlined, every npm package
+ *    stays an import. The declarations are rolled up with rollup-plugin-dts,
+ *    so the `.d.ts` never names a private package. `zod` + `drizzle-orm` are
  *    peerDependencies (the server provides its own instances to external
  *    modules), `typescript` an optional peer (`checkSkill`), `@drobek/sdk`
- *    a dependency at the same version, the other npm imports dependencies
- *    with the ranges the workspace uses. The core migrations
- *    (`packages/db/drizzle/migrations`) ship in `dist/migrations/core` for
- *    `coreMigrationsDir()`.
+ *    a dependency aliased to `@freema/drobek-sdk` at the same version, the
+ *    other npm imports dependencies with the ranges the workspace uses. The
+ *    core migrations (`packages/db/drizzle/migrations`) ship in
+ *    `dist/migrations/core` for `coreMigrationsDir()`.
  *  - `create-drobek-module`: its `dist/` + `template/`.
  *
  * Every package gets the repository's licence (AGPL-3.0-only, LICENSE) and
@@ -30,9 +40,9 @@
  *   node scripts/npm-packages.mjs publish  --version X.Y.Z  [--dry-run]
  *
  * `publish` (the CI `npm` job on a release tag) skips a package whose version
- * is already on the registry and publishes a pre-release (`X.Y.Z-rc.1`) under
- * the dist-tag `next`. Authentication is npm Trusted Publishing (OIDC) — no
- * token; provenance is attached automatically.
+ * is already on the registry (asked by its published name) and publishes a
+ * pre-release (`X.Y.Z-rc.1`) under the dist-tag `next`. Authentication is npm
+ * Trusted Publishing (OIDC) — no token; provenance is attached automatically.
  */
 import { execFileSync } from 'node:child_process';
 import { builtinModules } from 'node:module';
@@ -51,23 +61,30 @@ const SEMVER_RE = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/;
 const readJson = (p) => JSON.parse(readFileSync(p, 'utf8'));
 const writeJson = (p, v) => writeFileSync(p, JSON.stringify(v, null, 2) + '\n');
 
-/** The packages in publish order (a dependency before its dependents). */
+/** The packages in publish order (a dependency before its dependents): `name` in the workspace, `published` on npm. */
 export const NPM_PACKAGES = [
-  { name: '@drobek/sdk', src: 'packages/sdk', dir: 'drobek-sdk' },
-  { name: '@drobek/modules', src: 'packages/modules', dir: 'drobek-modules' },
-  { name: 'create-drobek-module', src: 'packages/create-drobek-module', dir: 'create-drobek-module' },
+  { name: '@drobek/sdk', published: '@freema/drobek-sdk', src: 'packages/sdk', dir: 'drobek-sdk' },
+  { name: '@drobek/modules', published: '@freema/drobek-modules', src: 'packages/modules', dir: 'drobek-modules' },
+  { name: 'create-drobek-module', published: 'create-drobek-module', src: 'packages/create-drobek-module', dir: 'create-drobek-module' },
 ];
 
-function commonManifest(pkg, src, version) {
+/** The spec that installs a workspace package's npm release under the workspace name (`npm:@freema/drobek-sdk@1.2.3`). */
+export function npmAlias(name, range) {
+  const entry = NPM_PACKAGES.find((p) => p.name === name);
+  if (!entry) throw new Error(`${name} is not published to npm`);
+  return `npm:${entry.published}@${range}`;
+}
+
+function commonManifest(entry, pkg, version) {
   return {
-    name: pkg.name,
+    name: entry.published,
     version,
     description: pkg.description,
     license: LICENSE,
     type: 'module',
     author: 'Tomáš Grasl',
     homepage: 'https://github.com/freema/drobek/blob/main/docs/MODULES.md#writing-a-module',
-    repository: { type: 'git', url: REPO_URL, directory: src },
+    repository: { type: 'git', url: REPO_URL, directory: entry.src },
     bugs: { url: 'https://github.com/freema/drobek/issues' },
     keywords: ['drobek', 'drobek-module', 'mcp'],
     engines: pkg.engines ?? { node: '>=22.0.0' },
@@ -93,7 +110,7 @@ async function stageSdk(entry, out, version) {
   cpSync(join(src, 'dist'), join(out, 'dist'), { recursive: true });
   copyCommon(entry.src, out);
   writeJson(join(out, 'package.json'), {
-    ...commonManifest(pkg, entry.src, version),
+    ...commonManifest(entry, pkg, version),
     exports: pkg.exports,
     files: ['dist', 'README.md', 'LICENSE'],
     sideEffects: false,
@@ -172,7 +189,7 @@ async function stageModules(entry, out, version) {
     plugins: [external],
     logLevel: 'error',
     legalComments: 'inline',
-    banner: { js: '// @drobek/modules — AGPL-3.0-only — https://github.com/freema/drobek' },
+    banner: { js: '// @freema/drobek-modules (@drobek/modules) — AGPL-3.0-only — https://github.com/freema/drobek' },
   });
 
   // Only what the output still imports becomes a dependency.
@@ -226,14 +243,14 @@ async function stageModules(entry, out, version) {
   const dependencies = {};
   const peerDependencies = {};
   for (const [name, range] of [...npmDeps].sort(([a], [b]) => a.localeCompare(b))) {
-    if (name === '@drobek/sdk') dependencies[name] = version;
+    if (name === '@drobek/sdk') dependencies[name] = npmAlias(name, version);
     else if (PEERS.includes(name)) peerDependencies[name] = range;
     else if (!(name in OPTIONAL_PEERS)) dependencies[name] = range;
   }
   for (const p of PEERS) if (!peerDependencies[p]) peerDependencies[p] = pkg.dependencies[p];
   Object.assign(peerDependencies, OPTIONAL_PEERS);
   writeJson(join(out, 'package.json'), {
-    ...commonManifest(pkg, entry.src, version),
+    ...commonManifest(entry, pkg, version),
     exports: {
       '.': { types: './dist/index.d.ts', default: './dist/index.js' },
       './testing': { types: './dist/testing.d.ts', default: './dist/testing.js' },
@@ -254,7 +271,7 @@ async function stageCreate(entry, out, version) {
   cpSync(join(src, 'template'), join(out, 'template'), { recursive: true });
   copyCommon(entry.src, out);
   writeJson(join(out, 'package.json'), {
-    ...commonManifest(pkg, entry.src, version),
+    ...commonManifest(entry, pkg, version),
     bin: pkg.bin,
     exports: pkg.exports,
     files: ['dist', 'template', 'README.md', 'LICENSE'],
@@ -268,7 +285,7 @@ export function workspaceVersion() {
   return readJson(join(ROOT, 'packages/modules/package.json')).version;
 }
 
-/** Stage every npm package into `<out>/<dir>`; returns `{ name, version, dir }` per package. */
+/** Stage every npm package into `<out>/<dir>`; returns `{ name (on npm), workspace, version, dir }` per package. */
 export async function stagePackages({ out = join(ROOT, 'dist-npm'), version = workspaceVersion() } = {}) {
   if (!SEMVER_RE.test(version)) throw new Error(`--version ${JSON.stringify(version)} is not X.Y.Z[-pre]`);
   rmSync(out, { recursive: true, force: true });
@@ -277,7 +294,7 @@ export async function stagePackages({ out = join(ROOT, 'dist-npm'), version = wo
     const dir = join(out, entry.dir);
     mkdirSync(dir, { recursive: true });
     await STAGERS[entry.name](entry, dir, version);
-    staged.push({ name: entry.name, version, dir });
+    staged.push({ name: entry.published, workspace: entry.name, version, dir });
   }
   return staged;
 }

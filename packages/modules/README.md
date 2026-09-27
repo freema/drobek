@@ -7,6 +7,21 @@ A platform module is the server half of an app backend: routes under
 a per-app config the agent sets with `configure_module` and a skill the
 agent reads with `skill_info`.
 
+Published on npm as `@freema/drobek-modules`; a module installs it under the
+name its code imports, with an npm alias, and declares it as a peer (the
+server provides its own copy):
+
+```sh
+npm install --save-dev @drobek/modules@npm:@freema/drobek-modules@^X.Y.Z
+```
+
+```json
+{
+  "peerDependencies": { "@drobek/modules": ">=X.Y.Z" },
+  "devDependencies": { "@drobek/modules": "npm:@freema/drobek-modules@^X.Y.Z" }
+}
+```
+
 ```ts
 import { defineModule, z } from '@drobek/modules';
 
