@@ -14,7 +14,7 @@ import type { action, loader } from './workspaces.$slug.apps.$appSlug.modules.$m
 import { AppPage } from '../app-header.js';
 import { PendingBanner } from '../pending-banner.js';
 import { JsonSchemaForm } from '../module-ui/json-schema-form.js';
-import { ContributesTable, ErrorsTable, ModuleFactsList, SlotsTable } from '../module-ui/module-facts.js';
+import { ContributesTable, Disclosure, ErrorsTable, ModuleFactsList, SlotsTable } from '../module-ui/module-facts.js';
 import { PendingPanel } from '../module-ui/pending-panel.js';
 import { CollectionsEditor, UpstreamsEditor } from '../module-ui/rules-editors.js';
 import { SecretsForm } from '../module-ui/secrets-form.js';
@@ -96,7 +96,10 @@ export default function AppModuleRoute() {
         <section id="config" aria-label="Configuration">
           <h2 style={ui.h2}>Configuration</h2>
           {d.module.confirms ? (
-            <p style={ui.hint}>Some changes (those that widen access or send mail somewhere new) wait for confirmation after saving.</p>
+            <p style={ui.hint}>
+              Some changes (those that widen access or send mail somewhere new) wait for confirmation after saving; until then
+              the value in force stays.
+            </p>
           ) : null}
           {configErrors && configErrors.general.length > 0 ? (
             <div style={ui.error} role="alert" data-testid="config-errors">
@@ -110,6 +113,7 @@ export default function AppModuleRoute() {
             errors={configErrors?.fields}
             readOnly={!d.canEdit}
             busy={busy}
+            states={d.states}
           />
         </section>
       ) : null}
@@ -153,9 +157,15 @@ export default function AppModuleRoute() {
 
       <section id="about" aria-label="About this module" data-testid="module-about">
         <h2 style={ui.h2}>About this module</h2>
-        <ModuleFactsList facts={d.about} />
-        <SlotsTable slots={d.about.slots} />
-        <ContributesTable contributes={d.about.contributes} />
+        <ModuleFactsList facts={d.about} part="summary" />
+        <Disclosure
+          testId="module-technical"
+          summary={`Technical details — source, contract${d.about.slots.length + d.about.contributes.length > 0 ? ', slots and contributions' : ''}`}
+        >
+          <ModuleFactsList facts={d.about} part="technical" />
+          <SlotsTable slots={d.about.slots} />
+          <ContributesTable contributes={d.about.contributes} />
+        </Disclosure>
         <p style={ui.small}>
           <Link to={d.modulesHref} data-testid="workspace-modules-link">
             Every module of this server
@@ -165,9 +175,10 @@ export default function AppModuleRoute() {
       </section>
 
       <section id="errors" aria-label="Error codes">
-        <h2 style={ui.h2}>Error codes</h2>
-        <p style={ui.hint}>What this module’s routes may answer besides the core codes — the app’s code and the agent see these.</p>
-        <ErrorsTable errors={d.errors} />
+        <Disclosure testId="module-error-codes" summary={`Error codes (${d.errors.length})`}>
+          <p style={{ ...ui.small, margin: '0.3rem 0' }}>What this module’s routes may answer besides the core codes — the app’s code and the agent see these.</p>
+          <ErrorsTable errors={d.errors} />
+        </Disclosure>
       </section>
     </AppPage>
   );

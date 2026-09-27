@@ -10,7 +10,7 @@
  * Enable / Disable switch — mounts through
  * `<WorkspaceModules availabilityControls={…}>` (../workspace-modules-toggle.tsx).
  */
-import { useActionData, useLoaderData, useNavigation } from 'react-router';
+import { useActionData, useLoaderData, useNavigation, useSearchParams } from 'react-router';
 import { WorkspacePage } from '@drobek/tenancy/layout';
 import type { action, loader } from './workspaces.$slug.modules.server.js';
 import { WorkspaceModules } from '../module-ui/workspace-modules.js';
@@ -31,6 +31,7 @@ export default function WorkspaceModulesRoute() {
   const d = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const busy = useNavigation().state !== 'idle';
+  const [params] = useSearchParams();
   const error = actionData && 'error' in actionData ? actionData.error : null;
   const optIn = new Map(d.optIn.modules.map((m) => [m.name, m]));
   return (
@@ -52,6 +53,7 @@ export default function WorkspaceModulesRoute() {
       ) : null}
       <WorkspaceModules
         modules={d.modules}
+        query={params.get('q') ?? ''}
         availabilityControls={(m) => {
           const state = optIn.get(m.name);
           return state ? <WorkspaceModuleOptIn module={state} canToggle={d.optIn.canToggle} busy={busy} /> : null;

@@ -29,8 +29,8 @@ const here = (rel: string) => fileURLToPath(new URL(rel, import.meta.url));
 const sdkEntry = existsSync(here('./sdk.js')) ? here('./sdk.js') : here('./sdk.ts');
 
 export const helloConfig = z.object({
-  greeting: z.string().trim().min(1).max(80),
-  excited: z.boolean(),
+  greeting: z.string().trim().min(1).max(80).meta({ title: 'Greeting', description: 'The greeting text, e.g. “Hello”. A change waits for the owner’s confirmation.' }),
+  excited: z.boolean().meta({ title: 'Excited', description: 'End the greeting with “!” instead of “.”.' }),
 });
 export type HelloConfig = z.infer<typeof helloConfig>;
 

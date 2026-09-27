@@ -39,18 +39,29 @@ export const filesConfigSchema = z.strictObject({
   /** Who may upload / download (each a rule). Delete is always owner|admin. */
   rules: z
     .strictObject({
-      upload: rule.default(DEFAULT_FILE_RULES.upload),
-      read: rule.default(DEFAULT_FILE_RULES.read),
+      upload: rule.default(DEFAULT_FILE_RULES.upload).meta({
+        title: 'Who may upload',
+        description: 'A rule: public, user, owner, admin or none, alternatives joined with |. Opening it to public waits for the owner’s confirmation.',
+      }),
+      read: rule.default(DEFAULT_FILE_RULES.read).meta({
+        title: 'Who may download',
+        description: 'A rule like the one above; owner means the uploader. Opening it to public while the app holds files waits for the owner’s confirmation.',
+      }),
     })
-    .default({ ...DEFAULT_FILE_RULES }),
+    .default({ ...DEFAULT_FILE_RULES })
+    .meta({ title: 'Access', description: 'Deleting a file is always allowed to its uploader and the app’s admins.' }),
   /** Per-file cap in bytes for this app (≤ the operator's FILES_MAX_BYTES, which wins). */
-  maxBytes: z.number().int().min(1).max(MAX_CONFIG_BYTES).optional(),
+  maxBytes: z.number().int().min(1).max(MAX_CONFIG_BYTES).optional().meta({
+    title: 'Largest file (bytes)',
+    description: 'This app’s cap per file, e.g. 5242880 for 5 MB. It can only lower the server’s limit. Empty: the server’s limit.',
+  }),
   /** The accepted types (sniffed from the bytes). */
   allowedTypes: z
     .array(z.enum(TYPE_PATTERNS))
     .min(1)
     .max(TYPE_PATTERNS.length)
-    .default([...DEFAULT_ALLOWED_TYPES]),
+    .default([...DEFAULT_ALLOWED_TYPES])
+    .meta({ title: 'Accepted file types', description: 'Checked against the file’s bytes, not its name.' }),
 });
 
 export type FilesConfig = z.infer<typeof filesConfigSchema>;

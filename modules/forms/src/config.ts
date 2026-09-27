@@ -20,17 +20,25 @@ const formConfigSchema = z.strictObject({
   rules: z
     .strictObject({
       /** Who may submit: anyone, or only signed-in users (auth module). */
-      submit: z.enum(['public', 'user']).default('public'),
+      submit: z
+        .enum(['public', 'user'])
+        .default('public')
+        .meta({ title: 'Who may submit', description: 'public: anyone; user: only signed-in users (needs the auth module).' }),
     })
-    .default({ submit: 'public' }),
+    .default({ submit: 'public' })
+    .meta({ title: 'Access' }),
   notify: z
     .strictObject({
       /** Extra addresses that get every submission (owner-confirmed). */
-      emails: z.array(email).max(MAX_NOTIFY_EMAILS).default([]),
+      emails: z.array(email).max(MAX_NOTIFY_EMAILS).default([]).meta({
+        title: 'Extra addresses to notify',
+        description: 'Every submission is also e-mailed here. Any change waits for the owner’s confirmation.',
+      }),
       /** E-mail the app's owners (editors + workspace admins). */
-      owners: z.boolean().default(true),
+      owners: z.boolean().default(true).meta({ title: 'Notify the app’s owners', description: 'E-mail the workspace’s editors and admins about every submission.' }),
     })
-    .default({ emails: [], owners: true }),
+    .default({ emails: [], owners: true })
+    .meta({ title: 'Notifications' }),
 });
 
 export type FormConfig = z.infer<typeof formConfigSchema>;
@@ -39,7 +47,11 @@ export const formsConfigSchema = z.strictObject({
   forms: z
     .record(z.string().regex(FORM_NAME_RE, 'form names are lowercase letters, digits, - and _ (max 40)'), formConfigSchema)
     .refine((f) => Object.keys(f).length <= MAX_FORMS, `at most ${MAX_FORMS} forms`)
-    .default({}),
+    .default({})
+    .meta({
+      title: 'Forms',
+      description: 'Settings per form, by the name the app uses. A form without an entry takes submissions from anyone and notifies the app’s owners.',
+    }),
 });
 
 export type FormsConfig = z.infer<typeof formsConfigSchema>;

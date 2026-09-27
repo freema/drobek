@@ -10,6 +10,11 @@
  * entry with its own fields (recursively), a "Remove" checkbox per entry and
  * ONE empty entry to add a new one — still no client JS. Errors inside an
  * entry are shown at the top-level record / list they belong to.
+ *
+ * Labels are the schema's `title` (else the humanized key); the config keys
+ * sit in a collapsed "Config keys for agents" table. With `states`, each
+ * top-level setting says whether it is the module's default or saved for
+ * the app, and what a change awaiting confirmation would make it.
  */
 import { Form } from 'react-router';
 import {
@@ -18,9 +23,13 @@ import {
   fieldName,
   instancePath,
   isEntriesValue,
+  leafFields,
+  listRule,
+  needsValue,
   optionInputName,
   ENTRY_VALUE,
   type EntriesValue,
+  type FieldState,
   type FieldValue,
   type FormField,
 } from '../module-config.js';
@@ -32,6 +41,8 @@ export interface JsonSchemaFormProps {
   errors?: Record<string, string[]>;
   readOnly: boolean;
   busy?: boolean;
+  /** Per top-level field: the module's default or saved for this app, and its value once a pending change is confirmed. */
+  states?: Record<string, FieldState>;
 }
 
 function testId(path: string): string {
@@ -54,6 +65,48 @@ interface Place {
   readOnly: boolean;
   /** Inside the empty "add" entry: every select offers "(not set)". */
   blank: boolean;
+  /** Top level only: where each field's value comes from. */
+  states?: Record<string, FieldState>;
+}
+
+function RequiredMark({ field }: { field: FormField }) {
+  return needsValue(field) ? (
+    <span style={ui.muted} title="Must have a value">
+      {' '}
+      *
+    </span>
+  ) : null;
+}
+
+/** "Default" / "Saved for this app" next to a top-level label. */
+function OriginTag({ path, place }: { path: string; place: Place }) {
+  const state = place.prefix === '' ? place.states?.[path] : undefined;
+  if (!state) return null;
+  return state.origin === 'saved' ? (
+    <span style={ui.savedTag} data-testid={`field-origin-${testId(path)}`} data-origin="saved">
+      Saved for this app
+    </span>
+  ) : (
+    <span style={ui.originTag} data-testid={`field-origin-${testId(path)}`} data-origin="default">
+      Default
+    </span>
+  );
+}
+
+/** The value a top-level field takes once the change awaiting confirmation is confirmed. */
+function PendingNote({ path, place }: { path: string; place: Place }) {
+  const pending = place.prefix === '' ? place.states?.[path]?.pending : undefined;
+  if (pending === undefined) return null;
+  return (
+    <span style={ui.pendingNote} data-testid={`field-pending-${testId(path)}`}>
+      Waiting for confirmation: <code style={ui.mono}>{pending}</code> — the value shown here stays in force until it is confirmed.
+    </span>
+  );
+}
+
+function Description({ field }: { field: FormField }) {
+  const text = [field.description, listRule(field)].filter(Boolean).join(' ');
+  return text ? <span style={ui.desc}>{text}</span> : null;
 }
 
 function Leaf({ field, value, errors, place }: { field: FormField; value: FieldValue | undefined; errors?: string[]; place: Place }) {
@@ -81,8 +134,10 @@ function Leaf({ field, value, errors, place }: { field: FormField; value: FieldV
           <label style={{ ...ui.label, display: 'flex', gap: '0.45rem', alignItems: 'center' }} htmlFor={id}>
             <input type="checkbox" {...common} defaultChecked={value === true} />
             {field.label}
+            <OriginTag path={field.path} place={place} />
           </label>
           {field.description ? <span style={ui.desc}>{field.description}</span> : null}
+          <PendingNote path={field.path} place={place} />
           <FieldErrors path={instance} errors={errors} />
         </div>
       );
@@ -92,9 +147,10 @@ function Leaf({ field, value, errors, place }: { field: FormField; value: FieldV
         <fieldset style={ui.fieldset} data-testid={`field-${testId(instance)}`}>
           <legend style={ui.legend}>
             {field.label}
-            {field.required ? <span style={ui.muted}> *</span> : null}
+            <OriginTag path={field.path} place={place} />
           </legend>
-          {field.description ? <span style={ui.desc}>{field.description}</span> : null}
+          <Description field={field} />
+          <PendingNote path={field.path} place={place} />
           <div style={{ ...ui.row, margin: '0.3rem 0 0.5rem' }}>
             {field.options?.map((o, j) => (
               <label key={o} style={{ display: 'inline-flex', gap: '0.35rem', alignItems: 'center', fontSize: '0.88rem' }}>
@@ -147,15 +203,21 @@ function Leaf({ field, value, errors, place }: { field: FormField; value: FieldV
       control = <input type="text" {...common} defaultValue={text} style={inputStyle} autoComplete="off" />;
   }
   const kindHint =
-    field.kind === 'string-list' ? 'One per line.' : field.kind === 'json' ? 'JSON.' : field.kind === 'integer' ? 'A whole number.' : null;
+    field.kind === 'string-list'
+      ? `One per line. ${listRule(field) ?? ''}`.trim()
+      : field.kind === 'json'
+        ? 'JSON.'
+        : field.kind === 'integer'
+          ? 'A whole number.'
+          : null;
   const range =
     field.min !== undefined || field.max !== undefined ? ` ${field.min ?? '…'}–${field.max ?? '…'}.` : field.maxLength !== undefined ? ` At most ${field.maxLength} characters.` : '';
   return (
     <div style={ui.field}>
       <label style={ui.label} htmlFor={id}>
         {field.label}
-        {field.required ? <span style={ui.muted}> *</span> : null}{' '}
-        {place.prefix === '' ? <code style={{ ...ui.mono, ...ui.muted }}>{field.path}</code> : null}
+        <RequiredMark field={field} />
+        <OriginTag path={field.path} place={place} />
       </label>
       {field.description || kindHint || range ? (
         <span style={ui.desc}>
@@ -163,6 +225,7 @@ function Leaf({ field, value, errors, place }: { field: FormField; value: FieldV
           {range}
         </span>
       ) : null}
+      <PendingNote path={field.path} place={place} />
       {control}
       <FieldErrors path={instance} errors={errors} />
     </div>
@@ -235,10 +298,10 @@ function EntriesField({ field, value, errors, place }: { field: FormField; value
     <fieldset style={ui.fieldset} data-testid={`field-${testId(instance)}`} aria-invalid={errors?.length ? true : undefined}>
       <legend style={ui.legend}>
         {field.label}
-        {field.required ? <span style={ui.muted}> *</span> : null}{' '}
-        {place.prefix === '' ? <code style={{ ...ui.mono, ...ui.muted, fontWeight: 400 }}>{field.path}</code> : null}
+        <OriginTag path={field.path} place={place} />
       </legend>
-      {field.description ? <span style={ui.desc}>{field.description}</span> : null}
+      <Description field={field} />
+      <PendingNote path={field.path} place={place} />
       <input type="hidden" name={entryInputs.count(instance)} value={count} />
       {entries.length === 0 && place.readOnly ? <p style={ui.small}>No entries.</p> : null}
       {entries.map((e, i) => (
@@ -283,13 +346,68 @@ function Fields({
   );
 }
 
-export function JsonSchemaForm({ fields, values, errors, readOnly, busy }: JsonSchemaFormProps) {
+/** Which config key each field sets — what an agent passes to configure_module. */
+function ConfigPaths({ fields, states }: { fields: FormField[]; states?: Record<string, FieldState> }) {
+  const leaves = leafFields(fields);
+  return (
+    <details style={ui.details} data-testid="config-paths">
+      <summary style={ui.summary}>Config keys for agents</summary>
+      <p style={{ ...ui.small, margin: '0.3rem 0' }}>
+        The key each setting is stored under — what an agent passes to <code style={ui.mono}>configure_module</code>.
+      </p>
+      <div style={ui.tableWrap}>
+        <table style={ui.table}>
+          <thead>
+            <tr>
+              <th style={ui.th}>Setting</th>
+              <th style={ui.th}>Key</th>
+              <th style={ui.th}>Value from</th>
+            </tr>
+          </thead>
+          <tbody>
+            {leaves.map((f) => (
+              <tr key={f.path} data-testid="config-path-row" data-path={f.path}>
+                <td style={ui.td}>{f.label}</td>
+                <td style={ui.td}>
+                  <code style={ui.mono}>{f.path}</code>
+                </td>
+                <td style={ui.td}>{states?.[f.path]?.origin === 'saved' ? 'saved for this app' : 'module default'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  );
+}
+
+function Legend({ fields, states }: { fields: FormField[]; states?: Record<string, FieldState> }) {
+  const leaves = leafFields(fields);
+  const marked = leaves.some(needsValue);
+  const pending = states ? Object.values(states).some((s) => s.pending !== undefined) : false;
+  return (
+    <p style={{ ...ui.small, margin: '0 0 0.8rem' }} data-testid="config-legend">
+      <span style={ui.originTag}>Default</span> the module’s value — nothing is saved for this app.{' '}
+      <span style={ui.savedTag}>Saved for this app</span> set on this page or by an agent.
+      {marked ? ' * must have a value.' : ''} A list can be left empty unless it says how many items it needs.
+      {pending ? ' Fields with a change waiting for confirmation show the new value; the one in force stays until it is confirmed.' : ''}
+    </p>
+  );
+}
+
+export function JsonSchemaForm({ fields, values, errors, readOnly, busy, states }: JsonSchemaFormProps) {
   if (fields.length === 0) return null;
-  const body = <Fields fields={fields} values={values} errors={errors} place={{ prefix: '', readOnly, blank: false }} />;
+  const body = (
+    <>
+      {states ? <Legend fields={fields} states={states} /> : null}
+      <Fields fields={fields} values={values} errors={errors} place={{ prefix: '', readOnly, blank: false, states }} />
+    </>
+  );
   if (readOnly) {
     return (
       <div data-testid="config-form" data-readonly="true">
         {body}
+        <ConfigPaths fields={fields} states={states} />
       </div>
     );
   }
@@ -301,6 +419,7 @@ export function JsonSchemaForm({ fields, values, errors, readOnly, busy }: JsonS
       <button type="submit" style={ui.button} disabled={busy} data-testid="config-save">
         Save configuration
       </button>
+      <ConfigPaths fields={fields} states={states} />
     </Form>
   );
 }

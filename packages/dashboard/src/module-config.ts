@@ -60,6 +60,9 @@ export interface FormField {
   min?: number;
   max?: number;
   maxLength?: number;
+  /** List fields (`string-list`, `enum-list`, `object-list`): how many items the schema asks for. */
+  minItems?: number;
+  maxItems?: number;
 }
 
 /** Form input names are the config path under this prefix. */
@@ -126,6 +129,18 @@ function num(v: unknown): number | undefined {
   return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
 }
 
+/** A numeric bound worth showing (zod's integer bounds are ±MAX_SAFE_INTEGER — no real limit). */
+function bound(v: unknown): number | undefined {
+  const n = num(v);
+  return n !== undefined && Math.abs(n) < Number.MAX_SAFE_INTEGER ? n : undefined;
+}
+
+function itemBounds(n: Json): { minItems?: number; maxItems?: number } {
+  const minItems = bound(n.minItems);
+  const maxItems = bound(n.maxItems);
+  return { ...(minItems !== undefined ? { minItems } : {}), ...(maxItems !== undefined ? { maxItems } : {}) };
+}
+
 function stringEnum(node: unknown): string[] | null {
   if (!isObject(node) || !Array.isArray(node.enum) || node.enum.length === 0) return null;
   return node.enum.every((x) => typeof x === 'string') ? (node.enum as string[]) : null;
@@ -163,19 +178,19 @@ function fieldOf(key: string, path: string, node: unknown, required: boolean, de
     return { ...base, kind: 'string', ...(maxLength !== undefined ? { maxLength } : {}) };
   }
   if (t === 'number' || t === 'integer') {
-    const min = num(n.minimum);
-    const max = num(n.maximum);
+    const min = bound(n.minimum);
+    const max = bound(n.maximum);
     return { ...base, kind: t, ...(min !== undefined ? { min } : {}), ...(max !== undefined ? { max } : {}) };
   }
   if (t === 'boolean') return { ...base, kind: 'boolean' };
   if (t === 'array' && isObject(n.items)) {
     const items = unwrapNullable(n.items);
     const itemChoices = stringEnum(items);
-    if (itemChoices) return { ...base, kind: 'enum-list', options: itemChoices };
-    if (typeOf(items) === 'string') return { ...base, kind: 'string-list' };
+    if (itemChoices) return { ...base, kind: 'enum-list', options: itemChoices, ...itemBounds(n) };
+    if (typeOf(items) === 'string') return { ...base, kind: 'string-list', ...itemBounds(n) };
     // An array of objects: each item is an entry (add / remove, fields recursively).
     if (depth < MAX_ENTRY_DEPTH && typeOf(items) === 'object' && isObject(items.properties) && Object.keys(items.properties).length > 0) {
-      return { ...base, kind: 'object-list', entry: objectFields(items, '', depth + 1) };
+      return { ...base, kind: 'object-list', entry: objectFields(items, '', depth + 1), ...itemBounds(n) };
     }
   }
   if (t === 'object' && isObject(n.properties) && Object.keys(n.properties).length > 0) {
@@ -569,6 +584,68 @@ export function fieldErrors(issues: readonly Issue[], fieldPaths: readonly strin
     }
   }
   return { fields, general };
+}
+
+// ── what the form says about a field ─────────────────────────────────────────
+
+const LIST_KINDS: ReadonlySet<FieldKind> = new Set(['string-list', 'enum-list', 'record', 'object-list']);
+
+/**
+ * Whether the label carries the "must have a value" mark. A list, record or
+ * checkbox the schema requires is always sent (an empty list, `false`), so
+ * "required" there only means the key exists — how many items it needs is
+ * `listRule`'s to say.
+ */
+export function needsValue(f: FormField): boolean {
+  return f.required && !LIST_KINDS.has(f.kind) && f.kind !== 'boolean' && f.kind !== 'object';
+}
+
+/** How many items a list field takes, in words (null for a field that is not a list). */
+export function listRule(f: FormField): string | null {
+  if (!LIST_KINDS.has(f.kind)) return null;
+  const item = f.kind === 'record' ? 'entry' : 'item';
+  const items = f.kind === 'record' ? 'entries' : 'items';
+  const min = f.minItems ?? 0;
+  const max = f.maxItems;
+  const most = max !== undefined ? ` At most ${max} ${max === 1 ? item : items}.` : '';
+  if (min === 0) return `Can be left empty.${most}`;
+  return `Needs at least ${min} ${min === 1 ? item : items}.${most}`;
+}
+
+/** Where a field's value comes from, and what a change awaiting confirmation would make it. */
+export interface FieldState {
+  /** `saved`: set for this app; `default`: the module's default (nothing saved). */
+  origin: 'saved' | 'default';
+  /** The value once the pending change is confirmed (absent: the change leaves this field alone). */
+  pending?: string;
+}
+
+function shortValue(v: unknown): string {
+  const s = showValue(v);
+  return s.length > 120 ? `${s.slice(0, 119)}…` : s;
+}
+
+/**
+ * Per top-level leaf field (objects flattened; a record / list is one leaf):
+ * saved for this app or the module's default, and its value after the
+ * change awaiting confirmation (`pendingAfter`: the effective config once
+ * confirmed; null / undefined when nothing waits or it no longer validates).
+ */
+export function fieldStates(
+  fields: readonly FormField[],
+  input: { stored: unknown; config: unknown; pendingAfter?: unknown }
+): Record<string, FieldState> {
+  const out: Record<string, FieldState> = {};
+  const after = input.pendingAfter;
+  for (const f of leafFields(fields)) {
+    const state: FieldState = { origin: valueAt(input.stored, f.path) === undefined ? 'default' : 'saved' };
+    if (after !== null && after !== undefined) {
+      const next = valueAt(after, f.path);
+      if (!jsonEqualValue(valueAt(input.config, f.path), next)) state.pending = shortValue(next);
+    }
+    out[f.path] = state;
+  }
+  return out;
 }
 
 // ── rules ────────────────────────────────────────────────────────────────────

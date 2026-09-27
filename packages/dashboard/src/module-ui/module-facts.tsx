@@ -8,6 +8,7 @@
  * a secret.
  */
 import type { ReactNode } from 'react';
+import { formatLimit } from '../module-catalogue.js';
 import { ui } from './styles.js';
 
 export interface SlotFact {
@@ -69,32 +70,64 @@ function Fact({ label, children, testId }: { label: string; children: ReactNode;
   );
 }
 
-/** The key → value list: version, source, contract, availability (+ the workspace's state, when given), requires, editor. */
-export function ModuleFactsList({ facts, availabilityExtra }: { facts: ModuleFactsData; availabilityExtra?: ReactNode }) {
+/**
+ * The key → value list. `summary`: version, availability (+ the workspace's
+ * state, when given), requires. `technical`: source, contract, dashboard
+ * editor. `all`: both.
+ */
+export function ModuleFactsList({
+  facts,
+  availabilityExtra,
+  part = 'all',
+}: {
+  facts: ModuleFactsData;
+  availabilityExtra?: ReactNode;
+  part?: 'all' | 'summary' | 'technical';
+}) {
+  const summary = part !== 'technical';
+  const technical = part !== 'summary';
   return (
     <dl style={ui.facts}>
-      <Fact label="Version" testId="fact-version">
-        <code style={ui.mono}>{facts.version}</code>
-      </Fact>
-      <Fact label="Source" testId="fact-source">
-        <span data-source={facts.source}>{SOURCE_LABEL[facts.source] ?? facts.source}</span>
-      </Fact>
-      <Fact label="Contract" testId="fact-contract">
-        {facts.contract ? <code style={ui.mono}>{facts.contract}</code> : <span style={ui.muted}>not declared</span>}
-      </Fact>
-      <Fact label="Availability" testId="fact-availability">
-        <span data-availability={facts.availability}>{AVAILABILITY_LABEL[facts.availability] ?? facts.availability}</span>
-        {availabilityExtra}
-      </Fact>
-      <Fact label="Requires" testId="fact-requires">
-        {facts.requires.length > 0 ? facts.requires.map((r) => <code key={r} style={{ ...ui.mono, marginRight: '0.4rem' }}>{r}</code>) : <span style={ui.muted}>nothing</span>}
-      </Fact>
-      {facts.editor ? (
-        <Fact label="Dashboard editor" testId="fact-editor">
-          <code style={ui.mono}>{facts.editor}</code>
-        </Fact>
+      {summary ? (
+        <>
+          <Fact label="Version" testId="fact-version">
+            <code style={ui.mono}>{facts.version}</code>
+          </Fact>
+          <Fact label="Availability" testId="fact-availability">
+            <span data-availability={facts.availability}>{AVAILABILITY_LABEL[facts.availability] ?? facts.availability}</span>
+            {availabilityExtra}
+          </Fact>
+          <Fact label="Requires" testId="fact-requires">
+            {facts.requires.length > 0 ? facts.requires.map((r) => <code key={r} style={{ ...ui.mono, marginRight: '0.4rem' }}>{r}</code>) : <span style={ui.muted}>nothing</span>}
+          </Fact>
+        </>
+      ) : null}
+      {technical ? (
+        <>
+          <Fact label="Source" testId="fact-source">
+            <span data-source={facts.source}>{SOURCE_LABEL[facts.source] ?? facts.source}</span>
+          </Fact>
+          <Fact label="Contract" testId="fact-contract">
+            {facts.contract ? <code style={ui.mono}>{facts.contract}</code> : <span style={ui.muted}>not declared</span>}
+          </Fact>
+          {facts.editor ? (
+            <Fact label="Dashboard editor" testId="fact-editor">
+              <code style={ui.mono}>{facts.editor}</code>
+            </Fact>
+          ) : null}
+        </>
       ) : null}
     </dl>
+  );
+}
+
+/** A collapsed section (closed by default) — the technical detail a module page does not lead with. */
+export function Disclosure({ summary, testId, children, open }: { summary: ReactNode; testId: string; children: ReactNode; open?: boolean }) {
+  return (
+    <details style={ui.details} data-testid={testId} open={open}>
+      <summary style={ui.summary}>{summary}</summary>
+      {children}
+    </details>
   );
 }
 
@@ -179,23 +212,34 @@ export function LimitsTable({ limits }: { limits: LimitFact[] }) {
         <thead>
           <tr>
             <th style={ui.th}>Limit</th>
-            <th style={ui.th}>Meaning</th>
             <th style={ui.th}>This workspace</th>
           </tr>
         </thead>
         <tbody>
-          {limits.map((l) => (
-            <tr key={l.name} data-testid="limit-row" data-limit={l.name}>
-              <td style={ui.td}>
-                <code style={ui.mono}>{l.name}</code>
-              </td>
-              <td style={ui.td}>{l.meaning}</td>
-              <td style={ui.td}>
-                <strong data-testid="limit-value">{l.value ?? l.default}</strong>
-                {l.value !== undefined && l.value !== l.default ? <span style={ui.small}> (server default {l.default})</span> : null}
-              </td>
-            </tr>
-          ))}
+          {limits.map((l) => {
+            const value = l.value ?? l.default;
+            const shown = formatLimit(l.name, l.meaning, value);
+            const byDefault = formatLimit(l.name, l.meaning, l.default);
+            return (
+              <tr key={l.name} data-testid="limit-row" data-limit={l.name}>
+                <td style={ui.td}>
+                  <div>{l.meaning}</div>
+                  <code style={{ ...ui.mono, ...ui.small }}>{l.name}</code>
+                </td>
+                <td style={{ ...ui.td, minWidth: '6.5rem' }}>
+                  <strong data-testid="limit-value" data-value={value} title={shown.exact ?? undefined}>
+                    {shown.text}
+                  </strong>
+                  {shown.exact ? (
+                    <div style={ui.small} data-testid="limit-exact">
+                      {shown.exact}
+                    </div>
+                  ) : null}
+                  {l.value !== undefined && l.value !== l.default ? <div style={ui.small}>server default {byDefault.text}</div> : null}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
