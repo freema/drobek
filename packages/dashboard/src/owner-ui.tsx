@@ -5,6 +5,7 @@
  * pages render inside <AppPage> (breadcrumb, app header, tabs). No server
  * imports.
  */
+import { useState } from 'react';
 import { controls, mergeStyles } from '@drobek/tenancy/layout';
 
 export const ui = {
@@ -143,5 +144,35 @@ export function ModuleMissing({ does }: { does: string }) {
     <p style={ui.empty} data-testid="module-missing">
       No platform module on this server {does} (the operator lists modules in <code>DROBEK_MODULES</code>).
     </p>
+  );
+}
+
+/**
+ * A concrete prompt for the user's coding agent, with a copy button: setup
+ * that the agent does (it writes the app's files), so there is no dashboard
+ * button for it.
+ */
+export function AgentPrompt({ prompt, testId }: { prompt: string; testId: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div style={ui.panel} data-testid={testId}>
+      <p style={{ margin: 0, fontSize: '0.9rem' }}>Ask your connected coding agent:</p>
+      <pre style={ui.pre} data-testid={`${testId}-text`}>
+        {prompt}
+      </pre>
+      <button
+        type="button"
+        style={{ ...ui.smallButton, marginTop: '0.5rem' }}
+        data-testid={`${testId}-copy`}
+        onClick={() => {
+          void navigator.clipboard?.writeText(prompt).then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          });
+        }}
+      >
+        {copied ? 'Copied' : 'Copy prompt'}
+      </button>
+    </div>
   );
 }

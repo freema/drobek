@@ -17,7 +17,7 @@
  * placeholder (its initial) instead. See docs/SECURITY.md.
  */
 import type { IframeHTMLAttributes } from 'react';
-import { Form, Link, useLoaderData } from 'react-router';
+import { Form, Link, useLoaderData, useLocation } from 'react-router';
 import { WorkspacePage, controls } from '@drobek/tenancy/layout';
 import type { loader } from './workspaces.$slug.apps.server.js';
 import { formatTimestamp, type AppThumbnail } from '../view.js';
@@ -192,6 +192,7 @@ function Thumbnail({ slug, thumbnail, to }: { slug: string; thumbnail: AppThumbn
 export default function WorkspaceAppsRoute() {
   const { nav, workspace, apps, total, filters, deletedSlug, slugReleaseDays, publishApproval, canRequestApproval } =
     useLoaderData<typeof loader>();
+  const location = useLocation();
   const filtered = filters.q !== '' || filters.status !== 'all';
 
   return (
@@ -204,7 +205,8 @@ export default function WorkspaceAppsRoute() {
       ) : null}
 
       {total > 0 ? (
-        <Form method="get" style={styles.filters} data-testid="apps-filters">
+        // Keyed by the query string: the uncontrolled fields follow the URL on Clear filters and back/forward.
+        <Form key={location.search} method="get" style={styles.filters} data-testid="apps-filters">
           <input
             type="search"
             name="q"
@@ -234,10 +236,13 @@ export default function WorkspaceAppsRoute() {
             Filter
           </button>
           {filtered ? (
-            <span style={styles.meta} data-testid="apps-filter-count">
-              {apps.length} of {total}
-            </span>
+            <Link to={`/workspaces/${workspace.slug}/apps`} style={controls.link} data-testid="apps-filter-clear">
+              Clear filters
+            </Link>
           ) : null}
+          <span style={styles.meta} data-testid="apps-filter-count" aria-live="polite">
+            {filtered ? `${apps.length} of ${total} apps` : `${total} ${total === 1 ? 'app' : 'apps'}`}
+          </span>
         </Form>
       ) : null}
 
@@ -247,7 +252,13 @@ export default function WorkspaceAppsRoute() {
         </p>
       ) : apps.length === 0 ? (
         <p style={styles.empty} data-testid="apps-no-match">
-          No app matches the filter.
+          No app matches {filters.q ? <>&ldquo;{filters.q}&rdquo;</> : 'the filter'}
+          {filters.status !== 'all' ? ` among ${filters.status === 'published' ? 'published' : 'unpublished'} apps` : ''}.
+          The search looks at app names and addresses and ignores accents and case.{' '}
+          <Link to={`/workspaces/${workspace.slug}/apps`} data-testid="apps-no-match-clear">
+            Clear filters
+          </Link>{' '}
+          to see all {total} {total === 1 ? 'app' : 'apps'}.
         </p>
       ) : (
         <ul style={styles.list} data-testid="apps-list">

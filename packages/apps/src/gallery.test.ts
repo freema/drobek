@@ -78,7 +78,7 @@ describe('galleryQuery / galleryLikePattern', () => {
     expect(galleryLikePattern('100%')).toBe('%100\\%%');
     expect(galleryLikePattern('a_b')).toBe('%a\\_b%');
     expect(galleryLikePattern('c:\\x')).toBe('%c:\\\\x%');
-    expect(galleryLikePattern("'; DROP TABLE apps; --")).toBe("%'; DROP TABLE apps; --%");
+    expect(galleryLikePattern("'; DROP TABLE apps; --")).toBe("%'; drop table apps; --%");
   });
 });
 

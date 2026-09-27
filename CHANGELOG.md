@@ -9,6 +9,9 @@
 
 ### Changed
 - **Duplicates: the hourly cap holds under parallel requests, and `from` must be this server's** (NSO-340). `DUPLICATES_PER_USER_HOUR` is checked and recorded in the copy's create transaction under a per-person lock, across workspaces and dashboard/MCP; a copy counts once its app exists. `duplicate_app` takes a slug or an address of this server (app host, verified custom domain, `/duplicate/<slug>`); another server's address is `invalid_params` instead of copying a local app with the same slug.
+- **The workspace app search ignores accents and case** like the public gallery (one shared helper, `@drobek/apps/search`): "podzimni" finds "Podzimní obloha"; `%` and `_` match literally (NSO-371).
+- **Filtered dashboard lists offer "Clear filters"** with the count after the reset (apps, Forms, Activity, data records, end users); the search and filter fields reset with it and follow back/forward, so the next search does not bring a cleared filter back (NSO-371).
+- **The Forms tab tells its empty states apart**: no forms yet (with a copyable prompt for the coding agent naming the workspace and app; viewers are told to ask an editor), no submissions yet, no match for the filters, and a loading error (NSO-371).
 - **Admin pages tidied** (NSO-371).
   - Publishing: the states are tabs, and a workspace slug search sits under them. Each workspace groups its live apps with the takedown form.
   - Moderation queue: the takedown reason, Take down and Mark resolved are labelled and on one row.

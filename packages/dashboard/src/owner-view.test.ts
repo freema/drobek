@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dayRange, editableJson, formatBytes, parseDay, parseRecordJson, safeFilename, sinceWindow, submissionFields, suggestAssetPath } from './owner-view.js';
+import { dayRange, editableJson, formatBytes, formsAgentPrompt, formsListState, parseDay, parseRecordJson, safeFilename, sinceWindow, submissionFields, suggestAssetPath } from './owner-view.js';
 
 describe('owner-view helpers (M2-03)', () => {
   it('the record editor round-trips the own fields only', () => {
@@ -46,5 +46,27 @@ describe('suggestAssetPath (NSO-358, the Assets tab)', () => {
     expect(suggestAssetPath('C:\\Users\\me\\s1.jpg')).toBe('s1.jpg');
     expect(suggestAssetPath('.hidden.png')).toBe('hidden.png');
     expect(suggestAssetPath('x'.repeat(150) + '.png')).toHaveLength(100);
+  });
+});
+
+describe('Forms tab states', () => {
+  const state = (forms: { submissions: number }[], rows: number, filtered: boolean, error: string | null = null) =>
+    formsListState({ forms, rows, filtered, error });
+
+  it('tells no forms, nothing received, a filter without results and an error apart', () => {
+    expect(state([], 0, false)).toBe('no-forms');
+    expect(state([], 0, true)).toBe('no-forms');
+    expect(state([{ submissions: 0 }], 0, false)).toBe('no-submissions');
+    expect(state([{ submissions: 0 }], 0, true)).toBe('no-submissions');
+    expect(state([{ submissions: 3 }], 0, true)).toBe('no-match');
+    expect(state([{ submissions: 3 }], 3, false)).toBe('rows');
+    expect(state([{ submissions: 3 }], 0, false, 'the cursor is not valid')).toBe('error');
+  });
+
+  it('names the workspace and the app in the agent prompt', () => {
+    const prompt = formsAgentPrompt('smoke', 'podzimn-obloha');
+    expect(prompt).toContain('workspace "smoke"');
+    expect(prompt).toContain('app "podzimn-obloha"');
+    expect(prompt).toContain('<Form name="contact">');
   });
 });

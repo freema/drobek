@@ -4,6 +4,7 @@
  * the redirect-back guard. db-free and client-safe (the route components
  * import some of these), unit-tested in app-view.test.ts.
  */
+import { matchesSearch } from '@drobek/apps/search';
 import type { AppListItem } from './view.js';
 
 // ── lock banner ──────────────────────────────────────────────────────────────
@@ -147,14 +148,14 @@ const lastActivity = (a: AppListItem) => Date.parse(a.lastChangeAt ?? a.createdA
 
 /**
  * Filter + sort the (live — deleted apps never reach the list) apps: a
- * case-insensitive search over name and slug, published / unpublished, and
+ * case- and accent-insensitive search over name and slug (the gallery's
+ * folding, `%` / `_` literal), published / unpublished, and
  * newest activity / newest created / name A→Z (slug as the tie-break).
  */
 export function filterApps(items: AppListItem[], f: AppListFilters): AppListItem[] {
-  const q = f.q.toLowerCase();
   const kept = items.filter(
     (a) =>
-      (!q || a.slug.includes(q) || (a.name ?? '').toLowerCase().includes(q)) &&
+      matchesSearch(f.q, [a.slug, a.name]) &&
       (f.status === 'all' || (f.status === 'published') === a.published)
   );
   const byName = (a: AppListItem) => (a.name ?? a.slug).toLowerCase();

@@ -171,6 +171,23 @@ describe('apps list filters', () => {
     expect(f('', 'unpublished')).toEqual(['beta']);
   });
 
+  it('ignores accents and case like the gallery, and matches % and _ literally', () => {
+    const list = [
+      item('podzimn-obloha', { name: 'Podzimní obloha' }),
+      item('jaro', { name: 'Jarní 50% sleva' }),
+      item('my_app'),
+    ];
+    const f = (q: string) => filterApps(list, { q, status: 'all', sort: 'name' }).map((a) => a.slug);
+    for (const q of ['Podzimní', 'podzimni', 'PODZIMNI', 'podzimní'.normalize('NFD')]) {
+      expect(f(q), q).toEqual(['podzimn-obloha']);
+    }
+    expect(f('jarni')).toEqual(['jaro']);
+    expect(f('%')).toEqual(['jaro']);
+    expect(f('_')).toEqual(['my_app']);
+    expect(f('y_a')).toEqual(['my_app']);
+    expect(f('m%a')).toEqual([]);
+  });
+
   it('sorts by last change, creation or name', () => {
     const sort = (s: 'updated' | 'created' | 'name') =>
       filterApps(apps, { q: '', status: 'all', sort: s }).map((a) => a.slug);

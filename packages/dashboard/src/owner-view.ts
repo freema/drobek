@@ -90,6 +90,36 @@ export function submissionFields(data: Record<string, unknown>): [string, string
     });
 }
 
+/**
+ * What the Forms tab shows instead of the table: `error` (the list failed),
+ * `no-forms` (the app declares no form and nothing was submitted),
+ * `no-submissions` (forms exist, nothing received yet), `no-match` (the
+ * filter hides every submission), or `rows`.
+ */
+export type FormsListState = 'error' | 'no-forms' | 'no-submissions' | 'no-match' | 'rows';
+
+export function formsListState(v: {
+  error: string | null;
+  forms: { submissions: number }[];
+  rows: number;
+  filtered: boolean;
+}): FormsListState {
+  if (v.error) return 'error';
+  if (v.rows > 0) return 'rows';
+  if (v.forms.length === 0) return 'no-forms';
+  if (v.forms.every((f) => f.submissions === 0)) return 'no-submissions';
+  return v.filtered ? 'no-match' : 'no-submissions';
+}
+
+/** The prompt the Forms tab offers for an app without forms (workspace + app named). */
+export function formsAgentPrompt(workspaceSlug: string, appSlug: string): string {
+  return (
+    `In the drobek workspace "${workspaceSlug}", add a contact form to the app "${appSlug}" ` +
+    `with <Form name="contact"> from drobek/forms (name, email and message fields), ` +
+    `then open the preview and send one test submission.`
+  );
+}
+
 /** A download file name: ASCII, no quotes/path separators, never empty. */
 export function safeFilename(name: string, fallback: string): string {
   const clean = name.replace(/[^\x20-\x7e]/g, '_').replace(/[\\/"%;]/g, '_').trim().slice(0, 150);

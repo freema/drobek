@@ -4,7 +4,7 @@
  * editors+: change a role, block / unblock, and "sign everyone out" (behind
  * a confirm step). Viewers see the list only.
  */
-import { Form, Link, useActionData, useLoaderData, useNavigation } from 'react-router';
+import { Form, Link, useActionData, useLoaderData, useLocation, useNavigation } from 'react-router';
 import type { action, loader } from './workspaces.$slug.apps.$appSlug.end-users.server.js';
 import { ModuleMissing, ui } from '../owner-ui.js';
 import { AppPage } from '../app-header.js';
@@ -18,6 +18,7 @@ const STATUS_TEXT = { active: 'active', disabled: 'blocked', not_allowed: 'not a
 
 export default function AppEndUsersRoute() {
   const d = useLoaderData<typeof loader>();
+  const location = useLocation();
   const actionData = useActionData<typeof action>();
   const busy = useNavigation().state !== 'idle';
   const base = `/workspaces/${d.workspace.slug}/apps/${d.appSlug}/end-users`;
@@ -52,14 +53,14 @@ export default function AppEndUsersRoute() {
           ) : null}
 
           <div style={ui.toolbar}>
-            <Form method="get" style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end' }} data-testid="users-search">
+            <Form key={location.search} method="get" style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end' }} data-testid="users-search">
               <div style={ui.field}>
                 <label style={ui.label} htmlFor="q">
                   E-mail contains
                 </label>
                 <input id="q" name="q" defaultValue={d.q} style={ui.input} data-testid="users-search-input" />
               </div>
-              <button type="submit" style={ui.button}>
+              <button type="submit" style={ui.button} data-testid="users-search-submit">
                 Search
               </button>
             </Form>
@@ -92,7 +93,17 @@ export default function AppEndUsersRoute() {
 
           {d.error ? null : d.users.length === 0 ? (
             <p style={ui.empty} data-testid="users-empty">
-              {d.q ? 'No users match this email search. Try another address or clear the search.' : 'No users yet. People appear here after their first sign-in.'}
+              {d.q ? (
+                <>
+                  No users match this email search. Try another address or{' '}
+                  <Link to={base} data-testid="users-empty-clear">
+                    clear the search
+                  </Link>
+                  .
+                </>
+              ) : (
+                'No users yet. People appear here after their first sign-in.'
+              )}
             </p>
           ) : (
             <div style={ui.tableWrap}>
