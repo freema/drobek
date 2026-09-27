@@ -198,9 +198,16 @@ export const apps = pgTable(
     galleryDescription: text('gallery_description'),
     /** NSO-340: a super-admin hid the gallery entry (non-null = hidden, whatever the owner sets). */
     galleryHiddenAt: timestamp('gallery_hidden_at'),
+    /** NSO-340: the owner lets signed-in people duplicate the listed app into their own workspace. */
+    galleryAllowDuplicate: boolean('gallery_allow_duplicate').notNull().default(false),
+    /** NSO-340: the gallery app this one was duplicated from (null when the source is gone or none). */
+    duplicatedFromAppId: text('duplicated_from_app_id').references((): AnyPgColumn => apps.id, { onDelete: 'set null' }),
+    /** The source's slug at duplication time, kept when the source is deleted. */
+    duplicatedFromSlug: text('duplicated_from_slug'),
   },
   (t) => [
     uniqueIndex('apps_slug_uq').on(t.slug),
+    index('apps_duplicated_from_idx').on(t.duplicatedFromAppId).where(sql`${t.duplicatedFromAppId} IS NOT NULL`),
     // The public gallery page reads listed apps newest-published first (NSO-340).
     index('apps_gallery_idx').on(t.publishedAt.desc(), t.slug.desc()).where(sql`${t.galleryListed}`),
     index('apps_workspace_idx').on(t.workspaceId),

@@ -157,6 +157,15 @@ describe('appAction intent=gallery (NSO-340)', () => {
     expect(audit.map((a) => a.action)).toEqual(['app.gallery_listed', 'app.gallery_listed', 'app.gallery_unlisted']);
     expect(new Set(audit.map((a) => a.actorKind))).toEqual(new Set(['user']));
   });
+
+  it('"Allow duplicates" is saved with the listing and kept when unlisting', async () => {
+    await post('shift-plan', { intent: 'gallery', listed: 'on', description: 'Plans shifts.', allowDuplicate: 'on' });
+    expect(await row()).toMatchObject({ galleryListed: true, galleryAllowDuplicate: true });
+    await post('shift-plan', { intent: 'gallery', description: 'Plans shifts.' });
+    expect(await row()).toMatchObject({ galleryListed: false, galleryAllowDuplicate: true });
+    await post('shift-plan', { intent: 'gallery', listed: 'on', description: 'Plans shifts.' });
+    expect(await row()).toMatchObject({ galleryListed: true, galleryAllowDuplicate: false });
+  });
 });
 
 describe('GET /api/public/gallery (NSO-340)', () => {
@@ -184,6 +193,9 @@ describe('GET /api/public/gallery (NSO-340)', () => {
           url: 'https://shift-plan.apps.example.test',
           publishedAt: '2026-09-20T10:00:00.000Z',
           modules: [],
+          duplicable: false,
+          duplicateUrl: null,
+          duplicates: 0,
         },
       ],
     });

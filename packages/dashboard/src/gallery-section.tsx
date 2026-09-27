@@ -1,7 +1,8 @@
 /**
  * The app Overview's "Gallery" section (NSO-340): whether the app is in the
  * server's public gallery, and — for editor+ — "Show in the gallery" + the
- * public one-line description + Save (intent `gallery` of appAction).
+ * public one-line description + "Allow duplicates" + Save (intent `gallery`
+ * of appAction).
  * Listing needs a published app; a super-admin's hide overrides the owner.
  * Rendered only when the server runs a gallery (GALLERY_ENABLED).
  */
@@ -14,6 +15,7 @@ export interface GallerySectionData {
   description: string | null;
   hiddenByAdmin: boolean;
   visible: boolean;
+  allowDuplicate: boolean;
   published: boolean;
   passwordProtected: boolean;
   descriptionMax: number;
@@ -95,6 +97,16 @@ export function GallerySection({ gallery, canEdit, busy }: { gallery: GallerySec
               />
               Show in the gallery
             </label>
+            <label style={styles.check}>
+              <input
+                type="checkbox"
+                name="allowDuplicate"
+                defaultChecked={gallery.allowDuplicate}
+                disabled={!editable}
+                data-testid="gallery-allow-duplicate"
+              />
+              Allow duplicates
+            </label>
           </div>
           <div style={{ ...controls.row, marginTop: '0.5rem' }}>
             <label style={{ ...controls.field, flex: '1 1 22rem' }}>
@@ -117,6 +129,10 @@ export function GallerySection({ gallery, canEdit, busy }: { gallery: GallerySec
           <p style={{ ...s.muted, fontSize: '0.8rem', margin: '0.4rem 0 0' }}>
             Plain text, at most {gallery.descriptionMax} characters. Agents can list the app too, but only after you
             say yes to them.
+          </p>
+          <p style={{ ...s.muted, fontSize: '0.8rem', margin: '0.3rem 0 0' }}>
+            With “Allow duplicates” on, the gallery shows a Duplicate button: a signed-in person can copy the published
+            files into their own workspace. Your data, users, uploads, secrets and domains are never copied.
           </p>
         </Form>
       ) : null}

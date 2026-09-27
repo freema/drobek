@@ -52,6 +52,7 @@ function allCombinations(): Scope[][] {
 const READ_TOOLS = ['list_apps', 'get_app', 'read_file', 'skill_info', 'query_data', 'get_logs', 'list_assets', 'list_domains', 'list_upstreams'];
 const WRITE_TOOLS = [
   'create_app',
+  'duplicate_app',
   'write_files',
   'restore_version',
   'configure_module',

@@ -27,6 +27,7 @@ const ALL_TOOLS = [
   'create_app',
   'create_asset_upload',
   'delete_asset',
+  'duplicate_app',
   'get_app',
   'get_logs',
   'list_apps',

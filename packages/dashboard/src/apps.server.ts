@@ -63,6 +63,9 @@ export interface AppDetail {
   galleryListed: boolean;
   galleryDescription: string | null;
   galleryHiddenAt: Date | null;
+  galleryAllowDuplicate: boolean;
+  /** NSO-340: the gallery app this one was duplicated from (its slug then), or null. */
+  duplicatedFromSlug: string | null;
 }
 
 /** A single app within a workspace, by slug (tombstones excluded). */
@@ -85,6 +88,8 @@ export async function loadAppForView(
       galleryListed: apps.galleryListed,
       galleryDescription: apps.galleryDescription,
       galleryHiddenAt: apps.galleryHiddenAt,
+      galleryAllowDuplicate: apps.galleryAllowDuplicate,
+      duplicatedFromSlug: apps.duplicatedFromSlug,
     })
     .from(apps)
     .where(and(eq(apps.workspaceId, workspaceId), eq(apps.slug, slug), isNull(apps.deletedAt)))
@@ -105,5 +110,7 @@ export async function loadAppForView(
     galleryListed: r.galleryListed,
     galleryDescription: r.galleryDescription,
     galleryHiddenAt: r.galleryHiddenAt,
+    galleryAllowDuplicate: r.galleryAllowDuplicate,
+    duplicatedFromSlug: r.duplicatedFromSlug,
   };
 }

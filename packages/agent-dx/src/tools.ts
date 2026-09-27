@@ -2,7 +2,7 @@
  * TOOL_DOCS — the declarative documentation manifest for the drobek MCP tools
  * (M0-05 NSO-283; publish M0-06 NSO-285; skill_info + configure_module M1-01
  * NSO-287; query_data M1-03 NSO-300; get_logs M1-07 NSO-290; set_gallery_listing
- * NSO-340; the asset tools NSO-358, assets honour publish NSO-362; the
+ * and duplicate_app NSO-340; the asset tools NSO-358, assets honour publish NSO-362; the
  * super-admin-only set_workspace_publishing and the custom-domain tools
  * NSO-366; the proxy upstream tools NSO-372). This is the SINGLE SOURCE OF TRUTH the agent-facing docs
  * render from (llms.txt / llms-full.txt / MCP docs resources / the build page),
@@ -97,15 +97,31 @@ export const TOOL_DOCS: ToolDoc[] = [
     example: { name: 'Shift planner', template: 'react-ts' },
   },
   {
+    name: 'duplicate_app',
+    title: 'Duplicate a gallery app',
+    scope: 'write (editor+ role in the target workspace)',
+    description:
+      'Copy an app from this server\'s public gallery into a workspace of the user — only an app whose owner allows duplicates (the gallery shows it as duplicable). Call it when the user asks to copy, fork or duplicate a gallery app. The copy is a new, unpublished app whose version 1 holds the source\'s PUBLISHED files, and it remembers where it came from (get_app `duplicated_from`). The source\'s module settings are proposed to the copy through the normal confirmation flow: anything that needs a confirmation waits on the new app\'s Modules page (`modules.pending[].confirm_url` — tell the user), and e-mail addresses and proxy upstreams are dropped. Never copied: secrets, data, end users, uploads, app assets, domains and the gallery listing. Refused when the server has no gallery (gallery_disabled), the app is not in the gallery (not_found), its owner does not allow copies (not_duplicable), the user made DUPLICATES_PER_USER_HOUR copies within the last hour (rate_limited) or the workspace is full (limit_exceeded). The same copy is on the dashboard at /duplicate/<slug>.',
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    fields: [
+      { name: 'from', type: 'string', required: true, description: 'The gallery app: its slug, its address or its duplicate page URL.' },
+      { name: 'workspace', type: 'string (optional)', required: false, description: 'Workspace slug for the copy (editor+); defaults to your personal workspace.' },
+      { name: 'name', type: 'string (optional, ≤ 80 chars)', required: false, description: 'Name of the copy; default "<name> copy". The slug is derived from it.' },
+    ],
+    returns:
+      '{ app_id, slug, workspace, version:1, from, preview_url, modules:{ applied:[module], pending:[{module,changes,confirm_url}], skipped:[{module,reason}] }, note? }',
+    example: { from: 'pixel-wall', name: 'My pixel wall' },
+  },
+  {
     name: 'get_app',
     title: 'Get an app',
     scope: 'read (any role in the workspace)',
     description:
-      'Snapshot of one app: everything list_apps shows plus the briefing, the source files of the latest version ({path,size,sha256}), the last 20 versions (number, created_at, actor_kind, reasoning, compile_status), the latest compile errors, the platform modules (per module: whether it is enabled for the app\'s workspace — an opt-in module the operator has not enabled says enabled:false and cannot be used —, its effective config, whether a change waits for the owner\'s confirmation, which secrets are set — names and hasSecret only, never values — and the module\'s info, e.g. proxy: the workspace upstreams with registered/assigned/call/hasSecret), the skills list (without the opt-in modules that are off for the workspace), the public gallery state (listed, description, hidden_by_admin, visible — or enabled:false when the server has no gallery), the custom domains in short (host, status pending | verified, primary — list_domains has their DNS records), `can_publish` (+ `publish_contact` when the workspace may not publish: the operator blocked it or has not approved it yet) and the workspace\'s `publishing` state (default | allowed | blocked), and the write lock (holder + expires_at) if someone holds it. Use it to re-orient before editing.',
+      'Snapshot of one app: everything list_apps shows plus the briefing, the source files of the latest version ({path,size,sha256}), the last 20 versions (number, created_at, actor_kind, reasoning, compile_status), the latest compile errors, the platform modules (per module: whether it is enabled for the app\'s workspace — an opt-in module the operator has not enabled says enabled:false and cannot be used —, its effective config, whether a change waits for the owner\'s confirmation, which secrets are set — names and hasSecret only, never values — and the module\'s info, e.g. proxy: the workspace upstreams with registered/assigned/call/hasSecret), the skills list (without the opt-in modules that are off for the workspace), the public gallery state (listed, description, hidden_by_admin, visible, allow_duplicate — or enabled:false when the server has no gallery), `duplicated_from` (the gallery app this one was copied from, when it was), the custom domains in short (host, status pending | verified, primary — list_domains has their DNS records), `can_publish` (+ `publish_contact` when the workspace may not publish: the operator blocked it or has not approved it yet) and the workspace\'s `publishing` state (default | allowed | blocked), and the write lock (holder + expires_at) if someone holds it. Use it to re-orient before editing.',
     annotations: READ_ONLY,
     fields: [{ name: 'app_id', type: 'string', required: true, description: 'The app id (from list_apps / create_app).' }],
     returns:
-      '{ app_id, name, slug, workspace, preview_url, published_url?, published_version?, latest_version, compile_status, compile_errors, briefing, files:[{path,size,sha256}], versions:[{number,created_at,actor_kind,reasoning,compile_status}], modules:{<name>:{enabled,configured,config,pending,pending_confirmation?,confirm_url?,secrets?:[{name,hasSecret}],info?}}, skills:[{name,use_when}], gallery:{enabled,listed?,description?,hidden_by_admin?,visible?}, domains:[{host,status:"pending"|"verified",primary}], can_publish, publish_contact?, publishing, lock?:{holder,expires_at}, locked_by_admin?, locked_reason? }',
+      '{ app_id, name, slug, workspace, preview_url, published_url?, published_version?, latest_version, compile_status, compile_errors, briefing, files:[{path,size,sha256}], versions:[{number,created_at,actor_kind,reasoning,compile_status}], modules:{<name>:{enabled,configured,config,pending,pending_confirmation?,confirm_url?,secrets?:[{name,hasSecret}],info?}}, skills:[{name,use_when}], gallery:{enabled,listed?,description?,hidden_by_admin?,visible?,allow_duplicate?}, duplicated_from?, domains:[{host,status:"pending"|"verified",primary}], can_publish, publish_contact?, publishing, lock?:{holder,expires_at}, locked_by_admin?, locked_reason? }',
     example: { app_id: 'k3v9x0…' },
   },
   {
@@ -189,7 +205,7 @@ export const TOOL_DOCS: ToolDoc[] = [
     title: 'List an app in the public gallery',
     scope: 'publish (editor+ role in the workspace)',
     description:
-      'Show a published app in this server\'s public gallery (its name, a one- or two-sentence description and its production URL, visible to everyone), change that description, or take the app out of the gallery. Listing (`listed: true`) needs a published app, a plain-text `description` of at most 160 characters and `user_confirmed: true` — set it ONLY after the user explicitly said yes to exactly this listing: ask them first and show them the description. Never list an app on your own initiative. Without the confirmation the answer is user_confirmation_required and nothing changes. Unlisting (`listed: false`) needs no confirmation and works at once. Refused when the server has no gallery (gallery_disabled), when the app is not published (not_published) and when the server operator hid the app from the gallery (gallery_hidden). Unpublishing the app also takes it out of the gallery. get_app shows the current state (`gallery`).',
+      'Show a published app in this server\'s public gallery (its name, a one- or two-sentence description and its production URL, visible to everyone), change that description, or take the app out of the gallery. Listing (`listed: true`) needs a published app, a plain-text `description` of at most 160 characters and `user_confirmed: true` — set it ONLY after the user explicitly said yes to exactly this listing: ask them first and show them the description. Never list an app on your own initiative. Without the confirmation the answer is user_confirmation_required and nothing changes. Unlisting (`listed: false`) needs no confirmation and works at once. Refused when the server has no gallery (gallery_disabled), when the app is not published (not_published) and when the server operator hid the app from the gallery (gallery_hidden). With `allow_duplicate: true` the gallery also offers a Duplicate button: signed-in people copy the published files into their own workspace (never data, users, secrets or domains) — include that in the question to the user. Unpublishing the app also takes it out of the gallery. get_app shows the current state (`gallery`).',
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     fields: [
       { name: 'app_id', type: 'string', required: true, description: 'The app id.' },
@@ -201,13 +217,19 @@ export const TOOL_DOCS: ToolDoc[] = [
         description: 'The public description: plain text, one or two sentences.',
       },
       {
+        name: 'allow_duplicate',
+        type: 'boolean (listing only, optional)',
+        required: false,
+        description: 'true lets signed-in people copy the published app into their own workspace (duplicate_app, the gallery\'s Duplicate button); omitted keeps the current choice. Covered by the same user_confirmed.',
+      },
+      {
         name: 'user_confirmed',
         type: 'boolean (listing only)',
         required: false,
         description: 'true ONLY after the user explicitly said yes to this listing and description.',
       },
     ],
-    returns: '{ app_id, listed, description, changed, visible, note? }',
+    returns: '{ app_id, listed, description, allow_duplicate, changed, visible, note? }',
     example: { app_id: 'k3v9x0…', listed: true, description: 'Plan weekly shifts for a small team.', user_confirmed: true },
   },
   {

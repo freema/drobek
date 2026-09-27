@@ -30,7 +30,7 @@ async function listTools(allow?: (t: string) => boolean, superAdmin = false) {
 const RO = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 
 describe('tools/list', () => {
-  it('is exactly the 23 tools with their annotations and inputs (snapshot)', async () => {
+  it('is exactly the 24 tools with their annotations and inputs (snapshot)', async () => {
     const tools = await listTools();
     const snapshot = tools.map((t) => ({
       name: t.name,
@@ -53,6 +53,13 @@ describe('tools/list', () => {
         annotations: { title: 'Create an app', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         properties: ['name', 'workspace', 'template'],
         required: ['name'],
+      },
+      {
+        name: 'duplicate_app',
+        title: 'Duplicate a gallery app',
+        annotations: { title: 'Duplicate a gallery app', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        properties: ['from', 'workspace', 'name'],
+        required: ['from'],
       },
       {
         name: 'get_app',
@@ -117,7 +124,7 @@ describe('tools/list', () => {
           idempotentHint: true,
           openWorldHint: true,
         },
-        properties: ['app_id', 'listed', 'description', 'user_confirmed'],
+        properties: ['app_id', 'listed', 'description', 'allow_duplicate', 'user_confirmed'],
         required: ['app_id', 'listed'],
       },
       {
@@ -260,8 +267,8 @@ describe('tools/list', () => {
 
   it('a super-admin also gets set_workspace_publishing, last (NSO-366)', async () => {
     const tools = await listTools(undefined, true);
-    expect(tools).toHaveLength(24);
-    const last = tools[23];
+    expect(tools).toHaveLength(25);
+    const last = tools[24];
     expect(last.name).toBe('set_workspace_publishing');
     expect(last.annotations).toEqual({
       title: 'Set a workspace\'s publishing',

@@ -244,11 +244,28 @@ everyone (on drobek.app it is shown at www.drobek.app/gallery).
   changes. The same call with a new description changes it.
 - `set_gallery_listing({ app_id, listed: false })` takes the app out at once
   — no confirmation needed. Unpublishing the app does that too.
+- `allow_duplicate: true` on the listing call also opens the app to copies:
+  the gallery shows a Duplicate button, and signed-in people copy its
+  published files into their own workspace. Ask about it together with the
+  listing; the same `user_confirmed: true` covers both. Omitted keeps the
+  current choice.
 - `get_app` shows the state (`gallery`: `listed`, `description`,
-  `hidden_by_admin`, `visible`; `enabled: false` when the server has no
-  gallery). `not_published`, `gallery_hidden` (the operator hid the app) and
-  `gallery_disabled` mean: tell the user, do not retry. The owner can do all
-  of this in the drobek dashboard as well.
+  `hidden_by_admin`, `visible`, `allow_duplicate`; `enabled: false` when the
+  server has no gallery). `not_published`, `gallery_hidden` (the operator hid
+  the app) and `gallery_disabled` mean: tell the user, do not retry. The owner
+  can do all of this in the drobek dashboard as well.
+- When the user asks to copy a gallery app whose owner allows it,
+  `duplicate_app({ from, workspace?, name? })` (scope `write`, editor+ in the
+  target; default your personal workspace) creates a new, unpublished app
+  with the source's PUBLISHED files as version 1. `from` is the app's slug or
+  address. The source's module settings are proposed to the copy: anything
+  that needs a confirmation waits on the new app's Modules page
+  (`modules.pending[].confirm_url` — tell the user), e-mail addresses and
+  proxy upstreams are dropped, and secrets, data, users, uploads, assets and
+  domains are never copied. `get_app` of the copy says `duplicated_from`.
+  `not_duplicable` (the owner does not allow copies) and `rate_limited`
+  (DUPLICATES_PER_USER_HOUR) mean: tell the user, do not retry. The same
+  copy is in the dashboard at `/duplicate/<slug>`.
 
 ## Custom domains
 
@@ -308,7 +325,7 @@ A failed call returns `isError: true` with `{ code, message, hint }` — the
 `hint` says what to do (`not_found`, `forbidden`, `invalid_params`,
 `invalid_path`, `limit_exceeded`, `secret_in_source`, `app_locked`,
 `app_locked_by_admin`, `busy`, `not_publishable`, `not_published`,
-`user_confirmation_required`, `gallery_hidden`, `gallery_disabled`,
+`user_confirmation_required`, `gallery_hidden`, `gallery_disabled`, `not_duplicable`,
 `publish_not_approved`, `publish_blocked`, `asset_too_large`, `module_not_enabled`,
 `domain_not_verified`, `dns_unavailable`, …).
 Compile problems are not tool failures: they come back in `compile.errors`. The

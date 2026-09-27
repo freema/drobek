@@ -28,6 +28,7 @@ import { ToolError, lockedByAdmin } from './errors.js';
 import {
   configureModule,
   createApp,
+  duplicateApp,
   getApp,
   getLogs,
   listApps,
@@ -53,6 +54,7 @@ import { TEMPLATES } from './templates.js';
 export const APP_TOOL_NAMES = [
   'list_apps',
   'create_app',
+  'duplicate_app',
   'get_app',
   'read_file',
   'write_files',
@@ -94,6 +96,11 @@ export const INPUT_SCHEMAS = {
     workspace: z.string().optional().describe('Workspace slug; default: your personal workspace.'),
     template: z.enum(TEMPLATES).optional().describe('Starting files; default react-ts.'),
   },
+  duplicate_app: {
+    from: z.string().describe('The gallery app to copy: its slug, its address or its duplicate page URL.'),
+    workspace: z.string().optional().describe('Workspace slug for the copy (editor+); default: your personal workspace.'),
+    name: z.string().optional().describe('Name of the copy (≤ 80 chars); default "<name> copy".'),
+  },
   get_app: { app_id: appId },
   read_file: {
     app_id: appId,
@@ -131,6 +138,10 @@ export const INPUT_SCHEMAS = {
       .string()
       .optional()
       .describe('Listing only: the public description, plain text, one or two sentences, at most 160 characters.'),
+    allow_duplicate: z
+      .boolean()
+      .optional()
+      .describe('Listing only: true lets signed-in people copy the published app into their own workspace; omitted keeps the current choice.'),
     user_confirmed: z
       .boolean()
       .optional()
@@ -364,6 +375,7 @@ export function registerAppTools(
 
   register('list_apps', listApps);
   register('create_app', createApp);
+  register('duplicate_app', duplicateApp);
   register('get_app', getApp);
   register<{ app_id: string; path: string; version?: number }>('read_file', readFile, (p, args) =>
     untrustedResult(untrustedEnvelope(args.app_id, p as ReadFileResult))

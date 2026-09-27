@@ -19,7 +19,11 @@ export type AppsErrorCode =
   /** NSO-366: PUBLISH_APPROVAL=approval and a super-admin has not approved the workspace (`contact`). */
   | 'publish_not_approved'
   /** NSO-366: a super-admin turned publishing off for the workspace (`contact`), in every PUBLISH_APPROVAL mode. */
-  | 'publish_blocked';
+  | 'publish_blocked'
+  /** NSO-340: the gallery app's owner does not allow duplicating it. */
+  | 'not_duplicable'
+  /** NSO-340: the person made DUPLICATES_PER_USER_HOUR copies within the last hour (`details.limit` / `details.value`). */
+  | 'rate_limited';
 
 /** A caller-facing failure; `code` is stable (MCP tools return it verbatim). */
 export class AppsError extends Error {

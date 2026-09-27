@@ -22,6 +22,8 @@ export interface CreateAppInput {
    * the env var, else DEFAULT_APPS_MAX_PER_WORKSPACE.
    */
   maxApps?: number;
+  /** NSO-340: the gallery app this one is a copy of (provenance, shown on the app's page). */
+  duplicatedFrom?: { appId: string; slug: string };
 }
 
 function appsMaxPerWorkspace(env: NodeJS.ProcessEnv = process.env): number {
@@ -92,7 +94,14 @@ export async function createApp(input: CreateAppInput): Promise<{ id: string; sl
       }
       const [row] = await tx
         .insert(apps)
-        .values({ workspaceId, slug, name })
+        .values({
+          workspaceId,
+          slug,
+          name,
+          ...(input.duplicatedFrom
+            ? { duplicatedFromAppId: input.duplicatedFrom.appId, duplicatedFromSlug: input.duplicatedFrom.slug }
+            : {}),
+        })
         .returning({ id: apps.id, slug: apps.slug });
       await writeAudit(
         {

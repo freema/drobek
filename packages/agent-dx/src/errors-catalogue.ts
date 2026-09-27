@@ -144,9 +144,15 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
   },
   {
     code: 'gallery_disabled',
-    surface: 'MCP tool isError (set_gallery_listing)',
+    surface: 'MCP tool isError (set_gallery_listing, duplicate_app)',
     meaning: 'This server runs no public gallery (its operator left GALLERY_ENABLED off). Nothing changed.',
     fix: 'Tell the user this server has no public gallery; do not retry.',
+  },
+  {
+    code: 'not_duplicable',
+    surface: 'MCP tool isError (duplicate_app); dashboard 403 (duplicate page)',
+    meaning: 'The app is in the public gallery, but its owner did not allow duplicates. Nothing was created.',
+    fix: 'Do not retry and do not copy the app another way. Tell the user its owner does not allow copies; they can build their own app with create_app.',
   },
   {
     code: 'asset_too_large',
@@ -310,9 +316,9 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
   },
   {
     code: 'rate_limited',
-    surface: 'module route 429 (DrobekError), Retry-After; MCP tool isError (create_asset_upload)',
-    meaning: 'A module limit was hit (per visitor, per user or per app — `details.limit` per `details.window_seconds`). From create_asset_upload: the app has asked for APP_ASSET_UPLOADS_PER_HOUR upload URLs within the last hour.',
-    fix: 'Show the user a message and retry after Retry-After seconds; never loop. For upload URLs: upload the files you already have URLs for, and ask for more after the hour.',
+    surface: 'module route 429 (DrobekError), Retry-After; MCP tool isError (create_asset_upload, duplicate_app); dashboard 429 (duplicate page)',
+    meaning: 'A module limit was hit (per visitor, per user or per app — `details.limit` per `details.window_seconds`). From create_asset_upload: the app has asked for APP_ASSET_UPLOADS_PER_HOUR upload URLs within the last hour. From duplicate_app: the user made DUPLICATES_PER_USER_HOUR copies of gallery apps within the last hour (`limit`, `value`).',
+    fix: 'Show the user a message and retry after Retry-After seconds; never loop. For upload URLs: upload the files you already have URLs for, and ask for more after the hour. For duplicate_app: tell the user to try again in an hour; do not retry.',
   },
   {
     code: 'payload_too_large',

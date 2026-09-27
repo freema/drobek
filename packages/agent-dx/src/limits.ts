@@ -78,6 +78,11 @@ export const LIMITS: LimitDoc[] = [
     meaning: 'Upload URLs one app may get per hour (create_asset_upload → rate_limited).',
   },
   {
+    env: 'DUPLICATES_PER_USER_HOUR',
+    default: '10',
+    meaning: 'Copies of gallery apps one person may make per hour, duplicate_app and the dashboard together (→ rate_limited).',
+  },
+  {
     env: 'tool: asset upload URL',
     default: '30 min, single use',
     meaning: 'How long a create_asset_upload URL stays valid; it takes exactly one PUT (a used or expired URL → upload_token_invalid).',

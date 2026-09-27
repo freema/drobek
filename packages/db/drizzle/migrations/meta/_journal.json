@@ -162,6 +162,13 @@
       "when": 1790496410618,
       "tag": "0027_publish_block",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1790525749936,
+      "tag": "0028_gallery_duplicate",
+      "breakpoints": true
     }
   ]
 }

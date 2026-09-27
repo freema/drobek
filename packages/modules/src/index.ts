@@ -217,6 +217,14 @@ export {
   type SlotContribution,
 } from './registry.js';
 export { DEFAULT_MODULES_DIR } from './dir-modules.js';
+// NSO-340: the module configs of a duplicated gallery app, proposed through the copy's confirmation flow.
+export {
+  NOT_COPIED_MODULES,
+  configForCopy,
+  duplicateModuleConfigs,
+  type DuplicateConfigsInput,
+  type DuplicateConfigsResult,
+} from './duplicate.js';
 export {
   ModuleRuntime,
   activeModules,

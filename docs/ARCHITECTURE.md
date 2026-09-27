@@ -129,6 +129,27 @@ This document is the map of how that works. The neighbours:
   frame the production host of an app it shows (a live preview): the app
   hosts' resolve row carries `galleryVisible` (the same conditions), and a
   listing change busts the serve cache.
+- **Duplicating a gallery app**: the owner opts in with "Allow duplicates"
+  (`apps.gallery_allow_duplicate`, off by default, kept while unlisted; the
+  agent's `allow_duplicate` rides on the listing's confirmation). Each gallery
+  item then also carries `duplicable`, `duplicateUrl` (the dashboard's
+  `/duplicate/<slug>`, null when not duplicable) and `duplicates` (live
+  copies). The dashboard page (sign-in first, `returnTo` back) and the MCP
+  tool `duplicate_app` run the same code: @drobek/apps
+  `duplicateAppFiles` copies the PUBLISHED version's files (source and built,
+  with its compile status — no recompile) as version 1 of a new, unpublished
+  app in a workspace where the person is an editor+, storing
+  `apps.duplicated_from_app_id` / `duplicated_from_slug` (the app header
+  shows "Duplicated from"); @drobek/modules `duplicateModuleConfigs` then
+  proposes the source's saved module configs through the copy's normal
+  `configure` path, so a change that needs confirmation waits on the copy's
+  Modules page. The whole `proxy` config (upstreams of the source workspace)
+  and every value holding an e-mail address are dropped; secrets, pending
+  proposals, data, end users, uploads, app assets (stored per app on disk),
+  domains and the listing are never copied. Audited as `app.duplicate` in
+  the target workspace and `app.duplicated` in the source's (without the
+  copier); `DUPLICATES_PER_USER_HOUR` (default 10) caps copies per person,
+  counted from those audit rows.
 - **One writer at a time**: a write takes the app's Redis lease
   (`drobek:applock:<app_id>`, 3 minutes, renewed per write). Another user's
   agent gets `app_locked`; the same user's other sessions take the lease over.

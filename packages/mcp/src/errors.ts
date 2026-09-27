@@ -26,6 +26,8 @@ export const TOOL_ERROR_CODES = [
   'user_confirmation_required',
   'gallery_hidden',
   'gallery_disabled',
+  // NSO-340: duplicate_app on a gallery app whose owner does not allow copies.
+  'not_duplicable',
   'asset_too_large',
   'asset_type_not_allowed',
   'asset_quota_exceeded',

@@ -13,10 +13,11 @@ import { FULL_SCOPE, mcpClient } from './helpers/mcp';
  * operator demo — here we assert the INGREDIENTS.
  */
 
-/** Exactly the MCP tool set: M0-05 core tools (NSO-283) + publish (NSO-285) + skill_info/configure_module (NSO-287) + query_data (NSO-300) + get_logs (NSO-290) + set_gallery_listing (NSO-340) + the asset tools (NSO-358) + the custom-domain tools (NSO-366) + the upstream tools (NSO-372); set_workspace_publishing is a super-admin's only. */
+/** Exactly the MCP tool set: M0-05 core tools (NSO-283) + publish (NSO-285) + skill_info/configure_module (NSO-287) + query_data (NSO-300) + get_logs (NSO-290) + set_gallery_listing and duplicate_app (NSO-340) + the asset tools (NSO-358) + the custom-domain tools (NSO-366) + the upstream tools (NSO-372); set_workspace_publishing is a super-admin's only. */
 const ALL_TOOLS = [
   'list_apps',
   'create_app',
+  'duplicate_app',
   'get_app',
   'read_file',
   'write_files',

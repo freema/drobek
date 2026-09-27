@@ -161,6 +161,8 @@ export interface GalleryState {
   hiddenByAdmin: boolean;
   /** Whether the public list shows the app right now. */
   visible: boolean;
+  /** The owner lets signed-in people duplicate the app from the gallery. */
+  allowDuplicate: boolean;
 }
 
 /**
@@ -172,6 +174,7 @@ export function galleryState(app: {
   galleryListed: boolean;
   galleryDescription: string | null;
   galleryHiddenAt: Date | null;
+  galleryAllowDuplicate: boolean;
   publishedVersionId: string | null;
   lockedReason: string | null;
   visibility: string;
@@ -181,6 +184,7 @@ export function galleryState(app: {
     listed: app.galleryListed,
     description: app.galleryDescription,
     hiddenByAdmin,
+    allowDuplicate: app.galleryAllowDuplicate,
     visible:
       app.galleryListed &&
       app.publishedVersionId !== null &&

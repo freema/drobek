@@ -228,6 +228,14 @@
       "types": "./src/routes/admin.publishing.server.ts",
       "default": "./dist/routes/admin.publishing.server.js"
     },
+    "./routes/duplicate.$slug": {
+      "types": "./src/routes/duplicate.$slug.tsx",
+      "default": "./dist/routes/duplicate.$slug.js"
+    },
+    "./routes/duplicate.$slug.server": {
+      "types": "./src/routes/duplicate.$slug.server.ts",
+      "default": "./dist/routes/duplicate.$slug.server.js"
+    },
     "./routes/api.public.gallery.server": {
       "types": "./src/routes/api.public.gallery.server.ts",
       "default": "./dist/routes/api.public.gallery.server.js"
