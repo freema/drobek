@@ -23,9 +23,11 @@ Map: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
    `hasSecret`. Never log a secret.
 5. **`task check` is the gate** (Taskfile, go-task — there is no Makefile).
    It runs `pnpm install`, the doc-lint, build, typecheck, lint, knip and unit tests.
-6. **One branch, `main`.** Commits end with `(NSO-xxx)`. Actions capacity is
-   limited: push only what `task check` proved locally, and run
-   `task e2e:image` before a release tag.
+6. **`main` via reviewed PRs.** Finished work goes to GitHub as a pull
+   request for review (stacked on an open PR when it builds on one); a merged
+   branch is deleted on GitHub and locally at once. Commits end with
+   `(NSO-xxx)`. Actions capacity is limited: push only what `task check`
+   proved locally, and run `task e2e:image` before a release tag.
 7. **Migrations:** core migrations live in `packages/db/drizzle/migrations`
    (journal `__drizzle_migrations_core`), each module has its own folder and
    journal (`__drizzle_migrations_mod_<name>`). Numbers are pre-assigned per
@@ -45,6 +47,13 @@ Map: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
     same change (drift-guarded by `tool-docs-parity.test.ts` and
     `skill.test.ts`). A new operator env var goes into `.env.example`,
     `.env.production.example` and the SELF-HOSTING env reference.
+12. **A tag is not a release.** The GitHub Releases page is where drobek is
+    promoted, so every `vX.Y.Z` tag must end as a GitHub Release (Latest
+    unless it is a pre-release) with its `CHANGELOG.md` section and the image
+    name. CI's `release` job creates it after `promote`; check
+    `gh release list` afterwards and create a missing one by hand. The same
+    holds for the plugin repo, whose tag must equal the version in
+    `package.json` and every plugin manifest or its publish fails.
 
 ## Commands
 
