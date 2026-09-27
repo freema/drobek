@@ -20,6 +20,9 @@ export interface AppRow {
   galleryListed: boolean;
   galleryDescription: string | null;
   galleryHiddenAt: Date | null;
+  galleryAllowDuplicate: boolean;
+  /** NSO-340: the gallery app this one was duplicated from. */
+  duplicatedFromSlug: string | null;
 }
 
 const appColumns = {
@@ -34,6 +37,8 @@ const appColumns = {
   galleryListed: apps.galleryListed,
   galleryDescription: apps.galleryDescription,
   galleryHiddenAt: apps.galleryHiddenAt,
+  galleryAllowDuplicate: apps.galleryAllowDuplicate,
+  duplicatedFromSlug: apps.duplicatedFromSlug,
 };
 
 /** A live (not soft-deleted) app by id, or null. */

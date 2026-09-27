@@ -187,6 +187,11 @@ function AppHeader({ header }: { header: AppHeaderData }) {
         </span>
       </div>
       {header.name && header.name !== header.slug ? <p style={s.sub}>{header.slug}</p> : null}
+      {header.duplicatedFrom ? (
+        <p style={s.sub} data-testid="app-duplicated-from">
+          Duplicated from {header.duplicatedFrom}
+        </p>
+      ) : null}
       {/* NSO-293: taken down by the operator — on every tab. */}
       <LockedByAdminNotice locked={header.lockedByAdmin} />
       {/* NSO-366: this workspace may not publish (blocked, or not approved yet) — on every tab. */}

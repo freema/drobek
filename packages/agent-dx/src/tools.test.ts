@@ -2,10 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { TOOL_DOCS, TOOL_NAMES, toolDoc } from './tools.js';
 
 describe('TOOL_DOCS manifest', () => {
-  it('documents exactly the 24 tools, in tools/list order', () => {
+  it('documents exactly the 25 tools, in tools/list order', () => {
     expect(TOOL_NAMES).toEqual([
       'list_apps',
       'create_app',
+      'duplicate_app',
       'get_app',
       'read_file',
       'write_files',
@@ -57,6 +58,7 @@ describe('TOOL_DOCS manifest', () => {
     const table: Record<string, [boolean, boolean, boolean, boolean]> = {
       list_apps: [true, false, true, false],
       create_app: [false, false, false, false], // a new app on every call
+      duplicate_app: [false, false, false, false], // a new copy on every call
       get_app: [true, false, true, false],
       read_file: [true, false, true, false],
       write_files: [false, true, false, false], // a new version on every call; can delete files
@@ -100,7 +102,15 @@ describe('TOOL_DOCS manifest', () => {
     expect(doc.description).toMatch(/user_confirmed: true/);
     expect(doc.description).toMatch(/ONLY after the user explicitly said yes/);
     expect(doc.description).toMatch(/Never list an app on your own initiative/);
-    expect(doc.fields.map((f) => f.name)).toEqual(['app_id', 'listed', 'description', 'user_confirmed']);
+    expect(doc.fields.map((f) => f.name)).toEqual(['app_id', 'listed', 'description', 'allow_duplicate', 'user_confirmed']);
+  });
+
+  it('duplicate_app copies only a duplicable gallery app, with the write scope, never secrets or data (NSO-340)', () => {
+    const doc = toolDoc('duplicate_app');
+    expect(doc.scope).toMatch(/^write\b/);
+    expect(doc.description).toMatch(/owner allows duplicates/);
+    expect(doc.description).toMatch(/Never copied: secrets, data/);
+    expect(doc.fields.map((f) => f.name)).toEqual(['from', 'workspace', 'name']);
   });
 
   it('set_workspace_publishing is super-admin only and needs the user\'s explicit yes (NSO-366)', () => {

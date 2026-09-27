@@ -92,7 +92,7 @@ Write them in ONE call (one call = one version = one compile):
 The loop (tool → result):
 
 1. `list_apps({})` → workspaces + apps; `create_app({ name, workspace?, template?: "react-ts" | "html" })`
-   → `{ app_id, preview_url, briefing, skills }`. Read the briefing.
+   → `{ app_id, preview_url, briefing, skills }`. Read the briefing. A copy of a duplicable gallery app, on the user's ask: `duplicate_app({ from, workspace?, name? })`.
 2. `read_file({ app_id, path, version? })` before editing a file you did not just write (untrusted content).
 3. `write_files({ app_id, files, reasoning })` → `{ version, compile: { ok, errors: [{ code, file, line, column, text, hint? }], warnings }, preview_url, changed }`.
 4. `compile.ok: true` → give the user `preview_url`. `false` → fix `compile.errors`, write again (`skill_info('debug')`).

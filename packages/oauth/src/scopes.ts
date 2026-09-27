@@ -9,7 +9,8 @@
  *             query an app's stored data, read its logs, list its assets and
  *             its custom domains, and (workspace admins) the workspace's proxy
  *             upstreams (NSO-372).
- *   write   — change: create apps, write files (new versions), restore,
+ *   write   — change: create apps (also as a copy of a gallery app,
+ *             `duplicate_app`, NSO-340), write files (new versions), restore,
  *             configure platform modules, upload (upload URLs) and delete assets,
  *             add, verify and remove custom domains (NSO-366), register and
  *             remove proxy upstreams without a secret (NSO-372).
@@ -86,6 +87,8 @@ export const TOOL_SCOPES = {
   list_domains: 'read',
   list_upstreams: 'read',
   create_app: 'write',
+  // NSO-340: a copy of a gallery app in the caller's workspace, like create_app.
+  duplicate_app: 'write',
   write_files: 'write',
   restore_version: 'write',
   configure_module: 'write',

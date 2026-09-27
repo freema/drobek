@@ -18,6 +18,7 @@ import { AUDIT_ACTIONS, writeAudit } from '@drobek/audit';
 import { apps, auditLog, getDb, moduleConfigs, workspaces } from '@drobek/db';
 import { createApp } from './apps.server.js';
 import { AppsError } from './errors.js';
+import { notifyAppChanged } from './events.js';
 import { galleryEnabled, isGalleryVisible } from './gallery.js';
 import { deriveSlug, suggestSlug, validateAppSlug } from './slug.js';
 import type { Actor } from './types.js';
@@ -198,6 +199,7 @@ export async function duplicateAppFiles(input: DuplicateFilesInput): Promise<{ i
     reasoning: `Duplicated from ${input.source.slug} (published version ${version.number})`,
     compile: { status: version.compileStatus === 'ok' ? 'ok' : 'error', errors: version.compileErrors },
   });
+  await notifyAppChanged({ app_id: created.id, slug: created.slug, version: number });
   await writeAudit({
     workspaceId: input.workspaceId,
     actorUserId: input.actor.userId,

@@ -101,6 +101,7 @@ describe('set_gallery_listing', () => {
         app_id: app.app_id,
         listed: true,
         description: 'Plan weekly shifts for a small team.',
+        allow_duplicate: false,
         changed: true,
         visible: true,
       });
@@ -113,6 +114,7 @@ describe('set_gallery_listing', () => {
         description: 'Plan weekly shifts for a small team.',
         hidden_by_admin: false,
         visible: true,
+        allow_duplicate: false,
       });
 
       const audit = await db

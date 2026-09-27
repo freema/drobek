@@ -41,6 +41,7 @@ const WRITE = [
   'create_app',
   'create_asset_upload',
   'delete_asset',
+  'duplicate_app',
   'register_upstream',
   'remove_domain',
   'remove_upstream',

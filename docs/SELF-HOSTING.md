@@ -220,7 +220,7 @@ built-ins.
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | — | optional Google sign-in |
 | `TLS_CUSTOM_DOMAINS`, `DOMAINS_MAX_PER_APP`, `DOMAINS_DNS_SERVERS`, `DOMAINS_RECHECK_INTERVAL_MS` | — | [custom domains](#custom-domains) (catch-all certificate on by default in on-demand mode; 3 per app) |
 | `TERMS_URL`, `ABUSE_REPORTS_PER_IP_HOUR`, `ABUSE_BRAND_WORDS` | — | [abuse handling](#abuse-and-takedowns) (terms link of the 451 page; 5 reports / IP / hour; publish-heuristic brand words) |
-| `GALLERY_ENABLED`, `GALLERY_API_PER_IP_MINUTE`, `GALLERY_FRAME_ANCESTORS` | — (off) | [the public gallery](#public-gallery) (`true` = owners may list published apps; `GET /api/public/gallery`; 60 requests / IP / minute; your gallery website's origins that may show listed apps as live previews) |
+| `GALLERY_ENABLED`, `GALLERY_API_PER_IP_MINUTE`, `GALLERY_FRAME_ANCESTORS`, `DUPLICATES_PER_USER_HOUR` | — (off) | [the public gallery](#public-gallery) (`true` = owners may list published apps; `GET /api/public/gallery`; 60 requests / IP / minute; your gallery website's origins that may show listed apps as live previews; 10 copies of gallery apps per person per hour) |
 | `PUBLISH_APPROVAL`, `OPERATOR_EMAIL`, `PUBLISH_NOTIFY` | — (`open`, off) | [publish approval](#publish-approval) (`approval` = a workspace publishes only after a super-admin allowed it; the contact refused users see; `first` / `every` = e-mail the operator about publishes) |
 | `EMAIL_SIGNIN_APP_HOURLY_SHARE` | — (25) | one app's percent of the sign-in e-mail budget — raise it on a single-app server (see [Production compose](#production-compose)) |
 | `EMAIL_WORKSPACE_HOURLY_SHARE` | — (50) | one workspace's percent of each module e-mail budget — raise it to 100 on a single-workspace server |
@@ -427,6 +427,7 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `GALLERY_ENABLED` | off | `true` = the [public gallery](#public-gallery): owners (and, on their explicit yes, their agents) may list published apps; `GET /api/public/gallery` answers. Off = no switch in the dashboard, the endpoint answers 404 |
 | `GALLERY_API_PER_IP_MINUTE` | 60 | requests to `GET /api/public/gallery` per client IP per minute (429 over it) |
 | `GALLERY_FRAME_ANCESTORS` | — (no embedding) | space-separated bare `http(s)://host[:port]` origins (at most 10) of your gallery website that may show a listed app in an `<iframe>` — added to `frame-ancestors` only on the production host (and custom domains) of an app the gallery shows, only while `GALLERY_ENABLED`; a wildcard, a path or a quote stops the server at start (see [Public gallery](#public-gallery)) |
+| `DUPLICATES_PER_USER_HOUR` | 10 | copies of gallery apps one person may make per hour, from the dashboard's `/duplicate/<slug>` and the MCP tool `duplicate_app` together (see [Public gallery](#public-gallery)) |
 | `PUBLISH_APPROVAL` | `open` | `open` = every workspace may publish unless a super-admin blocked it; `approval` = a workspace publishes only after a super-admin allowed it (or when a super-admin is its member) — see [Publish approval](#publish-approval). Any other value, or `approval` without `SUPERADMIN_EMAIL`, stops the server at start |
 | `OPERATOR_EMAIL` | the `SUPERADMIN_EMAIL` addresses | one address: the contact a refused publish names, the recipient of approval requests and publish notifications (without it every super-admin is e-mailed and the first one is shown), and an extra recipient of abuse reports; not one e-mail address = no start |
 | `PUBLISH_NOTIFY` | `off` | e-mail the operator (`OPERATOR_EMAIL`, else every super-admin) about publishes: `first` = the first publish of each app, `every` = every publish, at most one e-mail per app per hour; a super-admin's own publishes are never e-mailed. Any other value stops the server at start |
@@ -1011,9 +1012,27 @@ list.
   `/admin/abuse` and can **hide** an entry (or show it again). A hidden app
   is off the list and neither its owner nor an agent can list it. Audited
   `app.gallery_hidden` / `app.gallery_unhidden`.
+- **Duplicates.** With "Allow duplicates" on (next to "Show in the gallery";
+  off by default), your gallery website can show a Duplicate button linking
+  to the item's `duplicateUrl`. A visitor signs in (and comes back), picks a
+  workspace where they are an editor or higher and a name, and gets a new,
+  unpublished app with the published files as version 1 — the MCP tool
+  `duplicate_app` does the same. The source's module settings are proposed
+  to the copy, and those that need a confirmation wait on its Modules page;
+  e-mail addresses in them and proxy upstreams are dropped. Secrets, data,
+  end users, uploads, app assets, domains and the listing are never copied.
+  Audited `app.duplicate` (the new app) and `app.duplicated` (the source,
+  without the copier). `DUPLICATES_PER_USER_HOUR` (default 10) caps copies
+  per person per hour.
 - **`GET /api/public/gallery`** on the dashboard host, no login. Each item
-  is `{ name, description, url, publishedAt }` — `url` is the production host
-  `https://<slug>.<APPS_DOMAIN>`. No owner data (no e-mail, workspace or id).
+  is `{ name, description, url, publishedAt, modules, duplicable,
+  duplicateUrl, duplicates }` — `url` is the production host
+  `https://<slug>.<APPS_DOMAIN>`, `modules` the names of the modules the app
+  has settings for, `duplicable` whether the owner allows duplicates,
+  `duplicateUrl` the dashboard page that duplicates it
+  (`<PUBLIC_APP_URL>/duplicate/<slug>`, `null` when not duplicable) and
+  `duplicates` how many live copies were made. No owner data (no e-mail,
+  workspace or id).
   Parameters:
   - `?limit=` 1–48 (default 24);
   - `?q=` a case-insensitive substring of the name or the description

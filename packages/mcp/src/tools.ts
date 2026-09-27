@@ -2,7 +2,7 @@
  * The MCP tool bodies (plan §4): list_apps, create_app, get_app, read_file,
  * write_files, restore_version (M0-05), publish (M0-06), skill_info and
  * configure_module (M1-01), query_data (M1-03), get_logs (M1-07),
- * set_gallery_listing (NSO-340). Each takes the caller + validated
+ * set_gallery_listing and duplicate_app (NSO-340). Each takes the caller + validated
  * arguments and returns a plain JSON payload or throws a ToolError; the MCP
  * wiring (register.ts) turns that into a CallToolResult.
  *
@@ -27,6 +27,10 @@
  *  - listing an app in the public gallery (NSO-340) needs the publish scope,
  *    a published app and `user_confirmed: true` — the user's explicit yes;
  *    unlisting needs none of that. get_app shows the gallery state;
+ *  - duplicate_app copies only a gallery app whose owner allows it, as the
+ *    same @drobek/apps + @drobek/modules functions as the dashboard page:
+ *    the published files and the module settings through the copy's own
+ *    confirmation flow, never secrets, data or the source's proxy upstreams;
  *  - an opt-in module (NSO-346) that is off for the app's workspace is left
  *    out of the app's skills and compile hints, get_app says
  *    `enabled: false` and configure_module answers `module_not_enabled`;
@@ -44,9 +48,12 @@ import {
 } from '@drobek/agent-dx';
 import {
   AppsError,
+  copyName,
   createApp as createAppRow,
   createVersion,
   deriveSlug,
+  duplicateAppFiles,
+  duplicationSource,
   galleryEnabled,
   galleryState,
   getVersion,
@@ -78,7 +85,7 @@ import {
   type CompileMessage,
   type CompileResult,
 } from '@drobek/compile';
-import { confirmUrl, isModuleError, type ModuleRuntime, type SkillListItem } from '@drobek/modules';
+import { confirmUrl, duplicateModuleConfigs, isModuleError, type ModuleRuntime, type SkillListItem } from '@drobek/modules';
 import { ensurePersonalWorkspace, listAllWorkspaces, listUserWorkspaces } from '@drobek/tenancy';
 import { authorizeApp, authorizeWorkspace } from './access.js';
 import type { ToolDeps, ToolPrincipal } from './context.js';
@@ -340,6 +347,7 @@ export async function getApp(ctx: CallContext, args: { app_id: string }) {
     modules,
     skills: skills(ctx, enabled),
     gallery: galleryOut(app, ctx.deps.env),
+    ...(app.duplicatedFromSlug ? { duplicated_from: app.duplicatedFromSlug } : {}),
     // NSO-366: the custom domains in short; list_domains has the DNS records and the last check.
     domains: (await listDomains({ id: app.id, slug: app.slug, workspaceId: app.workspaceId }, ctx.deps.env)).map((d) => ({
       host: d.hostname,
@@ -355,7 +363,14 @@ export async function getApp(ctx: CallContext, args: { app_id: string }) {
 function galleryOut(app: AppRow, env: NodeJS.ProcessEnv) {
   if (!galleryEnabled(env)) return { enabled: false };
   const g = galleryState(app);
-  return { enabled: true, listed: g.listed, description: g.description, hidden_by_admin: g.hiddenByAdmin, visible: g.visible };
+  return {
+    enabled: true,
+    listed: g.listed,
+    description: g.description,
+    hidden_by_admin: g.hiddenByAdmin,
+    visible: g.visible,
+    allow_duplicate: g.allowDuplicate,
+  };
 }
 
 // ── read_file ────────────────────────────────────────────────────────────────
@@ -546,6 +561,94 @@ export async function createApp(
     preview_url: previewUrl(created.slug, ctx.deps.env),
     briefing: briefing(ctx, enabled),
     skills: skills(ctx, enabled),
+  };
+}
+
+// ── duplicate_app ────────────────────────────────────────────────────────────
+
+/** A gallery app's slug from `from`: a slug, its app address, or its duplicate page URL. */
+function duplicateSourceSlug(from: string): string {
+  const raw = from.trim();
+  if (!/[/.:]/.test(raw)) return raw.toLowerCase();
+  let url: URL;
+  try {
+    url = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : `https://${raw}`);
+  } catch {
+    return raw.toLowerCase();
+  }
+  const page = /^\/duplicate\/([^/]+)\/?$/.exec(url.pathname);
+  if (page) return decodeURIComponent(page[1]).toLowerCase();
+  return (url.hostname.split('.')[0] ?? '').split('--')[0].toLowerCase();
+}
+
+/**
+ * Copy a gallery app into the caller's workspace (NSO-340) — the dashboard's
+ * /duplicate/:slug in one call. Only an app shown in the public gallery whose
+ * owner allows duplicates; the copy is the published files as version 1 of a
+ * new, unpublished app (provenance kept), and the source's module settings
+ * are proposed to it through its confirmation flow (e-mail addresses and
+ * proxy upstreams dropped). Never secrets, data, users, uploads, assets or
+ * domains. write scope, editor+ in the target workspace (default: personal).
+ */
+export async function duplicateApp(ctx: CallContext, args: { from: string; workspace?: string; name?: string }) {
+  const env = ctx.deps.env;
+  const from = duplicateSourceSlug(String(args.from ?? ''));
+  if (!from) throw new ToolError('invalid_params', '`from` must be a gallery app: its slug or its address.');
+  if (args.name !== undefined && scanForSecrets('name', String(args.name)).length > 0) {
+    throw new ToolError('invalid_params', '`name` looks like a credential — pick a plain name.');
+  }
+  const ws =
+    args.workspace !== undefined
+      ? await authorizeWorkspace(ctx.principal, args.workspace, 'editor')
+      : await ensurePersonalWorkspace(ctx.principal.userId, ctx.principal.email);
+
+  let copy: { id: string; slug: string; version: number };
+  let source;
+  try {
+    source = await duplicationSource(from, env);
+    const name = copyName(args.name, source);
+    copy = await duplicateAppFiles({
+      source,
+      workspaceId: ws.id,
+      name,
+      actor: actorOf(ctx),
+      maxApps: (await ctx.modules.workspaceLimits(ws.id)).APPS_MAX_PER_WORKSPACE,
+      env,
+    });
+  } catch (err) {
+    if (err instanceof AppsError) {
+      if (err.code === 'not_found') throw new ToolError('not_found', err.message);
+      if (err.code === 'invalid_settings') throw new ToolError('invalid_params', `name: ${err.message}`);
+      if (
+        err.code === 'not_duplicable' ||
+        err.code === 'gallery_disabled' ||
+        err.code === 'rate_limited' ||
+        err.code === 'limit_exceeded' ||
+        err.code === 'slug_taken'
+      ) {
+        throw new ToolError(err.code, err.message, { ...err.details });
+      }
+    }
+    throw err;
+  }
+  await ctx.modules.runHook('onAppCreate', { id: copy.id, slug: copy.slug, workspaceId: ws.id });
+  const modules = await duplicateModuleConfigs(ctx.modules, {
+    sourceAppId: source.id,
+    target: { id: copy.id, slug: copy.slug, workspaceId: ws.id, workspaceSlug: ws.slug },
+    actorUserId: ctx.principal.userId,
+    surface: 'mcp',
+  });
+  return {
+    app_id: copy.id,
+    slug: copy.slug,
+    workspace: ws.slug,
+    version: copy.version,
+    from: source.slug,
+    preview_url: previewUrl(copy.slug, env),
+    modules,
+    ...(modules.pending.length > 0
+      ? { note: 'Some module settings wait for the user to confirm them on the new app (confirm_url). Tell the user; do not work around it.' }
+      : {}),
   };
 }
 
@@ -788,11 +891,12 @@ export async function publishApp(ctx: CallContext, args: { app_id: string; versi
  * a bad description (`invalid_params`) and — last, so the agent never asks
  * the user about a listing that cannot happen — a call without
  * `user_confirmed: true` (`user_confirmation_required`). Unlisting needs no
- * confirmation.
+ * confirmation. `allow_duplicate` (listing only; omitted keeps it) rides on
+ * the listing's confirmation.
  */
 export async function setGalleryListingTool(
   ctx: CallContext,
-  args: { app_id: string; listed: boolean; description?: string; user_confirmed?: boolean }
+  args: { app_id: string; listed: boolean; description?: string; allow_duplicate?: boolean; user_confirmed?: boolean }
 ) {
   const { app } = await authorizeApp(ctx.principal, args.app_id, 'editor');
   const env = ctx.deps.env;
@@ -800,6 +904,9 @@ export async function setGalleryListingTool(
     throw new ToolError('gallery_disabled', 'This server has no public gallery (GALLERY_ENABLED is off).');
   }
   if (typeof args.listed !== 'boolean') throw new ToolError('invalid_params', '`listed` must be true or false.');
+  if (args.allow_duplicate !== undefined && typeof args.allow_duplicate !== 'boolean') {
+    throw new ToolError('invalid_params', '`allow_duplicate` must be true or false.');
+  }
   const name = app.name ?? app.slug;
   if (args.listed) {
     refuseIfLockedByAdmin(app);
@@ -814,8 +921,8 @@ export async function setGalleryListingTool(
     if (args.user_confirmed !== true) {
       throw new ToolError(
         'user_confirmation_required',
-        `Listing "${name}" in the public gallery shows it to everyone. Ask the user whether they want "${name}" in the public gallery with this description, and call again with user_confirmed: true only after they say yes.`,
-        { description: v.value }
+        `Listing "${name}" in the public gallery shows it to everyone${args.allow_duplicate ? ' and lets any signed-in person copy its published files into their own workspace' : ''}. Ask the user whether they want "${name}" in the public gallery with this description${args.allow_duplicate ? ' and open to duplicates' : ''}, and call again with user_confirmed: true only after they say yes.`,
+        { description: v.value, ...(args.allow_duplicate !== undefined ? { allow_duplicate: args.allow_duplicate } : {}) }
       );
     }
   }
@@ -823,7 +930,9 @@ export async function setGalleryListingTool(
   try {
     result = await setGalleryListing(
       app.id,
-      args.listed ? { listed: true, description: String(args.description) } : { listed: false },
+      args.listed
+        ? { listed: true, description: String(args.description), ...(args.allow_duplicate !== undefined ? { allowDuplicate: args.allow_duplicate } : {}) }
+        : { listed: false },
       actorOf(ctx),
       { env }
     );
@@ -837,11 +946,12 @@ export async function setGalleryListingTool(
     }
     throw err;
   }
-  const state = galleryState({ ...app, galleryListed: result.listed, galleryDescription: result.description });
+  const state = galleryState({ ...app, galleryListed: result.listed, galleryDescription: result.description, galleryAllowDuplicate: result.allowDuplicate });
   return {
     app_id: app.id,
     listed: result.listed,
     description: result.description,
+    allow_duplicate: result.allowDuplicate,
     changed: result.changed,
     visible: state.visible,
     ...(result.listed && app.visibility === 'password'

@@ -104,6 +104,8 @@ export interface AppHeaderData {
   lockedByAdmin: LockedByAdminView | null;
   /** NSO-366: set while the workspace may not publish (blocked, or not approved yet) — the notice; publish is refused. */
   publishApproval: PublishApprovalView | null;
+  /** NSO-340: the slug of the gallery app this one was duplicated from. */
+  duplicatedFrom: string | null;
 }
 
 /** Everything <AppHeader> renders. The lease read is best effort (Redis down → no banner). */
@@ -152,6 +154,7 @@ export async function appHeaderData({ access, app }: AppPage): Promise<AppHeader
     canEdit: canPublish(access.effectiveRole),
     lockedByAdmin: lockedByAdminView(app.lockedReason),
     publishApproval,
+    duplicatedFrom: app.duplicatedFromSlug,
   };
 }
 
@@ -295,11 +298,13 @@ export async function appAction({ request, params }: ActionFunctionArgs) {
       case 'gallery': {
         // NSO-340: "Show in the gallery" + the public description. Listing
         // needs a published app (@drobek/apps refuses otherwise); unchecking
-        // unlists. The same function backs the MCP tool set_gallery_listing.
+        // unlists and keeps "Allow duplicates" as it was. The same function
+        // backs the MCP tool set_gallery_listing.
         const listed = form.get('listed') === 'on' || form.get('listed') === 'true';
+        const allowDuplicate = form.get('allowDuplicate') === 'on' || form.get('allowDuplicate') === 'true';
         await setGalleryListing(
           app.id,
-          listed ? { listed: true, description: String(form.get('description') ?? '') } : { listed: false },
+          listed ? { listed: true, description: String(form.get('description') ?? ''), allowDuplicate } : { listed: false },
           actor
         );
         break;
