@@ -97,7 +97,7 @@ export const INPUT_SCHEMAS = {
     template: z.enum(TEMPLATES).optional().describe('Starting files; default react-ts.'),
   },
   duplicate_app: {
-    from: z.string().describe('The gallery app to copy: its slug, its address or its duplicate page URL.'),
+    from: z.string().describe('The gallery app to copy on this server: its slug, its address (app host or verified custom domain) or this dashboard\'s /duplicate/<slug> URL.'),
     workspace: z.string().optional().describe('Workspace slug for the copy (editor+); default: your personal workspace.'),
     name: z.string().optional().describe('Name of the copy (≤ 80 chars); default "<name> copy".'),
   },

@@ -172,4 +172,32 @@ describe('duplicateAppFiles', () => {
     const err = await duplicateAppFiles({ source: src, workspaceId: copierWs, name: 'c', actor: busy, env }).catch((e: AppsError) => e);
     expect(err).toMatchObject({ code: 'rate_limited', details: { limit: 'DUPLICATES_PER_USER_HOUR', value: 2 } });
   });
+
+  it('parallel copies by one person share the cap: exactly the limit gets through', async () => {
+    const app = await galleryApp();
+    const src = await duplicationSource(app.slug, ON);
+    const [u] = await db.insert(users).values({ email: 'racer@example.test' }).returning();
+    const racer: Actor = { userId: u.id, kind: 'user' };
+    const env = { ...ON, DUPLICATES_PER_USER_HOUR: '1' };
+    const results = await Promise.allSettled(
+      [copierWs, copierWs, authorWs].map((ws, i) => duplicateAppFiles({ source: src, workspaceId: ws, name: `race ${i}`, actor: racer, env }))
+    );
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const refused = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected').map((r) => (r.reason as AppsError).code);
+    expect(refused).toEqual(['rate_limited', 'rate_limited']);
+    const copies = await db.select({ id: apps.id }).from(apps).where(eq(apps.duplicatedFromAppId, app.id));
+    expect(copies).toHaveLength(1);
+  });
+
+  it('a copy refused before its app exists does not use up the cap', async () => {
+    const app = await galleryApp();
+    const src = await duplicationSource(app.slug, ON);
+    const [u] = await db.insert(users).values({ email: 'full@example.test' }).returning();
+    const person: Actor = { userId: u.id, kind: 'user' };
+    const env = { ...ON, DUPLICATES_PER_USER_HOUR: '1' };
+    const full = await duplicateAppFiles({ source: src, workspaceId: copierWs, name: 'full', actor: person, env, maxApps: 1 }).catch((e: AppsError) => e);
+    expect(full).toMatchObject({ code: 'limit_exceeded' });
+    const ok = await duplicateAppFiles({ source: src, workspaceId: copierWs, name: 'fits', actor: person, env });
+    expect(ok.version).toBe(1);
+  });
 });

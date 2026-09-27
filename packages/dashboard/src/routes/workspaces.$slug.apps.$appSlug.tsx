@@ -16,6 +16,7 @@
 import { Form, Link, useActionData, useLoaderData, useNavigation } from 'react-router';
 import type { action, loader } from './workspaces.$slug.apps.$appSlug.server.js';
 import { ActionError, AppPage, appStyles } from '../app-header.js';
+import { DuplicateResult } from '../duplicate-result.js';
 import { GallerySection } from '../gallery-section.js';
 import { PendingBanner } from '../pending-banner.js';
 import { formatTimestamp } from '../view.js';
@@ -106,7 +107,7 @@ const COMPILE_LABEL: Record<string, string> = {
 };
 
 export default function AppDetailRoute() {
-  const { header, versions, errors, logs, canPublish, pendingBanner, gallery } = useLoaderData<typeof loader>();
+  const { header, versions, errors, logs, canPublish, pendingBanner, duplicateResult, gallery } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const nav = useNavigation();
   const submitting = nav.state !== 'idle';
@@ -115,6 +116,7 @@ export default function AppDetailRoute() {
   return (
     <AppPage header={header}>
       <ActionError actionData={actionData} />
+      <DuplicateResult result={duplicateResult} />
       <PendingBanner banner={pendingBanner} />
 
       <h2 style={styles.h2}>Versions</h2>
