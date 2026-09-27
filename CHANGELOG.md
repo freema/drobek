@@ -15,6 +15,7 @@
   - Empty lists on these pages say what would appear there and what to do next.
 
 ### Fixed
+- **Every release tag gets its GitHub Release**: CI's new `release` job (tags, after the image is promoted) creates it from the tag's CHANGELOG section with the image name, Latest or pre-release. The releases v0.2.1–v0.4.0 were missing and have been added by hand.
 - **The e2e stacks allow 300 sign-in codes per IP per 15 minutes** (dev and image flow; production defaults unchanged): the gallery duplicate and like specs pushed the suite over the old test limit of 100.
 
 ### Docs
