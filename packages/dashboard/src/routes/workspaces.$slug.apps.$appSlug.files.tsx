@@ -33,12 +33,14 @@ const TOKEN_COLOR: Record<TokenKind, string> = {
 
 const styles = {
   layout: {
-    display: 'grid',
-    gridTemplateColumns: 'minmax(12rem, 16rem) 1fr',
+    display: 'flex',
+    flexWrap: 'wrap',
     gap: '1.25rem',
     marginTop: '1.25rem',
-    alignItems: 'start',
+    alignItems: 'flex-start',
   },
+  treePane: { flex: '1 1 12rem', maxWidth: '100%', minWidth: 0, overflowWrap: 'anywhere' },
+  viewerPane: { flex: '999 1 20rem', minWidth: 0, maxWidth: '100%' },
   tree: { listStyle: 'none', margin: 0, paddingLeft: '0.9rem', fontSize: '0.86rem' },
   treeRoot: { listStyle: 'none', margin: 0, padding: 0, fontSize: '0.86rem' },
   folder: { color: '#52525b', fontWeight: 600 },
@@ -176,7 +178,7 @@ export default function AppFilesRoute() {
           </div>
 
           <div style={styles.layout}>
-            <nav aria-label="Files" data-testid="file-tree">
+            <nav aria-label="Files" data-testid="file-tree" style={styles.treePane}>
               <p style={styles.groupTitle}>Source</p>
               {tree.source.length === 0 ? (
                 <p style={s.muted}>none</p>
@@ -191,7 +193,7 @@ export default function AppFilesRoute() {
               )}
             </nav>
 
-            <section data-testid="file-viewer" aria-label="File content">
+            <section data-testid="file-viewer" aria-label="File content" style={styles.viewerPane}>
               {file === null ? (
                 <p style={s.muted}>{selected ? `No file "${selected.path}" in v${version.number}.` : 'Pick a file.'}</p>
               ) : (

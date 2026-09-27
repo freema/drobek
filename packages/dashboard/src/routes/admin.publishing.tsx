@@ -7,7 +7,7 @@
  * only) is the source of truth.
  */
 import { Form, Link, useActionData, useLoaderData, useNavigation } from 'react-router';
-import { DashboardPage, controls } from '@drobek/tenancy/layout';
+import { DashboardPage, controls, mergeStyles, tabStyles } from '@drobek/tenancy/layout';
 import type { action, loader } from './admin.publishing.server.js';
 
 export function meta() {
@@ -35,21 +35,34 @@ const pill = {
 const styles = {
   h1: { fontSize: '1.75rem', marginBottom: '0.25rem' },
   nav: { margin: '0 0 1.5rem', fontSize: '0.9rem', color: '#555', display: 'flex', gap: '0.9rem', flexWrap: 'wrap' },
-  navLink: { color: '#1a1a1a' },
-  navActive: { color: '#1a1a1a', fontWeight: 700, textDecoration: 'none' },
+  navLink: { color: '#1a1a1a', fontWeight: 600 },
+  search: { display: 'flex', gap: '0.5rem', alignItems: 'flex-end', flexWrap: 'wrap', margin: '1rem 0 0.5rem' },
+  h3: { fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.04em', color: '#71717a', margin: '0.9rem 0 0.3rem' },
   hint: { color: '#555', marginTop: 0, fontSize: '0.95rem' },
   list: { listStyle: 'none', padding: 0, margin: '1rem 0' },
   item: { padding: '0.8rem 0.95rem', border: '1px solid #e4e4e7', borderRadius: '10px', marginBottom: '0.7rem' },
   head: { display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' },
-  name: { fontWeight: 700, wordBreak: 'break-all' },
+  name: { fontWeight: 700, wordBreak: 'break-all', color: '#1a1a1a' },
   meta: { color: '#555', fontSize: '0.82rem', marginTop: '0.25rem', wordBreak: 'break-word' },
   badge: { ...pill, border: '1px solid #d4d4d8', color: '#3f3f46', background: '#fafafa' },
   okBadge: { ...pill, color: '#166534', background: '#dcfce7', border: '1px solid #bbf7d0' },
   waitBadge: { ...pill, color: '#92400e', background: '#fef3c7', border: '1px solid #fde68a' },
   blockBadge: { ...pill, color: '#991b1b', background: '#fee2e2', border: '1px solid #fecaca' },
-  actions: { display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', marginTop: '0.6rem' },
-  apps: { listStyle: 'none', padding: 0, margin: '0.6rem 0 0', display: 'grid', gap: '0.4rem' },
-  appRow: { display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', fontSize: '0.88rem' },
+  actions: { display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', marginTop: '0.75rem' },
+  apps: { listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: '0.4rem' },
+  appRow: {
+    display: 'flex',
+    gap: '0.5rem',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    fontSize: '0.88rem',
+    padding: '0.4rem 0.6rem',
+    background: '#fafafa',
+    border: '1px solid #f0f0f2',
+    borderRadius: '8px',
+  },
+  appForm: { display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' },
   appLink: { wordBreak: 'break-all', color: '#1a1a1a' },
   modeNote: {
     background: '#f4f4f5',
@@ -107,19 +120,7 @@ export default function PublishingRoute() {
 
   return (
     <DashboardPage crumbs={[{ label: 'Workspaces', to: '/workspaces' }, { label: 'Publishing' }]}>
-      <p style={styles.nav} data-testid="publishing-states">
-        {states.map((s) => (
-          <Link
-            key={s}
-            to={s === defaultState ? '/admin/publishing' : `/admin/publishing?state=${s}`}
-            style={!workspace && s === state ? styles.navActive : styles.navLink}
-            aria-current={!workspace && s === state ? 'page' : undefined}
-            data-testid="publishing-state"
-            data-state={s}
-          >
-            {stateLabel(s, mode)}
-          </Link>
-        ))}
+      <p style={styles.nav}>
         <Link to="/admin/abuse" style={styles.navLink}>
           Moderation queue
         </Link>
@@ -142,6 +143,40 @@ export default function PublishingRoute() {
           super-admin member). A refused publish e-mails you an approval request, at most once a day per workspace.
         </p>
       )}
+      <nav style={tabStyles.bar} aria-label="Publishing states" data-testid="publishing-states">
+        {states.map((s) => (
+          <Link
+            key={s}
+            to={s === defaultState ? '/admin/publishing' : `/admin/publishing?state=${s}`}
+            style={!workspace && s === state ? tabStyles.active : tabStyles.tab}
+            aria-current={!workspace && s === state ? 'page' : undefined}
+            data-testid="publishing-state"
+            data-state={s}
+          >
+            {stateLabel(s, mode)}
+          </Link>
+        ))}
+      </nav>
+      <Form method="get" style={styles.search} role="search">
+        <label style={controls.field}>
+          <span style={controls.label}>Workspace slug</span>
+          <input
+            type="search"
+            name="workspace"
+            defaultValue={workspace ?? ''}
+            placeholder="e.g. acme-team"
+            style={mergeStyles(controls.input, { width: '16rem', maxWidth: '100%' })}
+          />
+        </label>
+        <button type="submit" style={controls.secondaryButton}>
+          Find
+        </button>
+        {workspace ? (
+          <Link to="/admin/publishing" style={controls.link}>
+            Clear
+          </Link>
+        ) : null}
+      </Form>
       {workspace ? (
         <p style={styles.hint} data-testid="publishing-one">
           Showing workspace <strong>{workspace}</strong> · <Link to="/admin/publishing">all workspaces</Link>
@@ -161,7 +196,11 @@ export default function PublishingRoute() {
 
       {workspaces.length === 0 ? (
         <p style={styles.empty} data-testid="publishing-empty">
-          Nothing here.
+          {workspace
+            ? `No workspace has the slug ${workspace}. Check the slug in the workspace's address, or clear the search to see every workspace.`
+            : state === 'all'
+              ? 'No workspace exists yet. Workspaces appear here once someone signs up.'
+              : `No workspace in ${stateLabel(state, mode)}. Pick another tab to see the rest.`}
         </p>
       ) : (
         <ul style={styles.list} data-testid="publishing-workspaces">
@@ -239,13 +278,15 @@ export default function PublishingRoute() {
                 ))}
               </div>
               {w.liveApps.length > 0 ? (
+                <>
+                <h3 style={styles.h3}>Live apps</h3>
                 <ul style={styles.apps} data-testid="publishing-live-apps">
                   {w.liveApps.map((a) => (
                     <li key={a.id} id={`app-${a.slug}`} style={styles.appRow} data-testid="publishing-live-app" data-app={a.slug}>
                       <a href={a.url} target="_blank" rel="noreferrer noopener" style={styles.appLink}>
                         {a.name}
                       </a>
-                      <Form method="post" action="/admin/abuse" style={styles.appRow}>
+                      <Form method="post" action="/admin/abuse" style={styles.appForm}>
                         <input type="hidden" name="intent" value="takedown" />
                         <input type="hidden" name="appId" value={a.id} />
                         <select name="reason" defaultValue="other" style={controls.select} aria-label={`Takedown reason for ${a.slug}`}>
@@ -262,6 +303,7 @@ export default function PublishingRoute() {
                     </li>
                   ))}
                 </ul>
+                </>
               ) : null}
             </li>
           ))}

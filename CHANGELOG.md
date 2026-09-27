@@ -1,5 +1,15 @@
 # Changelog — drobek (core)
 
+## Unreleased
+
+### Changed
+- **Admin pages tidied** (NSO-371).
+  - Publishing: the states are tabs, and a workspace slug search sits under them. Each workspace groups its live apps with the takedown form.
+  - Moderation queue: the takedown reason, Take down and Mark resolved are labelled and on one row.
+  - Workspaces: a super-admin gets cards linking to Publishing and the Moderation queue, and can filter the list of all workspaces. The create-team form fits on one row.
+  - App Files: the tree and the viewer stack on a phone instead of overflowing the page.
+  - Empty lists on these pages say what would appear there and what to do next.
+
 ## v0.4.0 — 2026-09-27
 
 ### Added
