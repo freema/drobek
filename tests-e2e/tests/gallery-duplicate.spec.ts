@@ -136,6 +136,8 @@ test.describe('gallery: duplicate an app from the dashboard and over MCP (NSO-34
     expect(off.json).toMatchObject({ allow_duplicate: false });
     expect(await itemOf(request, app.slug)).toMatchObject({ duplicable: false, duplicateUrl: null });
     await page.goto(`${BASE_URL_WEB}/duplicate/${app.slug}`);
+    await expect(page).toHaveURL(/\/login\?returnTo=/);
+    await loginViaEmail(page, request, uniqueEmail('dup-refused'), new RegExp(`/duplicate/${app.slug}$`));
     await expect(page.getByTestId('duplicate-refused')).toHaveAttribute('data-reason', 'not_duplicable');
   });
 });
