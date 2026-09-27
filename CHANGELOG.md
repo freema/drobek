@@ -4,6 +4,7 @@
 
 ### Changed
 - **A form submission says whether its e-mail went out** (NSO-370). `POST /__drobek/v1/forms/:form` answers `{ ok, id, notified }` and `drobek.forms.submit` / `<Form onSuccess>` pass `notified` on. It is `false` when nobody is to be notified, a mail limit or the pause refused the message, or the transport failed; the submission is stored either way.
+- **Clearer upstream card and delete-app panel** (NSO-371). On an app's proxy module page the rate-limit input has its own line and Save and Unassign share one row; an upstream that is not registered yet points to the Upstreams page. Delete app names the app and its identifier, lists what deleting does and labels the confirmation field.
 
 ## v0.3.4 — 2026-09-27
 

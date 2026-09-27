@@ -267,7 +267,7 @@ export function UpstreamsEditor({
               inputMode="numeric"
               defaultValue={u.rateLimit ?? ''}
               disabled={readOnly}
-              style={{ ...ui.input, width: '8rem' }}
+              style={{ ...ui.input, display: 'block', width: '8rem', marginTop: '0.3rem' }}
               data-testid={`upstream-ratelimit-${u.name}`}
             />
             <Errors messages={messages} testId={`upstream-error-${u.name}`} />
@@ -301,23 +301,37 @@ export function UpstreamsEditor({
               ) : null
             ) : (
               <>
-                <Form method="post" noValidate>
+                <Form method="post" noValidate id={`upstream-form-${u.name}`}>
                   <input type="hidden" name="intent" value="save-upstream" />
                   <input type="hidden" name="upstream" value={u.name} />
                   {body}
-                  <button type="submit" style={{ ...ui.button, marginTop: '0.5rem' }} disabled={busy || !u.registered} data-testid={`upstream-save-${u.name}`}>
+                </Form>
+                {u.registered ? null : (
+                  <p style={{ ...ui.small, margin: '0.6rem 0 0' }} data-testid={`upstream-unregistered-${u.name}`}>
+                    Register “{u.name}” on the <a href={`/workspaces/${encodeURIComponent(workspaceSlug)}/upstreams`}>Upstreams page</a> first; then
+                    save it here and confirm.
+                  </p>
+                )}
+                <div style={{ ...ui.row, marginTop: '0.75rem' }}>
+                  <button
+                    type="submit"
+                    form={`upstream-form-${u.name}`}
+                    style={ui.button}
+                    disabled={busy || !u.registered}
+                    data-testid={`upstream-save-${u.name}`}
+                  >
                     {u.assigned ? 'Save' : 'Assign to this app'}
                   </button>
-                </Form>
-                {u.assigned ? (
-                  <Form method="post" style={{ marginTop: '0.5rem' }}>
-                    <input type="hidden" name="intent" value="unassign-upstream" />
-                    <input type="hidden" name="upstream" value={u.name} />
-                    <button type="submit" style={ui.dangerButton} disabled={busy} data-testid={`upstream-unassign-${u.name}`}>
-                      Unassign
-                    </button>
-                  </Form>
-                ) : null}
+                  {u.assigned ? (
+                    <Form method="post">
+                      <input type="hidden" name="intent" value="unassign-upstream" />
+                      <input type="hidden" name="upstream" value={u.name} />
+                      <button type="submit" style={ui.dangerButton} disabled={busy} data-testid={`upstream-unassign-${u.name}`}>
+                        Unassign
+                      </button>
+                    </Form>
+                  ) : null}
+                </div>
               </>
             )}
           </section>

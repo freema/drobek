@@ -139,26 +139,36 @@ export default function AppSettingsRoute() {
         <section style={styles.section} data-testid="settings-danger">
           <h2 style={styles.h2}>Delete app</h2>
           <div style={styles.danger}>
-            <p style={{ ...styles.hint, color: '#7f1d1d' }}>
-              This removes the app from the dashboard and your agents. Its published, preview and saved-version links
-              stop working immediately. Its identifier <code style={s.mono}>{header.slug}</code> stays reserved for{' '}
-              {settings.slugReleaseDays} days, then becomes available to other apps.
-              Type <code style={s.mono}>{header.slug}</code> to confirm deletion.
+            <p style={{ ...styles.hint, color: '#7f1d1d', margin: 0 }}>
+              You are deleting <strong>{header.name || header.slug}</strong> (identifier <code style={s.mono}>{header.slug}</code>). Deleting it:
             </p>
-            <Form method="post" style={styles.row}>
+            <ul style={{ ...styles.hint, color: '#7f1d1d', margin: '0.4rem 0 0.9rem', paddingLeft: '1.2rem' }}>
+              <li>removes it from the dashboard and from your agents;</li>
+              <li>stops its published, preview and saved-version links immediately;</li>
+              <li>
+                keeps <code style={s.mono}>{header.slug}</code> reserved for {settings.slugReleaseDays} days, then lets other apps take it.
+              </li>
+            </ul>
+            <Form method="post">
               <input type="hidden" name="intent" value="delete" />
-              <input
-                type="text"
-                name="confirm"
-                autoComplete="off"
-                placeholder={header.slug}
-                style={s.input}
-                aria-label={`Type ${header.slug} to confirm deletion`}
-                data-testid="delete-confirm-input"
-              />
-              <button type="submit" style={s.dangerButton} disabled={busy} data-testid="delete-button">
-                Delete app
-              </button>
+              <label htmlFor="delete-confirm" style={{ display: 'block', fontWeight: 600, fontSize: '0.9rem', color: '#7f1d1d', marginBottom: '0.3rem' }}>
+                To confirm, type the identifier <code style={s.mono}>{header.slug}</code>
+              </label>
+              <div style={styles.row}>
+                <input
+                  id="delete-confirm"
+                  type="text"
+                  name="confirm"
+                  autoComplete="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  style={{ ...s.input, flex: '1 1 16rem', minWidth: 'min(16rem, 100%)' }}
+                  data-testid="delete-confirm-input"
+                />
+                <button type="submit" style={s.dangerButton} disabled={busy} data-testid="delete-button">
+                  Delete this app
+                </button>
+              </div>
             </Form>
           </div>
         </section>
