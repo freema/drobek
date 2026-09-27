@@ -24,7 +24,7 @@ import {
   DEFAULT_PUBLIC_CALLS_PER_MIN_PER_IP,
   PROXY_CONFIG_DEFAULTS,
   proxyConfigSchema,
-  proxyConfirmRequired,
+  proxyConfirmRequiredIn,
   proxyOnConfirmed,
   type ProxyConfig,
 } from './config.js';
@@ -41,6 +41,7 @@ export {
   callRuleOf,
   proxyConfigSchema,
   proxyConfirmRequired,
+  proxyConfirmRequiredIn,
   proxyOnConfirmed,
   upstreamAssignmentSchema,
   type ProxyConfig,
@@ -112,7 +113,7 @@ export function createProxyModule(opts: ProxyRouteOptions = {}): DrobekModule<Pr
     },
     configSchema: proxyConfigSchema,
     configDefaults: PROXY_CONFIG_DEFAULTS,
-    confirmRequired: proxyConfirmRequired,
+    confirmRequired: proxyConfirmRequiredIn,
     onConfirmed: proxyOnConfirmed,
     rules: {
       ops: {

@@ -278,6 +278,30 @@ confirmation). Refusals: `invalid_hostname`, `hostname_not_allowed`,
 `domain_already_added`, `domain_taken`, `limit_exceeded`
 (DOMAINS_MAX_PER_APP; 0 = custom domains are off for the workspace).
 
+## External APIs (proxy upstreams)
+
+An app calls an external API through the `proxy` module
+(`skill_info('proxy')`). The API is first registered for the workspace — a
+workspace admin does it, over MCP or on the dashboard's Upstreams page:
+
+1. `register_upstream({ workspace, name, base_url, allowed_methods,
+   allowed_path_prefixes, auth_type })` (scope `write`). `auth_type: "none"`
+   (an API without a key) registers at once. `bearer` / `header` need a key,
+   and a key never goes through MCP: the answer is `registered: false` with
+   `secret_url` — give the user that link (the form is filled in), they paste
+   the key there. Never ask for a key in chat.
+2. `configure_module('proxy', { upstreams: { <name>: { rules: { call } } } })`
+   assigns it to the app; a workspace admin confirms it (`confirm_url`). A
+   name that is not registered is refused (`invalid_params`, reason
+   `upstream_not_registered`) — register first.
+3. The app calls `drobek.proxy.fetch(<name>, <path>)`. One app may use many
+   upstreams, each with its own name, rule and rate limit.
+
+`list_upstreams({ workspace })` lists them (never a key);
+`remove_upstream({ workspace, name, user_confirmed })` deletes one only after
+the user's explicit yes — every app using it breaks at once. A name the
+workspace already has answers `upstream_already_registered`.
+
 ## Errors
 
 A failed call returns `isError: true` with `{ code, message, hint }` — the

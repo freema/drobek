@@ -2,7 +2,11 @@
 
 ## Unreleased
 
+### Added
+- **Proxy upstreams over MCP** (NSO-372). `list_upstreams`, `register_upstream` and `remove_upstream` (workspace admins; scopes `read` / `write` / `write`) do what the workspace → Upstreams page does, audited as the agent. An upstream with `auth_type: "none"` registers at once; `bearer` / `header` answer `registered: false` with `secret_url`, the Upstreams page with every field filled in through query parameters, where the user pastes the key — a secret is never an MCP argument. `remove_upstream` needs `user_confirmed: true` and names the apps that call it.
+
 ### Changed
+- **`configure_module('proxy')` refuses an unregistered upstream** (NSO-372) with `invalid_params`, `details.reason: upstream_not_registered`; unassigning such a name still works. The pending confirmation says "with its secret" only for an upstream that has one.
 - **A form submission says whether its e-mail went out** (NSO-370). `POST /__drobek/v1/forms/:form` answers `{ ok, id, notified }` and `drobek.forms.submit` / `<Form onSuccess>` pass `notified` on. It is `false` when nobody is to be notified, a mail limit or the pause refused the message, or the transport failed; the submission is stored either way.
 - **Clearer upstream card and delete-app panel** (NSO-371). On an app's proxy module page the rate-limit input has its own line and Save and Unassign share one row; an upstream that is not registered yet points to the Upstreams page. Delete app names the app and its identifier, lists what deleting does and labels the confirmation field.
 

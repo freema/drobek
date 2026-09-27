@@ -41,6 +41,8 @@ export const TOOL_ERROR_CODES = [
   'domain_taken',
   'domain_not_verified',
   'dns_unavailable',
+  // NSO-372: register_upstream.
+  'upstream_already_registered',
   'internal_error',
 ] as const;
 

@@ -26,6 +26,7 @@
     "@drobek/domains": "workspace:*",
     "@drobek/insights": "workspace:*",
     "@drobek/modules": "workspace:*",
+    "@drobek/proxy": "workspace:*",
     "@drobek/tenancy": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.19.0",
     "drizzle-orm": "^0.45.3",

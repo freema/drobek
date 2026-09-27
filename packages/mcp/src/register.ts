@@ -45,10 +45,11 @@ import {
 } from './tools.js';
 import { createAssetUpload, deleteAssetTool, listAssetsTool } from './assets.js';
 import { addDomainTool, listDomainsTool, removeDomainTool, setPrimaryDomainTool, verifyDomainTool } from './domains.js';
+import { listUpstreamsTool, registerUpstreamTool, removeUpstreamTool } from './upstreams.js';
 import { setWorkspacePublishingTool } from './workspace-publishing.js';
 import { TEMPLATES } from './templates.js';
 
-/** The tool set, in tools/list order (M0-05 + publish, M0-06 + skill_info/configure_module, M1-01 + query_data, M1-03 + get_logs, M1-07 + set_gallery_listing, NSO-340 + the asset tools, NSO-358 + set_workspace_publishing, NSO-366 — super-admins only, and the custom-domain tools, NSO-366). */
+/** The tool set, in tools/list order (M0-05 + publish, M0-06 + skill_info/configure_module, M1-01 + query_data, M1-03 + get_logs, M1-07 + set_gallery_listing, NSO-340 + the asset tools, NSO-358 + set_workspace_publishing, NSO-366 — super-admins only, the custom-domain tools, NSO-366, and the proxy upstream tools, NSO-372). */
 export const APP_TOOL_NAMES = [
   'list_apps',
   'create_app',
@@ -70,6 +71,9 @@ export const APP_TOOL_NAMES = [
   'verify_domain',
   'set_primary_domain',
   'remove_domain',
+  'list_upstreams',
+  'register_upstream',
+  'remove_upstream',
   'set_workspace_publishing',
 ] as const;
 
@@ -198,6 +202,25 @@ export const INPUT_SCHEMAS = {
       .boolean()
       .optional()
       .describe('A verified domain only: true ONLY after the user explicitly said yes to removing it.'),
+  },
+  list_upstreams: {
+    workspace: z.string().describe('The workspace slug (list_apps lists your workspaces and your role).'),
+  },
+  register_upstream: {
+    workspace: z.string().describe('The workspace slug; you need the workspace-admin role.'),
+    name: z.string().describe('The name apps call it by, e.g. pokeapi (a letter first, then letters, digits, - or _).'),
+    base_url: z.string().describe('The public https base URL, e.g. https://pokeapi.co (port 80/443 only).'),
+    allowed_methods: z.array(z.string()).describe('The HTTP methods apps may use, e.g. ["GET"].'),
+    allowed_path_prefixes: z.array(z.string()).describe('The paths apps may call under base_url, e.g. ["/api/v2/"].'),
+    auth_type: z
+      .enum(['none', 'bearer', 'header'])
+      .describe('none = no key (registers now); bearer / header = a key the user pastes in the dashboard (secret_url).'),
+    auth_header_name: z.string().optional().describe('auth_type header only: the header that carries the key, e.g. X-Api-Key.'),
+  },
+  remove_upstream: {
+    workspace: z.string().describe('The workspace slug; you need the workspace-admin role.'),
+    name: z.string().describe('A registered upstream (list_upstreams lists them).'),
+    user_confirmed: z.boolean().optional().describe('true ONLY after the user explicitly said yes to removing it.'),
   },
   set_workspace_publishing: {
     workspace: z.string().describe('The workspace slug (list_apps all_workspaces lists every workspace).'),
@@ -361,6 +384,9 @@ export function registerAppTools(
   register('verify_domain', verifyDomainTool);
   register('set_primary_domain', setPrimaryDomainTool);
   register('remove_domain', removeDomainTool);
+  register('list_upstreams', listUpstreamsTool);
+  register('register_upstream', registerUpstreamTool);
+  register('remove_upstream', removeUpstreamTool);
   register('set_workspace_publishing', setWorkspacePublishingTool);
 
   if (registered === 0) {

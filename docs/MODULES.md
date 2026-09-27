@@ -1761,8 +1761,15 @@ calls an external API without holding its secret. `skill_info('proxy')`.
   **port 80/443 only** — `PROXY_ALLOWED_PORTS`, PHY-76 #8; anything else is
   `invalid_request` at registration and `ssrf_blocked` at connect time),
   allowed methods + path prefixes, `auth_type` `none | bearer | header` and
-  the write-only secret (AES-256-GCM envelope under `DROBEK_MASTER_KEY`). Never
-  over MCP.
+  the write-only secret (AES-256-GCM envelope under `DROBEK_MASTER_KEY`).
+  Over MCP (NSO-372, workspace-admin): `list_upstreams`, `register_upstream`
+  (the same checks; `auth_type: none` registers at once, `bearer` / `header`
+  answer `registered: false` + `secret_url`, the Upstreams form filled in via
+  query parameters — the secret is never an MCP argument) and
+  `remove_upstream` (`user_confirmed: true`). Audit rows name the agent.
+  Assigning (or re-binding) a name no upstream is registered under is refused
+  at `configure_module` (`invalid_params`, `details.reason:
+  upstream_not_registered`).
 - **Config** `{ upstreams: { <name>: { rules: { call }, rateLimit?, id? } } }`
   (≤ 20): assigns a workspace upstream to the app. `call` = `user` (default) |
   `admin` | `public` | `none` (alternatives with `|`; `owner` is refused).
@@ -1791,8 +1798,8 @@ calls an external API without holding its secret. `skill_info('proxy')`.
   the app's workspace (`404 not_found`, `upstream_not_registered`); the
   record the assignment is bound to (`403 forbidden`, `upstream_replaced`);
   the app on the upstream's allow-list (`403 forbidden`,
-  `upstream_not_allowed` — empty = no app; an assignment confirmed before the
-  upstream was registered is removed and added again); then
+  `upstream_not_allowed` — empty = no app; an assignment whose upstream was
+  deleted after it was proposed is removed and added again); then
   `@drobek/proxy` `forwardToUpstream`: the method/path allow-lists (`405
   method_not_allowed` / `403 path_not_allowed`, traversal-proof: each segment
   is checked fully percent-decoded, up to 3 rounds, and a multiply encoded one

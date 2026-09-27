@@ -32,9 +32,21 @@
  *    registered under the name now;
  *  - opening `call` to `public` (then also limited per client IP:
  *    PROXY_PUBLIC_CALLS_PER_MIN_PER_IP).
+ *
+ * Assigning (or re-binding) a name no upstream of the workspace is registered
+ * under is refused: a confirmation could never bind it (NSO-372).
  */
-import { isValidRule, parseRule, ruleIsPublic, z, type ConfirmItem, type ConfirmedContext } from '@drobek/modules';
-import { UPSTREAM_NAME_RE, allowAppOnUpstream } from '@drobek/proxy';
+import {
+  ModuleError,
+  isValidRule,
+  parseRule,
+  ruleIsPublic,
+  z,
+  type ConfirmContext,
+  type ConfirmItem,
+  type ConfirmedContext,
+} from '@drobek/modules';
+import { UPSTREAM_NAME_RE, allowAppOnUpstream, upstreamSummaries } from '@drobek/proxy';
 import { bindAssignment } from './binding.js';
 
 export const MAX_UPSTREAMS_PER_APP = 20;
@@ -101,23 +113,28 @@ function rebinds(before: UpstreamAssignment | null, after: UpstreamAssignment): 
   return !before || (after.id !== undefined && after.id !== before.id);
 }
 
-/** The changes between two valid configs that wait for a workspace admin (see the file header). */
-export function proxyConfirmRequired(before: ProxyConfig, after: ProxyConfig): ConfirmItem[] {
+/**
+ * The changes between two valid configs that wait for a workspace admin (see
+ * the file header). `hasSecret` (upstream name → a secret is stored) words
+ * the texts: "with its secret" only for an upstream that has one.
+ */
+export function proxyConfirmRequired(
+  before: ProxyConfig,
+  after: ProxyConfig,
+  hasSecret: ReadonlyMap<string, boolean> = new Map()
+): ConfirmItem[] {
   const out: ConfirmItem[] = [];
   const admin = (change: string): ConfirmItem => ({ change, confirmRole: 'admin' });
   for (const name of Object.keys(after.upstreams).sort()) {
     const a = assignmentOf(after, name)!;
     const b = assignmentOf(before, name);
     const rule = callRuleOf(a);
+    const secret = hasSecret.get(name) === true ? ' with its secret' : '';
     if (!b) {
-      out.push(
-        admin(`proxy.upstreams.${name}: this app may call the workspace upstream "${name}" with its secret (callers: "${rule}")`)
-      );
+      out.push(admin(`proxy.upstreams.${name}: this app may call the workspace upstream "${name}"${secret} (callers: "${rule}")`));
     } else if (rebinds(b, a)) {
       out.push(
-        admin(
-          `proxy.upstreams.${name}.id: this app may call the upstream registered as "${name}" now with its secret (callers: "${rule}")`
-        )
+        admin(`proxy.upstreams.${name}.id: this app may call the upstream registered as "${name}" now${secret} (callers: "${rule}")`)
       );
     }
     if (ruleIsPublic(rule) && !(b && ruleIsPublic(callRuleOf(b)))) {
@@ -131,13 +148,29 @@ export function proxyConfirmRequired(before: ProxyConfig, after: ProxyConfig): C
   return out;
 }
 
+/** configure_module's hook: refuse a name that is not registered, then {@link proxyConfirmRequired}. */
+export async function proxyConfirmRequiredIn(before: ProxyConfig, after: ProxyConfig, context: ConfirmContext): Promise<ConfirmItem[]> {
+  const registered = new Map((await upstreamSummaries(context.app.workspaceId, context.db)).map((u) => [u.name, u.hasSecret]));
+  const missing = Object.keys(after.upstreams)
+    .sort()
+    .filter((name) => !registered.has(name) && rebinds(assignmentOf(before, name), assignmentOf(after, name)!));
+  if (missing.length > 0) {
+    throw new ModuleError(
+      'invalid_params',
+      `No upstream ${missing.map((n) => `"${n}"`).join(', ')} is registered in this app's workspace, so it cannot be assigned. A workspace admin registers it first — register_upstream over MCP, or the dashboard's workspace → Upstreams page — then assign it again.`,
+      { details: { reason: 'upstream_not_registered', upstreams: missing }, hint: "skill_info('proxy')" }
+    );
+  }
+  return proxyConfirmRequired(before, after, registered);
+}
+
 /**
  * A workspace admin confirmed the change: every upstream the app newly has
  * (or re-binds) is allowed for the app (the upstream's `allowed_app_ids`) and
  * the assignment is bound to that record's id — in the confirm transaction,
- * so everything commits together. An upstream not registered yet stays
- * closed and unbound: after registering it, remove the assignment and add it
- * again.
+ * so everything commits together. An upstream deleted since the change was
+ * proposed stays closed and unbound: after registering it again, remove the
+ * assignment and add it again.
  */
 export async function proxyOnConfirmed(before: ProxyConfig, after: ProxyConfig, context: ConfirmedContext): Promise<void> {
   for (const name of Object.keys(after.upstreams).sort()) {

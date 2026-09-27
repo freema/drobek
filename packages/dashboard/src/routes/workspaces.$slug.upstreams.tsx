@@ -88,7 +88,8 @@ const styles = {
 } as const;
 
 export default function UpstreamsRoute() {
-  const { nav, upstreams, allowedPorts } = useLoaderData<typeof loader>();
+  const { nav, upstreams, allowedPorts, prefill } = useLoaderData<typeof loader>();
+  const needsKey = prefill?.authType === 'bearer' || prefill?.authType === 'header';
   const actionData = useActionData<typeof action>();
   const error = actionData && 'error' in actionData ? actionData.error : null;
   const errorCode = actionData && 'code' in actionData ? actionData.code : undefined;
@@ -166,6 +167,13 @@ export default function UpstreamsRoute() {
 
       <section data-testid="add-upstream">
         <h2 style={styles.h2}>Register an upstream</h2>
+        {prefill ? (
+          <p style={{ margin: '0 0 0.5rem', maxWidth: '32rem' }} data-testid="upstream-prefilled">
+            Your agent filled in this form.{' '}
+            {needsKey ? 'Paste the API key into Secret, check the fields and click Register upstream.' : 'Check the fields and click Register upstream.'}{' '}
+            The key is stored encrypted and never shown to the agent.
+          </p>
+        ) : null}
         <Form method="post" style={styles.form}>
           <input type="hidden" name="intent" value="create" />
           <label htmlFor="up-name" style={styles.label}>
@@ -176,6 +184,7 @@ export default function UpstreamsRoute() {
             name="name"
             style={styles.input}
             placeholder="my-api"
+            defaultValue={prefill?.name}
             data-testid="field-name"
           />
           <label htmlFor="up-base" style={styles.label}>
@@ -186,6 +195,7 @@ export default function UpstreamsRoute() {
             name="baseUrl"
             style={styles.input}
             placeholder="https://api.example.com/v1"
+            defaultValue={prefill?.baseUrl}
             data-testid="field-baseurl"
           />
           <label htmlFor="up-methods" style={styles.label}>
@@ -195,7 +205,7 @@ export default function UpstreamsRoute() {
             id="up-methods"
             name="methods"
             style={styles.input}
-            defaultValue="GET"
+            defaultValue={prefill?.methods ?? 'GET'}
             data-testid="field-methods"
           />
           <label htmlFor="up-paths" style={styles.label}>
@@ -206,6 +216,7 @@ export default function UpstreamsRoute() {
             name="pathPrefixes"
             style={styles.input}
             placeholder="/ /users"
+            defaultValue={prefill?.paths}
             data-testid="field-paths"
           />
           <label htmlFor="up-auth" style={styles.label}>
@@ -214,7 +225,7 @@ export default function UpstreamsRoute() {
           <select
             id="up-auth"
             name="authType"
-            defaultValue="none"
+            defaultValue={prefill?.authType ?? 'none'}
             style={styles.select}
             data-testid="field-authtype"
           >
@@ -230,6 +241,7 @@ export default function UpstreamsRoute() {
             name="authHeaderName"
             style={styles.input}
             placeholder="X-Api-Key"
+            defaultValue={prefill?.header}
             data-testid="field-headername"
           />
           <label htmlFor="up-secret" style={styles.label}>
@@ -240,6 +252,7 @@ export default function UpstreamsRoute() {
             name="secret"
             type="password"
             autoComplete="new-password"
+            autoFocus={needsKey}
             style={styles.input}
             data-testid="field-secret"
           />

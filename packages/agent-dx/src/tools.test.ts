@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { TOOL_DOCS, TOOL_NAMES, toolDoc } from './tools.js';
 
 describe('TOOL_DOCS manifest', () => {
-  it('documents exactly the 21 tools, in tools/list order', () => {
+  it('documents exactly the 24 tools, in tools/list order', () => {
     expect(TOOL_NAMES).toEqual([
       'list_apps',
       'create_app',
@@ -24,6 +24,9 @@ describe('TOOL_DOCS manifest', () => {
       'verify_domain',
       'set_primary_domain',
       'remove_domain',
+      'list_upstreams',
+      'register_upstream',
+      'remove_upstream',
       'set_workspace_publishing',
     ]);
   });
@@ -72,6 +75,9 @@ describe('TOOL_DOCS manifest', () => {
       verify_domain: [false, false, true, true], // asks public DNS; the same records give the same verdict
       set_primary_domain: [false, false, true, true], // where the production address sends the public
       remove_domain: [false, true, true, true], // a verified domain stops serving the public
+      list_upstreams: [true, false, true, false],
+      register_upstream: [false, false, true, false], // a second call answers upstream_already_registered
+      remove_upstream: [false, true, true, false], // the apps calling it break; a second remove answers not_found
       set_workspace_publishing: [false, false, true, false], // who may publish; the same call again answers changed:false
     };
     expect(Object.keys(table)).toEqual(TOOL_NAMES);
