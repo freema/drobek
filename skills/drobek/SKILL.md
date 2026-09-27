@@ -250,10 +250,12 @@ everyone (on drobek.app it is shown at www.drobek.app/gallery).
   listing; the same `user_confirmed: true` covers both. Omitted keeps the
   current choice.
 - `get_app` shows the state (`gallery`: `listed`, `description`,
-  `hidden_by_admin`, `visible`, `allow_duplicate`; `enabled: false` when the
-  server has no gallery). `not_published`, `gallery_hidden` (the operator hid
-  the app) and `gallery_disabled` mean: tell the user, do not retry. The owner
-  can do all of this in the drobek dashboard as well.
+  `hidden_by_admin`, `visible`, `allow_duplicate`, `likes`, `opens` in the
+  last 30 days; `enabled: false` when the server has no gallery). Liking is
+  for signed-in people on the gallery, never through MCP. `not_published`,
+  `gallery_hidden` (the operator hid the app) and `gallery_disabled` mean:
+  tell the user, do not retry. The owner can do all of this in the drobek
+  dashboard as well.
 - When the user asks to copy a gallery app whose owner allows it,
   `duplicate_app({ from, workspace?, name? })` (scope `write`, editor+ in the
   target; default your personal workspace) creates a new, unpublished app

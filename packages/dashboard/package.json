@@ -212,6 +212,18 @@
       "types": "./src/routes/report.server.ts",
       "default": "./dist/routes/report.server.js"
     },
+    "./routes/gallery.open.$slug.server": {
+      "types": "./src/routes/gallery.open.$slug.server.ts",
+      "default": "./dist/routes/gallery.open.$slug.server.js"
+    },
+    "./routes/gallery.like.$slug": {
+      "types": "./src/routes/gallery.like.$slug.tsx",
+      "default": "./dist/routes/gallery.like.$slug.js"
+    },
+    "./routes/gallery.like.$slug.server": {
+      "types": "./src/routes/gallery.like.$slug.server.ts",
+      "default": "./dist/routes/gallery.like.$slug.server.js"
+    },
     "./routes/admin.abuse": {
       "types": "./src/routes/admin.abuse.tsx",
       "default": "./dist/routes/admin.abuse.js"

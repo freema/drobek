@@ -44,6 +44,10 @@ interface GalleryItem {
   duplicable: boolean;
   duplicateUrl: string | null;
   duplicates: number;
+  likes: number;
+  opens: number;
+  openUrl: string;
+  likeUrl: string;
 }
 
 interface Created {
@@ -162,11 +166,27 @@ test.describe('gallery: list from the dashboard and over MCP, public API, admin 
       duplicable: false,
       duplicateUrl: null,
       duplicates: 0,
+      likes: 0,
+      opens: 0,
+      openUrl: `${BASE_URL_WEB}/gallery/open/${app.slug}`,
+      likeUrl: `${BASE_URL_WEB}/gallery/like/${app.slug}`,
     });
     const all = await galleryItems(request);
-    for (const item of all) {
-      expect(Object.keys(item).sort()).toEqual(['description', 'duplicable', 'duplicateUrl', 'duplicates', 'modules', 'name', 'publishedAt', 'url']);
-    }
+    for (const item of all)
+      expect(Object.keys(item).sort()).toEqual([
+        'description',
+        'duplicable',
+        'duplicateUrl',
+        'duplicates',
+        'likeUrl',
+        'likes',
+        'modules',
+        'name',
+        'openUrl',
+        'opens',
+        'publishedAt',
+        'url',
+      ]);
     const text = JSON.stringify(all);
     const ws = await personalWorkspaceOf(owner.email);
     for (const secret of [owner.email, ws.id, app.app_id, await userIdByEmail(owner.email)]) expect(text).not.toContain(secret);
@@ -259,7 +279,16 @@ test.describe('gallery: list from the dashboard and over MCP, public API, admin 
     expect(ok.json).toMatchObject({ app_id: app.app_id, listed: true, description, changed: true, visible: true });
     expect(await entryOf(request, app.slug)).toMatchObject({ description, url: urlOf(prodHost(app.slug)) });
     const after = await callTool(owner.client, 'get_app', { app_id: app.app_id });
-    expect(after.json.gallery).toEqual({ enabled: true, listed: true, description, hidden_by_admin: false, visible: true, allow_duplicate: false });
+    expect(after.json.gallery).toEqual({
+      enabled: true,
+      listed: true,
+      description,
+      hidden_by_admin: false,
+      visible: true,
+      allow_duplicate: false,
+      likes: 0,
+      opens: 0,
+    });
     expect((await galleryAudit(app.slug)).at(-1)).toMatchObject({ action: 'app.gallery_listed', actor_kind: 'agent' });
 
     const off = await callTool(owner.client, 'set_gallery_listing', { app_id: app.app_id, listed: false });

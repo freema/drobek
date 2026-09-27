@@ -78,12 +78,45 @@ export function galleryLikePattern(text: string): string {
   return `%${text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[\\%_]/g, '\\$&')}%`;
 }
 
-/** The public list's order: `new` = newest publish first (the default), `name` = name A→Z. */
-export type GallerySort = 'new' | 'name';
+/**
+ * The public list's order: `new` = newest publish first (the default),
+ * `name` = name A→Z, `popular` = the highest GALLERY_POPULAR_LIKE_WEIGHT ×
+ * likes + opens in the last GALLERY_OPENS_WINDOW_DAYS first.
+ */
+export type GallerySort = 'new' | 'name' | 'popular';
 
-/** `?sort` → `name` or (anything else) `new`. */
+/** `?sort` → `name`, `popular` or (anything else) `new`. */
 export function gallerySort(raw: string | null | undefined): GallerySort {
-  return raw?.trim().toLowerCase() === 'name' ? 'name' : 'new';
+  const v = raw?.trim().toLowerCase();
+  return v === 'name' || v === 'popular' ? v : 'new';
+}
+
+/** The window `opens` counts: the last 30 UTC days, today included. */
+export const GALLERY_OPENS_WINDOW_DAYS = 30;
+/** `popular` weighs one like as this many opens. */
+export const GALLERY_POPULAR_LIKE_WEIGHT = 5;
+
+/** A UTC day as `YYYY-MM-DD` (the `gallery_opens.day` key). */
+export function utcDay(at: Date): string {
+  return at.toISOString().slice(0, 10);
+}
+
+/** The first UTC day inside the `opens` window that ends on `now`. */
+export function galleryOpensSince(now: Date): string {
+  return utcDay(new Date(now.getTime() - (GALLERY_OPENS_WINDOW_DAYS - 1) * 86_400_000));
+}
+
+/**
+ * Whether a request is a browser prefetch or preview rather than a person
+ * opening the app (`Sec-Purpose` / `Purpose: prefetch`, Firefox `X-Moz`,
+ * Safari `X-Purpose: preview`); such a request is redirected but not counted.
+ */
+export function isPrefetchRequest(headers: Headers): boolean {
+  const purpose = [headers.get('sec-purpose'), headers.get('purpose'), headers.get('x-moz'), headers.get('x-purpose')]
+    .filter((v): v is string => v !== null)
+    .join(' ')
+    .toLowerCase();
+  return /\b(prefetch|prerender|preview)\b/.test(purpose);
 }
 
 /**

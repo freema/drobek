@@ -169,6 +169,13 @@
       "when": 1790525749936,
       "tag": "0028_gallery_duplicate",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1790525800000,
+      "tag": "0029_gallery_likes",
+      "breakpoints": true
     }
   ]
 }

@@ -196,6 +196,10 @@ describe('GET /api/public/gallery (NSO-340)', () => {
           duplicable: false,
           duplicateUrl: null,
           duplicates: 0,
+          likes: 0,
+          opens: 0,
+          openUrl: 'http://localhost:3041/gallery/open/shift-plan',
+          likeUrl: 'http://localhost:3041/gallery/like/shift-plan',
         },
       ],
     });

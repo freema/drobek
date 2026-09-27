@@ -139,6 +139,9 @@ export default [
   route('api/public/gallery', 'routes/api.public.gallery.ts'),
   // NSO-340: the gallery's Duplicate button — sign in, pick a workspace, copy the app.
   route('duplicate/:slug', 'routes/duplicate.$slug.tsx'),
+  // NSO-340: the gallery's counting link (302 to the app) and the like page (signed-in accounts).
+  route('gallery/open/:slug', 'routes/gallery.open.$slug.ts'),
+  route('gallery/like/:slug', 'routes/gallery.like.$slug.tsx'),
   // NSO-348: the IdP callback of an end-user sign-in provider (the auth
   // module's `auth.provider` slot) — one redirect URI per server; answers a
   // 302 with a handoff code to the app host, never touches the dashboard session.

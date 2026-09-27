@@ -115,6 +115,8 @@ describe('set_gallery_listing', () => {
         hidden_by_admin: false,
         visible: true,
         allow_duplicate: false,
+        likes: 0,
+        opens: 0,
       });
 
       const audit = await db

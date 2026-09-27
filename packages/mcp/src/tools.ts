@@ -54,6 +54,7 @@ import {
   deriveSlug,
   duplicateAppFiles,
   duplicationSource,
+  galleryCounts,
   galleryEnabled,
   galleryState,
   getVersion,
@@ -346,7 +347,7 @@ export async function getApp(ctx: CallContext, args: { app_id: string }) {
     })),
     modules,
     skills: skills(ctx, enabled),
-    gallery: galleryOut(app, ctx.deps.env),
+    gallery: await galleryOut(app, ctx.deps.env),
     ...(app.duplicatedFromSlug ? { duplicated_from: app.duplicatedFromSlug } : {}),
     // NSO-366: the custom domains in short; list_domains has the DNS records and the last check.
     domains: (await listDomains({ id: app.id, slug: app.slug, workspaceId: app.workspaceId }, ctx.deps.env)).map((d) => ({
@@ -359,10 +360,11 @@ export async function getApp(ctx: CallContext, args: { app_id: string }) {
   };
 }
 
-/** get_app's `gallery` (NSO-340): the public gallery state, read-only. */
-function galleryOut(app: AppRow, env: NodeJS.ProcessEnv) {
+/** get_app's `gallery` (NSO-340): the public gallery state and its likes / opens (30 days), read-only. */
+async function galleryOut(app: AppRow, env: NodeJS.ProcessEnv) {
   if (!galleryEnabled(env)) return { enabled: false };
   const g = galleryState(app);
+  const counts = await galleryCounts(app.id);
   return {
     enabled: true,
     listed: g.listed,
@@ -370,6 +372,7 @@ function galleryOut(app: AppRow, env: NodeJS.ProcessEnv) {
     hidden_by_admin: g.hiddenByAdmin,
     visible: g.visible,
     allow_duplicate: g.allowDuplicate,
+    ...counts,
   };
 }
 

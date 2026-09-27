@@ -122,7 +122,13 @@ This document is the map of how that works. The neighbours:
   or availability), newest first with a cursor or in numbered pages (`?page`,
   with `pages` / `total`), searchable (`?q`, name or description, ignoring case
   and combining accents) and
-  sortable by name (`?sort=name`), CORS `*`, cached 60 s — no owner data. It
+  sortable by name (`?sort=name`) or popularity (`?sort=popular`: 5 × likes
+  + opens in the last 30 days), CORS `*`, cached 60 s — no owner data. Each
+  item carries `likes` (`gallery_likes`, one row per app and signed-in
+  account, liked on the dashboard page `/gallery/like/<slug>`) and `opens`
+  (`gallery_opens`, a count per app and UTC day, raised by the redirect
+  `/gallery/open/<slug>` for a GET that is not a prefetch, per-IP limited;
+  nothing about the visitor is stored) with their `likeUrl` / `openUrl`. It
   filters at query time (listed, published, public, not taken down, not
   deleted, not hidden by a super-admin); unpublish and takedown also clear
   the flag. With `GALLERY_FRAME_ANCESTORS` the operator's gallery website may

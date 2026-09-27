@@ -220,7 +220,7 @@ built-ins.
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | — | optional Google sign-in |
 | `TLS_CUSTOM_DOMAINS`, `DOMAINS_MAX_PER_APP`, `DOMAINS_DNS_SERVERS`, `DOMAINS_RECHECK_INTERVAL_MS` | — | [custom domains](#custom-domains) (catch-all certificate on by default in on-demand mode; 3 per app) |
 | `TERMS_URL`, `ABUSE_REPORTS_PER_IP_HOUR`, `ABUSE_BRAND_WORDS` | — | [abuse handling](#abuse-and-takedowns) (terms link of the 451 page; 5 reports / IP / hour; publish-heuristic brand words) |
-| `GALLERY_ENABLED`, `GALLERY_API_PER_IP_MINUTE`, `GALLERY_FRAME_ANCESTORS`, `DUPLICATES_PER_USER_HOUR` | — (off) | [the public gallery](#public-gallery) (`true` = owners may list published apps; `GET /api/public/gallery`; 60 requests / IP / minute; your gallery website's origins that may show listed apps as live previews; 10 copies of gallery apps per person per hour) |
+| `GALLERY_ENABLED`, `GALLERY_API_PER_IP_MINUTE`, `GALLERY_OPENS_PER_IP_HOUR`, `GALLERY_LIKES_PER_USER_HOUR`, `GALLERY_FRAME_ANCESTORS`, `DUPLICATES_PER_USER_HOUR` | — (off) | [the public gallery](#public-gallery) (`true` = owners may list published apps; `GET /api/public/gallery`; 60 requests / IP / minute; 60 counted opens / IP / hour; 30 likes / account / hour; your gallery website's origins that may show listed apps as live previews and receive visitors back after a like; 10 copies of gallery apps per person per hour) |
 | `PUBLISH_APPROVAL`, `OPERATOR_EMAIL`, `PUBLISH_NOTIFY` | — (`open`, off) | [publish approval](#publish-approval) (`approval` = a workspace publishes only after a super-admin allowed it; the contact refused users see; `first` / `every` = e-mail the operator about publishes) |
 | `EMAIL_SIGNIN_APP_HOURLY_SHARE` | — (25) | one app's percent of the sign-in e-mail budget — raise it on a single-app server (see [Production compose](#production-compose)) |
 | `EMAIL_WORKSPACE_HOURLY_SHARE` | — (50) | one workspace's percent of each module e-mail budget — raise it to 100 on a single-workspace server |
@@ -426,6 +426,8 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `ABUSE_BRAND_WORDS` | a built-in list | the publish heuristic's brand words (comma-separated) |
 | `GALLERY_ENABLED` | off | `true` = the [public gallery](#public-gallery): owners (and, on their explicit yes, their agents) may list published apps; `GET /api/public/gallery` answers. Off = no switch in the dashboard, the endpoint answers 404 |
 | `GALLERY_API_PER_IP_MINUTE` | 60 | requests to `GET /api/public/gallery` per client IP per minute (429 over it) |
+| `GALLERY_OPENS_PER_IP_HOUR` | 60 | visits through a gallery `openUrl` counted per client IP per hour (more still redirect, uncounted) |
+| `GALLERY_LIKES_PER_USER_HOUR` | 30 | likes and unlikes per account per hour on `/gallery/like/<slug>` (429 over it) |
 | `GALLERY_FRAME_ANCESTORS` | — (no embedding) | space-separated bare `http(s)://host[:port]` origins (at most 10) of your gallery website that may show a listed app in an `<iframe>` — added to `frame-ancestors` only on the production host (and custom domains) of an app the gallery shows, only while `GALLERY_ENABLED`; a wildcard, a path or a quote stops the server at start (see [Public gallery](#public-gallery)) |
 | `DUPLICATES_PER_USER_HOUR` | 10 | copies of gallery apps one person may make per hour, from the dashboard's `/duplicate/<slug>` and the MCP tool `duplicate_app` together (see [Public gallery](#public-gallery)) |
 | `PUBLISH_APPROVAL` | `open` | `open` = every workspace may publish unless a super-admin blocked it; `approval` = a workspace publishes only after a super-admin allowed it (or when a super-admin is its member) — see [Publish approval](#publish-approval). Any other value, or `approval` without `SUPERADMIN_EMAIL`, stops the server at start |
@@ -1026,19 +1028,22 @@ list.
   per person per hour.
 - **`GET /api/public/gallery`** on the dashboard host, no login. Each item
   is `{ name, description, url, publishedAt, modules, duplicable,
-  duplicateUrl, duplicates }` — `url` is the production host
-  `https://<slug>.<APPS_DOMAIN>`, `modules` the names of the modules the app
-  has settings for, `duplicable` whether the owner allows duplicates,
-  `duplicateUrl` the dashboard page that duplicates it
-  (`<PUBLIC_APP_URL>/duplicate/<slug>`, `null` when not duplicable) and
-  `duplicates` how many live copies were made. No owner data (no e-mail,
-  workspace or id).
+  duplicateUrl, duplicates, likes, opens, openUrl, likeUrl }` — `url` is the
+  production host `https://<slug>.<APPS_DOMAIN>`, `modules` the names of the
+  modules the app has settings for, `duplicable` whether the owner allows
+  duplicates, `duplicateUrl` the dashboard page that duplicates it
+  (`<PUBLIC_APP_URL>/duplicate/<slug>`, `null` when not duplicable),
+  `duplicates` how many live copies were made, `likes` the number of accounts
+  that like the app and `opens` the visits through `openUrl` in the last 30
+  days (UTC). No owner data (no e-mail, workspace or id) and nothing about who
+  liked or opened.
   Parameters:
   - `?limit=` 1–48 (default 24);
   - `?q=` a case-insensitive substring of the name or the description
     (trimmed, at most 100 characters; `%`, `_` and `\` match themselves);
-  - `?sort=new` (default: newest publish first) or `?sort=name` (A→Z,
-    case-insensitive);
+  - `?sort=new` (default: newest publish first), `?sort=name` (A→Z,
+    case-insensitive) or `?sort=popular` (5 × likes + opens in the last
+    30 days, highest first; ties newest first);
   - `?cursor=` the previous page's `next` (cursor mode), or `?page=` a
     1-based page number (page mode).
 
@@ -1046,8 +1051,8 @@ list.
   - **cursor mode** (the default; `sort=new` without `page`, or with a
     `cursor`): `{ items, next? }` — `next` is there while more entries
     follow;
-  - **page mode** (`?page=` without a cursor, and always with `sort=name`,
-    which ignores a cursor): `{ items, page, pages, total }` — `total` and
+  - **page mode** (`?page=` without a cursor, and always with `sort=name`
+    or `sort=popular`, which ignore a cursor): `{ items, page, pages, total }` — `total` and
     `pages` count the filtered list (`pages` is 0 when nothing matches); a
     page that is not a whole number ≥ 1 is page 1, a page past the last has
     no items; `previews` is `true` when `GALLERY_FRAME_ANCESTORS` is set (the
@@ -1059,6 +1064,21 @@ list.
   max-age=60`, `Access-Control-Allow-Origin: *`, `GALLERY_API_PER_IP_MINUTE`
   requests per client IP per minute. Render it on your own website — a
   server-side fetch or a reverse proxy works as well as the browser.
+- **Opens.** Link a card to its `openUrl` (`/gallery/open/<slug>` on the
+  dashboard host): it adds one to the app's count for the day and redirects
+  to `url`. Only a `GET` counts — not `HEAD`, not a browser prefetch or
+  prerender (`Sec-Purpose` / `Purpose`) and not more than
+  `GALLERY_OPENS_PER_IP_HOUR` visits per client IP per hour (the redirect
+  still works). The server stores a count per app and day, never who opened
+  it.
+- **Likes.** Link a like button to `likeUrl` (`/gallery/like/<slug>`), with
+  `?back=<your gallery URL>` to return there. The page asks the visitor to
+  sign in to drobek (any account), then shows the count and a "Like this
+  app" / "Remove my like" button. One like per account; the public list
+  shows only the count. `back` is followed only when its origin is one of
+  `GALLERY_FRAME_ANCESTORS`, otherwise the page stays on drobek. At most
+  `GALLERY_LIKES_PER_USER_HOUR` changes per account per hour (429 over it).
+  A deleted account or app takes its likes with it.
 - **Live previews.** Apps refuse to be framed by other sites
   (`frame-ancestors`). To show each listed app as a live preview (a scaled,
   sandboxed, non-interactive `<iframe>` of its `url`), set
