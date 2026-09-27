@@ -16,6 +16,7 @@ import {
   getClientIp,
   normalizeAuthEmail,
 } from '../email-code.server.js';
+import { docPageUrl } from '@drobek/agent-dx';
 import { isGoogleLoginEnabled } from '../google-oauth.server.js';
 import {
   guardOtpRequest,
@@ -50,6 +51,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   const body = {
     googleEnabled: isGoogleLoginEnabled(),
+    docsUrl: docPageUrl('overview'),
     googleError:
       url.searchParams.get('error') === 'google' ? GENERIC_GOOGLE_ERROR : null,
   };

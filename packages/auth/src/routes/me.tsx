@@ -55,10 +55,28 @@ const styles = {
   },
   navRow: { margin: '0 0 1.5rem' },
   navLink: { fontWeight: 600, color: '#1a1a1a' },
+  start: {
+    margin: '0 0 1.75rem',
+    padding: '1rem 1.25rem',
+    border: '1px solid #e4e4e7',
+    borderRadius: '8px',
+  },
+  h2: { fontSize: '1.15rem', margin: '0 0 0.25rem' },
+  code: {
+    display: 'block',
+    margin: '0.5rem 0',
+    padding: '0.5rem 0.75rem',
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+    fontSize: '0.85rem',
+    background: '#f4f4f5',
+    borderRadius: '6px',
+    overflowX: 'auto',
+    whiteSpace: 'pre',
+  },
 } as const;
 
 export default function MeRoute() {
-  const { email, superAdmin } = useLoaderData<typeof loader>();
+  const { email, superAdmin, mcpUrl, agentGuideUrl } = useLoaderData<typeof loader>();
 
   return (
     <main style={styles.main}>
@@ -85,6 +103,23 @@ export default function MeRoute() {
           Connections
         </a>
       </p>
+
+      <section style={styles.start} data-testid="me-start">
+        <h2 style={styles.h2}>Start building</h2>
+        <p style={{ ...styles.hint, marginBottom: 0 }}>
+          Connect your agent to this MCP server, then ask it to build an app.
+          It works in your workspace and gives you a preview link.
+        </p>
+        <code style={styles.code} data-testid="me-mcp-url">{mcpUrl}</code>
+        <p style={{ margin: '0.75rem 0 0' }}>Claude Code:</p>
+        <code style={styles.code}>claude mcp add --transport http drobek {mcpUrl}</code>
+        <p style={{ margin: 0 }}>
+          <a href={agentGuideUrl} style={styles.navLink}>
+            Agent guide
+          </a>{' '}
+          — Codex, Cursor, the plugin and API keys.
+        </p>
+      </section>
 
       <Form method="post" action="/auth/logout">
         <button type="submit" style={styles.button}>

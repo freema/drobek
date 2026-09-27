@@ -3,6 +3,7 @@
  * component file so the client bundle never touches server-only deps.
  */
 import { type LoaderFunctionArgs } from 'react-router';
+import { docPageUrl, mcpEndpoint } from '@drobek/agent-dx';
 import { requireSessionUser } from '../session.server.js';
 import { isSuperAdmin } from '../super-admin.server.js';
 
@@ -11,5 +12,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   return {
     email: user.email,
     superAdmin: isSuperAdmin(user.email),
+    mcpUrl: mcpEndpoint(),
+    agentGuideUrl: docPageUrl('agent'),
   };
 }

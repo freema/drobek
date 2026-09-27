@@ -17,6 +17,7 @@ test('login page renders an email form console-clean @smoke', async ({
   await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
   await expect(page.getByLabel('Email')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Send code' })).toBeVisible();
+  await expect(page.getByTestId('login-docs-link')).toHaveAttribute('href', /^https?:\/\//);
 
   // Give hydration a beat to surface any mismatch errors.
   await page.waitForTimeout(500);

@@ -91,10 +91,12 @@ const styles = {
     fontSize: '0.8rem',
   },
   dividerLine: { flex: 1, height: 1, background: '#e4e4e7' },
+  about: { marginTop: '2rem', color: '#555', fontSize: '0.9rem' },
+  aboutLink: { color: '#1a1a1a', fontWeight: 600 },
 } as const;
 
 export default function LoginRoute() {
-  const { googleEnabled, googleError } = useLoaderData<typeof loader>();
+  const { googleEnabled, googleError, docsUrl } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const nav = useNavigation();
   const submitting = nav.state !== 'idle';
@@ -108,7 +110,7 @@ export default function LoginRoute() {
       <h1 style={styles.h1}>Sign in</h1>
       <p style={styles.hint}>
         Enter your email and we&apos;ll send you a one-time 6-digit code. No
-        password needed.
+        password needed. A new email gets a new account.
       </p>
 
       {error ? (
@@ -148,6 +150,14 @@ export default function LoginRoute() {
           </a>
         </>
       ) : null}
+
+      <p style={styles.about}>
+        drobek hosts the web apps your agent builds: connect it over MCP and
+        it creates, previews and publishes them in your workspace.{' '}
+        <a href={docsUrl} style={styles.aboutLink} data-testid="login-docs-link">
+          Read the docs
+        </a>
+      </p>
     </main>
   );
 }

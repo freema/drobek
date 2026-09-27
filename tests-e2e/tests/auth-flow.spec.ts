@@ -37,6 +37,8 @@ test('full flow: request code → mailpit → verify → /me shows email → log
   await page.getByRole('button', { name: 'Sign in' }).click();
   await page.waitForURL(/\/me$/);
   await expect(page.getByText(email)).toBeVisible();
+  await expect(page.getByTestId('me-start')).toContainText('Start building');
+  await expect(page.getByTestId('me-mcp-url')).toHaveText(/^https?:\/\/.+\/mcp$/);
 
   // Logout clears the session…
   await page.getByRole('button', { name: 'Sign out' }).click();
