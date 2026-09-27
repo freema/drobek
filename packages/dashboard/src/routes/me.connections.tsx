@@ -1,9 +1,9 @@
 /**
  * /me/connections — client half (M2-04, NSO-284): the OAuth clients (coding
  * agents, IDEs) that hold access to the user's account, with a revoke button
- * per client. Client-safe: data arrives shaped from ./me.connections.server.ts.
+ * per client, and a pointer to API keys (the other way an agent connects). Client-safe: data arrives shaped from ./me.connections.server.ts.
  */
-import { Form, useActionData, useLoaderData } from 'react-router';
+import { Form, Link, useActionData, useLoaderData } from 'react-router';
 import { DashboardPage, controls } from '@drobek/tenancy/layout';
 import type { action, loader } from './me.connections.server.js';
 
@@ -57,7 +57,7 @@ const styles = {
 } as const;
 
 export default function ConnectionsRoute() {
-  const { connections } = useLoaderData<typeof loader>();
+  const { connections, activeApiKeys } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const error = actionData && !actionData.ok ? actionData.error : null;
 
@@ -66,8 +66,17 @@ export default function ConnectionsRoute() {
 
       <h1 style={styles.h1}>Connections</h1>
       <p style={styles.hint}>
-        Coding agents and other MCP clients you approved. Revoking one signs it out at once: its
-        next call is refused and it has to ask for your approval again.
+        Coding agents and other MCP clients you approved on the sign-in (OAuth consent) page. Revoking one signs it
+        out at once: its next call is refused and it has to ask for your approval again.
+      </p>
+      <p style={styles.hint} data-testid="connections-api-keys">
+        An agent can also connect with a personal API key instead of signing in; those agents are not listed here.{' '}
+        {activeApiKeys === 0
+          ? 'You have no active API keys.'
+          : `You have ${activeApiKeys} active API key${activeApiKeys === 1 ? '' : 's'}.`}{' '}
+        <Link to="/me/api-keys">Manage API keys</Link>
+        {' · '}
+        <Link to="/me">How to connect an agent</Link>
       </p>
 
       {error ? (
@@ -78,7 +87,7 @@ export default function ConnectionsRoute() {
 
       {connections.length === 0 ? (
         <p style={styles.empty} data-testid="connections-empty">
-          No connected clients.
+          No approved OAuth clients. An agent appears here after it signs in and you approve it in the browser.
         </p>
       ) : (
         <ul style={styles.list} data-testid="connections">

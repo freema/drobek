@@ -36,14 +36,6 @@
       "types": "./src/routes/auth.logout.server.ts",
       "default": "./dist/routes/auth.logout.server.js"
     },
-    "./routes/me": {
-      "types": "./src/routes/me.tsx",
-      "default": "./dist/routes/me.js"
-    },
-    "./routes/me.server": {
-      "types": "./src/routes/me.server.ts",
-      "default": "./dist/routes/me.server.js"
-    },
     "./routes/auth.google": {
       "types": "./src/routes/auth.google.tsx",
       "default": "./dist/routes/auth.google.js"

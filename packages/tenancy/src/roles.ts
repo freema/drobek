@@ -63,3 +63,52 @@ export function decideWorkspaceAccess(input: {
   }
   return { ok: true, effectiveRole: input.membershipRole };
 }
+
+/** Where a user's access to a workspace comes from, as the dashboard shows it. */
+export interface WorkspaceAccessSource {
+  /** `member`: a memberships row; `superadmin`: only the global super-admin override. */
+  source: 'member' | 'superadmin';
+  /** The membership role, null when the user is not a member. */
+  memberRole: WorkspaceRole | null;
+  /** The badge text. */
+  label: string;
+  /** One sentence on what the access lets the user do. */
+  detail: string;
+}
+
+/**
+ * Describes where access comes from without changing it (decideWorkspaceAccess
+ * still decides): a super-admin without a membership is labelled as such
+ * instead of with the effective 'workspace-admin' it acts with. Null when the
+ * user has no access at all.
+ */
+export function describeWorkspaceAccess(input: {
+  membershipRole: WorkspaceRole | null;
+  superAdmin: boolean;
+}): WorkspaceAccessSource | null {
+  const { membershipRole, superAdmin } = input;
+  if (membershipRole === null) {
+    if (!superAdmin) return null;
+    return {
+      source: 'superadmin',
+      memberRole: null,
+      label: 'Superadmin access — not a member',
+      detail:
+        'You are not a member of this workspace. You can open and change it because you are a super-admin of this server.',
+    };
+  }
+  if (superAdmin && membershipRole !== 'workspace-admin') {
+    return {
+      source: 'member',
+      memberRole: membershipRole,
+      label: `${membershipRole} · superadmin access`,
+      detail: `You are a member with the ${membershipRole} role; as a super-admin of this server you can also do what a workspace-admin can.`,
+    };
+  }
+  return {
+    source: 'member',
+    memberRole: membershipRole,
+    label: membershipRole,
+    detail: `You are a member with the ${membershipRole} role.`,
+  };
+}

@@ -16,6 +16,12 @@ export {
   type ToolDoc,
   type ToolField,
 } from './tools.js';
+export {
+  connectClients,
+  firstAppPrompt,
+  type ConnectClient,
+  type ConnectStep,
+} from './connect.js';
 export { ERROR_CATALOGUE, errorDoc, errorHint, type ErrorDoc } from './errors-catalogue.js';
 export {
   APP_LOCK_TTL_SEC,

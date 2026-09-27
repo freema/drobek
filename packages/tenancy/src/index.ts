@@ -12,8 +12,10 @@ export {
   roleAtLeast,
   higherRole,
   decideWorkspaceAccess,
+  describeWorkspaceAccess,
   type WorkspaceRole,
   type WorkspaceAccessDecision,
+  type WorkspaceAccessSource,
 } from './roles.js';
 export {
   SLUG_MIN,

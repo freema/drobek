@@ -27,7 +27,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       kind: access.workspace.kind,
     },
     /** NSO-342: the shared workspace chrome (breadcrumb, badges, tabs). */
-    nav: workspaceNav(access),
+    nav: await workspaceNav(access),
     members,
     role: access.effectiveRole,
     superAdmin: access.superAdmin,
