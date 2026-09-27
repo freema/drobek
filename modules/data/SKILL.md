@@ -3,9 +3,9 @@
 ## 1. When to use
 
 The app keeps data: todos, entries, votes, a shared list, a per-user
-notebook. drobek stores the records; the app calls `drobek.data`. Never use
-Firebase, Supabase, localStorage-as-database or an own backend. Signed-in
-users (`user` / `owner` / `admin` rules) come from `skill_info('auth')`.
+notebook. drobek stores the records; the app calls `drobek.data`. Never use Firebase,
+Supabase, localStorage-as-database (UI preferences are fine) or an own backend.
+Signed-in users (`user` / `owner` / `admin` rules) come from `skill_info('auth')`.
 
 ## 2. Minimal working code
 

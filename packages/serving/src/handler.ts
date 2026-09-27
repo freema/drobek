@@ -45,6 +45,12 @@
  * nosniff, Referrer-Policy and (preview/version hosts) X-Robots-Tag; a module
  * response may add a stricter CSP of its own as a second policy (NSO-325).
  *
+ * GALLERY EMBEDDING: the operator's GALLERY_FRAME_ANCESTORS origins join
+ * `frame-ancestors` (next to the dashboard origin and the owner's override)
+ * only on the production host and custom domains of an app the public gallery
+ * shows right now (`ServeApp.galleryVisible`, cached like the rest of the app
+ * row) — never on its preview or version hosts.
+ *
  * ABUSE (M4-02, NSO-293): `GET /.well-known/drobek-report` on ANY app host
  * answers `{ report_url, app, terms_url }` (public, cacheable 1 h) before
  * anything else — where to report this host. A taken-down app
@@ -66,7 +72,7 @@ import {
 } from '@drobek/apps';
 import { assetNameOf, assetResponsePlan, type AssetSource } from './assets.js';
 import { contentTypeForPath } from './content-type.js';
-import { appSecurityHeaders, parseFrameAncestors, withDashboardAncestor } from './csp.js';
+import { appSecurityHeaders, parseFrameAncestors, withFrameAncestors } from './csp.js';
 import { UNLOCK_PATH, errorPage, lockedPage, missingPage, passwordPage, type MissingReason } from './pages.js';
 import {
   appAccessCookieName,
@@ -161,6 +167,14 @@ export interface HandlerDeps {
    * non-interactive thumbnail of the app (absent → only the app's own setting).
    */
   dashboardOrigin?: string | null;
+  /**
+   * GALLERY_FRAME_ANCESTORS (only while GALLERY_ENABLED): the operator's
+   * gallery origins, allowed in `frame-ancestors` of the production host and
+   * custom domains of an app the public gallery shows (`galleryVisible`), so
+   * the gallery can show a live, sandboxed preview. Preview and version hosts
+   * never get them (absent → no gallery embedding).
+   */
+  galleryFrameAncestors?: readonly string[];
   /** NSO-358: the frame-src list of every app host (frameSrcFromEnv; absent → the curated embeds). */
   frameSrc?: string;
   /** NSO-358: the app's uploaded assets at `/<name>` (absent → only the version's files are served). */
@@ -209,7 +223,8 @@ function safeNext(raw: string | null | undefined): string {
 export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Promise<AppResponse> {
   const method = req.method.toUpperCase();
   const kind = req.target?.kind;
-  const noindex = kind !== 'prod' && kind !== 'custom';
+  const production = kind === 'prod' || kind === 'custom';
+  const noindex = !production;
   let security = appSecurityHeaders({ noindex, frameSrc: deps.frameSrc });
 
   const page = (status: number, html: string, extra: Record<string, string> = {}): AppResponse => ({
@@ -257,7 +272,10 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
     ...appSecurityHeaders({
       noindex,
       frameSrc: deps.frameSrc,
-      frameAncestors: withDashboardAncestor(parseFrameAncestors(app.frameAncestors), deps.dashboardOrigin),
+      frameAncestors: withFrameAncestors(parseFrameAncestors(app.frameAncestors), [
+        deps.dashboardOrigin,
+        ...(production && app.galleryVisible ? (deps.galleryFrameAncestors ?? []) : []),
+      ]),
     }),
     [APP_HEADER]: app.slug,
   };

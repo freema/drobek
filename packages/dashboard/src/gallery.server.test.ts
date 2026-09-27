@@ -10,7 +10,9 @@
  *  - GET /api/public/gallery: 404 unless GALLERY_ENABLED; the listed app with
  *    name / description / url / publishedAt and nothing else; CORS * +
  *    `public, max-age=60`; the per-IP limit (429 + Retry-After; a Redis
- *    failure lets the request through); every other method → 405.
+ *    failure lets the request through); every other method → 405;
+ *    `?q` / `?sort` / `?page` (page mode `{ items, page, pages, total, previews }`,
+ *    the cursor mode unchanged).
  */
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
@@ -211,6 +213,40 @@ describe('GET /api/public/gallery (NSO-340)', () => {
     const second = (await (await getGallery(`?limit=2&cursor=${first.next}`)).json()) as { items: { name: string }[]; next?: string };
     expect(second.items.map((i) => i.name)).toEqual(['more-0', 'Shift planner']);
     expect(second.next).toBeUndefined();
+  });
+
+  it('?q searches name and description; ?page answers page mode; sort=name is always page mode', async () => {
+    // State from the previous tests: Shift planner (listed), more-0..2.
+    const names = async (query: string) => ((await (await getGallery(query)).json()) as { items: { name: string }[] }).items.map((i) => i.name);
+    expect(await names('?q=SHIFT')).toEqual(['Shift planner']);
+    expect(await names('?q=more%201')).toEqual(['more-1']);
+    expect(await names('?q=%25')).toEqual([]);
+
+    const page = await getGallery('?page=2&limit=3');
+    expect(page.status).toBe(200);
+    expect(page.headers.get('cache-control')).toBe('public, max-age=60');
+    const body = (await page.json()) as { items: { name: string }[]; page: number; pages: number; total: number; next?: string };
+    expect(body).toMatchObject({ page: 2, pages: 2, total: 4 });
+    expect(body.items.map((i) => i.name)).toEqual(['Shift planner']);
+    expect(body).not.toHaveProperty('next');
+    expect(await (await getGallery('?page=9&limit=3')).json()).toEqual({ items: [], page: 9, pages: 2, total: 4, previews: false });
+    process.env.GALLERY_FRAME_ANCESTORS = 'https://gallery.example.test';
+    try {
+      expect(await (await getGallery('?page=1&limit=3')).json()).toMatchObject({ previews: true });
+    } finally {
+      delete process.env.GALLERY_FRAME_ANCESTORS;
+    }
+    expect(await (await getGallery('?page=abc&limit=3&q=more')).json()).toMatchObject({ page: 1, pages: 1, total: 3 });
+
+    const byName = (await (await getGallery('?sort=name&limit=2')).json()) as { items: { name: string }[]; page: number };
+    expect(byName).toMatchObject({ page: 1, pages: 2, total: 4 });
+    expect(byName.items.map((i) => i.name)).toEqual(['more-0', 'more-1']);
+    const first = (await (await getGallery('?limit=2')).json()) as { next: string };
+    // sort=name ignores a cursor (page mode, page 1); sort=new with a cursor stays in cursor mode even with ?page.
+    expect(await (await getGallery(`?sort=name&limit=2&cursor=${first.next}`)).json()).toMatchObject({ page: 1, total: 4 });
+    const cursorWins = (await (await getGallery(`?limit=2&page=5&cursor=${first.next}`)).json()) as Record<string, unknown>;
+    expect(Object.keys(cursorWins)).toEqual(['items']);
+    expect((cursorWins.items as { name: string }[]).map((i) => i.name)).toEqual(['more-0', 'Shift planner']);
   });
 
   it('over the per-IP limit → 429 + Retry-After; no client IP → not counted; Redis down → allowed', async () => {

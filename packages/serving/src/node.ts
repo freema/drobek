@@ -32,6 +32,7 @@ import {
   classifyHost,
   dashboardOrigin,
   findServedAsset,
+  galleryEnabled,
   hostConfig,
   splitHost,
   type AppHostTarget,
@@ -59,7 +60,7 @@ import {
   type HandlerDeps,
 } from './handler.js';
 import type { AssetSource } from './assets.js';
-import { appSecurityHeaders, frameSrcFromEnv } from './csp.js';
+import { appSecurityHeaders, frameSrcFromEnv, galleryFrameAncestorsFromEnv } from './csp.js';
 import { appAccessSecret, appCookiesSecure } from './password.js';
 import { ServeStore } from './store.server.js';
 import { UnknownHostLimiter, unknownHostLimitsFromEnv } from './unknown-host.js';
@@ -178,7 +179,9 @@ export async function unlockAttemptAllowed(
  * attempts; NSO-315 unknown hosts per IP, APPS_UNKNOWN_HOST_LIMIT /
  * APPS_UNKNOWN_HOST_WINDOW_MS), insights counters + beacon, the dashboard
  * origin every app host lets frame it (NSO-342, the app-list thumbnail), the
- * frame-src list (APP_FRAME_SRC_EXTRA) and the app assets on ASSETS_DIR (NSO-358).
+ * operator's gallery origins (GALLERY_FRAME_ANCESTORS, only while
+ * GALLERY_ENABLED), the frame-src list (APP_FRAME_SRC_EXTRA) and the app
+ * assets on ASSETS_DIR (NSO-358).
  */
 export function defaultHandlerDeps(store: ServeStore, log?: Logger): HandlerDeps {
   return {
@@ -189,6 +192,7 @@ export function defaultHandlerDeps(store: ServeStore, log?: Logger): HandlerDeps
     signal: (appId, kind, path) => void incrementServingSignal(appId, kind, path),
     beacon: (req, app) => handleBeacon(req, app.id),
     dashboardOrigin: dashboardOrigin(),
+    galleryFrameAncestors: galleryEnabled() ? galleryFrameAncestorsFromEnv() : [],
     frameSrc: frameSrcFromEnv(),
     assets: defaultAssetSource(),
     unknownHosts: new UnknownHostLimiter({

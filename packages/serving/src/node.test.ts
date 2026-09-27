@@ -7,10 +7,16 @@
 import { EventEmitter } from 'node:events';
 import { request as httpRequest, createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { BEACON_PATH as INSIGHTS_BEACON_PATH, handleBeacon, type BeaconRecorder } from '@drobek/insights';
 import { BEACON_PATH, type PlatformHandler } from './handler.js';
-import { CLOSE_LINGER_MS, DEFAULT_MODULE_BODY_TIMEOUT_MS, createAppsHostMiddleware, moduleBodyTimeoutFromEnv } from './node.js';
+import {
+  CLOSE_LINGER_MS,
+  DEFAULT_MODULE_BODY_TIMEOUT_MS,
+  createAppsHostMiddleware,
+  defaultHandlerDeps,
+  moduleBodyTimeoutFromEnv,
+} from './node.js';
 import { ServeStore, type ServeLoaders } from './store.server.js';
 
 const HTML = '<!doctype html><h1>hi</h1>';
@@ -650,5 +656,20 @@ describe('unread request bodies (fake socket)', () => {
     expect(moduleBodyTimeoutFromEnv({ APPS_MODULE_BODY_TIMEOUT_MS: '30000' })).toBe(30_000);
     expect(moduleBodyTimeoutFromEnv({ APPS_MODULE_BODY_TIMEOUT_MS: '-1' })).toBe(120_000);
     expect(moduleBodyTimeoutFromEnv({ APPS_MODULE_BODY_TIMEOUT_MS: 'fast' })).toBe(120_000);
+  });
+});
+
+describe('GALLERY_FRAME_ANCESTORS in the production deps', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('the gallery origins apply only while GALLERY_ENABLED is on', () => {
+    const deps = () => defaultHandlerDeps(new ServeStore({ loaders }));
+    vi.stubEnv('GALLERY_FRAME_ANCESTORS', 'https://www.example.com');
+    vi.stubEnv('GALLERY_ENABLED', '');
+    expect(deps().galleryFrameAncestors).toEqual([]);
+    vi.stubEnv('GALLERY_ENABLED', 'true');
+    expect(deps().galleryFrameAncestors).toEqual(['https://www.example.com']);
+    vi.stubEnv('GALLERY_FRAME_ANCESTORS', '');
+    expect(deps().galleryFrameAncestors).toEqual([]);
   });
 });

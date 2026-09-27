@@ -306,9 +306,25 @@ describe('compile — errors', () => {
     ['GitHub', `const t = "ghp_${'a'.repeat(36)}";`],
     ['PEM', '-----BEGIN RSA PRIVATE KEY-----'],
     ['generic', `const apiKey = "${'Zz9'.repeat(8)}";`],
+    ['generic, prefixed name', `const stripeSecret = "${'Zz9'.repeat(8)}";`],
+    ['generic, quoted key', `const cfg = { "clientSecret": "${'Zz9'.repeat(8)}" };`],
+    ['Stripe live', `const k = "sk_live_${'a1B2'.repeat(6)}";`],
+    ['Stripe test', `const k = "sk_test_${'a1B2'.repeat(6)}";`],
+    ['Stripe restricted', `const k = "rk_live_${'a1B2'.repeat(6)}";`],
+    ['Stripe webhook', `const w = "whsec_${'a1B2'.repeat(8)}";`],
+    ['Slack', `const s = "xoxb-${'1234567890'}-abcdefABCDEF";`],
   ])('detects %s credentials', async (_name, line) => {
     const r = await compile(new Map([['src/main.ts', line]]));
     expect(r.errors[0]?.code).toBe('secret_in_source');
+  });
+
+  it.each([
+    ['Stripe publishable key', `const pk = "pk_live_${'a1B2'.repeat(6)}";`],
+    ['a secret-named flag', 'const secretVisible = true;'],
+    ['a short value', 'const apiKey = "demo";'],
+  ])('does not flag %s', async (_name, line) => {
+    const r = await compile(new Map([['src/main.ts', line]]));
+    expect(r.errors.filter((e) => e.code === 'secret_in_source')).toEqual([]);
   });
 
   it.each([

@@ -72,7 +72,7 @@ import {
   type CompileResult,
 } from '@drobek/compile';
 import { confirmUrl, isModuleError, type ModuleRuntime, type SkillListItem } from '@drobek/modules';
-import { ensurePersonalWorkspace, listUserWorkspaces } from '@drobek/tenancy';
+import { ensurePersonalWorkspace, listAllWorkspaces, listUserWorkspaces } from '@drobek/tenancy';
 import { authorizeApp, authorizeWorkspace } from './access.js';
 import type { ToolDeps, ToolPrincipal } from './context.js';
 import { LOG_KINDS, logsWindowStart, type LogKind } from '@drobek/insights';
@@ -263,11 +263,20 @@ export async function listApps(ctx: CallContext, args: { workspace?: string }) {
   }
   const workspaces = await listUserWorkspaces(principal.userId);
   const { items } = await summarize(rows, deps);
-  return {
+  const result: {
+    user: { email: string };
+    workspaces: { slug: string; name: string; kind: string; role: string }[];
+    apps: AppSummary[];
+    all_workspaces?: { slug: string; name: string; kind: string }[];
+  } = {
     user: { email: principal.email },
     workspaces: workspaces.map((w) => ({ slug: w.slug, name: w.name, kind: w.kind, role: w.role })),
     apps: items,
   };
+  if (principal.superAdmin) {
+    result.all_workspaces = (await listAllWorkspaces()).map((w) => ({ slug: w.slug, name: w.name, kind: w.kind }));
+  }
+  return result;
 }
 
 export async function getApp(ctx: CallContext, args: { app_id: string }) {

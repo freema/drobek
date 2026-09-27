@@ -359,6 +359,44 @@ describe('headers on every response (snapshot)', () => {
     store.bust('shop');
     model.get('shop')!.app.frameAncestors = null;
   });
+
+  it('GALLERY_FRAME_ANCESTORS: only the production host / custom domain of a gallery-visible app may be framed by the gallery', async () => {
+    const dash = 'https://drobek.example.com';
+    const gallery = 'https://www.example.com';
+    const withGallery = { ...deps, dashboardOrigin: dash, galleryFrameAncestors: [gallery] };
+    const csp = async (target: AppHostTarget, d: HandlerDeps = withGallery) =>
+      (await handleAppRequest(req(target), d)).headers['Content-Security-Policy'];
+
+    // Not shown in the gallery (galleryVisible absent / false): unchanged.
+    expect(await csp(prod('shop'))).toBe(appCsp(dash));
+    store.bust('shop');
+    model.get('shop')!.app.galleryVisible = false;
+    expect(await csp(prod('shop'))).toBe(appCsp(dash));
+
+    // Shown: the production host and a custom domain get the gallery origin …
+    store.bust('shop');
+    model.get('shop')!.app.galleryVisible = true;
+    expect(await csp(prod('shop'))).toBe(appCsp(`${dash} ${gallery}`));
+    expect(await csp({ kind: 'custom', slug: 'shop', hostname: 'shop.example.org' })).toBe(appCsp(`${dash} ${gallery}`));
+    // … the preview and version hosts never do.
+    expect(await csp(preview('shop'))).toBe(appCsp(dash));
+    expect(await csp(ver('shop', 2))).toBe(appCsp(dash));
+    // Next to the owner's override.
+    store.bust('shop');
+    model.get('shop')!.app.frameAncestors = 'https://intranet.example.com';
+    expect(await csp(prod('shop'))).toBe(appCsp(`https://intranet.example.com ${dash} ${gallery}`));
+    // Env unset (no gallery origins) = exactly as before.
+    expect(await csp(prod('shop'), { ...deps, dashboardOrigin: dash })).toBe(appCsp(`https://intranet.example.com ${dash}`));
+    expect(await csp(prod('shop'), { ...deps, dashboardOrigin: dash, galleryFrameAncestors: [] })).toBe(
+      appCsp(`https://intranet.example.com ${dash}`)
+    );
+
+    // Unlisted again: the next resolve (after the app-changed bust) drops it.
+    store.bust('shop');
+    model.get('shop')!.app.frameAncestors = null;
+    model.get('shop')!.app.galleryVisible = false;
+    expect(await csp(prod('shop'))).toBe(appCsp(dash));
+  });
 });
 
 describe('isolation from the dashboard session', () => {

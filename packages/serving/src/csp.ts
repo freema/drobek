@@ -22,7 +22,10 @@
  *                                                          (NSO-358); any other iframe is blocked
  *   object-src 'none'; base-uri 'self'; form-action 'self'
  *   frame-ancestors 'none'                              — or the app's validated override;
- *                                                          plus the dashboard origin (NSO-342)
+ *                                                          plus the dashboard origin (NSO-342);
+ *                                                          plus GALLERY_FRAME_ANCESTORS on the
+ *                                                          production host of an app shown in
+ *                                                          the public gallery
  *
  * Plus `X-Content-Type-Options: nosniff` (the Content-Type comes from the path
  * extension only), `Referrer-Policy: no-referrer` (an app URL never leaks to a
@@ -123,22 +126,73 @@ export function parseFrameAncestors(raw: string | null | undefined): string | nu
 }
 
 /**
- * NSO-342: the dashboard origin (PUBLIC_APP_URL) is ALWAYS a frame ancestor,
- * next to the owner's override or instead of `'none'` — the workspace app list
- * shows each app as a small, sandboxed, non-interactive iframe thumbnail. The
- * origin must pass the same source check as an override (a bare http(s)
- * origin); anything else is ignored and the value stays as it was.
+ * One extra frame ancestor as a CSP source: a bare http(s) origin (no
+ * wildcard, no path, no quote; a trailing slash is dropped), lowercased — or
+ * null when the value is anything else.
  */
-export function withDashboardAncestor(
+function ancestorOrigin(raw: string | null | undefined): string | null {
+  const origin = (raw ?? '').trim().toLowerCase().replace(/\/+$/, '');
+  if (!/^https?:\/\//.test(origin) || !SOURCE_RE.test(origin) || origin.includes('*')) return null;
+  const port = /:(\d+)$/.exec(origin)?.[1];
+  return port === undefined || (Number(port) >= 1 && Number(port) <= 65535) ? origin : null;
+}
+
+/**
+ * Add origins to a validated frame-ancestors value (parseFrameAncestors):
+ * each one next to the owner's override, or instead of `'none'`. Used for the
+ * dashboard origin (NSO-342, the app-list thumbnail — every app host) and the
+ * operator's gallery origins (GALLERY_FRAME_ANCESTORS — the production host of
+ * an app shown in the public gallery). An origin that is not a bare http(s)
+ * origin (ancestorOrigin) is ignored; no origin to add → the value as it was.
+ */
+export function withFrameAncestors(
   frameAncestors: string | null | undefined,
-  dashboardOrigin: string | null | undefined
+  origins: readonly (string | null | undefined)[]
 ): string | null {
-  const own = frameAncestors ?? null;
-  const dashboard = (dashboardOrigin ?? '').trim().toLowerCase().replace(/\/+$/, '');
-  if (!/^https?:\/\//.test(dashboard) || !SOURCE_RE.test(dashboard) || dashboard.includes('*')) return own;
-  if (own === null || own === DEFAULT_FRAME_ANCESTORS) return dashboard;
-  const tokens = own.split(' ');
-  return tokens.includes(dashboard) ? own : [...tokens, dashboard].join(' ');
+  let tokens = frameAncestors && frameAncestors !== DEFAULT_FRAME_ANCESTORS ? frameAncestors.split(' ') : [];
+  let added = false;
+  for (const raw of origins) {
+    const origin = ancestorOrigin(raw);
+    if (origin === null) continue;
+    added = true;
+    if (!tokens.includes(origin)) tokens = [...tokens, origin];
+  }
+  return added ? tokens.join(' ') : (frameAncestors ?? null);
+}
+
+const MAX_GALLERY_ANCESTORS = 10;
+
+/**
+ * Parse GALLERY_FRAME_ANCESTORS: space-separated bare http(s) origins (the
+ * operator's gallery website, e.g. `https://www.example.com`) that may frame
+ * the production host of an app shown in the public gallery. Anything else —
+ * a wildcard, a path, a scheme-only source, `'self'`, a quote — is an error
+ * (the server refuses to start). Unset or empty = no gallery embedding.
+ */
+export function parseGalleryFrameAncestors(raw: string | null | undefined): { origins: string[] } | { error: string } {
+  const tokens = (raw ?? '').split(/\s+/).filter(Boolean);
+  if (tokens.length > MAX_GALLERY_ANCESTORS) return { error: `at most ${MAX_GALLERY_ANCESTORS} origins` };
+  const out: string[] = [];
+  for (const token of tokens) {
+    const origin = ancestorOrigin(token);
+    if (origin === null) {
+      return { error: `"${token.slice(0, 80)}" is not a bare http(s) origin (https://host or https://host:port, no wildcard, no path)` };
+    }
+    if (!out.includes(origin)) out.push(origin);
+  }
+  return { origins: out };
+}
+
+/** Startup check: a set GALLERY_FRAME_ANCESTORS must parse (see parseGalleryFrameAncestors). */
+export function galleryFrameAncestorsConfigError(env: NodeJS.ProcessEnv = process.env): string | null {
+  const r = parseGalleryFrameAncestors(env.GALLERY_FRAME_ANCESTORS);
+  return 'error' in r ? `drobek refuses to start: GALLERY_FRAME_ANCESTORS ${r.error}.` : null;
+}
+
+/** The valid GALLERY_FRAME_ANCESTORS origins ([] when unset or invalid). */
+export function galleryFrameAncestorsFromEnv(env: NodeJS.ProcessEnv = process.env): string[] {
+  const r = parseGalleryFrameAncestors(env.GALLERY_FRAME_ANCESTORS);
+  return 'origins' in r ? r.origins : [];
 }
 
 export interface SecurityHeaderInput {

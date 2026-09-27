@@ -4,10 +4,19 @@
  * www.drobek.app/gallery, through its own proxy or straight from the
  * browser).
  *
- *   200 { items: [{ name, description, url, publishedAt }], next? }
+ *   cursor mode (default):  200 { items: [{ name, description, url, publishedAt }], next? }
+ *   page mode:              200 { items: [...], page, pages, total, previews }
  *
- * `url` is the production host `https://<slug>.<APPS_DOMAIN>`; newest publish
- * first; `?limit` 1–48 (default 24); `?cursor` = the previous page's `next`.
+ * `url` is the production host `https://<slug>.<APPS_DOMAIN>`; `?limit` 1–48
+ * (default 24); `?q` = case-insensitive substring of the name or the
+ * description (trimmed, at most 100 characters; `%` `_` `\` match
+ * themselves); `?sort` = `new` (newest publish first, the default) or `name`
+ * (A→Z). Cursor mode (`sort=new` without `page`, or with a `cursor`):
+ * `?cursor` = the previous page's `next`. Page mode (`?page=<n>` 1-based
+ * without a cursor, and always with `sort=name` — a cursor is ignored there):
+ * `pages` / `total` count the filtered list; an invalid page is page 1, a
+ * page past the last has no items. `previews` = GALLERY_FRAME_ANCESTORS is
+ * set, so a listed app's production host may be framed by the gallery.
  * Only apps whose owner listed them AND that are published, public (no
  * password gate), not taken down, not deleted and not hidden by a super-admin
  * (@drobek/apps listGallery filters at query time). No owner data: no
@@ -21,9 +30,10 @@
  * (the default) → 404.
  */
 import { type LoaderFunctionArgs } from 'react-router';
-import { galleryEnabled, galleryPageSize, listGallery } from '@drobek/apps';
+import { galleryEnabled, galleryPageNumber, galleryPageSize, gallerySort, listGallery, listGalleryPage } from '@drobek/apps';
 import { getClientIp, rateLimitRedis } from '@drobek/auth';
 import { createConsoleLogger, perIpLimitKey } from '@drobek/core';
+import { galleryFrameAncestorsFromEnv } from '@drobek/serving';
 
 const log = createConsoleLogger('gallery');
 
@@ -68,14 +78,19 @@ export async function loader({ request }: LoaderFunctionArgs): Promise<Response>
       { 'Retry-After': '60' }
     );
   }
-  const url = new URL(request.url);
-  const page = await listGallery({
-    limit: galleryPageSize(url.searchParams.get('limit')),
-    cursor: url.searchParams.get('cursor'),
-  });
-  return json(page.next ? { items: page.items, next: page.next } : { items: page.items }, 200, {
-    'Cache-Control': 'public, max-age=60',
-  });
+  const params = new URL(request.url).searchParams;
+  const limit = galleryPageSize(params.get('limit'));
+  const q = params.get('q');
+  const sort = gallerySort(params.get('sort'));
+  const cursor = params.get('cursor');
+  const pageNumber = galleryPageNumber(params.get('page'));
+  const cache = { 'Cache-Control': 'public, max-age=60' };
+  if (sort === 'name' || (pageNumber !== null && !cursor)) {
+    const previews = galleryFrameAncestorsFromEnv().length > 0;
+    return json({ ...(await listGalleryPage({ limit, page: pageNumber ?? 1, q, sort })), previews }, 200, cache);
+  }
+  const page = await listGallery({ limit, cursor, q });
+  return json(page.next ? { items: page.items, next: page.next } : { items: page.items }, 200, cache);
 }
 
 /** The list is read-only: every other method answers 405. */

@@ -9,27 +9,34 @@
  *  - `setGalleryHidden` — a super-admin hides an entry (or shows it again);
  *    a hidden app cannot be listed by anyone. Audited `app.gallery_hidden` /
  *    `app.gallery_unhidden`.
- *  - `listGallery` — the public list behind `GET /api/public/gallery`: name,
- *    description, production URL, publish time — never an owner, workspace or
- *    id. It filters at QUERY time (listed AND published AND public AND not
- *    taken down AND not deleted AND not hidden), so an unpublish, a takedown
- *    or a delete takes the entry off the list with the very next request,
- *    whatever the flag says. unpublishApp / takedownApp also clear the flag
+ *  - `listGallery` (cursor pages) / `listGalleryPage` (numbered pages, sort by
+ *    newest or name; both searchable) — the public list behind
+ *    `GET /api/public/gallery`: name, description, production URL, publish
+ *    time — never an owner, workspace or id. It filters at QUERY time
+ *    (listed AND published AND public AND not taken down AND not deleted AND
+ *    not hidden), so an unpublish, a takedown or a delete takes the entry off
+ *    the list with the very next request, whatever the flag says. unpublishApp / takedownApp also clear the flag
  *    (the owner lists again after publishing again).
  *
  * GALLERY_ENABLED (default off) gates every change here; the public endpoint
- * checks it itself.
+ * checks it itself. A listing change and a hide / show announce an
+ * app-changed `settings` event: the app hosts' cache drops the app, so the
+ * gallery's frame permission (GALLERY_FRAME_ANCESTORS) follows at once.
  */
-import { and, desc, eq, isNotNull, isNull, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, isNotNull, isNull, sql, type SQL } from 'drizzle-orm';
 import { AUDIT_ACTIONS, writeAudit } from '@drobek/audit';
 import { apps, getDb, workspaces } from '@drobek/db';
 import { AppsError } from './errors.js';
+import { notifyAppChanged } from './events.js';
 import {
   GALLERY_PAGE_SIZE,
   decodeGalleryCursor,
   encodeGalleryCursor,
   galleryEnabled,
+  galleryLikePattern,
+  galleryQuery,
   normalizeGalleryDescription,
+  type GallerySort,
 } from './gallery.js';
 import { lockedByAdminError } from './moderation.server.js';
 import { publishedUrl } from './origin.js';
@@ -73,7 +80,7 @@ export async function setGalleryListing(
     if (!v.ok) throw new AppsError('invalid_settings', v.message);
     description = v.value;
   }
-  return getDb().transaction(async (tx) => {
+  const out = await getDb().transaction(async (tx): Promise<GalleryListingResult> => {
     const [app] = await tx
       .select({
         id: apps.id,
@@ -130,6 +137,8 @@ export async function setGalleryListing(
     });
     return { changed: true, listed: true, description, slug: app.slug };
   });
+  if (out.changed) await notifyAppChanged({ app_id: appId, slug: out.slug, kind: 'settings' });
+  return out;
 }
 
 /**
@@ -144,7 +153,7 @@ export async function setGalleryHidden(
   actorUserId: string,
   opts: { now?: Date } = {}
 ): Promise<{ changed: boolean; slug: string }> {
-  return getDb().transaction(async (tx) => {
+  const out = await getDb().transaction(async (tx) => {
     const [app] = await tx
       .select({ id: apps.id, slug: apps.slug, workspaceId: apps.workspaceId, galleryHiddenAt: apps.galleryHiddenAt })
       .from(apps)
@@ -170,6 +179,8 @@ export async function setGalleryHidden(
     );
     return { changed: true, slug: app.slug };
   });
+  if (out.changed) await notifyAppChanged({ app_id: appId, slug: out.slug, kind: 'settings' });
+  return out;
 }
 
 /** One public gallery entry — exactly what `GET /api/public/gallery` returns per app. */
@@ -196,22 +207,50 @@ function visibleInGallery(): SQL[] {
   ];
 }
 
+/** The visible entries, narrowed by the search text (name or description, case-insensitive substring). */
+function galleryWhere(q: string | null | undefined): SQL[] {
+  const where = visibleInGallery();
+  const text = galleryQuery(q);
+  if (text) {
+    const pattern = galleryLikePattern(text);
+    where.push(
+      sql`(coalesce(${apps.name}, ${apps.slug}) ILIKE ${pattern} ESCAPE '\\' OR ${apps.galleryDescription} ILIKE ${pattern} ESCAPE '\\')`
+    );
+  }
+  return where;
+}
+
+const itemColumns = { slug: apps.slug, name: apps.name, description: apps.galleryDescription, publishedAt: apps.publishedAt };
+
+function toItem(
+  r: { slug: string; name: string | null; description: string | null; publishedAt: Date | null },
+  env: NodeJS.ProcessEnv | undefined
+): GalleryItem {
+  return {
+    name: r.name ?? r.slug,
+    description: r.description ?? '',
+    url: publishedUrl(r.slug, env),
+    publishedAt: (r.publishedAt as Date).toISOString(),
+  };
+}
+
 /**
  * One page of the public gallery, newest publish first (ties by slug), and
  * the `next` cursor when more entries follow. A cursor that does not decode
- * starts at the first page.
+ * starts at the first page. `q` narrows the list (see galleryWhere); the
+ * cursor pages within the same `q`.
  */
 export async function listGallery(
-  opts: { limit?: number; cursor?: string | null; env?: NodeJS.ProcessEnv } = {}
+  opts: { limit?: number; cursor?: string | null; q?: string | null; env?: NodeJS.ProcessEnv } = {}
 ): Promise<{ items: GalleryItem[]; next: string | null }> {
   const limit = opts.limit ?? GALLERY_PAGE_SIZE;
   const cursor = decodeGalleryCursor(opts.cursor);
-  const where = visibleInGallery();
+  const where = galleryWhere(opts.q);
   if (cursor) {
     where.push(sql`(${apps.publishedAt}, ${apps.slug}) < (${cursor.publishedAt.toISOString()}::timestamp, ${cursor.slug})`);
   }
   const rows = await getDb()
-    .select({ slug: apps.slug, name: apps.name, description: apps.galleryDescription, publishedAt: apps.publishedAt })
+    .select(itemColumns)
     .from(apps)
     .where(and(...where))
     .orderBy(desc(apps.publishedAt), desc(apps.slug))
@@ -219,14 +258,51 @@ export async function listGallery(
   const page = rows.slice(0, limit);
   const last = page.at(-1);
   return {
-    items: page.map((r) => ({
-      name: r.name ?? r.slug,
-      description: r.description ?? '',
-      url: publishedUrl(r.slug, opts.env),
-      publishedAt: (r.publishedAt as Date).toISOString(),
-    })),
+    items: page.map((r) => toItem(r, opts.env)),
     next: rows.length > limit && last ? encodeGalleryCursor({ publishedAt: last.publishedAt as Date, slug: last.slug }) : null,
   };
+}
+
+/** One numbered page of the public gallery. */
+export interface GalleryPage {
+  items: GalleryItem[];
+  /** The 1-based page these items are. */
+  page: number;
+  /** How many pages the filtered list has (0 when it is empty). */
+  pages: number;
+  /** How many entries the filtered list has. */
+  total: number;
+}
+
+/**
+ * Numbered pagination of the public gallery: page `page` (1-based) of `limit`
+ * entries, the filtered total and the page count. `sort` = `new` (newest
+ * publish first, ties by slug) or `name` (name A→Z case-insensitively, ties
+ * by slug); `q` narrows both the items and the count. A page past the last
+ * one has no items (and still the right `pages` / `total`).
+ */
+export async function listGalleryPage(
+  opts: { limit?: number; page?: number; q?: string | null; sort?: GallerySort; env?: NodeJS.ProcessEnv } = {}
+): Promise<GalleryPage> {
+  const limit = opts.limit ?? GALLERY_PAGE_SIZE;
+  const page = Math.max(1, Math.trunc(opts.page ?? 1));
+  const where = and(...galleryWhere(opts.q));
+  const order =
+    opts.sort === 'name'
+      ? [sql`lower(coalesce(${apps.name}, ${apps.slug})) ASC`, asc(apps.slug)]
+      : [desc(apps.publishedAt), desc(apps.slug)];
+  const [rows, [count]] = await Promise.all([
+    getDb()
+      .select(itemColumns)
+      .from(apps)
+      .where(where)
+      .orderBy(...order)
+      .limit(limit)
+      .offset((page - 1) * limit),
+    getDb().select({ total: sql<number>`count(*)::int` }).from(apps).where(where),
+  ]);
+  const total = Number(count?.total ?? 0);
+  return { items: rows.map((r) => toItem(r, opts.env)), page, pages: Math.ceil(total / limit), total };
 }
 
 /** A listed app as the super-admin's gallery moderation list shows it. */

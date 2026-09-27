@@ -146,7 +146,7 @@ module. A compile error is not a tool failure: it is
 binary must never travel through the model as base64. `create_asset_upload({
 app_id, path, size, content_type? })` checks everything that needs no bytes —
 the path (1–4 segments of `[A-Za-z0-9._-]`, an allowed extension: png jpg
-jpeg gif webp svg mp4 m4v m4a webm mp3 ogg oga wav woff woff2), no app file
+jpeg gif webp avif ico svg mp4 m4v m4a webm mp3 ogg oga wav woff woff2), no app file
 at that path (`asset_path_taken`), `APP_ASSET_MAX_BYTES` (`asset_too_large`),
 `APP_ASSETS_QUOTA` (`asset_quota_exceeded`), a `content_type` that fits the
 extension (`asset_type_not_allowed`), `APP_ASSET_UPLOADS_PER_HOUR`

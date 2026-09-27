@@ -18,7 +18,7 @@ import { createConsoleLogger, secretsConfigError } from '@drobek/core';
 import { dbErrorForLog, runCoreMigrations } from '@drobek/db';
 import { domainsConfigError } from '@drobek/domains';
 import { limitsProviderConfigError, loadModuleRuntime } from '@drobek/modules';
-import { frameSrcConfigError, tlsAskConfigError } from '@drobek/serving';
+import { frameSrcConfigError, galleryFrameAncestorsConfigError, tlsAskConfigError } from '@drobek/serving';
 import postgres from 'postgres';
 
 const log = createConsoleLogger('migrate');
@@ -30,7 +30,8 @@ const configError =
   tlsAskConfigError(process.env) ??
   limitsProviderConfigError(process.env) ??
   domainsConfigError(process.env) ??
-  frameSrcConfigError(process.env);
+  frameSrcConfigError(process.env) ??
+  galleryFrameAncestorsConfigError(process.env);
 if (configError) {
   console.error(configError);
   process.exit(1);

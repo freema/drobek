@@ -3,8 +3,8 @@
  *
  * Boot order: refuse insecure secrets (PHY-76 #6), an invalid APPS_DOMAIN,
  * TRUST_PROXY, TLS_ASK_TOKEN, LIMITS_PROVIDER_URL, DOMAINS_*,
- * APP_FRAME_SRC_EXTRA or e-mail transport (EMAIL_TRANSPORT / RESEND_API_KEY /
- * SMTP_HOST) → apply core migrations →
+ * APP_FRAME_SRC_EXTRA, GALLERY_FRAME_ANCESTORS or e-mail transport
+ * (EMAIL_TRANSPORT / RESEND_API_KEY / SMTP_HOST) → apply core migrations →
  * load the platform modules (DROBEK_MODULES: their migrations, the composed
  * SDK, the skills — a bad module stops the start, M1-01) →
  * mount the app-host dispatcher (M0-06), then React Router (Vite middleware in
@@ -29,6 +29,7 @@ import {
   ServeStore,
   createAppsHostMiddleware,
   frameSrcConfigError,
+  galleryFrameAncestorsConfigError,
   subscribeServeCache,
   tlsAskConfigError,
 } from '@drobek/serving';
@@ -47,6 +48,7 @@ const configError =
   limitsProviderConfigError(process.env) ??
   domainsConfigError(process.env) ??
   frameSrcConfigError(process.env) ??
+  galleryFrameAncestorsConfigError(process.env) ??
   emailConfigError(process.env);
 if (configError) {
   console.error(configError);

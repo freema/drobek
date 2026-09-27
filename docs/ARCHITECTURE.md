@@ -101,10 +101,15 @@ This document is the map of how that works. The neighbours:
   agent does with `set_gallery_listing` and the user's explicit yes
   (`user_confirmed: true`). `GET /api/public/gallery` on the dashboard host
   returns name, description, production URL and `apps.published_at` (set by
-  every publish), newest first with a cursor, CORS `*`, cached 60 s — no
-  owner data. It filters at query time (listed, published, public, not
-  taken down, not deleted, not hidden by a super-admin); unpublish and
-  takedown also clear the flag.
+  every publish), newest first with a cursor or in numbered pages (`?page`,
+  with `pages` / `total`), searchable (`?q`, name or description) and
+  sortable by name (`?sort=name`), CORS `*`, cached 60 s — no owner data. It
+  filters at query time (listed, published, public, not taken down, not
+  deleted, not hidden by a super-admin); unpublish and takedown also clear
+  the flag. With `GALLERY_FRAME_ANCESTORS` the operator's gallery website may
+  frame the production host of an app it shows (a live preview): the app
+  hosts' resolve row carries `galleryVisible` (the same conditions), and a
+  listing change busts the serve cache.
 - **One writer at a time**: a write takes the app's Redis lease
   (`drobek:applock:<app_id>`, 3 minutes, renewed per write). Another user's
   agent gets `app_locked`; the same user's other sessions take the lease over.
@@ -222,7 +227,7 @@ its sha256 stored in Redis for 30 minutes, bound to the app, the path, the
 size, the type family and the user who asked (the upload is audited as
 theirs). The PUT takes the token before reading a byte, streams the body to
 a temp file while it counts (over `APP_ASSET_MAX_BYTES` or past the declared
-size → stop), hashes and sniffs it (png, jpeg, gif, webp, svg, mp4, webm,
+size → stop), hashes and sniffs it (png, jpeg, gif, webp, avif, ico, svg, mp4, webm,
 m4a, mp3, ogg, wav, woff, woff2 — the bytes decide, never the name), renames
 it into place under its sha256, and writes the draft row under a per-app
 advisory lock that re-checks `APP_ASSETS_QUOTA` — and that the user the URL
@@ -239,8 +244,11 @@ https URL, `frame-src` only the curated embeds — YouTube
 (`www.youtube-nocookie.com`, `www.youtube.com`), `player.vimeo.com`,
 `drive.google.com` — plus the operator's `APP_FRAME_SRC_EXTRA`,
 `frame-ancestors` = the dashboard origin only, plus the origins the owner
-set in `apps.frame_ancestors` — the dashboard frames an app solely for the
-app-list thumbnail, see [`SECURITY.md`](./SECURITY.md)),
+set in `apps.frame_ancestors`, plus — on the production host and custom
+domains of an app the public gallery shows, never on preview or version
+hosts — the operator's `GALLERY_FRAME_ANCESTORS`; the dashboard frames an app
+solely for the app-list thumbnail, the gallery for its live preview, see
+[`SECURITY.md`](./SECURITY.md)),
 `nosniff` and `Referrer-Policy: no-referrer`; preview and version hosts add
 `X-Robots-Tag: noindex`. Bytes come from a 256 MiB in-memory LRU; the host
 and manifest caches are busted through a local event emitter first and Redis

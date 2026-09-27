@@ -15,7 +15,7 @@ import { fakeMp4 } from '../test/assets.js';
 
 describe('asset paths (NSO-358)', () => {
   it('accepts a relative path of up to 4 segments with an allowed extension (the page keeps its own paths)', () => {
-    for (const ok of ['film.mp4', 'poster.JPG', 'img/s1.jpg', 'media/Film-1.mp4', 'a/b/c/d.png', 'hero-2x.webp', 'logo_v1.svg', 'track.01.mp3', 'fonts/x.woff2', '0.m4a']) {
+    for (const ok of ['film.mp4', 'poster.JPG', 'img/s1.jpg', 'media/Film-1.mp4', 'a/b/c/d.png', 'hero-2x.webp', 'logo_v1.svg', 'track.01.mp3', 'fonts/x.woff2', '0.m4a', 'img/hero.avif', 'favicon.ico']) {
       expect(assetNameProblem(ok), ok).toBeNull();
     }
     expect(assetPath('img/s1.jpg')).toBe('/img/s1.jpg');
@@ -75,6 +75,8 @@ describe('AssetSniffer (the bytes decide)', () => {
     expect(sniffAsset(Buffer.concat([Buffer.from('ID3\x04\0\0', 'latin1'), Buffer.alloc(100, 1)]))).toBe('audio/mpeg');
     expect(sniffAsset(Buffer.concat([Buffer.from('wOF2'), Buffer.alloc(100, 1)]))).toBe('font/woff2');
     expect(sniffAsset(Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(80)]))).toBe('image/png');
+    expect(sniffAsset(Buffer.concat([Buffer.from([0, 0, 0, 0x1c]), Buffer.from('ftypavif\0\0\0\0mif1miafMA1B', 'latin1'), Buffer.alloc(80)]))).toBe('image/avif');
+    expect(sniffAsset(Buffer.concat([Buffer.from([0, 0, 1, 0, 1, 0, 16, 16, 0, 0, 1, 0, 32, 0]), Buffer.alloc(80, 1)]))).toBe('image/x-icon');
   });
 
   it('SVG is the one text type (UTF-8, no control bytes, an <svg> root)', () => {

@@ -1,8 +1,9 @@
 /**
  * The public gallery, the pure half (NSO-340): the on/off switch
- * (GALLERY_ENABLED), the public description rules, the page size and the
- * opaque cursor of `GET /api/public/gallery`. The stateful half (listing,
- * the super-admin hide, the public query) is gallery.server.ts.
+ * (GALLERY_ENABLED), the public description rules, the page size, the
+ * search / sort / page parameters and the opaque cursor of
+ * `GET /api/public/gallery`. The stateful half (listing, the super-admin
+ * hide, the public query) is gallery.server.ts.
  */
 
 /** The public description: plain text, one or two sentences. */
@@ -55,6 +56,47 @@ export function galleryPageSize(raw: string | null | undefined): number {
   return Math.min(Math.max(Math.trunc(n), 1), GALLERY_PAGE_MAX);
 }
 
+/** The longest `?q` search text (characters; longer input is cut). */
+export const GALLERY_QUERY_MAX = 100;
+/** The highest `?page` number taken as given (a larger one is clamped to it). */
+export const GALLERY_PAGE_NUMBER_MAX = 100_000;
+
+/** `?q` → the search text: trimmed, at most GALLERY_QUERY_MAX characters; null when empty. */
+export function galleryQuery(raw: string | null | undefined): string | null {
+  const text = (raw ?? '').trim();
+  if (!text) return null;
+  return [...text].slice(0, GALLERY_QUERY_MAX).join('').trim() || null;
+}
+
+/**
+ * The search text as an ILIKE pattern `%<text>%` with the LIKE wildcards
+ * `%`, `_` and the escape character `\` escaped, so every character of the
+ * text matches itself (used with `ESCAPE '\'`).
+ */
+export function galleryLikePattern(text: string): string {
+  return `%${text.replace(/[\\%_]/g, '\\$&')}%`;
+}
+
+/** The public list's order: `new` = newest publish first (the default), `name` = name A→Z. */
+export type GallerySort = 'new' | 'name';
+
+/** `?sort` → `name` or (anything else) `new`. */
+export function gallerySort(raw: string | null | undefined): GallerySort {
+  return raw?.trim().toLowerCase() === 'name' ? 'name' : 'new';
+}
+
+/**
+ * `?page` → a 1-based page number, or null when the parameter is absent or
+ * empty. Anything that is not a whole number ≥ 1 is page 1; a huge number is
+ * clamped to GALLERY_PAGE_NUMBER_MAX.
+ */
+export function galleryPageNumber(raw: string | null | undefined): number | null {
+  if (raw === null || raw === undefined || raw.trim() === '') return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || Math.trunc(n) < 1) return 1;
+  return Math.min(Math.trunc(n), GALLERY_PAGE_NUMBER_MAX);
+}
+
 /** Where the next page starts: the last entry's publish time and slug (both public). */
 export interface GalleryCursor {
   publishedAt: Date;
@@ -78,6 +120,35 @@ export function decodeGalleryCursor(token: string | null | undefined): GalleryCu
   const slug = raw.slice(dot + 1);
   if (!Number.isSafeInteger(ms) || ms < 0 || !CURSOR_SLUG_RE.test(slug) || slug.length > 40) return null;
   return { publishedAt: new Date(ms), slug };
+}
+
+/**
+ * Whether the public list shows this app right now — the row-level twin of
+ * the public query's filter (gallery.server.ts visibleInGallery): listed AND
+ * published AND public AND not taken down AND not deleted AND not hidden.
+ * The app hosts use it to let the operator's gallery frame the production
+ * host (GALLERY_FRAME_ANCESTORS).
+ */
+export function isGalleryVisible(app: {
+  galleryListed: boolean;
+  galleryDescription: string | null;
+  galleryHiddenAt: Date | null;
+  publishedVersionId: string | null;
+  publishedAt: Date | null;
+  lockedReason: string | null;
+  visibility: string;
+  deletedAt: Date | null;
+}): boolean {
+  return (
+    app.galleryListed &&
+    app.publishedVersionId !== null &&
+    app.publishedAt !== null &&
+    app.galleryDescription !== null &&
+    app.visibility === 'public' &&
+    app.lockedReason === null &&
+    app.deletedAt === null &&
+    app.galleryHiddenAt === null
+  );
 }
 
 /** An app's gallery state as the dashboard and get_app show it. */

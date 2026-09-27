@@ -2,11 +2,22 @@
  * The production loaders (Postgres, via PGlite) behind ServeStore + the
  * app-changed bust: what each host of an app serves as versions are written,
  * published and rolled back, and that the in-process event busts the cache so
- * the FIRST request after a publish already sees the new version.
+ * the FIRST request after a publish already sees the new version — and after a
+ * gallery listing change, the production host's gallery frame permission.
  */
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createApp, createVersion, notifyAppChanged, publish, type Actor } from '@drobek/apps';
+import {
+  createApp,
+  createVersion,
+  notifyAppChanged,
+  publish,
+  setAppVisibility,
+  setGalleryHidden,
+  setGalleryListing,
+  unpublishApp,
+  type Actor,
+} from '@drobek/apps';
 import { apps, users, workspaces } from '@drobek/db';
 import { addDomain, removeDomain, setPrimaryDomain, verifyDomain, type DnsResolver } from '@drobek/domains';
 import { handleAppRequest, type AppRequest, type HandlerDeps } from './handler.js';
@@ -62,7 +73,16 @@ describe('dbLoaders.resolve', () => {
     await publish(app.id, v1.id, actor);
     const prod = await dbLoaders.resolve({ kind: 'prod', slug: 'loader-app' });
     expect(prod.version).toEqual(v1);
-    expect(prod.app).toEqual({ id: app.id, slug: 'loader-app', workspaceId: wsId, visibility: 'public', frameAncestors: null, lockedReason: null, primaryDomain: null });
+    expect(prod.app).toEqual({
+      id: app.id,
+      slug: 'loader-app',
+      workspaceId: wsId,
+      visibility: 'public',
+      frameAncestors: null,
+      lockedReason: null,
+      primaryDomain: null,
+      galleryVisible: false,
+    });
   });
 
   it('a soft-deleted or hibernated app does not exist for the app hosts', async () => {
@@ -216,6 +236,69 @@ describe('custom domains through the real loaders (M3-01)', () => {
       await removeDomain(app, d.id, user);
       expect(await store.resolveCustomHost('shop.firma.cz')).toBeNull();
       expect((await store.resolve({ kind: 'prod', slug: 'domain-app' })).app?.primaryDomain).toBeNull();
+    } finally {
+      await sub.stop();
+    }
+  });
+});
+
+describe('gallery visibility through the real loaders (GALLERY_FRAME_ANCESTORS)', () => {
+  const GALLERY_ON = { GALLERY_ENABLED: 'true' } as NodeJS.ProcessEnv;
+  const gallery = 'https://www.example.com';
+
+  it('galleryVisible follows listing, hiding, visibility and unpublish; each change busts the cache', async () => {
+    const store = new ServeStore();
+    const sub = subscribeServeCache(store, { redis: null });
+    const deps: HandlerDeps = { store, accessSecret: null, allowUnlockAttempt: async () => true, galleryFrameAncestors: [gallery] };
+    const prod = { kind: 'prod' as const, slug: 'gallery-app' };
+    const preview = { kind: 'preview' as const, slug: 'gallery-app' };
+    const req = (target: AppRequest['target']): AppRequest => ({
+      method: 'GET',
+      target,
+      path: '/',
+      query: '',
+      header: () => null,
+      readForm: async () => null,
+      readBody: async () => null,
+      clientIp: null,
+    });
+    const framed = async (target: AppRequest['target']) =>
+      String((await handleAppRequest(req(target), deps)).headers['Content-Security-Policy']).includes(`frame-ancestors ${gallery}`);
+    const user = { userId: actor.userId, kind: 'user' as const };
+    const adminId = actor.userId as string;
+    try {
+      const app = await createApp({ workspaceId: wsId, slug: 'gallery-app', actor });
+      const v1 = await write(app.id, 'one');
+      await publish(app.id, v1.id, actor);
+      await notifyAppChanged({ app_id: app.id, slug: app.slug, kind: 'publish' });
+      expect((await store.resolve(prod)).app?.galleryVisible).toBe(false);
+      expect(await framed(prod)).toBe(false);
+
+      await setGalleryListing(app.id, { listed: true, description: 'Counts things.' }, user, { env: GALLERY_ON });
+      expect((await dbLoaders.resolve(prod)).app?.galleryVisible).toBe(true);
+      expect(await framed(prod)).toBe(true);
+      expect(await framed(preview)).toBe(false);
+
+      await setGalleryHidden(app.id, true, adminId);
+      expect(await framed(prod)).toBe(false);
+      await setGalleryHidden(app.id, false, adminId);
+      expect(await framed(prod)).toBe(true);
+
+      await setAppVisibility(app.id, { visibility: 'password', passwordHash: 'x' }, user);
+      await notifyAppChanged({ app_id: app.id, slug: app.slug, kind: 'settings' });
+      expect((await store.resolve(prod)).app?.galleryVisible).toBe(false);
+      await setAppVisibility(app.id, { visibility: 'public' }, user);
+      await notifyAppChanged({ app_id: app.id, slug: app.slug, kind: 'settings' });
+      expect(await framed(prod)).toBe(true);
+
+      await setGalleryListing(app.id, { listed: false }, user, { env: GALLERY_ON });
+      expect(await framed(prod)).toBe(false);
+
+      await setGalleryListing(app.id, { listed: true, description: 'Counts things.' }, user, { env: GALLERY_ON });
+      expect(await framed(prod)).toBe(true);
+      await unpublishApp(app.id, user);
+      await notifyAppChanged({ app_id: app.id, slug: app.slug, kind: 'unpublish' });
+      expect((await store.resolve(prod)).app?.galleryVisible).toBe(false);
     } finally {
       await sub.stop();
     }

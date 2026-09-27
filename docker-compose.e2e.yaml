@@ -124,8 +124,10 @@ services:
       # M4-02: the abuse spec signs in as this super-admin.
       SUPERADMIN_EMAIL: e2e-superadmin@drobek.test
       ABUSE_REPORTS_PER_IP_HOUR: '5'
-      # NSO-340: the gallery spec lists apps and reads GET /api/public/gallery.
+      # NSO-340: the gallery spec lists apps, reads GET /api/public/gallery and
+      # checks the gallery origin's frame permission.
       GALLERY_ENABLED: 'true'
+      GALLERY_FRAME_ANCESTORS: https://gallery.example.test
       # Google OIDC → the mock the auth-google spec spawns on the host (:3049).
       GOOGLE_CLIENT_ID: local-dev-client
       GOOGLE_CLIENT_SECRET: local-dev-secret

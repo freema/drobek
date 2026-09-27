@@ -6,9 +6,12 @@ import {
   appSecurityHeaders,
   frameSrcConfigError,
   frameSrcFromEnv,
+  galleryFrameAncestorsConfigError,
+  galleryFrameAncestorsFromEnv,
   parseFrameAncestors,
   parseFrameSrcExtra,
-  withDashboardAncestor,
+  parseGalleryFrameAncestors,
+  withFrameAncestors,
 } from './csp.js';
 
 describe('app CSP (plan §3.3)', () => {
@@ -126,31 +129,89 @@ describe('appSecurityHeaders (snapshot)', () => {
   });
 });
 
-describe('withDashboardAncestor (NSO-342, the app-list thumbnail)', () => {
+describe('withFrameAncestors (NSO-342 dashboard thumbnail, GALLERY_FRAME_ANCESTORS)', () => {
   const dash = 'https://drobek.example.com';
+  const gallery = 'https://www.example.com';
 
-  it("replaces 'none' / no override with the dashboard origin alone", () => {
-    expect(withDashboardAncestor(null, dash)).toBe(dash);
-    expect(withDashboardAncestor("'none'", dash)).toBe(dash);
-    expect(withDashboardAncestor(undefined, 'http://localhost:3041/')).toBe('http://localhost:3041');
+  it("replaces 'none' / no override with the added origin(s)", () => {
+    expect(withFrameAncestors(null, [dash])).toBe(dash);
+    expect(withFrameAncestors("'none'", [dash])).toBe(dash);
+    expect(withFrameAncestors(undefined, ['http://localhost:3041/'])).toBe('http://localhost:3041');
+    expect(withFrameAncestors(null, [dash, gallery])).toBe(`${dash} ${gallery}`);
   });
 
-  it("appends it to the owner's override once", () => {
-    expect(withDashboardAncestor("'self' https://intranet.example.com", dash)).toBe(
-      `'self' https://intranet.example.com ${dash}`
+  it("appends to the owner's override, each origin once", () => {
+    expect(withFrameAncestors("'self' https://intranet.example.com", [dash])).toBe(`'self' https://intranet.example.com ${dash}`);
+    expect(withFrameAncestors(`https://a.example.com ${dash}`, [dash])).toBe(`https://a.example.com ${dash}`);
+    expect(withFrameAncestors('https://a.example.com', [dash, gallery, gallery.toUpperCase()])).toBe(
+      `https://a.example.com ${dash} ${gallery}`
     );
-    expect(withDashboardAncestor(`https://a.example.com ${dash}`, dash)).toBe(`https://a.example.com ${dash}`);
   });
 
-  it('ignores a missing or unsafe dashboard origin (the value stays as it was)', () => {
-    for (const bad of [null, undefined, '', "'self'", '*', 'https:', 'https://*.example.com', 'https://a.example.com/path', 'https://a.example.com; x']) {
-      expect(withDashboardAncestor(null, bad), String(bad)).toBeNull();
-      expect(withDashboardAncestor('https://a.example.com', bad), String(bad)).toBe('https://a.example.com');
+  it('ignores a missing or unsafe origin (the value stays as it was)', () => {
+    for (const bad of [
+      null,
+      undefined,
+      '',
+      "'self'",
+      '*',
+      'https:',
+      'https://*.example.com',
+      'https://a.example.com/path',
+      'https://a.example.com; x',
+      'https://a.example.com:99999',
+    ]) {
+      expect(withFrameAncestors(null, [bad]), String(bad)).toBeNull();
+      expect(withFrameAncestors("'none'", [bad]), String(bad)).toBe("'none'");
+      expect(withFrameAncestors('https://a.example.com', [bad]), String(bad)).toBe('https://a.example.com');
+      expect(withFrameAncestors(null, [bad, gallery]), String(bad)).toBe(gallery);
+    }
+    expect(withFrameAncestors('https://a.example.com', [])).toBe('https://a.example.com');
+  });
+
+  it('ends up in the CSP as the only extra ancestors', () => {
+    const h = appSecurityHeaders({ noindex: false, frameAncestors: withFrameAncestors(parseFrameAncestors(null), [dash, gallery]) });
+    expect(h['Content-Security-Policy']).toContain(`frame-ancestors ${dash} ${gallery};`);
+  });
+});
+
+describe('GALLERY_FRAME_ANCESTORS', () => {
+  it('accepts space-separated bare http(s) origins, lower-cased, de-duplicated', () => {
+    expect(parseGalleryFrameAncestors(' https://WWW.Example.com  http://localhost:3042/ https://www.example.com ')).toEqual({
+      origins: ['https://www.example.com', 'http://localhost:3042'],
+    });
+    expect(parseGalleryFrameAncestors(undefined)).toEqual({ origins: [] });
+    expect(parseGalleryFrameAncestors('  ')).toEqual({ origins: [] });
+  });
+
+  it('refuses anything that is not a bare http(s) origin', () => {
+    for (const bad of [
+      'https://*.example.com',
+      'https:',
+      '*',
+      "'self'",
+      "'none'",
+      'https://www.example.com/gallery',
+      'https://www.example.com?x=1',
+      'https://a.example.com,https://b.example.com',
+      "https://a.example.com;script-src 'unsafe-eval'",
+      'https://a.example.com:99999',
+      'javascript:alert(1)',
+      'ftp://a.example.com',
+      Array.from({ length: 11 }, (_, i) => `https://a${i}.example.com`).join(' '),
+    ]) {
+      expect(parseGalleryFrameAncestors(bad), bad).toHaveProperty('error');
     }
   });
 
-  it('ends up in the CSP as the only extra ancestor', () => {
-    const h = appSecurityHeaders({ noindex: false, frameAncestors: withDashboardAncestor(parseFrameAncestors(null), dash) });
-    expect(h['Content-Security-Policy']).toContain(`frame-ancestors ${dash};`);
+  it('an invalid value is a startup error; unset or valid is not', () => {
+    expect(galleryFrameAncestorsConfigError({ GALLERY_FRAME_ANCESTORS: 'https://*.example.com' })).toMatch(
+      /refuses to start: GALLERY_FRAME_ANCESTORS "https:\/\/\*\.example\.com" is not a bare http\(s\) origin/
+    );
+    expect(galleryFrameAncestorsConfigError({ GALLERY_FRAME_ANCESTORS: 'https://www.example.com' })).toBeNull();
+    expect(galleryFrameAncestorsConfigError({})).toBeNull();
+    expect(galleryFrameAncestorsFromEnv({ GALLERY_FRAME_ANCESTORS: 'https://www.example.com' })).toEqual(['https://www.example.com']);
+    expect(galleryFrameAncestorsFromEnv({ GALLERY_FRAME_ANCESTORS: 'https://www.example.com/x' })).toEqual([]);
+    expect(galleryFrameAncestorsFromEnv({})).toEqual([]);
   });
 });

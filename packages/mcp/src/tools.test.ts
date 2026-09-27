@@ -677,6 +677,24 @@ describe('list_apps', () => {
         .from(apps)
         .where(and(eq(apps.workspaceId, teamId), isNull(apps.deletedAt)));
       expect(apps2).toHaveLength(count.length);
+      expect(r.body.all_workspaces).toBeUndefined();
+    } finally {
+      await c.close();
+    }
+  });
+
+  it('a super-admin also gets all_workspaces and reaches a foreign one by slug', async () => {
+    await newApp('Team app', { template: 'html' });
+    const c = await as('root');
+    try {
+      const r = await c.call('list_apps');
+      expect(r.isError, r.text).toBe(false);
+      const all = r.body.all_workspaces as { slug: string; kind: string }[];
+      expect(all.map((w) => w.slug)).toEqual(expect.arrayContaining(['team-x']));
+      expect(all.every((w) => Object.keys(w).sort().join() === 'kind,name,slug')).toBe(true);
+      const team = await c.call('list_apps', { workspace: 'team-x' });
+      expect(team.isError, team.text).toBe(false);
+      expect((team.body.apps as { workspace: string }[]).length).toBeGreaterThan(0);
     } finally {
       await c.close();
     }

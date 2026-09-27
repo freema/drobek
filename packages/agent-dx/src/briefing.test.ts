@@ -51,7 +51,8 @@ describe('renderBriefing', () => {
     expect(b).toContain('## Hosts');
     expect(b).toContain('<slug>--preview.<APPS_DOMAIN>');
     expect(b).toContain('<slug>--v<N>.<APPS_DOMAIN>');
-    expect(b).toMatch(/NOT served: `\.ts\/\.tsx\/\.jsx` sources/);
+    expect(b).toMatch(/NOT served as files: `\.ts\/\.tsx\/\.jsx` sources/);
+    expect(b).toMatch(/inline source map/);
     expect(b).toContain('https://esm.sh');
   });
 

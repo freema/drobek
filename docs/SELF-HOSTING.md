@@ -219,7 +219,7 @@ built-ins.
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | — | optional Google sign-in |
 | `TLS_CUSTOM_DOMAINS`, `DOMAINS_MAX_PER_APP`, `DOMAINS_DNS_SERVERS`, `DOMAINS_RECHECK_INTERVAL_MS` | — | [custom domains](#custom-domains) (catch-all certificate on by default in on-demand mode; 3 per app) |
 | `TERMS_URL`, `ABUSE_REPORTS_PER_IP_HOUR`, `ABUSE_BRAND_WORDS` | — | [abuse handling](#abuse-and-takedowns) (terms link of the 451 page; 5 reports / IP / hour; publish-heuristic brand words) |
-| `GALLERY_ENABLED`, `GALLERY_API_PER_IP_MINUTE` | — (off) | [the public gallery](#public-gallery) (`true` = owners may list published apps; `GET /api/public/gallery`; 60 requests / IP / minute) |
+| `GALLERY_ENABLED`, `GALLERY_API_PER_IP_MINUTE`, `GALLERY_FRAME_ANCESTORS` | — (off) | [the public gallery](#public-gallery) (`true` = owners may list published apps; `GET /api/public/gallery`; 60 requests / IP / minute; your gallery website's origins that may show listed apps as live previews) |
 | `EMAIL_SIGNIN_APP_HOURLY_SHARE` | — (25) | one app's percent of the sign-in e-mail budget — raise it on a single-app server (see [Production compose](#production-compose)) |
 | `EMAIL_WORKSPACE_HOURLY_SHARE` | — (50) | one workspace's percent of each module e-mail budget — raise it to 100 on a single-workspace server |
 | limits (`OTP_*`, `COMPILE_*`, `DATA_*`, `FILES_*`, `EMAIL_*`, …) | — | production defaults; every variable is in the [Environment reference](#environment-reference) |
@@ -423,6 +423,7 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `ABUSE_BRAND_WORDS` | a built-in list | the publish heuristic's brand words (comma-separated) |
 | `GALLERY_ENABLED` | off | `true` = the [public gallery](#public-gallery): owners (and, on their explicit yes, their agents) may list published apps; `GET /api/public/gallery` answers. Off = no switch in the dashboard, the endpoint answers 404 |
 | `GALLERY_API_PER_IP_MINUTE` | 60 | requests to `GET /api/public/gallery` per client IP per minute (429 over it) |
+| `GALLERY_FRAME_ANCESTORS` | — (no embedding) | space-separated bare `http(s)://host[:port]` origins (at most 10) of your gallery website that may show a listed app in an `<iframe>` — added to `frame-ancestors` only on the production host (and custom domains) of an app the gallery shows, only while `GALLERY_ENABLED`; a wildcard, a path or a quote stops the server at start (see [Public gallery](#public-gallery)) |
 
 ### Development and tests only
 
@@ -997,14 +998,51 @@ list.
   `/admin/abuse` and can **hide** an entry (or show it again). A hidden app
   is off the list and neither its owner nor an agent can list it. Audited
   `app.gallery_hidden` / `app.gallery_unhidden`.
-- **`GET /api/public/gallery`** on the dashboard host, no login:
-  `{ items: [{ name, description, url, publishedAt }], next? }` — `url` is
-  the production host `https://<slug>.<APPS_DOMAIN>`, newest publish first,
-  `?limit=` 1–48 (default 24), `?cursor=` the previous page's `next`. No
-  owner data (no e-mail, workspace or id). `Cache-Control: public,
+- **`GET /api/public/gallery`** on the dashboard host, no login. Each item
+  is `{ name, description, url, publishedAt }` — `url` is the production host
+  `https://<slug>.<APPS_DOMAIN>`. No owner data (no e-mail, workspace or id).
+  Parameters:
+  - `?limit=` 1–48 (default 24);
+  - `?q=` a case-insensitive substring of the name or the description
+    (trimmed, at most 100 characters; `%`, `_` and `\` match themselves);
+  - `?sort=new` (default: newest publish first) or `?sort=name` (A→Z,
+    case-insensitive);
+  - `?cursor=` the previous page's `next` (cursor mode), or `?page=` a
+    1-based page number (page mode).
+
+  Two response shapes:
+  - **cursor mode** (the default; `sort=new` without `page`, or with a
+    `cursor`): `{ items, next? }` — `next` is there while more entries
+    follow;
+  - **page mode** (`?page=` without a cursor, and always with `sort=name`,
+    which ignores a cursor): `{ items, page, pages, total }` — `total` and
+    `pages` count the filtered list (`pages` is 0 when nothing matches); a
+    page that is not a whole number ≥ 1 is page 1, a page past the last has
+    no items; `previews` is `true` when `GALLERY_FRAME_ANCESTORS` is set (the
+    gallery may frame the listed apps).
+
+  For example `?q=shift&sort=name&page=2&limit=12` →
+  `{ "items": [ … ], "page": 2, "pages": 3, "total": 29 }`, and `?q=shift` →
+  `{ "items": [ … ], "next": "MTc1…" }`. `Cache-Control: public,
   max-age=60`, `Access-Control-Allow-Origin: *`, `GALLERY_API_PER_IP_MINUTE`
   requests per client IP per minute. Render it on your own website — a
   server-side fetch or a reverse proxy works as well as the browser.
+- **Live previews.** Apps refuse to be framed by other sites
+  (`frame-ancestors`). To show each listed app as a live preview (a scaled,
+  sandboxed, non-interactive `<iframe>` of its `url`), set
+  `GALLERY_FRAME_ANCESTORS` to your gallery website's origin(s), e.g.
+  `https://www.example.com`. Those origins may then frame the **production
+  host** (and custom domains) of an app the gallery shows right now —
+  listed, published, public, not taken down, not deleted, not hidden. The
+  preview and version hosts never allow it, and other apps keep refusing.
+  Unlisting, hiding, unpublishing, a password gate or a takedown withdraws
+  the permission with the next request (at the latest after the app hosts'
+  60 s cache). Only while
+  `GALLERY_ENABLED` is on; an invalid origin stops the server at start.
+  Frame the app non-interactively (e.g. `sandbox="allow-scripts
+  allow-same-origin"`, `pointer-events: none`, `loading="lazy"`): each
+  preview load runs the app like any visit and counts in its request
+  stats.
 
 There are no screenshots: drobek never runs an app's code on the server.
 

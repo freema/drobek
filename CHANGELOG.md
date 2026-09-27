@@ -1,5 +1,17 @@
 # Changelog — drobek (core)
 
+## v0.2.1 — 2026-09-27
+
+### Added
+- **AVIF and ICO assets** — `create_asset_upload` and the Assets tab accept `.avif` (`image/avif`: an `ftyp` box with the `avif` / `avis` brand, major or compatible) and `.ico` (`image/x-icon`: an icon directory with at least one image), sniffed from the bytes like every other asset type, so a `favicon.ico` or an AVIF image of a ported page uploads as an asset. HEIC and QuickTime `ftyp` boxes still sniff as nothing; cursors (`.cur`) are refused. The files module's end-user types are unchanged. ([#4](https://github.com/freema/drobek/issues/4))
+- **Gallery search, sort and pages** — `GET /api/public/gallery` takes `?q=` (a case-insensitive substring of the app name or the gallery description; trimmed, at most 100 characters, `%` `_` `\` match themselves), `?sort=new|name` (newest publish first, the default, or name A→Z) and `?page=<n>` (1-based): page mode answers `{ items, page, pages, total, previews }`, counting the same filter (`previews`: `GALLERY_FRAME_ANCESTORS` is set); a page past the last has no items, an invalid page is 1. `sort=name` always answers in page mode (a cursor is ignored). Without `page` (or with a `cursor`) the list keeps answering `{ items, next? }` exactly as before.
+- **Live gallery previews** (`GALLERY_FRAME_ANCESTORS`, off by default) — space-separated bare http(s) origins of the operator's gallery website, added to `frame-ancestors` only on the production host (and custom domains) of an app the public gallery shows right now, so the gallery can show a sandboxed, non-interactive `<iframe>` of it; never on preview or version hosts, only while `GALLERY_ENABLED`. An invalid origin stops the server at start. Listing, unlisting, hiding and showing an app now bust the app hosts' cache, so the permission follows at once.
+
+### Fixed
+- **`list_apps` for a super-admin** — a server super-admin reaches every workspace (the dashboard lists them all), but `list_apps` showed only the workspaces they are a member of, so an agent with a super-admin key could not find another user's apps. It now also returns `all_workspaces` (`slug`, `name`, `kind`) for a super-admin; `list_apps({ workspace })` with one of those slugs lists its apps.
+- **The secret scanner catches Stripe and Slack keys** — `write_files` (and a module config) refused `sk-…` keys but let `sk_live_…` / `sk_test_…` / `rk_live_…` Stripe keys, `whsec_…` webhook secrets and Slack `xox?-` tokens through, and the name rule matched only an exact `secret` / `api_key` / `access_token` name. It now also refuses those formats and any name that ends in one of them (`stripeSecret = "…"`, `"clientSecret": "…"`); publishable keys (`pk_live_…`) and short values stay allowed.
+- **Agent docs match the behaviour** — the briefing and the `start` / `port-artifact` skills said a leading `/` in a path is refused; it is dropped (`/src/App.tsx` = `src/App.tsx`). The briefing now says the compiled JS/CSS carry an inline source map with the sources. The `not_found` / `invalid_params` hints name what to check per case, `publish` explains its `assets` field, and the data skill allows localStorage for UI preferences.
+
 ## v0.2.0 — 2026-09-26
 
 ### Added

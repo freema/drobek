@@ -56,7 +56,8 @@ export function GallerySection({ gallery, canEdit, busy }: { gallery: GallerySec
       <h2 style={styles.h2}>Gallery</h2>
       <p style={styles.hint}>
         List the app in this server&apos;s public gallery. Anyone can see its name, the description below and a link to
-        its production address. Unpublishing the app, or a takedown, removes it from the gallery.
+        its production address; the gallery may also show a live preview of that page. Unpublishing the app, or a
+        takedown, removes it from the gallery.
       </p>
       <p style={s.inline}>
         Now:{' '}

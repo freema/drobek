@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { hasControlBytes, looksLikeSvg, sniffSignature } from './sniff.js';
 
 const pad = (b: Buffer, n = 64): Buffer => Buffer.concat([b, Buffer.alloc(Math.max(0, n - b.length))]);
-const ftyp = (brand: string): Buffer => pad(Buffer.concat([Buffer.from([0, 0, 0, 0x20]), Buffer.from(`ftyp${brand}`, 'latin1')]));
+const ftyp = (brand: string, compatible: string[] = []): Buffer => {
+  const box = Buffer.concat([Buffer.from(`ftyp${brand}\0\0\0\0${compatible.join('')}`, 'latin1')]);
+  const size = Buffer.alloc(4);
+  size.writeUInt32BE(box.length + 4);
+  return pad(Buffer.concat([size, box]));
+};
 
 describe('sniffSignature (NSO-358: images, pdf, video, audio, fonts)', () => {
   it('images and pdf by magic bytes', () => {
@@ -13,10 +18,27 @@ describe('sniffSignature (NSO-358: images, pdf, video, audio, fonts)', () => {
     expect(sniffSignature(pad(Buffer.from('%PDF-1.7')))).toBe('application/pdf');
   });
 
-  it('MP4 by the ftyp box and an MP4 brand; M4A is audio; AVIF / HEIC / QuickTime are not video', () => {
+  it('MP4 by the ftyp box and an MP4 brand; M4A is audio; HEIC / QuickTime are not video', () => {
     for (const brand of ['isom', 'mp42', 'avc1', 'M4V ', 'dash']) expect(sniffSignature(ftyp(brand)), brand).toBe('video/mp4');
+    expect(sniffSignature(ftyp('isom', ['isom', 'iso2', 'mp41']))).toBe('video/mp4');
     expect(sniffSignature(ftyp('M4A '))).toBe('audio/mp4');
-    for (const brand of ['avif', 'heic', 'mif1', 'qt  ']) expect(sniffSignature(ftyp(brand)), brand).toBeNull();
+    for (const brand of ['heic', 'mif1', 'qt  ']) expect(sniffSignature(ftyp(brand)), brand).toBeNull();
+    expect(sniffSignature(ftyp('mif1', ['mif1', 'heic']))).toBeNull();
+  });
+
+  it('AVIF by the avif / avis brand, major or compatible', () => {
+    expect(sniffSignature(ftyp('avif', ['mif1', 'miaf']))).toBe('image/avif');
+    expect(sniffSignature(ftyp('avis', ['avis', 'msf1']))).toBe('image/avif');
+    expect(sniffSignature(ftyp('mif1', ['mif1', 'miaf', 'avif']))).toBe('image/avif');
+  });
+
+  it('ICO: an ICONDIR with at least one image', () => {
+    const ico = (count: number, reserved = 0) => pad(Buffer.from([0, 0, 1, 0, count, 0, 16, 16, 0, reserved, 1, 0, 32, 0]));
+    expect(sniffSignature(ico(1))).toBe('image/x-icon');
+    expect(sniffSignature(ico(3))).toBe('image/x-icon');
+    expect(sniffSignature(ico(0))).toBeNull();
+    expect(sniffSignature(ico(1, 7))).toBeNull();
+    expect(sniffSignature(pad(Buffer.from([0, 0, 2, 0, 1, 0])))).toBeNull(); // a cursor (CUR)
   });
 
   it('WebM needs the webm DocType in the EBML header (Matroska is not WebM)', () => {

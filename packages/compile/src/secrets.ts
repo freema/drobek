@@ -7,12 +7,15 @@ import type { CompileMessage } from './types.js';
  */
 const PATTERNS: Array<{ name: string; re: RegExp }> = [
   { name: 'API key (sk-…)', re: /\bsk-[A-Za-z0-9_-]{20,}/ },
+  { name: 'Stripe secret key', re: /\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}/ },
+  { name: 'Stripe webhook secret', re: /\bwhsec_[A-Za-z0-9]{24,}/ },
+  { name: 'Slack token', re: /\bxox[abposr]-[A-Za-z0-9-]{10,}/ },
   { name: 'AWS access key', re: /\bAKIA[0-9A-Z]{16}\b/ },
   { name: 'GitHub token', re: /\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,})/ },
   { name: 'private key', re: /-----BEGIN [A-Z ]*PRIVATE KEY-----/ },
   {
     name: 'hard-coded credential',
-    re: /\b(?:api[_-]?key|secret|access[_-]?token|auth[_-]?token)\s*[:=]\s*['"`][A-Za-z0-9_\-]{20,}['"`]/i,
+    re: /\b\w*(?:api[_-]?key|secret|access[_-]?token|auth[_-]?token)['"`]?\s*[:=]\s*['"`][A-Za-z0-9_\-]{20,}['"`]/i,
   },
 ];
 

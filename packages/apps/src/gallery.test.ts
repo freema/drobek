@@ -1,6 +1,6 @@
 /**
- * NSO-340 — the gallery's pure rules (switch, description, page size, cursor,
- * effective state) and migration 0022's `published_at` backfill against a
+ * NSO-340 — the gallery's pure rules (switch, description, page size, search
+ * text, sort, page number, cursor, effective state, row visibility) and migration 0022's `published_at` backfill against a
  * database in the 0021 shape.
  */
 import { PGlite } from '@electric-sql/pglite';
@@ -11,12 +11,19 @@ import * as schema from '@drobek/db/schema';
 import {
   GALLERY_DESCRIPTION_MAX,
   GALLERY_PAGE_MAX,
+  GALLERY_PAGE_NUMBER_MAX,
   GALLERY_PAGE_SIZE,
+  GALLERY_QUERY_MAX,
   decodeGalleryCursor,
   encodeGalleryCursor,
   galleryEnabled,
+  galleryLikePattern,
+  galleryPageNumber,
   galleryPageSize,
+  galleryQuery,
+  gallerySort,
   galleryState,
+  isGalleryVisible,
   normalizeGalleryDescription,
 } from './gallery.js';
 import { migrateTo, migrationsUpTo } from './test/db.js';
@@ -55,6 +62,64 @@ describe('galleryPageSize', () => {
     expect(galleryPageSize('0')).toBe(1);
     expect(galleryPageSize('500')).toBe(GALLERY_PAGE_MAX);
     expect(galleryPageSize('7.9')).toBe(7);
+  });
+});
+
+describe('galleryQuery / galleryLikePattern', () => {
+  it('trims, cuts to 100 characters and treats empty as no search', () => {
+    expect(galleryQuery(null)).toBeNull();
+    expect(galleryQuery('   ')).toBeNull();
+    expect(galleryQuery('  Shift plan ')).toBe('Shift plan');
+    expect(galleryQuery('ž'.repeat(GALLERY_QUERY_MAX + 20))).toBe('ž'.repeat(GALLERY_QUERY_MAX));
+  });
+
+  it('escapes the LIKE wildcards and the escape character', () => {
+    expect(galleryLikePattern('shift')).toBe('%shift%');
+    expect(galleryLikePattern('100%')).toBe('%100\\%%');
+    expect(galleryLikePattern('a_b')).toBe('%a\\_b%');
+    expect(galleryLikePattern('c:\\x')).toBe('%c:\\\\x%');
+    expect(galleryLikePattern("'; DROP TABLE apps; --")).toBe("%'; DROP TABLE apps; --%");
+  });
+});
+
+describe('gallerySort / galleryPageNumber', () => {
+  it('sorts by name only when asked; anything else is newest first', () => {
+    expect(gallerySort('name')).toBe('name');
+    expect(gallerySort(' NAME ')).toBe('name');
+    for (const v of [null, '', 'new', 'oldest', 'name;']) expect(gallerySort(v), String(v)).toBe('new');
+  });
+
+  it('absent = no page; an invalid page is 1; a huge one is clamped', () => {
+    expect(galleryPageNumber(null)).toBeNull();
+    expect(galleryPageNumber('')).toBeNull();
+    expect(galleryPageNumber('3')).toBe(3);
+    expect(galleryPageNumber('2.9')).toBe(2);
+    for (const v of ['0', '-4', 'abc', 'NaN', 'Infinity', '0.5']) expect(galleryPageNumber(v), v).toBe(1);
+    expect(galleryPageNumber('1e12')).toBe(GALLERY_PAGE_NUMBER_MAX);
+  });
+});
+
+describe('isGalleryVisible', () => {
+  const row = {
+    galleryListed: true,
+    galleryDescription: 'Hi.',
+    galleryHiddenAt: null,
+    publishedVersionId: 'v1',
+    publishedAt: new Date(),
+    lockedReason: null,
+    visibility: 'public',
+    deletedAt: null,
+  };
+  it('is true only for listed, published, public, not taken down, not deleted, not hidden', () => {
+    expect(isGalleryVisible(row)).toBe(true);
+    expect(isGalleryVisible({ ...row, galleryListed: false })).toBe(false);
+    expect(isGalleryVisible({ ...row, galleryDescription: null })).toBe(false);
+    expect(isGalleryVisible({ ...row, publishedVersionId: null })).toBe(false);
+    expect(isGalleryVisible({ ...row, publishedAt: null })).toBe(false);
+    expect(isGalleryVisible({ ...row, visibility: 'password' })).toBe(false);
+    expect(isGalleryVisible({ ...row, lockedReason: 'spam' })).toBe(false);
+    expect(isGalleryVisible({ ...row, deletedAt: new Date() })).toBe(false);
+    expect(isGalleryVisible({ ...row, galleryHiddenAt: new Date() })).toBe(false);
   });
 });
 

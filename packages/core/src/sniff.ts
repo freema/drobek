@@ -8,6 +8,8 @@
  *   image/jpeg        FF D8 FF
  *   image/gif         "GIF87a" | "GIF89a"
  *   image/webp        "RIFF" …… "WEBP"
+ *   image/avif        …… "ftyp" + the "avif" / "avis" brand (major or compatible)
+ *   image/x-icon      00 00 01 00, at least one image, a zero reserved byte
  *   application/pdf   "%PDF-"
  *   video/mp4         …… "ftyp" + an MP4 brand (isom, mp41, mp42, avc1, M4V …)
  *   audio/mp4         …… "ftyp" + the "M4A " / "M4B " brand
@@ -18,8 +20,8 @@
  *   font/woff         "wOFF"
  *   font/woff2        "wOF2"
  *
- * `ftyp` boxes of image formats (AVIF, HEIC) and QuickTime are NOT MP4 video
- * here: their brands are not on the list, so they sniff as nothing.
+ * Other `ftyp` boxes (HEIC, QuickTime) are neither MP4 nor AVIF: their brands
+ * are not on the lists, so they sniff as nothing.
  *
  * SVG has no magic bytes: `looksLikeSvg` recognises an `<svg` root after an
  * optional prolog. The caller checks that the whole stream is text.
@@ -30,6 +32,8 @@ export type SniffedType =
   | 'image/jpeg'
   | 'image/gif'
   | 'image/webp'
+  | 'image/avif'
+  | 'image/x-icon'
   | 'application/pdf'
   | 'video/mp4'
   | 'audio/mp4'
@@ -63,6 +67,7 @@ const MP4_BRANDS = new Set([
   'mmp4',
 ]);
 const M4A_BRANDS = new Set(['M4A ', 'M4B ']);
+const AVIF_BRANDS = new Set(['avif', 'avis']);
 
 const startsWith = (b: Buffer, sig: number[] | string, at = 0): boolean => {
   const bytes = typeof sig === 'string' ? Buffer.from(sig, 'latin1') : Buffer.from(sig);
@@ -77,6 +82,19 @@ function mp3FrameSync(b: Buffer): boolean {
   return version !== 0x01 && layer === 0x01;
 }
 
+/** The major brand and the compatible brands of an `ftyp` box, as far as `head` holds them. */
+function ftypBrands(head: Buffer): { major: string; compatible: string[] } {
+  const end = Math.min(head.readUInt32BE(0), head.length);
+  const compatible: string[] = [];
+  for (let at = 16; at + 4 <= end; at += 4) compatible.push(head.subarray(at, at + 4).toString('latin1'));
+  return { major: head.subarray(8, 12).toString('latin1'), compatible };
+}
+
+/** An ICONDIR header: reserved 0, type 1 (icon), at least one image, the first entry's reserved byte 0. */
+function icoHeader(b: Buffer): boolean {
+  return startsWith(b, [0x00, 0x00, 0x01, 0x00]) && b.length >= 10 && b.readUInt16LE(4) > 0 && b[9] === 0;
+}
+
 /** The type of some stored bytes from their first bytes (≥ SIGNATURE_HEAD_BYTES when there are that many), or null. */
 export function sniffSignature(head: Buffer): SniffedType | null {
   if (startsWith(head, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) return 'image/png';
@@ -86,9 +104,10 @@ export function sniffSignature(head: Buffer): SniffedType | null {
   if (startsWith(head, 'RIFF') && startsWith(head, 'WAVE', 8)) return 'audio/wav';
   if (startsWith(head, '%PDF-')) return 'application/pdf';
   if (startsWith(head, 'ftyp', 4) && head.length >= 12) {
-    const brand = head.subarray(8, 12).toString('latin1');
-    if (MP4_BRANDS.has(brand)) return 'video/mp4';
-    if (M4A_BRANDS.has(brand)) return 'audio/mp4';
+    const { major, compatible } = ftypBrands(head);
+    if (AVIF_BRANDS.has(major) || compatible.some((b) => AVIF_BRANDS.has(b))) return 'image/avif';
+    if (MP4_BRANDS.has(major)) return 'video/mp4';
+    if (M4A_BRANDS.has(major)) return 'audio/mp4';
     return null;
   }
   if (startsWith(head, [0x1a, 0x45, 0xdf, 0xa3])) {
@@ -97,6 +116,7 @@ export function sniffSignature(head: Buffer): SniffedType | null {
   if (startsWith(head, 'OggS')) return 'audio/ogg';
   if (startsWith(head, 'wOFF')) return 'font/woff';
   if (startsWith(head, 'wOF2')) return 'font/woff2';
+  if (icoHeader(head)) return 'image/x-icon';
   if (startsWith(head, 'ID3') || mp3FrameSync(head)) return 'audio/mpeg';
   return null;
 }

@@ -3,7 +3,9 @@
  * published app and a valid description; the public list filters at query
  * time (unpublished, password-gated, taken down, deleted, hidden → gone) and
  * carries no owner data; unpublish / takedown clear the flag; the cursor
- * pages newest-first without gaps; the super-admin hide blocks listing.
+ * pages newest-first without gaps; the super-admin hide blocks listing;
+ * search (name + description, LIKE wildcards literal), sort by name and
+ * numbered pages with the same filter in items and count.
  */
 import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -14,6 +16,7 @@ import {
   createVersion,
   listGallery,
   listGalleryForModeration,
+  listGalleryPage,
   publish,
   restoreApp,
   setAppVisibility,
@@ -207,6 +210,112 @@ describe('listGallery (the public list)', () => {
     expect([...times].sort((a, b) => b - a)).toEqual(times);
     // A garbage cursor is the first page.
     expect((await listGallery({ limit: 2, cursor: '!!nope', env: ON })).items).toEqual(all.items.slice(0, 2));
+  });
+});
+
+describe('search, sort and numbered pages', () => {
+  // Every name / description here carries "kvq", so `q` isolates this set from the other tests' apps.
+  const made: Record<string, { id: string; slug: string }> = {};
+  const urlOf = (key: string) => `https://${made[key].slug}.apps.example.test`;
+  const keysOf = (items: { url: string }[]) =>
+    items.map((i) => Object.keys(made).find((k) => urlOf(k) === i.url) ?? `other:${i.url}`);
+
+  async function listedAs(key: string, name: string, description: string): Promise<void> {
+    const app = await publishedApp(name);
+    await setGalleryListing(app.id, { listed: true, description }, actor, { env: ON });
+    made[key] = app;
+  }
+
+  beforeAll(async () => {
+    await listedAs('byName', 'Kvq Shift Planner', 'Plans shifts for a small team.');
+    await listedAs('byDescription', 'Rota', 'Built for KVQ teams.');
+    await listedAs('percent', 'kvq 100% free', 'Costs nothing.');
+    await listedAs('thousand', 'kvq 1000 things', 'Counts to a thousand.');
+    await listedAs('underscore', 'kvq_under', 'Snake case.');
+    await listedAs('backslash', 'Paths', 'Opens c:\\kvq folders.');
+    await listedAs('same1', 'kvq same', 'Twin one.');
+    await listedAs('same2', 'KVQ Same', 'Twin two.');
+    // Matching, but never visible: hidden, unlisted, unpublished, password-gated.
+    await listedAs('hidden', 'kvq hidden', 'Hidden by the operator.');
+    await setGalleryHidden(made.hidden.id, true, rootId);
+    await listedAs('unlisted', 'kvq unlisted', 'Taken out by its owner.');
+    await setGalleryListing(made.unlisted.id, { listed: false }, actor, { env: ON });
+    await listedAs('unpublished', 'kvq unpublished', 'Not live any more.');
+    await unpublishApp(made.unpublished.id, actor);
+    await listedAs('gated', 'kvq gated', 'Behind a password.');
+    await setAppVisibility(made.gated.id, { visibility: 'password', passwordHash: 'x' }, actor);
+  });
+
+  const VISIBLE = ['byName', 'byDescription', 'percent', 'thousand', 'underscore', 'backslash', 'same1', 'same2'];
+
+  it('q matches the name or the description, case-insensitively; the cursor pages within the search', async () => {
+    const all = await listGallery({ limit: 48, q: 'kvq', env: ON });
+    expect(keysOf(all.items).sort()).toEqual([...VISIBLE].sort());
+    expect(keysOf((await listGallery({ limit: 48, q: '  KvQ  ', env: ON })).items).sort()).toEqual([...VISIBLE].sort());
+    expect(keysOf((await listGallery({ limit: 48, q: 'shift', env: ON })).items)).toContain('byName');
+    expect(keysOf((await listGallery({ limit: 48, q: 'kvq teams', env: ON })).items)).toEqual(['byDescription']);
+    expect((await listGallery({ limit: 48, q: 'no-such-kvq-text', env: ON })).items).toEqual([]);
+
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const page = await listGallery({ limit: 3, q: 'kvq', cursor, env: ON });
+      seen.push(...page.items.map((i) => i.url));
+      cursor = page.next;
+    } while (cursor);
+    expect(seen).toEqual(all.items.map((i) => i.url));
+  });
+
+  it('%, _ and \\ in q match themselves only', async () => {
+    expect(keysOf((await listGallery({ limit: 48, q: '100%', env: ON })).items)).toEqual(['percent']);
+    const percent = await listGallery({ limit: 48, q: '%', env: ON });
+    expect(percent.items.length).toBeGreaterThan(0);
+    for (const i of percent.items) expect(`${i.name} ${i.description}`).toContain('%');
+    expect(keysOf((await listGallery({ limit: 48, q: 'kvq_', env: ON })).items)).toEqual(['underscore']);
+    expect(keysOf((await listGallery({ limit: 48, q: '\\kvq', env: ON })).items)).toEqual(['backslash']);
+    expect((await listGallery({ limit: 48, q: "kvq' OR 1=1 --", env: ON })).items).toEqual([]);
+    expect((await listGalleryPage({ limit: 48, q: '_', env: ON })).items.every((i) => `${i.name}${i.description}`.includes('_'))).toBe(
+      true
+    );
+  });
+
+  it('sort=name orders A→Z case-insensitively, ties by slug; pages / total count the same filter', async () => {
+    const first = await listGalleryPage({ limit: 3, page: 1, q: 'kvq', sort: 'name', env: ON });
+    expect(first).toMatchObject({ page: 1, pages: 3, total: VISIBLE.length });
+    const names: string[] = [...first.items.map((i) => i.name)];
+    const urls: string[] = [...first.items.map((i) => i.url)];
+    for (let page = 2; page <= first.pages; page += 1) {
+      const p = await listGalleryPage({ limit: 3, page, q: 'kvq', sort: 'name', env: ON });
+      expect(p).toMatchObject({ page, pages: 3, total: VISIBLE.length });
+      names.push(...p.items.map((i) => i.name));
+      urls.push(...p.items.map((i) => i.url));
+    }
+    expect(names.map((n) => n.toLowerCase())).toEqual([...names.map((n) => n.toLowerCase())].sort());
+    expect(new Set(urls).size).toBe(VISIBLE.length);
+    // The twins share a name (case aside): the slug decides.
+    const twins = [urlOf('same1'), urlOf('same2')].sort();
+    expect(urls.filter((u) => twins.includes(u))).toEqual(twins);
+  });
+
+  it('sort=new pages match the cursor order; a page past the end is empty with the right counts', async () => {
+    const cursorOrder = (await listGallery({ limit: 48, q: 'kvq', env: ON })).items;
+    const pages = [1, 2, 3].map((page) => listGalleryPage({ limit: 3, page, q: 'kvq', env: ON }));
+    expect((await Promise.all(pages)).flatMap((p) => p.items)).toEqual(cursorOrder);
+    expect(await listGalleryPage({ limit: 3, page: 99, q: 'kvq', env: ON })).toEqual({ items: [], page: 99, pages: 3, total: VISIBLE.length });
+    expect(await listGalleryPage({ limit: 3, page: 1, q: 'no-such-kvq-text', env: ON })).toEqual({ items: [], page: 1, pages: 0, total: 0 });
+  });
+
+  it('hidden, unlisted, unpublished and password-gated apps appear in no mode and no count', async () => {
+    const never = ['hidden', 'unlisted', 'unpublished', 'gated'].map(urlOf);
+    const all = [
+      ...(await listGallery({ limit: 48, env: ON })).items,
+      ...(await listGallery({ limit: 48, q: 'kvq', env: ON })).items,
+      ...(await listGalleryPage({ limit: 48, q: 'kvq', sort: 'name', env: ON })).items,
+      ...(await listGalleryPage({ limit: 48, page: 1, env: ON })).items,
+    ];
+    for (const url of never) expect(all.map((i) => i.url)).not.toContain(url);
+    const unfiltered = await listGalleryPage({ limit: 48, page: 1, env: ON });
+    expect(unfiltered.total).toBe((await slugsInGallery()).length);
   });
 });
 

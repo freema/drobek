@@ -121,7 +121,7 @@ What differs from the artifact sandbox (the app CSP):
   server's): text files 512 KiB each, 5 MiB and 200 files per version;
   assets `APP_ASSET_MAX_BYTES` 100 MiB each, `APP_ASSETS_QUOTA` 1 GiB per app,
   `APP_ASSET_UPLOADS_PER_HOUR` 60; an upload URL is single use, 30 minutes.
-- Asset types come from the bytes: PNG, JPEG, GIF, WebP, SVG, MP4 (H.264/AAC),
+- Asset types come from the bytes: PNG, JPEG, GIF, WebP, AVIF, ICO, SVG, MP4 (H.264/AAC),
   WebM, M4A, MP3, Ogg, WAV, WOFF, WOFF2. No transcoding (MOV/HEVC: convert
   first). A big `data:` URI inside the HTML: save it as a file and upload it.
 - An app text file at a path wins over an asset there (`asset_path_taken`).
@@ -137,7 +137,7 @@ What differs from the artifact sandbox (the app CSP):
 | `asset_size_mismatch` | the PUT body is not `size` bytes | `stat` the file, ask for a new URL with the exact size |
 | `upload_token_invalid` | the URL was used (even by a failed PUT) or is older than 30 minutes | a new `create_asset_upload` |
 | `rate_limited` | over `APP_ASSET_UPLOADS_PER_HOUR` upload URLs | upload what you have URLs for; ask for more after the hour |
-| `invalid_path` | `write_files` with a media extension (`.mp4`, `.mp3`), `..` or an absolute path | binaries via `create_asset_upload`; app-relative paths |
+| `invalid_path` | `write_files` with a media extension (`.mp4`, `.mp3`) or `..` | binaries via `create_asset_upload`; app-relative paths |
 | `limit_exceeded` | a text file over 512 KiB (inlined base64, a bundled library) | move the binary out; load the library from esm.sh |
 | `unresolved_import` | a React artifact package not in `drobek.json` | add its pinned esm.sh URL |
 | `secret_in_source` | an API key in the artifact's code | remove it; the owner sets it in the dashboard (`drobek.proxy`) |

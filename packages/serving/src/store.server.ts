@@ -4,8 +4,9 @@
  *  - host resolution  `slug → {target → {app, version}}` — what a host serves
  *    RIGHT NOW (the published pointer, the newest ok version, version N). This
  *    is the only mutable one: it is busted per slug by the `drobek:app-changed`
- *    events (every write, restore, publish; see subscribeServeCache) and has a
- *    short TTL backstop for changes no event announces (e.g. an SQL edit).
+ *    events (every write, restore, publish, settings and gallery change; see
+ *    subscribeServeCache) and has a short TTL backstop for changes no event
+ *    announces (e.g. an SQL edit).
  *  - version manifests `versionId → served manifest` — a version is immutable,
  *    so this never needs busting (count-capped LRU).
  *  - file bytes `sha256 → Buffer` — content-addressed, byte-capped LRU
@@ -31,7 +32,7 @@
  * caching logic against in-memory fakes.
  */
 import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
-import type { AppHostTarget } from '@drobek/apps';
+import { isGalleryVisible, type AppHostTarget } from '@drobek/apps';
 import { appVersions, apps, blobs, getDb, versionFiles } from '@drobek/db';
 import { primaryDomainOf, resolveCustomHost, type CustomHostResolution } from '@drobek/domains';
 import { ByteLru, CountLru, DEFAULT_BLOB_CACHE_BYTES } from './lru.js';
@@ -55,6 +56,13 @@ export interface ServeApp {
   primaryDomain?: string | null;
   /** `apps.locked_reason` (NSO-293): non-null = taken down → every host answers 451. */
   lockedReason?: string | null;
+  /**
+   * The public gallery shows the app right now (isGalleryVisible: listed,
+   * published, public, not taken down, not deleted, not hidden) — its
+   * production host and custom domains may be framed by the operator's
+   * GALLERY_FRAME_ANCESTORS. Absent = false.
+   */
+  galleryVisible?: boolean;
 }
 
 export interface ServeVersion {
@@ -230,6 +238,11 @@ async function resolveFromDb(target: AppHostTarget): Promise<Resolved> {
       lockedReason: apps.lockedReason,
       status: apps.status,
       publishedVersionId: apps.publishedVersionId,
+      publishedAt: apps.publishedAt,
+      deletedAt: apps.deletedAt,
+      galleryListed: apps.galleryListed,
+      galleryDescription: apps.galleryDescription,
+      galleryHiddenAt: apps.galleryHiddenAt,
     })
     .from(apps)
     .where(and(eq(apps.slug, target.slug), isNull(apps.deletedAt)))
@@ -242,6 +255,7 @@ async function resolveFromDb(target: AppHostTarget): Promise<Resolved> {
     visibility: row.visibility as Visibility,
     frameAncestors: row.frameAncestors,
     lockedReason: row.lockedReason,
+    galleryVisible: isGalleryVisible(row),
   };
 
   const okVersion = (where: ReturnType<typeof and>) =>

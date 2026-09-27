@@ -138,7 +138,7 @@ Add a package as a pinned esm.sh URL, e.g. `"date-fns": "https://esm.sh/date-fns
 | `unresolved_import` | a package not in `drobek.json`, or a backend SDK (`hint`) | add a pinned esm.sh URL, or follow the `hint` skill |
 | `build_error` | syntax error at `file:line:column` | fix that line |
 | `invalid_config` | `drobek.json` not JSON / wrong shape | rewrite it as above |
-| `invalid_path` | absolute path, `..`, disallowed extension | app-relative text files only |
+| `invalid_path` | `..`, disallowed extension | app-relative text files only (a leading `/` is dropped) |
 | `limit_exceeded` | too many/big files | split files; load libraries from esm.sh |
 | `secret_in_source` | a key/token in a file; nothing stored | remove it; the owner sets it in the dashboard |
 | `app_locked` | another user's agent writes the app | tell the user; retry after `expires_at` |

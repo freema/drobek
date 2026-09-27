@@ -1,6 +1,6 @@
 import { expect, test, type APIRequestContext, type BrowserContext, type Page } from '@playwright/test';
 import { BASE_URL_WEB } from '../playwright.config';
-import { prodHost, urlOf } from './helpers/apps-host';
+import { hostRequest, previewHost, prodHost, urlOf } from './helpers/apps-host';
 import { loginViaEmail, skipUnlessLocal, uniqueEmail } from './helpers/auth';
 import { FULL_SCOPE, callTool, mcpClient, type McpClient } from './helpers/mcp';
 import { addMembership, personalWorkspaceOf, userIdByEmail, withDb } from './helpers/seed';
@@ -19,6 +19,11 @@ import { addMembership, personalWorkspaceOf, userIdByEmail, withDb } from './hel
  *  - MCP: `set_gallery_listing` without `user_confirmed: true` →
  *    user_confirmation_required and nothing listed; with it → in the API,
  *    get_app shows the state, audited as the agent; unlisting → gone;
+ *  - search / sort / pages: `?q` finds the entry by its description, page
+ *    mode answers `{ items, page, pages, total }`; while listed, the
+ *    production host (never the preview host) lets the gallery origin
+ *    (GALLERY_FRAME_ANCESTORS, set in both composes) frame it, and
+ *    unlisting withdraws that at once;
  *  - a super-admin hides the entry in /admin/abuse → gone at once; the agent
  *    cannot re-list it (gallery_hidden) and the Overview says so; "Show again"
  *    brings it back.
@@ -27,6 +32,7 @@ import { addMembership, personalWorkspaceOf, userIdByEmail, withDb } from './hel
  */
 
 const SUPER_ADMIN = 'e2e-superadmin@drobek.test';
+const GALLERY_ORIGIN = 'https://gallery.example.test';
 const GALLERY = `${BASE_URL_WEB}/api/public/gallery`;
 
 interface GalleryItem {
@@ -251,6 +257,37 @@ test.describe('gallery: list from the dashboard and over MCP, public API, admin 
     expect(off.json).toMatchObject({ listed: false, changed: true });
     expect(await entryOf(request, app.slug)).toBeUndefined();
     expect((await galleryAudit(app.slug)).at(-1)).toMatchObject({ action: 'app.gallery_unlisted', actor_kind: 'agent' });
+  });
+
+  test('search, sort and pages; the gallery origin may frame the production host only while listed', async ({ request }) => {
+    skipUnlessLocal();
+    const token = `kvq${Date.now().toString(36)}`;
+    const framedBy = async (host: string) =>
+      String((await hostRequest(host, '/')).headers['content-security-policy'] ?? '').includes(GALLERY_ORIGIN);
+    expect(await framedBy(prodHost(app.slug))).toBe(false);
+
+    const listed = await callTool(owner.client, 'set_gallery_listing', {
+      app_id: app.app_id,
+      listed: true,
+      description: `Live preview ${token}.`,
+      user_confirmed: true,
+    });
+    expect(listed.isError, listed.text).toBe(false);
+
+    const found = await request.get(`${GALLERY}?q=${token.toUpperCase()}`);
+    expect(found.headers()['cache-control']).toBe('public, max-age=60');
+    expect(((await found.json()) as { items: GalleryItem[] }).items.map((i) => i.url)).toEqual([urlOf(prodHost(app.slug))]);
+    const paged = await request.get(`${GALLERY}?q=${token}&page=1&sort=name`);
+    expect(await paged.json()).toMatchObject({ page: 1, pages: 1, total: 1, items: [{ url: urlOf(prodHost(app.slug)) }] });
+    expect(await (await request.get(`${GALLERY}?q=${token}&page=2`)).json()).toEqual({ items: [], page: 2, pages: 1, total: 1, previews: true });
+    expect(await (await request.get(`${GALLERY}?q=${token}%25`)).json()).toEqual({ items: [] });
+
+    expect(await framedBy(prodHost(app.slug))).toBe(true);
+    expect(await framedBy(previewHost(app.slug))).toBe(false);
+
+    const off = await callTool(owner.client, 'set_gallery_listing', { app_id: app.app_id, listed: false });
+    expect(off.isError, off.text).toBe(false);
+    expect(await framedBy(prodHost(app.slug))).toBe(false);
   });
 
   test('a super-admin hides the entry: gone at once, the owner cannot re-list it; "Show again" restores it', async ({

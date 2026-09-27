@@ -39,7 +39,7 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     surface: 'MCP tool isError; module route 404 (DrobekError)',
     meaning:
       'The app, workspace, version or file does not exist — or you are not a member of its workspace (both answer the same, so ids cannot be probed). From skill_info / configure_module: no such skill or module on this server (`available` lists the ones that exist). From query_data or a data route: the app declares no such collection (`available` lists its collections), or no such record.',
-    fix: 'Call list_apps for the app ids and workspaces you can reach; get_app lists the files and versions of an app; skill_info() lists the skills and modules. For data: declare the collection with configure_module(\'data\') first.',
+    fix: 'Depending on what was missing: an app or workspace → list_apps shows the ones you can reach; a file or version → get_app lists them; a skill or module → skill_info(); a data collection → declare it with configure_module(\'data\') first.',
   },
   {
     code: 'forbidden',
@@ -53,13 +53,13 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     surface: 'MCP tool isError',
     meaning:
       'An argument breaks the tool contract: more than 20 files in one write_files, the same path twice, deleting a file that does not exist, reasoning over 300 characters, an empty name, a non-positive version number — or a configure_module config that fails the module\'s schema (`issues[]` carries each field path) or contains a credential — or a query_data filter/sort/cursor the collection does not allow, or a limit outside 1–100.',
-    fix: 'Read `message` (and `issues[].path`), fix the arguments and call again. Split large changes into several write_files calls of at most 20 files. For a module config, skill_info(module) shows the schema.',
+    fix: 'Read `message` (and `issues[].path`) — it names the argument — fix it and call again. Too many files: split into several write_files calls of at most 20. A module config: skill_info(module) shows the schema.',
   },
   {
     code: 'invalid_path',
     surface: 'MCP tool isError; compile.errors[]',
     meaning:
-      'A file path is unsafe (absolute, `..`, empty segment, control characters) or has an extension apps may not contain / that write_files cannot write as text.',
+      'A file path is unsafe (`..`, empty segment, control characters; a leading `/` is simply dropped) or has an extension apps may not contain / that write_files cannot write as text.',
     fix: 'Use app-relative paths like `src/App.tsx` with a text extension (.tsx .ts .jsx .js .mjs .css .json .html .txt .md .svg .webmanifest).',
   },
   {
@@ -73,7 +73,7 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     code: 'secret_in_source',
     surface: 'MCP tool isError (nothing is stored); compile.errors[]',
     meaning:
-      'A file contains something that looks like a credential (sk-… key, AWS key, GitHub token, private key, `apiKey = "…"`). App files are public — the write is refused and no version is stored.',
+      'A file contains something that looks like a credential (sk-… key, Stripe or Slack secret, AWS key, GitHub token, private key, `apiKey = "…"` / `clientSecret: "…"`). App files are public — the write is refused and no version is stored.',
     fix: 'Remove the value from the file. Secrets are entered by the app owner in the drobek dashboard and used server-side, never shipped in app files.',
   },
   {
@@ -145,7 +145,7 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     code: 'asset_type_not_allowed',
     surface: 'MCP tool isError (create_asset_upload); upload URL 415',
     meaning:
-      'The declared content_type does not fit the path\'s extension, or the uploaded bytes are not an allowed asset type for it (`allowed`; `type` = what the bytes are). The type comes from the file\'s content, never its name: an HTML page named film.mp4 is refused. Allowed: PNG, JPEG, GIF, WebP, SVG, MP4 (H.264/AAC), WebM, M4A, MP3, Ogg, WAV, WOFF, WOFF2.',
+      'The declared content_type does not fit the path\'s extension, or the uploaded bytes are not an allowed asset type for it (`allowed`; `type` = what the bytes are). The type comes from the file\'s content, never its name: an HTML page named film.mp4 is refused. Allowed: PNG, JPEG, GIF, WebP, AVIF, ICO, SVG, MP4 (H.264/AAC), WebM, M4A, MP3, Ogg, WAV, WOFF, WOFF2.',
     fix: 'Upload the real file with the matching extension (a .mov or .mkv must be converted to MP4 or WebM first). Text files (HTML, JS, CSS, JSON) go through write_files instead.',
   },
   {

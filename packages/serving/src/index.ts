@@ -33,9 +33,11 @@ export {
   appSecurityHeaders,
   frameSrcConfigError,
   frameSrcFromEnv,
+  galleryFrameAncestorsConfigError,
+  galleryFrameAncestorsFromEnv,
   parseFrameAncestors,
   parseFrameSrcExtra,
-  withDashboardAncestor,
+  withFrameAncestors,
   type SecurityHeaderInput,
 } from './csp.js';
 export {

@@ -70,13 +70,13 @@ export const TOOL_DOCS: ToolDoc[] = [
     title: 'List apps',
     scope: 'read (any role in the workspace)',
     description:
-      'Start here. Returns who you are, every workspace you belong to (slug + your role), and the apps in them: app_id, name, slug, workspace, preview_url, published_url/published_version (when published), latest_version, its compile_status, locked_by when another agent is writing, and locked_by_admin + locked_reason when the server operator took the app down. Pass `workspace` to list one workspace only (a workspace you cannot reach answers not_found).',
+      'Start here. Returns who you are, every workspace you belong to (slug + your role), and the apps in them: app_id, name, slug, workspace, preview_url, published_url/published_version (when published), latest_version, its compile_status, locked_by when another agent is writing, and locked_by_admin + locked_reason when the server operator took the app down. Pass `workspace` to list one workspace only (a workspace you cannot reach answers not_found). For a server super-admin it also returns `all_workspaces` — every workspace on the server, which a super-admin reaches like its admin (the dashboard shows the same list): pass one of their slugs as `workspace` to see its apps.',
     annotations: READ_ONLY,
     fields: [
       { name: 'workspace', type: 'string (optional)', required: false, description: 'Only this workspace (slug).' },
     ],
     returns:
-      '{ user:{email}, workspaces:[{slug,name,kind,role}], apps:[{app_id,name,slug,workspace,preview_url,published_url?,published_version?,latest_version,compile_status,locked_by?,locked_by_admin?,locked_reason?}] }',
+      '{ user:{email}, workspaces:[{slug,name,kind,role}], apps:[{app_id,name,slug,workspace,preview_url,published_url?,published_version?,latest_version,compile_status,locked_by?,locked_by_admin?,locked_reason?}], all_workspaces?:[{slug,name,kind}] }',
     example: {},
   },
   {
@@ -179,7 +179,7 @@ export const TOOL_DOCS: ToolDoc[] = [
         description: 'The version to put live; default the newest version that compiled (an older one = production rollback).',
       },
     ],
-    returns: '{ published_version, previous_version, published_url, domains:[host, …verified custom domains], assets:"draft"|"as_last_published" }',
+    returns: '{ published_version, previous_version, published_url, domains:[host, …verified custom domains], assets:"draft"|"as_last_published" } — assets "draft": the app\'s current uploads went live with this version; "as_last_published": an older version came back with the assets it served when it was last live',
     example: { app_id: 'k3v9x0…' },
   },
   {
@@ -289,7 +289,7 @@ export const TOOL_DOCS: ToolDoc[] = [
     title: 'Get an upload URL for a big file',
     scope: 'write (editor+ role in the workspace)',
     description:
-      'How a video, audio file, image or font reaches the app — write_files is text-only, and a binary must NEVER be pasted as base64. Returns a single-use upload URL (valid 30 minutes) for ONE file at `path`: run the returned `curl` line (`curl -T <file> \'<url>\'`) with the real file in your own sandbox, or give the link to the user — opening it in a browser shows an upload page. The preview then serves the file at `/<path>` at once, the production URL after the next publish (an upload never changes a published app on its own), in the same URL space as the app\'s own files: keep the paths your HTML already uses (`<video src="film.mp4" poster="poster.jpg">`, `img/s1.jpg`). Porting a Claude artifact: write the HTML/JS with write_files, then upload each binary at the relative path the page uses. Checked before the URL exists: the path (1–4 segments, letters/digits/._-, an allowed extension: png jpg jpeg gif webp svg mp4 m4v m4a webm mp3 ogg oga wav woff woff2), no app file at that path (asset_path_taken), `size` within APP_ASSET_MAX_BYTES (asset_too_large) and the app\'s APP_ASSETS_QUOTA (asset_quota_exceeded), a `content_type` that fits the extension (asset_type_not_allowed). The upload itself is sniffed: the bytes decide the type (an HTML file named film.mp4 is refused). Uploading to an existing asset path replaces it (in the preview; production after a publish). Videos play and seek (HTTP Range).',
+      'How a video, audio file, image or font reaches the app — write_files is text-only, and a binary must NEVER be pasted as base64. Returns a single-use upload URL (valid 30 minutes) for ONE file at `path`: run the returned `curl` line (`curl -T <file> \'<url>\'`) with the real file in your own sandbox, or give the link to the user — opening it in a browser shows an upload page. The preview then serves the file at `/<path>` at once, the production URL after the next publish (an upload never changes a published app on its own), in the same URL space as the app\'s own files: keep the paths your HTML already uses (`<video src="film.mp4" poster="poster.jpg">`, `img/s1.jpg`). Porting a Claude artifact: write the HTML/JS with write_files, then upload each binary at the relative path the page uses. Checked before the URL exists: the path (1–4 segments, letters/digits/._-, an allowed extension: png jpg jpeg gif webp avif ico svg mp4 m4v m4a webm mp3 ogg oga wav woff woff2), no app file at that path (asset_path_taken), `size` within APP_ASSET_MAX_BYTES (asset_too_large) and the app\'s APP_ASSETS_QUOTA (asset_quota_exceeded), a `content_type` that fits the extension (asset_type_not_allowed). The upload itself is sniffed: the bytes decide the type (an HTML file named film.mp4 is refused). Uploading to an existing asset path replaces it (in the preview; production after a publish). Videos play and seek (HTTP Range).',
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     fields: [
       { name: 'app_id', type: 'string', required: true, description: 'The app id.' },
