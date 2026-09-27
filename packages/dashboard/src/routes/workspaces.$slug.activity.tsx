@@ -64,8 +64,9 @@ const styles = {
   },
   field: controls.field,
   label: controls.label,
-  input: controls.select,
+  input: { ...controls.select, maxWidth: '12rem' },
   date: { ...controls.input, width: '9.5rem' },
+  actions: { display: 'flex', gap: '0.5rem', alignItems: 'flex-end', flex: '1 1 auto' },
   applyBtn: controls.button,
   clearLink: controls.link,
   csvLink: { ...controls.link, color: '#1e3a8a', marginLeft: 'auto' },
@@ -251,19 +252,17 @@ export default function WorkspaceActivityRoute() {
             data-testid="filter-to"
           />
         </div>
-        <button type="submit" style={styles.applyBtn} data-testid="filter-apply">
-          Apply
-        </button>
-        <Link to={base} style={styles.clearLink} data-testid="filter-clear">
-          Clear
-        </Link>
-        <a
-          href={`${base}/export.csv${search}`}
-          style={styles.csvLink}
-          data-testid="csv-export"
-        >
-          ↓ Export CSV
-        </a>
+        <div style={styles.actions}>
+          <button type="submit" style={styles.applyBtn} data-testid="filter-apply">
+            Apply
+          </button>
+          <Link to={base} style={styles.clearLink} data-testid="filter-clear">
+            Clear
+          </Link>
+          <a href={`${base}/export.csv${search}`} style={styles.csvLink} data-testid="csv-export">
+            ↓ Export CSV
+          </a>
+        </div>
       </Form>
       <p style={styles.exportNote} data-testid="csv-export-note">
         {search
