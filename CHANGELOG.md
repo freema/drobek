@@ -13,6 +13,8 @@
   - Workspaces: a super-admin gets cards linking to Publishing and the Moderation queue, and can filter the list of all workspaces. The create-team form fits on one row.
   - App Files: the tree and the viewer stack on a phone instead of overflowing the page.
   - Empty lists on these pages say what would appear there and what to do next.
+- **Workspace orientation** (NSO-371). The workspace header shows the slug next to the name, the owner of a personal workspace you are not a member of, and where your access comes from: your membership role, or "Superadmin access — not a member". A "Switch workspace" menu reaches your account and your own workspaces; the all-workspaces list names each personal workspace's owner and your access. Authorization is unchanged.
+- **Connecting an agent from `/me`** (NSO-371). The MCP URL, the Claude Code command and every client snippet have a Copy button that says whether the copy worked (and selects the text when the browser refuses). A picker shows the agent guide's steps for Claude Code, Claude (web and desktop), Cursor and Codex; the page names the workspace the agent uses by default, lists your workspaces and, while that workspace is empty, offers a first prompt to paste. `/me/connections` explains that it lists approved OAuth clients and points to API keys, the other way in.
 
 ### Docs
 - **Module directory and submission form** (NSO-340). The published modules are also listed at [www.drobek.app/modules](https://www.drobek.app/modules); authors submit theirs through the GitHub issue form `module-submission` (package, repository, contract, license and the module rules) instead of a pull request to `docs/MODULES.md`.

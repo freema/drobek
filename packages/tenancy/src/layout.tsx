@@ -141,7 +141,110 @@ const styles = {
     background: '#dbeafe',
     border: '1px solid #bfdbfe',
   },
+  superBadge: {
+    display: 'inline-block',
+    padding: '0.1rem 0.55rem',
+    fontSize: '0.72rem',
+    fontWeight: 700,
+    letterSpacing: '0.02em',
+    borderRadius: '999px',
+    color: '#7c2d12',
+    background: '#ffedd5',
+    border: '1px solid #fdba74',
+  },
+  slug: { color: '#71717a', fontSize: '0.9rem', overflowWrap: 'anywhere' },
+  accessNote: { margin: '0.4rem 0 0', color: '#52525b', fontSize: '0.88rem', overflowWrap: 'anywhere' },
+  switcher: { position: 'relative', marginLeft: 'auto' },
+  switcherSummary: {
+    ...buttonBase,
+    listStyle: 'none',
+    height: '1.9rem',
+    fontSize: '0.82rem',
+    color: '#3f3f46',
+  },
+  switcherMenu: {
+    position: 'absolute',
+    right: 0,
+    top: 'calc(100% + 0.3rem)',
+    zIndex: 20,
+    width: 'min(20rem, calc(100vw - 3.5rem))',
+    maxHeight: '22rem',
+    overflowY: 'auto',
+    margin: 0,
+    padding: '0.35rem',
+    listStyle: 'none',
+    background: '#fff',
+    border: '1px solid #e4e4e7',
+    borderRadius: '10px',
+    boxShadow: '0 8px 24px rgba(0,0,0,0.08)',
+  },
+  switcherLink: {
+    display: 'flex',
+    alignItems: 'baseline',
+    gap: '0.4rem',
+    flexWrap: 'wrap',
+    padding: '0.4rem 0.55rem',
+    borderRadius: '6px',
+    color: '#1a1a1a',
+    textDecoration: 'none',
+    fontSize: '0.88rem',
+    overflowWrap: 'anywhere',
+  },
+  switcherCurrent: { background: '#f4f4f5' },
+  switcherMeta: { color: '#71717a', fontSize: '0.78rem' },
+  switcherSep: { borderTop: '1px solid #f0f0f2', margin: '0.3rem 0' },
 } satisfies Record<string, CSSProperties>;
+
+/**
+ * "Switch" menu of the workspace header: your account, your own workspaces
+ * (each with its slug, so two "Personal" ones stay apart) and the workspaces
+ * page. A native <details>, so it opens and closes by keyboard without JS.
+ */
+function WorkspaceSwitcher({
+  current,
+  items,
+  superAdmin,
+}: {
+  current: string;
+  items: readonly { slug: string; name: string; kind: string; role: string }[];
+  superAdmin: boolean;
+}) {
+  return (
+    <details key={current} style={styles.switcher} data-testid="workspace-switcher">
+      <summary style={styles.switcherSummary}>Switch workspace ▾</summary>
+      <ul style={styles.switcherMenu}>
+        <li>
+          <Link to="/me" style={styles.switcherLink} data-testid="switch-account">
+            Your account
+          </Link>
+        </li>
+        <li aria-hidden="true" style={styles.switcherSep} />
+        {items.map((ws) => (
+          <li key={ws.slug}>
+            <Link
+              to={workspaceHref(ws.slug)}
+              style={ws.slug === current ? mergeStyles(styles.switcherLink, styles.switcherCurrent) : styles.switcherLink}
+              aria-current={ws.slug === current ? 'page' : undefined}
+              data-testid="switch-workspace"
+              data-slug={ws.slug}
+            >
+              <span>{ws.name}</span>
+              <span style={styles.switcherMeta}>
+                /{ws.slug} · {ws.role}
+              </span>
+            </Link>
+          </li>
+        ))}
+        <li aria-hidden="true" style={styles.switcherSep} />
+        <li>
+          <Link to="/workspaces" style={styles.switcherLink}>
+            {superAdmin ? 'All workspaces of this server' : 'All your workspaces'}
+          </Link>
+        </li>
+      </ul>
+    </details>
+  );
+}
 
 /** The tab bar look shared by the workspace tabs and the app tabs. */
 export const tabStyles = {
@@ -279,11 +382,30 @@ export function WorkspacePage({
       <header data-testid="workspace-header">
         <div style={styles.headRow}>
           <h1 style={styles.h1}>{workspace.name}</h1>
+          <span style={styles.slug} data-testid="workspace-slug">
+            /{workspace.slug}
+          </span>
           <span style={styles.badge}>{workspace.kind}</span>
-          <span style={styles.roleBadge} data-testid="my-role">
+          <span
+            style={workspace.roleSource === 'superadmin' ? styles.superBadge : styles.roleBadge}
+            title={workspace.roleDetail}
+            data-testid="my-role"
+            data-role-source={workspace.roleSource}
+          >
             {workspace.role}
           </span>
+          <WorkspaceSwitcher current={workspace.slug} items={workspace.switchTo} superAdmin={workspace.superAdmin} />
         </div>
+        {workspace.ownerEmail || workspace.roleSource === 'superadmin' ? (
+          <p style={styles.accessNote} data-testid="workspace-access-note">
+            {workspace.ownerEmail ? (
+              <>
+                Personal workspace of <strong data-testid="workspace-owner">{workspace.ownerEmail}</strong>.{' '}
+              </>
+            ) : null}
+            {workspace.roleDetail}
+          </p>
+        ) : null}
         <nav style={tabStyles.bar} aria-label="Workspace sections" data-testid="workspace-tabs">
           {tabs.map((t) => (
             <Link

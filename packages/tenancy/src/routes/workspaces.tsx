@@ -33,8 +33,8 @@ const styles = {
     marginBottom: '0.5rem',
     flexWrap: 'wrap',
   },
-  wsLink: { fontWeight: 600, color: '#1a1a1a', textDecoration: 'none' },
-  slug: { color: '#8a8a8e', fontSize: '0.85rem' },
+  wsLink: { fontWeight: 600, color: '#1a1a1a', textDecoration: 'none', overflowWrap: 'anywhere', minWidth: 0 },
+  slug: { color: '#71717a', fontSize: '0.85rem', overflowWrap: 'anywhere', minWidth: 0 },
   badge: {
     display: 'inline-block',
     padding: '0.1rem 0.55rem',
@@ -60,6 +60,18 @@ const styles = {
     border: '1px solid #bfdbfe',
     marginLeft: 'auto',
   },
+  superBadge: {
+    display: 'inline-block',
+    padding: '0.1rem 0.55rem',
+    fontSize: '0.72rem',
+    fontWeight: 700,
+    borderRadius: '999px',
+    color: '#7c2d12',
+    background: '#ffedd5',
+    border: '1px solid #fdba74',
+    marginLeft: 'auto',
+  },
+  owner: { color: '#52525b', fontSize: '0.85rem', overflowWrap: 'anywhere', minWidth: 0 },
   form: { display: 'flex', gap: '0.5rem', alignItems: 'flex-end', flexWrap: 'wrap', marginTop: '0.75rem' },
   field: { display: 'flex', flexDirection: 'column', gap: '0.2rem', flex: '1 1 12rem', minWidth: 0 },
   cards: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(15rem, 1fr))', gap: '0.6rem' },
@@ -89,10 +101,23 @@ const styles = {
   back: { fontSize: '0.9rem', color: '#555' },
 } as const;
 
-function AllWorkspaces({ workspaces }: { workspaces: readonly { slug: string; name: string; kind: string }[] }) {
+interface AdminWorkspaceRow {
+  slug: string;
+  name: string;
+  kind: string;
+  ownerEmail: string | null;
+  myRole: string | null;
+}
+
+function AllWorkspaces({ workspaces }: { workspaces: readonly AdminWorkspaceRow[] }) {
   const [query, setQuery] = useState('');
   const q = query.trim().toLowerCase();
-  const shown = q ? workspaces.filter((ws) => ws.slug.includes(q) || ws.name.toLowerCase().includes(q)) : workspaces;
+  const shown = q
+    ? workspaces.filter(
+        (ws) =>
+          ws.slug.includes(q) || ws.name.toLowerCase().includes(q) || (ws.ownerEmail ?? '').toLowerCase().includes(q)
+      )
+    : workspaces;
   return (
     <section>
       <h2 style={styles.h2}>Server administration</h2>
@@ -110,7 +135,7 @@ function AllWorkspaces({ workspaces }: { workspaces: readonly { slug: string; na
       <h2 style={styles.h2}>All workspaces</h2>
       <div style={controls.row}>
         <label style={controls.field}>
-          <span style={controls.label}>Filter by name or slug</span>
+          <span style={controls.label}>Filter by name, slug or owner</span>
           <input
             type="search"
             value={query}
@@ -131,12 +156,26 @@ function AllWorkspaces({ workspaces }: { workspaces: readonly { slug: string; na
       ) : (
         <ul style={styles.list} data-testid="all-workspaces">
           {shown.map((ws) => (
-            <li key={ws.slug} style={styles.item}>
+            <li key={ws.slug} style={styles.item} data-testid="all-workspace-item" data-slug={ws.slug}>
               <Link to={workspaceHref(ws.slug)} style={styles.wsLink}>
                 {ws.name}
               </Link>
               <span style={styles.slug}>/{ws.slug}</span>
               <span style={styles.badge}>{ws.kind}</span>
+              {ws.ownerEmail ? (
+                <span style={styles.owner} data-testid="workspace-owner">
+                  owner {ws.ownerEmail}
+                </span>
+              ) : null}
+              {ws.myRole ? (
+                <span style={styles.roleBadge} data-testid="all-workspace-access">
+                  {ws.myRole}
+                </span>
+              ) : (
+                <span style={styles.superBadge} data-testid="all-workspace-access">
+                  Superadmin access — not a member
+                </span>
+              )}
             </li>
           ))}
         </ul>
@@ -156,7 +195,8 @@ export default function WorkspacesRoute() {
     <DashboardPage>
       <h1 style={styles.h1}>Workspaces</h1>
       <p style={styles.hint}>
-        Your workspaces and your role in each of them.
+        Your workspaces and your role in each of them. The slug after the name tells apart workspaces with the same
+        name; your agent picks a workspace by its slug and uses your personal one when you name none.
       </p>
 
       <ul style={styles.list} data-testid="my-workspaces">

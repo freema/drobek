@@ -3,7 +3,7 @@
  * is pure (decideWorkspaceAccess in roles.ts); this module is the thin
  * session/db adapter that loaders and actions call.
  */
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { data } from 'react-router';
 import {
   isSuperAdmin,
@@ -201,6 +201,25 @@ export async function listUserWorkspaces(
     .innerJoin(workspaces, eq(workspaces.id, memberships.workspaceId))
     .where(eq(memberships.userId, userId))
     .orderBy(workspaces.createdAt);
+}
+
+/**
+ * The owner e-mail of each personal workspace (its one workspace-admin —
+ * invites are team-only), keyed by workspace id. Team workspaces have no
+ * single owner and are left out. Without `workspaceIds`: every personal
+ * workspace of the server.
+ */
+export async function personalWorkspaceOwners(workspaceIds?: readonly string[]): Promise<Map<string, string>> {
+  if (workspaceIds && workspaceIds.length === 0) return new Map();
+  const conditions = [eq(workspaces.kind, 'personal'), eq(memberships.role, 'workspace-admin')];
+  if (workspaceIds) conditions.push(inArray(workspaces.id, [...workspaceIds]));
+  const rows = await getDb()
+    .select({ workspaceId: workspaces.id, email: users.email })
+    .from(workspaces)
+    .innerJoin(memberships, eq(memberships.workspaceId, workspaces.id))
+    .innerJoin(users, eq(users.id, memberships.userId))
+    .where(and(...conditions));
+  return new Map(rows.map((r) => [r.workspaceId, r.email]));
 }
 
 export async function listAllWorkspaces(): Promise<WorkspaceSummary[]> {

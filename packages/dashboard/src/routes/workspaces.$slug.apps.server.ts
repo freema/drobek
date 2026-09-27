@@ -38,7 +38,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       kind: access.workspace.kind,
     },
     /** NSO-342: the shared workspace chrome (breadcrumb, badges, tabs). */
-    nav: workspaceNav(access),
+    nav: await workspaceNav(access),
     apps: filterApps(all, filters).map((app) => ({
       ...app,
       // NSO-342: the sandboxed iframe thumbnail (or why it is a placeholder).

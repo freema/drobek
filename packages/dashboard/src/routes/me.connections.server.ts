@@ -2,7 +2,8 @@
  * GET/POST /me/connections — server half (M2-04, NSO-284). The OAuth clients
  * (DCR or CIMD) that currently hold a live grant for the signed-in user:
  * name from the registration / metadata document, how it registered, the
- * granted scopes and when it last got a token. "Revoke" deletes every access
+ * granted scopes and when it last got a token. API keys are the other way in;
+ * the page only counts the live ones and links /me/api-keys. "Revoke" deletes every access
  * + refresh token (and pending code) of that client for this user — its next
  * MCP call is 401 and its refresh token is `invalid_grant`.
  *
@@ -16,14 +17,17 @@ import {
   type LoaderFunctionArgs,
 } from 'react-router';
 import { requireSessionUser } from '@drobek/auth';
-import { listConnections } from '@drobek/oauth';
+import { listApiKeys, listConnections } from '@drobek/oauth';
 import { shapeConnections } from '../account-view.js';
 import { AccountError, revokeAccountConnection } from '../account.server.js';
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const user = await requireSessionUser(request);
-  const connections = await listConnections(user.id);
-  return { connections: shapeConnections(connections) };
+  const [connections, keys] = await Promise.all([listConnections(user.id), listApiKeys(user.id)]);
+  return {
+    connections: shapeConnections(connections),
+    activeApiKeys: keys.filter((k) => k.revokedAt === null).length,
+  };
 }
 
 export type ConnectionsActionData = { ok: false; error: string };

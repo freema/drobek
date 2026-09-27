@@ -35,7 +35,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     workspaceSlug: access.workspace.slug,
     workspaceName: access.workspace.name,
     /** NSO-342: the shared workspace chrome. */
-    nav: workspaceNav(access),
+    nav: await workspaceNav(access),
   };
 }
 

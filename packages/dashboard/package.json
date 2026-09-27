@@ -180,6 +180,14 @@
       "types": "./src/routes/api.apps.$id.end-user-sessions.revoke.server.ts",
       "default": "./dist/routes/api.apps.$id.end-user-sessions.revoke.server.js"
     },
+    "./routes/me": {
+      "types": "./src/routes/me.tsx",
+      "default": "./dist/routes/me.js"
+    },
+    "./routes/me.server": {
+      "types": "./src/routes/me.server.ts",
+      "default": "./dist/routes/me.server.js"
+    },
     "./routes/me.api-keys": {
       "types": "./src/routes/me.api-keys.tsx",
       "default": "./dist/routes/me.api-keys.js"
@@ -268,6 +276,7 @@
     "test:run": "vitest run"
   },
   "dependencies": {
+    "@drobek/agent-dx": "workspace:*",
     "@drobek/apps": "workspace:*",
     "@drobek/audit": "workspace:*",
     "@drobek/auth": "workspace:*",

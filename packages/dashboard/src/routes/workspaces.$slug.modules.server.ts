@@ -42,7 +42,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   return {
     workspace: { slug: access.workspace.slug, name: access.workspace.name },
     /** The shared workspace chrome (breadcrumb, badges, tabs — NSO-342). */
-    nav: workspaceNav(access),
+    nav: await workspaceNav(access),
     modules,
     /** NSO-346: each opt-in module's state for this workspace + whether this user may flip the switch. */
     optIn,

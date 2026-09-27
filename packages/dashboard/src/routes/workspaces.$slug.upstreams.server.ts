@@ -65,7 +65,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   return {
     workspace: { slug: access.workspace.slug, name: access.workspace.name },
     /** NSO-342: the shared workspace chrome (breadcrumb, badges, tabs). */
-    nav: workspaceNav(access),
+    nav: await workspaceNav(access),
     upstreams,
     prefill: prefillOf(request.url),
     role: access.effectiveRole,

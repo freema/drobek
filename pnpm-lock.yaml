@@ -600,6 +600,9 @@ importers:
 
   packages/dashboard:
     dependencies:
+      '@drobek/agent-dx':
+        specifier: workspace:*
+        version: link:../agent-dx
       '@drobek/apps':
         specifier: workspace:*
         version: link:../apps

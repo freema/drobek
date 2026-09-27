@@ -15,6 +15,7 @@ import { isSuperAdmin, requireSessionUser } from '@drobek/auth';
 import {
   listAllWorkspaces,
   listUserWorkspaces,
+  personalWorkspaceOwners,
 } from '../membership.server.js';
 import { ensurePersonalWorkspace } from '../personal-workspace.server.js';
 import { createTeamWorkspace } from '../team-workspace.server.js';
@@ -29,7 +30,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   const mine = await listUserWorkspaces(user.id);
   const superAdmin = isSuperAdmin(user.email);
-  const all = superAdmin ? await listAllWorkspaces() : null;
+  const [all, owners] = superAdmin
+    ? await Promise.all([listAllWorkspaces(), personalWorkspaceOwners()])
+    : [null, null];
+  const myRole = new Map(mine.map((w) => [w.id, w.role]));
 
   return {
     email: user.email,
@@ -41,7 +45,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
     })),
     superAdmin,
     allWorkspaces: all
-      ? all.map(({ slug, name, kind }) => ({ slug, name, kind }))
+      ? all.map(({ id, slug, name, kind }) => ({
+          slug,
+          name,
+          kind,
+          ownerEmail: owners?.get(id) ?? null,
+          myRole: myRole.get(id) ?? null,
+        }))
       : null,
   };
 }

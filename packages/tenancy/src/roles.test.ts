@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   WORKSPACE_ROLES,
   decideWorkspaceAccess,
+  describeWorkspaceAccess,
   higherRole,
   isWorkspaceRole,
   roleAtLeast,
@@ -105,5 +106,41 @@ describe('decideWorkspaceAccess (requireWorkspaceRole decision core)', () => {
         minRole: 'workspace-admin',
       })
     ).toEqual({ ok: true, effectiveRole: 'workspace-admin' });
+  });
+});
+
+describe('describeWorkspaceAccess — the source of access the dashboard shows', () => {
+  it('a super-admin without a membership is labelled as superadmin access, not as a member role', () => {
+    const d = describeWorkspaceAccess({ membershipRole: null, superAdmin: true });
+    expect(d?.source).toBe('superadmin');
+    expect(d?.memberRole).toBeNull();
+    expect(d?.label).toBe('Superadmin access — not a member');
+    // the authorization decision is unchanged: still full access
+    expect(decideWorkspaceAccess({ membershipRole: null, superAdmin: true, minRole: 'workspace-admin' })).toEqual({
+      ok: true,
+      effectiveRole: 'workspace-admin',
+    });
+  });
+
+  it('a real workspace admin shows its membership role', () => {
+    const d = describeWorkspaceAccess({ membershipRole: 'workspace-admin', superAdmin: false });
+    expect(d).toMatchObject({ source: 'member', memberRole: 'workspace-admin', label: 'workspace-admin' });
+  });
+
+  it('a plain member shows its membership role', () => {
+    expect(describeWorkspaceAccess({ membershipRole: 'viewer', superAdmin: false })?.label).toBe('viewer');
+    expect(describeWorkspaceAccess({ membershipRole: 'editor', superAdmin: false })?.label).toBe('editor');
+  });
+
+  it('a super-admin who is also a member keeps the member role and names the override when it grants more', () => {
+    expect(describeWorkspaceAccess({ membershipRole: 'workspace-admin', superAdmin: true })?.label).toBe(
+      'workspace-admin'
+    );
+    const d = describeWorkspaceAccess({ membershipRole: 'viewer', superAdmin: true });
+    expect(d).toMatchObject({ source: 'member', memberRole: 'viewer', label: 'viewer · superadmin access' });
+  });
+
+  it('no membership and no super-admin means no access to describe', () => {
+    expect(describeWorkspaceAccess({ membershipRole: null, superAdmin: false })).toBeNull();
   });
 });
