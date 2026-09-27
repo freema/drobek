@@ -1,6 +1,6 @@
 # Changelog — drobek (core)
 
-## Unreleased
+## v0.4.1 — 2026-09-27
 
 ### Added
 - **Duplicate an app from the gallery** (NSO-340). An owner turns on "Allow duplicates" next to "Show in the gallery" (off by default; agents pass `allow_duplicate` to `set_gallery_listing`, inside the listing's confirmation). A signed-in person then copies the app on the dashboard at `/duplicate/<slug>` (sign-in first, then back) or with the new MCP tool `duplicate_app({ from, workspace?, name? })` (scope `write`, editor+ in the target workspace): a new, unpublished app with the published files as version 1 that remembers its source ("Duplicated from" in the app header, `duplicated_from` in `get_app`). The source's module settings are proposed to the copy through its confirmation flow, without e-mail addresses and proxy upstreams; secrets, data, end users, uploads, app assets, domains and the listing are never copied. Audited `app.duplicate` / `app.duplicated`; `DUPLICATES_PER_USER_HOUR` (default 10) caps copies per person. The public gallery API adds `duplicable`, `duplicateUrl` and `duplicates` to each item. Migration `0028_gallery_duplicate`.
@@ -13,6 +13,9 @@
   - Workspaces: a super-admin gets cards linking to Publishing and the Moderation queue, and can filter the list of all workspaces. The create-team form fits on one row.
   - App Files: the tree and the viewer stack on a phone instead of overflowing the page.
   - Empty lists on these pages say what would appear there and what to do next.
+
+### Fixed
+- **The e2e stacks allow 300 sign-in codes per IP per 15 minutes** (dev and image flow; production defaults unchanged): the gallery duplicate and like specs pushed the suite over the old test limit of 100.
 
 ### Docs
 - **Module directory and submission form** (NSO-340). The published modules are also listed at [www.drobek.app/modules](https://www.drobek.app/modules); authors submit theirs through the GitHub issue form `module-submission` (package, repository, contract, license and the module rules) instead of a pull request to `docs/MODULES.md`.
