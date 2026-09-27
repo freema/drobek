@@ -98,6 +98,9 @@ export default function AbuseQueueRoute() {
         <Link to={status === 'open' ? '/admin/abuse?status=resolved' : '/admin/abuse'} style={styles.navLink} data-testid="abuse-toggle">
           {status === 'open' ? 'Resolved reports' : 'Open reports'}
         </Link>
+        <Link to="/admin/publishing" style={styles.navLink} data-testid="abuse-publishing-link">
+          Publish approvals
+        </Link>
       </p>
       <h1 style={styles.h1}>Moderation queue</h1>
       <p style={styles.hint}>

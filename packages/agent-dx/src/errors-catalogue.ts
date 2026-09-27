@@ -117,16 +117,23 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
   },
   {
     code: 'user_confirmation_required',
-    surface: 'MCP tool isError (set_gallery_listing)',
+    surface: 'MCP tool isError (set_gallery_listing, set_publish_approval)',
     meaning:
-      'Listing an app in the public gallery shows its name, a description and its production link to everyone, so the call needs `user_confirmed: true` — set only after the user explicitly said yes to exactly this listing. Nothing changed.',
-    fix: 'Ask the user: "Do you want <app name> shown in the public gallery with the description \"<description>\"?" Call again with user_confirmed:true only if they clearly say yes; otherwise leave the app unlisted.',
+      'set_publish_approval: approving or revoking a workspace\'s publishing needs the super-admin\'s explicit yes. set_gallery_listing: listing an app in the public gallery shows its name, a description and its production link to everyone, so the call needs `user_confirmed: true` — set only after the user explicitly said yes to exactly this listing. Nothing changed.',
+    fix: 'Ask the user: "Do you want <app name> shown in the public gallery with the description \"<description>\"?" (set_publish_approval: "Allow workspace <slug> to publish?" / "Take publishing away from <slug>?"). Call again with user_confirmed:true only if they clearly say yes; otherwise change nothing.',
   },
   {
     code: 'gallery_hidden',
     surface: 'MCP tool isError (set_gallery_listing); dashboard 400',
     meaning: 'The server operator hid this app from the public gallery; neither the owner nor an agent can list it until the operator shows it again. Nothing changed.',
     fix: 'Do not retry and do not work around it. Tell the user the operator hid the app from the gallery; they can contact the operator.',
+  },
+  {
+    code: 'publish_not_approved',
+    surface: 'MCP tool isError (publish); dashboard 403',
+    meaning:
+      'This server lets a workspace publish only after its operator approved the workspace (PUBLISH_APPROVAL=approval), and this workspace is not approved yet. Nothing went live; the app\'s previews, versions, data and everything else keep working. drobek already e-mailed the operator an approval request (`contact` is their address, also named in `message`).',
+    fix: 'Do not retry and do not try another app or workspace. Tell the user publishing on this server needs the operator\'s approval, that a request was sent to the address in `contact`, and give them the preview_url meanwhile. Publish again once they say the workspace was approved (list_apps shows `can_publish`).',
   },
   {
     code: 'gallery_disabled',

@@ -78,7 +78,18 @@ This document is the map of how that works. The neighbours:
 - A **workspace** has members with a role: `workspace-admin`, `editor` or
   `viewer`. Every user has a personal workspace. `SUPERADMIN_EMAIL` (a list)
   names the operator's super-admins; super-admin is an env flag, not a role
-  row.
+  row. Sign-up is open: anyone can create workspaces and build and preview
+  apps.
+- **Publish approval** (`PUBLISH_APPROVAL`, `open` by default): in
+  `approval` mode a workspace publishes only after a super-admin approved it
+  (`workspaces.publish_approved_at`) or when a super-admin is its member.
+  `@drobek/apps` `publish()` checks it inside its transaction, so the MCP
+  tool, the dashboard publish and the rollback share one gate; a refusal
+  (`publish_not_approved`, naming `OPERATOR_EMAIL` or the first super-admin)
+  records an approval request on the workspace and e-mails the operator at
+  most once per 24 h. Super-admins decide at `/admin/publishing` or with the
+  super-admin-only MCP tool `set_publish_approval`; everything else about an
+  app is never gated.
 - An **app** belongs to one workspace and has a **globally unique slug**
   (a host label; `--` is not allowed in a slug, so the preview and version
   host names never collide with another app). `create_app` picks a free slug

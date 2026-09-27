@@ -17,7 +17,11 @@
  *    which writes its audit row; the app hosts' cache is busted right after.
  *    A taken-down app (NSO-293, `apps.locked_reason`) answers publish /
  *    restore / unpublish with 423 `app_locked_by_admin`; the header carries
- *    `lockedByAdmin` for <LockedByAdminNotice>.
+ *    `lockedByAdmin` for <LockedByAdminNotice>. With PUBLISH_APPROVAL=approval
+ *    (NSO-366) an unapproved workspace answers publish with 403
+ *    `publish_not_approved`; the header carries `publishApproval` for
+ *    <PublishApprovalNotice> and the `request-publish-approval` intent asks
+ *    the operator.
  */
 import { data, redirect, type ActionFunctionArgs, type LoaderFunctionArgs } from 'react-router';
 import { and, desc, eq, inArray, max } from 'drizzle-orm';
@@ -49,6 +53,8 @@ import { appBasePath } from './app-tabs.js';
 import { compileSummary, safeRedirectTo, shapeLock, type LockView } from './app-view.js';
 import { loadAppForView, type AppDetail } from './apps.server.js';
 import type { LockedByAdminView } from './locked-notice.js';
+import type { PublishApprovalView } from './publish-approval-notice.js';
+import { publishApprovalView, requestApprovalAction } from './publish-approval.server.js';
 import { canPublish, type CompileStatusName } from './view.js';
 
 export const APP_PASSWORD_MIN = 8;
@@ -95,6 +101,8 @@ export interface AppHeaderData {
   canEdit: boolean;
   /** NSO-293: set when a super-admin took the app down (the banner; publish/restore are refused). */
   lockedByAdmin: LockedByAdminView | null;
+  /** NSO-366: set while the workspace may not publish (PUBLISH_APPROVAL=approval) — the notice; publish is refused. */
+  publishApproval: PublishApprovalView | null;
 }
 
 /** Everything <AppHeader> renders. The lease read is best effort (Redis down → no banner). */
@@ -118,7 +126,10 @@ export async function appHeaderData({ access, app }: AppPage): Promise<AppHeader
     app.publishedVersionId ? getVersion(app.id, { id: app.publishedVersionId }) : Promise.resolve(null),
     readAppLease(app.id).catch(() => null),
   ]);
-  const emails = await emailsOf([lease?.holder_user_id ?? null]);
+  const [emails, publishApproval] = await Promise.all([
+    emailsOf([lease?.holder_user_id ?? null]),
+    publishApprovalView(app.workspaceId, access.user.id),
+  ]);
   return {
     workspace: { slug: access.workspace.slug, name: access.workspace.name },
     slug: app.slug,
@@ -139,6 +150,7 @@ export async function appHeaderData({ access, app }: AppPage): Promise<AppHeader
     lock: shapeLock(lease, emails, access.user.id, Date.now()),
     canEdit: canPublish(access.effectiveRole),
     lockedByAdmin: lockedByAdminView(app.lockedReason),
+    publishApproval,
   };
 }
 
@@ -186,6 +198,9 @@ export async function appAction({ request, params }: ActionFunctionArgs) {
   const back = safeRedirectTo(form.get('redirectTo') ?? new URL(request.url).pathname, base);
   const changed = (kind: 'publish' | 'unpublish' | 'version' | 'settings' | 'delete', version?: number) =>
     notifyAppChanged({ app_id: app.id, slug: app.slug, kind, ...(version ? { version } : {}) });
+
+  const requested = await requestApprovalAction(access, form, { base, fallback: back, appName: app.name ?? app.slug });
+  if (requested) return requested;
 
   // NSO-293: a taken-down app is not published, restored or unpublished from
   // here (@drobek/apps refuses publish/restore itself; unpublish is checked
@@ -309,6 +324,7 @@ export async function appAction({ request, params }: ActionFunctionArgs) {
     // A takedown that landed after the page loaded → 423 like the pre-check.
     if (err instanceof AppsError && err.code === 'app_locked_by_admin') return fail(423, intent, err.message);
     if (err instanceof AppsError && err.code === 'gallery_disabled') return fail(404, intent, err.message);
+    if (err instanceof AppsError && err.code === 'publish_not_approved') return fail(403, intent, err.message);
     if (err instanceof AppsError) return fail(400, intent, err.message);
     throw err;
   }

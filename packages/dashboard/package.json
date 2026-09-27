@@ -220,6 +220,14 @@
       "types": "./src/routes/admin.abuse.server.ts",
       "default": "./dist/routes/admin.abuse.server.js"
     },
+    "./routes/admin.publishing": {
+      "types": "./src/routes/admin.publishing.tsx",
+      "default": "./dist/routes/admin.publishing.js"
+    },
+    "./routes/admin.publishing.server": {
+      "types": "./src/routes/admin.publishing.server.ts",
+      "default": "./dist/routes/admin.publishing.server.js"
+    },
     "./routes/api.public.gallery.server": {
       "types": "./src/routes/api.public.gallery.server.ts",
       "default": "./dist/routes/api.public.gallery.server.js"

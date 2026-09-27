@@ -1,5 +1,6 @@
 /**
- * tools/list snapshot (M0-05 + M0-06 + M1-01 + M1-03 + M1-07 + NSO-340 + NSO-358): exactly the 15 tools, in order, with
+ * tools/list snapshot (M0-05 + M0-06 + M1-01 + M1-03 + M1-07 + NSO-340 + NSO-358): exactly the 15 tools of a
+ * user who is not a super-admin (a super-admin also gets set_publish_approval, NSO-366), in order, with
  * their titles, annotations and input schemas. Hand-written on purpose — a
  * change to the public tool surface must be a deliberate edit here.
  */
@@ -12,9 +13,9 @@ import { testDeps } from './test/harness.js';
 
 const principal = { userId: 'u', email: 'u@example.test', superAdmin: false };
 
-async function listTools(allow?: (t: string) => boolean) {
+async function listTools(allow?: (t: string) => boolean, superAdmin = false) {
   const server = new McpServer({ name: 't', version: '0' }, { capabilities: { tools: {} } });
-  registerAppTools(server, principal, { deps: testDeps(), allow });
+  registerAppTools(server, { ...principal, superAdmin }, { deps: testDeps(), allow });
   const [c, s] = InMemoryTransport.createLinkedPair();
   await server.connect(s);
   const client = new Client({ name: 't', version: '0' });
@@ -193,6 +194,22 @@ describe('tools/list', () => {
       'html',
     ]);
     for (const t of tools) expect(t.description!.length, t.name).toBeGreaterThan(40);
+  });
+
+  it('a super-admin also gets set_publish_approval, last (NSO-366)', async () => {
+    const tools = await listTools(undefined, true);
+    expect(tools).toHaveLength(16);
+    const last = tools[15];
+    expect(last.name).toBe('set_publish_approval');
+    expect(last.annotations).toEqual({
+      title: 'Approve a workspace for publishing',
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    });
+    expect(Object.keys((last.inputSchema.properties ?? {}) as object)).toEqual(['workspace', 'approved', 'user_confirmed']);
+    expect(last.inputSchema.required).toEqual(['workspace', 'approved']);
   });
 
   it('registers only what `allow` lets through (the scope gate)', async () => {

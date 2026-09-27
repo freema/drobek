@@ -107,6 +107,14 @@ export const workspaces = pgTable('workspaces', {
   slug: text('slug').notNull().unique(),
   name: text('name').notNull(),
   createdAt: timestamp('created_at').notNull().defaultNow(),
+  /** NSO-366: PUBLISH_APPROVAL=approval — a super-admin allowed this workspace to publish (null = not approved). */
+  publishApprovedAt: timestamp('publish_approved_at', { withTimezone: true }),
+  publishApprovedBy: text('publish_approved_by').references((): AnyPgColumn => users.id, { onDelete: 'set null' }),
+  /** NSO-366: the last approval request e-mailed to the operator (dedupe: one per 24 h until decided). */
+  publishApprovalRequestedAt: timestamp('publish_approval_requested_at', { withTimezone: true }),
+  publishApprovalRequestedBy: text('publish_approval_requested_by').references((): AnyPgColumn => users.id, {
+    onDelete: 'set null',
+  }),
 });
 
 export const memberships = pgTable(

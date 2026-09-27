@@ -18,6 +18,7 @@ import { AppsError } from './errors.js';
 import { zipStream, type ZipEntry } from './zip.js';
 import { lockedByAdminError, screenAfterPublish } from './moderation.server.js';
 import { freezeAssetsForPublish, pruneAssetSnapshots, restoreDraftAssets } from './assets/snapshots.server.js';
+import { assertMayPublish, requestPublishApproval } from './publish-approval.server.js';
 import type {
   Actor,
   CompileStatus,
@@ -59,6 +60,7 @@ async function lockApp(tx: Tx, appId: string) {
     .select({
       id: apps.id,
       slug: apps.slug,
+      name: apps.name,
       workspaceId: apps.workspaceId,
       publishedVersionId: apps.publishedVersionId,
       lockedReason: apps.lockedReason,
@@ -260,6 +262,10 @@ export async function readBlobs(sha256s: string[]): Promise<Map<string, Buffer>>
  * pointer moved, the published version goes through the phishing heuristic
  * (`screen: false` skips it).
  *
+ * NSO-366: with PUBLISH_APPROVAL=approval a workspace a super-admin has not
+ * approved refuses with `publish_not_approved` (nothing moves); the refusal
+ * records an approval request and e-mails the operator (deduped).
+ *
  * The app's assets are frozen for the version in the same transaction
  * (NSO-362): `assets: 'draft'` — the draft went live (the version the preview
  * shows, or one that never had a set); `'kept'` — a rollback to a version
@@ -269,10 +275,18 @@ export async function publish(
   appId: string,
   versionId: string,
   actor: Actor,
-  opts: { screen?: boolean } = {}
+  opts: { screen?: boolean; env?: NodeJS.ProcessEnv } = {}
 ): Promise<{ versionId: string; number: number; previousNumber: number | null; assets: 'draft' | 'kept' }> {
+  const env = opts.env ?? process.env;
+  let blocked: { workspaceId: string; appName: string } | null = null;
   const result = await getDb().transaction(async (tx) => {
     const app = await lockWritableApp(tx, appId);
+    try {
+      await assertMayPublish(tx, app.workspaceId, actor, env);
+    } catch (err) {
+      if (err instanceof AppsError && err.code === 'publish_not_approved') blocked = { workspaceId: app.workspaceId, appName: app.name ?? app.slug };
+      throw err;
+    }
     const [version] = await tx
       .select({ id: appVersions.id, number: appVersions.number, status: appVersions.compileStatus })
       .from(appVersions)
@@ -302,6 +316,9 @@ export async function publish(
       assets,
     });
     return { versionId: version.id, number: version.number, previousNumber, assets };
+  }).catch(async (err: unknown) => {
+    if (blocked) await requestPublishApproval({ ...blocked, actor, env }).catch(() => undefined);
+    throw err;
   });
   // NSO-293: the phishing heuristic — flags the app for the super-admin
   // queue, never blocks (a scan failure is only logged).

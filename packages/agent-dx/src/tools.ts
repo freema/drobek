@@ -2,7 +2,8 @@
  * TOOL_DOCS — the declarative documentation manifest for the drobek MCP tools
  * (M0-05 NSO-283; publish M0-06 NSO-285; skill_info + configure_module M1-01
  * NSO-287; query_data M1-03 NSO-300; get_logs M1-07 NSO-290; set_gallery_listing
- * NSO-340; the asset tools NSO-358, assets honour publish NSO-362). This is the SINGLE SOURCE OF TRUTH the agent-facing docs
+ * NSO-340; the asset tools NSO-358, assets honour publish NSO-362; the
+ * super-admin-only set_publish_approval NSO-366). This is the SINGLE SOURCE OF TRUTH the agent-facing docs
  * render from (llms.txt / llms-full.txt / MCP docs resources / the build page),
  * and @drobek/mcp registers each tool with THIS title, description and
  * annotations — so the published docs cannot drift from the real tools.
@@ -70,13 +71,13 @@ export const TOOL_DOCS: ToolDoc[] = [
     title: 'List apps',
     scope: 'read (any role in the workspace)',
     description:
-      'Start here. Returns who you are, every workspace you belong to (slug + your role), and the apps in them: app_id, name, slug, workspace, preview_url, published_url/published_version (when published), latest_version, its compile_status, locked_by when another agent is writing, and locked_by_admin + locked_reason when the server operator took the app down. Pass `workspace` to list one workspace only (a workspace you cannot reach answers not_found). For a server super-admin it also returns `all_workspaces` — every workspace on the server, which a super-admin reaches like its admin (the dashboard shows the same list): pass one of their slugs as `workspace` to see its apps.',
+      'Start here. Returns who you are, every workspace you belong to (slug + your role, and `can_publish` — false when this server lets a workspace publish only after its operator approved it and this one is not approved yet; `publish_contact` then names the operator\'s e-mail), and the apps in them: app_id, name, slug, workspace, preview_url, published_url/published_version (when published), latest_version, its compile_status, locked_by when another agent is writing, and locked_by_admin + locked_reason when the server operator took the app down. Pass `workspace` to list one workspace only (a workspace you cannot reach answers not_found). For a server super-admin it also returns `all_workspaces` — every workspace on the server, which a super-admin reaches like its admin (the dashboard shows the same list), each with its own `can_publish`: pass one of their slugs as `workspace` to see its apps.',
     annotations: READ_ONLY,
     fields: [
       { name: 'workspace', type: 'string (optional)', required: false, description: 'Only this workspace (slug).' },
     ],
     returns:
-      '{ user:{email}, workspaces:[{slug,name,kind,role}], apps:[{app_id,name,slug,workspace,preview_url,published_url?,published_version?,latest_version,compile_status,locked_by?,locked_by_admin?,locked_reason?}], all_workspaces?:[{slug,name,kind}] }',
+      '{ user:{email}, workspaces:[{slug,name,kind,role,can_publish,publish_contact?}], apps:[{app_id,name,slug,workspace,preview_url,published_url?,published_version?,latest_version,compile_status,locked_by?,locked_by_admin?,locked_reason?}], all_workspaces?:[{slug,name,kind,can_publish,publish_contact?}] }',
     example: {},
   },
   {
@@ -99,11 +100,11 @@ export const TOOL_DOCS: ToolDoc[] = [
     title: 'Get an app',
     scope: 'read (any role in the workspace)',
     description:
-      'Snapshot of one app: everything list_apps shows plus the briefing, the source files of the latest version ({path,size,sha256}), the last 20 versions (number, created_at, actor_kind, reasoning, compile_status), the latest compile errors, the platform modules (per module: whether it is enabled for the app\'s workspace — an opt-in module the operator has not enabled says enabled:false and cannot be used —, its effective config, whether a change waits for the owner\'s confirmation, which secrets are set — names and hasSecret only, never values — and the module\'s info, e.g. proxy: the workspace upstreams with registered/assigned/call/hasSecret), the skills list (without the opt-in modules that are off for the workspace), the public gallery state (listed, description, hidden_by_admin, visible — or enabled:false when the server has no gallery), and the write lock (holder + expires_at) if someone holds it. Use it to re-orient before editing.',
+      'Snapshot of one app: everything list_apps shows plus the briefing, the source files of the latest version ({path,size,sha256}), the last 20 versions (number, created_at, actor_kind, reasoning, compile_status), the latest compile errors, the platform modules (per module: whether it is enabled for the app\'s workspace — an opt-in module the operator has not enabled says enabled:false and cannot be used —, its effective config, whether a change waits for the owner\'s confirmation, which secrets are set — names and hasSecret only, never values — and the module\'s info, e.g. proxy: the workspace upstreams with registered/assigned/call/hasSecret), the skills list (without the opt-in modules that are off for the workspace), the public gallery state (listed, description, hidden_by_admin, visible — or enabled:false when the server has no gallery), `can_publish` (+ `publish_contact` when the operator has not approved the workspace for publishing yet), and the write lock (holder + expires_at) if someone holds it. Use it to re-orient before editing.',
     annotations: READ_ONLY,
     fields: [{ name: 'app_id', type: 'string', required: true, description: 'The app id (from list_apps / create_app).' }],
     returns:
-      '{ app_id, name, slug, workspace, preview_url, published_url?, published_version?, latest_version, compile_status, compile_errors, briefing, files:[{path,size,sha256}], versions:[{number,created_at,actor_kind,reasoning,compile_status}], modules:{<name>:{enabled,configured,config,pending,pending_confirmation?,confirm_url?,secrets?:[{name,hasSecret}],info?}}, skills:[{name,use_when}], gallery:{enabled,listed?,description?,hidden_by_admin?,visible?}, lock?:{holder,expires_at}, locked_by_admin?, locked_reason? }',
+      '{ app_id, name, slug, workspace, preview_url, published_url?, published_version?, latest_version, compile_status, compile_errors, briefing, files:[{path,size,sha256}], versions:[{number,created_at,actor_kind,reasoning,compile_status}], modules:{<name>:{enabled,configured,config,pending,pending_confirmation?,confirm_url?,secrets?:[{name,hasSecret}],info?}}, skills:[{name,use_when}], gallery:{enabled,listed?,description?,hidden_by_admin?,visible?}, can_publish, publish_contact?, lock?:{holder,expires_at}, locked_by_admin?, locked_reason? }',
     example: { app_id: 'k3v9x0…' },
   },
   {
@@ -168,7 +169,7 @@ export const TOOL_DOCS: ToolDoc[] = [
     title: 'Publish a version',
     scope: 'publish (editor+ role in the workspace)',
     description:
-      'Put a version live at the production URL `https://<slug>.<APPS_DOMAIN>` — by default the newest version that compiled; pass an older `version` to roll production back. Only versions that compiled can be published (not_publishable otherwise). The preview URL keeps following your writes and asset uploads; production changes only when you publish again. Publishing the newest version that compiled puts the current assets live with it; an older version brings back the assets it served when it was last published. Call this ONLY when the user explicitly asks to publish / go live — never on your own initiative. Does not take the write lease.',
+      'Put a version live at the production URL `https://<slug>.<APPS_DOMAIN>` — by default the newest version that compiled; pass an older `version` to roll production back. Only versions that compiled can be published (not_publishable otherwise). The preview URL keeps following your writes and asset uploads; production changes only when you publish again. Publishing the newest version that compiled puts the current assets live with it; an older version brings back the assets it served when it was last published. Call this ONLY when the user explicitly asks to publish / go live — never on your own initiative. Does not take the write lease. On a server whose operator approves each workspace for publishing, an unapproved workspace answers publish_not_approved with the operator\'s e-mail in `contact` — drobek has already sent them an approval request; tell the user and give them the preview_url meanwhile.',
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
     fields: [
       { name: 'app_id', type: 'string', required: true, description: 'The app id.' },
@@ -325,6 +326,21 @@ export const TOOL_DOCS: ToolDoc[] = [
     ],
     returns: '{ deleted: "/<path>", note }',
     example: { app_id: 'k3v9x0…', path: 'film.mp4' },
+  },
+  {
+    name: 'set_publish_approval',
+    title: 'Approve a workspace for publishing',
+    scope: 'publish (super-admins of this server only)',
+    description:
+      'For the operator of this server: allow a workspace to publish (`approved: true`) or take that back (`approved: false`). Matters when the server runs PUBLISH_APPROVAL=approval, where a workspace publishes only once approved (or when a super-admin is its member); anyone may still sign up, build and preview. Revoking stops new publishes; apps already live keep serving. Needs `user_confirmed: true` — set it ONLY after the user explicitly said yes to exactly this change; without it the answer is user_confirmation_required and nothing changes. Only in a super-admin\'s tools/list. list_apps `all_workspaces` shows each workspace\'s `can_publish`; the dashboard\'s /admin/publishing shows the waiting requests.',
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    fields: [
+      { name: 'workspace', type: 'string', required: true, description: 'The workspace slug.' },
+      { name: 'approved', type: 'boolean', required: true, description: 'true allows the workspace to publish; false takes that back.' },
+      { name: 'user_confirmed', type: 'boolean', required: false, description: 'true ONLY after the user explicitly said yes to this change.' },
+    ],
+    returns: '{ workspace, approved, approved_at, changed, mode:"open"|"approval", note? }',
+    example: { workspace: 'acme-crew', approved: true, user_confirmed: true },
   },
 ];
 

@@ -22,8 +22,9 @@ llms-full.txt and the MCP docs resource — link to them, do not hand-copy them.
 Your access belongs to the user, not to one workspace:
 
 1. Call `list_apps` — it returns the user's email, EVERY workspace they belong
-   to (`slug`, `kind`, `role`) and the apps across them (`app_id`, `name`,
-   `slug`, `preview_url`, `latest_version`, `compile_status`, `locked_by`).
+   to (`slug`, `kind`, `role`, `can_publish`) and the apps across them
+   (`app_id`, `name`, `slug`, `preview_url`, `latest_version`,
+   `compile_status`, `locked_by`).
 2. Every other tool addresses an app by its `app_id`. Your role in the app's
    workspace decides what you may do (`viewer` reads; `editor` and
    `workspace-admin` also write). An app you cannot reach answers `not_found`,
@@ -208,6 +209,17 @@ Publish **only when the user explicitly asks** ("publish it", "make it live").
 Never publish on your own initiative — the preview URL is for showing work in
 progress. The owner can also publish from the drobek dashboard.
 
+A server may let a workspace publish only after its operator approved it.
+Then `list_apps` / `get_app` say `can_publish: false` with `publish_contact`
+(the operator's e-mail), and `publish` answers `publish_not_approved` —
+drobek has already e-mailed the operator an approval request. Do not retry
+and do not move the app elsewhere: tell the user that publishing waits for
+the operator's approval, name the address, and give them the `preview_url`
+meanwhile. Building, versions and previews keep working. The operator (a
+super-admin) approves in the dashboard, or with
+`set_publish_approval({ workspace, approved, user_confirmed })` — a tool only
+in a super-admin's tools/list, and only after they explicitly said yes.
+
 ## Gallery
 
 A server can run a public gallery: a list of published apps, each with its
@@ -238,7 +250,7 @@ A failed call returns `isError: true` with `{ code, message, hint }` — the
 `invalid_path`, `limit_exceeded`, `secret_in_source`, `app_locked`,
 `app_locked_by_admin`, `busy`, `not_publishable`, `not_published`,
 `user_confirmation_required`, `gallery_hidden`, `gallery_disabled`,
-`asset_too_large`, `module_not_enabled`, …).
+`publish_not_approved`, `asset_too_large`, `module_not_enabled`, …).
 Compile problems are not tool failures: they come back in `compile.errors`. The
 full code → meaning → fix table is the Error catalogue in llms-full.txt (core
 codes, then one section per module); a module's own codes are also in

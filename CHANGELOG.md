@@ -2,8 +2,15 @@
 
 ## Unreleased
 
-### Fixed
+### Added
+- **Publish approval** (`PUBLISH_APPROVAL=open|approval`, `OPERATOR_EMAIL`). Sign-up stays open: anyone can create workspaces and build and preview apps. With `approval` a workspace may publish only after a super-admin approved it (or when a super-admin is its member); `open`, the default, changes nothing. An invalid value, `approval` without `SUPERADMIN_EMAIL` or an `OPERATOR_EMAIL` that is not one address stops the server at start.
+  - The gate sits in `publish()` itself, so the MCP `publish`, the dashboard Publish button and the production rollback all answer `publish_not_approved` ("Publishing on this server needs approval from <contact> … An approval request was sent to <contact> …", MCP field `contact`; dashboard 403). Previews, versions, restore, data, secrets and domains are never gated; apps already live keep serving after a revoke.
+  - The first blocked publish, or the owner's **Request approval** button, e-mails the operator (`OPERATOR_EMAIL`, else every super-admin): the workspace, the requester's e-mail, the app and a link to `/admin/publishing` — at most once per workspace per 24 hours until someone decides.
+  - `/admin/publishing` (super-admins): waiting requests, unapproved and approved workspaces, **Approve** / **Revoke**. The app pages and the workspace's apps list show "Publishing on this server needs approval from <contact>" with the Request approval button, and the Publish buttons say why they are disabled.
+  - MCP: `list_apps` (also `all_workspaces`) and `get_app` return `can_publish` (+ `publish_contact`); the new super-admin-only tool `set_publish_approval({ workspace, approved, user_confirmed })` (publish scope, registered only for a super-admin's grant) approves or revokes with the super-admin's explicit yes. New error code `publish_not_approved`.
+  - Audit: `workspace.publish_approval_request`, `workspace.publish_approve`, `workspace.publish_revoke`. Migration 0026 adds the approval columns to `workspaces` and approves every workspace that already has a published app.
 
+### Fixed
 - **E-mail sender name**: a bare `EMAIL_FROM` address is sent as `drobek <address>`, so inboxes show *drobek* instead of the address's local part (*no-reply*). `Name <address>` still sets any other name.
 
 ## v0.2.1 — 2026-09-27

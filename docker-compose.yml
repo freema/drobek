@@ -221,6 +221,9 @@ services:
       GALLERY_ENABLED: ${GALLERY_ENABLED:-true}
       GALLERY_API_PER_IP_MINUTE: ${GALLERY_API_PER_IP_MINUTE:-60}
       GALLERY_FRAME_ANCESTORS: ${GALLERY_FRAME_ANCESTORS:-https://gallery.example.test}
+      # NSO-366: `approval` runs the blocked-publish half of publish-approval.spec.ts.
+      PUBLISH_APPROVAL: ${PUBLISH_APPROVAL:-open}
+      OPERATOR_EMAIL: ${OPERATOR_EMAIL:-}
       # NSO-342: the footer's GitHub star count (empty = on; `off` = no call).
       DASHBOARD_GITHUB_STARS: ${DASHBOARD_GITHUB_STARS:-}
       LIMITS_PROVIDER_URL: ${LIMITS_PROVIDER_URL:-}

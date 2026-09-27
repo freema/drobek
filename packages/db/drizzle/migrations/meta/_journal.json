@@ -148,6 +148,13 @@
       "when": 1790437501780,
       "tag": "0025_app_asset_snapshots",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1790493019726,
+      "tag": "0026_publish_approval",
+      "breakpoints": true
     }
   ]
 }

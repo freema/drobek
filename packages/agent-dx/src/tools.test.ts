@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { TOOL_DOCS, TOOL_NAMES, toolDoc } from './tools.js';
 
 describe('TOOL_DOCS manifest', () => {
-  it('documents exactly the 15 tools, in tools/list order', () => {
+  it('documents exactly the 16 tools, in tools/list order', () => {
     expect(TOOL_NAMES).toEqual([
       'list_apps',
       'create_app',
@@ -19,6 +19,7 @@ describe('TOOL_DOCS manifest', () => {
       'create_asset_upload',
       'list_assets',
       'delete_asset',
+      'set_publish_approval',
     ]);
   });
 
@@ -61,6 +62,7 @@ describe('TOOL_DOCS manifest', () => {
       create_asset_upload: [false, false, false, false], // a new single-use URL on every call; the PUT stores
       list_assets: [true, false, true, false],
       delete_asset: [false, true, true, false], // removes a file; a second delete changes nothing more
+      set_publish_approval: [false, false, true, false], // who may publish; the same call again answers changed:false
     };
     expect(Object.keys(table)).toEqual(TOOL_NAMES);
     for (const [name, [readOnlyHint, destructiveHint, idempotentHint, openWorldHint]] of Object.entries(table)) {
@@ -81,6 +83,16 @@ describe('TOOL_DOCS manifest', () => {
     expect(doc.description).toMatch(/ONLY after the user explicitly said yes/);
     expect(doc.description).toMatch(/Never list an app on your own initiative/);
     expect(doc.fields.map((f) => f.name)).toEqual(['app_id', 'listed', 'description', 'user_confirmed']);
+  });
+
+  it('set_publish_approval is super-admin only and needs the user\'s explicit yes (NSO-366)', () => {
+    const doc = toolDoc('set_publish_approval');
+    expect(doc.scope).toMatch(/^publish \(super-admins of this server only\)/);
+    expect(doc.description).toMatch(/user_confirmed: true/);
+    expect(doc.description).toMatch(/ONLY after the user explicitly said yes/);
+    expect(doc.fields.map((f) => f.name)).toEqual(['workspace', 'approved', 'user_confirmed']);
+    expect(toolDoc('publish').description).toMatch(/publish_not_approved/);
+    expect(toolDoc('list_apps').returns).toContain('can_publish');
   });
 
   it('publish is documented as explicit-request only, with the publish scope', () => {

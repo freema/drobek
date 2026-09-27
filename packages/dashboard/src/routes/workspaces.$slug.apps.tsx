@@ -21,6 +21,7 @@ import { Form, Link, useLoaderData } from 'react-router';
 import { WorkspacePage, controls } from '@drobek/tenancy/layout';
 import type { loader } from './workspaces.$slug.apps.server.js';
 import { formatTimestamp, type AppThumbnail } from '../view.js';
+import { PublishApprovalNotice } from '../publish-approval-notice.js';
 
 export function meta({
   data,
@@ -189,11 +190,13 @@ function Thumbnail({ slug, thumbnail, to }: { slug: string; thumbnail: AppThumbn
 }
 
 export default function WorkspaceAppsRoute() {
-  const { nav, workspace, apps, total, filters, deletedSlug, slugReleaseDays } = useLoaderData<typeof loader>();
+  const { nav, workspace, apps, total, filters, deletedSlug, slugReleaseDays, publishApproval, canRequestApproval } =
+    useLoaderData<typeof loader>();
   const filtered = filters.q !== '' || filters.status !== 'all';
 
   return (
     <WorkspacePage workspace={nav} section="apps">
+      <PublishApprovalNotice approval={publishApproval} canRequest={canRequestApproval} />
       {deletedSlug ? (
         <p style={styles.notice} role="status" data-testid="apps-deleted-notice">
           <strong>{deletedSlug}</strong> was deleted. Its address stays reserved for {slugReleaseDays} days.

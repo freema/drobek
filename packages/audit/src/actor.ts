@@ -157,6 +157,12 @@ export const AUDIT_ACTIONS = {
   moduleWorkspaceEnable: 'module.workspace_enable',
   /** NSO-346: a super-admin disabled an opt-in platform module for the workspace (meta: module). */
   moduleWorkspaceDisable: 'module.workspace_disable',
+  /** NSO-366: a blocked publish (or the owner's button) asked the operator to approve the workspace for publishing. */
+  publishApprovalRequest: 'workspace.publish_approval_request',
+  /** NSO-366: a super-admin allowed the workspace to publish (PUBLISH_APPROVAL=approval). */
+  publishApprove: 'workspace.publish_approve',
+  /** NSO-366: a super-admin took the workspace's publish approval back (live apps keep serving). */
+  publishRevoke: 'workspace.publish_revoke',
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
@@ -176,6 +182,8 @@ export const AUDIT_SUBJECT_TYPES = {
   domain: 'domain',
   /** NSO-346: a platform module of the workspace (target = the module name). */
   module: 'module',
+  /** NSO-366: the workspace itself (target = its slug) — publish approval. */
+  workspace: 'workspace',
 } as const;
 
 export type AuditSubjectType =

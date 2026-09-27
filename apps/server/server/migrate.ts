@@ -12,7 +12,7 @@
  * nothing to apply. The config checks of the server entry run first, so an
  * image that would refuse to start never touches the database.
  */
-import { appsOriginConfigError } from '@drobek/apps';
+import { appsOriginConfigError, publishApprovalConfigError } from '@drobek/apps';
 import { trustProxyConfigError } from '@drobek/auth';
 import { createConsoleLogger, secretsConfigError } from '@drobek/core';
 import { dbErrorForLog, runCoreMigrations } from '@drobek/db';
@@ -31,7 +31,8 @@ const configError =
   limitsProviderConfigError(process.env) ??
   domainsConfigError(process.env) ??
   frameSrcConfigError(process.env) ??
-  galleryFrameAncestorsConfigError(process.env);
+  galleryFrameAncestorsConfigError(process.env) ??
+  publishApprovalConfigError(process.env);
 if (configError) {
   console.error(configError);
   process.exit(1);

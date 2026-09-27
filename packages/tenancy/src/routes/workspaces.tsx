@@ -149,6 +149,9 @@ export default function WorkspacesRoute() {
       {superAdmin && allWorkspaces ? (
         <>
           <h2 style={styles.h2}>All workspaces (super-admin)</h2>
+          <p style={styles.hint} data-testid="super-admin-links">
+            <Link to="/admin/publishing">Publish approvals</Link> · <Link to="/admin/abuse">Moderation queue</Link>
+          </p>
           <ul style={styles.list} data-testid="all-workspaces">
             {allWorkspaces.map((ws) => (
               <li key={ws.slug} style={styles.item}>

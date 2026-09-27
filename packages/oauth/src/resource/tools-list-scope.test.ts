@@ -12,21 +12,21 @@ import { SCOPES, type Scope } from '../scopes.js';
 import { buildMcpServer } from './mcp.js';
 import type { AuthContext } from './oauth-resource.js';
 
-function ctxFor(scopes: Scope[]): AuthContext {
+function ctxFor(scopes: Scope[], superAdmin = false): AuthContext {
   return {
     kind: 'oauth',
     credentialId: 'tok_test',
     userId: 'u_test',
     email: 'test@example.com',
-    superAdmin: false,
+    superAdmin,
     scope: scopes.join(' '),
     scopes,
     audience: 'http://localhost:3041/mcp',
   };
 }
 
-async function connect(scopes: Scope[]): Promise<Client> {
-  const server = buildMcpServer(ctxFor(scopes));
+async function connect(scopes: Scope[], superAdmin = false): Promise<Client> {
+  const server = buildMcpServer(ctxFor(scopes, superAdmin));
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   await server.connect(serverSide);
   const client = new Client({ name: 'scope-test', version: '0' });
@@ -65,6 +65,22 @@ describe('tools/list reflects the granted scope', () => {
       }
     });
   }
+
+  it('set_publish_approval exists only for a super-admin with the publish scope (NSO-366)', async () => {
+    for (const [scopes, superAdmin, listed] of [
+      [['read', 'write', 'publish'], true, true],
+      [['read', 'write'], true, false],
+      [['read', 'write', 'publish'], false, false],
+    ] as Array<[Scope[], boolean, boolean]>) {
+      const client = await connect(scopes, superAdmin);
+      try {
+        const names = (await client.listTools()).tools.map((t) => t.name);
+        expect(names.includes('set_publish_approval'), `${scopes.join(' ')} super-admin=${superAdmin}`).toBe(listed);
+      } finally {
+        await client.close();
+      }
+    }
+  });
 
   it('a read + write grant cannot list an app in the gallery (publish scope, NSO-340)', async () => {
     const client = await connect(['read', 'write']);

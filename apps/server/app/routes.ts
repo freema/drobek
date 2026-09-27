@@ -132,6 +132,8 @@ export default [
   // /.well-known/drobek-report points here) and the super-admin queue.
   route('report', 'routes/report.tsx'),
   route('admin/abuse', 'routes/admin.abuse.tsx'),
+  // NSO-366: the super-admin approves workspaces for publishing (PUBLISH_APPROVAL=approval).
+  route('admin/publishing', 'routes/admin.publishing.tsx'),
   // NSO-340: the public gallery list (read-only JSON, CORS *, 404 unless
   // GALLERY_ENABLED) — the operator's website renders it.
   route('api/public/gallery', 'routes/api.public.gallery.ts'),

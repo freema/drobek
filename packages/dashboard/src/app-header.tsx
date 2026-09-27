@@ -6,7 +6,8 @@
  * an app is the small sandboxed thumbnail of the workspace app list), the
  * compile state of the newest version, the single-writer lease banner with
  * "Unlock", the "Unpublish" control, the "taken down by the operator" banner
- * (NSO-293), and the tab bar (APP_TABS, data-driven).
+ * (NSO-293), the "publishing needs approval" notice (NSO-366), and the tab
+ * bar (APP_TABS, data-driven).
  *
  * The header's forms post to the app's BASE route (`appAction`, which every
  * app-page route may share) with `redirectTo` = the current page, so any tab
@@ -21,6 +22,7 @@ import type { AppHeaderData } from './app-page.server.js';
 import { APP_TABS, activeAppTab, appTabHref } from './app-tabs.js';
 import { formatAgo } from './app-view.js';
 import { LockedByAdminNotice } from './locked-notice.js';
+import { PublishApprovalNotice } from './publish-approval-notice.js';
 
 export const appStyles = {
   h1: { fontSize: '1.75rem', margin: 0 },
@@ -187,6 +189,10 @@ function AppHeader({ header }: { header: AppHeaderData }) {
       {header.name && header.name !== header.slug ? <p style={s.sub}>{header.slug}</p> : null}
       {/* NSO-293: taken down by the operator — on every tab. */}
       <LockedByAdminNotice locked={header.lockedByAdmin} />
+      {/* NSO-366: this workspace may not publish yet (PUBLISH_APPROVAL=approval) — on every tab. */}
+      {header.lockedByAdmin ? null : (
+        <PublishApprovalNotice approval={header.publishApproval} canRequest={header.canEdit} action={header.basePath} busy={busy} />
+      )}
 
       <div style={s.urlGrid}>
         <span style={s.label}>Production</span>
@@ -209,7 +215,9 @@ function AppHeader({ header }: { header: AppHeaderData }) {
             </>
           ) : (
             <span style={s.muted} data-testid="app-published-version">
-              not published — publish a version on the Overview tab
+              {header.publishApproval
+                ? 'not published — publishing waits for the operator\'s approval'
+                : 'not published — publish a version on the Overview tab'}
             </span>
           )}
         </span>

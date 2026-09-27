@@ -7,13 +7,17 @@
  * (all | published | unpublished), `sort` (updated | created | name);
  * `deleted=<slug>` shows the notice after a delete. Each app carries its
  * thumbnail (NSO-342): the URL the list frames, or a placeholder reason.
+ * NSO-366: while the workspace may not publish (PUBLISH_APPROVAL=approval)
+ * the list shows the approval notice; POST `request-publish-approval`
+ * (editor+) asks the operator.
  */
-import { type LoaderFunctionArgs } from 'react-router';
+import { data, type ActionFunctionArgs, type LoaderFunctionArgs } from 'react-router';
 import { SLUG_RELEASE_AFTER_MS, previewUrl, publishedUrl, validateAppSlug } from '@drobek/apps';
-import { requireWorkspaceRole, workspaceNav } from '@drobek/tenancy';
+import { requireWorkspaceRole, roleAtLeast, workspaceNav } from '@drobek/tenancy';
 import { listWorkspaceApps } from '../apps.server.js';
 import { filterApps, parseAppListFilters } from '../app-view.js';
 import { appThumbnail, shapeApps } from '../view.js';
+import { publishApprovalView, requestApprovalAction } from '../publish-approval.server.js';
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const access = await requireWorkspaceRole(
@@ -46,5 +50,14 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     deletedSlug: deleted && validateAppSlug(deleted) === null ? deleted : null,
     slugReleaseDays: Math.round(SLUG_RELEASE_AFTER_MS / (24 * 60 * 60 * 1000)),
     role: access.effectiveRole,
+    publishApproval: await publishApprovalView(access.workspace.id, access.user.id),
+    canRequestApproval: roleAtLeast(access.effectiveRole, 'editor'),
   };
+}
+
+export async function action({ request, params }: ActionFunctionArgs) {
+  const access = await requireWorkspaceRole(request, String(params.slug ?? ''), 'viewer');
+  const base = `/workspaces/${access.workspace.slug}/apps`;
+  const out = await requestApprovalAction(access, await request.formData(), { base, fallback: base });
+  return out ?? data({ error: 'Unknown action.' }, { status: 400 });
 }

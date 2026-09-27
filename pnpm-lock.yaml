@@ -460,6 +460,9 @@ importers:
       '@drobek/db':
         specifier: workspace:*
         version: link:../db
+      '@drobek/email':
+        specifier: workspace:*
+        version: link:../email
       drizzle-orm:
         specifier: ^0.45.3
         version: 0.45.3(@electric-sql/pglite@0.2.17)(@types/pg@8.20.0)(pg@8.22.0)(postgres@3.4.9)

@@ -44,9 +44,10 @@ import {
   type ReadFileResult,
 } from './tools.js';
 import { createAssetUpload, deleteAssetTool, listAssetsTool } from './assets.js';
+import { setPublishApprovalTool } from './publish-approval.js';
 import { TEMPLATES } from './templates.js';
 
-/** The tool set, in tools/list order (M0-05 + publish, M0-06 + skill_info/configure_module, M1-01 + query_data, M1-03 + get_logs, M1-07 + set_gallery_listing, NSO-340 + the asset tools, NSO-358). */
+/** The tool set, in tools/list order (M0-05 + publish, M0-06 + skill_info/configure_module, M1-01 + query_data, M1-03 + get_logs, M1-07 + set_gallery_listing, NSO-340 + the asset tools, NSO-358 + set_publish_approval, NSO-366 — super-admins only). */
 export const APP_TOOL_NAMES = [
   'list_apps',
   'create_app',
@@ -63,9 +64,13 @@ export const APP_TOOL_NAMES = [
   'create_asset_upload',
   'list_assets',
   'delete_asset',
+  'set_publish_approval',
 ] as const;
 
 export type AppToolName = (typeof APP_TOOL_NAMES)[number];
+
+/** NSO-366: tools that exist only for a super-admin's grant (never in anyone else's tools/list). */
+const SUPER_ADMIN_TOOL_NAMES: readonly AppToolName[] = ['set_publish_approval'];
 
 const appId = z.string().describe('The app id (from list_apps or create_app).');
 
@@ -162,6 +167,11 @@ export const INPUT_SCHEMAS = {
   delete_asset: {
     app_id: appId,
     path: z.string().describe('The asset path, e.g. film.mp4 (as list_assets shows it, with or without the leading /).'),
+  },
+  set_publish_approval: {
+    workspace: z.string().describe('The workspace slug (list_apps all_workspaces lists every workspace).'),
+    approved: z.boolean().describe('true allows the workspace to publish; false takes that back (live apps keep serving).'),
+    user_confirmed: z.boolean().optional().describe('true ONLY after the user explicitly said yes to this change.'),
   },
 } as const;
 
@@ -261,6 +271,7 @@ export function registerAppTools(
     shape: (payload: unknown, args: A) => ToolResult = (p) => jsonResult(p as Payload)
   ): void {
     if (!allow(name)) return;
+    if (SUPER_ADMIN_TOOL_NAMES.includes(name) && !principal.superAdmin) return;
     registered += 1;
     const doc = toolDoc(name);
     server.registerTool(
@@ -312,6 +323,7 @@ export function registerAppTools(
   register('create_asset_upload', createAssetUpload);
   register('list_assets', listAssetsTool);
   register('delete_asset', deleteAssetTool);
+  register('set_publish_approval', setPublishApprovalTool);
 
   if (registered === 0) {
     // A grant with no tool scope (e.g. none of read/write/publish) must still get an

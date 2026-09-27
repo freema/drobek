@@ -15,7 +15,9 @@ export type AppsErrorCode =
   /** NSO-340: the public gallery is off on this server (GALLERY_ENABLED). */
   | 'gallery_disabled'
   /** NSO-340: a super-admin hid the app's gallery entry; neither the owner nor an agent can list it. */
-  | 'gallery_hidden';
+  | 'gallery_hidden'
+  /** NSO-366: PUBLISH_APPROVAL=approval and a super-admin has not approved the workspace (`contact`). */
+  | 'publish_not_approved';
 
 /** A caller-facing failure; `code` is stable (MCP tools return it verbatim). */
 export class AppsError extends Error {
@@ -26,11 +28,13 @@ export class AppsError extends Error {
   readonly reason?: string;
   /** For `limit_exceeded`: `{ limit: <ENV_NAME>, value }`. */
   readonly details?: { limit: string; value: number };
+  /** For `publish_not_approved`: the operator's e-mail (OPERATOR_EMAIL or a super-admin), when configured. */
+  readonly contact?: string;
 
   constructor(
     code: AppsErrorCode,
     message: string,
-    extra: { suggestion?: string; reason?: string; details?: { limit: string; value: number } } = {}
+    extra: { suggestion?: string; reason?: string; details?: { limit: string; value: number }; contact?: string } = {}
   ) {
     super(message);
     this.name = 'AppsError';
@@ -38,5 +42,6 @@ export class AppsError extends Error {
     if (extra.suggestion) this.suggestion = extra.suggestion;
     if (extra.reason) this.reason = extra.reason;
     if (extra.details) this.details = extra.details;
+    if (extra.contact) this.contact = extra.contact;
   }
 }

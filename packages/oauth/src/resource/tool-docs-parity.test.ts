@@ -6,7 +6,8 @@
  * (or the other way round) and this fails, so llms.txt / llms-full.txt / the
  * skill can never silently drift from tools/list.
  *
- * A MAXIMAL-scope server (every scope granted) is listed over an in-memory
+ * A MAXIMAL-scope server (every scope granted, a super-admin — so the
+ * super-admin-only tools are listed too) is listed over an in-memory
  * MCP client. No DB is touched: listing never runs a tool body.
  */
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -22,7 +23,7 @@ const FULL_SCOPE_CTX: AuthContext = {
   credentialId: 'tok_test',
   userId: 'u_test',
   email: 'test@example.com',
-  superAdmin: false,
+  superAdmin: true,
   scope: SCOPES.join(' '),
   scopes: [...SCOPES],
   audience: 'http://localhost:3041/mcp',
@@ -45,7 +46,7 @@ describe('MCP tools/list ↔ agent-dx TOOL_DOCS parity', () => {
   it('registers exactly the documented tools, in manifest order', async () => {
     const tools = await listedTools();
     expect(tools.map((t) => t.name)).toEqual(TOOL_NAMES);
-    expect(tools).toHaveLength(15);
+    expect(tools).toHaveLength(16);
   });
 
   it('each tool has the documented title, description, annotations and input fields', async () => {

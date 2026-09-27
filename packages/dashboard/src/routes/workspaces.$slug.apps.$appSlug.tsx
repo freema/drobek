@@ -163,7 +163,19 @@ export default function AppDetailRoute() {
                   <td style={s.td}>{formatTimestamp(v.createdAt)}</td>
                   <td style={s.td}>
                     <span style={{ ...s.inline, flexWrap: 'nowrap', overflowWrap: 'normal' }}>
-                      {canPublish && v.publishable ? (
+                      {canPublish && v.publishable && header.publishApproval ? (
+                        <button
+                          type="button"
+                          style={s.button}
+                          disabled
+                          title={header.publishApproval.notice}
+                          data-testid="publish-button"
+                          data-version={v.number}
+                          data-blocked="approval"
+                        >
+                          Publish
+                        </button>
+                      ) : canPublish && v.publishable ? (
                         <Form method="post">
                           <input type="hidden" name="intent" value="publish" />
                           <input type="hidden" name="versionId" value={v.id} />

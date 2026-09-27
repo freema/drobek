@@ -29,7 +29,10 @@
  *    unlisting needs none of that. get_app shows the gallery state;
  *  - an opt-in module (NSO-346) that is off for the app's workspace is left
  *    out of the app's skills and compile hints, get_app says
- *    `enabled: false` and configure_module answers `module_not_enabled`.
+ *    `enabled: false` and configure_module answers `module_not_enabled`;
+ *  - with PUBLISH_APPROVAL=approval (NSO-366) publish in a workspace the
+ *    operator has not approved answers `publish_not_approved` + `contact`;
+ *    list_apps and get_app say `can_publish` (+ `publish_contact`).
  */
 import {
   APP_LOCK_TTL_SEC,
@@ -49,6 +52,7 @@ import {
   listVersions,
   normalizeGalleryDescription,
   previewUrl,
+  publishPermissions,
   publish as publishVersion,
   publishedUrl,
   readBlobs,
@@ -77,7 +81,7 @@ import { authorizeApp, authorizeWorkspace } from './access.js';
 import type { ToolDeps, ToolPrincipal } from './context.js';
 import { LOG_KINDS, logsWindowStart, type LogKind } from '@drobek/insights';
 import { dbErrorForLog } from '@drobek/db';
-import { ToolError, lockedByAdmin, notFound } from './errors.js';
+import { ToolError, lockedByAdmin, notFound, publishNotApproved } from './errors.js';
 import type { Lease } from './lease.js';
 import {
   appsInWorkspace,
@@ -263,20 +267,37 @@ export async function listApps(ctx: CallContext, args: { workspace?: string }) {
   }
   const workspaces = await listUserWorkspaces(principal.userId);
   const { items } = await summarize(rows, deps);
+  const mine = await publishPermissions(
+    workspaces.map((w) => w.id),
+    { env: deps.env, actorUserId: principal.userId }
+  );
   const result: {
     user: { email: string };
-    workspaces: { slug: string; name: string; kind: string; role: string }[];
+    workspaces: ({ slug: string; name: string; kind: string; role: string } & PublishOut)[];
     apps: AppSummary[];
-    all_workspaces?: { slug: string; name: string; kind: string }[];
+    all_workspaces?: ({ slug: string; name: string; kind: string } & PublishOut)[];
   } = {
     user: { email: principal.email },
-    workspaces: workspaces.map((w) => ({ slug: w.slug, name: w.name, kind: w.kind, role: w.role })),
+    workspaces: workspaces.map((w) => ({ slug: w.slug, name: w.name, kind: w.kind, role: w.role, ...publishOut(mine.get(w.id)) })),
     apps: items,
   };
   if (principal.superAdmin) {
-    result.all_workspaces = (await listAllWorkspaces()).map((w) => ({ slug: w.slug, name: w.name, kind: w.kind }));
+    const all = await listAllWorkspaces();
+    const perms = await publishPermissions(all.map((w) => w.id), { env: deps.env });
+    result.all_workspaces = all.map((w) => ({ slug: w.slug, name: w.name, kind: w.kind, ...publishOut(perms.get(w.id)) }));
   }
   return result;
+}
+
+interface PublishOut {
+  can_publish: boolean;
+  publish_contact?: string;
+}
+
+/** NSO-366: may the workspace publish (PUBLISH_APPROVAL), and whom to ask when not. */
+function publishOut(p: { allowed: boolean; contact: string | null } | undefined): PublishOut {
+  if (!p || p.allowed) return { can_publish: true };
+  return p.contact ? { can_publish: false, publish_contact: p.contact } : { can_publish: false };
 }
 
 export async function getApp(ctx: CallContext, args: { app_id: string }) {
@@ -287,6 +308,9 @@ export async function getApp(ctx: CallContext, args: { app_id: string }) {
   const detail = head ? await getVersion(app.id, { id: head.id }) : null;
   const lock = locks.get(app.id);
   const enabled = await ctx.modules.enabledModules(app.workspaceId);
+  const permission = (await publishPermissions([app.workspaceId], { env: ctx.deps.env, actorUserId: ctx.principal.userId })).get(
+    app.workspaceId
+  );
   const modules = await ctx.modules.appModules(
     { id: app.id, slug: app.slug, workspaceId: app.workspaceId },
     (m) => confirmUrl(ctx.modules.deps.env, app.workspaceSlug, app.slug, m),
@@ -309,6 +333,7 @@ export async function getApp(ctx: CallContext, args: { app_id: string }) {
     modules,
     skills: skills(ctx, enabled),
     gallery: galleryOut(app, ctx.deps.env),
+    ...publishOut(permission),
     ...(lock ? { lock } : {}),
   };
 }
@@ -687,7 +712,9 @@ export async function restoreVersion(ctx: CallContext, args: { app_id: string; v
  * rollback. Only `ok` versions are publishable (not_publishable otherwise).
  * editor+ (same floor as writing). No single-writer lease: publish writes no
  * files and cannot interleave with a write — it only moves one pointer
- * (atomic, audited `app.publish` by @drobek/apps).
+ * (atomic, audited `app.publish` by @drobek/apps). An unapproved workspace
+ * (PUBLISH_APPROVAL=approval, NSO-366) answers `publish_not_approved`; the
+ * refusal already e-mailed the operator an approval request.
  */
 export async function publishApp(ctx: CallContext, args: { app_id: string; version?: number }) {
   const { app } = await authorizeApp(ctx.principal, args.app_id, 'editor');
@@ -707,8 +734,9 @@ export async function publishApp(ctx: CallContext, args: { app_id: string; versi
 
   let result: { number: number; previousNumber: number | null; assets: 'draft' | 'kept' };
   try {
-    result = await publishVersion(app.id, version.id, actorOf(ctx));
+    result = await publishVersion(app.id, version.id, actorOf(ctx), { env: ctx.deps.env });
   } catch (err) {
+    if (err instanceof AppsError && err.code === 'publish_not_approved') throw publishNotApproved(err.message, err.contact);
     if (err instanceof AppsError && err.code === 'not_publishable') {
       throw new ToolError('not_publishable', err.message, { version: number });
     }

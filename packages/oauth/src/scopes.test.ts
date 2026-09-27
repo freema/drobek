@@ -51,7 +51,7 @@ function allCombinations(): Scope[][] {
 
 const READ_TOOLS = ['list_apps', 'get_app', 'read_file', 'skill_info', 'query_data', 'get_logs', 'list_assets'];
 const WRITE_TOOLS = ['create_app', 'write_files', 'restore_version', 'configure_module', 'create_asset_upload', 'delete_asset'];
-const PUBLISH_TOOLS = ['publish', 'set_gallery_listing'];
+const PUBLISH_TOOLS = ['publish', 'set_gallery_listing', 'set_publish_approval'];
 
 /** The exact tools/list per combination, spelled out (not derived from the table). */
 const EXPECTED: Record<string, string[]> = {
@@ -81,14 +81,14 @@ describe('tool → scope table', () => {
     });
   }
 
-  it('every tool needs exactly one scope; publish unlocks exactly publish + set_gallery_listing', () => {
+  it('every tool needs exactly one scope; publish unlocks exactly publish + set_gallery_listing + set_publish_approval', () => {
     for (const scope of Object.values(TOOL_SCOPES)) expect(['read', 'write', 'publish']).toContain(scope);
     expect(toolAllowed([], 'list_apps')).toBe(false);
     expect(toolAllowed(['read'], 'write_files')).toBe(false);
     expect(toolAllowed(['write'], 'read_file')).toBe(false);
     expect(toolAllowed('read', 'get_app')).toBe(true);
     expect(toolAllowed(['read', 'write'], 'publish')).toBe(false);
-    expect(allowedTools(['publish'])).toEqual(['publish', 'set_gallery_listing']);
+    expect(allowedTools(['publish'])).toEqual(['publish', 'set_gallery_listing', 'set_publish_approval']);
     expect(toolAllowed(['read', 'write'], 'set_gallery_listing')).toBe(false);
   });
 });

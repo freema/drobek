@@ -98,9 +98,10 @@ The loop (tool → result):
 3. `write_files({ app_id, files, reasoning })` → `{ version, compile: { ok, errors: [{ code, file, line, column, text, hint? }], warnings }, preview_url, changed }`.
 4. `compile.ok: true` → give the user `preview_url`. `false` → fix `compile.errors`, write again (`skill_info('debug')`).
 5. `get_logs({ app_id, kind: "runtime" })` after the page ran in a browser.
-6. `publish({ app_id, version? })` ONLY when the user explicitly asks → `published_url`.
-   Public gallery: `set_gallery_listing({ app_id, listed, description, user_confirmed })` — show the
-   user the description first; `user_confirmed: true` ONLY after they explicitly said yes.
+6. `publish({ app_id, version? })` ONLY when the user explicitly asks → `published_url`. Public gallery:
+   `set_gallery_listing({ app_id, listed, description, user_confirmed })` — show the user the description
+   first; `user_confirmed: true` ONLY after they explicitly said yes. A super-admin approves a workspace
+   for publishing with `set_publish_approval({ workspace, approved, user_confirmed })`, same rule.
 7. `get_app({ app_id })` = files, versions, lock, modules; `restore_version({ app_id, version })` = new version copying an old one.
 8. Backends: `skill_info({ name })`, `configure_module({ app_id, module, config })`, `query_data({ app_id, collection })`.
 9. Binaries: `create_asset_upload({ app_id, path, size })` → `upload_url` + `curl -T`; `list_assets({ app_id })`, `delete_asset({ app_id, path })`.
@@ -118,16 +119,14 @@ Add a package as a pinned esm.sh URL, e.g. `"date-fns": "https://esm.sh/date-fns
   only: .tsx .ts .jsx .js .mjs .css .json .html .txt .md .svg .webmanifest.
   Video, audio, images, fonts: `create_asset_upload` (an upload URL, never
   base64) → the preview serves it at `/<path>`, production after `publish`.
-- 1–20 changes per write; `reasoning` ≤ 300 chars. Per version (defaults;
-  the briefing has this server's): 200 files, 512 KiB per file, 5 MiB total,
-  10 s build.
+- 1–20 changes per write; `reasoning` ≤ 300 chars. Per version (defaults; the briefing has
+  this server's): 200 files, 512 KiB per file, 5 MiB total, 10 s build.
 - Secrets in files → the write is refused (`secret_in_source`); the owner
   sets secrets in the drobek dashboard. Never ask for their values.
 - Lease: a write holds the app for 3 minutes (renewed per write).
-- Hosts: `<slug>--preview.<APPS_DOMAIN>` follows every write that compiled;
-  `<slug>.<APPS_DOMAIN>` changes only on publish; `<slug>--v<N>.…` = version N.
-  Sources and `drobek.json` are not served; unknown extension-less paths get
-  `index.html` (client routing works).
+- Hosts: `<slug>--preview.<APPS_DOMAIN>` follows every write that compiled; `<slug>.<APPS_DOMAIN>`
+  changes only on publish; `<slug>--v<N>.…` = version N. Sources and `drobek.json` are not
+  served; unknown extension-less paths get `index.html` (client routing works).
 - CSP: scripts from the app + https://esm.sh; `fetch` only to the app's own
   origin + esm.sh (other APIs → `skill_info('proxy')`); no embedding.
 
@@ -144,6 +143,7 @@ Add a package as a pinned esm.sh URL, e.g. `"date-fns": "https://esm.sh/date-fns
 | `app_locked` | another user's agent writes the app | tell the user; retry after `expires_at` |
 | `busy` | the compiler queue is full | retry the same call in a few seconds |
 | `not_publishable` | that version did not compile | publish the newest version that compiled |
+| `publish_not_approved` | the operator has not approved the workspace; a request was e-mailed | tell the user (`contact`), share `preview_url`; do not retry |
 | `user_confirmation_required` | `set_gallery_listing` without the user's yes | ask the user; call again with `user_confirmed: true` only if they say yes |
 | `invalid_params` | > 20 files, same path twice, long reasoning | split the change; fix the arguments |
 | `not_found` | wrong `app_id` or no access | `list_apps` |
