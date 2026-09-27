@@ -1,23 +1,36 @@
 /**
- * /admin/publishing — client half (NSO-366): the super-admin's publish
- * approvals. Workspaces with their state (waiting request, not approved,
- * approved) and Approve / Revoke. The server gate (super-admin only) is the
- * source of truth.
+ * /admin/publishing — client half (NSO-366): the super-admin's switch for
+ * who may publish. Workspaces with their state (blocked, allowed, waiting,
+ * default) and mode-aware actions — `open`: Block / Unblock first;
+ * `approval`: Approve / Revoke / Block — plus each workspace's live apps
+ * with the moderation queue's takedown form. The server gate (super-admin
+ * only) is the source of truth.
  */
 import { Form, Link, useActionData, useLoaderData, useNavigation } from 'react-router';
 import { DashboardPage, controls } from '@drobek/tenancy/layout';
 import type { action, loader } from './admin.publishing.server.js';
 
 export function meta() {
-  return [{ title: 'Publish approvals — drobek' }];
+  return [{ title: 'Publishing — drobek' }];
 }
 
-const STATE_LABEL: Record<string, string> = {
-  requested: 'Waiting requests',
-  not_approved: 'Not approved',
-  approved: 'Approved',
-  all: 'All workspaces',
-};
+function stateLabel(state: string, mode: string): string {
+  if (state === 'requested') return 'Waiting requests';
+  if (state === 'default') return mode === 'approval' ? 'Not approved' : 'Default';
+  if (state === 'allowed') return 'Allowed';
+  if (state === 'blocked') return 'Blocked';
+  return 'All workspaces';
+}
+
+const pill = {
+  display: 'inline-block',
+  padding: '0.1rem 0.55rem',
+  fontSize: '0.72rem',
+  fontWeight: 700,
+  letterSpacing: '0.04em',
+  textTransform: 'uppercase',
+  borderRadius: '999px',
+} as const;
 
 const styles = {
   h1: { fontSize: '1.75rem', marginBottom: '0.25rem' },
@@ -30,43 +43,14 @@ const styles = {
   head: { display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' },
   name: { fontWeight: 700, wordBreak: 'break-all' },
   meta: { color: '#555', fontSize: '0.82rem', marginTop: '0.25rem', wordBreak: 'break-word' },
-  badge: {
-    display: 'inline-block',
-    padding: '0.1rem 0.55rem',
-    fontSize: '0.72rem',
-    fontWeight: 700,
-    letterSpacing: '0.04em',
-    textTransform: 'uppercase',
-    borderRadius: '999px',
-    border: '1px solid #d4d4d8',
-    color: '#3f3f46',
-    background: '#fafafa',
-  },
-  okBadge: {
-    display: 'inline-block',
-    padding: '0.1rem 0.55rem',
-    fontSize: '0.72rem',
-    fontWeight: 700,
-    letterSpacing: '0.04em',
-    textTransform: 'uppercase',
-    borderRadius: '999px',
-    color: '#166534',
-    background: '#dcfce7',
-    border: '1px solid #bbf7d0',
-  },
-  waitBadge: {
-    display: 'inline-block',
-    padding: '0.1rem 0.55rem',
-    fontSize: '0.72rem',
-    fontWeight: 700,
-    letterSpacing: '0.04em',
-    textTransform: 'uppercase',
-    borderRadius: '999px',
-    color: '#92400e',
-    background: '#fef3c7',
-    border: '1px solid #fde68a',
-  },
+  badge: { ...pill, border: '1px solid #d4d4d8', color: '#3f3f46', background: '#fafafa' },
+  okBadge: { ...pill, color: '#166534', background: '#dcfce7', border: '1px solid #bbf7d0' },
+  waitBadge: { ...pill, color: '#92400e', background: '#fef3c7', border: '1px solid #fde68a' },
+  blockBadge: { ...pill, color: '#991b1b', background: '#fee2e2', border: '1px solid #fecaca' },
   actions: { display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', marginTop: '0.6rem' },
+  apps: { listStyle: 'none', padding: 0, margin: '0.6rem 0 0', display: 'grid', gap: '0.4rem' },
+  appRow: { display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', fontSize: '0.88rem' },
+  appLink: { wordBreak: 'break-all', color: '#1a1a1a' },
   modeNote: {
     background: '#f4f4f5',
     border: '1px solid #e4e4e7',
@@ -100,41 +84,67 @@ function when(iso: string): string {
   return new Date(iso).toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
 }
 
-export default function PublishApprovalsRoute() {
-  const { state, states, mode, contact, workspaces } = useLoaderData<typeof loader>();
+type Intent = 'approve' | 'revoke' | 'block' | 'unblock';
+
+const INTENT_UI: Record<Intent, { label: string; style: object; testId: string }> = {
+  approve: { label: 'Approve', style: controls.button, testId: 'publishing-approve' },
+  revoke: { label: 'Revoke approval', style: controls.secondaryButton, testId: 'publishing-revoke' },
+  block: { label: 'Block publishing', style: controls.dangerButton, testId: 'publishing-block' },
+  unblock: { label: 'Unblock', style: controls.button, testId: 'publishing-unblock' },
+};
+
+/** The actions for one workspace — `open` puts Block / Unblock first, `approval` Approve / Revoke. */
+function intentsFor(publishing: string, mode: string): Intent[] {
+  if (publishing === 'blocked') return mode === 'approval' ? ['unblock', 'approve'] : ['unblock'];
+  if (publishing === 'allowed') return mode === 'approval' ? ['revoke', 'block'] : ['block', 'revoke'];
+  return mode === 'approval' ? ['approve', 'block'] : ['block', 'approve'];
+}
+
+export default function PublishingRoute() {
+  const { state, defaultState, states, workspace, mode, contact, reasons, workspaces } = useLoaderData<typeof loader>();
   const result = useActionData<typeof action>();
   const busy = useNavigation().state !== 'idle';
 
   return (
-    <DashboardPage crumbs={[{ label: 'Workspaces', to: '/workspaces' }, { label: 'Publish approvals' }]}>
+    <DashboardPage crumbs={[{ label: 'Workspaces', to: '/workspaces' }, { label: 'Publishing' }]}>
       <p style={styles.nav} data-testid="publishing-states">
         {states.map((s) => (
           <Link
             key={s}
-            to={s === 'requested' ? '/admin/publishing' : `/admin/publishing?state=${s}`}
-            style={s === state ? styles.navActive : styles.navLink}
-            aria-current={s === state ? 'page' : undefined}
+            to={s === defaultState ? '/admin/publishing' : `/admin/publishing?state=${s}`}
+            style={!workspace && s === state ? styles.navActive : styles.navLink}
+            aria-current={!workspace && s === state ? 'page' : undefined}
             data-testid="publishing-state"
             data-state={s}
           >
-            {STATE_LABEL[s]}
+            {stateLabel(s, mode)}
           </Link>
         ))}
         <Link to="/admin/abuse" style={styles.navLink}>
           Moderation queue
         </Link>
       </p>
-      <h1 style={styles.h1}>Publish approvals</h1>
+      <h1 style={styles.h1}>Publishing</h1>
       <p style={styles.hint}>
-        Anyone can sign up, create workspaces and build and preview apps. With <code>PUBLISH_APPROVAL=approval</code> a
-        workspace publishes only after you approve it here (or when a super-admin is its member). A blocked publish
-        e-mails {contact ?? 'the operator'} an approval request, at most once a day per workspace. Revoking stops new
-        publishes; apps already live keep serving.
+        Anyone can sign up, create workspaces and build and preview apps. Here you decide who may put an app on its
+        public address: <strong>Block publishing</strong> turns it off for a workspace in every mode (its editors and
+        admins get an e-mail; live apps keep serving — take one down below);{' '}
+        <strong>Approve</strong> lets a workspace publish even when the server requires approval. A refused user is
+        shown {contact ?? 'the operator'} as the contact.
       </p>
       {mode === 'open' ? (
         <p style={styles.modeNote} data-testid="publishing-mode-open">
-          This server runs <code>PUBLISH_APPROVAL=open</code>: every workspace may publish. Approvals made here apply
-          once the server switches to <code>approval</code>.
+          This server runs <code>PUBLISH_APPROVAL=open</code>: every workspace may publish unless you block it.
+        </p>
+      ) : (
+        <p style={styles.modeNote} data-testid="publishing-mode-approval">
+          This server runs <code>PUBLISH_APPROVAL=approval</code>: a workspace publishes only once approved (or with a
+          super-admin member). A refused publish e-mails you an approval request, at most once a day per workspace.
+        </p>
+      )}
+      {workspace ? (
+        <p style={styles.hint} data-testid="publishing-one">
+          Showing workspace <strong>{workspace}</strong> · <Link to="/admin/publishing">all workspaces</Link>
         </p>
       ) : null}
       {result ? (
@@ -158,10 +168,12 @@ export default function PublishApprovalsRoute() {
           {workspaces.map((w) => (
             <li
               key={w.id}
+              id={`workspace-${w.slug}`}
               style={styles.item}
               data-testid="publishing-workspace"
               data-slug={w.slug}
-              data-approved={w.approvedAt ? '1' : '0'}
+              data-publishing={w.publishing}
+              data-approved={w.publishing === 'allowed' ? '1' : '0'}
             >
               <div style={styles.head}>
                 <Link to={`/workspaces/${w.slug}/apps`} style={styles.name}>
@@ -169,17 +181,21 @@ export default function PublishApprovalsRoute() {
                 </Link>
                 <span style={styles.meta}>/{w.slug}</span>
                 <span style={styles.badge}>{w.kind}</span>
-                {w.approvedAt ? (
-                  <span style={styles.okBadge} data-testid="publishing-badge">
-                    approved
+                {w.publishing === 'blocked' ? (
+                  <span style={styles.blockBadge} data-testid="publishing-badge">
+                    blocked
                   </span>
-                ) : w.requestedAt ? (
+                ) : w.publishing === 'allowed' ? (
+                  <span style={styles.okBadge} data-testid="publishing-badge">
+                    allowed
+                  </span>
+                ) : w.requestedAt && mode === 'approval' ? (
                   <span style={styles.waitBadge} data-testid="publishing-badge">
                     waiting
                   </span>
                 ) : (
                   <span style={styles.badge} data-testid="publishing-badge">
-                    not approved
+                    {mode === 'approval' ? 'not approved' : 'default'}
                   </span>
                 )}
                 {w.superAdminMember ? <span style={styles.badge}>super-admin member</span> : null}
@@ -188,38 +204,65 @@ export default function PublishApprovalsRoute() {
                 Admins: {w.admins.length > 0 ? w.admins.join(', ') : '—'} · {w.apps} app{w.apps === 1 ? '' : 's'},{' '}
                 {w.publishedApps} published · created {when(w.createdAt)}
               </div>
-              {w.requestedAt && !w.approvedAt ? (
+              {w.requestedAt && w.publishing === 'default' ? (
                 <div style={styles.meta} data-testid="publishing-requested">
-                  Requested {when(w.requestedAt)} by {w.requestedBy ?? 'a removed user'}
+                  Approval requested {when(w.requestedAt)} by {w.requestedBy ?? 'a removed user'}
+                </div>
+              ) : null}
+              {w.blockedAt ? (
+                <div style={styles.meta} data-testid="publishing-blocked">
+                  Blocked {when(w.blockedAt)}
+                  {w.blockedBy ? ` by ${w.blockedBy}` : ''}
                 </div>
               ) : null}
               {w.approvedAt ? (
                 <div style={styles.meta}>
-                  Approved {when(w.approvedAt)}
-                  {w.approvedBy ? ` by ${w.approvedBy}` : ' — no approver recorded (the upgrade approved workspaces that already had a published app)'}
+                  Allowed {when(w.approvedAt)}
+                  {w.approvedBy ? ` by ${w.approvedBy}` : ' — no approver recorded (the upgrade allowed workspaces that already had a published app)'}
                 </div>
               ) : null}
               <div style={styles.actions}>
-                <Form method="post">
-                  <input type="hidden" name="workspaceId" value={w.id} />
-                  {w.approvedAt ? (
+                {intentsFor(w.publishing, mode).map((intent) => (
+                  <Form method="post" key={intent}>
+                    <input type="hidden" name="workspaceId" value={w.id} />
                     <button
                       type="submit"
                       name="intent"
-                      value="revoke"
-                      style={controls.secondaryButton}
+                      value={intent}
+                      style={INTENT_UI[intent].style}
                       disabled={busy}
-                      data-testid="publishing-revoke"
+                      data-testid={INTENT_UI[intent].testId}
                     >
-                      Revoke
+                      {INTENT_UI[intent].label}
                     </button>
-                  ) : (
-                    <button type="submit" name="intent" value="approve" style={controls.button} disabled={busy} data-testid="publishing-approve">
-                      Approve
-                    </button>
-                  )}
-                </Form>
+                  </Form>
+                ))}
               </div>
+              {w.liveApps.length > 0 ? (
+                <ul style={styles.apps} data-testid="publishing-live-apps">
+                  {w.liveApps.map((a) => (
+                    <li key={a.id} id={`app-${a.slug}`} style={styles.appRow} data-testid="publishing-live-app" data-app={a.slug}>
+                      <a href={a.url} target="_blank" rel="noreferrer noopener" style={styles.appLink}>
+                        {a.name}
+                      </a>
+                      <Form method="post" action="/admin/abuse" style={styles.appRow}>
+                        <input type="hidden" name="intent" value="takedown" />
+                        <input type="hidden" name="appId" value={a.id} />
+                        <select name="reason" defaultValue="other" style={controls.select} aria-label={`Takedown reason for ${a.slug}`}>
+                          {reasons.map((x) => (
+                            <option key={x.value} value={x.value}>
+                              {x.label}
+                            </option>
+                          ))}
+                        </select>
+                        <button type="submit" style={controls.dangerButton} disabled={busy} data-testid="publishing-takedown">
+                          Take down
+                        </button>
+                      </Form>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
             </li>
           ))}
         </ul>

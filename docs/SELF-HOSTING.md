@@ -220,7 +220,7 @@ built-ins.
 | `TLS_CUSTOM_DOMAINS`, `DOMAINS_MAX_PER_APP`, `DOMAINS_DNS_SERVERS`, `DOMAINS_RECHECK_INTERVAL_MS` | — | [custom domains](#custom-domains) (catch-all certificate on by default in on-demand mode; 3 per app) |
 | `TERMS_URL`, `ABUSE_REPORTS_PER_IP_HOUR`, `ABUSE_BRAND_WORDS` | — | [abuse handling](#abuse-and-takedowns) (terms link of the 451 page; 5 reports / IP / hour; publish-heuristic brand words) |
 | `GALLERY_ENABLED`, `GALLERY_API_PER_IP_MINUTE`, `GALLERY_FRAME_ANCESTORS` | — (off) | [the public gallery](#public-gallery) (`true` = owners may list published apps; `GET /api/public/gallery`; 60 requests / IP / minute; your gallery website's origins that may show listed apps as live previews) |
-| `PUBLISH_APPROVAL`, `OPERATOR_EMAIL` | — (`open`) | [publish approval](#publish-approval) (`approval` = a workspace publishes only after a super-admin approved it; the contact blocked users see) |
+| `PUBLISH_APPROVAL`, `OPERATOR_EMAIL`, `PUBLISH_NOTIFY` | — (`open`, off) | [publish approval](#publish-approval) (`approval` = a workspace publishes only after a super-admin allowed it; the contact refused users see; `first` / `every` = e-mail the operator about publishes) |
 | `EMAIL_SIGNIN_APP_HOURLY_SHARE` | — (25) | one app's percent of the sign-in e-mail budget — raise it on a single-app server (see [Production compose](#production-compose)) |
 | `EMAIL_WORKSPACE_HOURLY_SHARE` | — (50) | one workspace's percent of each module e-mail budget — raise it to 100 on a single-workspace server |
 | limits (`OTP_*`, `COMPILE_*`, `DATA_*`, `FILES_*`, `EMAIL_*`, …) | — | production defaults; every variable is in the [Environment reference](#environment-reference) |
@@ -425,8 +425,9 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `GALLERY_ENABLED` | off | `true` = the [public gallery](#public-gallery): owners (and, on their explicit yes, their agents) may list published apps; `GET /api/public/gallery` answers. Off = no switch in the dashboard, the endpoint answers 404 |
 | `GALLERY_API_PER_IP_MINUTE` | 60 | requests to `GET /api/public/gallery` per client IP per minute (429 over it) |
 | `GALLERY_FRAME_ANCESTORS` | — (no embedding) | space-separated bare `http(s)://host[:port]` origins (at most 10) of your gallery website that may show a listed app in an `<iframe>` — added to `frame-ancestors` only on the production host (and custom domains) of an app the gallery shows, only while `GALLERY_ENABLED`; a wildcard, a path or a quote stops the server at start (see [Public gallery](#public-gallery)) |
-| `PUBLISH_APPROVAL` | `open` | `open` = every workspace may publish; `approval` = a workspace publishes only after a super-admin approved it (or when a super-admin is its member) — see [Publish approval](#publish-approval). Any other value, or `approval` without `SUPERADMIN_EMAIL`, stops the server at start |
-| `OPERATOR_EMAIL` | the `SUPERADMIN_EMAIL` addresses | one address: the contact a blocked publish names and the recipient of approval requests (without it every super-admin is e-mailed and the first one is shown); not one e-mail address = no start |
+| `PUBLISH_APPROVAL` | `open` | `open` = every workspace may publish unless a super-admin blocked it; `approval` = a workspace publishes only after a super-admin allowed it (or when a super-admin is its member) — see [Publish approval](#publish-approval). Any other value, or `approval` without `SUPERADMIN_EMAIL`, stops the server at start |
+| `OPERATOR_EMAIL` | the `SUPERADMIN_EMAIL` addresses | one address: the contact a refused publish names, the recipient of approval requests and publish notifications (without it every super-admin is e-mailed and the first one is shown), and an extra recipient of abuse reports; not one e-mail address = no start |
+| `PUBLISH_NOTIFY` | `off` | e-mail the operator (`OPERATOR_EMAIL`, else every super-admin) about publishes: `first` = the first publish of each app, `every` = every publish, at most one e-mail per app per hour; a super-admin's own publishes are never e-mailed. Any other value stops the server at start |
 
 ### Development and tests only
 
@@ -951,8 +952,8 @@ Anyone can publish on a public drobek, so the operator (every address in
   reporter e-mail and a honeypot. `ABUSE_REPORTS_PER_IP_HOUR` (default 5)
   valid reports per client IP per hour. A report is stored in
   `abuse_reports` (the reporter's IP only as a keyed hash), audited
-  `abuse.report` in the app's workspace, and e-mailed to the super-admins —
-  at most once per app per hour.
+  `abuse.report` in the app's workspace, and e-mailed to the super-admins
+  and `OPERATOR_EMAIL` (each address once) — at most once per app per hour.
 - **Queue** (`/admin/abuse`, super-admins only, 403 for everyone else): the
   open reports with the app and workspace behind each host.
   - **Take down** (pick a reason category): the app is unpublished and
@@ -1052,24 +1053,47 @@ There are no screenshots: drobek never runs an app's code on the server.
 ## Publish approval
 
 Anyone can sign up on a drobek server, create workspaces, and build and
-preview apps. `PUBLISH_APPROVAL` decides who may put an app on its public
-production host:
+preview apps. What goes on an app's public production host is decided in
+two places:
 
-- `open` (the default) — every workspace may publish.
-- `approval` — a workspace publishes only after a super-admin approved it,
-  or when a super-admin is one of its members (a super-admin acting in any
-  workspace may always publish). Needs `SUPERADMIN_EMAIL`; the server
-  refuses to start without it, and on any other value.
+- **The server mode**, `PUBLISH_APPROVAL`:
+  - `open` (the default) — every workspace may publish.
+  - `approval` — a workspace publishes only after a super-admin allowed it,
+    or when a super-admin is one of its members. Needs `SUPERADMIN_EMAIL`;
+    the server refuses to start without it, and on any other value.
+- **Each workspace's state**, set by a super-admin: `default` (the mode
+  decides), `allowed` (may publish in both modes) or `blocked` (may not
+  publish in either mode). Setting one clears the other.
 
-In `approval` mode:
+For one publish: a super-admin publishing is always allowed; a `blocked`
+workspace is refused; an `allowed` workspace, or one with a super-admin
+member, may publish; otherwise `open` allows and `approval` refuses. The
+check sits in `publish()` itself, so the dashboard's Publish, an agent's
+`publish` and a rollback (a publish too) share it. Previews, versions,
+restore, data, secrets, domains and everything else are never gated.
 
-- **A blocked publish** — from the dashboard or an agent's `publish` (a
-  rollback is a publish too) — changes nothing and answers
-  `publish_not_approved`: "Publishing on this server needs approval from
-  `<contact>` … An approval request was sent to `<contact>` …". The contact
-  is `OPERATOR_EMAIL`, else the first `SUPERADMIN_EMAIL` address.
+**Blocking** is the switch for an `open` server: people publish without
+waiting for you, and you turn a workspace off when it misuses that.
+
+- A blocked publish changes nothing and answers `publish_blocked`:
+  "Publishing from this workspace was turned off by the operator of this
+  server (`<contact>`). Previews, versions and everything else keep working;
+  live apps keep serving unless taken down." No approval request is sent;
+  the dashboard shows "Publishing from this workspace was turned off by the
+  operator (`<contact>`)." and disables the Publish buttons.
+- Blocking does not unpublish anything. To remove an app, take it down (the
+  publishing page lists each workspace's live apps with the takedown form of
+  the [moderation queue](#abuse-and-takedowns)).
+- Blocking and unblocking e-mail the workspace's editors and admins what
+  happened and whom to contact (delivery errors are logged, never fatal).
+
+**Approval** (`PUBLISH_APPROVAL=approval`):
+
+- An unapproved publish changes nothing and answers `publish_not_approved`:
+  "Publishing on this server needs approval from `<contact>` … An approval
+  request was sent to `<contact>` …".
 - **The approval request** is e-mailed to `OPERATOR_EMAIL` (else every
-  super-admin) on the first blocked publish or when a member clicks
+  super-admin) on the first refused publish or when a member clicks
   **Request approval** — the workspace, the requester's e-mail (also the
   Reply-To), the app and a link to `/admin/publishing`. At most one e-mail
   per workspace per 24 hours until a super-admin decides; the request is
@@ -1077,23 +1101,40 @@ In `approval` mode:
 - **Owners see it**: the workspace's apps list and every app page say
   "Publishing on this server needs approval from `<contact>`" with a
   Request approval button (editor+); the Publish buttons are disabled.
-  Agents see `can_publish: false` and `publish_contact` in `list_apps` and
-  `get_app`.
-- **Decide** at `/admin/publishing` (super-admins only; linked from
-  `/workspaces` and the moderation queue): the waiting requests, the
-  unapproved and the approved workspaces with their admins and apps —
-  **Approve** / **Revoke**, audited `workspace.publish_approve` /
-  `workspace.publish_revoke`. A super-admin's agent can do the same with the
-  MCP tool `set_publish_approval` (`user_confirmed: true` after the
-  super-admin's explicit yes); non-super-admins never see that tool.
-- **Revoking** stops new publishes and rollbacks; apps already live keep
-  serving, and unpublishing still works.
-- Previews, versions, restore, data, secrets, domains and everything else
-  are never gated.
 
-Upgrading approves every workspace that already has a published app
+The contact is `OPERATOR_EMAIL`, else the first `SUPERADMIN_EMAIL` address.
+Agents see `can_publish`, `publish_contact` and the workspace's `publishing`
+state in `list_apps` and `get_app`.
+
+**Decide** at `/admin/publishing` (super-admins only; linked from
+`/workspaces` and the moderation queue): every workspace with its state,
+admins, apps and live apps; filters for waiting requests, default, allowed
+and blocked; `?workspace=<slug>` shows one. In `open` mode **Block
+publishing** / **Unblock** come first; in `approval` mode **Approve** /
+**Revoke approval** / **Block publishing**. Audited
+`workspace.publish_approve`, `workspace.publish_revoke`,
+`workspace.publish_block` and `workspace.publish_unblock`. A super-admin's
+agent can do the same with the MCP tool
+`set_workspace_publishing({ workspace, publishing: default | allowed | blocked, user_confirmed })`
+(`user_confirmed: true` after the super-admin's explicit yes); other users
+never see that tool.
+
+**Publish notifications** (`PUBLISH_NOTIFY`, `off` by default): `first`
+e-mails `OPERATOR_EMAIL` (else every super-admin) about the first publish of
+each app, `every` about every publish — at most one e-mail per app per hour.
+The e-mail names the app, its live URL and custom domains, the workspace,
+who published it from the dashboard or over MCP, the version and whether it
+was the first publish, a republish or a rollback, with links to the app, its
+dashboard page and `/admin/publishing?workspace=<slug>` (take the app down,
+block the workspace). A super-admin's own publishes are not e-mailed. The
+e-mail is sent after the publish and never delays or fails it.
+
+**Abuse reports** go to every super-admin and to `OPERATOR_EMAIL` (each
+address once).
+
+Upgrading approves every workspace that already had a published app
 (migration 0026), so switching to `approval` never blocks the next publish
-of an app that is live today.
+of an app that was live then; migration 0027 adds the block.
 
 ## The rehearsal (`task selfhost:rehearsal`)
 

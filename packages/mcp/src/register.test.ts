@@ -1,6 +1,6 @@
 /**
  * tools/list snapshot (M0-05 + M0-06 + M1-01 + M1-03 + M1-07 + NSO-340 + NSO-358): exactly the 15 tools of a
- * user who is not a super-admin (a super-admin also gets set_publish_approval, NSO-366), in order, with
+ * user who is not a super-admin (a super-admin also gets set_workspace_publishing, NSO-366), in order, with
  * their titles, annotations and input schemas. Hand-written on purpose — a
  * change to the public tool surface must be a deliberate edit here.
  */
@@ -196,20 +196,21 @@ describe('tools/list', () => {
     for (const t of tools) expect(t.description!.length, t.name).toBeGreaterThan(40);
   });
 
-  it('a super-admin also gets set_publish_approval, last (NSO-366)', async () => {
+  it('a super-admin also gets set_workspace_publishing, last (NSO-366)', async () => {
     const tools = await listTools(undefined, true);
     expect(tools).toHaveLength(16);
     const last = tools[15];
-    expect(last.name).toBe('set_publish_approval');
+    expect(last.name).toBe('set_workspace_publishing');
     expect(last.annotations).toEqual({
-      title: 'Approve a workspace for publishing',
+      title: 'Set a workspace\'s publishing',
       readOnlyHint: false,
       destructiveHint: false,
       idempotentHint: true,
       openWorldHint: false,
     });
-    expect(Object.keys((last.inputSchema.properties ?? {}) as object)).toEqual(['workspace', 'approved', 'user_confirmed']);
-    expect(last.inputSchema.required).toEqual(['workspace', 'approved']);
+    expect(Object.keys((last.inputSchema.properties ?? {}) as object)).toEqual(['workspace', 'publishing', 'user_confirmed']);
+    expect(last.inputSchema.required).toEqual(['workspace', 'publishing']);
+    expect((last.inputSchema.properties as Record<string, { enum?: string[] }>).publishing.enum).toEqual(['default', 'allowed', 'blocked']);
   });
 
   it('registers only what `allow` lets through (the scope gate)', async () => {

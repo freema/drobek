@@ -17,7 +17,9 @@ export type AppsErrorCode =
   /** NSO-340: a super-admin hid the app's gallery entry; neither the owner nor an agent can list it. */
   | 'gallery_hidden'
   /** NSO-366: PUBLISH_APPROVAL=approval and a super-admin has not approved the workspace (`contact`). */
-  | 'publish_not_approved';
+  | 'publish_not_approved'
+  /** NSO-366: a super-admin turned publishing off for the workspace (`contact`), in every PUBLISH_APPROVAL mode. */
+  | 'publish_blocked';
 
 /** A caller-facing failure; `code` is stable (MCP tools return it verbatim). */
 export class AppsError extends Error {
@@ -28,7 +30,7 @@ export class AppsError extends Error {
   readonly reason?: string;
   /** For `limit_exceeded`: `{ limit: <ENV_NAME>, value }`. */
   readonly details?: { limit: string; value: number };
-  /** For `publish_not_approved`: the operator's e-mail (OPERATOR_EMAIL or a super-admin), when configured. */
+  /** For `publish_not_approved` / `publish_blocked`: the operator's e-mail (OPERATOR_EMAIL or a super-admin), when configured. */
   readonly contact?: string;
 
   constructor(

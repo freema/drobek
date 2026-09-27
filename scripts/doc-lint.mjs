@@ -38,6 +38,7 @@ const RETIRED = [
   ['/:ws/app/:slug', /\/:ws\/app\/:slug/i],
   ['static bundle', /static[ -]bundles?/i],
   ['dual license', /dual[ -]licen[cs]/i],
+  ['set_publish_approval', /set_publish_approval/i],
 ];
 
 const EXEMPT_FILES = new Set(['CHANGELOG.md', SELF, 'pnpm-lock.yaml']);

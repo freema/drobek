@@ -2,12 +2,14 @@
  * NSO-366 in the dashboard, on a real PGlite database (the session and the
  * workspace role gate are stubbed — they have their own tests):
  *  - /admin/publishing: only a super-admin reads it or acts (403 otherwise);
- *    the waiting requests are listed; Approve / Revoke change the workspace
- *    and audit `workspace.publish_approve` / `workspace.publish_revoke`;
+ *    the waiting requests are listed; Approve / Revoke / Block / Unblock
+ *    change the workspace and audit `workspace.publish_approve` /
+ *    `_revoke` / `_block` / `_unblock`;
  *  - the apps list shows the approval notice while the workspace may not
  *    publish; "Request approval" (editor+) records the request (a viewer →
  *    403) and the notice then says it was sent; an approved workspace shows
- *    no notice.
+ *    no notice; a blocked one shows the operator's notice and never records
+ *    a request.
  */
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
@@ -112,6 +114,7 @@ describe('the workspace apps list', () => {
   it('shows the notice; a viewer cannot request; an editor requests once and the notice says it was sent', async () => {
     const before = (await listLoad()) as { publishApproval: Record<string, unknown> | null; canRequestApproval: boolean };
     expect(before.publishApproval).toMatchObject({
+      kind: 'approval',
       contact: 'ops@example.com',
       notice: 'Publishing on this server needs approval from ops@example.com.',
       requestPending: false,
@@ -147,8 +150,9 @@ describe('/admin/publishing', () => {
     expect(rows.find((r) => r.slug === 'acme')).toMatchObject({ requestedBy: 'owner@example.com', approvedAt: null, admins: ['owner@example.com'] });
 
     expect(result(await adminPost({ intent: 'approve', workspaceId: who.ws.id })).data).toMatchObject({ ok: true, message: 'acme may publish now.' });
-    expect(((result(await adminLoad('?state=approved')).data.workspaces as Record<string, unknown>[]).find((r) => r.slug === 'acme'))).toMatchObject({
+    expect(((result(await adminLoad('?state=allowed')).data.workspaces as Record<string, unknown>[]).find((r) => r.slug === 'acme'))).toMatchObject({
       approvedBy: 'boss@example.com',
+      publishing: 'allowed',
     });
     who.user = { id: ownerId, email: 'owner@example.com' };
     expect(((await listLoad()) as { publishApproval: unknown }).publishApproval).toBeNull();
@@ -157,7 +161,40 @@ describe('/admin/publishing', () => {
     expect(result(await adminPost({ intent: 'revoke', workspaceId: who.ws.id })).data).toMatchObject({ ok: true });
     expect(result(await adminPost({ intent: 'approve', workspaceId: 'nope' })).status).toBe(404);
     expect(result(await adminPost({ intent: 'bogus', workspaceId: who.ws.id })).status).toBe(400);
+    expect(result(await adminPost({ intent: 'constructor', workspaceId: who.ws.id })).status).toBe(400);
+  });
+
+  it('block shows the operator\'s notice to the owner, records no request; unblock takes it back; ?workspace= shows one', async () => {
+    who.user = { id: bossId, email: 'boss@example.com' };
+    expect(result(await adminPost({ intent: 'block', workspaceId: who.ws.id })).data).toMatchObject({
+      ok: true,
+      message: 'acme can no longer publish. Its live apps keep serving; its editors and admins were e-mailed.',
+    });
+    const one = result(await adminLoad('?workspace=acme'));
+    expect(one.data).toMatchObject({ workspace: 'acme', state: 'all' });
+    expect(one.data.workspaces).toEqual([expect.objectContaining({ slug: 'acme', publishing: 'blocked', blockedBy: 'boss@example.com', liveApps: [] })]);
+    expect((result(await adminLoad('?state=blocked')).data.workspaces as Record<string, unknown>[]).map((r) => r.slug)).toEqual(['acme']);
+
+    who.user = { id: ownerId, email: 'owner@example.com' };
+    who.effective = 'editor';
+    const page = (await listLoad()) as { publishApproval: Record<string, unknown> | null };
+    expect(page.publishApproval).toEqual({
+      kind: 'blocked',
+      contact: 'ops@example.com',
+      notice: 'Publishing from this workspace was turned off by the operator (ops@example.com).',
+      requestedAt: null,
+      requestPending: false,
+    });
+    const res = (await listPost({ intent: 'request-publish-approval' })) as Response;
+    expect(res.status).toBe(302);
+    expect((await db.select().from(workspaces).where(eq(workspaces.id, who.ws.id)))[0].publishApprovalRequestedAt).toBeNull();
+
+    who.user = { id: bossId, email: 'boss@example.com' };
+    expect(result(await adminPost({ intent: 'unblock', workspaceId: who.ws.id })).data).toMatchObject({
+      ok: true,
+      message: 'acme is unblocked; it publishes once approved. Its editors and admins were e-mailed.',
+    });
     const actions = (await db.select().from(auditLog).where(eq(auditLog.actorUserId, bossId))).map((r) => r.action);
-    expect(actions).toEqual(['workspace.publish_approve', 'workspace.publish_revoke']);
+    expect(actions).toEqual(['workspace.publish_approve', 'workspace.publish_revoke', 'workspace.publish_block', 'workspace.publish_unblock']);
   });
 });

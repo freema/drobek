@@ -1,13 +1,15 @@
 /**
- * NSO-366: the dashboard's side of publish approval — the notice data for a
- * workspace (`publishApprovalView`) and the "Request approval" POST
- * (`requestApprovalAction`, editor+), shared by the app pages and the
- * workspace's apps list.
+ * NSO-366: the dashboard's side of who may publish — the notice data for a
+ * workspace (`publishApprovalView`: blocked by the operator, or waiting for
+ * approval) and the "Request approval" POST (`requestApprovalAction`,
+ * editor+; a blocked workspace sends nothing), shared by the app pages and
+ * the workspace's apps list.
  */
 import { data, redirect } from 'react-router';
 import {
   PUBLISH_APPROVAL_REQUEST_EVERY_MS,
   publishApprovalNotice,
+  publishBlockedNotice,
   publishPermission,
   requestPublishApproval,
 } from '@drobek/apps';
@@ -16,7 +18,7 @@ import { roleAtLeast, type WorkspaceAccess } from '@drobek/tenancy';
 import { safeRedirectTo } from './app-view.js';
 import { REQUEST_PUBLISH_APPROVAL_INTENT, type PublishApprovalView } from './publish-approval-notice.js';
 
-/** null when the workspace may publish (or the server runs PUBLISH_APPROVAL=open). */
+/** null when the workspace may publish. */
 export async function publishApprovalView(
   workspaceId: string,
   userId: string,
@@ -24,8 +26,12 @@ export async function publishApprovalView(
 ): Promise<PublishApprovalView | null> {
   const p = await publishPermission(workspaceId, { actorUserId: userId, ...(opts.env ? { env: opts.env } : {}) });
   if (p.allowed) return null;
+  if (p.refusal === 'blocked') {
+    return { kind: 'blocked', contact: p.contact, notice: publishBlockedNotice(p.contact), requestedAt: null, requestPending: false };
+  }
   const now = opts.now ?? Date.now();
   return {
+    kind: 'approval',
     contact: p.contact,
     notice: publishApprovalNotice(p.contact),
     requestedAt: p.requestedAt ? p.requestedAt.toISOString() : null,

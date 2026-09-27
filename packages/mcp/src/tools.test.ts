@@ -657,7 +657,7 @@ describe('list_apps', () => {
       const r = await c.call('list_apps');
       expect(r.isError, r.text).toBe(false);
       expect(r.body.user).toEqual({ email: 'bob@example.test' });
-      expect(r.body.workspaces).toEqual([{ slug: 'team-x', name: 'Team X', kind: 'team', role: 'editor', can_publish: true }]);
+      expect(r.body.workspaces).toEqual([{ slug: 'team-x', name: 'Team X', kind: 'team', role: 'editor', can_publish: true, publishing: 'default' }]);
       const item = (r.body.apps as Record<string, unknown>[]).find((a) => a.app_id === app.app_id);
       expect(item).toEqual({
         app_id: app.app_id,
@@ -691,7 +691,7 @@ describe('list_apps', () => {
       expect(r.isError, r.text).toBe(false);
       const all = r.body.all_workspaces as { slug: string; kind: string }[];
       expect(all.map((w) => w.slug)).toEqual(expect.arrayContaining(['team-x']));
-      expect(all.every((w) => Object.keys(w).sort().join() === 'can_publish,kind,name,slug')).toBe(true);
+      expect(all.every((w) => Object.keys(w).sort().join() === 'can_publish,kind,name,publishing,slug')).toBe(true);
       const team = await c.call('list_apps', { workspace: 'team-x' });
       expect(team.isError, team.text).toBe(false);
       expect((team.body.apps as { workspace: string }[]).length).toBeGreaterThan(0);

@@ -18,8 +18,9 @@ export const TOOL_ERROR_CODES = [
   'busy',
   'slug_taken',
   'not_publishable',
-  // NSO-366: publish in a workspace the operator has not approved (PUBLISH_APPROVAL=approval).
+  // NSO-366: publish in a workspace the operator has not allowed (PUBLISH_APPROVAL=approval) or blocked.
   'publish_not_approved',
+  'publish_blocked',
   // NSO-340: set_gallery_listing.
   'not_published',
   'user_confirmation_required',
@@ -69,9 +70,13 @@ export function lockedByAdmin(lockedReason: string | null | undefined): ToolErro
   return new ToolError('app_locked_by_admin', lockedMessage(reason), { reason });
 }
 
-/** NSO-366: the workspace may not publish yet; `contact` = the operator's e-mail. */
-export function publishNotApproved(message: string, contact: string | null | undefined): ToolError {
-  return new ToolError('publish_not_approved', message, contact ? { contact } : {});
+/** NSO-366: the workspace may not publish (not approved yet, or blocked by the operator); `contact` = the operator's e-mail. */
+export function publishRefused(
+  code: 'publish_not_approved' | 'publish_blocked',
+  message: string,
+  contact: string | null | undefined
+): ToolError {
+  return new ToolError(code, message, contact ? { contact } : {});
 }
 
 export function notFound(what: 'app' | 'workspace' = 'app'): ToolError {

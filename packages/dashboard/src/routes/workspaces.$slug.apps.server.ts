@@ -7,9 +7,9 @@
  * (all | published | unpublished), `sort` (updated | created | name);
  * `deleted=<slug>` shows the notice after a delete. Each app carries its
  * thumbnail (NSO-342): the URL the list frames, or a placeholder reason.
- * NSO-366: while the workspace may not publish (PUBLISH_APPROVAL=approval)
- * the list shows the approval notice; POST `request-publish-approval`
- * (editor+) asks the operator.
+ * NSO-366: while the workspace may not publish (blocked by the operator, or
+ * not approved yet) the list shows the notice; POST `request-publish-approval`
+ * (editor+) asks the operator for an approval.
  */
 import { data, type ActionFunctionArgs, type LoaderFunctionArgs } from 'react-router';
 import { SLUG_RELEASE_AFTER_MS, previewUrl, publishedUrl, validateAppSlug } from '@drobek/apps';

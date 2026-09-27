@@ -1,5 +1,17 @@
 # Changelog — drobek (core)
 
+## Unreleased
+
+### Changed
+- **Who may publish is per workspace, in both modes** (NSO-366). A super-admin sets each workspace to `default` (the `PUBLISH_APPROVAL` mode decides), `allowed` (may publish in both modes — what v0.3.0 called approved; approved workspaces stay allowed) or `blocked` (may not publish in either mode); setting one clears the other. For one publish: a super-admin publisher is always allowed, a blocked workspace is refused, an allowed one or one with a super-admin member may publish, otherwise `open` allows and `approval` refuses as before. `PUBLISH_APPROVAL` still defaults to `open`, so a server lets everyone publish and the operator turns a workspace off when needed.
+- **`set_publish_approval` is renamed `set_workspace_publishing`** (it shipped only in the v0.3.0 tag): `set_workspace_publishing({ workspace, publishing: "default" | "allowed" | "blocked", user_confirmed })`, still super-admin only, publish scope, `user_confirmed: true` after the super-admin's explicit yes; returns `{ workspace, publishing, mode, can_publish_now, changed }`. `list_apps` (also `all_workspaces`) and `get_app` add the workspace's `publishing` next to `can_publish` / `publish_contact`.
+- **`/admin/publishing`** lists every workspace with its state, filters for waiting requests, default, allowed and blocked, and `?workspace=<slug>` for one. `open` mode puts **Block publishing** / **Unblock** first; `approval` mode **Approve** / **Revoke approval** / **Block publishing**. Each workspace's live apps are listed with the moderation queue's takedown form.
+- **Abuse reports** are e-mailed to every super-admin and to `OPERATOR_EMAIL` (each address once, case-insensitive).
+
+### Added
+- **Blocking a workspace's publishing**: a publish from it answers the new error `publish_blocked` ("Publishing from this workspace was turned off by the operator of this server (<contact>). Previews, versions and everything else keep working; live apps keep serving unless taken down.", MCP field `contact`; dashboard 403) — no approval request is sent. The dashboard shows "Publishing from this workspace was turned off by the operator (<contact>)." and disables the Publish buttons. Blocking does not unpublish anything (the takedown does). Blocking and unblocking e-mail the workspace's editors and admins what happened and whom to contact. Audit: `workspace.publish_block`, `workspace.publish_unblock` (with `from` / `to`). Migration 0027 adds `workspaces.publish_blocked_at` / `publish_blocked_by`.
+- **Publish notifications** (`PUBLISH_NOTIFY=off|first|every`, default `off`): `first` e-mails the operator (`OPERATOR_EMAIL`, else every super-admin) about the first publish of each app, `every` about every publish, at most one e-mail per app per hour. The e-mail names the app, its live URL and custom domains, the workspace, the publisher and whether it came from the dashboard or MCP, the version and whether it was the first publish, a republish or a rollback, with links to the app, its dashboard page and `/admin/publishing?workspace=<slug>` (takedown, block). A super-admin's own publishes are not e-mailed; the mail never delays or fails the publish. An invalid value stops the server at start.
+
 ## v0.3.0 — 2026-09-27
 
 ### Added

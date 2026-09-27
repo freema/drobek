@@ -21,7 +21,7 @@ import { randomBytes } from 'node:crypto';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { toolDoc } from '@drobek/agent-dx';
-import { AppsError } from '@drobek/apps';
+import { AppsError, WORKSPACE_PUBLISHING_STATES } from '@drobek/apps';
 import { dbErrorForLog } from '@drobek/db';
 import { defaultDeps, type ToolDeps, type ToolPrincipal } from './context.js';
 import { ToolError, lockedByAdmin } from './errors.js';
@@ -44,10 +44,10 @@ import {
   type ReadFileResult,
 } from './tools.js';
 import { createAssetUpload, deleteAssetTool, listAssetsTool } from './assets.js';
-import { setPublishApprovalTool } from './publish-approval.js';
+import { setWorkspacePublishingTool } from './workspace-publishing.js';
 import { TEMPLATES } from './templates.js';
 
-/** The tool set, in tools/list order (M0-05 + publish, M0-06 + skill_info/configure_module, M1-01 + query_data, M1-03 + get_logs, M1-07 + set_gallery_listing, NSO-340 + the asset tools, NSO-358 + set_publish_approval, NSO-366 — super-admins only). */
+/** The tool set, in tools/list order (M0-05 + publish, M0-06 + skill_info/configure_module, M1-01 + query_data, M1-03 + get_logs, M1-07 + set_gallery_listing, NSO-340 + the asset tools, NSO-358 + set_workspace_publishing, NSO-366 — super-admins only). */
 export const APP_TOOL_NAMES = [
   'list_apps',
   'create_app',
@@ -64,13 +64,13 @@ export const APP_TOOL_NAMES = [
   'create_asset_upload',
   'list_assets',
   'delete_asset',
-  'set_publish_approval',
+  'set_workspace_publishing',
 ] as const;
 
 export type AppToolName = (typeof APP_TOOL_NAMES)[number];
 
 /** NSO-366: tools that exist only for a super-admin's grant (never in anyone else's tools/list). */
-const SUPER_ADMIN_TOOL_NAMES: readonly AppToolName[] = ['set_publish_approval'];
+const SUPER_ADMIN_TOOL_NAMES: readonly AppToolName[] = ['set_workspace_publishing'];
 
 const appId = z.string().describe('The app id (from list_apps or create_app).');
 
@@ -168,9 +168,11 @@ export const INPUT_SCHEMAS = {
     app_id: appId,
     path: z.string().describe('The asset path, e.g. film.mp4 (as list_assets shows it, with or without the leading /).'),
   },
-  set_publish_approval: {
+  set_workspace_publishing: {
     workspace: z.string().describe('The workspace slug (list_apps all_workspaces lists every workspace).'),
-    approved: z.boolean().describe('true allows the workspace to publish; false takes that back (live apps keep serving).'),
+    publishing: z
+      .enum(WORKSPACE_PUBLISHING_STATES)
+      .describe('default = the server mode decides; allowed = may always publish; blocked = may never publish (live apps keep serving).'),
     user_confirmed: z.boolean().optional().describe('true ONLY after the user explicitly said yes to this change.'),
   },
 } as const;
@@ -323,7 +325,7 @@ export function registerAppTools(
   register('create_asset_upload', createAssetUpload);
   register('list_assets', listAssetsTool);
   register('delete_asset', deleteAssetTool);
-  register('set_publish_approval', setPublishApprovalTool);
+  register('set_workspace_publishing', setWorkspacePublishingTool);
 
   if (registered === 0) {
     // A grant with no tool scope (e.g. none of read/write/publish) must still get an

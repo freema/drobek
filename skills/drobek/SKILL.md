@@ -22,7 +22,7 @@ llms-full.txt and the MCP docs resource — link to them, do not hand-copy them.
 Your access belongs to the user, not to one workspace:
 
 1. Call `list_apps` — it returns the user's email, EVERY workspace they belong
-   to (`slug`, `kind`, `role`, `can_publish`) and the apps across them
+   to (`slug`, `kind`, `role`, `can_publish`, `publishing`) and the apps across them
    (`app_id`, `name`, `slug`, `preview_url`, `latest_version`,
    `compile_status`, `locked_by`).
 2. Every other tool addresses an app by its `app_id`. Your role in the app's
@@ -209,16 +209,23 @@ Publish **only when the user explicitly asks** ("publish it", "make it live").
 Never publish on your own initiative — the preview URL is for showing work in
 progress. The owner can also publish from the drobek dashboard.
 
-A server may let a workspace publish only after its operator approved it.
-Then `list_apps` / `get_app` say `can_publish: false` with `publish_contact`
-(the operator's e-mail), and `publish` answers `publish_not_approved` —
-drobek has already e-mailed the operator an approval request. Do not retry
-and do not move the app elsewhere: tell the user that publishing waits for
-the operator's approval, name the address, and give them the `preview_url`
-meanwhile. Building, versions and previews keep working. The operator (a
-super-admin) approves in the dashboard, or with
-`set_publish_approval({ workspace, approved, user_confirmed })` — a tool only
-in a super-admin's tools/list, and only after they explicitly said yes.
+The server's operator decides who may publish. `list_apps` / `get_app` say
+`can_publish` and the workspace's `publishing` state (`default`, `allowed` or
+`blocked`); when `can_publish` is false, `publish_contact` is the operator's
+e-mail. `publish` then answers one of:
+
+- `publish_blocked` — the operator turned publishing off for this workspace.
+  Live apps keep serving; nothing is requested.
+- `publish_not_approved` — the server lets a workspace publish only after its
+  operator approved it; drobek has already e-mailed them an approval request.
+
+Either way, do not retry and do not move the app elsewhere: tell the user,
+name the address in `contact`, and give them the `preview_url`. Building,
+versions and previews keep working. The operator (a super-admin) decides in
+the dashboard, or with
+`set_workspace_publishing({ workspace, publishing: "default" | "allowed" | "blocked", user_confirmed })`
+— a tool only in a super-admin's tools/list, and only after they explicitly
+said yes to exactly that change.
 
 ## Gallery
 
@@ -250,7 +257,7 @@ A failed call returns `isError: true` with `{ code, message, hint }` — the
 `invalid_path`, `limit_exceeded`, `secret_in_source`, `app_locked`,
 `app_locked_by_admin`, `busy`, `not_publishable`, `not_published`,
 `user_confirmation_required`, `gallery_hidden`, `gallery_disabled`,
-`publish_not_approved`, `asset_too_large`, `module_not_enabled`, …).
+`publish_not_approved`, `publish_blocked`, `asset_too_large`, `module_not_enabled`, …).
 Compile problems are not tool failures: they come back in `compile.errors`. The
 full code → meaning → fix table is the Error catalogue in llms-full.txt (core
 codes, then one section per module); a module's own codes are also in

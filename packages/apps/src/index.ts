@@ -181,29 +181,38 @@ export {
   type GalleryPage,
   type GalleryModerationEntry,
 } from './gallery.server.js';
-// NSO-366: publish approval (PUBLISH_APPROVAL=approval — a super-admin decides per workspace).
+// NSO-366: who may publish (PUBLISH_APPROVAL + a super-admin's per-workspace state) and the operator's publish e-mails (PUBLISH_NOTIFY).
 export {
   PUBLISH_APPROVAL_MODES,
   PUBLISH_APPROVAL_PATH,
   PUBLISH_APPROVAL_REQUEST_EVERY_MS,
+  PUBLISH_NOTIFY_MODES,
+  WORKSPACE_PUBLISHING_STATES,
+  isWorkspacePublishing,
   operatorContact,
   operatorEmails,
   publishApprovalConfigError,
   publishApprovalMode,
   publishApprovalNotice,
+  publishBlockedMessage,
+  publishBlockedNotice,
   publishNotApprovedMessage,
+  publishNotifyMode,
   type PublishApprovalMode,
+  type PublishNotifyMode,
+  type WorkspacePublishing,
 } from './publish-approval.js';
 export {
-  PUBLISH_APPROVAL_FILTERS,
-  listPublishApprovals,
+  PUBLISHING_FILTERS,
+  listWorkspacePublishing,
   publishPermission,
   publishPermissions,
   requestPublishApproval,
-  setPublishApproval,
+  setWorkspacePublishing,
   type PublishAllowedBy,
-  type PublishApprovalEntry,
-  type PublishApprovalFilter,
   type PublishApprovalRequestResult,
   type PublishPermission,
+  type PublishingFilter,
+  type WorkspacePublishingEntry,
 } from './publish-approval.server.js';
+export { notifyOperatorOfPublish, type PublishKind, type PublishNotifyResult } from './publish-notify.server.js';

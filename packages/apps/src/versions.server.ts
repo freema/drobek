@@ -10,15 +10,16 @@
  * live (assets/snapshots.server.ts).
  */
 import { createHash } from 'node:crypto';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, sql } from 'drizzle-orm';
 import { AUDIT_ACTIONS, writeAudit, type AuditExecutor } from '@drobek/audit';
 import { normalizeAppPath } from '@drobek/compile';
-import { appVersions, apps, blobs, getDb, versionFiles } from '@drobek/db';
+import { appVersions, apps, auditLog, blobs, getDb, versionFiles } from '@drobek/db';
 import { AppsError } from './errors.js';
 import { zipStream, type ZipEntry } from './zip.js';
 import { lockedByAdminError, screenAfterPublish } from './moderation.server.js';
 import { freezeAssetsForPublish, pruneAssetSnapshots, restoreDraftAssets } from './assets/snapshots.server.js';
 import { assertMayPublish, requestPublishApproval } from './publish-approval.server.js';
+import { notifyOperatorOfPublish, type PublishKind } from './publish-notify.server.js';
 import type {
   Actor,
   CompileStatus,
@@ -64,6 +65,7 @@ async function lockApp(tx: Tx, appId: string) {
       workspaceId: apps.workspaceId,
       publishedVersionId: apps.publishedVersionId,
       lockedReason: apps.lockedReason,
+      createdAt: apps.createdAt,
     })
     .from(apps)
     .where(eq(apps.id, appId))
@@ -262,9 +264,11 @@ export async function readBlobs(sha256s: string[]): Promise<Map<string, Buffer>>
  * pointer moved, the published version goes through the phishing heuristic
  * (`screen: false` skips it).
  *
- * NSO-366: with PUBLISH_APPROVAL=approval a workspace a super-admin has not
- * approved refuses with `publish_not_approved` (nothing moves); the refusal
- * records an approval request and e-mails the operator (deduped).
+ * NSO-366: a workspace a super-admin blocked refuses with `publish_blocked`;
+ * with PUBLISH_APPROVAL=approval one that is not allowed refuses with
+ * `publish_not_approved` (nothing moves) and the refusal records an approval
+ * request and e-mails the operator (deduped). A publish that went through is
+ * e-mailed to the operator per PUBLISH_NOTIFY, without waiting for it.
  *
  * The app's assets are frozen for the version in the same transaction
  * (NSO-362): `assets: 'draft'` — the draft went live (the version the preview
@@ -306,6 +310,24 @@ export async function publish(
         .where(eq(appVersions.id, app.publishedVersionId));
       previousNumber = prev?.number ?? null;
     }
+    const [earlier] = await tx
+      .select({ id: auditLog.id })
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.workspaceId, app.workspaceId),
+          eq(auditLog.action, AUDIT_ACTIONS.appPublish),
+          eq(auditLog.subjectType, 'app'),
+          eq(auditLog.target, app.slug),
+          gte(auditLog.createdAt, app.createdAt)
+        )
+      )
+      .limit(1);
+    const kind: PublishKind = !earlier
+      ? 'first'
+      : previousNumber !== null && version.number < previousNumber
+        ? 'rollback'
+        : 'republish';
     const assets = await freezeAssetsForPublish(tx, appId, version.id);
     // published_at orders the public gallery (NSO-340); ms precision like its cursor.
     await tx.update(apps).set({ publishedVersionId: version.id, publishedAt: new Date() }).where(eq(apps.id, appId));
@@ -315,15 +337,17 @@ export async function publish(
       previousVersion: previousNumber,
       assets,
     });
-    return { versionId: version.id, number: version.number, previousNumber, assets };
+    return { versionId: version.id, number: version.number, previousNumber, assets, kind };
   }).catch(async (err: unknown) => {
     if (blocked) await requestPublishApproval({ ...blocked, actor, env }).catch(() => undefined);
     throw err;
   });
+  const { kind, ...out } = result;
+  void notifyOperatorOfPublish({ appId, version: out.number, kind, actor, env });
   // NSO-293: the phishing heuristic — flags the app for the super-admin
   // queue, never blocks (a scan failure is only logged).
-  if (opts.screen !== false) await screenAfterPublish(appId, result.versionId);
-  return result;
+  if (opts.screen !== false) await screenAfterPublish(appId, out.versionId);
+  return out;
 }
 
 /**

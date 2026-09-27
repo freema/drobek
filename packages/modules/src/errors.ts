@@ -70,6 +70,7 @@ export const CORE_ERROR_CODES: readonly string[] = [
   'gallery_hidden',
   'gallery_disabled',
   'publish_not_approved',
+  'publish_blocked',
   // app assets (MCP asset tools, the upload URL)
   'asset_too_large',
   'asset_type_not_allowed',

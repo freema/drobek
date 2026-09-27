@@ -66,7 +66,7 @@ describe('tools/list reflects the granted scope', () => {
     });
   }
 
-  it('set_publish_approval exists only for a super-admin with the publish scope (NSO-366)', async () => {
+  it('set_workspace_publishing exists only for a super-admin with the publish scope (NSO-366)', async () => {
     for (const [scopes, superAdmin, listed] of [
       [['read', 'write', 'publish'], true, true],
       [['read', 'write'], true, false],
@@ -75,7 +75,7 @@ describe('tools/list reflects the granted scope', () => {
       const client = await connect(scopes, superAdmin);
       try {
         const names = (await client.listTools()).tools.map((t) => t.name);
-        expect(names.includes('set_publish_approval'), `${scopes.join(' ')} super-admin=${superAdmin}`).toBe(listed);
+        expect(names.includes('set_workspace_publishing'), `${scopes.join(' ')} super-admin=${superAdmin}`).toBe(listed);
       } finally {
         await client.close();
       }

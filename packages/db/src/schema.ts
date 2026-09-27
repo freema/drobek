@@ -115,6 +115,9 @@ export const workspaces = pgTable('workspaces', {
   publishApprovalRequestedBy: text('publish_approval_requested_by').references((): AnyPgColumn => users.id, {
     onDelete: 'set null',
   }),
+  /** NSO-366: a super-admin turned publishing off for this workspace (refused in every PUBLISH_APPROVAL mode; null = not blocked). */
+  publishBlockedAt: timestamp('publish_blocked_at', { withTimezone: true }),
+  publishBlockedBy: text('publish_blocked_by').references((): AnyPgColumn => users.id, { onDelete: 'set null' }),
 });
 
 export const memberships = pgTable(

@@ -3,7 +3,8 @@
  * (renderTextEmailHtml escapes everything, so a reporter's text can never
  * become markup in the operator's mail client):
  *
- *  - a new report → every super-admin (SUPERADMIN_EMAIL), at most ONE mail
+ *  - a new report → every super-admin (SUPERADMIN_EMAIL) and OPERATOR_EMAIL
+ *    (deduplicated, case-insensitive), at most ONE mail
  *    per reported app (or unresolved host) per hour — a flood of reports on
  *    one app does not flood the operator (`drobek:abuse:mail:<key>`, Redis
  *    SET NX, 1 h; a Redis error sends anyway);
@@ -51,6 +52,12 @@ async function deliver(to: string[], subject: string, text: string, log: Logger,
   return sent;
 }
 
+/** Who hears about a report: every super-admin plus OPERATOR_EMAIL, once each (case-insensitive). */
+function reportMailRecipients(env: NodeJS.ProcessEnv = process.env): string[] {
+  const operator = (env.OPERATOR_EMAIL ?? '').trim().toLowerCase();
+  return [...new Set([...superAdminEmails(env.SUPERADMIN_EMAIL), ...(operator ? [operator] : [])])];
+}
+
 export interface ReportMailInput {
   reportId: string;
   host: string;
@@ -60,15 +67,15 @@ export interface ReportMailInput {
   app: ReportedApp | null;
 }
 
-/** Tell the super-admins about a new report (deduped per app / host per hour). */
+/** Tell the super-admins and the operator about a new report (deduped per app / host per hour). */
 export async function mailSuperAdminsAboutReport(
   input: ReportMailInput,
   log: Logger,
   env: NodeJS.ProcessEnv = process.env
 ): Promise<{ sent: number; deduped: boolean }> {
-  const to = superAdminEmails(env.SUPERADMIN_EMAIL);
+  const to = reportMailRecipients(env);
   if (to.length === 0) {
-    log.warn('abuse report stored but SUPERADMIN_EMAIL is empty — nobody is notified', { report_id: input.reportId });
+    log.warn('abuse report stored but SUPERADMIN_EMAIL and OPERATOR_EMAIL are empty — nobody is notified', { report_id: input.reportId });
     return { sent: 0, deduped: false };
   }
   if (!(await firstInWindow(input.app?.id ?? `host:${input.host}`, log))) {

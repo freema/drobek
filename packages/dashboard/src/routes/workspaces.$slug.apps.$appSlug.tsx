@@ -171,7 +171,7 @@ export default function AppDetailRoute() {
                           title={header.publishApproval.notice}
                           data-testid="publish-button"
                           data-version={v.number}
-                          data-blocked="approval"
+                          data-blocked={header.publishApproval.kind}
                         >
                           Publish
                         </button>

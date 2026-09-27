@@ -19,7 +19,7 @@ describe('TOOL_DOCS manifest', () => {
       'create_asset_upload',
       'list_assets',
       'delete_asset',
-      'set_publish_approval',
+      'set_workspace_publishing',
     ]);
   });
 
@@ -62,7 +62,7 @@ describe('TOOL_DOCS manifest', () => {
       create_asset_upload: [false, false, false, false], // a new single-use URL on every call; the PUT stores
       list_assets: [true, false, true, false],
       delete_asset: [false, true, true, false], // removes a file; a second delete changes nothing more
-      set_publish_approval: [false, false, true, false], // who may publish; the same call again answers changed:false
+      set_workspace_publishing: [false, false, true, false], // who may publish; the same call again answers changed:false
     };
     expect(Object.keys(table)).toEqual(TOOL_NAMES);
     for (const [name, [readOnlyHint, destructiveHint, idempotentHint, openWorldHint]] of Object.entries(table)) {
@@ -85,14 +85,18 @@ describe('TOOL_DOCS manifest', () => {
     expect(doc.fields.map((f) => f.name)).toEqual(['app_id', 'listed', 'description', 'user_confirmed']);
   });
 
-  it('set_publish_approval is super-admin only and needs the user\'s explicit yes (NSO-366)', () => {
-    const doc = toolDoc('set_publish_approval');
+  it('set_workspace_publishing is super-admin only and needs the user\'s explicit yes (NSO-366)', () => {
+    const doc = toolDoc('set_workspace_publishing');
     expect(doc.scope).toMatch(/^publish \(super-admins of this server only\)/);
     expect(doc.description).toMatch(/user_confirmed: true/);
     expect(doc.description).toMatch(/ONLY after the user explicitly said yes/);
-    expect(doc.fields.map((f) => f.name)).toEqual(['workspace', 'approved', 'user_confirmed']);
+    expect(doc.fields.map((f) => f.name)).toEqual(['workspace', 'publishing', 'user_confirmed']);
+    expect(doc.returns).toContain('can_publish_now');
     expect(toolDoc('publish').description).toMatch(/publish_not_approved/);
+    expect(toolDoc('publish').description).toMatch(/publish_blocked/);
     expect(toolDoc('list_apps').returns).toContain('can_publish');
+    expect(toolDoc('list_apps').returns).toContain('publishing');
+    expect(toolDoc('get_app').returns).toContain('publishing');
   });
 
   it('publish is documented as explicit-request only, with the publish scope', () => {

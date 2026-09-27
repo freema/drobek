@@ -100,8 +100,8 @@ The loop (tool → result):
 5. `get_logs({ app_id, kind: "runtime" })` after the page ran in a browser.
 6. `publish({ app_id, version? })` ONLY when the user explicitly asks → `published_url`. Public gallery:
    `set_gallery_listing({ app_id, listed, description, user_confirmed })` — show the user the description
-   first; `user_confirmed: true` ONLY after they explicitly said yes. A super-admin approves a workspace
-   for publishing with `set_publish_approval({ workspace, approved, user_confirmed })`, same rule.
+   first; `user_confirmed: true` ONLY after they explicitly said yes. A super-admin allows or blocks a
+   workspace's publishing with `set_workspace_publishing({ workspace, publishing, user_confirmed })`, same rule.
 7. `get_app({ app_id })` = files, versions, lock, modules; `restore_version({ app_id, version })` = new version copying an old one.
 8. Backends: `skill_info({ name })`, `configure_module({ app_id, module, config })`, `query_data({ app_id, collection })`.
 9. Binaries: `create_asset_upload({ app_id, path, size })` → `upload_url` + `curl -T`; `list_assets({ app_id })`, `delete_asset({ app_id, path })`.
@@ -143,8 +143,8 @@ Add a package as a pinned esm.sh URL, e.g. `"date-fns": "https://esm.sh/date-fns
 | `app_locked` | another user's agent writes the app | tell the user; retry after `expires_at` |
 | `busy` | the compiler queue is full | retry the same call in a few seconds |
 | `not_publishable` | that version did not compile | publish the newest version that compiled |
-| `publish_not_approved` | the operator has not approved the workspace; a request was e-mailed | tell the user (`contact`), share `preview_url`; do not retry |
-| `user_confirmation_required` | `set_gallery_listing` without the user's yes | ask the user; call again with `user_confirmed: true` only if they say yes |
+| `publish_blocked` / `publish_not_approved` | the operator turned publishing off for the workspace / has not approved it (a request was e-mailed) | tell the user (`contact`), share `preview_url`; do not retry |
+| `user_confirmation_required` | `set_gallery_listing` / `set_workspace_publishing` without the user's yes | ask the user; call again with `user_confirmed: true` only if they say yes |
 | `invalid_params` | > 20 files, same path twice, long reasoning | split the change; fix the arguments |
 | `not_found` | wrong `app_id` or no access | `list_apps` |
 | `forbidden` | viewer role | ask for the editor role |

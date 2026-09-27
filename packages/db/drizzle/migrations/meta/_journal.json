@@ -155,6 +155,13 @@
       "when": 1790493019726,
       "tag": "0026_publish_approval",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1790496410618,
+      "tag": "0027_publish_block",
+      "breakpoints": true
     }
   ]
 }

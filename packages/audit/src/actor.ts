@@ -159,10 +159,14 @@ export const AUDIT_ACTIONS = {
   moduleWorkspaceDisable: 'module.workspace_disable',
   /** NSO-366: a blocked publish (or the owner's button) asked the operator to approve the workspace for publishing. */
   publishApprovalRequest: 'workspace.publish_approval_request',
-  /** NSO-366: a super-admin allowed the workspace to publish (PUBLISH_APPROVAL=approval). */
+  /** NSO-366: a super-admin allowed the workspace to publish (its state `allowed`). */
   publishApprove: 'workspace.publish_approve',
   /** NSO-366: a super-admin took the workspace's publish approval back (live apps keep serving). */
   publishRevoke: 'workspace.publish_revoke',
+  /** NSO-366: a super-admin turned publishing off for the workspace, in every mode (live apps keep serving; meta: from, to). */
+  publishBlock: 'workspace.publish_block',
+  /** NSO-366: a super-admin turned a blocked workspace's publishing back on (meta: from, to). */
+  publishUnblock: 'workspace.publish_unblock',
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];

@@ -3,7 +3,7 @@
  *
  * Boot order: refuse insecure secrets (PHY-76 #6), an invalid APPS_DOMAIN,
  * TRUST_PROXY, TLS_ASK_TOKEN, LIMITS_PROVIDER_URL, DOMAINS_*,
- * APP_FRAME_SRC_EXTRA, GALLERY_FRAME_ANCESTORS, PUBLISH_APPROVAL / OPERATOR_EMAIL or e-mail transport
+ * APP_FRAME_SRC_EXTRA, GALLERY_FRAME_ANCESTORS, PUBLISH_APPROVAL / OPERATOR_EMAIL / PUBLISH_NOTIFY or e-mail transport
  * (EMAIL_TRANSPORT / RESEND_API_KEY / SMTP_HOST) → apply core migrations →
  * load the platform modules (DROBEK_MODULES: their migrations, the composed
  * SDK, the skills — a bad module stops the start, M1-01) →

@@ -17,8 +17,9 @@
  *    which writes its audit row; the app hosts' cache is busted right after.
  *    A taken-down app (NSO-293, `apps.locked_reason`) answers publish /
  *    restore / unpublish with 423 `app_locked_by_admin`; the header carries
- *    `lockedByAdmin` for <LockedByAdminNotice>. With PUBLISH_APPROVAL=approval
- *    (NSO-366) an unapproved workspace answers publish with 403
+ *    `lockedByAdmin` for <LockedByAdminNotice>. A workspace the operator
+ *    blocked answers publish with 403 `publish_blocked`, and with
+ *    PUBLISH_APPROVAL=approval (NSO-366) an unapproved one with 403
  *    `publish_not_approved`; the header carries `publishApproval` for
  *    <PublishApprovalNotice> and the `request-publish-approval` intent asks
  *    the operator.
@@ -101,7 +102,7 @@ export interface AppHeaderData {
   canEdit: boolean;
   /** NSO-293: set when a super-admin took the app down (the banner; publish/restore are refused). */
   lockedByAdmin: LockedByAdminView | null;
-  /** NSO-366: set while the workspace may not publish (PUBLISH_APPROVAL=approval) — the notice; publish is refused. */
+  /** NSO-366: set while the workspace may not publish (blocked, or not approved yet) — the notice; publish is refused. */
   publishApproval: PublishApprovalView | null;
 }
 
@@ -324,7 +325,7 @@ export async function appAction({ request, params }: ActionFunctionArgs) {
     // A takedown that landed after the page loaded → 423 like the pre-check.
     if (err instanceof AppsError && err.code === 'app_locked_by_admin') return fail(423, intent, err.message);
     if (err instanceof AppsError && err.code === 'gallery_disabled') return fail(404, intent, err.message);
-    if (err instanceof AppsError && err.code === 'publish_not_approved') return fail(403, intent, err.message);
+    if (err instanceof AppsError && (err.code === 'publish_not_approved' || err.code === 'publish_blocked')) return fail(403, intent, err.message);
     if (err instanceof AppsError) return fail(400, intent, err.message);
     throw err;
   }
