@@ -323,6 +323,8 @@ task down         # stop the stack (docker compose down -v also wipes the data)
 ```
 
 Contributor rules and the repository map: [`CLAUDE.md`](./CLAUDE.md).
+Public repositories, agent plugins versus server modules, and the external
+consumer check: [`docs/ECOSYSTEM.md`](./docs/ECOSYSTEM.md).
 
 ### End-to-end tests
 

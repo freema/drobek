@@ -1257,6 +1257,9 @@ dependency of the server (see [Enabling modules](#enabling-modules)).
 
 ### Compatibility
 
+The [external-consumer check](ECOSYSTEM.md#external-consumer-check) tests a
+pinned counter module against candidate core packages before release.
+
 | Module contract (`MODULE_CONTRACT_VERSION`) | drobek image / npm packages | A module declaring |
 | --- | --- | --- |
 | `1.0.0` | v0.1.0 – v0.1.4 | `'^1.0'` (or no `contract`) |

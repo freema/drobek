@@ -1,6 +1,10 @@
 # drobek (PUBLIC core) — CI (M0-08)
 #
 #   quality  doc-lint → lint → typecheck → knip → unit tests (the `task check` pieces)
+#   module-compatibility  (module-compatibility.yml) the pinned external
+#            drobek-module-counter typechecked, built, tested, packed and
+#            loaded against this checkout's packed public packages
+#            (scripts/check-external-module.mjs); e2e waits for it.
 #   e2e      build the production image ONCE (Dockerfile `runner`) → run it
 #            with docker-compose.e2e.yaml behind Caddy (tls internal) with
 #            throwaway postgres / redis / mailpit / proxy-echo → the server
@@ -105,10 +109,15 @@ jobs:
       - name: Unit tests
         run: pnpm test
 
+  module-compatibility:
+    name: External consumer
+    needs: quality
+    uses: ./.github/workflows/module-compatibility.yml
+
   e2e:
     name: Prod image · compose · e2e (@smoke + @local)
     runs-on: ubuntu-latest
-    needs: quality
+    needs: [quality, module-compatibility]
     timeout-minutes: 10
     permissions:
       contents: read
