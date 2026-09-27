@@ -9,7 +9,7 @@
  */
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { apps, memberships, moduleConfigs, users, workspaces } from '@drobek/db';
+import { apps, domains, memberships, moduleConfigs, users, workspaces } from '@drobek/db';
 import type { ToolPrincipal } from './context.js';
 import { freshDb, type TestDb } from './test/db.js';
 import { connect, testDeps, type TestDeps } from './test/harness.js';
@@ -138,6 +138,48 @@ describe('duplicate_app', () => {
           limit: 'DUPLICATES_PER_USER_HOUR',
           value: 1,
         });
+      } finally {
+        await b.close();
+      }
+    } finally {
+      await a.close();
+    }
+  });
+
+  it('takes only addresses of this server: app hosts, a verified custom domain, the dashboard link', async () => {
+    const a = await connect(author, deps);
+    try {
+      const src = await galleryApp(a, 'Address Wall', true);
+      await db.insert(domains).values({ appId: src.app_id, hostname: 'wall.example.org', verificationToken: 't', verifiedAt: new Date() });
+      await db.insert(domains).values({ appId: src.app_id, hostname: 'pending.example.org', verificationToken: 't' });
+      const [u] = await db.insert(users).values({ email: 'addresses@example.test' }).returning();
+      const b = await connect({ userId: u.id, email: 'addresses@example.test', superAdmin: false }, deps);
+      try {
+        for (const from of [
+          `https://${src.slug}.other-instance.example/`,
+          `${src.slug}.other-instance.example`,
+          `https://other-instance.example/duplicate/${src.slug}`,
+          `https://${src.slug}.drobek.app.other-instance.example/`,
+          `https://${src.slug}.drobek.app:8443/`,
+          'https://pending.example.org/',
+          `https://dash.drobek.test/apps/${src.slug}`,
+          `ftp://${src.slug}.drobek.app/`,
+        ]) {
+          const err = errorOf(await b.call('duplicate_app', { from }));
+          expect(err, from).toMatchObject({ code: 'invalid_params' });
+          expect(String(err.message), from).toMatch(/this server/);
+        }
+        const copied: string[] = [];
+        for (const from of [
+          `https://${src.slug}--preview.drobek.app/some/page`,
+          `https://dash.drobek.test/duplicate/${src.slug}`,
+          'https://wall.example.org/',
+        ]) {
+          const r = await b.call('duplicate_app', { from });
+          expect(r.isError, `${from}: ${r.text}`).toBe(false);
+          copied.push((r.body as { from: string }).from);
+        }
+        expect(copied).toEqual([src.slug, src.slug, src.slug]);
       } finally {
         await b.close();
       }

@@ -19,6 +19,9 @@ import * as schema from '@drobek/db/schema';
 import { apps, memberships, moduleConfigs, setDbForTests, users, workspaces } from '@drobek/db';
 import { createApp, createVersion, getVersion, publish, readVersionFile, setGalleryListing, type Actor } from '@drobek/apps';
 import { noopLogger } from '@drobek/core';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { MemoryRouter } from 'react-router';
+import { DuplicateResult } from './duplicate-result.js';
 import { defineModule, loadModuleRuntime, memoryMailGuard, memoryRateLimiter, setModuleRuntimeForTests, z } from '@drobek/modules';
 
 const session = vi.hoisted(() => ({ user: null as { id: string; email: string } | null }));
@@ -29,6 +32,7 @@ vi.mock('@drobek/auth', async (importOriginal) => ({
 }));
 
 const route = await import('./routes/duplicate.$slug.server.js');
+const { parseDuplicateResult } = await import('./duplicate-result.server.js');
 
 const ENV = {
   GALLERY_ENABLED: 'true',
@@ -173,7 +177,7 @@ describe('/duplicate/:slug (NSO-340)', () => {
     const res = (await post(app.slug, { workspace: 'crew', name: '  My pixels ' })) as Response;
     expect(res.status).toBe(302);
     const location = res.headers.get('location') ?? '';
-    expect(location).toMatch(new RegExp(`^/workspaces/crew/apps/my-pixels[a-z0-9-]*\\?duplicated=${app.slug}$`));
+    expect(location).toMatch(new RegExp(`^/workspaces/crew/apps/my-pixels[a-z0-9-]*\\?duplicated=${app.slug}&pending=notes$`));
     const slug = location.split('/apps/')[1].split('?')[0];
     const [copy] = await db.select().from(apps).where(eq(apps.slug, slug));
     expect(copy).toMatchObject({ name: 'My pixels', duplicatedFromAppId: app.id, duplicatedFromSlug: app.slug, publishedVersionId: null });
@@ -181,6 +185,66 @@ describe('/duplicate/:slug (NSO-340)', () => {
     expect((await readVersionFile(v!.id, 'index.html'))?.toString('utf8')).toBe('<h1>pixels</h1>');
     const [cfg] = await db.select().from(moduleConfigs).where(and(eq(moduleConfigs.appId, copy.id), eq(moduleConfigs.module, 'notes')));
     expect((cfg.pending as { changes?: string[] } | null)?.changes).toEqual(['access: anyone can read']);
+  });
+
+  it('carries applied, pending and skipped module settings to the copy\'s page', async () => {
+    const app = await galleryApp();
+    await db.insert(moduleConfigs).values([
+      { appId: app.id, module: 'proxy', config: { upstreams: ['api'] } },
+      { appId: app.id, module: 'ghost', config: { on: true } },
+    ]);
+    const res = (await post(app.slug, { workspace: 'crew' })) as Response;
+    const location = res.headers.get('location') ?? '';
+    const url = new URL(location, 'https://dash.example.test');
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      duplicated: app.slug,
+      pending: 'notes',
+      skipped: 'ghost:not_enabled,proxy:not_copied',
+    });
+    const modulesPath = `${url.pathname}/modules`;
+    const view = parseDuplicateResult(url, modulesPath);
+    expect(view).toEqual({
+      from: app.slug,
+      applied: [],
+      pending: [{ module: 'notes', href: `${modulesPath}/notes` }],
+      skipped: [
+        { module: 'ghost', reason: 'not_enabled', href: `${modulesPath}/ghost` },
+        { module: 'proxy', reason: 'not_copied', href: `${modulesPath}/proxy` },
+      ],
+      modulesHref: modulesPath,
+      dismissHref: url.pathname,
+    });
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <DuplicateResult result={view} />
+      </MemoryRouter>
+    );
+    expect(html).toContain(`Copied from ${app.slug}. Some module settings were not copied.`);
+    expect(html).toContain(`href="${modulesPath}/notes"`);
+    expect(html).toMatch(/ghost<\/strong>: not copied — this module is not available in this workspace/);
+    expect(html).toContain(`href="${modulesPath}"`);
+    expect(html).toMatch(/proxy<\/strong>: not copied — its settings point at records of the original/);
+    expect(html).toContain(`href="${modulesPath}/proxy"`);
+  });
+
+  it('the copy\'s page ignores a hand-made or empty outcome query', () => {
+    const at = (q: string) => parseDuplicateResult(new URL(`https://dash.example.test/workspaces/crew/apps/x${q}`), '/m');
+    expect(at('')).toBeNull();
+    expect(at('?duplicated=<script>')).toBeNull();
+    expect(at('?duplicated=wall&applied=forms,Bad!,forms&pending=x&skipped=data:gone,files:invalid,<b>:invalid')).toEqual({
+      from: 'wall',
+      applied: ['forms'],
+      pending: [],
+      skipped: [{ module: 'files', reason: 'invalid', href: '/m/files' }],
+      modulesHref: '/m',
+      dismissHref: '/workspaces/crew/apps/x',
+    });
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <DuplicateResult result={at('?duplicated=wall')} />
+      </MemoryRouter>
+    );
+    expect(html).toContain('Copied from wall. The original had no module settings to copy.');
   });
 
   it('refuses a workspace the user cannot create apps in', async () => {

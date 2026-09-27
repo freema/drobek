@@ -11,10 +11,15 @@
  * else of the source is copied: no preview drafts, uploaded assets, data,
  * end users, secrets, domains or gallery listing. Audited `app.duplicate` on
  * the new app and `app.duplicated` on the source (without the copier).
- * DUPLICATES_PER_USER_HOUR (default 10) caps copies per person per hour.
+ * DUPLICATES_PER_USER_HOUR (default 10) caps copies per person per hour
+ * across workspaces and surfaces: the `app.duplicate` row is counted and
+ * written inside the new app's create transaction under a per-person advisory
+ * lock, so parallel requests cannot all pass. A copy counts once its app row
+ * exists (also when writing its files then fails, since the app stays); a
+ * copy refused before that (source gone, workspace full) does not count.
  */
-import { and, count, eq, gt, isNull } from 'drizzle-orm';
-import { AUDIT_ACTIONS, writeAudit } from '@drobek/audit';
+import { and, count, eq, gt, isNull, sql } from 'drizzle-orm';
+import { AUDIT_ACTIONS, writeAudit, type AuditExecutor } from '@drobek/audit';
 import { apps, auditLog, getDb, moduleConfigs, workspaces } from '@drobek/db';
 import { createApp } from './apps.server.js';
 import { AppsError } from './errors.js';
@@ -122,10 +127,18 @@ export function copyName(raw: unknown, source: { name: string }): string {
   return name;
 }
 
-/** Refuse (`rate_limited`) a person who made DUPLICATES_PER_USER_HOUR copies within the last hour. */
-async function assertUnderRate(userId: string, env: NodeJS.ProcessEnv, now: Date): Promise<void> {
-  const max = duplicatesPerUserHour(env);
-  const [{ n }] = await getDb()
+/** `rate_limited` when `n` copies within the last hour reached DUPLICATES_PER_USER_HOUR. */
+function assertUnderRate(n: number, max: number): void {
+  if (n >= max) {
+    throw new AppsError('rate_limited', `You duplicated ${max} apps in the last hour (DUPLICATES_PER_USER_HOUR). Try again later.`, {
+      details: { limit: 'DUPLICATES_PER_USER_HOUR', value: max },
+    });
+  }
+}
+
+/** The person's `app.duplicate` audit rows of the last hour, in every workspace. */
+async function recentCopies(db: AuditExecutor, userId: string, now: Date): Promise<number> {
+  const [{ n }] = await db
     .select({ n: count() })
     .from(auditLog)
     .where(
@@ -135,11 +148,7 @@ async function assertUnderRate(userId: string, env: NodeJS.ProcessEnv, now: Date
         gt(auditLog.createdAt, new Date(now.getTime() - HOUR_MS))
       )
     );
-  if (Number(n) >= max) {
-    throw new AppsError('rate_limited', `You duplicated ${max} apps in the last hour (DUPLICATES_PER_USER_HOUR). Try again later.`, {
-      details: { limit: 'DUPLICATES_PER_USER_HOUR', value: max },
-    });
-  }
+  return Number(n);
 }
 
 export interface DuplicateFilesInput {
@@ -160,8 +169,11 @@ export interface DuplicateFilesInput {
  */
 export async function duplicateAppFiles(input: DuplicateFilesInput): Promise<{ id: string; slug: string; version: number }> {
   const env = input.env ?? process.env;
-  if (!input.actor.userId) throw new AppsError('not_found', 'Sign in to duplicate an app.');
-  await assertUnderRate(input.actor.userId, env, input.now ?? new Date());
+  const userId = input.actor.userId;
+  if (!userId) throw new AppsError('not_found', 'Sign in to duplicate an app.');
+  const now = input.now ?? new Date();
+  const max = duplicatesPerUserHour(env);
+  assertUnderRate(await recentCopies(getDb(), userId, now), max);
   const version = await getVersion(input.source.id, { id: input.source.publishedVersionId });
   if (!version) throw new AppsError('not_found', `No app "${input.source.slug}" is in the public gallery.`);
   const bytes = await readBlobs(version.files.map((f) => f.sha256));
@@ -183,6 +195,22 @@ export async function duplicateAppFiles(input: DuplicateFilesInput): Promise<{ i
         actor: input.actor,
         maxApps: input.maxApps,
         duplicatedFrom: { appId: input.source.id, slug: input.source.slug },
+        inTransaction: async (tx, app) => {
+          await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`drobek:duplicate:${userId}`}::text))`);
+          assertUnderRate(await recentCopies(tx, userId, now), max);
+          await writeAudit(
+            {
+              workspaceId: input.workspaceId,
+              actorUserId: userId,
+              actorKind: input.actor.kind,
+              action: AUDIT_ACTIONS.appDuplicate,
+              subjectType: 'app',
+              target: app.slug,
+              meta: { from: input.source.slug, version: version.number },
+            },
+            tx
+          );
+        },
       });
     } catch (err) {
       if (err instanceof AppsError && (err.code === 'slug_taken' || err.code === 'invalid_slug')) {
@@ -200,15 +228,6 @@ export async function duplicateAppFiles(input: DuplicateFilesInput): Promise<{ i
     compile: { status: version.compileStatus === 'ok' ? 'ok' : 'error', errors: version.compileErrors },
   });
   await notifyAppChanged({ app_id: created.id, slug: created.slug, version: number });
-  await writeAudit({
-    workspaceId: input.workspaceId,
-    actorUserId: input.actor.userId,
-    actorKind: input.actor.kind,
-    action: AUDIT_ACTIONS.appDuplicate,
-    subjectType: 'app',
-    target: created.slug,
-    meta: { from: input.source.slug, version: version.number },
-  });
   await writeAudit({
     workspaceId: input.source.workspaceId,
     actorUserId: null,

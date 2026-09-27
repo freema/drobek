@@ -24,6 +24,7 @@ import {
 } from '@drobek/insights';
 import { appAction, appHeaderData, emailsOf, loadAppPage } from '../app-page.server.js';
 import { compileSummary } from '../app-view.js';
+import { parseDuplicateResult } from '../duplicate-result.server.js';
 import { loadPendingBanner } from '../pending-banner.server.js';
 import { shapeVersionHistory } from '../view.js';
 
@@ -78,6 +79,11 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     canPublish: header.canEdit && header.lockedByAdmin === null,
     // M2-02: "N changes await confirmation" (PendingBanner).
     pendingBanner: await loadPendingBanner(app, header.workspace.slug, app.slug),
+    // NSO-340: right after /duplicate/:slug, what happened to the original's module settings.
+    duplicateResult: parseDuplicateResult(
+      new URL(request.url),
+      `/workspaces/${encodeURIComponent(header.workspace.slug)}/apps/${encodeURIComponent(app.slug)}/modules`
+    ),
     // NSO-340: the public gallery section (null = the server runs no gallery).
     gallery: galleryEnabled()
       ? {

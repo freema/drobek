@@ -1,5 +1,5 @@
 import { and, count, eq, isNull } from 'drizzle-orm';
-import { AUDIT_ACTIONS, writeAudit } from '@drobek/audit';
+import { AUDIT_ACTIONS, writeAudit, type AuditExecutor } from '@drobek/audit';
 import { apps, getDb, isUniqueViolation, workspaces } from '@drobek/db';
 import { AppsError } from './errors.js';
 import { notifyAppChanged } from './events.js';
@@ -24,6 +24,12 @@ export interface CreateAppInput {
   maxApps?: number;
   /** NSO-340: the gallery app this one is a copy of (provenance, shown on the app's page). */
   duplicatedFrom?: { appId: string; slug: string };
+  /**
+   * Runs inside the create transaction after the app row is inserted; a throw
+   * rolls the app back. Duplicating uses it to check and record the per-person
+   * hourly cap atomically with the new app.
+   */
+  inTransaction?: (tx: AuditExecutor, app: { id: string; slug: string }) => Promise<void>;
 }
 
 function appsMaxPerWorkspace(env: NodeJS.ProcessEnv = process.env): number {
@@ -114,6 +120,7 @@ export async function createApp(input: CreateAppInput): Promise<{ id: string; sl
         },
         tx
       );
+      await input.inTransaction?.(tx, row);
       return row;
     });
   } catch (err) {

@@ -48,9 +48,11 @@ import {
 } from '@drobek/agent-dx';
 import {
   AppsError,
+  classifyHost,
   copyName,
   createApp as createAppRow,
   createVersion,
+  dashboardOrigin,
   deriveSlug,
   duplicateAppFiles,
   duplicationSource,
@@ -58,6 +60,7 @@ import {
   galleryEnabled,
   galleryState,
   getVersion,
+  hostConfig,
   lockCategory,
   listVersions,
   normalizeGalleryDescription,
@@ -76,7 +79,7 @@ import {
   type WorkspacePublishing,
 } from '@drobek/apps';
 import { actorKindForSurface } from '@drobek/audit';
-import { listDomains, verifiedDomainsOf } from '@drobek/domains';
+import { listDomains, resolveCustomHost, verifiedDomainsOf } from '@drobek/domains';
 import { maskEmail } from '@drobek/auth';
 import {
   BINARY_EXTS,
@@ -569,19 +572,41 @@ export async function createApp(
 
 // ── duplicate_app ────────────────────────────────────────────────────────────
 
-/** A gallery app's slug from `from`: a slug, its app address, or its duplicate page URL. */
-function duplicateSourceSlug(from: string): string {
+/**
+ * A gallery app's slug from `from`: a plain slug, or an address of THIS
+ * server — an app host under APPS_DOMAIN (published, `--preview`, `--v<N>`),
+ * a verified custom domain of a live app, or the dashboard's
+ * `/duplicate/<slug>` page. Any other address is `invalid_params`, so an app
+ * of another instance never resolves to a local app with the same slug.
+ */
+async function duplicateSourceSlug(from: string, env: NodeJS.ProcessEnv): Promise<string> {
   const raw = from.trim();
   if (!/[/.:]/.test(raw)) return raw.toLowerCase();
+  const foreign = (what: string) =>
+    new ToolError(
+      'invalid_params',
+      `\`from\` ${what}. Pass a gallery app of this server: its slug, its address (${publishedUrl('<slug>', env)}) or ${dashboardOrigin(env)}/duplicate/<slug>.`
+    );
   let url: URL;
   try {
     url = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : `https://${raw}`);
   } catch {
-    return raw.toLowerCase();
+    throw foreign('is neither a slug nor an address');
   }
-  const page = /^\/duplicate\/([^/]+)\/?$/.exec(url.pathname);
-  if (page) return decodeURIComponent(page[1]).toLowerCase();
-  return (url.hostname.split('.')[0] ?? '').split('--')[0].toLowerCase();
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') throw foreign('must be an http(s) address');
+  const config = hostConfig(env);
+  if (url.host === config.dashboardHost) {
+    const page = /^\/duplicate\/([^/]+)\/?$/.exec(url.pathname);
+    if (!page) throw foreign('is a dashboard page other than /duplicate/<slug>');
+    return decodeURIComponent(page[1]).toLowerCase();
+  }
+  const host = classifyHost(url.host, config);
+  if (host.side === 'apps' && host.target) return host.target.slug;
+  if (host.side === 'custom') {
+    const custom = await resolveCustomHost(host.hostname);
+    if (custom?.slug) return custom.slug;
+  }
+  throw foreign(`(${url.host}) is not an app address of this server`);
 }
 
 /**
@@ -595,7 +620,7 @@ function duplicateSourceSlug(from: string): string {
  */
 export async function duplicateApp(ctx: CallContext, args: { from: string; workspace?: string; name?: string }) {
   const env = ctx.deps.env;
-  const from = duplicateSourceSlug(String(args.from ?? ''));
+  const from = await duplicateSourceSlug(String(args.from ?? ''), env);
   if (!from) throw new ToolError('invalid_params', '`from` must be a gallery app: its slug or its address.');
   if (args.name !== undefined && scanForSecrets('name', String(args.name)).length > 0) {
     throw new ToolError('invalid_params', '`name` looks like a credential — pick a plain name.');

@@ -3,7 +3,9 @@
  * button lands here. A signed-out visitor goes to /login and comes back
  * (`returnTo`). A signed-in one sees what gets copied, picks a workspace
  * where they are an editor+ (their personal workspace first) and a name, and
- * Duplicate creates the copy and opens it. An app that is not in the gallery,
+ * Duplicate creates the copy and opens it; the
+ * redirect's query carries which module settings were applied, wait for
+ * confirmation or were skipped (the copy's Overview shows them). An app that is not in the gallery,
  * whose owner does not allow duplicates, or a server without a gallery
  * answers a refusal page instead (`refused`).
  *
@@ -25,6 +27,7 @@ import {
 import { getSessionUser, type SessionUser } from '@drobek/auth';
 import { duplicateModuleConfigs, moduleRuntime } from '@drobek/modules';
 import { ensurePersonalWorkspace, listUserWorkspaces, roleAtLeast } from '@drobek/tenancy';
+import { duplicatedAppUrl } from '../duplicate-result.server.js';
 
 const NO_STORE = { 'Cache-Control': 'no-store' };
 
@@ -136,11 +139,11 @@ export async function action({ request, params }: ActionFunctionArgs) {
     throw err;
   }
   await rt.runHook('onAppCreate', { id: copy.id, slug: copy.slug, workspaceId: ws.id });
-  await duplicateModuleConfigs(rt, {
+  const modules = await duplicateModuleConfigs(rt, {
     sourceAppId: src.id,
     target: { id: copy.id, slug: copy.slug, workspaceId: ws.id, workspaceSlug: ws.slug },
     actorUserId: user.id,
     surface: 'web',
   });
-  return redirect(`/workspaces/${encodeURIComponent(ws.slug)}/apps/${encodeURIComponent(copy.slug)}?duplicated=${encodeURIComponent(src.slug)}`);
+  return redirect(duplicatedAppUrl(`/workspaces/${encodeURIComponent(ws.slug)}/apps/${encodeURIComponent(copy.slug)}`, src.slug, modules));
 }

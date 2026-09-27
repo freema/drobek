@@ -15,8 +15,8 @@ import { withDb } from './helpers/seed';
  *  - a signed-out visitor of that URL lands on /login and, signed in, back on
  *    the confirm page (source name, what is and is not copied, a workspace
  *    picker, the "<name> copy" default name);
- *  - Duplicate opens the new app: "Duplicated from <slug>" in its header, not
- *    published; the gallery item counts `duplicates: 1`; audit
+ *  - Duplicate opens the new app: "Duplicated from <slug>" in its header and
+ *    a notice of what happened to the module settings, not published; the gallery item counts `duplicates: 1`; audit
  *    `app.duplicate` (copier) and `app.duplicated` (source, no copier);
  *  - MCP: `duplicate_app` copies the same app into the agent's workspace;
  *  - the owner turns duplicates off → the confirm page refuses
@@ -96,6 +96,7 @@ test.describe('gallery: duplicate an app from the dashboard and over MCP (NSO-34
 
       await expect(page).toHaveURL(/\/workspaces\/[^/]+\/apps\/my-pixel-wall[a-z0-9-]*\?duplicated=/);
       await expect(page.getByTestId('app-duplicated-from')).toContainText(`Duplicated from ${app.slug}`);
+      await expect(page.getByTestId('duplicate-result')).toContainText(`Copied from ${app.slug}.`);
       const copySlug = new URL(page.url()).pathname.split('/apps/')[1];
 
       expect(await itemOf(request, app.slug)).toMatchObject({ duplicates: 1 });

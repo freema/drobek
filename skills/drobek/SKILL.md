@@ -260,7 +260,9 @@ everyone (on drobek.app it is shown at www.drobek.app/gallery).
   `duplicate_app({ from, workspace?, name? })` (scope `write`, editor+ in the
   target; default your personal workspace) creates a new, unpublished app
   with the source's PUBLISHED files as version 1. `from` is the app's slug or
-  address. The source's module settings are proposed to the copy: anything
+  its address on this server (app host, verified custom domain or the
+  dashboard's `/duplicate/<slug>` link); another server's address is
+  `invalid_params`. The source's module settings are proposed to the copy: anything
   that needs a confirmation waits on the new app's Modules page
   (`modules.pending[].confirm_url` — tell the user), e-mail addresses and
   proxy upstreams are dropped, and secrets, data, users, uploads, assets and
