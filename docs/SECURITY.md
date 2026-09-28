@@ -70,9 +70,7 @@ the member's grant; everything they read from apps can be hostile);
 
 ### Status of the 2026-07 review (PHY-76)
 
-The pre-rebuild review is archived at
-[`archive/threat-model-phy-76.md`](./archive/threat-model-phy-76.md). Its
-findings today:
+Findings of the pre-rebuild review (PHY-76) today:
 
 | Finding | Status |
 | --- | --- |

@@ -1041,8 +1041,9 @@ list.
   liked or opened.
   Parameters:
   - `?limit=` 1–48 (default 24);
-  - `?q=` a case-insensitive substring of the name or the description
-    (trimmed, at most 100 characters; `%`, `_` and `\` match themselves);
+  - `?q=` a case- and accent-insensitive substring of the name or the
+    description (café matches cafe; trimmed, at most 100 characters; `%`, `_`
+    and `\` match themselves);
   - `?sort=new` (default: newest publish first), `?sort=name` (A→Z,
     case-insensitive) or `?sort=popular` (5 × likes + opens in the last
     30 days, highest first; ties newest first);
