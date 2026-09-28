@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { loginViaEmail, logout, skipUnlessLocal, uniqueEmail } from './helpers/auth';
+import { publishVersion, seedApp, seedVersion, workspaceIdBySlug } from './helpers/seed';
 
 /**
  * Workspace orientation and the account onboarding (NSO-371 review): two
@@ -57,6 +58,15 @@ test('a super-admin in another user’s personal workspace sees slug, owner and 
   const row = page.locator(`[data-testid="all-workspace-item"][data-slug="${janaSlug}"]`);
   await expect(row.getByTestId('workspace-owner')).toContainText(jana);
   await expect(row.getByTestId('all-workspace-access')).toHaveText('Superadmin access — not a member');
+  await expect(row.getByTestId('workspace-app-count')).toHaveText('No apps');
+
+  const janaWorkspaceId = await workspaceIdBySlug(janaSlug);
+  const live = await seedApp({ workspaceId: janaWorkspaceId });
+  await publishVersion(live.id, (await seedVersion({ appId: live.id })).id);
+  await seedApp({ workspaceId: janaWorkspaceId });
+  await page.reload();
+  await page.getByTestId('all-workspaces-filter').fill(janaSlug);
+  await expect(row.getByTestId('workspace-app-count')).toHaveText('2 apps · 1 published');
 });
 
 test('/me: copy the MCP URL, pick a client, and get a first prompt for the empty default workspace @local', async ({

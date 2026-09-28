@@ -6,13 +6,14 @@
  */
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
+import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { migrate } from 'drizzle-orm/pglite/migrator';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { memberships, setDbForTests, users } from '@drobek/db';
+import { apps, appVersions, memberships, setDbForTests, users } from '@drobek/db';
 import * as schema from '@drobek/db/schema';
 import type { WorkspaceAccess, WorkspaceSummary } from './membership.server.js';
-import { personalWorkspaceOwners } from './membership.server.js';
+import { personalWorkspaceOwners, workspaceAppCounts } from './membership.server.js';
 import { ensurePersonalWorkspace } from './personal-workspace.server.js';
 import { decideWorkspaceAccess, type WorkspaceRole } from './roles.js';
 import { createTeamWorkspace } from './team-workspace.server.js';
@@ -105,5 +106,34 @@ describe('workspaceNav', () => {
     expect(emails).toEqual(expect.arrayContaining(['root@example.test', 'jana@example.test']));
     expect(emails).not.toContain('owner@example.test');
     expect(await personalWorkspaceOwners([])).toEqual(new Map());
+  });
+
+  it('workspaceAppCounts counts live apps and the published ones, leaving deleted apps out', async () => {
+    const owner = await user('counts@example.test');
+    const created = await createTeamWorkspace(owner.id, 'Counts', 'counts');
+    if (!created.ok) throw new Error(created.message);
+    const ws = created.workspace;
+    const empty = await createTeamWorkspace(owner.id, 'Empty', 'empty-ws');
+    if (!empty.ok) throw new Error(empty.message);
+
+    const [published, , deleted] = await db
+      .insert(apps)
+      .values([
+        { workspaceId: ws.id, slug: 'counts-live' },
+        { workspaceId: ws.id, slug: 'counts-draft' },
+        { workspaceId: ws.id, slug: 'counts-gone~deleted-abc', deletedAt: new Date() },
+      ])
+      .returning({ id: apps.id });
+    for (const app of [published!, deleted!]) {
+      const [v] = await db
+        .insert(appVersions)
+        .values({ appId: app.id, number: 1, actorKind: 'agent' })
+        .returning({ id: appVersions.id });
+      await db.update(apps).set({ publishedVersionId: v!.id }).where(eq(apps.id, app.id));
+    }
+
+    const counts = await workspaceAppCounts();
+    expect(counts.get(ws.id)).toEqual({ apps: 2, published: 1 });
+    expect(counts.has(empty.workspace.id)).toBe(false);
   });
 });

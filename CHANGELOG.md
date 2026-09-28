@@ -1,5 +1,10 @@
 # Changelog — drobek (core)
 
+## Unreleased
+
+### Changed
+- **All workspaces shows each workspace's apps** (NSO-373): a super-admin's list on `/workspaces` reads "3 apps · 1 published" per workspace ("No apps" when empty; deleted apps are not counted), from one grouped query.
+
 ## v0.5.1 — 2026-09-28
 
 ### Added
