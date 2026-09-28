@@ -19,16 +19,16 @@ changes with a clear reason land fastest.
 
 ## Picking up an issue
 
-- **We don't assign issues on request.** "Please assign me" alone doesn't
+- **I don't assign issues on request.** "Please assign me" alone doesn't
   reserve an issue — too many claimed issues never get a pull request and
   block everyone else.
 - **To work on one,** post a short plan on the issue (two or three sentences:
   where the code goes, what it adds, how you'll test it) or open a draft pull
-  request that links it. The issue is assigned once there is a pull request.
-- **The first solid pull request wins.** If two arrive, the one that is
-  complete, tested and follows the rules below is merged.
-- **An assigned issue with no activity for 7 days** is unassigned and open
-  again.
+  request that links it. I assign the issue once there is a pull request.
+- **The first solid pull request wins.** If two arrive, I merge the one that
+  is complete, tested and follows the rules below.
+- **An assigned issue with no activity for 7 days** goes back to open, and I
+  unassign it.
 - One open issue per person at a time, please.
 
 ## Set up
