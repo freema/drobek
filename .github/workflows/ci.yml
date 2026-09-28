@@ -41,7 +41,8 @@
 # from the same sources and lockfile.
 #
 # Triggers: pushes to `main` and `v*` tags only (Actions capacity is limited —
-# push what `task check` proved; no PR / schedule triggers). A newer push to
+# push what `task check` proved; no schedule trigger). Pull requests run the
+# `quality` job alone, from pr.yml. A newer push to
 # the same ref cancels the running one.
 #
 # No repository secrets are used except the automatic GITHUB_TOKEN (GHCR push
