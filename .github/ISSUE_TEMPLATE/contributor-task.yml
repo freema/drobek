@@ -1,0 +1,36 @@
+name: Contributor task
+description: A self-contained task for an outside contributor (maintainer use).
+labels: [help wanted]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        One task, small enough for one pull request. Say where the code goes and how "done" is checked, so someone new to drobek can pick it up. Add `good first issue` when it needs no knowledge of the core beyond the files named.
+  - type: textarea
+    id: what
+    attributes:
+      label: What
+      description: The behaviour to add or fix, from the user's or the agent's side. A real example helps.
+    validations:
+      required: true
+  - type: textarea
+    id: where
+    attributes:
+      label: Where it fits
+      description: The files and functions to start from, the codes, types or API it adds, and the docs or catalogue entries that must change with it.
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Done when
+      description: The tests that prove it and anything checked by hand. `task check` green is always part of it.
+    validations:
+      required: true
+  - type: textarea
+    id: rules
+    attributes:
+      label: Rules that apply
+      description: The CONTRIBUTING rules this touches (never execute app code, secrets never through MCP, agent surface in sync, env vars documented…).
+      value: |
+        - Read [CONTRIBUTING.md](https://github.com/freema/drobek/blob/main/CONTRIBUTING.md) → Picking up an issue: post a short plan or open a draft PR; I don't assign on request.
