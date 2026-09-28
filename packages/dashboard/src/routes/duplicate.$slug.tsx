@@ -73,7 +73,7 @@ export default function DuplicateRoute() {
     <DashboardPage crumbs={[{ label: 'Duplicate an app' }]}>
       <h1 style={styles.h1}>Duplicate “{source.name}”</h1>
       <p style={styles.hint}>
-        By {source.workspaceName}. {source.description}
+        From the workspace {source.workspaceName} (/{source.workspaceSlug}). {source.description}
       </p>
 
       <section style={styles.card} data-testid="duplicate-what">

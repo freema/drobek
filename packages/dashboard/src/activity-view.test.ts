@@ -34,6 +34,21 @@ describe('activitySummary (NSO-371)', () => {
     expect(activitySummary(ev('app.gallery_unlisted', 'app', 'x', { reason: 'takedown' }))).toContain('taken down');
   });
 
+  it('tells a duplicates switch apart from listing and a description change', () => {
+    const listed = (meta: unknown) => activitySummary(ev('app.gallery_listed', 'app', 'x', meta));
+    expect(listed({ description: 'd', allowDuplicate: false })).toBe('Listed the app in the public gallery');
+    expect(listed({ description: 'd', allowDuplicate: true })).toBe('Listed the app in the public gallery, duplicates allowed');
+    expect(listed({ description: 'd', allowDuplicate: true, previousDescription: 'd', previousAllowDuplicate: false })).toBe(
+      'Allowed duplicates of the app from the public gallery'
+    );
+    expect(listed({ description: 'd', allowDuplicate: false, previousDescription: 'd', previousAllowDuplicate: true })).toBe(
+      'Stopped allowing duplicates of the app from the public gallery'
+    );
+    expect(listed({ description: 'new', allowDuplicate: true, previousDescription: 'old', previousAllowDuplicate: true })).toBe(
+      'Changed the app’s gallery description'
+    );
+  });
+
   it('names a module secret, never a value', () => {
     const s = activitySummary(ev('module.secret_set', 'app', 'x', { module: 'email', name: 'SMTP_PASSWORD', rotated: true, value: 'hunter2' }));
     expect(s).toBe('Replaced the email module secret SMTP_PASSWORD');

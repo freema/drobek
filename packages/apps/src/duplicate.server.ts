@@ -48,6 +48,7 @@ export interface DuplicationSource {
   description: string;
   /** The author's workspace name (its slug when unnamed). */
   workspaceName: string;
+  workspaceSlug: string;
   workspaceId: string;
   publishedVersionId: string;
   /** Module names with a saved configuration. */
@@ -104,6 +105,7 @@ export async function duplicationSource(slug: string, env: NodeJS.ProcessEnv = p
     name: row.name ?? row.slug,
     description: row.galleryDescription ?? '',
     workspaceName: row.workspaceName?.trim() || row.workspaceSlug,
+    workspaceSlug: row.workspaceSlug,
     workspaceId: row.workspaceId,
     publishedVersionId: row.publishedVersionId,
     modules: configs

@@ -32,6 +32,11 @@ function str(m: Meta, key: string): string | null {
   return typeof v === 'string' && v.trim() ? v : null;
 }
 
+function bool(m: Meta, key: string): boolean | null {
+  const v = m[key];
+  return typeof v === 'boolean' ? v : null;
+}
+
 function num(m: Meta, key: string): number | null {
   const v = m[key];
   return typeof v === 'number' && Number.isFinite(v) ? v : null;
@@ -159,7 +164,15 @@ const SUMMARIES: Record<string, Summarize> = {
   'abuse.report': (m) => `Someone reported the app${str(m, 'reason') ? ` (${str(m, 'reason')})` : ''}`,
   'admin.takedown': (m) => `The server operator took the app down${str(m, 'reason') ? ` (${str(m, 'reason')})` : ''}`,
   'admin.restore': () => 'The server operator lifted the takedown (the app stays unpublished)',
-  'app.gallery_listed': () => 'Listed the app in the public gallery',
+  'app.gallery_listed': (m) => {
+    const allow = bool(m, 'allowDuplicate');
+    const before = bool(m, 'previousAllowDuplicate');
+    if (before !== null && allow !== null && allow !== before) {
+      return allow ? 'Allowed duplicates of the app from the public gallery' : 'Stopped allowing duplicates of the app from the public gallery';
+    }
+    if (before !== null) return 'Changed the app’s gallery description';
+    return allow ? 'Listed the app in the public gallery, duplicates allowed' : 'Listed the app in the public gallery';
+  },
   'app.gallery_unlisted': (m) => {
     const reason = str(m, 'reason');
     if (reason === 'unpublish') return 'The app left the public gallery because it was unpublished';

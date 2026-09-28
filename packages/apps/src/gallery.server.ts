@@ -150,7 +150,7 @@ export async function setGalleryListing(
     await audit(AUDIT_ACTIONS.appGalleryListed, {
       description,
       allowDuplicate,
-      ...(app.galleryListed ? { previousDescription: app.galleryDescription } : {}),
+      ...(app.galleryListed ? { previousDescription: app.galleryDescription, previousAllowDuplicate: app.galleryAllowDuplicate } : {}),
     });
     return { changed: true, listed: true, description, allowDuplicate, slug: app.slug };
   });

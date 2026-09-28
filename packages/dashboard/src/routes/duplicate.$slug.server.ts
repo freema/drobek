@@ -47,7 +47,7 @@ export type DuplicateLoaderData =
   | { refused: DuplicateRefusal; message: string }
   | {
       refused: null;
-      source: { slug: string; name: string; description: string; workspaceName: string; modules: string[] };
+      source: { slug: string; name: string; description: string; workspaceName: string; workspaceSlug: string; modules: string[] };
       workspaces: DuplicateTarget[];
       defaultName: string;
       nameMax: number;
@@ -94,7 +94,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   return data<DuplicateLoaderData>(
     {
       refused: null,
-      source: { slug: src.slug, name: src.name, description: src.description, workspaceName: src.workspaceName, modules: src.modules },
+      source: { slug: src.slug, name: src.name, description: src.description, workspaceName: src.workspaceName, workspaceSlug: src.workspaceSlug, modules: src.modules },
       workspaces: (await targets(user)).map(({ slug, name, personal }) => ({ slug, name, personal })),
       defaultName: defaultCopyName(src.name),
       nameMax: DUPLICATE_NAME_MAX,
