@@ -1,6 +1,6 @@
 # Changelog — drobek (core)
 
-## Unreleased
+## v0.5.3 — 2026-09-28
 
 ### Changed
 - **Platform e-mails have real buttons and name the server** (NSO-375): the pending-change mail, the abuse-report, takedown/restore, publish notification, publish approval/block, lost-domain and invite mails link the dashboard page as a button (the address stays in the text part and as a fallback line). A button can only point at the server's own origin (`PUBLIC_APP_URL`, or `PUBLIC_ORIGIN` for invites); an app's mail (`ctx.email.send`) still renders as escaped text with no links and cannot add buttons.
