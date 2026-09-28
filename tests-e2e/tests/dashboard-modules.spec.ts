@@ -15,7 +15,8 @@ import { addMembership, userIdByEmail, withDb, workspaceIdBySlug } from './helpe
  *    is in force (a visitor can add a record), audit module.pending (agent) +
  *    module.confirm (user);
  *  - the owner gets ONE e-mail about pending changes (Mailpit), with the
- *    module, the change and the confirm URL; a second proposal within the hour
+ *    module, the change and the confirm URL (a button in the HTML part, the
+ *    address in the text part, the server named by its host); a second proposal within the hour
  *    sends none (1/h per app);
  *  - a secret entered in the form → `hasSecret: true` in get_app, and the
  *    value appears in no API response (get_app, skill_info, the page's loader
@@ -49,6 +50,7 @@ const PENDING_SUBJECT = 'awaits your confirmation';
 interface MailDetail {
   Subject: string;
   Text: string;
+  HTML: string;
   To: { Address: string }[];
 }
 
@@ -196,7 +198,12 @@ test.describe('dashboard Modules tab (M2-02) @local', () => {
     expect(mail.To.map((t) => t.Address)).toEqual([mcp.email.toLowerCase()]);
     expect(mail.Text).toContain('Module data:');
     expect(mail.Text).toContain('data.collections.notes.rules.create: "user" → "public"');
-    expect(mail.Text).toContain(`Review: ${BASE_URL_WEB}${modulePath(app, 'data')}`);
+    const review = `${BASE_URL_WEB}${modulePath(app, 'data')}`;
+    expect(mail.Text).toContain(`Review the data changes: ${review}`);
+    expect(mail.Text).toContain(`in the dashboard at ${new URL(BASE_URL_WEB).host}.`);
+    expect(mail.HTML).toContain(`<a href="${review}"`);
+    expect(mail.HTML).toContain(`Sent by the drobek server at ${new URL(BASE_URL_WEB).host} because you can edit this app.`);
+    expect(mail.HTML).not.toContain('Sent by an app hosted on drobek');
 
     // Another pending change (a new Reply-To) within the hour: aggregated, no second mail.
     const held = await configure(mcp, app.app_id, 'email', { replyTo: 'e2e-replies@example.com' });

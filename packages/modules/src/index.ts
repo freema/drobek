@@ -151,7 +151,7 @@ export {
 } from './principal.js';
 export { SECRET_NAME_RE, SECRET_MAX_BYTES, SecretStoreError, deleteModuleSecret, getModuleSecret, secretsSet, secretsStatus, setModuleSecret } from './secrets.server.js';
 export { readConfigRow, type ConfigRow, type PendingChange } from './configs.server.js';
-export { PENDING_MAIL_WINDOW_MS, pendingMail, pendingMailKey, type PendingMailModule } from './pending-mail.js';
+export { PENDING_MAIL_WINDOW_MS, pendingMail, pendingMailKey, type PendingMail, type PendingMailModule } from './pending-mail.js';
 export {
   BACKEND_IMPORT_SKILLS,
   PLATFORM_SKILL_NAME,
@@ -248,6 +248,7 @@ export {
   type EmailTransport,
   type ModuleDashboardView,
   type PendingView,
+  type PlatformMailParts,
   type TransportMessage,
   type LoadRuntimeOptions,
   type ModuleErrorSection,

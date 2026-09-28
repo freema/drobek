@@ -11,7 +11,18 @@
  * vendor SDK: RESEND_API_KEY). EMAIL_FROM is the sender for both.
  */
 export { smtpConfigured, getSmtpTransport, getEmailFrom, resetSmtpTransportForTests } from './smtp.server.js';
-export { renderEmailLayout, escapeHtml, emailBrand, type EmailLayoutInput } from './layout.server.js';
+export { renderEmailLayout, escapeHtml, emailBrand, emailFont, type EmailLayoutInput } from './layout.server.js';
+export {
+  platformEmailText,
+  renderEmailActionsHtml,
+  renderPlatformEmail,
+  serverFootNote,
+  serverHost,
+  serverOrigin,
+  trustedActionUrl,
+  type EmailAction,
+  type PlatformEmailInput,
+} from './platform-email.js';
 export { MASCOT_COLORS, MASCOT_HEIGHT, MASCOT_RECTS, MASCOT_WIDTH, mascotDataUri, mascotEmailHtml, mascotSvg, type MascotRect } from './mascot.js';
 export { renderTextEmailHtml, type TextEmailInput } from './text-email.js';
 export { emailFromParts, fromHeader, safeDisplayName, sendEmail, type OutgoingEmail } from './send.server.js';

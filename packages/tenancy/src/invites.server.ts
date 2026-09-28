@@ -236,12 +236,11 @@ export async function acceptInvite(args: {
   };
 }
 
-/** PUBLIC_ORIGIN + /invite/<token> (same env default as the auth package). */
+/** PUBLIC_ORIGIN (else PUBLIC_APP_URL) + /invite/<token>. */
 export function acceptInviteUrl(
   token: string,
   env: NodeJS.ProcessEnv = process.env
 ): string {
-  const origin = ((env.PUBLIC_ORIGIN ?? '').trim() || 'http://localhost:3041')
-    .replace(/\/+$/, '');
+  const origin = (env.PUBLIC_ORIGIN?.trim() || env.PUBLIC_APP_URL?.trim() || 'http://localhost:3041').replace(/\/+$/, '');
   return `${origin}/invite/${token}`;
 }

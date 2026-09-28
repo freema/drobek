@@ -24,7 +24,7 @@ import { alias } from 'drizzle-orm/pg-core';
 import { AUDIT_ACTIONS, AUDIT_SUBJECT_TYPES, writeAudit, type AuditExecutor } from '@drobek/audit';
 import { createConsoleLogger, type Logger } from '@drobek/core';
 import { apps, dbErrorForLog, getDb, memberships, users, workspaces } from '@drobek/db';
-import { renderTextEmailHtml, sendEmail } from '@drobek/email';
+import { renderPlatformEmail, sendEmail, serverFootNote, type PlatformEmailInput } from '@drobek/email';
 import { AppsError } from './errors.js';
 import { dashboardOrigin } from './origin.js';
 import {
@@ -176,23 +176,24 @@ export interface PublishApprovalRequestResult {
   contact: string | null;
 }
 
-type Mailer = (mail: { to: string; subject: string; text: string; replyTo?: string }) => Promise<boolean>;
+type Mailer = (mail: { to: string; subject: string; text: string; html: string; replyTo?: string }) => Promise<boolean>;
 
-const defaultMailer: Mailer = async (mail) =>
-  (await sendEmail({ ...mail, html: renderTextEmailHtml({ subject: mail.subject, text: mail.text }) })) === 'sent';
+const defaultMailer = (env: NodeJS.ProcessEnv): Mailer => async (mail) => (await sendEmail(mail, env)) === 'sent';
 
 async function deliver(
   to: string[],
-  mail: { subject: string; text: string; replyTo?: string },
+  mail: PlatformEmailInput & { replyTo?: string },
+  env: NodeJS.ProcessEnv,
   send: Mailer,
   log: Logger,
   what: string,
   meta: Record<string, unknown>
 ): Promise<number> {
+  const rendered = renderPlatformEmail(mail, env);
   let mailed = 0;
   for (const address of to) {
     try {
-      if (await send({ to: address, ...mail })) mailed++;
+      if (await send({ to: address, subject: mail.subject, ...rendered, ...(mail.replyTo ? { replyTo: mail.replyTo } : {}) })) mailed++;
       else log.info(`${what} not e-mailed (SMTP not configured in dev)`, meta);
     } catch (err) {
       log.error(`${what} e-mail failed`, { ...meta, error: dbErrorForLog(err) });
@@ -262,15 +263,20 @@ export async function requestPublishApproval(input: {
     `Workspace: ${ws.name} (${ws.slug})`,
     `Requested by: ${requester?.email ?? 'unknown'}`,
     ...(input.appName ? [`App: ${input.appName}`] : []),
-    '',
-    `Allow or block it: ${dashboardOrigin(env)}${PUBLISH_APPROVAL_PATH}`,
-    '',
-    'Until a super-admin allows the workspace its apps can be built and previewed but not published. Further requests from this workspace within 24 hours are not e-mailed again.',
   ].join('\n');
   const mailed = await deliver(
     operatorEmails(env),
-    { subject, text, ...(requester?.email ? { replyTo: requester.email } : {}) },
-    input.send ?? defaultMailer,
+    {
+      subject,
+      text,
+      actions: [{ label: 'Allow or block it', url: `${dashboardOrigin(env)}${PUBLISH_APPROVAL_PATH}` }],
+      closing:
+        'Until a super-admin allows the workspace its apps can be built and previewed but not published. Further requests from this workspace within 24 hours are not e-mailed again.',
+      footNote: serverFootNote('you are its operator (OPERATOR_EMAIL or a super-admin)', env),
+      ...(requester?.email ? { replyTo: requester.email } : {}),
+    },
+    env,
+    input.send ?? defaultMailer(env),
     log,
     'publish approval request',
     { workspace_id: ws.id }
@@ -402,8 +408,13 @@ export async function setWorkspacePublishing(input: {
       const contact = operatorContact(env);
       mailed = await deliver(
         recipients,
-        { ...blockMail(out.ws, to, publishApprovalMode(env), contact), ...(contact ? { replyTo: contact } : {}) },
-        input.send ?? defaultMailer,
+        {
+          ...blockMail(out.ws, to, publishApprovalMode(env), contact),
+          footNote: serverFootNote('you can publish from this workspace', env),
+          ...(contact ? { replyTo: contact } : {}),
+        },
+        env,
+        input.send ?? defaultMailer(env),
         log,
         to === 'blocked' ? 'publish block notice' : 'publish unblock notice',
         { workspace_id: out.ws.id }

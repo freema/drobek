@@ -94,3 +94,4 @@ export function escapeHtml(input: string): string {
 }
 
 export const emailBrand = BRAND;
+export const emailFont = FONT;

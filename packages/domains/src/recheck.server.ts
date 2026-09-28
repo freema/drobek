@@ -18,7 +18,7 @@ import { and, eq, inArray, isNotNull, isNull, lt, or } from 'drizzle-orm';
 import { appsOrigin, dashboardOrigin, notifyAppChanged, withRedisLock } from '@drobek/apps';
 import { AUDIT_ACTIONS, AUDIT_SUBJECT_TYPES, writeAudit } from '@drobek/audit';
 import { apps, dbErrorForLog, domains, getDb, memberships, users, workspaces } from '@drobek/db';
-import { renderTextEmailHtml, sendEmail } from '@drobek/email';
+import { renderPlatformEmail, sendEmail, serverFootNote, type EmailAction } from '@drobek/email';
 import { RECHECK_AFTER_MS, domainsResolver, recheckIntervalMs } from './config.js';
 import { checkDomainDns, type DnsResolver } from './dns.js';
 import { cnameTarget, verificationRecordName } from './hostname.js';
@@ -30,7 +30,9 @@ const CONCURRENCY = 8;
 export interface DomainLostNotice {
   to: string;
   subject: string;
+  /** Plain text without the link: the Domains page is the action. */
   text: string;
+  actions: EmailAction[];
 }
 
 export interface RecheckOptions {
@@ -62,31 +64,33 @@ export async function appOwnerAddresses(workspaceId: string): Promise<string[]> 
 }
 
 async function defaultSendNotice(notice: DomainLostNotice, env: NodeJS.ProcessEnv): Promise<void> {
-  const html = renderTextEmailHtml({
-    subject: notice.subject,
-    text: notice.text,
-    footNote: 'You get this because you can edit this app on drobek.',
-  });
-  await sendEmail({ to: notice.to, subject: notice.subject, text: notice.text, html }, env);
+  const mail = renderPlatformEmail(
+    { subject: notice.subject, text: notice.text, actions: notice.actions, footNote: serverFootNote('you can edit this app', env) },
+    env
+  );
+  await sendEmail({ to: notice.to, subject: notice.subject, ...mail }, env);
 }
 
-export function domainLostText(input: { hostname: string; appSlug: string; reason: string | null; manageUrl: string; cnameTarget: string }): {
-  subject: string;
-  text: string;
-} {
+export function domainLostText(input: {
+  hostname: string;
+  appSlug: string;
+  appsDomain: string;
+  reason: string | null;
+  manageUrl: string;
+  cnameTarget: string;
+}): Omit<DomainLostNotice, 'to'> {
   return {
     subject: `Custom domain ${input.hostname} is no longer verified`,
     text: [
       `The daily DNS check of ${input.hostname} (app ${input.appSlug}) failed:`,
       input.reason ?? 'the DNS records are missing.',
       '',
-      `drobek stopped serving the app on ${input.hostname}. It is still available on its drobek address.`,
+      `This server stopped serving the app on ${input.hostname}. Its own address under ${input.appsDomain} keeps working.`,
       'To bring the domain back, restore both DNS records and click "Verify" on the Domains page:',
       `  CNAME ${input.hostname} → ${input.cnameTarget}`,
       `  TXT   ${verificationRecordName(input.hostname)} = drobek-verify=… (the value shown on the Domains page)`,
-      '',
-      input.manageUrl,
     ].join('\n'),
+    actions: [{ label: 'Open the Domains page', url: input.manageUrl }],
   };
 }
 
@@ -159,8 +163,8 @@ export async function recheckDueDomains(opts: RecheckOptions = {}): Promise<Rech
       await notifyAppChanged({ app_id: d.appId, slug: d.slug, kind: 'domain' });
       opts.log?.('custom domain lost its verification', { app_id: d.appId, hostname: d.hostname, txt: check.txt, target: check.target });
 
-      const manageUrl = `${dashboardOrigin(env)}/workspaces/${d.workspaceSlug}/apps/${d.slug}/domains`;
-      const message = domainLostText({ hostname: d.hostname, appSlug: d.slug, reason: check.error, manageUrl, cnameTarget: target });
+      const manageUrl = `${dashboardOrigin(env)}/workspaces/${encodeURIComponent(d.workspaceSlug)}/apps/${encodeURIComponent(d.slug)}/domains`;
+      const message = domainLostText({ hostname: d.hostname, appSlug: d.slug, appsDomain, reason: check.error, manageUrl, cnameTarget: target });
       for (const to of await appOwnerAddresses(d.workspaceId)) {
         try {
           await send({ to, ...message });

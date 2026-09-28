@@ -4,7 +4,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mail = vi.hoisted(() => ({ send: vi.fn(async (_m: { to: string; subject: string }) => 'sent' as const) }));
+const mail = vi.hoisted(() => ({ send: vi.fn(async (_m: { to: string; subject: string; text: string; html: string }) => 'sent' as const) }));
 const redis = vi.hoisted(() => ({ set: vi.fn(async () => 'OK' as string | null) }));
 
 vi.mock('@drobek/email', async (importOriginal) => ({
@@ -47,5 +47,13 @@ describe('abuse report recipients', () => {
     expect(await mailSuperAdminsAboutReport(report(), log, {})).toEqual({ sent: 0, deduped: false });
     expect(mail.send).not.toHaveBeenCalled();
     expect(log.warn).toHaveBeenCalled();
+  });
+
+  it('the queue link is a button on the server origin, the text part keeps the URL, the footer names the server', async () => {
+    await mailSuperAdminsAboutReport(report(), log, { OPERATOR_EMAIL: 'ops@x.test', PUBLIC_APP_URL: 'https://dash.x.test' });
+    const [m] = mail.send.mock.calls[0];
+    expect(m.html).toMatch(/<a href="https:\/\/dash\.x\.test\/[^"]+"/);
+    expect(m.text).toMatch(/Review the report queue: https:\/\/dash\.x\.test\//);
+    expect(m.html).toContain('Sent by the drobek server at dash.x.test because you moderate this server');
   });
 });
