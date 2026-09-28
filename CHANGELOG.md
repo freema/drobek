@@ -1,6 +1,6 @@
 # Changelog — drobek (core)
 
-## Unreleased
+## v0.5.1 — 2026-09-28
 
 ### Added
 - **`/api/version` names the build and the process start** (NSO-340). Next to the unchanged `sha`, `version` and `modules` it answers `name` (`"drobek"`), `commitTime` (the committer time of `sha` in UTC ISO, baked into the image as the `COMMIT_TIME` build arg by CI, `task build` and `task e2e:image`; the same sources rebuild to the same value; `null` when unknown) and `startedAt` (when the running process started, i.e. the last deploy or restart).
