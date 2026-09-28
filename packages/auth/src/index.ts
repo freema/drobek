@@ -104,8 +104,11 @@ export {
   resetSmtpTransportForTests,
   sendEmail,
   renderEmailLayout,
+  renderEmailActionsHtml,
   escapeHtml,
   emailBrand,
+  serverFootNote,
+  serverHost,
   type EmailLayoutInput,
 } from '@drobek/email';
 export { sendLoginCodeEmail } from './email/send-login-code.server.js';

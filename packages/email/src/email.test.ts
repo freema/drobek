@@ -3,6 +3,7 @@ import { escapeHtml, renderEmailLayout } from './layout.server.js';
 import { emailFromParts, fromHeader, messageFor, safeDisplayName, sendEmail } from './send.server.js';
 import { getSmtpTransport, resetSmtpTransportForTests, smtpTransportOptions } from './smtp.server.js';
 import { renderTextEmailHtml } from './text-email.js';
+import { renderPlatformEmail, serverFootNote, serverHost, trustedActionUrl } from './platform-email.js';
 
 afterEach(() => resetSmtpTransportForTests());
 
@@ -27,6 +28,63 @@ describe('layout', () => {
     const html = renderEmailLayout({ preview: 'p', body: '<p>b</p>' });
     expect(html).toContain('a cloud workspace for agent-built web apps');
     expect(html).not.toMatch(/micro-apps|vibecoded/i);
+  });
+});
+
+describe('platform e-mail (trusted actions)', () => {
+  const env = { PUBLIC_APP_URL: 'https://apps.example.org' };
+  const review = 'https://apps.example.org/workspaces/acme/apps/shop/modules/data';
+
+  it('an action is a button (<a href>) in the HTML and a "label: url" line in the text part', () => {
+    const mail = renderPlatformEmail(
+      { subject: 'S', text: 'A change waits.\n', actions: [{ label: 'Review the data changes', url: review }], closing: 'Bye.' },
+      env
+    );
+    expect(mail.html).toContain(`<a href="${review}"`);
+    expect(mail.html).toContain('>Review the data changes</a>');
+    expect(mail.html).toContain('Sent by the drobek server at apps.example.org.');
+    expect(mail.text).toBe(`A change waits.\n\nReview the data changes: ${review}\n\nBye.`);
+  });
+
+  it('the text stays text: a URL or markup in it never becomes a link, the label is escaped', () => {
+    const mail = renderPlatformEmail(
+      { subject: 'S', text: 'visit https://evil.example/x <a href="https://evil.example">y</a>', actions: [{ label: '<b>Go</b>', url: review }] },
+      env
+    );
+    expect(mail.html.match(/<a /g)).toHaveLength(1);
+    expect(mail.html).toContain('&lt;a href=&quot;https://evil.example&quot;&gt;');
+    expect(mail.html).toContain('&lt;b&gt;Go&lt;/b&gt;');
+  });
+
+  it('an app-authored mail with URL-looking text has no <a> at all', () => {
+    const html = renderTextEmailHtml({ subject: 'x', text: 'Click https://drobek.app/login or <a href="https://x">here</a>' });
+    expect(html).not.toMatch(/<a[\s>]/);
+  });
+
+  it('refuses an action off the server origin, a non-http scheme or credentials', () => {
+    for (const bad of [
+      'https://evil.example/workspaces',
+      'https://apps.example.org.evil.example/',
+      'http://apps.example.org/x',
+      'javascript:alert(1)',
+      'https://user:pw@apps.example.org/',
+      '/workspaces/acme',
+    ]) {
+      expect(() => trustedActionUrl(bad, env), bad).toThrow(/action/);
+      expect(() => renderPlatformEmail({ subject: 's', text: 't', actions: [{ label: 'x', url: bad }] }, env), bad).toThrow();
+    }
+    expect(trustedActionUrl('https://invites.example.org/invite/t', { ...env, PUBLIC_ORIGIN: 'https://invites.example.org' })).toBe(
+      'https://invites.example.org/invite/t'
+    );
+  });
+
+  it('the host shown comes from PUBLIC_APP_URL (then PUBLIC_ORIGIN, then the dev default)', () => {
+    expect(serverHost(env)).toBe('apps.example.org');
+    expect(serverHost({ PUBLIC_ORIGIN: 'https://o.example.org/' })).toBe('o.example.org');
+    expect(serverHost({})).toBe('localhost:3041');
+    expect(serverFootNote('you can edit this app', { PUBLIC_APP_URL: 'https://drobek.example.com' })).toBe(
+      'Sent by the drobek server at drobek.example.com because you can edit this app.'
+    );
   });
 });
 

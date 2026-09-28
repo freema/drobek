@@ -823,6 +823,41 @@ describe('module e-mail (ctx.email.send through the runtime)', () => {
     expect(sent).toHaveLength(3);
   });
 
+  it('an app cannot make its mail a platform mail: extra fields from ctx.email.send or the mail authority never reach the transport', async () => {
+    const smuggler = defineModule<{ notify: string[] }>({
+      ...base,
+      name: 'smuggler',
+      configSchema: z.object({ notify: z.array(z.string()) }),
+      configDefaults: { notify: ['team@example.com'] },
+      routes(r) {
+        r.post('/mail', { rule: 'public', body: z.object({ to: z.any() }) }, async (_q, ctx) =>
+          ctx.email.send({
+            to: { config: 'notify' },
+            subject: 'Hi',
+            text: 'Open https://evil.example/login',
+            platform: { actions: [{ label: 'Sign in', url: 'https://evil.example/login' }], footNote: 'Sent by drobek' },
+            actions: [{ label: 'Sign in', url: 'https://evil.example/login' }],
+          } as unknown as Parameters<typeof ctx.email.send>[0])
+        );
+      },
+    });
+    const sneakyMailer = defineModule<Record<string, never>>({
+      ...base,
+      name: 'sneaky',
+      configSchema: z.object({}),
+      configDefaults: {},
+      mail: {
+        prepare: async () =>
+          ({ fromName: 'Shop', platform: { actions: [{ label: 'x', url: 'https://evil.example/' }], footNote: 'x' } }) as never,
+      },
+    });
+    const { r, sent } = await setup([smuggler, sneakyMailer]);
+    const res = await r.handle(req('POST', '/__drobek/v1/smuggler/mail', { headers: { ...sdkPost }, body: { to: null } }), app);
+    expect(res.status, String(res.body)).toBe(200);
+    expect(sent).toEqual([{ to: 'team@example.com', subject: 'Hi', text: 'Open https://evil.example/login', fromName: 'Shop' }]);
+    expect(Object.keys(sent[0])).not.toContain('platform');
+  });
+
   it('{ signInAddress } is reserved for the sign-in provider: another module gets 403 forbidden, nothing is sent or counted (NSO-327)', async () => {
     let guard: MailGuard | undefined;
     const { r, sent, send } = await setup([sender, mailer, intruder], {
@@ -943,8 +978,16 @@ describe('module e-mail (ctx.email.send through the runtime)', () => {
       const held = await r.configure({ app, module: 'echo', patch: { access: 'public' }, actorUserId: userId });
       expect(held.applied).toBe(false);
       expect(sent).toHaveLength(1);
-      expect(sent[0]).toMatchObject({ to: 'pending-owner@example.com', subject: '[shop] 1 change awaits your confirmation', fromName: 'Shop' });
-      expect(sent[0].text).toContain('Module echo:\n  - access: anyone can read\n  Review: https://drobek.example/workspaces/acme/apps/shop/modules/echo');
+      expect(sent[0]).toMatchObject({ to: 'pending-owner@example.com', subject: '[shop] 1 change awaits your confirmation' });
+      // A platform mail: the server's sender and footer, not the app's envelope; the review link is a trusted action.
+      expect(sent[0].fromName).toBeUndefined();
+      expect(sent[0].replyTo).toBeUndefined();
+      expect(sent[0].text).toContain('Module echo:\n  - access: anyone can read');
+      expect(sent[0].text).toContain('in the dashboard at drobek.example.');
+      expect(sent[0].platform).toMatchObject({
+        actions: [{ label: 'Review the echo changes', url: 'https://drobek.example/workspaces/acme/apps/shop/modules/echo' }],
+        footNote: 'Sent by the drobek server at drobek.example because you can edit this app.',
+      });
 
       // A second proposal within the hour: no second e-mail (the banner shows it).
       await r.configure({ app, module: 'echo', patch: { notify: ['boss@example.com'] }, actorUserId: userId });

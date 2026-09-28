@@ -39,7 +39,7 @@
  */
 import { appsOrigin, dashboardOrigin } from '@drobek/apps';
 import { AUDIT_ACTIONS, AUDIT_SUBJECT_TYPES, actorKindForSurface, writeAudit } from '@drobek/audit';
-import { renderTextEmailHtml, sendEmail } from '@drobek/email';
+import { renderPlatformEmail, renderTextEmailHtml, sendEmail, serverHost, trustedActionUrl, type EmailAction } from '@drobek/email';
 import { scanForSecrets } from '@drobek/compile';
 import { createConsoleLogger, getRedis, type Logger } from '@drobek/core';
 import { apps, dbErrorForLog, getDb, memberships, runJournalMigrations, users, workspaceModules, type DB } from '@drobek/db';
@@ -118,6 +118,15 @@ export interface TransportMessage extends MailEnvelope {
   to: string;
   subject: string;
   text: string;
+  /** Set only by the runtime's own mail (the pending-change e-mail), never from `ctx.email.send`. */
+  platform?: PlatformMailParts;
+}
+
+/** What makes a module-path message a platform mail: buttons to this server and the server's footer. */
+export interface PlatformMailParts {
+  actions: EmailAction[];
+  closing?: string;
+  footNote: string;
 }
 
 export interface EmailTransport {
@@ -180,7 +189,13 @@ export function memoryRateLimiter(now: () => number = Date.now): RateLimiter & {
 /** Plain-text mail through the operator's transport (@drobek/email: SMTP or Resend per EMAIL_TRANSPORT — the transport of the login codes too). */
 export function smtpEmailTransport(log: Logger, env: NodeJS.ProcessEnv = process.env): EmailTransport {
   return {
-    async send({ to, subject, text, fromName, replyTo }) {
+    async send({ to, subject, text, fromName, replyTo, platform }) {
+      if (platform) {
+        const mail = renderPlatformEmail({ subject, text, ...platform }, env);
+        const r = await sendEmail({ to, subject, text: mail.text, html: mail.html }, env);
+        if (r === 'not_configured') log.info('platform e-mail not sent (SMTP not configured in dev)', { subject });
+        return;
+      }
       const html = renderTextEmailHtml({
         subject,
         text,
@@ -1450,14 +1465,19 @@ export class ModuleRuntime {
       const [row] = await deps.db().select({ name: apps.name }).from(apps).where(eq(apps.id, app.id)).limit(1);
       const mail = pendingMail({
         appName: row?.name ?? app.slug,
+        serverHost: serverHost(deps.env),
         modules: waiting.map((w) => ({ ...w, confirmUrl: confirmUrl(deps.env, app.workspaceSlug, app.slug, w.module) })),
       });
       const hookApp: HookApp = { id: app.id, slug: app.slug, workspaceId: app.workspaceId };
-      const out = await this.sendEmail(m, hookApp, { kind: 'anon' }, {}, () => deps.limits.forWorkspace(app.workspaceId), {
-        to: { appOwners: true },
-        subject: mail.subject,
-        text: mail.text,
-      });
+      const out = await this.sendEmail(
+        m,
+        hookApp,
+        { kind: 'anon' },
+        {},
+        () => deps.limits.forWorkspace(app.workspaceId),
+        { to: { appOwners: true }, subject: mail.subject, text: mail.text },
+        { actions: mail.actions, closing: mail.closing, footNote: mail.footNote }
+      );
       deps.log.info('pending-change e-mail sent', { app_id: app.id, module: m.name, recipients: out.sent });
     } catch (err) {
       deps.log.warn('pending-change e-mail not sent', {
@@ -1587,7 +1607,9 @@ export class ModuleRuntime {
    * module) apply the app's policy and envelope, count against the
    * operator-wide hourly budget of the message's class (sign-in codes vs
    * notifications, plus the app's and its workspace's shares — mail-guard.ts),
-   * send one message per address, audit.
+   * send one message per address, audit. `platform` (the runtime's own mail
+   * only — `ctx.email.send` has no way to pass it) adds buttons to this server
+   * and the server's footer, and drops the app's sender name and Reply-To.
    */
   private async sendEmail(
     m: AnyModule,
@@ -1595,9 +1617,11 @@ export class ModuleRuntime {
     principal: Principal,
     config: unknown,
     getLimits: () => Promise<Limits>,
-    message: EmailMessage
+    message: EmailMessage,
+    platform?: PlatformMailParts
   ): Promise<{ sent: number }> {
     const deps = this.deps;
+    for (const a of platform?.actions ?? []) trustedActionUrl(a.url, deps.env);
     const db = deps.db();
     const kind = emailKind(message.to);
     assertSignInSender(kind, m.name, endUserAuthorityOf(this.modules)?.name ?? null);
@@ -1634,7 +1658,17 @@ export class ModuleRuntime {
     try {
       for (const address of to) {
         try {
-          await deps.email.send({ to: address, subject, text, ...envelope });
+          await deps.email.send(
+            platform
+              ? { to: address, subject, text, platform }
+              : {
+                  to: address,
+                  subject,
+                  text,
+                  ...(envelope.fromName ? { fromName: envelope.fromName } : {}),
+                  ...(envelope.replyTo ? { replyTo: envelope.replyTo } : {}),
+                }
+          );
         } catch (err) {
           // SMTP errors can quote the recipient: log them without addresses, answer 503.
           deps.log.error('module e-mail failed', { ...meta, sent, error: redactAddresses(dbErrorForLog(err)) });

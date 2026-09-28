@@ -4,7 +4,17 @@
  * (@drobek/email: SMTP or Resend per EMAIL_TRANSPORT, mailpit locally).
  * Addresses are masked in every log line.
  */
-import { emailBrand, escapeHtml, logger, maskEmail, renderEmailLayout, sendEmail } from '@drobek/auth';
+import {
+  emailBrand,
+  escapeHtml,
+  logger,
+  maskEmail,
+  renderEmailActionsHtml,
+  renderEmailLayout,
+  sendEmail,
+  serverFootNote,
+  serverHost,
+} from '@drobek/auth';
 import type { WorkspaceRole } from '../roles.js';
 
 export interface InviteEmailVars {
@@ -19,30 +29,25 @@ export interface RenderedInviteEmail {
   text: string;
 }
 
-export function renderInviteEmail(vars: InviteEmailVars): RenderedInviteEmail {
+export function renderInviteEmail(vars: InviteEmailVars, env: NodeJS.ProcessEnv = process.env): RenderedInviteEmail {
   const subject = `drobek — you're invited to “${vars.workspaceName}”`;
   const safeName = escapeHtml(vars.workspaceName);
   const safeRole = escapeHtml(vars.role);
-  const safeUrl = escapeHtml(vars.acceptUrl);
+  const host = serverHost(env);
 
   const body = `
     <h1 style="margin:0 0 8px;font-size:20px;line-height:1.3;font-weight:600;color:${emailBrand.ink};">You&#39;re invited</h1>
-    <p style="margin:0 0 24px;color:${emailBrand.muted};">
+    <p style="margin:0;color:${emailBrand.muted};">
       You have been invited to join the workspace <strong style="color:${emailBrand.ink};">${safeName}</strong>
-      on drobek as <strong style="color:${emailBrand.ink};">${safeRole}</strong>.
+      on the drobek server at ${escapeHtml(host)} as <strong style="color:${emailBrand.ink};">${safeRole}</strong>.
     </p>
-    <p style="margin:0 0 24px;">
-      <a href="${safeUrl}" style="display:inline-block;padding:10px 18px;background:${emailBrand.ink};color:#ffffff;text-decoration:none;border-radius:6px;font-size:14px;font-weight:600;">
-        Accept invitation
-      </a>
-    </p>
-    <p style="margin:0;font-size:13px;line-height:1.55;color:${emailBrand.faint};word-break:break-all;">
-      Or open this link: ${safeUrl}<br />
+    ${renderEmailActionsHtml([{ label: 'Accept invitation', url: vars.acceptUrl }], env)}
+    <p style="margin:16px 0 0;font-size:13px;line-height:1.55;color:${emailBrand.faint};">
       The invitation expires in 7 days and can be used once.
     </p>`;
 
   const text = [
-    `You have been invited to join the workspace "${vars.workspaceName}" on drobek as ${vars.role}.`,
+    `You have been invited to join the workspace "${vars.workspaceName}" on the drobek server at ${host} as ${vars.role}.`,
     '',
     `Accept the invitation: ${vars.acceptUrl}`,
     '',
@@ -54,6 +59,7 @@ export function renderInviteEmail(vars: InviteEmailVars): RenderedInviteEmail {
     html: renderEmailLayout({
       preview: `You're invited to ${vars.workspaceName} on drobek`,
       body,
+      footNote: escapeHtml(serverFootNote('a member of the workspace invited this address', env)),
     }),
     text,
   };

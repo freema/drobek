@@ -1,7 +1,8 @@
 /**
- * The moderation e-mails (M4-02, NSO-293), plain text in the drobek layout
- * (renderTextEmailHtml escapes everything, so a reporter's text can never
- * become markup in the operator's mail client):
+ * The moderation e-mails (M4-02, NSO-293), platform mail in the drobek layout
+ * (renderPlatformEmail escapes the text, so a reporter's text can never
+ * become markup in the operator's mail client; only the queue link, on this
+ * server's origin, is a button):
  *
  *  - a new report → every super-admin (SUPERADMIN_EMAIL) and OPERATOR_EMAIL
  *    (deduplicated, case-insensitive), at most ONE mail
@@ -19,7 +20,7 @@ import { ABUSE_QUEUE_PATH, dashboardOrigin, reasonLabel, termsUrl, type Reported
 import { superAdminEmails } from '@drobek/auth';
 import { getRedis, type Logger } from '@drobek/core';
 import { dbErrorForLog, getDb } from '@drobek/db';
-import { renderTextEmailHtml, sendEmail } from '@drobek/email';
+import { renderPlatformEmail, sendEmail, serverFootNote, type EmailAction } from '@drobek/email';
 import { appOwnerEmails } from '@drobek/modules';
 
 const REPORT_MAIL_DEDUP_MS = 60 * 60 * 1000;
@@ -38,11 +39,20 @@ async function firstInWindow(key: string, log: Logger): Promise<boolean> {
   }
 }
 
-async function deliver(to: string[], subject: string, text: string, log: Logger, meta: Record<string, unknown>): Promise<number> {
+interface ModerationMail {
+  subject: string;
+  text: string;
+  actions?: EmailAction[];
+  closing?: string;
+  footNote: string;
+}
+
+async function deliver(to: string[], mail: ModerationMail, log: Logger, meta: Record<string, unknown>, env: NodeJS.ProcessEnv): Promise<number> {
+  const { subject } = mail;
   let sent = 0;
   for (const address of to) {
     try {
-      const r = await sendEmail({ to: address, subject, text, html: renderTextEmailHtml({ subject, text }) });
+      const r = await sendEmail({ to: address, subject, ...renderPlatformEmail(mail, env) }, env);
       if (r === 'sent') sent++;
       else log.info('abuse e-mail not sent (SMTP not configured in dev)', { ...meta, subject });
     } catch (err) {
@@ -94,12 +104,20 @@ export async function mailSuperAdminsAboutReport(
     '',
     'Details:',
     input.details || '(none)',
-    '',
-    `Review the queue: ${dashboardOrigin(env)}${ABUSE_QUEUE_PATH}`,
-    '',
-    'Further reports on the same app within the hour are added to the queue without another e-mail.',
   ];
-  const sent = await deliver(to, subject, lines.join('\n'), log, { report_id: input.reportId });
+  const sent = await deliver(
+    to,
+    {
+      subject,
+      text: lines.join('\n'),
+      actions: [{ label: 'Review the report queue', url: `${dashboardOrigin(env)}${ABUSE_QUEUE_PATH}` }],
+      closing: 'Further reports on the same app within the hour are added to the queue without another e-mail.',
+      footNote: serverFootNote('you moderate this server (a super-admin or OPERATOR_EMAIL)', env),
+    },
+    log,
+    { report_id: input.reportId },
+    env
+  );
   return { sent, deduped: false };
 }
 
@@ -135,5 +153,5 @@ export async function mailOwnersAboutModeration(
           '',
           `Terms of service: ${terms}`,
         ].join('\n');
-  return deliver(to, subject, text, log, { app: input.app.slug, kind: input.kind });
+  return deliver(to, { subject, text, footNote: serverFootNote('you can edit this app', env) }, log, { app: input.app.slug, kind: input.kind }, env);
 }

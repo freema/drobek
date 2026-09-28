@@ -1,5 +1,14 @@
 # Changelog — drobek (core)
 
+## Unreleased
+
+### Changed
+- **Platform e-mails have real buttons and name the server** (NSO-375): the pending-change mail, the abuse-report, takedown/restore, publish notification, publish approval/block, lost-domain and invite mails link the dashboard page as a button (the address stays in the text part and as a fallback line). A button can only point at the server's own origin (`PUBLIC_APP_URL`, or `PUBLIC_ORIGIN` for invites); an app's mail (`ctx.email.send`) still renders as escaped text with no links and cannot add buttons.
+- **Self-hosted wording** (NSO-375): the mails say "the dashboard at <host of PUBLIC_APP_URL>" and end with "Sent by the drobek server at <host> because …" instead of "Sent by an app hosted on drobek"; the pending-change mail goes out under the server's sender, not the app's `fromName` / Reply-To; the sign-in code mail names the sign-in page's host.
+
+### Fixed
+- **Invite links fall back to `PUBLIC_APP_URL`** (NSO-375) when `PUBLIC_ORIGIN` is unset, instead of `http://localhost:3041`.
+
 ## v0.5.2 — 2026-09-28
 
 ### Changed

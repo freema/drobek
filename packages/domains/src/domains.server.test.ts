@@ -314,7 +314,7 @@ describe('recheckDueDomains (the daily re-check)', () => {
     // Owners = editors + workspace-admins (never viewers), one message each.
     expect(sent.map((m) => m.to).sort()).toEqual(['editor@example.test', 'owner@example.test']);
     expect(sent[0].subject).toBe('Custom domain recheck.cz is no longer verified');
-    expect(sent[0].text).toContain(`https://drobek.app/workspaces/firma/apps/${app.slug}/domains`);
+    expect(sent[0].actions).toEqual([{ label: 'Open the Domains page', url: `https://drobek.app/workspaces/firma/apps/${app.slug}/domains` }]);
     expect(sent[0].text).toContain(`CNAME recheck.cz → ${app.slug}.drobek.app`);
 
     const unverify = await db
