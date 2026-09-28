@@ -36,8 +36,8 @@
 #            An existing release is left alone.
 #
 # Images are linux/amd64 only (no ARM image in v1). A release image is built
-# from the tag with GIT_SHA = the tag's commit and VERSION = the tag, both
-# visible in /api/version; `git checkout vX.Y.Z && task build` rebuilds it
+# from the tag with GIT_SHA = the tag's commit, VERSION = the tag and
+# COMMIT_TIME = that commit's time, all visible in /api/version; `git checkout vX.Y.Z && task build` rebuilds it
 # from the same sources and lockfile.
 #
 # Triggers: pushes to `main` and `v*` tags only (Actions capacity is limited —
@@ -145,6 +145,7 @@ jobs:
         run: |
           short="$(git rev-parse --short HEAD)"
           echo "short=$short" >> "$GITHUB_OUTPUT"
+          echo "commit_time=$(git log -1 --format=%cI HEAD)" >> "$GITHUB_OUTPUT"
           if [ "$REF_TYPE" = tag ]; then
             # Semver release tags only: vX.Y.Z or vX.Y.Z-<pre-release>.
             if ! printf '%s' "$REF_NAME" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
@@ -208,6 +209,7 @@ jobs:
           build-args: |
             GIT_SHA=${{ steps.sha.outputs.short }}
             VERSION=${{ steps.sha.outputs.version }}
+            COMMIT_TIME=${{ steps.sha.outputs.commit_time }}
           cache-from: type=gha,scope=drobek
           cache-to: type=gha,scope=drobek,mode=max
           provenance: false

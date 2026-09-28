@@ -217,7 +217,7 @@ Healthy`, `…-redis-1 Healthy`, `…-drobek-1 Healthy`, `…-caddy-1 Healthy`.
 
 ```sh
 curl -s https://drobek.example.com/healthz      # → {"ok":true,"db":"up","redis":"up"}
-curl -s https://drobek.example.com/api/version  # → {"sha":"<commit>","version":"vX.Y.Z"}
+curl -s https://drobek.example.com/api/version  # → {"name":"drobek","sha":"<commit>","version":"vX.Y.Z","commitTime":"…","startedAt":"…","modules":[…]}
 ```
 
 Tip: `alias dc='docker compose --env-file .env.production -f docker-compose.production.yaml'`

@@ -50,14 +50,18 @@ RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack 
 ENV NODE_ENV=production \
     PORT=3000
 # M4-03: a release image is built from its tag (ci.yml, `v*`): GIT_SHA = the
-# tag's commit, VERSION = the tag (vX.Y.Z). Both surface in /api/version.
+# tag's commit, VERSION = the tag (vX.Y.Z), COMMIT_TIME = that commit's
+# committer time (ISO). All three surface in /api/version.
 ARG GIT_SHA=dev
 ARG VERSION=dev
+ARG COMMIT_TIME=
 ENV GIT_SHA=$GIT_SHA \
-    DROBEK_VERSION=$VERSION
+    DROBEK_VERSION=$VERSION \
+    GIT_COMMIT_TIME=$COMMIT_TIME
 LABEL org.opencontainers.image.source="https://github.com/freema/drobek" \
       org.opencontainers.image.revision=$GIT_SHA \
-      org.opencontainers.image.version=$VERSION
+      org.opencontainers.image.version=$VERSION \
+      org.opencontainers.image.created=$COMMIT_TIME
 WORKDIR /app
 COPY --from=builder --chown=node:node /out/package.json ./package.json
 COPY --from=builder --chown=node:node /out/node_modules ./node_modules

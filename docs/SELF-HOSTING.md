@@ -107,7 +107,7 @@ Healthy`, `…-redis-1 Healthy`, `…-drobek-1 Healthy`, `…-caddy-1 Healthy`.
 
 ```sh
 curl -s https://drobek.example.com/healthz      # → {"ok":true,"db":"up","redis":"up"}
-curl -s https://drobek.example.com/api/version  # → {"sha":"<commit>","version":"vX.Y.Z"}
+curl -s https://drobek.example.com/api/version  # → {"name":"drobek","sha":"<commit>","version":"vX.Y.Z","commitTime":"…","startedAt":"…","modules":[…]}
 ```
 
 Tip: `alias dc='docker compose --env-file .env.production -f docker-compose.production.yaml'`
@@ -693,7 +693,8 @@ image is the source of its modules.
 
 A release is a pushed `vX.Y.Z` tag: CI runs the quality gate and the e2e suite
 against the image it builds from that tag (`GIT_SHA` = the tag's commit,
-`VERSION` = the tag, both in `/api/version`), pushes that exact image as
+`VERSION` = the tag, `COMMIT_TIME` = that commit's time, all in
+`/api/version`), pushes that exact image as
 `vX.Y.Z`, then retags in the registry: the former `latest` → `previous`,
 `vX.Y.Z` → `latest`. A pre-release tag (`vX.Y.Z-rc.1`) gets only its own tag.
 To rebuild a release image yourself: `git checkout vX.Y.Z && task build` (same

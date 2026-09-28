@@ -37,8 +37,10 @@ you run, under the same licence.
 - Every dashboard page has a footer **`Source (AGPL-3.0) · <commit>`** linking
   to the source repository at the commit the image was built from
   (`GIT_SHA`, `@drobek/dashboard` `source-link.ts`).
-- `GET /api/version` answers `{ sha, version }` — the commit and the release
-  tag of the running image.
+- `GET /api/version` answers `{ name, sha, version, commitTime, startedAt,
+  modules }` — the commit, the release tag and the commit time of the running
+  image (`commitTime` is `null` when the image was built without it), when
+  the process started (the last deploy or restart) and the active modules.
 - Release images are built by CI from a git tag and tagged `vX.Y.Z`
   (`docs/SELF-HOSTING.md` → Image tags), so "the source of the version I run"
   is always a tag in the public repository.
