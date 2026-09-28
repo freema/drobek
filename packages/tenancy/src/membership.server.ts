@@ -3,14 +3,14 @@
  * is pure (decideWorkspaceAccess in roles.ts); this module is the thin
  * session/db adapter that loaders and actions call.
  */
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { data } from 'react-router';
 import {
   isSuperAdmin,
   requireSessionUser,
   type SessionUser,
 } from '@drobek/auth';
-import { getDb, memberships, users, workspaces } from '@drobek/db';
+import { apps, getDb, memberships, users, workspaces } from '@drobek/db';
 import {
   decideWorkspaceAccess,
   type WorkspaceRole,
@@ -220,6 +220,29 @@ export async function personalWorkspaceOwners(workspaceIds?: readonly string[]):
     .innerJoin(users, eq(users.id, memberships.userId))
     .where(and(...conditions));
   return new Map(rows.map((r) => [r.workspaceId, r.email]));
+}
+
+export interface WorkspaceAppCount {
+  apps: number;
+  published: number;
+}
+
+/**
+ * Apps per workspace (deleted ones left out) and how many of them have a
+ * published version, keyed by workspace id, in one grouped query. A
+ * workspace without apps is absent from the map.
+ */
+export async function workspaceAppCounts(): Promise<Map<string, WorkspaceAppCount>> {
+  const rows = await getDb()
+    .select({
+      workspaceId: apps.workspaceId,
+      apps: sql<number>`count(*)::int`,
+      published: sql<number>`(count(*) filter (where ${apps.publishedVersionId} is not null))::int`,
+    })
+    .from(apps)
+    .where(isNull(apps.deletedAt))
+    .groupBy(apps.workspaceId);
+  return new Map(rows.map((r) => [r.workspaceId, { apps: r.apps, published: r.published }]));
 }
 
 export async function listAllWorkspaces(): Promise<WorkspaceSummary[]> {

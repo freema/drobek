@@ -107,6 +107,13 @@ interface AdminWorkspaceRow {
   kind: string;
   ownerEmail: string | null;
   myRole: string | null;
+  apps: number;
+  publishedApps: number;
+}
+
+function appCountLabel(apps: number, published: number): string {
+  if (apps === 0) return 'No apps';
+  return `${apps} app${apps === 1 ? '' : 's'} · ${published} published`;
 }
 
 function AllWorkspaces({ workspaces }: { workspaces: readonly AdminWorkspaceRow[] }) {
@@ -167,6 +174,9 @@ function AllWorkspaces({ workspaces }: { workspaces: readonly AdminWorkspaceRow[
                   owner {ws.ownerEmail}
                 </span>
               ) : null}
+              <span style={styles.owner} data-testid="workspace-app-count">
+                {appCountLabel(ws.apps, ws.publishedApps)}
+              </span>
               {ws.myRole ? (
                 <span style={styles.roleBadge} data-testid="all-workspace-access">
                   {ws.myRole}

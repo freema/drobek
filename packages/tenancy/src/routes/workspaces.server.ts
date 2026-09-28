@@ -16,6 +16,7 @@ import {
   listAllWorkspaces,
   listUserWorkspaces,
   personalWorkspaceOwners,
+  workspaceAppCounts,
 } from '../membership.server.js';
 import { ensurePersonalWorkspace } from '../personal-workspace.server.js';
 import { createTeamWorkspace } from '../team-workspace.server.js';
@@ -30,9 +31,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   const mine = await listUserWorkspaces(user.id);
   const superAdmin = isSuperAdmin(user.email);
-  const [all, owners] = superAdmin
-    ? await Promise.all([listAllWorkspaces(), personalWorkspaceOwners()])
-    : [null, null];
+  const [all, owners, appCounts] = superAdmin
+    ? await Promise.all([listAllWorkspaces(), personalWorkspaceOwners(), workspaceAppCounts()])
+    : [null, null, null];
   const myRole = new Map(mine.map((w) => [w.id, w.role]));
 
   return {
@@ -51,6 +52,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
           kind,
           ownerEmail: owners?.get(id) ?? null,
           myRole: myRole.get(id) ?? null,
+          apps: appCounts?.get(id)?.apps ?? 0,
+          publishedApps: appCounts?.get(id)?.published ?? 0,
         }))
       : null,
   };
