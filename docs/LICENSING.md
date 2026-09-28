@@ -82,7 +82,7 @@ So:
   product completely is in drobek, under the AGPL** — the dashboard,
   modules, custom domains, TLS, abuse handling, backups, the agent tooling.
   Plans, billing, signup gating and the marketing site are not needed to use
-  drobek and stay in the SaaS.
+  drobek and stay in drobek-web (the hosted instance).
 
 ## Related repositories
 
