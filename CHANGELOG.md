@@ -1,9 +1,12 @@
 # Changelog — drobek (core)
 
-## Unreleased
+## v0.5.2 — 2026-09-28
 
 ### Changed
 - **All workspaces shows each workspace's apps** (NSO-373): a super-admin's list on `/workspaces` reads "3 apps · 1 published" per workspace ("No apps" when empty; deleted apps are not counted), from one grouped query.
+
+### Docs
+- **Community modules** (NSO-374): `docs/MODULES.md` says that an npm package with the `drobek-module` keyword is listed on www.drobek.app/modules under "Community modules" (not reviewed), and that the submission form gets it reviewed into the directory.
 
 ## v0.5.1 — 2026-09-28
 

@@ -1360,6 +1360,10 @@ Publish to npm (`npm publish`; `prepack` builds `dist/`) or ship the
 tarball `npm pack` writes (`drobek-module-erp-0.1.0.tgz`) from any URL. The
 package contains `dist/`, `migrations/` and `SKILL.md`. A git URL works
 only with a committed `dist/` (installs run without lifecycle scripts).
+Keep the keyword `drobek-module` in `package.json` (the scaffold sets it):
+[www.drobek.app/modules](https://www.drobek.app/modules) lists every npm
+package with it under "Community modules", marked not reviewed, refreshed on
+each deploy of the site.
 
 ### Install on a server
 
@@ -1399,7 +1403,9 @@ identity before upgrading the server.
 
 Modules anyone can install with `task selfhost:module:add -- <spec>`, also
 listed in the directory at [www.drobek.app/modules](https://www.drobek.app/modules).
-To add yours, fill in the [module submission form](https://github.com/freema/drobek/issues/new?template=module-submission.yml):
+An npm package with the `drobek-module` keyword appears there under
+"Community modules" on its own; to have it reviewed and listed in the
+directory, fill in the [module submission form](https://github.com/freema/drobek/issues/new?template=module-submission.yml):
 the package on npm (or a tarball URL), what it does, the contract it declares,
 its license and where its source is.
 
