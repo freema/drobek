@@ -1,0 +1,66 @@
+# drobek (PUBLIC core) — pull request checks
+#
+# The `quality` job of ci.yml (doc-lint → build → lint → typecheck → knip →
+# unit tests) on every pull request to `main`, forks included, so a
+# contributor sees the result of `task check` on GitHub. Same job name as in
+# ci.yml, so it satisfies the same required status check; keep the steps in
+# sync with ci.yml's `quality`.
+#
+# `pull_request` (never `pull_request_target`): a fork's run gets a read-only
+# GITHUB_TOKEN and no secrets. No e2e and no image here — Actions capacity is
+# limited; the full suite runs on `main` after the merge and on tags.
+# First-time contributors' runs wait for approval (repository default).
+name: PR
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PNPM_VERSION: 10.33.2
+  NODE_VERSION: '22'
+
+jobs:
+  quality:
+    name: Lint · typecheck · unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Doc-lint (retired vocabulary, quickstart parity, env reference)
+        run: pnpm doc-lint
+
+      - name: Build workspace packages
+        run: pnpm build:packages
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Knip (unused files, exports, dependencies)
+        run: pnpm knip
+
+      - name: Unit tests
+        run: pnpm test

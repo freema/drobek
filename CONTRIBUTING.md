@@ -67,6 +67,8 @@ task e2e      # Playwright against the dev stack, when you changed behaviour
 ```
 
 - One topic per pull request, against `main`, with tests for what changed.
+- GitHub runs the `task check` pieces (without e2e) on every pull request;
+  a first-time contributor's run starts once I approve it.
 - Commit messages in English, in the imperative, with a scope:
   `fix(serving): …`, `feat(mcp): …`, `docs: …`.
 - Say what changed for users or operators; a user-visible change also gets a
