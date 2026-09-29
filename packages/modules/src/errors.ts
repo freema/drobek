@@ -112,6 +112,14 @@ export const CORE_ERROR_CODES: readonly string[] = [
   'data_public_write_no_schema', 'data_public_write_unbounded', 'data_public_read_personal', 'rule_needs_auth_module', 'proxy_public_upstream', 'module_change_pending',
   'xss_html_sink', 'xss_eval', 'xss_url_sink',
   'type_error',
+  // compile.warnings[] (reserved core diagnostic codes)
+  'html_missing_lang',
+  'html_missing_viewport',
+  'html_missing_title',
+  'missing_favicon',
+  'a11y_img_alt',
+  'a11y_name',
+  'a11y_label',
   // OAuth
   'invalid_grant',
   'invalid_client',

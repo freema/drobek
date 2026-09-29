@@ -434,6 +434,48 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     meaning:
       'TypeScript found a type error at file:line (the message starts with the TS code). esbuild strips types without checking them, so the version compiled — but the mistake (a misspelled SDK method, a wrong argument, a possibly-null value) usually fails in the browser. The check runs in the background after write_files, against this server\'s drobek SDK declarations and React\'s types; untyped import-map packages count as `any`.',
     fix: 'Fix the code at the reported line and write again; get_app shows the new version\'s check once `readiness.typecheck` is `checked`. Check an SDK call against sdk.d.ts / skill_info.',
+  // ── compile.warnings[] (non-fatal static HTML checks) ────────────────────
+  {
+    code: 'html_missing_lang',
+    surface: 'compile.warnings[]',
+    meaning: 'A static HTML page has an <html> element without a language declaration.',
+    fix: 'Add a language tag such as <html lang="en">.',
+  },
+  {
+    code: 'html_missing_viewport',
+    surface: 'compile.warnings[]',
+    meaning: 'A static HTML page has no viewport meta tag for mobile browsers.',
+    fix: 'Add <meta name="viewport" content="width=device-width, initial-scale=1"> inside <head>.',
+  },
+  {
+    code: 'html_missing_title',
+    surface: 'compile.warnings[]',
+    meaning: 'A static HTML page has no non-empty title.',
+    fix: 'Add a descriptive, non-empty <title> inside <head>.',
+  },
+  {
+    code: 'missing_favicon',
+    surface: 'compile.warnings[]',
+    meaning: 'The app has no icon link and no favicon.ico or favicon.svg file.',
+    fix: 'Add <link rel="icon" href="/favicon.ico"> or include favicon.ico/favicon.svg in the app files.',
+  },
+  {
+    code: 'a11y_img_alt',
+    surface: 'compile.warnings[]',
+    meaning: 'A static HTML image has no alt attribute.',
+    fix: 'Describe the image with alt text, or use alt="" when it is decorative.',
+  },
+  {
+    code: 'a11y_name',
+    surface: 'compile.warnings[]',
+    meaning: 'A button or linked anchor has no accessible name.',
+    fix: 'Add visible text, aria-label, aria-labelledby, title, or an image with alt text.',
+  },
+  {
+    code: 'a11y_label',
+    surface: 'compile.warnings[]',
+    meaning: 'A form control has no associated label or accessible label.',
+    fix: 'Add a wrapping/for-associated <label>, aria-label, or aria-labelledby.',
   },
   // ── platform module routes (/__drobek/v1/<module>/…, the drobek SDK) ──────
   // Body { error, message, details?, hint } — `error` is the code below; the
