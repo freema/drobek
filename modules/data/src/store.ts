@@ -181,6 +181,116 @@ export async function insertRecords(
 }
 
 /**
+ * Write a whole batch into one collection (a module job's import, NSO-392):
+ * ONE transaction under the app's write lock, the quota checked for the
+ * state after the batch first — either everything lands or nothing does.
+ *
+ *  - `replace`: every stored record of the collection is deleted and the
+ *    batch inserted (the file's order is the creation order);
+ *  - `upsert`: a batch record whose `key` value equals a stored record's
+ *    replaces that record's fields (its `_owner` and `_created_at` stay), the
+ *    others are inserted, stored records the batch does not name stay.
+ *
+ * `key` values are compared as JSON (a string "7" is not the number 7).
+ */
+export async function importBatch(
+  db: DB,
+  input: { appId: string; collection: string; docs: Record<string, unknown>[]; mode: 'replace' | 'upsert'; key?: string; limits: DataQuotaLimits }
+): Promise<{ inserted: number; updated: number; deleted: number }> {
+  const sized = input.docs.map((doc) => ({ doc, bytes: docByteSize(doc) }));
+  for (const d of sized) {
+    enforceWriteQuota({ limits: input.limits, newDocBytes: d.bytes, liveDocCount: 0, liveBytesExcludingTarget: 0, isCreate: false });
+  }
+  return withAppWriteLock(db, input.appId, async (tx) => {
+    const u = await usage(tx, input.appId);
+    const [inColl] = await tx
+      .select({ n: sql<string>`count(*)`, b: sql<string>`coalesce(sum(${dataRecords.bytes}), 0)` })
+      .from(dataRecords)
+      .where(scope(input.appId, input.collection));
+    const collCount = Number(inColl?.n ?? 0);
+    const collBytes = Number(inColl?.b ?? 0);
+
+    const toInsert: { doc: Record<string, unknown>; bytes: number }[] = [];
+    const toUpdate: { id: string; doc: Record<string, unknown>; bytes: number }[] = [];
+    let keptCount = u.count - collCount;
+    let keptBytes = u.bytes - collBytes;
+    if (input.mode === 'replace') {
+      toInsert.push(...sized);
+    } else {
+      const key = input.key!;
+      const stored = await tx
+        .select({ id: dataRecords.id, value: sql<string | null>`(${dataRecords.doc} -> ${key}::text)::text`, bytes: dataRecords.bytes })
+        .from(dataRecords)
+        .where(scope(input.appId, input.collection));
+      const byKey = new Map<string, { id: string; bytes: number }>();
+      for (const r of stored) {
+        const v = r.value === null ? null : parseJsonb(r.value);
+        if (v !== null && v !== undefined) byKey.set(JSON.stringify(v), { id: r.id, bytes: r.bytes });
+      }
+      const matched = new Set<string>();
+      for (const d of sized) {
+        const hit = byKey.get(JSON.stringify(d.doc[key]));
+        if (hit) {
+          matched.add(hit.id);
+          toUpdate.push({ id: hit.id, doc: d.doc, bytes: d.bytes });
+        } else toInsert.push(d);
+      }
+      // Stored records the batch does not replace stay.
+      for (const r of stored) {
+        if (matched.has(r.id)) continue;
+        keptCount += 1;
+        keptBytes += r.bytes;
+      }
+    }
+    const finalCount = keptCount + toInsert.length + toUpdate.length;
+    const finalBytes = keptBytes + [...toInsert, ...toUpdate].reduce((a, d) => a + d.bytes, 0);
+    if (finalCount > input.limits.maxDocsPerApp) {
+      throw new DataError(
+        'quota_exceeded',
+        `The import would leave ${finalCount} records in this app; it may store at most ${input.limits.maxDocsPerApp}.`,
+        { details: { limit: 'DATA_MAX_DOCS_PER_APP', value: input.limits.maxDocsPerApp } }
+      );
+    }
+    if (finalBytes > input.limits.maxBytesPerApp) {
+      throw new DataError('quota_exceeded', `The import would exceed the app's storage limit of ${input.limits.maxBytesPerApp} bytes.`, {
+        details: { limit: 'DATA_MAX_BYTES_PER_APP', value: input.limits.maxBytesPerApp },
+      });
+    }
+
+    let deleted = 0;
+    if (input.mode === 'replace') {
+      const rows = await tx.delete(dataRecords).where(scope(input.appId, input.collection)).returning({ id: dataRecords.id });
+      deleted = rows.length;
+    }
+    const now = new Date();
+    for (const d of toUpdate) {
+      await tx
+        .update(dataRecords)
+        .set({ doc: d.doc, bytes: d.bytes, updatedAt: now })
+        .where(and(scope(input.appId, input.collection), eq(dataRecords.id, d.id)));
+    }
+    const base = now.getTime();
+    for (let i = 0; i < toInsert.length; i += 500) {
+      const chunk = toInsert.slice(i, i + 500).map((d, j) => {
+        const at = new Date(base + i + j);
+        return { id: newRecordId(), appId: input.appId, collection: input.collection, ownerId: null, doc: d.doc, bytes: d.bytes, createdAt: at, updatedAt: at };
+      });
+      await tx.insert(dataRecords).values(chunk);
+    }
+    return { inserted: toInsert.length, updated: toUpdate.length, deleted };
+  });
+}
+
+/** A jsonb value's text form (`"p1"`, `7`) as a JS value. */
+function parseJsonb(text: string): unknown {
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Delete every record of one collection of an app; how many were deleted.
  * Run it in a transaction (core's config transaction): it takes the app's
  * write lock first, so a write in flight lands before the purge, not after.

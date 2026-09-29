@@ -22,6 +22,7 @@ import {
   setModuleSecret,
   z,
   type ModuleRuntime,
+  type SyncRun,
 } from '@drobek/modules';
 import { noopLogger } from '@drobek/core';
 import { STORE_DATA, greet, store } from './test/modules.js';
@@ -1774,6 +1775,121 @@ describe('unknown arguments (NSO-378)', () => {
       expect(w.message).toContain('(and 5 more)');
     } finally {
       await alice.close();
+    }
+  });
+});
+
+describe('sync_now and get_logs kind "sync" (NSO-392)', () => {
+  /** A scheduled-import module whose runs live in memory; its runNow audits through the job context like the real one. */
+  const RUNS = new Map<string, SyncRun[]>();
+  const feed = defineModule({
+    name: 'feed',
+    version: '1.0.0',
+    contract: '^1.2',
+    skill: { useWhen: 'you import a feed', markdown: '# feed\n' },
+    configSchema: z.object({}),
+    configDefaults: {},
+    sync: {
+      sources: async () => [],
+      runs: async (view, q) => (RUNS.get(view.app.id) ?? []).filter((r) => !q.since || new Date(r.started_at) >= q.since).slice(0, q.limit ?? 50),
+      runNow: async (ctx, source) => {
+        if (source === 'ghost') throw new ModuleError('not_found', 'no source "ghost"', { details: { available: ['players'] } });
+        if (source === 'running') throw new ModuleError('conflict', 'a run of "running" is in progress');
+        if (source === 'hot') throw new ModuleError('rate_limited', 'twice this minute', { details: { limit: 'SYNC_NOW_PER_MINUTE', value: 2, retry_after_seconds: 30 } });
+        const failed = source === 'broken';
+        const run: SyncRun = {
+          source,
+          trigger: 'manual',
+          started_at: new Date().toISOString(),
+          duration_ms: 3,
+          status: failed ? 'failed' : 'ok',
+          records: failed ? null : 2,
+          error: failed ? 'the upstream answered HTTP 401' : null,
+        };
+        RUNS.set(ctx.app.id, [run, ...(RUNS.get(ctx.app.id) ?? [])]);
+        await ctx.audit('run', { source, status: run.status });
+        return run;
+      },
+      resume: async () => false,
+    },
+  });
+  let fdeps: TestDeps;
+
+  beforeAll(async () => {
+    const rt = await loadModuleRuntime({
+      env: { APPS_DOMAIN: 'drobek.app', PUBLIC_APP_URL: 'https://dash.drobek.test', DROBEK_MIGRATE_ON_START: '0', DROBEK_MASTER_KEY: '22'.repeat(32) },
+      log: noopLogger,
+      modules: [feed],
+      skillsDir: null,
+      deps: { rateLimit: memoryRateLimiter(), principal: async () => ({ kind: 'anon' }), email: { send: async () => {} } },
+    });
+    fdeps = { ...testDeps(), modules: async () => rt };
+  });
+
+  it('an editor runs a source: the run comes back, audited with the agent as the actor; get_logs lists it in the untrusted envelope', async () => {
+    const app = await newApp('Feed Board');
+    const c = await connect(P.alice, fdeps);
+    try {
+      const r = await c.call('sync_now', { app_id: app.app_id, source: 'players' });
+      expect(r.isError, r.text).toBe(false);
+      expect(r.body).toMatchObject({ app_id: app.app_id, run: { source: 'players', trigger: 'manual', status: 'ok', records: 2, error: null } });
+      expect(r.body.note).toBeUndefined();
+      const [audit] = await db.select().from(auditLog).where(and(eq(auditLog.action, 'feed.run'), eq(auditLog.target, app.slug)));
+      expect(audit).toMatchObject({ actorUserId: P.alice.userId, actorKind: 'agent' });
+      expect(audit.meta).toMatchObject({ source: 'players', status: 'ok', by: 'mcp', module: 'feed' });
+
+      const failed = await c.call('sync_now', { app_id: app.app_id, source: 'broken' });
+      expect(failed.isError, failed.text).toBe(false);
+      expect(failed.body).toMatchObject({ run: { status: 'failed', error: 'the upstream answered HTTP 401' } });
+      expect(failed.body.note).toMatch(/^The run failed and changed nothing: the upstream answered HTTP 401\. skill_info\('feed'\)/);
+
+      const logs = await c.call('get_logs', { app_id: app.app_id, kind: 'sync' });
+      expect(logs.isError, logs.text).toBe(false);
+      expect(logs.body).toMatchObject({ app_id: app.app_id, kind: 'sync', untrusted: true });
+      expect((logs.body.entries as SyncRun[]).map((e) => [e.source, e.status])).toEqual([
+        ['broken', 'failed'],
+        ['players', 'ok'],
+      ]);
+      expect(logs.text.startsWith('UNTRUSTED CONTENT:')).toBe(true);
+    } finally {
+      await c.close();
+    }
+  });
+
+  it('the module refusals map to tool errors: not_found (+ available), busy (sync_running), rate_limited', async () => {
+    const app = await newApp('Feed Errors');
+    const c = await connect(P.alice, fdeps);
+    try {
+      expect((await c.call('sync_now', { app_id: app.app_id, source: 'ghost' })).body).toMatchObject({ code: 'not_found', available: ['players'], hint: expect.any(String) });
+      expect((await c.call('sync_now', { app_id: app.app_id, source: 'running' })).body).toMatchObject({ code: 'busy', reason: 'sync_running' });
+      expect((await c.call('sync_now', { app_id: app.app_id, source: 'hot' })).body).toMatchObject({
+        code: 'rate_limited',
+        limit: 'SYNC_NOW_PER_MINUTE',
+        retry_after_seconds: 30,
+      });
+      expect((await c.call('get_logs', { app_id: app.app_id, kind: 'sync' })).body).toMatchObject({ entries: [], note: expect.stringMatching(/^No sync runs in this window/) });
+    } finally {
+      await c.close();
+    }
+  });
+
+  it('a viewer cannot run a source; without a sync module sync_now is not_found and get_logs says so', async () => {
+    const app = await newApp('Feed Viewer');
+    const v = await connect(P.vera, fdeps);
+    try {
+      const r = await v.call('sync_now', { app_id: app.app_id, source: 'players' });
+      expect(r.isError).toBe(true);
+      expect(RUNS.get(app.app_id)).toBeUndefined();
+    } finally {
+      await v.close();
+    }
+    const plain = await as('alice');
+    try {
+      expect((await plain.call('sync_now', { app_id: app.app_id, source: 'players' })).body).toMatchObject({ code: 'not_found' });
+      expect((await plain.call('get_logs', { app_id: app.app_id, kind: 'sync' })).body).toMatchObject({ entries: [], note: expect.stringMatching(/no sync module/) });
+      expect((await plain.call('get_logs', { app_id: app.app_id, kind: 'bogus' })).body).toMatchObject({ code: 'invalid_params', message: expect.stringContaining('"sync"') });
+    } finally {
+      await plain.close();
     }
   });
 });

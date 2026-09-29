@@ -12,6 +12,7 @@ import { requireWorkspaceRole } from '@drobek/tenancy';
 import { appHeaderData } from '../app-page.server.js';
 import { loadAppForView } from '../apps.server.js';
 import { loadPendingBanner } from '../pending-banner.server.js';
+import { loadSyncBanner } from '../sync-banner.server.js';
 import { canPublish } from '../view.js';
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
@@ -46,6 +47,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     header: await appHeaderData({ access, app }),
     modules,
     banner: await loadPendingBanner(app, access.workspace.slug, app.slug),
+    syncBanner: await loadSyncBanner({ id: app.id, slug: app.slug, workspaceId: access.workspace.id }, access.workspace.slug),
     canEdit: canPublish(access.effectiveRole),
   };
 }

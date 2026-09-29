@@ -26,7 +26,10 @@ import {
   memoryRateLimiter,
   setModuleRuntimeForTests,
   z,
+  ModuleError,
   type ModuleRuntime,
+  type SyncRun,
+  type SyncSourceState,
 } from '@drobek/modules';
 import { entryInputs, fieldName, ruleInputName } from '../module-config.js';
 
@@ -150,6 +153,62 @@ const vault = defineModule<{ shelf: string }>({
   configDefaults: { shelf: 'main' },
 });
 
+/**
+ * NSO-392: a scheduled-import module under another name — the sources panel
+ * follows the declared `sync` authority. Its state lives in memory: `FAILED`
+ * holds the sources paused after failed runs.
+ */
+const FAILED = new Set<string>();
+const IMPORT_RUNS: SyncRun[] = [];
+const importer = defineModule<{ sources: Record<string, { upstream: string; paused?: boolean }> }>({
+  name: 'importer',
+  version: '1.0.0',
+  contract: '^1.2',
+  skill: { useWhen: 'you import a feed on a schedule', markdown: '# importer' },
+  configSchema: z.strictObject({ sources: z.record(z.string(), z.strictObject({ upstream: z.string(), paused: z.boolean().optional() })).default({}) }),
+  configDefaults: { sources: {} },
+  sync: {
+    sources: async ({ config }) =>
+      Object.keys(config.sources)
+        .sort()
+        .map(
+          (name): SyncSourceState => ({
+            name,
+            upstream: config.sources[name].upstream,
+            path: '/feed',
+            collection: 'items',
+            mode: 'replace',
+            every: '15m',
+            paused: config.sources[name].paused ? 'owner' : FAILED.has(name) ? 'failures' : null,
+            failures: FAILED.has(name) ? 5 : 0,
+            last_run_at: FAILED.has(name) ? '2026-09-29T10:00:00.000Z' : null,
+            last_status: FAILED.has(name) ? 'failed' : null,
+            last_records: null,
+            last_error: FAILED.has(name) ? 'the upstream answered HTTP 401' : null,
+            last_success_at: null,
+            next_run_at: null,
+          })
+        ),
+    runs: async () => IMPORT_RUNS,
+    runNow: async (ctx, source) => {
+      if (source === 'hot') throw new ModuleError('rate_limited', 'The source "hot" ran by hand 2 times this minute (SYNC_NOW_PER_MINUTE) — wait 30 s.');
+      const run: SyncRun = {
+        source,
+        trigger: 'manual',
+        started_at: new Date().toISOString(),
+        duration_ms: 1,
+        status: source === 'broken' ? 'failed' : 'ok',
+        records: source === 'broken' ? null : 4,
+        error: source === 'broken' ? 'the upstream answered HTTP 500' : null,
+      };
+      IMPORT_RUNS.unshift(run);
+      await ctx.audit('run', { source, status: run.status });
+      return run;
+    },
+    resume: async (_view, source) => FAILED.delete(source),
+  },
+});
+
 let pg: PGlite;
 let rt: ModuleRuntime;
 let appId: string;
@@ -204,7 +263,7 @@ beforeAll(async () => {
   rt = await loadModuleRuntime({
     env: ENV,
     log: noopLogger,
-    modules: [shop, store, gateway, proxy, vault],
+    modules: [shop, store, gateway, proxy, vault, importer],
     skillsDir: null,
     deps: {
       rateLimit: memoryRateLimiter(),
@@ -518,5 +577,76 @@ describe('an opt-in module not enabled for the workspace (NSO-346)', () => {
     } finally {
       await db.delete(workspaceModules);
     }
+  });
+});
+
+describe('the sources of a scheduled-import module (NSO-392)', () => {
+  const configureImporter = (sources: Record<string, unknown>) =>
+    rt.configure({ app: { id: appId, slug: 'shop-app', workspaceId: role.ws.id, workspaceSlug: 'acme' }, module: 'importer', patch: { sources }, actorUserId: role.user.id, surface: 'web' });
+
+  beforeEach(() => {
+    FAILED.clear();
+    IMPORT_RUNS.length = 0;
+  });
+
+  it('only the module that declares sync gets the panel: sources, the latest runs, an empty list apart from a loading error', async () => {
+    expect((await load('shop')).sync).toBeNull();
+    const empty = await load('importer');
+    expect(empty.sync).toEqual({ sources: [], runs: [] });
+    await configureImporter({ feed: { upstream: 'news' } });
+    const d = await load('importer');
+    expect(d.sync!.sources!.map((s) => [s.name, s.upstream, s.paused])).toEqual([['feed', 'news', null]]);
+  });
+
+  it('Run now: an ok run, a failed run (not an error), a refusal at the source; the audit names the person', async () => {
+    await configureImporter({ feed: { upstream: 'news' }, broken: { upstream: 'news' }, hot: { upstream: 'news' } });
+    expect(doneOf(await post('importer', { intent: 'sync-run', source: 'feed' }))).toBe('sync-ran');
+    expect(doneOf(await post('importer', { intent: 'sync-run', source: 'broken' }))).toBe('sync-failed');
+    const refused = failed(await post('importer', { intent: 'sync-run', source: 'hot' }));
+    expect(refused.status).toBe(429);
+    expect(refused.errors).toMatchObject({ intent: 'sync-run', target: 'hot', general: [expect.stringMatching(/SYNC_NOW_PER_MINUTE/)] });
+    expect(failed(await post('importer', { intent: 'sync-run', source: 'ghost' })).status).toBe(404);
+    expect((await load('importer')).sync!.runs.map((r) => [r.source, r.status])).toEqual([
+      ['broken', 'failed'],
+      ['feed', 'ok'],
+    ]);
+    const rows = await drizzleDb().select().from(auditLog).where(eq(auditLog.action, 'importer.run'));
+    expect(rows.map((r) => [r.actorUserId, r.actorKind, (r.meta as { by: string }).by])).toEqual([
+      [role.user.id, 'user', 'web'],
+      [role.user.id, 'user', 'web'],
+    ]);
+  });
+
+  it("Pause sets the source's paused key directly; Resume removes it", async () => {
+    await configureImporter({ feed: { upstream: 'news' } });
+    expect(doneOf(await post('importer', { intent: 'sync-pause', source: 'feed' }))).toBe('sync-paused');
+    expect((await load('importer')).sync!.sources![0].paused).toBe('owner');
+    expect(doneOf(await post('importer', { intent: 'sync-resume', source: 'feed' }))).toBe('sync-resumed');
+    expect((await load('importer')).sync!.sources![0].paused).toBeNull();
+    const [row] = await drizzleDb().select().from(moduleConfigs).where(eq(moduleConfigs.module, 'importer'));
+    expect(row.config).toEqual({ sources: { feed: { upstream: 'news' } } });
+  });
+
+  it('a source paused after failed runs: the banner on every app page, Resume clears it (audited)', async () => {
+    await configureImporter({ feed: { upstream: 'news' } });
+    FAILED.add('feed');
+    const shopPage = await load('shop');
+    expect(shopPage.syncBanner).toEqual({
+      paused: [{ name: 'feed', failures: 5, error: 'the upstream answered HTTP 401' }],
+      href: '/workspaces/acme/apps/shop-app/modules/importer#sync',
+    });
+    expect((await load('importer')).sync!.sources![0].paused).toBe('failures');
+    expect(doneOf(await post('importer', { intent: 'sync-resume', source: 'feed' }))).toBe('sync-resumed');
+    expect((await load('shop')).syncBanner).toBeNull();
+    const [audit] = await drizzleDb().select().from(auditLog).where(eq(auditLog.action, 'importer.resume'));
+    expect(audit).toMatchObject({ actorUserId: role.user.id, actorKind: 'user', meta: { module: 'importer', source: 'feed' } });
+  });
+
+  it('another module has no sources to run; a viewer is refused before anything runs', async () => {
+    expect(failed(await post('shop', { intent: 'sync-run', source: 'feed' })).status).toBe(400);
+    await configureImporter({ feed: { upstream: 'news' } });
+    role.current = 'viewer';
+    await expect(post('importer', { intent: 'sync-run', source: 'feed' })).rejects.toMatchObject({ status: 403 });
+    expect(IMPORT_RUNS).toEqual([]);
   });
 });

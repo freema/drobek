@@ -36,6 +36,13 @@
  * 423 `app_locked_by_admin` (like configure_module and the module-confirm
  * API); `reject` and `remove-secret` stay allowed (they only take away).
  *
+ * NSO-392: the module that declares `sync` (by capability, not by name)
+ * also shows its sources (last / next run, the latest runs) with
+ * `sync-run` (Run now — the run's audit names the person), `sync-pause` /
+ * `sync-resume` (the source's `paused` key through the configure path; resume
+ * also clears a pause after failed runs, audited `<module>.resume`), and the
+ * "a scheduled import stopped" banner.
+ *
  * NSO-346: an opt-in module that is not enabled for the workspace shows
  * "not enabled for this workspace" instead of the forms, and refuses every
  * change with 404 `module_not_enabled` (again except `reject` and
@@ -53,6 +60,7 @@ import {
   moduleNotEnabled,
   moduleRuntime,
   setModuleSecret,
+  type BoundSync,
   type ModuleDashboardEditor,
   type ModuleRuntime,
 } from '@drobek/modules';
@@ -75,6 +83,8 @@ import {
   type Issue,
 } from '../module-config.js';
 import { loadPendingBanner } from '../pending-banner.server.js';
+import { loadSyncBanner } from '../sync-banner.server.js';
+import type { SyncPanelData } from '../module-ui/sync-sources.js';
 import { canPublish } from '../view.js';
 
 /**
@@ -188,6 +198,18 @@ function upstreamsOf(config: unknown, info: Record<string, unknown> | undefined)
   return [...out.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/** The runs the sources panel lists. */
+const SYNC_PANEL_RUNS = 20;
+
+async function syncPanel(sync: BoundSync): Promise<SyncPanelData> {
+  try {
+    const [sources, runs] = await Promise.all([sync.sources(), sync.runs({ limit: SYNC_PANEL_RUNS })]);
+    return { sources, runs };
+  } catch {
+    return { sources: null, runs: [] };
+  }
+}
+
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const { access, app, runtime, name, hookApp } = await context(request, params, 'viewer');
   const view = await runtime.moduleView(hookApp, name);
@@ -208,6 +230,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     : null;
 
   const done = new URL(request.url).searchParams.get('done');
+  const sync = view.enabled ? await runtime.sync(hookApp) : null;
   return {
     workspace: { slug: access.workspace.slug, name: access.workspace.name },
     app: { slug: app.slug },
@@ -241,6 +264,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     collections: editor?.kind === 'collections' ? collectionsOf(view.config, ops) : [],
     upstreams: editor?.kind === 'upstreams' ? upstreamsOf(view.config, view.info) : [],
     banner: await loadPendingBanner(app, access.workspace.slug, app.slug),
+    /** NSO-392: the scheduled-import module's sources (null on every other module's page). */
+    sync: sync && sync.module === name ? await syncPanel(sync) : null,
+    syncBanner: await loadSyncBanner(hookApp, access.workspace.slug),
     canEdit: canPublish(access.effectiveRole),
     done: done && /^[a-z-]{1,32}$/.test(done) ? done : null,
   };
@@ -289,6 +315,11 @@ export async function action({ request, params }: ActionFunctionArgs) {
   // ── secrets (write-only) ──
   if (intent === 'set-secret' || intent === 'remove-secret') {
     return secretAction(runtime, { intent, form, name, hookApp, userId: access.user.id, back });
+  }
+
+  // ── scheduled imports (NSO-392) ──
+  if (intent === 'sync-run' || intent === 'sync-pause' || intent === 'sync-resume') {
+    return syncAction(runtime, { intent, form, name, hookApp: { ...hookApp, workspaceSlug: ws }, userId: access.user.id, back });
   }
 
   // ── config (through the configure path) ──
@@ -461,4 +492,45 @@ async function secretAction(
   }
   await audit('module.secret_set', { rotated });
   return input.back(rotated ? 'secret-rotated' : 'secret-set', '#secrets');
+}
+
+async function syncAction(
+  runtime: ModuleRuntime,
+  input: {
+    intent: 'sync-run' | 'sync-pause' | 'sync-resume';
+    form: FormData;
+    name: string;
+    hookApp: { id: string; slug: string; workspaceId: string; workspaceSlug: string };
+    userId: string;
+    back: (done: string, anchor?: string) => Response;
+  }
+) {
+  const { intent, form, name, hookApp } = input;
+  const sync = await runtime.sync(hookApp);
+  if (!sync || sync.module !== name) return failure(400, { intent, fields: {}, general: ['This module imports nothing on a schedule.'] });
+  const source = String(form.get('source') ?? '').trim();
+  if (!source) return failure(400, { intent, fields: {}, general: ['Pick a source.'] });
+  const actor = { userId: input.userId, surface: 'web' as const };
+  const sources = asObject(asObject((await runtime.moduleView(hookApp, name)).config).sources);
+  if (!Object.prototype.hasOwnProperty.call(sources, source)) {
+    return failure(404, { intent, fields: {}, general: [`This app has no source "${source}" any more — reload the page.`] });
+  }
+  const setPaused = (paused: true | null) =>
+    runtime.configure({ app: hookApp, module: name, patch: { sources: { [source]: { paused } } }, actorUserId: input.userId, surface: 'web' });
+  try {
+    if (intent === 'sync-run') {
+      const run = await sync.runNow(source, actor);
+      return input.back(run.status === 'ok' ? 'sync-ran' : 'sync-failed', '#sync');
+    }
+    if (intent === 'sync-pause') {
+      await setPaused(true);
+      return input.back('sync-paused', '#sync');
+    }
+    if (asObject(sources[source]).paused === true) await setPaused(null);
+    await sync.resume(source, actor);
+    return input.back('sync-resumed', '#sync');
+  } catch (err) {
+    if (!isModuleError(err)) throw err;
+    return failure(err.status, { intent, target: source, fields: {}, general: [err.message] });
+  }
 }

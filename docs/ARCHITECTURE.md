@@ -70,7 +70,7 @@ This document is the map of how that works. The neighbours:
   | `@drobek/auth`, `@drobek/tenancy`, `@drobek/audit` | dashboard sign-in (e-mail code, Google), sessions, rate limits, origin check; workspaces and roles; the audit log |
   | `@drobek/domains`, `@drobek/email`, `@drobek/insights`, `@drobek/proxy` | custom domains; the one mail transport of the dashboard and the modules (`EMAIL_TRANSPORT=smtp` via nodemailer, or `resend` via the Resend HTTP API over `fetch`); the error beacon and request stats; upstream registry, envelope crypto, SSRF guard |
   | `@drobek/core`, `@drobek/db`, `@drobek/sdk` | env/config, health, logger, Caddyfile generator; drizzle schema + migrations; the browser SDK core |
-  | `modules/{auth,email,forms,data,proxy,files}` | the built-in platform modules (`drobek-module-<name>`) |
+  | `modules/{auth,email,forms,data,proxy,files,sync}` | the built-in platform modules (`drobek-module-<name>`) |
   | `create-drobek-module` | the scaffold for external modules; with `@drobek/modules` + `@drobek/sdk` published to npm as `@freema/drobek-modules` + `@freema/drobek-sdk` from each release tag (`scripts/npm-packages.mjs` bundles the private packages in; modules install them under the `@drobek/*` names via npm aliases) |
 
 ## 2. Workspaces, apps and versions

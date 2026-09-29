@@ -22,6 +22,7 @@ import {
   deleteCollectionRecords,
   deleteRecord,
   docKeysMatching,
+  importBatch,
   insertRecords,
   loadRecord,
   patchRecord,
@@ -228,6 +229,44 @@ function importDocs(c: CollectionConfig, text: string): { line: number; doc: Rec
   });
 }
 
+/** A batch record that does not fit: `validation_failed` naming its index in the batch, nothing stored. */
+function batchError(index: number, message: string, errors?: unknown): DataError {
+  return new DataError('validation_failed', `Record ${index}: ${message}. Nothing was imported.`, { details: { index, errors: errors ?? [] } });
+}
+
+/** The records of a batch import as stored documents: own fields only, schema + size + key checked. */
+function batchDocs(c: CollectionConfig, records: unknown[], key: string | undefined, maxDocBytes: number): Record<string, unknown>[] {
+  const seen = new Set<string>();
+  return records.map((raw, index) => {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw batchError(index, 'is not a JSON object');
+    const doc = ownFields(raw as Record<string, unknown>);
+    if (key !== undefined) {
+      const v = doc[key];
+      if (typeof v !== 'string' && !(typeof v === 'number' && Number.isFinite(v))) {
+        throw batchError(index, `its key field "${key}" is missing or not a string or number`);
+      }
+      const k = JSON.stringify(v);
+      if (seen.has(k)) throw batchError(index, `its key ${k} appears twice in the batch`);
+      seen.add(k);
+    }
+    if (c.schema) {
+      try {
+        validateDocument(c.schema, doc);
+      } catch (err) {
+        if (isModuleError(err) && err.code === 'validation_failed') {
+          const errors = err.details as { path: string; message: string }[] | undefined;
+          const first = errors?.[0];
+          throw batchError(index, first ? `${first.path || 'the record'} ${first.message}` : 'the record does not match the collection schema', errors);
+        }
+        throw err;
+      }
+    }
+    const bytes = docByteSize(doc);
+    if (bytes > maxDocBytes) throw batchError(index, `the record is ${bytes} bytes; one record may have at most ${maxDocBytes}`);
+    return doc;
+  });
+}
+
 /** Upper bound of one owner's page (query_data caps lower itself). */
 const OWNER_MAX_LIMIT = 200;
 
@@ -290,6 +329,20 @@ export const recordsAuthority: RecordsAuthority<DataConfig> = {
     }
     const imported = await insertRecords(view.db, { appId: view.app.id, collection, docs: rows.map((r) => r.doc), limits });
     return { imported };
+  },
+
+  // NSO-392: a module job's batch (the sync module's scheduled import). Like
+  // the owner's import it skips DATA_WRITE_RATE_LIMIT, never the schema or the quota.
+  async importRecords(view, collection, records, opts) {
+    const c = requireCollection(view.config, collection);
+    if (opts.mode !== 'replace' && opts.mode !== 'upsert') throw new DataError('invalid_request', 'The import mode is "replace" or "upsert".');
+    if (opts.mode === 'upsert' && !opts.key) throw new DataError('invalid_request', 'An upsert import needs the key field that identifies a record.');
+    if (opts.key !== undefined && (opts.key.startsWith('_') || !/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(opts.key))) {
+      throw new DataError('invalid_request', `The key "${opts.key}" is not a field name (letters, digits, - and _, a letter first).`);
+    }
+    const limits = dataQuotaFromLimits(await view.limits());
+    const docs = batchDocs(c, records, opts.key, limits.maxDocBytes);
+    return importBatch(view.db, { appId: view.app.id, collection, docs, mode: opts.mode, key: opts.key, limits });
   },
 
   async dropCollection(view, collection) {

@@ -8,7 +8,7 @@ import { skipUnlessLocal } from './helpers/auth';
  * directory `/data/modules` is mounted but empty). A module installed into
  * DROBEK_MODULES_DIR shows `source: dir` (the black-box pass installs one).
  */
-const STACK_MODULES = ['hello', 'auth', 'email', 'forms', 'data', 'proxy', 'files'];
+const STACK_MODULES = ['hello', 'auth', 'email', 'forms', 'data', 'proxy', 'files', 'sync'];
 
 test('healthz and api/version list the active modules in DROBEK_MODULES order, without paths @local', async ({ request }) => {
   skipUnlessLocal();
@@ -21,7 +21,8 @@ test('healthz and api/version list the active modules in DROBEK_MODULES order, w
     expect(m.version).toMatch(/^\d+\.\d+\.\d+/);
     if (STACK_MODULES.includes(m.name)) {
       expect(m.source).toBe('builtin');
-      expect(m.contract).toBe('^1.1');
+      // sync runs app jobs (contract 1.2); the others need 1.1.
+      expect(m.contract).toBe(m.name === 'sync' ? '^1.2' : '^1.1');
     }
   }
   expect(JSON.stringify(health)).not.toContain('/data/modules');

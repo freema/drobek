@@ -37,6 +37,8 @@ export interface ForwardInput {
   env?: NodeJS.ProcessEnv;
   /** Wall-clock cap of the exchange (default 20 s). */
   deadlineMs?: number;
+  /** A lower response cap than PROXY_MAX_RESPONSE_BYTES (a module job's own limit); never a higher one. */
+  maxResponseBytes?: number;
 }
 
 export interface ForwardResult {
@@ -127,7 +129,11 @@ export async function forwardToUpstream(input: ForwardInput): Promise<ForwardRes
     !BODYLESS.has(method) && input.body && input.body.length > 0 ? input.body : undefined;
 
   // 4) SSRF-safe forward (pinned IP, port allow-list, no redirects, deadline, size cap).
-  const maxBytes = proxyMaxResponseBytes(env);
+  const envMax = proxyMaxResponseBytes(env);
+  const maxBytes =
+    input.maxResponseBytes !== undefined && Number.isInteger(input.maxResponseBytes) && input.maxResponseBytes > 0
+      ? Math.min(envMax, input.maxResponseBytes)
+      : envMax;
   const result = await ssrfSafeForward({
     url: target,
     method,

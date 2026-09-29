@@ -89,6 +89,27 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // NSO-392: a sports feed for the sync module. It answers only with the
+  // injected bearer key (never echoed), `?n=` players (at most 5: the e2e
+  // DATA_MAX_DOCS_PER_APP), and /sync/fail always fails.
+  if (url.pathname === '/sync/players') {
+    if (!/^Bearer sk-e2e-/.test(String(req.headers.authorization ?? ''))) {
+      res.writeHead(401, { 'content-type': 'application/json' });
+      res.end('{"error":"no key"}');
+      return;
+    }
+    const n = Math.min(Math.max(Number(url.searchParams.get('n') ?? 3) || 0, 0), 5);
+    const players = Array.from({ length: n }, (_, i) => ({ id: i + 1, name: ['Ada', 'Bo', 'Cy', 'Dee', 'Eli'][i], points: (i + 1) * 10 }));
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ data: { players } }));
+    return;
+  }
+  if (url.pathname === '/sync/fail') {
+    res.writeHead(500, { 'content-type': 'application/json' });
+    res.end('{"error":"feed down"}');
+    return;
+  }
+
   // Drain the body then echo the request back as JSON.
   const chunks = [];
   req.on('data', (c) => chunks.push(c));

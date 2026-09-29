@@ -47,6 +47,7 @@ const WRITE = [
   'remove_domain',
   'remove_upstream',
   'restore_version',
+  'sync_now',
   'verify_domain',
   'write_files',
 ];

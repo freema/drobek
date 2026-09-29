@@ -21,7 +21,12 @@
  * `availability`, `dashboard.editor` and `hooks.onAppDelete` — all
  * optional, so a 1.0 module loads unchanged. Contract 1.2 adds `jobs`
  * (scheduled work core runs on an interval, NSO-391) and lists the
- * `pendingConfig` of a route's context; a 1.1 module loads unchanged.
+ * `pendingConfig` of a route's context; a per-app job's context also calls
+ * the app's upstreams (`upstreams.fetch`, through the module that declares
+ * `upstreams`), imports records (`records.import`, through the records
+ * authority) and audits (NSO-392), with the `upstreams` and `sync`
+ * authorities and `records.importRecords` behind them; a 1.1 module loads
+ * unchanged.
  *
  * Everything a handler needs arrives in a per-request, APP-SCOPED
  * ModuleContext: the caller (principal from the `drobek_eu` end-user cookie),
@@ -433,6 +438,8 @@ export interface ConfirmContext {
   app: HookApp;
   /** Read-only use: the configure transaction (the config row is locked). */
   db: DB;
+  /** Limits of the app's workspace (contract 1.2 — core always passes it; optional for 1.1 callers such as a module's own tests). */
+  limits?(): Promise<Limits>;
 }
 
 /**
@@ -585,6 +592,31 @@ export interface RecordsAuthority<Config = unknown> {
    * (the owner deletes a declared one with dropCollection).
    */
   purgeOrphan?(view: RecordsView<Config>, collection: string): Promise<{ records: number }>;
+  /**
+   * Contract 1.2 (NSO-392): write a batch of records into a declared
+   * collection as a whole — ONE transaction, every record checked against
+   * the collection's schema and the quotas first; any failure stores
+   * nothing. `replace`: the collection holds exactly these records
+   * afterwards; `upsert`: a record whose `key` field equals a stored
+   * record's replaces that record's fields, the others are added, the rest
+   * stay. Records have no owner. A bad record → ModuleError
+   * `validation_failed` (`details.index` names it).
+   */
+  importRecords?(view: RecordsView<Config>, collection: string, records: Record<string, unknown>[], opts: RecordsImportOptions): Promise<RecordsImportResult>;
+}
+
+/** How `importRecords` writes a batch. */
+export interface RecordsImportOptions {
+  mode: 'replace' | 'upsert';
+  /** The field that identifies a record (required for `upsert`; its values are strings or numbers, unique in the batch). */
+  key?: string;
+}
+
+/** What `importRecords` changed. */
+export interface RecordsImportResult {
+  inserted: number;
+  updated: number;
+  deleted: number;
 }
 
 /** The most rows (without the header) one CSV import may carry. */
@@ -669,6 +701,100 @@ export interface FilesAuthority<Config = unknown> {
   remove(view: OwnerView<Config>, id: string): Promise<boolean>;
 }
 
+// ── the upstreams authority (proxy) — contract 1.2 ──────────────────────────
+
+/** One call a job makes to an upstream assigned to its app. */
+export interface UpstreamRequest {
+  /** Default `GET`. The upstream's allowed methods still apply. */
+  method?: 'GET' | 'POST';
+  /** Path (and `?query`) below the upstream's base URL; default `/`. Its allowed path prefixes still apply. */
+  path?: string;
+  headers?: Record<string, string>;
+  body?: string;
+  /** A lower response cap than the operator's (never a higher one). */
+  maxBytes?: number;
+}
+
+/** The upstream's answer (any status — check it). */
+export interface UpstreamResponse {
+  status: number;
+  headers: Record<string, string>;
+  body: Buffer;
+}
+
+/**
+ * The module that owns the app's calls to its workspace's upstreams (the
+ * built-in `proxy`) makes one for a module JOB (never for an app request):
+ * the same checks as its route minus the caller's rule — the upstream is
+ * assigned to the app in `view.config` and confirmed for it, the secret is
+ * injected server-side, the SSRF guard, the allow-lists and the size cap
+ * apply. A refusal → ModuleError (`forbidden`, `not_found`, `upstream_error`,
+ * `ssrf_blocked`, `proxy_busy`, …) with a secret-free message.
+ */
+export interface UpstreamsAuthority<Config = unknown> {
+  fetch(view: OwnerView<Config>, name: string, request: UpstreamRequest): Promise<UpstreamResponse>;
+}
+
+// ── the sync authority (sync) — contract 1.2 ────────────────────────────────
+
+/** One source of the module that imports data on a schedule, as the owner sees it. */
+export interface SyncSourceState {
+  name: string;
+  upstream: string;
+  path: string;
+  collection: string;
+  mode: 'replace' | 'upsert';
+  /** The interval in force (the config's, raised to the operator's minimum). */
+  every: string;
+  /**
+   * Why it does not run on schedule: `owner` (the config says `paused: true`),
+   * `failures` (too many failed runs in a row), `limit` (past the app's source
+   * limit), or null.
+   */
+  paused: 'owner' | 'failures' | 'limit' | null;
+  /** Failed runs since the last success. */
+  failures: number;
+  last_run_at: string | null;
+  last_status: 'ok' | 'failed' | null;
+  last_records: number | null;
+  last_error: string | null;
+  last_success_at: string | null;
+  /** When the next scheduled run is due (null while paused). */
+  next_run_at: string | null;
+}
+
+/** One run of a source (newest first in `runs`). */
+export interface SyncRun {
+  source: string;
+  trigger: 'schedule' | 'manual';
+  started_at: string;
+  duration_ms: number;
+  status: 'ok' | 'failed';
+  /** Records the collection holds from this run (ok), null when it failed. */
+  records: number | null;
+  inserted?: number;
+  updated?: number;
+  deleted?: number;
+  /** Why it failed (secret-free), null when ok. */
+  error: string | null;
+}
+
+/**
+ * The module that imports data into the app on a schedule (the built-in
+ * `sync`) answers the OWNER — the dashboard and MCP (`sync_now`, get_logs
+ * `sync`): core calls it only after it authorized a drobek account for the
+ * app. Unknown source → ModuleError `not_found`.
+ */
+export interface SyncAuthority<Config = unknown> {
+  sources(view: OwnerView<Config>): Promise<SyncSourceState[]>;
+  /** The latest runs (newest first; `source` narrows, `since` bounds, at most `limit`, ≤ 100). */
+  runs(view: OwnerView<Config>, query: { source?: string; since?: Date; limit?: number }): Promise<SyncRun[]>;
+  /** Run one source now (a paused one too); `ctx` is a per-app job context whose audit names the person. */
+  runNow(ctx: AppJobContext<Config>, source: string): Promise<SyncRun>;
+  /** Clear a pause after failures (the next run is due at once); false when it was not paused so. */
+  resume(view: OwnerView<Config>, source: string): Promise<boolean>;
+}
+
 // ── per-app info (get_app / configure_module) ────────────────────────────────
 
 /** One app as a module sees it outside a request: its effective config + services. */
@@ -730,6 +856,31 @@ export interface AppJobContext<Config = unknown> extends JobContextBase {
     /** The plaintext of this app's declared secret `name` for this module, or null. */
     get(name: string): Promise<string | null>;
   };
+  /**
+   * NSO-392: call an upstream assigned to THIS app (the proxy config, a
+   * workspace admin confirmed it) through the module that declares
+   * `upstreams` — the secret is injected server-side, never seen here.
+   * ModuleError `unavailable` when no such module is on for the workspace.
+   */
+  upstreams: {
+    fetch(name: string, request?: UpstreamRequest): Promise<UpstreamResponse>;
+  };
+  /**
+   * NSO-392: write a batch of records into one of THIS app's declared
+   * collections through the records authority (`importRecords`: all or
+   * nothing, schema + quotas checked). ModuleError `unavailable` when the
+   * records module cannot.
+   */
+  records: {
+    import(collection: string, records: Record<string, unknown>[], opts: RecordsImportOptions): Promise<RecordsImportResult>;
+  };
+  /**
+   * Append an audit row for this app (the action is prefixed with the module
+   * name). A scheduled run has no person behind it: actor kind `user` without
+   * a user (the Activity page shows "system"), `meta.by: 'schedule'`; a run a
+   * person started (the sync authority's `runNow`) names them.
+   */
+  audit(action: string, meta?: Record<string, unknown>): Promise<void>;
 }
 
 /** A job core runs once per interval for the whole server (one replica at a time). */
@@ -863,6 +1014,10 @@ export interface DrobekModule<Config = unknown> {
   submissions?: SubmissionsAuthority<Config>;
   /** Only the module that stores end-user uploads (files): the owner's view for the dashboard. */
   files?: FilesAuthority<Config>;
+  /** Contract 1.2 — only the module that owns the app's upstream calls (proxy): a module job's `ctx.upstreams.fetch`. */
+  upstreams?: UpstreamsAuthority<Config>;
+  /** Contract 1.2 — only the module that imports data on a schedule (sync): the owner's view for the dashboard and MCP. */
+  sync?: SyncAuthority<Config>;
   /**
    * Secret-free facts about this module's state for ONE app, shown to the
    * app's agents: get_app's `modules.<name>.info` and configure_module's

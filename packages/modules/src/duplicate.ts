@@ -14,8 +14,8 @@ import { getDb, moduleConfigs } from '@drobek/db';
 import { isModuleError } from './errors.js';
 import type { ModuleRuntime } from './runtime.js';
 
-/** Modules whose config is never copied: it points at records of the source workspace. */
-export const NOT_COPIED_MODULES: readonly string[] = ['proxy'];
+/** Modules whose config is never copied: it points at records of the source workspace (proxy), or would start calling an external API from the copy (sync). */
+export const NOT_COPIED_MODULES: readonly string[] = ['proxy', 'sync'];
 
 const EMAIL_RE = /[^\s@<>"',;]+@[^\s@<>"',;]+\.[^\s@<>"',;]+/;
 

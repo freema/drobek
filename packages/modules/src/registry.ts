@@ -260,7 +260,7 @@ export function validateModule(m: AnyModule): void {
     for (const fn of ['collections', 'query', 'get', 'remove', 'csv'] as const) {
       if (typeof m.records?.[fn] !== 'function') fail(`records.${fn} must be a function`);
     }
-    for (const fn of ['update', 'importCsv', 'dropCollection'] as const) {
+    for (const fn of ['update', 'importCsv', 'dropCollection', 'importRecords'] as const) {
       if (m.records?.[fn] !== undefined && typeof m.records[fn] !== 'function') fail(`records.${fn} must be a function`);
     }
   }
@@ -277,6 +277,12 @@ export function validateModule(m: AnyModule): void {
   if (m.files !== undefined) {
     for (const fn of ['list', 'open', 'remove'] as const) {
       if (typeof m.files?.[fn] !== 'function') fail(`files.${fn} must be a function`);
+    }
+  }
+  if (m.upstreams !== undefined && typeof m.upstreams?.fetch !== 'function') fail('upstreams.fetch must be a function');
+  if (m.sync !== undefined) {
+    for (const fn of ['sources', 'runs', 'runNow', 'resume'] as const) {
+      if (typeof m.sync?.[fn] !== 'function') fail(`sync.${fn} must be a function`);
     }
   }
   if (m.requires !== undefined) {
@@ -526,6 +532,8 @@ export function checkModuleSet(modules: AnyModule[], env: NodeJS.ProcessEnv = pr
   recordsAuthorityOf(modules);
   submissionsAuthorityOf(modules);
   filesAuthorityOf(modules);
+  upstreamsAuthorityOf(modules);
+  syncAuthorityOf(modules);
   checkRequires(modules);
   const limitNames = new Map<string, string>();
   for (const m of modules) {
@@ -593,6 +601,24 @@ export function filesAuthorityOf(modules: AnyModule[]): AnyModule | null {
   const owners = modules.filter((m) => m.files !== undefined);
   if (owners.length > 1) {
     throw new ModuleLoadError(`only one module may store uploads (files); active: ${owners.map((m) => m.name).join(', ')}`);
+  }
+  return owners[0] ?? null;
+}
+
+/** The one active module that owns the app's upstream calls (`upstreams`), or null (two refuse the start). */
+export function upstreamsAuthorityOf(modules: AnyModule[]): AnyModule | null {
+  const owners = modules.filter((m) => m.upstreams !== undefined);
+  if (owners.length > 1) {
+    throw new ModuleLoadError(`only one module may own upstream calls (upstreams); active: ${owners.map((m) => m.name).join(', ')}`);
+  }
+  return owners[0] ?? null;
+}
+
+/** The one active module that imports data on a schedule (`sync`), or null (two refuse the start). */
+export function syncAuthorityOf(modules: AnyModule[]): AnyModule | null {
+  const owners = modules.filter((m) => m.sync !== undefined);
+  if (owners.length > 1) {
+    throw new ModuleLoadError(`only one module may run scheduled imports (sync); active: ${owners.map((m) => m.name).join(', ')}`);
   }
   return owners[0] ?? null;
 }

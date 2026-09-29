@@ -27,6 +27,7 @@ import { compileSummary } from '../app-view.js';
 import { parseDuplicateResult } from '../duplicate-result.server.js';
 import { loadPendingBanner } from '../pending-banner.server.js';
 import { loadReadiness } from '../readiness.server.js';
+import { loadSyncBanner } from '../sync-banner.server.js';
 import { shapeVersionHistory } from '../view.js';
 
 const EMPTY_ERRORS: AppErrorsView = {
@@ -83,6 +84,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     canPublish: header.canEdit && header.lockedByAdmin === null,
     // M2-02: "N changes await confirmation" (PendingBanner).
     pendingBanner: await loadPendingBanner(app, header.workspace.slug, app.slug),
+    // NSO-392: "a scheduled import stopped" (SyncBanner).
+    syncBanner: await loadSyncBanner(app, header.workspace.slug),
     // NSO-340: right after /duplicate/:slug, what happened to the original's module settings.
     duplicateResult: parseDuplicateResult(
       new URL(request.url),

@@ -56,6 +56,7 @@ const WRITE_TOOLS = [
   'write_files',
   'restore_version',
   'configure_module',
+  'sync_now',
   'create_asset_upload',
   'delete_asset',
   'add_domain',

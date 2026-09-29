@@ -6,7 +6,7 @@ import { BUILTIN_MODULES, EXPECTED_SKILLS, skillSources, skillsRuntime } from '.
 
 /**
  * NSO-308: the content `skill_info` serves. Written for the AGENT only, one
- * format for all 10 skills (docs/MODULES.md "Skills"):
+ * format for all 11 skills (docs/MODULES.md "Skills"):
  *
  *   ## 1. When to use / ## 2. Minimal working code / ## 3. API and types /
  *   ## 4. Rules and limits / ## 5. Errors → fix — at most 150 lines.
@@ -20,7 +20,7 @@ const CORE_CODES = ERROR_CATALOGUE.map((e) => e.code);
 const sources = await skillSources();
 
 describe('skill_info() with every built-in module', () => {
-  it('lists exactly the 10 skills — modules first, then the general skills', async () => {
+  it('lists exactly the 11 skills — modules first, then the general skills', async () => {
     const rt = await skillsRuntime();
     expect(rt.skillList().map((s) => s.name)).toEqual([...EXPECTED_SKILLS]);
   });
@@ -41,7 +41,8 @@ describe('skill_info() with every built-in module', () => {
       expect(moduleCodes, code).toContain(code);
     }
     for (const m of BUILTIN_MODULES) {
-      expect(m.contract, m.name).toBe('^1.1');
+      // sync needs contract 1.2 (app jobs + ctx.upstreams / ctx.records, NSO-391/392); the others run on 1.1.
+      expect(m.contract, m.name).toBe(m.jobs ? '^1.2' : '^1.1');
       expect(rt.skillInfo(m.name)!.errors, m.name).toEqual(m.errors ?? []);
     }
   });
@@ -53,7 +54,9 @@ describe('skill_info() with every built-in module', () => {
       expect(info, src.name).toMatchObject({ name: src.name, kind: src.kind, use_when: src.useWhen });
       expect(info.content).toBe(src.content);
       expect(src.fileText.trimEnd().endsWith(info.content.trimEnd()), src.name).toBe(true);
-      if (src.kind === 'module') expect(info.sdk?.types, src.name).toContain(`export declare namespace ${src.name}`);
+      // A module without an SDK (sync: nothing for the browser to call) has no types.
+      if (src.kind === 'module' && rt.get(src.name)?.sdk) expect(info.sdk?.types, src.name).toContain(`export declare namespace ${src.name}`);
+      else if (src.kind === 'module') expect(info.sdk, src.name).toBeUndefined();
     }
   });
 });

@@ -162,6 +162,13 @@ describe('tools/list', () => {
         required: ['app_id', 'kind'],
       },
       {
+        name: 'sync_now',
+        title: 'Run a sync source now',
+        annotations: { title: 'Run a sync source now', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+        properties: ['app_id', 'source'],
+        required: ['app_id', 'source'],
+      },
+      {
         name: 'create_asset_upload',
         title: 'Get an upload URL for a big file',
         annotations: {
@@ -267,8 +274,8 @@ describe('tools/list', () => {
 
   it('a super-admin also gets set_workspace_publishing, last (NSO-366)', async () => {
     const tools = await listTools(undefined, true);
-    expect(tools).toHaveLength(25);
-    const last = tools[24];
+    expect(tools).toHaveLength(26);
+    const last = tools[25];
     expect(last.name).toBe('set_workspace_publishing');
     expect(last.annotations).toEqual({
       title: 'Set a workspace\'s publishing',

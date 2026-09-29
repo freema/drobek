@@ -231,7 +231,7 @@ module is "used" through its configuration, as for every module — there is
 no per-app switch.
 
 The dev compose enables the example module and every built-in module
-(`DROBEK_MODULES=hello,auth,email,forms,data,proxy,files`, `HELLO_WAVES_PER_MINUTE=5`,
+(`DROBEK_MODULES=hello,auth,email,forms,data,proxy,files,sync`, `HELLO_WAVES_PER_MINUTE=5`,
 relaxed `AUTH_*` limits because every local request shares one client IP,
 `DATA_MAX_DOCS_PER_APP=5` so the quota e2e trips quickly); so does the e2e
 image compose.
@@ -414,7 +414,7 @@ The contract fields of 1.1:
 
 | Field | Rules |
 | ----- | ----- |
-| `contract` | a semver range matched against `MODULE_CONTRACT_VERSION` (`1.2.0`); not satisfied → the start is refused; missing → a warning. The built-in modules and the example declare `'^1.1'` |
+| `contract` | a semver range matched against `MODULE_CONTRACT_VERSION` (`1.2.0`); not satisfied → the start is refused; missing → a warning. The built-in modules and the example declare `'^1.1'`; `sync` (app jobs) declares `'^1.2'` |
 | `errors` | `[{ code, meaning, fix }]`: `code` matches `^[a-z][a-z0-9_]{2,40}$`, is not a core code (`CORE_ERROR_CODES`, the catalogue in `/llms-full.txt`) and is declared by no other active module; meaning and fix are required |
 | `slots` / `contributes` | see [Slots](#slots) |
 | `availability` | `'default'` (the default: every workspace of the server) or `'opt-in'` (only the workspaces it is enabled for — [Per-workspace enabling](#per-workspace-enabling-opt-in-modules)); returned by `skill_info('<name>')` and the dashboard's module view |
@@ -427,6 +427,11 @@ The contract fields of 1.2 (additive: a module declaring `'^1.1'` loads unchange
 | ----- | ----- |
 | `jobs` | `[{ name, scope?, every, description?, run }]` — see [Scheduled jobs](#scheduled-jobs-jobs). A module with jobs declares `contract: '^1.2'` (a 1.1 server ignores the field; the start logs a warning for a range that admits one) |
 | `ModuleContext.pendingConfig` | the config once the owner confirms the app's pending change, or `null` — see [`ModuleContext`](#modulecontext). Optional in the type: a route reads it as `ctx.pendingConfig ?? null` |
+| `AppJobContext.upstreams.fetch` / `.records.import` / `.audit` | an `app` job calls one of the app's upstreams through the module that owns them, writes a batch of records through the records module, and writes an audit row — see [Scheduled jobs](#scheduled-jobs-jobs) |
+| `upstreams` | the owner of upstream calls (the built-in `proxy`; two refuse the start): `fetch(view, name, { method?, path?, headers?, body?, maxBytes? })` → `{ status, headers, body }` — what `ctx.upstreams.fetch` of a job reaches |
+| `records.importRecords` | optional on the records authority: `(view, collection, records, { mode: 'replace' \| 'upsert', key? })` → `{ inserted, updated, deleted }`, all or nothing — what `ctx.records.import` of a job reaches |
+| `sync` | the owner of scheduled imports (the built-in `sync`; two refuse the start): `sources(view)`, `runs(view, q)`, `runNow(ctx, source)`, `resume(view, source)` — what the dashboard's sources panel, MCP `sync_now` and `get_logs({ kind: 'sync' })` call ([The built-in `sync` module](#the-built-in-sync-module)) |
+| `ConfirmContext.limits` | `confirmRequired`'s third argument may read the workspace's limits (`sync` refuses a source past its limits there) |
 
 ### Error codes
 
@@ -865,7 +870,29 @@ over the same apps an `app` job runs for (`{ app, config, db, log }`). An
 `app` job gets the app's context without a caller: `app`, `config`,
 `pendingConfig`, `limits()` (the workspace's), `rateLimit()` (the same
 buckets as the module's routes) and `secrets.get()` (declared names only).
-A job sends no e-mail and writes no audit row.
+A job sends no e-mail.
+
+An `app` job also reaches the app's other capabilities through core, never
+another module's code:
+
+- `ctx.upstreams.fetch(name, { method?, path?, headers?, body?, maxBytes? })`
+  calls an upstream the app's proxy config assigns, through the module that
+  owns upstream calls (`proxy`): the registered, admin-confirmed record, its
+  method and path allow-lists, the secret injected server-side, the SSRF
+  guard, 20 s and the lower of `PROXY_MAX_RESPONSE_BYTES` and `maxBytes`. The
+  job never sees the secret. There is no caller, so no call rule applies — an
+  upstream assigned with `call: "none"` works. Without an enabled `proxy`:
+  ModuleError `unavailable`.
+- `ctx.records.import(collection, records, { mode, key? })` writes a batch
+  into a collection through the records module (`data`): every record passes
+  the collection's schema, the size and the app's quotas, in one transaction
+  — `replace` leaves exactly the batch, `upsert` replaces the records with
+  the same `key` and adds the rest. A bad record refuses the whole batch
+  (`validation_failed` with `details.index`); nothing changes.
+- `ctx.audit(action, meta?)` writes an audit row `<module>.<action>` about
+  the app. A scheduled run has no person behind it: the row has no user
+  (the Activity view shows "system") and `meta.by: 'schedule'`; a run a
+  person started (the sync authority's `runNow`) names them.
 
 How core runs them:
 
@@ -2120,6 +2147,54 @@ people who use an app upload. `skill_info('files')`.
   through the SDK core), `url(id)`, `remove(id)`, `list({ limit?, cursor? })`.
 - **Not in v1**: image transformations, EXIF stripping, object storage (S3),
   public galleries.
+
+## The built-in `sync` module
+
+[`modules/sync`](../modules/sync) (`drobek-module-sync`, contract `^1.2`,
+requires `proxy` and `data`): an app's data collection filled from an
+external API on a schedule — scores, prices, fixtures, a feed — without app
+code on the server and without the API key leaving the dashboard.
+`skill_info('sync')`.
+
+- **Config** — `sources: { <name>: { upstream, path, method, body?, every,
+  collection, items, key?, mode, paused? } }`: `upstream` is assigned to the
+  app in the proxy config, `path` (default `/`, with a query) is below its
+  base URL, `method` `GET` (default) or `POST` with `body`, `every` `'5m'` …
+  `'30d'` (default `'1h'`), `collection` is declared in the data config,
+  `items` the dotted path of the array in the answer (`''` = the answer),
+  `mode` `replace` (default) or `upsert` by `key`. A new source, or a changed
+  upstream, path, method, body, collection or mode, waits for the owner's
+  confirmation; `every`, `items`, `key` and `paused` apply at once.
+  `configure_module` refuses a source past `SYNC_MAX_SOURCES_PER_APP` and an
+  `every` below `SYNC_MIN_INTERVAL_MIN` (only where the change sets it).
+- **Runs** — the module's app job (every minute while the app has a source)
+  runs each due source: it takes the source's lease in `mod_sync_sources`
+  (one run of a source at a time, across replicas), counts it against
+  `SYNC_RUNS_PER_HOUR_PER_APP`, fetches through `ctx.upstreams.fetch`
+  (`SYNC_MAX_RESPONSE_BYTES`), takes the array at `items`
+  (`SYNC_MAX_RECORDS_PER_RUN`) and writes it with `ctx.records.import`. A
+  failed run (a non-2xx answer, no JSON, no array, a record the schema
+  refuses, a quota) changes nothing. Every run is stored (the newest 50 per
+  source in `mod_sync_runs`, what `get_logs({ kind: 'sync' })` reads). A run
+  by hand and a failed scheduled run are also audited `sync.run`
+  (`{ source, trigger, status, records, error?, paused? }` — `paused: true`
+  on the run that paused the source; no user for a scheduled run); a
+  successful scheduled run is not. Its error text names the problem, never the upstream's data or the
+  secret.
+- **Failures** — a failed run backs the next scheduled one off (the
+  interval, doubling, at most a day or the interval); after
+  `SYNC_PAUSE_AFTER_FAILURES` failures in a row the source pauses: the app
+  page, its Modules tab and the module page show a banner. A successful Run
+  now, the owner's Resume (audited `sync.resume`) or a change of the source's
+  config starts it again.
+- **The owner** — the module page lists the sources (what they fetch and
+  write, the schedule, the last and the next run) with Run now and Pause /
+  Resume (Pause sets the source's `paused` without a confirmation), and the
+  latest runs. Over MCP: `sync_now({ app_id, source })` (editor+,
+  `SYNC_NOW_PER_MINUTE` per source) and `get_logs({ app_id, kind: 'sync' })`;
+  `get_app` shows each source's state under `modules.sync.info.sources`.
+- `duplicate_app` never copies the sources (they would start calling an
+  external API from the copy); deleting the app removes its sources and runs.
 
 ## The example: `drobek-module-hello`
 

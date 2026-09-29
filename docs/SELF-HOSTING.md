@@ -264,9 +264,9 @@ dependencies, or from `DROBEK_MODULES_DIR` for a module you installed with
 refuses to start on a module it cannot load. Limits come from their env vars
 or, with `LIMITS_PROVIDER_URL` + `LIMITS_PROVIDER_SECRET`, from your own
 signed limits endpoint. The image ships the built-in `auth`, `email`,
-`forms`, `data`, `proxy` and `files`
-(`DROBEK_MODULES=auth,email,forms,data,proxy,files`, the compose default;
-`forms` requires `email`). Proxy upstreams may only use ports 80 and 443
+`forms`, `data`, `proxy`, `files` and `sync`
+(`DROBEK_MODULES=auth,email,forms,data,proxy,files,sync`, the compose default;
+`forms` requires `email`, `sync` requires `proxy` and `data`). Proxy upstreams may only use ports 80 and 443
 (`PROXY_ALLOWED_PORTS`); an upstream on a private address needs its hostname
 on `PROXY_ALLOWED_HOSTS` (keep it empty in production). The old
 `/<ws>/api/proxy/<name>/*` dashboard-host route is gone: an app calls
@@ -391,7 +391,7 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 
 | Variable | Default | What |
 | --- | --- | --- |
-| `DROBEK_MODULES` | none *(compose: `auth,email,forms,data,proxy,files`)* | the modules this server runs; `x` loads `drobek-module-x` ([`MODULES.md`](./MODULES.md)) |
+| `DROBEK_MODULES` | none *(compose: `auth,email,forms,data,proxy,files,sync`)* | the modules this server runs; `x` loads `drobek-module-x` ([`MODULES.md`](./MODULES.md)) |
 | `DROBEK_MODULES_ROOT` | the server's directory | where module packages are resolved from when they are not in `DROBEK_MODULES_DIR` |
 | `DROBEK_MODULES_DIR` | `/data/modules` *(compose: the `modules_data` volume; dev: `./.modules`)* | modules the operator installed (`task selfhost:module:add`, dev: `task module:add`): `<dir>/<name>/node_modules/<package>` + `modules.lock.json`; looked up BEFORE the server's dependencies; a module there that the lockfile does not list, or whose files changed, refuses the start ([Third-party modules](#third-party-modules)). Change it only for a [derived image](#derived-image) that bakes its modules elsewhere |
 | `DROBEK_MODULES_UNLOCKED` | — | `1` = load modules from `DROBEK_MODULES_DIR` without the `modules.lock.json` check — for developing a module locally; ignored (with a warning) when `NODE_ENV=production` |
@@ -423,6 +423,10 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `PROXY_CONNECT_TIMEOUT_MS` / `PROXY_MAX_RESPONSE_BYTES` | 8000 / 5242880 | `proxy`: per upstream request (the size cap also holds for a decoded gzip/br body) |
 | `PROXY_MAX_CONCURRENT` / `PROXY_MAX_CONCURRENT_PER_APP` | 32 / 8 | `proxy`: upstream calls in flight on the whole server / per app; over either → `429 proxy_busy` |
 | `PROXY_CALLS_PER_MIN` / `PROXY_PUBLIC_CALLS_PER_MIN_PER_IP` | 60 / 10 | `proxy`: calls per app, per IP to `public` upstreams *(plan)* |
+| `SYNC_MIN_INTERVAL_MIN` / `SYNC_MAX_SOURCES_PER_APP` | 5 / 10 | `sync`: the shortest interval of a source (minutes); sources per app — `configure_module` refuses more *(plan)* |
+| `SYNC_MAX_RESPONSE_BYTES` / `SYNC_MAX_RECORDS_PER_RUN` | 5242880 / 1000 | `sync`: bytes of one upstream answer a run reads (`PROXY_MAX_RESPONSE_BYTES` caps it too); records one run imports — more fails the run *(plan)* |
+| `SYNC_RUNS_PER_HOUR_PER_APP` / `SYNC_NOW_PER_MINUTE` | 60 / 2 | `sync`: runs per app per hour (scheduled and by hand); runs by hand (Run now, `sync_now`) of one source per minute *(plan)* |
+| `SYNC_PAUSE_AFTER_FAILURES` | 5 | `sync`: failed runs in a row after which a source pauses until the owner resumes it *(plan)* |
 | `HELLO_WAVES_PER_MINUTE` | 30 | the example module `drobek-module-hello` |
 
 ### Custom domains, abuse and the gallery
@@ -601,7 +605,7 @@ task selfhost:module:add -- drobek-module-acme-erp@1.2.0
 #   modules.lock.json: sha512-…
 #
 # Next: enable it in .env.production and restart drobek (it applies the module's migrations on start):
-#   DROBEK_MODULES=auth,email,forms,data,proxy,files,drobek-module-acme-erp
+#   DROBEK_MODULES=auth,email,forms,data,proxy,files,sync,drobek-module-acme-erp
 #   ./scripts/selfhost-compose.sh up -d --wait drobek
 ```
 

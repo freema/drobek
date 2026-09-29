@@ -86,7 +86,7 @@ packages/agent-dx       briefing, tool manifest, limits, error catalogue, llms.t
 packages/dashboard      dashboard routes + server halves
 packages/{auth,tenancy,audit,domains,email,insights,proxy,core,db,sdk}
 packages/skills-check   compiles + typechecks every skill code block (test-only)
-modules/<name>          built-in platform modules (auth, email, forms, data, proxy, files) + SKILL.md
+modules/<name>          built-in platform modules (auth, email, forms, data, proxy, files, sync) + SKILL.md
 skills/                 general skills (start, debug, ui, port-artifact) + the platform skill skills/drobek
 examples/               drobek-module-hello (an external module)
 tests-e2e/              Playwright (@local needs the dev stack, @smoke is safe anywhere)

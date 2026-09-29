@@ -2,7 +2,7 @@
  * The MCP tool bodies (plan §4): list_apps, create_app, get_app, read_file,
  * write_files, restore_version (M0-05), publish (M0-06), skill_info and
  * configure_module (M1-01), query_data (M1-03), get_logs (M1-07),
- * set_gallery_listing and duplicate_app (NSO-340). Each takes the caller + validated
+ * set_gallery_listing and duplicate_app (NSO-340), sync_now (NSO-392). Each takes the caller + validated
  * arguments and returns a plain JSON payload or throws a ToolError; the MCP
  * wiring (register.ts) turns that into a CallToolResult.
  *
@@ -627,8 +627,8 @@ async function duplicateSourceSlug(from: string, env: NodeJS.ProcessEnv): Promis
  * /duplicate/:slug in one call. Only an app shown in the public gallery whose
  * owner allows duplicates; the copy is the published files as version 1 of a
  * new, unpublished app (provenance kept), and the source's module settings
- * are proposed to it through its confirmation flow (e-mail addresses and
- * proxy upstreams dropped). Never secrets, data, users, uploads, assets or
+ * are proposed to it through its confirmation flow (e-mail addresses,
+ * proxy upstreams and sync sources dropped). Never secrets, data, users, uploads, assets or
  * domains. write scope, editor+ in the target workspace (default: personal).
  */
 export async function duplicateApp(ctx: CallContext, args: { from: string; workspace?: string; name?: string }) {
@@ -1292,9 +1292,14 @@ export async function queryData(
 
 // ── get_logs ─────────────────────────────────────────────────────────────────
 
+/** get_logs kinds: the insights logs plus `sync` (the sync module's run history, NSO-392). */
+type GetLogsKind = LogKind | 'sync';
+const GET_LOGS_KINDS: readonly GetLogsKind[] = [...LOG_KINDS, 'sync'];
+const GET_LOGS_MAX = 100;
+
 export interface GetLogsResult {
   app_id: string;
-  kind: LogKind;
+  kind: GetLogsKind;
   /** The start of the window the entries cover (ISO; at most 30 days back). */
   since: string;
   entries: unknown[];
@@ -1302,18 +1307,20 @@ export interface GetLogsResult {
   note?: string;
 }
 
-const EMPTY_NOTES: Record<LogKind, string> = {
+const EMPTY_NOTES: Record<GetLogsKind, string> = {
   runtime:
     'No browser errors in this window. Every page that loads a compiled entry reports uncaught errors and unhandled promise rejections here within seconds (unless drobek.json has "beacon": false) — open the preview_url to reproduce a problem, then call get_logs again.',
   compile: 'No compiles in this window.',
   requests: 'No requests in this window.',
+  sync: 'No sync runs in this window. A source runs on its schedule once the owner confirmed it; sync_now runs it at once.',
 };
 
 /**
  * What happened to an app (M1-07), for the viewer+ of its workspace:
  *   runtime  — browser errors reported by the app's pages (deduped, with counts);
  *   compile  — the last 50 compiles (ok / errors / version / duration);
- *   requests — per UTC day: requests, 5xx, 404s, and module calls by status class.
+ *   requests — per UTC day: requests, 5xx, 404s, and module calls by status class;
+ *   sync     — the latest runs of the app's sync sources (newest first).
  * `since` (ISO) narrows the window; nothing older than 30 days exists. ≤ 100
  * entries. Everything is app-authored or user-supplied text → `untrusted`.
  */
@@ -1322,14 +1329,26 @@ export async function getLogs(
   args: { app_id: string; kind: string; since?: string }
 ): Promise<GetLogsResult> {
   const { app } = await authorizeApp(ctx.principal, args.app_id, 'viewer');
-  const kind = args.kind as LogKind;
-  if (!(LOG_KINDS as readonly string[]).includes(kind)) {
-    throw new ToolError('invalid_params', '`kind` must be "runtime", "compile" or "requests".');
+  const kind = args.kind as GetLogsKind;
+  if (!(GET_LOGS_KINDS as readonly string[]).includes(kind)) {
+    throw new ToolError('invalid_params', '`kind` must be "runtime", "compile", "requests" or "sync".');
   }
   if (args.since !== undefined && (typeof args.since !== 'string' || Number.isNaN(Date.parse(args.since)))) {
     throw new ToolError('invalid_params', '`since` must be an ISO 8601 date-time, e.g. "2026-09-23T10:00:00Z".');
   }
   const from = logsWindowStart(args.since ?? null);
+  if (kind === 'sync') {
+    const sync = await ctx.modules.sync({ id: app.id, slug: app.slug, workspaceId: app.workspaceId });
+    const runs = sync ? await sync.runs({ since: from, limit: GET_LOGS_MAX }) : [];
+    return {
+      app_id: app.id,
+      kind,
+      since: from.toISOString(),
+      entries: runs,
+      untrusted: true,
+      ...(runs.length === 0 ? { note: sync ? EMPTY_NOTES.sync : 'This server has no sync module: apps here import nothing on a schedule.' } : {}),
+    };
+  }
   const entries =
     kind === 'runtime'
       ? await ctx.deps.logs.runtime(app.id, from)
@@ -1344,4 +1363,47 @@ export async function getLogs(
     untrusted: true,
     ...(entries.length === 0 ? { note: EMPTY_NOTES[kind] } : {}),
   };
+}
+
+// ── sync_now ─────────────────────────────────────────────────────────────────
+
+/**
+ * Run one of the app's sync sources now (NSO-392), the dashboard's Run now
+ * over MCP: editor+, a paused source too (a successful run resumes one paused
+ * after failures). A failed RUN is not a tool error: the answer is the run
+ * with `status: "failed"` and its `error`. Rate limited per source
+ * (SYNC_NOW_PER_MINUTE) and by the app's hourly runs; audited `sync.run`
+ * with the agent as the actor.
+ */
+const SYNC_NOW_PASSED_CODES = ['not_found', 'module_not_enabled', 'rate_limited', 'limit_exceeded'] as const;
+
+export async function syncNow(ctx: CallContext, args: { app_id: string; source: string }) {
+  const { app } = await authorizeApp(ctx.principal, args.app_id, 'editor');
+  if (typeof args.source !== 'string' || args.source.length === 0) {
+    throw new ToolError('invalid_params', '`source` must be the name of a sync source of the app (get_app lists them under modules.sync).');
+  }
+  refuseIfLockedByAdmin(app);
+  const sync = await ctx.modules.sync({ id: app.id, slug: app.slug, workspaceId: app.workspaceId });
+  if (!sync) {
+    throw new ToolError('not_found', 'This server has no sync module: apps here import nothing on a schedule.', { hint: 'skill_info()' });
+  }
+  try {
+    const run = await sync.runNow(args.source, { userId: ctx.principal.userId, surface: 'mcp' });
+    return {
+      app_id: app.id,
+      run,
+      ...(run.status === 'failed'
+        ? { note: `The run failed and changed nothing: ${run.error ?? 'see get_logs(kind: "sync")'}. skill_info('${sync.module}') maps the usual errors to their fix.` }
+        : {}),
+    };
+  } catch (err) {
+    if (isModuleError(err)) {
+      const details = (err.details && typeof err.details === 'object' ? err.details : {}) as Record<string, unknown>;
+      const hint = { hint: `skill_info('${sync.module}')` };
+      const passed = SYNC_NOW_PASSED_CODES.find((c) => c === err.code);
+      if (passed) throw new ToolError(passed, err.message, { ...details, ...hint });
+      if (err.code === 'conflict') throw new ToolError('busy', err.message, { ...details, reason: 'sync_running', ...hint });
+    }
+    throw err;
+  }
 }

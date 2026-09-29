@@ -22,7 +22,8 @@
  *
  * `checkSkill(module)` checks the module's SKILL.md like the built-in
  * modules' (skill-check/). `t.runJob(name)` runs one of the module's
- * scheduled `jobs` once (contract 1.2).
+ * scheduled `jobs` once (contract 1.2); its `ctx.upstreams.fetch` and
+ * `ctx.records.import` are the test's `upstreams` / `records` fakes.
  */
 import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -44,7 +45,11 @@ import {
   type MailEnvelope,
   type ModuleContext,
   type Principal,
+  type RecordsImportOptions,
+  type RecordsImportResult,
   type ServerJobContext,
+  type UpstreamRequest,
+  type UpstreamResponse,
 } from './contract.js';
 import { mergePatch } from './merge-patch.js';
 import { collectRoutes, errorResult, isReadable, matchRoute, runRoute, type PipelineResult } from './router.js';
@@ -118,6 +123,10 @@ export interface ModuleTestOptions {
    * host's `compose` runs with them first, as at server start.
    */
   contributions?: Record<string, unknown[]>;
+  /** A job's `ctx.upstreams.fetch` (default: ModuleError `unavailable`, like a server without proxy). */
+  upstreams?: (name: string, request: UpstreamRequest) => Promise<UpstreamResponse>;
+  /** A job's `ctx.records.import` (default: ModuleError `unavailable`, like a server without data). */
+  records?: (collection: string, records: Record<string, unknown>[], opts: RecordsImportOptions) => Promise<RecordsImportResult>;
 }
 
 /** One request to the module's `endUsers.callback` (the dashboard-host IdP callback). */
@@ -414,6 +423,19 @@ export function createModuleTestContext(declared: AnyModule, opts: ModuleTestOpt
           pendingConfig: pendingConfig ?? null,
           rateLimit: base.rateLimit,
           secrets: base.secrets,
+          upstreams: {
+            fetch: async (upstream, request = {}) => {
+              if (!opts.upstreams) throw new ModuleError('unavailable', 'No module that calls upstreams (proxy) is on for this app\'s workspace.');
+              return opts.upstreams(upstream, request);
+            },
+          },
+          records: {
+            import: async (collection, records, importOpts) => {
+              if (!opts.records) throw new ModuleError('unavailable', 'No module that stores records and imports them in batches (data) is on for this app\'s workspace.');
+              return opts.records(collection, records, importOpts);
+            },
+          },
+          audit: base.audit,
         };
         await job.run(ctx);
         return { ran: true, intervalMs: Math.min(JOB_MAX_INTERVAL_MS, Math.max(JOB_MIN_INTERVAL_MS, ms)) };

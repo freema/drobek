@@ -203,7 +203,7 @@ tgz="$SCRATCH/drobek-module-guestbook-1.0.0.tgz"
 [ -f "$tgz" ] || die "npm pack of the guestbook fixture wrote no $tgz"
 (cd "$A" && COMPOSE_PROJECT_NAME="$PROJECT_A" task selfhost:module:add -- "$tgz") >"$SCRATCH/module-add.log" 2>&1 \
   || { cat "$SCRATCH/module-add.log" >&2; die "task selfhost:module:add failed"; }
-grep -q 'DROBEK_MODULES=auth,email,forms,data,proxy,files,guestbook' "$SCRATCH/module-add.log" \
+grep -q 'DROBEK_MODULES=auth,email,forms,data,proxy,files,sync,guestbook' "$SCRATCH/module-add.log" \
   || { cat "$SCRATCH/module-add.log" >&2; die "selfhost:module:add did not print the DROBEK_MODULES line"; }
 ok "installed into ${PROJECT_A}_modules_data, the next-step DROBEK_MODULES line printed"
 listed="$(cd "$A" && COMPOSE_PROJECT_NAME="$PROJECT_A" task selfhost:module:list 2>/dev/null)"
@@ -211,7 +211,7 @@ printf '%s\n' "$listed" | grep -Eq '^guestbook +drobek-module-guestbook +1\.0\.0
   || { printf '%s\n' "$listed" >&2; die "selfhost:module:list does not show guestbook as ok"; }
 ok "task selfhost:module:list: guestbook 1.0.0 ok"
 # guestbook contributes to the slot of the example module `hello` (in the image).
-ENV_FILE="$A/.env.production" env_set DROBEK_MODULES auth,email,forms,data,proxy,files,hello,guestbook
+ENV_FILE="$A/.env.production" env_set DROBEK_MODULES auth,email,forms,data,proxy,files,sync,hello,guestbook
 on "$A" "$PROJECT_A" up -d --wait --wait-timeout 300 drobek </dev/null >/dev/null 2>&1 || die "drobek did not come back with the module"
 version="$(curl -sf --cacert "$CA" "$BASE/api/version")"
 case "$version" in

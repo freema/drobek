@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { TOOL_DOCS, TOOL_NAMES, toolDoc } from './tools.js';
 
 describe('TOOL_DOCS manifest', () => {
-  it('documents exactly the 25 tools, in tools/list order', () => {
+  it('documents exactly the 26 tools, in tools/list order', () => {
     expect(TOOL_NAMES).toEqual([
       'list_apps',
       'create_app',
@@ -17,6 +17,7 @@ describe('TOOL_DOCS manifest', () => {
       'configure_module',
       'query_data',
       'get_logs',
+      'sync_now',
       'create_asset_upload',
       'list_assets',
       'delete_asset',
@@ -69,6 +70,7 @@ describe('TOOL_DOCS manifest', () => {
       configure_module: [false, true, true, false], // the same merge patch again answers unchanged
       query_data: [true, false, true, false],
       get_logs: [true, false, true, false],
+      sync_now: [false, true, false, true], // replace mode swaps the collection's records; calls the app's external API
       create_asset_upload: [false, false, false, false], // a new single-use URL on every call; the PUT stores
       list_assets: [true, false, true, false],
       delete_asset: [false, true, true, false], // removes a file; a second delete changes nothing more
@@ -88,8 +90,8 @@ describe('TOOL_DOCS manifest', () => {
     }
     // Consistency rules a directory reviewer applies: a read-only tool is never
     // destructive; only publish, the gallery listing and the domain tools that touch public DNS
-    // or the public site reach the open world.
-    const openWorld = ['publish', 'set_gallery_listing', 'verify_domain', 'set_primary_domain', 'remove_domain'];
+    // or the public site, and sync_now (it calls the app's external API), reach the open world.
+    const openWorld = ['publish', 'set_gallery_listing', 'sync_now', 'verify_domain', 'set_primary_domain', 'remove_domain'];
     for (const t of TOOL_DOCS) {
       if (t.annotations.readOnlyHint) expect(t.annotations.destructiveHint, t.name).toBe(false);
       expect(t.annotations.openWorldHint, t.name).toBe(openWorld.includes(t.name));
