@@ -25,7 +25,7 @@ import {
 } from '@drobek/modules';
 import { noopLogger } from '@drobek/core';
 import { STORE_DATA, greet, store } from './test/modules.js';
-import { APP_LOCK_TTL_SEC, LIMITS } from '@drobek/agent-dx';
+import { APP_LOCK_TTL_SEC, LIMITS, listAppsNext } from '@drobek/agent-dx';
 import type { ToolPrincipal } from './context.js';
 import { freshDb, type TestDb } from './test/db.js';
 import { connect, testDeps, type TestDeps } from './test/harness.js';
@@ -678,6 +678,11 @@ describe('list_apps', () => {
         .where(and(eq(apps.workspaceId, teamId), isNull(apps.deletedAt)));
       expect(apps2).toHaveLength(count.length);
       expect(r.body.all_workspaces).toBeUndefined();
+      // NSO-379: additive `next` — this server's skills (greet + data) have no `start`.
+      expect(Object.keys(r.body).sort()).toEqual(['apps', 'next', 'user', 'workspaces']);
+      expect(r.body.next).toBe(listAppsNext([{ name: 'greet' }, { name: 'data' }]));
+      expect(r.body.next).not.toContain("skill_info('start')");
+      expect(r.body.next).toContain('create_app');
     } finally {
       await c.close();
     }

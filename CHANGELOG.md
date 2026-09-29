@@ -1,5 +1,13 @@
 # Changelog — drobek (core)
 
+## Unreleased
+
+### Changed
+- **Agents find the start skill first** (NSO-379): the MCP server sends `instructions` on initialize (start with `list_apps`; before creating or changing an app call `skill_info('start')`, read the briefing), and `list_apps` answers an additive `next` naming `skill_info('start')` when the server has that skill. Existing fields are unchanged.
+- **`publish`'s `assets: "draft"` is explained** (NSO-390): the tool description, the briefing, `skills/drobek` and `docs/AGENT.md` say it means the uploads the preview shows went live with the version (production serves them now). The value is unchanged.
+- **Installable apps** (NSO-390): the briefing and `skills/drobek` have an "Installable app (home screen)" section — `manifest.webmanifest` via `write_files` (served as `application/manifest+json`), PNG icons through `create_asset_upload`, `apple-touch-icon`, `viewport-fit=cover` with safe-area padding, `display: standalone` / `fullscreen`, install from the published URL.
+- **Per-visitor state belongs in `localStorage`** (NSO-376): the data skill, its "use when" line, the briefing (when the data module is listed) and `skills/drobek` say that state of one visitor without sign-in (game saves, settings) stays in the browser, because the data module has no anonymous per-visitor identity; `drobek.data` is for shared data and signed-in users' records, and the two combine.
+
 ## v0.5.3 — 2026-09-28
 
 ### Changed

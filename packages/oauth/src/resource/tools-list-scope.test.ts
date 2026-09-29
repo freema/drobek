@@ -7,6 +7,7 @@
  */
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { SERVER_INSTRUCTIONS } from '@drobek/agent-dx';
 import { describe, expect, it } from 'vitest';
 import { SCOPES, type Scope } from '../scopes.js';
 import { buildMcpServer } from './mcp.js';
@@ -92,6 +93,18 @@ describe('tools/list reflects the granted scope', () => {
       } finally {
         await client.close();
       }
+    }
+  });
+
+  it('initialize carries the server instructions naming list_apps and the start skill (NSO-379)', async () => {
+    const client = await connect(['read']);
+    try {
+      const text = client.getInstructions() ?? '';
+      expect(text).toBe(SERVER_INSTRUCTIONS);
+      expect(text).toContain('`list_apps`');
+      expect(text).toContain("skill_info('start')");
+    } finally {
+      await client.close();
     }
   });
 
