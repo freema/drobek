@@ -417,6 +417,233 @@ describe('write_files', () => {
   });
 });
 
+describe('write_files — edits (NSO-382)', () => {
+  const GREET = "export const greet = (n: string) => `Hi ${n}`;\nexport const bye = (n: string) => `Bye ${n}`;\n";
+
+  /** What another session stores: the sources as they were before this call's edit. */
+  const unedited = (sources: Map<string, string | Buffer>) =>
+    [...sources].map(([path, content]) => ({ path, content: path === 'src/greet.ts' ? GREET : content }));
+
+  async function appWithGreet() {
+    const app = await newApp('Patchable', { workspace: 'alice' });
+    const c = await as('alice');
+    const r = await c.call('write_files', {
+      app_id: app.app_id,
+      files: [
+        { path: 'src/greet.ts', content: GREET },
+        { path: 'src/main.tsx', content: "import { greet } from './greet';\ndocument.body.textContent = greet('x');\n" },
+      ],
+      reasoning: 'Base',
+    });
+    expect(r.body).toMatchObject({ version: 2, base_version: 1, compile: { ok: true } });
+    return { app, c };
+  }
+
+  it('whole-file writes answer as before, plus base_version', async () => {
+    const { app, c } = await appWithGreet();
+    try {
+      const r = await c.call('write_files', { app_id: app.app_id, files: [{ path: 'notes.txt', content: 'x' }], reasoning: 'n' });
+      expect(Object.keys(r.body).sort()).toEqual(['base_version', 'changed', 'compile', 'preview_url', 'version']);
+      expect(r.body).toMatchObject({ version: 3, base_version: 2, changed: ['notes.txt'] });
+    } finally {
+      await c.close();
+    }
+  });
+
+  it('applies edits in order to the latest version, mixed with whole-file and delete entries, as ONE version', async () => {
+    const { app, c } = await appWithGreet();
+    try {
+      const r = await c.call('write_files', {
+        app_id: app.app_id,
+        files: [
+          {
+            path: 'src/greet.ts',
+            edits: [
+              { old_string: '`Hi ${n}`', new_string: '`Hello ${n}`' },
+              { old_string: 'Hello', new_string: 'Ahoj' },
+              { old_string: ' ${n}', new_string: ', ${n}!', replace_all: true },
+            ],
+          },
+          { path: 'src/extra.ts', content: 'export const $x = "$&";\n' },
+          { path: 'src/styles.css', delete: true },
+        ],
+        reasoning: 'Patch greet',
+      });
+      expect(r.isError, r.text).toBe(false);
+      expect(r.body).toMatchObject({ version: 3, base_version: 2, compile: { ok: true } });
+      expect((r.body.changed as string[]).sort()).toEqual(['src/extra.ts', 'src/greet.ts', 'src/styles.css']);
+      const src = await c.call('read_file', { app_id: app.app_id, path: 'src/greet.ts' });
+      expect(src.body.content).toBe("export const greet = (n: string) => `Ahoj, ${n}!`;\nexport const bye = (n: string) => `Bye, ${n}!`;\n");
+      // `$` patterns in new_string are literal text, not String.replace patterns.
+      const dollar = await c.call('write_files', {
+        app_id: app.app_id,
+        files: [{ path: 'src/greet.ts', edits: [{ old_string: 'Ahoj', new_string: "$&-$'" }] }],
+        reasoning: 'Dollar',
+      });
+      expect(dollar.body).toMatchObject({ version: 4, base_version: 3 });
+      expect((await c.call('read_file', { app_id: app.app_id, path: 'src/greet.ts' })).body.content).toContain("`$&-$', ${n}!`");
+      // An edit that changes nothing still makes a version, with nothing listed as changed.
+      const same = await c.call('write_files', {
+        app_id: app.app_id,
+        files: [{ path: 'src/greet.ts', edits: [{ old_string: 'Bye', new_string: 'Bye' }] }],
+        reasoning: 'Noop',
+      });
+      expect(same.body).toMatchObject({ version: 5, changed: [] });
+    } finally {
+      await c.close();
+    }
+  });
+
+  it('refuses the whole call with edit_mismatch naming the file and edit index; nothing is written', async () => {
+    const { app, c } = await appWithGreet();
+    const w = (files: unknown) => c.call('write_files', { app_id: app.app_id, files, reasoning: 'x' } as Record<string, unknown>);
+    try {
+      const absent = await w([
+        { path: 'notes.txt', content: 'must not land' },
+        { path: 'src/greet.ts', edits: [{ old_string: 'Hi', new_string: 'Hey' }, { old_string: 'nope', new_string: 'x' }] },
+      ]);
+      expect(absent.isError).toBe(true);
+      expect(absent.body).toMatchObject({ code: 'edit_mismatch', path: 'src/greet.ts', edit_index: 1, reason: 'not_found', base_version: 2 });
+      expect(absent.body.message).toContain('edits[1]');
+      expect(absent.body.hint).toContain('read_file');
+
+      const twice = await w([{ path: 'src/greet.ts', edits: [{ old_string: 'export const', new_string: 'const' }] }]);
+      expect(twice.body).toMatchObject({ code: 'edit_mismatch', path: 'src/greet.ts', edit_index: 0, reason: 'not_unique', matches: 2 });
+
+      const missing = await w([{ path: 'src/nope.ts', edits: [{ old_string: 'a', new_string: 'b' }] }]);
+      expect(missing.body).toMatchObject({ code: 'edit_mismatch', path: 'src/nope.ts', edit_index: 0, reason: 'file_not_found' });
+
+      // An earlier edit of the same entry can make a later one fail (edits apply in order).
+      const chained = await w([{ path: 'src/greet.ts', edits: [{ old_string: 'Bye', new_string: 'Hi' }, { old_string: '`Hi', new_string: '`Yo' }] }]);
+      expect(chained.body).toMatchObject({ code: 'edit_mismatch', edit_index: 1, reason: 'not_unique', matches: 2 });
+
+      const got = await c.call('get_app', { app_id: app.app_id });
+      expect(got.body.latest_version).toBe(2);
+      expect((got.body.files as { path: string }[]).map((f) => f.path)).not.toContain('notes.txt');
+    } finally {
+      await c.close();
+    }
+  });
+
+  it('rejects malformed edits with invalid_params (nothing stored)', async () => {
+    const { app, c } = await appWithGreet();
+    const w = (files: unknown) => c.call('write_files', { app_id: app.app_id, files, reasoning: 'x' } as Record<string, unknown>);
+    try {
+      expect((await w([{ path: 'src/greet.ts', edits: [] }])).body.code).toBe('invalid_params');
+      expect((await w([{ path: 'src/greet.ts', edits: [{ old_string: '', new_string: 'x' }] }])).body).toMatchObject({
+        code: 'invalid_params',
+        path: 'src/greet.ts',
+        edit_index: 0,
+      });
+      const tooMany = Array.from({ length: 51 }, () => ({ old_string: 'Hi', new_string: 'Hi' }));
+      expect((await w([{ path: 'src/greet.ts', edits: tooMany }])).body.message).toContain('1–50');
+      expect((await w([{ path: 'logo.png', edits: [{ old_string: 'a', new_string: 'b' }] }])).body.code).toBe('invalid_path');
+      expect((await c.call('get_app', { app_id: app.app_id })).body.latest_version).toBe(2);
+    } finally {
+      await c.close();
+    }
+  });
+
+  it('edits next to content or delete are ignored as before, now with a warning', async () => {
+    const { app, c } = await appWithGreet();
+    try {
+      const r = await c.call('write_files', {
+        app_id: app.app_id,
+        files: [
+          { path: 'notes.txt', content: 'hello', edits: [{ old_string: 'h', new_string: 'j' }] },
+          { path: 'src/styles.css', delete: true, edits: [] },
+        ],
+        reasoning: 'Both',
+      });
+      expect(r.isError, r.text).toBe(false);
+      expect(r.body).toMatchObject({ version: 3, changed: ['notes.txt', 'src/styles.css'] });
+      expect(r.body.warnings).toMatchObject([
+        { code: 'edits_ignored', path: 'notes.txt' },
+        { code: 'edits_ignored', path: 'src/styles.css' },
+      ]);
+      expect((await c.call('read_file', { app_id: app.app_id, path: 'notes.txt' })).body.content).toBe('hello');
+      // An unknown argument's warning is added to them, not in their place.
+      const both = await c.call('write_files', {
+        app_id: app.app_id,
+        files: [{ path: 'notes.txt', content: 'again', edits: [{ old_string: 'a', new_string: 'b' }] }],
+        reasoning: 'Both',
+        dry_run: true,
+      });
+      expect((both.body.warnings as { code: string }[]).map((w) => w.code)).toEqual(['edits_ignored', 'unknown_argument']);
+    } finally {
+      await c.close();
+    }
+  });
+
+  it('refuses a secret introduced by an edit (secret_in_source, nothing stored)', async () => {
+    const { app, c } = await appWithGreet();
+    try {
+      const r = await c.call('write_files', {
+        app_id: app.app_id,
+        files: [{ path: 'src/greet.ts', edits: [{ old_string: 'Bye', new_string: `sk-${'a'.repeat(32)}` }] }],
+        reasoning: 'oops',
+      });
+      expect(r.body.code).toBe('secret_in_source');
+      expect((await c.call('get_app', { app_id: app.app_id })).body.latest_version).toBe(2);
+    } finally {
+      await c.close();
+    }
+  });
+
+  it("re-applies the edits when the same user's other session stored a version in between", async () => {
+    const { app, c } = await appWithGreet();
+    await c.close();
+    // Another session of Alice stores version 3 while this call compiles: its
+    // first attempt was based on 2, so it is re-applied on top of 3.
+    let raced = false;
+    const racing: TestDeps = {
+      ...deps,
+      compile: async (sources, opts) => {
+        if (!raced) {
+          raced = true;
+          await createVersion(app.app_id, [...unedited(sources), { path: 'notes.txt', content: 'other session' }], {
+            actor: { userId: P.alice.userId, kind: 'agent' },
+          });
+        }
+        return deps.compile(sources, opts);
+      },
+    };
+    const ctx: CallContext = { principal: P.alice, sessionId: 's-edit', deps: racing, modules: await racing.modules() };
+    const r = await writeFiles(ctx, {
+      app_id: app.app_id,
+      files: [{ path: 'src/greet.ts', edits: [{ old_string: 'Bye', new_string: 'Ciao' }] }],
+      reasoning: 'Edit while racing',
+    });
+    expect(r).toMatchObject({ version: 4, base_version: 3, changed: ['src/greet.ts'] });
+    const v4 = await getVersion(app.app_id, { number: 4 });
+    expect((await readVersionFile(v4!.id, 'notes.txt', 'source'))?.toString()).toBe('other session');
+    expect((await readVersionFile(v4!.id, 'src/greet.ts', 'source'))?.toString()).toContain('Ciao');
+  });
+
+  it('answers busy when the base keeps moving, and stores nothing of its own', async () => {
+    const { app, c } = await appWithGreet();
+    await c.close();
+    const racing: TestDeps = {
+      ...deps,
+      compile: async (sources, opts) => {
+        await createVersion(app.app_id, unedited(sources), { actor: { userId: P.alice.userId, kind: 'agent' } });
+        return deps.compile(sources, opts);
+      },
+    };
+    const ctx: CallContext = { principal: P.alice, sessionId: 's-busy', deps: racing, modules: await racing.modules() };
+    const err = await writeFiles(ctx, {
+      app_id: app.app_id,
+      files: [{ path: 'src/greet.ts', edits: [{ old_string: 'Bye', new_string: 'Ciao' }] }],
+      reasoning: 'Never lands',
+    }).catch((e) => e);
+    expect(err.code).toBe('busy');
+    // Three racing versions (3, 4, 5), none of them with the edit.
+    const v5 = await getVersion(app.app_id, { number: 5 });
+    expect(await getVersion(app.app_id, { number: 6 })).toBeNull();
+    expect((await readVersionFile(v5!.id, 'src/greet.ts', 'source'))?.toString()).toBe(GREET);
+  });
+});
+
 describe('single-writer lease', () => {
   const write = async (ctxDeps: TestDeps, who: ToolPrincipal, sessionId: string, appId: string, n: number) => {
     const ctx: CallContext = { principal: who, sessionId, deps: ctxDeps, modules: await ctxDeps.modules() };

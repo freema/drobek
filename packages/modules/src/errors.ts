@@ -58,6 +58,7 @@ export const CORE_ERROR_CODES: readonly string[] = [
   // MCP tools
   'invalid_params',
   'invalid_path',
+  'edit_mismatch',
   'secret_in_source',
   'app_locked',
   'app_locked_by_admin',
