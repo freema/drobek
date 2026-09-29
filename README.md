@@ -20,6 +20,9 @@ over the app, its users and its secrets.
 **[Gallery](https://www.drobek.app/gallery)** ·
 **[Docs](https://www.drobek.app/docs)**
 
+MCP Registry name: [`io.github.freema/drobek`](./server.json). The hosted
+Streamable HTTP endpoint is `https://drobek.app/mcp` and uses OAuth 2.1.
+
 ## Choose where to run it
 
 | | Get started |
@@ -34,12 +37,17 @@ connect to either instance.
 
 ## See what people build
 
+- [Drobek Tycoon](https://drobek-tycoon.drobek.app/) — a playable hosting-company simulator with three levels.
+- [Pokédex](https://pokedex.drobek.app/) — PokéAPI search and stats through drobek's proxy module, with a live request log.
+- [Pixel Wall](https://pixel-zed.drobek.app/) — a shared 64 × 40 canvas backed by auth, data and other platform modules.
 - [Pixel Crumbs](https://pixel-crumbs.drobek.app/) — a browser pixel-art and animation editor.
 - [Drobek Skok](https://drobek-skok.drobek.app/) — a pixel platformer with a leaderboard.
 - [Pekárna Drobek](https://pek-rna-drobek.drobek.app/) — a small bakery's demo website.
 
 These are public apps on drobek.app. [Browse the gallery](https://www.drobek.app/gallery)
 for more examples.
+
+[![Drobek Tycoon running on drobek](./docs/assets/drobek-tycoon.jpg)](https://drobek-tycoon.drobek.app/)
 
 ## Build your first app
 

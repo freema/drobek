@@ -34,6 +34,9 @@
 #            notes = the tag's CHANGELOG section plus the image name; a
 #            pre-release tag is marked pre-release, otherwise it is Latest.
 #            An existing release is left alone.
+#   registry (tags only, after promote) publishes the hosted Streamable HTTP
+#            endpoint from server.json to the official MCP Registry through
+#            GitHub OIDC. The release tag supplies the registry version.
 #
 # Images are linux/amd64 only (no ARM image in v1). A release image is built
 # from the tag with GIT_SHA = the tag's commit, VERSION = the tag and
@@ -360,3 +363,32 @@ jobs:
         env:
           VERSION: ${{ needs.e2e.outputs.version }}
         run: node scripts/npm-packages.mjs publish --version "$VERSION"
+
+  registry:
+    name: Official MCP Registry
+    runs-on: ubuntu-latest
+    needs: [e2e, promote]
+    if: github.ref_type == 'tag'
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use the release version in server.json
+        env:
+          VERSION: ${{ needs.e2e.outputs.version }}
+        run: |
+          jq --arg version "${VERSION#v}" '.version = $version' server.json > server.tmp
+          mv server.tmp server.json
+
+      - name: Install the official MCP publisher
+        run: |
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" \
+            | tar xz mcp-publisher
+
+      - name: Publish server metadata
+        run: |
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish server.json
