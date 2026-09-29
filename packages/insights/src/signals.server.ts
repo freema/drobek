@@ -5,6 +5,13 @@
  * self-evicts as a rolling window); `flushDay` mirrors the current day into the
  * durable `app_daily_stats` table so app_logs reads survive a Redis flush.
  *
+ * The failing paths of get_logs('requests') (NSO-380) that are not a file 404
+ * — a platform 4xx and every 5xx — live only in Redis: one hash per status
+ * class, app and day (`drobek:signals:fail:<class>:<app_id>:<day>`, field =
+ * the normalized path), capped at MAX_FAIL_PATH_KEYS distinct paths (the rest
+ * funnel into `__other__`) and TTL'd like the counters, so they cover the whole
+ * get_logs window. The file 404s keep their durable `path_404_counts`.
+ *
  * incrementServingSignal is called from @drobek/serving and MUST never throw or
  * block the response — every path is wrapped and swallows its own errors.
  */
@@ -13,12 +20,17 @@ import { getRedis } from '@drobek/core';
 import { appDailyStats, getDb } from '@drobek/db';
 import { LOGS_RETENTION_DAYS } from './limits.js';
 
-export type ServingSignalKind = 'request' | '5xx' | '404';
+/** `4xx` records only the path of a platform 4xx (the 4xx count lives in the module stats). */
+export type ServingSignalKind = 'request' | '5xx' | '404' | '4xx';
 
 /** Cap distinct 404 paths tracked per app/day (bounds hash cardinality). */
 const MAX_404_KEYS = 200;
 const OTHER_404 = '__other__';
 const MAX_404_PATH_LEN = 256;
+/** Cap distinct failing paths (platform 4xx / 5xx) tracked per class, app and day. */
+export const MAX_FAIL_PATH_KEYS = 100;
+
+export type FailClass = '4xx' | '5xx';
 
 // The hot counters outlive the get_logs window (M1-07) so every day of it can
 // still be flushed into app_daily_stats when it is read.
@@ -37,6 +49,11 @@ function fault5xxKey(appId: string, day: string): string {
 }
 function paths404Key(appId: string, day: string): string {
   return `drobek:signals:404:${appId}:${day}`;
+}
+
+/** The Redis hash of one app's failing paths of one status class on one UTC day. */
+export function failPathsKey(cls: FailClass, appId: string, day: string): string {
+  return `drobek:signals:fail:${cls}:${appId}:${day}`;
 }
 
 /** The three Redis counters of one app and day (request count, 5xx count, 404-by-path hash). */
@@ -88,8 +105,8 @@ export async function upsertDailyStats(rows: DailyStatsRow[]): Promise<void> {
     });
 }
 
-/** Normalize an untrusted request path into a bounded 404 hash field. */
-function normalize404Path(path: string | undefined): string {
+/** Normalize an untrusted request path into a bounded hash field (no query, no fragment). */
+export function normalizeSignalPath(path: string | undefined): string {
   if (!path) return '/';
   let p = path.split('?')[0].split('#')[0];
   if (!p.startsWith('/')) p = `/${p}`;
@@ -116,9 +133,12 @@ export async function incrementServingSignal(
       const k = fault5xxKey(appId, day);
       const n = await r.incr(k);
       if (n === 1) await r.expire(k, SIGNAL_TTL_SEC);
+      if (path !== undefined) await recordFailingPath(appId, '5xx', path, { redis: () => r as unknown as FailPathsRedis, day });
+    } else if (kind === '4xx') {
+      if (path !== undefined) await recordFailingPath(appId, '4xx', path, { redis: () => r as unknown as FailPathsRedis, day });
     } else {
       const k = paths404Key(appId, day);
-      let field = normalize404Path(path);
+      let field = normalizeSignalPath(path);
       // Bound cardinality: once the hash is full, funnel new paths to __other__.
       const exists = await r.hexists(k, field);
       if (!exists && (await r.hlen(k)) >= MAX_404_KEYS) field = OTHER_404;
@@ -127,6 +147,37 @@ export async function incrementServingSignal(
     }
   } catch {
     /* signals are best-effort — never fail the serving response */
+  }
+}
+
+/** The Redis commands the failing-path hashes use (ioredis satisfies it). */
+export interface FailPathsRedis {
+  hexists(key: string, field: string): Promise<number>;
+  hlen(key: string): Promise<number>;
+  hincrby(key: string, field: string, n: number): Promise<number>;
+  expire(key: string, sec: number): Promise<number>;
+}
+
+/**
+ * Count one failing request path of `appId` under its status class for the
+ * current UTC day: the path is normalized (no query, no fragment, ≤ 256
+ * chars), a new path past MAX_FAIL_PATH_KEYS counts as `__other__`.
+ * Best-effort, never throws.
+ */
+export async function recordFailingPath(
+  appId: string,
+  cls: FailClass,
+  path: string,
+  opts: { redis?: () => FailPathsRedis; day?: string } = {}
+): Promise<void> {
+  try {
+    const r = (opts.redis ?? (() => getRedis() as unknown as FailPathsRedis))();
+    const k = failPathsKey(cls, appId, opts.day ?? utcDay());
+    let field = normalizeSignalPath(path);
+    if (!(await r.hexists(k, field)) && (await r.hlen(k)) >= MAX_FAIL_PATH_KEYS) field = OTHER_404;
+    if ((await r.hincrby(k, field, 1)) === 1) await r.expire(k, SIGNAL_TTL_SEC);
+  } catch {
+    /* signals are best-effort */
   }
 }
 

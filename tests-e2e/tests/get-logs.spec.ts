@@ -213,9 +213,19 @@ test.describe('get_logs — runtime errors, compile history, request stats (M1-0
     expect((await hostRequest(host, '/__drobek/v1/hello/nope')).status).toBe(404);
     // A mutation without the SDK header → 403 (csrf_rejected), a 4xx of hello.
     expect((await hostRequest(host, '/__drobek/v1/hello/wave', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"name":"x"}' })).status).toBe(403);
+    // A missing file → 404, its path (never its query) listed under failing_paths (NSO-380).
+    expect((await hostRequest(host, '/favicon.ico?v=secret')).status).toBe(404);
 
     const today = new Date().toISOString().slice(0, 10);
-    type Day = { day: string; requests: number; count_5xx: number; count_404: number; modules: Record<string, Record<string, number>> };
+    type Paths = { path: string; count: number }[];
+    type Day = {
+      day: string;
+      requests: number;
+      count_5xx: number;
+      count_404: number;
+      modules: Record<string, Record<string, number>>;
+      failing_paths: { '4xx': Paths; '5xx': Paths };
+    };
     let day: Day | undefined;
     await expect
       .poll(
@@ -224,12 +234,21 @@ test.describe('get_logs — runtime errors, compile history, request stats (M1-0
           expect(r.isError, JSON.stringify(r.json)).toBe(false);
           expect(r.json.untrusted).toBe(true);
           day = (r.json.entries as Day[]).find((d) => d.day === today);
-          return (day?.modules.hello?.['4xx'] ?? 0) >= 1 && (day?.modules.hello?.['2xx'] ?? 0) >= 1;
+          return (
+            (day?.modules.hello?.['4xx'] ?? 0) >= 1 &&
+            (day?.modules.hello?.['2xx'] ?? 0) >= 1 &&
+            (day?.failing_paths['4xx'].some((p) => p.path === '/favicon.ico') ?? false)
+          );
         },
         { timeout: 5_000, intervals: [250] }
       )
       .toBe(true);
-    expect(day!.requests).toBeGreaterThanOrEqual(4);
+    expect(day!.requests).toBeGreaterThanOrEqual(5);
+    expect(day!.count_404).toBeGreaterThanOrEqual(1);
+    const failing4xx = day!.failing_paths['4xx'].map((p) => p.path);
+    expect(failing4xx).toEqual(expect.arrayContaining(['/favicon.ico', '/__drobek/v1/hello/wave', '/__drobek/v1/hello/nope']));
+    expect(failing4xx.some((p) => p.includes('?'))).toBe(false);
+    expect(Array.isArray(day!.failing_paths['5xx'])).toBe(true);
     expect(Object.keys(day!.modules.hello).sort()).toEqual(['2xx', '3xx', '4xx', '5xx']);
     expect(typeof day!.count_5xx).toBe('number');
     // Not an active module → never a row.

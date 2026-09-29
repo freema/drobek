@@ -1,5 +1,10 @@
 # Changelog — drobek (core)
 
+## Unreleased
+
+### Added
+- **`get_logs kind:"requests"` names the failing paths** (NSO-380): each day adds `failing_paths: { "4xx": [{ path, count }], "5xx": [{ path, count }] }` — the day's top 10 per class (missing files and platform 4xx under `4xx`; rate-limited 429s are not recorded). Path only (no query or fragment, ≤ 256 chars), no visitor data; at most 100 distinct paths per class, app and day, the rest counted as `__other__`. The existing fields and counts are unchanged.
+
 ## v0.5.3 — 2026-09-28
 
 ### Changed

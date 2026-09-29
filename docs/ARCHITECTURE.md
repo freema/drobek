@@ -408,7 +408,11 @@ All in-process (`apps/server/server/jobs.ts`), started with the server:
 
 Request counters for `get_logs('requests')` accumulate in Redis and are
 flushed into Postgres on read (the whole window in one pipelined round trip)
-and at most once a minute per app and day; reads never delete.
+and at most once a minute per app and day; reads never delete. The paths of
+failing requests are counted per app and UTC day, path only (no query, at
+most 100 distinct per class, the rest as `__other__`): a missing file's path
+is stored with the daily stats, a platform 4xx's or a 5xx's stays in Redis
+for the 30-day window.
 
 ## 9. Agents, the dashboard and abuse
 

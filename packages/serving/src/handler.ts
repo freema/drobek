@@ -142,8 +142,8 @@ export interface HandlerDeps {
   accessSecret: string | null;
   /** Fixed-window limiter for unlock attempts (true = allowed). */
   allowUnlockAttempt(appId: string, clientIp: string | null): Promise<boolean>;
-  /** Best-effort, fire-and-forget request/404/5xx counters. */
-  signal?(appId: string, kind: 'request' | '404' | '5xx', path?: string): void;
+  /** Best-effort, fire-and-forget request/404/5xx counters; `4xx` (a platform 4xx) and a 5xx with `path` record the failing path. */
+  signal?(appId: string, kind: 'request' | '404' | '4xx' | '5xx', path?: string): void;
   now?: () => number;
   /** `__Host-` + Secure app-access cookie (default true; false only on plain-http dev). */
   secureCookies?: boolean;
@@ -325,7 +325,9 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
       return { ...b, headers: { ...b.headers, ...security } };
     }
     const r = await deps.platform!(req, { app, target: req.target });
-    if (r.status >= 500) deps.signal?.(app.id, '5xx');
+    if (r.status >= 500) deps.signal?.(app.id, '5xx', req.path);
+    // A throttled 429 is not recorded: a flood must cost nothing past the limiter.
+    else if (r.status >= 400 && r.status !== 429) deps.signal?.(app.id, '4xx', req.path);
     return { ...r, headers: withAppSecurity(r.headers, security) };
   }
   if (locked) {
@@ -346,7 +348,7 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
   try {
     manifest = await deps.store.manifest(version.id);
   } catch (err) {
-    deps.signal?.(app.id, '5xx');
+    deps.signal?.(app.id, '5xx', req.path);
     throw err;
   }
   const hit = resolveServePath({ requestPath: decoded, routingMode: 'spa', has: (p) => manifest.has(p) });
@@ -384,7 +386,7 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
   const bytes = await deps.store.blob(entry.sha256);
   if (!bytes) {
     // metadata without bytes — fail closed
-    deps.signal?.(app.id, '5xx');
+    deps.signal?.(app.id, '5xx', req.path);
     return missing('no-file');
   }
   headers['Content-Length'] = String(bytes.length);

@@ -146,6 +146,21 @@ export interface ModuleStatRow {
 
 export type ModuleCounts = Record<StatusClass, number>;
 
+/** get_logs('requests') lists at most this many failing paths per status class and day. */
+export const FAILING_PATHS_TOP = 10;
+
+export interface FailingPath {
+  /** The request path only (no query, no fragment, ≤ 256 chars); `__other__` = paths past the per-day cap. */
+  path: string;
+  count: number;
+}
+
+/** One day's failing paths by status class, as counted ({ path: count }). */
+export interface DayFailingPaths {
+  '4xx'?: Record<string, number | string> | null;
+  '5xx'?: Record<string, number | string> | null;
+}
+
 export interface RequestsEntry {
   /** UTC day `YYYY-MM-DD`. */
   day: string;
@@ -155,29 +170,68 @@ export interface RequestsEntry {
   count_404: number;
   /** Module calls (`/__drobek/v1/<module>/…`) by status class. */
   modules: Record<string, ModuleCounts>;
+  /** The most frequent failing paths of the day per status class, ≤ 10 each, most frequent first. */
+  failing_paths: { '4xx': FailingPath[]; '5xx': FailingPath[] };
 }
 
 function emptyCounts(): ModuleCounts {
   return { '2xx': 0, '3xx': 0, '4xx': 0, '5xx': 0 };
 }
 
-/** Per-day totals + per-module status classes, newest day first, ≤ 100 days. */
-export function requestEntries(daily: DailyRow[], modules: ModuleStatRow[]): RequestsEntry[] {
+function addCounts(into: Map<string, number>, counts: Record<string, number | string> | null | undefined): void {
+  for (const [path, raw] of Object.entries(counts ?? {})) {
+    const n = Number(raw);
+    if (Number.isFinite(n) && n > 0) into.set(path, (into.get(path) ?? 0) + n);
+  }
+}
+
+function topPaths(counts: Map<string, number>): FailingPath[] {
+  return [...counts]
+    .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+    .slice(0, FAILING_PATHS_TOP)
+    .map(([path, count]) => ({ path, count }));
+}
+
+/**
+ * Per-day totals + per-module status classes, newest day first, ≤ 100 days.
+ * `failing` adds the day's platform-4xx / 5xx paths (NSO-380); the 4xx list
+ * also takes the day's file 404s (`path404Counts`).
+ */
+export function requestEntries(
+  daily: DailyRow[],
+  modules: ModuleStatRow[],
+  failing: Map<string, DayFailingPaths> = new Map()
+): RequestsEntry[] {
   const byDay = new Map<string, RequestsEntry>();
   const entry = (day: string) => {
     let e = byDay.get(day);
     if (!e) {
-      e = { day, requests: 0, count_5xx: 0, count_404: 0, modules: {} };
+      e = { day, requests: 0, count_5xx: 0, count_404: 0, modules: {}, failing_paths: { '4xx': [], '5xx': [] } };
       byDay.set(day, e);
     }
     return e;
+  };
+  const paths4xx = new Map<string, Map<string, number>>();
+  const paths5xx = new Map<string, Map<string, number>>();
+  const bucket = (m: Map<string, Map<string, number>>, day: string) => {
+    let b = m.get(day);
+    if (!b) m.set(day, (b = new Map()));
+    return b;
   };
   for (const d of daily) {
     const e = entry(d.day);
     e.requests += d.requestCount;
     e.count_5xx += d.count5xx;
     e.count_404 += Object.values(d.path404Counts ?? {}).reduce((a, n) => a + (Number(n) || 0), 0);
+    addCounts(bucket(paths4xx, d.day), d.path404Counts);
   }
+  for (const [day, f] of failing) {
+    if (!f['4xx'] && !f['5xx']) continue;
+    addCounts(bucket(paths4xx, day), f['4xx']);
+    addCounts(bucket(paths5xx, day), f['5xx']);
+  }
+  for (const [day, counts] of paths4xx) if (counts.size > 0) entry(day).failing_paths['4xx'] = topPaths(counts);
+  for (const [day, counts] of paths5xx) if (counts.size > 0) entry(day).failing_paths['5xx'] = topPaths(counts);
   for (const m of modules) {
     if (!(STATUS_CLASSES as readonly string[]).includes(m.statusClass)) continue;
     const e = entry(m.day);

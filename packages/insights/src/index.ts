@@ -110,6 +110,7 @@ export {
   type CompileEntry,
   type CompileRow,
   type DailyRow,
+  type FailingPath,
   type LogKind,
   type ModuleCounts,
   type ModuleStatRow,

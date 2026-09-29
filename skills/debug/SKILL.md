@@ -69,7 +69,9 @@ Fix = the line it names, in the same app, e.g. `"date-fns": "https://esm.sh/date
     seconds after a page ran; ask the user to open/reload the preview first.
   - `compile` — last 50 compiles: `{ at, version, ok, errors, warning_count, duration_ms, trigger }`
     (`version: null` = refused, nothing stored).
-  - `requests` — per day: `{ day, requests, count_5xx, count_404, modules: { <m>: { "2xx", "3xx", "4xx", "5xx" } } }`.
+  - `requests` — per day: `{ day, requests, count_5xx, count_404, modules: { <m>: { "2xx", "3xx", "4xx", "5xx" } }, failing_paths: { "4xx": [{ path, count }], "5xx": [{ path, count }] } }`.
+    `failing_paths` = the day's top 10 failing paths per class (a missing `/favicon.ico` shows up under `4xx`);
+    the path only, no query; `__other__` = paths past the per-day cap.
   - Kept 30 days (runtime: the newest 500 errors per app); nothing older exists.
 - A `drobek.*` call rejects with `DrobekError { status, code, message, details?, hint? }`;
   `drobek.proxy.fetch` resolves with a `Response` instead (check `res.ok`).

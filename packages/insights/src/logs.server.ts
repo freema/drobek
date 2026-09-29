@@ -25,12 +25,13 @@ import {
   requestEntries,
   runtimeEntries,
   type CompileEntry,
+  type DayFailingPaths,
   type RequestsEntry,
   type RuntimeEntry,
 } from './logs.js';
 import { dedupErrors } from './shape.js';
 import { moduleCountersKey, moduleStatRows, upsertModuleStats, type ModuleStatsRow } from './module-stats.server.js';
-import { dailyStatsRow, servingSignalKeys, upsertDailyStats, utcDay, type DailyStatsRow } from './signals.server.js';
+import { dailyStatsRow, failPathsKey, servingSignalKeys, upsertDailyStats, utcDay, type DailyStatsRow } from './signals.server.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** Rows scanned for the runtime dedup — the ring buffer keeps ≤ 500 per app anyway. */
@@ -155,20 +156,24 @@ export interface RequestLogOptions {
  * app_daily_stats and module_request_stats: ONE pipelined Redis round trip
  * and at most one statement per table, however many days (NSO-327 — the
  * window is up to 31 days). Best-effort: a miss is caught up by the next
- * flush, the counters are cumulative.
+ * flush, the counters are cumulative. The same round trip reads the day's
+ * failing-path hashes (Redis-only, NSO-380) and answers them.
  */
-async function flushRequestDays(appId: string, days: string[], redis: () => RequestLogRedis): Promise<void> {
-  if (days.length === 0) return;
+async function flushRequestDays(appId: string, days: string[], redis: () => RequestLogRedis): Promise<Map<string, DayFailingPaths>> {
+  const failing = new Map<string, DayFailingPaths>();
+  if (days.length === 0) return failing;
+  const PER_DAY = 6;
   let results: [Error | null, unknown][];
   try {
     const p = redis().pipeline();
     for (const day of days) {
       const k = servingSignalKeys(appId, day);
       p.get(k.req).get(k.fault5xx).hgetall(k.paths404).hgetall(moduleCountersKey(appId, day));
+      p.hgetall(failPathsKey('4xx', appId, day)).hgetall(failPathsKey('5xx', appId, day));
     }
     results = (await p.exec()) ?? [];
   } catch {
-    return;
+    return failing;
   }
   const at = (i: number): unknown => {
     const r = results[i];
@@ -179,15 +184,18 @@ async function flushRequestDays(appId: string, days: string[], redis: () => Requ
   const daily: DailyStatsRow[] = [];
   const modules: ModuleStatsRow[] = [];
   days.forEach((day, d) => {
-    const row = dailyStatsRow(appId, day, str(at(4 * d)), str(at(4 * d + 1)), hash(at(4 * d + 2)));
+    const i = PER_DAY * d;
+    const row = dailyStatsRow(appId, day, str(at(i)), str(at(i + 1)), hash(at(i + 2)));
     if (row) daily.push(row);
-    modules.push(...moduleStatRows(appId, day, hash(at(4 * d + 3))));
+    modules.push(...moduleStatRows(appId, day, hash(at(i + 3))));
+    failing.set(day, { '4xx': hash(at(i + 4)), '5xx': hash(at(i + 5)) });
   });
   await upsertDailyStats(daily).catch(() => undefined);
   await upsertModuleStats(modules).catch(() => undefined);
+  return failing;
 }
 
-/** Daily totals (requests / 5xx / 404) + module calls by status class, newest day first. */
+/** Daily totals (requests / 5xx / 404), module calls by status class and the top failing paths, newest day first. */
 export async function queryRequestLog(
   appId: string,
   since?: Date | string | null,
@@ -196,9 +204,10 @@ export async function queryRequestLog(
   const now = opts.now ?? new Date();
   const fromDay = utcDay(logsWindowStart(since, now));
   const today = utcDay(now);
+  let failing = new Map<string, DayFailingPaths>();
   if (opts.flush !== false) {
     // The hot counters of every day in the window that still lives in Redis.
-    await flushRequestDays(appId, daysBetween(fromDay, today), opts.redis ?? (() => getRedis() as unknown as RequestLogRedis));
+    failing = await flushRequestDays(appId, daysBetween(fromDay, today), opts.redis ?? (() => getRedis() as unknown as RequestLogRedis));
   }
   const db = getDb();
   const [daily, modules] = await Promise.all([
@@ -223,6 +232,7 @@ export async function queryRequestLog(
   ]);
   return requestEntries(
     daily.map((d) => ({ ...d, path404Counts: d.path404Counts as Record<string, number> | null })),
-    modules
+    modules,
+    failing
   );
 }
