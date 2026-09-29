@@ -52,7 +52,7 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     code: 'invalid_params',
     surface: 'MCP tool isError',
     meaning:
-      'An argument breaks the tool contract: more than 20 files in one write_files, the same path twice, deleting a file that does not exist, reasoning over 300 characters, an empty name, a non-positive version number — or a configure_module config that fails the module\'s schema (`issues[]` carries each field path) or contains a credential — or a query_data filter/sort/cursor the collection does not allow, or a limit outside 1–100.',
+      'An argument breaks the tool contract: more than 20 files in one write_files, the same path twice, deleting a file that does not exist, a write_files entry with none of `content` / `edits` / `delete` (or both `content` and `delete`), `edits` that is not 1–50 `{ old_string, new_string, replace_all? }` with a non-empty old_string, reasoning over 300 characters, an empty name, a non-positive version number — or a configure_module config that fails the module\'s schema (`issues[]` carries each field path) or contains a credential — or a query_data filter/sort/cursor the collection does not allow, or a limit outside 1–100.',
     fix: 'Read `message` (and `issues[].path`) — it names the argument — fix it and call again. Too many files: split into several write_files calls of at most 20. A module config: skill_info(module) shows the schema.',
   },
   {
@@ -61,6 +61,13 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     meaning:
       'A file path is unsafe (`..`, empty segment, control characters; a leading `/` is simply dropped) or has an extension apps may not contain / that write_files cannot write as text.',
     fix: 'Use app-relative paths like `src/App.tsx` with a text extension (.tsx .ts .jsx .js .mjs .css .json .html .txt .md .svg .webmanifest).',
+  },
+  {
+    code: 'edit_mismatch',
+    surface: 'MCP tool isError (write_files)',
+    meaning:
+      'An edit of a write_files `{ path, edits }` entry could not be applied to the version the write builds on (`base_version`): the file does not exist there (`reason: "file_not_found"`), its `old_string` is not in the file (`"not_found"`) or matches more than once without `replace_all: true` (`"not_unique"`, `matches`). `path` and the 0-based `edit_index` name the edit; edits of one file apply in order, each to the result of the previous one. Nothing was written: the whole call is refused.',
+    fix: 'read_file the file (of `base_version`) and copy `old_string` exactly — whitespace and line breaks included. Not unique: add surrounding lines until it matches once, or set `replace_all: true` to change every match. A new file: write it with `{ path, content }`. Then send the whole call again.',
   },
   {
     code: 'limit_exceeded',
@@ -93,7 +100,7 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
   {
     code: 'busy',
     surface: 'MCP tool isError; compile.errors[]',
-    meaning: 'The compiler is saturated (COMPILE_CONCURRENCY builds running, the queue wait exceeded COMPILE_QUEUE_TIMEOUT_MS). Nothing was stored.',
+    meaning: 'The compiler is saturated (COMPILE_CONCURRENCY builds running, the queue wait exceeded COMPILE_QUEUE_TIMEOUT_MS). From a write_files call with `edits`: another session of the same user kept storing new versions while the edits were applied. Nothing was stored.',
     fix: 'Retry the same write_files call in a few seconds.',
   },
   {

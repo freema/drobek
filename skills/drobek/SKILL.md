@@ -112,10 +112,24 @@ Before using a backend (login, stored data, forms, email, file uploads, external
 ## Write files, read the compile result
 
 `write_files({ app_id, files, reasoning })` applies 1–20 changes on top of the
-latest version — `{ path, content }` writes a text file, `{ path, delete: true }`
-removes one — and compiles. One call = one version = one compile, so change
-files that depend on each other in the SAME call. `reasoning` is one line
-(≤ 300 characters) shown in the version history.
+latest version — `{ path, content }` writes a text file, `{ path, edits }`
+changes part of an existing one, `{ path, delete: true }` removes one — and
+compiles. One call = one version = one compile, so change files that depend on
+each other in the SAME call. `reasoning` is one line (≤ 300 characters) shown
+in the version history.
+
+- To change a few lines of a file that already exists, send `edits` instead of
+  the whole file again:
+  `{ "path": "src/game.ts", "edits": [{ "old_string": "const SPEED = 4;", "new_string": "const SPEED = 6;" }] }`.
+  Each `old_string` must match the file exactly once (whitespace included) —
+  add surrounding lines to make it unique, or set `replace_all: true` to change
+  every match. A file's edits (1–50) apply in order, each to the result of the
+  previous one; `content`, `edits` and `delete` entries mix in one call.
+- An edit that does not apply refuses the WHOLE call with `edit_mismatch`
+  (`path`, 0-based `edit_index`, `reason`: `file_not_found` / `not_found` /
+  `not_unique`) and nothing is written: `read_file` the file, fix that edit
+  and send the call again. New files always go as `content`.
+- The result's `base_version` is the version your changes were applied to.
 
 - `compile.ok: true` → give the user the `preview_url`.
 - `compile.ok: false` → the version is saved (nothing is lost) but the preview

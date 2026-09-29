@@ -162,7 +162,10 @@ This document is the map of how that works. The neighbours:
 
 ## 3. The compile step
 
-`write_files` (1–20 changes) → validate the paths and limits → scan for
+`write_files` (1–20 changes) → apply them to the latest version (whole
+files, deletions, and exact-string `edits`; a call with edits is stored only
+on top of the version it was applied to and re-applied when the same user's
+other session stored one in between) → validate the paths and limits → scan for
 secrets (a hit refuses the write and stores nothing) → compile → store the new
 version (also when the compile failed, so no work is lost) → notify the serve
 cache. The compile result is part of the tool response.
