@@ -1,0 +1,18 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.freema/drobek",
+  "title": "Drobek",
+  "description": "Build, preview, version and publish small browser apps from coding agents over MCP.",
+  "version": "0.6.0",
+  "websiteUrl": "https://www.drobek.app/",
+  "repository": {
+    "url": "https://github.com/freema/drobek",
+    "source": "github"
+  },
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://drobek.app/mcp"
+    }
+  ]
+}
