@@ -227,6 +227,48 @@ const MODE_NOTE: Record<CaddyTlsMode, string> = {
     "on-demand — one certificate per app host (and per verified custom domain), issued at the first handshake and ONLY when drobek's ask endpoint allows it",
 };
 
+/**
+ * Content types Caddy compresses. An explicit list instead of encode's default
+ * (which has `text/*`): `text/event-stream` (MCP streamable HTTP, SSE a module
+ * proxies) must reach the client uncompressed, event by event.
+ */
+const CADDY_ENCODE_CONTENT_TYPES = [
+  'text/html*',
+  'text/css*',
+  'text/javascript*',
+  'text/plain*',
+  'text/markdown*',
+  'text/csv*',
+  'text/xml*',
+  'application/javascript*',
+  'application/json*',
+  'application/manifest+json*',
+  'application/ld+json*',
+  'application/xml*',
+  'application/xhtml+xml*',
+  'application/rss+xml*',
+  'application/atom+xml*',
+  'application/wasm*',
+  'application/vnd.ms-fontobject*',
+  'image/svg+xml*',
+  'image/x-icon*',
+  'image/vnd.microsoft.icon*',
+  'font/ttf*',
+  'font/otf*',
+] as const;
+
+const ENCODE: string[] = [
+  '\t# Compress text responses. Only 200s (a 206 range stays byte-exact), only the',
+  '\t# listed types: text/event-stream is left out so SSE (MCP) is never buffered.',
+  '\tencode zstd gzip {',
+  '\t\tminimum_length 1024',
+  '\t\tmatch {',
+  '\t\t\tstatus 200',
+  ...CADDY_ENCODE_CONTENT_TYPES.map((t) => `\t\t\theader Content-Type ${t}`),
+  '\t\t}',
+  '\t}',
+];
+
 /** Render the Caddyfile (tabs, like `caddy fmt`). */
 export function renderCaddyfile(config: CaddyConfig): string {
   const { mode, upstream } = config;
@@ -258,6 +300,7 @@ export function renderCaddyfile(config: CaddyConfig): string {
 
   out.push(
     '(drobek) {',
+    ...ENCODE,
     '\t# Internal endpoints (the TLS ask) are for Caddy only — never public.',
     '\t@internal path /api/internal /api/internal/*',
     '\thandle @internal {',
