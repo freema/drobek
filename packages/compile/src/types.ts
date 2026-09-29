@@ -17,8 +17,17 @@ export type CompileErrorCode =
   /** Waited longer than `queueTimeoutMs` for a compile slot. */
   | 'busy';
 
+export type CompileWarningCode =
+  | 'html_missing_lang'
+  | 'html_missing_viewport'
+  | 'html_missing_title'
+  | 'missing_favicon'
+  | 'a11y_img_alt'
+  | 'a11y_name'
+  | 'a11y_label';
+
 export interface CompileMessage {
-  code: CompileErrorCode;
+  code: CompileErrorCode | CompileWarningCode;
   text: string;
   /** App-relative path, e.g. `src/main.tsx`. */
   file?: string;

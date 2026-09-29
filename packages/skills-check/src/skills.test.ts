@@ -26,7 +26,7 @@ describe('skill_info() with every built-in module', () => {
   });
 
   it('the checker knows exactly the catalogue codes (+ the module codes)', () => {
-    expect([...CORE_ERROR_CODES].sort()).toEqual([...new Set(CORE_CODES.filter((c) => /^[a-z][a-z_]*$/.test(c)))].sort());
+    expect([...CORE_ERROR_CODES].sort()).toEqual([...new Set(CORE_CODES.filter((c) => /^[a-z][a-z0-9_]*$/.test(c)))].sort());
     const auth = sources.find((s) => s.name === 'auth')!;
     expect(knownErrorCodes(auth, BUILTIN_MODULES).has('invalid_code')).toBe(true);
     expect(knownErrorCodes(auth, BUILTIN_MODULES).has('ssrf_blocked')).toBe(false); // proxy's code, not auth's

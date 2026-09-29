@@ -191,7 +191,7 @@ export function renderLlmsFull(env: NodeJS.ProcessEnv = process.env, modules: re
     [
       '## Error catalogue',
       '',
-      'A failed tool call returns `isError: true` with `{ code, message, hint }` (the hint is the fix below). Compile problems are NOT tool failures: they come back in `compile.errors[]` with their own code. code — where — meaning — fix:',
+      'A failed tool call returns `isError: true` with `{ code, message, hint }` (the hint is the fix below). Compile errors come back in `compile.errors[]`; static HTML/accessibility warnings are non-fatal entries in `compile.warnings[]`. Neither is a tool failure. code — where — meaning — fix:',
       '',
       'An argument a tool does not take is ignored, never passed on, and the call goes ahead: the result (a failed one too) then carries `warnings: [{ code: "unknown_argument", message, ignored, accepted }]` — the names it ignored and every argument it takes; an untrusted-envelope tool (read_file, query_data, get_logs) sends it as its own text block after the envelope. A missing or mistyped required argument is still an input validation error before the tool runs.',
       '',
