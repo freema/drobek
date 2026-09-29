@@ -16,6 +16,8 @@ import { extensionOf } from './content-type.js';
 export interface ServedFile {
   sha256: string;
   size: number;
+  /** Compiler output (NSO-381: only a built bundle has its inline source map split off on the production hosts). */
+  built?: true;
 }
 
 export type ServedManifest = Map<string, ServedFile>;
@@ -39,7 +41,7 @@ export function servedManifest(files: Iterable<StoredFile>): ServedManifest {
   const out: ServedManifest = new Map();
   const sources: StoredFile[] = [];
   for (const f of files) {
-    if (f.kind === 'built') out.set(f.path, { sha256: f.sha256, size: f.size });
+    if (f.kind === 'built') out.set(f.path, { sha256: f.sha256, size: f.size, built: true });
     else sources.push(f);
   }
   for (const f of sources) {

@@ -16,6 +16,8 @@ export interface LimitDoc {
 
 /** write_files: max changed files per call (1 call = 1 version = 1 compile). */
 export const WRITE_FILES_MAX = 20;
+/** write_files: max `edits` in one file entry (NSO-382). */
+export const WRITE_FILES_EDITS_MAX = 50;
 /** write_files: max length of `reasoning`. */
 export const REASONING_MAX_CHARS = 300;
 /** The single-writer lease on an app, renewed by every write. */
@@ -96,6 +98,11 @@ export const LIMITS: LimitDoc[] = [
     env: 'tool: write_files files',
     default: String(WRITE_FILES_MAX),
     meaning: 'Max changed files per write_files call (more → invalid_params).',
+  },
+  {
+    env: 'tool: write_files edits',
+    default: `${WRITE_FILES_EDITS_MAX} per file`,
+    meaning: 'Max edits in one `{ path, edits }` entry of write_files (more → invalid_params).',
   },
   {
     env: 'tool: write_files reasoning',

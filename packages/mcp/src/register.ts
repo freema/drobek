@@ -116,8 +116,18 @@ export const INPUT_SCHEMAS = {
       .array(
         z.object({
           path: z.string().describe('App-relative path, e.g. src/App.tsx.'),
-          content: z.string().optional().describe('The full new text content (omit when deleting).'),
+          content: z.string().optional().describe('The full new text content (omit when deleting or editing).'),
           delete: z.boolean().optional().describe('true removes the file.'),
+          edits: z
+            .array(
+              z.object({
+                old_string: z.string().describe('Exact text in the file; must match exactly once unless replace_all.'),
+                new_string: z.string().describe('The text that replaces it.'),
+                replace_all: z.boolean().optional().describe('true replaces every match.'),
+              })
+            )
+            .optional()
+            .describe('Instead of content: exact-string replacements in the existing file, applied in order.'),
         })
       )
       .describe('1–20 changes applied on top of the latest version.'),
@@ -296,7 +306,8 @@ function splitToolArgs(name: AppToolName, args: unknown): { known: Payload; warn
 function withWarnings<R extends { content: { type: 'text'; text: string }[]; structuredContent?: Payload }>(result: R, warnings: ToolWarning[]): R {
   if (warnings.length === 0) return result;
   if (result.structuredContent) {
-    const body = { ...result.structuredContent, warnings };
+    const own = result.structuredContent.warnings;
+    const body = { ...result.structuredContent, warnings: [...(Array.isArray(own) ? own : []), ...warnings] };
     return { ...result, content: [{ type: 'text' as const, text: JSON.stringify(body, null, 2) }], structuredContent: body };
   }
   return { ...result, content: [...result.content, { type: 'text' as const, text: JSON.stringify({ warnings }, null, 2) }] };

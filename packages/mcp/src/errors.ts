@@ -11,6 +11,8 @@ export const TOOL_ERROR_CODES = [
   'forbidden',
   'invalid_params',
   'invalid_path',
+  // NSO-382: a write_files edit that does not apply to the latest version.
+  'edit_mismatch',
   'limit_exceeded',
   'secret_in_source',
   'app_locked',

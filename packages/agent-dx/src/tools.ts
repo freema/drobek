@@ -144,24 +144,25 @@ export const TOOL_DOCS: ToolDoc[] = [
     title: 'Write files (new version)',
     scope: 'write (editor+ role in the workspace)',
     description:
-      'The core loop: apply 1–20 file changes on top of the latest version — `{path, content}` writes a text file, `{path, delete:true}` removes one — then the server compiles (esbuild; nothing is executed) and stores the result as ONE new version. The compile result comes back directly: `compile.ok`, and `errors[]` with file/line/column/text. On ok:false the version is still saved (nothing is lost) but the preview keeps serving the last version that compiled — fix the errors and write again. `readiness` is the publish readiness report of the new version: `blocking` repeats the compile errors (ready:false), `warnings` are things to fix before the user publishes (e.g. missing_title) — each {code,file?,line?,message,hint}; warnings never stop a write or a publish. A credential in a file is refused (secret_in_source) and nothing is stored. Takes the app\'s single-writer lease for 3 minutes (renewed by every write).',
+      'The core loop: apply 1–20 file changes on top of the latest version — `{path, content}` writes a text file, `{path, edits:[{old_string, new_string, replace_all?}]}` changes part of an existing one (each old_string must match exactly once unless replace_all; edits apply in order), `{path, delete:true}` removes one; the kinds mix freely in one call. For a small change to a big file send `edits`, not the whole file again. An edit that does not apply (no such file, old_string absent or not unique) refuses the WHOLE call with edit_mismatch naming `path` and `edit_index` — nothing is written. `base_version` in the result is the version the changes were applied to. Then the server compiles (esbuild; nothing is executed) and stores the result as ONE new version. The compile result comes back directly: `compile.ok`, and `errors[]` with file/line/column/text. On ok:false the version is still saved (nothing is lost) but the preview keeps serving the last version that compiled — fix the errors and write again. `readiness` is the publish readiness report of the new version: `blocking` repeats the compile errors (ready:false), `warnings` are things to fix before the user publishes (e.g. missing_title) — each {code,file?,line?,message,hint}; warnings never stop a write or a publish. A credential in a file is refused (secret_in_source) and nothing is stored. Takes the app\'s single-writer lease for 3 minutes (renewed by every write).',
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     fields: [
       { name: 'app_id', type: 'string', required: true, description: 'The app id.' },
       {
         name: 'files',
-        type: '({path, content} | {path, delete:true})[] (1–20)',
+        type: '({path, content} | {path, edits:{old_string, new_string, replace_all?}[] (1–50)} | {path, delete:true})[] (1–20)',
         required: true,
         description: 'Changes applied to the latest version; untouched files are kept.',
       },
       { name: 'reasoning', type: 'string (≤ 300 chars)', required: true, description: 'One line: why this change (shown in the version history).' },
     ],
     returns:
-      '{ version, compile:{ ok, errors:[{code,file,line,column,text}], warnings:[…] }, preview_url, changed:[paths], readiness:{ ready, blocking:[{code,file?,line?,message,hint}], warnings:[{code,file?,line?,message,hint}], warnings_omitted? } }',
+      '{ version, base_version, compile:{ ok, errors:[{code,file,line,column,text}], warnings:[…] }, preview_url, changed:[paths], readiness:{ ready, blocking:[{code,file?,line?,message,hint}], warnings:[{code,file?,line?,message,hint}], warnings_omitted? } }',
     example: {
       app_id: 'k3v9x0…',
       files: [
         { path: 'src/main.tsx', content: "import { createRoot } from 'react-dom/client';\n…" },
+        { path: 'src/App.tsx', edits: [{ old_string: '<h1>Shifts</h1>', new_string: '<h1>Shift table</h1>' }] },
         { path: 'src/old.ts', delete: true },
       ],
       reasoning: 'Add the shift table',

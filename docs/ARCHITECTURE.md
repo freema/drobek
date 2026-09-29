@@ -162,7 +162,10 @@ This document is the map of how that works. The neighbours:
 
 ## 3. The compile step
 
-`write_files` (1–20 changes) → validate the paths and limits → scan for
+`write_files` (1–20 changes) → apply them to the latest version (whole
+files, deletions, and exact-string `edits`; a call with edits is stored only
+on top of the version it was applied to and re-applied when the same user's
+other session stored one in between) → validate the paths and limits → scan for
 secrets (a hit refuses the write and stores nothing) → compile → store the new
 version (also when the compile failed, so no work is lost) → notify the serve
 cache. The compile result is part of the tool response.
@@ -235,7 +238,12 @@ before any byte of the app is touched:
 10. the version the host serves (**404** "not published" / "nothing compiled"),
     then the file: built output wins over sources, `.ts/.tsx/.jsx` sources and
     `drobek.json` are never served, extension-less paths fall back to
-    `index.html`, `ETag` = sha256 → **304**;
+    `index.html`, `ETag` = sha256 → **304**. Every JS/CSS bundle is stored
+    with an inline source map; the preview and version hosts serve it as
+    stored, while the production host and custom domains serve the code
+    without it (ending in `sourceMappingURL=<file>.map`) and answer
+    `/<file>.map` with the map, split at serve time and cached — browsers
+    fetch it only when devtools opens;
 11. no such file: the app's **asset** at that path, if any (see below).
 
 **Assets** (video, audio, images, fonts) share the app's URL space: the

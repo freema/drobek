@@ -37,6 +37,13 @@ export interface CreateVersionOptions {
   reasoning?: string | null;
   /** Compile result, when the caller already compiled (write_files does). */
   compile?: { status: CompileStatus; errors?: unknown };
+  /**
+   * NSO-382: the version number the new files were derived from (null = the
+   * app had none). Set, the write refuses with `version_conflict` when another
+   * version landed since; unset, the new version is stored on top of whatever
+   * is latest.
+   */
+  baseVersion?: number | null;
 }
 
 const VERSION_COLUMNS = {
@@ -146,6 +153,9 @@ export async function createVersion(
         .onConflictDoUpdate({ target: blobs.sha256, set: { createdAt: sql`now()` } });
     }
     const number = await nextNumber(tx, appId);
+    if (opts.baseVersion !== undefined && number - 1 !== (opts.baseVersion ?? 0)) {
+      throw new AppsError('version_conflict', `Version ${number - 1} landed after version ${opts.baseVersion ?? 0} this write was based on.`);
+    }
     const [version] = await tx
       .insert(appVersions)
       .values({
