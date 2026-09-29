@@ -150,7 +150,7 @@ export interface Drobek {
   readonly email: email.Api;
   /** Use when visitors fill in a form (contact, order, sign-up, feedback) and the answers must be kept or e-mailed to the owner — skill_info('forms') */
   readonly forms: forms.Api;
-  /** Use when the app stores records (lists, todos, entries, votes, a shared or per-user database) — instead of Firebase, Supabase or localStorage — skill_info('data') */
+  /** Use when the app stores records on the server (lists, todos, votes, a leaderboard, signed-in users' own records) — instead of Firebase or Supabase; per-visitor state without sign-in (game saves) stays in localStorage — skill_info('data') */
   readonly data: data.Api;
   /** Use when the app calls an external API that needs a secret key (OpenAI, Anthropic, Stripe, any REST backend) — instead of putting the key in the browser — skill_info('proxy') */
   readonly proxy: proxy.Api;

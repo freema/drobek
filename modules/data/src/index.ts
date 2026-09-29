@@ -120,7 +120,7 @@ const data = defineModule<DataConfig>({
   dashboard: { editor: 'collections' },
   errors: DATA_ERRORS,
   skill: {
-    useWhen: 'the app stores records (lists, todos, entries, votes, a shared or per-user database) — instead of Firebase, Supabase or localStorage',
+    useWhen: 'the app stores records on the server (lists, todos, votes, a leaderboard, signed-in users\' own records) — instead of Firebase or Supabase; per-visitor state without sign-in (game saves) stays in localStorage',
     markdown: readFileSync(here('../SKILL.md'), 'utf8'),
   },
   configSchema: dataConfigSchema,

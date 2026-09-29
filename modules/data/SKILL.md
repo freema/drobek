@@ -2,10 +2,10 @@
 
 ## 1. When to use
 
-The app keeps data: todos, entries, votes, a shared list, a per-user
-notebook. drobek stores the records; the app calls `drobek.data`. Never use Firebase,
-Supabase, localStorage-as-database (UI preferences are fine) or an own backend.
-Signed-in users (`user` / `owner` / `admin` rules) come from `skill_info('auth')`.
+The app keeps data on the server — todos, votes, a leaderboard, a per-user notebook — through
+`drobek.data`, never Firebase, Supabase or an own backend. Signed-in users: `skill_info('auth')`.
+Per-visitor state without sign-in (game saves, settings) stays in `localStorage`: a visitor's
+record has no `_owner`, so it cannot be kept to that visitor; send only a score to a collection.
 
 ## 2. Minimal working code
 
