@@ -216,8 +216,9 @@ test('app hosts: preview / publish / rollback / --vN, served files, headers, cac
       published_url: urlOf(prodHost(slug)),
       domains: [prodHost(slug)],
       assets: 'draft',
-      // NSO-384: the published version's readiness report (the html template has a <title>).
-      readiness: { ready: true, blocking: [], warnings: [] },
+      // NSO-384: the published version's readiness report (the template has a <title>);
+      // NSO-388: its .tsx is type-checked in the background — clean, done or still running.
+      readiness: { ready: true, blocking: [], warnings: [], typecheck: expect.stringMatching(/^(pending|checked)$/) },
     });
     const prod1 = await hostRequest(prodHost(slug));
     expect(prod1.status).toBe(200);
