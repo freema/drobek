@@ -1,5 +1,10 @@
 # Changelog — drobek (core)
 
+## Unreleased
+
+### Changed
+- **Caddy compresses responses** (NSO-393): the generated Caddyfile adds `encode zstd gzip` to every site (dashboard, `*.<APPS_DOMAIN>`, custom domains) in all TLS modes — `200` responses of at least 1 KB with a text type (HTML, CSS, JavaScript, JSON, XML, SVG, fonts, wasm); a 443 KB app bundle goes over the wire as ~134 KB gzip. `text/event-stream` is not in the list, so MCP's SSE responses still arrive unbuffered; `206` ranges and images pass through unchanged. Self-hosters pick it up with `task selfhost:init` (or `task caddy:config`) and a Caddy reload.
+
 ## v0.5.3 — 2026-09-28
 
 ### Changed

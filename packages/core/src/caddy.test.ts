@@ -78,6 +78,26 @@ describe('proxy + secret invariants (every mode)', () => {
     for (const env of modes) expect(render(env)).not.toContain(TOKEN);
   });
 
+  it('compresses text responses on every site, never SSE or a range', () => {
+    for (const env of [...modes, { ...PROD, TLS_DNS_PROVIDER: 'cloudflare', TLS_CUSTOM_DOMAINS: '1', TLS_ASK_TOKEN: TOKEN }]) {
+      const out = render(env);
+      const start = out.indexOf('(drobek) {');
+      const snippet = out.slice(start, out.indexOf('\n}\n', start));
+      expect(snippet).toMatch(/\n\tencode zstd gzip \{\n\t\tminimum_length 1024\n\t\tmatch \{\n\t\t\tstatus 200\n/);
+      for (const t of ['text/html*', 'text/css*', 'text/javascript*', 'application/json*', 'image/svg+xml*']) {
+        expect(snippet).toContain(`\t\t\theader Content-Type ${t}\n`);
+      }
+      const patterns = [...out.matchAll(/^\t\t\theader Content-Type (\S+)$/gm)].map((m) => m[1]);
+      const matches = (ct: string) => patterns.some((p) => (p.endsWith('*') ? ct.startsWith(p.slice(0, -1)) : ct === p));
+      expect(matches('text/event-stream')).toBe(false);
+      expect(matches('text/html; charset=utf-8')).toBe(true);
+      expect(matches('image/png')).toBe(false);
+      const sites = out.split('\n').filter((l) => /^\S.* \{$/.test(l) && l !== '(drobek) {');
+      expect(sites.length).toBeGreaterThanOrEqual(2);
+      expect(out.match(/^\timport drobek$/gm)).toHaveLength(sites.length);
+    }
+  });
+
   it('on_demand appears only together with the ask guard', () => {
     for (const env of modes) {
       const out = render(env);
