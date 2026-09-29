@@ -73,6 +73,7 @@ import {
   readBlobs,
   readVersionFile,
   restore,
+  scheduleVersionTypecheck,
   setGalleryListing,
   suggestSlug,
   validateAppSlug,
@@ -99,6 +100,7 @@ import { LOG_KINDS, logsWindowStart, type LogKind } from '@drobek/insights';
 import { dbErrorForLog } from '@drobek/db';
 import { ToolError, lockedByAdmin, notFound, publishRefused } from './errors.js';
 import type { Lease } from './lease.js';
+import { filesReadiness, storedReadiness } from './readiness.js';
 import {
   appsInWorkspace,
   appsOfMember,
@@ -338,9 +340,12 @@ export async function getApp(ctx: CallContext, args: { app_id: string }) {
     (m) => confirmUrl(ctx.modules.deps.env, app.workspaceSlug, app.slug, m),
     enabled
   );
+  // NSO-388: the newest version's readiness report — with its type errors once the background check is done.
+  const readiness = head ? await storedReadiness(ctx, app.id, enabled, head.number) : undefined;
   return {
     ...items[0],
     compile_errors: head?.compileStatus === 'error' ? toCompileOut(head.compileErrors, ctx.modules, enabled) : [],
+    ...(readiness ? { readiness } : {}),
     briefing: briefing(ctx, enabled),
     files: (detail?.files ?? [])
       .filter((f) => f.kind === 'source')
@@ -484,7 +489,7 @@ async function compileAndStore(
   reasoning: string,
   trigger: 'create_app' | 'write_files',
   baseVersion?: number | null
-): Promise<{ number: number; result: CompileResult }> {
+): Promise<{ number: number; result: CompileResult; typecheck?: 'pending' }> {
   // The bare `drobek` import → this server's versioned SDK (immutable caching);
   // `drobek/<module>` → that module's inline source, built into the app (M1-02);
   // every entry loads the error beacon first (M1-07, drobek.json can opt out).
@@ -499,7 +504,7 @@ async function compileAndStore(
     await logCompile(ctx, app.id, null, result, trigger);
     throw err;
   }
-  const { number } = await createVersion(app.id, versionFiles(sources, result), {
+  const { id, number } = await createVersion(app.id, versionFiles(sources, result), {
     actor: actorOf(ctx),
     reasoning,
     compile: { status: result.ok ? 'ok' : 'error', errors: result.ok ? null : result.errors },
@@ -507,7 +512,9 @@ async function compileAndStore(
   });
   await logCompile(ctx, app.id, number, result, trigger);
   await ctx.deps.notifyAppChanged({ app_id: app.id, slug: app.slug, version: number });
-  return { number, result };
+  // NSO-388: the TypeScript check runs in the background — the write never waits for it.
+  const typecheck = result.ok ? scheduleVersionTypecheck({ id, appId: app.id }, sources, ctx.deps.log) : undefined;
+  return { number, result, ...(typecheck ? { typecheck } : {}) };
 }
 
 // ── create_app ───────────────────────────────────────────────────────────────
@@ -911,7 +918,7 @@ export async function writeFiles(
     }
     checkSizes(files, ctx.deps);
 
-    let stored: { number: number; result: CompileResult };
+    let stored: Awaited<ReturnType<typeof compileAndStore>>;
     try {
       stored = await compileAndStore(ctx, app, files, args.reasoning.trim(), 'write_files', hasEdits ? base : undefined);
     } catch (err) {
@@ -924,13 +931,16 @@ export async function writeFiles(
       }
       continue;
     }
-    const { number, result } = stored;
+    const { number, result, typecheck } = stored;
+    const enabled = await ctx.modules.enabledModules(app.workspaceId);
+    const compile = compileOut(result, ctx.modules, enabled);
     return {
       version: number,
       base_version: base,
-      compile: compileOut(result, ctx.modules, await ctx.modules.enabledModules(app.workspaceId)),
+      compile,
       preview_url: previewUrl(app.slug, ctx.deps.env),
       changed,
+      readiness: await filesReadiness(ctx, app.id, enabled, files, compile.errors, typecheck),
       ...(await previewNote(app.id, result.ok)),
       ...(warnings.length > 0 ? { warnings } : {}),
     };
@@ -1020,6 +1030,8 @@ export async function publishApp(ctx: CallContext, args: { app_id: string; versi
   await ctx.deps.notifyAppChanged({ app_id: app.id, slug: app.slug, version: result.number, kind: 'publish' });
   await ctx.modules.runHook('onPublish', { id: app.id, slug: app.slug, workspaceId: app.workspaceId, version: result.number });
   const url = publishedUrl(app.slug, ctx.deps.env);
+  // NSO-384: warnings only — a version that compiled is published whatever they say.
+  const readiness = await storedReadiness(ctx, app.id, await ctx.modules.enabledModules(app.workspaceId), result.number);
   return {
     published_version: result.number,
     previous_version: result.previousNumber,
@@ -1029,6 +1041,7 @@ export async function publishApp(ctx: CallContext, args: { app_id: string; versi
     // NSO-362: which asset set went live with it — the draft (what the preview shows) or, for a
     // rollback, the set the version had when it was last published.
     assets: result.assets === 'draft' ? 'draft' : 'as_last_published',
+    ...(readiness ? { readiness } : {}),
   };
 }
 

@@ -205,6 +205,8 @@ test('core tools: create → broken write → fix → limits → restore → rea
     expect(badCompile.ok).toBe(false);
     expect(badCompile.errors[0]).toMatchObject({ file: 'src/main.tsx', line: 6 });
     expect(bad.json.preview_version).toBe(1);
+    // NSO-384: the readiness report repeats the compile errors as its blocking class.
+    expect(bad.json.readiness).toMatchObject({ ready: false, blocking: [{ code: 'build_error', file: 'src/main.tsx', line: 6 }] });
     const v2 = await callTool(a.client, 'get_app', { app_id: appId });
     expect(v2.json).toMatchObject({ latest_version: 2, compile_status: 'error' });
     expect((v2.json.compile_errors as { line: number }[])[0].line).toBe(6);
@@ -222,6 +224,11 @@ test('core tools: create → broken write → fix → limits → restore → rea
     expect(fixed.json).toMatchObject({ version: 3, compile: { ok: true } });
     expect(fixed.json.preview_url).toMatch(previewRe(slug));
     expect(fixed.json.preview_version).toBeUndefined();
+    // NSO-388: write_files never waits for the background type check; get_app has it a moment on.
+    expect(fixed.json.readiness).toEqual({ ready: true, blocking: [], warnings: [], typecheck: 'pending' });
+    await expect
+      .poll(async () => (await callTool(a.client, 'get_app', { app_id: appId })).json.readiness, { timeout: 30_000 })
+      .toEqual({ ready: true, blocking: [], warnings: [], typecheck: 'checked' });
 
     // 21 files in one call → invalid_params, nothing stored.
     const tooMany = await callTool(a.client, 'write_files', {

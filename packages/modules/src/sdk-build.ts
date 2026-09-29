@@ -50,6 +50,8 @@ export interface SdkBundle {
    * app's own import map (M1-02) — they are not part of `js`.
    */
   inline: Record<string, string>;
+  /** Module name → the declarations of `drobek/<name>` (the server's type check of app sources, NSO-388). */
+  inlineTypes: Record<string, string>;
   /** The error beacon script every compiled app imports (M1-07). */
   beacon: BeaconScript;
 }
@@ -172,6 +174,7 @@ export async function buildSdk(
   beaconEntry: string = sdkBeaconEntry()
 ): Promise<SdkBundle> {
   const inline: Record<string, string> = {};
+  const inlineTypes: Record<string, string> = {};
   for (const m of modules) {
     if (m.sdk && !existsSync(toPath(m.sdk.entry))) {
       throw new Error(`module "${m.name}": sdk.entry does not exist: ${toPath(m.sdk.entry)}`);
@@ -180,6 +183,7 @@ export async function buildSdk(
       const file = toPath(m.sdk.inline.entry);
       if (!existsSync(file)) throw new Error(`module "${m.name}": sdk.inline.entry does not exist: ${file}`);
       inline[inlineSpecifier(m.name)] = readFileSync(file, 'utf8');
+      inlineTypes[m.name] = m.sdk.inline.types;
     }
   }
   const result = await esbuild.build({
@@ -204,6 +208,7 @@ export async function buildSdk(
     url: `${SDK_PATH}?v=${hash}`,
     modules: modules.filter((m) => m.sdk).map((m) => m.name),
     inline,
+    inlineTypes,
     beacon: await buildBeaconScript(beaconEntry),
   };
 }

@@ -41,6 +41,9 @@ importers:
       '@drobek/auth':
         specifier: workspace:*
         version: link:../../packages/auth
+      '@drobek/compile':
+        specifier: workspace:*
+        version: link:../../packages/compile
       '@drobek/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -584,16 +587,25 @@ importers:
 
   packages/compile:
     dependencies:
+      '@drobek/agent-dx':
+        specifier: workspace:*
+        version: link:../agent-dx
+      '@types/react':
+        specifier: ^19.0.10
+        version: 19.2.17
+      '@types/react-dom':
+        specifier: ^19.0.4
+        version: 19.2.3(@types/react@19.2.17)
       esbuild:
         specifier: ^0.25.0
         version: 0.25.12
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
     devDependencies:
       '@types/node':
         specifier: ^22
         version: 22.20.0
-      typescript:
-        specifier: ^5.7.3
-        version: 5.9.3
       vitest:
         specifier: ^3.0.7
         version: 3.2.6(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.1)
@@ -652,6 +664,9 @@ importers:
       '@drobek/auth':
         specifier: workspace:*
         version: link:../auth
+      '@drobek/compile':
+        specifier: workspace:*
+        version: link:../compile
       '@drobek/core':
         specifier: workspace:*
         version: link:../core

@@ -7,7 +7,7 @@
  * (EMAIL_TRANSPORT / RESEND_API_KEY / SMTP_HOST) → apply core migrations →
  * load the platform modules (DROBEK_MODULES: their migrations, the composed
  * SDK, the skills — a bad module stops the start, M1-01) →
- * mount the app-host dispatcher (M0-06), then React Router (Vite middleware in
+ * install the TypeScript check runner (NSO-388) → mount the app-host dispatcher (M0-06), then React Router (Vite middleware in
  * dev, `build/server` in production) behind the MCP resource → start
  * background jobs + the serve-cache subscriber → listen.
  */
@@ -21,6 +21,7 @@ import { docsUrlConfigError, errorHint } from '@drobek/agent-dx';
 import { appsOriginConfigError, assetLimitsOf, createAssetUploadHandler, previewUrl, publishApprovalConfigError } from '@drobek/apps';
 import { trustProxyConfigError } from '@drobek/auth';
 import { createConsoleLogger, secretsConfigError } from '@drobek/core';
+import { TypecheckRunner, installTypecheckRunner, typecheckLimitsFromEnv } from '@drobek/compile/typecheck';
 import { dbErrorForLog, runCoreMigrations } from '@drobek/db';
 import { dnsMockWarning, domainsConfigError } from '@drobek/domains';
 import { emailConfigError } from '@drobek/email';
@@ -75,6 +76,14 @@ const modules = await moduleRuntime({ log: createConsoleLogger('modules') }).cat
   console.error(dbErrorForLog(err));
   process.exit(1);
 });
+
+// NSO-388: the background TypeScript check of app versions, against this server's SDK declarations.
+const typecheck = new TypecheckRunner({
+  limits: typecheckLimitsFromEnv(process.env),
+  sdk: { dts: modules.sdk.dts, inline: modules.sdk.inlineTypes },
+  log: createConsoleLogger('typecheck'),
+});
+installTypecheckRunner(typecheck);
 
 // Created up front so Vite's HMR websocket can share the app port in dev
 // (a separate HMR port would not be published from the container).
@@ -140,6 +149,7 @@ async function shutdown(signal: string): Promise<void> {
   server.close();
   await jobs.stop();
   await serveCache.stop();
+  await typecheck.close();
   process.exit(0);
 }
 process.on('SIGTERM', () => void shutdown('SIGTERM'));

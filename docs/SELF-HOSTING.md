@@ -374,6 +374,8 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `COMPILE_MAX_FILES` / `COMPILE_MAX_FILE_BYTES` / `COMPILE_MAX_TOTAL_BYTES` | 200 / 524288 / 5242880 | per app version |
 | `COMPILE_MAX_IMPORT_DEPTH` | 50 | depth of a relative import chain |
 | `COMPILE_TIMEOUT_MS` / `COMPILE_CONCURRENCY` / `COMPILE_QUEUE_TIMEOUT_MS` | 10000 / 4 / 10000 | per build; builds at once; max queue wait (then `busy`) |
+| `READINESS_MAX_WARNINGS` | 50 | warnings one publish readiness report lists (write_files, publish, the app page); the rest are counted in `warnings_omitted` |
+| `TYPECHECK_WORKERS` / `TYPECHECK_TIMEOUT_MS` / `TYPECHECK_MAX_MEMORY_MB` / `TYPECHECK_MAX_FILES` | 1 / 20000 / 512 / 150 | the background TypeScript check of each stored version (`type_error` readiness warnings): checks at once in worker threads (0 = off), time and heap per check, max .ts/.tsx files per app; a check over a limit gives no type warnings and is logged |
 | `BEACON_RATE_LIMIT` / `BEACON_APP_RATE_LIMIT` / `BEACON_RATE_WINDOW_MS` | 60 / 600 / 60000 | browser error reports per app+IP and per app per window |
 | `BEACON_MAX_EVENTS_PER_APP` / `BEACON_RETENTION_DAYS` / `BEACON_SAMPLE_RATE` | 500 / 30 / 1 | the per-app error buffer (newest N, max age) and sampling |
 | `LOGS_PRUNE_INTERVAL_MS` | 3600000 | how often the server removes `get_logs` rows past their retention for every app (errors past the buffer above, compiles and daily request stats older than 30 days) |

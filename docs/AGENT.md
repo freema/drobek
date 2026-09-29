@@ -115,9 +115,9 @@ answers `not_found`, the same as one that does not exist.
 | `duplicate_app` | write, editor+ in the target | not destructive | A copy of a gallery app whose owner allows duplicates (`from`: its slug or its address on this server — app host, verified custom domain or `/duplicate/<slug>`; another server's address is `invalid_params`), in the given workspace or the personal one: the source's published files as version 1 of a new, unpublished app that remembers its source (`duplicated_from` in get_app), and the source's module settings proposed through the copy's confirmation flow (`modules.applied` / `pending` with `confirm_url` / `skipped`; e-mail addresses, proxy upstreams and sync sources dropped). Never secrets, data, end users, uploads, assets or domains. `not_duplicable`, `gallery_disabled`, `rate_limited` (`DUPLICATES_PER_USER_HOUR`), `limit_exceeded`. |
 | `get_app` | read, any role | read-only | One app: the briefing, its files, the last 20 versions, the lock, the module configs (secrets as `hasSecret` only), the gallery state (with `allow_duplicate` and read-only `likes` and 30-day `opens`), `duplicated_from` for a copy, its custom domains in short (`domains`: host, status, primary), `can_publish`, `publishing`. |
 | `read_file` | read, any role | read-only | A file of the latest (or a given) version, inside an untrusted envelope. |
-| `write_files` | write, editor+ | destructive | 1–20 changes → one new version → one compile; returns `{ version, base_version, compile: { ok, errors, warnings }, preview_url, changed }`. An entry writes a whole file (`{ path, content }`), deletes one (`{ path, delete: true }`) or edits one in place (`{ path, edits: [{ old_string, new_string, replace_all? }] }`: exact-string replacements applied in order to the file of `base_version`, each `old_string` matching once unless `replace_all`); the kinds mix in one call. An edit that does not apply refuses the whole call with `edit_mismatch` (`path`, `edit_index`, `reason`). A secret in a file refuses the write. |
+| `write_files` | write, editor+ | destructive | 1–20 changes → one new version → one compile; returns `{ version, base_version, compile: { ok, errors, warnings }, preview_url, changed, readiness }`. An entry writes a whole file (`{ path, content }`), deletes one (`{ path, delete: true }`) or edits one in place (`{ path, edits: [{ old_string, new_string, replace_all? }] }`: exact-string replacements applied in order to the file of `base_version`, each `old_string` matching once unless `replace_all`); the kinds mix in one call. An edit that does not apply refuses the whole call with `edit_mismatch` (`path`, `edit_index`, `reason`). A secret in a file refuses the write. `readiness` is the publish readiness report (below). |
 | `restore_version` | write, editor+ | destructive | A new version with the files of an old one (rolls the working copy back); when that version was published, the draft assets go back to the ones it served then (`assets_restored`). |
-| `publish` | publish, editor+ | destructive, idempotent, open world | Puts a compiled version on `<slug>.<APPS_DOMAIN>` and the verified domains, with the app's current assets frozen for it (an older version: the assets it served when it was last published) — the answer's `assets` is `"draft"` when the draft set the preview shows went live (production serves it now) and `"as_last_published"` for a rollback to an earlier set. Only when the user asks. A workspace the operator blocked gets `publish_blocked`; on a server with `PUBLISH_APPROVAL=approval` an unapproved workspace gets `publish_not_approved` (an approval request is already e-mailed) — both with the operator's `contact`. |
+| `publish` | publish, editor+ | destructive, idempotent, open world | Puts a compiled version on `<slug>.<APPS_DOMAIN>` and the verified domains, with the app's current assets frozen for it (an older version: the assets it served when it was last published) — the answer's `assets` is `"draft"` when the draft set the preview shows went live (production serves it now) and `"as_last_published"` for a rollback to an earlier set. Only when the user asks. A workspace the operator blocked gets `publish_blocked`; on a server with `PUBLISH_APPROVAL=approval` an unapproved workspace gets `publish_not_approved` (an approval request is already e-mailed) — both with the operator's `contact`. The answer carries the published version's `readiness` report; its warnings never stop a publish. |
 | `set_gallery_listing` | publish, editor+ | not destructive, idempotent, open world | Lists a published app in the server's public gallery with a ≤ 160-character description, changes the description, or unlists it. Listing needs `user_confirmed: true` — the user's explicit yes (else `user_confirmation_required`); unlisting needs none. `allow_duplicate` (listing only, covered by the same confirmation) lets signed-in people copy the app from the gallery; omitted keeps the choice. `gallery_disabled` when the server runs no gallery, `gallery_hidden` when the operator hid the app. |
 | `set_workspace_publishing` | publish, super-admin only | not destructive, idempotent | Sets a workspace's publishing: `blocked` (refused in every mode, its editors and admins e-mailed), `allowed` (may publish even under `PUBLISH_APPROVAL=approval`) or `default` (the server mode decides). Returns `{ workspace, publishing, mode, can_publish_now, changed }`. Needs `user_confirmed: true` — the super-admin's explicit yes. Registered only for a super-admin's grant; live apps keep serving after a block (the takedown is separate). |
 | `skill_info` | read, any signed-in user | read-only | `skill_info()` lists the server's skills; `skill_info('<name>')` returns one (for a module also its SDK types, config schema, limits, secret names, its own error codes, and the facts the dashboard's workspace Modules page shows: version, source, contract range, availability, required modules, slots with their contributors and its own contributions). An opt-in module carries `availability: "opt-in"`; with `app_id` it also says `enabled_for_workspace` for that app's workspace. |
@@ -221,6 +221,53 @@ only the curated embeds, and no `window.claude.*` runtime API
 the same procedure as `/drobek:port-artifact` (Claude Code, Cursor) and the
 `port-artifact-to-drobek` skill (Codex). `task eval -- --only d` has a
 fresh agent port a fixture artifact and checks the result.
+
+**Publish readiness.** `write_files` and `publish` answer a `readiness`
+report — the dashboard's app page shows the same report for the newest
+version above the version list: `{ ready, blocking, warnings,
+warnings_omitted? }`, each entry `{ code, file?, line?, message, hint }` from
+the error catalogue. `blocking` is the compile errors (the only thing that
+stops a publish, as before; a credential is refused before anything is
+stored); `warnings` never stop a write or a publish. The report is
+deterministic and reads only the version's source files and the app's module
+configs — no app code runs. The checks: `missing_title` (index.html has
+no, or an empty, `<title>`) and the module rules audit over the app's module
+configs — `data_public_write_no_schema` / `data_public_write_unbounded` (a
+collection anyone may create or update without a schema, or with strings
+without `maxLength` / extra properties), `data_public_read_personal` (a
+public read of e-mail, phone or address fields), `rule_needs_auth_module`
+(a data, forms or proxy rule that needs a sign-in while the auth module is
+not active), `proxy_public_upstream` (an upstream anonymous visitors may
+call) and `module_change_pending` (a change still waiting for the owner's
+confirmation). Each names the collection, form or upstream and the exact
+`configure_module` fix. The forms module has no per-form limit or captcha
+setting (honeypot, time token and the per-IP / per-app limits always apply),
+so a public form is not a warning. `xss_html_sink`, `xss_eval` and
+`xss_url_sink` are the client-side XSS check (a token-level lint of the scripts and inline `<script>`s
+for innerHTML/outerHTML/insertAdjacentHTML/document.write/
+dangerouslySetInnerHTML, eval/new Function/string timers, and DOM href/src/
+location or a JSX frame/script `src` set from a value that is not a literal — literals, templates
+without `${}` and escaped substitutions pass; vendored and `.min.js` files
+are skipped). `READINESS_MAX_WARNINGS` (default 50) caps the
+listed warnings; the rest are counted in `warnings_omitted`. The checks live
+in `packages/compile/src/readiness/checks/` — one file per check, one line
+in its registry.
+
+**Type check.** esbuild strips TypeScript types without checking them, so a
+type error compiles and fails in the browser. After a write stores a version
+that compiled, the server type-checks its `.ts`/`.tsx` files in the
+background — the TypeScript checker over the in-memory files, the server's
+`sdk.d.ts` (and the `drobek/<module>` declarations) and React's types, in a
+worker thread; it analyses the sources and never runs them. `write_files`
+does not wait: its report says `typecheck: "pending"`. The result is stored
+with the version; `get_app` (its `readiness`), `publish` and the app page
+then list each error as a `type_error` warning (`file`, `line`, message
+`TS<code>: …`) with `typecheck: "checked"`. A check over
+`TYPECHECK_TIMEOUT_MS`, `TYPECHECK_MAX_MEMORY_MB` or `TYPECHECK_MAX_FILES`
+gives `typecheck: "unavailable"` and no type warnings (the server logs it);
+`TYPECHECK_WORKERS=0` turns it off (no `typecheck` field). Settings: strict,
+without `noImplicitAny`; an import-map package without types is `any`;
+JS-only apps are not checked. A type warning never blocks a publish.
 
 **Untrusted output.** `read_file`, `query_data` and `get_logs` return content
 written by app authors, end users and browsers. Their text result is wrapped

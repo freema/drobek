@@ -17,6 +17,7 @@
     "@drobek/apps": "workspace:*",
     "@drobek/audit": "workspace:*",
     "@drobek/auth": "workspace:*",
+    "@drobek/compile": "workspace:*",
     "@drobek/core": "workspace:*",
     "@drobek/dashboard": "workspace:*",
     "@drobek/db": "workspace:*",

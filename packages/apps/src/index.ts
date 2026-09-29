@@ -29,6 +29,8 @@ export {
   versionZip,
   type CreateVersionOptions,
 } from './versions.server.js';
+export { versionReadiness, versionSources, type VersionReadinessOptions } from './readiness.server.js';
+export { scheduleVersionTypecheck } from './typecheck.server.js';
 export { crc32, zipStream, type ZipEntry } from './zip.js';
 export {
   SLUG_RELEASE_AFTER_MS,

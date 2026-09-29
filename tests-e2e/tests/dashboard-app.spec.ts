@@ -145,6 +145,9 @@ test('app page: publish, rollback, restore and unpublish from the UI change what
   await expect(page.getByTestId('app-preview-url')).toHaveAttribute('href', urlOf(previewHost(app.slug)));
   await expect(page.getByTestId('app-compile-status')).toHaveAttribute('data-status', 'ok');
   await expect(page.locator('[data-testid="app-tab"][aria-current="page"]')).toHaveAttribute('data-tab', 'overview');
+  // NSO-384: the newest version passed the publish readiness checks (it has a <title>).
+  await expect(page.getByTestId('readiness-section')).toHaveAttribute('data-state', 'ready');
+  await expect(page.getByTestId('readiness-section')).toHaveAttribute('data-version', '2');
   // "Open" goes to the version host (a link, never a frame).
   await expect(row(2).getByTestId('version-open-link')).toHaveAttribute('href', urlOf(versionHost(app.slug, 2)));
   expect((await hostRequest(versionHost(app.slug, 1))).body).toContain('<h1>one</h1>');
@@ -187,6 +190,55 @@ test('app page: publish, rollback, restore and unpublish from the UI change what
 
   await page.waitForLoadState('networkidle');
   expect(problems).toEqual([]);
+});
+
+test('app page: the background TypeScript check lists a type_error after a reload, never blocking @local', async ({ page, request }) => {
+  skipUnlessLocal();
+  const email = uniqueEmail('dash-types');
+  await loginViaEmail(page, request, email);
+  const ws = await personalWorkspaceOf(email);
+  const app = await seedApp({ workspaceId: ws.id });
+  // A version nobody type-checked yet (seeded, like one from before NSO-388): opening the page schedules it.
+  await seedVersion({
+    appId: app.id,
+    files: [
+      { path: 'index.html', content: '<!doctype html><html><head><title>Typed</title></head><body><div id="root"></div></body></html>' },
+      { path: 'src/main.ts', content: "const count: number = 'three';\nconsole.log(count);\n" },
+    ],
+  });
+
+  await page.goto(`/workspaces/${ws.slug}/apps/${app.slug}`);
+  const section = page.getByTestId('readiness-section');
+  const typeError = section.locator('[data-testid="readiness-warning"][data-code="type_error"]');
+  await expect(async () => {
+    await page.reload();
+    await expect(typeError).toBeVisible({ timeout: 1_000 });
+  }).toPass({ timeout: 30_000 });
+  await expect(typeError).toContainText('src/main.ts:1');
+  await expect(typeError).toContainText("TS2322: Type 'string' is not assignable to type 'number'.");
+  await expect(section).toHaveAttribute('data-state', 'warnings');
+  await expect(section).toContainText('never block Publish');
+});
+
+test('app page: "Before you publish" lists a readiness warning and Publish still goes through @local', async ({ page, request }) => {
+  skipUnlessLocal();
+  const email = uniqueEmail('dash-ready');
+  await loginViaEmail(page, request, email);
+  const ws = await personalWorkspaceOf(email);
+  const app = await seedApp({ workspaceId: ws.id });
+  await seedVersion({ appId: app.id, files: [{ path: 'index.html', content: '<!doctype html><html><head></head><body><h1>untitled</h1></body></html>' }] });
+
+  await page.goto(`/workspaces/${ws.slug}/apps/${app.slug}`);
+  const section = page.getByTestId('readiness-section');
+  await expect(section).toHaveAttribute('data-state', 'warnings');
+  await expect(section.locator('[data-testid="readiness-warning"][data-code="missing_title"]')).toContainText('index.html');
+  await expect(section).toContainText('never block Publish');
+
+  // A warning never blocks: the version publishes and production serves it.
+  const row = page.locator('[data-testid="version-row"][data-version="1"]');
+  await row.getByTestId('publish-button').click();
+  await expect(row.getByTestId('version-published')).toBeVisible();
+  expect((await hostRequest(prodHost(app.slug))).body).toContain('<h1>untitled</h1>');
 });
 
 test('app page: a viewer sees versions, files and settings but no action; every POST is 403 @local', async ({
