@@ -241,6 +241,12 @@ test('core tools: create → broken write → fix → limits → restore → rea
     const v4 = await callTool(a.client, 'get_app', { app_id: appId });
     expect((v4.json.versions as { number: number }[]).map((v) => v.number)).toEqual([4, 3, 2, 1]);
     expect((v4.json.files as { path: string }[]).map((f) => f.path).sort()).toEqual(TEMPLATE_FILES);
+    expect(v4.json).not.toHaveProperty('warnings');
+
+    // NSO-378: an argument the tool does not take is ignored and named in warnings.
+    const extra = await callTool(a.client, 'get_app', { app_id: appId, user_confirmed: true });
+    expect(extra.isError, extra.text).toBe(false);
+    expect(extra.json).toMatchObject({ app_id: appId, warnings: [{ code: 'unknown_argument', ignored: ['user_confirmed'], accepted: ['app_id'] }] });
 
     // read_file: a missing path → not_found; an old version is addressable.
     const missing = await callTool(a.client, 'read_file', { app_id: appId, path: 'src/nope.tsx' });

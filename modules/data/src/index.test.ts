@@ -453,6 +453,22 @@ describe('REST: rules', () => {
     const csrf = await ctx().request('POST', '/guestbook', { body: { text: 'x' }, headers: { 'x-drobek-sdk': '' } });
     expect(csrf.status).toBe(403);
   });
+
+  it('NSO-377: a collection declared only in the pending change → 409 pending_confirmation; the rest answers as before', async () => {
+    const pendingConfig = { collections: { ...CONFIG.collections, scores: { rules: { read: 'public', create: 'public' } } } };
+    const t = createModuleTestContext(data, { db, app: { id: appA, slug: 'notes', workspaceId }, config: CONFIG, pendingConfig, origin: 'http://notes--preview.apps.localhost' });
+    const list = await t.request('GET', '/scores');
+    expect(list).toMatchObject({ status: 409, body: { error: 'pending_confirmation', details: { collection: 'scores' }, hint: "skill_info('data')" } });
+    expect((list.body as { message: string }).message).toBe('The collection "scores" is not available yet: it waits for the app owner\'s confirmation.');
+    expect((await t.request('POST', '/scores', { body: { score: 1 } })).body).toMatchObject({ error: 'pending_confirmation' });
+    expect((await t.request('GET', '/scores/abc')).body).toMatchObject({ error: 'pending_confirmation' });
+    // Nothing is served from it or stored in it.
+    expect(await countRows(appA, 'scores')).toBe(0);
+    // Undeclared everywhere → still 404; declared collections keep their current rules.
+    expect((await t.request('GET', '/secrets')).body).toMatchObject({ error: 'not_found' });
+    expect((await t.request('POST', '/guestbook', { body: { text: 'x' } })).status).toBe(201);
+    expect((await t.request('GET', '/members')).status).toBe(401);
+  });
 });
 
 describe('REST: schema, quota, rate limit', () => {
@@ -995,6 +1011,36 @@ describe('NSO-324: removed collections do not leave orphan records', () => {
     expect(await recordsAuthority.get(view(appB), 'todos', other._id)).toMatchObject({ title: 'other app' });
     expect(await purges()).toEqual([{ actor: owner, target: 'notes', meta: { collection: 'todos', records: 3, module: 'data' } }]);
     expect(await (await rt.records({ id: appA, slug: 'notes', workspaceId }))!.orphans()).toEqual([]);
+  });
+
+  it('NSO-377: a pending new collection answers pending_confirmation on the app host until confirmed; a pending rule change is not applied early', async () => {
+    const rt = await runtimeFor(async () => ANON);
+    const host = (path: string) => rt.handle(hostGet(`/__drobek/v1/data${path}`, 'notes'), { id: appA, slug: 'notes', workspaceId });
+    const held = await rt.configure({
+      app: app(),
+      module: 'data',
+      patch: { collections: { scores: { rules: { read: 'public', create: 'public' } }, todos: { rules: { read: 'public' } } } },
+      actorUserId: owner,
+    });
+    expect(held).toMatchObject({ applied: false });
+    const pending = await host('/scores');
+    expect(pending.status).toBe(409);
+    expect(JSON.parse(String(pending.body))).toMatchObject({ error: 'pending_confirmation', details: { collection: 'scores' } });
+    // todos keeps its current rule (read: user) while the opening to public waits.
+    expect((await host('/todos')).status).toBe(401);
+    expect((await host('/nope')).status).toBe(404);
+
+    await rt.confirm({ app: app(), module: 'data', userId: owner });
+    expect((await host('/scores')).status).toBe(200);
+    expect((await host('/todos')).status).toBe(200);
+  });
+
+  it('a rejected new collection is undeclared again (404)', async () => {
+    const rt = await runtimeFor(async () => ANON);
+    await rt.configure({ app: app(), module: 'data', patch: { collections: { scores: { rules: { read: 'public', create: 'public' } } } }, actorUserId: owner });
+    await rt.reject({ app: app(), module: 'data', userId: owner });
+    const res = await rt.handle(hostGet('/__drobek/v1/data/scores', 'notes'), { id: appA, slug: 'notes', workspaceId });
+    expect(res.status).toBe(404);
   });
 
   it('a rejected removal keeps the records', async () => {

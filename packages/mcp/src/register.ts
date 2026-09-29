@@ -9,6 +9,9 @@
  * so a violation answers with drobek's own `invalid_params` + hint instead of
  * the SDK's generic validation text.
  *
+ * Unknown arguments (NSO-378) are accepted, as they always were, and never
+ * reach a tool body; the result names them in `warnings` (see toolInput).
+ *
  * Every tool answers its JSON as text AND as `structuredContent` — except the
  * three that return app- or user-written content (read_file, query_data,
  * get_logs, NSO-324): they answer ONLY the text inside the untrusted envelope
@@ -244,6 +247,61 @@ export const INPUT_SCHEMAS = {
 
 type Payload = Record<string, unknown>;
 
+/** A note on a tool result that did not stop the call (NSO-378); `warnings[]` on the result. */
+interface ToolWarning {
+  code: 'unknown_argument';
+  message: string;
+  /** The argument names the tool ignored (at most 20 listed, each cut at 64 characters). */
+  ignored: string[];
+  /** Every argument the tool takes. */
+  accepted: string[];
+}
+
+const MAX_LISTED_ARGS = 20;
+const MAX_ARG_NAME = 64;
+
+/**
+ * The registered input schema of a tool: its shape as a LOOSE object, so the
+ * handler sees the unknown keys it has to report; `additionalProperties` is
+ * dropped from the listed JSON Schema so tools/list stays what it was.
+ */
+function toolInput(name: AppToolName) {
+  return z.looseObject(INPUT_SCHEMAS[name]).meta({ additionalProperties: undefined });
+}
+
+/** The known arguments of a call, and the warning for the rest (null when there is none). */
+function splitToolArgs(name: AppToolName, args: unknown): { known: Payload; warning: ToolWarning | null } {
+  const accepted = Object.keys(INPUT_SCHEMAS[name]);
+  const known: Payload = {};
+  const ignored: string[] = [];
+  for (const [k, v] of Object.entries(args && typeof args === 'object' ? (args as Payload) : {})) {
+    if (accepted.includes(k)) known[k] = v;
+    else ignored.push(k);
+  }
+  if (ignored.length === 0) return { known, warning: null };
+  const listed = ignored.slice(0, MAX_LISTED_ARGS).map((k) => (k.length > MAX_ARG_NAME ? `${k.slice(0, MAX_ARG_NAME)}…` : k));
+  const more = ignored.length > listed.length ? ` (and ${ignored.length - listed.length} more)` : '';
+  return {
+    known,
+    warning: {
+      code: 'unknown_argument',
+      message: `${name} ignored ${listed.map((k) => JSON.stringify(k)).join(', ')}${more}: it takes no such argument${ignored.length > 1 ? 's' : ''}. It takes ${accepted.length > 0 ? accepted.join(', ') : 'no arguments'}.`,
+      ignored: listed,
+      accepted,
+    },
+  };
+}
+
+/** `result` with `warnings`: in the JSON (text + structuredContent), or — for an untrusted envelope — as its own text block after it. */
+function withWarnings<R extends { content: { type: 'text'; text: string }[]; structuredContent?: Payload }>(result: R, warnings: ToolWarning[]): R {
+  if (warnings.length === 0) return result;
+  if (result.structuredContent) {
+    const body = { ...result.structuredContent, warnings };
+    return { ...result, content: [{ type: 'text' as const, text: JSON.stringify(body, null, 2) }], structuredContent: body };
+  }
+  return { ...result, content: [...result.content, { type: 'text' as const, text: JSON.stringify({ warnings }, null, 2) }] };
+}
+
 type ToolResult = { content: { type: 'text'; text: string }[]; structuredContent?: Payload };
 
 function jsonResult(payload: Payload): ToolResult {
@@ -346,12 +404,15 @@ export function registerAppTools(
       {
         title: doc.title,
         description: doc.description,
-        inputSchema: INPUT_SCHEMAS[name],
+        inputSchema: toolInput(name),
         annotations: { title: doc.title, ...doc.annotations },
       },
       // The SDK infers args from the schema; each body re-validates what it relies on.
-      (async (args: A, extra: { sessionId?: string }) => {
+      (async (raw: unknown, extra: { sessionId?: string }) => {
         const d = getDeps();
+        const { known, warning } = splitToolArgs(name, raw);
+        const args = known as A;
+        const warnings = warning ? [warning] : [];
         try {
           const ctx: CallContext = {
             principal,
@@ -359,14 +420,17 @@ export function registerAppTools(
             deps: d,
             modules: await d.modules(),
           };
-          return shape(await run(ctx, args), args);
+          return withWarnings(shape(await run(ctx, args), args), warnings);
         } catch (err) {
-          if (err instanceof ToolError) return errorResult(err.toBody());
+          if (err instanceof ToolError) return withWarnings(errorResult(err.toBody()), warnings);
           // A takedown that landed between the tool's own check and the write (NSO-293).
-          if (err instanceof AppsError && err.code === 'app_locked_by_admin') return errorResult(lockedByAdmin(err.reason).toBody());
+          if (err instanceof AppsError && err.code === 'app_locked_by_admin') return withWarnings(errorResult(lockedByAdmin(err.reason).toBody()), warnings);
           d.log.error('mcp tool failed', { tool: name, error: dbErrorForLog(err, { stack: true }) });
-          return errorResult(
-            new ToolError('internal_error', 'drobek hit an internal error; nothing more is known to the agent. Retry once, then tell the user.').toBody()
+          return withWarnings(
+            errorResult(
+              new ToolError('internal_error', 'drobek hit an internal error; nothing more is known to the agent. Retry once, then tell the user.').toBody()
+            ),
+            warnings
           );
         }
       }) as never

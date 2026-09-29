@@ -2,7 +2,17 @@
 
 ## Unreleased
 
+### Added
+- **MCP tools name the arguments they ignore** (NSO-378): an argument a tool does not take (e.g. `publish({ app_id, user_confirmed: true })`) is still accepted and never passed on, and the result — a failed one too — now carries `warnings: [{ code: "unknown_argument", message, ignored, accepted }]`. `read_file`, `query_data` and `get_logs` send it as a text block after the untrusted envelope. `tools/list` is unchanged; a call without unknown arguments answers exactly as before.
+
+### Fixed
+- **A data collection that waits for the owner's confirmation says so** (NSO-377): `/__drobek/v1/data/<collection>` answers `409 pending_confirmation` (`details.collection`) instead of `404 not_found` "Declare it first" when the collection is declared only in the app's pending change. What is applied or confirmed is unchanged. Modules get the pending config as the optional `ctx.pendingConfig` (`createModuleTestContext({ pendingConfig })` in tests).
+
 ### Changed
+- **Agents find the start skill first** (NSO-379): the MCP server sends `instructions` on initialize (start with `list_apps`; before creating or changing an app call `skill_info('start')`, read the briefing), and `list_apps` answers an additive `next` naming `skill_info('start')` when the server has that skill. Existing fields are unchanged.
+- **`publish`'s `assets: "draft"` is explained** (NSO-390): the tool description, the briefing, `skills/drobek` and `docs/AGENT.md` say it means the uploads the preview shows went live with the version (production serves them now). The value is unchanged.
+- **Installable apps** (NSO-390): the briefing and `skills/drobek` have an "Installable app (home screen)" section — `manifest.webmanifest` via `write_files` (served as `application/manifest+json`), PNG icons through `create_asset_upload`, `apple-touch-icon`, `viewport-fit=cover` with safe-area padding, `display: standalone` / `fullscreen`, install from the published URL.
+- **Per-visitor state belongs in `localStorage`** (NSO-376): the data skill, its "use when" line, the briefing (when the data module is listed) and `skills/drobek` say that state of one visitor without sign-in (game saves, settings) stays in the browser, because the data module has no anonymous per-visitor identity; `drobek.data` is for shared data and signed-in users' records, and the two combine.
 - **Caddy compresses responses** (NSO-393): the generated Caddyfile adds `encode zstd gzip` to every site (dashboard, `*.<APPS_DOMAIN>`, custom domains) in all TLS modes — `200` responses of at least 1 KB with a text type (HTML, CSS, JavaScript, JSON, XML, SVG, fonts, wasm); a 443 KB app bundle goes over the wire as ~134 KB gzip. `text/event-stream` is not in the list, so MCP's SSE responses still arrive unbuffered; `206` ranges and images pass through unchanged. Self-hosters pick it up with `task selfhost:init` (or `task caddy:config`) and a Caddy reload.
 
 ## v0.5.3 — 2026-09-28

@@ -59,6 +59,14 @@ export interface BriefingSkill {
   use_when: string;
 }
 
+/**
+ * Where per-visitor state goes (NSO-376): the data module has no anonymous
+ * per-visitor identity — a visitor's records carry no owner — so state that
+ * belongs to one visitor without sign-in stays in the browser.
+ */
+const VISITOR_STATE_RULE =
+  '- Per-visitor state without sign-in (game saves, settings, a half-filled form) belongs in the browser\'s `localStorage`: the data module has no anonymous per-visitor identity — records a visitor creates without signing in carry no owner, so they cannot be kept to that visitor. `drobek.data` is for data that is shared (a leaderboard, a guestbook, votes) or belongs to signed-in users (`owner` rules with `skill_info(\'auth\')`). Combine them: keep the save in `localStorage` and send only what others should see (a score) to a collection.';
+
 function skillsSection(skills: BriefingSkill[]): string[] {
   const rule =
     '- Before using a backend (login, stored data, forms, email, file uploads, external APIs), call `skill_info` with the skill\'s name and follow it exactly. `skill_info()` lists the skills; `configure_module` sets a module\'s per-app config (sensitive changes wait for the owner\'s confirmation — give the user the `confirm_url`).';
@@ -76,7 +84,33 @@ function skillsSection(skills: BriefingSkill[]): string[] {
     '- Secrets (API keys, tokens) are set by the app owner in the drobek dashboard — never ask for their values, never put them in files or config.',
     '- Available skills:',
     ...skills.map((s) => `  - \`${s.name}\` — use when ${s.use_when.replace(/^use when\s+/i, '')}`),
+    ...(skills.some((s) => s.name === 'data') ? [VISITOR_STATE_RULE] : []),
   ];
+}
+
+/**
+ * The MCP server's `instructions` (the initialize result, NSO-379): the one
+ * text a client shows the model before any tool call, so it names the first
+ * calls — list_apps, then the `start` skill before an app is created.
+ */
+export const SERVER_INSTRUCTIONS = [
+  'drobek hosts web apps you build through these tools: every write is a version with a preview URL, and publishing puts one live.',
+  'Start with `list_apps` (who you are, your workspaces, your apps).',
+  "Before you create or change an app, call `skill_info('start')` when `skill_info()` lists it — how a drobek app works: files, drobek.json, the write_files → compile → preview → publish loop — and read the briefing that `create_app` and `get_app` return.",
+  'Before using a backend (login, stored data, forms, email, file uploads, external APIs), call `skill_info` with the skill\'s name and follow it.',
+  'After every write that compiled, give the user the `preview_url`; publish only when the user explicitly asks.',
+].join(' ');
+
+/**
+ * `next` of list_apps (NSO-379): the step after it. Names `skill_info('start')`
+ * only when this server has that skill (the general skills may be absent).
+ */
+export function listAppsNext(skills: readonly { name: string }[]): string {
+  const briefing = '`create_app` and `get_app` return the app\'s briefing (stack, file rules, limits) — read it before writing files.';
+  if (skills.some((s) => s.name === 'start')) {
+    return `Before creating or changing an app, call skill_info('start'): how a drobek app works — files, drobek.json, the write_files → compile → preview → publish loop. ${briefing} skill_info() lists the backends (login, data, forms, …).`;
+  }
+  return `${briefing} skill_info() lists this server's backends, if any.`;
 }
 
 /**
@@ -103,7 +137,13 @@ export function renderBriefing(opts: { limits?: Partial<BriefingLimits>; skills?
     '',
     '## Video, audio and big files (assets)',
     '- write_files is text-only — never paste a binary as base64. For a video, audio file, image or font call `create_asset_upload({ app_id, path, size })`: it returns a single-use upload URL (30 minutes) and a `curl -T <file> \'<url>\'` line to run in your sandbox — or give the link to the user, a browser shows an upload page.',
-    '- The app serves the file at `/<path>` next to its own files — the preview at once, the production URL after the next publish (uploads and deletes never change a published app on their own): keep the paths your HTML already uses (`<video src="film.mp4" controls>`, `img/s1.jpg`). Porting a Claude artifact: write the HTML/JS with write_files, upload each binary at the same relative path (`skill_info(\'port-artifact\')` has the whole procedure). Videos seek (HTTP Range). `list_assets` / `delete_asset` manage them; an app file at the same path wins (`asset_path_taken`).',
+    '- The app serves the file at `/<path>` next to its own files — the preview at once, the production URL after the next publish (uploads and deletes never change a published app on their own; `publish` answering `assets: "draft"` means the uploads the preview shows are now live on production too): keep the paths your HTML already uses (`<video src="film.mp4" controls>`, `img/s1.jpg`). Porting a Claude artifact: write the HTML/JS with write_files, upload each binary at the same relative path (`skill_info(\'port-artifact\')` has the whole procedure). Videos seek (HTTP Range). `list_assets` / `delete_asset` manage them; an app file at the same path wins (`asset_path_taken`).',
+    '',
+    '## Installable app (home screen)',
+    '- Web app manifest: write `manifest.webmanifest` with write_files (it is served as `application/manifest+json`) and link it from index.html: `<link rel="manifest" href="/manifest.webmanifest">`. Set `name`, `short_name`, `start_url: "/"`, `display: "standalone"` (or `"fullscreen"`), `background_color`, `theme_color` and `icons`.',
+    '- Icons must be PNG files (iOS does not use SVG for the home-screen icon): write_files cannot store a .png, so upload each one with `create_asset_upload` at the path the HTML and the manifest use — e.g. `apple-touch-icon.png` (180×180) with `<link rel="apple-touch-icon" href="/apple-touch-icon.png">`, and `icons/icon-192.png` / `icons/icon-512.png` in the manifest.',
+    '- Full screen on phones: `<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">`, then pad the layout with `env(safe-area-inset-top)` / `-bottom` / `-left` / `-right` so nothing sits under the notch or the home indicator; `<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">` lets iOS draw the page under the status bar.',
+    '- Every host is its own origin: an app installed from the preview URL is the preview. Install from the `published_url` after `publish` — the icons (assets) reach production with that publish.',
     '',
     '## Files',
     '- Paths are app-relative (`src/App.tsx`; a leading `/` is dropped), no `..`. Text files only: .tsx .ts .jsx .js .mjs .css .json .html .txt .md .svg .webmanifest.',
