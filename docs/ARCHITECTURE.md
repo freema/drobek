@@ -395,7 +395,9 @@ normal ACME certificate; the app hosts use exactly one of three paths:
 Verified custom domains get their certificates from an on-demand catch-all
 behind the same `ask` (on by default in mode (c), `TLS_CUSTOM_DOMAINS`).
 `tls internal` (Caddy's local CA) serves a test box and `task dev:tls`.
-Details: [`SELF-HOSTING.md` → TLS](./SELF-HOSTING.md#tls).
+Caddy also compresses text responses (`encode zstd gzip`, `200` only, an
+explicit type list without `text/event-stream`, so `/mcp` SSE is not
+buffered); drobek itself never compresses. Details: [`SELF-HOSTING.md` → TLS](./SELF-HOSTING.md#tls).
 
 ## 8. Background jobs
 

@@ -247,6 +247,15 @@ the per-app, per-user and per-code limits hold it. drobek logs one
 `rate_limit_no_client_ip` warning per limit (once per start) when that
 happens; seeing it in production means the proxy header is missing.
 
+drobek sends its responses uncompressed; the generated Caddyfile compresses
+them (`encode zstd gzip`) on every site — dashboard, app hosts and custom
+domains. Only `200` responses of at least 1 KB with a text type (HTML, CSS,
+JavaScript, JSON, XML, SVG, plain text, fonts, wasm) are compressed: a `206`
+range stays byte-exact, images are left alone, and `text/event-stream` is
+never compressed, so MCP's streamable HTTP and any SSE an app backend proxies
+arrive event by event. With a different proxy in front, compress the same way
+and keep `text/event-stream` out of it.
+
 Platform modules (the backends apps use through `import { drobek } from
 'drobek'`) are enabled with `DROBEK_MODULES` (comma-separated; a
 short name `x` loads the package `drobek-module-x` from the server's
