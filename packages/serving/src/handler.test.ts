@@ -267,6 +267,115 @@ describe('caching', () => {
   });
 });
 
+describe('source maps on the production hosts (NSO-381)', () => {
+  const MAP = JSON.stringify({ version: 3, sources: ['src/main.tsx'], sourcesContent: ['secret-free source'], mappings: 'AAAA' });
+  const B64 = Buffer.from(MAP).toString('base64');
+  const CODE = 'import "/__drobek/beacon.js?v=0123456789abcdef";\nconsole.log("hi");\n';
+  const BUNDLE = `${CODE}//# sourceMappingURL=data:application/json;base64,${B64}\n`;
+  const CSS_CODE = 'body {\n  color: red;\n}\n';
+  const CSS = `${CSS_CODE}/*# sourceMappingURL=data:application/json;base64,${B64} */\n`;
+  const custom: AppHostTarget = { kind: 'custom', slug: 'mapped', hostname: 'mapped.firma.cz' };
+
+  beforeEach(() => {
+    const v = version('m_1', true, INDEX_V1, BUNDLE);
+    v.files['main.css'] = { content: CSS, kind: 'built' };
+    model.set('mapped', {
+      app: { id: 'app_mapped', slug: 'mapped', workspaceId: 'ws_1', visibility: 'public', frameAncestors: null },
+      published: 1,
+      versions: new Map([[1, v]]),
+      passwordHash: null,
+    });
+  });
+
+  it('preview and version hosts serve the bundle exactly as stored (inline map); no .map there', async () => {
+    for (const t of [preview('mapped'), ver('mapped', 1)]) {
+      const js = await handleAppRequest(req(t, '/main.js'), deps);
+      expect(text(js.body)).toBe(BUNDLE);
+      expect(js.headers.ETag).toBe(`"${sha(BUNDLE)}"`);
+      expect((await handleAppRequest(req(t, '/main.js.map'), deps)).status).toBe(404);
+    }
+  });
+
+  it('the production host and custom domains serve the code without the inline map, pointing at <file>.map', async () => {
+    for (const t of [prod('mapped'), custom]) {
+      const js = await handleAppRequest(req(t, '/main.js'), deps);
+      expect(js.status).toBe(200);
+      expect(text(js.body)).toBe(`${CODE}//# sourceMappingURL=main.js.map\n`);
+      expect(js.headers['Content-Type']).toBe('text/javascript; charset=utf-8');
+      expect(js.headers['Content-Length']).toBe(String(Buffer.byteLength(text(js.body))));
+      expect(js.headers.ETag).toBe(`"${sha(BUNDLE)}-nomap"`);
+      const css = await handleAppRequest(req(t, '/main.css'), deps);
+      expect(text(css.body)).toBe(`${CSS_CODE}/*# sourceMappingURL=main.css.map */\n`);
+    }
+  });
+
+  it('<file>.map on the production hosts is the decoded map (JSON, ETag, 304, HEAD)', async () => {
+    for (const t of [prod('mapped'), custom]) {
+      const map = await handleAppRequest(req(t, '/main.js.map'), deps);
+      expect(map.status).toBe(200);
+      expect(text(map.body)).toBe(MAP);
+      expect(map.headers).toMatchObject({
+        'Content-Type': 'application/json; charset=utf-8',
+        ETag: `"${sha(BUNDLE)}-map"`,
+        'Cache-Control': 'public, max-age=0, must-revalidate',
+        'Content-Length': String(Buffer.byteLength(MAP)),
+        'Content-Security-Policy': APP_CSP,
+        'X-Drobek-App': 'mapped',
+      });
+      const again = await handleAppRequest(req(t, '/main.js.map', { headers: { 'If-None-Match': map.headers.ETag } }), deps);
+      expect(again.status).toBe(304);
+      expect(again.body).toBeNull();
+      const head = await handleAppRequest(req(t, '/main.js.map', { method: 'HEAD' }), deps);
+      expect(head.status).toBe(200);
+      expect(head.body).toBeNull();
+      expect(text((await handleAppRequest(req(t, '/main.css.map'), deps)).body)).toBe(MAP);
+    }
+  });
+
+  it('a browser holding the old inline-map bundle gets the new one; the new ETag revalidates to 304', async () => {
+    const stale = await handleAppRequest(req(prod('mapped'), '/main.js', { headers: { 'If-None-Match': `"${sha(BUNDLE)}"` } }), deps);
+    expect(stale.status).toBe(200);
+    const fresh = await handleAppRequest(req(prod('mapped'), '/main.js', { headers: { 'If-None-Match': stale.headers.ETag } }), deps);
+    expect(fresh.status).toBe(304);
+    expect(fresh.body).toBeNull();
+    expect((await handleAppRequest(req(prod('mapped'), '/main.js', { query: 'v=0123abcd' }), deps)).headers['Cache-Control']).toBe(
+      'public, max-age=31536000, immutable'
+    );
+  });
+
+  it('the split is cached: repeated requests load the blob once', async () => {
+    for (let i = 0; i < 3; i++) {
+      await handleAppRequest(req(prod('mapped'), '/main.js'), deps);
+      await handleAppRequest(req(prod('mapped'), '/main.js.map'), deps);
+    }
+    expect(calls.blobs).toBe(1);
+  });
+
+  it('a bundle without an inline map is served as stored (same ETag) and has no .map', async () => {
+    const js = await handleAppRequest(req(prod('shop'), '/main.js'), deps);
+    expect(text(js.body)).toBe(MAIN_JS);
+    expect(js.headers.ETag).toBe(`"${sha(MAIN_JS)}"`);
+    expect((await handleAppRequest(req(prod('shop'), '/main.js.map'), deps)).status).toBe(404);
+  });
+
+  it('only compiler output is split: a hand-written main.js keeps its bytes; a stored .map file wins', async () => {
+    const v = model.get('mapped')!.versions.get(1)!;
+    delete v.files['main.js'];
+    v.files['main.js'] = { content: BUNDLE, kind: 'source' };
+    v.files['main.css.map'] = { content: '{"own":true}', kind: 'source' };
+    const js = await handleAppRequest(req(prod('mapped'), '/main.js'), deps);
+    expect(text(js.body)).toBe(BUNDLE);
+    expect((await handleAppRequest(req(prod('mapped'), '/main.js.map'), deps)).status).toBe(404);
+    expect(text((await handleAppRequest(req(prod('mapped'), '/main.css.map'), deps)).body)).toBe('{"own":true}');
+  });
+
+  it('a password-protected app gates the map like every file', async () => {
+    model.get('mapped')!.app.visibility = 'password';
+    model.get('mapped')!.passwordHash = passwordHash;
+    expect((await handleAppRequest(req(prod('mapped'), '/main.js.map'), deps)).status).toBe(401);
+  });
+});
+
 describe('headers on every response (snapshot)', () => {
   const PREVIEW_SECURITY = {
     'Content-Security-Policy': APP_CSP,

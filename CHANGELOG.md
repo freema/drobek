@@ -1,5 +1,10 @@
 # Changelog — drobek (core)
 
+## Unreleased
+
+### Changed
+- **Published apps load without the inline source map** (NSO-381): the production host and custom domains serve a compiled `main.js` / `main.css` (and every extra entry) without its inline source map, ending in `//# sourceMappingURL=main.js.map`, and serve that map at `/main.js.map` — browsers fetch it only when devtools opens. A sample app's `main.js` drops from 342 KB to 106 KB. Split at serve time, so already published versions get it too with nothing re-stored; the preview and version hosts serve the bundle exactly as before.
+
 ## v0.5.3 — 2026-09-28
 
 ### Changed

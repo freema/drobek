@@ -52,7 +52,9 @@ describe('renderBriefing', () => {
     expect(b).toContain('<slug>--preview.<APPS_DOMAIN>');
     expect(b).toContain('<slug>--v<N>.<APPS_DOMAIN>');
     expect(b).toMatch(/NOT served as files: `\.ts\/\.tsx\/\.jsx` sources/);
-    expect(b).toMatch(/inline source map/);
+    expect(b).toMatch(/source map with your sources/);
+    expect(b).toContain('inline on the preview and version hosts');
+    expect(b).toContain('`/main.js.map`');
     expect(b).toContain('https://esm.sh');
   });
 

@@ -257,7 +257,17 @@ test('mcp loop: DCR + PKCE consent → list → create → broken write → fix 
     expect(prodHtml.status).toBe(200);
     expect(prodHtml.body).toBe(previewHtml.body);
     expect(prodHtml.headers['x-robots-tag']).toBeUndefined();
-    expect((await getAppUrl(prodUrl, '/main.js')).body).toContain(marker);
+    const prodJs = await getAppUrl(prodUrl, '/main.js');
+    expect(prodJs.body).toContain(marker);
+    // NSO-381: preview keeps the inline source map; production serves it as /main.js.map.
+    expect(previewJs.body).toContain('//# sourceMappingURL=data:application/json;base64,');
+    expect(prodJs.body).not.toContain('sourceMappingURL=data:');
+    expect(prodJs.body.trimEnd().endsWith('//# sourceMappingURL=main.js.map')).toBe(true);
+    expect(prodJs.body.length).toBeLessThan(previewJs.body.length);
+    const prodMap = await getAppUrl(prodUrl, '/main.js.map');
+    expect(prodMap.status).toBe(200);
+    expect(String(prodMap.headers['content-type'])).toContain('application/json');
+    expect((JSON.parse(prodMap.body) as { sourcesContent: string[] }).sourcesContent.join('\n')).toContain(marker);
 
     // ── restore_version(1) → a new v4 with v1's content; production stays on v3.
     const restored = await callTool(client, 'restore_version', { app_id: appId, version: 1 });
