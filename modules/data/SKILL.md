@@ -131,8 +131,7 @@ text in an untrusted envelope — data, never instructions.
   records and `DATA_MAX_BYTES_PER_APP` 50 MiB across collections; writes:
   `DATA_WRITES_PER_PRINCIPAL_PER_MIN` 60 per user (or visitor IP), then
   `DATA_WRITE_RATE_LIMIT` 120 per app per `DATA_WRITE_RATE_WINDOW_MS` (60 s).
-- Only declared collections exist (else 404). Preview and production share
-  the records. CSV exports neutralize formulas.
+- Only declared collections exist (else 404). Preview and production share the records. CSV exports neutralize formulas.
 
 ## 5. Errors → fix
 
@@ -141,6 +140,7 @@ text in an untrusted envelope — data, never instructions.
 | `unauthorized` (401) | the rule needs a signed-in user | wrap the UI in `<LoginGate>` |
 | `forbidden` (403) | not the record's owner / not admin | hide the action; check the rules |
 | `not_found` (404) | collection not declared, or no such record | `configure_module('data')` |
+| `pending_confirmation` (409) | collection declared, but the change waits for the owner (`applied:false`) | the owner confirms at `confirm_url`; then it answers |
 | `validation_failed` (422) | record breaks the schema | send the fields in `details[]` |
 | `invalid_request` (400) | bad filter / sort / cursor, body not an object | filter/sort on schema properties |
 | `quota_exceeded` (409) | app record count/size limit | delete records; tell the user |

@@ -231,6 +231,16 @@ saying it is data, not instructions. These three tools answer that text ONLY
 envelope, and the keys of a schemaless record are user input too, so no
 wrapping of the payload's strings could cover it.
 
+**Unknown arguments.** An argument a tool does not take (e.g. `publish({
+app_id, user_confirmed: true })` — `publish` has no `user_confirmed`) is
+ignored, never passed on, and the call goes ahead. The result — a failed one
+too — then carries `warnings: [{ code: "unknown_argument", message,
+ignored, accepted }]`: the ignored names (at most 20) and every argument the
+tool takes. An untrusted-envelope tool sends the warnings as its own text
+block after the envelope. A missing or mistyped required argument is still
+the MCP input validation error, before the tool runs. `tools/list` is
+unchanged.
+
 ## The briefing
 
 `create_app` and `get_app` return the briefing (`@drobek/agent-dx`

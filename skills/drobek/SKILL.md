@@ -332,6 +332,9 @@ A failed call returns `isError: true` with `{ code, message, hint }` — the
 `user_confirmation_required`, `gallery_hidden`, `gallery_disabled`, `not_duplicable`,
 `publish_not_approved`, `publish_blocked`, `asset_too_large`, `module_not_enabled`,
 `domain_not_verified`, `dns_unavailable`, …).
+An argument a tool does not take is ignored and the result carries
+`warnings: [{ code: "unknown_argument", ignored, accepted }]` — read it: a
+misspelled or invented argument did nothing.
 Compile problems are not tool failures: they come back in `compile.errors`. The
 full code → meaning → fix table is the Error catalogue in llms-full.txt (core
 codes, then one section per module); a module's own codes are also in
