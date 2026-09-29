@@ -59,6 +59,29 @@ is the map of the code.
   and the env reference in [`docs/SELF-HOSTING.md`](./docs/SELF-HOSTING.md).
 - Docs describe the current design; `pnpm doc-lint` checks it.
 
+## Database migrations
+
+The server applies every migration by itself when it starts, so a self-hoster
+never runs one by hand. Keep it that way:
+
+- **Core tables** (`packages/db/src/schema.ts`): change the schema, then
+  `task db:generate` writes the next file into
+  `packages/db/drizzle/migrations` with its journal entry and snapshot. Use the
+  number it picks. Gaps in the numbering (no 0013, 0015, …) are intentional,
+  numbers that were reserved for parallel work; don't fill them.
+- **A module's tables** belong in the module's own `migrations/` folder with
+  its own journal, never in core. Tables are named `mod_<module>_…` and every
+  per-app row references `apps(id)` with `ON DELETE CASCADE`
+  ([`docs/MODULES.md` → Migrations and tables](./docs/MODULES.md#migrations-and-tables)).
+- **Never edit or renumber a migration that has been released.** Servers
+  already ran it; fix forward with a new one.
+- Write data migrations so a re-run is harmless (`IF NOT EXISTS`, guarded
+  `DO $$ … $$` blocks), and test them against a database in the previous
+  shape (see `modules/auth/src/migration.test.ts`).
+- `packages/db/src/migration-journals.test.ts` (in `task check`) fails when a
+  journal, its `.sql` files or the core snapshots disagree, e.g. after a
+  merge. I re-chain conflicting migrations when I merge.
+
 ## Before you open a pull request
 
 ```sh
