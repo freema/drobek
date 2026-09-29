@@ -41,6 +41,9 @@ describe('activitySummary (NSO-371)', () => {
     expect(run({ module: 'sync', source: 'players', by: 'schedule', status: 'failed', error: 'the upstream answered HTTP 401' })).toBe(
       'The scheduled import players failed: the upstream answered HTTP 401'
     );
+    expect(run({ module: 'sync', source: 'players', by: 'schedule', status: 'failed', error: 'the upstream answered HTTP 500', paused: true })).toBe(
+      'The scheduled import players failed: the upstream answered HTTP 500 — the import is paused'
+    );
     expect(activitySummary(ev('sync.resume', 'app', 'league', { module: 'sync', source: 'players' }))).toBe(
       'Resumed the scheduled import players after failed runs'
     );

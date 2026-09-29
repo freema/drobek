@@ -9,8 +9,9 @@
  * array at `items` (SYNC_MAX_RECORDS_PER_RUN), write it with
  * `ctx.records.import` (the data module: schema + quotas, ONE transaction —
  * a failed run leaves the collection as it was), then store the outcome:
- * the source's state, a row of its run history (the newest 50 kept) and an
- * audit row `sync.run`. A failure counts towards SYNC_PAUSE_AFTER_FAILURES
+ * the source's state, a row of its run history (the newest 50 kept) and, for
+ * a run by hand or a failed run, an audit row `sync.run` (a successful
+ * scheduled run is in the run history only). A failure counts towards SYNC_PAUSE_AFTER_FAILURES
  * (then the source pauses until the owner resumes it, a run succeeds or its
  * config changes) and backs the next scheduled run off.
  */
@@ -159,6 +160,7 @@ export async function runSource(input: RunSourceInput): Promise<SyncRun | null> 
 
   const durationMs = Math.max(0, Date.now() - started.getTime());
   const sameConfig = claimed.configHash === hash;
+  let pausedNow = false;
   if (outcome) {
     await db
       .update(syncSources)
@@ -181,7 +183,8 @@ export async function runSource(input: RunSourceInput): Promise<SyncRun | null> 
       .update(syncSources)
       .set({ configHash: hash, lastRunAt: started, lastStatus: 'failed', lastRecords: null, lastError: error, failures, pausedAt, runningUntil: null })
       .where(scope);
-    if (pausedAt && !(sameConfig && claimed.pausedAt)) {
+    pausedNow = pausedAt !== null && !(sameConfig && claimed.pausedAt);
+    if (pausedNow) {
       ctx.log.warn('sync source paused after failed runs', { app_id: appId, source: name, failures });
     }
   }
@@ -206,15 +209,19 @@ export async function runSource(input: RunSourceInput): Promise<SyncRun | null> 
   await db.execute(
     sql`DELETE FROM ${syncRuns} WHERE ${syncRuns.id} IN (SELECT ${syncRuns.id} FROM ${syncRuns} WHERE ${syncRuns.appId} = ${appId} AND ${syncRuns.source} = ${name} ORDER BY ${syncRuns.startedAt} DESC, ${syncRuns.id} DESC OFFSET ${RUNS_KEPT})`
   );
-  await ctx
-    .audit('run', {
-      source: name,
-      trigger,
-      status: outcome ? 'ok' : 'failed',
-      records: outcome?.records ?? null,
-      ...(error ? { error: error.slice(0, 300) } : {}),
-    })
-    .catch((err: unknown) => ctx.log.error('sync run audit not written', { app_id: appId, source: name, error: dbErrorForLog(err) }));
+  // A successful scheduled run stays in the run history only; a run by hand and a failed run are audited.
+  if (trigger === 'manual' || !outcome) {
+    await ctx
+      .audit('run', {
+        source: name,
+        trigger,
+        status: outcome ? 'ok' : 'failed',
+        records: outcome?.records ?? null,
+        ...(error ? { error: error.slice(0, 300) } : {}),
+        ...(pausedNow ? { paused: true } : {}),
+      })
+      .catch((err: unknown) => ctx.log.error('sync run audit not written', { app_id: appId, source: name, error: dbErrorForLog(err) }));
+  }
   return toRun(row);
 }
 

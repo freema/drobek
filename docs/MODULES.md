@@ -2175,9 +2175,11 @@ code on the server and without the API key leaving the dashboard.
   (`SYNC_MAX_RECORDS_PER_RUN`) and writes it with `ctx.records.import`. A
   failed run (a non-2xx answer, no JSON, no array, a record the schema
   refuses, a quota) changes nothing. Every run is stored (the newest 50 per
-  source in `mod_sync_runs`) and audited `sync.run`
-  (`{ source, trigger, status, records, error? }`, no user for a scheduled
-  run). Its error text names the problem, never the upstream's data or the
+  source in `mod_sync_runs`, what `get_logs({ kind: 'sync' })` reads). A run
+  by hand and a failed scheduled run are also audited `sync.run`
+  (`{ source, trigger, status, records, error?, paused? }` — `paused: true`
+  on the run that paused the source; no user for a scheduled run); a
+  successful scheduled run is not. Its error text names the problem, never the upstream's data or the
   secret.
 - **Failures** — a failed run backs the next scheduled one off (the
   interval, doubling, at most a day or the interval); after

@@ -266,7 +266,7 @@ describe('configure', () => {
 });
 
 describe('the scheduled pass', () => {
-  it('imports the records with the secret injected, then waits for the interval; audited as the schedule', async () => {
+  it('imports the records with the secret injected, then waits for the interval; a successful scheduled run is not audited', async () => {
     await freshApp({ collection: 'players', every: '15m' });
     players = { response: [{ id: 1, name: 'Ada', points: 10, _owner: 'spoof' }, { id: 2, name: 'Bo', points: 7 }] };
     const t0 = Date.now();
@@ -289,10 +289,7 @@ describe('the scheduled pass', () => {
       ['schedule', 'ok', 1, 1, 2],
       ['schedule', 'ok', 2, 2, 0],
     ]);
-    const rows = (await audits()).filter((r) => r.action === 'sync.run');
-    expect(rows).toHaveLength(2);
-    expect(rows[0]).toMatchObject({ actorUserId: null, actorKind: 'user', subjectType: 'app' });
-    expect(rows[0].meta).toMatchObject({ by: 'schedule', module: 'sync', source: 'players', trigger: 'schedule', status: 'ok', records: 2 });
+    expect((await audits()).filter((r) => r.action === 'sync.run')).toEqual([]);
   });
 
   it('upsert keeps the records the answer does not name', async () => {
@@ -363,6 +360,12 @@ describe('the scheduled pass', () => {
     expect(calls).toBe(before + 1);
     expect((await state()).failures).toBe(2);
     expect((await state()).pausedAt).not.toBeNull();
+    const failed = (await audits()).filter((r) => r.action === 'sync.run');
+    expect(failed).toHaveLength(2);
+    expect(failed[0]).toMatchObject({ actorUserId: null, actorKind: 'user', subjectType: 'app' });
+    expect(failed[0].meta).toMatchObject({ by: 'schedule', module: 'sync', source: 'players', trigger: 'schedule', status: 'failed', error: 'the upstream answered HTTP 500' });
+    expect((failed[0].meta as { paused?: boolean }).paused).toBeUndefined();
+    expect(failed[1].meta).toMatchObject({ trigger: 'schedule', status: 'failed', paused: true });
 
     const s = (await rt.sync(app))!;
     expect((await s.sources())[0]).toMatchObject({ name: 'players', paused: 'failures', failures: 2, next_run_at: null, last_error: 'the upstream answered HTTP 500' });
@@ -376,6 +379,7 @@ describe('the scheduled pass', () => {
     expect((await s.sources())[0]).toMatchObject({ paused: null, failures: 0 });
     await pass();
     expect(await state()).toMatchObject({ lastStatus: 'ok', failures: 0, pausedAt: null });
+    expect((await audits()).filter((r) => r.action === 'sync.run')).toHaveLength(2);
     const resume = (await audits()).find((r) => r.action === 'sync.resume');
     expect(resume).toMatchObject({ actorUserId: userId, actorKind: 'user' });
     expect(resume!.meta).toMatchObject({ source: 'players' });

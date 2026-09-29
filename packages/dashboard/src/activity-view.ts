@@ -151,7 +151,8 @@ const SUMMARIES: Record<string, Summarize> = {
       str(m, 'status') === 'failed'
         ? `failed${str(m, 'error') ? `: ${str(m, 'error')}` : ''}`
         : `wrote ${n !== null ? plural(n, 'record') : 'its records'}`;
-    return m.by === 'schedule' ? `The scheduled import${name} ${result}` : `Ran the import${name} now — it ${result}`;
+    const paused = m.paused === true ? ' — the import is paused' : '';
+    return m.by === 'schedule' ? `The scheduled import${name} ${result}${paused}` : `Ran the import${name} now — it ${result}${paused}`;
   },
   'sync.resume': (m) => `Resumed the scheduled import ${str(m, 'source') ?? ''} after failed runs`.replace('  ', ' '),
   'asset.upload': (m) => `${m.replaced === true ? 'Replaced' : 'Uploaded'} the asset ${str(m, 'name') ?? ''}`.trim(),
