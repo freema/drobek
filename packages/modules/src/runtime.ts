@@ -1171,7 +1171,7 @@ export class ModuleRuntime {
     const config = this.effectiveConfig(m, row.config);
     let pending: PendingView | null = null;
     if (row.pending) {
-      const r = m.configSchema.safeParse(mergePatch(m.configDefaults, mergePatch(row.config, row.pending.patch)));
+      const r = this.parsePending(m, row.config, row.pending);
       pending = {
         changes: row.pending.changes,
         proposed_at: row.pending.proposed_at,
@@ -1224,6 +1224,11 @@ export class ModuleRuntime {
    * config that fails configSchema is served through the module's
    * `salvageConfig` when it has one, else as the defaults.
    */
+  /** The config `stored` would become with `pending` confirmed, through configSchema. */
+  private parsePending(m: AnyModule, stored: Record<string, unknown>, pending: PendingChange) {
+    return m.configSchema.safeParse(mergePatch(m.configDefaults, mergePatch(stored, pending.patch)));
+  }
+
   effectiveConfig(m: AnyModule, stored: Record<string, unknown>): unknown {
     const key = `${m.name}:${jsonKey(stored)}`;
     const hit = this.configMemo.get(key);
@@ -1827,6 +1832,7 @@ export class ModuleRuntime {
     const deps = this.deps;
     const row = await readConfigRow(app.id, m.name, deps.db());
     const config = this.effectiveConfig(m, row.config);
+    const pending = row.pending ? this.parsePending(m, row.config, row.pending) : null;
     const declared = new Set((m.secrets ?? []).map((s) => s.name));
     const hookApp: HookApp = { id: app.id, slug: app.slug, workspaceId: app.workspaceId };
     return {
@@ -1834,6 +1840,7 @@ export class ModuleRuntime {
       module: m.name,
       principal,
       config,
+      pendingConfig: pending?.success ? pending.data : null,
       ...this.services(enabled),
       rules: { decide: (rule, ownerId) => decideAccess(rule, principal, ownerId) },
       limits: getLimits,

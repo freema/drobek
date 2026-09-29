@@ -101,6 +101,12 @@ const DATA_ERRORS: ModuleErrorDoc[] = [
     fix: "Send the fields the schema requires with the right types (get_app shows the data config), or change the schema with configure_module('data').",
   },
   {
+    code: 'pending_confirmation',
+    meaning:
+      "HTTP 409. The collection is declared only in the app's pending data change: configure_module answered applied:false and the app owner has not confirmed it yet. `details.collection` names it. Nothing was read or stored.",
+    fix: "Ask the app owner to confirm the pending change in the dashboard (get_app: modules.data.confirm_url); the collection answers once it is confirmed. A rejected change leaves it undeclared (not_found).",
+  },
+  {
     code: 'invalid_schema',
     meaning: "HTTP 400. The collection's stored JSON Schema is not a schema object or does not compile, so records cannot be checked against it. Nothing was stored.",
     fix: "Set a valid JSON Schema for the collection with configure_module('data') (skill_info('data') shows the supported keywords).",

@@ -347,9 +347,13 @@ test.describe('platform module data — collections with rules (M1-03) @local', 
     const c = (await callTool(mcp.client, 'create_app', { name: 'Data quota C', template: 'html' })).json as unknown as Created;
     const held = await configure(mcp, c.app_id, 'data', { collections: { log: { rules: { read: 'public', create: 'public' } } } });
     expect(held.applied).toBe(false);
+    const host = previewHost(c.slug);
+    // NSO-377: declared but waiting for the owner → 409 pending_confirmation, not "declare it first".
+    const waiting = await data(host, '/log');
+    expect(waiting.status, waiting.body).toBe(409);
+    expect(json(waiting)).toMatchObject({ error: 'pending_confirmation', details: { collection: 'log' } });
     const ok = await owner.request.post(`${BASE_URL_WEB}/api/apps/${c.app_id}/modules/data/confirm`, { headers: { Origin: BASE_URL_WEB }, maxRedirects: 0 });
     expect(ok.status(), await ok.text()).toBe(200);
-    const host = previewHost(c.slug);
     for (let i = 1; i <= 5; i++) {
       const r = await data(host, '/log', { method: 'POST', body: { n: i } });
       expect(r.status, r.body).toBe(201);
