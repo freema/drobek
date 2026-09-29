@@ -320,7 +320,7 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     code: 'xss_url_sink',
     surface: 'readiness.warnings[] (write_files, publish, dashboard app page)',
     meaning:
-      'A link or frame URL (`.href`, `.src` of a frame or script, setAttribute(\'href\'), location, JSX href) comes from a value that is not a literal or a fixed-scheme URL: a `javascript:` URL a visitor stored runs as script when the link is followed or the frame loads.',
+      'A link or frame URL (`.href`, `.src` of a frame or script, setAttribute(\'href\'), location, JSX src of an iframe/embed/object/script) comes from a value that is not a literal or a fixed-scheme URL: a `javascript:` URL a visitor stored runs as script when the link is followed or the frame loads.',
     fix: 'Allow-list the scheme before using a stored URL — `const u = new URL(value, location.href); if (u.protocol === \'https:\' || u.protocol === \'http:\') a.href = u.href;` — or build it from a fixed prefix (`\'/items/\' + encodeURIComponent(id)`).',
   },
   // ── platform module routes (/__drobek/v1/<module>/…, the drobek SDK) ──────

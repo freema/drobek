@@ -233,8 +233,8 @@ configs — no app code runs. The checks: `missing_title` (index.html has
 no, or an empty, `<title>`); `xss_html_sink`, `xss_eval` and `xss_url_sink`
 (client-side XSS: a token-level lint of the scripts and inline `<script>`s
 for innerHTML/outerHTML/insertAdjacentHTML/document.write/
-dangerouslySetInnerHTML, eval/new Function/string timers, and href/src/
-location set from a value that is not a literal — literals, templates
+dangerouslySetInnerHTML, eval/new Function/string timers, and DOM href/src/
+location or a JSX frame/script `src` set from a value that is not a literal — literals, templates
 without `${}` and escaped substitutions pass; vendored and `.min.js` files
 are skipped). `READINESS_MAX_WARNINGS` (default 50) caps the
 listed warnings; the rest are counted in `warnings_omitted`. The checks live

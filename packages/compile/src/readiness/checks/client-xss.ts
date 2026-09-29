@@ -28,7 +28,11 @@ const URL_ATTRS = new Set(['href', 'src', 'xlink:href']);
 const GLOBALS = new Set(['window', 'globalThis', 'self']);
 const TIMERS = new Set(['setTimeout', 'setInterval']);
 const LITERAL_NAMES = new Set(['null', 'undefined', 'true', 'false']);
-/** JSX `src` matters only where it loads a document or script; `<img src={…}>` runs nothing. */
+/**
+ * JSX `src` matters only where it loads a document or script; `<img src={…}>`
+ * runs nothing. JSX `href={…}` is not checked: most values are URLs the app
+ * built itself, and the warning would drown the rest.
+ */
 const JSX_SRC_TAGS = new Set(['iframe', 'frame', 'embed', 'object', 'script']);
 /** DOM `.src` on an image/media element runs nothing either. */
 const MEDIA_OBJECT = /img|image|video|audio|media|avatar|thumb|photo|pic|poster|logo|icon/i;
@@ -296,7 +300,7 @@ function scan(toks: Token[], jsx: boolean, hits: Hit[]): void {
     } else if (v === 'location' && isP(next, '=') && (!member || GLOBALS.has(toks[i - 2]?.value ?? ''))) {
       if (!member && (isN(prev, 'let') || isN(prev, 'const') || isN(prev, 'var'))) continue;
       if (!safe('url', expression(toks, i + 2))) hits.push(urlHit(t.line, '`location`'));
-    } else if (jsx && !member && isP(next, '=') && isP(toks[i + 2], '{') && (v === 'href' || (v === 'src' && tag !== undefined && JSX_SRC_TAGS.has(tag)))) {
+    } else if (jsx && !member && isP(next, '=') && isP(toks[i + 2], '{') && v === 'src' && tag !== undefined && JSX_SRC_TAGS.has(tag)) {
       const end = closing(toks, i + 2);
       if (!safe('url', toks.slice(i + 3, end))) hits.push(urlHit(t.line, `JSX \`${v}\``));
     }

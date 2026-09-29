@@ -93,11 +93,10 @@ describe('client-xss check: URL sinks', () => {
     ]);
   });
 
-  it('reports JSX href from a value and src only on frames and scripts', () => {
-    expect(tsx('<a href={item.url}>open</a>')).toEqual(['xss_url_sink@1']);
-    expect(tsx('<a href={`/items/${id}`}>{name}</a>\n<a href="/x">x</a>\n<img src={item.image} alt="" />')).toEqual([]);
+  it('reports JSX src only on frames and scripts, never JSX href', () => {
+    expect(tsx('<a href={item.url}>open</a>\n<a href={`/items/${id}`}>{name}</a>\n<img src={item.image} alt="" />')).toEqual([]);
     expect(tsx('<iframe src={embed.url} />')).toEqual(['xss_url_sink@1']);
-    expect(tsx('<a href={safeUrl(item.url)}>open</a>')).toEqual([]);
+    expect(tsx('<iframe src={safeUrl(embed.url)} />')).toEqual([]);
   });
 
   it('does not read JSX rules into plain .ts files', () => {
