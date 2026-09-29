@@ -432,7 +432,7 @@ catch an undeclared code. `skill_info('<name>')` returns the module's
 section per active module. The built-in modules declare theirs: `auth`
 (`email_not_allowed`, `invalid_code`, `too_many_attempts`), `forms`
 (`submitted_too_fast`, `invalid_form_token`), `data` (`validation_failed`,
-`invalid_schema`), `files` (`unsupported_type`), `proxy`
+`invalid_schema`, `pending_confirmation`), `files` (`unsupported_type`), `proxy`
 (`path_not_allowed`, `ssrf_blocked`, `upstream_error`, `proxy_busy`,
 `config_error`).
 
@@ -532,6 +532,7 @@ Everything a handler gets is scoped to **one app and one module**:
 | `app` | `{ id, slug, workspaceId }` |
 | `principal` | `{ kind: 'anon' }` or `{ kind: 'user', id, email, role: 'user' \| 'admin' }`, resolved by core from the host-only end-user cookie (`__Host-drobek_eu`; plain-http dev: `drobek_eu`). A module never reads cookies, and the dashboard session is never read on an app host. |
 | `config` | this app's effective config: `configSchema.parse(merge(configDefaults, stored))` |
+| `pendingConfig` | the config this app would have once the owner confirms its pending change, or `null` (nothing pending, or it no longer validates). Never act on it — it is not in force; it lets a route say that something waits for confirmation (e.g. data's `409 pending_confirmation`). `createModuleTestContext({ pendingConfig })` sets it in tests. |
 | `rules.decide(rule, ownerId?)` | `{ ok: true }` or `{ ok: false, status: 401 \| 403 }` |
 | `limits()` | this workspace's limits (env defaults or the limits provider) |
 | `rateLimit(bucket, key, max, windowMs)` | fixed-window counter in Redis, namespaced to the module and app |
@@ -1787,7 +1788,9 @@ of JSON records with per-operation rules. `skill_info('data')`.
 - **Config** `{ collections: { <name>: { schema?, rules?: { read, create,
   update, delete } } } }` (≤ 100 collections; names
   `^[A-Za-z][A-Za-z0-9_-]{0,63}$`). Only declared collections exist —
-  anything else is `404 not_found`. A rule is `public | user | owner | admin
+  anything else is `404 not_found`, except a collection declared only in
+  the app's pending change: `409 pending_confirmation` (`details.collection`)
+  until the owner confirms it; nothing is read or stored before. A rule is `public | user | owner | admin
   | none` joined with `|`; a rule left out takes the default
   `{ read: 'owner|admin', create: 'user', update: 'owner|admin', delete:
   'owner|admin' }` (each user sees and changes their own records, the app's

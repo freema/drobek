@@ -85,6 +85,8 @@ export async function createTestApp(db: unknown, opts: { slug?: string } = {}): 
 export interface ModuleTestOptions {
   /** A partial config (merged over configDefaults, then validated). */
   config?: Record<string, unknown>;
+  /** The config once a pending change is confirmed (`ctx.pendingConfig`; partial, merged over configDefaults). Default: nothing pending. */
+  pendingConfig?: Record<string, unknown>;
   principal?: Principal;
   /** Secret name → plaintext. */
   secrets?: Record<string, string>;
@@ -200,6 +202,12 @@ export function createModuleTestContext(declared: AnyModule, opts: ModuleTestOpt
     throw new Error(`createModuleTestContext: config does not pass ${module.name}.configSchema: ${parsed.error.message}`);
   }
   const config = parsed.data;
+  let pendingConfig: unknown = null;
+  if (opts.pendingConfig) {
+    const p = module.configSchema.safeParse(mergePatch(module.configDefaults, opts.pendingConfig));
+    if (!p.success) throw new Error(`createModuleTestContext: pendingConfig does not pass ${module.name}.configSchema: ${p.error.message}`);
+    pendingConfig = p.data;
+  }
   const origin = opts.origin ?? 'http://test--preview.apps.localhost';
   const app: HookApp = { id: 'app_test', slug: 'test', workspaceId: 'ws_test', ...opts.app };
   const limits: Limits = Object.freeze({
@@ -217,6 +225,7 @@ export function createModuleTestContext(declared: AnyModule, opts: ModuleTestOpt
     module: module.name,
     principal,
     config,
+    pendingConfig,
     db: opts.db ?? noDb(),
     log: opts.log ?? noopLogger,
     contributions: <T,>(slot: string) => [...(opts.contributions?.[slot] ?? [])] as T[],

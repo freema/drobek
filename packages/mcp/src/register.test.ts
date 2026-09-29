@@ -282,6 +282,17 @@ describe('tools/list', () => {
     expect((last.inputSchema.properties as Record<string, { enum?: string[] }>).publishing.enum).toEqual(['default', 'allowed', 'blocked']);
   });
 
+  it('lists every input schema as a plain object schema, without additionalProperties (the wire JSON)', async () => {
+    const tools = JSON.parse(JSON.stringify(await listTools(undefined, true))) as { name: string; inputSchema: Record<string, unknown> }[];
+    for (const t of tools) {
+      expect(t.inputSchema.type, t.name).toBe('object');
+      expect(Object.keys(t.inputSchema).sort(), t.name).toEqual(
+        ['$schema', 'properties', 'required', 'type'].filter((k) => k in t.inputSchema)
+      );
+      expect('additionalProperties' in t.inputSchema, t.name).toBe(false);
+    }
+  });
+
   it('registers only what `allow` lets through (the scope gate)', async () => {
     const tools = await listTools((t) => t === 'get_app' || t === 'read_file');
     expect(tools.map((t) => t.name)).toEqual(['get_app', 'read_file']);
