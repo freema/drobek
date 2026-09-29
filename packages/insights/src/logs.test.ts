@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   COMPILE_ERRORS_KEEP,
   COMPILE_LOG_LIMIT,
+  FAILING_PATHS_TOP,
   LOG_ENTRIES_MAX,
   capCompileErrors,
   compileEntries,
@@ -10,6 +11,7 @@ import {
   runtimeEntries,
   statusClass,
   type CompileRow,
+  type DailyRow,
 } from './logs.js';
 import { logsWindowStart } from './logs.server.js';
 import { dedupErrors } from './shape.js';
@@ -91,9 +93,48 @@ describe('requestEntries', () => {
       count_5xx: 0,
       count_404: 0,
       modules: { data: { '2xx': 3, '3xx': 0, '4xx': 2, '5xx': 0 }, forms: { '2xx': 0, '3xx': 0, '4xx': 0, '5xx': 1 } },
+      failing_paths: { '4xx': [], '5xx': [] },
     });
     expect(out[1]).toMatchObject({ requests: 10, count_5xx: 1, count_404: 3, modules: {} });
     expect(out[2].modules.data['4xx']).toBe(7);
+  });
+
+  it('failing paths per day: file 404s + platform 4xx merged, 5xx apart, most frequent first; the counts are untouched', () => {
+    const daily: DailyRow[] = [
+      { day: '2026-09-22', requestCount: 10, count5xx: 2, path404Counts: { '/favicon.ico': 3, '/a': 1 } },
+      { day: '2026-09-23', requestCount: 4, count5xx: 0, path404Counts: {} },
+    ];
+    const failing = new Map([
+      ['2026-09-22', { '4xx': { '/__drobek/v1/data/x': '5', '/a': '1' }, '5xx': { '/__drobek/v1/proxy/y': '2' } }],
+      ['2026-09-23', { '4xx': null, '5xx': null }],
+    ]);
+    const out = requestEntries(daily, [], failing);
+    const plain = requestEntries(daily, []);
+    expect(out.map(({ failing_paths: _f, ...rest }) => rest)).toEqual(plain.map(({ failing_paths: _f, ...rest }) => rest));
+    expect(out[1]).toMatchObject({ day: '2026-09-22', count_404: 4, count_5xx: 2 });
+    expect(out[1].failing_paths).toEqual({
+      '4xx': [
+        { path: '/__drobek/v1/data/x', count: 5 },
+        { path: '/favicon.ico', count: 3 },
+        { path: '/a', count: 2 },
+      ],
+      '5xx': [{ path: '/__drobek/v1/proxy/y', count: 2 }],
+    });
+    expect(out[0].failing_paths).toEqual({ '4xx': [], '5xx': [] });
+    // Without the Redis half (flush off) the durable file 404s still list.
+    expect(plain[1].failing_paths['4xx'].map((p) => p.path)).toEqual(['/favicon.ico', '/a']);
+  });
+
+  it('lists at most 10 failing paths per class; junk counts are skipped', () => {
+    const many = Object.fromEntries(Array.from({ length: 30 }, (_, i) => [`/p${String(i).padStart(2, '0')}`, i + 1]));
+    const out = requestEntries(
+      [{ day: '2026-09-22', requestCount: 1, count5xx: 0, path404Counts: many }],
+      [],
+      new Map([['2026-09-22', { '5xx': { '/ok': '1', '/nan': 'x', '/neg': '-2' } }]])
+    );
+    expect(out[0].failing_paths['4xx']).toHaveLength(FAILING_PATHS_TOP);
+    expect(out[0].failing_paths['4xx'][0]).toEqual({ path: '/p29', count: 30 });
+    expect(out[0].failing_paths['5xx']).toEqual([{ path: '/ok', count: 1 }]);
   });
 
   it('caps at 100 days', () => {

@@ -69,7 +69,9 @@ Fix = the line it names, in the same app, e.g. `"date-fns": "https://esm.sh/date
     seconds after a page ran; ask the user to open/reload the preview first.
   - `compile` — last 50 compiles: `{ at, version, ok, errors, warning_count, duration_ms, trigger }`
     (`version: null` = refused, nothing stored).
-  - `requests` — per day: `{ day, requests, count_5xx, count_404, modules: { <m>: { "2xx", "3xx", "4xx", "5xx" } } }`.
+  - `requests` — per day: `{ day, requests, count_5xx, count_404, modules: { <m>: { "2xx", "3xx", "4xx", "5xx" } }, failing_paths: { "4xx": [{ path, count }], "5xx": [{ path, count }] } }`.
+    `failing_paths` = the day's top 10 failing paths per class (a missing `/favicon.ico` shows up under `4xx`);
+    the path only, no query; `__other__` = paths past the per-day cap.
   - Kept 30 days (runtime: the newest 500 errors per app); nothing older exists.
 - A `drobek.*` call rejects with `DrobekError { status, code, message, details?, hint? }`;
   `drobek.proxy.fetch` resolves with a `Response` instead (check `res.ok`).
@@ -105,5 +107,6 @@ Fix = the line it names, in the same app, e.g. `"date-fns": "https://esm.sh/date
 | `rate_limited` (429) | per-minute limit | back off `Retry-After`; no retry loops |
 | `limit_exceeded` (429) | daily quota | tell the user; stop |
 | `validation_failed` (422) | record breaks the collection schema | send the fields in `details[]` |
+| `pending_confirmation` (409) | data collection waits for the owner's confirmation (`configure_module` said `applied:false`) | the owner confirms at `confirm_url` (`get_app`) |
 | `password_required` (401) | the app is password-locked | the user unlocks it in the browser first |
 | `unavailable` (503) | e-mail paused or a service down | retry later; tell the owner if it persists |

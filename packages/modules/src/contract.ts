@@ -886,6 +886,13 @@ export interface ModuleContext<Config = unknown> extends ModuleServices {
   principal: Principal;
   /** This app's effective config (defaults + what was set). */
   config: Config;
+  /**
+   * The config this app would have once the owner confirms its pending
+   * change; null or absent when nothing waits (or it no longer validates).
+   * Never act on it: it is not in force. It lets a route answer honestly
+   * about something the agent configured but the owner has not confirmed.
+   */
+  pendingConfig?: Config | null;
   rules: {
     /** Evaluate `rule` for the caller; `ownerId` = the record's owner (for `owner`). */
     decide(rule: Rule, ownerId?: string | null): AccessDecision;

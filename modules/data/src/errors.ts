@@ -12,6 +12,7 @@ export type DataErrorCode =
   | 'unauthorized'
   | 'forbidden'
   | 'not_found'
+  | 'pending_confirmation'
   | 'rate_limited'
   | 'payload_too_large'
   | 'quota_exceeded';
@@ -23,6 +24,7 @@ const STATUS: Record<DataErrorCode, number> = {
   unauthorized: 401,
   forbidden: 403,
   not_found: 404,
+  pending_confirmation: 409,
   rate_limited: 429,
   payload_too_large: 413,
   quota_exceeded: 409,

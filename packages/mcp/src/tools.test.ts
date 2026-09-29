@@ -25,7 +25,7 @@ import {
 } from '@drobek/modules';
 import { noopLogger } from '@drobek/core';
 import { STORE_DATA, greet, store } from './test/modules.js';
-import { APP_LOCK_TTL_SEC, LIMITS } from '@drobek/agent-dx';
+import { APP_LOCK_TTL_SEC, LIMITS, listAppsNext } from '@drobek/agent-dx';
 import type { ToolPrincipal } from './context.js';
 import { freshDb, type TestDb } from './test/db.js';
 import { connect, testDeps, type TestDeps } from './test/harness.js';
@@ -678,6 +678,11 @@ describe('list_apps', () => {
         .where(and(eq(apps.workspaceId, teamId), isNull(apps.deletedAt)));
       expect(apps2).toHaveLength(count.length);
       expect(r.body.all_workspaces).toBeUndefined();
+      // NSO-379: additive `next` — this server's skills (greet + data) have no `start`.
+      expect(Object.keys(r.body).sort()).toEqual(['apps', 'next', 'user', 'workspaces']);
+      expect(r.body.next).toBe(listAppsNext([{ name: 'greet' }, { name: 'data' }]));
+      expect(r.body.next).not.toContain("skill_info('start')");
+      expect(r.body.next).toContain('create_app');
     } finally {
       await c.close();
     }
@@ -1303,7 +1308,14 @@ describe('get_logs (M1-07)', () => {
         await new Promise((r) => setTimeout(r, 20));
       }
       expect(entries).toEqual([
-        { day: today, requests: 42, count_5xx: 1, count_404: 2, modules: { ping: { '2xx': 3, '3xx': 0, '4xx': 2, '5xx': 0 } } },
+        {
+          day: today,
+          requests: 42,
+          count_5xx: 1,
+          count_404: 2,
+          modules: { ping: { '2xx': 3, '3xx': 0, '4xx': 2, '5xx': 0 } },
+          failing_paths: { '4xx': [{ path: '/x', count: 2 }], '5xx': [] },
+        },
       ]);
     } finally {
       await c.close();
@@ -1331,6 +1343,84 @@ describe('get_logs (M1-07)', () => {
       expect(outsider.body).toMatchObject({ code: 'not_found' });
     } finally {
       await eve.close();
+    }
+  });
+});
+
+describe('unknown arguments (NSO-378)', () => {
+  it('are accepted and reported in warnings; the result is otherwise the same', async () => {
+    const app = await newApp('Extra args', { template: 'html' });
+    const alice = await as('alice');
+    try {
+      const plain = await alice.call('get_app', { app_id: app.app_id });
+      expect(plain.body).not.toHaveProperty('warnings');
+
+      const r = await alice.call('publish', { app_id: app.app_id, user_confirmed: true });
+      expect(r.isError, r.text).toBe(false);
+      expect(r.body).toMatchObject({ published_version: 1, published_url: `https://${app.slug}.drobek.app` });
+      expect(r.body.warnings).toEqual([
+        {
+          code: 'unknown_argument',
+          message: 'publish ignored "user_confirmed": it takes no such argument. It takes app_id, version.',
+          ignored: ['user_confirmed'],
+          accepted: ['app_id', 'version'],
+        },
+      ]);
+      // The text content is the same JSON as structuredContent.
+      expect(JSON.parse(r.text)).toEqual(r.body);
+
+      const again = await alice.call('get_app', { app_id: app.app_id, verbose: true });
+      const { warnings, ...rest } = again.body;
+      expect(rest).toEqual((await alice.call('get_app', { app_id: app.app_id })).body);
+      expect(warnings).toMatchObject([{ code: 'unknown_argument', ignored: ['verbose'], accepted: ['app_id'] }]);
+    } finally {
+      await alice.close();
+    }
+  });
+
+  it('are named on a failed call too', async () => {
+    const alice = await as('alice');
+    try {
+      const r = await alice.call('get_app', { app_id: 'nope', workspace: 'team-x' });
+      expect(r.isError).toBe(true);
+      expect(r.body.code).toBe('not_found');
+      expect(r.body.warnings).toMatchObject([{ code: 'unknown_argument', ignored: ['workspace'], accepted: ['app_id'] }]);
+      // A missing required argument is still the SDK's input validation error, before any tool body runs.
+      const missing = await alice.client.callTool({ name: 'get_app', arguments: { appId: 'nope' } });
+      expect(missing.isError).toBe(true);
+      expect((missing.content as { text: string }[])[0].text).toContain('Input validation error');
+    } finally {
+      await alice.close();
+    }
+  });
+
+  it('on an untrusted-envelope tool: the envelope stays the first block, the warnings follow in their own', async () => {
+    const app = await newApp('Extra envelope', { template: 'html' });
+    const alice = await as('alice');
+    try {
+      const raw = await alice.client.callTool({ name: 'read_file', arguments: { app_id: app.app_id, path: 'index.html', encoding: 'utf8' } });
+      expect(raw.structuredContent).toBeUndefined();
+      const content = raw.content as { type: string; text: string }[];
+      expect(content).toHaveLength(2);
+      expect(content[0].text.startsWith('UNTRUSTED CONTENT')).toBe(true);
+      expect(JSON.parse(content[1].text)).toMatchObject({ warnings: [{ code: 'unknown_argument', ignored: ['encoding'] }] });
+    } finally {
+      await alice.close();
+    }
+  });
+
+  it('caps the listed names', async () => {
+    const alice = await as('alice');
+    try {
+      const extra = Object.fromEntries(Array.from({ length: 25 }, (_, i) => [`x${i}${'y'.repeat(i === 0 ? 100 : 0)}`, i]));
+      const r = await alice.call('list_apps', extra);
+      expect(r.isError, r.text).toBe(false);
+      const [w] = r.body.warnings as { ignored: string[]; message: string }[];
+      expect(w.ignored).toHaveLength(20);
+      expect(w.ignored[0]).toHaveLength(65);
+      expect(w.message).toContain('(and 5 more)');
+    } finally {
+      await alice.close();
     }
   });
 });

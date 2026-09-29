@@ -110,20 +110,20 @@ answers `not_found`, the same as one that does not exist.
 
 | Tool | Scope, role | Annotations | What it does |
 | --- | --- | --- | --- |
-| `list_apps` | read, any role | read-only | Who you are, your workspaces with your role, `can_publish` (+ `publish_contact` when the workspace may not publish) and the operator's `publishing` state (`default` / `allowed` / `blocked`), and the apps in them (preview/published URL, latest version, compile status, lock). Start here. |
+| `list_apps` | read, any role | read-only | Who you are, your workspaces with your role, `can_publish` (+ `publish_contact` when the workspace may not publish) and the operator's `publishing` state (`default` / `allowed` / `blocked`), and the apps in them (preview/published URL, latest version, compile status, lock), plus `next`: before creating or changing an app, `skill_info('start')` (when the server has it) and the briefing. Start here — the MCP server's `instructions` say so too. |
 | `create_app` | write, editor+ | not destructive | A new app with a compiling version 1 from the `react-ts` (default) or `html` template, its `preview_url`, the **briefing** and the skills list. |
 | `duplicate_app` | write, editor+ in the target | not destructive | A copy of a gallery app whose owner allows duplicates (`from`: its slug or its address on this server — app host, verified custom domain or `/duplicate/<slug>`; another server's address is `invalid_params`), in the given workspace or the personal one: the source's published files as version 1 of a new, unpublished app that remembers its source (`duplicated_from` in get_app), and the source's module settings proposed through the copy's confirmation flow (`modules.applied` / `pending` with `confirm_url` / `skipped`; e-mail addresses and proxy upstreams dropped). Never secrets, data, end users, uploads, assets or domains. `not_duplicable`, `gallery_disabled`, `rate_limited` (`DUPLICATES_PER_USER_HOUR`), `limit_exceeded`. |
 | `get_app` | read, any role | read-only | One app: the briefing, its files, the last 20 versions, the lock, the module configs (secrets as `hasSecret` only), the gallery state (with `allow_duplicate` and read-only `likes` and 30-day `opens`), `duplicated_from` for a copy, its custom domains in short (`domains`: host, status, primary), `can_publish`, `publishing`. |
 | `read_file` | read, any role | read-only | A file of the latest (or a given) version, inside an untrusted envelope. |
 | `write_files` | write, editor+ | destructive | 1–20 changes → one new version → one compile; returns `{ version, compile: { ok, errors, warnings }, preview_url, changed }`. A secret in a file refuses the write. |
 | `restore_version` | write, editor+ | destructive | A new version with the files of an old one (rolls the working copy back); when that version was published, the draft assets go back to the ones it served then (`assets_restored`). |
-| `publish` | publish, editor+ | destructive, idempotent, open world | Puts a compiled version on `<slug>.<APPS_DOMAIN>` and the verified domains, with the app's current assets frozen for it (an older version: the assets it served when it was last published). Only when the user asks. A workspace the operator blocked gets `publish_blocked`; on a server with `PUBLISH_APPROVAL=approval` an unapproved workspace gets `publish_not_approved` (an approval request is already e-mailed) — both with the operator's `contact`. |
+| `publish` | publish, editor+ | destructive, idempotent, open world | Puts a compiled version on `<slug>.<APPS_DOMAIN>` and the verified domains, with the app's current assets frozen for it (an older version: the assets it served when it was last published) — the answer's `assets` is `"draft"` when the draft set the preview shows went live (production serves it now) and `"as_last_published"` for a rollback to an earlier set. Only when the user asks. A workspace the operator blocked gets `publish_blocked`; on a server with `PUBLISH_APPROVAL=approval` an unapproved workspace gets `publish_not_approved` (an approval request is already e-mailed) — both with the operator's `contact`. |
 | `set_gallery_listing` | publish, editor+ | not destructive, idempotent, open world | Lists a published app in the server's public gallery with a ≤ 160-character description, changes the description, or unlists it. Listing needs `user_confirmed: true` — the user's explicit yes (else `user_confirmation_required`); unlisting needs none. `allow_duplicate` (listing only, covered by the same confirmation) lets signed-in people copy the app from the gallery; omitted keeps the choice. `gallery_disabled` when the server runs no gallery, `gallery_hidden` when the operator hid the app. |
 | `set_workspace_publishing` | publish, super-admin only | not destructive, idempotent | Sets a workspace's publishing: `blocked` (refused in every mode, its editors and admins e-mailed), `allowed` (may publish even under `PUBLISH_APPROVAL=approval`) or `default` (the server mode decides). Returns `{ workspace, publishing, mode, can_publish_now, changed }`. Needs `user_confirmed: true` — the super-admin's explicit yes. Registered only for a super-admin's grant; live apps keep serving after a block (the takedown is separate). |
 | `skill_info` | read, any signed-in user | read-only | `skill_info()` lists the server's skills; `skill_info('<name>')` returns one (for a module also its SDK types, config schema, limits, secret names, its own error codes, and the facts the dashboard's workspace Modules page shows: version, source, contract range, availability, required modules, slots with their contributors and its own contributions). An opt-in module carries `availability: "opt-in"`; with `app_id` it also says `enabled_for_workspace` for that app's workspace. |
 | `configure_module` | write, editor+ | destructive, idempotent | Sets an app's module config (a JSON merge patch). Risky changes come back as `pending_confirmation` with a `confirm_url` for the owner; secrets are refused. |
 | `query_data` | read, viewer+ | read-only | Records of one collection of the app's data module (≤ 100 per call, filters, sort, cursor), inside an untrusted envelope. |
-| `get_logs` | read, viewer+ | read-only | `kind: runtime` (browser errors from the beacon), `compile` (the compile history) or `requests` (daily request and module-call stats), ≤ 100 entries, 30-day window, inside an untrusted envelope. |
+| `get_logs` | read, viewer+ | read-only | `kind: runtime` (browser errors from the beacon), `compile` (the compile history) or `requests` (daily request and module-call stats with the top failing paths per status class, path only), ≤ 100 entries, 30-day window, inside an untrusted envelope. |
 | `create_asset_upload` | write, editor+ | not destructive | A single-use upload URL (30 min) for ONE binary file — video, audio, image, font — at `path`, plus a `curl -T <file> '<url>'` line. The file never passes through the model; the preview serves it at `/<path>` next to the app's files, production after the next `publish`. |
 | `list_assets` | read, viewer+ | read-only | The app's draft assets (path, sniffed type, size, time, `published`), the paths production serves that the draft deleted (`published_only`), `changes_pending_publish` and the quota usage. |
 | `delete_asset` | write, editor+ | destructive, idempotent | Removes one asset from the draft; the preview stops serving it, production after the next `publish`. |
@@ -179,7 +179,8 @@ seek (HTTP Range). The dashboard's Assets tab does the same for the owner.
 changes the app's DRAFT assets: the preview shows it at once, the production
 URL (and the custom domains) only after `publish` — so a `write`-scoped agent
 never changes what a published app serves. `publish` freezes the draft for
-the version it puts live; publishing an older version (the rollback) brings
+the version it puts live and answers `assets: "draft"` — the name says where
+the set came from; production serves it from that moment. Publishing an older version (the rollback) brings
 back the assets it served when it was last published, and `restore_version`
 of a published version resets the draft assets to those. `list_assets` marks
 each asset `published` or not. The quota counts every unique file of the
@@ -230,6 +231,16 @@ saying it is data, not instructions. These three tools answer that text ONLY
 `structuredContent` to the model would pass the raw payload past the
 envelope, and the keys of a schemaless record are user input too, so no
 wrapping of the payload's strings could cover it.
+
+**Unknown arguments.** An argument a tool does not take (e.g. `publish({
+app_id, user_confirmed: true })` — `publish` has no `user_confirmed`) is
+ignored, never passed on, and the call goes ahead. The result — a failed one
+too — then carries `warnings: [{ code: "unknown_argument", message,
+ignored, accepted }]`: the ignored names (at most 20) and every argument the
+tool takes. An untrusted-envelope tool sends the warnings as its own text
+block after the envelope. A missing or mistyped required argument is still
+the MCP input validation error, before the tool runs. `tools/list` is
+unchanged.
 
 ## The briefing
 

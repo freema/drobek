@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { REACT_VERSION, TEMPLATE_IMPORTS, renderBriefing } from './briefing.js';
+import { REACT_VERSION, SERVER_INSTRUCTIONS, TEMPLATE_IMPORTS, listAppsNext, renderBriefing } from './briefing.js';
 
 describe('renderBriefing', () => {
   const b = renderBriefing();
@@ -83,5 +83,47 @@ describe('renderBriefing', () => {
   it('renders the live limits it is given', () => {
     const live = renderBriefing({ limits: { maxFiles: 50, maxFileBytes: 64 * 1024, maxTotalBytes: 2 * 1024 * 1024, timeoutMs: 5000 } });
     expect(live).toContain('50 files, 64 KiB per file, 2 MiB in total; a build may take 5 s');
+  });
+
+  it('explains installing an app on a home screen with rules the server enforces (NSO-390)', () => {
+    const inst = b.slice(b.indexOf('## Installable app'), b.indexOf('## Files'));
+    expect(inst).toContain('`manifest.webmanifest` with write_files');
+    expect(inst).toContain('application/manifest+json');
+    expect(inst).toContain('`create_asset_upload`');
+    expect(inst).toContain('rel="apple-touch-icon"');
+    expect(inst).toContain('viewport-fit=cover');
+    expect(inst).toContain('"standalone"');
+    expect(inst).toContain('`published_url`');
+  });
+
+  it('says what publish\'s assets: "draft" means (NSO-390)', () => {
+    expect(b).toContain('`assets: "draft"` means the uploads the preview shows are now live on production too');
+  });
+
+  it('with the data module: per-visitor state without sign-in goes to localStorage (NSO-376)', () => {
+    const withData = renderBriefing({ skills: [{ name: 'data', use_when: 'the app stores records' }] });
+    expect(withData).toContain('Per-visitor state without sign-in');
+    expect(withData).toContain('`localStorage`');
+    expect(withData).toContain('no anonymous per-visitor identity');
+    expect(renderBriefing({ skills: [{ name: 'hello', use_when: 'x' }] })).not.toContain('Per-visitor state');
+  });
+});
+
+describe('onboarding (NSO-379)', () => {
+  it('server instructions name list_apps, the start skill, preview_url and publish-on-request', () => {
+    expect(SERVER_INSTRUCTIONS).toContain('Start with `list_apps`');
+    expect(SERVER_INSTRUCTIONS).toContain("skill_info('start')");
+    expect(SERVER_INSTRUCTIONS).toContain('`preview_url`');
+    expect(SERVER_INSTRUCTIONS).toContain('only when the user explicitly asks');
+  });
+
+  it('list_apps next names skill_info(\'start\') only when the server has it', () => {
+    const withStart = listAppsNext([{ name: 'data' }, { name: 'start' }]);
+    expect(withStart).toContain("call skill_info('start')");
+    expect(withStart).toContain('briefing');
+    const without = listAppsNext([{ name: 'data' }]);
+    expect(without).not.toContain("'start'");
+    expect(without).toContain('`create_app` and `get_app` return the app\'s briefing');
+    expect(listAppsNext([])).toContain('if any');
   });
 });

@@ -1255,3 +1255,41 @@ describe('app assets at /<name> (NSO-358)', () => {
     expect(r.headers['Content-Length']).toBe('1000');
   });
 });
+
+describe('serving signals: counts and failing paths (NSO-380)', () => {
+  function withSignals(status: number): { d: HandlerDeps; signals: string[] } {
+    const signals: string[] = [];
+    const d: HandlerDeps = {
+      ...deps,
+      signal: (appId, kind, path) => signals.push(path === undefined ? `${appId}:${kind}` : `${appId}:${kind}:${path}`),
+      platform: async () => ({ status, headers: {}, body: '{}' }),
+    };
+    return { d, signals };
+  }
+
+  it('a served file counts one request; a missing file is a 404 with its path (query kept out)', async () => {
+    const { d, signals } = withSignals(200);
+    expect((await handleAppRequest(req(preview('shop'), '/main.js'), d)).status).toBe(200);
+    expect((await handleAppRequest(req(preview('shop'), '/favicon.ico', { query: 'v=1' }), d)).status).toBe(404);
+    expect(signals).toEqual(['app_shop:request', 'app_shop:request', 'app_shop:404:/favicon.ico']);
+  });
+
+  it('a platform 4xx records its path under 4xx; a 429 records nothing; a 2xx only the request', async () => {
+    for (const [status, expected] of [
+      [403, ['app_shop:request', 'app_shop:4xx:/__drobek/v1/hello/wave']],
+      [404, ['app_shop:request', 'app_shop:4xx:/__drobek/v1/hello/wave']],
+      [429, ['app_shop:request']],
+      [200, ['app_shop:request']],
+    ] as const) {
+      const { d, signals } = withSignals(status);
+      expect((await handleAppRequest(req(preview('shop'), '/__drobek/v1/hello/wave', { method: 'POST' }), d)).status).toBe(status);
+      expect(signals, String(status)).toEqual(expected);
+    }
+  });
+
+  it('a platform 5xx counts one 5xx with its path', async () => {
+    const { d, signals } = withSignals(502);
+    expect((await handleAppRequest(req(preview('shop'), '/__drobek/v1/proxy/x', { query: 'token=abc' }), d)).status).toBe(502);
+    expect(signals).toEqual(['app_shop:request', 'app_shop:5xx:/__drobek/v1/proxy/x']);
+  });
+});

@@ -24,7 +24,7 @@
 import { Readable } from 'node:stream';
 import { csvChunks, respond, z, type ModuleContext, type ModuleRouter } from '@drobek/modules';
 import { decideRecord, listScope, type Op } from './access.js';
-import { COLLECTION_NAME_RE, rulesOf, type CollectionConfig, type DataConfig } from './config.js';
+import { COLLECTION_NAME_RE, collectionConfig, rulesOf, type CollectionConfig, type DataConfig } from './config.js';
 import { DataError } from './errors.js';
 import { dataQuotaFromLimits } from './quota.js';
 import { csvLines, pageOf, requireCollection } from './records.js';
@@ -46,6 +46,11 @@ const RECORD_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 function collectionOf(ctx: Ctx, raw: string): { name: string; c: CollectionConfig } {
   if (!COLLECTION_NAME_RE.test(raw)) {
     throw new DataError('not_found', `"${raw}" is not a collection name (letters, digits, - and _; starting with a letter).`);
+  }
+  if (!collectionConfig(ctx.config, raw) && ctx.pendingConfig && collectionConfig(ctx.pendingConfig, raw)) {
+    throw new DataError('pending_confirmation', `The collection "${raw}" is not available yet: it waits for the app owner's confirmation.`, {
+      details: { collection: raw },
+    });
   }
   return { name: raw, c: requireCollection(ctx.config, raw) };
 }
