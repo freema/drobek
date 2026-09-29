@@ -44,6 +44,7 @@ import {
   APP_LOCK_TTL_SEC,
   REASONING_MAX_CHARS,
   WRITE_FILES_MAX,
+  listAppsNext,
   renderBriefing,
 } from '@drobek/agent-dx';
 import {
@@ -290,6 +291,7 @@ export async function listApps(ctx: CallContext, args: { workspace?: string }) {
     workspaces: ({ slug: string; name: string; kind: string; role: string } & PublishOut)[];
     apps: AppSummary[];
     all_workspaces?: ({ slug: string; name: string; kind: string } & PublishOut)[];
+    next?: string;
   } = {
     user: { email: principal.email },
     workspaces: workspaces.map((w) => ({ slug: w.slug, name: w.name, kind: w.kind, role: w.role, ...publishOut(mine.get(w.id)) })),
@@ -300,6 +302,7 @@ export async function listApps(ctx: CallContext, args: { workspace?: string }) {
     const perms = await publishPermissions(all.map((w) => w.id), { env: deps.env });
     result.all_workspaces = all.map((w) => ({ slug: w.slug, name: w.name, kind: w.kind, ...publishOut(perms.get(w.id)) }));
   }
+  result.next = listAppsNext(ctx.modules.skillList());
   return result;
 }
 

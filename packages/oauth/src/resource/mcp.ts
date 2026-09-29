@@ -19,6 +19,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import type { Express, Request, Response } from 'express';
+import { SERVER_INSTRUCTIONS } from '@drobek/agent-dx';
 import { coreVersion } from '@drobek/core';
 import { registerAppTools, type RegisterOptions } from '@drobek/mcp';
 import { toolAllowed } from '../scopes.js';
@@ -32,7 +33,7 @@ import { authenticate, send401, type AuthContext } from './oauth-resource.js';
 export function buildMcpServer(ctx: AuthContext, deps?: RegisterOptions['deps']): McpServer {
   const server = new McpServer(
     { name: 'drobek', version: coreVersion().version },
-    { capabilities: { tools: {}, resources: {}, prompts: {} } }
+    { capabilities: { tools: {}, resources: {}, prompts: {} }, instructions: SERVER_INSTRUCTIONS }
   );
 
   // Docs resources (drobek://docs/*) + the guided prompt, scope-agnostic: a

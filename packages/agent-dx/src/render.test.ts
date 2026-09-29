@@ -180,6 +180,7 @@ describe('renderLlmsFull', () => {
     }
     expect(full).toContain('redirect_uri');
     expect(full).toContain('{ code, message, hint }');
+    expect(full).toContain('warnings: [{ code: "unknown_argument", message, ignored, accepted }]');
   });
 
   it("renders each active module's own codes as a section after the core catalogue (NSO-344)", () => {

@@ -24,8 +24,11 @@ Your access belongs to the user, not to one workspace:
 1. Call `list_apps` — it returns the user's email, EVERY workspace they belong
    to (`slug`, `kind`, `role`, `can_publish`, `publishing`) and the apps across them
    (`app_id`, `name`, `slug`, `preview_url`, `latest_version`,
-   `compile_status`, `locked_by`).
-2. Every other tool addresses an app by its `app_id`. Your role in the app's
+   `compile_status`, `locked_by`), plus `next`: the step after it.
+2. Before you create or change an app, call `skill_info('start')` (when
+   `skill_info()` lists it): how a drobek app works — files, `drobek.json`,
+   the `write_files` → compile → preview → publish loop.
+3. Every other tool addresses an app by its `app_id`. Your role in the app's
    workspace decides what you may do (`viewer` reads; `editor` and
    `workspace-admin` also write). An app you cannot reach answers `not_found`,
    exactly like one that does not exist.
@@ -62,6 +65,14 @@ Before using a backend (login, stored data, forms, email, file uploads, external
 - `skill_info()` lists every skill with a "use when…" sentence; an empty list
   means this server has no backends — build a self-contained front-end and
   keep state in the browser (e.g. `localStorage`).
+- Per-visitor state without sign-in — a game save, settings, a half-filled
+  form — belongs in the browser's `localStorage`, also when the server has the
+  `data` module: that module has no anonymous per-visitor identity (a record
+  a visitor creates without signing in carries no owner, so it cannot be kept
+  to that visitor). `drobek.data` is for data that is shared (a leaderboard,
+  a guestbook, votes) or belongs to signed-in users (`owner` rules with
+  `skill_info('auth')`). Combine them: keep the save in `localStorage` and
+  send only what others should see (a score) to a collection.
 - `skill_info({ name })` returns the skill: minimal working code, the exact
   SDK calls and types, the module's config schema, limits and common errors;
   `errors` lists the module's own error codes with their meaning and fix;
@@ -151,6 +162,31 @@ served then; `restore_version` of a published version resets the assets too
 bytes decide the type), `asset_quota_exceeded`, `asset_path_taken` (an app file
 at that path wins). No transcoding: send MP4 (H.264/AAC) or WebM.
 
+## Installable app (home screen)
+
+An app can be added to a phone's home screen and open without the browser
+bar:
+
+- Write `manifest.webmanifest` with `write_files` (served as
+  `application/manifest+json`) and link it:
+  `<link rel="manifest" href="/manifest.webmanifest">`. Set `name`,
+  `short_name`, `start_url: "/"`, `display: "standalone"` (or
+  `"fullscreen"`), `background_color`, `theme_color` and `icons`.
+- Icons must be PNG (iOS does not use SVG for the home-screen icon).
+  `write_files` cannot store a `.png`: upload each icon with
+  `create_asset_upload` at the path the HTML and the manifest use —
+  `apple-touch-icon.png` (180×180) with
+  `<link rel="apple-touch-icon" href="/apple-touch-icon.png">`, and
+  `icons/icon-192.png` / `icons/icon-512.png` in the manifest.
+- Full screen on phones: `<meta name="viewport" content="width=device-width,
+  initial-scale=1, viewport-fit=cover">`, then pad the layout with
+  `env(safe-area-inset-top)` (and `-bottom`, `-left`, `-right`);
+  `<meta name="apple-mobile-web-app-status-bar-style"
+  content="black-translucent">` lets iOS draw under the status bar.
+- Every host is its own origin: an app installed from the preview URL is the
+  preview. Install from the `published_url` after `publish` — the icons
+  (assets) reach production with that publish.
+
 ## Port a Claude artifact
 
 drobek hosts what a Claude artifact is — a page with its script, images and
@@ -204,7 +240,11 @@ production URL (`<slug>.<APPS_DOMAIN>`) serves the PUBLISHED version only, and
 `publish({ app_id, version? })` (scope `publish`) puts a version live — by
 default the newest version that compiled; an older `version` rolls production
 back. It returns `published_url`, which you give to the user. Only versions
-that compiled can be published (`not_publishable`).
+that compiled can be published (`not_publishable`). Its `assets` says which
+uploads production serves now: `"draft"` = the ones the preview shows (the
+app's draft set) went live with this version — they are on production, not
+waiting; `"as_last_published"` = a rollback brought back the set that version
+served when it was last live.
 
 Publish **only when the user explicitly asks** ("publish it", "make it live").
 Never publish on your own initiative — the preview URL is for showing work in
@@ -333,6 +373,9 @@ A failed call returns `isError: true` with `{ code, message, hint }` — the
 `user_confirmation_required`, `gallery_hidden`, `gallery_disabled`, `not_duplicable`,
 `publish_not_approved`, `publish_blocked`, `asset_too_large`, `module_not_enabled`,
 `domain_not_verified`, `dns_unavailable`, …).
+An argument a tool does not take is ignored and the result carries
+`warnings: [{ code: "unknown_argument", ignored, accepted }]` — read it: a
+misspelled or invented argument did nothing.
 Compile problems are not tool failures: they come back in `compile.errors`. The
 full code → meaning → fix table is the Error catalogue in llms-full.txt (core
 codes, then one section per module); a module's own codes are also in
