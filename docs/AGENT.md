@@ -229,8 +229,14 @@ the error catalogue. `blocking` is the compile errors (the only thing that
 stops a publish, as before; a credential is refused before anything is
 stored); `warnings` never stop a write or a publish. The report is
 deterministic and reads only the version's source files and the app's module
-configs — no app code runs. Today's check: `missing_title` (index.html has
-no, or an empty, `<title>`). `READINESS_MAX_WARNINGS` (default 50) caps the
+configs — no app code runs. The checks: `missing_title` (index.html has
+no, or an empty, `<title>`); `xss_html_sink`, `xss_eval` and `xss_url_sink`
+(client-side XSS: a token-level lint of the scripts and inline `<script>`s
+for innerHTML/outerHTML/insertAdjacentHTML/document.write/
+dangerouslySetInnerHTML, eval/new Function/string timers, and href/src/
+location set from a value that is not a literal — literals, templates
+without `${}` and escaped substitutions pass; vendored and `.min.js` files
+are skipped). `READINESS_MAX_WARNINGS` (default 50) caps the
 listed warnings; the rest are counted in `warnings_omitted`. The checks live
 in `packages/compile/src/readiness/checks/` — one file per check, one line
 in its registry.

@@ -152,7 +152,11 @@ in the version history.
   `blocking` repeats the compile errors (`ready: false`), `warnings` are
   things to fix before the user publishes (e.g. `missing_title`), each
   `{ code, file?, line?, message, hint }`. Fix the warnings you can in your
-  next write; they never stop a write or a publish.
+  next write; they never stop a write or a publish. `xss_html_sink`,
+  `xss_url_sink` and `xss_eval` flag visitor-written text (data/forms
+  records) reaching innerHTML, a link/frame URL or eval: render it with
+  `textContent` / `createElement` (React: `{value}`), escape it, or
+  allow-list the URL scheme (http/https).
 - Never put secrets in files: writes are scanned and refused with
   `secret_in_source` (nothing is stored). Remove the value and tell the user to
   set the secret in the drobek dashboard — never ask them to paste it to you.

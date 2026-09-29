@@ -302,6 +302,27 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
       'index.html has no <title> in its head, or an empty one: browser tabs, bookmarks, history and shared links show the bare address instead of the app\'s name. The version still compiles and can be published.',
     fix: 'Add `<title>App name</title>` inside `<head>` of index.html (the app\'s own name, not "Vite App") and write again.',
   },
+  {
+    code: 'xss_html_sink',
+    surface: 'readiness.warnings[] (write_files, publish, dashboard app page)',
+    meaning:
+      'innerHTML/outerHTML, insertAdjacentHTML, document.write or dangerouslySetInnerHTML gets a value that is not a literal. The app\'s real attack surface is text other visitors wrote (data/forms records, a copied app): rendered as HTML it runs as script in every viewer\'s browser (the app CSP allows inline script). A heuristic over the source; literals and templates whose every ${} is an escaping call pass.',
+    fix: 'Render visitor text as text: `el.textContent = value`, or build nodes with document.createElement + textContent (in React, `{value}` — never dangerouslySetInnerHTML). When markup is needed, escape each value (an escapeHtml() helper) or sanitize the HTML (DOMPurify.sanitize).',
+  },
+  {
+    code: 'xss_eval',
+    surface: 'readiness.warnings[] (write_files, publish, dashboard app page)',
+    meaning:
+      'eval(), new Function() or setTimeout/setInterval with a string: the app\'s Content-Security-Policy has no \'unsafe-eval\', so the call throws in the browser — and code built from visitor text is script injection.',
+    fix: 'Pass a function instead (`setTimeout(() => tick(), 100)`), parse data with JSON.parse, and look actions up in an object map instead of evaluating their names.',
+  },
+  {
+    code: 'xss_url_sink',
+    surface: 'readiness.warnings[] (write_files, publish, dashboard app page)',
+    meaning:
+      'A link or frame URL (`.href`, `.src` of a frame or script, setAttribute(\'href\'), location, JSX href) comes from a value that is not a literal or a fixed-scheme URL: a `javascript:` URL a visitor stored runs as script when the link is followed or the frame loads.',
+    fix: 'Allow-list the scheme before using a stored URL — `const u = new URL(value, location.href); if (u.protocol === \'https:\' || u.protocol === \'http:\') a.href = u.href;` — or build it from a fixed prefix (`\'/items/\' + encodeURIComponent(id)`).',
+  },
   // ── platform module routes (/__drobek/v1/<module>/…, the drobek SDK) ──────
   // Body { error, message, details?, hint } — `error` is the code below; the
   // SDK throws it as DrobekError { status, code, message, details, hint }.
