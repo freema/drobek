@@ -1,5 +1,10 @@
 # Changelog — drobek (core)
 
+## Unreleased
+
+### Added
+- **Static HTML and accessibility compile warnings** (NSO-389): `write_files` reports non-fatal warnings for missing page metadata and favicons, images without `alt`, unnamed buttons/links, and unlabeled form controls. Each warning includes a fix hint and a source location when available; only static `.html` files are checked.
+
 ## v0.13.1 — 2026-11-16
 
 The tag v0.13.0 was not released: the hosted runner label `ubuntu-latest` moved to Ubuntu 26.04, which the pinned Playwright has no browser build for, so the image e2e could not start; v0.13.1 pins the workflows to `ubuntu-24.04` and is otherwise v0.13.0. No migrations. New env vars: `MCP_REQUESTS_PER_USER_MINUTE` (600; `0` = no limit) and `BACKUP_PASSPHRASE_FILE` (unset = plain archives, as before). After the upgrade every visitor unlocked on a password-protected app enters the password once more: unlock cookies issued by an older version no longer verify.
