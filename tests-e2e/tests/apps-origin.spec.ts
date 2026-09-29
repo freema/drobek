@@ -216,6 +216,8 @@ test('app hosts: preview / publish / rollback / --vN, served files, headers, cac
       published_url: urlOf(prodHost(slug)),
       domains: [prodHost(slug)],
       assets: 'draft',
+      // NSO-384: the published version's readiness report (the html template has a <title>).
+      readiness: { ready: true, blocking: [], warnings: [] },
     });
     const prod1 = await hostRequest(prodHost(slug));
     expect(prod1.status).toBe(200);

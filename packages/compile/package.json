@@ -16,6 +16,7 @@
     "test:run": "vitest run"
   },
   "dependencies": {
+    "@drobek/agent-dx": "workspace:*",
     "esbuild": "^0.25.0"
   },
   "devDependencies": {

@@ -25,7 +25,7 @@ import {
 } from '@drobek/modules';
 import { noopLogger } from '@drobek/core';
 import { STORE_DATA, greet, store } from './test/modules.js';
-import { APP_LOCK_TTL_SEC, LIMITS, listAppsNext } from '@drobek/agent-dx';
+import { APP_LOCK_TTL_SEC, LIMITS, errorHint, listAppsNext } from '@drobek/agent-dx';
 import type { ToolPrincipal } from './context.js';
 import { freshDb, type TestDb } from './test/db.js';
 import { connect, testDeps, type TestDeps } from './test/harness.js';
@@ -277,10 +277,15 @@ describe('write_files', () => {
         reasoning: 'Break it',
       });
       expect(bad.isError, bad.text).toBe(false);
-      const compile = bad.body.compile as { ok: boolean; errors: { file: string; line: number; code: string }[] };
+      const compile = bad.body.compile as { ok: boolean; errors: { file: string; line: number; code: string; text: string }[] };
       expect(compile.ok).toBe(false);
       expect(compile.errors[0]).toMatchObject({ file: 'src/main.tsx', line: 6, code: 'build_error' });
       expect(bad.body).toMatchObject({ version: 2, changed: ['src/main.tsx'], preview_version: 1 });
+      // NSO-384: the readiness report mirrors the compile errors as its blocking class.
+      expect(bad.body.readiness).toMatchObject({
+        ready: false,
+        blocking: [{ code: 'build_error', file: 'src/main.tsx', line: 6, message: compile.errors[0].text, hint: expect.any(String) }],
+      });
       expect(bad.body.preview_url).toBe(`https://${app.slug}--preview.drobek.app`);
 
       const got = await c.call('get_app', { app_id: app.app_id });
@@ -299,6 +304,8 @@ describe('write_files', () => {
         reasoning: 'Fix it',
       });
       expect(good.body).toMatchObject({ version: 3, compile: { ok: true, errors: [] } });
+      // The react-ts template has a <title>: nothing to warn about.
+      expect(good.body.readiness).toEqual({ ready: true, blocking: [], warnings: [] });
       expect(good.body.preview_url).toBe(`https://${app.slug}--preview.drobek.app`);
       expect(good.body).not.toHaveProperty('note');
       expect(deps.events.map((e) => e.version)).toEqual([1, 2, 3]);
@@ -389,6 +396,39 @@ describe('write_files', () => {
         line: 1,
       });
       expect((await c.call('get_app', { app_id: app.app_id })).body.latest_version).toBe(1);
+      // The refusal keeps its pre-NSO-384 shape: no readiness report on an error.
+      expect(r.body).not.toHaveProperty('readiness');
+    } finally {
+      await c.close();
+    }
+  });
+
+  it('warns (never blocks) in `readiness` when index.html has no <title> (NSO-384)', async () => {
+    const app = await newApp('Untitled', { template: 'html' });
+    const c = await as('alice');
+    try {
+      const r = await c.call('write_files', {
+        app_id: app.app_id,
+        files: [{ path: 'index.html', content: '<!doctype html>\n<html>\n<head>\n</head>\n<body><h1>Hi</h1></body>\n</html>\n' }],
+        reasoning: 'Drop the title',
+      });
+      expect(r.isError, r.text).toBe(false);
+      expect(r.body).toMatchObject({ version: 2, compile: { ok: true, errors: [], warnings: [] }, changed: ['index.html'] });
+      expect(r.body.readiness).toEqual({
+        ready: true,
+        blocking: [],
+        warnings: [
+          {
+            code: 'missing_title',
+            file: 'index.html',
+            line: 3,
+            message: 'index.html has no <title>: browser tabs, bookmarks and shared links show the bare address.',
+            hint: errorHint('missing_title'),
+          },
+        ],
+      });
+      // The version is stored and compiled like any other — a warning changes nothing else.
+      expect((await c.call('get_app', { app_id: app.app_id })).body).toMatchObject({ latest_version: 2, compile_status: 'ok' });
     } finally {
       await c.close();
     }
@@ -439,11 +479,11 @@ describe('write_files — edits (NSO-382)', () => {
     return { app, c };
   }
 
-  it('whole-file writes answer as before, plus base_version', async () => {
+  it('whole-file writes answer as before, plus base_version and readiness', async () => {
     const { app, c } = await appWithGreet();
     try {
       const r = await c.call('write_files', { app_id: app.app_id, files: [{ path: 'notes.txt', content: 'x' }], reasoning: 'n' });
-      expect(Object.keys(r.body).sort()).toEqual(['base_version', 'changed', 'compile', 'preview_url', 'version']);
+      expect(Object.keys(r.body).sort()).toEqual(['base_version', 'changed', 'compile', 'preview_url', 'readiness', 'version']);
       expect(r.body).toMatchObject({ version: 3, base_version: 2, changed: ['notes.txt'] });
     } finally {
       await c.close();
@@ -960,6 +1000,12 @@ describe('publish', () => {
         published_url: `https://${app.slug}.drobek.app`,
         domains: [`${app.slug}.drobek.app`],
         assets: 'draft',
+        // NSO-384: v2's index.html lost its <title> — a warning, and the publish went ahead.
+        readiness: {
+          ready: true,
+          blocking: [],
+          warnings: [expect.objectContaining({ code: 'missing_title', file: 'index.html', hint: errorHint('missing_title') })],
+        },
       });
       expect(deps.events).toEqual([{ app_id: app.app_id, slug: app.slug, version: 2, kind: 'publish' }]);
 

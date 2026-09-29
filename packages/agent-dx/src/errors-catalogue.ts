@@ -294,6 +294,14 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     meaning: 'The build ran longer than COMPILE_TIMEOUT_MS and was stopped (the version is stored with compile_status error).',
     fix: 'Look for an import cycle or a very large generated file.',
   },
+  // ── readiness.warnings[].code (write_files, publish, the dashboard — never blocks) ─
+  {
+    code: 'missing_title',
+    surface: 'readiness.warnings[] (write_files, publish, dashboard app page)',
+    meaning:
+      'index.html has no <title> in its head, or an empty one: browser tabs, bookmarks, history and shared links show the bare address instead of the app\'s name. The version still compiles and can be published.',
+    fix: 'Add `<title>App name</title>` inside `<head>` of index.html (the app\'s own name, not "Vite App") and write again.',
+  },
   // ── platform module routes (/__drobek/v1/<module>/…, the drobek SDK) ──────
   // Body { error, message, details?, hint } — `error` is the code below; the
   // SDK throws it as DrobekError { status, code, message, details, hint }.

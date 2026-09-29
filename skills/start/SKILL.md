@@ -94,8 +94,8 @@ The loop (tool → result):
 1. `list_apps({})` → workspaces + apps; `create_app({ name, workspace?, template?: "react-ts" | "html" })`
    → `{ app_id, preview_url, briefing, skills }`. Read the briefing. A copy of a duplicable gallery app, on the user's ask: `duplicate_app({ from, workspace?, name? })`.
 2. `read_file({ app_id, path, version? })` before editing a file you did not just write (untrusted content).
-3. `write_files({ app_id, files, reasoning })` → `{ version, base_version, compile: { ok, errors: [{ code, file, line, column, text, hint? }], warnings }, preview_url, changed }`. An entry is `{ path, content }`, `{ path, delete: true }` or, for a few lines of an existing file, `{ path, edits: [{ old_string, new_string, replace_all? }] }` (each `old_string` matches exactly once unless `replace_all`; one that does not apply → `edit_mismatch` naming `path` + `edit_index`, nothing written).
-4. `compile.ok: true` → give the user `preview_url`. `false` → fix `compile.errors`, write again (`skill_info('debug')`).
+3. `write_files({ app_id, files, reasoning })` → `{ version, base_version, compile: { ok, errors: [{ code, file, line, column, text, hint? }], warnings }, preview_url, changed, readiness }`. An entry is `{ path, content }`, `{ path, delete: true }` or, for a few lines of an existing file, `{ path, edits: [{ old_string, new_string, replace_all? }] }` (each `old_string` matches exactly once unless `replace_all`; one that does not apply → `edit_mismatch` naming `path` + `edit_index`, nothing written).
+4. `compile.ok: true` → give the user `preview_url`. `false` → fix `compile.errors`, write again (`skill_info('debug')`). `readiness.warnings` never block; fix them before a publish.
 5. `get_logs({ app_id, kind: "runtime" })` after the page ran in a browser.
 6. `publish({ app_id, version? })` ONLY when the user explicitly asks → `published_url`. Public gallery: `set_gallery_listing({ app_id,
    listed, description, user_confirmed })` — show the user the description first; `user_confirmed: true` ONLY after they explicitly

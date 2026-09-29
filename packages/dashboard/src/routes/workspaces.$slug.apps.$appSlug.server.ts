@@ -6,7 +6,7 @@
  * VERSION HISTORY (number, time, author, reasoning, compile status + first
  * error, a link to `<slug>--v<N>`) + the insight panels (recent errors,
  * traffic / 404s) + the public gallery section (NSO-340; absent unless
- * GALLERY_ENABLED). A viewer sees everything but no controls.
+ * GALLERY_ENABLED) + the newest version's publish readiness report (NSO-384). A viewer sees everything but no controls.
  *
  * POST (editor+): `appAction` — publish (an older version = the rollback),
  * restore to the working copy, the gallery listing, and the header's
@@ -26,6 +26,7 @@ import { appAction, appHeaderData, emailsOf, loadAppPage } from '../app-page.ser
 import { compileSummary } from '../app-view.js';
 import { parseDuplicateResult } from '../duplicate-result.server.js';
 import { loadPendingBanner } from '../pending-banner.server.js';
+import { loadReadiness } from '../readiness.server.js';
 import { shapeVersionHistory } from '../view.js';
 
 const EMPTY_ERRORS: AppErrorsView = {
@@ -45,13 +46,15 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const { app } = page;
 
   const raw = await listVersions(app.id, { limit: 100 });
-  const [header, emails, errors, logs] = await Promise.all([
+  const [header, emails, errors, logs, readiness] = await Promise.all([
     appHeaderData(page),
     emailsOf(raw.map((v) => v.createdByUserId)),
     // PHY-123 insight panels — best effort: a signals hiccup degrades to
     // empty, never 500s the page. Stored text is React-escaped on render.
     queryAppErrors(app.id).catch(() => EMPTY_ERRORS),
     queryAppLogs(app.id).catch(() => EMPTY_LOGS),
+    // NSO-384: the newest version's publish readiness report (best effort, never a 500).
+    raw[0] ? loadReadiness(app, raw[0].number) : null,
   ]);
   const byId = new Map(raw.map((v) => [v.id, v]));
   const latestNumber = raw[0]?.number ?? 0;
@@ -75,6 +78,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     versions,
     errors,
     logs,
+    readiness,
     // NSO-293: a taken-down app shows no publish / restore controls (the action answers 423 anyway).
     canPublish: header.canEdit && header.lockedByAdmin === null,
     // M2-02: "N changes await confirmation" (PendingBanner).

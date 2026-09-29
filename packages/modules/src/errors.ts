@@ -95,6 +95,8 @@ export const CORE_ERROR_CODES: readonly string[] = [
   'unresolved_import',
   'invalid_config',
   'timeout',
+  // readiness.warnings[]
+  'missing_title',
   // OAuth
   'invalid_grant',
   'invalid_client',
