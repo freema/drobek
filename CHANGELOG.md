@@ -1,6 +1,6 @@
 # Changelog — drobek (core)
 
-## Unreleased
+## v0.6.0 — 2026-09-29
 
 ### Added
 - **Readiness: client-side XSS warnings** (NSO-387): the readiness report adds `xss_html_sink` (innerHTML/outerHTML/insertAdjacentHTML/document.write/dangerouslySetInnerHTML set from a value), `xss_eval` (eval, new Function, string timers — the app CSP blocks them anyway) and `xss_url_sink` (DOM href/src, setAttribute, location, JSX `src` of an iframe/embed/object/script from a value that is not a literal or a fixed-scheme URL), each with file and line and a textContent / createElement / URL allow-list hint. A token-level lint of the scripts and inline `<script>`s (no app code runs, ~3 ms per 100 KB of TS); literals, templates without `${}` and escaped substitutions pass, vendored and `.min.js` files are skipped. Warnings only — nothing new is refused.
