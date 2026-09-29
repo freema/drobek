@@ -644,3 +644,36 @@ describe('appInfo (get_app / configure_module) and registration', () => {
     expect(JSON.stringify(view)).not.toContain('another-secret-value-xyz');
   });
 });
+
+describe('the upstreams authority (a module job calls an upstream, NSO-392)', () => {
+  const view = (config: unknown) => ({
+    app: { id: appA, slug: 'chat', workspaceId: ws1 },
+    config: proxyConfigSchema.parse(config),
+    db,
+    log: { debug() {}, info() {}, warn() {}, error() {} },
+    limits: async () => ({}),
+  });
+  const fetchUp = (config: unknown, name: string, request = {}) => mod().upstreams!.fetch(view(config) as never, name, request);
+
+  it('calls an assigned upstream with its secret injected, whatever its call rule (none too)', async () => {
+    const r = await fetchUp({ upstreams: { echo: { rules: { call: 'none' } } } }, 'echo', { path: '/v1/players?season=2026' });
+    expect(r.status).toBe(200);
+    const echoed = JSON.parse(r.body.toString('utf8')) as { method: string; path: string; query: string; headers: Record<string, string> };
+    expect(echoed).toMatchObject({ method: 'GET', path: '/v1/players', query: '?season=2026' });
+    expect(echoed.headers.authorization).toBe(`Bearer ${SECRET}`);
+    expect(echoed.headers.accept).toBe('application/json');
+  });
+
+  it('POST sends the body as JSON', async () => {
+    const r = await fetchUp({ upstreams: { open: {} } }, 'open', { method: 'POST', path: '/q', body: '{"a":1}' });
+    expect(JSON.parse(r.body.toString('utf8'))).toMatchObject({ method: 'POST', body: '{"a":1}', headers: { 'content-type': 'application/json' } });
+  });
+
+  it('refuses what the route refuses: not assigned, another workspace, a path outside the prefixes, a method the job may not use, over the cap', async () => {
+    await expect(fetchUp({ upstreams: {} }, 'echo')).rejects.toMatchObject({ code: 'forbidden', details: { reason: 'upstream_not_assigned' } });
+    await expect(fetchUp({ upstreams: { elsewhere: {} } }, 'elsewhere')).rejects.toMatchObject({ code: 'not_found', details: { reason: 'upstream_not_registered' } });
+    await expect(fetchUp({ upstreams: { echo: {} } }, 'echo', { path: '/v2/x' })).rejects.toMatchObject({ code: 'path_not_allowed' });
+    await expect(fetchUp({ upstreams: { echo: {} } }, 'echo', { method: 'DELETE', path: '/v1' })).rejects.toMatchObject({ code: 'invalid_request' });
+    await expect(fetchUp({ upstreams: { open: {} } }, 'open', { path: '/gzip', maxBytes: 5 })).rejects.toMatchObject({ code: 'upstream_error', message: 'upstream response exceeded the size cap' });
+  });
+});

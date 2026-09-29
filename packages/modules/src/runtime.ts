@@ -33,7 +33,11 @@
  *  - `endUserCallback()` — the end-user sign-in providers' IdP callback on
  *    the dashboard host (the `endUsers` authority's `callback`, NSO-348);
  *  - `jobApps()` / `serverJobContext()` / `appJobContext()` — what the
- *    module-jobs scheduler (./jobs.ts, NSO-391) runs a module's `jobs` with.
+ *    module-jobs scheduler (./jobs.ts, NSO-391) runs a module's `jobs` with
+ *    (a per-app job also calls the app's upstreams and imports records
+ *    through their authorities, NSO-392);
+ *  - `sync()` — the scheduled-import module's owner view (NSO-392): the
+ *    dashboard's sources and Run now, MCP `sync_now` and get_logs `sync`.
  *
  * `moduleRuntime()` is the process-wide instance, loaded once from
  * `DROBEK_MODULES` (memoised on globalThis, so the dev server's Vite-loaded
@@ -83,6 +87,8 @@ import type {
   RecordsQuery,
   RecordsView,
   ServerJobContext,
+  SyncRun,
+  SyncSourceState,
 } from './contract.js';
 import { asObject, asPending, readConfigRow, readConfigRows, withLockedConfig, type PendingChange } from './configs.server.js';
 import { assertSignInSender, capEmailText, emailKind, redactAddresses, resolveRecipients, sanitizeSubject } from './email.js';
@@ -102,6 +108,8 @@ import {
   mailAuthorityOf,
   recordsAuthorityOf,
   submissionsAuthorityOf,
+  syncAuthorityOf,
+  upstreamsAuthorityOf,
   type ModuleOrigin,
   type ModuleSource,
   type ResolveOptions,
@@ -109,6 +117,7 @@ import {
 } from './registry.js';
 import { collectRoutes, errorResult, isReadable, matchRoute, runRoute, type PipelineRequest, type PipelineResult, type Route } from './router.js';
 import { decideAccess } from './rules.js';
+import { moduleJobsSettingsFromEnv } from './jobs.js';
 import { BEACON_SCRIPT_PATH, SDK_PATH, SDK_TYPES_PATH, buildSdk, moduleTypes, toPath, type SdkBundle } from './sdk-build.js';
 import { PENDING_MAIL_WINDOW_MS, pendingMail, pendingMailKey } from './pending-mail.js';
 import { getModuleSecret, secretsSet, secretsStatus } from './secrets.server.js';
@@ -433,6 +442,23 @@ export interface BoundSubmissions {
   remove(id: string): Promise<boolean>;
 }
 
+/** Who started a run by hand (NSO-392): the dashboard user, or the agent acting for them. */
+export interface RunActor {
+  userId: string;
+  surface: 'mcp' | 'web';
+}
+
+/** The scheduled imports of one app (the module that declares `sync`, bound to the app's config). */
+export interface BoundSync {
+  module: string;
+  sources(): Promise<SyncSourceState[]>;
+  runs(query?: { source?: string; since?: Date; limit?: number }): Promise<SyncRun[]>;
+  /** Run a source now; the run's audit names `actor`. Refused (404 module_not_enabled) when the module is off for the workspace. */
+  runNow(source: string, actor: RunActor): Promise<SyncRun>;
+  /** Clear a pause after failures; audited `<module>.resume` (actor: the person). */
+  resume(source: string, actor: RunActor): Promise<boolean>;
+}
+
 /** The end-user uploads of one app (the module that declares `files`). */
 export interface BoundFiles {
   module: string;
@@ -535,6 +561,15 @@ export interface JobRunInput {
   job: string;
   signal: AbortSignal;
   lastSuccessAt: Date | null;
+  /** A run a person started (the sync authority's runNow); absent for a scheduled run. */
+  actor?: RunActor;
+}
+
+/** The longest a run started by hand may take: MODULE_JOBS_TIMEOUT_MS, at most a minute (the caller waits for it). */
+const RUN_NOW_MAX_MS = 60_000;
+
+function moduleRunTimeoutMs(env: NodeJS.ProcessEnv): number {
+  return Math.min(moduleJobsSettingsFromEnv(env).settings.timeoutMs, RUN_NOW_MAX_MS);
 }
 
 /** `log` with `meta` added to every line. */
@@ -1438,7 +1473,9 @@ export class ModuleRuntime {
         return { applied: true, config: before, pending: waiting, role: row.pending?.confirm_role, unchanged: true as const };
       }
       const hookApp: HookApp = { id: input.app.id, slug: input.app.slug, workspaceId: input.app.workspaceId };
-      const required = m.confirmRequired ? await m.confirmRequired(before, after, { app: hookApp, db: tx as unknown as DB }) : [];
+      const required = m.confirmRequired
+        ? await m.confirmRequired(before, after, { app: hookApp, db: tx as unknown as DB, limits: () => this.deps.limits.forWorkspace(hookApp.workspaceId) })
+        : [];
       const { changes, role } = normalizeConfirmItems(Array.isArray(required) ? required : []);
       if (changes.length === 0) {
         await write({ config: nextStored });
@@ -1739,6 +1776,92 @@ export class ModuleRuntime {
           if (!declared.has(name)) throw new Error(`module "${m.name}" reads undeclared secret "${name}"`);
           return getModuleSecret(app.id, m.name, name, deps.env);
         },
+      },
+      upstreams: {
+        fetch: async (name, request = {}) => {
+          const owner = upstreamsAuthorityOf(this.modules);
+          if (!owner?.upstreams || !enabled.has(owner.name)) {
+            throw new ModuleError('unavailable', 'No module that calls upstreams (proxy) is on for this app\'s workspace.');
+          }
+          const db = deps.db();
+          const config = this.effectiveConfig(owner, (await readConfigRow(app.id, owner.name, db)).config);
+          return owner.upstreams.fetch(this.ownerView(app, config, db), name, request);
+        },
+      },
+      records: {
+        import: async (collection, records, opts) => {
+          const owner = recordsAuthorityOf(this.modules);
+          const importRecords = owner?.records?.importRecords?.bind(owner.records);
+          if (!owner || !importRecords || !enabled.has(owner.name)) {
+            throw new ModuleError('unavailable', 'No module that stores records and imports them in batches (data) is on for this app\'s workspace.');
+          }
+          const db = deps.db();
+          const config = this.effectiveConfig(owner, (await readConfigRow(app.id, owner.name, db)).config);
+          return importRecords(this.ownerView(app, config, db), collection, records, opts);
+        },
+      },
+      audit: async (action, meta = {}) => {
+        const actor = input.actor;
+        await writeAudit({
+          workspaceId: app.workspaceId,
+          actorUserId: actor?.userId ?? null,
+          // A scheduled run has no person behind it: kind `user` without a user reads as "system" (like the DNS re-check).
+          actorKind: actor ? actorKindForSurface(actor.surface) : 'user',
+          action: action.startsWith(`${m.name}.`) ? action : `${m.name}.${action}`,
+          subjectType: AUDIT_SUBJECT_TYPES.app,
+          target: app.slug,
+          meta: { ...meta, module: m.name, job: input.job, by: actor ? actor.surface : 'schedule' },
+        });
+      },
+    };
+  }
+
+  // ── scheduled imports (NSO-392) ──
+
+  /**
+   * The app's scheduled imports (the module that declares `sync`), bound to
+   * the app's config — null when no active module declares it. For the
+   * OWNER's view (the dashboard, sync_now, get_logs): the caller authorized
+   * a drobek account for the app already.
+   */
+  async sync(app: HookApp): Promise<BoundSync | null> {
+    const m = syncAuthorityOf(this.modules);
+    if (!m?.sync) return null;
+    const authority = m.sync;
+    const db = this.deps.db();
+    const row = await readConfigRow(app.id, m.name, db);
+    const config = this.effectiveConfig(m, row.config);
+    const view = this.ownerView(app, config, db);
+    const runTimeoutMs = moduleRunTimeoutMs(this.deps.env);
+    return {
+      module: m.name,
+      sources: () => authority.sources(view),
+      runs: (q = {}) => authority.runs(view, q),
+      runNow: async (source, actor) => {
+        if (!(await this.isEnabled(app.workspaceId, m.name))) throw moduleNotEnabled(m.name);
+        const pending = row.pending ? this.parsePending(m, row.config, row.pending) : null;
+        const signal = AbortSignal.timeout(runTimeoutMs);
+        const ctx = await this.appJobContext(
+          m,
+          { app, config, pendingConfig: pending?.success ? pending.data : null },
+          { job: 'run_now', signal, lastSuccessAt: null, actor }
+        );
+        return authority.runNow(ctx as never, source);
+      },
+      resume: async (source, actor) => {
+        const resumed = await authority.resume(view, source);
+        if (resumed) {
+          await writeAudit({
+            workspaceId: app.workspaceId,
+            actorUserId: actor.userId,
+            actorKind: actorKindForSurface(actor.surface),
+            action: `${m.name}.resume`,
+            subjectType: AUDIT_SUBJECT_TYPES.app,
+            target: app.slug,
+            meta: { module: m.name, source },
+          });
+        }
+        return resumed;
       },
     };
   }

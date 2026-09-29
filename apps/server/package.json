@@ -38,6 +38,7 @@
     "drobek-module-forms": "workspace:*",
     "drobek-module-hello": "workspace:*",
     "drobek-module-proxy": "workspace:*",
+    "drobek-module-sync": "workspace:*",
     "esbuild": "^0.25.0",
     "express": "^4.21.2",
     "ioredis": "^5.6.0",

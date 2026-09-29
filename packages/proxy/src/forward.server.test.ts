@@ -146,3 +146,20 @@ describe('forwardToUpstream — relayed headers (NSO-326)', () => {
     });
   });
 });
+
+describe('forwardToUpstream — a caller\'s lower response cap (NSO-392)', () => {
+  const capped = (path: string, maxResponseBytes: number | undefined, e: NodeJS.ProcessEnv = env()) =>
+    forwardToUpstream({ upstream: upstream(), method: 'GET', subpath: path, search: '', headers: new Headers(), env: e, maxResponseBytes });
+
+  it('a cap below the body → upstream_error; the same call without one passes', async () => {
+    const err = await capped('/gzip', 100).catch((e: unknown) => e);
+    expect((err as ProxyError).code).toBe('upstream_error');
+    const r = await capped('/gzip', undefined);
+    expect(r.body?.toString('utf8')).toBe(JSON_BODY);
+  });
+
+  it('never raises the operator cap: the smaller of the two applies', async () => {
+    const err = await capped('/bomb', 64 * 1024 * 1024, env({ PROXY_MAX_RESPONSE_BYTES: String(1024 * 1024) })).catch((e: unknown) => e);
+    expect((err as ProxyError).code).toBe('upstream_error');
+  });
+});

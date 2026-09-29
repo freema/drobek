@@ -80,7 +80,7 @@ Before using a backend (login, stored data, forms, email, file uploads, external
   `contributes` describe the module itself (what the dashboard's workspace
   Modules page shows).
 - Besides the module skills (`auth`, `data`, `forms`, `email`, `files`,
-  `proxy`, …) the list has general skills: `start` (files, drobek.json, the
+  `proxy`, `sync`, …) the list has general skills: `start` (files, drobek.json, the
   write → preview → publish loop), `debug` (compile errors, `get_logs`,
   401/403 from a module), `ui` (Tailwind from esm.sh, responsive and
   accessible screens, loading and error states) and `port-artifact` (moving
@@ -319,8 +319,8 @@ everyone (on drobek.app it is shown at www.drobek.app/gallery).
   dashboard's `/duplicate/<slug>` link); another server's address is
   `invalid_params`. The source's module settings are proposed to the copy: anything
   that needs a confirmation waits on the new app's Modules page
-  (`modules.pending[].confirm_url` — tell the user), e-mail addresses and
-  proxy upstreams are dropped, and secrets, data, users, uploads, assets and
+  (`modules.pending[].confirm_url` — tell the user), e-mail addresses,
+  proxy upstreams and sync sources are dropped, and secrets, data, users, uploads, assets and
   domains are never copied. `get_app` of the copy says `duplicated_from`.
   `not_duplicable` (the owner does not allow copies) and `rate_limited`
   (DUPLICATES_PER_USER_HOUR) mean: tell the user, do not retry. The same
@@ -377,6 +377,16 @@ workspace admin does it, over MCP or on the dashboard's Upstreams page:
 `remove_upstream({ workspace, name, user_confirmed })` deletes one only after
 the user's explicit yes — every app using it breaks at once. A name the
 workspace already has answers `upstream_already_registered`.
+
+Data that should refresh on its own (scores, prices, a feed) is imported by
+the `sync` module (`skill_info('sync')`) instead of fetched per visitor: a
+source in `configure_module('sync', { sources: { <name>: { upstream, path,
+every, collection, items, key?, mode } } })` fetches the assigned upstream on
+a schedule (the owner confirms a new source) and writes the records into a
+`data` collection the app reads with `drobek.data`.
+`sync_now({ app_id, source })` runs a source at once and returns the run
+(`status: "failed"` + `error` is a failed run, not a tool error);
+`get_logs({ app_id, kind: "sync" })` lists the latest runs.
 
 ## Errors
 

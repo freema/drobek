@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { defineModule } from './contract.js';
-import { ModuleLoadError, checkRequires, endUserAuthorityOf, loadModules, mailAuthorityOf, packageNameFor, parseModuleList, recordsAuthorityOf, resolveModule, validateModule } from './registry.js';
+import { ModuleLoadError, checkRequires, endUserAuthorityOf, loadModules, mailAuthorityOf, packageNameFor, parseModuleList, recordsAuthorityOf, resolveModule, syncAuthorityOf, upstreamsAuthorityOf, validateModule } from './registry.js';
 import { echo, quiet } from './test/fixtures.js';
 
 const importer = (map: Record<string, unknown>) => async (pkg: string) => {
@@ -119,5 +119,41 @@ describe('registry', () => {
     expect(mailAuthorityOf([quiet, one])).toBe(one);
     expect(mailAuthorityOf([quiet])).toBeNull();
     expect(() => mailAuthorityOf([one, two])).toThrow(/only one module may own app e-mail/);
+  });
+});
+
+describe('the upstreams and sync authorities (NSO-392)', () => {
+  const base = { version: '1.0.0', skill: { useWhen: 'x', markdown: '# x' }, configSchema: z.object({}), configDefaults: {} };
+  const upstreams = { fetch: async () => ({ status: 200, headers: {}, body: Buffer.alloc(0) }) };
+  const sync = { sources: async () => [], runs: async () => [], runNow: async () => ({}) as never, resume: async () => false };
+
+  it('at most one module owns upstream calls; fetch must be a function', () => {
+    const one = defineModule({ ...base, name: 'one', upstreams });
+    const two = defineModule({ ...base, name: 'two', upstreams });
+    expect(() => validateModule(defineModule({ ...base, name: 'bad', upstreams: {} as never }))).toThrow(/upstreams.fetch/);
+    expect(upstreamsAuthorityOf([one])).toBe(one);
+    expect(upstreamsAuthorityOf([])).toBeNull();
+    expect(() => upstreamsAuthorityOf([one, two])).toThrow(/only one module may own upstream calls/);
+  });
+
+  it('at most one module runs scheduled imports; every sync.* must be a function', () => {
+    const one = defineModule({ ...base, name: 'one', sync });
+    const two = defineModule({ ...base, name: 'two', sync });
+    expect(() => validateModule(defineModule({ ...base, name: 'bad', sync: { ...sync, resume: undefined } as never }))).toThrow(/sync.resume/);
+    expect(syncAuthorityOf([one])).toBe(one);
+    expect(syncAuthorityOf([])).toBeNull();
+    expect(() => syncAuthorityOf([one, two])).toThrow(/only one module may run scheduled imports/);
+  });
+
+  it('records.importRecords is optional, but a function when present', () => {
+    const records = {
+      collections: async () => [],
+      query: async () => ({ collection: { name: 'x', rules: {}, schema: null, columns: [], records: 0 }, records: [], total: 0, next_cursor: null }),
+      get: async () => null,
+      remove: async () => false,
+      csv: async function* () {},
+    };
+    expect(() => validateModule(defineModule({ ...base, name: 'plain', records }))).not.toThrow();
+    expect(() => validateModule(defineModule({ ...base, name: 'bad', records: { ...records, importRecords: 'no' } as never }))).toThrow(/records.importRecords/);
   });
 });

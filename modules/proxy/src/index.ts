@@ -14,7 +14,8 @@
  * one to the app (the owner confirms it) and names who may call it; the
  * gateway core (SSRF guard, port allow-list 80/443, secret injection) is
  * `@drobek/proxy`. get_app / configure_module show each upstream with
- * `hasSecret`, never the value.
+ * `hasSecret`, never the value. Contract 1.2: the `upstreams` authority lets a
+ * module job (e.g. `sync`) call an assigned upstream the same guarded way.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -29,6 +30,7 @@ import {
   type ProxyConfig,
 } from './config.js';
 import { proxyAppInfo } from './info.js';
+import { upstreamsAuthority } from './job-fetch.js';
 import { registerRoutes, type ProxyRouteOptions } from './routes.js';
 
 export {
@@ -48,6 +50,7 @@ export {
   type UpstreamAssignment,
 } from './config.js';
 export { proxyAppInfo, type UpstreamInfo } from './info.js';
+export { upstreamsAuthority } from './job-fetch.js';
 export { PROXY_MAX_BODY_BYTES, proxyHandler, registerRoutes, toModuleError, type ProxyRouteOptions } from './routes.js';
 
 const here = (rel: string) => fileURLToPath(new URL(rel, import.meta.url));
@@ -129,6 +132,7 @@ export function createProxyModule(opts: ProxyRouteOptions = {}): DrobekModule<Pr
       },
     ],
     routes: registerRoutes(opts),
+    upstreams: upstreamsAuthority(opts),
     appInfo: proxyAppInfo,
     sdk: { entry: sdkEntry, types: SDK_TYPES },
   });

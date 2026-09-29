@@ -41,6 +41,7 @@ import {
   restoreVersion,
   setGalleryListingTool,
   skillInfo,
+  syncNow,
   writeFiles,
   type CallContext,
   type GetLogsResult,
@@ -68,6 +69,7 @@ export const APP_TOOL_NAMES = [
   'configure_module',
   'query_data',
   'get_logs',
+  'sync_now',
   'create_asset_upload',
   'list_assets',
   'delete_asset',
@@ -188,8 +190,14 @@ export const INPUT_SCHEMAS = {
   },
   get_logs: {
     app_id: appId,
-    kind: z.string().describe('"runtime" (browser errors), "compile" (the last 50 compiles) or "requests" (daily totals + module calls by status).'),
+    kind: z
+      .string()
+      .describe('"runtime" (browser errors), "compile" (the last 50 compiles), "requests" (daily totals + module calls by status) or "sync" (the latest runs of the sync sources).'),
     since: z.string().optional().describe('ISO 8601 date-time: only entries from then on (at most 30 days back).'),
+  },
+  sync_now: {
+    app_id: appId,
+    source: z.string().describe('A source of the app\'s sync config (get_app → modules.sync.info.sources).'),
   },
   create_asset_upload: {
     app_id: appId,
@@ -463,6 +471,7 @@ export function registerAppTools(
   register('configure_module', configureModule);
   register<{ app_id: string; collection: string }>('query_data', queryData, (p) => untrustedResult(untrustedDataEnvelope(p as QueryDataResult)));
   register<{ app_id: string; kind: string; since?: string }>('get_logs', getLogs, (p) => untrustedResult(untrustedLogsEnvelope(p as GetLogsResult)));
+  register('sync_now', syncNow);
   register('create_asset_upload', createAssetUpload);
   register('list_assets', listAssetsTool);
   register('delete_asset', deleteAssetTool);

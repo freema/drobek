@@ -92,6 +92,8 @@ export const TOOL_SCOPES = {
   write_files: 'write',
   restore_version: 'write',
   configure_module: 'write',
+  // NSO-392: a run writes the fetched records into the app's data, like the scheduled run.
+  sync_now: 'write',
   create_asset_upload: 'write',
   delete_asset: 'write',
   add_domain: 'write',

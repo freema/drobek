@@ -73,8 +73,8 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     code: 'limit_exceeded',
     surface: 'MCP tool isError; compile.errors[]; module route 429 (DrobekError), Retry-After',
     meaning:
-      'The version would exceed a size limit (COMPILE_MAX_FILES files, COMPILE_MAX_FILE_BYTES per file, COMPILE_MAX_TOTAL_BYTES in total) or an import chain is deeper than COMPILE_MAX_IMPORT_DEPTH. From create_app: the workspace already holds APPS_MAX_PER_WORKSPACE apps (`limit`, `value`; deleted apps do not count). On a module route: a quota of the app or the user is used up for the period (`details.limit`, e.g. FORMS_PER_APP_PER_DAY, EMAIL_PER_APP_PER_DAY, EMAIL_NOTIFY_ADMINS_PER_DAY). From add_domain (and in the dashboard): the app already has DOMAINS_MAX_PER_APP custom domains, pending and verified together (`limit`, `value`; 0 = custom domains are off for the workspace).',
-    fix: 'Split big files, delete unused ones, load large libraries from esm.sh through drobek.json instead of copying them into the app. From create_app (APPS_MAX_PER_WORKSPACE): do not retry — tell the user the workspace is full; they can delete an app they no longer need in the dashboard, work in another workspace, or ask the operator for a higher plan limit. On a module route: show the user a message and stop — the quota resets after Retry-After; the app owner can ask the operator for a higher plan limit. From add_domain: remove a domain the app no longer needs (remove_domain) or ask the operator for a higher limit; with 0, tell the user this server offers no custom domains for the workspace.',
+      'The version would exceed a size limit (COMPILE_MAX_FILES files, COMPILE_MAX_FILE_BYTES per file, COMPILE_MAX_TOTAL_BYTES in total) or an import chain is deeper than COMPILE_MAX_IMPORT_DEPTH. From create_app: the workspace already holds APPS_MAX_PER_WORKSPACE apps (`limit`, `value`; deleted apps do not count). On a module route: a quota of the app or the user is used up for the period (`details.limit`, e.g. FORMS_PER_APP_PER_DAY, EMAIL_PER_APP_PER_DAY, EMAIL_NOTIFY_ADMINS_PER_DAY). From add_domain (and in the dashboard): the app already has DOMAINS_MAX_PER_APP custom domains, pending and verified together (`limit`, `value`; 0 = custom domains are off for the workspace). From sync_now: the source is past SYNC_MAX_SOURCES_PER_APP and does not run.',
+    fix: 'Split big files, delete unused ones, load large libraries from esm.sh through drobek.json instead of copying them into the app. From create_app (APPS_MAX_PER_WORKSPACE): do not retry — tell the user the workspace is full; they can delete an app they no longer need in the dashboard, work in another workspace, or ask the operator for a higher plan limit. On a module route: show the user a message and stop — the quota resets after Retry-After; the app owner can ask the operator for a higher plan limit. From add_domain: remove a domain the app no longer needs (remove_domain) or ask the operator for a higher limit; with 0, tell the user this server offers no custom domains for the workspace. From sync_now: remove a sync source with configure_module(\'sync\', { sources: { <name>: null } }).',
   },
   {
     code: 'secret_in_source',
@@ -99,9 +99,9 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
   },
   {
     code: 'busy',
-    surface: 'MCP tool isError; compile.errors[]',
-    meaning: 'The compiler is saturated (COMPILE_CONCURRENCY builds running, the queue wait exceeded COMPILE_QUEUE_TIMEOUT_MS). From a write_files call with `edits`: another session of the same user kept storing new versions while the edits were applied. Nothing was stored.',
-    fix: 'Retry the same write_files call in a few seconds.',
+    surface: 'MCP tool isError (write_files, sync_now); compile.errors[]',
+    meaning: 'The compiler is saturated (COMPILE_CONCURRENCY builds running, the queue wait exceeded COMPILE_QUEUE_TIMEOUT_MS). From a write_files call with `edits`: another session of the same user kept storing new versions while the edits were applied. Nothing was stored. From sync_now (`reason: "sync_running"`): a run of that source is in progress.',
+    fix: 'Retry the same write_files call in a few seconds. For sync_now: wait for the run, then read it with get_logs(kind: "sync").',
   },
   {
     code: 'slug_taken',
@@ -323,9 +323,9 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
   },
   {
     code: 'rate_limited',
-    surface: 'module route 429 (DrobekError), Retry-After; MCP tool isError (create_asset_upload, duplicate_app); dashboard 429 (duplicate page)',
-    meaning: 'A module limit was hit (per visitor, per user or per app — `details.limit` per `details.window_seconds`). From create_asset_upload: the app has asked for APP_ASSET_UPLOADS_PER_HOUR upload URLs within the last hour. From duplicate_app: the user made DUPLICATES_PER_USER_HOUR copies of gallery apps within the last hour (`limit`, `value`).',
-    fix: 'Show the user a message and retry after Retry-After seconds; never loop. For upload URLs: upload the files you already have URLs for, and ask for more after the hour. For duplicate_app: tell the user to try again in an hour; do not retry.',
+    surface: 'module route 429 (DrobekError), Retry-After; MCP tool isError (create_asset_upload, duplicate_app, sync_now); dashboard 429 (duplicate page)',
+    meaning: 'A module limit was hit (per visitor, per user or per app — `details.limit` per `details.window_seconds`). From create_asset_upload: the app has asked for APP_ASSET_UPLOADS_PER_HOUR upload URLs within the last hour. From duplicate_app: the user made DUPLICATES_PER_USER_HOUR copies of gallery apps within the last hour (`limit`, `value`). From sync_now: the source ran by hand SYNC_NOW_PER_MINUTE times this minute, or the app used its SYNC_RUNS_PER_HOUR_PER_APP runs (`limit`, `value`, `retry_after_seconds`).',
+    fix: 'Show the user a message and retry after Retry-After seconds; never loop. For upload URLs: upload the files you already have URLs for, and ask for more after the hour. For duplicate_app: tell the user to try again in an hour; do not retry. For sync_now: the schedule keeps running the source — read its runs with get_logs(kind: "sync") instead of calling again.',
   },
   {
     code: 'payload_too_large',
@@ -362,7 +362,7 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
   },
   {
     code: 'module_not_enabled',
-    surface: 'MCP tool isError (configure_module); module route 404 (DrobekError)',
+    surface: 'MCP tool isError (configure_module, sync_now); module route 404 (DrobekError)',
     meaning:
       'The platform module is opt-in (skill_info lists it with availability: "opt-in") and is not enabled for the app\'s workspace (`details.module` / `module` names it). get_app shows it with `enabled: false` and leaves it out of the app\'s skills.',
     fix: 'Do not use that module in this app — build the feature another way or leave it out, and tell the user that the server operator enables opt-in modules per workspace. skill_info(\'<module>\', app_id) says whether it is enabled for the app\'s workspace.',

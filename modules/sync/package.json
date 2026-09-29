@@ -1,0 +1,42 @@
+{
+  "name": "drobek-module-sync",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Built-in drobek platform module: imports JSON from an assigned proxy upstream into a data collection on a schedule — the secret stays in the dashboard, no app code runs, the app reads the collection with drobek.data.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "migrations",
+    "SKILL.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest",
+    "test:run": "vitest run"
+  },
+  "dependencies": {
+    "@drobek/db": "workspace:*",
+    "@drobek/modules": "workspace:*",
+    "@paralleldrive/cuid2": "^2.2.2",
+    "drizzle-orm": "^0.45.3"
+  },
+  "devDependencies": {
+    "@drobek/proxy": "workspace:*",
+    "@electric-sql/pglite": "^0.2.17",
+    "@types/node": "^22",
+    "drobek-module-data": "workspace:*",
+    "drobek-module-proxy": "workspace:*",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.7"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}
