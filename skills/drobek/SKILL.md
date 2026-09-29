@@ -152,7 +152,12 @@ in the version history.
   `blocking` repeats the compile errors (`ready: false`), `warnings` are
   things to fix before the user publishes (e.g. `missing_title`), each
   `{ code, file?, line?, message, hint }`. Fix the warnings you can in your
-  next write; they never stop a write or a publish.
+  next write; they never stop a write or a publish. The module rules audit
+  reads the app's module configs: `data_public_write_no_schema`,
+  `data_public_write_unbounded`, `data_public_read_personal`,
+  `rule_needs_auth_module`, `proxy_public_upstream` name the collection,
+  form or upstream and the exact `configure_module` call that fixes it;
+  `module_change_pending` lists a change still waiting for the owner.
 - Never put secrets in files: writes are scanned and refused with
   `secret_in_source` (nothing is stored). Remove the value and tell the user to
   set the secret in the drobek dashboard — never ask them to paste it to you.

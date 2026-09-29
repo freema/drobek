@@ -73,7 +73,7 @@ describe('readinessReport', () => {
 
   it('loads module configs only when a check needs them, and a failed load skips only those checks', async () => {
     const loadModules = vi.fn(async () => [{ name: 'data', enabled: true, config: { collections: {} } }]);
-    await readinessReport({ files: titled, loadModules });
+    await readinessReport({ files: titled, loadModules, checks: READINESS_CHECKS.filter((c) => !c.needsModules) });
     expect(loadModules).not.toHaveBeenCalled();
 
     const seen: unknown[] = [];
@@ -90,6 +90,33 @@ describe('readinessReport', () => {
     });
     expect(onCheckError).toHaveBeenCalledWith('modules', expect.any(Error));
     expect(report.warnings.map((w) => w.code)).toEqual(['missing_title']);
+  });
+});
+
+describe('the module rules audit in the report (NSO-386)', () => {
+  it('reads the app\'s module configs and warns — never blocks', async () => {
+    const report = await readinessReport({
+      files: titled,
+      loadModules: async () => [
+        { name: 'auth', enabled: true, config: {} },
+        { name: 'data', enabled: true, config: { collections: { wall: { rules: { read: 'public', create: 'public' } } } }, pending: ['data.x: y'] },
+      ],
+    });
+    expect(report.ready).toBe(true);
+    expect(report.blocking).toEqual([]);
+    expect(report.warnings.map((w) => w.code)).toEqual(['data_public_write_no_schema', 'module_change_pending']);
+    expect(report.warnings[0].hint).toBe(errorHint('data_public_write_no_schema'));
+  });
+
+  it('a clean app with module configs keeps a clean report', async () => {
+    const report = await readinessReport({
+      files: titled,
+      loadModules: async () => [
+        { name: 'auth', enabled: true, config: {} },
+        { name: 'data', enabled: true, config: { collections: { todos: {} } } },
+      ],
+    });
+    expect(report).toEqual({ ready: true, blocking: [], warnings: [] });
   });
 });
 
