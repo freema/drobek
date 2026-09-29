@@ -241,7 +241,13 @@ call) and `module_change_pending` (a change still waiting for the owner's
 confirmation). Each names the collection, form or upstream and the exact
 `configure_module` fix. The forms module has no per-form limit or captcha
 setting (honeypot, time token and the per-IP / per-app limits always apply),
-so a public form is not a warning. `READINESS_MAX_WARNINGS` (default 50) caps the
+so a public form is not a warning. `xss_html_sink`, `xss_eval` and
+`xss_url_sink` are the client-side XSS check (a token-level lint of the scripts and inline `<script>`s
+for innerHTML/outerHTML/insertAdjacentHTML/document.write/
+dangerouslySetInnerHTML, eval/new Function/string timers, and DOM href/src/
+location or a JSX frame/script `src` set from a value that is not a literal — literals, templates
+without `${}` and escaped substitutions pass; vendored and `.min.js` files
+are skipped). `READINESS_MAX_WARNINGS` (default 50) caps the
 listed warnings; the rest are counted in `warnings_omitted`. The checks live
 in `packages/compile/src/readiness/checks/` — one file per check, one line
 in its registry.

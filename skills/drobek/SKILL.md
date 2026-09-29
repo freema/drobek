@@ -158,6 +158,10 @@ in the version history.
   `rule_needs_auth_module`, `proxy_public_upstream` name the collection,
   form or upstream and the exact `configure_module` call that fixes it;
   `module_change_pending` lists a change still waiting for the owner.
+  `xss_html_sink`, `xss_url_sink` and `xss_eval` flag visitor-written text (data/forms
+  records) reaching innerHTML, a link/frame URL or eval: render it with
+  `textContent` / `createElement` (React: `{value}`), escape it, or
+  allow-list the URL scheme (http/https).
 - Never put secrets in files: writes are scanned and refused with
   `secret_in_source` (nothing is stored). Remove the value and tell the user to
   set the secret in the drobek dashboard — never ask them to paste it to you.
