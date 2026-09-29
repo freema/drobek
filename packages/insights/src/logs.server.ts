@@ -102,6 +102,8 @@ export async function queryRuntimeLog(appId: string, since?: Date | string | nul
       url: appErrors.url,
       createdAt: appErrors.createdAt,
       ts: appErrors.ts,
+      module: appErrors.module,
+      job: appErrors.job,
     })
     .from(appErrors)
     .where(and(eq(appErrors.appId, appId), gte(appErrors.createdAt, from)))

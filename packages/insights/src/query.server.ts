@@ -44,6 +44,8 @@ export async function queryAppErrors(
       url: appErrors.url,
       createdAt: appErrors.createdAt,
       ts: appErrors.ts,
+      module: appErrors.module,
+      job: appErrors.job,
     })
     .from(appErrors)
     .where(and(eq(appErrors.appId, appId), gte(appErrors.createdAt, from)))

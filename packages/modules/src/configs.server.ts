@@ -29,11 +29,11 @@ export interface ConfigRow {
 type Tx = Parameters<Parameters<DB['transaction']>[0]>[0];
 type Executor = DB | Tx;
 
-function asObject(v: unknown): Record<string, unknown> {
+export function asObject(v: unknown): Record<string, unknown> {
   return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 }
 
-function asPending(v: unknown): PendingChange | null {
+export function asPending(v: unknown): PendingChange | null {
   const o = asObject(v);
   if (!('patch' in o)) return null;
   return {

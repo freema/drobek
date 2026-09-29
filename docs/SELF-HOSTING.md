@@ -395,6 +395,9 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `DROBEK_MODULES_UNLOCKED` | — | `1` = load modules from `DROBEK_MODULES_DIR` without the `modules.lock.json` check — for developing a module locally; ignored (with a warning) when `NODE_ENV=production` |
 | `DROBEK_MODULE_<NAME>_DEFAULTS` (e.g. `DROBEK_MODULE_AUTH_DEFAULTS`) | — | server-wide config defaults of the module `<name>`: a JSON merge patch over its defaults (`{"allow":{"domains":["acme.com"]}}`), validated by its schema at start — invalid refuses the start ([`MODULES.md`](./MODULES.md#operator-defaults-drobek_module_name_defaults)) |
 | `MODULE_ENABLED_<NAME>` (e.g. `MODULE_ENABLED_CRM`) | 0 | only for an opt-in module (`availability: 'opt-in'`): `1` enables it on every workspace; unset / `0` = a super-admin enables it per workspace in the dashboard (Workspace → Modules). A limits provider may answer it per workspace (`1` on, `0` off — also over the dashboard switch) ([`MODULES.md`](./MODULES.md#per-workspace-enabling-opt-in-modules)) *(plan)* |
+| `MODULE_JOBS_ENABLED` | 1 | `0` = this process runs no module jobs (e.g. every replica but one); modules declare their scheduled `jobs` ([`MODULES.md`](./MODULES.md#scheduled-jobs-jobs)) |
+| `MODULE_JOBS_CONCURRENCY` | 4 | module job runs in flight per process; a due run past it waits for a later check |
+| `MODULE_JOBS_TIMEOUT_MS` | 300000 | the longest one module job run may take: then it is aborted, counted as failed and retried with backoff |
 | `DROBEK_SKILLS_DIR` | `./skills` (image: `/app/skills`) | the general skills `skill_info` lists |
 | `LIMITS_PROVIDER_URL` / `LIMITS_PROVIDER_SECRET` | — | per-workspace limits from your own HMAC-signed endpoint (secret ≥ 32 characters) |
 | `AUTH_CODES_PER_IP_15MIN` / `AUTH_CODES_PER_IP_DAY` | 5 / 20 | `auth`: sign-in codes per client IP *(plan)* |

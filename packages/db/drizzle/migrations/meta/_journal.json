@@ -176,6 +176,13 @@
       "when": 1790525800000,
       "tag": "0029_gallery_likes",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1790681537145,
+      "tag": "0030_module_jobs",
+      "breakpoints": true
     }
   ]
 }

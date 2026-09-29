@@ -3,6 +3,7 @@ import { auditRetentionDays, pruneAuditLog } from '@drobek/audit';
 import type { Logger } from '@drobek/core';
 import { startDomainRecheck } from '@drobek/domains';
 import { startLogsPrune } from '@drobek/insights';
+import { startModuleJobs, type ModuleRuntime } from '@drobek/modules';
 import { startFilesSweep } from 'drobek-module-files';
 import { dbErrorForLog } from '@drobek/db';
 
@@ -33,11 +34,15 @@ export interface BackgroundJobs {
  * - NSO-358 assets sweep (hourly, Redis lease): the asset files of apps
  *   deleted 24 h+ ago, stale temp uploads and files no `app_assets` row
  *   references (logic in @drobek/apps).
+ * - NSO-391 module jobs (only when an active module declares `jobs`;
+ *   MODULE_JOBS_ENABLED / _CONCURRENCY / _TIMEOUT_MS, a Redis lease per run):
+ *   the modules' scheduled work, per server or per app (logic in
+ *   @drobek/modules jobs.ts). Nothing runs before the first tick.
  * - PHY-85 governance: the audit trail is append-only; the ONLY deletion is
  *   the age-based retention prune (startup, then daily). It never targets a
  *   specific row and is not exposed over any API/UI.
  */
-export function startBackgroundJobs(log: Logger, opts: { filesSweep?: boolean } = {}): BackgroundJobs {
+export function startBackgroundJobs(log: Logger, opts: { filesSweep?: boolean; modules?: ModuleRuntime } = {}): BackgroundJobs {
   // The jobs hand over an already log-safe error text (dbErrorForLog at the source).
   const jobLog = (msg: string, errorText?: string) => (errorText ? log.error(msg, { error: errorText }) : log.info(msg));
   const stopBlobGc = startBlobGc(jobLog);
@@ -45,6 +50,7 @@ export function startBackgroundJobs(log: Logger, opts: { filesSweep?: boolean } 
   const stopFilesSweep = opts.filesSweep ? startFilesSweep({ log: jobLog, lease: withRedisLock }) : () => {};
   const stopLogsPrune = startLogsPrune({ log: jobLog, lease: withRedisLock });
   const stopAssetsSweep = startAssetsSweep({ log: jobLog });
+  const stopModuleJobs = opts.modules ? startModuleJobs({ runtime: opts.modules, lease: withRedisLock, log }) : async () => {};
 
   const stopDomainRecheck = startDomainRecheck((msg, meta, errorText) =>
     errorText ? log.error(msg, { ...meta, error: errorText }) : log.info(msg, meta)
@@ -73,6 +79,7 @@ export function startBackgroundJobs(log: Logger, opts: { filesSweep?: boolean } 
       stopLogsPrune();
       stopAssetsSweep();
       stopDomainRecheck();
+      await stopModuleJobs();
     },
   };
 }

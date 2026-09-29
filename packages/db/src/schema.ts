@@ -494,10 +494,13 @@ export const apiKeys = pgTable('api_keys', {
 // roll-up (request volume / 5xx / 404s-by-path), fed from Redis hot counters by
 // a light flush. Both are read-only to the app_errors/app_logs MCP tools + the
 // dashboard Overview panels (viewer+; stored text is escaped on render).
+// NSO-391: a failed run of a module's per-app job lands here too (type
+// `module_job`, with `module` + `job`; server-side, redacted like the beacon's).
 
 export const appErrorTypeEnum = pgEnum('app_error_type', [
   'error',
   'unhandledrejection',
+  'module_job',
 ]);
 
 export const appErrors = pgTable(
@@ -522,6 +525,9 @@ export const appErrors = pgTable(
     ts: timestamp('ts'),
     /** sha256(message + stack head) — groups identical errors with counts. */
     dedupKey: text('dedup_key').notNull(),
+    /** `module_job` rows: the module and its job that failed (null for browser errors). */
+    module: text('module'),
+    job: text('job'),
     /** Server ingest time — the authoritative ordering + retention field. */
     createdAt: timestamp('created_at').notNull().defaultNow(),
   },

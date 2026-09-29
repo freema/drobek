@@ -71,7 +71,7 @@ run(consumer, 'npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund'])
 writeFileSync(join(consumer, 'check.mjs'), `
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
-import { isDefinedModule, loadModules, buildSdk } from '@drobek/modules';
+import { isDefinedModule, loadModules, buildSdk, ModuleJobScheduler, parseJobInterval } from '@drobek/modules';
 const pkg = ${JSON.stringify(original.name)};
 const mod = (await import(pkg)).default;
 assert.ok(isDefinedModule(mod), 'packed module must share the host contract');
@@ -82,7 +82,13 @@ assert.equal(modules.length, 1);
 if (mod.migrations) assert.ok(existsSync(mod.migrations.folder), 'packed migrations missing');
 if (mod.sdk) assert.ok(existsSync(mod.sdk.entry), 'packed SDK entry missing');
 await buildSdk(modules);
-console.log('Packed module loads and its SDK builds:', mod.name, mod.version, mod.contract);
+// Contract 1.2: the candidate schedules the module's jobs (loadModules validated them).
+assert.equal(typeof parseJobInterval, 'function', 'the candidate contract lacks jobs (1.2)');
+const jobs = modules[0].jobs ?? [];
+const lease = async () => ({ acquired: false });
+const scheduler = new ModuleJobScheduler({ runtime: { modules }, lease, log: console, settings: { enabled: true, concurrency: 1, timeoutMs: 1000 } });
+assert.equal(scheduler.hasJobs(), jobs.length > 0);
+console.log('Packed module loads and its SDK builds:', mod.name, mod.version, mod.contract, 'jobs:', jobs.map((j) => j.name).join(', ') || 'none');
 `);
 run(consumer, process.execPath, ['check.mjs']);
 console.log(`PASS: ${original.name}@${original.version} against @drobek/modules (@freema/drobek-modules@${staged.find((pkg) => pkg.workspace === '@drobek/modules').version})`);

@@ -78,6 +78,20 @@ export default defineModule<Config>({
       fix: 'Tell the user the list is full; the app owner can raise maxItems with configure_module.',
     },
   ],
+  // Scheduled work (module contract 1.2 — set contract: '^1.2' when you use it): core runs a
+  // job on its interval, once across replicas; a throw is retried with backoff and an 'app'
+  // job's failure shows in that app's get_logs runtime. Test it with t.runJob('trim').
+  // jobs: [
+  //   {
+  //     name: 'trim',
+  //     scope: 'app', // for each app that configured this module; omit for one server-wide run
+  //     every: '1h', // or (config) => interval | null, read per app
+  //     async run(ctx) {
+  //       const extra = (await itemCount(ctx.db, ctx.app.id)) - ctx.config.maxItems;
+  //       if (extra > 0) ctx.log.info('over maxItems', { extra });
+  //     },
+  //   },
+  // ],
   routes(r) {
     r.get('/items', { rule: 'public' }, async (_req, ctx) => {
       const rows = await ctx.db.select().from(items).where(eq(items.appId, ctx.app.id)).orderBy(desc(items.id)).limit(100);
