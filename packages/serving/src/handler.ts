@@ -11,7 +11,11 @@
  *   3. the visibility gate (password page / unlock POST);
  *   4. the version the host serves (404 "not published" / "nothing compiled");
  *   5. the file: built wins over source, TS/JSX sources never served, SPA
- *      fallback for extension-less paths, ETag = sha256 → 304;
+ *      fallback for extension-less paths, ETag = sha256 → 304. NSO-381: on
+ *      the production host and custom domains a built JS/CSS bundle is served
+ *      without its inline source map (ETag `"<sha256>-nomap"`), pointing at
+ *      `<file>.map`, which serves that map; the preview and version hosts
+ *      serve the bundle exactly as stored (see sourcemap.ts);
  *   6. no such file and the path can name an asset (`/film.mp4`,
  *      `/img/s1.jpg`): the app's uploaded asset (NSO-358, `deps.assets` —
  *      video/audio/images/fonts, Range 206, see assets.ts). NSO-362: the
@@ -87,8 +91,11 @@ import {
   decodeRequestPath,
   etagFor,
   isNotModified,
+  normalizeRequestPath,
   resolveServePath,
 } from './resolve.js';
+import { mayCarryInlineSourceMap } from './sourcemap.js';
+import type { ServedManifest } from './manifest.js';
 import type { ServeApp, ServeStore } from './store.server.js';
 import type { UnknownHostLimiter } from './unknown-host.js';
 import { decideVisibility } from './visibility.js';
@@ -354,6 +361,10 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
   const hit = resolveServePath({ requestPath: decoded, routingMode: 'spa', has: (p) => manifest.has(p) });
   const entry = hit.kind === 'file' ? manifest.get(hit.path) : undefined;
   if (hit.kind !== 'file' || !entry) {
+    if (production) {
+      const map = await serveSourceMap(req, deps, { app, decoded, manifest, security });
+      if (map) return map;
+    }
     const assetName = deps.assets ? assetNameOf(decoded) : null;
     if (assetName !== null) {
       const served = await serveAsset(req, deps.assets!, {
@@ -369,7 +380,11 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
     return missing('no-file');
   }
 
-  const etag = etagFor(entry.sha256);
+  const split =
+    production && entry.built && mayCarryInlineSourceMap(hit.path)
+      ? await deps.store.splitSourceMap(entry.sha256, hit.path)
+      : null;
+  const etag = split ? etagFor(`${entry.sha256}-nomap`) : etagFor(entry.sha256);
   const headers: Record<string, string> = {
     ...security,
     'Content-Type': contentTypeForPath(hit.path),
@@ -383,7 +398,7 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
   if (isNotModified(req.header('if-none-match'), etag)) {
     return { status: 304, headers, body: null };
   }
-  const bytes = await deps.store.blob(entry.sha256);
+  const bytes = split ? split.code : await deps.store.blob(entry.sha256);
   if (!bytes) {
     // metadata without bytes — fail closed
     deps.signal?.(app.id, '5xx', req.path);
@@ -391,6 +406,35 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
   }
   headers['Content-Length'] = String(bytes.length);
   return { status: 200, headers, body: method === 'HEAD' ? null : bytes };
+}
+
+/**
+ * NSO-381: `/<bundle>.map` on the production host / a custom domain, when
+ * the version has no file there: the inline source map of the built JS/CSS
+ * bundle `<bundle>` (null → not such a request; the caller answers as before).
+ */
+async function serveSourceMap(
+  req: AppRequest,
+  deps: HandlerDeps,
+  input: { app: ServeApp; decoded: string; manifest: ServedManifest; security: Record<string, string> }
+): Promise<AppResponse | null> {
+  const path = normalizeRequestPath(input.decoded);
+  if (!path?.endsWith('.map')) return null;
+  const bundlePath = path.slice(0, -'.map'.length);
+  const bundle = input.manifest.get(bundlePath);
+  if (!bundle?.built || !mayCarryInlineSourceMap(bundlePath)) return null;
+  const split = await deps.store.splitSourceMap(bundle.sha256, bundlePath);
+  if (!split) return null;
+  const etag = etagFor(`${bundle.sha256}-map`);
+  const headers: Record<string, string> = {
+    ...input.security,
+    'Content-Type': contentTypeForPath(path),
+    ETag: etag,
+    'Cache-Control': cacheControlFor({ path, query: req.query, isPrivate: input.app.visibility !== 'public' }),
+  };
+  if (isNotModified(req.header('if-none-match'), etag)) return { status: 304, headers, body: null };
+  headers['Content-Length'] = String(split.map.length);
+  return { status: 200, headers, body: req.method.toUpperCase() === 'HEAD' ? null : split.map };
 }
 
 /**

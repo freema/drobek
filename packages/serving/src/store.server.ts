@@ -10,7 +10,10 @@
  *  - version manifests `versionId → served manifest` — a version is immutable,
  *    so this never needs busting (count-capped LRU).
  *  - file bytes `sha256 → Buffer` — content-addressed, byte-capped LRU
- *    (256 MiB by default).
+ *    (256 MiB by default). The production hosts' split bundles (NSO-381: the
+ *    code without its inline source map, and the map) share that budget,
+ *    keyed by the sha256 and the file name; a bundle without an inline map
+ *    is remembered in a count-capped set so it is scanned once.
  *
  *  - custom hosts (M3-01) `hostname → { slug | null } | null` — which app a
  *    custom domain serves (null = not a custom domain at all → the dashboard;
@@ -37,6 +40,7 @@ import { appVersions, apps, blobs, getDb, versionFiles } from '@drobek/db';
 import { primaryDomainOf, resolveCustomHost, type CustomHostResolution } from '@drobek/domains';
 import { ByteLru, CountLru, DEFAULT_BLOB_CACHE_BYTES } from './lru.js';
 import { servedManifest, type ServedManifest, type StoredFile } from './manifest.js';
+import { splitInlineSourceMap, type SplitSourceMap } from './sourcemap.js';
 import type { Visibility } from './visibility.js';
 
 /** What the app hosts need to know about an app (no secrets). */
@@ -117,6 +121,7 @@ export class ServeStore {
   readonly blobs: ByteLru;
   private readonly resolved = new CountLru<Map<string, { expires: number; value: Resolved }>>(MAX_CACHED_SLUGS);
   private readonly manifests = new CountLru<ServedManifest>(MAX_CACHED_MANIFESTS);
+  private readonly noInlineMap = new CountLru<true>(MAX_CACHED_MANIFESTS * 4);
   private readonly customHosts = new CountLru<{ expires: number; value: CustomHostResolution }>(MAX_CACHED_SLUGS);
   private readonly missingSlugs: CountLru<number>;
   private readonly missingHosts: CountLru<number>;
@@ -198,6 +203,31 @@ export class ServeStore {
     const bytes = (await this.loaders.loadBlobs([sha256])).get(sha256) ?? null;
     if (bytes) this.blobs.set(sha256, bytes);
     return bytes;
+  }
+
+  /**
+   * NSO-381: the bundle `sha256` served at `path` split into code + source
+   * map (see sourcemap.ts). null = it carries no inline map (serve the blob
+   * as is); undefined = the blob is missing.
+   */
+  async splitSourceMap(sha256: string, path: string): Promise<SplitSourceMap | null | undefined> {
+    const name = path.slice(path.lastIndexOf('/') + 1);
+    const codeKey = `${sha256}:code:${name}`;
+    const mapKey = `${sha256}:map`;
+    if (this.noInlineMap.get(codeKey)) return null;
+    const code = this.blobs.get(codeKey);
+    const map = this.blobs.get(mapKey);
+    if (code && map) return { code, map };
+    const bytes = await this.blob(sha256);
+    if (!bytes) return undefined;
+    const split = splitInlineSourceMap(bytes, path);
+    if (!split) {
+      this.noInlineMap.set(codeKey, true);
+      return null;
+    }
+    this.blobs.set(codeKey, split.code);
+    this.blobs.set(mapKey, split.map);
+    return split;
   }
 
   passwordHash(appId: string): Promise<string | null> {

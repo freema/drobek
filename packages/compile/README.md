@@ -28,7 +28,8 @@ const r = await compile(new Map([
    points → `<basename>.js`). `src/main.{tsx,ts,jsx,js}` → `main.js` (+
    `main.css`). No entry at all = static app, nothing to bundle.
 4. **esbuild** (`bundle`, `esm`, `es2022`, `jsx: automatic`, inline source
-   map unless `sourcemap: false` for publish) with the `drobek-virtual-fs`
+   map unless `sourcemap: false`; the production hosts serve it as a separate
+   `<file>.map`, see `@drobek/serving`) with the `drobek-virtual-fs`
    plugin: relative and root-absolute imports resolve **only** in the
    in-memory file map (never the disk: `absWorkingDir` is an empty temp dir,
    `nodePaths: []`); `drobek` → `/__drobek/sdk.js`; `http(s)://` external (scheme-less `//host` is refused);
