@@ -27,15 +27,21 @@ function options(ctx: ReadinessCtx, appId: string, enabled: ReadonlySet<string>)
   };
 }
 
-/** write_files: the report of the files just compiled (`blocking` = the result's compile errors). */
-export function filesReadiness(
+/**
+ * write_files: the report of the files just compiled (`blocking` = the
+ * result's compile errors). The type check (NSO-388) is still running then:
+ * `typecheck: 'pending'`, and get_app has its `type_error` warnings later.
+ */
+export async function filesReadiness(
   ctx: ReadinessCtx,
   appId: string,
   enabled: ReadonlySet<string>,
   files: ReadonlyMap<string, string | Buffer>,
-  blocking: readonly BlockingMessage[]
+  blocking: readonly BlockingMessage[],
+  typecheck?: 'pending'
 ): Promise<ReadinessReport> {
-  return readinessReport({ ...options(ctx, appId, enabled), files, blocking });
+  const report = await readinessReport({ ...options(ctx, appId, enabled), files, blocking });
+  return typecheck ? { ...report, typecheck } : report;
 }
 
 /** publish: the report of a stored version; undefined when it cannot be read (the publish already happened). */

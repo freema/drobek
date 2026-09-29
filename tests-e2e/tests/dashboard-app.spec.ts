@@ -192,6 +192,34 @@ test('app page: publish, rollback, restore and unpublish from the UI change what
   expect(problems).toEqual([]);
 });
 
+test('app page: the background TypeScript check lists a type_error after a reload, never blocking @local', async ({ page, request }) => {
+  skipUnlessLocal();
+  const email = uniqueEmail('dash-types');
+  await loginViaEmail(page, request, email);
+  const ws = await personalWorkspaceOf(email);
+  const app = await seedApp({ workspaceId: ws.id });
+  // A version nobody type-checked yet (seeded, like one from before NSO-388): opening the page schedules it.
+  await seedVersion({
+    appId: app.id,
+    files: [
+      { path: 'index.html', content: '<!doctype html><html><head><title>Typed</title></head><body><div id="root"></div></body></html>' },
+      { path: 'src/main.ts', content: "const count: number = 'three';\nconsole.log(count);\n" },
+    ],
+  });
+
+  await page.goto(`/workspaces/${ws.slug}/apps/${app.slug}`);
+  const section = page.getByTestId('readiness-section');
+  const typeError = section.locator('[data-testid="readiness-warning"][data-code="type_error"]');
+  await expect(async () => {
+    await page.reload();
+    await expect(typeError).toBeVisible({ timeout: 1_000 });
+  }).toPass({ timeout: 30_000 });
+  await expect(typeError).toContainText('src/main.ts:1');
+  await expect(typeError).toContainText("TS2322: Type 'string' is not assignable to type 'number'.");
+  await expect(section).toHaveAttribute('data-state', 'warnings');
+  await expect(section).toContainText('never block Publish');
+});
+
 test('app page: "Before you publish" lists a readiness warning and Publish still goes through @local', async ({ page, request }) => {
   skipUnlessLocal();
   const email = uniqueEmail('dash-ready');

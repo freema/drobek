@@ -42,6 +42,28 @@ describe('ReadinessSection', () => {
     expect(html).toContain('data-testid="readiness-blocking" data-code="build_error"');
   });
 
+  it('a TypeScript check still running or over a limit: a note, still publishable', () => {
+    const pending = render({ state: 'ok', version: 8, report: { ready: true, blocking: [], warnings: [], typecheck: 'pending' } });
+    expect(pending).toContain('data-state="ready"');
+    expect(pending).toContain('The TypeScript check of v8 is still running. Reload the page in a few seconds');
+    const unavailable = render({ state: 'ok', version: 9, report: { ready: true, blocking: [], warnings: [title], typecheck: 'unavailable' } });
+    expect(unavailable).toContain('data-state="warnings"');
+    expect(unavailable).toContain('did not finish within this server&#x27;s limits');
+    const checked = render({
+      state: 'ok',
+      version: 10,
+      report: {
+        ready: true,
+        blocking: [],
+        warnings: [{ code: 'type_error', file: 'src/main.tsx', line: 4, message: "TS2551: Property 'lst' does not exist.", hint: 'Fix the type.' }],
+        typecheck: 'checked',
+      },
+    });
+    expect(checked).toContain('data-code="type_error"');
+    expect(checked).toContain('src/main.tsx:4');
+    expect(checked).not.toContain('readiness-typecheck');
+  });
+
   it('a load failure says so and that publishing still works', () => {
     const html = render({ state: 'error', version: 7 });
     expect(html).toContain('data-state="error"');

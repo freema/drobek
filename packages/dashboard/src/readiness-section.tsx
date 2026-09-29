@@ -3,7 +3,9 @@
  * newest version on the Overview tab, the same report the agent gets from
  * write_files and publish. Compile errors block; warnings are advice and
  * never stop the Publish button. Feed it `loadReadiness()`'s view; renders
- * nothing when the app has no version yet.
+ * nothing when the app has no version yet. The background TypeScript check
+ * (NSO-388) adds `type_error` warnings once done; while it runs, or when it
+ * hit a server limit, a note says so.
  */
 import type { CSSProperties } from 'react';
 import type { ReadinessFinding } from '@drobek/compile';
@@ -61,8 +63,18 @@ export function ReadinessSection({ readiness }: { readiness: ReadinessView | nul
       </p>
     );
   } else {
-    const { ready, blocking, warnings, warnings_omitted: omitted = 0 } = readiness.report;
+    const { ready, blocking, warnings, warnings_omitted: omitted = 0, typecheck } = readiness.report;
     const more = omitted > 0 ? <p style={{ ...style.lead, marginTop: '0.5rem' }}>…and {omitted} more.</p> : null;
+    const typeNote =
+      ready && typecheck === 'pending' ? (
+        <p style={{ ...style.lead, marginTop: '0.5rem' }} data-testid="readiness-typecheck">
+          The TypeScript check of {v} is still running. Reload the page in a few seconds to see any type errors.
+        </p>
+      ) : ready && typecheck === 'unavailable' ? (
+        <p style={{ ...style.lead, marginTop: '0.5rem' }} data-testid="readiness-typecheck">
+          The TypeScript check of {v} did not finish within this server&apos;s limits, so type errors are not listed.
+        </p>
+      ) : null;
     if (!ready) {
       tone = style.errBox;
       body = (
@@ -95,14 +107,18 @@ export function ReadinessSection({ readiness }: { readiness: ReadinessView | nul
             ))}
           </ul>
           {more}
+          {typeNote}
         </>
       );
     } else {
       tone = style.okBox;
       body = (
-        <p style={style.lead}>
-          {v} passed every publish check. Publish it from the version list below when you are ready.
-        </p>
+        <>
+          <p style={style.lead}>
+            {v} passed every publish check. Publish it from the version list below when you are ready.
+          </p>
+          {typeNote}
+        </>
       );
     }
   }

@@ -223,7 +223,11 @@ test('core tools: create → broken write → fix → limits → restore → rea
     expect(fixed.json).toMatchObject({ version: 3, compile: { ok: true } });
     expect(fixed.json.preview_url).toMatch(previewRe(slug));
     expect(fixed.json.preview_version).toBeUndefined();
-    expect(fixed.json.readiness).toEqual({ ready: true, blocking: [], warnings: [] });
+    // NSO-388: write_files never waits for the background type check; get_app has it a moment on.
+    expect(fixed.json.readiness).toEqual({ ready: true, blocking: [], warnings: [], typecheck: 'pending' });
+    await expect
+      .poll(async () => (await callTool(a.client, 'get_app', { app_id: appId })).json.readiness, { timeout: 30_000 })
+      .toEqual({ ready: true, blocking: [], warnings: [], typecheck: 'checked' });
 
     // 21 files in one call → invalid_params, nothing stored.
     const tooMany = await callTool(a.client, 'write_files', {

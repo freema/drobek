@@ -162,6 +162,15 @@ in the version history.
   records) reaching innerHTML, a link/frame URL or eval: render it with
   `textContent` / `createElement` (React: `{value}`), escape it, or
   allow-list the URL scheme (http/https).
+- TypeScript types are stripped, not checked, by the compiler — the server
+  type-checks the `.ts`/`.tsx` files of a version that compiled in the
+  background (against sdk.d.ts and React's types). `write_files` does not
+  wait: `readiness.typecheck` is `"pending"`. `get_app` a few seconds on returns the
+  newest version's `readiness` with `typecheck: "checked"` and each error as a
+  `type_error` warning (`file`, `line`, `TS<code>: …`) — fix those like a
+  compile error, they usually break in the browser. `"unavailable"` = the
+  check hit a server limit (no type warnings); no `typecheck` = nothing to
+  check (JS-only) or the check is off.
 - Never put secrets in files: writes are scanned and refused with
   `secret_in_source` (nothing is stored). Remove the value and tell the user to
   set the secret in the drobek dashboard — never ask them to paste it to you.

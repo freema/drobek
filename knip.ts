@@ -94,6 +94,19 @@ const config: KnipConfig = {
       ignore: ['test-fixtures/**'],
     },
 
+    'packages/compile': {
+      // src/typecheck/worker.ts: started by path as a worker thread
+      // (runner.ts, dist/typecheck/worker.js), never imported for its values.
+      entry: ['src/typecheck/worker.ts'],
+      ignoreDependencies: [
+        // The type check (NSO-388) resolves these by path (check.ts
+        // reactTypes) and maps an app's `react` / `react-dom` imports to
+        // their declarations; nothing imports them.
+        '@types/react',
+        '@types/react-dom',
+      ],
+    },
+
     'packages/create-drobek-module': {
       // `bin` / `exports` point at dist/ (published to npm, NSO-349).
       entry: ['src/index.ts', 'src/cli.ts'],

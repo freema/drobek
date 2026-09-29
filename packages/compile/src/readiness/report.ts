@@ -33,6 +33,8 @@ export interface ReadinessOptions {
   checks?: readonly ReadinessCheck[];
   /** A check (or the module load) that threw: it is left out of the report, never fails the caller. */
   onCheckError?: (checkId: string, err: unknown) => void;
+  /** Findings computed elsewhere (the stored type errors), reported after the checks'; `omitted` more were not kept. */
+  extra?: { findings: readonly CheckFinding[]; omitted?: number };
 }
 
 /** `{ code, file?, line?, message, hint }` — in that key order, optional keys only when set. */
@@ -90,11 +92,14 @@ export async function readinessReport(opts: ReadinessOptions): Promise<Readiness
     }
   }
 
+  if (opts.extra) all.push(...[...opts.extra.findings].sort(byPlace).map((f) => finding(f)));
+
   const warnings = all.slice(0, limits.maxWarnings);
+  const omitted = all.length - warnings.length + (opts.extra?.omitted ?? 0);
   return {
     ready: blocking.length === 0,
     blocking,
     warnings,
-    ...(all.length > warnings.length ? { warnings_omitted: all.length - warnings.length } : {}),
+    ...(omitted > 0 ? { warnings_omitted: omitted } : {}),
   };
 }

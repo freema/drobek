@@ -21,6 +21,14 @@ export interface ReadinessReport {
   warnings: ReadinessFinding[];
   /** Warnings left out above READINESS_MAX_WARNINGS (absent when none were). */
   warnings_omitted?: number;
+  /**
+   * NSO-388: the background TypeScript check of the version — `pending`
+   * (running; ask again with get_app), `checked` (its `type_error` findings
+   * are in `warnings`) or `unavailable` (not run: timeout, memory or file
+   * limit). Absent when the version has nothing to check (no .ts/.tsx file,
+   * or it did not compile) or the check is off.
+   */
+  typecheck?: 'pending' | 'checked' | 'unavailable';
 }
 
 /** A platform module as a check sees it: its effective config for the app. */

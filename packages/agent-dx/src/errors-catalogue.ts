@@ -365,6 +365,13 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
       'A link or frame URL (`.href`, `.src` of a frame or script, setAttribute(\'href\'), location, JSX src of an iframe/embed/object/script) comes from a value that is not a literal or a fixed-scheme URL: a `javascript:` URL a visitor stored runs as script when the link is followed or the frame loads.',
     fix: 'Allow-list the scheme before using a stored URL — `const u = new URL(value, location.href); if (u.protocol === \'https:\' || u.protocol === \'http:\') a.href = u.href;` — or build it from a fixed prefix (`\'/items/\' + encodeURIComponent(id)`).',
   },
+  {
+    code: 'type_error',
+    surface: 'readiness.warnings[] (get_app, publish, dashboard app page — after the background type check)',
+    meaning:
+      'TypeScript found a type error at file:line (the message starts with the TS code). esbuild strips types without checking them, so the version compiled — but the mistake (a misspelled SDK method, a wrong argument, a possibly-null value) usually fails in the browser. The check runs in the background after write_files, against this server\'s drobek SDK declarations and React\'s types; untyped import-map packages count as `any`.',
+    fix: 'Fix the code at the reported line and write again; get_app shows the new version\'s check once `readiness.typecheck` is `checked`. Check an SDK call against sdk.d.ts / skill_info.',
+  },
   // ── platform module routes (/__drobek/v1/<module>/…, the drobek SDK) ──────
   // Body { error, message, details?, hint } — `error` is the code below; the
   // SDK throws it as DrobekError { status, code, message, details, hint }.
