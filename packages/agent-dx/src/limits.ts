@@ -53,6 +53,11 @@ export const LIMITS: LimitDoc[] = [
     meaning: 'Max wait for a compile slot when COMPILE_CONCURRENCY builds are running (→ busy).',
   },
   {
+    env: 'READINESS_MAX_WARNINGS',
+    default: '50',
+    meaning: 'Max warnings one readiness report lists (write_files, publish); the rest are counted in `readiness.warnings_omitted`.',
+  },
+  {
     env: 'APPS_MAX_PER_WORKSPACE',
     default: '50',
     meaning: 'Max live (not deleted) apps in one workspace; the limits provider may set it per workspace (create_app → limit_exceeded).',

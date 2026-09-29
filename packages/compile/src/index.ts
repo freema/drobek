@@ -10,3 +10,20 @@ export type {
   CompileResult,
   SourceFiles,
 } from './types.js';
+export { READINESS_CHECKS } from './readiness/checks/index.js';
+export {
+  DEFAULT_READINESS_LIMITS,
+  readinessLimitsFromEnv,
+  readinessReport,
+  type BlockingMessage,
+  type ReadinessLimits,
+  type ReadinessOptions,
+} from './readiness/report.js';
+export type {
+  CheckFinding,
+  ReadinessCheck,
+  ReadinessFinding,
+  ReadinessInput,
+  ReadinessModule,
+  ReadinessReport,
+} from './readiness/types.js';
