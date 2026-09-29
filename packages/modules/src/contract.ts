@@ -19,7 +19,9 @@
  * with), `errors` (its own error codes), typed `slots` other modules
  * contribute to (`contributes`, read with `services.contributions()`),
  * `availability`, `dashboard.editor` and `hooks.onAppDelete` — all
- * optional, so a 1.0 module loads unchanged.
+ * optional, so a 1.0 module loads unchanged. Contract 1.2 adds `jobs`
+ * (scheduled work core runs on an interval, NSO-391) and lists the
+ * `pendingConfig` of a route's context; a 1.1 module loads unchanged.
  *
  * Everything a handler needs arrives in a per-request, APP-SCOPED
  * ModuleContext: the caller (principal from the `drobek_eu` end-user cookie),
@@ -38,13 +40,16 @@ import type { ZodType } from 'zod';
  * e.g. `'^1.1'`); the server refuses to start a module whose range this
  * version does not satisfy.
  */
-export const MODULE_CONTRACT_VERSION = '1.1.0';
+export const MODULE_CONTRACT_VERSION = '1.2.0';
 
 /** Module names: lowercase, URL-, JS-property- and env-safe. */
 export const MODULE_NAME_RE = /^[a-z][a-z0-9]{1,30}$/;
 
 /** Error codes a module declares in `errors`: lowercase snake case, 3–41 characters. */
 export const MODULE_ERROR_CODE_RE = /^[a-z][a-z0-9_]{2,40}$/;
+
+/** Job names: lowercase snake case, 2–40 characters, unique within the module. */
+export const JOB_NAME_RE = /^[a-z][a-z0-9_]{1,39}$/;
 
 /** Slot names: `<host module name>.<camelCase name>`, e.g. `auth.provider`. */
 export const SLOT_NAME_RE = /^[a-z][a-z0-9]*\.[a-z][a-zA-Z0-9]*$/;
@@ -674,6 +679,118 @@ export interface ModuleAppView<Config = unknown> {
   log: Logger;
 }
 
+// ── scheduled jobs (contract 1.2) ───────────────────────────────────────────
+
+/**
+ * How often a job runs: milliseconds, or a whole count with a unit — `'30s'`,
+ * `'5m'`, `'1h'`, `'1d'`. Between JOB_MIN_INTERVAL_MS (1 minute) and
+ * JOB_MAX_INTERVAL_MS (30 days).
+ */
+export type JobInterval = number | `${number}${'s' | 'm' | 'h' | 'd'}`;
+
+/** What every job run gets. */
+export interface JobContextBase extends ModuleServices {
+  module: string;
+  /** The job's name. */
+  job: string;
+  /**
+   * Aborted when the run exceeds the operator's MODULE_JOBS_TIMEOUT_MS or the
+   * server shuts down: pass it to `fetch` and stop early. A run that ignores
+   * it counts as failed at the timeout all the same.
+   */
+  signal: AbortSignal;
+  /** When the last successful run of this job (for this app) started, or null. */
+  lastSuccessAt: Date | null;
+}
+
+/** What a `scope: 'server'` job gets: the module's apps to iterate and the server-wide limits. */
+export interface ServerJobContext<Config = unknown> extends JobContextBase {
+  /** The server's default limits (env / catalogue defaults — no workspace is known). */
+  limits(): Promise<Limits>;
+  /**
+   * The live apps (not deleted, not taken down) that have a stored config of
+   * this module and whose workspace has it on, each with its effective
+   * config. Stop early by leaving the loop.
+   */
+  apps(): AsyncIterable<ModuleAppView<Config>>;
+}
+
+/** What a `scope: 'app'` job gets — scoped to ONE app, like a route's ModuleContext without a caller. */
+export interface AppJobContext<Config = unknown> extends JobContextBase {
+  app: HookApp;
+  /** This app's effective config. */
+  config: Config;
+  /** The config once the owner confirms its pending change, or null. Never act on it: it is not in force. */
+  pendingConfig: Config | null;
+  /** Limits of this app's workspace. */
+  limits(): Promise<Limits>;
+  /** Fixed-window counter namespaced to this module + app (the same buckets its routes use). */
+  rateLimit(bucket: string, key: string, max: number, windowMs: number): Promise<RateLimitResult>;
+  secrets: {
+    /** The plaintext of this app's declared secret `name` for this module, or null. */
+    get(name: string): Promise<string | null>;
+  };
+}
+
+/** A job core runs once per interval for the whole server (one replica at a time). */
+export interface ServerJob<Config = unknown> {
+  /** `JOB_NAME_RE`, unique within the module. */
+  name: string;
+  /** One line for operators and agents (skill_info). */
+  description?: string;
+  scope?: 'server';
+  every: JobInterval;
+  run(ctx: ServerJobContext<Config>): Promise<void> | void;
+}
+
+/**
+ * A job core runs for EACH app that has a stored config of the module and
+ * the module on for its workspace, each app on its own interval — fixed, or
+ * read from the app's config (`every(config, app)`; null or undefined = not
+ * for this app now).
+ */
+export interface AppJob<Config = unknown> {
+  /** `JOB_NAME_RE`, unique within the module. */
+  name: string;
+  /** One line for operators and agents (skill_info). */
+  description?: string;
+  scope: 'app';
+  every: JobInterval | ((config: Config, app: HookApp) => JobInterval | null | undefined);
+  run(ctx: AppJobContext<Config>): Promise<void> | void;
+}
+
+/**
+ * Scheduled work of a module (contract 1.2). Core runs each job on its
+ * interval under a Redis lease (once across replicas), at most
+ * MODULE_JOBS_CONCURRENCY runs per process, each cut off at
+ * MODULE_JOBS_TIMEOUT_MS. A failed run is logged (a per-app job's also in the
+ * app's get_logs `runtime`) and retried with backoff; it never affects the
+ * server's start or its requests. A job is the module's own trusted code —
+ * the server still never runs app code.
+ */
+export type ModuleJob<Config = unknown> = ServerJob<Config> | AppJob<Config>;
+
+const INTERVAL_RE = /^(\d+)(s|m|h|d)$/;
+const UNIT_MS = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 } as const;
+/** The shortest interval a job runs at. */
+export const JOB_MIN_INTERVAL_MS = 60_000;
+/** The longest interval a job runs at. */
+export const JOB_MAX_INTERVAL_MS = 30 * 86_400_000;
+
+/**
+ * A JobInterval in milliseconds, or null when the value is not one (a number
+ * that is not a positive integer, any other string). Not range-checked — see
+ * JOB_MIN_INTERVAL_MS / JOB_MAX_INTERVAL_MS.
+ */
+export function parseJobInterval(value: unknown): number | null {
+  if (typeof value === 'number') return Number.isSafeInteger(value) && value > 0 ? value : null;
+  if (typeof value !== 'string') return null;
+  const m = INTERVAL_RE.exec(value.trim());
+  if (!m) return null;
+  const ms = Number(m[1]) * UNIT_MS[m[2] as keyof typeof UNIT_MS];
+  return Number.isSafeInteger(ms) && ms > 0 ? ms : null;
+}
+
 // ── the module ───────────────────────────────────────────────────────────────
 
 export interface DrobekModule<Config = unknown> {
@@ -790,6 +907,11 @@ export interface DrobekModule<Config = unknown> {
   availability?: ModuleAvailability;
   /** How the dashboard presents the module. */
   dashboard?: ModuleDashboard;
+  /**
+   * Scheduled jobs (contract 1.2) — see ModuleJob. A module with jobs
+   * declares `contract: '^1.2'`: a 1.1 server ignores the field.
+   */
+  jobs?: ModuleJob<Config>[];
 }
 
 /** A module of any config type (what the registry holds). */

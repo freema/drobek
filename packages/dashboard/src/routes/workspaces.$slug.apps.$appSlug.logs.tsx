@@ -58,7 +58,7 @@ export default function AppLogsRoute() {
       <SectionError error={d.runtime.error} testId="runtime-error" />
       {d.runtime.entries.length === 0 && !d.runtime.error ? (
         <p style={ui.empty} data-testid="runtime-empty">
-          No browser errors reported in this time range.
+          No browser errors or failed module jobs reported in this time range.
         </p>
       ) : (
         <div style={ui.tableWrap}>
@@ -81,7 +81,7 @@ export default function AppLogsRoute() {
                   </td>
                   <td style={ui.td}>{e.count}</td>
                   <td style={{ ...ui.td, whiteSpace: 'nowrap' }}>{formatTimestamp(e.last_seen)}</td>
-                  <td style={{ ...ui.td, ...ui.mono, wordBreak: 'break-all' }}>{e.url}</td>
+                  <td style={{ ...ui.td, ...ui.mono, wordBreak: 'break-all' }}>{e.module ? `module ${e.module}, job ${e.job ?? ''}` : e.url}</td>
                 </tr>
               ))}
             </tbody>

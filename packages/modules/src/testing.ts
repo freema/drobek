@@ -21,7 +21,8 @@
  *   const app = await createTestApp(db);
  *
  * `checkSkill(module)` checks the module's SKILL.md like the built-in
- * modules' (skill-check/).
+ * modules' (skill-check/). `t.runJob(name)` runs one of the module's
+ * scheduled `jobs` once (contract 1.2).
  */
 import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -30,8 +31,12 @@ import { fileURLToPath } from 'node:url';
 import { noopLogger, type Logger } from '@drobek/core';
 import { apps, workspaces, type DB } from '@drobek/db';
 import {
+  JOB_MAX_INTERVAL_MS,
+  JOB_MIN_INTERVAL_MS,
   normalizeConfirmItems,
+  parseJobInterval,
   type AnyModule,
+  type AppJobContext,
   type EmailMessage,
   type EndUserCallbackResult,
   type HookApp,
@@ -39,6 +44,7 @@ import {
   type MailEnvelope,
   type ModuleContext,
   type Principal,
+  type ServerJobContext,
 } from './contract.js';
 import { mergePatch } from './merge-patch.js';
 import { collectRoutes, errorResult, isReadable, matchRoute, runRoute, type PipelineResult } from './router.js';
@@ -137,6 +143,20 @@ export interface TestRequestInit {
   clientIp?: string | null;
 }
 
+export interface TestJobRunInit {
+  /** Default: a signal that never aborts. */
+  signal?: AbortSignal;
+  /** `ctx.lastSuccessAt` (default null: the first run). */
+  lastSuccessAt?: Date | null;
+}
+
+export interface TestJobRun {
+  /** false: a `scope: 'app'` job whose `every(config, app)` gave no interval for the test app — core would not run it. */
+  ran: boolean;
+  /** The interval core would run it at for the test app (ms, clamped to 1 min – 30 days), or null. */
+  intervalMs: number | null;
+}
+
 export interface TestResponse {
   status: number;
   headers: Record<string, string>;
@@ -183,6 +203,14 @@ export interface ModuleTestContext {
    * limiter shares the test clock. Rejects when the module has no callback.
    */
   endUserCallback(init: TestCallbackInit): Promise<EndUserCallbackResult>;
+  /**
+   * Run the module's job `name` once, the way core's scheduler runs it: a
+   * `scope: 'app'` job for the test app with the test config, secrets and
+   * limits (not at all when `every(config, app)` gives no interval), a
+   * `server` job with `apps()` yielding the test app. Rejects with the job's
+   * own error, or when the module has no such job.
+   */
+  runJob(name: string, init?: TestJobRunInit): Promise<TestJobRun>;
   /** The module as the test runs it (composed from `contributions` when it hosts slots). */
   module: AnyModule;
 }
@@ -360,6 +388,44 @@ export function createModuleTestContext(declared: AnyModule, opts: ModuleTestOpt
             appId === app.id ? { app, config, limits: async () => limits, secrets: base.secrets, audit: base.audit, contributions: base.contributions } : null,
         },
       });
+    },
+    async runJob(name, init = {}) {
+      const job = module.jobs?.find((j) => j.name === name);
+      if (!job) throw new Error(`module "${module.name}" has no job "${name}"`);
+      const base = buildCtx();
+      const common = {
+        db: base.db,
+        log: base.log,
+        contributions: base.contributions,
+        module: module.name,
+        job: job.name,
+        signal: init.signal ?? new AbortController().signal,
+        lastSuccessAt: init.lastSuccessAt ?? null,
+        limits: async () => limits,
+      };
+      if (job.scope === 'app') {
+        const every = typeof job.every === 'function' ? job.every(config, app) : job.every;
+        const ms = every === null || every === undefined ? null : parseJobInterval(every);
+        if (ms === null) return { ran: false, intervalMs: null };
+        const ctx: AppJobContext<any> = {
+          ...common,
+          app,
+          config,
+          pendingConfig: pendingConfig ?? null,
+          rateLimit: base.rateLimit,
+          secrets: base.secrets,
+        };
+        await job.run(ctx);
+        return { ran: true, intervalMs: Math.min(JOB_MAX_INTERVAL_MS, Math.max(JOB_MIN_INTERVAL_MS, ms)) };
+      }
+      const ctx: ServerJobContext<any> = {
+        ...common,
+        apps: async function* () {
+          yield { app, config, db: base.db, log: base.log };
+        },
+      };
+      await job.run(ctx);
+      return { ran: true, intervalMs: parseJobInterval(job.every) };
     },
     async request(method, path, init = {}) {
       const upper = method.toUpperCase();

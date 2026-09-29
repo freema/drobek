@@ -15,6 +15,9 @@ export interface ErrorRow {
   url: string;
   createdAt: Date;
   ts: Date | null;
+  /** `module_job` rows: the module and job that failed. */
+  module?: string | null;
+  job?: string | null;
 }
 
 export interface DedupedError {
@@ -27,6 +30,9 @@ export interface DedupedError {
   lastUrl: string;
   /** `file:line:col` extracted from the most recent stack, when present. */
   fileHint: string | null;
+  /** `module_job` errors: the module and job that failed (absent for browser errors). */
+  module?: string;
+  job?: string;
 }
 
 export interface AppErrorsView {
@@ -55,6 +61,8 @@ export function dedupErrors(rows: ErrorRow[]): AppErrorsView {
         lastSeen: r.createdAt.toISOString(),
         lastUrl: r.url,
         fileHint: fileHintFromStack(r.stack),
+        ...(r.module ? { module: r.module } : {}),
+        ...(r.job ? { job: r.job } : {}),
         _lastAt: at,
         _firstAt: at,
       });

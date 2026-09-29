@@ -3,7 +3,7 @@
 A **platform module** is the only way an app on drobek gets a backend. It is
 platform code the **operator** installs, never code an app author or agent
 uploads: the server still never executes app code. The contract is the
-TypeScript package `@drobek/modules` (contract version `1.1.0`, semver:
+TypeScript package `@drobek/modules` (contract version `1.2.0`, semver:
 `MODULE_CONTRACT_VERSION`).
 
 A module contributes, for every app on the server:
@@ -20,6 +20,7 @@ A module contributes, for every app on the server:
 | **Skill** | the agent-facing Markdown `skill_info('<name>')` returns |
 | **Error codes** | its own codes with meaning and fix: `skill_info('<name>').errors`, `/llms-full.txt` |
 | **Slots** | typed extension points other modules contribute to (see [Slots](#slots)) |
+| **Jobs** | scheduled work core runs on an interval, for the server or for each app (see [Scheduled jobs](#scheduled-jobs-jobs)) |
 
 This page has three audiences: **app authors** (you, or the agent building
 your app) start at [Using modules in an app](#using-modules-in-an-app);
@@ -143,7 +144,7 @@ The server **refuses to start** when anything is off: an unknown package, an
 export that is not a module, an invalid name, a short name whose package
 exports another name, defaults that fail the schema, a `contract` range the
 server's `MODULE_CONTRACT_VERSION` does not satisfy (`module "crm": it needs
-module contract ^2.0, but this server implements 1.1.0 — …`), two modules
+module contract ^2.0, but this server implements 1.2.0 — …`), two modules
 with one name, a missing `sdk.entry`, a reserved name (`sdk`, `v1`,
 `drobek`, `internal`), a module whose `requires` is not enabled
 (`module "forms" requires the module "email": add it to DROBEK_MODULES
@@ -393,6 +394,7 @@ export default defineModule<Config>({
   contributes: { 'auth.provider': { … } },        // its contributions to other modules' slots
   availability: 'default',       // 'default' (every workspace) | 'opt-in'
   dashboard: { editor: 'collections' },           // the dedicated dashboard editor its config fits
+  jobs: [{ name: 'import', scope: 'app', every: (config) => config.every, run(ctx) {} }], // scheduled work (1.2, see "Scheduled jobs")
 });
 ```
 
@@ -412,12 +414,19 @@ The contract fields of 1.1:
 
 | Field | Rules |
 | ----- | ----- |
-| `contract` | a semver range matched against `MODULE_CONTRACT_VERSION` (`1.1.0`); not satisfied → the start is refused; missing → a warning. The built-in modules and the example declare `'^1.1'` |
+| `contract` | a semver range matched against `MODULE_CONTRACT_VERSION` (`1.2.0`); not satisfied → the start is refused; missing → a warning. The built-in modules and the example declare `'^1.1'` |
 | `errors` | `[{ code, meaning, fix }]`: `code` matches `^[a-z][a-z0-9_]{2,40}$`, is not a core code (`CORE_ERROR_CODES`, the catalogue in `/llms-full.txt`) and is declared by no other active module; meaning and fix are required |
 | `slots` / `contributes` | see [Slots](#slots) |
 | `availability` | `'default'` (the default: every workspace of the server) or `'opt-in'` (only the workspaces it is enabled for — [Per-workspace enabling](#per-workspace-enabling-opt-in-modules)); returned by `skill_info('<name>')` and the dashboard's module view |
 | `dashboard.editor` | `'collections'` (a `collections` config shaped like `data`'s) or `'upstreams'` (an `upstreams` config shaped like `proxy`'s): declares which dedicated dashboard editor the config fits; `data` and `proxy` declare theirs. The dashboard picks the editor by this capability only, never by the module's name — a replacement module that declares it gets the same editor, a module without it gets the generic form |
 | `hooks.onAppDelete` | `(app, services)` after the app was deleted, best effort |
+
+The contract fields of 1.2 (additive: a module declaring `'^1.1'` loads unchanged):
+
+| Field | Rules |
+| ----- | ----- |
+| `jobs` | `[{ name, scope?, every, description?, run }]` — see [Scheduled jobs](#scheduled-jobs-jobs). A module with jobs declares `contract: '^1.2'` (a 1.1 server ignores the field; the start logs a warning for a range that admits one) |
+| `ModuleContext.pendingConfig` | the config once the owner confirms the app's pending change, or `null` — see [`ModuleContext`](#modulecontext). Optional in the type: a route reads it as `ctx.pendingConfig ?? null` |
 
 ### Error codes
 
@@ -808,6 +817,84 @@ enabled). The dashboard serves an upload's bytes on its own origin only with
 the module's sniffed type, `nosniff`, `Content-Security-Policy: default-src
 'none'; sandbox`, and `inline` only for PNG / JPEG / GIF / WebP (everything
 else, SVG and PDF included, is an attachment).
+
+## Scheduled jobs (`jobs`)
+
+The server never runs app code, so work on a schedule — refreshing an app's
+data from an API every 15 minutes, a nightly clean-up — belongs to a module:
+it declares `jobs` (contract 1.2) and core runs them in the server process.
+
+```ts
+export default defineModule<Config>({
+  name: 'scores',
+  contract: '^1.2',
+  // …
+  jobs: [
+    {
+      name: 'refresh',                    // ^[a-z][a-z0-9_]{1,39}$, unique in the module
+      scope: 'app',                       // once per app, with that app's config
+      description: 'fetches the latest scores',
+      every: (config) => (config.feedUrl ? config.every : null), // '15m', or null: not for this app
+      async run(ctx) {
+        const key = await ctx.secrets.get('SCORES_API_KEY');
+        const res = await fetch(ctx.config.feedUrl, { headers: { authorization: `Bearer ${key}` }, signal: ctx.signal });
+        if (!res.ok) throw new Error(`the feed answered ${res.status}`); // → get_logs runtime, retried with backoff
+        // write the rows with ctx.db into the module's own tables
+      },
+    },
+    { name: 'prune', every: '1d', async run(ctx) { for await (const { app, config } of ctx.apps()) { /* … */ } } },
+  ],
+});
+```
+
+| Field | Rules |
+| ----- | ----- |
+| `name` | `^[a-z][a-z0-9_]{1,39}$`, unique within the module |
+| `scope` | `'server'` (the default): one run per interval for the whole server. `'app'`: one run per interval for **each app** that has a stored config of the module (a `configure_module` call, a dashboard save or a pending change), is live (not deleted, not taken down) and has the module on for its workspace |
+| `every` | milliseconds or a count with a unit — `'30s'`, `'5m'`, `'1h'`, `'1d'` — between 1 minute and 30 days (else the start is refused). An `app` job may pass `(config, app) => interval \| null` instead: read per app on every tick, `null`/`undefined` = not for this app now, an invalid value is skipped with a warning, a value outside the range is clamped to it |
+| `description` | one line; `skill_info('<name>').jobs` lists `{ name, scope, every, description }` (`every: 'config'` for one read from the config) |
+| `run(ctx)` | the work. A throw (or a rejection) fails the run |
+
+`run` gets the module's services — `db`, `log` (tagged with module, job and
+app), `contributions`, `module`, `job` — plus `signal` (aborted at the
+timeout or on shutdown: pass it to `fetch`) and `lastSuccessAt` (when the
+last successful run of this job, for this app, started — `null` the first
+time; an import can ask its source for what changed since). A `server` job
+also gets `limits()` (the server's defaults) and `apps()`, an async iterator
+over the same apps an `app` job runs for (`{ app, config, db, log }`). An
+`app` job gets the app's context without a caller: `app`, `config`,
+`pendingConfig`, `limits()` (the workspace's), `rateLimit()` (the same
+buckets as the module's routes) and `secrets.get()` (declared names only).
+A job sends no e-mail and writes no audit row.
+
+How core runs them:
+
+- A scheduler looks for due runs every 15 seconds. Each job (for each app)
+  keeps its state in Redis — when it last ran, when it last succeeded, how
+  many runs failed in a row — so a restart or another replica continues where
+  the last run left off; a run is due one interval after the last one, the
+  first one at once.
+- A Redis lease per run makes sure it runs **once across replicas**.
+- At most `MODULE_JOBS_CONCURRENCY` (4) runs are in flight per process; a
+  due run past the cap waits for a later tick. A run is cut off after
+  `MODULE_JOBS_TIMEOUT_MS` (5 minutes): its `signal` aborts and the run
+  counts as failed. A run that ignores the signal keeps its lease a minute
+  longer, then the next run may overlap it.
+- A failed run is logged (`module job failed`, with module, job, app, the
+  failures in a row and the retry delay, secrets redacted) and retried with
+  backoff: 1 minute, doubling per failure, at most the job's interval or an
+  hour, whichever is longer; a success resets it. An `app` job's failure is
+  also in the app's `get_logs({ kind: 'runtime' })`: type `module_job` with
+  `module` and `job`, the redacted message and an empty `url` — the agent
+  sees it where it looks for errors.
+- Nothing runs before the first tick after the start, and a scheduling error
+  is logged, never thrown: a job cannot hold up the server's start or its
+  requests. `MODULE_JOBS_ENABLED=0` turns the jobs off on one process (e.g.
+  all replicas but one); a server whose modules declare no jobs starts no
+  scheduler at all.
+
+`createModuleTestContext(module, { config, secrets, … }).runJob(name)` runs a
+job once the way the scheduler does (see [Testing a module](#testing-a-module)).
 
 ## Slots
 
@@ -1249,6 +1336,7 @@ t.audits;   // [{ action: 'hello.…', meta }]
 t.emails;   // [{ to, subject, text, kind, fromName?, replyTo? }] (owners: ['…'] feeds { appOwners: true })
 t.setPrincipal({ kind: 'anon' });
 await t.confirm({}, { greeting: 'Ahoj' });   // confirmRequired over two config patches → ['greeting: …']
+await t.runJob('refresh');                   // one run of a scheduled job → { ran, intervalMs }
 ```
 
 Mutating requests send the app's `Origin` and `X-Drobek-SDK: 1` by default;
@@ -1256,7 +1344,11 @@ pass `headers` to test the CSRF guard. `contributions: { '<slot>': [value, …] 
 sets what `ctx.contributions(slot)` returns. `request()` rejects where
 production answers `500 internal_error`: an exception that is not a
 ModuleError, or a ModuleError with a code that is neither core nor in the
-module's `errors`.
+module's `errors`. `runJob(name, { signal?, lastSuccessAt? })` runs one of
+the module's `jobs` once: an `app` job for the test app with the test config,
+secrets and limits (`{ ran: false }` when its `every(config)` gives no
+interval), a `server` job with `apps()` yielding the test app; it rejects
+with the job's own error.
 
 The database for `db` needs no other drobek package:
 
@@ -1340,7 +1432,8 @@ is the scaffold's output plus the slot demo.
 - `contract` is a semver range against the server's `MODULE_CONTRACT_VERSION`;
   a server whose version does not satisfy it refuses to start. Declare the
   lowest contract whose fields the module uses (`'^1.1'` for `errors`,
-  `slots`, `contributes`, `availability`, `dashboard`, `onAppDelete`).
+  `slots`, `contributes`, `availability`, `dashboard`, `onAppDelete`;
+  `'^1.2'` for `jobs`).
 - `@drobek/modules` and `drizzle-orm` are **peer dependencies** (and dev
   dependencies for the tests — `@drobek/modules` through the npm alias);
   `zod` comes as `z` from `@drobek/modules`.
@@ -1385,7 +1478,8 @@ pinned counter module against candidate core packages before release.
 | Module contract (`MODULE_CONTRACT_VERSION`) | drobek image / npm packages | A module declaring |
 | --- | --- | --- |
 | `1.0.0` | v0.1.0 – v0.1.4 | `'^1.0'` (or no `contract`) |
-| `1.1.0` | v0.2.0 – | `'^1.1'` or `'^1.0'` |
+| `1.1.0` | v0.2.0 – v0.5.x | `'^1.1'` or `'^1.0'` |
+| `1.2.0` | v0.6.0 – | `'^1.2'` (a module with `jobs`), `'^1.1'` or `'^1.0'` |
 
 `@freema/drobek-modules@X.Y.Z` is the contract of the image `ghcr.io/freema/drobek:vX.Y.Z`
 (both come from one tag). Additive contract changes raise the minor version

@@ -31,7 +31,9 @@
  *    onAppCreate / onPublish hook and contributes to no other module's slot
  *    there. The SDK stays one per server.
  *  - `endUserCallback()` — the end-user sign-in providers' IdP callback on
- *    the dashboard host (the `endUsers` authority's `callback`, NSO-348).
+ *    the dashboard host (the `endUsers` authority's `callback`, NSO-348);
+ *  - `jobApps()` / `serverJobContext()` / `appJobContext()` — what the
+ *    module-jobs scheduler (./jobs.ts, NSO-391) runs a module's `jobs` with.
  *
  * `moduleRuntime()` is the process-wide instance, loaded once from
  * `DROBEK_MODULES` (memoised on globalThis, so the dev server's Vite-loaded
@@ -42,14 +44,15 @@ import { AUDIT_ACTIONS, AUDIT_SUBJECT_TYPES, actorKindForSurface, writeAudit } f
 import { renderPlatformEmail, renderTextEmailHtml, sendEmail, serverHost, trustedActionUrl, type EmailAction } from '@drobek/email';
 import { scanForSecrets } from '@drobek/compile';
 import { createConsoleLogger, getRedis, type Logger } from '@drobek/core';
-import { apps, dbErrorForLog, getDb, memberships, runJournalMigrations, users, workspaceModules, type DB } from '@drobek/db';
+import { apps, dbErrorForLog, getDb, memberships, moduleConfigs, runJournalMigrations, users, workspaceModules, type DB } from '@drobek/db';
 import { recordModuleRequest } from '@drobek/insights';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNull } from 'drizzle-orm';
 import type { Readable } from 'node:stream';
 import { z } from 'zod';
 import { MODULE_CONTRACT_VERSION, normalizeConfirmItems } from './contract.js';
 import type {
   AnyModule,
+  AppJobContext,
   ConfirmRole,
   EmailMessage,
   EndUser,
@@ -71,6 +74,7 @@ import type {
   ModuleContext,
   ModuleDashboardEditor,
   ModuleErrorDoc,
+  ModuleAppView,
   ModuleServices,
   Principal,
   RateLimitResult,
@@ -78,8 +82,9 @@ import type {
   RecordsPage,
   RecordsQuery,
   RecordsView,
+  ServerJobContext,
 } from './contract.js';
-import { readConfigRow, readConfigRows, withLockedConfig, type PendingChange } from './configs.server.js';
+import { asObject, asPending, readConfigRow, readConfigRows, withLockedConfig, type PendingChange } from './configs.server.js';
 import { assertSignInSender, capEmailText, emailKind, redactAddresses, resolveRecipients, sanitizeSubject } from './email.js';
 import { CORE_ERROR_CODES, ModuleError, isModuleError, issuePaths, moduleNotEnabled, skillHint } from './errors.js';
 import { CORE_LIMITS, createLimitsProvider, moduleEnabledLimit, moduleEnabledLimitName, type CatalogueLimit, type LimitsProvider } from './limits.js';
@@ -283,6 +288,18 @@ export interface SkillInfo {
   contributes?: ModuleFacts['contributes'];
   /** NSO-346: skill_info with an app: whether this opt-in module is active for the app's workspace. */
   enabled_for_workspace?: boolean;
+  /** NSO-391: the module's scheduled jobs (only when it declares any). */
+  jobs?: SkillJob[];
+}
+
+/** One scheduled job of a module as skill_info shows it. */
+export interface SkillJob {
+  name: string;
+  /** `server` (once per interval for the whole server) or `app` (per app that configured the module). */
+  scope: 'server' | 'app';
+  /** The fixed interval as declared (`'15m'`, or milliseconds), or `config` — each app's config sets it. */
+  every: string | number;
+  description: string | null;
 }
 
 /**
@@ -503,6 +520,32 @@ function unsupported(module: string, what: string): ModuleError {
 
 /** Distinct (module, stored config) pairs kept parsed in memory. */
 const EFFECTIVE_CONFIG_MEMO_ENTRIES = 2000;
+/** Apps read per query when a module's jobs enumerate the apps they run for. */
+const JOB_APPS_BATCH = 500;
+
+/** One app a module's job runs for (see ModuleRuntime.jobApps). */
+export interface JobAppRow {
+  app: HookApp;
+  config: unknown;
+  pendingConfig: unknown;
+}
+
+/** What a job run gets besides its app: the abort signal and when the job last succeeded. */
+export interface JobRunInput {
+  job: string;
+  signal: AbortSignal;
+  lastSuccessAt: Date | null;
+}
+
+/** `log` with `meta` added to every line. */
+function taggedLogger(log: Logger, meta: Record<string, unknown>): Logger {
+  return {
+    debug: (message, m) => log.debug(message, { ...meta, ...m }),
+    info: (message, m) => log.info(message, { ...meta, ...m }),
+    warn: (message, m) => log.warn(message, { ...meta, ...m }),
+    error: (message, m) => log.error(message, { ...meta, ...m }),
+  };
+}
 
 /** One active module as /healthz, /api/version and the start log show it — never a path on disk. */
 export interface ModuleSummary {
@@ -1119,6 +1162,14 @@ export class ModuleRuntime {
       out.slots = facts.slots;
       out.contributes = facts.contributes;
     }
+    if (m.jobs?.length) {
+      out.jobs = m.jobs.map((j) => ({
+        name: j.name,
+        scope: j.scope ?? 'server',
+        every: typeof j.every === 'function' ? 'config' : j.every,
+        description: j.description ?? null,
+      }));
+    }
     return out;
   }
 
@@ -1601,6 +1652,95 @@ export class ModuleRuntime {
         this.deps.log.error('module hook failed', { module: m.name, hook, app_id: app.id, error: dbErrorForLog(err, { stack: true }) });
       }
     }
+  }
+
+  // ── scheduled jobs (NSO-391) ──
+
+  /**
+   * The apps module `m`'s jobs run for: live (not deleted, not taken down),
+   * with a stored config of `m` (a configure_module call, a dashboard save or
+   * a pending change) and `m` on for their workspace — in app-id order, read
+   * `batch` rows at a time, each with its effective config and the config its
+   * pending change would give (null when none or it no longer validates).
+   */
+  async *jobApps(m: AnyModule, batch = JOB_APPS_BATCH): AsyncGenerator<JobAppRow> {
+    const db = this.deps.db();
+    const on = new Map<string, boolean>();
+    let after = '';
+    for (;;) {
+      const rows = await db
+        .select({ id: apps.id, slug: apps.slug, workspaceId: apps.workspaceId, config: moduleConfigs.config, pending: moduleConfigs.pending })
+        .from(moduleConfigs)
+        .innerJoin(apps, eq(apps.id, moduleConfigs.appId))
+        .where(and(eq(moduleConfigs.module, m.name), gt(moduleConfigs.appId, after), isNull(apps.deletedAt), isNull(apps.lockedReason)))
+        .orderBy(asc(moduleConfigs.appId))
+        .limit(batch);
+      for (const r of rows) {
+        let enabled = on.get(r.workspaceId);
+        if (enabled === undefined) {
+          enabled = await this.isEnabled(r.workspaceId, m.name);
+          on.set(r.workspaceId, enabled);
+        }
+        if (!enabled) continue;
+        const stored = asObject(r.config);
+        const pending = asPending(r.pending);
+        const parsed = pending ? this.parsePending(m, stored, pending) : null;
+        yield {
+          app: { id: r.id, slug: r.slug, workspaceId: r.workspaceId },
+          config: this.effectiveConfig(m, stored),
+          pendingConfig: parsed?.success ? parsed.data : null,
+        };
+      }
+      if (rows.length < batch) return;
+      after = rows[rows.length - 1].id;
+    }
+  }
+
+  /** The context of one run of a `scope: 'server'` job of `m`. */
+  serverJobContext(m: AnyModule, input: JobRunInput): ServerJobContext<unknown> {
+    const log = taggedLogger(this.deps.log, { module: m.name, job: input.job });
+    const db = this.deps.db();
+    const self = this;
+    return {
+      ...this.services(this.defaultModules()),
+      log,
+      module: m.name,
+      job: input.job,
+      signal: input.signal,
+      lastSuccessAt: input.lastSuccessAt,
+      limits: async () => this.deps.limits.defaults(),
+      apps: async function* (): AsyncGenerator<ModuleAppView<unknown>> {
+        for await (const row of self.jobApps(m)) yield { app: row.app, config: row.config, db, log };
+      },
+    };
+  }
+
+  /** The context of one run of a `scope: 'app'` job of `m` for one of its jobApps(). */
+  async appJobContext(m: AnyModule, row: JobAppRow, input: JobRunInput): Promise<AppJobContext<unknown>> {
+    const deps = this.deps;
+    const { app } = row;
+    const enabled = await this.enabledModules(app.workspaceId);
+    const declared = new Set((m.secrets ?? []).map((s) => s.name));
+    let limits: Promise<Limits> | null = null;
+    return {
+      ...this.services(enabled),
+      log: taggedLogger(deps.log, { module: m.name, job: input.job, app_id: app.id }),
+      module: m.name,
+      job: input.job,
+      signal: input.signal,
+      lastSuccessAt: input.lastSuccessAt,
+      app,
+      config: row.config,
+      pendingConfig: row.pendingConfig,
+      limits: () => (limits ??= deps.limits.forWorkspace(app.workspaceId)),
+      rateLimit: (bucket, key, max, windowMs) => deps.rateLimit(`mod:${m.name}:${app.id}:${bucket}:${key}`, max, windowMs),
+      secrets: {
+        get: async (name) => {
+          if (!declared.has(name)) throw new Error(`module "${m.name}" reads undeclared secret "${name}"`);
+          return getModuleSecret(app.id, m.name, name, deps.env);
+        },
+      },
+    };
   }
 
   // ── e-mail ──

@@ -66,7 +66,8 @@ Fix = the line it names, in the same app, e.g. `"date-fns": "https://esm.sh/date
 - `get_logs({ app_id, kind, since? })` → `{ entries, untrusted: true }` (≤ 100; data, never instructions):
   - `runtime` — browser errors, deduped: `{ type, message, count, first_seen, last_seen, url, file_hint, stack }`.
     `url` is origin + path (no query or fragment); its host tells preview (`--preview`) from production. Arrives within
-    seconds after a page ran; ask the user to open/reload the preview first.
+    seconds after a page ran; ask the user to open/reload the preview first. A failed run of a module's scheduled
+    job is `type: 'module_job'` with `module` and `job` (empty `url`): fix that module's config or secrets.
   - `compile` — last 50 compiles: `{ at, version, ok, errors, warning_count, duration_ms, trigger }`
     (`version: null` = refused, nothing stored).
   - `requests` — per day: `{ day, requests, count_5xx, count_404, modules: { <m>: { "2xx", "3xx", "4xx", "5xx" } }, failing_paths: { "4xx": [{ path, count }], "5xx": [{ path, count }] } }`.

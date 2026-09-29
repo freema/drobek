@@ -33,7 +33,8 @@
  * a missing sdk.entry, a module whose `requires` is not active, a clashing
  * limit or error code, a contribution to an unknown slot or one that fails
  * the slot's schema, a slot host's `compose` that throws or returns an
- * invalid config, an invalid `DROBEK_MODULE_<NAME>_DEFAULTS` — stops the
+ * invalid config, an invalid `DROBEK_MODULE_<NAME>_DEFAULTS`, a job without
+ * a valid name, interval or `run` — stops the
  * server at start with a message that names the module. Nothing is skipped
  * silently.
  */
@@ -44,11 +45,15 @@ import { pathToFileURL } from 'node:url';
 import semver from 'semver';
 import { createConsoleLogger, type Logger } from '@drobek/core';
 import {
+  JOB_MAX_INTERVAL_MS,
+  JOB_MIN_INTERVAL_MS,
+  JOB_NAME_RE,
   MODULE_CONTRACT_VERSION,
   MODULE_ERROR_CODE_RE,
   MODULE_NAME_RE,
   SLOT_NAME_RE,
   isDefinedModule,
+  parseJobInterval,
   type AnyModule,
 } from './contract.js';
 import { checkDirModule, findDirModule, modulesDirState, packageEntryFile, verifyDirModule, type ModulesDirState } from './dir-modules.js';
@@ -318,10 +323,36 @@ export function validateModule(m: AnyModule): void {
     }
   }
   if (m.availability !== undefined && !AVAILABILITY.has(m.availability)) fail(`availability must be 'default' or 'opt-in'`);
+  if (m.jobs !== undefined) validateJobs(m.jobs, fail);
   if (m.dashboard !== undefined) {
     if (!isPlainObject(m.dashboard)) fail('dashboard must be an object');
     const editor: unknown = (m.dashboard as { editor?: unknown }).editor;
     if (editor !== undefined && !DASHBOARD_EDITORS.has(String(editor))) fail(`dashboard.editor must be one of ${[...DASHBOARD_EDITORS].join(', ')}`);
+  }
+}
+
+/** The rules of `jobs` (contract 1.2): unique names, a scope, a fixed interval in range or (per-app) a function, a `run`. */
+function validateJobs(jobs: unknown, fail: (msg: string) => never): void {
+  if (!Array.isArray(jobs)) fail('jobs must be an array of { name, every, run }');
+  const seen = new Set<string>();
+  const range = `between ${JOB_MIN_INTERVAL_MS / 60_000} minute and ${JOB_MAX_INTERVAL_MS / 86_400_000} days`;
+  for (const j of jobs as Record<string, unknown>[]) {
+    if (!isPlainObject(j)) fail('every job must be an object { name, every, run }');
+    const name = j.name;
+    if (typeof name !== 'string' || !JOB_NAME_RE.test(name)) fail(`job name ${JSON.stringify(name)} must match ${JOB_NAME_RE}`);
+    const who = `job "${String(name)}"`;
+    if (seen.has(String(name))) fail(`${who} is declared twice`);
+    seen.add(String(name));
+    if (j.scope !== undefined && j.scope !== 'server' && j.scope !== 'app') fail(`${who}: scope must be 'server' or 'app'`);
+    if (typeof j.run !== 'function') fail(`${who}: run must be a function`);
+    if (j.description !== undefined && (typeof j.description !== 'string' || !j.description.trim())) fail(`${who}: description must be a non-empty string`);
+    if (typeof j.every === 'function') {
+      if (j.scope !== 'app') fail(`${who}: only a scope: 'app' job may read its interval from the app's config (every as a function)`);
+      continue;
+    }
+    const ms = parseJobInterval(j.every);
+    if (ms === null) fail(`${who}: every must be milliseconds or a count with a unit ('30s', '5m', '1h', '1d'), got ${JSON.stringify(j.every)}`);
+    if (ms! < JOB_MIN_INTERVAL_MS || ms! > JOB_MAX_INTERVAL_MS) fail(`${who}: every must be ${range}, got ${JSON.stringify(j.every)}`);
   }
 }
 
@@ -632,6 +663,12 @@ export async function loadModuleSet(env: NodeJS.ProcessEnv = process.env, opts: 
     if (m.contract === undefined) {
       const range = `^${semver.major(MODULE_CONTRACT_VERSION)}.${semver.minor(MODULE_CONTRACT_VERSION)}`;
       log.warn(`module "${m.name}" declares no contract range — add contract: '${range}' to its defineModule()`, {
+        module: m.name,
+        contract: MODULE_CONTRACT_VERSION,
+      });
+    }
+    if ((m.jobs?.length ?? 0) > 0 && typeof m.contract === 'string' && semver.intersects(m.contract, '<1.2.0')) {
+      log.warn(`module "${m.name}" declares jobs, which need module contract 1.2, but its contract range ${m.contract} also admits older servers that ignore them — declare contract: '^1.2'`, {
         module: m.name,
         contract: MODULE_CONTRACT_VERSION,
       });

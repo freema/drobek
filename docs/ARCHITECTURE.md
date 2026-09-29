@@ -312,7 +312,7 @@ its preview host at once.
 ## 6. Platform modules
 
 A module is an npm package whose default export comes from `defineModule()`
-(`@drobek/modules`, contract `1.1.0`; a module states the versions it works
+(`@drobek/modules`, contract `1.2.0`; a module states the versions it works
 with in `contract`, e.g. `'^1.1'`, and one this server does not satisfy
 refuses the start). The operator enables modules with `DROBEK_MODULES`; a
 short name `x` loads `drobek-module-x` (which must export the module `x`), a
@@ -414,6 +414,7 @@ All in-process (`apps/server/server/jobs.ts`), started with the server:
 | files sweep (only with the `files` module) | `FILES_SWEEP_INTERVAL_MS` (1 h), Redis lease | removes the uploads of apps deleted `FILES_SWEEP_RETENTION_MS` (24 h) ago, stale temp uploads and blobs no `mod_files` row references (`drobek-module-files`) |
 | assets sweep | hourly, Redis lease | removes the asset files and rows of apps deleted 24 h ago, stale temp uploads and files neither the draft (`app_assets`) nor a kept published set (`app_version_assets`) references (`@drobek/apps`) |
 | logs prune | `LOGS_PRUNE_INTERVAL_MS` (1 h), Redis lease | removes `get_logs` rows past their retention for every app: browser errors older than 30 days or past the newest 500 per app, compiles and daily request stats older than 30 days (`@drobek/insights`) |
+| module jobs (only when an active module declares `jobs`) | each job's own interval (checked every 15 s), a Redis lease per run | the modules' scheduled work, for the server or for each app that configured the module; at most `MODULE_JOBS_CONCURRENCY` (4) runs per process, each cut off at `MODULE_JOBS_TIMEOUT_MS` (5 min); a failed run retries with backoff and an app's failure shows in its `get_logs` runtime; `MODULE_JOBS_ENABLED=0` = none on this process (`@drobek/modules`, [`MODULES.md`](./MODULES.md#scheduled-jobs-jobs)) |
 | audit retention | at start, then daily | deletes audit rows older than `AUDIT_RETENTION_DAYS` (365) — the only deletion of audit rows anywhere |
 
 Request counters for `get_logs('requests')` accumulate in Redis and are
