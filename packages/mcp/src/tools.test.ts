@@ -1308,7 +1308,14 @@ describe('get_logs (M1-07)', () => {
         await new Promise((r) => setTimeout(r, 20));
       }
       expect(entries).toEqual([
-        { day: today, requests: 42, count_5xx: 1, count_404: 2, modules: { ping: { '2xx': 3, '3xx': 0, '4xx': 2, '5xx': 0 } } },
+        {
+          day: today,
+          requests: 42,
+          count_5xx: 1,
+          count_404: 2,
+          modules: { ping: { '2xx': 3, '3xx': 0, '4xx': 2, '5xx': 0 } },
+          failing_paths: { '4xx': [{ path: '/x', count: 2 }], '5xx': [] },
+        },
       ]);
     } finally {
       await c.close();

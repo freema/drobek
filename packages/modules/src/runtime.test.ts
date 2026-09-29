@@ -589,7 +589,7 @@ describe('HTTP on the app hosts', () => {
     }
     // The read reports the counted classes exactly.
     const days = await queryRequestLog(app.id, null, { flush: false });
-    expect(days).toEqual([{ day: today, requests: 0, count_5xx: 0, count_404: 0, modules: { echo: { '2xx': 1005, '3xx': 0, '4xx': 1, '5xx': 0 } } }]);
+    expect(days).toEqual([{ day: today, requests: 0, count_5xx: 0, count_404: 0, modules: { echo: { '2xx': 1005, '3xx': 0, '4xx': 1, '5xx': 0 } }, failing_paths: { '4xx': [], '5xx': [] } }]);
     // A flush never lowers a stored count (Redis lost its counters → the row keeps its total).
     await flushModuleRequests(app.id, today, { redis: () => memoryModuleStatsRedis() });
     await recordModuleRequest(app.id, 'echo', 200, { redis: () => memoryModuleStatsRedis(), flushEverySec: 0 });

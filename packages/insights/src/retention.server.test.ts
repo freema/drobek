@@ -88,19 +88,30 @@ describe("get_logs('requests') flush", () => {
       strings.set(`drobek:signals:5xx:${appA}:${day}`, String(d));
       hashes.set(`drobek:signals:404:${appA}:${day}`, { '/missing': '2' });
       hashes.set(`drobek:signals:mod:${appA}:${day}`, { 'data:2xx': String(10 + d), 'auth:4xx': '1', 'junk': 'x' });
+      hashes.set(`drobek:signals:fail:4xx:${appA}:${day}`, { '/__drobek/v1/auth/me': '3' });
+      hashes.set(`drobek:signals:fail:5xx:${appA}:${day}`, { '/__drobek/v1/proxy/api': String(d) });
     }
     const { redis, stats } = pipelineRedis(strings, hashes);
     const sqlCalls = countSql();
     const entries = await queryRequestLog(appA, null, { now: NOW, redis: () => redis });
 
     expect(stats.execs).toBe(1);
-    expect(stats.commands).toBe((LOGS_RETENTION_DAYS + 1) * 4);
+    // Per day: req, 5xx, 404 paths, module counters + the 4xx / 5xx failing paths (NSO-380).
+    expect(stats.commands).toBe((LOGS_RETENTION_DAYS + 1) * 6);
     // Two upserts (app_daily_stats, module_request_stats) + the two reads — no per-day statement, no delete.
     expect(sqlCalls.count()).toBe(4);
 
     expect(entries).toHaveLength(LOGS_RETENTION_DAYS + 1);
     expect(entries[0]).toMatchObject({ day: dayOf(0), requests: 100, count_5xx: 0, count_404: 2, modules: { data: { '2xx': 10 }, auth: { '4xx': 1 } } });
     expect(entries.at(-1)).toMatchObject({ day: dayOf(LOGS_RETENTION_DAYS), requests: 100 + LOGS_RETENTION_DAYS });
+    expect(entries[0].failing_paths).toEqual({
+      '4xx': [
+        { path: '/__drobek/v1/auth/me', count: 3 },
+        { path: '/missing', count: 2 },
+      ],
+      '5xx': [],
+    });
+    expect(entries[1].failing_paths['5xx']).toEqual([{ path: '/__drobek/v1/proxy/api', count: 1 }]);
   });
 
   it('the flush is idempotent, keeps module rows from going backwards and never deletes on read', async () => {

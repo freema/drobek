@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- **`get_logs kind:"requests"` names the failing paths** (NSO-380): each day adds `failing_paths: { "4xx": [{ path, count }], "5xx": [{ path, count }] }` — the day's top 10 per class (missing files and platform 4xx under `4xx`; rate-limited 429s are not recorded). Path only (no query or fragment, ≤ 256 chars), no visitor data; at most 100 distinct paths per class, app and day, the rest counted as `__other__`. The existing fields and counts are unchanged.
 - **MCP tools name the arguments they ignore** (NSO-378): an argument a tool does not take (e.g. `publish({ app_id, user_confirmed: true })`) is still accepted and never passed on, and the result — a failed one too — now carries `warnings: [{ code: "unknown_argument", message, ignored, accepted }]`. `read_file`, `query_data` and `get_logs` send it as a text block after the untrusted envelope. `tools/list` is unchanged; a call without unknown arguments answers exactly as before.
 
 ### Fixed
