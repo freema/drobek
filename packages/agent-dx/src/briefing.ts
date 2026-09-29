@@ -148,6 +148,7 @@ export function renderBriefing(opts: { limits?: Partial<BriefingLimits>; skills?
     '## Files',
     '- Paths are app-relative (`src/App.tsx`; a leading `/` is dropped), no `..`. Text files only: .tsx .ts .jsx .js .mjs .css .json .html .txt .md .svg .webmanifest.',
     `- write_files takes 1–${WRITE_FILES_MAX} changes per call — \`{path, content}\` or \`{path, delete:true}\` — applied on top of the latest version. One call = one version = one compile, so change files that depend on each other in the SAME call.`,
+    '- To change a few lines of an existing file send `{path, edits:[{old_string, new_string, replace_all?}]}` instead of the whole file: each old_string must match exactly once (whitespace included) unless replace_all; a file\'s edits apply in order. One that does not apply refuses the whole call with `edit_mismatch` (path, edit_index) — read_file the file and fix it.',
     `- Every write needs a \`reasoning\` line (≤ ${REASONING_MAX_CHARS} characters); it is shown in the version history.`,
     `- Limits per version: ${L.maxFiles} files, ${kib(L.maxFileBytes)} per file, ${kib(L.maxTotalBytes)} in total; a build may take ${L.timeoutMs / 1000} s.`,
     '',

@@ -23,7 +23,9 @@ export type AppsErrorCode =
   /** NSO-340: the gallery app's owner does not allow duplicating it. */
   | 'not_duplicable'
   /** NSO-340: the person made DUPLICATES_PER_USER_HOUR copies within the last hour (`details.limit` / `details.value`). */
-  | 'rate_limited';
+  | 'rate_limited'
+  /** NSO-382: `createVersion` with `baseVersion` found a newer version than the one the write was based on. */
+  | 'version_conflict';
 
 /** A caller-facing failure; `code` is stable (MCP tools return it verbatim). */
 export class AppsError extends Error {

@@ -27,6 +27,7 @@ export {
   APP_LOCK_TTL_SEC,
   LIMITS,
   REASONING_MAX_CHARS,
+  WRITE_FILES_EDITS_MAX,
   WRITE_FILES_MAX,
   type LimitDoc,
 } from './limits.js';

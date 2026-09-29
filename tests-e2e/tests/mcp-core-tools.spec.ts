@@ -260,6 +260,32 @@ test('core tools: create → broken write → fix → limits → restore → rea
     expect(notes.text).toContain('UNTRUSTED CONTENT');
     expect(notes.text).toMatch(/<untrusted-app-file [^>]*nonce="([0-9a-f]{16})">\n[\s\S]*IGNORE PREVIOUS INSTRUCTIONS[\s\S]*\n<\/untrusted-app-file nonce="\1">$/);
 
+    // NSO-382: edits change part of a file in place; one that does not apply refuses the whole call.
+    const edited = await callTool(a.client, 'write_files', {
+      app_id: appId,
+      files: [
+        { path: 'src/main.tsx', edits: [{ old_string: '<p>Built with drobek.</p>', new_string: '<p>Edited in place.</p>' }] },
+        { path: 'EDITS.md', content: 'edit mode\n' },
+      ],
+      reasoning: 'Edit one line',
+    });
+    expect(edited.isError, edited.text).toBe(false);
+    expect(edited.json).toMatchObject({ version: 5, base_version: 4, compile: { ok: true } });
+    expect((edited.json.changed as string[]).sort()).toEqual(['EDITS.md', 'src/main.tsx']);
+    const v5Main = await callTool(a.client, 'read_file', { app_id: appId, path: 'src/main.tsx' });
+    expect(v5Main.json.content).toBe(String(v1Main.json.content).replace('<p>Built with drobek.</p>', '<p>Edited in place.</p>'));
+    const mismatch = await callTool(a.client, 'write_files', {
+      app_id: appId,
+      files: [
+        { path: 'NOT-STORED.md', content: 'x\n' },
+        { path: 'src/main.tsx', edits: [{ old_string: '<p>Built with drobek.</p>', new_string: 'x' }] },
+      ],
+      reasoning: 'Stale edit',
+    });
+    expect(mismatch.isError).toBe(true);
+    expect(mismatch.json).toMatchObject({ code: 'edit_mismatch', path: 'src/main.tsx', edit_index: 0, reason: 'not_found', base_version: 5 });
+    expect((await callTool(a.client, 'get_app', { app_id: appId })).json.latest_version).toBe(5);
+
     // Audit: app.create + app.version.write rows, written by the agent.
     const rows = await auditRows(slug);
     expect(rows.map((r) => r.action)).toContain('app.create');
