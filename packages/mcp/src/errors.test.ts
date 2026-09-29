@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ERROR_CATALOGUE, errorDoc } from '@drobek/agent-dx';
-import type { CompileErrorCode } from '@drobek/compile';
+import type { CompileErrorCode, CompileWarningCode } from '@drobek/compile';
 import { CORE_ERROR_CODES, MODULE_ERROR_CODE_RE, MODULE_ERROR_CODES } from '@drobek/modules';
 import { TOOL_ERROR_CODES, ToolError } from './errors.js';
 
@@ -16,6 +16,16 @@ const COMPILE_CODES: Record<CompileErrorCode, true> = {
   busy: true,
 };
 
+const COMPILE_WARNING_CODES: Record<CompileWarningCode, true> = {
+  html_missing_lang: true,
+  html_missing_viewport: true,
+  html_missing_title: true,
+  missing_favicon: true,
+  a11y_img_alt: true,
+  a11y_name: true,
+  a11y_label: true,
+};
+
 describe('error catalogue coverage', () => {
   it('every code a tool can emit has a catalogue entry (and a hint)', () => {
     for (const code of TOOL_ERROR_CODES) {
@@ -26,6 +36,12 @@ describe('error catalogue coverage', () => {
 
   it('every compile.errors[] code has a catalogue entry', () => {
     for (const code of Object.keys(COMPILE_CODES)) expect(errorDoc(code), code).toBeTruthy();
+  });
+
+  it('every compile.warnings[] code has a non-fatal catalogue entry', () => {
+    for (const code of Object.keys(COMPILE_WARNING_CODES)) {
+      expect(errorDoc(code), code).toMatchObject({ surface: 'compile.warnings[]' });
+    }
   });
 
   it('every module-route error code (DrobekError) has a catalogue entry (M1-01)', () => {

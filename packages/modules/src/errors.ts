@@ -95,6 +95,14 @@ export const CORE_ERROR_CODES: readonly string[] = [
   'unresolved_import',
   'invalid_config',
   'timeout',
+  // compile.warnings[] (reserved core diagnostic codes)
+  'html_missing_lang',
+  'html_missing_viewport',
+  'html_missing_title',
+  'missing_favicon',
+  'a11y_img_alt',
+  'a11y_name',
+  'a11y_label',
   // OAuth
   'invalid_grant',
   'invalid_client',

@@ -7,6 +7,7 @@ import { limitsFromEnv, type CompileLimits } from './limits.js';
 import { isAllowedExt, normalizeAppPath, TEXT_EXTS, extOf } from './paths.js';
 import { APP_NAMESPACE, SDK_SOURCE_NAMESPACE, virtualFsPlugin, type FailDetail, type VirtualFsState } from './plugin.js';
 import { Semaphore } from './queue.js';
+import { checkHtmlBasics } from './html-basics.js';
 import { scanForSecrets } from './secrets.js';
 import type {
   CompileErrorCode,
@@ -95,22 +96,26 @@ export class Compiler {
     const secrets = [...checked.text].flatMap(([path, text]) => scanForSecrets(path, text));
     if (secrets.length > 0) return failed(secrets, started);
 
+    const appFiles = new Set(checked.all.keys());
+    const htmlWarnings = [...checked.text].flatMap(([path, text]) => checkHtmlBasics(path, text, appFiles));
+
     const { config, errors: configErrors } = readAppConfig(checked.text);
-    if (configErrors.length > 0) return failed(configErrors, started);
+    if (configErrors.length > 0) return { ...failed(configErrors, started), warnings: htmlWarnings };
 
     if (Object.keys(config.entries).length === 0) {
       // A plain static app (index.html + assets) has nothing to bundle.
-      return { ok: true, outputs: new Map(), errors: [], warnings: [], inputs: [], durationMs: 0 };
+      return { ok: true, outputs: new Map(), errors: [], warnings: htmlWarnings, inputs: [], durationMs: 0 };
     }
 
     if (!(await this.slots.acquire())) {
-      return failed(
-        [{ code: 'busy', text: 'The compiler is busy — retry the write in a few seconds.' }],
-        started
-      );
+      return {
+        ...failed([{ code: 'busy', text: 'The compiler is busy — retry the write in a few seconds.' }], started),
+        warnings: htmlWarnings,
+      };
     }
     try {
-      return await this.build(checked.all, config, opts, hooks, started);
+      const result = await this.build(checked.all, config, opts, hooks, started);
+      return { ...result, warnings: [...htmlWarnings, ...result.warnings] };
     } finally {
       this.slots.release();
     }

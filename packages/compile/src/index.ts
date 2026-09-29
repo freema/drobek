@@ -5,6 +5,7 @@ export { normalizeAppPath, isAllowedExt, TEXT_EXTS, BINARY_EXTS, SOURCE_EXTS } f
 export { scanForSecrets } from './secrets.js';
 export type {
   CompileErrorCode,
+  CompileWarningCode,
   CompileMessage,
   CompileOptions,
   CompileResult,

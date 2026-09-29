@@ -294,6 +294,49 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     meaning: 'The build ran longer than COMPILE_TIMEOUT_MS and was stopped (the version is stored with compile_status error).',
     fix: 'Look for an import cycle or a very large generated file.',
   },
+  // ── compile.warnings[] (non-fatal static HTML checks) ────────────────────
+  {
+    code: 'html_missing_lang',
+    surface: 'compile.warnings[]',
+    meaning: 'A static HTML page has an <html> element without a language declaration.',
+    fix: 'Add a language tag such as <html lang="en">.',
+  },
+  {
+    code: 'html_missing_viewport',
+    surface: 'compile.warnings[]',
+    meaning: 'A static HTML page has no viewport meta tag for mobile browsers.',
+    fix: 'Add <meta name="viewport" content="width=device-width, initial-scale=1"> inside <head>.',
+  },
+  {
+    code: 'html_missing_title',
+    surface: 'compile.warnings[]',
+    meaning: 'A static HTML page has no non-empty title.',
+    fix: 'Add a descriptive, non-empty <title> inside <head>.',
+  },
+  {
+    code: 'missing_favicon',
+    surface: 'compile.warnings[]',
+    meaning: 'The app has no icon link and no favicon.ico or favicon.svg file.',
+    fix: 'Add <link rel="icon" href="/favicon.ico"> or include favicon.ico/favicon.svg in the app files.',
+  },
+  {
+    code: 'a11y_img_alt',
+    surface: 'compile.warnings[]',
+    meaning: 'A static HTML image has no alt attribute.',
+    fix: 'Describe the image with alt text, or use alt="" when it is decorative.',
+  },
+  {
+    code: 'a11y_name',
+    surface: 'compile.warnings[]',
+    meaning: 'A button or linked anchor has no accessible name.',
+    fix: 'Add visible text, aria-label, aria-labelledby, title, or an image with alt text.',
+  },
+  {
+    code: 'a11y_label',
+    surface: 'compile.warnings[]',
+    meaning: 'A form control has no associated label or accessible label.',
+    fix: 'Add a wrapping/for-associated <label>, aria-label, or aria-labelledby.',
+  },
   // ── platform module routes (/__drobek/v1/<module>/…, the drobek SDK) ──────
   // Body { error, message, details?, hint } — `error` is the code below; the
   // SDK throws it as DrobekError { status, code, message, details, hint }.

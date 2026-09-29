@@ -227,9 +227,28 @@ describe('compile — happy path', () => {
   });
 
   it('treats an app without src/main.* as static (nothing to bundle)', async () => {
-    const r = await compile(new Map([['index.html', '<h1>hi</h1>']]));
+    const r = await compile(new Map([['index.html', '<html><h1>hi</h1></html>']]));
     expect(r).toMatchObject({ ok: true, errors: [] });
     expect(r.outputs.size).toBe(0);
+    expect(r.warnings.map((warning) => warning.code)).toEqual(
+      expect.arrayContaining(['html_missing_lang', 'html_missing_viewport', 'html_missing_title', 'missing_favicon'])
+    );
+  });
+
+  it('checks favicon files across the version and returns HTML warnings for bundled apps', async () => {
+    const staticResult = await compile(
+      new Map([
+        ['index.html', '<html lang="en"><meta name="viewport"><title>App</title></html>'],
+        ['assets/favicon.svg', '<svg></svg>'],
+      ])
+    );
+    expect(staticResult.warnings.map((warning) => warning.code)).not.toContain('missing_favicon');
+
+    const bundledResult = await compile(app());
+    expect(bundledResult.warnings.map((warning) => warning.code)).toEqual(
+      expect.arrayContaining(['html_missing_lang', 'html_missing_viewport', 'html_missing_title', 'missing_favicon'])
+    );
+    expect(bundledResult.warnings.every((warning) => warning.file === 'index.html')).toBe(true);
   });
 
   it('compiles an import cycle without hanging', async () => {

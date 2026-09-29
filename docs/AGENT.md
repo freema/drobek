@@ -150,6 +150,18 @@ module (`errors`): `skill_info('<module>').errors` returns them and
 `/llms-full.txt` lists them after the core codes, one section per active
 module. A compile error is not a tool failure: it is
 `compile.ok: false` with `compile.errors[]`, and the version is stored.
+Static HTML checks can also return non-fatal `compile.warnings[]` entries with
+`code`, `file`, `line` where available, and a fix in `text`. They do not make a
+successful compile fail. Fix each warning by following its `text`; `alt=""` is
+valid for a decorative image.
+
+- `html_missing_lang`: add a language such as `lang="en"` to `<html>`.
+- `html_missing_viewport`: add a viewport meta tag inside `<head>`.
+- `html_missing_title`: add a non-empty `<title>` inside `<head>`.
+- `missing_favicon`: add an icon link or include `favicon.ico` / `favicon.svg`.
+- `a11y_img_alt`: describe the image with `alt`, or use `alt=""` if decorative.
+- `a11y_name`: give the button or linked anchor text, an ARIA label, a title, or an image with alt text.
+- `a11y_label`: associate the input, select, or textarea with a label or ARIA label.
 
 **Video, audio and big files (assets).** `write_files` is text-only, and a
 binary must never travel through the model as base64. `create_asset_upload({
