@@ -299,6 +299,7 @@ export default function AppDetailRoute() {
                 </div>
                 <div style={styles.errMeta}>
                   {e.type}
+                  {e.module ? ` · ${e.module} job ${e.job ?? ''}` : ''}
                   {e.fileHint ? ` · ${e.fileHint}` : ''} · last{' '}
                   {formatTimestamp(e.lastSeen)}
                 </div>

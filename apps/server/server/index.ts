@@ -124,7 +124,7 @@ const assetUpload = createAssetUploadHandler({
 }) as RequestHandler;
 
 const app = createServerApp({ rrHandler, before, clientDir, appsHost, assetUpload });
-const jobs = startBackgroundJobs(log, { filesSweep: modules.modules.some((m) => m.name === 'files') });
+const jobs = startBackgroundJobs(log, { filesSweep: modules.modules.some((m) => m.name === 'files'), modules });
 
 httpServer.on('request', app);
 const port = Number(process.env.PORT ?? 3000);

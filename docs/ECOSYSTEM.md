@@ -67,7 +67,8 @@ The script stages and packs the candidate public packages, copies the
 external module to a temporary directory, installs the tarballs, and runs
 its typecheck, build and tests (including its skill examples). It then packs
 the module with its original manifest and installs it in a separate consumer
-to verify registry loading, packaged migration/SDK paths and SDK bundling.
+to verify registry loading, packaged migration/SDK paths, SDK bundling and
+that the candidate's scheduler takes the module's `jobs` (contract 1.2).
 The source checkout remains unchanged. Temporary files are retained for
 diagnostics; npm registry access may be required. Only run trusted module
 sources: their build and test scripts execute locally.

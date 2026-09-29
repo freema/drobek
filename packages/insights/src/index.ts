@@ -141,3 +141,4 @@ export {
   type ModuleStatsOptions,
   type ModuleStatsRedis,
 } from './module-stats.server.js';
+export { recordModuleJobFailure, type ModuleJobFailure } from './module-jobs.server.js';

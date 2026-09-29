@@ -69,6 +69,9 @@ export interface RuntimeEntry {
   file_hint: string | null;
   /** The first lines of the latest stack (redacted), when the browser sent one. */
   stack: string | null;
+  /** Type `module_job` only: the platform module and its job whose run failed (url is empty). */
+  module?: string;
+  job?: string;
 }
 
 export function stackHead(stack: string | null, lines = STACK_HEAD_LINES): string | null {
@@ -90,6 +93,8 @@ export function runtimeEntries(errors: DedupedError[], stacks: Map<string, strin
       url: e.lastUrl,
       file_hint: e.fileHint,
       stack: stackHead(stacks.get(e.dedupKey) ?? null),
+      ...(e.module ? { module: e.module } : {}),
+      ...(e.job ? { job: e.job } : {}),
     }));
 }
 

@@ -80,19 +80,19 @@ const formal = defineModule({ ...base, name: 'formal', contributes: { 'host.gree
 // ── contract range ───────────────────────────────────────────────────────────
 
 describe('contract range', () => {
-  it(`is satisfied by this server (${MODULE_CONTRACT_VERSION}) for ^1.1, ^1.0, 1.x, >=1.1.0`, () => {
-    expect(MODULE_CONTRACT_VERSION).toBe('1.1.0');
-    for (const contract of ['^1.1', '^1.0', '1.x', '>=1.1.0']) {
+  it(`is satisfied by this server (${MODULE_CONTRACT_VERSION}) for ^1.1, ^1.0, 1.x, >=1.1.0 — a 1.1 module keeps loading on 1.2`, () => {
+    expect(MODULE_CONTRACT_VERSION).toBe('1.2.0');
+    for (const contract of ['^1.1', '^1.0', '1.x', '>=1.1.0', '^1.2']) {
       expect(() => validateModule(defineModule({ ...base, name: 'ok', contract }))).not.toThrow();
     }
   });
 
   it('refuses the start when the range is not satisfied — naming the module, the range and the server version', () => {
-    for (const contract of ['^2.0', '~1.0', '<1.1.0', '^1.2']) {
+    for (const contract of ['^2.0', '~1.0', '<1.1.0', '^1.3']) {
       expect(() => validateModule(defineModule({ ...base, name: 'future', contract }))).toThrow(ModuleLoadError);
     }
     expect(() => validateModule(defineModule({ ...base, name: 'future', contract: '^2.0' }))).toThrow(
-      /module "future": it needs module contract \^2\.0, but this server implements 1\.1\.0/
+      /module "future": it needs module contract \^2\.0, but this server implements 1\.2\.0/
     );
     expect(() => validateModule(defineModule({ ...base, name: 'odd', contract: 'not a range' }))).toThrow(/contract must be a semver range/);
   });
@@ -102,7 +102,7 @@ describe('contract range', () => {
     const legacy = defineModule({ ...base, name: 'legacy', contract: undefined });
     const mods = await loadModules({ DROBEK_MODULES: 'legacy' }, { importer: importer({ 'drobek-module-legacy': legacy }), log });
     expect(mods.map((m) => m.name)).toEqual(['legacy']);
-    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining(`module "legacy" declares no contract range — add contract: '^1.1'`), expect.anything());
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining(`module "legacy" declares no contract range — add contract: '^1.2'`), expect.anything());
     const log2 = logger();
     await loadModules({ DROBEK_MODULES: 'host' }, { importer: importer({ 'drobek-module-host': host }), log: log2 });
     expect(log2.warn).not.toHaveBeenCalled();
