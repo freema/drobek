@@ -43,6 +43,7 @@
 import {
   APP_LOCK_TTL_SEC,
   REASONING_MAX_CHARS,
+  WRITE_FILES_EDITS_MAX,
   WRITE_FILES_MAX,
   listAppsNext,
   renderBriefing,
@@ -481,7 +482,8 @@ async function compileAndStore(
   app: { id: string; slug: string },
   sources: Map<string, string | Buffer>,
   reasoning: string,
-  trigger: 'create_app' | 'write_files'
+  trigger: 'create_app' | 'write_files',
+  baseVersion?: number | null
 ): Promise<{ number: number; result: CompileResult }> {
   // The bare `drobek` import → this server's versioned SDK (immutable caching);
   // `drobek/<module>` → that module's inline source, built into the app (M1-02);
@@ -501,6 +503,7 @@ async function compileAndStore(
     actor: actorOf(ctx),
     reasoning,
     compile: { status: result.ok ? 'ok' : 'error', errors: result.ok ? null : result.errors },
+    ...(baseVersion !== undefined ? { baseVersion } : {}),
   });
   await logCompile(ctx, app.id, number, result, trigger);
   await ctx.deps.notifyAppChanged({ app_id: app.id, slug: app.slug, version: number });
@@ -685,18 +688,55 @@ export async function duplicateApp(ctx: CallContext, args: { from: string; works
 
 // ── write_files ──────────────────────────────────────────────────────────────
 
+interface FileEdit {
+  old_string: string;
+  new_string: string;
+  replace_all?: boolean;
+}
+
 export interface FileChange {
   path: string;
   content?: string;
   delete?: boolean;
+  /** NSO-382: exact-string replacements applied to the file of the version the write builds on. */
+  edits?: FileEdit[];
 }
 
-interface ValidChange {
+type ValidChange =
+  | { path: string; content: string; edits?: undefined }
+  | { path: string; content: null; edits?: undefined }
+  | { path: string; content?: undefined; edits: FileEdit[] };
+
+/** A note on a write that did not stop it; merged into the result's `warnings[]`. */
+interface WriteWarning {
+  code: 'edits_ignored';
+  message: string;
   path: string;
-  content: string | null;
 }
 
-function validateChanges(files: unknown, reasoning: unknown): ValidChange[] {
+function validateEdits(path: string, edits: unknown): FileEdit[] {
+  if (!Array.isArray(edits) || edits.length < 1 || edits.length > WRITE_FILES_EDITS_MAX) {
+    throw new ToolError(
+      'invalid_params',
+      `"${path}": \`edits\` must hold 1–${WRITE_FILES_EDITS_MAX} edits (got ${Array.isArray(edits) ? edits.length : 0}).`
+    );
+  }
+  return edits.map((e: Partial<FileEdit> | null, i) => {
+    if (typeof e?.old_string !== 'string' || e.old_string.length === 0 || typeof e.new_string !== 'string') {
+      throw new ToolError(
+        'invalid_params',
+        `"${path}" edits[${i}]: pass a non-empty \`old_string\` and a \`new_string\` (both strings).`,
+        { path, edit_index: i }
+      );
+    }
+    if (e.replace_all !== undefined && typeof e.replace_all !== 'boolean') {
+      throw new ToolError('invalid_params', `"${path}" edits[${i}]: \`replace_all\` must be true or false.`, { path, edit_index: i });
+    }
+    return { old_string: e.old_string, new_string: e.new_string, replace_all: e.replace_all === true };
+  });
+}
+
+function validateChanges(files: unknown, reasoning: unknown, warnings: WriteWarning[]): ValidChange[] {
   if (!Array.isArray(files) || files.length < 1 || files.length > WRITE_FILES_MAX) {
     const n = Array.isArray(files) ? files.length : 0;
     throw new ToolError(
@@ -708,14 +748,25 @@ function validateChanges(files: unknown, reasoning: unknown): ValidChange[] {
     throw new ToolError('invalid_params', `\`reasoning\` must be 1–${REASONING_MAX_CHARS} characters.`);
   }
   const seen = new Set<string>();
-  return (files as FileChange[]).map((f) => {
+  return (files as FileChange[]).map((f): ValidChange => {
     const path = normalizeAppPath(String(f?.path ?? ''));
     if (!path) throw new ToolError('invalid_path', `Unsafe file path ${JSON.stringify(f?.path)}.`);
     const del = f.delete === true;
-    if (del === (typeof f.content === 'string')) {
+    const hasContent = typeof f.content === 'string';
+    // Before NSO-382 `edits` next to `content` / `delete` was dropped silently;
+    // such a call still does what it did, now with a warning.
+    const edits = f.edits !== undefined && !del && !hasContent ? validateEdits(path, f.edits) : undefined;
+    if (f.edits !== undefined && edits === undefined) {
+      warnings.push({
+        code: 'edits_ignored',
+        path,
+        message: `"${path}": \`edits\` was ignored because the entry also has ${del ? '`delete: true`' : '`content`'}. Send either the whole \`content\` or \`edits\`, not both.`,
+      });
+    }
+    if (!edits && del === hasContent) {
       throw new ToolError(
         'invalid_params',
-        `"${path}": pass either \`content\` (write) or \`delete: true\` (remove), not both or neither.`
+        `"${path}": pass either \`content\` (write), \`edits\` (change part of the file) or \`delete: true\` (remove), not both or neither.`
       );
     }
     if (!del && !TEXT_EXTS.has(extOf(path))) {
@@ -726,8 +777,49 @@ function validateChanges(files: unknown, reasoning: unknown): ValidChange[] {
     }
     if (seen.has(path)) throw new ToolError('invalid_params', `"${path}" appears twice in one call.`);
     seen.add(path);
+    if (edits) return { path, edits };
     return { path, content: del ? null : (f.content as string) };
   });
+}
+
+/** Non-overlapping occurrences of `needle` in `text`, left to right. */
+function occurrences(text: string, needle: string): number[] {
+  const at: number[] = [];
+  for (let i = text.indexOf(needle); i !== -1; i = text.indexOf(needle, i + needle.length)) at.push(i);
+  return at;
+}
+
+/** Apply one entry's edits in order, each to the result of the previous; the first that does not apply refuses the call. */
+function applyEdits(path: string, before: string | Buffer | undefined, edits: FileEdit[], baseVersion: number | null): string {
+  const mismatch = (i: number, reason: 'file_not_found' | 'not_found' | 'not_unique', message: string, extra: Record<string, unknown> = {}) =>
+    new ToolError('edit_mismatch', `"${path}" edits[${i}]: ${message} Nothing was written.`, {
+      path,
+      edit_index: i,
+      reason,
+      base_version: baseVersion,
+      ...extra,
+    });
+  if (typeof before !== 'string') {
+    throw mismatch(0, 'file_not_found', `version ${baseVersion ?? 0} has no such text file — write a new file with \`content\`.`);
+  }
+  let text = before;
+  edits.forEach((e, i) => {
+    const at = occurrences(text, e.old_string);
+    if (at.length === 0) throw mismatch(i, 'not_found', '`old_string` is not in the file (it must match exactly, whitespace included).');
+    if (at.length > 1 && !e.replace_all) {
+      throw mismatch(i, 'not_unique', `\`old_string\` matches ${at.length} times — add surrounding lines to make it unique, or set \`replace_all: true\`.`, {
+        matches: at.length,
+      });
+    }
+    let out = '';
+    let from = 0;
+    for (const p of e.replace_all ? at : at.slice(0, 1)) {
+      out += text.slice(from, p) + e.new_string;
+      from = p + e.old_string.length;
+    }
+    text = out + text.slice(from);
+  });
+  return text;
 }
 
 function checkSizes(files: Map<string, string | Buffer>, deps: ToolDeps): void {
@@ -751,11 +843,11 @@ function checkSizes(files: Map<string, string | Buffer>, deps: ToolDeps): void {
   }
 }
 
-/** The latest version's source files (text as string, binary assets as Buffer). */
-async function latestSources(appId: string): Promise<Map<string, string | Buffer>> {
+/** The latest version's number (null: none yet) and its source files (text as string, binary assets as Buffer). */
+async function latestSources(appId: string): Promise<{ base: number | null; files: Map<string, string | Buffer> }> {
   const head = (await latestVersions([appId])).get(appId);
   const out = new Map<string, string | Buffer>();
-  if (!head) return out;
+  if (!head) return { base: null, files: out };
   const detail = await getVersion(appId, { id: head.id });
   const sources = (detail?.files ?? []).filter((f) => f.kind === 'source');
   const blobs = await readBlobs(sources.map((f) => f.sha256));
@@ -764,7 +856,7 @@ async function latestSources(appId: string): Promise<Map<string, string | Buffer
     if (!bytes) continue;
     out.set(f.path, TEXT_EXTS.has(extOf(f.path)) ? bytes.toString('utf8') : bytes);
   }
-  return out;
+  return { base: head.number, files: out };
 }
 
 async function previewNote(appId: string, ok: boolean): Promise<Record<string, unknown>> {
@@ -779,40 +871,70 @@ async function previewNote(appId: string, ok: boolean): Promise<Record<string, u
   };
 }
 
+/** Attempts of an edit-carrying write whose base version the same user's other session overtook. */
+const EDIT_WRITE_ATTEMPTS = 3;
+
 export async function writeFiles(
   ctx: CallContext,
   args: { app_id: string; files: FileChange[]; reasoning: string }
 ) {
   const { app } = await authorizeApp(ctx.principal, args.app_id, 'editor');
   refuseIfLockedByAdmin(app);
-  const changes = validateChanges(args.files, args.reasoning);
+  const warnings: WriteWarning[] = [];
+  const changes = validateChanges(args.files, args.reasoning, warnings);
   await takeLease(ctx, app.id);
+  // The lease keeps other users out, not the same user's other session. Edits
+  // are only valid against the version they were applied to, so a call with
+  // edits is stored only on top of its base and re-applied to a newer one;
+  // whole-file writes land on top of the latest version as they always did.
+  const hasEdits = changes.some((c) => c.edits !== undefined);
 
-  const files = await latestSources(app.id);
-  const changed: string[] = [];
-  for (const c of changes) {
-    const before = files.get(c.path);
-    if (c.content === null) {
-      if (before === undefined) {
-        throw new ToolError('invalid_params', `Cannot delete "${c.path}": the latest version has no such file.`);
+  for (let attempt = 1; ; attempt++) {
+    const { base, files } = await latestSources(app.id);
+    const changed: string[] = [];
+    for (const c of changes) {
+      const before = files.get(c.path);
+      if (c.edits !== undefined) {
+        const after = applyEdits(c.path, before, c.edits, base);
+        if (before !== after) changed.push(c.path);
+        files.set(c.path, after);
+      } else if (c.content === null) {
+        if (before === undefined) {
+          throw new ToolError('invalid_params', `Cannot delete "${c.path}": the latest version has no such file.`);
+        }
+        files.delete(c.path);
+        changed.push(c.path);
+      } else {
+        if (before !== c.content) changed.push(c.path);
+        files.set(c.path, c.content);
       }
-      files.delete(c.path);
-      changed.push(c.path);
-    } else {
-      if (before !== c.content) changed.push(c.path);
-      files.set(c.path, c.content);
     }
-  }
-  checkSizes(files, ctx.deps);
+    checkSizes(files, ctx.deps);
 
-  const { number, result } = await compileAndStore(ctx, app, files, args.reasoning.trim(), 'write_files');
-  return {
-    version: number,
-    compile: compileOut(result, ctx.modules, await ctx.modules.enabledModules(app.workspaceId)),
-    preview_url: previewUrl(app.slug, ctx.deps.env),
-    changed,
-    ...(await previewNote(app.id, result.ok)),
-  };
+    let stored: { number: number; result: CompileResult };
+    try {
+      stored = await compileAndStore(ctx, app, files, args.reasoning.trim(), 'write_files', hasEdits ? base : undefined);
+    } catch (err) {
+      if (!(err instanceof AppsError && err.code === 'version_conflict')) throw err;
+      if (attempt >= EDIT_WRITE_ATTEMPTS) {
+        throw new ToolError(
+          'busy',
+          'Another session kept storing new versions of this app while these edits were applied — nothing was stored. Retry in a few seconds.'
+        );
+      }
+      continue;
+    }
+    const { number, result } = stored;
+    return {
+      version: number,
+      base_version: base,
+      compile: compileOut(result, ctx.modules, await ctx.modules.enabledModules(app.workspaceId)),
+      preview_url: previewUrl(app.slug, ctx.deps.env),
+      changed,
+      ...(await previewNote(app.id, result.ok)),
+      ...(warnings.length > 0 ? { warnings } : {}),
+    };
+  }
 }
 
 // ── restore_version ──────────────────────────────────────────────────────────

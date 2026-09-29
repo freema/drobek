@@ -125,6 +125,17 @@ describe('versions', () => {
     expect(await latestVersionNumber(appId)).toBe(5);
   });
 
+  it('baseVersion: stores on top of the base, refuses with version_conflict once another version landed (NSO-382)', async () => {
+    await expect(createVersion(appId, [{ path: 'index.html', content: 'a' }], { actor, baseVersion: null })).resolves.toMatchObject({ number: 1 });
+    await expect(createVersion(appId, [{ path: 'index.html', content: 'b' }], { actor, baseVersion: 1 })).resolves.toMatchObject({ number: 2 });
+    const err = await createVersion(appId, [{ path: 'index.html', content: 'c' }], { actor, baseVersion: 1 }).catch((e) => e);
+    expect(err).toBeInstanceOf(AppsError);
+    expect(err.code).toBe('version_conflict');
+    expect(await latestVersionNumber(appId)).toBe(2);
+    // Without baseVersion a write lands on top of whatever is latest, as before.
+    await expect(createVersion(appId, [{ path: 'index.html', content: 'd' }], { actor })).resolves.toMatchObject({ number: 3 });
+  });
+
   it('restore creates a NEW version with identical version_files', async () => {
     const v1 = await createVersion(
       appId,

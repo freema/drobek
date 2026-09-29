@@ -209,9 +209,21 @@ describe('compile — happy path', () => {
     expect(text(r.outputs.get('main.js'))).toContain(`"/${asset}"`);
   });
 
-  it('omits the source map for publish builds', async () => {
+  it('omits the source map with `sourcemap: false`', async () => {
     const r = await compile(app(), { sourcemap: false });
     expect(text(r.outputs.get('main.js'))).not.toContain('sourceMappingURL');
+  });
+
+  // @drobek/serving splits exactly this trailer off on the production hosts (NSO-381, sourcemap.ts).
+  it('ends every JS/CSS bundle with the inline source map trailer the production hosts split off', async () => {
+    const r = await compile(app());
+    const b64 = '[A-Za-z0-9+/]+={0,2}';
+    const js = text(r.outputs.get('main.js'));
+    const css = text(r.outputs.get('main.css'));
+    expect(js).toMatch(new RegExp(`\\n//# sourceMappingURL=data:application/json;base64,${b64}\\n$`));
+    expect(css).toMatch(new RegExp(`\\n/\\*# sourceMappingURL=data:application/json;base64,${b64} \\*/\\n$`));
+    const map = JSON.parse(Buffer.from(/base64,([^\s]+)\n$/.exec(js)![1], 'base64').toString('utf8'));
+    expect(map.sourcesContent.join('\n')).toContain('Hello, ');
   });
 
   it('treats an app without src/main.* as static (nothing to bundle)', async () => {

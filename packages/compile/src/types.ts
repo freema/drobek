@@ -52,7 +52,11 @@ export interface CompileResult {
 }
 
 export interface CompileOptions {
-  /** Inline source maps (preview). Publish compiles without. Default true. */
+  /**
+   * Inline source map at the end of each JS/CSS bundle. Default true — every
+   * version is stored with it; the production hosts split it into a separate
+   * `<file>.map` at serve time (NSO-381, @drobek/serving).
+   */
   sourcemap?: boolean;
   minify?: boolean;
   /**
