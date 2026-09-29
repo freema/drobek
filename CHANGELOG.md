@@ -1,5 +1,11 @@
 # Changelog — drobek (core)
 
+## v0.6.1 — 2026-09-29
+
+### Fixed
+- **Claude Code can sign in again** (#46): `/oauth/authorize` accepts an http loopback `redirect_uri` (`localhost`, `127.0.0.1`, `[::1]`) with any port when its host, path and query equal a registered one character for character (RFC 8252 §7.3). Claude Code's Client ID Metadata Document registers `http://localhost/callback` without a port and signs in on an ephemeral one, which the exact-match check refused with "redirect_uri is not registered for this client". https redirect URIs still need an exact match, port included, and `/oauth/token` still compares the exact string stored with the code.
+- **IPv6 loopback redirect URIs register** (#46): `http://[::1]…` passes the DCR and CIMD redirect_uri policy (the check compared the hostname without its brackets).
+
 ## v0.6.0 — 2026-09-29
 
 ### Added
