@@ -26,7 +26,7 @@ export async function loadReadiness(app: { id: string; workspaceId: string }, ve
         loadModules: async () => {
           const runtime = await moduleRuntime();
           const states = await runtime.appModules(app.id);
-          return Object.entries(states).map(([name, s]) => ({ name, enabled: s.enabled, config: s.config }));
+          return Object.entries(states).map(([name, s]) => ({ name, enabled: s.enabled, config: s.config, pending: s.pending_confirmation }));
         },
         onCheckError: (check, err) => log.warn('readiness check failed', { app_id: app.id, check, error: dbErrorForLog(err) }),
       }
