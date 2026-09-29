@@ -302,6 +302,13 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
       'index.html has no <title> in its head, or an empty one: browser tabs, bookmarks, history and shared links show the bare address instead of the app\'s name. The version still compiles and can be published.',
     fix: 'Add `<title>App name</title>` inside `<head>` of index.html (the app\'s own name, not "Vite App") and write again.',
   },
+  {
+    code: 'type_error',
+    surface: 'readiness.warnings[] (get_app, publish, dashboard app page — after the background type check)',
+    meaning:
+      'TypeScript found a type error at file:line (the message starts with the TS code). esbuild strips types without checking them, so the version compiled — but the mistake (a misspelled SDK method, a wrong argument, a possibly-null value) usually fails in the browser. The check runs in the background after write_files, against this server\'s drobek SDK declarations and React\'s types; untyped import-map packages count as `any`.',
+    fix: 'Fix the code at the reported line and write again; get_app shows the new version\'s check once `readiness.typecheck` is `checked`. Check an SDK call against sdk.d.ts / skill_info.',
+  },
   // ── platform module routes (/__drobek/v1/<module>/…, the drobek SDK) ──────
   // Body { error, message, details?, hint } — `error` is the code below; the
   // SDK throws it as DrobekError { status, code, message, details, hint }.

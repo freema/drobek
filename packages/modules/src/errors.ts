@@ -97,6 +97,7 @@ export const CORE_ERROR_CODES: readonly string[] = [
   'timeout',
   // readiness.warnings[]
   'missing_title',
+  'type_error',
   // OAuth
   'invalid_grant',
   'invalid_client',

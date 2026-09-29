@@ -3,7 +3,8 @@
  * returns and the dashboard's app page shows. The same @drobek/compile
  * `readinessReport` write_files runs over its in-memory files: blocking = the
  * version's stored compile errors, warnings = the registered checks over its
- * source files (never executed) and the app's module configs.
+ * source files (never executed) and the app's module configs, plus the
+ * version's background TypeScript check (NSO-388, `type_error` warnings).
  */
 import {
   TEXT_EXTS,
@@ -12,6 +13,7 @@ import {
   type ReadinessOptions,
   type ReadinessReport,
 } from '@drobek/compile';
+import { versionTypecheck } from './typecheck.server.js';
 import { getVersion, readBlobs } from './versions.server.js';
 import type { VersionDetail } from './types.js';
 
@@ -46,7 +48,7 @@ function storedBlocking(version: Pick<VersionDetail, 'compileStatus' | 'compileE
   ];
 }
 
-export type VersionReadinessOptions = Omit<ReadinessOptions, 'files' | 'blocking'>;
+export type VersionReadinessOptions = Omit<ReadinessOptions, 'files' | 'blocking' | 'extra'>;
 
 /** The report of version `ref` of `appId`, or null when it does not exist. */
 export async function versionReadiness(
@@ -56,6 +58,13 @@ export async function versionReadiness(
 ): Promise<{ version: number; report: ReadinessReport } | null> {
   const version = await getVersion(appId, ref);
   if (!version) return null;
-  const report = await readinessReport({ ...opts, files: await versionSources(version), blocking: storedBlocking(version) });
-  return { version: version.number, report };
+  const files = await versionSources(version);
+  let typecheck: Awaited<ReturnType<typeof versionTypecheck>> = {};
+  try {
+    typecheck = await versionTypecheck(version, files);
+  } catch (err) {
+    opts.onCheckError?.('typecheck', err);
+  }
+  const report = await readinessReport({ ...opts, files, blocking: storedBlocking(version), extra: typecheck.extra });
+  return { version: version.number, report: typecheck.state ? { ...report, typecheck: typecheck.state } : report };
 }

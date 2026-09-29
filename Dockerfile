@@ -36,9 +36,11 @@ COPY . .
 RUN pnpm install --offline --frozen-lockfile
 RUN pnpm build:packages && pnpm --filter server build
 RUN pnpm --filter server deploy --prod --legacy /out \
- # typescript is only an optional peer of @react-router/{node,express} (typegen);
- # nothing loads it at runtime. Workspace `src/` trees are types-only.
- && rm -rf /out/node_modules/.pnpm/typescript@* /out/node_modules/.pnpm/node_modules/typescript \
+ # typescript: the background type check of app versions (NSO-388) loads only
+ # lib/typescript.js and the lib.*.d.ts files — tsc/tsserver and the message
+ # translations go. Workspace `src/` trees are types-only.
+ && find /out/node_modules/.pnpm/typescript@*/node_modules/typescript/lib -mindepth 1 -maxdepth 1 \
+      ! -name typescript.js ! -name 'lib.*.d.ts' -exec rm -rf {} + \
  && find /out/node_modules/.pnpm -path '*/node_modules/@drobek/*/src' -type d -prune -exec rm -rf {} +
 
 # --- runner: production image (no pnpm, no devDependencies, non-root).

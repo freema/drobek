@@ -30,6 +30,7 @@ import type { ToolPrincipal } from './context.js';
 import { freshDb, type TestDb } from './test/db.js';
 import { connect, testDeps, type TestDeps } from './test/harness.js';
 import { writeFiles, type CallContext } from './tools.js';
+import { DEFAULT_TYPECHECK_LIMITS, TypecheckRunner, installTypecheckRunner, type TypecheckRunner as Runner } from '@drobek/compile/typecheck';
 
 let db: TestDb;
 let close: () => Promise<void>;
@@ -682,6 +683,85 @@ describe('write_files — edits (NSO-382)', () => {
     expect(await getVersion(app.app_id, { number: 6 })).toBeNull();
     expect((await readVersionFile(v5!.id, 'src/greet.ts', 'source'))?.toString()).toBe(GREET);
   });
+});
+
+describe('write_files — background type check (NSO-388)', () => {
+  const TYPO_TSX = FIXED_TSX.replace("createRoot(document.getElementById('root')!)", "createRoot(document.getElementById('root')!, 42)");
+
+  it('answers without waiting for the check: readiness.typecheck is pending', async () => {
+    let started = 0;
+    const run = () => {
+      started++;
+      return new Promise<never>(() => {});
+    };
+    installTypecheckRunner({ limits: DEFAULT_TYPECHECK_LIMITS, run } as unknown as Runner);
+    try {
+      const app = await newApp('Waits Not');
+      const c = await as('alice');
+      try {
+        const r = await c.call('write_files', { app_id: app.app_id, files: [{ path: 'src/main.tsx', content: TYPO_TSX }], reasoning: 'Typo' });
+        expect(r.isError, r.text).toBe(false);
+        expect(r.body.compile).toMatchObject({ ok: true });
+        expect(r.body.readiness).toEqual({ ready: true, blocking: [], warnings: [], typecheck: 'pending' });
+        expect(started).toBeGreaterThanOrEqual(2); // create_app's template + this write
+      } finally {
+        await c.close();
+      }
+    } finally {
+      installTypecheckRunner(null);
+    }
+  });
+
+  it('a version that did not compile is not type-checked (no typecheck field)', async () => {
+    installTypecheckRunner({ limits: DEFAULT_TYPECHECK_LIMITS, run: () => new Promise<never>(() => {}) } as unknown as Runner);
+    try {
+      const app = await newApp('Broken Types');
+      const c = await as('alice');
+      try {
+        const r = await c.call('write_files', { app_id: app.app_id, files: [{ path: 'src/main.tsx', content: BROKEN_TSX }], reasoning: 'Break' });
+        expect(r.body.readiness).not.toHaveProperty('typecheck');
+      } finally {
+        await c.close();
+      }
+    } finally {
+      installTypecheckRunner(null);
+    }
+  });
+
+  it('get_app shows the type errors once the worker is done (real checker, React types)', async () => {
+    const modules = await deps.modules();
+    const runner = new TypecheckRunner({ limits: DEFAULT_TYPECHECK_LIMITS, sdk: { dts: modules.sdk.dts, inline: modules.sdk.inlineTypes } });
+    installTypecheckRunner(runner);
+    try {
+      const app = await newApp('Typed Check');
+      const c = await as('alice');
+      try {
+        const w = await c.call('write_files', { app_id: app.app_id, files: [{ path: 'src/main.tsx', content: TYPO_TSX }], reasoning: 'Typo' });
+        expect(w.body.readiness).toMatchObject({ typecheck: 'pending' });
+        type Readiness = { typecheck?: string; warnings: unknown[] };
+        const checked = async (): Promise<Readiness> => {
+          for (let i = 0; ; i++) {
+            const r = (await c.call('get_app', { app_id: app.app_id })).body.readiness as Readiness;
+            if (r?.typecheck === 'checked' || i >= 100) return r;
+            await new Promise((done) => setTimeout(done, 100));
+          }
+        };
+        const first = await checked();
+        expect(first).toMatchObject({ ready: true, typecheck: 'checked' });
+        expect(first.warnings).toEqual([
+          { code: 'type_error', file: 'src/main.tsx', line: 8, message: "TS2559: Type '42' has no properties in common with type 'RootOptions'.", hint: errorHint('type_error') },
+        ]);
+
+        await c.call('write_files', { app_id: app.app_id, files: [{ path: 'src/main.tsx', content: FIXED_TSX }], reasoning: 'Fix' });
+        expect(await checked()).toEqual({ ready: true, blocking: [], warnings: [], typecheck: 'checked' });
+      } finally {
+        await c.close();
+      }
+    } finally {
+      installTypecheckRunner(null);
+      await runner.close();
+    }
+  }, 30_000);
 });
 
 describe('single-writer lease', () => {

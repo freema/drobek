@@ -284,6 +284,11 @@ export const appVersions = pgTable(
      * or the snapshot was pruned.
      */
     assetsFrozenAt: timestamp('assets_frozen_at'),
+    /**
+     * NSO-388: the TypeScript check of this version's sources (a readiness
+     * warning source), written by the background check; null = not checked.
+     */
+    typecheck: jsonb('typecheck'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
   },
   (t) => [uniqueIndex('app_versions_app_number_uq').on(t.appId, t.number)]

@@ -235,6 +235,22 @@ listed warnings; the rest are counted in `warnings_omitted`. The checks live
 in `packages/compile/src/readiness/checks/` — one file per check, one line
 in its registry.
 
+**Type check.** esbuild strips TypeScript types without checking them, so a
+type error compiles and fails in the browser. After a write stores a version
+that compiled, the server type-checks its `.ts`/`.tsx` files in the
+background — the TypeScript checker over the in-memory files, the server's
+`sdk.d.ts` (and the `drobek/<module>` declarations) and React's types, in a
+worker thread; it analyses the sources and never runs them. `write_files`
+does not wait: its report says `typecheck: "pending"`. The result is stored
+with the version; `get_app` (its `readiness`), `publish` and the app page
+then list each error as a `type_error` warning (`file`, `line`, message
+`TS<code>: …`) with `typecheck: "checked"`. A check over
+`TYPECHECK_TIMEOUT_MS`, `TYPECHECK_MAX_MEMORY_MB` or `TYPECHECK_MAX_FILES`
+gives `typecheck: "unavailable"` and no type warnings (the server logs it);
+`TYPECHECK_WORKERS=0` turns it off (no `typecheck` field). Settings: strict,
+without `noImplicitAny`; an import-map package without types is `any`;
+JS-only apps are not checked. A type warning never blocks a publish.
+
 **Untrusted output.** `read_file`, `query_data` and `get_logs` return content
 written by app authors, end users and browsers. Their text result is wrapped
 in `<untrusted-app-file …>` / `<untrusted-app-data …>` /

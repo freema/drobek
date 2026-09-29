@@ -60,6 +60,26 @@ export const LIMITS: LimitDoc[] = [
     meaning: 'Max warnings one readiness report lists (write_files, publish); the rest are counted in `readiness.warnings_omitted`.',
   },
   {
+    env: 'TYPECHECK_WORKERS',
+    default: '1',
+    meaning: 'Background TypeScript checks running at once (worker threads); 0 turns the check off — no `type_error` warnings, no `readiness.typecheck`.',
+  },
+  {
+    env: 'TYPECHECK_TIMEOUT_MS',
+    default: '20000 (20 s)',
+    meaning: 'Time budget of one type check; after it the check stops and `readiness.typecheck` is `unavailable`.',
+  },
+  {
+    env: 'TYPECHECK_MAX_MEMORY_MB',
+    default: '512',
+    meaning: 'Heap limit of a type-check worker; a check over it stops (`readiness.typecheck: unavailable`).',
+  },
+  {
+    env: 'TYPECHECK_MAX_FILES',
+    default: '150',
+    meaning: 'An app with more .ts/.tsx files is not type-checked (`readiness.typecheck: unavailable`).',
+  },
+  {
     env: 'APPS_MAX_PER_WORKSPACE',
     default: '50',
     meaning: 'Max live (not deleted) apps in one workspace; the limits provider may set it per workspace (create_app → limit_exceeded).',

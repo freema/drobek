@@ -153,6 +153,15 @@ in the version history.
   things to fix before the user publishes (e.g. `missing_title`), each
   `{ code, file?, line?, message, hint }`. Fix the warnings you can in your
   next write; they never stop a write or a publish.
+- TypeScript types are stripped, not checked, by the compiler — the server
+  type-checks the `.ts`/`.tsx` files of a version that compiled in the
+  background (against sdk.d.ts and React's types). `write_files` does not
+  wait: `readiness.typecheck` is `"pending"`. `get_app` a few seconds on returns the
+  newest version's `readiness` with `typecheck: "checked"` and each error as a
+  `type_error` warning (`file`, `line`, `TS<code>: …`) — fix those like a
+  compile error, they usually break in the browser. `"unavailable"` = the
+  check hit a server limit (no type warnings); no `typecheck` = nothing to
+  check (JS-only) or the check is off.
 - Never put secrets in files: writes are scanned and refused with
   `secret_in_source` (nothing is stored). Remove the value and tell the user to
   set the secret in the drobek dashboard — never ask them to paste it to you.
