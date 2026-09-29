@@ -170,6 +170,17 @@ test.describe('platform module data — collections with rules (M1-03) @local', 
     ]);
     expect(String(held.confirm_url)).toContain(`/apps/${appA.slug}/modules/data`);
 
+    // NSO-386: the readiness report lists the change that waits for the owner (a warning, the write goes through).
+    const pendingWrite = await callTool(mcp.client, 'write_files', {
+      app_id: appA.app_id,
+      files: [{ path: 'src/readiness-probe.ts', content: 'export const probe = 1;\n' }],
+      reasoning: 'Readiness probe while a change is pending',
+    });
+    expect(pendingWrite.isError, JSON.stringify(pendingWrite.json)).toBe(false);
+    const pendingCodes = (pendingWrite.json.readiness as { warnings: { code: string; message: string }[] }).warnings;
+    expect(pendingCodes.find((w) => w.code === 'module_change_pending')?.message).toContain('data.collections.x.rules.create');
+    expect(pendingCodes.map((w) => w.code)).not.toContain('data_public_write_no_schema');
+
     const before = await data(hostA, '/x', { method: 'POST', body: { text: 'too early' } });
     expect(before.status, before.body).toBe(401);
 
@@ -178,6 +189,19 @@ test.describe('platform module data — collections with rules (M1-03) @local', 
       maxRedirects: 0,
     });
     expect(ok.status(), await ok.text()).toBe(200);
+
+    // NSO-386: now anyone may add records to "x", which has no schema — the audit names it and the fix.
+    const liveWrite = await callTool(mcp.client, 'write_files', {
+      app_id: appA.app_id,
+      files: [{ path: 'src/readiness-probe.ts', content: 'export const probe = 2;\n' }],
+      reasoning: 'Readiness probe after the confirmation',
+    });
+    const live = (liveWrite.json.readiness as { ready: boolean; warnings: { code: string; message: string }[] });
+    expect(live.ready).toBe(true);
+    expect(live.warnings.map((w) => w.code)).not.toContain('module_change_pending');
+    const noSchema = live.warnings.find((w) => w.code === 'data_public_write_no_schema');
+    expect(noSchema?.message).toContain('Collection "x"');
+    expect(noSchema?.message).toContain('configure_module({ app_id, module: "data"');
 
     const after = await data(hostA, '/x', { method: 'POST', body: { text: 'hello from a visitor', _owner: 'spoofed' } });
     expect(after.status, after.body).toBe(201);

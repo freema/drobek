@@ -152,7 +152,16 @@ in the version history.
   `blocking` repeats the compile errors (`ready: false`), `warnings` are
   things to fix before the user publishes (e.g. `missing_title`), each
   `{ code, file?, line?, message, hint }`. Fix the warnings you can in your
-  next write; they never stop a write or a publish.
+  next write; they never stop a write or a publish. The module rules audit
+  reads the app's module configs: `data_public_write_no_schema`,
+  `data_public_write_unbounded`, `data_public_read_personal`,
+  `rule_needs_auth_module`, `proxy_public_upstream` name the collection,
+  form or upstream and the exact `configure_module` call that fixes it;
+  `module_change_pending` lists a change still waiting for the owner.
+  `xss_html_sink`, `xss_url_sink` and `xss_eval` flag visitor-written text (data/forms
+  records) reaching innerHTML, a link/frame URL or eval: render it with
+  `textContent` / `createElement` (React: `{value}`), escape it, or
+  allow-list the URL scheme (http/https).
 - TypeScript types are stripped, not checked, by the compiler — the server
   type-checks the `.ts`/`.tsx` files of a version that compiled in the
   background (against sdk.d.ts and React's types). `write_files` does not

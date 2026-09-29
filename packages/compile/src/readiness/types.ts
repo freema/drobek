@@ -36,6 +36,8 @@ export interface ReadinessModule {
   name: string;
   enabled: boolean;
   config: unknown;
+  /** The module's config changes still waiting for the owner's confirmation (not live). */
+  pending?: readonly string[];
 }
 
 /** What every check reads — the version's source files and the app's module configs. Nothing else. */

@@ -21,7 +21,7 @@ function options(ctx: ReadinessCtx, appId: string, enabled: ReadonlySet<string>)
     limits: readinessLimitsFromEnv(ctx.deps.env),
     loadModules: async (): Promise<ReadinessModule[]> => {
       const states = await ctx.modules.appModules(appId, undefined, enabled);
-      return Object.entries(states).map(([name, s]) => ({ name, enabled: s.enabled, config: s.config }));
+      return Object.entries(states).map(([name, s]) => ({ name, enabled: s.enabled, config: s.config, pending: s.pending_confirmation }));
     },
     onCheckError: (check, err) => ctx.deps.log.warn('readiness check failed', { app_id: appId, check, error: dbErrorForLog(err) }),
   };

@@ -229,8 +229,25 @@ the error catalogue. `blocking` is the compile errors (the only thing that
 stops a publish, as before; a credential is refused before anything is
 stored); `warnings` never stop a write or a publish. The report is
 deterministic and reads only the version's source files and the app's module
-configs — no app code runs. Today's check: `missing_title` (index.html has
-no, or an empty, `<title>`). `READINESS_MAX_WARNINGS` (default 50) caps the
+configs — no app code runs. The checks: `missing_title` (index.html has
+no, or an empty, `<title>`) and the module rules audit over the app's module
+configs — `data_public_write_no_schema` / `data_public_write_unbounded` (a
+collection anyone may create or update without a schema, or with strings
+without `maxLength` / extra properties), `data_public_read_personal` (a
+public read of e-mail, phone or address fields), `rule_needs_auth_module`
+(a data, forms or proxy rule that needs a sign-in while the auth module is
+not active), `proxy_public_upstream` (an upstream anonymous visitors may
+call) and `module_change_pending` (a change still waiting for the owner's
+confirmation). Each names the collection, form or upstream and the exact
+`configure_module` fix. The forms module has no per-form limit or captcha
+setting (honeypot, time token and the per-IP / per-app limits always apply),
+so a public form is not a warning. `xss_html_sink`, `xss_eval` and
+`xss_url_sink` are the client-side XSS check (a token-level lint of the scripts and inline `<script>`s
+for innerHTML/outerHTML/insertAdjacentHTML/document.write/
+dangerouslySetInnerHTML, eval/new Function/string timers, and DOM href/src/
+location or a JSX frame/script `src` set from a value that is not a literal — literals, templates
+without `${}` and escaped substitutions pass; vendored and `.min.js` files
+are skipped). `READINESS_MAX_WARNINGS` (default 50) caps the
 listed warnings; the rest are counted in `warnings_omitted`. The checks live
 in `packages/compile/src/readiness/checks/` — one file per check, one line
 in its registry.
