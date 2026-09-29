@@ -79,7 +79,7 @@ function toRun(row: SyncRunRow): SyncRun {
   };
 }
 
-export interface RunSourceInput {
+interface RunSourceInput {
   ctx: Ctx;
   name: string;
   source: SyncSource;

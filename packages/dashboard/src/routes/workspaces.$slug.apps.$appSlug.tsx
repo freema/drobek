@@ -19,6 +19,7 @@ import { ActionError, AppPage, appStyles } from '../app-header.js';
 import { DuplicateResult } from '../duplicate-result.js';
 import { GallerySection } from '../gallery-section.js';
 import { PendingBanner } from '../pending-banner.js';
+import { SyncBanner } from '../sync-banner.js';
 import { formatTimestamp } from '../view.js';
 
 export function meta({ data }: { data?: Awaited<ReturnType<typeof loader>> }) {
@@ -115,7 +116,7 @@ const COMPILE_LABEL: Record<string, string> = {
 };
 
 export default function AppDetailRoute() {
-  const { header, versions, errors, logs, canPublish, pendingBanner, duplicateResult, gallery } = useLoaderData<typeof loader>();
+  const { header, versions, errors, logs, canPublish, pendingBanner, syncBanner, duplicateResult, gallery } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const nav = useNavigation();
   const submitting = nav.state !== 'idle';
@@ -126,6 +127,7 @@ export default function AppDetailRoute() {
       <ActionError actionData={actionData} />
       <DuplicateResult result={duplicateResult} />
       <PendingBanner banner={pendingBanner} />
+      <SyncBanner banner={syncBanner} />
 
       <h2 style={styles.h2}>Versions</h2>
       {versions.length === 0 ? (

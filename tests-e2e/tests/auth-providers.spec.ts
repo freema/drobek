@@ -8,7 +8,7 @@ import { callTool, mcpClient, type McpClient } from './helpers/mcp';
  * NSO-348 (EXT-06): the auth module's sign-in provider slot on the dev stack.
  *
  * The dev stack runs no sign-in provider module (DROBEK_MODULES =
- * hello,auth,email,forms,data,proxy,files), so this spec covers what exists
+ * hello,auth,email,forms,data,proxy,files,sync), so this spec covers what exists
  * without one:
  *
  *  - GET /__drobek/v1/auth/providers lists only the e-mail code;

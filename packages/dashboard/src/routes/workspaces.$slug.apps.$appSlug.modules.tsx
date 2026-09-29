@@ -8,6 +8,7 @@ import { Link, useLoaderData } from 'react-router';
 import type { loader } from './workspaces.$slug.apps.$appSlug.modules.server.js';
 import { AppPage } from '../app-header.js';
 import { PendingBanner } from '../pending-banner.js';
+import { SyncBanner } from '../sync-banner.js';
 import { ui } from '../module-ui/styles.js';
 
 export function meta({ data }: { data?: Awaited<ReturnType<typeof loader>> }) {
@@ -15,7 +16,7 @@ export function meta({ data }: { data?: Awaited<ReturnType<typeof loader>> }) {
 }
 
 export default function AppModulesRoute() {
-  const { workspace, app, header, modules, banner } = useLoaderData<typeof loader>();
+  const { workspace, app, header, modules, banner, syncBanner } = useLoaderData<typeof loader>();
   const base = `/workspaces/${workspace.slug}/apps/${app.slug}`;
 
   return (
@@ -26,6 +27,7 @@ export default function AppModulesRoute() {
         confirmation, and secrets are entered only here.
       </p>
       <PendingBanner banner={banner} />
+      <SyncBanner banner={syncBanner} />
 
       {modules.length === 0 ? (
         <p style={ui.muted}>This server runs no platform modules.</p>

@@ -30,9 +30,9 @@ export const DEFAULT_RUNS_PER_HOUR_PER_APP = 60;
 export const DEFAULT_PAUSE_AFTER_FAILURES = 5;
 export const DEFAULT_NOW_PER_MINUTE = 2;
 /** The schema's own cap on sources (the operator's SYNC_MAX_SOURCES_PER_APP is checked on configure). */
-export const MAX_SOURCES = 50;
+const MAX_SOURCES = 50;
 
-export const SOURCE_NAME_RE = /^[a-z][a-z0-9_-]{0,39}$/;
+const SOURCE_NAME_RE = /^[a-z][a-z0-9_-]{0,39}$/;
 const UPSTREAM_RE = /^[a-z][a-z0-9_-]{0,63}$/i;
 const COLLECTION_RE = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 const FIELD_RE = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
@@ -40,7 +40,7 @@ const EVERY_RE = /^[1-9]\d{0,4}(m|h|d)$/;
 const ITEMS_RE = /^$|^[A-Za-z0-9_$-]+(?:\[\d+\])*(?:\.[A-Za-z0-9_$-]+(?:\[\d+\])*)*$/;
 const DAY_MS = 86_400_000;
 
-export const sourceSchema = z
+const sourceSchema = z
   .strictObject({
     /** An upstream assigned to this app in the proxy config. */
     upstream: z.string().regex(UPSTREAM_RE, 'the name of an upstream assigned to this app in the proxy config'),

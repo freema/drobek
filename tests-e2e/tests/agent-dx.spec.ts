@@ -13,7 +13,7 @@ import { FULL_SCOPE, mcpClient } from './helpers/mcp';
  * operator demo — here we assert the INGREDIENTS.
  */
 
-/** Exactly the MCP tool set: M0-05 core tools (NSO-283) + publish (NSO-285) + skill_info/configure_module (NSO-287) + query_data (NSO-300) + get_logs (NSO-290) + set_gallery_listing and duplicate_app (NSO-340) + the asset tools (NSO-358) + the custom-domain tools (NSO-366) + the upstream tools (NSO-372); set_workspace_publishing is a super-admin's only. */
+/** Exactly the MCP tool set: M0-05 core tools (NSO-283) + publish (NSO-285) + skill_info/configure_module (NSO-287) + query_data (NSO-300) + get_logs (NSO-290) + set_gallery_listing and duplicate_app (NSO-340) + the asset tools (NSO-358) + the custom-domain tools (NSO-366) + the upstream tools (NSO-372) + sync_now (NSO-392); set_workspace_publishing is a super-admin's only. */
 const ALL_TOOLS = [
   'list_apps',
   'create_app',
@@ -28,6 +28,7 @@ const ALL_TOOLS = [
   'configure_module',
   'query_data',
   'get_logs',
+  'sync_now',
   'create_asset_upload',
   'list_assets',
   'delete_asset',
@@ -127,12 +128,12 @@ test('build-with-your-agent page renders with the plugin + skill install command
   for (const name of REMOVED_TOOLS) expect(html, name).not.toContain(name);
 });
 
-test('MCP tools/list is exactly the 23 tools; docs resources + the build-an-app prompt are populated @local', async ({
+test('MCP tools/list is exactly the documented tools; docs resources + the build-an-app prompt are populated @local', async ({
   page,
   request,
 }) => {
   skipUnlessLocal();
-  // Every scope → tools/list is exactly the 23 tools.
+  // Every scope → tools/list is exactly the documented tools.
   const { client, transport } = await mcpClient(page, request, {
     tag: 'agent-dx',
     scope: FULL_SCOPE,

@@ -153,6 +153,8 @@ services:
       FILES_MAX_BYTES: ${FILES_MAX_BYTES:-10485760}
       FILES_QUOTA_PER_APP: ${FILES_QUOTA_PER_APP:-2097152}
       FILES_UPLOAD_RATE_LIMIT: ${FILES_UPLOAD_RATE_LIMIT:-60}
+      # NSO-392: a sync source pauses after 2 failed runs, so the e2e reaches the pause quickly.
+      SYNC_PAUSE_AFTER_FAILURES: ${SYNC_PAUSE_AFTER_FAILURES:-2}
       # PHY-123 (agent loop v1): the PUBLIC error beacon. The per-app+IP rate
       # limit is a deliberately LOW dev cap so the beacon-flood e2e trips 429
       # quickly (prod default is 60). BEACON_APP_RATE_LIMIT is a second,
@@ -192,7 +194,7 @@ services:
       # M1-06 (NSO-297): the built-in `proxy` (per-app upstream assignment;
       # PROXY_CALLS_PER_MIN keeps its default 60 — the e2e trips the 61st call).
       # M1-05 (NSO-296): the built-in `files` (uploads on the files_data volume).
-      DROBEK_MODULES: ${DROBEK_MODULES:-hello,auth,email,forms,data,proxy,files}
+      DROBEK_MODULES: ${DROBEK_MODULES:-hello,auth,email,forms,data,proxy,files,sync}
       # NSO-345: the operator's installed modules (the ./.modules bind below).
       DROBEK_MODULES_DIR: ${DROBEK_MODULES_DIR:-/data/modules}
       DROBEK_MODULES_UNLOCKED: ${DROBEK_MODULES_UNLOCKED:-}
@@ -278,6 +280,7 @@ services:
       - /repo/modules/data/node_modules
       - /repo/modules/proxy/node_modules
       - /repo/modules/files/node_modules
+      - /repo/modules/sync/node_modules
       # M1-05: the files module's uploads (FILES_DIR).
       - files_data:/data/files
       # NSO-358: app assets (ASSETS_DIR).

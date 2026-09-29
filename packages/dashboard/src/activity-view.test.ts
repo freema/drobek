@@ -34,6 +34,18 @@ describe('activitySummary (NSO-371)', () => {
     expect(activitySummary(ev('app.gallery_unlisted', 'app', 'x', { reason: 'takedown' }))).toContain('taken down');
   });
 
+  it('reads a scheduled import run and a resume (NSO-392)', () => {
+    const run = (meta: unknown) => activitySummary(ev('sync.run', 'app', 'league', meta));
+    expect(run({ module: 'sync', source: 'players', by: 'schedule', status: 'ok', records: 3 })).toBe('The scheduled import players wrote 3 records');
+    expect(run({ module: 'sync', source: 'players', by: 'web', status: 'ok', records: 1 })).toBe('Ran the import players now — it wrote 1 record');
+    expect(run({ module: 'sync', source: 'players', by: 'schedule', status: 'failed', error: 'the upstream answered HTTP 401' })).toBe(
+      'The scheduled import players failed: the upstream answered HTTP 401'
+    );
+    expect(activitySummary(ev('sync.resume', 'app', 'league', { module: 'sync', source: 'players' }))).toBe(
+      'Resumed the scheduled import players after failed runs'
+    );
+  });
+
   it('tells a duplicates switch apart from listing and a description change', () => {
     const listed = (meta: unknown) => activitySummary(ev('app.gallery_listed', 'app', 'x', meta));
     expect(listed({ description: 'd', allowDuplicate: false })).toBe('Listed the app in the public gallery');

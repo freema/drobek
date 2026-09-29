@@ -19,6 +19,7 @@ import auth from 'drobek-module-auth';
 import data from 'drobek-module-data';
 import email from 'drobek-module-email';
 import files from 'drobek-module-files';
+import sync from 'drobek-module-sync';
 import forms from 'drobek-module-forms';
 import proxy from 'drobek-module-proxy';
 
@@ -28,10 +29,10 @@ export const PKG_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const SKILLS_DIR = join(REPO_ROOT, 'skills');
 
 /** The built-in modules in the dev compose's DROBEK_MODULES order. */
-export const BUILTIN_MODULES: AnyModule[] = [auth, email, forms, data, proxy, files] as AnyModule[];
+export const BUILTIN_MODULES: AnyModule[] = [auth, email, forms, data, proxy, files, sync] as AnyModule[];
 
-/** The 10 skills an agent can read on a server with every built-in module. */
-export const EXPECTED_SKILLS = ['auth', 'email', 'forms', 'data', 'proxy', 'files', 'debug', 'port-artifact', 'start', 'ui'] as const;
+/** The 11 skills an agent can read on a server with every built-in module. */
+export const EXPECTED_SKILLS = ['auth', 'email', 'forms', 'data', 'proxy', 'files', 'sync', 'debug', 'port-artifact', 'start', 'ui'] as const;
 
 let runtime: Promise<ModuleRuntime> | null = null;
 

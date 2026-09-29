@@ -5,7 +5,9 @@
  * the module's JSON Schema, the dedicated editor the module declares
  * (`dashboard.editor`: collections / upstreams), the write-only secrets and
  * "About this module" (version, source, contract, slots, contributions, its
- * own error codes — NSO-347). Viewers see the same page without controls.
+ * own error codes — NSO-347) and, for the scheduled-import module, its
+ * sources with Run now / Pause / Resume (NSO-392). Viewers see the same page
+ * without controls.
  * Server code lives in the .server.ts; values arrive pre-shaped and
  * secret-free.
  */
@@ -18,6 +20,8 @@ import { ContributesTable, Disclosure, ErrorsTable, ModuleFactsList, SlotsTable 
 import { PendingPanel } from '../module-ui/pending-panel.js';
 import { CollectionsEditor, UpstreamsEditor } from '../module-ui/rules-editors.js';
 import { SecretsForm } from '../module-ui/secrets-form.js';
+import { SyncSourcesPanel } from '../module-ui/sync-sources.js';
+import { SyncBanner } from '../sync-banner.js';
 import { ui } from '../module-ui/styles.js';
 
 export function meta({ data }: { data?: Awaited<ReturnType<typeof loader>> }) {
@@ -33,10 +37,15 @@ const DONE: Record<string, string> = {
   'secret-set': 'Secret stored.',
   'secret-rotated': 'Secret rotated — the new value is in use from the next request.',
   'secret-removed': 'Secret removed.',
+  'sync-ran': 'Run finished — the fetched records are in the collection.',
+  'sync-failed': 'The run failed and changed nothing — the app keeps the previous records. Its error is under Latest runs.',
+  'sync-paused': 'Schedule paused — the source runs again when you resume it or use Run now.',
+  'sync-resumed': 'Schedule resumed — the source runs within a minute.',
 };
 
 const COLLECTION_INTENTS = new Set(['add-collection', 'save-collection', 'remove-collection']);
 const UPSTREAM_INTENTS = new Set(['save-upstream', 'unassign-upstream']);
+const SYNC_INTENTS = new Set(['sync-run', 'sync-pause', 'sync-resume']);
 
 export default function AppModuleRoute() {
   const d = useLoaderData<typeof loader>();
@@ -79,6 +88,7 @@ export default function AppModuleRoute() {
       ) : null}
 
       <PendingBanner banner={d.banner} />
+      <SyncBanner banner={d.syncBanner} showLink={d.sync === null} />
       {d.done && DONE[d.done] ? (
         <div style={ui.notice} role="status" data-testid="done-notice" data-done={d.done}>
           {DONE[d.done]}
@@ -141,6 +151,13 @@ export default function AppModuleRoute() {
             busy={busy}
             error={errors && UPSTREAM_INTENTS.has(errors.intent) ? errors : null}
           />
+        </section>
+      ) : null}
+
+      {d.sync ? (
+        <section id="sync" aria-label="Sources">
+          <h2 style={ui.h2}>Sources</h2>
+          <SyncSourcesPanel data={d.sync} canEdit={d.canEdit} busy={busy} error={errors && SYNC_INTENTS.has(errors.intent) ? errors : null} />
         </section>
       ) : null}
 

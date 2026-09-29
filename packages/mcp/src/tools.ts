@@ -1280,7 +1280,7 @@ export async function queryData(
 // ── get_logs ─────────────────────────────────────────────────────────────────
 
 /** get_logs kinds: the insights logs plus `sync` (the sync module's run history, NSO-392). */
-export type GetLogsKind = LogKind | 'sync';
+type GetLogsKind = LogKind | 'sync';
 const GET_LOGS_KINDS: readonly GetLogsKind[] = [...LOG_KINDS, 'sync'];
 const GET_LOGS_MAX = 100;
 

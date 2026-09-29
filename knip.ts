@@ -135,6 +135,10 @@ const config: KnipConfig = {
       // + `sdk.inline.entry` (sdk/forms.tsx), as for modules/auth.
       entry: ['src/sdk.ts', 'sdk/*.tsx'],
     },
+    'modules/sync': {
+      // No browser SDK: the module only runs a scheduled job on the server.
+      entry: [],
+    },
 
     'examples/*': {
       // Same contract as modules/*: the SDK entry is loaded by path. The

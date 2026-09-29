@@ -23,7 +23,7 @@ import { describe, expect, it } from 'vitest';
 
 const SRC = fileURLToPath(new URL('./', import.meta.url));
 const ALLOW = 'module-name-guard: allow';
-const BUILTIN = ['auth', 'data', 'email', 'files', 'forms', 'proxy'];
+const BUILTIN = ['auth', 'data', 'email', 'files', 'forms', 'proxy', 'sync'];
 const NAMES = BUILTIN.join('|');
 const Q = `['"\`]`;
 
