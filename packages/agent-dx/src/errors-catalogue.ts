@@ -455,8 +455,8 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
   {
     code: 'invalid redirect_uri (redirect_uri mismatch)',
     surface: 'OAuth /authorize or /token 400',
-    meaning: 'The redirect_uri does not exactly match one registered for the client (exact-match, RFC 8252).',
-    fix: 'Register the exact redirect_uri via DCR (/oauth/register) and pass the identical string on /authorize and /token.',
+    meaning: 'The redirect_uri does not match one registered for the client: an exact string match, except that an http loopback redirect_uri (localhost, 127.0.0.1, [::1]) matches with any port (RFC 8252 §7.3).',
+    fix: 'Register the redirect_uri via DCR (/oauth/register) or list it in the Client ID Metadata Document, send it on /authorize (a loopback one with your ephemeral port), and pass the identical string on /token.',
   },
   {
     code: 'invalid_grant',
