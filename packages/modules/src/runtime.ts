@@ -25,7 +25,9 @@
  *    is active for a workspace when the limits provider's plan says
  *    `MODULE_ENABLED_<NAME>: 1` (0 = off, whatever else says), else when the
  *    env sets `MODULE_ENABLED_<NAME>=1` (every workspace), else when a
- *    super-admin enabled it in the dashboard (`workspace_modules`). An
+ *    super-admin enabled it in the dashboard (`workspace_modules`) — and
+ *    only while every module it `requires` is active there too
+ *    (transitively; the switch refuses to enable it before them). An
  *    inactive one answers `404 module_not_enabled` on its routes and in
  *    configure_module / confirm, is left out of an app's skills, runs no
  *    onAppCreate / onPublish hook and contributes to no other module's slot
@@ -92,7 +94,7 @@ import type {
 } from './contract.js';
 import { asObject, asPending, readConfigRow, readConfigRows, withLockedConfig, type PendingChange } from './configs.server.js';
 import { assertSignInSender, capEmailText, emailKind, redactAddresses, resolveRecipients, sanitizeSubject } from './email.js';
-import { CORE_ERROR_CODES, ModuleError, isModuleError, issuePaths, moduleNotEnabled, skillHint } from './errors.js';
+import { CORE_ERROR_CODES, ModuleError, isModuleError, issuePaths, moduleNotEnabled, moduleRequiresNotEnabled, skillHint } from './errors.js';
 import { CORE_LIMITS, createLimitsProvider, moduleEnabledLimit, moduleEnabledLimitName, type CatalogueLimit, type LimitsProvider } from './limits.js';
 import { mailGuardConfigFromEnv, redisMailGuard, type MailGuard, type MailGuardRedis } from './mail-guard.js';
 import { Lru, jsonKey } from './memo.js';
@@ -260,7 +262,7 @@ export interface WorkspaceModuleState {
   name: string;
   version: string;
   use_when: string;
-  /** Active for the workspace now. */
+  /** Active for the workspace now: its own state is on and so is every module it requires, transitively. */
   enabled: boolean;
   /**
    * What decides it: the limits provider's plan (`MODULE_ENABLED_<NAME>`, 1 or
@@ -268,6 +270,10 @@ export interface WorkspaceModuleState {
    * switch; null = nothing enables it.
    */
   source: WorkspaceModuleSource | null;
+  /** The opt-in modules it requires (directly or through another one) that are off for the workspace, in the order to enable them; while any is listed, it is off. */
+  missing_requires: string[];
+  /** The modules on for the workspace that require this one (directly or through another one): disabling it turns them off too. */
+  required_by: string[];
   /** The super-admin's switch (a `workspace_modules` row) — a plan value overrides it. */
   dashboard: { enabled: boolean; enabled_by: string | null; enabled_at: string | null };
 }
@@ -764,24 +770,72 @@ export class ModuleRuntime {
     return out;
   }
 
-  /** Is module `name` active for `workspaceId`? A default module always is; an unknown one never. */
+  /** Every module `name` requires, directly or through another one, each once, a dependency before its dependents. */
+  private requiresOf(name: string): string[] {
+    const out: string[] = [];
+    const walk = (n: string) => {
+      for (const r of this.byName.get(n)?.requires ?? []) {
+        if (out.includes(r)) continue;
+        walk(r);
+        out.push(r);
+      }
+    };
+    walk(name);
+    return out;
+  }
+
+  /** The opt-in modules that depend on `name`, directly or through another one. */
+  private dependentsOf(name: string): string[] {
+    return this.optInModules()
+      .map((m) => m.name)
+      .filter((n) => this.requiresOf(n).includes(name));
+  }
+
+  /**
+   * The opt-in modules on for the workspace once `requires` applies: one whose
+   * own state (plan, env or switch) is on stays on only while every module it
+   * requires, transitively, is on too. A default module requires only
+   * default ones (checkRequires), which are always on.
+   */
+  private effectiveOptIn(states: ReadonlyMap<string, OptInState>): Set<string> {
+    const on = new Set([...states].filter(([, s]) => s.enabled).map(([n]) => n));
+    const isOn = (r: string) => on.has(r) || this.byName.get(r)?.availability !== 'opt-in';
+    for (let changed = true; changed; ) {
+      changed = false;
+      for (const n of on) {
+        if ((this.byName.get(n)?.requires ?? []).some((r) => !isOn(r))) {
+          on.delete(n);
+          changed = true;
+        }
+      }
+    }
+    return on;
+  }
+
+  /** The opt-in modules `name` depends on whose own state is off for the workspace, in the order to enable them. */
+  private missingRequires(name: string, states: ReadonlyMap<string, OptInState>): string[] {
+    return this.requiresOf(name).filter((r) => this.byName.get(r)?.availability === 'opt-in' && states.get(r)?.enabled !== true);
+  }
+
+  /** Is module `name` active for `workspaceId`? A default module always is; an unknown one never; an opt-in one per enabledModules(). */
   async isEnabled(workspaceId: string, name: string): Promise<boolean> {
     const m = this.byName.get(name);
     if (!m) return false;
     if (m.availability !== 'opt-in') return true;
-    return (await this.optInStates(workspaceId, [m])).get(m.name)?.enabled === true;
+    return (await this.enabledModules(workspaceId)).has(m.name);
   }
 
   /**
    * The names of the active modules that are on for `workspaceId`
-   * (every default module + the enabled opt-in ones). No I/O when the server
-   * has no opt-in module. Compute it once per request and pass it on.
+   * (every default module + the enabled opt-in ones whose required modules
+   * are on too, transitively). No I/O when the server has no opt-in module.
+   * Compute it once per request and pass it on.
    */
   async enabledModules(workspaceId: string): Promise<ReadonlySet<string>> {
     const optIn = this.optInModules();
     const out = new Set(this.defaultModules());
     if (optIn.length === 0) return out;
-    for (const [name, st] of await this.optInStates(workspaceId, optIn)) if (st.enabled) out.add(name);
+    for (const name of this.effectiveOptIn(await this.optInStates(workspaceId, optIn))) out.add(name);
     return out;
   }
 
@@ -789,6 +843,7 @@ export class ModuleRuntime {
   async workspaceModules(workspaceId: string): Promise<WorkspaceModuleState[]> {
     const optIn = this.optInModules();
     const states = await this.optInStates(workspaceId, optIn);
+    const on = this.effectiveOptIn(states);
     const userIds = [...new Set([...states.values()].map((s) => s.row?.enabledBy).filter((v): v is string => !!v))];
     const emails = new Map<string, string>();
     if (userIds.length > 0) {
@@ -801,8 +856,10 @@ export class ModuleRuntime {
         name: m.name,
         version: m.version,
         use_when: m.skill.useWhen,
-        enabled: st.enabled,
+        enabled: on.has(m.name),
         source: st.source,
+        missing_requires: this.missingRequires(m.name, states),
+        required_by: this.dependentsOf(m.name).filter((n) => on.has(n)),
         dashboard: {
           enabled: st.row !== null,
           enabled_by: st.row?.enabledBy ? (emails.get(st.row.enabledBy) ?? null) : null,
@@ -817,15 +874,31 @@ export class ModuleRuntime {
    * (the dashboard's switch — the caller has checked super-admin). Audited
    * `module.workspace_enable` / `module.workspace_disable` (meta: module) when
    * it changes anything. A plan value (`MODULE_ENABLED_<NAME>`) still wins.
+   *
+   * Enabling is refused (409 `module_requires_not_enabled`, `details.missing`)
+   * while a module it requires, directly or through another one, is off for
+   * the workspace. Disabling always applies; `dependentsOff` names the
+   * modules that were on and are off now because they depend on this one.
    */
-  async setWorkspaceModule(input: { workspaceId: string; module: string; enabled: boolean; actorUserId: string }): Promise<{ changed: boolean }> {
+  async setWorkspaceModule(input: {
+    workspaceId: string;
+    module: string;
+    enabled: boolean;
+    actorUserId: string;
+  }): Promise<{ changed: boolean; dependentsOff: string[] }> {
     const m = this.byName.get(input.module);
     if (!m || m.availability !== 'opt-in') {
       throw new ModuleError('not_found', `No opt-in platform module "${String(input.module)}" is active on this server.`, {
         details: { available: this.optInModules().map((x) => x.name) },
       });
     }
-    return this.deps.db().transaction(async (tx) => {
+    if (input.enabled) {
+      const missing = this.missingRequires(m.name, await this.optInStates(input.workspaceId));
+      if (missing.length > 0) throw moduleRequiresNotEnabled(m.name, missing);
+    }
+    const dependents = input.enabled ? [] : this.dependentsOf(m.name);
+    const before = dependents.length > 0 ? await this.enabledModules(input.workspaceId) : null;
+    const { changed } = await this.deps.db().transaction(async (tx) => {
       const changed = input.enabled
         ? (
             await tx
@@ -856,6 +929,9 @@ export class ModuleRuntime {
       }
       return { changed };
     });
+    if (!before) return { changed, dependentsOff: [] };
+    const after = await this.enabledModules(input.workspaceId);
+    return { changed, dependentsOff: dependents.filter((n) => before.has(n) && !after.has(n)) };
   }
 
   // ── end users ──

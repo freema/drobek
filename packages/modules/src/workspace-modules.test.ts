@@ -6,7 +6,9 @@
  * get_app's `enabled`, the skills filter, the compile hint and the hooks; a
  * module that is off contributes nothing to the slots of the
  * modules that are on (routes and create / publish hooks), onAppDelete still
- * sees every contribution.
+ * sees every contribution; `requires` per workspace (the transitive closure,
+ * enable refused before a dependency, disable turning dependents off, plan
+ * grants without their dependency).
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { apps, auditLog, moduleConfigs, users, workspaceModules, workspaces } from '@drobek/db';
@@ -141,8 +143,8 @@ describe('availability (isEnabled / enabledModules)', () => {
 
   it('the super-admin switch (a workspace_modules row) enables it for that workspace only; audited once', async () => {
     const rt = await runtime({}, { provider: false });
-    expect(await rt.setWorkspaceModule({ workspaceId: wsA.id, module: 'files', enabled: true, actorUserId: userId })).toEqual({ changed: true });
-    expect(await rt.setWorkspaceModule({ workspaceId: wsA.id, module: 'files', enabled: true, actorUserId: userId })).toEqual({ changed: false });
+    expect(await rt.setWorkspaceModule({ workspaceId: wsA.id, module: 'files', enabled: true, actorUserId: userId })).toEqual({ changed: true, dependentsOff: [] });
+    expect(await rt.setWorkspaceModule({ workspaceId: wsA.id, module: 'files', enabled: true, actorUserId: userId })).toEqual({ changed: false, dependentsOff: [] });
     expect(await rt.isEnabled(wsA.id, 'files')).toBe(true);
     expect(await rt.isEnabled(wsB.id, 'files')).toBe(false);
     const [state] = await rt.workspaceModules(wsA.id);
@@ -157,7 +159,7 @@ describe('availability (isEnabled / enabledModules)', () => {
     expect(state.dashboard.enabled_at).toMatch(/^\d{4}-\d\d-\d\dT/);
     expect((await rt.workspaceModules(wsB.id))[0]).toMatchObject({ enabled: false, source: null, dashboard: { enabled: false, enabled_by: null, enabled_at: null } });
 
-    expect(await rt.setWorkspaceModule({ workspaceId: wsA.id, module: 'files', enabled: false, actorUserId: userId })).toEqual({ changed: true });
+    expect(await rt.setWorkspaceModule({ workspaceId: wsA.id, module: 'files', enabled: false, actorUserId: userId })).toEqual({ changed: true, dependentsOff: [] });
     expect(await rt.isEnabled(wsA.id, 'files')).toBe(false);
     const audits = await db.select().from(auditLog).where(eq(auditLog.workspaceId, wsA.id));
     expect(audits.map((a) => [a.action, a.subjectType, a.target, a.actorKind, a.meta])).toEqual([
@@ -422,5 +424,91 @@ describe('contributions follow the workspace switch', () => {
     expect(rt.contributions<Observe>('hub.observe').map((c) => c.id)).toEqual(['always', 'plug']);
     expect(rt.contributions<Observe>('hub.observe', await rt.enabledModules(wsA.id)).map((c) => c.id)).toEqual(['always']);
     expect(rt.services(await rt.enabledModules(wsB.id)).contributions<Observe>('hub.observe').map((c) => c.id)).toEqual(['always']);
+  });
+});
+
+// ── requires per workspace ──
+
+const chained = (name: string, requires: string[] = []) =>
+  defineModule({
+    name,
+    version: '1.0.0',
+    availability: 'opt-in',
+    ...(requires.length > 0 ? { requires } : {}),
+    skill: { useWhen: `a chained module (${name})`, markdown: `# ${name}` },
+    configSchema: z.object({}),
+    configDefaults: {},
+    routes(r) {
+      r.get('/ping', { rule: 'public' }, () => ({ ok: true }));
+    },
+  });
+const CHAIN = [quiet, chained('base'), chained('mid', ['base']), chained('top', ['mid']), chained('leaf', ['quiet'])];
+
+describe('requires per workspace', () => {
+  const on = (name: string, ws = wsA.id) => ({ workspaceId: ws, module: name, enabled: true, actorUserId: userId });
+  const off = (name: string, ws = wsA.id) => ({ workspaceId: ws, module: name, enabled: false, actorUserId: userId });
+  const optIn = async (rt: ModuleRuntime, ws = wsA.id) => [...(await rt.enabledModules(ws))].filter((n) => n !== 'quiet').sort();
+
+  it('enabling refuses while a required module is off, naming what to enable first (transitively, in order)', async () => {
+    const rt = await runtime({}, { provider: false, modules: CHAIN });
+    const err = await rt.setWorkspaceModule(on('top')).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ModuleError);
+    expect(err).toMatchObject({
+      code: 'module_requires_not_enabled',
+      status: 409,
+      details: { module: 'top', missing: ['base', 'mid'] },
+      hint: 'Enable "base", then "mid" for this workspace first, then enable "top".',
+    });
+    await expect(rt.setWorkspaceModule(on('mid'))).rejects.toMatchObject({ details: { missing: ['base'] } });
+    expect(await db.select().from(workspaceModules)).toEqual([]);
+    expect(await db.select().from(auditLog)).toEqual([]);
+
+    expect(await rt.setWorkspaceModule(on('leaf'))).toEqual({ changed: true, dependentsOff: [] });
+    expect(await rt.setWorkspaceModule(on('base'))).toEqual({ changed: true, dependentsOff: [] });
+    expect(await rt.setWorkspaceModule(on('mid'))).toEqual({ changed: true, dependentsOff: [] });
+    expect(await rt.setWorkspaceModule(on('top'))).toEqual({ changed: true, dependentsOff: [] });
+    expect(await optIn(rt)).toEqual(['base', 'leaf', 'mid', 'top']);
+    expect(await optIn(rt, wsB.id)).toEqual([]);
+  });
+
+  it('disabling a required module applies and turns its dependents off transitively; enabling it again brings them back', async () => {
+    const rt = await runtime({}, { provider: false, modules: CHAIN });
+    for (const n of ['base', 'mid', 'top']) await rt.setWorkspaceModule(on(n));
+    expect((await rt.workspaceModules(wsA.id)).find((m) => m.name === 'base')).toMatchObject({ enabled: true, missing_requires: [], required_by: ['mid', 'top'] });
+
+    expect(await rt.setWorkspaceModule(off('base'))).toEqual({ changed: true, dependentsOff: ['mid', 'top'] });
+    expect(await optIn(rt)).toEqual([]);
+    expect(await rt.isEnabled(wsA.id, 'top')).toBe(false);
+    expect((await rt.handle(req('/__drobek/v1/top/ping'), appA)).status).toBe(404);
+    const states = new Map((await rt.workspaceModules(wsA.id)).map((m) => [m.name, m]));
+    expect(states.get('mid')).toMatchObject({ enabled: false, source: 'dashboard', dashboard: { enabled: true }, missing_requires: ['base'], required_by: [] });
+    expect(states.get('top')).toMatchObject({ enabled: false, source: 'dashboard', dashboard: { enabled: true }, missing_requires: ['base'] });
+    expect(states.get('base')).toMatchObject({ enabled: false, required_by: [] });
+
+    expect(await rt.setWorkspaceModule(off('base'))).toEqual({ changed: false, dependentsOff: [] });
+    await rt.setWorkspaceModule(on('base'));
+    expect(await optIn(rt)).toEqual(['base', 'mid', 'top']);
+    expect((await rt.handle(req('/__drobek/v1/top/ping'), appA)).status).toBe(200);
+  });
+
+  it('a plan grant without its dependency stays off; a plan grant of the dependency satisfies the switch', async () => {
+    plan[wsA.id] = { [moduleEnabledLimitName('top')]: 1 };
+    plan[wsB.id] = { [moduleEnabledLimitName('base')]: 1, [moduleEnabledLimitName('mid')]: 1 };
+    const rt = await runtime({}, { modules: CHAIN });
+    expect(await rt.isEnabled(wsA.id, 'top')).toBe(false);
+    expect((await rt.workspaceModules(wsA.id)).find((m) => m.name === 'top')).toMatchObject({ enabled: false, source: 'plan', missing_requires: ['base', 'mid'] });
+
+    expect(await optIn(rt, wsB.id)).toEqual(['base', 'mid']);
+    expect(await rt.setWorkspaceModule(on('top', wsB.id))).toEqual({ changed: true, dependentsOff: [] });
+    expect(await optIn(rt, wsB.id)).toEqual(['base', 'mid', 'top']);
+    expect(await rt.setWorkspaceModule(off('base', wsB.id))).toEqual({ changed: false, dependentsOff: [] });
+  });
+
+  it('a plan 0 on a dependency keeps its dependents off whatever their switch says', async () => {
+    plan[wsA.id] = { [moduleEnabledLimitName('base')]: 0 };
+    const rt = await runtime({}, { modules: CHAIN });
+    await db.insert(workspaceModules).values(['base', 'mid'].map((module) => ({ workspaceId: wsA.id, module, enabledBy: userId })));
+    expect(await optIn(rt)).toEqual([]);
+    await expect(rt.setWorkspaceModule(on('top'))).rejects.toMatchObject({ code: 'module_requires_not_enabled', details: { missing: ['base'] } });
   });
 });

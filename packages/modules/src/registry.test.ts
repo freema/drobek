@@ -110,6 +110,19 @@ describe('registry', () => {
     expect(both.map((m) => m.name)).toEqual(['form', 'mail']);
   });
 
+  it('requires: a default module may not require an opt-in one; requires may not form a cycle', () => {
+    const base = { version: '1.0.0', skill: { useWhen: 'x', markdown: '# x' }, configSchema: z.object({}), configDefaults: {} };
+    const vault = defineModule({ ...base, name: 'vault', availability: 'opt-in' });
+    const shelf = defineModule({ ...base, name: 'shelf', requires: ['vault'] });
+    expect(() => checkRequires([shelf, vault])).toThrow(/module "shelf" is on in every workspace but requires the opt-in module "vault"/);
+    expect(() => checkRequires([defineModule({ ...shelf, availability: 'opt-in' }), vault])).not.toThrow();
+    const a = defineModule({ ...base, name: 'a', availability: 'opt-in', requires: ['b'] });
+    const b = defineModule({ ...base, name: 'b', availability: 'opt-in', requires: ['c'] });
+    const c = defineModule({ ...base, name: 'c', availability: 'opt-in', requires: ['a'] });
+    expect(() => checkRequires([a, b, c])).toThrow(/requires form a cycle: a → b → c → a/);
+    expect(() => checkRequires([a, b, defineModule({ ...base, name: 'c', availability: 'opt-in' })])).not.toThrow();
+  });
+
   it('at most one module owns app e-mail (mail.prepare must be a function)', () => {
     const base = { version: '1.0.0', skill: { useWhen: 'x', markdown: '# x' }, configSchema: z.object({}), configDefaults: {} };
     const prepare = async () => ({});

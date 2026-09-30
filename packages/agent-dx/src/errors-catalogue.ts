@@ -442,8 +442,15 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     code: 'module_not_enabled',
     surface: 'MCP tool isError (configure_module, sync_now); module route 404 (DrobekError)',
     meaning:
-      'The platform module is opt-in (skill_info lists it with availability: "opt-in") and is not enabled for the app\'s workspace (`details.module` / `module` names it). get_app shows it with `enabled: false` and leaves it out of the app\'s skills.',
+      'The platform module is opt-in (skill_info lists it with availability: "opt-in") and is not enabled for the app\'s workspace (`details.module` / `module` names it) — or it is, but a module it requires is not, which keeps it off too. get_app shows it with `enabled: false` and leaves it out of the app\'s skills.',
     fix: 'Do not use that module in this app — build the feature another way or leave it out, and tell the user that the server operator enables opt-in modules per workspace. skill_info(\'<module>\', app_id) says whether it is enabled for the app\'s workspace.',
+  },
+  {
+    code: 'module_requires_not_enabled',
+    surface: 'dashboard 409 (workspace Modules switch, super-admin)',
+    meaning:
+      'A super-admin tried to enable an opt-in module for a workspace while a module it requires (directly or through another one) is off there (`details.missing` lists them in the order to enable them). Nothing changed.',
+    fix: 'Enable the modules the message names for this workspace first, in that order, then enable this one. A module whose required module is off stays off even when the plan or the server configuration enables it.',
   },
   {
     code: 'method_not_allowed',

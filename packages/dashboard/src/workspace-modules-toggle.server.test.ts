@@ -7,7 +7,9 @@
  *    workspace admin sees which super-admin switched a module on;
  *  - a super-admin enables / disables (row + audit module.workspace_enable /
  *    module.workspace_disable, meta.module); the state shows who and the source;
- *  - a default or unknown module → 404; another intent → 400.
+ *  - a default or unknown module → 404; another intent → 400;
+ *  - `requires`: enabling before the required module → 409 naming it;
+ *    disabling the required module reports the dependents it turned off.
  */
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
@@ -43,6 +45,15 @@ const vault = defineModule({
   version: '2.0.0',
   availability: 'opt-in',
   skill: { useWhen: 'the app needs the firm vault', markdown: '# vault\n' },
+  configSchema: z.object({}),
+  configDefaults: {},
+});
+const annex = defineModule({
+  name: 'annex',
+  version: '1.0.0',
+  availability: 'opt-in',
+  requires: ['vault'],
+  skill: { useWhen: 'the app needs the vault annex', markdown: '# annex\n' },
   configSchema: z.object({}),
   configDefaults: {},
 });
@@ -89,7 +100,7 @@ beforeAll(async () => {
     await loadModuleRuntime({
       env: { APPS_DOMAIN: 'apps.example', PUBLIC_APP_URL: 'https://drobek.example', DROBEK_MIGRATE_ON_START: '0' },
       log: noopLogger,
-      modules: [plain, vault],
+      modules: [plain, vault, annex],
       skillsDir: null,
       deps: { rateLimit: memoryRateLimiter(), principal: async () => ({ kind: 'anon' }), email: { send: async () => {} } },
     })
@@ -114,10 +125,14 @@ describe('/workspaces/:slug/modules', () => {
       role.effective = r;
       const d = await load();
       expect(d.optIn.canToggle).toBe(false);
-      expect(d.optIn.modules.map((m) => [m.name, m.enabled])).toEqual([['vault', false]]);
+      expect(d.optIn.modules.map((m) => [m.name, m.enabled])).toEqual([
+        ['vault', false],
+        ['annex', false],
+      ]);
       expect(d.modules.map((m) => [m.name, m.availability])).toEqual([
         ['plain', 'default'],
         ['vault', 'opt-in'],
+        ['annex', 'opt-in'],
       ]);
       expect(result(await post({ intent: 'workspace-module', module: 'vault', enabled: '1' })).status).toBe(403);
     }
@@ -136,6 +151,7 @@ describe('/workspaces/:slug/modules', () => {
     expect(d.optIn.canToggle).toBe(false);
     expect(d.optIn.modules).toEqual([
       expect.objectContaining({ name: 'vault', version: '2.0.0', enabled: false, source: null, dashboard: { enabled: false, enabled_by: null, enabled_at: null } }),
+      expect.objectContaining({ name: 'annex', enabled: false, missing_requires: ['vault'], required_by: [] }),
     ]);
     const r = result(await post({ intent: 'workspace-module', module: 'vault', enabled: '1' }));
     expect(r.status).toBe(403);
@@ -150,6 +166,7 @@ describe('/workspaces/:slug/modules', () => {
       module: 'vault',
       enabled: true,
       changed: true,
+      dependentsOff: [],
     });
     const on = (await load()).optIn.modules[0];
     expect(on).toMatchObject({ enabled: true, source: 'dashboard', dashboard: { enabled: true, enabled_by: 'root@example.com' } });
@@ -167,5 +184,37 @@ describe('/workspaces/:slug/modules', () => {
     expect(result(await post({ intent: 'workspace-module', module: 'plain', enabled: '1' })).status).toBe(404);
     expect(result(await post({ intent: 'workspace-module', module: 'ghost', enabled: '1' })).status).toBe(404);
     expect(result(await post({ intent: 'other' })).status).toBe(400);
+  });
+
+  it('requires: enabling before the required module → 409 naming it; disabling the required one turns the dependent off', async () => {
+    role.superAdmin = true;
+    const refused = result(await post({ intent: 'workspace-module', module: 'annex', enabled: '1' }));
+    expect(refused.status).toBe(409);
+    expect(refused.data.error).toBe(
+      'The module "annex" depends on "vault", which is not enabled for this workspace. Enable "vault" for this workspace first, then enable "annex".'
+    );
+    expect(await db.select().from(workspaceModules)).toEqual([]);
+
+    await post({ intent: 'workspace-module', module: 'vault', enabled: '1' });
+    expect(result(await post({ intent: 'workspace-module', module: 'annex', enabled: '1' })).data).toMatchObject({ ok: true, changed: true });
+    const both = (await load()).optIn.modules;
+    expect(both.map((m) => [m.name, m.enabled, m.required_by, m.missing_requires])).toEqual([
+      ['vault', true, ['annex'], []],
+      ['annex', true, [], []],
+    ]);
+
+    expect(result(await post({ intent: 'workspace-module', module: 'vault', enabled: '0' })).data).toEqual({
+      ok: true,
+      module: 'vault',
+      enabled: false,
+      changed: true,
+      dependentsOff: ['annex'],
+    });
+    expect((await load()).optIn.modules.find((m) => m.name === 'annex')).toMatchObject({
+      enabled: false,
+      source: 'dashboard',
+      dashboard: { enabled: true },
+      missing_requires: ['vault'],
+    });
   });
 });

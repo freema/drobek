@@ -34,7 +34,9 @@ export async function loadWorkspaceModuleToggles(access: WorkspaceAccess): Promi
 /**
  * Handle the switch's POST (`intent=workspace-module`, `module`, `enabled=1|0`).
  * Returns null for any other intent (the route handles those), otherwise the
- * action data: `{ ok, module, enabled, changed }` or `{ error }` + a status.
+ * action data: `{ ok, module, enabled, changed, dependentsOff }` (the modules
+ * the disable turned off with it) or `{ error }` + a status (409 when a
+ * required module is still off: the message names what to enable first).
  */
 export async function workspaceModuleToggleAction(access: WorkspaceAccess, form: FormData) {
   if (String(form.get('intent') ?? '') !== WORKSPACE_MODULE_INTENT) return null;
@@ -45,15 +47,15 @@ export async function workspaceModuleToggleAction(access: WorkspaceAccess, form:
   const enabled = String(form.get('enabled') ?? '') === '1';
   const runtime = await moduleRuntime();
   try {
-    const { changed } = await runtime.setWorkspaceModule({
+    const { changed, dependentsOff } = await runtime.setWorkspaceModule({
       workspaceId: access.workspace.id,
       module,
       enabled,
       actorUserId: access.user.id,
     });
-    return data({ ok: true as const, module, enabled, changed });
+    return data({ ok: true as const, module, enabled, changed, dependentsOff });
   } catch (err) {
-    if (isModuleError(err)) return data({ error: err.message }, { status: err.status });
+    if (isModuleError(err)) return data({ error: err.hint && err.code === 'module_requires_not_enabled' ? `${err.message} ${err.hint}` : err.message }, { status: err.status });
     throw err;
   }
 }
