@@ -313,6 +313,7 @@ tasks:
       - test -f .modules/acmecrm/node_modules/drobek-module-acme-crm/package.json
       - grep -q '"acmecrm"' .modules/modules.lock.json
     cmds:
+      - test -d examples/drobek-module-acme-crm/node_modules || pnpm install --frozen-lockfile
       - test -f packages/modules/dist/cli/module-lock.js || pnpm build:packages
       - >-
         pack="$(mktemp -d)" &&
