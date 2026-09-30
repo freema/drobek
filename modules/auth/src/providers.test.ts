@@ -381,6 +381,7 @@ describe('auth providers — the full flow', () => {
     expect(res.headers['Referrer-Policy']).toBe('no-referrer');
     expect(res.headers['Set-Cookie']).toMatch(/^drobek_eu=/);
     expect(res.headers['Set-Cookie']).not.toMatch(/Domain=/i);
+    expect(res.setCookies[1]).toBe('drobek_eu_flow=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0');
 
     const user = await me(t, cookieOf(res));
     expect(user).toMatchObject({ email: 'ana@example.com', role: 'user' });
@@ -476,6 +477,8 @@ describe('auth providers — the full flow', () => {
     const res = await complete(t, own.code, `__Host-drobek_eu_flow=${'x'.repeat(43)}; __Host-drobek_eu_flow=${own.token}`);
     expect(res.status).toBe(302);
     expect(res.headers['Set-Cookie']).toMatch(/^__Host-drobek_eu=/);
+    expect(res.setCookies).toHaveLength(2);
+    expect(res.setCookies[1]).toBe('__Host-drobek_eu_flow=; Path=/; HttpOnly; SameSite=Lax; Secure; Max-Age=0');
   });
 
   it('a sign-in begun before this release (a v1 state or handoff record) is refused, never finished', async () => {

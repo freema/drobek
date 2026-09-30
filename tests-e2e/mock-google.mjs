@@ -8,9 +8,11 @@
  * Endpoints (dependency-free node:http):
  *   GET  /authorize  — minimal consent page with an Approve button. The form
  *                      POSTs back to /authorize, which issues a single-use
- *                      code bound to the canned identity and 302s to
+ *                      code bound to the canned identity, the S256
+ *                      code_challenge and the nonce, and 302s to
  *                      redirect_uri?code=…&state=….
- *   POST /token      — swaps code → access_token (JSON, Bearer).
+ *   POST /token      — swaps code + code_verifier → access_token and an
+ *                      unsigned id_token carrying the nonce (JSON, Bearer).
  *   GET  /userinfo   — returns {sub, email, email_verified} for the Bearer
  *                      access_token.
  *   GET  /           — 200 "mock-google ok" readiness probe.
@@ -33,12 +35,12 @@
  * Run: `task mock:google` (foreground) — the @local Playwright spec
  * (tests/auth-google.spec.ts) spawns its own instance when none is running.
  */
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
 
 const PORT = Number(process.env.MOCK_GOOGLE_PORT || 3049);
 
-/** code → identity (single-use) */
+/** code → { identity, challenge, nonce } (single-use) */
 const codes = new Map();
 /** access_token → identity */
 const tokens = new Map();
@@ -71,8 +73,14 @@ function issueCodeAndRedirect(res, params) {
     res.end('missing redirect_uri');
     return;
   }
+  const challenge = params.get('code_challenge') ?? '';
+  if (params.get('code_challenge_method') !== 'S256' || !challenge || !params.get('nonce')) {
+    res.writeHead(400, { 'content-type': 'text/plain' });
+    res.end('S256 code_challenge and nonce are required');
+    return;
+  }
   const code = randomBytes(16).toString('hex');
-  codes.set(code, identityFromParams(params));
+  codes.set(code, { identity: identityFromParams(params), challenge, nonce: params.get('nonce') });
   const sep = redirectUri.includes('?') ? '&' : '?';
   const location = `${redirectUri}${sep}code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`;
   res.writeHead(302, { location });
@@ -92,6 +100,9 @@ function consentPage(params) {
   <form method="post" action="/authorize">
     ${hidden('redirect_uri')}
     ${hidden('state')}
+    ${hidden('code_challenge')}
+    ${hidden('code_challenge_method')}
+    ${hidden('nonce')}
     <p><label>Google email
       <input name="mock_email" value="${escapeHtml(identity.email)}" style="width:100%">
     </label></p>
@@ -148,22 +159,30 @@ const server = createServer(async (req, res) => {
   if (req.method === 'POST' && url.pathname === '/token') {
     const params = new URLSearchParams(await readBody(req));
     const code = params.get('code') ?? '';
-    const identity = codes.get(code);
-    if (params.get('grant_type') !== 'authorization_code' || !identity) {
+    const grant = codes.get(code);
+    const verifier = params.get('code_verifier') ?? '';
+    if (
+      params.get('grant_type') !== 'authorization_code' ||
+      !grant ||
+      createHash('sha256').update(verifier).digest('base64url') !== grant.challenge
+    ) {
       res.writeHead(400, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ error: 'invalid_grant' }));
       return;
     }
     codes.delete(code); // single-use
+    const { identity, nonce } = grant;
     const accessToken = randomBytes(24).toString('hex');
     tokens.set(accessToken, identity);
+    const enc = (v) => Buffer.from(JSON.stringify(v)).toString('base64url');
+    const idToken = `${enc({ alg: 'none', typ: 'JWT' })}.${enc({ sub: identity.sub, aud: params.get('client_id'), nonce })}.`;
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(
       JSON.stringify({
         access_token: accessToken,
         token_type: 'Bearer',
         expires_in: 3600,
-        id_token: 'mock-id-token',
+        id_token: idToken,
       })
     );
     return;

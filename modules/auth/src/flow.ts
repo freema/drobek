@@ -232,14 +232,14 @@ export function flowCookieName(secure: boolean): string {
  * The flow cookie: `__Host-` (Secure, Path=/, no Domain — a sibling app host
  * under APPS_DOMAIN cannot set it), HttpOnly, SameSite=Lax, 10 minutes.
  */
-function flowCookieHeader(value: string, secure: boolean): string {
+function flowCookieHeader(value: string, secure: boolean, maxAgeSec = STATE_TTL_SEC): string {
   return [
     `${flowCookieName(secure)}=${value}`,
     'Path=/',
     'HttpOnly',
     'SameSite=Lax',
     ...(secure ? ['Secure'] : []),
-    `Max-Age=${STATE_TTL_SEC}`,
+    `Max-Age=${maxAgeSec}`,
   ].join('; ');
 }
 
@@ -539,7 +539,7 @@ export async function complete(ctx: Ctx, input: { code: string | undefined; host
   });
   return respond(302, null, {
     Location: safeReturnPath(record.return_to) ?? '/',
-    'Set-Cookie': endUserCookieHeader(sessionToken, { maxAgeSec: END_USER_SESSION_TTL_SEC }, secure),
+    'Set-Cookie': [endUserCookieHeader(sessionToken, { maxAgeSec: END_USER_SESSION_TTL_SEC }, secure), flowCookieHeader('', secure, 0)],
     'Referrer-Policy': 'no-referrer',
   });
 }

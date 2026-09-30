@@ -4,9 +4,12 @@ import {
   exchangeGoogleAuthCode,
   fetchGoogleUserInfo,
   getGoogleOAuthConfig,
+  idTokenNonceMatches,
   oauthStatesMatch,
   readStateCookie,
   stateCookieHeader,
+  takeOAuthFlow,
+  type GoogleOAuthFlow,
   type GoogleIdentity,
 } from '../google-oauth.server.js';
 import {
@@ -19,8 +22,9 @@ import { maskEmail } from '../mask-email.js';
 
 /**
  * GET /auth/google/callback — finish the OIDC dance:
- * exact-match state param vs cookie (cookie cleared either way), exchange the
- * code, fetch userinfo, REQUIRE email_verified === true, then account
+ * exact-match state param vs cookie (cookie cleared either way), consume the
+ * state's Redis record (missing or already used → refused), exchange the
+ * code with its PKCE verifier, match the ID token's nonce, fetch userinfo, REQUIRE email_verified === true, then account
  * resolution (sub match → email link → create) and session via
  * createUserSession. EVERY failure path: no session, generic
  * /login?error=google (real reason logged server-side only, email masked).
@@ -49,17 +53,31 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return fail('state_mismatch');
   }
 
-  let accessToken: string;
+  let flow: GoogleOAuthFlow | null;
   try {
-    ({ accessToken } = await exchangeGoogleAuthCode({
+    flow = await takeOAuthFlow(stateParam ?? '');
+  } catch (err) {
+    return fail('flow_lookup_failed', { err: serializeError(err) });
+  }
+  if (!flow) return fail('state_unknown');
+
+  let accessToken: string;
+  let idToken: string;
+  try {
+    ({ accessToken, idToken } = await exchangeGoogleAuthCode({
       tokenUrl: cfg.tokenUrl,
       code,
+      codeVerifier: flow.verifier,
       clientId: cfg.clientId,
       clientSecret: cfg.clientSecret,
       redirectUri: cfg.redirectUri,
     }));
   } catch (err) {
     return fail('token_exchange_failed', { err: serializeError(err) });
+  }
+
+  if (!idTokenNonceMatches(idToken, flow.nonce)) {
+    return fail('nonce_mismatch');
   }
 
   let identity: GoogleIdentity;

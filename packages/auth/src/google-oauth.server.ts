@@ -10,7 +10,8 @@
  * - redirect_uri is built from PUBLIC_ORIGIN (dev default http://localhost:3041)
  *   + /auth/google/callback.
  */
-import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { getRedis } from '@drobek/core';
 import {
   GOOGLE_OAUTH_STATE_COOKIE,
   GOOGLE_OAUTH_STATE_MAX_AGE_SEC,
@@ -117,6 +118,93 @@ export function readStateCookie(request: Request): string | null {
   return null;
 }
 
+// ── Server-side flow record (PKCE verifier + nonce), single-use per state ────
+
+/** The PKCE verifier and the nonce of one sign-in, keyed by its state. */
+export interface GoogleOAuthFlow {
+  verifier: string;
+  nonce: string;
+}
+
+const FLOW_SECRET_RE = /^[A-Za-z0-9_-]{43}$/;
+
+function flowKey(state: string): string {
+  return `drobek:google-oauth:${state}`;
+}
+
+export function generateOAuthFlow(): GoogleOAuthFlow {
+  return {
+    verifier: randomBytes(32).toString('base64url'),
+    nonce: randomBytes(32).toString('base64url'),
+  };
+}
+
+export function pkceChallenge(verifier: string): string {
+  return createHash('sha256').update(verifier).digest('base64url');
+}
+
+export async function saveOAuthFlow(
+  state: string,
+  flow: GoogleOAuthFlow
+): Promise<void> {
+  if (!STATE_RE.test(state)) throw new Error('malformed oauth state');
+  await getRedis().set(
+    flowKey(state),
+    JSON.stringify(flow),
+    'EX',
+    GOOGLE_OAUTH_STATE_MAX_AGE_SEC
+  );
+}
+
+/** Reads and deletes the record: a second call for the same state gets null. */
+export async function takeOAuthFlow(
+  state: string
+): Promise<GoogleOAuthFlow | null> {
+  if (!STATE_RE.test(state)) return null;
+  const raw = await getRedis().getdel(flowKey(state));
+  if (!raw) return null;
+  try {
+    const j = JSON.parse(raw) as Partial<GoogleOAuthFlow>;
+    if (
+      typeof j.verifier !== 'string' ||
+      typeof j.nonce !== 'string' ||
+      !FLOW_SECRET_RE.test(j.verifier) ||
+      !FLOW_SECRET_RE.test(j.nonce)
+    ) {
+      return null;
+    }
+    return { verifier: j.verifier, nonce: j.nonce };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The ID token is decoded without a signature check: it came straight from
+ * Google's token endpoint over TLS (OIDC Core 3.1.3.7).
+ */
+export function idTokenNonceMatches(
+  idToken: string,
+  nonce: string
+): boolean {
+  const parts = idToken.split('.');
+  if (parts.length !== 3) return false;
+  let claim: unknown;
+  try {
+    claim = (
+      JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')) as {
+        nonce?: unknown;
+      }
+    ).nonce;
+  } catch {
+    return false;
+  }
+  if (typeof claim !== 'string') return false;
+  const a = Buffer.from(claim);
+  const b = Buffer.from(nonce);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
 // ── Provider round-trips ──────────────────────────────────────────────────────
 
 export function buildGoogleAuthUrl(args: {
@@ -124,6 +212,8 @@ export function buildGoogleAuthUrl(args: {
   clientId: string;
   redirectUri: string;
   state: string;
+  codeChallenge: string;
+  nonce: string;
 }): string {
   const url = new URL(args.authUrl);
   url.searchParams.set('client_id', args.clientId);
@@ -131,6 +221,9 @@ export function buildGoogleAuthUrl(args: {
   url.searchParams.set('response_type', 'code');
   url.searchParams.set('scope', 'openid email profile');
   url.searchParams.set('state', args.state);
+  url.searchParams.set('code_challenge', args.codeChallenge);
+  url.searchParams.set('code_challenge_method', 'S256');
+  url.searchParams.set('nonce', args.nonce);
   url.searchParams.set('prompt', 'select_account');
   return url.toString();
 }
@@ -138,12 +231,14 @@ export function buildGoogleAuthUrl(args: {
 export async function exchangeGoogleAuthCode(args: {
   tokenUrl: string;
   code: string;
+  codeVerifier: string;
   clientId: string;
   clientSecret: string;
   redirectUri: string;
-}): Promise<{ accessToken: string }> {
+}): Promise<{ accessToken: string; idToken: string }> {
   const body = new URLSearchParams({
     code: args.code,
+    code_verifier: args.codeVerifier,
     client_id: args.clientId,
     client_secret: args.clientSecret,
     redirect_uri: args.redirectUri,
@@ -161,11 +256,14 @@ export async function exchangeGoogleAuthCode(args: {
     throw new Error(`google token exchange failed: ${res.status}`);
   }
 
-  const j = (await res.json()) as { access_token?: string };
+  const j = (await res.json()) as { access_token?: string; id_token?: string };
   if (!j.access_token) {
     throw new Error('google token response missing access_token');
   }
-  return { accessToken: j.access_token };
+  if (!j.id_token) {
+    throw new Error('google token response missing id_token');
+  }
+  return { accessToken: j.access_token, idToken: j.id_token };
 }
 
 export async function fetchGoogleUserInfo(args: {

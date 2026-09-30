@@ -156,7 +156,7 @@ export interface PipelineRequest {
 
 export interface PipelineResult {
   status: number;
-  headers: Record<string, string>;
+  headers: Record<string, string | string[]>;
   /** A Node Readable is streamed by the adapter (and destroyed unread for HEAD). */
   body: Buffer | string | Readable | null;
 }
@@ -188,7 +188,7 @@ function isResponse(v: unknown): v is ModuleResponse {
   return typeof v === 'object' && v !== null && (v as ModuleResponse).__drobekResponse === true;
 }
 
-function json(status: number, body: unknown, headers: Record<string, string> = {}): PipelineResult {
+function json(status: number, body: unknown, headers: Record<string, string | string[]> = {}): PipelineResult {
   return {
     status,
     headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...headers },

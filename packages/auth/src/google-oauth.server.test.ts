@@ -4,6 +4,8 @@ import {
   buildGoogleAuthUrl,
   generateOAuthState,
   getGoogleOAuthConfig,
+  idTokenNonceMatches,
+  pkceChallenge,
   GOOGLE_DEFAULT_AUTH_URL,
   GOOGLE_DEFAULT_TOKEN_URL,
   GOOGLE_DEFAULT_USERINFO_URL,
@@ -150,13 +152,15 @@ describe('state cookie helpers', () => {
 });
 
 describe('buildGoogleAuthUrl', () => {
-  it('carries client_id, redirect_uri, code flow, openid scopes, state and select_account', () => {
+  it('carries client_id, redirect_uri, code flow, openid scopes, state, S256 PKCE, nonce and select_account', () => {
     const url = new URL(
       buildGoogleAuthUrl({
         authUrl: GOOGLE_DEFAULT_AUTH_URL,
         clientId: 'client-1',
         redirectUri: 'http://localhost:3041/auth/google/callback',
         state: 'f'.repeat(48),
+        codeChallenge: 'c'.repeat(43),
+        nonce: 'n'.repeat(43),
       })
     );
     expect(url.origin + url.pathname).toBe(GOOGLE_DEFAULT_AUTH_URL);
@@ -167,6 +171,9 @@ describe('buildGoogleAuthUrl', () => {
     expect(url.searchParams.get('response_type')).toBe('code');
     expect(url.searchParams.get('scope')).toBe('openid email profile');
     expect(url.searchParams.get('state')).toBe('f'.repeat(48));
+    expect(url.searchParams.get('code_challenge')).toBe('c'.repeat(43));
+    expect(url.searchParams.get('code_challenge_method')).toBe('S256');
+    expect(url.searchParams.get('nonce')).toBe('n'.repeat(43));
     expect(url.searchParams.get('prompt')).toBe('select_account');
   });
 
@@ -176,7 +183,32 @@ describe('buildGoogleAuthUrl', () => {
       clientId: 'c',
       redirectUri: 'http://localhost:3041/auth/google/callback',
       state: 'a'.repeat(48),
+      codeChallenge: 'c'.repeat(43),
+      nonce: 'n'.repeat(43),
     });
     expect(url.startsWith('http://localhost:3049/authorize?')).toBe(true);
+  });
+});
+
+describe('pkceChallenge', () => {
+  it('is the RFC 7636 S256 transform', () => {
+    expect(pkceChallenge('dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk')).toBe(
+      'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM'
+    );
+  });
+});
+
+describe('idTokenNonceMatches', () => {
+  const token = (payload: unknown) =>
+    `e30.${Buffer.from(JSON.stringify(payload)).toString('base64url')}.sig`;
+
+  it('matches only the exact nonce claim', () => {
+    const nonce = 'n'.repeat(43);
+    expect(idTokenNonceMatches(token({ nonce }), nonce)).toBe(true);
+    expect(idTokenNonceMatches(token({ nonce: 'm'.repeat(43) }), nonce)).toBe(false);
+    expect(idTokenNonceMatches(token({}), nonce)).toBe(false);
+    expect(idTokenNonceMatches(token({ nonce: 1 }), nonce)).toBe(false);
+    expect(idTokenNonceMatches('not-a-jwt', nonce)).toBe(false);
+    expect(idTokenNonceMatches('a.%%%.c', nonce)).toBe(false);
   });
 });

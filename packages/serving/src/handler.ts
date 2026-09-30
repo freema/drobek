@@ -138,7 +138,7 @@ export type PlatformHandler = (req: AppRequest, ctx: { app: ServeApp; target: Ap
 
 export interface AppResponse {
   status: number;
-  headers: Record<string, string>;
+  headers: Record<string, string | string[]>;
   /** A Readable (a platform file download) is piped by the adapter. */
   body: Buffer | string | Readable | null;
 }
@@ -479,11 +479,11 @@ const CSP_HEADER = 'Content-Security-Policy';
  * a module can only tighten it — e.g. the files module's `sandbox` on served
  * files).
  */
-function withAppSecurity(headers: Record<string, string>, security: Record<string, string>): Record<string, string> {
+function withAppSecurity(headers: Record<string, string | string[]>, security: Record<string, string>): Record<string, string | string[]> {
   let moduleCsp: string | null = null;
-  const out: Record<string, string> = {};
+  const out: Record<string, string | string[]> = {};
   for (const [k, v] of Object.entries(headers)) {
-    if (k.toLowerCase() === CSP_HEADER.toLowerCase()) moduleCsp = v.trim() || null;
+    if (k.toLowerCase() === CSP_HEADER.toLowerCase()) moduleCsp = (Array.isArray(v) ? v.join(', ') : v).trim() || null;
     else out[k] = v;
   }
   Object.assign(out, security);

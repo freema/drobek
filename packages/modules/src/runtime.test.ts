@@ -508,7 +508,7 @@ describe('HTTP on the app hosts', () => {
     expect(js).toContain('unhandledrejection');
     expect(js.length).toBeLessThan(8000);
     expect((await rt.handle(req('GET', '/__drobek/beacon.js'), app)).headers['Cache-Control']).toBe('public, max-age=0, must-revalidate');
-    const etag = pinned.headers.ETag;
+    const etag = String(pinned.headers.ETag);
     expect((await rt.handle(req('GET', '/__drobek/beacon.js', { headers: { 'if-none-match': etag } }), app)).status).toBe(304);
     expect((await rt.handle(req('POST', '/__drobek/beacon.js'), app)).status).toBe(405);
   });

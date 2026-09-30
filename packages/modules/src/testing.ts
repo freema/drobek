@@ -168,7 +168,10 @@ export interface TestJobRun {
 
 export interface TestResponse {
   status: number;
+  /** A list-valued header is joined with `, ` (like fetch `Headers.get`). */
   headers: Record<string, string>;
+  /** Every `Set-Cookie` value in order (like fetch `Headers.getSetCookie`). */
+  setCookies: string[];
   /** Parsed JSON (or the raw text when the body is not JSON). */
   body: unknown;
   /** The raw response bytes (a streamed body is collected). */
@@ -329,7 +332,13 @@ export function createModuleTestContext(declared: AnyModule, opts: ModuleTestOpt
         /* keep the text */
       }
     }
-    return { status: r.status, headers: r.headers, body, bytes, bodyBytesRead };
+    const headers: Record<string, string> = {};
+    const setCookies: string[] = [];
+    for (const [k, v] of Object.entries(r.headers)) {
+      headers[k] = Array.isArray(v) ? v.join(', ') : v;
+      if (k.toLowerCase() === 'set-cookie') setCookies.push(...(Array.isArray(v) ? v : [v]));
+    }
+    return { status: r.status, headers, setCookies, body, bytes, bodyBytesRead };
   };
 
   /** `raw` as the adapter's pull stream, in `size`-byte chunks; counts what was pulled. */
