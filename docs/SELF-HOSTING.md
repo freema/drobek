@@ -6,13 +6,13 @@ everything to drobek on the internal network. This guide takes a clean
 server to a working instance — dashboard over TLS, an agent connected over
 MCP, a published app — and covers backups, upgrades and every setting.
 
-**Measured:** the whole quickstart below (init → TLS dashboard → user → MCP →
-published app with an uploaded file) took **33 s** in the
-local rehearsal (`task selfhost:rehearsal`, `tls internal`, image already
-built), a backup 7 s, a restore on a second "machine"
-(fresh checkout + `task selfhost:init` + `task restore`) 33 s; the image build
-itself 145 s (a VPS pulls it instead). Local = macOS, Docker Desktop, arm64,
-2026-09-23.
+**Measured:** on a clean Ubuntu 24.04 + Docker host (a fresh GitHub
+`ubuntu-24.04` runner, 2026-09-30) with the released `v0.6.1` image, the
+image pull took 8 s, the whole quickstart below (init → TLS dashboard → user →
+MCP → published app with an uploaded file) **31 s**, a backup 3 s and a
+restore on a second "machine" (fresh checkout + `task selfhost:init` +
+`task restore`) 25 s. The run is the manual `selfhost-rehearsal.yml`
+workflow (`task selfhost:rehearsal` with `tls internal`).
 
 ## Quickstart (clean Ubuntu 24.04 + Docker)
 
