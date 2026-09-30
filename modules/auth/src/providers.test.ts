@@ -37,9 +37,9 @@ vi.mock('@drobek/core', async (importOriginal) => {
   return { ...actual, getRedis: () => fake as unknown as ReturnType<typeof actual.getRedis> };
 });
 
-import auth, { type AuthConfig } from './index.js';
+import auth, { AUTH_CONFIG_DEFAULTS as AUTH_DEFAULTS, type AuthConfig } from './index.js';
 import { COMPLETE_PATH, handoffKey, stateKey } from './flow.js';
-import { connectionOf, notifySignedIn, providerSecrets } from './providers.js';
+import { connectionOf, notifySignedIn, providerLabel, providerSecrets, providersInfo, signInMethods } from './providers.js';
 import { authIdentities, authUsers } from './schema.js';
 import { providerSignIn } from './users.js';
 
@@ -303,6 +303,31 @@ describe('auth providers — slots, config, confirmations', () => {
     expect(res.body).toEqual({ providers: [{ id: 'emailCode', label: 'E-mail code' }, { id: 'authtest', label: 'Test IdP' }] });
     const only = await ctx({ config: { providers: { emailCode: { enabled: false }, authtwo: { enabled: true } } } }).request('GET', '/providers');
     expect(only.body).toEqual({ providers: [{ id: 'authtwo', label: 'Other IdP' }] });
+  });
+
+  it("a provider whose configSchema declares `label` shows the app's own label; others keep theirs", () => {
+    const labelled = defineAuthProvider({ ...otherProvider, id: 'company', label: 'Company account', configSchema: z.strictObject({ label: z.string().optional() }) });
+    const config = { ...ON, providers: { ...ON.providers, company: { enabled: true, label: 'Acme' }, authtwo: { enabled: true, label: 'ignored' } } } as unknown as AuthConfig;
+    expect(providerLabel(labelled, config)).toBe('Acme');
+    expect(providerLabel(otherProvider, config)).toBe('Other IdP');
+    expect(providerLabel(labelled, { ...config, providers: { ...config.providers, company: { enabled: true } } })).toBe('Company account');
+    expect(signInMethods(() => [labelled, otherProvider] as never[], config)).toEqual([
+      { id: 'emailCode', label: 'E-mail code' },
+      { id: 'company', label: 'Acme' },
+      { id: 'authtwo', label: 'Other IdP' },
+    ]);
+  });
+
+  it("get_app's info lists each provider of the server, on or off, with the operator's AUTH_<ID>_* names (never a value)", async () => {
+    const config = checkModuleSet([auth, fixture, fixture2], {})[0].configDefaults as AuthConfig;
+    const env = { AUTH_AUTHTEST_ISSUER: 'https://idp.example', AUTH_AUTHTEST_CLIENT_SECRET: 'shh-value', AUTH_AUTHTWO_X: ' ', OTHER: 'x' };
+    const info = providersInfo({ ...config, providers: { ...config.providers, authtest: { enabled: true } } }, env);
+    expect(info).toEqual([
+      { id: 'authtest', enabled: true, serverEnv: ['AUTH_AUTHTEST_CLIENT_SECRET', 'AUTH_AUTHTEST_ISSUER'] },
+      { id: 'authtwo', enabled: false, serverEnv: [] },
+    ]);
+    expect(JSON.stringify(info)).not.toContain('shh-value');
+    expect(await auth.appInfo!({ app: { id: appId, slug: 'team-board', workspaceId }, config: AUTH_DEFAULTS, db, log: capture() })).toEqual({ providers: [] });
   });
 
   it('the e-mail code turned off → send-code / verify answer provider_not_enabled', async () => {

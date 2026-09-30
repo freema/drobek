@@ -14,6 +14,7 @@
  */
 import type { AnyModule } from '../contract.js';
 import { CORE_ERROR_CODES } from '../errors.js';
+import { checkModuleSet } from '../registry.js';
 import type { SdkBundle } from '../sdk-build.js';
 import { checkExamples } from './examples.js';
 import { skillFormatIssues } from './format.js';
@@ -43,9 +44,14 @@ export interface CheckSkillSourcesOptions {
   root?: string;
 }
 
-/** The error codes a skill may name: the core catalogue + its module's `errors` (a general skill: every module's). */
+/**
+ * The error codes a skill may name: the core catalogue + its module's `errors`
+ * and those of the modules it `requires` (a sign-in provider: auth's
+ * `provider_error`); a general skill: every module's.
+ */
 export function knownErrorCodes(src: SkillSource, modules: AnyModule[]): Set<string> {
-  const own = src.kind === 'module' ? (src.module?.errors ?? []) : modules.flatMap((m) => m.errors ?? []);
+  const required = modules.filter((m) => src.module?.requires?.includes(m.name));
+  const own = src.kind === 'module' ? [...(src.module?.errors ?? []), ...required.flatMap((m) => m.errors ?? [])] : modules.flatMap((m) => m.errors ?? []);
   return new Set([...CORE_ERROR_CODES, ...own.map((e) => e.code)]);
 }
 
@@ -70,5 +76,18 @@ export function moduleSkillSource(module: AnyModule, file = 'SKILL.md'): SkillSo
  */
 export async function checkSkill(module: AnyModule, opts: CheckSkillOptions = {}): Promise<SkillIssue[]> {
   const others = (opts.modules ?? []).filter((m) => m.name !== module.name);
-  return checkSkillSources([moduleSkillSource(module, opts.file)], [module, ...others], { root: opts.root });
+  return checkSkillSources([moduleSkillSource(module, opts.file)], composed([module, ...others]), { root: opts.root });
+}
+
+/**
+ * The set as a server composes it (a slot host's config gains its
+ * contributions, e.g. auth's `providers.<id>`), so a payload for the host
+ * passes; a set a server would refuse is checked as declared.
+ */
+function composed(modules: AnyModule[]): AnyModule[] {
+  try {
+    return checkModuleSet(modules, {});
+  } catch {
+    return modules;
+  }
 }

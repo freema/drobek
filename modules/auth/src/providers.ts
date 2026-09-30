@@ -44,9 +44,20 @@ export function signInMethods(contributions: Contributions, config: AuthConfig):
   const out: SignInMethod[] = [];
   if (methodEnabled(config, 'email')) out.push({ id: EMAIL_CODE_KEY, label: 'E-mail code' });
   for (const p of contributions<AuthProvider>(PROVIDER_SLOT)) {
-    if (methodEnabled(config, p.id)) out.push({ id: p.id, label: p.label });
+    if (methodEnabled(config, p.id)) out.push({ id: p.id, label: providerLabel(p, config) });
   }
   return out;
+}
+
+/**
+ * What the app's users see for provider `p`: its `label`, or the app's own
+ * `providers.<id>.label` when the provider's configSchema declares a `label`
+ * (e.g. oidc: "Continue with Acme").
+ */
+export function providerLabel(p: AuthProvider, config: AuthConfig): string {
+  const own = config.providers[p.id]?.label;
+  const declared = 'label' in ((p.configSchema as { shape?: object }).shape ?? {});
+  return declared && typeof own === 'string' && own.trim() !== '' ? own : p.label;
 }
 
 /** The provider's own part of the app's config: `providers.<id>` without the keys auth adds. */
@@ -70,6 +81,20 @@ export function connectionOf(provider: AuthProvider, config: AuthConfig, env: No
     .filter(([k]) => !secretEnv.has(k))
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
   return createHash('sha256').update(JSON.stringify(['v1', provider.id, fields, vars])).digest('base64url');
+}
+
+/** One sign-in provider of the app in get_app's `modules.auth.info`: on or off, and the operator's `AUTH_<ID>_*` variables that are set (names only, never a value). */
+interface ProviderInfo {
+  id: string;
+  enabled: boolean;
+  serverEnv: string[];
+}
+
+/** The server's sign-in providers as the app's effective config lists them (every provider has an entry, off by default). */
+export function providersInfo(config: AuthConfig, env: NodeJS.ProcessEnv = process.env): ProviderInfo[] {
+  return Object.keys(config.providers)
+    .filter((id) => id !== EMAIL_CODE_KEY)
+    .map((id) => ({ id, enabled: methodEnabled(config, id), serverEnv: Object.keys(providerEnv(id, env)).sort() }));
 }
 
 /** The operator's `AUTH_<ID>_*` env vars (non-empty ones), for a provider's own env fallback. */

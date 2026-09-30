@@ -73,6 +73,7 @@ import {
   notifySignedIn,
   providerConfig,
   providerEnv,
+  providerLabel,
   providerSecrets,
   withTimeout,
 } from './providers.js';
@@ -354,7 +355,7 @@ export async function begin(ctx: Ctx, input: { provider: string; return_to?: str
   }
   if (!url) {
     await store.getdel(stateKey(id));
-    throw providerError(provider.label);
+    throw providerError(providerLabel(provider, ctx.config));
   }
   return respond(200, { url }, { 'Set-Cookie': flowCookieHeader(flow, endUserCookiesSecure()) });
 }
@@ -439,7 +440,7 @@ export async function providerCallback(input: EndUserCallbackInput<AuthConfig>):
     identity = parsed.data;
   } catch (err) {
     log.warn('auth: provider callback failed', { app_id: view.app.id, provider: provider.id, error: errorKind(err) });
-    return page(502, 'Sign-in failed', `Sign-in with ${provider.label} did not work. Try again.`, back);
+    return page(502, 'Sign-in failed', `Sign-in with ${providerLabel(provider, view.config)} did not work. Try again.`, back);
   }
 
   const denied = async (reason: string): Promise<void> => {
@@ -447,7 +448,7 @@ export async function providerCallback(input: EndUserCallbackInput<AuthConfig>):
   };
   if (!identity.emailVerified) {
     await denied('email_not_verified');
-    return page(403, 'E-mail address not verified', `${provider.label} did not confirm this e-mail address, so it cannot be used to sign in.`, back);
+    return page(403, 'E-mail address not verified', `${providerLabel(provider, view.config)} did not confirm this e-mail address, so it cannot be used to sign in.`, back);
   }
   const workspaceEditor = await isWorkspaceEditor(services.db, view.app.workspaceId, identity.email);
   const access = decideSignIn({ config: view.config, email: identity.email, workspaceEditor });
@@ -467,7 +468,7 @@ export async function providerCallback(input: EndUserCallbackInput<AuthConfig>):
     if (out.reason === 'limit') return page(429, 'App is full', 'This app cannot take new users right now.', back);
     if (out.reason === 'disabled') return page(403, 'Not allowed', 'This address may not sign in to this app.', back);
     if (out.reason === 'identity_mismatch') {
-      return page(409, 'Account does not match', `This ${provider.label} account is not the one this app's account is linked to. Ask the app owner.`, back);
+      return page(409, 'Account does not match', `This ${providerLabel(provider, view.config)} account is not the one this app's account is linked to. Ask the app owner.`, back);
     }
     return page(409, 'Account already linked', 'This address already signs in to this app another way. Use that sign-in, or ask the app owner.', back);
   }
