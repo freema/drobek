@@ -16,6 +16,7 @@ tasks:
     env:
       GIT_SHA: '{{.GIT_SHA}}'
     cmds:
+      - task: module:example
       - docker compose up -d --build --wait --wait-timeout 300
       - task: health
 
@@ -119,7 +120,13 @@ tasks:
       REDIS_URL: 'redis://localhost:{{.REDIS_PUBLISH | default "6391"}}'
       MAILPIT_URL: 'http://localhost:{{.MAILPIT_PUBLISH | default "8025"}}'
       ALLOW_DESTRUCTIVE: '1'
+      E2E_MODULE_REINSTALL: task module:example --force
     cmds:
+      - >-
+        before="$(cat .modules/modules.lock.json 2>/dev/null || true)";
+        task module:example &&
+        if [ "$before" != "$(cat .modules/modules.lock.json)" ]; then
+        docker compose restart drobek && docker compose up -d --wait --wait-timeout 300 drobek; fi
       - pnpm -C tests-e2e exec playwright test {{.CLI_ARGS}}
 
   e2e:image:
@@ -295,6 +302,24 @@ tasks:
       - test -f packages/modules/dist/cli/module-lock.js || pnpm build:packages
       - ./scripts/selfhost-module.sh --dev list
 
+  module:example:
+    desc: 'Dev stack: pack the external example module (examples/drobek-module-acme-crm, in the dev DROBEK_MODULES) and install it into ./.modules — skipped while that install is current [--force reinstalls]'
+    sources:
+      - examples/drobek-module-acme-crm/package.json
+      - examples/drobek-module-acme-crm/SKILL.md
+      - examples/drobek-module-acme-crm/src/**/*.ts
+      - examples/drobek-module-acme-crm/migrations/**/*
+    status:
+      - test -f .modules/acmecrm/node_modules/drobek-module-acme-crm/package.json
+      - grep -q '"acmecrm"' .modules/modules.lock.json
+    cmds:
+      - test -f packages/modules/dist/cli/module-lock.js || pnpm build:packages
+      - >-
+        pack="$(mktemp -d)" &&
+        pnpm --filter drobek-module-acme-crm pack --pack-destination "$pack" >/dev/null &&
+        ./scripts/selfhost-module.sh --dev add "$pack"/drobek-module-acme-crm-*.tgz;
+        status=$?; rm -rf "$pack"; exit $status
+
   dev:tls:
     desc: 'Dev stack behind Caddy with `tls internal` → https://localhost + https://<slug>--preview.apps.localhost [DEV_TLS_PORT=443]'
     vars:
@@ -306,6 +331,7 @@ tasks:
       DEV_TLS_SUFFIX: '{{.DEV_TLS_SUFFIX}}'
     cmds:
       - test -f packages/core/dist/cli/caddy-config.js || pnpm --filter @drobek/core build
+      - task: module:example
       - >-
         env -i PATH="$PATH" PUBLIC_APP_URL='https://localhost{{.DEV_TLS_SUFFIX}}'
         APPS_DOMAIN='apps.localhost{{.DEV_TLS_SUFFIX}}' TLS_INTERNAL=1

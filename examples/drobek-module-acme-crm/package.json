@@ -1,0 +1,44 @@
+{
+  "name": "drobek-module-acme-crm",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Example external drobek platform module (the create-drobek-module output, installed with task selfhost:module:add): GET/POST /__drobek/v1/acmecrm, drobek.acmecrm.list() / add(contact), an auth.signedIn observer, opt-in per workspace.",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "migrations",
+    "SKILL.md"
+  ],
+  "keywords": [
+    "drobek-module"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "check": "vitest run src/skill.test.ts",
+    "prepack": "npm run build"
+  },
+  "peerDependencies": {
+    "@drobek/modules": ">=1.0.0",
+    "drizzle-orm": ">=0.45.0"
+  },
+  "devDependencies": {
+    "@drobek/modules": "workspace:*",
+    "@electric-sql/pglite": "^0.2.17",
+    "@types/node": "^22",
+    "drizzle-orm": "^0.45.3",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.7"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

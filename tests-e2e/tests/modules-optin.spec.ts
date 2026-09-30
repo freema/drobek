@@ -3,6 +3,7 @@ import { BASE_URL_WEB } from '../playwright.config';
 import { hostRequest, previewHost } from './helpers/apps-host';
 import { loginViaEmail, skipUnlessLocal, uniqueEmail } from './helpers/auth';
 import { FULL_SCOPE, callTool, mcpClient, type McpClient } from './helpers/mcp';
+import { setFakePlan } from './helpers/limits';
 import { addMembership, personalWorkspaceOf, userIdByEmail, withDb } from './helpers/seed';
 
 /**
@@ -11,13 +12,16 @@ import { addMembership, personalWorkspaceOf, userIdByEmail, withDb } from './hel
  *  - the Workspace → Modules page (NSO-347, readable by every member): a
  *    workspace admin and an editor see it (tab + list, read-only, no
  *    switch); the switch POST → 403 for both;
- *  - with an opt-in module on the server (`availability: 'opt-in'` — the
- *    dev stack gets one with the EXT-09 example module; until then the flow
- *    is skipped): off for a fresh workspace → its route answers
- *    `404 module_not_enabled`, configure_module refuses, get_app says
- *    `enabled: false` and leaves it out of `skills`, skill_info(app_id) says
- *    `enabled_for_workspace: false`; a super-admin enables it on the page
- *    (audit `module.workspace_enable`) → all of it flips; Disable → back.
+ *  - the opt-in module of both stacks, the installed example `acmecrm`
+ *    (NSO-352, examples/drobek-module-acme-crm): off for a fresh workspace →
+ *    its route answers `404 module_not_enabled`, configure_module refuses,
+ *    get_app says `enabled: false` and leaves it out of `skills`,
+ *    skill_info(app_id) says `enabled_for_workspace: false`; a super-admin
+ *    enables it on the page (audit `module.workspace_enable`) → all of it
+ *    flips and configure_module works; the limits provider's plan
+ *    `MODULE_ENABLED_ACMECRM: 0` (the fake provider on proxy-echo,
+ *    helpers/limits.ts) turns it off although the switch is on, and on
+ *    again when the plan drops the value; Disable → off.
  *
  * The super-admin is `e2e-superadmin@drobek.test` (see abuse.spec.ts).
  */
@@ -98,10 +102,9 @@ test.describe('opt-in modules per workspace (NSO-346) @local', () => {
     request,
   }) => {
     skipUnlessLocal();
+    const name = 'acmecrm';
     const listed = await callTool(owner.client, 'skill_info', {});
-    const optIn = (listed.json.skills as SkillItem[]).find((s) => s.availability === 'opt-in');
-    test.skip(!optIn, 'the stack runs no opt-in module (the EXT-09 example module adds one)');
-    const name = optIn!.name;
+    expect((listed.json.skills as SkillItem[]).find((s) => s.name === name)).toMatchObject({ availability: 'opt-in' });
     await loginViaEmail(page, request, owner.email);
 
     const created = await callTool(owner.client, 'create_app', { name: 'Opt-in probe', workspace: owner.workspace, template: 'html' });
@@ -142,6 +145,36 @@ test.describe('opt-in modules per workspace (NSO-346) @local', () => {
     expect((got.json.skills as SkillItem[]).map((s) => s.name)).toContain(name);
     const on = await hostRequest(previewHost(app.slug), `/__drobek/v1/${name}/`);
     expect(on.body).not.toContain('module_not_enabled');
+    const onInApp = await callTool(owner.client, 'skill_info', { app_id: app.app_id });
+    expect((onInApp.json.skills as SkillItem[]).find((s) => s.name === name)).toMatchObject({ enabled_for_workspace: true });
+    const configured = await callTool(owner.client, 'configure_module', { app_id: app.app_id, module: name, config: {} });
+    expect(configured.isError, configured.text).toBe(false);
+    await page.reload();
+    await expect(page.getByTestId('module-not-enabled')).toHaveCount(0);
+
+    // ── the limits provider's plan (MODULE_ENABLED_<NAME>=0) wins over the switch ──
+    const ws = await personalWorkspaceOf(owner.email);
+    const planKey = `MODULE_ENABLED_${name.toUpperCase()}`;
+    try {
+      await setFakePlan(ws.id, { [planKey]: 0 });
+      await expect
+        .poll(async () => JSON.parse((await hostRequest(previewHost(app.slug), `/__drobek/v1/${name}/`)).body).error, { timeout: 20_000 })
+        .toBe('module_not_enabled');
+      got = await callTool(owner.client, 'get_app', { app_id: app.app_id });
+      expect((got.json.modules as Record<string, { enabled: boolean }>)[name].enabled).toBe(false);
+      const planned = await callTool(owner.client, 'configure_module', { app_id: app.app_id, module: name, config: {} });
+      expect(planned.json).toMatchObject({ code: 'module_not_enabled' });
+      await ap.reload();
+      await expect(row).toHaveAttribute('data-enabled', '0');
+      await expect(row).toHaveAttribute('data-source', 'plan');
+    } finally {
+      await setFakePlan(ws.id, null);
+    }
+    await expect
+      .poll(async () => (await hostRequest(previewHost(app.slug), `/__drobek/v1/${name}/`)).body, { timeout: 20_000 })
+      .not.toContain('module_not_enabled');
+    await ap.reload();
+    await expect(row).toHaveAttribute('data-enabled', '1');
 
     // ── and disables it again ──
     await row.getByTestId('workspace-module-toggle').click();
@@ -149,7 +182,6 @@ test.describe('opt-in modules per workspace (NSO-346) @local', () => {
     const off = await hostRequest(previewHost(app.slug), `/__drobek/v1/${name}/`);
     expect(JSON.parse(off.body)).toMatchObject({ error: 'module_not_enabled' });
 
-    const ws = await personalWorkspaceOf(owner.email);
     const audit = await workspaceAudit(ws.id);
     expect(audit.map((a) => [a.action, a.target, a.actor_kind])).toEqual([
       ['module.workspace_enable', name, 'user'],

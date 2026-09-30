@@ -173,8 +173,11 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
-      - name: Install the e2e package only
-        run: pnpm install --frozen-lockfile --filter tests-e2e
+      - name: Install the e2e package and the example module scripts/e2e-image.sh packs
+        run: pnpm install --frozen-lockfile --filter tests-e2e --filter "drobek-module-acme-crm..."
+
+      - name: Build the example module and the packages it compiles against
+        run: pnpm --filter "drobek-module-acme-crm..." build
 
       - name: Resolve the Playwright version
         id: pw

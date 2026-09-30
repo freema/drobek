@@ -34,6 +34,12 @@ import { addMembership, userIdByEmail, withDb, workspaceIdBySlug } from './helpe
  *  - the module page's "About this module" + error codes, linking there;
  *  - the generic form edits a record of named entries (the forms module's
  *    `forms`) without client JS: fill the empty entry, save, it is stored.
+ *
+ * NSO-352: the installed external module `acmecrm` (source dir, opt-in,
+ * its `auth.signedIn` contribution, error and limit) on the workspace page;
+ * its page is the generic form — a list (`tags`, one per line) and a record
+ * (`fields`) save — while `data` keeps its collections editor (a declared
+ * capability, not the module name).
  */
 
 interface Created {
@@ -416,6 +422,57 @@ test.describe('dashboard Modules tab (M2-02) @local', () => {
       await expect(ownerPage.getByTestId('entry-forms')).toHaveCount(1);
       await expect(ownerPage.getByTestId('entry-key-forms-0')).toHaveValue('contact');
     }
+  });
+
+  test('NSO-352: the installed external module — its facts on the workspace page, the generic form with a list and a record; data keeps its collections editor', async () => {
+    skipUnlessLocal();
+    const wsId = await workspaceIdBySlug(app.workspace);
+    await withDb((c) => c.query(`INSERT INTO workspace_modules (workspace_id, module) VALUES ($1, 'acmecrm') ON CONFLICT DO NOTHING`, [wsId]));
+
+    await ownerPage.goto(`/workspaces/${app.workspace}/modules`);
+    const crm = ownerPage.locator('[data-testid="workspace-module"][data-module="acmecrm"]');
+    await expect(crm.getByTestId('fact-version')).toHaveText('0.1.0');
+    await expect(crm.getByTestId('fact-availability').locator('[data-availability]')).toHaveAttribute('data-availability', 'opt-in');
+    await expect(crm.getByTestId('fact-requires')).toHaveText('auth');
+    await crm.getByTestId('module-technical').locator('summary').click();
+    await expect(crm.getByTestId('fact-source').locator('[data-source]')).toHaveAttribute('data-source', 'dir');
+    await expect(crm.getByTestId('fact-contract')).toHaveText('^1.2');
+    await expect(crm.getByTestId('fact-editor')).toHaveCount(0);
+    const contribution = crm.locator('[data-testid="contributes-row"][data-slot="auth.signedIn"]');
+    await expect(contribution).toContainText('auth');
+    await expect(contribution).toContainText('acmecrm-contacts');
+    await expect(crm.locator('[data-testid="error-row"][data-code="crm_duplicate"]')).toBeVisible();
+    await crm.getByTestId('module-limits').locator('summary').click();
+    await expect(crm.locator('[data-testid="limit-row"][data-limit="ACMECRM_CONTACTS_PER_APP"] [data-testid="limit-value"]')).toHaveAttribute('data-value', '1000');
+    // The slot host lists the external module among its contributors.
+    const auth = ownerPage.locator('[data-testid="workspace-module"][data-module="auth"]');
+    await auth.getByTestId('module-technical').locator('summary').click();
+    await expect(auth.locator('[data-testid="slot-row"][data-slot="auth.signedIn"]')).toContainText('acmecrm');
+
+    // The dedicated editor follows the declared capability, not the module name.
+    await ownerPage.goto(modulePath(app, 'data'));
+    await expect(ownerPage.getByTestId('collections-editor')).toBeVisible();
+    await ownerPage.goto(modulePath(app, 'acmecrm'));
+    await expect(ownerPage.getByTestId('collections-editor')).toHaveCount(0);
+    await expect(ownerPage.getByTestId('upstreams-editor')).toHaveCount(0);
+    await expect(ownerPage.locator('[data-name="ACMECRM_API_KEY"] [data-testid="secret-status"]')).toHaveText('not set');
+
+    // The generic form: a list (one per line) and a record of named entries.
+    await ownerPage.getByTestId('field-tags').fill('newsletter\nvip');
+    const fresh = ownerPage.getByTestId('entry-new-fields');
+    await fresh.locator('input[name="cfg.fields[0].$key"]').fill('company');
+    await fresh.locator('input[name="cfg.fields[0].label"]').fill('Company');
+    await fresh.locator('input[name="cfg.fields[0].required"]').check();
+    await ownerPage.getByTestId('config-save').click();
+    await expect(ownerPage.getByTestId('done-notice')).toHaveAttribute('data-done', 'applied');
+    const got = await callTool(mcp.client, 'get_app', { app_id: app.app_id });
+    expect((got.json.modules as Record<string, { config: unknown }>).acmecrm.config).toEqual({
+      tags: ['newsletter', 'vip'],
+      fields: { company: { label: 'Company', required: true } },
+    });
+    await expect(ownerPage.getByTestId('entry-fields')).toHaveCount(1);
+    await expect(ownerPage.getByTestId('entry-key-fields-0')).toHaveValue('company');
+    await expect(ownerPage.getByTestId('field-tags')).toHaveValue('newsletter\nvip');
   });
 
   test('a viewer sees the configuration, the pending change and the secret status — no buttons; a POST is 403', async ({ browser, request }) => {

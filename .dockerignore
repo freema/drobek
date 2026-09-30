@@ -21,3 +21,8 @@ docs
 .caddy
 certs
 deployments/Caddyfile
+
+# NSO-352: the external example module is never part of the image; operators and
+# the e2e flow install it into DROBEK_MODULES_DIR (its contract peer has no
+# workspace link in a --prod deploy).
+examples/drobek-module-acme-crm

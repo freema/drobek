@@ -196,7 +196,7 @@ test.describe('platform modules — the hello example (M1-01) @local', () => {
 
     const nope = await hostRequest(host, '/__drobek/v1/nope');
     expect(nope.status).toBe(404);
-    expect(JSON.parse(nope.body)).toMatchObject({ error: 'not_found', details: { available: ['hello', 'auth', 'email', 'forms', 'data', 'proxy', 'files', 'sync', 'oidc'] } });
+    expect(JSON.parse(nope.body)).toMatchObject({ error: 'not_found', details: { available: ['hello', 'auth', 'email', 'forms', 'data', 'proxy', 'files', 'sync', 'oidc', 'acmecrm'] } });
 
     // HELLO_WAVES_PER_MINUTE=5 per visitor IP (behind Caddy the browser test
     // already waved once from the same IP). A client IP of its own: on the
@@ -324,10 +324,11 @@ test.describe('platform modules — the hello example (M1-01) @local', () => {
     skipUnlessLocal();
     const list = await callTool(mcp.client, 'skill_info', {});
     expect(list.isError).toBe(false);
-    const skills = list.json.skills as { name: string; use_when: string }[];
+    const skills = list.json.skills as { name: string; use_when: string; availability?: string }[];
     expect(skills.map((s) => s.name)).toContain('hello');
     expect(skills.map((s) => s.name)).not.toContain('drobek');
-    expect(app.skills).toEqual(skills);
+    // create_app leaves out the opt-in modules not enabled for the workspace (acmecrm, NSO-352).
+    expect(app.skills).toEqual(skills.filter((s) => s.availability !== 'opt-in'));
 
     const one = await callTool(mcp.client, 'skill_info', { name: 'hello' });
     expect(one.json).toMatchObject({

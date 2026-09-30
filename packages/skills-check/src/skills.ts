@@ -3,9 +3,10 @@
  * `checkSkill` library of @drobek/modules/testing since NSO-349).
  *
  * The skills of a server running every built-in module — exactly what
- * `skill_info()` serves in the dev stack and the image (minus the `hello`
- * example module): the module skills of auth, email, forms, data, proxy,
- * files, sync, oidc and the general skills of the repo's `skills/` directory (debug,
+ * `skill_info()` serves in the dev stack and the image (minus the example
+ * modules `hello` and `acmecrm`, each checked by its own skill.test.ts): the
+ * module skills of auth, email, forms, data, proxy, files, sync, oidc and the
+ * general skills of the repo's `skills/` directory (debug,
  * port-artifact, start, ui; `skills/drobek` is the platform skill and never
  * listed).
  */
