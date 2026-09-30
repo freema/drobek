@@ -128,7 +128,7 @@ for s in POSTGRES_PASSWORD DROBEK_MASTER_KEY TLS_ASK_TOKEN; do
   v="$(ENV_FILE="$A/.env.production" env_get "$s")"
   [ "${#v}" = 64 ] || die "$s was not generated (64 hex chars)"
 done
-[ "$(stat -f %Lp "$A/.env.production" 2>/dev/null || stat -c %a "$A/.env.production")" = 600 ] || die ".env.production is not mode 600"
+[ "$(stat -c %a "$A/.env.production" 2>/dev/null || stat -f %Lp "$A/.env.production")" = 600 ] || die ".env.production is not mode 600"
 ok "three secrets generated (64 hex chars), .env.production mode 600"
 before_env="$(sha256_of "$A/.env.production")"
 before_caddy="$(sha256_of "$A/deployments/Caddyfile")"
