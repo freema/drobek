@@ -6,14 +6,15 @@ import { personalWorkspaceOf, withDb } from './helpers/seed';
 
 /**
  * NSO-329: APPS_MAX_PER_WORKSPACE over MCP against the local compose stack.
- * The dev stack does not set the variable and runs without a limits provider,
- * so the limit is the production default, 50. A fresh user's personal
+ * The dev stack does not set the variable and its fake limits provider
+ * (proxy-echo, helpers/limits.ts) answers no plan for this workspace, so the
+ * limit is the production default, 50. A fresh user's personal
  * workspace is filled up to 49 live apps straight in SQL (plus one soft-deleted
  * app, which must not count); create_app then makes the 50th, refuses the
  * 51st with `limit_exceeded` naming the limit, and makes room again once an
- * app is deleted. The per-workspace provider override and DOMAINS_MAX_PER_APP=0
- * need a provider / env the dev stack cannot switch per test — they are
- * covered by the unit tests (@drobek/modules limits, @drobek/mcp create_app,
+ * app is deleted. DOMAINS_MAX_PER_APP=0 needs an env the dev stack cannot
+ * switch per test; it and a plan override of a numeric limit are covered by
+ * the unit tests (@drobek/modules limits, @drobek/mcp create_app,
  * @drobek/domains addDomain).
  */
 

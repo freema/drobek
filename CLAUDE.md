@@ -88,7 +88,7 @@ packages/{auth,tenancy,audit,domains,email,insights,proxy,core,db,sdk}
 packages/skills-check   compiles + typechecks every skill code block (test-only)
 modules/<name>          built-in platform modules (auth, email, forms, data, proxy, files, sync, oidc) + SKILL.md
 skills/                 general skills (start, debug, ui, port-artifact) + the platform skill skills/drobek
-examples/               drobek-module-hello (an external module)
+examples/               drobek-module-hello, drobek-module-acme-crm (external modules)
 tests-e2e/              Playwright (@local needs the dev stack, @smoke is safe anywhere)
 tests-eval/             manual agent eval (`task eval`, never CI)
 scripts/                self-host scripts, e2e image flow, prod proof, doc-lint

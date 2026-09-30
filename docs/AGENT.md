@@ -336,8 +336,8 @@ lines). `skill_info` serves two kinds:
   build, layout, accessibility, forms), `port-artifact` (moving a Claude
   artifact to drobek).
 
-With every built-in module enabled `skill_info()` lists ten (plus `hello` in
-the dev stack). `@drobek/skills-check` compiles and typechecks every code
+With every built-in module enabled `skill_info()` lists twelve (plus `hello` and the
+opt-in `acmecrm` in the dev stack). `@drobek/skills-check` compiles and typechecks every code
 block of every skill against the current SDK types in `task check`, so a skill
 cannot drift from the code.
 

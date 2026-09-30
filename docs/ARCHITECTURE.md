@@ -54,7 +54,9 @@ This document is the map of how that works. The neighbours:
   on start (core journal `__drizzle_migrations_core`, one
   `__drizzle_migrations_mod_<name>` per module) and **refuses to start** on a
   placeholder secret, a weak `TLS_ASK_TOKEN`, a missing `APPS_DOMAIN` in
-  production or a module it cannot load.
+  production or a module it cannot load (one from `DROBEK_MODULES_DIR`, the
+  `modules_data` volume, whose files no longer match `modules.lock.json`
+  included).
 - **Feature logic lives in packages**, not in `apps/server`: the server wires
   them together. The main ones:
 
@@ -333,9 +335,14 @@ modules contribute values, checked at start and read with
 `contributions(slot)` (a host may `compose` its config schema, confirm
 rules and secrets from the contributions at start). Built in: `auth`
 (end-user sign-in by e-mailed code, plus the sign-in providers other
-modules contribute to its `auth.provider` slot), `email` (notifications to the app's owners), `forms`, `data`
+modules contribute to its `auth.provider` slot, and the `auth.signedIn`
+observers told of every sign-in), `email` (notifications to the app's owners), `forms`, `data`
 (collections with per-operation rules), `proxy` (external APIs with the
-secret injected server-side) and `files` (end-user uploads). The contract is
+secret injected server-side), `files` (end-user uploads), `sync` (a data
+collection filled from an external API on a schedule) and `oidc` (company
+sign-in with any OpenID Connect provider, an `auth.provider`). The examples
+`hello` (a dependency of `apps/server`) and the opt-in `acmecrm` (installed
+into `DROBEK_MODULES_DIR`) are loaded exactly as third-party modules are. The contract is
 [`MODULES.md`](./MODULES.md).
 
 - **Core resolves the caller** before a module sees the request: the

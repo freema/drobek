@@ -336,8 +336,9 @@ task dev          # or: docker compose up -d --build
 | redis 7 | 6391 | `redis-cli ping` |
 | mailpit (dev SMTP sink) | [8025](http://localhost:8025) | the login codes land here |
 
-The dev stack runs every built-in module plus the example
-`drobek-module-hello`. Sign in at [localhost:3041](http://localhost:3041)
+The dev stack runs every built-in module plus the examples
+`drobek-module-hello` and `drobek-module-acme-crm` (opt-in, installed into
+`./.modules` by `task dev`). Sign in at [localhost:3041](http://localhost:3041)
 (the code is in Mailpit), then point your agent at
 `http://localhost:3041/mcp`.
 
@@ -463,7 +464,8 @@ it under the name module code imports, `@drobek/modules`
 [`docs/MODULES.md` → Writing a module](./docs/MODULES.md#writing-a-module)
 walks through the contract, publishing and installing;
 [`examples/drobek-module-hello`](./examples/drobek-module-hello) is a working
-one, and [Published modules](./docs/MODULES.md#published-modules) lists the
+one, [`examples/drobek-module-acme-crm`](./examples/drobek-module-acme-crm)
+an opt-in one installed without an image, and [Published modules](./docs/MODULES.md#published-modules) lists the
 modules others can install.
 
 ## Contributing

@@ -3,8 +3,11 @@
 # (M0-08) — what CI runs, reproducible locally with `task e2e:image`:
 #
 #   1. render the Caddyfile with the image's own caddy-config CLI (tls internal)
-#   2. docker-compose.e2e.yaml up from that image, fresh volumes: postgres,
-#      redis, mailpit, proxy-echo, drobek (migrates itself on start), caddy
+#   2. pack examples/drobek-module-acme-crm and install it into the fresh
+#      modules_data volume with scripts/selfhost-module.sh (task
+#      selfhost:module:add); docker-compose.e2e.yaml up from that image:
+#      postgres, redis, mailpit, proxy-echo, drobek (migrates itself on
+#      start), caddy
 #   3. wait for /healthz through Caddy, trust Caddy's local root CA for Node
 #   4. playwright test --grep "@smoke|@local" with the guarded TRUNCATE
 #      (DATABASE_URL on 127.0.0.1 — inside the global-setup allow-list)
@@ -13,8 +16,10 @@
 # Usage: DROBEK_IMAGE=ghcr.io/freema/drobek:<tag> scripts/e2e-image.sh [playwright args…]
 # Extra args replace the default --grep (e.g. `tests/mcp-loop.spec.ts`).
 #
-# Secrets (DROBEK_MASTER_KEY, TLS_ASK_TOKEN) are generated here per run and
-# exported to docker compose only; they are never printed.
+# Secrets (DROBEK_MASTER_KEY, TLS_ASK_TOKEN, LIMITS_PROVIDER_SECRET) are
+# generated here per run and exported to docker compose only (the module
+# installer reads them from a 0600 file in a temp dir removed at exit); they
+# are never printed.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -30,14 +35,17 @@ export E2E_MAILPIT_PORT="${E2E_MAILPIT_PORT:-8035}"
 
 DROBEK_MASTER_KEY="$(openssl rand -hex 32)"
 TLS_ASK_TOKEN="$(openssl rand -hex 32)"
-export DROBEK_MASTER_KEY TLS_ASK_TOKEN
+LIMITS_PROVIDER_SECRET="$(openssl rand -hex 32)"
+export DROBEK_MASTER_KEY TLS_ASK_TOKEN LIMITS_PROVIDER_SECRET
 
 WEB="https://localhost:${E2E_TLS_PORT}"
 APPS_DOMAIN="apps.localhost:${E2E_TLS_PORT}"
 CA="$ROOT/.caddy/e2e-root.crt"
+WORK="$(mktemp -d)"
 
 teardown() {
   local code=$?
+  rm -rf "$WORK"
   if [ "$code" -ne 0 ]; then
     echo "── e2e-image failed (exit $code) — last drobek + caddy logs ──" >&2
     docker compose logs --no-color --tail 150 drobek caddy >&2 || true
@@ -57,8 +65,17 @@ docker run --rm \
   -e PUBLIC_APP_URL="$WEB" -e APPS_DOMAIN="$APPS_DOMAIN" -e TLS_INTERNAL=1 \
   "$DROBEK_IMAGE" node node_modules/@drobek/core/dist/cli/caddy-config.js > .caddy/Caddyfile.e2e
 
-# 2. A fresh stack from the image (a clean DB → every migration runs on boot).
+# 2. A fresh stack from the image (a clean DB → every migration runs on boot),
+#    with the external example module installed the way an operator installs
+#    one: packed, then `task selfhost:module:add` over this stack's
+#    modules_data volume (DROBEK_MODULES in docker-compose.e2e.yaml lists it).
 docker compose down -v --remove-orphans >/dev/null 2>&1 || true
+pnpm --filter drobek-module-acme-crm pack --pack-destination "$WORK" >/dev/null
+MODULE_TGZ="$(ls "$WORK"/drobek-module-acme-crm-*.tgz)"
+MODULE_ENV="$WORK/module.env"
+(umask 077 && printf 'DROBEK_IMAGE=%s\nDROBEK_MASTER_KEY=%s\nTLS_ASK_TOKEN=%s\nLIMITS_PROVIDER_SECRET=%s\n' "$DROBEK_IMAGE" "$DROBEK_MASTER_KEY" "$TLS_ASK_TOKEN" "$LIMITS_PROVIDER_SECRET" > "$MODULE_ENV")
+export E2E_MODULE_REINSTALL="ENV_FILE='$MODULE_ENV' SELFHOST_COMPOSE_FILE='$COMPOSE_FILE' ./scripts/selfhost-module.sh add '$MODULE_TGZ'"
+sh -c "$E2E_MODULE_REINSTALL"
 docker compose up -d --wait --wait-timeout 300
 
 # 3. Caddy's local root CA → Node's trust store for this run only.

@@ -70,6 +70,8 @@ services:
       # NSO-297: upstreams may only use ports 80/443 — the proxy e2e registers
       # `http://proxy-echo` (port 80); 8099 stays for the CIMD mock + healthcheck.
       EXTRA_PORTS: '80'
+      # NSO-352: the fake limits provider checks drobek's signature with it.
+      LIMITS_PROVIDER_SECRET: ${LIMITS_PROVIDER_SECRET:-dev-only-limits-provider-secret-0123456789abcdef}
     volumes:
       - .:/repo
     healthcheck:
@@ -182,8 +184,9 @@ services:
       OAUTH_CIMD_DEV_ORIGINS: ${OAUTH_CIMD_DEV_ORIGINS:-http://proxy-echo:8099}
       # NSO-351: DEV/TEST ONLY — the oidc module may reach the mock IdP
       # (tests-e2e/mock-oidc.mjs / `task mock:oidc`, host port 3050) over http
-      # from a private address. Ignored when NODE_ENV=production.
-      AUTH_OIDC_DEV_ORIGINS: ${AUTH_OIDC_DEV_ORIGINS:-http://host.docker.internal:3050}
+      # from a private address; the second origin is its authorization endpoint,
+      # which the browser on the host opens. Ignored when NODE_ENV=production.
+      AUTH_OIDC_DEV_ORIGINS: ${AUTH_OIDC_DEV_ORIGINS:-http://host.docker.internal:3050,http://localhost:3050}
       # M1-01 (NSO-287): platform modules. The dev stack runs the example
       # module `hello` (examples/drobek-module-hello — a dependency of
       # apps/server, loaded as the package `drobek-module-hello`). Its wave
@@ -198,7 +201,7 @@ services:
       # M1-06 (NSO-297): the built-in `proxy` (per-app upstream assignment;
       # PROXY_CALLS_PER_MIN keeps its default 60 — the e2e trips the 61st call).
       # M1-05 (NSO-296): the built-in `files` (uploads on the files_data volume).
-      DROBEK_MODULES: ${DROBEK_MODULES:-hello,auth,email,forms,data,proxy,files,sync,oidc}
+      DROBEK_MODULES: ${DROBEK_MODULES:-hello,auth,email,forms,data,proxy,files,sync,oidc,drobek-module-acme-crm}
       # NSO-345: the operator's installed modules (the ./.modules bind below).
       DROBEK_MODULES_DIR: ${DROBEK_MODULES_DIR:-/data/modules}
       DROBEK_MODULES_UNLOCKED: ${DROBEK_MODULES_UNLOCKED:-}
@@ -233,8 +236,10 @@ services:
       PUBLISH_NOTIFY: ${PUBLISH_NOTIFY:-off}
       # NSO-342: the footer's GitHub star count (empty = on; `off` = no call).
       DASHBOARD_GITHUB_STARS: ${DASHBOARD_GITHUB_STARS:-}
-      LIMITS_PROVIDER_URL: ${LIMITS_PROVIDER_URL:-}
-      LIMITS_PROVIDER_SECRET: ${LIMITS_PROVIDER_SECRET:-}
+      # NSO-352: the fake limits provider on proxy-echo (tests-e2e/proxy-echo.mjs):
+      # `{}` (the env defaults) unless an e2e wrote a plan for a workspace.
+      LIMITS_PROVIDER_URL: ${LIMITS_PROVIDER_URL:-http://proxy-echo:8099}
+      LIMITS_PROVIDER_SECRET: ${LIMITS_PROVIDER_SECRET:-dev-only-limits-provider-secret-0123456789abcdef}
       # M3-01 (NSO-292): custom domains. DEV/TEST ONLY — DOMAINS_DNS_MOCK=redis
       # answers the verification lookups from Redis keys
       # `drobek:dns-mock:<txt|cname|a|aaaa>:<name>` (JSON string arrays) that the
@@ -277,6 +282,7 @@ services:
       - /repo/packages/tenancy/node_modules
       - /repo/tests-e2e/node_modules
       - /repo/examples/drobek-module-hello/node_modules
+      - /repo/examples/drobek-module-acme-crm/node_modules
       - /repo/packages/create-drobek-module/node_modules
       - /repo/modules/auth/node_modules
       - /repo/modules/email/node_modules

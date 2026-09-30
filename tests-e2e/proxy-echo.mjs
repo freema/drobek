@@ -15,10 +15,13 @@
 // drobek network, hostname `proxy-echo`. Because a Docker container resolves to a
 // PRIVATE IP, the SSRF guard would block it — so the web service allow-lists this
 // exact hostname via PROXY_ALLOWED_HOSTS (empty in prod → fully strict).
+import { createHmac } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import http from 'node:http';
 import { gzipSync } from 'node:zlib';
 
 const PORT = Number(process.env.PORT || 8099);
+const LIMITS_SECRET = process.env.LIMITS_PROVIDER_SECRET || '';
 const EXTRA_PORTS = String(process.env.EXTRA_PORTS || '')
   .split(/[,\s]+/)
   .filter((p) => /^\d+$/.test(p))
@@ -107,6 +110,30 @@ const server = http.createServer((req, res) => {
   if (url.pathname === '/sync/fail') {
     res.writeHead(500, { 'content-type': 'application/json' });
     res.end('{"error":"feed down"}');
+    return;
+  }
+
+  // NSO-352: the fake limits provider (LIMITS_PROVIDER_URL=http://proxy-echo:8099
+  // in both composes). A signed GET /limits/<workspace_id> answers the plan the
+  // e2e wrote to tests-e2e/.limits-provider/<workspace_id>.json, else `{}` (the
+  // env defaults); a bad signature is a 401.
+  const limits = /^\/limits\/([A-Za-z0-9_-]+)$/.exec(url.pathname);
+  if (limits && req.method === 'GET') {
+    const ts = String(req.headers['x-drobek-timestamp'] ?? '');
+    const want = `v1=${createHmac('sha256', LIMITS_SECRET).update(`${ts}.GET.${url.pathname}`).digest('hex')}`;
+    if (!LIMITS_SECRET || req.headers['x-drobek-signature'] !== want) {
+      res.writeHead(401, { 'content-type': 'application/json' });
+      res.end('{"error":"bad signature"}');
+      return;
+    }
+    let plan = {};
+    try {
+      plan = JSON.parse(readFileSync(new URL(`./.limits-provider/${limits[1]}.json`, import.meta.url), 'utf8'));
+    } catch {
+      // no plan for this workspace: the env defaults
+    }
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ limits: plan }));
     return;
   }
 

@@ -54,3 +54,7 @@ tests-eval/results/*.jsonl
 /.modules/
 # npm packages for module authors (NSO-349): node scripts/npm-packages.mjs stage|pack
 /dist-npm/
+# go-task fingerprints (task module:example)
+/.task/
+# the fake limits provider plans the e2e writes (tests-e2e/proxy-echo.mjs)
+/tests-e2e/.limits-provider/

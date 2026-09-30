@@ -4,7 +4,8 @@
  * image. The oidc module reaches it like any IdP: an app's
  * `providers.oidc.issuer` (or AUTH_OIDC_ISSUER) names it, and the dev compose
  * lets the module call it over http from the container
- * (AUTH_OIDC_DEV_ORIGINS=http://host.docker.internal:3050, ignored in
+ * (AUTH_OIDC_DEV_ORIGINS=http://host.docker.internal:3050 for discovery, token
+ * and keys, http://localhost:3050 for the authorization endpoint; ignored in
  * production).
  *
  * Endpoints (dependency-free node:http + node:crypto):

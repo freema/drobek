@@ -20,10 +20,9 @@ import { callTool, mcpClient, type McpClient } from './helpers/mcp';
  *  - GET complete with a bogus handoff code → 400 page, no session.
  *
  * The full begin → IdP → callback → handoff → complete flow against the mock
- * IdP (tests-e2e/mock-oidc.mjs) is the `test.fixme` below, for EXT-09 to
- * finish. The unit suite
- * (modules/auth/src/providers.test.ts) drives that flow with a fixture
- * provider and no network.
+ * IdP (tests-e2e/mock-oidc.mjs) is auth-oidc.spec.ts (dev stack only). The
+ * unit suite (modules/auth/src/providers.test.ts) drives that flow with a
+ * fixture provider and no network.
  */
 
 interface Created {
@@ -102,12 +101,4 @@ test.describe('auth sign-in providers (NSO-348) @local', () => {
     expect(r.headers['content-type']).toContain('text/html');
     expect(r.headers['set-cookie']).toBeUndefined();
   });
-
-  // EXT-09: run with a provider module in DROBEK_MODULES (EXT-07's OIDC
-  // provider against a mock IdP): <LoginGate> shows "Continue with <label>",
-  // the browser goes begin → IdP → /__drobek/auth/callback/<id> → complete,
-  // lands on return_to signed in (host-only cookie), and a replayed complete
-  // URL, the code on the production host and a link opened in another browser
-  // context (no flow cookie) all answer the 400 page.
-  test.fixme('full provider sign-in through a real IdP redirect (needs a provider module in the stack — EXT-09)', async () => {});
 });

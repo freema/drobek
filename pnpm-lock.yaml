@@ -187,6 +187,27 @@ importers:
         specifier: ^3.0.7
         version: 3.2.6(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.1)
 
+  examples/drobek-module-acme-crm:
+    devDependencies:
+      '@drobek/modules':
+        specifier: workspace:*
+        version: link:../../packages/modules
+      '@electric-sql/pglite':
+        specifier: ^0.2.17
+        version: 0.2.17
+      '@types/node':
+        specifier: ^22
+        version: 22.20.0
+      drizzle-orm:
+        specifier: ^0.45.3
+        version: 0.45.3(@electric-sql/pglite@0.2.17)(@types/pg@8.20.0)(pg@8.22.0)(postgres@3.4.9)
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.7
+        version: 3.2.6(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.1)
+
   examples/drobek-module-hello:
     dependencies:
       '@drobek/modules':

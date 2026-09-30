@@ -232,11 +232,13 @@ modules); an app just gets `module_not_enabled` from their calls. Per app a
 module is "used" through its configuration, as for every module — there is
 no per-app switch.
 
-The dev compose enables the example module and every built-in module
-(`DROBEK_MODULES=hello,auth,email,forms,data,proxy,files,sync,oidc`, `HELLO_WAVES_PER_MINUTE=5`,
+The dev compose enables both example modules and every built-in module
+(`DROBEK_MODULES=hello,auth,email,forms,data,proxy,files,sync,oidc,drobek-module-acme-crm`,
+the last one installed into `./.modules` by `task dev`, `HELLO_WAVES_PER_MINUTE=5`,
 relaxed `AUTH_*` limits because every local request shares one client IP,
 `DATA_MAX_DOCS_PER_APP=5` so the quota e2e trips quickly); so does the e2e
-image compose.
+image compose, whose flow installs `drobek-module-acme-crm` with
+`selfhost:module:add`.
 
 ## Installing an external module
 
@@ -1256,7 +1258,8 @@ drobek: text files unchanged with `write_files`, every binary through
 `create_asset_upload` at the same path, what the app CSP changes, no
 `window.claude.*`). With every built-in module enabled `skill_info()` lists
 12 skills: `auth, email, forms, data, proxy, files, sync, oidc, debug,
-port-artifact, start, ui` (plus `hello` in the dev stack).
+port-artifact, start, ui` (plus `hello` and the opt-in `acmecrm` in the dev
+stack).
 
 ### The skill format (NSO-308)
 
@@ -1542,6 +1545,7 @@ its license and where its source is.
 | Package | What it does | Contract | Source |
 | --- | --- | --- | --- |
 | `drobek-module-hello` | the scaffold's output plus the slot demo — a starting point, not for production; not on npm, install it from a tarball `npm pack` writes in the example | `^1.1` | [`examples/drobek-module-hello`](../examples/drobek-module-hello) |
+| `drobek-module-acme-crm` | an opt-in example (module `acmecrm`): contacts per app, one written on every end-user sign-in through the `auth.signedIn` slot; not on npm, install its `npm pack` tarball with `selfhost:module:add` | `^1.2` | [`examples/drobek-module-acme-crm`](../examples/drobek-module-acme-crm) |
 | `drobek-module-counter` | named counters per app (page views, likes, downloads): `drobek.counter.hit(key)` / `get(key)` / `list()`, per-IP and per-app hit limits, `maxKeys`; on npm as `drobek-module-counter` (`task selfhost:module:add -- drobek-module-counter@<version>`), each version also as a tarball on its [GitHub release](https://github.com/freema/drobek-module-counter/releases) | `^1.1` | [`freema/drobek-module-counter`](https://github.com/freema/drobek-module-counter) |
 
 ## End-user sessions (core)
@@ -2313,3 +2317,27 @@ drobek.hello.ping().then((h) => (document.body.textContent = h.message));
 ```
 
 and open the `preview_url`.
+
+## The example: `drobek-module-acme-crm`
+
+[`examples/drobek-module-acme-crm`](../examples/drobek-module-acme-crm) is the
+scaffold's output for `acme-crm` turned into an opt-in module `acmecrm`
+(contract `^1.2`, requires `auth`). It is never a dependency of
+`apps/server`: `task dev` packs it and installs it into `./.modules` with
+`task module:add`, the e2e image flow installs it with
+`selfhost:module:add`, and `DROBEK_MODULES` names it by its package,
+`drobek-module-acme-crm`, so `/healthz` lists it with `source: dir`.
+
+- `GET /__drobek/v1/acmecrm` → `{ contacts, upstream }`, `POST` `{ email, name?, fields? }`
+  → the new contact; both need a signed-in end user (rule `user`);
+- an `auth.signedIn` contribution adds every end user who signs in
+  (`source: "sign-in"`);
+- config `{ tags, fields }` (a list and a record, so the dashboard's generic
+  form shows both kinds of field);
+- the own error `crm_duplicate` (409, `details.email`), the limit
+  `ACMECRM_CONTACTS_PER_APP` (default 1000), the optional secret
+  `ACMECRM_API_KEY` (`upstream: true` once the owner set it);
+- table `mod_acmecrm_contacts` under the journal
+  `__drizzle_migrations_mod_acmecrm`;
+- off for every workspace until a super-admin enables it, or the limits
+  provider's plan says `MODULE_ENABLED_ACMECRM=1`.
