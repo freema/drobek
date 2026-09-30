@@ -1,6 +1,6 @@
 /**
  * Access + refresh token issue, refresh ROTATION with reuse detection, and
- * token validation (U5, R6 security sleeper). Opaque tokens, SHA-256 at rest.
+ * token validation. Opaque tokens, SHA-256 at rest.
  *
  * Rotation contract: every refresh use mints a NEW access+refresh pair and
  * marks the presented refresh used (rotated_to = successor). Presenting an

@@ -1,5 +1,5 @@
 /**
- * App asset paths and types (NSO-358). PURE.
+ * App asset paths and types. PURE.
  *
  * An asset lives in the SAME URL space as the app's files: the asset
  * `img/s1.jpg` is served at `/img/s1.jpg` by its app (the preview at once,

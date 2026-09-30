@@ -5,7 +5,7 @@ import { FULL_SCOPE, callTool, mcpClient, type McpClient } from './helpers/mcp';
 import { personalWorkspaceOf, withDb } from './helpers/seed';
 
 /**
- * NSO-366: who may publish, on the local stack.
+ * Who may publish, on the local stack.
  *
  *  - /admin/publishing is super-admin only (403 for anyone else);
  *  - list_apps / get_app carry `can_publish` + `publishing`;
@@ -53,7 +53,7 @@ async function requestedAt(workspaceId: string): Promise<Date | null> {
 
 test.describe.configure({ mode: 'serial' });
 
-test.describe('publish approval and blocking (NSO-366) @local', () => {
+test.describe('publish approval and blocking @local', () => {
   let owner: McpClient;
   let boss: McpClient | null = null;
   let admin: BrowserContext | null = null;
@@ -144,7 +144,7 @@ test.describe('publish approval and blocking (NSO-366) @local', () => {
     const row = ap.locator(`[data-testid="publishing-workspace"][data-slug="${ws.slug}"]`);
     await expect(row).toHaveAttribute('data-publishing', 'default');
     await row.getByTestId('publishing-block').click();
-    // NSO-371: Block opens a confirm panel naming the workspace; only its button blocks.
+    // Block opens a confirm panel naming the workspace; only its button blocks.
     await expect(ap.getByTestId('block-confirm')).toHaveAttribute('data-slug', ws.slug);
     await ap.getByTestId('block-confirm-submit').click();
     await expect(ap.getByTestId('publishing-result')).toHaveText(

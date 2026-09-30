@@ -1,5 +1,5 @@
 /**
- * "A scheduled import stopped" (NSO-392) — a self-contained banner any app
+ * "A scheduled import stopped" — a self-contained banner any app
  * page can render (the app page, the Modules tab, the module's page). Feed it
  * what `loadSyncBanner()` (sync-banner.server.ts) returns; renders nothing
  * when no source is paused after failed runs.

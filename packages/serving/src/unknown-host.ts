@@ -1,5 +1,5 @@
 /**
- * Per-IP limit on "unknown app" answers of the apps origin (NSO-315).
+ * Per-IP limit on "unknown app" answers of the apps origin.
  *
  * Wildcard DNS makes every label under APPS_DOMAIN a host, so a client can ask
  * for endless random slugs; each is a cache miss and one DB lookup. The
@@ -14,7 +14,7 @@
  *    serve cache does not already know as live apps are answered 429 before
  *    any lookup — the DB is not touched at all.
  *
- * NSO-309: a request whose client IP is not recognised (null) is NEVER
+ * A request whose client IP is not recognised (null) is NEVER
  * counted — it would put every such client into one shared bucket and let one
  * of them lock the rest out. The negative cache still protects the DB there.
  * The counter failing (Redis down) fails open: the plain 404 is answered.

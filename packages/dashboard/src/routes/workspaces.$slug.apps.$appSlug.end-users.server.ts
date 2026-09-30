@@ -1,6 +1,6 @@
 /**
  * GET/POST /workspaces/:slug/apps/:appSlug/end-users — server half of the
- * Users tab (M2-03): the people who signed in to the app, through the auth
+ * Users tab: the people who signed in to the app, through the auth
  * module's `endUsers` authority (never its tables directly).
  *
  * GET (viewer+): one page (50, newest first) with an address search: email,
@@ -43,7 +43,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const base = {
     workspace: { slug: access.workspace.slug, name: access.workspace.name },
     appSlug: app.slug,
-    /** NSO-342: the app header + tabs on every app sub-page. */
+    /** The app header + tabs on every app sub-page. */
     header: await appHeaderFor(access, app.slug),
     q,
     canManage: access.effectiveRole !== 'viewer',

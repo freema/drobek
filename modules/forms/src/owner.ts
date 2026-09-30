@@ -1,6 +1,6 @@
 /**
  * The OWNER's view of the stored submissions (the `submissions` authority —
- * the dashboard Forms tab, M2-03). Core calls it only after it authorized a
+ * the dashboard Forms tab). Core calls it only after it authorized a
  * drobek account for the app, so it bypasses the per-form `admin` rule of
  * the REST routes; every query is still scoped to the ONE app of its view.
  *

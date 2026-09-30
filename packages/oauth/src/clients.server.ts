@@ -1,5 +1,5 @@
 /**
- * OAuth client store (U5, M0-04). Public PKCE clients only — no client_secret
+ * OAuth client store. Public PKCE clients only — no client_secret
  * is issued or stored (token_endpoint_auth_method = "none"). Two sources:
  *
  *  - `dcr`  — Dynamic Client Registration (RFC 7591), random hex client_id.
@@ -97,7 +97,7 @@ export async function markClientUsed(clientId: string): Promise<void> {
     .where(eq(oauthClients.clientId, clientId));
 }
 
-/** DCR clients that never received a grant (the PHY-76 #7 cap counts these). */
+/** DCR clients that never received a grant (the DCR abuse cap counts these). */
 export async function countUnusedDcrClients(): Promise<number> {
   const [row] = await getDb()
     .select({ n: count() })

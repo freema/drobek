@@ -46,18 +46,18 @@ export interface CompileOptions {
   /**
    * Inline source map at the end of each JS/CSS bundle. Default true — every
    * version is stored with it; the production hosts split it into a separate
-   * `<file>.map` at serve time (NSO-381, @drobek/serving).
+   * `<file>.map` at serve time (@drobek/serving).
    */
   sourcemap?: boolean;
   minify?: boolean;
   /**
-   * What the bare `drobek` import becomes (M1-01): the server's versioned SDK
+   * What the bare `drobek` import becomes: the server's versioned SDK
    * URL, e.g. `/__drobek/sdk.js?v=3f2a…` (immutable caching). Default
    * `SDK_URL` (unversioned).
    */
   sdkUrl?: string;
   /**
-   * Platform sources an app may import as `drobek/<module>` (M1-02): the
+   * Platform sources an app may import as `drobek/<module>`: the
    * specifier → the source text of a module's `sdk.inline` (e.g. the auth
    * module's `<LoginGate>`). They are compiled INTO the app bundle: their bare
    * imports resolve through the app's `drobek.json` (so a component uses the
@@ -66,7 +66,7 @@ export interface CompileOptions {
    */
   sdkSources?: Record<string, string>;
   /**
-   * The browser error beacon script (M1-07), e.g. `/__drobek/beacon.js?v=…`:
+   * The browser error beacon script, e.g. `/__drobek/beacon.js?v=…`:
    * when set, every JS entry starts with `import "<beaconUrl>";` so the app
    * reports its uncaught errors — unless the app's drobek.json has
    * `"beacon": false`. Unset = nothing is added.

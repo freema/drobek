@@ -6,7 +6,7 @@ import { FULL_SCOPE, callTool, mcpClient, type McpClient } from './helpers/mcp';
 import { addMembership, personalWorkspaceOf, userIdByEmail, withDb } from './helpers/seed';
 
 /**
- * NSO-340: the public gallery end to end on the local stack (GALLERY_ENABLED
+ * The public gallery end to end on the local stack (GALLERY_ENABLED
  * is on in docker-compose.yml and docker-compose.e2e.yaml).
  *
  *  - dashboard: the owner lists a published app on its Overview → it is in
@@ -111,7 +111,7 @@ async function saveGallery(page: Page, opts: { listed: boolean; description?: st
 
 test.describe.configure({ mode: 'serial' });
 
-test.describe('gallery: list from the dashboard and over MCP, public API, admin hide (NSO-340) @local', () => {
+test.describe('gallery: list from the dashboard and over MCP, public API, admin hide @local', () => {
   let owner: McpClient;
   let app: Created;
   let overview: string;
@@ -149,7 +149,7 @@ test.describe('gallery: list from the dashboard and over MCP, public API, admin 
     await expect(page.getByTestId('gallery-status')).toHaveAttribute('data-state', 'visible');
     expect(await listedFlag(app.app_id)).toEqual({ gallery_listed: true, gallery_description: description });
 
-    // NSO-371: Overview and Settings name each other — the listing lives on
+    // Overview and Settings name each other — the listing lives on
     // Overview, visibility and embedding on Settings.
     await page.getByTestId('gallery-settings-link').click();
     await page.waitForURL(new RegExp(`${overview}/settings$`));

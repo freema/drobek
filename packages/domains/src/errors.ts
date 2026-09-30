@@ -1,4 +1,4 @@
-/** Expected, caller-safe failures of the custom-domain operations (M3-01). */
+/** Expected, caller-safe failures of the custom-domain operations. */
 export type DomainsErrorCode =
   | 'invalid_hostname'
   | 'hostname_not_allowed'

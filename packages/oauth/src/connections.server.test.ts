@@ -28,7 +28,7 @@ async function user(email: string): Promise<string> {
   return u.id;
 }
 
-describe('OAuth connections (M2-04)', () => {
+describe('OAuth connections', () => {
   it('lists the clients holding a live grant for the user, with name, source, scope and last use', async () => {
     const alice = await user('alice-conn@example.test');
     const bob = await user('bob-conn@example.test');

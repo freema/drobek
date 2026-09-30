@@ -94,7 +94,7 @@ describe('schemaPropertyNames', () => {
   });
 });
 
-describe('compiled validators are cached by content (NSO-322 H1)', () => {
+describe('compiled validators are cached by content', () => {
   it('the same schema JSON in fresh objects compiles once; key order does not matter', () => {
     const before = schemaCompileStats.compiles;
     const make = () => ({ type: 'object', properties: { h1cache: { type: 'string' } }, required: ['h1cache'] });

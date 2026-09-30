@@ -1,5 +1,5 @@
 /**
- * The agent-docs renderers (M1b Agent DX, PHY-124) — PURE, react-free string
+ * The agent-docs renderers — PURE, react-free string
  * builders the web routes (/llms.txt, /llms-full.txt, /build-with-your-agent)
  * and the MCP docs resources render from, so every surface stays in sync with
  * the TOOL_DOCS manifest, the error catalogue, and the limits.
@@ -28,7 +28,7 @@ import {
 export const SKILL_INSTALL_COMMAND = 'cp -r skills/drobek ~/.claude/skills/drobek';
 
 /**
- * The agent guide in the source repository (NSO-298): the tools with their
+ * The agent guide in the source repository: the tools with their
  * scopes, the briefing, the skills and these surfaces, in one document.
  * Linked from /llms.txt when DOCS_URL is unset.
  */

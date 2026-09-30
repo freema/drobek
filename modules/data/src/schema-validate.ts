@@ -20,10 +20,9 @@ function makeAjv(): InstanceType<typeof Ajv> {
 }
 
 /**
- * Compiled validators by the schema's CONTENT (sha256 of its stable JSON) —
- * NSO-322 H1. The config is re-parsed into fresh objects, so an identity-keyed
- * cache never hit and every parse recompiled every collection's schema (~2 ms
- * each). A failed compile is cached too (as its message).
+ * Compiled validators by the schema's CONTENT (sha256 of its stable JSON): the
+ * config is re-parsed into fresh objects, so an identity-keyed cache would
+ * never hit. A failed compile is cached too (as its message).
  */
 const SCHEMA_CACHE_ENTRIES = 500;
 const cache = new Lru<ValidateFunction | { error: string }>(SCHEMA_CACHE_ENTRIES);

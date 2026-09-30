@@ -1,5 +1,5 @@
 /**
- * The skill format (NSO-308, docs/MODULES.md "Skills"): written for the AGENT
+ * The skill format (docs/MODULES.md "Skills"): written for the AGENT
  * only, one format for every skill —
  *
  *   # <name> — <title>

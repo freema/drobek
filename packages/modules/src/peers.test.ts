@@ -1,5 +1,5 @@
 /**
- * NSO-345: host-provided peers, end to end in a plain `node` process (no
+ * Host-provided peers, end to end in a plain `node` process (no
  * vitest module runner in between): a module in DROBEK_MODULES_DIR that
  * carries its OWN copies of `@drobek/modules` and `zod` gets the server's
  * instances — the same ModuleError class, the same zod — while a file

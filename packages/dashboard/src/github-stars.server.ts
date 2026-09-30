@@ -1,5 +1,5 @@
 /**
- * The GitHub star count in the dashboard footer (NSO-342). Server-only.
+ * The GitHub star count in the dashboard footer. Server-only.
  *
  * `GET https://api.github.com/repos/<owner>/<repo>` → `stargazers_count`,
  * unauthenticated, with a 3 s timeout. The value is kept in memory for an

@@ -1,5 +1,5 @@
 /**
- * GET/POST /workspaces/:slug/upstreams — server half (PHY-59). The workspace-level
+ * GET/POST /workspaces/:slug/upstreams — server half. The workspace-level
  * BFF proxy config: list registered upstreams, register a new one, delete one.
  *
  * workspace-admin / super-admin ONLY (editor/viewer → 403, non-member → 404) via
@@ -7,7 +7,7 @@
  * accepted on create, encrypted by @drobek/proxy, and NEVER read back: the loader
  * returns only `hasSecret`, never the value.
  *
- * NSO-372: register_upstream over MCP links an upstream that needs a key here
+ * register_upstream over MCP links an upstream that needs a key here
  * with its fields in the query (`name`, `baseUrl`, `methods`, `paths`,
  * `authType`, `header`) — the form starts filled in; a secret is never read
  * from the URL.
@@ -64,12 +64,12 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   });
   return {
     workspace: { slug: access.workspace.slug, name: access.workspace.name },
-    /** NSO-342: the shared workspace chrome (breadcrumb, badges, tabs). */
+    /** The shared workspace chrome (breadcrumb, badges, tabs). */
     nav: await workspaceNav(access),
     upstreams,
     prefill: prefillOf(request.url),
     role: access.effectiveRole,
-    // PHY-76 #8: the destination ports a base_url may use (PROXY_ALLOWED_PORTS, default 80/443).
+    // The destination ports a base_url may use (PROXY_ALLOWED_PORTS, default 80/443).
     allowedPorts: [...proxyAllowedPorts()].sort((a, b) => a - b),
   };
 }
@@ -113,7 +113,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   } catch (err) {
     if (err instanceof ProxyError) {
       // `code` is the stable reason (e.g. invalid_request for a base_url port
-      // outside 80/443 — PHY-76 #8); the message is secret-free.
+      // outside 80/443); the message is secret-free.
       return data({ error: err.message, code: err.code }, { status: proxyErrorStatus(err.code) });
     }
     throw err;

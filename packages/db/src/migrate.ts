@@ -29,7 +29,7 @@ export async function runCoreMigrations(databaseUrl = process.env.DATABASE_URL):
 
 /**
  * Apply ANOTHER drizzle migrations folder with its OWN journal table in the
- * `drizzle` schema (M1-01: a platform module's tables, journal
+ * `drizzle` schema (a platform module's tables, journal
  * `__drizzle_migrations_mod_<name>`), exactly like the core migrations.
  */
 export async function runJournalMigrations(opts: {

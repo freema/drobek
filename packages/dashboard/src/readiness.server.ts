@@ -1,6 +1,6 @@
 /**
  * The publish readiness report of an app's newest version for the app page
- * (NSO-384) — the same report write_files and publish give the agent. Best
+ * — the same report write_files and publish give the agent. Best
  * effort: a failure shows "could not be loaded", never a 500, and never stops
  * a publish.
  */

@@ -1,5 +1,5 @@
 /**
- * create_app starter templates (M0-05). Version 1 of every new app is one of
+ * create_app starter templates. Version 1 of every new app is one of
  * these, compiled like any write — so the preview works right away.
  *   react-ts — index.html, src/main.tsx, src/styles.css, drobek.json (pinned
  *              React import map from @drobek/agent-dx, one React on the page)

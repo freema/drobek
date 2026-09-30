@@ -1,5 +1,5 @@
 /**
- * The module-jobs scheduler (NSO-391): runs the `jobs` of the active modules
+ * The module-jobs scheduler: runs the `jobs` of the active modules
  * (contract 1.2) in the server process, next to the other background sweeps.
  *
  * Every MODULE_JOBS_TICK_MS the scheduler looks at each job — a `server`

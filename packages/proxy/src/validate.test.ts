@@ -125,7 +125,7 @@ describe('buildTargetUrl', () => {
   });
 });
 
-describe('backslashes never escape the upstream (NSO-322 R2)', () => {
+describe('backslashes never escape the upstream', () => {
   const codeOf = (fn: () => unknown): string | undefined => {
     try {
       fn();
@@ -171,7 +171,7 @@ describe('backslashes never escape the upstream (NSO-322 R2)', () => {
   });
 });
 
-describe('multiple percent-encoding never hides a traversal (NSO-326)', () => {
+describe('multiple percent-encoding never hides a traversal', () => {
   const codeOf = (fn: () => unknown): string | undefined => {
     try {
       fn();
@@ -225,7 +225,7 @@ describe('multiple percent-encoding never hides a traversal (NSO-326)', () => {
   });
 });
 
-describe('port allow-list (PHY-76 #8, NSO-297)', () => {
+describe('port allow-list', () => {
   const codeOf = (fn: () => unknown): string | undefined => {
     try {
       fn();

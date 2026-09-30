@@ -1,5 +1,5 @@
 /**
- * Shared server glue for the owner's module tabs of an app (M2-03): Forms
+ * Shared server glue for the owner's module tabs of an app: Forms
  * (submissions), Users (end users), Uploads (files) — and the owner audit.
  *
  * Every tab resolves the app INSIDE the caller's workspace (another

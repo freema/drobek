@@ -1,6 +1,6 @@
 /**
- * The count behind the app header's "N changes await confirmation" banner
- * (M2-02, NSO-291): every pending platform-module change of one app (active
+ * The count behind the app header's "N changes await confirmation" banner:
+ * every pending platform-module change of one app (active
  * modules only). Best effort — a failure hides the banner, it never breaks the
  * page that renders it.
  */

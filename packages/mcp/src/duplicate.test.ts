@@ -1,5 +1,5 @@
 /**
- * NSO-340 over a real MCP client on a real (PGlite) database: the author
+ * duplicate_app over a real MCP client on a real (PGlite) database: the author
  * opens a listed app to duplicates (set_gallery_listing `allow_duplicate`,
  * inside the listing's confirmation); another user's duplicate_app copies the
  * published files into their personal workspace, proposes the module

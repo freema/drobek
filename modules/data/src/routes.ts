@@ -12,8 +12,8 @@
  * A record is `{ _id, _owner, _created_at, _updated_at, …fields }`. The `_…`
  * fields are the server's: sent by a client they are dropped. `_owner` is the
  * signed-in creator (null for an anonymous create) and never changes; `owner`
- * rules compare it. A visitor who is not signed in never gets `_owner` back
- * (NSO-324): the opaque id would link the records of one user for anyone
+ * rules compare it. A visitor who is not signed in never gets `_owner` back:
+ * the opaque id would link the records of one user for anyone
  * reading a `public` collection.
  *
  * A write, in order: the collection's rule → the schema → the caller's own
@@ -158,7 +158,7 @@ export function registerRoutes(r: ModuleRouter<DataConfig>): void {
   });
 
   // Before `:collection/:id` — the first matching route wins.
-  // Streamed (NSO-323 M5): one keyset page and one ~64 KiB chunk in memory,
+  // Streamed: one keyset page and one ~64 KiB chunk in memory,
   // never the whole file. The header is pulled BEFORE the 200, so a bad
   // filter / sort still answers a clean 400; the audit (with the row count)
   // is written when the stream ends — `complete: false` when it was cut off.
@@ -216,7 +216,7 @@ export function registerRoutes(r: ModuleRouter<DataConfig>): void {
     };
     merged(row.doc ?? {}); // fail fast (422) before the write counts
     await writeAllowed(ctx, req.clientIp);
-    // Merged again onto the row as it is INSIDE the write lock — never the copy read above (NSO-322 M1).
+    // Merged again onto the row as it is INSIDE the write lock — never the copy read above.
     const updated = await patchRecord(ctx.db, { appId: ctx.app.id, collection: name, id: row.id, limits: dataQuotaFromLimits(await ctx.limits()), next: merged });
     if (!updated) throw new DataError('not_found', `No record "${row.id}" in "${name}".`);
     return forCaller(ctx, toRecord(updated));

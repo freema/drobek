@@ -1,5 +1,5 @@
 /**
- * The asset tools (NSO-358): create_asset_upload, list_assets, delete_asset.
+ * The asset tools: create_asset_upload, list_assets, delete_asset.
  *
  * write_files is text-only, and a 26 MB video must never pass through an LLM
  * as base64. So create_asset_upload hands out an UPLOAD URL instead: a
@@ -11,7 +11,7 @@
  * which sniffs, caps and stores them; the app serves them at `/<path>` —
  * the same path the page already uses (`<video src="film.mp4">`).
  *
- * NSO-362: an upload, a replacement or a delete changes the app's DRAFT
+ * An upload, a replacement or a delete changes the app's DRAFT
  * assets — the preview shows it at once, the production URL only after
  * `publish` (which needs the publish scope and the user's explicit request).
  * list_assets says per asset whether production already serves it.

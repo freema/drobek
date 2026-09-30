@@ -37,7 +37,7 @@ describe('normalizeSignalPath', () => {
   });
 });
 
-describe('recordFailingPath (NSO-380)', () => {
+describe('recordFailingPath', () => {
   const day = '2026-09-29';
 
   it('counts per status class, app and day, TTL = the logs retention + 1 day', async () => {

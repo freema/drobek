@@ -1,5 +1,5 @@
 /**
- * The browser error beacon (M1-07, NSO-290) — runs in the BROWSER on the app's
+ * The browser error beacon — runs in the BROWSER on the app's
  * own origin. The compiler adds `import "/__drobek/beacon.js?v=<hash>"` at the
  * top of every JS entry of an app (unless its drobek.json says
  * `"beacon": false`), so every app reports its uncaught errors and unhandled
@@ -10,7 +10,7 @@
  * same-origin, JSON `{ events: [{ type, message, stack, url, ua, ts }] }`,
  * ≤ 20 events and ≤ 8 KiB per POST (over-cap → 413). The server redacts
  * e-mails / tokens and truncates again — the client caps are only there so a
- * POST fits. The page `url` is only its origin + path (NSO-327): a query
+ * POST fits. The page `url` is only its origin + path: a query
  * string or fragment can carry one-time codes, tokens or PII the redaction
  * cannot recognise (`?code=123456`), so it never leaves the browser.
  *

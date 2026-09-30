@@ -68,7 +68,7 @@ describe('sanitizeEvent', () => {
     expect(s.url.includes('eyJhbGciOi.eyJzdWIiOiIx.SflKxwRJSMe')).toBe(false);
   });
 
-  it('keeps only origin + path of the page url: short codes in the query or fragment never reach storage (NSO-327)', () => {
+  it('keeps only origin + path of the page url: short codes in the query or fragment never reach storage', () => {
     const u = (url: unknown) => sanitizeEvent({ type: 'error', message: 'x', url }).url;
     expect(u('https://shop.apps.example/verify?code=123456&email=ann@example.com#otp=987654')).toBe('https://shop.apps.example/verify');
     expect(u('http://ann:secret@shop.apps.localhost:3041/a?x=1')).toBe('http://shop.apps.localhost:3041/a');

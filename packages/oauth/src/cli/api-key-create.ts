@@ -1,7 +1,7 @@
 /**
- * `task api-key:create` (M0-04) — create a personal API key for a user and
+ * `task api-key:create` — create a personal API key for a user and
  * print it ONCE. Dashboard management (list / revoke / last used) is the
- * M2-04 /me/api-keys page.
+ * /me/api-keys page.
  *
  *   node packages/oauth/dist/cli/api-key-create.js \
  *     --email you@example.com --name laptop --scopes read,write

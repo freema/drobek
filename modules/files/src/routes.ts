@@ -8,7 +8,7 @@
  *   DELETE /:id   → { id, deleted: true }                                                        (owner|admin)
  *
  * An upload, in order: the `upload` rule → the uploader's own rate limit
- * (the signed-in user, or the visitor's IP — NSO-324) → the per-app upload
+ * (the signed-in user, or the visitor's IP) → the per-app upload
  * rate limit →
  * the declared Content-Length and the app's quota (early refusals, nothing
  * read) → the file streams to a temp file while it is counted (past the

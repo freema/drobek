@@ -6,7 +6,7 @@ import {
   type ActivityCsvRow,
 } from './activity-csv.server.js';
 
-describe('activity CSV serialization (PHY-85; reuses PHY-121 csvLine)', () => {
+describe('activity CSV serialization (reuses csvLine)', () => {
   it('emits the fixed governance header', () => {
     expect(activityCsvHeaderLine()).toBe(
       'time,action,actor_kind,actor,subject_type,subject,summary'

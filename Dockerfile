@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 # ============================================================================
-# drobek — the ONE image (M0-01): dashboard + OAuth AS + MCP RS in one Node
+# drobek — the ONE image: dashboard + OAuth AS + MCP RS in one Node
 # process (apps/server). Published as ghcr.io/freema/drobek.
 #
 #   dev     — compose dev target (repo bind-mounted over /repo, Vite HMR)
@@ -36,7 +36,7 @@ COPY . .
 RUN pnpm install --offline --frozen-lockfile
 RUN pnpm build:packages && pnpm --filter server build
 RUN pnpm --filter server deploy --prod --legacy /out \
- # typescript: the background type check of app versions (NSO-388) loads only
+ # typescript: the background type check of app versions loads only
  # lib/typescript.js and the lib.*.d.ts files — tsc/tsserver and the message
  # translations go. Workspace `src/` trees are types-only.
  && find /out/node_modules/.pnpm/typescript@*/node_modules/typescript/lib -mindepth 1 -maxdepth 1 \
@@ -51,9 +51,7 @@ RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack 
     /usr/local/bin/yarn /usr/local/bin/yarnpkg
 ENV NODE_ENV=production \
     PORT=3000
-# M4-03: a release image is built from its tag (ci.yml, `v*`): GIT_SHA = the
-# tag's commit, VERSION = the tag (vX.Y.Z), COMMIT_TIME = that commit's
-# committer time (ISO). All three surface in /api/version.
+# Set by the release build from its tag; all three surface in /api/version.
 ARG GIT_SHA=dev
 ARG VERSION=dev
 ARG COMMIT_TIME=
@@ -69,12 +67,9 @@ COPY --from=builder --chown=node:node /out/package.json ./package.json
 COPY --from=builder --chown=node:node /out/node_modules ./node_modules
 COPY --from=builder --chown=node:node /out/build ./build
 COPY --from=builder --chown=node:node /out/dist ./dist
-# M1-01: general skills for skill_info (skills/<name>/SKILL.md; the platform
-# skill skills/drobek is shipped too but never listed).
+# General skills for skill_info; skills/drobek ships too but is never listed.
 COPY --from=builder --chown=node:node /repo/skills ./skills
-# M1-05: FILES_DIR of the files module; NSO-358: ASSETS_DIR (app assets —
-# video, audio, images, fonts); NSO-345: DROBEK_MODULES_DIR, the operator's
-# installed modules (+ modules.lock.json). Owned by `node`, so a fresh named
+# FILES_DIR, ASSETS_DIR, DROBEK_MODULES_DIR. Owned by `node`, so a fresh named
 # volume mounted here inherits a writable directory.
 RUN mkdir -p /data/files /data/assets /data/modules && chown node:node /data/files /data/assets /data/modules
 USER node

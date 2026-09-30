@@ -1,5 +1,5 @@
 /**
- * M1b Agent DX (PHY-124) — `GET /llms.txt`: the concise /llms.txt index (title +
+ * `GET /llms.txt`: the concise /llms.txt index (title +
  * summary + sectioned links). Rendered from the @drobek/agent-dx manifest so it
  * never drifts from the real tools. Served text/plain, cacheable.
  */

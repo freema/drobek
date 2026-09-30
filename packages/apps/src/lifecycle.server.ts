@@ -1,5 +1,5 @@
 /**
- * App lifecycle + settings beyond versions (M2-01, NSO-288) — what the
+ * App lifecycle + settings beyond versions — what the
  * dashboard changes about an app: unpublish, soft delete (+ the slug release
  * 30 days later), visibility / password and the frame-ancestors override.
  * Every mutation locks the app row, refuses a deleted app (`not_found`) and
@@ -87,7 +87,7 @@ async function audit(
  * Take the app off its production host: `published_version_id = null` →
  * `<slug>.<APPS_DOMAIN>` answers 404 "not published"; the preview and the
  * version hosts keep serving. Audited `app.unpublish` with the version that
- * was live. A gallery listing ends with it (NSO-340, audited
+ * was live. A gallery listing ends with it (audited
  * `app.gallery_unlisted`, reason `unpublish`). `not_published` when nothing
  * is published.
  */
@@ -101,7 +101,7 @@ export async function unpublishApp(appId: string, actor: Actor): Promise<{ previ
       .select({ number: appVersions.number })
       .from(appVersions)
       .where(eq(appVersions.id, app.publishedVersionId));
-    // NSO-340: an unpublished app leaves the public gallery; the owner lists
+    // An unpublished app leaves the public gallery; the owner lists
     // it again after publishing again.
     await tx
       .update(apps)

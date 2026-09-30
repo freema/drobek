@@ -1,11 +1,11 @@
 /**
- * Immutable app versions (M0-02). Every write creates a new version whose
+ * Immutable app versions. Every write creates a new version whose
  * files point at content-addressed blobs, so identical content is stored once
  * no matter how many versions (or apps) contain it. Publishing moves one
  * pointer (`apps.published_version_id`); restore copies an old file list into
  * a NEW version, so history is never rewritten.
  *
- * NSO-362: publish also freezes the app's assets for the version it puts
+ * Publish also freezes the app's assets for the version it puts
  * live, and restore brings back the assets a version had when it was last
  * live (assets/snapshots.server.ts).
  */
@@ -38,7 +38,7 @@ export interface CreateVersionOptions {
   /** Compile result, when the caller already compiled (write_files does). */
   compile?: { status: CompileStatus; errors?: unknown };
   /**
-   * NSO-382: the version number the new files were derived from (null = the
+   * The version number the new files were derived from (null = the
    * app had none). Set, the write refuses with `version_conflict` when another
    * version landed since; unset, the new version is stored on top of whatever
    * is latest.
@@ -81,7 +81,7 @@ async function lockApp(tx: Tx, appId: string) {
   return app;
 }
 
-/** Lock the app row AND refuse when a super-admin took the app down (NSO-293). */
+/** Lock the app row AND refuse when a super-admin took the app down. */
 async function lockWritableApp(tx: Tx, appId: string) {
   const app = await lockApp(tx, appId);
   if (app.lockedReason !== null) throw lockedByAdminError(app.lockedReason);
@@ -270,18 +270,18 @@ export async function readBlobs(sha256s: string[]): Promise<Map<string, Buffer>>
  * Point the app's production host at a version — one atomic pointer move,
  * audited as `app.publish` (with the previous version, so the audit log is
  * the publish history). Only a version that compiled `ok` is publishable.
- * A taken-down app (NSO-293) refuses with `app_locked_by_admin`. After the
+ * A taken-down app refuses with `app_locked_by_admin`. After the
  * pointer moved, the published version goes through the phishing heuristic
  * (`screen: false` skips it).
  *
- * NSO-366: a workspace a super-admin blocked refuses with `publish_blocked`;
+ * A workspace a super-admin blocked refuses with `publish_blocked`;
  * with PUBLISH_APPROVAL=approval one that is not allowed refuses with
  * `publish_not_approved` (nothing moves) and the refusal records an approval
  * request and e-mails the operator (deduped). A publish that went through is
  * e-mailed to the operator per PUBLISH_NOTIFY, without waiting for it.
  *
- * The app's assets are frozen for the version in the same transaction
- * (NSO-362): `assets: 'draft'` — the draft went live (the version the preview
+ * The app's assets are frozen for the version in the same transaction:
+ * `assets: 'draft'` — the draft went live (the version the preview
  * shows, or one that never had a set); `'kept'` — a rollback to a version
  * that serves the set it had when it was last live.
  */
@@ -339,7 +339,7 @@ export async function publish(
         ? 'rollback'
         : 'republish';
     const assets = await freezeAssetsForPublish(tx, appId, version.id);
-    // published_at orders the public gallery (NSO-340); ms precision like its cursor.
+    // published_at orders the public gallery; ms precision like its cursor.
     await tx.update(apps).set({ publishedVersionId: version.id, publishedAt: new Date() }).where(eq(apps.id, appId));
     await pruneAssetSnapshots(tx, appId);
     await audit(tx, app, actor, AUDIT_ACTIONS.appPublish, {
@@ -354,7 +354,7 @@ export async function publish(
   });
   const { kind, ...out } = result;
   void notifyOperatorOfPublish({ appId, version: out.number, kind, actor, env });
-  // NSO-293: the phishing heuristic — flags the app for the super-admin
+  // The phishing heuristic — flags the app for the super-admin
   // queue, never blocks (a scan failure is only logged).
   if (opts.screen !== false) await screenAfterPublish(appId, out.versionId);
   return out;
@@ -363,7 +363,7 @@ export async function publish(
 /**
  * Restore = a NEW version with exactly the file list (and compile result) of
  * version `number`. Nothing is rewritten; publishing it is a separate step.
- * NSO-362: when version `number` was published and its asset set is still
+ * When version `number` was published and its asset set is still
  * kept, the draft assets are reset to that set too (`assetsRestored`), so
  * the preview — and the next publish — show the version's old assets.
  */
@@ -415,7 +415,7 @@ export async function restore(
 const ZIP_BLOB_BATCH = 32;
 
 /**
- * A version as a ZIP (the dashboard's "download", NSO-288): every source file
+ * A version as a ZIP (the dashboard's "download"): every source file
  * under `<slug>-v<N>/source/`, every compiled output under
  * `<slug>-v<N>/built/`. Streamed — blobs are read in small batches while the
  * archive is written. null when the app has no such version.

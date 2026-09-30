@@ -1,6 +1,6 @@
 /**
- * GET /workspaces/:slug/apps/:appSlug/files — server half of the Files tab
- * (NSO-288). viewer+, read-only: the chosen version's file tree (source and
+ * GET /workspaces/:slug/apps/:appSlug/files — server half of the Files tab.
+ * viewer+, read-only: the chosen version's file tree (source and
  * built outputs), one file's content for the viewer and the ZIP download
  * link. `?version=N` (default: the newest), `?path=…&kind=source|built`
  * (default: index.html / the first source file). The UI is not a builder —

@@ -1,6 +1,6 @@
 /**
  * The OWNER's view of an app's end users (the optional owner methods of the
- * `endUsers` authority — the dashboard Users tab, M2-03). Core calls them only
+ * `endUsers` authority — the dashboard Users tab). Core calls them only
  * after it authorized a drobek account for the app; every query is scoped to
  * the ONE app of the view.
  *

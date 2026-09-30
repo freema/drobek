@@ -1,5 +1,5 @@
 /**
- * Pure, client-safe shaping for the account pages (M2-04, NSO-284):
+ * Pure, client-safe shaping for the account pages:
  * /me/api-keys and /me/connections. The loaders hand db rows in; the pages get
  * display-ready strings (deterministic UTC times, so SSR and hydration match).
  */

@@ -1,5 +1,5 @@
 /**
- * The shared dashboard page layout (NSO-342) — client-safe, no server
+ * The shared dashboard page layout — client-safe, no server
  * imports. Every signed-in dashboard page renders its content inside
  * <DashboardPage>: one max width, one padding, and a breadcrumb
  * (`Workspaces › <workspace> › <app> › <section>`, every part a link except
@@ -394,7 +394,7 @@ const SECTIONS: readonly { key: WorkspaceSection; label: string; path: string }[
   { key: 'members', label: 'Members', path: '' },
   { key: 'activity', label: 'Activity', path: 'activity' },
   { key: 'upstreams', label: 'Upstreams', path: 'upstreams' },
-  // NSO-347: the server's platform modules, read-only for every member.
+  // The server's platform modules, read-only for every member.
   { key: 'modules', label: 'Modules', path: 'modules' },
 ];
 

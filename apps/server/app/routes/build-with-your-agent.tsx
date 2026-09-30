@@ -1,6 +1,6 @@
 /**
- * M1b Agent DX (PHY-124) — `/build-with-your-agent`: the human-readable page
- * that shows the drobek plugin install (M0-10, NSO-302), the manual MCP connect
+ * `/build-with-your-agent`: the human-readable page
+ * that shows the drobek plugin install, the manual MCP connect
  * + one-command skill install, and links llms.txt. Every command and URL comes
  * from @drobek/agent-dx; env-derived URLs come from the loader (server-side
  * process.env). Minimal style, matching the index page.

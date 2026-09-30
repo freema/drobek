@@ -40,7 +40,7 @@ export type EmailConfig = z.infer<typeof emailConfigSchema>;
 
 export const EMAIL_CONFIG_DEFAULTS: EmailConfig = {};
 
-/** A new or changed Reply-To waits for the owner (§5.0: recipients of the app's mail are the owner's call). */
+/** A new or changed Reply-To waits for the owner (recipients of the app's mail are the owner's call). */
 export function emailConfirmRequired(before: EmailConfig, after: EmailConfig): string[] {
   if (after.replyTo && after.replyTo !== before.replyTo) {
     return [`replyTo: ${before.replyTo ?? '(none)'} → ${after.replyTo} (replies to this app's e-mails go there)`];

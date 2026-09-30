@@ -1,5 +1,5 @@
 /**
- * GET/POST /invite/:token — accept flow (U4, PHY-54).
+ * GET/POST /invite/:token — accept flow.
  * GET peeks WITHOUT consuming: anonymous → "sign in to accept" page (plain
  * /login link, no redirect chains — the user re-visits the invite link after
  * signing in); logged-in → accept button. POST consumes (single-use GETDEL),

@@ -1,5 +1,5 @@
 /**
- * @drobek/domains — custom domains for apps (M3-01): hostname validation
+ * @drobek/domains — custom domains for apps: hostname validation
  * (PSL, drobek-owned names refused), TXT + CNAME verification against an
  * injectable resolver, the per-app operations the dashboard calls, the host
  * lookups behind alias routing and Caddy's `ask` (@drobek/serving), and the

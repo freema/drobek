@@ -1,7 +1,7 @@
 /**
- * "Sign everyone out" of an app (M1-02, PHY-76 #9) — ONE implementation for
+ * "Sign everyone out" of an app — ONE implementation for
  * the owner's API (`POST /api/apps/:id/end-user-sessions/revoke`) and the
- * dashboard Users tab (M2-03): the app's session epoch goes up, so every
+ * dashboard Users tab: the app's session epoch goes up, so every
  * `drobek_eu` session issued before stops resolving on every host of the app
  * (preview, production, version hosts) from the next request. Audit
  * `end_users.sessions_revoke` (actor user). The caller authorized an editor+

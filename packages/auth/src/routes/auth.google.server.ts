@@ -8,7 +8,7 @@ import {
 import { logger } from '../logger.server.js';
 
 /**
- * GET /auth/google (U3) — start the OIDC redirect dance: random CSRF state in
+ * GET /auth/google — start the OIDC redirect dance: random CSRF state in
  * a short-lived HttpOnly cookie, then 302 to the provider's authorize URL.
  * Config-gated: unconfigured (empty GOOGLE_CLIENT_ID) bounces to /login.
  */

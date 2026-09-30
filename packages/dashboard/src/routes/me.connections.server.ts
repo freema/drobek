@@ -1,5 +1,5 @@
 /**
- * GET/POST /me/connections — server half (M2-04, NSO-284). The OAuth clients
+ * GET/POST /me/connections — server half. The OAuth clients
  * (DCR or CIMD) that currently hold a live grant for the signed-in user:
  * name from the registration / metadata document, how it registered, the
  * granted scopes and when it last got a token. API keys are the other way in;

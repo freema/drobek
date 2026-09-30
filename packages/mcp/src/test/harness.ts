@@ -89,10 +89,10 @@ function zoneResolver(zone: TestZone): DnsResolver {
 export interface TestDeps extends ToolDeps {
   events: AppChangedEvent[];
   clock: TestClock;
-  /** NSO-358: the in-memory upload tokens and the upload-URL budget left (set it to test rate_limited). */
+  /** The in-memory upload tokens and the upload-URL budget left (set it to test rate_limited). */
   uploadTokens: ReturnType<typeof memoryUploadTokenStore>;
   uploadBudget: { left: number };
-  /** NSO-366: what verify_domain's lookups answer. */
+  /** What verify_domain's lookups answer. */
   zone: TestZone;
 }
 
@@ -132,7 +132,7 @@ export function testDeps(limits: Partial<CompileLimits> = {}): TestDeps {
 
 /**
  * The payload of an untrusted envelope (read_file, query_data, get_logs answer
- * no structuredContent — NSO-324): the attributes of the opening marker plus
+ * no structuredContent): the attributes of the opening marker plus
  * the body, rebuilt into the tool's result shape so tests can assert on it.
  * null when `text` is not an envelope.
  */

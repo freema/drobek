@@ -1,5 +1,5 @@
 /**
- * The dashboard footer (M2-04, NSO-284; NSO-342): `drobek <version> · <sha> ·
+ * The dashboard footer: `drobek <version> · <sha> ·
  * Source (AGPL-3.0) · ★ <stars>`. "Source" is the AGPL-3.0 §13 link to the
  * exact commit of the running build; the stars link the repository and are
  * left out while the count is unknown (see ./github-stars.server.ts).

@@ -1,7 +1,7 @@
 /**
  * drobek-module-guestbook — a test fixture for modules installed into
- * DROBEK_MODULES_DIR (NSO-345). Plain ESM without a build step, so a test (or
- * the EXT-09 e2e, after `npm pack`) can install it as it is.
+ * DROBEK_MODULES_DIR. Plain ESM without a build step, so a test (or an e2e,
+ * after `npm pack`) can install it as it is.
  *
  *   GET  /__drobek/v1/guestbook        → { title, open, entries: [{ name, message, created_at }] }
  *   POST /__drobek/v1/guestbook/sign   → { entries }   ({ name, message }; rate-limited per visitor IP)

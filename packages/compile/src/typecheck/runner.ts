@@ -1,5 +1,5 @@
 /**
- * The typecheck runner (NSO-388): checks run in worker threads, never on the
+ * The typecheck runner: checks run in worker threads, never on the
  * event loop that serves write_files and publish, and are bounded by
  * TYPECHECK_* limits — time (the worker is terminated), memory (the worker's
  * heap limit), files (a bigger app is not checked) and TYPECHECK_WORKERS

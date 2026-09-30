@@ -47,7 +47,7 @@ describe('consumeAuthCode', () => {
     if (res.ok) {
       expect(res.row.userId).toBe('user-1');
       expect(res.row.scope).toBe('read write');
-      // User-bound (M0-04): the code carries no workspace and no role.
+      // User-bound: the code carries no workspace and no role.
       expect(res.row).not.toHaveProperty('workspaceId');
       expect(res.row).not.toHaveProperty('role');
       expect(res.row.resource).toBe('http://localhost:3042');
@@ -117,7 +117,7 @@ describe('consumeAuthCode', () => {
   });
 });
 
-describe('consumeAuthCode — a failed exchange burns the code (NSO-332)', () => {
+describe('consumeAuthCode — a failed exchange burns the code', () => {
   const good = { redirectUri: REDIRECT, codeVerifier: VERIFIER, clientId: 'client-abc' };
   const failures: [string, (t0: number) => { input: Partial<typeof good>; now: number }][] = [
     ['a wrong PKCE verifier', (t0) => ({ input: { codeVerifier: 'wrong-verifier' }, now: t0 })],
@@ -166,7 +166,7 @@ describe('consumeAuthCode — a failed exchange burns the code (NSO-332)', () =>
   });
 });
 
-describe('consumeAuthCode — replaying a consumed code revokes its tokens (NSO-332)', () => {
+describe('consumeAuthCode — replaying a consumed code revokes its tokens', () => {
   const good = { redirectUri: REDIRECT, codeVerifier: VERIFIER, clientId: 'client-abc' };
 
   /** Exchange a fresh code the way the /oauth/token route does. */

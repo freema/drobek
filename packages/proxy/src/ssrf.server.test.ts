@@ -1,5 +1,5 @@
 /**
- * ssrfSafeForward against a real local HTTP server (NSO-297): the port
+ * ssrfSafeForward against a real local HTTP server: the port
  * allow-list is re-asserted at CONNECT time (not only at registration), a
  * redirect is returned verbatim, the response cap and the deadline hold.
  */
@@ -139,7 +139,7 @@ describe('ssrfSafeForward — redirects, size cap, deadline', () => {
   });
 });
 
-describe('ssrfSafeForward — HEAD and request framing (NSO-326)', () => {
+describe('ssrfSafeForward — HEAD and request framing', () => {
   it('HEAD on a resource larger than the cap answers (the declared length is not a body)', async () => {
     const r = await ssrfSafeForward({ url: url('/huge'), method: 'HEAD', headers: {}, env: allowLocal(), maxResponseBytes: 1024 });
     expect(r.status).toBe(200);

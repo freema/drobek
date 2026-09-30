@@ -16,8 +16,8 @@ import { githubStars } from '@drobek/dashboard/github-stars.server';
 const FAVICON = mascotDataUri();
 
 /**
- * M2-04 (NSO-284): the build sha for the AGPL-3.0 §13 source link in the
- * footer (the same GIT_SHA `/api/version` reports); NSO-342: plus the release
+ * The build sha for the AGPL-3.0 §13 source link in the
+ * footer (the same GIT_SHA `/api/version` reports), the release
  * version (DROBEK_VERSION) and the repository's GitHub stars — answered from
  * memory, never awaited (null while unknown or when DASHBOARD_GITHUB_STARS is
  * off). The root never revalidates for them: they change once per document.

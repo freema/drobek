@@ -18,10 +18,10 @@ import { logger, serializeError } from '../logger.server.js';
 import { maskEmail } from '../mask-email.js';
 
 /**
- * GET /auth/google/callback (U3) — finish the OIDC dance:
+ * GET /auth/google/callback — finish the OIDC dance:
  * exact-match state param vs cookie (cookie cleared either way), exchange the
  * code, fetch userinfo, REQUIRE email_verified === true, then account
- * resolution (sub match → email link → create) and session via the U2
+ * resolution (sub match → email link → create) and session via
  * createUserSession. EVERY failure path: no session, generic
  * /login?error=google (real reason logged server-side only, email masked).
  */
@@ -93,7 +93,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     email: maskEmail(resolved.email),
   });
 
-  // U5: honor a stashed same-origin return target (e.g. /oauth/authorize).
+  // Honor a stashed same-origin return target (e.g. /oauth/authorize).
   const returnTo = readLoginReturnCookie(request);
 
   const headers = new Headers();

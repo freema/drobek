@@ -1,8 +1,8 @@
 /**
- * /workspaces/:slug/apps/:appSlug/settings — the Settings tab (NSO-288):
+ * /workspaces/:slug/apps/:appSlug/settings — the Settings tab:
  * who may open the app (public / password gate on the app hosts), where it
  * may be embedded (the CSP frame-ancestors override, and what it does not
- * cover), where the public gallery listing lives (Overview, NSO-340) and the
+ * cover), where the public gallery listing lives (Overview) and the
  * danger zone (delete). Editors and admins get the forms; a viewer reads the current
  * values only (the action refuses them with 403 anyway).
  */

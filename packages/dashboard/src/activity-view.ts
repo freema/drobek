@@ -1,5 +1,5 @@
 /**
- * The Activity view's reading aids (NSO-371), pure and client-safe:
+ * The Activity view's reading aids, pure and client-safe:
  *
  *  - `activitySummary` — one readable sentence per audit event, built only
  *    from the secret-free fields each writer records (versions, counts,

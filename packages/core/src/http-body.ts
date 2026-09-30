@@ -1,7 +1,7 @@
 /**
- * Streaming request bodies on node:http (NSO-325; shared since NSO-358 by the
+ * Streaming request bodies on node:http, shared by the
  * app hosts' module uploads in @drobek/serving and the asset upload URL of
- * @drobek/apps). Typed on node:http only, so Express req/res fit too.
+ * @drobek/apps. Typed on node:http only, so Express req/res fit too.
  *
  * `requestBodyStream` reads the body in paused mode — nothing is read ahead
  * of the consumer, so a slow disk write back-pressures the client.

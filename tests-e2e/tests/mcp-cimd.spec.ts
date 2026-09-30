@@ -21,7 +21,7 @@ import {
 import { personalWorkspaceOf, seedApp, userIdByEmail, withDb } from './helpers/seed';
 
 /**
- * M0-04 (NSO-282) acceptance, the parts beyond the classic DCR flow:
+ * OAuth beyond the classic DCR flow:
  *  - CIMD: a Client ID Metadata Document served by the in-network proxy-echo
  *    mock (the ONLY origin OAUTH_CIMD_DEV_ORIGINS allows over http / from a
  *    private IP) → authorize → token → tools/list filtered by the granted
@@ -176,7 +176,7 @@ test('DCR: the 11th registration from one IP within the hour → 429 @local', as
   skipUnlessLocal();
   const tag = `e2e-dcr-limit-${randomBytes(4).toString('hex')}`;
   // A client IP of its own (the dev stack has no per-IP bucket without one,
-  // NSO-328); behind Caddy the runner's IP registered before, hence the reset.
+  // behind Caddy the runner's IP registered before, hence the reset.
   const headers = ownClientIpHeaders();
   await resetDcrIpRateLimit();
   try {

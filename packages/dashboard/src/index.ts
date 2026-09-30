@@ -1,5 +1,5 @@
 /**
- * @drobek/dashboard — the minimal dashboard (PHY-74 slice / PHY-62): the
+ * @drobek/dashboard — the minimal dashboard: the
  * workspace apps list, per-app version history, and the role-gated publish
  * action (publishing an older version is the rollback). Heavy logic lives HERE; apps/web (and the private drobek-web app)
  * register thin route files that re-export the route modules under

@@ -1,5 +1,5 @@
 /**
- * GET/POST /duplicate/:slug — server half (NSO-340): the gallery's Duplicate
+ * GET/POST /duplicate/:slug — server half: the gallery's Duplicate
  * button lands here. A signed-out visitor goes to /login and comes back
  * (`returnTo`). A signed-in one sees what gets copied, picks a workspace
  * where they are an editor+ (their personal workspace first) and a name, and

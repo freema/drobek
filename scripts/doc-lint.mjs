@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * doc-lint (NSO-298, part of `task check` and the CI quality job).
+ * doc-lint (part of `task check` and the CI quality job).
  *
  * Three checks, all on the files git knows about (tracked + untracked, not
  * ignored), run from the repository root:

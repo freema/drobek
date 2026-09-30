@@ -1,5 +1,5 @@
 /**
- * The daily DNS re-check of verified custom domains (M3-01).
+ * The daily DNS re-check of verified custom domains.
  *
  * A sweep (every DOMAINS_RECHECK_INTERVAL_MS, default hourly, one replica at a
  * time through a Redis lease) re-checks every VERIFIED domain last checked

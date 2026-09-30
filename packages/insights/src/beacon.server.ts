@@ -1,5 +1,5 @@
 /**
- * recordBeacon (PHY-123, moved to the apps origin in M1-07) — the core of the
+ * recordBeacon — the core of the
  * PUBLIC, UNAUTHENTICATED error beacon `POST /__drobek/v1/_beacon`. The app
  * host has already resolved the app (and its password gate) and the HTTP
  * handler (rest.server.ts) enforced the 8 KiB size cap; this function owns
@@ -32,7 +32,7 @@ export interface RecordBeaconInput {
   appId: string;
   /** The parsed JSON body (untrusted: array, {events:[…]}, or a bare event). */
   batch: unknown;
-  /** The resolved client IP; null = none → no per-IP bucket (NSO-328). */
+  /** The resolved client IP; null = none → no per-IP bucket. */
   ip: string | null;
   env?: NodeJS.ProcessEnv;
   /** Sampler seam for tests; defaults to Math.random. */
@@ -56,11 +56,11 @@ export async function recordBeacon(
   //   a. per-app + per-IP — the normal per-client cap, AND
   //   b. per-app AGGREGATE (IP-independent) — bounds total ingest for one app
   //      even when an attacker rotates X-Forwarded-For to dodge the per-IP cap.
-  // The per-IP bucket is checked FIRST (NSO-327): a request it refuses never
+  // The per-IP bucket is checked FIRST: a request it refuses never
   // reaches the app bucket, so one client can spend at most its own per-IP
   // share of the app's budget and can never silence the app's error log.
   // No resolved client IP → only the aggregate applies (never a shared
-  // `unknown` per-IP bucket, NSO-328).
+  // `unknown` per-IP bucket).
   const ip = perIpLimitKey(input.ip, 'beacon');
   const perIp =
     ip === null

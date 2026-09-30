@@ -1,6 +1,6 @@
 /**
  * LIMITS — the caps an agent can hit, surfaced in llms-full.txt and the
- * briefing (M0-05). agent-dx is a zero-dependency leaf, so the defaults are
+ * briefing. agent-dx is a zero-dependency leaf, so the defaults are
  * restated here: the compile ones mirror @drobek/compile `DEFAULT_LIMITS`, the
  * tool ones are the constants below, which @drobek/mcp enforces. The
  * AUTHORITATIVE runtime value of an env cap is always the server's env var
@@ -16,7 +16,7 @@ export interface LimitDoc {
 
 /** write_files: max changed files per call (1 call = 1 version = 1 compile). */
 export const WRITE_FILES_MAX = 20;
-/** write_files: max `edits` in one file entry (NSO-382). */
+/** write_files: max `edits` in one file entry. */
 export const WRITE_FILES_EDITS_MAX = 50;
 /** write_files: max length of `reasoning`. */
 export const REASONING_MAX_CHARS = 300;

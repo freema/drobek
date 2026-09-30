@@ -1,5 +1,5 @@
 /**
- * Visibility gate decision (U7, PHY-58; M0-06). Pure — evaluated BEFORE any
+ * Visibility gate decision. Pure — evaluated BEFORE any
  * version or file lookup so a locked request never reaches app bytes.
  *
  * App hosts never read the dashboard session (they are other origins, and the

@@ -8,7 +8,7 @@ import { callTool, mcpClient, type McpClient } from './helpers/mcp';
 import { personalWorkspaceOf, withDb } from './helpers/seed';
 
 /**
- * NSO-352: sign-in with a company account through the built-in `oidc`
+ * Sign-in with a company account through the built-in `oidc`
  * provider module, end to end against the mock IdP (tests-e2e/mock-oidc.mjs,
  * spawned here like auth-google.spec.ts spawns its mock, or reused when
  * `task mock:oidc` runs).
@@ -110,7 +110,7 @@ interface Created {
 
 test.describe.configure({ mode: 'serial' });
 
-test.describe('auth provider oidc against the mock IdP (NSO-352) @local', () => {
+test.describe('auth provider oidc against the mock IdP @local', () => {
   let mcp: McpClient;
   let owner: BrowserContext;
   let app: Created;

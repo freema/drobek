@@ -6,7 +6,7 @@ import { skipUnlessLocal } from './helpers/auth';
 import { FULL_SCOPE, callTool, mcpClient, type McpClient } from './helpers/mcp';
 
 /**
- * NSO-358: app assets — video, audio, images and fonts an app serves at
+ * App assets — video, audio, images and fonts an app serves at
  * `/<path>` next to its own files, uploaded through a single-use upload URL
  * that never passes through the model. The page is shaped like a ported
  * Claude artifact: `index.html` with `<video src="film.mp4" poster="poster.jpg">`,
@@ -80,7 +80,7 @@ const onDashboard = (url: string): string => {
 
 test.describe.configure({ mode: 'serial' });
 
-test.describe('app assets — video, images, upload URLs (NSO-358) @local', () => {
+test.describe('app assets — video, images, upload URLs @local', () => {
   let mcp: McpClient;
   let owner: BrowserContext;
   let app: Created & { host: string };

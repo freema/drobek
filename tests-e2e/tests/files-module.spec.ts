@@ -9,7 +9,7 @@ import { pollLoginCode, skipUnlessLocal } from './helpers/auth';
 import { FULL_SCOPE, callTool, mcpClient, type McpClient } from './helpers/mcp';
 
 /**
- * M1-05 (NSO-296): the built-in platform module `files` end to end on the
+ * The built-in platform module `files` end to end on the
  * apps host (DROBEK_MODULES=…,data,files in both composes, FILES_MAX_BYTES
  * 10 MiB, FILES_QUOTA_PER_APP 2 MiB). Every test works on its own fresh app:
  *
@@ -25,7 +25,7 @@ import { FULL_SCOPE, callTool, mcpClient, type McpClient } from './helpers/mcp';
  *  - the same bytes in two apps are stored once; deleting one app's file
  *    keeps the blob until the other app's file is deleted too;
  *  - the 2 MiB quota → 409 quota_exceeded;
- *  - NSO-324: one signed-in user's upload flood hits their own bucket
+ *  - one signed-in user's upload flood hits their own bucket
  *    (FILES_UPLOADS_PER_PRINCIPAL_PER_MIN, 20/min) while another user of the
  *    app still uploads.
  *
@@ -139,7 +139,7 @@ async function signIn(request: APIRequestContext, host: string, address: string)
 
 test.describe.configure({ mode: 'serial' });
 
-test.describe('platform module files — end-user uploads (M1-05) @local', () => {
+test.describe('platform module files — end-user uploads @local', () => {
   let mcp: McpClient;
   let owner: BrowserContext;
 
@@ -249,9 +249,9 @@ test.describe('platform module files — end-user uploads (M1-05) @local', () =>
     expect(got.headers['content-type']).toBe('image/png');
     expect(got.headers['x-content-type-options']).toBe('nosniff');
     expect(String(got.headers['content-disposition'])).toMatch(/^inline; filename="dot\.png"/);
-    // NSO-325: the URL names the file, not its content — shared caches revalidate after 5 minutes.
+    // the URL names the file, not its content — shared caches revalidate after 5 minutes.
     expect(got.headers['cache-control']).toBe('public, max-age=300, must-revalidate');
-    // NSO-325: the sandbox backstop is a second policy after the app CSP, never replacing it.
+    // the sandbox backstop is a second policy after the app CSP, never replacing it.
     expect(String(got.headers['content-security-policy'])).toMatch(/^default-src 'self'.*, sandbox$/);
     expect(got.headers.etag).toBe(`"${sha256(TINY_PNG)}"`);
     expect((await get(app.host, f.id, { headers: { 'If-None-Match': String(got.headers.etag) } })).status).toBe(304);
@@ -355,7 +355,7 @@ test.describe('platform module files — end-user uploads (M1-05) @local', () =>
     expect((await upload(app.host, png(90_000), { cookie: user.cookie })).status).toBe(201);
   });
 
-  test("NSO-324: one user's upload flood hits their own bucket (FILES_UPLOADS_PER_PRINCIPAL_PER_MIN); another user still uploads", async ({ request }) => {
+  test("one user's upload flood hits their own bucket (FILES_UPLOADS_PER_PRINCIPAL_PER_MIN); another user still uploads", async ({ request }) => {
     skipUnlessLocal();
     const app = await freshApp('Files flood');
     await configure(app.app_id, 'auth', { allow: { emails: [email('fay'), email('gus')] } });

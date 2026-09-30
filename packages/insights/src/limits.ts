@@ -1,5 +1,5 @@
 /**
- * Beacon caps + the pure security decisions (PHY-123). The beacon is public and
+ * Beacon caps + the pure security decisions. The beacon is public and
  * writes, so it is bounded on every axis: payload SIZE, per-app+IP RATE, a
  * SAMPLE rate, and a per-app ring-buffer RETENTION (count + age). All are pure
  * functions here (unit-tested) + env-tunable; the server modules apply them.
@@ -22,15 +22,15 @@ export const DEFAULT_BEACON_WINDOW_MS = 60_000;
 export const DEFAULT_MAX_EVENTS_PER_APP = 500;
 /**
  * Ring buffer: drop events older than this many days — the get_logs window
- * (30 days), enforced on insert and by the periodic prune (NSO-327).
+ * (30 days), enforced on insert and by the periodic prune.
  */
 export const DEFAULT_RETENTION_DAYS = 30;
 /**
- * get_logs (M1-07): how far back the compile history, the module request
+ * get_logs: how far back the compile history, the module request
  * counters and the daily serving signals reach (days). Nothing older is kept.
  */
 export const LOGS_RETENTION_DAYS = 30;
-/** get_logs (M1-07): compile-history rows kept per app (newest first). */
+/** get_logs: compile-history rows kept per app (newest first). */
 export const COMPILE_HISTORY_KEEP = 200;
 /** 1 = store every event; <1 = randomly sample (bounds storage under floods). */
 export const DEFAULT_SAMPLE_RATE = 1;

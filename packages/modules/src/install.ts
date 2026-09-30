@@ -1,5 +1,5 @@
 /**
- * The operator's module installer (NSO-350, `task selfhost:module:add|remove|list`):
+ * The operator's module installer (`task selfhost:module:add|remove|list`):
  * everything after `npm install`, run by `cli/module-lock.ts` inside the
  * drobek image (or on the host for the dev stack) — so the lockfile is
  * written by the same code the server checks it with.

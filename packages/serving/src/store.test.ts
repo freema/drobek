@@ -175,7 +175,7 @@ describe('cache bust on app-changed', () => {
   });
 });
 
-describe('unknown slugs through the real loaders (NSO-315)', () => {
+describe('unknown slugs through the real loaders', () => {
   it('a slug cached as unknown is served right after createApp (its create event busts the miss)', async () => {
     const store = new ServeStore();
     const sub = subscribeServeCache(store, { redis: null });
@@ -204,7 +204,7 @@ describe('unknown slugs through the real loaders (NSO-315)', () => {
   });
 });
 
-describe('custom domains through the real loaders (M3-01)', () => {
+describe('custom domains through the real loaders', () => {
   const nodata = () => Promise.reject(Object.assign(new Error('nodata'), { code: 'ENODATA' }));
 
   it('registered → 404 side, verified → the app, primary → prod redirect target, removed → dashboard; domain events bust', async () => {

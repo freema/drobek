@@ -1,5 +1,5 @@
 /**
- * GET/POST /workspaces — server half (U4, PHY-54). GET lists the session
+ * GET/POST /workspaces — server half. GET lists the session
  * user's workspaces (and lazily ensures the personal one — this is how
  * existing prod users get theirs on the next visit, no backfill migration);
  * super-admins additionally get the ALL-workspaces list. POST creates a team

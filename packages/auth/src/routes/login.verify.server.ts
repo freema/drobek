@@ -1,5 +1,5 @@
 /**
- * GET/POST /login/verify — server half of the route module (U2, PHY-53).
+ * GET/POST /login/verify — server half of the route module.
  * Split from the component file so the client bundle never touches
  * server-only deps; both apps re-export this next to ./login.verify.tsx.
  */
@@ -49,7 +49,7 @@ export async function action({ request }: ActionFunctionArgs) {
   // Per-IP limit (env-tunable, otp-verify-guard.server.ts) — defense in depth
   // on top of the per-code atomic counter in consumeEmailLoginCode, which caps
   // guesses against one code to CODE_MAX_ATTEMPTS regardless of IP. No
-  // resolvable client IP → no per-IP bucket (never a shared one — NSO-309).
+  // resolvable client IP → no per-IP bucket (never a shared one).
   const ipRl = await guardOtpVerify({ ip: getClientIp(request) });
   if (!ipRl.ok) {
     // Same generic message → no signal that the limit (vs. a bad code) tripped.
@@ -64,7 +64,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const userId = await ensureUserByEmail(email);
   const { setCookie } = await createUserSession(userId, email);
 
-  // U5: land back on the stashed return target (e.g. /oauth/authorize) if set.
+  // Land back on the stashed return target (e.g. /oauth/authorize) if set.
   const returnTo = readLoginReturnCookie(request);
   const headers = new Headers();
   headers.append('Set-Cookie', setCookie);

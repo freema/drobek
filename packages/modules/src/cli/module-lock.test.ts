@@ -1,5 +1,5 @@
 /**
- * NSO-350: the installer half of `task selfhost:module:add|remove|list`
+ * The installer half of `task selfhost:module:add|remove|list`
  * (`cli/module-lock.ts` → `install.ts`) — the tree hash it records, the
  * lockfile it writes, and add / upgrade / rollback / remove / list over a
  * real DROBEK_MODULES_DIR laid out the way `npm install --prefix

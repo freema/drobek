@@ -1,5 +1,5 @@
 /**
- * App password hashing + the stateless app-access cookie (U7, PHY-58; M0-06).
+ * App password hashing + the stateless app-access cookie.
  *
  * Dependency-light on purpose (only `node:crypto`).
  *

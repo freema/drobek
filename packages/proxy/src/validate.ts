@@ -1,5 +1,5 @@
 /**
- * PURE request/registration validation (PHY-59) — no db, no network; unit
+ * PURE request/registration validation — no db, no network; unit
  * tested. Covers: method allow-list, path-prefix allow-list with traversal-proof
  * normalization, and base_url validation at REGISTRATION (http(s) only + not a
  * private/reserved IP literal + no userinfo + a port on the allow-list).
@@ -68,7 +68,7 @@ export function normalizePrefixes(prefixes: string[]): string[] {
 const MAX_DECODE_ROUNDS = 3;
 
 /**
- * Decode a path segment FULLY (NSO-326): `decodeURIComponent` until it no
+ * Decode a path segment FULLY: `decodeURIComponent` until it no
  * longer changes, so `%252e%252e%252f` is checked as `../`, not as the
  * harmless-looking `%2e%2e%2f`. A malformed escape in the raw segment is
  * refused; one that appears only after a round is a literal `%` (`a%2525b` →
@@ -99,10 +99,10 @@ function fullyDecode(seg: string): { value: string; rounds: number } {
 /**
  * Normalize the forwarded subpath (the route `*` splat) to a leading-slash path,
  * REJECTING any traversal. Every check runs on the FULLY decoded segment
- * (NSO-326 — double / triple encoding does not hide anything) and on the raw
+ * (double / triple encoding does not hide anything) and on the raw
  * one: a single `.` segment is dropped; a `..` segment, an encoded slash, a
  * backslash (the WHATWG URL parser treats `\` as `/`, so `/\evil.com` would
- * become another host, NSO-322 R2) or a control character is rejected
+ * become another host) or a control character is rejected
  * outright — a legitimate API subpath never needs any of them.
  *
  * What is forwarded is only what was validated: a segment encoded at most
@@ -166,11 +166,11 @@ export function assertPathAllowed(path: string, prefixes: string[]): void {
   }
 }
 
-/** Destination ports an upstream may use unless the operator sets PROXY_ALLOWED_PORTS (PHY-76 #8). */
+/** Destination ports an upstream may use unless the operator sets PROXY_ALLOWED_PORTS. */
 export const DEFAULT_PROXY_ALLOWED_PORTS: readonly number[] = [80, 443];
 
 /**
- * The destination-port allow-list (PHY-76 #8): `PROXY_ALLOWED_PORTS` (comma/space
+ * The destination-port allow-list: `PROXY_ALLOWED_PORTS` (comma/space
  * separated, 1–65535), default 80 + 443. Invalid entries are ignored; an empty
  * or all-invalid value falls back to the default — never "any port".
  */
@@ -199,7 +199,7 @@ export interface ValidatedBaseUrl {
 /**
  * Validate a base_url at REGISTRATION: http(s) only, no userinfo, the host
  * must NOT be a private/reserved IP LITERAL or `localhost`, and the port must
- * be on the allow-list (80/443 by default, PROXY_ALLOWED_PORTS — PHY-76 #8; the
+ * be on the allow-list (80/443 by default, PROXY_ALLOWED_PORTS; the
  * SSRF guard re-asserts it at connect time). (Hostnames that resolve to a
  * private IP are caught at forward time by the DNS-pinned SSRF guard — this is
  * the cheap literal check that also rejects the obvious cases.)
@@ -250,7 +250,7 @@ export function validateBaseUrl(
  * path) + the normalized subpath + the caller's query string. Path segments are
  * joined without doubling or dropping slashes.
  *
- * The parsed result is re-checked (NSO-322 R2): it must keep the base URL's
+ * The parsed result is re-checked: it must keep the base URL's
  * origin and stay under its base path at a segment boundary — whatever the
  * WHATWG parser made of the joined string — else `path_not_allowed`.
  */
@@ -284,7 +284,7 @@ export function targetSubpath(target: URL, baseUrl: string): string {
  * The whole path pipeline of one forward: normalize the raw splat
  * (traversal-proof), build the target, then check the allowed prefixes against
  * the path the upstream will ACTUALLY receive (the parsed target's pathname
- * minus the base path) — not the pre-parse string (NSO-322 R2).
+ * minus the base path) — not the pre-parse string.
  */
 export function resolveForwardTarget(
   baseUrl: string,

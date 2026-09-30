@@ -1,5 +1,5 @@
 /**
- * NSO-345: modules from DROBEK_MODULES_DIR — resolution order, the lockfile
+ * Modules from DROBEK_MODULES_DIR — resolution order, the lockfile
  * + integrity check, DROBEK_MODULES_UNLOCKED, the migration lint and the
  * directory rules. Builtins come through the `importer` seam; dir modules
  * are real files imported by Node (with the host-peer hook).

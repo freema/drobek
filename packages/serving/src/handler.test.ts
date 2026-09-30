@@ -267,7 +267,7 @@ describe('caching', () => {
   });
 });
 
-describe('source maps on the production hosts (NSO-381)', () => {
+describe('source maps on the production hosts', () => {
   const MAP = JSON.stringify({ version: 3, sources: ['src/main.tsx'], sourcesContent: ['secret-free source'], mappings: 'AAAA' });
   const B64 = Buffer.from(MAP).toString('base64');
   const CODE = 'import "/__drobek/beacon.js?v=0123456789abcdef";\nconsole.log("hi");\n';
@@ -451,7 +451,7 @@ describe('headers on every response (snapshot)', () => {
     expect(r.headers['Content-Security-Policy']).toBe(APP_CSP);
   });
 
-  it('NSO-342: the dashboard origin may always frame the app (thumbnail), next to an override', async () => {
+  it('the dashboard origin may always frame the app (thumbnail), next to an override', async () => {
     const withDash = { ...deps, dashboardOrigin: 'https://drobek.example.com' };
     store.bust('shop');
     model.get('shop')!.app.frameAncestors = null;
@@ -640,7 +640,7 @@ describe('password gate', () => {
   });
 });
 
-describe('platform paths (/__drobek/*, M1-01)', () => {
+describe('platform paths (/__drobek/*)', () => {
   function withPlatform(): { d: HandlerDeps; seen: { path: string; method: string; app: string; body: string | null }[] } {
     const seen: { path: string; method: string; app: string; body: string | null }[] = [];
     const d: HandlerDeps = {
@@ -658,7 +658,7 @@ describe('platform paths (/__drobek/*, M1-01)', () => {
     const { d, seen } = withPlatform();
     const r = await handleAppRequest(req(preview('shop'), '/__drobek/v1/hello/wave', { method: 'POST', body: '{"name":"a"}' }), d);
     expect(r.status).toBe(200);
-    // A module CSP is only ever a SECOND policy next to the app's (NSO-325).
+    // A module CSP is only ever a SECOND policy next to the app's.
     expect(r.headers['Content-Security-Policy']).toBe(`${APP_CSP}, bogus`);
     expect(r.headers['X-Content-Type-Options']).toBe('nosniff');
     expect(seen).toEqual([{ path: '/__drobek/v1/hello/wave', method: 'POST', app: 'app_shop', body: '{"name":"a"}' }]);
@@ -666,7 +666,7 @@ describe('platform paths (/__drobek/*, M1-01)', () => {
     expect((await handleAppRequest(req(prod('draft'), '/__drobek/sdk.js'), d)).status).toBe(200);
   });
 
-  it('NSO-325: a module CSP (e.g. `sandbox` on served files) is added after the app CSP, whatever its casing; other security headers stay the app\'s', async () => {
+  it('a module CSP (e.g. `sandbox` on served files) is added after the app CSP, whatever its casing; other security headers stay the app\'s', async () => {
     const d: HandlerDeps = {
       ...deps,
       platform: async () => ({
@@ -712,7 +712,7 @@ describe('platform paths (/__drobek/*, M1-01)', () => {
   });
 });
 
-describe('the browser error beacon (/__drobek/v1/_beacon, M1-07)', () => {
+describe('the browser error beacon (/__drobek/v1/_beacon)', () => {
   function withBeacon(): { d: HandlerDeps; beacons: string[]; platform: string[]; signals: string[] } {
     const beacons: string[] = [];
     const platform: string[] = [];
@@ -761,7 +761,7 @@ describe('the browser error beacon (/__drobek/v1/_beacon, M1-07)', () => {
   });
 });
 
-describe('custom domains (M3-01)', () => {
+describe('custom domains', () => {
   const custom = (slug: string, hostname = 'shop.firma.cz'): AppHostTarget => ({ kind: 'custom', slug, hostname });
 
   it('a verified custom domain serves the PUBLISHED version, indexable, like the production host', async () => {
@@ -801,7 +801,7 @@ describe('custom domains (M3-01)', () => {
   });
 });
 
-describe('abuse: report pointer, takedown 451, X-Drobek-App (M4-02)', () => {
+describe('abuse: report pointer, takedown 451, X-Drobek-App', () => {
   const REPORT = '/.well-known/drobek-report';
   const withReport = (d: HandlerDeps): HandlerDeps => ({
     ...d,
@@ -915,7 +915,7 @@ describe('abuse: report pointer, takedown 451, X-Drobek-App (M4-02)', () => {
   });
 });
 
-describe('unknown hosts: negative cache (NSO-315)', () => {
+describe('unknown hosts: negative cache', () => {
   it('a repeated unknown slug is ONE lookup for every host of it, until the 30 s TTL ends', async () => {
     let now = 1_000;
     const s = new ServeStore({ loaders, now: () => now });
@@ -997,7 +997,7 @@ describe('unknown hosts: negative cache (NSO-315)', () => {
   });
 });
 
-describe('unknown hosts: per-IP limit (NSO-315)', () => {
+describe('unknown hosts: per-IP limit', () => {
   function limited(limit = 3) {
     const counts = new Map<string, number>();
     const keys: string[] = [];
@@ -1051,7 +1051,7 @@ describe('unknown hosts: per-IP limit (NSO-315)', () => {
     expect((await handleAppRequest(req(null), d)).status).toBe(429);
   });
 
-  it('NSO-309: a client without a recognised IP is never counted (no shared bucket)', async () => {
+  it('a client without a recognised IP is never counted (no shared bucket)', async () => {
     const { d, keys } = limited(1);
     for (let i = 0; i < 5; i++) {
       const r = await handleAppRequest({ ...req(prod(`anon-${i}`)), clientIp: null }, d);
@@ -1096,7 +1096,7 @@ describe('unknown hosts: per-IP limit (NSO-315)', () => {
   });
 });
 
-describe('app assets at /<name> (NSO-358)', () => {
+describe('app assets at /<name>', () => {
   const FILM = Buffer.concat([Buffer.from('....ftypisom'), Buffer.alloc(988, 7)]); // 1000 bytes
   const LOGO = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>');
   const UPDATED = new Date('2026-09-20T10:00:00.123Z');
@@ -1237,7 +1237,7 @@ describe('app assets at /<name> (NSO-358)', () => {
     expect((await handleAppRequest(req(prod('shop'), '/media/film.mp4'), assetDeps())).status).toBe(404);
   });
 
-  it('NSO-362: production and custom hosts look assets up in the published version’s frozen set, preview in the draft, a version host in its set or the draft', async () => {
+  it('production and custom hosts look assets up in the published version’s frozen set, preview in the draft, a version host in its set or the draft', async () => {
     const scopes: unknown[] = [];
     const d = assetDeps();
     const find = d.assets!.find;
@@ -1256,7 +1256,7 @@ describe('app assets at /<name> (NSO-358)', () => {
   });
 });
 
-describe('serving signals: counts and failing paths (NSO-380)', () => {
+describe('serving signals: counts and failing paths', () => {
   function withSignals(status: number): { d: HandlerDeps; signals: string[] } {
     const signals: string[] = [];
     const d: HandlerDeps = {

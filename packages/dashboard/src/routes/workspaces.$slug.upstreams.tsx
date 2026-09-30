@@ -1,5 +1,5 @@
 /**
- * /workspaces/:slug/upstreams — client half (PHY-59): the BFF proxy config.
+ * /workspaces/:slug/upstreams — client half: the BFF proxy config.
  * Lists registered upstreams (name / base URL / methods / path prefixes / auth
  * type — NEVER the secret, only "set" vs "none") and a register form whose secret
  * field is WRITE-ONLY. workspace-admin / super-admin only (the server gate is the

@@ -6,7 +6,7 @@ import { skipUnlessLocal } from './helpers/auth';
 import { FULL_SCOPE, callTool, mcpClient, type McpClient } from './helpers/mcp';
 
 /**
- * NSO-362: assets honour publish. An upload, a replacement or a delete
+ * Assets honour publish. An upload, a replacement or a delete
  * changes the app's DRAFT assets — the preview host shows it at once, the
  * production host only after `publish`:
  *
@@ -35,7 +35,7 @@ const onDashboard = (url: string): string => `${BASE_URL_WEB}${new URL(url).path
 
 test.describe.configure({ mode: 'serial' });
 
-test.describe('assets honour publish (NSO-362) @local', () => {
+test.describe('assets honour publish @local', () => {
   let mcp: McpClient;
   let owner: BrowserContext;
   let app: Created & { preview: string; prod: string };

@@ -1,5 +1,5 @@
 /**
- * App asset limits and storage (NSO-358) — env numbers with production
+ * App asset limits and storage — env numbers with production
  * defaults:
  *
  *   APP_ASSET_MAX_BYTES         bytes of one asset (default 100 MiB)

@@ -1,5 +1,5 @@
 /**
- * App resolution for insights (PHY-123). Resolves `(wsSlug, appSlug)` to a
+ * App resolution for insights. Resolves `(wsSlug, appSlug)` to a
  * concrete, NON-deleted app id. The caller never supplies a raw app/workspace
  * id; a cross-workspace locator (MCP token bound elsewhere) is rejected before
  * any error/signal row is read — tenant isolation, like every module table.

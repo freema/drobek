@@ -1,5 +1,5 @@
 /**
- * M0-04/M0-05: user-bound grants on a real (PGlite) database —
+ * User-bound grants on a real (PGlite) database —
  *  - the RS Bearer path: audience check for OAuth tokens, `drk_` API keys,
  *    revoked key → invalid, super-admin by email;
  *  - the MCP server this package builds authorizes every tool call per app

@@ -6,13 +6,13 @@
  *   GET  me                         → { user | null } (+ rolls the session)
  *   POST logout                     → { ok: true } (+ clears the cookie)
  *   GET  providers                  → { providers: [{ id, label }] } — the
- *                                     sign-in methods that are on (NSO-348)
+ *                                     sign-in methods that are on
  *   POST begin { provider, return_to? } → { url } of the IdP (+ flow cookie)
  *   GET  complete?code=             → session cookie + 302 return_to
  *                                     (provider sign-in, see flow.ts)
  *
  * The code and its limits are the dashboard login's own machinery from
- * @drobek/auth (atomic INCR guess counter, PHY-76 #1; the OTP guard layers),
+ * @drobek/auth (atomic INCR guess counter; the OTP guard layers),
  * scoped to `eu:<app_id>` so one app's end users never share codes, counters
  * or pauses with the dashboard or another app. Sessions are the core
  * end-user sessions of @drobek/modules (`drobek:eu:<app_id>:<token>`, epoch
@@ -139,7 +139,7 @@ function notAllowed(): ModuleError {
 
 /**
  * The app's hourly code cap: AUTH_CODES_PER_APP_HOUR, but never more than the
- * app's share of the server's sign-in e-mail budget (NSO-322 H2) — the app
+ * app's share of the server's sign-in e-mail budget — the app
  * pauses on its own before it could eat into other apps' sign-in codes.
  */
 export function appHourlyCodeCap(limit: number, signInShare: number | undefined): number {
@@ -203,8 +203,8 @@ export function registerRoutes(r: ModuleRouter<AuthConfig>): void {
     const scope = otpScope(ctx.app.id);
     const ip = req.clientIp ?? undefined;
     const sent = { sent: true as const, email, expires_in: CODE_TTL_S };
-    // The OTP counters are only READ here and charged once the code went out
-    // (NSO-327): a send the module e-mail guard refuses (paused, the app's
+    // The OTP counters are only READ here and charged once the code went out:
+    // a send the module e-mail guard refuses (paused, the app's
     // share used up) costs the user nothing, so retries during a pause do not
     // leave them limited after it.
     const decision = await checkOtpRequest({ ip, email, limits: await guardLimits(ctx), scope });
@@ -230,7 +230,7 @@ export function registerRoutes(r: ModuleRouter<AuthConfig>): void {
       if (out.sent !== 1) throw new Error('the address was not accepted');
     } catch (err) {
       await releaseOtpCooldown(email, scope);
-      // The server's sign-in e-mail budget is used up (NSO-320): pass the
+      // The server's sign-in e-mail budget is used up: pass the
       // pause on as it is (details.reason email_paused + Retry-After).
       if (isModuleError(err) && (err.details as { reason?: unknown } | undefined)?.reason === 'email_paused') throw err;
       ctx.log.error('auth: sign-in e-mail failed', { app_id: ctx.app.id, email: maskEmail(email), error: dbErrorForLog(err) });
@@ -294,7 +294,7 @@ export function registerRoutes(r: ModuleRouter<AuthConfig>): void {
     return respond(200, { ok: true }, clearedCookie());
   });
 
-  // ── sign-in providers (NSO-348, flow.ts) ──
+  // ── sign-in providers (flow.ts) ──
 
   r.get('/providers', { rule: 'public' }, (_req, ctx) => ({ providers: signInMethods(ctx.contributions, ctx.config) }));
 

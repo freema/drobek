@@ -1,5 +1,5 @@
 /**
- * The browser side of an upload URL (NSO-358): a GET of
+ * The browser side of an upload URL: a GET of
  * `/api/assets/upload/<token>` shows what the link is for (app, asset name,
  * exact size, expiry) and a file picker that PUTs the chosen file to the
  * same URL with a progress bar — so an agent without a shell can hand the

@@ -1,5 +1,5 @@
 /**
- * Module contract 1.1 (NSO-344): the `contract` range, the short-name check,
+ * Module contract 1.1: the `contract` range, the short-name check,
  * typed slots (`slots` / `contributes` / `contributions()`), module error
  * codes (`errors`, the runtime's undeclared-code guard), `availability`,
  * `dashboard.editor`, `hooks.onAppDelete` and `DROBEK_MODULE_<NAME>_DEFAULTS`.
@@ -370,7 +370,7 @@ describe('the runtime (contributions, hooks, errors, skill_info, the dashboard v
   it('hooks get the services with contributions; onAppDelete runs for every module, a failure is logged', async () => {
     seen.length = 0;
     log.error.mockClear();
-    // NSO-346: the opt-in watcher is off for the workspace — no onAppCreate, but onAppDelete still runs.
+    // The opt-in watcher is off for the workspace — no onAppCreate, but onAppDelete still runs.
     await rt.runHook('onAppCreate', app);
     await rt.runHook('onAppDelete', app);
     expect(seen).toEqual([{ hook: 'delete', app, greeters: ['formal', 'pirate'] }]);
@@ -396,7 +396,7 @@ describe('the runtime (contributions, hooks, errors, skill_info, the dashboard v
     expect(await rt.moduleView(app, 'host')).toMatchObject({ availability: 'default', editor: null });
   });
 
-  it('moduleFacts (NSO-347): version, source, contract, requires, slots with their contributors, contributions, limits, errors', () => {
+  it('moduleFacts: version, source, contract, requires, slots with their contributors, contributions, limits, errors', () => {
     expect(rt.moduleFacts('host')).toEqual({
       name: 'host',
       version: '1.0.0',

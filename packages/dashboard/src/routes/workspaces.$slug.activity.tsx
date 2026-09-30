@@ -1,6 +1,6 @@
 /**
- * /workspaces/:slug/activity — client half of the workspace Activity view
- * (governance v1, PHY-85): the append-only audit trail as a table (time, action,
+ * /workspaces/:slug/activity — client half of the workspace Activity view:
+ * the append-only audit trail as a table (time, action,
  * actor + agent/user/end-user badge, subject), newest-first, with an app +
  * action + actor-kind + time-range FILTER
  * (GET, round-tripped through the loader), keyset "Next page" pagination, and a

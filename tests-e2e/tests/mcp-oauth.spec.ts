@@ -18,7 +18,7 @@ import { callTool, mcpClient, rawInitialize } from './helpers/mcp';
 import { personalWorkspaceOf, seedApp, workspaceIdBySlug } from './helpers/seed';
 
 /**
- * U5 + M0-04 acceptance: the MCP OAuth 2.1 flow end-to-end against the local
+ * The MCP OAuth 2.1 flow end-to-end against the local
  * compose stack — discovery → DCR → browser consent (PKCE S256, the three
  * scope checkboxes, NO workspace choice) → token → Bearer MCP call — plus the
  * security negatives: unauthenticated 401, a foreign `resource` → invalid_target,
@@ -85,7 +85,7 @@ async function consentAndGetCode(
 ): Promise<string> {
   await page.goto(`/oauth/authorize?${authorizeQuery(opts)}`);
   await expect(page.getByTestId('consent-approve')).toBeVisible();
-  // M0-04: the grant is user-bound — no workspace picker on the consent screen.
+  // The grant is user-bound — no workspace picker on the consent screen.
   await expect(page.getByTestId('workspace-select')).toHaveCount(0);
 
   const captured = new Promise<string>((resolve) => {
@@ -347,7 +347,7 @@ test('MCP OAuth negatives: no-token 401, invalid_target, deny, refresh rotation 
     expect(dead.status()).toBe(401);
   }
 
-  // --- a failed exchange burns the code (NSO-332) ---
+  // --- a failed exchange burns the code ---
   {
     const { verifier, challenge } = pkcePair();
     const code = await consentAndGetCode(page, {
@@ -371,7 +371,7 @@ test('MCP OAuth negatives: no-token 401, invalid_target, deny, refresh rotation 
     expect(right.body.error).toBe('invalid_grant');
   }
 
-  // --- replaying an exchanged code revokes what it minted (NSO-332) ---
+  // --- replaying an exchanged code revokes what it minted ---
   {
     const { verifier, challenge } = pkcePair();
     const code = await consentAndGetCode(page, {
@@ -496,13 +496,11 @@ test('OAuth authorization-server discovery returns the authorize endpoint @smoke
 });
 
 /**
- * M1a coherence, READ-ONLY — safe against ANY target (local OR beta/prod).
- * Proves the self-host/beta discovery chain is internally consistent without a
- * single write or a login email: the RS advertises the drobek AS, the AS
+ * READ-ONLY, safe against any target: the RS advertises the drobek AS, the AS
  * advertises PKCE-S256 + the three OAuth endpoints, and both health surfaces
- * are live. This is the beta-safe half of the M1a acceptance.
+ * are live — no write, no login email.
  */
-test('M1a discovery chain is coherent (RS ↔ AS ↔ health) @smoke', async ({
+test('OAuth discovery chain is coherent (RS ↔ AS ↔ health) @smoke', async ({
   request,
 }) => {
   // Web + MCP are both live.

@@ -1,5 +1,5 @@
 /**
- * NSO-366: the dashboard's side of who may publish — the notice data for a
+ * The dashboard's side of who may publish — the notice data for a
  * workspace (`publishApprovalView`: blocked by the operator, or waiting for
  * approval) and the "Request approval" POST (`requestApprovalAction`,
  * editor+; a blocked workspace sends nothing), shared by the app pages and

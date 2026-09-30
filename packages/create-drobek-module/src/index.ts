@@ -1,5 +1,5 @@
 /**
- * create-drobek-module (NSO-349) — scaffold an external drobek platform
+ * create-drobek-module — scaffold an external drobek platform
  * module from `template/`:
  *
  *   npm create drobek-module@latest erp            → drobek-module-erp/, module "erp"

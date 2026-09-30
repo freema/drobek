@@ -1,5 +1,5 @@
 /**
- * Who may publish (NSO-366), the pure half. Sign-up, workspaces, apps,
+ * Who may publish, the pure half. Sign-up, workspaces, apps,
  * versions, previews and data stay open in every mode; only putting a
  * version on the production host is decided here.
  *

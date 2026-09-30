@@ -16,7 +16,7 @@ import { APPS_DOMAIN, APPS_URL_SCHEME, BASE_URL_WEB } from '../../playwright.con
  */
 
 /**
- * NSO-342: every app host lets the dashboard origin (PUBLIC_APP_URL = the
+ * Every app host lets the dashboard origin (PUBLIC_APP_URL = the
  * e2e's BASE_URL_WEB) frame it, for the app-list thumbnail — the CSP's
  * `frame-ancestors` is this origin instead of `'none'` (plus the app's own
  * override, when one is set).

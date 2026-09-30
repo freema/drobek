@@ -1,5 +1,5 @@
 /**
- * `multipart/form-data` with TEXT fields only (M1-04) — what a plain
+ * `multipart/form-data` with TEXT fields only — what a plain
  * `fetch(url, { body: new FormData(form) })` sends. The result is a plain
  * object `{ name: value }`; a repeated name becomes an array of its values.
  * A part with a `filename` (a file) is refused: modules take files through

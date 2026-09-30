@@ -1,5 +1,5 @@
 /**
- * The DNS side of custom-domain verification (M3-01).
+ * The DNS side of custom-domain verification.
  *
  * Both records are required:
  *   TXT   `_drobek.<hostname>`  one record equal to `drobek-verify=<token>`

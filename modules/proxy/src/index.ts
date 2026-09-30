@@ -1,5 +1,5 @@
 /**
- * drobek-module-proxy — the BUILT-IN platform module `proxy` (M1-06, §5.6):
+ * drobek-module-proxy — the BUILT-IN platform module `proxy`:
  * an app calls an external API without ever holding its secret.
  *
  *   DROBEK_MODULES=…,proxy  → this package (`modules/proxy` in the drobek repo,

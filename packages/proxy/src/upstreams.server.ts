@@ -1,5 +1,5 @@
 /**
- * Upstream CRUD (PHY-59). Registration is workspace-admin+ only (super-admin
+ * Upstream CRUD. Registration is workspace-admin+ only (super-admin
  * override); every mutation writes an audit row. The injected secret is
  * envelope-encrypted at rest and is NEVER returned by any function here — the
  * safe view exposes only `hasSecret`.
@@ -338,7 +338,7 @@ export async function upstreamSummaries(
   }));
 }
 
-/** May app `appId` call this upstream? Only apps on its allow-list (empty = none) — NSO-322 H3. */
+/** May app `appId` call this upstream? Only apps on its allow-list (empty = none). */
 export function upstreamAllowsApp(upstream: Pick<UpstreamRecord, 'allowedAppIds'>, appId: string): boolean {
   return upstream.allowedAppIds.includes(appId);
 }
@@ -346,7 +346,7 @@ export function upstreamAllowsApp(upstream: Pick<UpstreamRecord, 'allowedAppIds'
 /**
  * Put `appId` on the allow-list of the upstream `name` of `workspaceId`
  * (idempotent). Returns the upstream's id — the record the app is now bound
- * to (NSO-326) — or null when no such upstream is registered. Called when a
+ * to — or null when no such upstream is registered. Called when a
  * workspace ADMIN confirms the app's assignment of the upstream (the proxy
  * module's onConfirmed, inside the confirm transaction) — the admin's
  * confirmation is what lets an app spend the upstream's secret.

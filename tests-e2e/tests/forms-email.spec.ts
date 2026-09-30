@@ -10,7 +10,7 @@ import { callTool, mcpClient, type McpClient } from './helpers/mcp';
 import { withDb } from './helpers/seed';
 
 /**
- * M1-04 (NSO-295): the built-in platform modules `forms` and `email` end to
+ * The built-in platform modules `forms` and `email` end to
  * end on the apps host (DROBEK_MODULES=hello,auth,email,forms in both
  * composes):
  *
@@ -30,7 +30,7 @@ import { withDb } from './helpers/seed';
  *    no-store, audited); plain users and visitors are refused;
  *  - notifyAdmins through <LoginGate> in a browser, fromName applied; the
  *    21st call of the day → 429 limit_exceeded;
- *  - the operator-wide hourly e-mail budgets (NSO-320): notifications past
+ *  - the operator-wide hourly e-mail budgets: notifications past
  *    theirs (forms of two apps) → notifications pause (503 email_paused)
  *    with a super-admin ALERT line, a form submission is still stored, and
  *    the auth module's send-code still delivers a code (own budget); one app
@@ -61,7 +61,7 @@ const SALES = `e2e-forms-sales-${STAMP}@example.com`;
 const ANA = `e2e-forms-ana-${STAMP}@example.com`;
 const CAROL = `e2e-forms-carol-${STAMP}@example.com`;
 const DAVE = `e2e-forms-dave-${STAMP}@example.com`;
-// The operator-wide e-mail budgets (NSO-320, mail-guard.ts): Redis keys and
+// The operator-wide e-mail budgets (mail-guard.ts): Redis keys and
 // the values both composes derive from EMAIL_GLOBAL_HOURLY_MAX 1000.
 const MAIL_NOTIFY_COUNTER = 'drobek:rl:mail:notification';
 const MAIL_NOTIFY_PAUSE = 'drobek:mail:paused:notification';
@@ -224,7 +224,7 @@ async function skillExample(mcp: McpClient, name: string, mustContain: string[])
 
 test.describe.configure({ mode: 'serial' });
 
-test.describe('platform modules forms + email (M1-04) @local', () => {
+test.describe('platform modules forms + email @local', () => {
   let mcp: McpClient;
   let owner: BrowserContext;
   let formsApp: Created;
@@ -486,7 +486,7 @@ test.describe('platform modules forms + email (M1-04) @local', () => {
     }
   });
 
-  // NSO-320: EMAIL_GLOBAL_HOURLY_MAX 1000 in both composes → 200 reserved for
+  // EMAIL_GLOBAL_HOURLY_MAX 1000 in both composes → 200 reserved for
   // sign-in codes (EMAIL_SIGNIN_HOURLY_MAX), 800 for notifications, one app
   // at most 25 % of those (EMAIL_APP_HOURLY_SHARE) = 200.
   test('notifications past their hourly budget pause (503 email_paused + ALERT); sign-in codes keep going; submissions are still stored', async ({ request }) => {

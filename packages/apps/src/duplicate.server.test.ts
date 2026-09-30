@@ -1,5 +1,5 @@
 /**
- * NSO-340 — duplicating a gallery app on a real (PGlite) database: only a
+ * Duplicating a gallery app on a real (PGlite) database: only a
  * visible gallery entry whose owner allows it; the copy is the PUBLISHED
  * version's files as version 1 of a new unpublished app that remembers its
  * source; audits on both sides; the per-person hourly cap; the public list's

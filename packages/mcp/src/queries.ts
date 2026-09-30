@@ -13,15 +13,15 @@ export interface AppRow {
   workspaceId: string;
   workspaceSlug: string;
   publishedVersionId: string | null;
-  /** NSO-293: the super-admin takedown category; non-null = locked (app_locked_by_admin). */
+  /** The super-admin takedown category; non-null = locked (app_locked_by_admin). */
   lockedReason: string | null;
-  /** NSO-340: what get_app's `gallery` reports. */
+  /** What get_app's `gallery` reports. */
   visibility: string;
   galleryListed: boolean;
   galleryDescription: string | null;
   galleryHiddenAt: Date | null;
   galleryAllowDuplicate: boolean;
-  /** NSO-340: the gallery app this one was duplicated from. */
+  /** The gallery app this one was duplicated from. */
   duplicatedFromSlug: string | null;
 }
 

@@ -1,5 +1,5 @@
 /**
- * The publish readiness report on the MCP tools (NSO-384): write_files runs it
+ * The publish readiness report on the MCP tools: write_files runs it
  * over the files it just compiled, publish over the version it put live.
  * Blocking = compile errors (they already block today); warnings never stop a
  * write or a publish. A check or module-config load that fails is logged and
@@ -29,7 +29,7 @@ function options(ctx: ReadinessCtx, appId: string, enabled: ReadonlySet<string>)
 
 /**
  * write_files: the report of the files just compiled (`blocking` = the
- * result's compile errors). The type check (NSO-388) is still running then:
+ * result's compile errors). The type check is still running then:
  * `typecheck: 'pending'`, and get_app has its `type_error` warnings later.
  */
 export async function filesReadiness(

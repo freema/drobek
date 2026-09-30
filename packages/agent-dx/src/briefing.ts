@@ -1,11 +1,11 @@
 /**
- * The app briefing (M0-05) — the contract an agent gets from create_app and
+ * The app briefing — the contract an agent gets from create_app and
  * get_app, and the same text llms-full.txt and the drobek skill point to. ONE
  * source: MCP, llms-full.txt and SKILL.md never tell different stories.
  *
  * Only what exists on THIS server is described: the platform modules and
- * general skills are listed from the live registry (M1-01) — none when the
- * operator enabled none. Publishing is the `publish` tool (M0-06) — only on
+ * general skills are listed from the live registry — none when the
+ * operator enabled none. Publishing is the `publish` tool — only on
  * the user's explicit request.
  */
 import { APP_LOCK_TTL_SEC, REASONING_MAX_CHARS, WRITE_FILES_MAX } from './limits.js';
@@ -26,7 +26,7 @@ export const TEMPLATE_IMPORTS: Readonly<Record<string, string>> = {
 };
 
 /**
- * Tailwind CSS v4's browser build on esm.sh (NSO-308): the no-build-step way
+ * Tailwind CSS v4's browser build on esm.sh: the no-build-step way
  * to use Tailwind under the apps CSP (scripts only from the app + esm.sh). The
  * `ui` skill uses the same URL (guarded by @drobek/skills-check).
  */
@@ -60,7 +60,7 @@ export interface BriefingSkill {
 }
 
 /**
- * Where per-visitor state goes (NSO-376): the data module has no anonymous
+ * Where per-visitor state goes: the data module has no anonymous
  * per-visitor identity — a visitor's records carry no owner — so state that
  * belongs to one visitor without sign-in stays in the browser.
  */
@@ -89,7 +89,7 @@ function skillsSection(skills: BriefingSkill[]): string[] {
 }
 
 /**
- * The MCP server's `instructions` (the initialize result, NSO-379): the one
+ * The MCP server's `instructions` (the initialize result): the one
  * text a client shows the model before any tool call, so it names the first
  * calls — list_apps, then the `start` skill before an app is created.
  */
@@ -102,7 +102,7 @@ export const SERVER_INSTRUCTIONS = [
 ].join(' ');
 
 /**
- * `next` of list_apps (NSO-379): the step after it. Names `skill_info('start')`
+ * `next` of list_apps: the step after it. Names `skill_info('start')`
  * only when this server has that skill (the general skills may be absent).
  */
 export function listAppsNext(skills: readonly { name: string }[]): string {

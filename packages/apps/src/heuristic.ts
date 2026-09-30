@@ -1,5 +1,5 @@
 /**
- * The publish heuristic (M4-02, NSO-293): a cheap, NON-BLOCKING phishing
+ * The publish heuristic: a cheap, NON-BLOCKING phishing
  * signal. A version is flagged when BOTH hold:
  *   1. it renders a password field — `<input type="password">` in HTML, or
  *      `type: "password"` / `type="password"` / `setAttribute("type",

@@ -1,5 +1,5 @@
 /**
- * Module contract 1.2 (NSO-391): `jobs` — the load-time rules, a 1.1 module
+ * Module contract 1.2: `jobs` — the load-time rules, a 1.1 module
  * loading unchanged, skill_info, the apps a per-app job runs for and the
  * contexts its runs get (PGlite), and the test kit's runJob.
  */

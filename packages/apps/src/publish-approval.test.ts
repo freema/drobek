@@ -10,7 +10,7 @@ import {
   publishNotifyMode,
 } from './publish-approval.js';
 
-describe('publishing config and messages (NSO-366)', () => {
+describe('publishing config and messages', () => {
   it('defaults to open; approval only when asked; an unknown value fails closed', () => {
     expect(publishApprovalMode({})).toBe('open');
     expect(publishApprovalMode({ PUBLISH_APPROVAL: ' Open ' })).toBe('open');

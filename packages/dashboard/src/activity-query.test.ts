@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseActivityQuery } from './routes/workspaces.$slug.activity.server.js';
 
-describe('parseActivityQuery (Activity filters, M2-04 actor kind)', () => {
+describe('parseActivityQuery (Activity filters, actor kind)', () => {
   it('reads app, action, actor and cursor', () => {
     const q = parseActivityQuery(
       new URL('http://x/workspaces/w/activity?app=my-app&action=data.export&actor=end_user&cursor=abc')
@@ -9,7 +9,7 @@ describe('parseActivityQuery (Activity filters, M2-04 actor kind)', () => {
     expect(q).toEqual({ app: 'my-app', action: 'data.export', actor: 'end_user', cursor: 'abc', from: null, to: null, start: null, until: null });
   });
 
-  it('reads an inclusive UTC day range; a bad date is ignored, a reversed range put in order (NSO-371)', () => {
+  it('reads an inclusive UTC day range; a bad date is ignored, a reversed range put in order', () => {
     const q = parseActivityQuery(new URL('http://x/a?from=2026-09-01&to=2026-09-03'));
     expect(q).toMatchObject({ from: '2026-09-01', to: '2026-09-03' });
     expect(q.start?.toISOString()).toBe('2026-09-01T00:00:00.000Z');

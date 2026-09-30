@@ -1,20 +1,8 @@
-// PHY-59 e2e echo target — a tiny in-network HTTP server the proxy specs point an
-// upstream at. It echoes the request (method/path/headers) as JSON so the test
-// can PROVE the injected auth header arrived, and offers a /redirect endpoint that
-// 302s to an internal address so the test can prove drobek does NOT follow it.
-//
-// M0-04: it also serves mock OAuth Client ID Metadata Documents (/cimd/…) for
-// tests/mcp-cimd.spec.ts; the drobek service allows exactly this origin via
-// OAUTH_CIMD_DEV_ORIGINS (dev/test only).
-//
-// NSO-297: upstreams may only use ports 80/443, so it ALSO listens on every
-// port in EXTRA_PORTS (the composes set 80): the proxy-module e2e registers
-// `http://proxy-echo` (port 80), the CIMD mock + healthcheck keep PORT (8099).
-//
-// It runs as a compose service (node:22-alpine, the repo bind-mounted) on the
-// drobek network, hostname `proxy-echo`. Because a Docker container resolves to a
-// PRIVATE IP, the SSRF guard would block it — so the web service allow-lists this
-// exact hostname via PROXY_ALLOWED_HOSTS (empty in prod → fully strict).
+// e2e-only upstream on the compose network (hostname `proxy-echo`, allow-listed
+// via PROXY_ALLOWED_HOSTS): echoes requests as JSON, serves a /redirect the
+// proxy must not follow, mock CIMD documents, a sync feed and the fake limits
+// provider. Upstreams may only use ports 80/443, so it also listens on
+// EXTRA_PORTS; the CIMD mock + healthcheck keep PORT (8099).
 import { createHmac } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import http from 'node:http';
@@ -37,7 +25,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // M0-04: mock OAuth Client ID Metadata Documents. The client_id inside is
+  // Mock OAuth Client ID Metadata Documents. The client_id inside is
   // the exact URL the document was fetched from (Host header + path):
   //   /cimd/<id>/client.json           → a valid public-client document
   //   /cimd-mismatch/<id>/client.json  → client_id names ANOTHER URL
@@ -71,7 +59,7 @@ const server = http.createServer((req, res) => {
     res.end('redirecting');
     return;
   }
-  // NSO-326: a RELATIVE redirect (relayed) …
+  // A RELATIVE redirect (relayed) …
   if (url.pathname === '/redirect/relative') {
     res.writeHead(302, { location: '/echo/next' });
     res.end('redirecting');
@@ -92,7 +80,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // NSO-392: a sports feed for the sync module. It answers only with the
+  // A sports feed for the sync module. It answers only with the
   // injected bearer key (never echoed), `?n=` players (at most 5: the e2e
   // DATA_MAX_DOCS_PER_APP), and /sync/fail always fails.
   if (url.pathname === '/sync/players') {
@@ -113,8 +101,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // NSO-352: the fake limits provider (LIMITS_PROVIDER_URL=http://proxy-echo:8099
-  // in both composes). A signed GET /limits/<workspace_id> answers the plan the
+  // The fake limits provider. A signed GET /limits/<workspace_id> answers the plan the
   // e2e wrote to tests-e2e/.limits-provider/<workspace_id>.json, else `{}` (the
   // env defaults); a bad signature is a 401.
   const limits = /^\/limits\/([A-Za-z0-9_-]+)$/.exec(url.pathname);

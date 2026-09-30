@@ -1,10 +1,10 @@
 /**
- * Authorization code issue + single-use consume (U5). The code is opaque; only
+ * Authorization code issue + single-use consume. The code is opaque; only
  * its SHA-256 hash is stored. Consumption is atomic (markAuthCodeUsed flips
  * used false→true and reports whether THIS caller won the race), so a code is
  * usable exactly once even under concurrent /oauth/token calls.
  *
- * Presentation burns the code (NSO-332, RFC 6749 §4.1.2 / OAuth 2.1 §4.1.3):
+ * Presentation burns the code (RFC 6749 §4.1.2 / OAuth 2.1 §4.1.3):
  * a FAILED exchange (wrong verifier, redirect_uri, client, expired) consumes
  * it too, so a PKCE guess gets exactly one try. Presenting an already-consumed
  * code is replay: the refresh-token lineage the code minted is revoked with

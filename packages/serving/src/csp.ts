@@ -1,5 +1,5 @@
 /**
- * Security headers of every response an app host sends (M0-06, plan §3.3).
+ * Security headers of every response an app host sends.
  * Pure. Every app has its own host = its own origin, so the CSP confines the
  * app to itself (+ esm.sh for the import-mapped dependencies) and the headers
  * below go on EVERY app-host response — files, 304s, the not-published / 404
@@ -11,18 +11,18 @@
  *   img-src     'self' data: blob: https:
  *   font-src    'self' data: https:
  *   connect-src 'self' https://esm.sh                   — fetch only back to the app itself
- *                                                          (modules live at /__drobek/*, M1)
+ *                                                          (modules live at /__drobek/*)
  *   media-src   'self' blob: https:                     — <video>/<audio> from the app's own
  *                                                          assets or any https URL (media runs
- *                                                          no script; NSO-358)
+ *                                                          no script)
  *   frame-src   https://www.youtube-nocookie.com https://www.youtube.com
  *               https://player.vimeo.com https://drive.google.com
  *                                                        — the curated video embeds, plus the
- *                                                          operator's APP_FRAME_SRC_EXTRA origins
- *                                                          (NSO-358); any other iframe is blocked
+ *                                                          operator's APP_FRAME_SRC_EXTRA origins;
+ *                                                          any other iframe is blocked
  *   object-src 'none'; base-uri 'self'; form-action 'self'
  *   frame-ancestors 'none'                              — or the app's validated override;
- *                                                          plus the dashboard origin (NSO-342);
+ *                                                          plus the dashboard origin;
  *                                                          plus GALLERY_FRAME_ANCESTORS on the
  *                                                          production host of an app shown in
  *                                                          the public gallery
@@ -35,7 +35,7 @@
 
 export const DEFAULT_FRAME_ANCESTORS = "'none'";
 
-/** The embeds every app may frame (NSO-358): YouTube (privacy-enhanced and classic), Vimeo, Google Drive. */
+/** The embeds every app may frame: YouTube (privacy-enhanced and classic), Vimeo, Google Drive. */
 export const DEFAULT_FRAME_SRC = 'https://www.youtube-nocookie.com https://www.youtube.com https://player.vimeo.com https://drive.google.com';
 
 const CSP_HEAD = [
@@ -140,7 +140,7 @@ function ancestorOrigin(raw: string | null | undefined): string | null {
 /**
  * Add origins to a validated frame-ancestors value (parseFrameAncestors):
  * each one next to the owner's override, or instead of `'none'`. Used for the
- * dashboard origin (NSO-342, the app-list thumbnail — every app host) and the
+ * dashboard origin (the app-list thumbnail — every app host) and the
  * operator's gallery origins (GALLERY_FRAME_ANCESTORS — the production host of
  * an app shown in the public gallery). An origin that is not a bare http(s)
  * origin (ancestorOrigin) is ignored; no origin to add → the value as it was.

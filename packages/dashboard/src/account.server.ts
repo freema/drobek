@@ -1,5 +1,5 @@
 /**
- * The account area's audited mutations (M2-04, NSO-284): personal API keys
+ * The account area's audited mutations: personal API keys
  * and OAuth connections. @drobek/oauth owns the rows; this layer adds the
  * per-user guards and the audit trail.
  *

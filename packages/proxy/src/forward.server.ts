@@ -1,5 +1,5 @@
 /**
- * forwardToUpstream — the gateway core of one proxied call (PHY-59, NSO-297).
+ * forwardToUpstream — the gateway core of one proxied call.
  * Principal-agnostic: WHO may call WHICH upstream is decided by the caller (the
  * `proxy` platform module checks the app's config, rule and rate limits on the
  * app host). This enforces what belongs to the upstream itself:
@@ -11,7 +11,7 @@
  *   4. the SSRF-safe forward: resolve once + pinned IP, port allow-list, no
  *      redirects, connect timeout, 20 s deadline, 5 MiB response cap;
  *   5. a `Content-Encoding` the upstream sent anyway (gzip / deflate / br) is
- *      decoded — the DECODED body must fit the same cap (NSO-326);
+ *      decoded — the DECODED body must fit the same cap;
  *   6. the response relayed with allow-listed headers + `Cache-Control: no-store`.
  */
 import { promisify } from 'node:util';

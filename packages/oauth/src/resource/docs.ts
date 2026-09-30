@@ -1,5 +1,5 @@
 /**
- * MCP docs resources + the guided prompt (PHY-124, M0-05).
+ * MCP docs resources + the guided prompt.
  *
  * A connected agent can read the same contract that /llms.txt and
  * /llms-full.txt serve WITHOUT web access, and can pull up a guided prompt that

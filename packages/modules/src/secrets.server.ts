@@ -1,11 +1,11 @@
 /**
- * Module secrets of an app (M1-01) — the minimal storage `ctx.secrets.get`
- * needs, built like the upstream secrets (§6): AES-256-GCM envelope (a random
+ * Module secrets of an app — the minimal storage `ctx.secrets.get`
+ * needs, built like the upstream secrets: AES-256-GCM envelope (a random
  * DEK per value, wrapped by the KEK from DROBEK_MASTER_KEY, `kek_id` for
  * rotation; @drobek/proxy crypto). The plaintext exists only in memory, inside
  * a module handler.
  *
- * WHO WRITES: only the dashboard (the secrets form of M2-02 calls
+ * WHO WRITES: only the dashboard (its secrets form calls
  * `setModuleSecret`); there is NO MCP path to set or read a value, and no API
  * ever returns one — agents and get_app see `hasSecret` only.
  */

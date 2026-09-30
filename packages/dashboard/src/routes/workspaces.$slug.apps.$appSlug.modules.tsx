@@ -1,5 +1,5 @@
 /**
- * /workspaces/:slug/apps/:appSlug/modules — client half (M2-02, NSO-291):
+ * /workspaces/:slug/apps/:appSlug/modules — client half:
  * the app's Modules tab — every platform module on the server, whether this
  * app configured it, what waits for confirmation and which required secrets
  * are missing; each links to its page. Server code lives in the .server.ts.

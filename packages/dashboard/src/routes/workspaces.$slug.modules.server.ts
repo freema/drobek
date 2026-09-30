@@ -1,5 +1,5 @@
 /**
- * GET/POST /workspaces/:slug/modules — server half (NSO-347 + NSO-346).
+ * GET/POST /workspaces/:slug/modules — server half.
  *
  * GET: a read-only overview of the platform modules this server runs, for
  * every member of the workspace (viewer+; a non-member → 404, anonymous →
@@ -12,8 +12,8 @@
  * returns to agents. Never a path on disk, never a secret, never an app's
  * config.
  *
- * Each opt-in module also carries its state for the workspace (NSO-346,
- * ../workspace-modules-toggle.server.ts): enabled or not and what decides it
+ * Each opt-in module also carries its state for the workspace
+ * (../workspace-modules-toggle.server.ts): enabled or not and what decides it
  * (plan / env / the super-admin's switch). Who flipped the switch (an
  * e-mail) is shown to workspace admins only.
  *
@@ -41,10 +41,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   }
   return {
     workspace: { slug: access.workspace.slug, name: access.workspace.name },
-    /** The shared workspace chrome (breadcrumb, badges, tabs — NSO-342). */
+    /** The shared workspace chrome (breadcrumb, badges, tabs). */
     nav: await workspaceNav(access),
     modules,
-    /** NSO-346: each opt-in module's state for this workspace + whether this user may flip the switch. */
+    /** Each opt-in module's state for this workspace + whether this user may flip the switch. */
     optIn,
   };
 }

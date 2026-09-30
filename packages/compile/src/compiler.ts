@@ -223,7 +223,7 @@ export class Compiler {
       tsconfigRaw: '{}',
       logLevel: 'silent',
       plugins: [virtualFsPlugin(state)],
-      // M1-07: every entry loads the error beacon first (ES imports run in order).
+      // Every entry loads the error beacon first (ES imports run in order).
       ...(opts.beaconUrl && config.beacon !== false ? { banner: { js: `import ${JSON.stringify(opts.beaconUrl)};` } } : {}),
     });
 

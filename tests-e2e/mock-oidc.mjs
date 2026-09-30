@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Mock OpenID Connect provider — tests-e2e ONLY (NSO-351). Never ships in the
+ * Mock OpenID Connect provider — tests-e2e ONLY. Never ships in the
  * image. The oidc module reaches it like any IdP: an app's
  * `providers.oidc.issuer` (or AUTH_OIDC_ISSUER) names it, and the dev compose
  * lets the module call it over http from the container

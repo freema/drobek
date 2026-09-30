@@ -1,12 +1,12 @@
 /**
- * Module request counters (get_logs `requests`, NSO-323 M3): one response of
+ * Module request counters (get_logs `requests`): one response of
  * `/__drobek/v1/<module>/…` is counted in REDIS — one hash per app and UTC day
  * (`drobek:signals:mod:<app_id>:<day>`, field `<module>:<status class>`,
  * TTL'd like the serving signals) — never with a SQL statement per request.
  * The durable `module_request_stats` rows are written lazily:
  *
  *  - by the read (`queryRequestLog` flushes every day of its window in one
- *    Redis pipeline and one statement per table — NSO-327), and
+ *    Redis pipeline and one statement per table), and
  *  - by the counter itself at most once per `MODULE_STATS_FLUSH_SEC` per app
  *    and day (a `SET NX EX` marker, `drobek:signals:modflush:<app_id>:<day>`),
  *    so the table stays fresh without a reader.

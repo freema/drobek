@@ -1,5 +1,5 @@
 /**
- * `createModuleTestContext()` (M1-01) — unit-test a module without a server,
+ * `createModuleTestContext()` — unit-test a module without a server,
  * Redis or SMTP: a real ModuleContext over in-memory fakes, plus `request()`
  * that runs a route through the SAME pipeline production uses (CSRF, rule,
  * rate limit, body/query validation, uniform errors).
@@ -12,7 +12,7 @@
  * `db` is whatever drizzle database the test passes (e.g. PGlite with the
  * module's migrations applied); a module that never touches `ctx.db` needs none.
  * `coreMigrationsDir()` + `createTestApp()` build that database without any
- * other drobek package (NSO-349):
+ * other drobek package:
  *
  *   const pg = new PGlite();
  *   const db = drizzle(pg);

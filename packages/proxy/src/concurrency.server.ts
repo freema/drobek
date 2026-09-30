@@ -1,5 +1,5 @@
 /**
- * In-flight caps for outbound proxy calls (NSO-326). Every proxied call holds
+ * In-flight caps for outbound proxy calls. Every proxied call holds
  * a socket and buffers up to PROXY_MAX_RESPONSE_BYTES for up to 20 s, so the
  * number of calls in flight is capped for the whole process
  * (`PROXY_MAX_CONCURRENT`) and per app (`PROXY_MAX_CONCURRENT_PER_APP`): one

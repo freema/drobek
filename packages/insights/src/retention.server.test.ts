@@ -1,5 +1,5 @@
 /**
- * get_logs storage (NSO-327): `get_logs('requests')` flushes its whole window
+ * get_logs storage: `get_logs('requests')` flushes its whole window
  * (up to 31 days) in ONE Redis round trip and one statement per table, reads
  * never delete, and the periodic prune keeps every table inside its
  * retention for every app. PGlite + a pipelined in-memory Redis.
@@ -96,7 +96,7 @@ describe("get_logs('requests') flush", () => {
     const entries = await queryRequestLog(appA, null, { now: NOW, redis: () => redis });
 
     expect(stats.execs).toBe(1);
-    // Per day: req, 5xx, 404 paths, module counters + the 4xx / 5xx failing paths (NSO-380).
+    // Per day: req, 5xx, 404 paths, module counters + the 4xx / 5xx failing paths.
     expect(stats.commands).toBe((LOGS_RETENTION_DAYS + 1) * 6);
     // Two upserts (app_daily_stats, module_request_stats) + the two reads — no per-day statement, no delete.
     expect(sqlCalls.count()).toBe(4);

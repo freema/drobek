@@ -11,7 +11,7 @@ export const TOOL_ERROR_CODES = [
   'forbidden',
   'invalid_params',
   'invalid_path',
-  // NSO-382: a write_files edit that does not apply to the latest version.
+  // A write_files edit that does not apply to the latest version.
   'edit_mismatch',
   'limit_exceeded',
   'secret_in_source',
@@ -20,15 +20,15 @@ export const TOOL_ERROR_CODES = [
   'busy',
   'slug_taken',
   'not_publishable',
-  // NSO-366: publish in a workspace the operator has not allowed (PUBLISH_APPROVAL=approval) or blocked.
+  // Publish in a workspace the operator has not allowed (PUBLISH_APPROVAL=approval) or blocked.
   'publish_not_approved',
   'publish_blocked',
-  // NSO-340: set_gallery_listing.
+  // set_gallery_listing.
   'not_published',
   'user_confirmation_required',
   'gallery_hidden',
   'gallery_disabled',
-  // NSO-340: duplicate_app on a gallery app whose owner does not allow copies.
+  // duplicate_app on a gallery app whose owner does not allow copies.
   'not_duplicable',
   'asset_too_large',
   'asset_type_not_allowed',
@@ -36,16 +36,16 @@ export const TOOL_ERROR_CODES = [
   'asset_path_taken',
   'asset_not_found',
   'rate_limited',
-  // NSO-346: configure_module on an opt-in module that is off for the workspace.
+  // configure_module on an opt-in module that is off for the workspace.
   'module_not_enabled',
-  // NSO-366: the custom-domain tools.
+  // The custom-domain tools.
   'invalid_hostname',
   'hostname_not_allowed',
   'domain_already_added',
   'domain_taken',
   'domain_not_verified',
   'dns_unavailable',
-  // NSO-372: register_upstream.
+  // register_upstream.
   'upstream_already_registered',
   'internal_error',
 ] as const;
@@ -71,11 +71,11 @@ export class ToolError extends Error {
 
 /**
  * The ONE answer for "no such app/workspace" AND "not a member" — identical
- * bytes, so it is no enumeration oracle (NSO-282). The plan's `not_member`
- * code deliberately does not exist.
+ * bytes, so it is no enumeration oracle; there is deliberately no
+ * `not_member` code.
  */
 /**
- * A super-admin took the app down (NSO-293): distinct from the single-writer
+ * A super-admin took the app down: distinct from the single-writer
  * lease `app_locked`. The message names the reason CATEGORY only.
  */
 export function lockedByAdmin(lockedReason: string | null | undefined): ToolError {
@@ -83,7 +83,7 @@ export function lockedByAdmin(lockedReason: string | null | undefined): ToolErro
   return new ToolError('app_locked_by_admin', lockedMessage(reason), { reason });
 }
 
-/** NSO-366: the workspace may not publish (not approved yet, or blocked by the operator); `contact` = the operator's e-mail. */
+/** The workspace may not publish (not approved yet, or blocked by the operator); `contact` = the operator's e-mail. */
 export function publishRefused(
   code: 'publish_not_approved' | 'publish_blocked',
   message: string,

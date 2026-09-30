@@ -1,5 +1,5 @@
 /**
- * recordBeacon's two rate-limit buckets (NSO-327): the per-IP bucket is
+ * recordBeacon's two rate-limit buckets: the per-IP bucket is
  * checked BEFORE the per-app aggregate, so one client can never spend the
  * app's whole budget and silence its error log — while the aggregate still
  * bounds a flood that rotates IPs. PGlite for the insert, an in-memory

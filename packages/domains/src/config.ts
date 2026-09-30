@@ -1,9 +1,9 @@
 /**
- * Custom-domain settings from the environment (M3-01):
+ * Custom-domain settings from the environment:
  *
  *   DOMAINS_MAX_PER_APP          domains per app, pending + verified (default 3;
  *                                0 = custom domains off). A limits provider
- *                                may set it per workspace (NSO-329): callers
+ *                                may set it per workspace: callers
  *                                pass that value to addDomain.
  *   DOMAINS_DNS_SERVERS          optional nameservers for verification, comma-
  *                                separated IPs (default: the system resolver)

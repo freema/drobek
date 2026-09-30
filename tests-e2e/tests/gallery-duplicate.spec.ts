@@ -6,7 +6,7 @@ import { FULL_SCOPE, callTool, mcpClient, type McpClient } from './helpers/mcp';
 import { withDb } from './helpers/seed';
 
 /**
- * NSO-340: duplicating a gallery app end to end on the local stack
+ * Duplicating a gallery app end to end on the local stack
  * (GALLERY_ENABLED is on in docker-compose.yml and docker-compose.e2e.yaml).
  *
  *  - the owner lists a published app with "Allow duplicates" on its Overview
@@ -49,7 +49,7 @@ async function itemOf(request: APIRequestContext, slug: string): Promise<Item | 
 
 test.describe.configure({ mode: 'serial' });
 
-test.describe('gallery: duplicate an app from the dashboard and over MCP (NSO-340) @local', () => {
+test.describe('gallery: duplicate an app from the dashboard and over MCP @local', () => {
   let owner: McpClient;
   let app: { app_id: string; slug: string };
   let overview: string;

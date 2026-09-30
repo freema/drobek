@@ -1,5 +1,5 @@
 /**
- * Path resolution + caching decisions for the app hosts (U7, PHY-58; M0-06).
+ * Path resolution + caching decisions for the app hosts.
  * Pure — no db, no redis, no react — so the resolution/caching contract is
  * unit-tested in isolation.
  */
@@ -90,7 +90,7 @@ export function resolveServePath(input: ResolveInput): ResolveResult {
   return { kind: 'not-found' };
 }
 
-// ── Caching decision (M0-06) ─────────────────────────────────────────────────
+// ── Caching decision ─────────────────────────────────────────────────
 
 /**
  * Everything revalidates by default: a host serves a MOVING version (preview

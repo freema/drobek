@@ -1,5 +1,5 @@
 /**
- * NSO-366 over a real MCP client on a real (PGlite) database: the custom-domain
+ * The custom-domain tools over a real MCP client on a real (PGlite) database: the
  * tools do what the dashboard's Domains tab does, through the same
  * @drobek/domains operations — list with the exact records, add (validation,
  * DOMAINS_MAX_PER_APP incl. 0, duplicates, a name another app verified),
@@ -350,7 +350,7 @@ describe('remove_domain', () => {
   });
 });
 
-describe('a taken-down app (NSO-293)', () => {
+describe('a taken-down app', () => {
   it('refuses adding, verifying and a primary domain; removing stays possible', async () => {
     const app = await newApp();
     await as('ed', async (c) => ok(await c.call('add_domain', { app_id: app.id, host: 'down.example.com' })));

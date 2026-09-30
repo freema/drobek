@@ -3,7 +3,7 @@ import { AGENT_GUIDE_URL, mcpEndpoint } from '@drobek/agent-dx';
 import { loader } from './build-with-your-agent';
 
 describe('/build-with-your-agent loader', () => {
-  it('carries the plugin install (Claude Code) + the Codex/Cursor repo pointer (M0-10)', () => {
+  it('carries the plugin install (Claude Code) + the Codex/Cursor repo pointer', () => {
     const data = loader();
     expect(data.plugin.commands).toBe(
       'claude plugin marketplace add freema/drobek-plugin\nclaude plugin install drobek@drobek'
@@ -21,7 +21,7 @@ describe('/build-with-your-agent loader', () => {
   });
 });
 
-describe('/build-with-your-agent agent guide link (NSO-366)', () => {
+describe('/build-with-your-agent agent guide link', () => {
   afterEach(() => {
     vi.unstubAllEnvs();
   });

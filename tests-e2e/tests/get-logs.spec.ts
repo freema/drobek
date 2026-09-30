@@ -7,7 +7,7 @@ import { skipUnlessLocal } from './helpers/auth';
 import { FULL_SCOPE, callTool, mcpClient, type McpClient } from './helpers/mcp';
 
 /**
- * M1-07 (NSO-290): get_logs end to end on the local stack.
+ * get_logs end to end on the local stack.
  *
  *  - runtime: a page on the PREVIEW host throws (uncaught error + unhandled
  *    rejection) in a real browser → the beacon the compiler put in front of
@@ -17,8 +17,8 @@ import { FULL_SCOPE, callTool, mcpClient, type McpClient } from './helpers/mcp';
  *  - compile: the last compiles with ok / errors / version (≤ 50);
  *  - requests: today's totals + module calls by status class (hello: 2xx, 4xx);
  *  - the beacon: 9 KiB (declared or chunked) → 413 and the server keeps
- *    answering (the PHY-76 #10 regression); a cross-origin POST → 403;
- *  - NSO-327: the page URL is stored as origin + path — the SDK never sends
+ *    answering; a cross-origin POST → 403;
+ *  - the page URL is stored as origin + path — the SDK never sends
  *    the query string or fragment (`?code=…`), and a client that does has
  *    them stripped by the server.
  */
@@ -101,7 +101,7 @@ function chunkedPost(host: string, path: string, body: Buffer): Promise<number> 
 
 test.describe.configure({ mode: 'serial' });
 
-test.describe('get_logs — runtime errors, compile history, request stats (M1-07) @local', () => {
+test.describe('get_logs — runtime errors, compile history, request stats @local', () => {
   let mcp: McpClient;
   let app: Created;
   let host: string;
@@ -137,7 +137,7 @@ test.describe('get_logs — runtime errors, compile history, request stats (M1-0
     const ctx = await browser.newContext();
     try {
       const tab = await ctx.newPage();
-      // A one-time code in the query and a token in the fragment must never reach the log (NSO-327).
+      // A one-time code in the query and a token in the fragment must never reach the log.
       await tab.goto(`${urlOf(host)}/?code=123456&e=${encodeURIComponent(LEAKED_EMAIL)}#token=${STAMP}`);
       await expect(tab.getByRole('heading', { name: 'Logs demo ready' })).toBeVisible();
       const loadedAt = Date.now();
@@ -209,11 +209,11 @@ test.describe('get_logs — runtime errors, compile history, request stats (M1-0
     skipUnlessLocal();
     expect((await hostRequest(host, '/')).status).toBe(200);
     expect((await hostRequest(host, '/__drobek/v1/hello')).status).toBe(200);
-    // An unknown route (and a 429) is not counted — only matched routes are (NSO-323).
+    // An unknown route (and a 429) is not counted — only matched routes are.
     expect((await hostRequest(host, '/__drobek/v1/hello/nope')).status).toBe(404);
     // A mutation without the SDK header → 403 (csrf_rejected), a 4xx of hello.
     expect((await hostRequest(host, '/__drobek/v1/hello/wave', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"name":"x"}' })).status).toBe(403);
-    // A missing file → 404, its path (never its query) listed under failing_paths (NSO-380).
+    // A missing file → 404, its path (never its query) listed under failing_paths.
     expect((await hostRequest(host, '/favicon.ico?v=secret')).status).toBe(404);
 
     const today = new Date().toISOString().slice(0, 10);
@@ -282,7 +282,7 @@ test.describe('get_logs — runtime errors, compile history, request stats (M1-0
     expect(JSON.stringify(r.json.entries)).not.toContain('forged');
   });
 
-  test('beacon: a client that sends the query string and fragment has them stripped server-side (NSO-327)', async () => {
+  test('beacon: a client that sends the query string and fragment has them stripped server-side', async () => {
     skipUnlessLocal();
     const marker = `raw-client-${STAMP}`;
     const posted = await hostRequest(host, '/__drobek/v1/_beacon', {

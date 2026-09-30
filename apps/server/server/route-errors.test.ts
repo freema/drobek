@@ -28,7 +28,7 @@ const args = (aborted = false) => {
 
 afterEach(() => vi.restoreAllMocks());
 
-describe('route error logging (NSO-333)', () => {
+describe('route error logging', () => {
   it('a failed query in a loader is logged without its bound values', () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     logRouteError(failedQuery(), args());

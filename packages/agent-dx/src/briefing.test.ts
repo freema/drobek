@@ -35,12 +35,12 @@ describe('renderBriefing', () => {
     expect(b).toContain('Never publish on your own initiative');
   });
 
-  it('lists in the gallery only after the user said yes (NSO-340)', () => {
+  it('lists in the gallery only after the user said yes', () => {
     expect(b).toContain('`set_gallery_listing` ONLY after the user explicitly said yes');
     expect(b).toContain('`user_confirmed: true`');
   });
 
-  it('points at get_logs for runtime errors and names the beacon opt-out (M1-07)', () => {
+  it('points at get_logs for runtime errors and names the beacon opt-out', () => {
     expect(b).toContain('get_logs({ app_id, kind: "runtime" })');
     expect(b).toContain('"beacon": false');
     expect(b).toContain('create_asset_upload({ app_id, path, size })');
@@ -85,7 +85,7 @@ describe('renderBriefing', () => {
     expect(live).toContain('50 files, 64 KiB per file, 2 MiB in total; a build may take 5 s');
   });
 
-  it('explains installing an app on a home screen with rules the server enforces (NSO-390)', () => {
+  it('explains installing an app on a home screen with rules the server enforces', () => {
     const inst = b.slice(b.indexOf('## Installable app'), b.indexOf('## Files'));
     expect(inst).toContain('`manifest.webmanifest` with write_files');
     expect(inst).toContain('application/manifest+json');
@@ -96,11 +96,11 @@ describe('renderBriefing', () => {
     expect(inst).toContain('`published_url`');
   });
 
-  it('says what publish\'s assets: "draft" means (NSO-390)', () => {
+  it('says what publish\'s assets: "draft" means', () => {
     expect(b).toContain('`assets: "draft"` means the uploads the preview shows are now live on production too');
   });
 
-  it('with the data module: per-visitor state without sign-in goes to localStorage (NSO-376)', () => {
+  it('with the data module: per-visitor state without sign-in goes to localStorage', () => {
     const withData = renderBriefing({ skills: [{ name: 'data', use_when: 'the app stores records' }] });
     expect(withData).toContain('Per-visitor state without sign-in');
     expect(withData).toContain('`localStorage`');
@@ -109,7 +109,7 @@ describe('renderBriefing', () => {
   });
 });
 
-describe('onboarding (NSO-379)', () => {
+describe('onboarding', () => {
   it('server instructions name list_apps, the start skill, preview_url and publish-on-request', () => {
     expect(SERVER_INSTRUCTIONS).toContain('Start with `list_apps`');
     expect(SERVER_INSTRUCTIONS).toContain("skill_info('start')");

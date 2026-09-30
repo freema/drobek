@@ -127,7 +127,7 @@ describe('canDeleteRecord (Data-tab delete authorization)', () => {
   });
 });
 
-describe('shapeActivity (PHY-85 audit-row shaping)', () => {
+describe('shapeActivity (audit-row shaping)', () => {
   const rows: ActivityRowInput[] = [
     {
       id: 'a1',
@@ -177,7 +177,7 @@ describe('shapeActivity (PHY-85 audit-row shaping)', () => {
     expect(systemRow.actorBadge).toBe('user');
   });
 
-  it('labels an end-user row (M1-01 module request, no drobek actor) as an app end user', () => {
+  it('labels an end-user row (module request, no drobek actor) as an app end user', () => {
     const [row] = shapeActivity([
       {
         id: 'e1',
@@ -208,7 +208,7 @@ describe('shapeActivity (PHY-85 audit-row shaping)', () => {
   });
 });
 
-describe('appThumbnail (NSO-342)', () => {
+describe('appThumbnail', () => {
   const urls = { published: 'https://shop.apps.example.com', preview: 'https://shop--preview.apps.example.com' };
   const app = { status: 'live', visibility: 'public', published: true, compiled: true, takenDown: false } as const;
 

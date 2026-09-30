@@ -1,5 +1,5 @@
 /**
- * NSO-349: the scaffold, and the npm packages it is written against.
+ * The scaffold, and the npm packages it is written against.
  *
  *  - parseTarget / scaffold: names, placeholders, refusal of a non-empty dir;
  *  - examples/drobek-module-hello IS the scaffold's output (+ the slot demo):

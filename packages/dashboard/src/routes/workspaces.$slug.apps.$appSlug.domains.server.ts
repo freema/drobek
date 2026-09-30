@@ -1,6 +1,6 @@
 /**
- * GET/POST /workspaces/:slug/apps/:appSlug/domains — server half (M3-01,
- * NSO-292): the app's custom domains.
+ * GET/POST /workspaces/:slug/apps/:appSlug/domains — server half:
+ * the app's custom domains.
  *
  * GET (viewer+): every domain with its state (pending / verified / primary),
  * the last check's problem and the two DNS records to create
@@ -18,7 +18,7 @@
  *   remove   { id }        → detach (Caddy's certificate expires on its own)
  * Expected failures come back as `{ error, code }` with the DomainsError status
  * (e.g. 403 `limit_exceeded` for the (DOMAINS_MAX_PER_APP + 1)-th domain).
- * DOMAINS_MAX_PER_APP is the WORKSPACE's value (NSO-329: the limits provider's
+ * DOMAINS_MAX_PER_APP is the WORKSPACE's value (the limits provider's
  * plan, else the env); 0 = custom domains off — the page says so and every
  * add answers `limit_exceeded`.
  */
@@ -61,7 +61,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   return {
     workspace: { slug: access.workspace.slug, name: access.workspace.name },
     app: { slug: app.slug, defaultUrl: publishedUrl(app.slug) },
-    /** NSO-342: the app header + tabs on every app sub-page. */
+    /** The app header + tabs on every app sub-page. */
     header: await appHeaderFor(access, app.slug),
     cnameTarget: cnameTarget(app.slug, appsOrigin().domain),
     scheme,
@@ -88,7 +88,7 @@ export type DomainsActionData =
 export async function action({ request, params }: ActionFunctionArgs) {
   const access = await requireWorkspaceRole(request, String(params.slug ?? ''), 'editor');
   const app = await appOf(access.workspace.id, String(params.appSlug ?? ''));
-  // Dashboard surface → a human actor (PHY-85), server-derived.
+  // Dashboard surface → a human actor, server-derived.
   const actor = { userId: access.user.id, kind: actorKindForSurface('web') };
   const form = await request.formData();
   const intent = String(form.get('intent') ?? '');

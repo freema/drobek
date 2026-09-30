@@ -1,5 +1,5 @@
 /**
- * Duplicating a gallery app (NSO-340): a signed-in person copies an app its
+ * Duplicating a gallery app: a signed-in person copies an app its
  * owner listed in the public gallery with "allow duplicates" on into a
  * workspace where they are an editor+. This is the files half, shared by the
  * dashboard's `/duplicate/:slug` page and the MCP tool `duplicate_app`; the

@@ -1,6 +1,6 @@
 /**
- * The end-user sign-in providers' IdP callback on the dashboard host
- * (NSO-348): request → runtime.endUserCallback input, result → HTTP.
+ * The end-user sign-in providers' IdP callback on the dashboard host:
+ * request → runtime.endUserCallback input, result → HTTP.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EndUserCallbackResult } from '@drobek/modules';

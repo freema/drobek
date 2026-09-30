@@ -1,10 +1,10 @@
 /**
- * "Before you publish" (NSO-384) — the publish readiness report of the app's
+ * "Before you publish" — the publish readiness report of the app's
  * newest version on the Overview tab, the same report the agent gets from
  * write_files and publish. Compile errors block; warnings are advice and
  * never stop the Publish button. Feed it `loadReadiness()`'s view; renders
  * nothing when the app has no version yet. The background TypeScript check
- * (NSO-388) adds `type_error` warnings once done; while it runs, or when it
+ * adds `type_error` warnings once done; while it runs, or when it
  * hit a server limit, a note says so.
  */
 import type { CSSProperties } from 'react';

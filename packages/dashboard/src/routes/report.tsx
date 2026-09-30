@@ -1,5 +1,5 @@
 /**
- * /report?host= — client half (M4-02, NSO-293): the public abuse report form.
+ * /report?host= — client half: the public abuse report form.
  * No login. The host comes prefilled from `/.well-known/drobek-report` on the
  * app host; the reporter picks a reason, may add details (≤ 2 000 chars) and
  * an e-mail for follow-up. `website` is a honeypot (hidden from humans).

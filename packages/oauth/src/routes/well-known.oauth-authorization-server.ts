@@ -1,5 +1,5 @@
 /**
- * GET /.well-known/oauth-authorization-server (U5) — OAuth 2.1 AS Metadata
+ * GET /.well-known/oauth-authorization-server — OAuth 2.1 AS Metadata
  * (RFC 8414). Advertises the authorize/token/register endpoints, code-only
  * response type, authorization_code + refresh_token grants, S256-only PKCE,
  * public ("none") client auth, and the drobek scope vocabulary. no-store.

@@ -1,5 +1,5 @@
 /**
- * NSO-346: an opt-in module over the MCP tools — left out of create_app /
+ * An opt-in module over the MCP tools — left out of create_app /
  * get_app `skills` and compile hints while it is off for the app's
  * workspace, `get_app.modules.<name>.enabled`, `skill_info` (availability,
  * `enabled_for_workspace` with an app) and configure_module's

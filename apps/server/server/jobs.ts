@@ -18,27 +18,27 @@ export interface BackgroundJobs {
  *
  * - Blob GC (hourly, one replica at a time via a Redis lease): deletes blobs
  *   no version references, after a 7-day grace period.
- * - Slug release (hourly, Redis lease; NSO-288): a soft-deleted app's slug is
+ * - Slug release (hourly, Redis lease): a soft-deleted app's slug is
  *   free again 30 days after the delete (renamed to its tombstone).
- * - M3-01 custom domains: the DNS re-check (hourly sweep, Redis lease) of every
+ * - Custom domains: the DNS re-check (hourly sweep, Redis lease) of every
  *   verified domain last checked 24 h+ ago — records gone → unverified + one
  *   e-mail to the app's owners.
- * - NSO-325 files sweep (only when the `files` module is active;
+ * - Files sweep (only when the `files` module is active;
  *   FILES_SWEEP_INTERVAL_MS, Redis lease): the uploads of apps deleted
  *   FILES_SWEEP_RETENTION_MS ago, blobs no `mod_files` row references and
  *   stale temp uploads (logic in drobek-module-files).
- * - NSO-327 get_logs retention prune (LOGS_PRUNE_INTERVAL_MS, Redis lease):
+ * - get_logs retention prune (LOGS_PRUNE_INTERVAL_MS, Redis lease):
  *   browser errors, compiles and daily request stats older than their
  *   retention (30 days) and errors past the newest 500 per app, for every app
  *   (logic in @drobek/insights).
- * - NSO-358 assets sweep (hourly, Redis lease): the asset files of apps
+ * - Assets sweep (hourly, Redis lease): the asset files of apps
  *   deleted 24 h+ ago, stale temp uploads and files no `app_assets` row
  *   references (logic in @drobek/apps).
- * - NSO-391 module jobs (only when an active module declares `jobs`;
+ * - Module jobs (only when an active module declares `jobs`;
  *   MODULE_JOBS_ENABLED / _CONCURRENCY / _TIMEOUT_MS, a Redis lease per run):
  *   the modules' scheduled work, per server or per app (logic in
  *   @drobek/modules jobs.ts). Nothing runs before the first tick.
- * - PHY-85 governance: the audit trail is append-only; the ONLY deletion is
+ * - Governance: the audit trail is append-only; the ONLY deletion is
  *   the age-based retention prune (startup, then daily). It never targets a
  *   specific row and is not exposed over any API/UI.
  */

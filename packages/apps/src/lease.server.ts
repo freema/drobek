@@ -1,11 +1,10 @@
 /**
- * The app's single-writer lease (M0-05) as the rest of the platform sees it:
+ * The app's single-writer lease as the rest of the platform sees it:
  * the Redis key `drobek:applock:<app_id>` holding
  * `{ holder_user_id, session_id, expires_at, renewed_at? }` with a TTL.
  * @drobek/mcp acquires / renews it (its Lua script lives there); this module
  * owns the key format + value parsing so the dashboard can READ the lease
- * ("an agent of X is working on this app") and RELEASE it (NSO-288,
- * "unlock") without depending on the MCP package.
+ * ("an agent of X is working on this app") and RELEASE it ("unlock") without depending on the MCP package.
  */
 import { AUDIT_ACTIONS, writeAudit } from '@drobek/audit';
 import { getRedis } from '@drobek/core';

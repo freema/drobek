@@ -1,5 +1,5 @@
 /**
- * The moderation e-mails (M4-02, NSO-293), platform mail in the drobek layout
+ * The moderation e-mails, platform mail in the drobek layout
  * (renderPlatformEmail escapes the text, so a reporter's text can never
  * become markup in the operator's mail client; only the queue link, on this
  * server's origin, is a button):

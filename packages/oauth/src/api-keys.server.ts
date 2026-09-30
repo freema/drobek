@@ -1,5 +1,5 @@
 /**
- * Personal API keys (M0-04, NSO-282) — a second Bearer for the MCP Resource
+ * Personal API keys — a second Bearer for the MCP Resource
  * Server next to OAuth access tokens, for clients that cannot run an OAuth
  * flow (CI, scripts, tests). Format `drk_` + 32 base64url characters (24
  * random bytes); the prefix is how the RS tells a key from an OAuth token.
@@ -131,7 +131,7 @@ const SUMMARY_COLUMNS = {
   revokedAt: apiKeys.revokedAt,
 };
 
-/** Every key of `userId` (live and revoked), newest first (M2-04, /me/api-keys). */
+/** Every key of `userId` (live and revoked), newest first (/me/api-keys). */
 export async function listApiKeys(userId: string): Promise<ApiKeySummary[]> {
   return getDb()
     .select(SUMMARY_COLUMNS)
@@ -141,7 +141,7 @@ export async function listApiKeys(userId: string): Promise<ApiKeySummary[]> {
 }
 
 /**
- * Revoke one of `userId`'s own keys (M2-04). Owner-scoped: another user's key
+ * Revoke one of `userId`'s own keys. Owner-scoped: another user's key
  * id is indistinguishable from an unknown one (null). Returns the revoked key,
  * or null when it is unknown, not the user's, or already revoked. Takes effect
  * on the very next request — validateApiKey reads the row every time (no cache).

@@ -1,6 +1,6 @@
 /**
- * The public error-beacon HTTP handler (PHY-123; on the apps origin since
- * M1-07): `POST /__drobek/v1/_beacon` on every app host. Framework-free — a
+ * The public error-beacon HTTP handler on the apps origin:
+ * `POST /__drobek/v1/_beacon` on every app host. Framework-free — a
  * plain request description in, a plain response out; @drobek/serving calls it
  * for the app it resolved from the Host (after the password gate), so the app
  * is never named by the client.

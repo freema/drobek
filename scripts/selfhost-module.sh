@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# `task selfhost:module:add|remove|list` (NSO-350) — install a third-party
+# `task selfhost:module:add|remove|list` — install a third-party
 # platform module into DROBEK_MODULES_DIR (the modules_data volume) without
 # building an image, remove one, list them. docs/SELF-HOSTING.md → Third-party
 # modules.
@@ -131,7 +131,7 @@ case "$cmd" in
     # The drobek image once first: creates the modules_data volume the compose
     # way (a fresh stack) and proves the image has the installer.
     dc run --rm --no-deps -T drobek test -f "$LOCK_CLI" </dev/null 2>/dev/null \
-      || die "$(drobek_image) has no $LOCK_CLI — module installation needs a drobek release with NSO-350 (set DROBEK_IMAGE_TAG and pull)"
+      || die "$(drobek_image) has no $LOCK_CLI — module installation needs a newer drobek release (set DROBEK_IMAGE_TAG and pull)"
     volume="$(project_name)_modules_data"
     docker volume inspect "$volume" >/dev/null 2>&1 || die "the volume $volume does not exist (COMPOSE_PROJECT_NAME?)"
 

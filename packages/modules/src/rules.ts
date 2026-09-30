@@ -1,5 +1,5 @@
 /**
- * The ONE rule evaluator every module uses (§5.0) — a pure function with
+ * The ONE rule evaluator every module uses — a pure function with
  * table tests. A rule is a `|`-separated disjunction of principals:
  *
  *   public — anyone, signed in or not

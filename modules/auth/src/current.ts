@@ -6,11 +6,11 @@
  *   - the `mod_auth_users` row still exists and is not disabled;
  *   - the sign-in method of the SESSION (`email` = the e-mail code, or the
  *     auth provider it came from) is still on in the app's config — turning
- *     a provider off (or the e-mail code) signs its sessions out (NSO-348);
+ *     a provider off (or the e-mail code) signs its sessions out;
  *   - a provider session: the provider is still contributed by a module that
  *     is on for the app's workspace, and its connection (identity config +
  *     env fallbacks) is the one the session began under — changing whose
- *     accounts it admits signs its sessions out (NSO-360);
+ *     accounts it admits signs its sessions out;
  *   - the app's CURRENT config still lets the address in (allowlist,
  *     adminEmails, or an editor of the app's workspace);
  *   - the role follows the config (adminEmails / workspace editor → admin).

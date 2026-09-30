@@ -22,7 +22,7 @@ beforeAll(async () => {
   process.env.APPS_DOMAIN = 'apps.drobek.test';
   delete process.env.PUBLIC_MCP_URL;
   process.env.TLS_ASK_TOKEN = ASK_TOKEN;
-  // The custom-domain lookup (M3-01) is the domains table in production; no DB here.
+  // The custom-domain lookup is the domains table in production; no DB here.
   const tlsAsk = createTlsAskHandler({ customDomainAllowed: async (h) => h === 'firma.example.com' }) as RequestHandler;
   server = createServerApp({ rrHandler, tlsAsk }).listen(0, '127.0.0.1');
   await new Promise<void>((resolve) => server.once('listening', resolve));
@@ -116,7 +116,7 @@ function raw(
   });
 }
 
-describe('apps origin dispatch + dashboard CSRF (M0-06)', () => {
+describe('apps origin dispatch + dashboard CSRF', () => {
   it('a host under APPS_DOMAIN never reaches React Router, /mcp or /health', async () => {
     for (const path of ['/', '/login', '/mcp', '/health', '/workspaces/acme/apps/x']) {
       // The apex of APPS_DOMAIN names no app → the apps side answers 404 (no DB needed).
@@ -150,7 +150,7 @@ describe('apps origin dispatch + dashboard CSRF (M0-06)', () => {
   });
 });
 
-describe('Caddy TLS ask endpoint (M0-07)', () => {
+describe('Caddy TLS ask endpoint', () => {
   const path = (token: string, domain: string) =>
     `/api/internal/tls/ask?token=${token}&domain=${encodeURIComponent(domain)}`;
 
@@ -161,7 +161,7 @@ describe('Caddy TLS ask endpoint (M0-07)', () => {
     const foreign = await raw('GET', path(ASK_TOKEN, 'x.example.com'), { Host: 'drobek:3000' });
     expect(foreign.status).toBe(404);
     expect(foreign.body).toBe('not found');
-    // M3-01: a verified custom domain gets its certificate.
+    // a verified custom domain gets its certificate.
     const custom = await raw('GET', path(ASK_TOKEN, 'firma.example.com'), { Host: 'drobek:3000' });
     expect(custom.status).toBe(200);
   });

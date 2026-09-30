@@ -1,5 +1,5 @@
 /**
- * Append-only audit WRITE (PHY-85; its own package so both @drobek/apps and
+ * Append-only audit WRITE (its own package so both @drobek/apps and
  * @drobek/tenancy can write without a dependency cycle — this package depends
  * ONLY on @drobek/db).
  *

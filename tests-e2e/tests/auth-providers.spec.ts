@@ -5,7 +5,7 @@ import { skipUnlessLocal } from './helpers/auth';
 import { callTool, mcpClient, type McpClient } from './helpers/mcp';
 
 /**
- * NSO-348 (EXT-06): the auth module's sign-in provider slot on the dev stack.
+ * The auth module's sign-in provider slot on the dev stack.
  *
  * The dev stack runs the oidc provider module (DROBEK_MODULES =
  * hello,auth,email,forms,data,proxy,files,sync,oidc), off for every app until
@@ -36,7 +36,7 @@ function sdkHeaders(host: string): Record<string, string> {
 
 test.describe.configure({ mode: 'serial' });
 
-test.describe('auth sign-in providers (NSO-348) @local', () => {
+test.describe('auth sign-in providers @local', () => {
   let mcp: McpClient;
   let host: string;
 

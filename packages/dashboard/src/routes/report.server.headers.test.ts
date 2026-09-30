@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { headers } from './report.server.js';
 
-describe('report route headers (M4-02)', () => {
+describe('report route headers', () => {
   it('passes the action headers through so a 429 keeps its Retry-After', () => {
     const actionHeaders = new Headers({ 'Retry-After': '3600' });
     const out = headers({

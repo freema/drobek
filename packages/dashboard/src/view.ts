@@ -32,9 +32,9 @@ export interface AppListRow {
   latestVersion: number | null;
   /** When the newest version was written. */
   lastChangeAt: Date | null;
-  /** NSO-342: some version compiled (the preview host has something to serve). */
+  /** Some version compiled (the preview host has something to serve). */
   compiled?: boolean;
-  /** NSO-293: the takedown category; non-null = taken down by a super-admin. */
+  /** The takedown category; non-null = taken down by a super-admin. */
   lockedReason?: string | null;
 }
 
@@ -80,7 +80,7 @@ export function shapeApps(rows: AppListRow[]): AppListItem[] {
 }
 
 /**
- * The app-list thumbnail (NSO-342): the URL the dashboard frames — the
+ * The app-list thumbnail: the URL the dashboard frames — the
  * published host, else the preview host — or why it shows a placeholder
  * instead: a password gate (the frame would only show the password page), a
  * takedown (451), an app that is not live, or nothing compiled yet.
@@ -161,7 +161,7 @@ export function canPublish(effectiveRole: WorkspaceRole | null): boolean {
 }
 
 /**
- * The Data-tab delete authorization (M1b, PHY-121), same rule as publish:
+ * The Data-tab delete authorization, same rule as publish:
  * editor / workspace-admin (and super-admin ⇒ workspace-admin) may delete a
  * record; a viewer or non-member may NOT. Gates whether the delete affordance
  * renders; the action re-enforces it server-side via requireWorkspaceRole
@@ -171,7 +171,7 @@ export function canDeleteRecord(effectiveRole: WorkspaceRole | null): boolean {
   return effectiveRole !== null && roleAtLeast(effectiveRole, 'editor');
 }
 
-// ── Activity / audit view (PHY-85) ───────────────────────────────────────────
+// ── Activity / audit view ───────────────────────────────────────────
 
 /** A raw audit row handed to the Activity shaping (db-free; from listActivity). */
 export interface ActivityRowInput {
@@ -221,7 +221,7 @@ export function shapeActivity(rows: ActivityRowInput[]): ActivityItem[] {
       action: r.action,
       actorKind: r.actorKind,
       actorBadge: r.actorKind,
-      // End users (M1-01) are not drobek users: their rows carry no actor id.
+      // End users are not drobek users: their rows carry no actor id.
       actorLabel: r.actorEmail ?? (r.actorKind === 'end_user' ? 'app end user' : 'system'),
       subjectType: r.subjectType,
       subject: r.subject,

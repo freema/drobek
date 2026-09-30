@@ -1,5 +1,5 @@
 /**
- * /workspaces/:slug/invite — client half (U4, PHY-54): shows the freshly
+ * /workspaces/:slug/invite — client half: shows the freshly
  * created invite link (always) and whether the email went out. Reached by
  * submitting the invite form on the workspace page.
  */

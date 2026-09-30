@@ -5,7 +5,7 @@ import { callTool, mcpClient } from './helpers/mcp';
 import { personalWorkspaceOf, withDb } from './helpers/seed';
 
 /**
- * NSO-329: APPS_MAX_PER_WORKSPACE over MCP against the local compose stack.
+ * APPS_MAX_PER_WORKSPACE over MCP against the local compose stack.
  * The dev stack does not set the variable and its fake limits provider
  * (proxy-echo, helpers/limits.ts) answers no plan for this workspace, so the
  * limit is the production default, 50. A fresh user's personal

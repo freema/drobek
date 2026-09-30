@@ -1,5 +1,5 @@
 /**
- * The installer half that runs where the server runs (NSO-350): `task
+ * The installer half that runs where the server runs: `task
  * selfhost:module:add|remove|list` call it inside the drobek image, after
  * npm (in a throwaway node container) has filled a staging prefix — so
  * modules.lock.json is written by the server's own `hashModuleTree()`.

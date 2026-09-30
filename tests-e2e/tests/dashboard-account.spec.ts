@@ -14,7 +14,7 @@ import {
 import { personalWorkspaceOf } from './helpers/seed';
 
 /**
- * M2-04 (NSO-284) acceptance — the account area:
+ * The account area:
  *   (1) /me/api-keys: a key created in the dashboard (shown exactly once)
  *       works for MCP `initialize` + a read tool; after "Revoke" the very next
  *       request is 401 (well within 1 s — the RS reads the key row, no cache).
@@ -266,7 +266,7 @@ test('account: OAuth connection is listed; revoke kills access + refresh (reuse 
     await expect(link, `footer on ${path}`).toBeVisible();
     const href = (await link.getAttribute('href')) ?? '';
     expect(href).toMatch(SOURCE_HREF_RE);
-    // NSO-342: `drobek <version> · <sha> · Source (AGPL-3.0) [· ★ n]`.
+    // `drobek <version> · <sha> · Source (AGPL-3.0) [· ★ n]`.
     await expect(link).toHaveText('Source (AGPL-3.0)');
     await expect(page.getByTestId('footer-version')).toHaveText(`drobek ${version.version}`);
     if (/^[0-9a-f]{7,40}$/.test(version.sha)) {

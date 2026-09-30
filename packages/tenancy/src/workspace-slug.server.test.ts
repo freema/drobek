@@ -1,5 +1,5 @@
 /**
- * A taken workspace slug through the REAL error path (NSO-333): PGlite with
+ * A taken workspace slug through the REAL error path: PGlite with
  * the core migrations, the workspaces.slug UNIQUE constraint and whatever
  * error shape the installed drizzle-orm throws (≥ 0.44 wraps the driver error
  * in a DrizzleQueryError whose own `code` is undefined).

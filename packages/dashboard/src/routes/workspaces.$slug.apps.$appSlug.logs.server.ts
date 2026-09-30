@@ -1,6 +1,6 @@
 /**
- * GET /workspaces/:slug/apps/:appSlug/logs — server half of the Logs tab
- * (M2-03): the SAME readers as the `get_logs` MCP tool (@drobek/insights) —
+ * GET /workspaces/:slug/apps/:appSlug/logs — server half of the Logs tab:
+ * the SAME readers as the `get_logs` MCP tool (@drobek/insights) —
  * browser runtime errors (deduped, with counts), the last compiles, and the
  * per-day request totals (module calls by status class) — for a window picked
  * from `?since=1h|24h|7d|30d` (default 24h). Viewer+; no mutations; no
@@ -42,7 +42,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   return {
     workspace: { slug: access.workspace.slug, name: access.workspace.name },
     appSlug: app.slug,
-    /** NSO-342: the app header + tabs on every app sub-page. */
+    /** The app header + tabs on every app sub-page. */
     header: await appHeaderFor(access, app.slug),
     since: key,
     sinceOptions: SINCE_OPTIONS.map((o) => ({ key: o.key, label: o.label })),

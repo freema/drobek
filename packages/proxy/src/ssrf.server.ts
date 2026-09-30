@@ -1,11 +1,11 @@
 /**
- * SSRF-safe forward (PHY-59, R6 security core). The single choke point every
+ * SSRF-safe forward. The single choke point every
  * outbound proxy request goes through.
  *
  * Contract:
  *   1. Resolve the host to an IP ONCE (dns.lookup).
  *   1b. The destination PORT must be on the allow-list (80/443 by default,
- *      `PROXY_ALLOWED_PORTS`, PHY-76 #8) — re-asserted here, at connect time,
+ *      `PROXY_ALLOWED_PORTS`) — re-asserted here, at connect time,
  *      not only at registration.
  *   2. Classify that IP — REJECT private/loopback/link-local/CGNAT/reserved/
  *      multicast (see ip-classify) UNLESS the host is on the operator's explicit
@@ -19,7 +19,7 @@
  *      an internal target.
  *   5. A per-request connect/idle timeout, an optional wall-clock deadline and
  *      a response-size cap (a HEAD / 204 / 304 answer's declared length is
- *      not a body and is not held to it — NSO-326).
+ *      not a body and is not held to it).
  *   6. A buffered request body goes out with `Content-Length`, never chunked.
  */
 import { lookup as dnsLookup, type LookupAddress } from 'node:dns';

@@ -3,7 +3,7 @@ import { loginViaEmail, skipUnlessLocal, uniqueEmail } from './helpers/auth';
 import { personalWorkspaceOf, seedApp, withDb } from './helpers/seed';
 
 /**
- * NSO-371 review: the workspace apps search folds accents and case like the
+ * The workspace apps search folds accents and case like the
  * public gallery (`%` / `_` match literally) and offers "Clear filters" with
  * the count (the fields reset with it); the Forms tab of an app without forms says so and offers a
  * concrete agent prompt instead of "No submissions match."

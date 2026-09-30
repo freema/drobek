@@ -1,5 +1,5 @@
 /**
- * AGPL-3.0 §13 source offer (M2-04, NSO-284): every dashboard page links to
+ * AGPL-3.0 §13 source offer: every dashboard page links to
  * the exact source of the running build. The sha is the one baked into the
  * image (`GIT_SHA` build-arg, the same value `/api/version` reports); a dev
  * run without one ("dev", empty, or anything that is not a hex sha) links to

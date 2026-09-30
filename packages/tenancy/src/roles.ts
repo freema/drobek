@@ -1,5 +1,5 @@
 /**
- * U4 (PHY-54) — workspace roles, RATIFIED: a fixed TS union, no custom-role
+ * Workspace roles: a fixed TS union, no custom-role
  * table, no user-editable roles. `super-admin` is deliberately NOT here — it
  * is a GLOBAL env flag (SUPERADMIN_EMAIL via @drobek/auth isSuperAdmin), not
  * a memberships row; it overrides every workspace check.
@@ -44,7 +44,7 @@ export type WorkspaceAccessDecision =
  * Pure access decision for requireWorkspaceRole (unit-tested without db):
  * - global super-admin → full access everywhere (effective workspace-admin);
  * - no membership → 404 (a non-member must not learn the workspace exists);
- * - membership below `minRole` → 403 (the "viewer mutation 403" acceptance);
+ * - membership below `minRole` → 403;
  * - otherwise → allowed with the membership role.
  */
 export function decideWorkspaceAccess(input: {

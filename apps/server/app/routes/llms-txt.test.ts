@@ -42,7 +42,7 @@ describe('/llms-full.txt loader', () => {
     expect(body).toContain('app_locked');
   });
 
-  it("adds each active module's own error codes as a catalogue section (NSO-344)", async () => {
+  it("adds each active module's own error codes as a catalogue section", async () => {
     setModuleRuntimeForTests({
       errorCatalogue: () => [{ module: 'auth', errors: [{ code: 'invalid_code', meaning: 'The code is wrong.', fix: 'Request a new one.' }] }],
     } as unknown as ModuleRuntime);

@@ -1,8 +1,8 @@
 /**
- * /admin/abuse — client half (M4-02, NSO-293): the super-admin moderation
+ * /admin/abuse — client half: the super-admin moderation
  * queue. Open reports (host → app, workspace, reason, details, created) with
  * Take down / Mark resolved, the list of taken-down apps with Restore, and
- * (NSO-340, when the server runs a gallery) the gallery entries with Hide /
+ * (when the server runs a gallery) the gallery entries with Hide /
  * Show again. Every app links to its dashboard overview and, when it is
  * published, to its public address, so it can be judged before acting.
  * Take down opens a confirm panel first (a GET, works without JavaScript);

@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * tests-eval (NSO-308) — the PURE parts of the agent eval, shared by run.mjs,
+ * tests-eval — the PURE parts of the agent eval, shared by run.mjs,
  * its --self-check and the @drobek/skills-check unit tests (which run them on
  * the real generated sdk.d.ts and on every skill example, so the parsers
  * cannot drift from the SDK format):
@@ -12,9 +12,9 @@
  *    `drobek/<m>` inline exports, root exports);
  *  - findApiMisuse: written files × that index → every use of an API that
  *    does not exist (unknown module / member / inline import / route);
- *  - relativeRefs / binaryWrites: the artifact-port checks (NSO-359) — the
+ *  - relativeRefs / binaryWrites: the artifact-port checks — the
  *    page keeps its relative paths, no binary travels through write_files;
- *  - renderResults: the Markdown table for the Linear comment.
+ *  - renderResults: the Markdown results table.
  */
 
 /**
@@ -293,7 +293,7 @@ export function formNameOf(files) {
 }
 
 /**
- * NSO-359 (port an artifact): the relative references of an HTML page —
+ * The relative references of an HTML page —
  * `src`, `href` and `poster` values that are not a URL, a `data:` URI, a
  * fragment or root-absolute — in document order, deduplicated. The port keeps
  * every one of them unchanged.

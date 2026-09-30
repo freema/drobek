@@ -30,7 +30,7 @@ describe('agent-dx public URLs', () => {
   });
 });
 
-describe('DOCS_URL (NSO-366)', () => {
+describe('DOCS_URL', () => {
   it('unset → the Markdown files in the source repository', () => {
     expect(docsUrl({})).toBeNull();
     expect(docsUrlConfigError({})).toBeNull();

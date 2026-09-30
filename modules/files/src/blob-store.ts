@@ -1,8 +1,7 @@
 /**
- * The files module's blob store (§3.4, §5.5): content-addressed files on a
+ * The files module's blob store: content-addressed files on a
  * local volume — `FILES_DIR` (default `/data/files`), one file per distinct
- * content at `<FILES_DIR>/<sha[0:2]>/<sha[2:4]>/<sha256>` (the pattern of the
- * pre-M0 `blob-store.ts`). An upload is written to `<FILES_DIR>/tmp/<uuid>.part`
+ * content at `<FILES_DIR>/<sha[0:2]>/<sha[2:4]>/<sha256>`. An upload is written to `<FILES_DIR>/tmp/<uuid>.part`
  * while it is hashed and counted; only a complete, accepted upload is
  * renamed into place (atomic on one filesystem — tmp lives inside FILES_DIR).
  * An aborted, oversized, refused or failed upload removes its temp file:

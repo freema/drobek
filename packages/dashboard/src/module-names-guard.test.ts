@@ -1,5 +1,5 @@
 /**
- * Guard (NSO-347): the dashboard never decides anything by the NAME of a
+ * Guard: the dashboard never decides anything by the NAME of a
  * built-in module. A replacement module (same capability, another package)
  * or a third-party module must get the same page: dedicated editors follow
  * `dashboard.editor`, the Data / Forms / Users / Uploads tabs follow the
@@ -76,7 +76,7 @@ function scan(file: string, src: string): Finding[] {
   return out;
 }
 
-describe('the dashboard knows no built-in module by name (NSO-347)', () => {
+describe('the dashboard knows no built-in module by name', () => {
   it('no literal data/proxy, no comparison / case / lookup by a built-in module name', () => {
     const findings = sourceFiles(SRC).flatMap((f) => scan(relative(SRC, f), readFileSync(f, 'utf8')));
     expect(findings, JSON.stringify(findings, null, 2)).toEqual([]);

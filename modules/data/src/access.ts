@@ -1,5 +1,5 @@
 /**
- * Who may do what with a collection's records (§5.0) — PURE decisions over
+ * Who may do what with a collection's records — PURE decisions over
  * the ONE rule evaluator of @drobek/modules (`decideAccess`), table-tested in
  * rules.test.ts. Per collection, each operation has a rule:
  *
@@ -32,7 +32,7 @@ export const DEFAULT_RULES: Rules = Object.freeze({
   delete: 'owner|admin',
 });
 
-/** The pre-module Data API access modes (U10) → per-operation rules (the migration does the same in SQL). */
+/** The pre-module Data API access modes → per-operation rules (the migration does the same in SQL). */
 export const LEGACY_ACCESS_MODES = ['public-read', 'public-write', 'locked', 'owner-only'] as const;
 export type LegacyAccessMode = (typeof LEGACY_ACCESS_MODES)[number];
 

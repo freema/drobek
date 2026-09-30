@@ -1,5 +1,5 @@
 /**
- * Guard (NSO-333): DB errors are read and logged only through the helpers in
+ * Guard: DB errors are read and logged only through the helpers in
  * errors.ts. Since drizzle-orm 0.44 a failed query is a `DrizzleQueryError`
  * whose `code` is undefined and whose message carries the bound parameters,
  * so across every package, module and the server:

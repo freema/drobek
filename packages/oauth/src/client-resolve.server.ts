@@ -1,5 +1,5 @@
 /**
- * Resolve the client named by an authorization request (M0-04). A URL
+ * Resolve the client named by an authorization request. A URL
  * client_id is a Client ID Metadata Document (fetched + validated, then
  * mirrored into oauth_clients); anything else must be a registered DCR
  * client. Either failure is `invalid_client` — shown to the user, never

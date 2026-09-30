@@ -1,7 +1,7 @@
 /**
- * App assets (NSO-358): binary files an app serves at `/<name>` next to its files —
+ * App assets: binary files an app serves at `/<name>` next to its files —
  * names and types, the byte sniffer, HTTP ranges, disk storage, the rows
- * (the draft and the sets publish freezes, NSO-362), upload URLs (tokens +
+ * (the draft and the sets publish freezes), upload URLs (tokens +
  * the node endpoint) and the sweep.
  */
 export {

@@ -1,5 +1,5 @@
 /**
- * /oauth/authorize — consent UI (U5, M0-04). Client half; server logic
+ * /oauth/authorize — consent UI. Client half; server logic
  * (validation, login bounce, code issuance) lives in ./oauth.authorize.server.ts.
  * Names the requesting client (and, for a CIMD client, the host that vouches
  * for that name) and offers the three scope checkboxes. There is no workspace

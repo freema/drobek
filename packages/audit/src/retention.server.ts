@@ -1,5 +1,5 @@
 /**
- * Audit RETENTION (PHY-85). The audit trail is append-only; the ONLY deletion
+ * Audit RETENTION. The audit trail is append-only; the ONLY deletion
  * allowed anywhere in the system is this age-based prune, and it is NEVER exposed
  * over the API/UI (no route calls it — only the worker's periodic sweep + tests).
  * It deletes strictly by `created_at` age; it can never target a specific row.

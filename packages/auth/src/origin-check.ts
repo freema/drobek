@@ -1,5 +1,5 @@
 /**
- * Origin check for the dashboard's mutating endpoints (M0-06, CSRF).
+ * Origin check for the dashboard's mutating endpoints (CSRF).
  *
  * The apps live on sibling hosts of the dashboard's registrable domain
  * (`<slug>.drobek.app` next to `drobek.app`), which makes every app SAME-SITE
@@ -21,8 +21,8 @@
  * EXEMPT (not cookie-authenticated; called cross-origin by native and web
  * MCP clients by design): `/oauth/token`, `/oauth/register` and `/mcp`
  * (Bearer-authenticated, mounted before this check anyway), and
- * `/__drobek/auth/callback/*` — the end-user sign-in providers' IdP callback
- * (NSO-348): an IdP may POST the browser there from its own origin (SAML,
+ * `/__drobek/auth/callback/*` — the end-user sign-in providers' IdP callback:
+ * an IdP may POST the browser there from its own origin (SAML,
  * `form_post`); it reads no dashboard cookie and is authenticated by its
  * signed, single-use state.
  */

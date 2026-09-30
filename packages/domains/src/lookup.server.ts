@@ -1,5 +1,5 @@
 /**
- * Read paths of the custom domains for the app hosts and Caddy (M3-01):
+ * Read paths of the custom domains for the app hosts and Caddy:
  * what a custom Host serves, whether Caddy may obtain a certificate for it,
  * and an app's primary domain (the 302 target of its default host).
  */

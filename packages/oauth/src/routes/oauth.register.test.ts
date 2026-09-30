@@ -34,7 +34,7 @@ beforeEach(() => {
   countUnusedDcrClients.mockImplementation(async () => 0);
 });
 
-describe('POST /oauth/register per-IP limit (NSO-328)', () => {
+describe('POST /oauth/register per-IP limit', () => {
   it('a resolved client IP is counted in its own oauth-register-ip bucket; over the limit → 429', async () => {
     expect((await register({ 'x-real-ip': '203.0.113.9' })).status).toBe(201);
     expect(rateLimitRedis).toHaveBeenCalledWith('oauth-register-ip', '203.0.113.9', 10, 3_600_000);

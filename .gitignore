@@ -39,20 +39,20 @@ logs/
 *.local.md
 .local/
 
-# Generated TLS config (M0-07): deployment-specific, rebuilt by `task caddy:config` / `task dev:tls`
+# Generated TLS config: deployment-specific, rebuilt by `task caddy:config` / `task dev:tls`
 /deployments/Caddyfile
 /.caddy/
 /certs/
 
-# tests-eval (NSO-308): raw Claude Code transcripts stay local
+# tests-eval: raw Claude Code transcripts stay local
 tests-eval/results/*.jsonl
 
-# Self-host backups (M4-03, task backup): database dumps + uploads — never commit
+# Self-host backups (task backup): database dumps + uploads — never commit
 /backups/
 
-# DROBEK_MODULES_DIR of the dev stack (NSO-345): modules installed locally
+# DROBEK_MODULES_DIR of the dev stack: modules installed locally
 /.modules/
-# npm packages for module authors (NSO-349): node scripts/npm-packages.mjs stage|pack
+# npm packages for module authors: node scripts/npm-packages.mjs stage|pack
 /dist-npm/
 # go-task fingerprints (task module:example)
 /.task/

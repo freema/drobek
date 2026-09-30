@@ -1,9 +1,9 @@
 /**
- * @drobek/apps — apps and their immutable versions (M0-02): create (global
+ * @drobek/apps — apps and their immutable versions: create (global
  * slugs), write a version, publish (pointer move), restore (new version from
- * an old one), and blob GC; since M2-01 also unpublish, soft delete + slug
+ * an old one), blob GC, unpublish, soft delete + slug
  * release, visibility / frame-ancestors settings, the single-writer lease
- * read/release and version ZIPs; since NSO-358 app assets (binary files at
+ * read/release and version ZIPs, and app assets (binary files at
  * `/<name>` next to the app's files, upload URLs). The MCP tools and the dashboard call these.
  */
 export { AppsError, type AppsErrorCode } from './errors.js';
@@ -91,7 +91,7 @@ export {
   type HostClass,
   type HostConfig,
 } from './host.js';
-// M4-02 (NSO-293): abuse reports, super-admin takedown/restore, publish heuristic.
+// Abuse reports, super-admin takedown/restore, publish heuristic.
 export {
   ABUSE_QUEUE_PATH,
   LOCK_REASONS,
@@ -143,7 +143,7 @@ export {
   type ScreenResult,
   type TakedownPreview,
 } from './moderation.server.js';
-// NSO-358: app assets — binary files served at /<name> next to the app's files, upload URLs, the sweep.
+// App assets — binary files served at /<name> next to the app's files, upload URLs, the sweep.
 export * from './assets/index.js';
 export type {
   Actor,
@@ -154,7 +154,7 @@ export type {
   VersionFileKind,
   VersionSummary,
 } from './types.js';
-// NSO-340: the public gallery (owner opt-in, super-admin hide, the public list).
+// The public gallery (owner opt-in, super-admin hide, the public list).
 export {
   GALLERY_DESCRIPTION_MAX,
   GALLERY_OPENS_WINDOW_DAYS,
@@ -190,7 +190,7 @@ export {
   type GalleryPage,
   type GalleryModerationEntry,
 } from './gallery.server.js';
-// NSO-340: duplicating a gallery app into the caller's workspace (the files half).
+// Duplicating a gallery app into the caller's workspace (the files half).
 export {
   DEFAULT_DUPLICATES_PER_USER_HOUR,
   DUPLICATE_NAME_MAX,
@@ -202,7 +202,7 @@ export {
   type DuplicateFilesInput,
   type DuplicationSource,
 } from './duplicate.server.js';
-// NSO-340: gallery likes (signed-in accounts) and opens (the counting link).
+// Gallery likes (signed-in accounts) and opens (the counting link).
 export {
   galleryCounts,
   galleryEntryBySlug,
@@ -211,7 +211,7 @@ export {
   setGalleryLike,
   type GalleryEntry,
 } from './gallery-engagement.server.js';
-// NSO-366: who may publish (PUBLISH_APPROVAL + a super-admin's per-workspace state) and the operator's publish e-mails (PUBLISH_NOTIFY).
+// Who may publish (PUBLISH_APPROVAL + a super-admin's per-workspace state) and the operator's publish e-mails (PUBLISH_NOTIFY).
 export {
   PUBLISH_APPROVAL_MODES,
   PUBLISH_APPROVAL_PATH,

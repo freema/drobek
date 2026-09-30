@@ -1,6 +1,6 @@
 /**
  * /workspaces/:slug/apps/:appSlug/end-users — client half of the Users tab
- * (M2-03): the app's end users (the auth module), an address search, and for
+ *: the app's end users (the auth module), an address search, and for
  * editors+: change a role, block / unblock, and "sign everyone out" (behind
  * a confirm step). Viewers see the list only.
  */

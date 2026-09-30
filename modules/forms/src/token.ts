@@ -1,5 +1,5 @@
 /**
- * The form time token `_t` (M1-04): `GET /__drobek/v1/forms/:form/token`
+ * The form time token `_t`: `GET /__drobek/v1/forms/:form/token`
  * issues `<issued-at base36>.<mac>`, the MAC = HMAC-SHA256 over the app id,
  * the form name and the issue time with a key derived (HKDF) from
  * DROBEK_MASTER_KEY — the key the server already refuses to start without in

@@ -1,5 +1,5 @@
 /**
- * Post-login return target (U5, PHY-71). The /login loader stores a validated
+ * Post-login return target. The /login loader stores a validated
  * same-origin path in the LOGIN_RETURN_COOKIE; the email-code verify action and
  * the Google callback consume it (clearing it) to redirect back instead of to
  * /me. Only same-origin *relative* paths are ever honored — never an absolute

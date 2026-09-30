@@ -1,5 +1,5 @@
 /**
- * Limits per workspace (§5.7) — `ctx.limits()` for module handlers.
+ * Limits per workspace — `ctx.limits()` for module handlers.
  *
  * Default: every limit is its env var (`FORMS_PER_APP_PER_DAY=…`) or the
  * default the declaring module ships. A SaaS operator plugs plans in with
@@ -14,7 +14,7 @@
  * The catalogue is CORE_LIMITS (enforced by core: apps per workspace, custom
  * domains per app, asset size and quota per app) plus every active module's `limits`. A limit marked
  * `allowZero` (DOMAINS_MAX_PER_APP) also takes 0 = the feature is off.
- * NSO-346: every `availability: 'opt-in'` module adds the pseudo-limit
+ * Every `availability: 'opt-in'` module adds the pseudo-limit
  * `MODULE_ENABLED_<NAME>` (0/1, env default 0): a plan answering 1 enables the
  * module for the workspace, 0 disables it even where a super-admin enabled
  * it (`fromPlan` tells an explicit plan value from the env default).
@@ -43,12 +43,12 @@ export const LIMITS_TIMESTAMP_HEADER = 'X-Drobek-Timestamp';
  */
 export type CatalogueLimit = ModuleLimit & { allowZero?: boolean; max?: number };
 
-/** NSO-346: the pseudo-limit that enables an opt-in module for a workspace. */
+/** The pseudo-limit that enables an opt-in module for a workspace. */
 export function moduleEnabledLimitName(module: string): string {
   return `MODULE_ENABLED_${module.toUpperCase()}`;
 }
 
-/** NSO-346: the catalogue entry of an opt-in module's `MODULE_ENABLED_<NAME>`. */
+/** The catalogue entry of an opt-in module's `MODULE_ENABLED_<NAME>`. */
 export function moduleEnabledLimit(module: string): CatalogueLimit {
   return {
     env: moduleEnabledLimitName(module),
@@ -60,7 +60,7 @@ export function moduleEnabledLimit(module: string): CatalogueLimit {
 }
 
 /**
- * The limits core enforces itself (NSO-329) — same env / provider mechanics
+ * The limits core enforces itself — same env / provider mechanics
  * as module limits, so a plan can set them per workspace. The SaaS limits
  * provider mirrors this list (docs/MODULES.md "Limits"). DOMAINS_MAX_PER_APP's
  * default must equal @drobek/domains DEFAULT_DOMAINS_MAX_PER_APP (guarded by
@@ -95,7 +95,7 @@ export interface LimitsProvider {
   /** The env-level values (no workspace): what skill_info documents. */
   defaults(): Limits;
   /**
-   * NSO-346: only the values the limits provider's plan sets for the workspace
+   * Only the values the limits provider's plan sets for the workspace
    * (validated, known names only) — null without a provider, or while it is
    * unavailable. Tells an explicit plan value from the env default.
    */

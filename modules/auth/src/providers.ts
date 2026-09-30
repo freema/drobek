@@ -1,5 +1,5 @@
 /**
- * The auth module's two slots (NSO-348) as the module reads them:
+ * The auth module's two slots as the module reads them:
  *
  *   `auth.provider` — sign-in providers (`AuthProvider` from @drobek/modules);
  *   `auth.signedIn` — observers of successful sign-ins.

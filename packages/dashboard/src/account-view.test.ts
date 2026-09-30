@@ -9,7 +9,7 @@ import { sourceLink, SOURCE_REPO_URL } from './source-link.js';
 
 const SCOPES = ['read', 'write', 'publish'] as const;
 
-describe('checkApiKeyForm (M2-04 create form)', () => {
+describe('checkApiKeyForm (create form)', () => {
   it('accepts a trimmed name and orders the scopes canonically', () => {
     expect(checkApiKeyForm('  CI deploy ', ['publish', 'read', 'read'], SCOPES)).toEqual({
       ok: true,

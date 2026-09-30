@@ -1,5 +1,5 @@
 /**
- * NSO-366: PUBLISH_NOTIFY — off by default; `first` mails only an app's first
+ * PUBLISH_NOTIFY — off by default; `first` mails only an app's first
  * publish, `every` every publish at most once per app per hour (a Redis
  * error sends anyway); recipients are OPERATOR_EMAIL, else every
  * super-admin; a super-admin's own publishes are never mailed; the mail

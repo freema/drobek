@@ -1,5 +1,5 @@
 /**
- * The module's secrets (M2-02, NSO-291): WRITE-ONLY. Each declared secret
+ * The module's secrets: WRITE-ONLY. Each declared secret
  * shows its name, description and whether (and when) it is set — never the
  * value; the input is an empty password field that is never pre-filled, and
  * the action redirects after storing, so the value appears in no response.

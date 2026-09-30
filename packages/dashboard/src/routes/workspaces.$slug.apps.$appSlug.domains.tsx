@@ -1,5 +1,5 @@
 /**
- * /workspaces/:slug/apps/:appSlug/domains — client half (M3-01): the app's
+ * /workspaces/:slug/apps/:appSlug/domains — client half: the app's
  * custom domains. Add a domain → the two DNS records to create → "Verify"
  * (the server looks both up now) → the domain serves the published version.
  * A verified domain can be made primary (the drobek address then redirects

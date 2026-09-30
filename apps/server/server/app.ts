@@ -22,34 +22,34 @@ export interface ServerAppOptions {
   /** Absolute path of `build/client` — served statically in production. */
   clientDir?: string;
   /**
-   * The app-host dispatcher (M0-06). Default: a fresh one from APPS_DOMAIN +
+   * The app-host dispatcher. Default: a fresh one from APPS_DOMAIN +
    * PUBLIC_APP_URL; index.ts passes one whose cache is wired to the
    * app-changed events.
    */
   appsHost?: RequestHandler;
-  /** Caddy's on-demand TLS `ask` handler (M0-07). Default: from TLS_ASK_TOKEN. */
+  /** Caddy's on-demand TLS `ask` handler. Default: from TLS_ASK_TOKEN. */
   tlsAsk?: RequestHandler;
   /**
-   * NSO-358: the asset upload URL endpoint (`/api/assets/upload/<token>`,
+   * The asset upload URL endpoint (`/api/assets/upload/<token>`,
    * @drobek/apps createAssetUploadHandler). Absent → not mounted.
    */
   assetUpload?: RequestHandler;
 }
 
 /**
- * The single drobek process (M0-01): one Express app serves the dashboard +
+ * The single drobek process: one Express app serves the dashboard +
  * OAuth 2.1 AS (React Router) and the OAuth-protected MCP resource at `/mcp`.
  *
  * Order matters:
- *  1. the app-host dispatcher (M0-06) runs FIRST: a request whose Host is an
+ *  1. the app-host dispatcher runs FIRST: a request whose Host is an
  *     app host (`<slug>[--preview|--v<N>].<APPS_DOMAIN>`) is answered there and
  *     never reaches anything below — no dashboard route, no /mcp, no session
  *     code. The dashboard host never serves app files (there is no app route).
- *  2. the asset upload URLs (NSO-358, `/api/assets/upload/<token>`): the
+ *  2. the asset upload URLs (`/api/assets/upload/<token>`): the
  *     token in the path is the whole authorization (single use, no cookie is
  *     read), so they sit before the Origin check — `curl -T` sends no Origin;
  *  3. the Origin check (CSRF) for every mutating dashboard request;
- *  4. health/version, Caddy's TLS `ask` endpoint (M0-07 — token-guarded,
+ *  4. health/version, Caddy's TLS `ask` endpoint (token-guarded,
  *     internal network only, blocked by Caddy on every public site), then `/mcp` (with `express.json()` scoped to it, because
  *     React Router actions must read the raw body), then React Router.
  */

@@ -175,7 +175,7 @@ function pendingFindings(m: ReadinessModule): CheckFinding[] {
 }
 
 /**
- * The module rules audit (NSO-386) over the app's live module configs:
+ * The module rules audit over the app's live module configs:
  * collections anyone may write without a (bounded) schema, public reads of
  * personal fields, rules that need a sign-in on an app without the auth
  * module and upstreams anonymous visitors may call — plus every change still

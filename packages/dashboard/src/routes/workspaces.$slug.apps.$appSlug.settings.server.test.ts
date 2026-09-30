@@ -1,5 +1,5 @@
 /**
- * The Settings tab's gallery summary (NSO-371): absent without a gallery;
+ * The Settings tab's gallery summary: absent without a gallery;
  * otherwise the app's gallery state (edited on Overview) and whether the
  * gallery website may frame a listed app, which the Embedding copy names as
  * an exception to the app's own list.

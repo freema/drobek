@@ -1,5 +1,5 @@
 /**
- * Team workspaces (U4, PHY-54): any logged-in user may create one; the
+ * Team workspaces: any logged-in user may create one; the
  * creator becomes workspace-admin. Slug validation is pure (slug.ts);
  * global uniqueness is the workspaces.slug UNIQUE constraint — a lost race
  * surfaces as { ok: false, reason: 'slug-taken' }, never a 500.

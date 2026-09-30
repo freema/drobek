@@ -1,5 +1,5 @@
 /**
- * Provider sign-in (NSO-348) — the flow that carries an IdP's answer from the
+ * Provider sign-in — the flow that carries an IdP's answer from the
  * ONE callback on the dashboard host back to the app host, without ever
  * sharing a cookie between the two:
  *

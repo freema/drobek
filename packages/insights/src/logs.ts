@@ -1,5 +1,5 @@
 /**
- * get_logs (M1-07) — the pure half: status classes, the capped compile-error
+ * get_logs — the pure half: status classes, the capped compile-error
  * shape that is stored, and the agent-facing entry shapes of the three kinds
  * (`runtime`, `compile`, `requests`). No DB / no Redis here → unit-tested.
  */
@@ -199,7 +199,7 @@ function topPaths(counts: Map<string, number>): FailingPath[] {
 
 /**
  * Per-day totals + per-module status classes, newest day first, ≤ 100 days.
- * `failing` adds the day's platform-4xx / 5xx paths (NSO-380); the 4xx list
+ * `failing` adds the day's platform-4xx / 5xx paths; the 4xx list
  * also takes the day's file 404s (`path404Counts`).
  */
 export function requestEntries(

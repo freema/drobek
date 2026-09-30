@@ -5,7 +5,7 @@ import { loginViaEmail, skipUnlessLocal, uniqueEmail } from './helpers/auth';
 import { personalWorkspaceOf, publishVersion, seedApp, seedVersion, withDb } from './helpers/seed';
 
 /**
- * NSO-342 acceptance — one dashboard layout:
+ * One dashboard layout:
  *   (1) every workspace and app page has the breadcrumb
  *       `Workspaces › <workspace> › <app> › <section>` (each part a link
  *       except the last), and no "← back" links;
@@ -203,7 +203,7 @@ test('one layout: breadcrumb, app header + tabs on every app page, aligned filte
   }
 
   // ── (6) phone width: no horizontal scroll, the breadcrumb wraps ────────────
-  // NSO-371: the app tabs stay one scrollable row with the current tab in
+  // the app tabs stay one scrollable row with the current tab in
   // view; the Files viewer and the version cards stay inside the page.
   const longLine = `<script>const s = "${'x'.repeat(600)}";</script>`;
   await seedVersion({

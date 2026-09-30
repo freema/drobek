@@ -1,5 +1,5 @@
 /**
- * Assets honour publish (NSO-362): the draft and the published snapshots.
+ * Assets honour publish: the draft and the published snapshots.
  *
  *   - `app_assets` is the DRAFT — uploads, replacements and deletes change
  *     only it, and the preview host serves it.
@@ -15,8 +15,8 @@
  *     so the restored preview — and the publish after it — shows the version's
  *     old assets too.
  *
- * Bytes are content-addressed per app (`ASSETS_DIR/<app_id>/<sha256>`; rows
- * from before NSO-362 keep their random key) and never rewritten, so the
+ * Bytes are content-addressed per app (`ASSETS_DIR/<app_id>/<sha256>`; legacy
+ * rows keep their random key) and never rewritten, so the
  * draft and any number of snapshots share one file. The quota
  * (APP_ASSETS_QUOTA) counts unique files: what the draft and the live set
  * need must fit it; the sets of earlier publishes (at most

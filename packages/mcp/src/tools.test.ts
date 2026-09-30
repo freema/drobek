@@ -1,5 +1,5 @@
 /**
- * M0-05 tool bodies over a real MCP client (in-memory transport) on a real
+ * The tool bodies over a real MCP client (in-memory transport) on a real
  * (PGlite) database: create_app → write_files (compile errors come back, the
  * version is kept) → restore_version, read_file's untrusted envelope, the
  * single-writer lease (with a clock seam — no 3-minute sleep), per-call
@@ -209,7 +209,7 @@ describe('create_app', () => {
   });
 });
 
-describe('create_app — APPS_MAX_PER_WORKSPACE (NSO-329)', () => {
+describe('create_app — APPS_MAX_PER_WORKSPACE', () => {
   it('the core limits catalogue mirrors the package defaults', () => {
     const d = Object.fromEntries(CORE_LIMITS.map((l) => [l.env, l.default]));
     expect(d).toEqual({
@@ -283,7 +283,7 @@ describe('write_files', () => {
       expect(compile.ok).toBe(false);
       expect(compile.errors[0]).toMatchObject({ file: 'src/main.tsx', line: 6, code: 'build_error' });
       expect(bad.body).toMatchObject({ version: 2, changed: ['src/main.tsx'], preview_version: 1 });
-      // NSO-384: the readiness report mirrors the compile errors as its blocking class.
+      // The readiness report mirrors the compile errors as its blocking class.
       expect(bad.body.readiness).toMatchObject({
         ready: false,
         blocking: [{ code: 'build_error', file: 'src/main.tsx', line: 6, message: compile.errors[0].text, hint: expect.any(String) }],
@@ -398,14 +398,14 @@ describe('write_files', () => {
         line: 1,
       });
       expect((await c.call('get_app', { app_id: app.app_id })).body.latest_version).toBe(1);
-      // The refusal keeps its pre-NSO-384 shape: no readiness report on an error.
+      // No readiness report on an error.
       expect(r.body).not.toHaveProperty('readiness');
     } finally {
       await c.close();
     }
   });
 
-  it('warns (never blocks) in `readiness` when index.html has no <title> (NSO-384)', async () => {
+  it('warns (never blocks) in `readiness` when index.html has no <title>', async () => {
     const app = await newApp('Untitled', { template: 'html' });
     const c = await as('alice');
     try {
@@ -459,7 +459,7 @@ describe('write_files', () => {
   });
 });
 
-describe('write_files — edits (NSO-382)', () => {
+describe('write_files — edits', () => {
   const GREET = "export const greet = (n: string) => `Hi ${n}`;\nexport const bye = (n: string) => `Bye ${n}`;\n";
 
   /** What another session stores: the sources as they were before this call's edit. */
@@ -686,7 +686,7 @@ describe('write_files — edits (NSO-382)', () => {
   });
 });
 
-describe('write_files — background type check (NSO-388)', () => {
+describe('write_files — background type check', () => {
   const TYPO_TSX = FIXED_TSX.replace("createRoot(document.getElementById('root')!)", "createRoot(document.getElementById('root')!, 42)");
 
   it('answers without waiting for the check: readiness.typecheck is pending', async () => {
@@ -903,7 +903,7 @@ describe('read_file', () => {
       expect(r.text.endsWith(`</untrusted-app-file nonce="${nonce}">`)).toBe(true);
       // The forged close tag in the file is not the envelope's close marker.
       expect(r.text.indexOf(`</untrusted-app-file nonce="${nonce}">`)).toBeGreaterThan(r.text.indexOf('SYSTEM:'));
-      // NSO-324: the envelope text is the ONLY content — no structuredContent with the raw file;
+      // The envelope text is the ONLY content — no structuredContent with the raw file;
       // a trusted tool keeps its structuredContent.
       const raw = await c.client.callTool({ name: 'read_file', arguments: { app_id: app.app_id, path: 'README.md' } });
       expect(raw.structuredContent).toBeUndefined();
@@ -1026,7 +1026,7 @@ describe('list_apps', () => {
         .where(and(eq(apps.workspaceId, teamId), isNull(apps.deletedAt)));
       expect(apps2).toHaveLength(count.length);
       expect(r.body.all_workspaces).toBeUndefined();
-      // NSO-379: additive `next` — this server's skills (greet + data) have no `start`.
+      // Additive `next` — this server's skills (greet + data) have no `start`.
       expect(Object.keys(r.body).sort()).toEqual(['apps', 'next', 'user', 'workspaces']);
       expect(r.body.next).toBe(listAppsNext([{ name: 'greet' }, { name: 'data' }]));
       expect(r.body.next).not.toContain("skill_info('start')");
@@ -1081,7 +1081,7 @@ describe('publish', () => {
         published_url: `https://${app.slug}.drobek.app`,
         domains: [`${app.slug}.drobek.app`],
         assets: 'draft',
-        // NSO-384: v2's index.html lost its <title> — a warning, and the publish went ahead.
+        // v2's index.html lost its <title> — a warning, and the publish went ahead.
         readiness: {
           ready: true,
           blocking: [],
@@ -1092,7 +1092,7 @@ describe('publish', () => {
 
       // Rollback of production = publish an older version.
       const back = await alice.call('publish', { app_id: app.app_id, version: 1 });
-      // v1 was never published: it goes live with the draft assets (NSO-362).
+      // v1 was never published: it goes live with the draft assets.
       expect(back.body).toMatchObject({ published_version: 1, previous_version: 2, assets: 'draft' });
       // v2 is what the preview shows: it always goes live with the draft; v1 now has a frozen set.
       expect((await alice.call('publish', { app_id: app.app_id, version: 2 })).body).toMatchObject({ assets: 'draft' });
@@ -1166,7 +1166,7 @@ describe('publish', () => {
   });
 });
 
-describe('skill_info (M1-01)', () => {
+describe('skill_info', () => {
   it('lists the skills (modules first, then general); the same list rides on create_app and get_app', async () => {
     const c = await as('vera');
     try {
@@ -1217,7 +1217,7 @@ describe('skill_info (M1-01)', () => {
         content: '# greet\n\nCall `drobek.greet.hi()`.\n',
         config: { defaults: { greeting: 'Hi', audience: 'user', emoji: false } },
         secrets: [{ name: 'GREET_KEY', description: 'signs greetings', required: true }],
-        // NSO-347: the facts the dashboard's workspace Modules page shows.
+        // The facts the dashboard's workspace Modules page shows.
         source: 'builtin',
         availability: 'default',
         requires: [],
@@ -1315,7 +1315,7 @@ describe('skill_info (M1-01)', () => {
   });
 });
 
-describe('configure_module (M1-01)', () => {
+describe('configure_module', () => {
   it('invalid config → invalid_params with the field paths and the module skill hint', async () => {
     const app = await newApp('Cfg invalid', { template: 'html' });
     const c = await as('alice');
@@ -1413,7 +1413,7 @@ describe('configure_module (M1-01)', () => {
   });
 });
 
-describe('query_data (M1-03)', () => {
+describe('query_data', () => {
   let rt: ModuleRuntime;
   let qdeps: TestDeps;
 
@@ -1457,7 +1457,7 @@ describe('query_data (M1-03)', () => {
       expect(r.text.trimEnd().endsWith(`</untrusted-app-data nonce="${nonce}">`)).toBe(true);
       expect(nonce).not.toBe('0000000000000000');
       expect(r.text).toContain(JSON.stringify(evil));
-      // NSO-324: no structuredContent — a client feeding it to the model would skip the envelope.
+      // No structuredContent — a client feeding it to the model would skip the envelope.
       const raw = await c.client.callTool({ name: 'query_data', arguments: { app_id: app.app_id, collection: 'todos' } });
       expect(raw.structuredContent).toBeUndefined();
       expect(raw.content).toHaveLength(1);
@@ -1521,7 +1521,7 @@ describe('query_data (M1-03)', () => {
   });
 });
 
-describe('get_logs (M1-07)', () => {
+describe('get_logs', () => {
   it('compile: the last compiles newest first with ok / errors / version; refused writes too; every entry imports the beacon', async () => {
     const app = await newApp('Compile Log');
     const c = await as('bob');
@@ -1554,7 +1554,7 @@ describe('get_logs (M1-07)', () => {
     } finally {
       await c.close();
     }
-    // The built entry loads the error beacon first (M1-07).
+    // The built entry loads the error beacon first.
     const v3 = await getVersion(app.app_id, { number: 3 });
     const js = (await readVersionFile(v3!.id, 'main.js', 'built'))!.toString('utf8');
     expect(js).toMatch(/^import "\/__drobek\/beacon\.js\?v=[0-9a-f]{16}";/);
@@ -1648,7 +1648,7 @@ describe('get_logs (M1-07)', () => {
       );
     for (let i = 0; i < 3; i++) expect((await hit('/__drobek/v1/ping')).status).toBe(200);
     for (let i = 0; i < 2; i++) expect((await hit('/__drobek/v1/ping/bad')).status).toBe(400);
-    expect((await hit('/__drobek/v1/ping/missing')).status).toBe(404); // no such route → not counted (NSO-323)
+    expect((await hit('/__drobek/v1/ping/missing')).status).toBe(404); // no such route → not counted
     expect((await hit('/__drobek/v1/nope')).status).toBe(404); // not an active module → not counted
     const today = new Date().toISOString().slice(0, 10);
     await db.insert(appDailyStats).values({ appId: app.app_id, day: today, requestCount: 42, count5xx: 1, path404Counts: { '/x': 2 } });
@@ -1701,7 +1701,7 @@ describe('get_logs (M1-07)', () => {
   });
 });
 
-describe('unknown arguments (NSO-378)', () => {
+describe('unknown arguments', () => {
   it('are accepted and reported in warnings; the result is otherwise the same', async () => {
     const app = await newApp('Extra args', { template: 'html' });
     const alice = await as('alice');
@@ -1779,7 +1779,7 @@ describe('unknown arguments (NSO-378)', () => {
   });
 });
 
-describe('sync_now and get_logs kind "sync" (NSO-392)', () => {
+describe('sync_now and get_logs kind "sync"', () => {
   /** A scheduled-import module whose runs live in memory; its runNow audits through the job context like the real one. */
   const RUNS = new Map<string, SyncRun[]>();
   const feed = defineModule({

@@ -137,7 +137,7 @@ afterAll(async () => {
 
 const mod = () => createProxyModule({ env: () => env });
 
-/** Upstreams of ws1 whose allow-list does NOT name appA (NSO-322 H3), for one test. */
+/** Upstreams of ws1 whose allow-list does NOT name appA, for one test. */
 async function withNarrowUpstreams(fn: () => Promise<void>): Promise<void> {
   const base = `http://127.0.0.1:${port}`;
   const common = { workspaceId: ws1, baseUrl: base, allowedMethods: ['GET'], allowedPathPrefixes: ['/'], authType: 'bearer' as const };
@@ -243,13 +243,13 @@ describe('config + confirmRequired', () => {
     const p = (c: unknown) => proxyConfigSchema.parse(c) as ProxyConfig;
     const none = p({});
     const user = p({ upstreams: { echo: {} } });
-    // Every one needs a workspace ADMIN (NSO-322 H3): only admins register upstreams.
+    // Every one needs a workspace ADMIN: only admins register upstreams.
     const admin = (change: string) => ({ change, confirmRole: 'admin' });
     const secret = new Map([['echo', true]]);
     expect(proxyConfirmRequired(none, user, secret)).toEqual([
       admin('proxy.upstreams.echo: this app may call the workspace upstream "echo" with its secret (callers: "user")'),
     ]);
-    // No secret stored: the text does not claim one (NSO-372).
+    // No secret stored: the text does not claim one.
     expect(proxyConfirmRequired(none, user, new Map([['echo', false]]))).toEqual([
       admin('proxy.upstreams.echo: this app may call the workspace upstream "echo" (callers: "user")'),
     ]);
@@ -264,7 +264,7 @@ describe('config + confirmRequired', () => {
     expect(await t({}).confirm({}, { upstreams: { echo: {} } })).toEqual([
       'proxy.upstreams.echo: this app may call the workspace upstream "echo" with its secret (callers: "user")',
     ]);
-    // A name nobody registered cannot be assigned (it could never be confirmed); removing one still can (NSO-372).
+    // A name nobody registered cannot be assigned (it could never be confirmed); removing one still can.
     await expect(t({}).confirm({}, { upstreams: { ghost: {} } })).rejects.toMatchObject({
       code: 'invalid_params',
       details: { reason: 'upstream_not_registered', upstreams: ['ghost'] },
@@ -275,7 +275,7 @@ describe('config + confirmRequired', () => {
     expect(proxyConfirmRequired(user, none)).toEqual([]);
   });
 
-  it('the record binding `id` (NSO-326): old name-only and new bound shapes both parse; a changed id needs an admin, a dropped one does not', () => {
+  it('the record binding `id`: old name-only and new bound shapes both parse; a changed id needs an admin, a dropped one does not', () => {
     const p = (c: unknown) => proxyConfigSchema.parse(c) as ProxyConfig;
     // Old shape (name only) — still valid, unbound.
     expect(p({ upstreams: { echo: { rules: { call: 'user' } } } }).upstreams.echo.id).toBeUndefined();
@@ -367,7 +367,7 @@ describe('calls', () => {
     expect(p.body).toMatchObject({ error: 'path_not_allowed' });
     const trav = await tt.request('GET', '/echo/v1/%2e%2e/admin', { headers: SDK });
     expect(trav.status).toBe(403);
-    // Double encoding hides nothing (NSO-326): checked on the fully decoded segment.
+    // Double encoding hides nothing: checked on the fully decoded segment.
     const double = await tt.request('GET', '/echo/v1/%252e%252e%252fadmin', { headers: SDK });
     expect(double.status).toBe(403);
     expect(double.body).toMatchObject({ error: 'path_not_allowed' });
@@ -381,7 +381,7 @@ describe('calls', () => {
     const tt = t({ upstreams: { echo: {} } });
     const r = await tt.request('GET', '/echo/redirect', { headers: SDK });
     expect(r.status).toBe(302);
-    // Returned as-is but the ABSOLUTE Location is dropped (NSO-326: it would leak where the upstream points).
+    // Returned as-is but the ABSOLUTE Location is dropped (it would leak where the upstream points).
     expect(Object.keys(r.headers).map((k) => k.toLowerCase())).not.toContain('location');
     const c = await tt.request('GET', '/echo/cors', { headers: SDK });
     expect(c.status).toBe(200);
@@ -392,7 +392,7 @@ describe('calls', () => {
     expect(Object.keys(c.headers).filter((k) => k.toLowerCase() === 'cache-control')).toEqual(['Cache-Control']);
   });
 
-  it("an upstream whose allow-list does not name the app → 403 upstream_not_allowed, nothing forwarded (NSO-322 H3)", async () => {
+  it("an upstream whose allow-list does not name the app → 403 upstream_not_allowed, nothing forwarded", async () => {
     await withNarrowUpstreams(async () => {
       for (const name of ['closed', 'theirs']) {
         const res = await t({ upstreams: { [name]: {} } }).request('GET', `/${name}/x`, { headers: SDK });
@@ -434,7 +434,7 @@ describe('calls', () => {
   });
 });
 
-describe('assignments are bound to the upstream RECORD, not its name (NSO-326)', () => {
+describe('assignments are bound to the upstream RECORD, not its name', () => {
   const idOf = async (name: string, workspaceId = ws1) =>
     (await db.select({ id: upstreams.id }).from(upstreams).where(and(eq(upstreams.workspaceId, workspaceId), eq(upstreams.name, name))))[0].id;
   const storedConfig = async () =>
@@ -522,7 +522,7 @@ describe('assignments are bound to the upstream RECORD, not its name (NSO-326)',
   });
 });
 
-describe('an encoded upstream body is decoded; headers are the allow-list (NSO-326)', () => {
+describe('an encoded upstream body is decoded; headers are the allow-list', () => {
   it('a gzipped JSON answer reaches the app as plain JSON, without Content-Encoding or the absolute Location', async () => {
     const res = await t({ upstreams: { open: {} } }).request('GET', '/open/gzip', { headers: SDK });
     expect(res.status).toBe(200);
@@ -534,7 +534,7 @@ describe('an encoded upstream body is decoded; headers are the allow-list (NSO-3
   });
 });
 
-describe('concurrent calls (NSO-326)', () => {
+describe('concurrent calls', () => {
   it('PROXY_MAX_CONCURRENT_PER_APP: a call over the cap → 429 proxy_busy with Retry-After; the slot frees when a call ends', async () => {
     slowGate = new Promise<void>((resolve) => {
       releaseSlow = resolve;
@@ -581,7 +581,7 @@ describe('rate limits', () => {
     expect((await tt.request('GET', '/open/x', { headers: SDK, clientIp: '198.51.100.2' })).status).toBe(200);
   });
 
-  it('a public upstream without a resolved client IP (NSO-328): no shared per-IP bucket, the app-wide limit still applies', async () => {
+  it('a public upstream without a resolved client IP: no shared per-IP bucket, the app-wide limit still applies', async () => {
     const tt = t({ upstreams: { open: { rules: { call: 'public' } } } }, ANON, { PROXY_CALLS_PER_MIN: 15 });
     for (let i = 0; i < 15; i++) {
       expect((await tt.request('GET', '/open/x', { headers: SDK, clientIp: null })).status, `call ${i + 1}`).toBe(200);
@@ -645,7 +645,7 @@ describe('appInfo (get_app / configure_module) and registration', () => {
   });
 });
 
-describe('the upstreams authority (a module job calls an upstream, NSO-392)', () => {
+describe('the upstreams authority (a module job calls an upstream)', () => {
   const view = (config: unknown) => ({
     app: { id: appA, slug: 'chat', workspaceId: ws1 },
     config: proxyConfigSchema.parse(config),

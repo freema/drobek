@@ -1,6 +1,6 @@
 /**
- * The sources of a scheduled-import module (the one that declares `sync`,
- * NSO-392) on its module page: per source what it fetches and where it
+ * The sources of a scheduled-import module (the one that declares `sync`)
+ * on its module page: per source what it fetches and where it
  * writes, its schedule, the last and the next run, Run now and Pause /
  * Resume; below, the latest runs. Values arrive pre-shaped from the loader.
  */

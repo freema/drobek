@@ -1,6 +1,6 @@
 /**
  * GET|POST /__drobek/auth/callback/:provider — the IdP callback of an
- * end-user sign-in provider (NSO-348), on the DASHBOARD host: the one
+ * end-user sign-in provider, on the DASHBOARD host: the one
  * redirect URI an operator registers with an IdP for every app of the
  * server. The dashboard session is never read or touched here.
  *

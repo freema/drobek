@@ -1,10 +1,9 @@
 /**
- * Sessions live in REDIS, not Postgres (ratified U2 + PHY-70 — the `sessions`
- * table in docs/archive/TECHNICAL_DESIGN.md §1 is stale drift; do NOT create it).
+ * Sessions live in REDIS, not Postgres — there is no `sessions` table.
  *
  * Key `drobek:session:<token>`, value JSON {userId, email, createdAt},
  * token = randomBytes(48) hex. Rolling 30-day TTL — refreshed (GETEX) on
- * every authenticated access. Cookie `__Host-drobek_session` (M0-06): HttpOnly;
+ * every authenticated access. Cookie `__Host-drobek_session`: HttpOnly;
  * Path=/; no Domain; Secure; SameSite=Lax (drobek has no iframe embedding);
  * Max-Age 30 days. Host-only on the dashboard host: an app host never receives
  * it. Plain-http dev (see cookies.ts) uses `drobek_session` without Secure.

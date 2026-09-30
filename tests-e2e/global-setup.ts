@@ -20,8 +20,7 @@ const CORE_TABLES = [
   'app_versions',
   'blobs',
   'apps',
-  // M0-04: DCR clients never authorized count toward the unused-client cap
-  // (OAUTH_DCR_MAX_UNUSED_CLIENTS) — start every run from zero.
+  // Never-authorized DCR clients count toward OAUTH_DCR_MAX_UNUSED_CLIENTS.
   'oauth_clients',
   'memberships',
   'workspaces',
@@ -29,10 +28,9 @@ const CORE_TABLES = [
 ];
 
 /**
- * U2: deterministic reruns for the auth specs — drop leftover OTP + rate-limit
- * counters (per-IP windows accumulate across runs). Mirrors the destructive
- * DB guard: ONLY `drobek:otp|rl|applock|mail:*` keys (M1-04: the mail pause), ONLY when TEST_ENV=local
- * AND the REDIS_URL host is local. Never touches `drobek:session:*`.
+ * Drop leftover OTP, rate-limit and mail-pause counters so auth specs rerun
+ * deterministically. Like the DB guard: only when TEST_ENV=local and the
+ * REDIS_URL host is local; never touches `drobek:session:*`.
  */
 const ALLOWED_REDIS_HOSTS = ['localhost', '127.0.0.1', 'redis'];
 const REDIS_CLEANUP_PATTERNS = ['drobek:otp:*', 'drobek:rl:*', 'drobek:applock:*', 'drobek:mail:*'];
@@ -72,15 +70,10 @@ async function cleanupAuthRedisKeys(): Promise<void> {
 }
 
 /**
- * NSO-314 belt-and-braces: settle a Vite dev target before the first browser
- * test. The dev server's client dep optimizer used to discover server-only
- * deps lazily on the first SSR renders after a cold cache (lockfile change,
- * `compose up -V`) and force a full page reload that wiped the first sign-in
- * of the run. apps/server's vite.config now pins the optimizer
- * (`noDiscovery`), so this normally returns after one round: render a few
- * pages, then wait until the pre-bundle hash the client modules import
- * (`.vite/deps/*?v=<hash>`) is stable. Production targets (no `/@vite/client`)
- * are skipped.
+ * Settle a Vite dev target before the first browser test: render a few pages,
+ * then wait until the pre-bundle hash (`.vite/deps/*?v=<hash>`) is stable, so a
+ * dep-optimizer reload cannot wipe the first sign-in. Production targets (no
+ * `/@vite/client`) are skipped.
  */
 const WARMUP_PAGES = ['/healthz', '/', '/login', '/login/verify?email=warmup%40example.com', '/build-with-your-agent'];
 

@@ -1,5 +1,5 @@
 /**
- * DB-backed (PGlite) tests of the audited account mutations (M2-04): the
+ * DB-backed (PGlite) tests of the audited account mutations: the
  * audit rows land in the actor's personal workspace, carry no secret, show up
  * under the actor filter and in the Activity CSV.
  */
@@ -50,7 +50,7 @@ async function signedIn(email: string) {
   return { id: u.id, email };
 }
 
-describe('audited account mutations (M2-04)', () => {
+describe('audited account mutations', () => {
   it('create + revoke an API key are audited in the personal workspace, without the key', async () => {
     const user = await signedIn('keys-audit@example.test');
     const created = await createAccountApiKey(user, { name: 'CI', scopes: ['read', 'write'] });

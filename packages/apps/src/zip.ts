@@ -1,6 +1,6 @@
 /**
  * A small streaming ZIP writer (PKZIP 2.0: store / deflate, UTF-8 names, no
- * ZIP64) for the dashboard's "download version" (NSO-288). Written here on
+ * ZIP64) for the dashboard's "download version". Written here on
  * `node:zlib` instead of pulling an archiver dependency: a version is at most
  * a few MiB (COMPILE_* limits), so ZIP64, encryption and multi-disk never
  * apply, and the format subset below is ~100 lines that are unit-tested

@@ -20,7 +20,7 @@ function failedQuery(): Error {
   });
 }
 
-describe('serializeError (NSO-333)', () => {
+describe('serializeError', () => {
   it('a failed query keeps code, constraint and table — never the bound e-mail', () => {
     const out = serializeError(failedQuery());
     expect(out.message).toBe('db error 23505 (constraint users_email_unique, table users)');

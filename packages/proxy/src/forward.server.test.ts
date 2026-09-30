@@ -1,5 +1,5 @@
 /**
- * forwardToUpstream against a real local HTTP server (NSO-326): an upstream
+ * forwardToUpstream against a real local HTTP server: an upstream
  * that encodes its body despite `Accept-Encoding: identity` is decoded (gzip,
  * deflate — zlib or raw — and br) and the DECODED size is held to the cap;
  * the relayed headers are the allow-list.
@@ -89,7 +89,7 @@ const upstream = (): UpstreamRecord => ({
 const get = (path: string, method = 'GET', e: NodeJS.ProcessEnv = env()) =>
   forwardToUpstream({ upstream: upstream(), method, subpath: path, search: '', headers: new Headers(), env: e });
 
-describe('forwardToUpstream — an encoded upstream body is decoded (NSO-326)', () => {
+describe('forwardToUpstream — an encoded upstream body is decoded', () => {
   for (const path of ['/gzip', '/deflate', '/deflate-raw', '/br', '/layered']) {
     it(`${path} → the plain JSON, no Content-Encoding relayed`, async () => {
       const r = await get(path);
@@ -132,7 +132,7 @@ describe('forwardToUpstream — an encoded upstream body is decoded (NSO-326)', 
   });
 });
 
-describe('forwardToUpstream — relayed headers (NSO-326)', () => {
+describe('forwardToUpstream — relayed headers', () => {
   it('only allow-listed headers pass; an absolute Location is dropped; never cached', async () => {
     const r = await get('/headers');
     expect(r.status).toBe(302);
@@ -147,7 +147,7 @@ describe('forwardToUpstream — relayed headers (NSO-326)', () => {
   });
 });
 
-describe('forwardToUpstream — a caller\'s lower response cap (NSO-392)', () => {
+describe('forwardToUpstream — a caller\'s lower response cap', () => {
   const capped = (path: string, maxResponseBytes: number | undefined, e: NodeJS.ProcessEnv = env()) =>
     forwardToUpstream({ upstream: upstream(), method: 'GET', subpath: path, search: '', headers: new Headers(), env: e, maxResponseBytes });
 

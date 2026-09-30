@@ -104,6 +104,7 @@ docs/                   ARCHITECTURE, SELF-HOSTING, MODULES, AGENT, SECURITY, LI
   keep API identifiers unchanged. Distinguish an empty list, no search results
   and a loading error. Comments explain current behavior and constraints;
   non-English sample data is appropriate when demonstrating Unicode handling.
+- No narrative comments or task IDs in code; the why goes in the commit or docs.
 - DB-backed unit tests use PGlite + `setDbForTests()` from `@drobek/db`.
 - DB errors: use `pgErrorCode` / `isUniqueViolation` / `dbErrorForLog` from
   `@drobek/db`; never read `err.code` or log `err.message` of a query error

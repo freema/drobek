@@ -1,5 +1,5 @@
 /**
- * Host-provided peers (NSO-345): a module installed in `DROBEK_MODULES_DIR`
+ * Host-provided peers: a module installed in `DROBEK_MODULES_DIR`
  * brings its own `node_modules`, possibly with its own copies of
  * `@drobek/modules`, `zod` or `drizzle-orm`. Two copies of the contract mean
  * two `ModuleError` classes, two zod runtimes, two drizzle query builders —

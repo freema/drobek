@@ -1,5 +1,5 @@
 /**
- * /workspaces/:slug/modules — client half (NSO-347 + NSO-346): the platform
+ * /workspaces/:slug/modules — client half: the platform
  * modules of this server, read-only, for every member of the workspace. One
  * card per module: its facts (version, source, contract, availability,
  * requires), the slots it offers and who contributes, its own contributions,

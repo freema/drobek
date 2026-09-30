@@ -1,5 +1,5 @@
 /**
- * Pure shaping for the read side (PHY-123): the stored rows → the
+ * Pure shaping for the read side: the stored rows → the
  * agent-actionable + dashboard shapes. No DB / no Redis here → unit-tested.
  */
 import { fileHintFromStack } from './sanitize.js';

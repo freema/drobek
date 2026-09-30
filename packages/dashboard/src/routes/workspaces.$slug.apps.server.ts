@@ -1,13 +1,13 @@
 /**
- * GET /workspaces/:slug/apps — server half (U8, PHY-74 slice; filters
- * NSO-288). The workspace APPS LIST. Requires viewer+ via the tenancy role
+ * GET /workspaces/:slug/apps — server half.
+ * The workspace APPS LIST. Requires viewer+ via the tenancy role
  * middleware (super-admin override; unknown slug / non-member → 404;
  * anonymous → /login redirect). Deleted apps never appear. Filters come from
  * the query string: `q` (name / slug search), `status`
  * (all | published | unpublished), `sort` (updated | created | name);
  * `deleted=<slug>` shows the notice after a delete. Each app carries its
- * thumbnail (NSO-342): the URL the list frames, or a placeholder reason.
- * NSO-366: while the workspace may not publish (blocked by the operator, or
+ * thumbnail: the URL the list frames, or a placeholder reason.
+ * While the workspace may not publish (blocked by the operator, or
  * not approved yet) the list shows the notice; POST `request-publish-approval`
  * (editor+) asks the operator for an approval.
  */
@@ -37,11 +37,11 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       name: access.workspace.name,
       kind: access.workspace.kind,
     },
-    /** NSO-342: the shared workspace chrome (breadcrumb, badges, tabs). */
+    /** The shared workspace chrome (breadcrumb, badges, tabs). */
     nav: await workspaceNav(access),
     apps: filterApps(all, filters).map((app) => ({
       ...app,
-      // NSO-342: the sandboxed iframe thumbnail (or why it is a placeholder).
+      // The sandboxed iframe thumbnail (or why it is a placeholder).
       thumbnail: appThumbnail(app, { published: publishedUrl(app.slug), preview: previewUrl(app.slug) }),
     })),
     total: all.length,

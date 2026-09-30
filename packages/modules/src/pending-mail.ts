@@ -1,6 +1,6 @@
 /**
  * The e-mail to an app's owners when an agent's configure_module leaves a
- * change waiting for their confirmation (M2-02, NSO-291). Sent by the runtime
+ * change waiting for their confirmation. Sent by the runtime
  * through the normal module e-mail path (`{ appOwners: true }`, the mail
  * authority = the `email` module, the operator-wide budgets), at most ONE per
  * app per PENDING_MAIL_WINDOW_MS; each message lists EVERYTHING that is

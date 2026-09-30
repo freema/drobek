@@ -1,5 +1,5 @@
 /**
- * NSO-340 — the gallery's counting link and like page on a real PGlite
+ * The gallery's counting link and like page on a real PGlite
  * database (the session and the Redis limiter are stubbed):
  *  - GET /gallery/open/:slug: 302 to the production URL and one open counted;
  *    a prefetch, a HEAD and an IP over GALLERY_OPENS_PER_IP_HOUR redirect

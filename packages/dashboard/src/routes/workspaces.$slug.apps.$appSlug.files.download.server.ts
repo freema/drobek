@@ -1,6 +1,6 @@
 /**
  * GET /workspaces/:slug/apps/:appSlug/files/download?version=N — one version
- * as a ZIP (NSO-288): `<slug>-v<N>/source/…` (what the agent wrote) and
+ * as a ZIP: `<slug>-v<N>/source/…` (what the agent wrote) and
  * `<slug>-v<N>/built/…` (what the compiler produced). viewer+ (the same
  * people who can read the files in the Files tab); a resource route that
  * streams the archive (@drobek/apps versionZip) — blobs are read in small

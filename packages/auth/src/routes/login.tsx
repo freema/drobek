@@ -64,7 +64,7 @@ const styles = {
     fontSize: '0.9rem',
     marginBottom: '1rem',
   },
-  // U3: "Continue with Google" — same footprint as the primary button,
+  // "Continue with Google" — same footprint as the primary button,
   // inverted colors so the email form stays the visual default.
   googleLink: {
     display: 'block',

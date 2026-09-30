@@ -1,5 +1,5 @@
 /**
- * The workspace Modules page's module list (NSO-347): a search (a GET form,
+ * The workspace Modules page's module list: a search (a GET form,
  * works without client JS), a jump list, then one card per active platform
  * module — what it is for, its version, availability (+ the opt-in switch)
  * and requirements up front; its limits for this workspace and the technical

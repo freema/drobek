@@ -1,6 +1,6 @@
 /**
  * GET/POST /workspaces/:slug/apps/:appSlug/settings — server half of the
- * Settings tab (NSO-288).
+ * Settings tab.
  *
  * GET (viewer+): visibility (public / password — never the hash, only
  * whether one is set), the frame-ancestors override, when a delete would

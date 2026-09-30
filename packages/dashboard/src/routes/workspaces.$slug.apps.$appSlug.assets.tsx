@@ -1,9 +1,9 @@
 /**
- * /workspaces/:slug/apps/:appSlug/assets — client half of the Assets tab
- * (NSO-358): the app's video, audio, images and fonts, served at `/<path>`
+ * /workspaces/:slug/apps/:appSlug/assets — client half of the Assets tab:
+ * the app's video, audio, images and fonts, served at `/<path>`
  * next to its files. A list (path, type, size, live or waiting for a publish,
  * copy path, open on the preview host) with the quota; upload and (after a
- * confirm step) delete for editors, read-only for viewers. NSO-362: uploads
+ * confirm step) delete for editors, read-only for viewers. Uploads
  * and deletes change the draft the preview serves; production follows at the
  * next publish.
  *

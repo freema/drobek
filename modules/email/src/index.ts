@@ -1,5 +1,5 @@
 /**
- * drobek-module-email — the BUILT-IN platform module `email` (M1-04, §5.4):
+ * drobek-module-email — the BUILT-IN platform module `email`:
  * the app-facing e-mail policy of a drobek server.
  *
  *   DROBEK_MODULES=email   → this package (`modules/email` in the drobek repo,

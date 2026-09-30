@@ -1,8 +1,8 @@
 /**
- * @drobek/proxy — the secret-injecting, SSRF-guarded gateway core (PHY-59).
+ * @drobek/proxy — the secret-injecting, SSRF-guarded gateway core.
  * Upstreams (base_url, allow-lists, envelope-encrypted secret) are registered
  * per WORKSPACE in the dashboard; apps reach them through the `proxy` platform
- * module (`/__drobek/v1/proxy/:upstream/*` on the app host, NSO-297), which
+ * module (`/__drobek/v1/proxy/:upstream/*` on the app host), which
  * decides who may call and calls `forwardToUpstream`. React-free server logic.
  */
 export {

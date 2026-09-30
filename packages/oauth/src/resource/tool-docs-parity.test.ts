@@ -1,5 +1,5 @@
 /**
- * DRIFT GUARD (PHY-124, M0-05) — the tools the MCP server ACTUALLY registers
+ * DRIFT GUARD — the tools the MCP server ACTUALLY registers
  * must equal the @drobek/agent-dx manifest (TOOL_DOCS): the same names, the
  * same input field names, the same annotations, and the scope each doc names
  * must be the one TOOL_SCOPES enforces. Add or change a tool without its doc

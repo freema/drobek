@@ -1,5 +1,5 @@
 /**
- * Assignment ↔ upstream RECORD binding (NSO-326). The app config names an
+ * Assignment ↔ upstream RECORD binding. The app config names an
  * upstream by NAME (what the agent writes and the dashboard shows); drobek
  * stores the id of the upstream record a workspace admin confirmed next to it
  * (`upstreams.<name>.id`). A deleted and re-registered upstream is a new record

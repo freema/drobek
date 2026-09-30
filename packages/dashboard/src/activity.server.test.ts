@@ -1,6 +1,6 @@
 /**
  * The workspace Activity page + its CSV export on a real PGlite database
- * (NSO-371; the workspace role gate is stubbed — requireWorkspaceRole has its
+ * (the workspace role gate is stubbed — requireWorkspaceRole has its
  * own tests — and the module runtime is a list of names):
  *  - rows carry a summary, links to what still exists and plain text with a
  *    note for what was deleted, and redacted technical details;
@@ -114,7 +114,7 @@ afterAll(async () => {
   await pg.close();
 });
 
-describe('Activity page (NSO-371)', () => {
+describe('Activity page', () => {
   it('summarises each row and links what still exists', async () => {
     const { items } = await load();
     const by = (action: string, subject?: string) => items.find((i) => i.action === action && (!subject || i.subject === subject))!;

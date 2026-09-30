@@ -1,5 +1,5 @@
 /**
- * set_workspace_publishing (NSO-366): a super-admin sets a workspace's
+ * set_workspace_publishing: a super-admin sets a workspace's
  * publishing — `allowed`, `blocked` (refused in every PUBLISH_APPROVAL mode)
  * or `default` (the server mode decides) — the same @drobek/apps function as
  * the dashboard's /admin/publishing, audited as the agent. Registered only

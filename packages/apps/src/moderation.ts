@@ -1,5 +1,5 @@
 /**
- * Abuse and moderation vocabulary (M4-02, NSO-293). Pure — no I/O — so the
+ * Abuse and moderation vocabulary. Pure — no I/O — so the
  * dashboard form, the queue, @drobek/serving's 451 page and the MCP refusal
  * all speak the same categories.
  *

@@ -1,5 +1,5 @@
 /**
- * Who may publish (NSO-366), the server half. The decision for one publish:
+ * Who may publish, the server half. The decision for one publish:
  *   1. the acting user is a super-admin → allowed;
  *   2. the workspace is `blocked` (`workspaces.publish_blocked_at`) → refused
  *      with `publish_blocked`, in every PUBLISH_APPROVAL mode;

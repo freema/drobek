@@ -1,5 +1,5 @@
 /**
- * `task caddy:config` — render the Caddyfile from the environment (M0-07).
+ * `task caddy:config` — render the Caddyfile from the environment.
  *
  *   node packages/core/dist/cli/caddy-config.js [--out <path>]
  *

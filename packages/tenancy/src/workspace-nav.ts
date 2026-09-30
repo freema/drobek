@@ -1,5 +1,5 @@
 /**
- * The server half of the workspace chrome (NSO-342): what <WorkspacePage>
+ * The server half of the workspace chrome: what <WorkspacePage>
  * (./layout.tsx) shows for a resolved workspace access — name + slug, kind,
  * where your access comes from (a membership or the super-admin override),
  * the personal workspace's owner, your other workspaces for the switcher and

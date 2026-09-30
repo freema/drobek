@@ -418,7 +418,7 @@ describe('reading submissions (admins only)', () => {
   });
 });
 
-describe("the owner's view (submissions authority, M2-03)", () => {
+describe("the owner's view (submissions authority)", () => {
   const view = (app = appId) => ({
     app: { id: app, slug: 'shop', workspaceId },
     config: formsConfigSchema.parse({ forms: { contact: {}, quiet: {} } }),

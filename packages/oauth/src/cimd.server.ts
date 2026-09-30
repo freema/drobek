@@ -1,5 +1,5 @@
 /**
- * Client ID Metadata Documents (M0-04, NSO-282) — the MCP authorization spec's
+ * Client ID Metadata Documents — the MCP authorization spec's
  * preferred client identification: the `client_id` IS an https URL, and the
  * document served there describes the client. No registration round-trip, no
  * stored client secret; the client is always public (PKCE).

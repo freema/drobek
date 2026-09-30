@@ -47,7 +47,7 @@ describe('module e-mail recipients', () => {
     expect(() => emailKind([])).toThrow(/no recipient/);
   });
 
-  it('only the sign-in provider may send to { signInAddress }: any other module → forbidden (NSO-327)', () => {
+  it('only the sign-in provider may send to { signInAddress }: any other module → forbidden', () => {
     expect(() => assertSignInSender('sign_in', 'auth', 'auth')).not.toThrow();
     expect(() => assertSignInSender('notification', 'forms', 'auth')).not.toThrow();
     expect(() => assertSignInSender('notification', 'forms', null)).not.toThrow();
@@ -212,7 +212,7 @@ describe('the operator-wide hourly budgets of module e-mail (sign-in codes vs no
     await expect(g.assertOpen(signIn())).resolves.toBeUndefined();
   });
 
-  it('the pause is a FIXED window (NSO-327): EMAIL_GLOBAL_PAUSE_MINUTES later the class starts a fresh budget, not at the end of the old hour', async () => {
+  it('the pause is a FIXED window: EMAIL_GLOBAL_PAUSE_MINUTES later the class starts a fresh budget, not at the end of the old hour', async () => {
     const redis = fakeRedis();
     const l = log();
     // G = 10: notifications 5, one app may use them all.
@@ -290,7 +290,7 @@ describe('the operator-wide hourly budgets of module e-mail (sign-in codes vs no
     await expect(g.assertOpen(notify('greedy'))).resolves.toBeUndefined();
   });
 
-  it('one app cannot pause sign-in for every app: past its share of sign-in codes only IT is refused (NSO-322 H2)', async () => {
+  it('one app cannot pause sign-in for every app: past its share of sign-in codes only IT is refused', async () => {
     const redis = fakeRedis();
     const l = log();
     // Defaults: sign-in 100 an hour, one app 25 of them.
@@ -325,7 +325,7 @@ describe('the operator-wide hourly budgets of module e-mail (sign-in codes vs no
     await g.admit(1, notify('greedy'));
   });
 
-  it('one workspace cannot take a whole class with several apps: its apps together stop at EMAIL_WORKSPACE_HOURLY_SHARE (NSO-323 M4)', async () => {
+  it('one workspace cannot take a whole class with several apps: its apps together stop at EMAIL_WORKSPACE_HOURLY_SHARE', async () => {
     const redis = fakeRedis();
     const l = log();
     // Defaults: notifications 400 an hour, one app 100, one workspace 200; sign-in 100 / 25 / 50.
@@ -400,7 +400,7 @@ describe('the operator-wide hourly budgets of module e-mail (sign-in codes vs no
     await expect(g.assertOpen(signIn())).rejects.toMatchObject({ details: { limit: 'EMAIL_SIGNIN_APP_HOURLY_SHARE' } });
     await g.assertOpen(notify('app_2'));
     await g.assertOpen(signIn('app_2'));
-    // The sign-in pause restarted that class's budget (NSO-327): app_2's code goes out.
+    // The sign-in pause restarted that class's budget: app_2's code goes out.
     await g.admit(1, signIn('app_2'));
     // Notifications never paused (app_1 hit its share first): their hourly
     // class counter still runs, and the next notification trips the pause.

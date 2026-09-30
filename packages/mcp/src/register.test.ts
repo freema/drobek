@@ -1,7 +1,7 @@
 /**
- * tools/list snapshot (M0-05 + M0-06 + M1-01 + M1-03 + M1-07 + NSO-340 + NSO-358 + the domain tools of NSO-366): exactly the 20 tools of a
- * user who is not a super-admin (a super-admin also gets set_workspace_publishing, NSO-366), in order, with
- * their titles, annotations and input schemas. Hand-written on purpose — a
+ * tools/list snapshot: exactly the 20 tools of a user who is not a
+ * super-admin (a super-admin also gets set_workspace_publishing), in order,
+ * with their titles, annotations and input schemas. Hand-written on purpose — a
  * change to the public tool surface must be a deliberate edit here.
  */
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -272,7 +272,7 @@ describe('tools/list', () => {
     for (const t of tools) expect(t.description!.length, t.name).toBeGreaterThan(40);
   });
 
-  it('a super-admin also gets set_workspace_publishing, last (NSO-366)', async () => {
+  it('a super-admin also gets set_workspace_publishing, last', async () => {
     const tools = await listTools(undefined, true);
     expect(tools).toHaveLength(26);
     const last = tools[25];

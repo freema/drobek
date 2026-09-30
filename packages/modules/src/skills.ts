@@ -1,5 +1,5 @@
 /**
- * Skills (M1-01) — the agent-facing documentation `skill_info` serves. Two
+ * Skills — the agent-facing documentation `skill_info` serves. Two
  * sources, one registry:
  *
  *  - MODULE skills: every active module's `defineModule({ skill })`;

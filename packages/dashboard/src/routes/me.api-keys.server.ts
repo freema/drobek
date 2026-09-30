@@ -1,5 +1,5 @@
 /**
- * GET/POST /me/api-keys — server half (M2-04, NSO-284). The signed-in user's
+ * GET/POST /me/api-keys — server half. The signed-in user's
  * personal `drk_` API keys: list (name, scopes, created, last used, revoked),
  * create (name + scopes; the raw key is in THIS action response only, never
  * stored or shown again) and revoke (immediate — the Resource Server reads the

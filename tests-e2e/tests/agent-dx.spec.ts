@@ -4,16 +4,13 @@ import { skipUnlessLocal } from './helpers/auth';
 import { FULL_SCOPE, mcpClient } from './helpers/mcp';
 
 /**
- * M1b Agent DX acceptance (PHY-124): the agent-facing docs are served + in sync
- * with the real tools. /llms.txt + /llms-full.txt render from the @drobek/agent-dx
- * manifest; the same content is reachable over MCP as docs resources + guided
- * prompts; and the human build page carries the install command + MCP URL.
- *
- * The "fresh agent builds a todo app from the skill" acceptance is a MANUAL
- * operator demo — here we assert the INGREDIENTS.
+ * The agent-facing docs are served and in sync with the real tools: /llms.txt
+ * + /llms-full.txt render from the @drobek/agent-dx manifest, the same content
+ * is reachable over MCP as docs resources + prompts, and the build page carries
+ * the install command + MCP URL.
  */
 
-/** Exactly the MCP tool set: M0-05 core tools (NSO-283) + publish (NSO-285) + skill_info/configure_module (NSO-287) + query_data (NSO-300) + get_logs (NSO-290) + set_gallery_listing and duplicate_app (NSO-340) + the asset tools (NSO-358) + the custom-domain tools (NSO-366) + the upstream tools (NSO-372) + sync_now (NSO-392); set_workspace_publishing is a super-admin's only. */
+/** Exactly the MCP tool set; set_workspace_publishing is a super-admin's only. */
 const ALL_TOOLS = [
   'list_apps',
   'create_app',
@@ -42,7 +39,7 @@ const ALL_TOOLS = [
   'remove_upstream',
 ];
 
-/** Removed tools (deploy pipeline NSO-281, data/insight tools NSO-283) — never advertised. */
+/** Retired tools — never advertised. */
 const REMOVED_TOOLS = [
   'deploy_init', // doc-lint: allow — retired tool, asserted absent
   'deploy_commit', // doc-lint: allow — retired tool, asserted absent
@@ -97,7 +94,7 @@ test('GET /llms-full.txt → 200 with every tool, no deploy pipeline, the limits
   expect(body).toContain('app_locked');
   expect(body).toContain('secret_in_source');
   expect(body).toContain('redirect_uri');
-  // …then one section per active module with its own codes (NSO-344).
+  // …then one section per active module with its own codes.
   expect(body).toContain('### Module auth');
   expect(body).toContain('- invalid_code — module route (auth) — ');
   expect(body).toContain('### Module proxy');

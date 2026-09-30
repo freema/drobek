@@ -49,7 +49,7 @@ describe('renderLlmsTxt', () => {
     for (const name of TOOL_NAMES) expect(txt).toContain(name);
   });
 
-  it('carries the plugin install for Claude Code + the Codex/Cursor pointer (M0-10)', () => {
+  it('carries the plugin install for Claude Code + the Codex/Cursor pointer', () => {
     expect(txt).toContain('## Plugin (Claude Code, Codex, Cursor)');
     expect(txt).toContain(PLUGIN_MARKETPLACE_ADD_COMMAND);
     expect(txt).toContain(PLUGIN_INSTALL_COMMAND);
@@ -64,7 +64,7 @@ describe('renderLlmsTxt', () => {
   });
 });
 
-describe('docs links: DOCS_URL set or unset (NSO-366)', () => {
+describe('docs links: DOCS_URL set or unset', () => {
   const DOCS = { ...ENV, DOCS_URL: 'https://www.drobek.app/docs' };
 
   it('unset: llms.txt and llms-full.txt link the Markdown files on GitHub', () => {
@@ -94,7 +94,7 @@ describe('docs links: DOCS_URL set or unset (NSO-366)', () => {
 describe('renderLlmsFull', () => {
   const full = renderLlmsFull(ENV);
 
-  it('documents every manifest tool completely: each input field, its result shape and an example (M0-10 parity)', () => {
+  it('documents every manifest tool completely: each input field, its result shape and an example', () => {
     // With the @drobek/oauth parity test (registered MCP tools == TOOL_DOCS),
     // this closes the chain: tools/list == manifest == llms-full.txt.
     for (const t of TOOL_DOCS) {
@@ -140,7 +140,7 @@ describe('renderLlmsFull', () => {
     expect(full).toContain('S256');
   });
 
-  it('documents the M0-04 model: user-bound grants, read/write/publish, CIMD, iss, API keys', () => {
+  it('documents the access model: user-bound grants, read/write/publish, CIMD, iss, API keys', () => {
     expect(full).toContain('Scopes: read (');
     expect(full).toContain('publish');
     expect(full).toContain('Client ID Metadata Document');
@@ -183,7 +183,7 @@ describe('renderLlmsFull', () => {
     expect(full).toContain('warnings: [{ code: "unknown_argument", message, ignored, accepted }]');
   });
 
-  it("renders each active module's own codes as a section after the core catalogue (NSO-344)", () => {
+  it("renders each active module's own codes as a section after the core catalogue", () => {
     const withModules = renderLlmsFull(ENV, [
       { module: 'auth', errors: [{ code: 'invalid_code', meaning: 'The code is wrong.', fix: 'Request a new one.' }] },
       { module: 'quiet', errors: [] },

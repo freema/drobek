@@ -1,7 +1,6 @@
 /**
- * The checks an upstream call makes after its caller passed (NSO-392 moved
- * them here from routes.ts, so the app-host route and a module job's
- * `ctx.upstreams.fetch` share them): the upstream is registered in the app's
+ * The checks an upstream call makes after its caller passed, shared by the
+ * app-host route and a module job's `ctx.upstreams.fetch`: the upstream is registered in the app's
  * workspace, it is the record the assignment is bound to, and the app is on
  * its allow-list; an unbound (older) assignment is bound here.
  */

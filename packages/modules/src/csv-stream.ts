@@ -1,5 +1,5 @@
 /**
- * The streamed body of a CSV export (NSO-323 M5): CSV lines in, CRLF-terminated
+ * The streamed body of a CSV export: CSV lines in, CRLF-terminated
  * text chunks of about `chunkChars` out — so an export (the data module's
  * `export.csv` on the app host, the dashboard's Data tab) holds one chunk in
  * memory, never the whole file. `Readable.from(csvChunks(lines))` is a module

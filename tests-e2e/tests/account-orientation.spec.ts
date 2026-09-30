@@ -3,7 +3,7 @@ import { loginViaEmail, logout, skipUnlessLocal, uniqueEmail } from './helpers/a
 import { publishVersion, seedApp, seedVersion, workspaceIdBySlug } from './helpers/seed';
 
 /**
- * Workspace orientation and the account onboarding (NSO-371 review): two
+ * Workspace orientation and the account onboarding: two
  * workspaces named "Personal" are told apart by slug and owner, the access
  * badge says where access comes from (a membership or the super-admin
  * override), the header's switcher reaches the account and your own

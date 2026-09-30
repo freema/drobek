@@ -1,9 +1,9 @@
 /**
- * /workspaces/:slug/apps/:appSlug — the app page's Overview tab (NSO-288):
+ * /workspaces/:slug/apps/:appSlug — the app page's Overview tab:
  * the shared header (production / preview URLs, compile state, the agent
  * lock + Unlock, Unpublish), "Before you publish" (the newest version's
- * publish readiness report, NSO-384), the VERSION HISTORY with its actions, the
- * public gallery section (NSO-340, when the server runs one) and the health
+ * publish readiness report), the VERSION HISTORY with its actions, the
+ * public gallery section (when the server runs one) and the health
  * panels (recent errors, traffic / 404s).
  *
  * Per version: number, time, author (agent / user + e-mail), the agent's

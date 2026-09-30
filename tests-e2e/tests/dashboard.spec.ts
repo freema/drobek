@@ -16,8 +16,7 @@ import {
 } from './helpers/seed';
 
 /**
- * U8 acceptance (PHY-74 slice / PHY-62) on the immutable-versions model
- * (NSO-281): the minimal dashboard. Apps + versions are SEEDED via SQL.
+ * The minimal dashboard on the immutable-versions model. Apps + versions are SEEDED via SQL.
  *   (1) admin flow — /workspaces/:slug/apps lists the seeded apps with their
  *       published state + latest version → the app detail shows the VERSION
  *       HISTORY (v1 ok, v2 ok published, v3 compile error) → "Publish" on v1

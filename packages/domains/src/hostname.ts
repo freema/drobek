@@ -1,5 +1,5 @@
 /**
- * Custom-domain hostname validation (M3-01). Pure — env comes in as `HostnameRules`.
+ * Custom-domain hostname validation. Pure — env comes in as `HostnameRules`.
  *
  * A hostname an owner may attach to an app is:
  *  - normalised: trimmed, lower-cased, one trailing dot dropped, IDNA → ASCII

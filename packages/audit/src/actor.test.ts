@@ -7,7 +7,7 @@ import {
   parseActorKind,
 } from './actor.js';
 
-describe('actorKindForSurface (PHY-85 actor_kind resolution)', () => {
+describe('actorKindForSurface (actor_kind resolution)', () => {
   it('an MCP tool call is attributed to the agent', () => {
     expect(actorKindForSurface('mcp')).toBe('agent');
   });
@@ -16,7 +16,7 @@ describe('actorKindForSurface (PHY-85 actor_kind resolution)', () => {
     expect(actorKindForSurface('web')).toBe('user');
   });
 
-  it('a platform-module request on an app host is attributed to the end user (M1-01)', () => {
+  it('a platform-module request on an app host is attributed to the end user', () => {
     expect(actorKindForSurface('apps')).toBe('end_user');
   });
 
@@ -28,7 +28,7 @@ describe('actorKindForSurface (PHY-85 actor_kind resolution)', () => {
 });
 
 describe('audit action vocabulary', () => {
-  it('exposes the PHY-85 surfaced actions', () => {
+  it('exposes the surfaced actions', () => {
     expect(AUDIT_ACTIONS).toMatchObject({
       appCreate: 'app.create',
       deployActivate: 'deploy.activate',
@@ -44,7 +44,7 @@ describe('audit action vocabulary', () => {
   });
 });
 
-describe('M2-04 dictionary + actor filter', () => {
+describe('account dictionary + actor filter', () => {
   it('lists the account actions and the module/proxy actions already written', () => {
     for (const a of [
       'api_key.create',

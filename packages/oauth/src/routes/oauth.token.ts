@@ -1,5 +1,5 @@
 /**
- * POST /oauth/token (U5, M0-04). Two grants:
+ * POST /oauth/token. Two grants:
  *
  *  - authorization_code: verify the code (unused + unexpired), EXACT
  *    redirect_uri match, the presenting client_id (a DCR id or a CIMD URL —

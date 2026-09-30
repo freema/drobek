@@ -1,9 +1,8 @@
 /**
- * The MCP tool bodies (plan §4): list_apps, create_app, get_app, read_file,
- * write_files, restore_version (M0-05), publish (M0-06), skill_info and
- * configure_module (M1-01), query_data (M1-03), get_logs (M1-07),
- * set_gallery_listing and duplicate_app (NSO-340), sync_now (NSO-392). Each takes the caller + validated
- * arguments and returns a plain JSON payload or throws a ToolError; the MCP
+ * The MCP tool bodies: list_apps, create_app, get_app, read_file,
+ * write_files, restore_version, publish, skill_info, configure_module,
+ * query_data, get_logs, set_gallery_listing, duplicate_app and sync_now.
+ * Each takes the caller + validated arguments and returns a plain JSON payload or throws a ToolError; the MCP
  * wiring (register.ts) turns that into a CallToolResult.
  *
  * Invariants:
@@ -21,22 +20,22 @@
  *    logs (get_logs): browser error texts come from the app and its users;
  *  - every compile a write runs lands in the app's compile history
  *    (get_logs 'compile'), refused ones included;
- *  - an app a super-admin took down (NSO-293) refuses write_files,
+ *  - an app a super-admin took down refuses write_files,
  *    restore_version, publish and configure_module with `app_locked_by_admin`
  *    (the reason category only); list_apps / get_app show `locked_by_admin`;
- *  - listing an app in the public gallery (NSO-340) needs the publish scope,
+ *  - listing an app in the public gallery needs the publish scope,
  *    a published app and `user_confirmed: true` — the user's explicit yes;
  *    unlisting needs none of that. get_app shows the gallery state;
  *  - duplicate_app copies only a gallery app whose owner allows it, as the
  *    same @drobek/apps + @drobek/modules functions as the dashboard page:
  *    the published files and the module settings through the copy's own
  *    confirmation flow, never secrets, data or the source's proxy upstreams;
- *  - an opt-in module (NSO-346) that is off for the app's workspace is left
+ *  - an opt-in module that is off for the app's workspace is left
  *    out of the app's skills and compile hints, get_app says
  *    `enabled: false` and configure_module answers `module_not_enabled`;
  *  - publish in a workspace a super-admin blocked answers `publish_blocked`,
  *    and with PUBLISH_APPROVAL=approval in one the operator has not allowed
- *    `publish_not_approved` (both + `contact`, NSO-366); list_apps and
+ *    `publish_not_approved` (both + `contact`); list_apps and
  *    get_app say `can_publish` (+ `publish_contact`) and the workspace's
  *    `publishing` state.
  */
@@ -128,7 +127,7 @@ function actorOf(ctx: CallContext): Actor {
   return { userId: ctx.principal.userId, kind: actorKindForSurface('mcp') };
 }
 
-/** NSO-293: a taken-down app refuses every change (write, restore, publish, module config). */
+/** A taken-down app refuses every change (write, restore, publish, module config). */
 function refuseIfLockedByAdmin(app: AppRow): void {
   if (app.lockedReason) throw lockedByAdmin(app.lockedReason);
 }
@@ -140,7 +139,7 @@ function extOf(path: string): string {
 
 /**
  * `{ code, file, line, column, text, hint? }` — the agent-facing compile
- * message. `hint` (M1-01) points a backend import the platform replaces at its
+ * message. `hint` points a backend import the platform replaces at its
  * skill, e.g. `unresolved_import` of `firebase` → `skill_info('data')`.
  */
 export interface CompileErrorOut {
@@ -168,7 +167,7 @@ function toCompileOut(messages: unknown, modules?: ModuleRuntime, enabled?: Read
   });
 }
 
-/** The briefing of an app: `enabled` = its workspace's enabledModules() (NSO-346). */
+/** The briefing of an app: `enabled` = its workspace's enabledModules(). */
 function briefing(ctx: CallContext, enabled: ReadonlySet<string>): string {
   const L = ctx.deps.limits;
   return renderBriefing({
@@ -182,7 +181,7 @@ function briefing(ctx: CallContext, enabled: ReadonlySet<string>): string {
   });
 }
 
-/** The skills of an app: the opt-in modules off for its workspace are left out (NSO-346). */
+/** The skills of an app: the opt-in modules off for its workspace are left out. */
 function skills(ctx: CallContext, enabled: ReadonlySet<string>): SkillListItem[] {
   return ctx.modules.skillList(enabled);
 }
@@ -229,7 +228,7 @@ export interface AppSummary {
   latest_version: number;
   compile_status: string | null;
   locked_by?: string;
-  /** NSO-293: taken down by a super-admin — nothing can be changed or published. */
+  /** Taken down by a super-admin — nothing can be changed or published. */
   locked_by_admin?: true;
   /** The takedown category (with locked_by_admin). */
   locked_reason?: string;
@@ -315,7 +314,7 @@ interface PublishOut {
   publishing: WorkspacePublishing;
 }
 
-/** NSO-366: may the workspace publish, its state as a super-admin set it, and whom to ask when it may not. */
+/** May the workspace publish, its state as a super-admin set it, and whom to ask when it may not. */
 function publishOut(p: { allowed: boolean; contact: string | null; publishing: WorkspacePublishing } | undefined): PublishOut {
   if (!p) return { can_publish: true, publishing: 'default' };
   if (p.allowed) return { can_publish: true, publishing: p.publishing };
@@ -340,7 +339,7 @@ export async function getApp(ctx: CallContext, args: { app_id: string }) {
     (m) => confirmUrl(ctx.modules.deps.env, app.workspaceSlug, app.slug, m),
     enabled
   );
-  // NSO-388: the newest version's readiness report — with its type errors once the background check is done.
+  // The newest version's readiness report — with its type errors once the background check is done.
   const readiness = head ? await storedReadiness(ctx, app.id, enabled, head.number) : undefined;
   return {
     ...items[0],
@@ -361,7 +360,7 @@ export async function getApp(ctx: CallContext, args: { app_id: string }) {
     skills: skills(ctx, enabled),
     gallery: await galleryOut(app, ctx.deps.env),
     ...(app.duplicatedFromSlug ? { duplicated_from: app.duplicatedFromSlug } : {}),
-    // NSO-366: the custom domains in short; list_domains has the DNS records and the last check.
+    // The custom domains in short; list_domains has the DNS records and the last check.
     domains: (await listDomains({ id: app.id, slug: app.slug, workspaceId: app.workspaceId }, ctx.deps.env)).map((d) => ({
       host: d.hostname,
       status: d.verified ? 'verified' : 'pending',
@@ -372,7 +371,7 @@ export async function getApp(ctx: CallContext, args: { app_id: string }) {
   };
 }
 
-/** get_app's `gallery` (NSO-340): the public gallery state and its likes / opens (30 days), read-only. */
+/** get_app's `gallery`: the public gallery state and its likes / opens (30 days), read-only. */
 async function galleryOut(app: AppRow, env: NodeJS.ProcessEnv) {
   if (!galleryEnabled(env)) return { enabled: false };
   const g = galleryState(app);
@@ -491,8 +490,8 @@ async function compileAndStore(
   baseVersion?: number | null
 ): Promise<{ number: number; result: CompileResult; typecheck?: 'pending' }> {
   // The bare `drobek` import → this server's versioned SDK (immutable caching);
-  // `drobek/<module>` → that module's inline source, built into the app (M1-02);
-  // every entry loads the error beacon first (M1-07, drobek.json can opt out).
+  // `drobek/<module>` → that module's inline source, built into the app;
+  // every entry loads the error beacon first (drobek.json can opt out).
   const result = await ctx.deps.compile(sources, {
     sdkUrl: ctx.modules.sdk.url,
     sdkSources: ctx.modules.sdk.inline,
@@ -512,7 +511,7 @@ async function compileAndStore(
   });
   await logCompile(ctx, app.id, number, result, trigger);
   await ctx.deps.notifyAppChanged({ app_id: app.id, slug: app.slug, version: number });
-  // NSO-388: the TypeScript check runs in the background — the write never waits for it.
+  // The TypeScript check runs in the background — the write never waits for it.
   const typecheck = result.ok ? scheduleVersionTypecheck({ id, appId: app.id }, sources, ctx.deps.log) : undefined;
   return { number, result, ...(typecheck ? { typecheck } : {}) };
 }
@@ -541,7 +540,7 @@ export async function createApp(
   // a free `-xxxx` variant instead of an error round trip.
   const base = deriveSlug(name);
   let slug = validateAppSlug(base) ? suggestSlug(base || 'app') : base;
-  // The workspace's plan (limits provider) or the env default (NSO-329).
+  // The workspace's plan (limits provider) or the env default.
   const maxApps = (await ctx.modules.workspaceLimits(ws.id)).APPS_MAX_PER_WORKSPACE;
   let created: { id: string; slug: string } | null = null;
   for (let attempt = 0; attempt < 4 && !created; attempt++) {
@@ -623,7 +622,7 @@ async function duplicateSourceSlug(from: string, env: NodeJS.ProcessEnv): Promis
 }
 
 /**
- * Copy a gallery app into the caller's workspace (NSO-340) — the dashboard's
+ * Copy a gallery app into the caller's workspace — the dashboard's
  * /duplicate/:slug in one call. Only an app shown in the public gallery whose
  * owner allows duplicates; the copy is the published files as version 1 of a
  * new, unpublished app (provenance kept), and the source's module settings
@@ -705,7 +704,7 @@ export interface FileChange {
   path: string;
   content?: string;
   delete?: boolean;
-  /** NSO-382: exact-string replacements applied to the file of the version the write builds on. */
+  /** Exact-string replacements applied to the file of the version the write builds on. */
   edits?: FileEdit[];
 }
 
@@ -760,8 +759,7 @@ function validateChanges(files: unknown, reasoning: unknown, warnings: WriteWarn
     if (!path) throw new ToolError('invalid_path', `Unsafe file path ${JSON.stringify(f?.path)}.`);
     const del = f.delete === true;
     const hasContent = typeof f.content === 'string';
-    // Before NSO-382 `edits` next to `content` / `delete` was dropped silently;
-    // such a call still does what it did, now with a warning.
+    // `edits` next to `content` / `delete` is ignored, with a warning.
     const edits = f.edits !== undefined && !del && !hasContent ? validateEdits(path, f.edits) : undefined;
     if (f.edits !== undefined && edits === undefined) {
       warnings.push({
@@ -971,7 +969,7 @@ export async function restoreVersion(ctx: CallContext, args: { app_id: string; v
   return {
     version: created.number,
     restored_from: args.version,
-    // NSO-362: true = the draft assets were reset to the set that version had when it was last published.
+    // True = the draft assets were reset to the set that version had when it was last published.
     assets_restored: created.assetsRestored,
     compile: {
       ok,
@@ -993,7 +991,7 @@ export async function restoreVersion(ctx: CallContext, args: { app_id: string; v
  * files and cannot interleave with a write — it only moves one pointer
  * (atomic, audited `app.publish` by @drobek/apps). A workspace a super-admin
  * blocked answers `publish_blocked`; an unapproved one (PUBLISH_APPROVAL=
- * approval, NSO-366) `publish_not_approved`, and that refusal already
+ * approval) `publish_not_approved`, and that refusal already
  * e-mailed the operator an approval request.
  */
 export async function publishApp(ctx: CallContext, args: { app_id: string; version?: number }) {
@@ -1030,15 +1028,15 @@ export async function publishApp(ctx: CallContext, args: { app_id: string; versi
   await ctx.deps.notifyAppChanged({ app_id: app.id, slug: app.slug, version: result.number, kind: 'publish' });
   await ctx.modules.runHook('onPublish', { id: app.id, slug: app.slug, workspaceId: app.workspaceId, version: result.number });
   const url = publishedUrl(app.slug, ctx.deps.env);
-  // NSO-384: warnings only — a version that compiled is published whatever they say.
+  // Warnings only — a version that compiled is published whatever they say.
   const readiness = await storedReadiness(ctx, app.id, await ctx.modules.enabledModules(app.workspaceId), result.number);
   return {
     published_version: result.number,
     previous_version: result.previousNumber,
     published_url: url,
-    // The production host, then every VERIFIED custom domain (M3-01) — all serve this version now.
+    // The production host, then every VERIFIED custom domain — all serve this version now.
     domains: [new URL(url).host, ...(await verifiedDomainsOf(app.id))],
-    // NSO-362: which asset set went live with it — the draft (what the preview shows) or, for a
+    // Which asset set went live with it — the draft (what the preview shows) or, for a
     // rollback, the set the version had when it was last published.
     assets: result.assets === 'draft' ? 'draft' : 'as_last_published',
     ...(readiness ? { readiness } : {}),
@@ -1049,7 +1047,7 @@ export async function publishApp(ctx: CallContext, args: { app_id: string; versi
 
 /**
  * List a PUBLISHED app in the server's public gallery with a short public
- * description, change the description, or unlist it (NSO-340) — the same
+ * description, change the description, or unlist it — the same
  * @drobek/apps function as the dashboard switch, audited as the agent.
  * publish scope (tools/list), editor+ role. Listing refuses, in this order: a
  * server without a gallery (`gallery_disabled`), a taken-down app, an entry
@@ -1129,14 +1127,14 @@ export async function setGalleryListingTool(
 // ── skill_info ───────────────────────────────────────────────────────────────
 
 /**
- * The agent-facing documentation of this server's backends (M1-01):
+ * The agent-facing documentation of this server's backends:
  * `skill_info()` lists every skill (active modules + general skills) with its
  * "use when…" sentence; `skill_info(name)` returns one skill's Markdown (for a
  * module also its SDK types, config schema/defaults, limits and the NAMES of
  * its secrets). Server-wide: it never returns a secret value or any app's
  * config. An opt-in module's skill carries `availability: 'opt-in'`; with
  * `app_id` (viewer+ of that app) it also says `enabled_for_workspace` — is
- * the module active for the app's workspace (NSO-346).
+ * the module active for the app's workspace.
  */
 export async function skillInfo(ctx: CallContext, args: { name?: string; app_id?: string }) {
   let enabled: ReadonlySet<string> | null = null;
@@ -1170,7 +1168,7 @@ export async function skillInfo(ctx: CallContext, args: { name?: string; app_id?
 // ── configure_module ─────────────────────────────────────────────────────────
 
 /**
- * Set a platform module's per-app config (M1-01). `config` is a PARTIAL
+ * Set a platform module's per-app config. `config` is a PARTIAL
  * config (JSON merge patch: only the keys you change; null resets a key).
  * Validated against the module's configSchema (`invalid_params` with the
  * field paths). Changes the module marks as needing the owner's OK (e.g.
@@ -1236,7 +1234,7 @@ export interface QueryDataResult {
 }
 
 /**
- * Read an app's stored records (M1-03) as its owner: viewer+ of the app's
+ * Read an app's stored records as its owner: viewer+ of the app's
  * workspace, authorized per call; the end-user rules do not apply. The
  * records module (the built-in `data`) answers for THIS app only, so another
  * app's collections are simply not found. ≤ 100 records per call; the
@@ -1292,7 +1290,7 @@ export async function queryData(
 
 // ── get_logs ─────────────────────────────────────────────────────────────────
 
-/** get_logs kinds: the insights logs plus `sync` (the sync module's run history, NSO-392). */
+/** get_logs kinds: the insights logs plus `sync` (the sync module's run history). */
 type GetLogsKind = LogKind | 'sync';
 const GET_LOGS_KINDS: readonly GetLogsKind[] = [...LOG_KINDS, 'sync'];
 const GET_LOGS_MAX = 100;
@@ -1316,7 +1314,7 @@ const EMPTY_NOTES: Record<GetLogsKind, string> = {
 };
 
 /**
- * What happened to an app (M1-07), for the viewer+ of its workspace:
+ * What happened to an app, for the viewer+ of its workspace:
  *   runtime  — browser errors reported by the app's pages (deduped, with counts);
  *   compile  — the last 50 compiles (ok / errors / version / duration);
  *   requests — per UTC day: requests, 5xx, 404s, and module calls by status class;
@@ -1368,7 +1366,7 @@ export async function getLogs(
 // ── sync_now ─────────────────────────────────────────────────────────────────
 
 /**
- * Run one of the app's sync sources now (NSO-392), the dashboard's Run now
+ * Run one of the app's sync sources now, the dashboard's Run now
  * over MCP: editor+, a paused source too (a successful run resumes one paused
  * after failures). A failed RUN is not a tool error: the answer is the run
  * with `status: "failed"` and its `error`. Rate limited per source

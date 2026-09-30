@@ -104,7 +104,7 @@ describe('tool → scope table', () => {
     expect(toolAllowed(['read', 'write'], 'publish')).toBe(false);
     expect(allowedTools(['publish'])).toEqual(['publish', 'set_gallery_listing', 'set_primary_domain', 'set_workspace_publishing']);
     expect(toolAllowed(['read', 'write'], 'set_gallery_listing')).toBe(false);
-    // NSO-366: add/verify/remove a domain are write; the primary domain is publish.
+    // Add/verify/remove a domain are write; the primary domain is publish.
     expect(toolAllowed(['read', 'write'], 'remove_domain')).toBe(true);
     expect(toolAllowed(['read', 'write'], 'set_primary_domain')).toBe(false);
   });

@@ -1,6 +1,6 @@
 /**
- * Shared inline styles of the Modules tab (M2-02) — the dashboard's minimal
- * look; form controls from the shared layout (NSO-342). The pages render
+ * Shared inline styles of the Modules tab — the dashboard's minimal
+ * look; form controls from the shared layout. The pages render
  * inside <AppPage>.
  */
 import { controls, mergeStyles } from '@drobek/tenancy/layout';
@@ -69,7 +69,7 @@ export const ui = {
   inputError: { borderColor: '#f87171', background: '#fef2f2' },
   fieldset: { border: '1px solid #e4e4e7', borderRadius: '8px', padding: '0.6rem 0.8rem 0.2rem', margin: '0 0 0.85rem' },
   legend: { fontWeight: 700, fontSize: '0.85rem', padding: '0 0.3rem' },
-  /** One entry of a record / list field in the generic form (NSO-347). */
+  /** One entry of a record / list field in the generic form. */
   entry: { border: '1px solid #e4e4e7', borderRadius: '8px', padding: '0.6rem 0.8rem', margin: '0.4rem 0 0.7rem', background: '#fff' },
   /** The empty "add" entry. */
   newEntry: { border: '1px dashed #d4d4d8', borderRadius: '8px', padding: '0.6rem 0.8rem', margin: '0.4rem 0 0.7rem', background: '#fcfcfd' },

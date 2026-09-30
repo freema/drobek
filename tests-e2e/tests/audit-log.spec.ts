@@ -9,8 +9,7 @@ import {
 } from './helpers/seed';
 
 /**
- * PHY-85 acceptance (governance / audit log v1): who published what, when, and
- * was it the AGENT or a HUMAN.
+ * The audit log: who published what, when, and was it the AGENT or a HUMAN.
  *   (1) a dashboard publish (and a publish of an older version = the rollback)
  *       writes `app.publish` attributed to the USER with {version,
  *       previousVersion} meta — actor_kind is derived server-side from the
@@ -20,9 +19,8 @@ import {
  *       events STILL show (the subject is retained — no FK cascade).
  *   (3) a team invite + accept write member.invite (inviter) + member.accept
  *       (accepter); an EDITOR is denied the Activity view (403).
- * No remaining MCP tool writes an audit row (the agent-side writers — version
- * writes via MCP — are not exposed yet), so agent attribution is covered by the
- * unit tests only. Apps + versions are SEEDED via SQL.
+ * Agent attribution is covered by the unit tests. Apps + versions are SEEDED
+ * via SQL.
  */
 
 interface AuditRow {
@@ -141,7 +139,7 @@ test('audit: dashboard publish is user-attributed (not spoofable); Activity view
     await expect(row).toHaveAttribute('data-action', 'app.publish');
     await expect(row.getByTestId('activity-actor')).toContainText(email);
     await expect(row.getByTestId('activity-subject')).toContainText(appSlug);
-    // NSO-371: a readable summary and a link to the (still existing) app.
+    // A readable summary and a link to the (still existing) app.
     await expect(row.getByTestId('activity-summary')).toContainText('Published version');
     await expect(row.getByTestId('activity-link').first()).toHaveAttribute('href', `/workspaces/${ws.slug}/apps/${appSlug}`);
   }
@@ -184,7 +182,7 @@ test('audit: dashboard publish is user-attributed (not spoofable); Activity view
   await page.goto(`/workspaces/${ws.slug}/activity?app=${appSlug}`);
   await expect(page.getByTestId('activity-table')).toBeVisible();
   await expect(page.locator('[data-testid="activity-row"]')).toHaveCount(2);
-  // NSO-371: the deleted app is plain text with a note, never a dead link.
+  // The deleted app is plain text with a note, never a dead link.
   await expect(page.getByTestId('activity-link')).toHaveCount(0);
   await expect(page.getByTestId('activity-unlinked').first()).toContainText('app deleted');
 

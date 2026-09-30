@@ -1,7 +1,7 @@
 /**
- * NSO-346: one opt-in module's state for a workspace and — for a
+ * One opt-in module's state for a workspace and — for a
  * super-admin — its Enable / Disable switch. The workspace Modules page
- * (NSO-347) mounts it next to the module's availability through
+ * mounts it next to the module's availability through
  * `<WorkspaceModules availabilityControls={…}>`; the server half is
  * ./workspace-modules-toggle.server.ts. Everyone else sees the state
  * read-only.

@@ -85,7 +85,7 @@ describe('installBeacon', () => {
     expect(b.events[1]).toMatchObject({ type: 'unhandledrejection', message: 'Unhandled rejection: {"code":42}', stack: null });
   });
 
-  it('reports the page as origin + path: no query string, fragment or credentials leave the browser (NSO-327)', async () => {
+  it('reports the page as origin + path: no query string, fragment or credentials leave the browser', async () => {
     const w = fakeWindow({ href: 'https://ann:pw@shop.apps.example/login/verify?code=123456&email=ann%40example.com#token=abc' });
     installBeacon(w.env);
     w.dispatch('error', { message: 'boom' });

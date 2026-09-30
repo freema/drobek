@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * The npm packages for external module authors (NSO-349), published under
+ * The npm packages for external module authors, published under
  * the npm user scope `@freema` (there is no `@drobek` npm organisation):
  *
  *   workspace `@drobek/sdk`      → npm `@freema/drobek-sdk`

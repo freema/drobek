@@ -27,7 +27,7 @@ function Calc() {
   ] });
 }`;
 
-describe('publish heuristic (NSO-293)', () => {
+describe('publish heuristic', () => {
   it('flags a test "bank login" app: password field + brand word', () => {
     const f = scanForPhishing(
       [

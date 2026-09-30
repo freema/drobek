@@ -3,7 +3,7 @@
  * drobek itself an agent can meet: MCP tool failures (`isError: true` with
  * `{ code, message, hint }`), the per-error codes inside `compile.errors[]`,
  * the codes core answers on the platform module routes an app calls
- * (`/__drobek/v1/…`, M1-01) and the OAuth connect flow (M0-05, NSO-283).
+ * (`/__drobek/v1/…`) and the OAuth connect flow.
  *
  * A module's OWN codes (e.g. auth's `invalid_code`, proxy's
  * `upstream_error`) are not here: each module declares them in its
@@ -18,7 +18,7 @@
  * @drobek/compile error code — has an entry, so the catalogue cannot fall
  * behind the code.
  *
- * Anti-enumeration: the plan's `not_member` does not exist on purpose — a
+ * Anti-enumeration: there is no `not_member` code on purpose — a
  * workspace or app you cannot reach answers exactly like one that does not
  * exist (`not_found`).
  */

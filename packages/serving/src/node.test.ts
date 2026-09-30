@@ -80,7 +80,7 @@ describe('host dispatch', () => {
     const r = await get('shop--preview.apps.localhost:3041', '/');
     expect(r.status).toBe(200);
     expect(r.body).toBe(HTML);
-    // NSO-342: only the dashboard origin (PUBLIC_APP_URL, default localhost:3041) may frame it.
+    // Only the dashboard origin (PUBLIC_APP_URL, default localhost:3041) may frame it.
     expect(r.headers['content-security-policy']).toContain('frame-ancestors http://localhost:3041;');
     expect(r.headers['x-robots-tag']).toBe('noindex');
     // Dashboard paths on an app host are app paths, not dashboard routes.
@@ -161,8 +161,8 @@ describe('host dispatch', () => {
 });
 
 /**
- * The browser error beacon on the apps origin (M1-07) over a real socket —
- * incl. the PHY-76 regression: an over-cap body (9 KiB, declared or chunked)
+ * The browser error beacon on the apps origin over a real socket —
+ * incl. a regression guard: an over-cap body (9 KiB, declared or chunked)
  * answers 413 and the process keeps serving (no stream cancel / destroy crash).
  */
 describe('POST /__drobek/v1/_beacon', () => {
@@ -270,7 +270,7 @@ describe('POST /__drobek/v1/_beacon', () => {
   });
 });
 
-/** M3-01: custom-domain candidates are resolved through the domains table (faked here). */
+/** Custom-domain candidates are resolved through the domains table (faked here). */
 describe('custom domains', () => {
   let customServer: Server;
   let customPort: number;
@@ -405,7 +405,7 @@ describe('platform body streams + streamed responses (the files module)', () => 
   /**
    * Settles once the answer arrived AND the whole body was written — or the
    * server closed the connection under the rest of it (an early answer to an
-   * unfinished upload closes it, NSO-325).
+   * unfinished upload closes it).
    */
   function send(method: string, body?: Buffer): Promise<{ status: number; body: string; connection: string | undefined }> {
     return new Promise((resolve, reject) => {
@@ -449,7 +449,7 @@ describe('platform body streams + streamed responses (the files module)', () => 
     expect((await send('GET')).status).toBe(200);
   });
 
-  it('NSO-325: the connection closes right after the early answer although the client never sends the rest of the declared body', async () => {
+  it('the connection closes right after the early answer although the client never sends the rest of the declared body', async () => {
     const closed = await new Promise<{ status: number; connection: string | undefined }>((resolve, reject) => {
       let status = 0;
       let connection: string | undefined;
@@ -480,7 +480,7 @@ describe('platform body streams + streamed responses (the files module)', () => 
 });
 
 /**
- * NSO-325 over a FAKE socket: an answer sent while the request body is still
+ * Unread request bodies over a FAKE socket: an answer sent while the request body is still
  * arriving carries `Connection: close`; after the response was flushed
  * (`finish`, never under a half-written response) the socket is half-closed
  * and destroyed exactly once, CLOSE_LINGER_MS later. A `/__drobek/*` body that

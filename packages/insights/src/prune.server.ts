@@ -1,5 +1,5 @@
 /**
- * The get_logs retention prune (NSO-327): a periodic job in the server process
+ * The get_logs retention prune: a periodic job in the server process
  * (apps/server jobs, one replica per interval via a Redis lease) that keeps
  * every get_logs table inside its retention for EVERY app — also for apps
  * nobody inspects. Reads never delete.

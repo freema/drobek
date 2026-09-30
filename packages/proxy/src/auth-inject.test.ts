@@ -88,7 +88,7 @@ describe('buildForwardHeaders — strips client credentials + hop-by-hop', () =>
   });
 });
 
-describe('buildForwardHeaders — browser metadata never reaches the upstream (NSO-297)', () => {
+describe('buildForwardHeaders — browser metadata never reaches the upstream', () => {
   it('drops origin / referer / sec-* / x-drobek-sdk / forwarded / via; asks for identity encoding', () => {
     const out = buildForwardHeaders(
       headers({
@@ -117,7 +117,7 @@ describe('buildForwardHeaders — browser metadata never reaches the upstream (N
 });
 
 describe('filterResponseHeaders', () => {
-  it("strips the upstream's CORS grants (NSO-297)", () => {
+  it("strips the upstream's CORS grants", () => {
     const out = filterResponseHeaders([
       ['content-type', 'text/plain'],
       ['Access-Control-Allow-Origin', '*'],
@@ -126,7 +126,7 @@ describe('filterResponseHeaders', () => {
     ]);
     expect(out['Access-Control-Allow-Origin']).toBeUndefined();
     expect(out['access-control-allow-credentials']).toBeUndefined();
-    // An absolute Location is dropped (NSO-326).
+    // An absolute Location is dropped.
     expect(out['location']).toBeUndefined();
     expect(out['content-type']).toBe('text/plain');
   });
@@ -145,7 +145,7 @@ describe('filterResponseHeaders', () => {
   });
 });
 
-describe('filterResponseHeaders — an allow-list (NSO-326)', () => {
+describe('filterResponseHeaders — an allow-list', () => {
   const filter = (h: Record<string, string>) => filterResponseHeaders(Object.entries(h));
 
   it('drops every header that would act on the app origin', () => {

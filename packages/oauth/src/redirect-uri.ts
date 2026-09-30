@@ -1,12 +1,12 @@
 /**
- * redirect_uri handling (U5, R6 security sleeper). OAuth 2.1 mandates an EXACT
+ * redirect_uri handling. OAuth 2.1 mandates an EXACT
  * string match between the authorize/token redirect_uri and a registered one —
  * no prefix, suffix, subdomain, or trailing-slash leniency (that is how open
  * redirectors and token exfiltration happen). The one exception is RFC 8252
  * §7.3: an http loopback redirect_uri matches with any port, because native
  * clients (Claude Code's CIMD lists `http://localhost/callback`) listen on an
  * ephemeral port. The same registration policy applies to DCR bodies and CIMD
- * documents (M0-04).
+ * documents.
  */
 import {
   CLIENT_NAME_MAX_LENGTH,

@@ -1,6 +1,6 @@
 /**
  * `node dist/server/migrate.js` — apply every pending migration and exit
- * (M4-03, the upgrade step of docs/SELF-HOSTING.md):
+ * (the upgrade step of docs/SELF-HOSTING.md):
  *
  *   docker compose … run --rm --no-deps drobek node dist/server/migrate.js
  *

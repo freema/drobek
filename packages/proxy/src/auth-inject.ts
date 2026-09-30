@@ -1,5 +1,5 @@
 /**
- * PURE header construction (PHY-59) — unit tested. Builds the header set sent to
+ * PURE header construction — unit tested. Builds the header set sent to
  * the upstream: the client's headers MINUS the ones that must never cross the
  * gateway (hop-by-hop, Host, and — critically — the client's Cookie AND
  * Authorization, so the drobek session and any client credential are NEVER
@@ -56,7 +56,7 @@ function strippedToUpstream(name: string): boolean {
 }
 
 /**
- * Upstream → client: an ALLOW-LIST (NSO-326). The relay answers on the APP's
+ * Upstream → client: an ALLOW-LIST. The relay answers on the APP's
  * origin, so nothing an upstream sends that acts on that origin may pass:
  * `Set-Cookie`, the upstream's CORS grants (`access-control-*`),
  * `Clear-Site-Data`, `Refresh`, `Link` (preload / prefetch), HSTS,

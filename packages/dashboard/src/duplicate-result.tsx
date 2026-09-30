@@ -1,5 +1,5 @@
 /**
- * NSO-340: the notice on a fresh copy's Overview page — which module settings
+ * The notice on a fresh copy's Overview page — which module settings
  * of the original were applied, which wait for the owner's confirmation and
  * which were skipped (with why and what to do). Parsed from the redirect's
  * query by duplicate-result.server.ts; renders nothing without it.

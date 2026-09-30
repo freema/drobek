@@ -1,5 +1,5 @@
 /**
- * "N changes await confirmation" (M2-02, NSO-291) — a self-contained banner
+ * "N changes await confirmation" — a self-contained banner
  * any app page can render (the app header, the Modules tab). Feed it the
  * shape `loadPendingBanner()` (pending-banner.server.ts) returns; renders
  * nothing when nothing waits.

@@ -7,7 +7,7 @@ import { FULL_SCOPE, callTool, mcpClient, type McpClient } from './helpers/mcp';
 import { addMembership, personalWorkspaceOf, userIdByEmail } from './helpers/seed';
 
 /**
- * M1-06 (NSO-297): the built-in platform module `proxy` end to end on the apps
+ * The built-in platform module `proxy` end to end on the apps
  * host (DROBEK_MODULES=…,proxy in both composes; the in-network echo target
  * `proxy-echo` listens on port 80 too — upstreams may only use 80/443 — and is
  * on PROXY_ALLOWED_HOSTS):
@@ -103,7 +103,7 @@ async function appWithEcho(mcp: McpClient, owner: BrowserContext, request: APIRe
 
 test.describe.configure({ mode: 'serial' });
 
-test.describe('platform module proxy — workspace upstreams per app (M1-06) @local', () => {
+test.describe('platform module proxy — workspace upstreams per app @local', () => {
   let mcp: McpClient;
   let owner: BrowserContext;
   let ws: string;
@@ -256,7 +256,7 @@ test.describe('platform module proxy — workspace upstreams per app (M1-06) @lo
     skipUnlessLocal();
     const r = await call(host, '/echo/redirect', { cookie: user.cookie });
     expect(r.status, r.body).toBe(302);
-    // NSO-326: an absolute Location would reveal (or point past) the upstream — it never reaches the app origin.
+    // An absolute Location would reveal (or point past) the upstream — it never reaches the app origin.
     expect(r.headers.location).toBeUndefined();
     expect(r.body).toBe('redirecting');
     const rel = await call(host, '/echo/redirect/relative', { cookie: user.cookie });
@@ -264,7 +264,7 @@ test.describe('platform module proxy — workspace upstreams per app (M1-06) @lo
     expect(rel.headers.location).toBe('/echo/next');
   });
 
-  test('NSO-326: a gzipped upstream answer arrives decoded; only allow-listed headers are relayed', async () => {
+  test('a gzipped upstream answer arrives decoded; only allow-listed headers are relayed', async () => {
     skipUnlessLocal();
     const r = await call(host, '/echo/echo/gzip', { cookie: user.cookie });
     expect(r.status, r.body).toBe(200);

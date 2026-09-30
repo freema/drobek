@@ -1,5 +1,5 @@
 /**
- * appAction on a taken-down app (NSO-293 × NSO-288) against a real PGlite
+ * appAction on a taken-down app against a real PGlite
  * database (the workspace role gate is stubbed — requireWorkspaceRole has its
  * own tests in @drobek/tenancy): publish / restore / unpublish answer 423
  * `app_locked_by_admin` before anything changes; other intents are not
@@ -71,11 +71,11 @@ afterAll(async () => {
   await pg.close();
 });
 
-describe('appAction on a taken-down app (NSO-293)', () => {
+describe('appAction on a taken-down app', () => {
   it('publish / restore / unpublish → 423 app_locked_by_admin, nothing changes', async () => {
     const bodies: Record<string, string>[] = [
       { intent: 'publish', versionId },
-      { versionId }, // a pre-NSO-288 publish form
+      { versionId }, // a publish form with only versionId
       { intent: 'publish', version: '1' },
       { intent: 'restore', version: '1' },
       { intent: 'unpublish' },

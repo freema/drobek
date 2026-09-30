@@ -1,9 +1,9 @@
 /**
- * The apps origin (M0-05): every app lives on its own host under
+ * The apps origin: every app lives on its own host under
  * `APPS_DOMAIN` — the published version at `<slug>.<APPS_DOMAIN>`, the working
  * copy at `<slug>--preview.<APPS_DOMAIN>`, one version at
  * `<slug>--v<N>.<APPS_DOMAIN>`. This module computes the URLs the tools and the
- * dashboard hand out; host.ts parses them back (M0-06 serving).
+ * dashboard hand out; host.ts parses them back.
  *
  * `APPS_DOMAIN` is a bare host (optionally `:port`), no scheme. It is required
  * in production (the server refuses to start without it); in dev it defaults

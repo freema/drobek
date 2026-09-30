@@ -15,7 +15,7 @@ const ev = (action: string, subjectType: string | null, subject: string | null, 
   meta,
 });
 
-describe('activitySummary (NSO-371)', () => {
+describe('activitySummary', () => {
   it('reads the events the review named as sentences', () => {
     expect(activitySummary(ev('app.publish', 'app', 'pokedex', { version: 3, previousVersion: 2, assets: 0 }))).toBe(
       'Published version 3 (replacing version 2)'
@@ -34,7 +34,7 @@ describe('activitySummary (NSO-371)', () => {
     expect(activitySummary(ev('app.gallery_unlisted', 'app', 'x', { reason: 'takedown' }))).toContain('taken down');
   });
 
-  it('reads a scheduled import run and a resume (NSO-392)', () => {
+  it('reads a scheduled import run and a resume', () => {
     const run = (meta: unknown) => activitySummary(ev('sync.run', 'app', 'league', meta));
     expect(run({ module: 'sync', source: 'players', by: 'schedule', status: 'ok', records: 3 })).toBe('The scheduled import players wrote 3 records');
     expect(run({ module: 'sync', source: 'players', by: 'web', status: 'ok', records: 1 })).toBe('Ran the import players now — it wrote 1 record');
@@ -79,7 +79,7 @@ describe('activitySummary (NSO-371)', () => {
   });
 });
 
-describe('activityRefs + resolveActivityRefs (NSO-371)', () => {
+describe('activityRefs + resolveActivityRefs', () => {
   const now = new Date('2026-09-20T12:00:00Z');
   const known: ActivityKnown = {
     workspaceSlug: 'smoke',
@@ -147,7 +147,7 @@ describe('activityRefs + resolveActivityRefs (NSO-371)', () => {
   });
 });
 
-describe('activityDetails (NSO-371)', () => {
+describe('activityDetails', () => {
   it('redacts values under credential-like keys, keeps flags and names', () => {
     const out = activityDetails({
       module: 'email',

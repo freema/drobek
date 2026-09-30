@@ -1,10 +1,10 @@
 /**
- * App assets (NSO-358): the rows (`app_assets`) and the bytes (disk.server.ts)
+ * App assets: the rows (`app_assets`) and the bytes (disk.server.ts)
  * of the binary files an app serves at `/<name>` — the same URL space as its
  * files; an app file at the same path wins, so an upload to a path the app's
  * latest or published version occupies is refused (`asset_path_taken`).
  *
- * The rows here are the DRAFT (NSO-362): an upload, a replacement or a
+ * The rows here are the DRAFT: an upload, a replacement or a
  * delete changes what the preview host serves; the production host serves
  * the set the last publish froze (snapshots.server.ts).
  *
@@ -49,7 +49,7 @@ export interface AssetInfo {
   size: number;
   sha256: string;
   updatedAt: Date;
-  /** NSO-362: the production host serves exactly these bytes at this path (else the change waits for a publish). */
+  /** The production host serves exactly these bytes at this path (else the change waits for a publish). */
   published: boolean;
 }
 
@@ -98,13 +98,13 @@ export async function listAssets(appId: string): Promise<AssetInfo[]> {
   return rows.map(({ liveSha256, ...r }) => ({ ...r, path: assetPath(r.name), published: liveSha256 === r.sha256 }));
 }
 
-/** The files the production host serves that the draft deleted (NSO-362). */
+/** The files the production host serves that the draft deleted. */
 export async function listPublishedOnlyAssets(appId: string): Promise<PublishedOnlyAsset[]> {
   return (await publishedOnlyAssetNames(appId)).map((r) => ({ name: r.name, path: assetPath(r.name), type: r.contentType, size: r.size }));
 }
 
 /**
- * Bytes the quota counts (NSO-362): the unique files of the draft (without
+ * Bytes the quota counts: the unique files of the draft (without
  * the asset `exceptName`, which an upload replaces) and of the live published
  * set. Sets of earlier publishes are kept only while they fit besides.
  */
@@ -113,7 +113,7 @@ export async function assetUsage(appId: string, exceptName?: string, executor: P
 }
 
 /**
- * Which assets a host serves (NSO-362): `'draft'` (the preview host), or the
+ * Which assets a host serves: `'draft'` (the preview host), or the
  * set frozen for a version (`versionId` — the production host and custom
  * domains serve the live one's; a version host passes `orDraft`, so a
  * version never published shows the draft).

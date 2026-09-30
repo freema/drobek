@@ -1,5 +1,5 @@
 /**
- * NSO-340 — a duplicated gallery app's module configs: the saved configs
+ * A duplicated gallery app's module configs: the saved configs
  * (never pending changes or secrets) go through the copy's normal configure
  * path, so a change that needs confirmation waits there; e-mail addresses and
  * the whole proxy config are dropped.

@@ -1,5 +1,5 @@
 /**
- * Caddy's on-demand TLS `ask` endpoint (M0-07): the pure decision, and the
+ * Caddy's on-demand TLS `ask` endpoint: the pure decision, and the
  * node:http handler over a real HTTP server exactly as Caddy calls it
  * (`GET http://drobek:3000/api/internal/tls/ask?token=…&domain=<host>`).
  */
@@ -23,7 +23,7 @@ const TOKEN = 'a'.repeat(24) + '0123456789abcdef';
 const PROD_HOSTS: HostConfig = { appsDomain: 'drobek.app', dashboardHost: 'drobek.app' };
 const LIVE = new Set(['shop', 'my-app']);
 const appExists = async (slug: string) => LIVE.has(slug);
-/** M3-01: the verified custom domains (the domains table in production). */
+/** The verified custom domains (the domains table in production). */
 const VERIFIED = new Set(['firma.test', 'shop.firma.cz']);
 const customDomainAllowed = async (hostname: string) => VERIFIED.has(hostname);
 
@@ -82,7 +82,7 @@ describe('tlsAskSlug', () => {
   });
 });
 
-describe('tlsAskCustomHost (M3-01)', () => {
+describe('tlsAskCustomHost', () => {
   it('a dotted public name outside APPS_DOMAIN and the dashboard is a custom-domain candidate', () => {
     expect(tlsAskCustomHost('firma.test', PROD_HOSTS)).toBe('firma.test');
     expect(tlsAskCustomHost('Shop.Firma.CZ.', PROD_HOSTS)).toBe('shop.firma.cz');
@@ -116,7 +116,7 @@ describe('decideTlsAsk', () => {
     expect(await ask('shop.drobek.app', 'b'.repeat(40))).toBe(401);
   });
 
-  it('M3-01: a verified custom domain → 200; unverified / unknown → 404 (no certificate)', async () => {
+  it('a verified custom domain → 200; unverified / unknown → 404 (no certificate)', async () => {
     expect(await ask('firma.test')).toBe(200);
     expect(await ask('shop.firma.cz')).toBe(200);
     expect(await ask('pending.firma.cz')).toBe(404);
@@ -221,7 +221,7 @@ describe('GET /api/internal/tls/ask over HTTP', () => {
     expect(r.status).toBe(200);
   });
 
-  it('hostname outside APPS_DOMAIN → 404 unless it is a verified custom domain (M3-01)', async () => {
+  it('hostname outside APPS_DOMAIN → 404 unless it is a verified custom domain', async () => {
     expect((await get(q('shop.example.com'))).status).toBe(404);
     expect((await get(q('firma.test'))).status).toBe(200);
   });

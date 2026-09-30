@@ -1,9 +1,9 @@
 /**
  * POST /api/apps/:id/end-user-sessions/revoke — the owner signs EVERY end user
- * of the app out at once (M1-02, PHY-76 #9): the app's session epoch goes up,
+ * of the app out at once: the app's session epoch goes up,
  * so every `drobek_eu` session issued before stops resolving on every host of
  * the app (preview, production, version hosts). Users sign in again with an
- * enabled sign-in method. The dashboard UI calls it (M2-03); the owner decides, never an
+ * enabled sign-in method. The dashboard UI calls it; the owner decides, never an
  * agent (no MCP tool).
  *
  * Guards (app-api.server.ts): POST only; a dashboard session (401); a

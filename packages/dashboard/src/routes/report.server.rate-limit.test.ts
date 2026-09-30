@@ -1,5 +1,5 @@
 /**
- * The abuse report form's per-IP limit (NSO-328): a resolved client IP has its
+ * The abuse report form's per-IP limit: a resolved client IP has its
  * own `abuse-report-ip` bucket; a request without one is not counted in a
  * shared `unknown` bucket — it is stored and the (per-app, hourly-capped)
  * super-admin mail path still runs.

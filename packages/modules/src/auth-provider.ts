@@ -1,5 +1,5 @@
 /**
- * End-user sign-in providers (NSO-348, contract 1.1): the typed contract of
+ * End-user sign-in providers (contract 1.1): the typed contract of
  * the two slots the built-in `auth` module offers other modules.
  *
  *   `auth.provider` — a way to sign in besides the e-mail code (OIDC, SAML, …).
