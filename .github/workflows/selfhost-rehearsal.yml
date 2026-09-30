@@ -1,0 +1,73 @@
+# drobek (PUBLIC core) — self-host rehearsal on a clean Ubuntu 24.04 host
+#
+# Manual only (workflow_dispatch). A fresh GitHub runner is a clean Ubuntu
+# 24.04 + Docker machine: it pulls a RELEASED image from GHCR (as a VPS does)
+# and runs `task selfhost:rehearsal` against it — the docs/SELF-HOSTING.md
+# quickstart (init → TLS dashboard → user → MCP → published app with a file),
+# `task backup`, and a restore on a second "machine". The timings land in the
+# job summary; they are the "Measured" line of docs/SELF-HOSTING.md.
+name: Self-host rehearsal
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Released image tag to pull, e.g. v0.6.1'
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  PNPM_VERSION: 10.33.2
+  NODE_VERSION: '22'
+
+jobs:
+  rehearsal:
+    name: Quickstart + backup → restore (ghcr.io/freema/drobek:${{ inputs.image_tag }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.image_tag }}
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - uses: arduino/setup-task@v2
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install the rehearsal client (tests-e2e)
+        run: pnpm install --frozen-lockfile --filter tests-e2e
+
+      - name: Pull the released image
+        run: |
+          start=$(date +%s)
+          docker pull -q "ghcr.io/freema/drobek:${{ inputs.image_tag }}"
+          echo "PULL_S=$(( $(date +%s) - start ))" >> "$GITHUB_ENV"
+
+      - name: task selfhost:rehearsal
+        env:
+          REHEARSAL_SKIP_BUILD: '1'
+          REHEARSAL_IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          set -o pipefail
+          task selfhost:rehearsal 2>&1 | tee rehearsal.log
+          {
+            echo "### Self-host rehearsal — ghcr.io/freema/drobek:${{ inputs.image_tag }}"
+            echo
+            echo "Clean \`ubuntu-24.04\` runner, $(docker --version)."
+            echo
+            echo '```'
+            echo "image pull             ${PULL_S}s"
+            sed -n '/self-host rehearsal PASSED/,$p' rehearsal.log | grep -v 'image build'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
