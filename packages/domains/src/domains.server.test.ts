@@ -121,7 +121,7 @@ describe('addDomain', () => {
     expect((await err(addDomain(other, 'two.limit.cz', actor, { ...ENV, DOMAINS_MAX_PER_APP: '1' })))?.code).toBe('limit_exceeded');
   });
 
-  it('the workspace limit (limits provider) overrides the env; 0 turns custom domains off (NSO-329)', async () => {
+  it('the workspace limit (limits provider) overrides the env; 0 turns custom domains off', async () => {
     const app = await newApp();
     // A paid plan above the env default of 3.
     for (const h of ['a.plan.cz', 'b.plan.cz', 'c.plan.cz', 'd.plan.cz']) await addDomain(app, h, actor, ENV, { maxPerApp: 4 });

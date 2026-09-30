@@ -1,5 +1,5 @@
 /**
- * NSO-366 over a real MCP client on a real (PGlite) database: publish in a
+ * Workspace publishing over a real MCP client on a real (PGlite) database: publish in a
  * blocked workspace answers publish_blocked (both modes), in an unapproved
  * one (PUBLISH_APPROVAL=approval) publish_not_approved with the operator's
  * contact (and records the approval request); list_apps / get_app say

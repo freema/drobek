@@ -122,7 +122,7 @@ describe('registry', () => {
   });
 });
 
-describe('the upstreams and sync authorities (NSO-392)', () => {
+describe('the upstreams and sync authorities', () => {
   const base = { version: '1.0.0', skill: { useWhen: 'x', markdown: '# x' }, configSchema: z.object({}), configDefaults: {} };
   const upstreams = { fetch: async () => ({ status: 200, headers: {}, body: Buffer.alloc(0) }) };
   const sync = { sources: async () => [], runs: async () => [], runNow: async () => ({}) as never, resume: async () => false };

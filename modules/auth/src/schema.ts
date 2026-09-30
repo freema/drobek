@@ -22,7 +22,7 @@ export const authUsers = pgTable(
 export type AuthUserRow = typeof authUsers.$inferSelect;
 
 /**
- * External identities (0002, NSO-360): who a provider proved, bound to one
+ * External identities (0002): who a provider proved, bound to one
  * local user. The key is (app, provider, issuer, subject) — the same subject
  * from another issuer is another person. `issuer` null = an identity linked
  * before issuers were recorded (0001): claimed once by the same subject with

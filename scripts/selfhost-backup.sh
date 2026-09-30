@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# `task backup` (M4-03) — one archive with everything a drobek instance needs
+# `task backup` — one archive with everything a drobek instance needs
 # to come back on another machine:
 #
 #   backups/drobek-<UTC timestamp>.tar.gz   (mode 600)

@@ -1,5 +1,5 @@
 /**
- * NSO-340 in the dashboard, on a real PGlite database (the workspace role
+ * The public gallery in the dashboard, on a real PGlite database (the workspace role
  * gate is stubbed — requireWorkspaceRole has its own tests in
  * @drobek/tenancy; the stub answers 403 for a viewer at the editor floor
  * like the real one):
@@ -119,7 +119,7 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-describe('appAction intent=gallery (NSO-340)', () => {
+describe('appAction intent=gallery', () => {
   it('a viewer gets 403 before anything changes', async () => {
     role.effective = 'viewer';
     const err = await post('shift-plan', { intent: 'gallery', listed: 'on', description: 'Plans shifts.' }).catch((e) => e);
@@ -168,7 +168,7 @@ describe('appAction intent=gallery (NSO-340)', () => {
   });
 });
 
-describe('GET /api/public/gallery (NSO-340)', () => {
+describe('GET /api/public/gallery', () => {
   it('404 unless GALLERY_ENABLED (CORS headers on the error too)', async () => {
     vi.stubEnv('GALLERY_ENABLED', '0');
     const res = await getGallery();

@@ -2,7 +2,7 @@ import { tokenize, type Token } from '../lexer.js';
 import type { CheckFinding, ReadinessCheck } from '../types.js';
 
 /**
- * Client-side XSS patterns (NSO-387). An app has no backend of its own, so its
+ * Client-side XSS patterns. An app has no backend of its own, so its
  * attack surface is text other visitors wrote — data/forms records, a gallery
  * copy — rendered in the browser. The app CSP allows inline script, so HTML
  * built from that text runs; it forbids eval, so eval-like calls also fail.

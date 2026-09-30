@@ -1,5 +1,5 @@
 /**
- * The proxy module's app-host route (§5.6):
+ * The proxy module's app-host route:
  *
  *   GET|HEAD|POST|PUT|PATCH|DELETE  /__drobek/v1/proxy/:upstream/*
  *
@@ -14,10 +14,10 @@
  *   5. a slot among the calls in flight (PROXY_MAX_CONCURRENT for the
  *      process, PROXY_MAX_CONCURRENT_PER_APP per app) — else 429 proxy_busy;
  *   6. the upstream is registered in the app's workspace — else 404 — it is
- *      the RECORD the assignment is bound to (`id`, NSO-326) — else 403
+ *      the RECORD the assignment is bound to (`id`) — else 403
  *      upstream_replaced — and THIS app is on its allow-list
  *      (`allowed_app_ids`, set when a workspace admin confirmed the
- *      assignment; NSO-322 H3) — else 403; an unbound (older) assignment is
+ *      assignment) — else 403; an unbound (older) assignment is
  *      bound here;
  *   7. @drobek/proxy `forwardToUpstream`: method + path allow-lists, the
  *      secret injected server-side, Cookie/Authorization/browser headers
@@ -107,7 +107,7 @@ export function proxyHandler(opts: ProxyRouteOptions = {}) {
 
     // 4) Rate limits (independent of the rule).
     //    No resolved client IP → no per-IP bucket (never a shared `unknown`
-    //    one, NSO-328); the app-wide and per-upstream limits still apply.
+    //    one); the app-wide and per-upstream limits still apply.
     const ip = ruleIsPublic(rule) ? perIpLimitKey(req.clientIp, 'mod:proxy:public-ip') : null;
     if (ip !== null) {
       const perIp = await limitOf(ctx, 'PROXY_PUBLIC_CALLS_PER_MIN_PER_IP', DEFAULT_PUBLIC_CALLS_PER_MIN_PER_IP);

@@ -1,5 +1,5 @@
 /**
- * drobek-module-forms — the BUILT-IN platform module `forms` (M1-04, §5.3):
+ * drobek-module-forms — the BUILT-IN platform module `forms`:
  * an app's forms (contact, sign-up, feedback) without a backend.
  *
  *   DROBEK_MODULES=email,forms  → this package (`modules/forms` in the drobek

@@ -1,5 +1,5 @@
 /**
- * Tenancy-wrapped /login/verify server module (U4, PHY-54): delegates to the
+ * Tenancy-wrapped /login/verify server module: delegates to the
  * @drobek/auth action and, when it minted a session (302 + session cookie),
  * lazily ensures the user's personal workspace. Apps re-export THIS instead
  * of the auth module (component/meta still come from @drobek/auth). See

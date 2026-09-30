@@ -62,7 +62,7 @@ describe('skills/drobek/SKILL.md', () => {
     expect(md).toContain('https://drobek.app/llms-full.txt');
   });
 
-  it('states the loop rules: preview_url, publish only on request, single writer, no secrets (M0-10)', () => {
+  it('states the loop rules: preview_url, publish only on request, single writer, no secrets', () => {
     expect(md).toContain('`compile.ok: true` → give the user the `preview_url`');
     expect(md).toContain('Publish **only when the user explicitly asks**');
     expect(md).toContain('Never publish on your own initiative');
@@ -72,13 +72,13 @@ describe('skills/drobek/SKILL.md', () => {
     expect(md).toContain('drobek dashboard');
   });
 
-  it('lists an app in the gallery only after the user said yes (NSO-340)', () => {
+  it('lists an app in the gallery only after the user said yes', () => {
     expect(md).toContain('**only after the user explicitly said yes**');
     expect(md).toContain('user_confirmed: true');
     expect(md).toContain('Never list on your own');
   });
 
-  it('ports a Claude artifact: text via write_files, binaries via create_asset_upload at the same path, never base64 (NSO-359)', () => {
+  it('ports a Claude artifact: text via write_files, binaries via create_asset_upload at the same path, never base64', () => {
     const port = md.slice(md.indexOf('## Port a Claude artifact'), md.indexOf('## One writer at a time'));
     expect(port).toContain("skill_info('port-artifact')");
     expect(port).toContain('the server\nfetches nothing from claude.ai');
@@ -90,7 +90,7 @@ describe('skills/drobek/SKILL.md', () => {
     expect(port).toContain('`window.claude.*`');
   });
 
-  it('states the skill_info rule verbatim, in the present tense (M1-01)', () => {
+  it('states the skill_info rule verbatim, in the present tense', () => {
     expect(md).toContain(SKILL_INFO_RULE);
     expect(md).not.toContain('module_info');
     for (const future of ['later', 'phase 2', 'coming soon', 'will be available']) {

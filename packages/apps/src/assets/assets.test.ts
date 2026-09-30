@@ -13,7 +13,7 @@ import {
 } from '../index.js';
 import { fakeMp4 } from '../test/assets.js';
 
-describe('asset paths (NSO-358)', () => {
+describe('asset paths', () => {
   it('accepts a relative path of up to 4 segments with an allowed extension (the page keeps its own paths)', () => {
     for (const ok of ['film.mp4', 'poster.JPG', 'img/s1.jpg', 'media/Film-1.mp4', 'a/b/c/d.png', 'hero-2x.webp', 'logo_v1.svg', 'track.01.mp3', 'fonts/x.woff2', '0.m4a', 'img/hero.avif', 'favicon.ico']) {
       expect(assetNameProblem(ok), ok).toBeNull();
@@ -111,7 +111,7 @@ describe('parseRange (RFC 9110, one range)', () => {
     expect(parseRange('bytes=0-10, 20-30', size)).toBeNull();
   });
 
-  it('a header without `=` is not a range at all → ignored, the whole file (RFC 9110, NSO-362)', () => {
+  it('a header without `=` is not a range at all → ignored, the whole file (RFC 9110)', () => {
     for (const invalid of ['bytes', '0-99', 'bytes 0-99', 'garbage']) expect(parseRange(invalid, size), invalid).toBeNull();
   });
 

@@ -90,7 +90,7 @@ describe('pipeline', () => {
     expect((await t.request('POST', '/say', { body: { text: 'd' }, clientIp: '10.0.0.9' })).status).toBe(200);
   });
 
-  it("per: 'ip' without a resolved client IP (NSO-328): the bucket is skipped, never shared; known IPs stay limited", async () => {
+  it("per: 'ip' without a resolved client IP: the bucket is skipped, never shared; known IPs stay limited", async () => {
     const t = createModuleTestContext(echo, { limits: { ECHO_PER_MINUTE: 2 } });
     for (let i = 0; i < 6; i += 1) {
       expect((await t.request('POST', '/say', { body: { text: `n${i}` }, clientIp: null })).status).toBe(200);
@@ -175,7 +175,7 @@ describe('body types', () => {
   });
 });
 
-describe('wildcard routes, raw bodies, all headers (NSO-297)', () => {
+describe('wildcard routes, raw bodies, all headers', () => {
   it('a trailing * captures the RAW rest of the path; * elsewhere is refused', () => {
     const routes = collectRoutes((r) => {
       r.get('/:upstream/*', () => 1);

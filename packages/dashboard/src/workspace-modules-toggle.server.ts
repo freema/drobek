@@ -1,5 +1,5 @@
 /**
- * NSO-346: the opt-in modules of one workspace — the server half of the
+ * The opt-in modules of one workspace — the server half of the
  * Workspace → Modules switch (self-contained: a route mounts
  * `loadWorkspaceModuleToggles` in its loader and `workspaceModuleToggleAction`
  * in its action).

@@ -5,7 +5,7 @@ import { dbErrorForLog } from '@drobek/db';
  * React Router's default `handleError` does `console.error(error)` for an
  * error thrown by a loader or action — the whole object, which for a failed
  * query is a `DrizzleQueryError` carrying the SQL and its bound parameters
- * (e-mail addresses, token hashes) and a Postgres `detail` (NSO-333). This
+ * (e-mail addresses, token hashes) and a Postgres `detail`. This
  * one logs the same error through `dbErrorForLog` (code + constraint + table
  * and the stack frames for a DB error; message + stack otherwise). A build
  * whose entry defines its own `handleError` keeps it.

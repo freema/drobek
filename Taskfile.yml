@@ -153,7 +153,7 @@ tasks:
       - pnpm -C tests-e2e exec playwright test --grep "@smoke"
 
   eval:
-    desc: 'MANUAL agent eval (NSO-308, never CI): clean `claude -p` sessions with only the drobek MCP build 3 reference apps against the local stack; results in tests-eval/results/ [-- --dry-run | --self-check | --only a,b,c | --mode plugin]'
+    desc: 'MANUAL agent eval (never CI): clean `claude -p` sessions with only the drobek MCP build 3 reference apps against the local stack; results in tests-eval/results/ [-- --dry-run | --self-check | --only a,b,c | --mode plugin]'
     cmds:
       - node tests-eval/run.mjs {{.CLI_ARGS}}
 
@@ -164,20 +164,20 @@ tasks:
       - IMAGE={{.IMAGE}}:{{.GIT_SHA}} ./scripts/prod-proof.sh
 
   mock:google:
-    desc: Run the mock Google OIDC provider in the foreground (U3 — tests-e2e/mock-google.mjs, port 3049)
+    desc: Run the mock Google OIDC provider in the foreground (tests-e2e/mock-google.mjs, port 3049)
     env:
       MOCK_GOOGLE_PORT: '{{.MOCK_GOOGLE_PORT | default "3049"}}'
     cmds:
       - node tests-e2e/mock-google.mjs
 
   mock:oidc:
-    desc: Run the mock OpenID Connect provider in the foreground (NSO-351 — tests-e2e/mock-oidc.mjs, port 3050)
+    desc: Run the mock OpenID Connect provider in the foreground (tests-e2e/mock-oidc.mjs, port 3050)
     env:
       MOCK_OIDC_PORT: '{{.MOCK_OIDC_PORT | default "3050"}}'
     cmds:
       - node tests-e2e/mock-oidc.mjs
 
-  # ── TLS / Caddy (M0-07) — see docs/SELF-HOSTING.md ─────────────────────────
+  # ── TLS / Caddy — see docs/SELF-HOSTING.md ─────────────────────────
   caddy:config:
     desc: 'Generate the Caddyfile from .env (PUBLIC_APP_URL, APPS_DOMAIN, TLS_*) → deployments/Caddyfile [OUT=path]'
     cmds:
@@ -191,7 +191,7 @@ tasks:
         {{if .COMPOSE_ARGS}}docker compose {{.COMPOSE_ARGS}}{{else}}./scripts/selfhost-compose.sh{{end}}
         exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile --force
 
-  # ── Self-host (M4-03) — docs/SELF-HOSTING.md ──────────────────────────────
+  # ── Self-host — docs/SELF-HOSTING.md ──────────────────────────────
   # Every task below drives docker-compose.production.yaml with
   # --env-file .env.production (ENV_FILE=… overrides; COMPOSE_PROJECT_NAME is
   # honoured). None needs Node on the host.
@@ -279,7 +279,7 @@ tasks:
     cmds:
       - ./scripts/selfhost-rehearsal.sh
 
-  # ── Dev stack: modules in ./.modules (NSO-350) — host npm + node ─────────
+  # ── Dev stack: modules in ./.modules — host npm + node ─────────
   module:add:
     desc: 'Dev stack: install a module into ./.modules + modules.lock.json (as selfhost:module:add, with the host npm) — task module:add -- <spec>'
     env:

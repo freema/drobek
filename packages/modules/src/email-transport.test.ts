@@ -8,7 +8,7 @@ const KEY = 're_test_fake_module_0123';
 
 afterEach(() => vi.unstubAllGlobals());
 
-describe('module e-mail over the operator transport (NSO-361)', () => {
+describe('module e-mail over the operator transport', () => {
   it('EMAIL_TRANSPORT=resend: ctx.email.send goes out through the Resend API with the display name and Reply-To', async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ id: 'msg_1' }), { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);

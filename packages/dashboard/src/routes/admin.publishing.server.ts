@@ -1,5 +1,5 @@
 /**
- * GET/POST /admin/publishing — server half (NSO-366): the super-admin's
+ * GET/POST /admin/publishing — server half: the super-admin's
  * switch for who may publish. SUPER-ADMIN ONLY: no session → /login; a
  * signed-in user who is not in SUPERADMIN_EMAIL → 403 (loader AND action).
  *
@@ -14,7 +14,7 @@
  * unblocking e-mail the workspace's editors and admins. The MCP tool
  * set_workspace_publishing is the same function.
  *
- * Blocking has a confirm step (NSO-371): "Block publishing…" is a GET to
+ * Blocking has a confirm step: "Block publishing…" is a GET to
  * `?workspace=<slug>&confirm=block`, which renders the workspace, who gets
  * e-mailed and what keeps serving; only the panel's POST carries
  * `confirmed=1`, and a block without it is refused (400) before anything

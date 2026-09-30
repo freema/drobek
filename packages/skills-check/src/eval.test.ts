@@ -7,7 +7,7 @@ import { codeBlocks } from '@drobek/modules/testing';
 import { BUILTIN_MODULES, REPO_ROOT, skillSources } from './skills.js';
 
 /**
- * NSO-308: the manual agent eval (tests-eval/) is not run in CI, but its
+ * The manual agent eval (tests-eval/) is not run in CI, but its
  * parsers are: the "non-existent API" detector must understand the REAL
  * generated sdk.d.ts (not only its fixture) and must not flag anything the
  * skills themselves teach — else the eval metric would be noise.

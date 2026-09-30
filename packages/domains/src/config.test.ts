@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_DOMAINS_MAX_PER_APP, domainsConfigError, domainsMaxPerApp } from './index.js';
 
-describe('DOMAINS_MAX_PER_APP (NSO-329)', () => {
+describe('DOMAINS_MAX_PER_APP', () => {
   it('defaults to 3; 0 is valid and means custom domains are off', () => {
     expect(domainsMaxPerApp({})).toBe(DEFAULT_DOMAINS_MAX_PER_APP);
     expect(DEFAULT_DOMAINS_MAX_PER_APP).toBe(3);

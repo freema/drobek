@@ -1,5 +1,5 @@
 /**
- * The upload URL endpoint (NSO-358): `/api/assets/upload/<token>` on the
+ * The upload URL endpoint: `/api/assets/upload/<token>` on the
  * DASHBOARD host (never an app host), mounted by apps/server before React
  * Router. Typed on node:http only, so Express req/res fit.
  *
@@ -7,8 +7,7 @@
  *        credential: it is taken (single use) before a byte is read; the
  *        user it was issued for must STILL be an editor of the app's
  *        workspace (or a super-admin) — a member removed or demoted since
- *        cannot complete an upload with an earlier link (403 forbidden,
- *        NSO-362). Then the body streams through storeAsset (size, type,
+ *        cannot complete an upload with an earlier link (403 forbidden). Then the body streams through storeAsset (size, type,
  *        quota, audit as that user) into the app's DRAFT assets — the
  *        production host shows it after the next publish. 201 `{ name, path,
  *        size, type, replaced }`; a refusal is `{ code, message, hint,
@@ -56,7 +55,7 @@ type NodeHandler = (req: IncomingMessage, res: ServerResponse) => void;
 /**
  * Is `userId` still an editor+ of `workspaceId` — or a super-admin
  * (SUPERADMIN_EMAIL, the global flag; @drobek/auth cannot be imported here)?
- * Checked when an upload URL is USED, not only when it was issued (NSO-362).
+ * Checked when an upload URL is USED, not only when it was issued.
  */
 export async function uploaderMayEdit(userId: string, workspaceId: string, env: NodeJS.ProcessEnv = process.env): Promise<boolean> {
   const db = getDb();

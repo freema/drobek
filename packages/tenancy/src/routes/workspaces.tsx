@@ -1,5 +1,5 @@
 /**
- * /workspaces — client half (U4, PHY-54): my workspaces with role badges,
+ * /workspaces — client half: my workspaces with role badges,
  * create-team form, and (super-admin only) the all-workspaces section.
  * Server code lives in ./workspaces.server.ts.
  */

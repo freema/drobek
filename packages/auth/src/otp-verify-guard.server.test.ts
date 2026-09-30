@@ -59,14 +59,14 @@ describe('guardOtpVerify', () => {
     expect(fake.store.has('drobek:rl:otp-verify-ip:203.0.113.1')).toBe(true);
   });
 
-  it('no IP (NSO-309): clients without an IP never share a bucket — far past the limit, still allowed', async () => {
+  it('no IP: clients without an IP never share a bucket — far past the limit, still allowed', async () => {
     for (let i = 0; i < LIMITS.ipLimit * 10; i += 1) {
       expect(await guardOtpVerify({ ip: undefined, limits: LIMITS })).toEqual({ ok: true });
       expect(await guardOtpVerify({ ip: null, limits: LIMITS })).toEqual({ ok: true });
     }
     // No shared "unknown" counter is ever written.
     expect([...fake.store.keys()].filter((k) => k.startsWith('drobek:rl:'))).toEqual([]);
-    // One warning per process (the shared @drobek/core perIpLimitKey, NSO-328).
+    // One warning per process (the shared @drobek/core perIpLimitKey).
     expect(vi.mocked(logger.warn)).toHaveBeenCalledTimes(1);
     expect(vi.mocked(logger.warn).mock.calls[0][1]).toEqual({ event: 'rate_limit_no_client_ip', bucket: 'otp-verify-ip' });
   });

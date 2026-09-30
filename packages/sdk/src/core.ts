@@ -1,5 +1,5 @@
 /**
- * The drobek browser SDK core (M1-01, NSO-287) — bundled into every server's
+ * The drobek browser SDK core — bundled into every server's
  * `/__drobek/sdk.js` together with the `sdk.entry` of each ACTIVE platform
  * module (`@drobek/modules` composes it with esbuild at startup). An app imports
  * it as `import { drobek } from 'drobek'` (the compiler maps the bare `drobek`

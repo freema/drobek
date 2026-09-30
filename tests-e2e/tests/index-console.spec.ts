@@ -21,7 +21,7 @@ test('index page renders console-clean @smoke', async ({ page }) => {
   }
   expect(res?.status()).toBe(200);
   await expect(page.getByRole('heading', { level: 1, name: 'drobek' })).toBeVisible();
-  // NSO-331: the landing describes the cloud workspace and links the agent docs.
+  // The landing describes the cloud workspace and links the agent docs.
   await expect(page.getByText('A cloud workspace for agent-built web apps')).toBeVisible();
   await expect(page.getByRole('link', { name: '/llms.txt' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Agent guide' })).toBeVisible();

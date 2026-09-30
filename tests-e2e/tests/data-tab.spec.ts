@@ -16,8 +16,8 @@ import {
 } from './helpers/seed';
 
 /**
- * The dashboard Data tab — the owner's view of the data module's records
- * (M1-03). Seed collections (the app's data config) + records straight into
+ * The dashboard Data tab — the owner's view of the data module's records.
+ * Seed collections (the app's data config) + records straight into
  * Postgres on an app SEEDED via SQL, then
  * drive the dashboard UI as the workspace admin: the collections list, the
  * collection table (schema columns, newest-first), a filter + sort round-trip

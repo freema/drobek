@@ -1,6 +1,6 @@
 /**
- * Invites (U4, PHY-54) — Redis-backed TTL tokens, NO invites table (ratified
- * pattern: sessions + login codes are Redis too).
+ * Invites — Redis-backed TTL tokens, NO invites table
+ * (sessions + login codes are Redis too).
  *
  *   key    drobek:invite:<token>      token = randomBytes(32).toString('hex')
  *   value  JSON {workspaceId, role, email, invitedBy, createdAt}
@@ -74,7 +74,7 @@ export async function createInvite(args: {
 }
 
 /**
- * Write the member.invite governance row (PHY-85). Called from the invite route
+ * Write the member.invite governance row. Called from the invite route
  * action after createInvite succeeds. The actor is the inviting user, the surface
  * is 'web' (invites have no MCP tool) → actor_kind = user. The invited EMAIL is
  * PII and is deliberately NOT stored — only the granted role, which is
@@ -158,7 +158,7 @@ export async function acceptInvite(args: {
   const existing = existingRows[0]?.role ?? null;
   const finalRole = resolveAcceptedRole(existing, invite.role);
 
-  // The membership write + its governance audit go in ONE transaction (PHY-85) so
+  // The membership write + its governance audit go in ONE transaction so
   // the row and its provenance land together. The actor is the ACCEPTING user
   // (server-derived from the session at the route) and the surface is 'web'
   // (there is no MCP invite tool) → actor_kind = user. The subject is the member's

@@ -1,5 +1,5 @@
 /**
- * MCP wiring for the M0-05 tools: registers each allowed tool on an McpServer
+ * MCP wiring for the tools: registers each allowed tool on an McpServer
  * with its zod input schema and — straight from the @drobek/agent-dx manifest —
  * its title, description and annotations, so the docs and tools/list cannot
  * drift. The transport, sessions and Bearer auth stay in @drobek/oauth.
@@ -9,12 +9,12 @@
  * so a violation answers with drobek's own `invalid_params` + hint instead of
  * the SDK's generic validation text.
  *
- * Unknown arguments (NSO-378) are accepted, as they always were, and never
+ * Unknown arguments are accepted and never
  * reach a tool body; the result names them in `warnings` (see toolInput).
  *
  * Every tool answers its JSON as text AND as `structuredContent` — except the
  * three that return app- or user-written content (read_file, query_data,
- * get_logs, NSO-324): they answer ONLY the text inside the untrusted envelope
+ * get_logs): they answer ONLY the text inside the untrusted envelope
  * with its per-response nonce. A client that hands `structuredContent` to the
  * model would otherwise pass the raw payload past the envelope, and no
  * wrapping of the payload's strings can cover it: the keys of a schemaless
@@ -54,7 +54,7 @@ import { listUpstreamsTool, registerUpstreamTool, removeUpstreamTool } from './u
 import { setWorkspacePublishingTool } from './workspace-publishing.js';
 import { TEMPLATES } from './templates.js';
 
-/** The tool set, in tools/list order (M0-05 + publish, M0-06 + skill_info/configure_module, M1-01 + query_data, M1-03 + get_logs, M1-07 + set_gallery_listing, NSO-340 + the asset tools, NSO-358 + set_workspace_publishing, NSO-366 — super-admins only, the custom-domain tools, NSO-366, and the proxy upstream tools, NSO-372). */
+/** The tool set, in tools/list order (set_workspace_publishing is super-admins only). */
 export const APP_TOOL_NAMES = [
   'list_apps',
   'create_app',
@@ -86,7 +86,7 @@ export const APP_TOOL_NAMES = [
 
 export type AppToolName = (typeof APP_TOOL_NAMES)[number];
 
-/** NSO-366: tools that exist only for a super-admin's grant (never in anyone else's tools/list). */
+/** Tools that exist only for a super-admin's grant (never in anyone else's tools/list). */
 const SUPER_ADMIN_TOOL_NAMES: readonly AppToolName[] = ['set_workspace_publishing'];
 
 const appId = z.string().describe('The app id (from list_apps or create_app).');
@@ -265,7 +265,7 @@ export const INPUT_SCHEMAS = {
 
 type Payload = Record<string, unknown>;
 
-/** A note on a tool result that did not stop the call (NSO-378); `warnings[]` on the result. */
+/** A note on a tool result that did not stop the call; `warnings[]` on the result. */
 interface ToolWarning {
   code: 'unknown_argument';
   message: string;
@@ -398,7 +398,7 @@ export interface RegisterOptions {
   deps?: Partial<ToolDeps>;
 }
 
-/** Register the M0-05 app tools the grant allows on `server`, for `principal`. */
+/** Register the app tools the grant allows on `server`, for `principal`. */
 export function registerAppTools(
   server: McpServer,
   principal: ToolPrincipal,
@@ -442,7 +442,7 @@ export function registerAppTools(
           return withWarnings(shape(await run(ctx, args), args), warnings);
         } catch (err) {
           if (err instanceof ToolError) return withWarnings(errorResult(err.toBody()), warnings);
-          // A takedown that landed between the tool's own check and the write (NSO-293).
+          // A takedown that landed between the tool's own check and the write.
           if (err instanceof AppsError && err.code === 'app_locked_by_admin') return withWarnings(errorResult(lockedByAdmin(err.reason).toBody()), warnings);
           d.log.error('mcp tool failed', { tool: name, error: dbErrorForLog(err, { stack: true }) });
           return withWarnings(

@@ -18,9 +18,8 @@ const CORE_TABLES = [
 ];
 
 /**
- * The upload/deploy pipeline tables dropped by 0007_app_versions (NSO-281),
- * and the pre-module Data API tables the data module imported and dropped
- * (its migration 0000, M1-03).
+ * The upload/deploy pipeline tables dropped by 0007_app_versions, and the
+ * pre-module Data API tables the data module dropped (its migration 0000).
  */
 const DROPPED_TABLES = ['deploys', 'deploy_files', 'blob_refs', 'collections', 'app_documents'];
 

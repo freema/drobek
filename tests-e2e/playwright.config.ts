@@ -25,7 +25,7 @@ export const BASE_URL_MCP =
 export const TEST_ENV = process.env.TEST_ENV ?? '';
 export const TARGET_PRODUCTION = process.env.E2E_TARGET_PRODUCTION === '1';
 /**
- * The apps origin the stack hands out (M0-05) — mirrors the server's default:
+ * The apps origin the stack hands out — mirrors the server's default:
  * docker-compose sets APPS_DOMAIN=apps.localhost:3041; the scheme is http for
  * localhost / *.localhost unless APPS_URL_SCHEME overrides it.
  */
@@ -38,8 +38,7 @@ export default defineConfig({
   testDir: './tests',
   globalSetup: './global-setup.ts',
   forbidOnly: Boolean(process.env.CI),
-  // CI runs on a cold, shared runner (first sign-in after a fresh boot, NSO-314):
-  // one retry there; a retried pass is still reported as flaky. Never locally.
+  // One retry on CI's cold, shared runner (a retried pass is still reported as flaky).
   retries: process.env.CI ? 1 : 0,
   timeout: 60_000,
   expect: {

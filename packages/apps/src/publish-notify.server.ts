@@ -1,5 +1,5 @@
 /**
- * Publish notifications (NSO-366): `PUBLISH_NOTIFY=first` e-mails the
+ * Publish notifications: `PUBLISH_NOTIFY=first` e-mails the
  * operator (OPERATOR_EMAIL, else every super-admin) about the first publish
  * of each app, `every` about every publish — at most one e-mail per app per
  * PUBLISH_NOTIFY_EVERY_MS (`drobek:publish:notify:<app id>`, Redis SET NX; a

@@ -1,5 +1,5 @@
 /**
- * What still exists for one page of Activity rows (NSO-371): the few batched,
+ * What still exists for one page of Activity rows: the few batched,
  * workspace-scoped reads `resolveActivityRefs` builds the links from — live
  * apps by slug, their versions and domains, the workspace's upstreams and
  * members, and the modules this server runs. Only ids referenced on the page

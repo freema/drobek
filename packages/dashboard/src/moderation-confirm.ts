@@ -1,5 +1,5 @@
 /**
- * The confirm step of the operator's irreversible moderation actions (NSO-371):
+ * The confirm step of the operator's irreversible moderation actions:
  * a takedown (/admin/abuse) and blocking a workspace's publishing
  * (/admin/publishing). The first click is a GET that renders the confirm panel
  * (works without JavaScript); only the panel's POST carries `confirmed=1`, and

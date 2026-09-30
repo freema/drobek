@@ -1,5 +1,5 @@
 /**
- * Fail-closed start (PHY-76 #6): refuse to boot with a known placeholder or,
+ * Fail-closed start: refuse to boot with a known placeholder or,
  * in production, a missing/weak secret. Copying `.env.example` verbatim must
  * never produce a running instance that encrypts upstream secrets with a
  * published key.

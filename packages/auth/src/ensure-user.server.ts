@@ -38,7 +38,7 @@ export async function ensureUserByEmail(emailRaw: string): Promise<string> {
   throw new Error('failed to ensure user');
 }
 
-// ── U3: Google OIDC account resolution ("account-link by email") ─────────────
+// ── Google OIDC account resolution ("account-link by email") ─────────────
 
 /**
  * Minimal persistence seam so the resolution ORDER is unit-testable against a
@@ -54,7 +54,7 @@ export interface GoogleUserStore {
 }
 
 /**
- * Resolution order (U3 acceptance — same user on email match, no dup rows):
+ * Resolution order (same user on email match, no duplicate rows):
  *  (a) `google_sub` match wins → log in that user;
  *  (b) else normalized-email match (magic-code signup) → LINK: set google_sub
  *      on the SAME users row;

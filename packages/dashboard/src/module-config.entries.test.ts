@@ -1,5 +1,5 @@
 /**
- * The generic config form for a THIRD-PARTY module's schema (NSO-347): a
+ * The generic config form for a THIRD-PARTY module's schema: a
  * fixture config schema written in zod the way a company module would
  * (records of named entries, arrays of objects, enums, booleans, bounded
  * numbers, descriptions), rendered by the real `z.toJSONSchema` (input side,

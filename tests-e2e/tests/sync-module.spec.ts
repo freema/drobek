@@ -6,7 +6,7 @@ import { skipUnlessLocal } from './helpers/auth';
 import { FULL_SCOPE, callTool, mcpClient, type McpClient } from './helpers/mcp';
 
 /**
- * NSO-392: the built-in platform module `sync` end to end (DROBEK_MODULES=…,sync
+ * The built-in platform module `sync` end to end (DROBEK_MODULES=…,sync
  * in the composes, SYNC_PAUSE_AFTER_FAILURES 2 there). The in-network
  * `proxy-echo` serves `/sync/players` only with the injected bearer key and
  * `/sync/fail` always fails:
@@ -64,7 +64,7 @@ async function syncNow(mcp: McpClient, appId: string, source: string) {
 
 test.describe.configure({ mode: 'serial' });
 
-test.describe('platform module sync — scheduled imports from an upstream (NSO-392) @local', () => {
+test.describe('platform module sync — scheduled imports from an upstream @local', () => {
   let mcp: McpClient;
   let owner: BrowserContext;
   let ws: string;

@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 // @ts-check
 /**
- * tests-eval/run.mjs (NSO-308) — the MANUAL agent eval: a clean Claude Code
+ * tests-eval/run.mjs — the MANUAL agent eval: a clean Claude Code
  * session with ONLY the drobek MCP builds three reference apps against a
  * running drobek stack, then the harness checks what came out; a fourth
- * session ports a multi-file Claude artifact (NSO-359). Never in CI (it costs
+ * session ports a multi-file Claude artifact. Never in CI (it costs
  * model tokens and needs the local stack + Mailpit).
  *
  *   node tests-eval/run.mjs --self-check   parsers on the fixtures (no network, no Claude)
@@ -104,7 +104,7 @@ const SCENARIOS = [
     verify: verifyProxy,
   },
   {
-    // NSO-359: port a Claude artifact. The session gets the artifact folder
+    // Port a Claude artifact. The session gets the artifact folder
     // (./artifact, copied from fixtures/artifact) plus file reads and curl —
     // the binaries go up through create_asset_upload's upload URL, never
     // through the model.
@@ -662,7 +662,7 @@ function selfCheck() {
 }
 
 /**
- * NSO-359: the artifact fixture stays what scenario d and port-artifact.spec.ts
+ * The artifact fixture stays what scenario d and port-artifact.spec.ts
  * need — relative paths that all exist, a real MP4 (`ftyp` box) and JPEGs,
  * tiny — and the port checks catch a rewritten path and a smuggled binary.
  * @returns {[string, unknown, unknown][]}

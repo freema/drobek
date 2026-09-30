@@ -1,5 +1,5 @@
 /**
- * The custom-domain tools (NSO-366, MCP parity with the dashboard's Domains
+ * The custom-domain tools (MCP parity with the dashboard's Domains
  * tab): list_domains, add_domain, verify_domain, set_primary_domain,
  * remove_domain. Every body calls the SAME @drobek/domains operation as the
  * dashboard (validation, DOMAINS_MAX_PER_APP from the workspace's limits,
@@ -14,7 +14,7 @@
  * yes (`user_confirmed: true`): setting or clearing the primary domain, and
  * removing a VERIFIED domain (it stops serving at once). Adding and verifying
  * do not: a domain serves only after its owner created both DNS records.
- * A taken-down app (NSO-293) refuses adding, verifying and a primary; removing
+ * A taken-down app refuses adding, verifying and a primary; removing
  * stays possible.
  */
 import { appsOrigin, publishedUrl } from '@drobek/apps';

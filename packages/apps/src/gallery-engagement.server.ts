@@ -1,5 +1,5 @@
 /**
- * Gallery likes and opens (NSO-340), behind the dashboard's
+ * Gallery likes and opens, behind the dashboard's
  * `/gallery/open/<slug>` (the counting link the public list hands out) and
  * `/gallery/like/<slug>` (a signed-in account likes or unlikes an app).
  *

@@ -5,7 +5,7 @@ import { pollLoginCode, skipUnlessLocal } from './helpers/auth';
 import { FULL_SCOPE, callTool, mcpClient, type McpClient } from './helpers/mcp';
 
 /**
- * M1-03 (NSO-300): the built-in platform module `data` end to end on the apps
+ * The built-in platform module `data` end to end on the apps
  * host (DROBEK_MODULES=hello,auth,email,forms,data in both composes,
  * DATA_MAX_DOCS_PER_APP=5):
  *
@@ -24,7 +24,7 @@ import { FULL_SCOPE, callTool, mcpClient, type McpClient } from './helpers/mcp';
  *  - query_data: untrusted records, ≤ 100, another app's collections are
  *    not_found; app B reads none of app A's records through REST or the SDK;
  *  - the preview and production hosts of an app share its records;
- *  - NSO-324: a visitor never gets `_owner`; removing a collection that holds
+ *  - a visitor never gets `_owner`; removing a collection that holds
  *    records waits for the owner, and the confirmation purges them; one
  *    signed-in user's write flood hits their own bucket
  *    (DATA_WRITES_PER_PRINCIPAL_PER_MIN) while another user still writes;
@@ -91,7 +91,7 @@ async function configure(mcp: McpClient, appId: string, module: string, config: 
 
 test.describe.configure({ mode: 'serial' });
 
-test.describe('platform module data — collections with rules (M1-03) @local', () => {
+test.describe('platform module data — collections with rules @local', () => {
   let mcp: McpClient;
   let owner: BrowserContext;
   let appA: Created;
@@ -170,7 +170,7 @@ test.describe('platform module data — collections with rules (M1-03) @local', 
     ]);
     expect(String(held.confirm_url)).toContain(`/apps/${appA.slug}/modules/data`);
 
-    // NSO-386: the readiness report lists the change that waits for the owner (a warning, the write goes through).
+    // the readiness report lists the change that waits for the owner (a warning, the write goes through).
     const pendingWrite = await callTool(mcp.client, 'write_files', {
       app_id: appA.app_id,
       files: [{ path: 'src/readiness-probe.ts', content: 'export const probe = 1;\n' }],
@@ -190,7 +190,7 @@ test.describe('platform module data — collections with rules (M1-03) @local', 
     });
     expect(ok.status(), await ok.text()).toBe(200);
 
-    // NSO-386: now anyone may add records to "x", which has no schema — the audit names it and the fix.
+    // now anyone may add records to "x", which has no schema — the audit names it and the fix.
     const liveWrite = await callTool(mcp.client, 'write_files', {
       app_id: appA.app_id,
       files: [{ path: 'src/readiness-probe.ts', content: 'export const probe = 2;\n' }],
@@ -206,7 +206,7 @@ test.describe('platform module data — collections with rules (M1-03) @local', 
     const after = await data(hostA, '/x', { method: 'POST', body: { text: 'hello from a visitor', _owner: 'spoofed' } });
     expect(after.status, after.body).toBe(201);
     expect(json(after)).toMatchObject({ text: 'hello from a visitor' });
-    expect(json(after)).not.toHaveProperty('_owner'); // a visitor never sees _owner (NSO-324)
+    expect(json(after)).not.toHaveProperty('_owner'); // a visitor never sees _owner
     const csrf = await hostRequest(hostA, '/__drobek/v1/data/x', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"text":"x"}' });
     expect(csrf.status).toBe(403);
     expect((await data(hostA, '/nope')).status).toBe(404);
@@ -278,7 +278,7 @@ test.describe('platform module data — collections with rules (M1-03) @local', 
     const csv = await data(hostA, '/todos/export.csv', { cookie: boss.cookie });
     expect(csv.status).toBe(200);
     expect(String(csv.headers['content-type'])).toContain('text/csv');
-    // Streamed (NSO-323 M5): no Content-Length, the body arrives in chunks.
+    // Streamed: no Content-Length, the body arrives in chunks.
     expect(csv.headers['content-length']).toBeUndefined();
     const lines = csv.body.trimEnd().split('\r\n');
     expect(lines[0]).toBe('_id,_owner,_created_at,_updated_at,title,done');
@@ -306,7 +306,7 @@ test.describe('platform module data — collections with rules (M1-03) @local', 
     const r = await callTool(mcp.client, 'query_data', { app_id: appA.app_id, collection: 'todos', filter: { title: { contains: 'todo' } }, sort: 'title', dir: 'asc' });
     expect(r.isError, JSON.stringify(r.json)).toBe(false);
     expect(r.json).toMatchObject({ app_id: appA.app_id, collection: 'todos', total: 2, next_cursor: null, untrusted: true });
-    expect(r.structured).toBe(false); // NSO-324: only the envelope text, no structuredContent
+    expect(r.structured).toBe(false); // only the envelope text, no structuredContent
     expect((r.json.records as Rec[]).map((x) => x.title)).toEqual(['Ana todo', 'Bob todo']);
     expect(r.text.startsWith('UNTRUSTED CONTENT:')).toBe(true);
     const nonce = /<untrusted-app-data [^>]*nonce="([0-9a-f]{16})">/.exec(r.text)![1];
@@ -372,7 +372,7 @@ test.describe('platform module data — collections with rules (M1-03) @local', 
     const held = await configure(mcp, c.app_id, 'data', { collections: { log: { rules: { read: 'public', create: 'public' } } } });
     expect(held.applied).toBe(false);
     const host = previewHost(c.slug);
-    // NSO-377: declared but waiting for the owner → 409 pending_confirmation, not "declare it first".
+    // declared but waiting for the owner → 409 pending_confirmation, not "declare it first".
     const waiting = await data(host, '/log');
     expect(waiting.status, waiting.body).toBe(409);
     expect(json(waiting)).toMatchObject({ error: 'pending_confirmation', details: { collection: 'log' } });
@@ -387,7 +387,7 @@ test.describe('platform module data — collections with rules (M1-03) @local', 
     expect(json(sixth)).toMatchObject({ error: 'quota_exceeded', details: { limit: 'DATA_MAX_DOCS_PER_APP', value: 5 }, hint: "skill_info('data')" });
   });
 
-  test('NSO-324: removing a collection that holds records waits for the owner; confirming purges them', async () => {
+  test('removing a collection that holds records waits for the owner; confirming purges them', async () => {
     skipUnlessLocal();
     const held = await configure(mcp, appA.app_id, 'data', { collections: { todos: null } });
     expect(held.applied).toBe(false);
@@ -406,7 +406,7 @@ test.describe('platform module data — collections with rules (M1-03) @local', 
     }
   });
 
-  test('NSO-324: a visitor never gets _owner; a signed-in user does', async () => {
+  test('a visitor never gets _owner; a signed-in user does', async () => {
     skipUnlessLocal();
     const created = await data(hostA, '/x', { method: 'POST', cookie: ana.cookie, body: { text: 'by Ana' } });
     expect(created.status, created.body).toBe(201);
@@ -418,7 +418,7 @@ test.describe('platform module data — collections with rules (M1-03) @local', 
     expect(json<Rec>(await data(hostA, `/x/${byAna._id}`, { cookie: bob.cookie }))._owner).toBe(ana.id);
   });
 
-  test('NSO-324: one signed-in user’s write flood hits their own bucket; another user still writes', async () => {
+  test('one signed-in user’s write flood hits their own bucket; another user still writes', async () => {
     skipUnlessLocal();
     const created = await data(hostA, '/members', { method: 'POST', cookie: bob.cookie, body: { name: 'Bob' } });
     expect(created.status, created.body).toBe(201);

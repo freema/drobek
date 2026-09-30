@@ -1,14 +1,14 @@
 /**
  * `import { LoginGate, useAuth } from 'drobek/auth'` — the auth module's
- * React part (M1-02). NOT in /__drobek/sdk.js: the drobek compiler builds
+ * React part. NOT in /__drobek/sdk.js: the drobek compiler builds
  * this file INTO the app that imports it, resolving `react` through the app's
  * own drobek.json (the app and the gate share one React) and `drobek` to the
  * server's SDK (the same `drobek.auth` instance the app sees).
  *
  * Self-contained on purpose: it may import only `react` and `drobek`.
  *
- * The form offers the sign-in methods that are on (drobek.auth.providers(),
- * NSO-348): "Continue with <label>" per sign-in provider and the e-mail code
+ * The form offers the sign-in methods that are on (drobek.auth.providers()):
+ * "Continue with <label>" per sign-in provider and the e-mail code
  * form when `emailCode` is on (also when the list cannot be loaded — the
  * server still refuses a method that is off).
  */

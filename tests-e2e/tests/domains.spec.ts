@@ -8,7 +8,7 @@ import { callTool, mcpClient } from './helpers/mcp';
 import { personalWorkspaceOf, publishVersion, seedApp, seedVersion, withDb } from './helpers/seed';
 
 /**
- * M3-01 (NSO-292) acceptance, end to end against the local compose stack:
+ * Custom domains, end to end against the local compose stack:
  *   - an owner adds a custom domain on the app's Domains tab and gets the DNS
  *     instructions (CNAME → <slug>.<APPS_DOMAIN without port>, TXT
  *     _drobek.<host> = drobek-verify=<token>);
@@ -25,7 +25,7 @@ import { personalWorkspaceOf, publishVersion, seedApp, seedVersion, withDb } fro
  *     the 4th domain of an app → limit_exceeded (DOMAINS_MAX_PER_APP=3);
  *   - audit rows domain.add / domain.verify / domain.primary / domain.unverify /
  *     domain.remove.
- *   - NSO-366: the same over MCP — list_domains / add_domain / verify_domain /
+ *   - the same over MCP — list_domains / add_domain / verify_domain /
  *     set_primary_domain / remove_domain, the confirmation gates and the audit
  *     rows as the agent.
  * The image flow (E2E_TARGET_PRODUCTION=1) ignores the DNS mock, so only the
@@ -148,7 +148,7 @@ async function seedPublishedApp(email: string, marker: string): Promise<{ id: st
   return { ...app, ws: ws.slug };
 }
 
-test.describe('custom domains (M3-01) @local', () => {
+test.describe('custom domains @local', () => {
   test('add → instructions → verify → ask/serve/primary → re-check drops it + mails the owner → remove', async ({
     page,
     request,
@@ -368,7 +368,7 @@ test.describe('custom domains (M3-01) @local', () => {
     await withDb((c) => c.query(`DELETE FROM domains WHERE app_id = $1`, [app.id]));
   });
 
-  test('over MCP: list → add → verify (what is missing) → primary + remove with the user\'s yes, audited as the agent (NSO-366)', async ({
+  test('over MCP: list → add → verify (what is missing) → primary + remove with the user\'s yes, audited as the agent', async ({
     page,
     request,
   }) => {

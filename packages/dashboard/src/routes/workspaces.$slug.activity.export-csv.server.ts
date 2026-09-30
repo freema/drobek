@@ -1,7 +1,7 @@
 /**
- * GET /workspaces/:slug/activity/export.csv — the Activity (audit) CSV export
- * (PHY-85). Streams the workspace's audit trail (the SAME app + action + actor +
- * time-range filter the table applies, NSO-371) as text/csv, RFC-4180 escaped (shared csvLine primitive, PHY-121).
+ * GET /workspaces/:slug/activity/export.csv — the Activity (audit) CSV export.
+ * Streams the workspace's audit trail (the SAME app + action + actor +
+ * time-range filter the table applies) as text/csv, RFC-4180 escaped (shared csvLine primitive).
  * A resource route (no component) returning a streaming Response.
  *
  * Authz + isolation: requireWorkspaceRole('workspace-admin') — admin/super-admin

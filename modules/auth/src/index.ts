@@ -1,5 +1,5 @@
 /**
- * drobek-module-auth — the BUILT-IN platform module `auth` (M1-02, §5.1):
+ * drobek-module-auth — the BUILT-IN platform module `auth`:
  * end users of an app sign in with a one-time code sent to their e-mail.
  *
  *   DROBEK_MODULES=auth   → this package (`modules/auth` in the drobek repo,
@@ -12,7 +12,7 @@
  *   anyone:true, enabling a provider and changing its identity fields need
  *   the owner's confirmation.
  *
- * Sign-in providers (NSO-348): other modules contribute to the slot
+ * Sign-in providers: other modules contribute to the slot
  * `auth.provider` (OIDC, SAML, …) — they only prove an identity; this module
  * keeps the allowlist, roles, users and sessions (flow.ts). The IdP calls
  * back on the DASHBOARD host (`endUsers.callback`); a one-time handoff code

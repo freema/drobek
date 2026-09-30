@@ -1,5 +1,5 @@
 /**
- * recordBeacon's rate limits (NSO-328): the per-app aggregate always applies;
+ * recordBeacon's rate limits: the per-app aggregate always applies;
  * the per-app + IP bucket only with a resolved client IP — a beacon without
  * one never lands in a shared `unknown` bucket. An empty batch stops before
  * the DB, so no database is needed here.

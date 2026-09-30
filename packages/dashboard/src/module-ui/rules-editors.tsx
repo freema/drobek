@@ -1,5 +1,5 @@
 /**
- * The dedicated editors of the built-in modules (M2-02, NSO-291):
+ * The dedicated editors of the built-in modules:
  *
  *  - `CollectionsEditor` (data): one card per collection with the rule table
  *    operation × principal (checkboxes; nothing checked = `none`) and the
@@ -48,7 +48,7 @@ function RuleTable({
   testPrefix: string;
 }) {
   return (
-    // On a phone the table scrolls inside its box, never the page (NSO-342).
+    // On a phone the table scrolls inside its box, never the page.
     <div style={ui.tableWrap}>
       <table style={ui.table}>
         <thead>

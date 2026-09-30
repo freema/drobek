@@ -1,7 +1,7 @@
 /**
  * /workspaces/:slug/apps/:appSlug/data — client half: the Data
  * tab's COLLECTIONS list (the data module's declared collections). Each
- * collection links to its table view. Below it, ORPHANS (NSO-324): records of
+ * collection links to its table view. Below it, ORPHANS: records of
  * collections the config no longer declares, with a purge form (editor+, the
  * owner types the name). Minimal style (mirrors the apps/app-detail pages).
  * Server code lives in the .server.ts; all values arrive pre-shaped so this

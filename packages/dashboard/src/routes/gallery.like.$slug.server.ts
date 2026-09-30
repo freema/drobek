@@ -1,5 +1,5 @@
 /**
- * GET/POST /gallery/like/:slug?back= — server half (NSO-340): a signed-in
+ * GET/POST /gallery/like/:slug?back= — server half: a signed-in
  * drobek account likes (or unlikes) a gallery app. `GET /api/public/gallery`
  * hands the page out as each entry's `likeUrl`.
  *

@@ -1,5 +1,5 @@
 /**
- * NSO-340 — gallery likes and opens on a real (PGlite) database: only a
+ * Gallery likes and opens on a real (PGlite) database: only a
  * visible entry resolves; opens count per UTC day and the list shows the
  * last 30 days; a like is one per account, idempotent, removable; deleting
  * the account drops its like; `sort=popular` orders by 5 × likes + opens.

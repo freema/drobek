@@ -1,6 +1,6 @@
 /**
- * The repo gate of the skills (NSO-308; the checks themselves are the
- * `checkSkill` library of @drobek/modules/testing since NSO-349).
+ * The repo gate of the skills (the checks themselves are the `checkSkill`
+ * library of @drobek/modules/testing).
  *
  * The skills of a server running every built-in module — exactly what
  * `skill_info()` serves in the dev stack and the image (minus the example

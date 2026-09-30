@@ -1,5 +1,5 @@
 /**
- * get_logs (M1-07) — the stored half, over a RESOLVED app id (the MCP tool
+ * get_logs — the stored half, over a RESOLVED app id (the MCP tool
  * authorizes the caller for the app first):
  *
  *  - recordCompile       — one `app_compiles` row per compile a write ran
@@ -11,7 +11,7 @@
  *
  * Every read is bounded to the retention window (30 days) and ≤ 100 entries.
  * Reads never delete: the periodic prune (prune.server.ts) keeps every table
- * inside its retention, also for apps nobody inspects (NSO-327).
+ * inside its retention, also for apps nobody inspects.
  */
 import { and, desc, eq, gte, lt, sql } from 'drizzle-orm';
 import { getRedis } from '@drobek/core';
@@ -156,10 +156,10 @@ export interface RequestLogOptions {
 /**
  * Mirror the Redis counters of `days` (serving signals + module calls) into
  * app_daily_stats and module_request_stats: ONE pipelined Redis round trip
- * and at most one statement per table, however many days (NSO-327 — the
+ * and at most one statement per table, however many days (the
  * window is up to 31 days). Best-effort: a miss is caught up by the next
  * flush, the counters are cumulative. The same round trip reads the day's
- * failing-path hashes (Redis-only, NSO-380) and answers them.
+ * failing-path hashes (Redis-only) and answers them.
  */
 async function flushRequestDays(appId: string, days: string[], redis: () => RequestLogRedis): Promise<Map<string, DayFailingPaths>> {
   const failing = new Map<string, DayFailingPaths>();

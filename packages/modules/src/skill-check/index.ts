@@ -1,5 +1,5 @@
 /**
- * `checkSkill(module)` (NSO-349) — the SKILL.md gate the built-in modules
+ * `checkSkill(module)` — the SKILL.md gate the built-in modules
  * pass, for any module: a module author runs it in the module's own tests
  * (`@drobek/modules/testing`), the repo gate (packages/skills-check) runs
  * `checkSkillSources` over the built-in modules + the general skills.

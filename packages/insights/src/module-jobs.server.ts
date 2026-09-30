@@ -1,5 +1,5 @@
 /**
- * A failed run of a platform module's per-app job (NSO-391), stored with the
+ * A failed run of a platform module's per-app job, stored with the
  * app's browser errors so get_logs `runtime` and the dashboard's Logs tab
  * show it: type `module_job`, the module and job, the redacted and truncated
  * message (a job's error can quote an upstream URL or a key) and an empty

@@ -1,12 +1,12 @@
 /**
- * Google OIDC login (U3, PHY-53) — env-driven and config-gated:
+ * Google OIDC login — env-driven and config-gated:
  * - Empty GOOGLE_CLIENT_ID (or SECRET) disables the feature entirely — the
  *   login-page button is hidden and /auth/google bounces to /login. Prod is
  *   safe when unconfigured.
  * - The three provider URLs default to the REAL Google endpoints and are
  *   overridable via env so the e2e mock provider (tests-e2e/mock-google.mjs)
- *   can stand in. This is configuration, not a code seam — ROADMAP §4
- *   explicitly rejects compiled-in test bypasses.
+ *   can stand in. This is configuration, not a code seam: no compiled-in
+ *   test bypasses.
  * - redirect_uri is built from PUBLIC_ORIGIN (dev default http://localhost:3041)
  *   + /auth/google/callback.
  */

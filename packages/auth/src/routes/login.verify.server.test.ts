@@ -61,7 +61,7 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-describe('POST /login/verify — no client IP (NSO-309)', () => {
+describe('POST /login/verify — no client IP', () => {
   it('many IP-less clients are never coupled: sign-ins far past the per-IP limit all succeed', async () => {
     vi.stubEnv('OTP_VERIFY_IP_LIMIT', '3');
     // 40 checks: past both the env limit (3) and the old hard-coded 30.

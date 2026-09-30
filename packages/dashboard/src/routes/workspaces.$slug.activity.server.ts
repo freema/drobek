@@ -1,8 +1,8 @@
 /**
- * GET /workspaces/:slug/activity — server half of the workspace Activity view
- * (governance v1, PHY-85). Lists the append-only audit trail for THIS workspace,
+ * GET /workspaces/:slug/activity — server half of the workspace Activity view.
+ * Lists the append-only audit trail for THIS workspace,
  * newest-first, filterable by app (subject) + action + actor kind (incl.
- * `end_user`, M2-04), keyset-paginated.
+ * `end_user`), keyset-paginated.
  *
  * Authz: requireWorkspaceRole('workspace-admin') — the audit trail is
  * workspace-admin / super-admin ONLY. A viewer or editor → 403, a non-member →
@@ -13,7 +13,7 @@
  * workspaceId) and the subject is plain text with no join to `apps`, so events
  * for a DELETED / tombstoned app still list.
  *
- * NSO-371: each row carries a readable summary, links to the objects it is
+ * Each row carries a readable summary, links to the objects it is
  * about that still exist (resolved per page against the live workspace — a
  * deleted app, version, upstream or domain is plain text with a note), and
  * its stored context for "Technical details" (credential-like keys redacted).
@@ -42,7 +42,7 @@ export interface ActivityQuery {
   action: string | null;
   /** App slug filter → matches the audit row's subject id (target), or null. */
   app: string | null;
-  /** Actor-kind filter (`?actor=user|agent|end_user`), or null (M2-04). */
+  /** Actor-kind filter (`?actor=user|agent|end_user`), or null. */
   actor: AuditActorKind | null;
   /** First UTC day of the range (`?from=YYYY-MM-DD`, inclusive), or null. */
   from: string | null;
@@ -112,7 +112,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   return {
     workspace: { slug: access.workspace.slug, name: access.workspace.name },
-    /** NSO-342: the shared workspace chrome (breadcrumb, badges, tabs). */
+    /** The shared workspace chrome (breadcrumb, badges, tabs). */
     nav: await workspaceNav(access),
     items: shapeActivity(
       result.rows.map((r) => ({

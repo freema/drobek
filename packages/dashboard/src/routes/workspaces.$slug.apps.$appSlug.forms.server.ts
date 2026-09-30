@@ -1,6 +1,6 @@
 /**
  * GET/POST /workspaces/:slug/apps/:appSlug/forms — server half of the Forms
- * tab (M2-03): the app's stored form submissions, through the forms module's
+ * tab: the app's stored form submissions, through the forms module's
  * `submissions` authority (the owner's view; the per-form `admin` rule of the
  * app host does not apply to workspace members).
  *
@@ -57,7 +57,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const base = {
     workspace: { slug: access.workspace.slug, name: access.workspace.name },
     appSlug: app.slug,
-    /** NSO-342: the app header + tabs on every app sub-page. */
+    /** The app header + tabs on every app sub-page. */
     header: await appHeaderFor(access, app.slug),
     filter: { form: f.form, from: f.from, to: f.to },
     search: formsSearch(f),

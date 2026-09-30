@@ -8,7 +8,7 @@ import { skipUnlessLocal } from './helpers/auth';
 import { FULL_SCOPE, callTool, mcpClient, type McpClient } from './helpers/mcp';
 
 /**
- * NSO-359: porting a Claude artifact to drobek — the procedure of the
+ * Porting a Claude artifact to drobek — the procedure of the
  * `port-artifact` skill, done here by the test the way an agent does it:
  *
  *  - the fixture `tests-eval/fixtures/artifact/` is a multi-file artifact
@@ -47,7 +47,7 @@ const onDashboard = (url: string): string => `${BASE_URL_WEB}${new URL(url).path
 
 test.describe.configure({ mode: 'serial' });
 
-test.describe('port a Claude artifact — text via write_files, binaries via upload URLs (NSO-359) @local', () => {
+test.describe('port a Claude artifact — text via write_files, binaries via upload URLs @local', () => {
   let mcp: McpClient;
   let app: Created & { host: string };
 

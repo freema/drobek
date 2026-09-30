@@ -1,5 +1,5 @@
 /**
- * drobek-module-sync — the BUILT-IN platform module `sync` (NSO-392): an app
+ * drobek-module-sync — the BUILT-IN platform module `sync`: an app
  * keeps a data collection filled from an external API on a schedule, without
  * running any app code and without the API key ever leaving the dashboard.
  *

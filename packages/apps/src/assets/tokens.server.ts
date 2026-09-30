@@ -1,5 +1,5 @@
 /**
- * Upload URLs for app assets (NSO-358): how a big file reaches drobek without
+ * Upload URLs for app assets: how a big file reaches drobek without
  * passing through an LLM. `create_asset_upload` (MCP, write scope) or the
  * dashboard's Assets tab mints one; the agent runs `curl -T <file> '<url>'`
  * in its own sandbox, or hands the link to the user.

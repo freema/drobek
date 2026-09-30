@@ -1,11 +1,11 @@
 /**
- * The module page's loader + action (M2-02, NSO-291) against a real PGlite
+ * The module page's loader + action against a real PGlite
  * database and a real ModuleRuntime (test modules; the workspace role gate is
  * stubbed — requireWorkspaceRole has its own tests in @drobek/tenancy):
  * form errors per field, pending via the configure path + confirm with audit,
  * write-only secrets (the value in no response, loader data or audit row),
  * the collections / upstreams editors — chosen by the module's declared
- * `dashboard.editor`, never by its name (NSO-347: the fixtures are NOT named
+ * `dashboard.editor`, never by its name (the fixtures are NOT named
  * data / proxy, and a module named `proxy` without the declaration gets the
  * generic form) — "About this module" + error codes, a viewer refused before
  * anything changes.
@@ -116,7 +116,7 @@ const gateway = defineModule<{ upstreams: Record<string, { rules: { call: string
       .default({}),
   }),
   configDefaults: { upstreams: {} },
-  // Like the real proxy module: assignments need a workspace ADMIN (NSO-322 H3).
+  // Like the real proxy module: assignments need a workspace ADMIN.
   confirmRequired: (b, a) =>
     Object.keys(a.upstreams)
       .filter((n) => !b.upstreams[n])
@@ -143,7 +143,7 @@ const proxy = defineModule<{ upstreams: Record<string, { url: string; retries?: 
   configDefaults: { upstreams: {}, slow: false },
 });
 
-/** NSO-346: an opt-in module — off for the workspace until a workspace_modules row enables it. */
+/** An opt-in module — off for the workspace until a workspace_modules row enables it. */
 const vault = defineModule<{ shelf: string }>({
   name: 'vault',
   version: '1.0.0',
@@ -154,7 +154,7 @@ const vault = defineModule<{ shelf: string }>({
 });
 
 /**
- * NSO-392: a scheduled-import module under another name — the sources panel
+ * A scheduled-import module under another name — the sources panel
  * follows the declared `sync` authority. Its state lives in memory: `FAILED`
  * holds the sources paused after failed runs.
  */
@@ -294,7 +294,7 @@ function drizzleDb() {
   return drizzle(pg, { schema });
 }
 
-describe('the module page (M2-02)', () => {
+describe('the module page', () => {
   it('loader: the generated form, the secrets as status only, the banner; unknown module / app → 404', async () => {
     const d = await load();
     expect(d.module).toMatchObject({ name: 'shop', confirms: true });
@@ -403,7 +403,7 @@ describe('the module page (M2-02)', () => {
     expect(await drizzleDb().select().from(moduleSecrets)).toEqual([]);
   });
 
-  it('a taken-down app (NSO-293): the banner, every change → 423 app_locked_by_admin, reject still allowed', async () => {
+  it('a taken-down app: the banner, every change → 423 app_locked_by_admin, reject still allowed', async () => {
     await drizzleDb().update(apps).set({ lockedReason: 'phishing' }).where(eq(apps.id, appId));
     try {
       expect((await load()).header.lockedByAdmin).toMatchObject({ reason: 'phishing' });
@@ -442,7 +442,7 @@ describe('the module page (M2-02)', () => {
       { path: 'upstreams.weather.rateLimit', before: '(not set)', after: '30' },
       { path: 'upstreams.weather.rules.call', before: '(not set)', after: '"user"' },
     ]);
-    // Only a workspace admin confirms it (NSO-322 H3): the editor sees why, and confirm is refused.
+    // Only a workspace admin confirms it: the editor sees why, and confirm is refused.
     expect(d.pending).toMatchObject({ confirmRole: 'admin', canConfirm: false });
     const refused = failed(await post('gateway', { intent: 'confirm' }));
     expect(refused.status).toBe(403);
@@ -560,7 +560,7 @@ describe('the module page (M2-02)', () => {
   });
 });
 
-describe('an opt-in module not enabled for the workspace (NSO-346)', () => {
+describe('an opt-in module not enabled for the workspace', () => {
   it('the page says so instead of the form, and every change answers 404 until it is enabled', async () => {
     const db = drizzleDb();
     expect((await load('vault')).enabled).toBe(false);
@@ -580,7 +580,7 @@ describe('an opt-in module not enabled for the workspace (NSO-346)', () => {
   });
 });
 
-describe('the sources of a scheduled-import module (NSO-392)', () => {
+describe('the sources of a scheduled-import module', () => {
   const configureImporter = (sources: Record<string, unknown>) =>
     rt.configure({ app: { id: appId, slug: 'shop-app', workspaceId: role.ws.id, workspaceSlug: 'acme' }, module: 'importer', patch: { sources }, actorUserId: role.user.id, surface: 'web' });
 

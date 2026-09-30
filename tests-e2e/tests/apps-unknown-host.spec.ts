@@ -6,7 +6,7 @@ import { skipUnlessLocal } from './helpers/auth';
 import { callTool, mcpClient } from './helpers/mcp';
 
 /**
- * NSO-315 acceptance, end to end against the local compose stack:
+ * Unknown app hosts end to end against the local compose stack:
  *   - an unknown slug is a 404 "no app" page (cached as a miss for 30 s) —
  *     and an app created under that very slug is served on the NEXT request
  *     (create_app announces a `create` app-changed event that drops the miss);

@@ -1,7 +1,6 @@
 /**
- * @drobek/auth — the U2+U3 auth feature (email magic-code + Redis sessions +
- * Google OIDC) as a workspace LIBRARY (PHY-53, ROADMAP §2 locked integration
- * model): heavy logic lives here; apps/web in this repo AND the private
+ * @drobek/auth — email magic-code + Redis sessions + Google OIDC, as a
+ * workspace LIBRARY: heavy logic lives here; apps/web in this repo AND the private
  * drobek-web app register thin route files that re-export the route modules
  * under `@drobek/auth/routes/*` (core APPS are deliberately not workspace
  * members of the SaaS repo, so app-local code cannot be shared — packages can).
@@ -95,8 +94,7 @@ export {
 } from './origin-check.js';
 export { maskEmail } from './mask-email.js';
 export { logger, serializeError } from './logger.server.js';
-// The transport + layout moved to @drobek/email (M1-04); re-exported so
-// existing consumers (tenancy invites, drobek-web) keep working.
+// Re-exported from @drobek/email for tenancy invites and drobek-web.
 export {
   smtpConfigured,
   getSmtpTransport,

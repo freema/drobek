@@ -1,5 +1,5 @@
 /**
- * NSO-340 — the public gallery on a real (PGlite) database: listing needs a
+ * The public gallery on a real (PGlite) database: listing needs a
  * published app and a valid description; the public list filters at query
  * time (unpublished, password-gated, taken down, deleted, hidden → gone) and
  * carries no owner data; unpublish / takedown clear the flag; the cursor

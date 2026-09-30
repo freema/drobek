@@ -11,7 +11,7 @@ afterEach(() => {
   resetSmtpTransportForTests();
 });
 
-describe('sendLoginCodeEmail — the operator transport (NSO-361)', () => {
+describe('sendLoginCodeEmail — the operator transport', () => {
   it('EMAIL_TRANSPORT=resend: the sign-in code goes out through the Resend API', async () => {
     vi.stubEnv('EMAIL_TRANSPORT', 'resend');
     vi.stubEnv('RESEND_API_KEY', KEY);

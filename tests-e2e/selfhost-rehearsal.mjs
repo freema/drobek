@@ -1,5 +1,5 @@
 /**
- * The agent half of scripts/selfhost-rehearsal.sh (M4-03) — NOT a Playwright
+ * The agent half of scripts/selfhost-rehearsal.sh — NOT a Playwright
  * spec. Lives in tests-e2e/ for its @modelcontextprotocol/sdk dependency.
  *
  *   node tests-e2e/selfhost-rehearsal.mjs seed    create + write + publish an

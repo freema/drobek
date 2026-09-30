@@ -1,5 +1,5 @@
 /**
- * NSO-340 — /duplicate/:slug on a real PGlite database (the session is
+ * /duplicate/:slug on a real PGlite database (the session is
  * stubbed; workspaces and roles are real):
  *  - signed out → /login?returnTo=/duplicate/<slug>;
  *  - the confirm page: the source's public facts, the editor+ workspaces
@@ -137,7 +137,7 @@ beforeEach(() => {
   vi.stubEnv('GALLERY_ENABLED', 'true');
 });
 
-describe('/duplicate/:slug (NSO-340)', () => {
+describe('/duplicate/:slug', () => {
   it('signed out → the login page, which brings the visitor back', async () => {
     session.user = null;
     const res = await thrown(load('pixel-x'));

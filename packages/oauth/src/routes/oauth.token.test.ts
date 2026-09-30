@@ -1,6 +1,6 @@
 /**
- * /oauth/token authorization_code grant against a real (PGlite) database
- * (NSO-332): a failed exchange burns the code, and replaying a consumed code
+ * /oauth/token authorization_code grant against a real (PGlite) database:
+ * a failed exchange burns the code, and replaying a consumed code
  * revokes the refresh lineage + access tokens it minted. Exercises the drizzle
  * store's explicit refresh-token id (the code → lineage link).
  */
@@ -77,7 +77,7 @@ function refresh(refreshToken: string) {
   return post({ grant_type: 'refresh_token', refresh_token: refreshToken, client_id: clientId });
 }
 
-describe('POST /oauth/token — authorization code replay (NSO-332)', () => {
+describe('POST /oauth/token — authorization code replay', () => {
   it('a wrong code_verifier burns the code: the right one then gets invalid_grant', async () => {
     const { code, verifier } = await newCode();
     const wrong = await exchange(code, randomBytes(32).toString('base64url'));

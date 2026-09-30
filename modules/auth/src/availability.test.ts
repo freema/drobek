@@ -1,5 +1,5 @@
 /**
- * NSO-360 (review R3): an opt-in sign-in provider module follows the
+ * An opt-in sign-in provider module follows the
  * workspace switch through the REAL module runtime — provider discovery,
  * begin, the dashboard-host callback, complete, the `auth.signedIn` observer
  * and the sessions it made. Two workspaces, the provider module enabled for
@@ -203,7 +203,7 @@ beforeEach(async () => {
   for (const [k, v] of Object.entries(ENV)) vi.stubEnv(k, v);
 });
 
-describe('an opt-in sign-in provider follows the workspace switch (NSO-360)', () => {
+describe('an opt-in sign-in provider follows the workspace switch', () => {
   it('provider discovery: listed for the enabled workspace only', async () => {
     expect((await call(appA, 'GET', '/providers')).json).toEqual({ providers: [{ id: 'emailCode', label: 'E-mail code' }, { id: 'ssotest', label: 'Firm SSO' }] });
     expect((await call(appB, 'GET', '/providers')).json).toEqual({ providers: [{ id: 'emailCode', label: 'E-mail code' }] });

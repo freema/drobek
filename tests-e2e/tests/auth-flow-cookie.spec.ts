@@ -7,7 +7,7 @@ import { skipUnlessLocal } from './helpers/auth';
 import { seedApp, seedVersion, withDb } from './helpers/seed';
 
 /**
- * NSO-360 (review R2): the provider sign-in's flow cookie cannot be planted by
+ * The provider sign-in's flow cookie cannot be planted by
  * a SIBLING app host. Two apps of this server are siblings under APPS_DOMAIN
  * (`<a>--preview.apps.localhost`, `<b>--preview.apps.localhost`); a page on
  * one may set a cookie with `Domain=<APPS_DOMAIN>` that the browser then
@@ -96,7 +96,7 @@ async function openComplete(page: Page, host: string, code: string) {
   };
 }
 
-test.describe('auth provider flow cookie — sibling app hosts (NSO-360) @local', () => {
+test.describe('auth provider flow cookie — sibling app hosts @local', () => {
   test.skip(APPS_URL_SCHEME !== 'https', 'cookie prefixes need https app hosts (task e2e:image)');
 
   let targetId: string;

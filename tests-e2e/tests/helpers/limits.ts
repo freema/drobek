@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { Redis } from 'ioredis';
 
 /**
- * The fake limits provider (NSO-352): both composes point LIMITS_PROVIDER_URL
+ * The fake limits provider: both composes point LIMITS_PROVIDER_URL
  * at proxy-echo, which answers a workspace's plan from
  * tests-e2e/.limits-provider/<workspace_id>.json (bind-mounted), else `{}`.
  * drobek caches an answer 60 s in Redis (`drobek:limits:<workspace_id>`), so a

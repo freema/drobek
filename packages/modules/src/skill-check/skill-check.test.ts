@@ -1,5 +1,5 @@
 /**
- * NSO-349: `checkSkill(module)` — the SKILL.md gate of the built-in modules as
+ * `checkSkill(module)` — the SKILL.md gate of the built-in modules as
  * a library for external module authors (@drobek/modules/testing), plus the
  * test-database helpers `coreMigrationsDir()` / `createTestApp()`.
  */

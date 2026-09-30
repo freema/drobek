@@ -8,10 +8,10 @@ import {
 } from './helpers/auth';
 
 /**
- * U4 acceptance (PHY-54): workspaces (personal + team), fixed roles, and
- * Redis-backed invites against the local compose stack. Mirrors the ROADMAP
- * §5 e2e line — "personal ws on signup; invite→accept→editor; viewer mutation
- * 403" — plus the single-use / expired / anonymous negatives. Everything runs
+ * Workspaces (personal + team), fixed roles and Redis-backed invites against
+ * the local compose stack: personal workspace on signup, invite → accept →
+ * editor, viewer mutation 403, plus the single-use / expired / anonymous
+ * negatives. Everything runs
  * in one browser context per test, switching users by logging out and back in
  * (invites are consumed server-side, so sequencing is deterministic).
  */

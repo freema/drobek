@@ -1,5 +1,5 @@
 /**
- * What a form submission may contain (M1-04). A flat object of fields:
+ * What a form submission may contain. A flat object of fields:
  * strings (≤ 10 000 characters), finite numbers, booleans, null, or lists of
  * strings (a multi-select, a repeated multipart name). No nested objects, no
  * files (upload through the files module and submit the id). Field names are

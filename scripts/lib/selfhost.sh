@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Shared helpers of the self-host scripts (M4-03): selfhost-init.sh,
+# Shared helpers of the self-host scripts: selfhost-init.sh,
 # selfhost-backup.sh, selfhost-restore.sh, selfhost-rehearsal.sh. Sourced, never
 # run. Plain bash 3.2 (macOS) compatible: no associative arrays, no mapfile.
 #

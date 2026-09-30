@@ -1,5 +1,5 @@
 /**
- * The operator-wide brake on module e-mail (M1-04, §6 "Spam"; NSO-320): every
+ * The operator-wide brake on module e-mail: every
  * address any platform module sends to counts against an hourly budget of
  * `EMAIL_GLOBAL_HOURLY_MAX` recipients (all apps together), split in two
  * classes so a flood of notifications can never lock end users out:
@@ -8,7 +8,7 @@
  *    reserved share, `EMAIL_SIGNIN_HOURLY_MAX` (default 20 % of the global
  *    cap, at least 50, never more than half of it), and ONE app may use at
  *    most `EMAIL_SIGNIN_APP_HOURLY_SHARE` percent of it (default 25, at least
- *    10 codes) — so one app can never pause sign-in for all (NSO-322 H2);
+ *    10 codes) — so one app can never pause sign-in for all;
  *  - `notification` — everything else (form notifications, notifyAdmins,
  *    mail to the signed-in user): the rest of the global cap, and ONE app
  *    may use at most `EMAIL_APP_HOURLY_SHARE` percent of it (default 25).
@@ -16,7 +16,7 @@
  * On top of the per-app shares, ONE workspace (all its apps together) may use
  * at most `EMAIL_WORKSPACE_HOURLY_SHARE` percent of each class (default 50,
  * never less than one app's share) — so a workspace with four apps cannot
- * take a whole class and pause it for every other workspace (NSO-323 M4).
+ * take a whole class and pause it for every other workspace.
  * Both shares must pass.
  *
  * The two class budgets add up to the global cap, so the operator's mailbox
@@ -24,8 +24,8 @@
  * Past a class budget, THAT class pauses for exactly
  * `EMAIL_GLOBAL_PAUSE_MINUTES` and an ALERT line for the super-admin goes to
  * the log (`event: email_global_pause`, with the `class`): the mailbox is
- * protected before the SMTP provider suspends it. The pause is a FIXED window
- * (NSO-327): tripping it also resets the class counter, so the first message
+ * protected before the SMTP provider suspends it. The pause is a FIXED window:
+ * tripping it also resets the class counter, so the first message
  * after the pause starts a fresh hourly budget instead of re-tripping the
  * pause until the old hour ends — the per-app and per-workspace shares stay
  * hourly, so the apps that filled the class stay refused until THEIR hour

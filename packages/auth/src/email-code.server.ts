@@ -1,17 +1,13 @@
 /**
- * Email magic-code auth — code create/consume (ported from puls, U2 deltas):
+ * Email magic-code auth — code create/consume:
  * - 6-digit NUMERIC code (crypto randomInt per digit, leading zeros allowed).
  * - Stored as SHA-256 hex in `drobek:otp:code:<sha256(email)>`, TTL 600 s.
  * - Max 5 guesses per code, tracked by an ATOMIC counter in a sibling key
  *   `drobek:otp:attempts:<sha256(email)>`; the 6th guess is refused even with
- *   the correct code (PHY-76 #1).
+ *   the correct code.
  *
- * Why a separate INCR counter (not an `attempts` field in the record): the
- * former read-modify-write (`GET rec` → `rec.attempts += 1` → `SET rec`) had no
- * atomicity, so a flood of concurrent guesses all read the same low count
- * before any write-back and the cap could be raced past for the full 600 s TTL
- * — an unauthenticated brute-force account-takeover of the 10^6 code space.
- * `INCR` is atomic and evaluated FIRST, so Redis serializes the guesses and at
+ * A separate INCR counter, not an `attempts` field in the record: a
+ * read-modify-write lets concurrent guesses race past the cap. `INCR` is atomic and evaluated FIRST, so Redis serializes the guesses and at
  * most CODE_MAX_ATTEMPTS of them are ever checked against a live code,
  * regardless of concurrency. IP/enumeration flooding is bounded separately by
  * the verify-side rate limit in login.verify.server.ts.
@@ -41,7 +37,7 @@ function emailHash(email: string): string {
 /**
  * Where a code lives. `undefined` = the dashboard login (`drobek:otp:…`, the
  * original keys); a scope such as `eu:<app_id>` = the end users of ONE app
- * (the platform `auth` module, M1-02): `drobek:otp:eu:<app_id>:…`. A code of
+ * (the platform `auth` module): `drobek:otp:eu:<app_id>:…`. A code of
  * one scope can never be consumed in another — same code, same counter
  * semantics, separate key spaces.
  */
@@ -111,7 +107,7 @@ export async function consumeEmailLoginCode(
   // so Redis serializes concurrent guesses and hands each a distinct count —
   // only the first CODE_MAX_ATTEMPTS ever proceed to a comparison against a live
   // code. Everything past the cap is refused without evaluating a guess, which
-  // is what defeats the concurrent brute-force (PHY-76 #1).
+  // is what defeats the concurrent brute-force.
   const attempts = await r.incr(attemptsKey);
   if (attempts === 1) {
     // Bound the counter's lifetime to the code TTL (createEmailLoginCode also
@@ -150,9 +146,9 @@ export async function consumeEmailLoginCode(
 }
 
 /**
- * How far the client-IP headers are trusted (`TRUST_PROXY`, M0-07):
+ * How far the client-IP headers are trusted (`TRUST_PROXY`):
  *
- * - `auto` (unset — the PHY-76 #4 behaviour): prefer `X-Real-IP`, fall back to
+ * - `auto` (unset): prefer `X-Real-IP`, fall back to
  *   the RIGHTMOST `X-Forwarded-For` hop. Right for an nginx front that sets
  *   `X-Real-IP $remote_addr` and appends to XFF.
  * - `x-real-ip`: drobek sits behind the bundled Caddy (or any proxy that
@@ -178,7 +174,7 @@ export function trustProxyConfigError(env: NodeJS.ProcessEnv = process.env): str
 
 /**
  * Best-effort client IP for per-IP rate limits. Trusts the reverse proxy, NOT
- * the client (PHY-76 #4):
+ * the client:
  *
  * - Prefer `X-Real-IP`: prod nginx sets it to `$remote_addr` (the real TCP peer)
  *   and OVERWRITES any client-sent value, so it cannot be spoofed from outside.

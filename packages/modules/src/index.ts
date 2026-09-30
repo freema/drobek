@@ -1,5 +1,5 @@
 /**
- * @drobek/modules — the platform module contract and runtime (M1-01).
+ * @drobek/modules — the platform module contract and runtime.
  *
  * A module is PLATFORM code the operator installs (`DROBEK_MODULES`): server
  * routes under `/__drobek/v1/<module>/…` on the app hosts, a slice of the
@@ -128,9 +128,9 @@ export {
 } from './auth-provider.js';
 export { CORE_ERROR_CODES, MODULE_ERROR_CODES, ModuleError, isModuleError, moduleNotEnabled, skillHint, issuePaths, type ModuleErrorBody, type ModuleErrorCode } from './errors.js';
 export { RULE_TOKENS, decideAccess, isValidRule, parseRule, ruleIsPublic } from './rules.js';
-/** Per-client-IP bucket keys for a module's own per-IP limits (null = no resolved IP → skip it; NSO-328). */
+/** Per-client-IP bucket keys for a module's own per-IP limits (null = no resolved IP → skip it). */
 export { perIpLimitKey } from '@drobek/core';
-/** Byte sniffing shared with app assets (NSO-358): a module decides a stored file's type from its bytes. */
+/** Byte sniffing shared with app assets: a module decides a stored file's type from its bytes. */
 export { hasControlBytes, looksLikeSvg, sniffSignature, type SniffedType } from '@drobek/core';
 export { mergePatch, jsonEqual } from './merge-patch.js';
 export { Lru, jsonKey, stableJson } from './memo.js';
@@ -238,7 +238,7 @@ export {
   type SlotContribution,
 } from './registry.js';
 export { DEFAULT_MODULES_DIR } from './dir-modules.js';
-// NSO-340: the module configs of a duplicated gallery app, proposed through the copy's confirmation flow.
+// The module configs of a duplicated gallery app, proposed through the copy's confirmation flow.
 export {
   NOT_COPIED_MODULES,
   configForCopy,

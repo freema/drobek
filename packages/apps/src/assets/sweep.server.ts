@@ -1,5 +1,5 @@
 /**
- * The assets sweep (NSO-358): hourly, one replica at a time (Redis lease).
+ * The assets sweep: hourly, one replica at a time (Redis lease).
  *
  *   1. apps deleted more than ASSETS_SWEEP_RETENTION_MS (24 h) ago: their
  *      `app_assets` and `app_version_assets` rows and their directory
@@ -9,7 +9,7 @@
  *   2. temp uploads (`ASSETS_DIR/tmp/*.part`) older than the retention —
  *      what a crash mid-upload left behind;
  *   3. files in an app directory that neither the draft nor a kept published
- *      set references (NSO-362: a set pruned or replaced by a publish, a
+ *      set references (a set pruned or replaced by a publish, a
  *      restore that reset the draft, an upload that failed after its file
  *      was moved into place) and that are older than an hour — decided and
  *      removed under the app's assets lock, so an upload reusing the bytes

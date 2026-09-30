@@ -14,7 +14,7 @@ import { FULL_SCOPE, callTool, mcpClient, type McpClient } from './helpers/mcp';
 import { withDb } from './helpers/seed';
 
 /**
- * M4-02 (NSO-293): abuse and moderation end to end on the local stack.
+ * Abuse and moderation end to end on the local stack.
  *
  *  - the publish heuristic flags a "bank login" app (password field + "bank"
  *    in the title/h1) into the queue and does NOT flag a calculator — neither
@@ -31,8 +31,7 @@ import { withDb } from './helpers/seed';
  *    serves again, write_files works), owner e-mailed, audit `admin.restore`;
  *  - the form allows 5 valid reports per IP per hour (the 6th → 429).
  *
- * The super-admin is `e2e-superadmin@drobek.test` — docker-compose.yml appends
- * it to SUPERADMIN_EMAIL in dev, docker-compose.e2e.yaml sets it.
+ * The super-admin is `e2e-superadmin@drobek.test` (set by both composes).
  */
 
 const SUPER_ADMIN = 'e2e-superadmin@drobek.test';
@@ -154,7 +153,7 @@ async function createAndPublish(mcp: McpClient, name: string, mainTsx: string): 
 
 test.describe.configure({ mode: 'serial' });
 
-test.describe('abuse: reports, takedown/restore, publish heuristic (M4-02) @local', () => {
+test.describe('abuse: reports, takedown/restore, publish heuristic @local', () => {
   let owner: McpClient;
   let bank: Created;
   let calc: Created;
@@ -275,7 +274,7 @@ test.describe('abuse: reports, takedown/restore, publish heuristic (M4-02) @loca
     await expect(row.getByTestId('abuse-app')).toHaveAttribute('href', new RegExp(`/apps/${bank.slug}$`));
     await expect(row.getByTestId('moderation-app-public')).toHaveAttribute('href', new RegExp(`${bank.slug}\\.`));
     await row.getByTestId('takedown-reason').selectOption('phishing');
-    // NSO-371: the first click only opens the confirm panel; Cancel changes nothing.
+    // The first click only opens the confirm panel; Cancel changes nothing.
     await row.getByTestId('takedown').click();
     const confirm = ap.getByTestId('takedown-confirm');
     await expect(confirm).toHaveAttribute('data-app-slug', bank.slug);
@@ -371,7 +370,7 @@ test.describe('abuse: reports, takedown/restore, publish heuristic (M4-02) @loca
     await resetRateLimitBucket(REPORT_BUCKET);
     const form = { host: prodHost(calc.slug), reason: 'spam', details: 'rate limit probe', email: '', website: '' };
     // A client IP of its own: on the dev stack a request without one has no
-    // per-IP bucket (NSO-328); behind Caddy it is the runner's IP anyway.
+    // per-IP bucket; behind Caddy it is the runner's IP anyway.
     const headers = ownClientIpHeaders();
     // An invalid submission is refused (400) and does not count.
     const invalid = await request.post('/report', { headers, form: { ...form, reason: 'not-a-reason' } });

@@ -1,10 +1,10 @@
 /**
- * The publish readiness report of a STORED version (NSO-384) — what publish
+ * The publish readiness report of a STORED version — what publish
  * returns and the dashboard's app page shows. The same @drobek/compile
  * `readinessReport` write_files runs over its in-memory files: blocking = the
  * version's stored compile errors, warnings = the registered checks over its
  * source files (never executed) and the app's module configs, plus the
- * version's background TypeScript check (NSO-388, `type_error` warnings).
+ * version's background TypeScript check (`type_error` warnings).
  */
 import {
   TEXT_EXTS,

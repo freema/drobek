@@ -1,6 +1,6 @@
 /**
  * GET/POST /workspaces/:slug/apps/:appSlug/uploads — server half of the
- * Uploads tab (M2-03): the files the app's end users uploaded, through the
+ * Uploads tab: the files the app's end users uploaded, through the
  * files module's `files` authority (the owner's view: every file, whatever the
  * app's read rule).
  *
@@ -28,7 +28,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const base = {
     workspace: { slug: access.workspace.slug, name: access.workspace.name },
     appSlug: app.slug,
-    /** NSO-342: the app header + tabs on every app sub-page. */
+    /** The app header + tabs on every app sub-page. */
     header: await appHeaderFor(access, app.slug),
     canDelete: access.effectiveRole !== 'viewer',
     confirmId: (url.searchParams.get('confirm') ?? '').slice(0, 64),

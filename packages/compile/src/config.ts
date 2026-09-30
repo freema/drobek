@@ -16,8 +16,8 @@ export interface AppConfig {
    */
   entries: Record<string, string>;
   /**
-   * `"beacon": false` in drobek.json turns the browser error beacon off
-   * (M1-07): the compiler then adds no beacon import. Default true.
+   * `"beacon": false` in drobek.json turns the browser error beacon off:
+   * the compiler then adds no beacon import. Default true.
    */
   beacon: boolean;
 }

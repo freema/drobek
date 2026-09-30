@@ -6,7 +6,7 @@ import { callTool, mcpClient, type McpClient } from './helpers/mcp';
 import { withDb } from './helpers/seed';
 
 /**
- * M1-02 (NSO-294): the built-in platform module `auth` end to end on the apps
+ * The built-in platform module `auth` end to end on the apps
  * host (DROBEK_MODULES=hello,auth,email,forms in both composes, relaxed AUTH_* limits):
  *
  *  - skill_info('auth') carries the <LoginGate> example; an agent writes it
@@ -18,7 +18,7 @@ import { withDb } from './helpers/seed';
  *  - a real browser signs in through <LoginGate> with the Mailpit code and
  *    sees the gated content; the session cookie is host-only (not sent to
  *    another app's host), HttpOnly, SameSite=Lax (Secure + __Host- on https);
- *  - wrong codes → invalid_code, then too_many_attempts (PHY-76 #1);
+ *  - wrong codes → invalid_code, then too_many_attempts;
  *  - adminEmails → role admin;
  *  - the owner's dashboard API revokes every session of the app (guards as
  *    the confirm API; audit end_users.sessions_revoke, actor_kind user);
@@ -132,7 +132,7 @@ function revoke(api: APIRequestContext, appId: string, origin: string | null = B
 
 test.describe.configure({ mode: 'serial' });
 
-test.describe('platform module auth — end-user sign-in (M1-02) @local', () => {
+test.describe('platform module auth — end-user sign-in @local', () => {
   let mcp: McpClient;
   let owner: BrowserContext;
   /** The browser of the end user ANA (kept across tests: the revoke test signs it out). */

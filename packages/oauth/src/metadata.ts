@@ -1,5 +1,5 @@
 /**
- * Discovery metadata + origin helpers (U5, M0-04). Pure functions so the
+ * Discovery metadata + origin helpers. Pure functions so the
  * Authorization Server routes and the MCP Resource Server build consistent
  * identities from ONE place. No secrets, no DB.
  */

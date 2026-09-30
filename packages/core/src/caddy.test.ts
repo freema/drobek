@@ -1,5 +1,5 @@
 /**
- * Caddyfile generator (M0-07): strict env validation and one snapshot per TLS
+ * Caddyfile generator: strict env validation and one snapshot per TLS
  * mode. The snapshots in __snapshots__/ are also the reference examples that
  * docs/SELF-HOSTING.md points at.
  */
@@ -127,7 +127,7 @@ describe('proxy + secret invariants (every mode)', () => {
   });
 });
 
-describe('custom domains (M3-01): the on-demand catch-all behind the ask', () => {
+describe('custom domains: the on-demand catch-all behind the ask', () => {
   const CATCH_ALL = '\nhttps:// {\n\ttls {\n\t\ton_demand\n\t}\n\timport drobek\n}\n';
 
   it('on by default in on-demand mode; TLS_CUSTOM_DOMAINS=0 turns it off', () => {

@@ -1,4 +1,4 @@
-/** Test helpers for app assets (NSO-358). */
+/** Test helpers for app assets. */
 
 /** `size` bytes that sniff as MP4: an `ftyp` box with the isom brand, then filler. */
 export function fakeMp4(size = 4096, fill = 7): Buffer {

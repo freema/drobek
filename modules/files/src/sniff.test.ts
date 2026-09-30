@@ -52,7 +52,7 @@ describe('sniffing (the bytes decide, never the name or the declared type)', () 
     expect(looksLikeSvg('<!---->'.repeat(10) + '<svg>')).toBe(true);
   });
 
-  it('SVG sniffing is linear: pathological 16 KiB heads answer fast (NSO-322 R1)', () => {
+  it('SVG sniffing is linear: pathological 16 KiB heads answer fast', () => {
     const fill = (unit: string, tail = 'a'): Buffer => Buffer.from(unit.repeat(Math.floor((SNIFF_HEAD_BYTES - tail.length) / unit.length)) + tail);
     const inputs = [
       fill('<?xml?>'), // overlapping `<?xml…?>` / `<?…?>` alternatives in the old regex

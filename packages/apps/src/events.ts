@@ -1,5 +1,5 @@
 /**
- * "An app changed" notifications (M0-05/M0-06): every new version, restore and
+ * "An app changed" notifications: every new version, restore and
  * publish announces itself so the app hosts' serve cache drops what it knows
  * about that app. Two paths, both best effort:
  *   - the Redis pub/sub channel `drobek:app-changed` (every drobek process,
@@ -21,8 +21,8 @@ export interface AppChangedEvent {
   /** The version that was written / restored / published, when there is one. */
   version?: number;
   /**
-   * `domain` (M3-01): a custom domain of the app was added, verified, unverified, removed or made primary.
-   * `create` (NSO-315): the app row was just created — the app hosts forget a
+   * `domain`: a custom domain of the app was added, verified, unverified, removed or made primary.
+   * `create`: the app row was just created — the app hosts forget a
    * cached "no such slug", so the new app is reachable at once.
    */
   kind?: 'version' | 'publish' | 'unpublish' | 'settings' | 'delete' | 'domain' | 'create';

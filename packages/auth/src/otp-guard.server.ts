@@ -14,7 +14,7 @@
  *   5. global hourly brake   (OTP_GLOBAL_HOURLY_MAX / h) → auto-pause + ALERT
  *
  * No resolvable client IP (`ip` undefined — no trusted proxy header) → steps 1
- * and 2 are SKIPPED, never keyed on a shared `unknown` bucket (NSO-309): that
+ * and 2 are SKIPPED, never keyed on a shared `unknown` bucket: that
  * bucket coupled every such client and ~5 sends per 15 min locked the whole
  * instance out. Steps 3–5 (per-e-mail + the global brake) still apply, and a
  * client able to hide its IP could equally rotate spoofed headers.
@@ -22,7 +22,7 @@
  * On Redis errors the decision is FAIL-CLOSED (better a temporarily
  * unavailable login than thousands of un-throttled e-mails).
  *
- * CHARGE AFTER SEND (NSO-327): `guardOtpRequest` charges the counters as it
+ * CHARGE AFTER SEND: `guardOtpRequest` charges the counters as it
  * checks them (the dashboard login). The platform `auth` module sends its
  * codes through the module e-mail path, which can refuse a send (e-mail
  * paused, the app's share used up) AFTER the guard said yes — so it runs
@@ -33,7 +33,7 @@
  * both pass the last free slot of a counter; the module e-mail budgets
  * (per app and per workspace, @drobek/modules mail-guard) bound that.
  *
- * SCOPES (M1-02): `scope` undefined = the dashboard login (the original keys);
+ * SCOPES: `scope` undefined = the dashboard login (the original keys);
  * `eu:<app_id>` = the end users of one app (platform module `auth`). A scoped
  * request has its OWN per-IP, per-e-mail and hourly counters, cooldown and
  * auto-pause (one app's abuse never pauses the dashboard login or another
@@ -82,7 +82,7 @@ function envInt(
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
-/** puls defaults: 5 / 15 min, 20 / 24 h, 3 / 1 h, 60 s, 100 / h. */
+/** Defaults: 5 / 15 min, 20 / 24 h, 3 / 1 h, 60 s, 100 / h. */
 export function otpGuardLimitsFromEnv(
   env: NodeJS.ProcessEnv = process.env
 ): OtpGuardLimits {
@@ -219,7 +219,7 @@ export async function checkOtpRequest(args: {
     const paused = await pausedDecision(ip, email, scope);
     if (paused) return paused;
 
-    // 1 + 2. per-IP windows (skipped without a client IP — NSO-309)
+    // 1 + 2. per-IP windows (skipped without a client IP)
     if (ip && (await counterValue(bucket('otp-ip-15m', scope), ip)) >= limits.ipShortLimit) {
       logBlock('ip_short', { ip, email, scope, alert: true });
       return { ok: false, kind: 'error', status: 429, reason: 'ip_short', message: MSG_IP };
@@ -308,7 +308,7 @@ export async function guardOtpRequest(args: {
     const paused = await pausedDecision(ip, email, scope);
     if (paused) return paused;
 
-    // 1. per-IP short window (skipped without a client IP — NSO-309/328)
+    // 1. per-IP short window (skipped without a client IP)
     const ipKey = perIpLimitKey(ip, scope === undefined ? 'otp-ip' : 'eu:otp-ip', logger);
     const ipShort = ipKey
       ? await rateLimitRedis(bucket('otp-ip-15m', scope), ipKey, limits.ipShortLimit, IP_SHORT_WINDOW_MS)
@@ -324,7 +324,7 @@ export async function guardOtpRequest(args: {
       };
     }
 
-    // 2. per-IP daily window (skipped without a client IP — NSO-309/328)
+    // 2. per-IP daily window (skipped without a client IP)
     const ipDaily = ipKey
       ? await rateLimitRedis(bucket('otp-ip-24h', scope), ipKey, limits.ipDailyLimit, IP_DAILY_WINDOW_MS)
       : { ok: true };
@@ -340,9 +340,7 @@ export async function guardOtpRequest(args: {
     }
 
     // ── CAPTCHA seam ─────────────────────────────────────────────────────────
-    // U2 ships without a CAPTCHA vendor. When one lands (e.g. Turnstile), it
-    // slots in HERE: after the cheap IP gates, before any per-e-mail work —
-    // see puls otp-guard.server.ts step 3 for the reference shape.
+    // A CAPTCHA check belongs here: after the cheap IP gates, before any per-e-mail work.
     // ─────────────────────────────────────────────────────────────────────────
 
     // 3. per-e-mail cooldown — atomic SET NX PX. First of the e-mail checks so

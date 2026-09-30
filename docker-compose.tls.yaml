@@ -1,5 +1,5 @@
 # `task dev:tls` — the dev stack (docker-compose.yml) behind Caddy with
-# `tls internal` (M0-07). An OVERRIDE file, never used alone:
+# `tls internal`. An OVERRIDE file, never used alone:
 #
 #   docker compose -f docker-compose.yml -f docker-compose.tls.yaml up -d --wait
 #

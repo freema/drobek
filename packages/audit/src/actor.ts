@@ -1,16 +1,16 @@
 /**
- * @drobek/audit — pure, db-free actor + action vocabulary (PHY-85). Safe to
+ * @drobek/audit — pure, db-free actor + action vocabulary. Safe to
  * import from client OR server code (no @drobek/db pull). The server write/read
  * modules (*.server.ts) and the dashboard shaping both build on these.
  */
 
 /**
- * Mirrors the `audit_actor_kind` pg enum. `end_user` (M1-01) = a signed-in end
+ * Mirrors the `audit_actor_kind` pg enum. `end_user` = a signed-in end
  * user of an app acting through a platform module on the apps origin.
  */
 export type AuditActorKind = 'user' | 'agent' | 'end_user';
 
-/** Every actor kind, in display order — the Activity view's actor filter (M2-04). */
+/** Every actor kind, in display order — the Activity view's actor filter. */
 export const AUDIT_ACTOR_KINDS: readonly AuditActorKind[] = ['user', 'agent', 'end_user'];
 
 /** Narrow untrusted input (a query param) to an actor kind, or null. */
@@ -30,7 +30,7 @@ export type AuditSurface = 'mcp' | 'web' | 'apps';
 
 /**
  * The canonical surface → actor_kind mapping (pure; unit-tested). `apps` = a
- * platform-module request on an app host, made by the app's end user (M1-01).
+ * platform-module request on an app host, made by the app's end user.
  */
 export function actorKindForSurface(surface: AuditSurface): AuditActorKind {
   if (surface === 'mcp') return 'agent';
@@ -39,137 +39,133 @@ export function actorKindForSurface(surface: AuditSurface): AuditActorKind {
 }
 
 /**
- * The audit action vocabulary. PHY-85 SURFACES the events that already exist
- * (deploy/rollback) plus the tenancy + app-create events. The set is left OPEN
- * (the column is free text) for the events that land later — U11 end-user-auth
- * config, U12 proxy upstreams, and an app-visibility change once a change path
- * exists (none does yet). Those are DEFERRED, not built here.
+ * The audit action vocabulary. The column is free text, so the set stays open.
  */
 export const AUDIT_ACTIONS = {
   appCreate: 'app.create',
   appVersionWrite: 'app.version.write',
   appVersionRestore: 'app.version.restore',
   appPublish: 'app.publish',
-  /** Legacy (pre-M0-02 upload pipeline) — kept so historic rows still label. */
+  /** Legacy upload pipeline — kept so historic rows still label. */
   deployActivate: 'deploy.activate',
-  /** Legacy (pre-M0-02 upload pipeline). */
+  /** Legacy upload pipeline. */
   deployRollback: 'deploy.rollback',
   memberInvite: 'member.invite',
   memberAccept: 'member.accept',
   memberRoleChange: 'member.role_change',
-  /** M1-01: configure_module applied a module config change directly. */
+  /** `configure_module` applied a module config change directly. */
   moduleConfigure: 'module.configure',
-  /** M1-01: configure_module stored a change that needs the owner's confirmation. */
+  /** `configure_module` stored a change that needs the owner's confirmation. */
   modulePending: 'module.pending',
-  /** M1-01: the owner confirmed a pending module change in the dashboard. */
+  /** The owner confirmed a pending module change in the dashboard. */
   moduleConfirm: 'module.confirm',
-  /** M1-01: the owner rejected a pending module change in the dashboard. */
+  /** The owner rejected a pending module change in the dashboard. */
   moduleReject: 'module.reject',
-  /** M1-02: an end user signed in to an app (platform module auth, actor end_user). */
+  /** An end user signed in to an app (platform module auth, actor end_user). */
   authSignIn: 'auth.sign_in',
-  /** M1-02: the owner signed every end user of an app out (session epoch bump). */
+  /** The owner signed every end user of an app out (session epoch bump). */
   endUserSessionsRevoke: 'end_users.sessions_revoke',
-  /** M1-04: a module sent e-mail through ctx.email.send (counts and kind only — never addresses). */
+  /** A module sent e-mail through ctx.email.send (counts and kind only — never addresses). */
   emailSend: 'email.send',
-  /** M1-04: an app admin exported a form's submissions as CSV (form + row count, never values). */
+  /** An app admin exported a form's submissions as CSV (form + row count, never values). */
   formsExport: 'forms.export',
-  /** M1-03: an app admin exported a data collection as CSV (collection + row count). */
+  /** An app admin exported a data collection as CSV (collection + row count). */
   dataExport: 'data.export',
-  /** PHY-59: a workspace admin registered a proxy upstream (@drobek/proxy PROXY_AUDIT_ACTIONS). */
+  /** A workspace admin registered a proxy upstream (@drobek/proxy PROXY_AUDIT_ACTIONS). */
   proxyUpstreamCreate: 'proxy.upstream.create',
-  /** PHY-59: a workspace admin deleted a proxy upstream. */
+  /** A workspace admin deleted a proxy upstream. */
   proxyUpstreamDelete: 'proxy.upstream.delete',
-  /** M1-06: the proxy module refused a call (SSRF guard, port, rule) — upstream + reason. */
+  /** The proxy module refused a call (SSRF guard, port, rule) — upstream + reason. */
   proxyBlocked: 'proxy.blocked',
-  /** M2-04: a user created a personal API key (name + scopes, never the key). Personal workspace. */
+  /** A user created a personal API key (name + scopes, never the key). Personal workspace. */
   apiKeyCreate: 'api_key.create',
-  /** M2-04: a user revoked one of their API keys. Personal workspace. */
+  /** A user revoked one of their API keys. Personal workspace. */
   apiKeyRevoke: 'api_key.revoke',
-  /** M2-04: a user revoked an OAuth client's access (all its tokens for that user). Personal workspace. */
+  /** A user revoked an OAuth client's access (all its tokens for that user). Personal workspace. */
   oauthClientRevoke: 'oauth_client.revoke',
-  /** M2-01: the production host stopped serving (published pointer cleared). */
+  /** The production host stopped serving (published pointer cleared). */
   appUnpublish: 'app.unpublish',
-  /** M2-01: the app was soft-deleted (invisible everywhere; slug held 30 days). */
+  /** The app was soft-deleted (invisible everywhere; slug held 30 days). */
   appDelete: 'app.delete',
-  /** M2-01: a deleted app's slug was released (system; renamed to its tombstone). */
+  /** A deleted app's slug was released (system; renamed to its tombstone). */
   appSlugRelease: 'app.slug_release',
-  /** M2-01: a member removed an agent's single-writer lease (meta: the previous holder). */
+  /** A member removed an agent's single-writer lease (meta: the previous holder). */
   appLockRelease: 'app.lock.release',
-  /** M2-01: the app was made public (no password gate). */
+  /** The app was made public (no password gate). */
   appVisibilityPublic: 'app.visibility.public',
-  /** M2-01: the app was put behind a password, or its password was changed. */
+  /** The app was put behind a password, or its password was changed. */
   appVisibilityPassword: 'app.visibility.password',
-  /** M2-01: the app's CSP frame-ancestors override changed (meta: the new value). */
+  /** The app's CSP frame-ancestors override changed (meta: the new value). */
   appFrameAncestors: 'app.frame_ancestors.change',
-  /** M3-01: an owner attached a custom domain to an app (hostname in meta). */
+  /** An owner attached a custom domain to an app (hostname in meta). */
   domainAdd: 'domain.add',
-  /** M3-01: a custom domain passed its DNS verification (TXT + CNAME). */
+  /** A custom domain passed its DNS verification (TXT + CNAME). */
   domainVerify: 'domain.verify',
-  /** M3-01: the daily DNS re-check found the records gone and dropped the verification (system). */
+  /** The daily DNS re-check found the records gone and dropped the verification (system). */
   domainUnverify: 'domain.unverify',
-  /** M3-01: an owner made a verified domain the primary one (or cleared it). */
+  /** An owner made a verified domain the primary one (or cleared it). */
   domainPrimary: 'domain.primary',
-  /** M3-01: an owner removed a custom domain (Caddy's certificate expires on its own). */
+  /** An owner removed a custom domain (Caddy's certificate expires on its own). */
   domainRemove: 'domain.remove',
-  /** M2-03: the owner edited a record in the dashboard Data tab (collection + id, never values). */
+  /** The owner edited a record in the dashboard Data tab (collection + id, never values). */
   dataRecordUpdate: 'data.record_update',
-  /** M2-03: the owner deleted a record in the dashboard Data tab. */
+  /** The owner deleted a record in the dashboard Data tab. */
   dataRecordDelete: 'data.record_delete',
-  /** M2-03: the owner imported a CSV into a collection (collection + row count). */
+  /** The owner imported a CSV into a collection (collection + row count). */
   dataImport: 'data.import',
-  /** M2-03: the owner deleted a collection (its records and its declaration). */
+  /** The owner deleted a collection (its records and its declaration). */
   dataCollectionDelete: 'data.collection_delete',
   /**
-   * NSO-324: the records of a removed collection were purged — on the owner's
+   * The records of a removed collection were purged — on the owner's
    * confirmation of the config change that removed it, or of an orphan
    * collection from the Data tab (meta: collection + record count).
    */
   dataCollectionPurge: 'data.collection.purge',
-  /** M2-03: the owner deleted a form submission. */
+  /** The owner deleted a form submission. */
   formsSubmissionDelete: 'forms.submission_delete',
-  /** M2-03: the owner changed an end user's role (end-user id + role, never the address). */
+  /** The owner changed an end user's role (end-user id + role, never the address). */
   endUserRole: 'end_users.role',
-  /** M2-03: the owner blocked an end user. */
+  /** The owner blocked an end user. */
   endUserDisable: 'end_users.disable',
-  /** M2-03: the owner unblocked an end user. */
+  /** The owner unblocked an end user. */
   endUserEnable: 'end_users.enable',
-  /** M1-05 / M2-03: an uploaded file was deleted (by the app's end user, or by the owner in the dashboard). */
+  /** An uploaded file was deleted (by the app's end user, or by the owner in the dashboard). */
   filesDelete: 'files.delete',
-  /** NSO-358: an app asset was uploaded or replaced (name, size, sniffed type, how — never a token). */
+  /** An app asset was uploaded or replaced (name, size, sniffed type, how — never a token). */
   assetUpload: 'asset.upload',
-  /** NSO-358: an app asset was deleted (name + size). */
+  /** An app asset was deleted (name + size). */
   assetDelete: 'asset.delete',
-  /** M4-02: someone reported an app through the public abuse form (report id + reason only). */
+  /** Someone reported an app through the public abuse form (report id + reason only). */
   abuseReport: 'abuse.report',
-  /** M4-02: a super-admin took an app down (unpublished + locked; meta.reason = the category). */
+  /** A super-admin took an app down (unpublished + locked; meta.reason = the category). */
   adminTakedown: 'admin.takedown',
-  /** M4-02: a super-admin lifted a takedown (the app stays unpublished until its owner publishes). */
+  /** A super-admin lifted a takedown (the app stays unpublished until its owner publishes). */
   adminRestore: 'admin.restore',
-  /** NSO-340: the app was listed in the public gallery, or its gallery description changed (meta: description). */
+  /** The app was listed in the public gallery, or its gallery description changed (meta: description). */
   appGalleryListed: 'app.gallery_listed',
-  /** NSO-340: the app left the public gallery (meta.reason: owner | unpublish | takedown). */
+  /** The app left the public gallery (meta.reason: owner | unpublish | takedown). */
   appGalleryUnlisted: 'app.gallery_unlisted',
-  /** NSO-340: a super-admin hid the app's gallery entry. */
+  /** A super-admin hid the app's gallery entry. */
   appGalleryHidden: 'app.gallery_hidden',
-  /** NSO-340: a super-admin showed a hidden gallery entry again. */
+  /** A super-admin showed a hidden gallery entry again. */
   appGalleryUnhidden: 'app.gallery_unhidden',
-  /** NSO-340: this app was created as a copy of a gallery app (meta: from = the source slug, version). */
+  /** This app was created as a copy of a gallery app (meta: from = the source slug, version). */
   appDuplicate: 'app.duplicate',
-  /** NSO-340: someone duplicated this gallery app into their own workspace (no details about them). */
+  /** Someone duplicated this gallery app into their own workspace (no details about them). */
   appDuplicated: 'app.duplicated',
-  /** NSO-346: a super-admin enabled an opt-in platform module for the workspace (meta: module). */
+  /** A super-admin enabled an opt-in platform module for the workspace (meta: module). */
   moduleWorkspaceEnable: 'module.workspace_enable',
-  /** NSO-346: a super-admin disabled an opt-in platform module for the workspace (meta: module). */
+  /** A super-admin disabled an opt-in platform module for the workspace (meta: module). */
   moduleWorkspaceDisable: 'module.workspace_disable',
-  /** NSO-366: a blocked publish (or the owner's button) asked the operator to approve the workspace for publishing. */
+  /** A blocked publish (or the owner's button) asked the operator to approve the workspace for publishing. */
   publishApprovalRequest: 'workspace.publish_approval_request',
-  /** NSO-366: a super-admin allowed the workspace to publish (its state `allowed`). */
+  /** A super-admin allowed the workspace to publish (its state `allowed`). */
   publishApprove: 'workspace.publish_approve',
-  /** NSO-366: a super-admin took the workspace's publish approval back (live apps keep serving). */
+  /** A super-admin took the workspace's publish approval back (live apps keep serving). */
   publishRevoke: 'workspace.publish_revoke',
-  /** NSO-366: a super-admin turned publishing off for the workspace, in every mode (live apps keep serving; meta: from, to). */
+  /** A super-admin turned publishing off for the workspace, in every mode (live apps keep serving; meta: from, to). */
   publishBlock: 'workspace.publish_block',
-  /** NSO-366: a super-admin turned a blocked workspace's publishing back on (meta: from, to). */
+  /** A super-admin turned a blocked workspace's publishing back on (meta: from, to). */
   publishUnblock: 'workspace.publish_unblock',
 } as const;
 
@@ -182,15 +178,15 @@ export const AUDIT_ACTION_LIST: AuditAction[] = Object.values(AUDIT_ACTIONS);
 export const AUDIT_SUBJECT_TYPES = {
   app: 'app',
   member: 'member',
-  /** M2-04: a personal API key (target = its id). */
+  /** A personal API key (target = its id). */
   apiKey: 'api_key',
-  /** M2-04: an OAuth client (target = its public client_id). */
+  /** An OAuth client (target = its public client_id). */
   oauthClient: 'oauth_client',
-  /** M3-01: a custom domain — `target` is the hostname, `meta.app` the app slug. */
+  /** A custom domain — `target` is the hostname, `meta.app` the app slug. */
   domain: 'domain',
-  /** NSO-346: a platform module of the workspace (target = the module name). */
+  /** A platform module of the workspace (target = the module name). */
   module: 'module',
-  /** NSO-366: the workspace itself (target = its slug) — publish approval. */
+  /** The workspace itself (target = its slug) — publish approval. */
   workspace: 'workspace',
 } as const;
 

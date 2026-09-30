@@ -1,8 +1,8 @@
 /**
- * M1b Agent DX (PHY-124) — `GET /llms-full.txt`: the full delivery-stack
+ * `GET /llms-full.txt`: the full delivery-stack
  * contract (MCP connect/OAuth flow, every tool with its input schema + example,
  * data access modes, quotas/limits, and the error catalogue — the core codes
- * plus one section per active platform module, NSO-344). Rendered from the
+ * plus one section per active platform module). Rendered from the
  * @drobek/agent-dx manifest. text/plain, cacheable.
  */
 import { renderLlmsFull } from '@drobek/agent-dx';

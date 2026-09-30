@@ -28,7 +28,7 @@ async function err(p: Promise<unknown>): Promise<AppsError | undefined> {
   );
 }
 
-describe('createApp — APPS_MAX_PER_WORKSPACE (NSO-329)', () => {
+describe('createApp — APPS_MAX_PER_WORKSPACE', () => {
   it('the (max + 1)-th live app is limit_exceeded, naming the limit', async () => {
     const wsId = await workspace('lim-two');
     await createApp({ workspaceId: wsId, slug: 'lim-two-a', actor, maxApps: 2 });

@@ -10,7 +10,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('sendInviteEmail — the operator transport (NSO-361)', () => {
+describe('sendInviteEmail — the operator transport', () => {
   it('EMAIL_TRANSPORT=resend: the workspace invite goes out through the Resend API', async () => {
     vi.stubEnv('EMAIL_TRANSPORT', 'resend');
     vi.stubEnv('RESEND_API_KEY', KEY);

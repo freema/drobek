@@ -1,5 +1,5 @@
 /**
- * Source maps on the production hosts (NSO-381). The compiler writes every
+ * Source maps on the production hosts. The compiler writes every
  * JS/CSS bundle with an INLINE source map (a base64 `data:` URL at the end of
  * the file) — the preview host serves the bundle exactly as stored. On the
  * production host and custom domains that trailer made a bundle several times

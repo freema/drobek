@@ -1,5 +1,5 @@
 /**
- * `ctx.email.send()` recipients (M1-01, M1-02, M1-04) — shared by the runtime
+ * `ctx.email.send()` recipients — shared by the runtime
  * and the test context so both resolve exactly the same way. A module never
  * names an arbitrary address: it points at owner-confirmed config, at the
  * signed-in end user, at the app's owners (verified drobek accounts), or
@@ -63,7 +63,7 @@ export function emailKind(to: EmailMessage['to']): EmailKind {
 
 /**
  * `{ signInAddress }` reaches an address nobody confirmed and spends the
- * server's sign-in budget, so only the sign-in provider may use it (NSO-327):
+ * server's sign-in budget, so only the sign-in provider may use it:
  * the one active module that owns end-user sessions (`endUsers` — the `auth`
  * module). Any other module gets `forbidden` (403) and nothing is sent.
  * `signInProvider` = that module's name, or null when none is active.

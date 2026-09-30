@@ -1,12 +1,12 @@
 /**
- * Our own JSON Schema → form renderer (M2-02, NSO-291; no vendor form
+ * Our own JSON Schema → form renderer (no vendor form
  * library): renders the `FormField`s of `schemaFields()` as plain inputs named
  * after their config path (`cfg.<path>`), so the form posts without any client
  * JS and the server rebuilds the config with `formToConfig()`. Validation is
  * the server's (the module's configSchema): errors come back per field.
  * `readOnly` (a viewer) renders the same values disabled and no button.
  *
- * NSO-347: a `record` (named entries) or `object-list` field renders each
+ * A `record` (named entries) or `object-list` field renders each
  * entry with its own fields (recursively), a "Remove" checkbox per entry and
  * ONE empty entry to add a new one — still no client JS. Errors inside an
  * entry are shown at the top-level record / list they belong to.

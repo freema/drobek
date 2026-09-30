@@ -1,5 +1,5 @@
 /**
- * Personal workspace ensure (U4, PHY-54) — LAZY, no backfill migration.
+ * Personal workspace ensure — LAZY, no backfill migration.
  * Called (1) after a successful login via the wrapped auth route modules
  * (routes/login.verify.server.ts + routes/auth.google.callback.server.ts) and
  * (2) on every /workspaces load, so existing prod users get theirs on the
@@ -105,7 +105,7 @@ export async function ensurePersonalWorkspace(
 }
 
 /**
- * Post-login hook, DOCUMENTED CHOICE (U4 deliverable 2): instead of adding a
+ * Post-login hook: instead of adding a
  * hook registry inside @drobek/auth (whose registration timing is
  * non-deterministic under lazy dev-server module loading), the tenancy
  * package WRAPS the two auth route modules that mint sessions

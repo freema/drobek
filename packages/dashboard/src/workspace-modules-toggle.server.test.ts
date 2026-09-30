@@ -1,7 +1,7 @@
 /**
- * NSO-346: /workspaces/:slug/modules — the opt-in switch per workspace, on a
+ * /workspaces/:slug/modules — the opt-in switch per workspace, on a
  * real PGlite database (the workspace role gate is stubbed — it has its own
- * tests in @drobek/tenancy). The page is readable by every member (NSO-347):
+ * tests in @drobek/tenancy). The page is readable by every member:
  *  - a viewer / editor / workspace admin sees the opt-in modules read-only
  *    (canToggle false) and gets 403 from the switch, nothing changes; only a
  *    workspace admin sees which super-admin switched a module on;

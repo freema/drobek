@@ -1,5 +1,5 @@
 /**
- * The beacon HTTP contract (PHY-123 → apps origin, M1-07) over the
+ * The beacon HTTP contract (apps origin) over the
  * framework-free handler: size cap BEFORE parsing (declared and counted),
  * same-origin only, POST only, JSON only, and the recorder is handed the app
  * the host resolved — never an app named by the client. The process-level
@@ -54,7 +54,7 @@ describe('handleBeacon', () => {
     expect((calls[0].batch as { events: unknown[] }).events).toHaveLength(1);
   });
 
-  it('no resolved client IP → the recorder gets ip: null, never a shared "unknown" (NSO-328)', async () => {
+  it('no resolved client IP → the recorder gets ip: null, never a shared "unknown"', async () => {
     const { calls, record } = recorder();
     const req = { ...beaconReq(EVENT, { origin: 'http://shop--preview.apps.localhost:3041' }), clientIp: null };
     expect((await handleBeacon(req, 'app_1', { record })).status).toBe(204);

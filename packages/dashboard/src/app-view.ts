@@ -1,5 +1,5 @@
 /**
- * Pure view shaping for the app page (NSO-288): the lock banner, relative
+ * Pure view shaping for the app page: the lock banner, relative
  * times, the Files-tab tree, compile summaries, the apps-list filters and
  * the redirect-back guard. db-free and client-safe (the route components
  * import some of these), unit-tested in app-view.test.ts.

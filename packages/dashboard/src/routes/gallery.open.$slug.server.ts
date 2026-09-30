@@ -1,5 +1,5 @@
 /**
- * GET /gallery/open/:slug — the gallery's counting link (NSO-340), on the
+ * GET /gallery/open/:slug — the gallery's counting link, on the
  * DASHBOARD host, no login. `GET /api/public/gallery` hands it out as each
  * entry's `openUrl`; it counts one open of the app for the current UTC day
  * and answers 302 to the app's production URL.

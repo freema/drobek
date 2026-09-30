@@ -53,7 +53,7 @@ describe('TOOL_DOCS manifest', () => {
     }
   });
 
-  it('annotations follow the real effect (plan §4; the full table, NSO-307)', () => {
+  it('annotations follow the real effect (the full table)', () => {
     // [readOnly, destructive, idempotent, openWorld] — every hint explicit, checked
     // against the live server in docs/listing/inspector-log.md.
     const table: Record<string, [boolean, boolean, boolean, boolean]> = {
@@ -98,7 +98,7 @@ describe('TOOL_DOCS manifest', () => {
     }
   });
 
-  it('set_gallery_listing lists only on the user\'s explicit yes, with the publish scope (NSO-340)', () => {
+  it('set_gallery_listing lists only on the user\'s explicit yes, with the publish scope', () => {
     const doc = toolDoc('set_gallery_listing');
     expect(doc.scope).toMatch(/^publish\b/);
     expect(doc.description).toMatch(/user_confirmed: true/);
@@ -107,7 +107,7 @@ describe('TOOL_DOCS manifest', () => {
     expect(doc.fields.map((f) => f.name)).toEqual(['app_id', 'listed', 'description', 'allow_duplicate', 'user_confirmed']);
   });
 
-  it('duplicate_app copies only a duplicable gallery app, with the write scope, never secrets or data (NSO-340)', () => {
+  it('duplicate_app copies only a duplicable gallery app, with the write scope, never secrets or data', () => {
     const doc = toolDoc('duplicate_app');
     expect(doc.scope).toMatch(/^write\b/);
     expect(doc.description).toMatch(/owner allows duplicates/);
@@ -115,7 +115,7 @@ describe('TOOL_DOCS manifest', () => {
     expect(doc.fields.map((f) => f.name)).toEqual(['from', 'workspace', 'name']);
   });
 
-  it('set_workspace_publishing is super-admin only and needs the user\'s explicit yes (NSO-366)', () => {
+  it('set_workspace_publishing is super-admin only and needs the user\'s explicit yes', () => {
     const doc = toolDoc('set_workspace_publishing');
     expect(doc.scope).toMatch(/^publish \(super-admins of this server only\)/);
     expect(doc.description).toMatch(/user_confirmed: true/);
@@ -129,7 +129,7 @@ describe('TOOL_DOCS manifest', () => {
     expect(toolDoc('get_app').returns).toContain('publishing');
   });
 
-  it('the custom-domain tools mirror the Domains tab; what changes the public site needs the user\'s yes (NSO-366)', () => {
+  it('the custom-domain tools mirror the Domains tab; what changes the public site needs the user\'s yes', () => {
     expect(toolDoc('list_domains').scope).toMatch(/^read \(viewer\+/);
     for (const name of ['add_domain', 'verify_domain', 'remove_domain']) expect(toolDoc(name).scope, name).toMatch(/^write \(editor\+/);
     expect(toolDoc('set_primary_domain').scope).toMatch(/^publish \(editor\+/);
@@ -174,14 +174,14 @@ describe('TOOL_DOCS manifest', () => {
   it('read_file tells the agent its content is untrusted', () => {
     expect(toolDoc('read_file').description).toMatch(/UNTRUSTED/);
     expect(toolDoc('read_file').returns).toContain('untrusted:true');
-    // NSO-324: the untrusted tools answer text only — no structuredContent past the envelope.
+    // The untrusted tools answer text only — no structuredContent past the envelope.
     for (const name of ['read_file', 'query_data', 'get_logs']) {
       expect(toolDoc(name).description, name).toMatch(/no structuredContent/);
       expect(toolDoc(name).returns, name).toMatch(/^text only/);
     }
   });
 
-  it('skill_info never returns secrets; configure_module routes secrets to the dashboard (M1-01)', () => {
+  it('skill_info never returns secrets; configure_module routes secrets to the dashboard', () => {
     expect(toolDoc('skill_info').scope).toMatch(/^read\b/);
     expect(toolDoc('skill_info').description).toMatch(/Never returns secret values or any app's config/);
     expect(toolDoc('configure_module').scope).toMatch(/^write\b/);
@@ -189,14 +189,14 @@ describe('TOOL_DOCS manifest', () => {
     expect(toolDoc('configure_module').description).toMatch(/Secrets are never set here/);
   });
 
-  it('query_data reads (≤ 100 records) and marks the records untrusted (M1-03)', () => {
+  it('query_data reads (≤ 100 records) and marks the records untrusted', () => {
     expect(toolDoc('query_data').scope).toMatch(/^read\b/);
     expect(toolDoc('query_data').description).toMatch(/untrusted/);
     expect(toolDoc('query_data').description).toMatch(/at most 100 records/);
     expect(toolDoc('query_data').returns).toContain('untrusted:true');
   });
 
-  it('get_logs reads runtime / compile / requests and marks the entries untrusted (M1-07)', () => {
+  it('get_logs reads runtime / compile / requests and marks the entries untrusted', () => {
     const doc = toolDoc('get_logs');
     expect(doc.scope).toMatch(/^read\b/);
     expect(doc.annotations.readOnlyHint).toBe(true);

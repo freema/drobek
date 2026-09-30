@@ -1,5 +1,5 @@
 /**
- * /me/api-keys — client half (M2-04, NSO-284): the user's personal `drk_` API
+ * /me/api-keys — client half: the user's personal `drk_` API
  * keys for MCP clients that cannot run OAuth (CI, scripts). A create form
  * (name + scope checkboxes), the new key shown ONCE in the create response,
  * and a list with last use + a revoke button. Client-safe: everything arrives

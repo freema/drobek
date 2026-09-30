@@ -1,5 +1,5 @@
 /**
- * SSRF IP-range classifier (PHY-59, R6 security core) — PURE + exhaustively
+ * SSRF IP-range classifier — PURE + exhaustively
  * unit-tested. A secret-injecting BFF proxy MUST NOT be tricked into connecting
  * to an internal address. At forward time the host is resolved to an IP ONCE
  * (dns.lookup) and passed HERE; a blocked IP is rejected BEFORE any socket is

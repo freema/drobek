@@ -1,6 +1,6 @@
 /**
- * GET /workspaces/:slug/apps/:appSlug/modules — server half (M2-02,
- * NSO-291): the app's Modules tab — every platform module active on the
+ * GET /workspaces/:slug/apps/:appSlug/modules — server half:
+ * the app's Modules tab — every platform module active on the
  * server with whether this app configured it, what waits for confirmation and
  * which required secrets are missing. viewer+ (unknown workspace / non-member
  * → 404 by requireWorkspaceRole; an app of another workspace → 404). Secret
@@ -30,7 +30,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       name: m.name,
       version: m.version,
       useWhen: m.skill.useWhen,
-      /** NSO-346: false for an opt-in module the workspace does not have enabled. */
+      /** False for an opt-in module the workspace does not have enabled. */
       enabled: s?.enabled !== false,
       configured: Boolean(s?.configured),
       pending: s?.pending_confirmation ?? [],
@@ -43,7 +43,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   return {
     workspace: { slug: access.workspace.slug, name: access.workspace.name },
     app: { slug: app.slug },
-    /** NSO-342: the app header + tabs on every app sub-page. */
+    /** The app header + tabs on every app sub-page. */
     header: await appHeaderData({ access, app }),
     modules,
     banner: await loadPendingBanner(app, access.workspace.slug, app.slug),

@@ -1,5 +1,5 @@
 /**
- * The browser SDK of THIS server (M1-01): at startup esbuild bundles the SDK
+ * The browser SDK of THIS server: at startup esbuild bundles the SDK
  * core (`@drobek/sdk` core.ts) + the `sdk.entry` of every active module into
  * ONE ES module, served on every app host at `/__drobek/sdk.js`; the
  * declarations go to `/__drobek/sdk.d.ts`. Only ACTIVE modules are in it.
@@ -10,7 +10,7 @@
  * (ETag). This is platform code read from the operator's disk — never app
  * code.
  *
- * The error beacon (M1-07) is a separate, tiny script `/__drobek/beacon.js`
+ * The error beacon is a separate, tiny script `/__drobek/beacon.js`
  * (the `@drobek/sdk` beacon entry): the compiler imports its versioned URL at
  * the top of every app entry, so every app reports its browser errors even
  * when it never imports `drobek`.
@@ -26,7 +26,7 @@ import type { AnyModule } from './contract.js';
 
 export const SDK_PATH = '/__drobek/sdk.js';
 export const SDK_TYPES_PATH = '/__drobek/sdk.d.ts';
-/** The browser error beacon script (M1-07). */
+/** The browser error beacon script. */
 export const BEACON_SCRIPT_PATH = '/__drobek/beacon.js';
 
 /** The bundled beacon script: `url` = `/__drobek/beacon.js?v=<hash>` (what the compiler imports). */
@@ -47,12 +47,12 @@ export interface SdkBundle {
   /**
    * `drobek/<module>` → the source of that module's `sdk.inline` (read at
    * start). The compiler builds these INTO an app that imports them, with the
-   * app's own import map (M1-02) — they are not part of `js`.
+   * app's own import map — they are not part of `js`.
    */
   inline: Record<string, string>;
-  /** Module name → the declarations of `drobek/<name>` (the server's type check of app sources, NSO-388). */
+  /** Module name → the declarations of `drobek/<name>` (the server's type check of app sources). */
   inlineTypes: Record<string, string>;
-  /** The error beacon script every compiled app imports (M1-07). */
+  /** The error beacon script every compiled app imports. */
   beacon: BeaconScript;
 }
 

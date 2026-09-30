@@ -28,16 +28,16 @@ describe('error catalogue coverage', () => {
     for (const code of Object.keys(COMPILE_CODES)) expect(errorDoc(code), code).toBeTruthy();
   });
 
-  it('every module-route error code (DrobekError) has a catalogue entry (M1-01)', () => {
+  it('every module-route error code (DrobekError) has a catalogue entry', () => {
     for (const code of MODULE_ERROR_CODES) expect(errorDoc(code), code).toBeTruthy();
   });
 
-  it('CORE_ERROR_CODES (what a module may not declare, and may always answer) equals the catalogue (NSO-344)', () => {
+  it('CORE_ERROR_CODES (what a module may not declare, and may always answer) equals the catalogue', () => {
     const catalogue = ERROR_CATALOGUE.map((e) => e.code).filter((c) => MODULE_ERROR_CODE_RE.test(c));
     expect([...CORE_ERROR_CODES].sort()).toEqual([...new Set(catalogue)].sort());
   });
 
-  it('module-specific codes live in their modules, not in the core catalogue (NSO-344)', () => {
+  it('module-specific codes live in their modules, not in the core catalogue', () => {
     for (const code of ['email_not_allowed', 'invalid_code', 'too_many_attempts', 'invalid_form_token', 'submitted_too_fast', 'validation_failed', 'unsupported_type', 'ssrf_blocked', 'proxy_busy', 'path_not_allowed', 'upstream_error', 'config_error']) {
       expect(errorDoc(code), code).toBeUndefined();
     }

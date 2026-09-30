@@ -1,5 +1,5 @@
 /**
- * The server half every app-page tab shares (NSO-288):
+ * The server half every app-page tab shares:
  *
  *  - `loadAppPage` — role gate (requireWorkspaceRole: non-member / unknown
  *    → 404, anonymous → /login) + the live app of THIS workspace (a deleted
@@ -9,17 +9,17 @@
  *    single-writer lease ("an agent of X is working, last write N s ago");
  *  - `appAction` — EVERY app mutation of the dashboard, dispatched on the
  *    form's `intent`: publish, restore, unpublish, unlock, visibility,
- *    frame-ancestors, gallery (NSO-340: list / relist / unlist), delete.
+ *    frame-ancestors, gallery (list / relist / unlist), delete.
  *    The editor gate runs FIRST (a viewer → 403, before the form is even
  *    read); the global origin check
  *    (createOriginCheckMiddleware) already refused cross-origin posts. Each
  *    mutation is a @drobek/apps function (the same ones the MCP tools use),
  *    which writes its audit row; the app hosts' cache is busted right after.
- *    A taken-down app (NSO-293, `apps.locked_reason`) answers publish /
+ *    A taken-down app (`apps.locked_reason`) answers publish /
  *    restore / unpublish with 423 `app_locked_by_admin`; the header carries
  *    `lockedByAdmin` for <LockedByAdminNotice>. A workspace the operator
  *    blocked answers publish with 403 `publish_blocked`, and with
- *    PUBLISH_APPROVAL=approval (NSO-366) an unapproved one with 403
+ *    PUBLISH_APPROVAL=approval an unapproved one with 403
  *    `publish_not_approved`; the header carries `publishApproval` for
  *    <PublishApprovalNotice> and the `request-publish-approval` intent asks
  *    the operator.
@@ -100,11 +100,11 @@ export interface AppHeaderData {
   previewVersion: number | null;
   lock: LockView | null;
   canEdit: boolean;
-  /** NSO-293: set when a super-admin took the app down (the banner; publish/restore are refused). */
+  /** Set when a super-admin took the app down (the banner; publish/restore are refused). */
   lockedByAdmin: LockedByAdminView | null;
-  /** NSO-366: set while the workspace may not publish (blocked, or not approved yet) — the notice; publish is refused. */
+  /** Set while the workspace may not publish (blocked, or not approved yet) — the notice; publish is refused. */
   publishApproval: PublishApprovalView | null;
-  /** NSO-340: the slug of the gallery app this one was duplicated from. */
+  /** The slug of the gallery app this one was duplicated from. */
   duplicatedFrom: string | null;
 }
 
@@ -159,7 +159,7 @@ export async function appHeaderData({ access, app }: AppPage): Promise<AppHeader
 }
 
 /**
- * NSO-342: the header of an app sub-page whose loader resolved the access
+ * The header of an app sub-page whose loader resolved the access
  * itself (Data, Forms, Users, Uploads, Logs, Modules, Domains) — the same
  * app lookup (a deleted app / another workspace's → 404) + appHeaderData.
  */
@@ -195,7 +195,7 @@ export async function appAction({ request, params }: ActionFunctionArgs) {
   // The editor gate FIRST: a viewer gets 403 before anything is read or changed.
   const { access, app } = await loadAppPage(request, params, 'editor');
   const form = await request.formData();
-  // Pre-NSO-288 forms posted only `versionId` (the publish button).
+  // A form with only `versionId` is the publish button.
   const intent = String(form.get('intent') ?? (form.has('versionId') ? 'publish' : ''));
   const actor: Actor = { userId: access.user.id, kind: actorKindForSurface('web') };
   const base = appBasePath(access.workspace.slug, app.slug);
@@ -206,7 +206,7 @@ export async function appAction({ request, params }: ActionFunctionArgs) {
   const requested = await requestApprovalAction(access, form, { base, fallback: back, appName: app.name ?? app.slug });
   if (requested) return requested;
 
-  // NSO-293: a taken-down app is not published, restored or unpublished from
+  // A taken-down app is not published, restored or unpublished from
   // here (@drobek/apps refuses publish/restore itself; unpublish is checked
   // here so all three answer the same 423).
   if (app.lockedReason && (intent === 'publish' || intent === 'restore' || intent === 'unpublish')) {
@@ -296,7 +296,7 @@ export async function appAction({ request, params }: ActionFunctionArgs) {
         break;
       }
       case 'gallery': {
-        // NSO-340: "Show in the gallery" + the public description. Listing
+        // "Show in the gallery" + the public description. Listing
         // needs a published app (@drobek/apps refuses otherwise); unchecking
         // unlists and keeps "Allow duplicates" as it was. The same function
         // backs the MCP tool set_gallery_listing.

@@ -1,5 +1,5 @@
 /**
- * Database errors, read the one safe way (NSO-333).
+ * Database errors, read the one safe way.
  *
  * The shape of a failed query depends on the driver and the drizzle version:
  * postgres.js throws a `PostgresError` (`code`, `constraint_name`,

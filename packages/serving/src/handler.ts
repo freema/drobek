@@ -1,41 +1,41 @@
 /**
- * The app-host request handler (M0-06): one request on `<slug>[--preview|--v<N>]
+ * The app-host request handler: one request on `<slug>[--preview|--v<N>]
  * .<APPS_DOMAIN>` → one response. Framework-free: a plain request description
  * in, a plain response out; `node.ts` adapts it to node:http / Express.
  *
  * Order (each step before any byte of the app is touched):
  *   1. method — GET/HEAD, plus POST to the password-unlock path; else 405;
- *   2. the app behind the host (404 page when there is none; NSO-315: a client
+ *   2. the app behind the host (404 page when there is none; a client
  *      IP past its unknown-host budget gets 429 instead — and, while throttled,
  *      429 before any lookup for hosts the cache does not know as live apps);
  *   3. the visibility gate (password page / unlock POST);
  *   4. the version the host serves (404 "not published" / "nothing compiled");
  *   5. the file: built wins over source, TS/JSX sources never served, SPA
- *      fallback for extension-less paths, ETag = sha256 → 304. NSO-381: on
+ *      fallback for extension-less paths, ETag = sha256 → 304. On
  *      the production host and custom domains a built JS/CSS bundle is served
  *      without its inline source map (ETag `"<sha256>-nomap"`), pointing at
  *      `<file>.map`, which serves that map; the preview and version hosts
  *      serve the bundle exactly as stored (see sourcemap.ts);
  *   6. no such file and the path can name an asset (`/film.mp4`,
- *      `/img/s1.jpg`): the app's uploaded asset (NSO-358, `deps.assets` —
- *      video/audio/images/fonts, Range 206, see assets.ts). NSO-362: the
+ *      `/img/s1.jpg`): the app's uploaded asset (`deps.assets` —
+ *      video/audio/images/fonts, Range 206, see assets.ts). The
  *      production host and custom domains serve the set the publish froze,
  *      the preview host the draft, a version host that version's set (or
  *      the draft) — `assetScopeFor`. The version's own file at the same path
  *      wins. Asset paths always carry a media extension, so the SPA fallback
  *      never answers for one.
  *
- * BEACON (M1-07): `POST /__drobek/v1/_beacon` goes to `deps.beacon` (core, not
+ * BEACON: `POST /__drobek/v1/_beacon` goes to `deps.beacon` (core, not
  * a module — every app reports its browser errors without configuration),
  * after steps 2 and 3 like a platform path; it is not counted as a request.
  *
- * PLATFORM paths (M1-01): `/__drobek/*` (except the unlock POST) go to
+ * PLATFORM paths: `/__drobek/*` (except the unlock POST) go to
  * `deps.platform` — the module runtime (SDK, module routes) — AFTER steps 2
  * and 3, so a module route never runs for a missing app or behind a locked
  * password gate (that answers JSON 401 `password_required`). Any method may reach
  * it; the runtime answers 405 itself. The app's files are never involved.
  *
- * CUSTOM DOMAINS (M3-01): a verified custom domain arrives as target
+ * CUSTOM DOMAINS: a verified custom domain arrives as target
  * `custom` and is served exactly like the production host (published
  * version, indexable). When the app has a PRIMARY domain, its production host
  * answers a GET/HEAD page request with 302 → the same path on that domain
@@ -43,11 +43,11 @@
  *
  * ISOLATION: this handler reads exactly ONE cookie, the app-access cookie of
  * the password gate, and sets no other; the platform handler additionally
- * reads the app's end-user cookie (`drobek_eu`, M1-01). The dashboard session
+ * reads the app's end-user cookie (`drobek_eu`). The dashboard session
  * is never parsed, looked up or touched here, whatever the request carries.
  * Every response — 200, 304, 401, 404, 405, 429, 500 — carries the app CSP,
  * nosniff, Referrer-Policy and (preview/version hosts) X-Robots-Tag; a module
- * response may add a stricter CSP of its own as a second policy (NSO-325).
+ * response may add a stricter CSP of its own as a second policy.
  *
  * GALLERY EMBEDDING: the operator's GALLERY_FRAME_ANCESTORS origins join
  * `frame-ancestors` (next to the dashboard origin and the owner's override)
@@ -55,7 +55,7 @@
  * shows right now (`ServeApp.galleryVisible`, cached like the rest of the app
  * row) — never on its preview or version hosts.
  *
- * ABUSE (M4-02, NSO-293): `GET /.well-known/drobek-report` on ANY app host
+ * ABUSE: `GET /.well-known/drobek-report` on ANY app host
  * answers `{ report_url, app, terms_url }` (public, cacheable 1 h) before
  * anything else — where to report this host. A taken-down app
  * (`lockedReason`) answers 451 on every host (prod, preview, version,
@@ -127,7 +127,7 @@ export interface AppRequest {
 /** Where the platform (module runtime) answers on every app host. */
 export const PLATFORM_PREFIX = '/__drobek/';
 
-/** The browser error beacon on every app host (M1-07; handled by core, not a module). */
+/** The browser error beacon on every app host (handled by core, not a module). */
 export const BEACON_PATH = '/__drobek/v1/_beacon';
 
 /** Answers the beacon POST for a resolved, visibility-cleared app. */
@@ -159,7 +159,7 @@ export interface HandlerDeps {
   /** The browser error beacon at BEACON_PATH (absent → the path falls to `platform`). */
   beacon?: BeaconHandler;
   /**
-   * M3-01: the origin of a custom domain, for the primary-domain redirect
+   * The origin of a custom domain, for the primary-domain redirect
    * (default `https://<hostname>`; node.ts derives scheme + port from the apps origin).
    */
   customDomainOrigin?: (hostname: string) => string;
@@ -167,10 +167,10 @@ export interface HandlerDeps {
   reportUrl?: (host: string) => string;
   /** The terms the 451 page links (default: TERMS_URL, else `<PUBLIC_APP_URL>/terms`). */
   termsUrl?: string;
-  /** NSO-315: per-IP budget of "no app here" answers (absent → never throttled). */
+  /** Per-IP budget of "no app here" answers (absent → never throttled). */
   unknownHosts?: UnknownHostLimiter;
   /**
-   * NSO-342: the dashboard origin (PUBLIC_APP_URL), always allowed in
+   * The dashboard origin (PUBLIC_APP_URL), always allowed in
    * `frame-ancestors` so the workspace app list can show a sandboxed,
    * non-interactive thumbnail of the app (absent → only the app's own setting).
    */
@@ -183,13 +183,13 @@ export interface HandlerDeps {
    * never get them (absent → no gallery embedding).
    */
   galleryFrameAncestors?: readonly string[];
-  /** NSO-358: the frame-src list of every app host (frameSrcFromEnv; absent → the curated embeds). */
+  /** The frame-src list of every app host (frameSrcFromEnv; absent → the curated embeds). */
   frameSrc?: string;
-  /** NSO-358: the app's uploaded assets at `/<name>` (absent → only the version's files are served). */
+  /** The app's uploaded assets at `/<name>` (absent → only the version's files are served). */
   assets?: AssetSource;
 }
 
-/** Header naming the app behind an app-host response (M4-02). */
+/** Header naming the app behind an app-host response. */
 export const APP_HEADER = 'X-Drobek-App';
 
 const HTML = 'text/html; charset=utf-8';
@@ -200,7 +200,7 @@ export const UNLOCK_ATTEMPTS = 10;
 /**
  * Unlock attempts per app over ALL clients per window — the per-password cap
  * that also holds for a request without a resolved client IP, which has no
- * per-IP bucket (NSO-328).
+ * per-IP bucket.
  */
 export const UNLOCK_APP_ATTEMPTS = 100;
 export const UNLOCK_WINDOW_MS = 15 * 60 * 1000;
@@ -241,12 +241,12 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
     });
   }
 
-  // ── where to report this host (M4-02) — any app host, before anything else ──
+  // ── where to report this host — any app host, before anything else ──
   if ((method === 'GET' || method === 'HEAD') && req.path === REPORT_WELL_KNOWN_PATH) {
     return wellKnownReport(req, deps, method, security);
   }
 
-  // ── the app (NSO-315: unknown hosts are counted per client IP) ──
+  // ── the app (unknown hosts are counted per client IP) ──
   const throttled = (): AppResponse => ({
     status: 429,
     headers: {
@@ -279,7 +279,7 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
   };
   if (!isBeacon) deps.signal?.(app.id, 'request');
 
-  // ── taken down by a super-admin (M4-02): 451 on every host and path ──
+  // ── taken down by a super-admin: 451 on every host and path ──
   if (app.lockedReason) {
     const category = lockCategory(app.lockedReason);
     const terms = deps.termsUrl ?? termsUrl();
@@ -299,7 +299,7 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
     });
   }
 
-  // ── primary custom domain: the production host redirects there (M3-01) ──
+  // ── primary custom domain: the production host redirects there ──
   if (
     req.target.kind === 'prod' &&
     app.primaryDomain &&
@@ -409,7 +409,7 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
 }
 
 /**
- * NSO-381: `/<bundle>.map` on the production host / a custom domain, when
+ * `/<bundle>.map` on the production host / a custom domain, when
  * the version has no file there: the inline source map of the built JS/CSS
  * bundle `<bundle>` (null → not such a request; the caller answers as before).
  */
@@ -438,7 +438,7 @@ async function serveSourceMap(
 }
 
 /**
- * Which asset set a host serves (NSO-362): the production host and custom
+ * Which asset set a host serves: the production host and custom
  * domains only the set the publish of their version froze; the preview host
  * the draft; a version host that version's set, or the draft when it was
  * never published.
@@ -448,7 +448,7 @@ function assetScopeFor(kind: AppHostTarget['kind'], versionId: string): AssetSco
   return kind === 'version' ? { versionId, orDraft: true } : { versionId };
 }
 
-/** An uploaded asset of the app (NSO-358), or null when the app has none by that name. */
+/** An uploaded asset of the app, or null when the app has none by that name. */
 async function serveAsset(
   req: AppRequest,
   assets: AssetSource,
@@ -477,7 +477,7 @@ const CSP_HEADER = 'Content-Security-Policy';
  * `Content-Security-Policy` is kept as a SECOND policy next to the app CSP
  * (`<app csp>, <module csp>`: a browser enforces every policy of the list, so
  * a module can only tighten it — e.g. the files module's `sandbox` on served
- * files, NSO-325).
+ * files).
  */
 function withAppSecurity(headers: Record<string, string>, security: Record<string, string>): Record<string, string> {
   let moduleCsp: string | null = null;

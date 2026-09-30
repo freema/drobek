@@ -32,7 +32,7 @@ export interface ToolPrincipal {
 }
 
 /**
- * get_logs storage (M1-07): the compile history written by create_app /
+ * get_logs storage: the compile history written by create_app /
  * write_files and the three read kinds. The default is @drobek/insights over
  * Postgres (+ Redis for the daily serving counters).
  */
@@ -63,11 +63,11 @@ export interface ToolDeps {
   now: () => number;
   env: NodeJS.ProcessEnv;
   log: Logger;
-  /** The process's platform modules + skills (M1-01): skill_info, configure_module, get_app.modules. */
+  /** The process's platform modules + skills: skill_info, configure_module, get_app.modules. */
   modules: () => Promise<ModuleRuntime>;
-  /** Compile history + get_logs reads (M1-07). */
+  /** Compile history + get_logs reads. */
   logs: LogStore;
-  /** Upload tokens, the hourly upload-URL budget and the asset disk (NSO-358). */
+  /** Upload tokens, the hourly upload-URL budget and the asset disk. */
   assets: AssetDeps;
   /** The resolver verify_domain looks the custom-domain records up with (DOMAINS_DNS_SERVERS / the dev mock). */
   dns: () => DnsResolver;

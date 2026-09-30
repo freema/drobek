@@ -1,5 +1,5 @@
 /**
- * Workspace slug rules (U4, PHY-54): [a-z0-9-], 3–40 chars, globally unique
+ * Workspace slug rules: [a-z0-9-], 3–40 chars, globally unique
  * (workspaces.slug UNIQUE enforces that), reserved list below. Pure functions
  * only — db-facing callers live in *-workspace.server.ts.
  */

@@ -1,5 +1,5 @@
 /**
- * The proxy module's `upstreams` authority (contract 1.2, NSO-392): a module
+ * The proxy module's `upstreams` authority (contract 1.2): a module
  * JOB's `ctx.upstreams.fetch(name, { method, path })` — e.g. the `sync`
  * module's scheduled import. There is no caller, so no call rule and no
  * per-caller rate limit; everything that protects the upstream and the

@@ -1,5 +1,5 @@
 /**
- * /workspaces/:slug/apps/:appSlug/files — the Files tab (NSO-288): pick a
+ * /workspaces/:slug/apps/:appSlug/files — the Files tab: pick a
  * version, browse its tree (source + built outputs), read one file in a
  * read-only viewer with a light syntax highlight, download the version as a
  * ZIP. No editing (the UI is not a builder) and no in-dashboard preview (the

@@ -1,5 +1,5 @@
 /**
- * knip (NSO-306) — unused files, exports, types and dependencies across the
+ * knip — unused files, exports, types and dependencies across the
  * pnpm workspace. Runs in `task check` (`pnpm knip`) and in the CI quality
  * job; the gate is 0 findings.
  *
@@ -42,13 +42,12 @@ const config: KnipConfig = {
         // from apps/server — i.e. be a direct dependency, although no source
         // file of this workspace imports it.
         'nodemailer',
-        // Same reason (NSO-314): build/server/index.js imports these through
-        // @drobek/db / @drobek/core. knip used to see them in vite.config's
-        // `optimizeDeps.include`, which the explicit dev optimizer dropped.
+        // Same reason: build/server/index.js imports these through
+        // @drobek/db / @drobek/core.
         '@paralleldrive/cuid2',
         'drizzle-orm',
         'ioredis',
-        // Same reason: @drobek/modules builds the SDK with it (NSO-347).
+        // Same reason: @drobek/modules builds the SDK with it.
         'esbuild',
         // DROBEK_MODULES entries are resolved at runtime from the SERVER's
         // package.json (packages/modules registry.ts, createRequire): the
@@ -71,26 +70,19 @@ const config: KnipConfig = {
     },
 
     'packages/sdk': {
-      // src/beacon-entry.ts: bundled by path by packages/modules sdk-build.ts
-      // into /__drobek/beacon.js (sdkBeaconEntry). The rest: the package's
-      // public entry points — its package.json `exports` point at dist/
-      // (publishable for external module authors, NSO-344), which knip does
-      // not map back to the sources; their exports are public API.
+      // src/beacon-entry.ts is bundled by path into /__drobek/beacon.js. The
+      // rest are public entry points: `exports` point at dist/, which knip
+      // does not map back to the sources.
       entry: ['src/beacon-entry.ts', 'src/index.ts', 'src/core.ts', 'src/beacon.ts'],
     },
 
     'packages/modules': {
-      // The package's public entry points (`.`, `./testing` and `./lock`):
-      // its package.json `exports` point at dist/ (publishable for external
-      // module authors, NSO-344), which knip does not map back to the
-      // sources; their exports are the contract external modules (and the
-      // modules.lock.json writer, NSO-345) use. src/cli/module-lock.ts is
-      // `node …/@drobek/modules/dist/cli/module-lock.js`, the installer half of
-      // `task selfhost:module:*` (scripts/selfhost-module.sh, NSO-350).
+      // Public entry points (`.`, `./testing`, `./lock`): `exports` point at
+      // dist/, which knip does not map back to the sources. src/cli/module-lock.ts
+      // is run by path from scripts/selfhost-module.sh.
       entry: ['src/index.ts', 'src/testing.ts', 'src/lock.ts', 'src/cli/*.ts'],
-      // NSO-345: test-fixtures/ holds an EXTERNAL module package (plain ESM)
-      // that tests copy into a temporary DROBEK_MODULES_DIR by path — never
-      // imported, its imports resolve to the server's instances at runtime.
+      // test-fixtures/ holds an external module package that tests copy into a
+      // temporary DROBEK_MODULES_DIR by path; never imported.
       ignore: ['test-fixtures/**'],
     },
 
@@ -99,7 +91,7 @@ const config: KnipConfig = {
       // (runner.ts, dist/typecheck/worker.js), never imported for its values.
       entry: ['src/typecheck/worker.ts'],
       ignoreDependencies: [
-        // The type check (NSO-388) resolves these by path (check.ts
+        // The type check resolves these by path (check.ts
         // reactTypes) and maps an app's `react` / `react-dom` imports to
         // their declarations; nothing imports them.
         '@types/react',
@@ -108,7 +100,7 @@ const config: KnipConfig = {
     },
 
     'packages/create-drobek-module': {
-      // `bin` / `exports` point at dist/ (published to npm, NSO-349).
+      // `bin` / `exports` point at dist/ (published to npm).
       entry: ['src/index.ts', 'src/cli.ts'],
       // template/ is the scaffold's OUTPUT (a module with its own
       // package.json and tests), copied with placeholders — never imported
@@ -158,9 +150,8 @@ const config: KnipConfig = {
     },
 
     'examples/*': {
-      // Same contract as modules/*: the SDK entry is loaded by path. The
-      // package `exports` point at dist/ like a create-drobek-module output
-      // (NSO-349), so src/index.ts is listed as the public entry.
+      // Same contract as modules/*: the SDK entry is loaded by path; `exports`
+      // point at dist/, so src/index.ts is listed as the public entry.
       entry: ['src/index.ts', 'src/sdk.ts'],
     },
 

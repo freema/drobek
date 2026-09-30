@@ -1,5 +1,5 @@
 /**
- * @drobek/dashboard — db reads for the minimal dashboard (PHY-74 slice).
+ * @drobek/dashboard — db reads for the minimal dashboard.
  * Thin drizzle queries over the apps/app_versions tables; the shaping lives in
  * ./view.ts so these stay trivial. Version history comes from @drobek/apps.
  */
@@ -22,7 +22,7 @@ export async function listWorkspaceApps(workspaceId: string): Promise<AppListRow
       createdAt: apps.createdAt,
       latestVersion: sql<number | null>`max(${appVersions.number})`,
       lastChangeAt: sql<Date | null>`max(${appVersions.createdAt})`.mapWith(appVersions.createdAt),
-      // NSO-342: the thumbnail needs a compiled version (preview) and the takedown state.
+      // The thumbnail needs a compiled version (preview) and the takedown state.
       compiled: sql<boolean | null>`bool_or(${appVersions.compileStatus} = 'ok')`,
       lockedReason: apps.lockedReason,
     })
@@ -57,14 +57,14 @@ export interface AppDetail {
   /** Raw `apps.frame_ancestors` override (null → no embedding). */
   frameAncestors: string | null;
   publishedVersionId: string | null;
-  /** NSO-293: the takedown category; non-null = taken down by a super-admin. */
+  /** The takedown category; non-null = taken down by a super-admin. */
   lockedReason: string | null;
-  /** NSO-340: the owner's gallery opt-in, its public description, the super-admin hide. */
+  /** The owner's gallery opt-in, its public description, the super-admin hide. */
   galleryListed: boolean;
   galleryDescription: string | null;
   galleryHiddenAt: Date | null;
   galleryAllowDuplicate: boolean;
-  /** NSO-340: the gallery app this one was duplicated from (its slug then), or null. */
+  /** The gallery app this one was duplicated from (its slug then), or null. */
   duplicatedFromSlug: string | null;
 }
 

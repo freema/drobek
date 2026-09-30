@@ -13,7 +13,7 @@ import { personalWorkspaceOf } from './seed';
 /**
  * Shared MCP harness: full login + OAuth consent (PKCE S256) + token exchange +
  * a connected Streamable-HTTP MCP client, plus a JSON tool-call helper.
- * Tokens are USER-bound (M0-04): the consent screen has no workspace choice,
+ * Tokens are USER-bound: the consent screen has no workspace choice,
  * only the read / write / publish checkboxes.
  * Not a spec file — Playwright's testMatch never collects it.
  */
@@ -241,7 +241,7 @@ export interface ToolCallWithText extends ToolCall {
 
 /**
  * The payload of an untrusted envelope: read_file, query_data and get_logs
- * answer ONLY the envelope text, no structuredContent (NSO-324). Rebuilt from
+ * answer ONLY the envelope text, no structuredContent. Rebuilt from
  * the opening marker's attributes and the body into the tool's result shape;
  * null when `text` is not an envelope.
  */

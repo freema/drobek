@@ -1,5 +1,5 @@
 /**
- * @drobek/audit — the neutral append-only audit trail (PHY-85). Its own package
+ * @drobek/audit — the neutral append-only audit trail. Its own package
  * so @drobek/apps AND @drobek/tenancy (and the @drobek/dashboard Activity view)
  * can write/read audit rows without a dependency cycle. Depends ONLY on
  * @drobek/db. The pure actor/action vocabulary lives in ./actor (client-safe).

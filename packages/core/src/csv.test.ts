@@ -10,7 +10,7 @@ describe('CSV serialization (RFC-4180 escaping)', () => {
     expect(csvEscape('carriage\rreturn')).toBe('"carriage\rreturn"');
   });
 
-  it('neutralizes spreadsheet formula injection with a leading quote (PHY-76 #5)', () => {
+  it('neutralizes spreadsheet formula injection with a leading quote', () => {
     // Leading =/+/-/@ triggers a formula in Excel/LibreOffice/Sheets.
     expect(csvEscape('=1+1')).toBe("'=1+1");
     expect(csvEscape('+1')).toBe("'+1");

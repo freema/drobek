@@ -1,5 +1,5 @@
 /**
- * The single-writer lease (M0-05): Redis key `drobek:applock:<app_id>` =
+ * The single-writer lease: Redis key `drobek:applock:<app_id>` =
  * `{ holder_user_id, session_id, expires_at }` with a TTL (3 min), renewed by
  * every write_files / restore_version. Another USER gets `app_locked`; the
  * same user from another session takes the lease over (it is their app).
@@ -12,7 +12,7 @@ import { LEASE_KEY_PREFIX, leaseKey, parseLease, type Lease } from '@drobek/apps
 import type { getRedis } from '@drobek/core';
 
 // The key format + value shape live in @drobek/apps (the dashboard reads and
-// releases the lease too, NSO-288); re-exported for the existing importers.
+// releases the lease too); re-exported for the existing importers.
 export { LEASE_KEY_PREFIX, leaseKey, type Lease };
 
 interface LeaseHolder {

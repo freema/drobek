@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# `task selfhost:init` (M4-03) — prepare a self-host checkout, non-interactively
+# `task selfhost:init` — prepare a self-host checkout, non-interactively
 # and idempotently:
 #
 #   1. .env.production from .env.production.example when absent (mode 600)

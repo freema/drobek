@@ -1,6 +1,6 @@
 /**
  * Abuse reports, takedown / restore and the publish heuristic against a real
- * (PGlite) database with the core migrations applied (NSO-293).
+ * (PGlite) database with the core migrations applied.
  */
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -137,7 +137,7 @@ describe('abuse reports', () => {
     expect(resolved.find((x) => x.id === orphan.id)?.resolvedByEmail).toBe('root@example.test');
   });
 
-  it('a VERIFIED custom domain resolves to its app (M3-01); an unverified claim does not', async () => {
+  it('a VERIFIED custom domain resolves to its app; an unverified claim does not', async () => {
     const a = await appWithVersion('custom-reported', CALC_INDEX);
     const b = await appWithVersion('custom-squatter', CALC_INDEX);
     await db.insert(domains).values([

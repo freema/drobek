@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Prove the production image (M0-01) locally, without touching any server:
+# Prove the production image locally, without touching any server:
 #   1. size < 250 MB, no devDependencies, runs as non-root
 #   2. a placeholder KEK makes the process exit 1 with a clear message
 #   3. against throwaway postgres + redis it migrates itself, serves the

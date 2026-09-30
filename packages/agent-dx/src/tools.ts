@@ -1,11 +1,7 @@
 /**
- * TOOL_DOCS — the declarative documentation manifest for the drobek MCP tools
- * (M0-05 NSO-283; publish M0-06 NSO-285; skill_info + configure_module M1-01
- * NSO-287; query_data M1-03 NSO-300; get_logs M1-07 NSO-290; set_gallery_listing
- * and duplicate_app NSO-340; the asset tools NSO-358, assets honour publish NSO-362; the
- * super-admin-only set_workspace_publishing and the custom-domain tools
- * NSO-366; the proxy upstream tools NSO-372; sync_now NSO-392). This is the SINGLE SOURCE OF TRUTH the agent-facing docs
- * render from (llms.txt / llms-full.txt / MCP docs resources / the build page),
+ * TOOL_DOCS — the declarative documentation manifest for the drobek MCP tools.
+ * This is the SINGLE SOURCE OF TRUTH the agent-facing docs render from
+ * (llms.txt / llms-full.txt / MCP docs resources / the build page),
  * and @drobek/mcp registers each tool with THIS title, description and
  * annotations — so the published docs cannot drift from the real tools.
  *
@@ -31,7 +27,7 @@ export interface ToolField {
 
 /**
  * MCP tool annotations (hints for clients — never a security boundary). All
- * four are always explicit (NSO-307, the directory listings read them):
+ * four are always explicit (the directory listings read them):
  * `idempotentHint` = a repeated call with the same arguments has no further
  * effect (true for every read, for publish — it moves the same pointer — and
  * for configure_module — the same merge patch answers `unchanged`; false for

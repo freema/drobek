@@ -1,15 +1,15 @@
 /**
  * POST /api/apps/:id/modules/:module/confirm|reject — the owner decides on a
- * pending platform-module change (M1-01). configure_module holds changes the
+ * pending platform-module change. configure_module holds changes the
  * module marks as sensitive (confirmRequired) and hands the agent a
- * `confirm_url` (the dashboard page M2-02 renders at
+ * `confirm_url` (the dashboard page rendered at
  * /workspaces/<ws>/apps/<app>/modules/<module>); that page calls this API.
  *
  * Guards (app-api.server.ts, before anything changes): POST only; a dashboard
  * session (401); a REQUIRED dashboard Origin (403); the app's workspace role —
  * unknown app / not a member → the same 404, viewer → 403, editor,
  * workspace-admin and super-admin may decide — except a change the module
- * marks `confirmRole: 'admin'` (e.g. proxy upstream assignments, NSO-322 H3):
+ * marks `confirmRole: 'admin'` (e.g. proxy upstream assignments):
  * only a workspace admin / super-admin confirms it (editor → 403
  * `admin_required`; rejecting stays open to editors). Then the module must be
  * active; nothing pending → 409 `nothing_pending`. The change is applied (or
@@ -38,7 +38,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     request,
     String(params.id ?? ''),
     'Confirming module changes needs the editor role in this workspace.',
-    // M4-02: a taken-down app's module config cannot change (423 app_locked_by_admin).
+    // A taken-down app's module config cannot change (423 app_locked_by_admin).
     { refuseLocked: true }
   );
   if (!auth.ok) return auth.response;

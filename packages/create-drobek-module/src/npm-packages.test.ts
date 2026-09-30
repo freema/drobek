@@ -1,5 +1,5 @@
 /**
- * NSO-349: the release half of scripts/npm-packages.mjs (the CI `npm` job on
+ * The release half of scripts/npm-packages.mjs (the CI `npm` job on
  * a `v*` tag) with a fake `npm` — nothing reaches a registry.
  */
 import { describe, expect, it } from 'vitest';

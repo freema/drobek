@@ -1,12 +1,12 @@
 /**
- * The app page chrome every tab renders (NSO-288; NSO-342: <AppPage> puts it
+ * The app page chrome every tab renders (<AppPage> puts it
  * inside the shared dashboard layout with the breadcrumb
  * `Workspaces › <workspace> › <app> › <section>`): the app's name + badges,
  * its preview / production URLs (links; the only place the dashboard frames
  * an app is the small sandboxed thumbnail of the workspace app list), the
  * compile state of the newest version, the single-writer lease banner with
- * "Unlock", the "Unpublish" control, the "taken down by the operator" banner
- * (NSO-293), the "publishing turned off / needs approval" notice (NSO-366), and the tab
+ * "Unlock", the "Unpublish" control, the "taken down by the operator" banner,
+ * the "publishing turned off / needs approval" notice, and the tab
  * bar (APP_TABS, data-driven).
  *
  * The header's forms post to the app's BASE route (`appAction`, which every
@@ -218,9 +218,9 @@ function AppHeader({ header }: { header: AppHeaderData }) {
           Duplicated from {header.duplicatedFrom}
         </p>
       ) : null}
-      {/* NSO-293: taken down by the operator — on every tab. */}
+      {/* Taken down by the operator — on every tab. */}
       <LockedByAdminNotice locked={header.lockedByAdmin} />
-      {/* NSO-366: this workspace may not publish (blocked, or not approved yet) — on every tab. */}
+      {/* This workspace may not publish (blocked, or not approved yet) — on every tab. */}
       {header.lockedByAdmin ? null : (
         <PublishApprovalNotice approval={header.publishApproval} canRequest={header.canEdit} action={header.basePath} busy={busy} />
       )}
@@ -335,7 +335,7 @@ function AppHeader({ header }: { header: AppHeaderData }) {
 }
 
 /**
- * An app page (NSO-342): the shared layout, the breadcrumb
+ * An app page: the shared layout, the breadcrumb
  * `Workspaces › <workspace> › <app> › <section> › …trail`, the app header with
  * its tabs, then the tab's content. The section is the active tab (none on
  * Overview); `trail` names what lies below it (a collection, a module).
@@ -364,7 +364,7 @@ export function AppPage({
   );
 }
 
-/** The failed action's message (`publish-error` for publish, as before NSO-288). */
+/** The failed action's message (`publish-error` for publish). */
 export function ActionError({ actionData }: { actionData?: { error?: string; intent?: string } | null }) {
   if (!actionData?.error) return null;
   return (

@@ -1,5 +1,5 @@
 /**
- * The ONE error shape every module route answers with (§3.5):
+ * The ONE error shape every module route answers with:
  *   `{ error, message, details?, hint }` + an HTTP status.
  * `hint` links the agent to the documentation — by default the module's own
  * skill, `skill_info('<module>')`. Handlers throw ModuleError; anything else
@@ -165,7 +165,7 @@ export function isModuleError(err: unknown): err is ModuleError {
 }
 
 /**
- * NSO-346: an opt-in module (`availability: 'opt-in'`) that is not enabled
+ * An opt-in module (`availability: 'opt-in'`) that is not enabled
  * for the app's workspace — the module route (404), configure_module and the
  * owner's confirm answer this.
  */

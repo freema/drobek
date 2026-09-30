@@ -1,5 +1,5 @@
 /**
- * NSO-340 — the gallery's pure rules (switch, description, page size, search
+ * The gallery's pure rules (switch, description, page size, search
  * text, sort, page number, cursor, effective state, row visibility) and migration 0022's `published_at` backfill against a
  * database in the 0021 shape.
  */

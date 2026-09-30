@@ -1,5 +1,5 @@
 /**
- * The Data tab's actions (NSO-324) against a real PGlite database and a real
+ * The Data tab's actions against a real PGlite database and a real
  * ModuleRuntime whose records module is an in-memory fake (the workspace role
  * gate is stubbed — requireWorkspaceRole has its own tests in @drobek/tenancy):
  * deleting a record from the collection table is audited

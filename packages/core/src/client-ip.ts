@@ -1,5 +1,5 @@
 /**
- * Per-client-IP rate-limit keys (NSO-309, NSO-328). One implementation for
+ * Per-client-IP rate-limit keys. One implementation for
  * every per-IP bucket in drobek: the dashboard sign-in guards, DCR, the app
  * password gate, the module router's `per: 'ip'`, the proxy's `public-ip`, the
  * error beacon and the abuse report form.

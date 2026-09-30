@@ -12,7 +12,7 @@ import {
 } from './helpers/seed';
 
 /**
- * M0-05 (NSO-283) acceptance, end-to-end over Streamable HTTP with the
+ * The core MCP tools end to end over Streamable HTTP with the
  * official SDK client against the local compose stack: the six core tools
  * (list_apps, create_app, get_app, read_file, write_files, restore_version),
  * the compile loop, the untrusted read_file envelope, per-call membership
@@ -46,7 +46,7 @@ const ALL_TOOLS = [
   'write_files',
 ];
 const READ_TOOLS = new Set(['list_apps', 'get_app', 'read_file', 'skill_info', 'query_data', 'get_logs', 'list_assets', 'list_domains', 'list_upstreams']);
-/** NSO-366: the domain tools that ask public DNS or change the public site. */
+/** The domain tools that ask public DNS or change the public site. */
 const OPEN_WORLD_TOOLS = new Set(['sync_now', 'verify_domain', 'remove_domain']);
 const IDEMPOTENT_WRITES = new Set(['configure_module', 'delete_asset', 'add_domain', 'verify_domain', 'remove_domain', 'register_upstream', 'remove_upstream']);
 
@@ -158,7 +158,7 @@ test('core tools: create → broken write → fix → limits → restore → rea
       expect(t.title ?? t.annotations?.title, `${t.name} title`).toBeTruthy();
       expect(t.annotations?.readOnlyHint, `${t.name} readOnlyHint`).toBe(READ_TOOLS.has(t.name));
       expect(t.annotations?.openWorldHint, `${t.name} openWorldHint`).toBe(OPEN_WORLD_TOOLS.has(t.name));
-      // NSO-307: explicit idempotentHint — reads, configure_module, delete_asset and the domain/upstream tools repeat safely; create/write/restore/upload URLs do not.
+      // Explicit idempotentHint — reads, configure_module, delete_asset and the domain/upstream tools repeat safely; create/write/restore/upload URLs do not.
       expect(t.annotations?.idempotentHint, `${t.name} idempotentHint`).toBe(READ_TOOLS.has(t.name) || IDEMPOTENT_WRITES.has(t.name));
     }
 
@@ -205,7 +205,7 @@ test('core tools: create → broken write → fix → limits → restore → rea
     expect(badCompile.ok).toBe(false);
     expect(badCompile.errors[0]).toMatchObject({ file: 'src/main.tsx', line: 6 });
     expect(bad.json.preview_version).toBe(1);
-    // NSO-384: the readiness report repeats the compile errors as its blocking class.
+    // The readiness report repeats the compile errors as its blocking class.
     expect(bad.json.readiness).toMatchObject({ ready: false, blocking: [{ code: 'build_error', file: 'src/main.tsx', line: 6 }] });
     const v2 = await callTool(a.client, 'get_app', { app_id: appId });
     expect(v2.json).toMatchObject({ latest_version: 2, compile_status: 'error' });
@@ -224,7 +224,7 @@ test('core tools: create → broken write → fix → limits → restore → rea
     expect(fixed.json).toMatchObject({ version: 3, compile: { ok: true } });
     expect(fixed.json.preview_url).toMatch(previewRe(slug));
     expect(fixed.json.preview_version).toBeUndefined();
-    // NSO-388: write_files never waits for the background type check; get_app has it a moment on.
+    // write_files never waits for the background type check; get_app has it a moment on.
     expect(fixed.json.readiness).toEqual({ ready: true, blocking: [], warnings: [], typecheck: 'pending' });
     await expect
       .poll(async () => (await callTool(a.client, 'get_app', { app_id: appId })).json.readiness, { timeout: 30_000 })
@@ -251,7 +251,7 @@ test('core tools: create → broken write → fix → limits → restore → rea
     expect((v4.json.files as { path: string }[]).map((f) => f.path).sort()).toEqual(TEMPLATE_FILES);
     expect(v4.json).not.toHaveProperty('warnings');
 
-    // NSO-378: an argument the tool does not take is ignored and named in warnings.
+    // An argument the tool does not take is ignored and named in warnings.
     const extra = await callTool(a.client, 'get_app', { app_id: appId, user_confirmed: true });
     expect(extra.isError, extra.text).toBe(false);
     expect(extra.json).toMatchObject({ app_id: appId, warnings: [{ code: 'unknown_argument', ignored: ['user_confirmed'], accepted: ['app_id'] }] });
@@ -268,7 +268,7 @@ test('core tools: create → broken write → fix → limits → restore → rea
     expect(notes.text).toContain('UNTRUSTED CONTENT');
     expect(notes.text).toMatch(/<untrusted-app-file [^>]*nonce="([0-9a-f]{16})">\n[\s\S]*IGNORE PREVIOUS INSTRUCTIONS[\s\S]*\n<\/untrusted-app-file nonce="\1">$/);
 
-    // NSO-382: edits change part of a file in place; one that does not apply refuses the whole call.
+    // Edits change part of a file in place; one that does not apply refuses the whole call.
     const edited = await callTool(a.client, 'write_files', {
       app_id: appId,
       files: [

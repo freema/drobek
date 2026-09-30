@@ -1,5 +1,5 @@
 /**
- * The proxy upstream tools (NSO-372, MCP parity with the dashboard's
+ * The proxy upstream tools (MCP parity with the dashboard's
  * workspace → Upstreams page): list_upstreams, register_upstream,
  * remove_upstream. Every body calls the SAME @drobek/proxy operation as the
  * dashboard (validation, the SSRF and port rules, the audit rows

@@ -93,7 +93,7 @@ describe('limits provider', () => {
   });
 });
 
-describe('core limits (NSO-329)', () => {
+describe('core limits', () => {
   const core = [...CORE_LIMITS, ...catalogue];
   const provider = (limits: Record<string, unknown>) =>
     createLimitsProvider({ catalogue: core, env, fetch: async () => ({ ok: true, status: 200, json: async () => ({ limits }) }) });
@@ -127,7 +127,7 @@ describe('core limits (NSO-329)', () => {
   });
 });
 
-describe('MODULE_ENABLED_<NAME> (NSO-346)', () => {
+describe('MODULE_ENABLED_<NAME>', () => {
   const cat = [...catalogue, moduleEnabledLimit('vault')];
 
   it('the pseudo-limit: env default 0, env 1 enables, anything but 0/1 is ignored', () => {

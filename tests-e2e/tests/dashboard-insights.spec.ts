@@ -18,10 +18,8 @@ import {
 } from './helpers/seed';
 
 /**
- * Dashboard insight panels (PHY-123, formerly agent-loop.spec.ts — the agent
- * loop itself is mcp-loop.spec.ts since M0-08): the captured runtime signals
- * render on the app Overview. The signals are SEEDED straight into app_errors /
- * app_daily_stats — the rows the ingest path stores — and the Errors + Logs
+ * Dashboard insight panels: the captured runtime signals render on the app
+ * Overview. The signals are SEEDED straight into app_errors / app_daily_stats — the rows the ingest path stores — and the Errors + Logs
  * panels are asserted end-to-end (stored text React-escaped), plus the authz:
  * a seeded viewer reads the panel, a non-member gets 404, a soft-deleted app
  * 404s for the member too.

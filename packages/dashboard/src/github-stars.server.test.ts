@@ -29,7 +29,7 @@ describe('githubRepoOf / starsEnabled', () => {
   });
 });
 
-describe('createStarsCache (NSO-342 footer stars)', () => {
+describe('createStarsCache', () => {
   it('never waits: the first peek is null, the count arrives in the background', async () => {
     const fetch = vi.fn(async (_url: string, _init: Init) => ok(42));
     const cache = createStarsCache({ repo: 'freema/drobek', fetch });

@@ -1,5 +1,5 @@
 /**
- * NSO-293 over a real MCP client on a real (PGlite) database: a super-admin
+ * App takedown over a real MCP client on a real (PGlite) database: a super-admin
  * takedown makes write_files / restore_version / publish / configure_module
  * refuse with `app_locked_by_admin` (distinct from the lease's `app_locked`),
  * list_apps / get_app show `locked_by_admin`, a restore lifts it; and the

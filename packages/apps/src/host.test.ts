@@ -102,12 +102,12 @@ describe('classifyHost (dev: apps.localhost:3041, dashboard localhost:3041)', ()
     expect(classifyHost('[::1]:3000', DEV)).toEqual({ side: 'dashboard' });
   });
 
-  it('M3-01: a dotted public name on the apps port is a custom-domain candidate', () => {
+  it('a dotted public name on the apps port is a custom-domain candidate', () => {
     expect(classifyHost('firma.test:3041', DEV)).toEqual({ side: 'custom', hostname: 'firma.test' });
     expect(classifyHost('Shop.Firma.CZ.:3041', DEV)).toEqual({ side: 'custom', hostname: 'shop.firma.cz' });
   });
 
-  it('M3-01: internal names, loopback, IPs and other ports are never candidates', () => {
+  it('internal names, loopback, IPs and other ports are never candidates', () => {
     for (const host of ['drobek:3000', 'localhost:3000', 'x.localhost:3041', '10.0.0.7:3041', '[::1]:3041', 'firma.test:3000', 'firma.test']) {
       expect(classifyHost(host, DEV), host).toEqual({ side: 'dashboard' });
     }

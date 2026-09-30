@@ -1,7 +1,7 @@
 /**
  * What stored bytes ARE, decided from their first bytes — never from a
  * client's Content-Type or a file name. PURE, shared by the files module
- * (end-user uploads) and app assets (@drobek/apps, NSO-358), so both refuse
+ * (end-user uploads) and app assets (@drobek/apps), so both refuse
  * the same disguised HTML page named `.png`.
  *
  *   image/png         89 50 4E 47 0D 0A 1A 0A
@@ -141,7 +141,7 @@ const isXmlSpace = (c: string): boolean => c === ' ' || c === '\t' || c === '\n'
  * (with an optional `[…]` internal subset), then `<svg`.
  *
  * A linear scanner on purpose: the regex it replaces backtracked
- * exponentially on repeated `<?xml?>` (NSO-322 R1). Every step moves `i`
+ * exponentially on repeated `<?xml?>`. Every step moves `i`
  * forward through `indexOf`, so the cost is O(head length). An unterminated
  * item is not an SVG.
  */

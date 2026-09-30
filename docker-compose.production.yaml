@@ -1,6 +1,5 @@
-# drobek — production / self-host stack (M0-07, M4-03): drobek + postgres +
-# redis + caddy (TLS). For self-hosters and the SaaS VPS. The whole procedure
-# (clean VPS → dashboard with TLS → MCP → published app, backups, upgrades) is
+# Production / self-host stack: drobek + postgres + redis + caddy (TLS). The
+# whole procedure (clean VPS → published app, backups, upgrades) is
 # docs/SELF-HOSTING.md.
 #
 #   1. task selfhost:init          → .env.production (secrets generated) +
@@ -84,7 +83,7 @@ services:
       DROBEK_MODULES: ${DROBEK_MODULES:-auth,email,forms,data,proxy,files,sync,oidc}
       # The files module's uploads live on the files_data volume below.
       FILES_DIR: /data/files
-      # App assets (video, audio, images, fonts; NSO-358) on the assets_data volume.
+      # App assets (video, audio, images, fonts) on the assets_data volume.
       ASSETS_DIR: /data/assets
       # Modules the operator installed (<name>/ + modules.lock.json), checked
       # against the lockfile at start — the modules_data volume below

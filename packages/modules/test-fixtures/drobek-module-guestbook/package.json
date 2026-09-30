@@ -2,7 +2,7 @@
   "name": "drobek-module-guestbook",
   "version": "1.0.0",
   "private": true,
-  "description": "Test fixture: an EXTERNAL drobek module installed into DROBEK_MODULES_DIR (NSO-345 loader tests, the EXT-09 black-box e2e). Plain ESM, no build step.",
+  "description": "Test fixture: an EXTERNAL drobek module installed into DROBEK_MODULES_DIR (loader tests, the black-box e2e). Plain ESM, no build step.",
   "type": "module",
   "exports": {
     ".": "./index.js"

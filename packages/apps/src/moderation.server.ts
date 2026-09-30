@@ -1,5 +1,5 @@
 /**
- * Abuse and moderation, the stateful half (M4-02, NSO-293):
+ * Abuse and moderation, the stateful half:
  *
  *  - the report queue (`abuse_reports`): `createAbuseReport` (the public form
  *    on the dashboard origin), `listAbuseReports`, `resolveAbuseReport`;
@@ -75,7 +75,7 @@ export interface ModerationTarget {
  * Take an app down: `locked_reason = reason`, `published_version_id = null`
  * (the production host stops serving; preview/version hosts answer 451 like
  * it), every open report of the app resolved, a gallery listing ended
- * (NSO-340, `app.gallery_unlisted` reason `takedown`) — one transaction,
+ * (`app.gallery_unlisted` reason `takedown`) — one transaction,
  * audited `admin.takedown` (meta: reason, the unpublished version id).
  * Idempotent: taking an app down again with the category it already has
  * changes nothing (`changed: false`, no audit, no cache bust) — a double
@@ -108,7 +108,7 @@ export async function takedownApp(input: {
     if (app.lockedReason !== null && lockCategory(app.lockedReason) === reason) {
       return { appId: app.id, slug: app.slug, workspaceId: app.workspaceId, unpublishedVersionId: null, alreadyLocked: true, changed: false };
     }
-    // NSO-340: a taken-down app also leaves the public gallery.
+    // A taken-down app also leaves the public gallery.
     await tx
       .update(apps)
       .set({ lockedReason: reason, publishedVersionId: null, publishedAt: null, galleryListed: false })
@@ -227,7 +227,7 @@ const reportedAppColumns = {
 
 /**
  * The live app a reported host belongs to (`<slug>`, `<slug>--preview`,
- * `<slug>--v<N>` under APPS_DOMAIN, or a VERIFIED custom domain — M3-01), or
+ * `<slug>--v<N>` under APPS_DOMAIN, or a VERIFIED custom domain), or
  * null — a host outside the apps origin that no verified domain names, a
  * malformed label, or no such (live) app.
  */

@@ -5,14 +5,14 @@ import { SKILL_SECTIONS, codeBlocks, formatSkillIssue, knownErrorCodes, skillFor
 import { BUILTIN_MODULES, EXPECTED_SKILLS, skillSources, skillsRuntime } from './skills.js';
 
 /**
- * NSO-308: the content `skill_info` serves. Written for the AGENT only, one
+ * The content `skill_info` serves. Written for the AGENT only, one
  * format for all 12 skills (docs/MODULES.md "Skills"):
  *
  *   ## 1. When to use / ## 2. Minimal working code / ## 3. API and types /
  *   ## 4. Rules and limits / ## 5. Errors → fix — at most 150 lines.
  *
  * The rules are `skillFormatIssues` of @drobek/modules/testing — the same
- * `checkSkill` library an external module runs in its own tests (NSO-349).
+ * `checkSkill` library an external module runs in its own tests.
  * The code inside is verified by examples.test.ts.
  */
 const CORE_CODES = ERROR_CATALOGUE.map((e) => e.code);
@@ -32,7 +32,7 @@ describe('skill_info() with every built-in module', () => {
     expect(knownErrorCodes(auth, BUILTIN_MODULES).has('ssrf_blocked')).toBe(false); // proxy's code, not auth's
   });
 
-  it('the merged error catalogue (core + every built-in module) has one owner per code; skill_info returns the module codes (NSO-344)', async () => {
+  it('the merged error catalogue (core + every built-in module) has one owner per code; skill_info returns the module codes', async () => {
     const rt = await skillsRuntime();
     const moduleCodes = rt.errorCatalogue().flatMap((s) => s.errors.map((e) => e.code));
     const all = [...CORE_CODES, ...moduleCodes];
@@ -41,7 +41,7 @@ describe('skill_info() with every built-in module', () => {
       expect(moduleCodes, code).toContain(code);
     }
     for (const m of BUILTIN_MODULES) {
-      // sync needs contract 1.2 (app jobs + ctx.upstreams / ctx.records, NSO-391/392); the others run on 1.1.
+      // sync needs contract 1.2 (app jobs + ctx.upstreams / ctx.records); the others run on 1.1.
       expect(m.contract, m.name).toBe(m.jobs ? '^1.2' : '^1.1');
       expect(rt.skillInfo(m.name)!.errors, m.name).toEqual(m.errors ?? []);
     }

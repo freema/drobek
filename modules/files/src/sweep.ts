@@ -1,5 +1,5 @@
 /**
- * The files sweep (NSO-325): what the upload and delete paths cannot clean up
+ * The files sweep: what the upload and delete paths cannot clean up
  * themselves, removed on a timer in the server process (apps/server jobs):
  *
  *  1. the `mod_files` rows of apps deleted at least RETENTION ago — an app

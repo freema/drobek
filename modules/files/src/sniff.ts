@@ -1,6 +1,6 @@
 /**
  * What a stored file IS, decided from its bytes — never from the client's
- * Content-Type or file name (§5.5). PURE, unit tested.
+ * Content-Type or file name. PURE, unit tested.
  *
  *   image/png   89 50 4E 47 0D 0A 1A 0A
  *   image/jpeg  FF D8 FF
@@ -25,7 +25,7 @@
  * `unsupported_type`. SVG and CSV are served as attachments only (serve.ts).
  *
  * The signatures and the SVG root check live in @drobek/core (shared with app
- * assets, NSO-358); this file narrows them to the module's types.
+ * assets); this file narrows them to the module's types.
  */
 import { hasControlBytes, looksLikeSvg, sniffSignature } from '@drobek/modules';
 
@@ -55,7 +55,7 @@ export function sniffBinary(head: Buffer): FileType | null {
 /** Enough bytes to tell every binary signature apart. */
 const MAGIC_BYTES = 12;
 
-/** The SVG root check is shared with app assets (@drobek/core, NSO-358). */
+/** The SVG root check is shared with app assets (@drobek/core). */
 export { looksLikeSvg };
 
 const MARKUP_RE = /<!doctype|<html|<script|<\?xml|<svg|<body|<iframe/i;

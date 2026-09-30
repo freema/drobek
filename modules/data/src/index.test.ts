@@ -280,7 +280,7 @@ describe('confirmRequired', () => {
     expect(await confirm({}, { collections: { x: { rules: { create: 'user', read: 'user' } } } })).toEqual([]);
   });
 
-  it('read widened to every signed-in user needs a confirmation (NSO-322 M2) — not for a NEW empty collection', async () => {
+  it('read widened to every signed-in user needs a confirmation — not for a NEW empty collection', async () => {
     expect(await confirm({ collections: { x: {} } }, { collections: { x: { rules: { read: 'user' } } } })).toEqual([
       'data.collections.x.rules.read: "owner|admin" → "user" (every signed-in user may read every record, not only their own)',
     ]);
@@ -306,7 +306,7 @@ describe('confirmRequired', () => {
     expect(await confirm({ collections: { todos: { schema: TODO_SCHEMA } } }, { collections: { todos: {} } }, appB)).toEqual([]);
   });
 
-  it('removing a collection that holds records (not an empty one) — NSO-324', async () => {
+  it('removing a collection that holds records (not an empty one)', async () => {
     expect(await confirm({ collections: { todos: {}, members: {} } }, { collections: { members: {} } })).toEqual([]);
     await create(ctx({ principal: A }), 'todos', { title: 'one' });
     await create(ctx({ principal: B }), 'todos', { title: 'two' });
@@ -338,7 +338,7 @@ describe('REST: rules', () => {
     expect((await ctx({ principal: B }).request('GET', '/members')).status).toBe(200);
   });
 
-  it('two interleaved PATCHes of one record both land: the merge happens inside the write lock (NSO-322 M1)', async () => {
+  it('two interleaved PATCHes of one record both land: the merge happens inside the write lock', async () => {
     const rec = await create(ctx({ principal: A }), 'members', { name: 'Ana', city: 'Brno', n: 0 });
     // Request 1 reads the record, then its write transaction waits until request 2 has written.
     let open!: () => void;
@@ -430,7 +430,7 @@ describe('REST: rules', () => {
 
   it('create: public — a visitor adds a record without an owner; update/delete stay admin', async () => {
     const rec = await create(ctx(), 'guestbook', { text: 'hi' });
-    expect(rec).not.toHaveProperty('_owner'); // a visitor never sees _owner (NSO-324)
+    expect(rec).not.toHaveProperty('_owner'); // a visitor never sees _owner
     expect((await ctx({ principal: ADMIN }).request('GET', `/guestbook/${rec._id}`)).body).toMatchObject({ _owner: null });
     expect((await ctx().request('GET', '/guestbook')).status).toBe(200);
     expect((await ctx().request('PATCH', `/guestbook/${rec._id}`, { body: { text: 'x' } })).status).toBe(401);
@@ -454,7 +454,7 @@ describe('REST: rules', () => {
     expect(csrf.status).toBe(403);
   });
 
-  it('NSO-377: a collection declared only in the pending change → 409 pending_confirmation; the rest answers as before', async () => {
+  it('a collection declared only in the pending change → 409 pending_confirmation; the rest answers as before', async () => {
     const pendingConfig = { collections: { ...CONFIG.collections, scores: { rules: { read: 'public', create: 'public' } } } };
     const t = createModuleTestContext(data, { db, app: { id: appA, slug: 'notes', workspaceId }, config: CONFIG, pendingConfig, origin: 'http://notes--preview.apps.localhost' });
     const list = await t.request('GET', '/scores');
@@ -648,7 +648,7 @@ describe('CSV export', () => {
     expect(some).toHaveLength(2);
   });
 
-  it('streams in chunks (never one joined string), identical to the joined lines; one read of a schemaless collection; a bad filter still answers 400 (NSO-323 M5)', async () => {
+  it('streams in chunks (never one joined string), identical to the joined lines; one read of a schemaless collection; a bad filter still answers 400', async () => {
     const t = ctx({ principal: ADMIN });
     await seedGuestbook(1200);
     const res = await t.request('GET', '/guestbook/export.csv');
@@ -741,7 +741,7 @@ describe("the owner's view (records authority)", () => {
   });
 });
 
-describe("the owner's edits (records authority, M2-03)", () => {
+describe("the owner's edits (records authority)", () => {
   beforeEach(() => {
     viewLimits = {};
   });
@@ -824,7 +824,7 @@ describe("the owner's edits (records authority, M2-03)", () => {
   });
 });
 
-describe('a stored config that fails the schema (legacy import past MAX_COLLECTIONS, hand edits — NSO-323 M6)', () => {
+describe('a stored config that fails the schema (legacy import past MAX_COLLECTIONS, hand edits)', () => {
   const PUBLIC = { read: 'public', create: 'public', update: 'admin', delete: 'admin' };
   const many = (n: number) => Object.fromEntries(Array.from({ length: n }, (_, i) => [`c${i}`, { rules: PUBLIC }]));
 
@@ -900,7 +900,7 @@ describe('the legacy Data API import (module migration 0000)', () => {
   });
 });
 
-describe('NSO-324: the caller’s own write bucket', () => {
+describe('the caller’s own write bucket', () => {
   const OWN = { DATA_WRITES_PER_PRINCIPAL_PER_MIN: 3, DATA_WRITE_RATE_LIMIT: 6 };
 
   it('an anonymous flood from one IP hits 429 on its own bucket; a signed-in user (and another visitor) still write', async () => {
@@ -952,7 +952,7 @@ describe('NSO-324: the caller’s own write bucket', () => {
   });
 });
 
-describe('NSO-324: _owner is hidden from visitors', () => {
+describe('_owner is hidden from visitors', () => {
   it('read: public list and get answer no _owner to a visitor; a signed-in user and the owner’s view keep it', async () => {
     const rec = await create(ctx({ principal: A }), 'guestbook', { text: 'from Ana' });
     expect(rec._owner).toBe('eu_a');
@@ -968,7 +968,7 @@ describe('NSO-324: _owner is hidden from visitors', () => {
   });
 });
 
-describe('NSO-324: removed collections do not leave orphan records', () => {
+describe('removed collections do not leave orphan records', () => {
   let owner: string;
   const app = () => ({ id: appA, slug: 'notes', workspaceId, workspaceSlug: 'data-ws' });
 
@@ -1013,7 +1013,7 @@ describe('NSO-324: removed collections do not leave orphan records', () => {
     expect(await (await rt.records({ id: appA, slug: 'notes', workspaceId }))!.orphans()).toEqual([]);
   });
 
-  it('NSO-377: a pending new collection answers pending_confirmation on the app host until confirmed; a pending rule change is not applied early', async () => {
+  it('a pending new collection answers pending_confirmation on the app host until confirmed; a pending rule change is not applied early', async () => {
     const rt = await runtimeFor(async () => ANON);
     const host = (path: string) => rt.handle(hostGet(`/__drobek/v1/data${path}`, 'notes'), { id: appA, slug: 'notes', workspaceId });
     const held = await rt.configure({

@@ -1,4 +1,4 @@
-// Thin route glue (PHY-59) — logic lives in @drobek/dashboard + @drobek/proxy.
+// Thin route glue — logic lives in @drobek/dashboard + @drobek/proxy.
 export {
   loader,
   action,

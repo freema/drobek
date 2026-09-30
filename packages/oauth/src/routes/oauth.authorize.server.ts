@@ -1,5 +1,5 @@
 /**
- * GET/POST /oauth/authorize (U5, M0-04) — the browser-facing authorization
+ * GET/POST /oauth/authorize — the browser-facing authorization
  * endpoint + consent. Server half; the consent UI lives in ./oauth.authorize.tsx.
  *
  * Validation order follows RFC 6749 §4.1.2.1: the client (a DCR client_id or

@@ -6,7 +6,7 @@
  * across `me` / `verify` / `logout`.
  *
  * `providers()` lists the sign-in methods that are on; `signIn(id)` starts a
- * provider sign-in (NSO-348): it asks the app host for the IdP URL and leaves
+ * provider sign-in: it asks the app host for the IdP URL and leaves
  * the page — the browser comes back signed in (see flow.ts).
  */
 import type { SdkCore } from '@drobek/sdk';

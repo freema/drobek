@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Test-only (NSO-308): the repo gate of the agent skills skill_info serves (skills/<name>/SKILL.md + modules/*/SKILL.md) — runs the checkSkill library of @drobek/modules/testing (the 5-section format, every code example compiled and typechecked against the live SDK types) over the built-in modules and the general skills.",
+  "description": "Test-only: the repo gate of the agent skills skill_info serves (skills/<name>/SKILL.md + modules/*/SKILL.md) — runs the checkSkill library of @drobek/modules/testing (the 5-section format, every code example compiled and typechecked against the live SDK types) over the built-in modules and the general skills.",
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest",

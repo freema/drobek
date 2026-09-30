@@ -1,5 +1,5 @@
 /**
- * drobek MCP scope vocabulary + the tool → scope table (M0-04, NSO-282).
+ * drobek MCP scope vocabulary + the tool → scope table.
  *
  * Three scopes, one consent checkbox each. A grant (OAuth token or API key) is
  * bound to a USER; the scope decides WHICH tools exist for it, and the user's
@@ -8,18 +8,18 @@
  *   read    — look: list apps (+ who am I), get an app, read its files, read skills,
  *             query an app's stored data, read its logs, list its assets and
  *             its custom domains, and (workspace admins) the workspace's proxy
- *             upstreams (NSO-372).
+ *             upstreams.
  *   write   — change: create apps (also as a copy of a gallery app,
- *             `duplicate_app`, NSO-340), write files (new versions), restore,
+ *             `duplicate_app`), write files (new versions), restore,
  *             configure platform modules, upload (upload URLs) and delete assets,
- *             add, verify and remove custom domains (NSO-366), register and
- *             remove proxy upstreams without a secret (NSO-372).
- *   publish — make a version live at its public URL (the `publish` tool, M0-06),
- *             list it in the public gallery (`set_gallery_listing`, NSO-340) and
+ *             add, verify and remove custom domains, register and
+ *             remove proxy upstreams without a secret.
+ *   publish — make a version live at its public URL (the `publish` tool),
+ *             list it in the public gallery (`set_gallery_listing`) and
  *             choose the primary domain the production address redirects to
- *             (`set_primary_domain`, NSO-366);
+ *             (`set_primary_domain`);
  *             a super-admin also allows or blocks a workspace's publishing
- *             (`set_workspace_publishing`, NSO-366 — registered for super-admins only).
+ *             (`set_workspace_publishing`, registered for super-admins only).
  *
  * `TOOL_SCOPES` is the ONE table both `tools/list` filtering and per-call
  * enforcement read (resource/mcp.ts).
@@ -87,12 +87,12 @@ export const TOOL_SCOPES = {
   list_domains: 'read',
   list_upstreams: 'read',
   create_app: 'write',
-  // NSO-340: a copy of a gallery app in the caller's workspace, like create_app.
+  // A copy of a gallery app in the caller's workspace, like create_app.
   duplicate_app: 'write',
   write_files: 'write',
   restore_version: 'write',
   configure_module: 'write',
-  // NSO-392: a run writes the fetched records into the app's data, like the scheduled run.
+  // A run writes the fetched records into the app's data, like the scheduled run.
   sync_now: 'write',
   create_asset_upload: 'write',
   delete_asset: 'write',
@@ -102,11 +102,11 @@ export const TOOL_SCOPES = {
   register_upstream: 'write',
   remove_upstream: 'write',
   publish: 'publish',
-  // NSO-340: listing in the public gallery is public exposure, like publishing.
+  // Listing in the public gallery is public exposure, like publishing.
   set_gallery_listing: 'publish',
-  // NSO-366: the primary domain decides where the production address sends every visitor.
+  // The primary domain decides where the production address sends every visitor.
   set_primary_domain: 'publish',
-  // NSO-366: who may publish is decided under the publish scope; @drobek/mcp registers it for super-admins only.
+  // Who may publish is decided under the publish scope; @drobek/mcp registers it for super-admins only.
   set_workspace_publishing: 'publish',
 } as const satisfies Record<string, Scope | null>;
 

@@ -1,6 +1,6 @@
 /**
- * The end-user session seam (M1-02): cookie, session records, the epoch
- * (PHY-76 #9) and the core principal resolver every module relies on.
+ * The end-user session seam: cookie, session records, the epoch (mass
+ * revocation) and the core principal resolver every module relies on.
  */
 import { describe, expect, it } from 'vitest';
 import { FakeRedis } from '@drobek/auth';
@@ -83,7 +83,7 @@ describe('sessions + epoch', () => {
     expect(parseEndUserSession('{')).toBeNull();
   });
 
-  it('a provider session keeps its provider and connection; the resolver hands both to the session owner (NSO-360)', async () => {
+  it('a provider session keeps its provider and connection; the resolver hands both to the session owner', async () => {
     const r = new FakeRedis();
     const connection = 'c'.repeat(43);
     const token = await createEndUserSession(r, 'app1', { ...USER, provider: 'oidc', connection });

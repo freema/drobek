@@ -1,5 +1,5 @@
 /**
- * The module-jobs scheduler (NSO-391) over a fake runtime, in-memory state and
+ * The module-jobs scheduler over a fake runtime, in-memory state and
  * an in-memory lease shared like Redis would be between replicas: when a run
  * is due, once across replicas, backoff after a failure, per-app intervals
  * from the config, the concurrency cap, the timeout, and that nothing ever

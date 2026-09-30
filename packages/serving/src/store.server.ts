@@ -1,5 +1,5 @@
 /**
- * The app hosts' read path + its caches (M0-06). Three in-process caches:
+ * The app hosts' read path + its caches. Three in-process caches:
  *
  *  - host resolution  `slug → {target → {app, version}}` — what a host serves
  *    RIGHT NOW (the published pointer, the newest ok version, version N). This
@@ -10,17 +10,17 @@
  *  - version manifests `versionId → served manifest` — a version is immutable,
  *    so this never needs busting (count-capped LRU).
  *  - file bytes `sha256 → Buffer` — content-addressed, byte-capped LRU
- *    (256 MiB by default). The production hosts' split bundles (NSO-381: the
+ *    (256 MiB by default). The production hosts' split bundles (the
  *    code without its inline source map, and the map) share that budget,
  *    keyed by the sha256 and the file name; a bundle without an inline map
  *    is remembered in a count-capped set so it is scanned once.
  *
- *  - custom hosts (M3-01) `hostname → { slug | null } | null` — which app a
+ *  - custom hosts `hostname → { slug | null } | null` — which app a
  *    custom domain serves (null = not a custom domain at all → the dashboard;
  *    `slug: null` = registered but unverified → 404). Same 60 s TTL; every
  *    `domain` app-changed event drops the whole map (bustCustomHosts).
  *
- *  - negative caches (NSO-315) `slug → expiry`, `hostname → expiry` — a slug
+ *  - negative caches `slug → expiry`, `hostname → expiry` — a slug
  *    with no live app / a hostname that is no custom domain at all. Wildcard
  *    DNS makes every label a new host, so these are kept APART from the
  *    positive caches (a random-slug flood can never evict a real app's entry),
@@ -53,12 +53,12 @@ export interface ServeApp {
   /** Raw `apps.frame_ancestors` (validated by the header builder). */
   frameAncestors: string | null;
   /**
-   * M3-01: the app's verified PRIMARY custom domain — its production host
+   * The app's verified PRIMARY custom domain — its production host
    * (`<slug>.<APPS_DOMAIN>`) answers 302 there. Resolved for prod/custom
    * targets only; absent/null = no redirect.
    */
   primaryDomain?: string | null;
-  /** `apps.locked_reason` (NSO-293): non-null = taken down → every host answers 451. */
+  /** `apps.locked_reason`: non-null = taken down → every host answers 451. */
   lockedReason?: string | null;
   /**
    * The public gallery shows the app right now (isGalleryVisible: listed,
@@ -87,7 +87,7 @@ export interface ServeLoaders {
   loadFiles(versionId: string): Promise<StoredFile[]>;
   loadBlobs(sha256s: string[]): Promise<Map<string, Buffer>>;
   loadPasswordHash(appId: string): Promise<string | null>;
-  /** M3-01: what a custom-domain candidate host is (absent → never a custom domain). */
+  /** What a custom-domain candidate host is (absent → never a custom domain). */
   resolveCustomHost?(hostname: string): Promise<CustomHostResolution | null>;
 }
 
@@ -104,7 +104,7 @@ export interface ServeStoreOptions {
 }
 
 export const RESOLVE_TTL_MS = 60_000;
-/** NSO-315: how long an unknown slug / hostname is remembered. */
+/** How long an unknown slug / hostname is remembered. */
 export const NEGATIVE_TTL_MS = 30_000;
 export const MAX_NEGATIVE_ENTRIES = 10_000;
 const NO_APP: Resolved = Object.freeze({ app: null, version: null });
@@ -159,7 +159,7 @@ export class ServeStore {
     return value;
   }
 
-  /** M3-01: which app a custom-domain candidate serves (cached; see the module comment). */
+  /** Which app a custom-domain candidate serves (cached; see the module comment). */
   async resolveCustomHost(hostname: string): Promise<CustomHostResolution | null> {
     const hit = this.customHosts.get(hostname);
     if (hit && hit.expires > this.now()) return hit.value;
@@ -177,7 +177,7 @@ export class ServeStore {
   }
 
   /**
-   * NSO-315: does the cache already know `slug` as a live app (an unexpired
+   * Does the cache already know `slug` as a live app (an unexpired
    * positive entry for any of its hosts)? No I/O — the unknown-host limiter
    * lets a throttled client through to such a host without a lookup risk.
    */
@@ -206,7 +206,7 @@ export class ServeStore {
   }
 
   /**
-   * NSO-381: the bundle `sha256` served at `path` split into code + source
+   * The bundle `sha256` served at `path` split into code + source
    * map (see sourcemap.ts). null = it carries no inline map (serve the blob
    * as is); undefined = the blob is missing.
    */

@@ -200,7 +200,7 @@ describe('rules', () => {
   });
 });
 
-describe('confirmRoleOf (NSO-322 H3)', () => {
+describe('confirmRoleOf', () => {
   it('only a workspace admin (super-admins arrive as one) confirms admin-only changes', () => {
     expect(confirmRoleOf('workspace-admin')).toBe('admin');
     expect(confirmRoleOf('editor')).toBe('editor');

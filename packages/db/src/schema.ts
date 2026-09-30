@@ -1,7 +1,7 @@
 /**
  * drobek core schema — day-one set (M0 walking skeleton).
  *
- * Identity + tenancy + apps and their immutable versions (M0-02, NSO-281),
+ * Identity + tenancy + apps and their immutable versions,
  * plus the tables each later unit added (oauth_*, upstreams, audit_log,
  * app_errors, app_daily_stats, app_compiles, module_request_stats,
  * module_configs, module_secrets, workspace_modules, abuse_reports,
@@ -15,7 +15,7 @@
  *   is the whole state — no disk volume to back up separately.
  * - A version is immutable; publish/restore only move `apps.published_version_id`
  *   or add a new version.
- * - PHY-101: soft-delete tombstone (`deleted_at`) on apps.
+ * - Soft-delete tombstone (`deleted_at`) on apps.
  * - super-admin is a GLOBAL env flag (SUPERADMIN_EMAIL), NOT a membership
  *   role — hence memberships only knows workspace-admin/editor/viewer.
  */
@@ -45,11 +45,11 @@ const bytea = customType<{ data: Buffer; driverData: Buffer | Uint8Array }>({
 });
 
 /**
- * Who performed an audited action (PHY-85). `agent` = an MCP tool call made on
+ * Who performed an audited action. `agent` = an MCP tool call made on
  * behalf of a connected coding agent (OAuth token); `user` = a human dashboard/
  * web session action. Derived SERVER-SIDE at the call site — never from client
  * input — so attribution is not spoofable. Defaults to `user` so the existing
- * deploy/rollback rows migrate additively without loss. `end_user` (M1-01) = a
+ * deploy/rollback rows migrate additively without loss. `end_user` = a
  * signed-in end user of an app acting through a platform module on the apps
  * origin (`ctx.audit`); such rows carry no `actor_user_id` (end users are not
  * drobek users).
@@ -67,10 +67,9 @@ export const membershipRoleEnum = pgEnum('membership_role', [
 ]);
 
 /**
- * App visibility gate, checked on the app host BEFORE any file is read
- * (M0-06): `public` or `password`. The former `team` value is gone — app hosts
- * never read the dashboard session, so "members only" cannot be enforced
- * there (migration 0010 turns `team` apps into `password` apps).
+ * App visibility gate, checked on the app host BEFORE any file is read:
+ * `public` or `password`. There is no "members only": app hosts never read
+ * the dashboard session, so it could not be enforced there.
  */
 export const appVisibilityEnum = pgEnum('app_visibility', ['public', 'password']);
 
@@ -92,7 +91,7 @@ export const users = pgTable('users', {
     .primaryKey()
     .$defaultFn(() => createId()),
   email: text('email').notNull().unique(),
-  /** Google OIDC subject (`sub`); links the OAuth account to this user (U3). */
+  /** Google OIDC subject (`sub`); links the OAuth account to this user. */
   googleSub: text('google_sub').unique(),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
@@ -107,15 +106,15 @@ export const workspaces = pgTable('workspaces', {
   slug: text('slug').notNull().unique(),
   name: text('name').notNull(),
   createdAt: timestamp('created_at').notNull().defaultNow(),
-  /** NSO-366: PUBLISH_APPROVAL=approval — a super-admin allowed this workspace to publish (null = not approved). */
+  /** PUBLISH_APPROVAL=approval — a super-admin allowed this workspace to publish (null = not approved). */
   publishApprovedAt: timestamp('publish_approved_at', { withTimezone: true }),
   publishApprovedBy: text('publish_approved_by').references((): AnyPgColumn => users.id, { onDelete: 'set null' }),
-  /** NSO-366: the last approval request e-mailed to the operator (dedupe: one per 24 h until decided). */
+  /** The last approval request e-mailed to the operator (dedupe: one per 24 h until decided). */
   publishApprovalRequestedAt: timestamp('publish_approval_requested_at', { withTimezone: true }),
   publishApprovalRequestedBy: text('publish_approval_requested_by').references((): AnyPgColumn => users.id, {
     onDelete: 'set null',
   }),
-  /** NSO-366: a super-admin turned publishing off for this workspace (refused in every PUBLISH_APPROVAL mode; null = not blocked). */
+  /** A super-admin turned publishing off for this workspace (refused in every PUBLISH_APPROVAL mode; null = not blocked). */
   publishBlockedAt: timestamp('publish_blocked_at', { withTimezone: true }),
   publishBlockedBy: text('publish_blocked_by').references((): AnyPgColumn => users.id, { onDelete: 'set null' }),
 });
@@ -148,7 +147,7 @@ export const apps = pgTable(
       .references(() => workspaces.id),
     /** GLOBALLY unique — it is the app's host label `<slug>.<APPS_DOMAIN>`. */
     slug: text('slug').notNull(),
-    /** Human-readable name given at create_app (null for pre-M0-05 apps → show the slug). */
+    /** Human-readable name given at create_app (null for older apps → show the slug). */
     name: text('name'),
     /** The version served on the production host; publish/rollback move it. */
     publishedVersionId: text('published_version_id').references(
@@ -159,7 +158,7 @@ export const apps = pgTable(
     /** Only set when visibility = 'password'. */
     passwordHash: text('password_hash'),
     /**
-     * CSP `frame-ancestors` override for the app's hosts (M0-06), e.g.
+     * CSP `frame-ancestors` override for the app's hosts, e.g.
      * `https://intranet.example.com`. Null → `'none'` (no embedding). Edited
      * in the dashboard later (M2); validated before it reaches a header.
      */
@@ -167,14 +166,14 @@ export const apps = pgTable(
     status: appStatusEnum('status').notNull().default('live'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     /**
-     * Soft delete (PHY-101; dashboard delete NSO-288): a deleted app is
+     * Soft delete: a deleted app is
      * invisible everywhere (dashboard, MCP, app hosts). It keeps its slug for
      * 30 days; then @drobek/apps renames it to the tombstone
      * `<slug>~deleted-<id>` so a new app can take the slug.
      */
     deletedAt: timestamp('deleted_at'),
     /**
-     * Super-admin takedown (M4-02, NSO-293): the reason CATEGORY
+     * Super-admin takedown: the reason CATEGORY
      * (`phishing` | `malware` | `spam` | `copyright` | `illegal` | `other`,
      * validated by @drobek/apps). Non-null = locked: every host of the app
      * answers 451, and writes / publish / restore / module config are refused
@@ -182,25 +181,25 @@ export const apps = pgTable(
      */
     lockedReason: text('locked_reason'),
     /**
-     * When the production host last started serving a version (NSO-340):
+     * When the production host last started serving a version:
      * every publish sets it, unpublish / takedown clear it. The public
      * gallery lists the newest first.
      */
     publishedAt: timestamp('published_at'),
     /**
-     * NSO-340: the owner's opt-in to the public gallery — changed in the
+     * The owner's opt-in to the public gallery — changed in the
      * dashboard by an editor+ of a PUBLISHED app, never through MCP.
      * Unpublish / takedown turn it off. The gallery also filters at query
      * time (published, not taken down, not deleted, not hidden).
      */
     galleryListed: boolean('gallery_listed').notNull().default(false),
-    /** NSO-340: the gallery's one-line public description (plain text, ≤ 160 chars). */
+    /** The gallery's one-line public description (plain text, ≤ 160 chars). */
     galleryDescription: text('gallery_description'),
-    /** NSO-340: a super-admin hid the gallery entry (non-null = hidden, whatever the owner sets). */
+    /** A super-admin hid the gallery entry (non-null = hidden, whatever the owner sets). */
     galleryHiddenAt: timestamp('gallery_hidden_at'),
-    /** NSO-340: the owner lets signed-in people duplicate the listed app into their own workspace. */
+    /** The owner lets signed-in people duplicate the listed app into their own workspace. */
     galleryAllowDuplicate: boolean('gallery_allow_duplicate').notNull().default(false),
-    /** NSO-340: the gallery app this one was duplicated from (null when the source is gone or none). */
+    /** The gallery app this one was duplicated from (null when the source is gone or none). */
     duplicatedFromAppId: text('duplicated_from_app_id').references((): AnyPgColumn => apps.id, { onDelete: 'set null' }),
     /** The source's slug at duplication time, kept when the source is deleted. */
     duplicatedFromSlug: text('duplicated_from_slug'),
@@ -208,7 +207,7 @@ export const apps = pgTable(
   (t) => [
     uniqueIndex('apps_slug_uq').on(t.slug),
     index('apps_duplicated_from_idx').on(t.duplicatedFromAppId).where(sql`${t.duplicatedFromAppId} IS NOT NULL`),
-    // The public gallery page reads listed apps newest-published first (NSO-340).
+    // The public gallery page reads listed apps newest-published first.
     index('apps_gallery_idx').on(t.publishedAt.desc(), t.slug.desc()).where(sql`${t.galleryListed}`),
     index('apps_workspace_idx').on(t.workspaceId),
     // The slug-release sweep reads deleted apps only.
@@ -222,7 +221,7 @@ export const apps = pgTable(
   ]
 );
 
-/** NSO-340: a signed-in drobek account likes a gallery app — one row per account and app. */
+/** A signed-in drobek account likes a gallery app — one row per account and app. */
 export const galleryLikes = pgTable(
   'gallery_likes',
   {
@@ -237,7 +236,7 @@ export const galleryLikes = pgTable(
   (t) => [primaryKey({ columns: [t.appId, t.userId] })]
 );
 
-/** NSO-340: opens of a gallery app through the gallery's counting link, per UTC day (`YYYY-MM-DD`); no visitor data. */
+/** Opens of a gallery app through the gallery's counting link, per UTC day (`YYYY-MM-DD`); no visitor data. */
 export const galleryOpens = pgTable(
   'gallery_opens',
   {
@@ -279,13 +278,13 @@ export const appVersions = pgTable(
     /** @drobek/compile messages when compile_status = 'error'. */
     compileErrors: jsonb('compile_errors'),
     /**
-     * NSO-362: set when a publish froze the app's assets for this version
+     * Set when a publish froze the app's assets for this version
      * (its `app_version_assets` rows — possibly none); null = never frozen,
      * or the snapshot was pruned.
      */
     assetsFrozenAt: timestamp('assets_frozen_at'),
     /**
-     * NSO-388: the TypeScript check of this version's sources (a readiness
+     * The TypeScript check of this version's sources (a readiness
      * warning source), written by the background check; null = not checked.
      */
     typecheck: jsonb('typecheck'),
@@ -315,13 +314,12 @@ export const versionFiles = pgTable(
 );
 
 /**
- * Append-only audit trail (U6/PHY-57; governance v1 PHY-85; TECHNICAL_DESIGN
- * §1). Every security-relevant workspace mutation (deploy.activate,
- * deploy.rollback, app.create, member.invite/accept/role_change, …) writes one
+ * Append-only audit trail. Every security-relevant workspace mutation
+ * (deploy.activate, deploy.rollback, app.create, member.invite/accept/role_change, …) writes one
  * immutable row. APPEND-ONLY: rows are never updated and never deleted except by
  * the age-based retention prune (@drobek/audit).
  *
- * Attribution (PHY-85): `actor_user_id` is the acting user (nullable for system
+ * Attribution: `actor_user_id` is the acting user (nullable for system
  * actions); `actor_kind` records whether that action came from a connected AGENT
  * (an MCP tool call) or a human USER (dashboard/web) — both derived server-side.
  *
@@ -361,12 +359,12 @@ export const auditLog = pgTable(
   ]
 );
 
-// ── MCP OAuth 2.1 Authorization Server (U5, PHY-71/PHY-53) ────────────────────
+// ── MCP OAuth 2.1 Authorization Server ────────────────────
 //
 // drobek's web app is the OAuth 2.1 Authorization Server; mcp-server is the
 // protected Resource Server. All opaque tokens/codes are stored SHA-256-hashed
 // at rest (never the raw secret). PKCE S256 is mandatory. Tokens are
-// bound to a USER (M0-04, NSO-282) — not to a workspace: every MCP tool call
+// bound to a USER — not to a workspace: every MCP tool call
 // re-resolves the caller's membership in the workspace it targets — and carry
 // the granted scope (`read` / `write` / `publish`) plus the RFC 8707
 // `audience` the Resource Server validates. See @drobek/oauth.
@@ -467,7 +465,7 @@ export const oauthRefreshTokens = pgTable('oauth_refresh_tokens', {
 });
 
 /**
- * Personal API keys (M0-04, NSO-282): `drk_` + 32 base64url chars, an
+ * Personal API keys: `drk_` + 32 base64url chars, an
  * alternative Bearer for the same MCP Resource Server path (the prefix tells
  * them apart). Bound to a user like an OAuth token, same scope vocabulary
  * (`scopes` is space-delimited), no audience. Only the SHA-256 of the key is
@@ -489,7 +487,7 @@ export const apiKeys = pgTable('api_keys', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
 
-// ── Agent loop v1 — error beacon + serving signals (PHY-123, PHY-92 slice) ─────
+// ── Agent loop v1 — error beacon + serving signals ─────
 //
 // The observe half of the deploy→observe→fix loop. `app_errors` is a per-app
 // RING BUFFER (capped count + age, oldest evicted by @drobek/insights on insert)
@@ -499,7 +497,7 @@ export const apiKeys = pgTable('api_keys', {
 // roll-up (request volume / 5xx / 404s-by-path), fed from Redis hot counters by
 // a light flush. Both are read-only to the app_errors/app_logs MCP tools + the
 // dashboard Overview panels (viewer+; stored text is escaped on render).
-// NSO-391: a failed run of a module's per-app job lands here too (type
+// A failed run of a module's per-app job lands here too (type
 // `module_job`, with `module` + `job`; server-side, redacted like the beacon's).
 
 export const appErrorTypeEnum = pgEnum('app_error_type', [
@@ -540,7 +538,7 @@ export const appErrors = pgTable(
 );
 
 /**
- * Per-app, per-UTC-day serving signals (PHY-123). `day` is a `YYYY-MM-DD` string
+ * Per-app, per-UTC-day serving signals. `day` is a `YYYY-MM-DD` string
  * (deterministic bucket, no tz math). `path_404_counts` is `{ path: count }`;
  * `__other__` absorbs paths past the per-day cardinality cap. Upserted from the
  * Redis hot counters on the read path (unique on (app_id, day)).
@@ -563,7 +561,7 @@ export const appDailyStats = pgTable(
   (t) => [primaryKey({ columns: [t.appId, t.day] })]
 );
 
-// ── get_logs (M1-07, NSO-290) — compile history + module request stats ────────
+// ── get_logs — compile history + module request stats ────────
 //
 // `app_compiles` is a per-app history of every compile a write ran (create_app,
 // write_files — ok, failed or refused), newest kept: 30 days / the last 200
@@ -611,7 +609,7 @@ export const moduleRequestStats = pgTable(
   (t) => [primaryKey({ columns: [t.appId, t.module, t.statusClass, t.day] })]
 );
 
-// ── BFF proxy v1 — authed-member gateway to a backend (PHY-59, U12 slice) ──────
+// ── BFF proxy v1 — authed-member gateway to a backend ──────
 //
 // A static app reaches a backend WITHOUT holding its secret: drobek is the
 // controlled gateway. A workspace-admin REGISTERS an upstream (a pinned base_url
@@ -620,11 +618,11 @@ export const moduleRequestStats = pgTable(
 // by the KEK env DROBEK_MASTER_KEY). At forward time drobek decrypts the secret
 // IN-MEMORY, injects it as the configured auth header, and forwards to the
 // SSRF-guarded upstream. In v1 the caller is an AUTHENTICATED workspace MEMBER
-// (drobek_session) — the anonymous public-app-visitor path is DEFERRED to U11
+// (drobek_session) — the anonymous public-app-visitor path is left to
 // end-user auth (Referer is spoofable and is NOT a caller-auth boundary), so
-// `allowed_app_ids` is STORED for U11 but is NOT the v1 caller-auth.
+// `allowed_app_ids` is stored but is NOT the v1 caller-auth.
 
-/** MVP upstream auth modes. HMAC + OpenAPI validation are deferred (PHY-59 v1). */
+/** MVP upstream auth modes. HMAC + OpenAPI validation are not supported. */
 export const upstreamAuthTypeEnum = pgEnum('upstream_auth_type', [
   'none',
   'bearer',
@@ -651,7 +649,7 @@ export const upstreams = pgTable(
     /** Header name to inject the secret under when auth_type = 'header'. */
     authHeaderName: text('auth_header_name'),
     /**
-     * STORED for U11 hosted-app end-user auth (which app may call this upstream
+     * STORED for hosted-app end-user auth (which app may call this upstream
      * anonymously) — NOT the v1 caller-auth (v1 = an authed workspace member).
      */
     allowedAppIds: text('allowed_app_ids').array().notNull().default([]),
@@ -685,7 +683,7 @@ export const upstreamSecrets = pgTable('upstream_secrets', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
 
-// ── Platform modules (M1-01, NSO-287) ────────────────────────────────────────
+// ── Platform modules ────────────────────────────────────────
 
 /**
  * Per-app configuration of one platform module (`@drobek/modules`).
@@ -740,7 +738,7 @@ export const moduleSecrets = pgTable(
 );
 
 /**
- * NSO-346: an opt-in platform module (`availability: 'opt-in'`) a super-admin
+ * An opt-in platform module (`availability: 'opt-in'`) a super-admin
  * enabled for one workspace in the dashboard. A default module never has a
  * row (it is on everywhere). The limits provider's `MODULE_ENABLED_<NAME>`
  * (plan) overrides the row in both directions; `enabled_by` turns null when
@@ -759,7 +757,7 @@ export const workspaceModules = pgTable(
   (t) => [primaryKey({ columns: [t.workspaceId, t.module] })]
 );
 
-// ── Custom domains (M3-01, NSO-292) ──────────────────────────────────────────
+// ── Custom domains ──────────────────────────────────────────
 //
 // A hostname an owner attached to an app. It serves the app's PUBLISHED
 // version once VERIFIED: `TXT _drobek.<hostname> = drobek-verify=<token>`
@@ -802,7 +800,7 @@ export const domains = pgTable(
   ]
 );
 
-// ── Abuse reports (M4-02, NSO-293) ───────────────────────────────────────────
+// ── Abuse reports ───────────────────────────────────────────
 //
 // The moderation queue: a report from the public form on the dashboard origin
 // (`/report?host=`, no login, rate-limited per IP) or a flag raised by the
@@ -840,7 +838,7 @@ export const abuseReports = pgTable(
   ]
 );
 
-// ── App assets (NSO-358, NSO-362) ────────────────────────────────────────────
+// ── App assets ────────────────────────────────────────────
 //
 // Binary files an app serves at `/<path>` (images, video, audio, fonts) —
 // the same URL space as its files, where an app file at the same path wins.
@@ -848,12 +846,12 @@ export const abuseReports = pgTable(
 // typed from their bytes. The bytes live on disk
 // (`ASSETS_DIR/<app_id>/<storage_key>`, not in Postgres — up to
 // APP_ASSET_MAX_BYTES each), content-addressed: an upload is stored under its
-// sha256 (rows from before NSO-362 keep their random key) and a file is never
+// sha256 (older rows keep a random key) and a file is never
 // rewritten, so several rows may share one.
 //
 // `app_assets` is the DRAFT: what uploads, replacements and deletes change,
 // and what the preview host serves. `app_version_assets` is the set a publish
-// FROZE for a version (NSO-362): the production host and custom domains serve
+// FROZE for a version: the production host and custom domains serve
 // only the live published version's rows, so an asset change reaches the
 // public URL only with a publish. A soft-deleted app's rows and files, and
 // files no row references, are removed by the assets sweep.
@@ -871,7 +869,7 @@ export const appAssets = pgTable(
     size: bigint('size', { mode: 'number' }).notNull(),
     /** Content hash — the strong ETag. */
     sha256: text('sha256').notNull(),
-    /** The file name under `ASSETS_DIR/<app_id>/` (the sha256; a random key for rows from before NSO-362). */
+    /** The file name under `ASSETS_DIR/<app_id>/` (the sha256, or a random key on older rows). */
     storageKey: text('storage_key').notNull(),
     createdByUserId: text('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at').notNull().defaultNow(),
@@ -880,7 +878,7 @@ export const appAssets = pgTable(
   (t) => [primaryKey({ columns: [t.appId, t.name] })]
 );
 
-/** NSO-362: the assets a publish froze for one version (see the section comment). */
+/** The assets a publish froze for one version (see the section comment). */
 export const appVersionAssets = pgTable(
   'app_version_assets',
   {

@@ -1,7 +1,7 @@
 /**
  * Unit-test helper: minimal in-memory Redis covering exactly the subset the
  * auth stack uses (GET/MGET/SET EX|PX|NX/GETEX/GETDEL/DEL/TTL/EXPIRE/PEXPIRE/
- * INCR/EXISTS) — also the end-user sessions of the platform `auth` module (M1-02).
+ * INCR/EXISTS) — also the end-user sessions of the platform `auth` module.
  * Set `failing = true` to make every op throw (fail-closed tests).
  * Not a *.test.ts file — vitest never collects it as a suite.
  */

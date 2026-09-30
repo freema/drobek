@@ -1,6 +1,6 @@
 /**
  * The TypeScript declarations of the SDK core, as the text the composed
- * `/__drobek/sdk.d.ts` starts with (M1-01). Kept next to core.ts; the
+ * `/__drobek/sdk.d.ts` starts with. Kept next to core.ts; the
  * `@drobek/modules` sdk tests parse the composed file and check that it
  * declares everything core.ts exports to apps.
  */

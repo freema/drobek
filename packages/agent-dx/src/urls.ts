@@ -1,5 +1,5 @@
 /**
- * Public-origin helpers for the agent docs (M1b, PHY-124). Mirror the resolution
+ * Public-origin helpers for the agent docs. Mirror the resolution
  * in @drobek/oauth/resource so the rendered URLs match what
  * the running stack actually serves — without taking a dependency on those
  * packages (agent-dx is a zero-dep leaf).

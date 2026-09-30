@@ -1,6 +1,6 @@
 /**
  * /admin/abuse on a real PGlite database (the session is stubbed; the owner
- * e-mail is counted, not sent) — NSO-371:
+ * e-mail is counted, not sent):
  *  - every listed app links to its dashboard overview and, when published,
  *    to its public address;
  *  - Take down is two steps: `?confirm=takedown` only reads (the panel names
@@ -98,7 +98,7 @@ afterAll(async () => {
   await pg.close();
 });
 
-describe('/admin/abuse (NSO-371)', () => {
+describe('/admin/abuse', () => {
   it('links a reported app to its overview and its public address', async () => {
     const page = await load();
     expect(page.confirm).toBeNull();

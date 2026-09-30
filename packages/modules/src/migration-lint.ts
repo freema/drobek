@@ -1,5 +1,5 @@
 /**
- * Start-time lint of an EXTERNAL module's migrations (NSO-345; modules loaded
+ * Start-time lint of an EXTERNAL module's migrations (modules loaded
  * from `DROBEK_MODULES_DIR`, never the built-ins). A module runs in-process
  * with the whole database at hand, so this is not a sandbox — it keeps a
  * third-party module's SCHEMA in its own namespace, where the trust model

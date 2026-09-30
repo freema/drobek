@@ -1,5 +1,5 @@
 /**
- * The data behind the "a scheduled import stopped" banner (NSO-392): the
+ * The data behind the "a scheduled import stopped" banner: the
  * sources of the module that declares `sync` (followed by capability, never
  * by name) that paused after failed runs. Best effort — a failure hides the
  * banner, it never breaks the page that renders it.

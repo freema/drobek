@@ -165,7 +165,7 @@ describe('skills', () => {
     ]);
   });
 
-  it("appInfo (NSO-297): get_app's modules.<name>.info and configure_module's info; a failing appInfo is left out", async () => {
+  it("appInfo: get_app's modules.<name>.info and configure_module's info; a failing appInfo is left out", async () => {
     const seen: unknown[] = [];
     const infoMod = defineModule<{ things: string[] }>({
       name: 'infomod',
@@ -318,7 +318,7 @@ describe('configure / confirm / reject', () => {
     expect(done.config).toMatchObject({ notify: ['b@example.com'] });
   });
 
-  it("confirmRole 'admin' (NSO-322 H3): an editor cannot confirm (403 admin_required) but may reject; an admin confirms and onConfirmed runs in the transaction", async () => {
+  it("confirmRole 'admin': an editor cannot confirm (403 admin_required) but may reject; an admin confirms and onConfirmed runs in the transaction", async () => {
     const confirmed: unknown[] = [];
     let failOnConfirm = false;
     const vault = defineModule<{ keys: string[]; note: string }>({
@@ -375,7 +375,7 @@ describe('configure / confirm / reject', () => {
     const done = await r.confirm({ app, module: 'vault', userId, role: 'admin' });
     expect(done).toMatchObject({ config: { keys: ['openai'], note: 'quiet' }, confirmed: ['keys: openai'] });
     expect(confirmed.at(-1)).toEqual({ before: [], after: ['openai'], app: app.id, userId, role: 'admin', hasDb: true });
-    // NSO-324: onConfirmed audits in the confirm transaction (actor: the confirming user) — the rolled-back one left no row.
+    // onConfirmed audits in the confirm transaction (actor: the confirming user) — the rolled-back one left no row.
     const granted = await db.select().from(auditLog).where(eq(auditLog.action, 'vault.granted'));
     expect(granted.map((g) => [g.actorUserId, g.actorKind, g.target, g.meta])).toEqual([
       [userId, 'user', app.slug, { keys: 0, module: 'vault' }],
@@ -388,7 +388,7 @@ describe('configure / confirm / reject', () => {
   });
 });
 
-describe('the dashboard view (M2-02)', () => {
+describe('the dashboard view', () => {
   it('moduleView: schema (input side), stored + effective config, the pending result, secrets as hasSecret only', async () => {
     await setModuleSecret({ appId: app.id, module: 'echo', name: 'ECHO_TOKEN', value: SECRET_VALUE, env: ENV });
     await rt.configure({ app, module: 'echo', patch: { loud: true }, actorUserId: userId });
@@ -469,7 +469,7 @@ describe('HTTP on the app hosts', () => {
     expect((await rt.handle(req('GET', '/__drobek/other'), app)).status).toBe(404);
   });
 
-  it('the effective config is parsed once per stored content, and a configure is seen at once (NSO-322 H1)', async () => {
+  it('the effective config is parsed once per stored content, and a configure is seen at once', async () => {
     await rt.configure({ app, module: 'echo', patch: { access: 'public', greeting: 'memo-one' }, actorUserId: userId });
     await rt.confirm({ app, module: 'echo', userId });
     const spy = vi.spyOn(echo.configSchema, 'safeParse');
@@ -497,7 +497,7 @@ describe('HTTP on the app hosts', () => {
     }
   });
 
-  it('/__drobek/beacon.js (M1-07): the minified beacon, immutable with its ?v=, 304 on the ETag', async () => {
+  it('/__drobek/beacon.js: the minified beacon, immutable with its ?v=, 304 on the ETag', async () => {
     expect(rt.sdk.beacon.url).toBe(`/__drobek/beacon.js?v=${rt.sdk.beacon.hash}`);
     const pinned = await rt.handle(req('GET', '/__drobek/beacon.js', { query: `v=${rt.sdk.beacon.hash}` }), app);
     expect(pinned.status).toBe(200);
@@ -513,7 +513,7 @@ describe('HTTP on the app hosts', () => {
     expect((await rt.handle(req('POST', '/__drobek/beacon.js'), app)).status).toBe(405);
   });
 
-  it('counts every response of a MATCHED route by status (M1-07); never a 429, an unknown route/method/module or the SDK (NSO-323)', async () => {
+  it('counts every response of a MATCHED route by status; never a 429, an unknown route/method/module or the SDK', async () => {
     const counted: [string, string, number][] = [];
     const r = await runtime({ requestStats: (appId, module, status) => void counted.push([appId, module, status]) });
     await r.handle(req('GET', '/__drobek/v1/echo/items/7'), app);
@@ -542,7 +542,7 @@ describe('HTTP on the app hosts', () => {
     expect((await broken.handle(req('GET', '/__drobek/v1/echo/items/7'), app)).status).toBe(200);
   });
 
-  it('request stats cost no SQL per response: 1000 × 429 add no statement, 1000 counted responses reach Postgres on the read (NSO-323 M3)', async () => {
+  it('request stats cost no SQL per response: 1000 × 429 add no statement, 1000 counted responses reach Postgres on the read', async () => {
     const statements: string[] = [];
     const spies = (['query', 'exec'] as const).map((method) => {
       const original = (pg[method] as (...a: unknown[]) => unknown).bind(pg);
@@ -715,7 +715,7 @@ describe('module e-mail (ctx.email.send through the runtime)', () => {
   /**
    * A sender module: POST /mail { to } sends to that recipient reference. It
    * owns end-user sessions (`endUsers`), so it is the sign-in provider that
-   * may send `{ signInAddress }` (NSO-327).
+   * may send `{ signInAddress }`.
    */
   const sender = defineModule<{ notify: string[] }>({
     ...base,
@@ -858,7 +858,7 @@ describe('module e-mail (ctx.email.send through the runtime)', () => {
     expect(Object.keys(sent[0])).not.toContain('platform');
   });
 
-  it('{ signInAddress } is reserved for the sign-in provider: another module gets 403 forbidden, nothing is sent or counted (NSO-327)', async () => {
+  it('{ signInAddress } is reserved for the sign-in provider: another module gets 403 forbidden, nothing is sent or counted', async () => {
     let guard: MailGuard | undefined;
     const { r, sent, send } = await setup([sender, mailer, intruder], {
       mailGuard: (l) => (guard = memoryMailGuard({ hourlyMax: 1000, pauseMinutes: 15 }, l)),
@@ -963,7 +963,7 @@ describe('module e-mail (ctx.email.send through the runtime)', () => {
     expect((await db.select().from(auditLog).where(eq(auditLog.action, 'email.send'))).length).toBe(before + 1);
   });
 
-  it('pending-change e-mail (M2-02): an agent proposal mails the owners once per app per hour, listing everything that waits', async () => {
+  it('pending-change e-mail: an agent proposal mails the owners once per app per hour, listing everything that waits', async () => {
     const [ed] = await db.insert(users).values({ email: 'pending-owner@example.com' }).returning();
     await db.insert(memberships).values({ userId: ed.id, workspaceId: ws.id, role: 'editor' });
     try {
@@ -1079,7 +1079,7 @@ describe('the records authority (query_data, the dashboard Data tab)', () => {
   });
 });
 
-describe("the owner's authorities (M2-03): owner config changes, end users, submissions, files", () => {
+describe("the owner's authorities: owner config changes, end users, submissions, files", () => {
   const base = { version: '1.0.0', skill: { useWhen: 'x', markdown: '# x' } };
   const hook = () => ({ id: app.id, slug: app.slug, workspaceId: app.workspaceId });
   const dropped: string[] = [];
@@ -1172,7 +1172,7 @@ describe("the owner's authorities (M2-03): owner config changes, end users, subm
   });
 });
 
-describe('endUserCallback — the IdP callback on the dashboard host (NSO-348)', () => {
+describe('endUserCallback — the IdP callback on the dashboard host', () => {
   const base = { version: '1.0.0', skill: { useWhen: 'x', markdown: '# x' } };
   const call = (r: ModuleRuntime, query: Record<string, string>) => r.endUserCallback({ provider: 'idp', method: 'GET', query, body: null, clientIp: '203.0.113.7' });
   const idp = defineModule<{ greeting: string }>({

@@ -1,5 +1,5 @@
 /**
- * drobek-module-oidc — the BUILT-IN platform module `oidc` (NSO-351): company
+ * drobek-module-oidc — the BUILT-IN platform module `oidc`: company
  * sign-in with any OpenID Connect provider (Google, Microsoft Entra ID, Okta,
  * Keycloak, Auth0) through the auth module's `auth.provider` slot.
  *

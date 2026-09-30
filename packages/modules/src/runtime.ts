@@ -1,5 +1,5 @@
 /**
- * The module runtime of ONE server process (M1-01): the active modules, their
+ * The module runtime of ONE server process: the active modules, their
  * route tables, the composed SDK and the skill registry — plus the operations
  * the rest of drobek calls:
  *
@@ -7,7 +7,7 @@
  *    and its visibility gate were resolved by @drobek/serving): the SDK, the
  *    beacon script, and the module routes — each response of a matched route
  *    of an active module (not a 429) is counted for get_logs `requests`
- *    (M1-07; Redis counters flushed lazily, @drobek/insights);
+ *    (Redis counters flushed lazily, @drobek/insights);
  *  - `skillList()` / `skillInfo()` — the `skill_info` tool, create_app, get_app;
  *  - `configure()` / `confirm()` / `reject()` — configure_module and the
  *    dashboard's pending-change API;
@@ -18,10 +18,10 @@
  *  - `contributions()` — the slot contributions of the active modules
  *    (`ModuleServices.contributions`; routes, `endUsers.current`, the
  *    end-user callback's `app()` and create / publish hooks get those of the
- *    workspace's enabled modules only — NSO-360); `errorCatalogue()` — the
+ *    workspace's enabled modules only); `errorCatalogue()` — the
  *    modules' own error codes (skill_info, /llms-full.txt);
  *  - `isEnabled()` / `enabledModules()` / `workspaceModules()` /
- *    `setWorkspaceModule()` — NSO-346: an `availability: 'opt-in'` module
+ *    `setWorkspaceModule()` — an `availability: 'opt-in'` module
  *    is active for a workspace when the limits provider's plan says
  *    `MODULE_ENABLED_<NAME>: 1` (0 = off, whatever else says), else when the
  *    env sets `MODULE_ENABLED_<NAME>=1` (every workspace), else when a
@@ -31,12 +31,12 @@
  *    onAppCreate / onPublish hook and contributes to no other module's slot
  *    there. The SDK stays one per server.
  *  - `endUserCallback()` — the end-user sign-in providers' IdP callback on
- *    the dashboard host (the `endUsers` authority's `callback`, NSO-348);
+ *    the dashboard host (the `endUsers` authority's `callback`);
  *  - `jobApps()` / `serverJobContext()` / `appJobContext()` — what the
- *    module-jobs scheduler (./jobs.ts, NSO-391) runs a module's `jobs` with
+ *    module-jobs scheduler (./jobs.ts) runs a module's `jobs` with
  *    (a per-app job also calls the app's upstreams and imports records
- *    through their authorities, NSO-392);
- *  - `sync()` — the scheduled-import module's owner view (NSO-392): the
+ *    through their authorities);
+ *  - `sync()` — the scheduled-import module's owner view: the
  *    dashboard's sources and Run now, MCP `sync_now` and get_logs `sync`.
  *
  * `moduleRuntime()` is the process-wide instance, loaded once from
@@ -158,7 +158,7 @@ export interface RuntimeDeps {
   /** The operator-wide hourly cap on module e-mail (auto-pause). */
   mailGuard: MailGuard;
   /**
-   * Count one response of a MATCHED route of an active module (M1-07 — get_logs
+   * Count one response of a MATCHED route of an active module (get_logs
    * `requests`; never a 429, an unknown route or a wrong method). Best-effort:
    * never awaited by the response, errors dropped.
    */
@@ -246,16 +246,16 @@ export interface PlatformApp {
 export interface SkillListItem {
   name: string;
   use_when: string;
-  /** NSO-346: only on an opt-in module's skill — it is active only for the workspaces it is enabled for. */
+  /** Only on an opt-in module's skill — it is active only for the workspaces it is enabled for. */
   availability?: 'opt-in';
-  /** NSO-346: skill_info() with an app, on an opt-in module's skill: active for the app's workspace. */
+  /** skill_info() with an app, on an opt-in module's skill: active for the app's workspace. */
   enabled_for_workspace?: boolean;
 }
 
-/** NSO-346: what decides that an opt-in module is on or off for a workspace. */
+/** What decides that an opt-in module is on or off for a workspace. */
 export type WorkspaceModuleSource = 'dashboard' | 'plan' | 'env';
 
-/** NSO-346: one opt-in module for one workspace (the dashboard's Workspace → Modules). */
+/** One opt-in module for one workspace (the dashboard's Workspace → Modules). */
 export interface WorkspaceModuleState {
   name: string;
   version: string;
@@ -295,9 +295,9 @@ export interface SkillInfo {
   /** The extension points the module offers (with who contributes) and its own contributions to other modules' slots. */
   slots?: ModuleFacts['slots'];
   contributes?: ModuleFacts['contributes'];
-  /** NSO-346: skill_info with an app: whether this opt-in module is active for the app's workspace. */
+  /** skill_info with an app: whether this opt-in module is active for the app's workspace. */
   enabled_for_workspace?: boolean;
-  /** NSO-391: the module's scheduled jobs (only when it declares any). */
+  /** The module's scheduled jobs (only when it declares any). */
   jobs?: SkillJob[];
 }
 
@@ -312,7 +312,7 @@ export interface SkillJob {
 }
 
 /**
- * The operator-facing facts of one active module, app-independent (NSO-347):
+ * The operator-facing facts of one active module, app-independent:
  * the dashboard's workspace Modules page and the module page's "About", and
  * the same fields in `skill_info(name)`. Never a path on disk, never a
  * secret, never an app's config.
@@ -352,7 +352,7 @@ export interface ModuleErrorSection {
 }
 
 export interface AppModuleState {
-  /** NSO-346: active for the app's workspace (always true for a default module). */
+  /** Active for the app's workspace (always true for a default module). */
   enabled: boolean;
   configured: boolean;
   config: unknown;
@@ -442,7 +442,7 @@ export interface BoundSubmissions {
   remove(id: string): Promise<boolean>;
 }
 
-/** Who started a run by hand (NSO-392): the dashboard user, or the agent acting for them. */
+/** Who started a run by hand: the dashboard user, or the agent acting for them. */
 export interface RunActor {
   userId: string;
   surface: 'mcp' | 'web';
@@ -467,13 +467,13 @@ export interface BoundFiles {
   remove(id: string): Promise<boolean>;
 }
 
-/** A pending change as the dashboard shows it (M2-02). */
+/** A pending change as the dashboard shows it. */
 export interface PendingView {
   /** What needs confirming, verbatim from the module's confirmRequired. */
   changes: string[];
   proposed_at: string;
   proposed_by: string | null;
-  /** Who may confirm it: any editor, or only a workspace admin (NSO-322 H3). */
+  /** Who may confirm it: any editor, or only a workspace admin. */
   confirm_role: ConfirmRole;
   /** The effective config once confirmed (null when it no longer validates). */
   after: unknown;
@@ -506,14 +506,14 @@ export interface ModuleDashboardView {
   availability: ModuleAvailability;
   /** The dedicated config editor the module declares (`dashboard.editor`), or null for the generic form. */
   editor: ModuleDashboardEditor | null;
-  /** NSO-347 — the module's facts for the page's "About this module": where it came from, its contract range, requires, slots, contributions and error codes. */
+  /** The module's facts for the page's "About this module": where it came from, its contract range, requires, slots, contributions and error codes. */
   source: ModuleSource;
   contract: string | null;
   requires: string[];
   slots: ModuleFacts['slots'];
   contributes: ModuleFacts['contributes'];
   errors: ModuleErrorDoc[];
-  /** NSO-346: active for the app's workspace (an opt-in module may not be — the page then shows no form). */
+  /** Active for the app's workspace (an opt-in module may not be — the page then shows no form). */
   enabled: boolean;
 }
 
@@ -532,7 +532,7 @@ const IMMUTABLE_CACHE = 'public, max-age=31536000, immutable';
 const REVALIDATE_CACHE = 'public, max-age=0, must-revalidate';
 const V1_RE = /^\/__drobek\/v1\/([^/]+)(\/.*)?$/;
 
-/** The dashboard page where the owner confirms a module change (M2-02 serves it). */
+/** The dashboard page where the owner confirms a module change. */
 export function confirmUrl(env: NodeJS.ProcessEnv, workspaceSlug: string, appSlug: string, module: string): string {
   return `${dashboardOrigin(env)}/workspaces/${encodeURIComponent(workspaceSlug)}/apps/${encodeURIComponent(appSlug)}/modules/${encodeURIComponent(module)}`;
 }
@@ -603,9 +603,8 @@ export class ModuleRuntime {
   /** Module → the error codes its routes may answer (the core catalogue + its own `errors`). */
   private readonly errorCodes = new Map<string, ReadonlySet<string>>();
   /**
-   * Effective configs by (module, content of the stored config) — NSO-322 H1:
-   * every module request used to re-run configSchema.safeParse (for data: an
-   * ajv compile per collection). Keyed on the stored JSON itself, so a
+   * Effective configs by (module, content of the stored config), so a request
+   * does not re-run configSchema.safeParse. Keyed on the stored JSON itself: a
    * configure / confirm (or a write by another process) is a new key and can
    * never serve a stale config.
    */
@@ -667,7 +666,7 @@ export class ModuleRuntime {
    * The contributions of the active modules to `slot`, in DROBEK_MODULES
    * order, as the slot's schema parsed them ([] when nobody contributes or no
    * active module declares the slot). With `enabled` (a workspace's
-   * enabledModules()) only those of the modules in it (NSO-360).
+   * enabledModules()) only those of the modules in it.
    */
   contributions<T = unknown>(slot: string, enabled?: ReadonlySet<string>): T[] {
     const all = this.slotContributions.get(slot) ?? [];
@@ -728,7 +727,7 @@ export class ModuleRuntime {
     return this.modules.map((m) => this.moduleFacts(m.name)!);
   }
 
-  // ── per-workspace availability (NSO-346) ──
+  // ── per-workspace availability ──
 
   /** The active modules declared `availability: 'opt-in'`. */
   private optInModules(): AnyModule[] {
@@ -765,7 +764,7 @@ export class ModuleRuntime {
     return out;
   }
 
-  /** NSO-346: is module `name` active for `workspaceId`? A default module always is; an unknown one never. */
+  /** Is module `name` active for `workspaceId`? A default module always is; an unknown one never. */
   async isEnabled(workspaceId: string, name: string): Promise<boolean> {
     const m = this.byName.get(name);
     if (!m) return false;
@@ -774,7 +773,7 @@ export class ModuleRuntime {
   }
 
   /**
-   * NSO-346: the names of the active modules that are on for `workspaceId`
+   * The names of the active modules that are on for `workspaceId`
    * (every default module + the enabled opt-in ones). No I/O when the server
    * has no opt-in module. Compute it once per request and pass it on.
    */
@@ -786,7 +785,7 @@ export class ModuleRuntime {
     return out;
   }
 
-  /** NSO-346: every opt-in module with its state for `workspaceId` (the dashboard's Workspace → Modules). */
+  /** Every opt-in module with its state for `workspaceId` (the dashboard's Workspace → Modules). */
   async workspaceModules(workspaceId: string): Promise<WorkspaceModuleState[]> {
     const optIn = this.optInModules();
     const states = await this.optInStates(workspaceId, optIn);
@@ -814,7 +813,7 @@ export class ModuleRuntime {
   }
 
   /**
-   * NSO-346: a super-admin turns an opt-in module on or off for a workspace
+   * A super-admin turns an opt-in module on or off for a workspace
    * (the dashboard's switch — the caller has checked super-admin). Audited
    * `module.workspace_enable` / `module.workspace_disable` (meta: module) when
    * it changes anything. A plan value (`MODULE_ENABLED_<NAME>`) still wins.
@@ -1013,7 +1012,7 @@ export class ModuleRuntime {
   }
 
   /**
-   * The effective limits of one workspace (NSO-329): the env defaults, or the
+   * The effective limits of one workspace: the env defaults, or the
    * limits provider's plan — CORE_LIMITS (APPS_MAX_PER_WORKSPACE,
    * DOMAINS_MAX_PER_APP) and every module limit. For core callers: create_app
    * and the dashboard's custom domains.
@@ -1137,7 +1136,7 @@ export class ModuleRuntime {
    * The skills list (skill_info(), create_app, get_app). Without `enabled`:
    * every skill, an opt-in module's marked `availability: 'opt-in'`. With the
    * app workspace's `enabled` set (enabledModules): the opt-in modules that
-   * are off for it are left out (NSO-346).
+   * are off for it are left out.
    */
   skillList(enabled?: ReadonlySet<string>): SkillListItem[] {
     const out: SkillListItem[] = [];
@@ -1211,7 +1210,7 @@ export class ModuleRuntime {
   /**
    * The hint for a compile message: backend imports point at the skill that
    * replaces them — only when that skill is on the server and, given the app
-   * workspace's `enabled` set, its module is active there (NSO-346).
+   * workspace's `enabled` set, its module is active there.
    */
   compileHint(msg: { code?: string; specifier?: string }, enabled?: ReadonlySet<string>): string | undefined {
     if (msg.code !== 'unresolved_import' || !msg.specifier) return undefined;
@@ -1246,7 +1245,7 @@ export class ModuleRuntime {
   }
 
   /**
-   * One module of one app for the owner's dashboard (M2-02): schema, defaults,
+   * One module of one app for the owner's dashboard: schema, defaults,
    * stored + effective config, the pending change with its effective result,
    * the declared secrets with hasSecret / updated_at (NEVER a value), the rule
    * operations and the module's secret-free appInfo.
@@ -1324,7 +1323,7 @@ export class ModuleRuntime {
     let value: unknown;
     if (r.success) value = r.data;
     else {
-      // Logged once per stored content: the result is memoized below (NSO-323 M6).
+      // Logged once per stored content: the result is memoized below.
       let salvaged: { config: unknown; issues: string[] } | null = null;
       try {
         salvaged = m.salvageConfig ? m.salvageConfig(merged) : null;
@@ -1537,7 +1536,7 @@ export class ModuleRuntime {
   }
 
   /**
-   * E-mail the app's owners that changes wait for their confirmation (M2-02):
+   * E-mail the app's owners that changes wait for their confirmation:
    * through the module e-mail path (`{ appOwners: true }`, the mail authority
    * — the `email` module — and the operator-wide budgets), at most once per
    * app per hour (PENDING_MAIL_WINDOW_MS), listing every module that waits.
@@ -1666,8 +1665,8 @@ export class ModuleRuntime {
   async runHook(hook: 'onAppCreate' | 'onAppDelete', app: HookApp): Promise<void>;
   async runHook(hook: 'onPublish', app: HookApp & { version: number }): Promise<void>;
   async runHook(hook: 'onAppCreate' | 'onPublish' | 'onAppDelete', app: HookApp & { version?: number }): Promise<void> {
-    // NSO-346: an opt-in module that is off for the workspace gets no create /
-    // publish hook, and contributes nothing to the others' (NSO-360);
+    // An opt-in module that is off for the workspace gets no create /
+    // publish hook, and contributes nothing to the others';
     // onAppDelete always runs, with every contribution (it cleans up what a
     // module kept while it was on).
     let enabled: ReadonlySet<string> | undefined;
@@ -1691,7 +1690,7 @@ export class ModuleRuntime {
     }
   }
 
-  // ── scheduled jobs (NSO-391) ──
+  // ── scheduled jobs ──
 
   /**
    * The apps module `m`'s jobs run for: live (not deleted, not taken down),
@@ -1816,7 +1815,7 @@ export class ModuleRuntime {
     };
   }
 
-  // ── scheduled imports (NSO-392) ──
+  // ── scheduled imports ──
 
   /**
    * The app's scheduled imports (the module that declares `sync`), bound to
@@ -1966,7 +1965,7 @@ export class ModuleRuntime {
   async handle(req: PlatformRequest, app: PlatformApp): Promise<PipelineResult> {
     const seen: { module?: string } = {};
     const res = await this.dispatch(req, app, seen);
-    // A 429 is not counted: a throttled flood must cost nothing past the limiter (NSO-323 M3).
+    // A 429 is not counted: a throttled flood must cost nothing past the limiter.
     if (seen.module && res.status !== 429) this.countRequest(app.id, seen.module, res.status);
     return res;
   }
@@ -1999,8 +1998,8 @@ export class ModuleRuntime {
           })
         );
       }
-      // NSO-346: an opt-in module off for the app's workspace answers nothing else (not counted);
-      // NSO-360: nor does it contribute to the modules that are on.
+      // An opt-in module off for the app's workspace answers nothing else (not counted)
+      // and contributes nothing to the modules that are on.
       const enabled = await this.enabledModules(app.workspaceId);
       if (!enabled.has(m.name)) {
         return errorResult(moduleNotEnabled(m.name), m.name);
@@ -2015,7 +2014,7 @@ export class ModuleRuntime {
           m.name
         );
       }
-      // Only a matched route is counted: a flood of unknown routes or methods costs no stats (NSO-323 M3).
+      // Only a matched route is counted: a flood of unknown routes or methods costs no stats.
       seen.module = m.name;
       const host = req.header('host');
       const selfOrigin = host ? `${appsOrigin(this.deps.env).scheme}://${host.trim().toLowerCase()}` : null;
@@ -2151,7 +2150,7 @@ export interface LoadRuntimeOptions extends ResolveOptions {
 
 /**
  * The limits catalogue of a module set: CORE_LIMITS, every module's `limits`
- * and, per opt-in module, its `MODULE_ENABLED_<NAME>` pseudo-limit (NSO-346).
+ * and, per opt-in module, its `MODULE_ENABLED_<NAME>` pseudo-limit.
  */
 export function limitsCatalogue(modules: readonly AnyModule[]): CatalogueLimit[] {
   return [

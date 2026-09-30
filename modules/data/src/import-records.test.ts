@@ -1,5 +1,5 @@
 /**
- * The records authority's `importRecords` (NSO-392 — the sync module's
+ * The records authority's `importRecords` (the sync module's
  * batch): replace and upsert over PGlite, all or nothing (a bad record, a
  * duplicate key or a quota leaves the collection as it was), the schema and
  * the record size checked for every record, other collections untouched.

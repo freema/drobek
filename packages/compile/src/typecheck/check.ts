@@ -1,5 +1,5 @@
 /**
- * The TypeScript check of one app version (NSO-388). It builds a program over
+ * The TypeScript check of one app version. It builds a program over
  * the in-memory file map + the server's SDK declarations + @types/react and
  * reports the diagnostics of the app's .ts/.tsx files. The checker only
  * analyses the sources — app code is never executed.

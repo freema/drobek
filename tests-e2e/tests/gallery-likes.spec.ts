@@ -6,7 +6,7 @@ import { FULL_SCOPE, callTool, mcpClient, type McpClient } from './helpers/mcp';
 import { withDb } from './helpers/seed';
 
 /**
- * NSO-340: likes and opens of a gallery entry on the local stack.
+ * Likes and opens of a gallery entry on the local stack.
  *
  *  - `openUrl` redirects to the production host and counts a GET once;
  *    a prefetch and a HEAD redirect without counting;
@@ -37,7 +37,7 @@ async function likesOf(appId: string): Promise<number> {
 
 test.describe.configure({ mode: 'serial' });
 
-test.describe('gallery likes and opens (NSO-340) @local', () => {
+test.describe('gallery likes and opens @local', () => {
   let owner: McpClient;
   let app: Created;
   const name = `Likes Board ${Date.now().toString(36)}`;

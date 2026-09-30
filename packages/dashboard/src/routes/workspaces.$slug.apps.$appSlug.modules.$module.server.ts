@@ -1,6 +1,6 @@
 /**
- * GET/POST /workspaces/:slug/apps/:appSlug/modules/:module — server half
- * (M2-02, NSO-291). This is the `confirm_url` configure_module hands the
+ * GET/POST /workspaces/:slug/apps/:appSlug/modules/:module — server half.
+ * This is the `confirm_url` configure_module hands the
  * agent (`confirmUrl()` in @drobek/modules).
  *
  * GET (viewer+): the module's config as a form generated from its JSON
@@ -8,7 +8,7 @@
  * own confirmRequired strings + a plain-language risk note each), the
  * declared secrets (`hasSecret` + when set — NEVER a value), the module's
  * facts ("About this module": version, source, contract range, requires,
- * slots, contributions, its own error codes — NSO-347), and a dedicated
+ * slots, contributions, its own error codes), and a dedicated
  * editor for a module that declares one in `dashboard.editor` — the
  * collections + rules editor (`collections`) or the per-app upstream
  * assignments (`upstreams`). The editor follows the declared capability,
@@ -32,18 +32,18 @@
  *    or rendered: a success redirects (PRG), a failure answers a message
  *    without it.
  *
- * A taken-down app (NSO-293, `apps.locked_reason`) refuses every change with
+ * A taken-down app (`apps.locked_reason`) refuses every change with
  * 423 `app_locked_by_admin` (like configure_module and the module-confirm
  * API); `reject` and `remove-secret` stay allowed (they only take away).
  *
- * NSO-392: the module that declares `sync` (by capability, not by name)
+ * The module that declares `sync` (by capability, not by name)
  * also shows its sources (last / next run, the latest runs) with
  * `sync-run` (Run now — the run's audit names the person), `sync-pause` /
  * `sync-resume` (the source's `paused` key through the configure path; resume
  * also clears a pause after failed runs, audited `<module>.resume`), and the
  * "a scheduled import stopped" banner.
  *
- * NSO-346: an opt-in module that is not enabled for the workspace shows
+ * An opt-in module that is not enabled for the workspace shows
  * "not enabled for this workspace" instead of the forms, and refuses every
  * change with 404 `module_not_enabled` (again except `reject` and
  * `remove-secret`).
@@ -234,10 +234,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   return {
     workspace: { slug: access.workspace.slug, name: access.workspace.name },
     app: { slug: app.slug },
-    /** NSO-342: the app header + tabs (and the "taken down" banner, NSO-293). */
+    /** The app header + tabs (and the "taken down" banner). */
     header: await appHeaderData({ access, app }),
     module: { name: view.name, version: view.version, useWhen: view.use_when, confirms: view.confirms },
-    /** NSO-347: "About this module" — never a path on disk, never a secret. */
+    /** "About this module" — never a path on disk, never a secret. */
     about: {
       version: view.version,
       source: view.source,
@@ -251,7 +251,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     errors: view.errors,
     /** The workspace Modules page (the same facts for every module of the server). */
     modulesHref: `/workspaces/${encodeURIComponent(access.workspace.slug)}/modules#module-${encodeURIComponent(view.name)}`,
-    /** NSO-346: an opt-in module off for this workspace — the page shows a notice instead of the forms. */
+    /** An opt-in module off for this workspace — the page shows a notice instead of the forms. */
     enabled: view.enabled,
     fields,
     values: fieldValues(fields, view.config),
@@ -264,7 +264,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     collections: editor?.kind === 'collections' ? collectionsOf(view.config, ops) : [],
     upstreams: editor?.kind === 'upstreams' ? upstreamsOf(view.config, view.info) : [],
     banner: await loadPendingBanner(app, access.workspace.slug, app.slug),
-    /** NSO-392: the scheduled-import module's sources (null on every other module's page). */
+    /** The scheduled-import module's sources (null on every other module's page). */
     sync: sync && sync.module === name ? await syncPanel(sync) : null,
     syncBanner: await loadSyncBanner(hookApp, access.workspace.slug),
     canEdit: canPublish(access.effectiveRole),
@@ -288,11 +288,11 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const ws = access.workspace.slug;
   const back = (done: string, anchor = '') => redirect(pageUrl(ws, app.slug, name, done, anchor));
 
-  // NSO-293: a taken-down app's module setup cannot change (reject / remove-secret only take away).
+  // A taken-down app's module setup cannot change (reject / remove-secret only take away).
   if (app.lockedReason && intent !== 'reject' && intent !== 'remove-secret') {
     return failure(423, { intent, fields: {}, general: [lockedByAdminError(app.lockedReason).message] });
   }
-  // NSO-346: an opt-in module off for the workspace takes no change (reject / remove-secret only take away).
+  // An opt-in module off for the workspace takes no change (reject / remove-secret only take away).
   if (intent !== 'reject' && intent !== 'remove-secret' && !(await runtime.isEnabled(hookApp.workspaceId, name))) {
     return failure(404, { intent, fields: {}, general: [moduleNotEnabled(name).message] });
   }
@@ -317,7 +317,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     return secretAction(runtime, { intent, form, name, hookApp, userId: access.user.id, back });
   }
 
-  // ── scheduled imports (NSO-392) ──
+  // ── scheduled imports ──
   if (intent === 'sync-run' || intent === 'sync-pause' || intent === 'sync-resume') {
     return syncAction(runtime, { intent, form, name, hookApp: { ...hookApp, workspaceSlug: ws }, userId: access.user.id, back });
   }

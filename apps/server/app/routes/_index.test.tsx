@@ -13,7 +13,7 @@ function text(html: string): string {
     .replace(/\s+/g, ' ');
 }
 
-describe('apex landing (NSO-331)', () => {
+describe('apex landing', () => {
   it('describes the cloud workspace: MCP, write → compile → preview → publish', () => {
     const body = text(render());
     expect(body).toContain('A cloud workspace for agent-built web apps');
@@ -45,7 +45,7 @@ describe('apex landing (NSO-331)', () => {
     expect(html).toContain('href="/build-with-your-agent"');
   });
 
-  it('links the agent guide on the docs site when DOCS_URL is set (NSO-366)', () => {
+  it('links the agent guide on the docs site when DOCS_URL is set', () => {
     vi.stubEnv('DOCS_URL', 'https://www.drobek.app/docs');
     try {
       expect(render()).toContain('href="https://www.drobek.app/docs/agent"');

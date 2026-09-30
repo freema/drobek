@@ -110,7 +110,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const collection = String(params.collection ?? '');
   const q = parseDataQuery(new URL(request.url));
   const records = await recordsOf(access.workspace.id, appSlug);
-  // NSO-342: the app header + tabs on every app sub-page.
+  // The app header + tabs on every app sub-page.
   const header = await appHeaderFor(access, appSlug);
 
   return withDataErrors(async () => {

@@ -1,6 +1,5 @@
 /**
- * The guards of the owner-facing app APIs (`POST /api/apps/:id/…`, M1-01 /
- * M1-02) — ONE implementation for the pending module-change decision and the
+ * The guards of the owner-facing app APIs (`POST /api/apps/:id/…`) — ONE implementation for the pending module-change decision and the
  * end-user session revocation. In order, before anything changes:
  *
  *   1. POST only (anything else 405);
@@ -10,7 +9,7 @@
  *   4. the app (live, by id) and the caller's role in ITS workspace: unknown
  *      app / not a member → the same 404 (anti-enumeration); below editor →
  *      403; editor, workspace-admin and super-admin pass;
- *   5. (`refuseLocked`, M4-02) an app a super-admin took down → 423
+ *   5. (`refuseLocked`) an app a super-admin took down → 423
  *      `app_locked_by_admin` (the reason category only) — for the APIs that
  *      change the app (module config). Safety actions (signing end users
  *      out) stay allowed.
@@ -33,11 +32,11 @@ interface ApiApp {
   slug: string;
   workspaceId: string;
   workspaceSlug: string;
-  /** M4-02: the takedown category; non-null = taken down by a super-admin. */
+  /** The takedown category; non-null = taken down by a super-admin. */
   lockedReason: string | null;
 }
 
-/** 423 `app_locked_by_admin` for a dashboard mutation of a taken-down app (M4-02). */
+/** 423 `app_locked_by_admin` for a dashboard mutation of a taken-down app. */
 export function lockedByAdminResponse(lockedReason: string | null) {
   const reason = lockCategory(lockedReason);
   return apiError(423, 'app_locked_by_admin', lockedMessage(reason), { reason });

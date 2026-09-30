@@ -1,5 +1,5 @@
 /**
- * NSO-366: a new abuse report e-mails every super-admin AND OPERATOR_EMAIL,
+ * A new abuse report e-mails every super-admin AND OPERATOR_EMAIL,
  * each address once (case-insensitive); nobody configured → no mail.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';

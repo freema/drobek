@@ -1,6 +1,6 @@
 /**
- * RFC-4180 CSV cells with spreadsheet formula-injection neutralization
- * (PHY-76 #5) — the ONE CSV writer of drobek: the data module's export, the
+ * RFC-4180 CSV cells with spreadsheet formula-injection neutralization —
+ * the ONE CSV writer of drobek: the data module's export, the
  * forms submissions export, the dashboard's Data tab and Activity exports all
  * serialize every cell through `csvLine`. `parseCsv` is its reader (the
  * dashboard's CSV import of the data module): RFC-4180, bounded rows.

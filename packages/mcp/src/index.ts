@@ -1,5 +1,5 @@
 /**
- * @drobek/mcp — the MCP tool bodies (M0-05, plan §4): list_apps, create_app,
+ * @drobek/mcp — the MCP tool bodies: list_apps, create_app,
  * duplicate_app, get_app, read_file, write_files, restore_version, publish,
  * skill_info, configure_module, query_data, get_logs, create_asset_upload,
  * list_assets, delete_asset, set_gallery_listing, the custom-domain tools (list_domains,

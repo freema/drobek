@@ -1,5 +1,5 @@
 /**
- * The MCP endpoint as an OAuth 2.1 Protected Resource (U5, M0-04).
+ * The MCP endpoint as an OAuth 2.1 Protected Resource.
  *
  * The RS never mints tokens — it validates the Bearer against the drobek AS's
  * token store and enforces RFC 8707: an OAuth access token's `audience` MUST

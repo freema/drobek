@@ -1,5 +1,5 @@
 /**
- * NSO-366: why this workspace may not publish — shown on every app page and
+ * Why this workspace may not publish — shown on every app page and
  * on the workspace's apps list. Client-safe: feed it `publishApprovalView(…)`
  * from the loader (publish-approval.server.ts); `null` renders nothing.
  *  - `blocked`: "Publishing from this workspace was turned off by the

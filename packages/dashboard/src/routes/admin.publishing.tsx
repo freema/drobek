@@ -1,5 +1,5 @@
 /**
- * /admin/publishing — client half (NSO-366): the super-admin's switch for
+ * /admin/publishing — client half: the super-admin's switch for
  * who may publish. Workspaces with their state (blocked, allowed, waiting,
  * default) and mode-aware actions — `open`: Block / Unblock first;
  * `approval`: Approve / Revoke / Block — plus each workspace's live apps

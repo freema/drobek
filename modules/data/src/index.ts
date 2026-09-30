@@ -1,5 +1,5 @@
 /**
- * drobek-module-data — the BUILT-IN platform module `data` (M1-03, §5.2):
+ * drobek-module-data — the BUILT-IN platform module `data`:
  * per-app collections of JSON records with per-operation rules.
  *
  *   DROBEK_MODULES=…,data  → this package (`modules/data` in the drobek repo,

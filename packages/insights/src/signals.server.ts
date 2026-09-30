@@ -1,11 +1,11 @@
 /**
- * Server-side serving signals (PHY-123): cheap, best-effort per-app+per-day
- * counters kept in Redis on the U7 serving path — request volume, 5xx faults,
+ * Server-side serving signals: cheap, best-effort per-app+per-day
+ * counters kept in Redis on the serving path — request volume, 5xx faults,
  * and 404s-by-path. Redis is the hot counter (drobek:signals:*, TTL'd so it
  * self-evicts as a rolling window); `flushDay` mirrors the current day into the
  * durable `app_daily_stats` table so app_logs reads survive a Redis flush.
  *
- * The failing paths of get_logs('requests') (NSO-380) that are not a file 404
+ * The failing paths of get_logs('requests') that are not a file 404
  * — a platform 4xx and every 5xx — live only in Redis: one hash per status
  * class, app and day (`drobek:signals:fail:<class>:<app_id>:<day>`, field =
  * the normalized path), capped at MAX_FAIL_PATH_KEYS distinct paths (the rest
@@ -32,7 +32,7 @@ export const MAX_FAIL_PATH_KEYS = 100;
 
 export type FailClass = '4xx' | '5xx';
 
-// The hot counters outlive the get_logs window (M1-07) so every day of it can
+// The hot counters outlive the get_logs window so every day of it can
 // still be flushed into app_daily_stats when it is read.
 const SIGNAL_TTL_SEC = (LOGS_RETENTION_DAYS + 1) * 24 * 60 * 60;
 

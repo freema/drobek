@@ -1,5 +1,5 @@
 /**
- * NSO-340 over a real MCP client on a real (PGlite) database:
+ * The public gallery over a real MCP client on a real (PGlite) database:
  * set_gallery_listing lists a published app only with `user_confirmed: true`
  * (the user's explicit yes), refuses an unpublished app, a bad description,
  * an entry the operator hid, a taken-down app, a viewer and a server without
@@ -227,7 +227,7 @@ describe('set_gallery_listing', () => {
       await c.call('write_files', { app_id: app.app_id, files: [{ path: 'src/a.ts', content: 'export {}' }], reasoning: 'x' });
       await c.call('publish', { app_id: app.app_id });
       expect(await listedRow(app.app_id)).toMatchObject({ listed: false });
-      // Of every tool, only set_gallery_listing takes a gallery argument (the domain and upstream tools' user_confirmed is theirs, NSO-366, NSO-372).
+      // Of every tool, only set_gallery_listing takes a gallery argument (the domain and upstream tools' user_confirmed is theirs).
       const tools = (await c.client.listTools()).tools;
       const withGallery = tools.filter((t) =>
         Object.keys((t.inputSchema.properties ?? {}) as object).some((k) => /listed|gallery/i.test(k))

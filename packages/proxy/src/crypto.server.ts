@@ -1,5 +1,5 @@
 /**
- * Envelope encryption for upstream secrets (PHY-59, R6 security core).
+ * Envelope encryption for upstream secrets.
  *
  * AES-256-GCM, envelope scheme: a fresh random DEK encrypts the secret; the DEK
  * is WRAPPED (encrypted) by the KEK derived from env `DROBEK_MASTER_KEY`. Only

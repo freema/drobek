@@ -1,10 +1,10 @@
 /**
- * NSO-346: opt-in modules per workspace against a real (PGlite) database —
+ * Opt-in modules per workspace against a real (PGlite) database —
  * default vs opt-in, the super-admin's `workspace_modules` row, the limits
  * provider's `MODULE_ENABLED_<NAME>` overriding the row in both directions,
  * the env default, `module_not_enabled` on the route / configure / confirm,
- * get_app's `enabled`, the skills filter, the compile hint and the hooks;
- * NSO-360: a module that is off contributes nothing to the slots of the
+ * get_app's `enabled`, the skills filter, the compile hint and the hooks; a
+ * module that is off contributes nothing to the slots of the
  * modules that are on (routes and create / publish hooks), onAppDelete still
  * sees every contribution.
  */
@@ -327,7 +327,7 @@ describe('get_app, skills, compile hints, hooks', () => {
   });
 });
 
-// ── NSO-360: contributions follow the workspace switch ──────────────────────
+// ── contributions follow the workspace switch ──
 
 /** Who ran: `<contributor>@<where>`. */
 const ran: string[] = [];
@@ -364,7 +364,7 @@ const contributor = (name: string, availability?: 'opt-in') =>
 const HUB_MODULES = [hub, contributor('always'), contributor('plug', 'opt-in')];
 const PLUG_KEY = moduleEnabledLimitName('plug');
 
-describe('contributions follow the workspace switch (NSO-360)', () => {
+describe('contributions follow the workspace switch', () => {
   beforeEach(() => {
     ran.length = 0;
   });

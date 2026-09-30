@@ -1,5 +1,5 @@
 /**
- * The files module's per-app config (§5.0, §5.5):
+ * The files module's per-app config:
  *
  *   { rules: { upload, read }, maxBytes?, allowedTypes }
  *

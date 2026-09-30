@@ -1,12 +1,12 @@
 /**
- * POST /oauth/register (U5, M0-04) — Dynamic Client Registration (RFC 7591)
+ * POST /oauth/register — Dynamic Client Registration (RFC 7591)
  * for public PKCE clients. Kept next to CIMD because Claude and ChatGPT
  * register this way today. Accepts client_name + redirect_uris[]; validates
  * each URI is absolute https (or http on loopback for native/dev clients);
  * returns a client_id with token_endpoint_auth_method = "none". no-store.
  *
- * Abuse caps (PHY-76 #7): 10 registrations per client IP per hour (→ 429;
- * skipped when no client IP is resolved, NSO-328),
+ * Abuse caps: 10 registrations per client IP per hour (→ 429;
+ * skipped when no client IP is resolved),
  * capped client_name / redirect_uris, and at most OAUTH_DCR_MAX_UNUSED_CLIENTS
  * (default 500) clients that never received a grant (→ 503) — abandoned
  * registrations older than a day are pruned first.
@@ -56,7 +56,7 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   // Per-IP fixed window, counted before any parsing so junk bodies pay too.
-  // Without a resolved client IP there is no per-IP bucket (NSO-328); the
+  // Without a resolved client IP there is no per-IP bucket; the
   // unused-client cap below still bounds what registrations can pile up.
   const ip = perIpLimitKey(getClientIp(request), 'oauth-register-ip');
   const limited =

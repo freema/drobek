@@ -6,7 +6,7 @@ import { callTool, mcpClient, type McpClient } from './helpers/mcp';
 import { addMembership, userIdByEmail, withDb, workspaceIdBySlug } from './helpers/seed';
 
 /**
- * M2-02 (NSO-291): the dashboard Modules tab end to end — an agent drives
+ * The dashboard Modules tab end to end — an agent drives
  * configure_module over MCP, the owner (and a viewer) use the UI:
  *
  *  - the agent opens `create` of a data collection to `public` → the
@@ -26,16 +26,15 @@ import { addMembership, userIdByEmail, withDb, workspaceIdBySlug } from './helpe
  *  - a viewer sees the configuration, the pending change and the secret
  *    status, but no button or input; a direct POST is 403.
  *
- * NSO-347 (EXT-05):
  *  - the workspace Modules page (a workspace tab, viewer+): every active
  *    module with version, source, contract, availability, slots, limits for
  *    the workspace and error codes — secret-free, no path on disk; its
- *    opt-in switch (NSO-346) answers a viewer 403;
+ *    opt-in switch answers a viewer 403;
  *  - the module page's "About this module" + error codes, linking there;
  *  - the generic form edits a record of named entries (the forms module's
  *    `forms`) without client JS: fill the empty entry, save, it is stored.
  *
- * NSO-352: the installed external module `acmecrm` (source dir, opt-in,
+ * The installed external module `acmecrm` (source dir, opt-in,
  * its `auth.signedIn` contribution, error and limit) on the workspace page;
  * its page is the generic form — a list (`tags`, one per line) and a record
  * (`fields`) save — while `data` keeps its collections editor (a declared
@@ -100,7 +99,7 @@ function modulePath(app: Created, module: string): string {
 
 test.describe.configure({ mode: 'serial' });
 
-test.describe('dashboard Modules tab (M2-02) @local', () => {
+test.describe('dashboard Modules tab @local', () => {
   let mcp: McpClient;
   let owner: BrowserContext;
   let ownerPage: Page;
@@ -306,7 +305,7 @@ test.describe('dashboard Modules tab (M2-02) @local', () => {
     await expect(ownerPage.getByTestId('field-error-greeting')).toBeVisible();
   });
 
-  test('NSO-347: the workspace Modules page lists every module with its facts — secret-free, no path on disk', async () => {
+  test('the workspace Modules page lists every module with its facts — secret-free, no path on disk', async () => {
     skipUnlessLocal();
     await ownerPage.goto(`/workspaces/${app.workspace}/apps`);
     await ownerPage.locator('[data-testid="workspace-tab"][data-tab="modules"]').click();
@@ -375,7 +374,7 @@ test.describe('dashboard Modules tab (M2-02) @local', () => {
     expect(info.json).toMatchObject({ contract: '^1.1', source: 'builtin', availability: 'default', slots: [expect.objectContaining({ name: 'hello.greeter' })] });
   });
 
-  test("NSO-347: the module page's About section + error codes, linking to the workspace page", async () => {
+  test("the module page's About section + error codes, linking to the workspace page", async () => {
     skipUnlessLocal();
     await ownerPage.goto(modulePath(app, 'hello'));
     const about = ownerPage.getByTestId('module-about');
@@ -404,7 +403,7 @@ test.describe('dashboard Modules tab (M2-02) @local', () => {
     await expect(paths.locator('[data-testid="config-path-row"][data-path="allow.emails"]')).toBeVisible();
   });
 
-  test('NSO-347: the generic form adds a named entry to a record (forms.forms) without client JS', async () => {
+  test('the generic form adds a named entry to a record (forms.forms) without client JS', async () => {
     skipUnlessLocal();
     await ownerPage.goto(modulePath(app, 'forms'));
     const record = ownerPage.getByTestId('field-forms');
@@ -424,7 +423,7 @@ test.describe('dashboard Modules tab (M2-02) @local', () => {
     }
   });
 
-  test('NSO-352: the installed external module — its facts on the workspace page, the generic form with a list and a record; data keeps its collections editor', async () => {
+  test('the installed external module — its facts on the workspace page, the generic form with a list and a record; data keeps its collections editor', async () => {
     skipUnlessLocal();
     const wsId = await workspaceIdBySlug(app.workspace);
     await withDb((c) => c.query(`INSERT INTO workspace_modules (workspace_id, module) VALUES ($1, 'acmecrm') ON CONFLICT DO NOTHING`, [wsId]));
@@ -500,12 +499,12 @@ test.describe('dashboard Modules tab (M2-02) @local', () => {
       await expect(page.getByTestId('secret-input-HELLO_SIGNATURE')).toHaveCount(0);
       await expect(page.locator('main button')).toHaveCount(0);
 
-      // NSO-347: the workspace Modules page is read-only for every member.
+      // the workspace Modules page is read-only for every member.
       await page.goto(`/workspaces/${app.workspace}/modules`);
       await expect(page.locator('[data-testid="workspace-module"][data-module="hello"]')).toBeVisible();
       // The search is the one control (a GET form, it changes nothing).
       await expect(page.locator('main button:not([data-testid="modules-search-submit"]), main input:not([type="hidden"]):not([type="search"])')).toHaveCount(0);
-      // NSO-346: the opt-in switch on that page is super-admin only.
+      // the opt-in switch on that page is super-admin only.
       const toggle = await page.request.post(`${BASE_URL_WEB}/workspaces/${app.workspace}/modules`, {
         headers: { Origin: BASE_URL_WEB },
         form: { intent: 'workspace-module', module: 'hello', enabled: '1' },

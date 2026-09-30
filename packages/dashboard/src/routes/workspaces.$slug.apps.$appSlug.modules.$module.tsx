@@ -1,12 +1,12 @@
 /**
- * /workspaces/:slug/apps/:appSlug/modules/:module — client half (M2-02,
- * NSO-291), the page configure_module's `confirm_url` points at: the pending
+ * /workspaces/:slug/apps/:appSlug/modules/:module — client half,
+ * the page configure_module's `confirm_url` points at: the pending
  * change (diff, risk notes, Confirm / Reject), the config form generated from
  * the module's JSON Schema, the dedicated editor the module declares
  * (`dashboard.editor`: collections / upstreams), the write-only secrets and
  * "About this module" (version, source, contract, slots, contributions, its
- * own error codes — NSO-347) and, for the scheduled-import module, its
- * sources with Run now / Pause / Resume (NSO-392). Viewers see the same page
+ * own error codes) and, for the scheduled-import module, its
+ * sources with Run now / Pause / Resume. Viewers see the same page
  * without controls.
  * Server code lives in the .server.ts; values arrive pre-shaped and
  * secret-free.
@@ -60,7 +60,7 @@ export default function AppModuleRoute() {
     errors && (errors.intent === 'set-secret' || errors.intent === 'remove-secret') ? { target: errors.target, messages: errors.general } : null;
 
   if (!d.enabled) {
-    // NSO-346: an opt-in module the operator has not enabled for this workspace.
+    // An opt-in module the operator has not enabled for this workspace.
     return (
       <AppPage header={d.header} trail={[{ label: d.module.name }]}>
         <h2 style={ui.title}>

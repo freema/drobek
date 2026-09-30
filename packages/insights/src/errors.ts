@@ -1,5 +1,5 @@
 /**
- * Typed insights-layer errors (PHY-123). Every rejection carries a stable
+ * Typed insights-layer errors. Every rejection carries a stable
  * `code` so the beacon HTTP handler can map it to a status and the MCP tool
  * layer can surface `{ error, message }` — without string-matching.
  */

@@ -1,5 +1,5 @@
 /**
- * The apex landing of a drobek instance (NSO-331): what an anonymous visitor
+ * The apex landing of a drobek instance: what an anonymous visitor
  * of a self-hosted core sees. Neutral copy about the open-source instance —
  * the agent loop over MCP, the platform modules, the dashboard — with links
  * to the agent guide, /llms.txt, the source repository and sign-in. External

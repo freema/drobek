@@ -1,5 +1,5 @@
 /**
- * Sign-in providers (NSO-348) end to end, without a network: a fixture
+ * Sign-in providers end to end, without a network: a fixture
  * module `authtest` contributes an `auth.provider` (a fake IdP that checks
  * the PKCE verifier) and an `auth.signedIn` observer. The flow runs through
  * the real routes (begin, complete) and the real `endUsers.callback`, with
@@ -435,7 +435,7 @@ describe('auth providers — the full flow', () => {
     await vi.waitFor(() => expect(events.map((e) => e.provider).sort()).toEqual(['copy:email', 'email']));
   });
 
-  it('https: the flow cookie is __Host- (no sibling app host can set it); the names a sibling can plant are never read (NSO-360)', async () => {
+  it('https: the flow cookie is __Host- (no sibling app host can set it); the names a sibling can plant are never read', async () => {
     vi.stubEnv('APPS_URL_SCHEME', 'https');
     const t = ctx();
     const signIn = async () => {
@@ -461,7 +461,7 @@ describe('auth providers — the full flow', () => {
     expect(res.headers['Set-Cookie']).toMatch(/^__Host-drobek_eu=/);
   });
 
-  it('a sign-in begun before this release (a v1 state or handoff record) is refused, never finished (NSO-360)', async () => {
+  it('a sign-in begun before this release (a v1 state or handoff record) is refused, never finished', async () => {
     const t = ctx();
     const b = await begin(t);
     const id = b.state.split('.')[0];
@@ -771,7 +771,7 @@ describe('auth providers — accounts and sessions', () => {
   });
 });
 
-describe('auth providers — an identity is (provider, issuer, subject) (NSO-360)', () => {
+describe('auth providers — an identity is (provider, issuer, subject)', () => {
   const ISSUER_B = { issuer: 'https://other-idp.example', clientId: 'drobek-test' };
   const ON_B = { ...ON, providers: { ...ON.providers, authtest: { enabled: true, ...ISSUER_B } } };
   const PROMPT = { ...ON, providers: { ...ON.providers, authtest: { enabled: true, ...ISSUER, prompt: 'login' } } };

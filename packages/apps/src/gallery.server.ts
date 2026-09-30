@@ -1,5 +1,5 @@
 /**
- * The public gallery, the stateful half (NSO-340):
+ * The public gallery, the stateful half:
  *
  *  - `setGalleryListing` — an editor+ lists a PUBLISHED app with a short
  *    public description, changes the description, or unlists it. The same

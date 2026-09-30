@@ -1,5 +1,5 @@
 /**
- * Modules installed in `DROBEK_MODULES_DIR` (NSO-345): the second place the
+ * Modules installed in `DROBEK_MODULES_DIR`: the second place the
  * registry looks for a DROBEK_MODULES entry, BEFORE the server's own
  * dependencies. Layout and lockfile: `./lock.ts`.
  *

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# `task restore BACKUP=backups/drobek-<ts>.tar.gz` (M4-03) — put a `task backup`
+# `task restore BACKUP=backups/drobek-<ts>.tar.gz` — put a `task backup`
 # archive back into this stack (the same machine or a new one) and start it:
 #
 #   1. unpack + verify (format, SHA256SUMS)

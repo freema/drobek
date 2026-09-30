@@ -1,12 +1,12 @@
 /**
- * Activity (audit) CSV serialization (PHY-85). Reuses the PHY-121 RFC-4180
+ * Activity (audit) CSV serialization. Reuses the RFC-4180
  * escaping primitive (`csvLine` from @drobek/core) so the audit export escapes
  * commas / quotes / newlines identically to the Data-tab export. Pure + unit
  * tested; imported only server-side (the export route streams these lines).
  *
  * Columns are fixed (governance, not a user schema): the ISO instant, the action,
  * the actor_kind (agent|user), the actor email, the subject (type + id) and the
- * readable summary the Activity table shows (NSO-371, secret-free). The
+ * readable summary the Activity table shows (secret-free). The
  * invited email is never in an invite row's subject, so no PII leaks beyond the
  * actor email that the admin viewer is already entitled to see.
  */

@@ -1,5 +1,5 @@
 /**
- * NSO-366: who may publish — the whole decision table (mode × workspace
+ * Who may publish — the whole decision table (mode × workspace
  * state × super-admin member × super-admin publisher), the approval request
  * dedupe (never for a blocked workspace), setWorkspacePublishing (the state
  * transitions, audit, the block / unblock e-mails to editors and admins),

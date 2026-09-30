@@ -1,9 +1,9 @@
 /**
- * NSO-345: the guestbook fixture (test-fixtures/drobek-module-guestbook)
+ * The guestbook fixture (test-fixtures/drobek-module-guestbook)
  * loaded from a DROBEK_MODULES_DIR through the whole runtime path — lock
  * check, host peers, lint, migrations on PGlite, routes through the
  * production pipeline, the slot contribution and the runtime summary that
- * /healthz serves. EXT-09 installs the same fixture into the image.
+ * /healthz serves.
  */
 import { rmSync } from 'node:fs';
 import type { PGlite } from '@electric-sql/pglite';

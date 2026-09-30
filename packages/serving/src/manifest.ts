@@ -1,5 +1,5 @@
 /**
- * What a version SERVES (M0-06). Pure. A version holds `source` files (what
+ * What a version SERVES. Pure. A version holds `source` files (what
  * the agent wrote) and `built` files (esbuild's output: `main.js`, `main.css`,
  * extra entries, bundled assets). The served manifest is:
  *   - every built file;
@@ -16,7 +16,7 @@ import { extensionOf } from './content-type.js';
 export interface ServedFile {
   sha256: string;
   size: number;
-  /** Compiler output (NSO-381: only a built bundle has its inline source map split off on the production hosts). */
+  /** Compiler output (only a built bundle has its inline source map split off on the production hosts). */
   built?: true;
 }
 

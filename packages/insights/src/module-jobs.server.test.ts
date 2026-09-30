@@ -1,5 +1,5 @@
 /**
- * NSO-391: a failed module job run in get_logs `runtime` (PGlite, migration
+ * A failed module job run in get_logs `runtime` (PGlite, migration
  * 0030) — its own type with module and job, redacted, deduped per module, job
  * and message — while a browser error's entry keeps exactly its shape.
  */

@@ -1,20 +1,20 @@
 /**
- * @drobek/insights — the agent-loop v1 (PHY-123, the observe slice of PHY-92) as
+ * @drobek/insights — the observe slice of the agent loop, as
  * a react-free workspace LIBRARY. It closes the write→observe→fix loop inside
  * the editor agent:
  *
  *  - a PUBLIC error beacon (recordBeacon / handleBeacon) that ingests untrusted
  *    window.onerror + unhandledrejection events, size-capped + rate-limited +
- *    PII/secret-sanitized + ring-buffer-retained — since M1-07 at
+ *    PII/secret-sanitized + ring-buffer-retained — at
  *    `POST /__drobek/v1/_beacon` on every app host (@drobek/serving routes it),
- *  - cheap serving signals (incrementServingSignal) tallied on the U7 serving
+ *  - cheap serving signals (incrementServingSignal) tallied on the serving
  *    path — request volume / 5xx / 404-by-path,
  *  - read models (queryAppErrors / queryAppLogs) for the dashboard Overview
- *    panels, and the get_logs side (M1-07): the compile history
+ *    panels, and the get_logs side: the compile history
  *    (recordCompile), module request counters (recordModuleRequest — Redis,
  *    flushed lazily into Postgres), the
  *    three get_logs kinds (queryRuntimeLog / queryCompileLog / queryRequestLog)
- *    and the periodic retention prune (startLogsPrune, NSO-327).
+ *    and the periodic retention prune (startLogsPrune).
  *
  * Depends only on @drobek/auth (rate-limit + client IP), @drobek/core (Redis)
  * and @drobek/db so @drobek/serving can import the signal hook with no cycle.

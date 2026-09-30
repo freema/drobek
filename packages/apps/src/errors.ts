@@ -6,25 +6,25 @@ export type AppsErrorCode =
   | 'not_publishable'
   | 'not_published'
   | 'invalid_settings'
-  /** NSO-293: a super-admin took the app down (`apps.locked_reason`); nothing changes until a restore. */
+  /** A super-admin took the app down (`apps.locked_reason`); nothing changes until a restore. */
   | 'app_locked_by_admin'
-  /** NSO-293: an unknown takedown / report reason category. */
+  /** An unknown takedown / report reason category. */
   | 'invalid_reason'
-  /** NSO-329: the workspace holds APPS_MAX_PER_WORKSPACE live apps (`details.limit` / `details.value`). */
+  /** The workspace holds APPS_MAX_PER_WORKSPACE live apps (`details.limit` / `details.value`). */
   | 'limit_exceeded'
-  /** NSO-340: the public gallery is off on this server (GALLERY_ENABLED). */
+  /** The public gallery is off on this server (GALLERY_ENABLED). */
   | 'gallery_disabled'
-  /** NSO-340: a super-admin hid the app's gallery entry; neither the owner nor an agent can list it. */
+  /** A super-admin hid the app's gallery entry; neither the owner nor an agent can list it. */
   | 'gallery_hidden'
-  /** NSO-366: PUBLISH_APPROVAL=approval and a super-admin has not approved the workspace (`contact`). */
+  /** PUBLISH_APPROVAL=approval and a super-admin has not approved the workspace (`contact`). */
   | 'publish_not_approved'
-  /** NSO-366: a super-admin turned publishing off for the workspace (`contact`), in every PUBLISH_APPROVAL mode. */
+  /** A super-admin turned publishing off for the workspace (`contact`), in every PUBLISH_APPROVAL mode. */
   | 'publish_blocked'
-  /** NSO-340: the gallery app's owner does not allow duplicating it. */
+  /** The gallery app's owner does not allow duplicating it. */
   | 'not_duplicable'
-  /** NSO-340: the person made DUPLICATES_PER_USER_HOUR copies within the last hour (`details.limit` / `details.value`). */
+  /** The person made DUPLICATES_PER_USER_HOUR copies within the last hour (`details.limit` / `details.value`). */
   | 'rate_limited'
-  /** NSO-382: `createVersion` with `baseVersion` found a newer version than the one the write was based on. */
+  /** `createVersion` with `baseVersion` found a newer version than the one the write was based on. */
   | 'version_conflict';
 
 /** A caller-facing failure; `code` is stable (MCP tools return it verbatim). */

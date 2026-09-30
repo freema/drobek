@@ -229,7 +229,7 @@ describe('drobek-module-auth — sign-in', () => {
     expect(await fake.get(`drobek:otp:eu:${appId}:cd:${emailHash('eva@firma.cz')}`)).toBeNull();
   });
 
-  it('retries while sign-in mail is paused cost nothing: 15 minutes later the same user and IP get a code (NSO-327)', async () => {
+  it('retries while sign-in mail is paused cost nothing: 15 minutes later the same user and IP get a code', async () => {
     let now = Date.now();
     // G = 4: sign-in codes 2 — used up by two other apps, so sign-in mail pauses.
     const guard = memoryMailGuard({ hourlyMax: 4, pauseMinutes: 15, appSharePercent: 100 }, noopLogger, () => now);
@@ -260,7 +260,7 @@ describe('drobek-module-auth — sign-in', () => {
     expect(await fake.get(`drobek:rl:eu:${appId}:otp-email-1h:${emailHash('ana@example.com')}`)).toBe('1');
   });
 
-  it("the app's hourly code cap is clamped to its share of the server's sign-in budget (NSO-322 H2)", async () => {
+  it("the app's hourly code cap is clamped to its share of the server's sign-in budget", async () => {
     expect(appHourlyCodeCap(100, 25)).toBe(25);
     expect(appHourlyCodeCap(10, 25)).toBe(10);
     expect(appHourlyCodeCap(100, undefined)).toBe(100);
@@ -331,7 +331,7 @@ describe('drobek-module-auth — sign-in', () => {
     expect(await resolve({ app: { ...APP(), id: 'another-app' }, cookieHeader: cookie })).toEqual({ kind: 'anon' });
   });
 
-  it('the 6th wrong code (and even the right one after) → too_many_attempts; a concurrent flood is capped (PHY-76 #1)', async () => {
+  it('the 6th wrong code (and even the right one after) → too_many_attempts; a concurrent flood is capped', async () => {
     const t = ctx();
     await t.request('POST', '/send-code', { body: { email: 'ana@example.com' } });
     const code = /\b(\d{6})\b/.exec(t.emails[0].subject)![1];
@@ -506,7 +506,7 @@ describe('drobek-module-auth — sign-in', () => {
   });
 });
 
-describe("drobek-module-auth — the owner's view (M2-03)", () => {
+describe("drobek-module-auth — the owner's view", () => {
   type Config = ReturnType<typeof authConfigSchema.parse>;
   const view = (config: Config): OwnerView<Config> => ({ app: APP(), config, db, log: noopLogger, limits: async () => ({}) });
   const owner = auth.endUsers!;

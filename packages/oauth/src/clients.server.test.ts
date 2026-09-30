@@ -24,7 +24,7 @@ afterAll(async () => close());
 
 const REDIRECT = 'http://127.0.0.1:9999/cb';
 
-describe('unused DCR clients (PHY-76 #7 cap)', () => {
+describe('unused DCR clients (abuse cap)', () => {
   it('counts only never-authorized DCR clients and prunes the stale ones', async () => {
     const before = await countUnusedDcrClients();
     const used = await createClient({ clientName: 'used', redirectUris: [REDIRECT] });

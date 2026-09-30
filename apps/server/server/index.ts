@@ -1,13 +1,13 @@
 /**
- * drobek server entry — the ONE process of the self-hostable image (M0-01).
+ * drobek server entry — the ONE process of the self-hostable image.
  *
- * Boot order: refuse insecure secrets (PHY-76 #6), an invalid APPS_DOMAIN,
+ * Boot order: refuse insecure secrets, an invalid APPS_DOMAIN,
  * TRUST_PROXY, TLS_ASK_TOKEN, LIMITS_PROVIDER_URL, DOMAINS_*,
  * APP_FRAME_SRC_EXTRA, GALLERY_FRAME_ANCESTORS, PUBLISH_APPROVAL / OPERATOR_EMAIL / PUBLISH_NOTIFY or e-mail transport
  * (EMAIL_TRANSPORT / RESEND_API_KEY / SMTP_HOST) → apply core migrations →
  * load the platform modules (DROBEK_MODULES: their migrations, the composed
- * SDK, the skills — a bad module stops the start, M1-01) →
- * install the TypeScript check runner (NSO-388) → mount the app-host dispatcher (M0-06), then React Router (Vite middleware in
+ * SDK, the skills — a bad module stops the start) →
+ * install the TypeScript check runner → mount the app-host dispatcher, then React Router (Vite middleware in
  * dev, `build/server` in production) behind the MCP resource → start
  * background jobs + the serve-cache subscriber → listen.
  */
@@ -70,14 +70,14 @@ if (process.env.DROBEK_MIGRATE_ON_START !== '0') {
   await runCoreMigrations();
 }
 
-// M1-01: the platform modules. Loaded once per process (moduleRuntime() is
+// The platform modules. Loaded once per process (moduleRuntime() is
 // shared with the Vite-loaded dashboard routes through globalThis).
 const modules = await moduleRuntime({ log: createConsoleLogger('modules') }).catch((err: unknown) => {
   console.error(dbErrorForLog(err));
   process.exit(1);
 });
 
-// NSO-388: the background TypeScript check of app versions, against this server's SDK declarations.
+// The background TypeScript check of app versions, against this server's SDK declarations.
 const typecheck = new TypecheckRunner({
   limits: typecheckLimitsFromEnv(process.env),
   sdk: { dts: modules.sdk.dts, inline: modules.sdk.inlineTypes },
@@ -114,17 +114,17 @@ if (production) {
   });
 }
 
-// M0-06: the app hosts' cache, busted by every app-changed event (in-process
+// The app hosts' cache, busted by every app-changed event (in-process
 // and over Redis pub/sub).
 const serveStore = new ServeStore();
 const serveCache = subscribeServeCache(serveStore, { log });
 const appsHost = createAppsHostMiddleware({
   store: serveStore,
-  // `/__drobek/*` on the app hosts: the SDK + module routes (M1-01).
+  // `/__drobek/*` on the app hosts: the SDK + module routes.
   deps: { platform: (req, { app }) => modules.handle(req, app) },
 }) as RequestHandler;
 
-// NSO-358: the asset upload URLs (create_asset_upload / the Assets tab).
+// The asset upload URLs (create_asset_upload / the Assets tab).
 const assetUpload = createAssetUploadHandler({
   limits: async (workspaceId) => assetLimitsOf(await modules.workspaceLimits(workspaceId)),
   hint: errorHint,

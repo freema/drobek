@@ -1,6 +1,6 @@
 /**
- * `modules.lock.json` and the module tree hash (`@drobek/modules/lock`,
- * NSO-345). Shared by the server (which verifies every module it loads from
+ * `modules.lock.json` and the module tree hash (`@drobek/modules/lock`).
+ * Shared by the server (which verifies every module it loads from
  * `DROBEK_MODULES_DIR` at start) and the operator's installer (which writes
  * the lockfile after `npm install`), so both hash a module the same way.
  * Node built-ins only — importing this subpath pulls in nothing else.

@@ -16,7 +16,7 @@ import { callTool, connectBearer, mcpClient } from './helpers/mcp';
 import { userIdByEmail, withDb } from './helpers/seed';
 
 /**
- * M0-06 (NSO-285) acceptance, end to end against the local compose stack:
+ * App origins end to end against the local compose stack:
  * every app is its own origin under APPS_DOMAIN (dev: apps.localhost:3041).
  *   - <slug>--preview.<APPS_DOMAIN> = the newest version that compiled,
  *     <slug>.<APPS_DOMAIN> = the published one (404 "not published" before),
@@ -24,7 +24,7 @@ import { userIdByEmail, withDb } from './helpers/seed';
  *   - built files win, sources (*.tsx) are never served, SPA fallback, ETag/304,
  *     the Cache-Control policy, the security header set (CSP, noindex on
  *     preview/version hosts, no-referrer, nosniff, frame-ancestors = only the
- *     dashboard origin (NSO-342, the app-list thumbnail));
+ *     dashboard origin (the app-list thumbnail));
  *   - MCP publish (scope `publish`, only ok versions, rollback, audited);
  *   - the cache is busted on publish / a new version (no stale first request);
  *   - the dashboard never serves an app, app hosts never read or set the
@@ -62,7 +62,7 @@ function cookieNames(header: string): string[] {
     .filter(Boolean);
 }
 
-/** An app's CSP: only the dashboard may frame it (the app-list thumbnail, NSO-342). */
+/** An app's CSP: only the dashboard may frame it (the app-list thumbnail). */
 const cspWithAncestors = (frameAncestors: string): string =>
   "default-src 'self'; script-src 'self' https://esm.sh 'unsafe-inline'; " +
   "style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https:; " +
@@ -216,8 +216,7 @@ test('app hosts: preview / publish / rollback / --vN, served files, headers, cac
       published_url: urlOf(prodHost(slug)),
       domains: [prodHost(slug)],
       assets: 'draft',
-      // NSO-384: the published version's readiness report (the template has a <title>);
-      // NSO-388: its .tsx is type-checked in the background — clean, done or still running.
+      // The template has a <title>; the .tsx type check runs in the background.
       readiness: { ready: true, blocking: [], warnings: [], typecheck: expect.stringMatching(/^(pending|checked)$/) },
     });
     const prod1 = await hostRequest(prodHost(slug));

@@ -4,7 +4,7 @@
  * opening sign-in to anyone — and enabling a sign-in provider or changing
  * who it lets in — needs the app owner's confirmation.
  *
- * `providers` (NSO-348): `emailCode` (the e-mail code, on by default) plus
+ * `providers`: `emailCode` (the e-mail code, on by default) plus
  * one entry per `auth.provider` contribution of the server — `{ enabled,
  * relinkByEmail?, …the provider's own config }`. The schema is COMPOSED at start from the
  * contributions (`composeAuthConfig`, the module's `compose`); the static
@@ -151,7 +151,7 @@ function shown(value: unknown): string {
 }
 
 /**
- * The changes that wait for the owner (§5.0): opening sign-in to anyone,
+ * The changes that wait for the owner: opening sign-in to anyone,
  * enabling a sign-in provider, changing a provider's identity fields (e.g.
  * `issuer`, `clientId` — they decide whose accounts get in) while it is
  * enabled, and turning on `relinkByEmail`. Turning a method OFF never waits.

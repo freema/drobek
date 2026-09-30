@@ -1,5 +1,5 @@
 /**
- * Auth migration 0002 (NSO-360) against a database in the v0.2.x shape
+ * Auth migration 0002 against a database in the v0.2.x shape
  * (0000–0001 applied, e-mail and provider-linked users present).
  */
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';

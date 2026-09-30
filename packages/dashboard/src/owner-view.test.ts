@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { dayRange, editableJson, formatBytes, formsAgentPrompt, formsListState, parseDay, parseRecordJson, safeFilename, sinceWindow, submissionFields, suggestAssetPath } from './owner-view.js';
 
-describe('owner-view helpers (M2-03)', () => {
+describe('owner-view helpers', () => {
   it('the record editor round-trips the own fields only', () => {
     const json = editableJson({ _id: 'r1', _owner: null, title: 'Milk', tags: ['a'] });
     expect(JSON.parse(json)).toEqual({ title: 'Milk', tags: ['a'] });
@@ -39,7 +39,7 @@ describe('owner-view helpers (M2-03)', () => {
   });
 });
 
-describe('suggestAssetPath (NSO-358, the Assets tab)', () => {
+describe('suggestAssetPath (the Assets tab)', () => {
   it('turns a file name into a valid asset path', () => {
     expect(suggestAssetPath('film.mp4')).toBe('film.mp4');
     expect(suggestAssetPath('Rodinné video (1).MP4')).toBe('Rodinne-video-1-.MP4');

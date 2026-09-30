@@ -83,7 +83,7 @@ describe('compile — happy path', () => {
     expect(r.outputs.has('main.js')).toBe(true);
   });
 
-  it('maps `drobek` to the versioned SDK URL it is given (M1-01)', async () => {
+  it('maps `drobek` to the versioned SDK URL it is given', async () => {
     const r = await compile(
       new Map([['src/main.ts', "import { drobek } from 'drobek';\nconsole.log(drobek);"]]),
       { sdkUrl: '/__drobek/sdk.js?v=0123456789abcdef' }
@@ -92,7 +92,7 @@ describe('compile — happy path', () => {
     expect(text(r.outputs.get('main.js'))).toContain('from "/__drobek/sdk.js?v=0123456789abcdef"');
   });
 
-  describe('the browser error beacon (M1-07)', () => {
+  describe('the browser error beacon', () => {
     const BEACON = '/__drobek/beacon.js?v=00112233aabbccdd';
 
     it('every JS entry imports the beacon FIRST when a beaconUrl is given', async () => {
@@ -132,7 +132,7 @@ describe('compile — happy path', () => {
     });
   });
 
-  describe('drobek/<module> platform sources (M1-02)', () => {
+  describe('drobek/<module> platform sources', () => {
     const GATE = [
       "import { useState } from 'react';",
       "import { drobek } from 'drobek';",
@@ -214,7 +214,7 @@ describe('compile — happy path', () => {
     expect(text(r.outputs.get('main.js'))).not.toContain('sourceMappingURL');
   });
 
-  // @drobek/serving splits exactly this trailer off on the production hosts (NSO-381, sourcemap.ts).
+  // @drobek/serving splits exactly this trailer off on the production hosts (sourcemap.ts).
   it('ends every JS/CSS bundle with the inline source map trailer the production hosts split off', async () => {
     const r = await compile(app());
     const b64 = '[A-Za-z0-9+/]+={0,2}';
@@ -278,7 +278,7 @@ describe('compile — errors', () => {
   it('tells the agent exactly how to add an unknown package', async () => {
     const r = await compile(new Map([['src/main.ts', "import { format } from 'date-fns/format';\nconsole.log(format);"]]));
     expect(r.errors[0].text).toContain('"date-fns": "https://esm.sh/date-fns@<version>"');
-    // The specifier travels structured, so a caller can attach a hint (M1-01: firebase → skill_info('data')).
+    // The specifier travels structured, so a caller can attach a hint (firebase → skill_info('data')).
     expect(r.errors[0].specifier).toBe('date-fns/format');
   });
 

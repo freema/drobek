@@ -1,5 +1,5 @@
 /**
- * "The code in the examples does not rot" (NSO-308, a library since NSO-349):
+ * "The code in the examples does not rot":
  * every fenced block of a skill is checked against drobek's compiler and the
  * SDK types of the given modules.
  *

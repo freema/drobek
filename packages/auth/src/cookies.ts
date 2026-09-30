@@ -1,5 +1,5 @@
 /**
- * Dashboard cookies (M0-06). The apps live on sibling hosts of the SAME
+ * Dashboard cookies. The apps live on sibling hosts of the SAME
  * registrable domain (`<slug>.drobek.app` next to `drobek.app`), so in
  * production every dashboard cookie is a `__Host-` cookie: the browser only
  * accepts it with Secure, Path=/ and NO Domain attribute — it lives on exactly

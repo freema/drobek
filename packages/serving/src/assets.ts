@@ -1,11 +1,11 @@
 /**
- * App assets on the app hosts (NSO-358): `GET|HEAD /<name>` answers the app's
+ * App assets on the app hosts: `GET|HEAD /<name>` answers the app's
  * uploaded binary (video, audio, images, fonts — `@drobek/apps` assets) with
  * the bytes' SNIFFED type. Assets share the URL space of the app's files, so
  * a ported page keeps its paths (`<video src="film.mp4">`, `img/s1.jpg`).
  * Reached from handler.ts only after the app, takedown, password gate and
  * version steps, and only when the version itself has no file at that path
- * (the app's own file wins — a version stays immutable). NSO-362: the
+ * (the app's own file wins — a version stays immutable). The
  * production host and custom domains look the name up in the set the last
  * publish froze, the preview host in the draft. An asset path always
  * has a media extension, so the SPA fallback (extension-less paths only) never

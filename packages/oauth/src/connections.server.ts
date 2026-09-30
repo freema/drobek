@@ -1,10 +1,10 @@
 /**
- * The user's OAuth connections (M2-04, NSO-284): which OAuth clients (DCR or
+ * The user's OAuth connections: which OAuth clients (DCR or
  * CIMD) currently hold a live grant for a user, and revoking one.
  *
  * A "connection" is a (user, client) pair with at least one LIVE token: an
  * unrevoked, unexpired access token or an unused, unexpired refresh token.
- * Tokens are user-bound (M0-04) and carry their client's internal id, so the
+ * Tokens are user-bound and carry their client's internal id, so the
  * whole view is a read over the two token tables — no extra schema.
  *
  * `lastUsedAt` = the newest token issued to the pair (the consent exchange or

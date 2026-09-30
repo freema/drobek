@@ -1,5 +1,5 @@
 /**
- * @drobek/serving — the apps origin (M0-06): every app is served from its own
+ * @drobek/serving — the apps origin: every app is served from its own
  * hosts under APPS_DOMAIN (`<slug>`, `<slug>--preview`, `<slug>--v<N>`) out of
  * its immutable versions. Host dispatch (`createAppsHostMiddleware`), the
  * request handler, the caches (+ their pub/sub bust), CSP and the password gate.

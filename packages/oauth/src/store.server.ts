@@ -1,5 +1,5 @@
 /**
- * Persistence seam for the OAuth code/token lifecycle (U5). The business rules
+ * Persistence seam for the OAuth code/token lifecycle. The business rules
  * (single-use, rotation, reuse detection, audience/expiry validation) live in
  * codes.server.ts / tokens.server.ts and talk ONLY to this interface, so they
  * unit-test against an in-memory store with NO Postgres — `task check` runs
@@ -32,7 +32,7 @@ export interface AuthCodeRow extends AuthCodeRecord {
   createdAt: Date;
 }
 
-/** A user-bound grant (M0-04): no workspace, no role — membership is resolved per call. */
+/** A user-bound grant: no workspace, no role — membership is resolved per call. */
 export interface GrantRecord {
   tokenHash: string;
   userId: string;

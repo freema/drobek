@@ -4,7 +4,7 @@ import { BINARY_EXTS, extOf, resolveAppSpecifier } from './paths.js';
 import type { CompileErrorCode } from './types.js';
 
 export const APP_NAMESPACE = 'app';
-/** `drobek/<module>` platform sources compiled into the app (M1-02). */
+/** `drobek/<module>` platform sources compiled into the app. */
 export const SDK_SOURCE_NAMESPACE = 'drobek-sdk';
 
 const LOADERS: Record<string, Loader> = {

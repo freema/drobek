@@ -1,5 +1,5 @@
 /**
- * /workspaces/:slug/apps/:appSlug/logs — client half of the Logs tab (M2-03):
+ * /workspaces/:slug/apps/:appSlug/logs — client half of the Logs tab:
  * the same three kinds as `get_logs` (runtime errors, compiles, requests) for
  * a chosen window, with a Refresh button. Read-only; no realtime.
  */

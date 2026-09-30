@@ -22,7 +22,7 @@ export interface CreateAppInput {
    * the env var, else DEFAULT_APPS_MAX_PER_WORKSPACE.
    */
   maxApps?: number;
-  /** NSO-340: the gallery app this one is a copy of (provenance, shown on the app's page). */
+  /** The gallery app this one is a copy of (provenance, shown on the app's page). */
   duplicatedFrom?: { appId: string; slug: string };
   /**
    * Runs inside the create transaction after the app row is inserted; a throw
@@ -63,7 +63,7 @@ async function slugTaken(slug: string): Promise<AppsError> {
  * its slug for 30 days). A workspace that already holds `maxApps` live apps
  * fails with `limit_exceeded` (soft-deleted apps do not count; creates in one
  * workspace are serialized on its row). Audited as `app.create`. Announces itself as an
- * app-changed `create` event (NSO-315) so an app host that cached the slug as
+ * app-changed `create` event so an app host that cached the slug as
  * unknown serves the new app on the very next request.
  */
 export async function createApp(input: CreateAppInput): Promise<{ id: string; slug: string }> {
@@ -78,7 +78,7 @@ export async function createApp(input: CreateAppInput): Promise<{ id: string; sl
     });
   }
   // A slug an app deleted 30+ days ago still holds is released right here,
-  // not only by the hourly sweep (NSO-288).
+  // not only by the hourly sweep.
   await releaseDeletedAppSlugs({ slug });
   if (await slugExists(slug)) throw await slugTaken(slug);
 

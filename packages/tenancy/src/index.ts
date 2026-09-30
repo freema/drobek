@@ -1,7 +1,6 @@
 /**
- * @drobek/tenancy — U4 workspaces (personal + team), the 3 membership roles +
- * global super-admin override, and Redis-backed invites (PHY-54; PHY-53
- * integration model): heavy logic lives HERE; apps/web in this repo AND the
+ * @drobek/tenancy — workspaces (personal + team), the 3 membership roles +
+ * global super-admin override, and Redis-backed invites: heavy logic lives HERE; apps/web in this repo AND the
  * private drobek-web app register thin route files that re-export the route
  * modules under `@drobek/tenancy/routes/*` — exactly like @drobek/auth.
  */

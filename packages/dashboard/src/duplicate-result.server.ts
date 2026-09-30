@@ -1,5 +1,5 @@
 /**
- * NSO-340: what happened to the module settings of a fresh copy, carried from
+ * What happened to the module settings of a fresh copy, carried from
  * /duplicate/:slug to the copy's Overview page in the redirect's query
  * (`duplicated`, `applied`, `pending`, `skipped=<module>:<reason>`). The query
  * is visitor-editable, so the parse keeps only well-formed module names and

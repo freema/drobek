@@ -6,7 +6,7 @@
  * slug / non-member → 404 (requireWorkspaceRole); an app of another workspace
  * → 404 (recordsOf).
  *
- * It also lists ORPHANS (NSO-324): records of collections the config no
+ * It also lists ORPHANS: records of collections the config no
  * longer declares (e.g. a write that landed while its collection was being
  * removed) — invisible everywhere else, yet counted by the app's quota.
  * POST `purge-orphan` (editor+, requireWorkspaceRole gates it server-side
@@ -33,7 +33,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     appSlug,
     /** The module that stores the records (the records authority) — its name, for the configure_module hint. */
     recordsModule: records.module,
-    /** NSO-342: the app header + tabs on every app sub-page. */
+    /** The app header + tabs on every app sub-page. */
     header: await appHeaderFor(access, appSlug),
     collections: collections.map((c) => ({
       name: c.name,

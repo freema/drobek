@@ -1,5 +1,5 @@
 /**
- * Typed proxy errors (PHY-59). Every rejection carries a stable `code` so the
+ * Typed proxy errors. Every rejection carries a stable `code` so the
  * route layer maps it to an HTTP status without string-matching. Messages are
  * ALWAYS secret-free (a decrypt/config failure must never echo key material).
  */

@@ -1,6 +1,5 @@
 /**
- * The public TypeScript module contract of drobek (M1-01, NSO-287) — semver
- * 1.x. A platform module is an npm package (a built-in under `modules/<name>`,
+ * The public TypeScript module contract of drobek — semver 1.x. A platform module is an npm package (a built-in under `modules/<name>`,
  * a third-party one named `drobek-module-<name>`) whose default export is the
  * result of `defineModule()`. The OPERATOR installs modules and lists them in
  * `DROBEK_MODULES`; they are trusted server-side dependencies of the same
@@ -15,18 +14,12 @@
  * it can use (values only ever entered in the dashboard), limits, and a SKILL:
  * the agent-facing documentation `skill_info` returns.
  *
- * Contract 1.1 adds: `contract` (the contract versions a module works
- * with), `errors` (its own error codes), typed `slots` other modules
- * contribute to (`contributes`, read with `services.contributions()`),
- * `availability`, `dashboard.editor` and `hooks.onAppDelete` — all
- * optional, so a 1.0 module loads unchanged. Contract 1.2 adds `jobs`
- * (scheduled work core runs on an interval, NSO-391) and lists the
- * `pendingConfig` of a route's context; a per-app job's context also calls
- * the app's upstreams (`upstreams.fetch`, through the module that declares
- * `upstreams`), imports records (`records.import`, through the records
- * authority) and audits (NSO-392), with the `upstreams` and `sync`
- * authorities and `records.importRecords` behind them; a 1.1 module loads
- * unchanged.
+ * Contract 1.1 adds `contract`, `errors`, typed `slots` (`contributes`,
+ * `services.contributions()`), `availability`, `dashboard.editor` and
+ * `hooks.onAppDelete`. Contract 1.2 adds `jobs` (scheduled work), a route
+ * context's `pendingConfig`, and a per-app job context's `upstreams.fetch`,
+ * `records.import` and audit. Every addition is optional, so an older module
+ * loads unchanged.
  *
  * Everything a handler needs arrives in a per-request, APP-SCOPED
  * ModuleContext: the caller (principal from the `drobek_eu` end-user cookie),
@@ -63,7 +56,7 @@ export const SLOT_NAME_RE = /^[a-z][a-z0-9]*\.[a-z][a-zA-Z0-9]*$/;
 
 /**
  * Who is calling a module route, resolved by core from the host-only
- * `drobek_eu` end-user session cookie of the app host (§5.0). The platform
+ * `drobek_eu` end-user session cookie of the app host. The platform
  * module `auth` signs end users in (e-mail code):
  *  - `anon` — no (valid) session;
  *  - `user` — an end user signed in to THIS app; `role: 'admin'` marks the
@@ -82,7 +75,7 @@ export interface EndUser {
   role: 'user' | 'admin';
   /**
    * How the session signed in: `email` (the e-mail code) or an auth
-   * provider's id (NSO-348). Absent = `email` (a session from before
+   * provider's id. Absent = `email` (a session from before
    * providers existed). Never part of the principal a module sees.
    */
   provider?: string;
@@ -128,7 +121,7 @@ export interface ModuleSkill {
   markdown: string;
 }
 
-/** A limit the module enforces — its env name is the operator's knob (§5.7). */
+/** A limit the module enforces — its env name is the operator's knob. */
 export interface ModuleLimit {
   /** Env var name, e.g. `FORMS_PER_APP_PER_DAY` (UPPER_SNAKE). */
   env: string;
@@ -287,7 +280,7 @@ export interface EndUserAuthority<Config = unknown> {
     contributions<T = unknown>(slot: string): T[];
   }): Promise<EndUser | null>;
 
-  // ── the owner's view (the dashboard Users tab, M2-03) — optional ──
+  // ── the owner's view (the dashboard Users tab) — optional ──
   // Core calls these only after it authorized a drobek account for the app
   // (the workspace role; changes are editor+). Unknown user → null / a
   // ModuleError `not_found`.
@@ -308,7 +301,7 @@ export interface EndUserAuthority<Config = unknown> {
   setDisabled?(view: OwnerView<Config>, id: string, disabled: boolean): Promise<EndUserRecord | null>;
 
   /**
-   * The IdP callback of the end-user sign-in providers (NSO-348): core routes
+   * The IdP callback of the end-user sign-in providers: core routes
    * `GET|POST /__drobek/auth/callback/:provider` on the DASHBOARD host here —
    * the one redirect URI an IdP client registers for every app. No dashboard
    * session is read and no origin check applies (the IdP redirects or posts
@@ -443,7 +436,7 @@ export interface ConfirmContext {
 }
 
 /**
- * Who may confirm a pending change (NSO-322 H3): `editor` (the default —
+ * Who may confirm a pending change: `editor` (the default —
  * editors, workspace admins, super-admins) or `admin` (workspace admins and
  * super-admins only), e.g. a change that spends a secret an admin registered.
  */
@@ -557,7 +550,7 @@ export interface RecordsAuthority<Config = unknown> {
   /** The CSV export of a collection (filter + sort applied): the header line, then one line per record (no line breaks). */
   csv(view: RecordsView<Config>, query: Omit<RecordsQuery, 'limit' | 'cursor'>): AsyncIterable<string>;
 
-  // ── owner edits (the dashboard Data tab, M2-03, editor+) — optional ──
+  // ── owner edits (the dashboard Data tab, editor+) — optional ──
 
   /**
    * Replace a record's own fields (`_…` keys are ignored), validated like any
@@ -593,7 +586,7 @@ export interface RecordsAuthority<Config = unknown> {
    */
   purgeOrphan?(view: RecordsView<Config>, collection: string): Promise<{ records: number }>;
   /**
-   * Contract 1.2 (NSO-392): write a batch of records into a declared
+   * Contract 1.2: write a batch of records into a declared
    * collection as a whole — ONE transaction, every record checked against
    * the collection's schema and the quotas first; any failure stores
    * nothing. `replace`: the collection holds exactly these records
@@ -857,7 +850,7 @@ export interface AppJobContext<Config = unknown> extends JobContextBase {
     get(name: string): Promise<string | null>;
   };
   /**
-   * NSO-392: call an upstream assigned to THIS app (the proxy config, a
+   * Call an upstream assigned to THIS app (the proxy config, a
    * workspace admin confirmed it) through the module that declares
    * `upstreams` — the secret is injected server-side, never seen here.
    * ModuleError `unavailable` when no such module is on for the workspace.
@@ -866,7 +859,7 @@ export interface AppJobContext<Config = unknown> extends JobContextBase {
     fetch(name: string, request?: UpstreamRequest): Promise<UpstreamResponse>;
   };
   /**
-   * NSO-392: write a batch of records into one of THIS app's declared
+   * Write a batch of records into one of THIS app's declared
    * collections through the records authority (`importRecords`: all or
    * nothing, schema + quotas checked). ModuleError `unavailable` when the
    * records module cannot.
@@ -1108,7 +1101,7 @@ export interface RateLimitResult {
   retryAfterSec: number;
 }
 
-/** Who an e-mail may go to — never an arbitrary address (§5.4). */
+/** Who an e-mail may go to — never an arbitrary address. */
 export type EmailRecipient =
   /** The addresses at this dotted path of THIS module's app config (owner-confirmed). */
   | { config: string }
@@ -1197,7 +1190,7 @@ export interface ModuleContext<Config = unknown> extends ModuleServices {
     /**
      * Sign-in codes (`{ signInAddress }`) this app may send per hour under the
      * operator-wide budget (EMAIL_SIGNIN_APP_HOURLY_SHARE of the sign-in
-     * budget) — a module's own per-app cap must not exceed it (NSO-322 H2).
+     * budget) — a module's own per-app cap must not exceed it.
      * Undefined when core runs no e-mail guard (tests).
      */
     signInShare?: number;
@@ -1282,7 +1275,7 @@ export interface RouteRateLimit {
   /**
    * What the counter keys on (default `ip`; `principal` = the signed-in user,
    * the IP for an anonymous caller). A request without a resolved client IP
-   * skips an IP-keyed limit — no shared bucket (NSO-328).
+   * skips an IP-keyed limit — no shared bucket.
    */
   per?: 'ip' | 'app' | 'principal';
 }

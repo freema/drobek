@@ -1,5 +1,5 @@
 /**
- * Tenancy-wrapped /auth/google/callback server module (U4, PHY-54): delegates
+ * Tenancy-wrapped /auth/google/callback server module: delegates
  * to the @drobek/auth loader and, when it minted a session (302 + session
  * cookie), lazily ensures the user's personal workspace. Apps re-export THIS
  * instead of the auth module. Failure paths (no session cookie) pass through

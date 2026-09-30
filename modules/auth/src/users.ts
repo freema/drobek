@@ -83,7 +83,7 @@ export async function appDisplayName(db: DB, appId: string, fallback: string): P
   return row?.name?.trim() || fallback;
 }
 
-// ── provider identities (NSO-360) ────────────────────────────────────────────
+// ── provider identities ────────────────────────────────────────────
 
 /** A provider identity the callback proved (a verified address the allowlist admitted). */
 export interface ProviderIdentityInput {

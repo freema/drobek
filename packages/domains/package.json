@@ -2,7 +2,7 @@
   "name": "@drobek/domains",
   "version": "0.1.0",
   "private": true,
-  "description": "Custom domains for apps (M3-01): hostname validation (PSL), TXT + CNAME verification, the daily DNS re-check, the host lookup behind alias routing and Caddy's ask.",
+  "description": "Custom domains for apps: hostname validation (PSL), TXT + CNAME verification, the daily DNS re-check, the host lookup behind alias routing and Caddy's ask.",
   "type": "module",
   "exports": {
     ".": {

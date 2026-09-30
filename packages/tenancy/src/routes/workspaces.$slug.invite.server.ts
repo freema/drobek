@@ -1,7 +1,7 @@
 /**
- * GET/POST /workspaces/:slug/invite — server half (U4, PHY-54). The action is
+ * GET/POST /workspaces/:slug/invite — server half. The action is
  * the workspace-admin-only invite mutation: editors/viewers get 403 from the
- * role middleware (the "viewer mutation 403" acceptance), non-members 404,
+ * role middleware, non-members 404,
  * anonymous a /login redirect. It ALWAYS returns the invite link; when an
  * email is provided it also sends the branded invite email (mailpit locally,
  * Hostinger SMTP in prod). GET renders the created-invite page (or a hint
@@ -34,7 +34,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   return {
     workspaceSlug: access.workspace.slug,
     workspaceName: access.workspace.name,
-    /** NSO-342: the shared workspace chrome. */
+    /** The shared workspace chrome. */
     nav: await workspaceNav(access),
   };
 }
@@ -76,7 +76,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   });
   const inviteUrl = acceptInviteUrl(token);
 
-  // Governance (PHY-85): record who invited someone at what role — server-derived
+  // Governance: record who invited someone at what role — server-derived
   // actor + actor_kind (this dashboard action is the human/web surface). No PII:
   // the invited email is never stored, only the granted role.
   await auditMemberInvite({

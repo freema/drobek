@@ -1,7 +1,7 @@
 /**
- * Client-safe building blocks of the owner's module tabs of an app (M2-03):
+ * Client-safe building blocks of the owner's module tabs of an app:
  * the shared inline styles (the dashboard's minimal look: system font, zinc
- * borders, one accent; form controls from the shared layout, NSO-342). The
+ * borders, one accent; form controls from the shared layout). The
  * pages render inside <AppPage> (breadcrumb, app header, tabs). No server
  * imports.
  */
@@ -137,7 +137,7 @@ export const ui = {
 /**
  * Shown when no active module owns a tab's data (the authority — e.g. the
  * module that stores uploads). Named by what it does, not by a module name:
- * any module declaring the authority serves the tab (NSO-347).
+ * any module declaring the authority serves the tab.
  */
 export function ModuleMissing({ does }: { does: string }) {
   return (

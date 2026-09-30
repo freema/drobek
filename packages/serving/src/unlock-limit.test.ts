@@ -1,5 +1,5 @@
 /**
- * The password gate's attempt limiter (NSO-328): per app + client IP, then per
+ * The password gate's attempt limiter: per app + client IP, then per
  * app over all clients; a request without a resolved client IP never shares a
  * per-IP bucket with other clients — only the per-app cap applies to it.
  */

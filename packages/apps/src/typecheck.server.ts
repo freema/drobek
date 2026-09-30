@@ -1,5 +1,5 @@
 /**
- * The background TypeScript check of a stored version (NSO-388). write_files
+ * The background TypeScript check of a stored version. write_files
  * schedules it after the version is stored and answers without waiting; the
  * result lands in `app_versions.typecheck` and joins the version's readiness
  * report as `type_error` warnings (get_app, publish, the dashboard). A version

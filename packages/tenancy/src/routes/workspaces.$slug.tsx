@@ -1,6 +1,6 @@
 /**
- * /workspaces/:slug — client half (U4, PHY-54): the workspace's Members tab
- * (NSO-342: inside the shared workspace layout — breadcrumb, name + kind +
+ * /workspaces/:slug — client half: the workspace's Members tab
+ * (inside the shared workspace layout — breadcrumb, name + kind +
  * your role, the workspace tabs), the members list, and the invite form
  * (workspace-admins/super-admins on team workspaces only). The invite form
  * posts to /workspaces/:slug/invite.

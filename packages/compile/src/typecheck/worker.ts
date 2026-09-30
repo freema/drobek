@@ -1,5 +1,5 @@
 /**
- * The typecheck worker thread (NSO-388): the TypeScript checker runs here so a
+ * The typecheck worker thread: the TypeScript checker runs here so a
  * check never blocks the server's event loop. It receives the SDK
  * declarations once (workerData) and then one message per check.
  */

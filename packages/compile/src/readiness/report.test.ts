@@ -93,7 +93,7 @@ describe('readinessReport', () => {
   });
 });
 
-describe('the module rules audit in the report (NSO-386)', () => {
+describe('the module rules audit in the report', () => {
   it('reads the app\'s module configs and warns — never blocks', async () => {
     const report = await readinessReport({
       files: titled,

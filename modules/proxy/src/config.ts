@@ -1,5 +1,5 @@
 /**
- * The proxy module's per-app config (§5.0, §5.6):
+ * The proxy module's per-app config:
  *
  *   { upstreams: { <name>: { rules?: { call }, rateLimit?, id? } } }
  *
@@ -13,7 +13,7 @@
  *    joined with `|`. `owner` has no meaning here (there is no record).
  *  - `rateLimit` — calls per minute to THIS upstream from the whole app, on
  *    top of the app-wide PROXY_CALLS_PER_MIN (which always applies).
- *  - `id` — the upstream RECORD a workspace admin confirmed (NSO-326), set by
+ *  - `id` — the upstream RECORD a workspace admin confirmed, set by
  *    drobek (binding.ts), never by the agent. A deleted and re-registered
  *    upstream has a new id: calls answer 403 `upstream_replaced` until the
  *    assignment is confirmed again. A config without `id` (older configs) is
@@ -21,7 +21,7 @@
  *    allow-list.
  *
  * Changes that need the confirmation of a workspace ADMIN (confirmRequired
- * with `confirmRole: 'admin'`, NSO-322 H3 — only admins register upstreams,
+ * with `confirmRole: 'admin'` — only admins register upstreams,
  * so only they may let an app use an upstream's credentials; an editor may reject):
  *  - assigning an upstream the app did not have (the app gains access using
  *    that upstream's credentials); confirming it puts the
@@ -34,7 +34,7 @@
  *    PROXY_PUBLIC_CALLS_PER_MIN_PER_IP).
  *
  * Assigning (or re-binding) a name no upstream of the workspace is registered
- * under is refused: a confirmation could never bind it (NSO-372).
+ * under is refused: a confirmation could never bind it.
  */
 import {
   ModuleError,
@@ -51,7 +51,7 @@ import { bindAssignment } from './binding.js';
 
 export const MAX_UPSTREAMS_PER_APP = 20;
 export const DEFAULT_CALL_RULE = 'user';
-/** Default app-wide proxy calls per minute (PROXY_CALLS_PER_MIN, §5.7). */
+/** Default app-wide proxy calls per minute (PROXY_CALLS_PER_MIN). */
 export const DEFAULT_CALLS_PER_MIN = 60;
 /** Default calls per minute per client IP to a `public` upstream. */
 export const DEFAULT_PUBLIC_CALLS_PER_MIN_PER_IP = 10;

@@ -1,5 +1,5 @@
 /**
- * /duplicate/:slug — client half (NSO-340): the confirm page behind the
+ * /duplicate/:slug — client half: the confirm page behind the
  * gallery's Duplicate button. It names the app and its author's workspace,
  * says what the copy gets and what stays behind, and asks for the target
  * workspace and a name; or explains why this app cannot be duplicated.

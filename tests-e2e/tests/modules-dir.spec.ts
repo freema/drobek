@@ -8,7 +8,7 @@ import { callTool, mcpClient } from './helpers/mcp';
 import { personalWorkspaceOf, withDb } from './helpers/seed';
 
 /**
- * NSO-345 / NSO-352: the module list of /healthz and /api/version, and a
+ * The module list of /healthz and /api/version, and a
  * module installed into DROBEK_MODULES_DIR the way an operator installs one.
  *
  * Both stacks list hello,auth,email,forms,data,proxy,files,sync,oidc (server

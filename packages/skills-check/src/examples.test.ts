@@ -5,7 +5,7 @@ import type { AnyModule } from '@drobek/modules';
 import { BUILTIN_MODULES, PKG_DIR, skillSources, skillsRuntime } from './skills.js';
 
 /**
- * NSO-308 acceptance: "the code in the examples does not rot". Every code block
+ * "The code in the examples does not rot": every code block
  * of the skills is compiled with @drobek/compile and typechecked against the
  * CURRENT sdk.d.ts; a renamed SDK method, a wrong prop, a config the module's
  * schema refuses or a script the CSP blocks turns `task check` red, naming the

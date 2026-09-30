@@ -1,6 +1,6 @@
 /**
  * /workspaces/:slug/apps/:appSlug/uploads — client half of the Uploads tab
- * (M2-03): the files the app's end users uploaded (the files module), usage
+ *: the files the app's end users uploaded (the files module), usage
  * against the quota, an inline preview for raster images (served by the
  * dashboard with nosniff), a download link, and (editor+) delete behind a
  * confirm step.

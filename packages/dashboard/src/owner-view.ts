@@ -1,5 +1,5 @@
 /**
- * Pure helpers for the owner's module tabs of an app (M2-03): the Data tab's
+ * Pure helpers for the owner's module tabs of an app: the Data tab's
  * record editor, the Forms tab's date range, the Uploads tab's sizes and
  * previews, the Logs tab's "since" window. No server imports — shared by the
  * loaders/actions and (where noted) the components; unit tested.
@@ -127,7 +127,7 @@ export function safeFilename(name: string, fallback: string): string {
 }
 
 /**
- * NSO-358: a file name → a valid asset path (the Assets tab prefills it):
+ * A file name → a valid asset path (the Assets tab prefills it):
  * characters outside `[A-Za-z0-9._-]` become `-`, a leading non-alphanumeric
  * run is dropped, at most 100 characters (`Rodinné video (1).MP4` →
  * `Rodinne-video-1-.MP4`, accents dropped). The owner may still edit it (e.g. `media/film.mp4`).

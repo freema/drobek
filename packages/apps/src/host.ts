@@ -1,5 +1,5 @@
 /**
- * Host dispatch for the apps origin (M0-06). Pure — no env, no I/O.
+ * Host dispatch for the apps origin. Pure — no env, no I/O.
  *
  * Every app has its own hosts (= its own browser origins) under APPS_DOMAIN:
  *   <slug>.<APPS_DOMAIN>            → the published version
@@ -23,7 +23,7 @@
  *  - ANY other host at or under APPS_DOMAIN is the apps side — a malformed
  *    label (`a.b.<domain>`, `x--beta.<domain>`, a reserved slug) is still
  *    answered by the apps handler (404), never by the dashboard;
- *  - M3-01: any OTHER public-looking DNS name (a dot, not an IP literal, not
+ *  - any OTHER public-looking DNS name (a dot, not an IP literal, not
  *    `localhost` / `*.localhost`, the same port rule as APPS_DOMAIN) is a
  *    `custom` candidate — a possible custom domain. Only the domains table can
  *    tell (@drobek/serving looks it up): a registered domain is the apps side
@@ -36,14 +36,14 @@ export type AppHostTarget =
   | { kind: 'prod'; slug: string }
   | { kind: 'preview'; slug: string }
   | { kind: 'version'; slug: string; number: number }
-  /** M3-01: a verified custom domain of the app — serves what `prod` serves. */
+  /** A verified custom domain of the app — serves what `prod` serves. */
   | { kind: 'custom'; slug: string; hostname: string };
 
 export type HostClass =
   | { side: 'dashboard' }
   /** `target` null = a host under APPS_DOMAIN that names no valid app host → 404. */
   | { side: 'apps'; target: AppHostTarget | null }
-  /** M3-01: a public DNS name outside APPS_DOMAIN — a custom domain if the domains table knows it. */
+  /** A public DNS name outside APPS_DOMAIN — a custom domain if the domains table knows it. */
   | { side: 'custom'; hostname: string }
   | { side: 'invalid' };
 
@@ -134,7 +134,7 @@ export function classifyHost(rawHost: string | null | undefined, config: HostCon
 }
 
 /**
- * Could this host be a custom domain (M3-01)? A dotted DNS name — not an IP
+ * Could this host be a custom domain? A dotted DNS name — not an IP
  * literal, not `localhost` / `*.localhost` — on the port the app hosts use.
  * Everything else (internal service names, loopback, other ports) is left to
  * the dashboard without a lookup.

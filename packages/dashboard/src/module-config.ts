@@ -1,5 +1,5 @@
 /**
- * The Modules tab's pure logic (M2-02, NSO-291) — client-safe, no server
+ * The Modules tab's pure logic — client-safe, no server
  * imports, unit-tested in module-config.test.ts:
  *
  *  - `schemaFields` — a module's config JSON Schema (zod → JSON Schema) →
@@ -692,7 +692,7 @@ export function ruleFromForm(form: FormReader, op: string, principals: readonly 
 // ── who may confirm ──────────────────────────────────────────────────────────
 
 /**
- * A workspace role as the module runtime's confirming role (NSO-322 H3): a
+ * A workspace role as the module runtime's confirming role: a
  * workspace admin (super-admins arrive as one) confirms `admin` changes too;
  * everyone else is at most an `editor`.
  */

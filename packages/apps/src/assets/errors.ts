@@ -1,5 +1,5 @@
 /**
- * Asset failures (NSO-358): a stable `code` from the agent-dx error
+ * Asset failures: a stable `code` from the agent-dx error
  * catalogue, a sentence for the caller and the HTTP status the upload URL
  * answers with. The MCP tools map them to ToolErrors, the dashboard shows the
  * message, the upload URL answers `{ code, message, hint }`.
@@ -16,7 +16,7 @@ export type AssetsErrorCode =
   | 'upload_token_invalid'
   | 'rate_limited'
   | 'app_locked_by_admin'
-  /** The user an upload URL was issued for is no longer an editor of the app (NSO-362). */
+  /** The user an upload URL was issued for is no longer an editor of the app. */
   | 'forbidden'
   /** The app was deleted (or never existed) while the upload ran. */
   | 'not_found';

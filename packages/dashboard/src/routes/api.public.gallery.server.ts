@@ -1,5 +1,5 @@
 /**
- * GET /api/public/gallery — the public gallery list (NSO-340), on the
+ * GET /api/public/gallery — the public gallery list, on the
  * DASHBOARD host, no login. The operator's website renders it (drobek.app:
  * www.drobek.app/gallery, through its own proxy or straight from the
  * browser).

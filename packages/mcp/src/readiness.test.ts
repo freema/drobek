@@ -3,7 +3,7 @@ import { filesReadiness } from './readiness.js';
 
 const files = new Map([['index.html', '<html><head><title>App</title></head></html>']]);
 
-describe('filesReadiness (NSO-386): the module rules audit sees the live configs and the pending changes', () => {
+describe('filesReadiness: the module rules audit sees the live configs and the pending changes', () => {
   it("passes each module's config, enabled flag and pending_confirmation to the checks", async () => {
     const appModules = vi.fn(async () => ({
       auth: { enabled: true, configured: false, config: {}, pending: false },

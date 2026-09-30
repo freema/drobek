@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Self-host rehearsal (M4-03) — the docs/SELF-HOSTING.md quickstart and the
+# Self-host rehearsal — the docs/SELF-HOSTING.md quickstart and the
 # backup → restore round trip, end to end, on throwaway stacks. `task
 # selfhost:rehearsal`; NOT part of `task check` or CI (it builds the image and
 # runs two full stacks). Every step is what an operator types:
@@ -14,7 +14,7 @@
 #        → publish → the production host serves it; an end user uploads a file
 #    4b. task selfhost:module:add -- <a packed module (the guestbook fixture)>
 #        → task selfhost:module:list → DROBEK_MODULES → drobek restarts and
-#        /api/version lists it with source "dir" (NSO-350)
+#        /api/version lists it with source "dir"
 #     5. task backup → docker compose down -v (every volume gone)
 #   machine B (another fresh copy + A's .env.production, nothing else)
 #     6. task selfhost:init (renders the Caddyfile, keeps every secret)

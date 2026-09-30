@@ -1,6 +1,6 @@
 /**
- * The module-config half of duplicating a gallery app (NSO-340; the files
- * half is @drobek/apps `duplicateAppFiles`). The source app's SAVED configs
+ * The module-config half of duplicating a gallery app (the files half is
+ * @drobek/apps `duplicateAppFiles`). The source app's SAVED configs
  * (never its pending changes) are proposed to the copy through the normal
  * `configure` path: a change the module wants confirmed waits on the copy's
  * Modules page like any other. Before that the copy drops what belongs to the

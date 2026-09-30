@@ -1,5 +1,5 @@
 /**
- * NSO-366 in the dashboard, on a real PGlite database (the session and the
+ * Publish approval in the dashboard, on a real PGlite database (the session and the
  * workspace role gate are stubbed — they have their own tests):
  *  - /admin/publishing: only a super-admin reads it or acts (403 otherwise);
  *    the waiting requests are listed; Approve / Revoke / Block / Unblock
@@ -166,7 +166,7 @@ describe('/admin/publishing', () => {
 
   it('block shows the operator\'s notice to the owner, records no request; unblock takes it back; ?workspace= shows one', async () => {
     who.user = { id: bossId, email: 'boss@example.com' };
-    // NSO-371: Block goes through a confirm step. The panel only reads.
+    // Block goes through a confirm step. The panel only reads.
     const panel = result(await adminLoad('?workspace=acme&confirm=block'));
     expect(panel.data.blockConfirm).toMatchObject({ workspaceId: who.ws.id, slug: 'acme', name: 'Acme', liveApps: 0, back: '/admin/publishing?workspace=acme' });
     expect(panel.data.blockConfirmError).toBeNull();

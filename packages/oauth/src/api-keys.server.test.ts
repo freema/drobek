@@ -92,7 +92,7 @@ describe('API keys in the database', () => {
     expect(await validateApiKey('drk_nope')).toBeNull();
   });
 
-  it("lists only the owner's keys (newest first, no secret) and revokes owner-scoped (M2-04)", async () => {
+  it("lists only the owner's keys (newest first, no secret) and revokes owner-scoped", async () => {
     const [other] = await db.insert(users).values({ email: 'other-keys@example.test' }).returning();
     const mine = await createApiKey({ userId, name: 'mine', scopes: ['read', 'publish'] });
     const theirs = await createApiKey({ userId: other.id, name: 'theirs', scopes: ['read'] });

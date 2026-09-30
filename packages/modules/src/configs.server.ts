@@ -1,5 +1,5 @@
 /**
- * `module_configs` access (M1-01): one row per (app, module) with the config
+ * `module_configs` access: one row per (app, module) with the config
  * that was SET (sparse — defaults fill the rest when read) and at most ONE
  * pending change waiting for the owner's confirmation.
  */
@@ -16,7 +16,7 @@ export interface PendingChange {
   proposed_at: string;
   /** The dashboard user whose agent proposed it. */
   proposed_by: string | null;
-  /** Who may confirm it (NSO-322 H3; missing on older rows = `editor`). */
+  /** Who may confirm it (missing on older rows = `editor`). */
   confirm_role?: ConfirmRole;
 }
 

@@ -1,5 +1,5 @@
 /**
- * A module's operator-facing facts (NSO-347), shared by the workspace Modules
+ * A module's operator-facing facts, shared by the workspace Modules
  * page and the module page's "About this module": version, where it was
  * loaded from, the contract range it declares, availability, the modules it
  * requires, the slots it offers (with who contributes), its contributions to

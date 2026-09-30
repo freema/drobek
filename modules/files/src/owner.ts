@@ -1,6 +1,6 @@
 /**
  * The OWNER's view of an app's uploads (the `files` authority — the dashboard
- * Uploads tab, M2-03). Core calls it only after it authorized a drobek account
+ * Uploads tab). Core calls it only after it authorized a drobek account
  * for the app, so it bypasses the `read` rule and the `owner|admin` delete
  * rule of the REST routes; every statement is still scoped to the ONE app of
  * the view. A delete follows the same blob rule as the module's own route:

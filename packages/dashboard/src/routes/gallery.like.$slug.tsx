@@ -1,5 +1,5 @@
 /**
- * /gallery/like/:slug — client half (NSO-340): a signed-in account likes or
+ * /gallery/like/:slug — client half: a signed-in account likes or
  * unlikes a gallery app. After the button the page returns to the gallery
  * (`back`) when it came from there, otherwise it shows the new state.
  */

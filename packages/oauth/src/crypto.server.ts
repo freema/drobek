@@ -1,6 +1,6 @@
 /**
- * OAuth crypto primitives (U5). Mirrors @drobek/auth's opaque-token pattern and
- * puls's oauth.server.ts: secrets are random + opaque, only their SHA-256 hash
+ * OAuth crypto primitives. Mirrors @drobek/auth's opaque-token pattern:
+ * secrets are random + opaque, only their SHA-256 hash
  * is persisted, and PKCE is S256-only (plain is rejected upstream).
  */
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';

@@ -1,18 +1,18 @@
 /**
  * GET/POST /workspaces/:slug/apps/:appSlug — server half of the app page's
- * Overview tab (NSO-288; PHY-74 slice before it).
+ * Overview tab.
  *
  * GET (viewer+): the shared app header (URLs, compile state, lock) + the
  * VERSION HISTORY (number, time, author, reasoning, compile status + first
  * error, a link to `<slug>--v<N>`) + the insight panels (recent errors,
- * traffic / 404s) + the public gallery section (NSO-340; absent unless
- * GALLERY_ENABLED) + the newest version's publish readiness report (NSO-384). A viewer sees everything but no controls.
+ * traffic / 404s) + the public gallery section (absent unless
+ * GALLERY_ENABLED) + the newest version's publish readiness report. A viewer sees everything but no controls.
  *
  * POST (editor+): `appAction` — publish (an older version = the rollback),
  * restore to the working copy, the gallery listing, and the header's
  * unpublish / unlock; the role gate runs before anything else (viewer → 403,
- * non-member → 404, anonymous → /login). A pre-NSO-288 form with only `versionId` still
- * publishes.
+ * non-member → 404, anonymous → /login). An older form with only `versionId`
+ * still publishes.
  */
 import { type LoaderFunctionArgs } from 'react-router';
 import { GALLERY_DESCRIPTION_MAX, galleryEnabled, galleryState, listVersions, versionUrl } from '@drobek/apps';
@@ -50,11 +50,11 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const [header, emails, errors, logs, readiness] = await Promise.all([
     appHeaderData(page),
     emailsOf(raw.map((v) => v.createdByUserId)),
-    // PHY-123 insight panels — best effort: a signals hiccup degrades to
+    // Insight panels — best effort: a signals hiccup degrades to
     // empty, never 500s the page. Stored text is React-escaped on render.
     queryAppErrors(app.id).catch(() => EMPTY_ERRORS),
     queryAppLogs(app.id).catch(() => EMPTY_LOGS),
-    // NSO-384: the newest version's publish readiness report (best effort, never a 500).
+    // The newest version's publish readiness report (best effort, never a 500).
     raw[0] ? loadReadiness(app, raw[0].number) : null,
   ]);
   const byId = new Map(raw.map((v) => [v.id, v]));
@@ -80,18 +80,18 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     errors,
     logs,
     readiness,
-    // NSO-293: a taken-down app shows no publish / restore controls (the action answers 423 anyway).
+    // A taken-down app shows no publish / restore controls (the action answers 423 anyway).
     canPublish: header.canEdit && header.lockedByAdmin === null,
-    // M2-02: "N changes await confirmation" (PendingBanner).
+    // "N changes await confirmation" (PendingBanner).
     pendingBanner: await loadPendingBanner(app, header.workspace.slug, app.slug),
-    // NSO-392: "a scheduled import stopped" (SyncBanner).
+    // "a scheduled import stopped" (SyncBanner).
     syncBanner: await loadSyncBanner(app, header.workspace.slug),
-    // NSO-340: right after /duplicate/:slug, what happened to the original's module settings.
+    // Right after /duplicate/:slug, what happened to the original's module settings.
     duplicateResult: parseDuplicateResult(
       new URL(request.url),
       `/workspaces/${encodeURIComponent(header.workspace.slug)}/apps/${encodeURIComponent(app.slug)}/modules`
     ),
-    // NSO-340: the public gallery section (null = the server runs no gallery).
+    // The public gallery section (null = the server runs no gallery).
     gallery: galleryEnabled()
       ? {
           ...galleryState(app),

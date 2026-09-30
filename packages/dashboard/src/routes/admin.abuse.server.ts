@@ -1,5 +1,5 @@
 /**
- * GET/POST /admin/abuse — server half (M4-02, NSO-293): the super-admin
+ * GET/POST /admin/abuse — server half: the super-admin
  * moderation queue. SUPER-ADMIN ONLY: no session → /login; a signed-in user
  * who is not in SUPERADMIN_EMAIL → 403 (loader AND action).
  *
@@ -11,12 +11,12 @@
  *  - `restore` (app): clear the lock — NOT republished — audit
  *    `admin.restore`, e-mail the owners;
  *  - `resolve` (report): mark one report resolved, nothing else;
- *  - `gallery-hide` / `gallery-show` (app, NSO-340): hide an app's entry in
+ *  - `gallery-hide` / `gallery-show` (app): hide an app's entry in
  *    the public gallery (or show it again) — audited `app.gallery_hidden` /
  *    `app.gallery_unhidden`; the owner cannot list a hidden app. The gallery
  *    section lists every listed or hidden app (only when GALLERY_ENABLED).
  *
- * A takedown has a confirm step (NSO-371): "Take down…" is a GET to
+ * A takedown has a confirm step: "Take down…" is a GET to
  * `?confirm=takedown&app=<id>&reason=<category>[&back=<path>]`, which renders
  * the app, its workspace, the reason and the effect on its addresses; only the
  * panel's POST carries `confirmed=1`, and a takedown without it is refused
@@ -145,7 +145,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         reason: lockCategory(a.lockedReason),
         reasonLabel: reasonLabel(lockCategory(a.lockedReason)),
       })),
-      // NSO-340: null = this server runs no gallery.
+      // Null = this server runs no gallery.
       gallery: listed
         ? listed.map((g) => ({
             id: g.id,

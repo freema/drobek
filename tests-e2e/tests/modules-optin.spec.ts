@@ -7,13 +7,13 @@ import { setFakePlan } from './helpers/limits';
 import { addMembership, personalWorkspaceOf, userIdByEmail, withDb } from './helpers/seed';
 
 /**
- * NSO-346: opt-in modules per workspace on the local stack.
+ * Opt-in modules per workspace on the local stack.
  *
- *  - the Workspace → Modules page (NSO-347, readable by every member): a
+ *  - the Workspace → Modules page (readable by every member): a
  *    workspace admin and an editor see it (tab + list, read-only, no
  *    switch); the switch POST → 403 for both;
  *  - the opt-in module of both stacks, the installed example `acmecrm`
- *    (NSO-352, examples/drobek-module-acme-crm): off for a fresh workspace →
+ *    (examples/drobek-module-acme-crm): off for a fresh workspace →
  *    its route answers `404 module_not_enabled`, configure_module refuses,
  *    get_app says `enabled: false` and leaves it out of `skills`,
  *    skill_info(app_id) says `enabled_for_workspace: false`; a super-admin
@@ -55,7 +55,7 @@ async function workspaceAudit(workspaceId: string): Promise<{ action: string; ta
 
 test.describe.configure({ mode: 'serial' });
 
-test.describe('opt-in modules per workspace (NSO-346) @local', () => {
+test.describe('opt-in modules per workspace @local', () => {
   let owner: McpClient;
   let admin: BrowserContext | null = null;
 

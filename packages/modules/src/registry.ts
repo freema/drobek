@@ -1,12 +1,12 @@
 /**
- * Loading the active modules (M1-01): `DROBEK_MODULES` is a comma-separated
+ * Loading the active modules: `DROBEK_MODULES` is a comma-separated
  * list the operator sets. Each entry resolves to a package:
  *
  *   - a short name `x` → the npm package `drobek-module-x`;
  *   - a full package name (`drobek-module-x`, `@scope/pkg`, anything with a
  *     `/`) → exactly that package.
  *
- * Each entry is looked up in two places, in this order (NSO-345):
+ * Each entry is looked up in two places, in this order:
  *
  *   1. `DROBEK_MODULES_DIR` (default `/data/modules`): a module the operator
  *      installed into `<dir>/<name>/node_modules/<package>` — checked against

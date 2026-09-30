@@ -1,5 +1,5 @@
 /**
- * The streaming type check of an asset upload (NSO-358): `update()` every
+ * The streaming type check of an asset upload: `update()` every
  * chunk, then `finish()`. Binary types come from their signature
  * (@drobek/core `sniffSignature`, shared with the files module); SVG is the
  * one text type: the whole stream must be UTF-8 without control characters

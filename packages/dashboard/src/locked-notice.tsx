@@ -1,5 +1,5 @@
 /**
- * The "taken down by the operator" banner for an app page (M4-02, NSO-293).
+ * The "taken down by the operator" banner for an app page.
  * Client-safe (no server imports): feed it `lockedByAdminView(appId)` from
  * the loader (app-api.server.ts) — `null` renders nothing.
  */

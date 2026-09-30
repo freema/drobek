@@ -1,5 +1,5 @@
 /**
- * The data module's per-app config (§5.0, §5.2):
+ * The data module's per-app config:
  *
  *   { collections: { <name>: { schema?: <JSON Schema>, rules?: { read, create, update, delete } } } }
  *
@@ -13,10 +13,10 @@
  *    holds no records yet;
  *  - `read`, `update` or `delete` opened to every signed-in user (`user`) —
  *    `read` again except for a NEW collection that holds no records yet
- *    (NSO-322 M2: widening `owner|admin` to `user` shows every user's
+ *    (widening `owner|admin` to `user` shows every user's
  *    records to everyone signed in);
  *  - removing the schema of a collection that holds records;
- *  - removing a collection that holds records (NSO-324): confirming it
+ *  - removing a collection that holds records: confirming it
  *    purges them (onConfirmed, audited `data.collection.purge`). An empty
  *    collection goes without a confirmation.
  */
@@ -75,7 +75,7 @@ export const DATA_CONFIG_DEFAULTS: DataConfig = { collections: {} };
 
 /**
  * The runtime's fallback for a stored config that fails dataConfigSchema
- * (NSO-323 M6) — e.g. a legacy import of more than MAX_COLLECTIONS
+ * — e.g. a legacy import of more than MAX_COLLECTIONS
  * collections, or a hand-edited rule: every collection that is valid ON ITS
  * OWN is kept (all of them, even past the cap — none of them goes dark), an
  * invalid one is dropped (it answers 404) and named in `issues`. null when

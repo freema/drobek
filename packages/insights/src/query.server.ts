@@ -1,5 +1,5 @@
 /**
- * The read side (PHY-123): queryAppErrors / queryAppLogs over a RESOLVED app id,
+ * The read side: queryAppErrors / queryAppLogs over a RESOLVED app id,
  * plus the *ByLocator variants the MCP tools call (resolve → query, with the
  * token's workspace as the cross-workspace guard). Shaping is pure (shape.ts).
  */

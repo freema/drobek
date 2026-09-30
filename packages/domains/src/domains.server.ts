@@ -1,5 +1,5 @@
 /**
- * Custom domains of one app (M3-01): list, add, verify, make primary, remove.
+ * Custom domains of one app: list, add, verify, make primary, remove.
  *
  * Callers authorize first (the dashboard route: editor+ of the app's
  * workspace) and pass the app they resolved; every query here is scoped by

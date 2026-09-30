@@ -1,6 +1,6 @@
 /**
- * The few pages an app host renders itself (M0-06): not found, not published,
- * the password form, and the 451 "taken down" page (M4-02). Plain HTML with one inline <style> (allowed by the app
+ * The few pages an app host renders itself: not found, not published,
+ * the password form, and the 451 "taken down" page. Plain HTML with one inline <style> (allowed by the app
  * CSP's style-src 'unsafe-inline'), no script, and the form posts to the same
  * host (form-action 'self'). Every value is HTML-escaped.
  */
@@ -87,7 +87,7 @@ export function errorPage(title: string, text: string): string {
 
 /**
  * 451 Unavailable For Legal Reasons (RFC 7725) — a super-admin took the app
- * down (NSO-293). Names the reason category only, links the operator's terms.
+ * down. Names the reason category only, links the operator's terms.
  */
 export function lockedPage(opts: { reasonLabel: string; termsUrl: string }): string {
   return layout(

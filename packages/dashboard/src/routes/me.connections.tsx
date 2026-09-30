@@ -1,5 +1,5 @@
 /**
- * /me/connections — client half (M2-04, NSO-284): the OAuth clients (coding
+ * /me/connections — client half: the OAuth clients (coding
  * agents, IDEs) that hold access to the user's account, with a revoke button
  * per client, and a pointer to API keys (the other way an agent connects). Client-safe: data arrives shaped from ./me.connections.server.ts.
  */

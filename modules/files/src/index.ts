@@ -1,5 +1,5 @@
 /**
- * drobek-module-files — the BUILT-IN platform module `files` (M1-05, §5.5):
+ * drobek-module-files — the BUILT-IN platform module `files`:
  * files the people who use an app upload (photos, PDFs, CSVs).
  *
  *   DROBEK_MODULES=…,files  → this package (`modules/files` in the drobek repo,

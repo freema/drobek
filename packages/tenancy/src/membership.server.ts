@@ -1,5 +1,5 @@
 /**
- * Membership lookups + the role middleware (U4, PHY-54). The access DECISION
+ * Membership lookups + the role middleware. The access DECISION
  * is pure (decideWorkspaceAccess in roles.ts); this module is the thin
  * session/db adapter that loaders and actions call.
  */
@@ -138,7 +138,7 @@ export interface PrincipalWorkspaceAccess {
 
 /**
  * Session-free twin of requireWorkspaceRole for token principals (MCP OAuth
- * tokens and API keys are bound to a USER, not a workspace — M0-04): resolve
+ * tokens and API keys are bound to a USER, not a workspace): resolve
  * `workspaceSlug` and the user's membership in it on every call. Returns null
  * for an unknown workspace AND for a non-member alike, so callers answer both
  * with the same `not_found` (anti-enumeration). The global super-admin reaches

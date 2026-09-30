@@ -1,5 +1,5 @@
 /**
- * NSO-362 — assets honour publish: the draft (preview) vs the set a publish
+ * Assets honour publish: the draft (preview) vs the set a publish
  * froze (production), rollback, restore, content addressing, the quota over
  * unique files, pruning, the sweep, the upload URL's editor re-check and the
  * upgrade migration.
@@ -388,7 +388,7 @@ describe('the upload URL re-checks the uploader at PUT time', () => {
   });
 });
 
-describe('migration 0025 (asset snapshots) on a database with NSO-358 assets', () => {
+describe('migration 0025 (asset snapshots) on a database with pre-snapshot assets', () => {
   it('freezes the assets of every published app as its live set; they stay the draft too', async () => {
     const mpg = new PGlite();
     const mdb = drizzle(mpg, { schema });

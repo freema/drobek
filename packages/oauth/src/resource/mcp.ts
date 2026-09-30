@@ -1,5 +1,5 @@
 /**
- * The drobek MCP endpoint (U5, M0-04, M0-05) — official TypeScript SDK over
+ * The drobek MCP endpoint — official TypeScript SDK over
  * Streamable HTTP at POST/GET/DELETE `/mcp`, behind the Bearer gate (OAuth
  * access token with the right audience, or a `drk_` API key).
  *

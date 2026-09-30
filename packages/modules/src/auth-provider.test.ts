@@ -1,5 +1,5 @@
 /**
- * The sign-in provider contract (NSO-348): the `auth.provider` /
+ * The sign-in provider contract: the `auth.provider` /
  * `auth.signedIn` slot schemas, `compose` (a slot host deriving its config,
  * confirm rules and secrets from contributions) and the method a session
  * signed in with.
@@ -65,7 +65,7 @@ describe('authProviderSchema', () => {
     expect(authIdentitySchema.safeParse({ issuer: iss, subject: 'x'.repeat(256), email: 'a@b.cz', emailVerified: true }).success).toBe(false);
     expect(authIdentitySchema.safeParse({ issuer: iss, subject: 's', email: 'a@b.cz', emailVerified: 'yes' }).success).toBe(false);
     expect(authIdentitySchema.safeParse({ issuer: iss, subject: 's', email: 'nope', emailVerified: true }).success).toBe(false);
-    // the issuer is part of the identity (NSO-360): required, one trimmed line
+    // the issuer is part of the identity: required, one trimmed line
     for (const issuer of [undefined, '', ' https://idp.example', 'https://a\nb', 'x'.repeat(2049)]) {
       expect(authIdentitySchema.safeParse({ issuer, subject: 's', email: 'a@b.cz', emailVerified: true }).success, String(issuer)).toBe(false);
     }

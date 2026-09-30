@@ -1,5 +1,5 @@
 /**
- * NSO-372 over a real MCP client on a real (PGlite) database: the proxy
+ * The proxy upstream tools over a real MCP client on a real (PGlite) database: the
  * upstream tools do what the dashboard's Upstreams page does, through the
  * same @drobek/proxy operations — list without secrets, register a keyless
  * upstream at once, answer a keyed one with the prefilled dashboard link (no

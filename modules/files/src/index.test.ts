@@ -308,7 +308,7 @@ describe('upload + download', () => {
     expect(p.headers['Content-Security-Policy']).toBeUndefined();
   });
 
-  it('NSO-325: every type but PDF carries the sandbox CSP backstop (the 304 too)', async () => {
+  it('every type but PDF carries the sandbox CSP backstop (the 304 too)', async () => {
     const row = { id: 'abcdefgh1', sha256: 'c'.repeat(64), size: 10, name: 'x' };
     for (const type of ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml', 'text/csv']) {
       expect(serveHeaders({ ...row, type }, 'user')['Content-Security-Policy'], type).toBe('sandbox');
@@ -322,7 +322,7 @@ describe('upload + download', () => {
     expect(cached.headers['Content-Security-Policy']).toBe('sandbox');
   });
 
-  it('NSO-325: the blob is opened before any header — deleted mid-download it still streams; already gone → a clean 404', async () => {
+  it('the blob is opened before any header — deleted mid-download it still streams; already gone → a clean 404', async () => {
     const t = ctx();
     const bytes = png(300_000);
     const f = await stored(t, bytes);
@@ -366,7 +366,7 @@ describe('upload + download', () => {
     expect(Number(third.headers['Retry-After'])).toBeGreaterThan(0);
   });
 
-  it('NSO-324: an anonymous flood from one IP hits 429 on its own bucket (FILES_UPLOADS_PER_PRINCIPAL_PER_MIN); signed-in users still upload', async () => {
+  it('an anonymous flood from one IP hits 429 on its own bucket (FILES_UPLOADS_PER_PRINCIPAL_PER_MIN); signed-in users still upload', async () => {
     const t = ctx({ principal: ANON, config: { rules: { upload: 'public' } }, limits: { FILES_UPLOADS_PER_PRINCIPAL_PER_MIN: 2, FILES_UPLOAD_RATE_LIMIT: 4 } });
     const up = (clientIp: string) => {
       const f = form(png(10));
@@ -390,7 +390,7 @@ describe('upload + download', () => {
     expect(onDisk().tmp).toEqual([]);
   });
 
-  it('NSO-324: a signed-in uploader is counted by their id; a visitor without a resolvable IP only by the app', async () => {
+  it('a signed-in uploader is counted by their id; a visitor without a resolvable IP only by the app', async () => {
     const t = ctx({ config: { rules: { upload: 'public' } }, limits: { FILES_UPLOADS_PER_PRINCIPAL_PER_MIN: 1, FILES_UPLOAD_RATE_LIMIT: 10 } });
     const up = (clientIp: string) => {
       const f = form(png(10));
@@ -534,7 +534,7 @@ describe('quota', () => {
   });
 });
 
-describe("the owner's view (files authority, M2-03)", () => {
+describe("the owner's view (files authority)", () => {
   const view = (app = appA, limits: Record<string, number> = {}) => ({
     app: { id: app, slug: app === appA ? 'album' : 'other', workspaceId },
     config: filesConfigSchema.parse({}),
@@ -577,7 +577,7 @@ describe("the owner's view (files authority, M2-03)", () => {
   });
 });
 
-describe('the sweep (NSO-325)', () => {
+describe('the sweep', () => {
   const MIN = 60_000;
   const ago = (ms: number) => new Date(Date.now() - ms);
   const age = (path: string, ms: number) => utimesSync(path, ago(ms), ago(ms));

@@ -1,5 +1,5 @@
 /**
- * Workspace-invite email (U4, PHY-54) — rendered with the shared @drobek/auth
+ * Workspace-invite email — rendered with the shared @drobek/auth
  * layout and delivered over the SAME operator transport as the sign-in codes
  * (@drobek/email: SMTP or Resend per EMAIL_TRANSPORT, mailpit locally).
  * Addresses are masked in every log line.

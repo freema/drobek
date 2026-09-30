@@ -1,5 +1,5 @@
 /**
- * Small in-process memo helpers (NSO-322 H1): an entry-counted LRU and a
+ * Small in-process memo helpers: an entry-counted LRU and a
  * stable content key for JSON values. Keys are content hashes, so an entry
  * never goes stale — a changed value is a different key; eviction is only
  * about memory. A Map keeps insertion order; a read re-inserts the entry so

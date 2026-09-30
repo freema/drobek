@@ -19,7 +19,6 @@ describe('isSuperAdmin', () => {
     expect(isSuperAdmin('', '')).toBe(false);
   });
 
-  // U3 amendment (2026-07-02): comma-separated list of super-admin emails.
   it('matches ANY entry of a comma-separated list', () => {
     const list = 'grasl.t@centrum.cz,freema25@gmail.com';
     expect(isSuperAdmin('grasl.t@centrum.cz', list)).toBe(true);

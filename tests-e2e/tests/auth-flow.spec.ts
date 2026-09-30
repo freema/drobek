@@ -7,11 +7,10 @@ import {
 } from './helpers/auth';
 
 /**
- * U2 acceptance (PHY-53): email magic-code auth end-to-end against the local
- * compose stack — request → mailpit (REST API) → code → session → /me;
- * 5 wrong attempts invalidate the code; the cooldown dedups resends;
- * anonymous /me bounces to /login. (Shared mailpit helpers live in
- * helpers/auth.ts since U3 reuses them.)
+ * E-mail magic-code auth end to end against the local compose stack —
+ * request → mailpit (REST API) → code → session → /me; 5 wrong attempts
+ * invalidate the code; the cooldown dedups resends; anonymous /me bounces to
+ * /login.
  */
 
 function wrongCodeFor(code: string): string {

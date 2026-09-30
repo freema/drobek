@@ -1,5 +1,5 @@
 /**
- * GET/POST /login — server half of the route module (U2, PHY-53). Split from
+ * GET/POST /login — server half of the route module. Split from
  * the component file so the client bundle never touches server-only deps
  * (redis/db/nodemailer); both apps re-export this next to ./login.tsx.
  * Typed with the generic react-router arg types — the package cannot use the
@@ -34,14 +34,14 @@ import { maskEmail } from '../mask-email.js';
 // Server-side sanity check; the input itself is type=email.
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// U3: ONE generic message for every Google-login failure mode — the real
+// ONE generic message for every Google-login failure mode — the real
 // reason is logged server-side only (no detail leak to the browser).
 const GENERIC_GOOGLE_ERROR =
   'Google sign-in did not complete. Please try again, or sign in with an email code below.';
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const url = new URL(request.url);
-  // U5: a same-origin ?returnTo= (e.g. the OAuth /oauth/authorize URL) is
+  // A same-origin ?returnTo= (e.g. the OAuth /oauth/authorize URL) is
   // stashed in a cookie so the email-code + Google round-trips land back there
   // instead of on /me. Only same-origin relative paths survive validation.
   const returnTo = safeReturnPath(url.searchParams.get('returnTo'));

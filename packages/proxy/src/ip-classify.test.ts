@@ -116,7 +116,7 @@ describe('SSRF classifier — IPv6 internal ranges + embedded IPv4', () => {
   });
 });
 
-describe('SSRF classifier — 6to4, local-use NAT64, site-local, discard (NSO-326)', () => {
+describe('SSRF classifier — 6to4, local-use NAT64, site-local, discard', () => {
   it('6to4 2002::/16 is blocked whole; a blocked embedded IPv4 (bytes 2..5) is named in the reason', () => {
     // 2002:7f00:0001:: embeds 127.0.0.1, 2002:a9fe:a9fe:: embeds 169.254.169.254, 2002:0a00:0001:: 10.0.0.1.
     expect(classifyForwardIp('2002:7f00:1::')).toEqual({ blocked: true, reason: '6to4-2002/16:loopback-127/8' });

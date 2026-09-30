@@ -1,5 +1,5 @@
 /**
- * M0-04 acceptance: `tools/list` is filtered by the granted scope — for EVERY
+ * `tools/list` is filtered by the granted scope — for EVERY
  * one of the 8 combinations of read / write / publish, a real MCP client
  * (in-memory transport) sees exactly the expected tools, and calling a tool
  * outside the grant fails. No DB: listing never runs a tool body, and the
@@ -81,7 +81,7 @@ describe('tools/list reflects the granted scope', () => {
     });
   }
 
-  it('set_workspace_publishing exists only for a super-admin with the publish scope (NSO-366)', async () => {
+  it('set_workspace_publishing exists only for a super-admin with the publish scope', async () => {
     for (const [scopes, superAdmin, listed] of [
       [['read', 'write', 'publish'], true, true],
       [['read', 'write'], true, false],
@@ -97,7 +97,7 @@ describe('tools/list reflects the granted scope', () => {
     }
   });
 
-  it('initialize carries the server instructions naming list_apps and the start skill (NSO-379)', async () => {
+  it('initialize carries the server instructions naming list_apps and the start skill', async () => {
     const client = await connect(['read']);
     try {
       const text = client.getInstructions() ?? '';
@@ -109,7 +109,7 @@ describe('tools/list reflects the granted scope', () => {
     }
   });
 
-  it('a read + write grant cannot list an app in the gallery (publish scope, NSO-340)', async () => {
+  it('a read + write grant cannot list an app in the gallery (publish scope)', async () => {
     const client = await connect(['read', 'write']);
     try {
       const res = await client.callTool({
@@ -123,7 +123,7 @@ describe('tools/list reflects the granted scope', () => {
     }
   });
 
-  it('a read + write grant cannot set the primary domain (publish scope, NSO-366)', async () => {
+  it('a read + write grant cannot set the primary domain (publish scope)', async () => {
     const client = await connect(['read', 'write']);
     try {
       const res = await client.callTool({

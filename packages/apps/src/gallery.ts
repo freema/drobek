@@ -1,5 +1,5 @@
 /**
- * The public gallery, the pure half (NSO-340): the on/off switch
+ * The public gallery, the pure half: the on/off switch
  * (GALLERY_ENABLED), the public description rules, the page size, the
  * search / sort / page parameters and the opaque cursor of
  * `GET /api/public/gallery`. The stateful half (listing, the super-admin

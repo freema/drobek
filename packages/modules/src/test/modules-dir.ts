@@ -1,5 +1,5 @@
 /**
- * Test helpers for DROBEK_MODULES_DIR (NSO-345): lay a module out the way
+ * Test helpers for DROBEK_MODULES_DIR: lay a module out the way
  * `npm install --prefix <dir>/<name> <package>` does and record it in
  * modules.lock.json with the real hash.
  */

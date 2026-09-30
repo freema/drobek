@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import viteConfig from '../vite.config';
 
 /**
- * NSO-314 regression guard. The dev client dep optimizer must stay explicit
+ * Regression guard: the dev client dep optimizer must stay explicit
  * (`noDiscovery`): with discovery on, React Router's dev SSR render registers
  * server-only deps with the client optimizer lazily, and on a cold cache the
  * re-optimization's forced full page reload wiped the first sign-in of a run.
@@ -87,7 +87,7 @@ function clientNpmImports(): Map<string, string> {
   return found;
 }
 
-describe('dev client dep optimizer (NSO-314)', () => {
+describe('dev client dep optimizer', () => {
   it('is explicit: no runtime dependency discovery', () => {
     expect(viteConfig.optimizeDeps?.noDiscovery).toBe(true);
   });

@@ -1,6 +1,6 @@
 /**
  * /workspaces/:slug/apps/:appSlug/forms — client half of the Forms tab
- * (M2-03): the submissions the forms module stored for this app, newest
+ *: the submissions the forms module stored for this app, newest
  * first, with a form + date-range filter (a GET form round-tripped through
  * the loader), a CSV export of the filtered rows, and (editor+) a delete with
  * a confirm step. Submitted values are visitor input: React escapes them.

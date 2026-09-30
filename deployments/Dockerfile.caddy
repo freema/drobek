@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 # ============================================================================
-# Caddy for drobek (M0-07). Two targets:
+# Caddy for drobek. Two targets:
 #
 #   official  — the stock Caddy image, unchanged (TLS_INTERNAL, wildcard cert
 #               files, or on-demand TLS need nothing else). Default.

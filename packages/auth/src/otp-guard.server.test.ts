@@ -153,7 +153,7 @@ describe('guardOtpRequest (strict defaults, injected)', () => {
     });
   });
 
-  it('no client IP (NSO-309): no shared "unknown" IP bucket — IP-less clients are not coupled', async () => {
+  it('no client IP: no shared "unknown" IP bucket — IP-less clients are not coupled', async () => {
     // Far past ipShortLimit (5) and ipDailyLimit (20): distinct e-mails, no IP.
     for (let i = 0; i < 30; i += 1) {
       expect(await guardOtpRequest({ ip: undefined, email: `noip${i}@example.com`, limits: STRICT })).toEqual({
@@ -233,7 +233,7 @@ describe('isOtpSendingPaused', () => {
 });
 
 describe('otpGuardLimitsFromEnv', () => {
-  it('falls back to the strict puls defaults when env is empty', () => {
+  it('falls back to the strict defaults when env is empty', () => {
     expect(otpGuardLimitsFromEnv({} as NodeJS.ProcessEnv)).toEqual(STRICT);
   });
 
@@ -255,7 +255,7 @@ describe('otpGuardLimitsFromEnv', () => {
   });
 });
 
-describe('scoped guard (M1-02: one app\'s end users)', () => {
+describe('scoped guard (one app\'s end users)', () => {
   const SCOPE = 'eu:app_1';
 
   it('counts per scope: an app\'s per-IP window never touches the dashboard or another app', async () => {
@@ -301,7 +301,7 @@ describe('scoped guard (M1-02: one app\'s end users)', () => {
   });
 });
 
-describe('checkOtpRequest + chargeOtpRequest (NSO-327: charge only what was sent)', () => {
+describe('checkOtpRequest + chargeOtpRequest (charge only what was sent)', () => {
   const SCOPE = 'eu:app_9';
 
   it('a check reads the counters without charging them; only the cooldown is claimed', async () => {
@@ -360,7 +360,7 @@ describe('checkOtpRequest + chargeOtpRequest (NSO-327: charge only what was sent
     expect(await fake.get(`drobek:rl:${SCOPE}:otp-global-1h:all`)).toBe('1');
   });
 
-  it('no client IP: the per-IP windows are neither read nor charged (NSO-309)', async () => {
+  it('no client IP: the per-IP windows are neither read nor charged', async () => {
     expect(await checkOtpRequest({ ip: undefined, email: 'x@example.com', limits: STRICT, scope: SCOPE })).toEqual({ ok: true });
     await chargeOtpRequest({ ip: undefined, email: 'x@example.com', scope: SCOPE });
     expect([...fake.store.keys()].filter((k) => k.includes('otp-ip-'))).toEqual([]);

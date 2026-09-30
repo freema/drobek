@@ -1,5 +1,5 @@
 /**
- * /invite/:token — client half (U4, PHY-54): sign-in prompt for anonymous
+ * /invite/:token — client half: sign-in prompt for anonymous
  * visitors, accept button for signed-in ones, and the generic invalid-invite
  * ErrorBoundary (404) for expired/used/garbage tokens.
  */

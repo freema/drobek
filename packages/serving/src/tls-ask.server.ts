@@ -1,6 +1,6 @@
 /**
  * node:http adapter + Postgres lookup for Caddy's on-demand TLS `ask`
- * endpoint (M0-07). The decision itself lives in tls-ask.ts.
+ * endpoint. The decision itself lives in tls-ask.ts.
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { and, eq, isNull } from 'drizzle-orm';
@@ -29,7 +29,7 @@ export interface TlsAskHandlerOptions {
   /** Default: from APPS_DOMAIN + PUBLIC_APP_URL. */
   hosts?: HostConfig;
   appExists?: (slug: string) => Promise<boolean>;
-  /** M3-01: default = a verified custom domain of a live app (@drobek/domains). */
+  /** Default = a verified custom domain of a live app (@drobek/domains). */
   customDomainAllowed?: (hostname: string) => Promise<boolean>;
   log?: Logger;
 }

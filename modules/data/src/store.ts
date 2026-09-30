@@ -105,7 +105,7 @@ export async function loadRecord(db: DB, appId: string, collection: string, id: 
 }
 
 /**
- * Update a record from its CURRENT fields (NSO-322 M1): the row is re-read
+ * Update a record from its CURRENT fields: the row is re-read
  * `FOR UPDATE` inside the app's write lock, `next(doc)` builds the new fields
  * from it (merge + validate — a throw rolls back), then the quota check and
  * the UPDATE. Two concurrent PATCHes of one record therefore both land
@@ -181,7 +181,7 @@ export async function insertRecords(
 }
 
 /**
- * Write a whole batch into one collection (a module job's import, NSO-392):
+ * Write a whole batch into one collection (a module job's import):
  * ONE transaction under the app's write lock, the quota checked for the
  * state after the batch first — either everything lands or nothing does.
  *
@@ -422,7 +422,7 @@ export async function countMatching(db: DB, input: Omit<QueryInput, 'sort' | 'li
 /**
  * The distinct own keys of every matching record (the columns of a schemaless
  * CSV export), in JS sort order — one statement, so the export reads the
- * records once (NSO-323 M5).
+ * records once.
  */
 export async function docKeysMatching(db: DB, input: Omit<QueryInput, 'sort' | 'limit' | 'cursor'>): Promise<string[]> {
   const rows = await db

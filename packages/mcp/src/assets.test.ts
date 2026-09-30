@@ -1,5 +1,5 @@
 /**
- * NSO-358 asset tools over a real MCP client on a real (PGlite) database:
+ * The asset tools over a real MCP client on a real (PGlite) database:
  * create_asset_upload hands out a single-use upload URL on the dashboard host
  * (bound to app + path + size + the caller), the PUT on it stores the file
  * as the caller (audit), list_assets / delete_asset, the role floor, the

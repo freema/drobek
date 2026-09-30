@@ -1,8 +1,8 @@
 /**
- * @drobek/sdk — the browser SDK core (M1-01, NSO-287). `core.ts` is bundled
+ * @drobek/sdk — the browser SDK core. `core.ts` is bundled
  * into `/__drobek/sdk.js` with the SDK entry of every active platform module;
  * module SDK entries type their argument with `SdkCore` from here.
- * `beacon.ts` (M1-07) is bundled into `/__drobek/beacon.js`, which the
+ * `beacon.ts` is bundled into `/__drobek/beacon.js`, which the
  * compiler imports into every app: uncaught browser errors → the app's beacon.
  */
 export const SDK_VERSION = '1.0.0';

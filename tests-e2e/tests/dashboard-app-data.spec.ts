@@ -15,7 +15,7 @@ import {
 } from './helpers/seed';
 
 /**
- * M2-03 (NSO-301): the owner's module tabs of an app in the dashboard.
+ * The owner's module tabs of an app in the dashboard.
  *
  *  - Data: a CSV import of 5 001 rows is refused and one with an invalid row
  *    names that row — in both cases NOTHING is stored (one transaction); a
@@ -166,7 +166,7 @@ async function importCsv(page: Page, csv: string): Promise<void> {
 
 test.describe.configure({ mode: 'serial' });
 
-test.describe("dashboard: the owner's app tabs — data edits + import, forms, users, uploads, logs (M2-03) @local", () => {
+test.describe("dashboard: the owner's app tabs — data edits + import, forms, users, uploads, logs @local", () => {
   let mcp: McpClient;
   let owner: BrowserContext;
   let ownerPage: Page;
@@ -268,7 +268,7 @@ test.describe("dashboard: the owner's app tabs — data edits + import, forms, u
     expect(await auditActions(dataApp.slug)).toEqual(expect.arrayContaining(['data.import', 'data.record_update', 'data.collection_delete']));
   });
 
-  test('data (NSO-324): a record delete is audited; orphan records (an undeclared collection) are listed and purged after typing the name', async () => {
+  test('data: a record delete is audited; orphan records (an undeclared collection) are listed and purged after typing the name', async () => {
     skipUnlessLocal();
     const p = ownerPage;
     await seedDataCollections(dataApp.id, { notes: { rules: { read: 'admin', create: 'admin', update: 'admin', delete: 'admin' } } });

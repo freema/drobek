@@ -1,5 +1,5 @@
 /**
- * Fixed extension → Content-Type map for served app files (U7, PHY-58).
+ * Fixed extension → Content-Type map for served app files.
  *
  * SECURITY: the served `Content-Type` is derived from the request PATH's
  * extension, NEVER from the blob's stored `content_type` (which came in on an

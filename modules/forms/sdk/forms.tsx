@@ -1,6 +1,6 @@
 /**
- * `import { Form } from 'drobek/forms'` — the forms module's React part
- * (M1-04). NOT in /__drobek/sdk.js: the drobek compiler builds this file INTO
+ * `import { Form } from 'drobek/forms'` — the forms module's React part.
+ * NOT in /__drobek/sdk.js: the drobek compiler builds this file INTO
  * the app that imports it, resolving `react` through the app's own
  * drobek.json (the app and the form share one React) and `drobek` to the
  * server's SDK (the same `drobek.forms` instance the app sees).

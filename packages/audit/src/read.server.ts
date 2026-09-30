@@ -1,5 +1,5 @@
 /**
- * Audit READ for the workspace Activity view (PHY-85). Reads are strictly
+ * Audit READ for the workspace Activity view. Reads are strictly
  * workspace-scoped (the caller MUST pass a workspaceId it has already authorized
  * — the dashboard loader gates on workspace-admin/super-admin BEFORE calling).
  *
@@ -30,7 +30,7 @@ export interface ListActivityInput {
   action?: string | null;
   /** Exact subject filter — the app slug, optional. */
   subject?: string | null;
-  /** Actor-kind filter (user | agent | end_user), optional (M2-04). */
+  /** Actor-kind filter (user | agent | end_user), optional. */
   actorKind?: AuditActorKind | null;
   /** Only rows at or after this instant (inclusive), optional. */
   from?: Date | null;

@@ -16,7 +16,7 @@ import {
 } from './helpers/seed';
 
 /**
- * M2-01 (NSO-288) acceptance — the app page of the dashboard:
+ * The app page of the dashboard:
  *   (1) publish / rollback / restore / unpublish from the UI change what the
  *       apps host serves (production, preview, `--v<N>`), all audited;
  *   (2) a viewer sees the app, its versions, files and settings but no
@@ -145,7 +145,7 @@ test('app page: publish, rollback, restore and unpublish from the UI change what
   await expect(page.getByTestId('app-preview-url')).toHaveAttribute('href', urlOf(previewHost(app.slug)));
   await expect(page.getByTestId('app-compile-status')).toHaveAttribute('data-status', 'ok');
   await expect(page.locator('[data-testid="app-tab"][aria-current="page"]')).toHaveAttribute('data-tab', 'overview');
-  // NSO-384: the newest version passed the publish readiness checks (it has a <title>).
+  // the newest version passed the publish readiness checks (it has a <title>).
   await expect(page.getByTestId('readiness-section')).toHaveAttribute('data-state', 'ready');
   await expect(page.getByTestId('readiness-section')).toHaveAttribute('data-version', '2');
   // "Open" goes to the version host (a link, never a frame).
@@ -198,7 +198,7 @@ test('app page: the background TypeScript check lists a type_error after a reloa
   await loginViaEmail(page, request, email);
   const ws = await personalWorkspaceOf(email);
   const app = await seedApp({ workspaceId: ws.id });
-  // A version nobody type-checked yet (seeded, like one from before NSO-388): opening the page schedules it.
+  // A version nobody type-checked yet (seeded): opening the page schedules it.
   await seedVersion({
     appId: app.id,
     files: [
@@ -474,7 +474,7 @@ test('app page: Settings — password visibility and frame-ancestors change the 
   await page.getByTestId('frame-ancestors-save').click();
   await expect(page.getByTestId('settings-frame-ancestors-current')).toHaveText('https://intranet.example.com');
   const csp = String((await hostRequest(prodHost(app.slug))).headers['content-security-policy']);
-  // NSO-342: the dashboard origin stays allowed next to the override (the app-list thumbnail).
+  // the dashboard origin stays allowed next to the override (the app-list thumbnail).
   expect(csp).toContain(`frame-ancestors https://intranet.example.com ${DASHBOARD_ORIGIN};`);
   await page.getByTestId('frame-ancestors-input').fill('');
   await page.getByTestId('frame-ancestors-save').click();

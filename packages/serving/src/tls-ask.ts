@@ -1,5 +1,5 @@
 /**
- * Caddy's on-demand TLS `ask` endpoint (M0-07). Before Caddy obtains a
+ * Caddy's on-demand TLS `ask` endpoint. Before Caddy obtains a
  * certificate for a host it has never seen, it asks
  * `GET <ask URL>?domain=<host>` and proceeds ONLY on a 2xx. drobek answers:
  *
@@ -10,7 +10,7 @@
  *        token rides in the ask URL — or the `X-Drobek-Tls-Ask-Token` header)
  *   200  `domain` is `<slug>`, `<slug>--preview` or `<slug>--v<N>` directly
  *        under APPS_DOMAIN and a live, non-deleted app owns `<slug>`
- *   200  (M3-01) `domain` is a VERIFIED custom domain of a live app (the
+ *   200  `domain` is a VERIFIED custom domain of a live app (the
  *        domains table; the lookup also records `cert_state = requested`)
  *   404  everything else: other hosts outside APPS_DOMAIN (unknown or
  *        unverified custom domains — Caddy never obtains a certificate for
@@ -92,7 +92,7 @@ export function tlsAskSlug(domain: string | null | undefined, hosts: HostConfig)
 }
 
 /**
- * The custom-domain name an ask `domain` would be (M3-01), or null: a dotted
+ * The custom-domain name an ask `domain` would be, or null: a dotted
  * DNS name outside APPS_DOMAIN and the dashboard host, no port, not an IP.
  */
 export function tlsAskCustomHost(domain: string | null | undefined, hosts: HostConfig): string | null {
@@ -120,7 +120,7 @@ export interface TlsAskDeps {
   hosts: HostConfig;
   /** True when a live, non-deleted app owns this slug. */
   appExists: (slug: string) => Promise<boolean>;
-  /** M3-01: true when `hostname` is a verified custom domain of a live app (absent → never). */
+  /** True when `hostname` is a verified custom domain of a live app (absent → never). */
   customDomainAllowed?: (hostname: string) => Promise<boolean>;
 }
 

@@ -1,6 +1,6 @@
 /**
- * A light, dependency-free syntax highlighter for the read-only file viewer
- * (NSO-288 Files tab). It only tokenizes — the component renders each token
+ * A light, dependency-free syntax highlighter for the read-only file viewer.
+ * It only tokenizes — the component renders each token
  * as a React text node inside a <span>, so app source can never become
  * markup (no dangerouslySetInnerHTML). Lossless: the tokens concatenate back
  * to the input exactly (unit-tested). Deliberately small: comments, strings,

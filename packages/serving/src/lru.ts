@@ -1,5 +1,5 @@
 /**
- * A byte-accounted LRU (M0-06): `sha256 → Buffer` for served file bytes,
+ * A byte-accounted LRU: `sha256 → Buffer` for served file bytes,
  * capped at 256 MiB by default. Keys are content hashes, so an entry never
  * goes stale — eviction is purely about memory. A Map keeps insertion order;
  * re-inserting on read makes it the most recently used.

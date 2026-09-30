@@ -1,8 +1,8 @@
 /**
- * The caller of a module route (§5.0): core resolves it ONCE per request from
+ * The caller of a module route: core resolves it ONCE per request from
  * the app host's end-user session cookie and hands it to the module — a module
  * never reads a cookie itself, and the dashboard session is never read here.
- * The platform module `auth` (M1-02) is the only writer: it creates, renews
+ * The platform module `auth` is the only writer: it creates, renews
  * and ends these sessions with the helpers below, so every other module gets
  * `user` / `admin` principals from `ctx.principal` without importing auth.
  *
@@ -20,10 +20,10 @@
  * by the auth module on every `me`. The key embeds the app id, so a token is
  * only ever valid on the app that issued it.
  *
- * Mass revocation (PHY-76 #9): `drobek:eu-epoch:<app_id>` (absent = 0). A
+ * Mass revocation: `drobek:eu-epoch:<app_id>` (absent = 0). A
  * session is valid only while its `epoch` equals the app's current epoch;
  * `revokeEndUserSessions()` increments it, which signs every end user of the
- * app out at once (the owner's dashboard API, M1-02).
+ * app out at once (the owner's dashboard API).
  *
  * The Redis record alone is NEVER trusted as the principal: core asks the
  * module that owns end-user sessions (`endUsers.current`, the auth module)
@@ -174,7 +174,7 @@ export async function destroyEndUserSession(redis: Pick<EndUserRedis, 'del'>, ap
   if (END_USER_TOKEN_RE.test(token)) await redis.del(endUserSessionKey(appId, token));
 }
 
-/** Sign every end user of `appId` out (PHY-76 #9) → the new epoch. */
+/** Sign every end user of `appId` out → the new epoch. */
 export async function revokeEndUserSessions(redis: Pick<EndUserRedis, 'incr'>, appId: string): Promise<number> {
   return redis.incr(endUserEpochKey(appId));
 }

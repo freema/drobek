@@ -1,5 +1,5 @@
 /**
- * The app Overview's "Gallery" section (NSO-340): whether the app is in the
+ * The app Overview's "Gallery" section: whether the app is in the
  * server's public gallery, and — for editor+ — "Show in the gallery" + the
  * public one-line description + "Allow duplicates" + Save (intent `gallery`
  * of appAction).

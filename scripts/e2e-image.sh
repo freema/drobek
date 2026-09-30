@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The whole Playwright suite (@smoke + @local) against the PRODUCTION image
-# (M0-08) — what CI runs, reproducible locally with `task e2e:image`:
+# — what CI runs, reproducible locally with `task e2e:image`:
 #
 #   1. render the Caddyfile with the image's own caddy-config CLI (tls internal)
 #   2. pack examples/drobek-module-acme-crm and install it into the fresh

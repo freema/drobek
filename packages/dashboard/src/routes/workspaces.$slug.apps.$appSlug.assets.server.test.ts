@@ -1,5 +1,5 @@
 /**
- * The Assets tab's actions (NSO-358) against a real PGlite database (the
+ * The Assets tab's actions against a real PGlite database (the
  * workspace role gate is stubbed — requireWorkspaceRole has its own tests in
  * @drobek/tenancy): an editor gets a single-use upload URL on the dashboard
  * host bound to the app, the path, the size and themselves (the dashboard

@@ -312,7 +312,7 @@ export const recordsAuthority: RecordsAuthority<DataConfig> = {
     if (!row) return null;
     const doc = ownFields(fields);
     if (c.schema) validateDocument(c.schema, doc);
-    // The owner's edit replaces the fields wholesale; patchRecord re-checks the row under the write lock (NSO-322).
+    // The owner's edit replaces the fields wholesale; patchRecord re-checks the row under the write lock.
     const updated = await patchRecord(view.db, { appId: view.app.id, collection, id, next: () => doc, limits: dataQuotaFromLimits(await view.limits()) });
     return updated ? toRecord(updated) : null;
   },
@@ -331,7 +331,7 @@ export const recordsAuthority: RecordsAuthority<DataConfig> = {
     return { imported };
   },
 
-  // NSO-392: a module job's batch (the sync module's scheduled import). Like
+  // A module job's batch (the sync module's scheduled import). Like
   // the owner's import it skips DATA_WRITE_RATE_LIMIT, never the schema or the quota.
   async importRecords(view, collection, records, opts) {
     const c = requireCollection(view.config, collection);
@@ -351,7 +351,7 @@ export const recordsAuthority: RecordsAuthority<DataConfig> = {
     return { records, configPatch: { collections: { [collection]: null } } };
   },
 
-  // NSO-324: records whose collection is no longer declared (a write that
+  // Records whose collection is no longer declared (a write that
   // landed while the collection was removed) — invisible to every other view,
   // yet counted by the quota until the owner purges them.
   async orphans(view) {

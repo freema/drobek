@@ -1,11 +1,11 @@
 /**
  * GET/POST /workspaces/:slug/apps/:appSlug/assets — server half of the Assets
- * tab (NSO-358): the app's own binary files (video, audio, images, fonts)
+ * tab: the app's own binary files (video, audio, images, fonts)
  * served at `/<path>` next to its files — the dashboard side of
  * create_asset_upload / list_assets / delete_asset (UI and MCP parity).
  *
  * GET (viewer+): every draft asset (path, sniffed type, size, time, a link on
- * the preview host, whether production already serves it — NSO-362), the
+ * the preview host, whether production already serves it), the
  * files production serves that the draft deleted, and the usage against
  * APP_ASSETS_QUOTA / APP_ASSET_MAX_BYTES (the workspace's limits). Uploads
  * and deletes change the draft; production follows at the next publish.

@@ -13,9 +13,8 @@
  * This bucket only bounds how hard ONE client can hammer the endpoint
  * (enumeration / load). It is keyed on `getClientIp`; when no client IP can be
  * resolved (no trusted proxy header — the plain-HTTP dev stack, a request that
- * bypassed the proxy) the bucket is SKIPPED (NSO-309). The former shared
- * `unknown` bucket coupled every such client: ~30 sign-ins per window locked
- * the whole instance out with "That code is not valid". Skipping it loses
+ * bypassed the proxy) the bucket is SKIPPED: a shared `unknown`
+ * bucket would lock every such client out together. Skipping it loses
  * nothing — a client able to make its IP unresolvable could equally rotate
  * spoofed headers — and the per-code cap above stays in force.
  *

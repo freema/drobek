@@ -1,5 +1,5 @@
 /**
- * Per-call authorization (NSO-282 model, M0-05 tools): a grant names a USER;
+ * Per-call authorization: a grant names a USER;
  * every call resolves that user's role in the TARGET app's workspace:
  *   - unknown app, soft-deleted app, unknown workspace, non-member → the SAME
  *     `not_found` (anti-enumeration);

@@ -1,5 +1,5 @@
 /**
- * HTTP byte ranges for serving assets (NSO-358; RFC 9110 §14). PURE.
+ * HTTP byte ranges for serving assets (RFC 9110 §14). PURE.
  *
  * Safari will not play — or seek in — a `<video>` whose server ignores
  * `Range`, so every asset answers `Accept-Ranges: bytes` and honours ONE

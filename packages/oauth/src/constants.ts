@@ -1,7 +1,7 @@
 /**
- * OAuth 2.1 lifetimes (U5, PHY-71/PHY-53). Kept small and explicit so the
+ * OAuth 2.1 lifetimes. Kept small and explicit so the
  * Authorization Server and the mcp Resource Server agree without a shared DB
- * read. All are ratified in ROADMAP §5 / TECHNICAL_DESIGN §4.
+ * read.
  */
 
 /** Authorization code: single-use, short (5 minutes). */
@@ -14,7 +14,7 @@ export const ACCESS_TTL_SEC = Math.floor(ACCESS_TTL_MS / 1000);
 /** Refresh token: 30 days (rotated on every use). */
 export const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
-// ── Client metadata caps (PHY-76 #7) — DCR bodies and CIMD documents ─────────
+// ── Client metadata caps — DCR bodies and CIMD documents ─────────
 
 /** Longest client_name we store/show on the consent screen. */
 export const CLIENT_NAME_MAX_LENGTH = 100;
@@ -23,7 +23,7 @@ export const REDIRECT_URIS_MAX = 10;
 /** Longest single redirect_uri. */
 export const REDIRECT_URI_MAX_LENGTH = 2000;
 
-// ── Dynamic Client Registration abuse caps (PHY-76 #7) ───────────────────────
+// ── Dynamic Client Registration abuse caps ───────────────────────
 
 /** Registrations per client IP per window (→ 429). */
 export const DCR_RATE_LIMIT = 10;
