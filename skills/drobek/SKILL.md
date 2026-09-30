@@ -80,7 +80,7 @@ Before using a backend (login, stored data, forms, email, file uploads, external
   `contributes` describe the module itself (what the dashboard's workspace
   Modules page shows).
 - Besides the module skills (`auth`, `data`, `forms`, `email`, `files`,
-  `proxy`, `sync`, …) the list has general skills: `start` (files, drobek.json, the
+  `proxy`, `sync`, `oidc`, …) the list has general skills: `start` (files, drobek.json, the
   write → preview → publish loop), `debug` (compile errors, `get_logs`,
   401/403 from a module), `ui` (Tailwind from esm.sh, responsive and
   accessible screens, loading and error states) and `port-artifact` (moving
@@ -88,7 +88,12 @@ Before using a backend (login, stored data, forms, email, file uploads, external
 - Sign-in (`auth`) is the e-mail code plus any sign-in provider the server
   runs (company SSO): `drobek.auth.providers()` lists the methods that are
   on, `<LoginGate>` offers them. Enabling a provider waits for the owner's
-  confirmation; its secrets are set in the dashboard.
+  confirmation; its secrets are set in the dashboard. Company accounts at an
+  OpenID Connect IdP (Google Workspace, Microsoft Entra ID, Okta, Keycloak,
+  Auth0) are the `oidc` provider: `configure_module('auth', { providers:
+  { oidc: { enabled, issuer, clientId } } })`, the owner sets
+  `OIDC_CLIENT_SECRET` and registers `<dashboard>/__drobek/auth/callback/oidc`
+  at the IdP (`skill_info('oidc')`).
 - `configure_module({ app_id, module, config })` sets a module's config for
   the app (`config` is partial: only the keys you change). A sensitive change
   comes back `applied: false` with `pending_confirmation` and a `confirm_url`:

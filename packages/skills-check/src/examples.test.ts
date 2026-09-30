@@ -1,24 +1,28 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { buildSdk, type SdkBundle } from '@drobek/modules';
 import { checkExamples, formatSkillIssue, type SkillSource } from '@drobek/modules/testing';
-import { BUILTIN_MODULES, PKG_DIR, skillSources } from './skills.js';
+import type { AnyModule } from '@drobek/modules';
+import { BUILTIN_MODULES, PKG_DIR, skillSources, skillsRuntime } from './skills.js';
 
 /**
  * NSO-308 acceptance: "the code in the examples does not rot". Every code block
- * of the 10 skills is compiled with @drobek/compile and typechecked against the
+ * of the skills is compiled with @drobek/compile and typechecked against the
  * CURRENT sdk.d.ts; a renamed SDK method, a wrong prop, a config the module's
  * schema refuses or a script the CSP blocks turns `task check` red, naming the
  * SKILL.md line, the skill and the block.
  */
 let sdk: SdkBundle;
+/** The modules as the server composes them: auth's config has `providers.oidc` (the oidc skill's payload). */
+let composed: AnyModule[];
 beforeAll(async () => {
   sdk = await buildSdk(BUILTIN_MODULES);
+  composed = (await skillsRuntime()).modules;
 });
 
 describe('skill examples compile and typecheck against the live SDK', () => {
   it('every code block of every skill passes', async () => {
     const started = Date.now();
-    const report = await checkExamples(await skillSources(), BUILTIN_MODULES, { sdk, root: PKG_DIR });
+    const report = await checkExamples(await skillSources(), composed, { sdk, root: PKG_DIR });
     const ms = Date.now() - started;
     expect(report.problems.map(formatSkillIssue), 'broken skill examples').toEqual([]);
     // Every skill contributes examples; the suite really compiled and typechecked something.
@@ -36,7 +40,7 @@ function fakeSkill(markdown: string): SkillSource {
 }
 
 async function problemsOf(markdown: string): Promise<string[]> {
-  return (await checkExamples([fakeSkill(markdown)], BUILTIN_MODULES, { sdk, root: PKG_DIR })).problems.map((p) => p.message);
+  return (await checkExamples([fakeSkill(markdown)], composed, { sdk, root: PKG_DIR })).problems.map((p) => p.message);
 }
 
 const fence = (info: string, code: string) => '```' + info + '\n' + code + '\n```\n';

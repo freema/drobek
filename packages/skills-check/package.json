@@ -21,6 +21,7 @@
     "drobek-module-email": "workspace:*",
     "drobek-module-files": "workspace:*",
     "drobek-module-forms": "workspace:*",
+    "drobek-module-oidc": "workspace:*",
     "drobek-module-proxy": "workspace:*",
     "drobek-module-sync": "workspace:*",
     "typescript": "^5.7.3",

@@ -264,9 +264,9 @@ dependencies, or from `DROBEK_MODULES_DIR` for a module you installed with
 refuses to start on a module it cannot load. Limits come from their env vars
 or, with `LIMITS_PROVIDER_URL` + `LIMITS_PROVIDER_SECRET`, from your own
 signed limits endpoint. The image ships the built-in `auth`, `email`,
-`forms`, `data`, `proxy`, `files` and `sync`
-(`DROBEK_MODULES=auth,email,forms,data,proxy,files,sync`, the compose default;
-`forms` requires `email`, `sync` requires `proxy` and `data`). Proxy upstreams may only use ports 80 and 443
+`forms`, `data`, `proxy`, `files`, `sync` and `oidc`
+(`DROBEK_MODULES=auth,email,forms,data,proxy,files,sync,oidc`, the compose default;
+`forms` requires `email`, `sync` requires `proxy` and `data`, `oidc` requires `auth`). Proxy upstreams may only use ports 80 and 443
 (`PROXY_ALLOWED_PORTS`); an upstream on a private address needs its hostname
 on `PROXY_ALLOWED_HOSTS` (keep it empty in production). The old
 `/<ws>/api/proxy/<name>/*` dashboard-host route is gone: an app calls
@@ -365,6 +365,7 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `GOOGLE_AUTH_URL` / `GOOGLE_TOKEN_URL` / `GOOGLE_USERINFO_URL` | Google's endpoints | dev only: point Google sign-in at the mock provider (`task mock:google`) |
 | `OAUTH_DCR_MAX_UNUSED_CLIENTS` | 500 | MCP clients registered by DCR that never got consent, before registration answers 503 |
 | `OAUTH_CIMD_DEV_ORIGINS` | — | dev/test only, ignored in production: origins allowed to serve a Client ID Metadata Document over plain http |
+| `AUTH_OIDC_DEV_ORIGINS` | — | dev/test only, ignored in production: origins the `oidc` module may reach over plain http from a private address (the mock IdP of `task mock:oidc`) |
 | `DASHBOARD_GITHUB_STARS` | on | the dashboard footer shows the source repository's GitHub star count, fetched server-side from `api.github.com` (unauthenticated, 3 s timeout, cached 1 h, never delays a page); `off` = no outbound call, no stars |
 
 ### Apps, compiler and serving
@@ -391,7 +392,7 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 
 | Variable | Default | What |
 | --- | --- | --- |
-| `DROBEK_MODULES` | none *(compose: `auth,email,forms,data,proxy,files,sync`)* | the modules this server runs; `x` loads `drobek-module-x` ([`MODULES.md`](./MODULES.md)) |
+| `DROBEK_MODULES` | none *(compose: `auth,email,forms,data,proxy,files,sync,oidc`)* | the modules this server runs; `x` loads `drobek-module-x` ([`MODULES.md`](./MODULES.md)) |
 | `DROBEK_MODULES_ROOT` | the server's directory | where module packages are resolved from when they are not in `DROBEK_MODULES_DIR` |
 | `DROBEK_MODULES_DIR` | `/data/modules` *(compose: the `modules_data` volume; dev: `./.modules`)* | modules the operator installed (`task selfhost:module:add`, dev: `task module:add`): `<dir>/<name>/node_modules/<package>` + `modules.lock.json`; looked up BEFORE the server's dependencies; a module there that the lockfile does not list, or whose files changed, refuses the start ([Third-party modules](#third-party-modules)). Change it only for a [derived image](#derived-image) that bakes its modules elsewhere |
 | `DROBEK_MODULES_UNLOCKED` | — | `1` = load modules from `DROBEK_MODULES_DIR` without the `modules.lock.json` check — for developing a module locally; ignored (with a warning) when `NODE_ENV=production` |
@@ -405,6 +406,8 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `AUTH_CODES_PER_IP_15MIN` / `AUTH_CODES_PER_IP_DAY` | 5 / 20 | `auth`: sign-in codes per client IP *(plan)* |
 | `AUTH_CODES_PER_EMAIL_HOUR` / `AUTH_CODES_PER_APP_HOUR` | 3 / 100 | `auth`: codes per address, per app *(plan)* |
 | `AUTH_ATTEMPTS_PER_IP_15MIN` / `END_USERS_MAX_PER_APP` | 30 / 1000 | `auth`: send-code, verify and provider begin/complete calls per IP; end users per app *(plan)* |
+| `AUTH_OIDC_ISSUER` / `AUTH_OIDC_CLIENT_ID` / `AUTH_OIDC_CLIENT_SECRET` | — | `oidc`: one company IdP for every app whose `providers.oidc` has no `issuer` (the issuer's host may be private and on any port); the secret is also the fallback of every app's `OIDC_CLIENT_SECRET`. Redirect URI at the IdP: `<PUBLIC_APP_URL>/__drobek/auth/callback/oidc` |
+| `OIDC_DISCOVERY_CACHE_SEC` | 3600 | `oidc`: seconds an IdP's discovery document is cached, server-wide (its keys: 1 hour, an unknown key id refetches them at most once a minute) |
 | `AUTH_PROVIDER_CALLBACKS_PER_IP_15MIN` | 60 | `auth`: sign-in provider callbacks (`/__drobek/auth/callback/<provider>` on the dashboard host) per client IP per 15 min — server-wide, never a plan value (the app is not known yet) |
 | `EMAIL_PER_APP_PER_DAY` / `EMAIL_NOTIFY_ADMINS_PER_DAY` | 50 / 20 | `email`: notification mails per app per day; `notifyAdmins()` per user per day *(plan)* |
 | `EMAIL_GLOBAL_HOURLY_MAX` / `EMAIL_GLOBAL_PAUSE_MINUTES` | 500 / 15 | the operator-wide cap on all module mail (recipients per hour) and the pause length (a fixed window: the class budget restarts after it) |
@@ -605,7 +608,7 @@ task selfhost:module:add -- drobek-module-acme-erp@1.2.0
 #   modules.lock.json: sha512-…
 #
 # Next: enable it in .env.production and restart drobek (it applies the module's migrations on start):
-#   DROBEK_MODULES=auth,email,forms,data,proxy,files,sync,drobek-module-acme-erp
+#   DROBEK_MODULES=auth,email,forms,data,proxy,files,sync,oidc,drobek-module-acme-erp
 #   ./scripts/selfhost-compose.sh up -d --wait drobek
 ```
 

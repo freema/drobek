@@ -163,6 +163,13 @@ tasks:
     cmds:
       - node tests-e2e/mock-google.mjs
 
+  mock:oidc:
+    desc: Run the mock OpenID Connect provider in the foreground (NSO-351 — tests-e2e/mock-oidc.mjs, port 3050)
+    env:
+      MOCK_OIDC_PORT: '{{.MOCK_OIDC_PORT | default "3050"}}'
+    cmds:
+      - node tests-e2e/mock-oidc.mjs
+
   # ── TLS / Caddy (M0-07) — see docs/SELF-HOSTING.md ─────────────────────────
   caddy:config:
     desc: 'Generate the Caddyfile from .env (PUBLIC_APP_URL, APPS_DOMAIN, TLS_*) → deployments/Caddyfile [OUT=path]'

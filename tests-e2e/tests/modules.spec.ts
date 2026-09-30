@@ -196,7 +196,7 @@ test.describe('platform modules — the hello example (M1-01) @local', () => {
 
     const nope = await hostRequest(host, '/__drobek/v1/nope');
     expect(nope.status).toBe(404);
-    expect(JSON.parse(nope.body)).toMatchObject({ error: 'not_found', details: { available: ['hello', 'auth', 'email', 'forms', 'data', 'proxy', 'files', 'sync'] } });
+    expect(JSON.parse(nope.body)).toMatchObject({ error: 'not_found', details: { available: ['hello', 'auth', 'email', 'forms', 'data', 'proxy', 'files', 'sync', 'oidc'] } });
 
     // HELLO_WAVES_PER_MINUTE=5 per visitor IP (behind Caddy the browser test
     // already waved once from the same IP). A client IP of its own: on the

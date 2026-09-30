@@ -44,7 +44,7 @@ task selfhost:module:add -- {{package}}@0.1.0     # or the URL of a packed tarba
 and add the module to `DROBEK_MODULES` in `.env.production`:
 
 ```sh
-DROBEK_MODULES=auth,email,forms,data,proxy,files,sync,{{entry}}
+DROBEK_MODULES=auth,email,forms,data,proxy,files,sync,oidc,{{entry}}
 ```
 
 Then restart drobek (see the self-hosting guide). The server refuses a module whose
