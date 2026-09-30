@@ -9,9 +9,10 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import type { Logger } from '@drobek/core';
+import { authProviderSchema } from './auth-provider.js';
 import { defineModule, isDefinedModule } from './contract.js';
 import { loadModuleSet } from './registry.js';
-import { GUESTBOOK_FIXTURE, installDirModule, lockDirModule, tempModulesDir, tinyModuleFiles } from './test/modules-dir.js';
+import { GUESTBOOK_FIXTURE, LEGACY_PROVIDER_FIXTURE, installDirModule, lockDirModule, tempModulesDir, tinyModuleFiles } from './test/modules-dir.js';
 
 /** The `hello.greeter` slot host the guestbook fixture contributes to. */
 const helloHost = defineModule({
@@ -28,6 +29,17 @@ const helloHost = defineModule({
       description: 'greeters',
     },
   },
+});
+
+/** A stand-in for the built-in `auth`: its `auth.provider` slot with the real schema. */
+const authHost = defineModule({
+  name: 'auth',
+  version: '1.0.0',
+  contract: '^1.1',
+  skill: { useWhen: 'a test needs the provider slot', markdown: '# auth\n' },
+  configSchema: z.object({}),
+  configDefaults: {},
+  slots: { 'auth.provider': { schema: authProviderSchema, unique: 'id', description: 'sign-in providers' } },
 });
 
 const builtins = (map: Record<string, unknown>) => async (pkg: string) => {
@@ -198,6 +210,40 @@ describe('DROBEK_MODULES_DIR', () => {
     writeFileSync(join(dir, 'probe', 'x.sql'), 'DROP TABLE data_documents;');
     const { origins } = await loadModuleSet({ ...DEV, DROBEK_MODULES: 'legacy' }, { modulesDir: dir, log: recordingLog(), importer: builtins({ 'drobek-module-legacy': migrating }) });
     expect(origins.legacy.source).toBe('builtin');
+  });
+
+  it('refuses at start a sign-in provider written for auth provider API 1; a current provider and other modules load', async () => {
+    const dir = modulesDir();
+    installDirModule(dir, { name: 'legacyidp', from: LEGACY_PROVIDER_FIXTURE });
+    installDirModule(dir, {
+      name: 'currentidp',
+      files: {
+        'package.json': JSON.stringify({ name: 'drobek-module-currentidp', version: '1.0.0', type: 'module', exports: './index.js' }),
+        'index.js': [
+          `import { defineAuthProvider, defineModule, z } from '@drobek/modules';`,
+          `export default defineModule({`,
+          `  name: 'currentidp', version: '1.0.0', contract: '^1.1', requires: ['auth'],`,
+          `  skill: { useWhen: 'a test needs a current provider', markdown: '# currentidp\\n' },`,
+          `  configSchema: z.object({}), configDefaults: {},`,
+          `  contributes: { 'auth.provider': defineAuthProvider({`,
+          `    apiVersion: 2, id: 'currentidp', label: 'Current IdP', configSchema: z.strictObject({}),`,
+          `    async begin() { return { url: 'https://idp.example/authorize' }; },`,
+          `    async callback() { return { issuer: 'https://idp.example', subject: 's', email: 'a@example.com', emailVerified: true }; },`,
+          `  }) },`,
+          `});`,
+          '',
+        ].join('\n'),
+      },
+    });
+    installDirModule(dir, { name: 'probe', files: tinyModuleFiles('probe') });
+    const load = (list: string) =>
+      loadModuleSet({ ...DEV, DROBEK_MODULES: list }, { modulesDir: dir, log: recordingLog(), importer: builtins({ 'drobek-module-auth': authHost }) });
+
+    await expect(load('auth,probe,legacyidp')).rejects.toThrow(
+      /module "legacyidp": its contribution to the slot "auth\.provider" \(module "auth"\) does not pass the slot's schema — apiVersion: missing — the provider was written for auth provider API 1, whose identities may lack `issuer`; this server requires API 2: make callback\(\) answer the issuer it verified .*declare `apiVersion: 2`/
+    );
+    const { modules } = await load('auth,probe,currentidp');
+    expect(modules.map((m) => m.name)).toEqual(['auth', 'probe', 'currentidp']);
   });
 
   it('refuses a dir module whose migrations folder lies outside its directory', async () => {

@@ -14,6 +14,7 @@ function at(schema: unknown, path: string): Node {
 }
 
 const provider = defineAuthProvider({
+  apiVersion: 2,
   id: 'idp',
   label: 'Test IdP',
   configSchema: z.strictObject({ issuer: z.url(), clientId: z.string().min(1) }),

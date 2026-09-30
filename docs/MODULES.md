@@ -1526,11 +1526,19 @@ change raises the major, and such a server refuses `'^1.x'` modules with a
 message naming both versions. The server logs the version at start
 (`platform modules ready`, `contract`).
 
-One change within `1.1.0` is not additive: since v0.3.0 a sign-in provider's
-`callback()` must return `issuer` (see
-[Auth providers](#auth-providers)). A provider module written for v0.2.x
-still loads, but its sign-ins fail with `provider_error`; add `issuer` to its
-identity before upgrading the server.
+A sign-in provider has its own compatibility boundary besides `contract`:
+the auth provider API it declares in its `auth.provider` contribution as
+`apiVersion` (`AUTH_PROVIDER_API_VERSION`, now `2`). API 2 requires
+`callback()` to return the verified `issuer`. A provider written before
+that declares no `apiVersion`, and the server refuses to start with it —
+`module "<name>": its contribution to the slot "auth.provider" (module
+"auth") does not pass the slot's schema — apiVersion: missing — …` — instead
+of failing each sign-in with `provider_error`. To migrate a provider,
+return the `issuer` it verified (OIDC: the `iss` of the validated ID token;
+SAML: the assertion's Issuer), add `apiVersion: 2` next to its `id`, and
+publish a new version. The module's `contract` range stays as it is
+(`'^1.1'` keeps loading); modules without an `auth.provider` contribution
+are not affected.
 
 ### Published modules
 
@@ -1689,11 +1697,14 @@ an app sign in with a 6-digit code e-mailed to them. Its `SKILL.md` is what
 Other modules add ways to sign in through the auth module's slot
 `auth.provider` (`defineAuthProvider` from `@drobek/modules`). A provider
 only **proves an identity**; auth keeps the allowlist, roles, users,
-sessions and audits.
+sessions and audits. A provider declares `apiVersion: 2` (the auth
+provider API it implements, see [Compatibility](#compatibility)); a
+contribution without it, or with another value, refuses the server start.
 
 ```ts
 contributes: {
   'auth.provider': defineAuthProvider({
+    apiVersion: 2,                      // AUTH_PROVIDER_API_VERSION: callback() answers the issuer
     id: 'oidc',                         // ^[a-z][a-z0-9]{1,15}$, not "email"
     label: 'Company SSO',               // "Continue with Company SSO"
     configSchema: z.strictObject({ issuer: z.url(), clientId: z.string() }), // no `enabled`

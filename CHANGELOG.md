@@ -1,5 +1,10 @@
 # Changelog — drobek (core)
 
+## Unreleased
+
+### Changed
+- **Sign-in providers declare their API; an outdated one refuses the start** (NSO-368): an `auth.provider` contribution now declares `apiVersion: 2` (`AUTH_PROVIDER_API_VERSION` from `@drobek/modules`) — the auth provider API whose `callback()` answers the verified `issuer`. A provider without it (written before the issuer was required) or with another value refuses the server start with `module "<name>": its contribution to the slot "auth.provider" (module "auth") does not pass the slot's schema — apiVersion: missing — …` and the fix, instead of loading and failing every sign-in with `provider_error`. To migrate, return the verified `issuer` and add `apiVersion: 2` (docs/MODULES.md "Compatibility"); the built-in `oidc` declares it. `MODULE_CONTRACT_VERSION` stays `1.2.0`: modules declaring `'^1.1'` without an `auth.provider` contribution load unchanged. Issuer validation is unchanged.
+
 ## v0.6.1 — 2026-09-29
 
 ### Fixed

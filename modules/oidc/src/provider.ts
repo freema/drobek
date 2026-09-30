@@ -104,6 +104,7 @@ export function createOidcProvider(deps: OidcProviderDeps = {}): AuthProvider<Oi
   });
 
   return defineAuthProvider<OidcConfig>({
+    apiVersion: 2,
     id: PROVIDER_ID,
     label: DEFAULT_LABEL,
     configSchema: oidcConfigSchema,

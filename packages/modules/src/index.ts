@@ -108,6 +108,7 @@ export {
   type UpstreamsAuthority,
 } from './contract.js';
 export {
+  AUTH_PROVIDER_API_VERSION,
   AUTH_PROVIDER_ID_RE,
   AUTH_RESERVED_CONFIG_KEYS,
   EMAIL_PROVIDER_ID,
