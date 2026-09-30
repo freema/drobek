@@ -90,6 +90,8 @@ export const CORE_ERROR_CODES: readonly string[] = [
   'dns_unavailable',
   // proxy upstreams (MCP upstream tools)
   'upstream_already_registered',
+  // the workspace Modules switch (dashboard)
+  'module_requires_not_enabled',
   // compile.errors[]
   'build_error',
   'unresolved_import',
@@ -174,6 +176,20 @@ export function moduleNotEnabled(name: string): ModuleError {
     'module_not_enabled',
     `The platform module "${name}" is not enabled for this app's workspace. Only the server operator can enable it.`,
     { details: { module: name }, hint: skillHint(name) }
+  );
+}
+
+/**
+ * A super-admin tried to enable an opt-in module for a workspace while a
+ * module it requires (directly or through another one) is off there.
+ * `missing` lists those modules in the order to enable them.
+ */
+export function moduleRequiresNotEnabled(name: string, missing: string[]): ModuleError {
+  const list = missing.map((x) => `"${x}"`);
+  return new ModuleError(
+    'module_requires_not_enabled',
+    `The module "${name}" depends on ${list.join(', ')}, which ${missing.length > 1 ? 'are' : 'is'} not enabled for this workspace.`,
+    { status: 409, details: { module: name, missing }, hint: `Enable ${list.join(', then ')} for this workspace first, then enable "${name}".` }
   );
 }
 

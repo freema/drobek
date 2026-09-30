@@ -30,7 +30,8 @@
  *
  * Anything off — unknown package, not a module, invalid name/schema/defaults,
  * a `contract` range this server does not satisfy, two modules with one name,
- * a missing sdk.entry, a module whose `requires` is not active, a clashing
+ * a missing sdk.entry, a module whose `requires` is not active (or is
+ * opt-in while the module itself is not, or forms a cycle), a clashing
  * limit or error code, a contribution to an unknown slot or one that fails
  * the slot's schema, a slot host's `compose` that throws or returns an
  * invalid config, an invalid `DROBEK_MODULE_<NAME>_DEFAULTS`, a job without
@@ -623,9 +624,15 @@ export function syncAuthorityOf(modules: AnyModule[]): AnyModule | null {
   return owners[0] ?? null;
 }
 
-/** Every module's `requires` must be active too (a clear start error names what to add). */
+/**
+ * Every module's `requires` must be active too (a clear start error names
+ * what to add). A default module may not require an opt-in one (it is on in
+ * every workspace, its dependency is not), and `requires` may not form a
+ * cycle (no module of it could be switched on first in a workspace).
+ */
 export function checkRequires(modules: AnyModule[]): void {
   const active = new Set(modules.map((m) => m.name));
+  const byName = new Map(modules.map((m) => [m.name, m]));
   for (const m of modules) {
     const missing = (m.requires ?? []).filter((r) => !active.has(r));
     if (missing.length > 0) {
@@ -633,7 +640,24 @@ export function checkRequires(modules: AnyModule[]): void {
         `module "${m.name}" requires the module${missing.length > 1 ? 's' : ''} ${missing.map((x) => `"${x}"`).join(', ')}: add ${missing.length > 1 ? 'them' : 'it'} to DROBEK_MODULES (e.g. DROBEK_MODULES=${[...active, ...missing].join(',')})`
       );
     }
+    if (m.availability !== 'opt-in') {
+      const optIn = (m.requires ?? []).filter((r) => byName.get(r)?.availability === 'opt-in');
+      if (optIn.length > 0) {
+        throw new ModuleLoadError(
+          `module "${m.name}" is on in every workspace but requires the opt-in module${optIn.length > 1 ? 's' : ''} ${optIn.map((x) => `"${x}"`).join(', ')}: declare "${m.name}" availability: 'opt-in' too, or drop the requirement`
+        );
+      }
+    }
   }
+  const done = new Set<string>();
+  const visit = (name: string, path: string[]): void => {
+    if (done.has(name)) return;
+    const at = path.indexOf(name);
+    if (at >= 0) throw new ModuleLoadError(`the modules' requires form a cycle: ${[...path.slice(at), name].join(' → ')}`);
+    for (const r of byName.get(name)?.requires ?? []) visit(r, [...path, name]);
+    done.add(name);
+  };
+  for (const m of modules) visit(m.name, []);
 }
 
 /**

@@ -86,6 +86,8 @@ beforeAll(async () => {
             use_when: 'x',
             enabled: true,
             source: 'dashboard' as const,
+            missing_requires: [],
+            required_by: [],
             dashboard: { enabled: true, enabled_by: 'root@example.com', enabled_at: '2026-09-26T10:00:00.000Z' },
           },
         ]

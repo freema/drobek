@@ -150,7 +150,8 @@ module contract ^2.0, but this server implements 1.2.0 — …`), two modules
 with one name, a missing `sdk.entry`, a reserved name (`sdk`, `v1`,
 `drobek`, `internal`), a module whose `requires` is not enabled
 (`module "forms" requires the module "email": add it to DROBEK_MODULES
-(e.g. DROBEK_MODULES=…,email)`), two modules declaring `mail` (or
+(e.g. DROBEK_MODULES=…,email)`), a default module that requires an opt-in
+one, `requires` that form a cycle, two modules declaring `mail` (or
 `endUsers`, or `records`), one limit or error code declared by two modules,
 a slot contribution that breaks the [slot rules](#slots), an invalid
 `DROBEK_MODULE_<NAME>_DEFAULTS`, and for a module from `DROBEK_MODULES_DIR`:
@@ -198,6 +199,29 @@ active for a workspace when, in this order:
    the state on the same page read-only (who switched it on: workspace
    admins only), and the switch answers them 403. There is no self-service
    switch and no MCP tool.
+
+**`requires` applies per workspace.** An opt-in module is active only while
+every module it `requires` is active for the workspace too, transitively
+(a default required module always is) — whichever of the three decided its
+own state. A plan or env value that enables a module whose required opt-in
+module is off there leaves it off; so does disabling a module another one
+depends on:
+
+- **Enable** refuses while a required module is off for the workspace:
+  `409 module_requires_not_enabled` (`details.missing` lists the modules to
+  enable, in order; the dashboard shows the message with "Enable … first",
+  and the Enable button stays disabled until then). Nothing changes.
+- **Disable** always applies. The modules that depend on it keep their own
+  switch but are off at once; the dashboard names them before (the card
+  says "… depends on it: disabling it turns them off for this workspace
+  too") and after the click, and they come back on when it is enabled
+  again.
+
+The workspace Modules page, `get_app.modules.<name>.enabled`,
+`skill_info`'s `enabled_for_workspace` and every runtime check read the
+same closure, so the dashboard and MCP always agree. A default module may
+not require an opt-in one, and `requires` may not form a cycle: the server
+refuses to start on either.
 
 `ModuleRuntime.isEnabled(workspaceId, name)` answers it (a default module:
 always `true`); `enabledModules(workspaceId)` returns the whole set once per
@@ -1197,7 +1221,9 @@ is shown in human units read from its env name or meaning (`…_BYTES` /
 underneath (`10,485,760 bytes`); a count is shown as is.
 
 An opt-in module's card also shows its state for this workspace — enabled
-or not, and what decides it (the plan, the env, or a super-admin's switch) —
+or not, and what decides it (the plan, the env, or a super-admin's switch),
+the required modules still off for it and the enabled modules that depend
+on it —
 and, for a super-admin only, the Enable / Disable switch
 ([Per-workspace enabling](#per-workspace-enabling-opt-in-modules)). The
 switch is mounted through `<WorkspaceModules availabilityControls={…}>`

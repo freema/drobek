@@ -9,6 +9,7 @@
  * An opt-in module's state for the workspace — and, for a super-admin, its
  * Enable / Disable switch — mounts through
  * `<WorkspaceModules availabilityControls={…}>` (../workspace-modules-toggle.tsx).
+ * A disable that turned dependent modules off with it says so above the list.
  */
 import { useActionData, useLoaderData, useNavigation, useSearchParams } from 'react-router';
 import { WorkspacePage } from '@drobek/tenancy/layout';
@@ -33,6 +34,7 @@ export default function WorkspaceModulesRoute() {
   const busy = useNavigation().state !== 'idle';
   const [params] = useSearchParams();
   const error = actionData && 'error' in actionData ? actionData.error : null;
+  const turnedOff = actionData && 'dependentsOff' in actionData ? { module: actionData.module, dependents: actionData.dependentsOff } : null;
   const optIn = new Map(d.optIn.modules.map((m) => [m.name, m]));
   return (
     <WorkspacePage workspace={d.nav} section="modules">
@@ -49,6 +51,13 @@ export default function WorkspaceModulesRoute() {
       {error ? (
         <div style={ui.error} role="alert" data-testid="workspace-module-error">
           {error}
+        </div>
+      ) : null}
+      {turnedOff && turnedOff.dependents.length > 0 ? (
+        <div style={ui.notice} role="status" data-testid="workspace-module-dependents-off">
+          Disabled "{turnedOff.module}". {turnedOff.dependents.map((n) => `"${n}"`).join(', ')}{' '}
+          {turnedOff.dependents.length > 1 ? 'depend' : 'depends'} on it and {turnedOff.dependents.length > 1 ? 'are' : 'is'} now off for
+          this workspace too; enable "{turnedOff.module}" again to turn {turnedOff.dependents.length > 1 ? 'them' : 'it'} back on.
         </div>
       ) : null}
       <WorkspaceModules
