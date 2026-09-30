@@ -25,7 +25,7 @@ export const TEMPLATE_DIR = fileURLToPath(new URL('../template', import.meta.url
 const MODULE_NAME_RE = /^[a-z][a-z0-9]{1,30}$/;
 const RESERVED = ['sdk', 'v1', 'drobek', 'internal'];
 /** The modules drobek ships: a new module needs its own name (replacing one is an operator decision, docs/MODULES.md). */
-const BUILT_IN = ['auth', 'email', 'forms', 'data', 'proxy', 'files', 'sync'];
+const BUILT_IN = ['auth', 'email', 'forms', 'data', 'proxy', 'files', 'sync', 'oidc'];
 const PACKAGE_RE = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;
 
 export interface ScaffoldTarget {

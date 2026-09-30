@@ -1,0 +1,36 @@
+{
+  "name": "drobek-module-oidc",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Built-in drobek platform module: company sign-in with any OpenID Connect provider (Google, Microsoft Entra ID, Okta, Keycloak, Auth0) — an auth.provider with discovery, PKCE and a verified ID token; auth keeps the allowlist, roles and sessions.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "SKILL.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest",
+    "test:run": "vitest run"
+  },
+  "dependencies": {
+    "@drobek/modules": "workspace:*",
+    "@drobek/proxy": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "drobek-module-auth": "workspace:*",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.7"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

@@ -7,21 +7,21 @@ import { callTool, mcpClient, type McpClient } from './helpers/mcp';
 /**
  * NSO-348 (EXT-06): the auth module's sign-in provider slot on the dev stack.
  *
- * The dev stack runs no sign-in provider module (DROBEK_MODULES =
- * hello,auth,email,forms,data,proxy,files,sync), so this spec covers what exists
- * without one:
+ * The dev stack runs the oidc provider module (DROBEK_MODULES =
+ * hello,auth,email,forms,data,proxy,files,sync,oidc), off for every app until
+ * its auth config turns it on, so this spec covers an app without a provider:
  *
  *  - GET /__drobek/v1/auth/providers lists only the e-mail code;
- *  - POST begin for a provider the server does not run → 404
+ *  - POST begin for a provider that is off for the app → 404
  *    provider_not_enabled (and still needs the SDK header);
  *  - the ONE IdP callback on the dashboard host answers a small no-store HTML
  *    page under a strict CSP for a bad state, GET and cross-site POST (the
  *    Origin check exempts it), and never sets a cookie;
  *  - GET complete with a bogus handoff code → 400 page, no session.
  *
- * The full begin → IdP → callback → handoff → complete flow needs a provider
- * module in the stack (the OIDC provider of EXT-07 against a mock IdP): it is
- * the `test.fixme` below, for EXT-09 to finish. The unit suite
+ * The full begin → IdP → callback → handoff → complete flow against the mock
+ * IdP (tests-e2e/mock-oidc.mjs) is the `test.fixme` below, for EXT-09 to
+ * finish. The unit suite
  * (modules/auth/src/providers.test.ts) drives that flow with a fixture
  * provider and no network.
  */

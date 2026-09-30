@@ -180,6 +180,10 @@ services:
       # mock on proxy-echo). Everything else must be public https; ignored when
       # NODE_ENV=production. Never set this in production.
       OAUTH_CIMD_DEV_ORIGINS: ${OAUTH_CIMD_DEV_ORIGINS:-http://proxy-echo:8099}
+      # NSO-351: DEV/TEST ONLY — the oidc module may reach the mock IdP
+      # (tests-e2e/mock-oidc.mjs / `task mock:oidc`, host port 3050) over http
+      # from a private address. Ignored when NODE_ENV=production.
+      AUTH_OIDC_DEV_ORIGINS: ${AUTH_OIDC_DEV_ORIGINS:-http://host.docker.internal:3050}
       # M1-01 (NSO-287): platform modules. The dev stack runs the example
       # module `hello` (examples/drobek-module-hello — a dependency of
       # apps/server, loaded as the package `drobek-module-hello`). Its wave
@@ -194,7 +198,7 @@ services:
       # M1-06 (NSO-297): the built-in `proxy` (per-app upstream assignment;
       # PROXY_CALLS_PER_MIN keeps its default 60 — the e2e trips the 61st call).
       # M1-05 (NSO-296): the built-in `files` (uploads on the files_data volume).
-      DROBEK_MODULES: ${DROBEK_MODULES:-hello,auth,email,forms,data,proxy,files,sync}
+      DROBEK_MODULES: ${DROBEK_MODULES:-hello,auth,email,forms,data,proxy,files,sync,oidc}
       # NSO-345: the operator's installed modules (the ./.modules bind below).
       DROBEK_MODULES_DIR: ${DROBEK_MODULES_DIR:-/data/modules}
       DROBEK_MODULES_UNLOCKED: ${DROBEK_MODULES_UNLOCKED:-}
@@ -281,6 +285,7 @@ services:
       - /repo/modules/proxy/node_modules
       - /repo/modules/files/node_modules
       - /repo/modules/sync/node_modules
+      - /repo/modules/oidc/node_modules
       # M1-05: the files module's uploads (FILES_DIR).
       - files_data:/data/files
       # NSO-358: app assets (ASSETS_DIR).

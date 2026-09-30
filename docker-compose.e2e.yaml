@@ -107,7 +107,8 @@ services:
       # M1-05: the built-in files module (FILES_QUOTA_PER_APP 2 MiB below).
       # NSO-392: the built-in sync module (a source pauses after 2 failed runs).
       SYNC_PAUSE_AFTER_FAILURES: '2'
-      DROBEK_MODULES: hello,auth,email,forms,data,proxy,files,sync
+      # NSO-351: the built-in oidc sign-in provider (off per app until configured).
+      DROBEK_MODULES: hello,auth,email,forms,data,proxy,files,sync,oidc
       FILES_MAX_BYTES: '10485760'
       FILES_QUOTA_PER_APP: '2097152'
       HELLO_WAVES_PER_MINUTE: '5'

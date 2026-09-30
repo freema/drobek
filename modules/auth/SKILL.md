@@ -5,7 +5,7 @@
 Only some people may use the app (invited e-mails, a company domain), some
 of them are admins, or records must belong to the signed-in person. Sign-in
 is a 6-digit code e-mailed by drobek, or a sign-in provider the server runs
-(company SSO; `drobek.auth.providers()` lists them); no passwords. Never
+(company SSO with OpenID Connect: `skill_info('oidc')`); no passwords. Never
 build your own login; Firebase Auth, Auth0, Clerk, NextAuth cannot run here.
 
 ## 2. Minimal working code

@@ -80,7 +80,8 @@ export function skillFormatIssues(src: SkillSource, knownCodes: ReadonlySet<stri
           return null;
         }
       })
-      .filter((j) => j && j.module === src.name && j.config !== undefined);
+      // A module that extends another (an auth.provider is configured in the auth config) may show that module's payload.
+      .filter((j) => j && (j.module === src.name || (src.module?.requires ?? []).includes(j.module as string)) && j.config !== undefined);
     if (payloads.length === 0) issue(`needs a configure_module payload: a \`json\` block with "app_id", "module": "${src.name}" and "config"`);
   } else if (!new RegExp(`^---\\nname: ${src.name}\\ndescription: \\S`).test(src.fileText)) {
     issue(`a general skill starts with frontmatter: \`name: ${src.name}\` and the "use when" sentence as \`description\``, 1);

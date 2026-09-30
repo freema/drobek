@@ -38,7 +38,7 @@ import { AUTH_CONFIG_DEFAULTS, authConfigSchema, authConfirmRequired, composeAut
 import { currentUser } from './current.js';
 import { CALLBACK_LIMIT, providerCallback } from './flow.js';
 import { ownerMethods } from './owner.js';
-import { PROVIDER_SLOT, SIGNED_IN_SLOT } from './providers.js';
+import { PROVIDER_SLOT, SIGNED_IN_SLOT, providersInfo } from './providers.js';
 import { registerRoutes } from './routes.js';
 
 export {
@@ -212,6 +212,8 @@ const auth = defineModule<AuthConfig>({
     },
     { env: 'END_USERS_MAX_PER_APP', default: 1000, meaning: 'end users one app may have' },
   ],
+  // get_app's modules.auth.info: which sign-in providers are on and which operator fallbacks exist (names only).
+  appInfo: (view) => ({ providers: providersInfo(view.config) }),
   routes: registerRoutes,
   endUsers: {
     current: async ({ app, user, config, db, contributions }) => (await currentUser(db, app, config, user, contributions))?.user ?? null,

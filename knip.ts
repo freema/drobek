@@ -152,6 +152,10 @@ const config: KnipConfig = {
       // No browser SDK: the module only runs a scheduled job on the server.
       entry: [],
     },
+    'modules/oidc': {
+      // No browser SDK: the module only contributes auth's sign-in provider.
+      entry: [],
+    },
 
     'examples/*': {
       // Same contract as modules/*: the SDK entry is loaded by path. The

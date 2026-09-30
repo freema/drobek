@@ -4,11 +4,11 @@ import { skipUnlessLocal } from './helpers/auth';
 /**
  * NSO-345: the module list of /healthz and /api/version against the stack's
  * DROBEK_MODULES (dev + e2e image compose: hello,auth,email,forms,data,proxy,
- * files — all server dependencies, so `source: builtin`; the modules
+ * files,sync,oidc — all server dependencies, so `source: builtin`; the modules
  * directory `/data/modules` is mounted but empty). A module installed into
  * DROBEK_MODULES_DIR shows `source: dir` (the black-box pass installs one).
  */
-const STACK_MODULES = ['hello', 'auth', 'email', 'forms', 'data', 'proxy', 'files', 'sync'];
+const STACK_MODULES = ['hello', 'auth', 'email', 'forms', 'data', 'proxy', 'files', 'sync', 'oidc'];
 
 test('healthz and api/version list the active modules in DROBEK_MODULES order, without paths @local', async ({ request }) => {
   skipUnlessLocal();

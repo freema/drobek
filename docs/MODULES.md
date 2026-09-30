@@ -41,9 +41,11 @@ sign-in provider), [`data`](#the-built-in-data-module) (collections of
 records with per-operation rules), [`forms`](#the-built-in-forms-module)
 (submissions stored and e-mailed to the app's owners),
 [`files`](#the-built-in-files-module) (end-user uploads),
-[`email`](#the-built-in-email-module) (e-mails to the app's owners) and
+[`email`](#the-built-in-email-module) (e-mails to the app's owners),
 [`proxy`](#the-built-in-proxy-module) (calls to an external API with its key
-added server-side). A server may run fewer or more:
+added server-side), [`sync`](#the-built-in-sync-module) (scheduled imports
+into a data collection) and [`oidc`](#the-built-in-oidc-module) (company
+sign-in with an OpenID Connect provider, through `auth`). A server may run fewer or more:
 `skill_info()` over MCP and the workspace's **Modules** tab in the dashboard
 list the ones this server runs. `skill_info('<name>')` gives the agent the
 module's code examples, SDK types, config schema, limits and error codes.
@@ -231,7 +233,7 @@ module is "used" through its configuration, as for every module — there is
 no per-app switch.
 
 The dev compose enables the example module and every built-in module
-(`DROBEK_MODULES=hello,auth,email,forms,data,proxy,files,sync`, `HELLO_WAVES_PER_MINUTE=5`,
+(`DROBEK_MODULES=hello,auth,email,forms,data,proxy,files,sync,oidc`, `HELLO_WAVES_PER_MINUTE=5`,
 relaxed `AUTH_*` limits because every local request shares one client IP,
 `DATA_MAX_DOCS_PER_APP=5` so the quota e2e trips quickly); so does the e2e
 image compose.
@@ -448,7 +450,9 @@ section per active module. The built-in modules declare theirs: `auth`
 (`submitted_too_fast`, `invalid_form_token`), `data` (`validation_failed`,
 `invalid_schema`, `pending_confirmation`), `files` (`unsupported_type`), `proxy`
 (`path_not_allowed`, `ssrf_blocked`, `upstream_error`, `proxy_busy`,
-`config_error`).
+`config_error`); `oidc` (`oidc_discovery_failed`, `oidc_token_invalid`)
+declares codes no route answers — its failures reach the app as auth's
+`provider_error` — so agents can read the causes the server logs.
 
 ### Routes: `ModuleRouter`
 
@@ -1251,8 +1255,8 @@ loading/error states) and `port-artifact` (moving a Claude artifact to
 drobek: text files unchanged with `write_files`, every binary through
 `create_asset_upload` at the same path, what the app CSP changes, no
 `window.claude.*`). With every built-in module enabled `skill_info()` lists
-10 skills: `auth, email, forms, data, proxy, files, debug, port-artifact,
-start, ui` (plus `hello` in the dev stack).
+12 skills: `auth, email, forms, data, proxy, files, sync, oidc, debug,
+port-artifact, start, ui` (plus `hello` in the dev stack).
 
 ### The skill format (NSO-308)
 
@@ -1269,7 +1273,8 @@ lines (frontmatter included) and exactly these `##` sections under one
 4. `## 4. Rules and limits` — what the server enforces (confirmations,
    limits by env name and default);
 5. `## 5. Errors → fix` — a table `| error | cause | fix |`; a backticked
-   code in the first column must exist in the error catalogue.
+   code in the first column must exist in the error catalogue, the module's
+   `errors` or those of a module it `requires`.
 
 `checkSkill(module)` from `@drobek/modules/testing` enforces the format
 (and a one-sentence "use when" of 30–220 characters) and that the code does
@@ -1288,7 +1293,8 @@ declarations; `json` blocks must parse, a `configure_module` payload
 blocks; `html` is compiled and its `<script src>` must satisfy the apps CSP;
 `css` is compiled; `sh`/`text` are prose; a block without a language fails.
 A module skill needs a `ts api` block per import it offers and one
-`configure_module` payload. A failure names the SKILL.md line, the skill and
+`configure_module` payload — of the module itself or of a module it
+`requires` (a sign-in provider shows the auth config). A failure names the SKILL.md line, the skill and
 the block. The e2e module specs run the FIRST ```` ```tsx ```` block of a
 module skill as a live app — keep its visible texts stable.
 
@@ -1397,7 +1403,9 @@ expect((await checkSkill(hello)).map(formatSkillIssue)).toEqual([]);   // the SK
 in this repo, a copy inside the published package). `checkSkill(module,
 { modules?, file?, root? })` returns the issues of the module's skill:
 `modules` adds other modules whose SDK the examples use (e.g. the `auth`
-module for `drobek.auth`), `root` is the directory whose `node_modules`
+module for `drobek.auth`; the set is composed like a server's, so a sign-in
+provider's `configure_module('auth', { providers: { <id>: … } })` payload
+passes), `root` is the directory whose `node_modules`
 resolve the examples' bare imports (default: the working directory; an
 unresolved one is typed `any`). It needs `typescript` installed (an
 optional peer dependency).
@@ -1712,7 +1720,14 @@ method off never waits.
 (`providers.emailCode.enabled`). A stored config naming a provider the
 server no longer runs is salvaged: that entry is dropped (or a broken one
 turned off), never the e-mail code switched back on — with nothing on,
-nobody can sign in until the owner fixes it.
+nobody can sign in until the owner fixes it. A provider whose configSchema
+declares `label` lets each app name its button: `<LoginGate>`,
+`drobek.auth.providers()` and the sign-in pages show `providers.<id>.label`
+instead of the contribution's `label` (the built-in `oidc`: "Continue with
+Acme"). `get_app` → `modules.auth.info.providers` lists every provider of
+the server as `{ id, enabled, serverEnv }` — `serverEnv` names the
+operator's `AUTH_<ID>_*` variables that are set, never a value; whether the
+app has its own secret is `modules.auth.secrets[].hasSecret`.
 
 **Secrets.** A provider's secrets are per-app secrets of the auth module
 (set in the dashboard, never through MCP); names start with `<ID>_`. A
@@ -2195,6 +2210,74 @@ code on the server and without the API key leaving the dashboard.
   `get_app` shows each source's state under `modules.sync.info.sources`.
 - `duplicate_app` never copies the sources (they would start calling an
   external API from the copy); deleting the app removes its sources and runs.
+
+## The built-in `oidc` module
+
+[`modules/oidc`](../modules/oidc) (`drobek-module-oidc`, contract `^1.1`,
+requires `auth`): company sign-in with any OpenID Connect provider —
+Google, Microsoft Entra ID, Okta, Keycloak, Auth0 — as the `auth.provider`
+`oidc`, without per-IdP code. `skill_info('oidc')`. The module has no
+config, routes, SDK or tables of its own; auth keeps state, nonce, PKCE,
+the allowlist, users and sessions ([Auth providers](#auth-providers)).
+
+- **Config** — in the AUTH config, `providers.oidc: { enabled, issuer?,
+  clientId?, scopes (["openid","email","profile"], must include openid),
+  trustEmail (false), label ("Company account"), claims?: { email? },
+  prompt? (select_account | login | consent), relinkByEmail? }`.
+  `identityFields: ['issuer', 'clientId', 'trustEmail', 'claims']` —
+  enabling it and changing any of them wait for the owner (`trustEmail` and
+  `claims` decide which address a person may claim). The issuer is https (http only outside production),
+  without query or fragment.
+- **Secrets and the env fallback** — `OIDC_CLIENT_SECRET` (the auth module's
+  per-app secret, env fallback `AUTH_OIDC_CLIENT_SECRET`). An app without
+  an `issuer` uses the operator's `AUTH_OIDC_ISSUER` with
+  `AUTH_OIDC_CLIENT_ID` (or its own `clientId`); the server's client never
+  pairs with an app's own issuer. The redirect URI to register at the IdP is
+  `<PUBLIC_APP_URL>/__drobek/auth/callback/oidc`.
+- **begin** — discovery at `<issuer>/.well-known/openid-configuration`: its
+  `issuer` must equal the configured one exactly (a Microsoft `/common`
+  issuer never does: use the tenant's), the endpoints must be https, and a
+  document that lists `code_challenge_methods_supported` without `S256` is
+  refused (one that lists none — Entra ID — gets S256 all the same). The
+  answer is the `authorization_endpoint` with `response_type=code`,
+  `client_id`, `redirect_uri`, `scope`, `state`, `nonce`,
+  `code_challenge`, `code_challenge_method=S256` and `prompt`. Without a
+  client secret it fails at once unless the IdP lists
+  `token_endpoint_auth_methods_supported: none`.
+- **callback** — an IdP `error` or an `iss` parameter naming another issuer
+  (RFC 9207) fails; the code is exchanged at `token_endpoint` with the PKCE
+  verifier and `client_secret_basic` (else `client_secret_post`, as the
+  document lists; `client_secret_basic` when it lists nothing). The ID
+  token: `alg` RS256, ES256 or PS256 and advertised in
+  `id_token_signing_alg_values_supported` (RS256 when absent; `none` and
+  HS* never), no `crit`, a signature by a key of `jwks_uri` (`kid`, `kty`,
+  `use`, `alg` matching; RSA ≥ 2048 bits, EC P-256; `node:crypto`, no JOSE
+  library), `iss` = the issuer, `aud` names the client (with several
+  audiences, or any `azp`, `azp` = the client), `exp` in the future, `iat`
+  within 5 minutes, `nonce` = the sign-in's. The address is the `email`
+  claim (or `claims.email`) of the ID token, else of `userinfo` (Bearer
+  access token; its `sub` must match); `email_verified` (`true` or
+  `"true"`) from the same source, or `trustEmail`. The identity is `{
+  issuer: iss, subject: sub, email (lower case), emailVerified, name? }`.
+- **Network** — every IdP call goes through the `@drobek/proxy` SSRF guard
+  (resolved once and pinned, private and reserved addresses refused, no
+  redirects), 5 s, at most 64 KiB, ports 443 / `PROXY_ALLOWED_PORTS`;
+  `PROXY_ALLOWED_HOSTS` never applies. Only the host of the operator's
+  `AUTH_OIDC_ISSUER` may be private and on any port, and — outside
+  production — the exact origins in `AUTH_OIDC_DEV_ORIGINS` also over http.
+- **Caches** — in process memory (a provider gets no Redis): the discovery
+  document per issuer `OIDC_DISCOVERY_CACHE_SEC` (3600, read from the
+  server's env: the provider gets no workspace limits), the keys per issuer
+  1 hour; a token with an unknown `kid` refetches them at most once a
+  minute.
+- **Failures** — an `OidcError` named `oidc_discovery_failed` or
+  `oidc_token_invalid`: auth logs the name and answers `provider_error`;
+  the module logs `oidc: sign-in begin|callback failed { app_id, error,
+  reason }` with addresses masked. No log line or error carries the client
+  secret, a code or a token.
+- **Testing** — `tests-e2e/mock-oidc.mjs` (`task mock:oidc`, port 3050) is a
+  dependency-free IdP: discovery, `/jwks`, an RS256 ID token from a key made
+  at start, the nonce and the PKCE verifier checked.
 
 ## The example: `drobek-module-hello`
 
