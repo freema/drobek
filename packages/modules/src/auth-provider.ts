@@ -9,12 +9,18 @@
  *   `auth.signedIn` — an observer told about every successful sign-in (e.g.
  *     a CRM sync); its failure is logged and never blocks the sign-in.
  *
+ * A provider declares the provider API it implements in `apiVersion`
+ * (`AUTH_PROVIDER_API_VERSION`), apart from the module's `contract` range:
+ * API 2 answers the verified `issuer` in every identity. A contribution
+ * without it (API 1, written before the issuer was required) or with another
+ * value refuses the server start, never a user's sign-in.
+ *
  * A module contributes one of each at most:
  *
  *   export default defineModule({
  *     name: 'oidc', …,
  *     requires: ['auth'],
- *     contributes: { 'auth.provider': defineAuthProvider({ id: 'oidc', label: 'Company SSO', … }) },
+ *     contributes: { 'auth.provider': defineAuthProvider({ apiVersion: 2, id: 'oidc', label: 'Company SSO', … }) },
  *   });
  *
  * The flow (docs/MODULES.md "Auth providers"): the app calls
@@ -32,6 +38,9 @@ import type { Logger } from '@drobek/core';
 import type { DB } from '@drobek/db';
 import { z, type ZodType } from 'zod';
 import type { EndUser, HookApp, ModuleSecretDoc } from './contract.js';
+
+/** The auth provider API this server implements: `callback()` answers the verified `issuer`. */
+export const AUTH_PROVIDER_API_VERSION = 2;
 
 /** Provider ids: lowercase letters and digits, 2–16 characters (a URL segment, a config key, a secret prefix). */
 export const AUTH_PROVIDER_ID_RE = /^[a-z][a-z0-9]{1,15}$/;
@@ -141,6 +150,12 @@ export interface AuthProviderCallbackInput<Config = unknown> extends AuthProvide
  * call is cut off after 15 s.
  */
 export interface AuthProvider<Config = any> {
+  /**
+   * The provider API this provider implements — `AUTH_PROVIDER_API_VERSION`.
+   * Declared by the provider itself (`defineAuthProvider` never adds it): a
+   * provider without it was written for API 1 and refuses the server start.
+   */
+  apiVersion: typeof AUTH_PROVIDER_API_VERSION;
   /** `AUTH_PROVIDER_ID_RE`, not `email`; unique within the slot. The `:provider` of the callback URL and the key of `auth.providers`. */
   id: string;
   /** What `<LoginGate>` shows: "Continue with <label>" (1–40 characters). */
@@ -215,6 +230,13 @@ function isObjectSchema(v: unknown): v is z.ZodObject {
   );
 }
 
+function apiVersionMessage(v: unknown): string {
+  const fix = `make callback() answer the issuer it verified (OIDC: the ID token's \`iss\`), then declare \`apiVersion: ${AUTH_PROVIDER_API_VERSION}\` in the provider (docs/MODULES.md "Compatibility")`;
+  return v === undefined
+    ? `missing — the provider was written for auth provider API 1, whose identities may lack \`issuer\`; this server requires API ${AUTH_PROVIDER_API_VERSION}: ${fix}`
+    : `${JSON.stringify(v) ?? typeof v} is not an auth provider API this server implements (${AUTH_PROVIDER_API_VERSION}): ${fix}`;
+}
+
 const SECRET_NAME = /^[A-Z][A-Z0-9_]{1,63}$/;
 // eslint-disable-next-line no-control-regex
 const CONTROL = /[\u0000-\u001f\u007f\u2028\u2029]/;
@@ -222,6 +244,9 @@ const CONTROL = /[\u0000-\u001f\u007f\u2028\u2029]/;
 /** The `auth.provider` slot's schema (the contribution as `auth` gets it; unknown keys kept). */
 export const authProviderSchema = z
   .looseObject({
+    apiVersion: z.custom<typeof AUTH_PROVIDER_API_VERSION>((v) => v === AUTH_PROVIDER_API_VERSION, {
+      error: (iss) => apiVersionMessage(iss.input),
+    }),
     id: z
       .string()
       .regex(AUTH_PROVIDER_ID_RE, 'id must be 2–16 lowercase letters and digits, starting with a letter')

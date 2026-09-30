@@ -12,6 +12,9 @@ import { formatModulesLock, hashModuleTree, readModulesLock, type ModulesLock } 
 /** The guestbook fixture package (plain ESM, no build step). */
 export const GUESTBOOK_FIXTURE = fileURLToPath(new URL('../../test-fixtures/drobek-module-guestbook', import.meta.url));
 
+/** A sign-in provider written for auth provider API 1 (no `apiVersion`, no `issuer`) — plain ESM. */
+export const LEGACY_PROVIDER_FIXTURE = fileURLToPath(new URL('../../test-fixtures/drobek-module-legacyidp', import.meta.url));
+
 export function tempModulesDir(): string {
   return mkdtempSync(join(tmpdir(), 'drobek-modules-'));
 }

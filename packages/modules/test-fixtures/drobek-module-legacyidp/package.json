@@ -1,0 +1,21 @@
+{
+  "name": "drobek-module-legacyidp",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Test fixture: an external sign-in provider written for auth provider API 1 (no apiVersion, an identity without issuer). The server must refuse it at start. Plain ESM, no build step.",
+  "type": "module",
+  "exports": {
+    ".": "./index.js"
+  },
+  "peerDependencies": {
+    "@drobek/modules": ">=1.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@drobek/modules": {
+      "optional": true
+    }
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

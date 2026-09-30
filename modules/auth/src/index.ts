@@ -177,7 +177,7 @@ const auth = defineModule<AuthConfig>({
       schema: authProviderSchema,
       unique: 'id',
       description:
-        'A way for end users to sign in besides the e-mail code (OIDC, SAML, …): begin() → the IdP URL, callback() → the verified identity { subject, email, emailVerified, name? }. auth keeps the allowlist, roles, users and the session.',
+        'A way for end users to sign in besides the e-mail code (OIDC, SAML, …): declares apiVersion 2, begin() → the IdP URL, callback() → the verified identity { issuer, subject, email, emailVerified, name? }. auth keeps the allowlist, roles, users and the session.',
     },
     [SIGNED_IN_SLOT]: {
       schema: authSignedInObserverSchema,

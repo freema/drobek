@@ -55,6 +55,7 @@ const calls: string[] = [];
 const events: AuthSignInEvent[] = [];
 
 const provider = defineAuthProvider({
+  apiVersion: 2,
   id: 'ssotest',
   label: 'Firm SSO',
   configSchema: z.strictObject({ issuer: z.url() }),

@@ -62,6 +62,7 @@ let lastState = '';
 const seenSecrets: (string | null)[] = [];
 
 const testProvider = defineAuthProvider({
+  apiVersion: 2,
   id: 'authtest',
   label: 'Test IdP',
   configSchema: z.strictObject({ issuer: z.url(), clientId: z.string().min(1), prompt: z.string().optional() }),
@@ -89,6 +90,7 @@ const testProvider = defineAuthProvider({
 });
 
 const otherProvider = defineAuthProvider({
+  apiVersion: 2,
   id: 'authtwo',
   label: 'Other IdP',
   configSchema: z.strictObject({}),
@@ -252,6 +254,21 @@ describe('auth providers — slots, config, confirmations', () => {
     expect(composed.configSchema.safeParse(ON).success).toBe(true);
     // a provider this server does not run is an unknown key
     expect(composed.configSchema.safeParse({ ...ON, providers: { emailCode: { enabled: true }, saml: { enabled: true } } }).success).toBe(false);
+  });
+
+  it('refuses the start with a provider written for auth provider API 1 (no apiVersion, no issuer)', () => {
+    const { apiVersion: _, ...v1 } = otherProvider;
+    const legacy = defineModule<Record<string, never>>({
+      ...fixtureBase,
+      name: 'legacyidp',
+      contributes: { 'auth.provider': { ...v1, id: 'legacyidp', callback: async () => ({ subject: 's', email: 'a@example.com', emailVerified: true }) } },
+    });
+    expect(() => checkModuleSet([auth, fixture, legacy], {})).toThrow(
+      /module "legacyidp": its contribution to the slot "auth\.provider" \(module "auth"\) does not pass the slot's schema — apiVersion: missing — .*declare `apiVersion: 2`/
+    );
+    expect(() => checkModuleSet([auth, { ...legacy, contributes: { 'auth.provider': { ...otherProvider, id: 'legacyidp', apiVersion: 3 } } }], {})).toThrow(
+      /apiVersion: 3 is not an auth provider API this server implements \(2\)/
+    );
   });
 
   it('a disabled provider may be half-configured; enabling it validates its whole schema', () => {
