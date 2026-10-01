@@ -1,6 +1,6 @@
 # Changelog — drobek (core)
 
-## Unreleased
+## v0.7.1 — 2026-10-01
 
 ### Fixed
 - **Operator-only modules stay hidden as a slot's contributors** (NSO-412): an operator-only module that contributes to a slot of an app-facing module — an e-mail transport under `email`'s `email.transport` — was still named among that slot's contributors, so `skill_info('email')`, the app's `email` module page and the workspace Modules page showed it to agents, app owners and every member. It is left out there now; only a super-admin's workspace Modules page names it, next to its operator-only card.
