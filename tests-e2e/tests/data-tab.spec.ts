@@ -76,12 +76,6 @@ test('data tab: collections → table → filter/sort round-trip → CSV → rec
 }) => {
   skipUnlessLocal();
 
-  const problems: string[] = [];
-  page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
-  page.on('console', (m) => {
-    if (m.type() === 'error') problems.push(`console.error: ${m.text()}`);
-  });
-
   const mcp = await mcpClient(page, request, {
     tag: 'datatab-admin',
     scope: DATA_SCOPE,
@@ -95,7 +89,15 @@ test('data tab: collections → table → filter/sort round-trip → CSV → rec
   const { ws, app } = seeded;
 
   // ── COLLECTIONS LIST ────────────────────────────────────────────────────────
+  // The console is watched from here on: the sign-in above navigates while
+  // React Router's lazy route discovery (/__manifest) runs, which in dev logs
+  // "Failed to fetch manifest patches" — noise from the test, not the data tab.
   await page.waitForLoadState('networkidle');
+  const problems: string[] = [];
+  page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
+  page.on('console', (m) => {
+    if (m.type() === 'error') problems.push(`console.error: ${m.text()}`);
+  });
   await page.goto(`/workspaces/${ws}/apps/${app}/data`);
   await expect(page.locator('[data-testid="collection-row"]')).toHaveCount(2);
 
