@@ -137,6 +137,10 @@ test('tampered state is rejected: no session cookie, bounced to /login?error=goo
   const start = await request.get('/auth/google', { maxRedirects: 0 });
   expect(start.status()).toBe(302);
   expect(start.headers()['location']).toContain('/authorize');
+  const authorize = new URL(start.headers()['location']);
+  expect(authorize.searchParams.get('code_challenge_method')).toBe('S256');
+  expect(authorize.searchParams.get('code_challenge')).toMatch(/^[A-Za-z0-9_-]{43}$/);
+  expect(authorize.searchParams.get('nonce')).toMatch(/^[A-Za-z0-9_-]{43}$/);
 
   // …then call back with a DIFFERENT (well-formed) state.
   const cb = await request.get(

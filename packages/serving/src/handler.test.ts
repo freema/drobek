@@ -227,7 +227,7 @@ describe('caching', () => {
     const first = await handleAppRequest(req(preview('shop'), '/main.js'), deps);
     expect(first.headers.ETag).toBe(`"${sha(MAIN_JS)}"`);
     const second = await handleAppRequest(
-      req(preview('shop'), '/main.js', { headers: { 'If-None-Match': first.headers.ETag } }),
+      req(preview('shop'), '/main.js', { headers: { 'If-None-Match': String(first.headers.ETag) } }),
       deps
     );
     expect(second.status).toBe(304);
@@ -322,7 +322,7 @@ describe('source maps on the production hosts', () => {
         'Content-Security-Policy': APP_CSP,
         'X-Drobek-App': 'mapped',
       });
-      const again = await handleAppRequest(req(t, '/main.js.map', { headers: { 'If-None-Match': map.headers.ETag } }), deps);
+      const again = await handleAppRequest(req(t, '/main.js.map', { headers: { 'If-None-Match': String(map.headers.ETag) } }), deps);
       expect(again.status).toBe(304);
       expect(again.body).toBeNull();
       const head = await handleAppRequest(req(t, '/main.js.map', { method: 'HEAD' }), deps);
@@ -335,7 +335,7 @@ describe('source maps on the production hosts', () => {
   it('a browser holding the old inline-map bundle gets the new one; the new ETag revalidates to 304', async () => {
     const stale = await handleAppRequest(req(prod('mapped'), '/main.js', { headers: { 'If-None-Match': `"${sha(BUNDLE)}"` } }), deps);
     expect(stale.status).toBe(200);
-    const fresh = await handleAppRequest(req(prod('mapped'), '/main.js', { headers: { 'If-None-Match': stale.headers.ETag } }), deps);
+    const fresh = await handleAppRequest(req(prod('mapped'), '/main.js', { headers: { 'If-None-Match': String(stale.headers.ETag) } }), deps);
     expect(fresh.status).toBe(304);
     expect(fresh.body).toBeNull();
     expect((await handleAppRequest(req(prod('mapped'), '/main.js', { query: 'v=0123abcd' }), deps)).headers['Cache-Control']).toBe(
@@ -555,7 +555,7 @@ describe('password gate', () => {
     const right = await unlock({ password: 'open sesame', next: '/reports?q=1' });
     expect(right.status).toBe(303);
     expect(right.headers.Location).toBe('/reports?q=1');
-    const setCookie = right.headers['Set-Cookie'];
+    const setCookie = String(right.headers['Set-Cookie']);
     expect(setCookie).toMatch(new RegExp(`^${APP_ACCESS_COOKIE}=[^;]+; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=43200$`));
     expect(setCookie.toLowerCase()).not.toContain('domain');
 
@@ -575,7 +575,7 @@ describe('password gate', () => {
     );
     expect(right.status).toBe(303);
     expect(right.headers['Set-Cookie']).toMatch(/^drobek_app_access=[^;]+; Path=\/; HttpOnly; SameSite=Lax; Max-Age=43200$/);
-    const value = right.headers['Set-Cookie'].split(';')[0].split('=').slice(1).join('=');
+    const value = String(right.headers['Set-Cookie']).split(';')[0].split('=').slice(1).join('=');
     const open = await handleAppRequest(req(prod('vault'), '/', { headers: { Cookie: `drobek_app_access=${value}` } }), d);
     expect(open.status).toBe(200);
     const prefixed = await handleAppRequest(

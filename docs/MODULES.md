@@ -538,7 +538,9 @@ route goes through the same pipeline:
    them;
 6. the handler → JSON with `Cache-Control: no-store` (or `respond(status,
    body, headers)`: a string/Buffer is sent as-is, a Node `Readable` is
-   streamed — e.g. a stored file — and destroyed unread for `HEAD`).
+   streamed — e.g. a stored file — and destroyed unread for `HEAD`; a
+   header whose value is a list is sent once per item, e.g. several
+   `Set-Cookie`).
 
 Every failure uses **one error shape**:
 
@@ -1403,7 +1405,9 @@ await t.runJob('refresh');                   // one run of a scheduled job → {
 
 Mutating requests send the app's `Origin` and `X-Drobek-SDK: 1` by default;
 pass `headers` to test the CSRF guard. `contributions: { '<slot>': [value, …] }`
-sets what `ctx.contributions(slot)` returns. `request()` rejects where
+sets what `ctx.contributions(slot)` returns. A response's list-valued
+header is joined with `, ` in `headers`; `setCookies` lists every
+`Set-Cookie` apart. `request()` rejects where
 production answers `500 internal_error`: an exception that is not a
 ModuleError, or a ModuleError with a code that is neither core nor in the
 module's `errors`. `runJob(name, { signal?, lastSuccessAt? })` runs one of
@@ -1809,7 +1813,8 @@ GET /__drobek/v1/auth/complete?code= ◄── 302
 - the handoff code (32 random bytes) lives 60 s, works once, and only on the
   app host that began the sign-in, in the browser holding the flow cookie
   (`__Host-drobek_eu_flow`: Secure, `Path=/`, no `Domain`, HttpOnly,
-  SameSite=Lax, 10 min; `drobek_eu_flow` on plain-http dev) — a callback
+  SameSite=Lax, 10 min; `drobek_eu_flow` on plain-http dev; `complete`
+  expires it with the session cookie) — a callback
   link handed to someone else signs nobody in, and another app host under
   `APPS_DOMAIN` cannot plant the cookie: a browser refuses a `__Host-`
   cookie with a `Domain`, and `complete` reads no other name. A sign-in begun

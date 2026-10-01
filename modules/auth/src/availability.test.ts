@@ -134,7 +134,7 @@ async function begin(app: PlatformApp) {
   const res = await call(app, 'POST', '/begin', { body: { provider: 'ssotest', return_to: '/' } });
   if (res.status !== 200) return { res, state: '', flow: '' };
   const state = new URL((res.json as { url: string }).url).searchParams.get('state')!;
-  return { res, state, flow: res.headers['Set-Cookie'].split(';')[0] };
+  return { res, state, flow: [res.headers['Set-Cookie']].flat()[0].split(';')[0] };
 }
 
 function callback(state: string): Promise<EndUserCallbackResult> {
@@ -150,7 +150,7 @@ async function signIn(app: PlatformApp): Promise<string> {
   const b = await begin(app);
   const done = await call(app, 'GET', '/complete', { query: `code=${codeOf(await callback(b.state))}`, cookie: b.flow });
   expect(done.status, done.text).toBe(302);
-  return done.headers['Set-Cookie'].split(';')[0];
+  return [done.headers['Set-Cookie']].flat()[0].split(';')[0];
 }
 
 beforeAll(async () => {

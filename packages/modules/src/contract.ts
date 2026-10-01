@@ -1254,10 +1254,11 @@ export interface ModuleResponse {
   status: number;
   /** JSON-serialisable value, a string/Buffer sent as-is, or a Node `Readable` streamed as-is (e.g. a file). */
   body: unknown;
-  headers: Record<string, string>;
+  /** A list value sends the header once per item (e.g. several `Set-Cookie`). */
+  headers: Record<string, string | string[]>;
 }
 
-export function respond(status: number, body: unknown = null, headers: Record<string, string> = {}): ModuleResponse {
+export function respond(status: number, body: unknown = null, headers: Record<string, string | string[]> = {}): ModuleResponse {
   return { __drobekResponse: true, status, body, headers };
 }
 
