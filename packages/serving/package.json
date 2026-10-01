@@ -22,6 +22,7 @@
   "dependencies": {
     "@drobek/apps": "workspace:*",
     "@drobek/auth": "workspace:*",
+    "@drobek/compile": "workspace:*",
     "@drobek/core": "workspace:*",
     "@drobek/db": "workspace:*",
     "@drobek/domains": "workspace:*",

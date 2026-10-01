@@ -222,6 +222,25 @@ the same procedure as `/drobek:port-artifact` (Claude Code, Cursor) and the
 `port-artifact-to-drobek` skill (Codex). `task eval -- --only d` has a
 fresh agent port a fixture artifact and checks the result.
 
+**Compile warnings.** Next to esbuild's own warnings, `compile.warnings`
+of `write_files` and `create_app` lists references the browser will fail to
+load — warnings only, the version is stored and compiles as usual. Each is
+`{ code, file, line, text }` with the fix in `text`. `missing_reference`: a
+literal same-app path (HTML `src`/`href` of link, script, img, a, source,
+video and audio, icon `<meta>`s, web manifest icons, CSS `url()` and
+`@import`, a `fetch()` / `new URL()` of a `/path`) names a file the version
+does not have and that is not an uploaded asset — a 404. `blocked_by_csp`: a
+literal URL of another origin where the app CSP refuses it (a `fetch()` to
+an API → `connect-src`, a `<script src>` / `import` / `drobek.json` import
+from a host other than esm.sh → `script-src`, an `http://` image or font),
+naming the directive, what it allows and the fix (a proxy upstream, an
+esm.sh URL, https, or the file in the app). The policy is read from one
+list in `@drobek/compile` (`app-csp.ts`) that the app hosts build their
+header from. Computed URLs, `data:`, `blob:`, `mailto:`, `tel:`, `#…`,
+`/__drobek/…`, extension-less paths (they get `index.html`) and the build's
+own outputs (`main.js`, `main.css`) are never reported; `<a href>` to
+another site is navigation and passes.
+
 **Publish readiness.** `write_files` and `publish` answer a `readiness`
 report — the dashboard's app page shows the same report for the newest
 version above the version list: `{ ready, blocking, warnings,

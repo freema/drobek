@@ -294,6 +294,21 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     meaning: 'The build ran longer than COMPILE_TIMEOUT_MS and was stopped (the version is stored with compile_status error).',
     fix: 'Look for an import cycle or a very large generated file.',
   },
+  // ── compile.warnings[].code (inside a compile result — never blocks) ─────
+  {
+    code: 'missing_reference',
+    surface: 'compile.warnings[]',
+    meaning:
+      'A literal same-app path in the app\'s files (an HTML src/href, an icon <meta>, a web manifest icon, a CSS url(), a fetch()/new URL() of a /path) names a file the version does not have and that is not an uploaded asset: the browser gets a 404 there. Extension-less paths, /__drobek/… routes and the build\'s outputs (main.js, main.css) never count. The version still compiles.',
+    fix: 'Add the file (write_files; an image, video or font can be uploaded with create_asset_upload), fix the path, or remove the reference.',
+  },
+  {
+    code: 'blocked_by_csp',
+    surface: 'compile.warnings[]',
+    meaning:
+      'A literal URL of another origin is loaded where the app Content-Security-Policy does not allow it — `text` names the directive and what it allows (e.g. fetch() → connect-src: the app itself and https://esm.sh; <script src>/import → script-src: the app and https://esm.sh; an http:// image or font). The browser refuses the load at run time. The version still compiles.',
+    fix: "An external API → a proxy upstream of the proxy module (skill_info('proxy')); a script or package → its pinned https://esm.sh URL (drobek.json imports); an http:// image, font, stylesheet or media URL → https://; otherwise add the file to the app.",
+  },
   // ── readiness.warnings[].code (write_files, publish, the dashboard — never blocks) ─
   {
     code: 'missing_title',

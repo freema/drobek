@@ -33,20 +33,16 @@
  * (only the published host may be indexed).
  */
 
+import { appCspFetchDirectives } from '@drobek/compile';
+
 export const DEFAULT_FRAME_ANCESTORS = "'none'";
 
 /** The embeds every app may frame: YouTube (privacy-enhanced and classic), Vimeo, Google Drive. */
 export const DEFAULT_FRAME_SRC = 'https://www.youtube-nocookie.com https://www.youtube.com https://player.vimeo.com https://drive.google.com';
 
-const CSP_HEAD = [
-  "default-src 'self'",
-  "script-src 'self' https://esm.sh 'unsafe-inline'",
-  "style-src 'self' 'unsafe-inline' https:",
-  "img-src 'self' data: blob: https:",
-  "font-src 'self' data: https:",
-  "connect-src 'self' https://esm.sh",
-  "media-src 'self' blob: https:",
-];
+// The fetch directives come from @drobek/compile, whose reference check warns
+// about URLs this policy blocks.
+const CSP_HEAD = appCspFetchDirectives();
 const CSP_TAIL = ["object-src 'none'", "base-uri 'self'"];
 
 /**

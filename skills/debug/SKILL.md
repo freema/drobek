@@ -101,6 +101,8 @@ Fix = the line it names, in the same app, e.g. `"date-fns": "https://esm.sh/date
 | `build_error` | syntax error | fix `file:line:column` |
 | `invalid_config` | `drobek.json` broken | valid JSON, `imports` of https URLs |
 | `secret_in_source` | a key in a file | remove it; the owner sets it in the dashboard |
+| `missing_reference` (warning) | a literal path to a file the version does not have | add the file (`create_asset_upload` for media), fix the path |
+| `blocked_by_csp` (warning) | a literal URL the app CSP refuses (`text` names the directive) | API → proxy upstream; script → esm.sh URL; `http://` → https |
 | `unauthorized` (401) | route needs a signed-in user | `<LoginGate>` (`skill_info('auth')`) |
 | `forbidden` (403) | the rule refuses this user / role | adjust `rules` or hide the action |
 | `not_found` (404) | data collection not declared, upstream not registered, wrong id | `configure_module`; `get_app` |
