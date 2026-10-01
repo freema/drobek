@@ -71,6 +71,11 @@ beforeAll(async () => {
       res.end('redirecting');
       return;
     }
+    if (url.pathname === '/v1/dir') {
+      res.writeHead(301, { location: `http://127.0.0.1:${port}/v1/dir/` });
+      res.end('moved');
+      return;
+    }
     if (url.pathname === '/cors') {
       res.writeHead(200, { 'content-type': 'text/plain', 'access-control-allow-origin': '*', 'set-cookie': 'up=1', 'cache-control': 'max-age=600' });
       res.end('cors');
@@ -377,11 +382,15 @@ describe('calls', () => {
     expect((pct.body as Echo).path).toBe('/v1/a%25b');
   });
 
-  it('a redirect is returned verbatim, never followed; upstream CORS grants and cookies are dropped, never cached', async () => {
+  it('a same-origin redirect inside the prefixes is followed; any other is 502 upstream_redirect without the foreign host; CORS grants and cookies are dropped, never cached', async () => {
     const tt = t({ upstreams: { echo: {} } });
+    const slash = await tt.request('GET', '/echo/v1/dir', { headers: SDK });
+    expect(slash.status).toBe(200);
+    expect(slash.body).toMatchObject({ path: '/v1/dir/', headers: { authorization: `Bearer ${SECRET}` } });
     const r = await tt.request('GET', '/echo/redirect', { headers: SDK });
-    expect(r.status).toBe(302);
-    // Returned as-is but the ABSOLUTE Location is dropped (it would leak where the upstream points).
+    expect(r.status).toBe(502);
+    expect(r.body).toMatchObject({ error: 'upstream_redirect', details: { location_path: '/latest/meta-data/' } });
+    expect(JSON.stringify(r.body)).not.toContain('169.254');
     expect(Object.keys(r.headers).map((k) => k.toLowerCase())).not.toContain('location');
     const c = await tt.request('GET', '/echo/cors', { headers: SDK });
     expect(c.status).toBe(200);
@@ -675,5 +684,16 @@ describe('the upstreams authority (a module job calls an upstream)', () => {
     await expect(fetchUp({ upstreams: { echo: {} } }, 'echo', { path: '/v2/x' })).rejects.toMatchObject({ code: 'path_not_allowed' });
     await expect(fetchUp({ upstreams: { echo: {} } }, 'echo', { method: 'DELETE', path: '/v1' })).rejects.toMatchObject({ code: 'invalid_request' });
     await expect(fetchUp({ upstreams: { open: {} } }, 'open', { path: '/gzip', maxBytes: 5 })).rejects.toMatchObject({ code: 'upstream_error', message: 'upstream response exceeded the size cap' });
+  });
+
+  it('follows a same-origin redirect like the route; a foreign one is upstream_redirect', async () => {
+    const r = await fetchUp({ upstreams: { echo: {} } }, 'echo', { path: '/v1/dir' });
+    expect(r.status).toBe(200);
+    expect(JSON.parse(r.body.toString('utf8'))).toMatchObject({ path: '/v1/dir/', headers: { authorization: `Bearer ${SECRET}` } });
+    await expect(fetchUp({ upstreams: { echo: {} } }, 'echo', { path: '/redirect' })).rejects.toMatchObject({
+      code: 'upstream_redirect',
+      status: 502,
+      details: { location_path: '/latest/meta-data/' },
+    });
   });
 });

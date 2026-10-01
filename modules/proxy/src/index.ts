@@ -66,7 +66,9 @@ export interface Api {
    * secret; never put a key in the app. Resolves with the standard Response
    * (any status — check res.ok): drobek refusals are JSON { error, message }
    * with 401/403 (rules), 404 (not registered), 405/403 (method/path not
-   * allowed), 429 (rate limited), 502 (upstream unreachable).
+   * allowed), 429 (rate limited), 502 (upstream unreachable, or a
+   * redirect drobek does not follow: upstream_redirect). A redirect within
+   * the upstream's origin and allowed prefixes is followed on the server.
    */
   fetch(upstream: string, path?: string, init?: RequestInit): Promise<Response>;
 }
@@ -88,6 +90,11 @@ const PROXY_ERRORS: ModuleErrorDoc[] = [
     code: 'upstream_error',
     meaning: "HTTP 502. The upstream could not be reached, timed out (20 s), answered more than 5 MiB (measured after undoing a gzip / deflate / br encoding) or used an encoding drobek cannot decode.",
     fix: "Show \"try again later\" in the app; ask for smaller responses (pagination, limits). Never retry in a tight loop.",
+  },
+  {
+    code: 'upstream_redirect',
+    meaning: "HTTP 502. The upstream answered a redirect drobek does not follow: to another host, scheme or port, to a path outside the upstream's base URL or allowed path prefixes, to a method the upstream does not allow, more than 3 hops or a loop. `details.location_path` is the target's path (never its host). A redirect within the upstream's origin and prefixes is followed and never reaches the app.",
+    fix: "Call the final path directly (e.g. with the trailing slash the upstream redirects to). If the path is outside the prefixes, ask the workspace admin to allow that path prefix on the upstream; if the target is another host, the admin registers that host as its own upstream and the app calls it by that name.",
   },
   {
     code: 'proxy_busy',
