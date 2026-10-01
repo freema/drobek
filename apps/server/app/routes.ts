@@ -7,6 +7,8 @@ export default [
   // The /llms.txt convention + a human build page.
   // Rendered from the @drobek/agent-dx manifest so they never drift from the
   // real MCP tools.
+  route('robots.txt', 'routes/robots-txt.ts'),
+  route('favicon.ico', 'routes/favicon-ico.ts'),
   route('llms.txt', 'routes/llms-txt.ts'),
   route('llms-full.txt', 'routes/llms-full-txt.ts'),
   route('build-with-your-agent', 'routes/build-with-your-agent.tsx'),
