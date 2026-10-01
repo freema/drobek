@@ -26,6 +26,8 @@ import { addMembership, personalWorkspaceOf, userIdByEmail } from './helpers/see
  *  - the 61st call of an app within a minute → 429 rate_limited;
  *  - SSRF: a private base_url is refused at registration, a host resolving to
  *    a private address → ssrf_blocked; an editor cannot configure upstreams;
+ *  - the app's module page: assigned upstreams as cards, the others as a
+ *    compact list with a name filter, assigning from it waits for confirmation;
  *  - the old dashboard-host route `/:ws/api/proxy/…` is gone.
  */
 
@@ -346,6 +348,49 @@ test.describe('platform module proxy — workspace upstreams per app @local', ()
     expect(json(blocked)).toMatchObject({ error: 'ssrf_blocked' });
     // The echo assignment is untouched by the merge patch.
     expect((await call(host, '/echo/echo/still', { cookie: user.cookie })).status).toBe(200);
+  });
+
+  test('the module page: assigned upstreams as cards, the others as a compact list with a name filter; assigning still works', async () => {
+    skipUnlessLocal();
+    const createUrl = `${BASE_URL_WEB}/workspaces/${ws}/upstreams`;
+    for (let i = 1; i <= 9; i++) {
+      const res = await owner.request.post(createUrl, {
+        form: { intent: 'create', name: `feed-${i}`, baseUrl: ECHO_BASE, methods: 'GET', pathPrefixes: `/feed${i}`, authType: 'none' },
+        maxRedirects: 0,
+      });
+      expect([302, 303], await res.text()).toContain(res.status());
+    }
+
+    const page = await owner.newPage();
+    try {
+      await page.goto(`/workspaces/${ws}/apps/${app.slug}/modules/proxy`);
+      const echo = page.getByTestId('upstream-echo');
+      await expect(echo.getByTestId('upstream-assigned')).toHaveText('assigned');
+      await expect(page.getByTestId('upstream-unassign-echo')).toBeVisible();
+
+      const list = page.getByTestId('upstreams-unassigned');
+      await expect(list).toContainText('Other upstreams in this workspace (9)');
+      const feed3 = list.getByTestId('upstream-feed-3');
+      await expect(feed3).toContainText('GET · /feed3');
+      await expect(feed3).toContainText('no secret');
+      await expect(list.getByTestId('upstream-ratelimit-feed-3')).toBeHidden();
+
+      const filter = page.getByTestId('upstream-filter');
+      await filter.fill('feed-3');
+      await expect(feed3).toBeVisible();
+      await expect(list.getByTestId('upstream-feed-4')).toBeHidden();
+      await filter.fill('no-such-feed');
+      await expect(page.getByTestId('upstream-filter-empty')).toContainText('No upstream name contains “no-such-feed”');
+      await filter.fill('');
+      await expect(list.getByTestId('upstream-feed-4')).toBeVisible();
+
+      await list.getByTestId('upstream-assign-open-feed-1').click();
+      await expect(list.getByTestId('upstream-ratelimit-feed-1')).toBeVisible();
+      await list.getByTestId('upstream-save-feed-1').click();
+      await expect(page.getByTestId('pending-change').filter({ hasText: 'proxy.upstreams.feed-1' })).toBeVisible();
+    } finally {
+      await page.close();
+    }
   });
 });
 

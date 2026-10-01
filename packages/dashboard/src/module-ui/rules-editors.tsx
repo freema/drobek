@@ -5,14 +5,18 @@
  *    operation × principal (checkboxes; nothing checked = `none`) and the
  *    collection's JSON Schema in a textarea (validated on the server — the
  *    module compiles it with ajv); add / remove a collection;
- *  - `UpstreamsEditor` (proxy): the workspace's upstreams (name, whether its
- *    secret is set) with assign / unassign, the `call` rule and `rateLimit`.
+ *  - `UpstreamsEditor` (proxy): the upstreams assigned to the app as cards
+ *    with the `call` rule, `rateLimit` and unassign; the workspace's other
+ *    upstreams as a compact list (name, methods · prefixes, whether its
+ *    secret is set) whose assign form opens per entry, with a name filter
+ *    once the list is long.
  *
  * Every save goes through the configure path, so a relaxation (e.g. `create`
  * opened to Anyone, a newly assigned upstream) becomes a pending change that
  * waits for confirmation instead of applying. A viewer sees everything
  * disabled, with no button.
  */
+import { useState } from 'react';
 import { Form } from 'react-router';
 import { PRINCIPALS, PRINCIPAL_LABEL, ruleInputName, ruleToPrincipals, type FieldValue, type PrincipalName } from '../module-config.js';
 import { ui } from './styles.js';
@@ -230,6 +234,240 @@ export interface UpstreamRow {
 
 const CALL_PRINCIPALS: readonly PrincipalName[] = ['public', 'user', 'admin'];
 
+/** Above this many unassigned upstreams the compact list gets a name filter. */
+const UPSTREAM_FILTER_THRESHOLD = 8;
+
+function upstreamsHref(workspaceSlug: string): string {
+  return `/workspaces/${encodeURIComponent(workspaceSlug)}/upstreams`;
+}
+
+function errorMessages(error: EditorError | null | undefined, name: string): string[] {
+  const mine = error && error.target === name ? error : null;
+  return [...(mine?.general ?? []), ...Object.entries(mine?.fields ?? {}).flatMap(([p, m]) => m.map((x) => `${p}: ${x}`))];
+}
+
+/** Assigned upstreams, and those the app's config names but the workspace no longer has, get the full card. */
+function isOnApp(u: UpstreamRow): boolean {
+  return u.assigned || !u.registered;
+}
+
+function SecretBadge({ hasSecret }: { hasSecret: boolean }) {
+  return <span style={hasSecret ? ui.okBadge : ui.badge}>{hasSecret ? 'secret set' : 'no secret'}</span>;
+}
+
+function Allowed({ u }: { u: UpstreamRow }) {
+  if (!u.methods.length && !u.prefixes.length) return null;
+  return (
+    <p style={{ ...ui.small, margin: '0.3rem 0 0' }} data-testid={`upstream-allowed-${u.name}`}>
+      {u.methods.join(', ')}
+      {u.prefixes.length ? ` · ${u.prefixes.join(', ')}` : ''}
+    </p>
+  );
+}
+
+function RulesFields({ u, readOnly, messages }: { u: UpstreamRow; readOnly: boolean; messages: string[] }) {
+  return (
+    <>
+      <RuleTable
+        rows={[{ op: 'call', rule: u.assigned ? u.call : 'user' }]}
+        principals={CALL_PRINCIPALS}
+        readOnly={readOnly}
+        testPrefix={`call-${u.name}`}
+      />
+      <label style={ui.label} htmlFor={`rl-${u.name}`}>
+        Calls per minute from this app <span style={ui.muted}>(optional; the app-wide limit applies too)</span>
+      </label>
+      <input
+        id={`rl-${u.name}`}
+        name="rateLimit"
+        inputMode="numeric"
+        defaultValue={u.rateLimit ?? ''}
+        disabled={readOnly}
+        style={{ ...ui.input, display: 'block', width: '8rem', marginTop: '0.3rem' }}
+        data-testid={`upstream-ratelimit-${u.name}`}
+      />
+      <Errors messages={messages} testId={`upstream-error-${u.name}`} />
+    </>
+  );
+}
+
+function AssignedCard({
+  u,
+  workspaceSlug,
+  readOnly,
+  busy,
+  messages,
+}: {
+  u: UpstreamRow;
+  workspaceSlug: string;
+  readOnly: boolean;
+  busy?: boolean;
+  messages: string[];
+}) {
+  const body = <RulesFields u={u} readOnly={readOnly} messages={messages} />;
+  return (
+    <section style={ui.panel} data-testid={`upstream-${u.name}`}>
+      <div style={ui.row}>
+        <code style={{ ...ui.mono, fontWeight: 700 }}>{u.name}</code>
+        {u.assigned ? (
+          <span style={ui.okBadge} data-testid="upstream-assigned">
+            assigned
+          </span>
+        ) : (
+          <span style={ui.badge} data-testid="upstream-assigned">
+            not assigned
+          </span>
+        )}
+        {u.registered ? null : <span style={ui.warnBadge}>not registered</span>}
+        <SecretBadge hasSecret={u.hasSecret} />
+      </div>
+      <Allowed u={u} />
+      {readOnly ? (
+        body
+      ) : (
+        <>
+          <Form method="post" noValidate id={`upstream-form-${u.name}`}>
+            <input type="hidden" name="intent" value="save-upstream" />
+            <input type="hidden" name="upstream" value={u.name} />
+            {body}
+          </Form>
+          {u.registered ? null : (
+            <p style={{ ...ui.small, margin: '0.6rem 0 0' }} data-testid={`upstream-unregistered-${u.name}`}>
+              Register “{u.name}” on the <a href={upstreamsHref(workspaceSlug)}>Upstreams page</a> first; then save it here and confirm.
+            </p>
+          )}
+          <div style={{ ...ui.row, marginTop: '0.75rem' }}>
+            <button
+              type="submit"
+              form={`upstream-form-${u.name}`}
+              style={ui.button}
+              disabled={busy || !u.registered}
+              data-testid={`upstream-save-${u.name}`}
+            >
+              {u.assigned ? 'Save' : 'Assign to this app'}
+            </button>
+            {u.assigned ? (
+              <Form method="post">
+                <input type="hidden" name="intent" value="unassign-upstream" />
+                <input type="hidden" name="upstream" value={u.name} />
+                <button type="submit" style={ui.dangerButton} disabled={busy} data-testid={`upstream-unassign-${u.name}`}>
+                  Unassign
+                </button>
+              </Form>
+            ) : null}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function UnassignedItem({
+  u,
+  readOnly,
+  busy,
+  messages,
+  hidden,
+}: {
+  u: UpstreamRow;
+  readOnly: boolean;
+  busy?: boolean;
+  messages: string[];
+  hidden: boolean;
+}) {
+  return (
+    <li
+      hidden={hidden}
+      style={{ padding: '0.55rem 0', borderTop: '1px solid #f0f0f2' }}
+      data-testid={`upstream-${u.name}`}
+      data-upstream-name={u.name}
+    >
+      <div style={ui.row}>
+        <code style={{ ...ui.mono, fontWeight: 700 }}>{u.name}</code>
+        <SecretBadge hasSecret={u.hasSecret} />
+      </div>
+      <Allowed u={u} />
+      {readOnly ? null : (
+        <details open={messages.length > 0} style={{ marginTop: '0.35rem' }} data-testid={`upstream-assign-${u.name}`}>
+          <summary style={{ cursor: 'pointer', fontSize: '0.9rem' }} data-testid={`upstream-assign-open-${u.name}`}>
+            Assign to this app…
+          </summary>
+          <Form method="post" noValidate style={{ marginTop: '0.5rem' }}>
+            <input type="hidden" name="intent" value="save-upstream" />
+            <input type="hidden" name="upstream" value={u.name} />
+            <RulesFields u={u} readOnly={false} messages={messages} />
+            <button type="submit" style={{ ...ui.button, marginTop: '0.6rem' }} disabled={busy} data-testid={`upstream-save-${u.name}`}>
+              Assign to this app
+            </button>
+          </Form>
+        </details>
+      )}
+    </li>
+  );
+}
+
+function UnassignedList({
+  upstreams,
+  readOnly,
+  busy,
+  error,
+}: {
+  upstreams: UpstreamRow[];
+  readOnly: boolean;
+  busy?: boolean;
+  error?: EditorError | null;
+}) {
+  const [query, setQuery] = useState('');
+  const filterable = upstreams.length > UPSTREAM_FILTER_THRESHOLD;
+  const needle = filterable ? query.trim().toLowerCase() : '';
+  const matches = (u: UpstreamRow) => !needle || u.name.toLowerCase().includes(needle);
+  const shown = upstreams.filter(matches).length;
+  return (
+    <div style={ui.panel} data-testid="upstreams-unassigned">
+      <p style={{ margin: '0 0 0.3rem', fontWeight: 700 }}>Other upstreams in this workspace ({upstreams.length})</p>
+      <p style={{ ...ui.small, margin: '0 0 0.5rem' }}>
+        {readOnly
+          ? 'This app cannot call these upstreams.'
+          : 'This app cannot call these yet. Open one to choose who may call it, then assign it; the assignment waits for confirmation.'}
+      </p>
+      {filterable ? (
+        <div style={{ marginBottom: '0.5rem' }}>
+          <label style={ui.label} htmlFor="upstream-filter">
+            Filter by name
+          </label>
+          <input
+            id="upstream-filter"
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="e.g. news"
+            autoComplete="off"
+            style={{ ...ui.input, maxWidth: '20rem', marginTop: '0.3rem' }}
+            data-testid="upstream-filter"
+          />
+        </div>
+      ) : null}
+      <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+        {upstreams.map((u) => (
+          <UnassignedItem
+            key={`${u.name}:${u.rateLimit ?? ''}`}
+            u={u}
+            readOnly={readOnly}
+            busy={busy}
+            messages={errorMessages(error, u.name)}
+            hidden={!matches(u)}
+          />
+        ))}
+      </ul>
+      {shown === 0 ? (
+        <p style={{ ...ui.muted, margin: '0.4rem 0 0' }} data-testid="upstream-filter-empty">
+          No upstream name contains “{query.trim()}”. Clear the filter to see all {upstreams.length}.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 export function UpstreamsEditor({
   upstreams,
   workspaceSlug,
@@ -244,99 +482,43 @@ export function UpstreamsEditor({
   error?: EditorError | null;
 }) {
   const readOnly = !canEdit;
+  const onApp = upstreams.filter(isOnApp);
+  const others = upstreams.filter((u) => !isOnApp(u));
   return (
     <div id="upstreams" data-testid="upstreams-editor">
       <p style={ui.hint}>
         Upstreams are registered for the whole workspace (base URL, allowed paths, the secret) on the{' '}
-        <a href={`/workspaces/${encodeURIComponent(workspaceSlug)}/upstreams`}>Upstreams page</a>. Here you choose which of them this
-        app may call and who may call them. Assigning one, or opening it to Anyone, waits for confirmation.
+        <a href={upstreamsHref(workspaceSlug)}>Upstreams page</a>. Here you choose which of them this app may call and who may call
+        them. Assigning one, or opening it to Anyone, waits for confirmation.
       </p>
-      {upstreams.length === 0 ? <p style={ui.muted}>This workspace has no upstreams yet.</p> : null}
-      {upstreams.map((u) => {
-        const mine = error && error.target === u.name ? error : null;
-        const messages = [...(mine?.general ?? []), ...Object.entries(mine?.fields ?? {}).flatMap(([p, m]) => m.map((x) => `${p}: ${x}`))];
-        const body = (
-          <>
-            <RuleTable rows={[{ op: 'call', rule: u.assigned ? u.call : 'user' }]} principals={CALL_PRINCIPALS} readOnly={readOnly} testPrefix={`call-${u.name}`} />
-            <label style={ui.label} htmlFor={`rl-${u.name}`}>
-              Calls per minute from this app <span style={ui.muted}>(optional; the app-wide limit applies too)</span>
-            </label>
-            <input
-              id={`rl-${u.name}`}
-              name="rateLimit"
-              inputMode="numeric"
-              defaultValue={u.rateLimit ?? ''}
-              disabled={readOnly}
-              style={{ ...ui.input, display: 'block', width: '8rem', marginTop: '0.3rem' }}
-              data-testid={`upstream-ratelimit-${u.name}`}
-            />
-            <Errors messages={messages} testId={`upstream-error-${u.name}`} />
-          </>
-        );
-        return (
-          <section key={`${u.name}:${u.assigned}:${u.call}:${u.rateLimit ?? ''}`} style={ui.panel} data-testid={`upstream-${u.name}`}>
-            <div style={ui.row}>
-              <code style={{ ...ui.mono, fontWeight: 700 }}>{u.name}</code>
-              {u.assigned ? (
-                <span style={ui.okBadge} data-testid="upstream-assigned">
-                  assigned
-                </span>
-              ) : (
-                <span style={ui.badge} data-testid="upstream-assigned">
-                  not assigned
-                </span>
-              )}
-              {u.registered ? null : <span style={ui.warnBadge}>not registered</span>}
-              <span style={u.hasSecret ? ui.okBadge : ui.badge}>{u.hasSecret ? 'secret set' : 'no secret'}</span>
-            </div>
-            {u.methods.length || u.prefixes.length ? (
-              <p style={{ ...ui.small, margin: '0.3rem 0 0' }}>
-                {u.methods.join(', ')}
-                {u.prefixes.length ? ` · ${u.prefixes.join(', ')}` : ''}
-              </p>
-            ) : null}
-            {readOnly ? (
-              u.assigned ? (
-                body
-              ) : null
-            ) : (
-              <>
-                <Form method="post" noValidate id={`upstream-form-${u.name}`}>
-                  <input type="hidden" name="intent" value="save-upstream" />
-                  <input type="hidden" name="upstream" value={u.name} />
-                  {body}
-                </Form>
-                {u.registered ? null : (
-                  <p style={{ ...ui.small, margin: '0.6rem 0 0' }} data-testid={`upstream-unregistered-${u.name}`}>
-                    Register “{u.name}” on the <a href={`/workspaces/${encodeURIComponent(workspaceSlug)}/upstreams`}>Upstreams page</a> first; then
-                    save it here and confirm.
-                  </p>
-                )}
-                <div style={{ ...ui.row, marginTop: '0.75rem' }}>
-                  <button
-                    type="submit"
-                    form={`upstream-form-${u.name}`}
-                    style={ui.button}
-                    disabled={busy || !u.registered}
-                    data-testid={`upstream-save-${u.name}`}
-                  >
-                    {u.assigned ? 'Save' : 'Assign to this app'}
-                  </button>
-                  {u.assigned ? (
-                    <Form method="post">
-                      <input type="hidden" name="intent" value="unassign-upstream" />
-                      <input type="hidden" name="upstream" value={u.name} />
-                      <button type="submit" style={ui.dangerButton} disabled={busy} data-testid={`upstream-unassign-${u.name}`}>
-                        Unassign
-                      </button>
-                    </Form>
-                  ) : null}
-                </div>
-              </>
-            )}
-          </section>
-        );
-      })}
+      {upstreams.length === 0 ? (
+        <p style={ui.muted} data-testid="upstreams-none">
+          This workspace has no upstreams yet. Register one on the <a href={upstreamsHref(workspaceSlug)}>Upstreams page</a>, then
+          assign it to this app here.
+        </p>
+      ) : null}
+      {upstreams.length > 0 && onApp.length === 0 ? (
+        <p style={ui.muted} data-testid="upstreams-none-assigned">
+          {readOnly ? 'No upstream is assigned to this app.' : 'No upstream is assigned to this app yet. Open one in the list below to assign it.'}
+        </p>
+      ) : null}
+      {onApp.map((u) => (
+        <AssignedCard
+          key={`${u.name}:${u.assigned}:${u.call}:${u.rateLimit ?? ''}`}
+          u={u}
+          workspaceSlug={workspaceSlug}
+          readOnly={readOnly}
+          busy={busy}
+          messages={errorMessages(error, u.name)}
+        />
+      ))}
+      {upstreams.length > 0 && others.length === 0 ? (
+        <p style={ui.muted} data-testid="upstreams-all-assigned">
+          Every upstream of this workspace is assigned to this app. To add another, register it on the{' '}
+          <a href={upstreamsHref(workspaceSlug)}>Upstreams page</a>.
+        </p>
+      ) : null}
+      {others.length > 0 ? <UnassignedList upstreams={others} readOnly={readOnly} busy={busy} error={error} /> : null}
     </div>
   );
 }
