@@ -15,8 +15,9 @@
  *   3. CONNECT to that exact resolved IP (a pinned dns lookup) — NOT re-resolving
  *      — while the Host header + TLS SNI stay the original hostname, so a
  *      DNS-rebind cannot swap the IP between the check and the connect.
- *   4. NO redirect following — a 3xx is returned verbatim, never auto-followed to
- *      an internal target.
+ *   4. One request, one hop: a 3xx is returned to the caller, never followed
+ *      here (forwardToUpstream follows a redirect only within the upstream's
+ *      origin and prefixes, each hop through this guard again).
  *   5. A per-request connect/idle timeout, an optional wall-clock deadline and
  *      a response-size cap (a HEAD / 204 / 304 answer's declared length is
  *      not a body and is not held to it).
@@ -181,8 +182,6 @@ export async function ssrfSafeForward(
         headers,
         lookup: pinnedLookup,
         timeout: timeoutMs,
-        // Redirects are NEVER auto-followed by node's http.request — we return
-        // any 3xx verbatim. (No agent-level redirect handling exists here.)
       },
       (res) => {
         // A HEAD answer (and a 204/304) carries no body: its Content-Length

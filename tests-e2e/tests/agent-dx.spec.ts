@@ -99,6 +99,7 @@ test('GET /llms-full.txt → 200 with every tool, no deploy pipeline, the limits
   expect(body).toContain('- invalid_code — module route (auth) — ');
   expect(body).toContain('### Module proxy');
   expect(body).toContain('- upstream_error — module route (proxy) — ');
+  expect(body).toContain('- upstream_redirect — module route (proxy) — ');
 
   // Limits: the compile caps + the tool contract limits.
   expect(body).toContain('COMPILE_MAX_FILES');

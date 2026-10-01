@@ -40,7 +40,7 @@ describe('error catalogue coverage', () => {
   });
 
   it('module-specific codes live in their modules, not in the core catalogue', () => {
-    for (const code of ['email_not_allowed', 'invalid_code', 'too_many_attempts', 'invalid_form_token', 'submitted_too_fast', 'validation_failed', 'unsupported_type', 'ssrf_blocked', 'proxy_busy', 'path_not_allowed', 'upstream_error', 'config_error']) {
+    for (const code of ['email_not_allowed', 'invalid_code', 'too_many_attempts', 'invalid_form_token', 'submitted_too_fast', 'validation_failed', 'unsupported_type', 'ssrf_blocked', 'proxy_busy', 'path_not_allowed', 'upstream_error', 'upstream_redirect', 'config_error']) {
       expect(errorDoc(code), code).toBeUndefined();
     }
   });
