@@ -1,6 +1,6 @@
 import { ASSET_UPLOAD_PATH_PREFIX } from '@drobek/apps';
 import { createOriginCheckMiddleware } from '@drobek/auth';
-import { coreVersion } from '@drobek/core';
+import { coreVersion, reportError } from '@drobek/core';
 import { mountMcpResource } from '@drobek/oauth/resource';
 import { TLS_ASK_PATH, createAppsHostMiddleware, createTlsAskHandler } from '@drobek/serving';
 import express, {
@@ -92,7 +92,8 @@ export function createServerApp(opts: ServerAppOptions): Express {
 
   // Clean JSON for body-parser failures (oversized / malformed) — never leak
   // express's default HTML error page (which discloses node_modules paths).
-  app.use((err: unknown, _req: Request, res: Response, next: NextFunction): void => {
+  // Anything else is a 500 and goes to the operator's error reporter.
+  app.use((err: unknown, req: Request, res: Response, next: NextFunction): void => {
     const e = err as { type?: string };
     if (e && (e.type === 'entity.too.large' || e.type === 'entity.parse.failed')) {
       res
@@ -100,6 +101,7 @@ export function createServerApp(opts: ServerAppOptions): Express {
         .json({ ok: false, error: e.type.replace(/\./g, '_') });
       return;
     }
+    void reportError({ message: 'request failed', error: err, context: { kind: 'http', method: req.method, route: req.path, status: 500 } });
     if (res.headersSent) {
       next(err);
       return;

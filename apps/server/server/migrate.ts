@@ -15,7 +15,7 @@
 import { docsUrlConfigError } from '@drobek/agent-dx';
 import { appsOriginConfigError, publishApprovalConfigError } from '@drobek/apps';
 import { trustProxyConfigError } from '@drobek/auth';
-import { createConsoleLogger, secretsConfigError } from '@drobek/core';
+import { createConsoleLogger, reportError, secretsConfigError } from '@drobek/core';
 import { dbErrorForLog, runCoreMigrations } from '@drobek/db';
 import { domainsConfigError } from '@drobek/domains';
 import { limitsProviderConfigError, loadModuleRuntime } from '@drobek/modules';
@@ -77,5 +77,6 @@ try {
   process.exit(0);
 } catch (err) {
   console.error('migrate: failed —', dbErrorForLog(err));
+  await reportError({ level: 'fatal', message: 'the migrations failed', error: err, context: { kind: 'startup' } });
   process.exit(1);
 }

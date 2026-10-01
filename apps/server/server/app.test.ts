@@ -1,6 +1,7 @@
 import { request as httpRequest, type Server } from 'node:http';
 import type { RequestHandler } from 'express';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { installErrorReporter, resetErrorReporterForTests, type ErrorReportEvent } from '@drobek/core';
 import { createTlsAskHandler } from '@drobek/serving';
 import { createServerApp } from './app.js';
 
@@ -11,6 +12,7 @@ let baseUrl: string;
 // Stands in for React Router: echoes the raw body so the test proves the MCP
 // JSON parser never consumes a dashboard request stream.
 const rrHandler: RequestHandler = (req, res) => {
+  if (req.path.startsWith('/explode')) throw new Error('handler blew up for zoe@corp.example');
   let raw = '';
   req.setEncoding('utf8');
   req.on('data', (chunk: string) => (raw += chunk));
@@ -40,6 +42,25 @@ afterAll(async () => {
 });
 
 describe('single drobek process', () => {
+  it('an unhandled error answers 500 JSON and reaches the error reporter without the query string', async () => {
+    const reported: ErrorReportEvent[] = [];
+    installErrorReporter({ id: 'sink', label: 'Sink', report: (e) => void reported.push(e) }, {});
+    try {
+      const res = await fetch(`${baseUrl}/explode/now?code=123456`, { headers: { cookie: 'drobek_session=s3cr3t' } });
+      expect(res.status).toBe(500);
+      expect(await res.json()).toEqual({ ok: false, error: 'internal' });
+      await vi.waitFor(() => expect(reported).toHaveLength(1));
+      expect(reported[0]).toMatchObject({
+        message: 'request failed',
+        error: { name: 'Error', message: 'handler blew up for [email]' },
+        context: { kind: 'http', method: 'GET', route: '/explode/now', status: 500 },
+      });
+      expect(JSON.stringify(reported)).not.toMatch(/123456|s3cr3t|zoe@/);
+    } finally {
+      resetErrorReporterForTests();
+    }
+  });
+
   it('GET /health returns {ok:true}', async () => {
     const res = await fetch(`${baseUrl}/health`);
     expect(res.status).toBe(200);

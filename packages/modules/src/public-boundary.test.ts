@@ -13,7 +13,7 @@ import { describe, expect, it } from 'vitest';
 const SRC = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(SRC, '../../..');
 
-const CONTRACT_FILES = ['auth-provider.ts', 'contract.ts', 'email-transport-slot.ts', 'errors.ts', 'public.ts', 'rules.ts'];
+const CONTRACT_FILES = ['auth-provider.ts', 'contract.ts', 'email-transport-slot.ts', 'error-reporter-slot.ts', 'errors.ts', 'public.ts', 'rules.ts'];
 const VALUE_PACKAGES = ['zod', '@drobek/core', '@drobek/email'];
 const TYPE_PACKAGES = [...VALUE_PACKAGES, '@drobek/db', '@drobek/sdk'];
 

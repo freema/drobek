@@ -49,7 +49,7 @@ import { appsOrigin, dashboardOrigin } from '@drobek/apps';
 import { AUDIT_ACTIONS, AUDIT_SUBJECT_TYPES, actorKindForSurface, writeAudit } from '@drobek/audit';
 import { renderPlatformEmail, renderTextEmailHtml, sendEmail, serverHost, trustedActionUrl, type EmailAction } from '@drobek/email';
 import { scanForSecrets } from '@drobek/compile';
-import { createConsoleLogger, getRedis, type Logger } from '@drobek/core';
+import { createConsoleLogger, getRedis, reportError, type Logger } from '@drobek/core';
 import { apps, dbErrorForLog, getDb, memberships, moduleConfigs, runJournalMigrations, users, workspaceModules, type DB } from '@drobek/db';
 import { recordModuleRequest } from '@drobek/insights';
 import { and, asc, eq, gt, inArray, isNull } from 'drizzle-orm';
@@ -94,6 +94,7 @@ import type {
 } from './contract.js';
 import { asObject, asPending, readConfigRow, readConfigRows, withLockedConfig, type PendingChange } from './configs.server.js';
 import { installModuleEmailTransport } from './email-transport-slot.js';
+import { CORE_SLOTS, installModuleErrorReporter } from './error-reporter-slot.js';
 import { assertSignInSender, capEmailText, emailKind, redactAddresses, resolveRecipients, sanitizeSubject } from './email.js';
 import { CORE_ERROR_CODES, ModuleError, ModuleLoadError, isModuleError, issuePaths, moduleNotEnabled, moduleRequiresNotEnabled, skillHint } from './errors.js';
 import { CORE_LIMITS, createLimitsProvider, moduleEnabledLimit, moduleEnabledLimitName, type CatalogueLimit, type LimitsProvider } from './limits.js';
@@ -705,7 +706,8 @@ export class ModuleRuntime {
     for (const [slot, list] of this.slotContributions) {
       const host = hostOf(slot);
       for (const c of list) {
-        if (c.module === m.name) contributes.push({ slot, host: host?.name ?? '', key: uniqueKeyOf(c.value, host?.slots?.[slot]?.unique) });
+        const core = CORE_SLOTS[slot];
+        if (c.module === m.name) contributes.push({ slot, host: host?.name ?? (core ? 'core' : ''), key: uniqueKeyOf(c.value, host?.slots?.[slot]?.unique ?? core?.unique) });
       }
     }
     return {
@@ -2042,7 +2044,7 @@ export class ModuleRuntime {
 
   /** Answer one `/__drobek/*` request of `app` (never throws). */
   async handle(req: PlatformRequest, app: PlatformApp): Promise<PipelineResult> {
-    const seen: { module?: string } = {};
+    const seen: { module?: string; route?: string } = {};
     const res = await this.dispatch(req, app, seen);
     // A 429 is not counted: a throttled flood must cost nothing past the limiter.
     if (seen.module && res.status !== 429) this.countRequest(app.id, seen.module, res.status);
@@ -2060,7 +2062,7 @@ export class ModuleRuntime {
     }
   }
 
-  private async dispatch(req: PlatformRequest, app: PlatformApp, seen: { module?: string }): Promise<PipelineResult> {
+  private async dispatch(req: PlatformRequest, app: PlatformApp, seen: { module?: string; route?: string }): Promise<PipelineResult> {
     try {
       if (req.path === SDK_PATH || req.path === SDK_TYPES_PATH) return this.serveSdk(req);
       if (req.path === BEACON_SCRIPT_PATH) return this.serveBeaconScript(req);
@@ -2095,6 +2097,7 @@ export class ModuleRuntime {
       }
       // Only a matched route is counted: a flood of unknown routes or methods costs no stats.
       seen.module = m.name;
+      seen.route = `/__drobek/v1/${m.name}${hit.route.pattern}`;
       const host = req.header('host');
       const selfOrigin = host ? `${appsOrigin(this.deps.env).scheme}://${host.trim().toLowerCase()}` : null;
       let limits: Limits | null = null;
@@ -2124,6 +2127,19 @@ export class ModuleRuntime {
     } catch (err) {
       if (isModuleError(err)) return errorResult(err);
       this.deps.log.error('module request failed', { app_id: app.id, path: req.path, error: dbErrorForLog(err, { stack: true }) });
+      void reportError({
+        message: 'module request failed',
+        error: err,
+        context: {
+          kind: 'module_route',
+          ...(seen.module ? { module: seen.module } : {}),
+          route: seen.route ?? req.path,
+          method: req.method,
+          status: 500,
+          appId: app.id,
+          workspaceId: app.workspaceId,
+        },
+      });
       return errorResult(new ModuleError('internal_error', 'drobek hit an internal error.'));
     }
   }
@@ -2252,6 +2268,7 @@ export async function loadModuleRuntime(opts: LoadRuntimeOptions = {}): Promise<
     : await loadModuleSet(env, { ...opts, log });
   const authority = endUserAuthorityOf(modules);
   installModuleEmailTransport(modules, env, log);
+  installModuleErrorReporter(modules, env, log);
 
   if (env.DROBEK_MIGRATE_ON_START !== '0') {
     const migrate =

@@ -3,10 +3,12 @@
  *
  * Boot order: refuse insecure secrets, an invalid APPS_DOMAIN,
  * TRUST_PROXY, TLS_ASK_TOKEN, LIMITS_PROVIDER_URL, DOMAINS_*,
- * APP_FRAME_SRC_EXTRA, GALLERY_FRAME_ANCESTORS, PUBLISH_APPROVAL / OPERATOR_EMAIL / PUBLISH_NOTIFY or e-mail transport
- * (EMAIL_TRANSPORT / RESEND_API_KEY / SMTP_HOST) → apply core migrations →
- * load the platform modules (DROBEK_MODULES: their migrations, the composed
- * SDK, the skills — a bad module stops the start) →
+ * APP_FRAME_SRC_EXTRA, GALLERY_FRAME_ANCESTORS, PUBLISH_APPROVAL / OPERATOR_EMAIL / PUBLISH_NOTIFY, e-mail transport
+ * (EMAIL_TRANSPORT / RESEND_API_KEY / SMTP_HOST) or ERROR_REPORTER_* → apply core migrations →
+ * load the platform modules (DROBEK_MODULES: the e-mail transport and error
+ * reporter they contribute, their migrations, the composed SDK, the skills —
+ * a bad module stops the start; once the reporter is up, the failure is
+ * reported too) →
  * install the TypeScript check runner → mount the app-host dispatcher, then React Router (Vite middleware in
  * dev, `build/server` in production) behind the MCP resource → start
  * background jobs + the serve-cache subscriber → listen.
@@ -20,7 +22,7 @@ import type { ServerBuild } from 'react-router';
 import { docsUrlConfigError, errorHint } from '@drobek/agent-dx';
 import { appsOriginConfigError, assetLimitsOf, createAssetUploadHandler, previewUrl, publishApprovalConfigError } from '@drobek/apps';
 import { trustProxyConfigError } from '@drobek/auth';
-import { createConsoleLogger, secretsConfigError } from '@drobek/core';
+import { createConsoleLogger, errorReporterConfigError, reportError, secretsConfigError } from '@drobek/core';
 import { TypecheckRunner, installTypecheckRunner, typecheckLimitsFromEnv } from '@drobek/compile/typecheck';
 import { dbErrorForLog, runCoreMigrations } from '@drobek/db';
 import { dnsMockWarning, domainsConfigError } from '@drobek/domains';
@@ -52,7 +54,8 @@ const configError =
   galleryFrameAncestorsConfigError(process.env) ??
   publishApprovalConfigError(process.env) ??
   docsUrlConfigError(process.env) ??
-  emailConfigError(process.env);
+  emailConfigError(process.env) ??
+  errorReporterConfigError(process.env);
 if (configError) {
   console.error(configError);
   process.exit(1);
@@ -72,8 +75,9 @@ if (process.env.DROBEK_MIGRATE_ON_START !== '0') {
 
 // The platform modules. Loaded once per process (moduleRuntime() is
 // shared with the Vite-loaded dashboard routes through globalThis).
-const modules = await moduleRuntime({ log: createConsoleLogger('modules') }).catch((err: unknown) => {
+const modules = await moduleRuntime({ log: createConsoleLogger('modules') }).catch(async (err: unknown) => {
   console.error(dbErrorForLog(err));
+  await reportError({ level: 'fatal', message: 'the server could not start', error: err, context: { kind: 'startup' } });
   process.exit(1);
 });
 

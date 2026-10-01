@@ -131,6 +131,15 @@ export {
   type EmailTransportMessage,
   type ModuleEmailTransport,
 } from '@drobek/email';
+export { ERROR_REPORTER_SLOT, defineErrorReporter, errorReporterSchema } from './error-reporter-slot.js';
+export {
+  ERROR_REPORTER_API_VERSION,
+  type ErrorReportContext,
+  type ErrorReportEvent,
+  type ErrorReportKind,
+  type ErrorReporter,
+  type ErrorReporterContext,
+} from '@drobek/core';
 export { CORE_ERROR_CODES, MODULE_ERROR_CODES, ModuleError, isModuleError, moduleNotEnabled, skillHint, issuePaths, type ModuleErrorBody, type ModuleErrorCode } from './errors.js';
 export { RULE_TOKENS, decideAccess, isValidRule, parseRule, ruleIsPublic } from './rules.js';
 /** Per-client-IP bucket keys for a module's own per-IP limits (null = no resolved IP → skip it). */

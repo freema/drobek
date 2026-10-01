@@ -6,6 +6,7 @@
  * throws out of a tick.
  */
 import { describe, expect, it, vi } from 'vitest';
+import { installErrorReporter, noopLogger, resetErrorReporterForTests, type ErrorReportEvent } from '@drobek/core';
 import { z } from 'zod';
 import { defineModule, type AnyModule, type AppJobContext, type HookApp, type ModuleJob, type ServerJobContext } from './contract.js';
 import {
@@ -211,6 +212,34 @@ describe('a server job', () => {
     await tickAndSettle(t.scheduler);
     expect(runs).toBe(3);
     expect((await t.state.read([jobStateKey('sync', 'tick')]))[0]).toMatchObject({ failures: 0, lastSuccessAt: 1_000_000 + 3 * MIN });
+  });
+
+  it('a failure reaches the error reporter with module, job and app', async () => {
+    const reported: ErrorReportEvent[] = [];
+    installErrorReporter({ id: 'sink', label: 'Sink', report: (e) => void reported.push(e) }, {}, noopLogger);
+    try {
+      const appMod = defineModule<{ every: string | null }>({
+        name: 'sync',
+        version: '1.0.0',
+        contract: '^1.2',
+        skill: { useWhen: 'x', markdown: '# x' },
+        configSchema: z.object({ every: z.string().nullable() }),
+        configDefaults: { every: null },
+        jobs: [
+          { name: 'tick', every: '1h', run: () => { throw new Error('server side broke'); } },
+          { name: 'pull', scope: 'app', every: () => '1h', run: () => { throw new Error('upstream refused'); } },
+        ],
+      }) as AnyModule;
+      const t = setup({ modules: [appMod], rows: [{ app: app('a1'), config: { every: '1h' }, pendingConfig: null }] });
+      await tickAndSettle(t.scheduler);
+      await vi.waitFor(() => expect(reported).toHaveLength(2));
+      const byJob = Object.fromEntries(reported.map((e) => [e.context.job, e]));
+      expect(byJob.tick).toMatchObject({ message: 'module job failed', error: { message: 'server side broke' }, context: { kind: 'module_job', module: 'sync', job: 'tick' } });
+      expect(byJob.tick!.context.appId).toBeUndefined();
+      expect(byJob.pull).toMatchObject({ error: { message: 'upstream refused' }, context: { kind: 'module_job', module: 'sync', job: 'pull', appId: 'a1', workspaceId: 'ws' } });
+    } finally {
+      resetErrorReporterForTests();
+    }
   });
 
   it('a run past the timeout is aborted and counts as failed', async () => {

@@ -18,6 +18,9 @@ export const LEGACY_PROVIDER_FIXTURE = fileURLToPath(new URL('../../test-fixture
 /** An e-mail transport (`email.transport` id `mailrelay`, MAILRELAY_TOKEN) delivering into a globalThis outbox — plain ESM. */
 export const MAILRELAY_FIXTURE = fileURLToPath(new URL('../../test-fixtures/drobek-module-mailrelay', import.meta.url));
 
+/** An error reporter (`errors.reporter` id `errorsink`, ERRORSINK_TOKEN) collecting events in a globalThis inbox — plain ESM. */
+export const ERRORSINK_FIXTURE = fileURLToPath(new URL('../../test-fixtures/drobek-module-errorsink', import.meta.url));
+
 export function tempModulesDir(): string {
   return mkdtempSync(join(tmpdir(), 'drobek-modules-'));
 }

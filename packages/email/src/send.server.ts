@@ -11,8 +11,11 @@
  * SMTP without SMTP_HOST outside production sends nothing (the caller logs
  * it); in production a missing SMTP config is an error. Resend without
  * RESEND_API_KEY is always an error (the server refuses to start that way).
+ * A failed send also goes to the operator's error reporter (ERROR_REPORTER,
+ * addresses redacted) before it reaches the caller.
  */
 import type { SendMailOptions } from 'nodemailer';
+import { reportError } from '@drobek/core';
 import { sendViaModuleTransport } from './module-transport.server.js';
 import { sendViaResend } from './resend.server.js';
 import { getEmailFrom, getSmtpTransport, smtpConfigured } from './smtp.server.js';
@@ -72,6 +75,15 @@ export function messageFor(mail: OutgoingEmail, env: NodeJS.ProcessEnv = process
 
 /** Deliver `mail`; 'not_configured' when SMTP is not set up in dev (nothing was sent). */
 export async function sendEmail(mail: OutgoingEmail, env: NodeJS.ProcessEnv = process.env): Promise<'sent' | 'not_configured'> {
+  try {
+    return await deliver(mail, env);
+  } catch (err) {
+    void reportError({ message: 'e-mail could not be sent', error: err, context: { kind: 'email' } });
+    throw err;
+  }
+}
+
+async function deliver(mail: OutgoingEmail, env: NodeJS.ProcessEnv): Promise<'sent' | 'not_configured'> {
   const kind = emailTransportKind(env);
   if (kind === 'resend') {
     await sendViaResend(mail, fromHeader(mail.fromName, env), env);
