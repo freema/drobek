@@ -107,14 +107,14 @@ describe('single drobek process', () => {
     expect(await res.json()).toEqual({ rr: true, path: '/login', raw: '{"email":"a@b.c"}' });
   });
 
-  it('rejects an oversized MCP body with clean JSON', async () => {
+  it('/mcp checks the Bearer before it reads a body: an anonymous oversized POST is a JSON-RPC 401', async () => {
     const res = await fetch(`${baseUrl}/mcp`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ blob: 'x'.repeat(600 * 1024) }),
     });
-    expect(res.status).toBe(413);
-    expect(await res.json()).toEqual({ ok: false, error: 'entity_too_large' });
+    expect(res.status).toBe(401);
+    expect(await res.json()).toMatchObject({ jsonrpc: '2.0', error: { code: -32001 }, id: null });
   });
 });
 

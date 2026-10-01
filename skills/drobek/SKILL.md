@@ -135,6 +135,10 @@ in the version history.
   `not_unique`) and nothing is written: `read_file` the file, fix that edit
   and send the call again. New files always go as `content`.
 - The result's `base_version` is the version your changes were applied to.
+- One call travels as one MCP request of at most 10 MiB of JSON (the server's
+  `MCP_MAX_BODY_BYTES`; the briefing states it). A bigger call is refused with
+  HTTP 413 and a JSON-RPC error before anything is written — split the write
+  into several calls, or send `edits` instead of whole files.
 
 - `compile.ok: true` → give the user the `preview_url`.
 - `compile.ok: false` → the version is saved (nothing is lost) but the preview

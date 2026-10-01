@@ -55,6 +55,11 @@ export const LIMITS: LimitDoc[] = [
     meaning: 'Max wait for a compile slot when COMPILE_CONCURRENCY builds are running (→ busy).',
   },
   {
+    env: 'MCP_MAX_BODY_BYTES',
+    default: '10485760 (10 MiB = 2 × COMPILE_MAX_TOTAL_BYTES)',
+    meaning: 'Max bytes of one MCP request, i.e. one write_files call as JSON (escaping included); a bigger one answers HTTP 413 with a JSON-RPC error and nothing is written — split the write into several calls or send `edits`.',
+  },
+  {
     env: 'READINESS_MAX_WARNINGS',
     default: '50',
     meaning: 'Max warnings one readiness report lists (write_files, publish); the rest are counted in `readiness.warnings_omitted`.',

@@ -326,7 +326,10 @@ unchanged.
   `index.html`. The CSP allows scripts and `fetch` only to the app itself and
   esm.sh.
 - **Files** — app-relative text files, 1–20 per write, one `reasoning` line
-  (≤ 300 characters); 200 files / 512 KiB per file / 5 MiB per version.
+  (≤ 300 characters); 200 files / 512 KiB per file / 5 MiB per version. One
+  `write_files` call is one MCP request of at most `MCP_MAX_BODY_BYTES`
+  (10 MiB of JSON); a bigger one answers HTTP 413 with a JSON-RPC error
+  telling the agent to split the write or send `edits`.
 - **Dependencies** — `drobek.json` `imports` → pinned esm.sh URLs; an unlisted
   bare import is `unresolved_import` naming the line to add; `drobek` is the
   platform SDK.

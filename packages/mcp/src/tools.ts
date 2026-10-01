@@ -111,6 +111,7 @@ import {
   type AppRow,
 } from './queries.js';
 import { templateFiles, type TemplateName } from './templates.js';
+import { mcpMaxBodyBytes } from './request-limit.js';
 
 export interface CallContext {
   principal: ToolPrincipal;
@@ -177,6 +178,7 @@ function briefing(ctx: CallContext, enabled: ReadonlySet<string>): string {
       maxFileBytes: L.maxFileBytes,
       maxTotalBytes: L.maxTotalBytes,
       timeoutMs: L.timeoutMs,
+      maxRequestBytes: mcpMaxBodyBytes(ctx.deps.env, L.maxTotalBytes),
     },
     skills: ctx.modules.skillList(enabled),
   });

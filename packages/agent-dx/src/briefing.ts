@@ -32,12 +32,17 @@ export const TEMPLATE_IMPORTS: Readonly<Record<string, string>> = {
  */
 export const TAILWIND_BROWSER_URL = 'https://esm.sh/@tailwindcss/browser@4.1.11';
 
-/** The live compile limits the briefing states (defaults = @drobek/compile DEFAULT_LIMITS). */
+/**
+ * The live limits the briefing states: the compile ones (defaults =
+ * @drobek/compile DEFAULT_LIMITS) and the largest MCP request body
+ * (MCP_MAX_BODY_BYTES, default twice the version total).
+ */
 export interface BriefingLimits {
   maxFiles: number;
   maxFileBytes: number;
   maxTotalBytes: number;
   timeoutMs: number;
+  maxRequestBytes: number;
 }
 
 const DEFAULT_BRIEFING_LIMITS: BriefingLimits = {
@@ -45,6 +50,7 @@ const DEFAULT_BRIEFING_LIMITS: BriefingLimits = {
   maxFileBytes: 512 * 1024,
   maxTotalBytes: 5 * 1024 * 1024,
   timeoutMs: 10_000,
+  maxRequestBytes: 10 * 1024 * 1024,
 };
 
 function kib(bytes: number): string {
@@ -159,6 +165,7 @@ export function renderBriefing(opts: { limits?: Partial<BriefingLimits>; skills?
     '- To change a few lines of an existing file send `{path, edits:[{old_string, new_string, replace_all?}]}` instead of the whole file: each old_string must match exactly once (whitespace included) unless replace_all; a file\'s edits apply in order. One that does not apply refuses the whole call with `edit_mismatch` (path, edit_index) — read_file the file and fix it.',
     `- Every write needs a \`reasoning\` line (≤ ${REASONING_MAX_CHARS} characters); it is shown in the version history.`,
     `- Limits per version: ${L.maxFiles} files, ${kib(L.maxFileBytes)} per file, ${kib(L.maxTotalBytes)} in total; a build may take ${L.timeoutMs / 1000} s.`,
+    `- One write_files call travels as one MCP request of at most ${kib(L.maxRequestBytes)} (the JSON, escaping included); a bigger one is refused before it reaches the tool (HTTP 413) and nothing is written. Split a big write into several calls, or send \`edits\` instead of whole files.`,
     '',
     '## Dependencies (drobek.json import map)',
     '- Bare imports resolve ONLY through drobek.json `imports` → pinned https URLs (esm.sh) that the browser loads (the one exception is `drobek`, the platform SDK). `pkg/sub` maps to the `pkg` URL + `/sub` unless listed itself. An unlisted package is a compile error (`unresolved_import`) that names the line to add.',
