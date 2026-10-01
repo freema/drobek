@@ -1,5 +1,10 @@
 # Changelog — drobek (core)
 
+## Unreleased
+
+### Fixed
+- **A refresh retried within 60 s gets a fresh pair; reuse revokes only its own lineage** (NSO-414): presenting a refresh token that had already been rotated was always reuse, and reuse revoked every access token of that user for the client and audience. Claude Code retries a refresh with the same token after a timeout or a lost response, its sessions on one machine share the stored token, and its `client_id` is one CIMD URL for every install — so one innocent retry answered `invalid_grant` and signed the user out of Claude Code on every machine. Now a rotated refresh token sent again within 60 s of its rotation (and of every later rotation in its chain, at most 10 links) is a retry: the lineage's newest, unused token is rotated and the client gets a fresh pair. Later it is reuse as before, but it revokes that lineage only: its refresh tokens are marked used and the access tokens issued with them revoked (migration 0032 adds `oauth_access_tokens.refresh_token_id`; access tokens issued before it are revoked by user, client and audience), so the user's other connections of the same client keep working; a replayed authorization code revokes the same way. A rotation now claims the token and links its successor in one transaction. Every refresh logs one `oauth refresh` line with its outcome (`rotated`, `retried`, `unknown`, `expired`, `client_mismatch`, `reuse`) and row ids, never a token.
+
 ## v0.7.2 — 2026-10-01
 
 ### Fixed

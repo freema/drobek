@@ -483,8 +483,8 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
   {
     code: 'invalid_grant',
     surface: 'OAuth /token 400',
-    meaning: 'The authorization code or refresh token is expired, already used (single-use), or its lineage was burned by reuse detection.',
-    fix: 'Restart the flow: new /authorize → new code → exchange once; rotate refresh tokens and never reuse an old one.',
+    meaning: 'The authorization code or refresh token is expired or already used (a code once; a rotated refresh token is accepted again only as a retry within 60 s), or its lineage was burned by reuse detection.',
+    fix: 'Restart the flow: new /authorize → new code → exchange once; keep the refresh token from the newest response and never send an older one.',
   },
   {
     code: 'invalid_client',
