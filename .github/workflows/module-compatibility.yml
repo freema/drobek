@@ -19,7 +19,7 @@ jobs:
         with:
           repository: freema/drobek-module-counter
           # Reviewed source, not a floating branch. Update deliberately with compatibility evidence.
-          ref: 5f026dd5f2a40af601dd671d4f6a94b5bb2e742a
+          ref: ea544f70b8be753a31a6a1d820e7e2ec9f907b0d
           path: .compat-counter
           persist-credentials: false
       - uses: pnpm/action-setup@v4
