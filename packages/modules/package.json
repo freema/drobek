@@ -2,7 +2,7 @@
   "name": "@drobek/modules",
   "version": "1.0.0",
   "private": false,
-  "description": "The drobek platform module contract, registry and runtime: defineModule, the ModuleContext and the test kit (@drobek/modules/testing).",
+  "description": "The drobek platform module contract (defineModule, the ModuleContext, the slot helpers) and the test kit (@drobek/modules/testing).",
   "license": "AGPL-3.0-only",
   "repository": {
     "type": "git",

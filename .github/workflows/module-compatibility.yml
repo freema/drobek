@@ -31,7 +31,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build:packages
-      - name: Test the counter against candidate public packages
+      - name: Test a scaffolded module and the counter against candidate public packages
         env:
           CORE_RELEASE: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
         run: node scripts/check-external-module.mjs .compat-counter "$CORE_RELEASE"

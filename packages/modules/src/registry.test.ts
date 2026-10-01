@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { defineModule } from './contract.js';
-import { ModuleLoadError, checkRequires, endUserAuthorityOf, loadModules, mailAuthorityOf, packageNameFor, parseModuleList, recordsAuthorityOf, resolveModule, syncAuthorityOf, upstreamsAuthorityOf, validateModule } from './registry.js';
+import { checkRequires, endUserAuthorityOf, loadModules, mailAuthorityOf, packageNameFor, parseModuleList, recordsAuthorityOf, resolveModule, syncAuthorityOf, upstreamsAuthorityOf, validateModule } from './registry.js';
+import { ModuleLoadError } from './errors.js';
 import { echo, quiet } from './test/fixtures.js';
 
 const importer = (map: Record<string, unknown>) => async (pkg: string) => {

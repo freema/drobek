@@ -7,142 +7,14 @@
  * sets with `configure_module`, and a skill the agent reads with `skill_info`.
  * App code is never executed by the server — only modules are.
  *
- * Module authors: `defineModule`, `z`, `respond`, `ModuleError` (+ types,
- * including `DB`, `Logger` and `SdkCore`, so a module needs no other drobek
- * package); tests: `@drobek/modules/testing`. The contract is docs/MODULES.md.
+ * This entry is the in-repo surface: the public contract (public.ts, what
+ * the npm package publishes) plus the runtime, registry and loader the
+ * server wires together. Module authors use the contract and
+ * `@drobek/modules/testing`; the contract is docs/MODULES.md.
  */
-export { z } from 'zod';
-export type { DB } from '@drobek/db';
-export type { Logger } from '@drobek/core';
-export type { SdkCore } from '@drobek/sdk';
-export {
-  JOB_MAX_INTERVAL_MS,
-  JOB_MIN_INTERVAL_MS,
-  JOB_NAME_RE,
-  MODULE_CONTRACT_VERSION,
-  MODULE_ERROR_CODE_RE,
-  MODULE_NAME_RE,
-  SLOT_NAME_RE,
-  RECORDS_IMPORT_MAX_ROWS,
-  defineModule,
-  isDefinedModule,
-  parseJobInterval,
-  respond,
-  type AccessDecision,
-  type AnyModule,
-  type AppJob,
-  type AppJobContext,
-  normalizeConfirmItems,
-  type ConfirmContext,
-  type ConfirmItem,
-  type ConfirmRole,
-  type ConfirmedContext,
-  type ComposedModuleParts,
-  type DrobekModule,
-  type EmailKind,
-  type EmailMessage,
-  type EmailRecipient,
-  type EndUser,
-  type EndUserAuthority,
-  type EndUserCallbackApp,
-  type EndUserCallbackInput,
-  type EndUserCallbackResult,
-  type EndUserListQuery,
-  type EndUserPage,
-  type EndUserRecord,
-  type FilesAuthority,
-  type OwnerFile,
-  type OwnerFilesPage,
-  type OwnerSubmission,
-  type OwnerView,
-  type SubmissionsAuthority,
-  type SubmissionsPage,
-  type SubmissionsQuery,
-  type HookApp,
-  type JobContextBase,
-  type JobInterval,
-  type Limits,
-  type MailAuthority,
-  type MailEnvelope,
-  type MailPrepareInput,
-  type ModuleAvailability,
-  type ModuleComposeInput,
-  type ModuleContext,
-  type ModuleDashboard,
-  type ModuleDashboardEditor,
-  type ModuleErrorDoc,
-  type ModuleHooks,
-  type ModuleJob,
-  type ModuleAppView,
-  type ModuleLimit,
-  type ModuleMigrations,
-  type ModuleRequest,
-  type ModuleResponse,
-  type ModuleRouter,
-  type ModuleSdk,
-  type ModuleSecretDoc,
-  type ModuleServices,
-  type ModuleSkill,
-  type ModuleSlot,
-  type Principal,
-  type RateLimitResult,
-  type RecordsAuthority,
-  type RecordsCollection,
-  type RecordsImportOptions,
-  type RecordsImportResult,
-  type RecordsPage,
-  type RecordsQuery,
-  type RecordsView,
-  type RouteHandler,
-  type RouteOptions,
-  type RouteRateLimit,
-  type Rule,
-  type ServerJob,
-  type ServerJobContext,
-  type SyncAuthority,
-  type SyncRun,
-  type SyncSourceState,
-  type UploadedFile,
-  type UpstreamRequest,
-  type UpstreamResponse,
-  type UpstreamsAuthority,
-} from './contract.js';
-export {
-  AUTH_PROVIDER_API_VERSION,
-  AUTH_PROVIDER_ID_RE,
-  AUTH_RESERVED_CONFIG_KEYS,
-  EMAIL_PROVIDER_ID,
-  authIdentitySchema,
-  authProviderSchema,
-  authSignedInObserverSchema,
-  defineAuthProvider,
-  defineSignInObserver,
-  type AuthIdentity,
-  type AuthProvider,
-  type AuthProviderBeginInput,
-  type AuthProviderBeginResult,
-  type AuthProviderCallbackInput,
-  type AuthProviderSecretDoc,
-  type AuthProviderSecrets,
-  type AuthSignInEvent,
-  type AuthSignedInObserver,
-} from './auth-provider.js';
-export { EMAIL_TRANSPORT_SLOT, defineEmailTransport, emailTransportSchema, selectEmailTransport } from './email-transport-slot.js';
-export {
-  EMAIL_SEND_ERROR_CODES,
-  EMAIL_TRANSPORT_API_VERSION,
-  EmailSendError,
-  type EmailSendErrorCode,
-  type EmailTransportContext,
-  type EmailTransportMessage,
-  type ModuleEmailTransport,
-} from '@drobek/email';
-export { CORE_ERROR_CODES, MODULE_ERROR_CODES, ModuleError, isModuleError, moduleNotEnabled, skillHint, issuePaths, type ModuleErrorBody, type ModuleErrorCode } from './errors.js';
-export { RULE_TOKENS, decideAccess, isValidRule, parseRule, ruleIsPublic } from './rules.js';
-/** Per-client-IP bucket keys for a module's own per-IP limits (null = no resolved IP → skip it). */
-export { perIpLimitKey } from '@drobek/core';
-/** Byte sniffing shared with app assets: a module decides a stored file's type from its bytes. */
-export { hasControlBytes, looksLikeSvg, sniffSignature, type SniffedType } from '@drobek/core';
+export * from './public.js';
+export { selectEmailTransport } from './email-transport-slot.js';
+export { ModuleLoadError } from './errors.js';
 export { mergePatch, jsonEqual } from './merge-patch.js';
 export { Lru, jsonKey, stableJson } from './memo.js';
 export {
@@ -223,7 +95,6 @@ export { MAX_FILE_HEAD_BYTES, multipartBoundary, parseMultipart, streamMultipart
 export { SDK_HEADER, DEFAULT_MAX_BODY_BYTES, isReadable, type PipelineRequest, type PipelineResult } from './router.js';
 export { csvChunks } from './csv-stream.js';
 export {
-  ModuleLoadError,
   RESERVED_MODULE_NAMES,
   checkErrorCodes,
   checkModuleSet,

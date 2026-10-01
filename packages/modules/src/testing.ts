@@ -58,13 +58,37 @@ import { CORE_ERROR_CODES, ModuleError } from './errors.js';
 import { assertSignInSender, capEmailText, emailKind, resolveRecipients, sanitizeSubject } from './email.js';
 import type { MailGuard } from './mail-guard.js';
 import { memoryRateLimiter } from './runtime.js';
-import { composeModule } from './registry.js';
+import { composeModule, loadModuleSet } from './registry.js';
+import { buildSdk as buildServerSdk } from './sdk-build.js';
 
 export { checkSkill, checkSkillSources, knownErrorCodes, moduleSkillSource, type CheckSkillOptions, type CheckSkillSourcesOptions } from './skill-check/index.js';
 export { checkExamples, type ExamplesOptions, type ExamplesReport } from './skill-check/examples.js';
 export { SKILL_MAX_LINES, SKILL_SECTIONS, skillFormatIssues } from './skill-check/format.js';
 export { codeBlocks, headings, proseOf, sectionText, type CodeBlock, type Heading } from './skill-check/markdown.js';
 export { formatSkillIssue, type SkillIssue, type SkillSource } from './skill-check/source.js';
+export { memoryMailGuard, type MailGuard, type MailGuardConfig } from './mail-guard.js';
+
+/**
+ * Load `DROBEK_MODULES` the way the server does at start (resolve, validate,
+ * check the set: slots, requires, error codes) and return the modules in
+ * that order. `importer` resolves a package name (`drobek-module-<name>` for
+ * a short name) to the module's ES module, or null when it is not installed.
+ */
+export async function loadModules(env: { DROBEK_MODULES?: string }, opts: { importer: (specifier: string) => Promise<unknown> }): Promise<AnyModule[]> {
+  return (await loadModuleSet({ DROBEK_MODULES: env.DROBEK_MODULES }, { importer: opts.importer, log: noopLogger })).modules;
+}
+
+/** The browser SDK the server builds from these modules: the bundle (`js`) and its declarations (`dts`). */
+export interface TestSdkBundle {
+  js: Buffer;
+  dts: string;
+}
+
+/** Build the browser SDK (`/__drobek/sdk.js` + its `.d.ts`) from these modules, as the server does at start. */
+export async function buildSdk(modules: AnyModule[]): Promise<TestSdkBundle> {
+  const sdk = await buildServerSdk(modules);
+  return { js: sdk.js, dts: sdk.dts };
+}
 
 /**
  * The folder of drobek's core migrations (journal `__drizzle_migrations_core`):

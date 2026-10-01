@@ -1,0 +1,2851 @@
+import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
+import { Readable } from 'node:stream';
+import { ZodType, z } from 'zod';
+export { z } from 'zod';
+export { SdkCore } from '@drobek/sdk';
+
+/**
+ * drobek core schema — day-one set (M0 walking skeleton).
+ *
+ * Identity + tenancy + apps and their immutable versions,
+ * plus the tables each later unit added (oauth_*, upstreams, audit_log,
+ * app_errors, app_daily_stats, app_compiles, module_request_stats,
+ * module_configs, module_secrets, workspace_modules, abuse_reports,
+ * app_assets, app_version_assets). Platform
+ * modules own their tables (`mod_<name>_*`, their own migration journals).
+ *
+ * Hard constraints encoded here:
+ * - App file bytes live IN Postgres (`blobs.bytes`, content-addressed by
+ *   sha256, deduplicated across versions and apps). Apps are small source
+ *   trees (≤ 5 MiB per version, enforced by @drobek/compile), so one database
+ *   is the whole state — no disk volume to back up separately.
+ * - A version is immutable; publish/restore only move `apps.published_version_id`
+ *   or add a new version.
+ * - Soft-delete tombstone (`deleted_at`) on apps.
+ * - super-admin is a GLOBAL env flag (SUPERADMIN_EMAIL), NOT a membership
+ *   role — hence memberships only knows workspace-admin/editor/viewer.
+ */
+
+
+/** Postgres `bytea` ↔ Node `Buffer`. */
+declare const bytea = customType<{ data: Buffer; driverData: Buffer | Uint8Array }>({
+  dataType: () => 'bytea',
+  fromDriver: (v) => (Buffer.isBuffer(v) ? v : Buffer.from(v)),
+});
+
+/**
+ * Who performed an audited action. `agent` = an MCP tool call made on
+ * behalf of a connected coding agent (OAuth token); `user` = a human dashboard/
+ * web session action. Derived SERVER-SIDE at the call site — never from client
+ * input — so attribution is not spoofable. Defaults to `user` so the existing
+ * deploy/rollback rows migrate additively without loss. `end_user` = a
+ * signed-in end user of an app acting through a platform module on the apps
+ * origin (`ctx.audit`); such rows carry no `actor_user_id` (end users are not
+ * drobek users).
+ */
+declare const auditActorKindEnum = pgEnum('audit_actor_kind', ['user', 'agent', 'end_user']);
+
+// ── Enums ────────────────────────────────────────────────────────────────────
+
+declare const workspaceKindEnum = pgEnum('workspace_kind', ['personal', 'team']);
+
+declare const membershipRoleEnum = pgEnum('membership_role', [
+  'workspace-admin',
+  'editor',
+  'viewer',
+]);
+
+/**
+ * App visibility gate, checked on the app host BEFORE any file is read:
+ * `public` or `password`. There is no "members only": app hosts never read
+ * the dashboard session, so it could not be enforced there.
+ */
+declare const appVisibilityEnum = pgEnum('app_visibility', ['public', 'password']);
+
+declare const appStatusEnum = pgEnum('app_status', ['live', 'hibernated']);
+
+/**
+ * Result of compiling a version (@drobek/compile). `pending` = stored but not
+ * compiled yet; only an `ok` version can be published.
+ */
+declare const compileStatusEnum = pgEnum('compile_status', ['pending', 'ok', 'error']);
+
+/** `source` = written by the agent; `built` = compiler output (served first). */
+declare const versionFileKindEnum = pgEnum('version_file_kind', ['source', 'built']);
+
+// ── Identity ─────────────────────────────────────────────────────────────────
+
+declare const users = pgTable('users', {
+  id: text('id')
+    .primaryKey()
+    .$defaultFn(() => createId()),
+  email: text('email').notNull().unique(),
+  /** Google OIDC subject (`sub`); links the OAuth account to this user. */
+  googleSub: text('google_sub').unique(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+// ── Tenancy ──────────────────────────────────────────────────────────────────
+
+declare const workspaces = pgTable('workspaces', {
+  id: text('id')
+    .primaryKey()
+    .$defaultFn(() => createId()),
+  kind: workspaceKindEnum('kind').notNull(),
+  slug: text('slug').notNull().unique(),
+  name: text('name').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  /** PUBLISH_APPROVAL=approval — a super-admin allowed this workspace to publish (null = not approved). */
+  publishApprovedAt: timestamp('publish_approved_at', { withTimezone: true }),
+  publishApprovedBy: text('publish_approved_by').references((): AnyPgColumn => users.id, { onDelete: 'set null' }),
+  /** The last approval request e-mailed to the operator (dedupe: one per 24 h until decided). */
+  publishApprovalRequestedAt: timestamp('publish_approval_requested_at', { withTimezone: true }),
+  publishApprovalRequestedBy: text('publish_approval_requested_by').references((): AnyPgColumn => users.id, {
+    onDelete: 'set null',
+  }),
+  /** A super-admin turned publishing off for this workspace (refused in every PUBLISH_APPROVAL mode; null = not blocked). */
+  publishBlockedAt: timestamp('publish_blocked_at', { withTimezone: true }),
+  publishBlockedBy: text('publish_blocked_by').references((): AnyPgColumn => users.id, { onDelete: 'set null' }),
+});
+
+declare const memberships = pgTable(
+  'memberships',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    role: membershipRoleEnum('role').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.workspaceId] })]
+);
+
+// ── Apps & versions ──────────────────────────────────────────────────────────
+
+declare const apps = pgTable(
+  'apps',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id),
+    /** GLOBALLY unique — it is the app's host label `<slug>.<APPS_DOMAIN>`. */
+    slug: text('slug').notNull(),
+    /** Human-readable name given at create_app (null for older apps → show the slug). */
+    name: text('name'),
+    /** The version served on the production host; publish/rollback move it. */
+    publishedVersionId: text('published_version_id').references(
+      (): AnyPgColumn => appVersions.id,
+      { onDelete: 'set null' }
+    ),
+    visibility: appVisibilityEnum('visibility').notNull().default('public'),
+    /** Only set when visibility = 'password'. */
+    passwordHash: text('password_hash'),
+    /**
+     * CSP `frame-ancestors` override for the app's hosts, e.g.
+     * `https://intranet.example.com`. Null → `'none'` (no embedding). Edited
+     * in the dashboard later (M2); validated before it reaches a header.
+     */
+    frameAncestors: text('frame_ancestors'),
+    status: appStatusEnum('status').notNull().default('live'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    /**
+     * Soft delete: a deleted app is
+     * invisible everywhere (dashboard, MCP, app hosts). It keeps its slug for
+     * 30 days; then @drobek/apps renames it to the tombstone
+     * `<slug>~deleted-<id>` so a new app can take the slug.
+     */
+    deletedAt: timestamp('deleted_at'),
+    /**
+     * Super-admin takedown: the reason CATEGORY
+     * (`phishing` | `malware` | `spam` | `copyright` | `illegal` | `other`,
+     * validated by @drobek/apps). Non-null = locked: every host of the app
+     * answers 451, and writes / publish / restore / module config are refused
+     * with `app_locked_by_admin`. Only a super-admin restore clears it.
+     */
+    lockedReason: text('locked_reason'),
+    /**
+     * When the production host last started serving a version:
+     * every publish sets it, unpublish / takedown clear it. The public
+     * gallery lists the newest first.
+     */
+    publishedAt: timestamp('published_at'),
+    /**
+     * The owner's opt-in to the public gallery — changed in the
+     * dashboard by an editor+ of a PUBLISHED app, never through MCP.
+     * Unpublish / takedown turn it off. The gallery also filters at query
+     * time (published, not taken down, not deleted, not hidden).
+     */
+    galleryListed: boolean('gallery_listed').notNull().default(false),
+    /** The gallery's one-line public description (plain text, ≤ 160 chars). */
+    galleryDescription: text('gallery_description'),
+    /** A super-admin hid the gallery entry (non-null = hidden, whatever the owner sets). */
+    galleryHiddenAt: timestamp('gallery_hidden_at'),
+    /** The owner lets signed-in people duplicate the listed app into their own workspace. */
+    galleryAllowDuplicate: boolean('gallery_allow_duplicate').notNull().default(false),
+    /** The gallery app this one was duplicated from (null when the source is gone or none). */
+    duplicatedFromAppId: text('duplicated_from_app_id').references((): AnyPgColumn => apps.id, { onDelete: 'set null' }),
+    /** The source's slug at duplication time, kept when the source is deleted. */
+    duplicatedFromSlug: text('duplicated_from_slug'),
+  },
+  (t) => [
+    uniqueIndex('apps_slug_uq').on(t.slug),
+    index('apps_duplicated_from_idx').on(t.duplicatedFromAppId).where(sql`${t.duplicatedFromAppId} IS NOT NULL`),
+    // The public gallery page reads listed apps newest-published first.
+    index('apps_gallery_idx').on(t.publishedAt.desc(), t.slug.desc()).where(sql`${t.galleryListed}`),
+    index('apps_workspace_idx').on(t.workspaceId),
+    // The slug-release sweep reads deleted apps only.
+    index('apps_deleted_at_idx').on(t.deletedAt).where(sql`${t.deletedAt} IS NOT NULL`),
+    // Grammar mirrored by @drobek/apps validateAppSlug (which adds reserved
+    // words). A deleted app may carry its released-slug tombstone instead (0016).
+    check(
+      'apps_slug_format',
+      sql`(${t.slug} ~ '^[a-z0-9]+(-[a-z0-9]+)*$' AND char_length(${t.slug}) BETWEEN 3 AND 40) OR (${t.deletedAt} IS NOT NULL AND ${t.slug} ~ '^[a-z0-9]+(-[a-z0-9]+)*~deleted-[a-z0-9]+$')`
+    ),
+  ]
+);
+
+/** A signed-in drobek account likes a gallery app — one row per account and app. */
+declare const galleryLikes = pgTable(
+  'gallery_likes',
+  {
+    appId: text('app_id')
+      .notNull()
+      .references(() => apps.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.appId, t.userId] })]
+);
+
+/** Opens of a gallery app through the gallery's counting link, per UTC day (`YYYY-MM-DD`); no visitor data. */
+declare const galleryOpens = pgTable(
+  'gallery_opens',
+  {
+    appId: text('app_id')
+      .notNull()
+      .references(() => apps.id, { onDelete: 'cascade' }),
+    day: text('day').notNull(),
+    count: integer('count').notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.appId, t.day] })]
+);
+
+/** Content-addressed file bytes, shared by every version (and app) that uses them. */
+declare const blobs = pgTable('blobs', {
+  sha256: text('sha256').primaryKey(),
+  bytes: bytea('bytes').notNull(),
+  size: integer('size').notNull(),
+  /** Refreshed whenever a new version references the blob (GC grace period). */
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+/** One immutable snapshot of an app's files; `number` counts up per app from 1. */
+declare const appVersions = pgTable(
+  'app_versions',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    appId: text('app_id')
+      .notNull()
+      .references(() => apps.id),
+    number: integer('number').notNull(),
+    createdByUserId: text('created_by_user_id').references(() => users.id),
+    /** agent (MCP) vs user (dashboard) — server-derived, like audit_log. */
+    actorKind: auditActorKindEnum('actor_kind').notNull(),
+    /** The agent's one-line "why" for this change (shown in the history). */
+    reasoning: text('reasoning'),
+    compileStatus: compileStatusEnum('compile_status').notNull().default('pending'),
+    /** @drobek/compile messages when compile_status = 'error'. */
+    compileErrors: jsonb('compile_errors'),
+    /**
+     * Set when a publish froze the app's assets for this version
+     * (its `app_version_assets` rows — possibly none); null = never frozen,
+     * or the snapshot was pruned.
+     */
+    assetsFrozenAt: timestamp('assets_frozen_at'),
+    /**
+     * The TypeScript check of this version's sources (a readiness
+     * warning source), written by the background check; null = not checked.
+     */
+    typecheck: jsonb('typecheck'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('app_versions_app_number_uq').on(t.appId, t.number)]
+);
+
+/** A version's file list: path → blob. A path may exist once per kind. */
+declare const versionFiles = pgTable(
+  'version_files',
+  {
+    versionId: text('version_id')
+      .notNull()
+      .references(() => appVersions.id, { onDelete: 'cascade' }),
+    path: text('path').notNull(),
+    sha256: text('sha256')
+      .notNull()
+      .references(() => blobs.sha256),
+    size: integer('size').notNull(),
+    kind: versionFileKindEnum('kind').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.versionId, t.kind, t.path] }),
+    index('version_files_sha256_idx').on(t.sha256),
+  ]
+);
+
+/**
+ * Append-only audit trail. Every security-relevant workspace mutation
+ * (deploy.activate, deploy.rollback, app.create, member.invite/accept/role_change, …) writes one
+ * immutable row. APPEND-ONLY: rows are never updated and never deleted except by
+ * the age-based retention prune (@drobek/audit).
+ *
+ * Attribution: `actor_user_id` is the acting user (nullable for system
+ * actions); `actor_kind` records whether that action came from a connected AGENT
+ * (an MCP tool call) or a human USER (dashboard/web) — both derived server-side.
+ *
+ * Subject: `subject_type` names the kind of thing acted on (app | member | …)
+ * and `target` holds its STABLE id (the app slug, the member user id, …). It is
+ * deliberately plain text with NO foreign key, so an audit row SURVIVES the
+ * deletion/tombstoning of its subject app/workspace (governance must outlive the
+ * resource). `meta` carries structured, secret-free, PII-free context only.
+ *
+ * `workspace_id` keeps the FK (audit is always read within a live workspace and
+ * workspaces are not deleted in v1); the subject app id is the one that must
+ * survive deletion, hence its text-not-FK treatment above.
+ */
+declare const auditLog = pgTable(
+  'audit_log',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id),
+    actorUserId: text('actor_user_id').references(() => users.id),
+    /** agent (MCP tool) vs user (dashboard/web) — server-derived, not spoofable. */
+    actorKind: auditActorKindEnum('actor_kind').notNull().default('user'),
+    action: text('action').notNull(),
+    /** The KIND of subject acted on: 'app' | 'member' | … (nullable, forward-open). */
+    subjectType: text('subject_type'),
+    /** The subject's stable id (app slug, member user id, …) — text, NO FK. */
+    target: text('target'),
+    meta: jsonb('meta'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (t) => [
+    // The Activity view reads by workspace, newest-first — index it.
+    index('audit_log_workspace_created_idx').on(t.workspaceId, t.createdAt),
+  ]
+);
+
+// ── MCP OAuth 2.1 Authorization Server ────────────────────
+//
+// drobek's web app is the OAuth 2.1 Authorization Server; mcp-server is the
+// protected Resource Server. All opaque tokens/codes are stored SHA-256-hashed
+// at rest (never the raw secret). PKCE S256 is mandatory. Tokens are
+// bound to a USER — not to a workspace: every MCP tool call
+// re-resolves the caller's membership in the workspace it targets — and carry
+// the granted scope (`read` / `write` / `publish`) plus the RFC 8707
+// `audience` the Resource Server validates. See @drobek/oauth.
+
+/**
+ * Public PKCE clients — no client_secret. `source` = `dcr` for a Dynamic Client
+ * Registration row (random hex client_id) or `cimd` for a Client ID Metadata
+ * Document client (client_id = the https URL of its metadata; the row is an
+ * upserted mirror of the fetched document so codes/tokens can reference it).
+ * `last_used_at` is stamped when the user approves a grant for the client —
+ * a DCR row that never got one counts toward the unused-client cap.
+ */
+declare const oauthClients = pgTable('oauth_clients', {
+  id: text('id')
+    .primaryKey()
+    .$defaultFn(() => createId()),
+  clientId: text('client_id').notNull().unique(),
+  clientName: text('client_name').notNull(),
+  /** Exact-match set — the authorize redirect_uri must equal one of these. */
+  redirectUris: text('redirect_uris').array().notNull(),
+  tokenEndpointAuthMethod: text('token_endpoint_auth_method')
+    .notNull()
+    .default('none'),
+  source: text('source').notNull().default('dcr'),
+  lastUsedAt: timestamp('last_used_at'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+/** Single-use PKCE authorization codes (~5 min TTL); consumed atomically. */
+declare const oauthAuthorizationCodes = pgTable('oauth_authorization_codes', {
+  id: text('id')
+    .primaryKey()
+    .$defaultFn(() => createId()),
+  codeHash: text('code_hash').notNull().unique(),
+  /** Public client_id string the code was issued to (FK → oauth_clients). */
+  clientId: text('client_id')
+    .notNull()
+    .references(() => oauthClients.clientId, { onDelete: 'cascade' }),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  redirectUri: text('redirect_uri').notNull(),
+  codeChallenge: text('code_challenge').notNull(),
+  codeChallengeMethod: text('code_challenge_method').notNull(),
+  scope: text('scope').notNull(),
+  /** RFC 8707 requested resource → becomes the access token audience. */
+  resource: text('resource').notNull(),
+  used: boolean('used').notNull().default(false),
+  expiresAt: timestamp('expires_at').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+/** Opaque access tokens (~1 h TTL), audience-bound (RFC 8707). */
+declare const oauthAccessTokens = pgTable('oauth_access_tokens', {
+  id: text('id')
+    .primaryKey()
+    .$defaultFn(() => createId()),
+  tokenHash: text('token_hash').notNull().unique(),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  oauthClientId: text('oauth_client_id').references(() => oauthClients.id, {
+    onDelete: 'set null',
+  }),
+  scope: text('scope').notNull(),
+  audience: text('audience').notNull(),
+  expiresAt: timestamp('expires_at').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  revokedAt: timestamp('revoked_at'),
+});
+
+/**
+ * Opaque refresh tokens (~30 day TTL) with ROTATION + reuse detection. On use:
+ * `used_at` is stamped and `rotated_to` points at the freshly-issued successor.
+ * Presenting a token whose `used_at` is already set is REUSE → the whole
+ * rotated_to lineage is invalidated and the grant's access tokens revoked.
+ */
+declare const oauthRefreshTokens = pgTable('oauth_refresh_tokens', {
+  id: text('id')
+    .primaryKey()
+    .$defaultFn(() => createId()),
+  tokenHash: text('token_hash').notNull().unique(),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  oauthClientId: text('oauth_client_id').references(() => oauthClients.id, {
+    onDelete: 'set null',
+  }),
+  scope: text('scope').notNull(),
+  audience: text('audience').notNull(),
+  /** Self-FK: the successor token minted when this one was rotated. */
+  rotatedTo: text('rotated_to').references(
+    (): AnyPgColumn => oauthRefreshTokens.id
+  ),
+  usedAt: timestamp('used_at'),
+  expiresAt: timestamp('expires_at').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+/**
+ * Personal API keys: `drk_` + 32 base64url chars, an
+ * alternative Bearer for the same MCP Resource Server path (the prefix tells
+ * them apart). Bound to a user like an OAuth token, same scope vocabulary
+ * (`scopes` is space-delimited), no audience. Only the SHA-256 of the key is
+ * stored; the raw key is shown once at creation. `last_used_at` is refreshed
+ * at most once a minute; a set `revoked_at` rejects the key.
+ */
+declare const apiKeys = pgTable('api_keys', {
+  id: text('id')
+    .primaryKey()
+    .$defaultFn(() => createId()),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  keyHash: text('key_hash').notNull().unique(),
+  scopes: text('scopes').notNull(),
+  lastUsedAt: timestamp('last_used_at'),
+  revokedAt: timestamp('revoked_at'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+// ── Agent loop v1 — error beacon + serving signals ─────
+//
+// The observe half of the deploy→observe→fix loop. `app_errors` is a per-app
+// RING BUFFER (capped count + age, oldest evicted by @drobek/insights on insert)
+// of SANITIZED client errors ingested by the PUBLIC, UNAUTHENTICATED beacon —
+// only message/stack/url/ua are stored, PII/secret-redacted + truncated; NEVER
+// cookies/tokens. `app_daily_stats` is the durable per-app/day serving-signal
+// roll-up (request volume / 5xx / 404s-by-path), fed from Redis hot counters by
+// a light flush. Both are read-only to the app_errors/app_logs MCP tools + the
+// dashboard Overview panels (viewer+; stored text is escaped on render).
+// A failed run of a module's per-app job lands here too (type
+// `module_job`, with `module` + `job`; server-side, redacted like the beacon's).
+
+declare const appErrorTypeEnum = pgEnum('app_error_type', [
+  'error',
+  'unhandledrejection',
+  'module_job',
+]);
+
+declare const appErrors = pgTable(
+  'app_errors',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    appId: text('app_id')
+      .notNull()
+      .references(() => apps.id),
+    type: appErrorTypeEnum('type').notNull(),
+    /** Sanitized (redacted + truncated) error message. */
+    message: text('message').notNull(),
+    /** Sanitized stack, when the browser supplied one. */
+    stack: text('stack'),
+    /** Page URL the error fired on (sanitized). */
+    url: text('url').notNull(),
+    /** User-agent (sanitized), when present. */
+    ua: text('ua'),
+    /** Client-supplied event time (validated epoch-ms → timestamp); may skew. */
+    ts: timestamp('ts'),
+    /** sha256(message + stack head) — groups identical errors with counts. */
+    dedupKey: text('dedup_key').notNull(),
+    /** `module_job` rows: the module and its job that failed (null for browser errors). */
+    module: text('module'),
+    job: text('job'),
+    /** Server ingest time — the authoritative ordering + retention field. */
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (t) => [index('app_errors_app_created_idx').on(t.appId, t.createdAt)]
+);
+
+/**
+ * Per-app, per-UTC-day serving signals. `day` is a `YYYY-MM-DD` string
+ * (deterministic bucket, no tz math). `path_404_counts` is `{ path: count }`;
+ * `__other__` absorbs paths past the per-day cardinality cap. Upserted from the
+ * Redis hot counters on the read path (unique on (app_id, day)).
+ */
+declare const appDailyStats = pgTable(
+  'app_daily_stats',
+  {
+    appId: text('app_id')
+      .notNull()
+      .references(() => apps.id),
+    day: text('day').notNull(),
+    path404Counts: jsonb('path_404_counts')
+      .$type<Record<string, number>>()
+      .notNull()
+      .default({}),
+    count5xx: integer('count_5xx').notNull().default(0),
+    requestCount: integer('request_count').notNull().default(0),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.appId, t.day] })]
+);
+
+// ── get_logs — compile history + module request stats ────────
+//
+// `app_compiles` is a per-app history of every compile a write ran (create_app,
+// write_files — ok, failed or refused), newest kept: 30 days / the last 200
+// rows per app, pruned by @drobek/insights on insert. `module_request_stats`
+// counts the responses of `/__drobek/v1/<module>/…` per app, module, status
+// class (2xx…5xx) and UTC day, upserted by the module runtime; kept 30 days.
+// Both are read by the MCP `get_logs` tool (compile / requests).
+
+declare const appCompiles = pgTable(
+  'app_compiles',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    appId: text('app_id')
+      .notNull()
+      .references(() => apps.id, { onDelete: 'cascade' }),
+    /** The version the compile produced; null when the write was refused (nothing stored). */
+    versionNumber: integer('version_number'),
+    ok: boolean('ok').notNull(),
+    /** `[{ code, file, line, column, text }]` — capped by @drobek/insights. */
+    errors: jsonb('errors').$type<unknown[]>().notNull().default([]),
+    warningCount: integer('warning_count').notNull().default(0),
+    durationMs: integer('duration_ms').notNull().default(0),
+    /** `create_app` | `write_files`. */
+    trigger: text('trigger').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (t) => [index('app_compiles_app_created_idx').on(t.appId, t.createdAt)]
+);
+
+declare const moduleRequestStats = pgTable(
+  'module_request_stats',
+  {
+    appId: text('app_id')
+      .notNull()
+      .references(() => apps.id, { onDelete: 'cascade' }),
+    module: text('module').notNull(),
+    /** `2xx` | `3xx` | `4xx` | `5xx`. */
+    statusClass: text('status_class').notNull(),
+    /** UTC `YYYY-MM-DD`. */
+    day: text('day').notNull(),
+    count: integer('count').notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.appId, t.module, t.statusClass, t.day] })]
+);
+
+// ── BFF proxy v1 — authed-member gateway to a backend ──────
+//
+// A static app reaches a backend WITHOUT holding its secret: drobek is the
+// controlled gateway. A workspace-admin REGISTERS an upstream (a pinned base_url
+// + an allow-list of methods and path prefixes + an auth mode) and stores the
+// upstream secret AES-256-GCM envelope-encrypted (a random per-secret DEK wrapped
+// by the KEK env DROBEK_MASTER_KEY). At forward time drobek decrypts the secret
+// IN-MEMORY, injects it as the configured auth header, and forwards to the
+// SSRF-guarded upstream. In v1 the caller is an AUTHENTICATED workspace MEMBER
+// (drobek_session) — the anonymous public-app-visitor path is left to
+// end-user auth (Referer is spoofable and is NOT a caller-auth boundary), so
+// `allowed_app_ids` is stored but is NOT the v1 caller-auth.
+
+/** MVP upstream auth modes. HMAC + OpenAPI validation are not supported. */
+declare const upstreamAuthTypeEnum = pgEnum('upstream_auth_type', [
+  'none',
+  'bearer',
+  'header',
+]);
+
+declare const upstreams = pgTable(
+  'upstreams',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    /** PINNED origin+base path; validated http(s) + non-private at registration. */
+    baseUrl: text('base_url').notNull(),
+    /** Allow-list — a forwarded method MUST be one of these (else 405). */
+    allowedMethods: text('allowed_methods').array().notNull(),
+    /** Allow-list — the normalized subpath MUST start with one of these (else 403). */
+    allowedPathPrefixes: text('allowed_path_prefixes').array().notNull(),
+    authType: upstreamAuthTypeEnum('auth_type').notNull().default('none'),
+    /** Header name to inject the secret under when auth_type = 'header'. */
+    authHeaderName: text('auth_header_name'),
+    /**
+     * STORED for hosted-app end-user auth (which app may call this upstream
+     * anonymously) — NOT the v1 caller-auth (v1 = an authed workspace member).
+     */
+    allowedAppIds: text('allowed_app_ids').array().notNull().default([]),
+    createdBy: text('created_by').references(() => users.id),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('upstreams_workspace_name_uq').on(t.workspaceId, t.name)]
+);
+
+/**
+ * The upstream's injected secret, AES-256-GCM ENVELOPE-encrypted. A random
+ * per-secret DEK encrypts the secret; the DEK is WRAPPED by the KEK
+ * (DROBEK_MASTER_KEY). `kek_id` records which KEK wrapped it (enables rotation +
+ * fails closed on a wrong/rotated key — the GCM auth tag verify fails → config
+ * error, never a leak). The plaintext is NEVER stored, logged, or returned.
+ */
+declare const upstreamSecrets = pgTable('upstream_secrets', {
+  upstreamId: text('upstream_id')
+    .primaryKey()
+    .references(() => upstreams.id, { onDelete: 'cascade' }),
+  /** base64 AES-256-GCM ciphertext of the secret (under the DEK). */
+  ciphertext: text('ciphertext').notNull(),
+  /** base64 12-byte IV for the secret ciphertext. */
+  iv: text('iv').notNull(),
+  /** base64 GCM auth tag for the secret ciphertext. */
+  authTag: text('auth_tag').notNull(),
+  /** The DEK wrapped by the KEK: base64(iv).base64(tag).base64(wrappedDek). */
+  wrappedDek: text('wrapped_dek').notNull(),
+  /** Stable, non-secret id of the KEK that wrapped the DEK (rotation). */
+  kekId: text('kek_id').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+// ── Platform modules ────────────────────────────────────────
+
+/**
+ * Per-app configuration of one platform module (`@drobek/modules`).
+ *
+ * `config` holds what the agent / owner SET (a sparse JSON object — the
+ * module's `configDefaults` fill the rest when it is read, so a module upgrade
+ * can change a default without rewriting rows). `pending` holds ONE change
+ * waiting for the owner's confirmation in the dashboard (`confirmRequired`):
+ * `{ patch, changes, proposed_at, proposed_by }` — the RFC 7396 merge patch
+ * the agent sent, applied on top of the then-current config when confirmed.
+ * Never contains secret values (module secrets live in `module_secrets`).
+ */
+declare const moduleConfigs = pgTable(
+  'module_configs',
+  {
+    appId: text('app_id')
+      .notNull()
+      .references(() => apps.id, { onDelete: 'cascade' }),
+    module: text('module').notNull(),
+    config: jsonb('config').notNull().default({}),
+    pending: jsonb('pending'),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.appId, t.module] })]
+);
+
+/**
+ * A module secret of one app (e.g. an API key a module injects server-side),
+ * AES-256-GCM ENVELOPE-encrypted exactly like `upstream_secrets` (random DEK
+ * wrapped by the KEK from DROBEK_MASTER_KEY, `kek_id` for rotation). Values are
+ * written only from the dashboard (never over MCP), read only inside a module
+ * handler (`ctx.secrets.get`) and never returned by any API — agents see
+ * `hasSecret` only.
+ */
+declare const moduleSecrets = pgTable(
+  'module_secrets',
+  {
+    appId: text('app_id')
+      .notNull()
+      .references(() => apps.id, { onDelete: 'cascade' }),
+    module: text('module').notNull(),
+    name: text('name').notNull(),
+    ciphertext: text('ciphertext').notNull(),
+    iv: text('iv').notNull(),
+    authTag: text('auth_tag').notNull(),
+    wrappedDek: text('wrapped_dek').notNull(),
+    kekId: text('kek_id').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.appId, t.module, t.name] })]
+);
+
+/**
+ * An opt-in platform module (`availability: 'opt-in'`) a super-admin
+ * enabled for one workspace in the dashboard. A default module never has a
+ * row (it is on everywhere). The limits provider's `MODULE_ENABLED_<NAME>`
+ * (plan) overrides the row in both directions; `enabled_by` turns null when
+ * the user row goes away.
+ */
+declare const workspaceModules = pgTable(
+  'workspace_modules',
+  {
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    module: text('module').notNull(),
+    enabledBy: text('enabled_by').references(() => users.id, { onDelete: 'set null' }),
+    enabledAt: timestamp('enabled_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.workspaceId, t.module] })]
+);
+
+// ── Custom domains ──────────────────────────────────────────
+//
+// A hostname an owner attached to an app. It serves the app's PUBLISHED
+// version once VERIFIED: `TXT _drobek.<hostname> = drobek-verify=<token>`
+// (proves control of the name) AND `<hostname> CNAME <slug>.<APPS_DOMAIN>`
+// (or the same addresses — apex ALIAS/flattening). Caddy's on-demand `ask`
+// answers 200 for verified rows only. A hostname is unique per app, and at
+// most ONE row per hostname can be verified instance-wide — an unverified
+// claim never blocks the real owner (anti-squatting: whoever proves DNS wins).
+// `is_primary` (≤ 1 per app, verified only) = redirect `<slug>.<APPS_DOMAIN>`
+// here with a 302. `cert_state`: `none` | `requested` (the ask said 200 — Caddy
+// is obtaining / holds a certificate). Deleting a row does not revoke Caddy's
+// certificate; it expires on its own (docs/SELF-HOSTING.md).
+
+declare const domains = pgTable(
+  'domains',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    appId: text('app_id')
+      .notNull()
+      .references(() => apps.id, { onDelete: 'cascade' }),
+    /** Lower-case ASCII (IDNA) hostname, no trailing dot. */
+    hostname: text('hostname').notNull(),
+    /** The `drobek-verify=<token>` TXT value's token (random, not a secret). */
+    verificationToken: text('verification_token').notNull(),
+    verifiedAt: timestamp('verified_at'),
+    lastCheckAt: timestamp('last_check_at'),
+    /** The last check's human-readable problem (null when it passed). */
+    lastError: text('last_error'),
+    certState: text('cert_state').notNull().default('none'),
+    isPrimary: boolean('is_primary').notNull().default(false),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('domains_app_hostname_uq').on(t.appId, t.hostname),
+    uniqueIndex('domains_verified_hostname_uq').on(t.hostname).where(sql`${t.verifiedAt} IS NOT NULL`),
+    uniqueIndex('domains_primary_uq').on(t.appId).where(sql`${t.isPrimary}`),
+    index('domains_hostname_idx').on(t.hostname),
+  ]
+);
+
+// ── Abuse reports ───────────────────────────────────────────
+//
+// The moderation queue: a report from the public form on the dashboard origin
+// (`/report?host=`, no login, rate-limited per IP) or a flag raised by the
+// publish heuristic (`reason = 'heuristic'`, never a block). `app_id` is the
+// app behind `host` when it resolved (set null if the app row goes away — the
+// report stays); `ip_hash` is a keyed hash of the reporter's IP (never the
+// address). A super-admin resolves a report from the queue (takedown, or
+// just "mark resolved").
+
+declare const abuseReportStatusEnum = pgEnum('abuse_report_status', ['open', 'resolved']);
+
+declare const abuseReports = pgTable(
+  'abuse_reports',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    appId: text('app_id').references(() => apps.id, { onDelete: 'set null' }),
+    /** The host the report names, normalized (lower-case, no scheme/path). */
+    host: text('host').notNull(),
+    /** `phishing` | `malware` | `spam` | `copyright` | `illegal` | `other` | `heuristic`. */
+    reason: text('reason').notNull(),
+    /** Free text from the reporter (≤ 2 000 chars) or the heuristic's finding. */
+    details: text('details').notNull().default(''),
+    reporterEmail: text('reporter_email'),
+    ipHash: text('ip_hash'),
+    status: abuseReportStatusEnum('status').notNull().default('open'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    resolvedAt: timestamp('resolved_at'),
+    resolvedBy: text('resolved_by').references(() => users.id, { onDelete: 'set null' }),
+  },
+  (t) => [
+    index('abuse_reports_status_created_idx').on(t.status, t.createdAt),
+    index('abuse_reports_app_idx').on(t.appId),
+  ]
+);
+
+// ── App assets ────────────────────────────────────────────
+//
+// Binary files an app serves at `/<path>` (images, video, audio, fonts) —
+// the same URL space as its files, where an app file at the same path wins.
+// Uploaded outside the LLM through a one-time upload URL or the dashboard,
+// typed from their bytes. The bytes live on disk
+// (`ASSETS_DIR/<app_id>/<storage_key>`, not in Postgres — up to
+// APP_ASSET_MAX_BYTES each), content-addressed: an upload is stored under its
+// sha256 (older rows keep a random key) and a file is never
+// rewritten, so several rows may share one.
+//
+// `app_assets` is the DRAFT: what uploads, replacements and deletes change,
+// and what the preview host serves. `app_version_assets` is the set a publish
+// FROZE for a version: the production host and custom domains serve
+// only the live published version's rows, so an asset change reaches the
+// public URL only with a publish. A soft-deleted app's rows and files, and
+// files no row references, are removed by the assets sweep.
+
+declare const appAssets = pgTable(
+  'app_assets',
+  {
+    appId: text('app_id')
+      .notNull()
+      .references(() => apps.id, { onDelete: 'cascade' }),
+    /** A relative path of 1–4 segments with an allowed extension (`film.mp4`, `img/s1.jpg`); served at `/<name>`. */
+    name: text('name').notNull(),
+    /** The type sniffed from the bytes (served as Content-Type, with nosniff). */
+    contentType: text('content_type').notNull(),
+    size: bigint('size', { mode: 'number' }).notNull(),
+    /** Content hash — the strong ETag. */
+    sha256: text('sha256').notNull(),
+    /** The file name under `ASSETS_DIR/<app_id>/` (the sha256, or a random key on older rows). */
+    storageKey: text('storage_key').notNull(),
+    createdByUserId: text('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.appId, t.name] })]
+);
+
+/** The assets a publish froze for one version (see the section comment). */
+declare const appVersionAssets = pgTable(
+  'app_version_assets',
+  {
+    versionId: text('version_id')
+      .notNull()
+      .references(() => appVersions.id, { onDelete: 'cascade' }),
+    appId: text('app_id')
+      .notNull()
+      .references(() => apps.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    contentType: text('content_type').notNull(),
+    size: bigint('size', { mode: 'number' }).notNull(),
+    sha256: text('sha256').notNull(),
+    storageKey: text('storage_key').notNull(),
+    /** The draft row's upload time (Last-Modified). */
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.versionId, t.name] }), index('app_version_assets_app_idx').on(t.appId)]
+);
+
+declare const schema_abuseReportStatusEnum: typeof abuseReportStatusEnum;
+declare const schema_abuseReports: typeof abuseReports;
+declare const schema_apiKeys: typeof apiKeys;
+declare const schema_appAssets: typeof appAssets;
+declare const schema_appCompiles: typeof appCompiles;
+declare const schema_appDailyStats: typeof appDailyStats;
+declare const schema_appErrorTypeEnum: typeof appErrorTypeEnum;
+declare const schema_appErrors: typeof appErrors;
+declare const schema_appStatusEnum: typeof appStatusEnum;
+declare const schema_appVersionAssets: typeof appVersionAssets;
+declare const schema_appVersions: typeof appVersions;
+declare const schema_appVisibilityEnum: typeof appVisibilityEnum;
+declare const schema_apps: typeof apps;
+declare const schema_auditActorKindEnum: typeof auditActorKindEnum;
+declare const schema_auditLog: typeof auditLog;
+declare const schema_blobs: typeof blobs;
+declare const schema_bytea: typeof bytea;
+declare const schema_compileStatusEnum: typeof compileStatusEnum;
+declare const schema_domains: typeof domains;
+declare const schema_galleryLikes: typeof galleryLikes;
+declare const schema_galleryOpens: typeof galleryOpens;
+declare const schema_membershipRoleEnum: typeof membershipRoleEnum;
+declare const schema_memberships: typeof memberships;
+declare const schema_moduleConfigs: typeof moduleConfigs;
+declare const schema_moduleRequestStats: typeof moduleRequestStats;
+declare const schema_moduleSecrets: typeof moduleSecrets;
+declare const schema_oauthAccessTokens: typeof oauthAccessTokens;
+declare const schema_oauthAuthorizationCodes: typeof oauthAuthorizationCodes;
+declare const schema_oauthClients: typeof oauthClients;
+declare const schema_oauthRefreshTokens: typeof oauthRefreshTokens;
+declare const schema_upstreamAuthTypeEnum: typeof upstreamAuthTypeEnum;
+declare const schema_upstreamSecrets: typeof upstreamSecrets;
+declare const schema_upstreams: typeof upstreams;
+declare const schema_users: typeof users;
+declare const schema_versionFileKindEnum: typeof versionFileKindEnum;
+declare const schema_versionFiles: typeof versionFiles;
+declare const schema_workspaceKindEnum: typeof workspaceKindEnum;
+declare const schema_workspaceModules: typeof workspaceModules;
+declare const schema_workspaces: typeof workspaces;
+declare namespace schema {
+  export {
+    schema_abuseReportStatusEnum as abuseReportStatusEnum,
+    schema_abuseReports as abuseReports,
+    schema_apiKeys as apiKeys,
+    schema_appAssets as appAssets,
+    schema_appCompiles as appCompiles,
+    schema_appDailyStats as appDailyStats,
+    schema_appErrorTypeEnum as appErrorTypeEnum,
+    schema_appErrors as appErrors,
+    schema_appStatusEnum as appStatusEnum,
+    schema_appVersionAssets as appVersionAssets,
+    schema_appVersions as appVersions,
+    schema_appVisibilityEnum as appVisibilityEnum,
+    schema_apps as apps,
+    schema_auditActorKindEnum as auditActorKindEnum,
+    schema_auditLog as auditLog,
+    schema_blobs as blobs,
+    schema_bytea as bytea,
+    schema_compileStatusEnum as compileStatusEnum,
+    schema_domains as domains,
+    schema_galleryLikes as galleryLikes,
+    schema_galleryOpens as galleryOpens,
+    schema_membershipRoleEnum as membershipRoleEnum,
+    schema_memberships as memberships,
+    schema_moduleConfigs as moduleConfigs,
+    schema_moduleRequestStats as moduleRequestStats,
+    schema_moduleSecrets as moduleSecrets,
+    schema_oauthAccessTokens as oauthAccessTokens,
+    schema_oauthAuthorizationCodes as oauthAuthorizationCodes,
+    schema_oauthClients as oauthClients,
+    schema_oauthRefreshTokens as oauthRefreshTokens,
+    schema_upstreamAuthTypeEnum as upstreamAuthTypeEnum,
+    schema_upstreamSecrets as upstreamSecrets,
+    schema_upstreams as upstreams,
+    schema_users as users,
+    schema_versionFileKindEnum as versionFileKindEnum,
+    schema_versionFiles as versionFiles,
+    schema_workspaceKindEnum as workspaceKindEnum,
+    schema_workspaceModules as workspaceModules,
+    schema_workspaces as workspaces,
+  };
+}
+
+type DB = PostgresJsDatabase<typeof schema>;
+
+/**
+ * Logger interface stub (core stays vendor-free — §15 ARCHITECTURE.md).
+ * drobek-web plugs Sentry/pino behind this; core + self-host default to
+ * the console logger.
+ */
+type LogMeta = Record<string, unknown>;
+
+interface Logger {
+  debug(message: string, meta?: LogMeta): void;
+  info(message: string, meta?: LogMeta): void;
+  warn(message: string, meta?: LogMeta): void;
+  error(message: string, meta?: LogMeta): void;
+}
+
+/**
+ * The public TypeScript module contract of drobek — semver 1.x. A platform module is an npm package (a built-in under `modules/<name>`,
+ * a third-party one named `drobek-module-<name>`) whose default export is the
+ * result of `defineModule()`. The OPERATOR installs modules and lists them in
+ * `DROBEK_MODULES`; they are trusted server-side dependencies of the same
+ * class as Express. An app author (or agent) never uploads one — the server
+ * still never runs app code.
+ *
+ * A module contributes: routes on every app host under
+ * `/__drobek/v1/<name>/…` (ModuleRouter), a piece of the browser SDK
+ * (`drobek.<name>` in `/__drobek/sdk.js`), a per-app configuration validated by
+ * `configSchema` (set by agents through `configure_module`, risky changes held
+ * for the owner's confirmation by `confirmRequired`), the names of the secrets
+ * it can use (values only ever entered in the dashboard), limits, and a SKILL:
+ * the agent-facing documentation `skill_info` returns.
+ *
+ * Contract 1.1 adds `contract`, `errors`, typed `slots` (`contributes`,
+ * `services.contributions()`), `availability`, `dashboard.editor` and
+ * `hooks.onAppDelete`. Contract 1.2 adds `jobs` (scheduled work), a route
+ * context's `pendingConfig`, and a per-app job context's `upstreams.fetch`,
+ * `records.import` and audit. Every addition is optional, so an older module
+ * loads unchanged.
+ *
+ * Everything a handler needs arrives in a per-request, APP-SCOPED
+ * ModuleContext: the caller (principal from the `drobek_eu` end-user cookie),
+ * the rule evaluator, limits, a rate limiter, this app's secrets for this
+ * module, audit, the database and e-mail. A module never reads cookies itself
+ * and never sees another app's id.
+ */
+
+/**
+ * The contract version this package implements (the `DrobekModule` shape).
+ * A module states the versions it works with in `contract` (a semver range,
+ * e.g. `'^1.1'`); the server refuses to start a module whose range this
+ * version does not satisfy.
+ */
+declare const MODULE_CONTRACT_VERSION = "1.2.0";
+/** Module names: lowercase, URL-, JS-property- and env-safe. */
+declare const MODULE_NAME_RE: RegExp;
+/** Error codes a module declares in `errors`: lowercase snake case, 3–41 characters. */
+declare const MODULE_ERROR_CODE_RE: RegExp;
+/** Job names: lowercase snake case, 2–40 characters, unique within the module. */
+declare const JOB_NAME_RE: RegExp;
+/** Slot names: `<host module name>.<camelCase name>`, e.g. `auth.provider`. */
+declare const SLOT_NAME_RE: RegExp;
+/**
+ * Who is calling a module route, resolved by core from the host-only
+ * `drobek_eu` end-user session cookie of the app host. The platform
+ * module `auth` signs end users in (e-mail code):
+ *  - `anon` — no (valid) session;
+ *  - `user` — an end user signed in to THIS app; `role: 'admin'` marks the
+ *    app's administrators (the auth config's `adminEmails`, and the editors
+ *    of the app's workspace signing in with their own e-mail).
+ * The dashboard session is never read on an app host.
+ */
+type Principal = {
+    kind: 'anon';
+} | {
+    kind: 'user';
+    id: string;
+    email: string;
+    role: 'user' | 'admin';
+};
+/** A signed-in end user (the `user` principal without its tag). */
+interface EndUser {
+    id: string;
+    email: string;
+    role: 'user' | 'admin';
+    /**
+     * How the session signed in: `email` (the e-mail code) or an auth
+     * provider's id. Absent = `email` (a session from before
+     * providers existed). Never part of the principal a module sees.
+     */
+    provider?: string;
+    /**
+     * A provider session's connection: the end-user authority's fingerprint of
+     * the provider's identity config when the session began (`auth` ends the
+     * session once it differs). Never part of the principal a module sees.
+     */
+    connection?: string;
+}
+/**
+ * An access rule: a `|`-separated disjunction of principals —
+ * `public | user | owner | admin | none` (e.g. `"owner|admin"`). `owner`
+ * matches a signed-in user whose id equals the record's owner.
+ */
+type Rule = string;
+type AccessDecision = {
+    ok: true;
+} | {
+    ok: false;
+    status: 401 | 403;
+};
+/** The operations a module exposes to rules, for the dashboard's rule editor. */
+interface RuleSurface {
+    /** operation → one-line meaning, e.g. `{ read: 'List and get records' }`. */
+    ops: Record<string, string>;
+}
+/**
+ * The agent-facing skill (returned by `skill_info('<name>')`). Short
+ * Markdown, target ≤ 150 lines: when to use → minimal working code → the exact
+ * SDK calls and their types → limits and server-enforced rules → common
+ * errors and fixes. No marketing.
+ */
+interface ModuleSkill {
+    /**
+     * ONE sentence starting with the situation, listed by `skill_info()`,
+     * create_app and get_app — e.g. "the user submits something and you want to
+     * store it or get it by e-mail".
+     */
+    useWhen: string;
+    /** The skill body (Markdown). */
+    markdown: string;
+}
+/** A limit the module enforces — its env name is the operator's knob. */
+interface ModuleLimit {
+    /** Env var name, e.g. `FORMS_PER_APP_PER_DAY` (UPPER_SNAKE). */
+    env: string;
+    /** Default when neither the env nor the limits provider sets it. */
+    default: number;
+    meaning: string;
+}
+/** A secret the module can use (the value is entered in the dashboard only). */
+interface ModuleSecretDoc {
+    /** UPPER_SNAKE name, e.g. `OPENAI_API_KEY`. */
+    name: string;
+    description: string;
+    /** true → configure_module reports it in `secrets_missing` until it is set. */
+    required?: boolean;
+}
+/** The browser part of a module. */
+interface ModuleSdk {
+    /**
+     * Absolute path (or `file:` URL) of an ES module whose DEFAULT export is
+     * `(core: SdkCore) => Api` (SdkCore from `@drobek/sdk`). Bundled into
+     * `/__drobek/sdk.js` as `drobek.<name>` by esbuild at server start; https://
+     * imports stay external, anything else is bundled.
+     */
+    entry: string;
+    /**
+     * TypeScript declarations for `drobek.<name>`: MUST declare an
+     * `interface Api` (plus any helper types). Wrapped in
+     * `declare namespace <name> { … }` in `/__drobek/sdk.d.ts`.
+     */
+    types: string;
+    /**
+     * Optional source module an app imports as `drobek/<name>` (e.g. React
+     * components such as the auth module's `<LoginGate>`). Unlike `entry` it is
+     * NOT in `/__drobek/sdk.js`: the compiler builds it INTO the app bundle, so
+     * its bare imports (`react`, …) resolve through the app's own `drobek.json`
+     * — the app and the component share one React — and `drobek` resolves to
+     * the SDK. One self-contained `.ts`/`.tsx` file (no relative imports),
+     * read from the operator's disk at server start.
+     */
+    inline?: {
+        /** Absolute path (or `file:` URL) of the `.ts`/`.tsx` source. */
+        entry: string;
+        /** Its declarations (shown by skill_info and in `/__drobek/sdk.d.ts`). */
+        types: string;
+    };
+}
+/** Module-owned tables: a drizzle migrations folder with its own journal. */
+interface ModuleMigrations {
+    /** Absolute path (or `file:` URL) of the drizzle migrations folder. */
+    folder: string;
+}
+/** Which app a hook runs for. */
+interface HookApp {
+    id: string;
+    slug: string;
+    workspaceId: string;
+}
+interface ModuleHooks {
+    /** After create_app stored version 1 (best effort — a failure is logged). */
+    onAppCreate?: (app: HookApp, services: ModuleServices) => Promise<void> | void;
+    /** After a version was published (MCP publish or the dashboard). */
+    onPublish?: (app: HookApp & {
+        version: number;
+    }, services: ModuleServices) => Promise<void> | void;
+    /**
+     * After the app was soft-deleted (the dashboard's delete; best effort — a
+     * failure is logged). For clean-up outside the database cascade, e.g. data
+     * the module keeps in another system.
+     */
+    onAppDelete?: (app: HookApp, services: ModuleServices) => Promise<void> | void;
+}
+/**
+ * One error code a module's routes answer with (`{ error: code, … }`),
+ * documented for agents: `skill_info('<name>').errors` and the module's
+ * section of the error catalogue in `/llms-full.txt`. A route may answer only
+ * the core codes (`CORE_ERROR_CODES`) and the codes its own module declares
+ * here — any other code becomes `500 internal_error` (logged).
+ */
+interface ModuleErrorDoc {
+    /** `MODULE_ERROR_CODE_RE`; unique across the core catalogue and every active module. */
+    code: string;
+    /** What happened, for the agent (one or two sentences). */
+    meaning: string;
+    /** What to do about it. */
+    fix: string;
+}
+/**
+ * A typed extension point a module (the HOST) offers other modules: each
+ * active module may contribute one value to it (`contributes`), validated
+ * by `schema` at server start. The host reads them with
+ * `services.contributions(slot)`, in `DROBEK_MODULES` order — at run time
+ * only those of modules that are on for the app's workspace (an opt-in
+ * module switched off there contributes nothing); `compose` sees them all.
+ */
+interface ModuleSlot<T = unknown> {
+    /** Validates every contribution; the host gets the parsed value. */
+    schema: ZodType<T>;
+    /**
+     * A key of the contribution whose value must be unique within the slot
+     * (e.g. `id`): two contributions with the same value refuse the start.
+     */
+    unique?: string;
+    /** What a contribution does, for module authors and the dashboard. */
+    description: string;
+}
+/**
+ * Who the module is for: `default` — every workspace of the server (the
+ * behaviour without the field); `opt-in` — the workspaces it is enabled for.
+ * The value is validated and reported (skill_info, the dashboard's module
+ * view); core does not restrict a module by it.
+ */
+type ModuleAvailability = 'default' | 'opt-in';
+/** The dedicated dashboard editors a module's config can declare it fits. */
+type ModuleDashboardEditor = 'collections' | 'upstreams';
+/** How the dashboard presents the module. */
+interface ModuleDashboard {
+    /**
+     * The dedicated dashboard editor this module's config fits (a capability
+     * declaration, validated at start and reported in the dashboard's module
+     * view): `collections` (a `collections` config shaped like the built-in
+     * `data`'s) or `upstreams` (an `upstreams` config shaped like `proxy`'s).
+     */
+    editor?: ModuleDashboardEditor;
+}
+/**
+ * The module that OWNS end-user sessions (the built-in `auth`): core asks it
+ * about the user of every live session before any module route sees a
+ * principal, so a user who was disabled, deleted or removed from the
+ * allowlist is anonymous — and their session deleted — on the very next
+ * request to ANY module, and a role follows the app's config at once. At most
+ * one active module may declare it; without one, no session is honoured.
+ */
+interface EndUserAuthority<Config = unknown> {
+    /**
+     * The user of a live session of `app` as they are NOW (their current role),
+     * or null: not allowed any more → core ends the session. Called once per
+     * module request that carries a session; keep it to indexed lookups. A throw
+     * makes that request anonymous (fail closed) without ending the session.
+     */
+    current(input: {
+        app: HookApp;
+        user: EndUser;
+        config: Config;
+        db: DB;
+        log: Logger;
+        /** The slot contributions of the modules that are on for the app's workspace (a disabled opt-in module contributes nothing). */
+        contributions<T = unknown>(slot: string): T[];
+    }): Promise<EndUser | null>;
+    /** The app's end users, newest first (`search` = a case-insensitive part of the address). */
+    list?(view: OwnerView<Config>, query: EndUserListQuery): Promise<EndUserPage>;
+    /**
+     * Make a user `user` or `admin`. When the role follows the app's config,
+     * return the merge patch of THIS module's config that gives it (core applies
+     * it under the config lock, in the same transaction as `view.db`, without a
+     * confirmation — the owner is the one who confirms). The change applies to
+     * the next module request (core asks `current` on every one). A role that
+     * cannot be changed (e.g. a workspace editor is always admin) → ModuleError
+     * `conflict`.
+     */
+    setRole?(view: OwnerView<Config>, id: string, role: 'user' | 'admin'): Promise<{
+        user: EndUserRecord;
+        configPatch: Record<string, unknown> | null;
+    }>;
+    /** Block (true) or unblock a user; a blocked user is anonymous — and signed out — on the next request. */
+    setDisabled?(view: OwnerView<Config>, id: string, disabled: boolean): Promise<EndUserRecord | null>;
+    /**
+     * The IdP callback of the end-user sign-in providers: core routes
+     * `GET|POST /__drobek/auth/callback/:provider` on the DASHBOARD host here —
+     * the one redirect URI an IdP client registers for every app. No dashboard
+     * session is read and no origin check applies (the IdP redirects or posts
+     * the browser here): the authority must authenticate the request by its
+     * own signed, single-use state, find the app from that state (never from
+     * the request) and answer a redirect to the app host or a page. A throw is
+     * logged and answers a generic error page.
+     */
+    callback?(input: EndUserCallbackInput<Config>): Promise<EndUserCallbackResult>;
+}
+/** One app as the end-user authority sees it in a sign-in callback (once it found the app in its own state). */
+interface EndUserCallbackApp<Config = unknown> {
+    app: HookApp;
+    /** The authority module's effective config for the app. */
+    config: Config;
+    /** Limits of the app's workspace. */
+    limits(): Promise<Limits>;
+    /** This app's secrets of the authority module (declared names only), plaintext in memory. */
+    secrets: {
+        get(name: string): Promise<string | null>;
+    };
+    /** Append an audit row for this app (actor: the anonymous visitor; action prefixed with the module name). */
+    audit(action: string, meta?: Record<string, unknown>): Promise<void>;
+    /** The slot contributions of the modules that are on for the app's workspace (a disabled opt-in module contributes nothing). */
+    contributions<T = unknown>(slot: string): T[];
+}
+/** What the end-user authority's `callback` gets. */
+interface EndUserCallbackInput<Config = unknown> {
+    /** The `:provider` path segment as the request sent it (unvalidated). */
+    provider: string;
+    method: 'GET' | 'POST';
+    /** Query parameters (first value of each). */
+    query: Record<string, string>;
+    /** The form fields of a POST (`application/x-www-form-urlencoded`, ≤ 256 KiB), else null. */
+    body: Record<string, string> | null;
+    clientIp: string | null;
+    services: ModuleServices & {
+        /** Fixed-window counter namespaced to the module's callback (no app is known yet). */
+        rateLimit(bucket: string, key: string, max: number, windowMs: number): Promise<RateLimitResult>;
+        /** The server's default limits (env / catalogue defaults — no workspace is known yet). */
+        limits(): Limits;
+        /** A live app by id (not deleted, not taken down) with the authority's config for it, or null. */
+        app(appId: string): Promise<EndUserCallbackApp<Config> | null>;
+    };
+}
+/** The callback's answer: send the browser on (to the app host), or show a page on the dashboard host. */
+type EndUserCallbackResult = {
+    kind: 'redirect';
+    location: string;
+} | {
+    kind: 'page';
+    status: number;
+    title: string;
+    message: string;
+    link?: {
+        href: string;
+        label: string;
+    };
+};
+/** One end user as the owner sees them. */
+interface EndUserRecord {
+    id: string;
+    email: string;
+    /** The role they have NOW (what `current` would answer). */
+    role: 'user' | 'admin';
+    /** Why they are admin: `workspace` (an editor of the app's workspace — fixed), `config` (the module's config). */
+    roleSource: 'workspace' | 'config' | null;
+    /** `active`, `disabled` by the owner, or `not_allowed` any more by the config (signed out on their next request). */
+    status: 'active' | 'disabled' | 'not_allowed';
+    /** How the user signs in: `email` (the e-mail code) or the auth provider their account is linked to. */
+    provider?: string;
+    created_at: string;
+    last_sign_in_at: string | null;
+}
+interface EndUserListQuery {
+    search?: string;
+    limit?: number;
+    cursor?: string | null;
+}
+interface EndUserPage {
+    users: EndUserRecord[];
+    /** Users matching the search (all pages). */
+    total: number;
+    next_cursor: string | null;
+}
+/** What an e-mail is for (the module that owns app e-mail treats them differently). */
+type EmailKind = 
+/** A one-time sign-in code (`{ signInAddress }`) — the auth module. */
+'sign_in'
+/** Everything else: form notifications, notifyAdmins, a message to the signed-in user. */
+ | 'notification';
+/** What core hands the mail authority for every message of any module of an app. */
+interface MailPrepareInput<Config = unknown> {
+    app: HookApp;
+    /** The module that sends (e.g. `forms`). */
+    module: string;
+    kind: EmailKind;
+    /** How many addresses the message resolved to (≥ 1). */
+    recipients: number;
+    /** The MAIL module's own effective config for this app. */
+    config: Config;
+    /** Limits of the app's workspace. */
+    limits: Limits;
+    /** Fixed-window counter namespaced to the MAIL module + this app. */
+    rateLimit(bucket: string, key: string, max: number, windowMs: number): Promise<RateLimitResult>;
+    log: Logger;
+}
+/** Envelope details the mail authority adds to a message. */
+interface MailEnvelope {
+    /** Display name of the sender (the address is always the operator's EMAIL_FROM). */
+    fromName?: string;
+    /** A Reply-To address. */
+    replyTo?: string;
+}
+/**
+ * The module that owns app e-mail (the built-in `email`): core calls
+ * `prepare` for EVERY `ctx.email.send` of any module, after the recipients
+ * resolved and before anything is sent. It enforces the per-app policy (a
+ * `limit_exceeded` ModuleError refuses the message) and returns the
+ * envelope. At most one active module may declare it. Without one, only
+ * sign-in codes can be sent; any other message is `unavailable`.
+ */
+interface MailAuthority<Config = unknown> {
+    prepare(input: MailPrepareInput<Config>): Promise<MailEnvelope>;
+}
+/** What `confirmRequired` gets besides the two configs. */
+interface ConfirmContext {
+    app: HookApp;
+    /** Read-only use: the configure transaction (the config row is locked). */
+    db: DB;
+    /** Limits of the app's workspace (contract 1.2 — core always passes it; optional for 1.1 callers such as a module's own tests). */
+    limits?(): Promise<Limits>;
+}
+/**
+ * Who may confirm a pending change: `editor` (the default —
+ * editors, workspace admins, super-admins) or `admin` (workspace admins and
+ * super-admins only), e.g. a change that spends a secret an admin registered.
+ */
+type ConfirmRole = 'editor' | 'admin';
+/** One change that waits for the owner: its text, or the text + who may confirm it. */
+type ConfirmItem = string | {
+    change: string;
+    confirmRole?: ConfirmRole;
+};
+/** The texts of `items` and the role their confirmation needs (the highest any item asks for). */
+declare function normalizeConfirmItems(items: readonly unknown[]): {
+    changes: string[];
+    role: ConfirmRole;
+};
+/** What `onConfirmed` gets: the confirm transaction and who confirmed. */
+interface ConfirmedContext {
+    app: HookApp;
+    /** The confirm transaction (the config row is locked): writes commit with the confirmation. */
+    db: DB;
+    /** The dashboard user who confirmed. */
+    userId: string;
+    /** Their confirming role (`admin` = workspace admin or super-admin). */
+    role: ConfirmRole;
+    /**
+     * Append an audit row for this app IN the confirm transaction (actor: the
+     * confirming user; the action is prefixed with the module name, e.g.
+     * `collection.purge` → `data.collection.purge`). `meta`: ids and counts only.
+     */
+    audit(action: string, meta?: Record<string, unknown>): Promise<void>;
+}
+/**
+ * One app as a module's OWNER-facing authority sees it (records, end users,
+ * submissions, files): core authorized a drobek account for the app first.
+ * `config` is the module's effective config for the app, `db` the database —
+ * or the transaction core runs the call in (a config change) — and `limits`
+ * the app's workspace limits.
+ */
+interface OwnerView<Config = unknown> {
+    app: HookApp;
+    config: Config;
+    db: DB;
+    log: Logger;
+    limits(): Promise<Limits>;
+}
+/** The app a records call is about, with the records module's effective config for it. */
+type RecordsView<Config = unknown> = OwnerView<Config>;
+/** One collection as the owner sees it. */
+interface RecordsCollection {
+    name: string;
+    /** operation → rule, e.g. `{ read: 'public', create: 'admin', … }`. */
+    rules: Record<string, string>;
+    /** The collection's JSON Schema, or null (schemaless). */
+    schema: unknown;
+    /** Display columns from the schema: required properties first. [] without a schema. */
+    columns: {
+        key: string;
+        required: boolean;
+    }[];
+    /** Stored records. */
+    records: number;
+}
+interface RecordsQuery {
+    collection: string;
+    /** The records filter (`{ field: value }` or `{ field: { op: value } }`, see the module's skill). */
+    filter?: unknown;
+    /** A sort field (a schema property or `_id` / `_created_at` / `_updated_at`). */
+    sort?: string;
+    dir?: 'asc' | 'desc';
+    limit?: number;
+    cursor?: string | null;
+}
+/** A page of records: every record is `{ _id, _owner, _created_at, _updated_at, …fields }`. */
+interface RecordsPage {
+    collection: RecordsCollection;
+    records: Record<string, unknown>[];
+    /** Records matching the filter (all pages). */
+    total: number;
+    next_cursor: string | null;
+}
+/**
+ * The module that stores records (the built-in `data`) answers the OWNER's
+ * questions about an app's data, bypassing the end-user rules: core calls it
+ * only after it authorized a drobek account for the app (MCP membership, the
+ * dashboard's workspace role). Unknown collection → ModuleError `not_found`;
+ * a bad filter/sort → `invalid_request`.
+ */
+interface RecordsAuthority<Config = unknown> {
+    collections(view: RecordsView<Config>): Promise<RecordsCollection[]>;
+    query(view: RecordsView<Config>, query: RecordsQuery): Promise<RecordsPage>;
+    get(view: RecordsView<Config>, collection: string, id: string): Promise<Record<string, unknown> | null>;
+    /** Delete one record (the dashboard, editor+); false when it did not exist. */
+    remove(view: RecordsView<Config>, collection: string, id: string): Promise<boolean>;
+    /** The CSV export of a collection (filter + sort applied): the header line, then one line per record (no line breaks). */
+    csv(view: RecordsView<Config>, query: Omit<RecordsQuery, 'limit' | 'cursor'>): AsyncIterable<string>;
+    /**
+     * Replace a record's own fields (`_…` keys are ignored), validated like any
+     * write (schema, the per-record and per-app quotas); `_owner` and
+     * `_created_at` stay. null when the record does not exist. A bad record →
+     * ModuleError `validation_failed` (details: the fields).
+     */
+    update?(view: RecordsView<Config>, collection: string, id: string, fields: Record<string, unknown>): Promise<Record<string, unknown> | null>;
+    /**
+     * Import CSV text into a collection as new records (no owner): the header
+     * names the fields. All or nothing — ONE transaction; too many rows
+     * (`RECORDS_IMPORT_MAX_ROWS`) is refused before anything is parsed further,
+     * and the first invalid row is reported with its line number
+     * (ModuleError `validation_failed`, `details.line`) with nothing stored.
+     */
+    importCsv?(view: RecordsView<Config>, collection: string, csv: string): Promise<{
+        imported: number;
+    }>;
+    /**
+     * Delete a collection: its records now (in `view.db`, core's config
+     * transaction), and return the merge patch of the module's config that
+     * removes its declaration (core writes it in the same transaction).
+     */
+    dropCollection?(view: RecordsView<Config>, collection: string): Promise<{
+        records: number;
+        configPatch: Record<string, unknown>;
+    }>;
+    /**
+     * Collections that hold records but are not declared in the config any
+     * more (orphans — e.g. a write that landed while its collection was being
+     * removed), with their record counts. They still count towards the quotas.
+     */
+    orphans?(view: RecordsView<Config>): Promise<{
+        name: string;
+        records: number;
+    }[]>;
+    /**
+     * Delete the records of an ORPHAN collection (in `view.db`, core's config
+     * transaction). A collection the config declares → ModuleError `conflict`
+     * (the owner deletes a declared one with dropCollection).
+     */
+    purgeOrphan?(view: RecordsView<Config>, collection: string): Promise<{
+        records: number;
+    }>;
+    /**
+     * Contract 1.2: write a batch of records into a declared
+     * collection as a whole — ONE transaction, every record checked against
+     * the collection's schema and the quotas first; any failure stores
+     * nothing. `replace`: the collection holds exactly these records
+     * afterwards; `upsert`: a record whose `key` field equals a stored
+     * record's replaces that record's fields, the others are added, the rest
+     * stay. Records have no owner. A bad record → ModuleError
+     * `validation_failed` (`details.index` names it).
+     */
+    importRecords?(view: RecordsView<Config>, collection: string, records: Record<string, unknown>[], opts: RecordsImportOptions): Promise<RecordsImportResult>;
+}
+/** How `importRecords` writes a batch. */
+interface RecordsImportOptions {
+    mode: 'replace' | 'upsert';
+    /** The field that identifies a record (required for `upsert`; its values are strings or numbers, unique in the batch). */
+    key?: string;
+}
+/** What `importRecords` changed. */
+interface RecordsImportResult {
+    inserted: number;
+    updated: number;
+    deleted: number;
+}
+/** The most rows (without the header) one CSV import may carry. */
+declare const RECORDS_IMPORT_MAX_ROWS = 5000;
+interface SubmissionsQuery {
+    /** One form, or every form of the app. */
+    form?: string;
+    /** Submitted at or after (ISO timestamp). */
+    from?: string;
+    /** Submitted before (ISO timestamp, exclusive). */
+    to?: string;
+    limit?: number;
+    cursor?: string | null;
+}
+/** A stored submission as the owner sees it. */
+interface OwnerSubmission {
+    id: string;
+    form: string;
+    created_at: string;
+    data: Record<string, unknown>;
+    user_id: string | null;
+    notified: boolean;
+}
+interface SubmissionsPage {
+    submissions: OwnerSubmission[];
+    /** Submissions matching the filter (all pages). */
+    total: number;
+    next_cursor: string | null;
+}
+/**
+ * The module that stores form submissions (the built-in `forms`) answers the
+ * OWNER (the dashboard Forms tab): core calls it only after it authorized a
+ * drobek account for the app. Bad filter/cursor → ModuleError `invalid_request`.
+ */
+interface SubmissionsAuthority<Config = unknown> {
+    /** The app's forms (declared or with stored submissions) and their submission counts. */
+    forms(view: OwnerView<Config>): Promise<{
+        name: string;
+        submissions: number;
+    }[]>;
+    list(view: OwnerView<Config>, query: SubmissionsQuery): Promise<SubmissionsPage>;
+    /** The CSV export (filter applied, newest first, capped): header line first, one line per submission. */
+    csv(view: OwnerView<Config>, query: Omit<SubmissionsQuery, 'limit' | 'cursor'>): AsyncIterable<string>;
+    /** Delete one submission; false when it did not exist. */
+    remove(view: OwnerView<Config>, id: string): Promise<boolean>;
+}
+/** A stored upload as the owner sees it. */
+interface OwnerFile {
+    id: string;
+    name: string;
+    /** The sniffed type (never the client's), e.g. `image/png`. */
+    type: string;
+    size: number;
+    /** The uploader's end-user id, or null. */
+    owner: string | null;
+    created_at: string;
+}
+interface OwnerFilesPage {
+    files: OwnerFile[];
+    next_cursor: string | null;
+    used_bytes: number;
+    quota_bytes: number;
+}
+/**
+ * The module that stores end-user uploads (the built-in `files`) answers the
+ * OWNER (the dashboard Uploads tab): list, the bytes (for a preview /
+ * download core serves with `nosniff`), delete (the module's own rules for
+ * the stored bytes, e.g. content shared by another app stays).
+ */
+interface FilesAuthority<Config = unknown> {
+    list(view: OwnerView<Config>, query: {
+        limit?: number;
+        cursor?: string | null;
+    }): Promise<OwnerFilesPage>;
+    /** The file and its bytes, or null. The caller reads the stream once. */
+    open(view: OwnerView<Config>, id: string): Promise<{
+        file: OwnerFile;
+        stream: Readable;
+    } | null>;
+    remove(view: OwnerView<Config>, id: string): Promise<boolean>;
+}
+/** One call a job makes to an upstream assigned to its app. */
+interface UpstreamRequest {
+    /** Default `GET`. The upstream's allowed methods still apply. */
+    method?: 'GET' | 'POST';
+    /** Path (and `?query`) below the upstream's base URL; default `/`. Its allowed path prefixes still apply. */
+    path?: string;
+    headers?: Record<string, string>;
+    body?: string;
+    /** A lower response cap than the operator's (never a higher one). */
+    maxBytes?: number;
+}
+/** The upstream's answer (any status — check it). */
+interface UpstreamResponse {
+    status: number;
+    headers: Record<string, string>;
+    body: Buffer;
+}
+/**
+ * The module that owns the app's calls to its workspace's upstreams (the
+ * built-in `proxy`) makes one for a module JOB (never for an app request):
+ * the same checks as its route minus the caller's rule — the upstream is
+ * assigned to the app in `view.config` and confirmed for it, the secret is
+ * injected server-side, the SSRF guard, the allow-lists and the size cap
+ * apply. A refusal → ModuleError (`forbidden`, `not_found`, `upstream_error`,
+ * `ssrf_blocked`, `proxy_busy`, …) with a secret-free message.
+ */
+interface UpstreamsAuthority<Config = unknown> {
+    fetch(view: OwnerView<Config>, name: string, request: UpstreamRequest): Promise<UpstreamResponse>;
+}
+/** One source of the module that imports data on a schedule, as the owner sees it. */
+interface SyncSourceState {
+    name: string;
+    upstream: string;
+    path: string;
+    collection: string;
+    mode: 'replace' | 'upsert';
+    /** The interval in force (the config's, raised to the operator's minimum). */
+    every: string;
+    /**
+     * Why it does not run on schedule: `owner` (the config says `paused: true`),
+     * `failures` (too many failed runs in a row), `limit` (past the app's source
+     * limit), or null.
+     */
+    paused: 'owner' | 'failures' | 'limit' | null;
+    /** Failed runs since the last success. */
+    failures: number;
+    last_run_at: string | null;
+    last_status: 'ok' | 'failed' | null;
+    last_records: number | null;
+    last_error: string | null;
+    last_success_at: string | null;
+    /** When the next scheduled run is due (null while paused). */
+    next_run_at: string | null;
+}
+/** One run of a source (newest first in `runs`). */
+interface SyncRun {
+    source: string;
+    trigger: 'schedule' | 'manual';
+    started_at: string;
+    duration_ms: number;
+    status: 'ok' | 'failed';
+    /** Records the collection holds from this run (ok), null when it failed. */
+    records: number | null;
+    inserted?: number;
+    updated?: number;
+    deleted?: number;
+    /** Why it failed (secret-free), null when ok. */
+    error: string | null;
+}
+/**
+ * The module that imports data into the app on a schedule (the built-in
+ * `sync`) answers the OWNER — the dashboard and MCP (`sync_now`, get_logs
+ * `sync`): core calls it only after it authorized a drobek account for the
+ * app. Unknown source → ModuleError `not_found`.
+ */
+interface SyncAuthority<Config = unknown> {
+    sources(view: OwnerView<Config>): Promise<SyncSourceState[]>;
+    /** The latest runs (newest first; `source` narrows, `since` bounds, at most `limit`, ≤ 100). */
+    runs(view: OwnerView<Config>, query: {
+        source?: string;
+        since?: Date;
+        limit?: number;
+    }): Promise<SyncRun[]>;
+    /** Run one source now (a paused one too); `ctx` is a per-app job context whose audit names the person. */
+    runNow(ctx: AppJobContext<Config>, source: string): Promise<SyncRun>;
+    /** Clear a pause after failures (the next run is due at once); false when it was not paused so. */
+    resume(view: OwnerView<Config>, source: string): Promise<boolean>;
+}
+/** One app as a module sees it outside a request: its effective config + services. */
+interface ModuleAppView<Config = unknown> {
+    app: HookApp;
+    config: Config;
+    db: DB;
+    log: Logger;
+}
+/**
+ * How often a job runs: milliseconds, or a whole count with a unit — `'30s'`,
+ * `'5m'`, `'1h'`, `'1d'`. Between JOB_MIN_INTERVAL_MS (1 minute) and
+ * JOB_MAX_INTERVAL_MS (30 days).
+ */
+type JobInterval = number | `${number}${'s' | 'm' | 'h' | 'd'}`;
+/** What every job run gets. */
+interface JobContextBase extends ModuleServices {
+    module: string;
+    /** The job's name. */
+    job: string;
+    /**
+     * Aborted when the run exceeds the operator's MODULE_JOBS_TIMEOUT_MS or the
+     * server shuts down: pass it to `fetch` and stop early. A run that ignores
+     * it counts as failed at the timeout all the same.
+     */
+    signal: AbortSignal;
+    /** When the last successful run of this job (for this app) started, or null. */
+    lastSuccessAt: Date | null;
+}
+/** What a `scope: 'server'` job gets: the module's apps to iterate and the server-wide limits. */
+interface ServerJobContext<Config = unknown> extends JobContextBase {
+    /** The server's default limits (env / catalogue defaults — no workspace is known). */
+    limits(): Promise<Limits>;
+    /**
+     * The live apps (not deleted, not taken down) that have a stored config of
+     * this module and whose workspace has it on, each with its effective
+     * config. Stop early by leaving the loop.
+     */
+    apps(): AsyncIterable<ModuleAppView<Config>>;
+}
+/** What a `scope: 'app'` job gets — scoped to ONE app, like a route's ModuleContext without a caller. */
+interface AppJobContext<Config = unknown> extends JobContextBase {
+    app: HookApp;
+    /** This app's effective config. */
+    config: Config;
+    /** The config once the owner confirms its pending change, or null. Never act on it: it is not in force. */
+    pendingConfig: Config | null;
+    /** Limits of this app's workspace. */
+    limits(): Promise<Limits>;
+    /** Fixed-window counter namespaced to this module + app (the same buckets its routes use). */
+    rateLimit(bucket: string, key: string, max: number, windowMs: number): Promise<RateLimitResult>;
+    secrets: {
+        /** The plaintext of this app's declared secret `name` for this module, or null. */
+        get(name: string): Promise<string | null>;
+    };
+    /**
+     * Call an upstream assigned to THIS app (the proxy config, a
+     * workspace admin confirmed it) through the module that declares
+     * `upstreams` — the secret is injected server-side, never seen here.
+     * ModuleError `unavailable` when no such module is on for the workspace.
+     */
+    upstreams: {
+        fetch(name: string, request?: UpstreamRequest): Promise<UpstreamResponse>;
+    };
+    /**
+     * Write a batch of records into one of THIS app's declared
+     * collections through the records authority (`importRecords`: all or
+     * nothing, schema + quotas checked). ModuleError `unavailable` when the
+     * records module cannot.
+     */
+    records: {
+        import(collection: string, records: Record<string, unknown>[], opts: RecordsImportOptions): Promise<RecordsImportResult>;
+    };
+    /**
+     * Append an audit row for this app (the action is prefixed with the module
+     * name). A scheduled run has no person behind it: actor kind `user` without
+     * a user (the Activity page shows "system"), `meta.by: 'schedule'`; a run a
+     * person started (the sync authority's `runNow`) names them.
+     */
+    audit(action: string, meta?: Record<string, unknown>): Promise<void>;
+}
+/** A job core runs once per interval for the whole server (one replica at a time). */
+interface ServerJob<Config = unknown> {
+    /** `JOB_NAME_RE`, unique within the module. */
+    name: string;
+    /** One line for operators and agents (skill_info). */
+    description?: string;
+    scope?: 'server';
+    every: JobInterval;
+    run(ctx: ServerJobContext<Config>): Promise<void> | void;
+}
+/**
+ * A job core runs for EACH app that has a stored config of the module and
+ * the module on for its workspace, each app on its own interval — fixed, or
+ * read from the app's config (`every(config, app)`; null or undefined = not
+ * for this app now).
+ */
+interface AppJob<Config = unknown> {
+    /** `JOB_NAME_RE`, unique within the module. */
+    name: string;
+    /** One line for operators and agents (skill_info). */
+    description?: string;
+    scope: 'app';
+    every: JobInterval | ((config: Config, app: HookApp) => JobInterval | null | undefined);
+    run(ctx: AppJobContext<Config>): Promise<void> | void;
+}
+/**
+ * Scheduled work of a module (contract 1.2). Core runs each job on its
+ * interval under a Redis lease (once across replicas), at most
+ * MODULE_JOBS_CONCURRENCY runs per process, each cut off at
+ * MODULE_JOBS_TIMEOUT_MS. A failed run is logged (a per-app job's also in the
+ * app's get_logs `runtime`) and retried with backoff; it never affects the
+ * server's start or its requests. A job is the module's own trusted code —
+ * the server still never runs app code.
+ */
+type ModuleJob<Config = unknown> = ServerJob<Config> | AppJob<Config>;
+/** The shortest interval a job runs at. */
+declare const JOB_MIN_INTERVAL_MS = 60000;
+/** The longest interval a job runs at. */
+declare const JOB_MAX_INTERVAL_MS: number;
+/**
+ * A JobInterval in milliseconds, or null when the value is not one (a number
+ * that is not a positive integer, any other string). Not range-checked — see
+ * JOB_MIN_INTERVAL_MS / JOB_MAX_INTERVAL_MS.
+ */
+declare function parseJobInterval(value: unknown): number | null;
+interface DrobekModule<Config = unknown> {
+    /** `/__drobek/v1/<name>`, `drobek.<name>`, the config key and the skill name. */
+    name: string;
+    /** The module's own semver. */
+    version: string;
+    /**
+     * The contract versions this module works with: a semver range matched
+     * against `MODULE_CONTRACT_VERSION` (e.g. `'^1.1'`). Not satisfied → the
+     * server refuses to start; missing → a start-up warning.
+     */
+    contract?: string;
+    skill: ModuleSkill;
+    /**
+     * Per-app configuration (zod). Validates every configure_module call and
+     * the dashboard form (JSON Schema via `z.toJSONSchema`). Keep secrets OUT.
+     */
+    configSchema: ZodType<Config>;
+    /** The configuration of an app nobody configured (must pass configSchema). */
+    configDefaults: Config;
+    /**
+     * Optional: the usable part of a STORED config that no longer passes
+     * configSchema as a whole (a legacy import, a hand edit, a lowered cap).
+     * Gets the merged config (defaults + stored) and returns the config to
+     * serve with plus one line per part it dropped or could not fix (logged
+     * once per stored content), or null to fall back to `configDefaults` — the
+     * behaviour without it. configure_module still validates the WHOLE config,
+     * so the next change has to repair it. E.g. data keeps every valid
+     * collection instead of answering 404 for all of them.
+     */
+    salvageConfig?(merged: unknown): {
+        config: Config;
+        issues: string[];
+    } | null;
+    /**
+     * The changes between two VALID configs that need the owner's confirmation
+     * in the dashboard — e.g. an operation opened to `public`, a new e-mail
+     * recipient. Non-empty → configure_module stores the change as pending.
+     * Each string is shown to the owner and the agent verbatim. `context` names
+     * the app and gives read access to the database (inside the configure
+     * transaction), for rules that depend on stored data — e.g. removing the
+     * schema of a collection that holds records. An item may be
+     * `{ change, confirmRole: 'admin' }`: only a workspace admin can confirm
+     * the pending change then (editors may still reject it).
+     */
+    confirmRequired?(before: Config, after: Config, context: ConfirmContext): ConfirmItem[] | Promise<ConfirmItem[]>;
+    /**
+     * Runs INSIDE the confirm transaction once the owner confirmed a pending
+     * change (`before` / `after` = the effective configs). A throw rolls the
+     * confirmation back. E.g. proxy records the app on the upstream's allow-list.
+     */
+    onConfirmed?(before: Config, after: Config, context: ConfirmedContext): void | Promise<void>;
+    secrets?: ModuleSecretDoc[];
+    rules?: RuleSurface;
+    limits?: ModuleLimit[];
+    /** Register the HTTP routes (called once at startup). */
+    routes?(r: ModuleRouter<Config>): void;
+    sdk?: ModuleSdk;
+    migrations?: ModuleMigrations;
+    hooks?: ModuleHooks;
+    /** Only the module that creates end-user sessions (auth). */
+    endUsers?: EndUserAuthority<Config>;
+    /** Only the module that owns app e-mail (email): per-app limits + the envelope of every module e-mail. */
+    mail?: MailAuthority<Config>;
+    /**
+     * Only the module that stores the app's records (data): the owner's
+     * read-mostly view for core — MCP `query_data` and the dashboard's data
+     * browser. Never called for an app host request.
+     */
+    records?: RecordsAuthority<Config>;
+    /** Only the module that stores form submissions (forms): the owner's view for the dashboard. */
+    submissions?: SubmissionsAuthority<Config>;
+    /** Only the module that stores end-user uploads (files): the owner's view for the dashboard. */
+    files?: FilesAuthority<Config>;
+    /** Contract 1.2 — only the module that owns the app's upstream calls (proxy): a module job's `ctx.upstreams.fetch`. */
+    upstreams?: UpstreamsAuthority<Config>;
+    /** Contract 1.2 — only the module that imports data on a schedule (sync): the owner's view for the dashboard and MCP. */
+    sync?: SyncAuthority<Config>;
+    /**
+     * Secret-free facts about this module's state for ONE app, shown to the
+     * app's agents: get_app's `modules.<name>.info` and configure_module's
+     * `info` (after the change). E.g. the proxy module lists the workspace
+     * upstreams the config points at with `hasSecret` — NEVER a secret value,
+     * never another app's data. A throw is logged and the `info` left out.
+     */
+    appInfo?(view: ModuleAppView<Config>): Promise<Record<string, unknown>> | Record<string, unknown>;
+    /**
+     * Other modules this one needs (by name), e.g. `forms` requires `email`.
+     * The server refuses to start when one of them is not in DROBEK_MODULES.
+     */
+    requires?: string[];
+    /**
+     * The module's own error codes (beyond the core catalogue) with their
+     * meaning and fix — see ModuleErrorDoc.
+     */
+    errors?: ModuleErrorDoc[];
+    /**
+     * Extension points this module offers other modules, by slot name
+     * (`<this module's name>.<name>`, e.g. `auth.provider`) — see ModuleSlot.
+     */
+    slots?: Record<string, ModuleSlot>;
+    /**
+     * This module's contribution to other modules' slots, by slot name
+     * (e.g. `{ 'auth.provider': { id: 'oidc', … } }`). The slot must belong to
+     * an active module and the value must pass its schema.
+     */
+    contributes?: Record<string, unknown>;
+    /**
+     * Optional, for a slot HOST whose config or secrets depend on what other
+     * modules contribute (e.g. `auth` adds `providers.<id>` and the providers'
+     * secrets for each `auth.provider` contribution). Called once at start,
+     * after the contributions were checked and before
+     * `DROBEK_MODULE_<NAME>_DEFAULTS` is applied; the parts it returns replace
+     * the declared ones everywhere (configure_module, the dashboard, skill_info,
+     * the test kit). The composed `configDefaults` must pass the composed
+     * `configSchema`. A throw refuses the start.
+     */
+    compose?(input: ModuleComposeInput): ComposedModuleParts<Config>;
+    /** Who the module is for (default `default`: every workspace) — see ModuleAvailability. */
+    availability?: ModuleAvailability;
+    /** How the dashboard presents the module. */
+    dashboard?: ModuleDashboard;
+    /**
+     * Scheduled jobs (contract 1.2) — see ModuleJob. A module with jobs
+     * declares `contract: '^1.2'`: a 1.1 server ignores the field.
+     */
+    jobs?: ModuleJob<Config>[];
+}
+/** A module of any config type (what the registry holds). */
+type AnyModule = DrobekModule<any>;
+/** What a slot host's `compose` gets at start: the checked contributions to every slot. */
+interface ModuleComposeInput {
+    contributions<T = unknown>(slot: string): T[];
+}
+/** The parts of a module its `compose` may replace (the rest of the module stays as declared). */
+type ComposedModuleParts<Config = unknown> = Partial<Pick<DrobekModule<Config>, 'configSchema' | 'configDefaults' | 'salvageConfig' | 'confirmRequired' | 'secrets'>>;
+/** Declare a module (typed identity + a brand the registry checks). */
+declare function defineModule<Config>(module: DrobekModule<Config>): DrobekModule<Config>;
+/** Was `value` produced by defineModule()? */
+declare function isDefinedModule(value: unknown): value is DrobekModule;
+/** Limits for one workspace: env name → value (env default, or the limits provider). */
+type Limits = Readonly<Record<string, number>>;
+interface RateLimitResult {
+    ok: boolean;
+    /** Calls counted in the current window, this one included. */
+    count: number;
+    /** Seconds until the window resets (a hint for Retry-After). */
+    retryAfterSec: number;
+}
+/** Who an e-mail may go to — never an arbitrary address. */
+type EmailRecipient = 
+/** The addresses at this dotted path of THIS module's app config (owner-confirmed). */
+{
+    config: string;
+}
+/** The signed-in end user making the request (their verified e-mail). */
+ | {
+    principal: true;
+}
+/**
+ * The app's owners: the editors and workspace-admins of the app's workspace
+ * (verified drobek accounts; membership is managed by people in the
+ * dashboard, never by an agent).
+ */
+ | {
+    appOwners: true;
+}
+/**
+ * The ONE address someone is signing in with — the one-time code of the
+ * auth module, sent only after the address passed the app's owner-confirmed
+ * allowlist and the sign-in rate limits. Not for anything else (and never
+ * combined with another recipient). Only the module that owns end-user
+ * sessions (`endUsers`) may use it; any other module gets `forbidden`.
+ */
+ | {
+    signInAddress: string;
+};
+interface EmailMessage {
+    /** One recipient reference or several (de-duplicated; every address gets its own message). */
+    to: EmailRecipient | EmailRecipient[];
+    /** One line: control characters (CR/LF, …) become spaces, max 200 characters. */
+    subject: string;
+    /** Plain text (max 20 000 characters); the server wraps it in the drobek layout (escaped). */
+    text: string;
+}
+/** App-independent services (hooks, startup). */
+interface ModuleServices {
+    db: DB;
+    log: Logger;
+    /**
+     * The contributions of the active modules to `slot` (a slot THIS module
+     * declares, or any other active module's), in `DROBEK_MODULES` order, as
+     * the slot's schema parsed them; [] when nobody contributes. In a route,
+     * `endUsers.current` and the create / publish hooks: only the modules that
+     * are on for the app's workspace (an opt-in module switched off there
+     * contributes nothing); with no app known (the end-user callback before
+     * `app()`): only the default modules; in `onAppDelete`: every active
+     * module. Type it with the slot's value type:
+     * `contributions<Provider>('auth.provider')`.
+     */
+    contributions<T = unknown>(slot: string): T[];
+}
+/** Everything a route handler gets — scoped to ONE app and ONE module. */
+interface ModuleContext<Config = unknown> extends ModuleServices {
+    app: HookApp;
+    module: string;
+    principal: Principal;
+    /** This app's effective config (defaults + what was set). */
+    config: Config;
+    /**
+     * The config this app would have once the owner confirms its pending
+     * change; null or absent when nothing waits (or it no longer validates).
+     * Never act on it: it is not in force. It lets a route answer honestly
+     * about something the agent configured but the owner has not confirmed.
+     */
+    pendingConfig?: Config | null;
+    rules: {
+        /** Evaluate `rule` for the caller; `ownerId` = the record's owner (for `owner`). */
+        decide(rule: Rule, ownerId?: string | null): AccessDecision;
+    };
+    /** Limits of this app's workspace (env defaults or the limits provider). */
+    limits(): Promise<Limits>;
+    /** Fixed-window counter, namespaced to this module + app: `bucket` × `key`. */
+    rateLimit(bucket: string, key: string, max: number, windowMs: number): Promise<RateLimitResult>;
+    secrets: {
+        /** The plaintext of this app's secret `name` for this module (in memory only), or null. */
+        get(name: string): Promise<string | null>;
+    };
+    /** Append an audit row for this app (actor derived by the server). */
+    audit(action: string, meta?: Record<string, unknown>): Promise<void>;
+    email: {
+        /**
+         * Send to allowed recipients only (never an arbitrary address). Resolves
+         * `{ sent }` (0 when no address resolved). Rejects with a ModuleError:
+         * `limit_exceeded` (the app's e-mail limits), `unavailable` (e-mail of
+         * this class — sign-in codes or notifications — is paused by the
+         * operator-wide hourly budget, the app used its hourly share of
+         * notifications, or no mail module is active).
+         */
+        send(message: EmailMessage): Promise<{
+            sent: number;
+        }>;
+        /**
+         * Sign-in codes (`{ signInAddress }`) this app may send per hour under the
+         * operator-wide budget (EMAIL_SIGNIN_APP_HOURLY_SHARE of the sign-in
+         * budget) — a module's own per-app cap must not exceed it.
+         * Undefined when core runs no e-mail guard (tests).
+         */
+        signInShare?: number;
+    };
+}
+interface ModuleRequest<Body = unknown, Query = Record<string, string>> {
+    method: string;
+    /** Path below `/__drobek/v1/<module>`, always starting with `/`. */
+    path: string;
+    /**
+     * `:name` segments of the route pattern (percent-decoded). A trailing `*`
+     * segment captures the rest of the path in `params['*']` — RAW
+     * (percent-encoded, no leading slash, '' when nothing follows).
+     */
+    params: Record<string, string>;
+    /** Query parameters (validated when the route declares `query`). */
+    query: Query;
+    /** The raw query string, without `?` ('' when none) — repeated keys and encoding intact. */
+    rawQuery: string;
+    /** Parsed JSON body (validated when the route declares `body`). */
+    body: Body;
+    header(name: string): string | null;
+    /** Every request header (lower-cased names; repeated ones joined with `, `). */
+    headers(): Record<string, string>;
+    clientIp: string | null;
+    /**
+     * The ONE file of a `bodyTypes: ['file']` route (multipart/form-data),
+     * streamed — never buffered by the router. Rejects with a ModuleError
+     * (`unsupported_media_type`, `invalid_request`) when the body is not such a
+     * multipart body; throws on any other route. Call it once.
+     */
+    file(): Promise<UploadedFile>;
+}
+/** The file part of a multipart upload (`req.file()`). Everything but `stream` is client-supplied: never trust it. */
+interface UploadedFile {
+    /** The multipart field name of the file part. */
+    field: string;
+    /** The client's file name ('' when none) — untrusted. */
+    filename: string;
+    /** The Content-Type the client declared for the part, or null — untrusted (sniff the bytes). */
+    declaredType: string | null;
+    /** Text fields sent BEFORE the file part (a field after it is refused). */
+    fields: Record<string, string>;
+    /**
+     * The file's bytes as they arrive. Read it once. The route caps the size
+     * itself: stop early by leaving the loop (`break`/`throw`) — the rest of the
+     * request is then discarded without being buffered. Iteration throws a
+     * ModuleError `invalid_request` on a malformed body (no closing boundary, a
+     * second part) and an Error when the client aborts.
+     */
+    stream: AsyncIterable<Buffer>;
+}
+/** A non-JSON-200 answer: `respond(status, body, headers)`. */
+interface ModuleResponse {
+    readonly __drobekResponse: true;
+    status: number;
+    /** JSON-serialisable value, a string/Buffer sent as-is, or a Node `Readable` streamed as-is (e.g. a file). */
+    body: unknown;
+    /** A list value sends the header once per item (e.g. several `Set-Cookie`). */
+    headers: Record<string, string | string[]>;
+}
+declare function respond(status: number, body?: unknown, headers?: Record<string, string | string[]>): ModuleResponse;
+type RouteHandler<Config, Body, Query> = (req: ModuleRequest<Body, Query>, ctx: ModuleContext<Config>) => Promise<unknown> | unknown;
+interface RouteRateLimit {
+    /** Bucket name (namespaced by core to the module + app). */
+    bucket: string;
+    /** Max calls per window: a number, or the env name of one of the module's limits. */
+    max: number | string;
+    windowMs: number;
+    /**
+     * What the counter keys on (default `ip`; `principal` = the signed-in user,
+     * the IP for an anonymous caller). A request without a resolved client IP
+     * skips an IP-keyed limit — no shared bucket.
+     */
+    per?: 'ip' | 'app' | 'principal';
+}
+interface RouteOptions<Config = unknown, Body = unknown, Query = Record<string, string>> {
+    /** Validates the JSON body (400 `invalid_request` with field paths otherwise). */
+    body?: ZodType<Body>;
+    /** Validates the query parameters (strings). */
+    query?: ZodType<Query>;
+    /** Access rule for the caller — fixed, or derived from the app's config. */
+    rule?: Rule | ((config: Config) => Rule);
+    rateLimit?: RouteRateLimit;
+    /** Max request body (default 32 KiB). */
+    maxBodyBytes?: number;
+    /**
+     * Accepted body formats (default `['json']`). `multipart` =
+     * `multipart/form-data` with text fields only: the body becomes
+     * `{ name: value }` (a repeated name → an array of values); a file part is
+     * refused (415). `raw` = any content type, unparsed: the body is the
+     * `Buffer` (undefined when empty) and `body` validation is skipped — for
+     * pass-through routes (the proxy). Anything else is
+     * `415 unsupported_media_type`.
+     * `file` = `multipart/form-data` carrying ONE file: the router does not read
+     * the body (and `maxBodyBytes` does not apply) — the handler streams it with
+     * `req.file()` and MUST cap its size itself. Exclusive: a `file` route takes
+     * no JSON body.
+     */
+    bodyTypes?: Array<'json' | 'multipart' | 'raw' | 'file'>;
+    /**
+     * CSRF guard for mutating methods (POST/PUT/PATCH/DELETE). Always: an
+     * `Origin` header, when present, must be the app host itself. Default
+     * `sdk-header` additionally requires `X-Drobek-SDK: 1` (the SDK sends it; a
+     * cross-site form or fetch cannot without a CORS preflight the apps origin
+     * never grants). `same-origin` drops the header requirement — only for
+     * endpoints a browser calls without custom headers (e.g. navigator.sendBeacon).
+     */
+    csrf?: 'sdk-header' | 'same-origin';
+}
+interface ModuleRouter<Config = unknown> {
+    get<Q = Record<string, string>>(path: string, opts: RouteOptions<Config, undefined, Q>, handler: RouteHandler<Config, undefined, Q>): void;
+    get(path: string, handler: RouteHandler<Config, undefined, Record<string, string>>): void;
+    post<B = unknown, Q = Record<string, string>>(path: string, opts: RouteOptions<Config, B, Q>, handler: RouteHandler<Config, B, Q>): void;
+    post(path: string, handler: RouteHandler<Config, unknown, Record<string, string>>): void;
+    put<B = unknown, Q = Record<string, string>>(path: string, opts: RouteOptions<Config, B, Q>, handler: RouteHandler<Config, B, Q>): void;
+    put(path: string, handler: RouteHandler<Config, unknown, Record<string, string>>): void;
+    patch<B = unknown, Q = Record<string, string>>(path: string, opts: RouteOptions<Config, B, Q>, handler: RouteHandler<Config, B, Q>): void;
+    patch(path: string, handler: RouteHandler<Config, unknown, Record<string, string>>): void;
+    delete<Q = Record<string, string>>(path: string, opts: RouteOptions<Config, undefined, Q>, handler: RouteHandler<Config, undefined, Q>): void;
+    delete(path: string, handler: RouteHandler<Config, undefined, Record<string, string>>): void;
+}
+
+/**
+ * Load `DROBEK_MODULES` the way the server does at start (resolve, validate,
+ * check the set: slots, requires, error codes) and return the modules in
+ * that order. `importer` resolves a package name (`drobek-module-<name>` for
+ * a short name) to the module's ES module, or null when it is not installed.
+ */
+declare function loadModules$1(env: {
+    DROBEK_MODULES?: string;
+}, opts: {
+    importer: (specifier: string) => Promise<unknown>;
+}): Promise<AnyModule[]>;
+/** The browser SDK the server builds from these modules: the bundle (`js`) and its declarations (`dts`). */
+interface TestSdkBundle {
+    js: Buffer;
+    dts: string;
+}
+/** Build the browser SDK (`/__drobek/sdk.js` + its `.d.ts`) from these modules, as the server does at start. */
+declare function buildSdk$1(modules: AnyModule[]): Promise<TestSdkBundle>;
+
+/**
+ * Per-client-IP rate-limit keys. One implementation for
+ * every per-IP bucket in drobek: the dashboard sign-in guards, DCR, the app
+ * password gate, the module router's `per: 'ip'`, the proxy's `public-ip`, the
+ * error beacon and the abuse report form.
+ *
+ * A request whose client IP could not be resolved (no trusted proxy header —
+ * the plain-HTTP dev stack, a request that bypassed the proxy, a misconfigured
+ * `TRUST_PROXY`) gets NO per-IP bucket: the caller skips that check and keeps
+ * its other protections (per app, per principal, per code). The former
+ * `ip ?? 'unknown'` key put every such client into ONE shared bucket, so a
+ * handful of requests locked everybody out. Skipping loses nothing a spoofer
+ * could not already get by rotating forged headers.
+ *
+ * The first skip of each bucket logs one warning per process so a
+ * misconfigured proxy is visible without flooding the log.
+ */
+
+
+/**
+ * The key of the per-IP bucket `bucket` for this client: the resolved IP, or
+ * `null` when there is none — the caller must then skip the per-IP check
+ * (never substitute a shared placeholder). `bucket` only labels the warning.
+ */
+declare function perIpLimitKey(ip: string | null | undefined, bucket: string, log: Logger = defaultLog): string | null {
+  const key = ip?.trim();
+  if (key) return key;
+  if (!warnedBuckets.has(bucket)) {
+    warnedBuckets.add(bucket);
+    log.warn(
+      `[rate-limit] no client IP resolved — per-IP limit "${bucket}" skipped (check TRUST_PROXY and the proxy X-Real-IP header)`,
+      { event: 'rate_limit_no_client_ip', bucket }
+    );
+  }
+  return null;
+}
+
+/**
+ * What stored bytes ARE, decided from their first bytes — never from a
+ * client's Content-Type or a file name. PURE, shared by the files module
+ * (end-user uploads) and app assets (@drobek/apps), so both refuse
+ * the same disguised HTML page named `.png`.
+ *
+ *   image/png         89 50 4E 47 0D 0A 1A 0A
+ *   image/jpeg        FF D8 FF
+ *   image/gif         "GIF87a" | "GIF89a"
+ *   image/webp        "RIFF" …… "WEBP"
+ *   image/avif        …… "ftyp" + the "avif" / "avis" brand (major or compatible)
+ *   image/x-icon      00 00 01 00, at least one image, a zero reserved byte
+ *   application/pdf   "%PDF-"
+ *   video/mp4         …… "ftyp" + an MP4 brand (isom, mp41, mp42, avc1, M4V …)
+ *   audio/mp4         …… "ftyp" + the "M4A " / "M4B " brand
+ *   video/webm        1A 45 DF A3 (EBML) with the "webm" DocType in the header
+ *   audio/mpeg        "ID3" | an MPEG audio Layer III frame sync (FF Ex/Fx)
+ *   audio/ogg         "OggS"
+ *   audio/wav         "RIFF" …… "WAVE"
+ *   font/woff         "wOFF"
+ *   font/woff2        "wOF2"
+ *
+ * Other `ftyp` boxes (HEIC, QuickTime) are neither MP4 nor AVIF: their brands
+ * are not on the lists, so they sniff as nothing.
+ *
+ * SVG has no magic bytes: `looksLikeSvg` recognises an `<svg` root after an
+ * optional prolog. The caller checks that the whole stream is text.
+ */
+
+type SniffedType =
+  | 'image/png'
+  | 'image/jpeg'
+  | 'image/gif'
+  | 'image/webp'
+  | 'image/avif'
+  | 'image/x-icon'
+  | 'application/pdf'
+  | 'video/mp4'
+  | 'audio/mp4'
+  | 'video/webm'
+  | 'audio/mpeg'
+  | 'audio/ogg'
+  | 'audio/wav'
+  | 'font/woff'
+  | 'font/woff2';
+
+/** The type of some stored bytes from their first bytes (≥ SIGNATURE_HEAD_BYTES when there are that many), or null. */
+declare function sniffSignature(head: Buffer): SniffedType | null {
+  if (startsWith(head, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) return 'image/png';
+  if (startsWith(head, [0xff, 0xd8, 0xff])) return 'image/jpeg';
+  if (startsWith(head, 'GIF87a') || startsWith(head, 'GIF89a')) return 'image/gif';
+  if (startsWith(head, 'RIFF') && startsWith(head, 'WEBP', 8)) return 'image/webp';
+  if (startsWith(head, 'RIFF') && startsWith(head, 'WAVE', 8)) return 'audio/wav';
+  if (startsWith(head, '%PDF-')) return 'application/pdf';
+  if (startsWith(head, 'ftyp', 4) && head.length >= 12) {
+    const { major, compatible } = ftypBrands(head);
+    if (AVIF_BRANDS.has(major) || compatible.some((b) => AVIF_BRANDS.has(b))) return 'image/avif';
+    if (MP4_BRANDS.has(major)) return 'video/mp4';
+    if (M4A_BRANDS.has(major)) return 'audio/mp4';
+    return null;
+  }
+  if (startsWith(head, [0x1a, 0x45, 0xdf, 0xa3])) {
+    return head.subarray(4, SIGNATURE_HEAD_BYTES).includes('webm', 0, 'latin1') ? 'video/webm' : null;
+  }
+  if (startsWith(head, 'OggS')) return 'audio/ogg';
+  if (startsWith(head, 'wOFF')) return 'font/woff';
+  if (startsWith(head, 'wOF2')) return 'font/woff2';
+  if (icoHeader(head)) return 'image/x-icon';
+  if (startsWith(head, 'ID3') || mp3FrameSync(head)) return 'audio/mpeg';
+  return null;
+}
+
+/**
+ * Does the (BOM-stripped) head start with an `<svg` root? Whitespace, then any
+ * mix of XML declarations / processing instructions (`<?…?>`) and comments
+ * (`<!--…-->`) — at most SVG_PROLOG_MAX_ITEMS — and one `<!DOCTYPE svg …>`
+ * (with an optional `[…]` internal subset), then `<svg`.
+ *
+ * A linear scanner on purpose: the regex it replaces backtracked
+ * exponentially on repeated `<?xml?>`. Every step moves `i`
+ * forward through `indexOf`, so the cost is O(head length). An unterminated
+ * item is not an SVG.
+ */
+declare function looksLikeSvg(head: string): boolean {
+  let i = 0;
+  const skipSpace = (): void => {
+    while (i < head.length && isXmlSpace(head[i])) i++;
+  };
+  let doctype = false;
+  for (let items = 0; items <= SVG_PROLOG_MAX_ITEMS; items++) {
+    skipSpace();
+    if (head.startsWith('<?', i)) {
+      const end = head.indexOf('?>', i + 2);
+      if (end < 0) return false;
+      i = end + 2;
+      continue;
+    }
+    if (head.startsWith('<!--', i)) {
+      const end = head.indexOf('-->', i + 4);
+      if (end < 0) return false;
+      i = end + 3;
+      continue;
+    }
+    if (!doctype && matchesAt(DOCTYPE_SVG_RE, head, i)) {
+      doctype = true;
+      const gt = head.indexOf('>', i);
+      const bracket = head.indexOf('[', i);
+      if (gt < 0) return false;
+      if (bracket < 0 || gt < bracket) {
+        i = gt + 1;
+        continue;
+      }
+      // An internal subset: `[` … `]`, optional whitespace, `>`.
+      const close = head.indexOf(']', bracket + 1);
+      if (close < 0) return false;
+      i = close + 1;
+      skipSpace();
+      if (head[i] !== '>') return false;
+      i++;
+      continue;
+    }
+    return matchesAt(SVG_ROOT_RE, head, i);
+  }
+  return false;
+}
+
+/** A C0 control character other than tab, LF, CR (never in a text file drobek accepts). */
+declare function hasControlBytes(chunk: Buffer): boolean {
+  for (let i = 0; i < chunk.length; i++) {
+    const c = chunk[i];
+    if (c < 0x20 && c !== 0x09 && c !== 0x0a && c !== 0x0d) return true;
+  }
+  return false;
+}
+
+/**
+ * End-user sign-in providers (contract 1.1): the typed contract of
+ * the two slots the built-in `auth` module offers other modules.
+ *
+ *   `auth.provider` — a way to sign in besides the e-mail code (OIDC, SAML, …).
+ *     The provider only proves an identity `{ issuer, subject, email,
+ *     emailVerified, name? }`; `auth` keeps everything else — the allowlist, roles,
+ *     `mod_auth_users`, the session, `drobek.auth`, `<LoginGate>`.
+ *   `auth.signedIn` — an observer told about every successful sign-in (e.g.
+ *     a CRM sync); its failure is logged and never blocks the sign-in.
+ *
+ * A provider declares the provider API it implements in `apiVersion`
+ * (`AUTH_PROVIDER_API_VERSION`), apart from the module's `contract` range:
+ * API 2 answers the verified `issuer` in every identity. A contribution
+ * without it (API 1, written before the issuer was required) or with another
+ * value refuses the server start, never a user's sign-in.
+ *
+ * A module contributes one of each at most:
+ *
+ *   export default defineModule({
+ *     name: 'oidc', …,
+ *     requires: ['auth'],
+ *     contributes: { 'auth.provider': defineAuthProvider({ apiVersion: 2, id: 'oidc', label: 'Company SSO', … }) },
+ *   });
+ *
+ * The flow (docs/MODULES.md "Auth providers"): the app calls
+ * `drobek.auth.signIn(id)` → `POST /__drobek/v1/auth/begin` on the app host →
+ * `begin()` answers the IdP URL (state, nonce and a PKCE S256 challenge made
+ * by `auth`) → the IdP redirects to the ONE callback on the dashboard host,
+ * `/__drobek/auth/callback/<id>` (the `redirectUri`) → `callback()` answers
+ * the verified identity → a one-time handoff code carries it back to the app
+ * host, which sets the host-only session cookie.
+ *
+ * Providers are operator-installed server code (the module trust model);
+ * the types here are what `auth` guarantees them and asks of them.
+ */
+
+/** The auth provider API this server implements: `callback()` answers the verified `issuer`. */
+declare const AUTH_PROVIDER_API_VERSION = 2;
+/** Provider ids: lowercase letters and digits, 2–16 characters (a URL segment, a config key, a secret prefix). */
+declare const AUTH_PROVIDER_ID_RE: RegExp;
+/** The provider id of the e-mail code (in `mod_auth_users.provider` and sessions) — no contribution may take it. */
+declare const EMAIL_PROVIDER_ID = "email";
+/** The keys `auth` adds to every provider's config entry — a provider's configSchema may not declare them. */
+declare const AUTH_RESERVED_CONFIG_KEYS: readonly ["enabled", "relinkByEmail"];
+/** The identity a provider proved (the IdP's verified answer — never a value the browser sent). */
+interface AuthIdentity {
+    /**
+     * The authority that asserted `subject`, as the provider VERIFIED it: OIDC —
+     * the `iss` of the validated ID token (the configured or discovered issuer,
+     * env fallbacks included); SAML — the assertion's Issuer. `auth` binds a
+     * person to (provider, issuer, subject) (OIDC Core §5.7): the same subject
+     * from another issuer is another person. Never a constant or a value the
+     * browser sent — max 2048 characters.
+     */
+    issuer: string;
+    /** The IdP's stable, unique id of the person at `issuer` (OIDC `sub`, SAML NameID) — max 255 characters. */
+    subject: string;
+    /** Their e-mail address (normalized to lower case by `auth`). */
+    email: string;
+    /**
+     * The IdP vouches for the address. `auth` refuses a sign-in with an
+     * unverified address (`email_not_verified`): the allowlist, `adminEmails`
+     * and the workspace-editor rule all decide by the address.
+     */
+    emailVerified: boolean;
+    /** A display name (optional, max 200 characters; passed to `auth.signedIn` observers, not stored). */
+    name?: string;
+}
+/**
+ * A secret a provider uses, declared under the `auth` module (per app,
+ * entered in the dashboard only). `name` starts with `<ID>_` (upper case),
+ * e.g. `OIDC_CLIENT_SECRET`.
+ */
+interface AuthProviderSecretDoc extends ModuleSecretDoc {
+    /**
+     * The operator's env var used when the app has no value of its own
+     * (`AUTH_<ID>_…`, e.g. `AUTH_OIDC_CLIENT_SECRET`) — one IdP for the whole
+     * self-hosted server.
+     */
+    env?: string;
+}
+/** The provider's secrets for ONE app: its declared names only (the app's value, else the declared env fallback). */
+interface AuthProviderSecrets {
+    get(name: string): Promise<string | null>;
+}
+interface AuthProviderInput<Config> {
+    app: HookApp;
+    /** The app's config of THIS provider (`auth.providers.<id>` without the keys auth adds), as its configSchema parsed it. */
+    config: Config;
+    secrets: AuthProviderSecrets;
+    /**
+     * The operator's `AUTH_<ID>_*` env vars (only those) — a provider's env
+     * fallback for config it may take from the server instead of the app.
+     */
+    env: Readonly<Record<string, string>>;
+    /**
+     * `<dashboard origin>/__drobek/auth/callback/<id>` — the ONE redirect URI
+     * to register at the IdP (the same for every app of the server).
+     */
+    redirectUri: string;
+    /** Opaque, signed and single-use: send it to the IdP (OIDC `state`, SAML `RelayState`), it comes back to the callback. */
+    state: string;
+    /** Random per sign-in (OIDC `nonce`): check the IdP's answer carries it. */
+    nonce: string;
+    log: Logger;
+}
+interface AuthProviderBeginInput<Config = unknown> extends AuthProviderInput<Config> {
+    /** PKCE: `BASE64URL(SHA-256(code_verifier))` — the verifier stays on the server. */
+    codeChallenge: string;
+    codeChallengeMethod: 'S256';
+}
+/** Where the browser goes to sign in: the IdP's authorization URL (a SAML provider: its HTTP-Redirect binding). */
+interface AuthProviderBeginResult {
+    /** https (http only outside production). */
+    url: string;
+}
+interface AuthProviderCallbackInput<Config = unknown> extends AuthProviderInput<Config> {
+    /**
+     * The callback's query parameters (first value of each). `auth` found the
+     * sign-in by its `state` (the `state` or `RelayState` parameter / form
+     * field) and consumed it before calling the provider.
+     */
+    query: Record<string, string>;
+    /** The form fields of a POST callback (`application/x-www-form-urlencoded`, e.g. a SAML response), else null. */
+    body: Record<string, string> | null;
+    /** The PKCE verifier of this sign-in (send it with the token request). */
+    codeVerifier: string;
+}
+/**
+ * A sign-in provider (the `auth.provider` slot). `begin` and `callback` are
+ * called unbound (`provider.begin(input)` on the parsed contribution): do
+ * not rely on `this`. A throw is logged by `auth` (the error's name only)
+ * and answers the user `provider_error` — never the IdP's details. Each
+ * call is cut off after 15 s.
+ */
+interface AuthProvider<Config = any> {
+    /**
+     * The provider API this provider implements — `AUTH_PROVIDER_API_VERSION`.
+     * Declared by the provider itself (`defineAuthProvider` never adds it): a
+     * provider without it was written for API 1 and refuses the server start.
+     */
+    apiVersion: typeof AUTH_PROVIDER_API_VERSION;
+    /** `AUTH_PROVIDER_ID_RE`, not `email`; unique within the slot. The `:provider` of the callback URL and the key of `auth.providers`. */
+    id: string;
+    /** What `<LoginGate>` shows: "Continue with <label>" (1–40 characters). */
+    label: string;
+    /**
+     * The per-app config of the provider (`auth.providers.<id>`), a zod OBJECT
+     * schema (`z.object` / `z.strictObject`) without the keys `auth` adds:
+     * `enabled: boolean` and `relinkByEmail?: boolean`. While disabled, every
+     * field is optional; enabling the provider validates the whole schema.
+     */
+    configSchema: ZodType<Config>;
+    /** Defaults merged under the app's config (optional; must pass `configSchema.partial()`). */
+    configDefaults?: Partial<Config>;
+    /**
+     * Config keys that decide WHO can sign in (e.g. `issuer`, `clientId`):
+     * changing one while the provider is enabled — and enabling it — waits for
+     * the app owner's confirmation. Their values and the operator's non-secret
+     * `AUTH_<ID>_*` env vars make the provider's connection: a change of either
+     * refuses the sign-ins in flight and ends the provider's sessions.
+     */
+    identityFields?: string[];
+    secrets?: AuthProviderSecretDoc[];
+    begin(input: AuthProviderBeginInput<Config>): Promise<AuthProviderBeginResult>;
+    callback(input: AuthProviderCallbackInput<Config>): Promise<AuthIdentity>;
+}
+/** What an `auth.signedIn` observer gets after a successful sign-in (e-mail code or provider). */
+interface AuthSignInEvent {
+    app: HookApp;
+    /** The signed-in user with the role they got (and the provider's display name, if any). */
+    user: EndUser & {
+        name?: string;
+    };
+    /** `email` (the e-mail code) or the provider id. */
+    provider: string;
+    /** The first sign-in of this user to the app. */
+    isNew: boolean;
+    db: DB;
+    log: Logger;
+}
+/** An observer of successful sign-ins (the `auth.signedIn` slot): run after the session exists, cut off after 5 s, errors logged. */
+interface AuthSignedInObserver {
+    /** Names the observer in logs (unique within the slot). */
+    id: string;
+    onSignIn(event: AuthSignInEvent): Promise<void> | void;
+}
+/** Type a provider contribution (identity at run time). */
+declare function defineAuthProvider<Config>(provider: AuthProvider<Config>): AuthProvider<Config>;
+/** Type a sign-in observer contribution (identity at run time). */
+declare function defineSignInObserver(observer: AuthSignedInObserver): AuthSignedInObserver;
+/** The `auth.provider` slot's schema (the contribution as `auth` gets it; unknown keys kept). */
+declare const authProviderSchema: ZodType<AuthProvider>;
+/** The `auth.signedIn` slot's schema. */
+declare const authSignedInObserverSchema: ZodType<AuthSignedInObserver>;
+/** What `auth` accepts from `callback()` (the address normalized to lower case). */
+declare const authIdentitySchema: z.ZodObject<{
+    issuer: z.ZodString;
+    subject: z.ZodString;
+    email: z.ZodPipe<z.ZodString, z.ZodEmail>;
+    emailVerified: z.ZodBoolean;
+    name: z.ZodOptional<z.ZodString>;
+}, z.core.$strip>;
+
+/**
+ * The Resend transport: one `POST https://api.resend.com/emails` per message
+ * over the global `fetch` — no vendor SDK. Same message as the SMTP transport
+ * (EMAIL_FROM's address under an optional display name, one recipient,
+ * subject, text, html, Reply-To).
+ *
+ * The API key only ever goes into the Authorization header: it is never
+ * logged and never part of an error message, and Resend's response body is
+ * not echoed either (it can quote the recipient) — an error carries the HTTP
+ * status and Resend's error `name` (a fixed identifier) only.
+ */
+
+
+/** Why a send failed — the callers map every code onto their existing "could not be sent" answer. */
+declare const EMAIL_SEND_ERROR_CODES = ['rate_limited', 'unauthorized', 'rejected', 'unavailable', 'timeout'] as const;
+type EmailSendErrorCode = (typeof EMAIL_SEND_ERROR_CODES)[number];
+
+declare class EmailSendError extends Error {
+  readonly code: EmailSendErrorCode;
+  /** HTTP status of the provider's answer (absent for network errors and timeouts). */
+  readonly status?: number;
+  /** Seconds the provider asked to wait (429 Retry-After). */
+  readonly retryAfterSec?: number;
+  /** Worth another try later (429, 5xx, network, timeout). */
+  readonly retryable: boolean;
+
+  constructor(code: EmailSendErrorCode, message: string, opts: { status?: number; retryAfterSec?: number } = {}) {
+    super(message);
+    this.name = 'EmailSendError';
+    this.code = code;
+    this.status = opts.status;
+    this.retryAfterSec = opts.retryAfterSec;
+    this.retryable = code === 'rate_limited' || code === 'unavailable' || code === 'timeout';
+  }
+}
+
+/** The sender as `{ name, address }` (EMAIL_FROM's address, the display name already one plain line). */
+type Sender = { name: string; address: string };
+
+/**
+ * An e-mail transport a platform module contributes to the `email.transport`
+ * slot (hosted by the `email` module), chosen with EMAIL_TRANSPORT=<its id>.
+ * SMTP and Resend stay in this package: the dashboard's sign-in codes and
+ * invites never depend on an installed module.
+ *
+ * The module runtime installs the selected transport at start, process-wide
+ * (on globalThis, so the dev server's Vite-loaded copy of this package sees
+ * it too), with the values of the env vars it declares in `secrets`. A
+ * transport is a server-level thing: its secrets come from the operator's
+ * env only, never from an app, MCP or the dashboard. Every send is cut off
+ * after EMAIL_TRANSPORT_TIMEOUT_MS; whatever it throws reaches the caller as
+ * an EmailSendError whose message has every secret value redacted.
+ */
+
+
+/** The transport API this server implements (a contribution may declare it as `apiVersion`). */
+declare const EMAIL_TRANSPORT_API_VERSION = 1;
+
+/** One message, as the built-in transports send it: EMAIL_FROM's address under a one-line display name, one recipient. */
+interface EmailTransportMessage {
+  from: Sender;
+  to: string;
+  subject: string;
+  text: string;
+  html: string;
+  replyTo?: string;
+}
+
+interface EmailTransportContext {
+  /** The values of the env vars the transport declared in `secrets` (all set: the server refuses to start otherwise). Never log them. */
+  secrets: Readonly<Record<string, string>>;
+  /** Aborted when the send runs past EMAIL_TRANSPORT_TIMEOUT_MS: pass it to `fetch`. */
+  signal: AbortSignal;
+}
+
+/**
+ * A module's e-mail transport (the `email.transport` slot). `send` is called
+ * unbound; it resolves once the provider accepted the message and throws
+ * otherwise — an EmailSendError with one of its codes keeps the code, any
+ * other error becomes `unavailable`.
+ */
+interface ModuleEmailTransport {
+  apiVersion?: typeof EMAIL_TRANSPORT_API_VERSION;
+  /** `EMAIL_TRANSPORT_ID_RE`, not `smtp` or `resend`; unique within the slot. */
+  id: string;
+  /** The provider's name for logs and docs (1–40 characters). */
+  label: string;
+  /** The operator env vars the transport needs (UPPER_SNAKE), e.g. `['POSTMARK_TOKEN']`. */
+  secrets?: string[];
+  send(message: EmailTransportMessage, ctx: EmailTransportContext): Promise<void>;
+}
+
+/**
+ * The `email.transport` slot: an e-mail provider (SES, Postmark, a company
+ * relay, …) as a module. The built-in `email` module hosts the slot (a slot
+ * belongs to a module named by its prefix); core selects the contribution
+ * whose id EMAIL_TRANSPORT names and installs it into @drobek/email, which
+ * then carries every message of the server through it: the dashboard's
+ * sign-in codes and invites as well as the modules' `ctx.email.send`.
+ *
+ *   export default defineModule({
+ *     name: 'postmark', …,
+ *     requires: ['email'],
+ *     contributes: {
+ *       'email.transport': defineEmailTransport({
+ *         id: 'postmark', label: 'Postmark', secrets: ['POSTMARK_TOKEN'],
+ *         async send(msg, { secrets, signal }) { … },
+ *       }),
+ *     },
+ *   });
+ *
+ * `smtp` and `resend` stay built in and cannot be replaced. The transport's
+ * secrets are operator env vars only (read at start, handed to `send` in
+ * `ctx.secrets`); the rate limits above the transport stay as they are.
+ */
+
+declare const EMAIL_TRANSPORT_SLOT = "email.transport";
+/** Type a transport contribution (identity at run time). */
+declare function defineEmailTransport(transport: ModuleEmailTransport): ModuleEmailTransport;
+/** The `email.transport` slot's schema (unknown keys kept). */
+declare const emailTransportSchema: ZodType<ModuleEmailTransport>;
+
+/**
+ * The ONE error shape every module route answers with:
+ *   `{ error, message, details?, hint }` + an HTTP status.
+ * `hint` links the agent to the documentation — by default the module's own
+ * skill, `skill_info('<module>')`. Handlers throw ModuleError; anything else
+ * becomes a 500 `internal_error` without internals.
+ */
+type ModuleErrorCode = 'invalid_request' | 'unauthorized' | 'forbidden' | 'not_found' | 'module_not_enabled' | 'method_not_allowed' | 'payload_too_large' | 'unsupported_media_type' | 'rate_limited' | 'limit_exceeded' | 'quota_exceeded' | 'conflict' | 'csrf_rejected' | 'password_required' | 'unavailable' | 'internal_error' | (string & {});
+/** Every code the platform answers module routes with (each has an agent-dx catalogue entry). */
+declare const MODULE_ERROR_CODES: readonly string[];
+/**
+ * Every code of the CORE error catalogue (`@drobek/agent-dx`
+ * `ERROR_CATALOGUE`, code-shaped entries): the module-route codes above plus
+ * the MCP tool, compile and OAuth codes. A module may not declare one of
+ * these in `errors`, and a module route may answer any of them. A unit test
+ * in @drobek/mcp keeps this list equal to the catalogue.
+ */
+declare const CORE_ERROR_CODES: readonly string[];
+interface ModuleErrorBody {
+    error: string;
+    message: string;
+    details?: unknown;
+    hint?: string;
+}
+/**
+ * Cross-instance brand: the dashboard's Vite SSR runner and the module
+ * processes can each hold their own copy of this class, and subclasses
+ * (`DataError`, …) rename `name`, so neither `instanceof` nor the name
+ * identifies a module error reliably. `Symbol.for` is shared per realm.
+ */
+declare const MODULE_ERROR_BRAND: unique symbol;
+declare class ModuleError extends Error {
+    readonly [MODULE_ERROR_BRAND]: true;
+    readonly code: ModuleErrorCode;
+    readonly status: number;
+    readonly details?: unknown;
+    readonly hint?: string;
+    readonly headers: Record<string, string>;
+    constructor(code: ModuleErrorCode, message: string, opts?: {
+        status?: number;
+        details?: unknown;
+        hint?: string;
+        headers?: Record<string, string>;
+    });
+    body(defaultHint?: string): ModuleErrorBody;
+}
+/**
+ * ModuleError by shape, not by class identity: a third-party module may bundle
+ * its own copy of this package, so `instanceof` is not enough.
+ */
+declare function isModuleError(err: unknown): err is ModuleError;
+/**
+ * An opt-in module (`availability: 'opt-in'`) that is not enabled
+ * for the app's workspace — the module route (404), configure_module and the
+ * owner's confirm answer this.
+ */
+declare function moduleNotEnabled(name: string): ModuleError;
+/** `skill_info('<name>')` — the hint every module error carries by default. */
+declare function skillHint(name?: string): string;
+/** zod issues → `[{ path: 'a.b[0]', message }]` (the agent-facing field paths). */
+declare function issuePaths(issues: ReadonlyArray<{
+    path: ReadonlyArray<PropertyKey>;
+    message: string;
+}>): {
+    path: string;
+    message: string;
+}[];
+
+/**
+ * The ONE rule evaluator every module uses — a pure function with
+ * table tests. A rule is a `|`-separated disjunction of principals:
+ *
+ *   public — anyone, signed in or not
+ *   user   — any end user signed in to this app
+ *   owner  — a signed-in user whose id equals the record's owner (`_owner`)
+ *   admin  — a signed-in user with role admin
+ *   none   — nobody (the operation is closed)
+ *
+ * Outcome: `{ ok: true }`, or 401 (anonymous and a sign-in could help) / 403
+ * (signed in but not allowed, or the rule admits nobody). An unknown token
+ * makes the rule invalid — `parseRule` reports it; `decideAccess` fails closed
+ * (403) on it.
+ */
+
+declare const RULE_TOKENS: readonly ["public", "user", "owner", "admin", "none"];
+type RuleToken = (typeof RULE_TOKENS)[number];
+/** The tokens of `rule`, or null when it contains an unknown/empty token. */
+declare function parseRule(rule: Rule): RuleToken[] | null;
+declare function isValidRule(rule: unknown): rule is Rule;
+/** Does `rule` let anyone in (`public`)? — the usual confirmRequired trigger. */
+declare function ruleIsPublic(rule: Rule): boolean;
+declare function decideAccess(rule: Rule, principal: Principal, ownerId?: string | null): AccessDecision;
+
+/**
+ * The `.` entry of the npm package `@freema/drobek-modules`
+ * (scripts/npm-packages.mjs): the public contract, plus two test helpers
+ * that modules written before `@drobek/modules/testing` offered them still
+ * import from here.
+ */
+
+/** @deprecated Import `loadModules` from `@drobek/modules/testing`; this re-export goes away in the next major version. */
+declare const loadModules: typeof loadModules$1;
+/** @deprecated Import `buildSdk` from `@drobek/modules/testing`; this re-export goes away in the next major version. */
+declare const buildSdk: typeof buildSdk$1;
+
+export { AUTH_PROVIDER_API_VERSION, AUTH_PROVIDER_ID_RE, AUTH_RESERVED_CONFIG_KEYS, CORE_ERROR_CODES, EMAIL_PROVIDER_ID, EMAIL_SEND_ERROR_CODES, EMAIL_TRANSPORT_API_VERSION, EMAIL_TRANSPORT_SLOT, EmailSendError, JOB_MAX_INTERVAL_MS, JOB_MIN_INTERVAL_MS, JOB_NAME_RE, MODULE_CONTRACT_VERSION, MODULE_ERROR_CODES, MODULE_ERROR_CODE_RE, MODULE_NAME_RE, ModuleError, RECORDS_IMPORT_MAX_ROWS, RULE_TOKENS, SLOT_NAME_RE, authIdentitySchema, authProviderSchema, authSignedInObserverSchema, buildSdk, decideAccess, defineAuthProvider, defineEmailTransport, defineModule, defineSignInObserver, emailTransportSchema, hasControlBytes, isDefinedModule, isModuleError, isValidRule, issuePaths, loadModules, looksLikeSvg, moduleNotEnabled, normalizeConfirmItems, parseJobInterval, parseRule, perIpLimitKey, respond, ruleIsPublic, skillHint, sniffSignature };
+export type { AccessDecision, AnyModule, AppJob, AppJobContext, AuthIdentity, AuthProvider, AuthProviderBeginInput, AuthProviderBeginResult, AuthProviderCallbackInput, AuthProviderSecretDoc, AuthProviderSecrets, AuthSignInEvent, AuthSignedInObserver, ComposedModuleParts, ConfirmContext, ConfirmItem, ConfirmRole, ConfirmedContext, DB, DrobekModule, EmailKind, EmailMessage, EmailRecipient, EmailSendErrorCode, EmailTransportContext, EmailTransportMessage, EndUser, EndUserAuthority, EndUserCallbackApp, EndUserCallbackInput, EndUserCallbackResult, EndUserListQuery, EndUserPage, EndUserRecord, FilesAuthority, HookApp, JobContextBase, JobInterval, Limits, Logger, MailAuthority, MailEnvelope, MailPrepareInput, ModuleAppView, ModuleAvailability, ModuleComposeInput, ModuleContext, ModuleDashboard, ModuleDashboardEditor, ModuleEmailTransport, ModuleErrorBody, ModuleErrorCode, ModuleErrorDoc, ModuleHooks, ModuleJob, ModuleLimit, ModuleMigrations, ModuleRequest, ModuleResponse, ModuleRouter, ModuleSdk, ModuleSecretDoc, ModuleServices, ModuleSkill, ModuleSlot, OwnerFile, OwnerFilesPage, OwnerSubmission, OwnerView, Principal, RateLimitResult, RecordsAuthority, RecordsCollection, RecordsImportOptions, RecordsImportResult, RecordsPage, RecordsQuery, RecordsView, RouteHandler, RouteOptions, RouteRateLimit, Rule, ServerJob, ServerJobContext, SniffedType, SubmissionsAuthority, SubmissionsPage, SubmissionsQuery, SyncAuthority, SyncRun, SyncSourceState, UploadedFile, UpstreamRequest, UpstreamResponse, UpstreamsAuthority };

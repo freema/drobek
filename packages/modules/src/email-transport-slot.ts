@@ -34,7 +34,7 @@ import {
 import type { Logger } from '@drobek/core';
 import { z, type ZodType } from 'zod';
 import type { AnyModule } from './contract.js';
-import { ModuleLoadError } from './registry.js';
+import { ModuleLoadError } from './errors.js';
 
 export const EMAIL_TRANSPORT_SLOT = 'email.transport';
 

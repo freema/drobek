@@ -18,8 +18,10 @@
  * built workspace (`pnpm build:packages` first) into `dist-npm/<dir>/`:
  *
  *  - `@freema/drobek-sdk`: the sdk's `dist/` as built (no dependencies).
- *  - `@freema/drobek-modules`: `dist/index.js` + `dist/testing.js` bundled
- *    with esbuild — the private workspace packages (`@drobek/db`,
+ *  - `@freema/drobek-modules`: the public module contract only — `.` is
+ *    `dist/published.js` (src/public.ts plus two deprecated test helpers),
+ *    `./testing` is `dist/testing.js`; the runtime, registry and loader stay
+ *    in the workspace. Both are bundled with esbuild — the private workspace packages (`@drobek/db`,
  *    `@drobek/core`, `@drobek/compile`, …) are inlined, every npm package
  *    stays an import. The declarations are rolled up with rollup-plugin-dts,
  *    so the `.d.ts` never names a private package. `zod` + `drizzle-orm` are
@@ -144,7 +146,7 @@ function manifestOf(file) {
 async function stageModules(entry, out, version) {
   const src = join(ROOT, entry.src);
   const pkg = readJson(join(src, 'package.json'));
-  const entries = { index: join(src, 'dist/index.js'), testing: join(src, 'dist/testing.js') };
+  const entries = { index: join(src, 'dist/published.js'), testing: join(src, 'dist/testing.js') };
   for (const f of Object.values(entries)) requireBuilt(f);
   const esbuild = await import('esbuild');
 
@@ -217,7 +219,7 @@ async function stageModules(entry, out, version) {
     },
   };
   const bundle = await rollup({
-    input: { index: join(src, 'dist/index.d.ts'), testing: join(src, 'dist/testing.d.ts') },
+    input: { index: join(src, 'dist/published.d.ts'), testing: join(src, 'dist/testing.d.ts') },
     plugins: [realpaths, dts({ respectExternal: true, tsconfig: join(src, 'tsconfig.build.json') })],
     external: dtsExternal,
     onwarn(w, warn) {
@@ -261,6 +263,33 @@ async function stageModules(entry, out, version) {
     peerDependencies,
     peerDependenciesMeta: Object.fromEntries(Object.keys(OPTIONAL_PEERS).map((n) => [n, { optional: true }])),
   });
+}
+
+/**
+ * The public API of a staged `@freema/drobek-modules`: each entry's
+ * declarations rolled up into one self-contained text (the shared chunk
+ * inlined under its real names), for the API snapshot.
+ */
+export async function publicDeclarations(dir) {
+  const { rollup } = await import('rollup');
+  const { dts } = await import('rollup-plugin-dts');
+  /** @type {{ index: string, testing: string }} */
+  const api = { index: '', testing: '' };
+  for (const entry of /** @type {const} */ (['index', 'testing'])) {
+    const bundle = await rollup({
+      input: join(dir, 'dist', `${entry}.d.ts`),
+      plugins: [dts({ respectExternal: true })],
+      external: (id) => !id.startsWith('.') && !id.startsWith('/'),
+      onwarn(w, warn) {
+        if (w.code === 'CIRCULAR_DEPENDENCY' || w.code === 'UNUSED_EXTERNAL_IMPORT') return;
+        warn(w);
+      },
+    });
+    const { output } = await bundle.generate({ format: 'es' });
+    await bundle.close();
+    api[entry] = output[0].code;
+  }
+  return api;
 }
 
 async function stageCreate(entry, out, version) {
