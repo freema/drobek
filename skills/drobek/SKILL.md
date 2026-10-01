@@ -405,7 +405,11 @@ workspace admin does it, over MCP or on the dashboard's Upstreams page:
 `list_upstreams({ workspace })` lists them (never a key);
 `remove_upstream({ workspace, name, user_confirmed })` deletes one only after
 the user's explicit yes — every app using it breaks at once. A name the
-workspace already has answers `upstream_already_registered`.
+workspace already has answers `upstream_already_registered`. One upstream is
+one host: when many similar hosts seem needed (a feed per region), ask the
+user first or use one main host — never register in bulk. Refusals:
+`limit_exceeded` (UPSTREAMS_MAX_PER_WORKSPACE upstreams),
+`rate_limited` (UPSTREAM_REGISTRATIONS_PER_HOUR per hour, `retry_after_seconds`).
 
 Data that should refresh on its own (scores, prices, a feed — a cron job
 elsewhere) is imported by

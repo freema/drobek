@@ -10,7 +10,8 @@
  * register_upstream over MCP links an upstream that needs a key here
  * with its fields in the query (`name`, `baseUrl`, `methods`, `paths`,
  * `authType`, `header`) — the form starts filled in; a secret is never read
- * from the URL.
+ * from the URL. Registering stops at the workspace's UPSTREAMS_MAX_PER_WORKSPACE
+ * and UPSTREAM_REGISTRATIONS_PER_HOUR; the page shows the refusal's message.
  */
 import {
   data,
@@ -26,7 +27,13 @@ import {
   ProxyError,
   proxyErrorStatus,
 } from '@drobek/proxy';
+import { moduleRuntime } from '@drobek/modules';
 import { requireWorkspaceRole, workspaceNav } from '@drobek/tenancy';
+
+/** The workspace's UPSTREAMS_MAX_PER_WORKSPACE (limits provider plan or env default). */
+async function maxUpstreams(workspaceId: string): Promise<number> {
+  return (await (await moduleRuntime()).workspaceLimits(workspaceId)).UPSTREAMS_MAX_PER_WORKSPACE;
+}
 
 function splitList(raw: string): string[] {
   return String(raw ?? '')
@@ -67,6 +74,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     /** The shared workspace chrome (breadcrumb, badges, tabs). */
     nav: await workspaceNav(access),
     upstreams,
+    maxUpstreams: await maxUpstreams(access.workspace.id),
     prefill: prefillOf(request.url),
     role: access.effectiveRole,
     // The destination ports a base_url may use (PROXY_ALLOWED_PORTS, default 80/443).
@@ -106,6 +114,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
         authHeaderName: String(form.get('authHeaderName') ?? '') || null,
         // Write-only: consumed here, encrypted, never returned.
         secret: String(form.get('secret') ?? '') || null,
+        maxUpstreams: await maxUpstreams(access.workspace.id),
       });
       return redirect(back);
     }

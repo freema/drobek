@@ -88,7 +88,8 @@ const styles = {
 } as const;
 
 export default function UpstreamsRoute() {
-  const { nav, upstreams, allowedPorts, prefill } = useLoaderData<typeof loader>();
+  const { nav, upstreams, allowedPorts, prefill, maxUpstreams } = useLoaderData<typeof loader>();
+  const full = upstreams.length >= maxUpstreams;
   const needsKey = prefill?.authType === 'bearer' || prefill?.authType === 'header';
   const actionData = useActionData<typeof action>();
   const error = actionData && 'error' in actionData ? actionData.error : null;
@@ -106,6 +107,11 @@ export default function UpstreamsRoute() {
       <p style={styles.hint}>
         drobek forwards only the methods and path prefixes you allow, to public hosts on ports {allowedPorts.join('/')}{' '}
         only; the proxy config of each app also says which of its users may call the upstream.
+      </p>
+      <p style={styles.hint} data-testid="upstreams-limit" data-full={full ? 'true' : undefined}>
+        {full
+          ? `This workspace has ${upstreams.length} of its ${maxUpstreams} upstreams. Delete one the apps no longer need before you register another.`
+          : `This workspace can hold ${maxUpstreams} upstreams (${upstreams.length} registered). One upstream is one host; apps call any allowed path under it.`}
       </p>
 
       {error ? (

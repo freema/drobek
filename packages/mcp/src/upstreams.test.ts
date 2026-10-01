@@ -8,13 +8,18 @@
  * attributed to the agent.
  */
 import { eq } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/pglite';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { apps, auditLog, memberships, upstreams, users, workspaces } from '@drobek/db';
+import { apps, auditLog, memberships, setDbForTests, upstreamSecrets, upstreams, users, workspaces } from '@drobek/db';
+import * as schema from '@drobek/db/schema';
+import type { ModuleRuntime } from '@drobek/modules';
+import { createUpstream, deleteUpstream, listUpstreams, type ConfigureActor } from '@drobek/proxy';
 import type { ToolPrincipal } from './context.js';
 import { freshDb, type TestDb } from './test/db.js';
 import { connect, testDeps, type TestDeps } from './test/harness.js';
 
 let db: TestDb;
+let pg: Awaited<ReturnType<typeof freshDb>>['pg'];
 let close: () => Promise<void>;
 const P = {} as Record<'alice' | 'ed' | 'eve', ToolPrincipal>;
 let wsId: string;
@@ -23,6 +28,7 @@ let deps: TestDeps;
 beforeAll(async () => {
   const t = await freshDb();
   db = t.db;
+  pg = t.pg;
   close = () => t.pg.close();
   const mk = async (email: string) => (await db.insert(users).values({ email }).returning())[0].id;
   const ids = { alice: await mk('alice@example.test'), ed: await mk('ed@example.test'), eve: await mk('eve@example.test') };
@@ -176,5 +182,127 @@ describe('the proxy upstream tools', () => {
       expect(await db.select().from(upstreams).where(eq(upstreams.name, 'pokeapi'))).toHaveLength(0);
       expect(errorOf(await c.call('remove_upstream', { workspace: 'team-u', name: 'pokeapi', user_confirmed: true }))).toMatchObject({ code: 'not_found' });
     });
+  });
+});
+
+describe('upstream caps (UPSTREAMS_MAX_PER_WORKSPACE, UPSTREAM_REGISTRATIONS_PER_HOUR)', () => {
+  async function newWorkspace(slug: string): Promise<{ id: string; actor: ConfigureActor }> {
+    const [ws] = await db.insert(workspaces).values({ kind: 'team', slug, name: slug }).returning();
+    await db.insert(memberships).values({ userId: P.alice.userId, workspaceId: ws.id, role: 'workspace-admin' });
+    return { id: ws.id, actor: { workspaceId: ws.id, actorUserId: P.alice.userId, role: 'workspace-admin' } };
+  }
+
+  function withPlan(limits: Record<string, number>): void {
+    const real = deps.modules;
+    deps.modules = async () => {
+      const rt = await real();
+      const planned = Object.create(rt) as ModuleRuntime;
+      planned.workspaceLimits = async (id: string) => ({ ...(await rt.workspaceLimits(id)), ...limits });
+      return planned;
+    };
+  }
+
+  const feed = (workspace: string, region: string) => ({
+    ...POKE,
+    workspace,
+    name: `feed-${region}`,
+    base_url: `https://${region}.example.com`,
+    allowed_path_prefixes: ['/rss'],
+  });
+
+  it('the workspace limit refuses the next upstream with limit_exceeded, keyed ones too; a taken name, deletes and existing upstreams over a lowered limit still work', async () => {
+    const { id, actor } = await newWorkspace('caps-a');
+    withPlan({ UPSTREAMS_MAX_PER_WORKSPACE: 2 });
+    await as('alice', async (c) => {
+      ok(await c.call('register_upstream', feed('caps-a', 'one')));
+      ok(await c.call('register_upstream', feed('caps-a', 'two')));
+      const over = errorOf(await c.call('register_upstream', feed('caps-a', 'three')));
+      expect(over).toMatchObject({ code: 'limit_exceeded', limit: 'UPSTREAMS_MAX_PER_WORKSPACE', value: 2 });
+      expect(String(over.message)).toContain('UPSTREAMS_MAX_PER_WORKSPACE');
+      expect(String(over.hint)).toContain('register_upstream');
+      // No dashboard link for a keyed upstream that could not be registered anyway.
+      expect(errorOf(await c.call('register_upstream', { ...feed('caps-a', 'keyed'), auth_type: 'bearer' }))).toMatchObject({ code: 'limit_exceeded' });
+      expect(errorOf(await c.call('register_upstream', feed('caps-a', 'one')))).toMatchObject({ code: 'upstream_already_registered' });
+      ok(await c.call('remove_upstream', { workspace: 'caps-a', name: 'feed-two', user_confirmed: true }));
+      ok(await c.call('register_upstream', feed('caps-a', 'three')));
+    });
+    // The dashboard path (the same operation) with a lowered limit: nothing is removed, delete works, no new one.
+    const dashboard = { ...actor, name: 'feed-four', baseUrl: 'https://four.example.com', allowedMethods: ['GET'], allowedPathPrefixes: ['/rss'], authType: 'none' };
+    await expect(createUpstream({ ...dashboard, maxUpstreams: 1 })).rejects.toMatchObject({
+      code: 'limit_exceeded',
+      details: { limit: 'UPSTREAMS_MAX_PER_WORKSPACE', value: 1 },
+    });
+    const listed = await listUpstreams(actor);
+    expect(listed.map((u) => u.name)).toEqual(['feed-one', 'feed-three']);
+    await deleteUpstream(actor, listed[0].id);
+    await expect(createUpstream({ ...dashboard, maxUpstreams: 1 })).rejects.toMatchObject({ code: 'limit_exceeded' });
+    expect((await db.select().from(upstreams).where(eq(upstreams.workspaceId, id))).map((u) => u.name)).toEqual(['feed-three']);
+  });
+
+  it('the env default is 20 upstreams per workspace', async () => {
+    const { actor } = await newWorkspace('caps-default');
+    const base = { ...actor, allowedMethods: ['GET'], allowedPathPrefixes: ['/'], authType: 'none', env: { UPSTREAM_REGISTRATIONS_PER_HOUR: '100' } };
+    for (let i = 0; i < 20; i++) await createUpstream({ ...base, name: `u${i}`, baseUrl: `https://h${i}.example.com` });
+    await expect(createUpstream({ ...base, name: 'u20', baseUrl: 'https://h20.example.com' })).rejects.toMatchObject({
+      code: 'limit_exceeded',
+      details: { limit: 'UPSTREAMS_MAX_PER_WORKSPACE', value: 20 },
+    });
+  });
+
+  it('UPSTREAM_REGISTRATIONS_PER_HOUR: rate_limited with retry_after_seconds; a delete does not give the budget back; the next hour does', async () => {
+    const { actor } = await newWorkspace('caps-rate');
+    await newWorkspace('caps-rate-other');
+    deps.env = { ...deps.env, UPSTREAM_REGISTRATIONS_PER_HOUR: '2' };
+    await as('alice', async (c) => {
+      ok(await c.call('register_upstream', feed('caps-rate', 'a')));
+      ok(await c.call('register_upstream', feed('caps-rate', 'b')));
+      ok(await c.call('remove_upstream', { workspace: 'caps-rate', name: 'feed-b', user_confirmed: true }));
+      const limited = errorOf(await c.call('register_upstream', feed('caps-rate', 'c')));
+      expect(limited).toMatchObject({ code: 'rate_limited', limit: 'UPSTREAM_REGISTRATIONS_PER_HOUR', value: 2 });
+      expect(limited.retry_after_seconds).toBeGreaterThan(3500);
+      expect(limited.retry_after_seconds).toBeLessThanOrEqual(3600);
+      expect(String(limited.hint)).toContain('register_upstream');
+      // Another workspace has its own budget.
+      ok(await c.call('register_upstream', feed('caps-rate-other', 'a')));
+    });
+    const later = new Date(Date.now() + 61 * 60 * 1000);
+    const view = await createUpstream({
+      ...actor,
+      name: 'feed-c',
+      baseUrl: 'https://c.example.com',
+      allowedMethods: ['GET'],
+      allowedPathPrefixes: ['/rss'],
+      authType: 'none',
+      env: { UPSTREAM_REGISTRATIONS_PER_HOUR: '2' },
+      now: () => later,
+    });
+    expect(view.name).toBe('feed-c');
+  });
+
+  it("listUpstreams reads only the workspace's own secret rows", async () => {
+    const mine = await newWorkspace('secrets-mine');
+    const theirs = await newWorkspace('secrets-theirs');
+    const env = { UPSTREAM_REGISTRATIONS_PER_HOUR: '100' };
+    const plain = { allowedMethods: ['GET'], allowedPathPrefixes: ['/'], authType: 'none', env };
+    const a = await createUpstream({ ...mine.actor, ...plain, name: 'keyed', baseUrl: 'https://a.example.com' });
+    await createUpstream({ ...mine.actor, ...plain, name: 'open', baseUrl: 'https://b.example.com' });
+    const b = await createUpstream({ ...theirs.actor, ...plain, name: 'keyed', baseUrl: 'https://c.example.com' });
+    const envelope = { ciphertext: 'x', iv: 'x', authTag: 'x', wrappedDek: 'x', kekId: 'k' };
+    await db.insert(upstreamSecrets).values([{ upstreamId: a.id, ...envelope }, { upstreamId: b.id, ...envelope }]);
+
+    const queries: { sql: string; params: unknown[] }[] = [];
+    setDbForTests(drizzle(pg, { schema, logger: { logQuery: (q, params) => queries.push({ sql: q, params }) } }));
+    try {
+      expect((await listUpstreams(mine.actor)).map((u) => [u.name, u.hasSecret])).toEqual([
+        ['keyed', true],
+        ['open', false],
+      ]);
+    } finally {
+      setDbForTests(db);
+    }
+    const secretReads = queries.filter((q) => q.sql.includes('from "upstream_secrets"'));
+    expect(secretReads).toHaveLength(1);
+    expect(secretReads[0].sql).toMatch(/where "upstream_secrets"\."upstream_id" in/);
+    expect(secretReads[0].params).not.toContain(b.id);
   });
 });
