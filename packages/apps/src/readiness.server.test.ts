@@ -17,9 +17,11 @@ beforeAll(async () => {
 });
 afterAll(async () => close());
 
+const HEAD = '<meta name="description" content="A ready app."><link rel="icon" href="/favicon.svg">';
+
 describe('versionReadiness', () => {
-  it('a compiled version with a titled index.html is ready with no warnings', async () => {
-    const v = await createVersion(appId, [{ path: 'index.html', content: '<head><title>Ready</title></head>' }], {
+  it('a compiled version with a titled, described index.html with an icon is ready with no warnings', async () => {
+    const v = await createVersion(appId, [{ path: 'index.html', content: `<head><title>Ready</title>${HEAD}</head>` }], {
       actor,
       compile: { status: 'ok' },
     });
@@ -33,7 +35,7 @@ describe('versionReadiness', () => {
     const v = await createVersion(
       appId,
       [
-        { path: 'index.html', content: '<head></head><body><div id="root"></div></body>' },
+        { path: 'index.html', content: `<head>${HEAD}</head><body><div id="root"></div></body>` },
         { path: 'index.html', content: '<head><title>built</title></head>', kind: 'built' },
       ],
       { actor, compile: { status: 'ok' } }

@@ -252,7 +252,13 @@ stops a publish, as before; a credential is refused before anything is
 stored); `warnings` never stop a write or a publish. The report is
 deterministic and reads only the version's source files and the app's module
 configs — no app code runs. The checks: `missing_title` (index.html has
-no, or an empty, `<title>`) and the module rules audit over the app's module
+no, or an empty, `<title>`), `missing_description` (no, or an empty,
+`<meta name="description">` in its head), `missing_favicon` (no `<link
+rel="icon">` in its head and no `favicon.ico` file in the version — an
+uploaded favicon.ico counts once it is linked, since uploads are not
+version files), `og_image_not_absolute` (an `og:image` / `twitter:image`
+meta of any page that is not an absolute `https://` URL — link previews
+ignore it), and the module rules audit over the app's module
 configs — `data_public_write_no_schema` / `data_public_write_unbounded` (a
 collection anyone may create or update without a schema, or with strings
 without `maxLength` / extra properties), `data_public_read_personal` (a

@@ -12,8 +12,10 @@ describe('create_app templates', () => {
     expect(r.ok).toBe(true);
   });
 
-  it.each(TEMPLATES)('%s passes every readiness check (no warnings on a fresh app)', async (name) => {
-    expect(await readinessReport({ files: templateFiles(name, 'Test "app" <b>&') })).toEqual({ ready: true, blocking: [], warnings: [] });
+  it.each(TEMPLATES)('%s has a <title>; its only warnings are the description and the favicon the agent adds', async (name) => {
+    const report = await readinessReport({ files: templateFiles(name, 'Test "app" <b>&') });
+    expect(report.ready).toBe(true);
+    expect(report.warnings.map((w) => w.code)).toEqual(['missing_description', 'missing_favicon']);
   });
 
   it('react-ts: the 4 files, a pinned import map with ONE react, main.js + main.css', async () => {

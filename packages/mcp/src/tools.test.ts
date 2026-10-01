@@ -116,6 +116,12 @@ const FIXED_TSX = [
   '',
 ].join('\n');
 
+/** A template app's readiness warnings: its <title> is the app name; the description and the icon are the agent's to add. */
+const TEMPLATE_WARNINGS = [
+  expect.objectContaining({ code: 'missing_description', file: 'index.html', hint: errorHint('missing_description') }),
+  expect.objectContaining({ code: 'missing_favicon', file: 'index.html', hint: errorHint('missing_favicon') }),
+];
+
 describe('create_app', () => {
   it('creates v1 from the react-ts template: 4 files, compiled ok, built outputs, preview URL, briefing', async () => {
     const c = await as('alice');
@@ -308,8 +314,8 @@ describe('write_files', () => {
         reasoning: 'Fix it',
       });
       expect(good.body).toMatchObject({ version: 3, compile: { ok: true, errors: [] } });
-      // The react-ts template has a <title>: nothing to warn about.
-      expect(good.body.readiness).toEqual({ ready: true, blocking: [], warnings: [] });
+      // The react-ts template has a <title>; its description and icon are the agent's to add.
+      expect(good.body.readiness).toEqual({ ready: true, blocking: [], warnings: TEMPLATE_WARNINGS });
       expect(good.body.preview_url).toBe(`https://${app.slug}--preview.drobek.app`);
       expect(good.body).not.toHaveProperty('note');
       expect(deps.events.map((e) => e.version)).toEqual([1, 2, 3]);
@@ -407,7 +413,7 @@ describe('write_files', () => {
     }
   });
 
-  it('warns (never blocks) in `readiness` when index.html has no <title>', async () => {
+  it('warns (never blocks) in `readiness` when index.html has no <title>, description or icon', async () => {
     const app = await newApp('Untitled', { template: 'html' });
     const c = await as('alice');
     try {
@@ -429,6 +435,8 @@ describe('write_files', () => {
             message: 'index.html has no <title>: browser tabs, bookmarks and shared links show the bare address.',
             hint: errorHint('missing_title'),
           },
+          expect.objectContaining({ code: 'missing_description', file: 'index.html', line: 3, hint: errorHint('missing_description') }),
+          expect.objectContaining({ code: 'missing_favicon', file: 'index.html', line: 3, hint: errorHint('missing_favicon') }),
         ],
       });
       // The version is stored and compiled like any other — a warning changes nothing else.
@@ -705,7 +713,7 @@ describe('write_files — background type check', () => {
         const r = await c.call('write_files', { app_id: app.app_id, files: [{ path: 'src/main.tsx', content: TYPO_TSX }], reasoning: 'Typo' });
         expect(r.isError, r.text).toBe(false);
         expect(r.body.compile).toMatchObject({ ok: true });
-        expect(r.body.readiness).toEqual({ ready: true, blocking: [], warnings: [], typecheck: 'pending' });
+        expect(r.body.readiness).toEqual({ ready: true, blocking: [], warnings: TEMPLATE_WARNINGS, typecheck: 'pending' });
         expect(started).toBeGreaterThanOrEqual(2); // create_app's template + this write
       } finally {
         await c.close();
@@ -752,11 +760,12 @@ describe('write_files — background type check', () => {
         const first = await checked();
         expect(first).toMatchObject({ ready: true, typecheck: 'checked' });
         expect(first.warnings).toEqual([
+          ...TEMPLATE_WARNINGS,
           { code: 'type_error', file: 'src/main.tsx', line: 8, message: "TS2559: Type '42' has no properties in common with type 'RootOptions'.", hint: errorHint('type_error') },
         ]);
 
         await c.call('write_files', { app_id: app.app_id, files: [{ path: 'src/main.tsx', content: FIXED_TSX }], reasoning: 'Fix' });
-        expect(await checked()).toEqual({ ready: true, blocking: [], warnings: [], typecheck: 'checked' });
+        expect(await checked()).toEqual({ ready: true, blocking: [], warnings: TEMPLATE_WARNINGS, typecheck: 'checked' });
       } finally {
         await c.close();
       }
@@ -1083,11 +1092,11 @@ describe('publish', () => {
         published_url: `https://${app.slug}.drobek.app`,
         domains: [`${app.slug}.drobek.app`],
         assets: 'draft',
-        // v2's index.html lost its <title> — a warning, and the publish went ahead.
+        // v2's index.html lost its <title>, description and icon — warnings, and the publish went ahead.
         readiness: {
           ready: true,
           blocking: [],
-          warnings: [expect.objectContaining({ code: 'missing_title', file: 'index.html', hint: errorHint('missing_title') })],
+          warnings: [expect.objectContaining({ code: 'missing_title', file: 'index.html', hint: errorHint('missing_title') }), ...TEMPLATE_WARNINGS],
         },
       });
       expect(deps.events).toEqual([{ app_id: app.app_id, slug: app.slug, version: 2, kind: 'publish' }]);

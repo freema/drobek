@@ -216,8 +216,13 @@ test('app hosts: preview / publish / rollback / --vN, served files, headers, cac
       published_url: urlOf(prodHost(slug)),
       domains: [prodHost(slug)],
       assets: 'draft',
-      // The template has a <title>; the .tsx type check runs in the background.
-      readiness: { ready: true, blocking: [], warnings: [], typecheck: expect.stringMatching(/^(pending|checked)$/) },
+      // The template has a <title>; its description and icon are the agent's to add. The .tsx type check runs in the background.
+      readiness: {
+        ready: true,
+        blocking: [],
+        warnings: [expect.objectContaining({ code: 'missing_description' }), expect.objectContaining({ code: 'missing_favicon' })],
+        typecheck: expect.stringMatching(/^(pending|checked)$/),
+      },
     });
     const prod1 = await hostRequest(prodHost(slug));
     expect(prod1.status).toBe(200);

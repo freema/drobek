@@ -29,7 +29,8 @@ function fakeRunner(result: TypecheckResult | (() => Promise<TypecheckResult>)) 
   return run;
 }
 
-const TITLED = { path: 'index.html', content: '<head><title>T</title></head><body><script type="module" src="/main.js"></script></body>' };
+const HEAD = '<title>T</title><meta name="description" content="A typed app."><link rel="icon" href="/favicon.svg">';
+const TITLED = { path: 'index.html', content: `<head>${HEAD}</head><body><script type="module" src="/main.js"></script></body>` };
 
 async function tsVersion(main = 'export const n: number = 1;\n', status: 'ok' | 'error' = 'ok') {
   return createVersion(appId, [TITLED, { path: 'src/main.ts', content: main }], { actor, compile: { status } });
@@ -76,7 +77,7 @@ describe('the background type check in the readiness report', () => {
 
   it('type errors come after the other checks and share READINESS_MAX_WARNINGS', async () => {
     fakeRunner({ status: 'checked', findings: [{ file: 'src/main.ts', line: 1, message: 'TS2322: x' }], total: 1, durationMs: 1 });
-    const v = await createVersion(appId, [{ path: 'index.html', content: '<p>no title</p>' }, { path: 'src/main.ts', content: 'x' }], {
+    const v = await createVersion(appId, [{ path: 'index.html', content: `${HEAD.replace('<title>T</title>', '')}<p>no title</p>` }, { path: 'src/main.ts', content: 'x' }], {
       actor,
       compile: { status: 'ok' },
     });
