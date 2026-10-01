@@ -95,14 +95,13 @@ import type {
 import { asObject, asPending, readConfigRow, readConfigRows, withLockedConfig, type PendingChange } from './configs.server.js';
 import { installModuleEmailTransport } from './email-transport-slot.js';
 import { assertSignInSender, capEmailText, emailKind, redactAddresses, resolveRecipients, sanitizeSubject } from './email.js';
-import { CORE_ERROR_CODES, ModuleError, isModuleError, issuePaths, moduleNotEnabled, moduleRequiresNotEnabled, skillHint } from './errors.js';
+import { CORE_ERROR_CODES, ModuleError, ModuleLoadError, isModuleError, issuePaths, moduleNotEnabled, moduleRequiresNotEnabled, skillHint } from './errors.js';
 import { CORE_LIMITS, createLimitsProvider, moduleEnabledLimit, moduleEnabledLimitName, type CatalogueLimit, type LimitsProvider } from './limits.js';
 import { mailGuardConfigFromEnv, redisMailGuard, type MailGuard, type MailGuardRedis } from './mail-guard.js';
 import { Lru, jsonKey } from './memo.js';
 import { jsonEqual, mergePatch } from './merge-patch.js';
 import { cookiePrincipalResolver, endUserCookiesSecure, type PrincipalResolver } from './principal.js';
 import {
-  ModuleLoadError,
   checkModuleSet,
   collectContributions,
   endUserAuthorityOf,

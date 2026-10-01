@@ -10,7 +10,8 @@ import { z } from 'zod';
 import { authIdentitySchema, authProviderSchema, authSignedInObserverSchema, defineAuthProvider } from './auth-provider.js';
 import { defineModule } from './contract.js';
 import { createEndUserSession, loadEndUserSession, parseEndUserSession } from './principal.js';
-import { ModuleLoadError, checkModuleSet, composeModule, validateModule } from './registry.js';
+import { checkModuleSet, composeModule, validateModule } from './registry.js';
+import { ModuleLoadError } from './errors.js';
 import { createModuleTestContext } from './testing.js';
 
 const provider = defineAuthProvider({

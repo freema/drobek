@@ -211,3 +211,11 @@ function formatPath(path: ReadonlyArray<PropertyKey>): string {
   }
   return out || '(root)';
 }
+
+/** A module set the server refuses to start with (the message names the reason and the fix). */
+export class ModuleLoadError extends Error {
+  constructor(message: string) {
+    super(`drobek refuses to start: ${message}`);
+    this.name = 'ModuleLoadError';
+  }
+}

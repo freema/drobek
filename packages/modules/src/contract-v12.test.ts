@@ -18,7 +18,8 @@ import {
   type AppJobContext,
   type ServerJobContext,
 } from './contract.js';
-import { ModuleLoadError, loadModules, validateModule } from './registry.js';
+import { loadModules, validateModule } from './registry.js';
+import { ModuleLoadError } from './errors.js';
 import { loadModuleRuntime, memoryRateLimiter, type JobAppRow, type ModuleRuntime } from './runtime.js';
 import { setModuleSecret } from './secrets.server.js';
 import { createModuleTestContext } from './testing.js';

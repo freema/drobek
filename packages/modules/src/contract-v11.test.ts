@@ -9,9 +9,8 @@ import { apps, workspaceModules, workspaces } from '@drobek/db';
 import { noopLogger } from '@drobek/core';
 import { z } from 'zod';
 import { MODULE_CONTRACT_VERSION, defineModule, type AnyModule, type HookApp, type ModuleServices } from './contract.js';
-import { CORE_ERROR_CODES, ModuleError } from './errors.js';
+import { CORE_ERROR_CODES, ModuleError, ModuleLoadError } from './errors.js';
 import {
-  ModuleLoadError,
   checkErrorCodes,
   checkModuleSet,
   collectContributions,

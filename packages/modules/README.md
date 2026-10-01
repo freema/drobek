@@ -38,12 +38,18 @@ export default defineModule({
 });
 ```
 
-- `@drobek/modules` — `defineModule`, `z`, `respond`, `ModuleError` and the
-  types a module needs (`ModuleContext`, `DB`, `Logger`, `SdkCore`, …).
+- `@drobek/modules` — the contract: `defineModule`, the slot helpers, `z`,
+  `respond`, `ModuleError` and the types a module needs (`ModuleContext`,
+  `DB`, `Logger`, `SdkCore`, …).
 - `@drobek/modules/testing` — `createModuleTestContext` (a route through
   the production pipeline, without a server), `coreMigrationsDir` +
-  `createTestApp` (a PGlite database with the core schema) and
-  `checkSkill` (the SKILL.md gate the built-in modules pass).
+  `createTestApp` (a PGlite database with the core schema), `checkSkill`
+  (the SKILL.md gate the built-in modules pass) and `loadModules` /
+  `buildSdk` (the server's loader and SDK build).
+
+These two entries are the whole public API; the server's runtime is not
+published. What counts as a breaking change:
+[Public API and semver](https://github.com/freema/drobek/blob/main/docs/MODULES.md#public-api-and-semver).
 
 Start a module with `npm create drobek-module@latest <name>`. The guide —
 contract, testing, publishing, installing on a server — is

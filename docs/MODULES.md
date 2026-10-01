@@ -1336,8 +1336,7 @@ skills?) is `tests-eval/` (`task eval`, manual, not CI).
 
 Every limit is its env var (`HELLO_WAVES_PER_MINUTE=5`) or the module's
 default. Besides every active module's `limits`, the catalogue holds the
-**core limits** (`CORE_LIMITS` from `@drobek/modules`, which core enforces
-itself and a module may not declare):
+**core limits** (which core enforces itself and a module may not declare):
 
 | Name | Default | Semantics |
 | --- | --- | --- |
@@ -1374,7 +1373,7 @@ protocol is the same; a value other than `0` / `1` is ignored.
 Answers are cached in Redis for 60 s (`drobek:limits:<workspace_id>`). When
 the provider is down, slower than 2 s or answers garbage, the env defaults
 apply for 10 s and a warning is logged: a provider outage never takes apps
-down. `signLimitsRequest(secret, ts, path)` is exported for the provider side.
+down.
 The server refuses to start with a URL but a missing or weak secret.
 
 ## Testing a module
@@ -1447,8 +1446,8 @@ optional peer dependency).
 
 A module outside this repository is an npm package written against the
 published contract. Every drobek release publishes, with the image's
-version, three npm packages: **`@freema/drobek-modules`** (the contract,
-the registry's checks, the test kit), **`@freema/drobek-sdk`** (the browser
+version, three npm packages: **`@freema/drobek-modules`** (the public
+contract and the test kit, see [Public API and semver](#public-api-and-semver)), **`@freema/drobek-sdk`** (the browser
 `SdkCore` a module's SDK entry receives) and **`create-drobek-module`**
 (the scaffold). All three are AGPL-3.0-only, like the rest of drobek
 ([`LICENSING.md`](./LICENSING.md) → Modules).
@@ -1515,6 +1514,49 @@ is the scaffold's output plus the slot demo.
   (`ctx.db`). It keeps to its own tables (`mod_<name>` / `mod_<name>_*`,
   foreign keys only to `apps(id)` / `workspaces(id)`), never alters another
   table, never reads secrets of other modules, and never executes app code.
+
+### Public API and semver
+
+`@freema/drobek-modules` publishes two entry points, and they are its whole
+public API:
+
+- `@drobek/modules`: the contract. `defineModule` and the slot helpers
+  (`defineAuthProvider`, `defineSignInObserver`, `defineEmailTransport`),
+  `z`, `respond`, `ModuleError` and the error helpers, the rule helpers,
+  `perIpLimitKey`, the byte-sniffing helpers, the contract constants and
+  every type a module names (`ModuleContext`, `HookApp`, `DB`, `Logger`,
+  `SdkCore`, the limit and error types, …);
+- `@drobek/modules/testing`: the test kit. `createModuleTestContext`,
+  `createTestApp`, `coreMigrationsDir`, `checkSkill` with the skill-check
+  helpers, `memoryMailGuard`, and `loadModules` / `buildSdk` (the server's
+  loader and SDK build, to assert that the module loads next to others and
+  its SDK slice builds).
+
+The runtime, the registry and loader, the limits provider, end-user
+sessions and the secret and config storage are internal to the server and
+not published. The contract entry never imports them (a test walks its
+import graph), the examples and the scaffold import only these two entries,
+and the published declarations of both are snapshotted in the repository
+(`packages/create-drobek-module/src/__snapshots__/`), so every change to
+the API shows in review.
+
+The package version is the drobek release version, and semver applies to
+this API:
+
+- **breaking**: anything that can stop a module that compiled and passed
+  its tests from doing so — removing or renaming an export, a required
+  field or parameter added, a parameter type narrowed or a return type
+  widened, a documented behaviour changed, a new major
+  `MODULE_CONTRACT_VERSION`. It needs a new major version; while drobek is
+  `0.x`, the minor plays that part (`^0.Y.Z` never crosses it);
+- **additive**: a new export, an optional field or parameter, a new error
+  code, a contract minor (`1.1` → `1.2`). A minor version, or a patch
+  while drobek is `0.x`;
+- **patch**: no change to the declarations.
+
+A deprecated export keeps working until the next breaking version and is
+marked `@deprecated` in its declaration: `loadModules` and `buildSdk`
+imported from `@drobek/modules` (use `@drobek/modules/testing`).
 
 ### Publish
 

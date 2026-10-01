@@ -7,8 +7,8 @@ import { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
 import { migrate } from 'drizzle-orm/pglite/migrator';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { buildSdk, collectContributions, defineModule, isDefinedModule, loadModules, z, type DB } from '@drobek/modules';
-import { coreMigrationsDir, createModuleTestContext, createTestApp } from '@drobek/modules/testing';
+import { defineModule, isDefinedModule, z, type DB } from '@drobek/modules';
+import { buildSdk, coreMigrationsDir, createModuleTestContext, createTestApp, loadModules } from '@drobek/modules/testing';
 import hello from './index.js';
 
 let pg: PGlite;
@@ -48,9 +48,11 @@ describe('drobek-module-hello', () => {
       { DROBEK_MODULES: 'hello,pirate' },
       { importer: async (pkg) => ({ 'drobek-module-hello': hello, 'drobek-module-pirate': pirate })[pkg] ?? null }
     );
-    expect(collectContributions(mods).get('hello.greeter')!.map((c) => c.module)).toEqual(['pirate']);
+    expect(mods.map((m) => m.name)).toEqual(['hello', 'pirate']);
     const broken = defineModule({ ...base, name: 'broken', contributes: { 'hello.greeter': { id: 'Broken!', greet: 'hi' } } });
-    expect(() => collectContributions([hello, broken])).toThrow(/does not pass the slot's schema/);
+    await expect(
+      loadModules({ DROBEK_MODULES: 'hello,broken' }, { importer: async (pkg) => ({ 'drobek-module-hello': hello, 'drobek-module-broken': broken })[pkg] ?? null })
+    ).rejects.toThrow(/does not pass the slot's schema/);
   });
 
   it('GET /greet uses the config greeting, or a contributed greeter; an unknown one is unknown_greeter', async () => {

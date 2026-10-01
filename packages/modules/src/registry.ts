@@ -58,7 +58,7 @@ import {
   type AnyModule,
 } from './contract.js';
 import { checkDirModule, findDirModule, modulesDirState, packageEntryFile, verifyDirModule, type ModulesDirState } from './dir-modules.js';
-import { CORE_ERROR_CODES, issuePaths } from './errors.js';
+import { CORE_ERROR_CODES, ModuleLoadError, issuePaths } from './errors.js';
 import { CORE_LIMITS } from './limits.js';
 import { mergePatch } from './merge-patch.js';
 import { registerHostPeers } from './peers.js';
@@ -75,13 +75,6 @@ const AVAILABILITY = new Set<string>(['default', 'opt-in']);
 const DASHBOARD_EDITORS = new Set<string>(['collections', 'upstreams']);
 const HOOKS = ['onAppCreate', 'onPublish', 'onAppDelete'] as const;
 const DEFAULTS_ENV_RE = /^DROBEK_MODULE_([A-Z0-9]+)_DEFAULTS$/;
-
-export class ModuleLoadError extends Error {
-  constructor(message: string) {
-    super(`drobek refuses to start: ${message}`);
-    this.name = 'ModuleLoadError';
-  }
-}
 
 /** `DROBEK_MODULES` → trimmed, de-duplicated entries (order kept). */
 export function parseModuleList(raw: string | undefined): string[] {

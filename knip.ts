@@ -78,9 +78,10 @@ const config: KnipConfig = {
 
     'packages/modules': {
       // Public entry points (`.`, `./testing`, `./lock`): `exports` point at
-      // dist/, which knip does not map back to the sources. src/cli/module-lock.ts
-      // is run by path from scripts/selfhost-module.sh.
-      entry: ['src/index.ts', 'src/testing.ts', 'src/lock.ts', 'src/cli/*.ts'],
+      // dist/, which knip does not map back to the sources. src/published.ts
+      // is the npm package's `.`, bundled by path by scripts/npm-packages.mjs.
+      // src/cli/module-lock.ts is run by path from scripts/selfhost-module.sh.
+      entry: ['src/index.ts', 'src/published.ts', 'src/testing.ts', 'src/lock.ts', 'src/cli/*.ts'],
       // test-fixtures/ holds an external module package that tests copy into a
       // temporary DROBEK_MODULES_DIR by path; never imported.
       ignore: ['test-fixtures/**'],
