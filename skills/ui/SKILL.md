@@ -117,6 +117,8 @@ createRoot(document.getElementById('root')!).render(<Orders />);
   images have `alt`; focus stays visible; status text in `role="status"`,
   errors in `role="alert"`, pending regions `aria-busy="true"`; contrast ≥
   4.5:1 (e.g. `text-slate-500` on white is the lightest body text).
+- Tab and shared link: `index.html`'s `<head>` carries a `<meta name="description">` and an icon (`favicon.svg` +
+  `<link rel="icon" href="/favicon.svg" type="image/svg+xml">`); the link-preview `og:*` tags: `skill_info('start')`.
 - Forms: native validation (`required`, `type="email"`, `min`/`max`)
   first; show the server's message (`DrobekError.message`) next to the
   form; never clear the user's input on an error.

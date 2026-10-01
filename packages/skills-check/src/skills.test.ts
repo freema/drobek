@@ -85,6 +85,15 @@ describe('skill start', () => {
     expect(start.content).toContain('3 minutes');
     expect(start.content).toContain('never RUNS anything');
   });
+
+  it('has the agent write the description, the favicon, absolute link-preview URLs and noindex into the head', () => {
+    expect(start.content).toContain('drobek adds nothing to your `<head>`');
+    expect(start.content).toContain('<meta name="description" content="…">');
+    expect(start.content).toContain('<link rel="icon" href="/favicon.svg" type="image/svg+xml">');
+    expect(start.content).toContain('`og:image` = ABSOLUTE `published_url`');
+    expect(start.content).toContain('(no SVG)');
+    expect(start.content).toContain('<meta name="robots" content="noindex">');
+  });
 });
 
 describe('skill ui', () => {
