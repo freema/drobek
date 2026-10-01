@@ -56,6 +56,9 @@ services:
     # Release tags: vX.Y.Z (pin one), latest (newest release), previous (the
     # release before it — the rollback target). linux/amd64 only.
     image: ghcr.io/freema/drobek:${DROBEK_IMAGE_TAG:-latest}
+    # On a stop drobek lets requests in flight finish for SHUTDOWN_GRACE_MS
+    # (20 s) before it exits; Docker must not kill it sooner.
+    stop_grace_period: 30s
     # Everything drobek reads (SMTP_*, SUPERADMIN_EMAIL, limits, …) comes from
     # .env.production; the entries below are the ones compose must see (fail
     # fast) or that this topology fixes.

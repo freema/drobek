@@ -256,6 +256,24 @@ never compressed, so MCP's streamable HTTP and any SSE an app backend proxies
 arrive event by event. With a different proxy in front, compress the same way
 and keep `text/event-stream` out of it.
 
+**Stopping and restarting drobek** (an upgrade, `docker compose restart`, a
+host reboot) does not cut the requests it is answering. On `SIGTERM` drobek
+stops accepting connections, closes idle keep-alive connections, ends the MCP
+listen streams (the long-lived `GET /mcp` an MCP client holds open; the
+stopping server answers a new one 405), lets requests in flight — a
+`write_files` compile, a token refresh, a page — finish for up to
+`SHUTDOWN_GRACE_MS` (20 s), cuts whatever is still running after that, stops
+its background jobs and exits. The compose file gives the container
+`stop_grace_period: 30s` so Docker does not kill it first; keep it about 10 s
+above `SHUTDOWN_GRACE_MS` when you raise that. MCP sessions live in the
+process: after a restart a client's next request with its old session id
+answers `404 MCP session not found — reconnect.`, which per the MCP
+specification makes the client open a new session (reconnect a client that
+does not).
+drobek keeps idle connections open for 125 s, longer than Caddy's 2-minute
+upstream keep-alive, so Caddy never reuses a connection drobek is closing;
+with a different proxy in front, keep its upstream idle timeout below 125 s.
+
 Platform modules (the backends apps use through `import { drobek } from
 'drobek'`) are enabled with `DROBEK_MODULES` (comma-separated; a
 short name `x` loads the package `drobek-module-x` from the server's
@@ -333,6 +351,7 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `TRUST_PROXY` | auto *(compose: `x-real-ip`)* | which client-IP header is trusted: `x-real-ip` = only Caddy's `X-Real-IP`; unset = `X-Real-IP`, else the rightmost `X-Forwarded-For` hop |
 | `NODE_ENV` | *(compose: production)* | `production` turns on `__Host-` cookies and the fail-closed secret checks, and ignores the dev-only switches below |
 | `PORT` | 3000 | the port drobek listens on inside the container (the dev compose maps `WEB_PORT` to it) |
+| `SHUTDOWN_GRACE_MS` | 20000 | on `SIGTERM`, how long requests in flight may finish before the rest is cut ([Production compose](#production-compose)); keep the container's stop grace period (compose: 30 s) above it |
 
 ### Secrets and TLS
 
@@ -569,6 +588,11 @@ first one completed, and the `up -d` that follows migrates nothing. A
 migration that fails rolls back its transaction and leaves the journal as it
 was; the old container is already stopped, so fix the cause (or roll back)
 before starting.
+
+The `stop drobek` step lets the old container finish the requests in flight
+first (up to `SHUTDOWN_GRACE_MS`, see [Production compose](#production-compose)).
+Connected MCP clients lose their session with the old process and open a new
+one once the new release serves.
 
 **Rollback.** `previous` is the release that was `latest` before the newest
 one — but it moves with the next release, so roll back to the exact version:

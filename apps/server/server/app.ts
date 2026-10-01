@@ -1,7 +1,7 @@
 import { ASSET_UPLOAD_PATH_PREFIX } from '@drobek/apps';
 import { createOriginCheckMiddleware } from '@drobek/auth';
 import { coreVersion, reportError } from '@drobek/core';
-import { mountMcpResource } from '@drobek/oauth/resource';
+import { mountMcpResource, type McpEndpoint } from '@drobek/oauth/resource';
 import { TLS_ASK_PATH, createAppsHostMiddleware, createTlsAskHandler } from '@drobek/serving';
 import express, {
   type Express,
@@ -36,6 +36,9 @@ export interface ServerAppOptions {
   assetUpload?: RequestHandler;
 }
 
+/** The server's Express app plus the handle on its open MCP sessions (index.ts closes them on shutdown). */
+export type ServerApp = Express & { mcp: McpEndpoint };
+
 /**
  * The single drobek process: one Express app serves the dashboard +
  * OAuth 2.1 AS (React Router) and the OAuth-protected MCP resource at `/mcp`.
@@ -54,7 +57,7 @@ export interface ServerAppOptions {
  *     JSON bodies; no parser runs app-wide, because React Router actions must read the raw body),
  *     then React Router.
  */
-export function createServerApp(opts: ServerAppOptions): Express {
+export function createServerApp(opts: ServerAppOptions): ServerApp {
   const app = express();
   app.disable('x-powered-by');
 
@@ -73,7 +76,7 @@ export function createServerApp(opts: ServerAppOptions): Express {
   app.get(TLS_ASK_PATH, opts.tlsAsk ?? (createTlsAskHandler() as RequestHandler));
 
   // RFC 9728 discovery + the Bearer-gated Streamable HTTP endpoint.
-  mountMcpResource(app);
+  const mcp = mountMcpResource(app);
 
   for (const mw of opts.before ?? []) app.use(mw);
 
@@ -107,5 +110,5 @@ export function createServerApp(opts: ServerAppOptions): Express {
     res.status(500).json({ ok: false, error: 'internal' });
   });
 
-  return app;
+  return Object.assign(app, { mcp });
 }

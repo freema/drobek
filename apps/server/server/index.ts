@@ -22,7 +22,14 @@ import type { ServerBuild } from 'react-router';
 import { docsUrlConfigError, errorHint } from '@drobek/agent-dx';
 import { appsOriginConfigError, assetLimitsOf, createAssetUploadHandler, previewUrl, publishApprovalConfigError } from '@drobek/apps';
 import { trustProxyConfigError } from '@drobek/auth';
-import { createConsoleLogger, errorReporterConfigError, reportError, secretsConfigError } from '@drobek/core';
+import {
+  closeGracefully,
+  createConsoleLogger,
+  errorReporterConfigError,
+  reportError,
+  secretsConfigError,
+  shutdownGraceMs,
+} from '@drobek/core';
 import { TypecheckRunner, installTypecheckRunner, typecheckLimitsFromEnv } from '@drobek/compile/typecheck';
 import { dbErrorForLog, runCoreMigrations } from '@drobek/db';
 import { dnsMockWarning, domainsConfigError } from '@drobek/domains';
@@ -92,10 +99,15 @@ installTypecheckRunner(typecheck);
 // Created up front so Vite's HMR websocket can share the app port in dev
 // (a separate HMR port would not be published from the container).
 const httpServer = createServer();
+// Above Caddy's 2 min upstream keep-alive, so the proxy never reuses a socket Node is closing.
+httpServer.keepAliveTimeout = 125_000;
+httpServer.headersTimeout = 126_000;
 
 let rrHandler: RequestHandler;
 const before: RequestHandler[] = [];
 let clientDir: string | undefined;
+// Dev: Vite's HMR WebSockets are upgraded sockets, which hold a server drain until its grace runs out.
+let closeDevServer = async (): Promise<void> => {};
 
 if (production) {
   const buildPath = resolve(appRoot, 'build/server/index.js');
@@ -109,6 +121,7 @@ if (production) {
     server: { middlewareMode: true, hmr: { server: httpServer } },
   });
   before.push(devServer.middlewares);
+  closeDevServer = () => devServer.close();
   rrHandler = createRequestHandler({
     build: async () =>
       withPublicActionOrigin(
@@ -141,16 +154,25 @@ const jobs = startBackgroundJobs(log, { filesSweep: modules.modules.some((m) => 
 
 httpServer.on('request', app);
 const port = Number(process.env.PORT ?? 3000);
-const server = httpServer.listen(port, '0.0.0.0', () => {
+httpServer.listen(port, '0.0.0.0', () => {
   log.info('drobek listening', { port, mode: production ? 'production' : 'development' });
 });
 
+// Shutdown: the MCP listen streams (and in dev the HMR sockets) end first —
+// they never finish on their own — then requests in flight get
+// SHUTDOWN_GRACE_MS before the rest is cut; the MCP sessions, jobs and caches
+// stop after the drain.
 let shuttingDown = false;
 async function shutdown(signal: string): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
-  log.info('shutting down', { signal });
-  server.close();
+  const graceMs = shutdownGraceMs(process.env);
+  log.info('shutting down', { signal, grace_ms: graceMs });
+  app.mcp.endListenStreams();
+  await closeDevServer();
+  const { drained } = await closeGracefully(httpServer, { graceMs });
+  if (!drained) log.warn('requests still running after the shutdown grace period were cut', { grace_ms: graceMs });
+  await app.mcp.closeSessions();
   await jobs.stop();
   await serveCache.stop();
   await typecheck.close();
