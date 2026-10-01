@@ -312,7 +312,10 @@ unchanged.
 - **Styling** — plain CSS, or Tailwind v4's browser build from esm.sh; there
   is no Tailwind build step.
 - **Modules and skills** — the modules and skills of THIS server; call
-  `skill_info` before using a backend.
+  `skill_info` before using a backend. With the `sync` module active it
+  sends work on a schedule (crons, periodic refreshes from an external API)
+  to `skill_info('sync')`: no app code runs on the server, sync imports an
+  upstream's JSON into a data collection.
 - **Rules** — no secrets in files; the single-writer lease (`app_locked`);
   `app_locked_by_admin` means the operator took the app down; give the user
   the `preview_url` after every successful compile; publish only on the
@@ -328,7 +331,7 @@ lines). `skill_info` serves two kinds:
 
 - **module skills** — each enabled module's own `SKILL.md`
   (`modules/<name>/SKILL.md`): `auth`, `email`, `forms`, `data`, `proxy`,
-  `files` (the steps for one app, from configuration to the SDK:
+  `files`, `sync`, `oidc` (the steps for one app, from configuration to the SDK:
   [Using modules in an app](./MODULES.md#using-modules-in-an-app));
 - **general skills** — `skills/<name>/SKILL.md` (`DROBEK_SKILLS_DIR`):
   `start` (how an app works and the write → compile → preview → publish

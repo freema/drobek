@@ -67,6 +67,13 @@ export interface BriefingSkill {
 const VISITOR_STATE_RULE =
   '- Per-visitor state without sign-in (game saves, settings, a half-filled form) belongs in the browser\'s `localStorage`: the data module has no anonymous per-visitor identity — records a visitor creates without signing in carry no owner, so they cannot be kept to that visitor. `drobek.data` is for data that is shared (a leaderboard, a guestbook, votes) or belongs to signed-in users (`owner` rules with `skill_info(\'auth\')`). Combine them: keep the save in `localStorage` and send only what others should see (a score) to a collection.';
 
+/**
+ * Where scheduled work goes: the server never runs app code, so the only
+ * cron is the sync module's import of an upstream's JSON into a collection.
+ */
+const SCHEDULED_WORK_RULE =
+  '- Work on a schedule (a cron, a periodic refresh of data from an external API: scores, prices, fixtures, a feed) is the `sync` module — call `skill_info(\'sync\')`. The server never runs app code, so there are no cron scripts of your own: a sync source fetches JSON from a proxy upstream on an interval into a `data` collection the app reads with `drobek.data`; any computation on that data happens in the browser.';
+
 function skillsSection(skills: BriefingSkill[]): string[] {
   const rule =
     '- Before using a backend (login, stored data, forms, email, file uploads, external APIs), call `skill_info` with the skill\'s name and follow it exactly. `skill_info()` lists the skills; `configure_module` sets a module\'s per-app config (sensitive changes wait for the owner\'s confirmation — give the user the `confirm_url`).';
@@ -85,6 +92,7 @@ function skillsSection(skills: BriefingSkill[]): string[] {
     '- Available skills:',
     ...skills.map((s) => `  - \`${s.name}\` — use when ${s.use_when.replace(/^use when\s+/i, '')}`),
     ...(skills.some((s) => s.name === 'data') ? [VISITOR_STATE_RULE] : []),
+    ...(skills.some((s) => s.name === 'sync') ? [SCHEDULED_WORK_RULE] : []),
   ];
 }
 

@@ -107,6 +107,18 @@ describe('renderBriefing', () => {
     expect(withData).toContain('no anonymous per-visitor identity');
     expect(renderBriefing({ skills: [{ name: 'hello', use_when: 'x' }] })).not.toContain('Per-visitor state');
   });
+
+  it('with the sync module: scheduled work and crons go to the sync module, without it no cron is promised', () => {
+    const withSync = renderBriefing({ skills: [{ name: 'sync', use_when: 'data refreshes on a schedule' }] });
+    expect(withSync).toContain("Work on a schedule (a cron, a periodic refresh of data from an external API");
+    expect(withSync).toContain("call `skill_info('sync')`");
+    expect(withSync).toContain('The server never runs app code, so there are no cron scripts of your own');
+    expect(withSync).toContain('any computation on that data happens in the browser');
+    for (const without of [renderBriefing(), renderBriefing({ skills: [{ name: 'data', use_when: 'x' }, { name: 'proxy', use_when: 'y' }] })]) {
+      expect(without).not.toMatch(/cron/i);
+      expect(without).not.toContain('Work on a schedule');
+    }
+  });
 });
 
 describe('onboarding', () => {

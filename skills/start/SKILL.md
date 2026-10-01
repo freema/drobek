@@ -106,7 +106,7 @@ The loop (tool → result):
 10. Custom domain: `add_domain({ app_id, host })` → show the user the CNAME + TXT `records` → `verify_domain({ app_id, host })` after they created
     them (DNS can take hours); `list_domains({ app_id })`. `set_primary_domain({ app_id, host, user_confirmed })` and `remove_domain({ app_id, host, user_confirmed })` of a verified domain: only after the user's explicit yes.
 11. External API (a workspace admin): `register_upstream({ workspace, name, base_url, allowed_methods, allowed_path_prefixes, auth_type })` — a key goes only
-    through the returned `secret_url`, never chat — then assign it with `configure_module` (`proxy`); `list_upstreams({ workspace })`, `remove_upstream({ workspace, name, user_confirmed })`. Its data on a schedule into a collection: `skill_info('sync')`, `sync_now({ app_id, source })`, `get_logs({ app_id, kind: "sync" })`.
+    through the returned `secret_url`, never chat — then assign it with `configure_module` (`proxy`); `list_upstreams({ workspace })`, `remove_upstream({ workspace, name, user_confirmed })`. Its data on a schedule (a cron, periodic refresh) into a collection: `skill_info('sync')`, `sync_now({ app_id, source })`, `get_logs({ app_id, kind: "sync" })`.
 
 `drobek.json`: `{ "imports": { "<bare>": "https://…" }, "entries"?: ["src/admin.tsx"], "beacon"?: false }`.
 Add a package as a pinned esm.sh URL, e.g. `"date-fns": "https://esm.sh/date-fns@4.1.0"`;

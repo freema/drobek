@@ -407,7 +407,8 @@ workspace admin does it, over MCP or on the dashboard's Upstreams page:
 the user's explicit yes — every app using it breaks at once. A name the
 workspace already has answers `upstream_already_registered`.
 
-Data that should refresh on its own (scores, prices, a feed) is imported by
+Data that should refresh on its own (scores, prices, a feed — a cron job
+elsewhere) is imported by
 the `sync` module (`skill_info('sync')`) instead of fetched per visitor: a
 source in `configure_module('sync', { sources: { <name>: { upstream, path,
 every, collection, items, key?, mode } } })` fetches the assigned upstream on
