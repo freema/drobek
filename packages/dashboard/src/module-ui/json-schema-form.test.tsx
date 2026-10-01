@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { describe, expect, it } from 'vitest';
 import { z, type ConfigFieldMeta } from '@drobek/modules';
-import { collectionChoices, intervalChoices, upstreamChoices, type ChoiceList } from '../module-choices.js';
+import { collectionChoices, formChoices, intervalChoices, upstreamChoices, type ChoiceList } from '../module-choices.js';
 import { fieldValues, schemaFields } from '../module-config.js';
 import { JsonSchemaForm } from './json-schema-form.js';
 
@@ -116,5 +116,133 @@ describe('JsonSchemaForm — fields with choices', () => {
     const html = render({ upstream: 'scores', every: '1h', collection: 'players', sources: {} }, ALL, true);
     expect(select(html, 'field-upstream')).toContain('disabled=""');
     expect(html).not.toContain('data-testid="field-note-upstream"');
+  });
+});
+
+const RULE = z.string().regex(/^(public|user|owner|admin|none)(\|(public|user|owner|admin|none))*$/);
+
+const ADMIN = z.strictObject({
+  rules: z
+    .strictObject({
+      upload: RULE.default('user').meta({ title: 'Who may upload', description: 'Opening uploads to anyone waits.', 'x-drobek-rule': ['public', 'user', 'admin'] } satisfies ConfigFieldMeta),
+      read: RULE.default('user').meta({ title: 'Who may download', 'x-drobek-rule': true } satisfies ConfigFieldMeta),
+    })
+    .default({ upload: 'user', read: 'user' })
+    .meta({ title: 'Access' }),
+  maxBytes: z
+    .number()
+    .int()
+    .min(1)
+    .max(1024 * 1024 * 1024)
+    .optional()
+    .meta({ title: 'Largest file', 'x-drobek-unit': 'bytes', 'x-drobek-default-limit': 'FILES_MAX_BYTES' } satisfies ConfigFieldMeta),
+  forms: z
+    .record(
+      z.string().meta({ title: 'Form name', 'x-drobek-choices': 'forms' } satisfies ConfigFieldMeta),
+      z.strictObject({ note: z.string().optional(), paused: z.boolean().optional().meta({ 'x-drobek-hidden': true } satisfies ConfigFieldMeta) })
+    )
+    .default({}),
+  provider: z
+    .strictObject({ issuer: z.string().optional(), enabled: z.boolean().meta({ title: 'On' }) })
+    .meta({ title: 'Company account', 'x-drobek-order': ['enabled'] } satisfies ConfigFieldMeta),
+});
+
+const ADMIN_FIELDS = schemaFields(z.toJSONSchema(ADMIN, { unrepresentable: 'any', io: 'input' }));
+
+const FORMS = formChoices({
+  forms: [
+    { name: 'contact', submissions: 3 },
+    { name: 'newsletter', submissions: 1 },
+    { name: 'survey', submissions: 0 },
+  ],
+});
+
+function renderAdmin(config: unknown, opts: { readOnly?: boolean; choices?: Record<string, ChoiceList>; limits?: Record<string, number> } = {}): string {
+  const element = (
+    <JsonSchemaForm
+      fields={ADMIN_FIELDS}
+      values={fieldValues(ADMIN_FIELDS, config)}
+      readOnly={opts.readOnly ?? false}
+      choices={opts.choices}
+      limits={opts.limits}
+    />
+  );
+  const router = createMemoryRouter([{ path: '/', element }], { initialEntries: ['/'] });
+  return renderToStaticMarkup(<RouterProvider router={router} />);
+}
+
+/** The opening tag of the element that carries the given test id. */
+function tagOf(html: string, testId: string): string {
+  const at = html.indexOf(`data-testid="${testId}"`);
+  expect(at, testId).toBeGreaterThan(-1);
+  const open = html.lastIndexOf('<', at);
+  return html.slice(open, html.indexOf('>', at) + 1);
+}
+
+const ADMIN_CONFIG = { rules: { upload: 'admin|user', read: 'owner' }, maxBytes: 5 * 1024 * 1024, forms: { contact: { paused: true } }, provider: { enabled: true } };
+
+describe('JsonSchemaForm — rule, size, hidden and ordered fields', () => {
+  it('rule fields next to each other share one table: a checkbox per principal each offers, the shown rule kept in a hidden input', () => {
+    const html = renderAdmin(ADMIN_CONFIG);
+    expect(html.match(/Anyone<\/th>/g)).toHaveLength(1);
+    expect(html).toContain('Anyone</th>');
+    expect(html).toContain('Record owner</th>');
+    expect(tagOf(html, 'rule-rules-upload-user')).toContain('checked=""');
+    expect(tagOf(html, 'rule-rules-upload-admin')).toContain('checked=""');
+    expect(tagOf(html, 'rule-rules-upload-public')).not.toContain('checked');
+    expect(tagOf(html, 'rule-rules-upload-user')).toContain('name="cfg.rules.upload.$user"');
+    expect(html).not.toContain('data-testid="rule-rules-upload-owner"');
+    expect(tagOf(html, 'rule-rules-read-owner')).toContain('checked=""');
+    expect(html).toContain('<input type="hidden" name="cfg.rules.upload.$shown" value="admin|user"/>');
+    expect(html).toContain('data-testid="rule-rules-upload-rule">admin|user</td>');
+    expect(html).toContain('<strong>Who may upload</strong>');
+    expect(html).toContain('Opening uploads to anyone waits.');
+    expect(html).toContain('Nothing checked means nobody (none).');
+    expect(html).not.toContain('name="cfg.rules.upload"');
+  });
+
+  it('a principal the rule names stays offered even where the field does not list it, so a save keeps it', () => {
+    const html = renderAdmin({ ...ADMIN_CONFIG, rules: { upload: 'owner', read: 'user' } });
+    expect(tagOf(html, 'rule-rules-upload-owner')).toContain('checked=""');
+  });
+
+  it('a bytes field is entered in MB, says its bounds in MB and what an empty field means', () => {
+    const html = renderAdmin({ ...ADMIN_CONFIG, maxBytes: undefined }, { limits: { FILES_MAX_BYTES: 25 * 1024 * 1024 } });
+    expect(tagOf(html, 'field-maxBytes')).toContain('inputMode="decimal"');
+    expect(html).toMatch(/data-testid="field-maxBytes"[^>]*\/><span[^>]*>MB<\/span>/);
+    expect(html).toContain('At most 1024 MB. Left empty: 25 MB, the limit in force.');
+    expect(html).not.toContain('A whole number.');
+    expect(tagOf(renderAdmin(ADMIN_CONFIG), 'field-maxBytes')).toContain('value="5"');
+    expect(renderAdmin(ADMIN_CONFIG)).not.toContain('Left empty');
+  });
+
+  it('a hidden field is only a hidden input with its value; an ordered object leads with the listed key', () => {
+    const html = renderAdmin(ADMIN_CONFIG);
+    expect(tagOf(html, 'field-forms-0-paused')).toBe('<input type="hidden" data-testid="field-forms-0-paused" name="cfg.forms[0].paused" value="true"/>');
+    expect(tagOf(html, 'field-forms-1-paused')).toContain('value=""');
+    expect(html).not.toContain('>Paused<');
+    expect(html.indexOf('name="cfg.provider.enabled"')).toBeLessThan(html.indexOf('name="cfg.provider.issuer"'));
+  });
+
+  it("a record's new entry suggests the names no entry uses yet (a datalist and in words)", () => {
+    const html = renderAdmin(ADMIN_CONFIG, { choices: { forms: FORMS } });
+    expect(html).toContain(
+      '<datalist id="names-forms" data-testid="entry-names-forms"><option value="newsletter" label="1 submission"></option><option value="survey" label="no submissions yet"></option></datalist>'
+    );
+    expect(tagOf(html, 'entry-key-forms-1')).toContain('list="names-forms"');
+    expect(tagOf(html, 'entry-key-forms-0')).not.toContain('list=');
+    expect(html).toContain('Suggested: newsletter (1 submission), survey (no submissions yet).');
+    const none = renderAdmin({ ...ADMIN_CONFIG, forms: { contact: {}, newsletter: {}, survey: {} } }, { choices: { forms: FORMS } });
+    expect(none).not.toContain('<datalist');
+    const failed = renderAdmin(ADMIN_CONFIG, { choices: { forms: { ...FORMS, failed: 'The app’s forms could not be loaded.' } } });
+    expect(failed).not.toContain('<datalist');
+  });
+
+  it('a viewer sees the rule checkboxes disabled, no hidden inputs and no suggestions', () => {
+    const html = renderAdmin(ADMIN_CONFIG, { readOnly: true, choices: { forms: FORMS } });
+    expect(tagOf(html, 'rule-rules-upload-user')).toContain('disabled=""');
+    expect(html).not.toContain('$shown');
+    expect(html).not.toContain('name="cfg.forms[0].paused"');
+    expect(html).not.toContain('<datalist');
   });
 });

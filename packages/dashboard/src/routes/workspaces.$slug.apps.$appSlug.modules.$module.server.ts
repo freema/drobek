@@ -16,7 +16,9 @@
  * gets the same editor. A viewer gets the same page without any control.
  * The fields a module annotates `x-drobek-choices` get their choices
  * (module-choices.server.ts): the workspace's upstreams, the app's
- * collections, the intervals the workspace's limit allows.
+ * collections and forms, the intervals the workspace's limit allows; a
+ * field annotated `x-drobek-default-limit` the workspace's value of that
+ * limit.
  *
  * POST (editor+, `requireWorkspaceRole('editor')` BEFORE anything is read
  * from the form: a viewer → 403, a non-member → 404, anonymous → /login):
@@ -74,6 +76,7 @@ import {
   choiceRequests,
   configDiff,
   confirmRoleOf,
+  defaultLimitNames,
   fieldErrors,
   fieldStates,
   fieldValues,
@@ -86,7 +89,7 @@ import {
   type FieldValue,
   type Issue,
 } from '../module-config.js';
-import { loadChoices } from '../module-choices.server.js';
+import { loadChoices, loadFieldLimits } from '../module-choices.server.js';
 import { loadPendingBanner } from '../pending-banner.server.js';
 import { loadSyncBanner } from '../sync-banner.server.js';
 import type { SyncPanelData } from '../module-ui/sync-sources.js';
@@ -268,6 +271,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     fields,
     /** The choices of the fields annotated `x-drobek-choices` (by choiceKey). */
     choices: view.enabled ? await loadChoices({ runtime, app: hookApp, workspaceSlug: access.workspace.slug, appSlug: app.slug }, choiceRequests(fields)) : {},
+    /** The workspace's values of the limits an empty field stands for (`x-drobek-default-limit`). */
+    limits: view.enabled ? await loadFieldLimits({ runtime, app: hookApp }, defaultLimitNames(fields)) : {},
     values: fieldValues(fields, view.config),
     /** Per field: the module's default or saved for this app, and its value once the pending change is confirmed. */
     states: fieldStates(fields, { stored: view.stored, config: view.config, pendingAfter: view.pending?.after }),

@@ -5,7 +5,8 @@
  * (module-choices.server.ts) and builds one list per source here; the form
  * keeps a current value that is not among the choices, marked
  * (`selectGroups`), and with no choice at all shows the list's `empty` note
- * instead of a select. The lists only help pick a value: the module's
+ * instead of a select. On a record's entry name the same list only suggests
+ * names (`nameSuggestions`). The lists only help pick a value: the module's
  * configSchema on the server still decides what is valid.
  */
 
@@ -17,6 +18,8 @@ export interface ChoiceLink {
 interface ChoiceOption {
   value: string;
   label: string;
+  /** Said after the label in a select ("contact — 3 submissions"), next to the value in a list of suggestions. */
+  detail?: string;
 }
 
 export interface ChoiceGroup {
@@ -46,6 +49,18 @@ export function hasChoices(list: ChoiceList): boolean {
 export function selectGroups(list: ChoiceList, current: string): ChoiceGroup[] {
   if (current === '' || list.groups.some((g) => g.options.some((o) => o.value === current))) return list.groups;
   return [{ options: [{ value: current, label: `${current} — ${list.missing}` }] }, ...list.groups];
+}
+
+/** How an option reads in a select. */
+export function optionText(o: ChoiceOption): string {
+  return o.detail ? `${o.label} — ${o.detail}` : o.label;
+}
+
+/** The names a record's new entry may take from the list: those no entry uses yet (a list that failed to load suggests none). */
+export function nameSuggestions(list: ChoiceList | undefined, used: readonly string[]): ChoiceOption[] {
+  if (!list || list.failed) return [];
+  const taken = new Set(used);
+  return list.groups.flatMap((g) => g.options).filter((o) => !taken.has(o.value));
 }
 
 // ── intervals ────────────────────────────────────────────────────────────────
@@ -144,5 +159,21 @@ export function collectionChoices(input: { collections: readonly string[]; creat
     empty: input.create
       ? { text: `This app has no data collection yet. Create one in the ${input.create.module} module first.`, link: { href: input.create.href, label: input.create.label } }
       : { text: 'This app has no data collection yet.' },
+  };
+}
+
+// ── forms ────────────────────────────────────────────────────────────────────
+
+/**
+ * The app's forms (the module declaring the `submissions` authority): those
+ * with stored submissions or settings, each with its number of submissions.
+ */
+export function formChoices(input: { forms: readonly { name: string; submissions: number }[] }): ChoiceList {
+  const sorted = [...input.forms].sort((a, b) => a.name.localeCompare(b.name));
+  const count = (n: number) => (n === 0 ? 'no submissions yet' : n === 1 ? '1 submission' : `${n} submissions`);
+  return {
+    groups: [{ options: sorted.map((f) => ({ value: f.name, label: f.name, detail: count(f.submissions) })) }],
+    missing: 'no submissions or settings yet',
+    empty: { text: 'No form of this app has submissions or settings yet.' },
   };
 }

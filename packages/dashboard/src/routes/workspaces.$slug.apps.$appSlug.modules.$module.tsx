@@ -133,6 +133,7 @@ export default function AppModuleRoute() {
             busy={busy}
             states={d.states}
             choices={d.choices}
+            limits={d.limits}
           />
         </section>
       ) : null}

@@ -10,7 +10,9 @@
  * generic form) — "About this module" + error codes, a viewer refused before
  * anything changes, and the choices of fields annotated `x-drobek-choices`
  * (the workspace's upstreams, the app's collections, the intervals the
- * workspace's limit allows).
+ * workspace's limit allows, the app's forms as names for a new entry), the
+ * limit an empty field stands for, and rule / size / hidden fields saving
+ * through the configure path.
  */
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
@@ -36,7 +38,7 @@ import {
   type SyncRun,
   type SyncSourceState,
 } from '@drobek/modules';
-import { entryInputs, fieldName, ruleInputName } from '../module-config.js';
+import { BYTES_PER_MB, entryInputs, fieldName, ruleInputName, ruleInputs } from '../module-config.js';
 
 const role = vi.hoisted(() => ({ current: 'editor' as 'viewer' | 'editor' | 'workspace-admin', user: { id: '', email: 'owner@example.com' }, ws: { id: '', slug: 'acme', name: 'Acme' } }));
 
@@ -249,6 +251,51 @@ const sentinel = defineModule({
   contributes: { [ERROR_REPORTER_SLOT]: defineErrorReporter({ id: 'sentinel', label: 'Sentinel', report: () => {} }) },
 });
 
+/** A form-submissions module under another name: its forms come from the declared `submissions` authority. */
+const LEADS_FORMS = [
+  { name: 'contact', submissions: 3 },
+  { name: 'order', submissions: 0 },
+];
+const leadRule = z.string().regex(/^(public|user|owner|admin|none)(\|(public|user|owner|admin|none))*$/);
+const leads = defineModule<{
+  rules: { submit: string };
+  maxBytes?: number;
+  forms: Record<string, { note?: string; paused?: boolean }>;
+}>({
+  name: 'leads',
+  version: '1.0.0',
+  contract: '^1.2',
+  skill: { useWhen: 'visitors leave their contact', markdown: '# leads' },
+  limits: [{ env: 'LEADS_MAX_BYTES', default: 10 * 1024 * 1024, meaning: 'bytes of one attachment' }],
+  configSchema: z.strictObject({
+    rules: z
+      .strictObject({ submit: leadRule.default('public').meta({ title: 'Who may submit', 'x-drobek-rule': ['public', 'user', 'admin'] } satisfies ConfigFieldMeta) })
+      .default({ submit: 'public' }),
+    maxBytes: z
+      .int()
+      .min(1)
+      .max(100 * 1024 * 1024)
+      .optional()
+      .meta({ title: 'Largest attachment', 'x-drobek-unit': 'bytes', 'x-drobek-default-limit': 'LEADS_MAX_BYTES' } satisfies ConfigFieldMeta),
+    forms: z
+      .record(
+        z.string().regex(/^[a-z]+$/).meta({ title: 'Form name', 'x-drobek-choices': 'forms' } satisfies ConfigFieldMeta),
+        z.strictObject({ note: z.string().optional(), paused: z.boolean().optional().meta({ 'x-drobek-hidden': true } satisfies ConfigFieldMeta) })
+      )
+      .default({}),
+  }),
+  configDefaults: { rules: { submit: 'public' }, forms: {} },
+  submissions: {
+    forms: async ({ config }) => {
+      const names = new Set([...LEADS_FORMS.map((f) => f.name), ...Object.keys(config.forms)]);
+      return [...names].sort().map((name) => ({ name, submissions: LEADS_FORMS.find((f) => f.name === name)?.submissions ?? 0 }));
+    },
+    list: async () => ({ submissions: [], next_cursor: null, total: 0 }),
+    csv: async function* () {},
+    remove: async () => false,
+  },
+});
+
 let pg: PGlite;
 let rt: ModuleRuntime;
 let appId: string;
@@ -303,7 +350,7 @@ beforeAll(async () => {
   rt = await loadModuleRuntime({
     env: ENV,
     log: noopLogger,
-    modules: [shop, store, gateway, proxy, vault, importer, feeder, sentinel],
+    modules: [shop, store, gateway, proxy, vault, importer, feeder, sentinel, leads],
     skillsDir: null,
     deps: {
       rateLimit: memoryRateLimiter(),
@@ -769,5 +816,82 @@ describe('fields with choices (x-drobek-choices)', () => {
     const [row] = await drizzleDb().select().from(moduleConfigs).where(eq(moduleConfigs.module, 'feeder'));
     expect(row.config).toEqual({ sources: { scores: { upstream: 'weather', collection: 'players', every: '30m' } } });
     expect((await load('feeder')).values.sources).toMatchObject({ entries: [{ key: 'scores', values: { upstream: 'weather', collection: 'players', every: '30m' } }] });
+  });
+});
+
+describe('rule, size and hidden fields; names suggested for a new entry', () => {
+  const hookApp = () => ({ id: appId, slug: 'shop-app', workspaceId: role.ws.id, workspaceSlug: 'acme' });
+  const stored = async () => (await rt.moduleView(hookApp(), 'leads')).stored as Record<string, unknown> | null;
+  const seed = (patch: unknown) => rt.configure({ app: hookApp(), module: 'leads', patch, actorUserId: role.user.id, surface: 'web' });
+
+  /** The form as the page posts it for the config in force, with `change` applied (null removes an input). */
+  const untouched = async (change: Record<string, string | null> = {}) => {
+    const d = await load('leads');
+    const forms = d.values.forms as { entries: { key?: string; values: Record<string, string> }[] };
+    const body: Record<string, string> = { intent: 'save-config' };
+    const rule = String(d.values['rules.submit']);
+    body[ruleInputs.shown('rules.submit')] = rule;
+    for (const p of rule.split('|')) if (p !== 'none') body[ruleInputs.principal('rules.submit', p as 'public')] = 'on';
+    body[fieldName('maxBytes')] = String(d.values.maxBytes);
+    body[entryInputs.count('forms')] = String(forms.entries.length);
+    forms.entries.forEach((e, i) => {
+      body[entryInputs.key('forms', i)] = e.key ?? '';
+      body[fieldName(`forms[${i}].note`)] = e.values.note;
+      body[fieldName(`forms[${i}].paused`)] = e.values.paused;
+    });
+    for (const [k, v] of Object.entries(change)) {
+      if (v === null) delete body[k];
+      else body[k] = v;
+    }
+    return post('leads', body);
+  };
+
+  it("loader: the app's forms from the module declaring submissions, and the workspace's value of the limit an empty field stands for", async () => {
+    const d = await load('leads');
+    expect(d.choices.forms.groups).toEqual([
+      {
+        options: [
+          { value: 'contact', label: 'contact', detail: '3 submissions' },
+          { value: 'order', label: 'order', detail: 'no submissions yet' },
+        ],
+      },
+    ]);
+    expect(d.limits).toEqual({ LEADS_MAX_BYTES: 10 * BYTES_PER_MB });
+    expect((await load('shop')).limits).toEqual({});
+    const fields = d.fields.map((f) => [f.path, f.kind]);
+    expect(fields).toEqual([
+      ['rules', 'object'],
+      ['maxBytes', 'integer'],
+      ['forms', 'record'],
+    ]);
+  });
+
+  it('an untouched form saves nothing — a hidden paused, a rule written in another order and an odd byte count included', async () => {
+    await seed({ rules: { submit: 'admin|user' }, maxBytes: 5_000_000, forms: { contact: { note: 'Sales', paused: true } } });
+    const before = await stored();
+    expect(doneOf(await untouched())).toBe('unchanged');
+    expect(await stored()).toEqual(before);
+  });
+
+  it('a change to another field keeps the hidden value; MB typed in are stored as bytes; checked principals make the rule', async () => {
+    await seed({ forms: { contact: { note: 'Sales', paused: true } } });
+    const done = doneOf(
+      await untouched({
+        [fieldName('maxBytes')]: '2.5',
+        [fieldName('forms[0].note')]: 'Leads',
+        [ruleInputs.principal('rules.submit', 'public')]: null,
+        [ruleInputs.principal('rules.submit', 'user')]: 'on',
+      })
+    );
+    expect(done).toBe('applied');
+    expect(await stored()).toMatchObject({ rules: { submit: 'user' }, maxBytes: 2.5 * BYTES_PER_MB, forms: { contact: { note: 'Leads', paused: true } } });
+  });
+
+  it('a size the schema refuses comes back in MB words at its field, nothing stored', async () => {
+    const bad = failed(await untouched({ [fieldName('maxBytes')]: '500' }));
+    expect(bad.status).toBe(400);
+    expect(bad.errors.fields).toEqual({ maxBytes: ['At most 100 MB.'] });
+    expect(bad.errors.values?.maxBytes).toBe('500');
+    expect((await stored()) ?? {}).toEqual({});
   });
 });

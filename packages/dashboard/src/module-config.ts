@@ -12,7 +12,11 @@
  *    edited as a JSON field. `description` (zod `.describe()`) is shown under
  *    the field; a string field annotated `x-drobek-choices` becomes a select
  *    whose choices the loader resolves (module-choices.server.ts); a
- *    record's `propertyNames` title / description label its entries' names.
+ *    record's `propertyNames` title / description label its entries' names
+ *    (its `x-drobek-choices` suggest a new entry's name). `x-drobek-rule`
+ *    makes a rule string principal checkboxes, `x-drobek-unit: 'bytes'` a
+ *    number entered in MB, `x-drobek-hidden` a value carried through a save
+ *    unseen, `x-drobek-order` puts an object's listed keys first.
  *    No vendor form library, no client JS: a new entry is the one
  *    empty entry each record / list renders, a removal a checkbox.
  *  - `formToConfig` — the submitted form → a config value. The SERVER then
@@ -26,7 +30,7 @@
  *  - rule ⇄ principal checkboxes, the plain-language risk note of a
  *    confirmRequired string.
  */
-import type { ConfigChoices, ConfigFieldMeta } from '@drobek/modules';
+import type { ConfigChoices, ConfigFieldMeta, ConfigUnit } from '@drobek/modules';
 
 type FieldKind =
   | 'object'
@@ -39,6 +43,7 @@ type FieldKind =
   | 'enum-list'
   | 'record'
   | 'object-list'
+  | 'rule'
   | 'json';
 
 export interface FormField {
@@ -71,8 +76,20 @@ export interface FormField {
   choices?: ConfigChoices;
   /** With `choices: 'intervals'`: the module limit holding the shortest interval in minutes (`x-drobek-min-interval`). */
   minInterval?: string;
-  /** `record` fields: the label and hint of an entry's name (the record's `propertyNames` title / description). */
-  entryKey?: { label: string; description?: string };
+  /**
+   * `record` fields: the label and hint of an entry's name (the record's
+   * `propertyNames` title / description) and where suggestions for a new
+   * entry's name come from (its `x-drobek-choices`).
+   */
+  entryKey?: { label: string; description?: string } & Pick<FormField, 'choices' | 'minInterval'>;
+  /** `rule` fields: the principals the checkboxes offer (`x-drobek-rule`). */
+  principals?: PrincipalName[];
+  /** `number` / `integer` fields: the unit the value is stored in (`x-drobek-unit`); `bytes` is entered in MB. */
+  unit?: ConfigUnit;
+  /** The module limit whose workspace value applies while the field is empty (`x-drobek-default-limit`). */
+  defaultLimit?: string;
+  /** `x-drobek-hidden`: not shown; a hidden input carries the current value (as JSON) through a save. */
+  hidden?: true;
 }
 
 /** Form input names are the config path under this prefix. */
@@ -153,7 +170,13 @@ function itemBounds(n: Json): { minItems?: number; maxItems?: number } {
 
 const CHOICES_KEY: keyof ConfigFieldMeta = 'x-drobek-choices';
 const MIN_INTERVAL_KEY: keyof ConfigFieldMeta = 'x-drobek-min-interval';
-const CHOICE_SOURCES: ReadonlySet<string> = new Set<ConfigChoices>(['upstreams', 'collections', 'intervals']);
+const RULE_KEY: keyof ConfigFieldMeta = 'x-drobek-rule';
+const UNIT_KEY: keyof ConfigFieldMeta = 'x-drobek-unit';
+const DEFAULT_LIMIT_KEY: keyof ConfigFieldMeta = 'x-drobek-default-limit';
+const HIDDEN_KEY: keyof ConfigFieldMeta = 'x-drobek-hidden';
+const ORDER_KEY: keyof ConfigFieldMeta = 'x-drobek-order';
+const CHOICE_SOURCES: ReadonlySet<string> = new Set<ConfigChoices>(['upstreams', 'collections', 'intervals', 'forms']);
+const UNITS: ReadonlySet<string> = new Set<ConfigUnit>(['bytes']);
 
 /** A string node's `x-drobek-choices` (+ `x-drobek-min-interval`) as FormField properties; an unknown source is ignored. */
 function choicesOf(n: Json): Pick<FormField, 'choices' | 'minInterval'> {
@@ -163,13 +186,40 @@ function choicesOf(n: Json): Pick<FormField, 'choices' | 'minInterval'> {
   return { choices: from as ConfigChoices, ...(from === 'intervals' && typeof min === 'string' && min ? { minInterval: min } : {}) };
 }
 
-/** A record's `entryKey` from its `propertyNames` title / description (none without either: the name is labelled "Name"). */
+/** A record's `entryKey` from its `propertyNames` title / description / choices (none without any: the name is labelled "Name"). */
 function entryKeyOf(n: Json): Pick<FormField, 'entryKey'> {
   const names = isObject(n.propertyNames) ? n.propertyNames : {};
   const title = typeof names.title === 'string' && names.title ? names.title : null;
   const description = typeof names.description === 'string' && names.description ? names.description : null;
-  if (!title && !description) return {};
-  return { entryKey: { label: title ?? 'Name', ...(description ? { description } : {}) } };
+  const choices = choicesOf(names);
+  if (!title && !description && !choices.choices) return {};
+  return { entryKey: { label: title ?? 'Name', ...(description ? { description } : {}), ...choices } };
+}
+
+/** The principals an `x-drobek-rule` node offers (`true`: all of them); null when it is no rule field. */
+function rulePrincipalsOf(n: Json): PrincipalName[] | null {
+  const v = n[RULE_KEY];
+  if (v === true) return [...PRINCIPALS];
+  if (!Array.isArray(v)) return null;
+  const listed = new Set(v);
+  const offered = PRINCIPALS.filter((p) => listed.has(p));
+  return offered.length > 0 ? offered : null;
+}
+
+/** A number node's `x-drobek-unit` (an unknown unit is ignored). */
+function unitOf(n: Json): Pick<FormField, 'unit'> {
+  const unit = n[UNIT_KEY];
+  return typeof unit === 'string' && UNITS.has(unit) ? { unit: unit as ConfigUnit } : {};
+}
+
+/** An object's properties: the keys its `x-drobek-order` lists first (in that order), then the rest in schema order. */
+function orderedProperties(node: Json): [string, unknown][] {
+  const props = isObject(node.properties) ? node.properties : {};
+  const order = node[ORDER_KEY];
+  const listed = Array.isArray(order) ? order.filter((k): k is string => typeof k === 'string' && Object.prototype.hasOwnProperty.call(props, k)) : [];
+  const first = [...new Set(listed)];
+  const rest = Object.keys(props).filter((k) => !first.includes(k));
+  return [...first, ...rest].map((k) => [k, props[k]]);
 }
 
 function stringEnum(node: unknown): string[] | null {
@@ -200,18 +250,23 @@ function fieldOf(key: string, path: string, node: unknown, required: boolean, de
     ...(typeof n.description === 'string' && n.description ? { description: n.description } : {}),
     required,
     ...(n.default !== undefined ? { default: n.default } : {}),
+    ...(typeof n[DEFAULT_LIMIT_KEY] === 'string' && n[DEFAULT_LIMIT_KEY] ? { defaultLimit: n[DEFAULT_LIMIT_KEY] } : {}),
   };
+  // A hidden value round-trips as JSON, whatever its type.
+  if (n[HIDDEN_KEY] === true) return { ...base, kind: 'json', hidden: true };
   const t = typeOf(n);
   const choices = stringEnum(n);
   if (choices) return { ...base, kind: 'enum', options: choices };
   if (t === 'string') {
     const maxLength = num(n.maxLength);
+    const principals = rulePrincipalsOf(n);
+    if (principals) return { ...base, kind: 'rule', principals };
     return { ...base, kind: 'string', ...(maxLength !== undefined ? { maxLength } : {}), ...choicesOf(n) };
   }
   if (t === 'number' || t === 'integer') {
     const min = bound(n.minimum);
     const max = bound(n.maximum);
-    return { ...base, kind: t, ...(min !== undefined ? { min } : {}), ...(max !== undefined ? { max } : {}) };
+    return { ...base, kind: t, ...(min !== undefined ? { min } : {}), ...(max !== undefined ? { max } : {}), ...unitOf(n) };
   }
   if (t === 'boolean') return { ...base, kind: 'boolean' };
   if (t === 'array' && isObject(n.items)) {
@@ -243,9 +298,8 @@ function fieldOf(key: string, path: string, node: unknown, required: boolean, de
 }
 
 function objectFields(node: Json, prefix: string, depth: number, skip: ReadonlySet<string> = new Set()): FormField[] {
-  const props = isObject(node.properties) ? node.properties : {};
   const required = new Set(Array.isArray(node.required) ? node.required.map(String) : []);
-  return Object.entries(props)
+  return orderedProperties(node)
     .filter(([key]) => !skip.has(key))
     .map(([key, child]) => fieldOf(key, prefix ? `${prefix}.${key}` : key, child, required.has(key), depth));
 }
@@ -274,13 +328,17 @@ export interface ChoiceRequest {
   minInterval?: string;
 }
 
-/** The choice lists `fields` need (objects and record / list entries included), each once. */
+/** The choice lists `fields` need (objects, record / list entries and entry names included), each once. */
 export function choiceRequests(fields: readonly FormField[]): ChoiceRequest[] {
   const out = new Map<string, ChoiceRequest>();
+  const add = (c: Pick<FormField, 'choices' | 'minInterval'>) => {
+    const key = choiceKey(c);
+    if (key && c.choices && !out.has(key)) out.set(key, { key, from: c.choices, ...(c.minInterval ? { minInterval: c.minInterval } : {}) });
+  };
   const walk = (list: readonly FormField[]) => {
     for (const f of list) {
-      const key = choiceKey(f);
-      if (key && f.choices && !out.has(key)) out.set(key, { key, from: f.choices, ...(f.minInterval ? { minInterval: f.minInterval } : {}) });
+      add(f);
+      if (f.entryKey) add(f.entryKey);
       walk(f.children ?? []);
       walk(f.entry ?? []);
     }
@@ -288,6 +346,47 @@ export function choiceRequests(fields: readonly FormField[]): ChoiceRequest[] {
   walk(fields);
   return [...out.values()];
 }
+
+/** The module limits `fields` name as what an empty field means (`x-drobek-default-limit`), each once. */
+export function defaultLimitNames(fields: readonly FormField[]): string[] {
+  const out = new Set<string>();
+  const walk = (list: readonly FormField[]) => {
+    for (const f of list) {
+      if (f.defaultLimit) out.add(f.defaultLimit);
+      walk(f.children ?? []);
+      walk(f.entry ?? []);
+    }
+  };
+  walk(fields);
+  return [...out];
+}
+
+/** Bytes in one MB, the unit a `bytes` field is entered in. */
+export const BYTES_PER_MB = 1024 * 1024;
+
+/**
+ * Bytes as the MB an input shows. Exact: a whole number of bytes over 2^20 is
+ * a finite binary fraction, and `String` gives the shortest text that parses
+ * back to it — so an untouched value saves the same bytes.
+ */
+function bytesToMb(bytes: number): string {
+  return String(bytes / BYTES_PER_MB);
+}
+
+/** A size for a hint, in MB with at most two decimals ("25 MB", "4.77 MB"). */
+export function mbLabel(bytes: number): string {
+  return `${Number((bytes / BYTES_PER_MB).toFixed(2))} MB`;
+}
+
+/**
+ * The input names of a `rule` field at `instance`: one checkbox per
+ * principal, and the rule the form showed — kept as written when the same
+ * principals come back, so an untouched rule saves unchanged.
+ */
+export const ruleInputs = {
+  principal: (instance: string, principal: PrincipalName) => fieldName(`${instance}.$${principal}`),
+  shown: (instance: string) => fieldName(`${instance}.$shown`),
+} as const;
 
 /** Every leaf field (objects flattened; a `record` / `object-list` is one leaf), in order. */
 export function leafFields(fields: readonly FormField[]): FormField[] {
@@ -355,7 +454,11 @@ export function fieldValues(fields: readonly FormField[], config: unknown): Reco
         out[f.path] = { entries: Array.isArray(v) ? v.map((x) => ({ values: entryValues(f, x) })) : [] };
         break;
       case 'json':
-        out[f.path] = v === undefined ? '' : JSON.stringify(v, null, 2);
+        out[f.path] = v === undefined ? '' : f.hidden ? JSON.stringify(v) : JSON.stringify(v, null, 2);
+        break;
+      case 'number':
+      case 'integer':
+        out[f.path] = typeof v === 'number' && f.unit === 'bytes' ? bytesToMb(v) : v === undefined || v === null ? '' : String(v);
         break;
       default:
         out[f.path] = v === undefined || v === null ? '' : String(v);
@@ -488,6 +591,15 @@ export function formToConfig(fields: readonly FormField[], form: FormReader): Fo
         out[f.key] = r.value;
         continue;
       }
+      if (f.kind === 'rule') {
+        const picked = PRINCIPALS.filter((p) => form.has(ruleInputs.principal(instance, p)));
+        const shown = form.get(ruleInputs.shown(instance));
+        const same = typeof shown === 'string' && samePrincipals(ruleToPrincipals(shown), picked);
+        const rule = same ? shown : principalsToRule(picked);
+        scope.values[f.path] = rule;
+        if (rule !== '') out[f.key] = rule;
+        continue;
+      }
       const raw = form.get(name);
       const text = typeof raw === 'string' ? raw : '';
       scope.values[f.path] = text;
@@ -500,6 +612,12 @@ export function formToConfig(fields: readonly FormField[], form: FormReader): Fo
         case 'number':
         case 'integer': {
           if (text.trim() === '') break;
+          if (f.unit === 'bytes') {
+            const bytes = readBytes(f, text);
+            if (typeof bytes === 'string') fail(scope, f, bytes);
+            else out[f.key] = bytes;
+            break;
+          }
           const n = Number(text.trim());
           if (!Number.isFinite(n) || (f.kind === 'integer' && !Number.isInteger(n))) {
             fail(scope, f, f.kind === 'integer' ? 'Enter a whole number.' : 'Enter a number.');
@@ -528,6 +646,20 @@ export function formToConfig(fields: readonly FormField[], form: FormReader): Fo
   };
 
   return { value: readFields(fields, { prefix: '', values }), values, errors };
+}
+
+/** MB typed into a `bytes` field → whole bytes, or what is wrong with the text (the schema's bounds in MB). */
+function readBytes(f: FormField, text: string): number | string {
+  const mb = Number(text.trim());
+  if (!Number.isFinite(mb)) return 'Enter a size in MB, like 5 or 0.5.';
+  const bytes = Math.round(mb * BYTES_PER_MB);
+  if (f.max !== undefined && bytes > f.max) return `At most ${mbLabel(f.max)}.`;
+  if (f.min !== undefined && bytes < f.min) return f.min <= 1 ? 'Enter more than 0 MB.' : `At least ${mbLabel(f.min)}.`;
+  return bytes;
+}
+
+function samePrincipals(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((p) => b.includes(p));
 }
 
 /** The JSON value equality of two config values (key order ignored). */
@@ -656,7 +788,7 @@ const LIST_KINDS: ReadonlySet<FieldKind> = new Set(['string-list', 'enum-list', 
  * `listRule`'s to say.
  */
 export function needsValue(f: FormField): boolean {
-  return f.required && !LIST_KINDS.has(f.kind) && f.kind !== 'boolean' && f.kind !== 'object';
+  return f.required && !f.hidden && !LIST_KINDS.has(f.kind) && f.kind !== 'boolean' && f.kind !== 'object' && f.kind !== 'rule';
 }
 
 /** How many items a list field takes, in words (null for a field that is not a list). */
