@@ -85,9 +85,15 @@ const server = http.createServer((req, res) => {
   }
 
   // A sports feed for the sync module. It answers only with the
-  // injected bearer key (never echoed), `?n=` players (at most 5: the e2e
-  // DATA_MAX_DOCS_PER_APP), and /sync/fail always fails.
+  // injected bearer key (never echoed) and a User-Agent (like GitHub's API),
+  // `?n=` players (at most 5: the e2e DATA_MAX_DOCS_PER_APP), and /sync/fail
+  // always fails.
   if (url.pathname === '/sync/players') {
+    if (!req.headers['user-agent']) {
+      res.writeHead(403, { 'content-type': 'application/json' });
+      res.end('{"error":"a User-Agent is required"}');
+      return;
+    }
     if (!/^Bearer sk-e2e-/.test(String(req.headers.authorization ?? ''))) {
       res.writeHead(401, { 'content-type': 'application/json' });
       res.end('{"error":"no key"}');

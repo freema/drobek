@@ -116,6 +116,18 @@ describe('buildForwardHeaders — browser metadata never reaches the upstream', 
   });
 });
 
+describe('buildForwardHeaders — User-Agent', () => {
+  it('a call without a User-Agent (a sync run, a module job) identifies as drobek', () => {
+    const out = buildForwardHeaders(headers({ accept: 'application/json' }), { authType: 'none' });
+    expect(out['user-agent']).toBe('drobek (+https://github.com/freema/drobek)');
+  });
+
+  it("keeps the caller's own User-Agent", () => {
+    const out = buildForwardHeaders(headers({ 'user-agent': 'Mozilla/5.0 (X11)' }), { authType: 'none' });
+    expect(out['user-agent']).toBe('Mozilla/5.0 (X11)');
+  });
+});
+
 describe('filterResponseHeaders', () => {
   it("strips the upstream's CORS grants", () => {
     const out = filterResponseHeaders([
