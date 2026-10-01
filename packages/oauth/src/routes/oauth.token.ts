@@ -8,16 +8,22 @@
  *    rotating refresh token). A failed exchange consumes the code as well;
  *    replaying a consumed code revokes the tokens it minted.
  *  - refresh_token: rotate — issue a new access+refresh, invalidate the old
- *    refresh; reuse of an already-rotated token burns the lineage. A client
- *    that names itself must be the one the refresh token was issued to.
+ *    refresh. An already-rotated token presented again within the retry
+ *    grace gets a fresh pair from its lineage's tail; later, it is reuse and
+ *    burns that lineage. A client that names itself must be the one the
+ *    refresh token was issued to. Every refresh logs one line with its
+ *    outcome and row ids (never a token).
  *
  * Every failure is a proper OAuth JSON error (invalid_request / invalid_grant /
  * unsupported_grant_type) with the right status and no-store — never a stack.
  */
 import type { ActionFunctionArgs } from 'react-router';
+import { createConsoleLogger } from '@drobek/core';
 import { findClientByClientId } from '../clients.server.js';
 import { consumeAuthCode } from '../codes.server.js';
 import { issueAccessAndRefresh, rotateRefreshToken } from '../tokens.server.js';
+
+const log = createConsoleLogger('oauth');
 
 function tokenError(error: string, description: string, status = 400): Response {
   return Response.json(
@@ -146,6 +152,11 @@ async function handleRefreshToken(params: URLSearchParams): Promise<Response> {
   const rotated = await rotateRefreshToken(refreshToken, undefined, undefined, {
     expectedOauthClientId,
   });
+  if (rotated.trace.outcome === 'reuse' || rotated.trace.outcome === 'client_mismatch') {
+    log.warn('oauth refresh', { ...rotated.trace });
+  } else {
+    log.info('oauth refresh', { ...rotated.trace });
+  }
   if (!rotated.ok) {
     return tokenError(rotated.error, rotated.description);
   }

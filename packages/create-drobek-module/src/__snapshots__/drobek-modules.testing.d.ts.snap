@@ -405,29 +405,44 @@ declare const oauthAuthorizationCodes = pgTable('oauth_authorization_codes', {
 });
 
 /** Opaque access tokens (~1 h TTL), audience-bound (RFC 8707). */
-declare const oauthAccessTokens = pgTable('oauth_access_tokens', {
-  id: text('id')
-    .primaryKey()
-    .$defaultFn(() => createId()),
-  tokenHash: text('token_hash').notNull().unique(),
-  userId: text('user_id')
-    .notNull()
-    .references(() => users.id, { onDelete: 'cascade' }),
-  oauthClientId: text('oauth_client_id').references(() => oauthClients.id, {
-    onDelete: 'set null',
-  }),
-  scope: text('scope').notNull(),
-  audience: text('audience').notNull(),
-  expiresAt: timestamp('expires_at').notNull(),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  revokedAt: timestamp('revoked_at'),
-});
+declare const oauthAccessTokens = pgTable(
+  'oauth_access_tokens',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    tokenHash: text('token_hash').notNull().unique(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    oauthClientId: text('oauth_client_id').references(() => oauthClients.id, {
+      onDelete: 'set null',
+    }),
+    scope: text('scope').notNull(),
+    audience: text('audience').notNull(),
+    /**
+     * The refresh token issued together with this access token, so revoking a
+     * rotation lineage revokes exactly its access tokens. No foreign key: a
+     * connection revoke deletes the pair's refresh tokens and access tokens in
+     * separate statements. Null on tokens issued before the column existed.
+     */
+    refreshTokenId: text('refresh_token_id'),
+    expiresAt: timestamp('expires_at').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    revokedAt: timestamp('revoked_at'),
+  },
+  (t) => [index('oauth_access_tokens_refresh_token_idx').on(t.refreshTokenId)]
+);
 
 /**
- * Opaque refresh tokens (~30 day TTL) with ROTATION + reuse detection. On use:
- * `used_at` is stamped and `rotated_to` points at the freshly-issued successor.
- * Presenting a token whose `used_at` is already set is REUSE → the whole
- * rotated_to lineage is invalidated and the grant's access tokens revoked.
+ * Opaque refresh tokens (~30 day TTL) with ROTATION + reuse detection. A
+ * rotation stamps `used_at` and points `rotated_to` at the successor in one
+ * transaction. A used token presented again while every use along its
+ * `rotated_to` chain is younger than the retry grace (60 s) is a retry: the
+ * unused tail of the lineage is rotated instead. Anything else is REUSE →
+ * every token from the presented one down the chain is marked used and the
+ * access tokens issued with them are revoked. A used token without
+ * `rotated_to` belongs to a revoked lineage.
  */
 declare const oauthRefreshTokens = pgTable('oauth_refresh_tokens', {
   id: text('id')
