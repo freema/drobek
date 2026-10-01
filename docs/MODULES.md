@@ -258,12 +258,18 @@ module is "used" through its configuration, as for every module — there is
 no per-app switch.
 
 The dev compose enables both example modules and every built-in module
-(`DROBEK_MODULES=hello,auth,email,forms,data,proxy,files,sync,oidc,drobek-module-acme-crm`,
-the last one installed into `./.modules` by `task dev`, `HELLO_WAVES_PER_MINUTE=5`,
+(`DROBEK_MODULES=hello,auth,email,forms,data,proxy,files,sync,oidc,drobek-module-acme-crm,drobek-module-ops-probe`,
+the last two installed into `./.modules` by `task dev`, `HELLO_WAVES_PER_MINUTE=5`,
 relaxed `AUTH_*` limits because every local request shares one client IP,
 `DATA_MAX_DOCS_PER_APP=5` so the quota e2e trips quickly); so does the e2e
-image compose, whose flow installs `drobek-module-acme-crm` with
-`selfhost:module:add`.
+image compose, whose flow installs both external ones with
+`selfhost:module:add`. `drobek-module-ops-probe`
+(`tests-e2e/fixtures`) is an operator-only test fixture: its error reporter
+`capture` (`ERROR_REPORTER=capture` in both composes) hands every report to
+the e2e's `proxy-echo`, its e-mail transport `relay`
+(`EMAIL_TRANSPORT=relay` in the dev compose only; the image flow keeps SMTP)
+sends through Mailpit's HTTP API, and its server job fails when a spec asks
+it to.
 
 ## Installing an external module
 

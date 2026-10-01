@@ -1,8 +1,9 @@
 // e2e-only upstream on the compose network (hostname `proxy-echo`, allow-listed
 // via PROXY_ALLOWED_HOSTS): echoes requests as JSON, serves redirects the
-// proxy refuses or follows, mock CIMD documents, a sync feed and the fake limits
-// provider. Upstreams may only use ports 80/443, so it also listens on
-// EXTRA_PORTS; the CIMD mock + healthcheck keep PORT (8099).
+// proxy refuses or follows, mock CIMD documents, a sync feed, the fake limits
+// provider and the ops-probe fixture's report capture. Upstreams may only use
+// ports 80/443, so it also listens on EXTRA_PORTS; the CIMD mock, the
+// healthcheck and the report capture keep PORT (8099).
 import { createHmac } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import http from 'node:http';
@@ -15,6 +16,9 @@ const EXTRA_PORTS = String(process.env.EXTRA_PORTS || '')
   .filter((p) => /^\d+$/.test(p))
   .map(Number)
   .filter((p) => p !== PORT);
+const OPS_REPORTS_MAX = 500;
+const opsReports = [];
+let opsJobFail = null;
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
@@ -98,6 +102,38 @@ const server = http.createServer((req, res) => {
   if (url.pathname === '/sync/fail') {
     res.writeHead(500, { 'content-type': 'application/json' });
     res.end('{"error":"feed down"}');
+    return;
+  }
+
+  // The operator-only fixture module (tests-e2e/fixtures/drobek-module-ops-probe):
+  // its error reporter POSTs every report to /opsprobe/reports (GET lists them),
+  // and its server job asks GET /opsprobe/job for the failure a spec armed with
+  // POST /opsprobe/job `{ fail }` (answered once, then cleared).
+  if (url.pathname === '/opsprobe/reports' || url.pathname === '/opsprobe/job') {
+    const chunks = [];
+    req.on('data', (c) => chunks.push(c));
+    req.on('end', () => {
+      let body = null;
+      try {
+        body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : null;
+      } catch {
+        body = null;
+      }
+      let out = { ok: true };
+      if (url.pathname === '/opsprobe/reports' && req.method === 'POST') {
+        opsReports.push({ received_at: new Date().toISOString(), event: body });
+        if (opsReports.length > OPS_REPORTS_MAX) opsReports.splice(0, opsReports.length - OPS_REPORTS_MAX);
+      } else if (url.pathname === '/opsprobe/reports') {
+        out = { reports: opsReports };
+      } else if (req.method === 'POST') {
+        opsJobFail = typeof body?.fail === 'string' ? body.fail : null;
+      } else {
+        out = { fail: opsJobFail };
+        opsJobFail = null;
+      }
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify(out));
+    });
     return;
   }
 

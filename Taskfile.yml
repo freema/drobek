@@ -17,6 +17,7 @@ tasks:
       GIT_SHA: '{{.GIT_SHA}}'
     cmds:
       - task: module:example
+      - task: module:fixture
       - docker compose up -d --build --wait --wait-timeout 300
       - task: health
 
@@ -124,7 +125,7 @@ tasks:
     cmds:
       - >-
         before="$(cat .modules/modules.lock.json 2>/dev/null || true)";
-        task module:example &&
+        task module:example && task module:fixture &&
         if [ "$before" != "$(cat .modules/modules.lock.json)" ]; then
         docker compose restart drobek && docker compose up -d --wait --wait-timeout 300 drobek; fi
       - pnpm -C tests-e2e exec playwright test {{.CLI_ARGS}}
@@ -321,6 +322,22 @@ tasks:
         ./scripts/selfhost-module.sh --dev add "$pack"/drobek-module-acme-crm-*.tgz;
         status=$?; rm -rf "$pack"; exit $status
 
+  module:fixture:
+    desc: 'Dev stack: pack the operator-only e2e fixture (tests-e2e/fixtures/drobek-module-ops-probe, in the dev DROBEK_MODULES: error reporter + e-mail transport) and install it into ./.modules — skipped while that install is current [--force reinstalls]'
+    sources:
+      - tests-e2e/fixtures/drobek-module-ops-probe/package.json
+      - tests-e2e/fixtures/drobek-module-ops-probe/*.js
+    status:
+      - test -f .modules/opsprobe/node_modules/drobek-module-ops-probe/package.json
+      - grep -q '"opsprobe"' .modules/modules.lock.json
+    cmds:
+      - test -f packages/modules/dist/cli/module-lock.js || pnpm build:packages
+      - >-
+        pack="$(mktemp -d)" &&
+        npm pack --loglevel=warn ./tests-e2e/fixtures/drobek-module-ops-probe --pack-destination "$pack" >/dev/null &&
+        ./scripts/selfhost-module.sh --dev add "$pack"/drobek-module-ops-probe-*.tgz;
+        status=$?; rm -rf "$pack"; exit $status
+
   dev:tls:
     desc: 'Dev stack behind Caddy with `tls internal` → https://localhost + https://<slug>--preview.apps.localhost [DEV_TLS_PORT=443]'
     vars:
@@ -333,6 +350,7 @@ tasks:
     cmds:
       - test -f packages/core/dist/cli/caddy-config.js || pnpm --filter @drobek/core build
       - task: module:example
+      - task: module:fixture
       - >-
         env -i PATH="$PATH" PUBLIC_APP_URL='https://localhost{{.DEV_TLS_SUFFIX}}'
         APPS_DOMAIN='apps.localhost{{.DEV_TLS_SUFFIX}}' TLS_INTERNAL=1

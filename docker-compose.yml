@@ -89,6 +89,15 @@ services:
       SMTP_PORT: '1025'
       SMTP_SECURE: '0'
       EMAIL_FROM: ${EMAIL_FROM:-no-reply@drobek.app}
+      # The operator-only e2e fixture drobek-module-ops-probe (tests-e2e/fixtures,
+      # installed by `task module:fixture`) is this stack's e-mail transport and
+      # error reporter: mail goes to Mailpit over its HTTP send API, reports to
+      # proxy-echo. EMAIL_TRANSPORT=smtp sends over SMTP_HOST, an empty
+      # ERROR_REPORTER only logs.
+      EMAIL_TRANSPORT: ${EMAIL_TRANSPORT:-relay}
+      OPSPROBE_MAIL_URL: ${OPSPROBE_MAIL_URL:-http://mailpit:8025/api/v1/send}
+      ERROR_REPORTER: ${ERROR_REPORTER-capture}
+      OPSPROBE_URL: ${OPSPROBE_URL:-http://proxy-echo:8099/opsprobe}
       # OTP limits relaxed for dev (prod defaults: 5 / 20 / 3 / 60000 / 100).
       OTP_LOGIN_DISABLED: ${OTP_LOGIN_DISABLED:-}
       OTP_IP_SHORT_LIMIT: ${OTP_IP_SHORT_LIMIT:-300}
@@ -150,7 +159,7 @@ services:
       # Auth sign-in limits are relaxed: behind Caddy the e2e signs in many times
       # from one client IP. A request without X-Real-IP has no per-IP bucket, so
       # the forms e2e sends its own X-Real-IP to count.
-      DROBEK_MODULES: ${DROBEK_MODULES:-hello,auth,email,forms,data,proxy,files,sync,oidc,drobek-module-acme-crm}
+      DROBEK_MODULES: ${DROBEK_MODULES:-hello,auth,email,forms,data,proxy,files,sync,oidc,drobek-module-acme-crm,drobek-module-ops-probe}
       DROBEK_MODULES_DIR: ${DROBEK_MODULES_DIR:-/data/modules}
       DROBEK_MODULES_UNLOCKED: ${DROBEK_MODULES_UNLOCKED:-}
       HELLO_WAVES_PER_MINUTE: ${HELLO_WAVES_PER_MINUTE:-5}
