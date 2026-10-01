@@ -71,7 +71,7 @@ test('a changed byte in the installed module fails its integrity check; reinstal
   const refused = loaderVerdict();
   expect(refused).toContain('REFUSED');
   expect(refused).toContain('does not match its integrity in /data/modules/modules.lock.json (files changed after the install)');
-  execSync(process.env.E2E_MODULE_REINSTALL ?? 'task module:example --force', { cwd: repoRoot, stdio: 'pipe' });
+  execSync(process.env.E2E_MODULE_REINSTALL ?? 'task module:example:install', { cwd: repoRoot, stdio: 'pipe' });
   expect(loaderVerdict()).toMatch(new RegExp(`^LOADED .*\\b${EXTERNAL}\\b`, 'm'));
 });
 

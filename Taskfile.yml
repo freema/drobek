@@ -121,7 +121,7 @@ tasks:
       REDIS_URL: 'redis://localhost:{{.REDIS_PUBLISH | default "6391"}}'
       MAILPIT_URL: 'http://localhost:{{.MAILPIT_PUBLISH | default "8025"}}'
       ALLOW_DESTRUCTIVE: '1'
-      E2E_MODULE_REINSTALL: task module:example --force
+      E2E_MODULE_REINSTALL: task module:example:install
     cmds:
       - >-
         before="$(cat .modules/modules.lock.json 2>/dev/null || true)";
@@ -286,9 +286,28 @@ tasks:
     env:
       MODULE_SPEC: '{{.CLI_ARGS}}'
     cmds:
+      - task: workspace:build
+      - ./scripts/selfhost-module.sh --dev add "$MODULE_SPEC"
+
+  workspace:build:
+    internal: true
+    sources:
+      - pnpm-lock.yaml
+      - packages/*/package.json
+      - packages/*/tsconfig*.json
+      - packages/*/src/**/*
+      - modules/*/package.json
+      - modules/*/tsconfig*.json
+      - modules/*/src/**/*
+      - examples/*/package.json
+      - examples/*/tsconfig*.json
+      - examples/*/src/**/*
+    generates:
+      - packages/core/dist/index.js
+      - packages/modules/dist/cli/module-lock.js
+    cmds:
       - pnpm install --frozen-lockfile
       - pnpm build:packages
-      - ./scripts/selfhost-module.sh --dev add "$MODULE_SPEC"
 
   module:remove:
     desc: 'Dev stack: delete a module from ./.modules and modules.lock.json — task module:remove -- <name>'
@@ -315,8 +334,11 @@ tasks:
       - test -f .modules/acmecrm/node_modules/drobek-module-acme-crm/package.json
       - grep -q '"acmecrm"' .modules/modules.lock.json
     cmds:
-      - pnpm install --frozen-lockfile
-      - pnpm build:packages
+      - task: workspace:build
+      - task: module:example:install
+
+  module:example:install:
+    cmds:
       - >-
         pack="$(mktemp -d)" &&
         pnpm --filter drobek-module-acme-crm pack --pack-destination "$pack" >/dev/null &&
@@ -332,8 +354,7 @@ tasks:
       - test -f .modules/opsprobe/node_modules/drobek-module-ops-probe/package.json
       - grep -q '"opsprobe"' .modules/modules.lock.json
     cmds:
-      - pnpm install --frozen-lockfile
-      - pnpm build:packages
+      - task: workspace:build
       - >-
         pack="$(mktemp -d)" &&
         npm pack --loglevel=warn ./tests-e2e/fixtures/drobek-module-ops-probe --pack-destination "$pack" >/dev/null &&
