@@ -1,7 +1,7 @@
 /**
  * The `/mcp` HTTP endpoint on a real (PGlite) database and a real HTTP
- * listener: the body cap and its JSON-RPC errors and the catch around the
- * transport.
+ * listener: the body cap and its JSON-RPC errors, the catch around the
+ * transport and the access log.
  */
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
@@ -32,6 +32,7 @@ const INITIALIZE = JSON.stringify({
 });
 
 let closeDb: () => Promise<void>;
+let userId: string;
 let readKey: string;
 const savedEnv = { ...process.env };
 
@@ -41,6 +42,7 @@ beforeAll(async () => {
   const t = await freshDb();
   closeDb = () => t.pg.close();
   const [u] = await t.db.insert(users).values({ email: 'mcp-endpoint@example.test' }).returning();
+  userId = u.id;
   readKey = (await createApiKey({ userId: u.id, name: 'endpoint test', scopes: ['read'] })).key;
 });
 
@@ -194,5 +196,62 @@ describe('/mcp failures', () => {
       process.off('unhandledRejection', unhandled);
       resetErrorReporterForTests();
     }
+  });
+});
+
+describe('the /mcp access log', () => {
+  it('one line per request: methods, tool, status, duration, short session id and user — never arguments or credentials', async () => {
+    const h = await mount();
+    const sid = await initialize(h);
+    const call = await post(
+      h.url,
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 3,
+        method: 'tools/call',
+        params: {
+          name: 'write_files',
+          arguments: { app_id: 'a1', files: [{ path: 'index.html', content: 'ARG-MARKER-123' }], reasoning: 'REASON-MARKER' },
+        },
+      }),
+      { 'mcp-session-id': sid }
+    );
+    expect(call.status).toBe(200);
+    await call.text();
+    const anonymous = await fetch(h.url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: INITIALIZE });
+    expect(anonymous.status).toBe(401);
+
+    await vi.waitFor(() => expect(h.lines.filter((l) => l.message === 'mcp request')).toHaveLength(4));
+    const lines = h.lines.filter((l) => l.message === 'mcp request');
+    for (const l of lines) {
+      expect(l.level).toBe('info');
+      expect(typeof l.meta.duration_ms).toBe('number');
+    }
+    expect(lines.find((l) => l.meta.rpc === 'initialize')?.meta).toMatchObject({
+      method: 'POST',
+      status: 200,
+      session: sid.slice(0, 8),
+      user_id: userId,
+    });
+    expect(lines.find((l) => l.meta.rpc === 'notifications/initialized')?.meta).toMatchObject({ status: 202, session: sid.slice(0, 8) });
+    expect(lines.find((l) => l.meta.rpc === 'tools/call')?.meta).toMatchObject({
+      method: 'POST',
+      rpc: 'tools/call',
+      tool: 'write_files',
+      status: 200,
+      session: sid.slice(0, 8),
+      user_id: userId,
+    });
+    const refused = lines.find((l) => l.meta.status === 401);
+    expect(refused?.meta).toMatchObject({ method: 'POST' });
+    expect(refused?.meta).not.toHaveProperty('user_id');
+
+    const text = JSON.stringify(h.lines);
+    expect(text).not.toContain(readKey);
+    expect(text).not.toContain('Bearer');
+    expect(text).not.toContain('ARG-MARKER');
+    expect(text).not.toContain('REASON-MARKER');
+    expect(text).not.toContain('index.html');
+    expect(text).not.toContain(sid);
   });
 });
