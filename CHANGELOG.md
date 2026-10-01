@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Added
+- **Readiness warns about a missing description, a missing favicon and a link-preview image that is not an absolute URL** (NSO-415): apps went live without a meta description, a favicon or a usable link preview, because nothing pointed the agent at them. `write_files`, `publish`, `get_app` and the dashboard's "Before you publish" now list `missing_description` (index.html has no, or an empty, `<meta name="description">` in its head), `missing_favicon` (no `<link rel="icon">` in its head and no `favicon.ico` in the version; an uploaded favicon.ico counts once index.html links it) and `og_image_not_absolute` (an `og:image` / `twitter:image` of any page that is not an absolute `https://` URL, which link previews ignore), each with its fix. They are warnings: nothing is blocked, and drobek adds nothing to an app's pages. An app fresh from a template has the first two until the agent adds them.
+
 ### Changed
 - **CI builds the production image in its own job** (NSO-416): the e2e job built the image, ran the suite against it and pushed it within one 10-minute limit, and a slow runner cancelled it during the push. A new `image` job builds the image and hands it to the e2e job as a workflow artifact (kept for a day); the e2e job loads it, runs the suite and pushes the image it tested. Both keep the 10-minute limit.
 - **The README and the MCP Registry entry describe drobek as open-source vibe coding hosting** (NSO-417): the README names it as a self-hostable alternative to Lovable, Bolt.new and v0 for people who already use an agent, and says a Claude artifact moves over unchanged.

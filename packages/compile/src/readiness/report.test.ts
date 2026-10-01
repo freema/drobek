@@ -4,8 +4,9 @@ import { READINESS_CHECKS } from './checks/index.js';
 import { DEFAULT_READINESS_LIMITS, readinessLimitsFromEnv, readinessReport } from './report.js';
 import type { ReadinessCheck } from './types.js';
 
-const titled = new Map([['index.html', '<html><head><title>App</title></head></html>']]);
-const untitled = new Map([['index.html', '<html><head></head></html>']]);
+const HEAD = '<meta name="description" content="An app."><link rel="icon" href="/favicon.svg">';
+const titled = new Map([['index.html', `<html><head><title>App</title>${HEAD}</head></html>`]]);
+const untitled = new Map([['index.html', `<html><head>${HEAD}</head></html>`]]);
 
 const fixed = (id: string, findings: { code: string; file?: string; line?: number }[], extra: Partial<ReadinessCheck> = {}): ReadinessCheck => ({
   id,
@@ -43,6 +44,13 @@ describe('readinessReport', () => {
     expect(report.warnings).toEqual([
       expect.objectContaining({ code: 'missing_title', file: 'index.html', line: 1, hint: errorHint('missing_title') }),
     ]);
+  });
+
+  it('warns about a page without a description or a favicon, after the title', async () => {
+    const report = await readinessReport({ files: new Map([['index.html', '<html><head></head><body></body></html>']]) });
+    expect(report.ready).toBe(true);
+    expect(report.warnings.map((w) => w.code)).toEqual(['missing_title', 'missing_description', 'missing_favicon']);
+    expect(report.warnings[2].hint).toBe(errorHint('missing_favicon'));
   });
 
   it('orders warnings by check, then file and line — the same input gives the same report', async () => {

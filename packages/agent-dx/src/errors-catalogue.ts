@@ -318,6 +318,27 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     fix: 'Add `<title>App name</title>` inside `<head>` of index.html (the app\'s own name, not "Vite App") and write again.',
   },
   {
+    code: 'missing_description',
+    surface: 'readiness.warnings[] (write_files, publish, dashboard app page)',
+    meaning:
+      'index.html has no <meta name="description"> in its head, or an empty one (a description meta in the body does not count): search results and link previews show text picked from the page, or none, instead of a sentence about what the app does. The version still compiles and can be published.',
+    fix: 'Add `<meta name="description" content="One sentence: what the app does.">` inside `<head>` of index.html and write again; for link previews add og:title, og:description, og:type, og:url and og:image metas too.',
+  },
+  {
+    code: 'missing_favicon',
+    surface: 'readiness.warnings[] (write_files, publish, dashboard app page)',
+    meaning:
+      'index.html links no icon in its head (<link rel="icon"> or rel="shortcut icon"; an apple-touch-icon alone is not a favicon) and the version has no favicon.ico at its root: browser tabs and bookmarks show a generic icon, and the browser\'s own request for /favicon.ico gets a 404 (get_logs kind "requests"). Uploaded assets are not part of the version\'s files: an uploaded favicon.ico counts only when index.html links it.',
+    fix: 'Write an SVG icon with write_files (`favicon.svg`) and add `<link rel="icon" href="/favicon.svg" type="image/svg+xml">` to the head of index.html. A PNG or ICO goes up with create_asset_upload and is linked the same way (`<link rel="icon" href="/favicon.ico">`).',
+  },
+  {
+    code: 'og_image_not_absolute',
+    surface: 'readiness.warnings[] (write_files, publish, dashboard app page)',
+    meaning:
+      'An og:image or twitter:image <meta> of an HTML page is not an absolute https:// URL — a relative path (/og.png), a protocol-relative //host/… URL, http:// or a data: URI. Social networks and chat apps fetch the preview image from the URL exactly as written and ignore anything else, so the shared link shows no image.',
+    fix: 'Use the full production address: `<meta property="og:image" content="https://<slug>.<APPS_DOMAIN>/og.png">` (the published_url + the path, or the primary custom domain when the app has one) — a PNG or JPEG of about 1200×630 uploaded with create_asset_upload (link previews do not render SVG), live on production after the next publish. No image → remove the meta: og:title and og:description still give a text preview.',
+  },
+  {
     code: 'data_public_write_no_schema',
     surface: 'readiness.warnings[] (write_files, publish, dashboard app page)',
     meaning:
