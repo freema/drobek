@@ -4,6 +4,7 @@ import { oauthAccessTokens, oauthAuthorizationCodes, oauthRefreshTokens, users }
 import { createClient } from './clients.server.js';
 import { issueAuthCode } from './codes.server.js';
 import { listConnections, revokeConnection } from './connections.server.js';
+import { REFRESH_RETRY_GRACE_MS } from './constants.js';
 import { createDbOAuthStore, type OAuthStore } from './store.server.js';
 import { issueAccessAndRefresh, rotateRefreshToken, validateAccessToken } from './tokens.server.js';
 import { freshDb, type TestDb } from './test/db.js';
@@ -162,7 +163,7 @@ describe('OAuth connections', () => {
     );
     const rot = await rotateRefreshToken(first.refreshToken, store);
     expect(rot.ok).toBe(true);
-    const reuse = await rotateRefreshToken(first.refreshToken, store);
+    const reuse = await rotateRefreshToken(first.refreshToken, store, Date.now() + REFRESH_RETRY_GRACE_MS + 1);
     expect(reuse).toMatchObject({ ok: false, error: 'invalid_grant', reuse: true });
     const successor = (rot as { refreshToken: string }).refreshToken;
     expect(await rotateRefreshToken(successor, store)).toMatchObject({ ok: false });

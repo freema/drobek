@@ -14,6 +14,16 @@ export const ACCESS_TTL_SEC = Math.floor(ACCESS_TTL_MS / 1000);
 /** Refresh token: 30 days (rotated on every use). */
 export const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
+/**
+ * A used refresh token presented again within this long of its use (and of
+ * every later use along its rotation chain) is a client retry — a lost
+ * response, or sessions sharing one stored token — not reuse: the lineage's
+ * unused tail is rotated for it instead of revoking the lineage.
+ */
+export const REFRESH_RETRY_GRACE_MS = 60_000;
+/** Most rotation links a retry follows from the presented token to the tail; a longer chain is reuse. */
+export const REFRESH_RETRY_MAX_HOPS = 10;
+
 // ── Client metadata caps — DCR bodies and CIMD documents ─────────
 
 /** Longest client_name we store/show on the consent screen. */
