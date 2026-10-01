@@ -93,6 +93,7 @@ import type {
   SyncSourceState,
 } from './contract.js';
 import { asObject, asPending, readConfigRow, readConfigRows, withLockedConfig, type PendingChange } from './configs.server.js';
+import { installModuleEmailTransport } from './email-transport-slot.js';
 import { assertSignInSender, capEmailText, emailKind, redactAddresses, resolveRecipients, sanitizeSubject } from './email.js';
 import { CORE_ERROR_CODES, ModuleError, isModuleError, issuePaths, moduleNotEnabled, moduleRequiresNotEnabled, skillHint } from './errors.js';
 import { CORE_LIMITS, createLimitsProvider, moduleEnabledLimit, moduleEnabledLimitName, type CatalogueLimit, type LimitsProvider } from './limits.js';
@@ -202,7 +203,7 @@ export function memoryRateLimiter(now: () => number = Date.now): RateLimiter & {
   return fn;
 }
 
-/** Plain-text mail through the operator's transport (@drobek/email: SMTP or Resend per EMAIL_TRANSPORT — the transport of the login codes too). */
+/** Plain-text mail through the operator's transport (@drobek/email: SMTP, Resend or a module transport per EMAIL_TRANSPORT — the transport of the login codes too). */
 export function smtpEmailTransport(log: Logger, env: NodeJS.ProcessEnv = process.env): EmailTransport {
   return {
     async send({ to, subject, text, fromName, replyTo, platform }) {
@@ -2248,6 +2249,7 @@ export async function loadModuleRuntime(opts: LoadRuntimeOptions = {}): Promise<
     ? { modules: checkModuleSet(opts.modules, env, log), origins: opts.origins ?? {} }
     : await loadModuleSet(env, { ...opts, log });
   const authority = endUserAuthorityOf(modules);
+  installModuleEmailTransport(modules, env, log);
 
   if (env.DROBEK_MIGRATE_ON_START !== '0') {
     const migrate =

@@ -1,6 +1,7 @@
 /**
- * Send one message through the operator's transport — SMTP (nodemailer) or
- * Resend (HTTP API), chosen by EMAIL_TRANSPORT (transport.server.ts).
+ * Send one message through the operator's transport — SMTP (nodemailer),
+ * Resend (HTTP API) or a module's transport, chosen by EMAIL_TRANSPORT
+ * (transport.server.ts).
  * EMAIL_FROM is always the sender address (SPF/DKIM belong to the operator's
  * domain; with Resend it must be on a domain verified there). A caller may
  * set a display NAME for the sender and a Reply-To; both are passed as
@@ -12,9 +13,10 @@
  * RESEND_API_KEY is always an error (the server refuses to start that way).
  */
 import type { SendMailOptions } from 'nodemailer';
+import { sendViaModuleTransport } from './module-transport.server.js';
 import { sendViaResend } from './resend.server.js';
 import { getEmailFrom, getSmtpTransport, smtpConfigured } from './smtp.server.js';
-import { emailTransportKind } from './transport.server.js';
+import { emailTransportId, emailTransportKind } from './transport.server.js';
 
 export interface OutgoingEmail {
   /** One address (one message per recipient: recipients never see each other). */
@@ -70,8 +72,13 @@ export function messageFor(mail: OutgoingEmail, env: NodeJS.ProcessEnv = process
 
 /** Deliver `mail`; 'not_configured' when SMTP is not set up in dev (nothing was sent). */
 export async function sendEmail(mail: OutgoingEmail, env: NodeJS.ProcessEnv = process.env): Promise<'sent' | 'not_configured'> {
-  if (emailTransportKind(env) === 'resend') {
+  const kind = emailTransportKind(env);
+  if (kind === 'resend') {
     await sendViaResend(mail, fromHeader(mail.fromName, env), env);
+    return 'sent';
+  }
+  if (kind === 'module') {
+    await sendViaModuleTransport(mail, fromHeader(mail.fromName, env), emailTransportId(env));
     return 'sent';
   }
   if (!smtpConfigured(env)) {

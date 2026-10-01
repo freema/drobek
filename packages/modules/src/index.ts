@@ -127,6 +127,16 @@ export {
   type AuthSignInEvent,
   type AuthSignedInObserver,
 } from './auth-provider.js';
+export { EMAIL_TRANSPORT_SLOT, defineEmailTransport, emailTransportSchema, selectEmailTransport } from './email-transport-slot.js';
+export {
+  EMAIL_SEND_ERROR_CODES,
+  EMAIL_TRANSPORT_API_VERSION,
+  EmailSendError,
+  type EmailSendErrorCode,
+  type EmailTransportContext,
+  type EmailTransportMessage,
+  type ModuleEmailTransport,
+} from '@drobek/email';
 export { CORE_ERROR_CODES, MODULE_ERROR_CODES, ModuleError, isModuleError, moduleNotEnabled, skillHint, issuePaths, type ModuleErrorBody, type ModuleErrorCode } from './errors.js';
 export { RULE_TOKENS, decideAccess, isValidRule, parseRule, ruleIsPublic } from './rules.js';
 /** Per-client-IP bucket keys for a module's own per-IP limits (null = no resolved IP → skip it). */
