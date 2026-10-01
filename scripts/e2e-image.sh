@@ -3,8 +3,9 @@
 # — what CI runs, reproducible locally with `task e2e:image`:
 #
 #   1. render the Caddyfile with the image's own caddy-config CLI (tls internal)
-#   2. pack examples/drobek-module-acme-crm and install it into the fresh
-#      modules_data volume with scripts/selfhost-module.sh (task
+#   2. pack examples/drobek-module-acme-crm and the operator-only fixture
+#      tests-e2e/fixtures/drobek-module-ops-probe and install both into the
+#      fresh modules_data volume with scripts/selfhost-module.sh (task
 #      selfhost:module:add); docker-compose.e2e.yaml up from that image:
 #      postgres, redis, mailpit, proxy-echo, drobek (migrates itself on
 #      start), caddy
@@ -66,16 +67,20 @@ docker run --rm \
   "$DROBEK_IMAGE" node node_modules/@drobek/core/dist/cli/caddy-config.js > .caddy/Caddyfile.e2e
 
 # 2. A fresh stack from the image (a clean DB → every migration runs on boot),
-#    with the external example module installed the way an operator installs
-#    one: packed, then `task selfhost:module:add` over this stack's
-#    modules_data volume (DROBEK_MODULES in docker-compose.e2e.yaml lists it).
+#    with the external example module and the operator-only fixture installed
+#    the way an operator installs one: packed, then `task selfhost:module:add`
+#    over this stack's modules_data volume (DROBEK_MODULES in
+#    docker-compose.e2e.yaml lists both).
 docker compose down -v --remove-orphans >/dev/null 2>&1 || true
 pnpm --filter drobek-module-acme-crm pack --pack-destination "$WORK" >/dev/null
 MODULE_TGZ="$(ls "$WORK"/drobek-module-acme-crm-*.tgz)"
+npm pack --loglevel=warn ./tests-e2e/fixtures/drobek-module-ops-probe --pack-destination "$WORK" >/dev/null
+FIXTURE_TGZ="$(ls "$WORK"/drobek-module-ops-probe-*.tgz)"
 MODULE_ENV="$WORK/module.env"
 (umask 077 && printf 'DROBEK_IMAGE=%s\nDROBEK_MASTER_KEY=%s\nTLS_ASK_TOKEN=%s\nLIMITS_PROVIDER_SECRET=%s\n' "$DROBEK_IMAGE" "$DROBEK_MASTER_KEY" "$TLS_ASK_TOKEN" "$LIMITS_PROVIDER_SECRET" > "$MODULE_ENV")
 export E2E_MODULE_REINSTALL="ENV_FILE='$MODULE_ENV' SELFHOST_COMPOSE_FILE='$COMPOSE_FILE' ./scripts/selfhost-module.sh add '$MODULE_TGZ'"
 sh -c "$E2E_MODULE_REINSTALL"
+ENV_FILE="$MODULE_ENV" SELFHOST_COMPOSE_FILE="$COMPOSE_FILE" ./scripts/selfhost-module.sh add "$FIXTURE_TGZ"
 docker compose up -d --wait --wait-timeout 300
 
 # 3. Caddy's local root CA → Node's trust store for this run only.

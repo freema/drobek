@@ -431,6 +431,16 @@ run `@smoke` + `@local` and tear everything down. `DROBEK_IMAGE=…` skips the
 build, `E2E_KEEP=1` keeps the stack, extra args go to Playwright
 (`task e2e:image -- tests/mcp-loop.spec.ts`).
 
+Both stacks install two external modules the way an operator does:
+`examples/drobek-module-acme-crm` and the operator-only test fixture
+`tests-e2e/fixtures/drobek-module-ops-probe` (`task module:example` and
+`task module:fixture` for the dev stack, `scripts/e2e-image.sh` for the image
+flow). The fixture is the error reporter of both (`ERROR_REPORTER=capture`:
+reports land on the e2e's `proxy-echo`, where the specs read them back) and
+the dev stack's e-mail transport (`EMAIL_TRANSPORT=relay`: every message goes
+to Mailpit over its HTTP API); the image flow keeps the built-in SMTP, and the
+specs that need the relay skip there.
+
 ## Versions and upgrades
 
 drobek follows semantic versioning; while it is at 0.x, a minor release may

@@ -161,6 +161,10 @@ const config: KnipConfig = {
       // (`node tests-e2e/proxy-echo.mjs`), selfhost-rehearsal.mjs by
       // scripts/selfhost-rehearsal.sh.
       entry: ['proxy-echo.mjs', 'selfhost-rehearsal.mjs'],
+      // fixtures/ holds an external module package the e2e stacks pack and
+      // install into DROBEK_MODULES_DIR (`task module:fixture`,
+      // scripts/e2e-image.sh); never imported.
+      ignore: ['fixtures/**'],
     },
   },
 
