@@ -81,8 +81,16 @@ describe('renderBriefing', () => {
   });
 
   it('renders the live limits it is given', () => {
-    const live = renderBriefing({ limits: { maxFiles: 50, maxFileBytes: 64 * 1024, maxTotalBytes: 2 * 1024 * 1024, timeoutMs: 5000 } });
+    const live = renderBriefing({
+      limits: { maxFiles: 50, maxFileBytes: 64 * 1024, maxTotalBytes: 2 * 1024 * 1024, timeoutMs: 5000, maxRequestBytes: 4 * 1024 * 1024 },
+    });
     expect(live).toContain('50 files, 64 KiB per file, 2 MiB in total; a build may take 5 s');
+    expect(live).toContain('one MCP request of at most 4 MiB');
+  });
+
+  it('states the largest write_files request and what to do over it', () => {
+    expect(b).toContain('One write_files call travels as one MCP request of at most 10 MiB (the JSON, escaping included)');
+    expect(b).toContain('(HTTP 413) and nothing is written. Split a big write into several calls, or send `edits` instead of whole files.');
   });
 
   it('explains installing an app on a home screen with rules the server enforces', () => {

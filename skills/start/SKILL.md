@@ -119,8 +119,8 @@ Add a package as a pinned esm.sh URL, e.g. `"date-fns": "https://esm.sh/date-fns
 - Paths app-relative (`src/App.tsx`), no `/` prefix, no `..`. Text files only: .tsx .ts .jsx .js
   .mjs .css .json .html .txt .md .svg .webmanifest. Video, audio, images, fonts: `create_asset_upload`
   (an upload URL, never base64) → the preview serves it at `/<path>`, production after `publish`.
-- 1–20 changes per write; `reasoning` ≤ 300 chars. Per version (defaults; the briefing has
-  this server's): 200 files, 512 KiB per file, 5 MiB total, 10 s build.
+- 1–20 changes per write, one write ≤ 10 MiB as JSON (bigger → HTTP 413: split it or send `edits`); `reasoning`
+  ≤ 300 chars. Per version (defaults; the briefing has this server's): 200 files, 512 KiB per file, 5 MiB total, 10 s build.
 - Secrets in files → the write is refused (`secret_in_source`); the owner sets secrets in the drobek
   dashboard. Never ask for their values. Lease: a write holds the app for 3 minutes (renewed per write).
 - Hosts: `<slug>--preview.<APPS_DOMAIN>` follows every write that compiled; `<slug>.<APPS_DOMAIN>`

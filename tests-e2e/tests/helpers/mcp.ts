@@ -172,6 +172,8 @@ export interface McpClient {
   transport: StreamableHTTPClientTransport;
   /** The signed-in user's email (the token subject). */
   email: string;
+  /** The OAuth access token the client connected with (for raw `/mcp` requests). */
+  token: string;
   /** The user's PERSONAL workspace slug (from list_apps) — where specs seed apps. */
   workspace: string;
   /** Every workspace the user belongs to (from list_apps). */
@@ -222,6 +224,7 @@ export async function mcpClient(
     client,
     transport,
     email,
+    token: tok.body.access_token as string,
     workspace: (personal as ListedWorkspace).slug,
     workspaces,
   };

@@ -29,6 +29,7 @@ export {
   type ToolPrincipal,
 } from './context.js';
 export { TOOL_ERROR_CODES, ToolError, type ToolErrorCode } from './errors.js';
+export { mcpMaxBodyBytes } from './request-limit.js';
 export type { AssetDeps } from './assets.js';
 export {
   LEASE_KEY_PREFIX,

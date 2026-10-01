@@ -50,8 +50,9 @@ export interface ServerAppOptions {
  *     read), so they sit before the Origin check — `curl -T` sends no Origin;
  *  3. the Origin check (CSRF) for every mutating dashboard request;
  *  4. health/version, Caddy's TLS `ask` endpoint (token-guarded,
- *     internal network only, blocked by Caddy on every public site), then `/mcp` (with `express.json()` scoped to it, because
- *     React Router actions must read the raw body), then React Router.
+ *     internal network only, blocked by Caddy on every public site), then `/mcp` (it parses its own
+ *     JSON bodies; no parser runs app-wide, because React Router actions must read the raw body),
+ *     then React Router.
  */
 export function createServerApp(opts: ServerAppOptions): Express {
   const app = express();
@@ -71,9 +72,6 @@ export function createServerApp(opts: ServerAppOptions): Express {
   });
   app.get(TLS_ASK_PATH, opts.tlsAsk ?? (createTlsAskHandler() as RequestHandler));
 
-  // Cap the MCP body (write_files batches + JSON-RPC envelope headroom) so an
-  // abusive oversized body is rejected by the parser.
-  app.use('/mcp', express.json({ limit: '512kb' }));
   // RFC 9728 discovery + the Bearer-gated Streamable HTTP endpoint.
   mountMcpResource(app);
 

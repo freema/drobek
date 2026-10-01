@@ -79,7 +79,8 @@ The procedure (tool → what to check):
    the briefing (read its limits). `html` for a page, `react-ts` for a component.
 3. Text files (`.html .js .mjs .css .json .svg .txt .md .jsx .tsx`) with
    `write_files({ app_id, files, reasoning })`, content and paths unchanged,
-   1–20 per call (split bigger folders into several calls).
+   1–20 per call and at most 10 MiB of JSON per call (split bigger folders into
+   several calls).
 4. Every binary (video, audio, image, font) with
    `create_asset_upload({ app_id, path, size, content_type? })` →
    `{ upload_url, expires_at, max_bytes, asset_path, curl }`. Run the `curl -T`
