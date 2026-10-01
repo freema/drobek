@@ -46,7 +46,10 @@ const host = defineModule({
   version: '1.4.0',
   contract: '^1.1',
   skill: { useWhen: 'you greet people', markdown: '# host' },
-  slots: { 'host.greeter': { schema: z.object({ id: z.string(), text: z.string() }), unique: 'id', description: 'a way to greet someone' } },
+  slots: {
+    'host.greeter': { schema: z.object({ id: z.string(), text: z.string() }), unique: 'id', description: 'a way to greet someone' },
+    'host.courier': { schema: z.object({ id: z.string() }), unique: 'id', description: 'where the server sends greetings', operatorOnly: true },
+  },
   limits: [
     { env: 'HOST_GREETINGS_PER_DAY', default: 100, meaning: 'Greetings per app per day' },
     { env: 'HOST_GREETERS_MAX', default: 5, meaning: 'Greeters per app' },
@@ -73,6 +76,8 @@ const sentinel = defineModule({
   configDefaults: {},
   contributes: { [ERROR_REPORTER_SLOT]: defineErrorReporter({ id: 'sentinel', label: 'Sentinel', report: () => {} }) },
 });
+// An operator-only module contributing to an operator slot of a module every member sees.
+const courier = defineModule({ name: 'courier', version: '1.0.0', configSchema: z.object({}), configDefaults: {}, contributes: { 'host.courier': { id: 'pigeon' } } });
 
 let rt: ModuleRuntime;
 
@@ -80,7 +85,7 @@ beforeAll(async () => {
   rt = await loadModuleRuntime({
     env: { APPS_DOMAIN: 'apps.example', PUBLIC_APP_URL: 'https://drobek.example', HOST_GREETERS_MAX: '7' },
     log: noopLogger,
-    modules: [host, pirate, company, sentinel],
+    modules: [host, pirate, company, sentinel, courier],
     origins: { company: { source: 'dir', path: '/data/modules/company' } },
     skillsDir: null,
     deps: { rateLimit: memoryRateLimiter() },
@@ -128,7 +133,10 @@ describe('the workspace Modules page', () => {
       availability: 'default',
       requires: [],
       useWhen: 'you greet people',
-      slots: [{ name: 'host.greeter', description: 'a way to greet someone', unique: 'id', contributions: [{ module: 'pirate', key: 'arr' }] }],
+      slots: [
+        { name: 'host.greeter', description: 'a way to greet someone', unique: 'id', contributions: [{ module: 'pirate', key: 'arr' }] },
+        { name: 'host.courier', description: 'where the server sends greetings', unique: 'id', contributions: [] },
+      ],
       contributes: [],
       limits: [
         { name: 'HOST_GREETINGS_PER_DAY', default: 100, value: 1000, meaning: 'Greetings per app per day' },
@@ -159,13 +167,19 @@ describe('the workspace Modules page', () => {
     await expect(load('other')).rejects.toMatchObject({ status: 404 });
   });
 
-  it('an operator-only module is listed for a super-admin only, marked operatorOnly', async () => {
+  it('an operator-only module is listed for a super-admin only, marked operatorOnly — also as a slot contributor', async () => {
     role.current = 'workspace-admin';
-    expect((await load()).modules.map((m) => m.name)).toEqual(['host', 'pirate', 'company']);
+    const member = await load();
+    expect(member.modules.map((m) => m.name)).toEqual(['host', 'pirate', 'company']);
+    expect(member.modules[0].slots.find((s) => s.name === 'host.courier')?.contributions).toEqual([]);
+    expect(JSON.stringify(member)).not.toContain('"module":"courier"');
+    expect(JSON.stringify(member)).not.toContain('pigeon');
     role.superAdmin = true;
     try {
       const d = await load();
-      expect(d.modules.map((m) => m.name)).toEqual(['host', 'pirate', 'company', 'sentinel']);
+      expect(d.modules.map((m) => m.name)).toEqual(['host', 'pirate', 'company', 'sentinel', 'courier']);
+      expect(d.modules[0].slots.find((s) => s.name === 'host.courier')?.contributions).toEqual([{ module: 'courier', key: 'pigeon' }]);
+      expect(d.modules[4]).toMatchObject({ operatorOnly: true, contributes: [{ slot: 'host.courier', host: 'host', key: 'pigeon' }] });
       expect(d.modules[3]).toMatchObject({
         operatorOnly: true,
         useWhen: '',

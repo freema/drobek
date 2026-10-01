@@ -334,7 +334,7 @@ export interface ModuleFacts {
   contract: string | null;
   availability: ModuleAvailability;
   requires: string[];
-  /** Its slots: name, what a contribution does, the unique key, and the active modules contributing (with their unique value). */
+  /** Its slots: name, what a contribution does, the unique key, and the active modules contributing (with their unique value; operator-only ones for operators only). */
   slots: { name: string; description: string; unique: string | null; contributions: { module: string; key: string | null }[] }[];
   /** Its contributions to other modules' slots: the slot, the host module and the contribution's unique value (null without one). */
   contributes: { slot: string; host: string; key: string | null }[];
@@ -715,10 +715,19 @@ export class ModuleRuntime {
       .map((m) => ({ module: m.name, errors: m.errors!.map((e) => ({ code: e.code, meaning: e.meaning, fix: e.fix })) }));
   }
 
-  /** The facts of one active module (see ModuleFacts), or null when no such module is active. */
-  moduleFacts(name: string): ModuleFacts | null {
+  /**
+   * The facts of one active module (see ModuleFacts), or null when no such
+   * module is active. Its slots list the operator-only contributors only
+   * with `operatorOnly: true` (the super-admin's workspace Modules page):
+   * skill_info, the module page and every other member never see them.
+   */
+  moduleFacts(name: string, opts: { operatorOnly?: boolean } = {}): ModuleFacts | null {
     const m = this.byName.get(name);
     if (!m) return null;
+    const shown = (module: string): boolean => {
+      const c = this.byName.get(module);
+      return c !== undefined && (opts.operatorOnly === true || isAppFacing(c));
+    };
     const hostOf = (slot: string) => this.modules.find((h) => h.slots && Object.prototype.hasOwnProperty.call(h.slots, slot));
     const contributes: ModuleFacts['contributes'] = [];
     for (const [slot, list] of this.slotContributions) {
@@ -739,7 +748,9 @@ export class ModuleRuntime {
         name: slot,
         description: def.description,
         unique: def.unique ?? null,
-        contributions: (this.slotContributions.get(slot) ?? []).map((c) => ({ module: c.module, key: uniqueKeyOf(c.value, def.unique) })),
+        contributions: (this.slotContributions.get(slot) ?? [])
+          .filter((c) => shown(c.module))
+          .map((c) => ({ module: c.module, key: uniqueKeyOf(c.value, def.unique) })),
       })),
       contributes,
       limits: (m.limits ?? []).map((l) => ({ name: l.env, default: this.deps.limits.defaults()[l.env] ?? l.default, meaning: l.meaning })),
@@ -751,9 +762,9 @@ export class ModuleRuntime {
     };
   }
 
-  /** The facts of every active module (operator-only ones included), in DROBEK_MODULES order. */
-  moduleFactsList(): ModuleFacts[] {
-    return this.modules.map((m) => this.moduleFacts(m.name)!);
+  /** The facts of every active module (operator-only ones included), in DROBEK_MODULES order; `opts` as moduleFacts. */
+  moduleFactsList(opts: { operatorOnly?: boolean } = {}): ModuleFacts[] {
+    return this.modules.map((m) => this.moduleFacts(m.name, opts)!);
   }
 
   // ── per-workspace availability ──
