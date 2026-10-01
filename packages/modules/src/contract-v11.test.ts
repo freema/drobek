@@ -279,6 +279,11 @@ describe('availability, dashboard.editor, hooks.onAppDelete', () => {
     expect(() => validateModule(defineModule({ ...base, name: 'mm', availability: 'maybe' as never }))).toThrow(/availability must be/);
     expect(() => validateModule(defineModule({ ...base, name: 'mm', dashboard: { editor: 'upstreams' } }))).not.toThrow();
     expect(() => validateModule(defineModule({ ...base, name: 'mm', dashboard: { editor: 'grid' as never } }))).toThrow(/dashboard\.editor must be one of collections, upstreams/);
+    expect(() => validateModule(defineModule({ ...base, name: 'mm', dashboard: { title: 'Scheduled imports', description: 'Works like a cron.' } }))).not.toThrow();
+    for (const title of ['', ' Padded', 'Two\nlines', 'x'.repeat(61), 42 as never]) {
+      expect(() => validateModule(defineModule({ ...base, name: 'mm', dashboard: { title } })), JSON.stringify(title)).toThrow(/dashboard\.title must be one line of 1–60 characters/);
+    }
+    expect(() => validateModule(defineModule({ ...base, name: 'mm', dashboard: { description: 'y'.repeat(201) } }))).toThrow(/dashboard\.description must be one line of 1–200 characters/);
     expect(() => validateModule(defineModule({ ...base, name: 'mm', hooks: { onAppDelete: 'x' as never } }))).toThrow(/hooks\.onAppDelete must be a function/);
   });
 });
@@ -296,7 +301,7 @@ describe('the runtime (contributions, hooks, errors, skill_info, the dashboard v
     ...base,
     name: 'watcher',
     availability: 'opt-in',
-    dashboard: { editor: 'collections' },
+    dashboard: { editor: 'collections', title: 'Watch list', description: 'Keeps an eye on the app.' },
     hooks: {
       onAppCreate: (a: HookApp, s: ModuleServices) => void seen.push({ hook: 'create', app: a, greeters: s.contributions<Greeter>('host.greeter').map((g) => g.id) }),
       onAppDelete: (a: HookApp, s: ModuleServices) => void seen.push({ hook: 'delete', app: a, greeters: s.contributions<Greeter>('host.greeter').map((g) => g.id) }),
@@ -390,9 +395,14 @@ describe('the runtime (contributions, hooks, errors, skill_info, the dashboard v
     expect(rt.errorCatalogue()).toEqual([{ module: 'host', errors: host.errors }]);
   });
 
-  it('the dashboard view carries availability and the declared editor', async () => {
-    expect(await rt.moduleView(app, 'watcher')).toMatchObject({ availability: 'opt-in', editor: 'collections' });
-    expect(await rt.moduleView(app, 'host')).toMatchObject({ availability: 'default', editor: null });
+  it('the dashboard view carries availability, the declared editor, title and description', async () => {
+    expect(await rt.moduleView(app, 'watcher')).toMatchObject({
+      availability: 'opt-in',
+      editor: 'collections',
+      title: 'Watch list',
+      description: 'Keeps an eye on the app.',
+    });
+    expect(await rt.moduleView(app, 'host')).toMatchObject({ availability: 'default', editor: null, title: null, description: null });
   });
 
   it('moduleFacts: version, source, contract, requires, slots with their contributors, contributions, limits, errors', () => {
@@ -418,9 +428,11 @@ describe('the runtime (contributions, hooks, errors, skill_info, the dashboard v
       limits: [],
       errors: host.errors,
       editor: null,
+      title: null,
+      description: null,
     });
     expect(rt.moduleFacts('pirate')).toMatchObject({ slots: [], contributes: [{ slot: 'host.greeter', host: 'host', key: 'pirate' }] });
-    expect(rt.moduleFacts('watcher')).toMatchObject({ availability: 'opt-in', editor: 'collections', contributes: [] });
+    expect(rt.moduleFacts('watcher')).toMatchObject({ availability: 'opt-in', editor: 'collections', title: 'Watch list', contributes: [] });
     expect(rt.moduleFacts('nope')).toBeNull();
     expect(rt.moduleFactsList().map((f) => f.name)).toEqual(['formal', 'failing', 'host', 'watcher', 'pirate']);
     // Never a path on disk: the facts are plain names and versions.

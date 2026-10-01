@@ -342,6 +342,10 @@ export interface ModuleFacts {
   errors: ModuleErrorDoc[];
   /** The dedicated dashboard editor its config declares it fits (`dashboard.editor`), null for the generic form. */
   editor: ModuleDashboardEditor | null;
+  /** Its name for people (`dashboard.title`), null without one. */
+  title: string | null;
+  /** Its one line for the app's owner (`dashboard.description`), null without one. */
+  description: string | null;
 }
 
 /** A slot contribution's unique value as text (null when the slot has no unique key or the value is missing). */
@@ -513,6 +517,9 @@ export interface ModuleDashboardView {
   availability: ModuleAvailability;
   /** The dedicated config editor the module declares (`dashboard.editor`), or null for the generic form. */
   editor: ModuleDashboardEditor | null;
+  /** Its name for people (`dashboard.title`) and its one line for the owner (`dashboard.description`), null without. */
+  title: string | null;
+  description: string | null;
   /** The module's facts for the page's "About this module": where it came from, its contract range, requires, slots, contributions and error codes. */
   source: ModuleSource;
   contract: string | null;
@@ -727,6 +734,8 @@ export class ModuleRuntime {
       limits: (m.limits ?? []).map((l) => ({ name: l.env, default: this.deps.limits.defaults()[l.env] ?? l.default, meaning: l.meaning })),
       errors: (m.errors ?? []).map((e) => ({ code: e.code, meaning: e.meaning, fix: e.fix })),
       editor: m.dashboard?.editor ?? null,
+      title: m.dashboard?.title ?? null,
+      description: m.dashboard?.description ?? null,
     };
   }
 
@@ -1367,6 +1376,8 @@ export class ModuleRuntime {
       confirms: Boolean(m.confirmRequired),
       availability: m.availability ?? 'default',
       editor: m.dashboard?.editor ?? null,
+      title: m.dashboard?.title ?? null,
+      description: m.dashboard?.description ?? null,
       source: facts.source,
       contract: facts.contract,
       requires: facts.requires,
