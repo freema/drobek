@@ -23,10 +23,10 @@ import { personalWorkspaceOf, seedApp, workspaceIdBySlug } from './helpers/seed'
  * scope checkboxes, NO workspace choice) → token → Bearer MCP call — plus the
  * security negatives: unauthenticated 401, a foreign `resource` → invalid_target,
  * RFC 9207 `iss` on every authorization response, single-use code, and refresh
- * rotation + reuse detection. The token is USER-bound: list_apps spans every
+ * rotation with a retry. The token is USER-bound: list_apps spans every
  * workspace of the user, and a non-member gets not_found.
  * CIMD, the DCR rate limit, the RS audience check and API keys live in
- * mcp-cimd.spec.ts.
+ * mcp-cimd.spec.ts; refresh reuse in mcp-oauth-refresh.spec.ts.
  */
 
 // A loopback redirect_uri that nothing serves — the browser's cross-origin
@@ -242,7 +242,7 @@ test('MCP OAuth 2.1 end-to-end: discovery → register → consent → token →
   }
 });
 
-test('MCP OAuth negatives: no-token 401, invalid_target, deny, refresh rotation + reuse, burned + replayed code @local', async ({
+test('MCP OAuth negatives: no-token 401, invalid_target, deny, refresh rotation + retry, burned + replayed code @local', async ({
   page,
   request,
 }) => {
@@ -302,7 +302,7 @@ test('MCP OAuth negatives: no-token 401, invalid_target, deny, refresh rotation 
     expect(denied.searchParams.get('code')).toBeNull();
   }
 
-  // --- single-use code + refresh rotation/reuse ---
+  // --- single-use code + refresh rotation/retry ---
   {
     const { verifier, challenge } = pkcePair();
     const code = await consentAndGetCode(page, {
@@ -324,27 +324,19 @@ test('MCP OAuth negatives: no-token 401, invalid_target, deny, refresh rotation 
     expect(rot.body.access_token).toBeTruthy();
     expect(rot.body.refresh_token).not.toBe(first.body.refresh_token);
 
-    // …reusing the OLD refresh token → invalid_grant (reuse detected)…
-    const reuse = await refresh(request, {
+    // …sending the OLD refresh token again within the retry grace (a client
+    // that lost the response) gets a fresh pair from the lineage's tail.
+    // Reuse after the grace is in mcp-oauth-refresh.spec.ts.
+    const retry = await refresh(request, {
       refreshToken: first.body.refresh_token as string,
       clientId,
     });
-    expect(reuse.status).toBe(400);
-    expect(reuse.body.error).toBe('invalid_grant');
-
-    // …and the lineage is burned: the rotated successor is now dead too.
-    const burned = await refresh(request, {
-      refreshToken: rot.body.refresh_token as string,
-      clientId,
+    expect(retry.status).toBe(200);
+    expect(retry.body.refresh_token).not.toBe(rot.body.refresh_token);
+    const live = await rawInitialize(request, {
+      Authorization: `Bearer ${retry.body.access_token}`,
     });
-    expect(burned.status).toBe(400);
-    expect(burned.body.error).toBe('invalid_grant');
-
-    // …as is every access token of the grant.
-    const dead = await rawInitialize(request, {
-      Authorization: `Bearer ${rot.body.access_token}`,
-    });
-    expect(dead.status()).toBe(401);
+    expect(live.status()).toBe(200);
   }
 
   // --- a failed exchange burns the code ---
