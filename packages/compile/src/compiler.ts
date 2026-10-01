@@ -7,6 +7,7 @@ import { limitsFromEnv, type CompileLimits } from './limits.js';
 import { isAllowedExt, normalizeAppPath, TEXT_EXTS, extOf } from './paths.js';
 import { APP_NAMESPACE, SDK_SOURCE_NAMESPACE, virtualFsPlugin, type FailDetail, type VirtualFsState } from './plugin.js';
 import { Semaphore } from './queue.js';
+import { scanReferences } from './references.js';
 import { scanForSecrets } from './secrets.js';
 import type {
   CompileErrorCode,
@@ -98,9 +99,11 @@ export class Compiler {
     const { config, errors: configErrors } = readAppConfig(checked.text);
     if (configErrors.length > 0) return failed(configErrors, started);
 
+    const references = scanReferences({ files: checked.all, text: checked.text, config, servedPaths: opts.servedPaths });
+
     if (Object.keys(config.entries).length === 0) {
       // A plain static app (index.html + assets) has nothing to bundle.
-      return { ok: true, outputs: new Map(), errors: [], warnings: [], inputs: [], durationMs: 0 };
+      return { ok: true, outputs: new Map(), errors: [], warnings: references, inputs: [], durationMs: 0 };
     }
 
     if (!(await this.slots.acquire())) {
@@ -110,7 +113,9 @@ export class Compiler {
       );
     }
     try {
-      return await this.build(checked.all, config, opts, hooks, started);
+      const result = await this.build(checked.all, config, opts, hooks, started);
+      result.warnings.push(...references);
+      return result;
     } finally {
       this.slots.release();
     }

@@ -15,7 +15,11 @@ export type CompileErrorCode =
   /** The build ran longer than `timeoutMs`. */
   | 'timeout'
   /** Waited longer than `queueTimeoutMs` for a compile slot. */
-  | 'busy';
+  | 'busy'
+  /** Warning: a literal same-app path the version does not have (a 404 in the browser). */
+  | 'missing_reference'
+  /** Warning: a literal URL of another origin the app CSP blocks. */
+  | 'blocked_by_csp';
 
 export interface CompileMessage {
   code: CompileErrorCode;
@@ -36,6 +40,7 @@ export interface CompileResult {
   /** Output path (e.g. `main.js`, `main.css`, `assets/logo-HASH.png`) → bytes. */
   outputs: Map<string, Buffer>;
   errors: CompileMessage[];
+  /** esbuild's warnings, then `missing_reference` / `blocked_by_csp` — never a reason to refuse a write. */
   warnings: CompileMessage[];
   /** App paths esbuild actually loaded (always a subset of the input files). */
   inputs: string[];
@@ -72,6 +77,11 @@ export interface CompileOptions {
    * `"beacon": false`. Unset = nothing is added.
    */
   beaconUrl?: string;
+  /**
+   * App paths served besides the version's files — the app's uploaded
+   * assets (`img/hero.jpg`): a reference to one is not a `missing_reference`.
+   */
+  servedPaths?: Iterable<string>;
 }
 
 export type SourceFiles = Map<string, string | Buffer>;

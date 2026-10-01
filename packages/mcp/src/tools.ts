@@ -63,6 +63,7 @@ import {
   getVersion,
   hostConfig,
   lockCategory,
+  listAssets,
   listVersions,
   normalizeGalleryDescription,
   previewUrl,
@@ -492,10 +493,13 @@ async function compileAndStore(
   // The bare `drobek` import → this server's versioned SDK (immutable caching);
   // `drobek/<module>` → that module's inline source, built into the app;
   // every entry loads the error beacon first (drobek.json can opt out).
+  // The app's uploaded assets share its URL space: a reference to one is not missing.
+  const assets = await listAssets(app.id);
   const result = await ctx.deps.compile(sources, {
     sdkUrl: ctx.modules.sdk.url,
     sdkSources: ctx.modules.sdk.inline,
     beaconUrl: ctx.modules.sdk.beacon.url,
+    servedPaths: assets.map((a) => a.name),
   });
   try {
     refuseUnstorable(result);

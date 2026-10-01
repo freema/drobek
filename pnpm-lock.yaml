@@ -1124,6 +1124,9 @@ importers:
       '@drobek/auth':
         specifier: workspace:*
         version: link:../auth
+      '@drobek/compile':
+        specifier: workspace:*
+        version: link:../compile
       '@drobek/core':
         specifier: workspace:*
         version: link:../core

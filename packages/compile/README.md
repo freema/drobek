@@ -35,7 +35,13 @@ const r = await compile(new Map([
    `nodePaths: []`); `drobek` → `/__drobek/sdk.js`; `http(s)://` external (scheme-less `//host` is refused);
    anything else → `unresolved_import` with the exact `drobek.json` line to
    add. Import depth is capped at `COMPILE_MAX_IMPORT_DEPTH` (50).
-5. **Runtime limits**: `COMPILE_CONCURRENCY` (4) builds at once, FIFO queue,
+5. **Reference warnings** (`references.ts`): literal same-app paths the
+   version does not have → `missing_reference`, literal URLs of another
+   origin the app CSP blocks → `blocked_by_csp` (the CSP fetch directives
+   live in `app-csp.ts`; `@drobek/serving` builds its header from them).
+   `compile.warnings` only — they never fail a build. `servedPaths` (the
+   app's uploaded assets) count as present.
+6. **Runtime limits**: `COMPILE_CONCURRENCY` (4) builds at once, FIFO queue,
    waiting longer than `COMPILE_QUEUE_TIMEOUT_MS` (10 s) → `busy`;
    `COMPILE_TIMEOUT_MS` (10 s) → `timeout`. A timed-out build is cancelled on
    its own esbuild context, not via a global `esbuild.stop()`, so concurrent

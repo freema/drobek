@@ -14,6 +14,8 @@ const COMPILE_CODES: Record<CompileErrorCode, true> = {
   invalid_config: true,
   timeout: true,
   busy: true,
+  missing_reference: true,
+  blocked_by_csp: true,
 };
 
 describe('error catalogue coverage', () => {
@@ -24,7 +26,7 @@ describe('error catalogue coverage', () => {
     }
   });
 
-  it('every compile.errors[] code has a catalogue entry', () => {
+  it('every compile.errors[] / compile.warnings[] code has a catalogue entry', () => {
     for (const code of Object.keys(COMPILE_CODES)) expect(errorDoc(code), code).toBeTruthy();
   });
 
