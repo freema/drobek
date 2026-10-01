@@ -5,7 +5,9 @@
 #            drobek-module-counter typechecked, built, tested, packed and
 #            loaded against this checkout's packed public packages
 #            (scripts/check-external-module.mjs).
-#   e2e      build the production image ONCE (Dockerfile `runner`) → run it
+#   image    build the production image ONCE (Dockerfile `runner`) and hand
+#            it to e2e as a docker-load artifact (kept for a day).
+#   e2e      (after image) load that image → run it
 #            with docker-compose.e2e.yaml behind Caddy (tls internal) with
 #            throwaway postgres / redis / mailpit / proxy-echo → the server
 #            migrates the fresh DB on start → /healthz → Playwright @smoke +
@@ -14,7 +16,7 @@
 #            passed is pushed as ghcr.io/freema/drobek:<sha> (main) or
 #            :<sha>-vX.Y.Z (tags): a tag and main on the same commit build
 #            different VERSIONs and must not overwrite each other.
-#   quality, module-compatibility and e2e run in parallel.
+#   quality, module-compatibility and image → e2e run in parallel.
 #   promote  (main and tags, after all three pass) no rebuild — registry-side
 #            tags of the image the e2e job tested and pushed:
 #              main       edge
@@ -127,14 +129,12 @@ jobs:
     name: External consumer
     uses: ./.github/workflows/module-compatibility.yml
 
-  e2e:
-    name: Prod image · compose · e2e (@smoke + @local)
+  image:
+    name: Prod image build
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    permissions:
-      contents: read
-      packages: write # only used by the main-branch / tag push step below
     outputs:
+      short: ${{ steps.sha.outputs.short }}
       stage: ${{ steps.sha.outputs.stage }}
       version: ${{ steps.sha.outputs.version }}
       prerelease: ${{ steps.sha.outputs.prerelease }}
@@ -163,6 +163,52 @@ jobs:
             echo "stage=$short" >> "$GITHUB_OUTPUT"
             echo "prerelease=false" >> "$GITHUB_OUTPUT"
           fi
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build the production image (runner target)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          target: runner
+          # A docker-load tarball for the e2e job, which tests it and on main /
+          # a tag pushes this exact image. amd64 only (v1: no ARM image).
+          platforms: linux/amd64
+          outputs: type=docker,dest=${{ runner.temp }}/drobek-image.tar
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.sha.outputs.short }}
+          build-args: |
+            GIT_SHA=${{ steps.sha.outputs.short }}
+            VERSION=${{ steps.sha.outputs.version }}
+            COMMIT_TIME=${{ steps.sha.outputs.commit_time }}
+          cache-from: type=gha,scope=drobek
+          cache-to: type=gha,scope=drobek,mode=max
+          provenance: false
+          sbom: false
+
+      - name: Upload the image for the e2e job
+        uses: actions/upload-artifact@v4
+        with:
+          name: drobek-image-${{ steps.sha.outputs.short }}
+          path: ${{ runner.temp }}/drobek-image.tar
+          compression-level: 1
+          retention-days: 1
+
+  e2e:
+    name: Prod image · compose · e2e (@smoke + @local)
+    runs-on: ubuntu-latest
+    needs: image
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write # only used by the main-branch / tag push step below
+    outputs:
+      stage: ${{ needs.image.outputs.stage }}
+      version: ${{ needs.image.outputs.version }}
+      prerelease: ${{ needs.image.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
         with:
@@ -198,40 +244,25 @@ jobs:
         if: steps.pw-cache.outputs.cache-hit == 'true'
         run: pnpm -C tests-e2e exec playwright install-deps chromium
 
-      - uses: docker/setup-buildx-action@v3
-
-      - name: Build the production image (runner target)
-        uses: docker/build-push-action@v6
+      - name: Download the image the image job built
+        uses: actions/download-artifact@v4
         with:
-          context: .
-          file: Dockerfile
-          target: runner
-          # Into the local daemon: compose runs it, and on main / a tag this
-          # exact image is pushed. amd64 only (v1: no ARM image).
-          platforms: linux/amd64
-          load: true
-          push: false
-          tags: |
-            ${{ env.IMAGE }}:${{ steps.sha.outputs.short }}
-          build-args: |
-            GIT_SHA=${{ steps.sha.outputs.short }}
-            VERSION=${{ steps.sha.outputs.version }}
-            COMMIT_TIME=${{ steps.sha.outputs.commit_time }}
-          cache-from: type=gha,scope=drobek
-          cache-to: type=gha,scope=drobek,mode=max
-          provenance: false
-          sbom: false
+          name: drobek-image-${{ needs.image.outputs.short }}
+          path: ${{ runner.temp }}
+
+      - name: Load the image into the local daemon
+        run: docker load --input "$RUNNER_TEMP/drobek-image.tar"
 
       - name: e2e against the image (compose up → migrate → @smoke + @local)
         env:
-          DROBEK_IMAGE: ${{ env.IMAGE }}:${{ steps.sha.outputs.short }}
+          DROBEK_IMAGE: ${{ env.IMAGE }}:${{ needs.image.outputs.short }}
         run: ./scripts/e2e-image.sh
 
       - name: Upload the Playwright report
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report-${{ steps.sha.outputs.short }}
+          name: playwright-report-${{ needs.image.outputs.short }}
           path: |
             tests-e2e/playwright-report
             tests-e2e/test-results
@@ -248,8 +279,8 @@ jobs:
       - name: Push the tested image (<sha> | <sha>-vX.Y.Z)
         if: github.ref == 'refs/heads/main' || github.ref_type == 'tag'
         env:
-          SHA: ${{ steps.sha.outputs.short }}
-          STAGE: ${{ steps.sha.outputs.stage }}
+          SHA: ${{ needs.image.outputs.short }}
+          STAGE: ${{ needs.image.outputs.stage }}
         run: |
           [ "$STAGE" = "$SHA" ] || docker tag "$IMAGE:$SHA" "$IMAGE:$STAGE"
           docker push "$IMAGE:$STAGE"

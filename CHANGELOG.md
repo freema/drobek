@@ -1,5 +1,10 @@
 # Changelog — drobek (core)
 
+## Unreleased
+
+### Changed
+- **CI builds the production image in its own job** (NSO-416): the e2e job built the image, ran the suite against it and pushed it within one 10-minute limit, and a slow runner cancelled it during the push. A new `image` job builds the image and hands it to the e2e job as a workflow artifact (kept for a day); the e2e job loads it, runs the suite and pushes the image it tested. Both keep the 10-minute limit.
+
 ## v0.7.3 — 2026-10-01
 
 ### Fixed
