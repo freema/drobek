@@ -158,10 +158,6 @@ httpServer.listen(port, '0.0.0.0', () => {
   log.info('drobek listening', { port, mode: production ? 'production' : 'development' });
 });
 
-// Shutdown: the MCP listen streams (and in dev the HMR sockets) end first —
-// they never finish on their own — then requests in flight get
-// SHUTDOWN_GRACE_MS before the rest is cut; the MCP sessions, jobs and caches
-// stop after the drain.
 let shuttingDown = false;
 async function shutdown(signal: string): Promise<void> {
   if (shuttingDown) return;
