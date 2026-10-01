@@ -1,5 +1,14 @@
 # Changelog — drobek (core)
 
+## Unreleased
+
+### Fixed
+- **Operator-only modules stay hidden as a slot's contributors** (NSO-412): an operator-only module that contributes to a slot of an app-facing module — an e-mail transport under `email`'s `email.transport` — was still named among that slot's contributors, so `skill_info('email')`, the app's `email` module page and the workspace Modules page showed it to agents, app owners and every member. It is left out there now; only a super-admin's workspace Modules page names it, next to its operator-only card.
+
+### Changed
+- **The e2e stacks run an operator-only fixture module** (NSO-412): `tests-e2e/fixtures/drobek-module-ops-probe` (`opsprobe`) is installed into both e2e stacks the way an operator installs a module (`task module:fixture` for `task dev` / `task e2e`, `scripts/e2e-image.sh` for the image flow). It is their error reporter (`ERROR_REPORTER=capture`; reports land on `proxy-echo`, where the specs read them) and the dev stack's e-mail transport (`EMAIL_TRANSPORT=relay`: every message goes to Mailpit over its HTTP API; `EMAIL_TRANSPORT=smtp` sends over SMTP as before). The image flow keeps the built-in SMTP. New specs cover the compile warnings, the scheduled-work briefing, the upstream cap and the hourly registration rate, the `files` and `forms` settings forms, operator-only modules, error reports and a module's e-mail transport.
+- **Workspace packages build and typecheck in parallel** (NSO-411, #76): `pnpm build:packages` and `pnpm typecheck` run through `pnpm -r`; unit tests still run one package at a time.
+
 ## v0.7.0 — 2026-10-01
 
 ### Added
