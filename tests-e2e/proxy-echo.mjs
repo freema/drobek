@@ -1,6 +1,6 @@
 // e2e-only upstream on the compose network (hostname `proxy-echo`, allow-listed
-// via PROXY_ALLOWED_HOSTS): echoes requests as JSON, serves a /redirect the
-// proxy must not follow, mock CIMD documents, a sync feed and the fake limits
+// via PROXY_ALLOWED_HOSTS): echoes requests as JSON, serves redirects the
+// proxy refuses or follows, mock CIMD documents, a sync feed and the fake limits
 // provider. Upstreams may only use ports 80/443, so it also listens on
 // EXTRA_PORTS; the CIMD mock + healthcheck keep PORT (8099).
 import { createHmac } from 'node:crypto';
@@ -52,14 +52,14 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // A redirect to an INTERNAL target — drobek must return this 302 verbatim and
-  // NEVER auto-follow it to the cloud-metadata endpoint.
+  // A redirect to another host (the cloud-metadata endpoint) — drobek refuses it
+  // as upstream_redirect and never follows it.
   if (url.pathname === '/redirect') {
     res.writeHead(302, { location: 'http://169.254.169.254/latest/meta-data/' });
     res.end('redirecting');
     return;
   }
-  // A RELATIVE redirect (relayed) …
+  // A redirect under the upstream's base and allowed prefixes (followed) …
   if (url.pathname === '/redirect/relative') {
     res.writeHead(302, { location: '/echo/next' });
     res.end('redirecting');
