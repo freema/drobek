@@ -1,9 +1,10 @@
 # Changelog — drobek (core)
 
-## Unreleased
+## v0.7.2 — 2026-10-01
 
 ### Fixed
 - **Sync runs and module jobs send a User-Agent** (NSO-413): a call the server makes to an upstream itself (a `sync` run, `ctx.upstreams.fetch` of a module job) went out without a `User-Agent`, and APIs that require one refused it: GitHub's API answered every sync run with HTTP 403. The proxy now sends `User-Agent: drobek (+https://github.com/freema/drobek)` when the caller sent none; a browser's own User-Agent passes as before. Found by the sync canary on drobek.app.
+- **`task module:example`, `module:fixture` and `module:add` install and build the workspace first** (NSO-412): after a pull they installed a module into the dev stack against stale package builds and `node_modules`, and the stack failed to start; they now run `pnpm install --frozen-lockfile` and `pnpm build:packages` before the install.
 
 ## v0.7.1 — 2026-10-01
 
