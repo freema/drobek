@@ -1030,7 +1030,7 @@ without contributions.
 ### Error reporters from modules
 
 Server errors always go to the log (container stdout). A module can also
-send them somewhere else (Sentry, an incident webhook, a log service, …) by
+send them somewhere else (an incident webhook, a log service, …) by
 contributing to the `errors.reporter` slot. Core hosts this slot — there is
 no `errors` module (the name is reserved), so the reporter's module is the
 only one it needs:
@@ -1095,48 +1095,6 @@ export default defineModule({
 - **Secrets** are server-level, as for e-mail transports: env var names in
   `secrets`, values in `ctx.secrets`, never module secrets of the dashboard,
   never over MCP, never logged.
-
-A Sentry reporter is a module of its own; a sketch over Sentry's envelope
-endpoint (no SDK — `@sentry/node` would also work, but it hooks the whole
-process):
-
-```ts
-import { randomUUID } from 'node:crypto';
-import { defineErrorReporter, defineModule, z } from '@drobek/modules';
-
-export default defineModule({
-  name: 'sentry', version: '1.0.0', contract: '^1.2',
-  skill: { useWhen: 'operator-only: server errors go to Sentry', markdown: '# sentry\n' },
-  configSchema: z.object({}), configDefaults: {},
-  contributes: {
-    'errors.reporter': defineErrorReporter({
-      apiVersion: 1, id: 'sentry', label: 'Sentry', secrets: ['SENTRY_DSN'],
-      async report(event, { secrets, signal }) {
-        const dsn = new URL(secrets.SENTRY_DSN); // https://<key>@<host>/<project>
-        const project = dsn.pathname.slice(1);
-        const eventId = randomUUID().replace(/-/g, '');
-        const item = {
-          event_id: eventId, timestamp: event.timestamp, level: event.level, platform: 'node',
-          release: event.release, environment: event.environment, message: { formatted: event.message },
-          exception: event.error ? { values: [{ type: event.error.name, value: event.error.message }] } : undefined,
-          tags: { kind: event.context.kind, module: event.context.module, job: event.context.job },
-          extra: { context: event.context, stack: event.error?.stack },
-          fingerprint: [event.fingerprint],
-        };
-        const body = [JSON.stringify({ event_id: eventId, sent_at: new Date().toISOString() }), JSON.stringify({ type: 'event' }), JSON.stringify(item)].join('\n');
-        const res = await fetch(`${dsn.protocol}//${dsn.host}/api/${project}/envelope/`, {
-          method: 'POST', signal, body,
-          headers: {
-            'Content-Type': 'application/x-sentry-envelope',
-            'X-Sentry-Auth': `Sentry sentry_version=7, sentry_key=${dsn.username}, sentry_client=drobek-sentry/1.0`,
-          },
-        });
-        if (!res.ok) throw new Error(`Sentry answered HTTP ${res.status}`);
-      },
-    }),
-  },
-});
-```
 
 ## Per-app configuration
 

@@ -1,16 +1,16 @@
 /**
  * The `errors.reporter` slot: where the server's errors go besides stdout
- * (Sentry, an incident webhook, a log service, …) as a module. Core hosts the
+ * (an incident webhook, a log service, …) as a module. Core hosts the
  * slot (no module named `errors` exists: the name is reserved), so a reporter
  * module needs nothing else in DROBEK_MODULES. Core selects the contribution
  * whose id ERROR_REPORTER names and installs it into @drobek/core, whose
  * `reportError` the server's central error points call.
  *
  *   export default defineModule({
- *     name: 'sentry', …,
+ *     name: 'pager', …,
  *     contributes: {
  *       'errors.reporter': defineErrorReporter({
- *         apiVersion: 1, id: 'sentry', label: 'Sentry', secrets: ['SENTRY_DSN'],
+ *         apiVersion: 1, id: 'pager', label: 'Incident webhook', secrets: ['PAGER_TOKEN'],
  *         async report(event, { secrets, signal }) { … },
  *       }),
  *     },
@@ -67,7 +67,7 @@ export const CORE_SLOTS: Readonly<Record<string, ModuleSlot>> = Object.freeze({
     schema: errorReporterSchema,
     unique: 'id',
     description:
-      'Where the server reports its errors besides the log (Sentry, a webhook, …), chosen with ERROR_REPORTER=<id>: report(event, { secrets, signal }). Secrets are the operator env vars it declares.',
+      'Where the server reports its errors besides the log (an incident webhook, a log service, …), chosen with ERROR_REPORTER=<id>: report(event, { secrets, signal }). Secrets are the operator env vars it declares.',
   },
 });
 

@@ -89,7 +89,7 @@ export interface ErrorReporter {
   id: string;
   /** The service's name for logs and docs (1–40 characters). */
   label: string;
-  /** The operator env vars the reporter needs (UPPER_SNAKE), e.g. `['SENTRY_DSN']`. */
+  /** The operator env vars the reporter needs (UPPER_SNAKE), e.g. `['WEBHOOK_TOKEN']`. */
   secrets?: string[];
   report(event: ErrorReportEvent, ctx: ErrorReporterContext): Promise<void> | void;
 }

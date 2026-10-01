@@ -1,7 +1,7 @@
 /**
  * Logger interface stub (core stays vendor-free — §15 ARCHITECTURE.md).
- * drobek-web plugs Sentry/pino behind this; core + self-host default to
- * the console logger.
+ * Core and self-hosted servers use the console logger; where errors go
+ * besides the log is the errors.reporter slot.
  */
 export type LogMeta = Record<string, unknown>;
 

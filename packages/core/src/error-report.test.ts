@@ -181,7 +181,7 @@ describe('installErrorReporter', () => {
 
   it('errorReporterConfigError names the variable, never its value', () => {
     expect(errorReporterConfigError({})).toBeNull();
-    expect(errorReporterConfigError({ ERROR_REPORTER: 'sentry', ERROR_REPORTER_TIMEOUT_MS: '5000', ERROR_REPORTER_MAX_PER_MINUTE: '60' })).toBeNull();
+    expect(errorReporterConfigError({ ERROR_REPORTER: 'pager', ERROR_REPORTER_TIMEOUT_MS: '5000', ERROR_REPORTER_MAX_PER_MINUTE: '60' })).toBeNull();
     expect(errorReporterConfigError({ ERROR_REPORTER: 'Not-An-Id!' })).toMatch(/^ERROR_REPORTER must be empty/);
     expect(errorReporterConfigError({ ERROR_REPORTER_MAX_PER_MINUTE: '0' })).toMatch(/^ERROR_REPORTER_MAX_PER_MINUTE must be an integer/);
     expect(errorReporterConfigError({ ERROR_REPORTER_TIMEOUT_MS: 'soon' })).not.toContain('soon');

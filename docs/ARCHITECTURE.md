@@ -334,8 +334,8 @@ through typed **slots**: a host module declares one with a zod schema, other
 modules contribute values, checked at start and read with
 `contributions(slot)` (a host may `compose` its config schema, confirm
 rules and secrets from the contributions at start). Core itself hosts one
-slot, `errors.reporter`: where server errors go besides the log (Sentry, a
-webhook, …), chosen with `ERROR_REPORTER=<id>` and fed by `reportError`
+slot, `errors.reporter`: where server errors go besides the log (an incident
+webhook, a log service, …), chosen with `ERROR_REPORTER=<id>` and fed by `reportError`
 (`@drobek/core`) from the central error points — a 5xx, a module route
 throw, a failed module job or e-mail send, a start-up failure. Built in: `auth`
 (end-user sign-in by e-mailed code, plus the sign-in providers other

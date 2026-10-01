@@ -53,7 +53,7 @@ afterEach(() => {
 });
 
 describe('the errors.reporter contribution schema', () => {
-  const ok = { id: 'sentry', label: 'Sentry', secrets: ['SENTRY_DSN'], report: async () => {} };
+  const ok = { id: 'pager', label: 'Pager', secrets: ['PAGER_TOKEN'], report: async () => {} };
 
   it('accepts a reporter with or without apiVersion 1', () => {
     expect(errorReporterSchema.safeParse(ok).success).toBe(true);
@@ -69,7 +69,7 @@ describe('the errors.reporter contribution schema', () => {
     expect(issue({ ...ok, id: 'Sen-try' })).toMatch(/lowercase letters and digits/);
     expect(issue({ ...ok, apiVersion: 2 })).toMatch(/not an error reporter API this server implements \(1\)/);
     expect(issue({ ...ok, label: 'Two\nlines' })).toMatch(/one trimmed line/);
-    expect(issue({ ...ok, secrets: ['sentry_dsn'] })).toMatch(/UPPER_SNAKE/);
+    expect(issue({ ...ok, secrets: ['pager_token'] })).toMatch(/UPPER_SNAKE/);
     expect(issue({ ...ok, secrets: ['A_B', 'A_B'] })).toMatch(/twice/);
     expect(issue({ ...ok, report: 'nope' })).toMatch(/report must be a function/);
   });
@@ -80,7 +80,7 @@ describe('the errors.reporter contribution schema', () => {
       /module "one": its contribution to the slot "errors\.reporter" \(hosted by core\) does not pass the slot's schema — id:/
     );
     expect(() => checkModuleSet([reporterModule('one', ok), reporterModule('two', ok)], {})).toThrow(
-      /modules "one" and "two" both contribute id "sentry" to the slot "errors\.reporter"/
+      /modules "one" and "two" both contribute id "pager" to the slot "errors\.reporter"/
     );
   });
 
@@ -129,13 +129,13 @@ describe('selection by ERROR_REPORTER', () => {
   });
 
   it('refuses the start without the module that contributes the id (never echoing the env value)', async () => {
-    await expect(loadModuleRuntime({ env: { ...ENV, ERROR_REPORTER: 'sentry', DROBEK_MIGRATE_ON_START: '0' }, modules: [], skillsDir: null, log: noopLogger })).rejects.toThrow(
+    await expect(loadModuleRuntime({ env: { ...ENV, ERROR_REPORTER: 'pager', DROBEK_MIGRATE_ON_START: '0' }, modules: [], skillsDir: null, log: noopLogger })).rejects.toThrow(
       /ERROR_REPORTER names no error reporter of the active modules \(available: none\) — add the module that contributes it to DROBEK_MODULES, or unset ERROR_REPORTER/
     );
     const { modules } = await loadWithSink();
-    const run = () => selectErrorReporter(modules, { ERROR_REPORTER: 'sentry' });
+    const run = () => selectErrorReporter(modules, { ERROR_REPORTER: 'pager' });
     expect(run).toThrow(/available: errorsink\)/);
-    expect(run).not.toThrow(/sentry/);
+    expect(run).not.toThrow(/pager/);
   });
 
   it('refuses the start when the env lacks a declared secret', async () => {
