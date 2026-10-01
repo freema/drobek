@@ -1,6 +1,6 @@
 # Changelog — drobek (core)
 
-## Unreleased
+## v0.7.0 — 2026-10-01
 
 ### Added
 - **Compile warnings: broken references and URLs the app CSP blocks** (NSO-402, #28): `compile.warnings` of `write_files` and `create_app` adds `missing_reference` (a literal same-app path — HTML `src`/`href`, icon `<meta>`s, web manifest icons, CSS `url()`/`@import`, a `fetch()`/`new URL()` of a `/path` — to a file the version does not have and that is not an uploaded asset, e.g. a `<link rel="icon" href="/favicon.ico">` without the file) and `blocked_by_csp` (a literal URL of another origin the app CSP refuses — a `fetch()` to an API, a `<script src>`, `import` or `drobek.json` import from a host other than esm.sh, an `http://` image or font), each with file, line, the directive and what it allows, and the fix (a proxy upstream, an esm.sh URL, https, or the file in the app). Computed URLs, `data:`/`blob:`/`mailto:`/`tel:`, anchors, `/__drobek/…`, extension-less paths and the build's own outputs are ignored. The CSP fetch directives now live in one list in `@drobek/compile` that the app hosts build their header from (the header is unchanged). Warnings only — nothing new is refused.
