@@ -7,13 +7,21 @@
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](./LICENSE)
 [![Image](https://img.shields.io/badge/image-ghcr.io%2Ffreema%2Fdrobek-2496ed)](https://github.com/freema/drobek/pkgs/container/drobek)
 
-> Open-source hosting for small web apps your own AI agent builds.
+> Open-source vibe coding hosting: your AI agent builds the web app, drobek
+> compiles, previews and publishes it.
 
 Bring Claude, Claude Code, Cursor or Codex. Your agent connects over MCP,
 writes the app directly into a workspace and gets compile feedback and a
 live preview. You decide when to publish. Platform modules supply sign-in,
 data, forms, e-mail, uploads, external APIs and scheduled imports; a
 dashboard gives you control over the app, its users and its secrets.
+Built something as a Claude artifact? Your agent moves its files over
+unchanged and hands you a preview.
+
+An open-source, self-hostable alternative to Lovable, Bolt.new and v0 for
+people who already have an agent: drobek has no chat of its own, the agent
+you use does the building, and drobek compiles, versions, previews and
+hosts what it writes.
 
 **[Try drobek.app](https://drobek.app/login)** ·
 **[Self-host](#self-host-quickstart)** ·

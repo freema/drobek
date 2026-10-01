@@ -4,6 +4,7 @@
 
 ### Changed
 - **CI builds the production image in its own job** (NSO-416): the e2e job built the image, ran the suite against it and pushed it within one 10-minute limit, and a slow runner cancelled it during the push. A new `image` job builds the image and hands it to the e2e job as a workflow artifact (kept for a day); the e2e job loads it, runs the suite and pushes the image it tested. Both keep the 10-minute limit.
+- **The README and the MCP Registry entry describe drobek as open-source vibe coding hosting** (NSO-417): the README names it as a self-hostable alternative to Lovable, Bolt.new and v0 for people who already use an agent, and says a Claude artifact moves over unchanged.
 
 ## v0.7.3 — 2026-10-01
 
