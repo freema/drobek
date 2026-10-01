@@ -3,11 +3,13 @@
 ## 1. When to use
 
 The app shows data that lives in an external API and should refresh on its
-own: fantasy-sports players and scores, prices, fixtures, a feed. drobek
+own: fantasy-sports players and scores, prices, fixtures, a feed — what is
+otherwise a cron job, a scheduled task or a periodic update. drobek
 fetches the JSON on a schedule (every 5 minutes at the least) through an
 upstream of the proxy module — the API key stays in the dashboard — and
 writes the records into a `data` collection. No app code runs on the
-server; the app reads the collection with `drobek.data` like any other.
+server, so there are no cron scripts: anything computed from the records
+happens in the browser, which reads the collection with `drobek.data`.
 Use `proxy` directly instead when the app needs the answer per visitor, at
 the moment of the click.
 

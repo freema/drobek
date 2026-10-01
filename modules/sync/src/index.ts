@@ -78,7 +78,7 @@ const sync = defineModule<SyncConfig>({
   requires: ['proxy', 'data'],
   skill: {
     useWhen:
-      'the app shows data from an external API that should refresh on its own (scores, prices, schedules, a feed) — drobek fetches it on a schedule into a data collection; the key stays in the dashboard',
+      'data from an external API should refresh on its own — a cron or periodic update of scores, prices, a feed: drobek fetches it on a schedule into a data collection; the key stays in the dashboard',
     markdown: readFileSync(here('../SKILL.md'), 'utf8'),
   },
   configSchema: syncConfigSchema,

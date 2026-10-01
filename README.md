@@ -12,8 +12,8 @@
 Bring Claude, Claude Code, Cursor or Codex. Your agent connects over MCP,
 writes the app directly into a workspace and gets compile feedback and a
 live preview. You decide when to publish. Platform modules supply sign-in,
-data, forms, e-mail, uploads and external APIs; a dashboard gives you control
-over the app, its users and its secrets.
+data, forms, e-mail, uploads, external APIs and scheduled imports; a
+dashboard gives you control over the app, its users and its secrets.
 
 **[Try drobek.app](https://drobek.app/login)** ·
 **[Self-host](#self-host-quickstart)** ·
