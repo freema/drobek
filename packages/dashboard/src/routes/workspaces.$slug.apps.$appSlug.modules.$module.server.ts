@@ -14,6 +14,9 @@
  * assignments (`upstreams`). The editor follows the declared capability,
  * never the module's name: a replacement module with the same capability
  * gets the same editor. A viewer gets the same page without any control.
+ * The fields a module annotates `x-drobek-choices` get their choices
+ * (module-choices.server.ts): the workspace's upstreams, the app's
+ * collections, the intervals the workspace's limit allows.
  *
  * POST (editor+, `requireWorkspaceRole('editor')` BEFORE anything is read
  * from the form: a viewer → 403, a non-member → 404, anonymous → /login):
@@ -68,6 +71,7 @@ import { requireWorkspaceRole } from '@drobek/tenancy';
 import { appHeaderData } from '../app-page.server.js';
 import { loadAppForView } from '../apps.server.js';
 import {
+  choiceRequests,
   configDiff,
   confirmRoleOf,
   fieldErrors,
@@ -82,6 +86,7 @@ import {
   type FieldValue,
   type Issue,
 } from '../module-config.js';
+import { loadChoices } from '../module-choices.server.js';
 import { loadPendingBanner } from '../pending-banner.server.js';
 import { loadSyncBanner } from '../sync-banner.server.js';
 import type { SyncPanelData } from '../module-ui/sync-sources.js';
@@ -236,7 +241,14 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     app: { slug: app.slug },
     /** The app header + tabs (and the "taken down" banner). */
     header: await appHeaderData({ access, app }),
-    module: { name: view.name, version: view.version, useWhen: view.use_when, confirms: view.confirms },
+    module: {
+      name: view.name,
+      version: view.version,
+      useWhen: view.use_when,
+      title: view.title,
+      description: view.description,
+      confirms: view.confirms,
+    },
     /** "About this module" — never a path on disk, never a secret. */
     about: {
       version: view.version,
@@ -254,6 +266,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     /** An opt-in module off for this workspace — the page shows a notice instead of the forms. */
     enabled: view.enabled,
     fields,
+    /** The choices of the fields annotated `x-drobek-choices` (by choiceKey). */
+    choices: view.enabled ? await loadChoices({ runtime, app: hookApp, workspaceSlug: access.workspace.slug, appSlug: app.slug }, choiceRequests(fields)) : {},
     values: fieldValues(fields, view.config),
     /** Per field: the module's default or saved for this app, and its value once the pending change is confirmed. */
     states: fieldStates(fields, { stored: view.stored, config: view.config, pendingAfter: view.pending?.after }),

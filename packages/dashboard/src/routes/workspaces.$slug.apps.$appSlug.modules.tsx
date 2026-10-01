@@ -7,6 +7,7 @@
 import { Link, useLoaderData } from 'react-router';
 import type { loader } from './workspaces.$slug.apps.$appSlug.modules.server.js';
 import { AppPage } from '../app-header.js';
+import { moduleHeading, moduleSummary } from '../module-catalogue.js';
 import { PendingBanner } from '../pending-banner.js';
 import { SyncBanner } from '../sync-banner.js';
 import { ui } from '../module-ui/styles.js';
@@ -37,7 +38,7 @@ export default function AppModulesRoute() {
             <li key={m.name} style={ui.panel} data-testid="module-row" data-module={m.name}>
               <div style={ui.row}>
                 <Link to={`${base}/modules/${m.name}`} style={{ fontWeight: 700, color: '#1a1a1a' }} data-testid={`module-link-${m.name}`}>
-                  {m.name}
+                  {moduleHeading(m)}
                 </Link>
                 <span style={ui.small}>v{m.version}</span>
                 {!m.enabled ? (
@@ -64,7 +65,7 @@ export default function AppModulesRoute() {
                   </span>
                 ) : null}
               </div>
-              <p style={{ ...ui.small, margin: '0.3rem 0 0' }}>Use when {m.useWhen}</p>
+              <p style={{ ...ui.small, margin: '0.3rem 0 0' }}>{moduleSummary(m)}</p>
             </li>
           ))}
         </ul>

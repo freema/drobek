@@ -10,7 +10,10 @@
  *    removed, each rendered recursively, up to MAX_ENTRY_DEPTH levels of
  *    entries; anything else (unions, a record of anything, deeper nesting) is
  *    edited as a JSON field. `description` (zod `.describe()`) is shown under
- *    the field. No vendor form library, no client JS: a new entry is the one
+ *    the field; a string field annotated `x-drobek-choices` becomes a select
+ *    whose choices the loader resolves (module-choices.server.ts); a
+ *    record's `propertyNames` title / description label its entries' names.
+ *    No vendor form library, no client JS: a new entry is the one
  *    empty entry each record / list renders, a removal a checkbox.
  *  - `formToConfig` — the submitted form → a config value. The SERVER then
  *    validates it through the module's real configSchema (the configure path
@@ -23,6 +26,7 @@
  *  - rule ⇄ principal checkboxes, the plain-language risk note of a
  *    confirmRequired string.
  */
+import type { ConfigChoices, ConfigFieldMeta } from '@drobek/modules';
 
 type FieldKind =
   | 'object'
@@ -63,6 +67,12 @@ export interface FormField {
   /** List fields (`string-list`, `enum-list`, `object-list`): how many items the schema asks for. */
   minItems?: number;
   maxItems?: number;
+  /** `string` fields annotated `x-drobek-choices`: where the select's choices come from. */
+  choices?: ConfigChoices;
+  /** With `choices: 'intervals'`: the module limit holding the shortest interval in minutes (`x-drobek-min-interval`). */
+  minInterval?: string;
+  /** `record` fields: the label and hint of an entry's name (the record's `propertyNames` title / description). */
+  entryKey?: { label: string; description?: string };
 }
 
 /** Form input names are the config path under this prefix. */
@@ -141,6 +151,27 @@ function itemBounds(n: Json): { minItems?: number; maxItems?: number } {
   return { ...(minItems !== undefined ? { minItems } : {}), ...(maxItems !== undefined ? { maxItems } : {}) };
 }
 
+const CHOICES_KEY: keyof ConfigFieldMeta = 'x-drobek-choices';
+const MIN_INTERVAL_KEY: keyof ConfigFieldMeta = 'x-drobek-min-interval';
+const CHOICE_SOURCES: ReadonlySet<string> = new Set<ConfigChoices>(['upstreams', 'collections', 'intervals']);
+
+/** A string node's `x-drobek-choices` (+ `x-drobek-min-interval`) as FormField properties; an unknown source is ignored. */
+function choicesOf(n: Json): Pick<FormField, 'choices' | 'minInterval'> {
+  const from = n[CHOICES_KEY];
+  if (typeof from !== 'string' || !CHOICE_SOURCES.has(from)) return {};
+  const min = n[MIN_INTERVAL_KEY];
+  return { choices: from as ConfigChoices, ...(from === 'intervals' && typeof min === 'string' && min ? { minInterval: min } : {}) };
+}
+
+/** A record's `entryKey` from its `propertyNames` title / description (none without either: the name is labelled "Name"). */
+function entryKeyOf(n: Json): Pick<FormField, 'entryKey'> {
+  const names = isObject(n.propertyNames) ? n.propertyNames : {};
+  const title = typeof names.title === 'string' && names.title ? names.title : null;
+  const description = typeof names.description === 'string' && names.description ? names.description : null;
+  if (!title && !description) return {};
+  return { entryKey: { label: title ?? 'Name', ...(description ? { description } : {}) } };
+}
+
 function stringEnum(node: unknown): string[] | null {
   if (!isObject(node) || !Array.isArray(node.enum) || node.enum.length === 0) return null;
   return node.enum.every((x) => typeof x === 'string') ? (node.enum as string[]) : null;
@@ -175,7 +206,7 @@ function fieldOf(key: string, path: string, node: unknown, required: boolean, de
   if (choices) return { ...base, kind: 'enum', options: choices };
   if (t === 'string') {
     const maxLength = num(n.maxLength);
-    return { ...base, kind: 'string', ...(maxLength !== undefined ? { maxLength } : {}) };
+    return { ...base, kind: 'string', ...(maxLength !== undefined ? { maxLength } : {}), ...choicesOf(n) };
   }
   if (t === 'number' || t === 'integer') {
     const min = bound(n.minimum);
@@ -200,13 +231,13 @@ function fieldOf(key: string, path: string, node: unknown, required: boolean, de
   if (t === 'object' && depth < MAX_ENTRY_DEPTH && isObject(n.additionalProperties) && !isObject(n.properties)) {
     const value = unwrapNullable(n.additionalProperties);
     if (typeOf(value) === 'object' && isObject(value.properties) && Object.keys(value.properties).length > 0) {
-      return { ...base, kind: 'record', entry: objectFields(value, '', depth + 1) };
+      return { ...base, kind: 'record', entry: objectFields(value, '', depth + 1), ...entryKeyOf(n) };
     }
     const plain = fieldOf(ENTRY_VALUE, ENTRY_VALUE, value, true, depth + 1);
     // A record of anything / of unrepresentable values stays one JSON field; at
     // the deepest level a structured value is edited as JSON inside its entry.
     const structured = typeOf(value) === 'object' || typeOf(value) === 'array';
-    if (plain.kind !== 'json' || (structured && depth + 1 >= MAX_ENTRY_DEPTH)) return { ...base, kind: 'record', entry: [plain] };
+    if (plain.kind !== 'json' || (structured && depth + 1 >= MAX_ENTRY_DEPTH)) return { ...base, kind: 'record', entry: [plain], ...entryKeyOf(n) };
   }
   return { ...base, kind: 'json' };
 }
@@ -228,6 +259,34 @@ function objectFields(node: Json, prefix: string, depth: number, skip: ReadonlyS
 export function schemaFields(schema: unknown, skip: readonly string[] = []): FormField[] {
   if (!isObject(schema)) return [];
   return objectFields(schema, '', 0, new Set(skip));
+}
+
+/** The key a field's resolved choices are kept under (one list per source; intervals per minimum). */
+export function choiceKey(f: Pick<FormField, 'choices' | 'minInterval'>): string | null {
+  if (!f.choices) return null;
+  return f.choices === 'intervals' ? `intervals:${f.minInterval ?? ''}` : f.choices;
+}
+
+/** One list of choices the form needs: its key, its source and, for intervals, the limit holding the minimum. */
+export interface ChoiceRequest {
+  key: string;
+  from: ConfigChoices;
+  minInterval?: string;
+}
+
+/** The choice lists `fields` need (objects and record / list entries included), each once. */
+export function choiceRequests(fields: readonly FormField[]): ChoiceRequest[] {
+  const out = new Map<string, ChoiceRequest>();
+  const walk = (list: readonly FormField[]) => {
+    for (const f of list) {
+      const key = choiceKey(f);
+      if (key && f.choices && !out.has(key)) out.set(key, { key, from: f.choices, ...(f.minInterval ? { minInterval: f.minInterval } : {}) });
+      walk(f.children ?? []);
+      walk(f.entry ?? []);
+    }
+  };
+  walk(fields);
+  return [...out.values()];
 }
 
 /** Every leaf field (objects flattened; a `record` / `object-list` is one leaf), in order. */

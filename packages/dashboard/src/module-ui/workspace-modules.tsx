@@ -12,7 +12,7 @@
  */
 import type { ReactNode } from 'react';
 import { Form, Link } from 'react-router';
-import { filterModules } from '../module-catalogue.js';
+import { filterModules, moduleHeading, moduleSummary } from '../module-catalogue.js';
 import { ContributesTable, Disclosure, ErrorsTable, LimitsTable, ModuleFactsList, SlotsTable, type ErrorFact, type LimitFact, type ModuleFactsData } from './module-facts.js';
 import { ui } from './styles.js';
 
@@ -20,6 +20,9 @@ import { ui } from './styles.js';
 export interface WorkspaceModule extends ModuleFactsData {
   name: string;
   useWhen: string;
+  /** `dashboard.title` / `dashboard.description` (null or absent without). */
+  title?: string | null;
+  description?: string | null;
   limits: LimitFact[];
   errors: ErrorFact[];
 }
@@ -40,7 +43,7 @@ function ModuleCard({ m, availabilityControls }: { m: WorkspaceModule; availabil
   return (
     <li id={`module-${m.name}`} style={styles.card} data-testid="workspace-module" data-module={m.name}>
       <div style={styles.head}>
-        <h2 style={styles.name}>{m.name}</h2>
+        <h2 style={styles.name}>{moduleHeading(m)}</h2>
         <span style={m.availability === 'opt-in' ? ui.warnBadge : ui.badge} data-testid="module-availability">
           {m.availability}
         </span>
@@ -48,7 +51,7 @@ function ModuleCard({ m, availabilityControls }: { m: WorkspaceModule; availabil
           {m.source}
         </span>
       </div>
-      {m.useWhen ? <p style={{ ...ui.hint, margin: '0.3rem 0 0' }}>Use when {m.useWhen}</p> : null}
+      {moduleSummary(m) ? <p style={{ ...ui.hint, margin: '0.3rem 0 0' }}>{moduleSummary(m)}</p> : null}
       <ModuleFactsList facts={m} part="summary" availabilityExtra={availabilityControls?.(m)} />
       {m.limits.length > 0 ? (
         <Disclosure testId="module-limits" summary={`Limits for this workspace (${m.limits.length})`}>
@@ -141,7 +144,7 @@ export function WorkspaceModules({
               {shown.map((m) => (
                 <li key={m.name}>
                   <a href={`#module-${m.name}`} data-testid="modules-jump">
-                    {m.name}
+                    {moduleHeading(m)}
                   </a>
                 </li>
               ))}
