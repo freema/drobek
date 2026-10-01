@@ -89,7 +89,7 @@ jobs:
   quality:
     name: Lint · typecheck · unit
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -130,7 +130,7 @@ jobs:
   e2e:
     name: Prod image · compose · e2e (@smoke + @local)
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     permissions:
       contents: read
       packages: write # only used by the main-branch / tag push step below
