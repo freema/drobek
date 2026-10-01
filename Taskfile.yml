@@ -286,7 +286,8 @@ tasks:
     env:
       MODULE_SPEC: '{{.CLI_ARGS}}'
     cmds:
-      - test -f packages/modules/dist/cli/module-lock.js || pnpm build:packages
+      - pnpm install --frozen-lockfile
+      - pnpm build:packages
       - ./scripts/selfhost-module.sh --dev add "$MODULE_SPEC"
 
   module:remove:
@@ -314,8 +315,8 @@ tasks:
       - test -f .modules/acmecrm/node_modules/drobek-module-acme-crm/package.json
       - grep -q '"acmecrm"' .modules/modules.lock.json
     cmds:
-      - test -d examples/drobek-module-acme-crm/node_modules || pnpm install --frozen-lockfile
-      - test -f packages/modules/dist/cli/module-lock.js || pnpm build:packages
+      - pnpm install --frozen-lockfile
+      - pnpm build:packages
       - >-
         pack="$(mktemp -d)" &&
         pnpm --filter drobek-module-acme-crm pack --pack-destination "$pack" >/dev/null &&
@@ -331,7 +332,8 @@ tasks:
       - test -f .modules/opsprobe/node_modules/drobek-module-ops-probe/package.json
       - grep -q '"opsprobe"' .modules/modules.lock.json
     cmds:
-      - test -f packages/modules/dist/cli/module-lock.js || pnpm build:packages
+      - pnpm install --frozen-lockfile
+      - pnpm build:packages
       - >-
         pack="$(mktemp -d)" &&
         npm pack --loglevel=warn ./tests-e2e/fixtures/drobek-module-ops-probe --pack-destination "$pack" >/dev/null &&
