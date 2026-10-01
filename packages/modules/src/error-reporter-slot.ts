@@ -17,7 +17,8 @@
  *   });
  *
  * The reporter's secrets are operator env vars only (read at start, handed to
- * `report` in `ctx.secrets`, redacted from every event and log line).
+ * `report` in `ctx.secrets`, redacted from every event and log line). The slot
+ * is `operatorOnly`: a reporter module needs no skill.
  */
 import {
   ERROR_REPORTER_API_VERSION,
@@ -68,6 +69,7 @@ export const CORE_SLOTS: Readonly<Record<string, ModuleSlot>> = Object.freeze({
     unique: 'id',
     description:
       'Where the server reports its errors besides the log (an incident webhook, a log service, …), chosen with ERROR_REPORTER=<id>: report(event, { secrets, signal }). Secrets are the operator env vars it declares.',
+    operatorOnly: true,
   },
 });
 

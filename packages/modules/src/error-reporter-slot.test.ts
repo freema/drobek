@@ -1,9 +1,10 @@
 /**
  * The core-hosted `errors.reporter` slot: the contribution schema, the
  * selection by ERROR_REPORTER and the start refusals, with the errorsink
- * fixture loaded from DROBEK_MODULES_DIR the way an operator installs it.
- * That a module route throw and a failed job reach the reporter is in
- * runtime.test.ts and jobs.test.ts.
+ * fixture loaded from DROBEK_MODULES_DIR the way an operator installs it —
+ * an operator-only module (no skill), which agents never see. That a module
+ * route throw and a failed job reach the reporter is in runtime.test.ts and
+ * jobs.test.ts.
  */
 import { rmSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -144,5 +145,19 @@ describe('selection by ERROR_REPORTER', () => {
       /the error reporter "errorsink" \(module "errorsink"\) needs ERRORSINK_TOKEN in the server env/
     );
     expect(installedErrorReporterId()).toBeNull();
+  });
+});
+
+describe('a reporter module without a skill (operator-only)', () => {
+  it('loads from DROBEK_MODULES_DIR and reports; agents never see it, the summary marks it for operators', async () => {
+    const { modules, origins } = await loadWithSink(ENV);
+    expect(modules[0]).not.toHaveProperty('skill');
+    const rt = await loadModuleRuntime({ env: { ...ENV, DROBEK_MIGRATE_ON_START: '0' }, modules, origins, skillsDir: null, log: noopLogger });
+    expect(installedErrorReporterId()).toBe('errorsink');
+    expect(rt.skillList()).toEqual([]);
+    expect(rt.skillInfo('errorsink')).toBeNull();
+    expect(rt.appFacing).toEqual([]);
+    expect(rt.summary()).toEqual([{ name: 'errorsink', version: '1.0.0', source: 'dir', contract: '^1.2', operatorOnly: true }]);
+    expect(rt.moduleFacts('errorsink')).toMatchObject({ operatorOnly: true, contributes: [{ slot: 'errors.reporter', host: 'core', key: 'errorsink' }] });
   });
 });

@@ -1001,7 +1001,10 @@ interface Logger {
  * `configSchema` (set by agents through `configure_module`, risky changes held
  * for the owner's confirmation by `confirmRequired`), the names of the secrets
  * it can use (values only ever entered in the dashboard), limits, and a SKILL:
- * the agent-facing documentation `skill_info` returns.
+ * the agent-facing documentation `skill_info` returns. A module with no app
+ * surface — only contributions to operator slots (`errors.reporter`,
+ * `email.transport`), server jobs, hooks, limits, migrations — may leave the
+ * skill out: it is operator-only, never shown to agents or app owners.
  *
  * Contract 1.1 adds `contract`, `errors`, typed `slots` (`contributes`,
  * `services.contributions()`), `availability`, `dashboard.editor` and
@@ -1206,6 +1209,12 @@ interface ModuleSlot<T = unknown> {
     unique?: string;
     /** What a contribution does, for module authors and the dashboard. */
     description: string;
+    /**
+     * The contributions configure the server, not apps (e.g. where its errors
+     * or its mail go): a module whose only contributions go to such slots may
+     * leave out its skill (an operator-only module). Default false.
+     */
+    operatorOnly?: boolean;
 }
 /**
  * Who the module is for: `default` — every workspace of the server (the
@@ -1918,6 +1927,7 @@ interface DrobekModule<Config = unknown> {
      * server refuses to start; missing → a start-up warning.
      */
     contract?: string;
+    /** The agent-facing documentation (skill_info, the briefing). A module without one is an OperatorModule. */
     skill: ModuleSkill;
     /**
      * Per-app configuration (zod). Validates every configure_module call and
@@ -2034,16 +2044,33 @@ interface DrobekModule<Config = unknown> {
      */
     jobs?: ModuleJob<Config>[];
 }
-/** A module of any config type (what the registry holds). */
-type AnyModule = DrobekModule<any>;
+/**
+ * A module without a skill: operator-only. Allowed only with no app surface —
+ * no routes, sdk, app config (configSchema fields, salvageConfig,
+ * confirmRequired, onConfirmed), secrets, rules, errors, owner authority,
+ * appInfo, opt-in availability, dashboard.editor, `scope: 'app'` job, compose
+ * or slot that is not `operatorOnly` — and with contributions to
+ * `operatorOnly` slots only (`errors.reporter`, `email.transport`); the
+ * registry refuses anything else at start. It is left out of skill_info, the
+ * briefing, llms.txt, configure_module and the app's Modules tab;
+ * /api/version and the super-admin's workspace Modules page mark it
+ * `operatorOnly`.
+ */
+interface OperatorModule<Config = unknown> extends Omit<DrobekModule<Config>, 'skill'> {
+    skill?: undefined;
+}
+/** A module of any config type, with or without a skill (what the registry holds). */
+type AnyModule = DrobekModule<any> | OperatorModule<any>;
 /** What a slot host's `compose` gets at start: the checked contributions to every slot. */
 interface ModuleComposeInput {
     contributions<T = unknown>(slot: string): T[];
 }
 /** The parts of a module its `compose` may replace (the rest of the module stays as declared). */
 type ComposedModuleParts<Config = unknown> = Partial<Pick<DrobekModule<Config>, 'configSchema' | 'configDefaults' | 'salvageConfig' | 'confirmRequired' | 'secrets'>>;
-/** Declare a module (typed identity + a brand the registry checks). */
+/** Declare a module (typed identity + a brand the registry checks): with a skill a DrobekModule, without one an OperatorModule. */
 declare function defineModule<Config>(module: DrobekModule<Config>): DrobekModule<Config>;
+declare function defineModule<Config>(module: OperatorModule<Config>): OperatorModule<Config>;
+declare function defineModule<Config>(module: DrobekModule<Config> | OperatorModule<Config>): DrobekModule<Config> | OperatorModule<Config>;
 /** Was `value` produced by defineModule()? */
 declare function isDefinedModule(value: unknown): value is DrobekModule;
 /** Limits for one workspace: env name → value (env default, or the limits provider). */
@@ -2865,7 +2892,9 @@ interface ModuleEmailTransport {
  *
  * `smtp` and `resend` stay built in and cannot be replaced. The transport's
  * secrets are operator env vars only (read at start, handed to `send` in
- * `ctx.secrets`); the rate limits above the transport stay as they are.
+ * `ctx.secrets`); the rate limits above the transport stay as they are. The
+ * built-in `email` declares the slot `operatorOnly`: a transport module needs
+ * no skill.
  */
 
 declare const EMAIL_TRANSPORT_SLOT = "email.transport";
@@ -2893,7 +2922,8 @@ declare const emailTransportSchema: ZodType<ModuleEmailTransport>;
  *   });
  *
  * The reporter's secrets are operator env vars only (read at start, handed to
- * `report` in `ctx.secrets`, redacted from every event and log line).
+ * `report` in `ctx.secrets`, redacted from every event and log line). The slot
+ * is `operatorOnly`: a reporter module needs no skill.
  */
 
 declare const ERROR_REPORTER_SLOT = "errors.reporter";
@@ -3008,4 +3038,4 @@ declare const loadModules: typeof loadModules$1;
 declare const buildSdk: typeof buildSdk$1;
 
 export { AUTH_PROVIDER_API_VERSION, AUTH_PROVIDER_ID_RE, AUTH_RESERVED_CONFIG_KEYS, CORE_ERROR_CODES, EMAIL_PROVIDER_ID, EMAIL_SEND_ERROR_CODES, EMAIL_TRANSPORT_API_VERSION, EMAIL_TRANSPORT_SLOT, ERROR_REPORTER_API_VERSION, ERROR_REPORTER_SLOT, EmailSendError, JOB_MAX_INTERVAL_MS, JOB_MIN_INTERVAL_MS, JOB_NAME_RE, MODULE_CONTRACT_VERSION, MODULE_ERROR_CODES, MODULE_ERROR_CODE_RE, MODULE_NAME_RE, ModuleError, RECORDS_IMPORT_MAX_ROWS, RULE_TOKENS, SLOT_NAME_RE, authIdentitySchema, authProviderSchema, authSignedInObserverSchema, buildSdk, decideAccess, defineAuthProvider, defineEmailTransport, defineErrorReporter, defineModule, defineSignInObserver, emailTransportSchema, errorReporterSchema, hasControlBytes, isDefinedModule, isModuleError, isValidRule, issuePaths, loadModules, looksLikeSvg, moduleNotEnabled, normalizeConfirmItems, parseJobInterval, parseRule, perIpLimitKey, respond, ruleIsPublic, skillHint, sniffSignature };
-export type { AccessDecision, AnyModule, AppJob, AppJobContext, AuthIdentity, AuthProvider, AuthProviderBeginInput, AuthProviderBeginResult, AuthProviderCallbackInput, AuthProviderSecretDoc, AuthProviderSecrets, AuthSignInEvent, AuthSignedInObserver, ComposedModuleParts, ConfigChoices, ConfigFieldMeta, ConfirmContext, ConfirmItem, ConfirmRole, ConfirmedContext, DB, DrobekModule, EmailKind, EmailMessage, EmailRecipient, EmailSendErrorCode, EmailTransportContext, EmailTransportMessage, EndUser, EndUserAuthority, EndUserCallbackApp, EndUserCallbackInput, EndUserCallbackResult, EndUserListQuery, EndUserPage, EndUserRecord, ErrorReportContext, ErrorReportEvent, ErrorReportKind, ErrorReporter, ErrorReporterContext, FilesAuthority, HookApp, JobContextBase, JobInterval, Limits, Logger, MailAuthority, MailEnvelope, MailPrepareInput, ModuleAppView, ModuleAvailability, ModuleComposeInput, ModuleContext, ModuleDashboard, ModuleDashboardEditor, ModuleEmailTransport, ModuleErrorBody, ModuleErrorCode, ModuleErrorDoc, ModuleHooks, ModuleJob, ModuleLimit, ModuleMigrations, ModuleRequest, ModuleResponse, ModuleRouter, ModuleSdk, ModuleSecretDoc, ModuleServices, ModuleSkill, ModuleSlot, OwnerFile, OwnerFilesPage, OwnerSubmission, OwnerView, Principal, RateLimitResult, RecordsAuthority, RecordsCollection, RecordsImportOptions, RecordsImportResult, RecordsPage, RecordsQuery, RecordsView, RouteHandler, RouteOptions, RouteRateLimit, Rule, ServerJob, ServerJobContext, SniffedType, SubmissionsAuthority, SubmissionsPage, SubmissionsQuery, SyncAuthority, SyncRun, SyncSourceState, UploadedFile, UpstreamRequest, UpstreamResponse, UpstreamsAuthority };
+export type { AccessDecision, AnyModule, AppJob, AppJobContext, AuthIdentity, AuthProvider, AuthProviderBeginInput, AuthProviderBeginResult, AuthProviderCallbackInput, AuthProviderSecretDoc, AuthProviderSecrets, AuthSignInEvent, AuthSignedInObserver, ComposedModuleParts, ConfigChoices, ConfigFieldMeta, ConfirmContext, ConfirmItem, ConfirmRole, ConfirmedContext, DB, DrobekModule, EmailKind, EmailMessage, EmailRecipient, EmailSendErrorCode, EmailTransportContext, EmailTransportMessage, EndUser, EndUserAuthority, EndUserCallbackApp, EndUserCallbackInput, EndUserCallbackResult, EndUserListQuery, EndUserPage, EndUserRecord, ErrorReportContext, ErrorReportEvent, ErrorReportKind, ErrorReporter, ErrorReporterContext, FilesAuthority, HookApp, JobContextBase, JobInterval, Limits, Logger, MailAuthority, MailEnvelope, MailPrepareInput, ModuleAppView, ModuleAvailability, ModuleComposeInput, ModuleContext, ModuleDashboard, ModuleDashboardEditor, ModuleEmailTransport, ModuleErrorBody, ModuleErrorCode, ModuleErrorDoc, ModuleHooks, ModuleJob, ModuleLimit, ModuleMigrations, ModuleRequest, ModuleResponse, ModuleRouter, ModuleSdk, ModuleSecretDoc, ModuleServices, ModuleSkill, ModuleSlot, OperatorModule, OwnerFile, OwnerFilesPage, OwnerSubmission, OwnerView, Principal, RateLimitResult, RecordsAuthority, RecordsCollection, RecordsImportOptions, RecordsImportResult, RecordsPage, RecordsQuery, RecordsView, RouteHandler, RouteOptions, RouteRateLimit, Rule, ServerJob, ServerJobContext, SniffedType, SubmissionsAuthority, SubmissionsPage, SubmissionsQuery, SyncAuthority, SyncRun, SyncSourceState, UploadedFile, UpstreamRequest, UpstreamResponse, UpstreamsAuthority };

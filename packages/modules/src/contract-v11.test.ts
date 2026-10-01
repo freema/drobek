@@ -430,6 +430,7 @@ describe('the runtime (contributions, hooks, errors, skill_info, the dashboard v
       editor: null,
       title: null,
       description: null,
+      operatorOnly: false,
     });
     expect(rt.moduleFacts('pirate')).toMatchObject({ slots: [], contributes: [{ slot: 'host.greeter', host: 'host', key: 'pirate' }] });
     expect(rt.moduleFacts('watcher')).toMatchObject({ availability: 'opt-in', editor: 'collections', title: 'Watch list', contributes: [] });

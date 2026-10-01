@@ -35,15 +35,17 @@
  * limit or error code, a contribution to an unknown slot or one that fails
  * the slot's schema, a slot host's `compose` that throws or returns an
  * invalid config, an invalid `DROBEK_MODULE_<NAME>_DEFAULTS`, a job without
- * a valid name, interval or `run` — stops the
- * server at start with a message that names the module. Nothing is skipped
- * silently.
+ * a valid name, interval or `run`, a module without a skill that reaches apps
+ * (appSurfaceOf, or a contribution to a slot that is not `operatorOnly`) —
+ * stops the server at start with a message that names the module. Nothing is
+ * skipped silently.
  */
 import { createRequire } from 'node:module';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import semver from 'semver';
+import { z } from 'zod';
 import { createConsoleLogger, type Logger } from '@drobek/core';
 import {
   JOB_MAX_INTERVAL_MS,
@@ -56,6 +58,7 @@ import {
   isDefinedModule,
   parseJobInterval,
   type AnyModule,
+  type DrobekModule,
   type ModuleSlot,
 } from './contract.js';
 import { checkDirModule, findDirModule, modulesDirState, packageEntryFile, verifyDirModule, type ModulesDirState } from './dir-modules.js';
@@ -78,6 +81,8 @@ const DASHBOARD_EDITORS = new Set<string>(['collections', 'upstreams']);
 const DASHBOARD_TITLE_MAX = 60;
 const DASHBOARD_DESCRIPTION_MAX = 200;
 const HOOKS = ['onAppCreate', 'onPublish', 'onAppDelete'] as const;
+const OWNER_AUTHORITIES = ['endUsers', 'mail', 'records', 'submissions', 'files', 'upstreams', 'sync'] as const;
+const CONFIG_HOOKS = ['salvageConfig', 'confirmRequired', 'onConfirmed'] as const;
 const DEFAULTS_ENV_RE = /^DROBEK_MODULE_([A-Z0-9]+)_DEFAULTS$/;
 
 /** A non-empty, trimmed string of at most `max` characters without a line break or control character. */
@@ -226,8 +231,10 @@ export function validateModule(m: AnyModule): void {
       );
     }
   }
-  if (!m.skill || typeof m.skill.useWhen !== 'string' || !m.skill.useWhen.trim()) fail('skill.useWhen is required');
-  if (typeof m.skill.markdown !== 'string' || !m.skill.markdown.trim()) fail('skill.markdown is required');
+  if (isAppFacing(m)) {
+    if (!isPlainObject(m.skill) || typeof m.skill.useWhen !== 'string' || !m.skill.useWhen.trim()) fail('skill.useWhen is required');
+    if (typeof m.skill.markdown !== 'string' || !m.skill.markdown.trim()) fail('skill.markdown is required');
+  }
   if (!m.configSchema || typeof (m.configSchema as { safeParse?: unknown }).safeParse !== 'function') {
     fail('configSchema must be a zod schema');
   }
@@ -319,6 +326,7 @@ export function validateModule(m: AnyModule): void {
       if (typeof (slot?.schema as { safeParse?: unknown } | undefined)?.safeParse !== 'function') fail(`slot "${name}": schema must be a zod schema`);
       if (slot.unique !== undefined && (typeof slot.unique !== 'string' || !slot.unique)) fail(`slot "${name}": unique must name a key of the contribution`);
       if (typeof slot.description !== 'string' || !slot.description.trim()) fail(`slot "${name}" needs a description`);
+      if (slot.operatorOnly !== undefined && typeof slot.operatorOnly !== 'boolean') fail(`slot "${name}": operatorOnly must be true or false`);
     }
   }
   if (m.compose !== undefined) {
@@ -342,6 +350,73 @@ export function validateModule(m: AnyModule): void {
       fail(`dashboard.description must be one line of 1–${DASHBOARD_DESCRIPTION_MAX} characters`);
     }
   }
+  if (!isAppFacing(m)) {
+    const surface = appSurfaceOf(m);
+    if (surface.length > 0) {
+      fail(
+        `skill is required: the module reaches apps through ${surface.join(', ')} — add skill: { useWhen, markdown } (what skill_info serves agents). Only an operator-only module (contributions to operator slots such as errors.reporter or email.transport, server jobs, hooks, limits, migrations) goes without one`
+      );
+    }
+  }
+}
+
+/** A module with a skill: what agents (skill_info, the briefing) and app owners (the app's Modules tab, configure_module) see. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type AppFacingModule = DrobekModule<any>;
+
+/** Does `m` declare a skill? Without one it is operator-only — validateModule allows that only for a module without an app surface. */
+export function isAppFacing(m: AnyModule): m is AppFacingModule {
+  return m.skill !== undefined && m.skill !== null;
+}
+
+/** Does `schema` describe nothing but an empty object (`z.object({})`)? */
+function isEmptyConfigSchema(schema: unknown): boolean {
+  let json: Record<string, unknown>;
+  try {
+    json = z.toJSONSchema(schema as z.ZodType, { unrepresentable: 'any' }) as Record<string, unknown>;
+  } catch {
+    return false;
+  }
+  const properties = json.properties;
+  return (
+    json.type === 'object' &&
+    (properties === undefined || (isPlainObject(properties) && Object.keys(properties).length === 0)) &&
+    json.additionalProperties === false &&
+    json.patternProperties === undefined &&
+    json.propertyNames === undefined
+  );
+}
+
+/**
+ * The parts of `m` that reach apps, their agents or their owners (field
+ * names; [] when none) — each one needs a skill: routes, an SDK, an app
+ * config (a configSchema with any field, salvageConfig, confirmRequired,
+ * onConfirmed), per-app secrets, rules, its own error codes, an owner
+ * authority, appInfo, opt-in availability, a dashboard editor, a
+ * `scope: 'app'` job, a slot that is not `operatorOnly`, compose. Name,
+ * version, contract, limits, migrations, hooks, requires, server jobs,
+ * dashboard.title/description and operator slots do not. Contributions are
+ * checked against their slots in collectContributions.
+ */
+export function appSurfaceOf(m: AnyModule): string[] {
+  const out: string[] = [];
+  if (m.routes !== undefined) out.push('routes');
+  if (m.sdk !== undefined) out.push('sdk');
+  if (!isEmptyConfigSchema(m.configSchema)) out.push('configSchema (an app config)');
+  for (const k of CONFIG_HOOKS) if (m[k] !== undefined) out.push(k);
+  if ((m.secrets ?? []).length > 0) out.push('secrets');
+  if (m.rules !== undefined) out.push('rules');
+  if ((m.errors ?? []).length > 0) out.push('errors');
+  for (const k of OWNER_AUTHORITIES) if (m[k] !== undefined) out.push(k);
+  if (m.appInfo !== undefined) out.push('appInfo');
+  if (m.availability === 'opt-in') out.push("availability 'opt-in'");
+  if (m.dashboard?.editor !== undefined) out.push('dashboard.editor');
+  if ((m.jobs ?? []).some((j) => j.scope === 'app')) out.push("a scope: 'app' job");
+  for (const [name, slot] of Object.entries(m.slots ?? {})) {
+    if (slot.operatorOnly !== true) out.push(`the slot "${name}"`);
+  }
+  if (m.compose !== undefined) out.push('compose');
+  return out;
 }
 
 /** The rules of `jobs` (contract 1.2): unique names, a scope, a fixed interval in range or (per-app) a function, a `run`. */
@@ -414,6 +489,11 @@ export function collectContributions(modules: AnyModule[]): Map<string, SlotCont
       }
       const slot = host.slot;
       const where = host.name === null ? 'hosted by core' : `module "${host.name}"`;
+      if (!isAppFacing(c) && slot.operatorOnly !== true) {
+        throw new ModuleLoadError(
+          `module "${c.name}" has no skill, but contributes to the slot "${name}" (${where}), which reaches apps — add skill: { useWhen, markdown }; only contributions to operator slots (errors.reporter, email.transport) go without one`
+        );
+      }
       const r = slot.schema.safeParse(value);
       if (!r.success) {
         const issues = issuePaths(r.error.issues).map((i) => `${i.path}: ${i.message}`).join('; ');

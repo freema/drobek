@@ -136,7 +136,7 @@ async function context(request: Request, params: LoaderFunctionArgs['params'], m
   if (!app) notFound();
   const runtime = await moduleRuntime();
   const name = String(params.module ?? '');
-  if (!runtime.get(name)) notFound();
+  if (!runtime.appFacing.some((m) => m.name === name)) notFound();
   const hookApp = { id: app.id, slug: app.slug, workspaceId: access.workspace.id };
   return { access, app, runtime, name, hookApp };
 }

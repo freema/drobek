@@ -2,7 +2,7 @@
   "name": "drobek-module-errorsink",
   "version": "1.0.0",
   "private": true,
-  "description": "Test fixture: an external module contributing an error reporter to the core-hosted errors.reporter slot (ERROR_REPORTER=errorsink, ERRORSINK_TOKEN). Plain ESM, no build step.",
+  "description": "Test fixture: an operator-only external module (no skill) contributing an error reporter to the core-hosted errors.reporter slot (ERROR_REPORTER=errorsink, ERRORSINK_TOKEN). Plain ESM, no build step.",
   "type": "module",
   "exports": {
     ".": "./index.js"

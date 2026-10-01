@@ -12,7 +12,10 @@
  * `configSchema` (set by agents through `configure_module`, risky changes held
  * for the owner's confirmation by `confirmRequired`), the names of the secrets
  * it can use (values only ever entered in the dashboard), limits, and a SKILL:
- * the agent-facing documentation `skill_info` returns.
+ * the agent-facing documentation `skill_info` returns. A module with no app
+ * surface — only contributions to operator slots (`errors.reporter`,
+ * `email.transport`), server jobs, hooks, limits, migrations — may leave the
+ * skill out: it is operator-only, never shown to agents or app owners.
  *
  * Contract 1.1 adds `contract`, `errors`, typed `slots` (`contributes`,
  * `services.contributions()`), `availability`, `dashboard.editor` and
@@ -231,6 +234,12 @@ export interface ModuleSlot<T = unknown> {
   unique?: string;
   /** What a contribution does, for module authors and the dashboard. */
   description: string;
+  /**
+   * The contributions configure the server, not apps (e.g. where its errors
+   * or its mail go): a module whose only contributions go to such slots may
+   * leave out its skill (an operator-only module). Default false.
+   */
+  operatorOnly?: boolean;
 }
 
 /**
@@ -1001,6 +1010,7 @@ export interface DrobekModule<Config = unknown> {
    * server refuses to start; missing → a start-up warning.
    */
   contract?: string;
+  /** The agent-facing documentation (skill_info, the briefing). A module without one is an OperatorModule. */
   skill: ModuleSkill;
   /**
    * Per-app configuration (zod). Validates every configure_module call and
@@ -1115,9 +1125,25 @@ export interface DrobekModule<Config = unknown> {
   jobs?: ModuleJob<Config>[];
 }
 
-/** A module of any config type (what the registry holds). */
+/**
+ * A module without a skill: operator-only. Allowed only with no app surface —
+ * no routes, sdk, app config (configSchema fields, salvageConfig,
+ * confirmRequired, onConfirmed), secrets, rules, errors, owner authority,
+ * appInfo, opt-in availability, dashboard.editor, `scope: 'app'` job, compose
+ * or slot that is not `operatorOnly` — and with contributions to
+ * `operatorOnly` slots only (`errors.reporter`, `email.transport`); the
+ * registry refuses anything else at start. It is left out of skill_info, the
+ * briefing, llms.txt, configure_module and the app's Modules tab;
+ * /api/version and the super-admin's workspace Modules page mark it
+ * `operatorOnly`.
+ */
+export interface OperatorModule<Config = unknown> extends Omit<DrobekModule<Config>, 'skill'> {
+  skill?: undefined;
+}
+
+/** A module of any config type, with or without a skill (what the registry holds). */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type AnyModule = DrobekModule<any>;
+export type AnyModule = DrobekModule<any> | OperatorModule<any>;
 
 const BRAND = Symbol.for('drobek.module');
 
@@ -1131,8 +1157,11 @@ export type ComposedModuleParts<Config = unknown> = Partial<
   Pick<DrobekModule<Config>, 'configSchema' | 'configDefaults' | 'salvageConfig' | 'confirmRequired' | 'secrets'>
 >;
 
-/** Declare a module (typed identity + a brand the registry checks). */
-export function defineModule<Config>(module: DrobekModule<Config>): DrobekModule<Config> {
+/** Declare a module (typed identity + a brand the registry checks): with a skill a DrobekModule, without one an OperatorModule. */
+export function defineModule<Config>(module: DrobekModule<Config>): DrobekModule<Config>;
+export function defineModule<Config>(module: OperatorModule<Config>): OperatorModule<Config>;
+export function defineModule<Config>(module: DrobekModule<Config> | OperatorModule<Config>): DrobekModule<Config> | OperatorModule<Config>;
+export function defineModule<Config>(module: DrobekModule<Config> | OperatorModule<Config>): DrobekModule<Config> | OperatorModule<Config> {
   return Object.freeze({ ...module, [BRAND]: MODULE_CONTRACT_VERSION });
 }
 

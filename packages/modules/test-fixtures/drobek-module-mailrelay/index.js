@@ -3,7 +3,8 @@
  * `email.transport` contribution `mailrelay` needs MAILRELAY_TOKEN from the
  * server env and delivers into an outbox on globalThis (the test reads it
  * there). A message to an address at `fail.example` throws with the token
- * in the error text, which the server must redact.
+ * in the error text, which the server must redact. No skill: an operator-only
+ * module, never listed for agents or app owners.
  */
 import { defineEmailTransport, defineModule, z } from '@drobek/modules';
 
@@ -13,7 +14,6 @@ export default defineModule({
   name: 'mailrelay',
   version: '1.0.0',
   contract: '^1.2',
-  skill: { useWhen: 'a test needs an e-mail transport from a module', markdown: '# mailrelay\n' },
   configSchema: z.object({}),
   configDefaults: {},
   requires: ['email'],

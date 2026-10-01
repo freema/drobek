@@ -4,7 +4,8 @@
  * server env and collects every event in an inbox on globalThis (the test
  * reads it there). An event whose message contains `explode` throws with the
  * token in the error text; one containing `hang` waits until the server
- * aborts the delivery.
+ * aborts the delivery. No skill: an operator-only module, never listed for
+ * agents or app owners.
  */
 import { defineErrorReporter, defineModule, z } from '@drobek/modules';
 
@@ -14,7 +15,6 @@ export default defineModule({
   name: 'errorsink',
   version: '1.0.0',
   contract: '^1.2',
-  skill: { useWhen: 'a test needs an error reporter from a module', markdown: '# errorsink\n' },
   configSchema: z.object({}),
   configDefaults: {},
   contributes: {

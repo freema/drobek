@@ -2,7 +2,8 @@
  * The `email.transport` slot: the contribution schema, the selection by
  * EMAIL_TRANSPORT and the start refusals, with the mailrelay fixture loaded
  * from DROBEK_MODULES_DIR the way an operator installs it. A stand-in for the
- * built-in `email` hosts the slot with the real schema.
+ * built-in `email` hosts the slot with the real schema, `operatorOnly` like
+ * the real one: mailrelay has no skill, an operator-only module.
  */
 import { rmSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -27,7 +28,7 @@ const emailHost = defineModule({
   skill: { useWhen: 'a test needs the transport slot', markdown: '# email\n' },
   configSchema: z.object({}),
   configDefaults: {},
-  slots: { [EMAIL_TRANSPORT_SLOT]: { schema: emailTransportSchema, unique: 'id', description: 'e-mail transports' } },
+  slots: { [EMAIL_TRANSPORT_SLOT]: { schema: emailTransportSchema, unique: 'id', description: 'e-mail transports', operatorOnly: true } },
 });
 
 function transportModule(name: string, transport: Record<string, unknown>): AnyModule {
@@ -157,5 +158,30 @@ describe('selection by EMAIL_TRANSPORT', () => {
 
   it('refuses a transport contribution while the email module is not active', async () => {
     await expect(loadWithRelay({ DROBEK_MODULES: 'mailrelay' })).rejects.toThrow(/module "mailrelay" requires the module "email"/);
+  });
+});
+
+describe('a transport module without a skill (operator-only)', () => {
+  it('loads from DROBEK_MODULES_DIR; agents never see it, the summary marks it for operators', async () => {
+    const { modules, origins } = await loadWithRelay({ DROBEK_MODULES: 'email,mailrelay' });
+    expect(modules[1]).not.toHaveProperty('skill');
+    const rt = await loadModuleRuntime({ env: { DROBEK_MIGRATE_ON_START: '0' }, modules, origins, skillsDir: null, log: noopLogger });
+    expect(rt.skillList().map((s) => s.name)).toEqual(['email']);
+    expect(rt.skillInfo('mailrelay')).toBeNull();
+    expect(rt.summary()).toEqual([
+      { name: 'email', version: '1.0.0', source: 'builtin', contract: '^1.1' },
+      { name: 'mailrelay', version: '1.0.0', source: 'dir', contract: '^1.2', operatorOnly: true },
+    ]);
+  });
+
+  it('is refused by a host whose email.transport slot is not operatorOnly', async () => {
+    const host = defineModule({ ...emailHost, slots: { [EMAIL_TRANSPORT_SLOT]: { schema: emailTransportSchema, unique: 'id', description: 'e-mail transports' } } });
+    const dir = tempModulesDir();
+    dirs.push(dir);
+    installDirModule(dir, { name: 'mailrelay', from: MAILRELAY_FIXTURE });
+    const importer = async (pkg: string) => (pkg === 'drobek-module-email' ? host : Promise.reject(new Error(`Cannot find package '${pkg}'`)));
+    await expect(loadModuleSet({ DROBEK_MODULES: 'email,mailrelay' }, { modulesDir: dir, log: noopLogger, importer })).rejects.toThrow(
+      /module "mailrelay" has no skill, but contributes to the slot "email\.transport" \(module "email"\), which reaches apps/
+    );
   });
 });

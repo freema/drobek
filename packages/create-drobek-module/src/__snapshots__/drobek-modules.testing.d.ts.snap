@@ -1158,6 +1158,12 @@ interface ModuleSlot<T = unknown> {
     unique?: string;
     /** What a contribution does, for module authors and the dashboard. */
     description: string;
+    /**
+     * The contributions configure the server, not apps (e.g. where its errors
+     * or its mail go): a module whose only contributions go to such slots may
+     * leave out its skill (an operator-only module). Default false.
+     */
+    operatorOnly?: boolean;
 }
 /**
  * Who the module is for: `default` — every workspace of the server (the
@@ -1815,6 +1821,7 @@ interface DrobekModule<Config = unknown> {
      * server refuses to start; missing → a start-up warning.
      */
     contract?: string;
+    /** The agent-facing documentation (skill_info, the briefing). A module without one is an OperatorModule. */
     skill: ModuleSkill;
     /**
      * Per-app configuration (zod). Validates every configure_module call and
@@ -1931,8 +1938,23 @@ interface DrobekModule<Config = unknown> {
      */
     jobs?: ModuleJob<Config>[];
 }
-/** A module of any config type (what the registry holds). */
-type AnyModule = DrobekModule<any>;
+/**
+ * A module without a skill: operator-only. Allowed only with no app surface —
+ * no routes, sdk, app config (configSchema fields, salvageConfig,
+ * confirmRequired, onConfirmed), secrets, rules, errors, owner authority,
+ * appInfo, opt-in availability, dashboard.editor, `scope: 'app'` job, compose
+ * or slot that is not `operatorOnly` — and with contributions to
+ * `operatorOnly` slots only (`errors.reporter`, `email.transport`); the
+ * registry refuses anything else at start. It is left out of skill_info, the
+ * briefing, llms.txt, configure_module and the app's Modules tab;
+ * /api/version and the super-admin's workspace Modules page mark it
+ * `operatorOnly`.
+ */
+interface OperatorModule<Config = unknown> extends Omit<DrobekModule<Config>, 'skill'> {
+    skill?: undefined;
+}
+/** A module of any config type, with or without a skill (what the registry holds). */
+type AnyModule = DrobekModule<any> | OperatorModule<any>;
 /** What a slot host's `compose` gets at start: the checked contributions to every slot. */
 interface ModuleComposeInput {
     contributions<T = unknown>(slot: string): T[];
@@ -2355,11 +2377,12 @@ interface CheckSkillSourcesOptions {
 declare function knownErrorCodes(src: SkillSource, modules: AnyModule[]): Set<string>;
 /** Format + code issues of `skills` on a server running `modules` (every module skill's module must be among them). */
 declare function checkSkillSources(skills: SkillSource[], modules: AnyModule[], opts?: CheckSkillSourcesOptions): Promise<SkillIssue[]>;
-/** The skill of one module as skill_info serves it. */
+/** The skill of one module as skill_info serves it (throws for an operator-only module, which has none). */
 declare function moduleSkillSource(module: AnyModule, file?: string): SkillSource;
 /**
  * Check a module's skill (`defineModule({ skill })`) the way drobek checks
- * its built-in modules. `[]` = it passes.
+ * its built-in modules. `[]` = it passes, or the module is operator-only
+ * (no skill to check).
  *
  *   const issues = await checkSkill(erp);
  *   expect(issues.map(formatSkillIssue)).toEqual([]);

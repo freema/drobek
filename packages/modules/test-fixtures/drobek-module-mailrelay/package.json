@@ -2,7 +2,7 @@
   "name": "drobek-module-mailrelay",
   "version": "1.0.0",
   "private": true,
-  "description": "Test fixture: an external module contributing an e-mail transport to the email.transport slot (EMAIL_TRANSPORT=mailrelay, MAILRELAY_TOKEN). Plain ESM, no build step.",
+  "description": "Test fixture: an operator-only external module (no skill) contributing an e-mail transport to the email.transport slot (EMAIL_TRANSPORT=mailrelay, MAILRELAY_TOKEN). Plain ESM, no build step.",
   "type": "module",
   "exports": {
     ".": "./index.js"
