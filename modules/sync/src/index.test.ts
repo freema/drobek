@@ -15,7 +15,7 @@ import { and, asc, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { apps, auditLog, setDbForTests, upstreamSecrets, upstreams, users, workspaces, type DB } from '@drobek/db';
 import * as schema from '@drobek/db/schema';
-import { loadModuleRuntime, memoryMailGuard, memoryRateLimiter, type AppJobContext, type ModuleRuntime } from '@drobek/modules';
+import { loadModuleRuntime, memoryMailGuard, memoryRateLimiter, z, type AppJobContext, type ModuleRuntime } from '@drobek/modules';
 import { encryptSecret } from '@drobek/proxy';
 import data, { dataRecords } from 'drobek-module-data';
 import { createProxyModule } from 'drobek-module-proxy';
@@ -465,5 +465,23 @@ describe('the module', () => {
     await rt.runHook('onAppDelete', app);
     expect(await db.select().from(syncSources).where(eq(syncSources.appId, app.id))).toEqual([]);
     expect(await db.select().from(syncRuns).where(eq(syncRuns.appId, app.id))).toEqual([]);
+  });
+});
+
+describe('the dashboard', () => {
+  it('is named "Scheduled imports"; its form picks the upstream, the collection and the schedule from lists', () => {
+    expect(sync.dashboard).toMatchObject({ title: 'Scheduled imports', description: expect.stringMatching(/cron/) });
+    const schema = z.toJSONSchema(syncConfigSchema, { unrepresentable: 'any', io: 'input' }) as unknown as {
+      properties: { sources: { propertyNames: { title: string }; additionalProperties: { properties: Record<string, Record<string, unknown>>; required: string[] } } };
+    };
+    const source = schema.properties.sources.additionalProperties;
+    expect(schema.properties.sources.propertyNames.title).toBe('Source name');
+    expect(source.properties.upstream['x-drobek-choices']).toBe('upstreams');
+    expect(source.properties.collection['x-drobek-choices']).toBe('collections');
+    expect(source.properties.every).toMatchObject({ 'x-drobek-choices': 'intervals', 'x-drobek-min-interval': 'SYNC_MIN_INTERVAL_MIN', default: '1h' });
+    expect(sync.limits?.map((l) => l.env)).toContain(source.properties.every['x-drobek-min-interval']);
+    // Only what a source cannot work without is required; every field is labelled.
+    expect(source.required.sort()).toEqual(['collection', 'upstream']);
+    for (const [key, field] of Object.entries(source.properties)) expect(field.title, key).toEqual(expect.any(String));
   });
 });

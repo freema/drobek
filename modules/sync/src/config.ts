@@ -20,7 +20,7 @@
  * SYNC_MIN_INTERVAL_MIN, is refused.
  */
 import { createHash } from 'node:crypto';
-import { ModuleError, parseJobInterval, z, type ConfirmContext, type ConfirmItem, type Limits } from '@drobek/modules';
+import { ModuleError, parseJobInterval, z, type ConfigFieldMeta, type ConfirmContext, type ConfirmItem, type Limits } from '@drobek/modules';
 
 export const DEFAULT_MIN_INTERVAL_MIN = 5;
 export const DEFAULT_MAX_SOURCES_PER_APP = 10;
@@ -42,27 +42,64 @@ const DAY_MS = 86_400_000;
 
 const sourceSchema = z
   .strictObject({
-    /** An upstream assigned to this app in the proxy config. */
-    upstream: z.string().regex(UPSTREAM_RE, 'the name of an upstream assigned to this app in the proxy config'),
-    /** Path and ?query below the upstream's base URL. */
-    path: z.string().max(500).regex(/^\//, 'starts with /').default('/'),
-    method: z.enum(['GET', 'POST']).default('GET'),
-    /** A POST body (JSON text), sent as is. */
-    body: z.string().max(4096).optional(),
-    /** How often: minutes, hours or days — "15m", "1h", "1d". */
+    upstream: z.string().regex(UPSTREAM_RE, 'the name of an upstream assigned to this app in the proxy config').meta({
+      title: 'Upstream',
+      description: 'The API to fetch from: an upstream of the workspace, assigned to this app in the proxy module (its key stays there).',
+      'x-drobek-choices': 'upstreams',
+    } satisfies ConfigFieldMeta),
+    path: z
+      .string()
+      .max(500)
+      .regex(/^\//, 'starts with /')
+      .default('/')
+      .meta({ title: 'Path', description: 'The path and ?query below the upstream’s base URL, e.g. /v3/players?league=1.' }),
+    method: z.enum(['GET', 'POST']).default('GET').meta({ title: 'Method' }),
+    body: z
+      .string()
+      .max(4096)
+      .optional()
+      .meta({ title: 'Request body', description: 'JSON text sent as is, with method POST only. Empty: no body.' }),
     every: z
       .string()
       .regex(EVERY_RE, 'a whole number of minutes, hours or days: "15m", "1h", "1d"')
       .refine((v) => (parseJobInterval(v) ?? 0) <= 30 * DAY_MS, 'at most 30 days')
-      .default('1h'),
-    /** A collection declared in the data config. */
-    collection: z.string().regex(COLLECTION_RE, 'a collection declared in the data config'),
-    /** Where the array of records is in the response: "data.players", "results[0].items"; "" = the response itself. */
-    items: z.string().max(200).regex(ITEMS_RE, 'a dotted path such as "data.players" (or "" for the response itself)').default(''),
-    /** The field that identifies a record (required for upsert). */
-    key: z.string().regex(FIELD_RE, 'a field name (letters, digits, - and _, a letter first)').optional(),
-    mode: z.enum(['replace', 'upsert']).default('replace'),
-    paused: z.boolean().optional(),
+      .default('1h')
+      .meta({
+        title: 'Schedule',
+        description: 'How often the source fetches, like a cron job.',
+        'x-drobek-choices': 'intervals',
+        'x-drobek-min-interval': 'SYNC_MIN_INTERVAL_MIN',
+      } satisfies ConfigFieldMeta),
+    collection: z.string().regex(COLLECTION_RE, 'a collection declared in the data config').meta({
+      title: 'Collection',
+      description: 'The data collection the fetched records are written into; the app reads them from there.',
+      'x-drobek-choices': 'collections',
+    } satisfies ConfigFieldMeta),
+    items: z
+      .string()
+      .max(200)
+      .regex(ITEMS_RE, 'a dotted path such as "data.players" (or "" for the response itself)')
+      .default('')
+      .meta({
+        title: 'Records in the answer',
+        description: 'Where the list of records is in the JSON answer, e.g. data.players or results[0].items. Empty: the answer itself is the list.',
+      }),
+    key: z
+      .string()
+      .regex(FIELD_RE, 'a field name (letters, digits, - and _, a letter first)')
+      .optional()
+      .meta({
+        title: 'Record key',
+        description: 'The field that identifies a record, e.g. id. Needed for mode upsert; with replace it is optional (then every record must have a unique one).',
+      }),
+    mode: z.enum(['replace', 'upsert']).default('replace').meta({
+      title: 'Mode',
+      description: 'replace: afterwards the collection holds exactly the fetched records. upsert: records are updated by their key, new ones added, none removed.',
+    }),
+    paused: z
+      .boolean()
+      .optional()
+      .meta({ title: 'Paused', description: 'The schedule stops; Run now still works. Pause schedule and Resume schedule under Sources set it too.' }),
   })
   .refine((s) => s.mode !== 'upsert' || s.key !== undefined, { message: 'mode "upsert" needs `key`: the field that identifies a record', path: ['key'] })
   .refine((s) => s.body === undefined || s.method === 'POST', { message: 'a body is sent with method "POST" only', path: ['body'] });
@@ -71,9 +108,19 @@ export type SyncSource = z.infer<typeof sourceSchema>;
 
 export const syncConfigSchema = z.strictObject({
   sources: z
-    .record(z.string().regex(SOURCE_NAME_RE, 'a source name: lowercase letters, digits, - and _, a letter first'), sourceSchema)
+    .record(
+      z
+        .string()
+        .regex(SOURCE_NAME_RE, 'a source name: lowercase letters, digits, - and _, a letter first')
+        .meta({ title: 'Source name', description: 'Lowercase letters, digits, - and _, a letter first, e.g. players.' }),
+      sourceSchema
+    )
     .refine((s) => Object.keys(s).length <= MAX_SOURCES, `at most ${MAX_SOURCES} sources`)
-    .default({}),
+    .default({})
+    .meta({
+      title: 'Sources',
+      description: 'Each source fetches JSON from an upstream on its schedule and writes the records into a data collection. A new source, or a change of what it fetches or writes, waits for confirmation.',
+    }),
 });
 
 export type SyncConfig = z.infer<typeof syncConfigSchema>;

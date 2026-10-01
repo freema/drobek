@@ -81,6 +81,10 @@ const sync = defineModule<SyncConfig>({
       'data from an external API should refresh on its own — a cron or periodic update of scores, prices, a feed: drobek fetches it on a schedule into a data collection; the key stays in the dashboard',
     markdown: readFileSync(here('../SKILL.md'), 'utf8'),
   },
+  dashboard: {
+    title: 'Scheduled imports',
+    description: 'Works like a cron job: on a schedule it fetches JSON from an upstream and writes the records into a data collection.',
+  },
   configSchema: syncConfigSchema,
   configDefaults: SYNC_CONFIG_DEFAULTS,
   confirmRequired: syncConfirmRequiredIn,
