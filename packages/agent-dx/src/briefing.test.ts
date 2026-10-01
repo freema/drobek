@@ -104,6 +104,24 @@ describe('renderBriefing', () => {
     expect(inst).toContain('`published_url`');
   });
 
+  it('explains the description, favicon, link previews and search engines — the agent writes them, drobek adds nothing', () => {
+    const head = b.slice(b.indexOf('## Browser tab, search results and shared links'), b.indexOf('## Files'));
+    expect(head).toContain('drobek adds nothing to your pages');
+    expect(head).toContain('<meta name="description" content="…">');
+    expect(head).toContain('`<link rel="icon" href="/favicon.svg" type="image/svg+xml">`');
+    expect(head).toContain('a PNG or ICO is uploaded with `create_asset_upload`');
+    expect(head).toContain('`/favicon.ico` request is a 404');
+    for (const og of ['og:title', 'og:description', 'og:type', 'og:url', 'og:image', 'summary_large_image']) expect(head, og).toContain(og);
+    expect(head).toContain('ABSOLUTE https URLs on the production address');
+    expect(head).toContain('`https://<slug>.<APPS_DOMAIN>/og.png`');
+    expect(head).toContain('social networks do not render SVG');
+    expect(head).toContain('leave `og:image` out');
+    expect(head).toContain('`X-Robots-Tag: noindex`');
+    expect(head).toContain('<meta name="robots" content="noindex">');
+    expect(head).toContain('drobek serves no robots.txt of its own');
+    for (const code of ['missing_title', 'missing_description', 'missing_favicon', 'og_image_not_absolute']) expect(head, code).toContain(code);
+  });
+
   it('says what publish\'s assets: "draft" means', () => {
     expect(b).toContain('`assets: "draft"` means the uploads the preview shows are now live on production too');
   });

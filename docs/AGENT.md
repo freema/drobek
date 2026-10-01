@@ -331,6 +331,14 @@ unchanged.
   Sources and `drobek.json` are never served; extension-less paths get
   `index.html`. The CSP allows scripts and `fetch` only to the app itself and
   esm.sh.
+- **Browser tab, search results and shared links** — drobek adds nothing to
+  an app's pages, so the agent writes the `<title>`, a
+  `<meta name="description">`, a favicon (an SVG via `write_files`, a PNG or
+  ICO via `create_asset_upload`) and the Open Graph tags itself; `og:url` and
+  `og:image` are absolute https URLs on the production address, the image a
+  ~1200×630 PNG or JPEG upload. Preview and version hosts are `noindex`; an
+  app stays out of search results with `<meta name="robots"
+  content="noindex">`, and drobek serves no robots.txt of its own.
 - **Files** — app-relative text files, 1–20 per write, one `reasoning` line
   (≤ 300 characters); 200 files / 512 KiB per file / 5 MiB per version. One
   `write_files` call is one MCP request of at most `MCP_MAX_BODY_BYTES`

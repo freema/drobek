@@ -89,6 +89,8 @@ The procedure (tool → what to check):
 5. Check: `write_files` → `compile.ok: true`; `list_assets({ app_id })` lists
    every binary with its size; give the user the `preview_url` and ask them to
    play the video; `get_logs({ app_id, kind: "runtime" })` for browser errors.
+   An artifact rarely has a description, a favicon or link-preview tags (readiness `missing_description`,
+   `missing_favicon`): add them to its `<head>` — `skill_info('start')`, "Tab, search, shared link".
 6. `publish({ app_id })` ONLY when the user explicitly asks → `published_url`.
 7. Offer the public gallery once: show the description (≤ 160 chars) and ask;
    ONLY after an explicit yes `set_gallery_listing({ app_id, listed: true,

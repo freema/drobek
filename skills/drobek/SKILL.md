@@ -159,7 +159,9 @@ in the version history.
   `"beacon": false` in drobek.json turns the error reports off.
 - `readiness` is the publish readiness report of the new version:
   `blocking` repeats the compile errors (`ready: false`), `warnings` are
-  things to fix before the user publishes (e.g. `missing_title`), each
+  things to fix before the user publishes (e.g. `missing_title`,
+  `missing_description`, `missing_favicon`, `og_image_not_absolute` — see
+  "Browser tab, search results and shared links"), each
   `{ code, file?, line?, message, hint }`. Fix the warnings you can in your
   next write; they never stop a write or a publish. The module rules audit
   reads the app's module configs: `data_public_write_no_schema`,
@@ -233,6 +235,39 @@ bar:
   preview. Install from the `published_url` after `publish` — the icons
   (assets) reach production with that publish.
 
+## Browser tab, search results and shared links
+
+drobek adds nothing to an app's pages: the browser tab, a search result and a
+link preview in a chat app show what the `<head>` of `index.html` (and of each
+other page) says. Write it yourself:
+
+- `<title>` (the app's name) and `<meta name="description" content="…">` —
+  one sentence on what the app does.
+- A favicon. The simplest is an SVG written with `write_files`
+  (`favicon.svg`) and `<link rel="icon" href="/favicon.svg"
+  type="image/svg+xml">`; a PNG or ICO goes up with `create_asset_upload` and
+  is linked the same way. Without one, the browser's own `/favicon.ico`
+  request is a 404 on every visit (`get_logs` kind `requests`).
+- Link previews (Open Graph): `og:title`, `og:description`, `og:type`
+  (`website`), `og:url` and `og:image`, plus `twitter:card`
+  `summary_large_image` when there is an image. `og:url` and `og:image` are
+  ABSOLUTE https URLs on the production address — the `published_url` + the
+  path (`https://<slug>.<APPS_DOMAIN>/og.png`, or the primary custom domain);
+  the preview is not indexed and not meant to be shared. `og:image` is a PNG
+  or JPEG of about 1200×630 uploaded with `create_asset_upload` (social
+  networks do not render SVG); it reaches production with the next
+  `publish`. No image → leave `og:image` out: the title and description
+  still give a text preview.
+- Search engines: the production address and custom domains may be indexed;
+  the preview and `--v<N>` hosts send `X-Robots-Tag: noindex`. To keep an
+  app out of search results (an internal tool), put `<meta name="robots"
+  content="noindex">` in its pages — a `robots.txt` with `Disallow: /` (a
+  `.txt` file via `write_files`) only stops crawling, a linked URL can still
+  be listed. drobek serves no robots.txt of its own.
+- `readiness.warnings` reports `missing_title`, `missing_description`,
+  `missing_favicon` and `og_image_not_absolute` (an `og:image` /
+  `twitter:image` that is not an absolute https URL).
+
 ## Port a Claude artifact
 
 drobek hosts what a Claude artifact is — a page with its script, images and
@@ -256,7 +291,9 @@ What changes on the way: scripts load only from the app and esm.sh (a CDN
 app (external APIs → the proxy module), `<iframe>` only YouTube, Vimeo and
 Google Drive, and there is no `window.claude.*` runtime API — `window.storage`
 becomes `localStorage` or the data module, `window.claude.complete` is dropped
-or goes through the proxy module.
+or goes through the proxy module. An artifact rarely has a description, a
+favicon or link-preview tags: add them as in "Browser tab, search results and
+shared links".
 
 ## One writer at a time
 

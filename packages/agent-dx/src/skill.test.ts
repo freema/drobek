@@ -8,6 +8,7 @@ import {
   PLUGIN_MARKETPLACE_ADD_COMMAND,
   PLUGIN_REPO_URL,
 } from './plugin.js';
+import { errorDoc } from './errors-catalogue.js';
 import { SKILL_INSTALL_COMMAND } from './render.js';
 import { TOOL_NAMES } from './tools.js';
 
@@ -88,6 +89,22 @@ describe('skills/drobek/SKILL.md', () => {
     expect(port).toContain('SAME relative path');
     expect(port).toContain('never base64 through a tool call');
     expect(port).toContain('`window.claude.*`');
+  });
+
+  it('has the agent write the description, favicon and link previews itself, with the readiness codes that flag them', () => {
+    const head = md.slice(md.indexOf('## Browser tab, search results and shared links'), md.indexOf('## Port a Claude artifact'));
+    expect(head).toContain('drobek adds nothing');
+    expect(head).toContain('<meta name="description" content="…">');
+    expect(head).toContain('`favicon.svg`');
+    expect(head).toContain('`create_asset_upload`');
+    expect(head).toContain('ABSOLUTE https URLs on the production address');
+    expect(head).toContain('social\n  networks do not render SVG');
+    expect(head).toContain('`X-Robots-Tag: noindex`');
+    expect(head).toContain('drobek serves no robots.txt of its own');
+    for (const code of ['missing_title', 'missing_description', 'missing_favicon', 'og_image_not_absolute']) {
+      expect(head, code).toContain(code);
+      expect(errorDoc(code), code).toBeTruthy();
+    }
   });
 
   it('states the skill_info rule verbatim, in the present tense', () => {
