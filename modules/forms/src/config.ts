@@ -45,7 +45,13 @@ export type FormConfig = z.infer<typeof formConfigSchema>;
 
 export const formsConfigSchema = z.strictObject({
   forms: z
-    .record(z.string().regex(FORM_NAME_RE, 'form names are lowercase letters, digits, - and _ (max 40)'), formConfigSchema)
+    .record(
+      z
+        .string()
+        .regex(FORM_NAME_RE, 'form names are lowercase letters, digits, - and _ (max 40)')
+        .meta({ title: 'Form name', description: 'The name the app gives the form, e.g. contact for <Form name="contact">.' }),
+      formConfigSchema
+    )
     .refine((f) => Object.keys(f).length <= MAX_FORMS, `at most ${MAX_FORMS} forms`)
     .default({})
     .meta({

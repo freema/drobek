@@ -253,6 +253,59 @@ export interface ModuleDashboard {
    * `data`'s) or `upstreams` (an `upstreams` config shaped like `proxy`'s).
    */
   editor?: ModuleDashboardEditor;
+  /**
+   * The module's name for people, e.g. `'Scheduled imports'`: the dashboard
+   * shows "Scheduled imports (sync)". The module's `name` stays its
+   * identifier everywhere (URLs, the config key, MCP, skill_info). One line,
+   * at most 60 characters.
+   */
+  title?: string;
+  /**
+   * One line for the app's owner, shown in the dashboard under the title
+   * instead of `skill.useWhen` (which is written for agents). At most 200
+   * characters.
+   */
+  description?: string;
+}
+
+/**
+ * Where the dashboard's config form takes the choices of a string field from
+ * (the JSON Schema keyword `x-drobek-choices`, see ConfigFieldMeta):
+ *
+ *  - `upstreams` — the upstreams registered in the app's workspace, those
+ *    assigned to the app first (the config of the module declaring
+ *    `dashboard.editor: 'upstreams'`);
+ *  - `collections` — the app's data collections (the config of the module
+ *    declaring `dashboard.editor: 'collections'`);
+ *  - `intervals` — intervals from 5 minutes to a day (`'5m'` … `'24h'`), none
+ *    shorter than the module limit `x-drobek-min-interval` names.
+ */
+export type ConfigChoices = 'upstreams' | 'collections' | 'intervals';
+
+/**
+ * What the dashboard's config form reads from a field of a module's
+ * `configSchema` — set with zod's `.meta()`, e.g.
+ * `z.string().meta({ title: 'Upstream', 'x-drobek-choices': 'upstreams' } satisfies ConfigFieldMeta)`.
+ * Presentation only: configure_module and the configSchema validate the
+ * same with or without it, and a value outside the choices stays valid.
+ */
+export interface ConfigFieldMeta {
+  /** The field's label (without one: the key, humanized). */
+  title?: string;
+  /** Shown under the field. */
+  description?: string;
+  /**
+   * A string field becomes a select of these choices (see ConfigChoices). A
+   * current value that is not among them stays selectable, marked; with no
+   * choice at all the form says what to set up first, and where.
+   */
+  'x-drobek-choices'?: ConfigChoices;
+  /**
+   * With `'x-drobek-choices': 'intervals'`: the env name of one of the
+   * module's `limits` that holds the shortest interval in minutes (the
+   * workspace's value applies), e.g. `'SYNC_MIN_INTERVAL_MIN'`.
+   */
+  'x-drobek-min-interval'?: string;
 }
 
 /**

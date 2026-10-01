@@ -1225,6 +1225,57 @@ interface ModuleDashboard {
      * `data`'s) or `upstreams` (an `upstreams` config shaped like `proxy`'s).
      */
     editor?: ModuleDashboardEditor;
+    /**
+     * The module's name for people, e.g. `'Scheduled imports'`: the dashboard
+     * shows "Scheduled imports (sync)". The module's `name` stays its
+     * identifier everywhere (URLs, the config key, MCP, skill_info). One line,
+     * at most 60 characters.
+     */
+    title?: string;
+    /**
+     * One line for the app's owner, shown in the dashboard under the title
+     * instead of `skill.useWhen` (which is written for agents). At most 200
+     * characters.
+     */
+    description?: string;
+}
+/**
+ * Where the dashboard's config form takes the choices of a string field from
+ * (the JSON Schema keyword `x-drobek-choices`, see ConfigFieldMeta):
+ *
+ *  - `upstreams` — the upstreams registered in the app's workspace, those
+ *    assigned to the app first (the config of the module declaring
+ *    `dashboard.editor: 'upstreams'`);
+ *  - `collections` — the app's data collections (the config of the module
+ *    declaring `dashboard.editor: 'collections'`);
+ *  - `intervals` — intervals from 5 minutes to a day (`'5m'` … `'24h'`), none
+ *    shorter than the module limit `x-drobek-min-interval` names.
+ */
+type ConfigChoices = 'upstreams' | 'collections' | 'intervals';
+/**
+ * What the dashboard's config form reads from a field of a module's
+ * `configSchema` — set with zod's `.meta()`, e.g.
+ * `z.string().meta({ title: 'Upstream', 'x-drobek-choices': 'upstreams' } satisfies ConfigFieldMeta)`.
+ * Presentation only: configure_module and the configSchema validate the
+ * same with or without it, and a value outside the choices stays valid.
+ */
+interface ConfigFieldMeta {
+    /** The field's label (without one: the key, humanized). */
+    title?: string;
+    /** Shown under the field. */
+    description?: string;
+    /**
+     * A string field becomes a select of these choices (see ConfigChoices). A
+     * current value that is not among them stays selectable, marked; with no
+     * choice at all the form says what to set up first, and where.
+     */
+    'x-drobek-choices'?: ConfigChoices;
+    /**
+     * With `'x-drobek-choices': 'intervals'`: the env name of one of the
+     * module's `limits` that holds the shortest interval in minutes (the
+     * workspace's value applies), e.g. `'SYNC_MIN_INTERVAL_MIN'`.
+     */
+    'x-drobek-min-interval'?: string;
 }
 /**
  * The module that OWNS end-user sessions (the built-in `auth`): core asks it
@@ -2957,4 +3008,4 @@ declare const loadModules: typeof loadModules$1;
 declare const buildSdk: typeof buildSdk$1;
 
 export { AUTH_PROVIDER_API_VERSION, AUTH_PROVIDER_ID_RE, AUTH_RESERVED_CONFIG_KEYS, CORE_ERROR_CODES, EMAIL_PROVIDER_ID, EMAIL_SEND_ERROR_CODES, EMAIL_TRANSPORT_API_VERSION, EMAIL_TRANSPORT_SLOT, ERROR_REPORTER_API_VERSION, ERROR_REPORTER_SLOT, EmailSendError, JOB_MAX_INTERVAL_MS, JOB_MIN_INTERVAL_MS, JOB_NAME_RE, MODULE_CONTRACT_VERSION, MODULE_ERROR_CODES, MODULE_ERROR_CODE_RE, MODULE_NAME_RE, ModuleError, RECORDS_IMPORT_MAX_ROWS, RULE_TOKENS, SLOT_NAME_RE, authIdentitySchema, authProviderSchema, authSignedInObserverSchema, buildSdk, decideAccess, defineAuthProvider, defineEmailTransport, defineErrorReporter, defineModule, defineSignInObserver, emailTransportSchema, errorReporterSchema, hasControlBytes, isDefinedModule, isModuleError, isValidRule, issuePaths, loadModules, looksLikeSvg, moduleNotEnabled, normalizeConfirmItems, parseJobInterval, parseRule, perIpLimitKey, respond, ruleIsPublic, skillHint, sniffSignature };
-export type { AccessDecision, AnyModule, AppJob, AppJobContext, AuthIdentity, AuthProvider, AuthProviderBeginInput, AuthProviderBeginResult, AuthProviderCallbackInput, AuthProviderSecretDoc, AuthProviderSecrets, AuthSignInEvent, AuthSignedInObserver, ComposedModuleParts, ConfirmContext, ConfirmItem, ConfirmRole, ConfirmedContext, DB, DrobekModule, EmailKind, EmailMessage, EmailRecipient, EmailSendErrorCode, EmailTransportContext, EmailTransportMessage, EndUser, EndUserAuthority, EndUserCallbackApp, EndUserCallbackInput, EndUserCallbackResult, EndUserListQuery, EndUserPage, EndUserRecord, ErrorReportContext, ErrorReportEvent, ErrorReportKind, ErrorReporter, ErrorReporterContext, FilesAuthority, HookApp, JobContextBase, JobInterval, Limits, Logger, MailAuthority, MailEnvelope, MailPrepareInput, ModuleAppView, ModuleAvailability, ModuleComposeInput, ModuleContext, ModuleDashboard, ModuleDashboardEditor, ModuleEmailTransport, ModuleErrorBody, ModuleErrorCode, ModuleErrorDoc, ModuleHooks, ModuleJob, ModuleLimit, ModuleMigrations, ModuleRequest, ModuleResponse, ModuleRouter, ModuleSdk, ModuleSecretDoc, ModuleServices, ModuleSkill, ModuleSlot, OwnerFile, OwnerFilesPage, OwnerSubmission, OwnerView, Principal, RateLimitResult, RecordsAuthority, RecordsCollection, RecordsImportOptions, RecordsImportResult, RecordsPage, RecordsQuery, RecordsView, RouteHandler, RouteOptions, RouteRateLimit, Rule, ServerJob, ServerJobContext, SniffedType, SubmissionsAuthority, SubmissionsPage, SubmissionsQuery, SyncAuthority, SyncRun, SyncSourceState, UploadedFile, UpstreamRequest, UpstreamResponse, UpstreamsAuthority };
+export type { AccessDecision, AnyModule, AppJob, AppJobContext, AuthIdentity, AuthProvider, AuthProviderBeginInput, AuthProviderBeginResult, AuthProviderCallbackInput, AuthProviderSecretDoc, AuthProviderSecrets, AuthSignInEvent, AuthSignedInObserver, ComposedModuleParts, ConfigChoices, ConfigFieldMeta, ConfirmContext, ConfirmItem, ConfirmRole, ConfirmedContext, DB, DrobekModule, EmailKind, EmailMessage, EmailRecipient, EmailSendErrorCode, EmailTransportContext, EmailTransportMessage, EndUser, EndUserAuthority, EndUserCallbackApp, EndUserCallbackInput, EndUserCallbackResult, EndUserListQuery, EndUserPage, EndUserRecord, ErrorReportContext, ErrorReportEvent, ErrorReportKind, ErrorReporter, ErrorReporterContext, FilesAuthority, HookApp, JobContextBase, JobInterval, Limits, Logger, MailAuthority, MailEnvelope, MailPrepareInput, ModuleAppView, ModuleAvailability, ModuleComposeInput, ModuleContext, ModuleDashboard, ModuleDashboardEditor, ModuleEmailTransport, ModuleErrorBody, ModuleErrorCode, ModuleErrorDoc, ModuleHooks, ModuleJob, ModuleLimit, ModuleMigrations, ModuleRequest, ModuleResponse, ModuleRouter, ModuleSdk, ModuleSecretDoc, ModuleServices, ModuleSkill, ModuleSlot, OwnerFile, OwnerFilesPage, OwnerSubmission, OwnerView, Principal, RateLimitResult, RecordsAuthority, RecordsCollection, RecordsImportOptions, RecordsImportResult, RecordsPage, RecordsQuery, RecordsView, RouteHandler, RouteOptions, RouteRateLimit, Rule, ServerJob, ServerJobContext, SniffedType, SubmissionsAuthority, SubmissionsPage, SubmissionsQuery, SyncAuthority, SyncRun, SyncSourceState, UploadedFile, UpstreamRequest, UpstreamResponse, UpstreamsAuthority };

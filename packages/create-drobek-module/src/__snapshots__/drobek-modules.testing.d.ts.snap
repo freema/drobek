@@ -1177,6 +1177,19 @@ interface ModuleDashboard {
      * `data`'s) or `upstreams` (an `upstreams` config shaped like `proxy`'s).
      */
     editor?: ModuleDashboardEditor;
+    /**
+     * The module's name for people, e.g. `'Scheduled imports'`: the dashboard
+     * shows "Scheduled imports (sync)". The module's `name` stays its
+     * identifier everywhere (URLs, the config key, MCP, skill_info). One line,
+     * at most 60 characters.
+     */
+    title?: string;
+    /**
+     * One line for the app's owner, shown in the dashboard under the title
+     * instead of `skill.useWhen` (which is written for agents). At most 200
+     * characters.
+     */
+    description?: string;
 }
 /**
  * The module that OWNS end-user sessions (the built-in `auth`): core asks it

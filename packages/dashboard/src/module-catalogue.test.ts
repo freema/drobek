@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { filterModules, formatLimit } from './module-catalogue.js';
+import { filterModules, formatLimit, moduleHeading, moduleSummary } from './module-catalogue.js';
 
 describe('formatLimit', () => {
   it('shows bytes in human units with the exact value', () => {
@@ -33,10 +33,30 @@ describe('filterModules', () => {
     expect(filterModules(modules, null)).toHaveLength(2);
   });
 
+  it('matches the title and the description too', () => {
+    const titled = [...modules, { name: 'sync', title: 'Scheduled imports', description: 'Works like a cron job.', useWhen: 'data refreshes', slots: [], limits: [] }];
+    expect(filterModules(titled, 'scheduled').map((m) => m.name)).toEqual(['sync']);
+    expect(filterModules(titled, 'cron').map((m) => m.name)).toEqual(['sync']);
+  });
+
   it('matches every word, case-insensitive, in the name, use-when, slots and limits', () => {
     expect(filterModules(modules, 'SIGN-IN').map((m) => m.name)).toEqual(['auth']);
     expect(filterModules(modules, 'max_bytes').map((m) => m.name)).toEqual(['files']);
     expect(filterModules(modules, 'auth.provider').map((m) => m.name)).toEqual(['auth']);
     expect(filterModules(modules, 'upload sign-in')).toEqual([]);
+  });
+});
+
+describe('moduleHeading / moduleSummary', () => {
+  it('a title leads, the name it is configured by follows; without one the name alone', () => {
+    expect(moduleHeading({ name: 'sync', title: 'Scheduled imports' })).toBe('Scheduled imports (sync)');
+    expect(moduleHeading({ name: 'auth', title: null })).toBe('auth');
+    expect(moduleHeading({ name: 'auth' })).toBe('auth');
+  });
+
+  it("the description for the owner, else the skill's use-when", () => {
+    expect(moduleSummary({ useWhen: 'data refreshes on its own', description: 'Works like a cron job.' })).toBe('Works like a cron job.');
+    expect(moduleSummary({ useWhen: 'the app needs sign-in', description: null })).toBe('Use when the app needs sign-in');
+    expect(moduleSummary({ useWhen: '' })).toBe('');
   });
 });

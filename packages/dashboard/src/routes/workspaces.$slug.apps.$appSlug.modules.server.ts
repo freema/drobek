@@ -30,6 +30,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       name: m.name,
       version: m.version,
       useWhen: m.skill.useWhen,
+      title: m.dashboard?.title ?? null,
+      description: m.dashboard?.description ?? null,
       /** False for an opt-in module the workspace does not have enabled. */
       enabled: s?.enabled !== false,
       configured: Boolean(s?.configured),

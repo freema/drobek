@@ -75,8 +75,15 @@ const ENV_NAME_RE = /^[A-Z][A-Z0-9_]*$/;
 const CORE_CODES = new Set(CORE_ERROR_CODES);
 const AVAILABILITY = new Set<string>(['default', 'opt-in']);
 const DASHBOARD_EDITORS = new Set<string>(['collections', 'upstreams']);
+const DASHBOARD_TITLE_MAX = 60;
+const DASHBOARD_DESCRIPTION_MAX = 200;
 const HOOKS = ['onAppCreate', 'onPublish', 'onAppDelete'] as const;
 const DEFAULTS_ENV_RE = /^DROBEK_MODULE_([A-Z0-9]+)_DEFAULTS$/;
+
+/** A non-empty, trimmed string of at most `max` characters without a line break or control character. */
+function oneLine(value: unknown, max: number): boolean {
+  return typeof value === 'string' && value.length > 0 && value.length <= max && value.trim() === value && !/[\u0000-\u001f\u007f\u2028\u2029]/.test(value);
+}
 
 /** `DROBEK_MODULES` → trimmed, de-duplicated entries (order kept). */
 export function parseModuleList(raw: string | undefined): string[] {
@@ -328,8 +335,12 @@ export function validateModule(m: AnyModule): void {
   if (m.jobs !== undefined) validateJobs(m.jobs, fail);
   if (m.dashboard !== undefined) {
     if (!isPlainObject(m.dashboard)) fail('dashboard must be an object');
-    const editor: unknown = (m.dashboard as { editor?: unknown }).editor;
+    const { editor, title, description } = m.dashboard as { editor?: unknown; title?: unknown; description?: unknown };
     if (editor !== undefined && !DASHBOARD_EDITORS.has(String(editor))) fail(`dashboard.editor must be one of ${[...DASHBOARD_EDITORS].join(', ')}`);
+    if (title !== undefined && !oneLine(title, DASHBOARD_TITLE_MAX)) fail(`dashboard.title must be one line of 1–${DASHBOARD_TITLE_MAX} characters`);
+    if (description !== undefined && !oneLine(description, DASHBOARD_DESCRIPTION_MAX)) {
+      fail(`dashboard.description must be one line of 1–${DASHBOARD_DESCRIPTION_MAX} characters`);
+    }
   }
 }
 

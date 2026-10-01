@@ -8,16 +8,18 @@
  * `dashboard.editor`, never by its name (the fixtures are NOT named
  * data / proxy, and a module named `proxy` without the declaration gets the
  * generic form) — "About this module" + error codes, a viewer refused before
- * anything changes.
+ * anything changes, and the choices of fields annotated `x-drobek-choices`
+ * (the workspace's upstreams, the app's collections, the intervals the
+ * workspace's limit allows).
  */
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { migrate } from 'drizzle-orm/pglite/migrator';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as schema from '@drobek/db/schema';
-import { apps, auditLog, moduleConfigs, moduleSecrets, setDbForTests, users, workspaceModules, workspaces } from '@drobek/db';
+import { apps, auditLog, moduleConfigs, moduleSecrets, setDbForTests, upstreams, users, workspaceModules, workspaces } from '@drobek/db';
 import { noopLogger } from '@drobek/core';
 import {
   defineModule,
@@ -27,6 +29,7 @@ import {
   setModuleRuntimeForTests,
   z,
   ModuleError,
+  type ConfigFieldMeta,
   type ModuleRuntime,
   type SyncRun,
   type SyncSourceState,
@@ -209,6 +212,31 @@ const importer = defineModule<{ sources: Record<string, { upstream: string; paus
   },
 });
 
+/** A module whose fields take their choices from the workspace and the app (`x-drobek-choices`). */
+const feeder = defineModule<{ sources: Record<string, { upstream: string; collection: string; every: string }> }>({
+  name: 'feeder',
+  version: '1.0.0',
+  skill: { useWhen: 'you feed a collection from an API', markdown: '# feeder' },
+  dashboard: { title: 'Feeds', description: 'Fills a collection from an upstream on a schedule.' },
+  limits: [{ env: 'FEEDER_MIN_INTERVAL_MIN', default: 15, meaning: 'the shortest feed interval, in minutes' }],
+  configSchema: z.strictObject({
+    sources: z
+      .record(
+        z.string().meta({ title: 'Feed name' }),
+        z.strictObject({
+          upstream: z.string().min(1).meta({ title: 'Upstream', 'x-drobek-choices': 'upstreams' } satisfies ConfigFieldMeta),
+          collection: z.string().min(1).meta({ title: 'Collection', 'x-drobek-choices': 'collections' } satisfies ConfigFieldMeta),
+          every: z
+            .string()
+            .default('1h')
+            .meta({ title: 'Schedule', 'x-drobek-choices': 'intervals', 'x-drobek-min-interval': 'FEEDER_MIN_INTERVAL_MIN' } satisfies ConfigFieldMeta),
+        })
+      )
+      .default({}),
+  }),
+  configDefaults: { sources: {} },
+});
+
 let pg: PGlite;
 let rt: ModuleRuntime;
 let appId: string;
@@ -263,7 +291,7 @@ beforeAll(async () => {
   rt = await loadModuleRuntime({
     env: ENV,
     log: noopLogger,
-    modules: [shop, store, gateway, proxy, vault, importer],
+    modules: [shop, store, gateway, proxy, vault, importer, feeder],
     skillsDir: null,
     deps: {
       rateLimit: memoryRateLimiter(),
@@ -648,5 +676,80 @@ describe('the sources of a scheduled-import module', () => {
     role.current = 'viewer';
     await expect(post('importer', { intent: 'sync-run', source: 'feed' })).rejects.toMatchObject({ status: 403 });
     expect(IMPORT_RUNS).toEqual([]);
+  });
+});
+
+describe('fields with choices (x-drobek-choices)', () => {
+  const hookApp = () => ({ id: appId, slug: 'shop-app', workspaceId: role.ws.id, workspaceSlug: 'acme' });
+  const values = (list: { groups: { options: { value: string }[] }[] }) => list.groups.flatMap((g) => g.options.map((o) => o.value));
+  const register = (workspaceId: string, name: string) =>
+    drizzleDb().insert(upstreams).values({ workspaceId, name, baseUrl: `https://${name}.example`, allowedMethods: ['GET'], allowedPathPrefixes: ['/'] });
+
+  afterEach(async () => {
+    await drizzleDb().delete(upstreams);
+  });
+
+  it('the module page names the module by its title; a module without annotated fields loads no choices', async () => {
+    const d = await load('feeder');
+    expect(d.module).toMatchObject({ name: 'feeder', title: 'Feeds', description: 'Fills a collection from an upstream on a schedule.' });
+    expect((await load('shop')).choices).toEqual({});
+    expect((await load('shop')).module).toMatchObject({ title: null, description: null });
+  });
+
+  it('nothing set up yet: each field says what to set up first and links there; the intervals start at the workspace minimum', async () => {
+    const d = await load('feeder');
+    expect(Object.keys(d.choices).sort()).toEqual(['collections', 'intervals:FEEDER_MIN_INTERVAL_MIN', 'upstreams']);
+    expect(d.choices.upstreams.groups).toEqual([]);
+    expect(d.choices.upstreams.empty).toEqual({
+      text: 'This workspace has no upstream yet. A workspace admin registers one on the Upstreams page; then assign it to this app in the gateway module.',
+      link: { href: '/workspaces/acme/upstreams', label: 'Open the Upstreams page' },
+    });
+    expect(values(d.choices.collections)).toEqual([]);
+    expect(d.choices.collections.empty).toEqual({
+      text: 'This app has no data collection yet. Create one in the store module first.',
+      link: { href: '/workspaces/acme/apps/shop-app/modules/store#collections', label: 'Create a collection' },
+    });
+    expect(values(d.choices['intervals:FEEDER_MIN_INTERVAL_MIN'])).toEqual(['15m', '30m', '1h', '3h', '6h', '12h', '24h']);
+  });
+
+  it("the workspace's upstreams, those assigned to the app first (never another workspace's), and the app's collections", async () => {
+    const [other] = await drizzleDb().insert(workspaces).values({ kind: 'team', slug: 'other-ws', name: 'Other' }).returning();
+    await register(role.ws.id, 'weather');
+    await register(role.ws.id, 'news');
+    await register(other.id, 'secret-feed');
+    await rt.configure({ app: hookApp(), module: 'store', patch: { collections: { players: {}, fixtures: {} } }, actorUserId: role.user.id, surface: 'web' });
+    await rt.configure({ app: hookApp(), module: 'gateway', patch: { upstreams: { weather: {} } }, actorUserId: role.user.id, surface: 'web' });
+    await rt.confirm({ app: hookApp(), module: 'gateway', userId: role.user.id, role: 'admin' });
+
+    const d = await load('feeder');
+    expect(d.choices.upstreams.groups).toEqual([
+      { label: 'Assigned to this app', options: [{ value: 'weather', label: 'weather' }] },
+      { label: 'Not assigned to this app yet', options: [{ value: 'news', label: 'news' }] },
+    ]);
+    expect(d.choices.upstreams.note?.link).toEqual({ href: '/workspaces/acme/apps/shop-app/modules/gateway#upstreams', label: 'Assign an upstream' });
+    expect(JSON.stringify(d.choices)).not.toContain('secret-feed');
+    expect(values(d.choices.collections)).toEqual(['fixtures', 'players']);
+    await drizzleDb().delete(workspaces).where(eq(workspaces.id, other.id));
+  });
+
+  it('a value picked from the selects saves through the configure path; the schema still decides what is valid', async () => {
+    await register(role.ws.id, 'weather');
+    const prefix = entryInputs.prefix('sources', 0);
+    const form = (upstream: string) => ({
+      intent: 'save-config',
+      [entryInputs.count('sources')]: '1',
+      [entryInputs.isNew('sources', 0)]: '1',
+      [entryInputs.key('sources', 0)]: 'scores',
+      [fieldName(`${prefix}.upstream`)]: upstream,
+      [fieldName(`${prefix}.collection`)]: 'players',
+      [fieldName(`${prefix}.every`)]: '30m',
+    });
+    const bad = failed(await post('feeder', form('')));
+    expect(bad.status).toBe(400);
+    expect(bad.errors.fields.sources?.[0]).toMatch(/upstream/);
+    expect(doneOf(await post('feeder', form('weather')))).toBe('applied');
+    const [row] = await drizzleDb().select().from(moduleConfigs).where(eq(moduleConfigs.module, 'feeder'));
+    expect(row.config).toEqual({ sources: { scores: { upstream: 'weather', collection: 'players', every: '30m' } } });
+    expect((await load('feeder')).values.sources).toMatchObject({ entries: [{ key: 'scores', values: { upstream: 'weather', collection: 'players', every: '30m' } }] });
   });
 });

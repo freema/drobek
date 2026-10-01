@@ -14,6 +14,7 @@
 import { Link, useActionData, useLoaderData, useNavigation } from 'react-router';
 import type { action, loader } from './workspaces.$slug.apps.$appSlug.modules.$module.server.js';
 import { AppPage } from '../app-header.js';
+import { moduleHeading, moduleSummary } from '../module-catalogue.js';
 import { PendingBanner } from '../pending-banner.js';
 import { JsonSchemaForm } from '../module-ui/json-schema-form.js';
 import { ContributesTable, Disclosure, ErrorsTable, ModuleFactsList, SlotsTable } from '../module-ui/module-facts.js';
@@ -25,7 +26,7 @@ import { SyncBanner } from '../sync-banner.js';
 import { ui } from '../module-ui/styles.js';
 
 export function meta({ data }: { data?: Awaited<ReturnType<typeof loader>> }) {
-  return [{ title: `${data?.module.name ?? 'Module'} — ${data?.app.slug ?? 'App'} — drobek` }];
+  return [{ title: `${data ? moduleHeading(data.module) : 'Module'} — ${data?.app.slug ?? 'App'} — drobek` }];
 }
 
 const DONE: Record<string, string> = {
@@ -59,14 +60,17 @@ export default function AppModuleRoute() {
   const secretError =
     errors && (errors.intent === 'set-secret' || errors.intent === 'remove-secret') ? { target: errors.target, messages: errors.general } : null;
 
+  const heading = moduleHeading(d.module);
+  const summary = moduleSummary(d.module);
+
   if (!d.enabled) {
     // An opt-in module the operator has not enabled for this workspace.
     return (
-      <AppPage header={d.header} trail={[{ label: d.module.name }]}>
-        <h2 style={ui.title}>
-          {d.module.name} <span style={{ ...ui.small, fontWeight: 400 }}>v{d.module.version}</span>
+      <AppPage header={d.header} trail={[{ label: heading }]}>
+        <h2 style={ui.title} data-testid="module-heading">
+          {heading} <span style={{ ...ui.small, fontWeight: 400 }}>v{d.module.version}</span>
         </h2>
-        <p style={ui.hint}>Use when {d.module.useWhen}</p>
+        {summary ? <p style={ui.hint}>{summary}</p> : null}
         <div style={ui.notice} role="status" data-testid="module-not-enabled">
           This module is not enabled for this workspace. It is an opt-in module: the server operator enables it per
           workspace. Until then the app cannot use it and its configuration cannot be changed.
@@ -76,11 +80,15 @@ export default function AppModuleRoute() {
   }
 
   return (
-    <AppPage header={d.header} trail={[{ label: d.module.name }]}>
-      <h2 style={ui.title}>
-        {d.module.name} <span style={{ ...ui.small, fontWeight: 400 }}>v{d.module.version}</span>
+    <AppPage header={d.header} trail={[{ label: heading }]}>
+      <h2 style={ui.title} data-testid="module-heading">
+        {heading} <span style={{ ...ui.small, fontWeight: 400 }}>v{d.module.version}</span>
       </h2>
-      <p style={ui.hint}>Use when {d.module.useWhen}</p>
+      {summary ? (
+        <p style={ui.hint} data-testid="module-summary">
+          {summary}
+        </p>
+      ) : null}
       {!d.canEdit ? (
         <p style={ui.small} data-testid="readonly-note">
           You can view this module’s configuration; changing it needs the editor role.
@@ -124,6 +132,7 @@ export default function AppModuleRoute() {
             readOnly={!d.canEdit}
             busy={busy}
             states={d.states}
+            choices={d.choices}
           />
         </section>
       ) : null}

@@ -199,6 +199,15 @@ test.describe('platform module sync — scheduled imports from an upstream @loca
     const mod = await owner.newPage();
     await mod.goto(`/workspaces/${ws}/apps/${app.slug}/modules/sync`);
     await expect(mod.getByTestId('sync-runs')).toBeVisible();
+    await expect(mod.getByTestId('module-heading')).toContainText('Scheduled imports (sync)');
+    const form = mod.getByTestId('config-form');
+    for (const [from, value] of [
+      ['upstreams', 'feed'],
+      ['collections', 'players'],
+      ['intervals', '1h'],
+    ] as const) {
+      await expect(form.locator(`select[data-choices="${from}"]`).first()).toHaveValue(value);
+    }
 
     await mod.getByTestId('sync-resume-broken').click();
     await expect(mod.getByTestId('sync-source-broken')).toHaveAttribute('data-paused', '');

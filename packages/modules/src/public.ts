@@ -62,6 +62,8 @@ export {
   type ModuleAvailability,
   type ModuleComposeInput,
   type ModuleContext,
+  type ConfigChoices,
+  type ConfigFieldMeta,
   type ModuleDashboard,
   type ModuleDashboardEditor,
   type ModuleErrorDoc,

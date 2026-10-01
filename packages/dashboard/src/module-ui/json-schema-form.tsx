@@ -15,10 +15,18 @@
  * sit in a collapsed "Config keys for agents" table. With `states`, each
  * top-level setting says whether it is the module's default or saved for
  * the app, and what a change awaiting confirmation would make it.
+ *
+ * A string field annotated `x-drobek-choices` is a select of the list
+ * `choices` holds for it (module-choices.ts): a current value outside the
+ * list stays selectable, marked; with nothing to choose the field says what
+ * to set up first and links there; a list that failed to load leaves a
+ * text input. A select's empty option names the schema's default.
  */
 import { Form } from 'react-router';
+import { hasChoices, selectGroups, type ChoiceLink, type ChoiceList } from '../module-choices.js';
 import {
   blankEntryValues,
+  choiceKey,
   entryInputs,
   fieldName,
   instancePath,
@@ -43,6 +51,8 @@ export interface JsonSchemaFormProps {
   busy?: boolean;
   /** Per top-level field: the module's default or saved for this app, and its value once a pending change is confirmed. */
   states?: Record<string, FieldState>;
+  /** The choices of the fields annotated `x-drobek-choices`, by `choiceKey()`. */
+  choices?: Record<string, ChoiceList>;
 }
 
 function testId(path: string): string {
@@ -63,10 +73,31 @@ interface Place {
   /** `''` top level, `<collection>[<i>]` inside an entry. */
   prefix: string;
   readOnly: boolean;
-  /** Inside the empty "add" entry: every select offers "(not set)". */
+  /** Inside the empty "add" entry: every select offers its empty option. */
   blank: boolean;
   /** Top level only: where each field's value comes from. */
   states?: Record<string, FieldState>;
+  choices?: Record<string, ChoiceList>;
+}
+
+/** The empty option of a select: the schema's default, else "Choose…" (required) / "(not set)". */
+function emptyOptionLabel(field: FormField): string {
+  if (typeof field.default === 'string' && field.default !== '') return `Default (${field.default})`;
+  return field.required ? 'Choose…' : '(not set)';
+}
+
+function ChoiceNote({ text, link, testId: id }: { text: string; link?: ChoiceLink; testId: string }) {
+  return (
+    <span style={ui.desc} data-testid={id}>
+      {text}
+      {link ? (
+        <>
+          {' '}
+          <a href={link.href}>{link.label}</a>
+        </>
+      ) : null}
+    </span>
+  );
 }
 
 function RequiredMark({ field }: { field: FormField }) {
@@ -125,8 +156,35 @@ function Leaf({ field, value, errors, place }: { field: FormField; value: FieldV
   const inputStyle = invalid ? { ...ui.input, ...ui.inputError } : ui.input;
   const areaStyle = invalid ? { ...ui.textarea, ...ui.inputError } : ui.textarea;
   const text = typeof value === 'string' ? value : '';
+  const key = field.kind === 'string' ? choiceKey(field) : null;
+  const list = key ? place.choices?.[key] : undefined;
+
+  if (list && !list.failed && !hasChoices(list) && text === '') {
+    return (
+      <div style={ui.field} data-testid={`field-${testId(instance)}`} data-choices="empty">
+        <span style={ui.label}>
+          {field.label}
+          <RequiredMark field={field} />
+          <OriginTag path={field.path} place={place} />
+        </span>
+        {field.description ? <span style={ui.desc}>{field.description}</span> : null}
+        <PendingNote path={field.path} place={place} />
+        <p style={{ ...ui.small, margin: '0.25rem 0 0' }} data-testid={`field-empty-${testId(instance)}`}>
+          {list.empty.text}
+          {list.empty.link ? (
+            <>
+              {' '}
+              <a href={list.empty.link.href}>{list.empty.link.label}</a>
+            </>
+          ) : null}
+        </p>
+        <FieldErrors path={instance} errors={errors} />
+      </div>
+    );
+  }
 
   let control;
+  let choiceNote = null;
   switch (field.kind) {
     case 'boolean':
       return (
@@ -172,7 +230,7 @@ function Leaf({ field, value, errors, place }: { field: FormField; value: FieldV
     case 'enum':
       control = (
         <select {...common} defaultValue={text} style={inputStyle}>
-          {!field.required || place.blank ? <option value="">(not set)</option> : null}
+          {!field.required || place.blank ? <option value="">{emptyOptionLabel(field)}</option> : null}
           {field.options?.map((o) => (
             <option key={o} value={o}>
               {o}
@@ -200,7 +258,34 @@ function Leaf({ field, value, errors, place }: { field: FormField; value: FieldV
       control = <textarea {...common} defaultValue={text} style={{ ...areaStyle, minHeight: '8rem' }} spellCheck={false} />;
       break;
     default:
-      control = <input type="text" {...common} defaultValue={text} style={inputStyle} autoComplete="off" />;
+      if (list && !list.failed) {
+        control = (
+          <select {...common} defaultValue={text} style={inputStyle} data-choices={field.choices}>
+            {!field.required || place.blank || text === '' ? <option value="">{emptyOptionLabel(field)}</option> : null}
+            {selectGroups(list, text).map((g, i) =>
+              g.label ? (
+                <optgroup key={`${i}-${g.label}`} label={g.label}>
+                  {g.options.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </optgroup>
+              ) : (
+                g.options.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))
+              )
+            )}
+          </select>
+        );
+        if (list.note && !place.readOnly) choiceNote = <ChoiceNote text={list.note.text} link={list.note.link} testId={`field-note-${testId(instance)}`} />;
+      } else {
+        control = <input type="text" {...common} defaultValue={text} style={inputStyle} autoComplete="off" />;
+        if (list?.failed) choiceNote = <ChoiceNote text={list.failed} testId={`field-note-${testId(instance)}`} />;
+      }
   }
   const kindHint =
     field.kind === 'string-list'
@@ -227,6 +312,7 @@ function Leaf({ field, value, errors, place }: { field: FormField; value: FieldV
       ) : null}
       <PendingNote path={field.path} place={place} />
       {control}
+      {choiceNote}
       <FieldErrors path={instance} errors={errors} />
     </div>
   );
@@ -240,6 +326,7 @@ function Entry({
   entry,
   isNew,
   readOnly,
+  choices,
 }: {
   field: FormField;
   instance: string;
@@ -247,6 +334,7 @@ function Entry({
   entry: { key?: string; values: Record<string, FieldValue> };
   isNew: boolean;
   readOnly: boolean;
+  choices?: Record<string, ChoiceList>;
 }) {
   const record = field.kind === 'record';
   const prefix = entryInputs.prefix(instance, index);
@@ -263,8 +351,9 @@ function Entry({
       {record ? (
         <div style={ui.field}>
           <label style={ui.label} htmlFor={keyId}>
-            Name
+            {field.entryKey?.label ?? 'Name'}
           </label>
+          {field.entryKey?.description ? <span style={ui.desc}>{field.entryKey.description}</span> : null}
           <input
             type="text"
             id={keyId}
@@ -278,7 +367,7 @@ function Entry({
         </div>
       ) : null}
       <div style={plain ? undefined : ui.entryBody}>
-        <Fields fields={field.entry ?? []} values={entry.values} place={{ prefix, readOnly, blank: isNew }} />
+        <Fields fields={field.entry ?? []} values={entry.values} place={{ prefix, readOnly, blank: isNew, choices }} />
       </div>
       {!isNew && !readOnly ? (
         <label style={{ ...ui.small, display: 'inline-flex', gap: '0.35rem', alignItems: 'center' }}>
@@ -305,10 +394,18 @@ function EntriesField({ field, value, errors, place }: { field: FormField; value
       <input type="hidden" name={entryInputs.count(instance)} value={count} />
       {entries.length === 0 && place.readOnly ? <p style={ui.small}>No entries.</p> : null}
       {entries.map((e, i) => (
-        <Entry key={`${i}-${e.key ?? ''}`} field={field} instance={instance} index={i} entry={e} isNew={false} readOnly={place.readOnly} />
+        <Entry key={`${i}-${e.key ?? ''}`} field={field} instance={instance} index={i} entry={e} isNew={false} readOnly={place.readOnly} choices={place.choices} />
       ))}
       {!place.readOnly ? (
-        <Entry field={field} instance={instance} index={entries.length} entry={{ values: blankEntryValues(field) }} isNew readOnly={false} />
+        <Entry
+          field={field}
+          instance={instance}
+          index={entries.length}
+          entry={{ values: blankEntryValues(field) }}
+          isNew
+          readOnly={false}
+          choices={place.choices}
+        />
       ) : null}
       <FieldErrors path={instance} errors={errors} />
     </fieldset>
@@ -395,12 +492,12 @@ function Legend({ fields, states }: { fields: FormField[]; states?: Record<strin
   );
 }
 
-export function JsonSchemaForm({ fields, values, errors, readOnly, busy, states }: JsonSchemaFormProps) {
+export function JsonSchemaForm({ fields, values, errors, readOnly, busy, states, choices }: JsonSchemaFormProps) {
   if (fields.length === 0) return null;
   const body = (
     <>
       {states ? <Legend fields={fields} states={states} /> : null}
-      <Fields fields={fields} values={values} errors={errors} place={{ prefix: '', readOnly, blank: false, states }} />
+      <Fields fields={fields} values={values} errors={errors} place={{ prefix: '', readOnly, blank: false, states, choices }} />
     </>
   );
   if (readOnly) {
