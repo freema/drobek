@@ -21,6 +21,7 @@
     "test:run": "vitest run"
   },
   "dependencies": {
+    "@drobek/core": "workspace:*",
     "nodemailer": "^10.0.10"
   },
   "devDependencies": {

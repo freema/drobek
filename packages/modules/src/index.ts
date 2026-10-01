@@ -14,6 +14,7 @@
  */
 export * from './public.js';
 export { selectEmailTransport } from './email-transport-slot.js';
+export { selectErrorReporter } from './error-reporter-slot.js';
 export { ModuleLoadError } from './errors.js';
 export { mergePatch, jsonEqual } from './merge-patch.js';
 export { Lru, jsonKey, stableJson } from './memo.js';

@@ -148,7 +148,7 @@ exports another name, defaults that fail the schema, a `contract` range the
 server's `MODULE_CONTRACT_VERSION` does not satisfy (`module "crm": it needs
 module contract ^2.0, but this server implements 1.2.0 — …`), two modules
 with one name, a missing `sdk.entry`, a reserved name (`sdk`, `v1`,
-`drobek`, `internal`), a module whose `requires` is not enabled
+`drobek`, `internal`, `errors`), a module whose `requires` is not enabled
 (`module "forms" requires the module "email": add it to DROBEK_MODULES
 (e.g. DROBEK_MODULES=…,email)`), a default module that requires an opt-in
 one, `requires` that form a cycle, two modules declaring `mail` (or
@@ -992,9 +992,9 @@ with a message naming the module and the slot):
   and starts with the name of the module that declares it; a slot has a
   `schema` and a `description`;
 - a module contributes at most one value per slot (`contributes` maps slot
-  name → value); the slot must be declared by an ACTIVE module — a
-  contribution to a slot of a module that is not in `DROBEK_MODULES`, or that
-  it does not declare, refuses the start;
+  name → value); the slot must be declared by an ACTIVE module or hosted by
+  core (`errors.reporter`, below) — a contribution to a slot of a module that
+  is not in `DROBEK_MODULES`, or that it does not declare, refuses the start;
 - every contribution must pass the slot's schema;
 - with `unique: '<key>'`, two contributions with the same value of that key
   refuse the start (`modules "a" and "b" both contribute id "x" to the slot
@@ -1026,6 +1026,75 @@ schema, defaults that pass it, unique UPPER_SNAKE secret names, functions).
 Only a module that declares slots may compose; any other key, or a throw,
 refuses the start. The declared parts stay the module's view of a server
 without contributions.
+
+### Error reporters from modules
+
+Server errors always go to the log (container stdout). A module can also
+send them somewhere else (an incident webhook, a log service, …) by
+contributing to the `errors.reporter` slot. Core hosts this slot — there is
+no `errors` module (the name is reserved), so the reporter's module is the
+only one it needs:
+
+```ts
+import { defineErrorReporter, defineModule, z } from '@drobek/modules';
+
+export default defineModule({
+  name: 'webhookerrors', version: '1.0.0', contract: '^1.2',
+  skill: { useWhen: 'operator-only: server errors go to an incident webhook', markdown: '# webhookerrors\n' },
+  configSchema: z.object({}), configDefaults: {},
+  contributes: {
+    'errors.reporter': defineErrorReporter({
+      apiVersion: 1,                    // optional; 1 is the reporter API this server implements
+      id: 'webhook',                    // 2–16 lowercase letters and digits
+      label: 'Incident webhook',
+      secrets: ['ERRORS_WEBHOOK_URL'],  // operator env vars, read at start
+      async report(event, { secrets, signal }) {
+        const res = await fetch(secrets.ERRORS_WEBHOOK_URL, {
+          method: 'POST', signal,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(event),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      },
+    }),
+  },
+});
+```
+
+- **Selection.** `ERROR_REPORTER=<id>` makes the contribution with that id
+  receive the server's errors; unset or empty, errors are only logged. The
+  server refuses to start when no active module contributes the id, a
+  declared secret is unset, or two contributions take one id.
+- **What is reported**: a 5xx of the dashboard (React Router) or the Express
+  app (`kind: 'http'`), a module route that throws (`module_route`, answered
+  `500 internal_error`), a failed or timed-out module job (`module_job`), a
+  failed e-mail send through any transport (`email`) and a start-up failure
+  once the reporter is installed — module migrations and everything after
+  the modules load (`startup`, `level: 'fatal'`; the server waits for the
+  report, at most the timeout, before it exits).
+- **The event**: `{ level, message, error?: { name, message, stack? },
+  context: { kind, route?, method?, status?, module?, job?, appId?,
+  workspaceId?, requestId? }, release, environment, timestamp, fingerprint }`.
+  `release` is `DROBEK_VERSION` (else `GIT_SHA`), `environment` is
+  `NODE_ENV`; `fingerprint` is stable for the same error at the same place.
+  It never carries request bodies, headers, cookies or query strings;
+  `route` is the path (a module route its pattern, e.g.
+  `/__drobek/v1/forms/submit`) with long opaque segments read `:param`.
+  E-mail addresses, bearer / JWT tokens, `key=value` secrets, the reporter's
+  secret values and the server's own secrets are redacted from every text;
+  a database error reads `db error <code> (constraint …, table …)` —
+  never its SQL or bound values.
+- **Never in the way.** `report` runs after the response is decided and is
+  never awaited by a request. It is cut off after `ERROR_REPORTER_TIMEOUT_MS`
+  (default 5000: `ctx.signal` aborts); whatever it throws, and a timeout,
+  is logged once per minute (secrets redacted) and dropped. At most
+  `ERROR_REPORTER_MAX_PER_MINUTE` reports (default 60) go out per minute —
+  over it, one warning per minute and the rest are only logged — and an
+  identical error (same fingerprint) goes out once per minute. An error
+  inside `report` itself is never reported.
+- **Secrets** are server-level, as for e-mail transports: env var names in
+  `secrets`, values in `ctx.secrets`, never module secrets of the dashboard,
+  never over MCP, never logged.
 
 ## Per-app configuration
 

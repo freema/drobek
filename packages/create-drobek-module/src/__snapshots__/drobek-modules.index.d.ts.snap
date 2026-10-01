@@ -975,8 +975,8 @@ type DB = PostgresJsDatabase<typeof schema>;
 
 /**
  * Logger interface stub (core stays vendor-free — §15 ARCHITECTURE.md).
- * drobek-web plugs Sentry/pino behind this; core + self-host default to
- * the console logger.
+ * Core and self-hosted servers use the console logger; where errors go
+ * besides the log is the errors.reporter slot.
  */
 type LogMeta = Record<string, unknown>;
 
@@ -2416,6 +2416,87 @@ declare function hasControlBytes(chunk: Buffer): boolean {
 }
 
 /**
+ * Where the server's errors go besides stdout: an error reporter a platform
+ * module contributes to the core-hosted `errors.reporter` slot, chosen with
+ * ERROR_REPORTER=<its id> (unset → logs only). The module runtime installs the
+ * selected reporter at start, process-wide on globalThis (the dev server's
+ * Vite-loaded copy of this package sees it too), with the values of the env
+ * vars it declares in `secrets`.
+ *
+ * `reportError` is called at the server's central error points (a 5xx of the
+ * dashboard or Express, a module route that throws, a failed module job, a
+ * failed e-mail send, a start-up failure once the reporter is up). It never
+ * throws and never holds up the caller: the event is built from an allow-list
+ * (no request bodies, headers, cookies or query strings), e-mail addresses,
+ * token-shaped strings and every known secret value are redacted, identical
+ * events are sent once per minute, at most ERROR_REPORTER_MAX_PER_MINUTE go
+ * out per minute, and each delivery is cut off after
+ * ERROR_REPORTER_TIMEOUT_MS. A failed delivery is logged (once per minute)
+ * and dropped.
+ */
+
+
+/** The reporter API this server implements (a contribution may declare it as `apiVersion`). */
+declare const ERROR_REPORTER_API_VERSION = 1;
+
+/** Where in the server the error happened. */
+type ErrorReportKind = 'http' | 'module_route' | 'module_job' | 'startup' | 'email';
+
+/** What is known about the place of the error — ids and names only, never request data. */
+interface ErrorReportContext {
+  kind: ErrorReportKind;
+  /** The request path without its query string; long opaque segments (tokens, ids) read `:param`. */
+  route?: string;
+  method?: string;
+  status?: number;
+  module?: string;
+  job?: string;
+  appId?: string;
+  workspaceId?: string;
+  requestId?: string;
+}
+
+/** One error as a reporter receives it. */
+interface ErrorReportEvent {
+  level: 'error' | 'fatal';
+  /** What failed, in the server's words (e.g. `module job failed`). */
+  message: string;
+  /** The thrown error: its name, message and stack, redacted (a database error reads `db error <code> (…)`). */
+  error?: { name: string; message: string; stack?: string };
+  context: ErrorReportContext;
+  /** DROBEK_VERSION, else GIT_SHA, else `dev`. */
+  release: string;
+  /** NODE_ENV (`development` when unset). */
+  environment: string;
+  /** ISO 8601. */
+  timestamp: string;
+  /** Stable for the same kind of error at the same place: group by it. */
+  fingerprint: string;
+}
+
+interface ErrorReporterContext {
+  /** The values of the env vars the reporter declared in `secrets` (all set: the server refuses to start otherwise). Never log them. */
+  secrets: Readonly<Record<string, string>>;
+  /** Aborted when the delivery runs past ERROR_REPORTER_TIMEOUT_MS: pass it to `fetch`. */
+  signal: AbortSignal;
+}
+
+/**
+ * A module's error reporter (the `errors.reporter` slot). `report` is called
+ * unbound for every admitted event; whatever it throws is logged and dropped.
+ */
+interface ErrorReporter {
+  apiVersion?: typeof ERROR_REPORTER_API_VERSION;
+  /** `ERROR_REPORTER_ID_RE`; unique within the slot. */
+  id: string;
+  /** The service's name for logs and docs (1–40 characters). */
+  label: string;
+  /** The operator env vars the reporter needs (UPPER_SNAKE), e.g. `['WEBHOOK_TOKEN']`. */
+  secrets?: string[];
+  report(event: ErrorReportEvent, ctx: ErrorReporterContext): Promise<void> | void;
+}
+
+/**
  * End-user sign-in providers (contract 1.1): the typed contract of
  * the two slots the built-in `auth` module offers other modules.
  *
@@ -2743,6 +2824,34 @@ declare function defineEmailTransport(transport: ModuleEmailTransport): ModuleEm
 declare const emailTransportSchema: ZodType<ModuleEmailTransport>;
 
 /**
+ * The `errors.reporter` slot: where the server's errors go besides stdout
+ * (an incident webhook, a log service, …) as a module. Core hosts the
+ * slot (no module named `errors` exists: the name is reserved), so a reporter
+ * module needs nothing else in DROBEK_MODULES. Core selects the contribution
+ * whose id ERROR_REPORTER names and installs it into @drobek/core, whose
+ * `reportError` the server's central error points call.
+ *
+ *   export default defineModule({
+ *     name: 'pager', …,
+ *     contributes: {
+ *       'errors.reporter': defineErrorReporter({
+ *         apiVersion: 1, id: 'pager', label: 'Incident webhook', secrets: ['PAGER_TOKEN'],
+ *         async report(event, { secrets, signal }) { … },
+ *       }),
+ *     },
+ *   });
+ *
+ * The reporter's secrets are operator env vars only (read at start, handed to
+ * `report` in `ctx.secrets`, redacted from every event and log line).
+ */
+
+declare const ERROR_REPORTER_SLOT = "errors.reporter";
+/** Type a reporter contribution (identity at run time). */
+declare function defineErrorReporter(reporter: ErrorReporter): ErrorReporter;
+/** The `errors.reporter` slot's schema (unknown keys kept). */
+declare const errorReporterSchema: ZodType<ErrorReporter>;
+
+/**
  * The ONE error shape every module route answers with:
  *   `{ error, message, details?, hint }` + an HTTP status.
  * `hint` links the agent to the documentation — by default the module's own
@@ -2847,5 +2956,5 @@ declare const loadModules: typeof loadModules$1;
 /** @deprecated Import `buildSdk` from `@drobek/modules/testing`; this re-export goes away in the next major version. */
 declare const buildSdk: typeof buildSdk$1;
 
-export { AUTH_PROVIDER_API_VERSION, AUTH_PROVIDER_ID_RE, AUTH_RESERVED_CONFIG_KEYS, CORE_ERROR_CODES, EMAIL_PROVIDER_ID, EMAIL_SEND_ERROR_CODES, EMAIL_TRANSPORT_API_VERSION, EMAIL_TRANSPORT_SLOT, EmailSendError, JOB_MAX_INTERVAL_MS, JOB_MIN_INTERVAL_MS, JOB_NAME_RE, MODULE_CONTRACT_VERSION, MODULE_ERROR_CODES, MODULE_ERROR_CODE_RE, MODULE_NAME_RE, ModuleError, RECORDS_IMPORT_MAX_ROWS, RULE_TOKENS, SLOT_NAME_RE, authIdentitySchema, authProviderSchema, authSignedInObserverSchema, buildSdk, decideAccess, defineAuthProvider, defineEmailTransport, defineModule, defineSignInObserver, emailTransportSchema, hasControlBytes, isDefinedModule, isModuleError, isValidRule, issuePaths, loadModules, looksLikeSvg, moduleNotEnabled, normalizeConfirmItems, parseJobInterval, parseRule, perIpLimitKey, respond, ruleIsPublic, skillHint, sniffSignature };
-export type { AccessDecision, AnyModule, AppJob, AppJobContext, AuthIdentity, AuthProvider, AuthProviderBeginInput, AuthProviderBeginResult, AuthProviderCallbackInput, AuthProviderSecretDoc, AuthProviderSecrets, AuthSignInEvent, AuthSignedInObserver, ComposedModuleParts, ConfirmContext, ConfirmItem, ConfirmRole, ConfirmedContext, DB, DrobekModule, EmailKind, EmailMessage, EmailRecipient, EmailSendErrorCode, EmailTransportContext, EmailTransportMessage, EndUser, EndUserAuthority, EndUserCallbackApp, EndUserCallbackInput, EndUserCallbackResult, EndUserListQuery, EndUserPage, EndUserRecord, FilesAuthority, HookApp, JobContextBase, JobInterval, Limits, Logger, MailAuthority, MailEnvelope, MailPrepareInput, ModuleAppView, ModuleAvailability, ModuleComposeInput, ModuleContext, ModuleDashboard, ModuleDashboardEditor, ModuleEmailTransport, ModuleErrorBody, ModuleErrorCode, ModuleErrorDoc, ModuleHooks, ModuleJob, ModuleLimit, ModuleMigrations, ModuleRequest, ModuleResponse, ModuleRouter, ModuleSdk, ModuleSecretDoc, ModuleServices, ModuleSkill, ModuleSlot, OwnerFile, OwnerFilesPage, OwnerSubmission, OwnerView, Principal, RateLimitResult, RecordsAuthority, RecordsCollection, RecordsImportOptions, RecordsImportResult, RecordsPage, RecordsQuery, RecordsView, RouteHandler, RouteOptions, RouteRateLimit, Rule, ServerJob, ServerJobContext, SniffedType, SubmissionsAuthority, SubmissionsPage, SubmissionsQuery, SyncAuthority, SyncRun, SyncSourceState, UploadedFile, UpstreamRequest, UpstreamResponse, UpstreamsAuthority };
+export { AUTH_PROVIDER_API_VERSION, AUTH_PROVIDER_ID_RE, AUTH_RESERVED_CONFIG_KEYS, CORE_ERROR_CODES, EMAIL_PROVIDER_ID, EMAIL_SEND_ERROR_CODES, EMAIL_TRANSPORT_API_VERSION, EMAIL_TRANSPORT_SLOT, ERROR_REPORTER_API_VERSION, ERROR_REPORTER_SLOT, EmailSendError, JOB_MAX_INTERVAL_MS, JOB_MIN_INTERVAL_MS, JOB_NAME_RE, MODULE_CONTRACT_VERSION, MODULE_ERROR_CODES, MODULE_ERROR_CODE_RE, MODULE_NAME_RE, ModuleError, RECORDS_IMPORT_MAX_ROWS, RULE_TOKENS, SLOT_NAME_RE, authIdentitySchema, authProviderSchema, authSignedInObserverSchema, buildSdk, decideAccess, defineAuthProvider, defineEmailTransport, defineErrorReporter, defineModule, defineSignInObserver, emailTransportSchema, errorReporterSchema, hasControlBytes, isDefinedModule, isModuleError, isValidRule, issuePaths, loadModules, looksLikeSvg, moduleNotEnabled, normalizeConfirmItems, parseJobInterval, parseRule, perIpLimitKey, respond, ruleIsPublic, skillHint, sniffSignature };
+export type { AccessDecision, AnyModule, AppJob, AppJobContext, AuthIdentity, AuthProvider, AuthProviderBeginInput, AuthProviderBeginResult, AuthProviderCallbackInput, AuthProviderSecretDoc, AuthProviderSecrets, AuthSignInEvent, AuthSignedInObserver, ComposedModuleParts, ConfirmContext, ConfirmItem, ConfirmRole, ConfirmedContext, DB, DrobekModule, EmailKind, EmailMessage, EmailRecipient, EmailSendErrorCode, EmailTransportContext, EmailTransportMessage, EndUser, EndUserAuthority, EndUserCallbackApp, EndUserCallbackInput, EndUserCallbackResult, EndUserListQuery, EndUserPage, EndUserRecord, ErrorReportContext, ErrorReportEvent, ErrorReportKind, ErrorReporter, ErrorReporterContext, FilesAuthority, HookApp, JobContextBase, JobInterval, Limits, Logger, MailAuthority, MailEnvelope, MailPrepareInput, ModuleAppView, ModuleAvailability, ModuleComposeInput, ModuleContext, ModuleDashboard, ModuleDashboardEditor, ModuleEmailTransport, ModuleErrorBody, ModuleErrorCode, ModuleErrorDoc, ModuleHooks, ModuleJob, ModuleLimit, ModuleMigrations, ModuleRequest, ModuleResponse, ModuleRouter, ModuleSdk, ModuleSecretDoc, ModuleServices, ModuleSkill, ModuleSlot, OwnerFile, OwnerFilesPage, OwnerSubmission, OwnerView, Principal, RateLimitResult, RecordsAuthority, RecordsCollection, RecordsImportOptions, RecordsImportResult, RecordsPage, RecordsQuery, RecordsView, RouteHandler, RouteOptions, RouteRateLimit, Rule, ServerJob, ServerJobContext, SniffedType, SubmissionsAuthority, SubmissionsPage, SubmissionsQuery, SyncAuthority, SyncRun, SyncSourceState, UploadedFile, UpstreamRequest, UpstreamResponse, UpstreamsAuthority };

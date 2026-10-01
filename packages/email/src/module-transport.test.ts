@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { installErrorReporter, resetErrorReporterForTests, type ErrorReportEvent } from '@drobek/core';
 import {
   installEmailTransport,
   installedEmailTransportId,
@@ -137,5 +138,26 @@ describe('sending through a module transport', () => {
   it('redactSecrets replaces every value, the longer first', () => {
     expect(redactSecrets('a=abc b=abcdef', { A: 'abc', B: 'abcdef' })).toBe('a=[redacted] b=[redacted]');
     expect(redactSecrets('nothing', {})).toBe('nothing');
+  });
+});
+
+describe('a failed send reaches the error reporter', () => {
+  it('kind email, the recipient and the transport secret redacted; the caller still gets the error', async () => {
+    const reported: ErrorReportEvent[] = [];
+    installErrorReporter({ id: 'sink', label: 'Sink', report: (e) => void reported.push(e) }, {});
+    try {
+      installEmailTransport(
+        relay(async (m, { secrets }) => {
+          throw new Error(`relay refused ${m.to} with ${secrets.RELAY_TOKEN}`);
+        }),
+        ENV
+      );
+      await expect(sendEmail(mail, ENV)).rejects.toMatchObject({ name: 'EmailSendError', code: 'unavailable' });
+      await vi.waitFor(() => expect(reported).toHaveLength(1));
+      expect(reported[0]).toMatchObject({ message: 'e-mail could not be sent', error: { name: 'EmailSendError' }, context: { kind: 'email' } });
+      expect(JSON.stringify(reported)).not.toMatch(/lead@example\.com|pm_test_fake_token/);
+    } finally {
+      resetErrorReporterForTests();
+    }
   });
 });

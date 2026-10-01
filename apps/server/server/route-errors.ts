@@ -1,5 +1,5 @@
 import { isRouteErrorResponse, type HandleErrorFunction, type ServerBuild } from 'react-router';
-import { createConsoleLogger } from '@drobek/core';
+import { createConsoleLogger, reportError } from '@drobek/core';
 import { dbErrorForLog } from '@drobek/db';
 
 const httpLog = createConsoleLogger('http');
@@ -10,8 +10,9 @@ const httpLog = createConsoleLogger('http');
  * query is a `DrizzleQueryError` carrying the SQL and its bound parameters
  * (e-mail addresses, token hashes) and a Postgres `detail`. This
  * one logs the same error through `dbErrorForLog` (code + constraint + table
- * and the stack frames for a DB error; message + stack otherwise). A build
- * whose entry defines its own `handleError` keeps it.
+ * and the stack frames for a DB error; message + stack otherwise) and hands
+ * every error that is not a 4xx route response to the operator's error
+ * reporter. A build whose entry defines its own `handleError` keeps it.
  *
  * The router's own 4xx answers (no route matches the URL → 404, a method
  * the route does not take such as OPTIONS → 405) are a client's guess, not
@@ -26,6 +27,12 @@ export const logRouteError: HandleErrorFunction = (error, { request }) => {
   }
   const inner = isRouteErrorResponse(error) ? (error as { error?: unknown }).error : undefined;
   console.error(dbErrorForLog(inner ?? error, { stack: true }));
+  const status = isRouteErrorResponse(error) ? error.status : 500;
+  void reportError({
+    message: 'dashboard request failed',
+    error: inner ?? error,
+    context: { kind: 'http', method: request.method, route: new URL(request.url).pathname, status },
+  });
 };
 
 export function withSafeRouteErrors(build: ServerBuild): ServerBuild {

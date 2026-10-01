@@ -27,7 +27,7 @@
  * cannot hold up the server's start or its requests. MODULE_JOBS_ENABLED=0
  * turns the scheduler off for this process.
  */
-import { getRedis, type Logger } from '@drobek/core';
+import { getRedis, reportError, type Logger } from '@drobek/core';
 import { dbErrorForLog } from '@drobek/db';
 import { recordModuleJobFailure, redact } from '@drobek/insights';
 import { JOB_MAX_INTERVAL_MS, JOB_MIN_INTERVAL_MS, parseJobInterval, type AnyModule, type ModuleJob } from './contract.js';
@@ -358,6 +358,11 @@ export class ModuleJobScheduler {
     const p = this.execute(due, freeSlot)
       .catch((err: unknown) => {
         this.opts.log.error('module job could not run', { module: due.module.name, job: due.job.name, error: dbErrorForLog(err) });
+        void reportError({
+          message: 'module job could not run',
+          error: err,
+          context: { kind: 'module_job', module: due.module.name, job: due.job.name, ...(due.row ? { appId: due.row.app.id, workspaceId: due.row.app.workspaceId } : {}) },
+        });
       })
       .finally(() => {
         freeSlot();
@@ -422,6 +427,11 @@ export class ModuleJobScheduler {
           failures,
           retry_in_ms: jobBackoffMs(failures, intervalMs),
           error: redact(dbErrorForLog(failed, { stack: true })),
+        });
+        void reportError({
+          message: 'module job failed',
+          error: failed,
+          context: { kind: 'module_job', module: m.name, job: job.name, ...(row ? { appId: row.app.id, workspaceId: row.app.workspaceId } : {}) },
         });
         if (row) {
           await this.recordFailure({ appId: row.app.id, module: m.name, job: job.name, message: dbErrorForLog(failed) }).catch((err: unknown) =>

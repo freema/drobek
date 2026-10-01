@@ -12,7 +12,7 @@ import { apps, auditLog, memberships, moduleConfigs, moduleRequestStats, moduleS
 import { flushModuleRequests, memoryModuleStatsRedis, queryRequestLog, recordModuleRequest } from '@drobek/insights';
 import type { PGlite } from '@electric-sql/pglite';
 import { eq } from 'drizzle-orm';
-import { noopLogger } from '@drobek/core';
+import { installErrorReporter, noopLogger, resetErrorReporterForTests, type ErrorReportEvent } from '@drobek/core';
 import { createLimitsProvider } from './limits.js';
 import { ModuleError } from './errors.js';
 import { FakeRedis } from '@drobek/auth';
@@ -616,6 +616,29 @@ describe('HTTP on the app hosts', () => {
     expect(String(res.body)).not.toContain('kaboom');
     expect(json(res)).toMatchObject({ error: 'internal_error' });
     expect(log.error).toHaveBeenCalled();
+  });
+
+  it('an unexpected handler error reaches the error reporter with the route pattern, never the request', async () => {
+    const r = await runtime();
+    const reported: ErrorReportEvent[] = [];
+    installErrorReporter({ id: 'sink', label: 'Sink', report: (e) => void reported.push(e) }, {}, noopLogger);
+    try {
+      const res = await r.handle(req('GET', '/__drobek/v1/echo/boom', { query: 'token=secret123', headers: { cookie: 'drobek_eu=abc' } }), app);
+      expect(res.status).toBe(500);
+      await vi.waitFor(() => expect(reported).toHaveLength(1));
+      expect(reported[0]).toMatchObject({
+        level: 'error',
+        message: 'module request failed',
+        error: { name: 'Error', message: 'kaboom with internals' },
+        context: { kind: 'module_route', module: 'echo', route: '/__drobek/v1/echo/boom', method: 'GET', status: 500, appId: app.id, workspaceId: app.workspaceId },
+      });
+      expect(JSON.stringify(reported)).not.toMatch(/secret123|drobek_eu/);
+      await r.handle(req('GET', '/__drobek/v1/echo/teapot'), app);
+      await r.handle(req('GET', '/__drobek/v1/echo/nope'), app);
+      expect(reported).toHaveLength(1);
+    } finally {
+      resetErrorReporterForTests();
+    }
   });
 
   it('the CSRF guard compares Origin with the app host itself', async () => {

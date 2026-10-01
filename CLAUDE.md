@@ -54,6 +54,14 @@ Map: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
     `gh release list` afterwards and create a missing one by hand. The same
     holds for the plugin repo, whose tag must equal the version in
     `package.json` and every plugin manifest or its publish fails.
+13. **Vendor integrations are always modules, never core.** A new
+    integration with a third-party service or anything only the hosted
+    instance needs (an error tracker, a mail provider, billing, …) is a
+    module: core ships only the generic slot and names no such vendor (the
+    built-in SMTP and Resend transports are the existing exception).
+    drobek.app's own modules live in drobek-web (`modules/<name>`), not in
+    this repository and not in a repository of their own. `pnpm doc-lint`
+    refuses the vendor names.
 
 ## Commands
 

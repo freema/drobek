@@ -71,7 +71,7 @@ This document is the map of how that works. The neighbours:
   | `@drobek/dashboard` | the dashboard routes and their server halves |
   | `@drobek/auth`, `@drobek/tenancy`, `@drobek/audit` | dashboard sign-in (e-mail code, Google), sessions, rate limits, origin check; workspaces and roles; the audit log |
   | `@drobek/domains`, `@drobek/email`, `@drobek/insights`, `@drobek/proxy` | custom domains; the one mail transport of the dashboard and the modules (`EMAIL_TRANSPORT=smtp` via nodemailer, `resend` via the Resend HTTP API over `fetch`, or the id of a module's `email.transport` contribution, installed at start); the error beacon and request stats; upstream registry, envelope crypto, SSRF guard |
-  | `@drobek/core`, `@drobek/db`, `@drobek/sdk` | env/config, health, logger, Caddyfile generator; drizzle schema + migrations; the browser SDK core |
+  | `@drobek/core`, `@drobek/db`, `@drobek/sdk` | env/config, health, logger, the installed error reporter (`reportError`), Caddyfile generator; drizzle schema + migrations; the browser SDK core |
   | `modules/{auth,email,forms,data,proxy,files,sync,oidc}` | the built-in platform modules (`drobek-module-<name>`) |
   | `create-drobek-module` | the scaffold for external modules; with `@drobek/modules` + `@drobek/sdk` published to npm as `@freema/drobek-modules` + `@freema/drobek-sdk` from each release tag (`scripts/npm-packages.mjs` bundles the private packages in; modules install them under the `@drobek/*` names via npm aliases) |
 
@@ -333,7 +333,11 @@ and a skill the agent reads with `skill_info`. Modules extend each other
 through typed **slots**: a host module declares one with a zod schema, other
 modules contribute values, checked at start and read with
 `contributions(slot)` (a host may `compose` its config schema, confirm
-rules and secrets from the contributions at start). Built in: `auth`
+rules and secrets from the contributions at start). Core itself hosts one
+slot, `errors.reporter`: where server errors go besides the log (an incident
+webhook, a log service, …), chosen with `ERROR_REPORTER=<id>` and fed by `reportError`
+(`@drobek/core`) from the central error points — a 5xx, a module route
+throw, a failed module job or e-mail send, a start-up failure. Built in: `auth`
 (end-user sign-in by e-mailed code, plus the sign-in providers other
 modules contribute to its `auth.provider` slot, and the `auth.signedIn`
 observers told of every sign-in), `email` (notifications to the app's owners,

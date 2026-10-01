@@ -56,8 +56,10 @@ import {
   isDefinedModule,
   parseJobInterval,
   type AnyModule,
+  type ModuleSlot,
 } from './contract.js';
 import { checkDirModule, findDirModule, modulesDirState, packageEntryFile, verifyDirModule, type ModulesDirState } from './dir-modules.js';
+import { CORE_SLOTS } from './error-reporter-slot.js';
 import { CORE_ERROR_CODES, ModuleLoadError, issuePaths } from './errors.js';
 import { CORE_LIMITS } from './limits.js';
 import { mergePatch } from './merge-patch.js';
@@ -65,8 +67,8 @@ import { registerHostPeers } from './peers.js';
 import { SECRET_NAME_RE } from './secrets.server.js';
 import { toPath } from './sdk-build.js';
 
-/** Names a module may not take (they are path segments of `/__drobek/…`). */
-export const RESERVED_MODULE_NAMES = new Set(['sdk', 'v1', 'drobek', 'internal']);
+/** Names a module may not take (path segments of `/__drobek/…`, and `errors`, the prefix of a slot core hosts). */
+export const RESERVED_MODULE_NAMES = new Set(['sdk', 'v1', 'drobek', 'internal', 'errors']);
 
 const SEMVER_RE = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
 const ENV_NAME_RE = /^[A-Z][A-Z0-9_]*$/;
@@ -370,16 +372,21 @@ export interface SlotContribution {
 /**
  * Every `contributes` of the active modules, checked against the slots they
  * target and grouped by slot (each list in module order; every declared slot
- * present, [] without contributions). Refuses the start on a contribution to
- * a slot no active module declares, one that fails the slot's schema, and two
+ * and every slot core hosts present, [] without contributions). Refuses the
+ * start on a contribution to a slot neither core nor an active module
+ * declares, one that fails the slot's schema, and two
  * contributions with the same value of the slot's `unique` key.
  */
 export function collectContributions(modules: AnyModule[]): Map<string, SlotContribution[]> {
-  const hosts = new Map<string, AnyModule>();
+  const hosts = new Map<string, { name: string | null; slot: ModuleSlot }>();
   const out = new Map<string, SlotContribution[]>();
+  for (const [name, slot] of Object.entries(CORE_SLOTS)) {
+    hosts.set(name, { name: null, slot });
+    out.set(name, []);
+  }
   for (const m of modules) {
-    for (const name of Object.keys(m.slots ?? {})) {
-      hosts.set(name, m);
+    for (const [name, slot] of Object.entries(m.slots ?? {})) {
+      hosts.set(name, { name: m.name, slot });
       out.set(name, []);
     }
   }
@@ -394,12 +401,13 @@ export function collectContributions(modules: AnyModule[]): Map<string, SlotCont
           : `the module "${owner}" is not in DROBEK_MODULES`;
         throw new ModuleLoadError(`module "${c.name}" contributes to the slot "${name}", but ${why}`);
       }
-      const slot = host.slots![name];
+      const slot = host.slot;
+      const where = host.name === null ? 'hosted by core' : `module "${host.name}"`;
       const r = slot.schema.safeParse(value);
       if (!r.success) {
         const issues = issuePaths(r.error.issues).map((i) => `${i.path}: ${i.message}`).join('; ');
         throw new ModuleLoadError(
-          `module "${c.name}": its contribution to the slot "${name}" (module "${host.name}") does not pass the slot's schema — ${issues}`
+          `module "${c.name}": its contribution to the slot "${name}" (${where}) does not pass the slot's schema — ${issues}`
         );
       }
       if (slot.unique !== undefined) {
