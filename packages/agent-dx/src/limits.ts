@@ -90,6 +90,16 @@ export const LIMITS: LimitDoc[] = [
     meaning: 'Max custom domains per app, set by the owner in the dashboard; 0 = custom domains off. The limits provider may set it per workspace.',
   },
   {
+    env: 'UPSTREAMS_MAX_PER_WORKSPACE',
+    default: '20',
+    meaning: 'Max proxy upstreams in one workspace (register_upstream → limit_exceeded); one upstream is one host. The limits provider may set it per workspace.',
+  },
+  {
+    env: 'UPSTREAM_REGISTRATIONS_PER_HOUR',
+    default: '20',
+    meaning: 'Upstream registrations per workspace within the last hour, register_upstream and the dashboard together (→ rate_limited with retry_after_seconds).',
+  },
+  {
     env: 'APP_ASSET_MAX_BYTES',
     default: '104857600',
     meaning: 'Max bytes (100 MiB) of one app asset — a video, audio, image or font uploaded with create_asset_upload (→ asset_too_large). The limits provider may set it per workspace.',

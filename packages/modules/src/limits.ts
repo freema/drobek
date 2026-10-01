@@ -12,7 +12,7 @@
  * and expects `{ "limits": { "<ENV_NAME>": <positive integer>, … } }`. Known
  * names override the env defaults; unknown names and bad values are ignored.
  * The catalogue is CORE_LIMITS (enforced by core: apps per workspace, custom
- * domains per app, asset size and quota per app) plus every active module's `limits`. A limit marked
+ * domains per app, asset size and quota per app, proxy upstreams per workspace) plus every active module's `limits`. A limit marked
  * `allowZero` (DOMAINS_MAX_PER_APP) also takes 0 = the feature is off.
  * Every `availability: 'opt-in'` module adds the pseudo-limit
  * `MODULE_ENABLED_<NAME>` (0/1, env default 0): a plan answering 1 enables the
@@ -26,6 +26,7 @@ import { createHmac } from 'node:crypto';
 import { DEFAULT_APPS_MAX_PER_WORKSPACE, DEFAULT_APP_ASSETS_QUOTA, DEFAULT_APP_ASSET_MAX_BYTES } from '@drobek/apps';
 import type { Logger } from '@drobek/core';
 import { dbErrorForLog } from '@drobek/db';
+import { DEFAULT_UPSTREAMS_MAX_PER_WORKSPACE } from '@drobek/proxy';
 import type { Limits, ModuleLimit } from './contract.js';
 
 export const LIMITS_CACHE_TTL_SEC = 60;
@@ -77,6 +78,11 @@ export const CORE_LIMITS: readonly CatalogueLimit[] = Object.freeze([
     default: 3,
     meaning: 'Custom domains per app, pending + verified; 0 turns custom domains off for the workspace.',
     allowZero: true,
+  },
+  {
+    env: 'UPSTREAMS_MAX_PER_WORKSPACE',
+    default: DEFAULT_UPSTREAMS_MAX_PER_WORKSPACE,
+    meaning: 'Proxy upstreams one workspace may hold; register_upstream and the Upstreams page beyond it answer limit_exceeded.',
   },
   {
     env: 'APP_ASSET_MAX_BYTES',

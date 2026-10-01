@@ -18,6 +18,11 @@ allowed_path_prefixes, auth_type })` (base URL: public host, port 80/443).
 which never goes through MCP: the answer carries `secret_url` (the
 dashboard's Upstreams form, filled in) — give it to the user to paste the key.
 Check with `list_upstreams` or `get_app` → `modules.proxy.info.upstreams`.
+One upstream = one host (its base URL). When many similar hosts seem needed
+(e.g. a feed per region), ask the user first or use one main host; never
+register upstreams in bulk — `UPSTREAMS_MAX_PER_WORKSPACE` (20) and
+`UPSTREAM_REGISTRATIONS_PER_HOUR` (20) refuse with `limit_exceeded` /
+`rate_limited`.
 (2) Assign it to the app (an unregistered name is refused):
 
 ```json

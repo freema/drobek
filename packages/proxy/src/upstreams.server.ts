@@ -4,20 +4,37 @@
  * envelope-encrypted at rest and is NEVER returned by any function here — the
  * safe view exposes only `hasSecret`.
  */
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, count, eq, gt, inArray, min, sql } from 'drizzle-orm';
 import { actorKindForSurface, writeAudit, type AuditActorKind } from '@drobek/audit';
-import { getDb, upstreamSecrets, upstreams, type DB } from '@drobek/db';
+import { auditLog, getDb, upstreamSecrets, upstreams, workspaces, type DB } from '@drobek/db';
 import type { WorkspaceRole } from '@drobek/tenancy';
 import { PROXY_AUDIT_ACTIONS, PROXY_SUBJECT_TYPE } from './audit-actions.js';
 import { canConfigureUpstreams } from './authz.js';
 import { encryptSecret, type SecretEnvelope } from './crypto.server.js';
 import { ProxyError } from './errors.js';
 import type { UpstreamAuthType } from './auth-inject.js';
+import { intEnv } from './ssrf.server.js';
 import {
   normalizeMethods,
   normalizePrefixes,
   validateBaseUrl,
 } from './validate.js';
+
+/** UPSTREAMS_MAX_PER_WORKSPACE default: upstreams one workspace may hold (the limits provider may set it per workspace). */
+export const DEFAULT_UPSTREAMS_MAX_PER_WORKSPACE = 20;
+/** UPSTREAM_REGISTRATIONS_PER_HOUR default: registrations per workspace within the last hour. */
+export const DEFAULT_UPSTREAM_REGISTRATIONS_PER_HOUR = 20;
+const HOUR_MS = 60 * 60 * 1000;
+
+/** The server-wide UPSTREAMS_MAX_PER_WORKSPACE (callers pass the workspace's effective value). */
+export function upstreamsMaxPerWorkspace(env: NodeJS.ProcessEnv = process.env): number {
+  return intEnv(env.UPSTREAMS_MAX_PER_WORKSPACE, DEFAULT_UPSTREAMS_MAX_PER_WORKSPACE);
+}
+
+/** UPSTREAM_REGISTRATIONS_PER_HOUR, else the default. */
+export function upstreamRegistrationsPerHour(env: NodeJS.ProcessEnv = process.env): number {
+  return intEnv(env.UPSTREAM_REGISTRATIONS_PER_HOUR, DEFAULT_UPSTREAM_REGISTRATIONS_PER_HOUR);
+}
 
 /** Upstream names: 1–64 chars, a letter first, then letters, digits, `-` or `_`. */
 export const UPSTREAM_NAME_RE = /^[a-z][a-z0-9_-]{0,63}$/i;
@@ -70,8 +87,11 @@ export interface CreateUpstreamInput extends ConfigureActor {
   allowedAppIds?: string[];
   /** Plaintext secret — encrypted here, never persisted or returned in the clear. */
   secret?: string | null;
-  /** PROXY_ALLOWED_PORTS / DROBEK_MASTER_KEY source (default process.env). */
+  /** PROXY_ALLOWED_PORTS / DROBEK_MASTER_KEY / UPSTREAM_REGISTRATIONS_PER_HOUR source (default process.env). */
   env?: NodeJS.ProcessEnv;
+  /** The workspace's effective UPSTREAMS_MAX_PER_WORKSPACE (limits provider plan); default: the env. */
+  maxUpstreams?: number;
+  now?: () => Date;
 }
 
 function assertConfigure(actor: ConfigureActor): void {
@@ -138,7 +158,66 @@ export function checkUpstreamFields(
   return { name, baseUrl, allowedMethods, allowedPathPrefixes, authType, authHeaderName };
 }
 
-/** Register a new upstream (workspace-admin+). Encrypts the secret in-txn. */
+type Tx = Parameters<Parameters<DB['transaction']>[0]>[0];
+
+/** The workspace's upstream count; `limit_exceeded` once it holds `max` (existing ones over a lowered cap stay). */
+async function assertUpstreamRoom(db: DB | Tx, workspaceId: string, max: number): Promise<void> {
+  const [{ n }] = await db.select({ n: count() }).from(upstreams).where(eq(upstreams.workspaceId, workspaceId));
+  if (Number(n) >= max) {
+    throw new ProxyError(
+      'limit_exceeded',
+      `This workspace already has ${Number(n)} upstream${Number(n) === 1 ? '' : 's'}; its limit (UPSTREAMS_MAX_PER_WORKSPACE) is ${max}. One upstream covers one host: reuse one that is registered, or delete one the apps no longer need.`,
+      { limit: 'UPSTREAMS_MAX_PER_WORKSPACE', value: max }
+    );
+  }
+}
+
+/**
+ * `rate_limited` when the workspace registered `perHour` upstreams within the
+ * last hour (its `proxy.upstream.create` audit rows, so a delete does not give
+ * the budget back); `retry_after_seconds` is when the oldest of them leaves the window.
+ */
+async function assertRegistrationRate(db: DB | Tx, workspaceId: string, perHour: number, now: Date): Promise<void> {
+  const since = new Date(now.getTime() - HOUR_MS);
+  const [{ n, oldest }] = await db
+    .select({ n: count(), oldest: min(auditLog.createdAt) })
+    .from(auditLog)
+    .where(
+      and(
+        eq(auditLog.workspaceId, workspaceId),
+        eq(auditLog.action, PROXY_AUDIT_ACTIONS.upstreamCreate),
+        gt(auditLog.createdAt, since)
+      )
+    );
+  if (Number(n) < perHour) return;
+  const oldestMs = oldest ? new Date(oldest).getTime() : now.getTime();
+  const retryAfter = Math.max(1, Math.ceil((oldestMs + HOUR_MS - now.getTime()) / 1000));
+  throw new ProxyError(
+    'rate_limited',
+    `This workspace registered ${Number(n)} upstreams within the last hour; its limit (UPSTREAM_REGISTRATIONS_PER_HOUR) is ${perHour}. Try again in ${Math.ceil(retryAfter / 60)} min.`,
+    { limit: 'UPSTREAM_REGISTRATIONS_PER_HOUR', value: perHour, retry_after_seconds: retryAfter }
+  );
+}
+
+/**
+ * The caps createUpstream enforces, checked ahead without registering
+ * (register_upstream before it hands out the dashboard link for a keyed upstream).
+ */
+export async function assertCanRegisterUpstream(
+  workspaceId: string,
+  opts: { maxUpstreams?: number; env?: NodeJS.ProcessEnv; now?: () => Date } = {}
+): Promise<void> {
+  const db = getDb();
+  await assertUpstreamRoom(db, workspaceId, opts.maxUpstreams ?? upstreamsMaxPerWorkspace(opts.env));
+  await assertRegistrationRate(db, workspaceId, upstreamRegistrationsPerHour(opts.env), (opts.now ?? (() => new Date()))());
+}
+
+/**
+ * Register a new upstream (workspace-admin+). Encrypts the secret in-txn.
+ * Refuses a name the workspace has (`invalid_request`), the
+ * (UPSTREAMS_MAX_PER_WORKSPACE + 1)-th upstream (`limit_exceeded`) and more
+ * than UPSTREAM_REGISTRATIONS_PER_HOUR registrations within an hour (`rate_limited`).
+ */
 export async function createUpstream(
   input: CreateUpstreamInput
 ): Promise<UpstreamView> {
@@ -157,17 +236,25 @@ export async function createUpstream(
 
   const envelope = secretPlain !== '' ? encryptSecret(secretPlain, input.env) : null;
 
-  const db = getDb();
-  const existing = await db
-    .select({ id: upstreams.id })
-    .from(upstreams)
-    .where(and(eq(upstreams.workspaceId, input.workspaceId), eq(upstreams.name, name)))
-    .limit(1);
-  if (existing[0]) {
-    throw new ProxyError('invalid_request', `an upstream named "${name}" already exists`);
-  }
+  const maxUpstreams = input.maxUpstreams ?? upstreamsMaxPerWorkspace(input.env);
+  const perHour = upstreamRegistrationsPerHour(input.env);
+  const now = (input.now ?? (() => new Date()))();
 
+  const db = getDb();
   const row = await db.transaction(async (tx) => {
+    // Serialize registrations per workspace so concurrent calls cannot all pass the caps.
+    await tx.select({ id: workspaces.id }).from(workspaces).where(eq(workspaces.id, input.workspaceId)).for('update');
+    const [existing] = await tx
+      .select({ id: upstreams.id })
+      .from(upstreams)
+      .where(and(eq(upstreams.workspaceId, input.workspaceId), eq(upstreams.name, name)))
+      .limit(1);
+    if (existing) {
+      throw new ProxyError('invalid_request', `an upstream named "${name}" already exists`);
+    }
+    await assertUpstreamRoom(tx, input.workspaceId, maxUpstreams);
+    await assertRegistrationRate(tx, input.workspaceId, perHour, now);
+
     const [created] = await tx
       .insert(upstreams)
       .values({
@@ -234,6 +321,7 @@ export async function listUpstreams(actor: ConfigureActor): Promise<UpstreamView
       await getDb()
         .select({ upstreamId: upstreamSecrets.upstreamId })
         .from(upstreamSecrets)
+        .where(inArray(upstreamSecrets.upstreamId, rows.map((r) => r.id)))
     ).map((r) => r.upstreamId)
   );
   return rows.map((r) => toView(r, withSecret.has(r.id)));

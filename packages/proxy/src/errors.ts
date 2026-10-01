@@ -11,6 +11,7 @@ export type ProxyErrorCode =
   | 'method_not_allowed'
   | 'path_not_allowed'
   | 'rate_limited'
+  | 'limit_exceeded'
   | 'proxy_busy'
   | 'ssrf_blocked'
   | 'upstream_error'
@@ -19,7 +20,9 @@ export type ProxyErrorCode =
 export class ProxyError extends Error {
   constructor(
     readonly code: ProxyErrorCode,
-    message: string
+    message: string,
+    /** Secret-free facts for the caller, e.g. `{ limit, value }` or `{ retry_after_seconds }`. */
+    readonly details: Record<string, unknown> = {}
   ) {
     super(message);
     this.name = 'ProxyError';
@@ -39,6 +42,8 @@ export function proxyErrorStatus(code: ProxyErrorCode): number {
       return 403;
     case 'not_found':
       return 404;
+    case 'limit_exceeded':
+      return 409;
     case 'method_not_allowed':
       return 405;
     case 'rate_limited':

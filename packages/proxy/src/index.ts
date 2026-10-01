@@ -66,6 +66,11 @@ export {
 export {
   checkUpstreamFields,
   createUpstream,
+  assertCanRegisterUpstream,
+  DEFAULT_UPSTREAM_REGISTRATIONS_PER_HOUR,
+  DEFAULT_UPSTREAMS_MAX_PER_WORKSPACE,
+  upstreamRegistrationsPerHour,
+  upstreamsMaxPerWorkspace,
   deleteUpstream,
   getUpstream,
   listUpstreams,

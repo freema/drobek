@@ -1000,6 +1000,12 @@ describe('module e-mail (ctx.email.send through the runtime)', () => {
         actions: [{ label: 'Review the echo changes', url: 'https://drobek.example/workspaces/acme/apps/shop/modules/echo' }],
         footNote: 'Sent by the drobek server at drobek.example because you can edit this app.',
       });
+      // Audited as the server's own mail ("system" in Activity), not as an end user.
+      const mailRows = (await db.select().from(auditLog).where(eq(auditLog.action, 'email.send'))).filter(
+        (a) => (a.meta as Record<string, unknown> | null)?.by === 'platform'
+      );
+      expect(mailRows).toHaveLength(1);
+      expect(mailRows[0]).toMatchObject({ actorKind: 'user', actorUserId: null, meta: { module: 'echo', kind: 'notification', recipients: 1, by: 'platform' } });
 
       // A second proposal within the hour: no second e-mail (the banner shows it).
       await r.configure({ app, module: 'echo', patch: { notify: ['boss@example.com'] }, actorUserId: userId });

@@ -10,7 +10,10 @@
  * registers at once; `bearer` / `header` answer `registered: false` with
  * `secret_url`, the Upstreams page with the fields filled in, where the user
  * pastes the key and registers it. Removing needs `user_confirmed: true`:
- * every app that calls the upstream breaks at once.
+ * every app that calls the upstream breaks at once. Registering stops at the
+ * workspace's UPSTREAMS_MAX_PER_WORKSPACE (`limit_exceeded`) and after
+ * UPSTREAM_REGISTRATIONS_PER_HOUR registrations within an hour (`rate_limited`),
+ * checked before a keyed upstream's link is handed out too.
  */
 import { inArray } from 'drizzle-orm';
 import { dashboardOrigin } from '@drobek/apps';
@@ -18,6 +21,7 @@ import { actorKindForSurface } from '@drobek/audit';
 import { apps, getDb } from '@drobek/db';
 import {
   ProxyError,
+  assertCanRegisterUpstream,
   checkUpstreamFields,
   createUpstream,
   deleteUpstream,
@@ -50,6 +54,7 @@ async function run<T>(fn: () => Promise<T>): Promise<T> {
   } catch (err) {
     if (!(err instanceof ProxyError)) throw err;
     if (err.code === 'forbidden' || err.code === 'not_found') throw new ToolError(err.code, err.message);
+    if (err.code === 'limit_exceeded' || err.code === 'rate_limited') throw new ToolError(err.code, err.message, { ...err.details });
     throw new ToolError('invalid_params', err.message);
   }
 }
@@ -122,6 +127,8 @@ export async function registerUpstreamTool(
   if (await run(() => getUpstream(actor, fields.name))) {
     throw new ToolError('upstream_already_registered', `An upstream named "${fields.name}" is already registered in workspace "${slug}" — list_upstreams shows it; remove_upstream removes it.`);
   }
+  const caps = { maxUpstreams: (await ctx.modules.workspaceLimits(actor.workspaceId)).UPSTREAMS_MAX_PER_WORKSPACE, env: ctx.deps.env };
+  await run(() => assertCanRegisterUpstream(actor.workspaceId, caps));
   if (fields.authType !== 'none') {
     const q = new URLSearchParams({
       name: fields.name,
@@ -138,7 +145,7 @@ export async function registerUpstreamTool(
       note: `This upstream needs a secret, and secrets never pass through MCP. Give the user secret_url: the Upstreams page with every field filled in — they paste the key and click Register. Never ask for the key in chat. Once it is registered, ${assignHint(fields.name)}`,
     };
   }
-  const view = await run(() => createUpstream({ ...actor, ...input, secret: null }));
+  const view = await run(() => createUpstream({ ...actor, ...input, ...caps, secret: null }));
   return {
     registered: true,
     upstream: upstreamOut(view, new Map()),

@@ -1090,8 +1090,8 @@ export class ModuleRuntime {
   /**
    * The effective limits of one workspace: the env defaults, or the
    * limits provider's plan — CORE_LIMITS (APPS_MAX_PER_WORKSPACE,
-   * DOMAINS_MAX_PER_APP) and every module limit. For core callers: create_app
-   * and the dashboard's custom domains.
+   * DOMAINS_MAX_PER_APP, UPSTREAMS_MAX_PER_WORKSPACE, …) and every module
+   * limit. For core callers: create_app, custom domains and upstreams.
    */
   workspaceLimits(workspaceId: string): Promise<Limits> {
     return this.deps.limits.forWorkspace(workspaceId);
@@ -2024,11 +2024,14 @@ export class ModuleRuntime {
         await writeAudit({
           workspaceId: app.workspaceId,
           actorUserId: null,
-          actorKind: actorKindForSurface('apps'),
+          // The runtime's own mail has no person behind it: kind `user` without a user reads as "system".
+          actorKind: platform ? 'user' : actorKindForSurface('apps'),
           action: 'email.send',
           subjectType: 'app',
           target: app.slug,
-          meta: { module: m.name, kind, recipients: sent, end_user: principal.kind === 'user' ? principal.id : 'anon' },
+          meta: platform
+            ? { module: m.name, kind, recipients: sent, by: 'platform' }
+            : { module: m.name, kind, recipients: sent, end_user: principal.kind === 'user' ? principal.id : 'anon' },
         }).catch((err: unknown) => deps.log.error('audit email.send failed', { app_id: app.id, error: dbErrorForLog(err) }));
       }
     }

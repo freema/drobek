@@ -426,6 +426,8 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `PROXY_ALLOWED_PORTS` / `PROXY_ALLOWED_HOSTS` | 80,443 / empty | `proxy`: upstream ports; hostnames whose private IPs may be reached (keep empty) |
 | `PROXY_CONNECT_TIMEOUT_MS` / `PROXY_MAX_RESPONSE_BYTES` | 8000 / 5242880 | `proxy`: per upstream request (the size cap also holds for a decoded gzip/br body) |
 | `PROXY_MAX_CONCURRENT` / `PROXY_MAX_CONCURRENT_PER_APP` | 32 / 8 | `proxy`: upstream calls in flight on the whole server / per app; over either → `429 proxy_busy` |
+| `UPSTREAMS_MAX_PER_WORKSPACE` | 20 | `proxy`: upstreams one workspace may hold (existing ones over a lowered cap stay, deleting always works); `register_upstream` and the Upstreams page beyond it answer `limit_exceeded` *(plan)* |
+| `UPSTREAM_REGISTRATIONS_PER_HOUR` | 20 | `proxy`: upstream registrations per workspace within the last hour, MCP and dashboard together; then `rate_limited` with `retry_after_seconds` |
 | `PROXY_CALLS_PER_MIN` / `PROXY_PUBLIC_CALLS_PER_MIN_PER_IP` | 60 / 10 | `proxy`: calls per app, per IP to `public` upstreams *(plan)* |
 | `SYNC_MIN_INTERVAL_MIN` / `SYNC_MAX_SOURCES_PER_APP` | 5 / 10 | `sync`: the shortest interval of a source (minutes); sources per app — `configure_module` refuses more *(plan)* |
 | `SYNC_MAX_RESPONSE_BYTES` / `SYNC_MAX_RECORDS_PER_RUN` | 5242880 / 1000 | `sync`: bytes of one upstream answer a run reads (`PROXY_MAX_RESPONSE_BYTES` caps it too); records one run imports — more fails the run *(plan)* |

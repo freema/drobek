@@ -12,6 +12,7 @@ import { appCompiles, appDailyStats, appErrors, apps, auditLog, memberships, mod
 import { dedupKey, memoryModuleStatsRedis, recordModuleRequest, sanitizeEvent } from '@drobek/insights';
 import { DEFAULT_APPS_MAX_PER_WORKSPACE, DEFAULT_APP_ASSETS_QUOTA, DEFAULT_APP_ASSET_MAX_BYTES } from '@drobek/apps';
 import { DEFAULT_DOMAINS_MAX_PER_APP } from '@drobek/domains';
+import { DEFAULT_UPSTREAMS_MAX_PER_WORKSPACE } from '@drobek/proxy';
 import {
   CORE_LIMITS,
   ModuleError,
@@ -215,6 +216,7 @@ describe('create_app — APPS_MAX_PER_WORKSPACE', () => {
     expect(d).toEqual({
       APPS_MAX_PER_WORKSPACE: DEFAULT_APPS_MAX_PER_WORKSPACE,
       DOMAINS_MAX_PER_APP: DEFAULT_DOMAINS_MAX_PER_APP,
+      UPSTREAMS_MAX_PER_WORKSPACE: DEFAULT_UPSTREAMS_MAX_PER_WORKSPACE,
       APP_ASSET_MAX_BYTES: DEFAULT_APP_ASSET_MAX_BYTES,
       APP_ASSETS_QUOTA: DEFAULT_APP_ASSETS_QUOTA,
     });
