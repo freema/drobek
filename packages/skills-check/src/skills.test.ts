@@ -37,7 +37,7 @@ describe('skill_info() with every built-in module', () => {
     const moduleCodes = rt.errorCatalogue().flatMap((s) => s.errors.map((e) => e.code));
     const all = [...CORE_CODES, ...moduleCodes];
     expect(new Set(all).size).toBe(all.length);
-    for (const code of ['email_not_allowed', 'invalid_code', 'too_many_attempts', 'invalid_form_token', 'submitted_too_fast', 'validation_failed', 'unsupported_type', 'ssrf_blocked', 'proxy_busy', 'path_not_allowed', 'upstream_error']) {
+    for (const code of ['email_not_allowed', 'invalid_code', 'too_many_attempts', 'invalid_form_token', 'submitted_too_fast', 'validation_failed', 'unsupported_type', 'ssrf_blocked', 'proxy_busy', 'path_not_allowed', 'upstream_error', 'upstream_redirect']) {
       expect(moduleCodes, code).toContain(code);
     }
     for (const m of BUILTIN_MODULES) {

@@ -114,8 +114,12 @@ export interface Api {
   `PROXY_PUBLIC_CALLS_PER_MIN_PER_IP` 10 for `public` upstreams;
   `PROXY_MAX_CONCURRENT_PER_APP` 8 calls of one app in flight at once —
   queue them, don't fire 20 in parallel.
-- No redirects followed (a 3xx comes back as-is); 20 s timeout; response
-  ≤ 5 MiB; request body ≤ 1 MiB; streaming (SSE) arrives whole.
+- Redirects: one to the same scheme, host and port that stays inside the
+  allowed path prefixes (e.g. `/rss` → `/rss/`) is followed on the server,
+  at most 3 hops (a 301/302/303 after POST becomes a GET). Any other redirect
+  is `upstream_redirect` (502) — the app never sees a 3xx except 304.
+- 20 s timeout and ≤ 5 MiB response for the whole redirect chain; request
+  body ≤ 1 MiB; streaming (SSE) arrives whole.
 - Private/internal addresses and ports other than 80/443 are unreachable.
 - The key never appears in responses, logs, get_app or skill_info.
 
@@ -136,4 +140,5 @@ export interface Api {
 | `csrf_rejected` (403) | raw `fetch('/__drobek/v1/proxy/…')` | use `drobek.proxy.fetch` |
 | `ssrf_blocked` (403) | upstream resolves to a private address | the admin must use a public host |
 | `upstream_error` (502) | unreachable, timed out or > 5 MiB (decoded) | show "try again later" |
+| `upstream_redirect` (502) | a redirect to another host/scheme/port, outside the prefixes, > 3 hops or a loop; `details.location_path` = the target path | call the final path directly; ask the admin to allow that prefix, or to register the other host as its own upstream |
 | `config_error` (500) | the upstream's stored key is unusable | the admin re-enters it in the dashboard |

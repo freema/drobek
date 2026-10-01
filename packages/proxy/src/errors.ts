@@ -15,6 +15,7 @@ export type ProxyErrorCode =
   | 'proxy_busy'
   | 'ssrf_blocked'
   | 'upstream_error'
+  | 'upstream_redirect'
   | 'config_error';
 
 export class ProxyError extends Error {
@@ -52,6 +53,9 @@ export function proxyErrorStatus(code: ProxyErrorCode): number {
       return 429;
     case 'upstream_error':
       // A bad gateway to the upstream (DNS fail, timeout, connection refused).
+      return 502;
+    case 'upstream_redirect':
+      // A redirect the gateway does not follow (another origin, a path outside the prefixes, too many hops).
       return 502;
     case 'config_error':
       // A misconfigured/missing KEK or an un-decryptable secret — fail CLOSED.

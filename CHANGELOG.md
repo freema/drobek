@@ -24,6 +24,9 @@
 - **The Upstreams list reads only the workspace's own secret rows** (NSO-403): `listUpstreams` computed `hasSecret` from every row of `upstream_secrets` on the server; it now reads only the rows of the workspace's upstreams.
 - **The pending-change e-mail is audited as the server's** (NSO-403): the owner notification about a change waiting for confirmation wrote its `email.send` audit row as an app end user ("END USER app end user" in Activity); it is now an actor-less row ("system", `meta.by: "platform"`), like a scheduled sync run. Mail an app sends from an end user's request is unchanged.
 
+### Fixed
+- **The proxy follows an upstream's own redirects** (NSO-404): an upstream that answers `301 Location: https://www.denik.cz/rss/` to `/rss` used to hand the 3xx to the browser, whose CSP blocked the absolute target, so the app got nothing. A 301/302/303/307/308 is now followed on the server — for app calls and for jobs (`ctx.upstreams.fetch`, `sync`) — when its target keeps the upstream base URL's scheme, host and port, stays under its base path and allowed path prefixes and the resulting method is allowed; at most 3 hops, each through the SSRF guard again (DNS pinning, port allow-list), with the 20 s deadline and the response cap covering the whole chain. 301/302/303 turn a non-GET/HEAD request into a GET without a body; 307/308 resend method and body. Any other redirect (another host, scheme or port, a path outside the prefixes, a fourth hop, a loop) and any other 3xx but 304 answers 502 with the new proxy code `upstream_redirect`, `details.location_path` (the target's path, never its host) and how to fix it: allow that path prefix on the upstream, or register the target host as its own upstream. No 3xx but 304 reaches the app anymore.
+
 ## v0.6.1 — 2026-09-29
 
 ### Fixed

@@ -21,9 +21,11 @@
  *      bound here;
  *   7. @drobek/proxy `forwardToUpstream`: method + path allow-lists, the
  *      secret injected server-side, Cookie/Authorization/browser headers
- *      stripped, SSRF guard (pinned IP, ports 80/443, no redirects, 20 s,
- *      5 MiB), an encoded body decoded within the cap, the response relayed
- *      with allow-listed headers and `Cache-Control: no-store`.
+ *      stripped, SSRF guard (pinned IP, ports 80/443, 20 s, 5 MiB), a
+ *      redirect followed only within the upstream's origin and prefixes
+ *      (else 502 upstream_redirect), an encoded body decoded within the cap,
+ *      the response relayed with allow-listed headers and
+ *      `Cache-Control: no-store`.
  */
 import { ModuleError, perIpLimitKey, respond, ruleIsPublic, type ModuleContext, type ModuleRequest, type ModuleRouter } from '@drobek/modules';
 import { ProxyError, acquireProxySlot, forwardToUpstream, proxyErrorStatus, type ProxyErrorCode } from '@drobek/proxy';
@@ -50,7 +52,7 @@ export function toModuleError(err: ProxyError): ModuleError {
   const code: ProxyErrorCode = err.code;
   // proxy_busy: slots free up as calls finish (≤ 20 s) — worth a retry soon.
   const headers = code === 'proxy_busy' ? { 'Retry-After': '1' } : undefined;
-  return new ModuleError(code, err.message, { status: proxyErrorStatus(code), headers });
+  return new ModuleError(code, err.message, { status: proxyErrorStatus(code), headers, details: err.details });
 }
 
 async function limitOf(ctx: Ctx, name: string, fallback: number): Promise<number> {

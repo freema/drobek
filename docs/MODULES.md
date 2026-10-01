@@ -2215,11 +2215,19 @@ calls an external API without holding its secret. `skill_info('proxy')`.
   (never chunked); the SSRF guard (DNS resolved once + pinned IP,
   private/reserved ranges blocked unless on `PROXY_ALLOWED_HOSTS` — IPv6
   includes 6to4 `2002::/16`, local-use NAT64 `64:ff9b:1::/48`, site-local
-  `fec0::/10` and discard `100::/64` — ports 80/443, **no redirects** — a 3xx
-  is returned as-is, 20 s deadline, 5 MiB response cap; a HEAD answer's
+  `fec0::/10` and discard `100::/64` — ports 80/443, 20 s deadline, 5 MiB
+  response cap, both for the whole redirect chain; a HEAD answer's
   `Content-Length` is not held to the cap → `ssrf_blocked` 403 (audited as
-  `proxy.blocked`) / `upstream_error` 502). A `Content-Encoding` the upstream
-  sends anyway (`gzip`, `deflate`, `br`) is decoded and the DECODED body must
+  `proxy.blocked`) / `upstream_error` 502). A 301/302/303/307/308 is
+  followed — at most 3 hops, each through the SSRF guard again with the
+  secret injected — only when its target keeps the base URL's scheme, host
+  and port, stays under the base path and the allowed path prefixes and the
+  resulting method is allowed (301/302/303 turn a non-GET/HEAD request into a
+  GET without a body, 307/308 resend method and body). Any other redirect —
+  another origin, a path outside the prefixes, a fourth hop, a loop — and any
+  other 3xx but 304 is `upstream_redirect` 502 with `details.location_path`
+  (the target's path, never its host); no 3xx but 304 reaches the app.
+  A `Content-Encoding` the upstream sends anyway (`gzip`, `deflate`, `br`) is decoded and the DECODED body must
   fit the 5 MiB cap (else `upstream_error`). The response keeps the
   upstream's status; its headers pass through an **allow-list**
   (`Content-Type`, `Content-Language`, `Content-Range`, `Accept-Ranges`,

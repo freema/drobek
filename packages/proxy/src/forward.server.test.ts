@@ -2,13 +2,15 @@
  * forwardToUpstream against a real local HTTP server: an upstream
  * that encodes its body despite `Accept-Encoding: identity` is decoded (gzip,
  * deflate — zlib or raw — and br) and the DECODED size is held to the cap;
- * the relayed headers are the allow-list.
+ * the relayed headers are the allow-list; a redirect is followed only within
+ * the upstream's origin and prefixes.
  */
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import zlib from 'node:zlib';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ProxyError } from './errors.js';
+import { encryptSecret } from './crypto.server.js';
 import { decodeBody, forwardToUpstream } from './forward.server.js';
 import type { UpstreamRecord } from './upstreams.server.js';
 
@@ -16,15 +18,76 @@ const JSON_BODY = JSON.stringify({ items: Array.from({ length: 50 }, (_, i) => (
 
 let server: http.Server;
 let port: number;
+const seen: { method: string; path: string; key: string | undefined }[] = [];
 
 beforeAll(async () => {
   server = http.createServer((req, res) => {
+    const path = (req.url ?? '/').split('?')[0];
+    seen.push({ method: req.method ?? '', path, key: req.headers['x-api-key'] as string | undefined });
+    const redirect = (status: number, location: string) => {
+      res.writeHead(status, { location, 'content-type': 'text/plain' });
+      res.end('moved');
+    };
+    const hops = /^\/hops\/(\d+)$/.exec(path);
+    if (hops) {
+      const n = Number(hops[1]);
+      return n === 0 ? (res.writeHead(200, { 'content-type': 'text/plain' }), res.end('landed')) : redirect(302, `/hops/${n - 1}`);
+    }
+    switch (path) {
+      case '/sport/fotbal-vysledky':
+        return redirect(301, `http://127.0.0.1:${port}/sport/fotbal-vysledky/`);
+      case '/sport/fotbal-vysledky/':
+        res.writeHead(200, { 'content-type': 'text/plain' });
+        return res.end('scores');
+      case '/rss':
+        return redirect(301, '/rss/');
+      case '/rss/':
+        res.writeHead(200, { 'content-type': 'application/rss+xml' });
+        return res.end('<rss/>');
+      case '/cross-host':
+        return redirect(302, `http://localhost:${port}/sport/fotbal-vysledky/`);
+      case '/cross-scheme':
+        return redirect(302, `https://127.0.0.1:${port}/rss/`);
+      case '/cross-port':
+        return redirect(302, `http://127.0.0.1:${port + 1}/rss/`);
+      case '/outside':
+        return redirect(302, '/private/data?token=1');
+      case '/ping':
+        return redirect(302, '/pong');
+      case '/pong':
+        return redirect(302, '/ping');
+      case '/self':
+        return redirect(307, '/self');
+      case '/no-location':
+        res.writeHead(302, { 'content-type': 'text/plain' });
+        return res.end('moved');
+      case '/choices':
+        return redirect(300, '/rss/');
+      case '/not-modified':
+        res.writeHead(304);
+        return res.end();
+      case '/post-303':
+        return redirect(303, '/echo');
+      case '/post-302':
+        return redirect(302, '/echo');
+      case '/post-307':
+        return redirect(307, '/echo');
+      case '/echo': {
+        const chunks: Buffer[] = [];
+        req.on('data', (c: Buffer) => chunks.push(c));
+        req.on('end', () => {
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ method: req.method, headers: req.headers, body: Buffer.concat(chunks).toString('utf8') }));
+        });
+        return;
+      }
+    }
     const send = (encoding: string, body: Buffer, extra: Record<string, string> = {}) => {
       res.writeHead(200, { 'content-type': 'application/json', 'content-encoding': encoding, 'content-length': String(body.length), ...extra });
       res.end(req.method === 'HEAD' ? undefined : body);
     };
     const raw = Buffer.from(JSON_BODY);
-    switch (req.url) {
+    switch (path) {
       case '/gzip':
         return send('gzip', zlib.gzipSync(raw));
       case '/deflate':
@@ -44,7 +107,7 @@ beforeAll(async () => {
       case '/garbage':
         return send('gzip', Buffer.from('this is not gzip'));
       case '/headers':
-        res.writeHead(302, {
+        res.writeHead(201, {
           'content-type': 'text/plain',
           location: 'https://upstream.internal:8443/v1/next',
           'clear-site-data': '"*"',
@@ -73,7 +136,7 @@ afterAll(async () => {
 const env = (over: Record<string, string> = {}): NodeJS.ProcessEnv =>
   ({ PROXY_ALLOWED_HOSTS: '127.0.0.1', PROXY_ALLOWED_PORTS: String(port), ...over }) as NodeJS.ProcessEnv;
 
-const upstream = (): UpstreamRecord => ({
+const upstream = (over: Partial<UpstreamRecord> = {}): UpstreamRecord => ({
   id: 'up_1',
   workspaceId: 'ws_1',
   name: 'local',
@@ -84,6 +147,7 @@ const upstream = (): UpstreamRecord => ({
   authHeaderName: null,
   allowedAppIds: [],
   secret: null,
+  ...over,
 });
 
 const get = (path: string, method = 'GET', e: NodeJS.ProcessEnv = env()) =>
@@ -135,7 +199,7 @@ describe('forwardToUpstream — an encoded upstream body is decoded', () => {
 describe('forwardToUpstream — relayed headers', () => {
   it('only allow-listed headers pass; an absolute Location is dropped; never cached', async () => {
     const r = await get('/headers');
-    expect(r.status).toBe(302);
+    expect(r.status).toBe(201);
     const { date, ...rest } = r.headers; // Node's server adds Date by itself
     expect(date).toBeTruthy();
     expect(rest).toEqual({
@@ -160,6 +224,98 @@ describe('forwardToUpstream — a caller\'s lower response cap', () => {
 
   it('never raises the operator cap: the smaller of the two applies', async () => {
     const err = await capped('/bomb', 64 * 1024 * 1024, env({ PROXY_MAX_RESPONSE_BYTES: String(1024 * 1024) })).catch((e: unknown) => e);
+    expect((err as ProxyError).code).toBe('upstream_error');
+  });
+});
+
+describe('forwardToUpstream — redirects', () => {
+  const call = (path: string, over: Partial<UpstreamRecord> = {}, method = 'GET', body?: Buffer, e: NodeJS.ProcessEnv = env()) =>
+    forwardToUpstream({ upstream: upstream(over), method, subpath: path, search: '', headers: new Headers({ 'content-type': 'text/plain' }), body, env: e });
+  const refused = async (p: Promise<unknown>): Promise<ProxyError> => {
+    const err = await p.catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ProxyError);
+    expect((err as ProxyError).code).toBe('upstream_redirect');
+    return err as ProxyError;
+  };
+  const prefixes = { allowedPathPrefixes: ['/rss', '/sport/fotbal-vysledky'] };
+
+  it('a trailing-slash redirect inside the prefixes is followed (absolute and relative Location)', async () => {
+    const sport = await call('/sport/fotbal-vysledky', prefixes);
+    expect(sport.status).toBe(200);
+    expect(sport.body?.toString('utf8')).toBe('scores');
+    const rss = await call('/rss', prefixes);
+    expect(rss.status).toBe(200);
+    expect(rss.body?.toString('utf8')).toBe('<rss/>');
+    expect(Object.keys(rss.headers).map((k) => k.toLowerCase())).not.toContain('location');
+  });
+
+  it('another host, scheme or port → upstream_redirect naming only the path', async () => {
+    for (const path of ['/cross-host', '/cross-scheme', '/cross-port']) {
+      const before = seen.length;
+      const err = await refused(call(path));
+      expect(err.details).toEqual({ location_path: path === '/cross-host' ? '/sport/fotbal-vysledky/' : '/rss/' });
+      expect(err.message).not.toContain('localhost');
+      expect(err.message).not.toContain('https:');
+      expect(err.message).toMatch(/register the target host as its own upstream/);
+      expect(seen.length - before, path).toBe(1);
+    }
+  });
+
+  it('a path outside the allowed prefixes → upstream_redirect without the query', async () => {
+    const err = await refused(call('/outside', { allowedPathPrefixes: ['/outside'] }));
+    expect(err.details).toEqual({ location_path: '/private/data' });
+    expect(err.message).toMatch(/allow that path prefix/);
+  });
+
+  it('at most 3 hops; a loop is refused', async () => {
+    const three = await call('/hops/3');
+    expect(three.body?.toString('utf8')).toBe('landed');
+    const four = await refused(call('/hops/4'));
+    expect(four.message).toMatch(/more than 3 redirects/);
+    expect((await refused(call('/ping'))).message).toMatch(/loop/);
+    expect((await refused(call('/self'))).message).toMatch(/loop/);
+  });
+
+  it('a redirect without Location, a 300 → upstream_redirect; a 304 passes', async () => {
+    expect((await refused(call('/no-location'))).details).toEqual({ location_path: null });
+    await refused(call('/choices'));
+    const nm = await call('/not-modified');
+    expect(nm.status).toBe(304);
+  });
+
+  it('303 and 302 after a POST become a GET without the body; 307 resends method and body', async () => {
+    const methods = { allowedMethods: ['GET', 'POST'] };
+    for (const path of ['/post-303', '/post-302']) {
+      const r = await call(path, methods, 'POST', Buffer.from('payload'));
+      const echoed = JSON.parse(r.body!.toString('utf8')) as { method: string; headers: Record<string, string>; body: string };
+      expect(echoed.method, path).toBe('GET');
+      expect(echoed.body).toBe('');
+      expect(echoed.headers['content-type']).toBeUndefined();
+      expect(echoed.headers['content-length']).toBeUndefined();
+    }
+    const kept = await call('/post-307', methods, 'POST', Buffer.from('payload'));
+    expect(JSON.parse(kept.body!.toString('utf8'))).toMatchObject({ method: 'POST', body: 'payload' });
+  });
+
+  it('a redirect to a method the upstream does not allow → upstream_redirect', async () => {
+    const err = await refused(call('/post-303', { allowedMethods: ['POST'] }, 'POST', Buffer.from('x')));
+    expect(err.message).toMatch(/method GET is not allowed/);
+  });
+
+  it('the injected secret goes to every same-origin hop', async () => {
+    const e = env({ DROBEK_MASTER_KEY: 'c'.repeat(64) });
+    const keyed = { authType: 'header' as const, authHeaderName: 'X-Api-Key', secret: encryptSecret('k3y-value', e), ...prefixes };
+    const before = seen.length;
+    const r = await call('/rss', keyed, 'GET', undefined, e);
+    expect(r.status).toBe(200);
+    expect(seen.slice(before)).toEqual([
+      { method: 'GET', path: '/rss', key: 'k3y-value' },
+      { method: 'GET', path: '/rss/', key: 'k3y-value' },
+    ]);
+  });
+
+  it('the size cap covers the whole chain', async () => {
+    const err = await call('/rss', prefixes, 'GET', undefined, env({ PROXY_MAX_RESPONSE_BYTES: '7' })).catch((e: unknown) => e);
     expect((err as ProxyError).code).toBe('upstream_error');
   });
 });
