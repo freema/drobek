@@ -11,14 +11,16 @@
  * It OWNS app e-mail (`mail`): core runs `prepare` for every `ctx.email.send`
  * of every module (forms notifications, notifyAdmins, auth sign-in codes)
  * — the per-app daily limit and the sender name / Reply-To. The transport
- * (SMTP, layout) is core (`@drobek/email`); the recipients rule and the
+ * (SMTP, Resend, layout) is core (`@drobek/email`); other providers come as
+ * modules through the `email.transport` slot this module hosts, selected by
+ * EMAIL_TRANSPORT (core installs the chosen one); the recipients rule and the
  * operator-wide hourly cap with auto-pause are core too (`@drobek/modules`).
  * There is no "send to any address": an app can notify its owners, and
  * other modules send to owner-confirmed config addresses or verified users.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { defineModule } from '@drobek/modules';
+import { EMAIL_TRANSPORT_SLOT, defineModule, emailTransportSchema } from '@drobek/modules';
 import { EMAIL_CONFIG_DEFAULTS, emailConfigSchema, emailConfirmRequired, type EmailConfig } from './config.js';
 import { prepareMail, registerRoutes } from './routes.js';
 
@@ -65,6 +67,14 @@ const email = defineModule<EmailConfig>({
     },
     { env: 'EMAIL_NOTIFY_ADMINS_PER_DAY', default: 20, meaning: 'drobek.email.notifyAdmins() calls one app may make per day' },
   ],
+  slots: {
+    [EMAIL_TRANSPORT_SLOT]: {
+      schema: emailTransportSchema,
+      unique: 'id',
+      description:
+        "An e-mail provider for the whole server (SES, Postmark, a company relay, …), chosen with EMAIL_TRANSPORT=<id>: send({ from, to, subject, text, html, replyTo? }, { secrets, signal }). Secrets are the operator env vars it declares; smtp and resend stay built in.",
+    },
+  },
   routes: registerRoutes,
   mail: { prepare: prepareMail },
   sdk: { entry: sdkEntry, types: SDK_TYPES },

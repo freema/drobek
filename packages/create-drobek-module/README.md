@@ -33,6 +33,13 @@ the code imports — `"@drobek/modules": "npm:@freema/drobek-modules@^X.Y.Z"`
 in `devDependencies` — and declares the peer `"@drobek/modules": ">=X.Y.Z"`
 the server's installer checks.
 
+A module can also extend another one through its slots instead of (or
+besides) serving an app: a sign-in method contributes to `auth.provider`,
+an e-mail provider for the whole server (SES, Postmark, a company relay)
+contributes `defineEmailTransport({ id, label, secrets, send })` to
+`email.transport` and is chosen with `EMAIL_TRANSPORT=<id>` — see
+[E-mail transports from modules](https://github.com/freema/drobek/blob/main/docs/MODULES.md#e-mail-transports-from-modules).
+
 The guide is
 [Writing a module](https://github.com/freema/drobek/blob/main/docs/MODULES.md#writing-a-module).
 Licence: AGPL-3.0-only.

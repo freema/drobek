@@ -10,14 +10,15 @@
  * status and Resend's error `name` (a fixed identifier) only.
  */
 import type { OutgoingEmail } from './send.server.js';
-import { resendApiKey } from './transport.server.js';
+import { EMAIL_TRANSPORT_TIMEOUT_DEFAULT_MS, resendApiKey } from './transport.server.js';
 
 export const RESEND_API_URL = 'https://api.resend.com/emails';
 /** How long one send may take before it is aborted. */
-export const RESEND_TIMEOUT_MS = 10_000;
+export const RESEND_TIMEOUT_MS = EMAIL_TRANSPORT_TIMEOUT_DEFAULT_MS;
 
 /** Why a send failed — the callers map every code onto their existing "could not be sent" answer. */
-export type EmailSendErrorCode = 'rate_limited' | 'unauthorized' | 'rejected' | 'unavailable' | 'timeout';
+export const EMAIL_SEND_ERROR_CODES = ['rate_limited', 'unauthorized', 'rejected', 'unavailable', 'timeout'] as const;
+export type EmailSendErrorCode = (typeof EMAIL_SEND_ERROR_CODES)[number];
 
 export class EmailSendError extends Error {
   readonly code: EmailSendErrorCode;

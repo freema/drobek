@@ -1907,6 +1907,73 @@ policy and a way to reach the app's owners. `skill_info('email')`.
   the app sends — form notifications and sign-in codes included.
 - **Limits**: `EMAIL_PER_APP_PER_DAY` 50, `EMAIL_NOTIFY_ADMINS_PER_DAY` 20
   (notifyAdmins calls per app per day; the 21st is `429 limit_exceeded`).
+- **Slot** `email.transport` (unique `id`): another e-mail provider for the
+  whole server, see below.
+
+### E-mail transports from modules
+
+SMTP and Resend are built into core (`@drobek/email`), so sign-in codes and
+invites never depend on an installed module. Any other provider (SES,
+Postmark, a company relay, …) comes as a module contributing to the
+`email.transport` slot, which the `email` module hosts:
+
+```ts
+import { EmailSendError, defineEmailTransport, defineModule, z } from '@drobek/modules';
+
+export default defineModule({
+  name: 'postmark', version: '1.0.0', contract: '^1.2',
+  skill: { useWhen: 'operator-only: mail goes out through Postmark', markdown: '# postmark\n' },
+  configSchema: z.object({}), configDefaults: {},
+  requires: ['email'],
+  contributes: {
+    'email.transport': defineEmailTransport({
+      apiVersion: 1,                // optional; 1 is the transport API this server implements
+      id: 'postmark',               // 2–16 lowercase letters and digits; not smtp or resend
+      label: 'Postmark',
+      secrets: ['POSTMARK_TOKEN'],  // operator env vars, read at start
+      async send(msg, { secrets, signal }) {
+        const res = await fetch('https://api.postmarkapp.com/email', {
+          method: 'POST',
+          signal,
+          headers: { 'X-Postmark-Server-Token': secrets.POSTMARK_TOKEN, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            From: `"${msg.from.name}" <${msg.from.address}>`, To: msg.to, Subject: msg.subject,
+            HtmlBody: msg.html, TextBody: msg.text, ReplyTo: msg.replyTo,
+          }),
+        });
+        if (res.status === 429) throw new EmailSendError('rate_limited', `HTTP ${res.status}`, { status: 429 });
+        if (!res.ok) throw new EmailSendError(res.status >= 500 ? 'unavailable' : 'rejected', `HTTP ${res.status}`, { status: res.status });
+      },
+    }),
+  },
+});
+```
+
+- **Selection.** `EMAIL_TRANSPORT=<id>` makes the contribution with that id
+  carry every message of the server: dashboard sign-in codes, workspace
+  invites, platform notices and every module's `ctx.email.send`. The server
+  refuses to start when no active module contributes the id (the `email`
+  module and the transport's module must both be in `DROBEK_MODULES`), when
+  a contribution takes the id `smtp` or `resend`, or when two take one id.
+  An opt-in transport module still carries the whole server's mail.
+- **The message** is what the built-in transports send: `from` (`{ name,
+  address }`: `EMAIL_FROM`'s address under a one-line display name), one
+  `to` address, `subject`, `text`, `html` and an optional `replyTo`.
+- **Secrets** are server-level, never per app: the env var names in
+  `secrets` (UPPER_SNAKE) must all be set in the server env or the start is
+  refused; `send` gets their values in `ctx.secrets`. They are not module
+  secrets of the dashboard, never pass through MCP, and the server never
+  logs them.
+- **Errors.** `send` resolves once the provider accepted the message. Throw
+  an `EmailSendError` (`rate_limited`, `unauthorized`, `rejected`,
+  `unavailable`, `timeout`) to keep its code; any other throw becomes
+  `unavailable`. Every secret value is redacted from the message the caller
+  sees and logs. The callers answer as for SMTP and Resend: the module route
+  `503 unavailable`, the sign-in form its "could not be sent" error.
+- **Timeout.** A send is aborted after `EMAIL_TRANSPORT_TIMEOUT_MS` (default
+  10000): `ctx.signal` aborts and the send fails with `timeout`. The rate
+  limits (`OTP_*`, `EMAIL_GLOBAL_*`, the per-app limits) apply above the
+  transport, unchanged.
 
 ## The built-in `forms` module
 
