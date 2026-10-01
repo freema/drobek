@@ -254,16 +254,17 @@ test.describe('platform module proxy — workspace upstreams per app @local', ()
     expect(traversal.status, traversal.body).toBe(403);
   });
 
-  test("the upstream's redirect is returned as-is, never followed; an absolute Location is dropped, a relative one relayed", async () => {
+  test("a redirect to another host is refused as upstream_redirect without its host; one under the upstream's base and prefixes is followed", async () => {
     skipUnlessLocal();
     const r = await call(host, '/echo/redirect', { cookie: user.cookie });
-    expect(r.status, r.body).toBe(302);
-    // An absolute Location would reveal (or point past) the upstream — it never reaches the app origin.
+    expect(r.status, r.body).toBe(502);
+    expect(json(r)).toMatchObject({ error: 'upstream_redirect', details: { location_path: '/latest/meta-data/' } });
+    expect(r.body).not.toContain('169.254');
     expect(r.headers.location).toBeUndefined();
-    expect(r.body).toBe('redirecting');
     const rel = await call(host, '/echo/redirect/relative', { cookie: user.cookie });
-    expect(rel.status, rel.body).toBe(302);
-    expect(rel.headers.location).toBe('/echo/next');
+    expect(rel.status, rel.body).toBe(200);
+    expect(json(rel)).toMatchObject({ method: 'GET', path: '/echo/next' });
+    expect(rel.headers.location).toBeUndefined();
   });
 
   test('a gzipped upstream answer arrives decoded; only allow-listed headers are relayed', async () => {
