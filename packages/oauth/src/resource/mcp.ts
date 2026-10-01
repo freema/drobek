@@ -80,6 +80,19 @@ export interface McpEndpointOptions {
   buildServer?: (ctx: AuthContext) => McpServer;
 }
 
+/** The open MCP sessions of this process, as the server's shutdown needs them. */
+export interface McpEndpoint {
+  /**
+   * End every session's GET listen stream (SSE) and answer later GETs 405,
+   * so a draining server is not held open by them; requests in flight run on.
+   */
+  endListenStreams(): void;
+  /** Close every session; a later request with its id answers 404 and the client re-initializes. */
+  closeSessions(): Promise<void>;
+  /** How many sessions are open. */
+  sessionCount(): number;
+}
+
 /** Longest JSON-RPC method or tool name the access log keeps. */
 const LOG_NAME_MAX = 64;
 /** Characters of the session id the access log keeps. */
@@ -148,12 +161,13 @@ function bodyErrorAnswer(err: unknown, maxBodyBytes: number): { status: number; 
 }
 
 /** Mount the Bearer-protected Streamable HTTP MCP endpoint on the app. */
-export function mountMcpEndpoint(app: Express, opts: McpEndpointOptions = {}): void {
+export function mountMcpEndpoint(app: Express, opts: McpEndpointOptions = {}): McpEndpoint {
   const sessions = new Map<string, McpSession>();
   const maxBodyBytes = opts.maxBodyBytes ?? mcpMaxBodyBytes(process.env);
   const log = opts.log ?? createConsoleLogger('mcp');
   const build = opts.buildServer ?? ((ctx: AuthContext) => buildMcpServer(ctx));
   const parseJson = express.json({ limit: maxBodyBytes });
+  let listenStreams = true;
 
   const readBody = (req: Request, res: Response): Promise<unknown> =>
     new Promise((resolve) => parseJson(req, res, (err?: unknown) => resolve(err)));
@@ -188,6 +202,12 @@ export function mountMcpEndpoint(app: Express, opts: McpEndpointOptions = {}): v
         return;
       }
       Object.assign(entry, rpcSummary(req.body));
+    }
+
+    if (req.method === 'GET' && !listenStreams) {
+      res.setHeader('Allow', 'POST, DELETE');
+      jsonRpcError(res, 405, -32000, 'The server is restarting: no listen stream now.');
+      return;
     }
 
     const open = sessionId ? sessions.get(sessionId) : undefined;
@@ -262,4 +282,17 @@ export function mountMcpEndpoint(app: Express, opts: McpEndpointOptions = {}): v
   app.post('/mcp', route);
   app.get('/mcp', route);
   app.delete('/mcp', route);
+
+  return {
+    endListenStreams() {
+      listenStreams = false;
+      for (const s of sessions.values()) s.transport.closeStandaloneSSEStream();
+    },
+    async closeSessions() {
+      const open = [...sessions.values()];
+      sessions.clear();
+      await Promise.allSettled(open.map((s) => s.server.close()));
+    },
+    sessionCount: () => sessions.size,
+  };
 }

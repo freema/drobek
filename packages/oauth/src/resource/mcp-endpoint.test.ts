@@ -1,7 +1,7 @@
 /**
  * The `/mcp` HTTP endpoint on a real (PGlite) database and a real HTTP
  * listener: the body cap and its JSON-RPC errors, the catch around the
- * transport and the access log.
+ * transport, closing the sessions for a shutdown, and the access log.
  */
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
@@ -20,7 +20,7 @@ import { users } from '@drobek/db';
 import { memoryLeaseStore } from '@drobek/mcp';
 import { createApiKey } from '../api-keys.server.js';
 import { freshDb } from '../test/db.js';
-import { buildMcpServer, mountMcpEndpoint, type McpEndpointOptions } from './mcp.js';
+import { buildMcpServer, mountMcpEndpoint, type McpEndpoint, type McpEndpointOptions } from './mcp.js';
 
 const MAX_BODY = 4096;
 const ACCEPT = 'application/json, text/event-stream';
@@ -59,6 +59,7 @@ interface Logged {
 
 interface Harness {
   url: string;
+  endpoint: McpEndpoint;
   lines: Logged[];
   stop: () => Promise<void>;
 }
@@ -77,7 +78,7 @@ function captureLog(lines: Logged[]): Logger {
 async function mount(opts: McpEndpointOptions = {}): Promise<Harness> {
   const lines: Logged[] = [];
   const app = express();
-  mountMcpEndpoint(app, {
+  const endpoint = mountMcpEndpoint(app, {
     maxBodyBytes: MAX_BODY,
     log: captureLog(lines),
     buildServer: (ctx) => buildMcpServer(ctx, { leases: memoryLeaseStore(), notifyAppChanged: async () => {}, log: noopLogger }),
@@ -87,8 +88,10 @@ async function mount(opts: McpEndpointOptions = {}): Promise<Harness> {
   await once(server, 'listening');
   const h: Harness = {
     url: `http://127.0.0.1:${(server.address() as AddressInfo).port}/mcp`,
+    endpoint,
     lines,
     stop: async () => {
+      await endpoint.closeSessions();
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));
     },
@@ -142,6 +145,7 @@ describe('/mcp request bodies', () => {
   it('a body under the cap is served (initialize opens a session)', async () => {
     const h = await mount();
     await initialize(h);
+    expect(h.endpoint.sessionCount()).toBe(1);
   });
 
   it('malformed JSON answers 400 with a JSON-RPC parse error', async () => {
@@ -196,6 +200,53 @@ describe('/mcp failures', () => {
       process.off('unhandledRejection', unhandled);
       resetErrorReporterForTests();
     }
+  });
+});
+
+describe('closing the MCP sessions (shutdown)', () => {
+  it('endListenStreams ends a GET listen stream at once and refuses new ones; POSTs keep working', async () => {
+    const h = await mount();
+    const sid = await initialize(h);
+    const headers = { accept: 'text/event-stream', authorization: `Bearer ${readKey}`, 'mcp-session-id': sid };
+    const stream = await fetch(h.url, { headers });
+    expect(stream.status).toBe(200);
+    expect(stream.headers.get('content-type')).toContain('text/event-stream');
+    const reader = (stream.body as ReadableStream<Uint8Array>).getReader();
+    const ended = (async () => {
+      for (;;) if ((await reader.read()).done) return true;
+    })();
+
+    h.endpoint.endListenStreams();
+    await expect(ended).resolves.toBe(true);
+
+    const again = await fetch(h.url, { headers });
+    expect(again.status).toBe(405);
+    expect(again.headers.get('allow')).toBe('POST, DELETE');
+    expect(await again.json()).toMatchObject({ jsonrpc: '2.0', error: { code: -32000 } });
+
+    const ping = await post(h.url, JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'ping' }), { 'mcp-session-id': sid });
+    expect(ping.status).toBe(200);
+    expect(await ping.text()).toContain('"id":5');
+
+    // The listen stream logs one line when it closes, with how long it was open.
+    await vi.waitFor(() => expect(h.lines.filter((l) => l.meta.method === 'GET')).toHaveLength(2));
+    const listen = h.lines.find((l) => l.meta.method === 'GET' && l.meta.status === 200);
+    expect(listen?.meta).toMatchObject({ session: sid.slice(0, 8), user_id: userId });
+    expect(typeof listen?.meta.duration_ms).toBe('number');
+  });
+
+  it('closeSessions drops every session; its id then answers 404 so the client re-initializes', async () => {
+    const h = await mount();
+    const first = await initialize(h);
+    await initialize(h);
+    expect(h.endpoint.sessionCount()).toBe(2);
+
+    await h.endpoint.closeSessions();
+    expect(h.endpoint.sessionCount()).toBe(0);
+
+    const gone = await post(h.url, JSON.stringify({ jsonrpc: '2.0', id: 6, method: 'ping' }), { 'mcp-session-id': first });
+    expect(gone.status).toBe(404);
+    expect(await gone.json()).toMatchObject({ error: { code: -32001, message: 'MCP session not found — reconnect.' } });
   });
 });
 

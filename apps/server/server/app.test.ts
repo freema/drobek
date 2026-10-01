@@ -3,9 +3,10 @@ import type { RequestHandler } from 'express';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { installErrorReporter, resetErrorReporterForTests, type ErrorReportEvent } from '@drobek/core';
 import { createTlsAskHandler } from '@drobek/serving';
-import { createServerApp } from './app.js';
+import { createServerApp, type ServerApp } from './app.js';
 
 const ASK_TOKEN = 't'.repeat(40);
+let app: ServerApp;
 let server: Server;
 let baseUrl: string;
 
@@ -26,7 +27,8 @@ beforeAll(async () => {
   process.env.TLS_ASK_TOKEN = ASK_TOKEN;
   // The custom-domain lookup is the domains table in production; no DB here.
   const tlsAsk = createTlsAskHandler({ customDomainAllowed: async (h) => h === 'firma.example.com' }) as RequestHandler;
-  server = createServerApp({ rrHandler, tlsAsk }).listen(0, '127.0.0.1');
+  app = createServerApp({ rrHandler, tlsAsk });
+  server = app.listen(0, '127.0.0.1');
   await new Promise<void>((resolve) => server.once('listening', resolve));
   const address = server.address();
   if (address === null || typeof address === 'string') {
@@ -115,6 +117,13 @@ describe('single drobek process', () => {
     });
     expect(res.status).toBe(401);
     expect(await res.json()).toMatchObject({ jsonrpc: '2.0', error: { code: -32001 }, id: null });
+  });
+
+  it('exposes the MCP sessions for the shutdown', async () => {
+    expect(app.mcp.sessionCount()).toBe(0);
+    app.mcp.endListenStreams();
+    await app.mcp.closeSessions();
+    expect(app.mcp.sessionCount()).toBe(0);
   });
 });
 

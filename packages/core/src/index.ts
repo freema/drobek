@@ -36,6 +36,12 @@ export { CsvParseError, csvEscape, csvLine, csvUnguard, parseCsv, type CsvRow } 
 export { SIGNATURE_HEAD_BYTES, hasControlBytes, looksLikeSvg, sniffSignature, type SniffedType } from './sniff.js';
 export { CLOSE_LINGER_MS, closeAfterResponse, requestBodyStream } from './http-body.js';
 export {
+  SHUTDOWN_GRACE_DEFAULT_MS,
+  closeGracefully,
+  shutdownGraceMs,
+  type GracefulCloseResult,
+} from './graceful-close.js';
+export {
   ERROR_REPORTER_API_VERSION,
   ERROR_REPORTER_ID_RE,
   ERROR_REPORTER_MAX_PER_MINUTE_DEFAULT,
