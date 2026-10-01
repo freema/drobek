@@ -18,12 +18,15 @@
  * body is parsed here, capped at MCP_MAX_BODY_BYTES: an oversized one answers
  * 413 with a JSON-RPC error saying how to split the write, malformed JSON a
  * JSON-RPC parse error (-32700). A failure answers JSON-RPC -32603 and goes to
- * the log and the error reporter.
+ * the log and the error reporter. Every request leaves one access-log line
+ * when its response closes — names, status, timing and ids, never arguments,
+ * credentials, headers or bodies.
  *
  * Sessions live in this process only: after a restart a client's session id
  * answers 404 and the client initializes a new session.
  */
 import { randomUUID } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
@@ -71,10 +74,48 @@ interface McpSession {
 export interface McpEndpointOptions {
   /** Max bytes of one request body. Default: MCP_MAX_BODY_BYTES (@drobek/mcp `mcpMaxBodyBytes`). */
   maxBodyBytes?: number;
-  /** Where failures are logged. Default: the console logger `mcp`. */
+  /** The access log and the failures. Default: the console logger `mcp`. */
   log?: Logger;
   /** Builds the MCP server of a new session. Default: `buildMcpServer`. */
   buildServer?: (ctx: AuthContext) => McpServer;
+}
+
+/** Longest JSON-RPC method or tool name the access log keeps. */
+const LOG_NAME_MAX = 64;
+/** Characters of the session id the access log keeps. */
+const LOG_SESSION_CHARS = 8;
+
+interface AccessEntry {
+  started: number;
+  rpc?: string;
+  tool?: string;
+  session?: string;
+  userId?: string;
+}
+
+function logName(value: unknown): string | undefined {
+  return typeof value === 'string' && value !== '' ? value.slice(0, LOG_NAME_MAX) : undefined;
+}
+
+/** The JSON-RPC method(s) of a body and, for tools/call, the tool name(s) — never params or arguments. */
+function rpcSummary(body: unknown): Pick<AccessEntry, 'rpc' | 'tool'> {
+  const methods: string[] = [];
+  const tools: string[] = [];
+  for (const message of Array.isArray(body) ? body : [body]) {
+    if (!message || typeof message !== 'object') continue;
+    const { method, params } = message as { method?: unknown; params?: unknown };
+    const name = logName(method);
+    if (!name) continue;
+    methods.push(name);
+    if (name === 'tools/call' && params && typeof params === 'object') {
+      const tool = logName((params as { name?: unknown }).name);
+      if (tool) tools.push(tool);
+    }
+  }
+  return {
+    ...(methods.length > 0 ? { rpc: methods.join(',') } : {}),
+    ...(tools.length > 0 ? { tool: tools.join(',') } : {}),
+  };
 }
 
 function jsonRpcError(
@@ -117,9 +158,10 @@ export function mountMcpEndpoint(app: Express, opts: McpEndpointOptions = {}): v
   const readBody = (req: Request, res: Response): Promise<unknown> =>
     new Promise((resolve) => parseJson(req, res, (err?: unknown) => resolve(err)));
 
-  async function handle(req: Request, res: Response): Promise<void> {
+  async function handle(req: Request, res: Response, entry: AccessEntry): Promise<void> {
     const presented = req.headers['mcp-session-id'];
     const sessionId = typeof presented === 'string' && presented !== '' ? presented : undefined;
+    if (sessionId) entry.session = sessionId.slice(0, LOG_SESSION_CHARS);
 
     const auth = await authenticate(req);
     if (auth.kind === 'no_token') {
@@ -135,6 +177,7 @@ export function mountMcpEndpoint(app: Express, opts: McpEndpointOptions = {}): v
       return;
     }
     const ctx = auth.ctx;
+    entry.userId = ctx.userId;
 
     if (req.method === 'POST') {
       const bodyError = await readBody(req, res);
@@ -144,6 +187,7 @@ export function mountMcpEndpoint(app: Express, opts: McpEndpointOptions = {}): v
         jsonRpcError(res, answer.status, answer.code, answer.message);
         return;
       }
+      Object.assign(entry, rpcSummary(req.body));
     }
 
     const open = sessionId ? sessions.get(sessionId) : undefined;
@@ -168,6 +212,7 @@ export function mountMcpEndpoint(app: Express, opts: McpEndpointOptions = {}): v
         sessionIdGenerator: () => randomUUID(),
         onsessioninitialized: (id) => {
           sessions.set(id, { transport, server, userId: ctx.userId, scope: ctx.scope });
+          entry.session = id.slice(0, LOG_SESSION_CHARS);
         },
       });
       transport.onclose = () => {
@@ -199,7 +244,20 @@ export function mountMcpEndpoint(app: Express, opts: McpEndpointOptions = {}): v
   }
 
   const route = (req: Request, res: Response): void => {
-    handle(req, res).catch((err: unknown) => fail(req, res, err));
+    const entry: AccessEntry = { started: performance.now() };
+    res.once('close', () => {
+      log.info('mcp request', {
+        method: req.method,
+        ...(entry.rpc ? { rpc: entry.rpc } : {}),
+        ...(entry.tool ? { tool: entry.tool } : {}),
+        status: res.statusCode,
+        duration_ms: Math.round(performance.now() - entry.started),
+        ...(entry.session ? { session: entry.session } : {}),
+        ...(entry.userId ? { user_id: entry.userId } : {}),
+        ...(res.writableFinished ? {} : { aborted: true }),
+      });
+    });
+    handle(req, res, entry).catch((err: unknown) => fail(req, res, err));
   };
   app.post('/mcp', route);
   app.get('/mcp', route);
