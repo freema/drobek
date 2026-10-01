@@ -8,8 +8,9 @@ import { FULL_SCOPE, callTool, mcpClient, type McpClient } from './helpers/mcp';
 /**
  * The built-in platform module `sync` end to end (DROBEK_MODULES=…,sync
  * in the composes, SYNC_PAUSE_AFTER_FAILURES 2 there). The in-network
- * `proxy-echo` serves `/sync/players` only with the injected bearer key and
- * `/sync/fail` always fails:
+ * `proxy-echo` serves `/sync/players` only with the injected bearer key and a
+ * User-Agent (a run sends the proxy's default one), and `/sync/fail` always
+ * fails:
  *
  *  - a bearer upstream registered in the dashboard, assigned to the app with
  *    `call: "none"` (no browser caller) and a sync source into a `players`

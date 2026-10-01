@@ -2444,7 +2444,9 @@ calls an external API without holding its secret. `skill_info('proxy')`.
   decrypted in memory and injected (`Authorization: Bearer …` or the named
   header), the client's `Cookie`, `Authorization`, hop-by-hop, `X-Forwarded-*`,
   `Forwarded`, `Via`, `Origin`, `Referer`, `Sec-*` and `X-Drobek-SDK` stripped,
-  `Accept-Encoding: identity`, a request body sent with `Content-Length`
+  `Accept-Encoding: identity`, `User-Agent: drobek
+  (+https://github.com/freema/drobek)` when the caller sent none (a sync run,
+  a module job), a request body sent with `Content-Length`
   (never chunked); the SSRF guard (DNS resolved once + pinned IP,
   private/reserved ranges blocked unless on `PROXY_ALLOWED_HOSTS` — IPv6
   includes 6to4 `2002::/16`, local-use NAT64 `64:ff9b:1::/48`, site-local

@@ -1,5 +1,10 @@
 # Changelog — drobek (core)
 
+## Unreleased
+
+### Fixed
+- **Sync runs and module jobs send a User-Agent** (NSO-413): a call the server makes to an upstream itself (a `sync` run, `ctx.upstreams.fetch` of a module job) went out without a `User-Agent`, and APIs that require one refused it: GitHub's API answered every sync run with HTTP 403. The proxy now sends `User-Agent: drobek (+https://github.com/freema/drobek)` when the caller sent none; a browser's own User-Agent passes as before. Found by the sync canary on drobek.app.
+
 ## v0.7.1 — 2026-10-01
 
 ### Fixed

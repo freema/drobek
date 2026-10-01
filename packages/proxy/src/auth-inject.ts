@@ -50,6 +50,9 @@ const STRIP_TO_UPSTREAM = new Set([
   'x-drobek-sdk',
 ]);
 
+/** Sent when the caller sent no User-Agent. */
+const DEFAULT_USER_AGENT = 'drobek (+https://github.com/freema/drobek)';
+
 /** Browser-only request metadata (`sec-fetch-*`, `sec-ch-ua*`, …) never crosses the gateway. */
 function strippedToUpstream(name: string): boolean {
   return STRIP_TO_UPSTREAM.has(name) || name.startsWith('sec-');
@@ -130,6 +133,9 @@ export function buildForwardHeaders(
   });
   // Ask for the body unencoded (an encoded answer is decoded within the cap anyway).
   out['accept-encoding'] = 'identity';
+  // A call the server makes itself (a sync run, a module job) has no User-Agent;
+  // APIs such as GitHub's refuse a request without one.
+  out['user-agent'] ??= DEFAULT_USER_AGENT;
 
   if (inject.authType === 'bearer') {
     if (!inject.secret) {
