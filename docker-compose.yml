@@ -84,7 +84,7 @@ services:
       NODE_ENV: development
       GIT_SHA: ${GIT_SHA:-dev}
       # The e2e super-admin is always appended; empty entries are ignored.
-      SUPERADMIN_EMAIL: ${SUPERADMIN_EMAIL:-},e2e-superadmin@drobek.test
+      SUPERADMIN_EMAIL: e2e-superadmin@drobek.test,${SUPERADMIN_EMAIL:-}
       SMTP_HOST: mailpit
       SMTP_PORT: '1025'
       SMTP_SECURE: '0'
