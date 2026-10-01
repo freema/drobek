@@ -421,7 +421,7 @@ export default defineModule<Config>({
   slots: { 'hello.greeter': { schema, unique: 'id', description } }, // extension points it offers (see "Slots")
   contributes: { 'auth.provider': { … } },        // its contributions to other modules' slots
   availability: 'default',       // 'default' (every workspace) | 'opt-in'
-  dashboard: { editor: 'collections' },           // the dedicated dashboard editor its config fits
+  dashboard: { editor: 'collections', title: 'Hello', description }, // the dedicated editor its config fits; its name for people
   jobs: [{ name: 'import', scope: 'app', every: (config) => config.every, run(ctx) {} }], // scheduled work (1.2, see "Scheduled jobs")
 });
 ```
@@ -460,6 +460,8 @@ The contract fields of 1.2 (additive: a module declaring `'^1.1'` loads unchange
 | `records.importRecords` | optional on the records authority: `(view, collection, records, { mode: 'replace' \| 'upsert', key? })` → `{ inserted, updated, deleted }`, all or nothing — what `ctx.records.import` of a job reaches |
 | `sync` | the owner of scheduled imports (the built-in `sync`; two refuse the start): `sources(view)`, `runs(view, q)`, `runNow(ctx, source)`, `resume(view, source)` — what the dashboard's sources panel, MCP `sync_now` and `get_logs({ kind: 'sync' })` call ([The built-in `sync` module](#the-built-in-sync-module)) |
 | `ConfirmContext.limits` | `confirmRequired`'s third argument may read the workspace's limits (`sync` refuses a source past its limits there) |
+| `dashboard.title` / `dashboard.description` | the module's name for people and one line under it, for the app's owner — the dashboard shows "Scheduled imports (sync)" and the description in place of "Use when …" (written for agents). The `name` stays the identifier in URLs, the config key, MCP and `skill_info`. One line each (trimmed, no line break or control character), 1–60 / 1–200 characters, else the start is refused; a server that predates them ignores both |
+| `ConfigFieldMeta` | the keywords the dashboard's config form reads from a `configSchema` field (zod `.meta()`): `title`, `description`, `x-drobek-choices`, `x-drobek-min-interval` — [Choices of a config field](#choices-of-a-config-field-x-drobek-choices). Presentation only |
 
 ### Error codes
 
@@ -1205,7 +1207,10 @@ module or a third-party one gets the same pages (a grep guard in
 `@drobek/dashboard` keeps it that way).
 
 `/workspaces/<ws>/apps/<slug>/modules` lists the active modules for the app
-(configured or defaults, what waits, missing required secrets); the app page
+(configured or defaults, what waits, missing required secrets), each under
+its `dashboard.title` with its name — "Scheduled imports (sync)" — and its
+`dashboard.description` (else "Use when …"), like the module page's
+heading; the app page
 shows a "N changes await confirmation" banner (`PendingBanner` +
 `loadPendingBanner()` in `@drobek/dashboard`). The module page (the
 `confirm_url`) has, top to bottom:
@@ -1222,10 +1227,16 @@ shows a "N changes await confirmation" banner (`PendingBanner` +
   (`z.record(…)` — `additionalProperties`) and **arrays of objects**. A
   record or list renders each entry with its own fields (recursively), a
   "Remove" checkbox per entry and one empty entry to add a new one (a record
-  entry needs a name); entries nest up to 3 levels deep, below that a value
+  entry needs a name, labelled by the `title` / `description` of the
+  record's key schema — `z.record(z.string().meta({ title: 'Form name' }), …)`
+  — else "Name"); entries nest up to 3 levels deep, below that a value
   is a JSON field. Anything else — unions, a record of anything
   (`z.record(z.string(), z.unknown())`) — is a JSON field. The zod
   `.describe()` text (JSON Schema `description`) is shown under the field.
+  A string field annotated with `x-drobek-choices` is a select of existing
+  things ([Choices of a config field](#choices-of-a-config-field-x-drobek-choices)).
+  The empty option of a select names the default ("Default (1h)"), or reads
+  "Choose…" for a required field and "(not set)" otherwise.
   No client JS: the form posts plain fields; the server
   rebuilds the config, turns it into a merge patch against the config in
   force and runs **the same configure path as `configure_module`**
@@ -1269,6 +1280,46 @@ shows a "N changes await confirmation" banner (`PendingBanner` +
 Viewers see all of it without a single control; every POST needs the editor
 role (viewer → 403).
 
+#### Choices of a config field (`x-drobek-choices`)
+
+A string field of a `configSchema` that names something existing — an
+upstream, a data collection, a schedule — gets a select in the form when it
+carries the JSON Schema keyword `x-drobek-choices` (zod `.meta()`, typed by
+`ConfigFieldMeta` from `@drobek/modules`):
+
+```ts
+import { z, type ConfigFieldMeta } from '@drobek/modules';
+
+const source = z.strictObject({
+  upstream: z.string().meta({ title: 'Upstream', 'x-drobek-choices': 'upstreams' } satisfies ConfigFieldMeta),
+  collection: z.string().meta({ title: 'Collection', 'x-drobek-choices': 'collections' } satisfies ConfigFieldMeta),
+  every: z.string().default('1h').meta({
+    title: 'Schedule',
+    'x-drobek-choices': 'intervals',
+    'x-drobek-min-interval': 'HELLO_MIN_INTERVAL_MIN',
+  } satisfies ConfigFieldMeta),
+});
+```
+
+| `x-drobek-choices` | The select offers |
+| ----- | ----- |
+| `upstreams` | the upstreams registered in the app's workspace: those assigned to the app first ("Assigned to this app"), then the rest ("Not assigned to this app yet", with a note and a link to the module declaring `dashboard.editor: 'upstreams'`, where an upstream is assigned) |
+| `collections` | the app's data collections — the `collections` of the module declaring `dashboard.editor: 'collections'` |
+| `intervals` | `5m`, `10m`, `15m`, `30m`, `1h`, `3h`, `6h`, `12h`, `24h` ("every 15 minutes"), none shorter than the workspace's value of the module limit `x-drobek-min-interval` names (the minimum itself is offered when it is not on the list) |
+
+- A current value that is not among the choices stays selected, marked
+  ("gone — not registered in this workspace", "2h — the current value"),
+  so saving the form never changes it by accident.
+- Nothing to choose and no value yet: the form shows no select but what to
+  set up first, with a link — the workspace's Upstreams page, or the
+  module that creates collections.
+- A list that cannot be loaded leaves a text field with a note.
+- The keyword is presentation only: `configure_module`, the dashboard's save
+  and the `configSchema` validate the same with or without it, so an agent
+  may still set a value outside the choices. An unknown source, a
+  non-string field or an enum ignore it; the lists are found by
+  capability, never by a module's name.
+
 ### The workspace Modules page
 
 `/workspaces/<ws>/modules` (the workspace's **Modules** tab, every member —
@@ -1283,8 +1334,10 @@ never a secret. The facts come from `ModuleRuntime.moduleFacts()`; agents
 get the same fields from `skill_info('<name>')`.
 
 The page leads with a search (`?q=`, every word must appear in the name,
-"use when", a slot or a limit name — a GET form, no client JS) and a jump
-list. Each card shows what the module is for, its version, availability
+the `dashboard.title` or `description`, "use when", a slot or a limit name
+— a GET form, no client JS) and a jump list. Each card is headed by the
+module's title and name ("Scheduled imports (sync)") and shows what the
+module is for, its version, availability
 and requirements; the limits and the technical facts (source, contract,
 slots, contributions, error codes) are collapsed sections. A limit's value
 is shown in human units read from its env name or meaning (`…_BYTES` /
@@ -2402,7 +2455,8 @@ people who use an app upload. `skill_info('files')`.
 requires `proxy` and `data`): an app's data collection filled from an
 external API on a schedule — scores, prices, fixtures, a feed — without app
 code on the server and without the API key leaving the dashboard.
-`skill_info('sync')`.
+`skill_info('sync')`. The dashboard calls it **Scheduled imports (sync)**
+("works like a cron job"); the identifier stays `sync`.
 
 - **Config** — `sources: { <name>: { upstream, path, method, body?, every,
   collection, items, key?, mode, paused? } }`: `upstream` is assigned to the
@@ -2415,6 +2469,9 @@ code on the server and without the API key leaving the dashboard.
   confirmation; `every`, `items`, `key` and `paused` apply at once.
   `configure_module` refuses a source past `SYNC_MAX_SOURCES_PER_APP` and an
   `every` below `SYNC_MIN_INTERVAL_MIN` (only where the change sets it).
+  In the dashboard form the upstream, the collection, the schedule (`5m` …
+  `24h` from `SYNC_MIN_INTERVAL_MIN`, a custom `every` kept) and the mode
+  are selects; `items` and `key` are optional fields with a hint each.
 - **Runs** — the module's app job (every minute while the app has a source)
   runs each due source: it takes the source's lease in `mod_sync_sources`
   (one run of a source at a time, across replicas), counts it against
