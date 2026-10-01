@@ -90,7 +90,9 @@ claude mcp add --transport http drobek https://drobek.example.com/mcp \
 4. `/oauth/authorize` with PKCE S256 and `resource` = exactly the MCP
    endpoint (RFC 8707) → consent → a code with `iss` (RFC 9207).
 5. `/oauth/token` → an access token for that audience only and a rotating
-   refresh token (reusing an old refresh token burns the lineage).
+   refresh token. Sending a rotated refresh token again within 60 s (a retry
+   after a lost response) gets a fresh pair; later, it is reuse and burns
+   that lineage.
 
 ## Scopes and roles
 

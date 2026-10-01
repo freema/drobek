@@ -445,7 +445,10 @@ for the 30-day window.
 
 - **MCP** (`/mcp`, Streamable HTTP): OAuth 2.1 with PKCE, Client ID Metadata
   Documents or Dynamic Client Registration, RFC 8707 audience, RFC 9207
-  `iss`, rotating refresh tokens; or a personal `drk_` API key. A grant is
+  `iss`, rotating refresh tokens (each access token records the refresh token
+  it came with; a rotated refresh token sent again within 60 s is a retry
+  that gets a fresh pair, later it is reuse and revokes that lineage only —
+  `packages/oauth/src/tokens.server.ts`); or a personal `drk_` API key. A grant is
   bound to the **user** (every workspace they belong to) with the scopes
   `read`, `write`, `publish`; the scope decides which tools exist, the role in
   the app's workspace decides each call. Fifteen tools (among them the
