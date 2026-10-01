@@ -483,5 +483,7 @@ describe('the dashboard', () => {
     // Only what a source cannot work without is required; every field is labelled.
     expect(source.required.sort()).toEqual(['collection', 'upstream']);
     for (const [key, field] of Object.entries(source.properties)) expect(field.title, key).toEqual(expect.any(String));
+    // Pause / Resume set `paused`: the form carries it through a save without showing it.
+    expect(source.properties.paused).toMatchObject({ type: 'boolean', 'x-drobek-hidden': true });
   });
 });

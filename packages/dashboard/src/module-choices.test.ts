@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   INTERVALS,
   collectionChoices,
+  formChoices,
   hasChoices,
   intervalChoices,
   intervalMinutes,
+  nameSuggestions,
+  optionText,
   selectGroups,
   upstreamChoices,
   type ChoiceList,
@@ -126,5 +129,38 @@ describe('selectGroups', () => {
     expect(selectGroups(list, 'gone')).toEqual([{ options: [{ value: 'gone', label: 'gone — no such collection in this app' }] }, ...list.groups]);
     const empty = collectionChoices({ collections: [], create: null });
     expect(selectGroups(empty, 'gone')[0].options).toEqual([{ value: 'gone', label: 'gone — no such collection in this app' }]);
+  });
+});
+
+describe('forms', () => {
+  const list = formChoices({
+    forms: [
+      { name: 'survey', submissions: 0 },
+      { name: 'contact', submissions: 12 },
+      { name: 'newsletter', submissions: 1 },
+    ],
+  });
+
+  it("the app's forms by name, each with its number of submissions", () => {
+    expect(list.groups).toEqual([
+      {
+        options: [
+          { value: 'contact', label: 'contact', detail: '12 submissions' },
+          { value: 'newsletter', label: 'newsletter', detail: '1 submission' },
+          { value: 'survey', label: 'survey', detail: 'no submissions yet' },
+        ],
+      },
+    ]);
+    expect(optionText(list.groups[0].options[0])).toBe('contact — 12 submissions');
+    expect(optionText({ value: 'x', label: 'x' })).toBe('x');
+    expect(hasChoices(formChoices({ forms: [] }))).toBe(false);
+    expect(formChoices({ forms: [] }).empty.text).toBe('No form of this app has submissions or settings yet.');
+  });
+
+  it('as name suggestions: only names no entry uses yet; a list that failed to load suggests nothing', () => {
+    expect(nameSuggestions(list, ['contact']).map((o) => o.value)).toEqual(['newsletter', 'survey']);
+    expect(nameSuggestions(list, ['contact', 'newsletter', 'survey'])).toEqual([]);
+    expect(nameSuggestions(undefined, [])).toEqual([]);
+    expect(nameSuggestions({ ...list, failed: 'Could not load.' }, [])).toEqual([]);
   });
 });

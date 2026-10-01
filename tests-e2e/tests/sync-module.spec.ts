@@ -19,7 +19,8 @@ import { FULL_SCOPE, callTool, mcpClient, type McpClient } from './helpers/mcp';
  *  - a failing source: two failed runs pause it, the app page shows the
  *    banner, a third manual run within the minute → rate_limited;
  *  - get_logs kind "sync" lists the runs;
- *  - the module page: Run now, Pause and Resume.
+ *  - the module page: Run now, Pause and Resume; saving the config form
+ *    keeps a pause (the form carries it without showing it).
  */
 
 interface Created {
@@ -213,6 +214,12 @@ test.describe('platform module sync — scheduled imports from an upstream @loca
     await expect(mod.getByTestId('sync-source-broken')).toHaveAttribute('data-paused', '');
 
     await mod.getByTestId('sync-pause-players').click();
+    await expect(mod.getByTestId('sync-source-players')).toHaveAttribute('data-paused', 'owner');
+    // The form shows no Paused checkbox but carries the pause through a save.
+    await expect(form.locator('input[type="checkbox"][name$=".paused"]')).toHaveCount(0);
+    await expect(form.locator('input[type="hidden"][name$=".paused"][value="true"]')).toHaveCount(1);
+    await mod.getByTestId('config-save').click();
+    await expect(mod.getByTestId('done-notice')).toHaveAttribute('data-done', 'unchanged');
     await expect(mod.getByTestId('sync-source-players')).toHaveAttribute('data-paused', 'owner');
     await mod.getByTestId('sync-run-players').click();
     await expect(mod.getByTestId('sync-source-players')).toHaveAttribute('data-status', 'ok');

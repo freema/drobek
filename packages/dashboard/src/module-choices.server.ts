@@ -2,14 +2,18 @@
  * The choices a module page's config form needs (module-choices.ts), read
  * for one app: the workspace's registered upstreams (@drobek/proxy) with the
  * assignments of the module declaring `dashboard.editor: 'upstreams'`, the
- * collections of the module declaring `'collections'`, and the workspace's
- * value of the limit an interval field names. The editors are found by the
- * declared capability, never by a module's name. A list that fails to load
- * says so and the field stays a text input; nothing here is a secret.
+ * collections of the module declaring `'collections'`, the forms of the
+ * module declaring the `submissions` authority, and the workspace's value of
+ * the limit an interval field names. The modules are found by the declared
+ * capability, never by a module's name. A list that fails to load says so
+ * and the field stays a text input; nothing here is a secret.
+ *
+ * Also the workspace's values of the limits fields name as what an empty
+ * field means (`x-drobek-default-limit`).
  */
-import type { AnyModule, HookApp, ModuleDashboardEditor, ModuleRuntime } from '@drobek/modules';
+import type { AnyModule, ConfigChoices, HookApp, ModuleDashboardEditor, ModuleRuntime } from '@drobek/modules';
 import { upstreamSummaries } from '@drobek/proxy';
-import { collectionChoices, intervalChoices, upstreamChoices, type ChoiceList } from './module-choices.js';
+import { collectionChoices, formChoices, intervalChoices, upstreamChoices, type ChoiceList } from './module-choices.js';
 import type { ChoiceRequest } from './module-config.js';
 
 type Json = Record<string, unknown>;
@@ -67,10 +71,23 @@ async function intervals(ctx: Context, limit: string | undefined): Promise<Choic
   return intervalChoices(typeof value === 'number' ? value : null);
 }
 
-const FAILED: Record<ChoiceRequest['from'], string> = {
+async function forms(ctx: Context): Promise<ChoiceList> {
+  const submissions = await ctx.runtime.submissions(ctx.app);
+  return formChoices({ forms: submissions ? await submissions.forms() : [] });
+}
+
+const LOADERS: Record<ConfigChoices, (ctx: Context, request: ChoiceRequest) => Promise<ChoiceList>> = {
+  upstreams: (ctx) => upstreams(ctx),
+  collections: (ctx) => collections(ctx),
+  intervals: (ctx, r) => intervals(ctx, r.minInterval),
+  forms: (ctx) => forms(ctx),
+};
+
+const FAILED: Record<ConfigChoices, string> = {
   upstreams: 'The upstreams could not be loaded — enter the upstream’s name. Reload the page to try again.',
   collections: 'The collections could not be loaded — enter the collection’s name. Reload the page to try again.',
   intervals: 'The intervals could not be loaded — enter one like 15m, 1h or 1d.',
+  forms: 'The app’s forms could not be loaded — enter the form’s name. Reload the page to try again.',
 };
 
 /** Every requested list, by its key (a list that failed to load carries `failed`). */
@@ -78,10 +95,21 @@ export async function loadChoices(ctx: Context, requests: readonly ChoiceRequest
   const out: Record<string, ChoiceList> = {};
   for (const r of requests) {
     try {
-      out[r.key] = r.from === 'upstreams' ? await upstreams(ctx) : r.from === 'collections' ? await collections(ctx) : await intervals(ctx, r.minInterval);
+      out[r.key] = await LOADERS[r.from](ctx, r);
     } catch {
       out[r.key] = { groups: [], missing: '', empty: { text: '' }, failed: FAILED[r.from] };
     }
   }
   return out;
+}
+
+/** The workspace's values of the limits `names` (a limit it does not have, or limits that cannot be read: left out). */
+export async function loadFieldLimits(ctx: Pick<Context, 'runtime' | 'app'>, names: readonly string[]): Promise<Record<string, number>> {
+  if (names.length === 0) return {};
+  try {
+    const limits = await ctx.runtime.workspaceLimits(ctx.app.workspaceId);
+    return Object.fromEntries(names.flatMap((n) => (typeof limits[n] === 'number' && Number.isFinite(limits[n]) ? [[n, limits[n]]] : [])));
+  } catch {
+    return {};
+  }
 }

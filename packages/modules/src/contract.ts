@@ -287,9 +287,21 @@ export interface ModuleDashboard {
  *  - `collections` — the app's data collections (the config of the module
  *    declaring `dashboard.editor: 'collections'`);
  *  - `intervals` — intervals from 5 minutes to a day (`'5m'` … `'24h'`), none
- *    shorter than the module limit `x-drobek-min-interval` names.
+ *    shorter than the module limit `x-drobek-min-interval` names;
+ *  - `forms` — the app's forms: those with stored submissions or settings
+ *    (the module declaring the `submissions` authority).
+ *
+ * On a record's `propertyNames` (the name of an entry) the choices are
+ * suggestions for a new entry's name instead: names no entry uses yet, and
+ * any other name can still be typed.
  */
-export type ConfigChoices = 'upstreams' | 'collections' | 'intervals';
+export type ConfigChoices = 'upstreams' | 'collections' | 'intervals' | 'forms';
+
+/** A principal of a rule as the config form's checkboxes offer it (nothing checked is `none`). */
+export type ConfigRulePrincipal = 'public' | 'user' | 'owner' | 'admin';
+
+/** The unit a number field is stored in (`x-drobek-unit`): `bytes` is entered in MB. */
+export type ConfigUnit = 'bytes';
 
 /**
  * What the dashboard's config form reads from a field of a module's
@@ -315,6 +327,37 @@ export interface ConfigFieldMeta {
    * workspace's value applies), e.g. `'SYNC_MIN_INTERVAL_MIN'`.
    */
   'x-drobek-min-interval'?: string;
+  /**
+   * A rule string field (`public`, `user`, `owner`, `admin` or `none`,
+   * alternatives joined with `|`) becomes one checkbox per principal —
+   * Anyone, Signed-in users, Record owner, App admins; nothing checked is
+   * `none`. `true` offers all four, a list only those (a principal the
+   * current rule names is offered too, so a save never drops it).
+   */
+  'x-drobek-rule'?: true | readonly ConfigRulePrincipal[];
+  /**
+   * A number field stored in this unit is entered in a unit people read:
+   * `bytes` in MB (1 MB = 1,048,576 bytes). The saved value stays in bytes.
+   */
+  'x-drobek-unit'?: ConfigUnit;
+  /**
+   * The env name of one of the module's `limits` that applies while the
+   * field is empty, e.g. `'FILES_MAX_BYTES'`: the form shows the
+   * workspace's value as what an empty field means.
+   */
+  'x-drobek-default-limit'?: string;
+  /**
+   * The form does not show the field and carries its current value through
+   * a save — for a key the dashboard sets with a control of its own (a
+   * pause button). configure_module sets it as before.
+   */
+  'x-drobek-hidden'?: boolean;
+  /**
+   * On an object: the keys the form shows first, in this order; the other
+   * keys follow in the schema's order (e.g. an `enabled` switch before the
+   * fields it turns on).
+   */
+  'x-drobek-order'?: readonly string[];
 }
 
 /**

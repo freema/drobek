@@ -47,6 +47,21 @@ describe('the auth config schema labels the dashboard form', () => {
     expect(at(composed, 'providers.idp.enabled').description).toMatch(/Test IdP/);
     expect(at(composed, 'providers.idp.relinkByEmail').title).toBeTruthy();
   });
+
+  it("puts a provider's On switch first in the form; what the entry accepts is unchanged", () => {
+    const parts = composeAuthConfig([provider]);
+    const schema = parts.configSchema as z.ZodType;
+    const composed = z.toJSONSchema(schema, { unrepresentable: 'any', io: 'input' });
+    const entry = at(composed, 'providers.idp') as Node & { 'x-drobek-order'?: string[] };
+    expect(entry['x-drobek-order']).toEqual(['enabled']);
+    expect(Object.keys(entry.properties ?? {})).toContain('enabled');
+    const base = parts.configDefaults as AuthConfig;
+    const on = { ...base, providers: { ...base.providers, idp: { enabled: true, issuer: 'https://idp.example.com', clientId: 'c' } } };
+    expect(schema.safeParse(on).success).toBe(true);
+    const missing = { ...base, providers: { ...base.providers, idp: { enabled: true } } };
+    expect(schema.safeParse(missing).success).toBe(false);
+    expect(schema.safeParse({ ...base, providers: { ...base.providers, idp: { enabled: false } } }).success).toBe(true);
+  });
 });
 
 describe('labels change neither validation nor what waits for confirmation', () => {

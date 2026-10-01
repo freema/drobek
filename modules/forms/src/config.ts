@@ -7,7 +7,7 @@
  * Changing `notify.emails` (adding OR removing an address) needs the owner's
  * confirmation: otherwise an agent could send the leads somewhere else.
  */
-import { z } from '@drobek/modules';
+import { z, type ConfigFieldMeta } from '@drobek/modules';
 
 /** Form names: URL-, config-path- and file-name-safe. */
 export const FORM_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,39}$/;
@@ -49,7 +49,11 @@ export const formsConfigSchema = z.strictObject({
       z
         .string()
         .regex(FORM_NAME_RE, 'form names are lowercase letters, digits, - and _ (max 40)')
-        .meta({ title: 'Form name', description: 'The name the app gives the form, e.g. contact for <Form name="contact">.' }),
+        .meta({
+          title: 'Form name',
+          description: 'The name the app gives the form, e.g. contact for <Form name="contact">.',
+          'x-drobek-choices': 'forms',
+        } satisfies ConfigFieldMeta),
       formConfigSchema
     )
     .refine((f) => Object.keys(f).length <= MAX_FORMS, `at most ${MAX_FORMS} forms`)

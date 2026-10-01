@@ -96,10 +96,11 @@ const sourceSchema = z
       title: 'Mode',
       description: 'replace: afterwards the collection holds exactly the fetched records. upsert: records are updated by their key, new ones added, none removed.',
     }),
-    paused: z
-      .boolean()
-      .optional()
-      .meta({ title: 'Paused', description: 'The schedule stops; Run now still works. Pause schedule and Resume schedule under Sources set it too.' }),
+    paused: z.boolean().optional().meta({
+      title: 'Paused',
+      description: 'The schedule stops; Run now still works. The dashboard sets it with Pause schedule and Resume schedule under Sources.',
+      'x-drobek-hidden': true,
+    } satisfies ConfigFieldMeta),
   })
   .refine((s) => s.mode !== 'upsert' || s.key !== undefined, { message: 'mode "upsert" needs `key`: the field that identifies a record', path: ['key'] })
   .refine((s) => s.body === undefined || s.method === 'POST', { message: 'a body is sent with method "POST" only', path: ['body'] });

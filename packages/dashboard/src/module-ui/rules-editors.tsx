@@ -16,7 +16,7 @@
  * waits for confirmation instead of applying. A viewer sees everything
  * disabled, with no button.
  */
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Form } from 'react-router';
 import { PRINCIPALS, PRINCIPAL_LABEL, ruleInputName, ruleToPrincipals, type FieldValue, type PrincipalName } from '../module-config.js';
 import { ui } from './styles.js';
@@ -40,16 +40,37 @@ function Errors({ messages, testId }: { messages: string[]; testId: string }) {
   );
 }
 
-function RuleTable({
+/** One row of a RuleTable: an operation (or a setting) and its rule. */
+interface RuleRow {
+  /** Names the row's test ids, and its checkboxes unless `inputName` does. */
+  op: string;
+  /** The first cell (default: the op, bold) and the name the checkboxes' labels use (default: the op). */
+  title?: ReactNode;
+  name?: string;
+  meaning?: ReactNode;
+  /** Under the meaning: e.g. a value waiting for confirmation, errors. */
+  after?: ReactNode;
+  /** The rule in force; `''` when none is set. */
+  rule: string;
+  /** The principals this row offers (default: every column); another column shows a dash. */
+  offered?: readonly PrincipalName[];
+  inputName?: (principal: PrincipalName) => string;
+  testId?: string;
+}
+
+/** The rule editor: one row per operation, one checkbox per principal (nothing checked = `none`), the rule it makes. */
+export function RuleTable({
   rows,
   principals,
   readOnly,
   testPrefix,
+  head = 'Operation',
 }: {
-  rows: { op: string; meaning?: string; rule: string }[];
+  rows: RuleRow[];
   principals: readonly PrincipalName[];
   readOnly: boolean;
   testPrefix: string;
+  head?: string;
 }) {
   return (
     // On a phone the table scrolls inside its box, never the page.
@@ -57,7 +78,7 @@ function RuleTable({
       <table style={ui.table}>
         <thead>
           <tr>
-            <th style={ui.th}>Operation</th>
+            <th style={ui.th}>{head}</th>
             {principals.map((p) => (
               <th key={p} style={{ ...ui.th, ...ui.center }}>
                 {PRINCIPAL_LABEL[p]}
@@ -69,26 +90,34 @@ function RuleTable({
         <tbody>
           {rows.map((r) => {
             const on = new Set(ruleToPrincipals(r.rule));
+            const offered = new Set(r.offered ?? principals);
             return (
-              <tr key={r.op}>
+              <tr key={r.op} data-testid={r.testId}>
                 <td style={ui.td}>
-                  <strong>{r.op}</strong>
+                  {r.title ?? <strong>{r.op}</strong>}
                   {r.meaning ? <span style={ui.desc}>{r.meaning}</span> : null}
+                  {r.after}
                 </td>
                 {principals.map((p) => (
                   <td key={p} style={{ ...ui.td, ...ui.center }}>
-                    <input
-                      type="checkbox"
-                      name={ruleInputName(r.op, p)}
-                      defaultChecked={on.has(p)}
-                      disabled={readOnly}
-                      aria-label={`${r.op}: ${PRINCIPAL_LABEL[p]}`}
-                      data-testid={`${testPrefix}-${r.op}-${p}`}
-                    />
+                    {offered.has(p) ? (
+                      <input
+                        type="checkbox"
+                        name={r.inputName ? r.inputName(p) : ruleInputName(r.op, p)}
+                        defaultChecked={on.has(p)}
+                        disabled={readOnly}
+                        aria-label={`${r.name ?? r.op}: ${PRINCIPAL_LABEL[p]}`}
+                        data-testid={`${testPrefix}-${r.op}-${p}`}
+                      />
+                    ) : (
+                      <span style={ui.muted} title={`Not offered for ${r.name ?? r.op}`}>
+                        –
+                      </span>
+                    )}
                   </td>
                 ))}
                 <td style={{ ...ui.td, ...ui.mono }} data-testid={`${testPrefix}-${r.op}-rule`}>
-                  {r.rule}
+                  {r.rule === '' ? '(not set)' : r.rule}
                 </td>
               </tr>
             );

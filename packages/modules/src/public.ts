@@ -64,6 +64,8 @@ export {
   type ModuleContext,
   type ConfigChoices,
   type ConfigFieldMeta,
+  type ConfigRulePrincipal,
+  type ConfigUnit,
   type ModuleDashboard,
   type ModuleDashboardEditor,
   type ModuleErrorDoc,

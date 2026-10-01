@@ -462,7 +462,7 @@ The contract fields of 1.2 (additive: a module declaring `'^1.1'` loads unchange
 | `sync` | the owner of scheduled imports (the built-in `sync`; two refuse the start): `sources(view)`, `runs(view, q)`, `runNow(ctx, source)`, `resume(view, source)` — what the dashboard's sources panel, MCP `sync_now` and `get_logs({ kind: 'sync' })` call ([The built-in `sync` module](#the-built-in-sync-module)) |
 | `ConfirmContext.limits` | `confirmRequired`'s third argument may read the workspace's limits (`sync` refuses a source past its limits there) |
 | `dashboard.title` / `dashboard.description` | the module's name for people and one line under it, for the app's owner — the dashboard shows "Scheduled imports (sync)" and the description in place of "Use when …" (written for agents). The `name` stays the identifier in URLs, the config key, MCP and `skill_info`. One line each (trimmed, no line break or control character), 1–60 / 1–200 characters, else the start is refused; a server that predates them ignores both |
-| `ConfigFieldMeta` | the keywords the dashboard's config form reads from a `configSchema` field (zod `.meta()`): `title`, `description`, `x-drobek-choices`, `x-drobek-min-interval` — [Choices of a config field](#choices-of-a-config-field-x-drobek-choices). Presentation only |
+| `ConfigFieldMeta` | the keywords the dashboard's config form reads from a `configSchema` field (zod `.meta()`): `title`, `description`, `x-drobek-choices`, `x-drobek-min-interval` — [Choices of a config field](#choices-of-a-config-field-x-drobek-choices); `x-drobek-rule`, `x-drobek-unit`, `x-drobek-default-limit`, `x-drobek-hidden`, `x-drobek-order` — [How a config field is shown](#how-a-config-field-is-shown). Presentation only |
 | `OperatorModule` | a module declared without `skill` (`defineModule` types it `OperatorModule`; `DrobekModule` keeps `skill` required) — allowed only without an app surface ([Operator-only modules](#operator-only-modules)); a server that predates it refuses a module without a skill (`skill.useWhen is required`) |
 | `ModuleSlot.operatorOnly` | `true` on a slot whose contributions configure the server, not apps (the core-hosted `errors.reporter`, `email`'s `email.transport`): a module contributing only to such slots needs no skill. Default `false`; anything but a boolean refuses the start |
 
@@ -1279,7 +1279,10 @@ shows a "N changes await confirmation" banner (`PendingBanner` +
   (`z.record(z.string(), z.unknown())`) — is a JSON field. The zod
   `.describe()` text (JSON Schema `description`) is shown under the field.
   A string field annotated with `x-drobek-choices` is a select of existing
-  things ([Choices of a config field](#choices-of-a-config-field-x-drobek-choices)).
+  things ([Choices of a config field](#choices-of-a-config-field-x-drobek-choices));
+  rule strings, sizes in bytes, values a control of their own sets and the
+  order of an object's keys have keywords too
+  ([How a config field is shown](#how-a-config-field-is-shown)).
   The empty option of a select names the default ("Default (1h)"), or reads
   "Choose…" for a required field and "(not set)" otherwise.
   No client JS: the form posts plain fields; the server
@@ -1351,6 +1354,7 @@ const source = z.strictObject({
 | `upstreams` | the upstreams registered in the app's workspace: those assigned to the app first ("Assigned to this app"), then the rest ("Not assigned to this app yet", with a note and a link to the module declaring `dashboard.editor: 'upstreams'`, where an upstream is assigned) |
 | `collections` | the app's data collections — the `collections` of the module declaring `dashboard.editor: 'collections'` |
 | `intervals` | `5m`, `10m`, `15m`, `30m`, `1h`, `3h`, `6h`, `12h`, `24h` ("every 15 minutes"), none shorter than the workspace's value of the module limit `x-drobek-min-interval` names (the minimum itself is offered when it is not on the list) |
+| `forms` | the app's forms — those with stored submissions or settings, each with its number of submissions ("contact — 3 submissions"), from the module declaring the `submissions` authority |
 
 - A current value that is not among the choices stays selected, marked
   ("gone — not registered in this workspace", "2h — the current value"),
@@ -1359,11 +1363,59 @@ const source = z.strictObject({
   set up first, with a link — the workspace's Upstreams page, or the
   module that creates collections.
 - A list that cannot be loaded leaves a text field with a note.
+- On a record's key schema (`z.record(z.string().meta({ 'x-drobek-choices':
+  'forms' }), …)`) the list only suggests a name for the new entry: the
+  names no entry uses yet, in a list on the name input and in words under
+  it ("Suggested: newsletter (1 submission)"); any other name can still be
+  typed. `forms` uses it: the form-name entry suggests the forms that
+  received submissions but have no settings yet.
 - The keyword is presentation only: `configure_module`, the dashboard's save
   and the `configSchema` validate the same with or without it, so an agent
   may still set a value outside the choices. An unknown source, a
   non-string field or an enum ignore it; the lists are found by
   capability, never by a module's name.
+
+#### How a config field is shown
+
+More `ConfigFieldMeta` keywords change how the form shows a field and reads
+it back — never what the `configSchema` accepts, so `configure_module`
+validates the same. A field the form shows unchanged saves unchanged.
+
+```ts
+import { isValidRule, z, type ConfigFieldMeta } from '@drobek/modules';
+
+const rule = z.string().refine(isValidRule, 'a rule like "user|admin"');
+
+const config = z.strictObject({
+  rules: z.strictObject({
+    upload: rule.default('user').meta({ title: 'Who may upload', 'x-drobek-rule': ['public', 'user', 'admin'] } satisfies ConfigFieldMeta),
+    read: rule.default('user').meta({ title: 'Who may download', 'x-drobek-rule': true } satisfies ConfigFieldMeta),
+  }),
+  maxBytes: z.int().min(1).optional().meta({
+    title: 'Largest file',
+    'x-drobek-unit': 'bytes',
+    'x-drobek-default-limit': 'HELLO_MAX_BYTES',
+  } satisfies ConfigFieldMeta),
+  paused: z.boolean().optional().meta({ 'x-drobek-hidden': true } satisfies ConfigFieldMeta),
+  provider: z
+    .strictObject({ issuer: z.string().optional(), enabled: z.boolean() })
+    .meta({ 'x-drobek-order': ['enabled'] } satisfies ConfigFieldMeta),
+});
+```
+
+| Keyword | On | The form |
+| ----- | ----- | ----- |
+| `x-drobek-rule` | a rule string (`public`, `user`, `owner`, `admin`, `none`, alternatives joined with `\|`) | one checkbox per principal — Anyone, Signed-in users, Record owner, App admins — like the collections editor; rule fields next to each other share one table, a row each with the rule in force. Nothing checked saves `none`. `true` offers all four, a list only those (a principal the current rule names is offered too). A rule saved untouched keeps its exact text (`admin\|user` stays `admin\|user`); a changed one is written in the column order |
+| `x-drobek-unit: 'bytes'` | a number | entered in MB (1 MB = 1,048,576 bytes, decimals allowed) and saved as whole bytes; the bounds read in MB ("At most 1024 MB.") and a value outside them is refused at the field in MB. A value that is not a whole number of MB shows exactly, so it saves unchanged |
+| `x-drobek-default-limit` | any field | the env name of one of the module's `limits` that applies while the field is empty: the hint says the workspace's value ("Left empty: 10 MB, the limit in force.") |
+| `x-drobek-hidden: true` | any field | not shown: a hidden input carries the current value through a save, so the form never changes it — for a key the page sets with a control of its own (`sync`'s Pause / Resume). Agents set it with `configure_module` as before |
+| `x-drobek-order` | an object | the listed keys first, in that order; the others follow in the schema's order — e.g. a switch before the fields it turns on, where `.extend()` put it last |
+
+The built-in modules use them: `files` shows `rules.upload` / `rules.read`
+as checkboxes (upload without Record owner — the uploader is the owner) and
+`maxBytes` in MB with `FILES_MAX_BYTES` as what empty means; `sync`'s
+`paused` is hidden (Pause schedule / Resume schedule under Sources set
+it); every `auth` sign-in provider shows its On switch first.
 
 ### The workspace Modules page
 
