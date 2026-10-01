@@ -170,3 +170,42 @@ describe('the runtime with an operator-only module', () => {
     expect(JSON.parse(String(res.body))).toMatchObject({ error: 'not_found', details: { available: ['echo'] } });
   });
 });
+
+describe('an operator-only contributor to a slot of an app-facing module', () => {
+  let pg: PGlite;
+  let rt: ModuleRuntime;
+  let app: { id: string; slug: string; workspaceId: string; workspaceSlug: string };
+  const relay = operator({ contributes: { 'host.relay': { id: 'pigeon' } } });
+
+  beforeAll(async () => {
+    const fresh = await freshDb();
+    pg = fresh.pg;
+    const [w] = await fresh.db.insert(workspaces).values({ kind: 'team', slug: 'acme', name: 'Acme' }).returning();
+    const [a] = await fresh.db.insert(apps).values({ workspaceId: w.id, slug: 'shop' }).returning();
+    app = { id: a.id, slug: a.slug, workspaceId: w.id, workspaceSlug: w.slug };
+    rt = await loadModuleRuntime({
+      env: { APPS_DOMAIN: 'apps.example', PUBLIC_APP_URL: 'https://drobek.example', DROBEK_MIGRATE_ON_START: '0', DROBEK_MASTER_KEY: '11'.repeat(32) },
+      log: noopLogger,
+      modules: [host, relay],
+      skillsDir: null,
+      deps: { rateLimit: memoryRateLimiter(), principal: async () => ({ kind: 'anon' }), email: { send: async () => {} } },
+    });
+  });
+
+  afterAll(async () => {
+    await pg.close();
+  });
+
+  it("is left out of the host's slot in skill_info, the module page and the facts; operators get it with operatorOnly: true", async () => {
+    const relaySlot = (slots: { name: string; contributions: unknown[] }[] | undefined) => slots?.find((x) => x.name === 'host.relay')?.contributions;
+    expect(rt.contributions('host.relay')).toEqual([{ id: 'pigeon' }]);
+    expect(relaySlot(rt.skillInfo('host')?.slots)).toEqual([]);
+    expect(JSON.stringify(rt.skillInfo('host'))).not.toContain('"op"');
+    expect(relaySlot((await rt.moduleView(app, 'host')).slots)).toEqual([]);
+    expect(relaySlot(rt.moduleFacts('host')?.slots)).toEqual([]);
+    expect(relaySlot(rt.moduleFactsList()[0].slots)).toEqual([]);
+    expect(relaySlot(rt.moduleFacts('host', { operatorOnly: true })?.slots)).toEqual([{ module: 'op', key: 'pigeon' }]);
+    expect(relaySlot(rt.moduleFactsList({ operatorOnly: true })[0].slots)).toEqual([{ module: 'op', key: 'pigeon' }]);
+    expect(rt.moduleFacts('op')).toMatchObject({ operatorOnly: true, contributes: [{ slot: 'host.relay', host: 'host', key: 'pigeon' }] });
+  });
+});

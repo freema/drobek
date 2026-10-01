@@ -498,7 +498,9 @@ does not list it and `skill_info('<name>')` answers `not_found` like an
 unknown name; the briefing, `/llms.txt` and `/llms-full.txt`, `create_app` /
 `get_app` (`skills`, `modules`), `configure_module` and the app's Modules tab
 and module page leave it out, and `/__drobek/v1/<name>/…` answers
-`not_found`. Operators still see it: `/healthz`, `/api/version` and the start log
+`not_found`. Nor is it named among the contributors of the slot it
+contributes to: `skill_info('email')` and the `email` module page list no
+module-provided transport under `email.transport`. Operators still see it: `/healthz`, `/api/version` and the start log
 mark it `operatorOnly: true`, and the
 [workspace Modules page](#the-workspace-modules-page) lists it, marked
 operator-only, for super-admins only.
@@ -1430,8 +1432,9 @@ else the server's env / default) and its error codes. Never a path on disk,
 never a secret. The facts come from `ModuleRuntime.moduleFacts()`; agents
 get the same fields from `skill_info('<name>')`. An
 [operator-only module](#operator-only-modules) is listed for super-admins
-only, its card marked operator-only (`operatorOnly` in the facts); the
-other members never see it.
+only, its card marked operator-only (`operatorOnly` in the facts) and
+named among the contributors of the slots it contributes to; the other
+members never see it, not even there.
 
 The page leads with a search (`?q=`, every word must appear in the name,
 the `dashboard.title` or `description`, "use when", a slot or a limit name

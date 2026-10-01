@@ -14,7 +14,8 @@
  *
  * An operator-only module (no skill: it serves the server itself, e.g. where
  * its errors or mail go) is listed for a super-admin only, marked
- * `operatorOnly`; the other members never see it.
+ * `operatorOnly`; the other members never see it, not even as a contributor
+ * to another module's slot (an e-mail transport under email.transport).
  *
  * Each opt-in module also carries its state for the workspace
  * (../workspace-modules-toggle.server.ts): enabled or not and what decides it
@@ -33,7 +34,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const access = await requireWorkspaceRole(request, String(params.slug ?? ''), 'viewer');
   const runtime = await moduleRuntime();
   const limits = await runtime.workspaceLimits(access.workspace.id);
-  const modules = runtime.moduleFactsList().filter((f) => access.superAdmin || !f.operatorOnly).map((f) => ({
+  const modules = runtime.moduleFactsList({ operatorOnly: access.superAdmin }).filter((f) => access.superAdmin || !f.operatorOnly).map((f) => ({
     ...f,
     useWhen: runtime.get(f.name)?.skill?.useWhen ?? '',
     limits: f.limits.map((l) => ({ ...l, value: limits[l.name] ?? l.default })),
