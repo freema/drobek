@@ -32,7 +32,10 @@ import { addMembership, userIdByEmail, withDb, workspaceIdBySlug } from './helpe
  *    opt-in switch answers a viewer 403;
  *  - the module page's "About this module" + error codes, linking there;
  *  - the generic form edits a record of named entries (the forms module's
- *    `forms`) without client JS: fill the empty entry, save, it is stored.
+ *    `forms`) without client JS: fill the empty entry, save, it is stored;
+ *  - the files form asks who may upload / download with principal
+ *    checkboxes and takes the largest file in MB (stored in bytes); a
+ *    sign-in provider of the auth form leads with its On switch.
  *
  * The installed external module `acmecrm` (source dir, opt-in,
  * its `auth.signedIn` contribution, error and limit) on the workspace page;
@@ -401,6 +404,29 @@ test.describe('dashboard Modules tab @local', () => {
     await expect(paths.locator('[data-testid="config-path-row"][data-path="allow.emails"]')).toBeHidden();
     await paths.locator('summary').click();
     await expect(paths.locator('[data-testid="config-path-row"][data-path="allow.emails"]')).toBeVisible();
+    // A sign-in provider's own fields follow its On switch.
+    const oidc = ownerPage.locator('fieldset', { has: ownerPage.locator('input[name="cfg.providers.oidc.enabled"]') }).last();
+    await expect(oidc.locator('input').first()).toHaveAttribute('name', 'cfg.providers.oidc.enabled');
+  });
+
+  test('the files form: who may upload / download as principal checkboxes, the largest file in MB', async () => {
+    skipUnlessLocal();
+    await ownerPage.goto(modulePath(app, 'files'));
+    const form = ownerPage.getByTestId('config-form');
+    await expect(form.getByTestId('rule-rules-upload-user')).toBeChecked();
+    await expect(form.getByTestId('rule-rules-upload-owner')).toHaveCount(0);
+    await expect(form.getByTestId('rule-rules-read-owner')).not.toBeChecked();
+    await expect(form.locator('input[name="cfg.rules.upload"]')).toHaveCount(0);
+    await expect(form).toContainText('the limit in force');
+    await form.getByTestId('rule-rules-upload-admin').check();
+    await form.getByTestId('field-maxBytes').fill('2.5');
+    await ownerPage.getByTestId('config-save').click();
+    await expect(ownerPage.getByTestId('done-notice')).toHaveAttribute('data-done', 'applied');
+    const got = await callTool(mcp.client, 'get_app', { app_id: app.app_id });
+    const files = (got.json.modules as Record<string, { config: { rules: { upload: string; read: string }; maxBytes?: number } }>).files;
+    expect(files.config).toMatchObject({ rules: { upload: 'user|admin', read: 'user' }, maxBytes: 2.5 * 1024 * 1024 });
+    await expect(ownerPage.getByTestId('field-maxBytes')).toHaveValue('2.5');
+    await expect(ownerPage.getByTestId('rule-rules-upload-admin')).toBeChecked();
   });
 
   test('the generic form adds a named entry to a record (forms.forms) without client JS', async () => {

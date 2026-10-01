@@ -106,6 +106,8 @@ describe('drobek-module-forms — shape and config', () => {
     expect(formsConfigSchema.safeParse({ forms: { 'Bad Name': {} } }).success).toBe(false);
     // The dashboard labels an entry's name by the record's key schema.
     expect(z.toJSONSchema(formsConfigSchema, { io: 'input' })).toMatchObject({ properties: { forms: { propertyNames: { title: 'Form name' } } } });
+    // A new entry's name is suggested from the app's forms (those with submissions).
+    expect(z.toJSONSchema(formsConfigSchema, { io: 'input' })).toMatchObject({ properties: { forms: { propertyNames: { 'x-drobek-choices': 'forms' } } } });
     expect(formsConfigSchema.safeParse({ forms: { contact: { notify: { emails: ['nope'] } } } }).success).toBe(false);
     expect(formsConfigSchema.safeParse({ forms: { contact: { to: 'x@y.cz' } } }).success).toBe(false);
     expect(formsConfigSchema.safeParse({ forms: { contact: { rules: { submit: 'admin' } } } }).success).toBe(false);

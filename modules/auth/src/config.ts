@@ -10,7 +10,7 @@
  * contributions (`composeAuthConfig`, the module's `compose`); the static
  * `authConfigSchema` is the one of a server without providers.
  */
-import { jsonEqual, z, type AuthProvider, type ComposedModuleParts, type ConfirmItem } from '@drobek/modules';
+import { jsonEqual, z, type AuthProvider, type ComposedModuleParts, type ConfigFieldMeta, type ConfirmItem } from '@drobek/modules';
 
 const DOMAIN_RE = /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
 
@@ -95,7 +95,7 @@ function providerEntrySchema(p: AuthProvider): z.ZodType {
       const r = p.configSchema.safeParse(rest);
       if (!r.success) for (const issue of r.error.issues) ctx.addIssue({ code: 'custom', path: issue.path, message: issue.message });
     })
-    .meta({ title: p.label });
+    .meta({ title: p.label, 'x-drobek-order': ['enabled'] } satisfies ConfigFieldMeta);
 }
 
 function hasSignInMethod(config: Pick<AuthConfig, 'providers'>): boolean {

@@ -15,7 +15,7 @@ import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { apps, workspaces, type DB } from '@drobek/db';
 import * as schema from '@drobek/db/schema';
-import { buildSdk, isDefinedModule, loadModules, type Principal } from '@drobek/modules';
+import { buildSdk, isDefinedModule, loadModules, z, type Principal } from '@drobek/modules';
 import { createModuleTestContext, type ModuleTestContext, type TestResponse } from '@drobek/modules/testing';
 import auth from 'drobek-module-auth';
 import filesModule, {
@@ -185,6 +185,18 @@ describe('config', () => {
     ]) {
       expect(filesConfigSchema.safeParse(bad).success, JSON.stringify(bad)).toBe(false);
     }
+  });
+
+  it('the dashboard form: the rules as principal checkboxes, the size in MB with the server limit as what empty means', () => {
+    const json = z.toJSONSchema(filesConfigSchema, { unrepresentable: 'any', io: 'input' }) as unknown as {
+      properties: { rules: { properties: Record<string, Record<string, unknown>> }; maxBytes: Record<string, unknown> };
+    };
+    expect(json.properties.rules.properties.upload).toMatchObject({ title: 'Who may upload', 'x-drobek-rule': ['public', 'user', 'admin'] });
+    expect(json.properties.rules.properties.read).toMatchObject({ title: 'Who may download', 'x-drobek-rule': true });
+    expect(json.properties.maxBytes).toMatchObject({ title: 'Largest file', 'x-drobek-unit': 'bytes', 'x-drobek-default-limit': 'FILES_MAX_BYTES' });
+    expect(filesModule.limits?.map((l) => l.env)).toContain(json.properties.maxBytes['x-drobek-default-limit']);
+    // Presentation only: the rules and the cap validate as before.
+    expect(filesConfigSchema.parse({ rules: { upload: 'owner', read: 'admin|user' }, maxBytes: 5_000_000 })).toMatchObject({ rules: { upload: 'owner', read: 'admin|user' }, maxBytes: 5_000_000 });
   });
 
   it('confirmRequired: upload → public always; read → public only while the app holds files', async () => {

@@ -19,7 +19,7 @@
  *  - `read` opened to `public` while the app holds files (they all become
  *    downloadable by anyone with a link) — on an app without files it applies.
  */
-import { isValidRule, ruleIsPublic, z, type ConfirmContext } from '@drobek/modules';
+import { isValidRule, ruleIsPublic, z, type ConfigFieldMeta, type ConfirmContext } from '@drobek/modules';
 import { TYPE_PATTERNS } from './sniff.js';
 import { countFiles } from './store.js';
 
@@ -41,20 +41,24 @@ export const filesConfigSchema = z.strictObject({
     .strictObject({
       upload: rule.default(DEFAULT_FILE_RULES.upload).meta({
         title: 'Who may upload',
-        description: 'A rule: public, user, owner, admin or none, alternatives joined with |. Opening it to public waits for the owner’s confirmation.',
-      }),
+        description: 'Opening uploads to anyone (public) waits for the owner’s confirmation.',
+        'x-drobek-rule': ['public', 'user', 'admin'],
+      } satisfies ConfigFieldMeta),
       read: rule.default(DEFAULT_FILE_RULES.read).meta({
         title: 'Who may download',
-        description: 'A rule like the one above; owner means the uploader. Opening it to public while the app holds files waits for the owner’s confirmation.',
-      }),
+        description: 'Record owner is the person who uploaded the file. Opening downloads to anyone (public) while the app holds files waits for the owner’s confirmation.',
+        'x-drobek-rule': true,
+      } satisfies ConfigFieldMeta),
     })
     .default({ ...DEFAULT_FILE_RULES })
     .meta({ title: 'Access', description: 'Deleting a file is always allowed to its uploader and the app’s admins.' }),
   /** Per-file cap in bytes for this app (≤ the operator's FILES_MAX_BYTES, which wins). */
   maxBytes: z.number().int().min(1).max(MAX_CONFIG_BYTES).optional().meta({
-    title: 'Largest file (bytes)',
-    description: 'This app’s cap per file, e.g. 5242880 for 5 MB. It can only lower the server’s limit. Empty: the server’s limit.',
-  }),
+    title: 'Largest file',
+    description: 'This app’s cap per file; it can only lower the server’s limit.',
+    'x-drobek-unit': 'bytes',
+    'x-drobek-default-limit': 'FILES_MAX_BYTES',
+  } satisfies ConfigFieldMeta),
   /** The accepted types (sniffed from the bytes). */
   allowedTypes: z
     .array(z.enum(TYPE_PATTERNS))
