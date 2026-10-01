@@ -59,6 +59,7 @@ async function runtime(deps: Partial<RuntimeDeps> = {}): Promise<ModuleRuntime> 
       principal: async () => ({ kind: 'anon' }),
       email: { send: async () => {} },
       mailGuard: memoryMailGuard({ hourlyMax: 1000, pauseMinutes: 1 }, noopLogger),
+      requestStats: () => undefined,
       ...deps,
     },
   });
@@ -551,10 +552,21 @@ describe('HTTP on the app hosts', () => {
         return original(sqlText, ...rest);
       }) as never);
     });
-    const settle = () => new Promise((r) => setTimeout(r, 20));
+    const pending: Promise<void>[] = [];
+    const settle = async () => {
+      await Promise.all(pending.splice(0));
+      await new Promise((r) => setTimeout(r, 20));
+    };
     const redis = memoryModuleStatsRedis();
     const limiter = memoryRateLimiter();
-    const counting = await runtime({ rateLimit: limiter, requestStats: (a, m, st) => recordModuleRequest(a, m, st, { redis: () => redis }) });
+    const counting = await runtime({
+      rateLimit: limiter,
+      requestStats: (a, m, st) => {
+        const p = recordModuleRequest(a, m, st, { redis: () => redis });
+        pending.push(p);
+        return p;
+      },
+    });
     const silent = await runtime({ rateLimit: limiter, requestStats: () => undefined });
     const say = () => req('POST', '/__drobek/v1/echo/say', { headers: sdkPost, body: { text: 'x' } });
     const today = new Date().toISOString().slice(0, 10);
