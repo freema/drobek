@@ -22,6 +22,8 @@ import * as schema from '@drobek/db/schema';
 import { apps, auditLog, moduleConfigs, moduleSecrets, setDbForTests, upstreams, users, workspaceModules, workspaces } from '@drobek/db';
 import { noopLogger } from '@drobek/core';
 import {
+  ERROR_REPORTER_SLOT,
+  defineErrorReporter,
   defineModule,
   loadModuleRuntime,
   memoryMailGuard,
@@ -237,6 +239,16 @@ const feeder = defineModule<{ sources: Record<string, { upstream: string; collec
   configDefaults: { sources: {} },
 });
 
+/** An operator-only module: no skill, only the core-hosted errors.reporter slot. */
+const sentinel = defineModule({
+  name: 'sentinel',
+  version: '1.0.0',
+  contract: '^1.2',
+  configSchema: z.object({}),
+  configDefaults: {},
+  contributes: { [ERROR_REPORTER_SLOT]: defineErrorReporter({ id: 'sentinel', label: 'Sentinel', report: () => {} }) },
+});
+
 let pg: PGlite;
 let rt: ModuleRuntime;
 let appId: string;
@@ -291,7 +303,7 @@ beforeAll(async () => {
   rt = await loadModuleRuntime({
     env: ENV,
     log: noopLogger,
-    modules: [shop, store, gateway, proxy, vault, importer, feeder],
+    modules: [shop, store, gateway, proxy, vault, importer, feeder, sentinel],
     skillsDir: null,
     deps: {
       rateLimit: memoryRateLimiter(),
@@ -337,6 +349,12 @@ describe('the module page', () => {
     expect(d.banner).toMatchObject({ count: 0 });
     expect(d.canEdit).toBe(true);
     await expect(load('nope')).rejects.toMatchObject({ init: { status: 404 } });
+  });
+
+  it('an operator-only module (no skill) has no page: the loader and every POST answer 404', async () => {
+    expect(rt.get('sentinel')).toBeDefined();
+    await expect(load('sentinel')).rejects.toMatchObject({ init: { status: 404 } });
+    await expect(post('sentinel', { intent: 'save-config' })).rejects.toMatchObject({ init: { status: 404 } });
   });
 
   it('save-config: out-of-schema input → 400 with the error at the field (nothing stored); a safe change applies', async () => {

@@ -62,19 +62,22 @@ export async function checkSkillSources(skills: SkillSource[], modules: AnyModul
   return [...format, ...problems];
 }
 
-/** The skill of one module as skill_info serves it. */
+/** The skill of one module as skill_info serves it (throws for an operator-only module, which has none). */
 export function moduleSkillSource(module: AnyModule, file = 'SKILL.md'): SkillSource {
+  if (!module.skill) throw new Error(`module "${module.name}" has no skill (an operator-only module)`);
   return { name: module.name, kind: 'module', useWhen: module.skill.useWhen, content: module.skill.markdown, file, fileText: module.skill.markdown, module };
 }
 
 /**
  * Check a module's skill (`defineModule({ skill })`) the way drobek checks
- * its built-in modules. `[]` = it passes.
+ * its built-in modules. `[]` = it passes, or the module is operator-only
+ * (no skill to check).
  *
  *   const issues = await checkSkill(erp);
  *   expect(issues.map(formatSkillIssue)).toEqual([]);
  */
 export async function checkSkill(module: AnyModule, opts: CheckSkillOptions = {}): Promise<SkillIssue[]> {
+  if (!module.skill) return [];
   const others = (opts.modules ?? []).filter((m) => m.name !== module.name);
   return checkSkillSources([moduleSkillSource(module, opts.file)], composed([module, ...others]), { root: opts.root });
 }

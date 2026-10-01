@@ -6,7 +6,10 @@ type EnvName = 'GIT_SHA' | 'DROBEK_VERSION' | 'GIT_COMMIT_TIME';
 const ENV_NAMES: EnvName[] = ['GIT_SHA', 'DROBEK_VERSION', 'GIT_COMMIT_TIME'];
 const original = new Map(ENV_NAMES.map((name) => [name, process.env[name]]));
 
-const MODULES = [{ name: 'guestbook', version: '1.0.0', source: 'dir', contract: '^1.1' }];
+const MODULES = [
+  { name: 'guestbook', version: '1.0.0', source: 'dir', contract: '^1.1' },
+  { name: 'sentinel', version: '1.0.0', source: 'dir', contract: '^1.2', operatorOnly: true },
+];
 
 afterEach(() => {
   for (const name of ENV_NAMES) {
@@ -18,7 +21,7 @@ afterEach(() => {
 });
 
 describe('/api/version loader', () => {
-  it('returns the name, sha, version, the commit time in UTC, the process start and the active modules', async () => {
+  it('returns the name, sha, version, the commit time in UTC, the process start and the active modules (an operator-only one marked)', async () => {
     process.env.GIT_SHA = 'abc1234';
     process.env.DROBEK_VERSION = 'v1.2.3';
     process.env.GIT_COMMIT_TIME = '2026-09-27T14:05:09+02:00';

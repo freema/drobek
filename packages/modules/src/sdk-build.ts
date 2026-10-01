@@ -158,7 +158,7 @@ export function sdkDeclarations(modules: AnyModule[]): string {
     '',
     ...withSdk.map((m) => moduleTypes(m) + '\n'),
     'export interface Drobek {',
-    ...withSdk.map((m) => `  /** Use when ${m.skill.useWhen.replace(/\*\//g, '* /')} — skill_info('${m.name}') */\n  readonly ${m.name}: ${m.name}.Api;`),
+    ...withSdk.map((m) => `  /** Use when ${(m.skill?.useWhen ?? '').replace(/\*\//g, '* /')} — skill_info('${m.name}') */\n  readonly ${m.name}: ${m.name}.Api;`),
     '}',
     'export declare const drobek: Drobek;',
     'export default drobek;',

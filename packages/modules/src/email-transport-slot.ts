@@ -19,7 +19,9 @@
  *
  * `smtp` and `resend` stay built in and cannot be replaced. The transport's
  * secrets are operator env vars only (read at start, handed to `send` in
- * `ctx.secrets`); the rate limits above the transport stay as they are.
+ * `ctx.secrets`); the rate limits above the transport stay as they are. The
+ * built-in `email` declares the slot `operatorOnly`: a transport module needs
+ * no skill.
  */
 import {
   BUILTIN_EMAIL_TRANSPORTS,

@@ -80,6 +80,7 @@ export {
   type ModuleServices,
   type ModuleSkill,
   type ModuleSlot,
+  type OperatorModule,
   type Principal,
   type RateLimitResult,
   type RecordsAuthority,

@@ -1,7 +1,8 @@
 /**
  * GET /workspaces/:slug/apps/:appSlug/modules — server half:
  * the app's Modules tab — every platform module active on the
- * server with whether this app configured it, what waits for confirmation and
+ * server (operator-only modules, without a skill, are left out: apps cannot
+ * use them) with whether this app configured it, what waits for confirmation and
  * which required secrets are missing. viewer+ (unknown workspace / non-member
  * → 404 by requireWorkspaceRole; an app of another workspace → 404). Secret
  * VALUES never reach this loader: the runtime reports `hasSecret` only.
@@ -22,7 +23,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   const runtime = await moduleRuntime();
   const states = await runtime.appModules({ id: app.id, slug: app.slug, workspaceId: access.workspace.id });
-  const modules = runtime.modules.map((m) => {
+  const modules = runtime.appFacing.map((m) => {
     const s = states[m.name];
     const secrets = s?.secrets ?? [];
     const requiredMissing = (m.secrets ?? []).filter((d) => d.required && !secrets.find((x) => x.name === d.name)?.hasSecret).map((d) => d.name);

@@ -8,7 +8,8 @@
  *
  * `availabilityControls` is the mount point for the per-workspace enable
  * toggle of an opt-in module (a super-admin control): whatever it renders
- * appears next to the module's availability.
+ * appears next to the module's availability. An operator-only module (only a
+ * super-admin's list has one) is marked as such.
  */
 import type { ReactNode } from 'react';
 import { Form, Link } from 'react-router';
@@ -25,7 +26,12 @@ export interface WorkspaceModule extends ModuleFactsData {
   description?: string | null;
   limits: LimitFact[];
   errors: ErrorFact[];
+  /** No skill: it serves the server itself; apps, agents and other members never see it. */
+  operatorOnly?: boolean;
 }
+
+const OPERATOR_ONLY_NOTE =
+  'Operator-only: it serves the server itself (e.g. where its errors or e-mail go). Apps cannot use it, agents do not see it, and only super-admins see it here.';
 
 const styles = {
   list: { listStyle: 'none', padding: 0, margin: '1rem 0' },
@@ -50,8 +56,18 @@ function ModuleCard({ m, availabilityControls }: { m: WorkspaceModule; availabil
         <span style={ui.badge} data-testid="module-source">
           {m.source}
         </span>
+        {m.operatorOnly ? (
+          <span style={ui.warnBadge} data-testid="module-operator-only">
+            operator-only
+          </span>
+        ) : null}
       </div>
       {moduleSummary(m) ? <p style={{ ...ui.hint, margin: '0.3rem 0 0' }}>{moduleSummary(m)}</p> : null}
+      {m.operatorOnly ? (
+        <p style={{ ...ui.hint, margin: '0.3rem 0 0' }} data-testid="module-operator-only-note">
+          {OPERATOR_ONLY_NOTE}
+        </p>
+      ) : null}
       <ModuleFactsList facts={m} part="summary" availabilityExtra={availabilityControls?.(m)} />
       {m.limits.length > 0 ? (
         <Disclosure testId="module-limits" summary={`Limits for this workspace (${m.limits.length})`}>

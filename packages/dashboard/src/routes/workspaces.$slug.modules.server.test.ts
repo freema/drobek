@@ -4,14 +4,16 @@
  * has its own tests in @drobek/tenancy): every active module with version,
  * source, contract, availability, requires, slots + contributions, limits
  * with the value in force for THIS workspace, error codes — for a viewer;
- * never a path on disk, never a secret.
+ * never a path on disk, never a secret. An operator-only module (no skill) is
+ * listed for a super-admin only, marked `operatorOnly`.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { noopLogger } from '@drobek/core';
-import { defineModule, loadModuleRuntime, memoryRateLimiter, setModuleRuntimeForTests, z, type ModuleRuntime } from '@drobek/modules';
+import { ERROR_REPORTER_SLOT, defineErrorReporter, defineModule, loadModuleRuntime, memoryRateLimiter, setModuleRuntimeForTests, z, type ModuleRuntime } from '@drobek/modules';
 
 const role = vi.hoisted(() => ({
   current: 'viewer' as 'viewer' | 'editor' | 'workspace-admin',
+  superAdmin: false,
   ws: { id: 'ws_1', slug: 'acme', name: 'Acme', kind: 'team' },
 }));
 
@@ -21,7 +23,7 @@ vi.mock('@drobek/tenancy', () => {
     requireWorkspaceRole: async (_request: Request, slug: string, min: keyof typeof rank) => {
       if (slug !== role.ws.slug) throw new Response('Not found', { status: 404 });
       if (rank[role.current] < rank[min]) throw new Response('Forbidden', { status: 403 });
-      return { user: { id: 'u_1', email: 'v@example.com' }, workspace: role.ws, membershipRole: role.current, superAdmin: false, effectiveRole: role.current };
+      return { user: { id: 'u_1', email: 'v@example.com' }, workspace: role.ws, membershipRole: role.current, superAdmin: role.superAdmin, effectiveRole: role.current };
     },
     workspaceNav: (access: { workspace: { slug: string; name: string; kind: string }; effectiveRole: string }) => ({
       slug: access.workspace.slug,
@@ -62,6 +64,15 @@ const pirate = defineModule({
 });
 // A module the DROBEK_MODULES_DIR loader found in the operator's directory (its origin; the path must never reach the page).
 const company = defineModule({ ...base, name: 'company', version: '3.0.0' });
+// An operator-only module: no skill, only the core-hosted errors.reporter slot.
+const sentinel = defineModule({
+  name: 'sentinel',
+  version: '2.1.0',
+  contract: '^1.2',
+  configSchema: z.object({}),
+  configDefaults: {},
+  contributes: { [ERROR_REPORTER_SLOT]: defineErrorReporter({ id: 'sentinel', label: 'Sentinel', report: () => {} }) },
+});
 
 let rt: ModuleRuntime;
 
@@ -69,7 +80,7 @@ beforeAll(async () => {
   rt = await loadModuleRuntime({
     env: { APPS_DOMAIN: 'apps.example', PUBLIC_APP_URL: 'https://drobek.example', HOST_GREETERS_MAX: '7' },
     log: noopLogger,
-    modules: [host, pirate, company],
+    modules: [host, pirate, company, sentinel],
     origins: { company: { source: 'dir', path: '/data/modules/company' } },
     skillsDir: null,
     deps: { rateLimit: memoryRateLimiter() },
@@ -146,6 +157,27 @@ describe('the workspace Modules page', () => {
     expect(text).not.toContain('the greeting key');
     expect(text).not.toMatch(/node_modules|\/data\/modules|\/app\//);
     await expect(load('other')).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('an operator-only module is listed for a super-admin only, marked operatorOnly', async () => {
+    role.current = 'workspace-admin';
+    expect((await load()).modules.map((m) => m.name)).toEqual(['host', 'pirate', 'company']);
+    role.superAdmin = true;
+    try {
+      const d = await load();
+      expect(d.modules.map((m) => m.name)).toEqual(['host', 'pirate', 'company', 'sentinel']);
+      expect(d.modules[3]).toMatchObject({
+        operatorOnly: true,
+        useWhen: '',
+        version: '2.1.0',
+        contract: '^1.2',
+        contributes: [{ slot: 'errors.reporter', host: 'core', key: 'sentinel' }],
+      });
+      expect(d.modules[0]).toMatchObject({ operatorOnly: false });
+    } finally {
+      role.superAdmin = false;
+      role.current = 'viewer';
+    }
   });
 
   it('the facts equal what skill_info returns to agents', async () => {

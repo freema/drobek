@@ -329,11 +329,14 @@ their source (`dir` | `builtin`). A module contributes routes under
 (`drobek.<name>`), a zod per-app config schema (its defaults overridable per
 server with `DROBEK_MODULE_<NAME>_DEFAULTS`), access rules, secrets (names
 only), env-named limits, its own error codes, its own tables and migrations,
-and a skill the agent reads with `skill_info`. Modules extend each other
-through typed **slots**: a host module declares one with a zod schema, other
-modules contribute values, checked at start and read with
-`contributions(slot)` (a host may `compose` its config schema, confirm
-rules and secrets from the contributions at start). Core itself hosts one
+and a skill the agent reads with `skill_info` — left out only by an
+operator-only module, of which nothing reaches apps (it contributes to
+`operatorOnly` slots such as `errors.reporter` and `email.transport`): agents
+and app owners never see it, `/api/version` marks it `operatorOnly`.
+Modules extend each other through typed **slots**: a host module declares
+one with a zod schema, other modules contribute values, checked at start and
+read with `contributions(slot)` (a host may `compose` its config schema,
+confirm rules and secrets from the contributions at start). Core itself hosts one
 slot, `errors.reporter`: where server errors go besides the log (an incident
 webhook, a log service, …), chosen with `ERROR_REPORTER=<id>` and fed by `reportError`
 (`@drobek/core`) from the central error points — a 5xx, a module route

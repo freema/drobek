@@ -2,7 +2,8 @@
  * Skills — the agent-facing documentation `skill_info` serves. Two
  * sources, one registry:
  *
- *  - MODULE skills: every active module's `defineModule({ skill })`;
+ *  - MODULE skills: every active module's `defineModule({ skill })` (an
+ *    operator-only module has none and is not listed);
  *  - GENERAL skills: `skills/<name>/SKILL.md` (frontmatter `name` +
  *    `description`; the description is the "use when…" sentence) — guides
  *    that are not tied to one module.
@@ -18,6 +19,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { Logger } from '@drobek/core';
 import type { AnyModule } from './contract.js';
+import { isAppFacing } from './registry.js';
 
 /** The platform skill (installed into the agent) — never listed by skill_info. */
 export const PLATFORM_SKILL_NAME = 'drobek';
@@ -80,7 +82,7 @@ export function loadGeneralSkills(dir: string | null, log?: Logger): SkillEntry[
 }
 
 export function moduleSkills(modules: AnyModule[]): SkillEntry[] {
-  return modules.map((m) => ({
+  return modules.filter(isAppFacing).map((m) => ({
     name: m.name,
     kind: 'module' as const,
     useWhen: m.skill.useWhen.trim(),

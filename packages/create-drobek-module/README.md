@@ -43,6 +43,10 @@ a place for the server's errors (an incident webhook, a log service) contributes
 `defineErrorReporter({ id, label, secrets, report })` to the core-hosted
 `errors.reporter` slot and is chosen with `ERROR_REPORTER=<id>` — see
 [Error reporters from modules](https://github.com/freema/drobek/blob/main/docs/MODULES.md#error-reporters-from-modules).
+A module that does nothing but that serves only the server: it may drop
+`skill`, `routes` and the SDK, keep `configSchema: z.object({})`, and agents
+and app owners never see it —
+[Operator-only modules](https://github.com/freema/drobek/blob/main/docs/MODULES.md#operator-only-modules).
 
 The guide is
 [Writing a module](https://github.com/freema/drobek/blob/main/docs/MODULES.md#writing-a-module).

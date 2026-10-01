@@ -107,12 +107,14 @@ import {
   collectContributions,
   endUserAuthorityOf,
   filesAuthorityOf,
+  isAppFacing,
   loadModuleSet,
   mailAuthorityOf,
   recordsAuthorityOf,
   submissionsAuthorityOf,
   syncAuthorityOf,
   upstreamsAuthorityOf,
+  type AppFacingModule,
   type ModuleOrigin,
   type ModuleSource,
   type ResolveOptions,
@@ -346,6 +348,8 @@ export interface ModuleFacts {
   title: string | null;
   /** Its one line for the app's owner (`dashboard.description`), null without one. */
   description: string | null;
+  /** It has no skill: it serves the server only (operator slots, server jobs, hooks) — agents and app owners never see it. */
+  operatorOnly: boolean;
 }
 
 /** A slot contribution's unique value as text (null when the slot has no unique key or the value is missing). */
@@ -603,10 +607,15 @@ export interface ModuleSummary {
   source: ModuleSource;
   /** The contract range the module declares (null: none). */
   contract: string | null;
+  /** Only on a module without a skill: it serves the server only, agents and app owners never see it. */
+  operatorOnly?: true;
 }
 
 export class ModuleRuntime {
+  /** Every active module, operator-only ones included, in DROBEK_MODULES order. */
   readonly modules: AnyModule[];
+  /** The active modules with a skill — what agents and app owners see (the app's Modules tab, get_app, configure_module). */
+  readonly appFacing: AppFacingModule[];
   readonly skills: SkillEntry[];
   readonly sdk: SdkBundle;
   readonly deps: RuntimeDeps;
@@ -634,6 +643,7 @@ export class ModuleRuntime {
     origins?: Record<string, ModuleOrigin>;
   }) {
     this.modules = input.modules;
+    this.appFacing = input.modules.filter(isAppFacing);
     this.origins = input.origins ?? {};
     this.skills = input.skills;
     this.sdk = input.sdk;
@@ -664,13 +674,14 @@ export class ModuleRuntime {
     return this.origins[name]?.source ?? 'builtin';
   }
 
-  /** The active modules (name, version, source, contract) in DROBEK_MODULES order — for /healthz and /api/version. */
+  /** The active modules (name, version, source, contract, operatorOnly) in DROBEK_MODULES order — for /healthz and /api/version. */
   summary(): ModuleSummary[] {
     return this.modules.map((m) => ({
       name: m.name,
       version: m.version,
       source: this.sourceOf(m.name),
       contract: m.contract ?? null,
+      ...(isAppFacing(m) ? {} : { operatorOnly: true as const }),
     }));
   }
 
@@ -736,10 +747,11 @@ export class ModuleRuntime {
       editor: m.dashboard?.editor ?? null,
       title: m.dashboard?.title ?? null,
       description: m.dashboard?.description ?? null,
+      operatorOnly: !isAppFacing(m),
     };
   }
 
-  /** The facts of every active module, in DROBEK_MODULES order. */
+  /** The facts of every active module (operator-only ones included), in DROBEK_MODULES order. */
   moduleFactsList(): ModuleFacts[] {
     return this.modules.map((m) => this.moduleFacts(m.name)!);
   }
@@ -866,7 +878,7 @@ export class ModuleRuntime {
       return {
         name: m.name,
         version: m.version,
-        use_when: m.skill.useWhen,
+        use_when: m.skill?.useWhen ?? '',
         enabled: on.has(m.name),
         source: st.source,
         missing_requires: this.missingRequires(m.name, states),
@@ -1322,9 +1334,9 @@ export class ModuleRuntime {
 
   /** The modules of `appId` with a change waiting for the owner (active modules only). */
   async pendingSummary(appId: string): Promise<{ module: string; changes: string[] }[]> {
-    const rows = await readConfigRows(appId, this.modules.map((m) => m.name));
+    const rows = await readConfigRows(appId, this.appFacing.map((m) => m.name));
     const out: { module: string; changes: string[] }[] = [];
-    for (const m of this.modules) {
+    for (const m of this.appFacing) {
       const p = rows.get(m.name)?.pending;
       if (p) out.push({ module: m.name, changes: p.changes });
     }
@@ -1465,10 +1477,10 @@ export class ModuleRuntime {
     enabled?: ReadonlySet<string>
   ): Promise<Record<string, AppModuleState>> {
     const appId = typeof app === 'string' ? app : app.id;
-    const rows = await readConfigRows(appId, this.modules.map((m) => m.name));
+    const rows = await readConfigRows(appId, this.appFacing.map((m) => m.name));
     const on = enabled ?? (await this.enabledModules(typeof app === 'string' ? await this.workspaceOf(app) : app.workspaceId));
     const out: Record<string, AppModuleState> = {};
-    for (const m of this.modules) {
+    for (const m of this.appFacing) {
       const row = rows.get(m.name);
       const stored = row?.config ?? {};
       const state: AppModuleState = {
@@ -1502,11 +1514,12 @@ export class ModuleRuntime {
     return row?.workspaceId ?? '';
   }
 
-  private requireModule(name: string): AnyModule {
+  /** An active module with a skill; an operator-only one answers not_found like an unknown name. */
+  private requireModule(name: string): AppFacingModule {
     const m = typeof name === 'string' ? this.byName.get(name) : undefined;
-    if (!m) {
+    if (!m || !isAppFacing(m)) {
       throw new ModuleError('not_found', `No platform module "${String(name)}" is active on this server.`, {
-        details: { available: this.modules.map((x) => x.name) },
+        details: { available: this.appFacing.map((x) => x.name) },
         hint: skillHint(),
       });
     }
@@ -2082,10 +2095,10 @@ export class ModuleRuntime {
         return errorResult(new ModuleError('not_found', 'No such drobek endpoint.', { hint: skillHint() }));
       }
       const m = this.byName.get(match[1]);
-      if (!m) {
+      if (!m || !isAppFacing(m)) {
         return errorResult(
           new ModuleError('not_found', `No platform module "${match[1]}" is active on this server.`, {
-            details: { available: this.modules.map((x) => x.name) },
+            details: { available: this.appFacing.map((x) => x.name) },
             hint: skillHint(),
           })
         );
@@ -2349,9 +2362,9 @@ export function moduleRuntime(opts?: LoadRuntimeOptions): Promise<ModuleRuntime>
 }
 
 /**
- * The active modules (name, version, source, contract) for `/healthz` and
- * `/api/version` — never a path. The server entry loads the runtime at boot,
- * so this only misses in tooling: then [].
+ * The active modules (name, version, source, contract, operatorOnly) for
+ * `/healthz` and `/api/version` — never a path. The server entry loads the
+ * runtime at boot, so this only misses in tooling: then [].
  */
 export function activeModules(): Promise<ModuleSummary[]> {
   return moduleRuntime()

@@ -642,8 +642,10 @@ its `dist/` committed). `add` runs in two steps:
 Then put the printed `DROBEK_MODULES` line into `.env.production` (the short
 name for a `drobek-module-<name>` package, else the full package name) and
 restart drobek; the start applies the module's migrations and `/api/version`
-lists it with `"source":"dir"`. The script prints this and stops: it never
-edits `.env.production` and never restarts anything.
+lists it with `"source":"dir"` (plus `"operatorOnly":true` for a module
+without a skill, e.g. an error reporter: agents and app owners never see it,
+the workspace Modules page shows it to super-admins). The script prints this
+and stops: it never edits `.env.production` and never restarts anything.
 
 ```sh
 task selfhost:module:list

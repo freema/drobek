@@ -73,6 +73,7 @@ const email = defineModule<EmailConfig>({
       unique: 'id',
       description:
         "An e-mail provider for the whole server (SES, Postmark, a company relay, …), chosen with EMAIL_TRANSPORT=<id>: send({ from, to, subject, text, html, replyTo? }, { secrets, signal }). Secrets are the operator env vars it declares; smtp and resend stay built in.",
+      operatorOnly: true,
     },
   },
   routes: registerRoutes,

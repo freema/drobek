@@ -14,7 +14,8 @@ function commitTime(): string | null {
  * (build-arg → env GIT_SHA); "dev" outside a release build. Plus
  * the release version (build-arg VERSION → env DROBEK_VERSION, the tag
  * `vX.Y.Z` a release image is built from; "dev" otherwise), the
- * active platform modules (`[{ name, version, source, contract }]`, no paths).
+ * active platform modules (`[{ name, version, source, contract, operatorOnly? }]`,
+ * no paths; `operatorOnly: true` marks a module without a skill).
  * `name`, `commitTime` (the committer time of GIT_SHA, build-arg
  * COMMIT_TIME → env GIT_COMMIT_TIME, UTC ISO; null when unknown — the same
  * sources rebuild to the same value) and `startedAt` (when this process

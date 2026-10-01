@@ -159,9 +159,10 @@ a missing or mismatching `modules.lock.json` entry, changed files, a
 migration outside its namespace. Nothing is skipped silently. A module
 without `contract` still loads, with a warning naming the range to add. On
 start the log `platform modules ready` lists every module as
-`{ name, version, source, contract }` (`source`: `builtin` | `dir`) next to
-the server's contract version; `/healthz` and `/api/version` serve the same
-`modules` list (never a path on disk).
+`{ name, version, source, contract }` (`source`: `builtin` | `dir`; plus
+`operatorOnly: true` on an [operator-only module](#operator-only-modules))
+next to the server's contract version; `/healthz` and `/api/version` serve
+the same `modules` list (never a path on disk).
 
 ### Operator defaults: `DROBEK_MODULE_<NAME>_DEFAULTS`
 
@@ -398,7 +399,7 @@ export default defineModule<Config>({
   name: 'hello',                 // /^[a-z][a-z0-9]{1,30}$/: URL, drobek.<name>, config key, skill name
   version: '1.0.0',              // the module's own semver
   contract: '^1.1',              // the contract versions it works with (semver range vs MODULE_CONTRACT_VERSION)
-  skill: { useWhen, markdown },  // useWhen: ONE sentence starting with the situation
+  skill: { useWhen, markdown },  // useWhen: ONE sentence starting with the situation; optional only for an operator-only module
   configSchema,                  // zod; validates configure_module + the dashboard form
   configDefaults,                // the config of an app nobody configured (must pass the schema)
   salvageConfig(merged) { return { config, issues } }, // optional: the usable part of a stored config that fails the schema
@@ -462,6 +463,45 @@ The contract fields of 1.2 (additive: a module declaring `'^1.1'` loads unchange
 | `ConfirmContext.limits` | `confirmRequired`'s third argument may read the workspace's limits (`sync` refuses a source past its limits there) |
 | `dashboard.title` / `dashboard.description` | the module's name for people and one line under it, for the app's owner — the dashboard shows "Scheduled imports (sync)" and the description in place of "Use when …" (written for agents). The `name` stays the identifier in URLs, the config key, MCP and `skill_info`. One line each (trimmed, no line break or control character), 1–60 / 1–200 characters, else the start is refused; a server that predates them ignores both |
 | `ConfigFieldMeta` | the keywords the dashboard's config form reads from a `configSchema` field (zod `.meta()`): `title`, `description`, `x-drobek-choices`, `x-drobek-min-interval` — [Choices of a config field](#choices-of-a-config-field-x-drobek-choices). Presentation only |
+| `OperatorModule` | a module declared without `skill` (`defineModule` types it `OperatorModule`; `DrobekModule` keeps `skill` required) — allowed only without an app surface ([Operator-only modules](#operator-only-modules)); a server that predates it refuses a module without a skill (`skill.useWhen is required`) |
+| `ModuleSlot.operatorOnly` | `true` on a slot whose contributions configure the server, not apps (the core-hosted `errors.reporter`, `email`'s `email.transport`): a module contributing only to such slots needs no skill. Default `false`; anything but a boolean refuses the start |
+
+### Operator-only modules
+
+A module that serves only the server itself — an error reporter, an e-mail
+transport — has nothing for an agent to read, so it may leave out `skill`.
+That is allowed only while nothing of it reaches apps:
+
+- no `routes`, `sdk`, `rules`, per-app `secrets`, own `errors` or `appInfo`;
+- no app config: `configSchema` describes an empty object
+  (`configSchema: z.object({}), configDefaults: {}`), and no `salvageConfig`,
+  `confirmRequired` or `onConfirmed`;
+- no owner authority (`endUsers`, `mail`, `records`, `submissions`, `files`,
+  `upstreams`, `sync`), no `availability: 'opt-in'`, no `dashboard.editor`,
+  no `scope: 'app'` job, no `compose`;
+- every slot it declares and every slot it contributes to is
+  `operatorOnly` — the core-hosted `errors.reporter` and the `email`
+  module's `email.transport` are; `auth.provider`, `auth.signedIn` and
+  `hello.greeter` are not.
+
+`limits`, `migrations`, `hooks`, `requires`, server jobs and
+`dashboard.title` / `description` are fine. `defineModule` types a module
+declared without a skill as `OperatorModule` (a module with one stays a
+`DrobekModule`, `skill` required); `AnyModule` is either. Anything else
+refuses the start and names what reaches apps — `module "x": skill is required: the module
+reaches apps through routes, secrets — add skill: { useWhen, markdown } …`,
+or for a contribution `module "x" has no skill, but contributes to the slot
+"auth.provider" (module "auth"), which reaches apps — …`.
+
+Agents and app owners never see an operator-only module: `skill_info()`
+does not list it and `skill_info('<name>')` answers `not_found` like an
+unknown name; the briefing, `/llms.txt` and `/llms-full.txt`, `create_app` /
+`get_app` (`skills`, `modules`), `configure_module` and the app's Modules tab
+and module page leave it out, and `/__drobek/v1/<name>/…` answers
+`not_found`. Operators still see it: `/healthz`, `/api/version` and the start log
+mark it `operatorOnly: true`, and the
+[workspace Modules page](#the-workspace-modules-page) lists it, marked
+operator-only, for super-admins only.
 
 ### Error codes
 
@@ -992,7 +1032,9 @@ with a message naming the module and the slot):
 
 - a slot name is `<host name>.<name>` (`^[a-z][a-z0-9]*\.[a-z][a-zA-Z0-9]*$`)
   and starts with the name of the module that declares it; a slot has a
-  `schema` and a `description`;
+  `schema` and a `description`, and `operatorOnly: true` when its
+  contributions configure the server, not apps (a contributor without a skill
+  may contribute only to such slots — [Operator-only modules](#operator-only-modules));
 - a module contributes at most one value per slot (`contributes` maps slot
   name → value); the slot must be declared by an ACTIVE module or hosted by
   core (`errors.reporter`, below) — a contribution to a slot of a module that
@@ -1035,14 +1077,15 @@ Server errors always go to the log (container stdout). A module can also
 send them somewhere else (an incident webhook, a log service, …) by
 contributing to the `errors.reporter` slot. Core hosts this slot — there is
 no `errors` module (the name is reserved), so the reporter's module is the
-only one it needs:
+only one it needs. The slot is `operatorOnly`, so the module needs no skill:
+it is [operator-only](#operator-only-modules), never shown to agents or app
+owners:
 
 ```ts
 import { defineErrorReporter, defineModule, z } from '@drobek/modules';
 
 export default defineModule({
   name: 'webhookerrors', version: '1.0.0', contract: '^1.2',
-  skill: { useWhen: 'operator-only: server errors go to an incident webhook', markdown: '# webhookerrors\n' },
   configSchema: z.object({}), configDefaults: {},
   contributes: {
     'errors.reporter': defineErrorReporter({
@@ -1207,7 +1250,9 @@ module or a third-party one gets the same pages (a grep guard in
 `@drobek/dashboard` keeps it that way).
 
 `/workspaces/<ws>/apps/<slug>/modules` lists the active modules for the app
-(configured or defaults, what waits, missing required secrets), each under
+(configured or defaults, what waits, missing required secrets; never an
+[operator-only module](#operator-only-modules), which has no module page
+either), each under
 its `dashboard.title` with its name — "Scheduled imports (sync)" — and its
 `dashboard.description` (else "Use when …"), like the module page's
 heading; the app page
@@ -1331,7 +1376,10 @@ value of each contribution), its own contributions, the limits it declares
 with the value in force for this workspace (the limits provider's plan,
 else the server's env / default) and its error codes. Never a path on disk,
 never a secret. The facts come from `ModuleRuntime.moduleFacts()`; agents
-get the same fields from `skill_info('<name>')`.
+get the same fields from `skill_info('<name>')`. An
+[operator-only module](#operator-only-modules) is listed for super-admins
+only, its card marked operator-only (`operatorOnly` in the facts); the
+other members never see it.
 
 The page leads with a search (`?q=`, every word must appear in the name,
 the `dashboard.title` or `description`, "use when", a slot or a limit name
@@ -1376,7 +1424,8 @@ It never returns a secret value or any app's config.
 
 Two sources feed one list:
 
-- **module skills**: every active module's `skill`;
+- **module skills**: every active module's `skill` (an
+  [operator-only module](#operator-only-modules) has none and is not listed);
 - **general skills**: `skills/<name>/SKILL.md` with frontmatter `name` and
   `description` (the description is the "use when …" sentence). The directory
   is `DROBEK_SKILLS_DIR`, else `<cwd>/skills` (the image copies the repo's
@@ -2072,22 +2121,23 @@ policy and a way to reach the app's owners. `skill_info('email')`.
   the app sends — form notifications and sign-in codes included.
 - **Limits**: `EMAIL_PER_APP_PER_DAY` 50, `EMAIL_NOTIFY_ADMINS_PER_DAY` 20
   (notifyAdmins calls per app per day; the 21st is `429 limit_exceeded`).
-- **Slot** `email.transport` (unique `id`): another e-mail provider for the
-  whole server, see below.
+- **Slot** `email.transport` (unique `id`, `operatorOnly`): another e-mail
+  provider for the whole server, see below.
 
 ### E-mail transports from modules
 
 SMTP and Resend are built into core (`@drobek/email`), so sign-in codes and
 invites never depend on an installed module. Any other provider (SES,
 Postmark, a company relay, …) comes as a module contributing to the
-`email.transport` slot, which the `email` module hosts:
+`email.transport` slot, which the `email` module hosts. The slot is
+`operatorOnly`, so the module needs no skill: it is
+[operator-only](#operator-only-modules), never shown to agents or app owners:
 
 ```ts
 import { EmailSendError, defineEmailTransport, defineModule, z } from '@drobek/modules';
 
 export default defineModule({
   name: 'postmark', version: '1.0.0', contract: '^1.2',
-  skill: { useWhen: 'operator-only: mail goes out through Postmark', markdown: '# postmark\n' },
   configSchema: z.object({}), configDefaults: {},
   requires: ['email'],
   contributes: {
