@@ -198,6 +198,10 @@ services:
       # the `.test` TLD; ignored in production. Re-check every 5 s (default 1 h).
       DOMAINS_DNS_MOCK: ${DOMAINS_DNS_MOCK:-redis}
       DOMAINS_RECHECK_INTERVAL_MS: ${DOMAINS_RECHECK_INTERVAL_MS:-5000}
+      # The app purge every 5 s (default 1 h), 45 days after a delete (default
+      # 30): past the 31-day shift of the slug-release e2e.
+      APP_PURGE_AFTER_DAYS: ${APP_PURGE_AFTER_DAYS:-45}
+      APP_PURGE_INTERVAL_MS: ${APP_PURGE_INTERVAL_MS:-5000}
       DOMAINS_MAX_PER_APP: ${DOMAINS_MAX_PER_APP:-3}
       TLS_ASK_TOKEN: ${TLS_ASK_TOKEN:-dev-only-tls-ask-token-0123456789abcdef}
     extra_hosts:

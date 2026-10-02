@@ -75,6 +75,7 @@ const SUMMARIES: Record<string, Summarize> = {
   'deploy.rollback': () => 'Rolled back to an earlier deploy (earlier upload pipeline)',
   'app.delete': () => 'Deleted the app',
   'app.slug_release': () => 'Released the deleted app’s address for reuse',
+  'app.purge': () => 'Deleted the app’s versions and data for good',
   'app.lock.release': () => 'Released the agent’s edit lock on the app',
   'app.visibility.public': () => 'Made the app public (no password)',
   'app.visibility.password': (m) =>
@@ -241,8 +242,8 @@ export function activityRefs(e: ActivityEvent): ActivityRef[] {
   const appId = str(m, 'app_id') ?? str(m, 'appId');
   switch (e.subjectType) {
     case 'app': {
-      // A released slug's app was renamed to its tombstone: nothing to link.
-      if (e.action === 'app.slug_release') return [];
+      // A released slug's app was renamed to its tombstone, a purged one is gone: nothing to link.
+      if (e.action === 'app.slug_release' || e.action === 'app.purge') return [];
       const refs: ActivityRef[] = [{ kind: 'app', slug: subject!, appId }];
       const key = VERSION_KEY[e.action];
       const n = key ? num(m, key) : null;

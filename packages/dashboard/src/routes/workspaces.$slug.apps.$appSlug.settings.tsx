@@ -183,7 +183,11 @@ export default function AppSettingsRoute() {
               <li>removes it from the dashboard and from your agents;</li>
               <li>stops its published, preview and saved-version links immediately;</li>
               <li>
-                keeps <code style={s.mono}>{header.slug}</code> reserved for {settings.slugReleaseDays} days, then lets other apps take it.
+                keeps <code style={s.mono}>{header.slug}</code> reserved for {settings.slugReleaseDays} days, then lets other apps take it;
+              </li>
+              <li data-testid="delete-purge-note" data-purge-days={settings.purgeDays}>
+                deletes its versions, data, form submissions, end users, uploads, domains and settings for good after{' '}
+                {settings.purgeDays} days. A deleted app cannot be restored; the workspace activity keeps its entries.
               </li>
             </ul>
             <Form method="post">

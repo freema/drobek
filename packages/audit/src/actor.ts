@@ -89,6 +89,8 @@ export const AUDIT_ACTIONS = {
   appDelete: 'app.delete',
   /** A deleted app's slug was released (system; renamed to its tombstone). */
   appSlugRelease: 'app.slug_release',
+  /** A deleted app was deleted for good, APP_PURGE_AFTER_DAYS after the delete (system). */
+  appPurge: 'app.purge',
   /** A member removed an agent's single-writer lease (meta: the previous holder). */
   appLockRelease: 'app.lock.release',
   /** The app was made public (no password gate). */

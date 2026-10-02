@@ -403,6 +403,7 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `LOGS_PRUNE_INTERVAL_MS` | 3600000 | how often the server removes `get_logs` rows past their retention for every app (errors past the buffer above, compiles and daily request stats older than 30 days) |
 | `DROBEK_MIGRATE_ON_START` | 1 | `0` = the server does not apply migrations on start (tests, tooling) |
 | `AUDIT_RETENTION_DAYS` | 365 | audit rows older than this are pruned daily |
+| `APP_PURGE_AFTER_DAYS` / `APP_PURGE_INTERVAL_MS` | 30 / 3600000 | a deleted app is deleted for good this many days after the delete — its versions, module data (records, form submissions, end users and their sessions, uploads), domains, assets, logs and statistics; audit rows stay until `AUDIT_RETENTION_DAYS` — and how often the purge runs. Below 30 the app's address is free from the purge on, not after 30 days |
 | `APPS_MAX_PER_WORKSPACE` | 50 | live apps per workspace (deleted ones do not count); `create_app` beyond it answers `limit_exceeded` *(plan)* |
 | `ASSETS_DIR` | `/data/assets` *(compose)* | app asset storage (the `assets_data` volume) |
 | `APP_ASSET_MAX_BYTES` / `APP_ASSETS_QUOTA` | 104857600 / 1073741824 | one app asset (100 MiB) / all assets of one app (1 GiB); `asset_too_large` / `asset_quota_exceeded` *(plan)*. An upload must arrive within Node's 300 s request timeout |

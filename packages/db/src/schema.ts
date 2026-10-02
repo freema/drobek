@@ -169,7 +169,9 @@ export const apps = pgTable(
      * Soft delete: a deleted app is
      * invisible everywhere (dashboard, MCP, app hosts). It keeps its slug for
      * 30 days; then @drobek/apps renames it to the tombstone
-     * `<slug>~deleted-<id>` so a new app can take the slug.
+     * `<slug>~deleted-<id>` so a new app can take the slug. APP_PURGE_AFTER_DAYS
+     * (30) after the delete the purge deletes the row, and every row that
+     * references it goes with it (ON DELETE CASCADE / SET NULL).
      */
     deletedAt: timestamp('deleted_at'),
     /**
@@ -267,7 +269,7 @@ export const appVersions = pgTable(
       .$defaultFn(() => createId()),
     appId: text('app_id')
       .notNull()
-      .references(() => apps.id),
+      .references(() => apps.id, { onDelete: 'cascade' }),
     number: integer('number').notNull(),
     createdByUserId: text('created_by_user_id').references(() => users.id),
     /** agent (MCP) vs user (dashboard) — server-derived, like audit_log. */
@@ -529,7 +531,7 @@ export const appErrors = pgTable(
       .$defaultFn(() => createId()),
     appId: text('app_id')
       .notNull()
-      .references(() => apps.id),
+      .references(() => apps.id, { onDelete: 'cascade' }),
     type: appErrorTypeEnum('type').notNull(),
     /** Sanitized (redacted + truncated) error message. */
     message: text('message').notNull(),
@@ -563,7 +565,7 @@ export const appDailyStats = pgTable(
   {
     appId: text('app_id')
       .notNull()
-      .references(() => apps.id),
+      .references(() => apps.id, { onDelete: 'cascade' }),
     day: text('day').notNull(),
     path404Counts: jsonb('path_404_counts')
       .$type<Record<string, number>>()

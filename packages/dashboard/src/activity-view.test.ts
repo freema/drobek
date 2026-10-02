@@ -32,6 +32,7 @@ describe('activitySummary', () => {
     );
     expect(activitySummary(ev('domain.add', 'domain', 'shop.example.com', { app: 'x' }))).toBe('Added the custom domain shop.example.com');
     expect(activitySummary(ev('app.gallery_unlisted', 'app', 'x', { reason: 'takedown' }))).toContain('taken down');
+    expect(activitySummary(ev('app.purge', 'app', 'x', { appId: 'app_0' }))).toBe('Deleted the app’s versions and data for good');
   });
 
   it('reads a scheduled import run and a resume', () => {
@@ -137,6 +138,7 @@ describe('activityRefs + resolveActivityRefs', () => {
     expect(links(ev('app.create', 'app', 'reused'))).toEqual([{ label: 'reused', href: null, note: 'app deleted' }]);
     expect(links(ev('domain.add', 'domain', 'a.example.com', { app: 'pokedex', app_id: 'app_other' }))[0].href).toBeNull();
     expect(links(ev('app.slug_release', 'app', 'pokedex', { appId: 'app_0' }))).toEqual([]);
+    expect(links(ev('app.purge', 'app', 'pokedex', { appId: 'app_0' }))).toEqual([]);
   });
 
   it('links members and account pages only where the viewer may open them', () => {

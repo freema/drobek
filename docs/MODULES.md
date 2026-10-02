@@ -441,8 +441,9 @@ declarations), like `@drobek/sdk`'s.
 Hooks run after `create_app` stored version 1, after a version was published
 (MCP or dashboard) and after the app was deleted (`onAppDelete`, the
 dashboard's delete: soft-deleted, its hosts answer 404 — the place to clean
-up what the module keeps outside the database). They are best effort: a
-failure is logged and never fails the call. `services` is
+up what the module keeps outside the database; its rows go with the app
+purge `APP_PURGE_AFTER_DAYS` later, through `ON DELETE CASCADE`). They are
+best effort: a failure is logged and never fails the call. `services` is
 `{ db, log, contributions }` (see [Slots](#slots)).
 
 The contract fields of 1.1:
@@ -722,7 +723,12 @@ migrations (`DROBEK_MIGRATE_ON_START=0` turns both off). Conventions:
   module from `DROBEK_MODULES_DIR` the [migration lint](#installing-an-external-module)
   enforces it;
 - every per-app row references `apps(id)` with `ON DELETE CASCADE`, so deleting
-  an app deletes its module data;
+  an app deletes its module data: a delete in the dashboard is a soft delete,
+  and `APP_PURGE_AFTER_DAYS` (30) later the app purge deletes the `apps` row
+  and, through the cascade, every module row of the app (the built-in
+  modules' records, form submissions, end users with their identities,
+  uploads and sync state). A reference without `ON DELETE` blocks the purge of
+  that app: the server logs it and retries it on every run;
 - a handler always filters by `ctx.app.id`.
 
 ### Module e-mail
@@ -1878,6 +1884,9 @@ auth module:
 - the app's epoch `drobek:eu-epoch:<app_id>`: a session whose epoch differs is
   dead. Raising it signs every user of the app out on every host of the app
   (preview, production, version hosts);
+- the app purge (`APP_PURGE_AFTER_DAYS` after a delete) removes the app's
+  session records and its epoch (`forgetEndUserSessions`, one `SCAN` pass per
+  run), after the user rows went with the app;
 - **the record is never the principal on its own**: for every module request
   that carries a live session, core asks the module that owns end-user
   sessions (`endUsers.current`, the auth module) who the user is NOW, with
@@ -1899,6 +1908,7 @@ auth module:
   title, message, link? }`; a throw is a generic 500 page;
 - helpers: `createEndUserSession`, `loadEndUserSession`,
   `renewEndUserSession`, `destroyEndUserSession`, `revokeEndUserSessions`,
+  `forgetEndUserSessions`,
   `endUserCookieHeader`, `readEndUserToken`, `cookiePrincipalResolver({
   redis, secure, current })` (fails closed: any Redis error is an anonymous
   visitor).
@@ -2546,7 +2556,8 @@ people who use an app upload. `skill_info('files')`.
 - **Sweep** (`startFilesSweep`, run by the server's background jobs when
   `files` is active; every `FILES_SWEEP_INTERVAL_MS` = 1 h, one replica per
   interval via a Redis lease): removes the rows of apps deleted at least
-  `FILES_SWEEP_RETENTION_MS` (24 h) ago (an app delete is a soft delete),
+  `FILES_SWEEP_RETENTION_MS` (24 h) ago (an app delete is a soft delete;
+  the app purge removes any row left `APP_PURGE_AFTER_DAYS` after it),
   temp uploads `FILES_DIR/tmp/*.part` untouched for that long, and blobs
   older than that which no `mod_files` row of ANY app references — each
   under its per-sha256 advisory lock with a fresh reference count, the

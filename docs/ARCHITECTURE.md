@@ -101,7 +101,10 @@ This document is the map of how that works. The neighbours:
   (a host label; `--` is not allowed in a slug, so the preview and version
   host names never collide with another app). `create_app` picks a free slug
   and falls back to `<name>-<4 hex>`. A deleted app keeps its slug for 30
-  days, then the slug is released.
+  days, then the slug is released. `APP_PURGE_AFTER_DAYS` (30) after the
+  delete the app is deleted for good: its row and every row that references
+  it (versions, module data, end users, uploads, domains, assets, logs,
+  statistics) go; audit rows stay until their own retention.
 - A **version** is an immutable, numbered snapshot of the app's files
   (`app_versions` + `version_files`): the sources the agent wrote AND the
   compiled output, plus who made it, the agent's one-line `reasoning` and the
@@ -426,6 +429,7 @@ All in-process (`apps/server/server/jobs.ts`), started with the server:
 | --- | --- | --- |
 | blob GC | hourly, Redis lease | deletes blobs no version references, after 7 days |
 | slug release | hourly, Redis lease | a soft-deleted app's slug is free again after 30 days |
+| app purge | `APP_PURGE_INTERVAL_MS` (1 h), Redis lease | deletes an app deleted `APP_PURGE_AFTER_DAYS` (30) ago for good, one app per transaction: the `apps` row and through `ON DELETE CASCADE` its versions (their blobs go with the blob GC), module configs and secrets, domains, asset rows, gallery likes and opens, logs and statistics, and the module tables (records, form submissions, end users and identities, uploads, sync state); abuse reports and duplicates keep their rows without the reference; its id leaves `upstreams.allowed_app_ids`, its asset directory and end-user sessions go; audited `app.purge`. An app a foreign key without `ON DELETE` holds is logged and retried every run (`@drobek/apps`) |
 | domain re-check | `DOMAINS_RECHECK_INTERVAL_MS` (1 h), Redis lease | re-verifies domains checked more than 24 h ago; unverifies + mails on a definitive failure |
 | files sweep (only with the `files` module) | `FILES_SWEEP_INTERVAL_MS` (1 h), Redis lease | removes the uploads of apps deleted `FILES_SWEEP_RETENTION_MS` (24 h) ago, stale temp uploads and blobs no `mod_files` row references (`drobek-module-files`) |
 | assets sweep | hourly, Redis lease | removes the asset files and rows of apps deleted 24 h ago, stale temp uploads and files neither the draft (`app_assets`) nor a kept published set (`app_version_assets`) references (`@drobek/apps`) |

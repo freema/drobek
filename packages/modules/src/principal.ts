@@ -179,6 +179,33 @@ export async function revokeEndUserSessions(redis: Pick<EndUserRedis, 'incr'>, a
   return redis.incr(endUserEpochKey(appId));
 }
 
+/** The Redis subset `forgetEndUserSessions` uses (ioredis-compatible). */
+export interface EndUserScanRedis {
+  scan(cursor: string, match: 'MATCH', pattern: string, count: 'COUNT', n: number): Promise<[string, string[]]>;
+  del(...keys: string[]): Promise<number>;
+}
+
+const SESSION_SCAN_COUNT = 1000;
+
+/**
+ * Remove the session records and the epoch of every app in `appIds` — apps
+ * deleted for good (the app purge) → the number of keys removed. One SCAN
+ * pass over the session keys serves all of them.
+ */
+export async function forgetEndUserSessions(redis: EndUserScanRedis, appIds: readonly string[]): Promise<number> {
+  if (appIds.length === 0) return 0;
+  const ids = new Set(appIds);
+  let removed = await redis.del(...appIds.map(endUserEpochKey));
+  let cursor = '0';
+  do {
+    const [next, keys] = await redis.scan(cursor, 'MATCH', endUserSessionKey('*', '*'), 'COUNT', SESSION_SCAN_COUNT);
+    cursor = next;
+    const gone = keys.filter((k) => ids.has(k.split(':')[2] ?? ''));
+    if (gone.length > 0) removed += await redis.del(...gone);
+  } while (cursor !== '0');
+  return removed;
+}
+
 /** Resolves the caller of one request on one app. */
 export type PrincipalResolver = (input: { app: HookApp; cookieHeader: string | null }) => Promise<Principal>;
 

@@ -4,8 +4,9 @@
  *   1. apps deleted more than ASSETS_SWEEP_RETENTION_MS (24 h) ago: their
  *      `app_assets` and `app_version_assets` rows and their directory
  *      `ASSETS_DIR/<app_id>/` go
- *      (a soft delete never fires the FK cascade; serving stopped at the
- *      delete — a deleted app has no host);
+ *      (a soft delete fires the FK cascade only with the app purge,
+ *      APP_PURGE_AFTER_DAYS later; serving stopped at the delete — a deleted
+ *      app has no host);
  *   2. temp uploads (`ASSETS_DIR/tmp/*.part`) older than the retention —
  *      what a crash mid-upload left behind;
  *   3. files in an app directory that neither the draft nor a kept published
