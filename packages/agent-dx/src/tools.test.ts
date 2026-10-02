@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { TOOL_DOCS, TOOL_NAMES, toolDoc } from './tools.js';
 
 describe('TOOL_DOCS manifest', () => {
-  it('documents exactly the 31 tools, in tools/list order', () => {
+  it('documents exactly the 36 tools, in tools/list order', () => {
     expect(TOOL_NAMES).toEqual([
       'list_apps',
       'create_app',
@@ -21,6 +21,11 @@ describe('TOOL_DOCS manifest', () => {
       'skill_info',
       'configure_module',
       'query_data',
+      'create_records',
+      'update_record',
+      'delete_record',
+      'delete_collection',
+      'purge_orphan_records',
       'get_logs',
       'sync_now',
       'create_asset_upload',
@@ -79,6 +84,11 @@ describe('TOOL_DOCS manifest', () => {
       skill_info: [true, false, true, false],
       configure_module: [false, true, true, false], // the same merge patch again answers unchanged
       query_data: [true, false, true, false],
+      create_records: [false, false, false, false], // new records on every call
+      update_record: [false, true, true, false], // overwrites fields; the same fields again change nothing
+      delete_record: [false, true, true, false], // a second delete answers not_found
+      delete_collection: [false, true, true, false], // records + declaration gone; a second call answers not_found
+      purge_orphan_records: [false, true, true, false], // a second call finds nothing to purge
       get_logs: [true, false, true, false],
       sync_now: [false, true, false, true], // replace mode swaps the collection's records; calls the app's external API
       create_asset_upload: [false, false, false, false], // a new single-use URL on every call; the PUT stores
@@ -188,6 +198,30 @@ describe('TOOL_DOCS manifest', () => {
     expect(toolDoc('release_lease').description).toMatch(/Only your own lease/);
     expect(toolDoc('release_lease').fields.map((f) => f.name)).toEqual(['app_id']);
     expect(toolDoc('get_app').returns).toContain('visibility:"public"|"password", frame_ancestors:string|null');
+  });
+
+  it("the data write tools mirror the Data tab (write scope, editor+); deleting a collection or orphans needs the user's yes", () => {
+    const names = ['create_records', 'update_record', 'delete_record', 'delete_collection', 'purge_orphan_records'];
+    expect(TOOL_NAMES.slice(TOOL_NAMES.indexOf('query_data') + 1, TOOL_NAMES.indexOf('query_data') + 6)).toEqual(names);
+    for (const name of names) {
+      const doc = toolDoc(name);
+      expect(doc.scope, name).toMatch(/^write \(editor\+/);
+      expect(doc.description, name).toMatch(/app_locked_by_admin/);
+      expect(doc.description, name).toMatch(/Audited with you as the actor/);
+    }
+    for (const name of ['delete_collection', 'purge_orphan_records']) {
+      const doc = toolDoc(name);
+      expect(doc.description, name).toMatch(/user_confirmed: true/);
+      expect(doc.description, name).toMatch(/ONLY after the user explicitly said yes/);
+      expect(doc.fields.at(-1)?.name, name).toBe('user_confirmed');
+    }
+    expect(toolDoc('create_records').description).toMatch(/1–500 records per call, stored ALL OR NOTHING/);
+    expect(toolDoc('create_records').fields.map((f) => f.name)).toEqual(['app_id', 'collection', 'records']);
+    expect(toolDoc('update_record').description).toMatch(/MERGED onto the stored fields/);
+    expect(toolDoc('update_record').fields.map((f) => f.name)).toEqual(['app_id', 'collection', 'id', 'fields', 'replace']);
+    expect(toolDoc('delete_record').fields.map((f) => f.name)).toEqual(['app_id', 'collection', 'id']);
+    expect(toolDoc('delete_collection').description).toMatch(/single-writer lease/);
+    expect(toolDoc('purge_orphan_records').fields.map((f) => f.name)).toEqual(['app_id', 'collection', 'user_confirmed']);
   });
 
   it('publish is documented as explicit-request only, with the publish scope', () => {

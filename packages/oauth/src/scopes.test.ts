@@ -67,6 +67,11 @@ const WRITE_TOOLS = [
   'set_frame_ancestors',
   'release_lease',
   'delete_app',
+  'create_records',
+  'update_record',
+  'delete_record',
+  'delete_collection',
+  'purge_orphan_records',
 ];
 const PUBLISH_TOOLS = ['unpublish', 'set_visibility', 'publish', 'set_gallery_listing', 'set_primary_domain', 'set_workspace_publishing'];
 
@@ -112,6 +117,12 @@ describe('tool → scope table', () => {
     expect(toolAllowed(['read', 'write'], 'unpublish')).toBe(false);
     expect(toolAllowed(['read', 'write'], 'set_visibility')).toBe(false);
     expect(toolAllowed(['read', 'write'], 'set_gallery_listing')).toBe(false);
+    // The owner's data edits are write, like the dashboard's Data tab; reading stays read.
+    for (const t of ['create_records', 'update_record', 'delete_record', 'delete_collection', 'purge_orphan_records'] as const) {
+      expect(toolAllowed(['write'], t), t).toBe(true);
+      expect(toolAllowed(['read', 'publish'], t), t).toBe(false);
+    }
+    expect(toolAllowed(['write'], 'query_data')).toBe(false);
     // Add/verify/remove a domain are write; the primary domain is publish.
     expect(toolAllowed(['read', 'write'], 'remove_domain')).toBe(true);
     expect(toolAllowed(['read', 'write'], 'set_primary_domain')).toBe(false);

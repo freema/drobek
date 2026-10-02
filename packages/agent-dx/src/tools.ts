@@ -15,6 +15,7 @@
  * the drobek skill (skills/drobek) in the SAME PR, and the plugin skills +
  * scripts/check-drobek.mjs in freema/drobek-plugin.
  */
+import { CREATE_RECORDS_MAX } from './limits.js';
 
 /** One input field of a tool, described for a human/agent reader. */
 export interface ToolField {
@@ -366,6 +367,93 @@ export const TOOL_DOCS: ToolDoc[] = [
     ],
     returns: 'text only, untrusted:true — `<untrusted-app-data app_id collection total next_cursor nonce>`, the records as JSON [{ _id, _owner, _created_at, _updated_at, …fields }], `</untrusted-app-data nonce>`',
     example: { app_id: 'k3v9x0…', collection: 'todos', filter: { done: false }, limit: 20 },
+  },
+  {
+    name: 'create_records',
+    title: 'Add records to a collection',
+    scope: 'write (editor+ role in the workspace)',
+    description:
+      `Store new records in a collection of the app's data module as the app's owner — what the dashboard's Data tab does: the collection's end-user rules do not apply and the records get no \`_owner\`. Use it when the user asks for sample, seed or test data, or for a record added by hand. 1–${CREATE_RECORDS_MAX} records per call, stored ALL OR NOTHING: every record is checked against the collection's schema (invalid_params with \`index\` — the first bad record, 0-based — and \`issues[]\` with its field paths), the per-record size and the app's quotas (limit_exceeded with \`limit\` naming the data module's limit and \`value\`; skill_info('data') lists them) before anything is stored; any failure stores nothing. Split a bigger batch into several calls. Keys starting with \`_\` are dropped. Owner writes skip the app's write rate limit, never a quota. Only declared collections exist — anything else answers not_found with \`available\` (declare one with configure_module('data') first). Audited with you as the actor; a taken-down app answers app_locked_by_admin.`,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    fields: [
+      { name: 'app_id', type: 'string', required: true, description: 'The app id.' },
+      { name: 'collection', type: 'string', required: true, description: 'A collection the app\'s data config declares.' },
+      {
+        name: 'records',
+        type: `object[] (1–${CREATE_RECORDS_MAX})`,
+        required: true,
+        description: 'The new records, each a JSON object of its fields; stored all or nothing.',
+      },
+    ],
+    returns: '{ app_id, collection, created, ids:[string] (the new records\' _id, in the given order), note }',
+    example: { app_id: 'k3v9x0…', collection: 'todos', records: [{ title: 'Buy milk', done: false }, { title: 'Call Ana', done: true }] },
+  },
+  {
+    name: 'update_record',
+    title: 'Change a record',
+    scope: 'write (editor+ role in the workspace)',
+    description:
+      'Change one stored record of a collection as the app\'s owner — the dashboard\'s record editor (the end-user rules do not apply; `_owner` and `_created_at` stay). By default `fields` are MERGED onto the stored fields like the SDK\'s update: only the keys you send change, null stores null. `replace: true` makes the record\'s own fields exactly `fields` instead — the way to drop a field; read the record with query_data first. The result is checked against the collection\'s schema (invalid_params with `issues[]`) and the quotas (limit_exceeded). An unknown record or collection answers not_found. Audited with you as the actor; a taken-down app answers app_locked_by_admin.',
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    fields: [
+      { name: 'app_id', type: 'string', required: true, description: 'The app id.' },
+      { name: 'collection', type: 'string', required: true, description: 'The record\'s collection.' },
+      { name: 'id', type: 'string', required: true, description: 'The record\'s `_id` (query_data lists them).' },
+      { name: 'fields', type: 'object', required: true, description: 'The fields to change (merged), or with replace: true all of its own fields.' },
+      { name: 'replace', type: 'boolean (optional)', required: false, description: 'true: the own fields become exactly `fields`; default false = merge.' },
+    ],
+    returns: '{ app_id, collection, id, replaced, updated_at, note }',
+    example: { app_id: 'k3v9x0…', collection: 'todos', id: 'q7m2…', fields: { done: true } },
+  },
+  {
+    name: 'delete_record',
+    title: 'Delete a record',
+    scope: 'write (editor+ role in the workspace)',
+    description:
+      'Delete one stored record of a collection for good, as the app\'s owner — the dashboard\'s Delete on the Data tab (the end-user rules do not apply). Delete only records the user asked you to remove. An unknown record or collection answers not_found. Audited with you as the actor; a taken-down app answers app_locked_by_admin.',
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    fields: [
+      { name: 'app_id', type: 'string', required: true, description: 'The app id.' },
+      { name: 'collection', type: 'string', required: true, description: 'The record\'s collection.' },
+      { name: 'id', type: 'string', required: true, description: 'The record\'s `_id` (query_data lists them).' },
+    ],
+    returns: '{ app_id, collection, id, deleted:true }',
+    example: { app_id: 'k3v9x0…', collection: 'todos', id: 'q7m2…' },
+  },
+  {
+    name: 'delete_collection',
+    title: 'Delete a collection',
+    scope: 'write (editor+ role in the workspace)',
+    description:
+      'Delete a collection of the app\'s data module — the dashboard\'s Delete collection: every record in it and its declaration in the data config (rules and schema) go in one step, and the app\'s calls to it answer 404 afterwards. It cannot be undone, so it needs `user_confirmed: true` — set it ONLY after the user explicitly said yes to deleting exactly this collection with its records; without it the answer is user_confirmation_required (with the record count) and nothing changes. Never delete a collection on your own initiative. The user\'s yes is the confirmation here; removing a collection that holds records through configure_module waits for the owner in the dashboard instead. Takes the app\'s single-writer lease like configure_module. An undeclared collection answers not_found with `available`. Audited with you as the actor; a taken-down app answers app_locked_by_admin.',
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    fields: [
+      { name: 'app_id', type: 'string', required: true, description: 'The app id.' },
+      { name: 'collection', type: 'string', required: true, description: 'A collection the app\'s data config declares.' },
+      {
+        name: 'user_confirmed',
+        type: 'boolean',
+        required: false,
+        description: 'true ONLY after the user explicitly said yes to deleting this collection and its records.',
+      },
+    ],
+    returns: '{ app_id, collection, deleted_records, note }',
+    example: { app_id: 'k3v9x0…', collection: 'drafts', user_confirmed: true },
+  },
+  {
+    name: 'purge_orphan_records',
+    title: 'Purge orphan records',
+    scope: 'write (editor+ role in the workspace)',
+    description:
+      'Delete the app\'s orphan records — the dashboard\'s "Orphan records" on the Data tab: records of collections the data config no longer declares (a write that landed while its collection was being removed). No view shows them, yet they count towards the app\'s quotas. Without `collection` it purges every orphan collection, with it only that one (a declared collection answers invalid_params — that is delete_collection). It needs `user_confirmed: true` — set it ONLY after the user explicitly said yes; without it the answer is user_confirmation_required with the `orphans` (name and record count) and nothing changes. An app without orphan records answers `purged: []` (nothing to confirm). Audited with you as the actor; a taken-down app answers app_locked_by_admin.',
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    fields: [
+      { name: 'app_id', type: 'string', required: true, description: 'The app id.' },
+      { name: 'collection', type: 'string (optional)', required: false, description: 'One orphan collection; omitted = every orphan collection.' },
+      { name: 'user_confirmed', type: 'boolean', required: false, description: 'true ONLY after the user explicitly said yes to purging these orphan records.' },
+    ],
+    returns: '{ app_id, purged:[{ name, records }], note }',
+    example: { app_id: 'k3v9x0…', user_confirmed: true },
   },
   {
     name: 'get_logs',

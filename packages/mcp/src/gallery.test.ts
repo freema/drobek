@@ -227,7 +227,7 @@ describe('set_gallery_listing', () => {
       await c.call('write_files', { app_id: app.app_id, files: [{ path: 'src/a.ts', content: 'export {}' }], reasoning: 'x' });
       await c.call('publish', { app_id: app.app_id });
       expect(await listedRow(app.app_id)).toMatchObject({ listed: false });
-      // Of every tool, only set_gallery_listing takes a gallery argument (the lifecycle, domain and upstream tools' user_confirmed is theirs).
+      // Of every tool, only set_gallery_listing takes a gallery argument (the lifecycle, data, domain and upstream tools' user_confirmed is theirs).
       const tools = (await c.client.listTools()).tools;
       const withGallery = tools.filter((t) =>
         Object.keys((t.inputSchema.properties ?? {}) as object).some((k) => /listed|gallery/i.test(k))
@@ -239,6 +239,8 @@ describe('set_gallery_listing', () => {
         'unpublish',
         'set_visibility',
         'delete_app',
+        'delete_collection',
+        'purge_orphan_records',
         'set_primary_domain',
         'remove_domain',
         'remove_upstream',

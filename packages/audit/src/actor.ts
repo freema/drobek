@@ -107,9 +107,11 @@ export const AUDIT_ACTIONS = {
   domainPrimary: 'domain.primary',
   /** An owner removed a custom domain (Caddy's certificate expires on its own). */
   domainRemove: 'domain.remove',
-  /** The owner edited a record in the dashboard Data tab (collection + id, never values). */
+  /** The owner (or their agent, create_records) added records to a collection (collection + count, never values). */
+  dataRecordCreate: 'data.record_create',
+  /** The owner edited a record in the dashboard Data tab, or their agent with update_record (collection + id, never values). */
   dataRecordUpdate: 'data.record_update',
-  /** The owner deleted a record in the dashboard Data tab. */
+  /** The owner deleted a record in the dashboard Data tab, or their agent with delete_record. */
   dataRecordDelete: 'data.record_delete',
   /** The owner imported a CSV into a collection (collection + row count). */
   dataImport: 'data.import',

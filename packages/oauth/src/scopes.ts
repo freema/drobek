@@ -15,7 +15,10 @@
  *             add, verify and remove custom domains, register and
  *             remove proxy upstreams without a secret, set which sites may
  *             embed an app, release one's own write lease and delete an app
- *             (`set_frame_ancestors`, `release_lease`, `delete_app`).
+ *             (`set_frame_ancestors`, `release_lease`, `delete_app`), and
+ *             change an app's stored data as its owner (`create_records`,
+ *             `update_record`, `delete_record`, `delete_collection`,
+ *             `purge_orphan_records`).
  *   publish — make a version live at its public URL (the `publish` tool),
  *             take it offline again (`unpublish`), choose who can open it
  *             (`set_visibility`), list it in the public gallery
@@ -108,6 +111,12 @@ export const TOOL_SCOPES = {
   set_frame_ancestors: 'write',
   release_lease: 'write',
   delete_app: 'write',
+  // The owner's edits of an app's stored data, like the dashboard's Data tab (editor+).
+  create_records: 'write',
+  update_record: 'write',
+  delete_record: 'write',
+  delete_collection: 'write',
+  purge_orphan_records: 'write',
   // Taking the production address offline and opening an app to everyone are public exposure, like publishing.
   unpublish: 'publish',
   set_visibility: 'publish',

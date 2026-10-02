@@ -25,6 +25,7 @@ export {
 export { ERROR_CATALOGUE, errorDoc, errorHint, type ErrorDoc } from './errors-catalogue.js';
 export {
   APP_LOCK_TTL_SEC,
+  CREATE_RECORDS_MAX,
   LIMITS,
   REASONING_MAX_CHARS,
   WRITE_FILES_EDITS_MAX,

@@ -26,8 +26,11 @@ const ALL_TOOLS = [
   'configure_module',
   'create_app',
   'create_asset_upload',
+  'create_records',
   'delete_app',
   'delete_asset',
+  'delete_collection',
+  'delete_record',
   'duplicate_app',
   'get_app',
   'get_logs',
@@ -35,6 +38,7 @@ const ALL_TOOLS = [
   'list_assets',
   'list_domains',
   'list_upstreams',
+  'purge_orphan_records',
   'query_data',
   'read_file',
   'register_upstream',
@@ -45,6 +49,7 @@ const ALL_TOOLS = [
   'set_frame_ancestors',
   'skill_info',
   'sync_now',
+  'update_record',
   'verify_domain',
   'write_files',
 ];
@@ -62,6 +67,10 @@ const IDEMPOTENT_WRITES = new Set([
   'set_frame_ancestors',
   'release_lease',
   'delete_app',
+  'update_record',
+  'delete_record',
+  'delete_collection',
+  'purge_orphan_records',
 ]);
 
 const TEMPLATE_FILES = ['drobek.json', 'index.html', 'src/main.tsx', 'src/styles.css'];
@@ -172,7 +181,7 @@ test('core tools: create → broken write → fix → limits → restore → rea
       expect(t.title ?? t.annotations?.title, `${t.name} title`).toBeTruthy();
       expect(t.annotations?.readOnlyHint, `${t.name} readOnlyHint`).toBe(READ_TOOLS.has(t.name));
       expect(t.annotations?.openWorldHint, `${t.name} openWorldHint`).toBe(OPEN_WORLD_TOOLS.has(t.name));
-      // Explicit idempotentHint — reads, configure_module, delete_asset, the domain/upstream tools and the app settings/lease/delete tools repeat safely; create/write/restore/upload URLs do not.
+      // Explicit idempotentHint — reads, configure_module, delete_asset, the domain/upstream tools, the app settings/lease/delete tools and the record update/delete tools repeat safely; create/write/restore/upload URLs and create_records do not.
       expect(t.annotations?.idempotentHint, `${t.name} idempotentHint`).toBe(READ_TOOLS.has(t.name) || IDEMPOTENT_WRITES.has(t.name));
     }
 

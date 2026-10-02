@@ -2,7 +2,7 @@
  * The MCP tool bodies: list_apps, create_app, get_app, read_file,
  * write_files, restore_version, publish, skill_info, configure_module,
  * query_data, get_logs, set_gallery_listing, duplicate_app and sync_now
- * (the app lifecycle tools are in lifecycle.ts).
+ * (the app lifecycle tools are in lifecycle.ts, the data write tools in data.ts).
  * Each takes the caller + validated arguments and returns a plain JSON payload or throws a ToolError; the MCP
  * wiring (register.ts) turns that into a CallToolResult.
  *
@@ -192,7 +192,8 @@ function skills(ctx: CallContext, enabled: ReadonlySet<string>): SkillListItem[]
 
 // ── leases ───────────────────────────────────────────────────────────────────
 
-async function takeLease(ctx: CallContext, appId: string): Promise<void> {
+/** Take (or renew) the app's single-writer lease for the caller's session; another user's lease → `app_locked`. */
+export async function takeLease(ctx: CallContext, appId: string): Promise<void> {
   const res = await ctx.deps.leases.acquire(
     appId,
     { userId: ctx.principal.userId, sessionId: ctx.sessionId },

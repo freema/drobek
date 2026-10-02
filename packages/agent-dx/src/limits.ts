@@ -22,6 +22,8 @@ export const WRITE_FILES_EDITS_MAX = 50;
 export const REASONING_MAX_CHARS = 300;
 /** The single-writer lease on an app, renewed by every write. */
 export const APP_LOCK_TTL_SEC = 180;
+/** create_records: max new records per call (all or nothing). */
+export const CREATE_RECORDS_MAX = 500;
 
 export const LIMITS: LimitDoc[] = [
   {
@@ -143,6 +145,11 @@ export const LIMITS: LimitDoc[] = [
     env: 'tool: write_files reasoning',
     default: `${REASONING_MAX_CHARS} characters`,
     meaning: 'Max length of the reasoning line.',
+  },
+  {
+    env: 'tool: create_records records',
+    default: String(CREATE_RECORDS_MAX),
+    meaning: 'Max new records per create_records call, stored all or nothing (more → invalid_params); the data module\'s quotas (records and bytes per app, bytes per record — skill_info(\'data\')) still apply.',
   },
   {
     env: 'tool: single-writer lease',

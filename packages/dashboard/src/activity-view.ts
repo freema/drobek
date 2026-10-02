@@ -129,6 +129,10 @@ const SUMMARIES: Record<string, Summarize> = {
     const c = str(m, 'collection');
     return `Exported ${c ? `the ${c} collection` : 'a collection'} as CSV${rows !== null ? ` (${plural(rows, 'row')})` : ''}`;
   },
+  'data.record_create': (m) => {
+    const n = num(m, 'records');
+    return `Added ${n !== null ? plural(n, 'record') : 'records'}${str(m, 'collection') ? ` to ${str(m, 'collection')}` : ''}`;
+  },
   'data.record_update': (m) => `Edited a record${str(m, 'collection') ? ` in ${str(m, 'collection')}` : ''}`,
   'data.record_delete': (m) => `Deleted a record${str(m, 'collection') ? ` from ${str(m, 'collection')}` : ''}`,
   'data.import': (m) => {

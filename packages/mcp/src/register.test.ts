@@ -1,5 +1,5 @@
 /**
- * tools/list snapshot: exactly the 30 tools of a user who is not a
+ * tools/list snapshot: exactly the 35 tools of a user who is not a
  * super-admin (a super-admin also gets set_workspace_publishing), in order,
  * with their titles, annotations and input schemas. Hand-written on purpose — a
  * change to the public tool surface must be a deliberate edit here.
@@ -30,7 +30,7 @@ async function listTools(allow?: (t: string) => boolean, superAdmin = false) {
 const RO = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 
 describe('tools/list', () => {
-  it('is exactly the 30 tools with their annotations and inputs (snapshot)', async () => {
+  it('is exactly the 35 tools with their annotations and inputs (snapshot)', async () => {
     const tools = await listTools();
     const snapshot = tools.map((t) => ({
       name: t.name,
@@ -190,6 +190,41 @@ describe('tools/list', () => {
         required: ['app_id', 'collection'],
       },
       {
+        name: 'create_records',
+        title: 'Add records to a collection',
+        annotations: { title: 'Add records to a collection', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        properties: ['app_id', 'collection', 'records'],
+        required: ['app_id', 'collection', 'records'],
+      },
+      {
+        name: 'update_record',
+        title: 'Change a record',
+        annotations: { title: 'Change a record', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+        properties: ['app_id', 'collection', 'id', 'fields', 'replace'],
+        required: ['app_id', 'collection', 'id', 'fields'],
+      },
+      {
+        name: 'delete_record',
+        title: 'Delete a record',
+        annotations: { title: 'Delete a record', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+        properties: ['app_id', 'collection', 'id'],
+        required: ['app_id', 'collection', 'id'],
+      },
+      {
+        name: 'delete_collection',
+        title: 'Delete a collection',
+        annotations: { title: 'Delete a collection', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+        properties: ['app_id', 'collection', 'user_confirmed'],
+        required: ['app_id', 'collection'],
+      },
+      {
+        name: 'purge_orphan_records',
+        title: 'Purge orphan records',
+        annotations: { title: 'Purge orphan records', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+        properties: ['app_id', 'collection', 'user_confirmed'],
+        required: ['app_id'],
+      },
+      {
         name: 'get_logs',
         title: "Read an app's logs",
         annotations: { title: "Read an app's logs", ...RO },
@@ -311,8 +346,8 @@ describe('tools/list', () => {
 
   it('a super-admin also gets set_workspace_publishing, last', async () => {
     const tools = await listTools(undefined, true);
-    expect(tools).toHaveLength(31);
-    const last = tools[30];
+    expect(tools).toHaveLength(36);
+    const last = tools[35];
     expect(last.name).toBe('set_workspace_publishing');
     expect(last.annotations).toEqual({
       title: 'Set a workspace\'s publishing',

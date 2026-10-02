@@ -49,6 +49,8 @@ export const TOOL_ERROR_CODES = [
   'dns_unavailable',
   // register_upstream.
   'upstream_already_registered',
+  // A data tool the server's records module does not support.
+  'unavailable',
   'internal_error',
 ] as const;
 

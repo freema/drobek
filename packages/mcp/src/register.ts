@@ -49,6 +49,7 @@ import {
   type ReadFileResult,
 } from './tools.js';
 import { createAssetUpload, deleteAssetTool, listAssetsTool } from './assets.js';
+import { createRecordsTool, deleteCollectionTool, deleteRecordTool, purgeOrphanRecordsTool, updateRecordTool } from './data.js';
 import { addDomainTool, listDomainsTool, removeDomainTool, setPrimaryDomainTool, verifyDomainTool } from './domains.js';
 import { deleteAppTool, releaseLeaseTool, setFrameAncestorsTool, setVisibilityTool, unpublishTool } from './lifecycle.js';
 import { listUpstreamsTool, registerUpstreamTool, removeUpstreamTool } from './upstreams.js';
@@ -74,6 +75,11 @@ export const APP_TOOL_NAMES = [
   'skill_info',
   'configure_module',
   'query_data',
+  'create_records',
+  'update_record',
+  'delete_record',
+  'delete_collection',
+  'purge_orphan_records',
   'get_logs',
   'sync_now',
   'create_asset_upload',
@@ -219,6 +225,41 @@ export const INPUT_SCHEMAS = {
     dir: z.string().optional().describe('"asc" or "desc" (default desc without sort, asc with one).'),
     limit: z.number().optional().describe('1–100 records, default 20.'),
     cursor: z.string().optional().describe('next_cursor of the previous page.'),
+  },
+  create_records: {
+    app_id: appId,
+    collection: z.string().describe('A collection the app\'s data config declares.'),
+    records: z
+      .array(z.record(z.string(), z.unknown()))
+      .describe('1–500 new records, each a JSON object of its fields (keys starting with _ are dropped); stored all or nothing.'),
+  },
+  update_record: {
+    app_id: appId,
+    collection: z.string().describe('The record\'s collection.'),
+    id: z.string().describe('The record\'s _id (query_data lists them).'),
+    fields: z.record(z.string(), z.unknown()).describe('The fields to change: merged onto the stored ones (only these keys change).'),
+    replace: z
+      .boolean()
+      .optional()
+      .describe('true: the record\'s own fields become exactly `fields` (drops the others); default false = merge.'),
+  },
+  delete_record: {
+    app_id: appId,
+    collection: z.string().describe('The record\'s collection.'),
+    id: z.string().describe('The record\'s _id (query_data lists them).'),
+  },
+  delete_collection: {
+    app_id: appId,
+    collection: z.string().describe('A collection the app\'s data config declares.'),
+    user_confirmed: z
+      .boolean()
+      .optional()
+      .describe('true ONLY after the user explicitly said yes to deleting this collection and its records.'),
+  },
+  purge_orphan_records: {
+    app_id: appId,
+    collection: z.string().optional().describe('One orphan collection; omitted = every orphan collection of the app.'),
+    user_confirmed: z.boolean().optional().describe('true ONLY after the user explicitly said yes to purging these orphan records.'),
   },
   get_logs: {
     app_id: appId,
@@ -507,6 +548,11 @@ export function registerAppTools(
   register('skill_info', skillInfo);
   register('configure_module', configureModule);
   register<{ app_id: string; collection: string }>('query_data', queryData, (p) => untrustedResult(untrustedDataEnvelope(p as QueryDataResult)));
+  register('create_records', createRecordsTool);
+  register('update_record', updateRecordTool);
+  register('delete_record', deleteRecordTool);
+  register('delete_collection', deleteCollectionTool);
+  register('purge_orphan_records', purgeOrphanRecordsTool);
   register<{ app_id: string; kind: string; since?: string }>('get_logs', getLogs, (p) => untrustedResult(untrustedLogsEnvelope(p as GetLogsResult)));
   register('sync_now', syncNow);
   register('create_asset_upload', createAssetUpload);

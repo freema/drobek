@@ -87,6 +87,7 @@ import type {
   RecordsCollection,
   RecordsPage,
   RecordsQuery,
+  RecordsUpdateOptions,
   RecordsView,
   ServerJobContext,
   SyncRun,
@@ -420,23 +421,26 @@ export interface BoundRecords {
   get(collection: string, id: string): Promise<Record<string, unknown> | null>;
   remove(collection: string, id: string): Promise<boolean>;
   csv(query: Omit<RecordsQuery, 'limit' | 'cursor'>): AsyncIterable<string>;
-  /** Replace a record's fields (owner edit); null when it does not exist. `unavailable` when the module cannot. */
-  update(collection: string, id: string, fields: Record<string, unknown>): Promise<Record<string, unknown> | null>;
+  /** Replace (or with `merge`, merge onto) a record's fields (owner edit); null when it does not exist. `unavailable` when the module cannot. */
+  update(collection: string, id: string, fields: Record<string, unknown>, opts?: RecordsUpdateOptions): Promise<Record<string, unknown> | null>;
+  /** All-or-nothing insert of new records (see RecordsAuthority.create). `unavailable` when the module cannot. */
+  create(collection: string, records: Record<string, unknown>[]): Promise<Record<string, unknown>[]>;
   /** All-or-nothing CSV import (see RecordsAuthority.importCsv). */
   importCsv(collection: string, csv: string): Promise<{ imported: number }>;
   /**
    * Delete a collection: its records and its declaration in the module's
    * config, in ONE transaction under the config lock; audited
-   * `data.collection_delete` (actor user).
+   * `data.collection_delete` (actor: the user, or their agent for `mcp`).
    */
-  dropCollection(collection: string, actorUserId: string): Promise<{ records: number }>;
+  dropCollection(collection: string, actorUserId: string, surface?: 'mcp' | 'web'): Promise<{ records: number }>;
   /** Collections with records but no declaration (orphans); [] when the module cannot tell. */
   orphans(): Promise<{ name: string; records: number }[]>;
   /**
    * Purge the records of an orphan collection, under the config lock (so it
-   * cannot be declared meanwhile); audited `data.collection.purge` (actor user).
+   * cannot be declared meanwhile); audited `data.collection.purge` (actor:
+   * the user, or their agent for `mcp`).
    */
-  purgeOrphan(collection: string, actorUserId: string): Promise<{ records: number }>;
+  purgeOrphan(collection: string, actorUserId: string, surface?: 'mcp' | 'web'): Promise<{ records: number }>;
 }
 
 /** The end users of one app (the module that declares `endUsers`, bound to the app's config). */
@@ -1068,7 +1072,7 @@ export class ModuleRuntime {
   /**
    * The app's records store (the module that declares `records`, e.g. data),
    * bound to the app's effective config — null when no active module stores
-   * records. For the OWNER's view (query_data, the dashboard): the caller has
+   * records. For the OWNER's view (query_data and the MCP data tools, the dashboard): the caller has
    * authorized a drobek account for the app already.
    */
   async records(app: HookApp): Promise<BoundRecords | null> {
@@ -1085,38 +1089,54 @@ export class ModuleRuntime {
       get: (collection, id) => r.get(view, collection, id),
       remove: (collection, id) => r.remove(view, collection, id),
       csv: (q) => r.csv(view, q),
-      update: async (collection, id, fields) => {
+      update: async (collection, id, fields, opts) => {
         if (!r.update) throw unsupported(m.name, 'editing records');
-        return r.update(view, collection, id, fields);
+        return r.update(view, collection, id, fields, opts);
+      },
+      create: async (collection, records) => {
+        if (!r.create) throw unsupported(m.name, 'adding records');
+        return r.create(view, collection, records);
       },
       importCsv: async (collection, csv) => {
         if (!r.importCsv) throw unsupported(m.name, 'importing CSV');
         return r.importCsv(view, collection, csv);
       },
-      dropCollection: async (collection, actorUserId) => {
+      dropCollection: async (collection, actorUserId, surface = 'web') => {
         const drop = r.dropCollection?.bind(r);
         if (!drop) throw unsupported(m.name, 'deleting collections');
-        return this.ownerConfigChange(m, app, actorUserId, async (config, tx) => {
-          const out = await drop(this.ownerView(app, config, tx), collection);
-          return {
-            patch: out.configPatch,
-            result: { records: out.records },
-            audit: { action: AUDIT_ACTIONS.dataCollectionDelete, meta: { module: m.name, collection, records: out.records } },
-          };
-        });
+        return this.ownerConfigChange(
+          m,
+          app,
+          actorUserId,
+          async (config, tx) => {
+            const out = await drop(this.ownerView(app, config, tx), collection);
+            return {
+              patch: out.configPatch,
+              result: { records: out.records },
+              audit: { action: AUDIT_ACTIONS.dataCollectionDelete, meta: { module: m.name, collection, records: out.records } },
+            };
+          },
+          surface
+        );
       },
       orphans: async () => (r.orphans ? r.orphans(view) : []),
-      purgeOrphan: async (collection, actorUserId) => {
+      purgeOrphan: async (collection, actorUserId, surface = 'web') => {
         const purge = r.purgeOrphan?.bind(r);
         if (!purge) throw unsupported(m.name, 'purging orphan collections');
-        return this.ownerConfigChange(m, app, actorUserId, async (config, tx) => {
-          const out = await purge(this.ownerView(app, config, tx), collection);
-          return {
-            patch: null,
-            result: { records: out.records },
-            audit: { action: AUDIT_ACTIONS.dataCollectionPurge, meta: { module: m.name, collection, records: out.records, orphan: true } },
-          };
-        });
+        return this.ownerConfigChange(
+          m,
+          app,
+          actorUserId,
+          async (config, tx) => {
+            const out = await purge(this.ownerView(app, config, tx), collection);
+            return {
+              patch: null,
+              result: { records: out.records },
+              audit: { action: AUDIT_ACTIONS.dataCollectionPurge, meta: { module: m.name, collection, records: out.records, orphan: true } },
+            };
+          },
+          surface
+        );
       },
     };
   }
@@ -1138,17 +1158,19 @@ export class ModuleRuntime {
   }
 
   /**
-   * An OWNER's change of module `m`'s config for `app` (the dashboard, never
-   * an agent): under the config lock, `fn` gets the effective config and the
-   * transaction, does its own writes in it and returns a merge patch (or
-   * null); the patched config must pass configSchema. No confirmation: the
-   * owner is the one who confirms. A pending agent change stays pending.
+   * An OWNER's change of module `m`'s config for `app` (the dashboard, or an
+   * agent's call the user explicitly confirmed — `surface: 'mcp'`): under the
+   * config lock, `fn` gets the effective config and the transaction, does its
+   * own writes in it and returns a merge patch (or null); the patched config
+   * must pass configSchema. No pending confirmation: the owner (or their
+   * explicit yes) is the confirmation. A pending agent change stays pending.
    */
   private async ownerConfigChange<T>(
     m: AnyModule,
     app: HookApp,
     actorUserId: string,
-    fn: (config: unknown, tx: DB) => Promise<{ patch: Record<string, unknown> | null; result: T; audit: { action: string; meta: Record<string, unknown> } }>
+    fn: (config: unknown, tx: DB) => Promise<{ patch: Record<string, unknown> | null; result: T; audit: { action: string; meta: Record<string, unknown> } }>,
+    surface: 'mcp' | 'web' = 'web'
   ): Promise<T> {
     return withLockedConfig(app.id, m.name, async (row, write, tx) => {
       const db = tx as unknown as DB;
@@ -1162,7 +1184,7 @@ export class ModuleRuntime {
         {
           workspaceId: app.workspaceId,
           actorUserId,
-          actorKind: actorKindForSurface('web'),
+          actorKind: actorKindForSurface(surface),
           action: out.audit.action,
           subjectType: 'app',
           target: app.slug,
