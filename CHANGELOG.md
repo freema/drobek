@@ -1,6 +1,6 @@
 # Changelog — drobek (core)
 
-## Unreleased
+## v0.7.4 — 2026-10-02
 
 ### Added
 - **Readiness warns about a missing description, a missing favicon and a link-preview image that is not an absolute URL** (NSO-415): apps went live without a meta description, a favicon or a usable link preview, because nothing pointed the agent at them. `write_files`, `publish`, `get_app` and the dashboard's "Before you publish" now list `missing_description` (index.html has no, or an empty, `<meta name="description">` in its head), `missing_favicon` (no `<link rel="icon">` in its head and no `favicon.ico` in the version; an uploaded favicon.ico counts once index.html links it) and `og_image_not_absolute` (an `og:image` / `twitter:image` of any page that is not an absolute `https://` URL, which link previews ignore), each with its fix. They are warnings: nothing is blocked, and drobek adds nothing to an app's pages. An app fresh from a template has the first two until the agent adds them.
