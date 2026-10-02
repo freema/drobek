@@ -48,6 +48,16 @@ for tool in docker task node npm curl openssl; do
 done
 [ -d "$ROOT/tests-e2e/node_modules/@modelcontextprotocol/sdk" ] || die "run pnpm install first (tests-e2e needs @modelcontextprotocol/sdk)"
 
+# `task` exports the checkout's dev .env (Taskfile dotenv); the machines of
+# the rehearsal are configured by their own .env.production only.
+if [ -f "$ROOT/.env" ]; then
+  while IFS='=' read -r key _; do
+    case "$key" in
+      [A-Za-z_]*) [ -z "${key//[A-Za-z0-9_]/}" ] && unset "$key" ;;
+    esac
+  done < "$ROOT/.env"
+fi
+
 RID="${REHEARSAL_ID:-$(openssl rand -hex 3)}"
 PROJECT_A="selfhost-$RID-a"
 PROJECT_B="selfhost-$RID-b"
