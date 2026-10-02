@@ -293,7 +293,7 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     code: 'build_error',
     surface: 'compile.errors[]',
     meaning: 'esbuild could not parse/transform a file (syntax error, invalid CSS/JSON, …).',
-    fix: 'Fix the file at the reported line/column. TypeScript types are stripped, not checked.',
+    fix: 'Fix the file at the reported line/column. A compile error is never a type error: the compiler strips TypeScript types, and type errors arrive as `type_error` warnings.',
   },
   {
     code: 'unresolved_import',

@@ -157,7 +157,7 @@ export function renderBriefing(opts: { limits?: Partial<BriefingLimits>; skills?
     '- A drobek app is a static web app. The server compiles your sources with esbuild on every write (it never runs them) and serves the result; there is no npm install and no build step of yours.',
     '- `index.html` is the entry page (other `*.html` files are served too). It loads `<script type="module" src="/main.js"></script>` and `<link rel="stylesheet" href="/main.css">`.',
     '- `src/main.tsx` (or `.ts` / `.jsx` / `.js`) is bundled into `/main.js`; CSS it imports (`import \'./styles.css\'`) becomes `/main.css`. More entry points: `"entries": ["src/admin.tsx"]` in drobek.json → `/admin.js`.',
-    '- JSX uses the automatic runtime (no `import React` needed). TypeScript types are stripped, not checked.',
+    '- JSX uses the automatic runtime (no `import React` needed). The compiler strips TypeScript types without checking them; the server type-checks a version that compiled in the background and `get_app` lists the errors as `type_error` warnings.',
     '- An app without `src/main.*` is plain HTML/CSS/JS served as written.',
     '',
     '## Hosts (every app is its own origin)',

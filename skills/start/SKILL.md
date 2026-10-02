@@ -111,7 +111,7 @@ pinned esm.sh URL, e.g. `"date-fns": "https://esm.sh/date-fns@4.1.0"`; `pkg/sub`
 ## 4. Rules and limits
 
 - `src/main.tsx|ts|jsx|js` → `/main.js` + imported CSS → `/main.css`; each `entries` file → `/<name>.js`. No
-  `src/main.*` = plain HTML served as written. JSX = automatic runtime (no `import React`); types stripped, NOT checked.
+  `src/main.*` = plain HTML served as written. JSX = automatic runtime (no `import React`); types stripped by the compiler, checked in the background (step 4).
 - Paths app-relative (`src/App.tsx`), no `/` prefix, no `..`. Text files only: .tsx .ts .jsx .js .mjs .css .json .html .txt .md
   .svg .webmanifest. Video, audio, images, fonts: `create_asset_upload` (an upload URL, never base64) → the preview serves it at `/<path>`, production after `publish`.
 - 1–20 changes per write, one write ≤ 10 MiB as JSON (bigger → HTTP 413: split it or send `edits`); `reasoning` ≤ 300 chars.

@@ -59,7 +59,8 @@ limits and rules. Read it before writing files (`get_app` returns it again).
 The essentials:
 
 - `index.html` loads `/main.js` and `/main.css`; `src/main.tsx` is bundled into
-  them. JSX needs no React import. Types are stripped, not checked.
+  them. JSX needs no React import. The compiler strips types; the server checks them
+  in the background (`readiness.typecheck`).
 - No npm: bare imports resolve only through `drobek.json` `imports` (pinned
   `https://esm.sh/…` URLs). An unlisted package is a compile error that names
   the line to add.

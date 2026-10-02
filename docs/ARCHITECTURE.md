@@ -596,9 +596,8 @@ for the 30-day window.
   that opened them; one is closed after `MCP_SESSION_IDLE_TTL_MS` without a
   request, when its user opens more than `MCP_SESSIONS_PER_USER` (the least
   recently used goes), or when its API key or OAuth connection is revoked —
-  the client then gets 404 for its id and initializes a new session. Fifteen
-  tools (among them the gallery listing and the asset upload URLs); the
-  contract and the briefing are in [`AGENT.md`](./AGENT.md).
+  the client then gets 404 for its id and initializes a new session. The tools,
+  the contract and the briefing are in [`AGENT.md`](./AGENT.md).
 - **The dashboard** (core, AGPL): sign-in by e-mail code (Google optional),
   workspaces (Apps / Members / Activity / Upstreams tabs), apps with Overview
   / Files / Assets / Data / Modules / Forms / Users / Uploads / Logs /
