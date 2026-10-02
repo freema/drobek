@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Self-host rehearsal — the docs/SELF-HOSTING.md quickstart and the
 # backup → restore round trip, end to end, on throwaway stacks. `task
-# selfhost:rehearsal`; NOT part of `task check` or CI (it builds the image and
-# runs two full stacks). Every step is what an operator types:
+# selfhost:rehearsal`; NOT part of `task check` (it builds the image and runs
+# two full stacks). CI runs it on release tags only, against the pushed image
+# (selfhost-rehearsal.yml). Every step is what an operator types:
 #
 #   machine A (a fresh copy of the self-host files, like a clean clone)
 #     1. task selfhost:init (tls internal, localhost, SMTP → a throwaway Mailpit)

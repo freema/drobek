@@ -11,8 +11,9 @@ MCP, a published app — and covers backups, upgrades and every setting.
 image pull took 8 s, the whole quickstart below (init → TLS dashboard → user →
 MCP → published app with an uploaded file) **31 s**, a backup 3 s and a
 restore on a second "machine" (fresh checkout + `task selfhost:init` +
-`task restore`) 25 s. The run is the manual `selfhost-rehearsal.yml`
-workflow (`task selfhost:rehearsal` with `tls internal`).
+`task restore`) 25 s. The run is the `selfhost-rehearsal.yml` workflow
+(`task selfhost:rehearsal` with `tls internal`), started by hand here; CI
+runs it on every release tag as well ([Image tags](#image-tags)).
 
 ## Quickstart (clean Ubuntu 24.04 + Docker)
 
@@ -926,14 +927,32 @@ image is the source of its modules.
 | `latest` | the newest release (the compose default) | on every release |
 | `previous` | the release `latest` pointed at before the newest one | on every release |
 | `edge` | the newest `main` commit that passed CI | on every `main` push |
-| `<sha>` | one commit that passed CI (`main` or a release tag) | never |
+| `<sha>` | one `main` commit whose image passed the e2e suite | never |
+| `<sha>-vX.Y.Z` | the image a release tag tested, before its release gate (below) | never |
 
 A release is a pushed `vX.Y.Z` tag: CI runs the quality gate and the e2e suite
 against the image it builds from that tag (`GIT_SHA` = the tag's commit,
 `VERSION` = the tag, `COMMIT_TIME` = that commit's time, all in
-`/api/version`), pushes that exact image as
-`vX.Y.Z`, then retags in the registry: the former `latest` → `previous`,
-`vX.Y.Z` → `latest`. A pre-release tag (`vX.Y.Z-rc.1`) gets only its own tag.
+`/api/version`) and pushes that exact image as `<sha>-vX.Y.Z`. Before any
+release tag moves, the same tag passes the release gate:
+
+- **Dependency audit:** no production dependency in the lockfile has a known
+  advisory of high or critical severity
+  (`pnpm audit --prod --audit-level high`).
+- **Image scan:** the image's operating-system and Node packages have no
+  known vulnerability of high or critical severity that a fixed package
+  version resolves. The scanner runs from an image pinned by digest, in a
+  job without secrets or write access.
+- **Self-host rehearsal:** a clean runner pulls the pushed image and passes
+  [the rehearsal](#the-rehearsal-task-selfhostrehearsal): this guide's
+  quickstart, `task backup` and a restore on a second machine.
+
+Only then does CI retag in the registry (`vX.Y.Z`, the former `latest` →
+`previous`, `vX.Y.Z` → `latest`) and publish the GitHub Release, the npm
+packages and the MCP Registry entry. A failed gate publishes none of them and
+leaves `latest` where it was; a finding is fixed in a new patch release. The gate runs on release
+tags only, never on a `main` push or a pull request. A pre-release tag
+(`vX.Y.Z-rc.1`) passes the same gate and gets only its own tag.
 To rebuild a release image yourself: `git checkout vX.Y.Z && task build` (same
 sources and lockfile; the build args come from the checkout).
 
@@ -1453,8 +1472,10 @@ byte, the same API key works, Caddy's restored CA still validates and the
 server starts with the same `modules.lock.json` and the module; a
 second restore must be refused and a second `task selfhost:migrate` must
 apply nothing. It prints the wall-clock time of every phase. Not part of
-`task check` or CI (it takes minutes). Knobs: `REHEARSAL_HTTPS_PORT` (9443),
-`REHEARSAL_SKIP_BUILD=1`, `REHEARSAL_KEEP=1` (see the script header).
+`task check` (it takes minutes); CI runs it on every release tag against the
+image it is about to release ([Image tags](#image-tags)). Knobs:
+`REHEARSAL_HTTPS_PORT` (9443), `REHEARSAL_SKIP_BUILD=1`, `REHEARSAL_KEEP=1`
+(see the script header).
 
 ## Development: `task dev:tls`
 

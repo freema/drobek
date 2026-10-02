@@ -295,7 +295,7 @@ tasks:
       - ./scripts/selfhost-module.sh list
 
   selfhost:rehearsal:
-    desc: 'The quickstart + backup → restore end to end on throwaway stacks (builds the image; NOT in check/CI) — scripts/selfhost-rehearsal.sh'
+    desc: 'The quickstart + backup → restore end to end on throwaway stacks (builds the image; NOT in check, CI runs it on release tags) — scripts/selfhost-rehearsal.sh'
     cmds:
       - ./scripts/selfhost-rehearsal.sh
 
