@@ -1,5 +1,10 @@
 # Changelog — drobek (core)
 
+## Unreleased
+
+### Fixed
+- **Hostile HTML or CSS in one write no longer stalls the whole server**: the reference warnings of a compile (`missing_reference`, `blocked_by_csp`), the readiness checks (`write_files`, `publish`, `get_app`, the dashboard's "Before you publish") and the publish heuristic scanned files with regular expressions that took quadratic time on unclosed markup — 59 KB of `<a ` took 3.3 s, 256 KB a minute, and a version may hold ten 512 KB files. The scans run on the one Node process, so while they ran no request of any workspace was answered. Each scan now reads a file once from left to right (256 KB of any such input now takes milliseconds) and finds what it found before in well-formed markup. In broken markup a tag scan goes on where the broken tag stops, as a browser does, and an unquoted CSS `url(` ends at an unescaped `(`, which CSS refuses anyway.
+
 ## v0.7.4 — 2026-10-02
 
 ### Added

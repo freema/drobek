@@ -118,6 +118,49 @@ describe('publish heuristic', () => {
   });
 });
 
+describe('publish heuristic: hostile input', () => {
+  const fill = (unit: string) => unit.repeat(Math.ceil((256 * 1024) / unit.length));
+  const ms = (f: () => unknown) => {
+    const started = performance.now();
+    f();
+    return performance.now() - started;
+  };
+
+  it.each([
+    ['unclosed tags', '<'],
+    ['unclosed inputs', '<input '],
+    ['unclosed titles', '<title>'],
+    ['unclosed headings', '<h1>'],
+    ['unclosed scripts', '<script>'],
+    ['unclosed styles', '<style'],
+    ['unclosed comments', '<!--'],
+    ['one long dotted name', 'a.'],
+  ])('scans 256 KB of %s in linear time', (_what, unit) => {
+    const content = fill(unit);
+    expect(ms(() => scanForPhishing([{ path: 'index.html', content }], words))).toBeLessThan(500);
+  });
+
+  it('reads the title, the visible text and a password input next to broken markup', () => {
+    const f = scanForPhishing(
+      [{ path: 'index.html', content: "<title>PayPal</title><!-- x --><p>Log in to <i>Revolut</i></p><input name=p\n type = 'password'><h1>Sign in<style" }],
+      words
+    );
+    expect(f).toEqual({
+      flagged: true,
+      passwordIn: ['index.html'],
+      brands: [
+        { word: 'paypal', where: 'title' },
+        { word: 'revolut', where: 'text' },
+      ],
+    });
+  });
+
+  it('still ignores domain names wherever they stand', () => {
+    const content = '<p>see...paypal.com, mail.google.com. (netflix.co.uk) x-amazon.de/a "Microsoft.com" -apple.io</p><input type=password>';
+    expect(scanForPhishing([{ path: 'index.html', content }], words).brands).toEqual([]);
+  });
+});
+
 describe('moderation vocabulary', () => {
   it('normalizes a reported host from a URL, host:port or bare host', () => {
     expect(normalizeReportHost('https://Evil-Bank.apps.localhost:3041/login?x=1')).toBe('evil-bank.apps.localhost:3041');

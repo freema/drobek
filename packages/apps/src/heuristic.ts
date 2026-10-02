@@ -65,7 +65,8 @@ export function brandWordsFromEnv(env: NodeJS.ProcessEnv = process.env): string[
 }
 
 const URL_RE = /(?:https?:)?\/\/[^\s"'`<>)]+/gi;
-const DOMAIN_RE = /\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|net|org|io|app|dev|cz|sk|eu|co|us|uk|de)\b/gi;
+/** Starts only where a dotted name starts, so a long `a.b.c…` run is read once, not once per label. */
+const DOMAIN_RE = /(?<![\w-]|[a-z0-9-]\.)[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|net|org|io|app|dev|cz|sk|eu|co|us|uk|de)\b/gi;
 
 function stripUrls(text: string): string {
   return text.replace(URL_RE, ' ').replace(DOMAIN_RE, ' ');
@@ -87,7 +88,8 @@ function decodeEntities(text: string): string {
     .replace(/&#x([0-9a-f]{1,6});/gi, (_, h: string) => safeChar(parseInt(h, 16)));
 }
 
-const HTML_PASSWORD_RE = /<input\b[^>]*\btype\s*=\s*["']?password\b/i;
+const INPUT_TAG = /<input\b/gi;
+const PASSWORD_TYPE = /\btype\s*=\s*["']?password\b/i;
 const JS_PASSWORD_RES = [
   // JSX compiled by esbuild: jsx("input", { type: "password" })
   /\btype\s*:\s*["'`]password["'`]/i,
@@ -110,8 +112,81 @@ interface Texts {
   js: string[];
 }
 
+/**
+ * The scans below read the text once from left to right (an unclosed tag,
+ * comment or element costs no more than a closed one) and find what the
+ * regular expression in each comment finds.
+ */
+
+/** `text` with every `open…close` span replaced by a space (`/open[\s\S]*?close/g`). */
+function withoutSpans(text: string, open: string, close: string): string {
+  let out = '';
+  let from = 0;
+  for (;;) {
+    const start = text.indexOf(open, from);
+    if (start === -1) break;
+    const end = text.indexOf(close, start + open.length);
+    if (end === -1) break;
+    out += `${text.slice(from, start)} `;
+    from = end + close.length;
+  }
+  return out + text.slice(from);
+}
+
+/** `html` with every `<name…</name>` replaced by a space (`/<name\b[\s\S]*?<\/name>/gi`). */
+function withoutElements(html: string, name: string): string {
+  const open = new RegExp(`<${name}\\b`, 'gi');
+  const close = new RegExp(`</${name}>`, 'gi');
+  let out = '';
+  let from = 0;
+  for (;;) {
+    open.lastIndex = from;
+    const m = open.exec(html);
+    if (!m) break;
+    close.lastIndex = open.lastIndex;
+    const c = close.exec(html);
+    if (!c) break;
+    out += `${html.slice(from, m.index)} `;
+    from = close.lastIndex;
+  }
+  return out + html.slice(from);
+}
+
+/** The content of every `<name …>…</name>` (`/<name\b[^>]*>([\s\S]*?)<\/name>/gi`). */
+function contents(html: string, name: string): string[] {
+  const open = new RegExp(`<${name}\\b`, 'gi');
+  const close = new RegExp(`</${name}>`, 'gi');
+  const out: string[] = [];
+  for (let from = 0; ; ) {
+    open.lastIndex = from;
+    const m = open.exec(html);
+    if (!m) break;
+    const gt = html.indexOf('>', open.lastIndex);
+    if (gt === -1) break;
+    close.lastIndex = gt + 1;
+    const c = close.exec(html);
+    if (!c) break;
+    out.push(html.slice(gt + 1, c.index));
+    from = close.lastIndex;
+  }
+  return out;
+}
+
+/** An `<input>` whose start tag says `type=password` (`/<input\b[^>]*\btype\s*=\s*["']?password\b/i`). */
+function hasPasswordInput(html: string): boolean {
+  for (let from = 0; ; ) {
+    INPUT_TAG.lastIndex = from;
+    const m = INPUT_TAG.exec(html);
+    if (!m) return false;
+    const gt = html.indexOf('>', INPUT_TAG.lastIndex);
+    if (PASSWORD_TYPE.test(html.slice(m.index, gt === -1 ? html.length : gt))) return true;
+    if (gt === -1) return false;
+    from = gt + 1;
+  }
+}
+
 function stripTags(s: string): string {
-  return decodeEntities(s.replace(/<[^>]*>/g, ' '));
+  return decodeEntities(withoutSpans(s, '<', '>'));
 }
 
 /** The string literals of a JS source (where JSX text and `document.title = …` end up). */
@@ -147,18 +222,15 @@ export function scanForPhishing(files: readonly HeuristicFile[], words: readonly
     const lower = f.path.toLowerCase();
     if (lower.endsWith('.html') || lower.endsWith('.htm')) {
       const html = f.content;
-      let password = HTML_PASSWORD_RE.test(html);
-      texts.title.push(...[...html.matchAll(/<title\b[^>]*>([\s\S]*?)<\/title>/gi)].map((m) => stripTags(m[1])));
-      texts.h1.push(...[...html.matchAll(/<h1\b[^>]*>([\s\S]*?)<\/h1>/gi)].map((m) => stripTags(m[1])));
+      let password = hasPasswordInput(html);
+      texts.title.push(...contents(html, 'title').map(stripTags));
+      texts.h1.push(...contents(html, 'h1').map(stripTags));
       // Inline scripts can build the form too.
-      for (const m of html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)) {
-        if (hasJsPassword(m[1])) password = true;
-        texts.js.push(...jsStrings(m[1]));
+      for (const script of contents(html, 'script')) {
+        if (hasJsPassword(script)) password = true;
+        texts.js.push(...jsStrings(script));
       }
-      const body = html
-        .replace(/<script\b[\s\S]*?<\/script>/gi, ' ')
-        .replace(/<style\b[\s\S]*?<\/style>/gi, ' ')
-        .replace(/<!--[\s\S]*?-->/g, ' ');
+      const body = withoutSpans(withoutElements(withoutElements(html, 'script'), 'style'), '<!--', '-->');
       texts.text.push(stripTags(body));
       if (password) passwordIn.push(f.path);
     } else if (lower.endsWith('.js') || lower.endsWith('.mjs')) {
