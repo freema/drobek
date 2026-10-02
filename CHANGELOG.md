@@ -1,5 +1,12 @@
 # Changelog — drobek (core)
 
+## v0.7.6 — 2026-10-02
+
+v0.7.5 was tagged but never released: its image failed the release gate's vulnerability scan. This release carries all of v0.7.5 (below), so upgrade straight to v0.7.6 and read the v0.7.5 notes before you do.
+
+### Fixed
+- **The image no longer ships an esbuild binary built with an old Go** (NSO-445): esbuild 0.25.12 was compiled with Go 1.23.12, whose standard library has 22 fixed HIGH/CRITICAL advisories. drobek now uses esbuild 0.28.2, compiled with Go 1.26.5. Apps compile the same way.
+
 ## v0.7.5 — 2026-10-02
 
 Before you upgrade: this release deletes data on its own for the first time. An app deleted more than `APP_PURGE_AFTER_DAYS` (30) ago is removed for good with everything it stored, and each app keeps its newest `APP_VERSIONS_KEEP` (200) versions plus the published one and the ones kept for a rollback; set either variable before the first start on this version if you want other values. Core migrations 0033–0036 are applied at start, and an older image then refuses to start on the migrated database. If the database holds secrets that `DROBEK_MASTER_KEY` no longer opens, `task selfhost:migrate` stops before it changes anything and says what to do.
