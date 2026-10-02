@@ -13,7 +13,8 @@
  * names override the env defaults; unknown names and bad values are ignored.
  * The catalogue is CORE_LIMITS (enforced by core: apps per workspace, custom
  * domains per app, asset size and quota per app, proxy upstreams per workspace,
- * new versions per app and per person per hour) plus every active module's `limits`. A limit marked
+ * new versions per app and per person per hour, the versions an app keeps and
+ * the bytes a workspace's versions store) plus every active module's `limits`. A limit marked
  * `allowZero` (DOMAINS_MAX_PER_APP) also takes 0 = the feature is off.
  * Every `availability: 'opt-in'` module adds the pseudo-limit
  * `MODULE_ENABLED_<NAME>` (0/1, env default 0): a plan answering 1 enables the
@@ -22,14 +23,18 @@
  * Answers are cached in Redis for 60 s (`drobek:limits:<workspace_id>`). When
  * the provider is down, slow (> 2 s) or answers garbage, the env defaults
  * apply and a warning is logged — a provider outage never takes apps down.
+ * `settled` answers null instead, for a job that deletes by a limit (the
+ * history retention) and must not act on the fallback.
  */
 import { createHmac } from 'node:crypto';
 import {
   DEFAULT_APPS_MAX_PER_WORKSPACE,
   DEFAULT_APP_ASSETS_QUOTA,
   DEFAULT_APP_ASSET_MAX_BYTES,
+  DEFAULT_APP_VERSIONS_KEEP,
   DEFAULT_VERSIONS_PER_APP_HOUR,
   DEFAULT_VERSIONS_PER_USER_HOUR,
+  DEFAULT_WORKSPACE_SOURCE_QUOTA,
 } from '@drobek/apps';
 import type { Logger } from '@drobek/core';
 import { dbErrorForLog } from '@drobek/db';
@@ -111,6 +116,16 @@ export const CORE_LIMITS: readonly CatalogueLimit[] = Object.freeze([
     default: DEFAULT_VERSIONS_PER_USER_HOUR,
     meaning: 'New versions one person makes within the last hour, in every app and workspace; past it rate_limited with retry_after_seconds.',
   },
+  {
+    env: 'APP_VERSIONS_KEEP',
+    default: DEFAULT_APP_VERSIONS_KEEP,
+    meaning: 'The newest versions of each app the hourly history retention keeps; older ones are deleted, except the published one, those kept for a rollback, the one the preview serves and the last hour\'s.',
+  },
+  {
+    env: 'WORKSPACE_SOURCE_QUOTA',
+    default: DEFAULT_WORKSPACE_SOURCE_QUOTA,
+    meaning: 'Bytes of the unique files (sources and build output) the versions of a workspace\'s live apps may store; a version past it answers limit_exceeded and nothing is stored.',
+  },
 ]);
 
 export interface LimitsProvider {
@@ -123,6 +138,12 @@ export interface LimitsProvider {
    * unavailable. Tells an explicit plan value from the env default.
    */
   fromPlan?(workspaceId: string): Promise<Limits | null>;
+  /**
+   * The effective limits, or null while a configured provider does not
+   * answer (failure, backoff) — never the env fallback. Without a provider:
+   * the env values.
+   */
+  settled?(workspaceId: string): Promise<Limits | null>;
 }
 
 type RedisLike = {
@@ -264,6 +285,11 @@ export function createLimitsProvider(opts: LimitsProviderOptions): LimitsProvide
     async fromPlan(workspaceId) {
       const remote = await remoteFor(workspaceId);
       return remote ? Object.freeze(planValues(remote)) : null;
+    },
+    async settled(workspaceId) {
+      if (!base) return defaults;
+      const remote = await remoteFor(workspaceId);
+      return remote ? merge(remote) : null;
     },
   };
 }

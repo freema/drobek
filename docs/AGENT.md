@@ -349,6 +349,17 @@ unchanged.
   both); past either `write_files`, `restore_version`, `create_app` and
   `duplicate_app` answer `rate_limited` with `retry_after_seconds` and store
   nothing.
+- **History** — an app keeps its newest `APP_VERSIONS_KEEP` versions (200),
+  the published one and those whose asset set is kept for a rollback; the
+  hourly retention deletes older ones. `get_app`'s `version_retention`
+  (`keep_newest`, `stored`, `oldest_version`) and the dashboard's version
+  history say so; `read_file`, `restore_version` and `publish` of a deleted
+  version answer `not_found` with "is no longer stored" and the oldest version
+  still stored. The versions of a workspace's live apps may store
+  `WORKSPACE_SOURCE_QUOTA` (1 GiB) of unique files; a `write_files`,
+  `create_app` or `duplicate_app` whose new bytes do not fit answers
+  `limit_exceeded` (`limit`, `value`, `used_bytes`) and stores nothing, a
+  restore always fits. The briefing states both values.
 - **Dependencies** — `drobek.json` `imports` → pinned esm.sh URLs; an unlisted
   bare import is `unresolved_import` naming the line to add; `drobek` is the
   platform SDK.

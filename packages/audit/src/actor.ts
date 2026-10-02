@@ -45,6 +45,8 @@ export const AUDIT_ACTIONS = {
   appCreate: 'app.create',
   appVersionWrite: 'app.version.write',
   appVersionRestore: 'app.version.restore',
+  /** The history retention deleted old versions of an app (system; meta: count + the first and last number). */
+  appVersionsPrune: 'app.versions.prune',
   appPublish: 'app.publish',
   /** Legacy upload pipeline — kept so historic rows still label. */
   deployActivate: 'deploy.activate',

@@ -30,6 +30,12 @@ describe('activitySummary', () => {
     expect(activitySummary(ev('app.version.restore', 'app', 'x', { version: 7, restoredFrom: 4 }))).toBe(
       'Restored the files of version 4 as version 7'
     );
+    expect(activitySummary(ev('app.versions.prune', 'app', 'x', { appId: 'a', versions: 12, from: 1, to: 14, keep: 200 }))).toBe(
+      'The history retention deleted 12 old versions (versions 1–14)'
+    );
+    expect(activitySummary(ev('app.versions.prune', 'app', 'x', { versions: 1, from: 3, to: 3 }))).toBe(
+      'The history retention deleted 1 old version (version 3)'
+    );
     expect(activitySummary(ev('domain.add', 'domain', 'shop.example.com', { app: 'x' }))).toBe('Added the custom domain shop.example.com');
     expect(activitySummary(ev('app.gallery_unlisted', 'app', 'x', { reason: 'takedown' }))).toContain('taken down');
   });

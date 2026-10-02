@@ -136,7 +136,7 @@ pinned esm.sh URL, e.g. `"date-fns": "https://esm.sh/date-fns@4.1.0"`; `pkg/sub`
 | `build_error` | syntax error at `file:line:column` | fix that line |
 | `invalid_config` | `drobek.json` not JSON / wrong shape | rewrite it as above |
 | `invalid_path` | `..`, disallowed extension | app-relative text files only (a leading `/` is dropped) |
-| `limit_exceeded` | too many/big files | split files; load libraries from esm.sh |
+| `limit_exceeded` | too many/big files; with `limit: "WORKSPACE_SOURCE_QUOTA"` the workspace's app versions are full (nothing stored) | split files; load libraries from esm.sh; for the quota tell the user (deleting an unused app frees space), do not retry |
 | `secret_in_source` | a key/token in a file; nothing stored | remove it; the owner sets it in the dashboard |
 | `app_locked` | another user's agent writes the app | tell the user; retry after `expires_at` |
 | `busy` | the compiler queue is full | retry the same call in a few seconds |
@@ -146,5 +146,5 @@ pinned esm.sh URL, e.g. `"date-fns": "https://esm.sh/date-fns@4.1.0"`; `pkg/sub`
 | `user_confirmation_required` | gallery listing, workspace publishing, primary domain or removing a live domain without the user's yes | ask the user; call again with `user_confirmed: true` only if they say yes |
 | `domain_not_verified` | the CNAME or TXT record of a custom domain is missing or wrong (`cname`, `txt`) | tell the user which record to fix; `verify_domain` again after a while |
 | `invalid_params` | > 20 files, same path twice, long reasoning | split the change; fix the arguments |
-| `not_found` | wrong `app_id` or no access | `list_apps` |
+| `not_found` | wrong `app_id` or no access; "is no longer stored" = a version the history retention deleted | `list_apps`; for a version, `get_app` (`version_retention`) and work from one still stored |
 | `forbidden` | viewer role | ask for the editor role |

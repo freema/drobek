@@ -23,6 +23,7 @@ import {
   duplicateAppFiles,
   duplicationSource,
   versionRateLimitsOf,
+  versionStorageLimitsOf,
   type DuplicationSource,
 } from '@drobek/apps';
 import { getSessionUser, type SessionUser } from '@drobek/auth';
@@ -131,6 +132,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       actor: { userId: user.id, kind: 'user' },
       maxApps: wsLimits.APPS_MAX_PER_WORKSPACE,
       versionLimits: versionRateLimitsOf(wsLimits),
+      sourceQuota: versionStorageLimitsOf(wsLimits).sourceQuota,
     });
   } catch (err) {
     if (err instanceof AppsError) {

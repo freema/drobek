@@ -4,7 +4,8 @@
  *
  * GET (viewer+): the shared app header (URLs, compile state, lock) + the
  * VERSION HISTORY (number, time, author, reasoning, compile status + first
- * error, a link to `<slug>--v<N>`) + the insight panels (recent errors,
+ * error, a link to `<slug>--v<N>`) and how much of it the history retention
+ * keeps (APP_VERSIONS_KEEP of the workspace) + the insight panels (recent errors,
  * traffic / 404s) + the public gallery section (absent unless
  * GALLERY_ENABLED) + the newest version's publish readiness report. A viewer sees everything but no controls.
  *
@@ -15,13 +16,22 @@
  * still publishes.
  */
 import { type LoaderFunctionArgs } from 'react-router';
-import { GALLERY_DESCRIPTION_MAX, galleryEnabled, galleryState, listVersions, versionUrl } from '@drobek/apps';
+import {
+  GALLERY_DESCRIPTION_MAX,
+  galleryEnabled,
+  galleryState,
+  listVersions,
+  versionRetention,
+  versionStorageLimitsOf,
+  versionUrl,
+} from '@drobek/apps';
 import {
   queryAppErrors,
   queryAppLogs,
   type AppErrorsView,
   type AppLogsView,
 } from '@drobek/insights';
+import { moduleRuntime } from '@drobek/modules';
 import { appAction, appHeaderData, emailsOf, loadAppPage } from '../app-page.server.js';
 import { compileSummary } from '../app-view.js';
 import { parseDuplicateResult } from '../duplicate-result.server.js';
@@ -47,7 +57,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const { app } = page;
 
   const raw = await listVersions(app.id, { limit: 100 });
-  const [header, emails, errors, logs, readiness] = await Promise.all([
+  const keep = versionStorageLimitsOf(await (await moduleRuntime()).workspaceLimits(app.workspaceId)).keep;
+  const [header, emails, errors, logs, readiness, retention] = await Promise.all([
     appHeaderData(page),
     emailsOf(raw.map((v) => v.createdByUserId)),
     // Insight panels — best effort: a signals hiccup degrades to
@@ -56,6 +67,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     queryAppLogs(app.id).catch(() => EMPTY_LOGS),
     // The newest version's publish readiness report (best effort, never a 500).
     raw[0] ? loadReadiness(app, raw[0].number) : null,
+    versionRetention(app.id, keep),
   ]);
   const byId = new Map(raw.map((v) => [v.id, v]));
   const latestNumber = raw[0]?.number ?? 0;
@@ -77,6 +89,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   return {
     header,
     versions,
+    // "keeps the newest N versions …" under the history.
+    retention: { keep: retention.keep, stored: retention.stored, oldest: retention.oldest },
     errors,
     logs,
     readiness,

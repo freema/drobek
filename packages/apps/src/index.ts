@@ -1,7 +1,8 @@
 /**
  * @drobek/apps — apps and their immutable versions: create (global
  * slugs), write a version, publish (pointer move), restore (new version from
- * an old one), the hourly rate of new versions, blob GC, unpublish, soft delete + slug
+ * an old one), the hourly rate of new versions, the history retention and the
+ * workspace's source quota, blob GC, unpublish, soft delete + slug
  * release, visibility / frame-ancestors settings, the single-writer lease
  * read/release and version ZIPs, and app assets (binary files at
  * `/<name>` next to the app's files, upload URLs). The MCP tools and the dashboard call these.
@@ -39,6 +40,24 @@ export {
   versionRateLimitsOf,
   type VersionRateLimits,
 } from './version-rate.server.js';
+// The history retention (APP_VERSIONS_KEEP) and the workspace's source quota (WORKSPACE_SOURCE_QUOTA).
+export {
+  DEFAULT_APP_VERSIONS_KEEP,
+  DEFAULT_WORKSPACE_SOURCE_QUOTA,
+  VERSION_RETENTION_INTERVAL_MS,
+  assertSourceQuota,
+  missingVersionMessage,
+  pruneVersionHistory,
+  startVersionRetention,
+  versionRetention,
+  versionStorageLimits,
+  versionStorageLimitsOf,
+  workspaceSourceBytes,
+  type PruneVersionHistoryOptions,
+  type VersionPruneResult,
+  type VersionRetentionInfo,
+  type VersionStorageLimits,
+} from './version-retention.server.js';
 export { versionReadiness, versionSources, type VersionReadinessOptions } from './readiness.server.js';
 export { scheduleVersionTypecheck } from './typecheck.server.js';
 export { crc32, zipStream, type ZipEntry } from './zip.js';

@@ -42,7 +42,12 @@
  *    duplicate_app) counts against VERSIONS_PER_APP_HOUR /
  *    VERSIONS_PER_USER_HOUR of the app's workspace: `rate_limited` with
  *    `retry_after_seconds`, checked before the compile and the lease, and
- *    again by @drobek/apps when the version is stored.
+ *    again by @drobek/apps when the version is stored;
+ *  - a new version whose new bytes would take the workspace's apps past
+ *    WORKSPACE_SOURCE_QUOTA answers `limit_exceeded` (`limit`, `value`,
+ *    `used_bytes`) and stores nothing; a version the history retention
+ *    deleted (APP_VERSIONS_KEEP) answers `not_found` saying so, and get_app
+ *    states how many versions the app keeps (`version_retention`).
  */
 import {
   APP_LOCK_TTL_SEC,
@@ -54,6 +59,7 @@ import {
 } from '@drobek/agent-dx';
 import {
   AppsError,
+  assertSourceQuota,
   assertVersionRate,
   classifyHost,
   copyName,
@@ -71,6 +77,7 @@ import {
   lockCategory,
   listAssets,
   listVersions,
+  missingVersionMessage,
   normalizeGalleryDescription,
   previewUrl,
   publishPermissions,
@@ -84,9 +91,12 @@ import {
   suggestSlug,
   validateAppSlug,
   versionRateLimitsOf,
+  versionRetention,
+  versionStorageLimitsOf,
   type Actor,
   type VersionFileInput,
   type VersionRateLimits,
+  type VersionStorageLimits,
   type WorkspacePublishing,
 } from '@drobek/apps';
 import { actorKindForSurface } from '@drobek/audit';
@@ -177,8 +187,8 @@ function toCompileOut(messages: unknown, modules?: ModuleRuntime, enabled?: Read
   });
 }
 
-/** The briefing of an app: `enabled` = its workspace's enabledModules(), `versions` = its version rate. */
-function briefing(ctx: CallContext, enabled: ReadonlySet<string>, versions: VersionRateLimits): string {
+/** The briefing of an app: `enabled` = its workspace's enabledModules(), `versions` = its version limits. */
+function briefing(ctx: CallContext, enabled: ReadonlySet<string>, versions: VersionLimits): string {
   const L = ctx.deps.limits;
   return renderBriefing({
     limits: {
@@ -187,23 +197,43 @@ function briefing(ctx: CallContext, enabled: ReadonlySet<string>, versions: Vers
       maxTotalBytes: L.maxTotalBytes,
       timeoutMs: L.timeoutMs,
       maxRequestBytes: mcpMaxBodyBytes(ctx.deps.env, L.maxTotalBytes),
-      versionsPerAppHour: versions.perApp,
-      versionsPerUserHour: versions.perUser,
+      versionsPerAppHour: versions.rate.perApp,
+      versionsPerUserHour: versions.rate.perUser,
+      versionsKeep: versions.storage.keep,
+      sourceQuotaBytes: versions.storage.sourceQuota,
     },
     skills: ctx.modules.skillList(enabled),
   });
 }
 
-// ── the version rate ─────────────────────────────────────────────────────────
+// ── the version limits ───────────────────────────────────────────────────────
 
-/** VERSIONS_PER_APP_HOUR / VERSIONS_PER_USER_HOUR of a workspace: its plan, else the env. */
-async function versionLimitsOf(ctx: CallContext, workspaceId: string): Promise<VersionRateLimits> {
-  return versionRateLimitsOf(await ctx.modules.workspaceLimits(workspaceId), ctx.deps.env);
+/** A workspace's version rate and history limits. */
+interface VersionLimits {
+  /** VERSIONS_PER_APP_HOUR / VERSIONS_PER_USER_HOUR */
+  rate: VersionRateLimits;
+  /** APP_VERSIONS_KEEP / WORKSPACE_SOURCE_QUOTA */
+  storage: VersionStorageLimits;
 }
 
-/** A new version over its rate (@drobek/apps `rate_limited`) as the tool error; anything else unchanged. */
-function versionRateError(err: unknown): unknown {
-  return err instanceof AppsError && err.code === 'rate_limited' ? new ToolError('rate_limited', err.message, { ...err.details }) : err;
+function versionLimitsFrom(limits: Readonly<Record<string, number>>, env: NodeJS.ProcessEnv): VersionLimits {
+  return { rate: versionRateLimitsOf(limits, env), storage: versionStorageLimitsOf(limits, env) };
+}
+
+/** The version limits of a workspace: its plan, else the env. */
+async function versionLimitsOf(ctx: CallContext, workspaceId: string): Promise<VersionLimits> {
+  return versionLimitsFrom(await ctx.modules.workspaceLimits(workspaceId), ctx.deps.env);
+}
+
+/**
+ * A new version @drobek/apps refused — over its rate (`rate_limited`) or the
+ * workspace's WORKSPACE_SOURCE_QUOTA (`limit_exceeded`) — as the tool error;
+ * anything else unchanged.
+ */
+function versionStoreError(err: unknown): unknown {
+  return err instanceof AppsError && (err.code === 'rate_limited' || err.code === 'limit_exceeded')
+    ? new ToolError(err.code, err.message, { ...err.details })
+    : err;
 }
 
 /** `rate_limited` ahead of the work when one more version of `appId` (when given) or by the caller would pass its rate. */
@@ -211,8 +241,14 @@ async function refuseOverVersionRate(ctx: CallContext, limits: VersionRateLimits
   try {
     await assertVersionRate({ appId, userId: ctx.principal.userId }, limits);
   } catch (err) {
-    throw versionRateError(err);
+    throw versionStoreError(err);
   }
+}
+
+/** The not_found of a version the app does not have — saying so when the history retention deleted it. */
+async function missingVersion(ctx: CallContext, app: AppRow, number: number, keep?: number): Promise<ToolError> {
+  const k = keep ?? versionStorageLimitsOf(await ctx.modules.workspaceLimits(app.workspaceId), ctx.deps.env).keep;
+  return new ToolError('not_found', await missingVersionMessage(app.id, number, { keep: k }));
 }
 
 /** The skills of an app: the opt-in modules off for its workspace are left out. */
@@ -390,6 +426,7 @@ export async function getApp(ctx: CallContext, args: { app_id: string }) {
       reasoning: v.reasoning,
       compile_status: v.compileStatus,
     })),
+    version_retention: retentionOut(await versionRetention(app.id, versionLimits.storage.keep)),
     modules,
     skills: skills(ctx, enabled),
     gallery: await galleryOut(app, ctx.deps.env),
@@ -421,6 +458,11 @@ async function galleryOut(app: AppRow, env: NodeJS.ProcessEnv) {
   };
 }
 
+/** get_app's `version_retention`: how many versions the app keeps and has. */
+function retentionOut(r: { keep: number; stored: number; oldest: number | null }) {
+  return { keep_newest: r.keep, stored: r.stored, oldest_version: r.oldest };
+}
+
 // ── read_file ────────────────────────────────────────────────────────────────
 
 export interface ReadFileResult {
@@ -446,7 +488,7 @@ export async function readFile(
   const number = args.version ?? (await latestVersions([app.id])).get(app.id)?.number;
   const version = number ? await getVersion(app.id, { number }) : null;
   if (!version) {
-    throw new ToolError('not_found', number ? `Version ${number} does not exist.` : 'The app has no versions yet.');
+    throw number ? await missingVersion(ctx, app, number) : new ToolError('not_found', 'The app has no versions yet.');
   }
   const file = version.files.find((f) => f.kind === 'source' && f.path === path);
   if (!file) throw new ToolError('not_found', `No file "${path}" in version ${version.number}.`);
@@ -521,7 +563,7 @@ async function compileAndStore(
   sources: Map<string, string | Buffer>,
   reasoning: string,
   trigger: 'create_app' | 'write_files',
-  versionLimits: VersionRateLimits,
+  versionLimits: VersionLimits,
   baseVersion?: number | null
 ): Promise<{ number: number; result: CompileResult; typecheck?: 'pending' }> {
   // The bare `drobek` import → this server's versioned SDK (immutable caching);
@@ -547,11 +589,12 @@ async function compileAndStore(
       actor: actorOf(ctx),
       reasoning,
       compile: { status: result.ok ? 'ok' : 'error', errors: result.ok ? null : result.errors },
-      versionLimits,
+      versionLimits: versionLimits.rate,
+      sourceQuota: versionLimits.storage.sourceQuota,
       ...(baseVersion !== undefined ? { baseVersion } : {}),
     });
   } catch (err) {
-    const refused = versionRateError(err);
+    const refused = versionStoreError(err);
     if (refused !== err) await logCompile(ctx, app.id, null, result, trigger);
     throw refused;
   }
@@ -590,9 +633,16 @@ export async function createApp(
   // The workspace's plan (limits provider) or the env default.
   const wsLimits = await ctx.modules.workspaceLimits(ws.id);
   const maxApps = wsLimits.APPS_MAX_PER_WORKSPACE;
-  const versionLimits = versionRateLimitsOf(wsLimits, ctx.deps.env);
-  // Version 1 counts against the caller's VERSIONS_PER_USER_HOUR: refused before the app exists.
-  await refuseOverVersionRate(ctx, versionLimits);
+  const versionLimits = versionLimitsFrom(wsLimits, ctx.deps.env);
+  const files = templateFiles(template, name);
+  // Version 1 counts against the caller's VERSIONS_PER_USER_HOUR and the workspace's
+  // WORKSPACE_SOURCE_QUOTA: refused before the app exists.
+  await refuseOverVersionRate(ctx, versionLimits.rate);
+  try {
+    await assertSourceQuota(ws.id, [...files.values()].map((content) => ({ content })), versionLimits.storage.sourceQuota);
+  } catch (err) {
+    throw versionStoreError(err);
+  }
   let created: { id: string; slug: string } | null = null;
   for (let attempt = 0; attempt < 4 && !created; attempt++) {
     try {
@@ -613,7 +663,7 @@ export async function createApp(
   const { number, result } = await compileAndStore(
     ctx,
     created,
-    templateFiles(template, name),
+    files,
     `Created from the ${template} template`,
     'create_app',
     versionLimits
@@ -707,6 +757,7 @@ export async function duplicateApp(ctx: CallContext, args: { from: string; works
       actor: actorOf(ctx),
       maxApps: wsLimits.APPS_MAX_PER_WORKSPACE,
       versionLimits: versionRateLimitsOf(wsLimits, env),
+      sourceQuota: versionStorageLimitsOf(wsLimits, env).sourceQuota,
       env,
     });
   } catch (err) {
@@ -942,7 +993,7 @@ export async function writeFiles(
   const warnings: WriteWarning[] = [];
   const changes = validateChanges(args.files, args.reasoning, warnings);
   const versionLimits = await versionLimitsOf(ctx, app.workspaceId);
-  await refuseOverVersionRate(ctx, versionLimits, app.id);
+  await refuseOverVersionRate(ctx, versionLimits.rate, app.id);
   await takeLease(ctx, app.id);
   // The lease keeps other users out, not the same user's other session. Edits
   // are only valid against the version they were applied to, so a call with
@@ -1010,16 +1061,14 @@ export async function restoreVersion(ctx: CallContext, args: { app_id: string; v
     throw new ToolError('invalid_params', '`version` must be a positive integer.');
   }
   const versionLimits = await versionLimitsOf(ctx, app.workspaceId);
-  await refuseOverVersionRate(ctx, versionLimits, app.id);
+  await refuseOverVersionRate(ctx, versionLimits.rate, app.id);
   await takeLease(ctx, app.id);
   let created: { id: string; number: number; assetsRestored: boolean };
   try {
-    created = await restore(app.id, args.version, actorOf(ctx), { versionLimits });
+    created = await restore(app.id, args.version, actorOf(ctx), { versionLimits: versionLimits.rate });
   } catch (err) {
-    if (err instanceof AppsError && err.code === 'not_found') {
-      throw new ToolError('not_found', `Version ${args.version} does not exist.`);
-    }
-    throw versionRateError(err);
+    if (err instanceof AppsError && err.code === 'not_found') throw await missingVersion(ctx, app, args.version, versionLimits.storage.keep);
+    throw versionStoreError(err);
   }
   const v = await getVersion(app.id, { id: created.id });
   const ok = v?.compileStatus === 'ok';
@@ -1066,7 +1115,7 @@ export async function publishApp(ctx: CallContext, args: { app_id: string; versi
     );
   }
   const version = await getVersion(app.id, { number });
-  if (!version) throw new ToolError('not_found', `Version ${number} does not exist.`);
+  if (!version) throw await missingVersion(ctx, app, number);
 
   let result: { number: number; previousNumber: number | null; assets: 'draft' | 'kept' };
   try {
@@ -1078,9 +1127,7 @@ export async function publishApp(ctx: CallContext, args: { app_id: string; versi
     if (err instanceof AppsError && err.code === 'not_publishable') {
       throw new ToolError('not_publishable', err.message, { version: number });
     }
-    if (err instanceof AppsError && err.code === 'not_found') {
-      throw new ToolError('not_found', `Version ${number} does not exist.`);
-    }
+    if (err instanceof AppsError && err.code === 'not_found') throw await missingVersion(ctx, app, number);
     throw err;
   }
   await ctx.deps.notifyAppChanged({ app_id: app.id, slug: app.slug, version: result.number, kind: 'publish' });

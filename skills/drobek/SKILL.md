@@ -146,6 +146,12 @@ in the version history.
   `retry_after_seconds`) and nothing is stored. Tell the user and continue
   after that time — never retry in a loop; put changes that belong together
   into one call.
+- The versions of all apps of a workspace may store a limited number of
+  bytes (`WORKSPACE_SOURCE_QUOTA`, 1 GiB by default; the briefing states it).
+  A write whose new bytes do not fit answers `limit_exceeded` with
+  `limit: "WORKSPACE_SOURCE_QUOTA"` and `used_bytes`, and nothing is stored:
+  tell the user — deleting an app the workspace no longer needs frees its
+  versions at once — and do not retry the same write.
 
 - `compile.ok: true` → give the user the `preview_url`.
 - `compile.ok: false` → the version is saved (nothing is lost) but the preview
@@ -318,7 +324,14 @@ operator can restore it.
 
 `get_app({ app_id })` lists the last 20 versions with their compile status and
 reasoning. `restore_version({ app_id, version })` creates a NEW version that is
-an exact copy of an old one — history is never rewritten.
+an exact copy of an old one — a version is never changed.
+
+An app keeps its newest versions (`APP_VERSIONS_KEEP`, 200 by default), the
+published one and those kept for a rollback; older versions are deleted
+hourly. `get_app`'s `version_retention` (`keep_newest`, `stored`,
+`oldest_version`) says what is kept. `read_file`, `restore_version` and
+`publish` of a deleted version answer `not_found` ("is no longer stored") —
+it cannot be brought back; work from a version that is still stored.
 
 ## Publishing
 

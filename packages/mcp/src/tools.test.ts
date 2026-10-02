@@ -7,15 +7,17 @@
  */
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { createVersion, getVersion, publish, readVersionFile } from '@drobek/apps';
+import { createVersion, getVersion, publish, pruneVersionHistory, readVersionFile } from '@drobek/apps';
 import { appCompiles, appDailyStats, appErrors, appVersions, apps, auditLog, memberships, moduleConfigs, moduleSecrets, users, workspaces } from '@drobek/db';
 import { dedupKey, memoryModuleStatsRedis, recordModuleRequest, sanitizeEvent } from '@drobek/insights';
 import {
   DEFAULT_APPS_MAX_PER_WORKSPACE,
   DEFAULT_APP_ASSETS_QUOTA,
   DEFAULT_APP_ASSET_MAX_BYTES,
+  DEFAULT_APP_VERSIONS_KEEP,
   DEFAULT_VERSIONS_PER_APP_HOUR,
   DEFAULT_VERSIONS_PER_USER_HOUR,
+  DEFAULT_WORKSPACE_SOURCE_QUOTA,
 } from '@drobek/apps';
 import { DEFAULT_DOMAINS_MAX_PER_APP } from '@drobek/domains';
 import { DEFAULT_UPSTREAMS_MAX_PER_WORKSPACE } from '@drobek/proxy';
@@ -233,6 +235,8 @@ describe('create_app — APPS_MAX_PER_WORKSPACE', () => {
       APP_ASSETS_QUOTA: DEFAULT_APP_ASSETS_QUOTA,
       VERSIONS_PER_APP_HOUR: DEFAULT_VERSIONS_PER_APP_HOUR,
       VERSIONS_PER_USER_HOUR: DEFAULT_VERSIONS_PER_USER_HOUR,
+      APP_VERSIONS_KEEP: DEFAULT_APP_VERSIONS_KEEP,
+      WORKSPACE_SOURCE_QUOTA: DEFAULT_WORKSPACE_SOURCE_QUOTA,
     });
     // llms-full.txt (agent-dx restates the defaults — it is a zero-dependency leaf).
     for (const l of CORE_LIMITS) expect(LIMITS.find((x) => x.env === l.env)?.default).toBe(String(l.default));
@@ -895,26 +899,26 @@ describe('restore_version', () => {
   });
 });
 
-describe('the version rate (VERSIONS_PER_APP_HOUR / VERSIONS_PER_USER_HOUR)', () => {
-  /** A runtime whose limits provider answers `plans[workspaceId]` (else no plan). */
-  function planRuntime(plans: Record<string, Record<string, number>>): Promise<ModuleRuntime> {
-    return loadModuleRuntime({
-      env: { APPS_DOMAIN: 'drobek.app', PUBLIC_APP_URL: 'https://dash.drobek.test', DROBEK_MIGRATE_ON_START: '0', DROBEK_MASTER_KEY: '22'.repeat(32) },
-      log: noopLogger,
-      modules: [greet],
-      deps: {
-        rateLimit: memoryRateLimiter(),
-        principal: async () => ({ kind: 'anon' }),
-        email: { send: async () => {} },
-        limits: createLimitsProvider({
-          catalogue: CORE_LIMITS,
-          env: { LIMITS_PROVIDER_URL: 'https://plans.example', LIMITS_PROVIDER_SECRET: 'p'.repeat(40) },
-          fetch: async (url) => ({ ok: true, status: 200, json: async () => ({ limits: plans[url.slice(url.lastIndexOf('/') + 1)] ?? {} }) }),
-        }),
-      },
-    });
-  }
+/** A runtime whose limits provider answers `plans[workspaceId]` (else no plan). */
+function planRuntime(plans: Record<string, Record<string, number>>): Promise<ModuleRuntime> {
+  return loadModuleRuntime({
+    env: { APPS_DOMAIN: 'drobek.app', PUBLIC_APP_URL: 'https://dash.drobek.test', DROBEK_MIGRATE_ON_START: '0', DROBEK_MASTER_KEY: '22'.repeat(32) },
+    log: noopLogger,
+    modules: [greet],
+    deps: {
+      rateLimit: memoryRateLimiter(),
+      principal: async () => ({ kind: 'anon' }),
+      email: { send: async () => {} },
+      limits: createLimitsProvider({
+        catalogue: CORE_LIMITS,
+        env: { LIMITS_PROVIDER_URL: 'https://plans.example', LIMITS_PROVIDER_SECRET: 'p'.repeat(40) },
+        fetch: async (url) => ({ ok: true, status: 200, json: async () => ({ limits: plans[url.slice(url.lastIndexOf('/') + 1)] ?? {} }) }),
+      }),
+    },
+  });
+}
 
+describe('the version rate (VERSIONS_PER_APP_HOUR / VERSIONS_PER_USER_HOUR)', () => {
   it("write_files and restore_version past the app's plan answer rate_limited before compiling; the window frees up", async () => {
     const [ws] = await db.insert(workspaces).values({ kind: 'team', slug: 'team-rate', name: 'Rate plan' }).returning();
     await db.insert(memberships).values({ userId: P.alice.userId, workspaceId: ws.id, role: 'workspace-admin' });
@@ -974,6 +978,99 @@ describe('the version rate (VERSIONS_PER_APP_HOUR / VERSIONS_PER_USER_HOUR)', ()
       expect(second.body).toMatchObject({ code: 'rate_limited', limit: 'VERSIONS_PER_USER_HOUR', value: 2 });
       expect(String(second.body.message)).toContain('across all your apps');
       expect(await db.select({ id: apps.id }).from(apps).where(eq(apps.workspaceId, ws.id))).toHaveLength(1);
+    } finally {
+      await c.close();
+    }
+  });
+});
+
+describe('the history retention and the source quota (APP_VERSIONS_KEEP / WORKSPACE_SOURCE_QUOTA)', () => {
+  it('get_app states what the app keeps; a version the retention deleted answers not_found saying so', async () => {
+    const [ws] = await db.insert(workspaces).values({ kind: 'team', slug: 'team-keep', name: 'Keep plan' }).returning();
+    await db.insert(memberships).values({ userId: P.alice.userId, workspaceId: ws.id, role: 'workspace-admin' });
+    const rt = await planRuntime({ [ws.id]: { APP_VERSIONS_KEEP: 2 } });
+    const c = await connect(P.alice, { ...testDeps(), modules: async () => rt });
+    try {
+      const created = await c.call('create_app', { name: 'Long history', workspace: 'team-keep', template: 'html' });
+      expect(created.isError, created.text).toBe(false);
+      const app = created.body as { app_id: string; briefing: string };
+      expect(app.briefing).toContain('an app keeps its newest 2 versions');
+      expect(app.briefing).toContain('may store 1 GiB of unique files');
+      expect((await c.call('get_app', { app_id: app.app_id })).body.version_retention).toEqual({ keep_newest: 2, stored: 1, oldest_version: 1 });
+      for (let i = 2; i <= 4; i++) {
+        const w = await c.call('write_files', { app_id: app.app_id, files: [{ path: 'index.html', content: `<title>v${i}</title>` }], reasoning: `write ${i}` });
+        expect(w.body).toMatchObject({ version: i });
+      }
+      await db
+        .update(appVersions)
+        .set({ createdAt: sql`${appVersions.createdAt} - make_interval(mins => 90)` })
+        .where(eq(appVersions.appId, app.app_id));
+      const pruned = await pruneVersionHistory({ limits: (id) => rt.settledWorkspaceLimits(id) });
+      expect(pruned.versions).toBeGreaterThanOrEqual(2);
+
+      const got = (await c.call('get_app', { app_id: app.app_id })).body;
+      expect(got.version_retention).toEqual({ keep_newest: 2, stored: 2, oldest_version: 3 });
+      expect((got.versions as { number: number }[]).map((v) => v.number)).toEqual([4, 3]);
+
+      const read = await c.call('read_file', { app_id: app.app_id, path: 'index.html', version: 1 });
+      expect(read.isError).toBe(true);
+      expect(read.body.code).toBe('not_found');
+      expect(read.body.message).toBe(
+        'Version 1 is no longer stored: the history retention deleted it. An app keeps its newest 2 versions, the published one and those kept for a rollback; the oldest version still stored is 3.'
+      );
+      expect(String(read.body.hint)).toContain('a version the retention deleted cannot be brought back');
+      const restored = await c.call('restore_version', { app_id: app.app_id, version: 2 });
+      expect(restored.body).toMatchObject({ code: 'not_found' });
+      expect(String(restored.body.message)).toContain('Version 2 is no longer stored');
+      const published = await c.call('publish', { app_id: app.app_id, version: 1 });
+      expect(published.body).toMatchObject({ code: 'not_found' });
+      expect(String(published.body.message)).toContain('no longer stored');
+      expect((await c.call('read_file', { app_id: app.app_id, path: 'index.html', version: 9 })).body.message).toBe(
+        'Version 9 does not exist — the newest version is 4.'
+      );
+      // What is still stored restores as before.
+      expect((await c.call('restore_version', { app_id: app.app_id, version: 3 })).body).toMatchObject({ version: 5, restored_from: 3 });
+    } finally {
+      await c.close();
+    }
+  });
+
+  it('a write past WORKSPACE_SOURCE_QUOTA answers limit_exceeded naming the limit and stores nothing; create_app is refused before the app exists', async () => {
+    const [ws] = await db.insert(workspaces).values({ kind: 'team', slug: 'team-quota', name: 'Quota plan' }).returning();
+    const [full] = await db.insert(workspaces).values({ kind: 'team', slug: 'team-full', name: 'Full plan' }).returning();
+    await db.insert(memberships).values([
+      { userId: P.alice.userId, workspaceId: ws.id, role: 'workspace-admin' },
+      { userId: P.alice.userId, workspaceId: full.id, role: 'workspace-admin' },
+    ]);
+    const rt = await planRuntime({ [ws.id]: { WORKSPACE_SOURCE_QUOTA: 20_000 }, [full.id]: { WORKSPACE_SOURCE_QUOTA: 10 } });
+    const c = await connect(P.alice, { ...testDeps(), modules: async () => rt });
+    try {
+      const created = await c.call('create_app', { name: 'Small storage', workspace: 'team-quota', template: 'html' });
+      expect(created.isError, created.text).toBe(false);
+      const app = created.body as { app_id: string; briefing: string };
+      expect(app.briefing).toContain('may store 20 KiB of unique files');
+      const big = await c.call('write_files', {
+        app_id: app.app_id,
+        files: [{ path: 'index.html', content: `<title>Big</title><p>${'x'.repeat(30_000)}</p>` }],
+        reasoning: 'too big',
+      });
+      expect(big.isError).toBe(true);
+      expect(big.body).toMatchObject({ code: 'limit_exceeded', limit: 'WORKSPACE_SOURCE_QUOTA', value: 20_000 });
+      expect(Number(big.body.used_bytes)).toBeGreaterThan(0);
+      expect(String(big.body.message)).toContain('nothing was stored');
+      expect(String(big.body.hint)).toContain('WORKSPACE_SOURCE_QUOTA');
+      expect((await c.call('get_app', { app_id: app.app_id })).body.latest_version).toBe(1);
+      // The refused compile is in the compile history, without a version.
+      const compiles = await db.select({ v: appCompiles.versionNumber }).from(appCompiles).where(eq(appCompiles.appId, app.app_id));
+      expect(compiles.map((r) => r.v).sort()).toEqual([1, null]);
+
+      const small = await c.call('write_files', { app_id: app.app_id, files: [{ path: 'index.html', content: '<title>Small</title>' }], reasoning: 'fits' });
+      expect(small.body).toMatchObject({ version: 2 });
+
+      const refused = await c.call('create_app', { name: 'No room', workspace: 'team-full', template: 'html' });
+      expect(refused.isError).toBe(true);
+      expect(refused.body).toMatchObject({ code: 'limit_exceeded', limit: 'WORKSPACE_SOURCE_QUOTA', value: 10, used_bytes: 0 });
+      expect(await db.select({ id: apps.id }).from(apps).where(eq(apps.workspaceId, full.id))).toHaveLength(0);
     } finally {
       await c.close();
     }

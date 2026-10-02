@@ -10,7 +10,10 @@ export type AppsErrorCode =
   | 'app_locked_by_admin'
   /** An unknown takedown / report reason category. */
   | 'invalid_reason'
-  /** The workspace holds APPS_MAX_PER_WORKSPACE live apps (`details.limit` / `details.value`). */
+  /**
+   * The workspace holds APPS_MAX_PER_WORKSPACE live apps, or a new version would take its apps' versions past
+   * WORKSPACE_SOURCE_QUOTA (`details.limit` / `details.value`, + `details.used_bytes` for the quota).
+   */
   | 'limit_exceeded'
   /** The public gallery is off on this server (GALLERY_ENABLED). */
   | 'gallery_disabled'
@@ -34,6 +37,7 @@ export interface AppsErrorDetails {
   limit: string;
   value: number;
   retry_after_seconds?: number;
+  used_bytes?: number;
 }
 
 /** A caller-facing failure; `code` is stable (MCP tools return it verbatim). */
@@ -43,7 +47,10 @@ export class AppsError extends Error {
   readonly suggestion?: string;
   /** For `app_locked_by_admin`: the takedown reason CATEGORY (never an internal note). */
   readonly reason?: string;
-  /** For `limit_exceeded` / `rate_limited`: `{ limit: <ENV_NAME>, value }`, + `retry_after_seconds` for a version over its rate. */
+  /**
+   * For `limit_exceeded` / `rate_limited`: `{ limit: <ENV_NAME>, value }`, + `retry_after_seconds` for a version
+   * over its rate, + `used_bytes` for a version over WORKSPACE_SOURCE_QUOTA.
+   */
   readonly details?: AppsErrorDetails;
   /** For `publish_not_approved` / `publish_blocked`: the operator's e-mail (OPERATOR_EMAIL or a super-admin), when configured. */
   readonly contact?: string;

@@ -1,4 +1,4 @@
-import { startAssetsSweep, startBlobGc, startSlugRelease, withRedisLock } from '@drobek/apps';
+import { startAssetsSweep, startBlobGc, startSlugRelease, startVersionRetention, withRedisLock } from '@drobek/apps';
 import { auditRetentionDays, pruneAuditLog } from '@drobek/audit';
 import type { Logger } from '@drobek/core';
 import { startDomainRecheck } from '@drobek/domains';
@@ -16,6 +16,11 @@ export interface BackgroundJobs {
 /**
  * In-process background work — there is no separate worker container.
  *
+ * - Version retention (hourly, Redis lease): deletes the versions of an app
+ *   past its workspace's APP_VERSIONS_KEEP — never the published one, a
+ *   rollback set, the one the preview serves or the last hour's; a workspace
+ *   whose limits provider does not answer is left alone (logic in
+ *   @drobek/apps).
  * - Blob GC (hourly, one replica at a time via a Redis lease): deletes blobs
  *   no version references, after a 7-day grace period.
  * - Slug release (hourly, Redis lease): a soft-deleted app's slug is
@@ -45,6 +50,10 @@ export interface BackgroundJobs {
 export function startBackgroundJobs(log: Logger, opts: { filesSweep?: boolean; modules?: ModuleRuntime } = {}): BackgroundJobs {
   // The jobs hand over an already log-safe error text (dbErrorForLog at the source).
   const jobLog = (msg: string, errorText?: string) => (errorText ? log.error(msg, { error: errorText }) : log.info(msg));
+  const stopVersionRetention = startVersionRetention({
+    log: jobLog,
+    ...(opts.modules ? { limits: opts.modules.settledWorkspaceLimits.bind(opts.modules) } : {}),
+  });
   const stopBlobGc = startBlobGc(jobLog);
   const stopSlugRelease = startSlugRelease(jobLog);
   const stopFilesSweep = opts.filesSweep ? startFilesSweep({ log: jobLog, lease: withRedisLock }) : () => {};
@@ -73,6 +82,7 @@ export function startBackgroundJobs(log: Logger, opts: { filesSweep?: boolean; m
   return {
     async stop() {
       clearInterval(timer);
+      stopVersionRetention();
       stopBlobGc();
       stopSlugRelease();
       stopFilesSweep();

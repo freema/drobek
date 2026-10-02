@@ -111,8 +111,35 @@ This document is the map of how that works. The neighbours:
 - **Publishing** moves one pointer, `apps.published_version_id`, to a version
   that compiled. Rolling production back is publishing an older version.
   `restore_version` rolls the working copy back by writing a NEW version with
-  the old files — history is never rewritten. There is no git and there are
+  the old files — a version is never changed. There is no git and there are
   no branches.
+- **History retention**: an app keeps its newest `APP_VERSIONS_KEEP` versions
+  (default 200; a limits provider may set it per workspace). The hourly
+  retention job deletes older ones, except the published version, a version
+  whose asset set is kept for a rollback (`assets_frozen_at`), the newest
+  version that compiled (the one the preview serves) and versions from the
+  last hour (they still count against the version rate). It works app by app
+  under the app's row lock, in batches, audits each batch as
+  `app.versions.prune` (a system action, shown in Activity) and busts the
+  serve cache; `version_files` go with their version and the blob GC frees
+  the bytes. Version numbers are never reused, so a missing number below the
+  newest one was deleted: `read_file`, `restore_version` and `publish` answer
+  `not_found` with "is no longer stored" and the oldest version still stored.
+  `get_app` (`version_retention`) and the dashboard's version history state
+  how many versions the app keeps and has. While a configured limits
+  provider does not answer for a workspace (`LimitsProvider.settled` → null),
+  the job leaves it alone, so the env fallback never deletes history a plan
+  keeps.
+- **Source quota**: the unique bytes (`version_files` by sha256, sources and
+  build output) the versions of a workspace's live apps store may not pass
+  `WORKSPACE_SOURCE_QUOTA` (default 1 GiB; per workspace through a limits
+  provider; deleted apps do not count, so deleting an app frees its bytes at
+  once). `createVersion` checks it after the rate, under the app's row lock and
+  a per-workspace advisory lock, before any blob is stored: a version whose
+  NEW bytes do not fit answers `limit_exceeded` (`limit`, `value`,
+  `used_bytes`). A version that adds no bytes — a restore, a revert — always
+  fits. `create_app` and gallery copies check the files ahead of creating the
+  app, so a refusal leaves no empty app behind.
 - **New versions are rate-limited** (`VERSIONS_PER_APP_HOUR`, default 600 per
   app, and `VERSIONS_PER_USER_HOUR`, 1200 per person across all apps, within
   the last hour; a limits provider may set both per workspace), so a loop of
@@ -434,6 +461,7 @@ All in-process (`apps/server/server/jobs.ts`), started with the server:
 
 | Job | Interval | What |
 | --- | --- | --- |
+| version retention | hourly, Redis lease | deletes the versions of each app past its workspace's `APP_VERSIONS_KEEP` (200) — never the published one, a rollback set, the one the preview serves or the last hour's; skips a workspace whose limits provider does not answer (`@drobek/apps`) |
 | blob GC | hourly, Redis lease | deletes blobs no version references, after 7 days |
 | slug release | hourly, Redis lease | a soft-deleted app's slug is free again after 30 days |
 | domain re-check | `DOMAINS_RECHECK_INTERVAL_MS` (1 h), Redis lease | re-verifies domains checked more than 24 h ago; unverifies + mails on a definitive failure |
