@@ -1,6 +1,6 @@
 {
   "id": "d7de680a-a971-47b5-abd5-1177c7f37f00",
-  "prevId": "72d75961-b307-4819-82ec-f30ddf794f45",
+  "prevId": "94e92256-f43a-4ca9-b405-6599825911e9",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -503,7 +503,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
@@ -634,7 +634,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
@@ -887,7 +887,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         },
         "app_versions_created_by_user_id_users_id_fk": {
@@ -900,7 +900,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
@@ -1260,19 +1260,6 @@
         }
       },
       "foreignKeys": {
-        "audit_log_workspace_id_workspaces_id_fk": {
-          "name": "audit_log_workspace_id_workspaces_id_fk",
-          "tableFrom": "audit_log",
-          "tableTo": "workspaces",
-          "columnsFrom": [
-            "workspace_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
         "audit_log_actor_user_id_users_id_fk": {
           "name": "audit_log_actor_user_id_users_id_fk",
           "tableFrom": "audit_log",
@@ -1283,7 +1270,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
@@ -2551,7 +2538,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },

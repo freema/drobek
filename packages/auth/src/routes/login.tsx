@@ -64,6 +64,15 @@ const styles = {
     fontSize: '0.9rem',
     marginBottom: '1rem',
   },
+  notice: {
+    background: '#f0fdf4',
+    border: '1px solid #bbf7d0',
+    color: '#166534',
+    borderRadius: '8px',
+    padding: '0.6rem 0.75rem',
+    fontSize: '0.9rem',
+    marginBottom: '1rem',
+  },
   // "Continue with Google" — same footprint as the primary button,
   // inverted colors so the email form stays the visual default.
   googleLink: {
@@ -96,7 +105,7 @@ const styles = {
 } as const;
 
 export default function LoginRoute() {
-  const { googleEnabled, googleError, docsUrl } = useLoaderData<typeof loader>();
+  const { googleEnabled, googleError, docsUrl, accountDeleted } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const nav = useNavigation();
   const submitting = nav.state !== 'idle';
@@ -112,6 +121,13 @@ export default function LoginRoute() {
         Enter your email and we&apos;ll send you a one-time 6-digit code. No
         password needed. A new email gets a new account.
       </p>
+
+      {accountDeleted && !error ? (
+        <div style={styles.notice} role="status" data-testid="login-account-deleted">
+          Your account was deleted, with your personal workspace and its apps. Signing in with the same address starts
+          a new, empty account.
+        </div>
+      ) : null}
 
       {error ? (
         <div style={styles.error} role="alert">

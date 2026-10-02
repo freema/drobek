@@ -95,6 +95,8 @@ services:
       DATA_MAX_DOCS_PER_APP: '5'
       BEACON_RATE_LIMIT: '30'
       SYNC_PAUSE_AFTER_FAILURES: '2'
+      APP_PURGE_AFTER_DAYS: '45'
+      APP_PURGE_INTERVAL_MS: '5000'
       # drobek-module-acme-crm and the operator-only fixture drobek-module-ops-probe
       # are installed into modules_data by scripts/e2e-image.sh. The fixture's
       # error reporter sends to proxy-echo; mail stays on the built-in SMTP.

@@ -15,6 +15,7 @@ import { SESSION_COOKIE, SESSION_MAX_AGE_SEC } from './constants.js';
 import {
   createUserSession,
   destroySession,
+  destroyUserSessions,
   getSessionUser,
   requireSessionUser,
   sessionCookieHeader,
@@ -160,5 +161,23 @@ describe('redis session round-trip', () => {
     expect(
       await getSessionUser(requestWithCookie(`__Host-${SESSION_COOKIE}=${token}`))
     ).toBeNull();
+  });
+
+  it('destroyUserSessions ends every session of one user and only theirs, across scan pages', async () => {
+    const mine = [];
+    for (let i = 0; i < 1200; i += 1) {
+      if (i % 400 === 0) mine.push((await createUserSession('user_gone', 'gone@b.com')).token);
+      else await createUserSession(`user_${i}`, `u${i}@b.com`);
+    }
+    await fake.set('drobek:session:broken', '{not json', 'EX', 60);
+    await fake.set('drobek:otp:code:x', JSON.stringify({ userId: 'user_gone' }), 'EX', 60);
+
+    expect(await destroyUserSessions('user_gone')).toBe(3);
+    for (const token of mine) {
+      expect(await getSessionUser(requestWithCookie(`__Host-${SESSION_COOKIE}=${token}`))).toBeNull();
+    }
+    expect([...fake.store.keys()].filter((k) => k.startsWith('drobek:session:'))).toHaveLength(1198);
+    expect(await fake.get('drobek:otp:code:x')).not.toBeNull();
+    expect(await destroyUserSessions('user_gone')).toBe(0);
   });
 });

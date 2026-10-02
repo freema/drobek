@@ -124,10 +124,10 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
   },
   {
     code: 'user_confirmation_required',
-    surface: 'MCP tool isError (set_gallery_listing, set_workspace_publishing, set_primary_domain, remove_domain)',
+    surface: 'MCP tool isError (set_gallery_listing, set_workspace_publishing, set_primary_domain, remove_domain, remove_member, delete_workspace)',
     meaning:
-      'set_primary_domain: making a domain primary redirects every visitor of the production address there, and clearing it changes that too. remove_domain: a verified domain serves the app, and removing it takes the app off that address. set_workspace_publishing: allowing, blocking or resetting a workspace\'s publishing needs the super-admin\'s explicit yes. set_gallery_listing: listing an app in the public gallery shows its name, a description and its production link to everyone, so the call needs `user_confirmed: true` — set only after the user explicitly said yes to exactly this listing. Nothing changed.',
-    fix: 'Ask the user: "Do you want <app name> shown in the public gallery with the description \"<description>\"?" (set_workspace_publishing: "Turn publishing off for <slug>?" / "Allow <slug> to publish?" / "Reset <slug> to the server default?"; set_primary_domain: "Should <app> redirect to <host>?"; remove_domain: "Remove <host> — the app stops answering there?"). Call again with user_confirmed:true only if they clearly say yes; otherwise change nothing.',
+      'set_primary_domain: making a domain primary redirects every visitor of the production address there, and clearing it changes that too. remove_domain: a verified domain serves the app, and removing it takes the app off that address. set_workspace_publishing: allowing, blocking or resetting a workspace\'s publishing needs the super-admin\'s explicit yes. remove_member: the member (or you, when leaving) loses access to the workspace at once. delete_workspace: the workspace and every app in it are deleted for good. set_gallery_listing: listing an app in the public gallery shows its name, a description and its production link to everyone, so the call needs `user_confirmed: true` — set only after the user explicitly said yes to exactly this listing. Nothing changed.',
+    fix: 'Ask the user: "Do you want <app name> shown in the public gallery with the description \"<description>\"?" (set_workspace_publishing: "Turn publishing off for <slug>?" / "Allow <slug> to publish?" / "Reset <slug> to the server default?"; set_primary_domain: "Should <app> redirect to <host>?"; remove_domain: "Remove <host> — the app stops answering there?"; remove_member: "Remove <email> from <slug> — they lose access at once?" / "Leave <slug>?"; delete_workspace: "Delete <slug> with its <n> apps for good?"). Call again with user_confirmed:true only if they clearly say yes; otherwise change nothing.',
   },
   {
     code: 'gallery_hidden',
@@ -254,6 +254,18 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     surface: 'MCP tool isError (register_upstream)',
     meaning: 'The workspace already has an upstream with this name. Nothing changed.',
     fix: 'list_upstreams shows it; use it as it is, pick another name, or remove_upstream it first (the user confirms) and register it again.',
+  },
+  {
+    code: 'personal_workspace',
+    surface: 'MCP tool isError (set_member_role, remove_member, delete_workspace); dashboard 400',
+    meaning: 'A personal workspace always has exactly one member, its owner, so its membership can be neither changed nor removed, and it is deleted only together with its owner\'s account. Nothing changed.',
+    fix: 'To work with other people, the user creates a team workspace on the dashboard\'s Workspaces page and invites them there. To delete the personal workspace, the user deletes their account in the dashboard (Account → Delete account); single apps are deleted on their Settings tab.',
+  },
+  {
+    code: 'last_workspace_admin',
+    surface: 'MCP tool isError (set_member_role, remove_member); dashboard 409',
+    meaning: 'The call would leave the workspace without a workspace-admin: demoting, removing or leaving as its only workspace-admin. Nothing changed.',
+    fix: 'Make another member a workspace-admin first (set_member_role, after the user agreed), then try again — or keep the role.',
   },
   {
     code: 'internal_error',

@@ -208,6 +208,22 @@
       "types": "./src/routes/me.connections.server.ts",
       "default": "./dist/routes/me.connections.server.js"
     },
+    "./routes/me.delete": {
+      "types": "./src/routes/me.delete.tsx",
+      "default": "./dist/routes/me.delete.js"
+    },
+    "./routes/me.delete.server": {
+      "types": "./src/routes/me.delete.server.ts",
+      "default": "./dist/routes/me.delete.server.js"
+    },
+    "./routes/workspaces.$slug.delete": {
+      "types": "./src/routes/workspaces.$slug.delete.tsx",
+      "default": "./dist/routes/workspaces.$slug.delete.js"
+    },
+    "./routes/workspaces.$slug.delete.server": {
+      "types": "./src/routes/workspaces.$slug.delete.server.ts",
+      "default": "./dist/routes/workspaces.$slug.delete.server.js"
+    },
     "./footer": {
       "types": "./src/footer.tsx",
       "default": "./dist/footer.js"

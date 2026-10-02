@@ -47,6 +47,9 @@ export const TOOL_ERROR_CODES = [
   'dns_unavailable',
   // register_upstream.
   'upstream_already_registered',
+  // set_member_role and remove_member.
+  'personal_workspace',
+  'last_workspace_admin',
   'internal_error',
 ] as const;
 

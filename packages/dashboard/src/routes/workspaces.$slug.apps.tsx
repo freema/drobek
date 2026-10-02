@@ -190,7 +190,7 @@ function Thumbnail({ slug, thumbnail, to }: { slug: string; thumbnail: AppThumbn
 }
 
 export default function WorkspaceAppsRoute() {
-  const { nav, workspace, apps, total, filters, deletedSlug, slugReleaseDays, publishApproval, canRequestApproval } =
+  const { nav, workspace, apps, total, filters, deletedSlug, slugReleaseDays, purgeDays, publishApproval, canRequestApproval } =
     useLoaderData<typeof loader>();
   const location = useLocation();
   const filtered = filters.q !== '' || filters.status !== 'all';
@@ -200,7 +200,8 @@ export default function WorkspaceAppsRoute() {
       <PublishApprovalNotice approval={publishApproval} canRequest={canRequestApproval} />
       {deletedSlug ? (
         <p style={styles.notice} role="status" data-testid="apps-deleted-notice">
-          <strong>{deletedSlug}</strong> was deleted. Its address stays reserved for {slugReleaseDays} days.
+          <strong>{deletedSlug}</strong> was deleted. Its address stays reserved for {slugReleaseDays} days; its versions and
+          data are deleted for good after {purgeDays} days.
         </p>
       ) : null}
 

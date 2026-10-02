@@ -55,9 +55,53 @@ export {
   resolveAcceptedRole,
   acceptInvite,
   acceptInviteUrl,
+  listPendingInvites,
+  revokeInvite,
   type InviteRecord,
   type AcceptInviteResult,
+  type PendingInvite,
 } from './invites.server.js';
+export {
+  MembershipError,
+  assertMemberRemovable,
+  changeMemberRole,
+  findWorkspaceMember,
+  removeMember,
+  type MembershipActor,
+  type MembershipErrorCode,
+  type RemoveResult,
+  type RoleChangeResult,
+} from './members.server.js';
+export {
+  DeletionError,
+  accountDeletionPlan,
+  assertWorkspaceDeletable,
+  deleteAccount,
+  deleteWorkspace,
+  workspaceDeletionSummary,
+  type AccountDeletionPlan,
+  type AccountWorkspace,
+  type AppDeletionHooks,
+  type DeletedAccount,
+  type DeletedWorkspace,
+  type DeletionErrorCode,
+  type WorkspaceDeleteActor,
+  type WorkspaceDeletionSummary,
+} from './deletion.server.js';
+export {
+  ACCOUNT_DELETE_OTP_SCOPE,
+  checkAccountDeleteCode,
+  sendAccountDeleteCode,
+  type AccountDeleteCodeResult,
+} from './account-code.server.js';
+export {
+  EMAIL_CHANGE_OTP_SCOPE,
+  confirmEmailChange,
+  emailChangeCodeScope,
+  requestEmailChange,
+  type EmailChangeConfirmResult,
+  type EmailChangeRequestResult,
+} from './email-change.server.js';
 export {
   renderInviteEmail,
   sendInviteEmail,

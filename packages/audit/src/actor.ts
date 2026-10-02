@@ -55,6 +55,26 @@ export const AUDIT_ACTIONS = {
   memberInvite: 'member.invite',
   memberAccept: 'member.accept',
   memberRoleChange: 'member.role_change',
+  /** A workspace admin removed a member (meta: the role they had). */
+  memberRemove: 'member.remove',
+  /** A member left the workspace (meta: the role they had). */
+  memberLeave: 'member.leave',
+  /** A workspace admin revoked a pending invite (meta: its role, never the address). */
+  memberInviteRevoke: 'member.invite_revoke',
+  /**
+   * A workspace was deleted with its apps (target = its slug; meta: app and
+   * member counts, `with_account` when its owner's account deletion took it).
+   * Written to the deleted workspace's own trail and to the actor's personal workspace.
+   */
+  workspaceDelete: 'workspace.delete',
+  /** A user deleted their account (target = the user id; meta: the workspaces deleted with it, the ones left). */
+  accountDelete: 'account.delete',
+  /**
+   * A user changed their sign-in e-mail after a code sent to the new address
+   * (target = the user id; never an address; meta.super_admin `gained` |
+   * `lost` when SUPERADMIN_EMAIL made that change too). Personal workspace.
+   */
+  accountEmailChange: 'account.email_change',
   /** `configure_module` applied a module config change directly. */
   moduleConfigure: 'module.configure',
   /** `configure_module` stored a change that needs the owner's confirmation. */
@@ -91,6 +111,8 @@ export const AUDIT_ACTIONS = {
   appDelete: 'app.delete',
   /** A deleted app's slug was released (system; renamed to its tombstone). */
   appSlugRelease: 'app.slug_release',
+  /** A deleted app was deleted for good, APP_PURGE_AFTER_DAYS after the delete (system). */
+  appPurge: 'app.purge',
   /** A member removed an agent's single-writer lease (meta: the previous holder). */
   appLockRelease: 'app.lock.release',
   /** The app was made public (no password gate). */
@@ -188,8 +210,10 @@ export const AUDIT_SUBJECT_TYPES = {
   domain: 'domain',
   /** A platform module of the workspace (target = the module name). */
   module: 'module',
-  /** The workspace itself (target = its slug) — publish approval. */
+  /** The workspace itself (target = its slug) — publish approval, deletion. */
   workspace: 'workspace',
+  /** A drobek account (target = its user id) — its deletion, its sign-in e-mail change. */
+  account: 'account',
 } as const;
 
 export type AuditSubjectType =

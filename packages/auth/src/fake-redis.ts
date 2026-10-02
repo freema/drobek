@@ -1,8 +1,8 @@
 /**
  * Unit-test helper: minimal in-memory Redis covering exactly the subset the
  * auth stack uses (GET/MGET/SET EX|PX|NX/GETEX/GETDEL/DEL/TTL/PTTL/EXPIRE/
- * PEXPIRE/INCR/EXISTS and a MULTI of GET/SET/INCR/PTTL) — also the end-user
- * sessions of the platform `auth` module.
+ * PEXPIRE/INCR/EXISTS/SCAN and a MULTI of GET/SET/INCR/PTTL) — also the
+ * end-user sessions of the platform `auth` module.
  * Set `failing = true` to make every op throw (fail-closed tests).
  * Not a *.test.ts file — vitest never collects it as a suite.
  */
@@ -161,5 +161,23 @@ export class FakeRedis {
   async exists(...keys: string[]): Promise<number> {
     this.throwIfFailing();
     return keys.filter((k) => this.live(k)).length;
+  }
+
+  /** SCAN cursor MATCH pattern COUNT n — `*` globs only; the cursor is an offset into the sorted keys. */
+  async scan(cursor: string, ...args: (string | number)[]): Promise<[string, string[]]> {
+    this.throwIfFailing();
+    let pattern = '*';
+    let count = 10;
+    for (let i = 0; i < args.length; i += 1) {
+      const a = String(args[i]).toUpperCase();
+      if (a === 'MATCH') pattern = String(args[(i += 1)]);
+      else if (a === 'COUNT') count = Number(args[(i += 1)]);
+    }
+    const re = new RegExp(`^${pattern.split('*').map((p) => p.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*')}$`);
+    const keys = [...this.store.keys()].filter((k) => this.live(k)).sort();
+    const start = Number(cursor) || 0;
+    const page = keys.slice(start, start + count).filter((k) => re.test(k));
+    const next = start + count >= keys.length ? '0' : String(start + count);
+    return [next, page];
   }
 }

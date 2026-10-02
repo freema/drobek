@@ -35,6 +35,12 @@ export function tombstoneSlug(slug: string, appId: string): string {
   return `${slug}${TOMBSTONE_MARK}${appId}`;
 }
 
+/** The slug an app had before its slug was released (a slug that is no tombstone stays as it is). */
+export function slugBeforeRelease(slug: string): string {
+  const at = slug.indexOf(TOMBSTONE_MARK);
+  return at === -1 ? slug : slug.slice(0, at);
+}
+
 /** When a slug deleted at `deletedAt` becomes free again. */
 export function slugReleaseAt(deletedAt: Date): Date {
   return new Date(deletedAt.getTime() + SLUG_RELEASE_AFTER_MS);
@@ -119,8 +125,8 @@ export async function unpublishApp(appId: string, actor: Actor): Promise<{ previ
 /**
  * Soft-delete the app: `deleted_at = now` makes it invisible to the
  * dashboard, the MCP tools (`not_found`) and every app host (404). Versions,
- * data and audit rows stay. The slug stays taken until `slugReleaseAt`.
- * Audited `app.delete`.
+ * data and audit rows stay until the purge (purge.server.ts) deletes the app
+ * for good. The slug stays taken until `slugReleaseAt`. Audited `app.delete`.
  */
 export async function softDeleteApp(
   appId: string,

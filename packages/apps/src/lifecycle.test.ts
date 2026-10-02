@@ -9,8 +9,10 @@ import {
   leaseKey,
   publish,
   readAppLease,
+  redisTakeLeaseHeldBy,
   releaseAppLease,
   releaseDeletedAppSlugs,
+  releaseUserAppLeases,
   setAppVisibility,
   setFrameAncestors,
   softDeleteApp,
@@ -233,5 +235,46 @@ describe('releaseAppLease', () => {
     const before = (await auditOf(app.slug)).length;
     expect(await releaseAppLease({ ...app, workspaceId: wsId }, actor, redis)).toEqual({ released: false, previous: null });
     expect((await auditOf(app.slug)).length).toBe(before);
+  });
+});
+
+describe('releaseUserAppLeases', () => {
+  /** The compare-and-delete script, emulated: DEL only while ARGV[1] is the holder. */
+  function fakeEval(store: Map<string, string>) {
+    return {
+      eval: async (_script: string, _n: number, key: string, holder: string) => {
+        const cur = store.get(key) ?? null;
+        if (!cur || (JSON.parse(cur) as { holder_user_id: string }).holder_user_id !== holder) return null;
+        store.delete(key);
+        return cur;
+      },
+    } as unknown as Parameters<typeof redisTakeLeaseHeldBy>[0];
+  }
+  const lease = (holder: string) => JSON.stringify({ holder_user_id: holder, session_id: 's', expires_at: '2026-10-02T10:03:00.000Z' });
+
+  it('releases only the leases the user holds on the workspace\'s live apps, audited with the actor', async () => {
+    const mine = await newApp('mine');
+    const theirs = await newApp('theirs');
+    const free = await newApp('free');
+    const gone = await newApp('gone');
+    await softDeleteApp(gone.id, actor);
+    const store = new Map<string, string>([
+      [leaseKey(mine.id), lease('leaver')],
+      [leaseKey(theirs.id), lease('stayer')],
+      [leaseKey(gone.id), lease('leaver')],
+    ]);
+    const released = await releaseUserAppLeases({ workspaceId: wsId, holderUserId: 'leaver', actor, take: redisTakeLeaseHeldBy(fakeEval(store)) });
+    expect(released).toEqual([mine.slug]);
+    expect(store.has(leaseKey(mine.id))).toBe(false);
+    expect(store.get(leaseKey(theirs.id))).toBe(lease('stayer'));
+    expect((await auditOf(mine.slug)).at(-1)).toMatchObject({
+      action: 'app.lock.release',
+      actorUserId: actor.userId,
+      meta: { previousHolderUserId: 'leaver' },
+    });
+    expect((await auditOf(theirs.slug)).some((a) => a.action === 'app.lock.release')).toBe(false);
+    expect((await auditOf(free.slug)).some((a) => a.action === 'app.lock.release')).toBe(false);
+
+    expect(await releaseUserAppLeases({ workspaceId: wsId, holderUserId: 'leaver', actor, take: redisTakeLeaseHeldBy(fakeEval(store)) })).toEqual([]);
   });
 });

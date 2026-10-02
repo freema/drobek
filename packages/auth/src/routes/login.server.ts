@@ -14,6 +14,7 @@ import {
 import {
   createEmailLoginCode,
   getClientIp,
+  isValidAuthEmail,
   normalizeAuthEmail,
 } from '../email-code.server.js';
 import { docPageUrl } from '@drobek/agent-dx';
@@ -31,9 +32,6 @@ import {
 import { getSessionUser } from '../session.server.js';
 import { logger, serializeError } from '../logger.server.js';
 import { maskEmail } from '../mask-email.js';
-
-// Server-side sanity check; the input itself is type=email.
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // ONE generic message for every Google-login failure mode — the real
 // reason is logged server-side only (no detail leak to the browser).
@@ -55,6 +53,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
     docsUrl: docPageUrl('overview'),
     googleError:
       url.searchParams.get('error') === 'google' ? GENERIC_GOOGLE_ERROR : null,
+    // The redirect after /me/delete.
+    accountDeleted: url.searchParams.get('deleted') === 'account',
   };
   if (returnTo) {
     return data(body, {
@@ -69,7 +69,8 @@ export async function action({ request }: ActionFunctionArgs) {
   const raw = String(form.get('email') ?? '');
   const email = normalizeAuthEmail(raw);
 
-  if (!EMAIL_RE.test(email) || email.length > 254) {
+  // Server-side sanity check; the input itself is type=email.
+  if (!isValidAuthEmail(email)) {
     return data(
       { error: 'Enter a valid email address.' },
       { status: 400 }

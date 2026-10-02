@@ -7,13 +7,15 @@
  *
  *   read    — look: list apps (+ who am I), get an app, read its files, read skills,
  *             query an app's stored data, read its logs, list its assets and
- *             its custom domains, and (workspace admins) the workspace's proxy
- *             upstreams.
+ *             its custom domains, a workspace's members, and (workspace admins)
+ *             the workspace's proxy upstreams.
  *   write   — change: create apps (also as a copy of a gallery app,
  *             `duplicate_app`), write files (new versions), restore,
  *             configure platform modules, upload (upload URLs) and delete assets,
  *             add, verify and remove custom domains, register and
- *             remove proxy upstreams without a secret.
+ *             remove proxy upstreams without a secret, change a member's
+ *             role, remove a member or leave a workspace, delete a team
+ *             workspace.
  *   publish — make a version live at its public URL (the `publish` tool),
  *             list it in the public gallery (`set_gallery_listing`) and
  *             choose the primary domain the production address redirects to
@@ -101,6 +103,12 @@ export const TOOL_SCOPES = {
   remove_domain: 'write',
   register_upstream: 'write',
   remove_upstream: 'write',
+  // Workspace members: reading them is read, changing a role or removing someone is write.
+  list_members: 'read',
+  set_member_role: 'write',
+  remove_member: 'write',
+  // Deleting a team workspace changes what exists, like the other workspace-admin tools.
+  delete_workspace: 'write',
   publish: 'publish',
   // Listing in the public gallery is public exposure, like publishing.
   set_gallery_listing: 'publish',

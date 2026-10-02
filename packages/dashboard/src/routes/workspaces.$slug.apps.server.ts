@@ -12,7 +12,7 @@
  * (editor+) asks the operator for an approval.
  */
 import { data, type ActionFunctionArgs, type LoaderFunctionArgs } from 'react-router';
-import { SLUG_RELEASE_AFTER_MS, previewUrl, publishedUrl, validateAppSlug } from '@drobek/apps';
+import { deletionWindow, previewUrl, publishedUrl, validateAppSlug } from '@drobek/apps';
 import { requireWorkspaceRole, roleAtLeast, workspaceNav } from '@drobek/tenancy';
 import { listWorkspaceApps } from '../apps.server.js';
 import { filterApps, parseAppListFilters } from '../app-view.js';
@@ -30,6 +30,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const filters = parseAppListFilters(url.searchParams);
   const all = shapeApps(await listWorkspaceApps(access.workspace.id));
   const deleted = url.searchParams.get('deleted') ?? '';
+  const deletion = deletionWindow();
 
   return {
     workspace: {
@@ -48,7 +49,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     filters,
     // Only echo something that looks like a slug (never arbitrary text).
     deletedSlug: deleted && validateAppSlug(deleted) === null ? deleted : null,
-    slugReleaseDays: Math.round(SLUG_RELEASE_AFTER_MS / (24 * 60 * 60 * 1000)),
+    slugReleaseDays: deletion.slugReservedDays,
+    purgeDays: deletion.purgeDays,
     role: access.effectiveRole,
     publishApproval: await publishApprovalView(access.workspace.id, access.user.id),
     canRequestApproval: roleAtLeast(access.effectiveRole, 'editor'),

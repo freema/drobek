@@ -131,6 +131,7 @@ declare const apps = pgTable(
     id: text('id')
       .primaryKey()
       .$defaultFn(() => createId()),
+    /** No ON DELETE: deleting a workspace purges its apps first (@drobek/tenancy). */
     workspaceId: text('workspace_id')
       .notNull()
       .references(() => workspaces.id),
@@ -158,7 +159,9 @@ declare const apps = pgTable(
      * Soft delete: a deleted app is
      * invisible everywhere (dashboard, MCP, app hosts). It keeps its slug for
      * 30 days; then @drobek/apps renames it to the tombstone
-     * `<slug>~deleted-<id>` so a new app can take the slug.
+     * `<slug>~deleted-<id>` so a new app can take the slug. APP_PURGE_AFTER_DAYS
+     * (30) after the delete the purge deletes the row, and every row that
+     * references it goes with it (ON DELETE CASCADE / SET NULL).
      */
     deletedAt: timestamp('deleted_at'),
     /**
@@ -256,9 +259,10 @@ declare const appVersions = pgTable(
       .$defaultFn(() => createId()),
     appId: text('app_id')
       .notNull()
-      .references(() => apps.id),
+      .references(() => apps.id, { onDelete: 'cascade' }),
     number: integer('number').notNull(),
-    createdByUserId: text('created_by_user_id').references(() => users.id),
+    /** The author; null once their account is deleted (the version stays). */
+    createdByUserId: text('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
     /** agent (MCP) vs user (dashboard) — server-derived, like audit_log. */
     actorKind: auditActorKindEnum('actor_kind').notNull(),
     /** The agent's one-line "why" for this change (shown in the history). */
@@ -313,7 +317,8 @@ declare const versionFiles = pgTable(
  * the age-based retention prune (@drobek/audit).
  *
  * Attribution: `actor_user_id` is the acting user (nullable for system
- * actions); `actor_kind` records whether that action came from a connected AGENT
+ * actions, and set to null when the account is deleted — the row stays);
+ * `actor_kind` records whether that action came from a connected AGENT
  * (an MCP tool call) or a human USER (dashboard/web) — both derived server-side.
  *
  * Subject: `subject_type` names the kind of thing acted on (app | member | …)
@@ -322,9 +327,9 @@ declare const versionFiles = pgTable(
  * deletion/tombstoning of its subject app/workspace (governance must outlive the
  * resource). `meta` carries structured, secret-free, PII-free context only.
  *
- * `workspace_id` keeps the FK (audit is always read within a live workspace and
- * workspaces are not deleted in v1); the subject app id is the one that must
- * survive deletion, hence its text-not-FK treatment above.
+ * `workspace_id` has no foreign key either: a deleted workspace's rows (its
+ * trail ends with `workspace.delete`) stay until the retention prune, like a
+ * purged app's. The Activity view reads them only while the workspace lives.
  */
 declare const auditLog = pgTable(
   'audit_log',
@@ -332,10 +337,8 @@ declare const auditLog = pgTable(
     id: text('id')
       .primaryKey()
       .$defaultFn(() => createId()),
-    workspaceId: text('workspace_id')
-      .notNull()
-      .references(() => workspaces.id),
-    actorUserId: text('actor_user_id').references(() => users.id),
+    workspaceId: text('workspace_id').notNull(),
+    actorUserId: text('actor_user_id').references(() => users.id, { onDelete: 'set null' }),
     /** agent (MCP tool) vs user (dashboard/web) — server-derived, not spoofable. */
     actorKind: auditActorKindEnum('actor_kind').notNull().default('user'),
     action: text('action').notNull(),
@@ -522,7 +525,7 @@ declare const appErrors = pgTable(
       .$defaultFn(() => createId()),
     appId: text('app_id')
       .notNull()
-      .references(() => apps.id),
+      .references(() => apps.id, { onDelete: 'cascade' }),
     type: appErrorTypeEnum('type').notNull(),
     /** Sanitized (redacted + truncated) error message. */
     message: text('message').notNull(),
@@ -556,7 +559,7 @@ declare const appDailyStats = pgTable(
   {
     appId: text('app_id')
       .notNull()
-      .references(() => apps.id),
+      .references(() => apps.id, { onDelete: 'cascade' }),
     day: text('day').notNull(),
     path404Counts: jsonb('path_404_counts')
       .$type<Record<string, number>>()
@@ -661,7 +664,7 @@ declare const upstreams = pgTable(
      * anonymously) — NOT the v1 caller-auth (v1 = an authed workspace member).
      */
     allowedAppIds: text('allowed_app_ids').array().notNull().default([]),
-    createdBy: text('created_by').references(() => users.id),
+    createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at').notNull().defaultNow(),
   },
   (t) => [uniqueIndex('upstreams_workspace_name_uq').on(t.workspaceId, t.name)]

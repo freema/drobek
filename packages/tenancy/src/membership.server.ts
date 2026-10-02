@@ -167,6 +167,7 @@ export async function resolveWorkspaceAccess(input: {
 }
 
 export interface WorkspaceMember {
+  userId: string;
   email: string;
   role: WorkspaceRole;
 }
@@ -175,11 +176,21 @@ export async function listWorkspaceMembers(
   workspaceId: string
 ): Promise<WorkspaceMember[]> {
   return getDb()
-    .select({ email: users.email, role: memberships.role })
+    .select({ userId: users.id, email: users.email, role: memberships.role })
     .from(memberships)
     .innerJoin(users, eq(users.id, memberships.userId))
     .where(eq(memberships.workspaceId, workspaceId))
     .orderBy(memberships.createdAt);
+}
+
+/** The e-mail address of each of these users, keyed by user id (unknown ids are absent). */
+export async function userEmails(userIds: readonly string[]): Promise<Map<string, string>> {
+  if (userIds.length === 0) return new Map();
+  const rows = await getDb()
+    .select({ id: users.id, email: users.email })
+    .from(users)
+    .where(inArray(users.id, [...new Set(userIds)]));
+  return new Map(rows.map((r) => [r.id, r.email]));
 }
 
 export interface UserWorkspace extends WorkspaceSummary {

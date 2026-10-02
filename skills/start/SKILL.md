@@ -97,7 +97,7 @@ The loop (tool → result):
 4. `compile.ok: true` → give the user `preview_url`. `false` → fix `compile.errors`, write again (`skill_info('debug')`). `readiness.warnings` never block; fix them before a publish. A TypeScript app is type-checked in the background (`readiness.typecheck: "pending"`): `get_app` a few seconds on lists its `type_error` warnings — fix them, they usually break in the browser.
 5. `get_logs({ app_id, kind: "runtime" })` after the page ran in a browser.
 6. `publish({ app_id, version? })` ONLY when the user explicitly asks → `published_url`. Public gallery: `set_gallery_listing({ app_id, listed, description, user_confirmed })`
-   — show the user the description first; `user_confirmed: true` ONLY after they explicitly said yes. A super-admin allows or blocks a workspace's publishing with `set_workspace_publishing({ workspace, publishing, user_confirmed })`, same rule.
+   — show the user the description first; `user_confirmed: true` ONLY after they explicitly said yes. A super-admin allows or blocks a workspace's publishing with `set_workspace_publishing({ workspace, publishing, user_confirmed })`, same rule. Members: `list_members({ workspace })`; a workspace admin changes a role with `set_member_role({ workspace, email, role })` and removes with `remove_member({ workspace, email, user_confirmed })` (your own e-mail = leave), same rule; `delete_workspace({ workspace, user_confirmed })` deletes a team workspace with all its apps, same rule (an account is deleted only in the dashboard).
 7. `get_app({ app_id })` = files, versions, lock, modules; `restore_version({ app_id, version })` = new version copying an old one.
 8. Backends: `skill_info({ name })`, `configure_module({ app_id, module, config })`, `query_data({ app_id, collection })`.
 9. Binaries: `create_asset_upload({ app_id, path, size })` → `upload_url` + `curl -T`; `list_assets({ app_id })`, `delete_asset({ app_id, path })`.
@@ -143,7 +143,7 @@ pinned esm.sh URL, e.g. `"date-fns": "https://esm.sh/date-fns@4.1.0"`; `pkg/sub`
 | `rate_limited` | too many new versions within an hour (`VERSIONS_PER_APP_HOUR` / `VERSIONS_PER_USER_HOUR`); nothing stored | tell the user; continue after `retry_after_seconds`, never loop; one write per related change |
 | `not_publishable` | that version did not compile | publish the newest version that compiled |
 | `publish_blocked` / `publish_not_approved` | the operator turned publishing off for the workspace / has not approved it (a request was e-mailed) | tell the user (`contact`), share `preview_url`; do not retry |
-| `user_confirmation_required` | gallery listing, workspace publishing, primary domain or removing a live domain without the user's yes | ask the user; call again with `user_confirmed: true` only if they say yes |
+| `user_confirmation_required` | gallery listing, workspace publishing, primary domain, removing a live domain or a member without the user's yes | ask the user; call again with `user_confirmed: true` only if they say yes |
 | `domain_not_verified` | the CNAME or TXT record of a custom domain is missing or wrong (`cname`, `txt`) | tell the user which record to fix; `verify_domain` again after a while |
 | `invalid_params` | > 20 files, same path twice, long reasoning | split the change; fix the arguments |
 | `not_found` | wrong `app_id` or no access; "is no longer stored" = a version the history retention deleted | `list_apps`; for a version, `get_app` (`version_retention`) and work from one still stored |

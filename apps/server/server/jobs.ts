@@ -1,9 +1,9 @@
-import { startAssetsSweep, startBlobGc, startSlugRelease, startVersionRetention, withRedisLock } from '@drobek/apps';
+import { startAppPurge, startAssetsSweep, startBlobGc, startSlugRelease, startVersionRetention, withRedisLock } from '@drobek/apps';
 import { auditRetentionDays, pruneAuditLog } from '@drobek/audit';
-import type { Logger } from '@drobek/core';
+import { getRedis, type Logger } from '@drobek/core';
 import { startDomainRecheck } from '@drobek/domains';
 import { startLogsPrune } from '@drobek/insights';
-import { startModuleJobs, type ModuleRuntime } from '@drobek/modules';
+import { forgetEndUserSessions, startModuleJobs, type EndUserScanRedis, type ModuleRuntime } from '@drobek/modules';
 import { startFilesSweep } from 'drobek-module-files';
 import { dbErrorForLog, runAsJob } from '@drobek/db';
 
@@ -25,6 +25,10 @@ export interface BackgroundJobs {
  *   no version references, after a 7-day grace period.
  * - Slug release (hourly, Redis lease): a soft-deleted app's slug is
  *   free again 30 days after the delete (renamed to its tombstone).
+ * - App purge (APP_PURGE_INTERVAL_MS, Redis lease): an app deleted
+ *   APP_PURGE_AFTER_DAYS (30) ago is deleted for good with everything that
+ *   references it, then its end users' sessions leave Redis (logic in
+ *   @drobek/apps purge.server.ts).
  * - Custom domains: the DNS re-check (hourly sweep, Redis lease) of every
  *   verified domain last checked 24 h+ ago — records gone → unverified + one
  *   e-mail to the app's owners.
@@ -64,6 +68,12 @@ function startJobs(log: Logger, opts: { filesSweep?: boolean; modules?: ModuleRu
   });
   const stopBlobGc = startBlobGc(jobLog);
   const stopSlugRelease = startSlugRelease(jobLog);
+  const stopAppPurge = startAppPurge({
+    log: jobLog,
+    afterPurge: async (purged) => {
+      await forgetEndUserSessions(getRedis() as unknown as EndUserScanRedis, purged.map((a) => a.appId));
+    },
+  });
   const stopFilesSweep = opts.filesSweep ? startFilesSweep({ log: jobLog, lease: withRedisLock }) : () => {};
   const stopLogsPrune = startLogsPrune({ log: jobLog, lease: withRedisLock });
   const stopAssetsSweep = startAssetsSweep({ log: jobLog });
@@ -93,6 +103,7 @@ function startJobs(log: Logger, opts: { filesSweep?: boolean; modules?: ModuleRu
       stopVersionRetention();
       stopBlobGc();
       stopSlugRelease();
+      stopAppPurge();
       stopFilesSweep();
       stopLogsPrune();
       stopAssetsSweep();

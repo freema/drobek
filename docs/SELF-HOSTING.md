@@ -211,7 +211,7 @@ built-ins.
 | `TLS_ASK_TOKEN` | secret | generated; the on-demand TLS `ask` token (drobek + Caddy) |
 | `SMTP_HOST` | yes (smtp) | SMTP server; `SMTP_PORT` (587), `SMTP_SECURE` (0 / 1 = implicit TLS), `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM` |
 | `EMAIL_TRANSPORT` / `RESEND_API_KEY` | — (`smtp`) / secret | `resend` sends through the Resend API instead of SMTP (then `SMTP_*` is not needed and `RESEND_API_KEY` is) |
-| `SUPERADMIN_EMAIL` | recommended | your sign-in e-mail(s), super-admin over every workspace |
+| `SUPERADMIN_EMAIL` | recommended | your sign-in e-mail(s), super-admin over every workspace; bound to the address, so a user who changes their sign-in e-mail on `/me` gains or loses super-admin with it |
 | `LANDING_URL` | — | your own website: `<PUBLIC_APP_URL>/` answers 301 there instead of the built-in landing page |
 | `DOCS_URL` | — | a website with the drobek docs: the agent docs link `<DOCS_URL>/<page>` instead of the files on GitHub |
 | `DASHBOARD_GITHUB_STARS` | — (on) | `off` = the dashboard footer makes no call to `api.github.com` for the repository's star count |
@@ -416,13 +416,13 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 
 | Variable | Default | What |
 | --- | --- | --- |
-| `SUPERADMIN_EMAIL` | — | comma-separated sign-in addresses with super-admin rights over every workspace (the abuse queue, reports) |
+| `SUPERADMIN_EMAIL` | — | comma-separated sign-in addresses with super-admin rights over every workspace (the abuse queue, reports). The rights belong to the address, not the account: a user who changes their sign-in e-mail on `/me` to a listed address becomes super-admin, and one who changes it away from a listed address stops being one |
 | `EMAIL_TRANSPORT` | smtp | how all mail goes out (sign-in codes, invites, module mail): `smtp`, `resend`, or the id of a transport a module in `DROBEK_MODULES` contributes to the `email.transport` slot ([MODULES](MODULES.md#e-mail-transports-from-modules): SES, Postmark, a company relay, …; set the secret env vars the module names). The server refuses to start on an invalid value, an id no active module contributes, or a missing transport secret |
 | `EMAIL_TRANSPORT_TIMEOUT_MS` | 10000 | how long one send through a module transport may take before it is aborted (1000–120000) |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_SECURE` / `SMTP_USER` / `SMTP_PASS` / `EMAIL_FROM` | — / 587 / 0 / — / — / — | **`SMTP_HOST` required with `smtp`** (production refuses to start without it) — the SMTP server for sign-in codes and module mail (`SMTP_SECURE=1` = implicit TLS); `EMAIL_FROM` is the sender for both transports (`Name <address>`; a bare address is sent under the name `drobek`) |
 | `SMTP_CONNECTION_TIMEOUT_MS` / `SMTP_GREETING_TIMEOUT_MS` / `SMTP_SOCKET_TIMEOUT_MS` | 10000 / 10000 / 30000 | how long an SMTP send waits to connect, for the server's greeting and on a silent socket (1000–120000; the server refuses to start on an invalid value). A hung mail server fails the send after these, and the sign-in form says so |
 | `RESEND_API_KEY` | — | **required with `resend`**, a secret (the server refuses to start without it; it is never logged or shown) — mail goes to `POST https://api.resend.com/emails` with a 10 s timeout; `EMAIL_FROM` must be on a domain verified in Resend |
-| `OTP_IP_SHORT_LIMIT` / `OTP_IP_DAILY_LIMIT` | 5 per 15 min / 20 per 24 h | dashboard sign-in code requests per client IP (a request whose e-mail failed counts too) |
+| `OTP_IP_SHORT_LIMIT` / `OTP_IP_DAILY_LIMIT` | 5 per 15 min / 20 per 24 h | dashboard sign-in code requests per client IP (a request whose e-mail failed counts too); every `OTP_*` limit also holds for the codes that confirm an account deletion or a new sign-in e-mail, counted separately |
 | `OTP_EMAIL_HOURLY_LIMIT` / `OTP_EMAIL_COOLDOWN_MS` | 3 per hour / 60000 | codes sent per address, minimum gap per address. A send that failed costs the address nothing: once mail works again, the next request sends a code |
 | `OTP_GLOBAL_HOURLY_MAX` | 100 | codes sent per hour server-wide, then sending pauses (failed sends do not count) |
 | `OTP_VERIFY_IP_LIMIT` / `OTP_VERIFY_IP_WINDOW_S` | 30 / 900 | code checks per client IP per window (the per-code cap of 5 guesses always applies) |
@@ -450,6 +450,7 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `LOGS_PRUNE_INTERVAL_MS` | 3600000 | how often the server removes `get_logs` rows past their retention for every app (errors past the buffer above, compiles and daily request stats older than 30 days) |
 | `DROBEK_MIGRATE_ON_START` | 1 | `0` = the server does not apply migrations on start (tests, tooling) |
 | `AUDIT_RETENTION_DAYS` | 365 | audit rows older than this are pruned daily |
+| `APP_PURGE_AFTER_DAYS` / `APP_PURGE_INTERVAL_MS` | 30 / 3600000 | a deleted app is deleted for good this many days after the delete — its versions, module data (records, form submissions, end users and their sessions, uploads), domains, assets, logs and statistics; audit rows stay until `AUDIT_RETENTION_DAYS` — and how often the purge runs. Below 30 the app's address is free from the purge on, not after 30 days |
 | `APPS_MAX_PER_WORKSPACE` | 50 | live apps per workspace (deleted ones do not count); `create_app` beyond it answers `limit_exceeded` *(plan)* |
 | `VERSIONS_PER_APP_HOUR` / `VERSIONS_PER_USER_HOUR` | 600 / 1200 | new versions of one app / made by one person (every app and workspace) within the last hour — `write_files`, `create_app`, `restore_version`, `duplicate_app` and the dashboard's Restore and duplicate page together; past either the call answers `rate_limited` with `retry_after_seconds` (the dashboard 429 + `Retry-After`) and nothing is stored *(plan)* |
 | `APP_VERSIONS_KEEP` | 200 | the newest versions of each app the hourly history retention keeps; older versions are deleted — never the published one, one whose asset set is kept for a rollback, the one the preview serves or one from the last hour — and the blob GC frees their bytes. `read_file` / `restore_version` of a deleted one answer `not_found` saying so; the dashboard's version history and `get_app` state the number *(plan; while the limits provider does not answer, the retention leaves the workspace alone)* |

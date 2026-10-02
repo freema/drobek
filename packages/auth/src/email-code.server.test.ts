@@ -19,6 +19,7 @@ import {
   createEmailLoginCode,
   generateLoginCode,
   getClientIp,
+  isValidAuthEmail,
   trustProxyConfigError,
   trustProxyMode,
   normalizeAuthEmail,
@@ -185,6 +186,15 @@ describe('consumeEmailLoginCode', () => {
 describe('normalizeAuthEmail', () => {
   it('trims and lowercases', () => {
     expect(normalizeAuthEmail('  Foo@BAR.com ')).toBe('foo@bar.com');
+  });
+});
+
+describe('isValidAuthEmail', () => {
+  it('takes one @ with a dotted domain, up to 254 characters', () => {
+    expect(isValidAuthEmail('a@b.cz')).toBe(true);
+    expect(isValidAuthEmail(`${'a'.repeat(243)}@example.cz`)).toBe(true);
+    expect(isValidAuthEmail(`${'a'.repeat(244)}@example.cz`)).toBe(false);
+    for (const bad of ['', 'a@b', 'a b@c.cz', '@b.cz', 'a@@b.cz', 'nobody']) expect(isValidAuthEmail(bad)).toBe(false);
   });
 });
 

@@ -480,6 +480,61 @@ export const TOOL_DOCS: ToolDoc[] = [
     example: { workspace: 'acme-crew', name: 'pokeapi', user_confirmed: true },
   },
   {
+    name: 'list_members',
+    title: 'List a workspace\'s members',
+    scope: 'read (any role in the workspace)',
+    description:
+      'The members of one workspace — the dashboard\'s Members tab: each member\'s `email`, `role` (viewer | editor | workspace-admin) and `you` (the user you act for). Plus the workspace `kind`, your `role` in it, `can_manage` (true when you may change roles and remove members: a workspace-admin of a team workspace) and `members_url`, the dashboard page (pending invites and new invites are managed there). Read-only.',
+    annotations: READ_ONLY,
+    fields: [{ name: 'workspace', type: 'string', required: true, description: 'The workspace slug.' }],
+    returns: '{ workspace, kind:"personal"|"team", role, members:[{ email, role, you }], can_manage, members_url }',
+    example: { workspace: 'acme-crew' },
+  },
+  {
+    name: 'set_member_role',
+    title: 'Change a member\'s role',
+    scope: 'write (workspace-admin role in the workspace)',
+    description:
+      'Set a member\'s role in a team workspace — what the dashboard\'s Members tab does: `viewer` reads, `editor` also builds and changes apps, `workspace-admin` also manages members, invites and the workspace\'s settings. A workspace always keeps a workspace-admin, so demoting the only one answers last_workspace_admin (make another member admin first); a personal workspace answers personal_workspace. A member who becomes a viewer loses their agent\'s edit locks on the workspace\'s apps (`released_locks`). The same role again answers `changed: false`. Audited `member.role_change` with you as the agent.',
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    fields: [
+      { name: 'workspace', type: 'string', required: true, description: 'The workspace slug.' },
+      { name: 'email', type: 'string', required: true, description: 'The member\'s e-mail address (list_members lists them).' },
+      { name: 'role', type: '"viewer" | "editor" | "workspace-admin"', required: true, description: 'The new role.' },
+    ],
+    returns: '{ workspace, email, from, to, changed, released_locks:[slug] }',
+    example: { workspace: 'acme-crew', email: 'jana@example.com', role: 'viewer' },
+  },
+  {
+    name: 'remove_member',
+    title: 'Remove a member from a workspace',
+    scope: 'write (workspace-admin role in the workspace; any role to leave)',
+    description:
+      'Remove a member from a team workspace — the dashboard\'s Remove on the Members tab — or, with your own e-mail, leave it (any role may leave). The member loses access at once: the dashboard and their agents answer not_found, and their edit locks on the workspace\'s apps are released (`released_locks`); the apps and versions they made stay. So it needs `user_confirmed: true` — set it ONLY after the user explicitly said yes to removing exactly this member (or to leaving); without it the answer is user_confirmation_required with the member\'s `role`, and nothing changes. The only workspace-admin can be neither removed nor leave (last_workspace_admin); a personal workspace answers personal_workspace. Coming back takes a new invite from a workspace admin. Audited `member.remove` / `member.leave` with you as the agent.',
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    fields: [
+      { name: 'workspace', type: 'string', required: true, description: 'The workspace slug.' },
+      { name: 'email', type: 'string', required: true, description: 'The member to remove; your own e-mail leaves the workspace.' },
+      { name: 'user_confirmed', type: 'boolean', required: false, description: 'true ONLY after the user explicitly said yes to this removal.' },
+    ],
+    returns: '{ workspace, removed:email, role, left, released_locks:[slug], note }',
+    example: { workspace: 'acme-crew', email: 'jana@example.com', user_confirmed: true },
+  },
+  {
+    name: 'delete_workspace',
+    title: 'Delete a team workspace',
+    scope: 'write (workspace-admin role in the workspace)',
+    description:
+      'Delete a team workspace for good — what the dashboard\'s Delete workspace page does: every app in it is deleted with its versions, data, uploads and custom domains, and its addresses stop answering; every member loses access; its pending invites stop working; its upstreams go with their keys. It cannot be restored, so it needs `user_confirmed: true` — set it ONLY after the user explicitly said yes to deleting exactly this workspace with everything in it; without it the answer is user_confirmation_required with what would go (`apps`, `published`, `members`, `pending_invites`, `upstreams`), and nothing changes. A personal workspace answers personal_workspace: it goes only with its owner\'s account, which is deleted in the dashboard (Account → Delete account), never through MCP. The activity entries stay for the server operator. Audited `workspace.delete` with you as the agent.',
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    fields: [
+      { name: 'workspace', type: 'string', required: true, description: 'The team workspace slug.' },
+      { name: 'user_confirmed', type: 'boolean', required: false, description: 'true ONLY after the user explicitly said yes to deleting it.' },
+    ],
+    returns: '{ deleted:slug, apps:[slug], members, note }',
+    example: { workspace: 'acme-crew', user_confirmed: true },
+  },
+  {
     name: 'set_workspace_publishing',
     title: 'Set a workspace\'s publishing',
     scope: 'publish (super-admins of this server only)',

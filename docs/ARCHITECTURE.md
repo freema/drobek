@@ -93,6 +93,60 @@ This document is the map of how that works. The neighbours:
   names the operator's super-admins; super-admin is an env flag, not a role
   row. Sign-up is open: anyone can create workspaces and build and preview
   apps.
+- **Members** of a team workspace join through single-use invites (Redis,
+  7 days, indexed per workspace in `drobek:invites:<workspace_id>` so its
+  admins list and revoke the pending ones on the Members tab). Workspace
+  admins change roles and remove members, any member leaves — on the Members
+  tab or over MCP (`list_members`, `set_member_role`, `remove_member`), both
+  through `@drobek/tenancy` `members.server.ts`: a workspace always keeps a
+  workspace-admin (the change locks the workspace row) and a personal
+  workspace's one member never changes. Access is resolved on every request,
+  so a removed member is out at once; the leases they held on the
+  workspace's apps are released too (also when a member becomes a viewer).
+  Every change is audited (`member.role_change`, `member.remove`,
+  `member.leave`, `member.invite_revoke`).
+- **Deleting a workspace or an account** goes through `@drobek/tenancy`
+  `deletion.server.ts`. A workspace admin deletes a team workspace after
+  typing its slug (`/workspaces/<slug>/delete`) or over MCP
+  (`delete_workspace` with `user_confirmed`): every app is soft-deleted (the
+  modules' `onAppDelete` runs, the app hosts drop it) and then purged at once
+  like the app purge job does, then the workspace row goes, and its
+  memberships, upstreams and module opt-ins go with it through `ON DELETE
+  CASCADE`. The row is locked first, and an app created meanwhile restarts the
+  pass; the pending invites are dropped from Redis. A user deletes their
+  account at `/me/delete` after a fresh e-mailed code (its own OTP scope),
+  only there: it deletes the personal workspace and every team workspace they
+  are the last member of the same way, leaves the others (releasing their
+  edit locks), deletes the `users` row (its API keys and OAuth codes and tokens
+  cascade) and every dashboard session (a SCAN over
+  `drobek:session:*`). It is refused while the user is the only
+  workspace-admin of a team workspace other members use. A member who joins
+  one of the team workspaces it deletes meanwhile stops it
+  (`workspaces_changed`): the members are counted again before each app is
+  deleted or purged and under the row lock before the row goes, so the team
+  and its new member stay. Authors stay
+  without a name: `app_versions.created_by_user_id`, `audit_log.actor_user_id`
+  and `upstreams.created_by` are set null. `audit_log.workspace_id` has no
+  foreign key, so a deleted workspace's audit rows stay until the audit
+  retention removes them; audited `workspace.delete`, `account.delete` and,
+  in each workspace left, `member.leave` with `reason: account_deleted`.
+- **Changing the sign-in e-mail** goes through `@drobek/tenancy`
+  `email-change.server.ts`, on `/me` only (no MCP tool). The user enters the
+  new address and a code goes to it: the sign-in code's guard with the same
+  `OTP_*` limits, counted under the scope `email-change`; the code lives
+  under `email-change:<user_id>`, so it changes only that account and only to
+  that address. An address another account signs in with gets an "already
+  has an account" e-mail instead of a code, and the page answers the same, so
+  it never tells whether an address has an account. The code changes
+  `users.email` under the row lock with `account.email_change` audited in the
+  personal workspace in the same transaction, ends every dashboard session
+  (the same SCAN) and signs the browser in again, and e-mails a notice to the
+  previous address. API keys, OAuth connections, memberships, the personal
+  workspace's slug and a linked Google sign-in hang on the user id and stay;
+  the previous address now signs in to a new, empty account. What is bound to
+  the address follows the new one at once: `SUPERADMIN_EMAIL`
+  (`meta.super_admin` records `gained` / `lost`) and a workspace editor's
+  admin role in its apps' sign-in (platform module `auth`).
 - **Who may publish** (`PUBLISH_APPROVAL`, `open` by default, plus a
   super-admin's per-workspace state `default` / `allowed` / `blocked`,
   `workspaces.publish_approved_at` / `publish_blocked_at`): a super-admin
@@ -112,7 +166,10 @@ This document is the map of how that works. The neighbours:
   (a host label; `--` is not allowed in a slug, so the preview and version
   host names never collide with another app). `create_app` picks a free slug
   and falls back to `<name>-<4 hex>`. A deleted app keeps its slug for 30
-  days, then the slug is released.
+  days, then the slug is released. `APP_PURGE_AFTER_DAYS` (30) after the
+  delete the app is deleted for good: its row and every row that references
+  it (versions, module data, end users, uploads, domains, assets, logs,
+  statistics) go; audit rows stay until their own retention.
 - A **version** is an immutable, numbered snapshot of the app's files
   (`app_versions` + `version_files`): the sources the agent wrote AND the
   compiled output, plus who made it, the agent's one-line `reasoning` and the
@@ -492,6 +549,7 @@ query:
 | version retention | hourly, Redis lease | deletes the versions of each app past its workspace's `APP_VERSIONS_KEEP` (200) — never the published one, a rollback set, the one the preview serves or the last hour's; skips a workspace whose limits provider does not answer (`@drobek/apps`) |
 | blob GC | hourly, Redis lease | deletes blobs no version references, after 7 days |
 | slug release | hourly, Redis lease | a soft-deleted app's slug is free again after 30 days |
+| app purge | `APP_PURGE_INTERVAL_MS` (1 h), Redis lease | deletes an app deleted `APP_PURGE_AFTER_DAYS` (30) ago for good, one app per transaction: the `apps` row and through `ON DELETE CASCADE` its versions (their blobs go with the blob GC), module configs and secrets, domains, asset rows, gallery likes and opens, logs and statistics, and the module tables (records, form submissions, end users and identities, uploads, sync state); abuse reports and duplicates keep their rows without the reference; its id leaves `upstreams.allowed_app_ids`, its asset directory and end-user sessions go; audited `app.purge`. An app a foreign key without `ON DELETE` holds is logged and retried every run (`@drobek/apps`) |
 | domain re-check | `DOMAINS_RECHECK_INTERVAL_MS` (1 h), Redis lease | re-verifies domains checked more than 24 h ago; unverifies + mails on a definitive failure |
 | files sweep (only with the `files` module) | `FILES_SWEEP_INTERVAL_MS` (1 h), Redis lease | removes the uploads of apps deleted `FILES_SWEEP_RETENTION_MS` (24 h) ago, stale temp uploads and blobs no `mod_files` row references (`drobek-module-files`) |
 | assets sweep | hourly, Redis lease | removes the asset files and rows of apps deleted 24 h ago, stale temp uploads and files neither the draft (`app_assets`) nor a kept published set (`app_version_assets`) references (`@drobek/apps`) |

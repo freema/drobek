@@ -24,6 +24,7 @@ export {
   CODE_MAX_ATTEMPTS,
   CODE_LENGTH,
   normalizeAuthEmail,
+  isValidAuthEmail,
   generateLoginCode,
   createEmailLoginCode,
   consumeEmailLoginCode,
@@ -59,6 +60,7 @@ export {
   requireSessionUser,
   createUserSession,
   destroySession,
+  destroyUserSessions,
   type SessionUser,
 } from './session.server.js';
 export {

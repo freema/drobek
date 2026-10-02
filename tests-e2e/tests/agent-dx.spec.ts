@@ -37,6 +37,10 @@ const ALL_TOOLS = [
   'list_upstreams',
   'register_upstream',
   'remove_upstream',
+  'list_members',
+  'set_member_role',
+  'remove_member',
+  'delete_workspace',
 ];
 
 /** Retired tools — never advertised. */

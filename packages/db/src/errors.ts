@@ -81,6 +81,11 @@ export function isQueryTimeout(err: unknown): boolean {
   return code === '57014' || code === '55P03';
 }
 
+/** A foreign-key violation (SQLSTATE 23503): a row another row still references, or a reference to a missing row. */
+export function isForeignKeyViolation(err: unknown): boolean {
+  return pgErrorCode(err) === '23503';
+}
+
 /** The SQLSTATE (or driver code), constraint and table of a DB error; null when `err` is not one. */
 function dbErrorSummary(err: unknown): string | null {
   const links = chain(err);

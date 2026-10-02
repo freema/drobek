@@ -14,6 +14,7 @@ import {
   endUserCookiesSecure,
   endUserEpochKey,
   endUserSessionKey,
+  forgetEndUserSessions,
   loadEndUserSession,
   parseEndUserSession,
   readEndUserToken,
@@ -22,6 +23,20 @@ import {
 } from './principal.js';
 
 const USER = { id: 'eu_1', email: 'ana@example.com', role: 'user' as const };
+
+/** FakeRedis + SCAN (MATCH with `*`, a page of `count` keys per call). */
+class ScanRedis extends FakeRedis {
+  scans = 0;
+  async scan(cursor: string, _match: 'MATCH', pattern: string, _count: 'COUNT', count: number): Promise<[string, string[]]> {
+    this.scans += 1;
+    const re = new RegExp(`^${pattern.split('*').map((p) => p.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*')}$`);
+    const keys = [...this.store.keys()].sort();
+    const from = Number(cursor);
+    const page = keys.slice(from, from + count);
+    const next = from + count >= keys.length ? '0' : String(from + count);
+    return [next, page.filter((k) => re.test(k))];
+  }
+}
 
 describe('end-user cookie', () => {
   it('is host-only, HttpOnly, Lax; __Host- + Secure when secure', () => {
@@ -74,6 +89,25 @@ describe('sessions + epoch', () => {
     expect(await loadEndUserSession(r, 'app2', other)).not.toBeNull();
     const fresh = await createEndUserSession(r, 'app1', USER);
     expect(await loadEndUserSession(r, 'app1', fresh)).toEqual({ ...USER, epoch: 1 });
+  });
+
+  it('forgetting purged apps removes their sessions and epochs in one SCAN pass; other apps keep theirs', async () => {
+    const r = new ScanRedis();
+    const gone1 = await createEndUserSession(r, 'gone1', USER);
+    const gone2 = await createEndUserSession(r, 'gone2', USER);
+    const kept = await createEndUserSession(r, 'kept', USER);
+    await revokeEndUserSessions(r, 'gone1');
+    await revokeEndUserSessions(r, 'kept');
+    for (let i = 0; i < 2500; i++) await r.set(`drobek:other:${i}`, 'x');
+    expect(await forgetEndUserSessions(r, ['gone1', 'gone2'])).toBe(3);
+    expect(r.scans).toBe(3);
+    expect(await r.get(endUserSessionKey('gone1', gone1))).toBeNull();
+    expect(await r.get(endUserSessionKey('gone2', gone2))).toBeNull();
+    expect(await r.get(endUserEpochKey('gone1'))).toBeNull();
+    expect(await r.get(endUserEpochKey('kept'))).toBe('1');
+    expect(await r.get(endUserSessionKey('kept', kept))).not.toBeNull();
+    expect(await forgetEndUserSessions(r, [])).toBe(0);
+    expect(r.scans).toBe(3);
   });
 
   it('parse refuses malformed records (fail closed)', () => {

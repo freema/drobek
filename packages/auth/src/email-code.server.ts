@@ -65,6 +65,13 @@ export function normalizeAuthEmail(input: string): string {
   return input.trim().toLowerCase();
 }
 
+const AUTH_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** A normalized address the dashboard accepts to sign in with: one `@`, a dot in the domain, at most 254 characters. */
+export function isValidAuthEmail(email: string): boolean {
+  return email.length <= 254 && AUTH_EMAIL_RE.test(email);
+}
+
 /** Exactly 6 numeric digits (0-9), leading zeros allowed. */
 export function generateLoginCode(): string {
   let out = '';

@@ -64,6 +64,7 @@
     "test:run": "vitest run"
   },
   "dependencies": {
+    "@drobek/apps": "workspace:*",
     "@drobek/audit": "workspace:*",
     "@drobek/auth": "workspace:*",
     "@drobek/core": "workspace:*",

@@ -99,6 +99,15 @@ const styles = {
     marginTop: '1rem',
   },
   back: { fontSize: '0.9rem', color: '#555' },
+  ok: {
+    background: '#f0fdf4',
+    border: '1px solid #bbf7d0',
+    color: '#166534',
+    borderRadius: '8px',
+    padding: '0.6rem 0.75rem',
+    fontSize: '0.9rem',
+    margin: '1rem 0',
+  },
 } as const;
 
 interface AdminWorkspaceRow {
@@ -195,7 +204,7 @@ function AllWorkspaces({ workspaces }: { workspaces: readonly AdminWorkspaceRow[
 }
 
 export default function WorkspacesRoute() {
-  const { workspaces, superAdmin, allWorkspaces } =
+  const { workspaces, superAdmin, allWorkspaces, left, deleted } =
     useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const nav = useNavigation();
@@ -204,6 +213,18 @@ export default function WorkspacesRoute() {
   return (
     <DashboardPage>
       <h1 style={styles.h1}>Workspaces</h1>
+      {left ? (
+        <p style={styles.ok} role="status" data-testid="workspace-left">
+          You left the workspace /{left}. Its apps are no longer listed for you; to come back, a workspace admin has
+          to invite you again.
+        </p>
+      ) : null}
+      {deleted ? (
+        <p style={styles.ok} role="status" data-testid="workspace-deleted">
+          The workspace /{deleted} was deleted with its apps, their data and its upstreams. Its members lost access,
+          its pending invites stopped working, and its apps&apos; addresses no longer answer.
+        </p>
+      ) : null}
       <p style={styles.hint}>
         Your workspaces and your role in each of them. The slug after the name tells apart workspaces with the same
         name; your agent picks a workspace by its slug and uses your personal one when you name none.

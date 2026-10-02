@@ -38,6 +38,43 @@ describe('activitySummary', () => {
     );
     expect(activitySummary(ev('domain.add', 'domain', 'shop.example.com', { app: 'x' }))).toBe('Added the custom domain shop.example.com');
     expect(activitySummary(ev('app.gallery_unlisted', 'app', 'x', { reason: 'takedown' }))).toContain('taken down');
+    expect(activitySummary(ev('app.purge', 'app', 'x', { appId: 'app_0' }))).toBe('Deleted the app’s versions and data for good');
+  });
+
+  it('reads the member changes', () => {
+    expect(activitySummary(ev('member.remove', 'member', 'u_1', { role: 'editor' }))).toBe('Removed a member (editor) from the workspace');
+    expect(activitySummary(ev('member.leave', 'member', 'u_1', { role: 'viewer' }))).toBe('A member (viewer) left the workspace');
+    expect(activitySummary(ev('member.invite_revoke', 'member', null, { role: 'editor' }))).toBe('Revoked a pending invite for the editor role');
+    expect(activitySummary(ev('member.leave', 'member', 'u_1', { role: 'editor', reason: 'account_deleted' }))).toBe(
+      'A member (editor) deleted their account and left the workspace'
+    );
+    expect(activitySummary(ev('member.role_change', 'member', 'u_1', { from: 'editor', to: 'viewer' }))).toBe(
+      'Changed a member’s role from editor to viewer'
+    );
+  });
+
+  it('reads a workspace and an account deletion', () => {
+    expect(activitySummary(ev('workspace.delete', 'workspace', 'acme', { apps: 2, members: 3 }))).toBe('Deleted the workspace /acme with 2 apps');
+    expect(activitySummary(ev('workspace.delete', 'workspace', 'solo', { apps: 1, members: 1, with_account: true }))).toBe(
+      'Deleted the workspace /solo with 1 app together with the account'
+    );
+    expect(activitySummary(ev('workspace.delete', 'workspace', null, { apps: 0, members: 1, with_account: true }))).toBe(
+      'Deleted the personal workspace with 0 apps together with the account'
+    );
+    expect(activitySummary(ev('account.delete', 'account', 'u_1', { workspaces_deleted: 1, workspaces_left: 0 }))).toBe('Deleted the account');
+    expect(activityRefs(ev('workspace.delete', 'workspace', 'acme', {}))).toEqual([]);
+    expect(activityRefs(ev('account.delete', 'account', 'u_1', {}))).toEqual([]);
+  });
+
+  it('reads a sign-in e-mail change, with the super-admin rights it moved', () => {
+    expect(activitySummary(ev('account.email_change', 'account', 'u_1', null))).toBe('Changed the sign-in e-mail');
+    expect(activitySummary(ev('account.email_change', 'account', 'u_1', { super_admin: 'gained' }))).toBe(
+      'Changed the sign-in e-mail to an address with super-admin rights'
+    );
+    expect(activitySummary(ev('account.email_change', 'account', 'u_1', { super_admin: 'lost' }))).toBe(
+      'Changed the sign-in e-mail; the new address has no super-admin rights'
+    );
+    expect(activityRefs(ev('account.email_change', 'account', 'u_1', {}))).toEqual([]);
   });
 
   it('reads a scheduled import run and a resume', () => {
@@ -143,6 +180,7 @@ describe('activityRefs + resolveActivityRefs', () => {
     expect(links(ev('app.create', 'app', 'reused'))).toEqual([{ label: 'reused', href: null, note: 'app deleted' }]);
     expect(links(ev('domain.add', 'domain', 'a.example.com', { app: 'pokedex', app_id: 'app_other' }))[0].href).toBeNull();
     expect(links(ev('app.slug_release', 'app', 'pokedex', { appId: 'app_0' }))).toEqual([]);
+    expect(links(ev('app.purge', 'app', 'pokedex', { appId: 'app_0' }))).toEqual([]);
   });
 
   it('links members and account pages only where the viewer may open them', () => {

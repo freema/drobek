@@ -82,6 +82,7 @@ const SUMMARIES: Record<string, Summarize> = {
   'deploy.rollback': () => 'Rolled back to an earlier deploy (earlier upload pipeline)',
   'app.delete': () => 'Deleted the app',
   'app.slug_release': () => 'Released the deleted app’s address for reuse',
+  'app.purge': () => 'Deleted the app’s versions and data for good',
   'app.lock.release': () => 'Released the agent’s edit lock on the app',
   'app.visibility.public': () => 'Made the app public (no password)',
   'app.visibility.password': (m) =>
@@ -101,6 +102,12 @@ const SUMMARIES: Record<string, Summarize> = {
     const to = str(m, 'to') ?? str(m, 'role');
     return `Changed a member’s role${from ? ` from ${from}` : ''}${to ? ` to ${to}` : ''}`;
   },
+  'member.remove': (m) => `Removed a member${str(m, 'role') ? ` (${str(m, 'role')})` : ''} from the workspace`,
+  'member.leave': (m) =>
+    str(m, 'reason') === 'account_deleted'
+      ? `A member${str(m, 'role') ? ` (${str(m, 'role')})` : ''} deleted their account and left the workspace`
+      : `A member${str(m, 'role') ? ` (${str(m, 'role')})` : ''} left the workspace`,
+  'member.invite_revoke': (m) => `Revoked a pending invite${str(m, 'role') ? ` for the ${str(m, 'role')} role` : ''}`,
   'module.configure': (m) => {
     const keys = Array.isArray(m.keys) ? m.keys.filter((k): k is string => typeof k === 'string') : [];
     return `Changed the ${mod(m)} module’s settings${keys.length ? ` (${keys.join(', ')})` : ''}`;
@@ -210,6 +217,18 @@ const SUMMARIES: Record<string, Summarize> = {
   'workspace.publish_revoke': () => 'The server operator took the publishing approval back',
   'workspace.publish_block': () => 'The server operator turned publishing off for this workspace',
   'workspace.publish_unblock': () => 'The server operator turned publishing back on for this workspace',
+  'workspace.delete': (m, e) => {
+    const apps = num(m, 'apps');
+    const what = `${e.subject ? `the workspace /${e.subject}` : 'the personal workspace'}${apps !== null ? ` with ${apps} app${apps === 1 ? '' : 's'}` : ''}`;
+    return m.with_account === true ? `Deleted ${what} together with the account` : `Deleted ${what}`;
+  },
+  'account.delete': () => 'Deleted the account',
+  'account.email_change': (m) => {
+    const superAdmin = str(m, 'super_admin');
+    if (superAdmin === 'gained') return 'Changed the sign-in e-mail to an address with super-admin rights';
+    if (superAdmin === 'lost') return 'Changed the sign-in e-mail; the new address has no super-admin rights';
+    return 'Changed the sign-in e-mail';
+  },
 };
 
 /** One readable sentence for an audit event (unknown actions fall back to their name). */
@@ -248,8 +267,8 @@ export function activityRefs(e: ActivityEvent): ActivityRef[] {
   const appId = str(m, 'app_id') ?? str(m, 'appId');
   switch (e.subjectType) {
     case 'app': {
-      // A released slug's app was renamed to its tombstone: nothing to link.
-      if (e.action === 'app.slug_release') return [];
+      // A released slug's app was renamed to its tombstone, a purged one is gone: nothing to link.
+      if (e.action === 'app.slug_release' || e.action === 'app.purge') return [];
       const refs: ActivityRef[] = [{ kind: 'app', slug: subject!, appId }];
       const key = VERSION_KEY[e.action];
       const n = key ? num(m, key) : null;

@@ -309,7 +309,7 @@ to, with your role in each.
 - **Scripts / CI:** a personal `drk_…` API key from `/me/api-keys` as
   `Authorization: Bearer drk_…`.
 
-The agent gets twenty-five tools — `list_apps`, `create_app`, `duplicate_app`, `get_app`,
+The agent gets twenty-eight tools — `list_apps`, `create_app`, `duplicate_app`, `get_app`,
 `read_file`, `write_files`, `restore_version`, `publish`,
 `set_gallery_listing`, `skill_info`, `configure_module`, `query_data`,
 `get_logs`, for video, audio, images and fonts `create_asset_upload`,
@@ -317,7 +317,8 @@ The agent gets twenty-five tools — `list_apps`, `create_app`, `duplicate_app`,
 the model), and for custom domains `list_domains`, `add_domain`,
 `verify_domain`, `set_primary_domain`, `remove_domain`, and for the proxy
 module's external APIs `list_upstreams`, `register_upstream`,
-`remove_upstream`, and `sync_now` for the sync module's scheduled imports (a super-admin also gets `set_workspace_publishing`). The full agent contract (scopes,
+`remove_upstream`, for a workspace's members `list_members`,
+`set_member_role`, `remove_member`, `delete_workspace`, and `sync_now` for the sync module's scheduled imports (a super-admin also gets `set_workspace_publishing`). The full agent contract (scopes,
 the briefing, skills, `/llms.txt`) is [`docs/AGENT.md`](./docs/AGENT.md); a
 running server serves it at `/llms.txt`, `/llms-full.txt` and
 `/build-with-your-agent`. To teach an agent the loop without the plugin:

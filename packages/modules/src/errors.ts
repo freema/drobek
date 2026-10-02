@@ -90,6 +90,9 @@ export const CORE_ERROR_CODES: readonly string[] = [
   'dns_unavailable',
   // proxy upstreams (MCP upstream tools)
   'upstream_already_registered',
+  // workspace members (MCP member tools)
+  'personal_workspace',
+  'last_workspace_admin',
   // the workspace Modules switch (dashboard)
   'module_requires_not_enabled',
   // compile.errors[]

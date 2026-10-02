@@ -36,6 +36,12 @@ describe('audit action vocabulary', () => {
       memberInvite: 'member.invite',
       memberAccept: 'member.accept',
       memberRoleChange: 'member.role_change',
+      memberRemove: 'member.remove',
+      memberLeave: 'member.leave',
+      memberInviteRevoke: 'member.invite_revoke',
+      workspaceDelete: 'workspace.delete',
+      accountDelete: 'account.delete',
+      accountEmailChange: 'account.email_change',
     });
   });
 

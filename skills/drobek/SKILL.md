@@ -484,6 +484,33 @@ a schedule (the owner confirms a new source) and writes the records into a
 (`status: "failed"` + `error` is a failed run, not a tool error);
 `get_logs({ app_id, kind: "sync" })` lists the latest runs.
 
+## Workspace members
+
+`list_members({ workspace })` lists a workspace's members (`email`, `role`,
+`you`) and `can_manage` — true for a workspace admin of a team workspace. A
+workspace admin changes a role with
+`set_member_role({ workspace, email, role })` (`viewer`, `editor`,
+`workspace-admin`; a new viewer's edit locks are released) and removes a
+member with `remove_member({ workspace, email, user_confirmed })` — only
+after the user's explicit yes: the member loses access at once (their
+agents get `not_found`, their edit locks are released); the apps they made
+stay. Your own e-mail leaves the workspace, at any role. A workspace always
+keeps a workspace-admin (`last_workspace_admin`: make another member admin
+first), and a personal workspace's one member never changes
+(`personal_workspace`). Pending invites are on the dashboard's Members tab
+(`members_url`).
+
+A workspace admin deletes a whole team workspace with
+`delete_workspace({ workspace, user_confirmed })`. The first call without
+`user_confirmed` changes nothing and answers `user_confirmation_required`
+with what would go (`apps`, `published`, `members`, `pending_invites`,
+`upstreams`); call again with `user_confirmed: true` only after the user's
+explicit yes. Every app is deleted for good with its data and domains, and
+the members lose access at once. A personal workspace answers
+`personal_workspace`: it goes only with its owner's account, and deleting an
+account is a dashboard-only action (Account → Delete account), like API keys,
+connections and changing the sign-in e-mail (Account → Sign-in e-mail).
+
 ## Errors
 
 A failed call returns `isError: true` with `{ code, message, hint }` — the

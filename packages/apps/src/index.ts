@@ -3,7 +3,7 @@
  * slugs), write a version, publish (pointer move), restore (new version from
  * an old one), the hourly rate of new versions, the history retention and the
  * workspace's source quota, blob GC, unpublish, soft delete + slug
- * release, visibility / frame-ancestors settings, the single-writer lease
+ * release + purge, visibility / frame-ancestors settings, the single-writer lease
  * read/release and version ZIPs, and app assets (binary files at
  * `/<name>` next to the app's files, upload URLs). The MCP tools and the dashboard call these.
  */
@@ -76,13 +76,27 @@ export {
   type VisibilityInput,
 } from './lifecycle.server.js';
 export {
+  DEFAULT_APP_PURGE_AFTER_DAYS,
+  DEFAULT_APP_PURGE_INTERVAL_MS,
+  appPurgeSettingsFromEnv,
+  deletionWindow,
+  purgeApp,
+  purgeDeletedApps,
+  startAppPurge,
+  type AppPurgeResult,
+  type PurgedApp,
+} from './purge.server.js';
+export {
   LEASE_KEY_PREFIX,
   leaseKey,
   parseLease,
   readAppLease,
   releaseAppLease,
+  redisTakeLeaseHeldBy,
+  releaseUserAppLeases,
   type Lease,
   type LeaseRedis,
+  type TakeLeaseHeldBy,
 } from './lease.server.js';
 export {
   BLOB_GC_GRACE_MS,

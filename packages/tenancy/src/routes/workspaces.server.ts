@@ -2,7 +2,9 @@
  * GET/POST /workspaces — server half. GET lists the session
  * user's workspaces (and lazily ensures the personal one — this is how
  * existing prod users get theirs on the next visit, no backfill migration);
- * super-admins additionally get the ALL-workspaces list. POST creates a team
+ * super-admins additionally get the ALL-workspaces list; `?left=<slug>` (the
+ * redirect after leaving a workspace) confirms the leave and `?deleted=<slug>`
+ * (after deleting one) the deletion. POST creates a team
  * workspace — any logged-in user may (no role gate beyond the session).
  */
 import {
@@ -35,9 +37,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
     ? await Promise.all([listAllWorkspaces(), personalWorkspaceOwners(), workspaceAppCounts()])
     : [null, null, null];
   const myRole = new Map(mine.map((w) => [w.id, w.role]));
+  // After leaving a workspace (the Members tab redirects here): confirm it, unless the user is still in it.
+  const params = new URL(request.url).searchParams;
+  const gone = (raw: string | null) =>
+    raw && /^[a-z0-9-]{1,64}$/.test(raw) && !mine.some((w) => w.slug === raw) ? raw : null;
+  const left = gone(params.get('left'));
+  const deleted = gone(params.get('deleted'));
 
   return {
     email: user.email,
+    left,
+    deleted,
     workspaces: mine.map(({ slug, name, kind, role }) => ({
       slug,
       name,

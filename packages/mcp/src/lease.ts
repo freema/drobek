@@ -8,7 +8,7 @@
  * app can never both win: the script reads the holder and writes the new
  * value atomically inside Redis.
  */
-import { LEASE_KEY_PREFIX, leaseKey, parseLease, type Lease } from '@drobek/apps';
+import { LEASE_KEY_PREFIX, leaseKey, parseLease, redisTakeLeaseHeldBy, type Lease } from '@drobek/apps';
 import type { getRedis } from '@drobek/core';
 
 // The key format + value shape live in @drobek/apps (the dashboard reads and
@@ -27,6 +27,8 @@ export interface LeaseStore {
   acquire(appId: string, holder: LeaseHolder, ttlMs: number): Promise<AcquireResult>;
   /** The live leases of these apps (missing = free). */
   get(appIds: string[]): Promise<Map<string, Lease>>;
+  /** Remove the app's lease only while `holderUserId` holds it (a member lost write access); the removed lease or null. */
+  release(appId: string, holderUserId: string): Promise<Lease | null>;
 }
 
 /**
@@ -78,6 +80,9 @@ export function redisLeaseStore(redis: () => RedisLike, now: () => number = Date
       });
       return out;
     },
+    release(appId, holderUserId) {
+      return redisTakeLeaseHeldBy(redis())(appId, holderUserId);
+    },
   };
 }
 
@@ -116,6 +121,12 @@ export function memoryLeaseStore(now: () => number = Date.now): LeaseStore & { c
         if (e) out.set(id, e.lease);
       }
       return out;
+    },
+    async release(appId, holderUserId) {
+      const cur = live(appId);
+      if (!cur || cur.lease.holder_user_id !== holderUserId) return null;
+      leases.delete(appId);
+      return cur.lease;
     },
     clear() {
       leases.clear();

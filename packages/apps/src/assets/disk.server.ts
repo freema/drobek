@@ -136,9 +136,9 @@ export class AssetDisk {
     await rm(this.pathOf(appId, key), { force: true });
   }
 
-  /** Delete every stored file of an app (idempotent). */
+  /** Delete every stored file of an app (idempotent; an id no directory can have is a no-op). */
   async removeApp(appId: string): Promise<void> {
-    if (!APP_ID_RE.test(appId)) throw new Error('AssetDisk: bad app id');
+    if (!APP_ID_RE.test(appId)) return;
     await rm(join(this.root, appId), { recursive: true, force: true });
   }
 }
