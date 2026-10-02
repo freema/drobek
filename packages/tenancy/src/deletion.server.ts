@@ -29,8 +29,13 @@
  * gallery likes go with it (ON DELETE CASCADE); versions, audit rows and
  * upstreams they made stay, their author set to null. Audited
  * `account.delete`. Last, every dashboard session of the user ends.
+ * A workspace deleted with an account keeps the members the plan saw (a team
+ * one: the user alone): before each of its apps is deleted or purged, and
+ * again under the workspace row lock before the row goes, a member who joined
+ * meanwhile stops the deletion (`workspaces_changed`), so an account deletion
+ * never takes a workspace someone else uses.
  */
-import { and, asc, count, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import {
   AppsError,
   notifyAppChanged,
@@ -85,7 +90,26 @@ type Executor = Tx | ReturnType<typeof getDb>;
 const PERSONAL =
   'A personal workspace is deleted only together with its owner’s account (Account → Delete account). Its apps can be deleted one by one.';
 
+const CHANGED =
+  'Your workspaces changed while the account was being deleted. Open the page again to see what is left, then try again.';
+
 const ROW_DELETE_ATTEMPTS = 3;
+
+/** An account deletion: the deleting user, and how many other members the plan saw in the workspace. */
+interface MemberGuard {
+  userId: string;
+  others: number;
+}
+
+/** `workspaces_changed` when the workspace has more members besides the user than the plan saw. */
+async function assertNoNewMembers(db: Executor, workspaceId: string, guard: MemberGuard | null): Promise<void> {
+  if (!guard) return;
+  const [row] = await db
+    .select({ n: count() })
+    .from(memberships)
+    .where(and(eq(memberships.workspaceId, workspaceId), ne(memberships.userId, guard.userId)));
+  if ((row?.n ?? 0) > guard.others) throw new DeletionError('workspaces_changed', CHANGED);
+}
 
 // ── what a deletion takes ────────────────────────────────────────────────────
 
@@ -147,7 +171,11 @@ export interface DeletedWorkspace {
 type WorkspaceRef = Pick<WorkspaceSummary, 'id' | 'slug' | 'kind'>;
 
 /** Soft-delete the live apps (hooks), then purge every app of the workspace → the slugs that were live. */
-async function deleteWorkspaceApps(workspaceId: string, actor: { userId: string; kind: AuditActorKind }, opts: DeletionOptions) {
+async function deleteWorkspaceApps(
+  workspaceId: string,
+  actor: { userId: string; kind: AuditActorKind },
+  opts: DeletionOptions & { guard: MemberGuard | null }
+) {
   const rows = await getDb()
     .select({ id: apps.id, slug: apps.slug, deletedAt: apps.deletedAt })
     .from(apps)
@@ -156,6 +184,7 @@ async function deleteWorkspaceApps(workspaceId: string, actor: { userId: string;
   const live: string[] = [];
   for (const app of rows) {
     if (app.deletedAt) continue;
+    await assertNoNewMembers(getDb(), workspaceId, opts.guard);
     try {
       await softDeleteApp(app.id, actor);
     } catch (err) {
@@ -171,15 +200,19 @@ async function deleteWorkspaceApps(workspaceId: string, actor: { userId: string;
     }
   }
   const purged: string[] = [];
-  for (const app of rows) {
-    const out = await purgeApp(app.id, opts.disk ? { disk: opts.disk } : {});
-    if (out) purged.push(out.appId);
-  }
-  if (purged.length > 0 && opts.hooks?.afterPurge) {
-    try {
-      await opts.hooks.afterPurge(purged);
-    } catch (err) {
-      logger.error('[tenancy] the clean-up after purging a deleted workspace’s apps failed', { err: dbErrorForLog(err) });
+  try {
+    for (const app of rows) {
+      await assertNoNewMembers(getDb(), workspaceId, opts.guard);
+      const out = await purgeApp(app.id, opts.disk ? { disk: opts.disk } : {});
+      if (out) purged.push(out.appId);
+    }
+  } finally {
+    if (purged.length > 0 && opts.hooks?.afterPurge) {
+      try {
+        await opts.hooks.afterPurge(purged);
+      } catch (err) {
+        logger.error('[tenancy] the clean-up after purging a deleted workspace’s apps failed', { err: dbErrorForLog(err) });
+      }
     }
   }
   return live;
@@ -212,7 +245,7 @@ async function deleteWorkspaceRow(
 async function removeWorkspace(
   ws: WorkspaceRef,
   actor: { userId: string; kind: AuditActorKind },
-  opts: DeletionOptions & { withAccount: boolean; copyTo: string | null }
+  opts: DeletionOptions & { withAccount: boolean; copyTo: string | null; guard: MemberGuard | null }
 ): Promise<DeletedWorkspace> {
   const deletedApps: string[] = [];
   for (let attempt = 1; ; attempt += 1) {
@@ -220,6 +253,7 @@ async function removeWorkspace(
     try {
       const members = await getDb().transaction(async (tx) => {
         await tx.select({ id: workspaces.id }).from(workspaces).where(eq(workspaces.id, ws.id)).for('update');
+        await assertNoNewMembers(tx, ws.id, opts.guard);
         return deleteWorkspaceRow(tx, ws, actor, { apps: deletedApps.length, withAccount: opts.withAccount }, opts.copyTo);
       });
       try {
@@ -263,6 +297,7 @@ export async function deleteWorkspace(
     ...input,
     withAccount: false,
     copyTo: personal !== input.workspace.id ? personal : null,
+    guard: null,
   });
 }
 
@@ -394,7 +429,8 @@ export async function deleteAccount(
   }
   const deleted: DeletedWorkspace[] = [];
   for (const w of plan.deletes) {
-    deleted.push(await removeWorkspace(w, actor, { ...input, withAccount: true, copyTo: null }));
+    const guard = { userId: input.userId, others: w.members - 1 };
+    deleted.push(await removeWorkspace(w, actor, { ...input, withAccount: true, copyTo: null, guard }));
   }
 
   const auditWorkspace =
@@ -408,12 +444,7 @@ export async function deleteAccount(
     for (const w of now.deletes) {
       // A workspace that appeared meanwhile (a page load created the personal one): gone with the account when empty.
       const [anyApp] = await tx.select({ id: apps.id }).from(apps).where(eq(apps.workspaceId, w.id)).limit(1);
-      if (anyApp) {
-        throw new DeletionError(
-          'workspaces_changed',
-          'Your workspaces changed while the account was being deleted. Open the page again to see what is left, then try again.'
-        );
-      }
+      if (anyApp) throw new DeletionError('workspaces_changed', CHANGED);
       const members = await deleteWorkspaceRow(tx, w, actor, { apps: 0, withAccount: true }, null);
       deleted.push({ slug: w.slug, apps: [], members });
       lateDeletes.push(w.id);

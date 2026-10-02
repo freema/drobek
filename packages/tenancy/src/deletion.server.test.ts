@@ -62,7 +62,7 @@ import {
   workspaceDeletionSummary,
   type AppDeletionHooks,
 } from './deletion.server.js';
-import { createInvite, getInvite, listPendingInvites } from './invites.server.js';
+import { acceptInvite, createInvite, getInvite, listPendingInvites } from './invites.server.js';
 import { resolveWorkspaceAccess } from './membership.server.js';
 import { changeMemberRole } from './members.server.js';
 import type { WorkspaceRole } from './roles.js';
@@ -456,6 +456,70 @@ describe('deleteAccount', () => {
     expect(out.deleted.map((d) => d.apps)).toEqual([[first.slug], []]);
     expect(await rows('workspaces', 'id', recreated!)).toBe(0);
     expect(await rows('users', 'id', racer.id)).toBe(0);
+  });
+
+  async function join(workspaceId: string, inviter: string): Promise<string> {
+    const joiner = await user('joiner');
+    const invite = await createInvite({ workspaceId, role: 'editor', invitedByUserId: inviter });
+    expect(await acceptInvite({ token: invite.token, userId: joiner.id })).toMatchObject({ ok: true });
+    return joiner.id;
+  }
+
+  it('a member who joins a team while its apps are deleted stops the deletion before they are purged', async () => {
+    const owner = await user('joined');
+    await workspace('personal', { [owner.id]: 'workspace-admin' });
+    const team = await workspace('team', { [owner.id]: 'workspace-admin' });
+    await app(team.id, owner.id);
+    await app(team.id, owner.id);
+    expect((await accountDeletionPlan(owner.id)).deletes.map((w) => w.slug)).toContain(team.slug);
+
+    let joiner: string | null = null;
+    const softDeleted: string[] = [];
+    const purged: string[] = [];
+    const hooks: AppDeletionHooks = {
+      onAppDelete: async (a) => {
+        softDeleted.push(a.id);
+        if (a.workspaceId === team.id && joiner === null) joiner = await join(team.id, owner.id);
+      },
+      afterPurge: async (ids) => {
+        purged.push(...ids);
+      },
+    };
+    const err = await deletionError(deleteAccount({ userId: owner.id, hooks, disk }));
+    expect(err.code).toBe('workspaces_changed');
+    expect(err.message).toContain('Your workspaces changed');
+
+    expect(await rows('users', 'id', owner.id)).toBe(1);
+    expect(await rows('workspaces', 'id', team.id)).toBe(1);
+    expect(await rows('memberships', 'workspace_id', team.id)).toBe(2);
+    expect(await rows('memberships', 'user_id', joiner!)).toBe(1);
+    // Only the app deleted before the member joined is deleted; the other one is untouched; none is purged.
+    const left = await db.select({ id: apps.id, deletedAt: apps.deletedAt }).from(apps).where(eq(apps.workspaceId, team.id));
+    expect(left).toHaveLength(2);
+    expect(left.filter((a) => a.deletedAt !== null).map((a) => a.id)).toEqual(softDeleted);
+    expect(purged).toEqual([]);
+    expect((await accountDeletionPlan(owner.id)).blockers.map((w) => w.slug)).toEqual([team.slug]);
+  });
+
+  it('a member who joins a team after its apps are purged keeps the team: the row delete is refused', async () => {
+    const owner = await user('late');
+    const team = await workspace('team', { [owner.id]: 'workspace-admin' });
+    const only = await app(team.id, owner.id);
+
+    let joiner: string | null = null;
+    const hooks: AppDeletionHooks = {
+      afterPurge: async (ids) => {
+        if (ids.includes(only.id) && joiner === null) joiner = await join(team.id, owner.id);
+      },
+    };
+    const err = await deletionError(deleteAccount({ userId: owner.id, hooks, disk }));
+    expect(err.code).toBe('workspaces_changed');
+
+    expect(await rows('apps', 'id', only.id)).toBe(0);
+    expect(await rows('workspaces', 'id', team.id)).toBe(1);
+    expect(await rows('memberships', 'user_id', joiner!)).toBe(1);
+    expect(await rows('users', 'id', owner.id)).toBe(1);
+    expect((await auditOf(team.id)).map((a) => a.action)).not.toContain('workspace.delete');
   });
 
   it('a user without any workspace is deleted too', async () => {
