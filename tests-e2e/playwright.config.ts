@@ -1,4 +1,4 @@
-import { defineConfig } from '@playwright/test';
+import { defineConfig, type ReporterDescription } from '@playwright/test';
 
 /**
  * One suite, two targets, env-parameterized (ROADMAP §4):
@@ -17,12 +17,22 @@ import { defineConfig } from '@playwright/test';
  * - E2E_IGNORE_HTTPS_ERRORS=1 — the browser + APIRequestContext accept the
  *                   target's local CA (Caddy `tls internal`); Node's own
  *                   clients trust it through NODE_EXTRA_CA_CERTS instead.
+ * - E2E_DROBEK_URL — drobek's own plain-http port behind the TLS proxy (the
+ *                   image flow publishes it on loopback); default BASE_URL_WEB.
+ * - PLAYWRIGHT_JSON_OUTPUT_FILE — also write a JSON report there (the image
+ *                   flow's per-phase reports for scripts/e2e-skip-guard.mjs).
  */
 export const BASE_URL_WEB =
   process.env.BASE_URL_WEB ?? 'http://localhost:3041';
 export const BASE_URL_MCP =
   process.env.BASE_URL_MCP ?? BASE_URL_WEB;
 export const TEST_ENV = process.env.TEST_ENV ?? '';
+/**
+ * Where the TLS proxy sends its requests: drobek itself over plain http.
+ * Specs reach it directly to send what only the proxy sends (Caddy's TLS ask,
+ * an X-Real-IP of their choosing). The dev stack serves on it directly.
+ */
+export const DROBEK_URL = process.env.E2E_DROBEK_URL || BASE_URL_WEB;
 export const TARGET_PRODUCTION = process.env.E2E_TARGET_PRODUCTION === '1';
 /**
  * The apps origin the stack hands out — mirrors the server's default:
@@ -50,6 +60,10 @@ export default defineConfig({
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
-  reporter: [['list'], ['html', { open: 'never' }]],
+  reporter: [
+    ['list'],
+    ['html', { open: 'never' }],
+    ...(process.env.PLAYWRIGHT_JSON_OUTPUT_FILE ? ([['json']] satisfies ReporterDescription[]) : []),
+  ],
   workers: 1,
 });

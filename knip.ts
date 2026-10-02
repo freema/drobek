@@ -32,8 +32,9 @@ const config: KnipConfig = {
     'apps/server': {
       // server/index.ts (package.json `dev`/`start`) and the routes are found
       // by the plugins; migrate.ts is `node dist/server/migrate.js`, the
-      // self-host upgrade step (`task selfhost:migrate`).
-      entry: ['server/migrate.ts'],
+      // self-host upgrade step (`task selfhost:migrate`); rekey.ts is
+      // `node dist/server/rekey.js`, the key rotation step (`task selfhost:rekey`).
+      entry: ['server/migrate.ts', 'server/rekey.ts'],
       project: ['server/**/*.ts', 'app/**/*.{ts,tsx}'],
       ignoreDependencies: [
         // The React Router SSR build bundles the linked workspace packages and
@@ -158,9 +159,10 @@ const config: KnipConfig = {
 
     'tests-e2e': {
       // Started by path, not imported: proxy-echo.mjs by docker-compose*.y*ml
-      // (`node tests-e2e/proxy-echo.mjs`), selfhost-rehearsal.mjs by
+      // (`node tests-e2e/proxy-echo.mjs`), dns-mock.mjs by
+      // docker-compose.e2e.yaml, selfhost-rehearsal.mjs by
       // scripts/selfhost-rehearsal.sh.
-      entry: ['proxy-echo.mjs', 'selfhost-rehearsal.mjs'],
+      entry: ['proxy-echo.mjs', 'dns-mock.mjs', 'selfhost-rehearsal.mjs'],
       // fixtures/ holds an external module package the e2e stacks pack and
       // install into DROBEK_MODULES_DIR (`task module:fixture`,
       // scripts/e2e-image.sh); never imported.

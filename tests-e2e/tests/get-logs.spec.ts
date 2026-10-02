@@ -5,6 +5,7 @@ import { APPS_URL_SCHEME, BASE_URL_WEB } from '../playwright.config';
 import { hostRequest, previewHost, urlOf } from './helpers/apps-host';
 import { skipUnlessLocal } from './helpers/auth';
 import { FULL_SCOPE, callTool, mcpClient, type McpClient } from './helpers/mcp';
+import { withDb } from './helpers/seed';
 
 /**
  * get_logs end to end on the local stack.
@@ -16,6 +17,7 @@ import { FULL_SCOPE, callTool, mcpClient, type McpClient } from './helpers/mcp';
  *    untrusted envelope;
  *  - compile: the last compiles with ok / errors / version (≤ 50);
  *  - requests: today's totals + module calls by status class (hello: 2xx, 4xx);
+ *    a flush never lowers a day Postgres already holds (Redis restarted);
  *  - the beacon: 9 KiB (declared or chunked) → 413 and the server keeps
  *    answering; a cross-origin POST → 403;
  *  - the page URL is stored as origin + path — the SDK never sends
@@ -253,6 +255,39 @@ test.describe('get_logs — runtime errors, compile history, request stats @loca
     expect(typeof day!.count_5xx).toBe('number');
     // Not an active module → never a row.
     expect(day!.modules._beacon).toBeUndefined();
+  });
+
+  test('requests: a flush never lowers the stored day (counters that restarted after a Redis flush)', async () => {
+    skipUnlessLocal();
+    const today = new Date().toISOString().slice(0, 10);
+    // Postgres holds more than Redis — what a Redis restart leaves behind.
+    const stored = await withDb(async (c) => {
+      const res = await c.query(
+        `UPDATE app_daily_stats
+            SET request_count = request_count + 100000,
+                path_404_counts = path_404_counts || '{"/before-restart": 40}'::jsonb
+          WHERE app_id = $1 AND day = $2
+          RETURNING request_count`,
+        [app.app_id, today]
+      );
+      return Number(res.rows[0]?.request_count ?? 0);
+    });
+    expect(stored).toBeGreaterThan(100_000);
+    expect((await hostRequest(host, '/')).status).toBe(200);
+
+    const r = await callTool(mcp.client, 'get_logs', { app_id: app.app_id, kind: 'requests' });
+    expect(r.isError, JSON.stringify(r.json)).toBe(false);
+    const day = (r.json.entries as { day: string; requests: number; count_404: number }[]).find((d) => d.day === today);
+    expect(day?.requests).toBeGreaterThanOrEqual(stored);
+    expect(day?.count_404).toBeGreaterThanOrEqual(40);
+
+    const row = await withDb(
+      async (c) =>
+        (await c.query(`SELECT request_count, path_404_counts FROM app_daily_stats WHERE app_id = $1 AND day = $2`, [app.app_id, today]))
+          .rows[0] as { request_count: number; path_404_counts: Record<string, number> }
+    );
+    expect(row.request_count).toBeGreaterThanOrEqual(stored);
+    expect(row.path_404_counts['/before-restart']).toBe(40);
   });
 
   test('beacon: 9 KiB → 413 (declared and chunked), the server keeps answering; cross-origin → 403', async ({ request }) => {

@@ -98,6 +98,7 @@ export {
   type OAuthConnection,
   type RevokedConnection,
 } from './connections.server.js';
+export { pruneExpiredOAuth, type OAuthPruneResult } from './prune.server.js';
 export {
   issueAuthCode,
   consumeAuthCode,

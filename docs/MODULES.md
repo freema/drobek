@@ -267,7 +267,8 @@ image compose, whose flow installs both external ones with
 (`tests-e2e/fixtures`) is an operator-only test fixture: its error reporter
 `capture` (`ERROR_REPORTER=capture` in both composes) hands every report to
 the e2e's `proxy-echo`, its e-mail transport `relay`
-(`EMAIL_TRANSPORT=relay` in the dev compose only; the image flow keeps SMTP)
+(`EMAIL_TRANSPORT=relay` in the dev compose and in the second phase of the
+image flow, whose first phase keeps SMTP)
 sends through Mailpit's HTTP API, and its server job fails when a spec asks
 it to.
 
@@ -719,7 +720,11 @@ available ones.
 A module with tables ships a drizzle migrations folder
 (`migrations: { folder }`). On start the server applies it with the module's
 **own journal**, `drizzle.__drizzle_migrations_mod_<name>`, after the core
-migrations (`DROBEK_MIGRATE_ON_START=0` turns both off). Conventions:
+migrations (`DROBEK_MIGRATE_ON_START=0` turns both off), under the same
+migration lock. Migrations only go forward: when the journal holds migrations
+the installed module version does not ship (a newer version migrated the
+database), the server refuses to start and names the module and image
+versions to run. Conventions:
 
 - table names start with `mod_<name>_` (e.g. `mod_hello_waves`) — for a
   module from `DROBEK_MODULES_DIR` the [migration lint](#installing-an-external-module)
@@ -2702,7 +2707,9 @@ the allowlist, users and sessions ([Auth providers](#auth-providers)).
   secret, a code or a token.
 - **Testing** — `tests-e2e/mock-oidc.mjs` (`task mock:oidc`, port 3050) is a
   dependency-free IdP: discovery, `/jwks`, an RS256 ID token from a key made
-  at start, the nonce and the PKCE verifier checked.
+  at start, the nonce and the PKCE verifier checked. The dev stack reaches it
+  over http through `AUTH_OIDC_DEV_ORIGINS`; the e2e image flow runs it behind
+  its Caddy over https as the server's `AUTH_OIDC_ISSUER`.
 
 ## The example: `drobek-module-hello`
 

@@ -47,6 +47,12 @@ export {
   decryptSecret,
   encryptSecret,
   kekFromEnv,
+  keyOf,
+  keyRingFromEnv,
+  previousKekFromEnv,
+  rewrapSecret,
+  type KeyRing,
+  type RewrapResult,
   type SecretEnvelope,
 } from './crypto.server.js';
 export {

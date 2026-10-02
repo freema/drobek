@@ -20,7 +20,7 @@ import { callTool, mcpClient, type McpClient } from './helpers/mcp';
  *  - GET complete with a bogus handoff code → 400 page, no session.
  *
  * The full begin → IdP → callback → handoff → complete flow against the mock
- * IdP (tests-e2e/mock-oidc.mjs) is auth-oidc.spec.ts (dev stack only). The
+ * IdP (tests-e2e/mock-oidc.mjs) is auth-oidc.spec.ts. The
  * unit suite (modules/auth/src/providers.test.ts) drives that flow with a
  * fixture provider and no network.
  */

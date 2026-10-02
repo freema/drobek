@@ -24,6 +24,13 @@ export const REFRESH_RETRY_GRACE_MS = 60_000;
 /** Most rotation links a retry follows from the presented token to the tail; a longer chain is reuse. */
 export const REFRESH_RETRY_MAX_HOPS = 10;
 
+/**
+ * How long an expired access or refresh token stays before the daily prune
+ * deletes it (an authorization code stays REFRESH_TTL_MS longer, see
+ * prune.server.ts). The token endpoint answers it `expired` until then.
+ */
+export const EXPIRED_GRANT_KEEP_MS = 7 * 24 * 60 * 60 * 1000;
+
 // ── Client metadata caps — DCR bodies and CIMD documents ─────────
 
 /** Longest client_name we store/show on the consent screen. */

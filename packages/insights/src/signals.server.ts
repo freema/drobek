@@ -87,7 +87,9 @@ export function dailyStatsRow(
 /**
  * Upsert day rows into app_daily_stats in ONE statement (idempotent on
  * (app_id, day)). The Redis counters are cumulative for the day, so the row
- * takes the totals.
+ * takes the totals — but never lowers a stored count: each count, and each
+ * path's 404 count, keeps the larger of the stored and the flushed value, so
+ * counters that restart after a Redis flush cannot shrink a stored day.
  */
 export async function upsertDailyStats(rows: DailyStatsRow[]): Promise<void> {
   if (rows.length === 0) return;
@@ -97,9 +99,19 @@ export async function upsertDailyStats(rows: DailyStatsRow[]): Promise<void> {
     .onConflictDoUpdate({
       target: [appDailyStats.appId, appDailyStats.day],
       set: {
-        requestCount: sql`excluded.request_count`,
-        count5xx: sql`excluded.count_5xx`,
-        path404Counts: sql`excluded.path_404_counts`,
+        requestCount: sql`greatest(${appDailyStats.requestCount}, excluded.request_count)`,
+        count5xx: sql`greatest(${appDailyStats.count5xx}, excluded.count_5xx)`,
+        path404Counts: sql`(
+          select coalesce(jsonb_object_agg(k, greatest(
+            coalesce((${appDailyStats.path404Counts} ->> k)::numeric, 0),
+            coalesce((excluded.path_404_counts ->> k)::numeric, 0)
+          )), '{}'::jsonb)
+          from (
+            select jsonb_object_keys(${appDailyStats.path404Counts}) as k
+            union
+            select jsonb_object_keys(excluded.path_404_counts)
+          ) as paths
+        )`,
         updatedAt: new Date(),
       },
     });
@@ -185,7 +197,7 @@ export async function recordFailingPath(
  * Persist the current day's Redis counters into app_daily_stats (idempotent
  * upsert on (app_id, day)). Best-effort; called on the read path so the durable
  * table is fresh when app_logs is queried. Redis counters are cumulative for the
- * day, so overwriting the row with the totals is correct.
+ * day, so the row takes the totals (never lower than what it already holds).
  */
 export async function flushDay(appId: string, day: string): Promise<void> {
   try {

@@ -11,8 +11,9 @@ MCP, a published app — and covers backups, upgrades and every setting.
 image pull took 8 s, the whole quickstart below (init → TLS dashboard → user →
 MCP → published app with an uploaded file) **31 s**, a backup 3 s and a
 restore on a second "machine" (fresh checkout + `task selfhost:init` +
-`task restore`) 25 s. The run is the manual `selfhost-rehearsal.yml`
-workflow (`task selfhost:rehearsal` with `tls internal`).
+`task restore`) 25 s. The run is the `selfhost-rehearsal.yml` workflow
+(`task selfhost:rehearsal` with `tls internal`), started by hand here; CI
+runs it on every release tag as well ([Image tags](#image-tags)).
 
 ## Quickstart (clean Ubuntu 24.04 + Docker)
 
@@ -179,7 +180,10 @@ app — but a separate registrable domain for the apps is the safer choice.
 
 [`docker-compose.production.yaml`](../docker-compose.production.yaml) runs
 drobek, postgres 17, redis 7 and caddy, all `restart: unless-stopped` with a
-healthcheck each. Only Caddy publishes ports (80, 443, 443/udp —
+healthcheck each. Each container's log (`docker compose logs`, the
+`json-file` driver) rotates: at most `CONTAINER_LOG_MAX_FILES` (5) files of
+`CONTAINER_LOG_MAX_SIZE` (20m), 100 MB per service, so logs cannot fill the
+disk. Only Caddy publishes ports (80, 443, 443/udp —
 `HTTP_PORT` / `HTTPS_PORT` / `PUBLISH_IP` move them); drobek, postgres and
 redis stay on the internal network. Nothing secret is written in the file —
 every value comes from `.env.production` (`--env-file` for interpolation,
@@ -207,7 +211,7 @@ built-ins.
 | `PUBLIC_APP_URL` | yes | `https://<dashboard host>[:<HTTPS_PORT>]` |
 | `APPS_DOMAIN` | yes | apps live on `*.<APPS_DOMAIN>` (`:<port>` when not 443) |
 | `POSTGRES_PASSWORD` | yes, secret | generated; only used when `pg_data` is first created |
-| `DROBEK_MASTER_KEY` | yes, secret | generated, 64 hex; encrypts upstream secrets, signs app cookies — keep it with your backups |
+| `DROBEK_MASTER_KEY` | yes, secret | generated, 64 hex; encrypts upstream and module secrets, signs app cookies — keep it with your backups; [rotate it](#rotating-drobek_master_key) with `DROBEK_MASTER_KEY_PREVIOUS` |
 | `TLS_ASK_TOKEN` | secret | generated; the on-demand TLS `ask` token (drobek + Caddy) |
 | `SMTP_HOST` | yes (smtp) | SMTP server; `SMTP_PORT` (587), `SMTP_SECURE` (0 / 1 = implicit TLS), `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM` |
 | `EMAIL_TRANSPORT` / `RESEND_API_KEY` | — (`smtp`) / secret | `resend` sends through the Resend API instead of SMTP (then `SMTP_*` is not needed and `RESEND_API_KEY` is) |
@@ -219,11 +223,13 @@ built-ins.
 | `HTTP_PORT`, `HTTPS_PORT`, `PUBLISH_IP` | — | published ports / bind address |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | — | optional Google sign-in |
 | `TLS_CUSTOM_DOMAINS`, `DOMAINS_MAX_PER_APP`, `DOMAINS_DNS_SERVERS`, `DOMAINS_RECHECK_INTERVAL_MS` | — | [custom domains](#custom-domains) (catch-all certificate on by default in on-demand mode; 3 per app) |
-| `TERMS_URL`, `ABUSE_REPORTS_PER_IP_HOUR`, `ABUSE_BRAND_WORDS` | — | [abuse handling](#abuse-and-takedowns) (terms link of the 451 page; 5 reports / IP / hour; publish-heuristic brand words) |
+| `TERMS_URL`, `ABUSE_REPORTS_PER_IP_HOUR`, `ABUSE_BRAND_WORDS`, `ABUSE_REPORTS_RETENTION_DAYS` | — | [abuse handling](#abuse-and-takedowns) (terms link of the 451 page; 5 reports / IP / hour; publish-heuristic brand words; resolved reports are deleted after 365 days) |
 | `GALLERY_ENABLED`, `GALLERY_API_PER_IP_MINUTE`, `GALLERY_OPENS_PER_IP_HOUR`, `GALLERY_LIKES_PER_USER_HOUR`, `GALLERY_FRAME_ANCESTORS`, `DUPLICATES_PER_USER_HOUR` | — (off) | [the public gallery](#public-gallery) (`true` = owners may list published apps; `GET /api/public/gallery`; 60 requests / IP / minute; 60 counted opens / IP / hour; 30 likes / account / hour; your gallery website's origins that may show listed apps as live previews and receive visitors back after a like; 10 copies of gallery apps per person per hour) |
 | `PUBLISH_APPROVAL`, `OPERATOR_EMAIL`, `PUBLISH_NOTIFY` | — (`open`, off) | [publish approval](#publish-approval) (`approval` = a workspace publishes only after a super-admin allowed it; the contact refused users see; `first` / `every` = e-mail the operator about publishes) |
 | `EMAIL_SIGNIN_APP_HOURLY_SHARE` | — (25) | one app's percent of the sign-in e-mail budget — raise it on a single-app server (see [Production compose](#production-compose)) |
 | `EMAIL_WORKSPACE_HOURLY_SHARE` | — (50) | one workspace's percent of each module e-mail budget — raise it to 100 on a single-workspace server |
+| `BACKUP_DIR`, `BACKUP_KEEP`, `BACKUP_MIN_FREE_MB` | — (`backups`, 14, 1024) | [`task backup`](#backup-and-restore): where the archives go, how many stay (0 = all), the space a backup leaves free |
+| `CONTAINER_LOG_MAX_SIZE`, `CONTAINER_LOG_MAX_FILES` | — (`20m`, 5) | each container's log rotates at this size and keeps this many files |
 | limits (`OTP_*`, `COMPILE_*`, `DATA_*`, `FILES_*`, `EMAIL_*`, …) | — | production defaults; every variable is in the [Environment reference](#environment-reference) |
 
 The file is read by `docker compose` and by `docker run --env-file` (the
@@ -402,7 +408,8 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 
 | Variable | Default | What |
 | --- | --- | --- |
-| `DROBEK_MASTER_KEY` | — | **required, secret** — 64 hex; encrypts module and upstream secrets, keys the app-access cookie and the forms token. Keep it with your backups |
+| `DROBEK_MASTER_KEY` | — | **required, secret** — 64 hex; encrypts module and upstream secrets, keys the app-access cookie, the forms token, the provider sign-in state and the stored IP hashes. Keep it with your backups. A stored secret that neither this key nor `DROBEK_MASTER_KEY_PREVIOUS` opens stops a production start |
+| `DROBEK_MASTER_KEY_PREVIOUS` | — | secret, only while [rotating the master key](#rotating-drobek_master_key) — the key used before: secrets stored under it still decrypt (new ones use `DROBEK_MASTER_KEY`) until `task selfhost:rekey` re-wraps them; then remove it. Same format as `DROBEK_MASTER_KEY`; a malformed value stops the start |
 | `POSTGRES_PASSWORD` | — | **required, secret** (production compose) — used when `pg_data` is first created |
 | `TLS_ASK_TOKEN` | — | secret, ≥ 32 URL-safe characters — the on-demand TLS `ask` token (drobek + Caddy); unset = every certificate refused |
 | `TLS_INTERNAL` | — | `1` = Caddy's local CA for every site (a test box, `task dev:tls`) |
@@ -522,6 +529,7 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `DOCS_URL` | — (the Markdown files in the GitHub repository) | the base of a website with the drobek docs, each page at `<DOCS_URL>/<slug>` (`overview`, `agent`, `modules`, `self-hosting`, `architecture`, `security`, `licensing`) with a Markdown twin at `<DOCS_URL>/<slug>.md`: `/llms.txt` links the `.md` pages, `/llms-full.txt` the agent guide's `.md`, `/build-with-your-agent` and the landing page the agent guide. Not an http(s) URL (or one with a query or fragment) stops the server at start |
 | `ABUSE_REPORTS_PER_IP_HOUR` | 5 | valid abuse reports per client IP per hour |
 | `ABUSE_BRAND_WORDS` | a built-in list | the publish heuristic's brand words (comma-separated) |
+| `ABUSE_REPORTS_RETENTION_DAYS` | 365 | a resolved abuse report is deleted this many days after it was resolved (the daily retention prune); open reports stay |
 | `GALLERY_ENABLED` | off | `true` = the [public gallery](#public-gallery): owners (and, on their explicit yes, their agents) may list published apps; `GET /api/public/gallery` answers. Off = no switch in the dashboard, the endpoint answers 404 |
 | `GALLERY_API_PER_IP_MINUTE` | 60 | requests to `GET /api/public/gallery` per client IP per minute (429 over it) |
 | `GALLERY_OPENS_PER_IP_HOUR` | 60 | visits through a gallery `openUrl` counted per client IP per hour (more still redirect, uncounted) |
@@ -531,6 +539,19 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `PUBLISH_APPROVAL` | `open` | `open` = every workspace may publish unless a super-admin blocked it; `approval` = a workspace publishes only after a super-admin allowed it (or when a super-admin is its member) — see [Publish approval](#publish-approval). Any other value, or `approval` without `SUPERADMIN_EMAIL`, stops the server at start |
 | `OPERATOR_EMAIL` | the `SUPERADMIN_EMAIL` addresses | one address: the contact a refused publish names, the recipient of approval requests and publish notifications (without it every super-admin is e-mailed and the first one is shown), and an extra recipient of abuse reports; not one e-mail address = no start |
 | `PUBLISH_NOTIFY` | `off` | e-mail the operator (`OPERATOR_EMAIL`, else every super-admin) about publishes: `first` = the first publish of each app, `every` = every publish, at most one e-mail per app per hour; a super-admin's own publishes are never e-mailed. Any other value stops the server at start |
+
+### Backups and container logs
+
+`task backup` reads the `BACKUP_*` settings from the environment (`task
+backup BACKUP_KEEP=30`), else from `.env.production`; docker compose reads the
+`CONTAINER_LOG_*` ones from `.env.production`. Neither reaches drobek itself.
+
+| Variable | Default | What |
+| --- | --- | --- |
+| `BACKUP_DIR` | `backups` | where `task backup` writes `drobek-<UTC timestamp>.tar.gz` (relative to the checkout) — and its parts while it runs, not `/tmp`; `task backup:verify` checks the newest archive there |
+| `BACKUP_KEEP` | 14 | after a backup that verified, every `drobek-<UTC timestamp>.tar.gz` in `BACKUP_DIR` beyond the newest N is deleted; `0` = keep every archive. A failed backup deletes nothing, and files of any other name are never deleted |
+| `BACKUP_MIN_FREE_MB` | 1024 | the free space a backup leaves on the `BACKUP_DIR` disk: it refuses to start unless twice the data (the database's tables + the four volumes) plus this much is free |
+| `CONTAINER_LOG_MAX_SIZE` / `CONTAINER_LOG_MAX_FILES` | `20m` / 5 | the production compose's `json-file` log of every container rotates at this size (docker's `k`, `m`, `g` units) and keeps this many files |
 
 ### Development and tests only
 
@@ -548,11 +569,17 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 
 ```sh
 task backup
+# · free space in backups
+#   38.2 GiB free, 1.0 GiB needed (twice the data + BACKUP_MIN_FREE_MB)
+# · pg_dump -Fc   · files_data   · assets_data   · modules_data   · caddy_data
+# · verify the archive
+#   5 parts (db.dump 1.1 MiB · files.tar 40.0 KiB · assets.tar 2.1 MiB · modules.tar 10.0 KiB · caddy_data.tar 30.0 KiB) — every size and sha256 matches manifest.json
 # ✓ backups/drobek-20260923T201500Z.tar.gz — 1234567 bytes in 4 s
 #   apps 12 · files 40 · assets 3 · core migrations 20 · image ghcr.io/freema/drobek:v1.2.0 (v1.2.0 abc1234)
+#   BACKUP_KEEP=14: 1 older archive(s) deleted, 1.2 MiB freed
 ```
 
-One archive (mode 600, in `backups/`, override with `BACKUP_DIR=`):
+One archive (mode 600, in `backups/`, override with `BACKUP_DIR`):
 `db.dump` (`pg_dump -Fc` of the whole database — one consistent snapshot),
 `files.tar` (the `files_data` volume), `assets.tar` (the `assets_data`
 volume), `modules.tar` (the `modules_data` volume), `caddy_data.tar`, `SHA256SUMS` and a
@@ -569,9 +596,61 @@ copy the archives off the machine:
 15 3 * * * cd /opt/drobek && task backup >> /var/log/drobek-backup.log 2>&1
 ```
 
+**Disk space.** The parts are written into a hidden directory in
+`BACKUP_DIR` (not `/tmp`) and the archive next to them, so while it runs a
+backup needs about twice the data. Before it writes anything it adds up the
+database's tables and the four volumes and refuses to start unless the
+`BACKUP_DIR` disk has twice that plus `BACKUP_MIN_FREE_MB` (1024) free — the
+volumes usually share that disk, and postgres stops when it is full:
+
+```
+✗ not enough free space in backups for a backup: 3.1 GiB free, 4.6 GiB needed — nothing was written.
+  The backup writes its parts (about 1.8 GiB: database tables 1.2 GiB, volumes 0.6 GiB)
+  and then the archive next to them, so it needs twice that, and leaves BACKUP_MIN_FREE_MB (1024) free.
+  The 14 archive(s) in backups hold 12.0 GiB: copy older ones off the machine and
+  delete them, or set BACKUP_DIR to a bigger disk. A lower BACKUP_KEEP (now 14) keeps fewer from then on.
+```
+
+`task selfhost:upgrade` starts with `task backup`, so a refusal stops the
+upgrade before anything changed.
+
+**Retention.** Before the new archive gets its name, `task backup` checks it
+the way `task backup:verify` does (below). Then it keeps the newest
+`BACKUP_KEEP` (14 — two weeks of the daily cron above) archives named
+`drobek-<UTC timestamp>.tar.gz` in `BACKUP_DIR` and deletes the older ones;
+`BACKUP_KEEP=0` keeps every archive. A backup that fails — no room, a part
+that cannot be read, an archive that does not verify — deletes nothing and
+leaves no partial file behind, and a file of any other name
+(`drobek-before-migration.tar.gz`) is never deleted. The `BACKUP_*` settings
+come from the environment (`task backup BACKUP_KEEP=30`), else from
+`.env.production`.
+
+**Check an archive** without restoring it — the newest in `BACKUP_DIR`, or
+any with `BACKUP=`:
+
+```sh
+task backup:verify
+# · verifying backups/drobek-20260923T201500Z.tar.gz (1.2 MiB)
+# ✓ backups/drobek-20260923T201500Z.tar.gz is intact — 5 parts (db.dump 1.1 MiB · …); every size and sha256 matches manifest.json and SHA256SUMS (0 s)
+#   created 2026-09-23T20:15:00Z, image ghcr.io/freema/drobek:v1.2.0 (v1.2.0 abc1234)
+#   apps 12 · files 40 · assets 3 · core migrations 20
+#   made under DROBEK_MASTER_KEY of .env.production
+```
+
+It reads `manifest.json` and `SHA256SUMS`, checks that both list the same
+parts with the same checksums and that the parts a restore needs are there,
+and streams every part out of the archive to compare its size and sha256 —
+nothing is unpacked to disk, and neither docker nor the stack is needed, so a
+copy on another machine (a checkout with `task`) checks the same way. A
+damaged archive exits 1 naming the first part that does not match. With
+`.env.production` at hand it also says whether its `DROBEK_MASTER_KEY` (or
+`DROBEK_MASTER_KEY_PREVIOUS`) is the archive's — a restore needs that key.
+
 **Not in the archive:** `.env.production` — it holds `DROBEK_MASTER_KEY`,
-without which the restored upstream secrets (proxy module) cannot be
-decrypted. Keep a copy of it somewhere safe, separately from the backups.
+without which the restored upstream and module secrets cannot be
+decrypted. Keep a copy of it somewhere safe, separately from the backups —
+after a [key rotation](#rotating-drobek_master_key), keep the old key with
+the archives made before it.
 Redis is not backed up (sessions, caches, rate-limit counters).
 
 **Restore** into a stack whose database is empty — a new machine, or this one
@@ -588,19 +667,96 @@ task restore BACKUP=backups/drobek-20260923T201500Z.tar.gz
 ```
 
 `task restore` verifies the checksums, refuses a `DROBEK_MASTER_KEY` that does
-not match the backup's fingerprint (`ALLOW_KEY_MISMATCH=1` restores anyway,
-without usable upstream secrets), refuses a **non-empty database** (`FORCE=1`
+not match the backup's fingerprint — unless `DROBEK_MASTER_KEY_PREVIOUS`
+matches it (a backup from before a key rotation: run `task selfhost:rekey`
+after the restore) or `ALLOW_KEY_MISMATCH=1` is set (restores anyway and
+deletes the stored upstream and module secrets before the start, since no
+key opens them — their owners set them again) — refuses a **non-empty database** (`FORCE=1`
 drops and recreates it — back it up first), stops drobek and caddy, restores
 the database, replaces `files_data`, `assets_data` (left empty when the
 archive has no `assets.tar`) and `caddy_data`, and starts the stack
 (`up -d --wait`). Restore with the backup's image version or a newer one
 (`image_version` in `manifest.json`) — a newer image migrates the restored
-database forward on start; an older one does not know its migrations. Point
+database forward on start; an older one refuses to start on it (see
+[Upgrades and rollback](#upgrades-and-rollback)). Point
 the DNS records at the new machine; the restored `caddy_data` carries the
 certificates over. Sessions (dashboard users and apps' end users) live in
 Redis, which is not in the backup: after a restore on a new machine everyone
 signs in again; API keys and OAuth clients are in the database and keep
 working. A `FORCE=1` restore on the same machine leaves Redis as it is.
+
+## Rotating DROBEK_MASTER_KEY
+
+Every stored secret — upstream secrets (proxy module) and module secrets
+(a sign-in provider's client secret, an API key a module injects) — is
+encrypted with a key of its own, and that key is wrapped by
+`DROBEK_MASTER_KEY`; each row records which master key wrapped it. To change
+the master key (it leaked, someone who knew it left, it was copied around),
+drobek keeps reading with the old key while every secret moves to the new one:
+
+```sh
+cd /opt/drobek
+task backup                       # still under the old key — keep that key with this archive
+openssl rand -hex 32              # the new key
+# in .env.production: the old value becomes DROBEK_MASTER_KEY_PREVIOUS, the new one DROBEK_MASTER_KEY
+#   DROBEK_MASTER_KEY_PREVIOUS=<the old key>
+#   DROBEK_MASTER_KEY=<the new key>
+./scripts/selfhost-compose.sh up -d --wait drobek    # recreates drobek with both keys
+task selfhost:rekey
+# upstream_secrets: 3 re-wrapped, 0 already under DROBEK_MASTER_KEY, 0 under an unknown key
+# module_secrets: 5 re-wrapped, 1 already under DROBEK_MASTER_KEY, 0 under an unknown key
+# every stored secret is encrypted under DROBEK_MASTER_KEY — remove DROBEK_MASTER_KEY_PREVIOUS and restart drobek.
+# in .env.production: delete the DROBEK_MASTER_KEY_PREVIOUS line
+./scripts/selfhost-compose.sh up -d --wait drobek
+task backup                       # the first archive under the new key
+```
+
+While `DROBEK_MASTER_KEY_PREVIOUS` is set, secrets stored under it decrypt as
+before and every secret set from then on uses `DROBEK_MASTER_KEY`; each start
+logs how many are still under the previous key. `task selfhost:rekey` (`docker
+compose … run --rm --no-deps -T drobek node dist/server/rekey.js`) wraps each
+secret's own key again under `DROBEK_MASTER_KEY` — no secret value is
+decrypted, and no key or value is printed, only counts. It runs next to the
+serving drobek, and running it again is safe: a second run re-wraps nothing.
+It exits 1 when secrets are left that no key of the server opens.
+
+**What the rotation ends.** What drobek derives from the master key without
+storing it stops matching the new key:
+
+- **password-gated apps** — the unlock cookie (12 hours): visitors enter the
+  password again;
+- **forms** — a page opened before the rotation fails its submission with
+  `invalid_form_token` until it is reloaded (the form token lives 2 hours);
+- **an end user's sign-in through a provider** (the `oidc` module or another
+  `auth.provider`) that is in progress (10 minutes): they start it again;
+- **stored IP hashes** of form submissions and abuse reports: the same address
+  hashes differently afterwards, so entries from before and after the
+  rotation cannot be matched by address;
+- **backups made before the rotation** carry the old key's fingerprint: keep
+  the old key with them. `task restore` accepts such an archive while that key
+  is set as `DROBEK_MASTER_KEY_PREVIOUS`; run `task selfhost:rekey` after it.
+
+Dashboard sessions, end users' sessions, API keys, OAuth tokens and app
+passwords do not depend on the master key and keep working.
+
+**A secret under an unknown key stops the start.** When the database holds
+secrets that neither `DROBEK_MASTER_KEY` nor `DROBEK_MASTER_KEY_PREVIOUS`
+opens — the previous key was removed before `task selfhost:rekey` ran, or the
+`.env.production` belongs to another installation — drobek refuses to start
+instead of failing on each of those secrets later:
+
+```
+drobek refuses to start: 2 stored secrets are encrypted under a key this server does not have (neither DROBEK_MASTER_KEY nor DROBEK_MASTER_KEY_PREVIOUS) (upstream_secrets 1, module_secrets 1).
+  - DROBEK_MASTER_KEY was rotated: set the key used before as DROBEK_MASTER_KEY_PREVIOUS, start drobek, then run `task selfhost:rekey`.
+  - A backup was restored: use the DROBEK_MASTER_KEY it was made with (or set that key as DROBEK_MASTER_KEY_PREVIOUS).
+  - The key is lost: `task selfhost:rekey FORGET_UNKNOWN=1` deletes these secrets; their owners set them again in the dashboard.
+```
+
+`task selfhost:rekey FORGET_UNKNOWN=1` names what it deletes
+(`<workspace>/<upstream>`, `<workspace>/<app> <module>.<NAME>`), so you can
+tell the owners which secret to set again. Outside production
+(`NODE_ENV` other than `production`) the same finding is a warning in the
+log, and the start goes on.
 
 ## Upgrades and rollback
 
@@ -619,12 +775,12 @@ task selfhost:upgrade
 `task selfhost:upgrade` is exactly:
 
 ```sh
-task backup                                                   # the rollback point
+task backup                                                   # the rollback point (refused without room: nothing changes)
 docker compose --env-file .env.production -f docker-compose.production.yaml pull --ignore-buildable
 docker compose --env-file .env.production -f docker-compose.production.yaml pull caddy     # (DNS-01 Caddy: build --pull caddy)
 docker compose --env-file .env.production -f docker-compose.production.yaml up -d --wait postgres redis
 docker compose --env-file .env.production -f docker-compose.production.yaml stop drobek
-task selfhost:migrate     # the new image: applies the release's migrations, exits
+task selfhost:migrate     # the new image: applies the release's migrations, exits (refuses a newer database)
 task selfhost:migrate     # again: "migrations: nothing to apply (up to date)"
 docker compose --env-file .env.production -f docker-compose.production.yaml up -d --wait
 ```
@@ -639,6 +795,33 @@ first one completed, and the `up -d` that follows migrates nothing. A
 migration that fails rolls back its transaction and leaves the journal as it
 was; the old container is already stopped, so fix the cause (or roll back)
 before starting.
+
+**One process migrates at a time.** Every migration run — a server start and
+`task selfhost:migrate` alike — holds one Postgres advisory lock while it
+applies a journal. Two replicas that start together (or a `migrate` next to
+a starting server) do not race: the second logs `waiting for another drobek
+process to finish its migrations`, waits, then finds everything applied and
+goes on.
+
+**An older image refuses a newer database.** Each run records, per journal,
+the image (and module) version that brought the journal's newest migration
+(`drizzle.__drobek_migration_images`). An image that finds migrations in a
+journal that it does not know — the database was migrated by a newer release
+— applies nothing and exits instead of serving against a schema it does not
+know:
+
+```
+the database schema is newer than this image — drizzle.__drizzle_migrations_core holds 2 migrations
+that drobek v1.2.0 (abc1234) does not know. It was migrated by drobek v1.3.0 (def5678): start drobek
+v1.3.0 (def5678) or newer (DROBEK_IMAGE_TAG). Migrations only go forward: an older image never runs
+on a newer schema.
+```
+
+In `task selfhost:upgrade` this stops the first `task selfhost:migrate`, so
+the upgrade ends with drobek stopped and the database untouched: set
+`DROBEK_IMAGE_TAG` to the version the message names (or a newer one) and run
+`task selfhost:upgrade` again. A module journal names the module version too —
+install that version of a third-party module (`task selfhost:module:add`).
 
 The `stop drobek` step lets the old container finish the requests in flight
 first (up to `SHUTDOWN_GRACE_MS`, see [Production compose](#production-compose)).
@@ -656,8 +839,9 @@ task restore FORCE=1 BACKUP=backups/<the backup task selfhost:upgrade just took>
 docker compose --env-file .env.production -f docker-compose.production.yaml up -d --wait
 ```
 
-Migrations only go forward; an older image on a database migrated by a newer
-one is not supported, which is why the upgrade takes a backup first.
+Migrations only go forward; an older image refuses a database migrated by a
+newer one (see above), which is why the upgrade takes a backup first and a
+rollback restores it.
 
 **Check a live server end to end.** The @smoke suite drives the whole MCP loop
 against a running server over public HTTP only: `list_apps`, `create_app` (or
@@ -794,14 +978,32 @@ image is the source of its modules.
 | `latest` | the newest release (the compose default) | on every release |
 | `previous` | the release `latest` pointed at before the newest one | on every release |
 | `edge` | the newest `main` commit that passed CI | on every `main` push |
-| `<sha>` | one commit that passed CI (`main` or a release tag) | never |
+| `<sha>` | one `main` commit whose image passed the e2e suite | never |
+| `<sha>-vX.Y.Z` | the image a release tag tested, before its release gate (below) | never |
 
 A release is a pushed `vX.Y.Z` tag: CI runs the quality gate and the e2e suite
 against the image it builds from that tag (`GIT_SHA` = the tag's commit,
 `VERSION` = the tag, `COMMIT_TIME` = that commit's time, all in
-`/api/version`), pushes that exact image as
-`vX.Y.Z`, then retags in the registry: the former `latest` → `previous`,
-`vX.Y.Z` → `latest`. A pre-release tag (`vX.Y.Z-rc.1`) gets only its own tag.
+`/api/version`) and pushes that exact image as `<sha>-vX.Y.Z`. Before any
+release tag moves, the same tag passes the release gate:
+
+- **Dependency audit:** no production dependency in the lockfile has a known
+  advisory of high or critical severity
+  (`pnpm audit --prod --audit-level high`).
+- **Image scan:** the image's operating-system and Node packages have no
+  known vulnerability of high or critical severity that a fixed package
+  version resolves. The scanner runs from an image pinned by digest, in a
+  job without secrets or write access.
+- **Self-host rehearsal:** a clean runner pulls the pushed image and passes
+  [the rehearsal](#the-rehearsal-task-selfhostrehearsal): this guide's
+  quickstart, `task backup` and a restore on a second machine.
+
+Only then does CI retag in the registry (`vX.Y.Z`, the former `latest` →
+`previous`, `vX.Y.Z` → `latest`) and publish the GitHub Release, the npm
+packages and the MCP Registry entry. A failed gate publishes none of them and
+leaves `latest` where it was; a finding is fixed in a new patch release. The gate runs on release
+tags only, never on a `main` push or a pull request. A pre-release tag
+(`vX.Y.Z-rc.1`) passes the same gate and gets only its own tag.
 To rebuild a release image yourself: `git checkout vX.Y.Z && task build` (same
 sources and lockfile; the build args come from the checkout).
 
@@ -1092,6 +1294,11 @@ Anyone can publish on a public drobek, so the operator (every address in
   - **Restore**: the lock is lifted — the app is NOT republished, its owner
     publishes again. Owners get an e-mail; audited `admin.restore`.
   - **Mark resolved**: closes a report without acting.
+  - **Retention**: a resolved report (taken down or marked resolved) is
+    deleted `ABUSE_REPORTS_RETENTION_DAYS` (default 365) days after it was
+    resolved, with its details and the reporter's e-mail; the audit rows of
+    the report and of a takedown follow `AUDIT_RETENTION_DAYS`. Open reports
+    are never deleted.
 - **Publish heuristic.** Every publish scans the published version (HTML +
   JS): a password field AND a word from `ABUSE_BRAND_WORDS` (comma-separated;
   unset = a built-in list of ~25 bank / payment / e-mail / social / crypto
@@ -1183,7 +1390,8 @@ list.
   prerender (`Sec-Purpose` / `Purpose`) and not more than
   `GALLERY_OPENS_PER_IP_HOUR` visits per client IP per hour (the redirect
   still works). The server stores a count per app and day, never who opened
-  it.
+  it, and deletes the counts of days older than the 30-day window plus 7
+  days once a day.
 - **Likes.** Link a like button to `likeUrl` (`/gallery/like/<slug>`), with
   `?back=<your gallery URL>` to return there. The page asks the visitor to
   sign in to drobek (any account), then shows the count and a "Like this
@@ -1304,19 +1512,26 @@ guide end to end on throwaway stacks (unique `COMPOSE_PROJECT_NAME`s, every
 port on 127.0.0.1, a throwaway Mailpit as the SMTP server): it builds the
 image, copies only the self-host files into a fresh directory ("machine A"),
 runs `task selfhost:init` twice (idempotency) and `docker compose config`
-(no warnings), starts the stack, signs a user in over the e-mail code flow,
+(no warnings), starts the stack and checks that every container log rotates,
+signs a user in over the e-mail code flow,
 mints an API key with the container CLI, creates + writes + publishes an app
 over MCP (the official SDK client) and uploads a file through the files
 module; installs a packed module with `task selfhost:module:add`, enables it
-and checks `/api/version` loads it from the modules directory; then `task backup`, `down -v`, a second fresh directory ("machine B")
-with only machine A's `.env.production`, `task selfhost:init`, `task
-restore`, and asserts the app serves on its host, the file downloads byte for
+and checks `/api/version` loads it from the modules directory; then a `task
+backup` that must be refused for lack of room (`BACKUP_MIN_FREE_MB`) without
+writing or deleting anything, a `task backup BACKUP_KEEP=2` next to three
+older archives that must keep the newest two, `down -v`, a second fresh
+directory ("machine B") with only machine A's `.env.production` and the
+archive, where `task backup:verify` must pass on it (no stack running) and
+fail on a damaged copy, `task selfhost:init`, `task restore`, and asserts the app serves on its host, the file downloads byte for
 byte, the same API key works, Caddy's restored CA still validates and the
 server starts with the same `modules.lock.json` and the module; a
 second restore must be refused and a second `task selfhost:migrate` must
 apply nothing. It prints the wall-clock time of every phase. Not part of
-`task check` or CI (it takes minutes). Knobs: `REHEARSAL_HTTPS_PORT` (9443),
-`REHEARSAL_SKIP_BUILD=1`, `REHEARSAL_KEEP=1` (see the script header).
+`task check` (it takes minutes); CI runs it on every release tag against the
+image it is about to release ([Image tags](#image-tags)). Knobs:
+`REHEARSAL_HTTPS_PORT` (9443), `REHEARSAL_SKIP_BUILD=1`, `REHEARSAL_KEEP=1`
+(see the script header).
 
 ## Development: `task dev:tls`
 

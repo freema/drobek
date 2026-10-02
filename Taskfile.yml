@@ -131,7 +131,7 @@ tasks:
       - pnpm -C tests-e2e exec playwright test {{.CLI_ARGS}}
 
   e2e:image:
-    desc: 'The CI e2e flow locally: build the prod image, run it behind Caddy (tls internal) next to the dev stack, whole @smoke + @local suite [DROBEK_IMAGE=… skips the build; E2E_KEEP=1 keeps the stack]'
+    desc: 'The CI e2e flow locally: build the prod image, run it behind Caddy (tls internal) next to the dev stack, whole @smoke + @local suite, then drobek with EMAIL_TRANSPORT=relay + PUBLISH_APPROVAL=approval for the specs that need it, then the skip guard [DROBEK_IMAGE=… skips the build; E2E_KEEP=1 keeps the stack; -- <args> runs only those, E2E_PHASE=2 in the second configuration]'
     cmds:
       - '{{if not .DROBEK_IMAGE}}docker build --target runner --build-arg GIT_SHA={{.GIT_SHA}} --build-arg COMMIT_TIME={{.COMMIT_TIME}} -t {{.IMAGE}}:e2e .{{else}}true{{end}}'
       - DROBEK_IMAGE={{.DROBEK_IMAGE | default (printf "%s:e2e" .IMAGE)}} ./scripts/e2e-image.sh {{.CLI_ARGS}}
@@ -218,12 +218,19 @@ tasks:
       - ./scripts/selfhost-init.sh
 
   selfhost:migrate:
-    desc: 'Apply every pending migration (core + DROBEK_MODULES) with the configured image and exit — the upgrade step; postgres must be up'
+    desc: 'Apply every pending migration (core + DROBEK_MODULES) with the configured image and exit — the upgrade step; postgres must be up. Waits for the migration lock; refuses a database migrated by a newer image'
     cmds:
       - ./scripts/selfhost-compose.sh run --rm --no-deps -T drobek node dist/server/migrate.js
 
+  selfhost:rekey:
+    desc: 'Re-wrap every stored secret under DROBEK_MASTER_KEY (the DROBEK_MASTER_KEY_PREVIOUS rotation step) and print the counts; idempotent, safe while drobek runs [FORGET_UNKNOWN=1 deletes the secrets no key here opens]'
+    vars:
+      REKEY_ARGS: '{{if eq (.FORGET_UNKNOWN | default "") "1"}}--forget-unknown{{end}}'
+    cmds:
+      - ./scripts/selfhost-compose.sh run --rm --no-deps -T drobek node dist/server/rekey.js {{.REKEY_ARGS}}
+
   selfhost:upgrade:
-    desc: 'Upgrade in place: task backup → pull → stop drobek → migrate ×2 → up -d --wait (set DROBEK_IMAGE_TAG in .env.production first to pin a release)'
+    desc: 'Upgrade in place: task backup → pull → stop drobek → migrate ×2 → up -d --wait (set DROBEK_IMAGE_TAG in .env.production first to pin a release; an image older than the database stops the upgrade at migrate, before up)'
     vars:
       DC: ./scripts/selfhost-compose.sh
     cmds:
@@ -241,9 +248,21 @@ tasks:
       - '{{.DC}} exec -T drobek wget -q -O - http://127.0.0.1:3000/api/version && echo'
 
   backup:
-    desc: 'Back up the production stack → backups/drobek-<UTC>.tar.gz (pg_dump -Fc + files_data + assets_data + modules_data + caddy_data + manifest.json) [BACKUP_DIR=backups]'
+    desc: 'Back up the production stack → backups/drobek-<UTC>.tar.gz (pg_dump -Fc + files_data + assets_data + modules_data + caddy_data + manifest.json); refuses without twice the data free, verifies the archive, then keeps the newest BACKUP_KEEP [BACKUP_DIR=backups BACKUP_KEEP=14 BACKUP_MIN_FREE_MB=1024, also from .env.production]'
+    env:
+      BACKUP_DIR: '{{.BACKUP_DIR}}'
+      BACKUP_KEEP: '{{.BACKUP_KEEP}}'
+      BACKUP_MIN_FREE_MB: '{{.BACKUP_MIN_FREE_MB}}'
     cmds:
       - ./scripts/selfhost-backup.sh
+
+  backup:verify:
+    desc: 'Check a `task backup` archive without restoring it: manifest.json, SHA256SUMS and the size + sha256 of every part, streamed (no docker, nothing unpacked) [BACKUP=… — default: the newest in BACKUP_DIR]'
+    env:
+      BACKUP: '{{.BACKUP}}'
+      BACKUP_DIR: '{{.BACKUP_DIR}}'
+    cmds:
+      - ./scripts/selfhost-backup-verify.sh
 
   restore:
     desc: 'Restore a `task backup` archive into this stack and start it (refuses a non-empty database unless FORCE=1) — BACKUP=backups/drobek-<ts>.tar.gz'
@@ -276,7 +295,7 @@ tasks:
       - ./scripts/selfhost-module.sh list
 
   selfhost:rehearsal:
-    desc: 'The quickstart + backup → restore end to end on throwaway stacks (builds the image; NOT in check/CI) — scripts/selfhost-rehearsal.sh'
+    desc: 'The quickstart + backup → restore end to end on throwaway stacks (builds the image; NOT in check, CI runs it on release tags) — scripts/selfhost-rehearsal.sh'
     cmds:
       - ./scripts/selfhost-rehearsal.sh
 

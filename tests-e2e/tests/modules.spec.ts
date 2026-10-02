@@ -371,14 +371,19 @@ test.describe('platform modules — the hello example @local', () => {
         [appId, MARKER, 'AAAAAAAAAAAAAAAA', 'AAAAAAAAAAAAAAAAAAAAAA==', MARKER]
       )
     );
-    const info = await callTool(mcp.client, 'skill_info', { name: 'hello' });
-    const got = await callTool(mcp.client, 'get_app', { app_id: appId });
-    for (const r of [info, got]) {
-      expect(r.text).not.toContain(MARKER);
-      expect(JSON.stringify(r.json)).not.toContain(MARKER);
+    try {
+      const info = await callTool(mcp.client, 'skill_info', { name: 'hello' });
+      const got = await callTool(mcp.client, 'get_app', { app_id: appId });
+      for (const r of [info, got]) {
+        expect(r.text).not.toContain(MARKER);
+        expect(JSON.stringify(r.json)).not.toContain(MARKER);
+      }
+      expect((got.json.modules as Record<string, { secrets: unknown }>).hello.secrets).toEqual([
+        { name: 'HELLO_SIGNATURE', hasSecret: true },
+      ]);
+    } finally {
+      // The row is under no real key: left behind, it would stop a production start.
+      await withDb((c) => c.query(`DELETE FROM module_secrets WHERE app_id = $1`, [appId]));
     }
-    expect((got.json.modules as Record<string, { secrets: unknown }>).hello.secrets).toEqual([
-      { name: 'HELLO_SIGNATURE', hasSecret: true },
-    ]);
   });
 });

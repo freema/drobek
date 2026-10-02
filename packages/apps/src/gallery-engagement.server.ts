@@ -6,11 +6,12 @@
  * Opens are one counter per app and UTC day, with nothing about who opened
  * the app; a like is one row per account and app. Only an entry the public
  * list shows right now can be opened or liked; deleting an app or an account
- * removes its rows (FK cascade).
+ * removes its rows (FK cascade). Open counts older than the `opens` window
+ * plus a margin are pruned daily.
  */
-import { and, eq, gte, sql } from 'drizzle-orm';
+import { and, eq, gte, lt, sql } from 'drizzle-orm';
 import { apps, galleryLikes, galleryOpens, getDb } from '@drobek/db';
-import { galleryOpensSince, utcDay } from './gallery.js';
+import { galleryOpensKeptSince, galleryOpensSince, utcDay } from './gallery.js';
 import { visibleInGallery } from './gallery.server.js';
 import { publishedUrl } from './origin.js';
 
@@ -44,6 +45,19 @@ export async function recordGalleryOpen(appId: string, now: Date = new Date()): 
     .insert(galleryOpens)
     .values({ appId, day: utcDay(now), count: 1 })
     .onConflictDoUpdate({ target: [galleryOpens.appId, galleryOpens.day], set: { count: sql`${galleryOpens.count} + 1` } });
+}
+
+/**
+ * Delete the open counts of every app for the days before the `opens` window
+ * plus GALLERY_OPENS_PRUNE_MARGIN_DAYS (the daily retention prune); nothing
+ * reads them any more.
+ */
+export async function pruneGalleryOpens(now: Date = new Date()): Promise<{ deleted: number }> {
+  const rows = await getDb()
+    .delete(galleryOpens)
+    .where(lt(galleryOpens.day, galleryOpensKeptSince(now)))
+    .returning({ appId: galleryOpens.appId });
+  return { deleted: rows.length };
 }
 
 /** An app's likes and its opens in the last GALLERY_OPENS_WINDOW_DAYS UTC days (what its gallery entry shows). */

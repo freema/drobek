@@ -126,7 +126,7 @@ function AppLinks({ appPath, publicUrl, workspaceSlug }: { appPath: string; publ
 }
 
 export default function AbuseQueueRoute() {
-  const { status, confirm, confirmError, reasons, reports, locked, gallery } = useLoaderData<typeof loader>();
+  const { status, retentionDays, confirm, confirmError, reasons, reports, locked, gallery } = useLoaderData<typeof loader>();
   const result = useActionData<typeof action>();
   const busy = useNavigation().state !== 'idle';
   const { pathname, search } = useLocation();
@@ -209,6 +209,12 @@ export default function AbuseQueueRoute() {
       ) : null}
 
       <h2 style={styles.h2}>{status === 'open' ? 'Open reports' : 'Resolved reports'}</h2>
+      {status === 'resolved' ? (
+        <p style={styles.hint} data-testid="abuse-retention">
+          A resolved report is deleted {retentionDays} days after it was resolved, with its details and the reporter&apos;s
+          e-mail (ABUSE_REPORTS_RETENTION_DAYS). The activity log keeps its own record of the report and of a takedown.
+        </p>
+      ) : null}
       {reports.length === 0 ? (
         <p style={styles.empty} data-testid="abuse-empty">
           {status === 'open'

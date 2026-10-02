@@ -29,6 +29,15 @@ describe('findSecretProblems', () => {
     ]);
   });
 
+  it('checks the previous KEK for a placeholder, but lets a rotation move away from the all-zero dev key', () => {
+    const zeros = '0'.repeat(64);
+    expect(findSecretProblems({ NODE_ENV: 'production', DROBEK_MASTER_KEY: REAL, DROBEK_MASTER_KEY_PREVIOUS: zeros })).toEqual([]);
+    expect(findSecretProblems({ NODE_ENV: 'production', DROBEK_MASTER_KEY: REAL, DROBEK_MASTER_KEY_PREVIOUS: 'change-me' })).toEqual([
+      { name: 'DROBEK_MASTER_KEY_PREVIOUS', reason: 'placeholder' },
+    ]);
+    expect(findSecretProblems({ NODE_ENV: 'production', DROBEK_MASTER_KEY: REAL, DROBEK_MASTER_KEY_PREVIOUS: REAL })).toEqual([]);
+  });
+
   it('requires the KEK in production', () => {
     expect(findSecretProblems({ NODE_ENV: 'production' })).toEqual([
       { name: 'DROBEK_MASTER_KEY', reason: 'missing' },

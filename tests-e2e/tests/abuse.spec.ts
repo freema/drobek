@@ -363,6 +363,11 @@ test.describe('abuse: reports, takedown/restore, publish heuristic @local', () =
     const audit = await auditOf(bank.slug, 'admin.restore');
     expect(audit).toHaveLength(1);
     expect(audit[0]).toMatchObject({ actor_kind: 'user', meta: { reason: 'phishing' } });
+
+    // The resolved view lists the app's reports and says how long they are kept.
+    await ap.goto('/admin/abuse?status=resolved');
+    await expect(ap.getByTestId('abuse-retention')).toContainText('deleted 365 days after it was resolved');
+    await expect(ap.locator(`[data-testid="abuse-report"][data-host="${prodHost(bank.slug)}"]`).first()).toBeVisible();
   });
 
   test('the report form allows 5 valid reports per IP per hour; the 6th → 429', async ({ request }) => {

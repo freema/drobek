@@ -9,16 +9,33 @@
 #            it to e2e as a docker-load artifact (kept for a day).
 #   e2e      (after image) load that image → run it
 #            with docker-compose.e2e.yaml behind Caddy (tls internal) with
-#            throwaway postgres / redis / mailpit / proxy-echo → the server
-#            migrates the fresh DB on start → /healthz → Playwright @smoke +
-#            @local (guarded TRUNCATE, host allow-list) — scripts/e2e-image.sh,
-#            the same script `task e2e:image` runs locally. The image that
+#            throwaway postgres / redis / mailpit and the e2e helpers
+#            (proxy-echo, oidc-mock, dns-mock) → the server migrates the fresh
+#            DB on start → /healthz → Playwright @smoke + @local (guarded
+#            TRUNCATE, host allow-list) → drobek recreated with
+#            EMAIL_TRANSPORT=relay + PUBLISH_APPROVAL=approval for the specs
+#            that need it → the skip guard (every test ran in a phase) —
+#            scripts/e2e-image.sh, the same script `task e2e:image` runs
+#            locally. The image that
 #            passed is pushed as ghcr.io/freema/drobek:<sha> (main) or
 #            :<sha>-vX.Y.Z (tags): a tag and main on the same commit build
 #            different VERSIONs and must not overwrite each other.
 #   quality, module-compatibility and image → e2e run in parallel.
-#   promote  (main and tags, after all three pass) no rebuild — registry-side
-#            tags of the image the e2e job tested and pushed:
+#   The release gate — three more jobs, on tags only (skipped on main):
+#   audit    `pnpm audit --prod --audit-level high` over the lockfile: an
+#            advisory of high or critical severity in a production
+#            dependency fails it.
+#   scan     (after image) the image tarball the e2e job tests, scanned for
+#            known vulnerabilities in its OS and Node packages by a scanner
+#            image pinned by digest, in a job without secrets or write
+#            permissions: a high or critical vulnerability that has a fixed
+#            version fails it.
+#   rehearsal (after e2e, selfhost-rehearsal.yml) the image e2e pushed as
+#            <sha>-vX.Y.Z, pulled like a VPS does: the docs/SELF-HOSTING.md
+#            quickstart, `task backup` and a restore on a second machine.
+#   promote  (main and tags, after quality, module-compatibility and e2e
+#            pass; a tag also needs audit, scan and rehearsal) no rebuild —
+#            registry-side tags of the image the e2e job tested and pushed:
 #              main       edge
 #              tag vX.Y.Z vX.Y.Z; the former `latest` → `previous` (the
 #                         rollback target), vX.Y.Z → `latest`. A pre-release
@@ -31,7 +48,7 @@
 #            pre-release under the dist-tag `next`) with npm Trusted
 #            Publishing — OIDC, no token, provenance attached — skipping a
 #            version npm already has (scripts/npm-packages.mjs publish). After
-#            promote, so only a tested tag publishes.
+#            promote, so only a tag that passed the release gate publishes.
 #   release  (tags only, after promote) the GitHub Release for the tag, its
 #            notes = the tag's CHANGELOG section plus the image name; a
 #            pre-release tag is marked pre-release, otherwise it is Latest.
@@ -46,7 +63,8 @@
 # from the same sources and lockfile.
 #
 # Triggers: pushes to `main` and `v*` tags only (Actions capacity is limited —
-# push what `task check` proved; no schedule trigger). Pull requests run the
+# push what `task check` proved; no schedule trigger). audit, scan and
+# rehearsal run on tags only. Pull requests run the
 # `quality` job alone, from pr.yml. A newer push to
 # the same ref cancels the running one.
 #
@@ -253,7 +271,7 @@ jobs:
       - name: Load the image into the local daemon
         run: docker load --input "$RUNNER_TEMP/drobek-image.tar"
 
-      - name: e2e against the image (compose up → migrate → @smoke + @local)
+      - name: e2e against the image (compose up → migrate → @smoke + @local → relay + approval → skip guard)
         env:
           DROBEK_IMAGE: ${{ env.IMAGE }}:${{ needs.image.outputs.short }}
         run: ./scripts/e2e-image.sh
@@ -285,11 +303,69 @@ jobs:
           [ "$STAGE" = "$SHA" ] || docker tag "$IMAGE:$SHA" "$IMAGE:$STAGE"
           docker push "$IMAGE:$STAGE"
 
+  audit:
+    name: Release gate · production dependency audit (high)
+    runs-on: ubuntu-latest
+    if: github.ref_type == 'tag'
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # Reads pnpm-lock.yaml; no install needed.
+      - name: pnpm audit --prod --audit-level high
+        run: pnpm audit --prod --audit-level high
+
+  scan:
+    name: Release gate · image vulnerability scan (high, fixable)
+    runs-on: ubuntu-latest
+    needs: image
+    if: github.ref_type == 'tag'
+    timeout-minutes: 10
+    env:
+      SCANNER: ghcr.io/aquasecurity/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
+    steps:
+      - name: Download the image the image job built
+        uses: actions/download-artifact@v4
+        with:
+          name: drobek-image-${{ needs.image.outputs.short }}
+          path: ${{ runner.temp }}
+
+      - name: Scan the image tarball (OS + Node packages, high and critical with a fix)
+        run: |
+          docker run --rm -v "$RUNNER_TEMP:/scan:ro" "$SCANNER" image \
+            --input /scan/drobek-image.tar --scanners vuln \
+            --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --no-progress
+
+  rehearsal:
+    name: Release gate · self-host rehearsal
+    needs: e2e
+    if: github.ref_type == 'tag'
+    uses: ./.github/workflows/selfhost-rehearsal.yml
+    with:
+      image_tag: ${{ needs.e2e.outputs.stage }}
+
   promote:
     name: Image tags (edge, vX.Y.Z, latest, previous)
     runs-on: ubuntu-latest
-    needs: [quality, module-compatibility, e2e]
-    if: github.ref == 'refs/heads/main' || github.ref_type == 'tag'
+    needs: [quality, module-compatibility, e2e, audit, scan, rehearsal]
+    # audit, scan and rehearsal are skipped on main; a tag needs all three.
+    if: >-
+      !cancelled()
+      && (github.ref == 'refs/heads/main' || github.ref_type == 'tag')
+      && needs.quality.result == 'success'
+      && needs.module-compatibility.result == 'success'
+      && needs.e2e.result == 'success'
+      && (github.ref_type != 'tag' || needs.audit.result == 'success')
+      && (github.ref_type != 'tag' || needs.scan.result == 'success')
+      && (github.ref_type != 'tag' || needs.rehearsal.result == 'success')
     timeout-minutes: 10
     permissions:
       contents: read

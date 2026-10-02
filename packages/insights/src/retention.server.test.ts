@@ -1,7 +1,7 @@
 /**
  * get_logs storage: `get_logs('requests')` flushes its whole window
  * (up to 31 days) in ONE Redis round trip and one statement per table, reads
- * never delete, and the periodic prune keeps every table inside its
+ * never delete, a flush never lowers a stored day, and the periodic prune keeps every table inside its
  * retention for every app. PGlite + a pipelined in-memory Redis.
  */
 import type { PGlite } from '@electric-sql/pglite';
@@ -11,6 +11,7 @@ import { eq } from 'drizzle-orm';
 import { LOGS_RETENTION_DAYS } from './limits.js';
 import { queryRequestLog, type RequestLogPipeline, type RequestLogRedis } from './logs.server.js';
 import { DEFAULT_LOGS_PRUNE_INTERVAL_MS, logsPruneIntervalFromEnv, pruneLogs, startLogsPrune } from './prune.server.js';
+import { upsertDailyStats } from './signals.server.js';
 import { freshDb, type TestDb } from './test/db.js';
 
 const DAY_MS = 86_400_000;
@@ -128,6 +129,32 @@ describe("get_logs('requests') flush", () => {
     expect(again[0]).toMatchObject({ day: today, requests: 7, modules: { data: { '2xx': 50 } } });
     // The 60-day-old row is outside the window but still stored: only the prune deletes.
     expect(await db.select().from(appDailyStats).where(eq(appDailyStats.day, dayOf(60)))).toHaveLength(1);
+  });
+
+  it('never lowers a stored day: counters that restarted after a Redis flush keep the larger values', async () => {
+    const today = dayOf(0);
+    await upsertDailyStats([
+      { appId: appA, day: today, requestCount: 120, count5xx: 4, path404Counts: { '/gone': 9, '/old': 2, __other__: 5 } },
+      { appId: appB, day: today, requestCount: 3, count5xx: 0, path404Counts: {} },
+    ]);
+    // Redis lost its counters: the next flush brings smaller totals and a new path.
+    await upsertDailyStats([
+      { appId: appA, day: today, requestCount: 7, count5xx: 1, path404Counts: { '/gone': 1, '/new': 3 } },
+      { appId: appB, day: today, requestCount: 8, count5xx: 2, path404Counts: { '/x': 1 } },
+    ]);
+    const row = async (appId: string) =>
+      (await db.select().from(appDailyStats).where(eq(appDailyStats.appId, appId)))[0];
+    expect(await row(appA)).toMatchObject({
+      requestCount: 120,
+      count5xx: 4,
+      path404Counts: { '/gone': 9, '/old': 2, '/new': 3, __other__: 5 },
+    });
+    // Larger totals still win.
+    expect(await row(appB)).toMatchObject({ requestCount: 8, count5xx: 2, path404Counts: { '/x': 1 } });
+
+    const { redis } = pipelineRedis(new Map([[`drobek:signals:req:${appA}:${today}`, '9']]), new Map());
+    const entries = await queryRequestLog(appA, null, { now: NOW, redis: () => redis });
+    expect(entries[0]).toMatchObject({ day: today, requests: 120, count_5xx: 4, count_404: 19 });
   });
 
   it('a Redis failure skips the flush and still answers from Postgres', async () => {

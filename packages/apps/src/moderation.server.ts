@@ -2,7 +2,8 @@
  * Abuse and moderation, the stateful half:
  *
  *  - the report queue (`abuse_reports`): `createAbuseReport` (the public form
- *    on the dashboard origin), `listAbuseReports`, `resolveAbuseReport`;
+ *    on the dashboard origin), `listAbuseReports`, `resolveAbuseReport`,
+ *    `pruneResolvedAbuseReports` (the daily retention prune);
  *  - the takedown (`apps.locked_reason`): `takedownApp` unpublishes the app
  *    and locks it in one transaction (audit `admin.takedown`),
  *    `restoreApp` lifts the lock WITHOUT republishing (audit `admin.restore`);
@@ -20,7 +21,7 @@
  * dashboard's business — this package sends none.
  */
 import { createHmac } from 'node:crypto';
-import { and, desc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import { AUDIT_ACTIONS, writeAudit } from '@drobek/audit';
 import { createConsoleLogger, type Logger } from '@drobek/core';
 import { abuseReports, appVersions, apps, blobs, dbErrorForLog, domains, getDb, users, versionFiles, workspaces } from '@drobek/db';
@@ -30,6 +31,7 @@ import { brandWordsFromEnv, describeFinding, scanForPhishing, type HeuristicFind
 import { appHostOf, classifyHost, type HostConfig } from './host.js';
 import {
   REPORT_DETAILS_MAX,
+  abuseReportsRetentionDays,
   isLockReason,
   lockCategory,
   normalizeReportHost,
@@ -414,6 +416,20 @@ export async function resolveAbuseReport(reportId: string, actorUserId: string):
     .where(and(eq(abuseReports.id, reportId), eq(abuseReports.status, 'open')))
     .returning({ id: abuseReports.id });
   return rows.length > 0;
+}
+
+/**
+ * Delete the reports resolved more than ABUSE_REPORTS_RETENTION_DAYS ago
+ * (the daily retention prune). Open reports always stay; the audit trail of
+ * the report and of its takedown follows AUDIT_RETENTION_DAYS.
+ */
+export async function pruneResolvedAbuseReports(opts: { now?: Date; env?: NodeJS.ProcessEnv } = {}): Promise<{ deleted: number }> {
+  const cutoff = new Date((opts.now ?? new Date()).getTime() - abuseReportsRetentionDays(opts.env) * 86_400_000);
+  const rows = await getDb()
+    .delete(abuseReports)
+    .where(and(eq(abuseReports.status, 'resolved'), lt(abuseReports.resolvedAt, cutoff)))
+    .returning({ id: abuseReports.id });
+  return { deleted: rows.length };
 }
 
 /** Every app that is currently taken down (live rows), newest first by slug order. */

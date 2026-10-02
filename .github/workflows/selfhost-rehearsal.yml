@@ -1,7 +1,9 @@
 # drobek (PUBLIC core) — self-host rehearsal on a clean Ubuntu 24.04 host
 #
-# Manual only (workflow_dispatch). A fresh GitHub runner is a clean Ubuntu
-# 24.04 + Docker machine: it pulls a RELEASED image from GHCR (as a VPS does)
+# Runs on every release tag as part of ci.yml's release gate (workflow_call,
+# before `promote`, against the image e2e pushed as <sha>-vX.Y.Z), and by hand
+# (workflow_dispatch) against a released tag. A fresh GitHub runner is a clean
+# Ubuntu 24.04 + Docker machine: it pulls the image from GHCR (as a VPS does)
 # and runs `task selfhost:rehearsal` against it — the docs/SELF-HOSTING.md
 # quickstart (init → TLS dashboard → user → MCP → published app with a file),
 # `task backup`, and a restore on a second "machine". The timings land in the
@@ -14,6 +16,12 @@ on:
       image_tag:
         description: 'Released image tag to pull, e.g. v0.6.1'
         required: true
+  workflow_call:
+    inputs:
+      image_tag:
+        description: 'Image tag to pull, the <sha>-vX.Y.Z the calling tag pushed'
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -30,7 +38,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.image_tag }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.image_tag || github.ref }}
           fetch-depth: 0
 
       - name: Use the rehearsal harness from this workflow's commit
@@ -47,12 +55,12 @@ jobs:
 
       - uses: arduino/setup-task@v2
         with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          repo-token: ${{ github.token }}
 
       - name: Install the rehearsal client (tests-e2e)
         run: pnpm install --frozen-lockfile --filter tests-e2e
 
-      - name: Pull the released image
+      - name: Pull the image
         run: |
           start=$(date +%s)
           docker pull -q "ghcr.io/freema/drobek:${{ inputs.image_tag }}"

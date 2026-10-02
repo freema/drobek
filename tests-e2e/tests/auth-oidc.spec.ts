@@ -1,25 +1,30 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
-import { BASE_URL_WEB, TARGET_PRODUCTION, TEST_ENV } from '../playwright.config';
-import { hostRequest, previewHost, urlOf, type Raw } from './helpers/apps-host';
+import { APPS_URL_SCHEME, BASE_URL_WEB, TARGET_PRODUCTION, TEST_ENV } from '../playwright.config';
+import { getAppUrl, hostRequest, previewHost, urlOf, type Raw } from './helpers/apps-host';
 import { skipUnlessLocal } from './helpers/auth';
 import { callTool, mcpClient, type McpClient } from './helpers/mcp';
 import { personalWorkspaceOf, withDb } from './helpers/seed';
 
 /**
  * Sign-in with a company account through the built-in `oidc`
- * provider module, end to end against the mock IdP (tests-e2e/mock-oidc.mjs,
- * spawned here like auth-google.spec.ts spawns its mock, or reused when
- * `task mock:oidc` runs).
+ * provider module, end to end against the mock IdP (tests-e2e/mock-oidc.mjs).
  *
- * DEV STACK ONLY: the IdP must be public https; the dev compose admits the
- * http mock through AUTH_OIDC_DEV_ORIGINS (its host.docker.internal:3050 and
- * localhost:3050 origins), which production ignores — the e2e image runs
- * NODE_ENV=production, so there the whole spec is skipped.
+ * An app may name an IdP on a private address only where the server vouches
+ * for it, so each stack reaches the mock its own way:
+ *  - the dev stack: the spec spawns the mock on the host (like
+ *    auth-google.spec.ts spawns its mock, or reuses `task mock:oidc`) and the
+ *    app names it as its issuer; the dev compose admits it over plain http
+ *    through AUTH_OIDC_DEV_ORIGINS (host.docker.internal:3050 and
+ *    localhost:3050), which production ignores;
+ *  - the image flow (NODE_ENV=production): the mock is the `oidc-mock`
+ *    service behind the e2e Caddy over https (MOCK_OIDC_ISSUER for the
+ *    server, MOCK_OIDC_BROWSER_URL for the browser) and the server's own
+ *    AUTH_OIDC_ISSUER, so the app names no issuer — only its clientId.
  *
  *  - the agent turns the provider on with configure_module('auth', { providers:
- *    { oidc: { enabled, issuer, clientId } } }) → pending; the owner confirms
+ *    { oidc: { enabled, [issuer,] clientId } } }) → pending; the owner confirms
  *    it and sets OIDC_CLIENT_SECRET in the dashboard;
  *  - the app is the oidc skill's first ```tsx block (<LoginGate>);
  *  - a browser: "Continue with Company account" → the mock's consent → the
@@ -37,10 +42,15 @@ import { personalWorkspaceOf, withDb } from './helpers/seed';
  */
 
 const MOCK_PORT = Number(process.env.MOCK_OIDC_PORT ?? 3050);
-const MOCK_URL = `http://localhost:${MOCK_PORT}`;
+/** Where the browser meets the mock (its authorization endpoint). */
+const MOCK_URL = process.env.MOCK_OIDC_BROWSER_URL ?? `http://localhost:${MOCK_PORT}`;
 const MOCK_SCRIPT = fileURLToPath(new URL('../mock-oidc.mjs', import.meta.url));
 /** What the drobek container reaches (the mock's default issuer, AUTH_OIDC_DEV_ORIGINS). */
 const ISSUER = process.env.MOCK_OIDC_ISSUER ?? `http://host.docker.internal:${MOCK_PORT}`;
+/** Production refuses an app's own issuer on a private address: there the mock is the server's AUTH_OIDC_ISSUER. */
+const ISSUER_FROM_SERVER = TARGET_PRODUCTION;
+/** The end-user session cookie: `__Host-` on https app hosts. */
+const SESSION_COOKIE = APPS_URL_SCHEME === 'https' ? '__Host-drobek_eu' : 'drobek_eu';
 const CLIENT_ID = 'drobek-e2e';
 /** The mock's client secret (MOCK_OIDC_CLIENT_SECRET default) — a test value, not a real secret. */
 const CLIENT_SECRET = process.env.MOCK_OIDC_CLIENT_SECRET ?? 'local-dev-secret';
@@ -56,15 +66,16 @@ let spawnedMock: ChildProcess | null = null;
 
 async function mockIsUp(): Promise<boolean> {
   try {
-    return (await fetch(`${MOCK_URL}/`, { signal: AbortSignal.timeout(1000) })).ok;
+    return (await getAppUrl(MOCK_URL, '/')).status === 200;
   } catch {
     return false;
   }
 }
 
 test.beforeAll(async () => {
-  if (TEST_ENV !== 'local' || TARGET_PRODUCTION) return;
+  if (TEST_ENV !== 'local') return;
   if (await mockIsUp()) return;
+  if (ISSUER_FROM_SERVER) throw new Error(`the oidc-mock service does not answer at ${MOCK_URL} (docker-compose.e2e.yaml)`);
   spawnedMock = spawn(process.execPath, [MOCK_SCRIPT], { env: { ...process.env, MOCK_OIDC_PORT: String(MOCK_PORT) }, stdio: 'ignore' });
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
@@ -78,11 +89,6 @@ test.afterAll(() => {
   spawnedMock?.kill();
   spawnedMock = null;
 });
-
-function skipUnlessDevStack(): void {
-  skipUnlessLocal();
-  test.skip(TARGET_PRODUCTION, 'production ignores AUTH_OIDC_DEV_ORIGINS: the http mock IdP runs on the dev stack only');
-}
 
 function sdkHeaders(host: string, cookie?: string): Record<string, string> {
   return { 'Content-Type': 'application/json', Origin: urlOf(host), 'X-Drobek-SDK': '1', ...(cookie ? { Cookie: cookie } : {}) };
@@ -125,14 +131,14 @@ test.describe('auth provider oidc against the mock IdP @local', () => {
   async function signInThroughIdp(page: Page, email: string, opts: { verified?: boolean } = {}): Promise<void> {
     await page.goto(urlOf(host));
     await page.getByRole('button', { name: LABEL }).click();
-    await page.waitForURL(new RegExp(`^${MOCK_URL}/authorize`));
+    await page.waitForURL((u) => u.href.startsWith(`${MOCK_URL}/authorize`));
     await page.getByLabel('Email', { exact: true }).fill(email);
     if (opts.verified === false) await page.getByLabel('Email verified').fill('0');
     await page.getByRole('button', { name: 'Approve' }).click();
   }
 
   test('the agent enables the provider → pending; the owner confirms it and sets OIDC_CLIENT_SECRET', async ({ page, request }) => {
-    skipUnlessDevStack();
+    skipUnlessLocal();
     mcp = await mcpClient(page, request, { tag: 'auth-oidc' });
     owner = await page.context().browser()!.newContext({ storageState: await page.context().storageState() });
 
@@ -160,7 +166,11 @@ test.describe('auth provider oidc against the mock IdP @local', () => {
     const held = await callTool(mcp.client, 'configure_module', {
       app_id: app.app_id,
       module: 'auth',
-      config: { allow: { domains: [DOMAIN] }, adminEmails: [BOSS], providers: { oidc: { enabled: true, issuer: ISSUER, clientId: CLIENT_ID } } },
+      config: {
+        allow: { domains: [DOMAIN] },
+        adminEmails: [BOSS],
+        providers: { oidc: { enabled: true, ...(ISSUER_FROM_SERVER ? {} : { issuer: ISSUER }), clientId: CLIENT_ID } },
+      },
     });
     expect(held.isError, held.text).toBe(false);
     expect(held.json).toMatchObject({ applied: false });
@@ -187,7 +197,7 @@ test.describe('auth provider oidc against the mock IdP @local', () => {
   });
 
   test('a browser: Continue with Company account → mock consent → dashboard-host callback → handoff → signed in on the app host as admin; acmecrm recorded the contact', async ({ browser }) => {
-    skipUnlessDevStack();
+    skipUnlessLocal();
     const ctx = await browser.newContext();
     try {
       const page = await ctx.newPage();
@@ -206,8 +216,8 @@ test.describe('auth provider oidc against the mock IdP @local', () => {
       const me = await page.evaluate(async () => (await fetch('/__drobek/v1/auth/me')).json());
       expect(me.user).toMatchObject({ email: BOSS, role: 'admin' });
       const appCookies = await ctx.cookies(urlOf(host));
-      expect(appCookies.map((c) => c.name)).toContain('drobek_eu');
-      expect(await ctx.cookies(BASE_URL_WEB)).not.toContainEqual(expect.objectContaining({ name: 'drobek_eu' }));
+      expect(appCookies.map((c) => c.name)).toContain(SESSION_COOKIE);
+      expect(await ctx.cookies(BASE_URL_WEB)).not.toContainEqual(expect.objectContaining({ name: SESSION_COOKIE }));
 
       await expect
         .poll(async () =>
@@ -224,7 +234,7 @@ test.describe('auth provider oidc against the mock IdP @local', () => {
   });
 
   test('an address outside the allowlist → the 403 page, no session', async ({ browser }) => {
-    skipUnlessDevStack();
+    skipUnlessLocal();
     const ctx = await browser.newContext();
     try {
       const page = await ctx.newPage();
@@ -232,7 +242,7 @@ test.describe('auth provider oidc against the mock IdP @local', () => {
       await signInThroughIdp(page, OUTSIDER);
       expect((await callback).status()).toBe(403);
       await expect(page.getByRole('heading', { name: 'Not allowed' })).toBeVisible();
-      expect((await ctx.cookies(urlOf(host))).map((c) => c.name)).not.toContain('drobek_eu');
+      expect((await ctx.cookies(urlOf(host))).map((c) => c.name)).not.toContain(SESSION_COOKIE);
       expect(JSON.parse((await hostRequest(host, '/__drobek/v1/auth/me')).body)).toEqual({ user: null });
     } finally {
       await ctx.close();
@@ -240,7 +250,7 @@ test.describe('auth provider oidc against the mock IdP @local', () => {
   });
 
   test('email_verified=false without trustEmail → the "not verified" page (email_not_verified), no session', async ({ browser }) => {
-    skipUnlessDevStack();
+    skipUnlessLocal();
     const ctx = await browser.newContext();
     try {
       const page = await ctx.newPage();
@@ -248,7 +258,7 @@ test.describe('auth provider oidc against the mock IdP @local', () => {
       await signInThroughIdp(page, ANA, { verified: false });
       expect((await callback).status()).toBe(403);
       await expect(page.getByRole('heading', { name: 'E-mail address not verified' })).toBeVisible();
-      expect((await ctx.cookies(urlOf(host))).map((c) => c.name)).not.toContain('drobek_eu');
+      expect((await ctx.cookies(urlOf(host))).map((c) => c.name)).not.toContain(SESSION_COOKIE);
       const denied = await withDb(async (c) =>
         (await c.query(`SELECT meta FROM audit_log WHERE target = $1 AND action = 'auth.sign_in_denied' ORDER BY created_at`, [app.slug])).rows
       );
@@ -272,7 +282,7 @@ test.describe('auth provider oidc against the mock IdP @local', () => {
   }
 
   test('a forged state → the 400 "Sign-in expired" page (invalid_state), no cookie', async ({ request }) => {
-    skipUnlessDevStack();
+    skipUnlessLocal();
     const { url } = await begin();
     const [id] = String(url.searchParams.get('state')).split('.');
     const forged = await request.get(`${BASE_URL_WEB}/__drobek/auth/callback/oidc?state=${id}.${'A'.repeat(43)}&code=x`, { maxRedirects: 0 });
@@ -282,13 +292,13 @@ test.describe('auth provider oidc against the mock IdP @local', () => {
   });
 
   test('a handoff code works once: the second complete is the 400 "Sign-in expired" page without a cookie', async ({ request }) => {
-    skipUnlessDevStack();
+    skipUnlessLocal();
     const { url, flow } = await begin('/after');
     url.searchParams.set('mock_approve', '1');
     url.searchParams.set('mock_email', ANA);
-    const idp = await fetch(url, { redirect: 'manual' });
-    expect(idp.status).toBe(302);
-    const toCallback = idp.headers.get('location')!;
+    const idp = await getAppUrl(url.origin, `${url.pathname}${url.search}`);
+    expect(idp.status, idp.body).toBe(302);
+    const toCallback = String(idp.headers.location);
     expect(toCallback.startsWith(`${BASE_URL_WEB}/__drobek/auth/callback/oidc?`)).toBe(true);
     const cb = await request.get(toCallback, { maxRedirects: 0 });
     expect(cb.status(), await cb.text()).toBe(302);
@@ -308,7 +318,7 @@ test.describe('auth provider oidc against the mock IdP @local', () => {
   });
 
   test('begin refuses return_to "//evil.example" (invalid_request)', async () => {
-    skipUnlessDevStack();
+    skipUnlessLocal();
     for (const bad of ['//evil.example', '//evil.example/path', 'https://evil.example/']) {
       const r = await hostRequest(host, '/__drobek/v1/auth/begin', {
         method: 'POST',

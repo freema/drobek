@@ -103,6 +103,14 @@ export function galleryOpensSince(now: Date): string {
   return utcDay(new Date(now.getTime() - (GALLERY_OPENS_WINDOW_DAYS - 1) * 86_400_000));
 }
 
+/** Days of open counts kept before the `opens` window; older days are deleted by the daily retention prune. */
+export const GALLERY_OPENS_PRUNE_MARGIN_DAYS = 7;
+
+/** The oldest UTC day of `gallery_opens` the retention prune keeps on `now`. */
+export function galleryOpensKeptSince(now: Date): string {
+  return utcDay(new Date(now.getTime() - (GALLERY_OPENS_WINDOW_DAYS + GALLERY_OPENS_PRUNE_MARGIN_DAYS - 1) * 86_400_000));
+}
+
 /**
  * Whether a request is a browser prefetch or preview rather than a person
  * opening the app (`Sec-Purpose` / `Purpose: prefetch`, Firefox `X-Moz`,

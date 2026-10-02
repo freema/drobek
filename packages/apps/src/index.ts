@@ -137,11 +137,13 @@ export {
 // Abuse reports, super-admin takedown/restore, publish heuristic.
 export {
   ABUSE_QUEUE_PATH,
+  DEFAULT_ABUSE_REPORTS_RETENTION_DAYS,
   LOCK_REASONS,
   REPORT_DETAILS_MAX,
   REPORT_FORM_PATH,
   REPORT_REASONS,
   REPORT_WELL_KNOWN_PATH,
+  abuseReportsRetentionDays,
   isLockReason,
   isReportReason,
   lockCategory,
@@ -169,6 +171,7 @@ export {
   listAbuseReports,
   listLockedApps,
   lockedByAdminError,
+  pruneResolvedAbuseReports,
   reportIpHash,
   resolveAbuseReport,
   restoreApp,
@@ -200,6 +203,7 @@ export type {
 // The public gallery (owner opt-in, super-admin hide, the public list).
 export {
   GALLERY_DESCRIPTION_MAX,
+  GALLERY_OPENS_PRUNE_MARGIN_DAYS,
   GALLERY_OPENS_WINDOW_DAYS,
   GALLERY_PAGE_MAX,
   GALLERY_PAGE_SIZE,
@@ -250,6 +254,7 @@ export {
   galleryCounts,
   galleryEntryBySlug,
   galleryLikeState,
+  pruneGalleryOpens,
   recordGalleryOpen,
   setGalleryLike,
   type GalleryEntry,

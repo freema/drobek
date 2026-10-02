@@ -1,13 +1,15 @@
 /**
  * Gallery likes and opens on a real (PGlite) database: only a
  * visible entry resolves; opens count per UTC day and the list shows the
- * last 30 days; a like is one per account, idempotent, removable; deleting
+ * last 30 days; the daily prune drops days past the window plus a margin;
+ * a like is one per account, idempotent, removable; deleting
  * the account drops its like; `sort=popular` orders by 5 × likes + opens.
  */
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { galleryOpens, users, workspaces } from '@drobek/db';
 import {
+  GALLERY_OPENS_PRUNE_MARGIN_DAYS,
   createApp,
   createVersion,
   galleryEntryBySlug,
@@ -16,6 +18,7 @@ import {
   isPrefetchRequest,
   listGallery,
   listGalleryPage,
+  pruneGalleryOpens,
   publish,
   recordGalleryOpen,
   setGalleryLike,
@@ -95,6 +98,24 @@ describe('opens', () => {
       ['2026-09-27', 2],
     ]);
     expect((await itemOf(app.slug)).opens).toBe(3);
+  });
+
+  it('the daily prune deletes the days before the window plus 7 days, for every app', async () => {
+    expect(GALLERY_OPENS_PRUNE_MARGIN_DAYS).toBe(7);
+    const app = await listedApp('Pruned');
+    const other = await listedApp('Pruned too');
+    await recordGalleryOpen(app.id, new Date(NOW.getTime() - 36 * DAY));
+    await recordGalleryOpen(app.id, new Date(NOW.getTime() - 37 * DAY));
+    await recordGalleryOpen(other.id, new Date(NOW.getTime() - 90 * DAY));
+    await recordGalleryOpen(other.id, NOW);
+
+    expect(await pruneGalleryOpens(NOW)).toEqual({ deleted: 2 });
+    const days = async (appId: string) =>
+      (await db.select().from(galleryOpens).where(eq(galleryOpens.appId, appId))).map((r) => r.day).sort();
+    expect(await days(app.id)).toEqual(['2026-08-22']);
+    expect(await days(other.id)).toEqual(['2026-09-27']);
+    expect((await itemOf(other.slug)).opens).toBe(1);
+    expect(await pruneGalleryOpens(NOW)).toEqual({ deleted: 0 });
   });
 
   it('prefetch and preview requests are recognized', () => {

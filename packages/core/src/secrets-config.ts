@@ -10,6 +10,7 @@
 /** Secrets checked for placeholder values whenever they are set. */
 export const SECRET_ENV_VARS = [
   'DROBEK_MASTER_KEY',
+  'DROBEK_MASTER_KEY_PREVIOUS',
   'SMTP_PASS',
   'GOOGLE_CLIENT_SECRET',
   'TLS_ASK_TOKEN',
@@ -17,6 +18,12 @@ export const SECRET_ENV_VARS = [
 
 /** Secrets a production instance cannot run without. */
 export const REQUIRED_PRODUCTION_SECRETS = ['DROBEK_MASTER_KEY'] as const;
+
+/**
+ * Keys drobek only decrypts with, never encrypts: an all-zero one is the dev
+ * key a rotation moves away from, so it is not refused as weak.
+ */
+const DECRYPT_ONLY: ReadonlySet<string> = new Set(['DROBEK_MASTER_KEY_PREVIOUS']);
 
 const PLACEHOLDER = /^(change[-_ ]?me|replace[-_ ]?me|placeholder|xxx+)(\b|$)/i;
 
@@ -36,7 +43,7 @@ export function findSecretProblems(
     if (!value) continue;
     if (PLACEHOLDER.test(value)) {
       problems.push({ name, reason: 'placeholder' });
-    } else if (production && /^0+$/.test(value)) {
+    } else if (production && !DECRYPT_ONLY.has(name) && /^0+$/.test(value)) {
       // The dev compose default KEK is 64 zeros — fine locally, fatal in prod.
       problems.push({ name, reason: 'weak' });
     }

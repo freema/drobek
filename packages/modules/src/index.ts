@@ -55,6 +55,14 @@ export {
   type PrincipalResolver,
 } from './principal.js';
 export { SECRET_NAME_RE, SECRET_MAX_BYTES, SecretStoreError, deleteModuleSecret, getModuleSecret, secretsSet, secretsStatus, setModuleSecret } from './secrets.server.js';
+export {
+  previousMasterKeyConfigError,
+  rekeyReport,
+  rekeySecrets,
+  storedSecretKeysCheck,
+  type RekeyCounts,
+  type SecretKeysVerdict,
+} from './secret-keys.server.js';
 export { readConfigRow, type ConfigRow, type PendingChange } from './configs.server.js';
 export { PENDING_MAIL_WINDOW_MS, pendingMail, pendingMailKey, type PendingMail, type PendingMailModule } from './pending-mail.js';
 export {
