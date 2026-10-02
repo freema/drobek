@@ -44,7 +44,8 @@ Your access belongs to the user, not to one workspace:
    without `user_confirmed: true` the answer is `user_confirmation_required`
    and nothing is sent. The invite link travels only in that e-mail, never
    to you; `unavailable` means the e-mail could not be sent and no invite
-   exists (the dashboard's Invite page also shows a link).
+   exists (on the dashboard's Invite page the user sees the link itself and
+   can share it when e-mail is not an option).
 
 ## Create an app
 
