@@ -18,6 +18,7 @@ vi.mock('./logger.server.js', () => ({
 
 import {
   chargeOtpRequest,
+  chargeOtpSent,
   checkOtpRequest,
   guardOtpRequest,
   isOtpSendingPaused,
@@ -104,6 +105,7 @@ describe('guardOtpRequest (strict defaults, injected)', () => {
     for (let i = 0; i < 3; i += 1) {
       const d = await guardOtpRequest({ ip: '10.0.0.4', email, limits: STRICT });
       expect(d.ok).toBe(true);
+      await chargeOtpSent({ email });
       await releaseOtpCooldown(email); // isolate the hourly layer from the cooldown
     }
     const fourth = await guardOtpRequest({ ip: '10.0.0.4', email, limits: STRICT });
@@ -112,6 +114,29 @@ describe('guardOtpRequest (strict defaults, injected)', () => {
       kind: 'redirect_verify',
       reason: 'email_hourly',
     });
+  });
+
+  it('failed sends cost the address and the brake nothing; the per-IP windows count every attempt', async () => {
+    const email = 'outage@example.com';
+    const ip = '10.0.0.10';
+    // A mail outage: more attempts than the hourly share (3), every send failed.
+    for (let i = 0; i < 4; i += 1) {
+      expect(await guardOtpRequest({ ip, email, limits: STRICT })).toEqual({ ok: true });
+      await releaseOtpCooldown(email);
+    }
+    expect([...fake.store.keys()].filter((k) => k.includes(':otp-email-1h:') || k.includes(':otp-global-1h:'))).toEqual([]);
+    expect(await fake.get(`drobek:rl:otp-ip-15m:${ip}`)).toBe('4');
+    // Mail is back: the next attempt sends and is charged once.
+    expect(await guardOtpRequest({ ip, email, limits: STRICT })).toEqual({ ok: true });
+    await chargeOtpSent({ email });
+    expect(await fake.get('drobek:rl:otp-global-1h:all')).toBe('1');
+    // The per-IP window counted all five attempts: the sixth is refused.
+    expect(await guardOtpRequest({ ip, email: 'other@example.com', limits: STRICT })).toMatchObject({ status: 429, reason: 'ip_short' });
+  });
+
+  it('chargeOtpSent only logs a Redis error', async () => {
+    fake.failing = true;
+    await expect(chargeOtpSent({ email: 'f@example.com' })).resolves.toBeUndefined();
   });
 
   it('global brake: exceeding the global cap returns 503 and sets the autopause key', async () => {
@@ -125,6 +150,7 @@ describe('guardOtpRequest (strict defaults, injected)', () => {
         })
       ).ok
     ).toBe(true);
+    await chargeOtpSent({ email: 'g1@example.com' });
 
     const second = await guardOtpRequest({
       ip: '10.1.0.2',
@@ -166,6 +192,7 @@ describe('guardOtpRequest (strict defaults, injected)', () => {
   it('no client IP: the per-e-mail limits and the global brake still apply', async () => {
     const email = 'noip-same@example.com';
     expect(await guardOtpRequest({ ip: undefined, email, limits: STRICT })).toEqual({ ok: true });
+    await chargeOtpSent({ email });
     expect(await guardOtpRequest({ ip: undefined, email, limits: STRICT })).toMatchObject({
       ok: false,
       kind: 'redirect_verify',
@@ -173,6 +200,7 @@ describe('guardOtpRequest (strict defaults, injected)', () => {
     });
     const tiny = { ...STRICT, globalHourlyMax: 2 };
     expect(await guardOtpRequest({ ip: undefined, email: 'g1@example.com', limits: tiny })).toEqual({ ok: true });
+    await chargeOtpSent({ email: 'g1@example.com' });
     expect(await guardOtpRequest({ ip: undefined, email: 'g2@example.com', limits: tiny })).toMatchObject({
       ok: false,
       status: 503,
@@ -271,8 +299,10 @@ describe('scoped guard (one app\'s end users)', () => {
 
   it('the scope\'s hourly brake pauses only that scope', async () => {
     const limits = { ...STRICT, globalHourlyMax: 2, ipShortLimit: 100, ipDailyLimit: 100 };
-    expect(await guardOtpRequest({ ip: '10.0.0.6', email: 'a1@example.com', limits, scope: SCOPE })).toEqual({ ok: true });
-    expect(await guardOtpRequest({ ip: '10.0.0.6', email: 'a2@example.com', limits, scope: SCOPE })).toEqual({ ok: true });
+    for (const email of ['a1@example.com', 'a2@example.com']) {
+      expect(await guardOtpRequest({ ip: '10.0.0.6', email, limits, scope: SCOPE })).toEqual({ ok: true });
+      await chargeOtpSent({ email, scope: SCOPE });
+    }
     expect(await guardOtpRequest({ ip: '10.0.0.6', email: 'a3@example.com', limits, scope: SCOPE })).toMatchObject({ ok: false, status: 503, reason: 'global_brake' });
     expect(await isOtpSendingPaused(SCOPE)).toEqual({ paused: true, reason: 'scope_autopause' });
     expect(await isOtpSendingPaused()).toEqual({ paused: false });

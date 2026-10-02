@@ -1,11 +1,36 @@
+import { createServer, type Socket } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { escapeHtml, renderEmailLayout } from './layout.server.js';
 import { emailFromParts, fromHeader, messageFor, safeDisplayName, sendEmail } from './send.server.js';
 import { getSmtpTransport, resetSmtpTransportForTests, smtpTransportOptions } from './smtp.server.js';
 import { renderTextEmailHtml } from './text-email.js';
 import { renderPlatformEmail, serverFootNote, serverHost, trustedActionUrl } from './platform-email.js';
+import { emailConfigError } from './transport.server.js';
 
 afterEach(() => resetSmtpTransportForTests());
+
+const DEFAULT_TIMEOUTS = { connectionTimeout: 10_000, greetingTimeout: 10_000, socketTimeout: 30_000 };
+const MAIL = { to: 'a@b.cz', subject: 's', text: 't', html: '<p>t</p>' };
+
+/** A local SMTP server that hangs: it never greets, or greets and then never answers. */
+async function silentSmtpServer(greet: boolean): Promise<{ port: number; close: () => Promise<void> }> {
+  const sockets = new Set<Socket>();
+  const server = createServer((socket) => {
+    sockets.add(socket);
+    socket.on('error', () => {});
+    if (greet) socket.write('220 hung.example ESMTP\r\n');
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address() as { port: number };
+  return {
+    port,
+    close: () =>
+      new Promise<void>((resolve) => {
+        for (const s of sockets) s.destroy();
+        server.close(() => resolve());
+      }),
+  };
+}
 
 describe('layout', () => {
   it('escapes HTML metacharacters', () => {
@@ -119,14 +144,51 @@ describe('transport (nodemailer 10)', () => {
       port: 587,
       secure: false,
       auth: { user: 'u@x.cz', pass: 'p' },
+      ...DEFAULT_TIMEOUTS,
     });
     expect(smtpTransportOptions({ SMTP_HOST: 'smtp.hostinger.com', SMTP_PORT: '465', SMTP_SECURE: '1', SMTP_USER: 'u', SMTP_PASS: 'p' })).toMatchObject({
       port: 465,
       secure: true,
     });
     // mailpit: host alone, no auth; a user without a password sends no auth either.
-    expect(smtpTransportOptions({ SMTP_HOST: 'mailpit', SMTP_PORT: '1025' })).toEqual({ host: 'mailpit', port: 1025, secure: false });
+    expect(smtpTransportOptions({ SMTP_HOST: 'mailpit', SMTP_PORT: '1025' })).toEqual({ host: 'mailpit', port: 1025, secure: false, ...DEFAULT_TIMEOUTS });
     expect(smtpTransportOptions({ SMTP_HOST: 'mailpit', SMTP_USER: 'u' })).not.toHaveProperty('auth');
+  });
+
+  it('SMTP timeouts: production defaults far below nodemailer\'s own, env overrides, an invalid value refuses the start', () => {
+    expect(smtpTransportOptions({ SMTP_HOST: 'mailpit', SMTP_CONNECTION_TIMEOUT_MS: '5000', SMTP_GREETING_TIMEOUT_MS: ' 2000 ', SMTP_SOCKET_TIMEOUT_MS: '60000' })).toMatchObject({
+      connectionTimeout: 5000,
+      greetingTimeout: 2000,
+      socketTimeout: 60000,
+    });
+    expect(emailConfigError({ SMTP_SOCKET_TIMEOUT_MS: '60000' })).toBeNull();
+    const refused = emailConfigError({ SMTP_CONNECTION_TIMEOUT_MS: '10s', SMTP_GREETING_TIMEOUT_MS: '500', SMTP_SOCKET_TIMEOUT_MS: '30000' });
+    expect(refused).toMatch(/^SMTP_CONNECTION_TIMEOUT_MS, SMTP_GREETING_TIMEOUT_MS must be milliseconds between 1000 and 120000/);
+    expect(emailConfigError({ SMTP_SOCKET_TIMEOUT_MS: '600000' })).toMatch(/SMTP_SOCKET_TIMEOUT_MS/);
+    // Read without the start check (a unit test, a script): an invalid value is its default.
+    expect(smtpTransportOptions({ SMTP_HOST: 'mailpit', SMTP_GREETING_TIMEOUT_MS: 'soon' })).toMatchObject({ greetingTimeout: 10_000 });
+  });
+
+  it('a hung SMTP server fails the send after SMTP_GREETING_TIMEOUT_MS: it accepts the connection and never greets', async () => {
+    const { port, close } = await silentSmtpServer(false);
+    try {
+      const started = Date.now();
+      await expect(sendEmail(MAIL, { SMTP_HOST: '127.0.0.1', SMTP_PORT: String(port), SMTP_GREETING_TIMEOUT_MS: '1000' })).rejects.toThrow(/greeting/i);
+      expect(Date.now() - started).toBeLessThan(5_000);
+    } finally {
+      await close();
+    }
+  });
+
+  it('a hung SMTP server fails the send after SMTP_SOCKET_TIMEOUT_MS: it greets, then goes silent', async () => {
+    const { port, close } = await silentSmtpServer(true);
+    try {
+      const started = Date.now();
+      await expect(sendEmail(MAIL, { SMTP_HOST: '127.0.0.1', SMTP_PORT: String(port), SMTP_SOCKET_TIMEOUT_MS: '1000' })).rejects.toMatchObject({ code: 'ETIMEDOUT' });
+      expect(Date.now() - started).toBeLessThan(5_000);
+    } finally {
+      await close();
+    }
   });
 
   it('dev without SMTP_HOST falls back to the JSON transport; production refuses', async () => {

@@ -19,6 +19,7 @@ import {
 import { docPageUrl } from '@drobek/agent-dx';
 import { isGoogleLoginEnabled } from '../google-oauth.server.js';
 import {
+  chargeOtpSent,
   guardOtpRequest,
   logOtpSent,
   releaseOtpCooldown,
@@ -78,6 +79,8 @@ export async function action({ request }: ActionFunctionArgs) {
   const ip = getClientIp(request);
 
   // Layered protection: kill switch → per-IP → per-email → global brake.
+  // The per-IP windows count this attempt; the address's hourly share and
+  // the global brake count only a code that went out (chargeOtpSent below).
   const decision = await guardOtpRequest({ ip, email });
   if (!decision.ok) {
     // Generic redirect to verify (anti-enumeration / dedup) — nothing new sent.
@@ -95,7 +98,8 @@ export async function action({ request }: ActionFunctionArgs) {
     );
     await sendLoginCodeEmail({ email, code });
   } catch (err) {
-    // Send failed → release the cooldown so the user can retry right away.
+    // Send failed → release the cooldown so the user can retry right away;
+    // the address and the brake were not charged.
     await releaseOtpCooldown(email);
     logger.error('[login] sendLoginCodeEmail failed', {
       err: serializeError(err),
@@ -107,6 +111,7 @@ export async function action({ request }: ActionFunctionArgs) {
     );
   }
 
+  await chargeOtpSent({ email });
   logOtpSent({ ip, email });
   throw redirect(`/login/verify?${new URLSearchParams({ email })}`);
 }

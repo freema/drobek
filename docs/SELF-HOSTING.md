@@ -375,10 +375,11 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `EMAIL_TRANSPORT` | smtp | how all mail goes out (sign-in codes, invites, module mail): `smtp`, `resend`, or the id of a transport a module in `DROBEK_MODULES` contributes to the `email.transport` slot ([MODULES](MODULES.md#e-mail-transports-from-modules): SES, Postmark, a company relay, …; set the secret env vars the module names). The server refuses to start on an invalid value, an id no active module contributes, or a missing transport secret |
 | `EMAIL_TRANSPORT_TIMEOUT_MS` | 10000 | how long one send through a module transport may take before it is aborted (1000–120000) |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_SECURE` / `SMTP_USER` / `SMTP_PASS` / `EMAIL_FROM` | — / 587 / 0 / — / — / — | **`SMTP_HOST` required with `smtp`** (production refuses to start without it) — the SMTP server for sign-in codes and module mail (`SMTP_SECURE=1` = implicit TLS); `EMAIL_FROM` is the sender for both transports (`Name <address>`; a bare address is sent under the name `drobek`) |
+| `SMTP_CONNECTION_TIMEOUT_MS` / `SMTP_GREETING_TIMEOUT_MS` / `SMTP_SOCKET_TIMEOUT_MS` | 10000 / 10000 / 30000 | how long an SMTP send waits to connect, for the server's greeting and on a silent socket (1000–120000; the server refuses to start on an invalid value). A hung mail server fails the send after these, and the sign-in form says so |
 | `RESEND_API_KEY` | — | **required with `resend`**, a secret (the server refuses to start without it; it is never logged or shown) — mail goes to `POST https://api.resend.com/emails` with a 10 s timeout; `EMAIL_FROM` must be on a domain verified in Resend |
-| `OTP_IP_SHORT_LIMIT` / `OTP_IP_DAILY_LIMIT` | 5 per 15 min / 20 per 24 h | dashboard sign-in codes sent per client IP |
-| `OTP_EMAIL_HOURLY_LIMIT` / `OTP_EMAIL_COOLDOWN_MS` | 3 per hour / 60000 | codes per address, minimum gap per address |
-| `OTP_GLOBAL_HOURLY_MAX` | 100 | codes per hour server-wide, then sending pauses |
+| `OTP_IP_SHORT_LIMIT` / `OTP_IP_DAILY_LIMIT` | 5 per 15 min / 20 per 24 h | dashboard sign-in code requests per client IP (a request whose e-mail failed counts too) |
+| `OTP_EMAIL_HOURLY_LIMIT` / `OTP_EMAIL_COOLDOWN_MS` | 3 per hour / 60000 | codes sent per address, minimum gap per address. A send that failed costs the address nothing: once mail works again, the next request sends a code |
+| `OTP_GLOBAL_HOURLY_MAX` | 100 | codes sent per hour server-wide, then sending pauses (failed sends do not count) |
 | `OTP_VERIFY_IP_LIMIT` / `OTP_VERIFY_IP_WINDOW_S` | 30 / 900 | code checks per client IP per window (the per-code cap of 5 guesses always applies) |
 | `OTP_LOGIN_DISABLED` | 0 | `1` = kill switch: no sign-in codes are sent |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | — | optional Google sign-in for the dashboard (redirect URI `<PUBLIC_ORIGIN>/auth/google/callback`) |

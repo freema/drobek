@@ -10,8 +10,8 @@
  *   2. per-IP daily window   (default 20 / 24 h)
  *      [CAPTCHA seam — see below]
  *   3. per-e-mail cooldown   (default 60 s between sends — double-click dedup)
- *   4. per-e-mail hourly     (default 3 / h)
- *   5. global hourly brake   (OTP_GLOBAL_HOURLY_MAX / h) → auto-pause + ALERT
+ *   4. per-e-mail hourly     (default 3 codes sent / h)
+ *   5. global hourly brake   (OTP_GLOBAL_HOURLY_MAX codes sent / h) → auto-pause + ALERT
  *
  * No resolvable client IP (`ip` undefined — no trusted proxy header) → steps 1
  * and 2 are SKIPPED, never keyed on a shared `unknown` bucket: that
@@ -22,16 +22,24 @@
  * On Redis errors the decision is FAIL-CLOSED (better a temporarily
  * unavailable login than thousands of un-throttled e-mails).
  *
- * CHARGE AFTER SEND: `guardOtpRequest` charges the counters as it
- * checks them (the dashboard login). The platform `auth` module sends its
- * codes through the module e-mail path, which can refuse a send (e-mail
- * paused, the app's share used up) AFTER the guard said yes — so it runs
- * `checkOtpRequest` (same layers, counters only READ; the cooldown is still
- * claimed so a double-click sends once) and `chargeOtpRequest` once the code
- * went out. A user who retries while e-mail is paused is not left limited
- * after the pause by attempts that sent nothing. Two concurrent checks may
- * both pass the last free slot of a counter; the module e-mail budgets
- * (per app and per workspace, @drobek/modules mail-guard) bound that.
+ * CHARGE AFTER SEND: the per-e-mail hour and the hourly brake count codes
+ * that went out, never a send that failed — a mail outage must not use up an
+ * address's share or trip the brake, so once mail is back the next attempt
+ * sends. The cooldown is claimed by the check (a double-click sends once)
+ * and released by the caller when the send fails.
+ *  - The dashboard login runs `guardOtpRequest`: the per-IP windows count
+ *    every attempt (also one whose e-mail fails), the rest is only READ;
+ *    `chargeOtpSent` charges the address and the brake after the send.
+ *  - The platform `auth` module sends through the module e-mail path, which
+ *    can also refuse a send (e-mail paused, the app's share used up) — it
+ *    runs `checkOtpRequest` (every counter only READ; its route has its own
+ *    per-IP attempt limit) and `chargeOtpRequest` (the per-IP windows too)
+ *    once the code went out. A user who retries while e-mail is paused is
+ *    not left limited after the pause by attempts that sent nothing.
+ * Two concurrent checks may both pass the last free slot of the brake; the
+ * per-e-mail hour is serialized by the cooldown, and the module e-mail
+ * budgets (per app and per workspace, @drobek/modules mail-guard) bound the
+ * module's sends.
  *
  * SCOPES: `scope` undefined = the dashboard login (the original keys);
  * `eu:<app_id>` = the end users of one app (platform module `auth`). A scoped
@@ -171,7 +179,8 @@ export async function isOtpSendingPaused(scope?: OtpScope): Promise<
 
 /**
  * Release the per-e-mail cooldown (call when the e-mail send FAILED — so the
- * user can retry immediately instead of being held by the cooldown).
+ * user can retry immediately instead of being held by the cooldown; nothing
+ * else was charged to the address).
  */
 export async function releaseOtpCooldown(email: string, scope?: OtpScope): Promise<void> {
   try {
@@ -181,7 +190,7 @@ export async function releaseOtpCooldown(email: string, scope?: OtpScope): Promi
   }
 }
 
-/** Step 0 of both guards: the kill switch / auto-pause as a refusal, or null. */
+/** Step 0: the kill switch / auto-pause as a refusal, or null. */
 async function pausedDecision(ip: string | undefined, email: string, scope?: OtpScope): Promise<OtpGuardDecision | null> {
   const paused = await isOtpSendingPaused(scope);
   if (!paused.paused) return null;
@@ -199,52 +208,73 @@ async function counterValue(bucketName: string, key: string): Promise<number> {
   return Number((await getRedis().get(`drobek:rl:${bucketName}:${key}`)) ?? 0) || 0;
 }
 
-/**
- * Every layer of `guardOtpRequest`, but the per-IP, per-e-mail and per-scope
- * hourly counters are only READ — nothing is charged until
- * `chargeOtpRequest` runs after the code went out. The per-e-mail cooldown
- * IS claimed (release it with `releaseOtpCooldown` when the send fails).
- * FAIL-CLOSED on Redis errors.
- */
-export async function checkOtpRequest(args: {
+interface OtpRequestArgs {
   ip: string | undefined;
   email: string;
   limits?: OtpGuardLimits;
+  /** undefined = the dashboard login; `eu:<app_id>` = one app's end users. */
   scope?: OtpScope;
-}): Promise<OtpGuardDecision> {
+}
+
+/**
+ * Every layer in order. The per-IP windows are charged for this attempt
+ * (`chargeIp`) or only read; the per-e-mail hour and the hourly brake are
+ * only read — the caller charges them once the code went out. The cooldown
+ * is claimed. FAIL-CLOSED on Redis errors.
+ */
+async function decide(args: OtpRequestArgs, chargeIp: boolean): Promise<OtpGuardDecision> {
   const { ip, email, scope } = args;
   const limits = args.limits ?? otpGuardLimitsFromEnv();
   const emailHash = hashEmail(email);
+
   try {
+    // 0. Kill switch / auto-pause
     const paused = await pausedDecision(ip, email, scope);
     if (paused) return paused;
 
     // 1 + 2. per-IP windows (skipped without a client IP)
-    if (ip && (await counterValue(bucket('otp-ip-15m', scope), ip)) >= limits.ipShortLimit) {
-      logBlock('ip_short', { ip, email, scope, alert: true });
-      return { ok: false, kind: 'error', status: 429, reason: 'ip_short', message: MSG_IP };
-    }
-    if (ip && (await counterValue(bucket('otp-ip-24h', scope), ip)) >= limits.ipDailyLimit) {
-      logBlock('ip_daily', { ip, email, scope, alert: true });
-      return { ok: false, kind: 'error', status: 429, reason: 'ip_daily', message: MSG_IP };
+    const ipKey = perIpLimitKey(ip, scope === undefined ? 'otp-ip' : 'eu:otp-ip', logger);
+    const ipWindows = [
+      { name: 'otp-ip-15m', limit: limits.ipShortLimit, windowMs: IP_SHORT_WINDOW_MS, reason: 'ip_short' },
+      { name: 'otp-ip-24h', limit: limits.ipDailyLimit, windowMs: IP_DAILY_WINDOW_MS, reason: 'ip_daily' },
+    ];
+    if (ipKey) {
+      for (const w of ipWindows) {
+        const within = chargeIp
+          ? (await rateLimitRedis(bucket(w.name, scope), ipKey, w.limit, w.windowMs)).ok
+          : (await counterValue(bucket(w.name, scope), ipKey)) < w.limit;
+        if (!within) {
+          logBlock(w.reason, { ip, email, scope, alert: true });
+          return { ok: false, kind: 'error', status: 429, reason: w.reason, message: MSG_IP };
+        }
+      }
     }
 
-    // 3. per-e-mail cooldown — claimed now, so a double-click sends once.
-    const acquired = await getRedis().set(cooldownKey(emailHash, scope), '1', 'PX', limits.emailCooldownMs, 'NX');
+    // ── CAPTCHA seam ─────────────────────────────────────────────────────────
+    // A CAPTCHA check belongs here: after the cheap IP gates, before any per-e-mail work.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // 3. per-e-mail cooldown — atomic SET NX PX, claimed now so a double-click
+    //    sends once. First of the e-mail checks.
+    const r = getRedis();
+    const acquired = await r.set(cooldownKey(emailHash, scope), '1', 'PX', limits.emailCooldownMs, 'NX');
     if (acquired === null) {
+      // A code was just sent → send nothing new, redirect to verify (generic).
       logBlock('cooldown', { ip, email, scope });
       return { ok: false, kind: 'redirect_verify', reason: 'cooldown' };
     }
 
-    // 4. per-e-mail hourly limit
+    // 4. per-e-mail hourly limit (codes that went out)
     if ((await counterValue(bucket('otp-email-1h', scope), emailHash)) >= limits.emailHourlyLimit) {
       logBlock('email_hourly', { ip, email, scope });
       return { ok: false, kind: 'redirect_verify', reason: 'email_hourly' };
     }
 
-    // 5. the scope's hourly brake: full → auto-pause, as in guardOtpRequest.
+    // 5. Hourly brake (codes that went out, server-wide or in the scope)
     if ((await counterValue(bucket('otp-global-1h', scope), 'all')) >= limits.globalHourlyMax) {
-      await getRedis().set(autopauseKey(scope), '1', 'PX', GLOBAL_AUTOPAUSE_MS);
+      // Auto-pause: temporarily stop ALL sends — protect the mailbox before
+      // the provider does it for us.
+      await r.set(autopauseKey(scope), '1', 'PX', GLOBAL_AUTOPAUSE_MS);
       logger.warn('[otp-guard] ALERT: global hourly OTP cap exceeded — auto-pausing sends', {
         event: 'otp_global_brake',
         ...(scope ? { scope } : {}),
@@ -255,8 +285,11 @@ export async function checkOtpRequest(args: {
       logBlock('global_brake', { ip, email, scope, alert: true });
       return { ok: false, kind: 'error', status: 503, reason: 'global_brake', message: MSG_PAUSED };
     }
+
     return { ok: true };
   } catch (err) {
+    // FAIL-CLOSED: if we cannot enforce the limits (typically a Redis outage)
+    // we do NOT send e-mails — protect the mailbox.
     logger.error('[otp-guard] guard error — fail-closed', {
       ...(scope ? { scope } : {}),
       err: serializeError(err),
@@ -267,18 +300,33 @@ export async function checkOtpRequest(args: {
 }
 
 /**
- * Charge one sent code to the counters `checkOtpRequest` read: the per-IP
- * windows (when the IP is known), the per-e-mail hour and the scope's hour.
- * Call it only after the code went out. Best-effort: the code is already
- * sent, so a Redis error is logged, not thrown.
+ * The dashboard login: run all protection layers. The per-IP windows count
+ * this attempt, also when its e-mail then fails; the per-e-mail hour and the
+ * hourly brake are only read — charge a code that went out with
+ * `chargeOtpSent`. Limits injectable for unit tests.
  */
-export async function chargeOtpRequest(args: { ip: string | undefined; email: string; scope?: OtpScope }): Promise<void> {
-  const { ip, email, scope } = args;
+export async function guardOtpRequest(args: OtpRequestArgs): Promise<OtpGuardDecision> {
+  return decide(args, true);
+}
+
+/**
+ * Every layer of `guardOtpRequest`, but the per-IP windows are only READ as
+ * well — nothing is charged until `chargeOtpRequest` runs after the code
+ * went out. The per-e-mail cooldown IS claimed (release it with
+ * `releaseOtpCooldown` when the send fails). FAIL-CLOSED on Redis errors.
+ */
+export async function checkOtpRequest(args: OtpRequestArgs): Promise<OtpGuardDecision> {
+  return decide(args, false);
+}
+
+/** Best-effort: the code is already sent, so a Redis error is logged, not thrown. */
+async function charge(ip: string | undefined, email: string, scope?: OtpScope): Promise<void> {
   const uncapped = Number.MAX_SAFE_INTEGER;
+  const ipKey = ip?.trim();
   try {
-    if (ip) {
-      await rateLimitRedis(bucket('otp-ip-15m', scope), ip, uncapped, IP_SHORT_WINDOW_MS);
-      await rateLimitRedis(bucket('otp-ip-24h', scope), ip, uncapped, IP_DAILY_WINDOW_MS);
+    if (ipKey) {
+      await rateLimitRedis(bucket('otp-ip-15m', scope), ipKey, uncapped, IP_SHORT_WINDOW_MS);
+      await rateLimitRedis(bucket('otp-ip-24h', scope), ipKey, uncapped, IP_DAILY_WINDOW_MS);
     }
     await rateLimitRedis(bucket('otp-email-1h', scope), hashEmail(email), uncapped, EMAIL_HOURLY_WINDOW_MS);
     await rateLimitRedis(bucket('otp-global-1h', scope), 'all', uncapped, GLOBAL_WINDOW_MS);
@@ -291,132 +339,21 @@ export async function chargeOtpRequest(args: { ip: string | undefined; email: st
   }
 }
 
-/** Run all protection layers. Limits injectable for unit tests. */
-export async function guardOtpRequest(args: {
-  ip: string | undefined;
-  email: string;
-  limits?: OtpGuardLimits;
-  /** undefined = the dashboard login; `eu:<app_id>` = one app's end users. */
-  scope?: OtpScope;
-}): Promise<OtpGuardDecision> {
-  const { ip, email, scope } = args;
-  const limits = args.limits ?? otpGuardLimitsFromEnv();
-  const emailHash = hashEmail(email);
+/**
+ * After `guardOtpRequest` (it already counted the attempt per IP): charge
+ * one sent code to the per-e-mail hour and the hourly brake. Call it only
+ * after the code went out. Best-effort: a Redis error is logged, not thrown.
+ */
+export async function chargeOtpSent(args: { email: string; scope?: OtpScope }): Promise<void> {
+  await charge(undefined, args.email, args.scope);
+}
 
-  try {
-    // 0. Kill switch / auto-pause
-    const paused = await pausedDecision(ip, email, scope);
-    if (paused) return paused;
-
-    // 1. per-IP short window (skipped without a client IP)
-    const ipKey = perIpLimitKey(ip, scope === undefined ? 'otp-ip' : 'eu:otp-ip', logger);
-    const ipShort = ipKey
-      ? await rateLimitRedis(bucket('otp-ip-15m', scope), ipKey, limits.ipShortLimit, IP_SHORT_WINDOW_MS)
-      : { ok: true };
-    if (!ipShort.ok) {
-      logBlock('ip_short', { ip, email, scope, alert: true });
-      return {
-        ok: false,
-        kind: 'error',
-        status: 429,
-        reason: 'ip_short',
-        message: MSG_IP,
-      };
-    }
-
-    // 2. per-IP daily window (skipped without a client IP)
-    const ipDaily = ipKey
-      ? await rateLimitRedis(bucket('otp-ip-24h', scope), ipKey, limits.ipDailyLimit, IP_DAILY_WINDOW_MS)
-      : { ok: true };
-    if (!ipDaily.ok) {
-      logBlock('ip_daily', { ip, email, scope, alert: true });
-      return {
-        ok: false,
-        kind: 'error',
-        status: 429,
-        reason: 'ip_daily',
-        message: MSG_IP,
-      };
-    }
-
-    // ── CAPTCHA seam ─────────────────────────────────────────────────────────
-    // A CAPTCHA check belongs here: after the cheap IP gates, before any per-e-mail work.
-    // ─────────────────────────────────────────────────────────────────────────
-
-    // 3. per-e-mail cooldown — atomic SET NX PX. First of the e-mail checks so
-    //    a double-click never burns the hourly budget.
-    const r = getRedis();
-    const acquired = await r.set(
-      cooldownKey(emailHash, scope),
-      '1',
-      'PX',
-      limits.emailCooldownMs,
-      'NX'
-    );
-    if (acquired === null) {
-      // A code was just sent → send nothing new, redirect to verify (generic).
-      logBlock('cooldown', { ip, email, scope });
-      return { ok: false, kind: 'redirect_verify', reason: 'cooldown' };
-    }
-
-    // 4. per-e-mail hourly limit
-    const emailHourly = await rateLimitRedis(
-      bucket('otp-email-1h', scope),
-      emailHash,
-      limits.emailHourlyLimit,
-      EMAIL_HOURLY_WINDOW_MS
-    );
-    if (!emailHourly.ok) {
-      logBlock('email_hourly', { ip, email, scope });
-      return { ok: false, kind: 'redirect_verify', reason: 'email_hourly' };
-    }
-
-    // 5. Global brake (N / h across the whole app)
-    const globalRl = await rateLimitRedis(
-      bucket('otp-global-1h', scope),
-      'all',
-      limits.globalHourlyMax,
-      GLOBAL_WINDOW_MS
-    );
-    if (!globalRl.ok) {
-      // Auto-pause: temporarily stop ALL sends — protect the mailbox before
-      // the provider does it for us.
-      await r.set(autopauseKey(scope), '1', 'PX', GLOBAL_AUTOPAUSE_MS);
-      logger.warn(
-        '[otp-guard] ALERT: global hourly OTP cap exceeded — auto-pausing sends',
-        {
-          event: 'otp_global_brake',
-          ...(scope ? { scope } : {}),
-          max: limits.globalHourlyMax,
-          autopauseMs: GLOBAL_AUTOPAUSE_MS,
-          alert: true,
-        }
-      );
-      logBlock('global_brake', { ip, email, scope, alert: true });
-      return {
-        ok: false,
-        kind: 'error',
-        status: 503,
-        reason: 'global_brake',
-        message: MSG_PAUSED,
-      };
-    }
-
-    return { ok: true };
-  } catch (err) {
-    // FAIL-CLOSED: if we cannot enforce the limits (typically a Redis outage)
-    // we do NOT send e-mails — protect the mailbox.
-    logger.error('[otp-guard] guard error — fail-closed', {
-      ...(scope ? { scope } : {}),
-      err: serializeError(err),
-      email: maskEmail(email),
-    });
-    return {
-      ok: false,
-      kind: 'error',
-      status: 503,
-      reason: 'guard_error',
-      message: MSG_BUSY,
-    };
-  }
+/**
+ * After `checkOtpRequest`: charge one sent code to every counter it read —
+ * the per-IP windows (when the IP is known), the per-e-mail hour and the
+ * scope's hour. Call it only after the code went out. Best-effort: a Redis
+ * error is logged, not thrown.
+ */
+export async function chargeOtpRequest(args: { ip: string | undefined; email: string; scope?: OtpScope }): Promise<void> {
+  await charge(args.ip, args.email, args.scope);
 }
