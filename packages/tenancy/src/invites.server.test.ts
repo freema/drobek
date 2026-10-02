@@ -18,6 +18,7 @@ import {
   createInvite,
   getInvite,
   resolveAcceptedRole,
+  revokeInvite,
 } from './invites.server.js';
 
 beforeEach(() => {
@@ -27,6 +28,16 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.useRealTimers();
+});
+
+describe('revokeInvite', () => {
+  it('withdraws an invite; a malformed token touches nothing', async () => {
+    const { token } = await createInvite({ workspaceId: 'ws1', role: 'editor', invitedByUserId: 'u1', email: 'a@example.com' });
+    await revokeInvite('drobek:invite:*');
+    expect(await getInvite(token)).not.toBeNull();
+    await revokeInvite(token);
+    expect(await getInvite(token)).toBeNull();
+  });
 });
 
 describe('createInvite', () => {

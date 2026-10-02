@@ -56,6 +56,7 @@ const WRITE = [
   'create_app',
   'create_asset_upload',
   'create_records',
+  'create_workspace',
   'delete_app',
   'delete_asset',
   'delete_collection',
@@ -63,6 +64,7 @@ const WRITE = [
   'delete_record',
   'delete_upload',
   'duplicate_app',
+  'invite_member',
   'purge_orphan_records',
   'register_upstream',
   'release_lease',
@@ -109,16 +111,20 @@ describe('tools/list reflects the granted scope', () => {
     });
   }
 
-  it('set_workspace_publishing exists only for a super-admin with the publish scope', async () => {
+  it('the super-admin tools exist only for a super-admin, each under its scope', async () => {
+    const publish = ['set_workspace_publishing', 'takedown_app', 'restore_app', 'set_gallery_hidden'];
     for (const [scopes, superAdmin, listed] of [
-      [['read', 'write', 'publish'], true, true],
-      [['read', 'write'], true, false],
-      [['read', 'write', 'publish'], false, false],
-    ] as Array<[Scope[], boolean, boolean]>) {
+      [['read', 'write', 'publish'], true, [...publish, 'set_workspace_module']],
+      [['read', 'write'], true, ['set_workspace_module']],
+      [['publish'], true, publish],
+      [['read', 'write', 'publish'], false, []],
+    ] as Array<[Scope[], boolean, string[]]>) {
       const client = await connect(scopes, superAdmin);
       try {
         const names = (await client.listTools()).tools.map((t) => t.name);
-        expect(names.includes('set_workspace_publishing'), `${scopes.join(' ')} super-admin=${superAdmin}`).toBe(listed);
+        for (const t of [...publish, 'set_workspace_module']) {
+          expect(names.includes(t), `${t}: ${scopes.join(' ')} super-admin=${superAdmin}`).toBe(listed.includes(t));
+        }
       } finally {
         await client.close();
       }

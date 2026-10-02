@@ -246,6 +246,7 @@ describe('set_gallery_listing', () => {
         'set_primary_domain',
         'remove_domain',
         'remove_upstream',
+        'invite_member',
       ]);
     } finally {
       await c.close();

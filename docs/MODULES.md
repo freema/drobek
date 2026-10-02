@@ -198,8 +198,11 @@ active for a workspace when, in this order:
    the `workspace_modules` table, audited `module.workspace_enable` /
    `module.workspace_disable` with `meta.module`). Every other member sees
    the state on the same page read-only (who switched it on: workspace
-   admins only), and the switch answers them 403. There is no self-service
-   switch and no MCP tool.
+   admins only), and the switch answers them 403. A super-admin's agent
+   flips the same switch with the MCP tool `set_workspace_module` (scope
+   `write`, `user_confirmed: true` after their explicit yes; audited with the
+   agent as the actor); other users never see that tool. There is no
+   self-service switch.
 
 **`requires` applies per workspace.** An opt-in module is active only while
 every module it `requires` is active for the workspace too, transitively

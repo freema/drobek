@@ -912,7 +912,8 @@ export class ModuleRuntime {
 
   /**
    * A super-admin turns an opt-in module on or off for a workspace
-   * (the dashboard's switch — the caller has checked super-admin). Audited
+   * (the dashboard's switch, `surface: 'web'`, or their agent's
+   * set_workspace_module, `'mcp'` — the caller has checked super-admin). Audited
    * `module.workspace_enable` / `module.workspace_disable` (meta: module) when
    * it changes anything. A plan value (`MODULE_ENABLED_<NAME>`) still wins.
    *
@@ -926,6 +927,7 @@ export class ModuleRuntime {
     module: string;
     enabled: boolean;
     actorUserId: string;
+    surface?: 'mcp' | 'web';
   }): Promise<{ changed: boolean; dependentsOff: string[] }> {
     const m = this.byName.get(input.module);
     if (!m || m.availability !== 'opt-in') {
@@ -959,7 +961,7 @@ export class ModuleRuntime {
           {
             workspaceId: input.workspaceId,
             actorUserId: input.actorUserId,
-            actorKind: actorKindForSurface('web'),
+            actorKind: actorKindForSurface(input.surface ?? 'web'),
             action: input.enabled ? AUDIT_ACTIONS.moduleWorkspaceEnable : AUDIT_ACTIONS.moduleWorkspaceDisable,
             subjectType: AUDIT_SUBJECT_TYPES.module,
             target: m.name,

@@ -285,8 +285,8 @@ export async function requestPublishApproval(input: {
   return { status: 'sent', requestedAt: now, mailed, contact };
 }
 
-/** The e-mails of a workspace's editors and workspace-admins (who can publish there). */
-async function workspacePublisherEmails(workspaceId: string): Promise<string[]> {
+/** The e-mails of a workspace's editors and workspace-admins (who can publish there; the app owners of moderation-mail.server.ts). */
+export async function workspacePublisherEmails(workspaceId: string): Promise<string[]> {
   const rows = await getDb()
     .select({ email: users.email })
     .from(memberships)

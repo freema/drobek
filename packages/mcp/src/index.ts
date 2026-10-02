@@ -11,8 +11,10 @@
  * (unpublish, set_visibility, set_frame_ancestors, release_lease, delete_app),
  * the custom-domain tools (list_domains,
  * add_domain, verify_domain, set_primary_domain, remove_domain), the proxy
- * upstream tools (list_upstreams, register_upstream, remove_upstream) and — for a
- * super-admin only — set_workspace_publishing. @drobek/oauth keeps the
+ * upstream tools (list_upstreams, register_upstream, remove_upstream), the
+ * workspace tools (create_workspace, invite_member) and — for a super-admin
+ * only — set_workspace_publishing, set_workspace_module, takedown_app,
+ * restore_app and set_gallery_hidden. @drobek/oauth keeps the
  * Streamable HTTP transport, sessions and Bearer auth and delegates tool
  * registration here (`registerAppTools`).
  */

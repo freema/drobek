@@ -27,6 +27,7 @@ const ALL_TOOLS = [
   'create_app',
   'create_asset_upload',
   'create_records',
+  'create_workspace',
   'delete_app',
   'delete_asset',
   'delete_collection',
@@ -36,6 +37,7 @@ const ALL_TOOLS = [
   'duplicate_app',
   'get_app',
   'get_logs',
+  'invite_member',
   'list_activity',
   'list_apps',
   'list_assets',
@@ -79,7 +81,7 @@ const READ_TOOLS = new Set([
   'list_activity',
 ]);
 /** The tools that ask public DNS or change the public site. */
-const OPEN_WORLD_TOOLS = new Set(['sync_now', 'verify_domain', 'remove_domain', 'set_frame_ancestors', 'delete_app']);
+const OPEN_WORLD_TOOLS = new Set(['sync_now', 'verify_domain', 'remove_domain', 'set_frame_ancestors', 'delete_app', 'invite_member']);
 const IDEMPOTENT_WRITES = new Set([
   'configure_module',
   'delete_asset',
@@ -100,6 +102,7 @@ const IDEMPOTENT_WRITES = new Set([
   'set_end_user_blocked',
   'delete_upload',
   'remove_module_secret',
+  'create_workspace',
 ]);
 
 const TEMPLATE_FILES = ['drobek.json', 'index.html', 'src/main.tsx', 'src/styles.css'];

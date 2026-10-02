@@ -1036,6 +1036,13 @@ Anyone can publish on a public drobek, so the operator (every address in
   - **Restore**: the lock is lifted — the app is NOT republished, its owner
     publishes again. Owners get an e-mail; audited `admin.restore`.
   - **Mark resolved**: closes a report without acting.
+- **From an agent.** A super-admin's agent gets `takedown_app` and
+  `restore_app` (scope `publish`; other users never see them): the same
+  takedown and restore, the same owner e-mails and audit rows with the agent
+  as the actor, each only with `user_confirmed: true` after the super-admin's
+  explicit yes. The app is named by its id, its slug or the host a report
+  names. Reading the queue and marking a report resolved stay in the
+  dashboard.
 - **Publish heuristic.** Every publish scans the published version (HTML +
   JS): a password field AND a word from `ABUSE_BRAND_WORDS` (comma-separated;
   unset = a built-in list of ~25 bank / payment / e-mail / social / crypto
@@ -1067,9 +1074,10 @@ list.
   at query time: only apps that are listed, published, public (no password
   gate), not taken down, not deleted and not hidden appear.
 - **Hiding.** A super-admin sees every listed app in the Gallery section of
-  `/admin/abuse` and can **hide** an entry (or show it again). A hidden app
-  is off the list and neither its owner nor an agent can list it. Audited
-  `app.gallery_hidden` / `app.gallery_unhidden`.
+  `/admin/abuse` and can **hide** an entry (or show it again); their agent
+  can do the same with `set_gallery_hidden` (`user_confirmed: true`). A
+  hidden app is off the list and neither its owner nor an agent can list it.
+  Audited `app.gallery_hidden` / `app.gallery_unhidden`.
 - **Duplicates.** With "Allow duplicates" on (next to "Show in the gallery";
   off by default), your gallery website can show a Duplicate button linking
   to the item's `duplicateUrl`. A visitor signs in (and comes back), picks a

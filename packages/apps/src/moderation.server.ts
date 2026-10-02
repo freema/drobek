@@ -16,12 +16,14 @@
  * restore refuse with `app_locked_by_admin`) and by every caller that changes
  * an app another way (MCP configure_module, the dashboard APIs).
  *
- * E-mail (super-admins on a report, owners on a takedown/restore) is the
- * dashboard's business — this package sends none.
+ * E-mail: the owners hear about a takedown / restore through
+ * mailOwnersAboutModeration (moderation-mail.server.ts), which the dashboard
+ * queue and the MCP tools call after these functions; the super-admins'
+ * report mail is the dashboard's.
  */
 import { createHmac } from 'node:crypto';
 import { and, desc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
-import { AUDIT_ACTIONS, writeAudit } from '@drobek/audit';
+import { AUDIT_ACTIONS, writeAudit, type AuditActorKind } from '@drobek/audit';
 import { createConsoleLogger, type Logger } from '@drobek/core';
 import { abuseReports, appVersions, apps, blobs, dbErrorForLog, domains, getDb, users, versionFiles, workspaces } from '@drobek/db';
 import { AppsError } from './errors.js';
@@ -85,6 +87,8 @@ export async function takedownApp(input: {
   appId: string;
   reason: string;
   actorUserId: string;
+  /** `agent` when a super-admin's agent called takedown_app; default `user` (the dashboard). */
+  actorKind?: AuditActorKind;
   log?: Logger;
 }): Promise<ModerationTarget & { unpublishedVersionId: string | null; alreadyLocked: boolean; changed: boolean }> {
   if (!isLockReason(input.reason)) {
@@ -122,7 +126,7 @@ export async function takedownApp(input: {
       {
         workspaceId: app.workspaceId,
         actorUserId: input.actorUserId,
-        actorKind: 'user',
+        actorKind: input.actorKind ?? 'user',
         action: AUDIT_ACTIONS.adminTakedown,
         subjectType: 'app',
         target: app.slug,
@@ -140,7 +144,7 @@ export async function takedownApp(input: {
         {
           workspaceId: app.workspaceId,
           actorUserId: input.actorUserId,
-          actorKind: 'user',
+          actorKind: input.actorKind ?? 'user',
           action: AUDIT_ACTIONS.appGalleryUnlisted,
           subjectType: 'app',
           target: app.slug,
@@ -171,6 +175,8 @@ export async function takedownApp(input: {
 export async function restoreApp(input: {
   appId: string;
   actorUserId: string;
+  /** `agent` when a super-admin's agent called restore_app; default `user` (the dashboard). */
+  actorKind?: AuditActorKind;
   log?: Logger;
 }): Promise<ModerationTarget & { wasLocked: boolean; reason: LockReason | null }> {
   const out = await getDb().transaction(async (tx) => {
@@ -188,7 +194,7 @@ export async function restoreApp(input: {
       {
         workspaceId: app.workspaceId,
         actorUserId: input.actorUserId,
-        actorKind: 'user',
+        actorKind: input.actorKind ?? 'user',
         action: AUDIT_ACTIONS.adminRestore,
         subjectType: 'app',
         target: app.slug,

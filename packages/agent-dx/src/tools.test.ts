@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { TOOL_DOCS, TOOL_NAMES, toolDoc } from './tools.js';
 
 describe('TOOL_DOCS manifest', () => {
-  it('documents exactly the 46 tools, in tools/list order', () => {
+  it('documents exactly the 52 tools, in tools/list order', () => {
     expect(TOOL_NAMES).toEqual([
       'list_apps',
       'create_app',
@@ -49,7 +49,13 @@ describe('TOOL_DOCS manifest', () => {
       'list_upstreams',
       'register_upstream',
       'remove_upstream',
+      'create_workspace',
+      'invite_member',
       'set_workspace_publishing',
+      'set_workspace_module',
+      'takedown_app',
+      'restore_app',
+      'set_gallery_hidden',
     ]);
   });
 
@@ -122,7 +128,13 @@ describe('TOOL_DOCS manifest', () => {
       list_upstreams: [true, false, true, false],
       register_upstream: [false, false, true, false], // a second call answers upstream_already_registered
       remove_upstream: [false, true, true, false], // the apps calling it break; a second remove answers not_found
+      create_workspace: [false, false, true, false], // a second call with the same slug answers slug_taken
+      invite_member: [false, false, false, true], // every call e-mails a new link to someone outside the conversation
       set_workspace_publishing: [false, false, true, false], // who may publish; the same call again answers changed:false
+      set_workspace_module: [false, true, true, false], // disabling turns it off for every app of the workspace; the same state again answers changed:false
+      takedown_app: [false, true, true, true], // unpublishes; every host answers 451; a second call answers changed:false
+      restore_app: [false, false, true, true], // the preview and version hosts serve again; a second call answers changed:false
+      set_gallery_hidden: [false, false, true, true], // what the public gallery shows; the same state again answers changed:false
     };
     expect(Object.keys(table)).toEqual(TOOL_NAMES);
     for (const [name, [readOnlyHint, destructiveHint, idempotentHint, openWorldHint]] of Object.entries(table)) {
@@ -130,7 +142,8 @@ describe('TOOL_DOCS manifest', () => {
     }
     // Consistency rules a directory reviewer applies: a read-only tool is never
     // destructive; only publish, the gallery listing, the lifecycle tools and the domain tools that
-    // touch public DNS or the public site, and sync_now (it calls the app's external API), reach the open world.
+    // touch public DNS or the public site, sync_now (it calls the app's external API), invite_member (it e-mails
+    // someone outside the conversation) and the super-admin's moderation tools reach the open world.
     const openWorld = [
       'publish',
       'set_gallery_listing',
@@ -142,6 +155,10 @@ describe('TOOL_DOCS manifest', () => {
       'verify_domain',
       'set_primary_domain',
       'remove_domain',
+      'invite_member',
+      'takedown_app',
+      'restore_app',
+      'set_gallery_hidden',
     ];
     for (const t of TOOL_DOCS) {
       if (t.annotations.readOnlyHint) expect(t.annotations.destructiveHint, t.name).toBe(false);
@@ -178,6 +195,40 @@ describe('TOOL_DOCS manifest', () => {
     expect(toolDoc('list_apps').returns).toContain('can_publish');
     expect(toolDoc('list_apps').returns).toContain('publishing');
     expect(toolDoc('get_app').returns).toContain('publishing');
+  });
+
+  it('create_workspace and invite_member mirror the dashboard; the invite needs the user\'s yes and never hands out the link', () => {
+    expect(toolDoc('create_workspace').scope).toMatch(/^write \(any signed-in user\)/);
+    expect(toolDoc('create_workspace').fields.map((f) => f.name)).toEqual(['name', 'slug']);
+    expect(toolDoc('create_workspace').description).toMatch(/slug_taken/);
+    const invite = toolDoc('invite_member');
+    expect(invite.scope).toMatch(/^write \(workspace-admin role in a team workspace\)/);
+    expect(invite.fields.map((f) => f.name)).toEqual(['workspace', 'email', 'role', 'user_confirmed']);
+    expect(invite.description).toMatch(/user_confirmed: true/);
+    expect(invite.description).toMatch(/ONLY after the user explicitly said yes/);
+    expect(invite.description).toMatch(/never through MCP/);
+    expect(invite.description).toMatch(/member\.invite/);
+    expect(invite.returns).not.toMatch(/url|link|token/);
+  });
+
+  it('the super-admin tools: registered for super-admins only, each change on the user\'s explicit yes, audited as the agent', () => {
+    for (const name of ['set_workspace_module', 'takedown_app', 'restore_app', 'set_gallery_hidden']) {
+      const doc = toolDoc(name);
+      expect(doc.scope, name).toMatch(/^(write|publish) \(super-admins of this server only\)/);
+      expect(doc.description, name).toMatch(/Only in a super-admin's tools\/list/);
+      expect(doc.description, name).toMatch(/user_confirmed: true/);
+      expect(doc.description, name).toMatch(/ONLY after the user explicitly said yes/);
+      expect(doc.description, name).toMatch(/with you as the actor/);
+      expect(doc.fields.at(-1)?.name, name).toBe('user_confirmed');
+    }
+    expect(toolDoc('set_workspace_module').scope).toMatch(/^write\b/);
+    for (const name of ['takedown_app', 'restore_app', 'set_gallery_hidden']) {
+      expect(toolDoc(name).scope, name).toMatch(/^publish\b/);
+      expect(toolDoc(name).fields[0], name).toMatchObject({ name: 'app', required: true });
+    }
+    expect(toolDoc('takedown_app').description).toMatch(/Never take an app down on your own initiative/);
+    expect(toolDoc('restore_app').description).toMatch(/NOT published again/);
+    expect(toolDoc('set_workspace_module').description).toMatch(/module_requires_not_enabled/);
   });
 
   it('the custom-domain tools mirror the Domains tab; what changes the public site needs the user\'s yes', () => {

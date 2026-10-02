@@ -40,6 +40,8 @@ export const TOOL_ERROR_CODES = [
   'rate_limited',
   // configure_module on an opt-in module that is off for the workspace.
   'module_not_enabled',
+  // set_workspace_module enabling a module whose required module is off.
+  'module_requires_not_enabled',
   // The custom-domain tools.
   'invalid_hostname',
   'hostname_not_allowed',

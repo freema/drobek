@@ -55,8 +55,14 @@ export {
   resolveAcceptedRole,
   acceptInvite,
   acceptInviteUrl,
+  inviteMember,
+  normalizeInviteEmail,
+  revokeInvite,
+  defaultMemberInviteDeps,
   type InviteRecord,
   type AcceptInviteResult,
+  type InviteMemberResult,
+  type MemberInviteDeps,
 } from './invites.server.js';
 export {
   renderInviteEmail,

@@ -10,7 +10,7 @@ import { FULL_SCOPE, mcpClient } from './helpers/mcp';
  * the install command + MCP URL.
  */
 
-/** Exactly the MCP tool set; set_workspace_publishing is a super-admin's only. */
+/** Exactly the MCP tool set; set_workspace_publishing, set_workspace_module, takedown_app, restore_app and set_gallery_hidden are a super-admin's only. */
 const ALL_TOOLS = [
   'list_apps',
   'create_app',
@@ -57,6 +57,8 @@ const ALL_TOOLS = [
   'list_upstreams',
   'register_upstream',
   'remove_upstream',
+  'create_workspace',
+  'invite_member',
 ];
 
 /** Retired tools — never advertised. */

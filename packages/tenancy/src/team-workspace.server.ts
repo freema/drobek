@@ -1,6 +1,8 @@
 /**
- * Team workspaces: any logged-in user may create one; the
- * creator becomes workspace-admin. Slug validation is pure (slug.ts);
+ * Team workspaces: any logged-in user may create one (the dashboard's
+ * /workspaces form and the MCP tool create_workspace call the same function);
+ * the creator becomes workspace-admin. The name is trimmed (1–80 characters),
+ * the slug trimmed and lower-cased; slug validation is pure (slug.ts);
  * global uniqueness is the workspaces.slug UNIQUE constraint — a lost race
  * surfaces as { ok: false, reason: 'slug-taken' }, never a 500.
  */
@@ -8,15 +10,23 @@ import { getDb, isUniqueViolation, memberships, workspaces } from '@drobek/db';
 import { validateTeamSlug } from './slug.js';
 import type { WorkspaceSummary } from './membership.server.js';
 
+/** The longest team workspace name. */
+const TEAM_NAME_MAX = 80;
+
 export type CreateTeamResult =
   | { ok: true; workspace: WorkspaceSummary }
-  | { ok: false; reason: 'invalid-slug' | 'slug-taken'; message: string };
+  | { ok: false; reason: 'invalid-name' | 'invalid-slug' | 'slug-taken'; message: string };
 
 export async function createTeamWorkspace(
   ownerUserId: string,
-  name: string,
-  slug: string
+  rawName: string,
+  rawSlug: string
 ): Promise<CreateTeamResult> {
+  const name = rawName.trim();
+  const slug = rawSlug.trim().toLowerCase();
+  if (!name || name.length > TEAM_NAME_MAX) {
+    return { ok: false, reason: 'invalid-name', message: `Enter a team name (1–${TEAM_NAME_MAX} characters).` };
+  }
   const slugError = validateTeamSlug(slug);
   if (slugError) {
     return { ok: false, reason: 'invalid-slug', message: slugError };

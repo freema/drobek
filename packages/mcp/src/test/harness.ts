@@ -96,6 +96,8 @@ export interface TestDeps extends ToolDeps {
   zone: TestZone;
   /** The end-user session epoch per app (sign_out_end_users raises it). */
   sessionEpochs: Map<string, number>;
+  /** invite_member's invites by token, the e-mails it sent, and whether the next send fails. */
+  invited: { tokens: Map<string, { workspaceId: string; role: string; email: string | null }>; sent: { email: string; workspaceName: string; role: string; acceptUrl: string }[]; failNext: boolean };
 }
 
 export function testDeps(limits: Partial<CompileLimits> = {}): TestDeps {
@@ -106,6 +108,8 @@ export function testDeps(limits: Partial<CompileLimits> = {}): TestDeps {
   const uploadBudget = { left: 1000 };
   const zone: TestZone = { txt: {}, cname: {}, fail: new Set() };
   const sessionEpochs = new Map<string, number>();
+  const invited: TestDeps['invited'] = { tokens: new Map(), sent: [], failNext: false };
+  let inviteSeq = 0;
   return {
     leases: memoryLeaseStore(clock.now),
     notifyAppChanged: async (e) => {
@@ -130,6 +134,24 @@ export function testDeps(limits: Partial<CompileLimits> = {}): TestDeps {
       sessionEpochs.set(appId, epoch);
       return epoch;
     },
+    invites: {
+      create: async (a) => {
+        const token = (++inviteSeq).toString(16).padStart(64, '0');
+        invited.tokens.set(token, { workspaceId: a.workspaceId, role: a.role, email: a.email ?? null });
+        return { token };
+      },
+      revoke: async (token) => {
+        invited.tokens.delete(token);
+      },
+      send: async (m) => {
+        if (invited.failNext) {
+          invited.failNext = false;
+          throw new Error('smtp down');
+        }
+        invited.sent.push(m);
+      },
+    },
+    invited,
     events,
     clock,
     uploadTokens,

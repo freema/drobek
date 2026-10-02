@@ -21,14 +21,19 @@
  *             `update_record`, `delete_record`, `delete_collection`,
  *             `purge_orphan_records`), delete a form submission or an
  *             upload, change an end user's role, block them or sign every
- *             end user out, and remove a module secret (never set one).
+ *             end user out, and remove a module secret (never set one),
+ *             create a team workspace and invite a member by e-mail
+ *             (`create_workspace`, `invite_member`); a super-admin also
+ *             switches a workspace's opt-in modules (`set_workspace_module`).
  *   publish — make a version live at its public URL (the `publish` tool),
  *             take it offline again (`unpublish`), choose who can open it
  *             (`set_visibility`), list it in the public gallery
  *             (`set_gallery_listing`) and choose the primary domain the
  *             production address redirects to (`set_primary_domain`);
  *             a super-admin also allows or blocks a workspace's publishing
- *             (`set_workspace_publishing`, registered for super-admins only).
+ *             (`set_workspace_publishing`), takes an app down or restores it
+ *             (`takedown_app`, `restore_app`) and hides a gallery entry
+ *             (`set_gallery_hidden`) — all registered for super-admins only.
  *
  * `TOOL_SCOPES` is the ONE table both `tools/list` filtering and per-call
  * enforcement read (resource/mcp.ts).
@@ -141,6 +146,15 @@ export const TOOL_SCOPES = {
   set_primary_domain: 'publish',
   // Who may publish is decided under the publish scope; @drobek/mcp registers it for super-admins only.
   set_workspace_publishing: 'publish',
+  // A new team workspace and an e-mailed invite to one change the user's workspaces, like the dashboard's /workspaces.
+  create_workspace: 'write',
+  invite_member: 'write',
+  // Super-admins only (@drobek/mcp): a workspace's opt-in module switch is configuration;
+  // a takedown, its restore and hiding a gallery entry decide what the public sees.
+  set_workspace_module: 'write',
+  takedown_app: 'publish',
+  restore_app: 'publish',
+  set_gallery_hidden: 'publish',
 } as const satisfies Record<string, Scope | null>;
 
 export type ToolName = keyof typeof TOOL_SCOPES;

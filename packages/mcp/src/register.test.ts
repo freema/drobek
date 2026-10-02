@@ -1,6 +1,7 @@
 /**
- * tools/list snapshot: exactly the 45 tools of a user who is not a
- * super-admin (a super-admin also gets set_workspace_publishing), in order,
+ * tools/list snapshot: exactly the 47 tools of a user who is not a
+ * super-admin (a super-admin also gets set_workspace_publishing,
+ * set_workspace_module, takedown_app, restore_app and set_gallery_hidden), in order,
  * with their titles, annotations and input schemas. Hand-written on purpose — a
  * change to the public tool surface must be a deliberate edit here.
  */
@@ -30,7 +31,7 @@ async function listTools(allow?: (t: string) => boolean, superAdmin = false) {
 const RO = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 
 describe('tools/list', () => {
-  it('is exactly the 45 tools with their annotations and inputs (snapshot)', async () => {
+  it('is exactly the 47 tools with their annotations and inputs (snapshot)', async () => {
     const tools = await listTools();
     const snapshot = tools.map((t) => ({
       name: t.name,
@@ -403,6 +404,20 @@ describe('tools/list', () => {
         properties: ['workspace', 'name', 'user_confirmed'],
         required: ['workspace', 'name'],
       },
+      {
+        name: 'create_workspace',
+        title: 'Create a team workspace',
+        annotations: { title: 'Create a team workspace', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        properties: ['name', 'slug'],
+        required: ['name', 'slug'],
+      },
+      {
+        name: 'invite_member',
+        title: 'Invite a workspace member',
+        annotations: { title: 'Invite a workspace member', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+        properties: ['workspace', 'email', 'role', 'user_confirmed'],
+        required: ['workspace', 'email', 'role'],
+      },
     ]);
     const create = tools.find((t) => t.name === 'create_app')!;
     expect((create.inputSchema.properties as Record<string, { enum?: string[] }>).template.enum).toEqual([
@@ -412,12 +427,22 @@ describe('tools/list', () => {
     for (const t of tools) expect(t.description!.length, t.name).toBeGreaterThan(40);
     const visibility = tools.find((t) => t.name === 'set_visibility')!;
     expect((visibility.inputSchema.properties as Record<string, { enum?: string[] }>).visibility.enum).toEqual(['public', 'password']);
+    const invite = tools.find((t) => t.name === 'invite_member')!;
+    expect((invite.inputSchema.properties as Record<string, { enum?: string[] }>).role.enum).toEqual(['viewer', 'editor', 'workspace-admin']);
   });
 
-  it('a super-admin also gets set_workspace_publishing, last', async () => {
+  it('a super-admin also gets set_workspace_publishing, set_workspace_module and the moderation tools, last', async () => {
     const tools = await listTools(undefined, true);
-    expect(tools).toHaveLength(46);
-    const last = tools[45];
+    expect(tools).toHaveLength(52);
+    expect(tools.slice(47).map((t) => t.name)).toEqual(['set_workspace_publishing', 'set_workspace_module', 'takedown_app', 'restore_app', 'set_gallery_hidden']);
+    const props = (name: string) => Object.keys((tools.find((t) => t.name === name)!.inputSchema.properties ?? {}) as object);
+    expect(props('set_workspace_module')).toEqual(['workspace', 'module', 'enabled', 'user_confirmed']);
+    expect(props('takedown_app')).toEqual(['app', 'reason', 'user_confirmed']);
+    expect(props('restore_app')).toEqual(['app', 'user_confirmed']);
+    expect(props('set_gallery_hidden')).toEqual(['app', 'hidden', 'user_confirmed']);
+    const takedown = tools.find((t) => t.name === 'takedown_app')!;
+    expect((takedown.inputSchema.properties as Record<string, { enum?: string[] }>).reason.enum).toEqual(['phishing', 'malware', 'spam', 'copyright', 'illegal', 'other']);
+    const last = tools[47];
     expect(last.name).toBe('set_workspace_publishing');
     expect(last.annotations).toEqual({
       title: 'Set a workspace\'s publishing',

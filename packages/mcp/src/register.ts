@@ -25,8 +25,9 @@ import { randomBytes } from 'node:crypto';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { toolDoc } from '@drobek/agent-dx';
-import { AppsError, WORKSPACE_PUBLISHING_STATES } from '@drobek/apps';
+import { AppsError, LOCK_REASONS, WORKSPACE_PUBLISHING_STATES } from '@drobek/apps';
 import { dbErrorForLog } from '@drobek/db';
+import { WORKSPACE_ROLES } from '@drobek/tenancy';
 import { defaultDeps, type ToolDeps, type ToolPrincipal } from './context.js';
 import { ToolError, lockedByAdmin } from './errors.js';
 import {
@@ -68,9 +69,11 @@ import {
 import { ownerListEnvelope, type OwnerListPayload } from './owner-list.js';
 import { listUpstreamsTool, registerUpstreamTool, removeUpstreamTool } from './upstreams.js';
 import { setWorkspacePublishingTool } from './workspace-publishing.js';
+import { createWorkspaceTool, inviteMemberTool } from './workspaces.js';
+import { restoreAppTool, setGalleryHiddenTool, setWorkspaceModuleTool, takedownAppTool } from './admin.js';
 import { TEMPLATES } from './templates.js';
 
-/** The tool set, in tools/list order (set_workspace_publishing is super-admins only). */
+/** The tool set, in tools/list order (the last five, from set_workspace_publishing on, are super-admins only). */
 export const APP_TOOL_NAMES = [
   'list_apps',
   'create_app',
@@ -117,15 +120,30 @@ export const APP_TOOL_NAMES = [
   'list_upstreams',
   'register_upstream',
   'remove_upstream',
+  'create_workspace',
+  'invite_member',
   'set_workspace_publishing',
+  'set_workspace_module',
+  'takedown_app',
+  'restore_app',
+  'set_gallery_hidden',
 ] as const;
 
 export type AppToolName = (typeof APP_TOOL_NAMES)[number];
 
 /** Tools that exist only for a super-admin's grant (never in anyone else's tools/list). */
-const SUPER_ADMIN_TOOL_NAMES: readonly AppToolName[] = ['set_workspace_publishing'];
+const SUPER_ADMIN_TOOL_NAMES: readonly AppToolName[] = [
+  'set_workspace_publishing',
+  'set_workspace_module',
+  'takedown_app',
+  'restore_app',
+  'set_gallery_hidden',
+];
 
 const appId = z.string().describe('The app id (from list_apps or create_app).');
+const moderationAppArg = z
+  .string()
+  .describe('The app: its app_id, its slug or one of its addresses (an app host or a verified custom domain, e.g. from an abuse report).');
 
 /** zod input shapes — the field names are drift-guarded against TOOL_DOCS. */
 export const INPUT_SCHEMAS = {
@@ -408,11 +426,41 @@ export const INPUT_SCHEMAS = {
     name: z.string().describe('A registered upstream (list_upstreams lists them).'),
     user_confirmed: z.boolean().optional().describe('true ONLY after the user explicitly said yes to removing it.'),
   },
+  create_workspace: {
+    name: z.string().describe('The team\'s name (1–80 characters).'),
+    slug: z.string().describe('Its address on this server, /workspaces/<slug>: 3–40 lowercase letters, digits and dashes, unique.'),
+  },
+  invite_member: {
+    workspace: z.string().describe('The team workspace slug; you need the workspace-admin role.'),
+    email: z.string().describe('The address the invite e-mail goes to.'),
+    role: z.enum(WORKSPACE_ROLES).describe('viewer (reads), editor (changes apps) or workspace-admin (also members and settings).'),
+    user_confirmed: z.boolean().optional().describe('true ONLY after the user explicitly said yes to inviting this address with this role.'),
+  },
   set_workspace_publishing: {
     workspace: z.string().describe('The workspace slug (list_apps all_workspaces lists every workspace).'),
     publishing: z
       .enum(WORKSPACE_PUBLISHING_STATES)
       .describe('default = the server mode decides; allowed = may always publish; blocked = may never publish (live apps keep serving).'),
+    user_confirmed: z.boolean().optional().describe('true ONLY after the user explicitly said yes to this change.'),
+  },
+  set_workspace_module: {
+    workspace: z.string().describe('The workspace slug (list_apps all_workspaces lists every workspace).'),
+    module: z.string().describe('An opt-in platform module (skill_info() lists it with availability "opt-in").'),
+    enabled: z.boolean().describe('true enables it for the workspace; false disables it.'),
+    user_confirmed: z.boolean().optional().describe('true ONLY after the user explicitly said yes to this change.'),
+  },
+  takedown_app: {
+    app: moderationAppArg,
+    reason: z.enum(LOCK_REASONS).describe('The category the owners are told.'),
+    user_confirmed: z.boolean().optional().describe('true ONLY after the user explicitly said yes to taking this app down.'),
+  },
+  restore_app: {
+    app: moderationAppArg,
+    user_confirmed: z.boolean().optional().describe('true ONLY after the user explicitly said yes to restoring this app.'),
+  },
+  set_gallery_hidden: {
+    app: moderationAppArg,
+    hidden: z.boolean().describe('true hides its gallery entry; false lets the gallery show it again.'),
     user_confirmed: z.boolean().optional().describe('true ONLY after the user explicitly said yes to this change.'),
   },
 } as const;
@@ -657,7 +705,13 @@ export function registerAppTools(
   register('list_upstreams', listUpstreamsTool);
   register('register_upstream', registerUpstreamTool);
   register('remove_upstream', removeUpstreamTool);
+  register('create_workspace', createWorkspaceTool);
+  register('invite_member', inviteMemberTool);
   register('set_workspace_publishing', setWorkspacePublishingTool);
+  register('set_workspace_module', setWorkspaceModuleTool);
+  register('takedown_app', takedownAppTool);
+  register('restore_app', restoreAppTool);
+  register('set_gallery_hidden', setGalleryHiddenTool);
 
   if (registered === 0) {
     // A grant with no tool scope (e.g. none of read/write/publish) must still get an
