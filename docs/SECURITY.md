@@ -85,7 +85,7 @@ Findings of the pre-rebuild review (PHY-76) today:
 | LOW — placeholder secrets accepted | fixed: fail-closed start |
 | LOW — app-access cookie survives a password change | **open**: the unlock cookie is a stateless HMAC token valid for 12 h; changing an app's password does not revoke cookies already issued |
 | LOW — proxy to any port | fixed: ports 80/443 only |
-| LOW — beacon poisoning | fixed: same-origin beacon on the app's own host, size caps, per-app and per-IP limits |
+| LOW — beacon poisoning | fixed: same-origin beacon on the app's own host, size caps, per-app and per-IP limits; a page load is counted only for a version the app has, behind its own per-app and per-IP buckets, and stores a number — no IP, cookie, user agent or URL |
 
 ### Known limitations
 

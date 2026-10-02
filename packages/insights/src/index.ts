@@ -4,9 +4,11 @@
  * the editor agent:
  *
  *  - a PUBLIC error beacon (recordBeacon / handleBeacon) that ingests untrusted
- *    window.onerror + unhandledrejection events, size-capped + rate-limited +
- *    PII/secret-sanitized + ring-buffer-retained — at
- *    `POST /__drobek/v1/_beacon` on every app host (@drobek/serving routes it),
+ *    uncaught errors, unhandled rejections, failed resource loads and CSP
+ *    blocks, size-capped + rate-limited + PII/secret-sanitized +
+ *    ring-buffer-retained, each with the version its page was served from,
+ *    and counts page loads per version — at `POST /__drobek/v1/_beacon` on
+ *    every app host (@drobek/serving routes it),
  *  - cheap serving signals (incrementServingSignal) tallied on the serving
  *    path — request volume / 5xx / 404-by-path,
  *  - read models (queryAppErrors / queryAppLogs) for the dashboard Overview
@@ -36,11 +38,14 @@ export {
   LOGS_RETENTION_DAYS,
   beaconLimitsFromEnv,
   beaconSizeVerdict,
+  extractBatch,
   extractEvents,
   shouldSample,
+  type BeaconBatch,
   type BeaconLimits,
 } from './limits.js';
 export {
+  BEACON_EVENT_TYPES,
   MAX_EVENTS_PER_BATCH,
   MAX_MESSAGE,
   MAX_STACK,
@@ -50,6 +55,7 @@ export {
   fileHintFromStack,
   redact,
   sanitizeEvent,
+  sanitizeVersion,
   type BeaconEventType,
   type SanitizedEvent,
 } from './sanitize.js';
@@ -114,6 +120,7 @@ export {
   type LogKind,
   type ModuleCounts,
   type ModuleStatRow,
+  type RenderCounts,
   type RequestsEntry,
   type RuntimeEntry,
   type StatusClass,
@@ -122,6 +129,7 @@ export {
 export {
   logsWindowStart,
   queryCompileLog,
+  queryRenderCounts,
   queryRequestLog,
   queryRuntimeLog,
   recordCompile,

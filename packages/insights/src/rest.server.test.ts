@@ -32,7 +32,7 @@ function recorder() {
   const calls: Parameters<BeaconRecorder>[0][] = [];
   const record: BeaconRecorder = async (input) => {
     calls.push(input);
-    return { stored: 1 };
+    return { stored: 1, loadCounted: false };
   };
   return { calls, record };
 }
@@ -52,6 +52,14 @@ describe('handleBeacon', () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]).toMatchObject({ appId: 'app_1', ip: '203.0.113.9' });
     expect((calls[0].batch as { events: unknown[] }).events).toHaveLength(1);
+  });
+
+  it('passes the version the host serves on, for a page that does not say its own (default: none)', async () => {
+    const { calls, record } = recorder();
+    const origin = { origin: 'http://shop--preview.apps.localhost:3041' };
+    await handleBeacon(beaconReq(EVENT, origin), 'app_1', { record, servedVersion: 7 });
+    await handleBeacon(beaconReq(EVENT, origin), 'app_1', { record });
+    expect(calls.map((c) => c.servedVersion)).toEqual([7, null]);
   });
 
   it('no resolved client IP → the recorder gets ip: null, never a shared "unknown"', async () => {

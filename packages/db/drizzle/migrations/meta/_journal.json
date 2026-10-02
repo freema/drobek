@@ -197,6 +197,13 @@
       "when": 1790869000706,
       "tag": "0032_access_token_lineage",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1790943377021,
+      "tag": "0035_render_signal",
+      "breakpoints": true
     }
   ]
 }

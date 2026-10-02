@@ -86,8 +86,10 @@ import { listDomains, resolveCustomHost, verifiedDomainsOf } from '@drobek/domai
 import { maskEmail } from '@drobek/auth';
 import {
   BINARY_EXTS,
+  CONFIG_FILE,
   TEXT_EXTS,
   normalizeAppPath,
+  readAppConfig,
   scanForSecrets,
   type CompileMessage,
   type CompileResult,
@@ -96,7 +98,7 @@ import { confirmUrl, duplicateModuleConfigs, isModuleError, type ModuleRuntime, 
 import { ensurePersonalWorkspace, listAllWorkspaces, listUserWorkspaces } from '@drobek/tenancy';
 import { authorizeApp, authorizeWorkspace } from './access.js';
 import type { ToolDeps, ToolPrincipal } from './context.js';
-import { LOG_KINDS, logsWindowStart, type LogKind } from '@drobek/insights';
+import { LOG_KINDS, logsWindowStart, type LogKind, type RuntimeEntry } from '@drobek/insights';
 import { dbErrorForLog } from '@drobek/db';
 import { ToolError, lockedByAdmin, notFound, publishRefused } from './errors.js';
 import type { Lease } from './lease.js';
@@ -344,10 +346,12 @@ export async function getApp(ctx: CallContext, args: { app_id: string }) {
   );
   // The newest version's readiness report — with its type errors once the background check is done.
   const readiness = head ? await storedReadiness(ctx, app.id, enabled, head.number) : undefined;
+  const render = head ? await renderSignal(ctx, app.id, head) : undefined;
   return {
     ...items[0],
     compile_errors: head?.compileStatus === 'error' ? toCompileOut(head.compileErrors, ctx.modules, enabled) : [],
     ...(readiness ? { readiness } : {}),
+    ...(render ? { render } : {}),
     briefing: briefing(ctx, enabled),
     files: (detail?.files ?? [])
       .filter((f) => f.kind === 'source')
@@ -372,6 +376,40 @@ export async function getApp(ctx: CallContext, args: { app_id: string }) {
     ...publishOut(permission),
     ...(lock ? { lock } : {}),
   };
+}
+
+/**
+ * The render signal of a version (get_app, get_logs runtime): how many of
+ * its pages loaded in a browser and how many browser errors they reported —
+ * counts the beacon sent, nothing about the visitors. `beacon: false` = the
+ * version's drobek.json turned the beacon off, so nothing is reported.
+ */
+export interface RenderSignal {
+  version: number;
+  beacon: boolean;
+  page_loads: number;
+  errors: number;
+}
+
+/** Does the version's drobek.json leave the beacon on? (An unreadable config counts as on, like the compiler's default.) */
+async function beaconOn(versionId: string): Promise<boolean> {
+  const bytes = await readVersionFile(versionId, CONFIG_FILE, 'source');
+  if (!bytes) return true;
+  return readAppConfig(new Map([[CONFIG_FILE, bytes.toString('utf8')]])).config.beacon;
+}
+
+async function renderSignal(ctx: CallContext, appId: string, version: { id: string; number: number }): Promise<RenderSignal> {
+  if (!(await beaconOn(version.id))) return { version: version.number, beacon: false, page_loads: 0, errors: 0 };
+  return { version: version.number, beacon: true, ...(await ctx.deps.logs.render(appId, version.number)) };
+}
+
+/** One sentence on the render signal for the get_logs note. */
+function renderNote(r: RenderSignal): string {
+  if (!r.beacon) return `Version ${r.version} has "beacon": false in drobek.json: its pages report nothing and nothing is counted.`;
+  if (r.page_loads === 0) {
+    return `No page of version ${r.version} has loaded in a browser yet — give the user the preview_url and call get_app or get_logs again after they opened it.`;
+  }
+  return `Version ${r.version}: ${r.page_loads} page load${r.page_loads === 1 ? '' : 's'}, ${r.errors} browser error${r.errors === 1 ? '' : 's'} reported by its pages.`;
 }
 
 /** get_app's `gallery`: the public gallery state and its likes / opens (30 days), read-only. */
@@ -1308,12 +1346,14 @@ export interface GetLogsResult {
   since: string;
   entries: unknown[];
   untrusted: true;
+  /** kind runtime: the newest version's page loads and browser errors. */
+  render?: RenderSignal;
   note?: string;
 }
 
 const EMPTY_NOTES: Record<GetLogsKind, string> = {
   runtime:
-    'No browser errors in this window. Every page that loads a compiled entry reports uncaught errors and unhandled promise rejections here within seconds (unless drobek.json has "beacon": false) — open the preview_url to reproduce a problem, then call get_logs again.',
+    'No browser errors in this window. Every page that loads a compiled entry reports uncaught errors, unhandled promise rejections, files that failed to load and requests the CSP blocked here within seconds (unless drobek.json has "beacon": false) — open the preview_url to reproduce a problem, then call get_logs again.',
   compile: 'No compiles in this window.',
   requests: 'No requests in this window.',
   sync: 'No sync runs in this window. A source runs on its schedule once the owner confirmed it; sync_now runs it at once.',
@@ -1321,7 +1361,9 @@ const EMPTY_NOTES: Record<GetLogsKind, string> = {
 
 /**
  * What happened to an app, for the viewer+ of its workspace:
- *   runtime  — browser errors reported by the app's pages (deduped, with counts);
+ *   runtime  — browser errors reported by the app's pages (deduped, with counts,
+ *              each with the version of its page) + the newest version's render
+ *              signal (page loads, errors of its pages);
  *   compile  — the last 50 compiles (ok / errors / version / duration);
  *   requests — per UTC day: requests, 5xx, 404s, and module calls by status class;
  *   sync     — the latest runs of the app's sync sources (newest first).
@@ -1353,12 +1395,22 @@ export async function getLogs(
       ...(runs.length === 0 ? { note: sync ? EMPTY_NOTES.sync : 'This server has no sync module: apps here import nothing on a schedule.' } : {}),
     };
   }
-  const entries =
-    kind === 'runtime'
-      ? await ctx.deps.logs.runtime(app.id, from)
-      : kind === 'compile'
-        ? await ctx.deps.logs.compile(app.id, from)
-        : await ctx.deps.logs.requests(app.id, from);
+  if (kind === 'runtime') {
+    const entries: RuntimeEntry[] = await ctx.deps.logs.runtime(app.id, from);
+    const head = (await latestVersions([app.id])).get(app.id);
+    const render = head ? await renderSignal(ctx, app.id, head) : undefined;
+    const note = [entries.length === 0 ? EMPTY_NOTES.runtime : null, render ? renderNote(render) : null].filter(Boolean).join(' ');
+    return {
+      app_id: app.id,
+      kind,
+      since: from.toISOString(),
+      entries,
+      untrusted: true,
+      ...(render ? { render } : {}),
+      ...(note ? { note } : {}),
+    };
+  }
+  const entries = kind === 'compile' ? await ctx.deps.logs.compile(app.id, from) : await ctx.deps.logs.requests(app.id, from);
   return {
     app_id: app.id,
     kind,

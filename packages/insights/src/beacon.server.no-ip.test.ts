@@ -33,13 +33,13 @@ function keys(): string[] {
 
 describe('recordBeacon rate limits without a client IP', () => {
   it('a resolved IP: counted per app + IP and per app', async () => {
-    await expect(recordBeacon({ appId: 'a1', batch: [], ip: '203.0.113.9', env: ENV })).resolves.toEqual({ stored: 0 });
+    await expect(recordBeacon({ appId: 'a1', batch: [], ip: '203.0.113.9', env: ENV })).resolves.toEqual({ stored: 0, loadCounted: false });
     expect(keys().sort()).toEqual(['beacon:a1:203.0.113.9', 'beacon:app:a1']);
   });
 
   it('no client IP: the per-IP bucket is not consulted (no shared "unknown" key), the beacon proceeds', async () => {
     for (let i = 0; i < 5; i += 1) {
-      await expect(recordBeacon({ appId: 'a1', batch: [], ip: null, env: ENV })).resolves.toEqual({ stored: 0 });
+      await expect(recordBeacon({ appId: 'a1', batch: [], ip: null, env: ENV })).resolves.toEqual({ stored: 0, loadCounted: false });
     }
     expect(new Set(keys())).toEqual(new Set(['beacon:app:a1']));
   });

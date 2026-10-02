@@ -8,7 +8,7 @@ import { Readable } from 'node:stream';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { AppHostTarget } from '@drobek/apps';
 import { APP_CSP, appCsp } from './csp.js';
-import { BEACON_PATH, handleAppRequest, type AppRequest, type HandlerDeps } from './handler.js';
+import { BEACON_PATH, VERSION_TIMING_METRIC, handleAppRequest, type AppRequest, type HandlerDeps } from './handler.js';
 import type { StoredFile } from './manifest.js';
 import { UNLOCK_PATH } from './pages.js';
 import { APP_ACCESS_COOKIE, hashAppPassword, mintAppAccessToken } from './password.js';
@@ -194,6 +194,20 @@ describe('which version a host serves', () => {
   it('an unknown slug or a malformed app host is a 404', async () => {
     expect((await handleAppRequest(req(prod('nope')), deps)).status).toBe(404);
     expect((await handleAppRequest(req(null), deps)).status).toBe(404);
+  });
+
+  it('an HTML page names the version it was served from in Server-Timing (also on a 304); other files do not', async () => {
+    expect(VERSION_TIMING_METRIC).toBe('drobek-version');
+    const timing = (r: { headers: Record<string, string | string[]> }) => r.headers['Server-Timing'];
+    expect(timing(await handleAppRequest(req(preview('shop')), deps))).toBe('drobek-version;desc="2"');
+    expect(timing(await handleAppRequest(req(prod('shop')), deps))).toBe('drobek-version;desc="1"');
+    expect(timing(await handleAppRequest(req(ver('shop', 1), '/some/spa/route'), deps))).toBe('drobek-version;desc="1"');
+    const page = await handleAppRequest(req(preview('shop')), deps);
+    const again = await handleAppRequest(req(preview('shop'), '/', { headers: { 'If-None-Match': String(page.headers.ETag) } }), deps);
+    expect(again.status).toBe(304);
+    expect(timing(again)).toBe('drobek-version;desc="2"');
+    expect(timing(await handleAppRequest(req(preview('shop'), '/main.js'), deps))).toBeUndefined();
+    expect(timing(await handleAppRequest(req(preview('shop'), '/nope.png'), deps))).toBeUndefined();
   });
 });
 
@@ -392,6 +406,7 @@ describe('headers on every response (snapshot)', () => {
       'Content-Type': 'text/html; charset=utf-8',
       ETag: `"${sha(INDEX_V2)}"`,
       'Cache-Control': 'public, max-age=0, must-revalidate',
+      'Server-Timing': 'drobek-version;desc="2"',
       'Content-Length': String(Buffer.byteLength(INDEX_V2)),
     });
   });
@@ -406,6 +421,7 @@ describe('headers on every response (snapshot)', () => {
       'Content-Type': 'text/html; charset=utf-8',
       ETag: `"${sha(INDEX_V1)}"`,
       'Cache-Control': 'public, max-age=0, must-revalidate',
+      'Server-Timing': 'drobek-version;desc="1"',
       'Content-Length': String(Buffer.byteLength(INDEX_V1)),
     });
   });
@@ -724,8 +740,8 @@ describe('the browser error beacon (/__drobek/v1/_beacon)', () => {
         platform.push(r.path);
         return { status: 200, headers: {}, body: '{}' };
       },
-      beacon: async (_r, app) => {
-        beacons.push(app.id);
+      beacon: async (_r, app, version) => {
+        beacons.push(version ? `${app.id}@${version.number}` : app.id);
         return { status: 204, headers: { 'Cache-Control': 'no-store', 'Content-Security-Policy': 'bogus' }, body: null };
       },
     };
@@ -737,7 +753,10 @@ describe('the browser error beacon (/__drobek/v1/_beacon)', () => {
     const r = await handleAppRequest(req(preview('shop'), BEACON_PATH, { method: 'POST', body: '{}' }), d);
     expect(r.status).toBe(204);
     expect(r.headers['Content-Security-Policy']).not.toBe('bogus');
-    expect(beacons).toEqual(['app_shop']);
+    // With the version the host serves now (the page may not say its own).
+    expect(beacons).toEqual(['app_shop@2']);
+    await handleAppRequest(req(prod('shop'), BEACON_PATH, { method: 'POST', body: '{}' }), d);
+    expect(beacons).toEqual(['app_shop@2', 'app_shop@1']);
     expect(platform).toEqual([]);
     expect(signals).toEqual([]);
     // an app with no compiled version still reports (the page may be a cached one)
@@ -757,7 +776,7 @@ describe('the browser error beacon (/__drobek/v1/_beacon)', () => {
       d
     );
     expect(open.status).toBe(204);
-    expect(beacons).toEqual(['app_vault']);
+    expect(beacons).toEqual(['app_vault@1']);
   });
 });
 

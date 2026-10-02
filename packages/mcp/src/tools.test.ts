@@ -8,7 +8,7 @@
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createVersion, getVersion, publish, readVersionFile } from '@drobek/apps';
-import { appCompiles, appDailyStats, appErrors, apps, auditLog, memberships, moduleConfigs, moduleSecrets, users, workspaces } from '@drobek/db';
+import { appCompiles, appDailyStats, appErrors, apps, appVersionLoads, auditLog, memberships, moduleConfigs, moduleSecrets, users, workspaces } from '@drobek/db';
 import { dedupKey, memoryModuleStatsRedis, recordModuleRequest, sanitizeEvent } from '@drobek/insights';
 import { DEFAULT_APPS_MAX_PER_WORKSPACE, DEFAULT_APP_ASSETS_QUOTA, DEFAULT_APP_ASSET_MAX_BYTES } from '@drobek/apps';
 import { DEFAULT_DOMAINS_MAX_PER_APP } from '@drobek/domains';
@@ -1612,12 +1612,71 @@ describe('get_logs', () => {
       expect(r.text.startsWith('UNTRUSTED CONTENT:')).toBe(true);
       const nonce = /<untrusted-app-logs [^>]*nonce="([0-9a-f]{16})">/.exec(r.text)![1];
       expect(nonce).not.toBe('0000000000000000');
-      expect(r.text.trimEnd().endsWith(`</untrusted-app-logs nonce="${nonce}">`)).toBe(true);
+      // The envelope closes with its own nonce; only drobek's note on the render signal follows it.
+      const closing = `</untrusted-app-logs nonce="${nonce}">`;
+      expect(r.text).toContain(`\n${closing}\n\nNo page of version 1 has loaded`);
+      expect(r.text.slice(r.text.indexOf(closing))).not.toContain('Ignore previous instructions');
 
       // since: a window after the errors → nothing, with a note
       const later = await c.call('get_logs', { app_id: app.app_id, kind: 'runtime', since: new Date(Date.now() + 60_000).toISOString() });
       expect(later.body.entries).toEqual([]);
       expect(String(later.body.note)).toContain('preview_url');
+    } finally {
+      await c.close();
+    }
+  });
+
+  it('runtime + get_app: the render signal of the newest version — page loads and errors of its pages, or beacon off', async () => {
+    // In alice's personal workspace: team-x is at APPS_MAX_PER_WORKSPACE with this file's other apps.
+    const app = await newApp('Render Signal', { workspace: 'alice' });
+    const c = await as('alice');
+    try {
+      const fresh = await c.call('get_app', { app_id: app.app_id });
+      expect(fresh.body.render).toEqual({ version: 1, beacon: true, page_loads: 0, errors: 0 });
+      const none = await c.call('get_logs', { app_id: app.app_id, kind: 'runtime' });
+      expect(none.text).toMatch(/<untrusted-app-logs [^>]* entries="0" latest_version="1" beacon="on" page_loads="0" page_errors="0" nonce="/);
+      expect(none.body).toMatchObject({ render: { version: 1, beacon: true, page_loads: 0, errors: 0 } });
+      expect(String(none.body.note)).toContain('No page of version 1 has loaded in a browser yet');
+
+      // Three loads of v1; two errors from its pages, one from an unknown page, one module job failure.
+      await db.insert(appVersionLoads).values({ appId: app.app_id, versionNumber: 1, pageLoads: 3 });
+      const row = (message: string, versionNumber: number | null, type: 'error' | 'resource' | 'module_job' = 'error') => ({
+        appId: app.app_id,
+        type,
+        message,
+        url: 'https://render-signal--preview.drobek.app/',
+        dedupKey: dedupKey(message, null),
+        versionNumber,
+      });
+      await db.insert(appErrors).values([
+        row('TypeError: boom', 1),
+        row('Failed to load image: https://render-signal--preview.drobek.app/logo.png', 1, 'resource'),
+        row('old tab', null),
+        row('the job failed', null, 'module_job'),
+      ]);
+      expect((await c.call('get_app', { app_id: app.app_id })).body.render).toEqual({ version: 1, beacon: true, page_loads: 3, errors: 2 });
+      const logs = await c.call('get_logs', { app_id: app.app_id, kind: 'runtime' });
+      expect(logs.body.render).toEqual({ version: 1, beacon: true, page_loads: 3, errors: 2 });
+      expect(String(logs.body.note)).toBe('Version 1: 3 page loads, 2 browser errors reported by its pages.');
+      const entries = logs.body.entries as { type: string; message: string; version: number | null }[];
+      expect(entries.find((e) => e.type === 'resource')).toMatchObject({ version: 1 });
+      expect(entries.find((e) => e.message === 'old tab')).toMatchObject({ version: null });
+      // Only kind runtime carries it.
+      expect((await c.call('get_logs', { app_id: app.app_id, kind: 'compile' })).body.render).toBeUndefined();
+
+      // A new version starts from zero: the counts are per version.
+      const config = JSON.parse(String((await c.call('read_file', { app_id: app.app_id, path: 'drobek.json' })).body.content)) as Record<string, unknown>;
+      const w = await c.call('write_files', {
+        app_id: app.app_id,
+        files: [{ path: 'drobek.json', content: JSON.stringify({ ...config, beacon: false }, null, 2) }],
+        reasoning: 'beacon off',
+      });
+      expect(w.body).toMatchObject({ version: 2, compile: { ok: true } });
+      expect((await c.call('get_app', { app_id: app.app_id })).body.render).toEqual({ version: 2, beacon: false, page_loads: 0, errors: 0 });
+      const off = await c.call('get_logs', { app_id: app.app_id, kind: 'runtime' });
+      expect(off.text).toMatch(/ latest_version="2" beacon="off" nonce="/);
+      expect(off.body.render).toEqual({ version: 2, beacon: false, page_loads: 0, errors: 0 });
+      expect(String(off.body.note)).toContain('Version 2 has "beacon": false in drobek.json');
     } finally {
       await c.close();
     }

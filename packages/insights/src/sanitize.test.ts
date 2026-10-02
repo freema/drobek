@@ -5,6 +5,7 @@ import {
   fileHintFromStack,
   redact,
   sanitizeEvent,
+  sanitizeVersion,
 } from './sanitize.js';
 
 describe('redact', () => {
@@ -80,9 +81,17 @@ describe('sanitizeEvent', () => {
 
   it('coerces an unknown type to error', () => {
     expect(sanitizeEvent({ type: 'weird', message: 'x' }).type).toBe('error');
-    expect(
-      sanitizeEvent({ type: 'unhandledrejection', message: 'x' }).type
-    ).toBe('unhandledrejection');
+    expect(sanitizeEvent({ type: 'module_job', message: 'x' }).type).toBe('error');
+    for (const type of ['unhandledrejection', 'resource', 'csp']) {
+      expect(sanitizeEvent({ type, message: 'x' }).type).toBe(type);
+    }
+  });
+
+  it('redacts a failed resource and a CSP block like any other report', () => {
+    const r = sanitizeEvent({ type: 'resource', message: 'Failed to load image: https://x.example/u/ann@example.com/a.png' });
+    expect(r.message).toBe('Failed to load image: https://x.example/u/[redacted-email]/a.png');
+    const c = sanitizeEvent({ type: 'csp', message: 'Content-Security-Policy blocked https://x.example/token=abcdef (connect-src)' });
+    expect(c.message).toBe('Content-Security-Policy blocked https://x.example/token=[redacted] (connect-src)');
   });
 
   it('truncates an over-long message', () => {
@@ -133,5 +142,13 @@ describe('fileHintFromStack', () => {
   it('returns null with no location', () => {
     expect(fileHintFromStack('Error: no frames')).toBeNull();
     expect(fileHintFromStack(null)).toBeNull();
+  });
+});
+
+describe('sanitizeVersion', () => {
+  it('keeps a positive 32-bit integer and drops anything else', () => {
+    expect(sanitizeVersion(1)).toBe(1);
+    expect(sanitizeVersion(2_147_483_647)).toBe(2_147_483_647);
+    for (const bad of [0, -1, 1.5, 2_147_483_648, '3', null, undefined, NaN, Infinity]) expect(sanitizeVersion(bad)).toBeNull();
   });
 });

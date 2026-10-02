@@ -7,15 +7,16 @@
  *                          pruned to 30 days / the newest 200 per app;
  *  - (module request counters live in module-stats.server.ts — Redis, flushed
  *    into `module_request_stats` lazily and by queryRequestLog);
- *  - queryRuntimeLog / queryCompileLog / queryRequestLog — the three kinds.
+ *  - queryRuntimeLog / queryCompileLog / queryRequestLog — the three kinds;
+ *  - queryRenderCounts   — one version's page loads and browser errors.
  *
  * Every read is bounded to the retention window (30 days) and ≤ 100 entries.
  * Reads never delete: the periodic prune (prune.server.ts) keeps every table
  * inside its retention, also for apps nobody inspects.
  */
-import { and, desc, eq, gte, lt, sql } from 'drizzle-orm';
+import { and, count, desc, eq, gte, lt, ne, sql } from 'drizzle-orm';
 import { getRedis } from '@drobek/core';
-import { appCompiles, appDailyStats, appErrors, getDb, moduleRequestStats } from '@drobek/db';
+import { appCompiles, appDailyStats, appErrors, appVersionLoads, getDb, moduleRequestStats } from '@drobek/db';
 import { COMPILE_HISTORY_KEEP, LOGS_RETENTION_DAYS } from './limits.js';
 import {
   COMPILE_LOG_LIMIT,
@@ -26,6 +27,7 @@ import {
   runtimeEntries,
   type CompileEntry,
   type DayFailingPaths,
+  type RenderCounts,
   type RequestsEntry,
   type RuntimeEntry,
 } from './logs.js';
@@ -104,6 +106,7 @@ export async function queryRuntimeLog(appId: string, since?: Date | string | nul
       ts: appErrors.ts,
       module: appErrors.module,
       job: appErrors.job,
+      versionNumber: appErrors.versionNumber,
     })
     .from(appErrors)
     .where(and(eq(appErrors.appId, appId), gte(appErrors.createdAt, from)))
@@ -112,6 +115,33 @@ export async function queryRuntimeLog(appId: string, since?: Date | string | nul
   const stacks = new Map<string, string | null>();
   for (const r of rows) if (!stacks.has(r.dedupKey)) stacks.set(r.dedupKey, r.stack);
   return runtimeEntries(dedupErrors(rows).errors, stacks);
+}
+
+/**
+ * The render signal of one version: its page loads and the browser errors
+ * its pages reported inside the retention window (module job failures are no
+ * page's and never count).
+ */
+export async function queryRenderCounts(appId: string, version: number, now: Date = new Date()): Promise<RenderCounts> {
+  const db = getDb();
+  const [loads, errors] = await Promise.all([
+    db
+      .select({ pageLoads: appVersionLoads.pageLoads })
+      .from(appVersionLoads)
+      .where(and(eq(appVersionLoads.appId, appId), eq(appVersionLoads.versionNumber, version))),
+    db
+      .select({ n: count() })
+      .from(appErrors)
+      .where(
+        and(
+          eq(appErrors.appId, appId),
+          eq(appErrors.versionNumber, version),
+          ne(appErrors.type, 'module_job'),
+          gte(appErrors.createdAt, logsWindowStart(null, now))
+        )
+      ),
+  ]);
+  return { page_loads: loads[0]?.pageLoads ?? 0, errors: Number(errors[0]?.n ?? 0) };
 }
 
 /** The last 50 compiles since `since`, newest first. */

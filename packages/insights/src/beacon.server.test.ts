@@ -2,12 +2,13 @@
  * recordBeacon's two rate-limit buckets: the per-IP bucket is
  * checked BEFORE the per-app aggregate, so one client can never spend the
  * app's whole budget and silence its error log — while the aggregate still
- * bounds a flood that rotates IPs. PGlite for the insert, an in-memory
- * rateLimitRedis.
+ * bounds a flood that rotates IPs. Page loads are counted per version behind
+ * their own buckets, and every stored error carries its page's version.
+ * PGlite for the insert, an in-memory rateLimitRedis.
  */
 import type { PGlite } from '@electric-sql/pglite';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { appErrors, apps, workspaces } from '@drobek/db';
+import { appErrors, apps, appVersionLoads, appVersions, workspaces } from '@drobek/db';
 import { eq } from 'drizzle-orm';
 
 const rl = vi.hoisted(() => ({ counts: new Map<string, number>(), order: [] as string[] }));
@@ -27,6 +28,7 @@ vi.mock('@drobek/auth', async (importOriginal) => {
 });
 
 import { recordBeacon } from './beacon.server.js';
+import { queryRenderCounts, queryRuntimeLog } from './logs.server.js';
 import { freshDb, type TestDb } from './test/db.js';
 
 let db: TestDb;
@@ -51,6 +53,7 @@ beforeAll(async () => {
   const [ws] = await db.insert(workspaces).values({ kind: 'team', slug: 'beacon-ws', name: 'Beacon' }).returning();
   const [app] = await db.insert(apps).values({ workspaceId: ws.id, slug: 'shop', name: 'Shop' }).returning();
   appId = app.id;
+  await db.insert(appVersions).values([1, 2].map((number) => ({ appId, number, actorKind: 'agent' as const, compileStatus: 'ok' as const })));
 });
 
 afterAll(async () => {
@@ -61,6 +64,7 @@ beforeEach(async () => {
   rl.counts.clear();
   rl.order.length = 0;
   await db.delete(appErrors);
+  await db.delete(appVersionLoads);
 });
 
 describe('recordBeacon rate limits', () => {
@@ -83,5 +87,70 @@ describe('recordBeacon rate limits', () => {
     for (let i = 0; i < 25; i++) results.push(await beacon(`10.0.0.${i}`, `rot${i}`));
     expect(results.filter((r) => r === 'stored')).toHaveLength(20);
     expect(results.slice(20).every((r) => r === 'rate_limited')).toBe(true);
+  });
+});
+
+describe('recordBeacon page loads and versions', () => {
+  const load = (version?: number, events: unknown[] = []) => ({ ...(version === undefined ? {} : { version }), load: true, events });
+
+  it('counts a page load per version, a count only — and only a version the app has', async () => {
+    expect(await recordBeacon({ appId, batch: load(2), ip: '203.0.113.1', env: ENV })).toEqual({ stored: 0, loadCounted: true });
+    expect(await recordBeacon({ appId, batch: load(2), ip: '203.0.113.2', env: ENV })).toEqual({ stored: 0, loadCounted: true });
+    expect(await recordBeacon({ appId, batch: load(1), ip: '203.0.113.1', env: ENV })).toEqual({ stored: 0, loadCounted: true });
+    // A made-up version stores nothing; a bad one is no version at all.
+    expect((await recordBeacon({ appId, batch: load(99), ip: '203.0.113.1', env: ENV })).loadCounted).toBe(false);
+    expect((await recordBeacon({ appId, batch: { version: 'x', load: true, events: [] }, ip: '203.0.113.1', env: ENV })).loadCounted).toBe(false);
+
+    const rows = await db.select().from(appVersionLoads).where(eq(appVersionLoads.appId, appId));
+    expect(rows.map((r) => [r.versionNumber, r.pageLoads]).sort()).toEqual([
+      [1, 1],
+      [2, 2],
+    ]);
+    expect(Object.keys(rows[0]).sort()).toEqual(['appId', 'pageLoads', 'updatedAt', 'versionNumber']);
+    expect(await db.select().from(appErrors)).toHaveLength(0);
+  });
+
+  it('a page that does not say its version is counted under the version the host serves', async () => {
+    expect((await recordBeacon({ appId, batch: load(), ip: '203.0.113.1', servedVersion: 1, env: ENV })).loadCounted).toBe(true);
+    expect((await recordBeacon({ appId, batch: load(), ip: '203.0.113.1', servedVersion: null, env: ENV })).loadCounted).toBe(false);
+    expect((await queryRenderCounts(appId, 1)).page_loads).toBe(1);
+  });
+
+  it('page loads have their own buckets: a busy page never spends the error budget', async () => {
+    for (let i = 0; i < 12; i++) await recordBeacon({ appId, batch: load(2), ip: '203.0.113.1', env: ENV });
+    // The per-IP load cap (5) bounds what one client counts …
+    expect((await queryRenderCounts(appId, 2)).page_loads).toBe(5);
+    expect(rl.counts.get(`beacon-load:${appId}:203.0.113.1`)).toBe(12);
+    // … and the error buckets were never touched: errors are still stored.
+    expect(rl.counts.get(`beacon:${appId}:203.0.113.1`)).toBeUndefined();
+    expect(await beacon('203.0.113.1', 'still reported')).toBe('stored');
+  });
+
+  it('every stored error carries the version of its page; the render counts are per version', async () => {
+    const ev = (message: string, type = 'error') => ({ type, message, url: 'https://shop--preview.apps.example/', ts: Date.now() });
+    await recordBeacon({ appId, batch: load(1, [ev('old page')]), ip: '203.0.113.1', env: ENV });
+    await recordBeacon({
+      appId,
+      batch: { version: 2, events: [ev('Failed to load script: https://shop--preview.apps.example/missing.js', 'resource'), ev('Content-Security-Policy blocked https://evil.example/x.js (script-src-elem)', 'csp')] },
+      ip: '203.0.113.1',
+      env: ENV,
+    });
+    await recordBeacon({ appId, batch: { events: [ev('host fallback')] }, ip: '203.0.113.1', servedVersion: 2, env: ENV });
+    await recordBeacon({ appId, batch: { events: [ev('nobody knows')] }, ip: '203.0.113.1', env: ENV });
+
+    const rows = await db.select().from(appErrors).where(eq(appErrors.appId, appId));
+    const byMessage = new Map(rows.map((r) => [r.message, r]));
+    expect(byMessage.get('old page')!.versionNumber).toBe(1);
+    expect(byMessage.get('host fallback')!.versionNumber).toBe(2);
+    expect(byMessage.get('nobody knows')!.versionNumber).toBeNull();
+    expect(rows.find((r) => r.type === 'resource')).toMatchObject({ versionNumber: 2 });
+    expect(rows.find((r) => r.type === 'csp')).toMatchObject({ versionNumber: 2 });
+
+    expect(await queryRenderCounts(appId, 1)).toEqual({ page_loads: 1, errors: 1 });
+    expect(await queryRenderCounts(appId, 2)).toEqual({ page_loads: 0, errors: 3 });
+
+    const entries = await queryRuntimeLog(appId);
+    expect(entries.find((e) => e.message === 'old page')).toMatchObject({ version: 1 });
+    expect(entries.find((e) => e.type === 'resource')).toMatchObject({ version: 2, message: 'Failed to load script: https://shop--preview.apps.example/missing.js' });
   });
 });

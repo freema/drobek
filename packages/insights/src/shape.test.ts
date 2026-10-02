@@ -39,6 +39,16 @@ describe('dedupErrors', () => {
     expect(a.fileHint).toBe('app.js:1:1');
   });
 
+  it('carries the version of the latest occurrence (null when unknown)', () => {
+    const view = dedupErrors([
+      errRow({ dedupKey: 'a', versionNumber: 4, createdAt: new Date('2026-07-01T03:00:00Z') }),
+      errRow({ dedupKey: 'a', versionNumber: 3, createdAt: new Date('2026-07-01T01:00:00Z') }),
+      errRow({ dedupKey: 'b' }),
+    ]);
+    expect(view.errors.find((e) => e.dedupKey === 'a')!.lastVersion).toBe(4);
+    expect(view.errors.find((e) => e.dedupKey === 'b')!.lastVersion).toBeNull();
+  });
+
   it('sorts by count desc', () => {
     const rows: ErrorRow[] = [
       errRow({ dedupKey: 'once' }),

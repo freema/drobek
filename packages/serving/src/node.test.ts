@@ -171,7 +171,7 @@ describe('POST /__drobek/v1/_beacon', () => {
   const stored: Parameters<BeaconRecorder>[0][] = [];
   const record: BeaconRecorder = async (input) => {
     stored.push(input);
-    return { stored: 1 };
+    return { stored: 1, loadCounted: false };
   };
 
   beforeAll(async () => {

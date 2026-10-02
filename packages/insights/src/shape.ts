@@ -18,6 +18,8 @@ export interface ErrorRow {
   /** `module_job` rows: the module and job that failed. */
   module?: string | null;
   job?: string | null;
+  /** The app version the reporting page was served from (null = unknown). */
+  versionNumber?: number | null;
 }
 
 export interface DedupedError {
@@ -28,6 +30,8 @@ export interface DedupedError {
   firstSeen: string;
   lastSeen: string;
   lastUrl: string;
+  /** The version of the page of the latest occurrence (null = unknown). */
+  lastVersion: number | null;
   /** `file:line:col` extracted from the most recent stack, when present. */
   fileHint: string | null;
   /** `module_job` errors: the module and job that failed (absent for browser errors). */
@@ -60,6 +64,7 @@ export function dedupErrors(rows: ErrorRow[]): AppErrorsView {
         firstSeen: r.createdAt.toISOString(),
         lastSeen: r.createdAt.toISOString(),
         lastUrl: r.url,
+        lastVersion: r.versionNumber ?? null,
         fileHint: fileHintFromStack(r.stack),
         ...(r.module ? { module: r.module } : {}),
         ...(r.job ? { job: r.job } : {}),
@@ -73,6 +78,7 @@ export function dedupErrors(rows: ErrorRow[]): AppErrorsView {
       existing._lastAt = at;
       existing.lastSeen = r.createdAt.toISOString();
       existing.lastUrl = r.url;
+      existing.lastVersion = r.versionNumber ?? null;
       existing.message = r.message;
       existing.fileHint = fileHintFromStack(r.stack) ?? existing.fileHint;
     }

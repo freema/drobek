@@ -161,7 +161,23 @@ function decodeUntrusted(text: string): Record<string, unknown> | null {
       untrusted: true,
     };
   }
-  return { app_id: attrs.app_id, kind: attrs.kind, since: attrs.since, entries: JSON.parse(body) as unknown, untrusted: true, ...(after ? { note: after } : {}) };
+  const render = attrs.latest_version
+    ? {
+        version: Number(attrs.latest_version),
+        beacon: attrs.beacon !== 'off',
+        page_loads: Number(attrs.page_loads ?? 0),
+        errors: Number(attrs.page_errors ?? 0),
+      }
+    : null;
+  return {
+    app_id: attrs.app_id,
+    kind: attrs.kind,
+    since: attrs.since,
+    entries: JSON.parse(body) as unknown,
+    untrusted: true,
+    ...(render ? { render } : {}),
+    ...(after ? { note: after } : {}),
+  };
 }
 
 export interface ToolCall {

@@ -60,13 +60,14 @@ describe('runtimeEntries', () => {
     const at = (s: number) => new Date(Date.UTC(2026, 8, 23, 12, 0, s));
     const rows = [
       { dedupKey: 'b', type: 'error', message: 'B', stack: null, url: 'https://x/2', createdAt: at(30), ts: null },
-      { dedupKey: 'a', type: 'error', message: 'A', stack: 'Error: A\n at f (main.js:1:2)\n' + 'x\n'.repeat(20), url: 'https://x/1', createdAt: at(20), ts: null },
-      { dedupKey: 'a', type: 'error', message: 'A', stack: 'old', url: 'https://x/0', createdAt: at(10), ts: null },
+      { dedupKey: 'a', type: 'error', message: 'A', stack: 'Error: A\n at f (main.js:1:2)\n' + 'x\n'.repeat(20), url: 'https://x/1', createdAt: at(20), ts: null, versionNumber: 5 },
+      { dedupKey: 'a', type: 'error', message: 'A', stack: 'old', url: 'https://x/0', createdAt: at(10), ts: null, versionNumber: 4 },
     ];
     const stacks = new Map([['a', rows[1].stack], ['b', null]]);
     const out = runtimeEntries(dedupErrors(rows).errors, stacks);
     expect(out.map((e) => [e.message, e.count])).toEqual([['B', 1], ['A', 2]]);
-    expect(out[1]).toMatchObject({ first_seen: at(10).toISOString(), last_seen: at(20).toISOString(), url: 'https://x/1', file_hint: 'main.js:1:2' });
+    expect(out[1]).toMatchObject({ first_seen: at(10).toISOString(), last_seen: at(20).toISOString(), url: 'https://x/1', version: 5, file_hint: 'main.js:1:2' });
+    expect(out[0].version).toBeNull();
     expect(out[1].stack!.split('\n')).toHaveLength(6);
   });
 });

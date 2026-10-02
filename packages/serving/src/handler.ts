@@ -26,8 +26,13 @@
  *      never answers for one.
  *
  * BEACON: `POST /__drobek/v1/_beacon` goes to `deps.beacon` (core, not
- * a module — every app reports its browser errors without configuration),
- * after steps 2 and 3 like a platform path; it is not counted as a request.
+ * a module — every app reports its browser errors and page loads without
+ * configuration), after steps 2 and 3 like a platform path, with the version
+ * the host serves now; it is not counted as a request. Every HTML file
+ * response names the version it was served from in `Server-Timing:
+ * drobek-version;desc="<N>"`, which the beacon reads from the page's
+ * navigation timing and sends along, so a report is filed under the version
+ * of its page even after the host moved on.
  *
  * PLATFORM paths: `/__drobek/*` (except the unlock POST) go to
  * `deps.platform` — the module runtime (SDK, module routes) — AFTER steps 2
@@ -96,7 +101,7 @@ import {
 } from './resolve.js';
 import { mayCarryInlineSourceMap } from './sourcemap.js';
 import type { ServedManifest } from './manifest.js';
-import type { ServeApp, ServeStore } from './store.server.js';
+import type { ServeApp, ServeStore, ServeVersion } from './store.server.js';
 import type { UnknownHostLimiter } from './unknown-host.js';
 import { decideVisibility } from './visibility.js';
 
@@ -130,8 +135,11 @@ export const PLATFORM_PREFIX = '/__drobek/';
 /** The browser error beacon on every app host (handled by core, not a module). */
 export const BEACON_PATH = '/__drobek/v1/_beacon';
 
-/** Answers the beacon POST for a resolved, visibility-cleared app. */
-export type BeaconHandler = (req: AppRequest, app: ServeApp) => Promise<AppResponse>;
+/** Answers the beacon POST for a resolved, visibility-cleared app; `version` = what the host serves now (null = nothing). */
+export type BeaconHandler = (req: AppRequest, app: ServeApp, version: ServeVersion | null) => Promise<AppResponse>;
+
+/** The `Server-Timing` metric that names the version an HTML page was served from (read by the beacon). */
+export const VERSION_TIMING_METRIC = 'drobek-version';
 
 /** Answers a `/__drobek/*` request for a resolved, visibility-cleared app. */
 export type PlatformHandler = (req: AppRequest, ctx: { app: ServeApp; target: AppHostTarget }) => Promise<AppResponse>;
@@ -328,7 +336,7 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
       };
     }
     if (isBeacon) {
-      const b = await deps.beacon!(req, app);
+      const b = await deps.beacon!(req, app, version);
       return { ...b, headers: { ...b.headers, ...security } };
     }
     const r = await deps.platform!(req, { app, target: req.target });
@@ -385,15 +393,17 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
       ? await deps.store.splitSourceMap(entry.sha256, hit.path)
       : null;
   const etag = split ? etagFor(`${entry.sha256}-nomap`) : etagFor(entry.sha256);
+  const contentType = contentTypeForPath(hit.path);
   const headers: Record<string, string> = {
     ...security,
-    'Content-Type': contentTypeForPath(hit.path),
+    'Content-Type': contentType,
     ETag: etag,
     'Cache-Control': cacheControlFor({
       path: hit.path,
       query: req.query,
       isPrivate: app.visibility !== 'public',
     }),
+    ...(contentType.startsWith('text/html') ? { 'Server-Timing': `${VERSION_TIMING_METRIC};desc="${version.number}"` } : {}),
   };
   if (isNotModified(req.header('if-none-match'), etag)) {
     return { status: 304, headers, body: null };

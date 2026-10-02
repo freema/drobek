@@ -10,12 +10,13 @@
  *  - `app_compiles`: older than LOGS_RETENTION_DAYS (30) — the newest 200 per
  *    app are kept by recordCompile on insert;
  *  - `app_daily_stats` / `module_request_stats`: days older than
- *    LOGS_RETENTION_DAYS (30).
+ *    LOGS_RETENTION_DAYS (30);
+ *  - `app_version_loads`: versions no page loaded for LOGS_RETENTION_DAYS (30).
  *
  * LOGS_PRUNE_INTERVAL_MS (1 h) is the operator's.
  */
 import { lt, sql } from 'drizzle-orm';
-import { appCompiles, appDailyStats, appErrors, dbErrorForLog, getDb, moduleRequestStats } from '@drobek/db';
+import { appCompiles, appDailyStats, appErrors, appVersionLoads, dbErrorForLog, getDb, moduleRequestStats } from '@drobek/db';
 import { LOGS_RETENTION_DAYS, beaconLimitsFromEnv } from './limits.js';
 import { utcDay } from './signals.server.js';
 
@@ -38,9 +39,10 @@ export interface LogsPruneResult {
   compiles: number;
   dailyStats: number;
   moduleStats: number;
+  pageLoads: number;
 }
 
-/** One pass over every app (no per-app loop: four age deletes + one rank delete). */
+/** One pass over every app (no per-app loop: five age deletes + one rank delete). */
 export async function pruneLogs(opts: { now?: Date; env?: NodeJS.ProcessEnv } = {}): Promise<LogsPruneResult> {
   const now = opts.now ?? new Date();
   const limits = beaconLimitsFromEnv(opts.env);
@@ -68,12 +70,17 @@ export async function pruneLogs(opts: { now?: Date; env?: NodeJS.ProcessEnv } = 
     .delete(moduleRequestStats)
     .where(lt(moduleRequestStats.day, oldestDay))
     .returning({ appId: moduleRequestStats.appId });
+  const pageLoads = await db
+    .delete(appVersionLoads)
+    .where(lt(appVersionLoads.updatedAt, logsCutoff))
+    .returning({ appId: appVersionLoads.appId });
 
   return {
     errors: aged.length + overCap.length,
     compiles: compiles.length,
     dailyStats: dailyStats.length,
     moduleStats: moduleStats.length,
+    pageLoads: pageLoads.length,
   };
 }
 
@@ -98,9 +105,9 @@ export function startLogsPrune(opts: {
         : { acquired: true as const, result: await once() };
       if (out.acquired) {
         const r = out.result;
-        if (r.errors + r.compiles + r.dailyStats + r.moduleStats > 0) {
+        if (r.errors + r.compiles + r.dailyStats + r.moduleStats + r.pageLoads > 0) {
           opts.log(
-            `logs prune: removed ${r.errors} browser error(s), ${r.compiles} compile(s), ${r.dailyStats} daily stat row(s), ${r.moduleStats} module stat row(s)`
+            `logs prune: removed ${r.errors} browser error(s), ${r.compiles} compile(s), ${r.dailyStats} daily stat row(s), ${r.moduleStats} module stat row(s), ${r.pageLoads} page-load row(s)`
           );
         }
       }

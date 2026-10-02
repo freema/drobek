@@ -2,7 +2,8 @@
 
 The browser SDK core of [drobek](https://github.com/freema/drobek): the
 `SdkCore` a platform module's SDK entry receives (`core.request(method,
-path, { body, query })`), `DrobekError` and the error beacon. The drobek
+path, { body, query })`), `DrobekError` and the beacon (page loads, browser
+errors, failed resource loads and CSP blocks, with the page's version). The drobek
 server bundles it with the SDK entries of its modules into
 `/__drobek/sdk.js`, which apps import as `drobek`.
 

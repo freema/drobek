@@ -47,6 +47,11 @@ describe('renderBriefing', () => {
     expect(b).toContain('player.vimeo.com');
   });
 
+  it('tells the agent to check the render signal after the user opened the preview', () => {
+    expect(b).toContain('After the user opened the preview, call `get_app` — `render`');
+    expect(b).toContain('page_loads 0 means nobody has opened that version yet');
+  });
+
   it('explains the hosts, what is (not) served and the CSP', () => {
     expect(b).toContain('## Hosts');
     expect(b).toContain('<slug>--preview.<APPS_DOMAIN>');
