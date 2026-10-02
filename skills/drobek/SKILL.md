@@ -421,7 +421,8 @@ production address then redirects to that verified domain; `host: null`
 clears it) and `remove_domain({ app_id, host, user_confirmed })` of a
 verified domain (it stops serving at once; a pending one goes without
 confirmation). Refusals: `invalid_hostname`, `hostname_not_allowed`,
-`domain_already_added`, `domain_taken`, `limit_exceeded`
+`domain_already_added`, `domain_taken` (another app on this server verified
+the name; a deleted app holds none), `limit_exceeded`
 (DOMAINS_MAX_PER_APP; 0 = custom domains are off for the workspace).
 
 ## External APIs (proxy upstreams)

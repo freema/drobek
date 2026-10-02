@@ -1,6 +1,6 @@
 import { and, eq, ne } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { onLocalAppChanged, type AppChangedEvent } from '@drobek/apps';
+import { onLocalAppChanged, softDeleteApp, type AppChangedEvent } from '@drobek/apps';
 import { apps, auditLog, domains, memberships, users, workspaces } from '@drobek/db';
 import {
   DomainsError,
@@ -229,6 +229,69 @@ describe('verifyDomain', () => {
     await db.update(apps).set({ deletedAt: new Date() }).where(eq(apps.id, app.id));
     expect(await resolveCustomHost('gone-app.cz')).toEqual({ slug: null });
     expect(await customDomainAskAllowed('gone-app.cz')).toBe(false);
+  });
+});
+
+describe('the domain of a deleted app', () => {
+  async function appInOtherWorkspace(slug: string): Promise<DomainApp> {
+    const [w] = await db.insert(workspaces).values({ kind: 'team', slug: `ws-${slug}`, name: 'Jiná firma' }).returning();
+    const [a] = await db.insert(apps).values({ workspaceId: w.id, slug }).returning();
+    return { id: a.id, slug: a.slug, workspaceId: w.id };
+  }
+
+  it('is free for an app of another workspace: add, verify, serve and the ask follow the new app', async () => {
+    const gone = await newApp();
+    const old = await addDomain(gone, 'reused.cz', actor, ENV);
+    const zone = {
+      txt: { '_drobek.reused.cz': [old.instructions.txt.value] } as Record<string, string[]>,
+      cname: { 'reused.cz': [`${gone.slug}.drobek.app`] } as Record<string, string[]>,
+    };
+    await verifyDomain(gone, old.id, actor, { env: ENV, resolver: zoneResolver(zone) });
+    await setPrimaryDomain(gone, old.id, actor);
+    const next = await appInOtherWorkspace('reuse-next');
+    expect((await err(addDomain(next, 'reused.cz', actor, ENV)))?.code).toBe('domain_taken');
+
+    await softDeleteApp(gone.id, actor);
+    expect(await customDomainAskAllowed('reused.cz')).toBe(false);
+    expect(await resolveCustomHost('reused.cz')).toEqual({ slug: null });
+
+    const mine = await addDomain(next, 'reused.cz', actor, ENV);
+    // The old app's records do not verify the new claim: its own token and CNAME do.
+    expect((await verifyDomain(next, mine.id, actor, { env: ENV, resolver: zoneResolver(zone) })).domain.verified).toBe(false);
+    expect(await customDomainAskAllowed('reused.cz')).toBe(false);
+    zone.txt['_drobek.reused.cz'] = [mine.instructions.txt.value];
+    zone.cname['reused.cz'] = [`${next.slug}.drobek.app`];
+    events.length = 0;
+    const out = await verifyDomain(next, mine.id, actor, { env: ENV, resolver: zoneResolver(zone) });
+    expect(out).toMatchObject({ newlyVerified: true, domain: { verified: true } });
+    expect(events).toEqual([{ app_id: next.id, slug: next.slug, kind: 'domain' }]);
+
+    const [released] = await db.select().from(domains).where(eq(domains.id, old.id));
+    expect(released).toMatchObject({ verifiedAt: null, isPrimary: false });
+    expect(await resolveCustomHost('reused.cz')).toEqual({ slug: next.slug });
+    expect(await customDomainAskAllowed('reused.cz')).toBe(true);
+    // The name is the new app's now: a third app is refused again.
+    expect((await err(addDomain(await newApp(), 'reused.cz', actor, ENV)))?.code).toBe('domain_taken');
+  });
+
+  it('is free for an app of the same workspace, also when the app was deleted long ago', async () => {
+    const gone = await newApp();
+    const old = await addDomain(gone, 'old-delete.cz', actor, ENV);
+    const zone = {
+      txt: { '_drobek.old-delete.cz': [old.instructions.txt.value] } as Record<string, string[]>,
+      cname: { 'old-delete.cz': [`${gone.slug}.drobek.app`] } as Record<string, string[]>,
+    };
+    await verifyDomain(gone, old.id, actor, { env: ENV, resolver: zoneResolver(zone) });
+    // A row left verified by a delete from before deleted apps released their names.
+    await db.update(apps).set({ deletedAt: new Date('2026-01-01T00:00:00Z') }).where(eq(apps.id, gone.id));
+
+    const next = await newApp();
+    const mine = await addDomain(next, 'old-delete.cz', actor, ENV);
+    zone.txt['_drobek.old-delete.cz'] = [mine.instructions.txt.value];
+    zone.cname['old-delete.cz'] = [`${next.slug}.drobek.app`];
+    expect((await verifyDomain(next, mine.id, actor, { env: ENV, resolver: zoneResolver(zone) })).newlyVerified).toBe(true);
+    expect((await listDomains(next, ENV))[0]).toMatchObject({ hostname: 'old-delete.cz', verified: true });
+    expect(await resolveCustomHost('old-delete.cz')).toEqual({ slug: next.slug });
   });
 });
 

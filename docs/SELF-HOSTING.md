@@ -946,7 +946,10 @@ workspace-admin), creates two DNS records and clicks **Verify**:
   domains off: the Domains tab says so and offers no add form. The limits
   provider may set it per workspace (e.g. a plan without custom domains). One host name is
   verified for at most one app on the instance — an unverified claim never
-  blocks the real owner.
+  blocks the real owner, and a deleted app holds no name: its domains stop
+  serving with the delete, and any other app (in any workspace) can add the
+  name and verify it with its own records (`domain_taken` only while the app
+  that verified the name exists).
 - **Serving**: a verified domain serves the app's published version (indexable,
   like `<slug>.<APPS_DOMAIN>`). Marking one domain **primary** makes
   `<slug>.<APPS_DOMAIN>` answer `302` to it (GET/HEAD, outside
@@ -994,8 +997,8 @@ tls:reload` after changing it (`task caddy:config` in a development checkout).
 Certificate lifecycle: Caddy obtains the certificate at the first HTTPS
 request after verification (HTTP-01 on port 80 or TLS-ALPN-01 on 443 — both
 must reach Caddy; the first request waits a few seconds) and renews it
-itself. Removing a domain or losing its verification stops serving it and
-refuses new certificates, but does **not** revoke the one already issued — it
+itself. Removing a domain, losing its verification or deleting its app stops
+serving it and refuses new certificates, but does **not** revoke the one already issued — it
 stays in `caddy_data` until it expires. Let's Encrypt's per-domain rate
 limits apply per customer domain.
 

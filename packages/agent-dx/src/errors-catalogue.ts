@@ -233,8 +233,8 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     code: 'domain_taken',
     surface: 'MCP tool isError (add_domain, verify_domain); dashboard 409',
     meaning:
-      'Another app on this server has already verified this host name — a name serves one app only. An unverified claim elsewhere never blocks: only DNS decides who owns a name.',
-    fix: 'Tell the user the name is in use by another app on this server; they remove it there first (or use a different subdomain).',
+      'Another app on this server has already verified this host name — a name serves one app only. An unverified claim elsewhere never blocks: only DNS decides who owns a name. A deleted app holds no name: once it is deleted, any app can add and verify the name.',
+    fix: 'Tell the user the name is in use by another app on this server; they remove it from that app first (deleting that app frees it as well), or use a different subdomain.',
   },
   {
     code: 'domain_not_verified',
