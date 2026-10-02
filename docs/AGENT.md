@@ -159,7 +159,8 @@ error catalogue (`@drobek/agent-dx` `errors-catalogue.ts`, rendered into
 `/llms-full.txt`). A platform module's own route codes are declared by the
 module (`errors`): `skill_info('<module>').errors` returns them and
 `/llms-full.txt` lists them after the core codes, one section per active
-module. A compile error is not a tool failure: it is
+module. A query the database cut off (the server is under load) answers
+`busy` with `reason: "database_timeout"` from any tool. A compile error is not a tool failure: it is
 `compile.ok: false` with `compile.errors[]`, and the version is stored.
 
 **Video, audio and big files (assets).** `write_files` is text-only, and a

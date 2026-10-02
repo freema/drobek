@@ -43,6 +43,12 @@ export {
   type BodyLimitOptions,
 } from './body-limit.js';
 export {
+  FATAL_STOP_MARGIN_MS,
+  installFatalErrorHandlers,
+  type FatalErrorHandlerOptions,
+  type FatalErrorProcess,
+} from './fatal-errors.js';
+export {
   SHUTDOWN_GRACE_DEFAULT_MS,
   closeGracefully,
   shutdownGraceMs,

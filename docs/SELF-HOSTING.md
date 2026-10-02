@@ -277,7 +277,11 @@ stopping server answers a new one 405), lets requests in flight — a
 `SHUTDOWN_GRACE_MS` (20 s), cuts whatever is still running after that, stops
 its background jobs and exits. The compose file gives the container
 `stop_grace_period: 30s` so Docker does not kill it first; keep it about 10 s
-above `SHUTDOWN_GRACE_MS` when you raise that. MCP sessions live in the
+above `SHUTDOWN_GRACE_MS` when you raise that. An error nothing in drobek
+caught (an uncaught exception or an unhandled promise rejection) stops it the
+same way: the error is logged, sent to the error reporter (`ERROR_REPORTER`)
+and drobek exits with code 1 once the requests in flight drained, so Docker's
+`restart: unless-stopped` starts it again. MCP sessions live in the
 process: after a restart a client's next request with its old session id
 answers `404 MCP session not found — reconnect.`, which per the MCP
 specification makes the client open a new session (reconnect a client that
@@ -291,6 +295,20 @@ the short session id and the user id.
 drobek keeps idle connections open for 125 s, longer than Caddy's 2-minute
 upstream keep-alive, so Caddy never reuses a connection drobek is closing;
 with a different proxy in front, keep its upstream idle timeout below 125 s.
+
+**Database connections.** drobek keeps two Postgres pools of up to
+`DB_POOL_MAX` (20) connections each: one for requests (dashboard, MCP, app
+hosts) and one for its background jobs, opened only while a job runs —
+keep `2 × DB_POOL_MAX` plus a few below Postgres's `max_connections` (100 in
+the bundled database). A request's query that runs past
+`DB_STATEMENT_TIMEOUT_MS` (30 s), or waits past `DB_LOCK_TIMEOUT_MS` (10 s)
+for a row or lock another request holds, is cut off instead of holding a
+connection everyone else waits for: an agent gets `busy` (`reason:
+"database_timeout"`), an app's page or module call and the asset upload URL a 503,
+the dashboard its error page, and the log a `db error 57014` / `55P03` line.
+The background jobs run without the statement timeout and the migrations
+without either. `0` turns a timeout off (the database's own setting, e.g.
+one set on the role, applies).
 
 Platform modules (the backends apps use through `import { drobek } from
 'drobek'`) are enabled with `DROBEK_MODULES` (comma-separated; a
@@ -370,7 +388,15 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `TRUST_PROXY` | auto *(compose: `x-real-ip`)* | which client-IP header is trusted: `x-real-ip` = only Caddy's `X-Real-IP`; unset = `X-Real-IP`, else the rightmost `X-Forwarded-For` hop |
 | `NODE_ENV` | *(compose: production)* | `production` turns on `__Host-` cookies and the fail-closed secret checks, and ignores the dev-only switches below |
 | `PORT` | 3000 | the port drobek listens on inside the container (the dev compose maps `WEB_PORT` to it) |
-| `SHUTDOWN_GRACE_MS` | 20000 | on `SIGTERM`, how long requests in flight may finish before the rest is cut ([Production compose](#production-compose)); keep the container's stop grace period (compose: 30 s) above it |
+| `SHUTDOWN_GRACE_MS` | 20000 | on `SIGTERM` (and after an error nothing caught, which exits with code 1), how long requests in flight may finish before the rest is cut ([Production compose](#production-compose)); keep the container's stop grace period (compose: 30 s) above it |
+
+### Database
+
+| Variable | Default | What |
+| --- | --- | --- |
+| `DB_POOL_MAX` | 20 | connections of each of drobek's two Postgres pools — requests, and the background jobs (open only while a job runs); 1–200. Keep `2 × DB_POOL_MAX` plus a few below Postgres's `max_connections` ([Production compose](#production-compose)) |
+| `DB_STATEMENT_TIMEOUT_MS` | 30000 | a request's query running longer is cut off (Postgres `statement_timeout`; MCP `busy` with `reason: "database_timeout"`, module routes `503 unavailable`). Not for the background jobs or the migrations; `0` = drobek sets none, else 100–3600000 |
+| `DB_LOCK_TIMEOUT_MS` | 10000 | a query of a request or a job waiting longer for a row, table or advisory lock is cut off (Postgres `lock_timeout`), answered like the statement timeout. Not for the migrations; `0` = drobek sets none, else 100–3600000 |
 
 ### Secrets and TLS
 

@@ -673,3 +673,49 @@ describe('GALLERY_FRAME_ANCESTORS in the production deps', () => {
     expect(deps().galleryFrameAncestors).toEqual([]);
   });
 });
+
+describe('an app request that fails', () => {
+  let failServer: Server;
+  let failPort: number;
+
+  beforeAll(async () => {
+    const cut = Object.assign(new Error('canceling statement due to statement timeout'), { name: 'PostgresError', severity: 'ERROR', code: '57014' });
+    const mw = createAppsHostMiddleware({
+      hosts: { appsDomain: 'apps.localhost:3041', dashboardHost: 'localhost:3041' },
+      store: new ServeStore({
+        loaders: {
+          ...loaders,
+          resolve: async (t) => {
+            throw t.slug === 'stuck' ? new Error('Failed query: select', { cause: cut }) : new Error('kaboom with internals');
+          },
+        },
+      }),
+      deps: { accessSecret: null, allowUnlockAttempt: async () => true, signal: () => {} },
+      log: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+    });
+    failServer = createServer((req, res) => mw(req, res, () => res.end('dashboard')));
+    await new Promise<void>((r) => failServer.listen(0, '127.0.0.1', r));
+    failPort = (failServer.address() as { port: number }).port;
+  });
+  afterAll(async () => {
+    await new Promise<void>((r) => failServer.close(() => r()));
+  });
+
+  function fetchApp(host: string): Promise<{ status: number; retryAfter: string | undefined; body: string }> {
+    return new Promise((resolve, reject) => {
+      const req = httpRequest({ host: '127.0.0.1', port: failPort, path: '/', headers: { Host: host }, setHost: false }, (res) => {
+        let body = '';
+        res.setEncoding('utf8');
+        res.on('data', (c: string) => (body += c));
+        res.on('end', () => resolve({ status: res.statusCode ?? 0, retryAfter: res.headers['retry-after'] as string | undefined, body }));
+      });
+      req.on('error', reject);
+      req.end();
+    });
+  }
+
+  it('a query the database cut off is a plain 503 with Retry-After; anything else a plain 500', async () => {
+    expect(await fetchApp('stuck--preview.apps.localhost:3041')).toEqual({ status: 503, retryAfter: '5', body: 'Service Unavailable' });
+    expect(await fetchApp('broken--preview.apps.localhost:3041')).toEqual({ status: 500, retryAfter: undefined, body: 'Internal Server Error' });
+  });
+});

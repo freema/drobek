@@ -92,6 +92,15 @@ export function publishRefused(
   return new ToolError(code, message, contact ? { contact } : {});
 }
 
+/** A query the database cut off (DB_STATEMENT_TIMEOUT_MS / DB_LOCK_TIMEOUT_MS): the server is under load. */
+export function databaseTimeout(): ToolError {
+  return new ToolError(
+    'busy',
+    'The database did not answer in time (the server is under load), so the call stopped. A write may or may not have been stored.',
+    { reason: 'database_timeout' }
+  );
+}
+
 export function notFound(what: 'app' | 'workspace' = 'app'): ToolError {
   return new ToolError('not_found', `${what} not found`);
 }

@@ -139,7 +139,7 @@ pinned esm.sh URL, e.g. `"date-fns": "https://esm.sh/date-fns@4.1.0"`; `pkg/sub`
 | `limit_exceeded` | too many/big files; with `limit: "WORKSPACE_SOURCE_QUOTA"` the workspace's app versions are full (nothing stored) | split files; load libraries from esm.sh; for the quota tell the user (deleting an unused app frees space), do not retry |
 | `secret_in_source` | a key/token in a file; nothing stored | remove it; the owner sets it in the dashboard |
 | `app_locked` | another user's agent writes the app | tell the user; retry after `expires_at` |
-| `busy` | the compiler queue is full | retry the same call in a few seconds |
+| `busy` | the compiler queue is full; with `reason: "database_timeout"` the server's database is overloaded | retry the same call in a few seconds (after a `database_timeout`, `get_app` first: the write may have landed) |
 | `rate_limited` | too many new versions within an hour (`VERSIONS_PER_APP_HOUR` / `VERSIONS_PER_USER_HOUR`); nothing stored | tell the user; continue after `retry_after_seconds`, never loop; one write per related change |
 | `not_publishable` | that version did not compile | publish the newest version that compiled |
 | `publish_blocked` / `publish_not_approved` | the operator turned publishing off for the workspace / has not approved it (a request was e-mailed) | tell the user (`contact`), share `preview_url`; do not retry |

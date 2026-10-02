@@ -14,7 +14,8 @@
  *        …details }` with its status (404 upload_token_invalid, 403
  *        forbidden, 413 asset_too_large /
  *        asset_quota_exceeded, 415 asset_type_not_allowed, 400
- *        asset_size_mismatch, 423 app_locked_by_admin). A refusal sent while
+ *        asset_size_mismatch, 423 app_locked_by_admin; 503 busy with
+ *        `reason: database_timeout` when the database cut a query off). A refusal sent while
  *        the body is still arriving closes the connection after the answer
  *        (closeAfterResponse) instead of reading the rest.
  *   GET  a small page with a file picker that PUTs to the same URL — for a
@@ -26,7 +27,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { closeAfterResponse, createConsoleLogger, requestBodyStream, type Logger } from '@drobek/core';
 import { and, eq, inArray } from 'drizzle-orm';
-import { dbErrorForLog, getDb, memberships, users } from '@drobek/db';
+import { dbErrorForLog, getDb, isQueryTimeout, memberships, users } from '@drobek/db';
 import type { AssetLimits } from './config.js';
 import type { AssetDisk } from './disk.server.js';
 import { AssetsError } from './errors.js';
@@ -188,6 +189,15 @@ export function createAssetUploadHandler(opts: AssetUploadHandlerOptions): NodeH
       }
       if (!req.complete && !req.readableEnded && req.destroyed) return; // the uploader went away mid-body
       log.error('asset upload failed', { error: dbErrorForLog(err, { stack: true }) });
+      if (isQueryTimeout(err)) {
+        sendJson(req, res, 503, {
+          code: 'busy',
+          reason: 'database_timeout',
+          message: 'The database did not answer in time (the server is under load), so the upload was not stored. Ask for a new upload URL and retry in a moment.',
+          hint: opts.hint('busy'),
+        });
+        return;
+      }
       sendJson(req, res, 500, {
         code: 'internal_error',
         message: 'drobek hit an internal error while storing the upload. Ask for a new upload URL and retry once.',

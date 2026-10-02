@@ -4,7 +4,7 @@
  * Boot order: refuse insecure secrets, an invalid APPS_DOMAIN,
  * TRUST_PROXY, TLS_ASK_TOKEN, LIMITS_PROVIDER_URL, DOMAINS_*,
  * APP_FRAME_SRC_EXTRA, GALLERY_FRAME_ANCESTORS, PUBLISH_APPROVAL / OPERATOR_EMAIL / PUBLISH_NOTIFY, e-mail transport
- * (EMAIL_TRANSPORT / RESEND_API_KEY / SMTP_HOST) or ERROR_REPORTER_* → apply core migrations →
+ * (EMAIL_TRANSPORT / RESEND_API_KEY / SMTP_HOST), ERROR_REPORTER_* or DB_* → apply core migrations →
  * load the platform modules (DROBEK_MODULES: the e-mail transport and error
  * reporter they contribute, their migrations, the composed SDK, the skills —
  * a bad module stops the start; once the reporter is up, the failure is
@@ -12,6 +12,10 @@
  * install the TypeScript check runner → mount the app-host dispatcher, then React Router (Vite middleware in
  * dev, `build/server` in production) behind the MCP resource → start
  * background jobs + the serve-cache subscriber → listen.
+ *
+ * SIGTERM / SIGINT stop it gracefully with exit code 0; an error nothing
+ * caught (uncaughtException, unhandledRejection) is logged, reported and
+ * stops it the same way with exit code 1.
  */
 import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
@@ -26,12 +30,13 @@ import {
   closeGracefully,
   createConsoleLogger,
   errorReporterConfigError,
+  installFatalErrorHandlers,
   reportError,
   secretsConfigError,
   shutdownGraceMs,
 } from '@drobek/core';
 import { TypecheckRunner, installTypecheckRunner, typecheckLimitsFromEnv } from '@drobek/compile/typecheck';
-import { dbErrorForLog, runCoreMigrations } from '@drobek/db';
+import { dbConfigError, dbErrorForLog, runCoreMigrations } from '@drobek/db';
 import { dnsMockWarning, domainsConfigError } from '@drobek/domains';
 import { emailConfigError } from '@drobek/email';
 import { limitsProviderConfigError, moduleRuntime } from '@drobek/modules';
@@ -62,11 +67,16 @@ const configError =
   publishApprovalConfigError(process.env) ??
   docsUrlConfigError(process.env) ??
   emailConfigError(process.env) ??
-  errorReporterConfigError(process.env);
+  errorReporterConfigError(process.env) ??
+  dbConfigError(process.env);
 if (configError) {
   console.error(configError);
   process.exit(1);
 }
+
+// Installed before anything starts: until the server listens there is nothing to drain.
+let stopServer: ((reason: string) => Promise<void>) | null = null;
+installFatalErrorHandlers({ log, stop: async (reason) => stopServer?.(reason), graceMs: shutdownGraceMs(process.env) });
 
 // server/ (dev, tsx) and dist/server/ (prod) both resolve the app root.
 const here = dirname(fileURLToPath(import.meta.url));
@@ -158,21 +168,33 @@ httpServer.listen(port, '0.0.0.0', () => {
   log.info('drobek listening', { port, mode: production ? 'production' : 'development' });
 });
 
-let shuttingDown = false;
-async function shutdown(signal: string): Promise<void> {
-  if (shuttingDown) return;
-  shuttingDown = true;
-  const graceMs = shutdownGraceMs(process.env);
-  log.info('shutting down', { signal, grace_ms: graceMs });
-  app.mcp.endListenStreams();
-  await closeDevServer();
-  const { drained } = await closeGracefully(httpServer, { graceMs });
-  if (!drained) log.warn('requests still running after the shutdown grace period were cut', { grace_ms: graceMs });
-  await app.mcp.closeSessions();
-  await jobs.stop();
-  await serveCache.stop();
-  await typecheck.close();
-  process.exit(0);
+let stopping: Promise<void> | null = null;
+/** The graceful stop, once: drain the requests in flight, then close the sessions, jobs and caches. Does not exit. */
+function stop(reason: string): Promise<void> {
+  stopping ??= (async () => {
+    const graceMs = shutdownGraceMs(process.env);
+    log.info('shutting down', { reason, grace_ms: graceMs });
+    app.mcp.endListenStreams();
+    await closeDevServer();
+    const { drained } = await closeGracefully(httpServer, { graceMs });
+    if (!drained) log.warn('requests still running after the shutdown grace period were cut', { grace_ms: graceMs });
+    await app.mcp.closeSessions();
+    await jobs.stop();
+    await serveCache.stop();
+    await typecheck.close();
+  })();
+  return stopping;
 }
-process.on('SIGTERM', () => void shutdown('SIGTERM'));
-process.on('SIGINT', () => void shutdown('SIGINT'));
+
+function stopOnSignal(signal: NodeJS.Signals): void {
+  void stop(signal).then(
+    () => process.exit(),
+    (err: unknown) => {
+      log.error('the server did not stop cleanly', { error: dbErrorForLog(err, { stack: true }) });
+      process.exit(1);
+    }
+  );
+}
+stopServer = stop;
+process.on('SIGTERM', () => stopOnSignal('SIGTERM'));
+process.on('SIGINT', () => stopOnSignal('SIGINT'));

@@ -99,9 +99,9 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
   },
   {
     code: 'busy',
-    surface: 'MCP tool isError (write_files, sync_now); compile.errors[]',
-    meaning: 'The compiler is saturated (COMPILE_CONCURRENCY builds running, the queue wait exceeded COMPILE_QUEUE_TIMEOUT_MS). From a write_files call with `edits`: another session of the same user kept storing new versions while the edits were applied. Nothing was stored. From sync_now (`reason: "sync_running"`): a run of that source is in progress.',
-    fix: 'Retry the same write_files call in a few seconds. For sync_now: wait for the run, then read it with get_logs(kind: "sync").',
+    surface: 'MCP tool isError (write_files, sync_now; any tool with `reason: "database_timeout"`); compile.errors[]; upload URL 503',
+    meaning: 'The compiler is saturated (COMPILE_CONCURRENCY builds running, the queue wait exceeded COMPILE_QUEUE_TIMEOUT_MS). From a write_files call with `edits`: another session of the same user kept storing new versions while the edits were applied. Nothing was stored. From sync_now (`reason: "sync_running"`): a run of that source is in progress. With `reason: "database_timeout"` (any tool, the upload URL): a database query of the call ran past the server\'s DB_STATEMENT_TIMEOUT_MS or waited past DB_LOCK_TIMEOUT_MS for data another request held — the server is under load. The call stopped; a write may or may not have been stored, and an upload URL is used up.',
+    fix: 'Retry the same write_files call in a few seconds. For sync_now: wait for the run, then read it with get_logs(kind: "sync"). For "database_timeout": wait a few seconds; after a write, check whether it landed (get_app, list_assets) before you repeat it once — ask for a new upload URL; if it keeps happening, tell the user the server is overloaded.',
   },
   {
     code: 'slug_taken',
@@ -471,7 +471,7 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     code: 'unavailable',
     surface: 'module route 503 (DrobekError)',
     meaning:
-      'A service the module depends on is down or not configured on this server — e.g. module e-mail is paused because the server-wide hourly budget of its class (notifications or sign-in codes, `details.class`) or the per-app hourly share of notifications (`details.limit: EMAIL_APP_HOURLY_SHARE`) or the per-workspace share (`EMAIL_WORKSPACE_HOURLY_SHARE`) was used up (`details.reason: email_paused`, Retry-After), the server runs no `email` module, or it has no DROBEK_MASTER_KEY (forms).',
+      'A service the module depends on is down or not configured on this server — e.g. module e-mail is paused because the server-wide hourly budget of its class (notifications or sign-in codes, `details.class`) or the per-app hourly share of notifications (`details.limit: EMAIL_APP_HOURLY_SHARE`) or the per-workspace share (`EMAIL_WORKSPACE_HOURLY_SHARE`) was used up (`details.reason: email_paused`, Retry-After), the server runs no `email` module, or it has no DROBEK_MASTER_KEY (forms). With `details.reason: database_timeout` (Retry-After): a database query of the request ran past the server\'s statement or lock timeout — the server is under load, and a write may or may not have been stored.',
     fix: 'Show the user a message and retry later; tell the app owner if it persists.',
   },
   {

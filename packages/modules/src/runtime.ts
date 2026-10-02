@@ -50,7 +50,7 @@ import { AUDIT_ACTIONS, AUDIT_SUBJECT_TYPES, actorKindForSurface, writeAudit } f
 import { renderPlatformEmail, renderTextEmailHtml, sendEmail, serverHost, trustedActionUrl, type EmailAction } from '@drobek/email';
 import { scanForSecrets } from '@drobek/compile';
 import { createConsoleLogger, getRedis, reportError, type Logger } from '@drobek/core';
-import { apps, dbErrorForLog, getDb, memberships, moduleConfigs, runJournalMigrations, users, workspaceModules, type DB } from '@drobek/db';
+import { apps, dbErrorForLog, getDb, isQueryTimeout, memberships, moduleConfigs, runJournalMigrations, users, workspaceModules, type DB } from '@drobek/db';
 import { recordModuleRequest } from '@drobek/insights';
 import { and, asc, eq, gt, inArray, isNull } from 'drizzle-orm';
 import type { Readable } from 'node:stream';
@@ -96,7 +96,17 @@ import { asObject, asPending, readConfigRow, readConfigRows, withLockedConfig, t
 import { installModuleEmailTransport } from './email-transport-slot.js';
 import { CORE_SLOTS, installModuleErrorReporter } from './error-reporter-slot.js';
 import { assertSignInSender, capEmailText, emailKind, redactAddresses, resolveRecipients, sanitizeSubject } from './email.js';
-import { CORE_ERROR_CODES, ModuleError, ModuleLoadError, isModuleError, issuePaths, moduleNotEnabled, moduleRequiresNotEnabled, skillHint } from './errors.js';
+import {
+  CORE_ERROR_CODES,
+  ModuleError,
+  ModuleLoadError,
+  databaseTimeout,
+  isModuleError,
+  issuePaths,
+  moduleNotEnabled,
+  moduleRequiresNotEnabled,
+  skillHint,
+} from './errors.js';
 import { CORE_LIMITS, createLimitsProvider, moduleEnabledLimit, moduleEnabledLimitName, type CatalogueLimit, type LimitsProvider } from './limits.js';
 import { mailGuardConfigFromEnv, redisMailGuard, type MailGuard, type MailGuardRedis } from './mail-guard.js';
 import { Lru, jsonKey } from './memo.js';
@@ -2172,6 +2182,7 @@ export class ModuleRuntime {
       return res;
     } catch (err) {
       if (isModuleError(err)) return errorResult(err);
+      const timedOut = isQueryTimeout(err);
       this.deps.log.error('module request failed', { app_id: app.id, path: req.path, error: dbErrorForLog(err, { stack: true }) });
       void reportError({
         message: 'module request failed',
@@ -2181,11 +2192,12 @@ export class ModuleRuntime {
           ...(seen.module ? { module: seen.module } : {}),
           route: seen.route ?? req.path,
           method: req.method,
-          status: 500,
+          status: timedOut ? 503 : 500,
           appId: app.id,
           workspaceId: app.workspaceId,
         },
       });
+      if (timedOut) return errorResult(databaseTimeout());
       return errorResult(new ModuleError('internal_error', 'drobek hit an internal error.'));
     }
   }

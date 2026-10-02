@@ -8,7 +8,8 @@
  *
  * `reportError` is called at the server's central error points (a 5xx of the
  * dashboard or Express, a module route that throws, a failed module job, a
- * failed e-mail send, a start-up failure once the reporter is up). It never
+ * failed e-mail send, a start-up failure once the reporter is up, an error
+ * nothing caught that stops the process). It never
  * throws and never holds up the caller: the event is built from an allow-list
  * (no request bodies, headers, cookies or query strings), e-mail addresses,
  * token-shaped strings and every known secret value are redacted, identical
@@ -38,7 +39,7 @@ const PER_MINUTE_MAX = 10_000;
 const WINDOW_MS = 60_000;
 
 /** Where in the server the error happened. */
-export type ErrorReportKind = 'http' | 'module_route' | 'module_job' | 'startup' | 'email';
+export type ErrorReportKind = 'http' | 'module_route' | 'module_job' | 'startup' | 'email' | 'process';
 
 /** What is known about the place of the error — ids and names only, never request data. */
 export interface ErrorReportContext {

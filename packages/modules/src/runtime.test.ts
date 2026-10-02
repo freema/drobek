@@ -618,6 +618,33 @@ describe('HTTP on the app hosts', () => {
     expect(log.error).toHaveBeenCalled();
   });
 
+  it('a query the database cut off → 503 unavailable (database_timeout) with Retry-After, reported as 503', async () => {
+    const log = logger();
+    const r = await runtime({ log });
+    const reported: ErrorReportEvent[] = [];
+    installErrorReporter({ id: 'sink', label: 'Sink', report: (e) => void reported.push(e) }, {}, noopLogger);
+    try {
+      const res = await r.handle(req('GET', '/__drobek/v1/echo/stuck'), app);
+      expect(res.status).toBe(503);
+      expect(res.headers['Retry-After']).toBe('5');
+      expect(json(res)).toEqual({
+        error: 'unavailable',
+        message: 'The database did not answer in time (the server is under load). Try again in a moment.',
+        details: { reason: 'database_timeout' },
+        hint: 'skill_info()',
+      });
+      expect(String(res.body)).not.toContain('canceling');
+      expect(log.error).toHaveBeenCalled();
+      await vi.waitFor(() => expect(reported).toHaveLength(1));
+      expect(reported[0]).toMatchObject({
+        error: { name: 'DatabaseError', message: 'db error 55P03' },
+        context: { kind: 'module_route', module: 'echo', route: '/__drobek/v1/echo/stuck', status: 503 },
+      });
+    } finally {
+      resetErrorReporterForTests();
+    }
+  });
+
   it('an unexpected handler error reaches the error reporter with the route pattern, never the request', async () => {
     const r = await runtime();
     const reported: ErrorReportEvent[] = [];

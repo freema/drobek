@@ -3,6 +3,7 @@
  * secret, a limit, routes, SDK) and `quiet` (the bare minimum).
  */
 import { fileURLToPath } from 'node:url';
+import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { defineModule, respond } from '../contract.js';
 import { ModuleError } from '../errors.js';
@@ -54,6 +55,9 @@ export const echo = defineModule<EchoConfig>({
     r.delete('/items/:id', { rule: 'public', csrf: 'same-origin' }, () => respond(204));
     r.get('/boom', { rule: 'public' }, () => {
       throw new Error('kaboom with internals');
+    });
+    r.get('/stuck', { rule: 'public' }, async (_req, ctx) => {
+      await ctx.db.execute(sql.raw(`do $$ begin raise exception 'canceling statement due to lock timeout' using errcode = 'lock_not_available'; end $$`));
     });
     r.get('/teapot', { rule: 'public' }, () => {
       throw new ModuleError('forbidden', 'no tea', { hint: "skill_info('tea')" });

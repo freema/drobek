@@ -92,8 +92,9 @@ Findings of the pre-rebuild review (PHY-76) today:
 Stated plainly so operators can plan around them:
 
 - **No per-token rate limit on `/mcp` itself.** Calls are bounded by the body
-  cap, the compile queue (`busy`), the single-writer lease and the per-feature
-  limits.
+  cap, the compile queue (`busy`), the database's statement and lock timeouts
+  (`DB_STATEMENT_TIMEOUT_MS`, `DB_LOCK_TIMEOUT_MS`), the single-writer lease
+  and the per-feature limits.
 - **App-access cookies** of password-protected apps stay valid for up to 12 h
   after a password change (see the table above).
 - **Client IP behind another proxy:** with a CDN, load balancer or host proxy

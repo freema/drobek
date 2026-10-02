@@ -5,7 +5,7 @@ import { startDomainRecheck } from '@drobek/domains';
 import { startLogsPrune } from '@drobek/insights';
 import { startModuleJobs, type ModuleRuntime } from '@drobek/modules';
 import { startFilesSweep } from 'drobek-module-files';
-import { dbErrorForLog } from '@drobek/db';
+import { dbErrorForLog, runAsJob } from '@drobek/db';
 
 const AUDIT_PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
@@ -46,8 +46,16 @@ export interface BackgroundJobs {
  * - Governance: the audit trail is append-only; the ONLY deletion is
  *   the age-based retention prune (startup, then daily). It never targets a
  *   specific row and is not exposed over any API/UI.
+ *
+ * Every job queries through the background-job pool of @drobek/db
+ * (`runAsJob`): no DB_STATEMENT_TIMEOUT_MS, and never a connection a request
+ * waits for.
  */
 export function startBackgroundJobs(log: Logger, opts: { filesSweep?: boolean; modules?: ModuleRuntime } = {}): BackgroundJobs {
+  return runAsJob(() => startJobs(log, opts));
+}
+
+function startJobs(log: Logger, opts: { filesSweep?: boolean; modules?: ModuleRuntime }): BackgroundJobs {
   // The jobs hand over an already log-safe error text (dbErrorForLog at the source).
   const jobLog = (msg: string, errorText?: string) => (errorText ? log.error(msg, { error: errorText }) : log.info(msg));
   const stopVersionRetention = startVersionRetention({

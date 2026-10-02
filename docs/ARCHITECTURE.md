@@ -49,7 +49,17 @@ This document is the map of how that works. The neighbours:
   `@react-router/express` for the dashboard, `mountMcpResource` for `/mcp` and
   the apps-host middleware in front of everything. There is no worker
   container and no job queue; background work runs on timers inside the
-  process, each under a Redis lease so only one replica does it.
+  process, each under a Redis lease so only one replica does it. An error
+  nothing caught (`uncaughtException`, `unhandledRejection`) is logged,
+  reported and stops the process like `SIGTERM` (requests drain), exit
+  code 1 (`installFatalErrorHandlers` in `@drobek/core`).
+- **Postgres connections**: two pools per process (`@drobek/db`, shared by
+  the dashboard build's bundled copy), `DB_POOL_MAX` each — requests with
+  `statement_timeout` (`DB_STATEMENT_TIMEOUT_MS`) and `lock_timeout`
+  (`DB_LOCK_TIMEOUT_MS`), background jobs with the lock timeout only;
+  migrations use one connection of their own without either. A query cut
+  off by a timeout answers `busy` (`reason: "database_timeout"`) over MCP
+  and `503 unavailable` on module routes, never the driver's message.
 - **One image**, `ghcr.io/freema/drobek` (root `Dockerfile`, targets `dev` and
   `runner`; linux/amd64 releases). The image applies every pending migration
   on start (core journal `__drizzle_migrations_core`, one
@@ -383,7 +393,8 @@ confirm rules and secrets from the contributions at start). Core itself hosts on
 slot, `errors.reporter`: where server errors go besides the log (an incident
 webhook, a log service, …), chosen with `ERROR_REPORTER=<id>` and fed by `reportError`
 (`@drobek/core`) from the central error points — a 5xx, a module route
-throw, a failed module job or e-mail send, a start-up failure. Built in: `auth`
+throw, a failed module job or e-mail send, a start-up failure, an error
+nothing caught. Built in: `auth`
 (end-user sign-in by e-mailed code, plus the sign-in providers other
 modules contribute to its `auth.provider` slot, and the `auth.signedIn`
 observers told of every sign-in), `email` (notifications to the app's owners,
@@ -470,7 +481,11 @@ Details: [`SELF-HOSTING.md` → TLS](./SELF-HOSTING.md#tls).
 
 ## 8. Background jobs
 
-All in-process (`apps/server/server/jobs.ts`), started with the server:
+All in-process (`apps/server/server/jobs.ts`), started with the server.
+They query through a Postgres pool of their own (`runAsJob` in `@drobek/db`)
+without the requests' `DB_STATEMENT_TIMEOUT_MS`, so a long sweep never
+takes a connection a request waits for and is not cut off like a request's
+query:
 
 | Job | Interval | What |
 | --- | --- | --- |

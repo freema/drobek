@@ -600,7 +600,9 @@ Every failure uses **one error shape**:
 
 Handlers throw `new ModuleError(code, message, { details, hint, headers })`.
 Anything else becomes `500 internal_error` without internals (logged on the
-server). Codes: `invalid_request` 400, `unauthorized` 401,
+server) — except a query the database cut off (the server's
+`DB_STATEMENT_TIMEOUT_MS` / `DB_LOCK_TIMEOUT_MS`), which answers `503
+unavailable` with `details.reason: database_timeout` and `Retry-After`. Codes: `invalid_request` 400, `unauthorized` 401,
 `password_required` 401, `forbidden` 403, `csrf_rejected` 403, `not_found`
 404, `method_not_allowed` 405, `conflict` 409, `payload_too_large` 413,
 `unsupported_media_type` 415, `rate_limited` / `limit_exceeded` 429,
@@ -1121,10 +1123,13 @@ export default defineModule({
 - **What is reported**: a 5xx of the dashboard (React Router) or the Express
   app (`kind: 'http'`), a module route that throws (`module_route`, answered
   `500 internal_error`), a failed or timed-out module job (`module_job`), a
-  failed e-mail send through any transport (`email`) and a start-up failure
+  failed e-mail send through any transport (`email`), a start-up failure
   once the reporter is installed — module migrations and everything after
   the modules load (`startup`, `level: 'fatal'`; the server waits for the
-  report, at most the timeout, before it exits).
+  report, at most the timeout, before it exits) — and an error nothing
+  caught, an uncaught exception or unhandled promise rejection (`process`,
+  `level: 'fatal'`; the server stops gracefully and exits with code 1 once
+  the report went out or timed out).
 - **The event**: `{ level, message, error?: { name, message, stack? },
   context: { kind, route?, method?, status?, module?, job?, appId?,
   workspaceId?, requestId? }, release, environment, timestamp, fingerprint }`.
