@@ -437,10 +437,14 @@ All in-process (`apps/server/server/jobs.ts`), started with the server:
 | logs prune | `LOGS_PRUNE_INTERVAL_MS` (1 h), Redis lease | removes `get_logs` rows past their retention for every app: browser errors older than 30 days or past the newest 500 per app, compiles and daily request stats older than 30 days (`@drobek/insights`) |
 | module jobs (only when an active module declares `jobs`) | each job's own interval (checked every 15 s), a Redis lease per run | the modules' scheduled work, for the server or for each app that configured the module; at most `MODULE_JOBS_CONCURRENCY` (4) runs per process, each cut off at `MODULE_JOBS_TIMEOUT_MS` (5 min); a failed run retries with backoff and an app's failure shows in its `get_logs` runtime; `MODULE_JOBS_ENABLED=0` = none on this process (`@drobek/modules`, [`MODULES.md`](./MODULES.md#scheduled-jobs-jobs)) |
 | audit retention | at start, then daily | deletes audit rows older than `AUDIT_RETENTION_DAYS` (365) — the only deletion of audit rows anywhere |
+| retention prune | at start, then daily, Redis lease | deletes OAuth access and refresh tokens 7 days after they expired (a rotated refresh token stays until then, so reuse detection still sees it) and authorization codes 37 days after (when the lineage a code minted has expired as well, so a replayed code revokes it as long as it exists) (`@drobek/oauth`); gallery open counts of days older than the 30-day `opens` window plus 7 days; abuse reports resolved more than `ABUSE_REPORTS_RETENTION_DAYS` (365) ago — open reports stay (`@drobek/apps`) |
 
 Request counters for `get_logs('requests')` accumulate in Redis and are
 flushed into Postgres on read (the whole window in one pipelined round trip)
-and at most once a minute per app and day; reads never delete. The paths of
+and at most once a minute per app and day; reads never delete. A flush never
+lowers a stored day: each count, and each path's 404 count, keeps the larger
+of the stored and the flushed value, so counters that restart after a Redis
+flush cannot shrink a day already in Postgres. The paths of
 failing requests are counted per app and UTC day, path only (no query, at
 most 100 distinct per class, the rest as `__other__`): a missing file's path
 is stored with the daily stats, a platform 4xx's or a 5xx's stays in Redis

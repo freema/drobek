@@ -222,7 +222,7 @@ built-ins.
 | `HTTP_PORT`, `HTTPS_PORT`, `PUBLISH_IP` | — | published ports / bind address |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | — | optional Google sign-in |
 | `TLS_CUSTOM_DOMAINS`, `DOMAINS_MAX_PER_APP`, `DOMAINS_DNS_SERVERS`, `DOMAINS_RECHECK_INTERVAL_MS` | — | [custom domains](#custom-domains) (catch-all certificate on by default in on-demand mode; 3 per app) |
-| `TERMS_URL`, `ABUSE_REPORTS_PER_IP_HOUR`, `ABUSE_BRAND_WORDS` | — | [abuse handling](#abuse-and-takedowns) (terms link of the 451 page; 5 reports / IP / hour; publish-heuristic brand words) |
+| `TERMS_URL`, `ABUSE_REPORTS_PER_IP_HOUR`, `ABUSE_BRAND_WORDS`, `ABUSE_REPORTS_RETENTION_DAYS` | — | [abuse handling](#abuse-and-takedowns) (terms link of the 451 page; 5 reports / IP / hour; publish-heuristic brand words; resolved reports are deleted after 365 days) |
 | `GALLERY_ENABLED`, `GALLERY_API_PER_IP_MINUTE`, `GALLERY_OPENS_PER_IP_HOUR`, `GALLERY_LIKES_PER_USER_HOUR`, `GALLERY_FRAME_ANCESTORS`, `DUPLICATES_PER_USER_HOUR` | — (off) | [the public gallery](#public-gallery) (`true` = owners may list published apps; `GET /api/public/gallery`; 60 requests / IP / minute; 60 counted opens / IP / hour; 30 likes / account / hour; your gallery website's origins that may show listed apps as live previews and receive visitors back after a like; 10 copies of gallery apps per person per hour) |
 | `PUBLISH_APPROVAL`, `OPERATOR_EMAIL`, `PUBLISH_NOTIFY` | — (`open`, off) | [publish approval](#publish-approval) (`approval` = a workspace publishes only after a super-admin allowed it; the contact refused users see; `first` / `every` = e-mail the operator about publishes) |
 | `EMAIL_SIGNIN_APP_HOURLY_SHARE` | — (25) | one app's percent of the sign-in e-mail budget — raise it on a single-app server (see [Production compose](#production-compose)) |
@@ -477,6 +477,7 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `DOCS_URL` | — (the Markdown files in the GitHub repository) | the base of a website with the drobek docs, each page at `<DOCS_URL>/<slug>` (`overview`, `agent`, `modules`, `self-hosting`, `architecture`, `security`, `licensing`) with a Markdown twin at `<DOCS_URL>/<slug>.md`: `/llms.txt` links the `.md` pages, `/llms-full.txt` the agent guide's `.md`, `/build-with-your-agent` and the landing page the agent guide. Not an http(s) URL (or one with a query or fragment) stops the server at start |
 | `ABUSE_REPORTS_PER_IP_HOUR` | 5 | valid abuse reports per client IP per hour |
 | `ABUSE_BRAND_WORDS` | a built-in list | the publish heuristic's brand words (comma-separated) |
+| `ABUSE_REPORTS_RETENTION_DAYS` | 365 | a resolved abuse report is deleted this many days after it was resolved (the daily retention prune); open reports stay |
 | `GALLERY_ENABLED` | off | `true` = the [public gallery](#public-gallery): owners (and, on their explicit yes, their agents) may list published apps; `GET /api/public/gallery` answers. Off = no switch in the dashboard, the endpoint answers 404 |
 | `GALLERY_API_PER_IP_MINUTE` | 60 | requests to `GET /api/public/gallery` per client IP per minute (429 over it) |
 | `GALLERY_OPENS_PER_IP_HOUR` | 60 | visits through a gallery `openUrl` counted per client IP per hour (more still redirect, uncounted) |
@@ -1218,6 +1219,11 @@ Anyone can publish on a public drobek, so the operator (every address in
   - **Restore**: the lock is lifted — the app is NOT republished, its owner
     publishes again. Owners get an e-mail; audited `admin.restore`.
   - **Mark resolved**: closes a report without acting.
+  - **Retention**: a resolved report (taken down or marked resolved) is
+    deleted `ABUSE_REPORTS_RETENTION_DAYS` (default 365) days after it was
+    resolved, with its details and the reporter's e-mail; the audit rows of
+    the report and of a takedown follow `AUDIT_RETENTION_DAYS`. Open reports
+    are never deleted.
 - **Publish heuristic.** Every publish scans the published version (HTML +
   JS): a password field AND a word from `ABUSE_BRAND_WORDS` (comma-separated;
   unset = a built-in list of ~25 bank / payment / e-mail / social / crypto
@@ -1309,7 +1315,8 @@ list.
   prerender (`Sec-Purpose` / `Purpose`) and not more than
   `GALLERY_OPENS_PER_IP_HOUR` visits per client IP per hour (the redirect
   still works). The server stores a count per app and day, never who opened
-  it.
+  it, and deletes the counts of days older than the 30-day window plus 7
+  days once a day.
 - **Likes.** Link a like button to `likeUrl` (`/gallery/like/<slug>`), with
   `?back=<your gallery URL>` to return there. The page asks the visitor to
   sign in to drobek (any account), then shows the count and a "Like this

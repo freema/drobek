@@ -27,6 +27,7 @@ import { data, type ActionFunctionArgs, type LoaderFunctionArgs } from 'react-ro
 import {
   AppsError,
   LOCK_REASONS,
+  abuseReportsRetentionDays,
   findModerationApp,
   galleryEnabled,
   isLockReason,
@@ -111,6 +112,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   return data(
     {
       status,
+      retentionDays: abuseReportsRetentionDays(),
       ...confirm,
       reasons: LOCK_REASONS.map((value) => ({ value, label: reasonLabel(value) })),
       reports: reports.map((r) => ({

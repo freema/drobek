@@ -2,11 +2,12 @@
  * Abuse reports, takedown / restore and the publish heuristic against a real
  * (PGlite) database with the core migrations applied.
  */
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { abuseReports, apps, auditLog, domains, users, workspaces } from '@drobek/db';
 import {
   AppsError,
+  abuseReportsRetentionDays,
   appLockState,
   createAbuseReport,
   createApp,
@@ -15,6 +16,7 @@ import {
   listAbuseReports,
   listLockedApps,
   onLocalAppChanged,
+  pruneResolvedAbuseReports,
   publish,
   resolveAbuseReport,
   restore,
@@ -27,6 +29,7 @@ import {
 import { freshDb, type TestDb } from './test/db.js';
 
 const HOSTS = { appsDomain: 'apps.example', dashboardHost: 'drobek.example' };
+const DAY = 86_400_000;
 
 let db: TestDb;
 let close: () => Promise<void>;
@@ -151,6 +154,40 @@ describe('abuse reports', () => {
     expect(r.app?.id).toBe(a.id);
     const [row] = await db.select().from(abuseReports).where(eq(abuseReports.id, r.id));
     expect(row).toMatchObject({ appId: a.id, host: 'shop.firma.cz' });
+  });
+
+  it('ABUSE_REPORTS_RETENTION_DAYS: a positive number of days, else 365', () => {
+    expect(abuseReportsRetentionDays({})).toBe(365);
+    expect(abuseReportsRetentionDays({ ABUSE_REPORTS_RETENTION_DAYS: ' 90 ' })).toBe(90);
+    expect(abuseReportsRetentionDays({ ABUSE_REPORTS_RETENTION_DAYS: '1.5' })).toBe(1);
+    for (const bad of ['', '0', '-5', '0.5', 'year']) {
+      expect(abuseReportsRetentionDays({ ABUSE_REPORTS_RETENTION_DAYS: bad })).toBe(365);
+    }
+  });
+
+  it('the retention prune deletes reports resolved longer ago than the retention; open ones stay', async () => {
+    const now = new Date();
+    const ago = (days: number) => new Date(now.getTime() - days * DAY);
+    const rows = await db
+      .insert(abuseReports)
+      .values([
+        { host: 'old-resolved.apps.example', reason: 'spam', status: 'resolved', createdAt: ago(100), resolvedAt: ago(40) },
+        { host: 'recent-resolved.apps.example', reason: 'spam', status: 'resolved', createdAt: ago(100), resolvedAt: ago(20) },
+        { host: 'old-open.apps.example', reason: 'spam', status: 'open', createdAt: ago(400) },
+      ])
+      .returning({ id: abuseReports.id });
+    const hostsLeft = async () =>
+      (await db.select({ host: abuseReports.host }).from(abuseReports).where(inArray(abuseReports.id, rows.map((r) => r.id))))
+        .map((r) => r.host)
+        .sort();
+
+    expect(await pruneResolvedAbuseReports({ now, env: { ABUSE_REPORTS_RETENTION_DAYS: '30' } })).toEqual({ deleted: 1 });
+    expect(await hostsLeft()).toEqual(['old-open.apps.example', 'recent-resolved.apps.example']);
+
+    // The default keeps a resolved report for a year.
+    expect(await pruneResolvedAbuseReports({ now: new Date(now.getTime() + 340 * DAY), env: {} })).toEqual({ deleted: 0 });
+    expect(await pruneResolvedAbuseReports({ now: new Date(now.getTime() + 350 * DAY), env: {} })).toEqual({ deleted: 1 });
+    expect(await hostsLeft()).toEqual(['old-open.apps.example']);
   });
 });
 
