@@ -756,7 +756,9 @@ drobek refuses to start: 2 stored secrets are encrypted under a key this server 
 (`<workspace>/<upstream>`, `<workspace>/<app> <module>.<NAME>`), so you can
 tell the owners which secret to set again. Outside production
 (`NODE_ENV` other than `production`) the same finding is a warning in the
-log, and the start goes on.
+log, and the start goes on. `task selfhost:migrate` makes the same check
+before it applies a migration, so an upgrade stops with the old schema in
+place and the image you ran before still starts.
 
 ## Upgrades and rollback
 

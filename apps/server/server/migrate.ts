@@ -9,10 +9,12 @@
  * (`__drizzle_migrations_mod_<name>`) — without listening. Running it twice is
  * the upgrade's idempotency proof: drizzle records every applied migration in
  * its journal inside the migration transaction, so the second run finds
- * nothing to apply. The config checks of the server entry run first, so an
- * image that would refuse to start never touches the database. Like the
- * server, it holds the migration lock and refuses a database that is ahead
- * of this image.
+ * nothing to apply. The config checks of the server entry run first, and so
+ * does its check of the stored secrets' keys (a secret that neither
+ * DROBEK_MASTER_KEY nor DROBEK_MASTER_KEY_PREVIOUS opens stops a production
+ * start), so an image that would refuse to start never touches the database.
+ * Like the server, it holds the migration lock and refuses a database that is
+ * ahead of this image.
  */
 import { docsUrlConfigError } from '@drobek/agent-dx';
 import { appsOriginConfigError, publishApprovalConfigError } from '@drobek/apps';
@@ -20,7 +22,7 @@ import { trustProxyConfigError } from '@drobek/auth';
 import { createConsoleLogger, reportError, secretsConfigError } from '@drobek/core';
 import { dbConfigError, dbErrorForLog, runCoreMigrations } from '@drobek/db';
 import { domainsConfigError } from '@drobek/domains';
-import { limitsProviderConfigError, loadModuleRuntime, previousMasterKeyConfigError } from '@drobek/modules';
+import { limitsProviderConfigError, loadModuleRuntime, previousMasterKeyConfigError, storedSecretKeysCheck } from '@drobek/modules';
 import { frameSrcConfigError, galleryFrameAncestorsConfigError, tlsAskConfigError } from '@drobek/serving';
 import postgres from 'postgres';
 
@@ -65,6 +67,13 @@ async function journalCounts(): Promise<Record<string, number>> {
 
 try {
   if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required');
+  // A database without the secret tables (a first start) has nothing to check.
+  const secretKeys = await storedSecretKeysCheck(process.env).catch(() => null);
+  if (secretKeys?.level === 'fatal') {
+    console.error(secretKeys.message);
+    process.exit(1);
+  }
+  if (secretKeys?.level === 'warn') log.warn(secretKeys.message);
   const before = await journalCounts();
   await runCoreMigrations({ log });
   // Loads DROBEK_MODULES exactly like the server and applies their migrations

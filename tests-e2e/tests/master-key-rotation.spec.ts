@@ -16,8 +16,10 @@ import { seedApp, seedVersion, withDb } from './helpers/seed';
  * `node dist/server/rekey.js`, run in the drobek container with that older
  * key as DROBEK_MASTER_KEY_PREVIOUS) re-wraps it under the current key, so
  * the server signs with it again; a second run re-wraps nothing;
- * `--forget-unknown` deletes a secret no key opens. The output carries counts
- * and names, never a key or the value.
+ * `--forget-unknown` deletes a secret no key opens. While such a secret is
+ * stored, the upgrade's migrate step (`node dist/server/migrate.js`) stops
+ * before it applies anything in the production image and warns on the dev
+ * stack. The output carries counts and names, never a key or the value.
  */
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -57,6 +59,14 @@ function rekey(previous: string, ...args: string[]): { status: number | null; ou
     timeout: 120_000,
   });
   return { status: r.status, output: `${r.stdout ?? ''}${r.stderr ?? ''}` };
+}
+
+/** The upgrade's migrate step inside the drobek container; `image` = the production image, which refuses what the dev stack only warns about. */
+function migrate(): { status: number | null; output: string; image: boolean } {
+  const cmd = `cd apps/server 2>/dev/null; if [ -f server/migrate.ts ]; then exec node_modules/.bin/tsx server/migrate.ts; else echo production-image; exec node dist/server/migrate.js; fi`;
+  const r = spawnSync('docker', ['compose', 'exec', '-T', 'drobek', 'sh', '-c', cmd], { cwd: repoRoot, encoding: 'utf8', timeout: 120_000 });
+  const output = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+  return { status: r.status, output, image: output.includes('production-image') };
 }
 
 async function seedWorkspace(): Promise<{ id: string; slug: string }> {
@@ -133,7 +143,7 @@ test.describe('DROBEK_MASTER_KEY rotation — rekey @local', () => {
     }
   });
 
-  test('a secret under a key the server does not have: rekey names it and exits 1; --forget-unknown deletes it', async () => {
+  test('a secret under a key the server does not have: rekey names it and exits 1, migrate refuses it; --forget-unknown deletes it', async () => {
     skipUnlessLocal();
     test.setTimeout(240_000);
     const lost = randomBytes(32).toString('hex');
@@ -150,6 +160,17 @@ test.describe('DROBEK_MASTER_KEY rotation — rekey @local', () => {
       expect(kept.output).toContain(`  - ${label}`);
       expect(kept.output).toContain('task selfhost:rekey FORGET_UNKNOWN=1');
       expect(await secretRows(app.id)).toHaveLength(1);
+
+      const migrated = migrate();
+      expect(migrated.output).toContain('encrypted under a key this server does not have');
+      expect(migrated.output).not.toContain(lost);
+      if (migrated.image) {
+        expect(migrated.status).toBe(1);
+        expect(migrated.output).toContain('drobek refuses to start');
+        expect(migrated.output).not.toContain('migrations:');
+      } else {
+        expect(migrated.status).toBe(0);
+      }
 
       const forgot = rekey(unrelated, '--forget-unknown');
       expect(forgot.output).toContain(`  - ${label}`);
