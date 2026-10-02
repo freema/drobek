@@ -52,7 +52,10 @@ This document is the map of how that works. The neighbours:
 - **One image**, `ghcr.io/freema/drobek` (root `Dockerfile`, targets `dev` and
   `runner`; linux/amd64 releases). The image applies every pending migration
   on start (core journal `__drizzle_migrations_core`, one
-  `__drizzle_migrations_mod_<name>` per module) and **refuses to start** on a
+  `__drizzle_migrations_mod_<name>` per module) under one Postgres advisory
+  lock, so replicas migrate one after the other, and **refuses to start** on a
+  database whose journal holds migrations it does not know (a newer release
+  migrated it — the message names that release), a
   placeholder secret, a weak `TLS_ASK_TOKEN`, a missing `APPS_DOMAIN` in
   production or a module it cannot load (one from `DROBEK_MODULES_DIR`, the
   `modules_data` volume, whose files no longer match `modules.lock.json`

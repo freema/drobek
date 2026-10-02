@@ -458,7 +458,8 @@ immutable image `ghcr.io/freema/drobek:vX.Y.Z`, a
 [`CHANGELOG.md`](./CHANGELOG.md); `latest` and `previous` move with each
 release ([`docs/SELF-HOSTING.md` → Image tags](./docs/SELF-HOSTING.md#image-tags)).
 Migrations only go forward and run as their own step of
-`task selfhost:upgrade`; a rollback is the previous image plus, when the
+`task selfhost:upgrade`; an image older than the database refuses to start
+and names the release to run, and a rollback is the previous image plus, when the
 release migrated the database, the backup taken before it
 ([Upgrades and rollback](./docs/SELF-HOSTING.md#upgrades-and-rollback)).
 Modules declare the contract range they need, and the server refuses to start

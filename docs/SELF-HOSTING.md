@@ -544,7 +544,8 @@ the database, replaces `files_data`, `assets_data` (left empty when the
 archive has no `assets.tar`) and `caddy_data`, and starts the stack
 (`up -d --wait`). Restore with the backup's image version or a newer one
 (`image_version` in `manifest.json`) — a newer image migrates the restored
-database forward on start; an older one does not know its migrations. Point
+database forward on start; an older one refuses to start on it (see
+[Upgrades and rollback](#upgrades-and-rollback)). Point
 the DNS records at the new machine; the restored `caddy_data` carries the
 certificates over. Sessions (dashboard users and apps' end users) live in
 Redis, which is not in the backup: after a restore on a new machine everyone
@@ -573,7 +574,7 @@ docker compose --env-file .env.production -f docker-compose.production.yaml pull
 docker compose --env-file .env.production -f docker-compose.production.yaml pull caddy     # (DNS-01 Caddy: build --pull caddy)
 docker compose --env-file .env.production -f docker-compose.production.yaml up -d --wait postgres redis
 docker compose --env-file .env.production -f docker-compose.production.yaml stop drobek
-task selfhost:migrate     # the new image: applies the release's migrations, exits
+task selfhost:migrate     # the new image: applies the release's migrations, exits (refuses a newer database)
 task selfhost:migrate     # again: "migrations: nothing to apply (up to date)"
 docker compose --env-file .env.production -f docker-compose.production.yaml up -d --wait
 ```
@@ -588,6 +589,33 @@ first one completed, and the `up -d` that follows migrates nothing. A
 migration that fails rolls back its transaction and leaves the journal as it
 was; the old container is already stopped, so fix the cause (or roll back)
 before starting.
+
+**One process migrates at a time.** Every migration run — a server start and
+`task selfhost:migrate` alike — holds one Postgres advisory lock while it
+applies a journal. Two replicas that start together (or a `migrate` next to
+a starting server) do not race: the second logs `waiting for another drobek
+process to finish its migrations`, waits, then finds everything applied and
+goes on.
+
+**An older image refuses a newer database.** Each run records, per journal,
+the image (and module) version that brought the journal's newest migration
+(`drizzle.__drobek_migration_images`). An image that finds migrations in a
+journal that it does not know — the database was migrated by a newer release
+— applies nothing and exits instead of serving against a schema it does not
+know:
+
+```
+the database schema is newer than this image — drizzle.__drizzle_migrations_core holds 2 migrations
+that drobek v1.2.0 (abc1234) does not know. It was migrated by drobek v1.3.0 (def5678): start drobek
+v1.3.0 (def5678) or newer (DROBEK_IMAGE_TAG). Migrations only go forward: an older image never runs
+on a newer schema.
+```
+
+In `task selfhost:upgrade` this stops the first `task selfhost:migrate`, so
+the upgrade ends with drobek stopped and the database untouched: set
+`DROBEK_IMAGE_TAG` to the version the message names (or a newer one) and run
+`task selfhost:upgrade` again. A module journal names the module version too —
+install that version of a third-party module (`task selfhost:module:add`).
 
 The `stop drobek` step lets the old container finish the requests in flight
 first (up to `SHUTDOWN_GRACE_MS`, see [Production compose](#production-compose)).
@@ -605,8 +633,9 @@ task restore FORCE=1 BACKUP=backups/<the backup task selfhost:upgrade just took>
 docker compose --env-file .env.production -f docker-compose.production.yaml up -d --wait
 ```
 
-Migrations only go forward; an older image on a database migrated by a newer
-one is not supported, which is why the upgrade takes a backup first.
+Migrations only go forward; an older image refuses a database migrated by a
+newer one (see above), which is why the upgrade takes a backup first and a
+rollback restores it.
 
 **Check a live server end to end.** The @smoke suite drives the whole MCP loop
 against a running server over public HTTP only: `list_apps`, `create_app` (or

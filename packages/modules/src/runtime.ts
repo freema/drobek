@@ -2273,7 +2273,7 @@ export interface LoadRuntimeOptions extends ResolveOptions {
   origins?: Record<string, ModuleOrigin>;
   /** Directory of the general skills (default: generalSkillsDir()). null = none. */
   skillsDir?: string | null;
-  /** Apply a module's migrations (default: runJournalMigrations against DATABASE_URL). */
+  /** Apply a module's migrations (default: runJournalMigrations against DATABASE_URL, under the migration lock). */
   migrate?: (folder: string, table: string) => Promise<void>;
   deps?: Partial<RuntimeDeps>;
 }
@@ -2306,13 +2306,13 @@ export async function loadModuleRuntime(opts: LoadRuntimeOptions = {}): Promise<
   installModuleErrorReporter(modules, env, log);
 
   if (env.DROBEK_MIGRATE_ON_START !== '0') {
-    const migrate =
-      opts.migrate ??
-      ((folder: string, table: string) => runJournalMigrations({ migrationsFolder: folder, migrationsTable: table }));
     for (const m of modules) {
       if (!m.migrations) continue;
       log.info('applying module migrations', { module: m.name });
-      await migrate(toPath(m.migrations.folder), moduleJournalTable(m.name));
+      const folder = toPath(m.migrations.folder);
+      const table = moduleJournalTable(m.name);
+      if (opts.migrate) await opts.migrate(folder, table);
+      else await runJournalMigrations({ migrationsFolder: folder, migrationsTable: table, module: { name: m.name, version: m.version }, log });
     }
   }
 

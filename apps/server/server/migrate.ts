@@ -10,7 +10,9 @@
  * the upgrade's idempotency proof: drizzle records every applied migration in
  * its journal inside the migration transaction, so the second run finds
  * nothing to apply. The config checks of the server entry run first, so an
- * image that would refuse to start never touches the database.
+ * image that would refuse to start never touches the database. Like the
+ * server, it holds the migration lock and refuses a database that is ahead
+ * of this image.
  */
 import { docsUrlConfigError } from '@drobek/agent-dx';
 import { appsOriginConfigError, publishApprovalConfigError } from '@drobek/apps';
@@ -62,7 +64,7 @@ async function journalCounts(): Promise<Record<string, number>> {
 try {
   if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required');
   const before = await journalCounts();
-  await runCoreMigrations();
+  await runCoreMigrations({ log });
   // Loads DROBEK_MODULES exactly like the server and applies their migrations
   // (a module that cannot be loaded fails here, before the upgrade goes on).
   await loadModuleRuntime({ env: { ...process.env, DROBEK_MIGRATE_ON_START: '1' }, log: createConsoleLogger('modules') });

@@ -18,7 +18,8 @@
 # On a new machine: clone the same (or a newer) release, copy .env.production
 # from the old one, `task selfhost:init` (renders the Caddyfile, keeps the
 # secrets), then this. Restore with the backup's image version or a newer one
-# (manifest.json `image_version`), never an older one.
+# (manifest.json `image_version`), never an older one: it refuses to start on
+# a database migrated by a newer image.
 #
 #   BACKUP=… (required)  FORCE=1  ALLOW_KEY_MISMATCH=1  ENV_FILE=.env.production
 set -euo pipefail

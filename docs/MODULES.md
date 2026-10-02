@@ -716,7 +716,11 @@ available ones.
 A module with tables ships a drizzle migrations folder
 (`migrations: { folder }`). On start the server applies it with the module's
 **own journal**, `drizzle.__drizzle_migrations_mod_<name>`, after the core
-migrations (`DROBEK_MIGRATE_ON_START=0` turns both off). Conventions:
+migrations (`DROBEK_MIGRATE_ON_START=0` turns both off), under the same
+migration lock. Migrations only go forward: when the journal holds migrations
+the installed module version does not ship (a newer version migrated the
+database), the server refuses to start and names the module and image
+versions to run. Conventions:
 
 - table names start with `mod_<name>_` (e.g. `mod_hello_waves`) — for a
   module from `DROBEK_MODULES_DIR` the [migration lint](#installing-an-external-module)

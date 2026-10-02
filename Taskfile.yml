@@ -218,12 +218,12 @@ tasks:
       - ./scripts/selfhost-init.sh
 
   selfhost:migrate:
-    desc: 'Apply every pending migration (core + DROBEK_MODULES) with the configured image and exit — the upgrade step; postgres must be up'
+    desc: 'Apply every pending migration (core + DROBEK_MODULES) with the configured image and exit — the upgrade step; postgres must be up. Waits for the migration lock; refuses a database migrated by a newer image'
     cmds:
       - ./scripts/selfhost-compose.sh run --rm --no-deps -T drobek node dist/server/migrate.js
 
   selfhost:upgrade:
-    desc: 'Upgrade in place: task backup → pull → stop drobek → migrate ×2 → up -d --wait (set DROBEK_IMAGE_TAG in .env.production first to pin a release)'
+    desc: 'Upgrade in place: task backup → pull → stop drobek → migrate ×2 → up -d --wait (set DROBEK_IMAGE_TAG in .env.production first to pin a release; an image older than the database stops the upgrade at migrate, before up)'
     vars:
       DC: ./scripts/selfhost-compose.sh
     cmds:

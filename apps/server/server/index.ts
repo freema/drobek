@@ -4,7 +4,8 @@
  * Boot order: refuse insecure secrets, an invalid APPS_DOMAIN,
  * TRUST_PROXY, TLS_ASK_TOKEN, LIMITS_PROVIDER_URL, DOMAINS_*,
  * APP_FRAME_SRC_EXTRA, GALLERY_FRAME_ANCESTORS, PUBLISH_APPROVAL / OPERATOR_EMAIL / PUBLISH_NOTIFY, e-mail transport
- * (EMAIL_TRANSPORT / RESEND_API_KEY / SMTP_HOST) or ERROR_REPORTER_* → apply core migrations →
+ * (EMAIL_TRANSPORT / RESEND_API_KEY / SMTP_HOST) or ERROR_REPORTER_* → apply core migrations
+ * (under the migration lock; a database ahead of this image stops the start) →
  * load the platform modules (DROBEK_MODULES: the e-mail transport and error
  * reporter they contribute, their migrations, the composed SDK, the skills —
  * a bad module stops the start; once the reporter is up, the failure is
@@ -77,7 +78,11 @@ if (dnsMock) log.warn(dnsMock);
 
 if (process.env.DROBEK_MIGRATE_ON_START !== '0') {
   log.info('applying core migrations');
-  await runCoreMigrations();
+  await runCoreMigrations({ log }).catch(async (err: unknown) => {
+    console.error(dbErrorForLog(err));
+    await reportError({ level: 'fatal', message: 'the server could not start', error: err, context: { kind: 'startup' } });
+    process.exit(1);
+  });
 }
 
 // The platform modules. Loaded once per process (moduleRuntime() is
