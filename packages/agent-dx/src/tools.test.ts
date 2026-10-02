@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { TOOL_DOCS, TOOL_NAMES, toolDoc } from './tools.js';
 
 describe('TOOL_DOCS manifest', () => {
-  it('documents exactly the 26 tools, in tools/list order', () => {
+  it('documents exactly the 31 tools, in tools/list order', () => {
     expect(TOOL_NAMES).toEqual([
       'list_apps',
       'create_app',
@@ -13,6 +13,11 @@ describe('TOOL_DOCS manifest', () => {
       'restore_version',
       'publish',
       'set_gallery_listing',
+      'unpublish',
+      'set_visibility',
+      'set_frame_ancestors',
+      'release_lease',
+      'delete_app',
       'skill_info',
       'configure_module',
       'query_data',
@@ -66,6 +71,11 @@ describe('TOOL_DOCS manifest', () => {
       restore_version: [false, true, false, false], // a new version on every call
       publish: [false, true, true, true], // changes what the public internet sees; same pointer again
       set_gallery_listing: [false, false, true, true], // a public listing; the same call again answers changed:false
+      unpublish: [false, true, true, true], // the production address goes 404; a second call answers not_published
+      set_visibility: [false, true, true, true], // who can open the public site; public drops the stored password
+      set_frame_ancestors: [false, false, true, true], // which sites may frame the public site; the same list again answers changed:false
+      release_lease: [false, false, true, false], // frees only the caller's own lease; a second call answers released:false
+      delete_app: [false, true, true, true], // every host goes 404; a second call answers not_found
       skill_info: [true, false, true, false],
       configure_module: [false, true, true, false], // the same merge patch again answers unchanged
       query_data: [true, false, true, false],
@@ -89,9 +99,20 @@ describe('TOOL_DOCS manifest', () => {
       expect(toolDoc(name).annotations, name).toEqual({ readOnlyHint, destructiveHint, idempotentHint, openWorldHint });
     }
     // Consistency rules a directory reviewer applies: a read-only tool is never
-    // destructive; only publish, the gallery listing and the domain tools that touch public DNS
-    // or the public site, and sync_now (it calls the app's external API), reach the open world.
-    const openWorld = ['publish', 'set_gallery_listing', 'sync_now', 'verify_domain', 'set_primary_domain', 'remove_domain'];
+    // destructive; only publish, the gallery listing, the lifecycle tools and the domain tools that
+    // touch public DNS or the public site, and sync_now (it calls the app's external API), reach the open world.
+    const openWorld = [
+      'publish',
+      'set_gallery_listing',
+      'unpublish',
+      'set_visibility',
+      'set_frame_ancestors',
+      'delete_app',
+      'sync_now',
+      'verify_domain',
+      'set_primary_domain',
+      'remove_domain',
+    ];
     for (const t of TOOL_DOCS) {
       if (t.annotations.readOnlyHint) expect(t.annotations.destructiveHint, t.name).toBe(false);
       expect(t.annotations.openWorldHint, t.name).toBe(openWorld.includes(t.name));
@@ -149,6 +170,24 @@ describe('TOOL_DOCS manifest', () => {
     }
     expect(toolDoc('get_app').returns).toContain('domains:[{host,status');
     expect(toolDoc('publish').returns).toContain('verified custom domains');
+  });
+
+  it('the app lifecycle tools mirror the Settings tab; what changes the public site needs the user\'s yes', () => {
+    for (const name of ['unpublish', 'set_visibility']) expect(toolDoc(name).scope, name).toMatch(/^publish \(editor\+/);
+    for (const name of ['set_frame_ancestors', 'release_lease', 'delete_app']) expect(toolDoc(name).scope, name).toMatch(/^write \(editor\+/);
+    for (const name of ['unpublish', 'set_visibility', 'delete_app']) {
+      const doc = toolDoc(name);
+      expect(doc.description, name).toMatch(/user_confirmed: true/);
+      expect(doc.description, name).toMatch(/ONLY after the user explicitly said yes/);
+      expect(doc.fields.at(-1)?.name, name).toBe('user_confirmed');
+    }
+    expect(toolDoc('set_visibility').description).toMatch(/never ask for the password in chat/);
+    expect(toolDoc('set_visibility').returns).toContain('password_not_set');
+    expect(toolDoc('set_visibility').fields.map((f) => f.name)).toEqual(['app_id', 'visibility', 'user_confirmed']);
+    expect(toolDoc('set_frame_ancestors').fields.map((f) => f.name)).toEqual(['app_id', 'frame_ancestors']);
+    expect(toolDoc('release_lease').description).toMatch(/Only your own lease/);
+    expect(toolDoc('release_lease').fields.map((f) => f.name)).toEqual(['app_id']);
+    expect(toolDoc('get_app').returns).toContain('visibility:"public"|"password", frame_ancestors:string|null');
   });
 
   it('publish is documented as explicit-request only, with the publish scope', () => {

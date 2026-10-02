@@ -26,6 +26,7 @@ const ALL_TOOLS = [
   'configure_module',
   'create_app',
   'create_asset_upload',
+  'delete_app',
   'delete_asset',
   'duplicate_app',
   'get_app',
@@ -37,18 +38,31 @@ const ALL_TOOLS = [
   'query_data',
   'read_file',
   'register_upstream',
+  'release_lease',
   'remove_domain',
   'remove_upstream',
   'restore_version',
+  'set_frame_ancestors',
   'skill_info',
   'sync_now',
   'verify_domain',
   'write_files',
 ];
 const READ_TOOLS = new Set(['list_apps', 'get_app', 'read_file', 'skill_info', 'query_data', 'get_logs', 'list_assets', 'list_domains', 'list_upstreams']);
-/** The domain tools that ask public DNS or change the public site. */
-const OPEN_WORLD_TOOLS = new Set(['sync_now', 'verify_domain', 'remove_domain']);
-const IDEMPOTENT_WRITES = new Set(['configure_module', 'delete_asset', 'add_domain', 'verify_domain', 'remove_domain', 'register_upstream', 'remove_upstream']);
+/** The tools that ask public DNS or change the public site. */
+const OPEN_WORLD_TOOLS = new Set(['sync_now', 'verify_domain', 'remove_domain', 'set_frame_ancestors', 'delete_app']);
+const IDEMPOTENT_WRITES = new Set([
+  'configure_module',
+  'delete_asset',
+  'add_domain',
+  'verify_domain',
+  'remove_domain',
+  'register_upstream',
+  'remove_upstream',
+  'set_frame_ancestors',
+  'release_lease',
+  'delete_app',
+]);
 
 const TEMPLATE_FILES = ['drobek.json', 'index.html', 'src/main.tsx', 'src/styles.css'];
 
@@ -158,7 +172,7 @@ test('core tools: create → broken write → fix → limits → restore → rea
       expect(t.title ?? t.annotations?.title, `${t.name} title`).toBeTruthy();
       expect(t.annotations?.readOnlyHint, `${t.name} readOnlyHint`).toBe(READ_TOOLS.has(t.name));
       expect(t.annotations?.openWorldHint, `${t.name} openWorldHint`).toBe(OPEN_WORLD_TOOLS.has(t.name));
-      // Explicit idempotentHint — reads, configure_module, delete_asset and the domain/upstream tools repeat safely; create/write/restore/upload URLs do not.
+      // Explicit idempotentHint — reads, configure_module, delete_asset, the domain/upstream tools and the app settings/lease/delete tools repeat safely; create/write/restore/upload URLs do not.
       expect(t.annotations?.idempotentHint, `${t.name} idempotentHint`).toBe(READ_TOOLS.has(t.name) || IDEMPOTENT_WRITES.has(t.name));
     }
 

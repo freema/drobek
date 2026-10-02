@@ -41,17 +41,20 @@ const WRITE = [
   'configure_module',
   'create_app',
   'create_asset_upload',
+  'delete_app',
   'delete_asset',
   'duplicate_app',
   'register_upstream',
+  'release_lease',
   'remove_domain',
   'remove_upstream',
   'restore_version',
+  'set_frame_ancestors',
   'sync_now',
   'verify_domain',
   'write_files',
 ];
-const PUBLISH = ['publish', 'set_gallery_listing', 'set_primary_domain'];
+const PUBLISH = ['publish', 'set_gallery_listing', 'set_primary_domain', 'set_visibility', 'unpublish'];
 
 const EXPECTED: Array<[Scope[], string[]]> = [
   [[], []],

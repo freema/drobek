@@ -1,7 +1,8 @@
 /**
  * The MCP tool bodies: list_apps, create_app, get_app, read_file,
  * write_files, restore_version, publish, skill_info, configure_module,
- * query_data, get_logs, set_gallery_listing, duplicate_app and sync_now.
+ * query_data, get_logs, set_gallery_listing, duplicate_app and sync_now
+ * (the app lifecycle tools are in lifecycle.ts).
  * Each takes the caller + validated arguments and returns a plain JSON payload or throws a ToolError; the MCP
  * wiring (register.ts) turns that into a CallToolResult.
  *
@@ -198,12 +199,17 @@ async function takeLease(ctx: CallContext, appId: string): Promise<void> {
     APP_LOCK_TTL_SEC * 1000
   );
   if (res.acquired) return;
-  const emails = await emailsByUserIds([res.lease.holder_user_id]);
-  const holder = maskEmail(emails.get(res.lease.holder_user_id) ?? '');
-  throw new ToolError(
+  throw await appLocked(res.lease);
+}
+
+/** `app_locked` for a lease another user holds: their masked e-mail and when it runs out. */
+export async function appLocked(lease: Lease, suffix = ''): Promise<ToolError> {
+  const emails = await emailsByUserIds([lease.holder_user_id]);
+  const holder = maskEmail(emails.get(lease.holder_user_id) ?? '');
+  return new ToolError(
     'app_locked',
-    `${holder} is editing this app right now (their agent holds the write lease until ${res.lease.expires_at}).`,
-    { holder, expires_at: res.lease.expires_at }
+    `${holder} is editing this app right now (their agent holds the write lease until ${lease.expires_at}).${suffix}`,
+    { holder, expires_at: lease.expires_at }
   );
 }
 
@@ -361,6 +367,8 @@ export async function getApp(ctx: CallContext, args: { app_id: string }) {
     })),
     modules,
     skills: skills(ctx, enabled),
+    visibility: app.visibility,
+    frame_ancestors: app.frameAncestors,
     gallery: await galleryOut(app, ctx.deps.env),
     ...(app.duplicatedFromSlug ? { duplicated_from: app.duplicatedFromSlug } : {}),
     // The custom domains in short; list_domains has the DNS records and the last check.

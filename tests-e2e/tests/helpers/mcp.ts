@@ -21,7 +21,7 @@ import { personalWorkspaceOf } from './seed';
 /** The loopback redirect_uri the browser's cross-origin redirect is intercepted at. */
 export const REDIRECT_URI = 'http://127.0.0.1:9988/callback';
 
-/** Every scope the AS issues — tools/list then carries all 20 tools (21 for a super-admin). */
+/** Every scope the AS issues — tools/list then carries all 30 tools (31 for a super-admin). */
 export const FULL_SCOPE = 'read write publish';
 
 export function pkcePair(): { verifier: string; challenge: string } {

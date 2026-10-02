@@ -64,8 +64,11 @@ const WRITE_TOOLS = [
   'remove_domain',
   'register_upstream',
   'remove_upstream',
+  'set_frame_ancestors',
+  'release_lease',
+  'delete_app',
 ];
-const PUBLISH_TOOLS = ['publish', 'set_gallery_listing', 'set_primary_domain', 'set_workspace_publishing'];
+const PUBLISH_TOOLS = ['unpublish', 'set_visibility', 'publish', 'set_gallery_listing', 'set_primary_domain', 'set_workspace_publishing'];
 
 /** The exact tools/list per combination, spelled out (not derived from the table). */
 const EXPECTED: Record<string, string[]> = {
@@ -95,14 +98,19 @@ describe('tool → scope table', () => {
     });
   }
 
-  it('every tool needs exactly one scope; publish unlocks exactly publish + set_gallery_listing + set_primary_domain + set_workspace_publishing', () => {
+  it('every tool needs exactly one scope; publish unlocks exactly unpublish + set_visibility + publish + set_gallery_listing + set_primary_domain + set_workspace_publishing', () => {
     for (const scope of Object.values(TOOL_SCOPES)) expect(['read', 'write', 'publish']).toContain(scope);
     expect(toolAllowed([], 'list_apps')).toBe(false);
     expect(toolAllowed(['read'], 'write_files')).toBe(false);
     expect(toolAllowed(['write'], 'read_file')).toBe(false);
     expect(toolAllowed('read', 'get_app')).toBe(true);
     expect(toolAllowed(['read', 'write'], 'publish')).toBe(false);
-    expect(allowedTools(['publish'])).toEqual(['publish', 'set_gallery_listing', 'set_primary_domain', 'set_workspace_publishing']);
+    expect(allowedTools(['publish'])).toEqual(['unpublish', 'set_visibility', 'publish', 'set_gallery_listing', 'set_primary_domain', 'set_workspace_publishing']);
+    // Deleting an app and its embedding are write; taking it offline and opening it to everyone are publish.
+    expect(toolAllowed(['read', 'write'], 'delete_app')).toBe(true);
+    expect(toolAllowed(['read', 'write'], 'release_lease')).toBe(true);
+    expect(toolAllowed(['read', 'write'], 'unpublish')).toBe(false);
+    expect(toolAllowed(['read', 'write'], 'set_visibility')).toBe(false);
     expect(toolAllowed(['read', 'write'], 'set_gallery_listing')).toBe(false);
     // Add/verify/remove a domain are write; the primary domain is publish.
     expect(toolAllowed(['read', 'write'], 'remove_domain')).toBe(true);

@@ -309,9 +309,11 @@ to, with your role in each.
 - **Scripts / CI:** a personal `drk_…` API key from `/me/api-keys` as
   `Authorization: Bearer drk_…`.
 
-The agent gets twenty-five tools — `list_apps`, `create_app`, `duplicate_app`, `get_app`,
+The agent gets thirty tools — `list_apps`, `create_app`, `duplicate_app`, `get_app`,
 `read_file`, `write_files`, `restore_version`, `publish`,
-`set_gallery_listing`, `skill_info`, `configure_module`, `query_data`,
+`set_gallery_listing`, for the app's settings and lifecycle `unpublish`,
+`set_visibility`, `set_frame_ancestors`, `release_lease`, `delete_app`,
+`skill_info`, `configure_module`, `query_data`,
 `get_logs`, for video, audio, images and fonts `create_asset_upload`,
 `list_assets`, `delete_asset` (an upload URL — the file never passes through
 the model), and for custom domains `list_domains`, `add_domain`,

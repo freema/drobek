@@ -73,6 +73,8 @@ export const CORE_ERROR_CODES: readonly string[] = [
   'not_duplicable',
   'publish_not_approved',
   'publish_blocked',
+  // set_visibility without a password set in the dashboard
+  'password_not_set',
   // app assets (MCP asset tools, the upload URL)
   'asset_too_large',
   'asset_type_not_allowed',

@@ -194,13 +194,20 @@ describe('setFrameAncestors', () => {
 });
 
 describe('releaseAppLease', () => {
+  /** The two scripts' replies: GET+DEL (no holder), or the holder-only take ({1|0, value} / nil). */
   function fakeRedis(store: Map<string, string>): LeaseRedis {
     return {
       get: async (key: string) => store.get(key) ?? null,
-      eval: async (_script: string, _n: number, key: string) => {
+      eval: async (_script: string, _n: number, key: string, holder?: string) => {
         const cur = store.get(key) ?? null;
+        if (holder === undefined) {
+          store.delete(key);
+          return cur;
+        }
+        if (cur === null) return null;
+        if ((JSON.parse(cur) as { holder_user_id: string }).holder_user_id !== holder) return [0, cur];
         store.delete(key);
-        return cur;
+        return [1, cur];
       },
     } as unknown as LeaseRedis;
   }
@@ -233,5 +240,39 @@ describe('releaseAppLease', () => {
     const before = (await auditOf(app.slug)).length;
     expect(await releaseAppLease({ ...app, workspaceId: wsId }, actor, redis)).toEqual({ released: false, previous: null });
     expect((await auditOf(app.slug)).length).toBe(before);
+  });
+
+  it('with holderUserId removes only that user\'s lease; another holder\'s stays, unaudited', async () => {
+    const app = await newApp();
+    const me = actor.userId as string;
+    const store = new Map<string, string>();
+    const redis = fakeRedis(store);
+    const theirs = { holder_user_id: 'user-other', session_id: 's9', expires_at: '2026-09-23T10:03:00.000Z' };
+    store.set(leaseKey(app.id), JSON.stringify(theirs));
+    const before = (await auditOf(app.slug)).length;
+
+    expect(await releaseAppLease({ ...app, workspaceId: wsId }, actor, redis, { holderUserId: me })).toEqual({
+      released: false,
+      previous: theirs,
+    });
+    expect(await readAppLease(app.id, redis)).toEqual(theirs);
+    expect((await auditOf(app.slug)).length).toBe(before);
+
+    const mine = { holder_user_id: me, session_id: 's1', expires_at: '2026-09-23T10:03:00.000Z' };
+    store.set(leaseKey(app.id), JSON.stringify(mine));
+    expect(await releaseAppLease({ ...app, workspaceId: wsId }, actor, redis, { holderUserId: me })).toEqual({
+      released: true,
+      previous: mine,
+    });
+    expect(await readAppLease(app.id, redis)).toBeNull();
+    expect((await auditOf(app.slug)).at(-1)).toMatchObject({
+      action: 'app.lock.release',
+      meta: { previousHolderUserId: me, expiresAt: mine.expires_at },
+    });
+
+    expect(await releaseAppLease({ ...app, workspaceId: wsId }, actor, redis, { holderUserId: me })).toEqual({
+      released: false,
+      previous: null,
+    });
   });
 });

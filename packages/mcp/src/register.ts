@@ -50,6 +50,7 @@ import {
 } from './tools.js';
 import { createAssetUpload, deleteAssetTool, listAssetsTool } from './assets.js';
 import { addDomainTool, listDomainsTool, removeDomainTool, setPrimaryDomainTool, verifyDomainTool } from './domains.js';
+import { deleteAppTool, releaseLeaseTool, setFrameAncestorsTool, setVisibilityTool, unpublishTool } from './lifecycle.js';
 import { listUpstreamsTool, registerUpstreamTool, removeUpstreamTool } from './upstreams.js';
 import { setWorkspacePublishingTool } from './workspace-publishing.js';
 import { TEMPLATES } from './templates.js';
@@ -65,6 +66,11 @@ export const APP_TOOL_NAMES = [
   'restore_version',
   'publish',
   'set_gallery_listing',
+  'unpublish',
+  'set_visibility',
+  'set_frame_ancestors',
+  'release_lease',
+  'delete_app',
   'skill_info',
   'configure_module',
   'query_data',
@@ -161,6 +167,32 @@ export const INPUT_SCHEMAS = {
       .boolean()
       .optional()
       .describe('Listing only: true ONLY after the user explicitly said yes to this listing and description.'),
+  },
+  unpublish: {
+    app_id: appId,
+    user_confirmed: z.boolean().optional().describe('true ONLY after the user explicitly said yes to unpublishing this app.'),
+  },
+  set_visibility: {
+    app_id: appId,
+    visibility: z
+      .enum(['public', 'password'])
+      .describe('public = anyone with the link; password = only with the password the owner set in the dashboard.'),
+    user_confirmed: z
+      .boolean()
+      .optional()
+      .describe('Making it public: true ONLY after the user explicitly said yes.'),
+  },
+  set_frame_ancestors: {
+    app_id: appId,
+    frame_ancestors: z
+      .string()
+      .nullable()
+      .describe('\'self\' and/or up to 10 http(s) origins separated by spaces, e.g. https://intranet.example.com; null = no other site may embed the app.'),
+  },
+  release_lease: { app_id: appId },
+  delete_app: {
+    app_id: appId,
+    user_confirmed: z.boolean().optional().describe('true ONLY after the user explicitly said yes to deleting this app.'),
   },
   skill_info: {
     name: z.string().optional().describe('A skill name from the list; omit to list every skill.'),
@@ -467,6 +499,11 @@ export function registerAppTools(
   register('restore_version', restoreVersion);
   register('publish', publishApp);
   register('set_gallery_listing', setGalleryListingTool);
+  register('unpublish', unpublishTool);
+  register('set_visibility', setVisibilityTool);
+  register('set_frame_ancestors', setFrameAncestorsTool);
+  register('release_lease', releaseLeaseTool);
+  register('delete_app', deleteAppTool);
   register('skill_info', skillInfo);
   register('configure_module', configureModule);
   register<{ app_id: string; collection: string }>('query_data', queryData, (p) => untrustedResult(untrustedDataEnvelope(p as QueryDataResult)));

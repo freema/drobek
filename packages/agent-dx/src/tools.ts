@@ -113,11 +113,11 @@ export const TOOL_DOCS: ToolDoc[] = [
     title: 'Get an app',
     scope: 'read (any role in the workspace)',
     description:
-      'Snapshot of one app: everything list_apps shows plus the briefing, the source files of the latest version ({path,size,sha256}), the last 20 versions (number, created_at, actor_kind, reasoning, compile_status), the latest compile errors, the latest version\'s publish readiness report (`readiness` — with `typecheck` and its `type_error` warnings once the background TypeScript check of that version is done), the platform modules (per module: whether it is enabled for the app\'s workspace — an opt-in module the operator has not enabled says enabled:false and cannot be used —, its effective config, whether a change waits for the owner\'s confirmation, which secrets are set — names and hasSecret only, never values — and the module\'s info, e.g. proxy: the workspace upstreams with registered/assigned/call/hasSecret), the skills list (without the opt-in modules that are off for the workspace), the public gallery state (listed, description, hidden_by_admin, visible, allow_duplicate, likes — signed-in accounts that like it — and opens through the gallery in the last 30 days; or enabled:false when the server has no gallery), `duplicated_from` (the gallery app this one was copied from, when it was), the custom domains in short (host, status pending | verified, primary — list_domains has their DNS records), `can_publish` (+ `publish_contact` when the workspace may not publish: the operator blocked it or has not approved it yet) and the workspace\'s `publishing` state (default | allowed | blocked), and the write lock (holder + expires_at) if someone holds it. Use it to re-orient before editing.',
+      'Snapshot of one app: everything list_apps shows plus the briefing, the source files of the latest version ({path,size,sha256}), the last 20 versions (number, created_at, actor_kind, reasoning, compile_status), the latest compile errors, the latest version\'s publish readiness report (`readiness` — with `typecheck` and its `type_error` warnings once the background TypeScript check of that version is done), the platform modules (per module: whether it is enabled for the app\'s workspace — an opt-in module the operator has not enabled says enabled:false and cannot be used —, its effective config, whether a change waits for the owner\'s confirmation, which secrets are set — names and hasSecret only, never values — and the module\'s info, e.g. proxy: the workspace upstreams with registered/assigned/call/hasSecret), the skills list (without the opt-in modules that are off for the workspace), who can open the app (`visibility`: public | password) and which other sites may embed it (`frame_ancestors`, null = none), the public gallery state (listed, description, hidden_by_admin, visible, allow_duplicate, likes — signed-in accounts that like it — and opens through the gallery in the last 30 days; or enabled:false when the server has no gallery), `duplicated_from` (the gallery app this one was copied from, when it was), the custom domains in short (host, status pending | verified, primary — list_domains has their DNS records), `can_publish` (+ `publish_contact` when the workspace may not publish: the operator blocked it or has not approved it yet) and the workspace\'s `publishing` state (default | allowed | blocked), and the write lock (holder + expires_at) if someone holds it. Use it to re-orient before editing.',
     annotations: READ_ONLY,
     fields: [{ name: 'app_id', type: 'string', required: true, description: 'The app id (from list_apps / create_app).' }],
     returns:
-      '{ app_id, name, slug, workspace, preview_url, published_url?, published_version?, latest_version, compile_status, compile_errors, readiness?:{ ready, blocking:[…], warnings:[{code,file?,line?,message,hint}], warnings_omitted?, typecheck?:"pending"|"checked"|"unavailable" }, briefing, files:[{path,size,sha256}], versions:[{number,created_at,actor_kind,reasoning,compile_status}], modules:{<name>:{enabled,configured,config,pending,pending_confirmation?,confirm_url?,secrets?:[{name,hasSecret}],info?}}, skills:[{name,use_when}], gallery:{enabled,listed?,description?,hidden_by_admin?,visible?,allow_duplicate?,likes?,opens?}, duplicated_from?, domains:[{host,status:"pending"|"verified",primary}], can_publish, publish_contact?, publishing, lock?:{holder,expires_at}, locked_by_admin?, locked_reason? }',
+      '{ app_id, name, slug, workspace, preview_url, published_url?, published_version?, latest_version, compile_status, compile_errors, readiness?:{ ready, blocking:[…], warnings:[{code,file?,line?,message,hint}], warnings_omitted?, typecheck?:"pending"|"checked"|"unavailable" }, briefing, files:[{path,size,sha256}], versions:[{number,created_at,actor_kind,reasoning,compile_status}], modules:{<name>:{enabled,configured,config,pending,pending_confirmation?,confirm_url?,secrets?:[{name,hasSecret}],info?}}, skills:[{name,use_when}], visibility:"public"|"password", frame_ancestors:string|null, gallery:{enabled,listed?,description?,hidden_by_admin?,visible?,allow_duplicate?,likes?,opens?}, duplicated_from?, domains:[{host,status:"pending"|"verified",primary}], can_publish, publish_contact?, publishing, lock?:{holder,expires_at}, locked_by_admin?, locked_reason? }',
     example: { app_id: 'k3v9x0…' },
   },
   {
@@ -228,6 +228,84 @@ export const TOOL_DOCS: ToolDoc[] = [
     ],
     returns: '{ app_id, listed, description, allow_duplicate, changed, visible, note? }',
     example: { app_id: 'k3v9x0…', listed: true, description: 'Plan weekly shifts for a small team.', user_confirmed: true },
+  },
+  {
+    name: 'unpublish',
+    title: 'Unpublish an app',
+    scope: 'publish (editor+ role in the workspace)',
+    description:
+      'Take the app off its production address — the dashboard\'s Unpublish: `https://<slug>.<APPS_DOMAIN>` and every verified custom domain answer 404 "not published" from the next request, while the preview and the version hosts keep serving and nothing is deleted; `publish` puts a version live again. A listed app also leaves the public gallery. It changes what the public sees, so it needs `user_confirmed: true` — set it ONLY after the user explicitly said yes to unpublishing exactly this app; without it the answer is user_confirmation_required and nothing changes. Never unpublish on your own initiative. An app that is not published answers not_published, a taken-down app app_locked_by_admin.',
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+    fields: [
+      { name: 'app_id', type: 'string', required: true, description: 'The app id.' },
+      { name: 'user_confirmed', type: 'boolean', required: false, description: 'true ONLY after the user explicitly said yes to unpublishing this app.' },
+    ],
+    returns: '{ app_id, unpublished_version, gallery_unlisted, note }',
+    example: { app_id: 'k3v9x0…', user_confirmed: true },
+  },
+  {
+    name: 'set_visibility',
+    title: 'Set who can open an app',
+    scope: 'publish (editor+ role in the workspace)',
+    description:
+      'Who can open the app, on every host of it (the production address, its custom domains, the preview and the version hosts) — the dashboard\'s Settings → Visibility. `public`: anyone with the link. `password`: only people who enter the app\'s password. A password never passes through MCP or an LLM: the owner sets it on the Settings tab, so `password` works only for an app that already has one stored — otherwise the answer is password_not_set with `settings_url`: give the user that link and never ask for the password in chat. Making a password-protected app public opens it to everyone and removes its stored password (protecting it again needs a new one in the dashboard), so it needs `user_confirmed: true` — set it ONLY after the user explicitly said yes; without it the answer is user_confirmation_required and nothing changes. The visibility the app already has answers changed:false. get_app shows `visibility`.',
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+    fields: [
+      { name: 'app_id', type: 'string', required: true, description: 'The app id.' },
+      { name: 'visibility', type: '"public" | "password"', required: true, description: 'public = anyone with the link; password = only with the password the owner set in the dashboard.' },
+      {
+        name: 'user_confirmed',
+        type: 'boolean (making it public)',
+        required: false,
+        description: 'true ONLY after the user explicitly said yes to making this password-protected app public.',
+      },
+    ],
+    returns: '{ app_id, visibility:"public"|"password", changed, note } — or isError password_not_set with { settings_url }',
+    example: { app_id: 'k3v9x0…', visibility: 'public', user_confirmed: true },
+  },
+  {
+    name: 'set_frame_ancestors',
+    title: 'Set which sites may embed an app',
+    scope: 'write (editor+ role in the workspace)',
+    description:
+      'Which other websites may show the app in an `<iframe>` — the CSP `frame-ancestors` of every host of the app, the dashboard\'s Settings → Embedding. By default no other site may (the dashboard itself, and the operator\'s gallery website for an app in the public gallery, always can). `frame_ancestors` is a space-separated list of `\'self\'` and up to 10 http(s) origins, a host may start with `*.` — e.g. "https://intranet.example.com https://*.example.org"; null, "" or "\'none\'" removes it. The call replaces the whole list: get_app shows the current `frame_ancestors`, so read it before adding one origin. A path, a quote, `*`, a scheme-only source like `https:` or more than 10 entries answer invalid_params. Allow only the sites the user named.',
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    fields: [
+      { name: 'app_id', type: 'string', required: true, description: 'The app id.' },
+      {
+        name: 'frame_ancestors',
+        type: 'string | null',
+        required: true,
+        description: '\'self\' and/or up to 10 http(s) origins separated by spaces; null (or "") = no other site may embed the app.',
+      },
+    ],
+    returns: '{ app_id, frame_ancestors:string|null, previous:string|null, changed, note }',
+    example: { app_id: 'k3v9x0…', frame_ancestors: 'https://intranet.example.com' },
+  },
+  {
+    name: 'release_lease',
+    title: 'Release your write lease',
+    scope: 'write (editor+ role in the workspace)',
+    description:
+      'Free the app\'s single-writer lease your writes hold (write_files, restore_version and configure_module take it for 3 minutes) once you are done, so another member\'s agent can write at once instead of waiting for it to run out. Only your own lease, from any of your sessions: a lease another user\'s agent holds stays in place and answers app_locked with its `holder` and `expires_at`. A free app answers released:false. Your next write takes the lease again.',
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    fields: [{ name: 'app_id', type: 'string', required: true, description: 'The app id.' }],
+    returns: '{ app_id, released, note }',
+    example: { app_id: 'k3v9x0…' },
+  },
+  {
+    name: 'delete_app',
+    title: 'Delete an app',
+    scope: 'write (editor+ role in the workspace)',
+    description:
+      'Delete the app — the dashboard\'s Settings → Delete app: every host of it (the production address, its custom domains, the preview and the version hosts) answers 404 from the next request, and it is gone from list_apps, get_app and the dashboard; neither the user nor you can bring it back. Its slug stays reserved for 30 days, then a new app may take it. Use it when the user asks to delete an app — e.g. when create_app answered limit_exceeded and the user chose which app goes. It needs `user_confirmed: true` — set it ONLY after the user explicitly said yes to deleting exactly this app (name it); without it the answer is user_confirmation_required and nothing changes. Never delete an app on your own initiative.',
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+    fields: [
+      { name: 'app_id', type: 'string', required: true, description: 'The app id.' },
+      { name: 'user_confirmed', type: 'boolean', required: false, description: 'true ONLY after the user explicitly said yes to deleting this app.' },
+    ],
+    returns: '{ deleted:slug, app_id, slug_released_at, note }',
+    example: { app_id: 'k3v9x0…', user_confirmed: true },
   },
   {
     name: 'skill_info',

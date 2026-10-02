@@ -3,12 +3,14 @@
  * `{ holder_user_id, session_id, expires_at }` with a TTL (3 min), renewed by
  * every write_files / restore_version. Another USER gets `app_locked`; the
  * same user from another session takes the lease over (it is their app).
+ * `release` (release_lease) frees only the caller's own lease, through
+ * @drobek/apps `releaseAppLease` — the dashboard's unlock, audited.
  *
  * Acquire/renew/take-over is ONE Lua script, so two agents racing for a free
  * app can never both win: the script reads the holder and writes the new
  * value atomically inside Redis.
  */
-import { LEASE_KEY_PREFIX, leaseKey, parseLease, type Lease } from '@drobek/apps';
+import { LEASE_KEY_PREFIX, leaseKey, parseLease, releaseAppLease, type Actor, type Lease } from '@drobek/apps';
 import type { getRedis } from '@drobek/core';
 
 // The key format + value shape live in @drobek/apps (the dashboard reads and
@@ -22,11 +24,16 @@ interface LeaseHolder {
 
 type AcquireResult = { acquired: true; lease: Lease } | { acquired: false; lease: Lease };
 
+/** `released: false` + `previous` = another user holds it (left in place); + null = it was free. */
+type ReleaseResult = { released: boolean; previous: Lease | null };
+
 export interface LeaseStore {
   /** Take (free / expired / own) or renew the lease; report the holder otherwise. */
   acquire(appId: string, holder: LeaseHolder, ttlMs: number): Promise<AcquireResult>;
   /** The live leases of these apps (missing = free). */
   get(appIds: string[]): Promise<Map<string, Lease>>;
+  /** Remove the lease when `actor` holds it (audited `app.lock.release`); another user's stays. */
+  release(app: { id: string; slug: string; workspaceId: string }, actor: Actor & { userId: string }): Promise<ReleaseResult>;
 }
 
 /**
@@ -46,7 +53,7 @@ redis.call('SET', KEYS[1], ARGV[2], 'PX', tonumber(ARGV[3]))
 return {1, ARGV[2]}
 `;
 
-type RedisLike = Pick<ReturnType<typeof getRedis>, 'eval' | 'mget'>;
+type RedisLike = Pick<ReturnType<typeof getRedis>, 'eval' | 'mget' | 'get'>;
 
 export function redisLeaseStore(redis: () => RedisLike, now: () => number = Date.now): LeaseStore {
   return {
@@ -78,12 +85,16 @@ export function redisLeaseStore(redis: () => RedisLike, now: () => number = Date
       });
       return out;
     },
+    release(app, actor) {
+      return releaseAppLease(app, actor, redis(), { holderUserId: actor.userId });
+    },
   };
 }
 
 /**
  * In-process lease store with the SAME semantics (tests, clock seam): expiry
  * is decided by `now()`, so a test can jump past the TTL without sleeping.
+ * `release` writes no audit row (the Redis store's goes through @drobek/apps).
  */
 export function memoryLeaseStore(now: () => number = Date.now): LeaseStore & { clear(): void } {
   const leases = new Map<string, { lease: Lease; expiresAtMs: number }>();
@@ -116,6 +127,13 @@ export function memoryLeaseStore(now: () => number = Date.now): LeaseStore & { c
         if (e) out.set(id, e.lease);
       }
       return out;
+    },
+    async release(app, actor) {
+      const cur = live(app.id);
+      if (!cur) return { released: false, previous: null };
+      if (cur.lease.holder_user_id !== actor.userId) return { released: false, previous: cur.lease };
+      leases.delete(app.id);
+      return { released: true, previous: cur.lease };
     },
     clear() {
       leases.clear();

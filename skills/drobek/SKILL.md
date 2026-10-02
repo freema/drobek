@@ -12,8 +12,9 @@ server (esbuild — it never runs your code) on every write. Every write is an
 immutable **version**; the working copy is served at the app's `preview_url`.
 
 Connect the MCP server first (OAuth 2.1, PKCE — or a `drk_…` API key). The
-user approves scopes on the consent screen: `read` (look), `write` (create and
-change apps) and `publish` (make a version live, list it in the gallery); you
+user approves scopes on the consent screen: `read` (look), `write` (create,
+change and delete apps) and `publish` (make a version live or take it offline,
+choose who can open it, list it in the gallery); you
 only see the tools your grant allows. The AUTHORITATIVE, always-current tool schemas live in
 llms-full.txt and the MCP docs resource — link to them, do not hand-copy them.
 
@@ -300,7 +301,10 @@ shared links".
 A write takes the app's lease for 3 minutes, renewed by every write. If another
 user's agent holds it you get `app_locked` with the (masked) `holder` and
 `expires_at`: tell the user who is working on the app and retry after
-`expires_at`. Your own other sessions never block you.
+`expires_at`. Your own other sessions never block you. When you are done
+writing, `release_lease({ app_id })` frees your lease so another member's
+agent can write at once (only your own: another user's lease answers
+`app_locked` and stays).
 
 `app_locked_by_admin` is different: the server operator took the app down
 (`reason` names the category; list_apps / get_app show `locked_by_admin`).
@@ -396,6 +400,38 @@ everyone (on drobek.app it is shown at www.drobek.app/gallery).
   (DUPLICATES_PER_USER_HOUR) mean: tell the user, do not retry. The same
   copy is in the dashboard at `/duplicate/<slug>`.
 
+## Settings: visibility, embedding, unpublish, delete
+
+What the dashboard's app page and Settings tab change, you change too — the
+same checks, each change audited with you as the actor:
+
+- `set_visibility({ app_id, visibility, user_confirmed? })` (scope `publish`)
+  — who can open the app on every host: `public` (anyone with the link) or
+  `password`. A password never passes through you: the owner sets it on the
+  Settings tab. `password` works only when the app already has one;
+  otherwise the answer is `password_not_set` with `settings_url` — give the
+  user that link, never ask for the password in chat. Making a
+  password-protected app public opens it to everyone and drops its password,
+  so it needs `user_confirmed: true` after the user's explicit yes.
+  `get_app` shows `visibility`.
+- `set_frame_ancestors({ app_id, frame_ancestors })` (scope `write`) — which
+  other sites may embed the app in an `<iframe>`: `'self'` and/or up to 10
+  http(s) origins separated by spaces; `null` = none (the default). It
+  replaces the whole list, so read `frame_ancestors` from `get_app` before
+  adding one. Allow only the sites the user named.
+- `unpublish({ app_id, user_confirmed })` (scope `publish`) — the production
+  address and the custom domains answer "not published" (the preview keeps
+  serving; a listed app leaves the gallery); `publish` puts it back.
+- `delete_app({ app_id, user_confirmed })` (scope `write`) — every address of
+  the app answers 404 and it is gone from the dashboard and from MCP; it
+  cannot be brought back, and its slug is free again after 30 days. When
+  `create_app` answers `limit_exceeded` (the workspace is full), the user may
+  pick an app to delete.
+
+Unpublish and delete happen **only after the user explicitly said yes** to
+exactly that app (`user_confirmed: true`, else `user_confirmation_required`
+and nothing changes) — never on your own initiative.
+
 ## Custom domains
 
 An app can also answer on a domain the user owns — the same as the dashboard's
@@ -469,7 +505,7 @@ A failed call returns `isError: true` with `{ code, message, hint }` — the
 `hint` says what to do (`not_found`, `forbidden`, `invalid_params`,
 `invalid_path`, `limit_exceeded`, `secret_in_source`, `app_locked`,
 `app_locked_by_admin`, `busy`, `not_publishable`, `not_published`,
-`user_confirmation_required`, `gallery_hidden`, `gallery_disabled`, `not_duplicable`,
+`user_confirmation_required`, `password_not_set`, `gallery_hidden`, `gallery_disabled`, `not_duplicable`,
 `publish_not_approved`, `publish_blocked`, `asset_too_large`, `module_not_enabled`,
 `domain_not_verified`, `dns_unavailable`, …).
 An argument a tool does not take is ignored and the result carries

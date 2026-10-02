@@ -15,8 +15,9 @@ export interface AppRow {
   publishedVersionId: string | null;
   /** The super-admin takedown category; non-null = locked (app_locked_by_admin). */
   lockedReason: string | null;
-  /** What get_app's `gallery` reports. */
+  /** What get_app's `gallery` reports; with `frameAncestors` also get_app's own fields. */
   visibility: string;
+  frameAncestors: string | null;
   galleryListed: boolean;
   galleryDescription: string | null;
   galleryHiddenAt: Date | null;
@@ -34,6 +35,7 @@ const appColumns = {
   publishedVersionId: apps.publishedVersionId,
   lockedReason: apps.lockedReason,
   visibility: apps.visibility,
+  frameAncestors: apps.frameAncestors,
   galleryListed: apps.galleryListed,
   galleryDescription: apps.galleryDescription,
   galleryHiddenAt: apps.galleryHiddenAt,

@@ -1,5 +1,5 @@
 /**
- * tools/list snapshot: exactly the 20 tools of a user who is not a
+ * tools/list snapshot: exactly the 30 tools of a user who is not a
  * super-admin (a super-admin also gets set_workspace_publishing), in order,
  * with their titles, annotations and input schemas. Hand-written on purpose — a
  * change to the public tool surface must be a deliberate edit here.
@@ -30,7 +30,7 @@ async function listTools(allow?: (t: string) => boolean, superAdmin = false) {
 const RO = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 
 describe('tools/list', () => {
-  it('is exactly the 24 tools with their annotations and inputs (snapshot)', async () => {
+  it('is exactly the 30 tools with their annotations and inputs (snapshot)', async () => {
     const tools = await listTools();
     const snapshot = tools.map((t) => ({
       name: t.name,
@@ -126,6 +126,41 @@ describe('tools/list', () => {
         },
         properties: ['app_id', 'listed', 'description', 'allow_duplicate', 'user_confirmed'],
         required: ['app_id', 'listed'],
+      },
+      {
+        name: 'unpublish',
+        title: 'Unpublish an app',
+        annotations: { title: 'Unpublish an app', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+        properties: ['app_id', 'user_confirmed'],
+        required: ['app_id'],
+      },
+      {
+        name: 'set_visibility',
+        title: 'Set who can open an app',
+        annotations: { title: 'Set who can open an app', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+        properties: ['app_id', 'visibility', 'user_confirmed'],
+        required: ['app_id', 'visibility'],
+      },
+      {
+        name: 'set_frame_ancestors',
+        title: 'Set which sites may embed an app',
+        annotations: { title: 'Set which sites may embed an app', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+        properties: ['app_id', 'frame_ancestors'],
+        required: ['app_id', 'frame_ancestors'],
+      },
+      {
+        name: 'release_lease',
+        title: 'Release your write lease',
+        annotations: { title: 'Release your write lease', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        properties: ['app_id'],
+        required: ['app_id'],
+      },
+      {
+        name: 'delete_app',
+        title: 'Delete an app',
+        annotations: { title: 'Delete an app', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+        properties: ['app_id', 'user_confirmed'],
+        required: ['app_id'],
       },
       {
         name: 'skill_info',
@@ -270,12 +305,14 @@ describe('tools/list', () => {
       'html',
     ]);
     for (const t of tools) expect(t.description!.length, t.name).toBeGreaterThan(40);
+    const visibility = tools.find((t) => t.name === 'set_visibility')!;
+    expect((visibility.inputSchema.properties as Record<string, { enum?: string[] }>).visibility.enum).toEqual(['public', 'password']);
   });
 
   it('a super-admin also gets set_workspace_publishing, last', async () => {
     const tools = await listTools(undefined, true);
-    expect(tools).toHaveLength(26);
-    const last = tools[25];
+    expect(tools).toHaveLength(31);
+    const last = tools[30];
     expect(last.name).toBe('set_workspace_publishing');
     expect(last.annotations).toEqual({
       title: 'Set a workspace\'s publishing',

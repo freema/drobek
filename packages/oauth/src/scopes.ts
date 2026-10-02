@@ -13,11 +13,14 @@
  *             `duplicate_app`), write files (new versions), restore,
  *             configure platform modules, upload (upload URLs) and delete assets,
  *             add, verify and remove custom domains, register and
- *             remove proxy upstreams without a secret.
+ *             remove proxy upstreams without a secret, set which sites may
+ *             embed an app, release one's own write lease and delete an app
+ *             (`set_frame_ancestors`, `release_lease`, `delete_app`).
  *   publish — make a version live at its public URL (the `publish` tool),
- *             list it in the public gallery (`set_gallery_listing`) and
- *             choose the primary domain the production address redirects to
- *             (`set_primary_domain`);
+ *             take it offline again (`unpublish`), choose who can open it
+ *             (`set_visibility`), list it in the public gallery
+ *             (`set_gallery_listing`) and choose the primary domain the
+ *             production address redirects to (`set_primary_domain`);
  *             a super-admin also allows or blocks a workspace's publishing
  *             (`set_workspace_publishing`, registered for super-admins only).
  *
@@ -101,6 +104,13 @@ export const TOOL_SCOPES = {
   remove_domain: 'write',
   register_upstream: 'write',
   remove_upstream: 'write',
+  // App lifecycle: embedding, the caller's own lease and deletion (with the user's yes) are app changes.
+  set_frame_ancestors: 'write',
+  release_lease: 'write',
+  delete_app: 'write',
+  // Taking the production address offline and opening an app to everyone are public exposure, like publishing.
+  unpublish: 'publish',
+  set_visibility: 'publish',
   publish: 'publish',
   // Listing in the public gallery is public exposure, like publishing.
   set_gallery_listing: 'publish',

@@ -28,6 +28,8 @@ export const TOOL_ERROR_CODES = [
   'user_confirmation_required',
   'gallery_hidden',
   'gallery_disabled',
+  // set_visibility to password without a password set in the dashboard.
+  'password_not_set',
   // duplicate_app on a gallery app whose owner does not allow copies.
   'not_duplicable',
   'asset_too_large',

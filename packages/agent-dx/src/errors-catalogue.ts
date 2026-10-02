@@ -74,7 +74,7 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     surface: 'MCP tool isError; compile.errors[]; module route 429 (DrobekError), Retry-After',
     meaning:
       'The version would exceed a size limit (COMPILE_MAX_FILES files, COMPILE_MAX_FILE_BYTES per file, COMPILE_MAX_TOTAL_BYTES in total) or an import chain is deeper than COMPILE_MAX_IMPORT_DEPTH. From create_app: the workspace already holds APPS_MAX_PER_WORKSPACE apps (`limit`, `value`; deleted apps do not count). On a module route: a quota of the app or the user is used up for the period (`details.limit`, e.g. FORMS_PER_APP_PER_DAY, EMAIL_PER_APP_PER_DAY, EMAIL_NOTIFY_ADMINS_PER_DAY). From add_domain (and in the dashboard): the app already has DOMAINS_MAX_PER_APP custom domains, pending and verified together (`limit`, `value`; 0 = custom domains are off for the workspace). From sync_now: the source is past SYNC_MAX_SOURCES_PER_APP and does not run. From register_upstream (and in the dashboard): the workspace already holds UPSTREAMS_MAX_PER_WORKSPACE proxy upstreams (`limit`, `value`).',
-    fix: 'Split big files, delete unused ones, load large libraries from esm.sh through drobek.json instead of copying them into the app. From create_app (APPS_MAX_PER_WORKSPACE): do not retry — tell the user the workspace is full; they can delete an app they no longer need in the dashboard, work in another workspace, or ask the operator for a higher plan limit. On a module route: show the user a message and stop — the quota resets after Retry-After; the app owner can ask the operator for a higher plan limit. From add_domain: remove a domain the app no longer needs (remove_domain) or ask the operator for a higher limit; with 0, tell the user this server offers no custom domains for the workspace. From sync_now: remove a sync source with configure_module(\'sync\', { sources: { <name>: null } }). From register_upstream: do not retry and do not register more hosts — one upstream is one host; reuse a registered one (list_upstreams), ask the user whether one main host is enough, or let them remove one they no longer need (remove_upstream, with their yes) or ask the operator for a higher plan limit.',
+    fix: 'Split big files, delete unused ones, load large libraries from esm.sh through drobek.json instead of copying them into the app. From create_app (APPS_MAX_PER_WORKSPACE): do not retry — tell the user the workspace is full; they can delete an app they no longer need (delete_app once they named it and said yes, or in the dashboard), work in another workspace, or ask the operator for a higher plan limit. On a module route: show the user a message and stop — the quota resets after Retry-After; the app owner can ask the operator for a higher plan limit. From add_domain: remove a domain the app no longer needs (remove_domain) or ask the operator for a higher limit; with 0, tell the user this server offers no custom domains for the workspace. From sync_now: remove a sync source with configure_module(\'sync\', { sources: { <name>: null } }). From register_upstream: do not retry and do not register more hosts — one upstream is one host; reuse a registered one (list_upstreams), ask the user whether one main host is enough, or let them remove one they no longer need (remove_upstream, with their yes) or ask the operator for a higher plan limit.',
   },
   {
     code: 'secret_in_source',
@@ -87,12 +87,12 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     code: 'app_locked',
     surface: 'MCP tool isError',
     meaning:
-      'Another user\'s agent is writing this app right now (single-writer lease, 3 minutes, renewed by each of their writes). The body carries the masked `holder` and `expires_at`.',
+      'Another user\'s agent is writing this app right now (single-writer lease, 3 minutes, renewed by each of their writes). The body carries the masked `holder` and `expires_at`. From release_lease: that lease is not yours, so it stays.',
     fix: 'Tell the user who holds the app and wait until `expires_at`, then retry. Your own other sessions never block you — they hand the lease over.',
   },
   {
     code: 'app_locked_by_admin',
-    surface: 'MCP tool isError (write_files, restore_version, publish, configure_module); dashboard API 423; app host 451 (module routes: JSON)',
+    surface: 'MCP tool isError (write_files, restore_version, publish, unpublish, configure_module); dashboard API 423; app host 451 (module routes: JSON)',
     meaning:
       'The server operator took this app down for a violation of the terms (`reason` is the category: phishing, malware, spam, copyright, illegal or other). Every host of the app answers 451, it is unpublished, and nothing can be written, published or reconfigured. Not the same as `app_locked` (another agent holding the write lease) — waiting does not help.',
     fix: 'Stop changing the app and tell the user it was taken down by the operator (name the reason category). Only the operator can restore it; the user can contact them through the terms / report page linked from the app\'s address. Do not recreate the same content in another app.',
@@ -118,16 +118,23 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
   },
   {
     code: 'not_published',
-    surface: 'MCP tool isError (set_gallery_listing)',
-    meaning: 'Only a published app can be listed in the public gallery, and this app has no version on its production URL.',
-    fix: 'Publish the app first — but only when the user explicitly asks to publish — then ask again whether they want it in the gallery.',
+    surface: 'MCP tool isError (set_gallery_listing, unpublish)',
+    meaning: 'The app has no version on its production URL: only a published app can be listed in the public gallery, and there is nothing to unpublish.',
+    fix: 'Publish the app first — but only when the user explicitly asks to publish — then ask again whether they want it in the gallery. From unpublish: nothing to do, the production address already answers "not published".',
   },
   {
     code: 'user_confirmation_required',
-    surface: 'MCP tool isError (set_gallery_listing, set_workspace_publishing, set_primary_domain, remove_domain)',
+    surface: 'MCP tool isError (set_gallery_listing, unpublish, set_visibility, delete_app, set_workspace_publishing, set_primary_domain, remove_domain)',
     meaning:
-      'set_primary_domain: making a domain primary redirects every visitor of the production address there, and clearing it changes that too. remove_domain: a verified domain serves the app, and removing it takes the app off that address. set_workspace_publishing: allowing, blocking or resetting a workspace\'s publishing needs the super-admin\'s explicit yes. set_gallery_listing: listing an app in the public gallery shows its name, a description and its production link to everyone, so the call needs `user_confirmed: true` — set only after the user explicitly said yes to exactly this listing. Nothing changed.',
-    fix: 'Ask the user: "Do you want <app name> shown in the public gallery with the description \"<description>\"?" (set_workspace_publishing: "Turn publishing off for <slug>?" / "Allow <slug> to publish?" / "Reset <slug> to the server default?"; set_primary_domain: "Should <app> redirect to <host>?"; remove_domain: "Remove <host> — the app stops answering there?"). Call again with user_confirmed:true only if they clearly say yes; otherwise change nothing.',
+      'set_primary_domain: making a domain primary redirects every visitor of the production address there, and clearing it changes that too. remove_domain: a verified domain serves the app, and removing it takes the app off that address. unpublish: the production address and the custom domains stop serving the app. set_visibility: making a password-protected app public opens it to everyone and drops its password. delete_app: every address of the app answers 404 and the app cannot be brought back. set_workspace_publishing: allowing, blocking or resetting a workspace\'s publishing needs the super-admin\'s explicit yes. set_gallery_listing: listing an app in the public gallery shows its name, a description and its production link to everyone, so the call needs `user_confirmed: true` — set only after the user explicitly said yes to exactly this listing. Nothing changed.',
+    fix: 'Ask the user: "Do you want <app name> shown in the public gallery with the description \"<description>\"?" (set_workspace_publishing: "Turn publishing off for <slug>?" / "Allow <slug> to publish?" / "Reset <slug> to the server default?"; set_primary_domain: "Should <app> redirect to <host>?"; remove_domain: "Remove <host> — the app stops answering there?"; unpublish: "Take <app> offline at <published_url>?"; set_visibility: "Make <app> public for anyone with the link?"; delete_app: "Delete <app> for good?"). Call again with user_confirmed:true only if they clearly say yes; otherwise change nothing.',
+  },
+  {
+    code: 'password_not_set',
+    surface: 'MCP tool isError (set_visibility)',
+    meaning:
+      'The app has no password, and a password gate needs one. Its value never passes through MCP or an LLM: only the app\'s owner sets it, on the app\'s Settings tab in the dashboard (`settings_url`). Nothing changed.',
+    fix: 'Give the user `settings_url` and tell them to choose Password there and set one. Never ask for the password in chat and never put it in a file.',
   },
   {
     code: 'gallery_hidden',

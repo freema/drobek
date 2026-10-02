@@ -161,6 +161,8 @@ This document is the map of how that works. The neighbours:
 - **One writer at a time**: a write takes the app's Redis lease
   (`drobek:applock:<app_id>`, 3 minutes, renewed per write). Another user's
   agent gets `app_locked`; the same user's other sessions take the lease over.
+  `release_lease` frees the caller's own lease early; the dashboard's unlock
+  frees anyone's (both audited `app.lock.release`).
 
 ## 3. The compile step
 
