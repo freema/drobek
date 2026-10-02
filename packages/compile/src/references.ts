@@ -1,5 +1,6 @@
 import { APP_CSP_SOURCES, appCspAllows, type AppCspDirective } from './app-csp.js';
 import { CONFIG_FILE, type AppConfig } from './config.js';
+import { blank, replaceSpans, startTagReader } from './markup.js';
 import { SOURCE_EXTS, extOf } from './paths.js';
 import { tokenize, type Token } from './readiness/lexer.js';
 import type { CompileMessage } from './types.js';
@@ -48,16 +49,11 @@ const SCHEME = /^([a-z][a-z0-9+.-]*):/i;
 const TEMPLATED = /[{}$<>`]|^%[A-Z_]+%/;
 const GLOBALS = new Set(['window', 'globalThis', 'self']);
 
-const HTML_COMMENT = /<!--[\s\S]*?-->/g;
-const CSS_COMMENT = /\/\*[\s\S]*?\*\//g;
-const TAG = /<([a-zA-Z][a-zA-Z0-9-]*)((?:\s+[^\s=>/]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'>]+))?)*)\s*\/?>/g;
-const ATTR = /([^\s=>/]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g;
 const JS_TYPE = /^(?:module|text\/javascript|application\/javascript)$/i;
 const CSS_IMPORT = /@import\s+(?:url\(\s*)?(?:"([^"]*)"|'([^']*)'|([^\s"');]+))/gi;
-const CSS_URL = /url\(\s*(?:"([^"]*)"|'([^']*)'|([^)\s"']*))\s*\)/gi;
+/** An unquoted URL ends at a `(` unless it is escaped: CSS refuses an unescaped one, and stopping there keeps the scan linear. */
+const CSS_URL = /url\(\s*(?:(?:"([^"]*)"|'([^']*)'|((?:[^()\s"']|(?<=\\)\()+))\s*)?\)/gi;
 const META_IMAGE = /^(?:og:image|og:image:url|twitter:image|msapplication-tileimage|msapplication-config|msapplication-(?:square|wide)\d+x\d+logo)$/;
-
-const blank = (s: string): string => s.replace(/[^\n]/g, ' ');
 
 function lineStarts(text: string): number[] {
   const starts = [0];
@@ -106,19 +102,17 @@ function linkDirective(rel: string[], as: string): AppCspDirective | null | unde
 }
 
 function scanHtml(file: string, source: string, refs: Ref[], manifests: Set<string>, inline: (code: string, line: number) => void): void {
-  const text = source.replace(HTML_COMMENT, blank);
+  const text = replaceSpans(source, '<!--', '-->', blank);
   const starts = lineStarts(text);
-  TAG.lastIndex = 0;
-  let m: RegExpExecArray | null;
-  while ((m = TAG.exec(text))) {
-    const tag = m[1].toLowerCase();
-    const attrsAt = m.index + 1 + m[1].length;
+  const nextTag = startTagReader(text);
+  let from = 0;
+  for (let t = nextTag(from); t; t = nextTag(from)) {
+    from = t.end;
+    const tag = t.name.toLowerCase();
     const attrs = new Map<string, { value: string; at: number }>();
-    ATTR.lastIndex = 0;
-    let a: RegExpExecArray | null;
-    while ((a = ATTR.exec(m[2]))) {
-      const name = a[1].toLowerCase();
-      if (!attrs.has(name)) attrs.set(name, { value: decodeEntities(a[2] ?? a[3] ?? a[4] ?? ''), at: attrsAt + a.index });
+    for (const a of t.attrs) {
+      const name = a.name.toLowerCase();
+      if (!attrs.has(name)) attrs.set(name, { value: decodeEntities(a.value ?? ''), at: a.at });
     }
     const add = (attr: string, what: string, directive: AppCspDirective | null): void => {
       const v = attrs.get(attr);
@@ -127,17 +121,17 @@ function scanHtml(file: string, source: string, refs: Ref[], manifests: Set<stri
 
     if (tag === 'script' || tag === 'style') {
       const close = new RegExp(`</${tag}\\s*>`, 'ig');
-      close.lastIndex = TAG.lastIndex;
+      close.lastIndex = from;
       const end = close.exec(text);
-      const body = text.slice(TAG.lastIndex, end ? end.index : text.length);
-      const bodyLine = lineAt(starts, TAG.lastIndex);
+      const body = text.slice(from, end ? end.index : text.length);
+      const bodyLine = lineAt(starts, from);
       if (tag === 'script') {
         if (attrs.has('src')) add('src', '<script src>', 'script-src');
         else if (!attrs.has('type') || JS_TYPE.test(attrs.get('type')!.value.trim())) inline(body, bodyLine);
       } else {
         scanCss(file, body, refs, bodyLine);
       }
-      TAG.lastIndex = end ? close.lastIndex : text.length;
+      from = end ? close.lastIndex : text.length;
       continue;
     }
 
@@ -178,7 +172,7 @@ function scanHtml(file: string, source: string, refs: Ref[], manifests: Set<stri
 // ── CSS ──────────────────────────────────────────────────────────────────────
 
 function scanCss(file: string, source: string, refs: Ref[], firstLine = 1): void {
-  const text = source.replace(CSS_COMMENT, blank);
+  const text = replaceSpans(source, '/*', '*/', blank);
   const starts = lineStarts(text);
   const line = (i: number): number => lineAt(starts, i) + firstLine - 1;
   const imports = new Set<number>();

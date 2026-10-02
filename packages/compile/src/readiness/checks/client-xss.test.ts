@@ -146,3 +146,26 @@ describe('client-xss check: files', () => {
     expect(js('el.innerHTML = ')).toEqual([]);
   });
 });
+
+describe('client-xss check: hostile HTML', () => {
+  /** Exactly 512 KB: the check skips a larger file. */
+  const fill = (unit: string) => unit.repeat(Math.ceil((512 * 1024) / unit.length)).slice(0, 512 * 1024);
+  const ms = (f: () => unknown) => {
+    const started = performance.now();
+    f();
+    return performance.now() - started;
+  };
+
+  it.each([
+    ['unclosed scripts', fill('<script>')],
+    ['script start tags without >', fill('<script')],
+    ['thousands of empty scripts', fill('<script></script>\n')],
+    ['end tags that never close', fill('<script></script ')],
+  ])('scans 512 KB of %s in linear time', (_what, html) => {
+    expect(ms(() => run({ 'index.html': html }))).toBeLessThan(500);
+  });
+
+  it('keeps the page line numbers across many inline scripts', () => {
+    expect(codes('index.html', `${'<script></script>\n'.repeat(3)}<script>\nel.innerHTML = x;\n</script>`)).toEqual(['xss_html_sink@5']);
+  });
+});
