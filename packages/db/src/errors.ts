@@ -71,6 +71,16 @@ export function isUniqueViolation(err: unknown): boolean {
   return pgErrorCode(err) === '23505';
 }
 
+/**
+ * A query the database cut off: it ran past `statement_timeout` (57014
+ * query_canceled, also an operator's `pg_cancel_backend`) or waited past
+ * `lock_timeout` for a row, table or advisory lock (55P03 lock_not_available).
+ */
+export function isQueryTimeout(err: unknown): boolean {
+  const code = pgErrorCode(err);
+  return code === '57014' || code === '55P03';
+}
+
 /** The SQLSTATE (or driver code), constraint and table of a DB error; null when `err` is not one. */
 function dbErrorSummary(err: unknown): string | null {
   const links = chain(err);

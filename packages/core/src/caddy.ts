@@ -33,12 +33,16 @@
  * `X-Real-IP` is OVERWRITTEN with the TCP peer (`{remote_host}`), so a
  * client-sent value never reaches drobek — run drobek with
  * TRUST_PROXY=x-real-ip. `/api/internal/*` (the ask endpoint) is refused on
- * every public site; only Caddy calls it, over the internal network.
+ * every public site; only Caddy calls it, over the internal network. On the
+ * dashboard site a request body over DASHBOARD_MAX_BODY_BYTES is refused with
+ * 413 before it reaches drobek, except on the paths with their own limits
+ * (DASHBOARD_BODY_CAP_EXEMPT_PATHS), which drobek enforces itself.
  *
  * No secret is ever written into the file: the ask token is referenced as
  * `{$TLS_ASK_TOKEN}` (substituted from Caddy's own environment when it loads
  * the config) and DNS credentials should be `{env.NAME}` placeholders.
  */
+import { dashboardMaxBodyBytes } from './body-limit.js';
 
 export type CaddyTlsMode = 'internal' | 'wildcard-file' | 'dns' | 'on-demand';
 
@@ -55,7 +59,17 @@ export interface CaddyConfig {
   dns: { provider: string; args: string[]; overrideDomain: string | null } | null;
   /** Render the on-demand catch-all site for verified custom domains. */
   customDomains: boolean;
+  /** DASHBOARD_MAX_BODY_BYTES: the dashboard site's request body cap. */
+  dashboardMaxBodyBytes: number;
 }
+
+/**
+ * Dashboard-site paths (Caddy path patterns) whose bodies drobek caps itself
+ * with their own, larger limits: the MCP endpoint (MCP_MAX_BODY_BYTES), the
+ * asset upload URLs (the asset size) and the Data tab's collection page (its
+ * CSV import).
+ */
+export const DASHBOARD_BODY_CAP_EXEMPT_PATHS: readonly string[] = ['/mcp', '/mcp/*', '/api/assets/upload/*', '/workspaces/*/apps/*/data/*'];
 
 export type CaddyConfigResult = { ok: true; config: CaddyConfig } | { ok: false; errors: string[] };
 
@@ -215,7 +229,10 @@ export function caddyConfigFromEnv(env: NodeJS.ProcessEnv = process.env): CaddyC
   }
 
   if (errors.length > 0) return { ok: false, errors };
-  return { ok: true, config: { mode, dashboardSite, appsDomain, upstream, acmeEmail, wildcard, dns, customDomains } };
+  return {
+    ok: true,
+    config: { mode, dashboardSite, appsDomain, upstream, acmeEmail, wildcard, dns, customDomains, dashboardMaxBodyBytes: dashboardMaxBodyBytes(env) },
+  };
 }
 
 const MODE_NOTE: Record<CaddyTlsMode, string> = {
@@ -288,8 +305,8 @@ export function renderCaddyfile(config: CaddyConfig): string {
   if (mode === 'on-demand' || config.customDomains) {
     globals.push(
       '\t# Caddy asks drobek before EVERY new certificate; drobek answers 200 only for',
-      '\t# <slug>[--preview|--v<N>].<APPS_DOMAIN> of an existing app and for VERIFIED',
-      '\t# custom domains. {$TLS_ASK_TOKEN}',
+      '\t# <slug>[--preview].<APPS_DOMAIN> of an existing app, <slug>--v<N> of an',
+      '\t# existing version and VERIFIED custom domains. {$TLS_ASK_TOKEN}',
       "\t# is substituted from Caddy's environment when the config is loaded.",
       '\ton_demand_tls {',
       `\t\task http://${upstream}${TLS_ASK_PATH}?token={$TLS_ASK_TOKEN}`,
@@ -319,7 +336,18 @@ export function renderCaddyfile(config: CaddyConfig): string {
   );
 
   const dashboardTls = mode === 'internal' ? ['\ttls internal'] : [];
-  out.push(`# Dashboard, OAuth and MCP (PUBLIC_APP_URL).`, `${config.dashboardSite} {`, ...dashboardTls, '\timport drobek', '}', '');
+  const bodyCap = [
+    '\t# A request body over DASHBOARD_MAX_BODY_BYTES is refused (413) before it',
+    '\t# reaches drobek, except on the paths drobek caps with their own limits:',
+    "\t# /mcp, the asset upload URLs and the Data tab's CSV import.",
+    '\t@capped_body {',
+    `\t\tnot path ${DASHBOARD_BODY_CAP_EXEMPT_PATHS.join(' ')}`,
+    '\t}',
+    '\trequest_body @capped_body {',
+    `\t\tmax_size ${config.dashboardMaxBodyBytes}`,
+    '\t}',
+  ];
+  out.push(`# Dashboard, OAuth and MCP (PUBLIC_APP_URL).`, `${config.dashboardSite} {`, ...dashboardTls, ...bodyCap, '\timport drobek', '}', '');
 
   let appsTls: string[];
   switch (mode) {

@@ -25,9 +25,9 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { toolDoc } from '@drobek/agent-dx';
 import { AppsError, WORKSPACE_PUBLISHING_STATES } from '@drobek/apps';
-import { dbErrorForLog } from '@drobek/db';
+import { dbErrorForLog, isQueryTimeout } from '@drobek/db';
 import { defaultDeps, type ToolDeps, type ToolPrincipal } from './context.js';
-import { ToolError, lockedByAdmin } from './errors.js';
+import { ToolError, databaseTimeout, lockedByAdmin } from './errors.js';
 import {
   configureModule,
   createApp,
@@ -445,6 +445,7 @@ export function registerAppTools(
           // A takedown that landed between the tool's own check and the write.
           if (err instanceof AppsError && err.code === 'app_locked_by_admin') return withWarnings(errorResult(lockedByAdmin(err.reason).toBody()), warnings);
           d.log.error('mcp tool failed', { tool: name, error: dbErrorForLog(err, { stack: true }) });
+          if (isQueryTimeout(err)) return withWarnings(errorResult(databaseTimeout().toBody()), warnings);
           return withWarnings(
             errorResult(
               new ToolError('internal_error', 'drobek hit an internal error; nothing more is known to the agent. Retry once, then tell the user.').toBody()

@@ -1,11 +1,12 @@
 import { request as httpRequest } from 'node:http';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { Redis } from 'ioredis';
-import { APPS_DOMAIN, APPS_URL_SCHEME, BASE_URL_WEB, TARGET_PRODUCTION } from '../playwright.config';
+import { APPS_DOMAIN, APPS_URL_SCHEME, TARGET_PRODUCTION } from '../playwright.config';
 import { hostRequest, prodHost, type Raw } from './helpers/apps-host';
 import { loginViaEmail, mailpitMessagesFor, skipUnlessLocal, uniqueEmail } from './helpers/auth';
 import { callTool, mcpClient } from './helpers/mcp';
 import { personalWorkspaceOf, publishVersion, seedApp, seedVersion, withDb } from './helpers/seed';
+import { tlsAsk } from './helpers/tls-ask';
 
 /**
  * Custom domains, end to end against the local compose stack:
@@ -41,7 +42,6 @@ const HOST = 'firma.test';
 /** The custom host on the dev stack's app port (a custom Host must carry APPS_DOMAIN's port). */
 const APPS_PORT = /:(\d+)$/.exec(APPS_DOMAIN)?.[1] ?? null;
 const HOST_WITH_PORT = APPS_PORT ? `${HOST}:${APPS_PORT}` : HOST;
-const TLS_ASK_TOKEN = process.env.TLS_ASK_TOKEN ?? 'dev-only-tls-ask-token-0123456789abcdef';
 
 async function redisClient(): Promise<Redis> {
   const url = process.env.REDIS_URL;
@@ -70,29 +70,6 @@ async function clearMocks(): Promise<void> {
   } finally {
     r.disconnect();
   }
-}
-
-/**
- * Caddy's ask, exactly as Caddy sends it: to drobek's internal address (Host
- * drobek:3000 — never the public dashboard host). The dev stack publishes that
- * port as the dashboard's host port, so connect there with an explicit Host.
- */
-function tlsAsk(domain: string): Promise<number> {
-  const web = new URL(BASE_URL_WEB);
-  const port = Number(web.port || (web.protocol === 'https:' ? 443 : 80));
-  const path = `/api/internal/tls/ask?token=${encodeURIComponent(TLS_ASK_TOKEN)}&domain=${encodeURIComponent(domain)}`;
-  return new Promise((resolve, reject) => {
-    const req = httpRequest(
-      { host: '127.0.0.1', port, path, method: 'GET', headers: { Host: 'drobek:3000' }, setHost: false },
-      (res) => {
-        res.resume();
-        res.on('end', () => resolve(res.statusCode ?? 0));
-      }
-    );
-    req.setTimeout(15_000, () => req.destroy(new Error(`timeout: tls ask ${domain}`)));
-    req.on('error', reject);
-    req.end();
-  });
 }
 
 /**

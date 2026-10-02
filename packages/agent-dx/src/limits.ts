@@ -115,6 +115,26 @@ export const LIMITS: LimitDoc[] = [
     meaning: 'Max bytes (1 GiB) of all assets of one app (→ asset_quota_exceeded). The limits provider may set it per workspace.',
   },
   {
+    env: 'VERSIONS_PER_APP_HOUR',
+    default: '600',
+    meaning: 'New versions of one app within the last hour — write_files, create_app, restore_version, duplicate_app and the dashboard\'s Restore together (→ rate_limited with retry_after_seconds; nothing is stored). The limits provider may set it per workspace.',
+  },
+  {
+    env: 'VERSIONS_PER_USER_HOUR',
+    default: '1200',
+    meaning: 'New versions one person makes within the last hour, in every app and workspace (→ rate_limited with retry_after_seconds; nothing is stored). The limits provider may set it per workspace.',
+  },
+  {
+    env: 'APP_VERSIONS_KEEP',
+    default: '200',
+    meaning: 'The newest versions of each app the hourly history retention keeps; older ones are deleted except the published one, those kept for a rollback, the one the preview serves and those from the last hour (read_file / restore_version / publish of a deleted one → not_found; get_app `version_retention`). The limits provider may set it per workspace.',
+  },
+  {
+    env: 'WORKSPACE_SOURCE_QUOTA',
+    default: '1073741824',
+    meaning: 'Max bytes (1 GiB) of the unique files — sources and build output — the versions of all live apps of one workspace store; a version whose new bytes do not fit (write_files, create_app, duplicate_app) → limit_exceeded with `used_bytes`, nothing stored. A restore adds no bytes. The limits provider may set it per workspace.',
+  },
+  {
     env: 'APP_ASSET_UPLOADS_PER_HOUR',
     default: '60',
     meaning: 'Upload URLs one app may get per hour (create_asset_upload → rate_limited).',

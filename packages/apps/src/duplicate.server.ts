@@ -17,6 +17,9 @@
  * lock, so parallel requests cannot all pass. A copy counts once its app row
  * exists (also when writing its files then fails, since the app stays); a
  * copy refused before that (source gone, workspace full) does not count.
+ * The copy's version 1 counts against the person's VERSIONS_PER_USER_HOUR
+ * and the target workspace's WORKSPACE_SOURCE_QUOTA, both checked before the
+ * app is created as well (version-rate.server.ts, version-retention.server.ts).
  */
 import { and, count, eq, gt, isNull, sql } from 'drizzle-orm';
 import { AUDIT_ACTIONS, writeAudit, type AuditExecutor } from '@drobek/audit';
@@ -28,6 +31,8 @@ import { galleryEnabled, isGalleryVisible } from './gallery.js';
 import { deriveSlug, suggestSlug, validateAppSlug } from './slug.js';
 import type { Actor } from './types.js';
 import { createVersion, getVersion, readBlobs } from './versions.server.js';
+import { assertVersionRate, versionRateLimits, type VersionRateLimits } from './version-rate.server.js';
+import { assertSourceQuota, versionStorageLimits } from './version-retention.server.js';
 
 export const DEFAULT_DUPLICATES_PER_USER_HOUR = 10;
 const HOUR_MS = 3_600_000;
@@ -160,6 +165,10 @@ export interface DuplicateFilesInput {
   actor: Actor;
   /** The target workspace's APPS_MAX_PER_WORKSPACE (see createApp). */
   maxApps?: number;
+  /** The target workspace's VERSIONS_PER_APP_HOUR / VERSIONS_PER_USER_HOUR (see createVersion); default: the env. */
+  versionLimits?: VersionRateLimits;
+  /** The target workspace's WORKSPACE_SOURCE_QUOTA, bytes (see createVersion); default: the env. */
+  sourceQuota?: number;
   env?: NodeJS.ProcessEnv;
   now?: Date;
 }
@@ -176,6 +185,8 @@ export async function duplicateAppFiles(input: DuplicateFilesInput): Promise<{ i
   const now = input.now ?? new Date();
   const max = duplicatesPerUserHour(env);
   assertUnderRate(await recentCopies(getDb(), userId, now), max);
+  const versionLimits = input.versionLimits ?? versionRateLimits(env);
+  await assertVersionRate({ userId }, versionLimits);
   const version = await getVersion(input.source.id, { id: input.source.publishedVersionId });
   if (!version) throw new AppsError('not_found', `No app "${input.source.slug}" is in the public gallery.`);
   const bytes = await readBlobs(version.files.map((f) => f.sha256));
@@ -184,6 +195,8 @@ export async function duplicateAppFiles(input: DuplicateFilesInput): Promise<{ i
     if (!content) throw new AppsError('not_found', `A file of "${input.source.slug}" is missing.`);
     return { path: f.path, content, kind: f.kind };
   });
+  const sourceQuota = input.sourceQuota ?? versionStorageLimits(env).sourceQuota;
+  await assertSourceQuota(input.workspaceId, files, sourceQuota);
 
   const base = deriveSlug(input.name);
   let slug = validateAppSlug(base) ? suggestSlug(base || 'app') : base;
@@ -228,6 +241,8 @@ export async function duplicateAppFiles(input: DuplicateFilesInput): Promise<{ i
     actor: input.actor,
     reasoning: `Duplicated from ${input.source.slug} (published version ${version.number})`,
     compile: { status: version.compileStatus === 'ok' ? 'ok' : 'error', errors: version.compileErrors },
+    versionLimits,
+    sourceQuota,
   });
   await notifyAppChanged({ app_id: created.id, slug: created.slug, version: number });
   await writeAudit({

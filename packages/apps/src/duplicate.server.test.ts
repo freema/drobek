@@ -189,6 +189,39 @@ describe('duplicateAppFiles', () => {
     expect(copies).toHaveLength(1);
   });
 
+  it("the copy's version 1 counts against VERSIONS_PER_USER_HOUR, refused before the app exists", async () => {
+    const app = await galleryApp();
+    const src = await duplicationSource(app.slug, ON);
+    const [u] = await db.insert(users).values({ email: 'writer@example.test' }).returning();
+    const writer: Actor = { userId: u.id, kind: 'user' };
+    const versionLimits = { perApp: 600, perUser: 2 };
+    const first = await duplicateAppFiles({ source: src, workspaceId: copierWs, name: 'first', actor: writer, env: ON, versionLimits });
+    await createVersion(first.id, [{ path: 'index.html', content: '<h1>mine</h1>' }], { actor: writer, versionLimits });
+    const err = await duplicateAppFiles({ source: src, workspaceId: copierWs, name: 'second', actor: writer, env: ON, versionLimits }).catch(
+      (e: AppsError) => e
+    );
+    expect(err).toMatchObject({ code: 'rate_limited', details: { limit: 'VERSIONS_PER_USER_HOUR', value: 2 } });
+    const copies = await db.select({ name: apps.name }).from(apps).where(eq(apps.duplicatedFromAppId, app.id));
+    expect(copies.map((c) => c.name)).toEqual(['first']);
+  });
+
+  it("the copy's files count against the target workspace's WORKSPACE_SOURCE_QUOTA, refused before the app exists", async () => {
+    const app = await galleryApp();
+    const src = await duplicationSource(app.slug, ON);
+    const [w] = await db.insert(workspaces).values({ kind: 'team', slug: `quota-${n}`, name: 'Small quota' }).returning();
+    const [u] = await db.insert(users).values({ email: 'quota@example.test' }).returning();
+    const person: Actor = { userId: u.id, kind: 'user' };
+    // The published version stores 18 + 14 bytes.
+    const err = await duplicateAppFiles({ source: src, workspaceId: w.id, name: 'too big', actor: person, env: ON, sourceQuota: 31 }).catch(
+      (e: AppsError) => e
+    );
+    expect(err).toMatchObject({ code: 'limit_exceeded', details: { limit: 'WORKSPACE_SOURCE_QUOTA', value: 31, used_bytes: 0 } });
+    expect(await db.select({ id: apps.id }).from(apps).where(eq(apps.workspaceId, w.id))).toHaveLength(0);
+    await expect(duplicateAppFiles({ source: src, workspaceId: w.id, name: 'fits', actor: person, env: ON, sourceQuota: 32 })).resolves.toMatchObject({
+      version: 1,
+    });
+  });
+
   it('a copy refused before its app exists does not use up the cap', async () => {
     const app = await galleryApp();
     const src = await duplicationSource(app.slug, ON);

@@ -29,6 +29,7 @@ import {
   oauthRefreshTokens,
 } from '@drobek/db';
 import type { ClientSource } from './clients.server.js';
+import { credentialsRevoked } from './revocations.js';
 
 export interface OAuthConnection {
   /** oauth_clients.id (internal) — what the revoke form posts. */
@@ -171,15 +172,16 @@ export interface RevokedConnection {
 
 /**
  * Revoke `userId`'s grant for one client: delete all of the pair's access
- * tokens, refresh tokens and authorization codes in one transaction. Returns
- * null when the client is unknown or the user holds nothing for it (another
- * user's connection is indistinguishable from an unknown one).
+ * tokens, refresh tokens and authorization codes in one transaction, then
+ * close the MCP sessions they opened. Returns null when the client is unknown
+ * or the user holds nothing for it (another user's connection is
+ * indistinguishable from an unknown one).
  */
 export async function revokeConnection(
   userId: string,
   oauthClientId: string
 ): Promise<RevokedConnection | null> {
-  return getDb().transaction(async (tx) => {
+  const revoked = await getDb().transaction(async (tx): Promise<RevokedConnection | null> => {
     const [client] = await tx
       .select({
         id: oauthClients.id,
@@ -227,5 +229,7 @@ export async function revokeConnection(
       authorizationCodes: codes.length,
     };
   });
+  if (revoked) credentialsRevoked(userId);
+  return revoked;
 }
 

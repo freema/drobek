@@ -1,9 +1,10 @@
 /**
- * appAction on a taken-down app against a real PGlite
- * database (the workspace role gate is stubbed — requireWorkspaceRole has its
- * own tests in @drobek/tenancy): publish / restore / unpublish answer 423
- * `app_locked_by_admin` before anything changes; other intents are not
- * refused as locked.
+ * appAction against a real PGlite database (the workspace role gate is
+ * stubbed — requireWorkspaceRole has its own tests in @drobek/tenancy; the
+ * lease read sees a free app): on a taken-down app publish / restore /
+ * unpublish answer 423 `app_locked_by_admin` before anything changes, other
+ * intents are not refused as locked; a restore past the workspace's version
+ * rate answers 429 `rate_limited` with Retry-After.
  */
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
@@ -13,6 +14,7 @@ import { migrate } from 'drizzle-orm/pglite/migrator';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import * as schema from '@drobek/db/schema';
 import { appVersions, apps, auditLog, setDbForTests, users, workspaces } from '@drobek/db';
+import { setModuleRuntimeForTests } from '@drobek/modules';
 
 const role = vi.hoisted(() => ({ user: { id: '', email: 'owner@example.com' }, ws: { id: '', slug: 'acme', name: 'Acme' } }));
 
@@ -23,23 +25,28 @@ vi.mock('@drobek/tenancy', () => ({
   },
 }));
 
+vi.mock('@drobek/core', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@drobek/core')>()),
+  getRedis: () => ({ get: async () => null }),
+}));
+
 const { appAction } = await import('./app-page.server.js');
 
 let pg: PGlite;
 let appId: string;
 let versionId: string;
 
-function post(body: Record<string, string>) {
-  const request = new Request('https://drobek.example/workspaces/acme/apps/taken-app', {
+function post(body: Record<string, string>, appSlug = 'taken-app') {
+  const request = new Request(`https://drobek.example/workspaces/acme/apps/${appSlug}`, {
     method: 'POST',
     body: new URLSearchParams(body),
   });
-  return appAction({ request, params: { slug: 'acme', appSlug: 'taken-app' }, context: {} } as never);
+  return appAction({ request, params: { slug: 'acme', appSlug }, context: {} } as never);
 }
 
-function failed(res: unknown): { status: number; error: string; intent: string } {
-  const d = res as { data: { error: string; intent: string }; init: { status: number } };
-  return { status: d.init?.status, error: d.data.error, intent: d.data.intent };
+function failed(res: unknown): { status: number; error: string; intent: string; headers: Record<string, string> } {
+  const d = res as { data: { error: string; intent: string }; init: { status: number; headers?: Record<string, string> } };
+  return { status: d.init?.status, error: d.data.error, intent: d.data.intent, headers: d.init?.headers ?? {} };
 }
 
 beforeAll(async () => {
@@ -95,5 +102,24 @@ describe('appAction on a taken-down app', () => {
 
   it('other intents are not refused as locked', async () => {
     expect(failed(await post({ intent: 'nope' }))).toMatchObject({ status: 400, error: 'Unknown action.' });
+  });
+});
+
+describe('restore past the version rate', () => {
+  it("answers 429 rate_limited with Retry-After from the workspace's VERSIONS_PER_APP_HOUR; nothing changes", async () => {
+    const db = drizzle(pg, { schema });
+    const [a] = await db.insert(apps).values({ workspaceId: role.ws.id, slug: 'busy-app', name: 'Busy' }).returning();
+    await db.insert(appVersions).values({ appId: a.id, number: 1, compileStatus: 'ok', createdByUserId: role.user.id, actorKind: 'user' });
+    setModuleRuntimeForTests({ workspaceLimits: async () => ({ VERSIONS_PER_APP_HOUR: 1 }) } as never);
+    try {
+      const r = failed(await post({ intent: 'restore', version: '1' }, 'busy-app'));
+      expect(r).toMatchObject({ status: 429, intent: 'restore' });
+      expect(r.error).toContain('VERSIONS_PER_APP_HOUR');
+      expect(r.error).toContain('Try again in');
+      expect(Number(r.headers['Retry-After'])).toBeGreaterThan(3500);
+      expect(await db.select().from(appVersions).where(eq(appVersions.appId, a.id))).toHaveLength(1);
+    } finally {
+      setModuleRuntimeForTests(null);
+    }
   });
 });

@@ -125,6 +125,19 @@ describe('proxy + secret invariants (every mode)', () => {
   it('APPS_DOMAIN with :443 is the bare host', () => {
     expect(render({ ...PROD, APPS_DOMAIN: 'drobek.app:443', TLS_ASK_TOKEN: TOKEN })).toContain('\n*.drobek.app {\n');
   });
+
+  it('caps request bodies on the dashboard site only (DASHBOARD_MAX_BODY_BYTES), never the paths with their own limits', () => {
+    const cap = (n: number) =>
+      `\t@capped_body {\n\t\tnot path /mcp /mcp/* /api/assets/upload/* /workspaces/*/apps/*/data/*\n\t}\n\trequest_body @capped_body {\n\t\tmax_size ${n}\n\t}\n\timport drobek\n}\n`;
+    for (const env of [...modes, { ...PROD, TLS_DNS_PROVIDER: 'cloudflare', TLS_CUSTOM_DOMAINS: '1', TLS_ASK_TOKEN: TOKEN }]) {
+      const out = render(env);
+      expect(out.match(/request_body/g)).toHaveLength(1);
+      const dashboard = out.slice(out.indexOf('# Dashboard, OAuth and MCP'), out.indexOf('# Every app host'));
+      expect(dashboard).toContain(cap(1048576));
+    }
+    expect(render({ ...PROD, TLS_ASK_TOKEN: TOKEN, DASHBOARD_MAX_BODY_BYTES: '2097152' })).toContain(cap(2097152));
+    expect(render({ ...PROD, TLS_ASK_TOKEN: TOKEN, DASHBOARD_MAX_BODY_BYTES: 'lots' })).toContain(cap(1048576));
+  });
 });
 
 describe('custom domains: the on-demand catch-all behind the ask', () => {

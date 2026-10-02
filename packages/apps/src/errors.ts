@@ -10,7 +10,10 @@ export type AppsErrorCode =
   | 'app_locked_by_admin'
   /** An unknown takedown / report reason category. */
   | 'invalid_reason'
-  /** The workspace holds APPS_MAX_PER_WORKSPACE live apps (`details.limit` / `details.value`). */
+  /**
+   * The workspace holds APPS_MAX_PER_WORKSPACE live apps, or a new version would take its apps' versions past
+   * WORKSPACE_SOURCE_QUOTA (`details.limit` / `details.value`, + `details.used_bytes` for the quota).
+   */
   | 'limit_exceeded'
   /** The public gallery is off on this server (GALLERY_ENABLED). */
   | 'gallery_disabled'
@@ -22,10 +25,20 @@ export type AppsErrorCode =
   | 'publish_blocked'
   /** The gallery app's owner does not allow duplicating it. */
   | 'not_duplicable'
-  /** The person made DUPLICATES_PER_USER_HOUR copies within the last hour (`details.limit` / `details.value`). */
+  /**
+   * The person made DUPLICATES_PER_USER_HOUR copies within the last hour, or a new version would pass
+   * VERSIONS_PER_APP_HOUR / VERSIONS_PER_USER_HOUR (`details.limit` / `details.value` / `details.retry_after_seconds`).
+   */
   | 'rate_limited'
   /** `createVersion` with `baseVersion` found a newer version than the one the write was based on. */
   | 'version_conflict';
+
+export interface AppsErrorDetails {
+  limit: string;
+  value: number;
+  retry_after_seconds?: number;
+  used_bytes?: number;
+}
 
 /** A caller-facing failure; `code` is stable (MCP tools return it verbatim). */
 export class AppsError extends Error {
@@ -34,15 +47,18 @@ export class AppsError extends Error {
   readonly suggestion?: string;
   /** For `app_locked_by_admin`: the takedown reason CATEGORY (never an internal note). */
   readonly reason?: string;
-  /** For `limit_exceeded`: `{ limit: <ENV_NAME>, value }`. */
-  readonly details?: { limit: string; value: number };
+  /**
+   * For `limit_exceeded` / `rate_limited`: `{ limit: <ENV_NAME>, value }`, + `retry_after_seconds` for a version
+   * over its rate, + `used_bytes` for a version over WORKSPACE_SOURCE_QUOTA.
+   */
+  readonly details?: AppsErrorDetails;
   /** For `publish_not_approved` / `publish_blocked`: the operator's e-mail (OPERATOR_EMAIL or a super-admin), when configured. */
   readonly contact?: string;
 
   constructor(
     code: AppsErrorCode,
     message: string,
-    extra: { suggestion?: string; reason?: string; details?: { limit: string; value: number }; contact?: string } = {}
+    extra: { suggestion?: string; reason?: string; details?: AppsErrorDetails; contact?: string } = {}
   ) {
     super(message);
     this.name = 'AppsError';

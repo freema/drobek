@@ -16,7 +16,7 @@ import { docsUrlConfigError } from '@drobek/agent-dx';
 import { appsOriginConfigError, publishApprovalConfigError } from '@drobek/apps';
 import { trustProxyConfigError } from '@drobek/auth';
 import { createConsoleLogger, reportError, secretsConfigError } from '@drobek/core';
-import { dbErrorForLog, runCoreMigrations } from '@drobek/db';
+import { dbConfigError, dbErrorForLog, runCoreMigrations } from '@drobek/db';
 import { domainsConfigError } from '@drobek/domains';
 import { limitsProviderConfigError, loadModuleRuntime } from '@drobek/modules';
 import { frameSrcConfigError, galleryFrameAncestorsConfigError, tlsAskConfigError } from '@drobek/serving';
@@ -34,7 +34,8 @@ const configError =
   frameSrcConfigError(process.env) ??
   galleryFrameAncestorsConfigError(process.env) ??
   publishApprovalConfigError(process.env) ??
-  docsUrlConfigError(process.env);
+  docsUrlConfigError(process.env) ??
+  dbConfigError(process.env);
 if (configError) {
   console.error(configError);
   process.exit(1);

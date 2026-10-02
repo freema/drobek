@@ -21,6 +21,7 @@ import type { AuthContext } from './oauth-resource.js';
 const FULL_SCOPE_CTX: AuthContext = {
   kind: 'oauth',
   credentialId: 'tok_test',
+  oauthClientId: null,
   userId: 'u_test',
   email: 'test@example.com',
   superAdmin: true,

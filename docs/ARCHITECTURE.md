@@ -36,6 +36,7 @@ This document is the map of how that works. The neighbours:
  │   3. /health, /version, /api/internal/tls/ask (internal address only)                                        │
  │   4. /mcp: @drobek/oauth resource server (Bearer → user, scopes, audience) + @drobek/mcp tool bodies          │
  │   5. everything else: React Router (@drobek/dashboard routes, OAuth AS routes, /llms.txt, /report …)         │
+ │      behind the body cap: DASHBOARD_MAX_BODY_BYTES → 413 (the CSV import keeps its own limit)                │
  │   in-process jobs (apps/server/server/jobs.ts): blob GC, slug release, domain re-check, audit, files sweep   │
  └──────────────┬───────────────────────────────────────────┬────────────────────────────────┬──────────────────┘
                 │ postgres-js + drizzle                     │ ioredis                        │ SMTP (nodemailer) or Resend
@@ -48,7 +49,17 @@ This document is the map of how that works. The neighbours:
   `@react-router/express` for the dashboard, `mountMcpResource` for `/mcp` and
   the apps-host middleware in front of everything. There is no worker
   container and no job queue; background work runs on timers inside the
-  process, each under a Redis lease so only one replica does it.
+  process, each under a Redis lease so only one replica does it. An error
+  nothing caught (`uncaughtException`, `unhandledRejection`) is logged,
+  reported and stops the process like `SIGTERM` (requests drain), exit
+  code 1 (`installFatalErrorHandlers` in `@drobek/core`).
+- **Postgres connections**: two pools per process (`@drobek/db`, shared by
+  the dashboard build's bundled copy), `DB_POOL_MAX` each — requests with
+  `statement_timeout` (`DB_STATEMENT_TIMEOUT_MS`) and `lock_timeout`
+  (`DB_LOCK_TIMEOUT_MS`), background jobs with the lock timeout only;
+  migrations use one connection of their own without either. A query cut
+  off by a timeout answers `busy` (`reason: "database_timeout"`) over MCP
+  and `503 unavailable` on module routes, never the driver's message.
 - **One image**, `ghcr.io/freema/drobek` (root `Dockerfile`, targets `dev` and
   `runner`; linux/amd64 releases). The image applies every pending migration
   on start (core journal `__drizzle_migrations_core`, one
@@ -111,8 +122,45 @@ This document is the map of how that works. The neighbours:
 - **Publishing** moves one pointer, `apps.published_version_id`, to a version
   that compiled. Rolling production back is publishing an older version.
   `restore_version` rolls the working copy back by writing a NEW version with
-  the old files — history is never rewritten. There is no git and there are
+  the old files — a version is never changed. There is no git and there are
   no branches.
+- **History retention**: an app keeps its newest `APP_VERSIONS_KEEP` versions
+  (default 200; a limits provider may set it per workspace). The hourly
+  retention job deletes older ones, except the published version, a version
+  whose asset set is kept for a rollback (`assets_frozen_at`), the newest
+  version that compiled (the one the preview serves) and versions from the
+  last hour (they still count against the version rate). It works app by app
+  under the app's row lock, in batches, audits each batch as
+  `app.versions.prune` (a system action, shown in Activity) and busts the
+  serve cache; `version_files` go with their version and the blob GC frees
+  the bytes. Version numbers are never reused, so a missing number below the
+  newest one was deleted: `read_file`, `restore_version` and `publish` answer
+  `not_found` with "is no longer stored" and the oldest version still stored.
+  `get_app` (`version_retention`) and the dashboard's version history state
+  how many versions the app keeps and has. While a configured limits
+  provider does not answer for a workspace (`LimitsProvider.settled` → null),
+  the job leaves it alone, so the env fallback never deletes history a plan
+  keeps.
+- **Source quota**: the unique bytes (`version_files` by sha256, sources and
+  build output) the versions of a workspace's live apps store may not pass
+  `WORKSPACE_SOURCE_QUOTA` (default 1 GiB; per workspace through a limits
+  provider; deleted apps do not count, so deleting an app frees its bytes at
+  once). `createVersion` checks it after the rate, under the app's row lock and
+  a per-workspace advisory lock, before any blob is stored: a version whose
+  NEW bytes do not fit answers `limit_exceeded` (`limit`, `value`,
+  `used_bytes`). A version that adds no bytes — a restore, a revert — always
+  fits. `create_app` and gallery copies check the files ahead of creating the
+  app, so a refusal leaves no empty app behind.
+- **New versions are rate-limited** (`VERSIONS_PER_APP_HOUR`, default 600 per
+  app, and `VERSIONS_PER_USER_HOUR`, 1200 per person across all apps, within
+  the last hour; a limits provider may set both per workspace), so a loop of
+  writes cannot fill the database. Every way to a version counts — writes,
+  `create_app`'s version 1, restores, gallery copies. `createVersion` /
+  `restore` count `app_versions` rows inside their transaction under the
+  app's row lock and a per-person advisory lock, before any blob is stored;
+  the MCP tools repeat the check before the compile and the lease. A refusal
+  is `rate_limited` with `retry_after_seconds` (when the oldest version of the
+  full window leaves it).
 - **The public gallery** (`GALLERY_ENABLED`, off by default): an editor+
   lists a PUBLISHED app with a ≤ 160-character public description
   (`apps.gallery_listed` / `gallery_description`) in the dashboard, or an
@@ -225,9 +273,14 @@ before any byte of the app is touched:
 2. `/.well-known/drobek-report` → the report pointer (works for any host);
 3. the unknown-host limiter: a client IP past `APPS_UNKNOWN_HOST_LIMIT`
    "no app here" answers per window gets **429** (without a lookup for hosts
-   the cache does not know as live apps);
-4. the app lookup — a miss is a counted **404** page; misses are kept in a
-   separate negative cache for 30 s, hits in the positive cache for 60 s;
+   the cache does not know as live apps — for a version host, that very
+   version);
+4. the app lookup — a miss is a counted **404** page; a version host whose
+   version does not exist or did not compile counts against the same budget
+   (its 404 follows at step 10). Misses (unknown slugs and missing versions)
+   are kept in a separate negative cache for 30 s, hits in the positive cache
+   for 60 s; both are capped (LRU over every host of every app) and drop
+   expired entries, so no range of `--v<N>` numbers grows the process;
 5. `X-Drobek-App: <slug>` on every response from here on;
 6. a taken-down app: **451** on every host and path (JSON 451 on platform
    paths), before the redirect, the password gate and the modules;
@@ -340,7 +393,8 @@ confirm rules and secrets from the contributions at start). Core itself hosts on
 slot, `errors.reporter`: where server errors go besides the log (an incident
 webhook, a log service, …), chosen with `ERROR_REPORTER=<id>` and fed by `reportError`
 (`@drobek/core`) from the central error points — a 5xx, a module route
-throw, a failed module job or e-mail send, a start-up failure. Built in: `auth`
+throw, a failed module job or e-mail send, a start-up failure, an error
+nothing caught. Built in: `auth`
 (end-user sign-in by e-mailed code, plus the sign-in providers other
 modules contribute to its `auth.provider` slot, and the `auth.signedIn`
 observers told of every sign-in), `email` (notifications to the app's owners,
@@ -408,22 +462,34 @@ normal ACME certificate; the app hosts use exactly one of three paths:
   optional `_acme-challenge` CNAME delegation;
 - **(c) on-demand**, one certificate per app host, always gated by drobek's
   `ask` endpoint (`/api/internal/tls/ask`, internal address + `TLS_ASK_TOKEN`
-  only): 200 for a host of a live app or a verified custom domain, 404 for
-  everything else.
+  only): 200 for the production or preview host of a live app, for a
+  version host whose version exists and compiled, and for a verified custom
+  domain; 404 for everything else, so no `--v<N>` number the app does not
+  have can order a certificate.
 
 Verified custom domains get their certificates from an on-demand catch-all
 behind the same `ask` (on by default in mode (c), `TLS_CUSTOM_DOMAINS`).
 `tls internal` (Caddy's local CA) serves a test box and `task dev:tls`.
 Caddy also compresses text responses (`encode zstd gzip`, `200` only, an
 explicit type list without `text/event-stream`, so `/mcp` SSE is not
-buffered); drobek itself never compresses. Details: [`SELF-HOSTING.md` → TLS](./SELF-HOSTING.md#tls).
+buffered); drobek itself never compresses. On the dashboard site Caddy refuses
+a request body over `DASHBOARD_MAX_BODY_BYTES` (`request_body`, 413) except on
+the paths drobek caps with their own limits (`/mcp`, the asset upload URLs, the
+Data tab's CSV import); drobek applies the same cap itself in front of React
+Router (`@drobek/core` `withBodyLimit`), counting a chunked body as it arrives.
+Details: [`SELF-HOSTING.md` → TLS](./SELF-HOSTING.md#tls).
 
 ## 8. Background jobs
 
-All in-process (`apps/server/server/jobs.ts`), started with the server:
+All in-process (`apps/server/server/jobs.ts`), started with the server.
+They query through a Postgres pool of their own (`runAsJob` in `@drobek/db`)
+without the requests' `DB_STATEMENT_TIMEOUT_MS`, so a long sweep never
+takes a connection a request waits for and is not cut off like a request's
+query:
 
 | Job | Interval | What |
 | --- | --- | --- |
+| version retention | hourly, Redis lease | deletes the versions of each app past its workspace's `APP_VERSIONS_KEEP` (200) — never the published one, a rollback set, the one the preview serves or the last hour's; skips a workspace whose limits provider does not answer (`@drobek/apps`) |
 | blob GC | hourly, Redis lease | deletes blobs no version references, after 7 days |
 | slug release | hourly, Redis lease | a soft-deleted app's slug is free again after 30 days |
 | domain re-check | `DOMAINS_RECHECK_INTERVAL_MS` (1 h), Redis lease | re-verifies domains checked more than 24 h ago; unverifies + mails on a definitive failure |
@@ -451,9 +517,14 @@ for the 30-day window.
   `packages/oauth/src/tokens.server.ts`); or a personal `drk_` API key. A grant is
   bound to the **user** (every workspace they belong to) with the scopes
   `read`, `write`, `publish`; the scope decides which tools exist, the role in
-  the app's workspace decides each call. Fifteen tools (among them the
-  gallery listing and the asset upload URLs); the contract and the briefing
-  are in [`AGENT.md`](./AGENT.md).
+  the app's workspace decides each call. Sessions live in the process
+  (`packages/oauth/src/resource/mcp.ts`), bound to the user, scope and grant
+  that opened them; one is closed after `MCP_SESSION_IDLE_TTL_MS` without a
+  request, when its user opens more than `MCP_SESSIONS_PER_USER` (the least
+  recently used goes), or when its API key or OAuth connection is revoked —
+  the client then gets 404 for its id and initializes a new session. Fifteen
+  tools (among them the gallery listing and the asset upload URLs); the
+  contract and the briefing are in [`AGENT.md`](./AGENT.md).
 - **The dashboard** (core, AGPL): sign-in by e-mail code (Google optional),
   workspaces (Apps / Members / Activity / Upstreams tabs), apps with Overview
   / Files / Assets / Data / Modules / Forms / Users / Uploads / Logs /

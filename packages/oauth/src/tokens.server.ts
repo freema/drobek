@@ -24,6 +24,7 @@ import {
   REFRESH_TTL_MS,
 } from './constants.js';
 import { generateOpaqueToken, hashToken } from './crypto.server.js';
+import { credentialsRevoked } from './revocations.js';
 import {
   defaultOAuthStore,
   type OAuthStore,
@@ -236,8 +237,9 @@ async function mintFrom(
  * Invalidate a rotation lineage from `start` on: every refresh token reachable
  * via rotated_to is marked used (none can rotate again) and the live access
  * tokens issued with them are revoked, together with the grant's access
- * tokens that record no refresh row. Other lineages of the same user, client
- * and audience are untouched.
+ * tokens that record no refresh row, and the MCP sessions those access tokens
+ * drove are closed. Other lineages of the same user, client and audience are
+ * untouched.
  */
 export async function revokeLineage(
   start: RefreshTokenRow,
@@ -257,6 +259,7 @@ export async function revokeLineage(
     { userId: start.userId, oauthClientId: start.oauthClientId, audience: start.audience },
     [...seen]
   );
+  credentialsRevoked(start.userId);
 }
 
 /** A validated access token: WHO (user) + WHAT (scope) + for WHICH resource. */

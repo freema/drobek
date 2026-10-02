@@ -3,11 +3,18 @@
  * files point at content-addressed blobs, so identical content is stored once
  * no matter how many versions (or apps) contain it. Publishing moves one
  * pointer (`apps.published_version_id`); restore copies an old file list into
- * a NEW version, so history is never rewritten.
+ * a NEW version — a version is never changed. Only the history retention
+ * deletes old versions (version-retention.server.ts).
  *
  * Publish also freezes the app's assets for the version it puts
  * live, and restore brings back the assets a version had when it was last
  * live (assets/snapshots.server.ts).
+ *
+ * A new version — a write or a restore — is refused with `rate_limited` past
+ * VERSIONS_PER_APP_HOUR / VERSIONS_PER_USER_HOUR (version-rate.server.ts),
+ * and a write with `limit_exceeded` past the workspace's
+ * WORKSPACE_SOURCE_QUOTA (version-retention.server.ts), before any blob is
+ * stored.
  */
 import { createHash } from 'node:crypto';
 import { and, desc, eq, gte, inArray, sql } from 'drizzle-orm';
@@ -20,6 +27,8 @@ import { lockedByAdminError, screenAfterPublish } from './moderation.server.js';
 import { freezeAssetsForPublish, pruneAssetSnapshots, restoreDraftAssets } from './assets/snapshots.server.js';
 import { assertMayPublish, requestPublishApproval } from './publish-approval.server.js';
 import { notifyOperatorOfPublish, type PublishKind } from './publish-notify.server.js';
+import { assertVersionRateLocked, versionRateLimits, type VersionRateLimits } from './version-rate.server.js';
+import { assertSourceQuotaLocked, fileSizes, missingVersionMessage, versionStorageLimits } from './version-retention.server.js';
 import type {
   Actor,
   CompileStatus,
@@ -44,6 +53,10 @@ export interface CreateVersionOptions {
    * is latest.
    */
   baseVersion?: number | null;
+  /** VERSIONS_PER_APP_HOUR / VERSIONS_PER_USER_HOUR of the app's workspace (versionRateLimitsOf); default: the env. */
+  versionLimits?: VersionRateLimits;
+  /** WORKSPACE_SOURCE_QUOTA of the app's workspace (versionStorageLimitsOf), bytes; default: the env. */
+  sourceQuota?: number;
 }
 
 const VERSION_COLUMNS = {
@@ -118,9 +131,10 @@ async function audit(
 }
 
 /**
- * Store a new version: blobs upsert → version row → file rows, in one
- * transaction. An upsert of an existing blob refreshes its `created_at` and
- * row-locks it, so a concurrent GC sweep can never delete it underneath us.
+ * Store a new version: rate check → quota check → blobs upsert → version row →
+ * file rows, in one transaction. An upsert of an existing blob refreshes its
+ * `created_at` and row-locks it, so a concurrent GC sweep can never delete it
+ * underneath us.
  */
 export async function createVersion(
   appId: string,
@@ -146,6 +160,8 @@ export async function createVersion(
 
   return getDb().transaction(async (tx) => {
     const app = await lockWritableApp(tx, appId);
+    await assertVersionRateLocked(tx, appId, opts.actor.userId, opts.versionLimits ?? versionRateLimits());
+    await assertSourceQuotaLocked(tx, app.workspaceId, fileSizes(rows), opts.sourceQuota ?? versionStorageLimits().sourceQuota);
     if (bytesBySha.size > 0) {
       await tx
         .insert(blobs)
@@ -362,16 +378,19 @@ export async function publish(
 
 /**
  * Restore = a NEW version with exactly the file list (and compile result) of
- * version `number`. Nothing is rewritten; publishing it is a separate step.
+ * version `number`. Nothing is rewritten and no bytes are added (the
+ * workspace's source quota never refuses it); publishing it is a separate
+ * step. A version the retention deleted answers `not_found` saying so.
  * When version `number` was published and its asset set is still
  * kept, the draft assets are reset to that set too (`assetsRestored`), so
  * the preview — and the next publish — show the version's old assets.
+ * Counts against the version rate like a write (`opts.versionLimits`).
  */
 export async function restore(
   appId: string,
   number: number,
   actor: Actor,
-  opts: { reasoning?: string | null } = {}
+  opts: { reasoning?: string | null; versionLimits?: VersionRateLimits } = {}
 ): Promise<{ id: string; number: number; assetsRestored: boolean }> {
   return getDb().transaction(async (tx) => {
     const app = await lockWritableApp(tx, appId);
@@ -383,7 +402,8 @@ export async function restore(
       })
       .from(appVersions)
       .where(and(eq(appVersions.appId, appId), eq(appVersions.number, number)));
-    if (!source) throw new AppsError('not_found', `Version ${number} does not exist.`);
+    if (!source) throw new AppsError('not_found', await missingVersionMessage(appId, number, { ex: tx }));
+    await assertVersionRateLocked(tx, appId, actor.userId, opts.versionLimits ?? versionRateLimits());
 
     const newNumber = await nextNumber(tx, appId);
     const [version] = await tx

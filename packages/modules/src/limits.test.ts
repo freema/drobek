@@ -121,6 +121,24 @@ describe('core limits', () => {
     expect(p.defaults()).toMatchObject({ DOMAINS_MAX_PER_APP: 0, APPS_MAX_PER_WORKSPACE: 50 });
   });
 
+  it('settled: the effective limits, or null while the provider does not answer — never the env fallback', async () => {
+    const plain = createLimitsProvider({ catalogue, env: { FORMS_PER_DAY: '7' } });
+    expect(await plain.settled!('ws')).toEqual({ HELLO_WAVES_PER_MINUTE: 30, FORMS_PER_DAY: 7 });
+    const up = createLimitsProvider({ catalogue, env, fetch: async () => ({ ok: true, status: 200, json: async () => ({ limits: { FORMS_PER_DAY: 3 } }) }) });
+    expect(await up.settled!('ws')).toEqual({ HELLO_WAVES_PER_MINUTE: 30, FORMS_PER_DAY: 3 });
+    const down = createLimitsProvider({
+      catalogue,
+      env,
+      log: logger(),
+      fetch: async () => {
+        throw new Error('ECONNREFUSED');
+      },
+    });
+    expect(await down.settled!('ws')).toBeNull();
+    // forWorkspace still answers the env defaults meanwhile.
+    expect(await down.forWorkspace('ws')).toEqual({ HELLO_WAVES_PER_MINUTE: 30, FORMS_PER_DAY: 50 });
+  });
+
   it('docs/MODULES.md lists every core limit (the provider-side mirror)', () => {
     const doc = readFileSync(new URL('../../../docs/MODULES.md', import.meta.url), 'utf8');
     for (const l of CORE_LIMITS) expect(doc).toContain(`\`${l.env}\``);

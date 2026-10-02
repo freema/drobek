@@ -13,6 +13,7 @@ import {
   tlsAskConfigError,
   tlsAskCustomHost,
   tlsAskSlug,
+  tlsAskTarget,
   tlsAskToken,
   tlsAskTokenMatches,
   type TlsAskDeps,
@@ -23,6 +24,9 @@ const TOKEN = 'a'.repeat(24) + '0123456789abcdef';
 const PROD_HOSTS: HostConfig = { appsDomain: 'drobek.app', dashboardHost: 'drobek.app' };
 const LIVE = new Set(['shop', 'my-app']);
 const appExists = async (slug: string) => LIVE.has(slug);
+/** The compiled versions of the live apps. */
+const VERSIONS: Record<string, number[]> = { shop: [1, 2], 'my-app': [3] };
+const versionExists = async (slug: string, n: number) => VERSIONS[slug]?.includes(n) ?? false;
 /** The verified custom domains (the domains table in production). */
 const VERIFIED = new Set(['firma.test', 'shop.firma.cz']);
 const customDomainAllowed = async (hostname: string) => VERIFIED.has(hostname);
@@ -82,6 +86,17 @@ describe('tlsAskSlug', () => {
   });
 });
 
+describe('tlsAskTarget', () => {
+  it('names the host form, so a version host carries its number', () => {
+    expect(tlsAskTarget('shop.drobek.app', PROD_HOSTS)).toEqual({ kind: 'prod', slug: 'shop' });
+    expect(tlsAskTarget('shop--preview.drobek.app', PROD_HOSTS)).toEqual({ kind: 'preview', slug: 'shop' });
+    expect(tlsAskTarget('shop--v999999999.drobek.app', PROD_HOSTS)).toEqual({ kind: 'version', slug: 'shop', number: 999999999 });
+    expect(tlsAskTarget('shop--v1234567890.drobek.app', PROD_HOSTS)).toBeNull();
+    expect(tlsAskTarget('shop--v0.drobek.app', PROD_HOSTS)).toBeNull();
+    expect(tlsAskTarget('firma.test', PROD_HOSTS)).toBeNull();
+  });
+});
+
 describe('tlsAskCustomHost', () => {
   it('a dotted public name outside APPS_DOMAIN and the dashboard is a custom-domain candidate', () => {
     expect(tlsAskCustomHost('firma.test', PROD_HOSTS)).toBe('firma.test');
@@ -96,7 +111,7 @@ describe('tlsAskCustomHost', () => {
 });
 
 describe('decideTlsAsk', () => {
-  const deps: TlsAskDeps = { expectedToken: TOKEN, hosts: PROD_HOSTS, appExists, customDomainAllowed };
+  const deps: TlsAskDeps = { expectedToken: TOKEN, hosts: PROD_HOSTS, appExists, versionExists, customDomainAllowed };
   const ask = (domain: string | null, token: string | null = TOKEN, requestHost = 'drobek:3000') =>
     decideTlsAsk({ domain, token, requestHost }, deps);
 
@@ -108,6 +123,30 @@ describe('decideTlsAsk', () => {
 
   it('non-existing slug → 404', async () => {
     expect(await ask('nope.drobek.app')).toBe(404);
+    expect(await ask('nope--v1.drobek.app')).toBe(404);
+  });
+
+  it('a version host → 200 only for a version the live app has; any other N → 404', async () => {
+    expect(await ask('shop--v1.drobek.app')).toBe(200);
+    expect(await ask('shop--v2.drobek.app')).toBe(200);
+    expect(await ask('shop--v3.drobek.app')).toBe(404);
+    expect(await ask('shop--v999999999.drobek.app')).toBe(404);
+    expect(await ask('my-app--v1.drobek.app')).toBe(404);
+    // Without the version lookup no version host gets a certificate.
+    const noVersions = { ...deps, versionExists: undefined };
+    expect(await decideTlsAsk({ domain: 'shop--v1.drobek.app', token: TOKEN, requestHost: 'drobek:3000' }, noVersions)).toBe(404);
+    expect(await decideTlsAsk({ domain: 'shop--preview.drobek.app', token: TOKEN, requestHost: 'drobek:3000' }, noVersions)).toBe(200);
+  });
+
+  it('a version host is decided by the version lookup alone (the app lookup is not asked)', async () => {
+    const seen: string[] = [];
+    const spy: TlsAskDeps = {
+      ...deps,
+      appExists: async (s) => (seen.push(`app:${s}`), true),
+      versionExists: async (s, n) => (seen.push(`version:${s}:${n}`), false),
+    };
+    expect(await decideTlsAsk({ domain: 'shop--v42.drobek.app', token: TOKEN, requestHost: 'drobek:3000' }, spy)).toBe(404);
+    expect(seen).toEqual(['version:shop:42']);
   });
 
   it('no token → 401, wrong token → 401', async () => {
@@ -148,9 +187,11 @@ describe('decideTlsAsk', () => {
     const spy: TlsAskDeps = {
       ...deps,
       appExists: async (s) => (seen.push(s), true),
+      versionExists: async (s) => (seen.push(s), true),
       customDomainAllowed: async (h) => (seen.push(h), true),
     };
     await decideTlsAsk({ domain: 'shop.drobek.app', token: 'wrong', requestHost: 'drobek:3000' }, spy);
+    await decideTlsAsk({ domain: 'shop--v1.drobek.app', token: 'wrong', requestHost: 'drobek:3000' }, spy);
     await decideTlsAsk({ domain: 'firma.test', token: 'wrong', requestHost: 'drobek:3000' }, spy);
     await decideTlsAsk({ domain: 'firma.test', token: TOKEN, requestHost: 'drobek.app' }, spy);
     await decideTlsAsk({ domain: '203.0.113.7', token: TOKEN, requestHost: 'drobek:3000' }, spy);
@@ -171,6 +212,7 @@ describe('GET /api/internal/tls/ask over HTTP', () => {
         if (failing) throw new Error('db down');
         return LIVE.has(slug);
       },
+      versionExists,
       customDomainAllowed,
       log: noopLogger,
     });
@@ -209,6 +251,11 @@ describe('GET /api/internal/tls/ask over HTTP', () => {
 
   it('non-existing slug → 404', async () => {
     expect((await get(q('ghost.drobek.app'))).status).toBe(404);
+  });
+
+  it('a version host → 200 for an existing version, 404 for any other number', async () => {
+    expect((await get(q('shop--v2.drobek.app'))).status).toBe(200);
+    expect((await get(q('shop--v7.drobek.app'))).status).toBe(404);
   });
 
   it('no token → 401; wrong token → 401', async () => {

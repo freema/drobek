@@ -182,6 +182,21 @@ export function moduleNotEnabled(name: string): ModuleError {
   );
 }
 
+/** Seconds a caller should wait after a database timeout before it retries. */
+const DATABASE_TIMEOUT_RETRY_AFTER_S = 5;
+
+/**
+ * A query the database cut off (DB_STATEMENT_TIMEOUT_MS / DB_LOCK_TIMEOUT_MS)
+ * while a module route ran: `503 unavailable`, `details.reason:
+ * database_timeout`, Retry-After.
+ */
+export function databaseTimeout(): ModuleError {
+  return new ModuleError('unavailable', 'The database did not answer in time (the server is under load). Try again in a moment.', {
+    details: { reason: 'database_timeout' },
+    headers: { 'Retry-After': String(DATABASE_TIMEOUT_RETRY_AFTER_S) },
+  });
+}
+
 /**
  * A super-admin tried to enable an opt-in module for a workspace while a
  * module it requires (directly or through another one) is off there.

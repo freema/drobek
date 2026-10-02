@@ -22,6 +22,11 @@
  *                       app's write rate limit, never the quota  → data.import
  *   - `drop-collection` delete the collection (records + declaration) after
  *                       the owner typed its name (`?drop=1`)    → data.collection_delete
+ *
+ * The page keeps its own body limit (the server's DASHBOARD_MAX_BODY_BYTES
+ * cap leaves it alone, `hasOwnBodyLimit`): a declared length over
+ * IMPORT_REQUEST_MAX_BYTES is refused before anything is read, and a body
+ * without one is counted as it is read — both answer the import's 413.
  */
 import {
   data,
@@ -34,6 +39,7 @@ import { RECORDS_IMPORT_MAX_ROWS } from '@drobek/modules';
 import { requireWorkspaceRole } from '@drobek/tenancy';
 import { appHeaderFor } from '../app-page.server.js';
 import { flattenRecord, mapFilterSort, rulesText, type Column } from '../data-view.js';
+import { IMPORT_REQUEST_MAX_BYTES, readBodyUpTo } from '../body-limits.js';
 import { auditOwner, ownerError } from '../owner-http.server.js';
 import { IMPORT_MAX_BYTES, editableJson, parseRecordJson } from '../owner-view.js';
 import { recordsOf, withDataErrors } from './data-http.server.js';
@@ -231,12 +237,13 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const collection = String(params.collection ?? '');
   const collBase = `/workspaces/${access.workspace.slug}/apps/${appSlug}/data/${collection}`;
 
-  // A CSV import is the only large body: refuse it before it is read.
+  // A CSV import is the only large body: refuse it before it is read, or once it is past the limit.
+  const tooLarge = () => actionError('import', 413, `The file is larger than ${IMPORT_MAX_BYTES / (1024 * 1024)} MiB — split it into smaller files.`);
   const declared = Number(request.headers.get('content-length') ?? NaN);
-  if (Number.isFinite(declared) && declared > IMPORT_MAX_BYTES + 64 * 1024) {
-    return actionError('import', 413, `The file is larger than ${IMPORT_MAX_BYTES / (1024 * 1024)} MiB — split it into smaller files.`);
-  }
-  const form = await request.formData();
+  if (Number.isFinite(declared) && declared > IMPORT_REQUEST_MAX_BYTES) return tooLarge();
+  const body = await readBodyUpTo(request, IMPORT_REQUEST_MAX_BYTES);
+  if (!body) return tooLarge();
+  const form = await new Response(body, { headers: { 'Content-Type': request.headers.get('content-type') ?? '' } }).formData();
   const intent = String(form.get('intent') ?? '') as ActionIntent;
   const records = await recordsOf(access.workspace.id, appSlug);
   const audit = (action: string, meta: Record<string, unknown>) => auditOwner(access, { slug: appSlug }, action, { module: records.module, collection, ...meta });
@@ -279,9 +286,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   if (intent === 'import') {
     const file = form.get('file');
     if (!file || typeof file === 'string' || file.size === 0) return actionError(intent, 400, 'Choose a CSV file to import.');
-    if (file.size > IMPORT_MAX_BYTES) {
-      return actionError(intent, 413, `The file is larger than ${IMPORT_MAX_BYTES / (1024 * 1024)} MiB — split it into smaller files.`);
-    }
+    if (file.size > IMPORT_MAX_BYTES) return tooLarge();
     let text: string;
     try {
       text = new TextDecoder('utf-8', { fatal: true }).decode(await file.arrayBuffer());

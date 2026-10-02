@@ -6,7 +6,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { and, eq, isNull } from 'drizzle-orm';
 import { hostConfig, type HostConfig } from '@drobek/apps';
 import { createConsoleLogger, type Logger } from '@drobek/core';
-import { apps, dbErrorForLog, getDb } from '@drobek/db';
+import { appVersions, apps, dbErrorForLog, getDb } from '@drobek/db';
 import { customDomainAskAllowed } from '@drobek/domains';
 import { TLS_ASK_TOKEN_HEADER, decideTlsAsk, tlsAskToken, type TlsAskStatus } from './tls-ask.js';
 
@@ -23,12 +23,36 @@ export async function appSlugIsLive(slug: string): Promise<boolean> {
   return row?.status === 'live';
 }
 
+/**
+ * True when the live, non-deleted app `slug` has a version `number` that
+ * compiled — exactly the versions its `--v<N>` host serves.
+ */
+export async function appVersionIsLive(slug: string, number: number): Promise<boolean> {
+  const [row] = await getDb()
+    .select({ id: appVersions.id })
+    .from(appVersions)
+    .innerJoin(apps, eq(apps.id, appVersions.appId))
+    .where(
+      and(
+        eq(apps.slug, slug),
+        isNull(apps.deletedAt),
+        eq(apps.status, 'live'),
+        eq(appVersions.number, number),
+        eq(appVersions.compileStatus, 'ok')
+      )
+    )
+    .limit(1);
+  return row !== undefined;
+}
+
 export interface TlsAskHandlerOptions {
   /** Default: from TLS_ASK_TOKEN (read once, at mount). */
   token?: string | null;
   /** Default: from APPS_DOMAIN + PUBLIC_APP_URL. */
   hosts?: HostConfig;
   appExists?: (slug: string) => Promise<boolean>;
+  /** Default = a compiled version of a live app (appVersionIsLive). */
+  versionExists?: (slug: string, number: number) => Promise<boolean>;
   /** Default = a verified custom domain of a live app (@drobek/domains). */
   customDomainAllowed?: (hostname: string) => Promise<boolean>;
   log?: Logger;
@@ -56,6 +80,7 @@ export function createTlsAskHandler(
   const token = opts.token !== undefined ? opts.token : tlsAskToken();
   const hosts = opts.hosts ?? hostConfig();
   const appExists = opts.appExists ?? appSlugIsLive;
+  const versionExists = opts.versionExists ?? appVersionIsLive;
   const customDomainAllowed = opts.customDomainAllowed ?? customDomainAskAllowed;
   const log = opts.log ?? createConsoleLogger('tls-ask');
   let warnedUnset = false;
@@ -75,7 +100,7 @@ export function createTlsAskHandler(
         token: one('token') ?? single(req.headers[TLS_ASK_TOKEN_HEADER]),
         requestHost: single(req.headers.host),
       },
-      { expectedToken: token, hosts, appExists, customDomainAllowed }
+      { expectedToken: token, hosts, appExists, versionExists, customDomainAllowed }
     ).then(
       (status) => {
         if (status === 200) log.info('tls ask: allowed', { domain: one('domain') });

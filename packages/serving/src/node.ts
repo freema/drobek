@@ -23,6 +23,9 @@
  * request (module routes, the beacon) must deliver its whole body within
  * APPS_MODULE_BODY_TIMEOUT_MS (2 min): past it, 408 (or, when an answer is
  * already on its way, the connection is closed).
+ *
+ * A request that fails unexpectedly answers a plain 500; one whose database
+ * query was cut off (statement or lock timeout) a plain 503 with Retry-After.
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { Readable, pipeline } from 'node:stream';
@@ -48,7 +51,7 @@ import {
   type Logger,
 } from '@drobek/core';
 import { handleBeacon, incrementServingSignal } from '@drobek/insights';
-import { dbErrorForLog } from '@drobek/db';
+import { dbErrorForLog, isQueryTimeout } from '@drobek/db';
 import {
   PLATFORM_PREFIX,
   UNLOCK_APP_ATTEMPTS,
@@ -342,14 +345,16 @@ export function createAppsHostMiddleware(opts: AppsHostOptions = {}): NodeMiddle
         res.destroy();
         return;
       }
+      const timedOut = isQueryTimeout(err);
       answer({
-        status: 500,
+        status: timedOut ? 503 : 500,
         headers: {
           ...appSecurityHeaders({ noindex: true }),
           'Content-Type': 'text/plain; charset=utf-8',
           'Cache-Control': 'no-store',
+          ...(timedOut ? { 'Retry-After': '5' } : {}),
         },
-        body: 'Internal Server Error',
+        body: timedOut ? 'Service Unavailable' : 'Internal Server Error',
       });
     });
   }

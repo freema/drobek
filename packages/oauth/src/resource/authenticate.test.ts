@@ -60,6 +60,7 @@ function ctxFor(userId: string, email: string, superAdmin = false): AuthContext 
   return {
     kind: 'oauth',
     credentialId: 't',
+    oauthClientId: null,
     userId,
     email,
     superAdmin,

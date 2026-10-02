@@ -6,6 +6,10 @@
  * public gallery section (when the server runs one) and the health
  * panels (recent errors, traffic / 404s).
  *
+ * Under the heading: how many versions the history retention keeps
+ * (APP_VERSIONS_KEEP of the workspace, besides the published one and those
+ * kept for a rollback), how many the app has and the oldest one.
+ *
  * Per version: number, time, author (agent / user + e-mail), the agent's
  * reasoning, compile status (+ the first error), and — editor+ only —
  * "Publish" (a compiled, unpublished version; an older one IS the rollback)
@@ -118,7 +122,8 @@ const COMPILE_LABEL: Record<string, string> = {
 };
 
 export default function AppDetailRoute() {
-  const { header, versions, errors, logs, readiness, canPublish, pendingBanner, syncBanner, duplicateResult, gallery } = useLoaderData<typeof loader>();
+  const { header, versions, retention, errors, logs, readiness, canPublish, pendingBanner, syncBanner, duplicateResult, gallery } =
+    useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const nav = useNavigation();
   const submitting = nav.state !== 'idle';
@@ -134,6 +139,15 @@ export default function AppDetailRoute() {
       <ReadinessSection readiness={readiness} />
 
       <h2 style={styles.h2}>Versions</h2>
+      {versions.length > 0 ? (
+        <p style={{ ...styles.muted, fontSize: '0.85rem', marginTop: 0 }} data-testid="version-retention" data-keep={retention.keep}>
+          drobek keeps the newest {retention.keep} versions of this app, plus the published version and the versions kept for a
+          rollback; older versions are deleted automatically. {retention.stored} {retention.stored === 1 ? 'version is' : 'versions are'}{' '}
+          stored now{retention.oldest !== null ? `, the oldest is v${retention.oldest}` : ''}
+          {retention.stored > versions.length ? ` (the list shows the newest ${versions.length})` : ''}. To keep a copy of an older version,
+          download its ZIP from its Files page.
+        </p>
+      ) : null}
       {versions.length === 0 ? (
         <p style={styles.muted}>No versions yet — your agent writes the first one.</p>
       ) : (

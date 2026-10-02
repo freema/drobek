@@ -67,7 +67,7 @@ export {
   verifyAppAccessToken,
   verifyAppPassword,
 } from './password.js';
-export { ByteLru, CountLru, DEFAULT_BLOB_CACHE_BYTES } from './lru.js';
+export { ByteLru, CountLru, DEFAULT_BLOB_CACHE_BYTES, ExpiringLru } from './lru.js';
 export {
   isUnservedSource,
   servedManifest,
@@ -126,10 +126,11 @@ export {
   tlsAskConfigError,
   tlsAskCustomHost,
   tlsAskSlug,
+  tlsAskTarget,
   tlsAskToken,
   tlsAskTokenMatches,
   type TlsAskDeps,
   type TlsAskInput,
   type TlsAskStatus,
 } from './tls-ask.js';
-export { appSlugIsLive, createTlsAskHandler, type TlsAskHandlerOptions } from './tls-ask.server.js';
+export { appSlugIsLive, appVersionIsLive, createTlsAskHandler, type TlsAskHandlerOptions } from './tls-ask.server.js';

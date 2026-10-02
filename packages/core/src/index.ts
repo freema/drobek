@@ -23,6 +23,7 @@ export {
   type SecretProblem,
 } from './secrets-config.js';
 export {
+  DASHBOARD_BODY_CAP_EXEMPT_PATHS,
   TLS_ASK_PATH,
   TLS_ASK_TOKEN_MIN_LENGTH,
   caddyConfigFromEnv,
@@ -36,6 +37,18 @@ export {
 export { CsvParseError, csvEscape, csvLine, csvUnguard, parseCsv, type CsvRow } from './csv.js';
 export { SIGNATURE_HEAD_BYTES, hasControlBytes, looksLikeSvg, sniffSignature, type SniffedType } from './sniff.js';
 export { CLOSE_LINGER_MS, closeAfterResponse, requestBodyStream } from './http-body.js';
+export {
+  DASHBOARD_MAX_BODY_BYTES_DEFAULT,
+  dashboardMaxBodyBytes,
+  withBodyLimit,
+  type BodyLimitOptions,
+} from './body-limit.js';
+export {
+  FATAL_STOP_MARGIN_MS,
+  installFatalErrorHandlers,
+  type FatalErrorHandlerOptions,
+  type FatalErrorProcess,
+} from './fatal-errors.js';
 export {
   SHUTDOWN_GRACE_DEFAULT_MS,
   closeGracefully,

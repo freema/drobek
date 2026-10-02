@@ -279,7 +279,11 @@ declare const appVersions = pgTable(
     typecheck: jsonb('typecheck'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
   },
-  (t) => [uniqueIndex('app_versions_app_number_uq').on(t.appId, t.number)]
+  (t) => [
+    uniqueIndex('app_versions_app_number_uq').on(t.appId, t.number),
+    // The per-person version rate (VERSIONS_PER_USER_HOUR) reads a person's newest versions.
+    index('app_versions_creator_created_idx').on(t.createdByUserId, t.createdAt),
+  ]
 );
 
 /** A version's file list: path → blob. A path may exist once per kind. */
@@ -2559,7 +2563,8 @@ declare function hasControlBytes(chunk: Buffer): boolean {
  *
  * `reportError` is called at the server's central error points (a 5xx of the
  * dashboard or Express, a module route that throws, a failed module job, a
- * failed e-mail send, a start-up failure once the reporter is up). It never
+ * failed e-mail send, a start-up failure once the reporter is up, an error
+ * nothing caught that stops the process). It never
  * throws and never holds up the caller: the event is built from an allow-list
  * (no request bodies, headers, cookies or query strings), e-mail addresses,
  * token-shaped strings and every known secret value are redacted, identical
@@ -2574,7 +2579,7 @@ declare function hasControlBytes(chunk: Buffer): boolean {
 declare const ERROR_REPORTER_API_VERSION = 1;
 
 /** Where in the server the error happened. */
-type ErrorReportKind = 'http' | 'module_route' | 'module_job' | 'startup' | 'email';
+type ErrorReportKind = 'http' | 'module_route' | 'module_job' | 'startup' | 'email' | 'process';
 
 /** What is known about the place of the error — ids and names only, never request data. */
 interface ErrorReportContext {

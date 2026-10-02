@@ -112,4 +112,4 @@ Fix = the line it names, in the same app, e.g. `"date-fns": "https://esm.sh/date
 | `validation_failed` (422) | record breaks the collection schema | send the fields in `details[]` |
 | `pending_confirmation` (409) | data collection waits for the owner's confirmation (`configure_module` said `applied:false`) | the owner confirms at `confirm_url` (`get_app`) |
 | `password_required` (401) | the app is password-locked | the user unlocks it in the browser first |
-| `unavailable` (503) | e-mail paused or a service down | retry later; tell the owner if it persists |
+| `unavailable` (503) | e-mail paused, a service down, or the database timed out (`details.reason: database_timeout`) | retry after `Retry-After`; tell the owner if it persists |

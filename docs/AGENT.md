@@ -93,6 +93,14 @@ claude mcp add --transport http drobek https://drobek.example.com/mcp \
    refresh token. Sending a rotated refresh token again within 60 s (a retry
    after a lost response) gets a fresh pair; later, it is reuse and burns
    that lineage.
+6. `initialize` opens a session (`Mcp-Session-Id`) bound to the user, the
+   scope and the grant (the API key, or the OAuth client) that opened it;
+   another credential gets 401 on it. drobek closes a session after
+   `MCP_SESSION_IDLE_TTL_MS` (1 hour) without a request, when the user opens
+   more than `MCP_SESSIONS_PER_USER` (10; the least recently used goes), when
+   its key or connection is revoked, and on a restart. A request with a
+   closed session's id answers 404, and the client initializes a new
+   session.
 
 ## Scopes and roles
 
@@ -151,7 +159,8 @@ error catalogue (`@drobek/agent-dx` `errors-catalogue.ts`, rendered into
 `/llms-full.txt`). A platform module's own route codes are declared by the
 module (`errors`): `skill_info('<module>').errors` returns them and
 `/llms-full.txt` lists them after the core codes, one section per active
-module. A compile error is not a tool failure: it is
+module. A query the database cut off (the server is under load) answers
+`busy` with `reason: "database_timeout"` from any tool. A compile error is not a tool failure: it is
 `compile.ok: false` with `compile.errors[]`, and the version is stored.
 
 **Video, audio and big files (assets).** `write_files` is text-only, and a
@@ -343,7 +352,23 @@ unchanged.
   (≤ 300 characters); 200 files / 512 KiB per file / 5 MiB per version. One
   `write_files` call is one MCP request of at most `MCP_MAX_BODY_BYTES`
   (10 MiB of JSON); a bigger one answers HTTP 413 with a JSON-RPC error
-  telling the agent to split the write or send `edits`.
+  telling the agent to split the write or send `edits`. New versions are
+  rate-limited: the workspace's `VERSIONS_PER_APP_HOUR` per app and
+  `VERSIONS_PER_USER_HOUR` per person within an hour (the briefing states
+  both); past either `write_files`, `restore_version`, `create_app` and
+  `duplicate_app` answer `rate_limited` with `retry_after_seconds` and store
+  nothing.
+- **History** — an app keeps its newest `APP_VERSIONS_KEEP` versions (200),
+  the published one and those whose asset set is kept for a rollback; the
+  hourly retention deletes older ones. `get_app`'s `version_retention`
+  (`keep_newest`, `stored`, `oldest_version`) and the dashboard's version
+  history say so; `read_file`, `restore_version` and `publish` of a deleted
+  version answer `not_found` with "is no longer stored" and the oldest version
+  still stored. The versions of a workspace's live apps may store
+  `WORKSPACE_SOURCE_QUOTA` (1 GiB) of unique files; a `write_files`,
+  `create_app` or `duplicate_app` whose new bytes do not fit answers
+  `limit_exceeded` (`limit`, `value`, `used_bytes`) and stores nothing, a
+  restore always fits. The briefing states both values.
 - **Dependencies** — `drobek.json` `imports` → pinned esm.sh URLs; an unlisted
   bare import is `unresolved_import` naming the line to add; `drobek` is the
   platform SDK.

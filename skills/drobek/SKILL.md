@@ -139,6 +139,19 @@ in the version history.
   `MCP_MAX_BODY_BYTES`; the briefing states it). A bigger call is refused with
   HTTP 413 and a JSON-RPC error before anything is written — split the write
   into several calls, or send `edits` instead of whole files.
+- New versions are rate-limited per app and per person within an hour (the
+  briefing states the numbers, by default 600 and 1200). Every `write_files`,
+  `restore_version`, `create_app` and `duplicate_app` makes a version; past
+  either limit the call answers `rate_limited` (`limit`,
+  `retry_after_seconds`) and nothing is stored. Tell the user and continue
+  after that time — never retry in a loop; put changes that belong together
+  into one call.
+- The versions of all apps of a workspace may store a limited number of
+  bytes (`WORKSPACE_SOURCE_QUOTA`, 1 GiB by default; the briefing states it).
+  A write whose new bytes do not fit answers `limit_exceeded` with
+  `limit: "WORKSPACE_SOURCE_QUOTA"` and `used_bytes`, and nothing is stored:
+  tell the user — deleting an app the workspace no longer needs frees its
+  versions at once — and do not retry the same write.
 
 - `compile.ok: true` → give the user the `preview_url`.
 - `compile.ok: false` → the version is saved (nothing is lost) but the preview
@@ -311,7 +324,14 @@ operator can restore it.
 
 `get_app({ app_id })` lists the last 20 versions with their compile status and
 reasoning. `restore_version({ app_id, version })` creates a NEW version that is
-an exact copy of an old one — history is never rewritten.
+an exact copy of an old one — a version is never changed.
+
+An app keeps its newest versions (`APP_VERSIONS_KEEP`, 200 by default), the
+published one and those kept for a rollback; older versions are deleted
+hourly. `get_app`'s `version_retention` (`keep_newest`, `stored`,
+`oldest_version`) says what is kept. `read_file`, `restore_version` and
+`publish` of a deleted version answer `not_found` ("is no longer stored") —
+it cannot be brought back; work from a version that is still stored.
 
 ## Publishing
 
@@ -471,7 +491,7 @@ A failed call returns `isError: true` with `{ code, message, hint }` — the
 `invalid_path`, `limit_exceeded`, `secret_in_source`, `app_locked`,
 `app_locked_by_admin`, `busy`, `not_publishable`, `not_published`,
 `user_confirmation_required`, `gallery_hidden`, `gallery_disabled`, `not_duplicable`,
-`publish_not_approved`, `publish_blocked`, `asset_too_large`, `module_not_enabled`,
+`publish_not_approved`, `publish_blocked`, `rate_limited`, `asset_too_large`, `module_not_enabled`,
 `domain_not_verified`, `dns_unavailable`, …).
 An argument a tool does not take is ignored and the result carries
 `warnings: [{ code: "unknown_argument", ignored, accepted }]` — read it: a

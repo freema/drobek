@@ -62,6 +62,13 @@ const SUMMARIES: Record<string, Summarize> = {
     const from = num(m, 'restoredFrom');
     return `Restored the files of ${from !== null ? `version ${from}` : 'an earlier version'}${v !== null ? ` as version ${v}` : ''}`;
   },
+  'app.versions.prune': (m) => {
+    const count = num(m, 'versions');
+    const from = num(m, 'from');
+    const to = num(m, 'to');
+    const range = from !== null && to !== null ? (from === to ? ` (version ${from})` : ` (versions ${from}–${to})`) : '';
+    return `The history retention deleted ${count !== null ? plural(count, 'old version') : 'old versions'}${range}`;
+  },
   'app.publish': (m) => {
     const v = num(m, 'version');
     const prev = num(m, 'previousVersion');

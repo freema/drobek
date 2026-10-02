@@ -277,7 +277,11 @@ declare const appVersions = pgTable(
     typecheck: jsonb('typecheck'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
   },
-  (t) => [uniqueIndex('app_versions_app_number_uq').on(t.appId, t.number)]
+  (t) => [
+    uniqueIndex('app_versions_app_number_uq').on(t.appId, t.number),
+    // The per-person version rate (VERSIONS_PER_USER_HOUR) reads a person's newest versions.
+    index('app_versions_creator_created_idx').on(t.createdByUserId, t.createdAt),
+  ]
 );
 
 /** A version's file list: path → blob. A path may exist once per kind. */

@@ -1,7 +1,9 @@
 /**
  * The `/mcp` HTTP endpoint on a real (PGlite) database and a real HTTP
  * listener: the body cap and its JSON-RPC errors, the catch around the
- * transport, closing the sessions for a shutdown, and the access log.
+ * transport, closing the sessions for a shutdown, the access log, and the
+ * session lifecycle — the idle TTL, the per-user cap, the grant a session is
+ * bound to and closing on a revocation.
  */
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
@@ -18,9 +20,14 @@ import {
 } from '@drobek/core';
 import { users } from '@drobek/db';
 import { memoryLeaseStore } from '@drobek/mcp';
-import { createApiKey } from '../api-keys.server.js';
+import { createApiKey, revokeUserApiKey } from '../api-keys.server.js';
+import { createClient } from '../clients.server.js';
+import { revokeConnection } from '../connections.server.js';
+import { REFRESH_RETRY_GRACE_MS } from '../constants.js';
 import { freshDb } from '../test/db.js';
+import { issueAccessAndRefresh, rotateRefreshToken } from '../tokens.server.js';
 import { buildMcpServer, mountMcpEndpoint, type McpEndpoint, type McpEndpointOptions } from './mcp.js';
+import { mcpResourceUri } from './oauth-resource.js';
 
 const MAX_BODY = 4096;
 const ACCEPT = 'application/json, text/event-stream';
@@ -34,6 +41,7 @@ const INITIALIZE = JSON.stringify({
 let closeDb: () => Promise<void>;
 let userId: string;
 let readKey: string;
+let otherKey: string;
 const savedEnv = { ...process.env };
 
 beforeAll(async () => {
@@ -42,8 +50,10 @@ beforeAll(async () => {
   const t = await freshDb();
   closeDb = () => t.pg.close();
   const [u] = await t.db.insert(users).values({ email: 'mcp-endpoint@example.test' }).returning();
+  const [o] = await t.db.insert(users).values({ email: 'mcp-endpoint-other@example.test' }).returning();
   userId = u.id;
   readKey = (await createApiKey({ userId: u.id, name: 'endpoint test', scopes: ['read'] })).key;
+  otherKey = (await createApiKey({ userId: o.id, name: 'other user', scopes: ['read'] })).key;
 });
 
 afterAll(async () => {
@@ -108,18 +118,37 @@ function post(url: string, body: string, headers: Record<string, string> = {}): 
   });
 }
 
-async function initialize(h: Harness): Promise<string> {
-  const res = await post(h.url, INITIALIZE);
+async function initialize(h: Harness, bearer: string = readKey): Promise<string> {
+  const auth = { authorization: `Bearer ${bearer}` };
+  const res = await post(h.url, INITIALIZE, auth);
   expect(res.status).toBe(200);
   await res.text();
   const sid = res.headers.get('mcp-session-id');
   expect(sid).toBeTruthy();
   const ready = await post(h.url, JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }), {
+    ...auth,
     'mcp-session-id': sid as string,
   });
   expect(ready.status).toBe(202);
   await ready.text();
   return sid as string;
+}
+
+let pingId = 100;
+
+/** A ping on session `sid`; the status and the body. */
+async function ping(h: Harness, sid: string, bearer: string = readKey): Promise<{ status: number; body: string }> {
+  const res = await post(h.url, JSON.stringify({ jsonrpc: '2.0', id: ++pingId, method: 'ping' }), {
+    authorization: `Bearer ${bearer}`,
+    'mcp-session-id': sid,
+  });
+  return { status: res.status, body: await res.text() };
+}
+
+const SESSION_GONE = { error: { code: -32001, message: 'MCP session not found — reconnect.' } };
+
+function closedLines(h: Harness): LogMeta[] {
+  return h.lines.filter((l) => l.message === 'mcp session closed').map((l) => l.meta);
 }
 
 describe('/mcp request bodies', () => {
@@ -304,5 +333,151 @@ describe('the /mcp access log', () => {
     expect(text).not.toContain('REASON-MARKER');
     expect(text).not.toContain('index.html');
     expect(text).not.toContain(sid);
+  });
+});
+
+describe('the MCP session lifecycle', () => {
+  const TTL = 60_000;
+
+  it('a session without a request for the idle TTL is closed: its id answers 404, a new initialize works', async () => {
+    let clock = 1_000_000;
+    const h = await mount({ now: () => clock, sessionLimits: { idleTtlMs: TTL, perUser: 10 } });
+    const sid = await initialize(h);
+
+    clock += TTL - 1;
+    expect((await ping(h, sid)).status).toBe(200);
+    clock += TTL - 1;
+    expect((await ping(h, sid)).status).toBe(200);
+
+    clock += TTL;
+    const gone = await ping(h, sid);
+    expect(gone.status).toBe(404);
+    expect(JSON.parse(gone.body)).toMatchObject(SESSION_GONE);
+    expect(h.endpoint.sessionCount()).toBe(0);
+    expect(closedLines(h)).toEqual([{ reason: 'idle', session: sid.slice(0, 8), user_id: userId }]);
+
+    await initialize(h);
+    expect(h.endpoint.sessionCount()).toBe(1);
+  });
+
+  it('the idle sweep closes an idle session on its own; closeIdleSessions counts what it closed', async () => {
+    let clock = 1_000_000;
+    const h = await mount({ now: () => clock, sweepIntervalMs: 20, sessionLimits: { idleTtlMs: TTL, perUser: 10 } });
+    await initialize(h);
+    await initialize(h);
+    expect(h.endpoint.closeIdleSessions()).toBe(0);
+
+    clock += TTL;
+    await vi.waitFor(() => expect(h.endpoint.sessionCount()).toBe(0));
+    expect(closedLines(h).map((m) => m.reason)).toEqual(['idle', 'idle']);
+    expect(h.endpoint.closeIdleSessions()).toBe(0);
+  });
+
+  it('an open request — a GET listen stream — keeps its session from going idle until it ends', async () => {
+    let clock = 1_000_000;
+    const h = await mount({ now: () => clock, sessionLimits: { idleTtlMs: TTL, perUser: 10 } });
+    const sid = await initialize(h);
+    const listening = new AbortController();
+    const stream = await fetch(h.url, {
+      headers: { accept: 'text/event-stream', authorization: `Bearer ${readKey}`, 'mcp-session-id': sid },
+      signal: listening.signal,
+    });
+    expect(stream.status).toBe(200);
+
+    clock += 3 * TTL;
+    expect(h.endpoint.closeIdleSessions()).toBe(0);
+    expect((await ping(h, sid)).status).toBe(200);
+
+    listening.abort();
+    await vi.waitFor(() => expect(h.lines.some((l) => l.message === 'mcp request' && l.meta.method === 'GET')).toBe(true));
+    clock += TTL - 1;
+    expect(h.endpoint.closeIdleSessions()).toBe(0);
+    clock += 1;
+    expect(h.endpoint.closeIdleSessions()).toBe(1);
+    expect((await ping(h, sid)).status).toBe(404);
+  });
+
+  it("past the per-user cap a new session closes that user's least recently used one; other users are not counted", async () => {
+    let clock = 1_000_000;
+    const h = await mount({ now: () => clock, sessionLimits: { idleTtlMs: TTL, perUser: 2 } });
+    const other = await initialize(h, otherKey);
+    clock += 1_000;
+    const first = await initialize(h);
+    clock += 1_000;
+    const second = await initialize(h);
+    clock += 1_000;
+    expect((await ping(h, first)).status).toBe(200);
+    clock += 1_000;
+
+    const third = await initialize(h);
+    expect(h.endpoint.sessionCount()).toBe(3);
+    const evicted = await ping(h, second);
+    expect(evicted.status).toBe(404);
+    expect(JSON.parse(evicted.body)).toMatchObject(SESSION_GONE);
+    for (const sid of [first, third]) expect((await ping(h, sid)).status).toBe(200);
+    expect((await ping(h, other, otherKey)).status).toBe(200);
+    expect(closedLines(h)).toEqual([{ reason: 'limit', session: second.slice(0, 8), user_id: userId }]);
+  });
+
+  it('a session is driven only by the grant it was opened with: another key of the same user and scope gets 401', async () => {
+    const h = await mount();
+    const sid = await initialize(h);
+    const second = (await createApiKey({ userId, name: 'second key', scopes: ['read'] })).key;
+    const refused = await ping(h, sid, second);
+    expect(refused.status).toBe(401);
+    expect(JSON.parse(refused.body)).toMatchObject({ error: { message: 'Token does not match this MCP session.' } });
+    expect((await ping(h, sid)).status).toBe(200);
+  });
+
+  it('revoking an API key closes its sessions and only those', async () => {
+    const h = await mount();
+    const doomed = await createApiKey({ userId, name: 'doomed', scopes: ['read'] });
+    const sid = await initialize(h, doomed.key);
+    const kept = await initialize(h);
+    const foreign = await initialize(h, otherKey);
+
+    expect(await revokeUserApiKey(userId, doomed.id)).not.toBeNull();
+    await vi.waitFor(() => expect(h.endpoint.sessionCount()).toBe(2));
+    expect(closedLines(h)).toEqual([{ reason: 'revoked', session: sid.slice(0, 8), user_id: userId }]);
+
+    expect((await ping(h, sid, doomed.key)).status).toBe(401);
+    expect((await ping(h, sid)).status).toBe(404);
+    expect((await ping(h, kept)).status).toBe(200);
+    expect((await ping(h, foreign, otherKey)).status).toBe(200);
+  });
+
+  it('an OAuth session survives a token refresh and is closed when the connection is revoked', async () => {
+    const h = await mount();
+    const client = await createClient({ clientName: 'Session test', redirectUris: ['http://127.0.0.1:9999/cb'] });
+    const grant = { userId, oauthClientId: client.id, scope: 'read', audience: mcpResourceUri() };
+    const issued = await issueAccessAndRefresh(grant);
+    const sid = await initialize(h, issued.accessToken);
+    const kept = await initialize(h);
+
+    const rotated = await rotateRefreshToken(issued.refreshToken);
+    expect(rotated.ok).toBe(true);
+    const fresh = rotated.ok ? rotated.accessToken : '';
+    expect((await ping(h, sid, fresh)).status).toBe(200);
+
+    expect(await revokeConnection(userId, client.id)).not.toBeNull();
+    await vi.waitFor(() => expect(h.endpoint.sessionCount()).toBe(1));
+    expect(closedLines(h)).toEqual([{ reason: 'revoked', session: sid.slice(0, 8), user_id: userId }]);
+    expect((await ping(h, sid)).status).toBe(404);
+    expect((await ping(h, kept)).status).toBe(200);
+  });
+
+  it('refresh reuse detection closes the sessions its burnt lineage drove', async () => {
+    const h = await mount();
+    const client = await createClient({ clientName: 'Reuse test', redirectUris: ['http://127.0.0.1:9999/cb'] });
+    const issued = await issueAccessAndRefresh({ userId, oauthClientId: client.id, scope: 'read', audience: mcpResourceUri() });
+    const rotatedAt = Date.now();
+    const rotated = await rotateRefreshToken(issued.refreshToken, undefined, rotatedAt);
+    expect(rotated.ok).toBe(true);
+    const sid = await initialize(h, rotated.ok ? rotated.accessToken : '');
+
+    const reuse = await rotateRefreshToken(issued.refreshToken, undefined, rotatedAt + REFRESH_RETRY_GRACE_MS + 1);
+    expect(reuse).toMatchObject({ ok: false, reuse: true });
+    await vi.waitFor(() => expect(h.endpoint.sessionCount()).toBe(0));
+    expect(closedLines(h)).toEqual([{ reason: 'revoked', session: sid.slice(0, 8), user_id: userId }]);
   });
 });

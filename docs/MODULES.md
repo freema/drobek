@@ -600,7 +600,9 @@ Every failure uses **one error shape**:
 
 Handlers throw `new ModuleError(code, message, { details, hint, headers })`.
 Anything else becomes `500 internal_error` without internals (logged on the
-server). Codes: `invalid_request` 400, `unauthorized` 401,
+server) — except a query the database cut off (the server's
+`DB_STATEMENT_TIMEOUT_MS` / `DB_LOCK_TIMEOUT_MS`), which answers `503
+unavailable` with `details.reason: database_timeout` and `Retry-After`. Codes: `invalid_request` 400, `unauthorized` 401,
 `password_required` 401, `forbidden` 403, `csrf_rejected` 403, `not_found`
 404, `method_not_allowed` 405, `conflict` 409, `payload_too_large` 413,
 `unsupported_media_type` 415, `rate_limited` / `limit_exceeded` 429,
@@ -1121,10 +1123,13 @@ export default defineModule({
 - **What is reported**: a 5xx of the dashboard (React Router) or the Express
   app (`kind: 'http'`), a module route that throws (`module_route`, answered
   `500 internal_error`), a failed or timed-out module job (`module_job`), a
-  failed e-mail send through any transport (`email`) and a start-up failure
+  failed e-mail send through any transport (`email`), a start-up failure
   once the reporter is installed — module migrations and everything after
   the modules load (`startup`, `level: 'fatal'`; the server waits for the
-  report, at most the timeout, before it exits).
+  report, at most the timeout, before it exits) — and an error nothing
+  caught, an uncaught exception or unhandled promise rejection (`process`,
+  `level: 'fatal'`; the server stops gracefully and exits with code 1 once
+  the report went out or timed out).
 - **The event**: `{ level, message, error?: { name, message, stack? },
   context: { kind, route?, method?, status?, module?, job?, appId?,
   workspaceId?, requestId? }, release, environment, timestamp, fingerprint }`.
@@ -1577,6 +1582,10 @@ default. Besides every active module's `limits`, the catalogue holds the
 | `UPSTREAMS_MAX_PER_WORKSPACE` | 20 | proxy upstreams one workspace may hold; `register_upstream` and the Upstreams page beyond it answer `limit_exceeded` with `limit` / `value` (existing upstreams over a lowered limit stay) |
 | `APP_ASSET_MAX_BYTES` | 104857600 | bytes of one app asset (100 MiB — video, audio, image, font at `/<path>`); `create_asset_upload` / the upload URL answer `asset_too_large` |
 | `APP_ASSETS_QUOTA` | 1073741824 | bytes of all assets of one app (1 GiB); past it `asset_quota_exceeded` |
+| `VERSIONS_PER_APP_HOUR` | 600 | new versions of one app within the last hour — `write_files`, `create_app`, `restore_version`, `duplicate_app` and the dashboard's Restore together; past it `rate_limited` with `limit` / `value` / `retry_after_seconds`, nothing stored |
+| `VERSIONS_PER_USER_HOUR` | 1200 | new versions one person makes within the last hour, in every app and workspace (the plan of the workspace being written applies); past it `rate_limited` like above |
+| `APP_VERSIONS_KEEP` | 200 | the newest versions of each app the hourly history retention keeps; older ones are deleted, except the published one, those kept for a rollback, the one the preview serves and those from the last hour. While the provider does not answer for a workspace, the retention leaves it alone |
+| `WORKSPACE_SOURCE_QUOTA` | 1073741824 | bytes of the unique files (sources and build output) the versions of a workspace's live apps store (1 GiB); a version whose new bytes do not fit answers `limit_exceeded` with `limit` / `value` / `used_bytes`, nothing stored |
 
 `ModuleRuntime.workspaceLimits(workspaceId)` returns a workspace's effective
 limits (core and module) for core callers. An operator with plans sets:

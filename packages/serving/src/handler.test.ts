@@ -1094,6 +1094,110 @@ describe('unknown hosts: per-IP limit', () => {
     for (let i = 0; i < 5; i++) await handleAppRequest(req(prod('shop'), `/missing-${i}.png`), d);
     expect(keys).toEqual([]);
   });
+
+  it('a version host without its version counts like an unknown host (429 past the budget, X-Drobek-App set)', async () => {
+    const { d, keys } = limited(3);
+    for (const n of [100, 101, 3]) {
+      const r = await handleAppRequest(req(ver('shop', n)), d);
+      expect(r.status).toBe(404);
+      expect(text(r.body)).toContain('does not exist or did not compile');
+    }
+    const r = await handleAppRequest(req(ver('shop', 102)), d);
+    expect(r.status).toBe(429);
+    expect(text(r.body)).toBe('Too Many Requests');
+    expect(r.headers['X-Drobek-App']).toBe('shop');
+    expect(keys).toEqual(Array(4).fill('203.0.113.9'));
+  });
+
+  it('versions that exist are never counted', async () => {
+    const { d, keys } = limited(1);
+    for (let i = 0; i < 5; i++) {
+      expect((await handleAppRequest(req(ver('shop', 1)), d)).status).toBe(200);
+      expect((await handleAppRequest(req(ver('shop', 2), '/missing.png'), d)).status).toBe(404);
+    }
+    expect(keys).toEqual([]);
+  });
+
+  it('while throttled: no lookup for version numbers the cache does not know; cached versions are still served', async () => {
+    const { d } = limited(1);
+    expect((await handleAppRequest(req(ver('shop', 1)), d)).status).toBe(200);
+    expect((await handleAppRequest(req(ver('shop', 50)), d)).status).toBe(404);
+    expect((await handleAppRequest(req(ver('shop', 51)), d)).status).toBe(429);
+    const before = calls.resolve;
+    for (const n of [52, 53, 50, 2]) expect((await handleAppRequest(req(ver('shop', n)), d)).status, `v${n}`).toBe(429);
+    expect(calls.resolve).toBe(before);
+    expect((await handleAppRequest(req(ver('shop', 1)), d)).status).toBe(200);
+    expect(calls.resolve).toBe(before);
+    // The app's other hosts follow the slug, as before.
+    expect((await handleAppRequest(req(prod('shop')), d)).status).toBe(200);
+  });
+
+  it('a missing version of a password app is counted too, behind the same password page', async () => {
+    const { d, keys } = limited(1);
+    expect((await handleAppRequest(req(ver('vault', 1)), d)).status).toBe(401);
+    const r = await handleAppRequest(req(ver('vault', 7)), d);
+    expect(r.status).toBe(401);
+    expect(text(r.body)).not.toContain('does not exist');
+    expect((await handleAppRequest(req(ver('vault', 8)), d)).status).toBe(429);
+    expect((await handleAppRequest(req(ver('vault', 1)), d)).status).toBe(401);
+    expect(keys).toHaveLength(2);
+  });
+});
+
+describe('version hosts: bounded host cache', () => {
+  it('a missing version is one lookup per number until the 30 s negative TTL ends', async () => {
+    let now = 1_000;
+    const s = new ServeStore({ loaders, now: () => now });
+    const d = { ...deps, store: s };
+    for (let i = 0; i < 3; i++) expect((await handleAppRequest(req(ver('shop', 9)), d)).status).toBe(404);
+    expect(calls.resolve).toBe(1);
+    now += 30_001;
+    expect((await handleAppRequest(req(ver('shop', 9)), d)).status).toBe(404);
+    expect(calls.resolve).toBe(2);
+  });
+
+  it('a flood of version numbers never evicts the hosts a live app serves', async () => {
+    const s = new ServeStore({ loaders, negativeMaxEntries: 5 });
+    const d = { ...deps, store: s };
+    for (const t of [prod('shop'), preview('shop'), ver('shop', 1)]) await handleAppRequest(req(t), d);
+    for (let n = 1_000; n < 1_200; n++) await handleAppRequest(req(ver('shop', n)), d);
+    const before = calls.resolve;
+    for (const t of [prod('shop'), preview('shop'), ver('shop', 1)]) expect((await handleAppRequest(req(t), d)).status).toBe(200);
+    expect(calls.resolve).toBe(before);
+    // Bounded: only the newest misses are remembered.
+    await handleAppRequest(req(ver('shop', 1_199)), d);
+    expect(calls.resolve).toBe(before);
+    await handleAppRequest(req(ver('shop', 1_000)), d);
+    expect(calls.resolve).toBe(before + 1);
+  });
+
+  it('the positive cache is capped over every host of every app (LRU)', async () => {
+    const s = new ServeStore({ loaders, maxCachedHosts: 3 });
+    const d = { ...deps, store: s };
+    for (const t of [prod('shop'), ver('shop', 1), ver('shop', 2), preview('draft')]) await handleAppRequest(req(t), d);
+    expect(calls.resolve).toBe(4);
+    for (const t of [ver('shop', 1), ver('shop', 2), preview('draft')]) await handleAppRequest(req(t), d);
+    expect(calls.resolve).toBe(4);
+    await handleAppRequest(req(prod('shop')), d);
+    expect(calls.resolve).toBe(5);
+  });
+
+  it('a new version is served on its host right after the bust that announces it', async () => {
+    const d = { ...deps, store };
+    expect((await handleAppRequest(req(ver('shop', 4)), d)).status).toBe(404);
+    model.get('shop')!.versions.set(4, version('v_4', true, '<h1>v4</h1>'));
+    expect((await handleAppRequest(req(ver('shop', 4)), d)).status).toBe(404);
+    store.bust('shop');
+    expect(text((await handleAppRequest(req(ver('shop', 4)), d)).body)).toContain('<h1>v4</h1>');
+  });
+
+  it('the report pointer of a version host looks up the app, not version N', async () => {
+    for (let n = 500; n < 510; n++) {
+      const r = await handleAppRequest(req(ver('shop', n), '/.well-known/drobek-report'), deps);
+      expect(JSON.parse(text(r.body)).app).toBe('shop');
+    }
+    expect(calls.resolve).toBe(1);
+  });
 });
 
 describe('app assets at /<name>', () => {

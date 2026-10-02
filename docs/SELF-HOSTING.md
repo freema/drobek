@@ -256,6 +256,18 @@ never compressed, so MCP's streamable HTTP and any SSE an app backend proxies
 arrive event by event. With a different proxy in front, compress the same way
 and keep `text/event-stream` out of it.
 
+Request bodies on the dashboard origin are capped at `DASHBOARD_MAX_BODY_BYTES`
+(1 MiB): a bigger body sent to a dashboard page, the sign-in or an OAuth
+endpoint answers `413` — a declared `Content-Length` before anything is read,
+a chunked body as soon as the bytes that arrived pass the cap — and the
+connection closes after the answer. `/mcp` (`MCP_MAX_BODY_BYTES`), the asset
+upload URLs (the asset size) and the Data tab's CSV import (a 10 MiB file)
+keep their own limits. The generated Caddyfile refuses the same bodies on the
+dashboard site before they reach drobek (`request_body`, those paths left to
+drobek), so after changing the variable re-run `task selfhost:init` and
+`task tls:reload`. With a different proxy in front, cap the dashboard origin
+the same way or leave it to drobek.
+
 **Stopping and restarting drobek** (an upgrade, `docker compose restart`, a
 host reboot) does not cut the requests it is answering. On `SIGTERM` drobek
 stops accepting connections, closes idle keep-alive connections, ends the MCP
@@ -265,14 +277,38 @@ stopping server answers a new one 405), lets requests in flight — a
 `SHUTDOWN_GRACE_MS` (20 s), cuts whatever is still running after that, stops
 its background jobs and exits. The compose file gives the container
 `stop_grace_period: 30s` so Docker does not kill it first; keep it about 10 s
-above `SHUTDOWN_GRACE_MS` when you raise that. MCP sessions live in the
+above `SHUTDOWN_GRACE_MS` when you raise that. An error nothing in drobek
+caught (an uncaught exception or an unhandled promise rejection) stops it the
+same way: the error is logged, sent to the error reporter (`ERROR_REPORTER`)
+and drobek exits with code 1 once the requests in flight drained, so Docker's
+`restart: unless-stopped` starts it again. MCP sessions live in the
 process: after a restart a client's next request with its old session id
 answers `404 MCP session not found — reconnect.`, which per the MCP
 specification makes the client open a new session (reconnect a client that
-does not).
+does not). The same answer comes for a session drobek closed while running:
+one without a request for `MCP_SESSION_IDLE_TTL_MS` (1 hour; an open listen
+stream counts as a request), a user's least recently used one when they open
+more than `MCP_SESSIONS_PER_USER` (10), and every session of an API key or
+an OAuth connection the moment it is revoked. Each closing leaves a
+`mcp session closed` log line with the reason (`idle`, `limit`, `revoked`),
+the short session id and the user id.
 drobek keeps idle connections open for 125 s, longer than Caddy's 2-minute
 upstream keep-alive, so Caddy never reuses a connection drobek is closing;
 with a different proxy in front, keep its upstream idle timeout below 125 s.
+
+**Database connections.** drobek keeps two Postgres pools of up to
+`DB_POOL_MAX` (20) connections each: one for requests (dashboard, MCP, app
+hosts) and one for its background jobs, opened only while a job runs —
+keep `2 × DB_POOL_MAX` plus a few below Postgres's `max_connections` (100 in
+the bundled database). A request's query that runs past
+`DB_STATEMENT_TIMEOUT_MS` (30 s), or waits past `DB_LOCK_TIMEOUT_MS` (10 s)
+for a row or lock another request holds, is cut off instead of holding a
+connection everyone else waits for: an agent gets `busy` (`reason:
+"database_timeout"`), an app's page or module call and the asset upload URL a 503,
+the dashboard its error page, and the log a `db error 57014` / `55P03` line.
+The background jobs run without the statement timeout and the migrations
+without either. `0` turns a timeout off (the database's own setting, e.g.
+one set on the role, applies).
 
 Platform modules (the backends apps use through `import { drobek } from
 'drobek'`) are enabled with `DROBEK_MODULES` (comma-separated; a
@@ -346,12 +382,21 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `APPS_URL_SCHEME` | `http` for `*.localhost`, else `https` *(compose: https)* | scheme of the app URLs drobek hands out |
 | `APPS_UNKNOWN_HOST_LIMIT` / `APPS_UNKNOWN_HOST_WINDOW_MS` | 60 / 60000 | "no app here" answers per client IP per window, then 429 |
 | `APPS_MODULE_BODY_TIMEOUT_MS` | 120000 | a `/__drobek/*` request (module routes, uploads, the beacon) must deliver its body within it, else 408; raise it with `FILES_MAX_BYTES` for big uploads over slow links |
+| `DASHBOARD_MAX_BODY_BYTES` | 1048576 | the largest request body of the dashboard origin's pages, sign-in and OAuth endpoints — a declared length or a chunked body counted as it arrives; a bigger one answers 413 before it is read further. `/mcp`, the asset upload URLs and the Data tab's CSV import keep their own limits. The generated Caddyfile carries the same cap: re-render it after a change ([Production compose](#production-compose)) |
 | `DROBEK_IMAGE_TAG` | `latest` | image tag of the production compose ([Image tags](#image-tags)) |
 | `HTTP_PORT` / `HTTPS_PORT` / `PUBLISH_IP` | 80 / 443 / all | ports and bind address Caddy publishes |
 | `TRUST_PROXY` | auto *(compose: `x-real-ip`)* | which client-IP header is trusted: `x-real-ip` = only Caddy's `X-Real-IP`; unset = `X-Real-IP`, else the rightmost `X-Forwarded-For` hop |
 | `NODE_ENV` | *(compose: production)* | `production` turns on `__Host-` cookies and the fail-closed secret checks, and ignores the dev-only switches below |
 | `PORT` | 3000 | the port drobek listens on inside the container (the dev compose maps `WEB_PORT` to it) |
-| `SHUTDOWN_GRACE_MS` | 20000 | on `SIGTERM`, how long requests in flight may finish before the rest is cut ([Production compose](#production-compose)); keep the container's stop grace period (compose: 30 s) above it |
+| `SHUTDOWN_GRACE_MS` | 20000 | on `SIGTERM` (and after an error nothing caught, which exits with code 1), how long requests in flight may finish before the rest is cut ([Production compose](#production-compose)); keep the container's stop grace period (compose: 30 s) above it |
+
+### Database
+
+| Variable | Default | What |
+| --- | --- | --- |
+| `DB_POOL_MAX` | 20 | connections of each of drobek's two Postgres pools — requests, and the background jobs (open only while a job runs); 1–200. Keep `2 × DB_POOL_MAX` plus a few below Postgres's `max_connections` ([Production compose](#production-compose)) |
+| `DB_STATEMENT_TIMEOUT_MS` | 30000 | a request's query running longer is cut off (Postgres `statement_timeout`; MCP `busy` with `reason: "database_timeout"`, module routes `503 unavailable`). Not for the background jobs or the migrations; `0` = drobek sets none, else 100–3600000 |
+| `DB_LOCK_TIMEOUT_MS` | 10000 | a query of a request or a job waiting longer for a row, table or advisory lock is cut off (Postgres `lock_timeout`), answered like the statement timeout. Not for the migrations; `0` = drobek sets none, else 100–3600000 |
 
 ### Secrets and TLS
 
@@ -397,6 +442,7 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `COMPILE_MAX_IMPORT_DEPTH` | 50 | depth of a relative import chain |
 | `COMPILE_TIMEOUT_MS` / `COMPILE_CONCURRENCY` / `COMPILE_QUEUE_TIMEOUT_MS` | 10000 / 4 / 10000 | per build; builds at once; max queue wait (then `busy`) |
 | `MCP_MAX_BODY_BYTES` | 2 × `COMPILE_MAX_TOTAL_BYTES` (10485760) | the largest `/mcp` request body — one `write_files` call as JSON; a bigger one answers 413 with a JSON-RPC error telling the agent to split the write (the briefing states the value) |
+| `MCP_SESSION_IDLE_TTL_MS` / `MCP_SESSIONS_PER_USER` | 3600000 / 10 | MCP sessions are held in the server's memory: one with no request open for the idle TTL is closed (an open listen stream keeps it), and a user who opens a session past the cap has their least recently used one closed. The client's next request with a closed session's id answers 404, and the client initializes a new session ([Production compose](#production-compose)) |
 | `READINESS_MAX_WARNINGS` | 50 | warnings one publish readiness report lists (write_files, publish, the app page); the rest are counted in `warnings_omitted` |
 | `TYPECHECK_WORKERS` / `TYPECHECK_TIMEOUT_MS` / `TYPECHECK_MAX_MEMORY_MB` / `TYPECHECK_MAX_FILES` | 1 / 20000 / 512 / 150 | the background TypeScript check of each stored version (`type_error` readiness warnings): checks at once in worker threads (0 = off), time and heap per check, max .ts/.tsx files per app; a check over a limit gives no type warnings and is logged |
 | `BEACON_RATE_LIMIT` / `BEACON_APP_RATE_LIMIT` / `BEACON_RATE_WINDOW_MS` | 60 / 600 / 60000 | browser error reports per app+IP and per app per window |
@@ -405,6 +451,9 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `DROBEK_MIGRATE_ON_START` | 1 | `0` = the server does not apply migrations on start (tests, tooling) |
 | `AUDIT_RETENTION_DAYS` | 365 | audit rows older than this are pruned daily |
 | `APPS_MAX_PER_WORKSPACE` | 50 | live apps per workspace (deleted ones do not count); `create_app` beyond it answers `limit_exceeded` *(plan)* |
+| `VERSIONS_PER_APP_HOUR` / `VERSIONS_PER_USER_HOUR` | 600 / 1200 | new versions of one app / made by one person (every app and workspace) within the last hour — `write_files`, `create_app`, `restore_version`, `duplicate_app` and the dashboard's Restore and duplicate page together; past either the call answers `rate_limited` with `retry_after_seconds` (the dashboard 429 + `Retry-After`) and nothing is stored *(plan)* |
+| `APP_VERSIONS_KEEP` | 200 | the newest versions of each app the hourly history retention keeps; older versions are deleted — never the published one, one whose asset set is kept for a rollback, the one the preview serves or one from the last hour — and the blob GC frees their bytes. `read_file` / `restore_version` of a deleted one answer `not_found` saying so; the dashboard's version history and `get_app` state the number *(plan; while the limits provider does not answer, the retention leaves the workspace alone)* |
+| `WORKSPACE_SOURCE_QUOTA` | 1073741824 | bytes of the unique files (sources and build output) the versions of a workspace's live apps may store (1 GiB; deleted apps do not count); a write, `create_app` or gallery copy whose new bytes do not fit answers `limit_exceeded` and nothing is stored; a restore adds no bytes *(plan)* |
 | `ASSETS_DIR` | `/data/assets` *(compose)* | app asset storage (the `assets_data` volume) |
 | `APP_ASSET_MAX_BYTES` / `APP_ASSETS_QUOTA` | 104857600 / 1073741824 | one app asset (100 MiB) / all assets of one app (1 GiB); `asset_too_large` / `asset_quota_exceeded` *(plan)*. An upload must arrive within Node's 300 s request timeout |
 | `APP_ASSET_UPLOADS_PER_HOUR` | 60 | upload URLs (`create_asset_upload`, the Assets tab) per app per hour, then `rate_limited` |
@@ -880,7 +929,8 @@ the credentials only ever touch that small zone. Generated app block:
 
 With no wildcard, Caddy issues a certificate for each app host at its first
 TLS handshake. That is **always gated**: before every new certificate Caddy
-asks drobek, and drobek says yes only for a host of an existing app.
+asks drobek, and drobek says yes only for a host of an existing app (a
+`--v<N>` host: only for a version the app has).
 `task selfhost:init` generates `TLS_ASK_TOKEN` (for every mode) and the
 compose file hands the same value to drobek and to Caddy.
 
@@ -902,10 +952,11 @@ compose file hands the same value to drobek and to Caddy.
 
 | Answer | When |
 | --- | --- |
-| 200 | `<slug>`, `<slug>--preview` or `<slug>--v<N>` directly under `APPS_DOMAIN`, and a live, non-deleted app owns `<slug>` (for `--v<N>` the version itself is not checked) |
+| 200 | `<slug>` or `<slug>--preview` directly under `APPS_DOMAIN`, and a live, non-deleted app owns `<slug>` |
+| 200 | `<slug>--v<N>` directly under `APPS_DOMAIN`, and version N of that live app exists and compiled |
 | 200 | a **verified** custom domain of a live, non-deleted app (M3-01, [Custom domains](#custom-domains)) |
 | 401 | missing or wrong token (compared in constant time; also accepted as the `X-Drobek-Tls-Ask-Token` header) |
-| 404 | everything else: other hosts outside `APPS_DOMAIN` (unknown or not yet verified custom domains), the dashboard host, deeper names, unknown slugs — and **every** request while `TLS_ASK_TOKEN` is unset (fail closed), or one that arrives on the public dashboard host |
+| 404 | everything else: other hosts outside `APPS_DOMAIN` (unknown or not yet verified custom domains), the dashboard host, deeper names, unknown slugs, version numbers the app does not have — and **every** request while `TLS_ASK_TOKEN` is unset (fail closed), or one that arrives on the public dashboard host |
 | 503 | the database lookup failed (no certificate) |
 
 The endpoint is internal: Caddy refuses `/api/internal/*` with 404 on every

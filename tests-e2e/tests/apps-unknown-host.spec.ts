@@ -1,9 +1,10 @@
 import { randomBytes, randomInt } from 'node:crypto';
 import { expect, test } from '@playwright/test';
-import { APPS_URL_SCHEME } from '../playwright.config';
-import { hostRequest, previewHost, prodHost } from './helpers/apps-host';
-import { skipUnlessLocal } from './helpers/auth';
+import { APPS_DOMAIN, APPS_URL_SCHEME, TARGET_PRODUCTION } from '../playwright.config';
+import { hostRequest, previewHost, prodHost, versionHost } from './helpers/apps-host';
+import { ownClientIpHeaders, skipUnlessLocal } from './helpers/auth';
 import { callTool, mcpClient } from './helpers/mcp';
+import { tlsAsk } from './helpers/tls-ask';
 
 /**
  * Unknown app hosts end to end against the local compose stack:
@@ -11,7 +12,10 @@ import { callTool, mcpClient } from './helpers/mcp';
  *     and an app created under that very slug is served on the NEXT request
  *     (create_app announces a `create` app-changed event that drops the miss);
  *   - past APPS_UNKNOWN_HOST_LIMIT (default 60) "no app" answers per client
- *     IP per window, the apps origin answers 429 with a tiny plain-text body.
+ *     IP per window, the apps origin answers 429 with a tiny plain-text body;
+ *   - a version host of a live app whose version does not exist is a 404
+ *     counted against the same budget (429 past it, while the versions the
+ *     cache knows keep serving), and Caddy's TLS ask refuses it a certificate.
  * The limit part needs a client IP the server believes: on the plain-http dev
  * stack an explicit X-Real-IP is honoured (TRUST_PROXY unset), so the spec
  * uses a random TEST-NET-2 address nobody else shares. Behind Caddy
@@ -79,4 +83,52 @@ test('unknown app hosts: per-IP limit answers 429 @local', async () => {
     headers: { 'X-Real-IP': `198.51.100.${(Number(ip.split('.')[3]) % 254) + 1}` },
   });
   expect(other.status).toBe(404);
+});
+
+test('version hosts: a missing version is a counted 404 and gets no certificate @local', async ({ page, request }) => {
+  skipUnlessLocal();
+  const a = await mcpClient(page, request, { tag: 'unknown-version' });
+  try {
+    const created = await callTool(a.client, 'create_app', { name: `ghost-versions-${randomBytes(4).toString('hex')}` });
+    expect(created.isError, created.text).toBe(false);
+    const slug = created.json.slug as string;
+
+    expect((await hostRequest(versionHost(slug, 1))).status).toBe(200);
+    for (const n of [2, 999_999_999]) {
+      const miss = await hostRequest(versionHost(slug, n));
+      expect(miss.status).toBe(404);
+      expect(miss.body).toContain('This version does not exist or did not compile.');
+      expect(miss.headers['x-drobek-app']).toBe(slug);
+    }
+
+    // The ask's internal address and an honoured X-Real-IP exist only on the plain-http dev stack.
+    if (TARGET_PRODUCTION || APPS_URL_SCHEME !== 'http') return;
+
+    await test.step("Caddy's ask: a certificate only for a version the app has", async () => {
+      const domain = APPS_DOMAIN.replace(/:\d+$/, '');
+      expect(await tlsAsk(`${slug}.${domain}`)).toBe(200);
+      expect(await tlsAsk(`${slug}--v1.${domain}`)).toBe(200);
+      expect(await tlsAsk(`${slug}--v2.${domain}`)).toBe(404);
+      expect(await tlsAsk(`${slug}--v999999999.${domain}`)).toBe(404);
+    });
+
+    await test.step('missing versions count against the per-IP budget', async () => {
+      const headers = ownClientIpHeaders();
+      let first429 = -1;
+      for (let i = 0; i < 70 && first429 === -1; i++) {
+        const r = await hostRequest(versionHost(slug, 1_000 + i), '/', { headers });
+        if (r.status === 429) first429 = i;
+        else expect(r.status).toBe(404);
+      }
+      expect(first429).toBe(60);
+      const throttled = await hostRequest(versionHost(slug, 5_000), '/', { headers });
+      expect(throttled.status).toBe(429);
+      expect(throttled.body).toBe('Too Many Requests');
+      // The version the serve cache knows (refreshed by a request without a per-IP bucket) still serves the throttled client.
+      expect((await hostRequest(versionHost(slug, 1))).status).toBe(200);
+      expect((await hostRequest(versionHost(slug, 1), '/', { headers })).status).toBe(200);
+    });
+  } finally {
+    await a.transport.close();
+  }
 });

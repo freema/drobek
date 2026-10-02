@@ -17,6 +17,7 @@ function ctxFor(scopes: Scope[], superAdmin = false): AuthContext {
   return {
     kind: 'oauth',
     credentialId: 'tok_test',
+    oauthClientId: null,
     userId: 'u_test',
     email: 'test@example.com',
     superAdmin,
