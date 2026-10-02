@@ -26,33 +26,92 @@ const ALL_TOOLS = [
   'configure_module',
   'create_app',
   'create_asset_upload',
+  'create_records',
+  'create_workspace',
+  'delete_app',
   'delete_asset',
+  'delete_collection',
+  'delete_form_submission',
+  'delete_record',
+  'delete_upload',
   'delete_workspace',
   'duplicate_app',
   'get_app',
   'get_logs',
+  'invite_member',
+  'list_activity',
   'list_apps',
   'list_assets',
   'list_domains',
+  'list_end_users',
+  'list_form_submissions',
   'list_members',
+  'list_uploads',
   'list_upstreams',
+  'purge_orphan_records',
   'query_data',
   'read_file',
   'register_upstream',
+  'release_lease',
   'remove_domain',
   'remove_member',
+  'remove_module_secret',
   'remove_upstream',
   'restore_version',
+  'set_end_user_blocked',
+  'set_end_user_role',
+  'set_frame_ancestors',
   'set_member_role',
+  'sign_out_end_users',
   'skill_info',
   'sync_now',
+  'update_record',
   'verify_domain',
   'write_files',
 ];
-const READ_TOOLS = new Set(['list_apps', 'get_app', 'read_file', 'skill_info', 'query_data', 'get_logs', 'list_assets', 'list_domains', 'list_upstreams', 'list_members']);
-/** The domain tools that ask public DNS or change the public site. */
-const OPEN_WORLD_TOOLS = new Set(['sync_now', 'verify_domain', 'remove_domain']);
-const IDEMPOTENT_WRITES = new Set(['configure_module', 'delete_asset', 'add_domain', 'verify_domain', 'remove_domain', 'register_upstream', 'remove_upstream', 'set_member_role', 'remove_member', 'delete_workspace']);
+const READ_TOOLS = new Set([
+  'list_apps',
+  'get_app',
+  'read_file',
+  'skill_info',
+  'query_data',
+  'get_logs',
+  'list_assets',
+  'list_domains',
+  'list_upstreams',
+  'list_form_submissions',
+  'list_end_users',
+  'list_uploads',
+  'list_activity',
+  'list_members',
+]);
+/** The tools that ask public DNS or change the public site. */
+const OPEN_WORLD_TOOLS = new Set(['sync_now', 'verify_domain', 'remove_domain', 'set_frame_ancestors', 'delete_app', 'invite_member']);
+const IDEMPOTENT_WRITES = new Set([
+  'configure_module',
+  'delete_asset',
+  'add_domain',
+  'verify_domain',
+  'remove_domain',
+  'register_upstream',
+  'remove_upstream',
+  'set_frame_ancestors',
+  'release_lease',
+  'delete_app',
+  'update_record',
+  'delete_record',
+  'delete_collection',
+  'purge_orphan_records',
+  'delete_form_submission',
+  'set_end_user_role',
+  'set_end_user_blocked',
+  'delete_upload',
+  'remove_module_secret',
+  'create_workspace',
+  'set_member_role',
+  'remove_member',
+  'delete_workspace',
+]);
 
 const TEMPLATE_FILES = ['drobek.json', 'index.html', 'src/main.tsx', 'src/styles.css'];
 
@@ -162,7 +221,7 @@ test('core tools: create → broken write → fix → limits → restore → rea
       expect(t.title ?? t.annotations?.title, `${t.name} title`).toBeTruthy();
       expect(t.annotations?.readOnlyHint, `${t.name} readOnlyHint`).toBe(READ_TOOLS.has(t.name));
       expect(t.annotations?.openWorldHint, `${t.name} openWorldHint`).toBe(OPEN_WORLD_TOOLS.has(t.name));
-      // Explicit idempotentHint — reads, configure_module, delete_asset and the domain/upstream tools repeat safely; create/write/restore/upload URLs do not.
+      // Explicit idempotentHint — reads, configure_module, delete_asset, the domain/upstream tools, the app settings/lease/delete tools, the record update/delete tools and the owner's delete/role/block/secret tools repeat safely; sign_out_end_users, create/write/restore/upload URLs and create_records do not.
       expect(t.annotations?.idempotentHint, `${t.name} idempotentHint`).toBe(READ_TOOLS.has(t.name) || IDEMPOTENT_WRITES.has(t.name));
     }
 

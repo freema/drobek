@@ -2,7 +2,8 @@
  * @drobek/audit — the neutral append-only audit trail. Its own package
  * so @drobek/apps AND @drobek/tenancy (and the @drobek/dashboard Activity view)
  * can write/read audit rows without a dependency cycle. Depends ONLY on
- * @drobek/db. The pure actor/action vocabulary lives in ./actor (client-safe).
+ * @drobek/db. The pure actor/action vocabulary lives in ./actor, the redaction
+ * of a row's stored context for its readers in ./redact (both client-safe).
  */
 export {
   actorKindForSurface,
@@ -28,6 +29,7 @@ export {
   type ListActivityInput,
   type ListActivityResult,
 } from './read.server.js';
+export { redactAuditMeta } from './redact.js';
 export {
   pruneAuditLog,
   auditRetentionDays,

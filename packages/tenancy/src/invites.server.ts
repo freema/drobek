@@ -22,6 +22,7 @@
  */
 import { randomBytes } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
+import { logger, maskEmail, normalizeAuthEmail, serializeError } from '@drobek/auth';
 import { getRedis } from '@drobek/core';
 import { getDb, memberships } from '@drobek/db';
 import {
@@ -31,6 +32,7 @@ import {
   AUDIT_SUBJECT_TYPES,
   type AuditActorKind,
 } from '@drobek/audit';
+import { sendInviteEmail } from './email/invite-email.server.js';
 import { higherRole, isWorkspaceRole, type WorkspaceRole } from './roles.js';
 import { getWorkspaceById } from './membership.server.js';
 
@@ -88,33 +90,127 @@ export async function createInvite(args: {
   );
   await redis.hset(inviteIndexKey(args.workspaceId), id, token);
   await redis.expire(inviteIndexKey(args.workspaceId), INVITE_TTL_SEC);
-  // NOTE: the member.invite audit row is written by the invite ROUTE action (it
-  // owns the session actor + a live DB), NOT here — createInvite stays a pure
-  // Redis helper (unit-tested without a database). See auditMemberInvite below.
+  // NOTE: the member.invite audit row is written by inviteMember (it knows the
+  // actor and the surface), NOT here — createInvite stays a pure Redis helper
+  // (unit-tested without a database).
   return { token, id };
 }
 
 /**
- * Write the member.invite governance row. Called from the invite route
- * action after createInvite succeeds. The actor is the inviting user, the surface
- * is 'web' (invites have no MCP tool) → actor_kind = user. The invited EMAIL is
- * PII and is deliberately NOT stored — only the granted role, which is
- * non-sensitive; there is no member user id yet, so the subject id is null.
+ * Withdraw an invite nobody can have used yet: its link and its pending-list
+ * entry go, unaudited (the invite never stood — revokeInvite is the admin's
+ * audited withdrawal). A malformed token never builds a Redis key.
  */
-export async function auditMemberInvite(args: {
+export async function withdrawInvite(token: string): Promise<void> {
+  if (!INVITE_TOKEN_RE.test(token)) return;
+  const redis = getRedis();
+  const invite = parseInvite(await redis.getdel(inviteKey(token)));
+  if (invite?.id) await redis.hdel(inviteIndexKey(invite.workspaceId), invite.id);
+}
+
+/**
+ * Write the member.invite governance row. The actor is the inviting user;
+ * the surface decides actor_kind (`web` = the dashboard → user, `mcp` = their
+ * agent's invite_member → agent). The invited EMAIL is PII and is
+ * deliberately NOT stored — only the granted role, which is non-sensitive;
+ * there is no member user id yet, so the subject id is null.
+ */
+async function auditMemberInvite(args: {
   workspaceId: string;
   invitedByUserId: string;
   role: WorkspaceRole;
+  surface?: 'web' | 'mcp';
 }): Promise<void> {
   await writeAudit({
     workspaceId: args.workspaceId,
     actorUserId: args.invitedByUserId,
-    actorKind: actorKindForSurface('web'),
+    actorKind: actorKindForSurface(args.surface ?? 'web'),
     action: AUDIT_ACTIONS.memberInvite,
     subjectType: AUDIT_SUBJECT_TYPES.member,
     target: null,
     meta: { role: args.role },
   });
+}
+
+const INVITE_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const INVITE_EMAIL_MAX = 254;
+
+/** The invited address, normalized like a sign-in address — or null when it does not look like one (≤ 254 characters). */
+export function normalizeInviteEmail(raw: string): string | null {
+  const email = normalizeAuthEmail(raw.trim());
+  return INVITE_EMAIL_RE.test(email) && email.length <= INVITE_EMAIL_MAX ? email : null;
+}
+
+/** The side effects of an invite: the Redis token, its withdrawal and the e-mail (injectable for tests). */
+export interface MemberInviteDeps {
+  create: typeof createInvite;
+  withdraw: (token: string) => Promise<void>;
+  send: (args: { email: string; workspaceName: string; role: WorkspaceRole; acceptUrl: string }) => Promise<void>;
+}
+
+export function defaultMemberInviteDeps(): MemberInviteDeps {
+  return { create: createInvite, withdraw: withdrawInvite, send: sendInviteEmail };
+}
+
+export type InviteMemberResult =
+  | { ok: true; role: WorkspaceRole; email: string | null; inviteUrl: string; emailSent: boolean }
+  | { ok: false; reason: 'not-team' | 'invalid-role' | 'invalid-email' | 'email-failed'; message: string };
+
+/**
+ * A workspace admin invites someone — the ONE invite flow of the dashboard's
+ * /workspaces/:slug/invite and the MCP tool invite_member (the caller has
+ * checked the workspace-admin role). Team workspaces only; the role is one
+ * of the three; the optional e-mail is normalized and must look like an
+ * address (≤ 254 characters). The invite e-mail goes out when an address is
+ * given; a send failure is logged and the link stays valid — unless
+ * `requireDelivery` (MCP: the link never passes through the agent, so an
+ * invite nobody received is withdrawn and nothing is audited). The
+ * member.invite row is written once the invite stands.
+ */
+export async function inviteMember(input: {
+  workspace: { id: string; name: string; kind: string };
+  invitedByUserId: string;
+  role: string;
+  email: string | null;
+  surface: 'web' | 'mcp';
+  requireDelivery?: boolean;
+  deps?: MemberInviteDeps;
+  env?: NodeJS.ProcessEnv;
+}): Promise<InviteMemberResult> {
+  if (input.workspace.kind !== 'team') {
+    return { ok: false, reason: 'not-team', message: 'Invites are only available for team workspaces.' };
+  }
+  const role = input.role;
+  if (!isWorkspaceRole(role)) return { ok: false, reason: 'invalid-role', message: 'Pick a valid role.' };
+  const raw = (input.email ?? '').trim();
+  let email: string | null = null;
+  if (raw) {
+    email = normalizeInviteEmail(raw);
+    if (!email) return { ok: false, reason: 'invalid-email', message: 'Enter a valid email address.' };
+  } else if (input.requireDelivery) {
+    return { ok: false, reason: 'invalid-email', message: 'Enter the email address to send the invite to.' };
+  }
+
+  const deps = input.deps ?? defaultMemberInviteDeps();
+  const { token } = await deps.create({ workspaceId: input.workspace.id, role, invitedByUserId: input.invitedByUserId, email });
+  const inviteUrl = acceptInviteUrl(token, input.env);
+
+  let emailSent = false;
+  if (email) {
+    try {
+      await deps.send({ email, workspaceName: input.workspace.name, role, acceptUrl: inviteUrl });
+      emailSent = true;
+    } catch (err) {
+      logger.error('[tenancy] sendInviteEmail failed', { err: serializeError(err), email: maskEmail(email) });
+    }
+  }
+  if (input.requireDelivery && !emailSent) {
+    await deps.withdraw(token);
+    return { ok: false, reason: 'email-failed', message: 'The invite email could not be sent, so the invite was withdrawn.' };
+  }
+
+  await auditMemberInvite({ workspaceId: input.workspace.id, invitedByUserId: input.invitedByUserId, role, surface: input.surface });
+  return { ok: true, role, email, inviteUrl, emailSent };
 }
 
 function parseInvite(raw: string | null): InviteRecord | null {
@@ -272,7 +368,7 @@ export async function acceptInvite(args: {
   // The membership write + its governance audit go in ONE transaction so
   // the row and its provenance land together. The actor is the ACCEPTING user
   // (server-derived from the session at the route) and the surface is 'web'
-  // (there is no MCP invite tool) → actor_kind = user. The subject is the member's
+  // (an invite is accepted only in the dashboard) → actor_kind = user. The subject is the member's
   // own stable user id (an opaque cuid, not PII); the invited email is never stored.
   await db.transaction(async (tx) => {
     if (existing === null) {

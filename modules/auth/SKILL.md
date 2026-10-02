@@ -120,7 +120,7 @@ subdomains), `allow.anyone` everybody, `adminEmails` may sign in as `admin`,
 - A code lives 10 minutes, works once, dies after 5 wrong tries.
 - Every module request re-checks the user: removed from `allow` or disabled
   → anonymous at once; the role follows `adminEmails` on the next request.
-  Other modules apply their `user` / `owner` / `admin` rules to this user.
+  Other modules apply their `user` / `owner` / `admin` rules to this user. As the owner you use `list_end_users`, `set_end_user_role` (edits `adminEmails`), `set_end_user_blocked` and, after the user's yes, `sign_out_end_users`.
 - Per app: `AUTH_CODES_PER_IP_15MIN` 5, `AUTH_CODES_PER_IP_DAY` 20,
   `AUTH_CODES_PER_EMAIL_HOUR` 3 (more requests answer "sent", send nothing),
   `AUTH_CODES_PER_APP_HOUR` 100 (never above the app's share of the server's

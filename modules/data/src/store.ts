@@ -144,15 +144,16 @@ export async function patchRecord(
 }
 
 /**
- * Insert many records at once (the owner's CSV import): ONE transaction under
- * the app's write lock, the quota checked for the whole batch first — either
- * every record is stored or none. `created_at` rises by a millisecond per
- * record, so the file's order is the creation order.
+ * Insert many records at once (the owner's CSV import, the MCP
+ * create_records): ONE transaction under the app's write lock, the quota
+ * checked for the whole batch first — either every record is stored or
+ * none. `created_at` rises by a millisecond per record, so the given order is
+ * the creation order. Returns the stored rows in that order.
  */
 export async function insertRecords(
   db: DB,
   input: { appId: string; collection: string; docs: Record<string, unknown>[]; limits: DataQuotaLimits }
-): Promise<number> {
+): Promise<DataRecordRow[]> {
   const sized = input.docs.map((doc) => ({ doc, bytes: docByteSize(doc) }));
   return withAppWriteLock(db, input.appId, async (tx) => {
     const u = await usage(tx, input.appId);
@@ -163,20 +164,22 @@ export async function insertRecords(
     if (u.count + sized.length > input.limits.maxDocsPerApp) {
       throw new DataError(
         'quota_exceeded',
-        `The import would store ${u.count + sized.length} records; this app may store at most ${input.limits.maxDocsPerApp} (${u.count} stored).`,
+        `Storing ${sized.length} more records would leave ${u.count + sized.length} in this app; it may store at most ${input.limits.maxDocsPerApp} (${u.count} stored).`,
         { details: { limit: 'DATA_MAX_DOCS_PER_APP', value: input.limits.maxDocsPerApp } }
       );
     }
     enforceWriteQuota({ limits: input.limits, newDocBytes: total, liveDocCount: 0, liveBytesExcludingTarget: u.bytes, isCreate: false });
     const base = Date.now();
+    const stored: DataRecordRow[] = [];
     for (let i = 0; i < sized.length; i += 500) {
       const chunk = sized.slice(i, i + 500).map((d, j) => {
         const at = new Date(base + i + j);
         return { id: newRecordId(), appId: input.appId, collection: input.collection, ownerId: null, doc: d.doc, bytes: d.bytes, createdAt: at, updatedAt: at };
       });
-      await tx.insert(dataRecords).values(chunk);
+      stored.push(...(await tx.insert(dataRecords).values(chunk).returning()));
     }
-    return sized.length;
+    // Every record has its own created_at: that is the given order, whatever order RETURNING used.
+    return stored.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
   });
 }
 

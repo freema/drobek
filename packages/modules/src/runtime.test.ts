@@ -1329,7 +1329,16 @@ describe("the owner's authorities: owner config changes, end users, submissions,
     await expect(bound.dropCollection('bad', userId)).rejects.toMatchObject({ code: 'invalid_params' });
     expect((await db.select().from(auditLog).where(eq(auditLog.action, 'data.collection_delete'))).length).toBe(before);
     await expect(bound.update('keep', 'id', {})).rejects.toMatchObject({ code: 'unavailable' });
+    await expect(bound.create('keep', [{}])).rejects.toMatchObject({ code: 'unavailable' });
     await expect(bound.importCsv('keep', 'a')).rejects.toMatchObject({ code: 'unavailable' });
+  });
+
+  it("dropCollection from an agent's confirmed call (surface mcp) is audited with the agent as the actor", async () => {
+    const r = await load([store]);
+    await r.configure({ app, module: 'store', patch: { tables: { agent: { n: 1 } } }, actorUserId: userId });
+    expect(await (await r.records(hook()))!.dropCollection('agent', userId, 'mcp')).toEqual({ records: 3 });
+    const audits = await db.select().from(auditLog).where(eq(auditLog.action, 'data.collection_delete'));
+    expect(audits.at(-1)).toMatchObject({ actorKind: 'agent', actorUserId: userId, meta: { collection: 'agent', records: 3, module: 'store' } });
   });
 
   it("setRole applies the module's config patch (audited end_users.role); missing owner methods → unavailable; no module → null", async () => {

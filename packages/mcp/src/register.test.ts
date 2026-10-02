@@ -1,6 +1,7 @@
 /**
- * tools/list snapshot: exactly the 20 tools of a user who is not a
- * super-admin (a super-admin also gets set_workspace_publishing), in order,
+ * tools/list snapshot: exactly the 47 tools of a user who is not a
+ * super-admin (a super-admin also gets set_workspace_publishing,
+ * set_workspace_module, takedown_app, restore_app and set_gallery_hidden), in order,
  * with their titles, annotations and input schemas. Hand-written on purpose — a
  * change to the public tool surface must be a deliberate edit here.
  */
@@ -30,7 +31,7 @@ async function listTools(allow?: (t: string) => boolean, superAdmin = false) {
 const RO = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 
 describe('tools/list', () => {
-  it('is exactly the 24 tools with their annotations and inputs (snapshot)', async () => {
+  it('is exactly the 47 tools with their annotations and inputs (snapshot)', async () => {
     const tools = await listTools();
     const snapshot = tools.map((t) => ({
       name: t.name,
@@ -128,6 +129,41 @@ describe('tools/list', () => {
         required: ['app_id', 'listed'],
       },
       {
+        name: 'unpublish',
+        title: 'Unpublish an app',
+        annotations: { title: 'Unpublish an app', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+        properties: ['app_id', 'user_confirmed'],
+        required: ['app_id'],
+      },
+      {
+        name: 'set_visibility',
+        title: 'Set who can open an app',
+        annotations: { title: 'Set who can open an app', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+        properties: ['app_id', 'visibility', 'user_confirmed'],
+        required: ['app_id', 'visibility'],
+      },
+      {
+        name: 'set_frame_ancestors',
+        title: 'Set which sites may embed an app',
+        annotations: { title: 'Set which sites may embed an app', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+        properties: ['app_id', 'frame_ancestors'],
+        required: ['app_id', 'frame_ancestors'],
+      },
+      {
+        name: 'release_lease',
+        title: 'Release your write lease',
+        annotations: { title: 'Release your write lease', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        properties: ['app_id'],
+        required: ['app_id'],
+      },
+      {
+        name: 'delete_app',
+        title: 'Delete an app',
+        annotations: { title: 'Delete an app', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+        properties: ['app_id', 'user_confirmed'],
+        required: ['app_id'],
+      },
+      {
         name: 'skill_info',
         title: 'Read a skill',
         annotations: { title: 'Read a skill', ...RO },
@@ -153,6 +189,41 @@ describe('tools/list', () => {
         annotations: { title: "Query an app's data", ...RO },
         properties: ['app_id', 'collection', 'filter', 'sort', 'dir', 'limit', 'cursor'],
         required: ['app_id', 'collection'],
+      },
+      {
+        name: 'create_records',
+        title: 'Add records to a collection',
+        annotations: { title: 'Add records to a collection', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        properties: ['app_id', 'collection', 'records'],
+        required: ['app_id', 'collection', 'records'],
+      },
+      {
+        name: 'update_record',
+        title: 'Change a record',
+        annotations: { title: 'Change a record', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+        properties: ['app_id', 'collection', 'id', 'fields', 'replace'],
+        required: ['app_id', 'collection', 'id', 'fields'],
+      },
+      {
+        name: 'delete_record',
+        title: 'Delete a record',
+        annotations: { title: 'Delete a record', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+        properties: ['app_id', 'collection', 'id'],
+        required: ['app_id', 'collection', 'id'],
+      },
+      {
+        name: 'delete_collection',
+        title: 'Delete a collection',
+        annotations: { title: 'Delete a collection', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+        properties: ['app_id', 'collection', 'user_confirmed'],
+        required: ['app_id', 'collection'],
+      },
+      {
+        name: 'purge_orphan_records',
+        title: 'Purge orphan records',
+        annotations: { title: 'Purge orphan records', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+        properties: ['app_id', 'collection', 'user_confirmed'],
+        required: ['app_id'],
       },
       {
         name: 'get_logs',
@@ -200,6 +271,76 @@ describe('tools/list', () => {
         },
         properties: ['app_id', 'path'],
         required: ['app_id', 'path'],
+      },
+      {
+        name: 'list_form_submissions',
+        title: "List an app's form submissions",
+        annotations: { title: "List an app's form submissions", ...RO },
+        properties: ['app_id', 'form', 'from', 'to', 'limit', 'cursor'],
+        required: ['app_id'],
+      },
+      {
+        name: 'delete_form_submission',
+        title: 'Delete a form submission',
+        annotations: { title: 'Delete a form submission', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+        properties: ['app_id', 'id'],
+        required: ['app_id', 'id'],
+      },
+      {
+        name: 'list_end_users',
+        title: "List an app's end users",
+        annotations: { title: "List an app's end users", ...RO },
+        properties: ['app_id', 'search', 'limit', 'cursor'],
+        required: ['app_id'],
+      },
+      {
+        name: 'set_end_user_role',
+        title: "Change an end user's role",
+        annotations: { title: "Change an end user's role", readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+        properties: ['app_id', 'user_id', 'role'],
+        required: ['app_id', 'user_id', 'role'],
+      },
+      {
+        name: 'set_end_user_blocked',
+        title: 'Block or unblock an end user',
+        annotations: { title: 'Block or unblock an end user', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+        properties: ['app_id', 'user_id', 'blocked'],
+        required: ['app_id', 'user_id', 'blocked'],
+      },
+      {
+        name: 'sign_out_end_users',
+        title: 'Sign every end user out',
+        annotations: { title: 'Sign every end user out', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+        properties: ['app_id', 'user_confirmed'],
+        required: ['app_id'],
+      },
+      {
+        name: 'list_uploads',
+        title: "List an app's end-user uploads",
+        annotations: { title: "List an app's end-user uploads", ...RO },
+        properties: ['app_id', 'limit', 'cursor'],
+        required: ['app_id'],
+      },
+      {
+        name: 'delete_upload',
+        title: 'Delete an end-user upload',
+        annotations: { title: 'Delete an end-user upload', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+        properties: ['app_id', 'id'],
+        required: ['app_id', 'id'],
+      },
+      {
+        name: 'remove_module_secret',
+        title: 'Remove a module secret',
+        annotations: { title: 'Remove a module secret', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+        properties: ['app_id', 'module', 'name', 'user_confirmed'],
+        required: ['app_id', 'module', 'name'],
+      },
+      {
+        name: 'list_activity',
+        title: "Read a workspace's activity log",
+        annotations: { title: "Read a workspace's activity log", ...RO },
+        properties: ['workspace', 'app', 'action', 'actor', 'from', 'to', 'limit', 'cursor'],
+        required: ['workspace'],
       },
       {
         name: 'list_domains',
@@ -264,11 +405,25 @@ describe('tools/list', () => {
         required: ['workspace', 'name'],
       },
       {
+        name: 'create_workspace',
+        title: 'Create a team workspace',
+        annotations: { title: 'Create a team workspace', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        properties: ['name', 'slug'],
+        required: ['name', 'slug'],
+      },
+      {
         name: 'list_members',
         title: 'List a workspace\'s members',
         annotations: { title: 'List a workspace\'s members', ...RO },
         properties: ['workspace'],
         required: ['workspace'],
+      },
+      {
+        name: 'invite_member',
+        title: 'Invite a workspace member',
+        annotations: { title: 'Invite a workspace member', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+        properties: ['workspace', 'email', 'role', 'user_confirmed'],
+        required: ['workspace', 'email', 'role'],
       },
       {
         name: 'set_member_role',
@@ -298,12 +453,24 @@ describe('tools/list', () => {
       'html',
     ]);
     for (const t of tools) expect(t.description!.length, t.name).toBeGreaterThan(40);
+    const visibility = tools.find((t) => t.name === 'set_visibility')!;
+    expect((visibility.inputSchema.properties as Record<string, { enum?: string[] }>).visibility.enum).toEqual(['public', 'password']);
+    const invite = tools.find((t) => t.name === 'invite_member')!;
+    expect((invite.inputSchema.properties as Record<string, { enum?: string[] }>).role.enum).toEqual(['viewer', 'editor', 'workspace-admin']);
   });
 
-  it('a super-admin also gets set_workspace_publishing, last', async () => {
+  it('a super-admin also gets set_workspace_publishing, set_workspace_module and the moderation tools, last', async () => {
     const tools = await listTools(undefined, true);
-    expect(tools).toHaveLength(30);
-    const last = tools[29];
+    expect(tools).toHaveLength(56);
+    expect(tools.slice(51).map((t) => t.name)).toEqual(['set_workspace_publishing', 'set_workspace_module', 'takedown_app', 'restore_app', 'set_gallery_hidden']);
+    const props = (name: string) => Object.keys((tools.find((t) => t.name === name)!.inputSchema.properties ?? {}) as object);
+    expect(props('set_workspace_module')).toEqual(['workspace', 'module', 'enabled', 'user_confirmed']);
+    expect(props('takedown_app')).toEqual(['app', 'reason', 'user_confirmed']);
+    expect(props('restore_app')).toEqual(['app', 'user_confirmed']);
+    expect(props('set_gallery_hidden')).toEqual(['app', 'hidden', 'user_confirmed']);
+    const takedown = tools.find((t) => t.name === 'takedown_app')!;
+    expect((takedown.inputSchema.properties as Record<string, { enum?: string[] }>).reason.enum).toEqual(['phishing', 'malware', 'spam', 'copyright', 'illegal', 'other']);
+    const last = tools[51];
     expect(last.name).toBe('set_workspace_publishing');
     expect(last.annotations).toEqual({
       title: 'Set a workspace\'s publishing',

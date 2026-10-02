@@ -91,6 +91,7 @@ export {
   type RecordsImportResult,
   type RecordsPage,
   type RecordsQuery,
+  type RecordsUpdateOptions,
   type RecordsView,
   type RouteHandler,
   type RouteOptions,

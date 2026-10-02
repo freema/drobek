@@ -271,6 +271,8 @@ This document is the map of how that works. The neighbours:
 - **One writer at a time**: a write takes the app's Redis lease
   (`drobek:applock:<app_id>`, 3 minutes, renewed per write). Another user's
   agent gets `app_locked`; the same user's other sessions take the lease over.
+  `release_lease` frees the caller's own lease early; the dashboard's unlock
+  frees anyone's (both audited `app.lock.release`).
 
 ## 3. The compile step
 
@@ -508,7 +510,8 @@ into `DROBEK_MODULES_DIR`) are loaded exactly as third-party modules are. The co
   workspaces they are enabled for: by the limits provider's plan
   (`MODULE_ENABLED_<NAME>`: `1` on, `0` off — it wins), by the env value
   `MODULE_ENABLED_<NAME>=1` (every workspace), or by a super-admin's switch
-  on the dashboard's Workspace → Modules page (`workspace_modules`, audited).
+  on the dashboard's Workspace → Modules page or their agent's
+  `set_workspace_module` (`workspace_modules`, audited).
   Elsewhere their routes answer `404 module_not_enabled`, `configure_module`
   refuses, `get_app` shows `enabled: false` and the app's skills leave them
   out; the SDK stays one bundle per server.

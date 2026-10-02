@@ -57,9 +57,14 @@ export {
   acceptInviteUrl,
   listPendingInvites,
   revokeInvite,
+  inviteMember,
+  normalizeInviteEmail,
+  defaultMemberInviteDeps,
   type InviteRecord,
   type AcceptInviteResult,
   type PendingInvite,
+  type InviteMemberResult,
+  type MemberInviteDeps,
 } from './invites.server.js';
 export {
   MembershipError,

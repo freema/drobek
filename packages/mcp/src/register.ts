@@ -13,8 +13,9 @@
  * reach a tool body; the result names them in `warnings` (see toolInput).
  *
  * Every tool answers its JSON as text AND as `structuredContent` — except the
- * three that return app- or user-written content (read_file, query_data,
- * get_logs): they answer ONLY the text inside the untrusted envelope
+ * ones that return app- or user-written content (read_file, query_data,
+ * get_logs, and the owner's lists list_form_submissions, list_end_users,
+ * list_uploads, list_activity — owner-list.ts): they answer ONLY the text inside the untrusted envelope
  * with its per-response nonce. A client that hands `structuredContent` to the
  * model would otherwise pass the raw payload past the envelope, and no
  * wrapping of the payload's strings can cover it: the keys of a schemaless
@@ -24,9 +25,9 @@ import { randomBytes } from 'node:crypto';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { READ_FILE_SEARCH_MATCHES_MAX, toolDoc } from '@drobek/agent-dx';
-import { AppsError, WORKSPACE_PUBLISHING_STATES } from '@drobek/apps';
-import { WORKSPACE_ROLES } from '@drobek/tenancy';
+import { AppsError, LOCK_REASONS, WORKSPACE_PUBLISHING_STATES } from '@drobek/apps';
 import { dbErrorForLog, isQueryTimeout } from '@drobek/db';
+import { WORKSPACE_ROLES } from '@drobek/tenancy';
 import { defaultDeps, type ToolDeps, type ToolPrincipal } from './context.js';
 import { ToolError, databaseTimeout, lockedByAdmin } from './errors.js';
 import {
@@ -49,14 +50,31 @@ import {
 } from './tools.js';
 import { readFile, type ReadFileArgs, type ReadFileResult, type ReadFilesResult, type SearchFilesResult } from './read-file.js';
 import { createAssetUpload, deleteAssetTool, listAssetsTool } from './assets.js';
+import { createRecordsTool, deleteCollectionTool, deleteRecordTool, purgeOrphanRecordsTool, updateRecordTool } from './data.js';
 import { addDomainTool, listDomainsTool, removeDomainTool, setPrimaryDomainTool, verifyDomainTool } from './domains.js';
+import { deleteAppTool, releaseLeaseTool, setFrameAncestorsTool, setVisibilityTool, unpublishTool } from './lifecycle.js';
+import { listActivityTool } from './activity.js';
+import {
+  deleteFormSubmissionTool,
+  deleteUploadTool,
+  listEndUsersTool,
+  listFormSubmissionsTool,
+  listUploadsTool,
+  removeModuleSecretTool,
+  setEndUserBlockedTool,
+  setEndUserRoleTool,
+  signOutEndUsersTool,
+} from './owner.js';
+import { ownerListEnvelope, type OwnerListPayload } from './owner-list.js';
 import { listUpstreamsTool, registerUpstreamTool, removeUpstreamTool } from './upstreams.js';
 import { listMembersTool, removeMemberTool, setMemberRoleTool } from './members.js';
 import { deleteWorkspaceTool } from './workspace-delete.js';
 import { setWorkspacePublishingTool } from './workspace-publishing.js';
+import { createWorkspaceTool, inviteMemberTool } from './workspaces.js';
+import { restoreAppTool, setGalleryHiddenTool, setWorkspaceModuleTool, takedownAppTool } from './admin.js';
 import { TEMPLATES } from './templates.js';
 
-/** The tool set, in tools/list order (set_workspace_publishing is super-admins only). */
+/** The tool set, in tools/list order (the last five, from set_workspace_publishing on, are super-admins only). */
 export const APP_TOOL_NAMES = [
   'list_apps',
   'create_app',
@@ -67,14 +85,34 @@ export const APP_TOOL_NAMES = [
   'restore_version',
   'publish',
   'set_gallery_listing',
+  'unpublish',
+  'set_visibility',
+  'set_frame_ancestors',
+  'release_lease',
+  'delete_app',
   'skill_info',
   'configure_module',
   'query_data',
+  'create_records',
+  'update_record',
+  'delete_record',
+  'delete_collection',
+  'purge_orphan_records',
   'get_logs',
   'sync_now',
   'create_asset_upload',
   'list_assets',
   'delete_asset',
+  'list_form_submissions',
+  'delete_form_submission',
+  'list_end_users',
+  'set_end_user_role',
+  'set_end_user_blocked',
+  'sign_out_end_users',
+  'list_uploads',
+  'delete_upload',
+  'remove_module_secret',
+  'list_activity',
   'list_domains',
   'add_domain',
   'verify_domain',
@@ -83,19 +121,34 @@ export const APP_TOOL_NAMES = [
   'list_upstreams',
   'register_upstream',
   'remove_upstream',
+  'create_workspace',
   'list_members',
+  'invite_member',
   'set_member_role',
   'remove_member',
   'delete_workspace',
   'set_workspace_publishing',
+  'set_workspace_module',
+  'takedown_app',
+  'restore_app',
+  'set_gallery_hidden',
 ] as const;
 
 export type AppToolName = (typeof APP_TOOL_NAMES)[number];
 
 /** Tools that exist only for a super-admin's grant (never in anyone else's tools/list). */
-const SUPER_ADMIN_TOOL_NAMES: readonly AppToolName[] = ['set_workspace_publishing'];
+const SUPER_ADMIN_TOOL_NAMES: readonly AppToolName[] = [
+  'set_workspace_publishing',
+  'set_workspace_module',
+  'takedown_app',
+  'restore_app',
+  'set_gallery_hidden',
+];
 
 const appId = z.string().describe('The app id (from list_apps or create_app).');
+const moderationAppArg = z
+  .string()
+  .describe('The app: its app_id, its slug or one of its addresses (an app host or a verified custom domain, e.g. from an abuse report).');
 
 /** zod input shapes — the field names are drift-guarded against TOOL_DOCS. */
 export const INPUT_SCHEMAS = {
@@ -173,6 +226,32 @@ export const INPUT_SCHEMAS = {
       .optional()
       .describe('Listing only: true ONLY after the user explicitly said yes to this listing and description.'),
   },
+  unpublish: {
+    app_id: appId,
+    user_confirmed: z.boolean().optional().describe('true ONLY after the user explicitly said yes to unpublishing this app.'),
+  },
+  set_visibility: {
+    app_id: appId,
+    visibility: z
+      .enum(['public', 'password'])
+      .describe('public = anyone with the link; password = only with the password the owner set in the dashboard.'),
+    user_confirmed: z
+      .boolean()
+      .optional()
+      .describe('Making it public: true ONLY after the user explicitly said yes.'),
+  },
+  set_frame_ancestors: {
+    app_id: appId,
+    frame_ancestors: z
+      .string()
+      .nullable()
+      .describe('\'self\' and/or up to 10 http(s) origins separated by spaces, e.g. https://intranet.example.com; null = no other site may embed the app.'),
+  },
+  release_lease: { app_id: appId },
+  delete_app: {
+    app_id: appId,
+    user_confirmed: z.boolean().optional().describe('true ONLY after the user explicitly said yes to deleting this app.'),
+  },
   skill_info: {
     name: z.string().optional().describe('A skill name from the list; omit to list every skill.'),
     app_id: z
@@ -199,6 +278,41 @@ export const INPUT_SCHEMAS = {
     limit: z.number().optional().describe('1–100 records, default 20.'),
     cursor: z.string().optional().describe('next_cursor of the previous page.'),
   },
+  create_records: {
+    app_id: appId,
+    collection: z.string().describe('A collection the app\'s data config declares.'),
+    records: z
+      .array(z.record(z.string(), z.unknown()))
+      .describe('1–500 new records, each a JSON object of its fields (keys starting with _ are dropped); stored all or nothing.'),
+  },
+  update_record: {
+    app_id: appId,
+    collection: z.string().describe('The record\'s collection.'),
+    id: z.string().describe('The record\'s _id (query_data lists them).'),
+    fields: z.record(z.string(), z.unknown()).describe('The fields to change: merged onto the stored ones (only these keys change).'),
+    replace: z
+      .boolean()
+      .optional()
+      .describe('true: the record\'s own fields become exactly `fields` (drops the others); default false = merge.'),
+  },
+  delete_record: {
+    app_id: appId,
+    collection: z.string().describe('The record\'s collection.'),
+    id: z.string().describe('The record\'s _id (query_data lists them).'),
+  },
+  delete_collection: {
+    app_id: appId,
+    collection: z.string().describe('A collection the app\'s data config declares.'),
+    user_confirmed: z
+      .boolean()
+      .optional()
+      .describe('true ONLY after the user explicitly said yes to deleting this collection and its records.'),
+  },
+  purge_orphan_records: {
+    app_id: appId,
+    collection: z.string().optional().describe('One orphan collection; omitted = every orphan collection of the app.'),
+    user_confirmed: z.boolean().optional().describe('true ONLY after the user explicitly said yes to purging these orphan records.'),
+  },
   get_logs: {
     app_id: appId,
     kind: z
@@ -220,6 +334,63 @@ export const INPUT_SCHEMAS = {
   delete_asset: {
     app_id: appId,
     path: z.string().describe('The asset path, e.g. film.mp4 (as list_assets shows it, with or without the leading /).'),
+  },
+  list_form_submissions: {
+    app_id: appId,
+    form: z.string().optional().describe('Only this form (a name the answer\'s `forms` lists).'),
+    from: z.string().optional().describe('First UTC day, YYYY-MM-DD (inclusive).'),
+    to: z.string().optional().describe('Last UTC day, YYYY-MM-DD (inclusive).'),
+    limit: z.number().optional().describe('1–100 submissions, default 20.'),
+    cursor: z.string().optional().describe('next_cursor of the previous page.'),
+  },
+  delete_form_submission: {
+    app_id: appId,
+    id: z.string().describe('The submission\'s id (list_form_submissions lists them).'),
+  },
+  list_end_users: {
+    app_id: appId,
+    search: z.string().optional().describe('Only users whose e-mail address contains this text.'),
+    limit: z.number().optional().describe('1–100 users, default 50.'),
+    cursor: z.string().optional().describe('next_cursor of the previous page.'),
+  },
+  set_end_user_role: {
+    app_id: appId,
+    user_id: z.string().describe('The end user\'s id (list_end_users lists them).'),
+    role: z.enum(['user', 'admin']).describe('user or admin.'),
+  },
+  set_end_user_blocked: {
+    app_id: appId,
+    user_id: z.string().describe('The end user\'s id (list_end_users lists them).'),
+    blocked: z.boolean().describe('true blocks the user (signed out, anonymous from the next request); false unblocks them.'),
+  },
+  sign_out_end_users: {
+    app_id: appId,
+    user_confirmed: z.boolean().optional().describe('true ONLY after the user explicitly said yes to signing every end user out.'),
+  },
+  list_uploads: {
+    app_id: appId,
+    limit: z.number().optional().describe('1–100 uploads, default 50.'),
+    cursor: z.string().optional().describe('next_cursor of the previous page.'),
+  },
+  delete_upload: {
+    app_id: appId,
+    id: z.string().describe('The upload\'s id (list_uploads lists them).'),
+  },
+  remove_module_secret: {
+    app_id: appId,
+    module: z.string().describe('The module that declares the secret, e.g. "auth" (get_app → modules.<name>.secrets).'),
+    name: z.string().describe('The secret\'s name, e.g. OIDC_CLIENT_SECRET.'),
+    user_confirmed: z.boolean().optional().describe('true ONLY after the user explicitly said yes to removing this secret.'),
+  },
+  list_activity: {
+    workspace: z.string().describe('The workspace slug; you need the workspace-admin role.'),
+    app: z.string().optional().describe('Only events about this app (its slug).'),
+    action: z.string().optional().describe('Only this action, e.g. "app.publish".'),
+    actor: z.enum(['user', 'agent', 'end_user']).optional().describe('Only events by this kind of actor.'),
+    from: z.string().optional().describe('First UTC day, YYYY-MM-DD (inclusive).'),
+    to: z.string().optional().describe('Last UTC day, YYYY-MM-DD (inclusive).'),
+    limit: z.number().optional().describe('1–100 events, default 50.'),
+    cursor: z.string().optional().describe('next_cursor of the previous page.'),
   },
   list_domains: { app_id: appId },
   add_domain: {
@@ -265,8 +436,18 @@ export const INPUT_SCHEMAS = {
     name: z.string().describe('A registered upstream (list_upstreams lists them).'),
     user_confirmed: z.boolean().optional().describe('true ONLY after the user explicitly said yes to removing it.'),
   },
+  create_workspace: {
+    name: z.string().describe('The team\'s name (1–80 characters).'),
+    slug: z.string().describe('Its address on this server, /workspaces/<slug>: 3–40 lowercase letters, digits and dashes, unique.'),
+  },
   list_members: {
     workspace: z.string().describe('The workspace slug (list_apps lists your workspaces and your role).'),
+  },
+  invite_member: {
+    workspace: z.string().describe('The team workspace slug; you need the workspace-admin role.'),
+    email: z.string().describe('The address the invite e-mail goes to.'),
+    role: z.enum(WORKSPACE_ROLES).describe('viewer (reads), editor (changes apps) or workspace-admin (also members and settings).'),
+    user_confirmed: z.boolean().optional().describe('true ONLY after the user explicitly said yes to inviting this address with this role.'),
   },
   set_member_role: {
     workspace: z.string().describe('The workspace slug; you need the workspace-admin role.'),
@@ -290,6 +471,26 @@ export const INPUT_SCHEMAS = {
     publishing: z
       .enum(WORKSPACE_PUBLISHING_STATES)
       .describe('default = the server mode decides; allowed = may always publish; blocked = may never publish (live apps keep serving).'),
+    user_confirmed: z.boolean().optional().describe('true ONLY after the user explicitly said yes to this change.'),
+  },
+  set_workspace_module: {
+    workspace: z.string().describe('The workspace slug (list_apps all_workspaces lists every workspace).'),
+    module: z.string().describe('An opt-in platform module (skill_info() lists it with availability "opt-in").'),
+    enabled: z.boolean().describe('true enables it for the workspace; false disables it.'),
+    user_confirmed: z.boolean().optional().describe('true ONLY after the user explicitly said yes to this change.'),
+  },
+  takedown_app: {
+    app: moderationAppArg,
+    reason: z.enum(LOCK_REASONS).describe('The category the owners are told.'),
+    user_confirmed: z.boolean().optional().describe('true ONLY after the user explicitly said yes to taking this app down.'),
+  },
+  restore_app: {
+    app: moderationAppArg,
+    user_confirmed: z.boolean().optional().describe('true ONLY after the user explicitly said yes to restoring this app.'),
+  },
+  set_gallery_hidden: {
+    app: moderationAppArg,
+    hidden: z.boolean().describe('true hides its gallery entry; false lets the gallery show it again.'),
     user_confirmed: z.boolean().optional().describe('true ONLY after the user explicitly said yes to this change.'),
   },
 } as const;
@@ -555,14 +756,34 @@ export function registerAppTools(
   register('restore_version', restoreVersion);
   register('publish', publishApp);
   register('set_gallery_listing', setGalleryListingTool);
+  register('unpublish', unpublishTool);
+  register('set_visibility', setVisibilityTool);
+  register('set_frame_ancestors', setFrameAncestorsTool);
+  register('release_lease', releaseLeaseTool);
+  register('delete_app', deleteAppTool);
   register('skill_info', skillInfo);
   register('configure_module', configureModule);
   register<{ app_id: string; collection: string }>('query_data', queryData, (p) => untrustedResult(untrustedDataEnvelope(p as QueryDataResult)));
+  register('create_records', createRecordsTool);
+  register('update_record', updateRecordTool);
+  register('delete_record', deleteRecordTool);
+  register('delete_collection', deleteCollectionTool);
+  register('purge_orphan_records', purgeOrphanRecordsTool);
   register<{ app_id: string; kind: string; since?: string }>('get_logs', getLogs, (p) => untrustedResult(untrustedLogsEnvelope(p as GetLogsResult)));
   register('sync_now', syncNow);
   register('create_asset_upload', createAssetUpload);
   register('list_assets', listAssetsTool);
   register('delete_asset', deleteAssetTool);
+  register('list_form_submissions', listFormSubmissionsTool, (p) => untrustedResult(ownerListEnvelope('form-submissions', p as OwnerListPayload)));
+  register('delete_form_submission', deleteFormSubmissionTool);
+  register('list_end_users', listEndUsersTool, (p) => untrustedResult(ownerListEnvelope('end-users', p as OwnerListPayload)));
+  register('set_end_user_role', setEndUserRoleTool);
+  register('set_end_user_blocked', setEndUserBlockedTool);
+  register('sign_out_end_users', signOutEndUsersTool);
+  register('list_uploads', listUploadsTool, (p) => untrustedResult(ownerListEnvelope('uploads', p as OwnerListPayload)));
+  register('delete_upload', deleteUploadTool);
+  register('remove_module_secret', removeModuleSecretTool);
+  register('list_activity', listActivityTool, (p) => untrustedResult(ownerListEnvelope('activity', p as OwnerListPayload)));
   register('list_domains', listDomainsTool);
   register('add_domain', addDomainTool);
   register('verify_domain', verifyDomainTool);
@@ -571,11 +792,17 @@ export function registerAppTools(
   register('list_upstreams', listUpstreamsTool);
   register('register_upstream', registerUpstreamTool);
   register('remove_upstream', removeUpstreamTool);
+  register('create_workspace', createWorkspaceTool);
   register('list_members', listMembersTool);
+  register('invite_member', inviteMemberTool);
   register('set_member_role', setMemberRoleTool);
   register('remove_member', removeMemberTool);
   register('delete_workspace', deleteWorkspaceTool);
   register('set_workspace_publishing', setWorkspacePublishingTool);
+  register('set_workspace_module', setWorkspaceModuleTool);
+  register('takedown_app', takedownAppTool);
+  register('restore_app', restoreAppTool);
+  register('set_gallery_hidden', setGalleryHiddenTool);
 
   if (registered === 0) {
     // A grant with no tool scope (e.g. none of read/write/publish) must still get an

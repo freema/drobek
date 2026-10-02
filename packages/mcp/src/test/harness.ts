@@ -94,6 +94,10 @@ export interface TestDeps extends ToolDeps {
   uploadBudget: { left: number };
   /** What verify_domain's lookups answer. */
   zone: TestZone;
+  /** The end-user session epoch per app (sign_out_end_users raises it). */
+  sessionEpochs: Map<string, number>;
+  /** invite_member's invites by token, the e-mails it sent, and whether the next send fails. */
+  invited: { tokens: Map<string, { workspaceId: string; role: string; email: string | null }>; sent: { email: string; workspaceName: string; role: string; acceptUrl: string }[]; failNext: boolean };
 }
 
 export function testDeps(limits: Partial<CompileLimits> = {}): TestDeps {
@@ -103,6 +107,9 @@ export function testDeps(limits: Partial<CompileLimits> = {}): TestDeps {
   const uploadTokens = memoryUploadTokenStore(clock.now);
   const uploadBudget = { left: 1000 };
   const zone: TestZone = { txt: {}, cname: {}, fail: new Set() };
+  const sessionEpochs = new Map<string, number>();
+  const invited: TestDeps['invited'] = { tokens: new Map(), sent: [], failNext: false };
+  let inviteSeq = 0;
   return {
     leases: memoryLeaseStore(clock.now),
     notifyAppChanged: async (e) => {
@@ -122,11 +129,35 @@ export function testDeps(limits: Partial<CompileLimits> = {}): TestDeps {
       disk: new AssetDisk(mkdtempSync(join(tmpdir(), 'drobek-mcp-assets-'))),
     },
     dns: () => zoneResolver(zone),
+    revokeEndUserSessions: async (appId) => {
+      const epoch = (sessionEpochs.get(appId) ?? 0) + 1;
+      sessionEpochs.set(appId, epoch);
+      return epoch;
+    },
+    invites: {
+      create: async (a) => {
+        const token = (++inviteSeq).toString(16).padStart(64, '0');
+        invited.tokens.set(token, { workspaceId: a.workspaceId, role: a.role, email: a.email ?? null });
+        return { token, id: token.slice(-16) };
+      },
+      withdraw: async (token) => {
+        invited.tokens.delete(token);
+      },
+      send: async (m) => {
+        if (invited.failNext) {
+          invited.failNext = false;
+          throw new Error('smtp down');
+        }
+        invited.sent.push(m);
+      },
+    },
+    invited,
     events,
     clock,
     uploadTokens,
     uploadBudget,
     zone,
+    sessionEpochs,
   };
 }
 
@@ -177,6 +208,15 @@ function decodeFiles(text: string): Record<string, unknown> {
  * null when `text` is not an envelope.
  */
 function decodeUntrusted(text: string): Record<string, unknown> | null {
+  const list = /^<untrusted-(form-submissions|end-users|uploads|activity) (.*)>$/m.exec(text);
+  if (list) {
+    const nonce = /nonce="([0-9a-f]+)"/.exec(list[2])?.[1];
+    const start = list.index + list[0].length + 1;
+    const closing = `\n</untrusted-${list[1]} nonce="${nonce}">`;
+    const end = text.indexOf(closing, start - 1);
+    const after = text.slice(end + closing.length).replace(/^\n+/, '');
+    return { ...(JSON.parse(text.slice(start, end)) as Record<string, unknown>), ...(after ? { note: after } : {}) };
+  }
   const open = /^<untrusted-app-(file|data|logs|search) (.*)>$/m.exec(text);
   if (!open) return null;
   if (open[1] === 'file') return decodeFiles(text);

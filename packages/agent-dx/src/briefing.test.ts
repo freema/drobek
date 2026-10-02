@@ -49,6 +49,14 @@ describe('renderBriefing', () => {
     expect(b).toContain('`user_confirmed: true`');
   });
 
+  it('unpublish, delete and making an app public only on the user\'s yes; the password stays in the dashboard', () => {
+    for (const tool of ['`unpublish`', '`delete_app`', '`set_visibility`', '`release_lease`', '`set_frame_ancestors`']) expect(b, tool).toContain(tool);
+    expect(b).toContain('with `user_confirmed: true` only after their explicit yes');
+    expect(b).toContain('`password_not_set`');
+    expect(b).toContain('never ask for it');
+    expect(b).not.toContain('the app cannot be embedded in other sites');
+  });
+
   it('points at get_logs for runtime errors and names the beacon opt-out', () => {
     expect(b).toContain('get_logs({ app_id, kind: "runtime" })');
     expect(b).toContain('"beacon": false');

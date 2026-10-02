@@ -4,8 +4,10 @@
  * `{ holder_user_id, session_id, expires_at, renewed_at? }` with a TTL.
  * @drobek/mcp acquires / renews it (its Lua script lives there); this module
  * owns the key format + value parsing so the dashboard can READ the lease
- * ("an agent of X is working on this app") and RELEASE it ("unlock") without depending on the MCP package,
- * and so a member who loses write access loses their leases at once (`releaseUserAppLeases`).
+ * ("an agent of X is working on this app") and RELEASE it ("unlock") without
+ * depending on the MCP package; the MCP `release_lease` releases through it
+ * too, and a member who loses write access loses their leases at once
+ * (`releaseUserAppLeases`).
  */
 import { and, eq, isNull } from 'drizzle-orm';
 import { AUDIT_ACTIONS, writeAudit } from '@drobek/audit';
@@ -62,17 +64,44 @@ return cur
 `;
 
 /**
+ * KEYS[1] lease key · ARGV[1] the user whose lease may go. Returns nil when
+ * free, {1, removed} when that user held it, {0, current} when another user
+ * does (left in place). An unreadable value holds nobody and is removed.
+ */
+const TAKE_OWN_LUA = `
+local cur = redis.call('GET', KEYS[1])
+if not cur then return false end
+local ok, lease = pcall(cjson.decode, cur)
+if ok and type(lease) == 'table' and lease.holder_user_id ~= nil and lease.holder_user_id ~= ARGV[1] then
+  return {0, cur}
+end
+redis.call('DEL', KEYS[1])
+return {1, cur}
+`;
+
+/**
  * Remove the app's lease ("unlock" in the dashboard): the next write of ANY
  * member's agent takes it fresh. Atomic (the removed value is exactly the
  * one reported), audited `app.lock.release` with the previous holder. A free
- * app is a no-op (`released: false`, nothing audited).
+ * app is a no-op (`released: false`, nothing audited). With `holderUserId`
+ * (the MCP `release_lease`: an agent frees its own lease) only a lease that
+ * user holds goes; another user's stays in place and comes back as
+ * `previous` with `released: false`, nothing audited.
  */
 export async function releaseAppLease(
   app: { id: string; slug: string; workspaceId: string },
   actor: Actor,
-  redis: LeaseRedis = getRedis()
+  redis: LeaseRedis = getRedis(),
+  opts: { holderUserId?: string } = {}
 ): Promise<{ released: boolean; previous: Lease | null }> {
-  const raw = (await redis.eval(TAKE_LUA, 1, leaseKey(app.id))) as string | null;
+  let raw: string | null;
+  if (opts.holderUserId === undefined) {
+    raw = (await redis.eval(TAKE_LUA, 1, leaseKey(app.id))) as string | null;
+  } else {
+    const out = (await redis.eval(TAKE_OWN_LUA, 1, leaseKey(app.id), opts.holderUserId)) as [number, string] | null;
+    if (out && out[0] === 0) return { released: false, previous: parseLease(out[1]) };
+    raw = out ? out[1] : null;
+  }
   if (!raw) return { released: false, previous: null };
   const previous = parseLease(raw);
   await auditLeaseRelease(app, actor, previous);
@@ -94,24 +123,15 @@ async function auditLeaseRelease(app: { slug: string; workspaceId: string }, act
   });
 }
 
-/** GET + DEL only while ARGV[1] holds the lease: returns the removed value (nil otherwise). */
-const TAKE_IF_HOLDER_LUA = `
-local cur = redis.call('GET', KEYS[1])
-if not cur then return nil end
-local ok, lease = pcall(cjson.decode, cur)
-if ok and type(lease) == 'table' and lease.holder_user_id == ARGV[1] then
-  redis.call('DEL', KEYS[1])
-  return cur
-end
-return nil
-`;
-
 /** Remove an app's lease only while `holderUserId` holds it; the removed lease, or null. */
 export type TakeLeaseHeldBy = (appId: string, holderUserId: string) => Promise<Lease | null>;
 
-/** The Redis TakeLeaseHeldBy: atomic, so a lease another user took meanwhile stays. */
+/** The Redis TakeLeaseHeldBy (the holder-only take of `releaseAppLease`): atomic, so a lease another user took meanwhile stays. */
 export function redisTakeLeaseHeldBy(redis: Pick<ReturnType<typeof getRedis>, 'eval'> = getRedis()): TakeLeaseHeldBy {
-  return async (appId, holderUserId) => parseLease((await redis.eval(TAKE_IF_HOLDER_LUA, 1, leaseKey(appId), holderUserId)) as string | null);
+  return async (appId, holderUserId) => {
+    const out = (await redis.eval(TAKE_OWN_LUA, 1, leaseKey(appId), holderUserId)) as [number, string] | null;
+    return out && out[0] === 1 ? parseLease(out[1]) : null;
+  };
 }
 
 /**

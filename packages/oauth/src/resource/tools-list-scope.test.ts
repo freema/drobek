@@ -36,26 +36,57 @@ async function connect(scopes: Scope[], superAdmin = false): Promise<Client> {
   return client;
 }
 
-const READ = ['get_app', 'get_logs', 'list_apps', 'list_assets', 'list_domains', 'list_members', 'list_upstreams', 'query_data', 'read_file', 'skill_info'];
+const READ = [
+  'get_app',
+  'get_logs',
+  'list_activity',
+  'list_apps',
+  'list_assets',
+  'list_domains',
+  'list_end_users',
+  'list_form_submissions',
+  'list_members',
+  'list_uploads',
+  'list_upstreams',
+  'query_data',
+  'read_file',
+  'skill_info',
+];
 const WRITE = [
   'add_domain',
   'configure_module',
   'create_app',
   'create_asset_upload',
+  'create_records',
+  'create_workspace',
+  'delete_app',
   'delete_asset',
+  'delete_collection',
+  'delete_form_submission',
+  'delete_record',
+  'delete_upload',
   'delete_workspace',
   'duplicate_app',
+  'invite_member',
+  'purge_orphan_records',
   'register_upstream',
+  'release_lease',
   'remove_domain',
   'remove_member',
+  'remove_module_secret',
   'remove_upstream',
   'restore_version',
+  'set_end_user_blocked',
+  'set_end_user_role',
+  'set_frame_ancestors',
   'set_member_role',
+  'sign_out_end_users',
   'sync_now',
+  'update_record',
   'verify_domain',
   'write_files',
 ];
-const PUBLISH = ['publish', 'set_gallery_listing', 'set_primary_domain'];
+const PUBLISH = ['publish', 'set_gallery_listing', 'set_primary_domain', 'set_visibility', 'unpublish'];
 
 const EXPECTED: Array<[Scope[], string[]]> = [
   [[], []],
@@ -85,16 +116,20 @@ describe('tools/list reflects the granted scope', () => {
     });
   }
 
-  it('set_workspace_publishing exists only for a super-admin with the publish scope', async () => {
+  it('the super-admin tools exist only for a super-admin, each under its scope', async () => {
+    const publish = ['set_workspace_publishing', 'takedown_app', 'restore_app', 'set_gallery_hidden'];
     for (const [scopes, superAdmin, listed] of [
-      [['read', 'write', 'publish'], true, true],
-      [['read', 'write'], true, false],
-      [['read', 'write', 'publish'], false, false],
-    ] as Array<[Scope[], boolean, boolean]>) {
+      [['read', 'write', 'publish'], true, [...publish, 'set_workspace_module']],
+      [['read', 'write'], true, ['set_workspace_module']],
+      [['publish'], true, publish],
+      [['read', 'write', 'publish'], false, []],
+    ] as Array<[Scope[], boolean, string[]]>) {
       const client = await connect(scopes, superAdmin);
       try {
         const names = (await client.listTools()).tools.map((t) => t.name);
-        expect(names.includes('set_workspace_publishing'), `${scopes.join(' ')} super-admin=${superAdmin}`).toBe(listed);
+        for (const t of [...publish, 'set_workspace_module']) {
+          expect(names.includes(t), `${t}: ${scopes.join(' ')} super-admin=${superAdmin}`).toBe(listed.includes(t));
+        }
       } finally {
         await client.close();
       }

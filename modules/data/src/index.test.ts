@@ -758,6 +758,50 @@ describe("the owner's edits (records authority)", () => {
     await expect(recordsAuthority.update!(v, 'nope', rec._id, {})).rejects.toMatchObject({ code: 'not_found' });
   });
 
+  it('update with merge keeps the fields not given; the merged record must still pass the schema', async () => {
+    const rec = await create(ctx({ principal: A }), 'todos', { title: 'one', priority: 1 });
+    const v = view();
+    const merged = await recordsAuthority.update!(v, 'todos', rec._id, { done: true, _owner: 'spoof' }, { merge: true });
+    expect(merged).toMatchObject({ _id: rec._id, _owner: 'eu_a', title: 'one', priority: 1, done: true });
+    await expect(recordsAuthority.update!(v, 'todos', rec._id, { priority: 'high' }, { merge: true })).rejects.toMatchObject({ code: 'validation_failed' });
+    expect(await recordsAuthority.get(v, 'todos', rec._id)).toMatchObject({ priority: 1, done: true });
+  });
+
+  it('create stores the batch in order without an _owner; one refused record names its index and nothing is stored', async () => {
+    const v = view();
+    const stored = await recordsAuthority.create!(v, 'todos', [{ title: 'a', _owner: 'spoof', _id: 'x' }, { title: 'b', done: true }]);
+    expect(stored).toMatchObject([
+      { title: 'a', _owner: null },
+      { title: 'b', done: true, _owner: null },
+    ]);
+    expect(stored[0]._id).not.toBe('x');
+    expect((await recordsAuthority.query(v, { collection: 'todos', dir: 'asc' })).records.map((r) => r._id)).toEqual(stored.map((r) => r._id));
+
+    await expect(recordsAuthority.create!(v, 'todos', [{ title: 'c' }, { done: 'yes' }])).rejects.toMatchObject({
+      code: 'validation_failed',
+      message: expect.stringMatching(/^Record 1: .*Nothing was stored\.$/),
+      details: { index: 1, errors: expect.any(Array) },
+    });
+    expect((await recordsAuthority.query(v, { collection: 'todos' })).total).toBe(2);
+    await expect(recordsAuthority.create!(v, 'nope', [{ title: 'x' }])).rejects.toMatchObject({ code: 'not_found' });
+  });
+
+  it('create respects the quota as a whole batch and DATA_MAX_DOC_BYTES per record', async () => {
+    await create(ctx({ principal: A }), 'todos', { title: 'already' });
+    viewLimits = { DATA_MAX_DOCS_PER_APP: 3, DATA_MAX_DOC_BYTES: 40 };
+    const v = view();
+    await expect(recordsAuthority.create!(v, 'todos', [{ title: 'a' }, { title: 'b' }, { title: 'c' }])).rejects.toMatchObject({
+      code: 'quota_exceeded',
+      details: { limit: 'DATA_MAX_DOCS_PER_APP', value: 3 },
+    });
+    await expect(recordsAuthority.create!(v, 'todos', [{ title: 'short' }, { title: 'x'.repeat(60) }])).rejects.toMatchObject({
+      code: 'validation_failed',
+      details: { index: 1 },
+    });
+    expect((await recordsAuthority.query(v, { collection: 'todos' })).total).toBe(1);
+    expect(await recordsAuthority.create!(v, 'todos', [{ title: 'a' }, { title: 'b' }])).toHaveLength(2);
+  });
+
   it('importCsv: typed cells from the schema, _… columns ignored, formula guards undone, file order = creation order', async () => {
     const v = view();
     const csv = ['_id,title,done,priority,tags', "x1,first,true,'-2,\"[\"\"a\"\"]\"", 'x2,\"second, with comma\",FALSE,,', ''].join('\r\n');

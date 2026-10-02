@@ -189,6 +189,7 @@ export {
   type ScreenResult,
   type TakedownPreview,
 } from './moderation.server.js';
+export { mailOwnersAboutModeration } from './moderation-mail.server.js';
 // App assets — binary files served at /<name> next to the app's files, upload URLs, the sweep.
 export * from './assets/index.js';
 export type {

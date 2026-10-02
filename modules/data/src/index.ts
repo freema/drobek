@@ -10,7 +10,7 @@
  *   GET               /__drobek/v1/data/:collection/export.csv   (admin)
  *   drobek.data.collection(name).list() / get() / create() / update() / remove() / exportCsvUrl()
  *   config { collections: { <name>: { schema?, rules: { read, create, update, delete } } } }
- *   records authority → MCP query_data and the dashboard Data tab (the owner's view).
+ *   records authority → MCP query_data + the data write tools and the dashboard Data tab (the owner's view).
  *
  * Opening an operation to `public`, `update`/`delete` to every signed-in
  * user, dropping the schema of a collection that holds records, or removing

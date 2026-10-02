@@ -28,6 +28,8 @@ export const TOOL_ERROR_CODES = [
   'user_confirmation_required',
   'gallery_hidden',
   'gallery_disabled',
+  // set_visibility to password without a password set in the dashboard.
+  'password_not_set',
   // duplicate_app on a gallery app whose owner does not allow copies.
   'not_duplicable',
   'asset_too_large',
@@ -38,6 +40,8 @@ export const TOOL_ERROR_CODES = [
   'rate_limited',
   // configure_module on an opt-in module that is off for the workspace.
   'module_not_enabled',
+  // set_workspace_module enabling a module whose required module is off.
+  'module_requires_not_enabled',
   // The custom-domain tools.
   'invalid_hostname',
   'hostname_not_allowed',
@@ -50,6 +54,10 @@ export const TOOL_ERROR_CODES = [
   // set_member_role and remove_member.
   'personal_workspace',
   'last_workspace_admin',
+  // A data tool the server's records module does not support.
+  'unavailable',
+  // An owner change the module refuses in the app's current state (set_end_user_role).
+  'conflict',
   'internal_error',
 ] as const;
 

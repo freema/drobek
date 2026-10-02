@@ -655,15 +655,32 @@ export interface RecordsAuthority<Config = unknown> {
   /** The CSV export of a collection (filter + sort applied): the header line, then one line per record (no line breaks). */
   csv(view: RecordsView<Config>, query: Omit<RecordsQuery, 'limit' | 'cursor'>): AsyncIterable<string>;
 
-  // ── owner edits (the dashboard Data tab, editor+) — optional ──
+  // ── owner edits (the dashboard Data tab and the MCP data tools, editor+) — optional ──
 
   /**
    * Replace a record's own fields (`_…` keys are ignored), validated like any
    * write (schema, the per-record and per-app quotas); `_owner` and
-   * `_created_at` stay. null when the record does not exist. A bad record →
-   * ModuleError `validation_failed` (details: the fields).
+   * `_created_at` stay. With `merge`, `fields` are merged onto the stored
+   * ones instead (a shallow merge, like the SDK's update). null when the
+   * record does not exist. A bad record → ModuleError `validation_failed`
+   * (details: the fields).
    */
-  update?(view: RecordsView<Config>, collection: string, id: string, fields: Record<string, unknown>): Promise<Record<string, unknown> | null>;
+  update?(
+    view: RecordsView<Config>,
+    collection: string,
+    id: string,
+    fields: Record<string, unknown>,
+    opts?: RecordsUpdateOptions
+  ): Promise<Record<string, unknown> | null>;
+  /**
+   * Store new records (no owner; `_…` keys are ignored) in a declared
+   * collection as a whole — ONE transaction, every record checked against
+   * the collection's schema, the per-record size and the app's quotas first;
+   * any failure stores nothing (a bad record → ModuleError
+   * `validation_failed`, `details.index` names it). Returns the stored
+   * records in the given order.
+   */
+  create?(view: RecordsView<Config>, collection: string, records: Record<string, unknown>[]): Promise<Record<string, unknown>[]>;
   /**
    * Import CSV text into a collection as new records (no owner): the header
    * names the fields. All or nothing — ONE transaction; too many rows
@@ -701,6 +718,12 @@ export interface RecordsAuthority<Config = unknown> {
    * `validation_failed` (`details.index` names it).
    */
   importRecords?(view: RecordsView<Config>, collection: string, records: Record<string, unknown>[], opts: RecordsImportOptions): Promise<RecordsImportResult>;
+}
+
+/** How `update` changes a record. */
+export interface RecordsUpdateOptions {
+  /** true: merge the fields onto the stored ones; false (default): replace them. */
+  merge?: boolean;
 }
 
 /** How `importRecords` writes a batch. */

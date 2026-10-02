@@ -38,22 +38,22 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     code: 'not_found',
     surface: 'MCP tool isError; module route 404 (DrobekError)',
     meaning:
-      'The app, workspace, version or file does not exist — or you are not a member of its workspace (both answer the same, so ids cannot be probed). A version older than the app\'s newest APP_VERSIONS_KEEP may have been deleted by the history retention: read_file, restore_version and publish then say "is no longer stored" and name the oldest version still stored. From skill_info / configure_module: no such skill or module on this server (`available` lists the ones that exist). From query_data or a data route: the app declares no such collection (`available` lists its collections), or no such record. From verify_domain, set_primary_domain or remove_domain: the app has no such custom domain.',
-    fix: 'Depending on what was missing: an app or workspace → list_apps shows the ones you can reach; a file or version → get_app lists them (a version the retention deleted cannot be brought back — work from one still stored, or tell the user); a skill or module → skill_info(); a data collection → declare it with configure_module(\'data\') first; a custom domain → list_domains.',
+      'The app, workspace, version or file does not exist — or you are not a member of its workspace (both answer the same, so ids cannot be probed). A version older than the app\'s newest APP_VERSIONS_KEEP may have been deleted by the history retention: read_file, restore_version and publish then say "is no longer stored" and name the oldest version still stored. From skill_info / configure_module: no such skill or module on this server (`available` lists the ones that exist). From query_data, the data write tools (create_records, update_record, delete_record, delete_collection) or a data route: the app declares no such collection (`available` lists its collections), or no such record. From purge_orphan_records: the collection holds no orphan records (`orphans` lists the ones that do). From verify_domain, set_primary_domain or remove_domain: the app has no such custom domain. From the owner\'s tools (list_form_submissions, list_end_users, list_uploads and the changes next to them): this server runs no module that keeps form submissions, end users or uploads, or the app has no such submission, end user or upload. From remove_module_secret: no such module (`available`) or the module declares no such secret (`secrets`). From takedown_app, restore_app or set_gallery_hidden: no live app has that id, slug or address. From set_workspace_module: no such opt-in module (`available`).',
+    fix: 'Depending on what was missing: an app or workspace → list_apps shows the ones you can reach; a file or version → get_app lists them (a version the retention deleted cannot be brought back — work from one still stored, or tell the user); a skill or module → skill_info(); a data collection → declare it with configure_module(\'data\') first; a record → query_data lists the records with their `_id`; a custom domain → list_domains; a form submission, end user or upload → list_form_submissions, list_end_users or list_uploads lists them with their id; a module secret → get_app → modules.<name>.secrets.',
   },
   {
     code: 'forbidden',
     surface: 'MCP tool isError; module route 403 (DrobekError); upload URL 403',
     meaning:
-      'You are a member of the workspace, but your role is viewer — changing apps needs editor or workspace-admin. From a module route: the signed-in end user may not do this (the module\'s rule, e.g. owner or admin only). From an upload URL: the user it was issued for is no longer an editor of the app (removed or demoted since), so it cannot be used.',
+      'You are a member of the workspace, but your role is viewer — changing apps needs editor or workspace-admin. From list_activity, list_upstreams, register_upstream, remove_upstream or invite_member: that needs the workspace-admin role. From a module route: the signed-in end user may not do this (the module\'s rule, e.g. owner or admin only). From an upload URL: the user it was issued for is no longer an editor of the app (removed or demoted since), so it cannot be used.',
     fix: 'Ask a workspace admin for the editor role (the write scope alone does not raise your role), or work in a workspace where you are an editor. In an app: show the end user a friendly message.',
   },
   {
     code: 'invalid_params',
     surface: 'MCP tool isError',
     meaning:
-      'An argument breaks the tool contract: more than 20 files in one write_files, the same path twice, deleting a file that does not exist, a write_files entry with none of `content` / `edits` / `delete` (or both `content` and `delete`), `edits` that is not 1–50 `{ old_string, new_string, replace_all? }` with a non-empty old_string, reasoning over 300 characters, an empty name, a non-positive version number — or a configure_module config that fails the module\'s schema (`issues[]` carries each field path) or contains a credential — or a query_data filter/sort/cursor the collection does not allow, or a limit outside 1–100.',
-    fix: 'Read `message` (and `issues[].path`) — it names the argument — fix it and call again. Too many files: split into several write_files calls of at most 20. A module config: skill_info(module) shows the schema.',
+      'An argument breaks the tool contract: more than 20 files in one write_files, the same path twice, deleting a file that does not exist, a write_files entry with none of `content` / `edits` / `delete` (or both `content` and `delete`), `edits` that is not 1–50 `{ old_string, new_string, replace_all? }` with a non-empty old_string, reasoning over 300 characters, an empty name, a non-positive version number — or a configure_module config that fails the module\'s schema (`issues[]` carries each field path) or contains a credential — or a query_data filter/sort/cursor the collection does not allow, or a limit outside 1–100 (query_data and the owner\'s list tools: list_form_submissions, list_end_users, list_uploads, list_activity), a `from` / `to` that is not a UTC day YYYY-MM-DD or a cursor that is not the previous page\'s next_cursor — or a create_records / update_record record the collection\'s schema refuses (`issues[]` with each field path; `index` names the record of a batch, 0-based; nothing was stored), more than 500 records in one create_records, or a purge_orphan_records `collection` that is declared (delete_collection deletes that) — or a create_workspace name or slug that breaks the rules, or an invite_member to a personal workspace (invites are for team workspaces) or to something that is not one e-mail address.',
+    fix: 'Read `message` (and `issues[].path`) — it names the argument — fix it and call again. Too many files: split into several write_files calls of at most 20. A module config: skill_info(module) shows the schema. A record: send the fields the schema requires with the right types (get_app shows the data config), then send the whole call again.',
   },
   {
     code: 'invalid_path',
@@ -73,8 +73,8 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     code: 'limit_exceeded',
     surface: 'MCP tool isError; compile.errors[]; module route 429 (DrobekError), Retry-After',
     meaning:
-      'The version would exceed a size limit (COMPILE_MAX_FILES files, COMPILE_MAX_FILE_BYTES per file, COMPILE_MAX_TOTAL_BYTES in total) or an import chain is deeper than COMPILE_MAX_IMPORT_DEPTH. From write_files, create_app and duplicate_app with `limit: "WORKSPACE_SOURCE_QUOTA"`: the new bytes of this version would take the unique files the versions of the workspace\'s live apps store past the quota (`value`, `used_bytes`); nothing was stored. From create_app: the workspace already holds APPS_MAX_PER_WORKSPACE apps (`limit`, `value`; deleted apps do not count). On a module route: a quota of the app or the user is used up for the period (`details.limit`, e.g. FORMS_PER_APP_PER_DAY, EMAIL_PER_APP_PER_DAY, EMAIL_NOTIFY_ADMINS_PER_DAY). From add_domain (and in the dashboard): the app already has DOMAINS_MAX_PER_APP custom domains, pending and verified together (`limit`, `value`; 0 = custom domains are off for the workspace). From sync_now: the source is past SYNC_MAX_SOURCES_PER_APP and does not run. From register_upstream (and in the dashboard): the workspace already holds UPSTREAMS_MAX_PER_WORKSPACE proxy upstreams (`limit`, `value`).',
-    fix: 'Split big files, delete unused ones, load large libraries from esm.sh through drobek.json instead of copying them into the app. WORKSPACE_SOURCE_QUOTA: do not retry the same write — tell the user the workspace\'s storage for app versions is full; deleting an app the workspace no longer needs (dashboard) frees its versions at once, the history retention drops versions past APP_VERSIONS_KEEP hourly, and the operator can raise the limit; keep binaries out of the sources (create_asset_upload) and libraries on esm.sh. From create_app (APPS_MAX_PER_WORKSPACE): do not retry — tell the user the workspace is full; they can delete an app they no longer need in the dashboard, work in another workspace, or ask the operator for a higher plan limit. On a module route: show the user a message and stop — the quota resets after Retry-After; the app owner can ask the operator for a higher plan limit. From add_domain: remove a domain the app no longer needs (remove_domain) or ask the operator for a higher limit; with 0, tell the user this server offers no custom domains for the workspace. From sync_now: remove a sync source with configure_module(\'sync\', { sources: { <name>: null } }). From register_upstream: do not retry and do not register more hosts — one upstream is one host; reuse a registered one (list_upstreams), ask the user whether one main host is enough, or let them remove one they no longer need (remove_upstream, with their yes) or ask the operator for a higher plan limit.',
+      'The version would exceed a size limit (COMPILE_MAX_FILES files, COMPILE_MAX_FILE_BYTES per file, COMPILE_MAX_TOTAL_BYTES in total) or an import chain is deeper than COMPILE_MAX_IMPORT_DEPTH. From write_files, create_app and duplicate_app with `limit: "WORKSPACE_SOURCE_QUOTA"`: the new bytes of this version would take the unique files the versions of the workspace\'s live apps store past the quota (`value`, `used_bytes`); nothing was stored. From create_app: the workspace already holds APPS_MAX_PER_WORKSPACE apps (`limit`, `value`; deleted apps do not count). On a module route: a quota of the app or the user is used up for the period (`details.limit`, e.g. FORMS_PER_APP_PER_DAY, EMAIL_PER_APP_PER_DAY, EMAIL_NOTIFY_ADMINS_PER_DAY). From add_domain (and in the dashboard): the app already has DOMAINS_MAX_PER_APP custom domains, pending and verified together (`limit`, `value`; 0 = custom domains are off for the workspace). From sync_now: the source is past SYNC_MAX_SOURCES_PER_APP and does not run. From register_upstream (and in the dashboard): the workspace already holds UPSTREAMS_MAX_PER_WORKSPACE proxy upstreams (`limit`, `value`). From create_records / update_record: the app\'s data would pass a quota of the data module — the records or bytes per app, or the size of one record (`limit` names it, `value`; skill_info(\'data\') lists them); nothing was stored.',
+    fix: 'Split big files, delete unused ones, load large libraries from esm.sh through drobek.json instead of copying them into the app. WORKSPACE_SOURCE_QUOTA: do not retry the same write — tell the user the workspace\'s storage for app versions is full; deleting an app the workspace no longer needs (dashboard) frees its versions at once, the history retention drops versions past APP_VERSIONS_KEEP hourly, and the operator can raise the limit; keep binaries out of the sources (create_asset_upload) and libraries on esm.sh. From create_app (APPS_MAX_PER_WORKSPACE): do not retry — tell the user the workspace is full; they can delete an app they no longer need (delete_app once they named it and said yes, or in the dashboard), work in another workspace, or ask the operator for a higher plan limit. On a module route: show the user a message and stop — the quota resets after Retry-After; the app owner can ask the operator for a higher plan limit. From add_domain: remove a domain the app no longer needs (remove_domain) or ask the operator for a higher limit; with 0, tell the user this server offers no custom domains for the workspace. From sync_now: remove a sync source with configure_module(\'sync\', { sources: { <name>: null } }). From register_upstream: do not retry and do not register more hosts — one upstream is one host; reuse a registered one (list_upstreams), ask the user whether one main host is enough, or let them remove one they no longer need (remove_upstream, with their yes) or ask the operator for a higher plan limit. From create_records / update_record: do not retry the same call — store fewer or smaller records, let the user pick records the app no longer needs (delete_record, purge_orphan_records with their yes), or tell them the app is full; the operator sets the limits.',
   },
   {
     code: 'secret_in_source',
@@ -87,12 +87,12 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     code: 'app_locked',
     surface: 'MCP tool isError',
     meaning:
-      'Another user\'s agent is writing this app right now (single-writer lease, 3 minutes, renewed by each of their writes). The body carries the masked `holder` and `expires_at`.',
+      'Another user\'s agent is writing this app right now (single-writer lease, 3 minutes, renewed by each of their writes). The body carries the masked `holder` and `expires_at`. From release_lease: that lease is not yours, so it stays.',
     fix: 'Tell the user who holds the app and wait until `expires_at`, then retry. Your own other sessions never block you — they hand the lease over.',
   },
   {
     code: 'app_locked_by_admin',
-    surface: 'MCP tool isError (write_files, restore_version, publish, configure_module); dashboard API 423; app host 451 (module routes: JSON)',
+    surface: 'MCP tool isError (write_files, restore_version, publish, unpublish, configure_module, the data write tools); dashboard API 423; app host 451 (module routes: JSON)',
     meaning:
       'The server operator took this app down for a violation of the terms (`reason` is the category: phishing, malware, spam, copyright, illegal or other). Every host of the app answers 451, it is unpublished, and nothing can be written, published or reconfigured. Not the same as `app_locked` (another agent holding the write lease) — waiting does not help.',
     fix: 'Stop changing the app and tell the user it was taken down by the operator (name the reason category). Only the operator can restore it; the user can contact them through the terms / report page linked from the app\'s address. Do not recreate the same content in another app.',
@@ -106,8 +106,9 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
   {
     code: 'slug_taken',
     surface: 'MCP tool isError',
-    meaning: 'Every slug tried for the new app is taken (create_app already retries with a free `-xxxx` suffix).',
-    fix: 'Call create_app again, or with a more specific name.',
+    meaning:
+      'Every slug tried for the new app is taken (create_app already retries with a free `-xxxx` suffix). From create_workspace: a workspace on this server already has that slug (`slug`); nothing was created.',
+    fix: 'Call create_app again, or with a more specific name. From create_workspace: ask the user for another slug and call again.',
   },
   {
     code: 'not_publishable',
@@ -118,16 +119,23 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
   },
   {
     code: 'not_published',
-    surface: 'MCP tool isError (set_gallery_listing)',
-    meaning: 'Only a published app can be listed in the public gallery, and this app has no version on its production URL.',
-    fix: 'Publish the app first — but only when the user explicitly asks to publish — then ask again whether they want it in the gallery.',
+    surface: 'MCP tool isError (set_gallery_listing, unpublish)',
+    meaning: 'The app has no version on its production URL: only a published app can be listed in the public gallery, and there is nothing to unpublish.',
+    fix: 'Publish the app first — but only when the user explicitly asks to publish — then ask again whether they want it in the gallery. From unpublish: nothing to do, the production address already answers "not published".',
   },
   {
     code: 'user_confirmation_required',
-    surface: 'MCP tool isError (set_gallery_listing, set_workspace_publishing, set_primary_domain, remove_domain, remove_member, delete_workspace)',
+    surface: 'MCP tool isError (set_gallery_listing, unpublish, set_visibility, delete_app, delete_collection, purge_orphan_records, sign_out_end_users, remove_module_secret, set_workspace_publishing, set_primary_domain, remove_domain, invite_member, remove_member, delete_workspace, set_workspace_module, takedown_app, restore_app, set_gallery_hidden)',
     meaning:
-      'set_primary_domain: making a domain primary redirects every visitor of the production address there, and clearing it changes that too. remove_domain: a verified domain serves the app, and removing it takes the app off that address. set_workspace_publishing: allowing, blocking or resetting a workspace\'s publishing needs the super-admin\'s explicit yes. remove_member: the member (or you, when leaving) loses access to the workspace at once. delete_workspace: the workspace and every app in it are deleted for good. set_gallery_listing: listing an app in the public gallery shows its name, a description and its production link to everyone, so the call needs `user_confirmed: true` — set only after the user explicitly said yes to exactly this listing. Nothing changed.',
-    fix: 'Ask the user: "Do you want <app name> shown in the public gallery with the description \"<description>\"?" (set_workspace_publishing: "Turn publishing off for <slug>?" / "Allow <slug> to publish?" / "Reset <slug> to the server default?"; set_primary_domain: "Should <app> redirect to <host>?"; remove_domain: "Remove <host> — the app stops answering there?"; remove_member: "Remove <email> from <slug> — they lose access at once?" / "Leave <slug>?"; delete_workspace: "Delete <slug> with its <n> apps for good?"). Call again with user_confirmed:true only if they clearly say yes; otherwise change nothing.',
+      'set_primary_domain: making a domain primary redirects every visitor of the production address there, and clearing it changes that too. remove_domain: a verified domain serves the app, and removing it takes the app off that address. unpublish: the production address and the custom domains stop serving the app. set_visibility: making a password-protected app public opens it to everyone and drops its password. delete_app: every address of the app answers 404 and the app cannot be brought back. delete_collection: the collection\'s records (`records` counts them) and its declaration are deleted for good. purge_orphan_records: the `orphans` listed are deleted for good. sign_out_end_users: every end user of the app (`end_users` counts them) is signed out at once. remove_module_secret: the secret\'s stored value is deleted, what the module needs it for stops working, and only the owner can set it again in the dashboard. set_workspace_publishing: allowing, blocking or resetting a workspace\'s publishing needs the super-admin\'s explicit yes, and so do set_workspace_module, takedown_app, restore_app and set_gallery_hidden (the message says what each changes). invite_member: drobek e-mails a person outside the conversation a link into the workspace. remove_member: the member (or you, when leaving) loses access to the workspace at once. delete_workspace: the workspace and every app in it are deleted for good. set_gallery_listing: listing an app in the public gallery shows its name, a description and its production link to everyone, so the call needs `user_confirmed: true` — set only after the user explicitly said yes to exactly this listing. Nothing changed.',
+    fix: 'Ask the user: "Do you want <app name> shown in the public gallery with the description \"<description>\"?" (set_workspace_publishing: "Turn publishing off for <slug>?" / "Allow <slug> to publish?" / "Reset <slug> to the server default?"; set_primary_domain: "Should <app> redirect to <host>?"; remove_domain: "Remove <host> — the app stops answering there?"; unpublish: "Take <app> offline at <published_url>?"; set_visibility: "Make <app> public for anyone with the link?"; delete_app: "Delete <app> for good?"; delete_collection: "Delete the collection <name> with its <records> records?"; purge_orphan_records: "Purge the orphan records of <names>?"; sign_out_end_users: "Sign all <end_users> users of <app> out?"; remove_module_secret: "Remove <name> from <app> — <module> stops using it until you set it again in the dashboard?"; invite_member: "Invite <email> to <workspace> as <role>?"; remove_member: "Remove <email> from <slug> — they lose access at once?" / "Leave <slug>?"; delete_workspace: "Delete <slug> with its <n> apps for good?"; set_workspace_module: "Enable <module> for <workspace>?" / "Disable <module> for <workspace>?"; takedown_app: "Take <app> down for <reason>?"; restore_app: "Restore <app>?"; set_gallery_hidden: "Hide <app> from the gallery?"). Call again with user_confirmed:true only if they clearly say yes; otherwise change nothing.',
+  },
+  {
+    code: 'password_not_set',
+    surface: 'MCP tool isError (set_visibility)',
+    meaning:
+      'The app has no password, and a password gate needs one. Its value never passes through MCP or an LLM: only the app\'s owner sets it, on the app\'s Settings tab in the dashboard (`settings_url`). Nothing changed.',
+    fix: 'Give the user `settings_url` and tell them to choose Password there and set one. Never ask for the password in chat and never put it in a file.',
   },
   {
     code: 'gallery_hidden',
@@ -259,7 +267,7 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     code: 'personal_workspace',
     surface: 'MCP tool isError (set_member_role, remove_member, delete_workspace); dashboard 400',
     meaning: 'A personal workspace always has exactly one member, its owner, so its membership can be neither changed nor removed, and it is deleted only together with its owner\'s account. Nothing changed.',
-    fix: 'To work with other people, the user creates a team workspace on the dashboard\'s Workspaces page and invites them there. To delete the personal workspace, the user deletes their account in the dashboard (Account → Delete account); single apps are deleted on their Settings tab.',
+    fix: 'To work with other people, the user creates a team workspace (`create_workspace`, or the dashboard\'s Workspaces page) and invites them there (`invite_member`). To delete the personal workspace, the user deletes their account in the dashboard (Account → Delete account); single apps are deleted with `delete_app` or on their Settings tab.',
   },
   {
     code: 'last_workspace_admin',
@@ -475,16 +483,17 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
   },
   {
     code: 'conflict',
-    surface: 'module route 409 (DrobekError)',
-    meaning: 'The request conflicts with the current state (e.g. a record that already exists or changed meanwhile).',
-    fix: 'Reload the state and retry; the module skill names its conflict cases.',
+    surface: 'module route 409 (DrobekError); MCP tool isError (set_end_user_role)',
+    meaning:
+      'The request conflicts with the current state (e.g. a record that already exists or changed meanwhile). From set_end_user_role (`reason`): the user is an editor of the app\'s workspace and therefore always an admin of its apps (`workspace_editor`), or the app\'s admin list or allowlist is full (`too_many_admins`, `allowlist_full`). Nothing changed.',
+    fix: 'Reload the state and retry; the module skill names its conflict cases. From set_end_user_role: do not retry — a workspace editor\'s role changes with their workspace role (a workspace admin does that in the dashboard); a full list: tell the user to remove an address first.',
   },
   {
     code: 'unavailable',
-    surface: 'module route 503 (DrobekError)',
+    surface: 'module route 503 (DrobekError); MCP tool isError (a data write tool or an owner tool the server\'s module does not support; invite_member)',
     meaning:
-      'A service the module depends on is down or not configured on this server — e.g. module e-mail is paused because the server-wide hourly budget of its class (notifications or sign-in codes, `details.class`) or the per-app hourly share of notifications (`details.limit: EMAIL_APP_HOURLY_SHARE`) or the per-workspace share (`EMAIL_WORKSPACE_HOURLY_SHARE`) was used up (`details.reason: email_paused`, Retry-After), the server runs no `email` module, or it has no DROBEK_MASTER_KEY (forms). With `details.reason: database_timeout` (Retry-After): a database query of the request ran past the server\'s statement or lock timeout — the server is under load, and a write may or may not have been stored.',
-    fix: 'Show the user a message and retry later; tell the app owner if it persists.',
+      'A service the module depends on is down or not configured on this server — e.g. module e-mail is paused because the server-wide hourly budget of its class (notifications or sign-in codes, `details.class`) or the per-app hourly share of notifications (`details.limit: EMAIL_APP_HOURLY_SHARE`) or the per-workspace share (`EMAIL_WORKSPACE_HOURLY_SHARE`) was used up (`details.reason: email_paused`, Retry-After), the server runs no `email` module, or it has no DROBEK_MASTER_KEY (forms). From a data write tool: the module that stores the app\'s records on this server cannot do that change. From an owner tool (list_end_users, set_end_user_role, set_end_user_blocked): the module that runs the app\'s sign-in on this server does not offer it. From invite_member (`reason: "email_failed"`): the invite e-mail could not be sent, so no invite was created. With `details.reason: database_timeout` (Retry-After): a database query of the request ran past the server\'s statement or lock timeout — the server is under load, and a write may or may not have been stored.',
+    fix: 'Show the user a message and retry later; tell the app owner if it persists. From a data write tool or an owner tool: do not retry — the owner makes that change in the dashboard, if the module offers it there. From invite_member: tell the user; a workspace admin can invite from the dashboard\'s Invite page, which also shows the link.',
   },
   {
     code: 'module_not_enabled',
@@ -495,10 +504,10 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
   },
   {
     code: 'module_requires_not_enabled',
-    surface: 'dashboard 409 (workspace Modules switch, super-admin)',
+    surface: 'dashboard 409 (workspace Modules switch, super-admin); MCP tool isError (set_workspace_module)',
     meaning:
       'A super-admin tried to enable an opt-in module for a workspace while a module it requires (directly or through another one) is off there (`details.missing` lists them in the order to enable them). Nothing changed.',
-    fix: 'Enable the modules the message names for this workspace first, in that order, then enable this one. A module whose required module is off stays off even when the plan or the server configuration enables it.',
+    fix: 'Enable the modules the message names for this workspace first, in that order (set_workspace_module, each with the user\'s yes), then enable this one. A module whose required module is off stays off even when the plan or the server configuration enables it.',
   },
   {
     code: 'method_not_allowed',

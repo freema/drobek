@@ -19,6 +19,7 @@ import {
   getInvite,
   listPendingInvites,
   resolveAcceptedRole,
+  withdrawInvite,
 } from './invites.server.js';
 
 beforeEach(() => {
@@ -28,6 +29,18 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.useRealTimers();
+});
+
+describe('withdrawInvite', () => {
+  it('withdraws an invite and its pending-list entry; a malformed token touches nothing', async () => {
+    const { token, id } = await createInvite({ workspaceId: 'ws1', role: 'editor', invitedByUserId: 'u1', email: 'a@example.com' });
+    await withdrawInvite('drobek:invite:*');
+    expect(await getInvite(token)).not.toBeNull();
+    expect((await listPendingInvites('ws1')).map((i) => i.id)).toEqual([id]);
+    await withdrawInvite(token);
+    expect(await getInvite(token)).toBeNull();
+    expect(await listPendingInvites('ws1')).toEqual([]);
+  });
 });
 
 describe('createInvite', () => {

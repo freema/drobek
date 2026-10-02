@@ -57,7 +57,7 @@ function actorOf(ctx: CallContext, role: MembershipActor['role']): MembershipAct
   return { userId: ctx.principal.userId, kind: actorKindForSurface('mcp'), role };
 }
 
-const takeLease = (ctx: CallContext) => (appId: string, holderUserId: string) => ctx.deps.leases.release(appId, holderUserId);
+const takeLease = (ctx: CallContext) => (appId: string, holderUserId: string) => ctx.deps.leases.takeHeldBy(appId, holderUserId);
 
 // ── list_members ─────────────────────────────────────────────────────────────
 

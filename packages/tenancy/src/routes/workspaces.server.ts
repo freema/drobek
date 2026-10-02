@@ -5,7 +5,8 @@
  * super-admins additionally get the ALL-workspaces list; `?left=<slug>` (the
  * redirect after leaving a workspace) confirms the leave and `?deleted=<slug>`
  * (after deleting one) the deletion. POST creates a team
- * workspace — any logged-in user may (no role gate beyond the session).
+ * workspace — any logged-in user may (no role gate beyond the session); the
+ * name and slug checks are createTeamWorkspace's, shared with MCP.
  */
 import {
   data,
@@ -22,8 +23,6 @@ import {
 } from '../membership.server.js';
 import { ensurePersonalWorkspace } from '../personal-workspace.server.js';
 import { createTeamWorkspace } from '../team-workspace.server.js';
-
-const NAME_MAX = 80;
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const user = await requireSessionUser(request);
@@ -73,19 +72,11 @@ export async function action({ request }: ActionFunctionArgs) {
   const user = await requireSessionUser(request);
 
   const form = await request.formData();
-  const name = String(form.get('name') ?? '').trim();
-  const slug = String(form.get('slug') ?? '')
-    .trim()
-    .toLowerCase();
-
-  if (!name || name.length > NAME_MAX) {
-    return data(
-      { error: `Enter a team name (1–${NAME_MAX} characters).` },
-      { status: 400 }
-    );
-  }
-
-  const created = await createTeamWorkspace(user.id, name, slug);
+  const created = await createTeamWorkspace(
+    user.id,
+    String(form.get('name') ?? ''),
+    String(form.get('slug') ?? '')
+  );
   if (!created.ok) {
     return data({ error: created.message }, { status: 400 });
   }

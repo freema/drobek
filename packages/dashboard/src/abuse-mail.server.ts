@@ -11,17 +11,17 @@
  *    SET NX, 1 h; a Redis error sends anyway);
  *  - a takedown / a restore → the app's owners (its workspace's editors and
  *    workspace-admins): the reason CATEGORY and what happens next — never the
- *    reporter's text or address.
+ *    reporter's text or address (@drobek/apps mailOwnersAboutModeration,
+ *    re-exported here).
  *
  * Delivery errors are logged and swallowed: the report / the takedown already
  * happened and must not fail because the mailbox is down.
  */
-import { ABUSE_QUEUE_PATH, dashboardOrigin, reasonLabel, termsUrl, type ReportedApp } from '@drobek/apps';
+import { ABUSE_QUEUE_PATH, dashboardOrigin, reasonLabel, type ReportedApp } from '@drobek/apps';
 import { superAdminEmails } from '@drobek/auth';
 import { getRedis, type Logger } from '@drobek/core';
-import { dbErrorForLog, getDb } from '@drobek/db';
+import { dbErrorForLog } from '@drobek/db';
 import { renderPlatformEmail, sendEmail, serverFootNote, type EmailAction } from '@drobek/email';
-import { appOwnerEmails } from '@drobek/modules';
 
 const REPORT_MAIL_DEDUP_MS = 60 * 60 * 1000;
 
@@ -121,37 +121,5 @@ export async function mailSuperAdminsAboutReport(
   return { sent, deduped: false };
 }
 
-/** Tell the app's owners it was taken down (category only) or restored. */
-export async function mailOwnersAboutModeration(
-  input: { kind: 'takedown' | 'restore'; app: { slug: string; workspaceId: string }; reason: string },
-  log: Logger,
-  env: NodeJS.ProcessEnv = process.env
-): Promise<number> {
-  const to = await appOwnerEmails(getDb(), input.app.workspaceId);
-  if (to.length === 0) return 0;
-  const terms = termsUrl(env);
-  const subject =
-    input.kind === 'takedown'
-      ? `Your app ${input.app.slug} was taken down`
-      : `Your app ${input.app.slug} was restored`;
-  const text =
-    input.kind === 'takedown'
-      ? [
-          `The operator of this drobek server took your app ${input.app.slug} down.`,
-          '',
-          `Reason: ${reasonLabel(input.reason)}.`,
-          '',
-          'The app is unpublished and every one of its addresses shows an "unavailable" page. It cannot be changed, published or reconfigured — neither in the dashboard nor by your coding agent — until the operator restores it.',
-          '',
-          `Terms of service: ${terms}`,
-          'If you think this is a mistake, reply to the operator of this server.',
-        ].join('\n')
-      : [
-          `The operator of this drobek server restored your app ${input.app.slug}.`,
-          '',
-          'You can change it again. It is NOT published: publish a version from the dashboard or ask your agent to publish when it is ready.',
-          '',
-          `Terms of service: ${terms}`,
-        ].join('\n');
-  return deliver(to, { subject, text, footNote: serverFootNote('you can edit this app', env) }, log, { app: input.app.slug, kind: input.kind }, env);
-}
+/** The owners' takedown / restore e-mail lives in @drobek/apps (the MCP tools send it too). */
+export { mailOwnersAboutModeration } from '@drobek/apps';

@@ -49,7 +49,22 @@ function allCombinations(): Scope[][] {
   return out;
 }
 
-const READ_TOOLS = ['list_apps', 'get_app', 'read_file', 'skill_info', 'query_data', 'get_logs', 'list_assets', 'list_domains', 'list_upstreams', 'list_members'];
+const READ_TOOLS = [
+  'list_apps',
+  'get_app',
+  'read_file',
+  'skill_info',
+  'query_data',
+  'get_logs',
+  'list_assets',
+  'list_domains',
+  'list_upstreams',
+  'list_form_submissions',
+  'list_end_users',
+  'list_uploads',
+  'list_activity',
+  'list_members',
+];
 const WRITE_TOOLS = [
   'create_app',
   'duplicate_app',
@@ -67,8 +82,35 @@ const WRITE_TOOLS = [
   'set_member_role',
   'remove_member',
   'delete_workspace',
+  'set_frame_ancestors',
+  'release_lease',
+  'delete_app',
+  'create_records',
+  'update_record',
+  'delete_record',
+  'delete_collection',
+  'purge_orphan_records',
+  'delete_form_submission',
+  'set_end_user_role',
+  'set_end_user_blocked',
+  'sign_out_end_users',
+  'delete_upload',
+  'remove_module_secret',
+  'create_workspace',
+  'invite_member',
+  'set_workspace_module',
 ];
-const PUBLISH_TOOLS = ['publish', 'set_gallery_listing', 'set_primary_domain', 'set_workspace_publishing'];
+const PUBLISH_TOOLS = [
+  'unpublish',
+  'set_visibility',
+  'publish',
+  'set_gallery_listing',
+  'set_primary_domain',
+  'set_workspace_publishing',
+  'takedown_app',
+  'restore_app',
+  'set_gallery_hidden',
+];
 
 /** The exact tools/list per combination, spelled out (not derived from the table). */
 const EXPECTED: Record<string, string[]> = {
@@ -98,15 +140,44 @@ describe('tool → scope table', () => {
     });
   }
 
-  it('every tool needs exactly one scope; publish unlocks exactly publish + set_gallery_listing + set_primary_domain + set_workspace_publishing', () => {
+  it('every tool needs exactly one scope; publish unlocks exactly what changes the public site or who may publish', () => {
     for (const scope of Object.values(TOOL_SCOPES)) expect(['read', 'write', 'publish']).toContain(scope);
     expect(toolAllowed([], 'list_apps')).toBe(false);
     expect(toolAllowed(['read'], 'write_files')).toBe(false);
     expect(toolAllowed(['write'], 'read_file')).toBe(false);
     expect(toolAllowed('read', 'get_app')).toBe(true);
     expect(toolAllowed(['read', 'write'], 'publish')).toBe(false);
-    expect(allowedTools(['publish'])).toEqual(['publish', 'set_gallery_listing', 'set_primary_domain', 'set_workspace_publishing']);
+    expect(allowedTools(['publish'])).toEqual(PUBLISH_TOOLS);
+    // Deleting an app and its embedding are write; taking it offline and opening it to everyone are publish.
+    expect(toolAllowed(['read', 'write'], 'delete_app')).toBe(true);
+    expect(toolAllowed(['read', 'write'], 'release_lease')).toBe(true);
+    expect(toolAllowed(['read', 'write'], 'unpublish')).toBe(false);
+    expect(toolAllowed(['read', 'write'], 'set_visibility')).toBe(false);
     expect(toolAllowed(['read', 'write'], 'set_gallery_listing')).toBe(false);
+    // The owner's data edits are write, like the dashboard's Data tab; reading stays read.
+    for (const t of ['create_records', 'update_record', 'delete_record', 'delete_collection', 'purge_orphan_records'] as const) {
+      expect(toolAllowed(['write'], t), t).toBe(true);
+      expect(toolAllowed(['read', 'publish'], t), t).toBe(false);
+    }
+    expect(toolAllowed(['write'], 'query_data')).toBe(false);
+    // The owner's module tabs: the lists (and the activity log) are read, every change is write.
+    for (const t of ['list_form_submissions', 'list_end_users', 'list_uploads', 'list_activity'] as const) {
+      expect(toolAllowed(['read'], t), t).toBe(true);
+      expect(toolAllowed(['write', 'publish'], t), t).toBe(false);
+    }
+    for (const t of ['delete_form_submission', 'set_end_user_role', 'set_end_user_blocked', 'sign_out_end_users', 'delete_upload', 'remove_module_secret'] as const) {
+      expect(toolAllowed(['write'], t), t).toBe(true);
+      expect(toolAllowed(['read', 'publish'], t), t).toBe(false);
+    }
+    // A new team workspace and an invite are write; of the super-admin tools the module switch is write, moderation publish.
+    for (const t of ['create_workspace', 'invite_member', 'set_workspace_module'] as const) {
+      expect(toolAllowed(['write'], t), t).toBe(true);
+      expect(toolAllowed(['read', 'publish'], t), t).toBe(false);
+    }
+    for (const t of ['takedown_app', 'restore_app', 'set_gallery_hidden'] as const) {
+      expect(toolAllowed(['publish'], t), t).toBe(true);
+      expect(toolAllowed(['read', 'write'], t), t).toBe(false);
+    }
     // Add/verify/remove a domain are write; the primary domain is publish.
     expect(toolAllowed(['read', 'write'], 'remove_domain')).toBe(true);
     expect(toolAllowed(['read', 'write'], 'set_primary_domain')).toBe(false);

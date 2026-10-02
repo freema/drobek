@@ -8,8 +8,8 @@
  * by whom / when, and what decides it: `dashboard` — the super-admin's
  * switch, `plan` — the limits provider's `MODULE_ENABLED_<NAME>`, `env` —
  * the operator's `MODULE_ENABLED_<NAME>=1`). Only a super-admin may flip the
- * switch (moderation, dashboard-only: there is no MCP tool); everyone else
- * gets 403. The POST is a React Router action, so the framework's origin
+ * switch (here, or their agent with the MCP tool set_workspace_module — the
+ * same runtime call); everyone else gets 403. The POST is a React Router action, so the framework's origin
  * check runs before it. Audit: `module.workspace_enable` /
  * `module.workspace_disable` (meta: module), written by the runtime.
  */

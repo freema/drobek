@@ -19,7 +19,8 @@ import {
   type RuntimeEntry,
 } from '@drobek/insights';
 import { domainsResolver, type DnsResolver } from '@drobek/domains';
-import { moduleRuntime, type ModuleRuntime } from '@drobek/modules';
+import { moduleRuntime, revokeEndUserSessions, type ModuleRuntime } from '@drobek/modules';
+import { defaultMemberInviteDeps, type MemberInviteDeps } from '@drobek/tenancy';
 import type { AssetDeps } from './assets.js';
 import { redisLeaseStore, type LeaseStore } from './lease.js';
 
@@ -77,6 +78,10 @@ export interface ToolDeps {
   assets: AssetDeps;
   /** The resolver verify_domain looks the custom-domain records up with (DOMAINS_DNS_SERVERS / the dev mock). */
   dns: () => DnsResolver;
+  /** Sign every end user of an app out (the app's session epoch goes up, in Redis); the new epoch. */
+  revokeEndUserSessions: (appId: string) => Promise<number>;
+  /** invite_member: the Redis invite tokens and the invite e-mail. */
+  invites: MemberInviteDeps;
 }
 
 let sharedCompiler: Compiler | null = null;
@@ -107,6 +112,8 @@ export function defaultDeps(overrides: Partial<ToolDeps> = {}): ToolDeps {
       disk: assetDisk(),
     },
     dns: () => domainsResolver(overrides.env ?? process.env),
+    revokeEndUserSessions: (appId) => revokeEndUserSessions(getRedis(), appId),
+    invites: defaultMemberInviteDeps(),
     ...overrides,
   };
 }

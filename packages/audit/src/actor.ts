@@ -85,7 +85,7 @@ export const AUDIT_ACTIONS = {
   moduleReject: 'module.reject',
   /** An end user signed in to an app (platform module auth, actor end_user). */
   authSignIn: 'auth.sign_in',
-  /** The owner signed every end user of an app out (session epoch bump). */
+  /** The owner (or their agent, sign_out_end_users) signed every end user of an app out (session epoch bump). */
   endUserSessionsRevoke: 'end_users.sessions_revoke',
   /** A module sent e-mail through ctx.email.send (counts and kind only — never addresses). */
   emailSend: 'email.send',
@@ -131,9 +131,11 @@ export const AUDIT_ACTIONS = {
   domainPrimary: 'domain.primary',
   /** An owner removed a custom domain (Caddy's certificate expires on its own). */
   domainRemove: 'domain.remove',
-  /** The owner edited a record in the dashboard Data tab (collection + id, never values). */
+  /** The owner (or their agent, create_records) added records to a collection (collection + count, never values). */
+  dataRecordCreate: 'data.record_create',
+  /** The owner edited a record in the dashboard Data tab, or their agent with update_record (collection + id, never values). */
   dataRecordUpdate: 'data.record_update',
-  /** The owner deleted a record in the dashboard Data tab. */
+  /** The owner deleted a record in the dashboard Data tab, or their agent with delete_record. */
   dataRecordDelete: 'data.record_delete',
   /** The owner imported a CSV into a collection (collection + row count). */
   dataImport: 'data.import',
@@ -145,15 +147,15 @@ export const AUDIT_ACTIONS = {
    * collection from the Data tab (meta: collection + record count).
    */
   dataCollectionPurge: 'data.collection.purge',
-  /** The owner deleted a form submission. */
+  /** The owner deleted a form submission (the Forms tab, or their agent with delete_form_submission). */
   formsSubmissionDelete: 'forms.submission_delete',
-  /** The owner changed an end user's role (end-user id + role, never the address). */
+  /** The owner (or their agent, set_end_user_role) changed an end user's role (end-user id + role, never the address). */
   endUserRole: 'end_users.role',
-  /** The owner blocked an end user. */
+  /** The owner (or their agent, set_end_user_blocked) blocked an end user. */
   endUserDisable: 'end_users.disable',
-  /** The owner unblocked an end user. */
+  /** The owner (or their agent, set_end_user_blocked) unblocked an end user. */
   endUserEnable: 'end_users.enable',
-  /** An uploaded file was deleted (by the app's end user, or by the owner in the dashboard). */
+  /** An uploaded file was deleted (by the app's end user, by the owner in the dashboard, or by their agent with delete_upload). */
   filesDelete: 'files.delete',
   /** An app asset was uploaded or replaced (name, size, sniffed type, how — never a token). */
   assetUpload: 'asset.upload',

@@ -310,16 +310,25 @@ to, with your role in each.
 - **Scripts / CI:** a personal `drk_…` API key from `/me/api-keys` as
   `Authorization: Bearer drk_…`.
 
-The agent gets twenty-eight tools — `list_apps`, `create_app`, `duplicate_app`, `get_app`,
+The agent gets fifty-one tools — `list_apps`, `create_app`, `duplicate_app`, `get_app`,
 `read_file`, `write_files`, `restore_version`, `publish`,
-`set_gallery_listing`, `skill_info`, `configure_module`, `query_data`,
-`get_logs`, for video, audio, images and fonts `create_asset_upload`,
+`set_gallery_listing`, for the app's settings and lifecycle `unpublish`,
+`set_visibility`, `set_frame_ancestors`, `release_lease`, `delete_app`,
+`skill_info`, `configure_module`, `query_data`, for the app's stored data
+`create_records`, `update_record`, `delete_record`, `delete_collection`,
+`purge_orphan_records`, `get_logs`, for video, audio, images and fonts `create_asset_upload`,
 `list_assets`, `delete_asset` (an upload URL — the file never passes through
-the model), and for custom domains `list_domains`, `add_domain`,
+the model), for the owner's module tabs `list_form_submissions`,
+`delete_form_submission`, `list_end_users`, `set_end_user_role`,
+`set_end_user_blocked`, `sign_out_end_users`, `list_uploads`,
+`delete_upload`, `remove_module_secret` and `list_activity`, and for custom domains `list_domains`, `add_domain`,
 `verify_domain`, `set_primary_domain`, `remove_domain`, and for the proxy
 module's external APIs `list_upstreams`, `register_upstream`,
-`remove_upstream`, for a workspace's members `list_members`,
-`set_member_role`, `remove_member`, `delete_workspace`, and `sync_now` for the sync module's scheduled imports (a super-admin also gets `set_workspace_publishing`). The full agent contract (scopes,
+`remove_upstream`, `sync_now` for the sync module's scheduled imports, and
+for workspaces `create_workspace`, `list_members`, `invite_member`,
+`set_member_role`, `remove_member` and `delete_workspace` (a super-admin also
+gets `set_workspace_publishing`, `set_workspace_module`, `takedown_app`,
+`restore_app` and `set_gallery_hidden`). The full agent contract (scopes,
 the briefing, skills, `/llms.txt`) is [`docs/AGENT.md`](./docs/AGENT.md); a
 running server serves it at `/llms.txt`, `/llms-full.txt` and
 `/build-with-your-agent`. To teach an agent the loop without the plugin:

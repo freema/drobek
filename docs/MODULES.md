@@ -200,8 +200,11 @@ active for a workspace when, in this order:
    the `workspace_modules` table, audited `module.workspace_enable` /
    `module.workspace_disable` with `meta.module`). Every other member sees
    the state on the same page read-only (who switched it on: workspace
-   admins only), and the switch answers them 403. There is no self-service
-   switch and no MCP tool.
+   admins only), and the switch answers them 403. A super-admin's agent
+   flips the same switch with the MCP tool `set_workspace_module` (scope
+   `write`, `user_confirmed: true` after their explicit yes; audited with the
+   agent as the actor); other users never see that tool. There is no
+   self-service switch.
 
 **`requires` applies per workspace.** An opt-in module is active only while
 every module it `requires` is active for the workspace too, transitively
@@ -820,9 +823,9 @@ Every `ctx.email.send` of every module goes through one path in core:
 The one enabled module that declares `records` (the built-in `data`; two
 refuse the start) answers the app OWNER's questions about the app's stored
 records. Core calls it only after it authorized a drobek account for the app
-— MCP `query_data` (membership, viewer+) and the dashboard's Data tab (the
-workspace role; delete is editor+) — never for an app host request, so it
-bypasses the end-user rules. Each call gets a `RecordsView`: the ONE app,
+— MCP `query_data` (membership, viewer+), the MCP data write tools
+(editor+) and the dashboard's Data tab (the workspace role; changes are
+editor+) — never for an app host request, so it bypasses the end-user rules. Each call gets a `RecordsView`: the ONE app,
 the module's effective config for it, `db` and `log`.
 
 ```ts
@@ -846,18 +849,23 @@ null and both surfaces answer 404.
 
 The dashboard's app tabs (Data, Forms, Users, Uploads, Logs) act for the
 app OWNER through the same kind of owner-facing authority — core never reads
-or writes a module's tables. Every authority call gets an `OwnerView`
+or writes a module's tables. The MCP data tools (`create_records`,
+`update_record`, `delete_record`, `delete_collection`,
+`purge_orphan_records`) reach the same `records` methods for the agent,
+editor+, refused for a taken-down app; their audit rows carry actor kind
+`agent`. Every authority call gets an `OwnerView`
 (`RecordsView` is the same type): the app, the module's effective config,
 `db`, `log` and `limits()` (the workspace's limits, memoized per call).
 Loaders are viewer+, mutations editor+ (and the dashboard origin check);
 core writes the audit row (actor kind `user`).
 
-Optional `records` methods (the built-in `data` has all five; a module
+Optional `records` methods (the built-in `data` has all of them; a module
 without one answers `unavailable`, and `orphans` lists nothing):
 
 ```ts
 records: {
-  update?(view, collection, id, fields)  // → record | null; the module validates (schema, size, quota)
+  update?(view, collection, id, fields, { merge? }?) // → record | null; the module validates (schema, size, quota)
+  create?(view, collection, records)     // → the stored records, in order; ALL or nothing
   importCsv?(view, collection, csv)      // → { imported }; ALL or nothing
   dropCollection?(view, collection)      // → { records, configPatch }
   orphans?(view)                         // → [{ name, records }]: rows of undeclared collections
@@ -875,17 +883,31 @@ records: {
   deliberate bulk action by the owner, not app traffic) but **not** the
   quotas: `DATA_MAX_DOCS_PER_APP`, the per-app bytes and the per-record size
   still apply. Dashboard: `data.import` (row count only).
+- `update`: replaces the record's own fields (the dashboard's JSON editor);
+  `merge: true` merges them onto the stored ones like the SDK's update (MCP
+  `update_record` by default). Both build the new fields from the row as it
+  is under the app's write lock.
+- `create` (MCP `create_records`, at most 500 records per call): new records
+  without an owner, every one checked (schema, per-record size) before one
+  transaction stores them all against the quotas; the first bad one is a
+  `validation_failed` with `details.index`, and nothing is stored. Like the
+  import it bypasses `DATA_WRITE_RATE_LIMIT`, never a quota. Audit
+  `data.record_create` (collection + count).
 - `dropCollection`: deletes the records and returns the config patch that
   removes the collection; core applies the patch through the same path as
   `configure_module` (config lock, merge-patch, `validateConfig`) and writes
   the records deletion, the config and the `data.collection_delete` audit in
-  ONE transaction. The dashboard asks the owner to type the collection name.
+  ONE transaction. The dashboard asks the owner to type the collection name;
+  MCP `delete_collection` needs `user_confirmed: true` (the user's explicit
+  yes) and takes the app's single-writer lease like `configure_module`.
 - `orphans` / `purgeOrphan` (NSO-324): records whose collection the config no
   longer declares — e.g. a write that landed while the collection was being
   removed — are invisible to every other view but still count towards the
   quotas. The Data tab lists them with their counts; an editor purges one
   after typing its name (under the config lock, so it cannot be declared
-  meanwhile; audit `data.collection.purge` with `orphan: true`).
+  meanwhile; audit `data.collection.purge` with `orphan: true`). MCP
+  `purge_orphan_records` purges one or every orphan collection with
+  `user_confirmed: true`.
 
 Optional `endUsers` owner methods (the built-in `auth` has them):
 
@@ -930,6 +952,21 @@ enabled). The dashboard serves an upload's bytes on its own origin only with
 the module's sniffed type, `nosniff`, `Content-Security-Policy: default-src
 'none'; sandbox`, and `inline` only for PNG / JPEG / GIF / WebP (everything
 else, SVG and PDF included, is an attachment).
+
+The agent reaches the same bindings over MCP, with the tabs' role floors
+(viewer+ reads, editor+ changes) and audit rows (the agent as the actor):
+`list_form_submissions` / `delete_form_submission` (`submissions`),
+`list_end_users` / `set_end_user_role` / `set_end_user_blocked` /
+`sign_out_end_users` (`endUsers` and the session epoch), `list_uploads` /
+`delete_upload` (`files`; never an upload's bytes). The lists answer only
+inside an untrusted envelope, at most 100 entries and 64 KiB per call;
+`set_end_user_role` passes `surface: 'mcp'` so `end_users.role` records the
+agent, and takes the app's single-writer lease because it changes the
+config. A module error becomes the tool error the agent acts on:
+`invalid_request` → `invalid_params`, `not_found`, `conflict` (with
+`details.reason` as `reason`), `unavailable`. `remove_module_secret`
+deletes one declared secret of the app after the user's explicit yes
+(audited `module.secret_remove`); no tool sets or reads a value.
 
 ## Scheduled jobs (`jobs`)
 
