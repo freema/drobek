@@ -181,6 +181,19 @@ describe('TOOL_DOCS manifest', () => {
     }
   });
 
+  it('read_file reads several paths or a line range, or searches literal text, all read-only', () => {
+    const doc = toolDoc('read_file');
+    expect(doc.scope).toMatch(/^read\b/);
+    expect(doc.fields.map((f) => f.name)).toEqual(['app_id', 'path', 'paths', 'version', 'offset', 'limit', 'search', 'ignore_case']);
+    expect(doc.fields.filter((f) => f.required).map((f) => f.name)).toEqual(['app_id']);
+    expect(doc.description).toContain('`paths` up to 20');
+    expect(doc.description).toContain('COMPILE_MAX_FILE_BYTES');
+    expect(doc.description).toContain('`omitted`');
+    expect(doc.description).toContain('literal text, not a regex');
+    expect(doc.returns).toContain('<untrusted-app-search');
+    expect(doc.returns).toContain('total_lines');
+  });
+
   it('skill_info never returns secrets; configure_module routes secrets to the dashboard', () => {
     expect(toolDoc('skill_info').scope).toMatch(/^read\b/);
     expect(toolDoc('skill_info').description).toMatch(/Never returns secret values or any app's config/);

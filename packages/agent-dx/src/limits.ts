@@ -22,6 +22,13 @@ export const WRITE_FILES_EDITS_MAX = 50;
 export const REASONING_MAX_CHARS = 300;
 /** The single-writer lease on an app, renewed by every write. */
 export const APP_LOCK_TTL_SEC = 180;
+/** read_file: max paths in one call. */
+export const READ_FILE_PATHS_MAX = 20;
+/** read_file with `search`: the matching lines returned by default, and at most. */
+export const READ_FILE_SEARCH_MATCHES_DEFAULT = 50;
+export const READ_FILE_SEARCH_MATCHES_MAX = 100;
+/** read_file with `search`: max length of the text searched for. */
+export const READ_FILE_SEARCH_MAX_CHARS = 200;
 
 export const LIMITS: LimitDoc[] = [
   {
@@ -143,6 +150,21 @@ export const LIMITS: LimitDoc[] = [
     env: 'tool: write_files reasoning',
     default: `${REASONING_MAX_CHARS} characters`,
     meaning: 'Max length of the reasoning line.',
+  },
+  {
+    env: 'tool: read_file paths',
+    default: String(READ_FILE_PATHS_MAX),
+    meaning: 'Max paths in one read_file call (more → invalid_params).',
+  },
+  {
+    env: 'tool: read_file text per call',
+    default: 'COMPILE_MAX_FILE_BYTES',
+    meaning: 'Text one read_file call returns: the first file always comes back, each further one only while the total stays within it — the rest is listed under `omitted` (read it in another call, or a part with offset/limit).',
+  },
+  {
+    env: 'tool: read_file search',
+    default: `${READ_FILE_SEARCH_MATCHES_DEFAULT} matching lines (limit up to ${READ_FILE_SEARCH_MATCHES_MAX}), ${READ_FILE_SEARCH_MAX_CHARS} characters`,
+    meaning: 'read_file with `search`: the matching lines returned (the answer counts them all) and the longest text searched for (literal, one line).',
   },
   {
     env: 'tool: single-writer lease',

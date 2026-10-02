@@ -1,5 +1,5 @@
 /**
- * The MCP tool bodies: list_apps, create_app, get_app, read_file,
+ * The MCP tool bodies: list_apps, create_app, get_app,
  * write_files, restore_version, publish, skill_info, configure_module,
  * query_data, get_logs, set_gallery_listing, duplicate_app and sync_now.
  * Each takes the caller + validated arguments and returns a plain JSON payload or throws a ToolError; the MCP
@@ -85,7 +85,6 @@ import { actorKindForSurface } from '@drobek/audit';
 import { listDomains, resolveCustomHost, verifiedDomainsOf } from '@drobek/domains';
 import { maskEmail } from '@drobek/auth';
 import {
-  BINARY_EXTS,
   CONFIG_FILE,
   TEXT_EXTS,
   normalizeAppPath,
@@ -125,7 +124,6 @@ export interface CallContext {
 }
 
 const NAME_MAX = 80;
-const utf8 = new TextDecoder('utf-8', { fatal: true });
 
 function actorOf(ctx: CallContext): Actor {
   return { userId: ctx.principal.userId, kind: actorKindForSurface('mcp') };
@@ -426,48 +424,6 @@ async function galleryOut(app: AppRow, env: NodeJS.ProcessEnv) {
     allow_duplicate: g.allowDuplicate,
     ...counts,
   };
-}
-
-// ── read_file ────────────────────────────────────────────────────────────────
-
-export interface ReadFileResult {
-  path: string;
-  version: number;
-  untrusted: true;
-  content?: string;
-  binary?: true;
-  size?: number;
-}
-
-export async function readFile(
-  ctx: CallContext,
-  args: { app_id: string; path: string; version?: number }
-): Promise<ReadFileResult> {
-  const { app } = await authorizeApp(ctx.principal, args.app_id, 'viewer');
-  if (args.version !== undefined && (!Number.isInteger(args.version) || args.version < 1)) {
-    throw new ToolError('invalid_params', '`version` must be a positive integer.');
-  }
-  const path = normalizeAppPath(String(args.path ?? ''));
-  if (!path) throw new ToolError('invalid_path', `Unsafe file path ${JSON.stringify(args.path)}.`);
-
-  const number = args.version ?? (await latestVersions([app.id])).get(app.id)?.number;
-  const version = number ? await getVersion(app.id, { number }) : null;
-  if (!version) {
-    throw new ToolError('not_found', number ? `Version ${number} does not exist.` : 'The app has no versions yet.');
-  }
-  const file = version.files.find((f) => f.kind === 'source' && f.path === path);
-  if (!file) throw new ToolError('not_found', `No file "${path}" in version ${version.number}.`);
-  const bytes = await readVersionFile(version.id, path, 'source');
-  if (!bytes) throw new ToolError('not_found', `No file "${path}" in version ${version.number}.`);
-
-  if (!BINARY_EXTS.has(extOf(path))) {
-    try {
-      return { path, version: version.number, untrusted: true, content: utf8.decode(bytes) };
-    } catch {
-      // not UTF-8 → report as binary below
-    }
-  }
-  return { path, version: version.number, untrusted: true, binary: true, size: bytes.length };
 }
 
 // ── compile + store (create_app v1, write_files) ─────────────────────────────

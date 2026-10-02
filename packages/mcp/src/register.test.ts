@@ -70,10 +70,10 @@ describe('tools/list', () => {
       },
       {
         name: 'read_file',
-        title: 'Read a file',
-        annotations: { title: 'Read a file', ...RO },
-        properties: ['app_id', 'path', 'version'],
-        required: ['app_id', 'path'],
+        title: 'Read or search files',
+        annotations: { title: 'Read or search files', ...RO },
+        properties: ['app_id', 'path', 'paths', 'version', 'offset', 'limit', 'search', 'ignore_case'],
+        required: ['app_id'],
       },
       {
         name: 'write_files',

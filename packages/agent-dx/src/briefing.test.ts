@@ -16,6 +16,15 @@ describe('renderBriefing', () => {
     expect(b).toContain('200 files, 512 KiB per file, 5 MiB in total');
   });
 
+  it('teaches read_file: several paths, a line range and a literal search', () => {
+    const files = b.slice(b.indexOf('## Files'), b.indexOf('## Dependencies'));
+    expect(files).toContain('up to 20 `paths` in one call');
+    expect(files).toContain('`offset` / `limit`');
+    expect(files).toContain('`total_lines`');
+    expect(files).toContain('`read_file({ app_id, search })`');
+    expect(b).toContain('read_file the template files (`paths` reads them in one call)');
+  });
+
   it('carries the pinned import map with one React version', () => {
     for (const url of Object.values(TEMPLATE_IMPORTS)) {
       expect(b).toContain(url);
