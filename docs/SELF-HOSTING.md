@@ -207,7 +207,7 @@ built-ins.
 | `PUBLIC_APP_URL` | yes | `https://<dashboard host>[:<HTTPS_PORT>]` |
 | `APPS_DOMAIN` | yes | apps live on `*.<APPS_DOMAIN>` (`:<port>` when not 443) |
 | `POSTGRES_PASSWORD` | yes, secret | generated; only used when `pg_data` is first created |
-| `DROBEK_MASTER_KEY` | yes, secret | generated, 64 hex; encrypts upstream secrets, signs app cookies — keep it with your backups |
+| `DROBEK_MASTER_KEY` | yes, secret | generated, 64 hex; encrypts upstream and module secrets, signs app cookies — keep it with your backups; [rotate it](#rotating-drobek_master_key) with `DROBEK_MASTER_KEY_PREVIOUS` |
 | `TLS_ASK_TOKEN` | secret | generated; the on-demand TLS `ask` token (drobek + Caddy) |
 | `SMTP_HOST` | yes (smtp) | SMTP server; `SMTP_PORT` (587), `SMTP_SECURE` (0 / 1 = implicit TLS), `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM` |
 | `EMAIL_TRANSPORT` / `RESEND_API_KEY` | — (`smtp`) / secret | `resend` sends through the Resend API instead of SMTP (then `SMTP_*` is not needed and `RESEND_API_KEY` is) |
@@ -357,7 +357,8 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 
 | Variable | Default | What |
 | --- | --- | --- |
-| `DROBEK_MASTER_KEY` | — | **required, secret** — 64 hex; encrypts module and upstream secrets, keys the app-access cookie and the forms token. Keep it with your backups |
+| `DROBEK_MASTER_KEY` | — | **required, secret** — 64 hex; encrypts module and upstream secrets, keys the app-access cookie, the forms token, the provider sign-in state and the stored IP hashes. Keep it with your backups. A stored secret that neither this key nor `DROBEK_MASTER_KEY_PREVIOUS` opens stops a production start |
+| `DROBEK_MASTER_KEY_PREVIOUS` | — | secret, only while [rotating the master key](#rotating-drobek_master_key) — the key used before: secrets stored under it still decrypt (new ones use `DROBEK_MASTER_KEY`) until `task selfhost:rekey` re-wraps them; then remove it. Same format as `DROBEK_MASTER_KEY`; a malformed value stops the start |
 | `POSTGRES_PASSWORD` | — | **required, secret** (production compose) — used when `pg_data` is first created |
 | `TLS_ASK_TOKEN` | — | secret, ≥ 32 URL-safe characters — the on-demand TLS `ask` token (drobek + Caddy); unset = every certificate refused |
 | `TLS_INTERNAL` | — | `1` = Caddy's local CA for every site (a test box, `task dev:tls`) |
@@ -519,8 +520,10 @@ copy the archives off the machine:
 ```
 
 **Not in the archive:** `.env.production` — it holds `DROBEK_MASTER_KEY`,
-without which the restored upstream secrets (proxy module) cannot be
-decrypted. Keep a copy of it somewhere safe, separately from the backups.
+without which the restored upstream and module secrets cannot be
+decrypted. Keep a copy of it somewhere safe, separately from the backups —
+after a [key rotation](#rotating-drobek_master_key), keep the old key with
+the archives made before it.
 Redis is not backed up (sessions, caches, rate-limit counters).
 
 **Restore** into a stack whose database is empty — a new machine, or this one
@@ -537,8 +540,11 @@ task restore BACKUP=backups/drobek-20260923T201500Z.tar.gz
 ```
 
 `task restore` verifies the checksums, refuses a `DROBEK_MASTER_KEY` that does
-not match the backup's fingerprint (`ALLOW_KEY_MISMATCH=1` restores anyway,
-without usable upstream secrets), refuses a **non-empty database** (`FORCE=1`
+not match the backup's fingerprint — unless `DROBEK_MASTER_KEY_PREVIOUS`
+matches it (a backup from before a key rotation: run `task selfhost:rekey`
+after the restore) or `ALLOW_KEY_MISMATCH=1` is set (restores anyway and
+deletes the stored upstream and module secrets before the start, since no
+key opens them — their owners set them again) — refuses a **non-empty database** (`FORCE=1`
 drops and recreates it — back it up first), stops drobek and caddy, restores
 the database, replaces `files_data`, `assets_data` (left empty when the
 archive has no `assets.tar`) and `caddy_data`, and starts the stack
@@ -551,6 +557,79 @@ certificates over. Sessions (dashboard users and apps' end users) live in
 Redis, which is not in the backup: after a restore on a new machine everyone
 signs in again; API keys and OAuth clients are in the database and keep
 working. A `FORCE=1` restore on the same machine leaves Redis as it is.
+
+## Rotating DROBEK_MASTER_KEY
+
+Every stored secret — upstream secrets (proxy module) and module secrets
+(a sign-in provider's client secret, an API key a module injects) — is
+encrypted with a key of its own, and that key is wrapped by
+`DROBEK_MASTER_KEY`; each row records which master key wrapped it. To change
+the master key (it leaked, someone who knew it left, it was copied around),
+drobek keeps reading with the old key while every secret moves to the new one:
+
+```sh
+cd /opt/drobek
+task backup                       # still under the old key — keep that key with this archive
+openssl rand -hex 32              # the new key
+# in .env.production: the old value becomes DROBEK_MASTER_KEY_PREVIOUS, the new one DROBEK_MASTER_KEY
+#   DROBEK_MASTER_KEY_PREVIOUS=<the old key>
+#   DROBEK_MASTER_KEY=<the new key>
+./scripts/selfhost-compose.sh up -d --wait drobek    # recreates drobek with both keys
+task selfhost:rekey
+# upstream_secrets: 3 re-wrapped, 0 already under DROBEK_MASTER_KEY, 0 under an unknown key
+# module_secrets: 5 re-wrapped, 1 already under DROBEK_MASTER_KEY, 0 under an unknown key
+# every stored secret is encrypted under DROBEK_MASTER_KEY — remove DROBEK_MASTER_KEY_PREVIOUS and restart drobek.
+# in .env.production: delete the DROBEK_MASTER_KEY_PREVIOUS line
+./scripts/selfhost-compose.sh up -d --wait drobek
+task backup                       # the first archive under the new key
+```
+
+While `DROBEK_MASTER_KEY_PREVIOUS` is set, secrets stored under it decrypt as
+before and every secret set from then on uses `DROBEK_MASTER_KEY`; each start
+logs how many are still under the previous key. `task selfhost:rekey` (`docker
+compose … run --rm --no-deps -T drobek node dist/server/rekey.js`) wraps each
+secret's own key again under `DROBEK_MASTER_KEY` — no secret value is
+decrypted, and no key or value is printed, only counts. It runs next to the
+serving drobek, and running it again is safe: a second run re-wraps nothing.
+It exits 1 when secrets are left that no key of the server opens.
+
+**What the rotation ends.** What drobek derives from the master key without
+storing it stops matching the new key:
+
+- **password-gated apps** — the unlock cookie (12 hours): visitors enter the
+  password again;
+- **forms** — a page opened before the rotation fails its submission with
+  `invalid_form_token` until it is reloaded (the form token lives 2 hours);
+- **an end user's sign-in through a provider** (the `oidc` module or another
+  `auth.provider`) that is in progress (10 minutes): they start it again;
+- **stored IP hashes** of form submissions and abuse reports: the same address
+  hashes differently afterwards, so entries from before and after the
+  rotation cannot be matched by address;
+- **backups made before the rotation** carry the old key's fingerprint: keep
+  the old key with them. `task restore` accepts such an archive while that key
+  is set as `DROBEK_MASTER_KEY_PREVIOUS`; run `task selfhost:rekey` after it.
+
+Dashboard sessions, end users' sessions, API keys, OAuth tokens and app
+passwords do not depend on the master key and keep working.
+
+**A secret under an unknown key stops the start.** When the database holds
+secrets that neither `DROBEK_MASTER_KEY` nor `DROBEK_MASTER_KEY_PREVIOUS`
+opens — the previous key was removed before `task selfhost:rekey` ran, or the
+`.env.production` belongs to another installation — drobek refuses to start
+instead of failing on each of those secrets later:
+
+```
+drobek refuses to start: 2 stored secrets are encrypted under a key this server does not have (neither DROBEK_MASTER_KEY nor DROBEK_MASTER_KEY_PREVIOUS) (upstream_secrets 1, module_secrets 1).
+  - DROBEK_MASTER_KEY was rotated: set the key used before as DROBEK_MASTER_KEY_PREVIOUS, start drobek, then run `task selfhost:rekey`.
+  - A backup was restored: use the DROBEK_MASTER_KEY it was made with (or set that key as DROBEK_MASTER_KEY_PREVIOUS).
+  - The key is lost: `task selfhost:rekey FORGET_UNKNOWN=1` deletes these secrets; their owners set them again in the dashboard.
+```
+
+`task selfhost:rekey FORGET_UNKNOWN=1` names what it deletes
+(`<workspace>/<upstream>`, `<workspace>/<app> <module>.<NAME>`), so you can
+tell the owners which secret to set again. Outside production
+(`NODE_ENV` other than `production`) the same finding is a warning in the
+log, and the start goes on.
 
 ## Upgrades and rollback
 

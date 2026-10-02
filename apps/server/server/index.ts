@@ -1,12 +1,13 @@
 /**
  * drobek server entry — the ONE process of the self-hostable image.
  *
- * Boot order: refuse insecure secrets, an invalid APPS_DOMAIN,
- * TRUST_PROXY, TLS_ASK_TOKEN, LIMITS_PROVIDER_URL, DOMAINS_*,
+ * Boot order: refuse insecure secrets (a malformed DROBEK_MASTER_KEY_PREVIOUS
+ * included), an invalid APPS_DOMAIN, TRUST_PROXY, TLS_ASK_TOKEN, LIMITS_PROVIDER_URL, DOMAINS_*,
  * APP_FRAME_SRC_EXTRA, GALLERY_FRAME_ANCESTORS, PUBLISH_APPROVAL / OPERATOR_EMAIL / PUBLISH_NOTIFY, e-mail transport
  * (EMAIL_TRANSPORT / RESEND_API_KEY / SMTP_HOST) or ERROR_REPORTER_* → apply core migrations
  * (under the migration lock; a database ahead of this image stops the start) →
- * load the platform modules (DROBEK_MODULES: the e-mail transport and error
+ * check the keys of the stored secrets (a secret no key of this server opens
+ * stops a production start) → load the platform modules (DROBEK_MODULES: the e-mail transport and error
  * reporter they contribute, their migrations, the composed SDK, the skills —
  * a bad module stops the start; once the reporter is up, the failure is
  * reported too) →
@@ -35,7 +36,7 @@ import { TypecheckRunner, installTypecheckRunner, typecheckLimitsFromEnv } from 
 import { dbErrorForLog, runCoreMigrations } from '@drobek/db';
 import { dnsMockWarning, domainsConfigError } from '@drobek/domains';
 import { emailConfigError } from '@drobek/email';
-import { limitsProviderConfigError, moduleRuntime } from '@drobek/modules';
+import { limitsProviderConfigError, moduleRuntime, previousMasterKeyConfigError, storedSecretKeysCheck } from '@drobek/modules';
 import {
   ServeStore,
   createAppsHostMiddleware,
@@ -53,6 +54,7 @@ const log = createConsoleLogger('drobek');
 
 const configError =
   secretsConfigError(process.env) ??
+  previousMasterKeyConfigError(process.env) ??
   appsOriginConfigError(process.env) ??
   trustProxyConfigError(process.env) ??
   tlsAskConfigError(process.env) ??
@@ -84,6 +86,16 @@ if (process.env.DROBEK_MIGRATE_ON_START !== '0') {
     process.exit(1);
   });
 }
+
+const secretKeys = await storedSecretKeysCheck(process.env).catch((err: unknown) => {
+  log.warn('could not check the keys of the stored secrets', { error: dbErrorForLog(err) });
+  return null;
+});
+if (secretKeys?.level === 'fatal') {
+  console.error(secretKeys.message);
+  process.exit(1);
+}
+if (secretKeys) log[secretKeys.level](secretKeys.message);
 
 // The platform modules. Loaded once per process (moduleRuntime() is
 // shared with the Vite-loaded dashboard routes through globalThis).

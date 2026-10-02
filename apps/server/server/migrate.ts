@@ -20,7 +20,7 @@ import { trustProxyConfigError } from '@drobek/auth';
 import { createConsoleLogger, reportError, secretsConfigError } from '@drobek/core';
 import { dbErrorForLog, runCoreMigrations } from '@drobek/db';
 import { domainsConfigError } from '@drobek/domains';
-import { limitsProviderConfigError, loadModuleRuntime } from '@drobek/modules';
+import { limitsProviderConfigError, loadModuleRuntime, previousMasterKeyConfigError } from '@drobek/modules';
 import { frameSrcConfigError, galleryFrameAncestorsConfigError, tlsAskConfigError } from '@drobek/serving';
 import postgres from 'postgres';
 
@@ -28,6 +28,7 @@ const log = createConsoleLogger('migrate');
 
 const configError =
   secretsConfigError(process.env) ??
+  previousMasterKeyConfigError(process.env) ??
   appsOriginConfigError(process.env) ??
   trustProxyConfigError(process.env) ??
   tlsAskConfigError(process.env) ??

@@ -32,8 +32,9 @@ const config: KnipConfig = {
     'apps/server': {
       // server/index.ts (package.json `dev`/`start`) and the routes are found
       // by the plugins; migrate.ts is `node dist/server/migrate.js`, the
-      // self-host upgrade step (`task selfhost:migrate`).
-      entry: ['server/migrate.ts'],
+      // self-host upgrade step (`task selfhost:migrate`); rekey.ts is
+      // `node dist/server/rekey.js`, the key rotation step (`task selfhost:rekey`).
+      entry: ['server/migrate.ts', 'server/rekey.ts'],
       project: ['server/**/*.ts', 'app/**/*.{ts,tsx}'],
       ignoreDependencies: [
         // The React Router SSR build bundles the linked workspace packages and

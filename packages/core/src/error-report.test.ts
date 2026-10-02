@@ -85,6 +85,14 @@ describe('reportError', () => {
     expect(events[0]!.error!.message).toContain('[redacted]');
   });
 
+  it('redacts the previous master key of a rotation too, also when it is a passphrase', async () => {
+    const { events, reporter } = sink();
+    const previous = 'the old pass phrase, at least 32 chars';
+    installErrorReporter(reporter, { ...ENV, DROBEK_MASTER_KEY_PREVIOUS: previous }, logger());
+    await reportError({ message: 'rotation', error: new Error(`could not open with ${previous}`), context: { kind: 'startup' } });
+    expect(JSON.stringify(events)).not.toContain(previous);
+  });
+
   it('a database error keeps its code and table, never the SQL or the bound values', async () => {
     const { events, reporter } = sink();
     installErrorReporter(reporter, ENV, logger());

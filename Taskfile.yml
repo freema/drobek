@@ -222,6 +222,13 @@ tasks:
     cmds:
       - ./scripts/selfhost-compose.sh run --rm --no-deps -T drobek node dist/server/migrate.js
 
+  selfhost:rekey:
+    desc: 'Re-wrap every stored secret under DROBEK_MASTER_KEY (the DROBEK_MASTER_KEY_PREVIOUS rotation step) and print the counts; idempotent, safe while drobek runs [FORGET_UNKNOWN=1 deletes the secrets no key here opens]'
+    vars:
+      REKEY_ARGS: '{{if eq (.FORGET_UNKNOWN | default "") "1"}}--forget-unknown{{end}}'
+    cmds:
+      - ./scripts/selfhost-compose.sh run --rm --no-deps -T drobek node dist/server/rekey.js {{.REKEY_ARGS}}
+
   selfhost:upgrade:
     desc: 'Upgrade in place: task backup → pull → stop drobek → migrate ×2 → up -d --wait (set DROBEK_IMAGE_TAG in .env.production first to pin a release; an image older than the database stops the upgrade at migrate, before up)'
     vars:

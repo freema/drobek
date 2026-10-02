@@ -4,8 +4,11 @@
 #
 #   1. unpack + verify (format, SHA256SUMS)
 #   2. DROBEK_MASTER_KEY of .env.production must match the backup's
-#      fingerprint (else the restored proxy secrets / password-app cookies are
-#      unreadable) — ALLOW_KEY_MISMATCH=1 restores anyway
+#      fingerprint (else the restored upstream / module secrets are
+#      unreadable) — or DROBEK_MASTER_KEY_PREVIOUS must (a backup from before a
+#      key rotation; `task selfhost:rekey` afterwards). ALLOW_KEY_MISMATCH=1
+#      restores anyway and deletes the secrets no key here opens before the
+#      start (drobek refuses to start on them)
 #   3. postgres up; the database must be EMPTY — FORCE=1 drops and recreates it
 #   4. drobek + caddy stopped (no writer while the data is replaced)
 #   5. pg_restore; files_data, assets_data, modules_data and caddy_data
@@ -50,13 +53,21 @@ say "✓ $backup verified — created $(field created_at), image $(field image) 
 # ── 2. master key ────────────────────────────────────────────────────────────
 want="$(field master_key_fingerprint)"
 have="$(master_key_fingerprint)"
+under_previous=0
+forget_unknown=0
 if [ "$want" != "$have" ]; then
-  if [ "${ALLOW_KEY_MISMATCH:-}" = 1 ]; then
+  if [ -n "$(env_get DROBEK_MASTER_KEY_PREVIOUS)" ] && [ "$want" = "$(master_key_fingerprint DROBEK_MASTER_KEY_PREVIOUS)" ]; then
+    say "· the backup was made under DROBEK_MASTER_KEY_PREVIOUS (before a key rotation)"
+    under_previous=1
+  elif [ "${ALLOW_KEY_MISMATCH:-}" = 1 ]; then
     say "! DROBEK_MASTER_KEY differs from the backup's — restoring anyway (ALLOW_KEY_MISMATCH=1):"
-    say "  stored proxy upstream secrets cannot be decrypted and must be set again."
+    say "  the stored upstream and module secrets cannot be decrypted; they are deleted before the"
+    say "  start and their owners set them again in the dashboard."
+    forget_unknown=1
   else
     die "DROBEK_MASTER_KEY in $ENV_FILE is not the one this backup was made with.
-  Copy the original .env.production (or at least its DROBEK_MASTER_KEY) here, or pass
+  Copy the original .env.production (or at least its DROBEK_MASTER_KEY) here — after a key
+  rotation, set the key of that time as DROBEK_MASTER_KEY_PREVIOUS instead — or pass
   ALLOW_KEY_MISMATCH=1 to restore without the encrypted secrets."
   fi
 fi
@@ -108,6 +119,12 @@ dc run --rm --no-deps -T --entrypoint sh caddy -c \
   'find /data -mindepth 1 -delete && tar -C /data -xf -' < "$work/caddy_data.tar" 2>"$work/run.log" \
   || { cat "$work/run.log" >&2; die "could not restore the caddy_data volume"; }
 
+if [ "$forget_unknown" = 1 ]; then
+  say "· deleting the secrets no key of this server opens (rekey --forget-unknown)"
+  dc run --rm --no-deps -T drobek node dist/server/rekey.js --forget-unknown </dev/null 2>&1 | sed 's/^/    /' >&2 \
+    || die "could not delete the unreadable secrets — drobek would refuse to start on them"
+fi
+
 # ── 6. start + check ─────────────────────────────────────────────────────────
 say "· docker compose up -d --wait"
 dc up -d --wait --wait-timeout 300 </dev/null 2>&1 | sed 's/^/    /' >&2
@@ -116,3 +133,6 @@ apps="$(pg_query "SELECT count(*) FROM apps")"
 files_rows="$(pg_query "SELECT CASE WHEN to_regclass('public.mod_files') IS NULL THEN 0 ELSE (SELECT count(*) FROM mod_files) END")"
 say "✓ restored in $(( $(date +%s) - started )) s — /healthz $health"
 say "  apps $apps · files $files_rows (backup: $(sed -n 's/.*"counts": { "apps": \([0-9]*\), "files": \([0-9]*\).*/apps \1 · files \2/p' "$work/manifest.json"))"
+if [ "$under_previous" = 1 ]; then
+  say "  Next: task selfhost:rekey (moves the restored secrets to DROBEK_MASTER_KEY), then remove DROBEK_MASTER_KEY_PREVIOUS."
+fi

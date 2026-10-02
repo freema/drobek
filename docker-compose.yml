@@ -147,6 +147,8 @@ services:
       # KEK for the envelope-encrypted secrets; fail-closed if unset. Dev value
       # only — production needs `openssl rand -hex 32`.
       DROBEK_MASTER_KEY: ${DROBEK_MASTER_KEY:-0000000000000000000000000000000000000000000000000000000000000000}
+      # The key before a rotation (still decrypts until `rekey` re-wraps the secrets).
+      DROBEK_MASTER_KEY_PREVIOUS: ${DROBEK_MASTER_KEY_PREVIOUS:-}
       # Hostnames the SSRF guard may reach on a private IP (empty in prod).
       PROXY_ALLOWED_HOSTS: ${PROXY_ALLOWED_HOSTS:-proxy-echo}
       # DEV/TEST ONLY — origins that may serve a CIMD over http from a private

@@ -103,11 +103,12 @@ sha256_check() {
 
 bytes_of() { wc -c < "$1" | tr -d ' '; }
 
-# A non-reversible fingerprint of DROBEK_MASTER_KEY (restore compares it with
-# the backup's): the first 16 hex chars of sha256("drobek-backup-fp\0" + key).
+# A non-reversible fingerprint of DROBEK_MASTER_KEY, or of the key variable $1
+# names (restore compares it with the backup's): the first 16 hex chars of
+# sha256("drobek-backup-fp\0" + key).
 master_key_fingerprint() {
   local key
-  key="$(env_get DROBEK_MASTER_KEY)"
+  key="$(env_get "${1:-DROBEK_MASTER_KEY}")"
   [ -n "$key" ] || { printf 'unset'; return; }
   printf 'drobek-backup-fp\0%s' "$key" | { if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum -a 256; fi; } | cut -c1-16
 }

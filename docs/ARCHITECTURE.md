@@ -55,7 +55,9 @@ This document is the map of how that works. The neighbours:
   `__drizzle_migrations_mod_<name>` per module) under one Postgres advisory
   lock, so replicas migrate one after the other, and **refuses to start** on a
   database whose journal holds migrations it does not know (a newer release
-  migrated it — the message names that release), a
+  migrated it — the message names that release), stored secrets that
+  neither `DROBEK_MASTER_KEY` nor `DROBEK_MASTER_KEY_PREVIOUS` opens (a key
+  rotation is `task selfhost:rekey`), a
   placeholder secret, a weak `TLS_ASK_TOKEN`, a missing `APPS_DOMAIN` in
   production or a module it cannot load (one from `DROBEK_MODULES_DIR`, the
   `modules_data` volume, whose files no longer match `modules.lock.json`
