@@ -50,7 +50,7 @@
  * auto-pause.
  */
 import { createHash } from 'node:crypto';
-import { getRedis, perIpLimitKey } from '@drobek/core';
+import { getRedis, peekFixedWindow, perIpLimitKey } from '@drobek/core';
 import { otpKeyPrefix, type OtpScope } from './email-code.server.js';
 import { logger, serializeError } from './logger.server.js';
 import { maskEmail } from './mask-email.js';
@@ -203,9 +203,9 @@ async function pausedDecision(ip: string | undefined, email: string, scope?: Otp
   return { ok: false, kind: 'error', status: 503, reason: paused.reason, message: MSG_PAUSED };
 }
 
-/** The current value of a fixed-window counter of `rateLimitRedis` (0 when absent). */
-async function counterValue(bucketName: string, key: string): Promise<number> {
-  return Number((await getRedis().get(`drobek:rl:${bucketName}:${key}`)) ?? 0) || 0;
+/** The current value of a fixed-window counter of `rateLimitRedis` (0 when absent; `peekFixedWindow`). */
+async function counterValue(bucketName: string, key: string, windowMs: number): Promise<number> {
+  return peekFixedWindow(getRedis(), `drobek:rl:${bucketName}:${key}`, windowMs);
 }
 
 interface OtpRequestArgs {
@@ -242,7 +242,7 @@ async function decide(args: OtpRequestArgs, chargeIp: boolean): Promise<OtpGuard
       for (const w of ipWindows) {
         const within = chargeIp
           ? (await rateLimitRedis(bucket(w.name, scope), ipKey, w.limit, w.windowMs)).ok
-          : (await counterValue(bucket(w.name, scope), ipKey)) < w.limit;
+          : (await counterValue(bucket(w.name, scope), ipKey, w.windowMs)) < w.limit;
         if (!within) {
           logBlock(w.reason, { ip, email, scope, alert: true });
           return { ok: false, kind: 'error', status: 429, reason: w.reason, message: MSG_IP };
@@ -265,13 +265,13 @@ async function decide(args: OtpRequestArgs, chargeIp: boolean): Promise<OtpGuard
     }
 
     // 4. per-e-mail hourly limit (codes that went out)
-    if ((await counterValue(bucket('otp-email-1h', scope), emailHash)) >= limits.emailHourlyLimit) {
+    if ((await counterValue(bucket('otp-email-1h', scope), emailHash, EMAIL_HOURLY_WINDOW_MS)) >= limits.emailHourlyLimit) {
       logBlock('email_hourly', { ip, email, scope });
       return { ok: false, kind: 'redirect_verify', reason: 'email_hourly' };
     }
 
     // 5. Hourly brake (codes that went out, server-wide or in the scope)
-    if ((await counterValue(bucket('otp-global-1h', scope), 'all')) >= limits.globalHourlyMax) {
+    if ((await counterValue(bucket('otp-global-1h', scope), 'all', GLOBAL_WINDOW_MS)) >= limits.globalHourlyMax) {
       // Auto-pause: temporarily stop ALL sends — protect the mailbox before
       // the provider does it for us.
       await r.set(autopauseKey(scope), '1', 'PX', GLOBAL_AUTOPAUSE_MS);

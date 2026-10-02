@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FakeRedis } from './fake-redis.js';
 
@@ -177,6 +178,46 @@ describe('guardOtpRequest (strict defaults, injected)', () => {
       status: 503,
       reason: 'global_autopause',
     });
+  });
+
+  it('a full brake counter left without an expiry gets the hour and lets sign-in back in after it', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-02T12:00:00Z'));
+    try {
+      const GLOBAL = 'drobek:rl:otp-global-1h:all';
+      const EMAIL_HOUR = `drobek:rl:otp-email-1h:${createHash('sha256').update('stuck@example.com').digest('hex')}`;
+      await fake.set(GLOBAL, String(STRICT.globalHourlyMax));
+      await fake.set(EMAIL_HOUR, String(STRICT.emailHourlyLimit));
+
+      expect(await guardOtpRequest({ ip: '10.2.0.1', email: 'stuck@example.com', limits: STRICT })).toMatchObject({
+        ok: false,
+        reason: 'email_hourly',
+      });
+      expect(await fake.pttl(EMAIL_HOUR)).toBe(60 * 60_000);
+      expect(await guardOtpRequest({ ip: '10.2.0.2', email: 'other@example.com', limits: STRICT })).toMatchObject({
+        ok: false,
+        reason: 'global_brake',
+      });
+      expect(await fake.pttl(GLOBAL)).toBe(60 * 60_000);
+
+      vi.advanceTimersByTime(60 * 60_000);
+      expect(await fake.get(GLOBAL)).toBeNull();
+      expect(await fake.get(EMAIL_HOUR)).toBeNull();
+      expect(await guardOtpRequest({ ip: '10.2.0.3', email: 'stuck@example.com', limits: STRICT })).toEqual({ ok: true });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a per-IP counter left without an expiry gets its window on the next attempt', async () => {
+    const IP_SHORT = 'drobek:rl:otp-ip-15m:10.2.0.9';
+    await fake.set(IP_SHORT, '500');
+    expect(await guardOtpRequest({ ip: '10.2.0.9', email: 'ip@example.com', limits: STRICT })).toMatchObject({
+      ok: false,
+      reason: 'ip_short',
+    });
+    expect(await fake.pttl(IP_SHORT)).toBeGreaterThan(14 * 60_000);
+    expect(await fake.pttl(IP_SHORT)).toBeLessThanOrEqual(15 * 60_000);
   });
 
   it('no client IP: no shared "unknown" IP bucket — IP-less clients are not coupled', async () => {

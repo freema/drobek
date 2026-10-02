@@ -13,7 +13,7 @@
  * new URL. Tokens are never logged.
  */
 import { createHash, randomBytes } from 'node:crypto';
-import { getRedis } from '@drobek/core';
+import { getRedis, hitFixedWindow } from '@drobek/core';
 import type { AuditActorKind } from '@drobek/audit';
 import { UPLOAD_TOKEN_TTL_SEC, assetUploadsPerHour } from './config.js';
 
@@ -147,14 +147,9 @@ type UploadCounter = (appId: string, limit: number, windowMs: number) => Promise
 
 const HOUR_MS = 60 * 60 * 1000;
 
-/** INCR + PEXPIRE on `drobek:rl:asset-upload:<app_id>` (the rate-limit key scheme of @drobek/auth). */
-const redisUploadCounter: UploadCounter = async (appId, limit, windowMs) => {
-  const r = getRedis();
-  const key = `drobek:rl:asset-upload:${appId}`;
-  const n = await r.incr(key);
-  if (n === 1) await r.pexpire(key, windowMs);
-  return n <= limit;
-};
+/** `hitFixedWindow` on `drobek:rl:asset-upload:<app_id>` (the rate-limit key scheme of @drobek/auth). */
+const redisUploadCounter: UploadCounter = async (appId, limit, windowMs) =>
+  (await hitFixedWindow(getRedis(), `drobek:rl:asset-upload:${appId}`, windowMs)).count <= limit;
 
 /** May `appId` get another upload URL this hour (APP_ASSET_UPLOADS_PER_HOUR)? Counts the attempt. */
 export async function assetUploadAllowed(
