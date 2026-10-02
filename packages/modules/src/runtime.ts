@@ -447,8 +447,11 @@ export interface BoundRecords {
 export interface BoundEndUsers {
   module: string;
   list(query: EndUserListQuery): Promise<EndUserPage>;
-  /** Change a role; a config change is applied under the config lock and audited `end_users.role` (actor user). */
-  setRole(id: string, role: 'user' | 'admin', actorUserId: string): Promise<EndUserRecord>;
+  /**
+   * Change a role; a config change is applied under the config lock and
+   * audited `end_users.role` (actor: the user, or their agent for `mcp`).
+   */
+  setRole(id: string, role: 'user' | 'admin', actorUserId: string, surface?: 'mcp' | 'web'): Promise<EndUserRecord>;
   setDisabled(id: string, disabled: boolean): Promise<EndUserRecord | null>;
 }
 
@@ -1212,13 +1215,19 @@ export class ModuleRuntime {
         if (!a.list) throw unsupported(m.name, 'listing end users');
         return a.list(view, q);
       },
-      setRole: async (id, role, actorUserId) => {
+      setRole: async (id, role, actorUserId, surface = 'web') => {
         const setRole = a.setRole?.bind(a);
         if (!setRole) throw unsupported(m.name, 'changing roles');
-        return this.ownerConfigChange(m, app, actorUserId, async (config, tx) => {
-          const out = await setRole(this.ownerView(app, config, tx), id, role);
-          return { patch: out.configPatch, result: out.user, audit: { action: AUDIT_ACTIONS.endUserRole, meta: { module: m.name, end_user: id, role } } };
-        });
+        return this.ownerConfigChange(
+          m,
+          app,
+          actorUserId,
+          async (config, tx) => {
+            const out = await setRole(this.ownerView(app, config, tx), id, role);
+            return { patch: out.configPatch, result: out.user, audit: { action: AUDIT_ACTIONS.endUserRole, meta: { module: m.name, end_user: id, role } } };
+          },
+          surface
+        );
       },
       setDisabled: async (id, disabled) => {
         if (!a.setDisabled) throw unsupported(m.name, 'blocking users');

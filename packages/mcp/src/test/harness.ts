@@ -94,6 +94,8 @@ export interface TestDeps extends ToolDeps {
   uploadBudget: { left: number };
   /** What verify_domain's lookups answer. */
   zone: TestZone;
+  /** The end-user session epoch per app (sign_out_end_users raises it). */
+  sessionEpochs: Map<string, number>;
 }
 
 export function testDeps(limits: Partial<CompileLimits> = {}): TestDeps {
@@ -103,6 +105,7 @@ export function testDeps(limits: Partial<CompileLimits> = {}): TestDeps {
   const uploadTokens = memoryUploadTokenStore(clock.now);
   const uploadBudget = { left: 1000 };
   const zone: TestZone = { txt: {}, cname: {}, fail: new Set() };
+  const sessionEpochs = new Map<string, number>();
   return {
     leases: memoryLeaseStore(clock.now),
     notifyAppChanged: async (e) => {
@@ -122,11 +125,17 @@ export function testDeps(limits: Partial<CompileLimits> = {}): TestDeps {
       disk: new AssetDisk(mkdtempSync(join(tmpdir(), 'drobek-mcp-assets-'))),
     },
     dns: () => zoneResolver(zone),
+    revokeEndUserSessions: async (appId) => {
+      const epoch = (sessionEpochs.get(appId) ?? 0) + 1;
+      sessionEpochs.set(appId, epoch);
+      return epoch;
+    },
     events,
     clock,
     uploadTokens,
     uploadBudget,
     zone,
+    sessionEpochs,
   };
 }
 
@@ -137,6 +146,15 @@ export function testDeps(limits: Partial<CompileLimits> = {}): TestDeps {
  * null when `text` is not an envelope.
  */
 function decodeUntrusted(text: string): Record<string, unknown> | null {
+  const list = /^<untrusted-(form-submissions|end-users|uploads|activity) (.*)>$/m.exec(text);
+  if (list) {
+    const nonce = /nonce="([0-9a-f]+)"/.exec(list[2])?.[1];
+    const start = list.index + list[0].length + 1;
+    const closing = `\n</untrusted-${list[1]} nonce="${nonce}">`;
+    const end = text.indexOf(closing, start - 1);
+    const after = text.slice(end + closing.length).replace(/^\n+/, '');
+    return { ...(JSON.parse(text.slice(start, end)) as Record<string, unknown>), ...(after ? { note: after } : {}) };
+  }
   const open = /^<untrusted-app-(file|data|logs) (.*)>$/m.exec(text);
   if (!open) return null;
   const attrs: Record<string, string> = {};

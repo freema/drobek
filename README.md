@@ -309,7 +309,7 @@ to, with your role in each.
 - **Scripts / CI:** a personal `drk_…` API key from `/me/api-keys` as
   `Authorization: Bearer drk_…`.
 
-The agent gets thirty-five tools — `list_apps`, `create_app`, `duplicate_app`, `get_app`,
+The agent gets forty-five tools — `list_apps`, `create_app`, `duplicate_app`, `get_app`,
 `read_file`, `write_files`, `restore_version`, `publish`,
 `set_gallery_listing`, for the app's settings and lifecycle `unpublish`,
 `set_visibility`, `set_frame_ancestors`, `release_lease`, `delete_app`,
@@ -317,7 +317,10 @@ The agent gets thirty-five tools — `list_apps`, `create_app`, `duplicate_app`,
 `create_records`, `update_record`, `delete_record`, `delete_collection`,
 `purge_orphan_records`, `get_logs`, for video, audio, images and fonts `create_asset_upload`,
 `list_assets`, `delete_asset` (an upload URL — the file never passes through
-the model), and for custom domains `list_domains`, `add_domain`,
+the model), for the owner's module tabs `list_form_submissions`,
+`delete_form_submission`, `list_end_users`, `set_end_user_role`,
+`set_end_user_blocked`, `sign_out_end_users`, `list_uploads`,
+`delete_upload`, `remove_module_secret` and `list_activity`, and for custom domains `list_domains`, `add_domain`,
 `verify_domain`, `set_primary_domain`, `remove_domain`, and for the proxy
 module's external APIs `list_upstreams`, `register_upstream`,
 `remove_upstream`, and `sync_now` for the sync module's scheduled imports (a super-admin also gets `set_workspace_publishing`). The full agent contract (scopes,

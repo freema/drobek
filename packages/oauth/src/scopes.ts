@@ -7,8 +7,9 @@
  *
  *   read    — look: list apps (+ who am I), get an app, read its files, read skills,
  *             query an app's stored data, read its logs, list its assets and
- *             its custom domains, and (workspace admins) the workspace's proxy
- *             upstreams.
+ *             its custom domains, its form submissions, end users and uploads,
+ *             and (workspace admins) the workspace's proxy upstreams and
+ *             activity log.
  *   write   — change: create apps (also as a copy of a gallery app,
  *             `duplicate_app`), write files (new versions), restore,
  *             configure platform modules, upload (upload URLs) and delete assets,
@@ -18,7 +19,9 @@
  *             (`set_frame_ancestors`, `release_lease`, `delete_app`), and
  *             change an app's stored data as its owner (`create_records`,
  *             `update_record`, `delete_record`, `delete_collection`,
- *             `purge_orphan_records`).
+ *             `purge_orphan_records`), delete a form submission or an
+ *             upload, change an end user's role, block them or sign every
+ *             end user out, and remove a module secret (never set one).
  *   publish — make a version live at its public URL (the `publish` tool),
  *             take it offline again (`unpublish`), choose who can open it
  *             (`set_visibility`), list it in the public gallery
@@ -117,6 +120,17 @@ export const TOOL_SCOPES = {
   delete_record: 'write',
   delete_collection: 'write',
   purge_orphan_records: 'write',
+  // The owner's module tabs (Forms, Users, Uploads, a module's secrets) and the workspace Activity page.
+  list_form_submissions: 'read',
+  delete_form_submission: 'write',
+  list_end_users: 'read',
+  set_end_user_role: 'write',
+  set_end_user_blocked: 'write',
+  sign_out_end_users: 'write',
+  list_uploads: 'read',
+  delete_upload: 'write',
+  remove_module_secret: 'write',
+  list_activity: 'read',
   // Taking the production address offline and opening an app to everyone are public exposure, like publishing.
   unpublish: 'publish',
   set_visibility: 'publish',

@@ -13,8 +13,9 @@
  * reach a tool body; the result names them in `warnings` (see toolInput).
  *
  * Every tool answers its JSON as text AND as `structuredContent` — except the
- * three that return app- or user-written content (read_file, query_data,
- * get_logs): they answer ONLY the text inside the untrusted envelope
+ * ones that return app- or user-written content (read_file, query_data,
+ * get_logs, and the owner's lists list_form_submissions, list_end_users,
+ * list_uploads, list_activity — owner-list.ts): they answer ONLY the text inside the untrusted envelope
  * with its per-response nonce. A client that hands `structuredContent` to the
  * model would otherwise pass the raw payload past the envelope, and no
  * wrapping of the payload's strings can cover it: the keys of a schemaless
@@ -52,6 +53,19 @@ import { createAssetUpload, deleteAssetTool, listAssetsTool } from './assets.js'
 import { createRecordsTool, deleteCollectionTool, deleteRecordTool, purgeOrphanRecordsTool, updateRecordTool } from './data.js';
 import { addDomainTool, listDomainsTool, removeDomainTool, setPrimaryDomainTool, verifyDomainTool } from './domains.js';
 import { deleteAppTool, releaseLeaseTool, setFrameAncestorsTool, setVisibilityTool, unpublishTool } from './lifecycle.js';
+import { listActivityTool } from './activity.js';
+import {
+  deleteFormSubmissionTool,
+  deleteUploadTool,
+  listEndUsersTool,
+  listFormSubmissionsTool,
+  listUploadsTool,
+  removeModuleSecretTool,
+  setEndUserBlockedTool,
+  setEndUserRoleTool,
+  signOutEndUsersTool,
+} from './owner.js';
+import { ownerListEnvelope, type OwnerListPayload } from './owner-list.js';
 import { listUpstreamsTool, registerUpstreamTool, removeUpstreamTool } from './upstreams.js';
 import { setWorkspacePublishingTool } from './workspace-publishing.js';
 import { TEMPLATES } from './templates.js';
@@ -85,6 +99,16 @@ export const APP_TOOL_NAMES = [
   'create_asset_upload',
   'list_assets',
   'delete_asset',
+  'list_form_submissions',
+  'delete_form_submission',
+  'list_end_users',
+  'set_end_user_role',
+  'set_end_user_blocked',
+  'sign_out_end_users',
+  'list_uploads',
+  'delete_upload',
+  'remove_module_secret',
+  'list_activity',
   'list_domains',
   'add_domain',
   'verify_domain',
@@ -282,6 +306,63 @@ export const INPUT_SCHEMAS = {
   delete_asset: {
     app_id: appId,
     path: z.string().describe('The asset path, e.g. film.mp4 (as list_assets shows it, with or without the leading /).'),
+  },
+  list_form_submissions: {
+    app_id: appId,
+    form: z.string().optional().describe('Only this form (a name the answer\'s `forms` lists).'),
+    from: z.string().optional().describe('First UTC day, YYYY-MM-DD (inclusive).'),
+    to: z.string().optional().describe('Last UTC day, YYYY-MM-DD (inclusive).'),
+    limit: z.number().optional().describe('1–100 submissions, default 20.'),
+    cursor: z.string().optional().describe('next_cursor of the previous page.'),
+  },
+  delete_form_submission: {
+    app_id: appId,
+    id: z.string().describe('The submission\'s id (list_form_submissions lists them).'),
+  },
+  list_end_users: {
+    app_id: appId,
+    search: z.string().optional().describe('Only users whose e-mail address contains this text.'),
+    limit: z.number().optional().describe('1–100 users, default 50.'),
+    cursor: z.string().optional().describe('next_cursor of the previous page.'),
+  },
+  set_end_user_role: {
+    app_id: appId,
+    user_id: z.string().describe('The end user\'s id (list_end_users lists them).'),
+    role: z.enum(['user', 'admin']).describe('user or admin.'),
+  },
+  set_end_user_blocked: {
+    app_id: appId,
+    user_id: z.string().describe('The end user\'s id (list_end_users lists them).'),
+    blocked: z.boolean().describe('true blocks the user (signed out, anonymous from the next request); false unblocks them.'),
+  },
+  sign_out_end_users: {
+    app_id: appId,
+    user_confirmed: z.boolean().optional().describe('true ONLY after the user explicitly said yes to signing every end user out.'),
+  },
+  list_uploads: {
+    app_id: appId,
+    limit: z.number().optional().describe('1–100 uploads, default 50.'),
+    cursor: z.string().optional().describe('next_cursor of the previous page.'),
+  },
+  delete_upload: {
+    app_id: appId,
+    id: z.string().describe('The upload\'s id (list_uploads lists them).'),
+  },
+  remove_module_secret: {
+    app_id: appId,
+    module: z.string().describe('The module that declares the secret, e.g. "auth" (get_app → modules.<name>.secrets).'),
+    name: z.string().describe('The secret\'s name, e.g. OIDC_CLIENT_SECRET.'),
+    user_confirmed: z.boolean().optional().describe('true ONLY after the user explicitly said yes to removing this secret.'),
+  },
+  list_activity: {
+    workspace: z.string().describe('The workspace slug; you need the workspace-admin role.'),
+    app: z.string().optional().describe('Only events about this app (its slug).'),
+    action: z.string().optional().describe('Only this action, e.g. "app.publish".'),
+    actor: z.enum(['user', 'agent', 'end_user']).optional().describe('Only events by this kind of actor.'),
+    from: z.string().optional().describe('First UTC day, YYYY-MM-DD (inclusive).'),
+    to: z.string().optional().describe('Last UTC day, YYYY-MM-DD (inclusive).'),
+    limit: z.number().optional().describe('1–100 events, default 50.'),
+    cursor: z.string().optional().describe('next_cursor of the previous page.'),
   },
   list_domains: { app_id: appId },
   add_domain: {
@@ -558,6 +639,16 @@ export function registerAppTools(
   register('create_asset_upload', createAssetUpload);
   register('list_assets', listAssetsTool);
   register('delete_asset', deleteAssetTool);
+  register('list_form_submissions', listFormSubmissionsTool, (p) => untrustedResult(ownerListEnvelope('form-submissions', p as OwnerListPayload)));
+  register('delete_form_submission', deleteFormSubmissionTool);
+  register('list_end_users', listEndUsersTool, (p) => untrustedResult(ownerListEnvelope('end-users', p as OwnerListPayload)));
+  register('set_end_user_role', setEndUserRoleTool);
+  register('set_end_user_blocked', setEndUserBlockedTool);
+  register('sign_out_end_users', signOutEndUsersTool);
+  register('list_uploads', listUploadsTool, (p) => untrustedResult(ownerListEnvelope('uploads', p as OwnerListPayload)));
+  register('delete_upload', deleteUploadTool);
+  register('remove_module_secret', removeModuleSecretTool);
+  register('list_activity', listActivityTool, (p) => untrustedResult(ownerListEnvelope('activity', p as OwnerListPayload)));
   register('list_domains', listDomainsTool);
   register('add_domain', addDomainTool);
   register('verify_domain', verifyDomainTool);

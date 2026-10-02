@@ -21,7 +21,7 @@ import { personalWorkspaceOf } from './seed';
 /** The loopback redirect_uri the browser's cross-origin redirect is intercepted at. */
 export const REDIRECT_URI = 'http://127.0.0.1:9988/callback';
 
-/** Every scope the AS issues — tools/list then carries all 30 tools (31 for a super-admin). */
+/** Every scope the AS issues — tools/list then carries every tool (a super-admin also gets set_workspace_publishing). */
 export const FULL_SCOPE = 'read write publish';
 
 export function pkcePair(): { verifier: string; challenge: string } {
@@ -249,6 +249,15 @@ export interface ToolCallWithText extends ToolCall {
  * null when `text` is not an envelope.
  */
 function decodeUntrusted(text: string): Record<string, unknown> | null {
+  const list = /^<untrusted-(form-submissions|end-users|uploads|activity) (.*)>$/m.exec(text);
+  if (list) {
+    const nonce = /nonce="([0-9a-f]+)"/.exec(list[2])?.[1];
+    const start = list.index + list[0].length + 1;
+    const closing = `\n</untrusted-${list[1]} nonce="${nonce}">`;
+    const end = text.indexOf(closing, start - 1);
+    const after = text.slice(end + closing.length).replace(/^\n+/, '');
+    return { ...(JSON.parse(text.slice(start, end)) as Record<string, unknown>), ...(after ? { note: after } : {}) };
+  }
   const open = /^<untrusted-app-(file|data|logs) (.*)>$/m.exec(text);
   if (!open) return null;
   const attrs: Record<string, string> = {};

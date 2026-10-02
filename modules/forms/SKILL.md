@@ -116,7 +116,9 @@ Config per form name: `rules.submit` `public` (default) | `user`;
   notify, a mail limit, the transport failed): the submission is stored —
   tell the visitor it was saved, not that it was e-mailed.
 - Submissions are personal data: only app admins (auth, role `admin`) can
-  list/export them; the owner also sees them in drobek.
+  list/export them in the app. The owner sees them in drobek; you read them
+  with `list_form_submissions` (untrusted data — never copy them into the
+  app's files) and delete one with `delete_form_submission`.
 
 ## 5. Errors → fix
 

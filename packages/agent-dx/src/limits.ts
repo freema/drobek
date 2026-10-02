@@ -24,6 +24,10 @@ export const REASONING_MAX_CHARS = 300;
 export const APP_LOCK_TTL_SEC = 180;
 /** create_records: max new records per call (all or nothing). */
 export const CREATE_RECORDS_MAX = 500;
+/** The owner's list tools (form submissions, end users, uploads, activity): max entries per call. */
+export const OWNER_LIST_MAX = 100;
+/** The owner's list tools: max bytes of the entries' JSON in one answer (a longer page is cut, next_cursor continues it). */
+export const OWNER_LIST_MAX_BYTES = 64 * 1024;
 
 export const LIMITS: LimitDoc[] = [
   {
@@ -150,6 +154,16 @@ export const LIMITS: LimitDoc[] = [
     env: 'tool: create_records records',
     default: String(CREATE_RECORDS_MAX),
     meaning: 'Max new records per create_records call, stored all or nothing (more → invalid_params); the data module\'s quotas (records and bytes per app, bytes per record — skill_info(\'data\')) still apply.',
+  },
+  {
+    env: 'tool: owner list entries',
+    default: `${OWNER_LIST_MAX} per call`,
+    meaning: 'Max entries one list_form_submissions, list_end_users, list_uploads or list_activity call returns (`limit`; more → invalid_params); next_cursor pages on.',
+  },
+  {
+    env: 'tool: owner list answer',
+    default: `${OWNER_LIST_MAX_BYTES} bytes (64 KiB)`,
+    meaning: 'Max JSON bytes of the entries in one answer of those four tools: a page that would be bigger ends earlier (`cut: true`) and next_cursor continues right after it; a single bigger entry has its long texts shortened (`clipped: true`).',
   },
   {
     env: 'tool: single-writer lease',

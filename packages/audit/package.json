@@ -11,6 +11,10 @@
     "./actor": {
       "types": "./src/actor.ts",
       "default": "./dist/actor.js"
+    },
+    "./redact": {
+      "types": "./src/redact.ts",
+      "default": "./dist/redact.js"
     }
   },
   "scripts": {

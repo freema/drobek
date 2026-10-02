@@ -924,6 +924,21 @@ the module's sniffed type, `nosniff`, `Content-Security-Policy: default-src
 'none'; sandbox`, and `inline` only for PNG / JPEG / GIF / WebP (everything
 else, SVG and PDF included, is an attachment).
 
+The agent reaches the same bindings over MCP, with the tabs' role floors
+(viewer+ reads, editor+ changes) and audit rows (the agent as the actor):
+`list_form_submissions` / `delete_form_submission` (`submissions`),
+`list_end_users` / `set_end_user_role` / `set_end_user_blocked` /
+`sign_out_end_users` (`endUsers` and the session epoch), `list_uploads` /
+`delete_upload` (`files`; never an upload's bytes). The lists answer only
+inside an untrusted envelope, at most 100 entries and 64 KiB per call;
+`set_end_user_role` passes `surface: 'mcp'` so `end_users.role` records the
+agent, and takes the app's single-writer lease because it changes the
+config. A module error becomes the tool error the agent acts on:
+`invalid_request` → `invalid_params`, `not_found`, `conflict` (with
+`details.reason` as `reason`), `unavailable`. `remove_module_secret`
+deletes one declared secret of the app after the user's explicit yes
+(audited `module.secret_remove`); no tool sets or reads a value.
+
 ## Scheduled jobs (`jobs`)
 
 The server never runs app code, so work on a schedule — refreshing an app's

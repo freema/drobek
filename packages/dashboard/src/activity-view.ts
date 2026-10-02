@@ -13,6 +13,7 @@
  *
  * Stored audit rows are never rewritten: this only reads them.
  */
+import { redactAuditMeta } from '@drobek/audit/redact';
 
 export interface ActivityEvent {
   action: string;
@@ -387,27 +388,11 @@ export function resolveActivityRefs(
 
 // ── technical details ────────────────────────────────────────────────────────
 
-const SENSITIVE_KEY = /secret|passw|token|authorization|cookie|api[_-]?key|private[_-]?key|credential/i;
-
-/** A copy of `meta` with every non-boolean value under a credential-like key replaced. */
-function redactMeta(value: unknown, depth = 0): unknown {
-  if (depth > 6) return '[…]';
-  if (Array.isArray(value)) return value.map((v) => redactMeta(v, depth + 1));
-  if (value && typeof value === 'object') {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value as Meta)) {
-      out[k] = SENSITIVE_KEY.test(k) && typeof v !== 'boolean' && v !== null ? '[redacted]' : redactMeta(v, depth + 1);
-    }
-    return out;
-  }
-  return value;
-}
-
 /** The stored context of an event as indented JSON (redacted), or null when there is none. */
 export function activityDetails(meta: unknown): string | null {
   if (meta === null || meta === undefined) return null;
   if (typeof meta === 'object' && !Array.isArray(meta) && Object.keys(meta).length === 0) return null;
-  return JSON.stringify(redactMeta(meta), null, 2);
+  return JSON.stringify(redactAuditMeta(meta), null, 2);
 }
 
 // ── time range ───────────────────────────────────────────────────────────────

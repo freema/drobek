@@ -35,7 +35,21 @@ async function connect(scopes: Scope[], superAdmin = false): Promise<Client> {
   return client;
 }
 
-const READ = ['get_app', 'get_logs', 'list_apps', 'list_assets', 'list_domains', 'list_upstreams', 'query_data', 'read_file', 'skill_info'];
+const READ = [
+  'get_app',
+  'get_logs',
+  'list_activity',
+  'list_apps',
+  'list_assets',
+  'list_domains',
+  'list_end_users',
+  'list_form_submissions',
+  'list_uploads',
+  'list_upstreams',
+  'query_data',
+  'read_file',
+  'skill_info',
+];
 const WRITE = [
   'add_domain',
   'configure_module',
@@ -45,15 +59,21 @@ const WRITE = [
   'delete_app',
   'delete_asset',
   'delete_collection',
+  'delete_form_submission',
   'delete_record',
+  'delete_upload',
   'duplicate_app',
   'purge_orphan_records',
   'register_upstream',
   'release_lease',
   'remove_domain',
+  'remove_module_secret',
   'remove_upstream',
   'restore_version',
+  'set_end_user_blocked',
+  'set_end_user_role',
   'set_frame_ancestors',
+  'sign_out_end_users',
   'sync_now',
   'update_record',
   'verify_domain',

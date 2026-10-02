@@ -49,7 +49,21 @@ function allCombinations(): Scope[][] {
   return out;
 }
 
-const READ_TOOLS = ['list_apps', 'get_app', 'read_file', 'skill_info', 'query_data', 'get_logs', 'list_assets', 'list_domains', 'list_upstreams'];
+const READ_TOOLS = [
+  'list_apps',
+  'get_app',
+  'read_file',
+  'skill_info',
+  'query_data',
+  'get_logs',
+  'list_assets',
+  'list_domains',
+  'list_upstreams',
+  'list_form_submissions',
+  'list_end_users',
+  'list_uploads',
+  'list_activity',
+];
 const WRITE_TOOLS = [
   'create_app',
   'duplicate_app',
@@ -72,6 +86,12 @@ const WRITE_TOOLS = [
   'delete_record',
   'delete_collection',
   'purge_orphan_records',
+  'delete_form_submission',
+  'set_end_user_role',
+  'set_end_user_blocked',
+  'sign_out_end_users',
+  'delete_upload',
+  'remove_module_secret',
 ];
 const PUBLISH_TOOLS = ['unpublish', 'set_visibility', 'publish', 'set_gallery_listing', 'set_primary_domain', 'set_workspace_publishing'];
 
@@ -123,6 +143,15 @@ describe('tool → scope table', () => {
       expect(toolAllowed(['read', 'publish'], t), t).toBe(false);
     }
     expect(toolAllowed(['write'], 'query_data')).toBe(false);
+    // The owner's module tabs: the lists (and the activity log) are read, every change is write.
+    for (const t of ['list_form_submissions', 'list_end_users', 'list_uploads', 'list_activity'] as const) {
+      expect(toolAllowed(['read'], t), t).toBe(true);
+      expect(toolAllowed(['write', 'publish'], t), t).toBe(false);
+    }
+    for (const t of ['delete_form_submission', 'set_end_user_role', 'set_end_user_blocked', 'sign_out_end_users', 'delete_upload', 'remove_module_secret'] as const) {
+      expect(toolAllowed(['write'], t), t).toBe(true);
+      expect(toolAllowed(['read', 'publish'], t), t).toBe(false);
+    }
     // Add/verify/remove a domain are write; the primary domain is publish.
     expect(toolAllowed(['read', 'write'], 'remove_domain')).toBe(true);
     expect(toolAllowed(['read', 'write'], 'set_primary_domain')).toBe(false);

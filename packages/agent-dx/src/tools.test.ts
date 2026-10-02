@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { TOOL_DOCS, TOOL_NAMES, toolDoc } from './tools.js';
 
 describe('TOOL_DOCS manifest', () => {
-  it('documents exactly the 36 tools, in tools/list order', () => {
+  it('documents exactly the 46 tools, in tools/list order', () => {
     expect(TOOL_NAMES).toEqual([
       'list_apps',
       'create_app',
@@ -31,6 +31,16 @@ describe('TOOL_DOCS manifest', () => {
       'create_asset_upload',
       'list_assets',
       'delete_asset',
+      'list_form_submissions',
+      'delete_form_submission',
+      'list_end_users',
+      'set_end_user_role',
+      'set_end_user_blocked',
+      'sign_out_end_users',
+      'list_uploads',
+      'delete_upload',
+      'remove_module_secret',
+      'list_activity',
       'list_domains',
       'add_domain',
       'verify_domain',
@@ -94,6 +104,16 @@ describe('TOOL_DOCS manifest', () => {
       create_asset_upload: [false, false, false, false], // a new single-use URL on every call; the PUT stores
       list_assets: [true, false, true, false],
       delete_asset: [false, true, true, false], // removes a file; a second delete changes nothing more
+      list_form_submissions: [true, false, true, false],
+      delete_form_submission: [false, true, true, false], // a second delete answers not_found
+      list_end_users: [true, false, true, false],
+      set_end_user_role: [false, true, true, false], // can take admin rights away; the same role again changes nothing
+      set_end_user_blocked: [false, true, true, false], // ends the user's sessions; the same state again changes nothing
+      sign_out_end_users: [false, true, false, false], // every call signs out whoever signed in since
+      list_uploads: [true, false, true, false],
+      delete_upload: [false, true, true, false], // a second delete answers not_found
+      remove_module_secret: [false, true, true, false], // a second call answers removed:false
+      list_activity: [true, false, true, false],
       list_domains: [true, false, true, false],
       add_domain: [false, false, true, false], // a second add answers domain_already_added
       verify_domain: [false, false, true, true], // asks public DNS; the same records give the same verdict
@@ -224,6 +244,45 @@ describe('TOOL_DOCS manifest', () => {
     expect(toolDoc('purge_orphan_records').fields.map((f) => f.name)).toEqual(['app_id', 'collection', 'user_confirmed']);
   });
 
+  it("the owner's module tabs and the activity log: lists read in an envelope, changes write; signing everyone out and removing a secret need the user's yes", () => {
+    const names = [
+      'list_form_submissions',
+      'delete_form_submission',
+      'list_end_users',
+      'set_end_user_role',
+      'set_end_user_blocked',
+      'sign_out_end_users',
+      'list_uploads',
+      'delete_upload',
+      'remove_module_secret',
+      'list_activity',
+    ];
+    const at = TOOL_NAMES.indexOf('list_form_submissions');
+    expect(TOOL_NAMES.slice(at, at + names.length)).toEqual(names);
+    for (const name of ['list_form_submissions', 'list_end_users', 'list_uploads']) {
+      expect(toolDoc(name).scope, name).toMatch(/^read \(viewer\+/);
+      expect(toolDoc(name).description, name).toMatch(/at most 100 \w+ and 64 KiB per call/i);
+      expect(toolDoc(name).fields.map((f) => f.name).slice(-2), name).toEqual(['limit', 'cursor']);
+    }
+    expect(toolDoc('list_activity').scope).toMatch(/^read \(workspace-admin/);
+    expect(toolDoc('list_activity').fields.map((f) => f.name)).toEqual(['workspace', 'app', 'action', 'actor', 'from', 'to', 'limit', 'cursor']);
+    for (const name of ['delete_form_submission', 'set_end_user_role', 'set_end_user_blocked', 'sign_out_end_users', 'delete_upload', 'remove_module_secret']) {
+      expect(toolDoc(name).scope, name).toMatch(/^write \(editor\+/);
+      expect(toolDoc(name).description, name).toMatch(/with you as the actor/);
+    }
+    for (const name of ['sign_out_end_users', 'remove_module_secret']) {
+      const doc = toolDoc(name);
+      expect(doc.description, name).toMatch(/user_confirmed: true/);
+      expect(doc.description, name).toMatch(/ONLY after the user explicitly said yes/);
+      expect(doc.fields.at(-1)?.name, name).toBe('user_confirmed');
+    }
+    expect(toolDoc('list_end_users').description).toMatch(/personal data/);
+    expect(toolDoc('set_end_user_role').returns).not.toContain('email');
+    expect(toolDoc('set_end_user_blocked').returns).not.toContain('email');
+    expect(toolDoc('remove_module_secret').description).toMatch(/Setting a value stays in the dashboard/);
+    expect(toolDoc('list_uploads').description).toMatch(/not available over MCP/);
+  });
+
   it('publish is documented as explicit-request only, with the publish scope', () => {
     expect(toolDoc('publish').scope).toMatch(/^publish\b/);
     expect(toolDoc('publish').description).toMatch(/ONLY when the user explicitly asks/);
@@ -248,7 +307,7 @@ describe('TOOL_DOCS manifest', () => {
     expect(toolDoc('read_file').description).toMatch(/UNTRUSTED/);
     expect(toolDoc('read_file').returns).toContain('untrusted:true');
     // The untrusted tools answer text only — no structuredContent past the envelope.
-    for (const name of ['read_file', 'query_data', 'get_logs']) {
+    for (const name of ['read_file', 'query_data', 'get_logs', 'list_form_submissions', 'list_end_users', 'list_uploads', 'list_activity']) {
       expect(toolDoc(name).description, name).toMatch(/no structuredContent/);
       expect(toolDoc(name).returns, name).toMatch(/^text only/);
     }

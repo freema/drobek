@@ -125,6 +125,9 @@ ONE file part, `X-Drobek-SDK: 1`), `GET|DELETE /__drobek/v1/files/<id>`.
   visitor IP), then `FILES_UPLOAD_RATE_LIMIT` 60 per minute per app.
 - Preview and production share the files. No resizing/thumbnails, no EXIF
   stripping (photos keep their metadata).
+- The owner sees the uploads in drobek; you list them with `list_uploads`
+  (names the uploaders chose: untrusted data) and delete one with
+  `delete_upload` (its links answer 404). You never read a file's content.
 
 ## 5. Errors → fix
 

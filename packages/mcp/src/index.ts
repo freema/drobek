@@ -4,7 +4,10 @@
  * skill_info, configure_module, query_data, the data write tools
  * (create_records, update_record, delete_record, delete_collection,
  * purge_orphan_records), get_logs, create_asset_upload,
- * list_assets, delete_asset, set_gallery_listing, the app lifecycle tools
+ * list_assets, delete_asset, the owner's module tabs (list_form_submissions,
+ * delete_form_submission, list_end_users, set_end_user_role,
+ * set_end_user_blocked, sign_out_end_users, list_uploads, delete_upload,
+ * remove_module_secret) and list_activity, set_gallery_listing, the app lifecycle tools
  * (unpublish, set_visibility, set_frame_ancestors, release_lease, delete_app),
  * the custom-domain tools (list_domains,
  * add_domain, verify_domain, set_primary_domain, remove_domain), the proxy

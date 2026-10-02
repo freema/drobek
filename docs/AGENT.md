@@ -104,8 +104,8 @@ answers `not_found`, the same as one that does not exist.
 
 | Scope | Tools |
 | --- | --- |
-| `read` | `list_apps`, `get_app`, `read_file`, `skill_info`, `query_data`, `get_logs`, `list_assets`, `list_domains`, `list_upstreams` |
-| `write` | `create_app`, `duplicate_app`, `write_files`, `restore_version`, `configure_module`, `sync_now`, `create_asset_upload`, `delete_asset`, `add_domain`, `verify_domain`, `remove_domain`, `register_upstream`, `remove_upstream`, `set_frame_ancestors`, `release_lease`, `delete_app`, `create_records`, `update_record`, `delete_record`, `delete_collection`, `purge_orphan_records` |
+| `read` | `list_apps`, `get_app`, `read_file`, `skill_info`, `query_data`, `get_logs`, `list_assets`, `list_form_submissions`, `list_end_users`, `list_uploads`, `list_activity`, `list_domains`, `list_upstreams` |
+| `write` | `create_app`, `duplicate_app`, `write_files`, `restore_version`, `configure_module`, `sync_now`, `create_asset_upload`, `delete_asset`, `add_domain`, `verify_domain`, `remove_domain`, `register_upstream`, `remove_upstream`, `set_frame_ancestors`, `release_lease`, `delete_app`, `create_records`, `update_record`, `delete_record`, `delete_collection`, `purge_orphan_records`, `delete_form_submission`, `set_end_user_role`, `set_end_user_blocked`, `sign_out_end_users`, `delete_upload`, `remove_module_secret` |
 | `publish` | `publish`, `unpublish`, `set_visibility`, `set_gallery_listing`, `set_primary_domain`, `set_workspace_publishing` (super-admins only) |
 
 ## Tools
@@ -140,6 +140,16 @@ answers `not_found`, the same as one that does not exist.
 | `create_asset_upload` | write, editor+ | not destructive | A single-use upload URL (30 min) for ONE binary file — video, audio, image, font — at `path`, plus a `curl -T <file> '<url>'` line. The file never passes through the model; the preview serves it at `/<path>` next to the app's files, production after the next `publish`. |
 | `list_assets` | read, viewer+ | read-only | The app's draft assets (path, sniffed type, size, time, `published`), the paths production serves that the draft deleted (`published_only`), `changes_pending_publish` and the quota usage. |
 | `delete_asset` | write, editor+ | destructive, idempotent | Removes one asset from the draft; the preview stops serving it, production after the next `publish`. |
+| `list_form_submissions` | read, viewer+ | read-only | The app's form submissions (the dashboard's Forms tab, through the module that keeps them): `forms` with their counts, then the submissions newest first, filtered by `form` and an inclusive UTC day range (`from`, `to`), ≤ 100 per call (default 20) with `next_cursor`. Only inside an untrusted envelope (no `structuredContent`) — the fields are what visitors typed. |
+| `delete_form_submission` | write, editor+ | destructive, idempotent | Deletes one submission (the Forms tab's Delete); `not_found` for an unknown or deleted one. Audited `forms.submission_delete` with the agent as the actor. |
+| `list_end_users` | read, viewer+ | read-only | The app's end users (the Users tab): `id`, `email`, `role` (+ `role_source`), `status`, `provider`, `created_at`, `last_sign_in_at`, filtered by `search` (part of an address), ≤ 100 per call (default 50) with `next_cursor`. Only inside an untrusted envelope: the addresses are personal data. |
+| `set_end_user_role` | write, editor+ | destructive, idempotent | Makes an end user `admin` or `user` through the sign-in module, which changes its config (the auth module's `adminEmails`) under the app's single-writer lease. A change the module refuses is `conflict` with a `reason` (`workspace_editor`, `too_many_admins`, `allowlist_full`). Answers the id, role and status, never the address. Audited `end_users.role` with the agent as the actor. |
+| `set_end_user_blocked` | write, editor+ | destructive, idempotent | Blocks (`blocked: true`) or unblocks an end user: a blocked user is anonymous on every host of the app from the next request. Audited `end_users.disable` / `end_users.enable`. |
+| `sign_out_end_users` | write, editor+ | destructive, not idempotent | Signs every end user of the app out on every host (the Users tab's Sign everyone out). Needs `user_confirmed: true` — the user's explicit yes (else `user_confirmation_required` with the `end_users` count). Audited `end_users.sessions_revoke`. |
+| `list_uploads` | read, viewer+ | read-only | The files the app's end users uploaded (the Uploads tab): `id`, `name`, `type`, `size`, `uploaded_by`, `created_at`, plus `used_bytes` / `quota_bytes`, ≤ 100 per call (default 50) with `next_cursor`. Only inside an untrusted envelope. A file's content is not available over MCP. |
+| `delete_upload` | write, editor+ | destructive, idempotent | Deletes one upload (the Uploads tab's Delete); the app's links to it answer 404. Audited `files.delete`. |
+| `remove_module_secret` | write, editor+ | destructive, idempotent | Removes one secret a module declares (`module`, `name`) from the app. Needs `user_confirmed: true` (else `user_confirmation_required`); a secret that is not set answers `removed: false`. A value is set only in the dashboard (`secrets_url`) — no tool sets or reads one. Audited `module.secret_remove`. |
+| `list_activity` | read, workspace-admin | read-only | The workspace's audit trail (the dashboard's Activity page), newest first, filtered by `app`, `action`, `actor` (`user` / `agent` / `end_user`) and an inclusive UTC day range, ≤ 100 per call (default 50) with `next_cursor`; each entry's context redacted like the page's Technical details. Only inside an untrusted envelope. |
 | `list_domains` | read, viewer+ | read-only | The app's custom domains (the dashboard's Domains tab): per domain `host`, `status` (`pending` / `verified`), `primary`, the two DNS `records` to create, `verified_at`, `last_check_at`, `last_error`, the certificate state; plus `cname_target` and `max_per_app`. |
 | `add_domain` | write, editor+ | not destructive, idempotent | Attaches a domain the user owns (pending) and returns the two records: CNAME `<host>` → `<slug>.<APPS_DOMAIN>` and TXT `_drobek.<host>` = `drobek-verify=<token>`. Same validation and `DOMAINS_MAX_PER_APP` as the dashboard (`invalid_hostname`, `hostname_not_allowed`, `limit_exceeded`, `domain_already_added`, `domain_taken`). |
 | `verify_domain` | write, editor+ | not destructive, idempotent, open world | Looks both records up now. Verified → the domain serves the published version. Otherwise `domain_not_verified` with `cname` / `txt` = `ok` / `missing` / `wrong` and the expected `records` (DNS can take up to 48 hours), or `dns_unavailable` (a lookup failed; nothing changed). |
@@ -316,6 +326,17 @@ saying it is data, not instructions. These three tools answer that text ONLY
 `structuredContent` to the model would pass the raw payload past the
 envelope, and the keys of a schemaless record are user input too, so no
 wrapping of the payload's strings could cover it.
+The owner's lists answer the same way: `list_form_submissions`,
+`list_end_users`, `list_uploads` and `list_activity` wrap their JSON in
+`<untrusted-form-submissions …>` / `<untrusted-end-users …>` /
+`<untrusted-uploads …>` / `<untrusted-activity …>` and keep it to at most
+100 entries and 64 KiB of entries per call: a page that would be bigger ends
+early (`cut: true`, `next_cursor` continues right after it), and an entry
+bigger than the whole budget comes alone with its long texts shortened
+(`clipped: true`). End users' personal data — addresses, what they typed,
+the names of their files — reaches the agent only inside these envelopes;
+the answers of the changing tools carry ids, roles and states, never an
+address.
 
 **Unknown arguments.** An argument a tool does not take (e.g. `publish({
 app_id, user_confirmed: true })` — `publish` has no `user_confirmed`) is

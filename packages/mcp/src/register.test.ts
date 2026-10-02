@@ -1,5 +1,5 @@
 /**
- * tools/list snapshot: exactly the 35 tools of a user who is not a
+ * tools/list snapshot: exactly the 45 tools of a user who is not a
  * super-admin (a super-admin also gets set_workspace_publishing), in order,
  * with their titles, annotations and input schemas. Hand-written on purpose — a
  * change to the public tool surface must be a deliberate edit here.
@@ -30,7 +30,7 @@ async function listTools(allow?: (t: string) => boolean, superAdmin = false) {
 const RO = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 
 describe('tools/list', () => {
-  it('is exactly the 35 tools with their annotations and inputs (snapshot)', async () => {
+  it('is exactly the 45 tools with their annotations and inputs (snapshot)', async () => {
     const tools = await listTools();
     const snapshot = tools.map((t) => ({
       name: t.name,
@@ -272,6 +272,76 @@ describe('tools/list', () => {
         required: ['app_id', 'path'],
       },
       {
+        name: 'list_form_submissions',
+        title: "List an app's form submissions",
+        annotations: { title: "List an app's form submissions", ...RO },
+        properties: ['app_id', 'form', 'from', 'to', 'limit', 'cursor'],
+        required: ['app_id'],
+      },
+      {
+        name: 'delete_form_submission',
+        title: 'Delete a form submission',
+        annotations: { title: 'Delete a form submission', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+        properties: ['app_id', 'id'],
+        required: ['app_id', 'id'],
+      },
+      {
+        name: 'list_end_users',
+        title: "List an app's end users",
+        annotations: { title: "List an app's end users", ...RO },
+        properties: ['app_id', 'search', 'limit', 'cursor'],
+        required: ['app_id'],
+      },
+      {
+        name: 'set_end_user_role',
+        title: "Change an end user's role",
+        annotations: { title: "Change an end user's role", readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+        properties: ['app_id', 'user_id', 'role'],
+        required: ['app_id', 'user_id', 'role'],
+      },
+      {
+        name: 'set_end_user_blocked',
+        title: 'Block or unblock an end user',
+        annotations: { title: 'Block or unblock an end user', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+        properties: ['app_id', 'user_id', 'blocked'],
+        required: ['app_id', 'user_id', 'blocked'],
+      },
+      {
+        name: 'sign_out_end_users',
+        title: 'Sign every end user out',
+        annotations: { title: 'Sign every end user out', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+        properties: ['app_id', 'user_confirmed'],
+        required: ['app_id'],
+      },
+      {
+        name: 'list_uploads',
+        title: "List an app's end-user uploads",
+        annotations: { title: "List an app's end-user uploads", ...RO },
+        properties: ['app_id', 'limit', 'cursor'],
+        required: ['app_id'],
+      },
+      {
+        name: 'delete_upload',
+        title: 'Delete an end-user upload',
+        annotations: { title: 'Delete an end-user upload', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+        properties: ['app_id', 'id'],
+        required: ['app_id', 'id'],
+      },
+      {
+        name: 'remove_module_secret',
+        title: 'Remove a module secret',
+        annotations: { title: 'Remove a module secret', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+        properties: ['app_id', 'module', 'name', 'user_confirmed'],
+        required: ['app_id', 'module', 'name'],
+      },
+      {
+        name: 'list_activity',
+        title: "Read a workspace's activity log",
+        annotations: { title: "Read a workspace's activity log", ...RO },
+        properties: ['workspace', 'app', 'action', 'actor', 'from', 'to', 'limit', 'cursor'],
+        required: ['workspace'],
+      },
+      {
         name: 'list_domains',
         title: "List an app's custom domains",
         annotations: { title: "List an app's custom domains", ...RO },
@@ -346,8 +416,8 @@ describe('tools/list', () => {
 
   it('a super-admin also gets set_workspace_publishing, last', async () => {
     const tools = await listTools(undefined, true);
-    expect(tools).toHaveLength(36);
-    const last = tools[35];
+    expect(tools).toHaveLength(46);
+    const last = tools[45];
     expect(last.name).toBe('set_workspace_publishing');
     expect(last.annotations).toEqual({
       title: 'Set a workspace\'s publishing',

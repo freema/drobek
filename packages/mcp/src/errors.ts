@@ -51,6 +51,8 @@ export const TOOL_ERROR_CODES = [
   'upstream_already_registered',
   // A data tool the server's records module does not support.
   'unavailable',
+  // An owner change the module refuses in the app's current state (set_end_user_role).
+  'conflict',
   'internal_error',
 ] as const;
 
