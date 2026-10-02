@@ -139,6 +139,13 @@ in the version history.
   `MCP_MAX_BODY_BYTES`; the briefing states it). A bigger call is refused with
   HTTP 413 and a JSON-RPC error before anything is written — split the write
   into several calls, or send `edits` instead of whole files.
+- New versions are rate-limited per app and per person within an hour (the
+  briefing states the numbers, by default 600 and 1200). Every `write_files`,
+  `restore_version`, `create_app` and `duplicate_app` makes a version; past
+  either limit the call answers `rate_limited` (`limit`,
+  `retry_after_seconds`) and nothing is stored. Tell the user and continue
+  after that time — never retry in a loop; put changes that belong together
+  into one call.
 
 - `compile.ok: true` → give the user the `preview_url`.
 - `compile.ok: false` → the version is saved (nothing is lost) but the preview
@@ -470,7 +477,7 @@ A failed call returns `isError: true` with `{ code, message, hint }` — the
 `invalid_path`, `limit_exceeded`, `secret_in_source`, `app_locked`,
 `app_locked_by_admin`, `busy`, `not_publishable`, `not_published`,
 `user_confirmation_required`, `gallery_hidden`, `gallery_disabled`, `not_duplicable`,
-`publish_not_approved`, `publish_blocked`, `asset_too_large`, `module_not_enabled`,
+`publish_not_approved`, `publish_blocked`, `rate_limited`, `asset_too_large`, `module_not_enabled`,
 `domain_not_verified`, `dns_unavailable`, …).
 An argument a tool does not take is ignored and the result carries
 `warnings: [{ code: "unknown_argument", ignored, accepted }]` — read it: a

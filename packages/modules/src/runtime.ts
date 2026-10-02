@@ -1125,7 +1125,7 @@ export class ModuleRuntime {
    * The effective limits of one workspace: the env defaults, or the
    * limits provider's plan — CORE_LIMITS (APPS_MAX_PER_WORKSPACE,
    * DOMAINS_MAX_PER_APP, UPSTREAMS_MAX_PER_WORKSPACE, …) and every module
-   * limit. For core callers: create_app, custom domains and upstreams.
+   * limit. For core callers: create_app, new versions, custom domains and upstreams.
    */
   workspaceLimits(workspaceId: string): Promise<Limits> {
     return this.deps.limits.forWorkspace(workspaceId);

@@ -404,6 +404,7 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `DROBEK_MIGRATE_ON_START` | 1 | `0` = the server does not apply migrations on start (tests, tooling) |
 | `AUDIT_RETENTION_DAYS` | 365 | audit rows older than this are pruned daily |
 | `APPS_MAX_PER_WORKSPACE` | 50 | live apps per workspace (deleted ones do not count); `create_app` beyond it answers `limit_exceeded` *(plan)* |
+| `VERSIONS_PER_APP_HOUR` / `VERSIONS_PER_USER_HOUR` | 600 / 1200 | new versions of one app / made by one person (every app and workspace) within the last hour — `write_files`, `create_app`, `restore_version`, `duplicate_app` and the dashboard's Restore and duplicate page together; past either the call answers `rate_limited` with `retry_after_seconds` (the dashboard 429 + `Retry-After`) and nothing is stored *(plan)* |
 | `ASSETS_DIR` | `/data/assets` *(compose)* | app asset storage (the `assets_data` volume) |
 | `APP_ASSET_MAX_BYTES` / `APP_ASSETS_QUOTA` | 104857600 / 1073741824 | one app asset (100 MiB) / all assets of one app (1 GiB); `asset_too_large` / `asset_quota_exceeded` *(plan)*. An upload must arrive within Node's 300 s request timeout |
 | `APP_ASSET_UPLOADS_PER_HOUR` | 60 | upload URLs (`create_asset_upload`, the Assets tab) per app per hour, then `rate_limited` |

@@ -189,6 +189,22 @@ describe('duplicateAppFiles', () => {
     expect(copies).toHaveLength(1);
   });
 
+  it("the copy's version 1 counts against VERSIONS_PER_USER_HOUR, refused before the app exists", async () => {
+    const app = await galleryApp();
+    const src = await duplicationSource(app.slug, ON);
+    const [u] = await db.insert(users).values({ email: 'writer@example.test' }).returning();
+    const writer: Actor = { userId: u.id, kind: 'user' };
+    const versionLimits = { perApp: 600, perUser: 2 };
+    const first = await duplicateAppFiles({ source: src, workspaceId: copierWs, name: 'first', actor: writer, env: ON, versionLimits });
+    await createVersion(first.id, [{ path: 'index.html', content: '<h1>mine</h1>' }], { actor: writer, versionLimits });
+    const err = await duplicateAppFiles({ source: src, workspaceId: copierWs, name: 'second', actor: writer, env: ON, versionLimits }).catch(
+      (e: AppsError) => e
+    );
+    expect(err).toMatchObject({ code: 'rate_limited', details: { limit: 'VERSIONS_PER_USER_HOUR', value: 2 } });
+    const copies = await db.select({ name: apps.name }).from(apps).where(eq(apps.duplicatedFromAppId, app.id));
+    expect(copies.map((c) => c.name)).toEqual(['first']);
+  });
+
   it('a copy refused before its app exists does not use up the cap', async () => {
     const app = await galleryApp();
     const src = await duplicationSource(app.slug, ON);

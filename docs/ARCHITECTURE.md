@@ -113,6 +113,16 @@ This document is the map of how that works. The neighbours:
   `restore_version` rolls the working copy back by writing a NEW version with
   the old files — history is never rewritten. There is no git and there are
   no branches.
+- **New versions are rate-limited** (`VERSIONS_PER_APP_HOUR`, default 600 per
+  app, and `VERSIONS_PER_USER_HOUR`, 1200 per person across all apps, within
+  the last hour; a limits provider may set both per workspace), so a loop of
+  writes cannot fill the database. Every way to a version counts — writes,
+  `create_app`'s version 1, restores, gallery copies. `createVersion` /
+  `restore` count `app_versions` rows inside their transaction under the
+  app's row lock and a per-person advisory lock, before any blob is stored;
+  the MCP tools repeat the check before the compile and the lease. A refusal
+  is `rate_limited` with `retry_after_seconds` (when the oldest version of the
+  full window leaves it).
 - **The public gallery** (`GALLERY_ENABLED`, off by default): an editor+
   lists a PUBLISHED app with a ≤ 160-character public description
   (`apps.gallery_listed` / `gallery_description`) in the dashboard, or an

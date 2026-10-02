@@ -1577,6 +1577,8 @@ default. Besides every active module's `limits`, the catalogue holds the
 | `UPSTREAMS_MAX_PER_WORKSPACE` | 20 | proxy upstreams one workspace may hold; `register_upstream` and the Upstreams page beyond it answer `limit_exceeded` with `limit` / `value` (existing upstreams over a lowered limit stay) |
 | `APP_ASSET_MAX_BYTES` | 104857600 | bytes of one app asset (100 MiB — video, audio, image, font at `/<path>`); `create_asset_upload` / the upload URL answer `asset_too_large` |
 | `APP_ASSETS_QUOTA` | 1073741824 | bytes of all assets of one app (1 GiB); past it `asset_quota_exceeded` |
+| `VERSIONS_PER_APP_HOUR` | 600 | new versions of one app within the last hour — `write_files`, `create_app`, `restore_version`, `duplicate_app` and the dashboard's Restore together; past it `rate_limited` with `limit` / `value` / `retry_after_seconds`, nothing stored |
+| `VERSIONS_PER_USER_HOUR` | 1200 | new versions one person makes within the last hour, in every app and workspace (the plan of the workspace being written applies); past it `rate_limited` like above |
 
 `ModuleRuntime.workspaceLimits(workspaceId)` returns a workspace's effective
 limits (core and module) for core callers. An operator with plans sets:

@@ -34,8 +34,10 @@ export const TAILWIND_BROWSER_URL = 'https://esm.sh/@tailwindcss/browser@4.1.11'
 
 /**
  * The live limits the briefing states: the compile ones (defaults =
- * @drobek/compile DEFAULT_LIMITS) and the largest MCP request body
- * (MCP_MAX_BODY_BYTES, default twice the version total).
+ * @drobek/compile DEFAULT_LIMITS), the largest MCP request body
+ * (MCP_MAX_BODY_BYTES, default twice the version total) and the version rate
+ * of the app's workspace (VERSIONS_PER_APP_HOUR / VERSIONS_PER_USER_HOUR,
+ * defaults = @drobek/apps).
  */
 export interface BriefingLimits {
   maxFiles: number;
@@ -43,6 +45,8 @@ export interface BriefingLimits {
   maxTotalBytes: number;
   timeoutMs: number;
   maxRequestBytes: number;
+  versionsPerAppHour: number;
+  versionsPerUserHour: number;
 }
 
 const DEFAULT_BRIEFING_LIMITS: BriefingLimits = {
@@ -51,6 +55,8 @@ const DEFAULT_BRIEFING_LIMITS: BriefingLimits = {
   maxTotalBytes: 5 * 1024 * 1024,
   timeoutMs: 10_000,
   maxRequestBytes: 10 * 1024 * 1024,
+  versionsPerAppHour: 600,
+  versionsPerUserHour: 1200,
 };
 
 function kib(bytes: number): string {
@@ -173,6 +179,7 @@ export function renderBriefing(opts: { limits?: Partial<BriefingLimits>; skills?
     `- Every write needs a \`reasoning\` line (≤ ${REASONING_MAX_CHARS} characters); it is shown in the version history.`,
     `- Limits per version: ${L.maxFiles} files, ${kib(L.maxFileBytes)} per file, ${kib(L.maxTotalBytes)} in total; a build may take ${L.timeoutMs / 1000} s.`,
     `- One write_files call travels as one MCP request of at most ${kib(L.maxRequestBytes)} (the JSON, escaping included); a bigger one is refused before it reaches the tool (HTTP 413) and nothing is written. Split a big write into several calls, or send \`edits\` instead of whole files.`,
+    `- New versions are rate-limited: ${L.versionsPerAppHour} per app and ${L.versionsPerUserHour} per person (all apps) within an hour — every write_files, restore_version, create_app and duplicate_app makes one. Past either, the call answers \`rate_limited\` with \`retry_after_seconds\` and nothing is stored: tell the user and continue after that time, never retry in a loop. Put changes that belong together into one write_files call.`,
     '',
     '## Dependencies (drobek.json import map)',
     '- Bare imports resolve ONLY through drobek.json `imports` → pinned https URLs (esm.sh) that the browser loads (the one exception is `drobek`, the platform SDK). `pkg/sub` maps to the `pkg` URL + `/sub` unless listed itself. An unlisted package is a compile error (`unresolved_import`) that names the line to add.',

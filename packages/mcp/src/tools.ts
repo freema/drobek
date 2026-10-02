@@ -37,7 +37,12 @@
  *    and with PUBLISH_APPROVAL=approval in one the operator has not allowed
  *    `publish_not_approved` (both + `contact`); list_apps and
  *    get_app say `can_publish` (+ `publish_contact`) and the workspace's
- *    `publishing` state.
+ *    `publishing` state;
+ *  - every new version (write_files, create_app, restore_version,
+ *    duplicate_app) counts against VERSIONS_PER_APP_HOUR /
+ *    VERSIONS_PER_USER_HOUR of the app's workspace: `rate_limited` with
+ *    `retry_after_seconds`, checked before the compile and the lease, and
+ *    again by @drobek/apps when the version is stored.
  */
 import {
   APP_LOCK_TTL_SEC,
@@ -49,6 +54,7 @@ import {
 } from '@drobek/agent-dx';
 import {
   AppsError,
+  assertVersionRate,
   classifyHost,
   copyName,
   createApp as createAppRow,
@@ -77,8 +83,10 @@ import {
   setGalleryListing,
   suggestSlug,
   validateAppSlug,
+  versionRateLimitsOf,
   type Actor,
   type VersionFileInput,
+  type VersionRateLimits,
   type WorkspacePublishing,
 } from '@drobek/apps';
 import { actorKindForSurface } from '@drobek/audit';
@@ -169,8 +177,8 @@ function toCompileOut(messages: unknown, modules?: ModuleRuntime, enabled?: Read
   });
 }
 
-/** The briefing of an app: `enabled` = its workspace's enabledModules(). */
-function briefing(ctx: CallContext, enabled: ReadonlySet<string>): string {
+/** The briefing of an app: `enabled` = its workspace's enabledModules(), `versions` = its version rate. */
+function briefing(ctx: CallContext, enabled: ReadonlySet<string>, versions: VersionRateLimits): string {
   const L = ctx.deps.limits;
   return renderBriefing({
     limits: {
@@ -179,9 +187,32 @@ function briefing(ctx: CallContext, enabled: ReadonlySet<string>): string {
       maxTotalBytes: L.maxTotalBytes,
       timeoutMs: L.timeoutMs,
       maxRequestBytes: mcpMaxBodyBytes(ctx.deps.env, L.maxTotalBytes),
+      versionsPerAppHour: versions.perApp,
+      versionsPerUserHour: versions.perUser,
     },
     skills: ctx.modules.skillList(enabled),
   });
+}
+
+// ── the version rate ─────────────────────────────────────────────────────────
+
+/** VERSIONS_PER_APP_HOUR / VERSIONS_PER_USER_HOUR of a workspace: its plan, else the env. */
+async function versionLimitsOf(ctx: CallContext, workspaceId: string): Promise<VersionRateLimits> {
+  return versionRateLimitsOf(await ctx.modules.workspaceLimits(workspaceId), ctx.deps.env);
+}
+
+/** A new version over its rate (@drobek/apps `rate_limited`) as the tool error; anything else unchanged. */
+function versionRateError(err: unknown): unknown {
+  return err instanceof AppsError && err.code === 'rate_limited' ? new ToolError('rate_limited', err.message, { ...err.details }) : err;
+}
+
+/** `rate_limited` ahead of the work when one more version of `appId` (when given) or by the caller would pass its rate. */
+async function refuseOverVersionRate(ctx: CallContext, limits: VersionRateLimits, appId?: string): Promise<void> {
+  try {
+    await assertVersionRate({ appId, userId: ctx.principal.userId }, limits);
+  } catch (err) {
+    throw versionRateError(err);
+  }
 }
 
 /** The skills of an app: the opt-in modules off for its workspace are left out. */
@@ -333,7 +364,7 @@ export async function getApp(ctx: CallContext, args: { app_id: string }) {
   const head = latest.get(app.id);
   const detail = head ? await getVersion(app.id, { id: head.id }) : null;
   const lock = locks.get(app.id);
-  const enabled = await ctx.modules.enabledModules(app.workspaceId);
+  const [enabled, versionLimits] = await Promise.all([ctx.modules.enabledModules(app.workspaceId), versionLimitsOf(ctx, app.workspaceId)]);
   const permission = (await publishPermissions([app.workspaceId], { env: ctx.deps.env, actorUserId: ctx.principal.userId })).get(
     app.workspaceId
   );
@@ -348,7 +379,7 @@ export async function getApp(ctx: CallContext, args: { app_id: string }) {
     ...items[0],
     compile_errors: head?.compileStatus === 'error' ? toCompileOut(head.compileErrors, ctx.modules, enabled) : [],
     ...(readiness ? { readiness } : {}),
-    briefing: briefing(ctx, enabled),
+    briefing: briefing(ctx, enabled, versionLimits),
     files: (detail?.files ?? [])
       .filter((f) => f.kind === 'source')
       .map((f) => ({ path: f.path, size: f.size, sha256: f.sha256 })),
@@ -490,6 +521,7 @@ async function compileAndStore(
   sources: Map<string, string | Buffer>,
   reasoning: string,
   trigger: 'create_app' | 'write_files',
+  versionLimits: VersionRateLimits,
   baseVersion?: number | null
 ): Promise<{ number: number; result: CompileResult; typecheck?: 'pending' }> {
   // The bare `drobek` import → this server's versioned SDK (immutable caching);
@@ -509,12 +541,21 @@ async function compileAndStore(
     await logCompile(ctx, app.id, null, result, trigger);
     throw err;
   }
-  const { id, number } = await createVersion(app.id, versionFiles(sources, result), {
-    actor: actorOf(ctx),
-    reasoning,
-    compile: { status: result.ok ? 'ok' : 'error', errors: result.ok ? null : result.errors },
-    ...(baseVersion !== undefined ? { baseVersion } : {}),
-  });
+  let stored: { id: string; number: number };
+  try {
+    stored = await createVersion(app.id, versionFiles(sources, result), {
+      actor: actorOf(ctx),
+      reasoning,
+      compile: { status: result.ok ? 'ok' : 'error', errors: result.ok ? null : result.errors },
+      versionLimits,
+      ...(baseVersion !== undefined ? { baseVersion } : {}),
+    });
+  } catch (err) {
+    const refused = versionRateError(err);
+    if (refused !== err) await logCompile(ctx, app.id, null, result, trigger);
+    throw refused;
+  }
+  const { id, number } = stored;
   await logCompile(ctx, app.id, number, result, trigger);
   await ctx.deps.notifyAppChanged({ app_id: app.id, slug: app.slug, version: number });
   // The TypeScript check runs in the background — the write never waits for it.
@@ -547,7 +588,11 @@ export async function createApp(
   const base = deriveSlug(name);
   let slug = validateAppSlug(base) ? suggestSlug(base || 'app') : base;
   // The workspace's plan (limits provider) or the env default.
-  const maxApps = (await ctx.modules.workspaceLimits(ws.id)).APPS_MAX_PER_WORKSPACE;
+  const wsLimits = await ctx.modules.workspaceLimits(ws.id);
+  const maxApps = wsLimits.APPS_MAX_PER_WORKSPACE;
+  const versionLimits = versionRateLimitsOf(wsLimits, ctx.deps.env);
+  // Version 1 counts against the caller's VERSIONS_PER_USER_HOUR: refused before the app exists.
+  await refuseOverVersionRate(ctx, versionLimits);
   let created: { id: string; slug: string } | null = null;
   for (let attempt = 0; attempt < 4 && !created; attempt++) {
     try {
@@ -570,7 +615,8 @@ export async function createApp(
     created,
     templateFiles(template, name),
     `Created from the ${template} template`,
-    'create_app'
+    'create_app',
+    versionLimits
   );
   await ctx.modules.runHook('onAppCreate', { id: created.id, slug: created.slug, workspaceId: ws.id });
   const enabled = await ctx.modules.enabledModules(ws.id);
@@ -583,7 +629,7 @@ export async function createApp(
     version: number,
     compile: compileOut(result, ctx.modules, enabled),
     preview_url: previewUrl(created.slug, ctx.deps.env),
-    briefing: briefing(ctx, enabled),
+    briefing: briefing(ctx, enabled, versionLimits),
     skills: skills(ctx, enabled),
   };
 }
@@ -653,12 +699,14 @@ export async function duplicateApp(ctx: CallContext, args: { from: string; works
   try {
     source = await duplicationSource(from, env);
     const name = copyName(args.name, source);
+    const wsLimits = await ctx.modules.workspaceLimits(ws.id);
     copy = await duplicateAppFiles({
       source,
       workspaceId: ws.id,
       name,
       actor: actorOf(ctx),
-      maxApps: (await ctx.modules.workspaceLimits(ws.id)).APPS_MAX_PER_WORKSPACE,
+      maxApps: wsLimits.APPS_MAX_PER_WORKSPACE,
+      versionLimits: versionRateLimitsOf(wsLimits, env),
       env,
     });
   } catch (err) {
@@ -893,6 +941,8 @@ export async function writeFiles(
   refuseIfLockedByAdmin(app);
   const warnings: WriteWarning[] = [];
   const changes = validateChanges(args.files, args.reasoning, warnings);
+  const versionLimits = await versionLimitsOf(ctx, app.workspaceId);
+  await refuseOverVersionRate(ctx, versionLimits, app.id);
   await takeLease(ctx, app.id);
   // The lease keeps other users out, not the same user's other session. Edits
   // are only valid against the version they were applied to, so a call with
@@ -924,7 +974,7 @@ export async function writeFiles(
 
     let stored: Awaited<ReturnType<typeof compileAndStore>>;
     try {
-      stored = await compileAndStore(ctx, app, files, args.reasoning.trim(), 'write_files', hasEdits ? base : undefined);
+      stored = await compileAndStore(ctx, app, files, args.reasoning.trim(), 'write_files', versionLimits, hasEdits ? base : undefined);
     } catch (err) {
       if (!(err instanceof AppsError && err.code === 'version_conflict')) throw err;
       if (attempt >= EDIT_WRITE_ATTEMPTS) {
@@ -959,15 +1009,17 @@ export async function restoreVersion(ctx: CallContext, args: { app_id: string; v
   if (!Number.isInteger(args.version) || args.version < 1) {
     throw new ToolError('invalid_params', '`version` must be a positive integer.');
   }
+  const versionLimits = await versionLimitsOf(ctx, app.workspaceId);
+  await refuseOverVersionRate(ctx, versionLimits, app.id);
   await takeLease(ctx, app.id);
   let created: { id: string; number: number; assetsRestored: boolean };
   try {
-    created = await restore(app.id, args.version, actorOf(ctx));
+    created = await restore(app.id, args.version, actorOf(ctx), { versionLimits });
   } catch (err) {
     if (err instanceof AppsError && err.code === 'not_found') {
       throw new ToolError('not_found', `Version ${args.version} does not exist.`);
     }
-    throw err;
+    throw versionRateError(err);
   }
   const v = await getVersion(app.id, { id: created.id });
   const ok = v?.compileStatus === 'ok';

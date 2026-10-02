@@ -22,7 +22,8 @@
  *    PUBLISH_APPROVAL=approval an unapproved one with 403
  *    `publish_not_approved`; the header carries `publishApproval` for
  *    <PublishApprovalNotice> and the `request-publish-approval` intent asks
- *    the operator.
+ *    the operator. A restore past the workspace's VERSIONS_PER_APP_HOUR /
+ *    VERSIONS_PER_USER_HOUR answers 429 `rate_limited` with Retry-After.
  */
 import { data, redirect, type ActionFunctionArgs, type LoaderFunctionArgs } from 'react-router';
 import { and, desc, eq, inArray, max } from 'drizzle-orm';
@@ -42,6 +43,7 @@ import {
   setGalleryListing,
   softDeleteApp,
   unpublishApp,
+  versionRateLimitsOf,
   type Actor,
 } from '@drobek/apps';
 import { actorKindForSurface } from '@drobek/audit';
@@ -174,8 +176,8 @@ interface AppActionError {
   intent: string;
 }
 
-function fail(status: number, intent: string, error: string) {
-  return data<AppActionError>({ error, intent }, { status });
+function fail(status: number, intent: string, error: string, headers?: Record<string, string>) {
+  return data<AppActionError>({ error, intent }, { status, ...(headers ? { headers } : {}) });
 }
 
 function versionNumber(raw: FormDataEntryValue | null): number | null {
@@ -189,7 +191,7 @@ function versionNumber(raw: FormDataEntryValue | null): number | null {
  * here from any tab), else to the posting page; `delete` lands on the apps
  * list. Expected failures come back as `{ error, intent }` with 400 (409 when
  * another member's agent holds the lease, 423 when a super-admin took the app
- * down) for the page to show.
+ * down, 429 past the version rate) for the page to show.
  */
 export async function appAction({ request, params }: ActionFunctionArgs) {
   // The editor gate FIRST: a viewer gets 403 before anything is read or changed.
@@ -244,7 +246,8 @@ export async function appAction({ request, params }: ActionFunctionArgs) {
           const holder = (await emailsOf([lease.holder_user_id])).get(lease.holder_user_id) ?? 'another member';
           return fail(409, intent, `An agent of ${holder} is writing this app right now — unlock it first, then restore.`);
         }
-        const out = await restore(app.id, n, actor, { reasoning: `Restore of version ${n} (dashboard)` });
+        const versionLimits = versionRateLimitsOf(await (await moduleRuntime()).workspaceLimits(access.workspace.id));
+        const out = await restore(app.id, n, actor, { reasoning: `Restore of version ${n} (dashboard)`, versionLimits });
         await changed('version', out.number);
         break;
       }
@@ -331,6 +334,10 @@ export async function appAction({ request, params }: ActionFunctionArgs) {
     if (err instanceof AppsError && err.code === 'app_locked_by_admin') return fail(423, intent, err.message);
     if (err instanceof AppsError && err.code === 'gallery_disabled') return fail(404, intent, err.message);
     if (err instanceof AppsError && (err.code === 'publish_not_approved' || err.code === 'publish_blocked')) return fail(403, intent, err.message);
+    if (err instanceof AppsError && err.code === 'rate_limited') {
+      const retry = err.details?.retry_after_seconds;
+      return fail(429, intent, err.message, retry ? { 'Retry-After': String(retry) } : undefined);
+    }
     if (err instanceof AppsError) return fail(400, intent, err.message);
     throw err;
   }

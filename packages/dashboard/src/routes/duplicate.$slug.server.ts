@@ -22,6 +22,7 @@ import {
   defaultCopyName,
   duplicateAppFiles,
   duplicationSource,
+  versionRateLimitsOf,
   type DuplicationSource,
 } from '@drobek/apps';
 import { getSessionUser, type SessionUser } from '@drobek/auth';
@@ -122,12 +123,14 @@ export async function action({ request, params }: ActionFunctionArgs) {
   let copy: { id: string; slug: string };
   try {
     const name = copyName(form.get('name'), src);
+    const wsLimits = await rt.workspaceLimits(ws.id);
     copy = await duplicateAppFiles({
       source: src,
       workspaceId: ws.id,
       name,
       actor: { userId: user.id, kind: 'user' },
-      maxApps: (await rt.workspaceLimits(ws.id)).APPS_MAX_PER_WORKSPACE,
+      maxApps: wsLimits.APPS_MAX_PER_WORKSPACE,
+      versionLimits: versionRateLimitsOf(wsLimits),
     });
   } catch (err) {
     if (err instanceof AppsError) {

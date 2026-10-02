@@ -12,7 +12,8 @@
  * and expects `{ "limits": { "<ENV_NAME>": <positive integer>, … } }`. Known
  * names override the env defaults; unknown names and bad values are ignored.
  * The catalogue is CORE_LIMITS (enforced by core: apps per workspace, custom
- * domains per app, asset size and quota per app, proxy upstreams per workspace) plus every active module's `limits`. A limit marked
+ * domains per app, asset size and quota per app, proxy upstreams per workspace,
+ * new versions per app and per person per hour) plus every active module's `limits`. A limit marked
  * `allowZero` (DOMAINS_MAX_PER_APP) also takes 0 = the feature is off.
  * Every `availability: 'opt-in'` module adds the pseudo-limit
  * `MODULE_ENABLED_<NAME>` (0/1, env default 0): a plan answering 1 enables the
@@ -23,7 +24,13 @@
  * apply and a warning is logged — a provider outage never takes apps down.
  */
 import { createHmac } from 'node:crypto';
-import { DEFAULT_APPS_MAX_PER_WORKSPACE, DEFAULT_APP_ASSETS_QUOTA, DEFAULT_APP_ASSET_MAX_BYTES } from '@drobek/apps';
+import {
+  DEFAULT_APPS_MAX_PER_WORKSPACE,
+  DEFAULT_APP_ASSETS_QUOTA,
+  DEFAULT_APP_ASSET_MAX_BYTES,
+  DEFAULT_VERSIONS_PER_APP_HOUR,
+  DEFAULT_VERSIONS_PER_USER_HOUR,
+} from '@drobek/apps';
 import type { Logger } from '@drobek/core';
 import { dbErrorForLog } from '@drobek/db';
 import { DEFAULT_UPSTREAMS_MAX_PER_WORKSPACE } from '@drobek/proxy';
@@ -93,6 +100,16 @@ export const CORE_LIMITS: readonly CatalogueLimit[] = Object.freeze([
     env: 'APP_ASSETS_QUOTA',
     default: DEFAULT_APP_ASSETS_QUOTA,
     meaning: 'Bytes of all assets of one app; an upload past it answers asset_quota_exceeded.',
+  },
+  {
+    env: 'VERSIONS_PER_APP_HOUR',
+    default: DEFAULT_VERSIONS_PER_APP_HOUR,
+    meaning: 'New versions of one app within the last hour (write_files, create_app, restores, gallery copies); past it rate_limited with retry_after_seconds.',
+  },
+  {
+    env: 'VERSIONS_PER_USER_HOUR',
+    default: DEFAULT_VERSIONS_PER_USER_HOUR,
+    meaning: 'New versions one person makes within the last hour, in every app and workspace; past it rate_limited with retry_after_seconds.',
   },
 ]);
 

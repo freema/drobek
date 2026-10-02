@@ -343,7 +343,12 @@ unchanged.
   (≤ 300 characters); 200 files / 512 KiB per file / 5 MiB per version. One
   `write_files` call is one MCP request of at most `MCP_MAX_BODY_BYTES`
   (10 MiB of JSON); a bigger one answers HTTP 413 with a JSON-RPC error
-  telling the agent to split the write or send `edits`.
+  telling the agent to split the write or send `edits`. New versions are
+  rate-limited: the workspace's `VERSIONS_PER_APP_HOUR` per app and
+  `VERSIONS_PER_USER_HOUR` per person within an hour (the briefing states
+  both); past either `write_files`, `restore_version`, `create_app` and
+  `duplicate_app` answer `rate_limited` with `retry_after_seconds` and store
+  nothing.
 - **Dependencies** — `drobek.json` `imports` → pinned esm.sh URLs; an unlisted
   bare import is `unresolved_import` naming the line to add; `drobek` is the
   platform SDK.

@@ -114,8 +114,8 @@ pinned esm.sh URL, e.g. `"date-fns": "https://esm.sh/date-fns@4.1.0"`; `pkg/sub`
   `src/main.*` = plain HTML served as written. JSX = automatic runtime (no `import React`); types stripped, NOT checked.
 - Paths app-relative (`src/App.tsx`), no `/` prefix, no `..`. Text files only: .tsx .ts .jsx .js .mjs .css .json .html .txt .md
   .svg .webmanifest. Video, audio, images, fonts: `create_asset_upload` (an upload URL, never base64) → the preview serves it at `/<path>`, production after `publish`.
-- 1–20 changes per write, one write ≤ 10 MiB as JSON (bigger → HTTP 413: split it or send `edits`); `reasoning`
-  ≤ 300 chars. Per version (defaults; the briefing has this server's): 200 files, 512 KiB per file, 5 MiB total, 10 s build.
+- 1–20 changes per write, one write ≤ 10 MiB as JSON (bigger → HTTP 413: split it or send `edits`); `reasoning` ≤ 300 chars.
+  Per version (defaults; the briefing has this server's): 200 files, 512 KiB per file, 5 MiB total, 10 s build; per hour 600 new versions per app, 1200 per person.
 - Secrets in files → the write is refused (`secret_in_source`); the owner sets secrets in the drobek
   dashboard. Never ask for their values. Lease: a write holds the app for 3 minutes (renewed per write).
 - Hosts: `<slug>--preview.<APPS_DOMAIN>` follows every write that compiled; `<slug>.<APPS_DOMAIN>`
@@ -140,6 +140,7 @@ pinned esm.sh URL, e.g. `"date-fns": "https://esm.sh/date-fns@4.1.0"`; `pkg/sub`
 | `secret_in_source` | a key/token in a file; nothing stored | remove it; the owner sets it in the dashboard |
 | `app_locked` | another user's agent writes the app | tell the user; retry after `expires_at` |
 | `busy` | the compiler queue is full | retry the same call in a few seconds |
+| `rate_limited` | too many new versions within an hour (`VERSIONS_PER_APP_HOUR` / `VERSIONS_PER_USER_HOUR`); nothing stored | tell the user; continue after `retry_after_seconds`, never loop; one write per related change |
 | `not_publishable` | that version did not compile | publish the newest version that compiled |
 | `publish_blocked` / `publish_not_approved` | the operator turned publishing off for the workspace / has not approved it (a request was e-mailed) | tell the user (`contact`), share `preview_url`; do not retry |
 | `user_confirmation_required` | gallery listing, workspace publishing, primary domain or removing a live domain without the user's yes | ask the user; call again with `user_confirmed: true` only if they say yes |

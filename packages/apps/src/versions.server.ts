@@ -8,6 +8,10 @@
  * Publish also freezes the app's assets for the version it puts
  * live, and restore brings back the assets a version had when it was last
  * live (assets/snapshots.server.ts).
+ *
+ * A new version — a write or a restore — is refused with `rate_limited` past
+ * VERSIONS_PER_APP_HOUR / VERSIONS_PER_USER_HOUR (version-rate.server.ts),
+ * before any blob is stored.
  */
 import { createHash } from 'node:crypto';
 import { and, desc, eq, gte, inArray, sql } from 'drizzle-orm';
@@ -20,6 +24,7 @@ import { lockedByAdminError, screenAfterPublish } from './moderation.server.js';
 import { freezeAssetsForPublish, pruneAssetSnapshots, restoreDraftAssets } from './assets/snapshots.server.js';
 import { assertMayPublish, requestPublishApproval } from './publish-approval.server.js';
 import { notifyOperatorOfPublish, type PublishKind } from './publish-notify.server.js';
+import { assertVersionRateLocked, versionRateLimits, type VersionRateLimits } from './version-rate.server.js';
 import type {
   Actor,
   CompileStatus,
@@ -44,6 +49,8 @@ export interface CreateVersionOptions {
    * is latest.
    */
   baseVersion?: number | null;
+  /** VERSIONS_PER_APP_HOUR / VERSIONS_PER_USER_HOUR of the app's workspace (versionRateLimitsOf); default: the env. */
+  versionLimits?: VersionRateLimits;
 }
 
 const VERSION_COLUMNS = {
@@ -118,7 +125,7 @@ async function audit(
 }
 
 /**
- * Store a new version: blobs upsert → version row → file rows, in one
+ * Store a new version: rate check → blobs upsert → version row → file rows, in one
  * transaction. An upsert of an existing blob refreshes its `created_at` and
  * row-locks it, so a concurrent GC sweep can never delete it underneath us.
  */
@@ -146,6 +153,7 @@ export async function createVersion(
 
   return getDb().transaction(async (tx) => {
     const app = await lockWritableApp(tx, appId);
+    await assertVersionRateLocked(tx, appId, opts.actor.userId, opts.versionLimits ?? versionRateLimits());
     if (bytesBySha.size > 0) {
       await tx
         .insert(blobs)
@@ -366,12 +374,13 @@ export async function publish(
  * When version `number` was published and its asset set is still
  * kept, the draft assets are reset to that set too (`assetsRestored`), so
  * the preview — and the next publish — show the version's old assets.
+ * Counts against the version rate like a write (`opts.versionLimits`).
  */
 export async function restore(
   appId: string,
   number: number,
   actor: Actor,
-  opts: { reasoning?: string | null } = {}
+  opts: { reasoning?: string | null; versionLimits?: VersionRateLimits } = {}
 ): Promise<{ id: string; number: number; assetsRestored: boolean }> {
   return getDb().transaction(async (tx) => {
     const app = await lockWritableApp(tx, appId);
@@ -384,6 +393,7 @@ export async function restore(
       .from(appVersions)
       .where(and(eq(appVersions.appId, appId), eq(appVersions.number, number)));
     if (!source) throw new AppsError('not_found', `Version ${number} does not exist.`);
+    await assertVersionRateLocked(tx, appId, actor.userId, opts.versionLimits ?? versionRateLimits());
 
     const newNumber = await nextNumber(tx, appId);
     const [version] = await tx
