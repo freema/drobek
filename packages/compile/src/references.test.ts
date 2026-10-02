@@ -255,10 +255,12 @@ describe('compile result', () => {
 describe('hostile input', () => {
   /** 512 KB (the largest file a version may hold) of `unit`: one file of each took the old regular expressions seconds to minutes. */
   const fill = (unit: string) => unit.repeat(Math.ceil((512 * 1024) / unit.length)).slice(0, 512 * 1024);
+  /** The CPU time `f` takes, in ms: other load on the machine does not count. */
   const ms = (f: () => unknown) => {
-    const started = performance.now();
+    const started = process.cpuUsage();
     f();
-    return performance.now() - started;
+    const { user, system } = process.cpuUsage(started);
+    return (user + system) / 1000;
   };
 
   it.each([

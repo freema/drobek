@@ -4,10 +4,12 @@ import { blank, elements, replaceSpans, startTagReader, type StartTag } from './
 /** 512 KB (the largest file a version may hold) of `unit`: the old regular expressions took seconds to minutes on each hostile input below. */
 const fill = (unit: string): string => unit.repeat(Math.ceil((512 * 1024) / unit.length)).slice(0, 512 * 1024);
 
+/** The CPU time `f` takes, in ms: other load on the machine does not count. */
 function ms(f: () => unknown): number {
-  const started = performance.now();
+  const started = process.cpuUsage();
   f();
-  return performance.now() - started;
+  const { user, system } = process.cpuUsage(started);
+  return (user + system) / 1000;
 }
 
 /** mulberry32: the same generated texts on every run. */

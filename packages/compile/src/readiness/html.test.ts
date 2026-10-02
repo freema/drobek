@@ -51,8 +51,9 @@ describe('readHtml', () => {
     ['unclosed comments', '<!--'],
   ])('reads 512 KB of %s in linear time', (_what, unit) => {
     const source = unit.repeat(Math.ceil((512 * 1024) / unit.length)).slice(0, 512 * 1024);
-    const started = performance.now();
+    const started = process.cpuUsage();
     readHtml(source);
-    expect(performance.now() - started).toBeLessThan(500);
+    const { user, system } = process.cpuUsage(started);
+    expect((user + system) / 1000).toBeLessThan(500);
   });
 });
