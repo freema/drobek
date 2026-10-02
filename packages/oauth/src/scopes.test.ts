@@ -49,7 +49,7 @@ function allCombinations(): Scope[][] {
   return out;
 }
 
-const READ_TOOLS = ['list_apps', 'get_app', 'read_file', 'skill_info', 'query_data', 'get_logs', 'list_assets', 'list_domains', 'list_upstreams'];
+const READ_TOOLS = ['list_apps', 'get_app', 'read_file', 'skill_info', 'query_data', 'get_logs', 'list_assets', 'list_domains', 'list_upstreams', 'list_members'];
 const WRITE_TOOLS = [
   'create_app',
   'duplicate_app',
@@ -64,6 +64,8 @@ const WRITE_TOOLS = [
   'remove_domain',
   'register_upstream',
   'remove_upstream',
+  'set_member_role',
+  'remove_member',
 ];
 const PUBLISH_TOOLS = ['publish', 'set_gallery_listing', 'set_primary_domain', 'set_workspace_publishing'];
 

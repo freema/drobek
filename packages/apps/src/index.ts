@@ -63,8 +63,11 @@ export {
   parseLease,
   readAppLease,
   releaseAppLease,
+  redisTakeLeaseHeldBy,
+  releaseUserAppLeases,
   type Lease,
   type LeaseRedis,
+  type TakeLeaseHeldBy,
 } from './lease.server.js';
 export {
   BLOB_GC_GRACE_MS,

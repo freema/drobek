@@ -53,6 +53,12 @@ export const AUDIT_ACTIONS = {
   memberInvite: 'member.invite',
   memberAccept: 'member.accept',
   memberRoleChange: 'member.role_change',
+  /** A workspace admin removed a member (meta: the role they had). */
+  memberRemove: 'member.remove',
+  /** A member left the workspace (meta: the role they had). */
+  memberLeave: 'member.leave',
+  /** A workspace admin revoked a pending invite (meta: its role, never the address). */
+  memberInviteRevoke: 'member.invite_revoke',
   /** `configure_module` applied a module config change directly. */
   moduleConfigure: 'module.configure',
   /** `configure_module` stored a change that needs the owner's confirmation. */

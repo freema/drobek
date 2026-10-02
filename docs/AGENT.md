@@ -104,8 +104,8 @@ answers `not_found`, the same as one that does not exist.
 
 | Scope | Tools |
 | --- | --- |
-| `read` | `list_apps`, `get_app`, `read_file`, `skill_info`, `query_data`, `get_logs`, `list_assets`, `list_domains`, `list_upstreams` |
-| `write` | `create_app`, `duplicate_app`, `write_files`, `restore_version`, `configure_module`, `sync_now`, `create_asset_upload`, `delete_asset`, `add_domain`, `verify_domain`, `remove_domain`, `register_upstream`, `remove_upstream` |
+| `read` | `list_apps`, `get_app`, `read_file`, `skill_info`, `query_data`, `get_logs`, `list_assets`, `list_domains`, `list_upstreams`, `list_members` |
+| `write` | `create_app`, `duplicate_app`, `write_files`, `restore_version`, `configure_module`, `sync_now`, `create_asset_upload`, `delete_asset`, `add_domain`, `verify_domain`, `remove_domain`, `register_upstream`, `remove_upstream`, `set_member_role`, `remove_member` |
 | `publish` | `publish`, `set_gallery_listing`, `set_primary_domain`, `set_workspace_publishing` (super-admins only) |
 
 ## Tools
@@ -138,6 +138,9 @@ answers `not_found`, the same as one that does not exist.
 | `list_upstreams` | read, workspace-admin | read-only | The workspace's proxy upstreams (the dashboard's Upstreams page): `name`, `base_url`, allowed methods and path prefixes, `auth_type`, `auth_header_name`, `has_secret` (never the key), the `apps` whose assignment was confirmed; plus `upstreams_url`. |
 | `register_upstream` | write, workspace-admin | not destructive, idempotent | Registers an external API for the proxy module with the dashboard's checks (public host, port 80/443, allowed methods and path prefixes). `auth_type: "none"` registers at once. `bearer` / `header` need a key, which never passes through MCP: the answer is `registered: false` with `secret_url`, the Upstreams page with the fields filled in, where the user pastes the key. One upstream is one host; never register many similar hosts (a feed per region) without asking the user. A taken name answers `upstream_already_registered`; `limit_exceeded` (`UPSTREAMS_MAX_PER_WORKSPACE`), `rate_limited` (`UPSTREAM_REGISTRATIONS_PER_HOUR`, `retry_after_seconds`). |
 | `remove_upstream` | write, workspace-admin | destructive, idempotent | Deletes an upstream and its key; every app calling it breaks at once, so it needs `user_confirmed: true` (without it: `user_confirmation_required` with the `apps` using it). |
+| `list_members` | read, any role | read-only | The workspace's members (the dashboard's Members tab): `email`, `role`, `you`; plus the workspace `kind`, your `role`, `can_manage` (a workspace-admin of a team workspace) and `members_url`. |
+| `set_member_role` | write, workspace-admin | not destructive, idempotent | Sets a member's role (`viewer` / `editor` / `workspace-admin`) in a team workspace; a new viewer's edit locks on the workspace's apps are released (`released_locks`). Never demotes the only workspace-admin (`last_workspace_admin`); a personal workspace answers `personal_workspace`. Audited `member.role_change`. |
+| `remove_member` | write, workspace-admin (any role to leave) | destructive, idempotent | Removes a member, or with your own e-mail leaves the workspace. The member loses access at once (`not_found` everywhere) and their edit locks are released; their apps and versions stay. Needs `user_confirmed: true` (without it: `user_confirmation_required` with the member's `role`). Never the only workspace-admin (`last_workspace_admin`), never a personal workspace (`personal_workspace`). Audited `member.remove` / `member.leave`. |
 
 Every tool carries all four MCP annotations explicitly (`readOnlyHint`,
 `destructiveHint`, `idempotentHint`, `openWorldHint`; "idempotent" above means

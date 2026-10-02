@@ -25,6 +25,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { toolDoc } from '@drobek/agent-dx';
 import { AppsError, WORKSPACE_PUBLISHING_STATES } from '@drobek/apps';
+import { WORKSPACE_ROLES } from '@drobek/tenancy';
 import { dbErrorForLog } from '@drobek/db';
 import { defaultDeps, type ToolDeps, type ToolPrincipal } from './context.js';
 import { ToolError, lockedByAdmin } from './errors.js';
@@ -51,6 +52,7 @@ import {
 import { createAssetUpload, deleteAssetTool, listAssetsTool } from './assets.js';
 import { addDomainTool, listDomainsTool, removeDomainTool, setPrimaryDomainTool, verifyDomainTool } from './domains.js';
 import { listUpstreamsTool, registerUpstreamTool, removeUpstreamTool } from './upstreams.js';
+import { listMembersTool, removeMemberTool, setMemberRoleTool } from './members.js';
 import { setWorkspacePublishingTool } from './workspace-publishing.js';
 import { TEMPLATES } from './templates.js';
 
@@ -81,6 +83,9 @@ export const APP_TOOL_NAMES = [
   'list_upstreams',
   'register_upstream',
   'remove_upstream',
+  'list_members',
+  'set_member_role',
+  'remove_member',
   'set_workspace_publishing',
 ] as const;
 
@@ -253,6 +258,19 @@ export const INPUT_SCHEMAS = {
     workspace: z.string().describe('The workspace slug; you need the workspace-admin role.'),
     name: z.string().describe('A registered upstream (list_upstreams lists them).'),
     user_confirmed: z.boolean().optional().describe('true ONLY after the user explicitly said yes to removing it.'),
+  },
+  list_members: {
+    workspace: z.string().describe('The workspace slug (list_apps lists your workspaces and your role).'),
+  },
+  set_member_role: {
+    workspace: z.string().describe('The workspace slug; you need the workspace-admin role.'),
+    email: z.string().describe('The member\'s e-mail address (list_members lists them).'),
+    role: z.enum(WORKSPACE_ROLES).describe('viewer = reads; editor = also builds and changes apps; workspace-admin = also manages members.'),
+  },
+  remove_member: {
+    workspace: z.string().describe('The workspace slug.'),
+    email: z.string().describe('The member to remove (list_members lists them); your own e-mail leaves the workspace.'),
+    user_confirmed: z.boolean().optional().describe('true ONLY after the user explicitly said yes to this removal.'),
   },
   set_workspace_publishing: {
     workspace: z.string().describe('The workspace slug (list_apps all_workspaces lists every workspace).'),
@@ -483,6 +501,9 @@ export function registerAppTools(
   register('list_upstreams', listUpstreamsTool);
   register('register_upstream', registerUpstreamTool);
   register('remove_upstream', removeUpstreamTool);
+  register('list_members', listMembersTool);
+  register('set_member_role', setMemberRoleTool);
+  register('remove_member', removeMemberTool);
   register('set_workspace_publishing', setWorkspacePublishingTool);
 
   if (registered === 0) {

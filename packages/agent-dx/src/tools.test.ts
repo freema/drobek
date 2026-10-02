@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { TOOL_DOCS, TOOL_NAMES, toolDoc } from './tools.js';
 
 describe('TOOL_DOCS manifest', () => {
-  it('documents exactly the 26 tools, in tools/list order', () => {
+  it('documents exactly the 29 tools, in tools/list order', () => {
     expect(TOOL_NAMES).toEqual([
       'list_apps',
       'create_app',
@@ -29,6 +29,9 @@ describe('TOOL_DOCS manifest', () => {
       'list_upstreams',
       'register_upstream',
       'remove_upstream',
+      'list_members',
+      'set_member_role',
+      'remove_member',
       'set_workspace_publishing',
     ]);
   });
@@ -82,6 +85,9 @@ describe('TOOL_DOCS manifest', () => {
       list_upstreams: [true, false, true, false],
       register_upstream: [false, false, true, false], // a second call answers upstream_already_registered
       remove_upstream: [false, true, true, false], // the apps calling it break; a second remove answers not_found
+      list_members: [true, false, true, false],
+      set_member_role: [false, false, true, false], // the same role again answers changed:false
+      remove_member: [false, true, true, false], // the member loses access; a second remove answers not_found
       set_workspace_publishing: [false, false, true, false], // who may publish; the same call again answers changed:false
     };
     expect(Object.keys(table)).toEqual(TOOL_NAMES);
@@ -149,6 +155,24 @@ describe('TOOL_DOCS manifest', () => {
     }
     expect(toolDoc('get_app').returns).toContain('domains:[{host,status');
     expect(toolDoc('publish').returns).toContain('verified custom domains');
+  });
+
+  it('the member tools mirror the Members tab; removing needs the user\'s explicit yes', () => {
+    expect(toolDoc('list_members').scope).toMatch(/^read \(any role/);
+    expect(toolDoc('set_member_role').scope).toMatch(/^write \(workspace-admin/);
+    expect(toolDoc('remove_member').scope).toMatch(/^write \(workspace-admin role in the workspace; any role to leave\)/);
+    expect(toolDoc('list_members').fields.map((f) => f.name)).toEqual(['workspace']);
+    expect(toolDoc('set_member_role').fields.map((f) => f.name)).toEqual(['workspace', 'email', 'role']);
+    expect(toolDoc('set_member_role').description).not.toMatch(/user_confirmed/);
+    const remove = toolDoc('remove_member');
+    expect(remove.fields.map((f) => f.name)).toEqual(['workspace', 'email', 'user_confirmed']);
+    expect(remove.description).toMatch(/user_confirmed: true/);
+    expect(remove.description).toMatch(/ONLY after the user explicitly said yes/);
+    for (const name of ['set_member_role', 'remove_member']) {
+      expect(toolDoc(name).description, name).toMatch(/last_workspace_admin/);
+      expect(toolDoc(name).description, name).toMatch(/personal_workspace/);
+      expect(toolDoc(name).returns, name).toContain('released_locks');
+    }
   });
 
   it('publish is documented as explicit-request only, with the publish scope', () => {

@@ -55,9 +55,23 @@ export {
   resolveAcceptedRole,
   acceptInvite,
   acceptInviteUrl,
+  listPendingInvites,
+  revokeInvite,
   type InviteRecord,
   type AcceptInviteResult,
+  type PendingInvite,
 } from './invites.server.js';
+export {
+  MembershipError,
+  assertMemberRemovable,
+  changeMemberRole,
+  findWorkspaceMember,
+  removeMember,
+  type MembershipActor,
+  type MembershipErrorCode,
+  type RemoveResult,
+  type RoleChangeResult,
+} from './members.server.js';
 export {
   renderInviteEmail,
   sendInviteEmail,

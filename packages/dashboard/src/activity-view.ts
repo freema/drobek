@@ -95,6 +95,9 @@ const SUMMARIES: Record<string, Summarize> = {
     const to = str(m, 'to') ?? str(m, 'role');
     return `Changed a member’s role${from ? ` from ${from}` : ''}${to ? ` to ${to}` : ''}`;
   },
+  'member.remove': (m) => `Removed a member${str(m, 'role') ? ` (${str(m, 'role')})` : ''} from the workspace`,
+  'member.leave': (m) => `A member${str(m, 'role') ? ` (${str(m, 'role')})` : ''} left the workspace`,
+  'member.invite_revoke': (m) => `Revoked a pending invite${str(m, 'role') ? ` for the ${str(m, 'role')} role` : ''}`,
   'module.configure': (m) => {
     const keys = Array.isArray(m.keys) ? m.keys.filter((k): k is string => typeof k === 'string') : [];
     return `Changed the ${mod(m)} module’s settings${keys.length ? ` (${keys.join(', ')})` : ''}`;

@@ -17,6 +17,7 @@ import {
   consumeInvite,
   createInvite,
   getInvite,
+  listPendingInvites,
   resolveAcceptedRole,
 } from './invites.server.js';
 
@@ -134,6 +135,45 @@ describe('getInvite (peek) + consumeInvite (single-use)', () => {
     expect(await getInvite(token)).toBeNull();
     await fake.set(`drobek:invite:${token}`, JSON.stringify({ role: 'nope' }));
     expect(await consumeInvite(token)).toBeNull();
+  });
+});
+
+describe('listPendingInvites (the workspace index)', () => {
+  it('lists the workspace\'s pending invites newest first, by id — never the token', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-01T10:00:00Z'));
+    const a = await createInvite({ workspaceId: 'ws1', role: 'viewer', invitedByUserId: 'u1', email: 'a@example.com' });
+    vi.setSystemTime(new Date('2026-10-01T11:00:00Z'));
+    const b = await createInvite({ workspaceId: 'ws1', role: 'editor', invitedByUserId: 'u1' });
+    await createInvite({ workspaceId: 'ws2', role: 'editor', invitedByUserId: 'u9' });
+
+    expect(a.id).toMatch(/^[0-9a-f]{16}$/);
+    const listed = await listPendingInvites('ws1');
+    expect(listed).toEqual([
+      { id: b.id, role: 'editor', email: null, invitedBy: 'u1', createdAt: '2026-10-01T11:00:00.000Z', expiresAt: '2026-10-08T11:00:00.000Z' },
+      { id: a.id, role: 'viewer', email: 'a@example.com', invitedBy: 'u1', createdAt: '2026-10-01T10:00:00.000Z', expiresAt: '2026-10-08T10:00:00.000Z' },
+    ]);
+    expect(JSON.stringify(listed)).not.toContain(a.token);
+    expect(await fake.ttl('drobek:invites:ws1')).toBe(INVITE_TTL_SEC);
+  });
+
+  it('an accepted invite leaves the list; an expired one is pruned from the index', async () => {
+    vi.useFakeTimers();
+    const accepted = await createInvite({ workspaceId: 'ws1', role: 'editor', invitedByUserId: 'u1' });
+    const old = await createInvite({ workspaceId: 'ws1', role: 'viewer', invitedByUserId: 'u1' });
+    await consumeInvite(accepted.token);
+    expect((await listPendingInvites('ws1')).map((i) => i.id)).toEqual([old.id]);
+
+    // The invite key expires; a newer create keeps the index alive past it.
+    vi.advanceTimersByTime((INVITE_TTL_SEC - 10) * 1000);
+    const fresh = await createInvite({ workspaceId: 'ws1', role: 'editor', invitedByUserId: 'u1' });
+    vi.advanceTimersByTime(20 * 1000);
+    expect((await listPendingInvites('ws1')).map((i) => i.id)).toEqual([fresh.id]);
+    expect(Object.keys(await fake.hgetall('drobek:invites:ws1'))).toEqual([fresh.id]);
+  });
+
+  it('a workspace without invites lists none', async () => {
+    expect(await listPendingInvites('nobody')).toEqual([]);
   });
 });
 

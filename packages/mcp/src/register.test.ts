@@ -263,6 +263,27 @@ describe('tools/list', () => {
         properties: ['workspace', 'name', 'user_confirmed'],
         required: ['workspace', 'name'],
       },
+      {
+        name: 'list_members',
+        title: 'List a workspace\'s members',
+        annotations: { title: 'List a workspace\'s members', ...RO },
+        properties: ['workspace'],
+        required: ['workspace'],
+      },
+      {
+        name: 'set_member_role',
+        title: 'Change a member\'s role',
+        annotations: { title: 'Change a member\'s role', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        properties: ['workspace', 'email', 'role'],
+        required: ['workspace', 'email', 'role'],
+      },
+      {
+        name: 'remove_member',
+        title: 'Remove a member from a workspace',
+        annotations: { title: 'Remove a member from a workspace', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+        properties: ['workspace', 'email', 'user_confirmed'],
+        required: ['workspace', 'email'],
+      },
     ]);
     const create = tools.find((t) => t.name === 'create_app')!;
     expect((create.inputSchema.properties as Record<string, { enum?: string[] }>).template.enum).toEqual([
@@ -274,8 +295,8 @@ describe('tools/list', () => {
 
   it('a super-admin also gets set_workspace_publishing, last', async () => {
     const tools = await listTools(undefined, true);
-    expect(tools).toHaveLength(26);
-    const last = tools[25];
+    expect(tools).toHaveLength(29);
+    const last = tools[28];
     expect(last.name).toBe('set_workspace_publishing');
     expect(last.annotations).toEqual({
       title: 'Set a workspace\'s publishing',

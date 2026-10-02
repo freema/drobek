@@ -1221,6 +1221,9 @@ importers:
 
   packages/tenancy:
     dependencies:
+      '@drobek/apps':
+        specifier: workspace:*
+        version: link:../apps
       '@drobek/audit':
         specifier: workspace:*
         version: link:../audit

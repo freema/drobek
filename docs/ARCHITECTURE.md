@@ -82,6 +82,18 @@ This document is the map of how that works. The neighbours:
   names the operator's super-admins; super-admin is an env flag, not a role
   row. Sign-up is open: anyone can create workspaces and build and preview
   apps.
+- **Members** of a team workspace join through single-use invites (Redis,
+  7 days, indexed per workspace in `drobek:invites:<workspace_id>` so its
+  admins list and revoke the pending ones on the Members tab). Workspace
+  admins change roles and remove members, any member leaves — on the Members
+  tab or over MCP (`list_members`, `set_member_role`, `remove_member`), both
+  through `@drobek/tenancy` `members.server.ts`: a workspace always keeps a
+  workspace-admin (the change locks the workspace row) and a personal
+  workspace's one member never changes. Access is resolved on every request,
+  so a removed member is out at once; the leases they held on the
+  workspace's apps are released too (also when a member becomes a viewer).
+  Every change is audited (`member.role_change`, `member.remove`,
+  `member.leave`, `member.invite_revoke`).
 - **Who may publish** (`PUBLISH_APPROVAL`, `open` by default, plus a
   super-admin's per-workspace state `default` / `allowed` / `blocked`,
   `workspaces.publish_approved_at` / `publish_blocked_at`): a super-admin

@@ -67,7 +67,8 @@ export default function InviteCreatedRoute() {
         <>
           <p style={styles.hint}>
             Invite created for role <strong>{result.role}</strong>. It expires
-            in 7 days and can be used once.
+            in 7 days and can be used once. Until then it is listed under
+            Pending invites on the Members tab, where you can revoke it.
           </p>
           <code style={styles.linkBox} data-testid="invite-link">
             {result.inviteUrl}

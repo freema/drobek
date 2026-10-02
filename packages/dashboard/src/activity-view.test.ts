@@ -35,6 +35,15 @@ describe('activitySummary', () => {
     expect(activitySummary(ev('app.purge', 'app', 'x', { appId: 'app_0' }))).toBe('Deleted the app’s versions and data for good');
   });
 
+  it('reads the member changes', () => {
+    expect(activitySummary(ev('member.remove', 'member', 'u_1', { role: 'editor' }))).toBe('Removed a member (editor) from the workspace');
+    expect(activitySummary(ev('member.leave', 'member', 'u_1', { role: 'viewer' }))).toBe('A member (viewer) left the workspace');
+    expect(activitySummary(ev('member.invite_revoke', 'member', null, { role: 'editor' }))).toBe('Revoked a pending invite for the editor role');
+    expect(activitySummary(ev('member.role_change', 'member', 'u_1', { from: 'editor', to: 'viewer' }))).toBe(
+      'Changed a member’s role from editor to viewer'
+    );
+  });
+
   it('reads a scheduled import run and a resume', () => {
     const run = (meta: unknown) => activitySummary(ev('sync.run', 'app', 'league', meta));
     expect(run({ module: 'sync', source: 'players', by: 'schedule', status: 'ok', records: 3 })).toBe('The scheduled import players wrote 3 records');
