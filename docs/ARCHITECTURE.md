@@ -502,9 +502,14 @@ for the 30-day window.
   `packages/oauth/src/tokens.server.ts`); or a personal `drk_` API key. A grant is
   bound to the **user** (every workspace they belong to) with the scopes
   `read`, `write`, `publish`; the scope decides which tools exist, the role in
-  the app's workspace decides each call. Fifteen tools (among them the
-  gallery listing and the asset upload URLs); the contract and the briefing
-  are in [`AGENT.md`](./AGENT.md).
+  the app's workspace decides each call. Sessions live in the process
+  (`packages/oauth/src/resource/mcp.ts`), bound to the user, scope and grant
+  that opened them; one is closed after `MCP_SESSION_IDLE_TTL_MS` without a
+  request, when its user opens more than `MCP_SESSIONS_PER_USER` (the least
+  recently used goes), or when its API key or OAuth connection is revoked —
+  the client then gets 404 for its id and initializes a new session. Fifteen
+  tools (among them the gallery listing and the asset upload URLs); the
+  contract and the briefing are in [`AGENT.md`](./AGENT.md).
 - **The dashboard** (core, AGPL): sign-in by e-mail code (Google optional),
   workspaces (Apps / Members / Activity / Upstreams tabs), apps with Overview
   / Files / Assets / Data / Modules / Forms / Users / Uploads / Logs /

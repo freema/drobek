@@ -13,9 +13,9 @@
  * (resource/access.ts).
  */
 import type { Request, Response } from 'express';
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { isSuperAdmin } from '@drobek/auth';
-import { getDb, users } from '@drobek/db';
+import { apiKeys, getDb, oauthAccessTokens, users } from '@drobek/db';
 import { looksLikeApiKey, validateApiKey } from '../api-keys.server.js';
 import { authorizationServer, mcpResourceUri } from '../metadata.js';
 import { knownScopes, SCOPES, type Scope } from '../scopes.js';
@@ -73,6 +73,8 @@ export interface AuthContext {
   kind: 'oauth' | 'api_key';
   /** Row id of the access token / API key (never the secret). */
   credentialId: string;
+  /** The OAuth client the token was issued to (stable across refreshes); null for an API key. */
+  oauthClientId: string | null;
   userId: string;
   email: string;
   /** Global SUPERADMIN_EMAIL override: reaches every workspace. */
@@ -99,12 +101,12 @@ export async function authenticate(req: Request): Promise<AuthOutcome> {
   const bearer = extractBearer(req);
   if (!bearer) return { kind: 'no_token' };
 
-  let claims: { id: string; userId: string; scope: string; audience: string | null };
+  let claims: { id: string; userId: string; scope: string; audience: string | null; oauthClientId: string | null };
   let kind: AuthContext['kind'];
   if (looksLikeApiKey(bearer)) {
     const key = await validateApiKey(bearer);
     if (!key) return { kind: 'invalid' };
-    claims = { ...key, audience: null };
+    claims = { ...key, audience: null, oauthClientId: null };
     kind = 'api_key';
   } else {
     const token = await validateAccessToken(bearer, { audience: mcpResourceUri() });
@@ -125,6 +127,7 @@ export async function authenticate(req: Request): Promise<AuthOutcome> {
     ctx: {
       kind,
       credentialId: claims.id,
+      oauthClientId: claims.oauthClientId,
       userId: claims.userId,
       email: u.email,
       superAdmin: isSuperAdmin(u.email),
@@ -133,4 +136,38 @@ export async function authenticate(req: Request): Promise<AuthOutcome> {
       audience: claims.audience,
     },
   };
+}
+
+/** One credential as `AuthContext` names it: which kind and its row id. */
+export interface CredentialRef {
+  kind: AuthContext['kind'];
+  id: string;
+}
+
+/**
+ * Which of `refs` are still live, as a lookup: an API key that is not
+ * revoked, an OAuth access token that is neither revoked nor deleted (a
+ * revoked connection deletes its tokens). An expired access token still
+ * counts: its client refreshes it and goes on.
+ */
+export async function liveCredentials(refs: readonly CredentialRef[]): Promise<(ref: CredentialRef) => boolean> {
+  const keyIds = [...new Set(refs.filter((r) => r.kind === 'api_key').map((r) => r.id))];
+  const tokenIds = [...new Set(refs.filter((r) => r.kind === 'oauth').map((r) => r.id))];
+  const db = getDb();
+  const [keys, tokens] = await Promise.all([
+    keyIds.length === 0
+      ? []
+      : db
+          .select({ id: apiKeys.id })
+          .from(apiKeys)
+          .where(and(inArray(apiKeys.id, keyIds), isNull(apiKeys.revokedAt))),
+    tokenIds.length === 0
+      ? []
+      : db
+          .select({ id: oauthAccessTokens.id })
+          .from(oauthAccessTokens)
+          .where(and(inArray(oauthAccessTokens.id, tokenIds), isNull(oauthAccessTokens.revokedAt))),
+  ]);
+  const live = { api_key: new Set(keys.map((r) => r.id)), oauth: new Set(tokens.map((r) => r.id)) };
+  return (ref) => live[ref.kind].has(ref.id);
 }

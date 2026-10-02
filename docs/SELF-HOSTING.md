@@ -281,7 +281,13 @@ above `SHUTDOWN_GRACE_MS` when you raise that. MCP sessions live in the
 process: after a restart a client's next request with its old session id
 answers `404 MCP session not found — reconnect.`, which per the MCP
 specification makes the client open a new session (reconnect a client that
-does not).
+does not). The same answer comes for a session drobek closed while running:
+one without a request for `MCP_SESSION_IDLE_TTL_MS` (1 hour; an open listen
+stream counts as a request), a user's least recently used one when they open
+more than `MCP_SESSIONS_PER_USER` (10), and every session of an API key or
+an OAuth connection the moment it is revoked. Each closing leaves a
+`mcp session closed` log line with the reason (`idle`, `limit`, `revoked`),
+the short session id and the user id.
 drobek keeps idle connections open for 125 s, longer than Caddy's 2-minute
 upstream keep-alive, so Caddy never reuses a connection drobek is closing;
 with a different proxy in front, keep its upstream idle timeout below 125 s.
@@ -409,6 +415,7 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `COMPILE_MAX_IMPORT_DEPTH` | 50 | depth of a relative import chain |
 | `COMPILE_TIMEOUT_MS` / `COMPILE_CONCURRENCY` / `COMPILE_QUEUE_TIMEOUT_MS` | 10000 / 4 / 10000 | per build; builds at once; max queue wait (then `busy`) |
 | `MCP_MAX_BODY_BYTES` | 2 × `COMPILE_MAX_TOTAL_BYTES` (10485760) | the largest `/mcp` request body — one `write_files` call as JSON; a bigger one answers 413 with a JSON-RPC error telling the agent to split the write (the briefing states the value) |
+| `MCP_SESSION_IDLE_TTL_MS` / `MCP_SESSIONS_PER_USER` | 3600000 / 10 | MCP sessions are held in the server's memory: one with no request open for the idle TTL is closed (an open listen stream keeps it), and a user who opens a session past the cap has their least recently used one closed. The client's next request with a closed session's id answers 404, and the client initializes a new session ([Production compose](#production-compose)) |
 | `READINESS_MAX_WARNINGS` | 50 | warnings one publish readiness report lists (write_files, publish, the app page); the rest are counted in `warnings_omitted` |
 | `TYPECHECK_WORKERS` / `TYPECHECK_TIMEOUT_MS` / `TYPECHECK_MAX_MEMORY_MB` / `TYPECHECK_MAX_FILES` | 1 / 20000 / 512 / 150 | the background TypeScript check of each stored version (`type_error` readiness warnings): checks at once in worker threads (0 = off), time and heap per check, max .ts/.tsx files per app; a check over a limit gives no type warnings and is logged |
 | `BEACON_RATE_LIMIT` / `BEACON_APP_RATE_LIMIT` / `BEACON_RATE_WINDOW_MS` | 60 / 600 / 60000 | browser error reports per app+IP and per app per window |

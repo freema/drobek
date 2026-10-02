@@ -93,6 +93,14 @@ claude mcp add --transport http drobek https://drobek.example.com/mcp \
    refresh token. Sending a rotated refresh token again within 60 s (a retry
    after a lost response) gets a fresh pair; later, it is reuse and burns
    that lineage.
+6. `initialize` opens a session (`Mcp-Session-Id`) bound to the user, the
+   scope and the grant (the API key, or the OAuth client) that opened it;
+   another credential gets 401 on it. drobek closes a session after
+   `MCP_SESSION_IDLE_TTL_MS` (1 hour) without a request, when the user opens
+   more than `MCP_SESSIONS_PER_USER` (10; the least recently used goes), when
+   its key or connection is revoked, and on a restart. A request with a
+   closed session's id answers 404, and the client initializes a new
+   session.
 
 ## Scopes and roles
 

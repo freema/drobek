@@ -9,7 +9,7 @@
  *  - SCOPE — `TOOL_SCOPES` (scopes.ts) decides which tools exist for the
  *    grant: only those are registered, so tools/list shows exactly them and
  *    a call to any other tool fails. A session stays bound to the (user,
- *    scope) it was opened with.
+ *    scope, grant) it was opened with.
  *  - MEMBERSHIP — every tool resolves the caller's role in the target app's
  *    workspace on the call (@drobek/mcp access.ts); an unknown app/workspace
  *    and a non-member answer the same `not_found`.
@@ -22,8 +22,13 @@
  * when its response closes — names, status, timing and ids, never arguments,
  * credentials, headers or bodies.
  *
- * Sessions live in this process only: after a restart a client's session id
- * answers 404 and the client initializes a new session.
+ * Sessions live in this process only and are bound to the user, scope and
+ * grant (the API key, or the OAuth client whose rotating tokens drive it) they
+ * were opened with. One is closed when it had no request open for
+ * MCP_SESSION_IDLE_TTL_MS, when its user opens one past MCP_SESSIONS_PER_USER
+ * (the least recently used goes), when its credential is revoked in this
+ * process, and on a restart. A request with a closed session's id answers 404,
+ * after which the client initializes a new session (MCP Streamable HTTP).
  */
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
@@ -35,9 +40,17 @@ import { SERVER_INSTRUCTIONS } from '@drobek/agent-dx';
 import { coreVersion, createConsoleLogger, reportError, type Logger } from '@drobek/core';
 import { dbErrorForLog } from '@drobek/db';
 import { mcpMaxBodyBytes, registerAppTools, type RegisterOptions } from '@drobek/mcp';
+import { onCredentialsRevoked } from '../revocations.js';
 import { toolAllowed } from '../scopes.js';
 import { registerDocs } from './docs.js';
-import { authenticate, send401, type AuthContext } from './oauth-resource.js';
+import {
+  authenticate,
+  liveCredentials,
+  send401,
+  type AuthContext,
+  type CredentialRef,
+} from './oauth-resource.js';
+import { mcpSessionLimits, type McpSessionLimits } from './session-limits.js';
 
 /**
  * Build a fresh MCP server for one authenticated principal + granted scope.
@@ -64,11 +77,31 @@ export function buildMcpServer(ctx: AuthContext, deps?: RegisterOptions['deps'])
 }
 
 interface McpSession {
+  id: string;
   transport: StreamableHTTPServerTransport;
   server: McpServer;
   /** The session is pinned to the principal + scope its tools were built for. */
   userId: string;
   scope: string;
+  /** What may drive it: the same API key, or a token of the same OAuth client (its tokens rotate). */
+  grant: string;
+  /** The credential of its latest request — what a revocation is checked against. */
+  credential: CredentialRef;
+  /** When a request on it last started or ended. */
+  lastActive: number;
+  /** Its requests still open; a GET listen stream counts while the client listens. */
+  inFlight: number;
+}
+
+type CloseReason = 'idle' | 'limit' | 'revoked';
+
+function grantOf(ctx: AuthContext): string {
+  return ctx.kind === 'api_key' ? `api_key:${ctx.credentialId}` : `oauth:${ctx.oauthClientId ?? ''}`;
+}
+
+/** The idle sweep runs once per idle TTL, at least every minute and at most every second. */
+function sweepIntervalFor(idleTtlMs: number): number {
+  return Math.min(60_000, Math.max(1_000, idleTtlMs));
 }
 
 export interface McpEndpointOptions {
@@ -78,6 +111,12 @@ export interface McpEndpointOptions {
   log?: Logger;
   /** Builds the MCP server of a new session. Default: `buildMcpServer`. */
   buildServer?: (ctx: AuthContext) => McpServer;
+  /** The idle TTL and the per-user cap. Default: MCP_SESSION_IDLE_TTL_MS / MCP_SESSIONS_PER_USER. */
+  sessionLimits?: McpSessionLimits;
+  /** How often idle sessions are closed. Default: the idle TTL, at least every minute, at most every second. */
+  sweepIntervalMs?: number;
+  /** The clock of the idle TTL. Default: `Date.now`. */
+  now?: () => number;
 }
 
 /** The open MCP sessions of this process, as the server's shutdown needs them. */
@@ -87,7 +126,13 @@ export interface McpEndpoint {
    * so a draining server is not held open by them; requests in flight run on.
    */
   endListenStreams(): void;
-  /** Close every session; a later request with its id answers 404 and the client re-initializes. */
+  /** Close every session idle for the idle TTL (the endpoint also does it on a timer); returns how many. */
+  closeIdleSessions(): number;
+  /**
+   * Close every session and stop the idle sweep and the revocation listener
+   * (the server's shutdown); a later request with a session's id answers 404
+   * and the client re-initializes.
+   */
   closeSessions(): Promise<void>;
   /** How many sessions are open. */
   sessionCount(): number;
@@ -166,11 +211,82 @@ export function mountMcpEndpoint(app: Express, opts: McpEndpointOptions = {}): M
   const maxBodyBytes = opts.maxBodyBytes ?? mcpMaxBodyBytes(process.env);
   const log = opts.log ?? createConsoleLogger('mcp');
   const build = opts.buildServer ?? ((ctx: AuthContext) => buildMcpServer(ctx));
+  const limits = opts.sessionLimits ?? mcpSessionLimits(process.env);
+  const now = opts.now ?? Date.now;
   const parseJson = express.json({ limit: maxBodyBytes });
   let listenStreams = true;
 
   const readBody = (req: Request, res: Response): Promise<unknown> =>
     new Promise((resolve) => parseJson(req, res, (err?: unknown) => resolve(err)));
+
+  const isIdle = (session: McpSession, at: number): boolean =>
+    session.inFlight === 0 && at - session.lastActive >= limits.idleTtlMs;
+
+  function closeSession(session: McpSession, reason: CloseReason): void {
+    if (sessions.get(session.id) !== session) return;
+    sessions.delete(session.id);
+    log.info('mcp session closed', {
+      reason,
+      session: session.id.slice(0, LOG_SESSION_CHARS),
+      user_id: session.userId,
+    });
+    session.server.close().catch((err: unknown) => {
+      log.warn('mcp session close failed', { error: dbErrorForLog(err) });
+    });
+  }
+
+  /** A request on `session` starts: note its credential and keep the session active until the response closes. */
+  function track(session: McpSession, ctx: AuthContext, res: Response): void {
+    session.credential = { kind: ctx.kind, id: ctx.credentialId };
+    session.inFlight += 1;
+    session.lastActive = now();
+    res.once('close', () => {
+      session.inFlight -= 1;
+      session.lastActive = now();
+    });
+  }
+
+  /** Past the per-user cap, close the user's least recently used sessions, never `keep`. */
+  function enforcePerUserCap(userId: string, keep: string): void {
+    const own = [...sessions.values()].filter((s) => s.userId === userId);
+    const excess = own.length - limits.perUser;
+    if (excess <= 0) return;
+    const others = own.filter((s) => s.id !== keep).sort((a, b) => a.lastActive - b.lastActive);
+    for (const s of others.slice(0, excess)) closeSession(s, 'limit');
+  }
+
+  function closeIdleSessions(): number {
+    const at = now();
+    let closed = 0;
+    for (const session of [...sessions.values()]) {
+      if (!isIdle(session, at)) continue;
+      closeSession(session, 'idle');
+      closed += 1;
+    }
+    return closed;
+  }
+
+  /** Close the sessions of `userId` whose latest credential is no longer live. */
+  async function closeRevokedSessions(userId: string): Promise<void> {
+    const checked = [...sessions.values()]
+      .filter((s) => s.userId === userId)
+      .map((s) => ({ session: s, credential: s.credential }));
+    if (checked.length === 0) return;
+    const isLive = await liveCredentials(checked.map((c) => c.credential));
+    for (const { session, credential } of checked) {
+      const current = session.credential;
+      if (current.kind !== credential.kind || current.id !== credential.id) continue;
+      if (!isLive(credential)) closeSession(session, 'revoked');
+    }
+  }
+
+  const sweep = setInterval(closeIdleSessions, opts.sweepIntervalMs ?? sweepIntervalFor(limits.idleTtlMs));
+  sweep.unref();
+  const stopRevocations = onCredentialsRevoked((userId) => {
+    closeRevokedSessions(userId).catch((err: unknown) => {
+      log.warn('mcp session revocation check failed', { user_id: userId, error: dbErrorForLog(err) });
+    });
+  });
 
   async function handle(req: Request, res: Response, entry: AccessEntry): Promise<void> {
     const presented = req.headers['mcp-session-id'];
@@ -210,15 +326,20 @@ export function mountMcpEndpoint(app: Express, opts: McpEndpointOptions = {}): M
       return;
     }
 
-    const open = sessionId ? sessions.get(sessionId) : undefined;
-    if (open) {
-      // A session may only be driven by the user AND scope it was opened for —
-      // its tool set was registered for that scope.
-      if (open.userId !== ctx.userId || open.scope !== ctx.scope) {
+    let session = sessionId ? sessions.get(sessionId) : undefined;
+    if (session && isIdle(session, now())) {
+      closeSession(session, 'idle');
+      session = undefined;
+    }
+    if (session) {
+      // A session may only be driven by the user, scope AND grant it was
+      // opened for — its tool set was registered for that scope.
+      if (session.userId !== ctx.userId || session.scope !== ctx.scope || session.grant !== grantOf(ctx)) {
         send401(res, 'invalid_token', 'Token does not match this MCP session.');
         return;
       }
-      await open.transport.handleRequest(req, res, req.body);
+      track(session, ctx, res);
+      await session.transport.handleRequest(req, res, req.body);
       return;
     }
     if (sessionId) {
@@ -231,8 +352,21 @@ export function mountMcpEndpoint(app: Express, opts: McpEndpointOptions = {}): M
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
         onsessioninitialized: (id) => {
-          sessions.set(id, { transport, server, userId: ctx.userId, scope: ctx.scope });
+          const opened: McpSession = {
+            id,
+            transport,
+            server,
+            userId: ctx.userId,
+            scope: ctx.scope,
+            grant: grantOf(ctx),
+            credential: { kind: ctx.kind, id: ctx.credentialId },
+            lastActive: now(),
+            inFlight: 0,
+          };
+          sessions.set(id, opened);
+          track(opened, ctx, res);
           entry.session = id.slice(0, LOG_SESSION_CHARS);
+          enforcePerUserCap(ctx.userId, id);
         },
       });
       transport.onclose = () => {
@@ -288,7 +422,10 @@ export function mountMcpEndpoint(app: Express, opts: McpEndpointOptions = {}): M
       listenStreams = false;
       for (const s of sessions.values()) s.transport.closeStandaloneSSEStream();
     },
+    closeIdleSessions,
     async closeSessions() {
+      clearInterval(sweep);
+      stopRevocations();
       const open = [...sessions.values()];
       sessions.clear();
       await Promise.allSettled(open.map((s) => s.server.close()));
