@@ -256,6 +256,18 @@ never compressed, so MCP's streamable HTTP and any SSE an app backend proxies
 arrive event by event. With a different proxy in front, compress the same way
 and keep `text/event-stream` out of it.
 
+Request bodies on the dashboard origin are capped at `DASHBOARD_MAX_BODY_BYTES`
+(1 MiB): a bigger body sent to a dashboard page, the sign-in or an OAuth
+endpoint answers `413` — a declared `Content-Length` before anything is read,
+a chunked body as soon as the bytes that arrived pass the cap — and the
+connection closes after the answer. `/mcp` (`MCP_MAX_BODY_BYTES`), the asset
+upload URLs (the asset size) and the Data tab's CSV import (a 10 MiB file)
+keep their own limits. The generated Caddyfile refuses the same bodies on the
+dashboard site before they reach drobek (`request_body`, those paths left to
+drobek), so after changing the variable re-run `task selfhost:init` and
+`task tls:reload`. With a different proxy in front, cap the dashboard origin
+the same way or leave it to drobek.
+
 **Stopping and restarting drobek** (an upgrade, `docker compose restart`, a
 host reboot) does not cut the requests it is answering. On `SIGTERM` drobek
 stops accepting connections, closes idle keep-alive connections, ends the MCP
@@ -346,6 +358,7 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `APPS_URL_SCHEME` | `http` for `*.localhost`, else `https` *(compose: https)* | scheme of the app URLs drobek hands out |
 | `APPS_UNKNOWN_HOST_LIMIT` / `APPS_UNKNOWN_HOST_WINDOW_MS` | 60 / 60000 | "no app here" answers per client IP per window, then 429 |
 | `APPS_MODULE_BODY_TIMEOUT_MS` | 120000 | a `/__drobek/*` request (module routes, uploads, the beacon) must deliver its body within it, else 408; raise it with `FILES_MAX_BYTES` for big uploads over slow links |
+| `DASHBOARD_MAX_BODY_BYTES` | 1048576 | the largest request body of the dashboard origin's pages, sign-in and OAuth endpoints — a declared length or a chunked body counted as it arrives; a bigger one answers 413 before it is read further. `/mcp`, the asset upload URLs and the Data tab's CSV import keep their own limits. The generated Caddyfile carries the same cap: re-render it after a change ([Production compose](#production-compose)) |
 | `DROBEK_IMAGE_TAG` | `latest` | image tag of the production compose ([Image tags](#image-tags)) |
 | `HTTP_PORT` / `HTTPS_PORT` / `PUBLISH_IP` | 80 / 443 / all | ports and bind address Caddy publishes |
 | `TRUST_PROXY` | auto *(compose: `x-real-ip`)* | which client-IP header is trusted: `x-real-ip` = only Caddy's `X-Real-IP`; unset = `X-Real-IP`, else the rightmost `X-Forwarded-For` hop |

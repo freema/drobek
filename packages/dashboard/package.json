@@ -104,6 +104,10 @@
       "types": "./src/pending-banner.server.ts",
       "default": "./dist/pending-banner.server.js"
     },
+    "./body-limits": {
+      "types": "./src/body-limits.ts",
+      "default": "./dist/body-limits.js"
+    },
     "./routes/workspaces.$slug.apps.$appSlug.domains": {
       "types": "./src/routes/workspaces.$slug.apps.$appSlug.domains.tsx",
       "default": "./dist/routes/workspaces.$slug.apps.$appSlug.domains.js"

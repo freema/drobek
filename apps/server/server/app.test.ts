@@ -1,19 +1,33 @@
 import { request as httpRequest, type Server } from 'node:http';
+import { createReadableStreamFromReadable } from '@react-router/node';
 import type { RequestHandler } from 'express';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { installErrorReporter, resetErrorReporterForTests, type ErrorReportEvent } from '@drobek/core';
+import { ASSET_UPLOAD_PATH_PREFIX } from '@drobek/apps';
+import { DASHBOARD_BODY_CAP_EXEMPT_PATHS, installErrorReporter, resetErrorReporterForTests, type ErrorReportEvent } from '@drobek/core';
+import { hasOwnBodyLimit } from '@drobek/dashboard/body-limits';
 import { createTlsAskHandler } from '@drobek/serving';
 import { createServerApp, type ServerApp } from './app.js';
 
 const ASK_TOKEN = 't'.repeat(40);
+const MAX_BODY = 64 * 1024;
 let app: ServerApp;
 let server: Server;
 let baseUrl: string;
 
 // Stands in for React Router: echoes the raw body so the test proves the MCP
-// JSON parser never consumes a dashboard request stream.
+// JSON parser never consumes a dashboard request stream. `/form/*` reads the
+// body the way @react-router/express hands it to an action (a web stream over
+// the request → `request.formData()`).
 const rrHandler: RequestHandler = (req, res) => {
   if (req.path.startsWith('/explode')) throw new Error('handler blew up for zoe@corp.example');
+  if (req.path.startsWith('/form/')) {
+    const body = createReadableStreamFromReadable(req);
+    const init = { method: req.method, headers: { 'content-type': String(req.headers['content-type']) }, body, duplex: 'half' };
+    void new Request(`http://drobek.test${req.originalUrl}`, init as RequestInit)
+      .formData()
+      .then((fd) => res.json({ rr: true, fields: Object.fromEntries([...fd.entries()].map(([k, v]) => [k, String(v)])) }));
+    return;
+  }
   let raw = '';
   req.setEncoding('utf8');
   req.on('data', (chunk: string) => (raw += chunk));
@@ -27,7 +41,7 @@ beforeAll(async () => {
   process.env.TLS_ASK_TOKEN = ASK_TOKEN;
   // The custom-domain lookup is the domains table in production; no DB here.
   const tlsAsk = createTlsAskHandler({ customDomainAllowed: async (h) => h === 'firma.example.com' }) as RequestHandler;
-  app = createServerApp({ rrHandler, tlsAsk });
+  app = createServerApp({ rrHandler, tlsAsk, maxBodyBytes: MAX_BODY });
   server = app.listen(0, '127.0.0.1');
   await new Promise<void>((resolve) => server.once('listening', resolve));
   const address = server.address();
@@ -177,6 +191,100 @@ describe('apps origin dispatch + dashboard CSRF', () => {
     // The token endpoint is exempt (native / web MCP clients call it cross-origin).
     const token = await raw('POST', '/oauth/token', { Host: 'drobek.test', Origin: 'https://claude.ai' });
     expect(JSON.parse(token.body)).toMatchObject({ rr: true });
+  });
+});
+
+/** A POST with a body (declared or chunked); a reset before any answer is status -1. */
+function post(
+  path: string,
+  body: Buffer,
+  opts: { chunked?: boolean; type?: string } = {}
+): Promise<{ status: number; body: string }> {
+  const { port } = new URL(baseUrl);
+  const headers: Record<string, string> = { Host: 'drobek.test', 'Content-Type': opts.type ?? 'application/octet-stream' };
+  if (opts.chunked) headers['Transfer-Encoding'] = 'chunked';
+  else headers['Content-Length'] = String(body.length);
+  return new Promise((resolve, reject) => {
+    const req = httpRequest({ host: '127.0.0.1', port, method: 'POST', path, headers, agent: false }, (res) => {
+      let text = '';
+      res.setEncoding('utf8');
+      res.on('data', (c: string) => (text += c));
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, body: text }));
+    });
+    req.on('error', (err: NodeJS.ErrnoException) => (err.code === 'ECONNRESET' || err.code === 'EPIPE' ? resolve({ status: -1, body: '' }) : reject(err)));
+    if (opts.chunked) {
+      for (let i = 0; i < body.length; i += 1024) req.write(body.subarray(i, i + 1024));
+      req.end();
+    } else {
+      req.end(body);
+    }
+  });
+}
+
+describe('the request body cap in front of React Router (DASHBOARD_MAX_BODY_BYTES)', () => {
+  const form = (fields: Record<string, string>) => Buffer.from(new URLSearchParams(fields).toString());
+  const FORM = 'application/x-www-form-urlencoded';
+
+  it('a body within the cap reaches the action intact — declared or chunked', async () => {
+    const fields = { email: 'jiri@example.cz', note: 'ř'.repeat(8_000) };
+    expect(form(fields).length).toBeLessThan(MAX_BODY);
+    for (const chunked of [false, true]) {
+      const r = await post('/form/login', form(fields), { chunked, type: FORM });
+      expect(r.status).toBe(200);
+      expect(JSON.parse(r.body)).toEqual({ rr: true, fields });
+    }
+  });
+
+  it('a body over the cap → 413 before React Router (declared or chunked); the process keeps serving', async () => {
+    const big = form({ email: 'a@b.c', pad: 'x'.repeat(MAX_BODY) });
+    for (const path of ['/login', '/oauth/token']) {
+      const declared = await post(path, big, { type: FORM });
+      expect(declared.status, path).toBe(413);
+      expect(JSON.parse(declared.body)).toMatchObject({ error: 'payload_too_large', details: { limit: 'DASHBOARD_MAX_BODY_BYTES', value: MAX_BODY } });
+      expect(declared.body).not.toContain('"rr":true');
+      const chunked = await post(path, big, { chunked: true, type: FORM });
+      expect(chunked.status, path).toBe(413);
+    }
+    expect((await fetch(`${baseUrl}/health`)).status).toBe(200);
+    const small = await post('/form/oauth/token', form({ grant_type: 'refresh_token' }), { chunked: true, type: FORM });
+    expect(JSON.parse(small.body)).toEqual({ rr: true, fields: { grant_type: 'refresh_token' } });
+  });
+
+  it('the Data tab collection page (its CSV import) keeps its own limit; dot segments cannot borrow it', async () => {
+    const big = Buffer.alloc(3 * MAX_BODY, 0x61);
+    for (const path of ['/workspaces/acme/apps/shop/data/todos', '/workspaces/acme/apps/shop/data/todos.data']) {
+      const r = await post(path, big);
+      expect(JSON.parse(r.body), path).toMatchObject({ rr: true, raw: big.toString() });
+    }
+    expect((await post('/workspaces/acme/apps/shop/data/../settings', big)).status).toBe(413);
+    expect((await post('/workspaces/acme/apps/shop/data/%2e%2e', big)).status).toBe(413);
+  });
+
+  it('the generated Caddyfile caps the same paths drobek caps (and leaves the ones with their own limits to drobek)', () => {
+    // Caddy's path matcher: one trailing `*` is a prefix match, otherwise `*` spans one path segment.
+    const caddyExempt = (p: string) =>
+      DASHBOARD_BODY_CAP_EXEMPT_PATHS.some((pattern) =>
+        pattern.indexOf('*') === pattern.length - 1
+          ? p.startsWith(pattern.slice(0, -1))
+          : new RegExp(`^${pattern.split('*').map((s) => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('[^/]*')}$`, 'i').test(p)
+      );
+    const drobekExempt = (p: string) => p === '/mcp' || p.startsWith(ASSET_UPLOAD_PATH_PREFIX) || hasOwnBodyLimit(p);
+    const paths = [
+      '/mcp',
+      `${ASSET_UPLOAD_PATH_PREFIX}tok_123`,
+      '/workspaces/acme/apps/shop/data/todos',
+      '/workspaces/acme/apps/shop/data/todos.data',
+      '/login',
+      '/login/verify',
+      '/oauth/token',
+      '/oauth/register',
+      '/report',
+      '/workspaces/acme/apps/shop/data',
+      '/workspaces/acme/apps/shop/data.data',
+      '/workspaces/acme/apps/shop/settings',
+    ];
+    for (const p of paths) expect(caddyExempt(p), p).toBe(drobekExempt(p));
+    expect(paths.filter(drobekExempt)).toHaveLength(4);
   });
 });
 

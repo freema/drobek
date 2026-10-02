@@ -1,6 +1,7 @@
 import { ASSET_UPLOAD_PATH_PREFIX } from '@drobek/apps';
 import { createOriginCheckMiddleware } from '@drobek/auth';
-import { coreVersion, reportError } from '@drobek/core';
+import { coreVersion, dashboardMaxBodyBytes, reportError, withBodyLimit } from '@drobek/core';
+import { hasOwnBodyLimit } from '@drobek/dashboard/body-limits';
 import { mountMcpResource, type McpEndpoint } from '@drobek/oauth/resource';
 import { TLS_ASK_PATH, createAppsHostMiddleware, createTlsAskHandler } from '@drobek/serving';
 import express, {
@@ -34,6 +35,8 @@ export interface ServerAppOptions {
    * @drobek/apps createAssetUploadHandler). Absent → not mounted.
    */
   assetUpload?: RequestHandler;
+  /** The request body cap in front of React Router. Default: DASHBOARD_MAX_BODY_BYTES. */
+  maxBodyBytes?: number;
 }
 
 /** The server's Express app plus the handle on its open MCP sessions (index.ts closes them on shutdown). */
@@ -55,7 +58,8 @@ export type ServerApp = Express & { mcp: McpEndpoint };
  *  4. health/version, Caddy's TLS `ask` endpoint (token-guarded,
  *     internal network only, blocked by Caddy on every public site), then `/mcp` (it parses its own
  *     JSON bodies; no parser runs app-wide, because React Router actions must read the raw body),
- *     then React Router.
+ *     then React Router behind the request body cap (DASHBOARD_MAX_BODY_BYTES → 413; the Data
+ *     tab's collection page keeps its own, larger limit; /mcp and the asset uploads never get here).
  */
 export function createServerApp(opts: ServerAppOptions): ServerApp {
   const app = express();
@@ -89,7 +93,7 @@ export function createServerApp(opts: ServerAppOptions): ServerApp {
     app.use(express.static(opts.clientDir, { maxAge: '1h' }));
   }
 
-  app.all('*', opts.rrHandler);
+  app.all('*', withBodyLimit(opts.rrHandler, { maxBytes: opts.maxBodyBytes ?? dashboardMaxBodyBytes(), exempt: hasOwnBodyLimit }));
 
   // Clean JSON for body-parser failures (oversized / malformed) — never leak
   // express's default HTML error page (which discloses node_modules paths).

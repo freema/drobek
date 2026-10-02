@@ -61,6 +61,15 @@
 
 # Dashboard, OAuth and MCP (PUBLIC_APP_URL).
 drobek.app {
+	# A request body over DASHBOARD_MAX_BODY_BYTES is refused (413) before it
+	# reaches drobek, except on the paths drobek caps with their own limits:
+	# /mcp, the asset upload URLs and the Data tab's CSV import.
+	@capped_body {
+		not path /mcp /mcp/* /api/assets/upload/* /workspaces/*/apps/*/data/*
+	}
+	request_body @capped_body {
+		max_size 1048576
+	}
 	import drobek
 }
 

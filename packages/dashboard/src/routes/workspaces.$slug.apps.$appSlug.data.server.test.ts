@@ -5,7 +5,8 @@
  * deleting a record from the collection table is audited
  * `data.record_delete`; orphan collections are listed and purged by an
  * editor (audited `data.collection.purge`), a viewer is refused before
- * anything changes.
+ * anything changes; the CSV import refuses a body over its own limit, declared
+ * or counted as it arrives, with its in-page 413.
  */
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
@@ -167,6 +168,35 @@ describe('deleting a record from the collection table', () => {
     const missing = await table.action({ request: post(url, { intent: 'delete', id: 'nope' }), params, context: {} } as never).catch((e: unknown) => e);
     expect((missing as { init?: { status: number } }).init?.status).toBe(404);
     expect(store.get('todos')?.has('r1')).toBe(true);
+    expect(await audits()).toEqual([]);
+  });
+});
+
+describe('the CSV import keeps its own body limit (the server cap leaves the page to it)', () => {
+  const url = `${base}/todos`;
+  const params = { slug: 'acme', appSlug: 'shop-app', collection: 'todos' };
+  const MiB = 1024 * 1024;
+  const TYPE = 'multipart/form-data; boundary=x';
+  const message = 'The file is larger than 10 MiB — split it into smaller files.';
+
+  it('a declared length over the limit → the import 413, nothing read', async () => {
+    const request = new Request(url, { method: 'POST', headers: { 'content-type': TYPE, 'content-length': String(11 * MiB) }, body: 'never read' });
+    expect(failed(await table.action({ request, params, context: {} } as never))).toEqual({ status: 413, body: { intent: 'import', error: message } });
+    expect(request.bodyUsed).toBe(false);
+  });
+
+  it('a body without a declared length is counted as it arrives: past the limit → the import 413, nothing imported', async () => {
+    let sent = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (sent >= 11 * MiB) return controller.close();
+        sent += MiB;
+        controller.enqueue(new Uint8Array(MiB));
+      },
+    });
+    const request = new Request(url, { method: 'POST', headers: { 'content-type': TYPE }, body, duplex: 'half' } as RequestInit);
+    expect(failed(await table.action({ request, params, context: {} } as never))).toEqual({ status: 413, body: { intent: 'import', error: message } });
+    expect(store.get('todos')?.size).toBe(1);
     expect(await audits()).toEqual([]);
   });
 });
