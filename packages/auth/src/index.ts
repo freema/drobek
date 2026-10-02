@@ -24,6 +24,7 @@ export {
   CODE_MAX_ATTEMPTS,
   CODE_LENGTH,
   normalizeAuthEmail,
+  isValidAuthEmail,
   generateLoginCode,
   createEmailLoginCode,
   consumeEmailLoginCode,

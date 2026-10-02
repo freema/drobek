@@ -119,6 +119,23 @@ This document is the map of how that works. The neighbours:
   foreign key, so a deleted workspace's audit rows stay until the audit
   retention removes them; audited `workspace.delete`, `account.delete` and,
   in each workspace left, `member.leave` with `reason: account_deleted`.
+- **Changing the sign-in e-mail** goes through `@drobek/tenancy`
+  `email-change.server.ts`, on `/me` only (no MCP tool). The user enters the
+  new address and a code goes to it: the sign-in code's guard with the same
+  `OTP_*` limits, counted under the scope `email-change`; the code lives
+  under `email-change:<user_id>`, so it changes only that account and only to
+  that address. An address another account signs in with gets an "already
+  has an account" e-mail instead of a code, and the page answers the same, so
+  it never tells whether an address has an account. The code changes
+  `users.email` under the row lock with `account.email_change` audited in the
+  personal workspace in the same transaction, ends every dashboard session
+  (the same SCAN) and signs the browser in again, and e-mails a notice to the
+  previous address. API keys, OAuth connections, memberships, the personal
+  workspace's slug and a linked Google sign-in hang on the user id and stay;
+  the previous address now signs in to a new, empty account. What is bound to
+  the address follows the new one at once: `SUPERADMIN_EMAIL`
+  (`meta.super_admin` records `gained` / `lost`) and a workspace editor's
+  admin role in its apps' sign-in (platform module `auth`).
 - **Who may publish** (`PUBLISH_APPROVAL`, `open` by default, plus a
   super-admin's per-workspace state `default` / `allowed` / `blocked`,
   `workspaces.publish_approved_at` / `publish_blocked_at`): a super-admin

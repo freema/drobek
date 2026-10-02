@@ -75,9 +75,10 @@ claude mcp add --transport http drobek https://drobek.example.com/mcp \
 ```
 
 `/me/connections` lists the OAuth clients you approved and revokes them.
-API keys, OAuth connections and deleting the account itself (`/me/delete`,
+API keys, OAuth connections, the sign-in e-mail (`/me`, confirmed by a code
+sent to the new address) and deleting the account itself (`/me/delete`,
 confirmed by a fresh e-mailed code) are dashboard-only: no MCP tool creates a
-key, revokes a connection or deletes an account.
+key, revokes a connection, changes the sign-in e-mail or deletes an account.
 
 ### The OAuth details
 

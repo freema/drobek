@@ -7,7 +7,8 @@
  * Path=/; no Domain; Secure; SameSite=Lax (drobek has no iframe embedding);
  * Max-Age 30 days. Host-only on the dashboard host: an app host never receives
  * it. Plain-http dev (see cookies.ts) uses `drobek_session` without Secure.
- * Deleting an account ends all of its sessions (`destroyUserSessions`).
+ * Deleting an account or changing its sign-in e-mail ends all of its sessions
+ * (`destroyUserSessions`); the e-mail change then signs this browser in again.
  */
 import { randomBytes } from 'node:crypto';
 import { redirect } from 'react-router';
@@ -126,7 +127,8 @@ const SESSION_SCAN_COUNT = 1000;
 /**
  * Sign the user out everywhere: delete every session of `userId` → how many.
  * Sessions are keyed by token only, so this walks the session keys (SCAN, one
- * pass) — it serves the rare account deletion, never a request path.
+ * pass) — it serves the rare account deletion and sign-in e-mail change,
+ * never a request path.
  */
 export async function destroyUserSessions(userId: string): Promise<number> {
   const redis = getRedis();

@@ -60,6 +60,17 @@ describe('activitySummary', () => {
     expect(activityRefs(ev('account.delete', 'account', 'u_1', {}))).toEqual([]);
   });
 
+  it('reads a sign-in e-mail change, with the super-admin rights it moved', () => {
+    expect(activitySummary(ev('account.email_change', 'account', 'u_1', null))).toBe('Changed the sign-in e-mail');
+    expect(activitySummary(ev('account.email_change', 'account', 'u_1', { super_admin: 'gained' }))).toBe(
+      'Changed the sign-in e-mail to an address with super-admin rights'
+    );
+    expect(activitySummary(ev('account.email_change', 'account', 'u_1', { super_admin: 'lost' }))).toBe(
+      'Changed the sign-in e-mail; the new address has no super-admin rights'
+    );
+    expect(activityRefs(ev('account.email_change', 'account', 'u_1', {}))).toEqual([]);
+  });
+
   it('reads a scheduled import run and a resume', () => {
     const run = (meta: unknown) => activitySummary(ev('sync.run', 'app', 'league', meta));
     expect(run({ module: 'sync', source: 'players', by: 'schedule', status: 'ok', records: 3 })).toBe('The scheduled import players wrote 3 records');

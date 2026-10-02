@@ -487,8 +487,8 @@ with what would go (`apps`, `published`, `members`, `pending_invites`,
 explicit yes. Every app is deleted for good with its data and domains, and
 the members lose access at once. A personal workspace answers
 `personal_workspace`: it goes only with its owner's account, and deleting an
-account is a dashboard-only action (Account → Delete account), like API keys
-and connections.
+account is a dashboard-only action (Account → Delete account), like API keys,
+connections and changing the sign-in e-mail (Account → Sign-in e-mail).
 
 ## Errors
 

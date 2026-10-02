@@ -2,15 +2,16 @@
  * /me — client half: the account page. Your workspaces (quick switch), how to
  * connect an agent (MCP URL + a short client picker, every snippet copyable),
  * which workspace the agent uses, a first prompt while that workspace is
- * empty, where to manage access (Connections, API keys) and the way to
+ * empty, where to manage access (Connections, API keys), changing the
+ * sign-in e-mail (new address → code from the e-mail) and the way to
  * deleting the account (/me/delete). Client-safe:
  * data arrives shaped from ./me.server.ts.
  */
 import { useState, type CSSProperties } from 'react';
-import { Form, Link, useLoaderData } from 'react-router';
+import { Form, Link, useActionData, useLoaderData, useNavigation } from 'react-router';
 import { DashboardPage, controls, mergeStyles, workspaceHref } from '@drobek/tenancy/layout';
 import { CopyBlock } from '../copy-block.js';
-import type { loader } from './me.server.js';
+import type { EmailChangeActionData, loader } from './me.server.js';
 
 export function meta() {
   return [{ title: 'Your account — drobek' }];
@@ -57,6 +58,28 @@ const styles = {
   label: { margin: '0.8rem 0 0', fontSize: '0.9rem', fontWeight: 600 },
   picker: { display: 'flex', flexWrap: 'wrap', gap: '0.4rem', margin: '0.5rem 0 0.25rem' },
   step: { margin: '0.5rem 0 0', fontSize: '0.92rem', overflowWrap: 'anywhere' },
+  fieldLabel: { display: 'block', margin: '0.8rem 0 0', fontSize: '0.9rem', fontWeight: 600 },
+  formRow: { display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', margin: '0.35rem 0 0' },
+  error: {
+    background: '#fef2f2',
+    border: '1px solid #fecaca',
+    color: '#991b1b',
+    borderRadius: '8px',
+    padding: '0.6rem 0.75rem',
+    fontSize: '0.9rem',
+    margin: '0.75rem 0 0',
+    overflowWrap: 'anywhere',
+  },
+  notice: {
+    background: '#f0fdf4',
+    border: '1px solid #bbf7d0',
+    color: '#14532d',
+    borderRadius: '8px',
+    padding: '0.6rem 0.75rem',
+    fontSize: '0.92rem',
+    margin: '0 0 1rem',
+    overflowWrap: 'anywhere',
+  },
 } satisfies Record<string, CSSProperties>;
 
 const pickerOn = mergeStyles(controls.button, { height: '2rem' });
@@ -101,14 +124,116 @@ function ClientPicker({ clients }: { clients: Data['clients'] }) {
   );
 }
 
+function SignInEmail({ email, superAdmin }: { email: string; superAdmin: boolean }) {
+  const result = useActionData() as EmailChangeActionData | undefined;
+  const busy = useNavigation().state !== 'idle';
+  return (
+    <section style={styles.section} data-testid="me-email">
+      <h2 style={styles.h2}>Sign-in e-mail</h2>
+      <p style={styles.hint}>
+        You sign in with <strong>{email}</strong>. To sign in with another address, enter it below: we e-mail a code
+        to the new address, and the address changes once you type that code here. Your other sessions are then signed
+        out; your workspaces, API keys and agent connections stay.
+      </p>
+      {superAdmin ? (
+        <p style={styles.hint} data-testid="me-email-super-admin">
+          Your super-admin rights come with this address (it is listed in this server&rsquo;s SUPERADMIN_EMAIL). With a
+          new address you lose them, unless the server operator lists the new address too.
+        </p>
+      ) : null}
+      {result?.error ? (
+        <p style={styles.error} role="alert" data-testid="me-email-error">
+          {result.error}
+        </p>
+      ) : null}
+      {result?.stage === 'code' ? (
+        <>
+          <p style={styles.step} role="status" data-testid="me-email-code-sent">
+            {result.sent
+              ? `We e-mailed a 6-digit code to ${result.email}.`
+              : `A code was e-mailed to ${result.email} a moment ago; use the newest one.`}{' '}
+            It works once, for 10 minutes. Nothing changes until you type it here.
+          </p>
+          <Form method="post">
+            <input type="hidden" name="intent" value="email-change" />
+            <input type="hidden" name="email" value={result.email} />
+            <label htmlFor="me-email-code" style={styles.fieldLabel}>
+              Code from the e-mail
+            </label>
+            <div style={styles.formRow}>
+              <input
+                id="me-email-code"
+                name="code"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                pattern="[0-9]{6}"
+                maxLength={6}
+                required
+                style={{ ...controls.input, width: '9rem', letterSpacing: '0.2em' }}
+                data-testid="me-email-code"
+              />
+              <button type="submit" style={controls.button} disabled={busy} data-testid="me-email-confirm">
+                Change my sign-in e-mail
+              </button>
+            </div>
+          </Form>
+          <div style={{ ...styles.formRow, marginTop: '0.75rem' }}>
+            <Form method="post">
+              <input type="hidden" name="intent" value="email-send-code" />
+              <input type="hidden" name="email" value={result.email} />
+              <button type="submit" style={controls.secondaryButton} disabled={busy} data-testid="me-email-resend">
+                Send a new code
+              </button>
+            </Form>
+            <Link to="/me" style={controls.link} data-testid="me-email-cancel">
+              Use another address
+            </Link>
+          </div>
+        </>
+      ) : (
+        <Form method="post">
+          <input type="hidden" name="intent" value="email-send-code" />
+          <label htmlFor="me-email-new" style={styles.fieldLabel}>
+            New e-mail address
+          </label>
+          <div style={styles.formRow}>
+            <input
+              id="me-email-new"
+              name="email"
+              type="email"
+              autoComplete="email"
+              maxLength={254}
+              required
+              defaultValue={result?.email ?? ''}
+              style={{ ...controls.input, flex: '1 1 14rem', minWidth: 0, maxWidth: '22rem' }}
+              data-testid="me-email-new"
+            />
+            <button type="submit" style={controls.button} disabled={busy} data-testid="me-email-send-code">
+              E-mail a code to it
+            </button>
+          </div>
+        </Form>
+      )}
+    </section>
+  );
+}
+
 export default function MeRoute() {
   const d = useLoaderData<typeof loader>();
 
   return (
     <DashboardPage crumbs={[{ label: 'Account' }]}>
       <h1 style={styles.h1}>Your account</h1>
+      {d.emailChanged ? (
+        <p style={styles.notice} role="status" data-testid="me-email-changed">
+          You now sign in with <strong>{d.email}</strong>. Your other sessions were signed out; your API keys and agent
+          connections keep working. A notice went to your previous address.
+        </p>
+      ) : null}
       <div style={styles.row}>
-        <span style={styles.email}>{d.email}</span>
+        <span style={styles.email} data-testid="me-account-email">
+          {d.email}
+        </span>
         {d.superAdmin ? <span style={styles.badge}>Super-admin</span> : null}
       </div>
 
@@ -190,6 +315,8 @@ export default function MeRoute() {
           ))}
         </ul>
       </section>
+
+      <SignInEmail key={d.email} email={d.email} superAdmin={d.superAdmin} />
 
       <section style={styles.section} data-testid="me-delete-account">
         <h2 style={styles.h2}>Delete your account</h2>

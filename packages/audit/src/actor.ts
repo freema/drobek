@@ -67,6 +67,12 @@ export const AUDIT_ACTIONS = {
   workspaceDelete: 'workspace.delete',
   /** A user deleted their account (target = the user id; meta: the workspaces deleted with it, the ones left). */
   accountDelete: 'account.delete',
+  /**
+   * A user changed their sign-in e-mail after a code sent to the new address
+   * (target = the user id; never an address; meta.super_admin `gained` |
+   * `lost` when SUPERADMIN_EMAIL made that change too). Personal workspace.
+   */
+  accountEmailChange: 'account.email_change',
   /** `configure_module` applied a module config change directly. */
   moduleConfigure: 'module.configure',
   /** `configure_module` stored a change that needs the owner's confirmation. */
@@ -204,7 +210,7 @@ export const AUDIT_SUBJECT_TYPES = {
   module: 'module',
   /** The workspace itself (target = its slug) — publish approval, deletion. */
   workspace: 'workspace',
-  /** A drobek account (target = its user id) — its deletion. */
+  /** A drobek account (target = its user id) — its deletion, its sign-in e-mail change. */
   account: 'account',
 } as const;
 

@@ -95,6 +95,14 @@ export {
   type AccountDeleteCodeResult,
 } from './account-code.server.js';
 export {
+  EMAIL_CHANGE_OTP_SCOPE,
+  confirmEmailChange,
+  emailChangeCodeScope,
+  requestEmailChange,
+  type EmailChangeConfirmResult,
+  type EmailChangeRequestResult,
+} from './email-change.server.js';
+export {
   renderInviteEmail,
   sendInviteEmail,
   type InviteEmailVars,

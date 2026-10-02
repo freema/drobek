@@ -216,6 +216,12 @@ const SUMMARIES: Record<string, Summarize> = {
     return m.with_account === true ? `Deleted ${what} together with the account` : `Deleted ${what}`;
   },
   'account.delete': () => 'Deleted the account',
+  'account.email_change': (m) => {
+    const superAdmin = str(m, 'super_admin');
+    if (superAdmin === 'gained') return 'Changed the sign-in e-mail to an address with super-admin rights';
+    if (superAdmin === 'lost') return 'Changed the sign-in e-mail; the new address has no super-admin rights';
+    return 'Changed the sign-in e-mail';
+  },
 };
 
 /** One readable sentence for an audit event (unknown actions fall back to their name). */
