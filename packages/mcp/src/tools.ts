@@ -1173,7 +1173,8 @@ export async function skillInfo(ctx: CallContext, args: { name?: string; app_id?
  * Validated against the module's configSchema (`invalid_params` with the
  * field paths). Changes the module marks as needing the owner's OK (e.g.
  * opening data to the public, a new e-mail recipient) are held as pending:
- * `applied:false`, `pending_confirmation`, `confirm_url` for the user.
+ * `applied:false`, `pending_confirmation`, `confirm_url` for the user; a
+ * proposal made while another waits joins it (`merged_with_pending`).
  * editor+; takes the single-writer lease like write_files.
  */
 export async function configureModule(
@@ -1199,6 +1200,9 @@ export async function configureModule(
         ? {
             note:
               'Give the user confirm_url and tell them what needs their confirmation. The pending change applies only after they confirm it in the drobek dashboard; until then the config above stays in force.' +
+              (out.merged_with_pending
+                ? ' A change was already waiting (merged_with_pending): this proposal joined it, so pending_confirmation lists the combined change, and the user confirms or rejects it all at once.'
+                : '') +
               (out.confirm_role === 'admin' ? ' Only a workspace admin of the app\'s workspace can confirm this one (confirm_role: admin).' : ''),
           }
         : {}),

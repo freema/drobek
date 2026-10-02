@@ -69,8 +69,10 @@ at once. `configure_module` answers `pending_confirmation` with a
 `confirm_url`, and the workspace's editors and admins are told by e-mail
 (when the server sends mail). One of them reviews the change on that
 dashboard page and confirms or rejects it; a proxy change needs a workspace
-admin ([Confirming a pending change](#confirming-a-pending-change)). Each module's
-section below lists what waits for confirmation.
+admin ([Confirming a pending change](#confirming-a-pending-change)). Another
+risky change made before that decision joins the waiting one, so both are
+confirmed or rejected together. Each module's section below lists what waits
+for confirmation.
 
 **4. Set secrets in the dashboard.** A secret value (a sign-in provider's
 client secret, an API key for the proxy) is never an MCP argument: you enter
@@ -1188,7 +1190,7 @@ single-writer lease, merges the patch, and validates the result. Then:
   `hint: "skill_info('hello')"`;
 - **something that looks like a secret value** (an API key, a private key, …)
   → `invalid_params`: secrets are set only in the dashboard;
-- **unchanged** → `{ applied: false, unchanged: true, … }`;
+- **unchanged** → `{ applied: true, unchanged: true, … }` (nothing written);
 `confirmRequired(before, after, context)` gets both configs VALID and
 effective, and `context = { app, db }`: the app (id, slug, workspace) and the
 configure transaction (the config row is locked) for read-only lookups — e.g.
@@ -1211,8 +1213,24 @@ transaction (actor: the confirming user).
   (audit `module.pending`, actor agent), the config in force stays:
   `{ applied: false, config, pending_confirmation: ["greeting: \"Hello\" → \"Ahoj\""], confirm_url }`.
 
-A newer pending change replaces the older one. Required secrets that are not
-set yet come back as `secrets_missing: ["NAME"]` (names only).
+An app has at most one pending change per module, and a newer proposal
+never replaces it: a call whose `confirmRequired` names changes while one
+waits **joins** it. The two patches are composed (the waiting one, then the
+new one) into one patch over the config in force, the result is validated
+as a whole and `confirmRequired` runs again from the config in force to it,
+so `pending_confirmation` lists what the combined change needs (a change the
+new patch undoes drops out). It needs a workspace admin when either part or
+the combined change does. The answer adds `merged_with_pending` (the changes
+that were waiting before), the audit row `module.pending` the same key, and
+the owner sees one before → after diff: Confirm applies all of it, Reject
+drops all of it. A proposal that does not fit the waiting change answers
+`invalid_params` with the issues and `pending_confirmation` (what waits);
+nothing is stored. A dashboard save (`surface: 'web'`) joins the same way. A
+call that needs no confirmation is written at once and leaves the waiting
+change as it is.
+
+Required secrets that are not set yet come back as `secrets_missing:
+["NAME"]` (names only).
 
 `get_app` returns `modules.<name>`: `{ configured, config, pending,
 pending_confirmation?, confirm_url?, secrets: [{ name, hasSecret }], info? }`.
@@ -1279,10 +1297,12 @@ shows a "N changes await confirmation" banner (`PendingBanner` +
 `loadPendingBanner()` in `@drobek/dashboard`). The module page (the
 `confirm_url`) has, top to bottom:
 
-- **the pending change**: who proposed it and when, the module's
+- **the pending change**: who proposed it last and when, the module's
   confirmRequired strings each with a plain-language risk note, a
   before → after table of every changed path of the effective config, and
-  Confirm / Reject (the same `runtime.confirm` / `reject` as the API above);
+  Confirm / Reject (the same `runtime.confirm` / `reject` as the API above)
+  — one decision for everything listed, also when several proposals were
+  joined into it;
 - **the configuration form**, generated from the module's `configSchema`
   (zod → JSON Schema, input side) by the dashboard's own renderer: objects
   (nested), string, string enum (a select), number / integer (with

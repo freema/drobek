@@ -453,6 +453,39 @@ describe('the module page', () => {
     expect((await load()).values.access).toBe('user');
   });
 
+  it("a relaxation saved while an agent's change waits joins it (done=merged): one diff, Reject drops both", async () => {
+    const hook = { id: appId, slug: 'shop-app', workspaceId: role.ws.id, workspaceSlug: role.ws.slug };
+    await rt.configure({ app: hook, module: 'store', patch: { collections: { notes: {}, board: {} } }, actorUserId: role.user.id });
+    const agent = await rt.configure({ app: hook, module: 'store', patch: { collections: { notes: { rules: { create: 'public' } } } }, actorUserId: role.user.id });
+    expect(agent.applied).toBe(false);
+
+    const checks = { [ruleInputName('read', 'owner')]: 'on', [ruleInputName('create', 'public')]: 'on' };
+    expect(doneOf(await post('store', { intent: 'save-collection', collection: 'board', schema: '', ...checks }))).toBe('merged');
+    const d = await load('store');
+    expect(d.pending?.changes.map((c) => c.text).sort()).toEqual([
+      'data.collections.board.rules.create: → "public"',
+      'data.collections.notes.rules.create: → "public"',
+    ]);
+    expect(d.pending?.diff.map((x) => x.path)).toEqual(expect.arrayContaining(['collections.board.rules.create', 'collections.notes.rules.create']));
+    expect(d.collections.map((c) => [c.name, c.rules.create])).toEqual([
+      ['board', 'user'],
+      ['notes', 'user'],
+    ]);
+
+    expect(doneOf(await post('store', { intent: 'reject' }))).toBe('rejected');
+    const after = await load('store');
+    expect(after.pending).toBeNull();
+    expect(after.collections.map((c) => [c.name, c.rules.create])).toEqual([
+      ['board', 'user'],
+      ['notes', 'user'],
+    ]);
+    const rows = await drizzleDb().select().from(auditLog);
+    expect(rows.filter((r) => r.action === 'module.pending').map((r) => [r.actorKind, (r.meta as { merged_with_pending?: unknown }).merged_with_pending])).toEqual([
+      ['agent', undefined],
+      ['user', ['data.collections.notes.rules.create: → "public"']],
+    ]);
+  });
+
   it('secrets are write-only: set, rotate, remove — the value is in no response, loader data or audit row', async () => {
     const set = await post('shop', { intent: 'set-secret', secret: 'SHOP_KEY', value: SECRET_VALUE });
     expect(doneOf(set)).toBe('secret-set');

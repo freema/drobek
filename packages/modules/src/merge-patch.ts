@@ -17,6 +17,25 @@ export function mergePatch(target: unknown, patch: unknown): unknown {
   return out;
 }
 
+/**
+ * The merge patch that turns `before` into `after` (`{}` when they are
+ * equal): changed keys carry the new value, removed keys `null`, objects
+ * recurse, arrays and scalars are replaced whole. `mergePatch(before, patch)`
+ * gives back `after` for every `after` mergePatch can produce (no `null`
+ * object values).
+ */
+export function diffMergePatch(before: Record<string, unknown>, after: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(before)) if (!Object.prototype.hasOwnProperty.call(after, key)) out[key] = null;
+  for (const [key, value] of Object.entries(after)) {
+    const was = before[key];
+    if (Object.prototype.hasOwnProperty.call(before, key) && jsonEqual(was, value)) continue;
+    if (isObject(was) && isObject(value)) out[key] = diffMergePatch(was, value);
+    else out[key] = structuredClone(value);
+  }
+  return out;
+}
+
 /** Structural equality of two JSON values (key order does not matter). */
 export function jsonEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true;

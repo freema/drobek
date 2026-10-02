@@ -1597,6 +1597,19 @@ describe('configure_module', () => {
         { action: 'module.configure', actorKind: 'agent' },
         { action: 'module.pending', actorKind: 'agent' },
       ]);
+
+      // A second proposal before the owner decides joins the waiting change, and the answer says so.
+      const joined = await c.call('configure_module', { app_id: app.app_id, module: 'greet', config: { greeting: 'Hej' } });
+      expect(joined.isError, joined.text).toBe(false);
+      expect(joined.body).toMatchObject({
+        applied: false,
+        config: { greeting: 'Hi', audience: 'user', emoji: true },
+        pending_confirmation: ['greeting: "Hi" → "Hej"', 'audience: anyone may call greet'],
+        merged_with_pending: ['greeting: "Hi" → "Ahoj"', 'audience: anyone may call greet'],
+        note: expect.stringContaining('merged_with_pending'),
+      });
+      const [joinedRow] = await db.select().from(moduleConfigs).where(eq(moduleConfigs.appId, app.app_id));
+      expect(joinedRow.pending).toMatchObject({ patch: { greeting: 'Hej', audience: 'public' } });
     } finally {
       await c.close();
     }

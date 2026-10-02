@@ -18,6 +18,9 @@ import { addMembership, userIdByEmail, withDb, workspaceIdBySlug } from './helpe
  *    module, the change and the confirm URL (a button in the HTML part, the
  *    address in the text part, the server named by its host); a second proposal within the hour
  *    sends none (1/h per app);
+ *  - a second proposal joins the change that waits (`merged_with_pending`),
+ *    an owner's relaxation saved in the dashboard joins it too, the page
+ *    shows one diff and Reject drops every part;
  *  - a secret entered in the form → `hasSecret: true` in get_app, and the
  *    value appears in no API response (get_app, skill_info, the page's loader
  *    data) and no HTML;
@@ -218,6 +221,62 @@ test.describe('dashboard Modules tab @local', () => {
     expect(held.applied).toBe(false);
     await new Promise((r) => setTimeout(r, 2_000));
     expect(await pendingMails(request, mcp.email)).toHaveLength(1);
+  });
+
+  test('a second proposal joins the waiting change (agent and dashboard): one diff on the page, Reject drops all of it', async () => {
+    skipUnlessLocal();
+    expect(await configure(mcp, app.app_id, 'data', { collections: { board: {} } })).toMatchObject({ applied: true });
+    const first = await configure(mcp, app.app_id, 'data', { collections: { board: { rules: { create: 'public' } } } });
+    expect(first.applied).toBe(false);
+    expect(first.merged_with_pending).toBeUndefined();
+    const createItem = 'data.collections.board.rules.create: "user" → "public" (anyone, signed in or not, may add records)';
+    expect(first.pending_confirmation).toEqual([createItem]);
+
+    // The agent's second proposal does not replace the first: the answer names what already waited.
+    const second = await configure(mcp, app.app_id, 'data', { collections: { board: { rules: { update: 'public' } } } });
+    expect(second).toMatchObject({ applied: false, merged_with_pending: [createItem], note: expect.stringContaining('merged_with_pending') });
+    const updateItem = 'data.collections.board.rules.update: "owner|admin" → "public" (anyone, signed in or not, may change every record)';
+    expect(second.pending_confirmation).toEqual([createItem, updateItem]);
+
+    // The owner sees one change with both paths in its diff.
+    await ownerPage.goto(modulePath(app, 'data'));
+    const panel = ownerPage.getByTestId('pending-panel');
+    await expect(panel.getByTestId('pending-change')).toContainText([createItem, updateItem]);
+    await expect(panel.getByTestId('pending-scope')).toContainText('Reject drops all of it');
+    for (const path of ['collections.board.rules.create', 'collections.board.rules.update']) {
+      await expect(panel.locator(`[data-testid="pending-diff-row"][data-path="${path}"] [data-testid="pending-diff-after"]`)).toHaveText('"public"');
+    }
+
+    // A relaxation the owner saves in the dashboard joins it too.
+    await ownerPage.getByTestId('rule-board-delete-public').check();
+    await ownerPage.getByTestId('collection-save-board').click();
+    await expect(ownerPage.getByTestId('done-notice')).toHaveAttribute('data-done', 'merged');
+    await expect(panel.getByTestId('pending-change')).toHaveCount(3);
+    await expect(panel.locator('[data-testid="pending-diff-row"][data-path="collections.board.rules.delete"]')).toBeVisible();
+    await expect(ownerPage.getByTestId('rule-board-create-rule')).toHaveText('user');
+
+    // Reject drops every part; the rules in force never changed.
+    await panel.getByTestId('pending-reject').click();
+    await expect(ownerPage.getByTestId('done-notice')).toHaveAttribute('data-done', 'rejected');
+    await expect(ownerPage.getByTestId('pending-panel')).toHaveCount(0);
+    for (const [op, rule] of [
+      ['create', 'user'],
+      ['update', 'owner|admin'],
+      ['delete', 'owner|admin'],
+    ]) {
+      await expect(ownerPage.getByTestId(`rule-board-${op}-rule`)).toHaveText(rule);
+    }
+    const got = await callTool(mcp.client, 'get_app', { app_id: app.app_id });
+    expect((got.json.modules as Record<string, Record<string, unknown>>).data).toMatchObject({
+      pending: false,
+      config: { collections: { board: { rules: { create: 'user', update: 'owner|admin', delete: 'owner|admin' } } } },
+    });
+    const pendingRows = (await auditRows(app.slug)).filter((r) => r.action === 'module.pending' && JSON.stringify(r.meta).includes('collections.board'));
+    expect(pendingRows.map((r) => [r.actor_kind, r.meta?.merged_with_pending])).toEqual([
+      ['agent', undefined],
+      ['agent', [createItem]],
+      ['user', [createItem, updateItem]],
+    ]);
   });
 
   test('a secret entered in the dashboard: hasSecret true; the value is in no API response and no HTML', async () => {

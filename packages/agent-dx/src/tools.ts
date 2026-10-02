@@ -260,7 +260,7 @@ export const TOOL_DOCS: ToolDoc[] = [
     title: 'Configure a platform module',
     scope: 'write (editor+ role in the workspace)',
     description:
-      'Set a platform module\'s config for one app. `config` is PARTIAL (a JSON merge patch): send only the keys you change; null resets a key to its default. It is validated against the module\'s schema (skill_info(module) shows it) — a wrong value answers invalid_params with the field paths. Changes the module marks as sensitive (e.g. opening data to the public, a new e-mail recipient) are NOT applied: the answer is applied:false with pending_confirmation and a confirm_url — give the user that link; the change applies once they confirm it in the drobek dashboard. Secrets are never set here (credential-looking values are refused): the app owner enters them in the dashboard, and secrets_missing names the ones still unset. An opt-in module that is not enabled for the app\'s workspace answers module_not_enabled. Takes the app\'s single-writer lease like write_files.',
+      'Set a platform module\'s config for one app. `config` is PARTIAL (a JSON merge patch): send only the keys you change; null resets a key to its default. It is validated against the module\'s schema (skill_info(module) shows it) — a wrong value answers invalid_params with the field paths. Changes the module marks as sensitive (e.g. opening data to the public, a new e-mail recipient) are NOT applied: the answer is applied:false with pending_confirmation and a confirm_url — give the user that link; the change applies once they confirm it in the drobek dashboard. A sensitive change sent while another one still waits joins it (merged_with_pending lists what was already waiting, pending_confirmation the combined change): the user confirms or rejects them together, and a change that does not fit the waiting one answers invalid_params. Secrets are never set here (credential-looking values are refused): the app owner enters them in the dashboard, and secrets_missing names the ones still unset. An opt-in module that is not enabled for the app\'s workspace answers module_not_enabled. Takes the app\'s single-writer lease like write_files.',
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     fields: [
       { name: 'app_id', type: 'string', required: true, description: 'The app id.' },
@@ -273,7 +273,7 @@ export const TOOL_DOCS: ToolDoc[] = [
       },
     ],
     returns:
-      '{ module, applied, config (effective, now in force), pending_confirmation:[string], confirm_role? (\'admin\': only a workspace admin can confirm), confirm_url?, secrets_missing?:[name], info? (the module\'s secret-free state, e.g. proxy upstreams with hasSecret), unchanged?, note? }',
+      '{ module, applied, config (effective, now in force), pending_confirmation:[string], confirm_role? (\'admin\': only a workspace admin can confirm), confirm_url?, merged_with_pending?:[string] (what already waited and now waits together with this proposal), secrets_missing?:[name], info? (the module\'s secret-free state, e.g. proxy upstreams with hasSecret), unchanged?, note? }',
     example: { app_id: 'k3v9x0…', module: 'hello', config: { excited: true } },
   },
   {

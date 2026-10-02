@@ -98,7 +98,11 @@ Before using a backend (login, stored data, forms, email, file uploads, external
   the app (`config` is partial: only the keys you change). A sensitive change
   comes back `applied: false` with `pending_confirmation` and a `confirm_url`:
   give the user that link and say what needs their OK — it applies only after
-  they confirm it in the drobek dashboard.
+  they confirm it in the drobek dashboard. A module holds one waiting change:
+  a sensitive change sent before the user decides joins it
+  (`merged_with_pending` lists what already waited, `pending_confirmation`
+  the combined change), and the user confirms or rejects all of it at once —
+  tell them it now covers both.
 - An opt-in module (`availability: "opt-in"` in `skill_info()`) works only in
   the workspaces the server operator enabled it for: `get_app` shows
   `modules.<name>.enabled: false` and leaves it out of `skills`,
