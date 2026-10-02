@@ -146,3 +146,24 @@ describe('client-xss check: files', () => {
     expect(js('el.innerHTML = ')).toEqual([]);
   });
 });
+
+describe('client-xss check: hostile HTML', () => {
+  const fill = (unit: string) => unit.repeat(Math.ceil((256 * 1024) / unit.length));
+  const ms = (f: () => unknown) => {
+    const started = performance.now();
+    f();
+    return performance.now() - started;
+  };
+
+  it.each([
+    ['unclosed scripts', fill('<script>')],
+    ['script start tags without >', fill('<script')],
+    ['thousands of empty scripts', fill('<script></script>\n')],
+  ])('scans 256 KB of %s in linear time', (_what, html) => {
+    expect(ms(() => run({ 'index.html': html }))).toBeLessThan(500);
+  });
+
+  it('keeps the page line numbers across many inline scripts', () => {
+    expect(codes('index.html', `${'<script></script>\n'.repeat(3)}<script>\nel.innerHTML = x;\n</script>`)).toEqual(['xss_html_sink@5']);
+  });
+});

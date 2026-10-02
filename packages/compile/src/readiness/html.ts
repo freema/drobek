@@ -1,3 +1,5 @@
+import { blank, elements, nextStartTag, replaceSpans } from '../markup.js';
+
 /**
  * The tags of an HTML page as the readiness checks read them: a pattern
  * scan of the text, never a browser parse and never executed. Comments and
@@ -23,19 +25,21 @@ export interface HtmlPage {
   headLine: number;
 }
 
-const COMMENT = /<!--[\s\S]*?-->/g;
-const RAW_TEXT = /(<(script|style|template|title|textarea)\b[^>]*>)([\s\S]*?)(<\/\2\s*>|$)/gi;
-const TAG = /<([a-zA-Z][a-zA-Z0-9-]*)((?:\s+[^\s=>/]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'>]+))?)*)\s*\/?>/g;
-const ATTR = /([^\s=>/]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g;
-
-const blank = (s: string): string => s.replace(/[^\n]/g, ' ');
+const RAW_TEXT = ['script', 'style', 'template', 'title', 'textarea'];
 
 function decodeEntities(s: string): string {
   return s.replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
 }
 
 export function readHtml(source: string): HtmlPage {
-  const text = source.replace(COMMENT, blank).replace(RAW_TEXT, (_m, open: string, _name, body: string, close: string) => open + blank(body) + close);
+  const uncommented = replaceSpans(source, '<!--', '-->', blank);
+  let text = '';
+  let from = 0;
+  for (const el of elements(uncommented, RAW_TEXT)) {
+    text += uncommented.slice(from, el.contentStart) + blank(uncommented.slice(el.contentStart, el.contentEnd));
+    from = el.contentEnd;
+  }
+  text += uncommented.slice(from);
   const starts = [0];
   for (let i = 0; i < text.length; i++) if (text.charCodeAt(i) === 10) starts.push(i + 1);
   const lineAt = (index: number): number => {
@@ -54,15 +58,15 @@ export function readHtml(source: string): HtmlPage {
   const head: HtmlTag[] = [];
   let headLine = 1;
   let seenHead = false;
-  for (const m of text.matchAll(TAG)) {
+  for (let t = nextStartTag(text, 0); t; t = nextStartTag(text, t.end)) {
     const attrs = new Map<string, string>();
-    for (const a of m[2].matchAll(ATTR)) {
-      const name = a[1].toLowerCase();
-      if (!attrs.has(name)) attrs.set(name, decodeEntities(a[2] ?? a[3] ?? a[4] ?? ''));
+    for (const a of t.attrs) {
+      const name = a.name.toLowerCase();
+      if (!attrs.has(name)) attrs.set(name, decodeEntities(a.value ?? ''));
     }
-    const tag: HtmlTag = { name: m[1].toLowerCase(), attrs, line: lineAt(m.index) };
+    const tag: HtmlTag = { name: t.name.toLowerCase(), attrs, line: lineAt(t.start) };
     tags.push(tag);
-    if (headEnd === -1 || m.index < headEnd) head.push(tag);
+    if (headEnd === -1 || t.start < headEnd) head.push(tag);
     if (tag.name === 'head' && !seenHead) {
       seenHead = true;
       headLine = tag.line;

@@ -1,3 +1,4 @@
+import { elements } from '../../markup.js';
 import { tokenize, type Token } from '../lexer.js';
 import type { CheckFinding, ReadinessCheck } from '../types.js';
 
@@ -17,7 +18,6 @@ const JSX_FILE = /\.[jt]sx$/i;
 const SKIPPED_FILE = /(?:^|\/)(?:vendor|node_modules)\/|\.min\.[cm]?js$/i;
 const MAX_FILE_CHARS = 512 * 1024;
 
-const SCRIPT_TAG = /<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi;
 const JS_TYPE = /\btype\s*=\s*["']?(?:module|text\/javascript|application\/javascript)["']?/i;
 const ANY_TYPE = /\btype\s*=/i;
 const SRC_ATTR = /\bsrc\s*=/i;
@@ -341,14 +341,14 @@ function scanSource(source: string, firstLine: number, jsx: boolean, hits: Hit[]
 }
 
 function htmlScripts(html: string, hits: Hit[]): void {
-  SCRIPT_TAG.lastIndex = 0;
-  for (let m = SCRIPT_TAG.exec(html); m; m = SCRIPT_TAG.exec(html)) {
-    const attrs = m[1];
+  let line = 1;
+  let counted = 0;
+  for (const el of elements(html, ['script'])) {
+    if (!el.closed) break;
+    const attrs = html.slice(el.start + '<script'.length, el.contentStart - 1);
     if (SRC_ATTR.test(attrs) || (ANY_TYPE.test(attrs) && !JS_TYPE.test(attrs))) continue;
-    const bodyAt = m.index + m[0].indexOf('>') + 1;
-    let line = 1;
-    for (let i = 0; i < bodyAt; i++) if (html.charCodeAt(i) === 10) line++;
-    scanSource(m[2], line, false, hits);
+    for (; counted < el.contentStart; counted++) if (html.charCodeAt(counted) === 10) line++;
+    scanSource(html.slice(el.contentStart, el.contentEnd), line, false, hits);
   }
 }
 
