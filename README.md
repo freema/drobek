@@ -436,9 +436,20 @@ build the production image, start it with `docker-compose.e2e.yaml` (project
 `drobek-e2e`, its own loopback ports, so it runs next to the dev stack) behind
 Caddy with `tls internal` on `https://localhost:8443` and
 `https://<slug>--preview.apps.localhost:8443`, let it migrate a fresh DB, then
-run `@smoke` + `@local` and tear everything down. `DROBEK_IMAGE=…` skips the
-build, `E2E_KEEP=1` keeps the stack, extra args go to Playwright
-(`task e2e:image -- tests/mcp-loop.spec.ts`).
+run `@smoke` + `@local` (phase 1), recreate drobek with
+`EMAIL_TRANSPORT=relay` and `PUBLISH_APPROVAL=approval` and run the specs that
+need them (phase 2), and tear everything down. A skip guard
+(`scripts/e2e-skip-guard.mjs`) then fails the run when a test of the suite ran
+in neither phase. The image runs `NODE_ENV=production`, which ignores the dev
+stack's shortcuts, so the e2e stack brings production-shaped stand-ins: the
+mock IdP (`tests-e2e/mock-oidc.mjs`) behind Caddy over https as the server's
+`AUTH_OIDC_ISSUER`, a DNS server (`tests-e2e/dns-mock.mjs`) as
+`DOMAINS_DNS_SERVERS` that answers from the same Redis keys as the dev DNS
+mock, and drobek's own port on `127.0.0.1:3451` for what only Caddy sends (the
+TLS ask, a client `X-Real-IP`). `DROBEK_IMAGE=…` skips the build, `E2E_KEEP=1`
+keeps the stack, extra args replace the phases with one Playwright run
+(`task e2e:image -- tests/mcp-loop.spec.ts`; `E2E_PHASE=2` runs it against the
+phase-2 configuration).
 
 Both stacks install two external modules the way an operator does:
 `examples/drobek-module-acme-crm` and the operator-only test fixture
@@ -447,8 +458,8 @@ Both stacks install two external modules the way an operator does:
 flow). The fixture is the error reporter of both (`ERROR_REPORTER=capture`:
 reports land on the e2e's `proxy-echo`, where the specs read them back) and
 the dev stack's e-mail transport (`EMAIL_TRANSPORT=relay`: every message goes
-to Mailpit over its HTTP API); the image flow keeps the built-in SMTP, and the
-specs that need the relay skip there.
+to Mailpit over its HTTP API); the image flow keeps the built-in SMTP in its
+first phase and switches to the relay in the second.
 
 ## Versions and upgrades
 

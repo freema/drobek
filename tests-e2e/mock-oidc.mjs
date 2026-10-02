@@ -2,11 +2,13 @@
 /**
  * Mock OpenID Connect provider — tests-e2e ONLY. Never ships in the
  * image. The oidc module reaches it like any IdP: an app's
- * `providers.oidc.issuer` (or AUTH_OIDC_ISSUER) names it, and the dev compose
+ * `providers.oidc.issuer` (or AUTH_OIDC_ISSUER) names it. The dev compose
  * lets the module call it over http from the container
  * (AUTH_OIDC_DEV_ORIGINS=http://host.docker.internal:3050 for discovery, token
  * and keys, http://localhost:3050 for the authorization endpoint; ignored in
- * production).
+ * production). The image flow runs it as the `oidc-mock` service of
+ * docker-compose.e2e.yaml behind the e2e Caddy over https — the server's
+ * AUTH_OIDC_ISSUER, which production lets reach a private address.
  *
  * Endpoints (dependency-free node:http + node:crypto):
  *   GET  /.well-known/openid-configuration — discovery (issuer = MOCK_OIDC_ISSUER)

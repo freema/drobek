@@ -131,7 +131,7 @@ tasks:
       - pnpm -C tests-e2e exec playwright test {{.CLI_ARGS}}
 
   e2e:image:
-    desc: 'The CI e2e flow locally: build the prod image, run it behind Caddy (tls internal) next to the dev stack, whole @smoke + @local suite [DROBEK_IMAGE=… skips the build; E2E_KEEP=1 keeps the stack]'
+    desc: 'The CI e2e flow locally: build the prod image, run it behind Caddy (tls internal) next to the dev stack, whole @smoke + @local suite, then drobek with EMAIL_TRANSPORT=relay + PUBLISH_APPROVAL=approval for the specs that need it, then the skip guard [DROBEK_IMAGE=… skips the build; E2E_KEEP=1 keeps the stack; -- <args> runs only those, E2E_PHASE=2 in the second configuration]'
     cmds:
       - '{{if not .DROBEK_IMAGE}}docker build --target runner --build-arg GIT_SHA={{.GIT_SHA}} --build-arg COMMIT_TIME={{.COMMIT_TIME}} -t {{.IMAGE}}:e2e .{{else}}true{{end}}'
       - DROBEK_IMAGE={{.DROBEK_IMAGE | default (printf "%s:e2e" .IMAGE)}} ./scripts/e2e-image.sh {{.CLI_ARGS}}

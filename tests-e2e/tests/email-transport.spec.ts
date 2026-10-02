@@ -9,8 +9,9 @@ import { REPORT_FIELDS, drobekEnv, opsReports, type OpsReport } from './helpers/
  * E-mail through a module's transport (EMAIL_TRANSPORT=<id>): the dev stack
  * sends all of its mail through the `relay` transport of the operator-only
  * fixture `opsprobe`, which hands each message to Mailpit's HTTP send API
- * with the header `X-Ops-Probe-Transport: relay` (the image flow keeps the
- * built-in SMTP, so this spec skips there).
+ * with the header `X-Ops-Probe-Transport: relay`. The image flow's first
+ * phase keeps the built-in SMTP (this spec skips there); its second phase
+ * restarts drobek with EMAIL_TRANSPORT=relay (scripts/e2e-image.sh).
  *  - a dashboard sign-in code and a module's mail (a form notification,
  *    under the app's sender name) arrive through it;
  *  - a refused send (the fixture refuses `@fail.example`, naming the address

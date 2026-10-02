@@ -159,9 +159,10 @@ const config: KnipConfig = {
 
     'tests-e2e': {
       // Started by path, not imported: proxy-echo.mjs by docker-compose*.y*ml
-      // (`node tests-e2e/proxy-echo.mjs`), selfhost-rehearsal.mjs by
+      // (`node tests-e2e/proxy-echo.mjs`), dns-mock.mjs by
+      // docker-compose.e2e.yaml, selfhost-rehearsal.mjs by
       // scripts/selfhost-rehearsal.sh.
-      entry: ['proxy-echo.mjs', 'selfhost-rehearsal.mjs'],
+      entry: ['proxy-echo.mjs', 'dns-mock.mjs', 'selfhost-rehearsal.mjs'],
       // fixtures/ holds an external module package the e2e stacks pack and
       // install into DROBEK_MODULES_DIR (`task module:fixture`,
       // scripts/e2e-image.sh); never imported.

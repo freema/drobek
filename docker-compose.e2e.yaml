@@ -1,14 +1,21 @@
 # e2e against the production image, driven only by scripts/e2e-image.sh
 # (`task e2e:image` and the CI `e2e` job). The production topology in
 # miniature: the runner image behind Caddy with `tls internal`, plus throwaway
-# postgres / redis / mailpit and the proxy-echo e2e helper.
+# postgres / redis / mailpit and the e2e helpers proxy-echo, oidc-mock (the
+# IdP, behind Caddy) and dns-mock (custom-domain DNS).
 #
 #   https://localhost:${E2E_TLS_PORT}                      dashboard / OAuth / MCP
 #   https://<slug>--preview.apps.localhost:${E2E_TLS_PORT} app hosts
+#   https://idp.localhost:${E2E_TLS_PORT}                  the mock IdP (browser side)
+#   http://127.0.0.1:${E2E_DROBEK_PORT}                    drobek itself, what Caddy forwards to
 #
 # Project `drobek-e2e`, no container_name and its own host ports, so it runs
 # next to the dev stack. Every published port binds 127.0.0.1 only; the
-# secrets are generated per run by the script.
+# secrets are generated per run by the script. The script starts caddy and
+# dns-mock first: drobek trusts Caddy's root CA (copied to
+# .caddy/e2e-root.crt) and resolves custom domains through dns-mock's address
+# (E2E_DNS_SERVER). E2E_EMAIL_TRANSPORT / E2E_PUBLISH_APPROVAL switch drobek
+# to the script's second phase.
 name: drobek-e2e
 
 services:
@@ -64,8 +71,50 @@ services:
       timeout: 5s
       retries: 30
 
+  oidc-mock:
+    # The mock OpenID Connect provider (tests-e2e/mock-oidc.mjs), reached only
+    # through Caddy over https: the server under idp.e2e.internal (a network
+    # alias of caddy), the browser under idp.localhost.
+    image: node:22-alpine
+    command: ['node', '/e2e/mock-oidc.mjs']
+    environment:
+      MOCK_OIDC_PORT: '3050'
+      MOCK_OIDC_ISSUER: https://idp.e2e.internal:${E2E_TLS_PORT:-8443}
+      MOCK_OIDC_BROWSER_URL: https://idp.localhost:${E2E_TLS_PORT:-8443}
+    volumes:
+      - ./tests-e2e:/e2e:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -q -T 3 -O - http://127.0.0.1:3050/ || exit 1']
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  dns-mock:
+    # Custom-domain verification DNS (tests-e2e/dns-mock.mjs): the records the
+    # spec writes to Redis, served over real DNS — production ignores the
+    # in-process DOMAINS_DNS_MOCK.
+    image: node:22-alpine
+    command: ['node', '/e2e/dns-mock.mjs']
+    environment:
+      DNS_PORT: '53'
+      REDIS_URL: redis://redis:6379
+    volumes:
+      - ./tests-e2e:/e2e:ro
+    healthcheck:
+      test: ['CMD', 'node', '/e2e/dns-mock.mjs', '--probe']
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    depends_on:
+      redis:
+        condition: service_healthy
+
   drobek:
     image: ${DROBEK_IMAGE:?set DROBEK_IMAGE (scripts/e2e-image.sh does)}
+    ports:
+      # What Caddy forwards to: the specs send the TLS ask, a custom domain's
+      # Host and a client X-Real-IP of their own here.
+      - '127.0.0.1:${E2E_DROBEK_PORT:-3451}:3000'
     environment:
       NODE_ENV: production
       DATABASE_URL: postgresql://drobek:drobek@postgres:5432/drobek
@@ -97,10 +146,14 @@ services:
       SYNC_PAUSE_AFTER_FAILURES: '2'
       # drobek-module-acme-crm and the operator-only fixture drobek-module-ops-probe
       # are installed into modules_data by scripts/e2e-image.sh. The fixture's
-      # error reporter sends to proxy-echo; mail stays on the built-in SMTP.
+      # error reporter sends to proxy-echo; mail goes over the built-in SMTP,
+      # in the second phase through the fixture's relay to Mailpit's HTTP API.
       DROBEK_MODULES: hello,auth,email,forms,data,proxy,files,sync,oidc,drobek-module-acme-crm,drobek-module-ops-probe
       ERROR_REPORTER: capture
       OPSPROBE_URL: http://proxy-echo:8099/opsprobe
+      EMAIL_TRANSPORT: ${E2E_EMAIL_TRANSPORT:-smtp}
+      OPSPROBE_MAIL_URL: http://mailpit:8025/api/v1/send
+      PUBLISH_APPROVAL: ${E2E_PUBLISH_APPROVAL:-open}
       FILES_MAX_BYTES: '10485760'
       FILES_QUOTA_PER_APP: '2097152'
       HELLO_WAVES_PER_MINUTE: '5'
@@ -121,6 +174,15 @@ services:
       ABUSE_REPORTS_PER_IP_HOUR: '5'
       GALLERY_ENABLED: 'true'
       GALLERY_FRAME_ANCESTORS: https://gallery.example.test
+      # The company IdP of auth-oidc.spec: the oidc-mock service through Caddy,
+      # trusted through Caddy's root CA; production lets only the operator's
+      # own issuer reach a private address.
+      AUTH_OIDC_ISSUER: https://idp.e2e.internal:${E2E_TLS_PORT:-8443}
+      NODE_EXTRA_CA_CERTS: /run/e2e/e2e-root.crt
+      # Custom domains: verification DNS from dns-mock (its address, looked up
+      # by the script); the re-check runs every 5 s like the dev stack's.
+      DOMAINS_DNS_SERVERS: ${E2E_DNS_SERVER:-}
+      DOMAINS_RECHECK_INTERVAL_MS: '5000'
       # Google OIDC → the mock the auth-google spec spawns on the host (:3049).
       GOOGLE_CLIENT_ID: local-dev-client
       GOOGLE_CLIENT_SECRET: local-dev-secret
@@ -140,6 +202,9 @@ services:
       - /data/assets
       # A named volume, so a module can be installed into it before the stack starts.
       - modules_data:/data/modules
+      # The directory, not the file: the module installer's `run drobek`
+      # comes before the script copies Caddy's root CA there.
+      - ./.caddy:/run/e2e:ro
     # The image's own HEALTHCHECK probes /healthz (db + redis) — `up --wait` uses it.
     depends_on:
       postgres:
@@ -150,6 +215,8 @@ services:
         condition: service_healthy
       proxy-echo:
         condition: service_healthy
+      dns-mock:
+        condition: service_healthy
 
   caddy:
     image: caddy:2-alpine
@@ -158,16 +225,18 @@ services:
     environment:
       TLS_ASK_TOKEN: ${TLS_ASK_TOKEN:?generated by scripts/e2e-image.sh}
     volumes:
-      # Rendered by the image's own caddy-config CLI (scripts/e2e-image.sh).
+      # Rendered by the image's own caddy-config CLI, plus the mock IdP's site
+      # (scripts/e2e-image.sh).
       - ./.caddy/Caddyfile.e2e:/etc/caddy/Caddyfile:ro
+    networks:
+      default:
+        aliases:
+          - idp.e2e.internal
     healthcheck:
       test: ['CMD-SHELL', 'nc -z -w 3 127.0.0.1 ${E2E_TLS_PORT:-8443} || exit 1']
       interval: 2s
       timeout: 5s
       retries: 30
-    depends_on:
-      drobek:
-        condition: service_healthy
 
 volumes:
   modules_data:

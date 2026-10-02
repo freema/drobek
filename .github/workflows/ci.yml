@@ -9,10 +9,14 @@
 #            it to e2e as a docker-load artifact (kept for a day).
 #   e2e      (after image) load that image → run it
 #            with docker-compose.e2e.yaml behind Caddy (tls internal) with
-#            throwaway postgres / redis / mailpit / proxy-echo → the server
-#            migrates the fresh DB on start → /healthz → Playwright @smoke +
-#            @local (guarded TRUNCATE, host allow-list) — scripts/e2e-image.sh,
-#            the same script `task e2e:image` runs locally. The image that
+#            throwaway postgres / redis / mailpit and the e2e helpers
+#            (proxy-echo, oidc-mock, dns-mock) → the server migrates the fresh
+#            DB on start → /healthz → Playwright @smoke + @local (guarded
+#            TRUNCATE, host allow-list) → drobek recreated with
+#            EMAIL_TRANSPORT=relay + PUBLISH_APPROVAL=approval for the specs
+#            that need it → the skip guard (every test ran in a phase) —
+#            scripts/e2e-image.sh, the same script `task e2e:image` runs
+#            locally. The image that
 #            passed is pushed as ghcr.io/freema/drobek:<sha> (main) or
 #            :<sha>-vX.Y.Z (tags): a tag and main on the same commit build
 #            different VERSIONs and must not overwrite each other.
@@ -253,7 +257,7 @@ jobs:
       - name: Load the image into the local daemon
         run: docker load --input "$RUNNER_TEMP/drobek-image.tar"
 
-      - name: e2e against the image (compose up → migrate → @smoke + @local)
+      - name: e2e against the image (compose up → migrate → @smoke + @local → relay + approval → skip guard)
         env:
           DROBEK_IMAGE: ${{ env.IMAGE }}:${{ needs.image.outputs.short }}
         run: ./scripts/e2e-image.sh

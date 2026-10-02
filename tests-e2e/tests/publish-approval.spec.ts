@@ -20,8 +20,10 @@ import { personalWorkspaceOf, withDb } from './helpers/seed';
  *    E2E_PUBLISH_APPROVAL=approval, and E2E_OPERATOR_EMAIL when OPERATOR_EMAIL
  *    is set): an unapproved publish answers publish_not_approved naming the
  *    contact, the operator gets one e-mail (a second refused publish sends
- *    none), and after approval the publish goes through. The dev stack runs
- *    `open`, so that part is skipped there.
+ *    none), and after approval the publish goes through. The dev stack and
+ *    the image flow's first phase run `open`, so that part is skipped there;
+ *    the image flow's second phase restarts drobek with
+ *    PUBLISH_APPROVAL=approval from E2E_PUBLISH_APPROVAL (scripts/e2e-image.sh).
  */
 
 const SUPER_ADMIN = 'e2e-superadmin@drobek.test';

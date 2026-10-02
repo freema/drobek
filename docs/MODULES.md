@@ -267,7 +267,8 @@ image compose, whose flow installs both external ones with
 (`tests-e2e/fixtures`) is an operator-only test fixture: its error reporter
 `capture` (`ERROR_REPORTER=capture` in both composes) hands every report to
 the e2e's `proxy-echo`, its e-mail transport `relay`
-(`EMAIL_TRANSPORT=relay` in the dev compose only; the image flow keeps SMTP)
+(`EMAIL_TRANSPORT=relay` in the dev compose and in the second phase of the
+image flow, whose first phase keeps SMTP)
 sends through Mailpit's HTTP API, and its server job fails when a spec asks
 it to.
 
@@ -2684,7 +2685,9 @@ the allowlist, users and sessions ([Auth providers](#auth-providers)).
   secret, a code or a token.
 - **Testing** — `tests-e2e/mock-oidc.mjs` (`task mock:oidc`, port 3050) is a
   dependency-free IdP: discovery, `/jwks`, an RS256 ID token from a key made
-  at start, the nonce and the PKCE verifier checked.
+  at start, the nonce and the PKCE verifier checked. The dev stack reaches it
+  over http through `AUTH_OIDC_DEV_ORIGINS`; the e2e image flow runs it behind
+  its Caddy over https as the server's `AUTH_OIDC_ISSUER`.
 
 ## The example: `drobek-module-hello`
 
