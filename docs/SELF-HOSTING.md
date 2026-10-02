@@ -895,7 +895,8 @@ the credentials only ever touch that small zone. Generated app block:
 
 With no wildcard, Caddy issues a certificate for each app host at its first
 TLS handshake. That is **always gated**: before every new certificate Caddy
-asks drobek, and drobek says yes only for a host of an existing app.
+asks drobek, and drobek says yes only for a host of an existing app (a
+`--v<N>` host: only for a version the app has).
 `task selfhost:init` generates `TLS_ASK_TOKEN` (for every mode) and the
 compose file hands the same value to drobek and to Caddy.
 
@@ -917,10 +918,11 @@ compose file hands the same value to drobek and to Caddy.
 
 | Answer | When |
 | --- | --- |
-| 200 | `<slug>`, `<slug>--preview` or `<slug>--v<N>` directly under `APPS_DOMAIN`, and a live, non-deleted app owns `<slug>` (for `--v<N>` the version itself is not checked) |
+| 200 | `<slug>` or `<slug>--preview` directly under `APPS_DOMAIN`, and a live, non-deleted app owns `<slug>` |
+| 200 | `<slug>--v<N>` directly under `APPS_DOMAIN`, and version N of that live app exists and compiled |
 | 200 | a **verified** custom domain of a live, non-deleted app (M3-01, [Custom domains](#custom-domains)) |
 | 401 | missing or wrong token (compared in constant time; also accepted as the `X-Drobek-Tls-Ask-Token` header) |
-| 404 | everything else: other hosts outside `APPS_DOMAIN` (unknown or not yet verified custom domains), the dashboard host, deeper names, unknown slugs — and **every** request while `TLS_ASK_TOKEN` is unset (fail closed), or one that arrives on the public dashboard host |
+| 404 | everything else: other hosts outside `APPS_DOMAIN` (unknown or not yet verified custom domains), the dashboard host, deeper names, unknown slugs, version numbers the app does not have — and **every** request while `TLS_ASK_TOKEN` is unset (fail closed), or one that arrives on the public dashboard host |
 | 503 | the database lookup failed (no certificate) |
 
 The endpoint is internal: Caddy refuses `/api/internal/*` with 404 on every

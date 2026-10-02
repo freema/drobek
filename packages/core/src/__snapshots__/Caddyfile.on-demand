@@ -5,8 +5,8 @@
 {
 	email ops@example.com
 	# Caddy asks drobek before EVERY new certificate; drobek answers 200 only for
-	# <slug>[--preview|--v<N>].<APPS_DOMAIN> of an existing app and for VERIFIED
-	# custom domains. {$TLS_ASK_TOKEN}
+	# <slug>[--preview].<APPS_DOMAIN> of an existing app, <slug>--v<N> of an
+	# existing version and VERIFIED custom domains. {$TLS_ASK_TOKEN}
 	# is substituted from Caddy's environment when the config is loaded.
 	on_demand_tls {
 		ask http://drobek:3000/api/internal/tls/ask?token={$TLS_ASK_TOKEN}

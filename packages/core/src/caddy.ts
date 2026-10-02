@@ -305,8 +305,8 @@ export function renderCaddyfile(config: CaddyConfig): string {
   if (mode === 'on-demand' || config.customDomains) {
     globals.push(
       '\t# Caddy asks drobek before EVERY new certificate; drobek answers 200 only for',
-      '\t# <slug>[--preview|--v<N>].<APPS_DOMAIN> of an existing app and for VERIFIED',
-      '\t# custom domains. {$TLS_ASK_TOKEN}',
+      '\t# <slug>[--preview].<APPS_DOMAIN> of an existing app, <slug>--v<N> of an',
+      '\t# existing version and VERIFIED custom domains. {$TLS_ASK_TOKEN}',
       "\t# is substituted from Caddy's environment when the config is loaded.",
       '\ton_demand_tls {',
       `\t\task http://${upstream}${TLS_ASK_PATH}?token={$TLS_ASK_TOKEN}`,

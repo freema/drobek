@@ -8,24 +8,27 @@
  *        Caddy on the internal network: `http://drobek:3000/…`)
  *   401  missing or wrong token (`?token=` — Caddy's ask is a bare GET, so the
  *        token rides in the ask URL — or the `X-Drobek-Tls-Ask-Token` header)
- *   200  `domain` is `<slug>`, `<slug>--preview` or `<slug>--v<N>` directly
- *        under APPS_DOMAIN and a live, non-deleted app owns `<slug>`
+ *   200  `domain` is `<slug>` or `<slug>--preview` directly under APPS_DOMAIN
+ *        and a live, non-deleted app owns `<slug>`
+ *   200  `domain` is `<slug>--v<N>` directly under APPS_DOMAIN and version N
+ *        of that live app exists and compiled (the host has something to serve)
  *   200  `domain` is a VERIFIED custom domain of a live app (the
  *        domains table; the lookup also records `cert_state = requested`)
  *   404  everything else: other hosts outside APPS_DOMAIN (unknown or
  *        unverified custom domains — Caddy never obtains a certificate for
  *        them), the dashboard host, APPS_DOMAIN itself, deeper names,
- *        malformed labels, unknown slugs, IP literals.
+ *        malformed labels, unknown slugs, version numbers the app does not
+ *        have, IP literals.
  *
- * `--v<N>` only checks that the app exists, not that version N does — a
- * certificate for a host that then 404s is harmless, and it keeps this a
- * single indexed slug lookup.
+ * `--v<N>` takes any N up to nine digits, so it is checked against the
+ * versions themselves: otherwise one live app would let anyone order a
+ * certificate per number and use up the CA's quota for APPS_DOMAIN.
  *
  * Pure — the app lookup is injected (the Postgres one lives in
  * tls-ask.server.ts), so every branch is unit-tested without a database.
  */
 import { createHash, timingSafeEqual } from 'node:crypto';
-import { classifyHost, splitHost, type HostConfig } from '@drobek/apps';
+import { classifyHost, splitHost, type AppHostTarget, type HostConfig } from '@drobek/apps';
 import { TLS_ASK_PATH, TLS_ASK_TOKEN_MIN_LENGTH, isValidTlsAskToken } from '@drobek/core';
 
 export { TLS_ASK_PATH, TLS_ASK_TOKEN_MIN_LENGTH };
@@ -72,11 +75,11 @@ function withoutPort(host: string | null): string | null {
 }
 
 /**
- * The app slug an ask `domain` would serve, or null. Ports are ignored on both
+ * The app host an ask `domain` names, or null. Ports are ignored on both
  * sides: Caddy asks with the bare SNI name, while APPS_DOMAIN may carry a port
  * (e.g. `apps.localhost:8443` when the TLS port is not 443).
  */
-export function tlsAskSlug(domain: string | null | undefined, hosts: HostConfig): string | null {
+export function tlsAskTarget(domain: string | null | undefined, hosts: HostConfig): AppHostTarget | null {
   if (typeof domain !== 'string') return null;
   const host = splitHost(domain);
   // The SNI name Caddy asks about never carries a port or an IPv6 literal.
@@ -87,8 +90,12 @@ export function tlsAskSlug(domain: string | null | undefined, hosts: HostConfig)
     appsDomain,
     dashboardHost: withoutPort(hosts.dashboardHost),
   });
-  if (cls.side !== 'apps' || cls.target === null) return null;
-  return cls.target.slug;
+  return cls.side === 'apps' ? cls.target : null;
+}
+
+/** The app slug an ask `domain` would serve, or null (see tlsAskTarget). */
+export function tlsAskSlug(domain: string | null | undefined, hosts: HostConfig): string | null {
+  return tlsAskTarget(domain, hosts)?.slug ?? null;
 }
 
 /**
@@ -120,6 +127,8 @@ export interface TlsAskDeps {
   hosts: HostConfig;
   /** True when a live, non-deleted app owns this slug. */
   appExists: (slug: string) => Promise<boolean>;
+  /** True when the live app `slug` has a version `number` that compiled (absent → never). */
+  versionExists?: (slug: string, number: number) => Promise<boolean>;
   /** True when `hostname` is a verified custom domain of a live app (absent → never). */
   customDomainAllowed?: (hostname: string) => Promise<boolean>;
 }
@@ -135,8 +144,11 @@ export async function decideTlsAsk(input: TlsAskInput, deps: TlsAskDeps): Promis
   if (!reqHost) return 404;
   if (dashboard && reqHost.hostname === dashboard.hostname) return 404;
   if (!tlsAskTokenMatches(deps.expectedToken, input.token)) return 401;
-  const slug = tlsAskSlug(input.domain, deps.hosts);
-  if (slug) return (await deps.appExists(slug)) ? 200 : 404;
+  const target = tlsAskTarget(input.domain, deps.hosts);
+  if (target?.kind === 'version') {
+    return deps.versionExists && (await deps.versionExists(target.slug, target.number)) ? 200 : 404;
+  }
+  if (target) return (await deps.appExists(target.slug)) ? 200 : 404;
   const custom = tlsAskCustomHost(input.domain, deps.hosts);
   if (custom && deps.customDomainAllowed) return (await deps.customDomainAllowed(custom)) ? 200 : 404;
   return 404;

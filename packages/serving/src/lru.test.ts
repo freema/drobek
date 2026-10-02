@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ByteLru, CountLru, DEFAULT_BLOB_CACHE_BYTES } from './lru.js';
+import { ByteLru, CountLru, DEFAULT_BLOB_CACHE_BYTES, ExpiringLru } from './lru.js';
 
 const buf = (n: number) => Buffer.alloc(n, 1);
 
@@ -58,5 +58,80 @@ describe('CountLru', () => {
     expect(lru.get('b')).toBeUndefined();
     expect(lru.get('a')).toBe(1);
     expect(lru.get('c')).toBe(3);
+  });
+});
+
+describe('ExpiringLru', () => {
+  function clocked(max: number, ttl = 1_000) {
+    const clock = { now: 0 };
+    return { clock, lru: new ExpiringLru<string>(max, ttl, () => clock.now) };
+  }
+
+  it('keeps at most maxEntries over all groups, dropping the least recently used', () => {
+    const { lru } = clocked(3);
+    lru.set('shop:prod', 'a', 'shop');
+    lru.set('shop:v1', 'b', 'shop');
+    lru.set('blog:prod', 'c', 'blog');
+    lru.get('shop:prod');
+    lru.set('shop:v2', 'd', 'shop');
+    expect(lru.size).toBe(3);
+    expect(lru.get('shop:v1')).toBeUndefined();
+    expect(lru.get('shop:prod')).toBe('a');
+    for (let n = 3; n < 100; n++) lru.set(`shop:v${n}`, 'x', 'shop');
+    expect(lru.size).toBe(3);
+    // The evicted entries left the group index too: forgetting the group empties the cache.
+    lru.deleteGroup('shop');
+    expect(lru.size).toBe(0);
+  });
+
+  it('an expired entry is never returned and is dropped when read', () => {
+    const { clock, lru } = clocked(10);
+    lru.set('a', 'x');
+    clock.now = 999;
+    expect(lru.get('a')).toBe('x');
+    clock.now = 1_000;
+    expect(lru.get('a')).toBeUndefined();
+    expect(lru.size).toBe(0);
+  });
+
+  it('a write sweeps out every expired entry once the last sweep is a TTL old', () => {
+    const { clock, lru } = clocked(100);
+    for (let i = 0; i < 50; i++) lru.set(`old-${i}`, 'x', 'old');
+    clock.now = 500;
+    lru.set('mid', 'x');
+    expect(lru.size).toBe(51);
+    clock.now = 1_200;
+    lru.set('new', 'x');
+    // The 50 entries of t=0 expired at 1 000 and are gone without being read; `mid` lives until 1 500.
+    expect(lru.size).toBe(2);
+    expect(lru.hasGroup('old')).toBe(false);
+    expect(lru.get('mid')).toBe('x');
+  });
+
+  it('groups: hasGroup sees only unexpired entries, deleteGroup forgets one group', () => {
+    const { clock, lru } = clocked(10);
+    lru.set('shop:prod', 'a', 'shop');
+    lru.set('shop:v1', 'b', 'shop');
+    lru.set('blog:prod', 'c', 'blog');
+    expect(lru.hasGroup('shop')).toBe(true);
+    expect(lru.hasGroup('nope')).toBe(false);
+    lru.deleteGroup('shop');
+    expect(lru.get('shop:prod')).toBeUndefined();
+    expect(lru.get('shop:v1')).toBeUndefined();
+    expect(lru.get('blog:prod')).toBe('c');
+    clock.now = 1_000;
+    expect(lru.hasGroup('blog')).toBe(false);
+  });
+
+  it('re-setting a key renews its expiry and may move it to another group', () => {
+    const { clock, lru } = clocked(10);
+    lru.set('k', 'a', 'one');
+    clock.now = 800;
+    lru.set('k', 'b', 'two');
+    clock.now = 1_500;
+    expect(lru.get('k')).toBe('b');
+    expect(lru.hasGroup('one')).toBe(false);
+    lru.deleteGroup('two');
+    expect(lru.size).toBe(0);
   });
 });

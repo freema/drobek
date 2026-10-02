@@ -1,12 +1,14 @@
 /**
  * The app hosts' read path + its caches. Three in-process caches:
  *
- *  - host resolution  `slug → {target → {app, version}}` — what a host serves
+ *  - host resolution  `slug + host → {app, version}` — what a host serves
  *    RIGHT NOW (the published pointer, the newest ok version, version N). This
  *    is the only mutable one: it is busted per slug by the `drobek:app-changed`
  *    events (every write, restore, publish, settings and gallery change; see
  *    subscribeServeCache) and has a short TTL backstop for changes no event
- *    announces (e.g. an SQL edit).
+ *    announces (e.g. an SQL edit). It holds at most 20 000 hosts over all apps
+ *    (LRU) and drops expired entries (ExpiringLru); a version host is kept
+ *    here only while its version exists.
  *  - version manifests `versionId → served manifest` — a version is immutable,
  *    so this never needs busting (count-capped LRU).
  *  - file bytes `sha256 → Buffer` — content-addressed, byte-capped LRU
@@ -20,15 +22,16 @@
  *    `slug: null` = registered but unverified → 404). Same 60 s TTL; every
  *    `domain` app-changed event drops the whole map (bustCustomHosts).
  *
- *  - negative caches `slug → expiry`, `hostname → expiry` — a slug
- *    with no live app / a hostname that is no custom domain at all. Wildcard
- *    DNS makes every label a new host, so these are kept APART from the
- *    positive caches (a random-slug flood can never evict a real app's entry),
- *    count-capped (LRU) and short-lived (30 s). A miss answers every target of
- *    the slug (prod, preview, --vN) — the app row is what is missing. Busted
- *    like the positive entries: any app-changed event of the slug (incl.
- *    `create`, emitted by createApp) forgets its miss, any `domain` event
- *    forgets every hostname miss.
+ *  - negative caches — a slug with no live app, a version host of a live app
+ *    whose version does not exist (or did not compile), a hostname that is no
+ *    custom domain at all. Wildcard DNS makes every label a new host, and
+ *    `--v<N>` takes any N, so these are kept APART from the positive caches (a
+ *    flood of random slugs or version numbers can never evict a real app's
+ *    entry), count-capped (LRU) and short-lived (30 s). A slug miss answers
+ *    every target of the slug (prod, preview, --vN) — the app row is what is
+ *    missing. Busted like the positive entries: any app-changed event of the
+ *    slug (incl. `create`, emitted by createApp, and every new version) forgets
+ *    its misses, any `domain` event forgets every hostname miss.
  *
  * The password hash is never cached; the unlock POST reads it on demand.
  * The DB access sits behind `ServeLoaders`, so the unit tests run the real
@@ -38,7 +41,7 @@ import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { isGalleryVisible, type AppHostTarget } from '@drobek/apps';
 import { appVersions, apps, blobs, getDb, versionFiles } from '@drobek/db';
 import { primaryDomainOf, resolveCustomHost, type CustomHostResolution } from '@drobek/domains';
-import { ByteLru, CountLru, DEFAULT_BLOB_CACHE_BYTES } from './lru.js';
+import { ByteLru, CountLru, DEFAULT_BLOB_CACHE_BYTES, ExpiringLru } from './lru.js';
 import { servedManifest, type ServedManifest, type StoredFile } from './manifest.js';
 import { splitInlineSourceMap, type SplitSourceMap } from './sourcemap.js';
 import type { Visibility } from './visibility.js';
@@ -95,98 +98,105 @@ export interface ServeStoreOptions {
   loaders?: ServeLoaders;
   /** Host-resolution TTL backstop (default 60 s). */
   resolveTtlMs?: number;
-  /** How long a miss (unknown slug / hostname) is remembered (default 30 s). */
+  /** How long a miss (unknown slug, missing version, unknown hostname) is remembered (default 30 s). */
   negativeTtlMs?: number;
   /** How many misses each negative cache keeps (default 10 000). */
   negativeMaxEntries?: number;
+  /** How many app hosts the host-resolution cache keeps (default 20 000). */
+  maxCachedHosts?: number;
   blobCacheBytes?: number;
   now?: () => number;
 }
 
 export const RESOLVE_TTL_MS = 60_000;
-/** How long an unknown slug / hostname is remembered. */
+/** How long an unknown slug / version / hostname is remembered. */
 export const NEGATIVE_TTL_MS = 30_000;
 export const MAX_NEGATIVE_ENTRIES = 10_000;
+const MAX_CACHED_HOSTS = 20_000;
 const NO_APP: Resolved = Object.freeze({ app: null, version: null });
-const MAX_CACHED_SLUGS = 10_000;
+const MAX_CACHED_CUSTOM_HOSTS = 10_000;
 const MAX_CACHED_MANIFESTS = 2_000;
+/** The negative-cache host of a slug no live app owns (it answers every host of the slug). */
+const ANY_HOST = '*';
 
 function targetKey(t: AppHostTarget): string {
   // A custom domain serves exactly what the production host serves.
   return t.kind === 'version' ? `v${t.number}` : t.kind === 'custom' ? 'prod' : t.kind;
 }
 
+const hostKey = (slug: string, host: string) => `${slug}:${host}`;
+
 export class ServeStore {
   readonly loaders: ServeLoaders;
   readonly blobs: ByteLru;
-  private readonly resolved = new CountLru<Map<string, { expires: number; value: Resolved }>>(MAX_CACHED_SLUGS);
+  private readonly resolved: ExpiringLru<Resolved>;
   private readonly manifests = new CountLru<ServedManifest>(MAX_CACHED_MANIFESTS);
   private readonly noInlineMap = new CountLru<true>(MAX_CACHED_MANIFESTS * 4);
-  private readonly customHosts = new CountLru<{ expires: number; value: CustomHostResolution }>(MAX_CACHED_SLUGS);
-  private readonly missingSlugs: CountLru<number>;
-  private readonly missingHosts: CountLru<number>;
-  private readonly ttlMs: number;
-  private readonly negativeTtlMs: number;
-  private readonly now: () => number;
+  private readonly customHosts: ExpiringLru<CustomHostResolution>;
+  /** Slug misses (`<slug>:*`) and version misses (`<slug>:v<N>`, with the app). */
+  private readonly missing: ExpiringLru<Resolved>;
+  private readonly missingHosts: ExpiringLru<true>;
 
   constructor(opts: ServeStoreOptions = {}) {
     this.loaders = opts.loaders ?? dbLoaders;
     this.blobs = new ByteLru(opts.blobCacheBytes ?? DEFAULT_BLOB_CACHE_BYTES);
-    this.ttlMs = opts.resolveTtlMs ?? RESOLVE_TTL_MS;
-    this.negativeTtlMs = opts.negativeTtlMs ?? NEGATIVE_TTL_MS;
-    this.missingSlugs = new CountLru<number>(opts.negativeMaxEntries ?? MAX_NEGATIVE_ENTRIES);
-    this.missingHosts = new CountLru<number>(opts.negativeMaxEntries ?? MAX_NEGATIVE_ENTRIES);
-    this.now = opts.now ?? Date.now;
+    const now = opts.now ?? Date.now;
+    const ttlMs = opts.resolveTtlMs ?? RESOLVE_TTL_MS;
+    const negativeTtlMs = opts.negativeTtlMs ?? NEGATIVE_TTL_MS;
+    const negativeMax = opts.negativeMaxEntries ?? MAX_NEGATIVE_ENTRIES;
+    this.resolved = new ExpiringLru(opts.maxCachedHosts ?? MAX_CACHED_HOSTS, ttlMs, now);
+    this.customHosts = new ExpiringLru(MAX_CACHED_CUSTOM_HOSTS, ttlMs, now);
+    this.missing = new ExpiringLru(negativeMax, negativeTtlMs, now);
+    this.missingHosts = new ExpiringLru(negativeMax, negativeTtlMs, now);
   }
 
   async resolve(target: AppHostTarget): Promise<Resolved> {
-    const key = targetKey(target);
-    const bySlug = this.resolved.get(target.slug);
-    const hit = bySlug?.get(key);
-    if (hit && hit.expires > this.now()) return hit.value;
-    const missUntil = this.missingSlugs.get(target.slug);
-    if (missUntil !== undefined && missUntil > this.now()) return NO_APP;
+    const { slug } = target;
+    const key = hostKey(slug, targetKey(target));
+    const hit =
+      this.resolved.get(key) ??
+      this.missing.get(hostKey(slug, ANY_HOST)) ??
+      (target.kind === 'version' ? this.missing.get(key) : undefined);
+    if (hit) return hit;
     const value = await this.loaders.resolve(target);
     if (!value.app) {
-      this.resolved.delete(target.slug);
-      this.missingSlugs.set(target.slug, this.now() + this.negativeTtlMs);
+      this.resolved.deleteGroup(slug);
+      this.missing.deleteGroup(slug);
+      this.missing.set(hostKey(slug, ANY_HOST), NO_APP, slug);
       return NO_APP;
     }
-    this.missingSlugs.delete(target.slug);
-    const entry = this.resolved.get(target.slug) ?? new Map();
-    entry.set(key, { expires: this.now() + this.ttlMs, value });
-    this.resolved.set(target.slug, entry);
+    this.missing.delete(hostKey(slug, ANY_HOST));
+    if (target.kind === 'version' && !value.version) this.missing.set(key, value, slug);
+    else this.resolved.set(key, value, slug);
     return value;
   }
 
   /** Which app a custom-domain candidate serves (cached; see the module comment). */
   async resolveCustomHost(hostname: string): Promise<CustomHostResolution | null> {
     const hit = this.customHosts.get(hostname);
-    if (hit && hit.expires > this.now()) return hit.value;
-    const missUntil = this.missingHosts.get(hostname);
-    if (missUntil !== undefined && missUntil > this.now()) return null;
+    if (hit) return hit;
+    if (this.missingHosts.get(hostname)) return null;
     const value = this.loaders.resolveCustomHost ? await this.loaders.resolveCustomHost(hostname) : null;
     if (value === null) {
       this.customHosts.delete(hostname);
-      this.missingHosts.set(hostname, this.now() + this.negativeTtlMs);
+      this.missingHosts.set(hostname, true);
       return null;
     }
     this.missingHosts.delete(hostname);
-    this.customHosts.set(hostname, { expires: this.now() + this.ttlMs, value });
+    this.customHosts.set(hostname, value);
     return value;
   }
 
   /**
-   * Does the cache already know `slug` as a live app (an unexpired
-   * positive entry for any of its hosts)? No I/O — the unknown-host limiter
-   * lets a throttled client through to such a host without a lookup risk.
+   * Does the cache already know this host as one a live app serves? No I/O —
+   * the unknown-host limiter lets a throttled client through to such a host
+   * without a lookup risk. The production, preview and custom hosts count once
+   * any host of the slug is cached; a version host only when that very version
+   * is (a throttled client never looks up version numbers one by one).
    */
-  knowsLiveApp(slug: string): boolean {
-    const bySlug = this.resolved.get(slug);
-    if (!bySlug) return false;
-    const now = this.now();
-    for (const e of bySlug.values()) if (e.expires > now) return true;
-    return false;
+  knowsLiveHost(target: AppHostTarget): boolean {
+    if (target.kind === 'version') return this.resolved.get(hostKey(target.slug, targetKey(target))) !== undefined;
+    return this.resolved.hasGroup(target.slug);
   }
 
   async manifest(versionId: string): Promise<ServedManifest> {
@@ -236,8 +246,8 @@ export class ServeStore {
 
   /** Forget what every host of `slug` serves (a write, restore or publish happened). */
   bust(slug: string): void {
-    this.resolved.delete(slug);
-    this.missingSlugs.delete(slug);
+    this.resolved.deleteGroup(slug);
+    this.missing.deleteGroup(slug);
   }
 
   /** Forget every custom-host resolution (a domain was added, verified, unverified or removed). */
@@ -249,7 +259,7 @@ export class ServeStore {
   bustAll(): void {
     this.resolved.clear();
     this.customHosts.clear();
-    this.missingSlugs.clear();
+    this.missing.clear();
     this.missingHosts.clear();
   }
 }

@@ -23,7 +23,7 @@ import { addDomain, removeDomain, setPrimaryDomain, verifyDomain, type DnsResolv
 import { handleAppRequest, type AppRequest, type HandlerDeps } from './handler.js';
 import { ServeStore, dbLoaders } from './store.server.js';
 import { subscribeServeCache } from './subscriber.server.js';
-import { appSlugIsLive } from './tls-ask.server.js';
+import { appSlugIsLive, appVersionIsLive } from './tls-ask.server.js';
 import { freshDb, type TestDb } from './test/db.js';
 
 let db: TestDb;
@@ -104,6 +104,21 @@ describe('dbLoaders.resolve', () => {
     expect(await appSlugIsLive('ask-never')).toBe(false);
   });
 
+  it('appVersionIsLive (the TLS ask of a version host): only a compiled version of a live app', async () => {
+    const app = await createApp({ workspaceId: wsId, slug: 'ask-versions', actor });
+    await write(app.id, 'one');
+    await write(app.id, 'broken', false);
+    expect(await appVersionIsLive('ask-versions', 1)).toBe(true);
+    expect(await appVersionIsLive('ask-versions', 2)).toBe(false);
+    expect(await appVersionIsLive('ask-versions', 3)).toBe(false);
+    expect(await appVersionIsLive('ask-versions', 999_999_999)).toBe(false);
+    expect(await appVersionIsLive('ask-never', 1)).toBe(false);
+    await db.update(apps).set({ status: 'hibernated' }).where(eq(apps.id, app.id));
+    expect(await appVersionIsLive('ask-versions', 1)).toBe(false);
+    await db.update(apps).set({ status: 'live', deletedAt: new Date() }).where(eq(apps.id, app.id));
+    expect(await appVersionIsLive('ask-versions', 1)).toBe(false);
+  });
+
   it('loads files of both kinds, blobs by hash and the password hash', async () => {
     const app = await createApp({ workspaceId: wsId, slug: 'files-app', actor });
     const v = await write(app.id, 'f');
@@ -172,6 +187,27 @@ describe('cache bust on app-changed', () => {
     expect(String((await handleAppRequest(get(preview), deps)).body)).toContain('<h1>old</h1>');
     store.bust('stale-app');
     expect(String((await handleAppRequest(get(preview), deps)).body)).toContain('<h1>new</h1>');
+  });
+});
+
+describe('version hosts through the real loaders', () => {
+  it('a missing version is remembered as a miss; the next version event makes it served', async () => {
+    const store = new ServeStore();
+    const sub = subscribeServeCache(store, { redis: null });
+    try {
+      const app = await createApp({ workspaceId: wsId, slug: 'miss-version-app', actor });
+      await write(app.id, 'one');
+      const v2 = { kind: 'version' as const, slug: 'miss-version-app', number: 2 };
+      expect(await store.resolve(v2)).toMatchObject({ app: { id: app.id }, version: null });
+      const written = await write(app.id, 'two');
+      expect((await store.resolve(v2)).version).toBeNull();
+      await notifyAppChanged({ app_id: app.id, slug: 'miss-version-app', version: written.number });
+      expect((await store.resolve(v2)).version).toEqual(written);
+      expect(store.knowsLiveHost(v2)).toBe(true);
+      expect(store.knowsLiveHost({ ...v2, number: 3 })).toBe(false);
+    } finally {
+      await sub.stop();
+    }
   });
 });
 

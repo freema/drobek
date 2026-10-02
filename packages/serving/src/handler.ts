@@ -7,7 +7,9 @@
  *   1. method — GET/HEAD, plus POST to the password-unlock path; else 405;
  *   2. the app behind the host (404 page when there is none; a client
  *      IP past its unknown-host budget gets 429 instead — and, while throttled,
- *      429 before any lookup for hosts the cache does not know as live apps);
+ *      429 before any lookup for hosts the cache does not know as live apps).
+ *      A version host whose version does not exist or did not compile is
+ *      counted against the same budget (429 past it; else its 404 at step 4);
  *   3. the visibility gate (password page / unlock POST);
  *   4. the version the host serves (404 "not published" / "nothing compiled");
  *   5. the file: built wins over source, TS/JSX sources never served, SPA
@@ -261,7 +263,7 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
     deps.unknownHosts && !(await deps.unknownHosts.allow(req.clientIp)) ? throttled() : missing('no-app');
 
   if (!req.target) return unknownApp();
-  if (deps.unknownHosts?.isThrottled(req.clientIp) && !deps.store.knowsLiveApp(req.target.slug)) {
+  if (deps.unknownHosts?.isThrottled(req.clientIp) && !deps.store.knowsLiveHost(req.target)) {
     return throttled();
   }
   const { app, version } = await deps.store.resolve(req.target);
@@ -277,6 +279,10 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
     }),
     [APP_HEADER]: app.slug,
   };
+  // A version host without its version counts like an unknown host: `--v<N>` takes any N.
+  if (req.target.kind === 'version' && !version && deps.unknownHosts && !(await deps.unknownHosts.allow(req.clientIp))) {
+    return throttled();
+  }
   if (!isBeacon) deps.signal?.(app.id, 'request');
 
   // ── taken down by a super-admin: 451 on every host and path ──
@@ -528,7 +534,9 @@ async function wellKnownReport(
   security: Record<string, string>
 ): Promise<AppResponse> {
   const host = (req.header('host') ?? '').trim().toLowerCase().replace(/\.+(?=:|$)/, '');
-  const app = req.target ? (await deps.store.resolve(req.target)).app : null;
+  // Only the app is needed: a version host looks up its production host, whatever N it names.
+  const target = req.target?.kind === 'version' ? { kind: 'prod' as const, slug: req.target.slug } : req.target;
+  const app = target ? (await deps.store.resolve(target)).app : null;
   const body = JSON.stringify({
     report_url: (deps.reportUrl ?? ((h: string) => reportFormUrl(h)))(host),
     app: app?.slug ?? null,

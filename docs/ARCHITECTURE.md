@@ -263,9 +263,14 @@ before any byte of the app is touched:
 2. `/.well-known/drobek-report` → the report pointer (works for any host);
 3. the unknown-host limiter: a client IP past `APPS_UNKNOWN_HOST_LIMIT`
    "no app here" answers per window gets **429** (without a lookup for hosts
-   the cache does not know as live apps);
-4. the app lookup — a miss is a counted **404** page; misses are kept in a
-   separate negative cache for 30 s, hits in the positive cache for 60 s;
+   the cache does not know as live apps — for a version host, that very
+   version);
+4. the app lookup — a miss is a counted **404** page; a version host whose
+   version does not exist or did not compile counts against the same budget
+   (its 404 follows at step 10). Misses (unknown slugs and missing versions)
+   are kept in a separate negative cache for 30 s, hits in the positive cache
+   for 60 s; both are capped (LRU over every host of every app) and drop
+   expired entries, so no range of `--v<N>` numbers grows the process;
 5. `X-Drobek-App: <slug>` on every response from here on;
 6. a taken-down app: **451** on every host and path (JSON 451 on platform
    paths), before the redirect, the password gate and the modules;
@@ -446,8 +451,10 @@ normal ACME certificate; the app hosts use exactly one of three paths:
   optional `_acme-challenge` CNAME delegation;
 - **(c) on-demand**, one certificate per app host, always gated by drobek's
   `ask` endpoint (`/api/internal/tls/ask`, internal address + `TLS_ASK_TOKEN`
-  only): 200 for a host of a live app or a verified custom domain, 404 for
-  everything else.
+  only): 200 for the production or preview host of a live app, for a
+  version host whose version exists and compiled, and for a verified custom
+  domain; 404 for everything else, so no `--v<N>` number the app does not
+  have can order a certificate.
 
 Verified custom domains get their certificates from an on-demand catch-all
 behind the same `ask` (on by default in mode (c), `TLS_CUSTOM_DOMAINS`).
