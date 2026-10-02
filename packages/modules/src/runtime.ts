@@ -49,7 +49,7 @@ import { appsOrigin, dashboardOrigin } from '@drobek/apps';
 import { AUDIT_ACTIONS, AUDIT_SUBJECT_TYPES, actorKindForSurface, writeAudit } from '@drobek/audit';
 import { renderPlatformEmail, renderTextEmailHtml, sendEmail, serverHost, trustedActionUrl, type EmailAction } from '@drobek/email';
 import { scanForSecrets } from '@drobek/compile';
-import { createConsoleLogger, getRedis, reportError, type Logger } from '@drobek/core';
+import { createConsoleLogger, getRedis, hitFixedWindow, reportError, type FixedWindowRedis, type Logger } from '@drobek/core';
 import { apps, dbErrorForLog, getDb, memberships, moduleConfigs, runJournalMigrations, users, workspaceModules, type DB } from '@drobek/db';
 import { recordModuleRequest } from '@drobek/insights';
 import { and, asc, eq, gt, inArray, isNull } from 'drizzle-orm';
@@ -170,19 +170,12 @@ export interface RuntimeDeps {
   requestStats?: (appId: string, module: string, status: number) => Promise<void> | void;
 }
 
-type RedisLike = ReturnType<typeof getRedis>;
-
-/** Fixed-window counter in Redis (atomic INCR + PEXPIRE), `drobek:rl:` keys. */
-export function redisRateLimiter(redis: () => Pick<RedisLike, 'incr' | 'pexpire' | 'ttl'>): RateLimiter {
+/** Fixed-window counter in Redis (`hitFixedWindow` of @drobek/core, the one of `rateLimitRedis`), `drobek:rl:` keys. */
+export function redisRateLimiter(redis: () => FixedWindowRedis): RateLimiter {
   return async (key, max, windowMs) => {
-    const r = redis();
-    const k = `drobek:rl:${key}`;
-    const n = await r.incr(k);
-    if (n === 1) await r.pexpire(k, windowMs);
-    if (n <= max) return { ok: true, count: n, retryAfterSec: 0 };
-    const ttl = await r.ttl(k);
-    if (ttl < 0) await r.pexpire(k, windowMs); // a key that lost its expiry must not lock forever
-    return { ok: false, count: n, retryAfterSec: Math.max(1, ttl > 0 ? ttl : Math.ceil(windowMs / 1000)) };
+    const { count, ttlMs } = await hitFixedWindow(redis(), `drobek:rl:${key}`, windowMs);
+    if (count <= max) return { ok: true, count, retryAfterSec: 0 };
+    return { ok: false, count, retryAfterSec: Math.max(1, Math.ceil(ttlMs / 1000)) };
   };
 }
 

@@ -375,10 +375,11 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `EMAIL_TRANSPORT` | smtp | how all mail goes out (sign-in codes, invites, module mail): `smtp`, `resend`, or the id of a transport a module in `DROBEK_MODULES` contributes to the `email.transport` slot ([MODULES](MODULES.md#e-mail-transports-from-modules): SES, Postmark, a company relay, …; set the secret env vars the module names). The server refuses to start on an invalid value, an id no active module contributes, or a missing transport secret |
 | `EMAIL_TRANSPORT_TIMEOUT_MS` | 10000 | how long one send through a module transport may take before it is aborted (1000–120000) |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_SECURE` / `SMTP_USER` / `SMTP_PASS` / `EMAIL_FROM` | — / 587 / 0 / — / — / — | **`SMTP_HOST` required with `smtp`** (production refuses to start without it) — the SMTP server for sign-in codes and module mail (`SMTP_SECURE=1` = implicit TLS); `EMAIL_FROM` is the sender for both transports (`Name <address>`; a bare address is sent under the name `drobek`) |
+| `SMTP_CONNECTION_TIMEOUT_MS` / `SMTP_GREETING_TIMEOUT_MS` / `SMTP_SOCKET_TIMEOUT_MS` | 10000 / 10000 / 30000 | how long an SMTP send waits to connect, for the server's greeting and on a silent socket (1000–120000; the server refuses to start on an invalid value). A hung mail server fails the send after these, and the sign-in form says so |
 | `RESEND_API_KEY` | — | **required with `resend`**, a secret (the server refuses to start without it; it is never logged or shown) — mail goes to `POST https://api.resend.com/emails` with a 10 s timeout; `EMAIL_FROM` must be on a domain verified in Resend |
-| `OTP_IP_SHORT_LIMIT` / `OTP_IP_DAILY_LIMIT` | 5 per 15 min / 20 per 24 h | dashboard sign-in codes sent per client IP |
-| `OTP_EMAIL_HOURLY_LIMIT` / `OTP_EMAIL_COOLDOWN_MS` | 3 per hour / 60000 | codes per address, minimum gap per address |
-| `OTP_GLOBAL_HOURLY_MAX` | 100 | codes per hour server-wide, then sending pauses |
+| `OTP_IP_SHORT_LIMIT` / `OTP_IP_DAILY_LIMIT` | 5 per 15 min / 20 per 24 h | dashboard sign-in code requests per client IP (a request whose e-mail failed counts too) |
+| `OTP_EMAIL_HOURLY_LIMIT` / `OTP_EMAIL_COOLDOWN_MS` | 3 per hour / 60000 | codes sent per address, minimum gap per address. A send that failed costs the address nothing: once mail works again, the next request sends a code |
+| `OTP_GLOBAL_HOURLY_MAX` | 100 | codes sent per hour server-wide, then sending pauses (failed sends do not count) |
 | `OTP_VERIFY_IP_LIMIT` / `OTP_VERIFY_IP_WINDOW_S` | 30 / 900 | code checks per client IP per window (the per-code cap of 5 guesses always applies) |
 | `OTP_LOGIN_DISABLED` | 0 | `1` = kill switch: no sign-in codes are sent |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | — | optional Google sign-in for the dashboard (redirect URI `<PUBLIC_ORIGIN>/auth/google/callback`) |
@@ -946,7 +947,10 @@ workspace-admin), creates two DNS records and clicks **Verify**:
   domains off: the Domains tab says so and offers no add form. The limits
   provider may set it per workspace (e.g. a plan without custom domains). One host name is
   verified for at most one app on the instance — an unverified claim never
-  blocks the real owner.
+  blocks the real owner, and a deleted app holds no name: its domains stop
+  serving with the delete, and any other app (in any workspace) can add the
+  name and verify it with its own records (`domain_taken` only while the app
+  that verified the name exists).
 - **Serving**: a verified domain serves the app's published version (indexable,
   like `<slug>.<APPS_DOMAIN>`). Marking one domain **primary** makes
   `<slug>.<APPS_DOMAIN>` answer `302` to it (GET/HEAD, outside
@@ -994,8 +998,8 @@ tls:reload` after changing it (`task caddy:config` in a development checkout).
 Certificate lifecycle: Caddy obtains the certificate at the first HTTPS
 request after verification (HTTP-01 on port 80 or TLS-ALPN-01 on 443 — both
 must reach Caddy; the first request waits a few seconds) and renews it
-itself. Removing a domain or losing its verification stops serving it and
-refuses new certificates, but does **not** revoke the one already issued — it
+itself. Removing a domain, losing its verification or deleting its app stops
+serving it and refuses new certificates, but does **not** revoke the one already issued — it
 stays in `caddy_data` until it expires. Let's Encrypt's per-domain rate
 limits apply per customer domain.
 

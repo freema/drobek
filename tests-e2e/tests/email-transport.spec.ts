@@ -1,5 +1,6 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { expect, test, type APIRequestContext } from '@playwright/test';
+import { Redis } from 'ioredis';
 import { hostRequest, previewHost, urlOf } from './helpers/apps-host';
 import { MAILPIT_URL, mailpitMessagesFor, skipUnlessLocal, uniqueEmail } from './helpers/auth';
 import { callTool, mcpClient } from './helpers/mcp';
@@ -17,7 +18,10 @@ import { REPORT_FIELDS, drobekEnv, opsReports, type OpsReport } from './helpers/
  *    and its relay URL in the error) answers the sign-in form with 502, sends
  *    nothing, and reaches the error reporter as one `e-mail could not be
  *    sent` event: the address and the transport's secret redacted, nothing
- *    of the request — its query, headers, cookies or body.
+ *    of the request — its query, headers, cookies or body;
+ *  - retries of a refused send are each tried again (502, never a silent
+ *    "code sent"): a failed send costs the address's hourly share and the
+ *    server's brake nothing.
  */
 
 const TRANSPORT_HEADER = 'X-Ops-Probe-Transport';
@@ -30,6 +34,17 @@ interface MailDetail {
 
 function letters(n: number): string {
   return Array.from(randomBytes(n), (b) => String.fromCharCode(97 + (b % 26))).join('');
+}
+
+/** A dashboard OTP counter (`drobek:rl:<bucket>:<key>`) of the dev stack's Redis, or null when absent. */
+async function otpCounter(bucket: string, key: string): Promise<string | null> {
+  const redis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6391', { maxRetriesPerRequest: 2, lazyConnect: true });
+  await redis.connect();
+  try {
+    return await redis.get(`drobek:rl:${bucket}:${key}`);
+  } finally {
+    redis.disconnect();
+  }
 }
 
 function skipUnlessRelay(): void {
@@ -131,5 +146,22 @@ test('a send the transport refuses: 502 on the sign-in form, no mail, one redact
 
   const sent = JSON.stringify(event);
   for (const leaked of [address, marker, 'mailpit:8025', ...Object.values(leaks)]) expect(sent).not.toContain(leaked);
+  expect(await mailpitMessagesFor(request, address)).toEqual([]);
+});
+
+test('retries of a refused send are each tried again and cost the address nothing: 502 every time, no hourly share or brake used @local', async ({ request }) => {
+  skipUnlessRelay();
+  const address = `retry-${letters(12)}@fail.example`;
+  const brakeBefore = await otpCounter('otp-global-1h', 'all');
+
+  for (let i = 0; i < 3; i += 1) {
+    const res = await request.post('/login', { form: { email: address }, maxRedirects: 0 });
+    expect(res.status(), `attempt ${i + 1}`).toBe(502);
+    expect(await res.text()).toContain('We could not send the email. Please try again in a moment.');
+  }
+
+  expect(await otpCounter('otp-email-1h', createHash('sha256').update(address).digest('hex'))).toBeNull();
+  // The brake did not grow (its hourly window may have ended meanwhile).
+  expect(Number((await otpCounter('otp-global-1h', 'all')) ?? 0)).toBeLessThanOrEqual(Number(brakeBefore ?? 0));
   expect(await mailpitMessagesFor(request, address)).toEqual([]);
 });

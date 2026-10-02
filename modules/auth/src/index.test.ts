@@ -24,7 +24,7 @@ import {
   revokeEndUserSessions,
   type OwnerView,
 } from '@drobek/modules';
-import { createModuleTestContext, type ModuleTestContext } from '@drobek/modules/testing';
+import { createModuleTestContext, type MailGuard, type ModuleTestContext } from '@drobek/modules/testing';
 import { noopLogger } from '@drobek/core';
 
 let fake: FakeRedis;
@@ -258,6 +258,37 @@ describe('drobek-module-auth — sign-in', () => {
     // The one code that went out is charged once.
     expect(await fake.get(`drobek:rl:eu:${appId}:otp-ip-15m:198.51.100.7`)).toBe('1');
     expect(await fake.get(`drobek:rl:eu:${appId}:otp-email-1h:${emailHash('ana@example.com')}`)).toBe('1');
+  });
+
+  it('a mail outage costs the address nothing: after more failed sends than its hourly share, the next attempt delivers a code that signs in', async () => {
+    let down = 4;
+    const outage: MailGuard = {
+      assertOpen: async () => {},
+      admit: async () => {
+        if (down > 0) {
+          down -= 1;
+          throw new Error('connect ETIMEDOUT');
+        }
+      },
+    };
+    const t = createModuleTestContext(auth, { db, app: APP(), config: CONFIG, origin: `http://${HOST}`, mailGuard: outage });
+    const send = () => t.request('POST', '/send-code', { body: { email: 'ana@example.com' }, headers: { host: HOST }, clientIp: '198.51.100.8' });
+    // More failures than AUTH_CODES_PER_EMAIL_HOUR (3): each one an error, never a silent "sent".
+    for (let i = 0; i < 4; i++) {
+      const res = await send();
+      expect(res.status, JSON.stringify(res.body)).toBe(503);
+      expect(res.body).toMatchObject({ error: 'unavailable', message: 'The sign-in e-mail could not be sent. Try again in a moment.' });
+    }
+    expect(t.emails).toEqual([]);
+    expect(await fake.get(`drobek:rl:eu:${appId}:otp-email-1h:${emailHash('ana@example.com')}`)).toBeNull();
+    expect(await fake.get(`drobek:rl:eu:${appId}:otp-global-1h:all`)).toBeNull();
+
+    const ok = await send();
+    expect(ok.status, JSON.stringify(ok.body)).toBe(200);
+    expect(t.emails).toHaveLength(1);
+    const code = /\b(\d{6})\b/.exec(t.emails[0].subject)![1];
+    const res = await t.request('POST', '/verify', { body: { email: 'ana@example.com', code } });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
   });
 
   it("the app's hourly code cap is clamped to its share of the server's sign-in budget", async () => {

@@ -1959,9 +1959,11 @@ an app sign in with a 6-digit code e-mailed to them. Its `SKILL.md` is what
   the app (a one-line, capped name) and goes to `{ signInAddress }`; logs mask
   addresses (`maskEmail`). The per-IP, per-address and per-app code counters
   are only read before the send and charged after the code went out
-  (`checkOtpRequest` / `chargeOtpRequest`): an attempt the module e-mail
-  guard refuses (paused, a share used up) costs nothing, so a user who
-  retried during a pause is not limited after it.
+  (`checkOtpRequest` / `chargeOtpRequest`): an attempt that sent nothing —
+  the module e-mail guard refused it (paused, a share used up) or the mail
+  transport failed — costs nothing but the route's per-IP attempt limit, so
+  a user who retried during a pause or a mail outage gets a code as soon as
+  mail works again.
 - **verify** decides the allowlist again (it may have changed since the code
   was sent), upserts the user (role from the config), creates the session and
   writes the audit `auth.sign_in` (actor end_user).

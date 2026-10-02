@@ -21,6 +21,9 @@ import { personalWorkspaceOf, publishVersion, seedApp, seedVersion, withDb } fro
  *     default host 302 to it;
  *   - the re-check (dev: every 5 s, DOMAINS_RECHECK_INTERVAL_MS) drops a
  *     backdated domain whose TXT record vanished and e-mails the owner (Mailpit);
+ *   - a verified name is domain_taken for another workspace's app until its app
+ *     is deleted; then the ask says no and the host 404s at once, and the other
+ *     app adds and verifies the name and serves on it;
  *   - drobek-owned names → hostname_not_allowed, IP literals → invalid_hostname,
  *     the 4th domain of an app → limit_exceeded (DOMAINS_MAX_PER_APP=3);
  *   - audit rows domain.add / domain.verify / domain.primary / domain.unverify /
@@ -97,11 +100,12 @@ function tlsAsk(domain: string): Promise<number> {
  * pointed at it by DNS — connect to the local stack's app port with the Host
  * header set (helpers/apps-host only short-circuits *.localhost).
  */
-function customGet(path = '/'): Promise<Raw> {
+function customGet(path = '/', host = HOST): Promise<Raw> {
   const port = Number(APPS_PORT ?? 80);
+  const hostHeader = APPS_PORT ? `${host}:${APPS_PORT}` : host;
   return new Promise((resolve, reject) => {
     const req = httpRequest(
-      { host: '127.0.0.1', port, path, method: 'GET', headers: { Host: HOST_WITH_PORT }, setHost: false },
+      { host: '127.0.0.1', port, path, method: 'GET', headers: { Host: hostHeader }, setHost: false },
       (res) => {
         const chunks: Buffer[] = [];
         res.on('data', (c: Buffer) => chunks.push(c));
@@ -111,7 +115,7 @@ function customGet(path = '/'): Promise<Raw> {
         });
       }
     );
-    req.setTimeout(15_000, () => req.destroy(new Error(`timeout: http://${HOST_WITH_PORT}${path}`)));
+    req.setTimeout(15_000, () => req.destroy(new Error(`timeout: http://${hostHeader}${path}`)));
     req.on('error', reject);
     req.end();
   });
@@ -325,6 +329,85 @@ test.describe('custom domains @local', () => {
 
     await clearMocks();
     expect(problems).toEqual([]);
+  });
+
+  test('a deleted app frees its domain: an app of another workspace adds and verifies it, the ask and the host follow', async ({
+    page,
+    request,
+    browser,
+  }) => {
+    skipUnlessLocal();
+    test.skip(TARGET_PRODUCTION, 'the Redis DNS mock is ignored when NODE_ENV=production');
+    test.skip(APPS_URL_SCHEME !== 'http', 'the custom host is reached over plain http on the dev stack');
+    test.setTimeout(180_000);
+
+    const host = `reuse-${Date.now().toString(36)}${Math.floor(Math.random() * 1e4)}.test`;
+    const cnameOf = (slug: string) => `${slug}.${APPS_DOMAIN.replace(/:\d+$/, '')}`;
+    const verifyOn = async (p: Page, slug: string) => {
+      const row = rowOf(p, host);
+      await expect(row).toHaveAttribute('data-verified', 'false');
+      const txt = (await row.getByTestId('txt-value').textContent())?.trim() ?? '';
+      expect(txt).toMatch(/^drobek-verify=[0-9a-f]{32}$/);
+      await setMock('txt', `_drobek.${host}`, [txt]);
+      await setMock('cname', host, [cnameOf(slug)]);
+      await row.getByTestId('domain-verify').click();
+      await expect(row).toHaveAttribute('data-verified', 'true');
+    };
+
+    const emailA = uniqueEmail('domains-reuse-a');
+    await loginViaEmail(page, request, emailA);
+    const markerA = `e2e-domains-reuse-a-${Date.now()}`;
+    const first = await seedPublishedApp(emailA, markerA);
+
+    const otherCtx = await browser.newContext();
+    try {
+      const other = await otherCtx.newPage();
+      const emailB = uniqueEmail('domains-reuse-b');
+      await loginViaEmail(other, request, emailB);
+      const markerB = `e2e-domains-reuse-b-${Date.now()}`;
+      const second = await seedPublishedApp(emailB, markerB);
+      expect(second.ws).not.toBe(first.ws);
+
+      await test.step('the first app verifies the name and serves on it', async () => {
+        await page.goto(`/workspaces/${first.ws}/apps/${first.slug}/domains`);
+        await addDomain(page, host);
+        await verifyOn(page, first.slug);
+        expect(await tlsAsk(host)).toBe(200);
+        await expect.poll(async () => (await customGet('/', host)).body.includes(markerA), { timeout: 15_000 }).toBe(true);
+      });
+
+      await test.step('while that app lives, another workspace cannot add the name (domain_taken)', async () => {
+        await other.goto(`/workspaces/${second.ws}/apps/${second.slug}/domains`);
+        await addDomain(other, host);
+        await expectError(other, 'domain_taken');
+        await expect(rowOf(other, host)).toHaveCount(0);
+      });
+
+      await test.step('deleting the app stops the name at once: no certificate, 404 on the host', async () => {
+        await page.goto(`/workspaces/${first.ws}/apps/${first.slug}/settings`);
+        await page.getByTestId('delete-confirm-input').fill(first.slug);
+        await page.getByTestId('delete-button').click();
+        await page.waitForURL(new RegExp(`/workspaces/${first.ws}/apps\\?deleted=${first.slug}$`));
+        expect(await tlsAsk(host)).toBe(404);
+        await expect.poll(async () => (await customGet('/', host)).status, { timeout: 15_000 }).toBe(404);
+      });
+
+      await test.step('the app of the other workspace now adds and verifies the same name', async () => {
+        await other.goto(`/workspaces/${second.ws}/apps/${second.slug}/domains`);
+        await addDomain(other, host);
+        await expect(other.getByTestId('domain-notice')).toContainText(host);
+        await verifyOn(other, second.slug);
+        expect(await tlsAsk(host)).toBe(200);
+        await expect.poll(async () => (await customGet('/', host)).body.includes(markerB), { timeout: 15_000 }).toBe(true);
+        expect((await domainRow(host, first.id))?.verified_at).toBeNull();
+        expect((await domainRow(host, second.id))?.verified_at).not.toBeNull();
+      });
+    } finally {
+      await otherCtx.close();
+      await setMock('txt', `_drobek.${host}`, null);
+      await setMock('cname', host, null);
+      await withDb((c) => c.query(`DELETE FROM domains WHERE hostname = $1`, [host]));
+    }
   });
 
   test('refused names and the per-app limit (no DNS involved)', async ({ page, request }) => {

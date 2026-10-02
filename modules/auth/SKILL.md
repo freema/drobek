@@ -138,7 +138,7 @@ subdomains), `allow.anyone` everybody, `adminEmails` may sign in as `admin`,
 | `invalid_code` (400) | wrong, used or expired code | re-enter, or `sendCode` again |
 | `too_many_attempts` (429) | 5 wrong codes | request a new code |
 | `rate_limited` (429) | too many codes/attempts from one IP | wait `Retry-After`; show a message |
-| `unavailable` (503) | sign-in mail paused or SMTP down | try later |
+| `unavailable` (503) | sign-in mail paused or the mail server down | let the user try again later; a failed send uses up none of their codes |
 | `limit_exceeded` (429) | `END_USERS_MAX_PER_APP` reached | the owner removes users |
 | `account_linked` (409 page) | the provider account (issuer + subject) is not the one the user's account is linked to | sign in the linked way or with the e-mail code; for an issuer migration the owner confirms `relinkByEmail` |
 | `csrf_rejected` (403) | raw `fetch` or another origin | use `drobek.auth` / `<LoginGate>` |

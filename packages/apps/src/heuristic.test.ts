@@ -118,6 +118,153 @@ describe('publish heuristic', () => {
   });
 });
 
+describe('publish heuristic: hostile input', () => {
+  /** 512 KB, the largest file a version may hold. */
+  const fill = (unit: string) => unit.repeat(Math.ceil((512 * 1024) / unit.length)).slice(0, 512 * 1024);
+  /** The CPU time `f` takes, in ms: other load on the machine does not count. */
+  const ms = (f: () => unknown) => {
+    const started = process.cpuUsage();
+    f();
+    const { user, system } = process.cpuUsage(started);
+    return (user + system) / 1000;
+  };
+
+  it.each([
+    ['unclosed tags', '<'],
+    ['unclosed tags with attributes', '<a x=y '],
+    ['unclosed inputs', '<input '],
+    ['unclosed titles', '<title>'],
+    ['title start tags without >', '<title'],
+    ['unclosed headings', '<h1>'],
+    ['unclosed scripts', '<script>'],
+    ['unclosed styles', '<style'],
+    ['unclosed comments', '<!--'],
+    ['one long dotted name', 'a.'],
+    ['one long hyphenated name', 'a-'],
+  ])('scans 512 KB of %s in linear time', (_what, unit) => {
+    const content = fill(unit);
+    expect(ms(() => scanForPhishing([{ path: 'index.html', content }], words))).toBeLessThan(500);
+  });
+
+  it.each([
+    ['short strings', '"a"'],
+    ['short templates', '`a`'],
+    ['one long dotted name', 'a.'],
+  ])('scans a 512 KB script of %s in linear time', (_what, unit) => {
+    const content = fill(unit);
+    expect(ms(() => scanForPhishing([{ path: 'main.js', content }, { path: 'index.html', content: `<script>${content}</script>` }], words))).toBeLessThan(500);
+  });
+
+  it('reads the title, the visible text and a password input next to broken markup', () => {
+    const f = scanForPhishing(
+      [{ path: 'index.html', content: "<title>PayPal</title><!-- x --><p>Log in to <i>Revolut</i></p><input name=p\n type = 'password'><h1>Sign in<style" }],
+      words
+    );
+    expect(f).toEqual({
+      flagged: true,
+      passwordIn: ['index.html'],
+      brands: [
+        { word: 'paypal', where: 'title' },
+        { word: 'revolut', where: 'text' },
+      ],
+    });
+  });
+
+  it('still ignores domain names wherever they stand', () => {
+    const content = '<p>see...paypal.com, mail.google.com. (netflix.co.uk) x-amazon.de/a "Microsoft.com" -apple.io</p><input type=password>';
+    expect(scanForPhishing([{ path: 'index.html', content }], words).brands).toEqual([]);
+  });
+
+  it('reads a domain glued to a leading _ as words', () => {
+    const content = '<p>sign_-paypal.com</p><input type=password>';
+    expect(scanForPhishing([{ path: 'index.html', content }], words).brands).toEqual([{ word: 'paypal', where: 'text' }]);
+  });
+});
+
+describe('publish heuristic: well-formed pages (seeded fuzz against the regular expressions it used before)', () => {
+  function previousScan(files: { path: string; content: string }[]): ReturnType<typeof scanForPhishing> {
+    const normalize = (t: string) => t.normalize('NFKD').replace(/\p{M}+/gu, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ');
+    const safe = (c: number) => (Number.isInteger(c) && c > 0 && c <= 0x10ffff ? String.fromCodePoint(c) : ' ');
+    const decode = (t: string) =>
+      t
+        .replace(/&nbsp;/gi, ' ')
+        .replace(/&amp;/gi, '&')
+        .replace(/&lt;/gi, '<')
+        .replace(/&gt;/gi, '>')
+        .replace(/&quot;/gi, '"')
+        .replace(/&#39;|&apos;/gi, "'")
+        .replace(/&#(\d{1,7});/g, (_, d: string) => safe(Number(d)))
+        .replace(/&#x([0-9a-f]{1,6});/gi, (_, h: string) => safe(parseInt(h, 16)));
+    const stripTags = (t: string) => decode(t.replace(/<[^>]*>/g, ' '));
+    const jsPassword = (js: string) =>
+      [/\btype\s*:\s*["'`]password["'`]/i, /\btype\s*=\s*\\?["'`]?password\b/i, /["'`]type["'`]\s*,\s*["'`]password["'`]/i].some((re) => re.test(js));
+    const jsStrings = (js: string) =>
+      [...js.matchAll(/"((?:[^"\\\n]|\\.){1,500})"|'((?:[^'\\\n]|\\.){1,500})'|`((?:[^`\\]|\\.){1,2000})`/g)].map((m) => m[1] ?? m[2] ?? m[3] ?? '');
+    const passwordIn: string[] = [];
+    const texts = { title: [] as string[], h1: [] as string[], text: [] as string[], js: [] as string[] };
+    for (const f of files) {
+      if (f.path.endsWith('.html')) {
+        const html = f.content;
+        let password = /<input\b[^>]*\btype\s*=\s*["']?password\b/i.test(html);
+        texts.title.push(...[...html.matchAll(/<title\b[^>]*>([\s\S]*?)<\/title>/gi)].map((m) => stripTags(m[1])));
+        texts.h1.push(...[...html.matchAll(/<h1\b[^>]*>([\s\S]*?)<\/h1>/gi)].map((m) => stripTags(m[1])));
+        for (const m of html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)) {
+          if (jsPassword(m[1])) password = true;
+          texts.js.push(...jsStrings(m[1]));
+        }
+        texts.text.push(stripTags(html.replace(/<script\b[\s\S]*?<\/script>/gi, ' ').replace(/<style\b[\s\S]*?<\/style>/gi, ' ').replace(/<!--[\s\S]*?-->/g, ' ')));
+        if (password) passwordIn.push(f.path);
+      } else {
+        if (jsPassword(f.content)) passwordIn.push(f.path);
+        texts.js.push(...jsStrings(f.content));
+      }
+    }
+    const strip = (t: string) =>
+      t.replace(/(?:https?:)?\/\/[^\s"'`<>)]+/gi, ' ').replace(/\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|net|org|io|app|dev|cz|sk|eu|co|us|uk|de)\b/gi, ' ');
+    const hay = Object.fromEntries(Object.entries(texts).map(([k, v]) => [k, ` ${normalize(strip(v.join('\n')))} `]));
+    const brands = words.flatMap((word) => {
+      const where = (['title', 'h1', 'text', 'js'] as const).find((w) => hay[w].includes(` ${word} `));
+      return where ? [{ word, where }] : [];
+    });
+    return { flagged: passwordIn.length > 0 && brands.length > 0, passwordIn, brands };
+  }
+
+  it('finds what the regular expressions found on 2,000 generated pages', () => {
+    let seed = 87;
+    const rnd = () => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      return seed / 0x7fffffff;
+    };
+    const pick = <T>(list: readonly T[]): T => list[Math.floor(rnd() * list.length)];
+    const some = (list: readonly string[], max: number) => Array.from({ length: Math.floor(rnd() * (max + 1)) }, () => pick(list)).join(' ');
+    const prose = ['Sign in', 'PayPal', 'Revolut', 'apple id', 'Bank', 'shifts', 'paypal.com', 'mail.google.com', 'x-amazon.de/a', 'https://netflix.com/a', '&amp;', '&#80;ayPal', 'Wells&nbsp;Fargo', '3 > 2', '\n', 'é', 'Česká spořitelna'];
+    const script = ['const t = "Log in to PayPal";', "el.type = 'password';", 'jsx("input", { type: "password" })', "'<input type=\"password\">'", 'x = `Revolut ${n}`;', 'if (a < b) go();'];
+    for (let i = 0; i < 2000; i++) {
+      const nodes: string[] = [];
+      for (let n = Math.floor(rnd() * 14); n > 0; n--) {
+        const text = some(prose, 4);
+        nodes.push(
+          pick([
+            `<title>${text}</title>`,
+            `<TITLE lang=en>${text}</TITLE>`,
+            `<h1 class="x">${text}<b>${pick(prose)}</b></h1>`,
+            `<p>${text}</p>`,
+            `<a href="https://paypal.com/x">${text}</a>`,
+            `<script type="module">${some(script, 3)}</script>`,
+            `<style>a::after { content: "${text}" }</style>`,
+            `<!-- ${text} -->`,
+            pick(['<input type="password">', "<input name=p\n type = 'password'>", '<INPUT TYPE=PASSWORD>', '<input type=text>', '<input data-x="a > b" type=password>']),
+            text,
+          ])
+        );
+      }
+      const files = [{ path: 'index.html', content: nodes.join('\n') }];
+      if (rnd() < 0.3) files.push({ path: 'main.js', content: some(script, 4) });
+      expect(scanForPhishing(files, words)).toEqual(previousScan(files));
+    }
+  });
+});
+
 describe('moderation vocabulary', () => {
   it('normalizes a reported host from a URL, host:port or bare host', () => {
     expect(normalizeReportHost('https://Evil-Bank.apps.localhost:3041/login?x=1')).toBe('evil-bank.apps.localhost:3041');

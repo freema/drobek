@@ -12,7 +12,7 @@
  * domain serves, and a removed one stops serving, from the next request.
  */
 import { randomBytes } from 'node:crypto';
-import { and, count, eq, isNotNull, ne } from 'drizzle-orm';
+import { and, count, eq, inArray, isNotNull, isNull, ne } from 'drizzle-orm';
 import { appsOrigin, notifyAppChanged, type AppChangedEvent } from '@drobek/apps';
 import { AUDIT_ACTIONS, AUDIT_SUBJECT_TYPES, writeAudit, type AuditActorKind } from '@drobek/audit';
 import { apps, domains, getDb, isUniqueViolation } from '@drobek/db';
@@ -53,6 +53,39 @@ export interface DomainView {
 }
 
 type DomainRow = typeof domains.$inferSelect;
+type Tx = Parameters<Parameters<ReturnType<typeof getDb>['transaction']>[0]>[0];
+
+/**
+ * Has another, non-deleted app verified `hostname`? A deleted app holds no
+ * name: its verified rows never block another app (`domain_taken`).
+ */
+async function verifiedByAnotherApp(tx: Tx, hostname: string, appId: string): Promise<boolean> {
+  const [taken] = await tx
+    .select({ id: domains.id })
+    .from(domains)
+    .innerJoin(apps, eq(apps.id, domains.appId))
+    .where(and(eq(domains.hostname, hostname), isNotNull(domains.verifiedAt), ne(domains.appId, appId), isNull(apps.deletedAt)))
+    .limit(1);
+  return taken !== undefined;
+}
+
+/**
+ * Drop the verification deleted apps still hold on `hostname`, so the single
+ * verified row per hostname (`domains_verified_hostname_uq`) can become
+ * another app's.
+ */
+async function releaseFromDeletedApps(tx: Tx, hostname: string): Promise<void> {
+  await tx
+    .update(domains)
+    .set({ verifiedAt: null, isPrimary: false })
+    .where(
+      and(
+        eq(domains.hostname, hostname),
+        isNotNull(domains.verifiedAt),
+        inArray(domains.appId, tx.select({ id: apps.id }).from(apps).where(isNotNull(apps.deletedAt)))
+      )
+    );
+}
 
 /** A fresh verification token: 32 hex characters (it is proof of control, not a secret). */
 export function newVerificationToken(): string {
@@ -144,9 +177,10 @@ export async function listDomains(app: DomainApp, env: NodeJS.ProcessEnv = proce
  * drobek-owned name, a name the app already has, a name another app has
  * VERIFIED (`domain_taken`) and the (DOMAINS_MAX_PER_APP + 1)-th domain
  * (`limit_exceeded`; with a limit of 0 every add is refused — custom domains
- * are off for the workspace). An unverified claim elsewhere does not block:
- * only DNS decides who owns a name. `opts.maxPerApp` is the workspace's
- * effective DOMAINS_MAX_PER_APP (the limits provider's plan); default: the env.
+ * are off for the workspace). An unverified claim elsewhere does not block,
+ * nor does a deleted app's: only DNS decides who owns a name.
+ * `opts.maxPerApp` is the workspace's effective DOMAINS_MAX_PER_APP (the
+ * limits provider's plan); default: the env.
  */
 function domainsDisabled(): DomainsError {
   return new DomainsError('limit_exceeded', 'Custom domains are not available for this workspace (DOMAINS_MAX_PER_APP is 0).', {
@@ -179,12 +213,9 @@ export async function addDomain(
         .where(and(eq(domains.appId, app.id), eq(domains.hostname, hostname)))
         .limit(1);
       if (dup) throw new DomainsError('already_added', `${hostname} is already a domain of this app.`);
-      const [taken] = await tx
-        .select({ id: domains.id })
-        .from(domains)
-        .where(and(eq(domains.hostname, hostname), isNotNull(domains.verifiedAt), ne(domains.appId, app.id)))
-        .limit(1);
-      if (taken) throw new DomainsError('domain_taken', `${hostname} is already verified for another app.`);
+      if (await verifiedByAnotherApp(tx, hostname, app.id)) {
+        throw new DomainsError('domain_taken', `${hostname} is already verified for another app.`);
+      }
       const [{ n }] = await tx.select({ n: count() }).from(domains).where(eq(domains.appId, app.id));
       if (Number(n) >= max) {
         throw new DomainsError('limit_exceeded', `An app can have at most ${max} custom domain${max === 1 ? '' : 's'} (DOMAINS_MAX_PER_APP).`, {
@@ -225,7 +256,8 @@ export interface VerifyOutcome {
 
 /**
  * Look the domain's two records up now and store the verdict. Passing →
- * `verified_at` (audited `domain.verify` the first time). Failing → the
+ * `verified_at` (audited `domain.verify` the first time; a verification a
+ * deleted app still held on the name is dropped). Failing → the
  * reason in `last_error`; a verified domain whose records are definitively
  * gone loses its verification (audited `domain.unverify`); a transient DNS
  * failure never changes the state.
@@ -247,12 +279,10 @@ export async function verifyDomain(app: DomainApp, domainId: string, actor: Doma
   if (check.ok) {
     try {
       updated = await getDb().transaction(async (tx) => {
-        const [taken] = await tx
-          .select({ id: domains.id })
-          .from(domains)
-          .where(and(eq(domains.hostname, row.hostname), isNotNull(domains.verifiedAt), ne(domains.id, row.id)))
-          .limit(1);
-        if (taken) throw new DomainsError('domain_taken', `${row.hostname} is already verified for another app.`);
+        if (await verifiedByAnotherApp(tx, row.hostname, app.id)) {
+          throw new DomainsError('domain_taken', `${row.hostname} is already verified for another app.`);
+        }
+        await releaseFromDeletedApps(tx, row.hostname);
         const [u] = await tx
           .update(domains)
           .set({ verifiedAt: row.verifiedAt ?? now, lastCheckAt: now, lastError: null })

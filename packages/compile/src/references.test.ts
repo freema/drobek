@@ -251,3 +251,44 @@ describe('compile result', () => {
     expect((await compiler.compile(files, { servedPaths: ['hero.jpg'] })).warnings).toEqual([]);
   });
 });
+
+describe('hostile input', () => {
+  /** 512 KB (the largest file a version may hold) of `unit`: one file of each took the old regular expressions seconds to minutes. */
+  const fill = (unit: string) => unit.repeat(Math.ceil((512 * 1024) / unit.length)).slice(0, 512 * 1024);
+  /** The CPU time `f` takes, in ms: other load on the machine does not count. */
+  const ms = (f: () => unknown) => {
+    const started = process.cpuUsage();
+    f();
+    const { user, system } = process.cpuUsage(started);
+    return (user + system) / 1000;
+  };
+
+  it.each([
+    ['index.html', 'unclosed tags', fill('<a ')],
+    ['index.html', 'unclosed tags with values', fill('<a x=y')],
+    ['index.html', 'unclosed attribute names', fill('<a x')],
+    ['index.html', 'unclosed quotes', fill('<a x="')],
+    ['index.html', 'quoted values that each start a tag', `<a${fill(' x="<a z" y=\'<a w\'')}`],
+    ['index.html', 'unclosed comments', fill('<!--')],
+    ['index.html', 'unclosed scripts', fill('<script>')],
+    ['index.html', 'unclosed styles', fill('<style>url(')],
+    ['style.css', 'unclosed comments', fill('/* ')],
+    ['style.css', 'unclosed url(', fill('url(')],
+    ['style.css', 'unclosed quoted url(', fill('url("')],
+    ['style.css', 'spaces after url(', `url(${fill(' ')}`],
+    ['style.css', 'unclosed @import url(', fill('@import url(')],
+  ])('scans %s of %s in linear time', (file, _what, text) => {
+    expect(ms(() => scan({ [file]: text }))).toBeLessThan(500);
+  });
+
+  it('reads the tags after a broken one and the urls after a broken url(', () => {
+    const w = scan({
+      'index.html': page('', '<div class="a"title="b">\n<img src="/one.png">'),
+      'a.css': 'a { background: url(x(1).png) }\nb { background: url( "/two.png" ) }',
+    });
+    expect(w.map((m) => [m.file, m.line, m.text.match(/points to (\S+),/)?.[1]])).toEqual([
+      ['index.html', 8, 'one.png'],
+      ['a.css', 2, 'two.png'],
+    ]);
+  });
+});

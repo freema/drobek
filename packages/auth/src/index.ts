@@ -37,6 +37,7 @@ export {
 export {
   otpGuardLimitsFromEnv,
   guardOtpRequest,
+  chargeOtpSent,
   checkOtpRequest,
   chargeOtpRequest,
   isOtpSendingPaused,

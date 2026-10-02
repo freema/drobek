@@ -45,3 +45,30 @@ describe('missing-title check', () => {
     expect(run(Buffer.from('<head></head>'))).toEqual([]);
   });
 });
+
+describe('missing-title check: hostile HTML', () => {
+  const fill = (unit: string) => unit.repeat(Math.ceil((512 * 1024) / unit.length)).slice(0, 512 * 1024);
+  /** The CPU time `f` takes, in ms: other load on the machine does not count. */
+  const ms = (f: () => unknown) => {
+    const started = process.cpuUsage();
+    f();
+    const { user, system } = process.cpuUsage(started);
+    return (user + system) / 1000;
+  };
+
+  it.each([
+    ['title start tags without >', fill('<title')],
+    ['unclosed titles', fill('<title>')],
+    ['a title full of <', `<title>${fill('<')}</title>`],
+    ['unclosed comments', fill('<!--')],
+    ['unclosed tags', fill('<a ')],
+  ])('reads 512 KB of %s in linear time', (_what, html) => {
+    expect(ms(() => run(html))).toBeLessThan(500);
+  });
+
+  it('reads the title text around tags inside it', () => {
+    expect(run('<head><title><b>Shifts</b></title></head>')).toEqual([]);
+    expect(run('<head><title>a<b</title></head>')).toEqual([]);
+    expect((run('<head><title><b></b> </title></head>') as { message: string }[])[0].message).toContain('empty <title>');
+  });
+});

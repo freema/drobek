@@ -7,6 +7,7 @@
  * (module-transport.server.ts; the module runtime checks it at start). The
  * rate limits (OTP_*, EMAIL_GLOBAL_* …) live above this layer and apply to all.
  */
+import { smtpTimeoutError } from './smtp.server.js';
 
 /** The built-in transports; a module transport may not take their ids. */
 export const BUILTIN_EMAIL_TRANSPORTS = ['smtp', 'resend'] as const;
@@ -59,8 +60,9 @@ export function resendApiKey(env: NodeJS.ProcessEnv = process.env): string {
  * A start-up refusal for the e-mail settings, or null when they are usable:
  * an EMAIL_TRANSPORT that is neither built in nor a transport id, `resend`
  * without RESEND_API_KEY, `smtp` without SMTP_HOST in production (sign-in
- * codes could not go out; outside production the code is logged instead) or
- * an invalid EMAIL_TRANSPORT_TIMEOUT_MS. A module transport is checked when
+ * codes could not go out; outside production the code is logged instead), an
+ * invalid EMAIL_TRANSPORT_TIMEOUT_MS or an invalid SMTP timeout
+ * (SMTP_*_TIMEOUT_MS). A module transport is checked when
  * the modules load. Names variables only — never a value.
  */
 export function emailConfigError(env: NodeJS.ProcessEnv = process.env): string | null {
@@ -74,5 +76,5 @@ export function emailConfigError(env: NodeJS.ProcessEnv = process.env): string |
   if (raw === 'smtp' && env.NODE_ENV === 'production' && !env.SMTP_HOST?.trim()) {
     return 'SMTP_HOST must be set in production (your SMTP server), or use EMAIL_TRANSPORT=resend with RESEND_API_KEY.';
   }
-  return emailTransportTimeoutError(env);
+  return emailTransportTimeoutError(env) ?? smtpTimeoutError(env);
 }

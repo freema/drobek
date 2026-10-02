@@ -1,4 +1,6 @@
+import { createHash } from 'node:crypto';
 import { expect, test } from '@playwright/test';
+import { Redis } from 'ioredis';
 import {
   mailpitMessagesFor,
   pollLoginCode,
@@ -10,8 +12,21 @@ import {
  * E-mail magic-code auth end to end against the local compose stack —
  * request → mailpit (REST API) → code → session → /me; 5 wrong attempts
  * invalidate the code; the cooldown dedups resends; anonymous /me bounces to
- * /login.
+ * /login; a full rate-limit counter left without an expiry (a crash between
+ * the count and its expiry) gets its window back on the next attempt instead
+ * of refusing the address for good.
  */
+
+/** Run `fn` against the dev stack's Redis. */
+async function withRedis<T>(fn: (redis: Redis) => Promise<T>): Promise<T> {
+  const redis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6391', { maxRetriesPerRequest: 2, lazyConnect: true });
+  await redis.connect();
+  try {
+    return await fn(redis);
+  } finally {
+    redis.disconnect();
+  }
+}
 
 function wrongCodeFor(code: string): string {
   return code === '000000' ? '111111' : '000000';
@@ -93,6 +108,29 @@ test('immediate resend within the cooldown does not produce a second mailpit mes
   await new Promise((r) => setTimeout(r, 1500));
   const msgs = await mailpitMessagesFor(request, email);
   expect(msgs.length).toBe(1);
+});
+
+test('a full per-address counter without an expiry gets its hour back on the next attempt @local', async ({ request }) => {
+  skipUnlessLocal();
+  const email = uniqueEmail('stuck');
+  const key = `drobek:rl:otp-email-1h:${createHash('sha256').update(email.toLowerCase()).digest('hex')}`;
+  await withRedis((r) => r.set(key, '1000000'));
+  try {
+    expect(await withRedis((r) => r.pttl(key))).toBe(-1);
+
+    // Over the hourly share: the generic redirect, nothing sent…
+    const res = await request.post('/login', { form: { email } });
+    expect(res.url()).toContain('/login/verify');
+
+    // …and the counter now ends with its hour instead of never.
+    const ttl = await withRedis((r) => r.pttl(key));
+    expect(ttl).toBeGreaterThan(0);
+    expect(ttl).toBeLessThanOrEqual(60 * 60_000);
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(await mailpitMessagesFor(request, email)).toEqual([]);
+  } finally {
+    await withRedis((r) => r.del(key));
+  }
 });
 
 test('anonymous /me redirects to /login @local', async ({ page }) => {
