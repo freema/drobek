@@ -88,7 +88,8 @@ test('GET /llms.txt → 200 text/plain with the title + section links @smoke', a
   expect(body.startsWith('# drobek')).toBe(true);
   expect(body).toContain('## Docs');
   expect(body).toContain('/llms-full.txt');
-  expect(body).toContain('https://github.com/freema/drobek/blob/main/docs/AGENT.md');
+  // The repo's AGENT.md, or `<DOCS_URL>/agent.md` on a server that sets DOCS_URL.
+  expect(body).toMatch(/\]\((https:\/\/github\.com\/freema\/drobek\/blob\/main\/docs\/AGENT\.md|https:\/\/[^)]+\/agent\.md)\)/);
   expect(body).toContain('/build-with-your-agent');
 });
 
