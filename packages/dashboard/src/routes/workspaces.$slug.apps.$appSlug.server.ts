@@ -15,7 +15,7 @@
  * non-member → 404, anonymous → /login). An older form with only `versionId`
  * still publishes.
  */
-import { type LoaderFunctionArgs } from 'react-router';
+import { type HeadersArgs, type LoaderFunctionArgs } from 'react-router';
 import {
   GALLERY_DESCRIPTION_MAX,
   galleryEnabled,
@@ -118,3 +118,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 }
 
 export const action = appAction;
+
+/** Without a `headers` export React Router drops the `Retry-After` of a rate-limited action. */
+export function headers({ actionHeaders, loaderHeaders }: HeadersArgs) {
+  return actionHeaders.has('Retry-After') ? actionHeaders : loaderHeaders;
+}

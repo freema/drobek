@@ -147,6 +147,7 @@ test('a member leaves the workspace; the only workspace-admin cannot, and a pers
     // A personal workspace: one member, no Leave and no member controls.
     await member.goto('/workspaces');
     await member.getByTestId('workspace-item').filter({ hasText: 'personal' }).getByRole('link').click();
+    await member.getByTestId('workspace-tab').filter({ hasText: 'Members' }).click();
     await expect(member.getByTestId('members-personal')).toBeVisible();
     await expect(member.getByTestId('leave-workspace')).toHaveCount(0);
   } finally {

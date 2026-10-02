@@ -82,7 +82,7 @@ test('new user: consent → authed, /me shows the canned email @local', async ({
 
   await runGoogleConsentFlow(page, { email });
   await page.waitForURL(/\/me$/);
-  await expect(page.getByText(email)).toBeVisible();
+  await expect(page.getByTestId('me-account-email')).toHaveText(email);
 });
 
 test('account link: google login with a magic-code email reuses the SAME user row @local', async ({
@@ -109,7 +109,7 @@ test('account link: google login with a magic-code email reuses the SAME user ro
   // 3) Google flow with the SAME canned email → must land on the same account.
   await runGoogleConsentFlow(page, { email });
   await page.waitForURL(/\/me$/);
-  await expect(page.getByText(email)).toBeVisible();
+  await expect(page.getByTestId('me-account-email')).toHaveText(email);
 
   // 4) The acceptance: exactly ONE users row for the email, google_sub set.
   const dbUrl = process.env.DATABASE_URL;

@@ -50,7 +50,7 @@ test('full flow: request code → mailpit → verify → /me shows email → log
   await page.getByLabel('Code').fill(code);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await page.waitForURL(/\/me$/);
-  await expect(page.getByText(email)).toBeVisible();
+  await expect(page.getByTestId('me-account-email')).toHaveText(email);
   await expect(page.getByTestId('me-start')).toContainText('Start building');
   await expect(page.getByTestId('me-mcp-url')).toHaveText(/^https?:\/\/.+\/mcp$/);
 
