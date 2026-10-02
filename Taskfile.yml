@@ -248,9 +248,21 @@ tasks:
       - '{{.DC}} exec -T drobek wget -q -O - http://127.0.0.1:3000/api/version && echo'
 
   backup:
-    desc: 'Back up the production stack → backups/drobek-<UTC>.tar.gz (pg_dump -Fc + files_data + assets_data + modules_data + caddy_data + manifest.json) [BACKUP_DIR=backups]'
+    desc: 'Back up the production stack → backups/drobek-<UTC>.tar.gz (pg_dump -Fc + files_data + assets_data + modules_data + caddy_data + manifest.json); refuses without twice the data free, verifies the archive, then keeps the newest BACKUP_KEEP [BACKUP_DIR=backups BACKUP_KEEP=14 BACKUP_MIN_FREE_MB=1024, also from .env.production]'
+    env:
+      BACKUP_DIR: '{{.BACKUP_DIR}}'
+      BACKUP_KEEP: '{{.BACKUP_KEEP}}'
+      BACKUP_MIN_FREE_MB: '{{.BACKUP_MIN_FREE_MB}}'
     cmds:
       - ./scripts/selfhost-backup.sh
+
+  backup:verify:
+    desc: 'Check a `task backup` archive without restoring it: manifest.json, SHA256SUMS and the size + sha256 of every part, streamed (no docker, nothing unpacked) [BACKUP=… — default: the newest in BACKUP_DIR]'
+    env:
+      BACKUP: '{{.BACKUP}}'
+      BACKUP_DIR: '{{.BACKUP_DIR}}'
+    cmds:
+      - ./scripts/selfhost-backup-verify.sh
 
   restore:
     desc: 'Restore a `task backup` archive into this stack and start it (refuses a non-empty database unless FORCE=1) — BACKUP=backups/drobek-<ts>.tar.gz'

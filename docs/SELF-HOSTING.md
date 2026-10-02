@@ -179,7 +179,10 @@ app — but a separate registrable domain for the apps is the safer choice.
 
 [`docker-compose.production.yaml`](../docker-compose.production.yaml) runs
 drobek, postgres 17, redis 7 and caddy, all `restart: unless-stopped` with a
-healthcheck each. Only Caddy publishes ports (80, 443, 443/udp —
+healthcheck each. Each container's log (`docker compose logs`, the
+`json-file` driver) rotates: at most `CONTAINER_LOG_MAX_FILES` (5) files of
+`CONTAINER_LOG_MAX_SIZE` (20m), 100 MB per service, so logs cannot fill the
+disk. Only Caddy publishes ports (80, 443, 443/udp —
 `HTTP_PORT` / `HTTPS_PORT` / `PUBLISH_IP` move them); drobek, postgres and
 redis stay on the internal network. Nothing secret is written in the file —
 every value comes from `.env.production` (`--env-file` for interpolation,
@@ -224,6 +227,8 @@ built-ins.
 | `PUBLISH_APPROVAL`, `OPERATOR_EMAIL`, `PUBLISH_NOTIFY` | — (`open`, off) | [publish approval](#publish-approval) (`approval` = a workspace publishes only after a super-admin allowed it; the contact refused users see; `first` / `every` = e-mail the operator about publishes) |
 | `EMAIL_SIGNIN_APP_HOURLY_SHARE` | — (25) | one app's percent of the sign-in e-mail budget — raise it on a single-app server (see [Production compose](#production-compose)) |
 | `EMAIL_WORKSPACE_HOURLY_SHARE` | — (50) | one workspace's percent of each module e-mail budget — raise it to 100 on a single-workspace server |
+| `BACKUP_DIR`, `BACKUP_KEEP`, `BACKUP_MIN_FREE_MB` | — (`backups`, 14, 1024) | [`task backup`](#backup-and-restore): where the archives go, how many stay (0 = all), the space a backup leaves free |
+| `CONTAINER_LOG_MAX_SIZE`, `CONTAINER_LOG_MAX_FILES` | — (`20m`, 5) | each container's log rotates at this size and keeps this many files |
 | limits (`OTP_*`, `COMPILE_*`, `DATA_*`, `FILES_*`, `EMAIL_*`, …) | — | production defaults; every variable is in the [Environment reference](#environment-reference) |
 
 The file is read by `docker compose` and by `docker run --env-file` (the
@@ -482,6 +487,19 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `OPERATOR_EMAIL` | the `SUPERADMIN_EMAIL` addresses | one address: the contact a refused publish names, the recipient of approval requests and publish notifications (without it every super-admin is e-mailed and the first one is shown), and an extra recipient of abuse reports; not one e-mail address = no start |
 | `PUBLISH_NOTIFY` | `off` | e-mail the operator (`OPERATOR_EMAIL`, else every super-admin) about publishes: `first` = the first publish of each app, `every` = every publish, at most one e-mail per app per hour; a super-admin's own publishes are never e-mailed. Any other value stops the server at start |
 
+### Backups and container logs
+
+`task backup` reads the `BACKUP_*` settings from the environment (`task
+backup BACKUP_KEEP=30`), else from `.env.production`; docker compose reads the
+`CONTAINER_LOG_*` ones from `.env.production`. Neither reaches drobek itself.
+
+| Variable | Default | What |
+| --- | --- | --- |
+| `BACKUP_DIR` | `backups` | where `task backup` writes `drobek-<UTC timestamp>.tar.gz` (relative to the checkout) — and its parts while it runs, not `/tmp`; `task backup:verify` checks the newest archive there |
+| `BACKUP_KEEP` | 14 | after a backup that verified, every `drobek-<UTC timestamp>.tar.gz` in `BACKUP_DIR` beyond the newest N is deleted; `0` = keep every archive. A failed backup deletes nothing, and files of any other name are never deleted |
+| `BACKUP_MIN_FREE_MB` | 1024 | the free space a backup leaves on the `BACKUP_DIR` disk: it refuses to start unless twice the data (the database's tables + the four volumes) plus this much is free |
+| `CONTAINER_LOG_MAX_SIZE` / `CONTAINER_LOG_MAX_FILES` | `20m` / 5 | the production compose's `json-file` log of every container rotates at this size (docker's `k`, `m`, `g` units) and keeps this many files |
+
 ### Development and tests only
 
 | Variable | Default | What |
@@ -498,11 +516,17 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 
 ```sh
 task backup
+# · free space in backups
+#   38.2 GiB free, 1.0 GiB needed (twice the data + BACKUP_MIN_FREE_MB)
+# · pg_dump -Fc   · files_data   · assets_data   · modules_data   · caddy_data
+# · verify the archive
+#   5 parts (db.dump 1.1 MiB · files.tar 40.0 KiB · assets.tar 2.1 MiB · modules.tar 10.0 KiB · caddy_data.tar 30.0 KiB) — every size and sha256 matches manifest.json
 # ✓ backups/drobek-20260923T201500Z.tar.gz — 1234567 bytes in 4 s
 #   apps 12 · files 40 · assets 3 · core migrations 20 · image ghcr.io/freema/drobek:v1.2.0 (v1.2.0 abc1234)
+#   BACKUP_KEEP=14: 1 older archive(s) deleted, 1.2 MiB freed
 ```
 
-One archive (mode 600, in `backups/`, override with `BACKUP_DIR=`):
+One archive (mode 600, in `backups/`, override with `BACKUP_DIR`):
 `db.dump` (`pg_dump -Fc` of the whole database — one consistent snapshot),
 `files.tar` (the `files_data` volume), `assets.tar` (the `assets_data`
 volume), `modules.tar` (the `modules_data` volume), `caddy_data.tar`, `SHA256SUMS` and a
@@ -518,6 +542,56 @@ copy the archives off the machine:
 ```cron
 15 3 * * * cd /opt/drobek && task backup >> /var/log/drobek-backup.log 2>&1
 ```
+
+**Disk space.** The parts are written into a hidden directory in
+`BACKUP_DIR` (not `/tmp`) and the archive next to them, so while it runs a
+backup needs about twice the data. Before it writes anything it adds up the
+database's tables and the four volumes and refuses to start unless the
+`BACKUP_DIR` disk has twice that plus `BACKUP_MIN_FREE_MB` (1024) free — the
+volumes usually share that disk, and postgres stops when it is full:
+
+```
+✗ not enough free space in backups for a backup: 3.1 GiB free, 4.6 GiB needed — nothing was written.
+  The backup writes its parts (about 1.8 GiB: database tables 1.2 GiB, volumes 0.6 GiB)
+  and then the archive next to them, so it needs twice that, and leaves BACKUP_MIN_FREE_MB (1024) free.
+  The 14 archive(s) in backups hold 12.0 GiB: copy older ones off the machine and
+  delete them, or set BACKUP_DIR to a bigger disk. A lower BACKUP_KEEP (now 14) keeps fewer from then on.
+```
+
+`task selfhost:upgrade` starts with `task backup`, so a refusal stops the
+upgrade before anything changed.
+
+**Retention.** Before the new archive gets its name, `task backup` checks it
+the way `task backup:verify` does (below). Then it keeps the newest
+`BACKUP_KEEP` (14 — two weeks of the daily cron above) archives named
+`drobek-<UTC timestamp>.tar.gz` in `BACKUP_DIR` and deletes the older ones;
+`BACKUP_KEEP=0` keeps every archive. A backup that fails — no room, a part
+that cannot be read, an archive that does not verify — deletes nothing and
+leaves no partial file behind, and a file of any other name
+(`drobek-before-migration.tar.gz`) is never deleted. The `BACKUP_*` settings
+come from the environment (`task backup BACKUP_KEEP=30`), else from
+`.env.production`.
+
+**Check an archive** without restoring it — the newest in `BACKUP_DIR`, or
+any with `BACKUP=`:
+
+```sh
+task backup:verify
+# · verifying backups/drobek-20260923T201500Z.tar.gz (1.2 MiB)
+# ✓ backups/drobek-20260923T201500Z.tar.gz is intact — 5 parts (db.dump 1.1 MiB · …); every size and sha256 matches manifest.json and SHA256SUMS (0 s)
+#   created 2026-09-23T20:15:00Z, image ghcr.io/freema/drobek:v1.2.0 (v1.2.0 abc1234)
+#   apps 12 · files 40 · assets 3 · core migrations 20
+#   made under DROBEK_MASTER_KEY of .env.production
+```
+
+It reads `manifest.json` and `SHA256SUMS`, checks that both list the same
+parts with the same checksums and that the parts a restore needs are there,
+and streams every part out of the archive to compare its size and sha256 —
+nothing is unpacked to disk, and neither docker nor the stack is needed, so a
+copy on another machine (a checkout with `task`) checks the same way. A
+damaged archive exits 1 naming the first part that does not match. With
+`.env.production` at hand it also says whether its `DROBEK_MASTER_KEY` (or
+`DROBEK_MASTER_KEY_PREVIOUS`) is the archive's — a restore needs that key.
 
 **Not in the archive:** `.env.production` — it holds `DROBEK_MASTER_KEY`,
 without which the restored upstream and module secrets cannot be
@@ -648,7 +722,7 @@ task selfhost:upgrade
 `task selfhost:upgrade` is exactly:
 
 ```sh
-task backup                                                   # the rollback point
+task backup                                                   # the rollback point (refused without room: nothing changes)
 docker compose --env-file .env.production -f docker-compose.production.yaml pull --ignore-buildable
 docker compose --env-file .env.production -f docker-compose.production.yaml pull caddy     # (DNS-01 Caddy: build --pull caddy)
 docker compose --env-file .env.production -f docker-compose.production.yaml up -d --wait postgres redis
@@ -1356,13 +1430,18 @@ guide end to end on throwaway stacks (unique `COMPOSE_PROJECT_NAME`s, every
 port on 127.0.0.1, a throwaway Mailpit as the SMTP server): it builds the
 image, copies only the self-host files into a fresh directory ("machine A"),
 runs `task selfhost:init` twice (idempotency) and `docker compose config`
-(no warnings), starts the stack, signs a user in over the e-mail code flow,
+(no warnings), starts the stack and checks that every container log rotates,
+signs a user in over the e-mail code flow,
 mints an API key with the container CLI, creates + writes + publishes an app
 over MCP (the official SDK client) and uploads a file through the files
 module; installs a packed module with `task selfhost:module:add`, enables it
-and checks `/api/version` loads it from the modules directory; then `task backup`, `down -v`, a second fresh directory ("machine B")
-with only machine A's `.env.production`, `task selfhost:init`, `task
-restore`, and asserts the app serves on its host, the file downloads byte for
+and checks `/api/version` loads it from the modules directory; then a `task
+backup` that must be refused for lack of room (`BACKUP_MIN_FREE_MB`) without
+writing or deleting anything, a `task backup BACKUP_KEEP=2` next to three
+older archives that must keep the newest two, `down -v`, a second fresh
+directory ("machine B") with only machine A's `.env.production` and the
+archive, where `task backup:verify` must pass on it (no stack running) and
+fail on a damaged copy, `task selfhost:init`, `task restore`, and asserts the app serves on its host, the file downloads byte for
 byte, the same API key works, Caddy's restored CA still validates and the
 server starts with the same `modules.lock.json` and the module; a
 second restore must be refused and a second `task selfhost:migrate` must

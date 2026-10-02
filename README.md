@@ -286,8 +286,8 @@ clients: `NODE_EXTRA_CA_CERTS=drobek-root.crt`). App hosts are
 carries the port.
 <!-- quickstart:end -->
 
-Backups (`task backup` / `task restore`), upgrades (`task selfhost:upgrade`),
-rotating `DROBEK_MASTER_KEY` (`task selfhost:rekey`),
+Backups (`task backup`, `task backup:verify`, `task restore`), upgrades
+(`task selfhost:upgrade`), rotating `DROBEK_MASTER_KEY` (`task selfhost:rekey`),
 the three TLS paths, custom domains, abuse handling and every setting:
 [`docs/SELF-HOSTING.md`](./docs/SELF-HOSTING.md).
 

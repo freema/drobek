@@ -17,12 +17,20 @@
 # COMPOSE_PROJECT_NAME overrides it (the rehearsal script runs throwaway ones).
 name: drobek-prod
 
-x-restart: &restart
+# Every service restarts unless stopped, and its container log (`docker
+# compose logs`) rotates: at most CONTAINER_LOG_MAX_FILES files of
+# CONTAINER_LOG_MAX_SIZE each (100 MB per service by default).
+x-service: &service
   restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: ${CONTAINER_LOG_MAX_SIZE:-20m}
+      max-file: '${CONTAINER_LOG_MAX_FILES:-5}'
 
 services:
   postgres:
-    <<: *restart
+    <<: *service
     image: postgres:17-alpine
     environment:
       POSTGRES_USER: drobek
@@ -37,7 +45,7 @@ services:
       retries: 12
 
   redis:
-    <<: *restart
+    <<: *service
     image: redis:7-alpine
     # Sessions, caches, rate limits, leases, un-flushed request counters — not
     # part of `task backup` (after a restore everyone signs in again); AOF keeps
@@ -52,7 +60,7 @@ services:
       retries: 12
 
   drobek:
-    <<: *restart
+    <<: *service
     # Release tags: vX.Y.Z (pin one), latest (newest release), previous (the
     # release before it — the rollback target). linux/amd64 only.
     image: ghcr.io/freema/drobek:${DROBEK_IMAGE_TAG:-latest}
@@ -114,7 +122,7 @@ services:
         condition: service_healthy
 
   caddy:
-    <<: *restart
+    <<: *service
     # The stock Caddy image, pulled like the others — unless you use DNS-01
     # (TLS_DNS_PROVIDER): then CADDY_IMAGE=drobek-caddy:dns,
     # CADDY_BUILD_TARGET=dns, CADDY_DNS_MODULE=github.com/caddy-dns/<provider>
