@@ -1617,10 +1617,21 @@ interface RecordsAuthority<Config = unknown> {
     /**
      * Replace a record's own fields (`_…` keys are ignored), validated like any
      * write (schema, the per-record and per-app quotas); `_owner` and
-     * `_created_at` stay. null when the record does not exist. A bad record →
-     * ModuleError `validation_failed` (details: the fields).
+     * `_created_at` stay. With `merge`, `fields` are merged onto the stored
+     * ones instead (a shallow merge, like the SDK's update). null when the
+     * record does not exist. A bad record → ModuleError `validation_failed`
+     * (details: the fields).
      */
-    update?(view: RecordsView<Config>, collection: string, id: string, fields: Record<string, unknown>): Promise<Record<string, unknown> | null>;
+    update?(view: RecordsView<Config>, collection: string, id: string, fields: Record<string, unknown>, opts?: RecordsUpdateOptions): Promise<Record<string, unknown> | null>;
+    /**
+     * Store new records (no owner; `_…` keys are ignored) in a declared
+     * collection as a whole — ONE transaction, every record checked against
+     * the collection's schema, the per-record size and the app's quotas first;
+     * any failure stores nothing (a bad record → ModuleError
+     * `validation_failed`, `details.index` names it). Returns the stored
+     * records in the given order.
+     */
+    create?(view: RecordsView<Config>, collection: string, records: Record<string, unknown>[]): Promise<Record<string, unknown>[]>;
     /**
      * Import CSV text into a collection as new records (no owner): the header
      * names the fields. All or nothing — ONE transaction; too many rows
@@ -1668,6 +1679,11 @@ interface RecordsAuthority<Config = unknown> {
      * `validation_failed` (`details.index` names it).
      */
     importRecords?(view: RecordsView<Config>, collection: string, records: Record<string, unknown>[], opts: RecordsImportOptions): Promise<RecordsImportResult>;
+}
+/** How `update` changes a record. */
+interface RecordsUpdateOptions {
+    /** true: merge the fields onto the stored ones; false (default): replace them. */
+    merge?: boolean;
 }
 /** How `importRecords` writes a batch. */
 interface RecordsImportOptions {
@@ -3094,4 +3110,4 @@ declare const loadModules: typeof loadModules$1;
 declare const buildSdk: typeof buildSdk$1;
 
 export { AUTH_PROVIDER_API_VERSION, AUTH_PROVIDER_ID_RE, AUTH_RESERVED_CONFIG_KEYS, CORE_ERROR_CODES, EMAIL_PROVIDER_ID, EMAIL_SEND_ERROR_CODES, EMAIL_TRANSPORT_API_VERSION, EMAIL_TRANSPORT_SLOT, ERROR_REPORTER_API_VERSION, ERROR_REPORTER_SLOT, EmailSendError, JOB_MAX_INTERVAL_MS, JOB_MIN_INTERVAL_MS, JOB_NAME_RE, MODULE_CONTRACT_VERSION, MODULE_ERROR_CODES, MODULE_ERROR_CODE_RE, MODULE_NAME_RE, ModuleError, RECORDS_IMPORT_MAX_ROWS, RULE_TOKENS, SLOT_NAME_RE, authIdentitySchema, authProviderSchema, authSignedInObserverSchema, buildSdk, decideAccess, defineAuthProvider, defineEmailTransport, defineErrorReporter, defineModule, defineSignInObserver, emailTransportSchema, errorReporterSchema, hasControlBytes, isDefinedModule, isModuleError, isValidRule, issuePaths, loadModules, looksLikeSvg, moduleNotEnabled, normalizeConfirmItems, parseJobInterval, parseRule, perIpLimitKey, respond, ruleIsPublic, skillHint, sniffSignature };
-export type { AccessDecision, AnyModule, AppJob, AppJobContext, AuthIdentity, AuthProvider, AuthProviderBeginInput, AuthProviderBeginResult, AuthProviderCallbackInput, AuthProviderSecretDoc, AuthProviderSecrets, AuthSignInEvent, AuthSignedInObserver, ComposedModuleParts, ConfigChoices, ConfigFieldMeta, ConfigRulePrincipal, ConfigUnit, ConfirmContext, ConfirmItem, ConfirmRole, ConfirmedContext, DB, DrobekModule, EmailKind, EmailMessage, EmailRecipient, EmailSendErrorCode, EmailTransportContext, EmailTransportMessage, EndUser, EndUserAuthority, EndUserCallbackApp, EndUserCallbackInput, EndUserCallbackResult, EndUserListQuery, EndUserPage, EndUserRecord, ErrorReportContext, ErrorReportEvent, ErrorReportKind, ErrorReporter, ErrorReporterContext, FilesAuthority, HookApp, JobContextBase, JobInterval, Limits, Logger, MailAuthority, MailEnvelope, MailPrepareInput, ModuleAppView, ModuleAvailability, ModuleComposeInput, ModuleContext, ModuleDashboard, ModuleDashboardEditor, ModuleEmailTransport, ModuleErrorBody, ModuleErrorCode, ModuleErrorDoc, ModuleHooks, ModuleJob, ModuleLimit, ModuleMigrations, ModuleRequest, ModuleResponse, ModuleRouter, ModuleSdk, ModuleSecretDoc, ModuleServices, ModuleSkill, ModuleSlot, OperatorModule, OwnerFile, OwnerFilesPage, OwnerSubmission, OwnerView, Principal, RateLimitResult, RecordsAuthority, RecordsCollection, RecordsImportOptions, RecordsImportResult, RecordsPage, RecordsQuery, RecordsView, RouteHandler, RouteOptions, RouteRateLimit, Rule, ServerJob, ServerJobContext, SniffedType, SubmissionsAuthority, SubmissionsPage, SubmissionsQuery, SyncAuthority, SyncRun, SyncSourceState, UploadedFile, UpstreamRequest, UpstreamResponse, UpstreamsAuthority };
+export type { AccessDecision, AnyModule, AppJob, AppJobContext, AuthIdentity, AuthProvider, AuthProviderBeginInput, AuthProviderBeginResult, AuthProviderCallbackInput, AuthProviderSecretDoc, AuthProviderSecrets, AuthSignInEvent, AuthSignedInObserver, ComposedModuleParts, ConfigChoices, ConfigFieldMeta, ConfigRulePrincipal, ConfigUnit, ConfirmContext, ConfirmItem, ConfirmRole, ConfirmedContext, DB, DrobekModule, EmailKind, EmailMessage, EmailRecipient, EmailSendErrorCode, EmailTransportContext, EmailTransportMessage, EndUser, EndUserAuthority, EndUserCallbackApp, EndUserCallbackInput, EndUserCallbackResult, EndUserListQuery, EndUserPage, EndUserRecord, ErrorReportContext, ErrorReportEvent, ErrorReportKind, ErrorReporter, ErrorReporterContext, FilesAuthority, HookApp, JobContextBase, JobInterval, Limits, Logger, MailAuthority, MailEnvelope, MailPrepareInput, ModuleAppView, ModuleAvailability, ModuleComposeInput, ModuleContext, ModuleDashboard, ModuleDashboardEditor, ModuleEmailTransport, ModuleErrorBody, ModuleErrorCode, ModuleErrorDoc, ModuleHooks, ModuleJob, ModuleLimit, ModuleMigrations, ModuleRequest, ModuleResponse, ModuleRouter, ModuleSdk, ModuleSecretDoc, ModuleServices, ModuleSkill, ModuleSlot, OperatorModule, OwnerFile, OwnerFilesPage, OwnerSubmission, OwnerView, Principal, RateLimitResult, RecordsAuthority, RecordsCollection, RecordsImportOptions, RecordsImportResult, RecordsPage, RecordsQuery, RecordsUpdateOptions, RecordsView, RouteHandler, RouteOptions, RouteRateLimit, Rule, ServerJob, ServerJobContext, SniffedType, SubmissionsAuthority, SubmissionsPage, SubmissionsQuery, SyncAuthority, SyncRun, SyncSourceState, UploadedFile, UpstreamRequest, UpstreamResponse, UpstreamsAuthority };
