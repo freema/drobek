@@ -242,6 +242,46 @@ export interface ToolCallWithText extends ToolCall {
   structured: boolean;
 }
 
+/** The attributes of an envelope's opening marker. */
+function envelopeAttrs(raw: string): Record<string, string> {
+  const attrs: Record<string, string> = {};
+  for (const m of raw.matchAll(/(\w+)=("(?:[^"\\]|\\.)*")/g)) attrs[m[1]] = JSON.parse(m[2]) as string;
+  return attrs;
+}
+
+/**
+ * read_file's answer: every `<untrusted-app-file>` block in order (one file →
+ * that file's shape; several, or a trailing report → `{ version, files,
+ * omitted?, missing?, note? }`).
+ */
+function decodeFiles(text: string): Record<string, unknown> {
+  const files: Record<string, unknown>[] = [];
+  let pos = 0;
+  for (;;) {
+    const open = /^<untrusted-app-file (.*)>$/m.exec(text.slice(pos));
+    if (!open) break;
+    const attrs = envelopeAttrs(open[1]);
+    const start = pos + open.index + open[0].length + 1;
+    const closing = `\n</untrusted-app-file nonce="${attrs.nonce}">`;
+    const end = text.indexOf(closing, start - 1);
+    const body = text.slice(start, end);
+    pos = end + closing.length;
+    const binary = /^\(binary file, (\d+) bytes — no text content\)$/.exec(body);
+    const base = {
+      path: attrs.path,
+      version: Number(attrs.version),
+      untrusted: true,
+      ...(attrs.total_lines !== undefined ? { total_lines: Number(attrs.total_lines) } : {}),
+      ...(attrs.lines !== undefined ? { lines: attrs.lines } : {}),
+    };
+    files.push(binary ? { ...base, binary: true, size: Number(binary[1]) } : { ...base, content: body });
+  }
+  const after = text.slice(pos).replace(/^\n+/, '');
+  const report = after ? (JSON.parse(after) as Record<string, unknown>) : null;
+  if (files.length === 1 && !report) return files[0];
+  return { version: files[0]?.version, untrusted: true, files, ...report };
+}
+
 /**
  * The payload of an untrusted envelope: read_file, query_data and get_logs
  * answer ONLY the envelope text, no structuredContent. Rebuilt from
@@ -249,19 +289,25 @@ export interface ToolCallWithText extends ToolCall {
  * null when `text` is not an envelope.
  */
 function decodeUntrusted(text: string): Record<string, unknown> | null {
-  const open = /^<untrusted-app-(file|data|logs) (.*)>$/m.exec(text);
+  const open = /^<untrusted-app-(file|data|logs|search) (.*)>$/m.exec(text);
   if (!open) return null;
-  const attrs: Record<string, string> = {};
-  for (const m of open[2].matchAll(/(\w+)=("(?:[^"\\]|\\.)*")/g)) attrs[m[1]] = JSON.parse(m[2]) as string;
+  if (open[1] === 'file') return decodeFiles(text);
+  const attrs = envelopeAttrs(open[2]);
   const start = open.index + open[0].length + 1;
   const closing = `\n</untrusted-app-${open[1]} nonce="${attrs.nonce}">`;
   const end = text.indexOf(closing, start - 1);
   const body = text.slice(start, end);
   const after = text.slice(end + closing.length).replace(/^\n+/, '');
-  if (open[1] === 'file') {
-    const binary = /^\(binary file, (\d+) bytes — no text content\)$/.exec(body);
-    const base = { path: attrs.path, version: Number(attrs.version), untrusted: true };
-    return binary ? { ...base, binary: true, size: Number(binary[1]) } : { ...base, content: body };
+  if (open[1] === 'search') {
+    return {
+      app_id: attrs.app_id,
+      version: Number(attrs.version),
+      matches: JSON.parse(body) as unknown,
+      total: Number(attrs.total),
+      files_searched: Number(attrs.files_searched),
+      untrusted: true,
+      ...(after ? (JSON.parse(after) as Record<string, unknown>) : {}),
+    };
   }
   if (open[1] === 'data') {
     return {
@@ -273,7 +319,23 @@ function decodeUntrusted(text: string): Record<string, unknown> | null {
       untrusted: true,
     };
   }
-  return { app_id: attrs.app_id, kind: attrs.kind, since: attrs.since, entries: JSON.parse(body) as unknown, untrusted: true, ...(after ? { note: after } : {}) };
+  const render = attrs.latest_version
+    ? {
+        version: Number(attrs.latest_version),
+        beacon: attrs.beacon !== 'off',
+        page_loads: Number(attrs.page_loads ?? 0),
+        errors: Number(attrs.page_errors ?? 0),
+      }
+    : null;
+  return {
+    app_id: attrs.app_id,
+    kind: attrs.kind,
+    since: attrs.since,
+    entries: JSON.parse(body) as unknown,
+    untrusted: true,
+    ...(render ? { render } : {}),
+    ...(after ? { note: after } : {}),
+  };
 }
 
 /**

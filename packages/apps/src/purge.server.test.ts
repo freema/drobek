@@ -156,6 +156,7 @@ const FIXTURES: Record<string, (id: string) => Promise<unknown>> = {
   app_errors: (id) =>
     pg.query(`INSERT INTO app_errors (id, app_id, type, message, url, dedup_key) VALUES ($1, $2, 'error', 'boom', '/', 'k')`, [`err${id}`, id]),
   app_daily_stats: (id) => pg.query(`INSERT INTO app_daily_stats (app_id, day) VALUES ($1, '2026-09-01')`, [id]),
+  app_version_loads: (id) => pg.query(`INSERT INTO app_version_loads (app_id, version_number, page_loads) VALUES ($1, 1, 4)`, [id]),
   app_compiles: (id) => pg.query(`INSERT INTO app_compiles (id, app_id, ok, trigger) VALUES ($1, $2, true, 'write_files')`, [`cmp${id}`, id]),
   module_request_stats: (id) =>
     pg.query(`INSERT INTO module_request_stats (app_id, module, status_class, day, count) VALUES ($1, 'data', '2xx', '2026-09-01', 3)`, [id]),

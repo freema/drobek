@@ -292,8 +292,10 @@ cache. The compile result is part of the tool response.
   app's own React).
 - `src/main.{tsx,ts,jsx,js}` → `/main.js`, the CSS it imports → `/main.css`,
   `drobek.json` `entries` → more bundles. An app without `src/main.*` is plain
-  HTML served as written. The compiler prepends the error-beacon import to
-  every JS entry (`"beacon": false` opts out).
+  HTML served as written. The compiler prepends the beacon import to every
+  JS entry (`"beacon": false` opts out): each page reports its load and its
+  browser errors, failed resource loads and CSP blocks with the version it
+  was served from (`get_app` `render`, `get_logs` runtime).
 - Limits (`COMPILE_*`): 200 files, 512 KiB per file, 5 MiB per version, an
   import depth of 50, 10 s per build (cancelled with its own `ctx.cancel()`),
   4 builds at once and a FIFO queue whose wait answers `busy`.
@@ -355,7 +357,9 @@ before any byte of the app is touched:
 10. the version the host serves (**404** "not published" / "nothing compiled"),
     then the file: built output wins over sources, `.ts/.tsx/.jsx` sources and
     `drobek.json` are never served, extension-less paths fall back to
-    `index.html`, `ETag` = sha256 → **304**. Every JS/CSS bundle is stored
+    `index.html`, `ETag` = sha256 → **304**; an HTML response names its
+    version in `Server-Timing: drobek-version;desc="<N>"` (the beacon reads
+    it). Every JS/CSS bundle is stored
     with an inline source map; the preview and version hosts serve it as
     stored, while the production host and custom domains serve the code
     without it (ending in `sourceMappingURL=<file>.map`) and answer

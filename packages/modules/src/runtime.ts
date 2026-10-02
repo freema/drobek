@@ -110,7 +110,7 @@ import {
 import { CORE_LIMITS, createLimitsProvider, moduleEnabledLimit, moduleEnabledLimitName, type CatalogueLimit, type LimitsProvider } from './limits.js';
 import { mailGuardConfigFromEnv, redisMailGuard, type MailGuard, type MailGuardRedis } from './mail-guard.js';
 import { Lru, jsonKey } from './memo.js';
-import { jsonEqual, mergePatch } from './merge-patch.js';
+import { diffMergePatch, jsonEqual, mergePatch } from './merge-patch.js';
 import { cookiePrincipalResolver, endUserCookiesSecure, type PrincipalResolver } from './principal.js';
 import {
   checkModuleSet,
@@ -408,6 +408,11 @@ export interface ConfigureResult {
   /** Only a workspace admin can confirm the pending change (absent: any editor). */
   confirm_role?: 'admin';
   confirm_url?: string;
+  /**
+   * The changes that already waited before this call: the new proposal joined
+   * them, and `pending_confirmation` lists what the combined change needs.
+   */
+  merged_with_pending?: string[];
   secrets_missing?: string[];
   unchanged?: true;
   /** The module's `appInfo` for the config now in force (secret-free), when it declares one. */
@@ -556,6 +561,11 @@ const V1_RE = /^\/__drobek\/v1\/([^/]+)(\/.*)?$/;
 /** The dashboard page where the owner confirms a module change. */
 export function confirmUrl(env: NodeJS.ProcessEnv, workspaceSlug: string, appSlug: string, module: string): string {
   return `${dashboardOrigin(env)}/workspaces/${encodeURIComponent(workspaceSlug)}/apps/${encodeURIComponent(appSlug)}/modules/${encodeURIComponent(module)}`;
+}
+
+/** The role that may confirm a change made of parts that each need `roles` (missing = editor). */
+function stricterRole(...roles: (ConfirmRole | undefined)[]): ConfirmRole {
+  return roles.includes('admin') ? 'admin' : 'editor';
 }
 
 /** An optional owner-facing authority method the active module does not implement. */
@@ -1569,7 +1579,10 @@ export class ModuleRuntime {
     return required.filter((n) => !set.has(n));
   }
 
-  /** configure_module: validate a partial config; apply it, or hold it for the owner. */
+  /**
+   * configure_module: validate a partial config; apply it, or hold it for
+   * the owner — joined with the change that already waits, if any.
+   */
   async configure(input: ConfigureInput): Promise<ConfigureResult> {
     const m = this.requireModule(input.module);
     if (!(await this.isEnabled(input.app.workspaceId, m.name))) throw moduleNotEnabled(m.name);
@@ -1599,11 +1612,14 @@ export class ModuleRuntime {
         return { applied: true, config: before, pending: waiting, role: row.pending?.confirm_role, unchanged: true as const };
       }
       const hookApp: HookApp = { id: input.app.id, slug: input.app.slug, workspaceId: input.app.workspaceId };
-      const required = m.confirmRequired
-        ? await m.confirmRequired(before, after, { app: hookApp, db: tx as unknown as DB, limits: () => this.deps.limits.forWorkspace(hookApp.workspaceId) })
-        : [];
-      const { changes, role } = normalizeConfirmItems(Array.isArray(required) ? required : []);
-      if (changes.length === 0) {
+      const confirmItems = async (target: unknown) => {
+        const required = m.confirmRequired
+          ? await m.confirmRequired(before, target, { app: hookApp, db: tx as unknown as DB, limits: () => this.deps.limits.forWorkspace(hookApp.workspaceId) })
+          : [];
+        return normalizeConfirmItems(Array.isArray(required) ? required : []);
+      };
+      const own = await confirmItems(after);
+      if (own.changes.length === 0) {
         await write({ config: nextStored });
         await writeAudit(
           {
@@ -1619,8 +1635,29 @@ export class ModuleRuntime {
         );
         return { applied: true, config: after, pending: waiting, role: row.pending?.confirm_role };
       }
+
+      // A change already waits: this proposal joins it, so the owner confirms
+      // or rejects both as one change over the config in force.
+      let pendingPatch = patch as Record<string, unknown>;
+      let { changes, role } = own;
+      const earlier = row.pending;
+      if (earlier) {
+        const combined = mergePatch(mergePatch(row.config, earlier.patch), patch) as Record<string, unknown>;
+        const parsed = m.configSchema.safeParse(mergePatch(m.configDefaults, combined));
+        if (!parsed.success) {
+          throw new ModuleError(
+            'invalid_params',
+            `The ${m.name} config is invalid together with the change that already waits for the owner's confirmation (pending_confirmation): send a change that fits it.`,
+            { details: { issues: issuePaths(parsed.error.issues), pending_confirmation: earlier.changes }, hint: skillHint(m.name) }
+          );
+        }
+        const all = await confirmItems(parsed.data);
+        pendingPatch = diffMergePatch(row.config, combined);
+        changes = all.changes.length > 0 ? all.changes : [...new Set([...earlier.changes, ...own.changes])];
+        role = stricterRole(earlier.confirm_role, own.role, all.role);
+      }
       const pending: PendingChange = {
-        patch: patch as Record<string, unknown>,
+        patch: pendingPatch,
         changes,
         proposed_at: new Date().toISOString(),
         proposed_by: input.actorUserId,
@@ -1635,11 +1672,16 @@ export class ModuleRuntime {
           action: 'module.pending',
           subjectType: 'app',
           target: input.app.slug,
-          meta: { module: m.name, changes, ...(role === 'admin' ? { confirm_role: role } : {}) },
+          meta: {
+            module: m.name,
+            changes,
+            ...(role === 'admin' ? { confirm_role: role } : {}),
+            ...(earlier ? { merged_with_pending: earlier.changes } : {}),
+          },
         },
         tx
       );
-      return { applied: false, config: before, pending: changes, role };
+      return { applied: false, config: before, pending: changes, role, merged: earlier?.changes };
     });
 
     const out: ConfigureResult = {
@@ -1653,6 +1695,7 @@ export class ModuleRuntime {
       out.confirm_url = link;
     }
     if ('unchanged' in result && result.unchanged) out.unchanged = true;
+    if ('merged' in result && result.merged) out.merged_with_pending = result.merged;
     const missing = await this.missingSecrets(input.app.id, m);
     if (missing.length > 0) out.secrets_missing = missing;
     const info = await this.appInfo(m, { id: input.app.id, slug: input.app.slug, workspaceId: input.app.workspaceId }, result.config);

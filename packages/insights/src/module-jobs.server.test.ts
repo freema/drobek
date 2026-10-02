@@ -71,7 +71,12 @@ describe('recordModuleJobFailure', () => {
       createdAt: created,
     });
     const [entry] = await queryRuntimeLog(appId);
-    expect(Object.keys(entry).sort()).toEqual(['count', 'file_hint', 'first_seen', 'last_seen', 'message', 'stack', 'type', 'url']);
-    expect(entry).toMatchObject({ type: 'error', url: 'https://fantasy--preview.apps.example/', file_hint: 'https://fantasy--preview.apps.example/assets/app.js:4:2' });
+    expect(Object.keys(entry).sort()).toEqual(['count', 'file_hint', 'first_seen', 'last_seen', 'message', 'stack', 'type', 'url', 'version']);
+    expect(entry).toMatchObject({
+      type: 'error',
+      url: 'https://fantasy--preview.apps.example/',
+      version: null,
+      file_hint: 'https://fantasy--preview.apps.example/assets/app.js:4:2',
+    });
   });
 });

@@ -312,11 +312,130 @@ describe('configure / confirm / reject', () => {
     expect(await rt.reject({ app, module: 'echo', userId }).catch((e) => e.code)).toBe('conflict');
   });
 
-  it('a newer pending change replaces the older one', async () => {
+  it('a second proposal joins the waiting one: patches composed, changes recomputed, one confirm applies both', async () => {
+    const first = await rt.configure({ app, module: 'echo', patch: { access: 'public' }, actorUserId: userId });
+    expect(first).toMatchObject({ applied: false, pending_confirmation: ['access: anyone can read'] });
+    expect(first.merged_with_pending).toBeUndefined();
+
+    const second = await rt.configure({ app, module: 'echo', patch: { notify: ['boss@example.com'] }, actorUserId: userId });
+    expect(second).toMatchObject({
+      applied: false,
+      config: { access: 'user', notify: [] },
+      pending_confirmation: ['access: anyone can read', 'notify: new recipient boss@example.com'],
+      merged_with_pending: ['access: anyone can read'],
+      confirm_url: 'https://drobek.example/workspaces/acme/apps/shop/modules/echo',
+    });
+    expect((await rt.appModules(app.id)).echo).toMatchObject({ pending: true, pending_confirmation: second.pending_confirmation });
+
+    // The owner sees ONE change: both items and both paths in the result.
+    const hookApp = { id: app.id, slug: app.slug, workspaceId: app.workspaceId };
+    expect((await rt.moduleView(hookApp, 'echo')).pending).toMatchObject({
+      changes: second.pending_confirmation,
+      confirm_role: 'editor',
+      after: { greeting: 'hi', access: 'public', notify: ['boss@example.com'], loud: false },
+    });
+    const [row] = await db.select().from(moduleConfigs).where(eq(moduleConfigs.appId, app.id));
+    expect(row.config).toEqual({});
+    expect(row.pending).toMatchObject({ patch: { access: 'public', notify: ['boss@example.com'] }, proposed_by: userId });
+
+    const pendingAudit = await db.select().from(auditLog).where(eq(auditLog.action, 'module.pending'));
+    expect(pendingAudit.map((a) => a.meta)).toEqual([
+      { module: 'echo', changes: ['access: anyone can read'] },
+      { module: 'echo', changes: second.pending_confirmation, merged_with_pending: ['access: anyone can read'] },
+    ]);
+
+    const done = await rt.confirm({ app, module: 'echo', userId });
+    expect(done).toEqual({
+      module: 'echo',
+      config: { greeting: 'hi', access: 'public', notify: ['boss@example.com'], loud: false },
+      confirmed: second.pending_confirmation,
+    });
+  });
+
+  it('the joined change is listed against the config in force: what the new proposal undoes drops out', async () => {
     await rt.configure({ app, module: 'echo', patch: { notify: ['a@example.com'] }, actorUserId: userId });
-    await rt.configure({ app, module: 'echo', patch: { notify: ['b@example.com'] }, actorUserId: userId });
+    const out = await rt.configure({ app, module: 'echo', patch: { notify: ['b@example.com'] }, actorUserId: userId });
+    expect(out).toMatchObject({
+      applied: false,
+      pending_confirmation: ['notify: new recipient b@example.com'],
+      merged_with_pending: ['notify: new recipient a@example.com'],
+    });
     const done = await rt.confirm({ app, module: 'echo', userId });
     expect(done.config).toMatchObject({ notify: ['b@example.com'] });
+  });
+
+  it('reject drops the joined change as a whole; a safe change meanwhile applies and joins nothing', async () => {
+    await rt.configure({ app, module: 'echo', patch: { access: 'public' }, actorUserId: userId });
+    const safe = await rt.configure({ app, module: 'echo', patch: { greeting: 'ahoj' }, actorUserId: userId });
+    expect(safe).toMatchObject({ applied: true, config: { greeting: 'ahoj', access: 'user' }, pending_confirmation: ['access: anyone can read'] });
+    expect(safe.merged_with_pending).toBeUndefined();
+    const merged = await rt.configure({ app, module: 'echo', patch: { notify: ['boss@example.com'] }, actorUserId: userId, surface: 'web' });
+    expect(merged.merged_with_pending).toEqual(['access: anyone can read']);
+
+    const out = await rt.reject({ app, module: 'echo', userId });
+    expect(out).toEqual({
+      module: 'echo',
+      config: { greeting: 'ahoj', access: 'user', notify: [], loud: false },
+      rejected: ['access: anyone can read', 'notify: new recipient boss@example.com'],
+    });
+    expect((await rt.appModules(app.id)).echo).toMatchObject({ pending: false, config: { greeting: 'ahoj', access: 'user', notify: [] } });
+    const audit = await db.select().from(auditLog).where(eq(auditLog.action, 'module.pending'));
+    expect(audit.map((a) => a.actorKind)).toEqual(['agent', 'user']);
+  });
+
+  it('the joined change needs the stricter confirm role of its parts', async () => {
+    const keys = defineModule<{ keys: string[]; note: string }>({
+      name: 'keys',
+      version: '1.0.0',
+      skill: { useWhen: 'x', markdown: '# x' },
+      configSchema: z.object({ keys: z.array(z.string()), note: z.string() }),
+      configDefaults: { keys: [], note: '' },
+      confirmRequired: (before, after) => [
+        ...after.keys.filter((k) => !before.keys.includes(k)).map((k) => ({ change: `keys: ${k}`, confirmRole: 'admin' as const })),
+        ...(after.note !== before.note ? [`note: ${after.note}`] : []),
+      ],
+    });
+    const r = new ModuleRuntime({ modules: [keys], skills: [], sdk: rt.sdk, deps: rt.deps });
+
+    expect((await r.configure({ app, module: 'keys', patch: { note: 'a' }, actorUserId: userId })).confirm_role).toBeUndefined();
+    const raised = await r.configure({ app, module: 'keys', patch: { keys: ['openai'] }, actorUserId: userId });
+    expect(raised).toMatchObject({ pending_confirmation: ['keys: openai', 'note: a'], confirm_role: 'admin', merged_with_pending: ['note: a'] });
+    await r.reject({ app, module: 'keys', userId });
+
+    await r.configure({ app, module: 'keys', patch: { keys: ['openai'] }, actorUserId: userId });
+    const kept = await r.configure({ app, module: 'keys', patch: { note: 'b' }, actorUserId: userId });
+    expect(kept).toMatchObject({ pending_confirmation: ['keys: openai', 'note: b'], confirm_role: 'admin' });
+    const refused = await r.confirm({ app, module: 'keys', userId, role: 'editor' }).catch((e: unknown) => e);
+    expect(refused).toMatchObject({ code: 'forbidden', details: { reason: 'admin_required' } });
+    expect((await r.confirm({ app, module: 'keys', userId, role: 'admin' })).config).toEqual({ keys: ['openai'], note: 'b' });
+  });
+
+  it('a proposal that does not fit the waiting change → invalid_params with the issues and what waits; nothing stored', async () => {
+    const strict = defineModule<{ mode: 'open' | 'closed'; until?: string }>({
+      name: 'strict',
+      version: '1.0.0',
+      skill: { useWhen: 'x', markdown: '# x' },
+      configSchema: z
+        .object({ mode: z.enum(['open', 'closed']), until: z.string().optional() })
+        .refine((c) => c.mode !== 'open' || c.until !== 'never', { path: ['until'], message: 'an open mode needs an end' }),
+      configDefaults: { mode: 'closed' },
+      confirmRequired: (before, after) => [
+        ...(after.mode === 'open' && before.mode !== 'open' ? ['mode: open'] : []),
+        ...(after.until !== before.until ? [`until: ${after.until ?? '(none)'}`] : []),
+      ],
+    });
+    const r = new ModuleRuntime({ modules: [strict], skills: [], sdk: rt.sdk, deps: rt.deps });
+    await r.configure({ app, module: 'strict', patch: { mode: 'open' }, actorUserId: userId });
+    const err = await r.configure({ app, module: 'strict', patch: { until: 'never' }, actorUserId: userId }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ModuleError);
+    expect(err).toMatchObject({
+      code: 'invalid_params',
+      details: { issues: [{ path: 'until', message: 'an open mode needs an end' }], pending_confirmation: ['mode: open'] },
+      hint: "skill_info('strict')",
+    });
+    const [row] = await db.select().from(moduleConfigs).where(eq(moduleConfigs.appId, app.id));
+    expect(row.pending).toMatchObject({ patch: { mode: 'open' }, changes: ['mode: open'] });
+    expect((await db.select().from(auditLog).where(eq(auditLog.action, 'module.pending'))).length).toBe(1);
   });
 
   it("confirmRole 'admin': an editor cannot confirm (403 admin_required) but may reject; an admin confirms and onConfirmed runs in the transaction", async () => {
@@ -1037,14 +1156,15 @@ describe('module e-mail (ctx.email.send through the runtime)', () => {
       const audit = await db.select().from(auditLog).where(eq(auditLog.action, 'module.pending'));
       expect(audit.map((a) => a.actorKind)).toEqual(['user']);
 
+      // The agent's proposal joins the owner's waiting one: the mail lists both.
       const held = await r.configure({ app, module: 'echo', patch: { access: 'public' }, actorUserId: userId });
-      expect(held.applied).toBe(false);
+      expect(held).toMatchObject({ applied: false, merged_with_pending: ['notify: new recipient x@example.com'] });
       expect(sent).toHaveLength(1);
-      expect(sent[0]).toMatchObject({ to: 'pending-owner@example.com', subject: '[shop] 1 change awaits your confirmation' });
+      expect(sent[0]).toMatchObject({ to: 'pending-owner@example.com', subject: '[shop] 2 changes await your confirmation' });
       // A platform mail: the server's sender and footer, not the app's envelope; the review link is a trusted action.
       expect(sent[0].fromName).toBeUndefined();
       expect(sent[0].replyTo).toBeUndefined();
-      expect(sent[0].text).toContain('Module echo:\n  - access: anyone can read');
+      expect(sent[0].text).toContain('Module echo:\n  - access: anyone can read\n  - notify: new recipient x@example.com');
       expect(sent[0].text).toContain('in the dashboard at drobek.example.');
       expect(sent[0].platform).toMatchObject({
         actions: [{ label: 'Review the echo changes', url: 'https://drobek.example/workspaces/acme/apps/shop/modules/echo' }],
@@ -1060,7 +1180,7 @@ describe('module e-mail (ctx.email.send through the runtime)', () => {
       // A second proposal within the hour: no second e-mail (the banner shows it).
       await r.configure({ app, module: 'echo', patch: { notify: ['boss@example.com'] }, actorUserId: userId });
       expect(sent).toHaveLength(1);
-      expect(await r.pendingSummary(app.id)).toEqual([{ module: 'echo', changes: ['notify: new recipient boss@example.com'] }]);
+      expect(await r.pendingSummary(app.id)).toEqual([{ module: 'echo', changes: ['access: anyone can read', 'notify: new recipient boss@example.com'] }]);
       // A safe change never mails.
       await r.configure({ app, module: 'echo', patch: { loud: true }, actorUserId: userId });
       expect(sent).toHaveLength(1);

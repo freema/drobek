@@ -32,6 +32,7 @@ export function meta({ data }: { data?: Awaited<ReturnType<typeof loader>> }) {
 const DONE: Record<string, string> = {
   applied: 'Saved — the new configuration is in force.',
   pending: 'Saved as a change awaiting confirmation — it applies once confirmed.',
+  merged: 'Added to the change already awaiting confirmation — confirming applies all of it, rejecting drops all of it.',
   unchanged: 'Nothing changed.',
   confirmed: 'Confirmed — the change is in force.',
   rejected: 'Rejected — the configuration stays as it was.',

@@ -18,6 +18,7 @@ export {
   untrustedDataEnvelope,
   untrustedEnvelope,
   untrustedLogsEnvelope,
+  untrustedSearchEnvelope,
   type AppToolName,
   type RegisterOptions,
 } from './register.js';

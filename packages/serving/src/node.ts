@@ -193,7 +193,7 @@ export function defaultHandlerDeps(store: ServeStore, log?: Logger): HandlerDeps
     secureCookies: appCookiesSecure(),
     allowUnlockAttempt: (appId, ip) => unlockAttemptAllowed(appId, ip),
     signal: (appId, kind, path) => void incrementServingSignal(appId, kind, path),
-    beacon: (req, app) => handleBeacon(req, app.id),
+    beacon: (req, app, version) => handleBeacon(req, app.id, { servedVersion: version?.number ?? null }),
     dashboardOrigin: dashboardOrigin(),
     galleryFrameAncestors: galleryEnabled() ? galleryFrameAncestorsFromEnv() : [],
     frameSrc: frameSrcFromEnv(),

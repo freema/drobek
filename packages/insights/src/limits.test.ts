@@ -5,6 +5,7 @@ import {
   DEFAULT_BEACON_RATE_LIMIT,
   beaconLimitsFromEnv,
   beaconSizeVerdict,
+  extractBatch,
   extractEvents,
   shouldSample,
 } from './limits.js';
@@ -50,6 +51,29 @@ describe('extractEvents', () => {
   it('is empty for a non-object payload', () => {
     expect(extractEvents(null, 20)).toEqual([]);
     expect(extractEvents(42, 20)).toEqual([]);
+  });
+});
+
+describe('extractBatch', () => {
+  it('reads the version and the page load next to the events', () => {
+    expect(extractBatch({ version: 7, load: true, events: [{ message: 'x' }] }, 20)).toEqual({
+      events: [{ message: 'x' }],
+      version: 7,
+      load: true,
+    });
+  });
+  it('a page load alone is no event', () => {
+    expect(extractBatch({ version: 7, load: true }, 20)).toEqual({ events: [], version: 7, load: true });
+    expect(extractBatch({ version: 7, load: true, events: [] }, 20).events).toEqual([]);
+  });
+  it('only load: true is a page load; a bad version is none', () => {
+    expect(extractBatch({ version: '7', load: 'yes', events: [] }, 20)).toEqual({ events: [], version: null, load: false });
+    expect(extractBatch({ version: -1, events: [] }, 20).version).toBeNull();
+  });
+  it('keeps the old shapes: a bare array or a bare event, no version', () => {
+    expect(extractBatch([{ a: 1 }], 20)).toEqual({ events: [{ a: 1 }], version: null, load: false });
+    expect(extractBatch({ type: 'error', message: 'x' }, 20)).toEqual({ events: [{ type: 'error', message: 'x' }], version: null, load: false });
+    expect(extractBatch(null, 20)).toEqual({ events: [], version: null, load: false });
   });
 });
 

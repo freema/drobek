@@ -213,6 +213,13 @@
       "breakpoints": true
     },
     {
+      "idx": 35,
+      "version": "7",
+      "when": 1790947800000,
+      "tag": "0035_render_signal",
+      "breakpoints": true
+    },
+    {
       "idx": 36,
       "version": "7",
       "when": 1790947900000,

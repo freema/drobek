@@ -9,7 +9,11 @@ import type { ConfirmRole } from './contract.js';
 
 /** A change held for the owner's confirmation (confirmRequired). */
 export interface PendingChange {
-  /** The RFC 7396 merge patch the agent sent — applied on top of the config at confirm time. */
+  /**
+   * The RFC 7396 merge patch that was proposed — or, when a proposal joined a
+   * waiting one, the patch from the config in force to both applied in turn.
+   * Applied on top of the config at confirm time.
+   */
   patch: Record<string, unknown>;
   /** What needs confirming, verbatim from the module's confirmRequired. */
   changes: string[];

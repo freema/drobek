@@ -1,5 +1,5 @@
 /**
- * The MCP tool bodies: list_apps, create_app, get_app, read_file,
+ * The MCP tool bodies: list_apps, create_app, get_app,
  * write_files, restore_version, publish, skill_info, configure_module,
  * query_data, get_logs, set_gallery_listing, duplicate_app and sync_now.
  * Each takes the caller + validated arguments and returns a plain JSON payload or throws a ToolError; the MCP
@@ -103,9 +103,10 @@ import { actorKindForSurface } from '@drobek/audit';
 import { listDomains, resolveCustomHost, verifiedDomainsOf } from '@drobek/domains';
 import { maskEmail } from '@drobek/auth';
 import {
-  BINARY_EXTS,
+  CONFIG_FILE,
   TEXT_EXTS,
   normalizeAppPath,
+  readAppConfig,
   scanForSecrets,
   type CompileMessage,
   type CompileResult,
@@ -114,7 +115,7 @@ import { confirmUrl, duplicateModuleConfigs, isModuleError, type ModuleRuntime, 
 import { ensurePersonalWorkspace, listAllWorkspaces, listUserWorkspaces } from '@drobek/tenancy';
 import { authorizeApp, authorizeWorkspace } from './access.js';
 import type { ToolDeps, ToolPrincipal } from './context.js';
-import { LOG_KINDS, logsWindowStart, type LogKind } from '@drobek/insights';
+import { LOG_KINDS, logsWindowStart, type LogKind, type RuntimeEntry } from '@drobek/insights';
 import { dbErrorForLog } from '@drobek/db';
 import { ToolError, lockedByAdmin, notFound, publishRefused } from './errors.js';
 import type { Lease } from './lease.js';
@@ -141,7 +142,6 @@ export interface CallContext {
 }
 
 const NAME_MAX = 80;
-const utf8 = new TextDecoder('utf-8', { fatal: true });
 
 function actorOf(ctx: CallContext): Actor {
   return { userId: ctx.principal.userId, kind: actorKindForSurface('mcp') };
@@ -246,7 +246,7 @@ async function refuseOverVersionRate(ctx: CallContext, limits: VersionRateLimits
 }
 
 /** The not_found of a version the app does not have — saying so when the history retention deleted it. */
-async function missingVersion(ctx: CallContext, app: AppRow, number: number, keep?: number): Promise<ToolError> {
+export async function missingVersion(ctx: CallContext, app: AppRow, number: number, keep?: number): Promise<ToolError> {
   const k = keep ?? versionStorageLimitsOf(await ctx.modules.workspaceLimits(app.workspaceId), ctx.deps.env).keep;
   return new ToolError('not_found', await missingVersionMessage(app.id, number, { keep: k }));
 }
@@ -411,10 +411,12 @@ export async function getApp(ctx: CallContext, args: { app_id: string }) {
   );
   // The newest version's readiness report — with its type errors once the background check is done.
   const readiness = head ? await storedReadiness(ctx, app.id, enabled, head.number) : undefined;
+  const render = head ? await renderSignal(ctx, app.id, head) : undefined;
   return {
     ...items[0],
     compile_errors: head?.compileStatus === 'error' ? toCompileOut(head.compileErrors, ctx.modules, enabled) : [],
     ...(readiness ? { readiness } : {}),
+    ...(render ? { render } : {}),
     briefing: briefing(ctx, enabled, versionLimits),
     files: (detail?.files ?? [])
       .filter((f) => f.kind === 'source')
@@ -442,6 +444,40 @@ export async function getApp(ctx: CallContext, args: { app_id: string }) {
   };
 }
 
+/**
+ * The render signal of a version (get_app, get_logs runtime): how many of
+ * its pages loaded in a browser and how many browser errors they reported —
+ * counts the beacon sent, nothing about the visitors. `beacon: false` = the
+ * version's drobek.json turned the beacon off, so nothing is reported.
+ */
+export interface RenderSignal {
+  version: number;
+  beacon: boolean;
+  page_loads: number;
+  errors: number;
+}
+
+/** Does the version's drobek.json leave the beacon on? (An unreadable config counts as on, like the compiler's default.) */
+async function beaconOn(versionId: string): Promise<boolean> {
+  const bytes = await readVersionFile(versionId, CONFIG_FILE, 'source');
+  if (!bytes) return true;
+  return readAppConfig(new Map([[CONFIG_FILE, bytes.toString('utf8')]])).config.beacon;
+}
+
+async function renderSignal(ctx: CallContext, appId: string, version: { id: string; number: number }): Promise<RenderSignal> {
+  if (!(await beaconOn(version.id))) return { version: version.number, beacon: false, page_loads: 0, errors: 0 };
+  return { version: version.number, beacon: true, ...(await ctx.deps.logs.render(appId, version.number)) };
+}
+
+/** One sentence on the render signal for the get_logs note. */
+function renderNote(r: RenderSignal): string {
+  if (!r.beacon) return `Version ${r.version} has "beacon": false in drobek.json: its pages report nothing and nothing is counted.`;
+  if (r.page_loads === 0) {
+    return `No page of version ${r.version} has loaded in a browser yet — give the user the preview_url and call get_app or get_logs again after they opened it.`;
+  }
+  return `Version ${r.version}: ${r.page_loads} page load${r.page_loads === 1 ? '' : 's'}, ${r.errors} browser error${r.errors === 1 ? '' : 's'} reported by its pages.`;
+}
+
 /** get_app's `gallery`: the public gallery state and its likes / opens (30 days), read-only. */
 async function galleryOut(app: AppRow, env: NodeJS.ProcessEnv) {
   if (!galleryEnabled(env)) return { enabled: false };
@@ -461,48 +497,6 @@ async function galleryOut(app: AppRow, env: NodeJS.ProcessEnv) {
 /** get_app's `version_retention`: how many versions the app keeps and has. */
 function retentionOut(r: { keep: number; stored: number; oldest: number | null }) {
   return { keep_newest: r.keep, stored: r.stored, oldest_version: r.oldest };
-}
-
-// ── read_file ────────────────────────────────────────────────────────────────
-
-export interface ReadFileResult {
-  path: string;
-  version: number;
-  untrusted: true;
-  content?: string;
-  binary?: true;
-  size?: number;
-}
-
-export async function readFile(
-  ctx: CallContext,
-  args: { app_id: string; path: string; version?: number }
-): Promise<ReadFileResult> {
-  const { app } = await authorizeApp(ctx.principal, args.app_id, 'viewer');
-  if (args.version !== undefined && (!Number.isInteger(args.version) || args.version < 1)) {
-    throw new ToolError('invalid_params', '`version` must be a positive integer.');
-  }
-  const path = normalizeAppPath(String(args.path ?? ''));
-  if (!path) throw new ToolError('invalid_path', `Unsafe file path ${JSON.stringify(args.path)}.`);
-
-  const number = args.version ?? (await latestVersions([app.id])).get(app.id)?.number;
-  const version = number ? await getVersion(app.id, { number }) : null;
-  if (!version) {
-    throw number ? await missingVersion(ctx, app, number) : new ToolError('not_found', 'The app has no versions yet.');
-  }
-  const file = version.files.find((f) => f.kind === 'source' && f.path === path);
-  if (!file) throw new ToolError('not_found', `No file "${path}" in version ${version.number}.`);
-  const bytes = await readVersionFile(version.id, path, 'source');
-  if (!bytes) throw new ToolError('not_found', `No file "${path}" in version ${version.number}.`);
-
-  if (!BINARY_EXTS.has(extOf(path))) {
-    try {
-      return { path, version: version.number, untrusted: true, content: utf8.decode(bytes) };
-    } catch {
-      // not UTF-8 → report as binary below
-    }
-  }
-  return { path, version: version.number, untrusted: true, binary: true, size: bytes.length };
 }
 
 // ── compile + store (create_app v1, write_files) ─────────────────────────────
@@ -1278,7 +1272,8 @@ export async function skillInfo(ctx: CallContext, args: { name?: string; app_id?
  * Validated against the module's configSchema (`invalid_params` with the
  * field paths). Changes the module marks as needing the owner's OK (e.g.
  * opening data to the public, a new e-mail recipient) are held as pending:
- * `applied:false`, `pending_confirmation`, `confirm_url` for the user.
+ * `applied:false`, `pending_confirmation`, `confirm_url` for the user; a
+ * proposal made while another waits joins it (`merged_with_pending`).
  * editor+; takes the single-writer lease like write_files.
  */
 export async function configureModule(
@@ -1304,6 +1299,9 @@ export async function configureModule(
         ? {
             note:
               'Give the user confirm_url and tell them what needs their confirmation. The pending change applies only after they confirm it in the drobek dashboard; until then the config above stays in force.' +
+              (out.merged_with_pending
+                ? ' A change was already waiting (merged_with_pending): this proposal joined it, so pending_confirmation lists the combined change, and the user confirms or rejects it all at once.'
+                : '') +
               (out.confirm_role === 'admin' ? ' Only a workspace admin of the app\'s workspace can confirm this one (confirm_role: admin).' : ''),
           }
         : {}),
@@ -1407,12 +1405,14 @@ export interface GetLogsResult {
   since: string;
   entries: unknown[];
   untrusted: true;
+  /** kind runtime: the newest version's page loads and browser errors. */
+  render?: RenderSignal;
   note?: string;
 }
 
 const EMPTY_NOTES: Record<GetLogsKind, string> = {
   runtime:
-    'No browser errors in this window. Every page that loads a compiled entry reports uncaught errors and unhandled promise rejections here within seconds (unless drobek.json has "beacon": false) — open the preview_url to reproduce a problem, then call get_logs again.',
+    'No browser errors in this window. Every page that loads a compiled entry reports uncaught errors, unhandled promise rejections, files that failed to load and requests the CSP blocked here within seconds (unless drobek.json has "beacon": false) — open the preview_url to reproduce a problem, then call get_logs again.',
   compile: 'No compiles in this window.',
   requests: 'No requests in this window.',
   sync: 'No sync runs in this window. A source runs on its schedule once the owner confirmed it; sync_now runs it at once.',
@@ -1420,7 +1420,9 @@ const EMPTY_NOTES: Record<GetLogsKind, string> = {
 
 /**
  * What happened to an app, for the viewer+ of its workspace:
- *   runtime  — browser errors reported by the app's pages (deduped, with counts);
+ *   runtime  — browser errors reported by the app's pages (deduped, with counts,
+ *              each with the version of its page) + the newest version's render
+ *              signal (page loads, errors of its pages);
  *   compile  — the last 50 compiles (ok / errors / version / duration);
  *   requests — per UTC day: requests, 5xx, 404s, and module calls by status class;
  *   sync     — the latest runs of the app's sync sources (newest first).
@@ -1452,12 +1454,22 @@ export async function getLogs(
       ...(runs.length === 0 ? { note: sync ? EMPTY_NOTES.sync : 'This server has no sync module: apps here import nothing on a schedule.' } : {}),
     };
   }
-  const entries =
-    kind === 'runtime'
-      ? await ctx.deps.logs.runtime(app.id, from)
-      : kind === 'compile'
-        ? await ctx.deps.logs.compile(app.id, from)
-        : await ctx.deps.logs.requests(app.id, from);
+  if (kind === 'runtime') {
+    const entries: RuntimeEntry[] = await ctx.deps.logs.runtime(app.id, from);
+    const head = (await latestVersions([app.id])).get(app.id);
+    const render = head ? await renderSignal(ctx, app.id, head) : undefined;
+    const note = [entries.length === 0 ? EMPTY_NOTES.runtime : null, render ? renderNote(render) : null].filter(Boolean).join(' ');
+    return {
+      app_id: app.id,
+      kind,
+      since: from.toISOString(),
+      entries,
+      untrusted: true,
+      ...(render ? { render } : {}),
+      ...(note ? { note } : {}),
+    };
+  }
+  const entries = kind === 'compile' ? await ctx.deps.logs.compile(app.id, from) : await ctx.deps.logs.requests(app.id, from);
   return {
     app_id: app.id,
     kind,

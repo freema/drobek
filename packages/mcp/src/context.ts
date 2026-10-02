@@ -8,11 +8,13 @@ import { Compiler, type CompileOptions, type SourceFiles } from '@drobek/compile
 import { createConsoleLogger, getRedis, type Logger } from '@drobek/core';
 import {
   queryCompileLog,
+  queryRenderCounts,
   queryRequestLog,
   queryRuntimeLog,
   recordCompile,
   type CompileEntry,
   type RecordCompileInput,
+  type RenderCounts,
   type RequestsEntry,
   type RuntimeEntry,
 } from '@drobek/insights';
@@ -33,14 +35,17 @@ export interface ToolPrincipal {
 
 /**
  * get_logs storage: the compile history written by create_app /
- * write_files and the three read kinds. The default is @drobek/insights over
- * Postgres (+ Redis for the daily serving counters).
+ * write_files, the three read kinds and the render signal of a version
+ * (get_app / get_logs). The default is @drobek/insights over Postgres (+ Redis
+ * for the daily serving counters).
  */
 export interface LogStore {
   recordCompile(input: RecordCompileInput): Promise<void>;
   runtime(appId: string, since: Date): Promise<RuntimeEntry[]>;
   compile(appId: string, since: Date): Promise<CompileEntry[]>;
   requests(appId: string, since: Date): Promise<RequestsEntry[]>;
+  /** What the beacon reported for one version: page loads and browser errors of its pages. */
+  render(appId: string, version: number): Promise<RenderCounts>;
 }
 
 /** The @drobek/insights LogStore. `flushSignals: false` skips Redis (tests). */
@@ -50,6 +55,7 @@ export function insightsLogStore(opts: { flushSignals?: boolean } = {}): LogStor
     runtime: (appId, since) => queryRuntimeLog(appId, since),
     compile: (appId, since) => queryCompileLog(appId, since),
     requests: (appId, since) => queryRequestLog(appId, since, { flush: opts.flushSignals !== false }),
+    render: (appId, version) => queryRenderCounts(appId, version),
   };
 }
 

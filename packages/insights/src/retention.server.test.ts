@@ -6,7 +6,7 @@
  */
 import type { PGlite } from '@electric-sql/pglite';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { appCompiles, appDailyStats, appErrors, apps, moduleRequestStats, workspaces } from '@drobek/db';
+import { appCompiles, appDailyStats, appErrors, apps, appVersionLoads, moduleRequestStats, workspaces } from '@drobek/db';
 import { eq } from 'drizzle-orm';
 import { LOGS_RETENTION_DAYS } from './limits.js';
 import { queryRequestLog, type RequestLogPipeline, type RequestLogRedis } from './logs.server.js';
@@ -37,7 +37,7 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  for (const t of [appErrors, appCompiles, appDailyStats, moduleRequestStats]) await db.delete(t);
+  for (const t of [appErrors, appCompiles, appDailyStats, moduleRequestStats, appVersionLoads]) await db.delete(t);
 });
 
 afterEach(() => {
@@ -196,8 +196,14 @@ describe('the periodic logs prune', () => {
       { appId: appB, module: 'data', statusClass: '2xx', day: dayOf(3), count: 1 },
     ]);
 
+    // Page loads of a version nobody opened for over 30 days go; a version loaded yesterday stays.
+    await db.insert(appVersionLoads).values([
+      { appId: appA, versionNumber: 1, pageLoads: 4, updatedAt: at(31) },
+      { appId: appA, versionNumber: 2, pageLoads: 9, updatedAt: at(1) },
+    ]);
+
     const result = await pruneLogs({ now: NOW, env: {} });
-    expect(result).toEqual({ errors: 3 + 10, compiles: 2, dailyStats: 2, moduleStats: 1 });
+    expect(result).toEqual({ errors: 3 + 10, compiles: 2, dailyStats: 2, moduleStats: 1, pageLoads: 1 });
 
     const errorsA = await db.select().from(appErrors).where(eq(appErrors.appId, appA));
     expect(errorsA).toHaveLength(500);
@@ -208,8 +214,9 @@ describe('the periodic logs prune', () => {
     expect((await db.select().from(appCompiles)).map((c) => c.appId)).toEqual([appA]);
     expect((await db.select().from(appDailyStats)).map((d) => d.day)).toEqual([dayOf(30)]);
     expect((await db.select().from(moduleRequestStats)).map((m) => m.day)).toEqual([dayOf(3)]);
+    expect((await db.select().from(appVersionLoads)).map((l) => [l.versionNumber, l.pageLoads])).toEqual([[2, 9]]);
     // A second pass has nothing left to do.
-    expect(await pruneLogs({ now: NOW, env: {} })).toEqual({ errors: 0, compiles: 0, dailyStats: 0, moduleStats: 0 });
+    expect(await pruneLogs({ now: NOW, env: {} })).toEqual({ errors: 0, compiles: 0, dailyStats: 0, moduleStats: 0, pageLoads: 0 });
   });
 
   it('honours BEACON_RETENTION_DAYS / BEACON_MAX_EVENTS_PER_APP for the error buffer', async () => {

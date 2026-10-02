@@ -34,6 +34,9 @@ export function PendingPanel({ pending, canEdit, busy }: { pending: PendingPanel
         Proposed{pending.proposedBy ? ` for ${pending.proposedBy}` : ''}
         {when ? ` · ${when}` : ''}. The config in force stays until it is confirmed.
       </p>
+      <p style={{ ...ui.small, margin: '0 0 0.6rem' }} data-testid="pending-scope">
+        Confirm applies everything listed here; Reject drops all of it. A change proposed while this one waits is added to it.
+      </p>
 
       <ul style={{ margin: '0 0 0.7rem', paddingLeft: '1.1rem' }}>
         {pending.changes.map((c) => (

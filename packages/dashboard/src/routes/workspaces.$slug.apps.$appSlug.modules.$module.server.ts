@@ -27,8 +27,8 @@
  *    `save-upstream`, `unassign-upstream` → a merge patch through the SAME
  *    configure path configure_module uses (the module's configSchema,
  *    confirmRequired, audit — actor `user`): a relaxation becomes a pending
- *    change rather than applying directly. Invalid → 400 with the errors at
- *    their fields;
+ *    change rather than applying directly, or joins the one that already
+ *    waits (`done=merged`). Invalid → 400 with the errors at their fields;
  *  - `confirm` / `reject` → the pending decision (audit module.confirm /
  *    module.reject, actor `user`);
  *  - `set-secret` (set or rotate) / `remove-secret` → the encrypted module
@@ -358,7 +358,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
         actorUserId: access.user.id,
         surface: 'web',
       });
-      return back(out.unchanged ? 'unchanged' : out.applied ? 'applied' : 'pending', out.applied ? err.anchor : '#pending');
+      return back(out.unchanged ? 'unchanged' : out.applied ? 'applied' : out.merged_with_pending ? 'merged' : 'pending', out.applied ? err.anchor : '#pending');
     } catch (e) {
       if (!isModuleError(e)) throw e;
       const issues = asObject(e.details).issues;

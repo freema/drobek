@@ -66,6 +66,8 @@ export interface RuntimeEntry {
   last_seen: string;
   /** The page the latest occurrence fired on (its host tells preview from production). */
   url: string;
+  /** The app version that page was served from (null = unknown, e.g. `module_job`). */
+  version: number | null;
   file_hint: string | null;
   /** The first lines of the latest stack (redacted), when the browser sent one. */
   stack: string | null;
@@ -91,11 +93,22 @@ export function runtimeEntries(errors: DedupedError[], stacks: Map<string, strin
       first_seen: e.firstSeen,
       last_seen: e.lastSeen,
       url: e.lastUrl,
+      version: e.lastVersion,
       file_hint: e.fileHint,
       stack: stackHead(stacks.get(e.dedupKey) ?? null),
       ...(e.module ? { module: e.module } : {}),
       ...(e.job ? { job: e.job } : {}),
     }));
+}
+
+// ── render signal ────────────────────────────────────────────────────────────
+
+/** What the beacon reported for one version: page loads and browser errors of its pages. */
+export interface RenderCounts {
+  /** Pages of the version that loaded in a browser (a count only). */
+  page_loads: number;
+  /** Browser errors (uncaught, resource, CSP) reported by pages of the version. */
+  errors: number;
 }
 
 // ── compile ──────────────────────────────────────────────────────────────────

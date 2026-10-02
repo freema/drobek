@@ -1,6 +1,6 @@
 {
-  "id": "d7de680a-a971-47b5-abd5-1177c7f37f00",
-  "prevId": "1393ab96-ca2b-4cac-8849-ec9fdc194894",
+  "id": "1393ab96-ca2b-4cac-8849-ec9fdc194894",
+  "prevId": "94e92256-f43a-4ca9-b405-6599825911e9",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -917,27 +917,6 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "app_versions_creator_created_idx": {
-          "name": "app_versions_creator_created_idx",
-          "columns": [
-            {
-              "expression": "created_by_user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}

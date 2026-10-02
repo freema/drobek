@@ -510,11 +510,16 @@ declare const apiKeys = pgTable('api_keys', {
 // dashboard Overview panels (viewer+; stored text is escaped on render).
 // A failed run of a module's per-app job lands here too (type
 // `module_job`, with `module` + `job`; server-side, redacted like the beacon's).
+// The beacon's own types: `error` / `unhandledrejection` (uncaught), `resource`
+// (a script, stylesheet, image or media file that failed to load) and `csp`
+// (a request the app CSP blocked).
 
 declare const appErrorTypeEnum = pgEnum('app_error_type', [
   'error',
   'unhandledrejection',
   'module_job',
+  'resource',
+  'csp',
 ]);
 
 declare const appErrors = pgTable(
@@ -542,10 +547,30 @@ declare const appErrors = pgTable(
     /** `module_job` rows: the module and its job that failed (null for browser errors). */
     module: text('module'),
     job: text('job'),
+    /** The app version the reporting page was served from (null = unknown; `module_job` rows). */
+    versionNumber: integer('version_number'),
     /** Server ingest time — the authoritative ordering + retention field. */
     createdAt: timestamp('created_at').notNull().defaultNow(),
   },
   (t) => [index('app_errors_app_created_idx').on(t.appId, t.createdAt)]
+);
+
+/**
+ * Page loads per app version, reported by the beacon once per page load
+ * (a count only — nothing about the visitor). Only a version the app has is
+ * counted; rows untouched for the get_logs retention are pruned.
+ */
+declare const appVersionLoads = pgTable(
+  'app_version_loads',
+  {
+    appId: text('app_id')
+      .notNull()
+      .references(() => apps.id, { onDelete: 'cascade' }),
+    versionNumber: integer('version_number').notNull(),
+    pageLoads: integer('page_loads').notNull().default(0),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.appId, t.versionNumber] })]
 );
 
 /**
@@ -920,6 +945,7 @@ declare const schema_appErrorTypeEnum: typeof appErrorTypeEnum;
 declare const schema_appErrors: typeof appErrors;
 declare const schema_appStatusEnum: typeof appStatusEnum;
 declare const schema_appVersionAssets: typeof appVersionAssets;
+declare const schema_appVersionLoads: typeof appVersionLoads;
 declare const schema_appVersions: typeof appVersions;
 declare const schema_appVisibilityEnum: typeof appVisibilityEnum;
 declare const schema_apps: typeof apps;
@@ -961,6 +987,7 @@ declare namespace schema {
     schema_appErrors as appErrors,
     schema_appStatusEnum as appStatusEnum,
     schema_appVersionAssets as appVersionAssets,
+    schema_appVersionLoads as appVersionLoads,
     schema_appVersions as appVersions,
     schema_appVisibilityEnum as appVisibilityEnum,
     schema_apps as apps,
