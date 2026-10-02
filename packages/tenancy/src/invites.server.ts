@@ -219,6 +219,20 @@ export async function revokeInvite(args: {
   return pendingInvite(args.inviteId, invite);
 }
 
+/**
+ * Drop every pending invite of a workspace that is being deleted: their links
+ * stop working at once → how many were removed. Not audited (the
+ * `workspace.delete` row covers it).
+ */
+export async function dropWorkspaceInvites(workspaceId: string): Promise<number> {
+  const redis = getRedis();
+  const index = await redis.hgetall(inviteIndexKey(workspaceId));
+  const tokens = Object.values(index).filter((t) => INVITE_TOKEN_RE.test(t));
+  const removed = tokens.length > 0 ? await redis.del(...tokens.map(inviteKey)) : 0;
+  await redis.del(inviteIndexKey(workspaceId));
+  return removed;
+}
+
 /** Accept keeps the HIGHER of (existing membership role, invited role). */
 export function resolveAcceptedRole(
   existing: WorkspaceRole | null,

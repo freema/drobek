@@ -53,6 +53,7 @@ import { createAssetUpload, deleteAssetTool, listAssetsTool } from './assets.js'
 import { addDomainTool, listDomainsTool, removeDomainTool, setPrimaryDomainTool, verifyDomainTool } from './domains.js';
 import { listUpstreamsTool, registerUpstreamTool, removeUpstreamTool } from './upstreams.js';
 import { listMembersTool, removeMemberTool, setMemberRoleTool } from './members.js';
+import { deleteWorkspaceTool } from './workspace-delete.js';
 import { setWorkspacePublishingTool } from './workspace-publishing.js';
 import { TEMPLATES } from './templates.js';
 
@@ -86,6 +87,7 @@ export const APP_TOOL_NAMES = [
   'list_members',
   'set_member_role',
   'remove_member',
+  'delete_workspace',
   'set_workspace_publishing',
 ] as const;
 
@@ -271,6 +273,13 @@ export const INPUT_SCHEMAS = {
     workspace: z.string().describe('The workspace slug.'),
     email: z.string().describe('The member to remove (list_members lists them); your own e-mail leaves the workspace.'),
     user_confirmed: z.boolean().optional().describe('true ONLY after the user explicitly said yes to this removal.'),
+  },
+  delete_workspace: {
+    workspace: z.string().describe('The team workspace slug; you need the workspace-admin role.'),
+    user_confirmed: z
+      .boolean()
+      .optional()
+      .describe('true ONLY after the user explicitly said yes to deleting this workspace with all its apps.'),
   },
   set_workspace_publishing: {
     workspace: z.string().describe('The workspace slug (list_apps all_workspaces lists every workspace).'),
@@ -504,6 +513,7 @@ export function registerAppTools(
   register('list_members', listMembersTool);
   register('set_member_role', setMemberRoleTool);
   register('remove_member', removeMemberTool);
+  register('delete_workspace', deleteWorkspaceTool);
   register('set_workspace_publishing', setWorkspacePublishingTool);
 
   if (registered === 0) {

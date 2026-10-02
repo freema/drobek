@@ -204,7 +204,7 @@ function AllWorkspaces({ workspaces }: { workspaces: readonly AdminWorkspaceRow[
 }
 
 export default function WorkspacesRoute() {
-  const { workspaces, superAdmin, allWorkspaces, left } =
+  const { workspaces, superAdmin, allWorkspaces, left, deleted } =
     useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const nav = useNavigation();
@@ -217,6 +217,12 @@ export default function WorkspacesRoute() {
         <p style={styles.ok} role="status" data-testid="workspace-left">
           You left the workspace /{left}. Its apps are no longer listed for you; to come back, a workspace admin has
           to invite you again.
+        </p>
+      ) : null}
+      {deleted ? (
+        <p style={styles.ok} role="status" data-testid="workspace-deleted">
+          The workspace /{deleted} was deleted with its apps, their data and its upstreams. Its members lost access,
+          its pending invites stopped working, and its apps&apos; addresses no longer answer.
         </p>
       ) : null}
       <p style={styles.hint}>

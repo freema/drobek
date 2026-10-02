@@ -94,6 +94,27 @@ This document is the map of how that works. The neighbours:
   workspace's apps are released too (also when a member becomes a viewer).
   Every change is audited (`member.role_change`, `member.remove`,
   `member.leave`, `member.invite_revoke`).
+- **Deleting a workspace or an account** goes through `@drobek/tenancy`
+  `deletion.server.ts`. A workspace admin deletes a team workspace after
+  typing its slug (`/workspaces/<slug>/delete`) or over MCP
+  (`delete_workspace` with `user_confirmed`): every app is soft-deleted (the
+  modules' `onAppDelete` runs, the app hosts drop it) and then purged at once
+  like the app purge job does, then the workspace row goes, and its
+  memberships, upstreams and module opt-ins go with it through `ON DELETE
+  CASCADE`. The row is locked first, and an app created meanwhile restarts the
+  pass; the pending invites are dropped from Redis. A user deletes their
+  account at `/me/delete` after a fresh e-mailed code (its own OTP scope),
+  only there: it deletes the personal workspace and every team workspace they
+  are the last member of the same way, leaves the others (releasing their
+  edit locks), deletes the `users` row (its API keys and OAuth codes and tokens
+  cascade) and every dashboard session (a SCAN over
+  `drobek:session:*`). It is refused while the user is the only
+  workspace-admin of a team workspace other members use. Authors stay
+  without a name: `app_versions.created_by_user_id`, `audit_log.actor_user_id`
+  and `upstreams.created_by` are set null. `audit_log.workspace_id` has no
+  foreign key, so a deleted workspace's audit rows stay until the audit
+  retention removes them; audited `workspace.delete`, `account.delete` and,
+  in each workspace left, `member.leave` with `reason: account_deleted`.
 - **Who may publish** (`PUBLISH_APPROVAL`, `open` by default, plus a
   super-admin's per-workspace state `default` / `allowed` / `blocked`,
   `workspaces.publish_approved_at` / `publish_blocked_at`): a super-admin

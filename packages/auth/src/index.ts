@@ -58,6 +58,7 @@ export {
   requireSessionUser,
   createUserSession,
   destroySession,
+  destroyUserSessions,
   type SessionUser,
 } from './session.server.js';
 export {

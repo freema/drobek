@@ -521,6 +521,20 @@ export const TOOL_DOCS: ToolDoc[] = [
     example: { workspace: 'acme-crew', email: 'jana@example.com', user_confirmed: true },
   },
   {
+    name: 'delete_workspace',
+    title: 'Delete a team workspace',
+    scope: 'write (workspace-admin role in the workspace)',
+    description:
+      'Delete a team workspace for good — what the dashboard\'s Delete workspace page does: every app in it is deleted with its versions, data, uploads and custom domains, and its addresses stop answering; every member loses access; its pending invites stop working; its upstreams go with their keys. It cannot be restored, so it needs `user_confirmed: true` — set it ONLY after the user explicitly said yes to deleting exactly this workspace with everything in it; without it the answer is user_confirmation_required with what would go (`apps`, `published`, `members`, `pending_invites`, `upstreams`), and nothing changes. A personal workspace answers personal_workspace: it goes only with its owner\'s account, which is deleted in the dashboard (Account → Delete account), never through MCP. The activity entries stay for the server operator. Audited `workspace.delete` with you as the agent.',
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    fields: [
+      { name: 'workspace', type: 'string', required: true, description: 'The team workspace slug.' },
+      { name: 'user_confirmed', type: 'boolean', required: false, description: 'true ONLY after the user explicitly said yes to deleting it.' },
+    ],
+    returns: '{ deleted:slug, apps:[slug], members, note }',
+    example: { workspace: 'acme-crew', user_confirmed: true },
+  },
+  {
     name: 'set_workspace_publishing',
     title: 'Set a workspace\'s publishing',
     scope: 'publish (super-admins of this server only)',

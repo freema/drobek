@@ -479,6 +479,17 @@ first), and a personal workspace's one member never changes
 (`personal_workspace`). Pending invites are on the dashboard's Members tab
 (`members_url`).
 
+A workspace admin deletes a whole team workspace with
+`delete_workspace({ workspace, user_confirmed })`. The first call without
+`user_confirmed` changes nothing and answers `user_confirmation_required`
+with what would go (`apps`, `published`, `members`, `pending_invites`,
+`upstreams`); call again with `user_confirmed: true` only after the user's
+explicit yes. Every app is deleted for good with its data and domains, and
+the members lose access at once. A personal workspace answers
+`personal_workspace`: it goes only with its owner's account, and deleting an
+account is a dashboard-only action (Account → Delete account), like API keys
+and connections.
+
 ## Errors
 
 A failed call returns `isError: true` with `{ code, message, hint }` — the

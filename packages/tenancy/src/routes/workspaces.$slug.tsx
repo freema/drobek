@@ -4,9 +4,10 @@
  * your role, the workspace tabs). Everyone sees the members; a workspace
  * admin of a team workspace also changes roles, removes members, sees and
  * revokes the pending invites and creates new ones (the form posts to
- * /workspaces/:slug/invite); a member of a team workspace can leave it.
+ * /workspaces/:slug/invite) and finds the way to deleting the workspace
+ * (/workspaces/:slug/delete); a member of a team workspace can leave it.
  */
-import { Form, useActionData, useLoaderData, useNavigation } from 'react-router';
+import { Form, Link, useActionData, useLoaderData, useNavigation } from 'react-router';
 import { WorkspacePage, controls } from '../layout.js';
 import type { action, loader } from './workspaces.$slug.server.js';
 
@@ -303,6 +304,20 @@ export default function WorkspaceDetailRoute() {
               </button>
             </Form>
           )}
+        </section>
+      ) : null}
+
+      {canManageMembers ? (
+        <section data-testid="delete-workspace">
+          <h2 style={styles.h2}>Delete this workspace</h2>
+          <p style={styles.hint}>
+            Deletes the workspace for good with all its apps — their versions, data and addresses — its upstreams and
+            pending invites. Every member loses access at once. The next page lists what goes and asks you to type the
+            workspace&apos;s slug.
+          </p>
+          <Link to={`/workspaces/${nav.slug}/delete`} style={controls.dangerButton} data-testid="delete-workspace-link">
+            Delete workspace…
+          </Link>
         </section>
       ) : null}
     </WorkspacePage>

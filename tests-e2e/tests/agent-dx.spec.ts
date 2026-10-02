@@ -40,6 +40,7 @@ const ALL_TOOLS = [
   'list_members',
   'set_member_role',
   'remove_member',
+  'delete_workspace',
 ];
 
 /** Retired tools — never advertised. */

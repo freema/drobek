@@ -96,7 +96,10 @@ const SUMMARIES: Record<string, Summarize> = {
     return `Changed a member’s role${from ? ` from ${from}` : ''}${to ? ` to ${to}` : ''}`;
   },
   'member.remove': (m) => `Removed a member${str(m, 'role') ? ` (${str(m, 'role')})` : ''} from the workspace`,
-  'member.leave': (m) => `A member${str(m, 'role') ? ` (${str(m, 'role')})` : ''} left the workspace`,
+  'member.leave': (m) =>
+    str(m, 'reason') === 'account_deleted'
+      ? `A member${str(m, 'role') ? ` (${str(m, 'role')})` : ''} deleted their account and left the workspace`
+      : `A member${str(m, 'role') ? ` (${str(m, 'role')})` : ''} left the workspace`,
   'member.invite_revoke': (m) => `Revoked a pending invite${str(m, 'role') ? ` for the ${str(m, 'role')} role` : ''}`,
   'module.configure': (m) => {
     const keys = Array.isArray(m.keys) ? m.keys.filter((k): k is string => typeof k === 'string') : [];
@@ -207,6 +210,12 @@ const SUMMARIES: Record<string, Summarize> = {
   'workspace.publish_revoke': () => 'The server operator took the publishing approval back',
   'workspace.publish_block': () => 'The server operator turned publishing off for this workspace',
   'workspace.publish_unblock': () => 'The server operator turned publishing back on for this workspace',
+  'workspace.delete': (m, e) => {
+    const apps = num(m, 'apps');
+    const what = `${e.subject ? `the workspace /${e.subject}` : 'the personal workspace'}${apps !== null ? ` with ${apps} app${apps === 1 ? '' : 's'}` : ''}`;
+    return m.with_account === true ? `Deleted ${what} together with the account` : `Deleted ${what}`;
+  },
+  'account.delete': () => 'Deleted the account',
 };
 
 /** One readable sentence for an audit event (unknown actions fall back to their name). */

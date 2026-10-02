@@ -2,7 +2,8 @@
  * /me — client half: the account page. Your workspaces (quick switch), how to
  * connect an agent (MCP URL + a short client picker, every snippet copyable),
  * which workspace the agent uses, a first prompt while that workspace is
- * empty, and where to manage access (Connections, API keys). Client-safe:
+ * empty, where to manage access (Connections, API keys) and the way to
+ * deleting the account (/me/delete). Client-safe:
  * data arrives shaped from ./me.server.ts.
  */
 import { useState, type CSSProperties } from 'react';
@@ -188,6 +189,18 @@ export default function MeRoute() {
             </li>
           ))}
         </ul>
+      </section>
+
+      <section style={styles.section} data-testid="me-delete-account">
+        <h2 style={styles.h2}>Delete your account</h2>
+        <p style={styles.hint}>
+          Deletes your account, your personal workspace with its apps and the team workspaces only you use, and ends
+          your sessions, API keys and agent connections. You leave the other workspaces; what you made there stays.
+          A code e-mailed to you confirms it.
+        </p>
+        <Link to="/me/delete" style={controls.dangerButton} data-testid="me-delete-account-link">
+          Delete account…
+        </Link>
       </section>
 
       <Form method="post" action="/auth/logout">

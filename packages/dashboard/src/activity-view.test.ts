@@ -39,9 +39,25 @@ describe('activitySummary', () => {
     expect(activitySummary(ev('member.remove', 'member', 'u_1', { role: 'editor' }))).toBe('Removed a member (editor) from the workspace');
     expect(activitySummary(ev('member.leave', 'member', 'u_1', { role: 'viewer' }))).toBe('A member (viewer) left the workspace');
     expect(activitySummary(ev('member.invite_revoke', 'member', null, { role: 'editor' }))).toBe('Revoked a pending invite for the editor role');
+    expect(activitySummary(ev('member.leave', 'member', 'u_1', { role: 'editor', reason: 'account_deleted' }))).toBe(
+      'A member (editor) deleted their account and left the workspace'
+    );
     expect(activitySummary(ev('member.role_change', 'member', 'u_1', { from: 'editor', to: 'viewer' }))).toBe(
       'Changed a member’s role from editor to viewer'
     );
+  });
+
+  it('reads a workspace and an account deletion', () => {
+    expect(activitySummary(ev('workspace.delete', 'workspace', 'acme', { apps: 2, members: 3 }))).toBe('Deleted the workspace /acme with 2 apps');
+    expect(activitySummary(ev('workspace.delete', 'workspace', 'solo', { apps: 1, members: 1, with_account: true }))).toBe(
+      'Deleted the workspace /solo with 1 app together with the account'
+    );
+    expect(activitySummary(ev('workspace.delete', 'workspace', null, { apps: 0, members: 1, with_account: true }))).toBe(
+      'Deleted the personal workspace with 0 apps together with the account'
+    );
+    expect(activitySummary(ev('account.delete', 'account', 'u_1', { workspaces_deleted: 1, workspaces_left: 0 }))).toBe('Deleted the account');
+    expect(activityRefs(ev('workspace.delete', 'workspace', 'acme', {}))).toEqual([]);
+    expect(activityRefs(ev('account.delete', 'account', 'u_1', {}))).toEqual([]);
   });
 
   it('reads a scheduled import run and a resume', () => {

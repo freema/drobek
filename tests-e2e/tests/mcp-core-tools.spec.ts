@@ -27,6 +27,7 @@ const ALL_TOOLS = [
   'create_app',
   'create_asset_upload',
   'delete_asset',
+  'delete_workspace',
   'duplicate_app',
   'get_app',
   'get_logs',
@@ -51,7 +52,7 @@ const ALL_TOOLS = [
 const READ_TOOLS = new Set(['list_apps', 'get_app', 'read_file', 'skill_info', 'query_data', 'get_logs', 'list_assets', 'list_domains', 'list_upstreams', 'list_members']);
 /** The domain tools that ask public DNS or change the public site. */
 const OPEN_WORLD_TOOLS = new Set(['sync_now', 'verify_domain', 'remove_domain']);
-const IDEMPOTENT_WRITES = new Set(['configure_module', 'delete_asset', 'add_domain', 'verify_domain', 'remove_domain', 'register_upstream', 'remove_upstream', 'set_member_role', 'remove_member']);
+const IDEMPOTENT_WRITES = new Set(['configure_module', 'delete_asset', 'add_domain', 'verify_domain', 'remove_domain', 'register_upstream', 'remove_upstream', 'set_member_role', 'remove_member', 'delete_workspace']);
 
 const TEMPLATE_FILES = ['drobek.json', 'index.html', 'src/main.tsx', 'src/styles.css'];
 

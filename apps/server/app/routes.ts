@@ -23,10 +23,14 @@ export default [
   // The account area — personal API keys + OAuth connections.
   route('me/api-keys', 'routes/me.api-keys.tsx'),
   route('me/connections', 'routes/me.connections.tsx'),
+  // Delete your account (a fresh e-mail code confirms it).
+  route('me/delete', 'routes/me.delete.tsx'),
   // Workspaces (personal+team) + roles + Redis invites.
   route('workspaces', 'routes/workspaces.tsx'),
   route('workspaces/:slug', 'routes/workspaces.$slug.tsx'),
   route('workspaces/:slug/invite', 'routes/workspaces.$slug.invite.tsx'),
+  // A workspace admin deletes a team workspace with its apps (type the slug).
+  route('workspaces/:slug/delete', 'routes/workspaces.$slug.delete.tsx'),
   route('invite/:token', 'routes/invite.$token.tsx'),
   // The workspace Activity view — the append-only audit
   // trail (who created/published/invited, and whether it was the agent

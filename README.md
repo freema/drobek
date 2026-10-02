@@ -318,7 +318,7 @@ the model), and for custom domains `list_domains`, `add_domain`,
 `verify_domain`, `set_primary_domain`, `remove_domain`, and for the proxy
 module's external APIs `list_upstreams`, `register_upstream`,
 `remove_upstream`, for a workspace's members `list_members`,
-`set_member_role`, `remove_member`, and `sync_now` for the sync module's scheduled imports (a super-admin also gets `set_workspace_publishing`). The full agent contract (scopes,
+`set_member_role`, `remove_member`, `delete_workspace`, and `sync_now` for the sync module's scheduled imports (a super-admin also gets `set_workspace_publishing`). The full agent contract (scopes,
 the briefing, skills, `/llms.txt`) is [`docs/AGENT.md`](./docs/AGENT.md); a
 running server serves it at `/llms.txt`, `/llms-full.txt` and
 `/build-with-your-agent`. To teach an agent the loop without the plugin:

@@ -54,6 +54,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
     docsUrl: docPageUrl('overview'),
     googleError:
       url.searchParams.get('error') === 'google' ? GENERIC_GOOGLE_ERROR : null,
+    // The redirect after /me/delete.
+    accountDeleted: url.searchParams.get('deleted') === 'account',
   };
   if (returnTo) {
     return data(body, {

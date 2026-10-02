@@ -1,4 +1,4 @@
 export * from './schema.js';
 export { getDb, getSql, healthDbPing, closeDb, setDbForTests, type DB } from './client.js';
 export { runCoreMigrations, runJournalMigrations } from './migrate.js';
-export { pgErrorCode, isUniqueViolation, dbErrorForLog } from './errors.js';
+export { pgErrorCode, isUniqueViolation, isForeignKeyViolation, dbErrorForLog } from './errors.js';

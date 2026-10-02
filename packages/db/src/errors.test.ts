@@ -2,7 +2,7 @@ import { PGlite } from '@electric-sql/pglite';
 import { sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { dbErrorForLog, isUniqueViolation, pgErrorCode } from './errors.js';
+import { dbErrorForLog, isForeignKeyViolation, isUniqueViolation, pgErrorCode } from './errors.js';
 
 const EMAIL = 'bob.secret@corp.example';
 
@@ -24,6 +24,8 @@ beforeAll(async () => {
   db = drizzle(pg);
   await pg.exec('create table people (id text primary key, email text not null constraint people_email_unique unique, n int)');
   await db.execute(sql`insert into people (id, email, n) values ('a', ${EMAIL}, 1)`);
+  await pg.exec('create table pets (id text primary key, owner text not null references people (id))');
+  await pg.exec("insert into pets (id, owner) values ('p', 'a')");
 });
 
 afterAll(async () => {
@@ -35,6 +37,14 @@ describe('real driver errors (PGlite through drizzle)', () => {
     const err = await failing(sql`insert into people (id, email, n) values ('b', ${EMAIL}, 2)`);
     expect(pgErrorCode(err)).toBe('23505');
     expect(isUniqueViolation(err)).toBe(true);
+    expect(isForeignKeyViolation(err)).toBe(false);
+  });
+
+  it('reads SQLSTATE 23503 of a foreign-key violation', async () => {
+    const err = await failing(sql`delete from people where id = 'a'`);
+    expect(pgErrorCode(err)).toBe('23503');
+    expect(isForeignKeyViolation(err)).toBe(true);
+    expect(isUniqueViolation(err)).toBe(false);
   });
 
   it('drizzle ≥ 0.44 wraps the driver error: no code on the wrapper, the bound values in its message', async () => {

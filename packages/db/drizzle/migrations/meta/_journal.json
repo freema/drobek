@@ -204,6 +204,13 @@
       "when": 1790943594501,
       "tag": "0033_app_purge",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1790947732244,
+      "tag": "0034_workspace_account_delete",
+      "breakpoints": true
     }
   ]
 }

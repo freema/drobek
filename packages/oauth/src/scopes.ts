@@ -14,7 +14,8 @@
  *             configure platform modules, upload (upload URLs) and delete assets,
  *             add, verify and remove custom domains, register and
  *             remove proxy upstreams without a secret, change a member's
- *             role, remove a member or leave a workspace.
+ *             role, remove a member or leave a workspace, delete a team
+ *             workspace.
  *   publish — make a version live at its public URL (the `publish` tool),
  *             list it in the public gallery (`set_gallery_listing`) and
  *             choose the primary domain the production address redirects to
@@ -106,6 +107,8 @@ export const TOOL_SCOPES = {
   list_members: 'read',
   set_member_role: 'write',
   remove_member: 'write',
+  // Deleting a team workspace changes what exists, like the other workspace-admin tools.
+  delete_workspace: 'write',
   publish: 'publish',
   // Listing in the public gallery is public exposure, like publishing.
   set_gallery_listing: 'publish',

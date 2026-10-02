@@ -5,7 +5,8 @@
  * list_assets, delete_asset, set_gallery_listing, the custom-domain tools (list_domains,
  * add_domain, verify_domain, set_primary_domain, remove_domain), the proxy
  * upstream tools (list_upstreams, register_upstream, remove_upstream), the
- * member tools (list_members, set_member_role, remove_member) and — for a
+ * member tools (list_members, set_member_role, remove_member),
+ * delete_workspace and — for a
  * super-admin only — set_workspace_publishing. @drobek/oauth keeps the
  * Streamable HTTP transport, sessions and Bearer auth and delegates tool
  * registration here (`registerAppTools`).

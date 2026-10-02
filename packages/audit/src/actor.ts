@@ -59,6 +59,14 @@ export const AUDIT_ACTIONS = {
   memberLeave: 'member.leave',
   /** A workspace admin revoked a pending invite (meta: its role, never the address). */
   memberInviteRevoke: 'member.invite_revoke',
+  /**
+   * A workspace was deleted with its apps (target = its slug; meta: app and
+   * member counts, `with_account` when its owner's account deletion took it).
+   * Written to the deleted workspace's own trail and to the actor's personal workspace.
+   */
+  workspaceDelete: 'workspace.delete',
+  /** A user deleted their account (target = the user id; meta: the workspaces deleted with it, the ones left). */
+  accountDelete: 'account.delete',
   /** `configure_module` applied a module config change directly. */
   moduleConfigure: 'module.configure',
   /** `configure_module` stored a change that needs the owner's confirmation. */
@@ -194,8 +202,10 @@ export const AUDIT_SUBJECT_TYPES = {
   domain: 'domain',
   /** A platform module of the workspace (target = the module name). */
   module: 'module',
-  /** The workspace itself (target = its slug) — publish approval. */
+  /** The workspace itself (target = its slug) — publish approval, deletion. */
   workspace: 'workspace',
+  /** A drobek account (target = its user id) — its deletion. */
+  account: 'account',
 } as const;
 
 export type AuditSubjectType =

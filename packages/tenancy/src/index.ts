@@ -73,6 +73,28 @@ export {
   type RoleChangeResult,
 } from './members.server.js';
 export {
+  DeletionError,
+  accountDeletionPlan,
+  assertWorkspaceDeletable,
+  deleteAccount,
+  deleteWorkspace,
+  workspaceDeletionSummary,
+  type AccountDeletionPlan,
+  type AccountWorkspace,
+  type AppDeletionHooks,
+  type DeletedAccount,
+  type DeletedWorkspace,
+  type DeletionErrorCode,
+  type WorkspaceDeleteActor,
+  type WorkspaceDeletionSummary,
+} from './deletion.server.js';
+export {
+  ACCOUNT_DELETE_OTP_SCOPE,
+  checkAccountDeleteCode,
+  sendAccountDeleteCode,
+  type AccountDeleteCodeResult,
+} from './account-code.server.js';
+export {
   renderInviteEmail,
   sendInviteEmail,
   type InviteEmailVars,

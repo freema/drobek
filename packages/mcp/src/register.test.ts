@@ -284,6 +284,13 @@ describe('tools/list', () => {
         properties: ['workspace', 'email', 'user_confirmed'],
         required: ['workspace', 'email'],
       },
+      {
+        name: 'delete_workspace',
+        title: 'Delete a team workspace',
+        annotations: { title: 'Delete a team workspace', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+        properties: ['workspace', 'user_confirmed'],
+        required: ['workspace'],
+      },
     ]);
     const create = tools.find((t) => t.name === 'create_app')!;
     expect((create.inputSchema.properties as Record<string, { enum?: string[] }>).template.enum).toEqual([
@@ -295,8 +302,8 @@ describe('tools/list', () => {
 
   it('a super-admin also gets set_workspace_publishing, last', async () => {
     const tools = await listTools(undefined, true);
-    expect(tools).toHaveLength(29);
-    const last = tools[28];
+    expect(tools).toHaveLength(30);
+    const last = tools[29];
     expect(last.name).toBe('set_workspace_publishing');
     expect(last.annotations).toEqual({
       title: 'Set a workspace\'s publishing',

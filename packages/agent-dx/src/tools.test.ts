@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { TOOL_DOCS, TOOL_NAMES, toolDoc } from './tools.js';
 
 describe('TOOL_DOCS manifest', () => {
-  it('documents exactly the 29 tools, in tools/list order', () => {
+  it('documents exactly the 30 tools, in tools/list order', () => {
     expect(TOOL_NAMES).toEqual([
       'list_apps',
       'create_app',
@@ -32,6 +32,7 @@ describe('TOOL_DOCS manifest', () => {
       'list_members',
       'set_member_role',
       'remove_member',
+      'delete_workspace',
       'set_workspace_publishing',
     ]);
   });
@@ -88,6 +89,7 @@ describe('TOOL_DOCS manifest', () => {
       list_members: [true, false, true, false],
       set_member_role: [false, false, true, false], // the same role again answers changed:false
       remove_member: [false, true, true, false], // the member loses access; a second remove answers not_found
+      delete_workspace: [false, true, true, false], // everything in it goes; a second call answers not_found
       set_workspace_publishing: [false, false, true, false], // who may publish; the same call again answers changed:false
     };
     expect(Object.keys(table)).toEqual(TOOL_NAMES);
@@ -173,6 +175,17 @@ describe('TOOL_DOCS manifest', () => {
       expect(toolDoc(name).description, name).toMatch(/personal_workspace/);
       expect(toolDoc(name).returns, name).toContain('released_locks');
     }
+  });
+
+  it('delete_workspace needs the user\'s explicit yes, and account deletion stays in the dashboard', () => {
+    const doc = toolDoc('delete_workspace');
+    expect(doc.scope).toMatch(/^write \(workspace-admin/);
+    expect(doc.fields.map((f) => f.name)).toEqual(['workspace', 'user_confirmed']);
+    expect(doc.description).toMatch(/user_confirmed: true/);
+    expect(doc.description).toMatch(/ONLY after the user explicitly said yes/);
+    expect(doc.description).toMatch(/personal_workspace/);
+    expect(doc.description).toMatch(/never through MCP/);
+    expect(TOOL_NAMES.some((n) => /account/.test(n))).toBe(false);
   });
 
   it('publish is documented as explicit-request only, with the publish scope', () => {

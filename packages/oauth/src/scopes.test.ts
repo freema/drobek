@@ -66,6 +66,7 @@ const WRITE_TOOLS = [
   'remove_upstream',
   'set_member_role',
   'remove_member',
+  'delete_workspace',
 ];
 const PUBLISH_TOOLS = ['publish', 'set_gallery_listing', 'set_primary_domain', 'set_workspace_publishing'];
 
