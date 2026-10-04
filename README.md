@@ -28,6 +28,15 @@ hosts what it writes.
 **[Gallery](https://www.drobek.app/gallery)** ·
 **[Docs](https://www.drobek.app/docs)**
 
+## Watch drobek in 33 seconds
+
+See an AI agent write an app over MCP, fix a compile error, open a live preview
+and publish the finished version.
+
+[![Watch the 33-second drobek demo: an agent compiles, previews and publishes a Pixel Wall app](./docs/assets/drobek-demo-poster.png)](https://youtu.be/TGG5SZ091hg)
+
+**[Watch the demo on YouTube →](https://youtu.be/TGG5SZ091hg)**
+
 MCP Registry name: [`io.github.freema/drobek`](./server.json). The hosted
 Streamable HTTP endpoint is `https://drobek.app/mcp` and uses OAuth 2.1.
 
