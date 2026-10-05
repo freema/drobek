@@ -246,7 +246,7 @@ async function refuseOverVersionRate(ctx: CallContext, limits: VersionRateLimits
   }
 }
 
-/** The not_found of a version the app does not have — saying so when the history retention deleted it. */
+/** The not_found of a version the app does not have — saying so when the history retention or a clean-up deleted it. */
 export async function missingVersion(ctx: CallContext, app: AppRow, number: number, keep?: number): Promise<ToolError> {
   const k = keep ?? versionStorageLimitsOf(await ctx.modules.workspaceLimits(app.workspaceId), ctx.deps.env).keep;
   return new ToolError('not_found', await missingVersionMessage(app.id, number, { keep: k }));
@@ -403,7 +403,7 @@ function publishOut(p: { allowed: boolean; contact: string | null; publishing: W
 export async function getApp(ctx: CallContext, args: { app_id: string }) {
   const { app } = await authorizeApp(ctx.principal, args.app_id, 'viewer');
   const { items, latest, locks } = await summarize([app], ctx.deps);
-  const versions = await listVersions(app.id, { limit: 20 });
+  const { versions } = await listVersions(app.id, { limit: 20 });
   const head = latest.get(app.id);
   const detail = head ? await getVersion(app.id, { id: head.id }) : null;
   const lock = locks.get(app.id);

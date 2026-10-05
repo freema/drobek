@@ -61,7 +61,7 @@ test('APP_VERSIONS_KEEP: get_app and the dashboard state what is kept; a deleted
     expect(read.isError).toBe(true);
     expect(read.json.code).toBe('not_found');
     expect(String(read.json.message)).toBe(
-      'Version 1 is no longer stored: the history retention deleted it. An app keeps its newest 2 versions, the published one and those kept for a rollback; the oldest version still stored is 2.'
+      "Version 1 is no longer stored: the history retention or a member's clean-up deleted it. An app keeps its newest 2 versions, the published one, the kept ones and those kept for a rollback; the oldest version still stored is 2."
     );
     expect(String(read.json.hint)).toContain('a version the retention deleted cannot be brought back');
     const restored = await callTool(mcp.client, 'restore_version', { app_id: appId, version: 1 });

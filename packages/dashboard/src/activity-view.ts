@@ -70,6 +70,22 @@ const SUMMARIES: Record<string, Summarize> = {
     const range = from !== null && to !== null ? (from === to ? ` (version ${from})` : ` (versions ${from}–${to})`) : '';
     return `The history retention deleted ${count !== null ? plural(count, 'old version') : 'old versions'}${range}`;
   },
+  'app.versions.delete': (m) => {
+    const count = num(m, 'count');
+    const from = num(m, 'from');
+    const to = num(m, 'to');
+    const range = from !== null && to !== null ? (from === to ? ` (version ${from})` : ` (versions ${from}–${to})`) : '';
+    const what = m.failedOnly === true ? 'failed build' : 'old version';
+    return `Deleted ${count !== null ? plural(count, what) : `${what}s`}${range}`;
+  },
+  'app.version.keep': (m) => {
+    const v = num(m, 'version');
+    return `Kept ${v !== null ? `version ${v}` : 'a version'} — the history clean-up leaves it alone`;
+  },
+  'app.version.unkeep': (m) => {
+    const v = num(m, 'version');
+    return `Stopped keeping ${v !== null ? `version ${v}` : 'a version'}`;
+  },
   'app.publish': (m) => {
     const v = num(m, 'version');
     const prev = num(m, 'previousVersion');
@@ -261,6 +277,8 @@ export type ActivityRef =
 const VERSION_KEY: Record<string, string> = {
   'app.version.write': 'version',
   'app.version.restore': 'version',
+  'app.version.keep': 'version',
+  'app.version.unkeep': 'version',
   'app.publish': 'version',
   'app.unpublish': 'previousVersion',
 };

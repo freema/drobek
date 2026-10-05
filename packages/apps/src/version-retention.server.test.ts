@@ -13,6 +13,8 @@ import { appVersions, auditLog, blobs, users, versionFiles, workspaces } from '@
 import {
   AppsError,
   DEFAULT_APP_VERSIONS_KEEP,
+  DEFAULT_APP_VERSIONS_KEPT_MAX,
+  DEFAULT_APP_VERSIONS_PAGE,
   DEFAULT_WORKSPACE_SOURCE_QUOTA,
   assertSourceQuota,
   createApp,
@@ -24,6 +26,7 @@ import {
   softDeleteApp,
   sweepUnreferencedBlobs,
   versionRetention,
+  versionsPageSize,
   versionStorageLimits,
   versionStorageLimitsOf,
   workspaceSourceBytes,
@@ -88,15 +91,35 @@ const keepFor =
   };
 
 describe('versionStorageLimits', () => {
-  it('reads APP_VERSIONS_KEEP / WORKSPACE_SOURCE_QUOTA, else the production defaults; a plan wins over the env', () => {
+  it('reads APP_VERSIONS_KEEP / APP_VERSIONS_KEPT_MAX / WORKSPACE_SOURCE_QUOTA, else the production defaults; a plan wins over the env', () => {
     expect(DEFAULT_APP_VERSIONS_KEEP).toBe(200);
+    expect(DEFAULT_APP_VERSIONS_KEPT_MAX).toBe(20);
     expect(DEFAULT_WORKSPACE_SOURCE_QUOTA).toBe(1073741824);
-    expect(versionStorageLimits({})).toEqual({ keep: 200, sourceQuota: 1073741824 });
-    expect(versionStorageLimits({ APP_VERSIONS_KEEP: ' 50 ', WORKSPACE_SOURCE_QUOTA: '1048576' })).toEqual({ keep: 50, sourceQuota: 1048576 });
+    expect(versionStorageLimits({})).toEqual({ keep: 200, keptMax: 20, sourceQuota: 1073741824 });
+    expect(versionStorageLimits({ APP_VERSIONS_KEEP: ' 50 ', APP_VERSIONS_KEPT_MAX: '5', WORKSPACE_SOURCE_QUOTA: '1048576' })).toEqual({
+      keep: 50,
+      keptMax: 5,
+      sourceQuota: 1048576,
+    });
     for (const bad of ['0', '-3', '2.5', 'lots', '']) {
-      expect(versionStorageLimits({ APP_VERSIONS_KEEP: bad, WORKSPACE_SOURCE_QUOTA: bad })).toEqual({ keep: 200, sourceQuota: 1073741824 });
+      expect(versionStorageLimits({ APP_VERSIONS_KEEP: bad, APP_VERSIONS_KEPT_MAX: bad, WORKSPACE_SOURCE_QUOTA: bad })).toEqual({
+        keep: 200,
+        keptMax: 20,
+        sourceQuota: 1073741824,
+      });
     }
-    expect(versionStorageLimitsOf({ APP_VERSIONS_KEEP: 20 }, { WORKSPACE_SOURCE_QUOTA: '999' })).toEqual({ keep: 20, sourceQuota: 999 });
+    expect(versionStorageLimitsOf({ APP_VERSIONS_KEEP: 20, APP_VERSIONS_KEPT_MAX: 3 }, { WORKSPACE_SOURCE_QUOTA: '999' })).toEqual({
+      keep: 20,
+      keptMax: 3,
+      sourceQuota: 999,
+    });
+  });
+
+  it('reads APP_VERSIONS_PAGE, else 20', () => {
+    expect(DEFAULT_APP_VERSIONS_PAGE).toBe(20);
+    expect(versionsPageSize({})).toBe(20);
+    expect(versionsPageSize({ APP_VERSIONS_PAGE: '50' })).toBe(50);
+    expect(versionsPageSize({ APP_VERSIONS_PAGE: '0' })).toBe(20);
   });
 });
 
@@ -199,7 +222,7 @@ describe('the retention (APP_VERSIONS_KEEP)', () => {
     expect(err).toBeInstanceOf(AppsError);
     expect(err.code).toBe('not_found');
     expect(err.message).toBe(
-      'Version 1 is no longer stored: the history retention deleted it. An app keeps its newest versions, the published one and those kept for a rollback; the oldest version still stored is 4.'
+      "Version 1 is no longer stored: the history retention or a member's clean-up deleted it. An app keeps its newest versions, the published one, the kept ones and those kept for a rollback; the oldest version still stored is 4."
     );
     expect(await missingVersionMessage(app.id, 3, { keep: 2 })).toContain('An app keeps its newest 2 versions');
     expect(await missingVersionMessage(app.id, 9)).toBe('Version 9 does not exist — the newest version is 5.');

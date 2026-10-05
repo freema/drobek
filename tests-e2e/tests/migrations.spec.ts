@@ -67,6 +67,14 @@ test('core drizzle journal applied and core tables exist @local', async () => {
     expect(appCols).not.toContain('active_deploy_id');
     expect(appCols).not.toContain('routing_mode');
 
+    // A member can keep a version: who kept it and when.
+    const versionCols = await client.query(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'app_versions'`
+    );
+    const vCols = versionCols.rows.map((r: { column_name: string }) => r.column_name);
+    expect(vCols).toEqual(expect.arrayContaining(['kept_at', 'kept_by_user_id']));
+
     // The data module owns its records table (its own journal).
     const mod = await client.query(
       `SELECT count(*)::int AS n FROM drizzle.__drizzle_migrations_mod_data`

@@ -32,6 +32,7 @@ import {
   DEFAULT_APP_ASSETS_QUOTA,
   DEFAULT_APP_ASSET_MAX_BYTES,
   DEFAULT_APP_VERSIONS_KEEP,
+  DEFAULT_APP_VERSIONS_KEPT_MAX,
   DEFAULT_VERSIONS_PER_APP_HOUR,
   DEFAULT_VERSIONS_PER_USER_HOUR,
   DEFAULT_WORKSPACE_SOURCE_QUOTA,
@@ -119,7 +120,12 @@ export const CORE_LIMITS: readonly CatalogueLimit[] = Object.freeze([
   {
     env: 'APP_VERSIONS_KEEP',
     default: DEFAULT_APP_VERSIONS_KEEP,
-    meaning: 'The newest versions of each app the hourly history retention keeps; older ones are deleted, except the published one, those kept for a rollback, the one the preview serves and the last hour\'s.',
+    meaning: 'The newest versions of each app the hourly history retention keeps; older ones are deleted, except the published one, the one the preview serves, the kept ones, those kept for a rollback and the last hour\'s.',
+  },
+  {
+    env: 'APP_VERSIONS_KEPT_MAX',
+    default: DEFAULT_APP_VERSIONS_KEPT_MAX,
+    meaning: 'Versions of one app its members may keep (the retention and a clean-up leave them alone); keeping one more answers limit_exceeded. A lower value leaves the versions already kept alone.',
   },
   {
     env: 'WORKSPACE_SOURCE_QUOTA',

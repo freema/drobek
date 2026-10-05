@@ -1663,7 +1663,8 @@ default. Besides every active module's `limits`, the catalogue holds the
 | `APP_ASSETS_QUOTA` | 1073741824 | bytes of all assets of one app (1 GiB); past it `asset_quota_exceeded` |
 | `VERSIONS_PER_APP_HOUR` | 600 | new versions of one app within the last hour — `write_files`, `create_app`, `restore_version`, `duplicate_app` and the dashboard's Restore together; past it `rate_limited` with `limit` / `value` / `retry_after_seconds`, nothing stored |
 | `VERSIONS_PER_USER_HOUR` | 1200 | new versions one person makes within the last hour, in every app and workspace (the plan of the workspace being written applies); past it `rate_limited` like above |
-| `APP_VERSIONS_KEEP` | 200 | the newest versions of each app the hourly history retention keeps; older ones are deleted, except the published one, those kept for a rollback, the one the preview serves and those from the last hour. While the provider does not answer for a workspace, the retention leaves it alone |
+| `APP_VERSIONS_KEEP` | 200 | the newest versions of each app the hourly history retention keeps; older ones are deleted, except the published one, the one the preview serves, the kept ones, those kept for a rollback and those from the last hour. While the provider does not answer for a workspace, the retention leaves it alone |
+| `APP_VERSIONS_KEPT_MAX` | 20 | versions of one app its members may keep; keeping one more answers `limit_exceeded` with `limit` / `value`; a lower value leaves the versions already kept alone |
 | `WORKSPACE_SOURCE_QUOTA` | 1073741824 | bytes of the unique files (sources and build output) the versions of a workspace's live apps store (1 GiB); a version whose new bytes do not fit answers `limit_exceeded` with `limit` / `value` / `used_bytes`, nothing stored |
 
 `ModuleRuntime.workspaceLimits(workspaceId)` returns a workspace's effective

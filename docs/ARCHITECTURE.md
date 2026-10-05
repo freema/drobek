@@ -188,14 +188,18 @@ This document is the map of how that works. The neighbours:
   no branches.
 - **History retention**: an app keeps its newest `APP_VERSIONS_KEEP` versions
   (default 200; a limits provider may set it per workspace). The hourly
-  retention job deletes older ones, except the published version, a version
-  whose asset set is kept for a rollback (`assets_frozen_at`), the newest
-  version that compiled (the one the preview serves) and versions from the
-  last hour (they still count against the version rate). It works app by app
-  under the app's row lock, in batches, audits each batch as
-  `app.versions.prune` (a system action, shown in Activity) and busts the
-  serve cache; `version_files` go with their version and the blob GC frees
-  the bytes. Version numbers are never reused, so a missing number below the
+  retention job deletes older ones, except the published version, the newest
+  version that compiled (the one the preview serves), a version a member
+  keeps (`kept_at`, at most `APP_VERSIONS_KEPT_MAX` per app), a version whose
+  asset set is kept for a rollback (`assets_frozen_at`), the newest version
+  and versions from the last hour (they still count against the version
+  rate). A member's clean-up (`deleteVersions`: every version up to a number,
+  or only the failed builds) leaves the same versions alone — one SQL rule
+  serves both. Both work app by app under the app's row lock, in batches,
+  audit each batch (`app.versions.prune`, a system action; `app.versions.delete`,
+  the member — shown in Activity) and bust the serve cache; `version_files`
+  go with their version and the blob GC frees the bytes. Version numbers are
+  never reused, so a missing number below the
   newest one was deleted: `read_file`, `restore_version` and `publish` answer
   `not_found` with "is no longer stored" and the oldest version still stored.
   `get_app` (`version_retention`) and the dashboard's version history state
@@ -558,7 +562,7 @@ query:
 
 | Job | Interval | What |
 | --- | --- | --- |
-| version retention | hourly, Redis lease | deletes the versions of each app past its workspace's `APP_VERSIONS_KEEP` (200) — never the published one, a rollback set, the one the preview serves or the last hour's; skips a workspace whose limits provider does not answer (`@drobek/apps`) |
+| version retention | hourly, Redis lease | deletes the versions of each app past its workspace's `APP_VERSIONS_KEEP` (200) — never the published one, the one the preview serves, a kept one, a rollback set or the last hour's; skips a workspace whose limits provider does not answer (`@drobek/apps`) |
 | blob GC | hourly, Redis lease | deletes blobs no version references, after 7 days |
 | slug release | hourly, Redis lease | a soft-deleted app's slug is free again after 30 days |
 | app purge | `APP_PURGE_INTERVAL_MS` (1 h), Redis lease | deletes an app deleted `APP_PURGE_AFTER_DAYS` (30) ago for good, one app per transaction: the `apps` row and through `ON DELETE CASCADE` its versions (their blobs go with the blob GC), module configs and secrets, domains, asset rows, gallery likes and opens, logs and statistics, and the module tables (records, form submissions, end users and identities, uploads, sync state); abuse reports and duplicates keep their rows without the reference; its id leaves `upstreams.allowed_app_ids`, its asset directory and end-user sessions go; audited `app.purge`. An app a foreign key without `ON DELETE` holds is logged and retried every run (`@drobek/apps`) |

@@ -282,6 +282,13 @@ declare const appVersions = pgTable(
      */
     typecheck: jsonb('typecheck'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
+    /**
+     * Set while a member keeps this version: neither the history retention
+     * nor a clean-up deletes it. Null = not kept.
+     */
+    keptAt: timestamp('kept_at'),
+    /** Who kept it; null once their account is deleted (the version stays kept). */
+    keptByUserId: text('kept_by_user_id').references(() => users.id, { onDelete: 'set null' }),
   },
   (t) => [
     uniqueIndex('app_versions_app_number_uq').on(t.appId, t.number),

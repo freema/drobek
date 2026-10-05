@@ -225,6 +225,13 @@
       "when": 1790947900000,
       "tag": "0036_app_versions_creator_idx",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1790948000000,
+      "tag": "0037_app_versions_kept",
+      "breakpoints": true
     }
   ]
 }

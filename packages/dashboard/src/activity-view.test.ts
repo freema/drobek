@@ -36,6 +36,17 @@ describe('activitySummary', () => {
     expect(activitySummary(ev('app.versions.prune', 'app', 'x', { versions: 1, from: 3, to: 3 }))).toBe(
       'The history retention deleted 1 old version (version 3)'
     );
+    expect(activitySummary(ev('app.versions.delete', 'app', 'x', { count: 30, from: 3, to: 41, failedOnly: false }))).toBe(
+      'Deleted 30 old versions (versions 3–41)'
+    );
+    expect(activitySummary(ev('app.versions.delete', 'app', 'x', { count: 1, from: 5, to: 5, failedOnly: true }))).toBe(
+      'Deleted 1 failed build (version 5)'
+    );
+    expect(activitySummary(ev('app.version.keep', 'app', 'x', { version: 12 }))).toBe(
+      'Kept version 12 — the history clean-up leaves it alone'
+    );
+    expect(activitySummary(ev('app.version.unkeep', 'app', 'x', { version: 12 }))).toBe('Stopped keeping version 12');
+    expect(activityRefs(ev('app.version.keep', 'app', 'x', { version: 12 }))).toContainEqual({ kind: 'version', slug: 'x', number: 12 });
     expect(activitySummary(ev('domain.add', 'domain', 'shop.example.com', { app: 'x' }))).toBe('Added the custom domain shop.example.com');
     expect(activitySummary(ev('app.gallery_unlisted', 'app', 'x', { reason: 'takedown' }))).toContain('taken down');
     expect(activitySummary(ev('app.purge', 'app', 'x', { appId: 'app_0' }))).toBe('Deleted the app’s versions and data for good');

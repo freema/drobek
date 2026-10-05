@@ -56,7 +56,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const page = await loadAppPage(request, params, 'viewer');
   const { app } = page;
 
-  const raw = await listVersions(app.id, { limit: 100 });
+  const { versions: raw } = await listVersions(app.id, { limit: 100 });
   const keep = versionStorageLimitsOf(await (await moduleRuntime()).workspaceLimits(app.workspaceId)).keep;
   const [header, emails, errors, logs, readiness, retention] = await Promise.all([
     appHeaderData(page),

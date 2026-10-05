@@ -23,6 +23,7 @@ export {
   getVersion,
   latestVersionNumber,
   listVersions,
+  pinnedVersions,
   publish,
   readBlobs,
   readVersionFile,
@@ -40,24 +41,35 @@ export {
   versionRateLimitsOf,
   type VersionRateLimits,
 } from './version-rate.server.js';
-// The history retention (APP_VERSIONS_KEEP) and the workspace's source quota (WORKSPACE_SOURCE_QUOTA).
+// The history retention (APP_VERSIONS_KEEP), a member's clean-up, the kept cap (APP_VERSIONS_KEPT_MAX),
+// the history page (APP_VERSIONS_PAGE) and the workspace's source quota (WORKSPACE_SOURCE_QUOTA).
 export {
   DEFAULT_APP_VERSIONS_KEEP,
+  DEFAULT_APP_VERSIONS_KEPT_MAX,
+  DEFAULT_APP_VERSIONS_PAGE,
   DEFAULT_WORKSPACE_SOURCE_QUOTA,
   VERSION_RETENTION_INTERVAL_MS,
   assertSourceQuota,
+  deleteVersions,
   missingVersionMessage,
+  planVersionDeletion,
   pruneVersionHistory,
   startVersionRetention,
+  versionRanges,
   versionRetention,
+  versionsPageSize,
   versionStorageLimits,
   versionStorageLimitsOf,
   workspaceSourceBytes,
   type PruneVersionHistoryOptions,
+  type VersionDeletion,
+  type VersionDeletionOptions,
+  type VersionProtection,
   type VersionPruneResult,
   type VersionRetentionInfo,
   type VersionStorageLimits,
 } from './version-retention.server.js';
+export { keepVersion, type KeepVersionOptions, type KeepVersionResult } from './version-keep.server.js';
 export { versionReadiness, versionSources, type VersionReadinessOptions } from './readiness.server.js';
 export { scheduleVersionTypecheck } from './typecheck.server.js';
 export { crc32, zipStream, type ZipEntry } from './zip.js';
@@ -199,6 +211,7 @@ export type {
   VersionFile,
   VersionFileInput,
   VersionFileKind,
+  VersionPage,
   VersionSummary,
 } from './types.js';
 // The public gallery (owner opt-in, super-admin hide, the public list).

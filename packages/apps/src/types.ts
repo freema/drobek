@@ -35,6 +35,21 @@ export interface VersionSummary {
   createdAt: Date;
   /** True when `apps.published_version_id` points at this version. */
   published: boolean;
+  /** True for the newest version that compiled — the one the preview host serves. */
+  preview: boolean;
+  /** True while a member keeps the version (the retention and a clean-up leave it alone). */
+  kept: boolean;
+  /** When it was kept; null when it is not. */
+  keptAt: Date | null;
+  /** Who kept it; null when it is not kept or their account is gone. */
+  keptByUserId: string | null;
+}
+
+/** One page of an app's history, newest first. */
+export interface VersionPage {
+  versions: VersionSummary[];
+  /** Pass as `before` for the next (older) page; null on the last page. */
+  nextBefore: number | null;
 }
 
 export interface VersionDetail extends VersionSummary {
