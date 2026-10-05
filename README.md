@@ -28,6 +28,12 @@ hosts what it writes.
 **[Gallery](https://www.drobek.app/gallery)** ·
 **[Docs](https://www.drobek.app/docs)**
 
+[![Watch the 33-second drobek demo on YouTube](./docs/assets/demo-poster.png)](https://youtu.be/TGG5SZ091hg)
+
+The [proxy module in 35 seconds](https://youtu.be/EeUG2dwL4qI): your agent
+registers an outside API, an admin confirms who can call it, and the key
+you type into the dashboard never reaches the app or the agent.
+
 MCP Registry name: [`io.github.freema/drobek`](./server.json). The hosted
 Streamable HTTP endpoint is `https://drobek.app/mcp` and uses OAuth 2.1.
 
