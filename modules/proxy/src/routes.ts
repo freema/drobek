@@ -12,7 +12,9 @@
  *   4. rate limits: per client IP on a `public` upstream, the app-wide
  *      PROXY_CALLS_PER_MIN, the assignment's own `rateLimit` — 429;
  *   5. a slot among the calls in flight (PROXY_MAX_CONCURRENT for the
- *      process, PROXY_MAX_CONCURRENT_PER_APP per app) — else 429 proxy_busy;
+ *      process, PROXY_MAX_CONCURRENT_PER_APP per app,
+ *      PROXY_MAX_CONCURRENT_PER_CALLER per end user or anonymous client IP)
+ *      — else 429 proxy_busy;
  *   6. the upstream is registered in the app's workspace — else 404 — it is
  *      the RECORD the assignment is bound to (`id`) — else 403
  *      upstream_replaced — and THIS app is on its allow-list
@@ -21,11 +23,12 @@
  *      bound here;
  *   7. @drobek/proxy `forwardToUpstream`: method + path allow-lists, the
  *      secret injected server-side, Cookie/Authorization/browser headers
- *      stripped, SSRF guard (pinned IP, ports 80/443, 20 s, 5 MiB), a
- *      redirect followed only within the upstream's origin and prefixes
- *      (else 502 upstream_redirect), an encoded body decoded within the cap,
- *      the response relayed with allow-listed headers and
- *      `Cache-Control: no-store`.
+ *      stripped, SSRF guard (pinned IP, ports 80/443, the response
+ *      deadline, 5 MiB), a redirect followed only within the upstream's
+ *      origin and prefixes (else 502 upstream_redirect), an encoded body
+ *      decoded within the cap, the response relayed with allow-listed
+ *      headers and `Cache-Control: no-store`. A `text/event-stream` answer
+ *      is relayed as it arrives; its slot is held until the stream is over.
  */
 import { ModuleError, perIpLimitKey, respond, ruleIsPublic, type ModuleContext, type ModuleRequest, type ModuleRouter } from '@drobek/modules';
 import { ProxyError, acquireProxySlot, forwardToUpstream, proxyErrorStatus, type ProxyErrorCode } from '@drobek/proxy';
@@ -50,7 +53,7 @@ type Ctx = ModuleContext<ProxyConfig>;
 /** A ProxyError → the uniform module error (same code, same status, secret-free message). */
 export function toModuleError(err: ProxyError): ModuleError {
   const code: ProxyErrorCode = err.code;
-  // proxy_busy: slots free up as calls finish (≤ 20 s) — worth a retry soon.
+  // proxy_busy: slots free up as calls finish — worth a retry soon.
   const headers = code === 'proxy_busy' ? { 'Retry-After': '1' } : undefined;
   return new ModuleError(code, err.message, { status: proxyErrorStatus(code), headers, details: err.details });
 }
@@ -118,12 +121,13 @@ export function proxyHandler(opts: ProxyRouteOptions = {}) {
     await enforce(ctx, 'calls', 'app', await limitOf(ctx, 'PROXY_CALLS_PER_MIN', DEFAULT_CALLS_PER_MIN));
     if (assignment.rateLimit) await enforce(ctx, 'upstream', name, assignment.rateLimit);
 
-    // 5) A slot among the calls in flight (each may buffer 5 MiB for 20 s).
+    // 5) A slot among the calls in flight (the app's, and this caller's).
     const env = opts.env?.() ?? process.env;
+    const caller = ctx.principal.kind === 'user' ? `u:${ctx.principal.id}` : perIpLimitKey(req.clientIp, 'mod:proxy:caller');
     let release: (() => void) | undefined;
     const started = Date.now();
     try {
-      release = acquireProxySlot(ctx.app.id, env);
+      release = acquireProxySlot(ctx.app.id, env, undefined, caller);
       // 6 + 7) Resolve in the app's workspace, check the binding, forward.
       const upstream = await assignedUpstream({ db: ctx.db, log: ctx.log, app: ctx.app, name, assignment });
       const result = await forwardToUpstream({
@@ -134,14 +138,21 @@ export function proxyHandler(opts: ProxyRouteOptions = {}) {
         headers: clientHeaders(req),
         body: Buffer.isBuffer(req.body) ? req.body : undefined,
         env,
+        stream: true,
       });
-      ctx.log.info('proxy call', {
-        app_id: ctx.app.id,
-        upstream: name,
-        method: req.method,
-        status: result.status,
-        ms: Date.now() - started,
-      });
+      const fields = { app_id: ctx.app.id, upstream: name, method: req.method, status: result.status };
+      if ('streamEnd' in result) {
+        // The slot is held until the stream is over (end, a cap, an upstream error or the client leaving).
+        const held = release;
+        release = undefined;
+        void result.streamEnd.then((end) => {
+          held();
+          ctx.log.info('proxy call', { ...fields, ms: Date.now() - started, bytes: end.bytes, streamed: true, end_reason: end.reason });
+        });
+      } else {
+        const bytes = Buffer.isBuffer(result.body) ? result.body.length : 0;
+        ctx.log.info('proxy call', { ...fields, ms: Date.now() - started, bytes, streamed: false });
+      }
       return respond(result.status, result.body, result.headers);
     } catch (err) {
       if (err instanceof ProxyError) {

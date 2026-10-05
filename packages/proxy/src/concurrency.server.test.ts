@@ -3,6 +3,7 @@ import {
   ConcurrencyGate,
   DEFAULT_PROXY_MAX_CONCURRENT,
   DEFAULT_PROXY_MAX_CONCURRENT_PER_APP,
+  DEFAULT_PROXY_MAX_CONCURRENT_PER_CALLER,
   acquireProxySlot,
 } from './concurrency.server.js';
 import { ProxyError, proxyErrorStatus } from './errors.js';
@@ -21,21 +22,32 @@ function codeOf(fn: () => unknown): string | null {
 describe('ConcurrencyGate', () => {
   it('caps the calls in flight per key and in total; a release frees the slot (idempotent)', () => {
     const gate = new ConcurrencyGate();
-    const a1 = gate.tryAcquire('a', 3, 2)!;
-    const a2 = gate.tryAcquire('a', 3, 2)!;
-    expect(gate.tryAcquire('a', 3, 2)).toBeNull(); // per key
-    const b1 = gate.tryAcquire('b', 3, 2)!;
-    expect(gate.tryAcquire('b', 3, 2)).toBeNull(); // total
+    const a = [{ key: 'a', max: 2 }];
+    const b = [{ key: 'b', max: 2 }];
+    const a1 = gate.tryAcquire(3, a)!;
+    const a2 = gate.tryAcquire(3, a)!;
+    expect(gate.tryAcquire(3, a)).toBeNull(); // per key
+    const b1 = gate.tryAcquire(3, b)!;
+    expect(gate.tryAcquire(3, b)).toBeNull(); // total
     expect(gate.inFlight()).toBe(3);
     a1();
     a1();
     expect(gate.inFlight()).toBe(2);
     expect(gate.inFlight('a')).toBe(1);
-    const b2 = gate.tryAcquire('b', 3, 2)!;
+    const b2 = gate.tryAcquire(3, b)!;
     expect(b2).toBeTypeOf('function');
     for (const r of [a2, b1, b2]) r();
     expect(gate.inFlight()).toBe(0);
     expect(gate.inFlight('a')).toBe(0);
+  });
+
+  it('a slot counted under several keys is refused when any of them is full, and released from all of them', () => {
+    const gate = new ConcurrencyGate();
+    const r1 = gate.tryAcquire(10, [{ key: 'app', max: 5 }, { key: 'caller', max: 1 }])!;
+    expect(gate.tryAcquire(10, [{ key: 'app', max: 5 }, { key: 'caller', max: 1 }])).toBeNull();
+    expect(gate.inFlight('app')).toBe(1);
+    r1();
+    expect([gate.inFlight('app'), gate.inFlight('caller'), gate.inFlight()]).toEqual([0, 0, 0]);
   });
 });
 
@@ -88,5 +100,37 @@ describe('acquireProxySlot', () => {
     const held = Array.from({ length: DEFAULT_PROXY_MAX_CONCURRENT_PER_APP }, () => acquireProxySlot('app', e, gate));
     expect(codeOf(() => acquireProxySlot('app', e, gate))).toBe('proxy_busy');
     held.forEach((r) => r());
+  });
+
+  it('PROXY_MAX_CONCURRENT_PER_CALLER (default 2): one caller of an app at its cap → proxy_busy; another caller and another app still get a slot', () => {
+    expect(DEFAULT_PROXY_MAX_CONCURRENT_PER_CALLER).toBe(2);
+    const gate = new ConcurrencyGate();
+    const e = env({});
+    const r1 = acquireProxySlot('app_a', e, gate, 'u:alice');
+    acquireProxySlot('app_a', e, gate, 'u:alice');
+    let err: unknown;
+    try {
+      acquireProxySlot('app_a', e, gate, 'u:alice');
+    } catch (x) {
+      err = x;
+    }
+    expect((err as ProxyError).code).toBe('proxy_busy');
+    expect((err as Error).message).toMatch(/this visitor in flight \(at most 2\)/);
+    expect(codeOf(() => acquireProxySlot('app_a', e, gate, 'u:bob'))).toBeNull();
+    expect(codeOf(() => acquireProxySlot('app_b', e, gate, 'u:alice'))).toBeNull();
+    // The refused call took nothing: app_a counts its 3 granted slots.
+    expect(gate.inFlight('app:app_a')).toBe(3);
+    r1();
+    r1();
+    expect(codeOf(() => acquireProxySlot('app_a', e, gate, 'u:alice'))).toBeNull();
+  });
+
+  it('PROXY_MAX_CONCURRENT_PER_CALLER from the env; no caller key → only the app and process caps', () => {
+    const gate = new ConcurrencyGate();
+    const e = env({ PROXY_MAX_CONCURRENT_PER_CALLER: '1' });
+    acquireProxySlot('app', e, gate, '198.51.100.7');
+    expect(codeOf(() => acquireProxySlot('app', e, gate, '198.51.100.7'))).toBe('proxy_busy');
+    expect(codeOf(() => acquireProxySlot('app', e, gate, null))).toBeNull();
+    expect(codeOf(() => acquireProxySlot('app', e, gate))).toBeNull();
   });
 });

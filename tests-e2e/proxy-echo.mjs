@@ -1,6 +1,7 @@
 // e2e-only upstream on the compose network (hostname `proxy-echo`, allow-listed
 // via PROXY_ALLOWED_HOSTS): echoes requests as JSON, serves redirects the
-// proxy refuses or follows, mock CIMD documents, a sync feed, the fake limits
+// proxy refuses or follows, server-sent events, a slow answer, mock CIMD
+// documents, a sync feed, the fake limits
 // provider and the ops-probe fixture's report capture. Upstreams may only use
 // ports 80/443, so it also listens on EXTRA_PORTS; the CIMD mock, the
 // healthcheck and the report capture keep PORT (8099).
@@ -81,6 +82,35 @@ const server = http.createServer((req, res) => {
       'x-request-id': 'echo-req-1',
     });
     res.end(gzipSync(Buffer.from(JSON.stringify({ gzipped: true, acceptEncoding: req.headers['accept-encoding'] ?? null }))));
+    return;
+  }
+
+  // Server-sent events for the proxy's streamed relay: /echo/sse sends 5
+  // events ~400 ms apart, /echo/sse/stall one event and then nothing (until
+  // the client leaves); /echo/slow?ms= answers after that long (at most 30 s).
+  if (url.pathname === '/echo/sse' || url.pathname === '/echo/sse/stall') {
+    res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
+    res.write(`event: tick\ndata: {"n":1,"at":${Date.now()}}\n\n`);
+    if (url.pathname === '/echo/sse/stall') return;
+    let n = 1;
+    const timer = setInterval(() => {
+      n += 1;
+      res.write(`event: tick\ndata: {"n":${n},"at":${Date.now()}}\n\n`);
+      if (n === 5) {
+        clearInterval(timer);
+        res.end();
+      }
+    }, 400);
+    res.on('close', () => clearInterval(timer));
+    return;
+  }
+  if (url.pathname === '/echo/slow') {
+    const ms = Math.min(Math.max(Number(url.searchParams.get('ms') ?? 1000) || 0, 0), 30_000);
+    const timer = setTimeout(() => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ slow: true, ms }));
+    }, ms);
+    res.on('close', () => clearTimeout(timer));
     return;
   }
 
