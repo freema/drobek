@@ -101,6 +101,8 @@ export const AUDIT_ACTIONS = {
   dataExport: 'data.export',
   /** A workspace admin registered a proxy upstream (@drobek/proxy PROXY_AUDIT_ACTIONS). */
   proxyUpstreamCreate: 'proxy.upstream.create',
+  /** A workspace admin turned streaming passthrough on or off for a proxy upstream (meta: name, allowStreaming). */
+  proxyUpstreamUpdate: 'proxy.upstream.update',
   /** A workspace admin deleted a proxy upstream. */
   proxyUpstreamDelete: 'proxy.upstream.delete',
   /** The proxy module refused a call (SSRF guard, port, rule) — upstream + reason. */
