@@ -3,6 +3,7 @@ import {
   canDeleteRecord,
   canPublish,
   formatTimestamp,
+  groupFailedRuns,
   shapeActivity,
   appThumbnail,
   shapeApps,
@@ -102,6 +103,47 @@ describe('shapeVersionHistory', () => {
       [1, false, true],
     ]);
     expect(items[3].createdAt).toBe('2026-01-01T00:00:00.000Z');
+  });
+
+  it('carries the preview and kept flags (absent → false)', () => {
+    const items = shapeVersionHistory([v(2, { preview: true }), v(1, { kept: true })]);
+    expect(items.map((i) => [i.number, i.preview, i.kept])).toEqual([
+      [2, true, false],
+      [1, false, true],
+    ]);
+  });
+});
+
+describe('groupFailedRuns', () => {
+  type Row = { number: number; compileStatus: 'ok' | 'error' | 'pending'; kept?: boolean };
+  const rows = (spec: string): Row[] =>
+    // newest first: "o" = ok, "e" = error, "k" = a kept error, "p" = pending; numbered down from the length.
+    [...spec].map((c, i) => ({
+      number: spec.length - i,
+      compileStatus: c === 'o' ? 'ok' : c === 'p' ? 'pending' : 'error',
+      ...(c === 'k' ? { kept: true } : {}),
+    }));
+  const shape = (spec: string) =>
+    groupFailedRuns(rows(spec)).map((e) => (e.kind === 'version' ? e.item.number : `${e.from}-${e.to}:${e.items.length}`));
+
+  it('collapses 2+ consecutive failed builds; a single failure stays a row', () => {
+    expect(shape('oeeeoeo')).toEqual([7, '4-6:3', 3, 2, 1]);
+  });
+
+  it('a run at the start or the end of a page is grouped too, and only up to the page edge', () => {
+    expect(shape('eeoee')).toEqual(['4-5:2', 3, '1-2:2']);
+    expect(shape('e')).toEqual([1]);
+  });
+
+  it('a kept failed build or a pending version breaks a run', () => {
+    expect(shape('eekee')).toEqual(['4-5:2', 3, '1-2:2']);
+    expect(shape('epe')).toEqual([3, 2, 1]);
+  });
+
+  it('keeps the rows in their order inside a run and returns [] for an empty page', () => {
+    const [run] = groupFailedRuns(rows('ee'));
+    expect(run.kind === 'failedRun' && run.items.map((i) => i.number)).toEqual([2, 1]);
+    expect(groupFailedRuns([])).toEqual([]);
   });
 });
 

@@ -8,7 +8,8 @@
  *    compile state of the newest version, the published version and the
  *    single-writer lease ("an agent of X is working, last write N s ago");
  *  - `appAction` — EVERY app mutation of the dashboard, dispatched on the
- *    form's `intent`: publish, restore, unpublish, unlock, visibility,
+ *    form's `intent`: publish, restore, keep / unkeep (a version),
+ *    delete-versions (the history clean-up), unpublish, unlock, visibility,
  *    frame-ancestors, gallery (list / relist / unlist), delete.
  *    The editor gate runs FIRST (a viewer → 403, before the form is even
  *    read); the global origin check
@@ -16,7 +17,8 @@
  *    mutation is a @drobek/apps function (the same ones the MCP tools use),
  *    which writes its audit row; the app hosts' cache is busted right after.
  *    A taken-down app (`apps.locked_reason`) answers publish /
- *    restore / unpublish with 423 `app_locked_by_admin`; the header carries
+ *    restore / unpublish / delete-versions with 423 `app_locked_by_admin`
+ *    (keeping a version stays allowed); the header carries
  *    `lockedByAdmin` for <LockedByAdminNotice>. A workspace the operator
  *    blocked answers publish with 403 `publish_blocked`, and with
  *    PUBLISH_APPROVAL=approval an unapproved one with 403
@@ -24,12 +26,18 @@
  *    <PublishApprovalNotice> and the `request-publish-approval` intent asks
  *    the operator. A restore past the workspace's VERSIONS_PER_APP_HOUR /
  *    VERSIONS_PER_USER_HOUR answers 429 `rate_limited` with Retry-After.
+ *    Keeping a version past APP_VERSIONS_KEPT_MAX answers 400 with the
+ *    limit's message. `delete-versions` needs `confirmed=1` (the confirm
+ *    panel's POST) and recomputes what goes itself; it never trusts a count
+ *    from the preview.
  */
 import { data, redirect, type ActionFunctionArgs, type LoaderFunctionArgs } from 'react-router';
 import { and, desc, eq, inArray, max } from 'drizzle-orm';
 import {
   AppsError,
+  deleteVersions,
   getVersion,
+  keepVersion,
   lockedByAdminError,
   notifyAppChanged,
   previewUrl,
@@ -44,6 +52,7 @@ import {
   softDeleteApp,
   unpublishApp,
   versionRateLimitsOf,
+  versionStorageLimitsOf,
   type Actor,
 } from '@drobek/apps';
 import { actorKindForSurface } from '@drobek/audit';
@@ -56,8 +65,10 @@ import { appBasePath } from './app-tabs.js';
 import { compileSummary, safeRedirectTo, shapeLock, type LockView } from './app-view.js';
 import { loadAppForView, type AppDetail } from './apps.server.js';
 import type { LockedByAdminView } from './locked-notice.js';
+import { isConfirmed } from './moderation-confirm.js';
 import type { PublishApprovalView } from './publish-approval-notice.js';
 import { publishApprovalView, requestApprovalAction } from './publish-approval.server.js';
+import { countRanges, parseVersionNumber, withVersionResult } from './version-history.js';
 import { canPublish, type CompileStatusName } from './view.js';
 
 export const APP_PASSWORD_MIN = 8;
@@ -181,8 +192,7 @@ function fail(status: number, intent: string, error: string, headers?: Record<st
 }
 
 function versionNumber(raw: FormDataEntryValue | null): number | null {
-  const n = Number(String(raw ?? '').trim());
-  return Number.isInteger(n) && n > 0 ? n : null;
+  return parseVersionNumber(typeof raw === 'string' ? raw : null);
 }
 
 /**
@@ -208,10 +218,10 @@ export async function appAction({ request, params }: ActionFunctionArgs) {
   const requested = await requestApprovalAction(access, form, { base, fallback: back, appName: app.name ?? app.slug });
   if (requested) return requested;
 
-  // A taken-down app is not published, restored or unpublished from
-  // here (@drobek/apps refuses publish/restore itself; unpublish is checked
-  // here so all three answer the same 423).
-  if (app.lockedReason && (intent === 'publish' || intent === 'restore' || intent === 'unpublish')) {
+  // A taken-down app is not published, restored, unpublished or cleaned up
+  // from here (@drobek/apps refuses publish / restore / delete-versions
+  // itself; unpublish is checked here so all four answer the same 423).
+  if (app.lockedReason && (intent === 'publish' || intent === 'restore' || intent === 'unpublish' || intent === 'delete-versions')) {
     return fail(423, intent, lockedByAdminError(app.lockedReason).message);
   }
 
@@ -250,6 +260,41 @@ export async function appAction({ request, params }: ActionFunctionArgs) {
         const out = await restore(app.id, n, actor, { reasoning: `Restore of version ${n} (dashboard)`, versionLimits });
         await changed('version', out.number);
         break;
+      }
+      case 'keep':
+      case 'unkeep': {
+        const n = versionNumber(form.get('version'));
+        if (!n) return fail(400, intent, intent === 'keep' ? 'Pick a version to keep.' : 'Pick a version to stop keeping.');
+        const limits = versionStorageLimitsOf(await (await moduleRuntime()).workspaceLimits(access.workspace.id));
+        const out = await keepVersion(app.id, n, intent === 'keep', actor, { keptMax: limits.keptMax, keep: limits.keep });
+        return redirect(
+          withVersionResult(
+            back,
+            intent === 'keep' ? { keptVersion: String(n) } : { unkeptVersion: String(n), ...(out.prunable ? { prunable: '1' } : {}) }
+          )
+        );
+      }
+      case 'delete-versions': {
+        if (!isConfirmed(form)) {
+          return fail(
+            400,
+            intent,
+            'Nothing was deleted: review the clean-up first. Choose “Review clean-up”, check what goes and what stays, then confirm.'
+          );
+        }
+        const upTo = versionNumber(form.get('upTo'));
+        if (!upTo) return fail(400, intent, 'Enter a version number to clean up to, e.g. 12.');
+        const failedOnly = form.get('failedOnly') === '1';
+        const out = await deleteVersions(app.id, upTo, { failedOnly }, actor);
+        const stayed = Object.values(out.skipped).reduce((n, ranges) => n + countRanges(ranges ?? []), 0);
+        return redirect(
+          withVersionResult(base, {
+            deletedCount: String(out.count),
+            ...(out.deleted.length > 0 && out.deleted.length <= 50 ? { deletedRanges: out.deleted.join(',') } : {}),
+            ...(failedOnly ? { deletedFailedOnly: '1' } : {}),
+            ...(stayed > 0 ? { stayed: String(stayed) } : {}),
+          })
+        );
       }
       case 'unpublish': {
         await unpublishApp(app.id, actor);

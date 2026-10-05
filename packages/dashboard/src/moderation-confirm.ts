@@ -1,9 +1,10 @@
 /**
- * The confirm step of the operator's irreversible moderation actions:
- * a takedown (/admin/abuse) and blocking a workspace's publishing
- * (/admin/publishing). The first click is a GET that renders the confirm panel
- * (works without JavaScript); only the panel's POST carries `confirmed=1`, and
- * the actions refuse a takedown or block without it. Pure and client-safe.
+ * The confirm step of irreversible actions: the operator's takedown
+ * (/admin/abuse) and blocking a workspace's publishing (/admin/publishing),
+ * and a member's clean-up of an app's version history (the app page). The
+ * first click is a GET that renders the confirm panel (works without
+ * JavaScript); only the panel's POST carries `confirmed=1`, and the actions
+ * refuse without it. Pure and client-safe.
  */
 
 /** The form field the confirm panel posts; the actions require it. */

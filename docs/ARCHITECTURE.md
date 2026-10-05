@@ -606,7 +606,9 @@ for the 30-day window.
   workspaces (Apps / Members / Activity / Upstreams tabs), apps with Overview
   / Files / Assets / Data / Modules / Forms / Users / Uploads / Logs /
   Domains / Settings tabs (Assets: list, upload with a progress bar, delete —
-  the same checks and upload URL as `create_asset_upload`), version history and publish, activity (the audit log, CSV),
+  the same checks and upload URL as `create_asset_upload`), version history and publish (the Overview tab lists the live, preview
+  and kept versions on their own, pages the rest by `APP_VERSIONS_PAGE` with runs of failed builds collapsed, and offers
+  Keep / Unkeep and a clean-up whose confirm panel shows what goes and why the rest stays), activity (the audit log, CSV),
   API keys and OAuth connections, the super-admin abuse queue. Every page
   shares one layout (`@drobek/tenancy/layout`: one width, a breadcrumb
   `Workspaces › <workspace> › <app> › <section>`, one set of form controls);
