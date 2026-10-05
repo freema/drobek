@@ -18,7 +18,7 @@ Before you upgrade: core migrations 0037 (the kept-version columns of `app_versi
 - **`/whats-new`** (NSO-449): Without a login, it redirects to the GitHub release of the running version, or to the releases list for a dev build.
 
 ### Changed
-- **`get_app` versions say whether each is `published`, the `preview`'s, or `kept`** (NSO-446): MCP now has 60 tools with `set_upstream_streaming`.
+- **`get_app` versions say whether each is `published`, the `preview`'s, or `kept`** (NSO-446): With the three version tools and `set_upstream_streaming`, MCP now has 60 tools.
 - **A version that is no longer stored says who deleted it** (NSO-447): The `not_found` message names the history retention or a member's clean-up, and lists kept versions among those that stay.
 - **The proxy skill's example is a streamed Anthropic call with a Stop button** (NSO-448): The port-artifact and drobek skills mention streaming.
 - **The app page explains a load error on the page itself** (NSO-446): An unknown app, missing access or a server error each get their own message.
