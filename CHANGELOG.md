@@ -1,5 +1,32 @@
 # Changelog — drobek (core)
 
+## v0.8.0 — 2026-10-05
+
+Before you upgrade: core migration 0037 adds the kept-version columns to `app_versions` and is applied at start; an older image then refuses to start on the migrated database. New env vars, all with production defaults: `APP_VERSIONS_KEPT_MAX` (20), `APP_VERSIONS_PAGE` (20), `PROXY_RESPONSE_TIMEOUT_MS` (120000), `PROXY_STREAM_IDLE_TIMEOUT_MS` (60000), `PROXY_STREAM_MAX_MS` (600000), `PROXY_STREAM_MAX_BYTES` (33554432), `PROXY_MAX_CONCURRENT_PER_CALLER` (2) and `WHATS_NEW_BANNER` (1). A proxy call now holds its slot for as long as its answer streams (up to 10 minutes), so the per-app and per-caller proxy limits fill sooner when apps stream LLM answers; module jobs that fetch through the proxy now wait up to 120 s instead of 20 s. If another reverse proxy sits in front of drobek, it must not buffer `text/event-stream` (nginx: `proxy_buffering off`). Kept versions stay out of the history retention, so they count toward the workspace source quota until a member stops keeping them.
+
+### Added
+- **The proxy module streams an LLM answer to the app as it arrives** (NSO-448, #88): A `text/event-stream` answer (an LLM API called with `stream: true`) reaches `drobek.proxy.fetch` event by event; every other answer arrives whole. A stream is cut after `PROXY_STREAM_IDLE_TIMEOUT_MS` (60 s) without data, after `PROXY_STREAM_MAX_MS` (10 min), or past `PROXY_STREAM_MAX_BYTES` (32 MiB), and then ends with an SSE `error` event (`details.reason`: `stream_idle` / `stream_too_long` / `stream_too_large`). A client that stops reading a cut stream is disconnected after the idle timeout.
+- **`PROXY_MAX_CONCURRENT_PER_CALLER` (2)** (NSO-448): Proxy calls in flight per end user, or per client IP for anonymous callers. An open stream holds its slot until it ends; over the limit the call gets `429 proxy_busy`.
+- **`PROXY_RESPONSE_TIMEOUT_MS` (120 s)** (NSO-448, #88): How long a buffered proxy answer, or a stream's headers, may take.
+- **A member can keep a version of an app** (NSO-447, #89): Neither the history retention nor a clean-up deletes a kept version, up to `APP_VERSIONS_KEPT_MAX` (default 20, the limits provider can override it) kept versions per app. Keeping and unkeeping are audited as `app.version.keep` / `app.version.unkeep`, and both work on a taken-down app and on a failed build.
+- **Members can delete old versions of an app** (NSO-447, #89): Everything up to a version, or only the failed builds. The published version, the preview's, kept versions, versions kept for a rollback, the newest version and the last hour's always stay, and each kept-back version comes with the reason. It is audited as `app.versions.delete`, frees the workspace's source quota at once, and is refused on a taken-down app.
+- **The app page's version history is curated and paged** (NSO-446, #89): The live, preview and kept versions are listed on their own, the rest pages with "Show older versions" (`APP_VERSIONS_PAGE`, default 20), and runs of failed builds collapse into one row with each build's first error.
+- **Keep / Unkeep and "Clean up history" on the app page** (NSO-446, #89): Editors keep or unkeep a version; past `APP_VERSIONS_KEPT_MAX` the page says so, and an unkeep the hourly retention will act on is flagged. The clean-up deletes versions up to a number, or only the failed builds, after a confirm panel that shows what goes and why the rest stays (live, preview, kept, kept for a rollback, newest, last hour). It works without JavaScript and the server recomputes what goes on confirm.
+- **Three new MCP tools for the version history** (NSO-446, #89): `list_versions` pages an app's history newest first (`next_before`, up to `APP_VERSIONS_PAGE` per page) with the published, preview and kept versions pinned on every page. `keep_version` keeps a version or stops keeping it. `delete_versions` deletes old versions (or only failed builds) for good, only with `user_confirmed: true` after the user's explicit yes, and reports which versions stay and why; a taken-down app refuses it.
+- **A "What's new" notice after an update** (NSO-449): After an update to a new release line, the dashboard shows signed-in people a dismissible "drobek was updated to 0.8 · What's new" notice. The dismissal is remembered per browser and line, and works without JavaScript. `WHATS_NEW_BANNER=0` turns it off.
+- **`/whats-new`** (NSO-449): Without a login, it redirects to the GitHub release of the running version, or to the releases list for a dev build.
+
+### Changed
+- **`get_app` versions say whether each is `published`, the `preview`'s, or `kept`** (NSO-446): MCP now has 59 tools.
+- **A version that is no longer stored says who deleted it** (NSO-447): The `not_found` message names the history retention or a member's clean-up, and lists kept versions among those that stay.
+- **The proxy skill's example is a streamed Anthropic call with a Stop button** (NSO-448): The port-artifact and drobek skills mention streaming.
+- **The app page explains a load error on the page itself** (NSO-446): An unknown app, missing access or a server error each get their own message.
+- **The history's published badge reads "live"** (NSO-446).
+
+### Fixed
+- **A non-streamed LLM answer no longer fails after 8 s of upstream silence** (NSO-448, #88): `PROXY_CONNECT_TIMEOUT_MS` (8 s) worked as an idle timeout for the whole proxy exchange. It now covers only the TCP/TLS connect, and `PROXY_RESPONSE_TIMEOUT_MS` bounds the answer.
+- **A version number too large for the database no longer fails the app page's actions** (NSO-446): The dashboard accepts only version numbers that fit the column.
+
 ## v0.7.6 — 2026-10-02
 
 v0.7.5 was tagged but never released: its image failed the release gate's vulnerability scan. This release carries all of v0.7.5 (below), so upgrade straight to v0.7.6 and read the v0.7.5 notes before you do.
