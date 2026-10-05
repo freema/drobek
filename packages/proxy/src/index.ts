@@ -57,10 +57,21 @@ export {
 } from './crypto.server.js';
 export {
   DEFAULT_CONNECT_TIMEOUT_MS,
-  DEFAULT_FORWARD_DEADLINE_MS,
   DEFAULT_MAX_RESPONSE_BYTES,
+  DEFAULT_RESPONSE_TIMEOUT_MS,
+  DEFAULT_STREAM_IDLE_TIMEOUT_MS,
+  DEFAULT_STREAM_MAX_BYTES,
+  DEFAULT_STREAM_MAX_MS,
+  openUpstreamRequest,
   proxyAllowedHosts,
+  proxyResponseTimeoutMs,
+  proxyStreamLimits,
   ssrfSafeForward,
+  streamUpstreamBody,
+  type OpenedUpstream,
+  type StreamEnd,
+  type StreamEndReason,
+  type UpstreamRequestInput,
   type SsrfForwardInput,
   type SsrfForwardResult,
 } from './ssrf.server.js';
@@ -92,5 +103,5 @@ export {
   type UpstreamSummary,
   type UpstreamView,
 } from './upstreams.server.js';
-export { forwardToUpstream, type ForwardInput, type ForwardResult } from './forward.server.js';
-export { acquireProxySlot } from './concurrency.server.js';
+export { forwardToUpstream, sseCutEvent, type ForwardInput, type ForwardResult, type StreamedForwardResult } from './forward.server.js';
+export { DEFAULT_PROXY_MAX_CONCURRENT_PER_CALLER, acquireProxySlot } from './concurrency.server.js';

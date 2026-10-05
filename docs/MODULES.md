@@ -1024,7 +1024,9 @@ another module's code:
   calls an upstream the app's proxy config assigns, through the module that
   owns upstream calls (`proxy`): the registered, admin-confirmed record, its
   method and path allow-lists, the secret injected server-side, the SSRF
-  guard, 20 s and the lower of `PROXY_MAX_RESPONSE_BYTES` and `maxBytes`. The
+  guard, `PROXY_RESPONSE_TIMEOUT_MS` (120 s) and the lower of
+  `PROXY_MAX_RESPONSE_BYTES` and `maxBytes` (a job's answer is always
+  buffered, a `text/event-stream` one too). The
   job never sees the secret. There is no caller, so no call rule applies — an
   upstream assigned with `call: "none"` works. Without an enabled `proxy`:
   ModuleError `unavailable`.
@@ -2524,8 +2526,10 @@ calls an external API without holding its secret. `skill_info('proxy')`.
   `PROXY_CALLS_PER_MIN` (60 per app, all upstreams) and the assignment's
   `rateLimit` (`429 rate_limited` + `Retry-After`); a slot among the calls in
   flight — `PROXY_MAX_CONCURRENT` (32, the whole server) and
-  `PROXY_MAX_CONCURRENT_PER_APP` (8), each call holds up to 5 MiB for up to
-  20 s (`429 proxy_busy` + `Retry-After: 1`, nothing queues); registered in
+  `PROXY_MAX_CONCURRENT_PER_APP` (8) and `PROXY_MAX_CONCURRENT_PER_CALLER` (2
+  per signed-in end user, or per client IP for an anonymous caller); a
+  buffered call holds its slot until it is answered, a streamed one until the
+  stream ends (`429 proxy_busy` + `Retry-After: 1`, nothing queues); registered in
   the app's workspace (`404 not_found`, `upstream_not_registered`); the
   record the assignment is bound to (`403 forbidden`, `upstream_replaced`);
   the app on the upstream's allow-list (`403 forbidden`,
@@ -2544,8 +2548,10 @@ calls an external API without holding its secret. `skill_info('proxy')`.
   (never chunked); the SSRF guard (DNS resolved once + pinned IP,
   private/reserved ranges blocked unless on `PROXY_ALLOWED_HOSTS` — IPv6
   includes 6to4 `2002::/16`, local-use NAT64 `64:ff9b:1::/48`, site-local
-  `fec0::/10` and discard `100::/64` — ports 80/443, 20 s deadline, 5 MiB
-  response cap, both for the whole redirect chain; a HEAD answer's
+  `fec0::/10` and discard `100::/64` — ports 80/443, a connect timeout
+  (`PROXY_CONNECT_TIMEOUT_MS`, only until the TCP / TLS connection stands),
+  the `PROXY_RESPONSE_TIMEOUT_MS` deadline (120 s) and the 5 MiB response cap,
+  both for the whole redirect chain; a HEAD answer's
   `Content-Length` is not held to the cap → `ssrf_blocked` 403 (audited as
   `proxy.blocked`) / `upstream_error` 502). A 301/302/303/307/308 is
   followed — at most 3 hops, each through the SSRF guard again with the
@@ -2566,7 +2572,18 @@ calls an external API without holding its secret. `skill_info('proxy')`.
   HTML, `Location` only when relative) — so `Set-Cookie`, `Access-Control-*`,
   `Clear-Site-Data`, `Refresh`, `Link`, HSTS, `Service-Worker-Allowed` and an
   absolute `Location` never reach the app origin — with
-  `Cache-Control: no-store`.
+  `Cache-Control: no-store` and `X-Content-Type-Options: nosniff`.
+  **Streaming**: a final answer (after any followed redirect) that is
+  `text/event-stream`, not encoded, not a 3xx and not HEAD / 204 / 304 is
+  relayed chunk by chunk instead of buffered, with `X-Accel-Buffering: no`;
+  the response deadline then covers only its headers. The stream is cut after
+  `PROXY_STREAM_IDLE_TIMEOUT_MS` (60 s) without data, `PROXY_STREAM_MAX_MS`
+  (10 min) in total or past `PROXY_STREAM_MAX_BYTES` (32 MiB): the upstream
+  connection is closed and a last SSE event is appended — `event: error`,
+  `data: {"error":"upstream_error","message":…,"details":{"reason":
+  "stream_idle" | "stream_too_long" | "stream_too_large"}}`. A client that
+  leaves closes the upstream connection. The `proxy call` log line of a stream
+  is written when it ends, with `bytes`, `streamed: true` and `end_reason`.
 - **Info**: `get_app` → `modules.proxy.info.upstreams: [{ name, registered,
   assigned, call?, rateLimit?, hasSecret, allowedMethods?, allowedPathPrefixes?
   }]` (never the secret or the base URL).

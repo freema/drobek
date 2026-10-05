@@ -29,6 +29,8 @@ export interface Raw {
   body: string;
   /** The raw response bytes (`body` is them decoded as UTF-8). */
   bytes: Buffer;
+  /** Each body chunk as it arrived (ms since the request was sent) — shows whether a response streamed. */
+  chunks: { at: number; text: string }[];
 }
 
 export interface RawOpts {
@@ -56,6 +58,7 @@ function rawRequest(
   const { hostname, port } = via ?? splitHost(host, scheme);
   const sni = splitHost(host, scheme).hostname;
   const send = scheme === 'https' ? httpsRequest : httpRequest;
+  const sentAt = Date.now();
   return new Promise((resolve, reject) => {
     const req = send(
       {
@@ -69,10 +72,14 @@ function rawRequest(
       },
       (res) => {
         const chunks: Buffer[] = [];
-        res.on('data', (c: Buffer) => chunks.push(c));
+        const timed: { at: number; text: string }[] = [];
+        res.on('data', (c: Buffer) => {
+          chunks.push(c);
+          timed.push({ at: Date.now() - sentAt, text: c.toString('utf8') });
+        });
         res.on('end', () => {
           const bytes = Buffer.concat(chunks);
-          resolve({ status: res.statusCode ?? 0, headers: res.headers, body: bytes.toString('utf8'), bytes });
+          resolve({ status: res.statusCode ?? 0, headers: res.headers, body: bytes.toString('utf8'), bytes, chunks: timed });
         });
       }
     );

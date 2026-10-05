@@ -117,7 +117,8 @@ What differs from the artifact sandbox (the app CSP):
   work; `<iframe>` only YouTube (`youtube-nocookie.com`), Vimeo, Google Drive
   (plus what the operator allows).
 - No `window.claude.*` on drobek: `window.claude.complete` has no
-  replacement (drop the feature, or call an LLM API through `drobek.proxy`);
+  replacement (drop the feature, or call an LLM API through `drobek.proxy`,
+  with `stream: true` so the answer renders as it streams);
   `window.storage` → `localStorage` or `drobek.data`; sign-in → `drobek.auth`,
   a form that must reach the owner → `drobek.forms`. `skill_info()` lists them.
 - Limits (defaults; the briefing and `create_asset_upload` give this

@@ -7,6 +7,7 @@
  */
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import { PGlite } from '@electric-sql/pglite';
@@ -23,6 +24,7 @@ import { createCore } from '@drobek/sdk';
 import auth from 'drobek-module-auth';
 import proxy, {
   createProxyModule,
+  proxyHandler,
   proxyAppInfo,
   proxyConfigSchema,
   proxyConfirmRequired,
@@ -50,6 +52,9 @@ let env: NodeJS.ProcessEnv;
 /** Calls to /slow wait until the test resolves this. */
 let releaseSlow: () => void = () => undefined;
 let slowGate: Promise<void> = Promise.resolve();
+/** /sse/hold streams its last event when the test resolves this. */
+let releaseSse: () => void = () => undefined;
+let sseGate: Promise<void> = Promise.resolve();
 
 beforeAll(async () => {
   server = http.createServer((req, res) => {
@@ -59,6 +64,24 @@ beforeAll(async () => {
         res.writeHead(200, { 'content-type': 'text/plain' });
         res.end('slow');
       });
+      return;
+    }
+    if (url.pathname === '/sse' || url.pathname === '/sse/hold' || url.pathname === '/sse/drop') {
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      if (req.method === 'HEAD') {
+        res.end();
+        return;
+      }
+      res.write('data: one\n\n');
+      if (url.pathname === '/sse/hold') {
+        void sseGate.then(() => res.end('data: two\n\n'));
+        return;
+      }
+      if (url.pathname === '/sse/drop') {
+        setTimeout(() => res.destroy(), 20);
+        return;
+      }
+      res.end('data: two\n\n');
       return;
     }
     if (url.pathname === '/gzip') {
@@ -182,7 +205,7 @@ describe('the module', () => {
     ]);
   });
 
-  it("the skill's React example (an OpenAI call behind <LoginGate>) compiles; the skill is ≤ 150 lines", async () => {
+  it("the skill's React example (a streamed Anthropic call behind <LoginGate>) compiles; the skill is ≤ 150 lines", async () => {
     const { compile } = await import('@drobek/compile');
     const sdk = await buildSdk([auth, proxy]);
     const example = /```tsx\n([\s\S]*?)```/.exec(proxy.skill.markdown)![1];
@@ -207,7 +230,8 @@ describe('the module', () => {
     expect(r.errors).toEqual([]);
     const out = r.outputs.get('main.js')!.toString('utf8');
     expect(out).toContain('function LoginGate(');
-    expect(out).toContain('/v1/chat/completions');
+    expect(out).toContain('/v1/messages');
+    expect(out).toContain('getReader');
     expect(proxy.skill.markdown.split('\n').length).toBeLessThanOrEqual(150);
   });
 
@@ -565,6 +589,123 @@ describe('concurrent calls', () => {
     for (const r of await Promise.all(inFlight)) expect(r.status).toBe(200);
     slowGate = Promise.resolve();
     expect((await tt.request('GET', '/open/x', { headers: SDK })).status).toBe(200);
+  });
+});
+
+describe('streamed answers (text/event-stream)', () => {
+  const callerEnv = (n: string) => createProxyModule({ env: () => ({ ...env, PROXY_MAX_CONCURRENT_PER_CALLER: n }) });
+  const tc = (n: string, principal: Principal = USER) =>
+    createModuleTestContext(callerEnv(n), { db, app: { id: appA, slug: 'chat', workspaceId: ws1 }, config: { upstreams: { open: {} } }, principal });
+
+  /** The route handler called directly, so the test holds the streamed body. */
+  async function direct(n: string, path: string, principal: Principal = USER, method = 'GET') {
+    const tt = tc(n, principal);
+    const handler = proxyHandler({ env: () => ({ ...env, PROXY_MAX_CONCURRENT_PER_CALLER: n }) });
+    const req = {
+      method,
+      path: `/open${path}`,
+      params: { upstream: 'open', '*': path.slice(1) },
+      query: {},
+      rawQuery: '',
+      body: undefined,
+      header: (h: string) => (h.toLowerCase() === 'x-drobek-sdk' ? '1' : null),
+      headers: () => ({ 'x-drobek-sdk': '1' }),
+      clientIp: '198.51.100.9',
+      file: async () => {
+        throw new Error('no file');
+      },
+    };
+    const out = (await handler(req as never, tt.ctx)) as { status: number; headers: Record<string, string>; body: unknown };
+    return { tt, out };
+  }
+
+  const settle = () => new Promise((r) => setTimeout(r, 30));
+
+  it('an SSE answer is relayed as a stream (X-Accel-Buffering: no, no-store) and logged with streamed + end_reason when it ends', async () => {
+    const info = vi.fn();
+    const tt = createModuleTestContext(mod(), {
+      db,
+      app: { id: appA, slug: 'chat', workspaceId: ws1 },
+      config: { upstreams: { open: {} } },
+      principal: USER,
+      log: { info, warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
+    });
+    const r = await tt.request('GET', '/open/sse', { headers: SDK });
+    expect(r.status).toBe(200);
+    expect(r.bytes.toString('utf8')).toBe('data: one\n\ndata: two\n\n');
+    expect(r.headers).toMatchObject({ 'content-type': 'text/event-stream', 'X-Accel-Buffering': 'no', 'Cache-Control': 'no-store' });
+    await settle();
+    expect(info).toHaveBeenCalledWith('proxy call', expect.objectContaining({ status: 200, streamed: true, end_reason: 'end', bytes: 22 }));
+  });
+
+  it("the handler answers a Readable; the caller's slot is held until the stream ends", async () => {
+    sseGate = new Promise<void>((resolve) => {
+      releaseSse = resolve;
+    });
+    const { tt, out } = await direct('1', '/sse/hold');
+    expect(out.body).toBeInstanceOf(Readable);
+    const busy = await tt.request('GET', '/open/x', { headers: SDK });
+    expect(busy.status).toBe(429);
+    expect(busy.body).toMatchObject({ error: 'proxy_busy', message: expect.stringMatching(/this visitor/) });
+    releaseSse();
+    const chunks: Buffer[] = [];
+    for await (const c of out.body as Readable) chunks.push(Buffer.from(c as Uint8Array));
+    expect(Buffer.concat(chunks).toString()).toBe('data: one\n\ndata: two\n\n');
+    await settle();
+    expect((await tt.request('GET', '/open/x', { headers: SDK })).status).toBe(200);
+    sseGate = Promise.resolve();
+  });
+
+  it('the slot is released when the client leaves (the Readable destroyed)', async () => {
+    sseGate = new Promise<void>((resolve) => {
+      releaseSse = resolve;
+    });
+    const { tt, out } = await direct('1', '/sse/hold');
+    expect((await tt.request('GET', '/open/x', { headers: SDK })).status).toBe(429);
+    (out.body as Readable).destroy();
+    await settle();
+    expect((await tt.request('GET', '/open/x', { headers: SDK })).status).toBe(200);
+    releaseSse();
+    sseGate = Promise.resolve();
+  });
+
+  it('the slot is released when the upstream drops the stream', async () => {
+    const { tt, out } = await direct('1', '/sse/drop');
+    const err = await (async () => {
+      for await (const _ of out.body as Readable) {
+        /* drain */
+      }
+    })().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ProxyError);
+    await settle();
+    expect((await tt.request('GET', '/open/x', { headers: SDK })).status).toBe(200);
+  });
+
+  it('HEAD on an SSE path is not streamed (no body); its slot is released at once', async () => {
+    const { tt, out } = await direct('1', '/sse', USER, 'HEAD');
+    expect(out.status).toBe(200);
+    expect(out.body).toBeNull();
+    expect((await tt.request('GET', '/open/x', { headers: SDK })).status).toBe(200);
+  });
+
+  it('PROXY_MAX_CONCURRENT_PER_CALLER is per caller: another signed-in user and an anonymous IP still get a slot', async () => {
+    sseGate = new Promise<void>((resolve) => {
+      releaseSse = resolve;
+    });
+    const held = await direct('1', '/sse/hold');
+    expect((await held.tt.request('GET', '/open/x', { headers: SDK })).status).toBe(429);
+    expect((await tc('1', ADMIN).request('GET', '/open/x', { headers: SDK })).status).toBe(200);
+    const anon = createModuleTestContext(callerEnv('1'), {
+      db,
+      app: { id: appA, slug: 'chat', workspaceId: ws1 },
+      config: { upstreams: { open: { rules: { call: 'public' } } } },
+      principal: ANON,
+    });
+    expect((await anon.request('GET', '/open/x', { headers: SDK, clientIp: '203.0.113.5' })).status).toBe(200);
+    releaseSse();
+    (held.out.body as Readable).destroy();
+    sseGate = Promise.resolve();
+    await settle();
   });
 });
 

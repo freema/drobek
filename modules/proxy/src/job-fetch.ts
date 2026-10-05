@@ -6,7 +6,7 @@
  * secret still applies: the assignment in this app's proxy config, the
  * registered + bound + admin-confirmed record (resolve.ts), a slot among the
  * calls in flight, and `forwardToUpstream` (method + path allow-lists, the
- * secret injected server-side, SSRF guard, 20 s, the size cap — the lower of
+ * secret injected server-side, SSRF guard, the response deadline, the size cap — the lower of
  * PROXY_MAX_RESPONSE_BYTES and the job's own).
  */
 import { ModuleError, type OwnerView, type UpstreamRequest, type UpstreamResponse, type UpstreamsAuthority } from '@drobek/modules';

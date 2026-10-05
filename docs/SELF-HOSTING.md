@@ -260,7 +260,10 @@ JavaScript, JSON, XML, SVG, plain text, fonts, wasm) are compressed: a `206`
 range stays byte-exact, images are left alone, and `text/event-stream` is
 never compressed, so MCP's streamable HTTP and any SSE an app backend proxies
 arrive event by event. With a different proxy in front, compress the same way
-and keep `text/event-stream` out of it.
+and keep `text/event-stream` out of it, and do not buffer it either (nginx:
+`proxy_buffering off` — the proxy module's streamed answers carry
+`X-Accel-Buffering: no`, which nginx honours), or an LLM answer streamed through
+the `proxy` module reaches the browser only when it is complete.
 
 Request bodies on the dashboard origin are capped at `DASHBOARD_MAX_BODY_BYTES`
 (1 MiB): a bigger body sent to a dashboard page, the sign-in or an OAuth
@@ -283,7 +286,10 @@ stopping server answers a new one 405), lets requests in flight — a
 `SHUTDOWN_GRACE_MS` (20 s), cuts whatever is still running after that, stops
 its background jobs and exits. The compose file gives the container
 `stop_grace_period: 30s` so Docker does not kill it first; keep it about 10 s
-above `SHUTDOWN_GRACE_MS` when you raise that. An error nothing in drobek
+above `SHUTDOWN_GRACE_MS` when you raise that. A long-lived stream — an LLM
+answer the `proxy` module relays as it arrives — counts as a request in flight:
+a redeploy cuts it after `SHUTDOWN_GRACE_MS`, and the app sees its stream end
+early. An error nothing in drobek
 caught (an uncaught exception or an unhandled promise rejection) stops it the
 same way: the error is logged, sent to the error reporter (`ERROR_REPORTER`)
 and drobek exits with code 1 once the requests in flight drained, so Docker's
@@ -505,8 +511,10 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `FILES_UPLOADS_PER_PRINCIPAL_PER_MIN` | 20 | `files`: uploads per minute of one signed-in user (or one visitor IP), checked before the per-app limit *(plan)* |
 | `FILES_SWEEP_INTERVAL_MS` / `FILES_SWEEP_RETENTION_MS` | 3600000 / 86400000 | `files`: how often the sweep runs; it removes the uploads of apps deleted that long ago, temp uploads untouched that long and blobs that old no app references |
 | `PROXY_ALLOWED_PORTS` / `PROXY_ALLOWED_HOSTS` | 80,443 / empty | `proxy`: upstream ports; hostnames whose private IPs may be reached (keep empty) |
-| `PROXY_CONNECT_TIMEOUT_MS` / `PROXY_MAX_RESPONSE_BYTES` | 8000 / 5242880 | `proxy`: per upstream request (the size cap also holds for a decoded gzip/br body) |
-| `PROXY_MAX_CONCURRENT` / `PROXY_MAX_CONCURRENT_PER_APP` | 32 / 8 | `proxy`: upstream calls in flight on the whole server / per app; over either → `429 proxy_busy` |
+| `PROXY_CONNECT_TIMEOUT_MS` / `PROXY_MAX_RESPONSE_BYTES` | 8000 / 5242880 | `proxy`: how long the TCP / TLS connect to an upstream may take (only the connect, not the answer); the size cap of a buffered answer (also for a decoded gzip/br body) |
+| `PROXY_RESPONSE_TIMEOUT_MS` | 120000 | `proxy`: how long a buffered answer may take (redirects included), and how long a streamed one may take to send its headers |
+| `PROXY_STREAM_IDLE_TIMEOUT_MS` / `PROXY_STREAM_MAX_MS` / `PROXY_STREAM_MAX_BYTES` | 60000 / 600000 / 33554432 | `proxy`: a `text/event-stream` answer is relayed as it arrives; it is cut (with a last SSE `error` event) after this long without data, this long in total, or past this many bytes |
+| `PROXY_MAX_CONCURRENT` / `PROXY_MAX_CONCURRENT_PER_APP` / `PROXY_MAX_CONCURRENT_PER_CALLER` | 32 / 8 / 2 | `proxy`: upstream calls in flight on the whole server / per app / per caller of an app (a signed-in end user, or a client IP); an open stream counts until it ends; over any → `429 proxy_busy` |
 | `UPSTREAMS_MAX_PER_WORKSPACE` | 20 | `proxy`: upstreams one workspace may hold (existing ones over a lowered cap stay, deleting always works); `register_upstream` and the Upstreams page beyond it answer `limit_exceeded` *(plan)* |
 | `UPSTREAM_REGISTRATIONS_PER_HOUR` | 20 | `proxy`: upstream registrations per workspace within the last hour, MCP and dashboard together; then `rate_limited` with `retry_after_seconds` |
 | `PROXY_CALLS_PER_MIN` / `PROXY_PUBLIC_CALLS_PER_MIN_PER_IP` | 60 / 10 | `proxy`: calls per app, per IP to `public` upstreams *(plan)* |

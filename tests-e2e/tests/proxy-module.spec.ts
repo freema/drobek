@@ -23,6 +23,9 @@ import { addMembership, personalWorkspaceOf, userIdByEmail } from './helpers/see
  *    `Authorization: Bearer <secret>`, never the Cookie (raw + through the SDK
  *    in a real browser); anonymous → 401; method/path allow-lists;
  *  - a redirect of the upstream is returned as-is, never followed;
+ *  - a text/event-stream answer streams event by event (raw and through the
+ *    SDK in a real browser, where AbortController stops it); a 10 s answer
+ *    is not cut by the connect timeout;
  *  - the 61st call of an app within a minute → 429 rate_limited;
  *  - SSRF: a private base_url is refused at registration, a host resolving to
  *    a private address → ssrf_blocked; an editor cannot configure upstreams;
@@ -305,6 +308,110 @@ test.describe('platform module proxy — workspace upstreams per app @local', ()
     } finally {
       await ctx.close();
     }
+  });
+
+  test('a text/event-stream answer streams through: the first event arrives long before the last is sent', async () => {
+    skipUnlessLocal();
+    const r = await call(host, '/echo/echo/sse', { cookie: user.cookie });
+    expect(r.status, r.body).toBe(200);
+    expect(r.headers['content-type']).toBe('text/event-stream');
+    expect(r.headers['x-accel-buffering']).toBe('no');
+    expect(r.headers['cache-control']).toBe('no-store');
+    expect(r.headers['content-encoding']).toBeUndefined();
+    const ticks = [...r.body.matchAll(/data: \{"n":(\d)/g)].map((m) => Number(m[1]));
+    expect(ticks).toEqual([1, 2, 3, 4, 5]);
+    // The echo sends the 5 events ~400 ms apart: relayed whole, they would arrive in one go.
+    const first = r.chunks.find((c) => c.text.includes('"n":1'))!;
+    const last = r.chunks.find((c) => c.text.includes('"n":5'))!;
+    expect(first.text).not.toContain('"n":5');
+    expect(last.at - first.at).toBeGreaterThan(1_000);
+  });
+
+  test('a slow answer (10 s) arrives: the 8 s connect timeout no longer cuts it', async () => {
+    skipUnlessLocal();
+    const started = Date.now();
+    const r = await call(host, '/echo/echo/slow?ms=10000', { cookie: user.cookie });
+    expect(r.status, r.body).toBe(200);
+    expect(json(r)).toEqual({ slow: true, ms: 10000 });
+    expect(Date.now() - started).toBeGreaterThan(8_000);
+  });
+
+  test('drobek.proxy.fetch in a real browser: a stream renders event by event; AbortController stops it and frees the slot', async ({ browser }) => {
+    skipUnlessLocal();
+    const main = [
+      "import { drobek } from 'drobek';",
+      "const root = document.getElementById('root')!;",
+      "root.innerHTML = '<button id=\"sse\">Stream</button><button id=\"stall\">Stall</button><button id=\"stop\">Stop</button><p id=\"status\">idle</p><ul id=\"events\"></ul>';",
+      "const status = document.getElementById('status')!;",
+      "const list = document.getElementById('events')!;",
+      'let ctrl: AbortController | null = null;',
+      'async function run(path: string) {',
+      '  ctrl = new AbortController();',
+      "  list.textContent = '';",
+      '  try {',
+      "    const res = await drobek.proxy.fetch('echo', path, { signal: ctrl.signal });",
+      "    status.textContent = `streaming ${res.status}`;",
+      '    const reader = res.body!.getReader();',
+      '    const decoder = new TextDecoder();',
+      "    let buffer = '';",
+      '    for (;;) {',
+      '      const { done, value } = await reader.read();',
+      '      if (done) break;',
+      '      buffer += decoder.decode(value, { stream: true });',
+      "      const events = buffer.split('\\n\\n');",
+      "      buffer = events.pop() ?? '';",
+      '      for (const ev of events) {',
+      "        const data = ev.split('\\n').find((l) => l.startsWith('data: '));",
+      "        if (data) list.insertAdjacentHTML('beforeend', `<li>${JSON.parse(data.slice(6)).n}</li>`);",
+      '      }',
+      '    }',
+      "    status.textContent = 'done';",
+      '  } catch {',
+      "    status.textContent = 'stopped';",
+      '  }',
+      '}',
+      "document.getElementById('sse')!.onclick = () => void run('/echo/sse');",
+      "document.getElementById('stall')!.onclick = () => void run('/echo/sse/stall');",
+      "document.getElementById('stop')!.onclick = () => ctrl?.abort();",
+      '',
+    ].join('\n');
+    const w = await callTool(mcp.client, 'write_files', { app_id: app.app_id, files: [{ path: 'src/main.tsx', content: main }], reasoning: 'proxy stream check' });
+    expect(w.isError, JSON.stringify(w.json)).toBe(false);
+    expect((w.json.compile as { ok: boolean }).ok, JSON.stringify(w.json.compile)).toBe(true);
+
+    const ctx = await browser.newContext();
+    try {
+      await ctx.addCookies([{ name: COOKIE, value: user.value, url: urlOf(host) }]);
+      const page = await ctx.newPage();
+      await page.goto(urlOf(host));
+      const items = page.locator('#events li');
+      const status = page.locator('#status');
+
+      await page.locator('#sse').click();
+      await expect(items.first()).toHaveText('1');
+      // The first event is on the page while the stream is still open.
+      expect(await items.count()).toBeLessThan(5);
+      await expect(status).toHaveText('streaming 200');
+      await expect(status).toHaveText('done', { timeout: 10_000 });
+      await expect(items).toHaveText(['1', '2', '3', '4', '5']);
+
+      await page.locator('#stall').click();
+      await expect(items).toHaveText(['1']);
+      await expect(status).toHaveText('streaming 200');
+      await page.locator('#stop').click();
+      await expect(status).toHaveText('stopped');
+    } finally {
+      await ctx.close();
+    }
+
+    // The stopped stream's slot is free again: two calls of the same user at once both pass
+    // (PROXY_MAX_CONCURRENT_PER_CALLER 2).
+    await expect
+      .poll(async () => {
+        const both = await Promise.all([1, 2].map(() => call(host, '/echo/echo/slow?ms=300', { cookie: user.cookie })));
+        return both.map((r) => r.status);
+      })
+      .toEqual([200, 200]);
   });
 
   test('the 61st call of an app within a minute → 429 rate_limited (PROXY_CALLS_PER_MIN 60)', async ({ request }) => {
