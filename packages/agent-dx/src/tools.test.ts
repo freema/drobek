@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { TOOL_DOCS, TOOL_NAMES, toolDoc } from './tools.js';
 
 describe('TOOL_DOCS manifest', () => {
-  it('documents exactly the 56 tools, in tools/list order', () => {
+  it('documents exactly the 59 tools, in tools/list order', () => {
     expect(TOOL_NAMES).toEqual([
       'list_apps',
       'create_app',
@@ -11,6 +11,9 @@ describe('TOOL_DOCS manifest', () => {
       'read_file',
       'write_files',
       'restore_version',
+      'list_versions',
+      'keep_version',
+      'delete_versions',
       'publish',
       'set_gallery_listing',
       'unpublish',
@@ -94,6 +97,9 @@ describe('TOOL_DOCS manifest', () => {
       read_file: [true, false, true, false],
       write_files: [false, true, false, false], // a new version on every call; can delete files
       restore_version: [false, true, false, false], // a new version on every call
+      list_versions: [true, false, true, false],
+      keep_version: [false, false, true, false], // the same state again answers changed:false
+      delete_versions: [false, true, true, false], // versions gone for good; a second call finds nothing more to delete
       publish: [false, true, true, true], // changes what the public internet sees; same pointer again
       set_gallery_listing: [false, false, true, true], // a public listing; the same call again answers changed:false
       unpublish: [false, true, true, true], // the production address goes 404; a second call answers not_published
@@ -172,6 +178,22 @@ describe('TOOL_DOCS manifest', () => {
       if (t.annotations.readOnlyHint) expect(t.annotations.destructiveHint, t.name).toBe(false);
       expect(t.annotations.openWorldHint, t.name).toBe(openWorld.includes(t.name));
     }
+  });
+
+  it('the version history tools: list_versions reads, keep_version and delete_versions are editor+ writes, the clean-up only on the user\'s yes', () => {
+    expect(toolDoc('list_versions').scope).toMatch(/^read \(any role/);
+    expect(toolDoc('list_versions').fields.map((f) => f.name)).toEqual(['app_id', 'before', 'limit']);
+    expect(toolDoc('list_versions').returns).toContain('next_before');
+    expect(toolDoc('list_versions').description).toContain('APP_VERSIONS_PAGE');
+    for (const name of ['keep_version', 'delete_versions']) expect(toolDoc(name).scope, name).toMatch(/^write \(editor\+/);
+    expect(toolDoc('keep_version').fields.map((f) => f.name)).toEqual(['app_id', 'version', 'kept']);
+    expect(toolDoc('keep_version').description).toContain('APP_VERSIONS_KEPT_MAX');
+    const del = toolDoc('delete_versions');
+    expect(del.fields.map((f) => f.name)).toEqual(['app_id', 'up_to', 'failed_only', 'user_confirmed']);
+    expect(del.description).toMatch(/user_confirmed: true/);
+    expect(del.description).toMatch(/ONLY after the user explicitly said yes/);
+    expect(del.description).toMatch(/Never delete versions on your own initiative/);
+    for (const reason of ['published', 'preview', 'kept', 'rollback_assets', 'newest', 'recent']) expect(del.returns, reason).toContain(reason);
   });
 
   it('set_gallery_listing lists only on the user\'s explicit yes, with the publish scope', () => {

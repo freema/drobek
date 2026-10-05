@@ -5,13 +5,16 @@
  * bound to a USER; the scope decides WHICH tools exist for it, and the user's
  * membership role in the targeted workspace decides what each call may touch.
  *
- *   read    — look: list apps (+ who am I), get an app, read its files, read skills,
+ *   read    — look: list apps (+ who am I), get an app, read its files and
+ *             page its version history (`list_versions`), read skills,
  *             query an app's stored data, read its logs, list its assets and
  *             its custom domains, its form submissions, end users and uploads,
  *             a workspace's members, and (workspace admins) the workspace's
  *             proxy upstreams and activity log.
  *   write   — change: create apps (also as a copy of a gallery app,
  *             `duplicate_app`), write files (new versions), restore,
+ *             keep a version and delete old versions (`keep_version`,
+ *             `delete_versions`, the clean-up only after the user's yes),
  *             configure platform modules, upload (upload URLs) and delete assets,
  *             add, verify and remove custom domains, register and
  *             remove proxy upstreams without a secret, set which sites may
@@ -107,6 +110,10 @@ export const TOOL_SCOPES = {
   duplicate_app: 'write',
   write_files: 'write',
   restore_version: 'write',
+  // The version history: paging it is a read, keeping a version or cleaning old ones up an app change.
+  list_versions: 'read',
+  keep_version: 'write',
+  delete_versions: 'write',
   configure_module: 'write',
   // A run writes the fetched records into the app's data, like the scheduled run.
   sync_now: 'write',

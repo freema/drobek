@@ -53,6 +53,7 @@ const READ_TOOLS = [
   'list_apps',
   'get_app',
   'read_file',
+  'list_versions',
   'skill_info',
   'query_data',
   'get_logs',
@@ -70,6 +71,8 @@ const WRITE_TOOLS = [
   'duplicate_app',
   'write_files',
   'restore_version',
+  'keep_version',
+  'delete_versions',
   'configure_module',
   'sync_now',
   'create_asset_upload',
@@ -177,6 +180,12 @@ describe('tool → scope table', () => {
     for (const t of ['takedown_app', 'restore_app', 'set_gallery_hidden'] as const) {
       expect(toolAllowed(['publish'], t), t).toBe(true);
       expect(toolAllowed(['read', 'write'], t), t).toBe(false);
+    }
+    // Paging the version history is read; keeping a version and the clean-up change the app.
+    expect(toolAllowed(['read'], 'list_versions')).toBe(true);
+    for (const t of ['keep_version', 'delete_versions'] as const) {
+      expect(toolAllowed(['write'], t), t).toBe(true);
+      expect(toolAllowed(['read', 'publish'], t), t).toBe(false);
     }
     // Add/verify/remove a domain are write; the primary domain is publish.
     expect(toolAllowed(['read', 'write'], 'remove_domain')).toBe(true);

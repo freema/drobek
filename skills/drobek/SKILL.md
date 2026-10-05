@@ -393,15 +393,40 @@ operator can restore it.
 ## Roll back
 
 `get_app({ app_id })` lists the last 20 versions with their compile status and
-reasoning. `restore_version({ app_id, version })` creates a NEW version that is
-an exact copy of an old one — a version is never changed.
+reasoning. `list_versions({ app_id, before?, limit? })` (scope `read`) pages
+the whole history, newest first: each version says `published`, `preview`
+(the newest that compiled — what the preview host serves) and `kept`;
+`pinned` lists those versions on every page, and `next_before` is the
+cursor of the next, older page (`null` = the oldest page). `limit` is 1 to
+`APP_VERSIONS_PAGE` (20 by default). `restore_version({ app_id, version })`
+creates a NEW version that is an exact copy of an old one — a version is
+never changed.
 
 An app keeps its newest versions (`APP_VERSIONS_KEEP`, 200 by default), the
-published one and those kept for a rollback; older versions are deleted
-hourly. `get_app`'s `version_retention` (`keep_newest`, `stored`,
-`oldest_version`) says what is kept. `read_file`, `restore_version` and
-`publish` of a deleted version answer `not_found` ("is no longer stored") —
-it cannot be brought back; work from a version that is still stored.
+published one, the kept ones and those kept for a rollback; older versions
+are deleted hourly. `get_app`'s `version_retention` (`keep_newest`,
+`stored`, `oldest_version`) says what is kept. `read_file`, `restore_version`
+and `publish` of a deleted version answer `not_found` ("is no longer
+stored") — it cannot be brought back; work from a version that is still
+stored.
+
+- `keep_version({ app_id, version, kept })` (scope `write`, editor+) keeps a
+  version the user wants to come back to: neither the retention nor a
+  clean-up deletes it. At most `APP_VERSIONS_KEPT_MAX` (20 by default) per
+  app — past it `limit_exceeded`: ask the user which kept version to stop
+  keeping (`kept: false`). After `kept: false`, `prunable: true` = the next
+  retention run deletes it.
+- `delete_versions({ app_id, up_to, failed_only?, user_confirmed })` (scope
+  `write`, editor+) deletes old versions for good — every version up to
+  `up_to`, or only the failed builds — and frees the workspace's storage at
+  once (the way out of `limit_exceeded` for `WORKSPACE_SOURCE_QUOTA`). The
+  published version, the preview's, kept versions, rollback sets, the newest
+  version and the last hour's always stay; `skipped` names them by reason.
+  Without `user_confirmed: true` the answer is `user_confirmation_required`
+  with the plan (`delete`, `count`, `skipped`) and nothing changes: show it
+  and ask "Delete N old versions of <app> for good?" — call again **only
+  after the user explicitly said yes**, never on your own initiative. A
+  taken-down app refuses it (`app_locked_by_admin`).
 
 ## Publishing
 

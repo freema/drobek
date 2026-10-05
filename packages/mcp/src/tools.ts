@@ -2,7 +2,8 @@
  * The MCP tool bodies: list_apps, create_app, get_app,
  * write_files, restore_version, publish, skill_info, configure_module,
  * query_data, get_logs, set_gallery_listing, duplicate_app and sync_now
- * (the app lifecycle tools are in lifecycle.ts, the data write tools in data.ts).
+ * (the app lifecycle tools are in lifecycle.ts, the version history tools in
+ * versions.ts, the data write tools in data.ts).
  * Each takes the caller + validated arguments and returns a plain JSON payload or throws a ToolError; the MCP
  * wiring (register.ts) turns that into a CallToolResult.
  *
@@ -434,6 +435,9 @@ export async function getApp(ctx: CallContext, args: { app_id: string }) {
       actor_kind: v.actorKind,
       reasoning: v.reasoning,
       compile_status: v.compileStatus,
+      published: v.published,
+      preview: v.preview,
+      kept: v.kept,
     })),
     version_retention: retentionOut(await versionRetention(app.id, versionLimits.storage.keep)),
     modules,

@@ -140,17 +140,22 @@ export const LIMITS: LimitDoc[] = [
   {
     env: 'APP_VERSIONS_KEEP',
     default: '200',
-    meaning: 'The newest versions of each app the hourly history retention keeps; older ones are deleted except the published one, the one the preview serves, the kept ones, those kept for a rollback and those from the last hour (read_file / restore_version / publish of a deleted one → not_found; get_app `version_retention`). The limits provider may set it per workspace.',
+    meaning: 'The newest versions of each app the hourly history retention keeps; older ones are deleted except the published one, the one the preview serves, the kept ones, those kept for a rollback and those from the last hour (read_file / restore_version / publish of a deleted one → not_found; get_app `version_retention`). A member deletes older ones sooner with delete_versions. The limits provider may set it per workspace.',
   },
   {
     env: 'APP_VERSIONS_KEPT_MAX',
     default: '20',
-    meaning: 'Versions of one app its members may keep — neither the history retention nor a clean-up deletes a kept version; keeping one more → limit_exceeded with `limit` / `value` (stop keeping one first). A lower limit leaves the versions already kept alone. The limits provider may set it per workspace.',
+    meaning: 'Versions of one app its members may keep (keep_version) — neither the history retention nor a clean-up deletes a kept version; keeping one more → limit_exceeded with `limit` / `value` (stop keeping one first). A lower limit leaves the versions already kept alone. The limits provider may set it per workspace.',
+  },
+  {
+    env: 'APP_VERSIONS_PAGE',
+    default: '20',
+    meaning: 'Versions one page of the history lists — list_versions\' default and largest `limit` (more → invalid_params), and the dashboard\'s page.',
   },
   {
     env: 'WORKSPACE_SOURCE_QUOTA',
     default: '1073741824',
-    meaning: 'Max bytes (1 GiB) of the unique files — sources and build output — the versions of all live apps of one workspace store; a version whose new bytes do not fit (write_files, create_app, duplicate_app) → limit_exceeded with `used_bytes`, nothing stored. A restore adds no bytes. The limits provider may set it per workspace.',
+    meaning: 'Max bytes (1 GiB) of the unique files — sources and build output — the versions of all live apps of one workspace store; a version whose new bytes do not fit (write_files, create_app, duplicate_app) → limit_exceeded with `used_bytes`, nothing stored. A restore adds no bytes; delete_versions frees the bytes only the deleted versions used at once. The limits provider may set it per workspace.',
   },
   {
     env: 'APP_ASSET_UPLOADS_PER_HOUR',

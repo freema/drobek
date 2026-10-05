@@ -54,6 +54,7 @@ import { createRecordsTool, deleteCollectionTool, deleteRecordTool, purgeOrphanR
 import { addDomainTool, listDomainsTool, removeDomainTool, setPrimaryDomainTool, verifyDomainTool } from './domains.js';
 import { deleteAppTool, releaseLeaseTool, setFrameAncestorsTool, setVisibilityTool, unpublishTool } from './lifecycle.js';
 import { listActivityTool } from './activity.js';
+import { deleteVersionsTool, keepVersionTool, listVersionsTool } from './versions.js';
 import {
   deleteFormSubmissionTool,
   deleteUploadTool,
@@ -83,6 +84,9 @@ export const APP_TOOL_NAMES = [
   'read_file',
   'write_files',
   'restore_version',
+  'list_versions',
+  'keep_version',
+  'delete_versions',
   'publish',
   'set_gallery_listing',
   'unpublish',
@@ -202,6 +206,22 @@ export const INPUT_SCHEMAS = {
   restore_version: {
     app_id: appId,
     version: z.number().describe('The version number to copy into a new version.'),
+  },
+  list_versions: {
+    app_id: appId,
+    before: z.number().optional().describe('next_before of the previous page: lists the versions older than this number; default from the newest.'),
+    limit: z.number().optional().describe('Versions on the page, 1 to APP_VERSIONS_PAGE (20 by default), which is also the default.'),
+  },
+  keep_version: {
+    app_id: appId,
+    version: z.number().describe('The version number to keep or stop keeping.'),
+    kept: z.boolean().describe('true keeps the version (neither the history retention nor a clean-up deletes it); false stops keeping it.'),
+  },
+  delete_versions: {
+    app_id: appId,
+    up_to: z.number().describe('The newest version number the clean-up may delete; protected versions up to it stay.'),
+    failed_only: z.boolean().optional().describe('true deletes only the versions whose build failed; default false.'),
+    user_confirmed: z.boolean().optional().describe('true ONLY after the user explicitly said yes to deleting these versions for good.'),
   },
   publish: {
     app_id: appId,
@@ -754,6 +774,9 @@ export function registerAppTools(
   register<ReadFileArgs>('read_file', readFile, (p, args) => untrustedResult(readFileText(args.app_id, p as ReadFileResult)));
   register('write_files', writeFiles);
   register('restore_version', restoreVersion);
+  register('list_versions', listVersionsTool);
+  register('keep_version', keepVersionTool);
+  register('delete_versions', deleteVersionsTool);
   register('publish', publishApp);
   register('set_gallery_listing', setGalleryListingTool);
   register('unpublish', unpublishTool);

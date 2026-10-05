@@ -34,11 +34,13 @@ const ALL_TOOLS = [
   'delete_form_submission',
   'delete_record',
   'delete_upload',
+  'delete_versions',
   'delete_workspace',
   'duplicate_app',
   'get_app',
   'get_logs',
   'invite_member',
+  'keep_version',
   'list_activity',
   'list_apps',
   'list_assets',
@@ -48,6 +50,7 @@ const ALL_TOOLS = [
   'list_members',
   'list_uploads',
   'list_upstreams',
+  'list_versions',
   'purge_orphan_records',
   'query_data',
   'read_file',
@@ -73,6 +76,7 @@ const READ_TOOLS = new Set([
   'list_apps',
   'get_app',
   'read_file',
+  'list_versions',
   'skill_info',
   'query_data',
   'get_logs',
@@ -98,6 +102,8 @@ const IDEMPOTENT_WRITES = new Set([
   'set_frame_ancestors',
   'release_lease',
   'delete_app',
+  'keep_version',
+  'delete_versions',
   'update_record',
   'delete_record',
   'delete_collection',
@@ -221,7 +227,7 @@ test('core tools: create → broken write → fix → limits → restore → rea
       expect(t.title ?? t.annotations?.title, `${t.name} title`).toBeTruthy();
       expect(t.annotations?.readOnlyHint, `${t.name} readOnlyHint`).toBe(READ_TOOLS.has(t.name));
       expect(t.annotations?.openWorldHint, `${t.name} openWorldHint`).toBe(OPEN_WORLD_TOOLS.has(t.name));
-      // Explicit idempotentHint — reads, configure_module, delete_asset, the domain/upstream tools, the app settings/lease/delete tools, the record update/delete tools and the owner's delete/role/block/secret tools repeat safely; sign_out_end_users, create/write/restore/upload URLs and create_records do not.
+      // Explicit idempotentHint — reads, configure_module, delete_asset, the domain/upstream tools, the app settings/lease/delete tools, keeping a version and deleting old ones, the record update/delete tools and the owner's delete/role/block/secret tools repeat safely; sign_out_end_users, create/write/restore/upload URLs and create_records do not.
       expect(t.annotations?.idempotentHint, `${t.name} idempotentHint`).toBe(READ_TOOLS.has(t.name) || IDEMPOTENT_WRITES.has(t.name));
     }
 

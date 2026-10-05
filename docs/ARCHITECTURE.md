@@ -193,8 +193,9 @@ This document is the map of how that works. The neighbours:
   keeps (`kept_at`, at most `APP_VERSIONS_KEPT_MAX` per app), a version whose
   asset set is kept for a rollback (`assets_frozen_at`), the newest version
   and versions from the last hour (they still count against the version
-  rate). A member's clean-up (`deleteVersions`: every version up to a number,
-  or only the failed builds) leaves the same versions alone — one SQL rule
+  rate). A member's clean-up (`deleteVersions`, over MCP `delete_versions`
+  after the user's yes: every version up to a number, or only the failed
+  builds) leaves the same versions alone — one SQL rule
   serves both. Both work app by app under the app's row lock, in batches,
   audit each batch (`app.versions.prune`, a system action; `app.versions.delete`,
   the member — shown in Activity) and bust the serve cache; `version_files`
@@ -203,7 +204,9 @@ This document is the map of how that works. The neighbours:
   newest one was deleted: `read_file`, `restore_version` and `publish` answer
   `not_found` with "is no longer stored" and the oldest version still stored.
   `get_app` (`version_retention`) and the dashboard's version history state
-  how many versions the app keeps and has. While a configured limits
+  how many versions the app keeps and has; `list_versions` pages the history
+  by number (`APP_VERSIONS_PAGE` per page) with the published, preview and
+  kept versions pinned, and `keep_version` keeps one. While a configured limits
   provider does not answer for a workspace (`LimitsProvider.settled` → null),
   the job leaves it alone, so the env fallback never deletes history a plan
   keeps.

@@ -103,6 +103,27 @@ describe('tools/list', () => {
         required: ['app_id', 'version'],
       },
       {
+        name: 'list_versions',
+        title: 'List versions',
+        annotations: { title: 'List versions', ...RO },
+        properties: ['app_id', 'before', 'limit'],
+        required: ['app_id'],
+      },
+      {
+        name: 'keep_version',
+        title: 'Keep a version',
+        annotations: { title: 'Keep a version', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        properties: ['app_id', 'version', 'kept'],
+        required: ['app_id', 'version', 'kept'],
+      },
+      {
+        name: 'delete_versions',
+        title: 'Delete old versions',
+        annotations: { title: 'Delete old versions', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+        properties: ['app_id', 'up_to', 'failed_only', 'user_confirmed'],
+        required: ['app_id', 'up_to'],
+      },
+      {
         name: 'publish',
         title: 'Publish a version',
         annotations: {
@@ -461,8 +482,8 @@ describe('tools/list', () => {
 
   it('a super-admin also gets set_workspace_publishing, set_workspace_module and the moderation tools, last', async () => {
     const tools = await listTools(undefined, true);
-    expect(tools).toHaveLength(56);
-    expect(tools.slice(51).map((t) => t.name)).toEqual(['set_workspace_publishing', 'set_workspace_module', 'takedown_app', 'restore_app', 'set_gallery_hidden']);
+    expect(tools).toHaveLength(59);
+    expect(tools.slice(54).map((t) => t.name)).toEqual(['set_workspace_publishing', 'set_workspace_module', 'takedown_app', 'restore_app', 'set_gallery_hidden']);
     const props = (name: string) => Object.keys((tools.find((t) => t.name === name)!.inputSchema.properties ?? {}) as object);
     expect(props('set_workspace_module')).toEqual(['workspace', 'module', 'enabled', 'user_confirmed']);
     expect(props('takedown_app')).toEqual(['app', 'reason', 'user_confirmed']);
@@ -470,7 +491,7 @@ describe('tools/list', () => {
     expect(props('set_gallery_hidden')).toEqual(['app', 'hidden', 'user_confirmed']);
     const takedown = tools.find((t) => t.name === 'takedown_app')!;
     expect((takedown.inputSchema.properties as Record<string, { enum?: string[] }>).reason.enum).toEqual(['phishing', 'malware', 'spam', 'copyright', 'illegal', 'other']);
-    const last = tools[51];
+    const last = tools[54];
     expect(last.name).toBe('set_workspace_publishing');
     expect(last.annotations).toEqual({
       title: 'Set a workspace\'s publishing',
