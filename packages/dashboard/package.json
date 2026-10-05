@@ -291,6 +291,22 @@
     "./locked-notice": {
       "types": "./src/locked-notice.tsx",
       "default": "./dist/locked-notice.js"
+    },
+    "./whats-new-banner": {
+      "types": "./src/whats-new-banner.tsx",
+      "default": "./dist/whats-new-banner.js"
+    },
+    "./whats-new.server": {
+      "types": "./src/whats-new.server.ts",
+      "default": "./dist/whats-new.server.js"
+    },
+    "./routes/whats-new.server": {
+      "types": "./src/routes/whats-new.server.ts",
+      "default": "./dist/routes/whats-new.server.js"
+    },
+    "./routes/whats-new.dismiss.server": {
+      "types": "./src/routes/whats-new.dismiss.server.ts",
+      "default": "./dist/routes/whats-new.dismiss.server.js"
     }
   },
   "scripts": {

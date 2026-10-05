@@ -4,6 +4,9 @@ export default [
   index('routes/_index.tsx'),
   route('healthz', 'routes/healthz.tsx'),
   route('api/version', 'routes/api.version.tsx'),
+  // The release notes of the running version, and the dashboard notice's dismissal.
+  route('whats-new', 'routes/whats-new.ts'),
+  route('whats-new/dismiss', 'routes/whats-new.dismiss.ts'),
   // The /llms.txt convention + a human build page.
   // Rendered from the @drobek/agent-dx manifest so they never drift from the
   // real MCP tools.

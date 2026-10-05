@@ -219,6 +219,7 @@ built-ins.
 | `LANDING_URL` | — | your own website: `<PUBLIC_APP_URL>/` answers 301 there instead of the built-in landing page |
 | `DOCS_URL` | — | a website with the drobek docs: the agent docs link `<DOCS_URL>/<page>` instead of the files on GitHub |
 | `DASHBOARD_GITHUB_STARS` | — (on) | `off` = the dashboard footer makes no call to `api.github.com` for the repository's star count |
+| `WHATS_NEW_BANNER` | — (`1`) | `0` = no "drobek was updated · What's new" notice in the dashboard after an update |
 | `TLS_*`, `CADDY_*` | per TLS path | see [TLS](#tls) |
 | `HTTP_PORT`, `HTTPS_PORT`, `PUBLISH_IP` | — | published ports / bind address |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | — | optional Google sign-in |
@@ -446,6 +447,7 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `OAUTH_CIMD_DEV_ORIGINS` | — | dev/test only, ignored in production: origins allowed to serve a Client ID Metadata Document over plain http |
 | `AUTH_OIDC_DEV_ORIGINS` | — | dev/test only, ignored in production: origins the `oidc` module may reach over plain http from a private address (the mock IdP of `task mock:oidc`) |
 | `DASHBOARD_GITHUB_STARS` | on | the dashboard footer shows the source repository's GitHub star count, fetched server-side from `api.github.com` (unauthenticated, 3 s timeout, cached 1 h, never delays a page); `off` = no outbound call, no stars |
+| `WHATS_NEW_BANNER` | 1 | after an update to a new release line (the `major.minor` of `DROBEK_VERSION`), every signed-in person sees a notice "drobek was updated to 0.9 · What's new" above the dashboard until they dismiss it; the dismissal is a cookie per browser and line, and a dev build shows no notice. `/whats-new` (no login) redirects to the GitHub release of the running version, or the releases list for a dev build, whatever this is set to. `0` = no notice |
 
 ### Apps, compiler and serving
 
