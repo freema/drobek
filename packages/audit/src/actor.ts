@@ -47,6 +47,12 @@ export const AUDIT_ACTIONS = {
   appVersionRestore: 'app.version.restore',
   /** The history retention deleted old versions of an app (system; meta: count + the first and last number). */
   appVersionsPrune: 'app.versions.prune',
+  /** A member kept a version, so neither the retention nor a clean-up deletes it (meta: version). */
+  appVersionKeep: 'app.version.keep',
+  /** A member stopped keeping a version (meta: version). */
+  appVersionUnkeep: 'app.version.unkeep',
+  /** A member deleted old versions of an app (meta: count, the first and last number, failedOnly). */
+  appVersionsDelete: 'app.versions.delete',
   appPublish: 'app.publish',
   /** Legacy upload pipeline — kept so historic rows still label. */
   deployActivate: 'deploy.activate',

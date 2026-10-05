@@ -3,8 +3,9 @@
  * files point at content-addressed blobs, so identical content is stored once
  * no matter how many versions (or apps) contain it. Publishing moves one
  * pointer (`apps.published_version_id`); restore copies an old file list into
- * a NEW version — a version is never changed. Only the history retention
- * deletes old versions (version-retention.server.ts).
+ * a NEW version — a version's files never change. Only the history retention
+ * and a member's clean-up delete old versions (version-retention.server.ts);
+ * a member can keep a version so neither does (version-keep.server.ts).
  *
  * Publish also freezes the app's assets for the version it puts
  * live, and restore brings back the assets a version had when it was last
@@ -17,7 +18,7 @@
  * stored.
  */
 import { createHash } from 'node:crypto';
-import { and, desc, eq, gte, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNotNull, lt, or, sql, type SQL } from 'drizzle-orm';
 import { AUDIT_ACTIONS, writeAudit, type AuditExecutor } from '@drobek/audit';
 import { normalizeAppPath } from '@drobek/compile';
 import { appVersions, apps, auditLog, blobs, getDb, versionFiles } from '@drobek/db';
@@ -35,6 +36,7 @@ import type {
   VersionDetail,
   VersionFile,
   VersionFileInput,
+  VersionPage,
   VersionSummary,
 } from './types.js';
 
@@ -69,14 +71,28 @@ const VERSION_COLUMNS = {
   compileStatus: appVersions.compileStatus,
   compileErrors: appVersions.compileErrors,
   createdAt: appVersions.createdAt,
+  keptAt: appVersions.keptAt,
+  keptByUserId: appVersions.keptByUserId,
 };
+
+/** The app's versions `where` selects, newest first, with the app's published pointer. */
+function versionRows(where: SQL | undefined) {
+  return getDb()
+    .select({ ...VERSION_COLUMNS, publishedVersionId: apps.publishedVersionId })
+    .from(appVersions)
+    .innerJoin(apps, eq(apps.id, appVersions.appId))
+    .where(where)
+    .orderBy(desc(appVersions.number));
+}
+
+type VersionRow = Awaited<ReturnType<typeof versionRows>>[number];
 
 function sha256Hex(bytes: Buffer): string {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
 /** Lock the app row for the rest of the transaction (serializes version numbers). */
-async function lockApp(tx: Tx, appId: string) {
+export async function lockApp(tx: Tx, appId: string) {
   const [app] = await tx
     .select({
       id: apps.id,
@@ -195,23 +211,38 @@ export async function createVersion(
   });
 }
 
+/** The id of the newest version that compiled — the one the preview host serves — or null. */
+async function previewVersionId(appId: string): Promise<string | null> {
+  const [row] = await getDb()
+    .select({ id: appVersions.id })
+    .from(appVersions)
+    .where(and(eq(appVersions.appId, appId), eq(appVersions.compileStatus, 'ok')))
+    .orderBy(desc(appVersions.number))
+    .limit(1);
+  return row?.id ?? null;
+}
+
+function summaryOf({ publishedVersionId, ...v }: VersionRow, previewId: string | null): VersionSummary {
+  return {
+    ...v,
+    published: publishedVersionId === v.id,
+    preview: previewId === v.id,
+    kept: v.keptAt !== null,
+  };
+}
+
 /** One version of an app (by number or id) with its file list, or null. */
 export async function getVersion(
   appId: string,
   ref: { number: number } | { id: string }
 ): Promise<VersionDetail | null> {
   const db = getDb();
-  const [row] = await db
-    .select({ ...VERSION_COLUMNS, publishedVersionId: apps.publishedVersionId })
-    .from(appVersions)
-    .innerJoin(apps, eq(apps.id, appVersions.appId))
-    .where(
-      and(
-        eq(appVersions.appId, appId),
-        'number' in ref ? eq(appVersions.number, ref.number) : eq(appVersions.id, ref.id)
-      )
-    )
-    .limit(1);
+  const [[row], previewId] = await Promise.all([
+    versionRows(
+      and(eq(appVersions.appId, appId), 'number' in ref ? eq(appVersions.number, ref.number) : eq(appVersions.id, ref.id))
+    ).limit(1),
+    previewVersionId(appId),
+  ]);
   if (!row) return null;
   const files = await db
     .select({
@@ -223,23 +254,52 @@ export async function getVersion(
     .from(versionFiles)
     .where(eq(versionFiles.versionId, row.id))
     .orderBy(versionFiles.kind, versionFiles.path);
-  const { publishedVersionId, ...version } = row;
-  return { ...version, published: publishedVersionId === row.id, files };
+  return { ...summaryOf(row, previewId), files };
 }
 
-/** The app's versions, newest first (no file lists). */
+/**
+ * One page of the app's versions, newest first (no file lists): at most
+ * `limit` (default 50) versions numbered below `before` (default: from the
+ * newest). `nextBefore` continues with the older ones; null on the last page.
+ */
 export async function listVersions(
   appId: string,
-  opts: { limit?: number } = {}
-): Promise<VersionSummary[]> {
-  const rows = await getDb()
-    .select({ ...VERSION_COLUMNS, publishedVersionId: apps.publishedVersionId })
-    .from(appVersions)
-    .innerJoin(apps, eq(apps.id, appVersions.appId))
-    .where(eq(appVersions.appId, appId))
-    .orderBy(desc(appVersions.number))
-    .limit(opts.limit ?? 50);
-  return rows.map(({ publishedVersionId, ...v }) => ({ ...v, published: publishedVersionId === v.id }));
+  opts: { limit?: number; before?: number } = {}
+): Promise<VersionPage> {
+  const limit = opts.limit !== undefined && Number.isFinite(opts.limit) ? Math.max(1, Math.floor(opts.limit)) : 50;
+  const where =
+    opts.before === undefined || !Number.isFinite(opts.before)
+      ? eq(appVersions.appId, appId)
+      : and(eq(appVersions.appId, appId), lt(appVersions.number, Math.ceil(opts.before)));
+  const [rows, previewId] = await Promise.all([
+    versionRows(where).limit(limit + 1),
+    previewVersionId(appId),
+  ]);
+  const page = rows.slice(0, limit);
+  return {
+    versions: page.map((r) => summaryOf(r, previewId)),
+    nextBefore: rows.length > limit ? page[page.length - 1].number : null,
+  };
+}
+
+/**
+ * The versions that stay put whatever page of the history is shown: the
+ * published one, the preview (newest that compiled) and the kept ones,
+ * newest first, each once with its `published` / `preview` / `kept` flags.
+ */
+export async function pinnedVersions(appId: string): Promise<VersionSummary[]> {
+  const previewId = await previewVersionId(appId);
+  const rows = await versionRows(
+    and(
+      eq(appVersions.appId, appId),
+      or(
+        isNotNull(appVersions.keptAt),
+        eq(appVersions.id, apps.publishedVersionId),
+        ...(previewId ? [eq(appVersions.id, previewId)] : [])
+      )
+    )
+  );
+  return rows.map((r) => summaryOf(r, previewId));
 }
 
 /** The newest version's number (0 when the app has none). */

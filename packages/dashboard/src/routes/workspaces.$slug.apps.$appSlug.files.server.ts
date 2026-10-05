@@ -36,7 +36,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const { app } = page;
   const url = new URL(request.url);
 
-  const [header, all] = await Promise.all([appHeaderData(page), listVersions(app.id, { limit: 500 })]);
+  const [header, { versions: all }] = await Promise.all([appHeaderData(page), listVersions(app.id, { limit: 500 })]);
   const number = positiveInt(url.searchParams.get('version')) ?? all[0]?.number ?? null;
   const version = number !== null ? await getVersion(app.id, { number }) : null;
   if (number !== null && !version) throw data({ message: 'Not found' }, { status: 404 });

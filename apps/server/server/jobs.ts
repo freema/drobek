@@ -30,8 +30,8 @@ export interface BackgroundJobs {
  * In-process background work — there is no separate worker container.
  *
  * - Version retention (hourly, Redis lease): deletes the versions of an app
- *   past its workspace's APP_VERSIONS_KEEP — never the published one, a
- *   rollback set, the one the preview serves or the last hour's; a workspace
+ *   past its workspace's APP_VERSIONS_KEEP — never the published one, the
+ *   one the preview serves, a kept one, a rollback set or the last hour's; a workspace
  *   whose limits provider does not answer is left alone (logic in
  *   @drobek/apps).
  * - Blob GC (hourly, one replica at a time via a Redis lease): deletes blobs

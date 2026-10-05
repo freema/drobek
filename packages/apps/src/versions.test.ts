@@ -120,7 +120,7 @@ describe('versions', () => {
         createVersion(appId, [{ path: 'index.html', content: `v${i}` }], { actor })
       )
     );
-    const list = await listVersions(appId);
+    const list = (await listVersions(appId)).versions;
     expect(list.map((v) => v.number)).toEqual([5, 4, 3, 2, 1]);
     expect(await latestVersionNumber(appId)).toBe(5);
   });
@@ -179,7 +179,7 @@ describe('versions', () => {
 
     const [app] = await db.select().from(apps).where(eq(apps.id, appId));
     expect(app.publishedVersionId).toBe(v1.id);
-    expect((await listVersions(appId)).find((v) => v.published)?.number).toBe(1);
+    expect((await listVersions(appId)).versions.find((v) => v.published)?.number).toBe(1);
 
     const history = await db
       .select({ action: auditLog.action, meta: auditLog.meta, actorKind: auditLog.actorKind })

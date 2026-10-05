@@ -28,6 +28,7 @@ import {
   DEFAULT_APP_ASSETS_QUOTA,
   DEFAULT_APP_ASSET_MAX_BYTES,
   DEFAULT_APP_VERSIONS_KEEP,
+  DEFAULT_APP_VERSIONS_KEPT_MAX,
   DEFAULT_VERSIONS_PER_APP_HOUR,
   DEFAULT_VERSIONS_PER_USER_HOUR,
   DEFAULT_WORKSPACE_SOURCE_QUOTA,
@@ -249,6 +250,7 @@ describe('create_app — APPS_MAX_PER_WORKSPACE', () => {
       VERSIONS_PER_APP_HOUR: DEFAULT_VERSIONS_PER_APP_HOUR,
       VERSIONS_PER_USER_HOUR: DEFAULT_VERSIONS_PER_USER_HOUR,
       APP_VERSIONS_KEEP: DEFAULT_APP_VERSIONS_KEEP,
+      APP_VERSIONS_KEPT_MAX: DEFAULT_APP_VERSIONS_KEPT_MAX,
       WORKSPACE_SOURCE_QUOTA: DEFAULT_WORKSPACE_SOURCE_QUOTA,
     });
     // llms-full.txt (agent-dx restates the defaults — it is a zero-dependency leaf).
@@ -1029,7 +1031,7 @@ describe('the history retention and the source quota (APP_VERSIONS_KEEP / WORKSP
       expect(read.isError).toBe(true);
       expect(read.body.code).toBe('not_found');
       expect(read.body.message).toBe(
-        'Version 1 is no longer stored: the history retention deleted it. An app keeps its newest 2 versions, the published one and those kept for a rollback; the oldest version still stored is 3.'
+        "Version 1 is no longer stored: the history retention or a member's clean-up deleted it. An app keeps its newest 2 versions, the published one, the kept ones and those kept for a rollback; the oldest version still stored is 3."
       );
       expect(String(read.body.hint)).toContain('a version the retention deleted cannot be brought back');
       const restored = await c.call('restore_version', { app_id: app.app_id, version: 2 });

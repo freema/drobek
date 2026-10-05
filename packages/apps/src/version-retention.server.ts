@@ -2,43 +2,54 @@
  * How much version history drobek keeps:
  *
  *   APP_VERSIONS_KEEP       the newest versions of each app the retention
- *                           keeps (default 200)
+ *                           keeps (default 200); kept versions stay on top
+ *   APP_VERSIONS_KEPT_MAX   versions of one app its members may keep
+ *                           (default 20)
  *   WORKSPACE_SOURCE_QUOTA  bytes of the unique files (sources and their
  *                           built output) the versions of a workspace's live
  *                           apps may store (default 1 GiB)
  *
  * The retention (`pruneVersionHistory`, hourly under a Redis lease) deletes
- * the versions of an app older than its newest APP_VERSIONS_KEEP — never the
- * published version, a version whose asset set is kept for a rollback
- * (`assets_frozen_at`), the newest version that compiled (the one the preview
- * serves) or a version from the last hour (it still counts against the hourly
- * version rate). Each app is pruned under its row lock, so a write, restore or
- * publish never sees half of it; `version_files` go with their version
- * (cascade) and the blob GC removes the bytes nothing references any more.
- * Every prune is audited `app.versions.prune` (a system action).
+ * the versions of an app older than its newest APP_VERSIONS_KEEP, and a
+ * member's clean-up (`deleteVersions`) the versions up to a number they pick.
+ * Both leave the same versions alone (`protectionReason`): the published
+ * version, the newest version that compiled (the one the preview serves), a
+ * version a member keeps (`kept_at`, version-keep.server.ts), a version whose
+ * asset set is kept for a rollback (`assets_frozen_at`), the newest version
+ * (version numbers are never reused) and a version from the last hour (it
+ * still counts against the hourly version rate). Each app is pruned under its
+ * row lock, so a write, restore or publish never sees half of it;
+ * `version_files` go with their version (cascade) and the blob GC removes the
+ * bytes nothing references any more. A prune is audited `app.versions.prune`
+ * (a system action), a clean-up `app.versions.delete` (the member).
  *
  * The quota is checked when a version is stored (`createVersion`, after the
  * app's row lock, under a per-workspace advisory lock so parallel writes in
  * one workspace cannot overshoot it): a version whose NEW unique bytes would
  * take the workspace past WORKSPACE_SOURCE_QUOTA is refused with
  * `limit_exceeded` and nothing is stored. A version that adds no bytes (a
- * restore, a revert) always fits. Deleted apps do not count.
+ * restore, a revert) always fits. Deleted apps and deleted versions do not
+ * count.
  *
- * Both are in the limits catalogue (`CORE_LIMITS`, @drobek/modules), so a
+ * All three are in the limits catalogue (`CORE_LIMITS`, @drobek/modules), so a
  * limits provider can set them per workspace. The retention leaves a
  * workspace alone while the provider does not answer: the env fallback never
  * deletes history a plan keeps.
  */
 import { createHash } from 'node:crypto';
-import { eq, sql } from 'drizzle-orm';
+import { eq, sql, type SQL } from 'drizzle-orm';
 import { AUDIT_ACTIONS, writeAudit } from '@drobek/audit';
 import { appVersions, apps, dbErrorForLog, getDb, type DB } from '@drobek/db';
 import { AppsError } from './errors.js';
 import { notifyAppChanged } from './events.js';
 import { withRedisLock } from './lock.server.js';
+import { lockedByAdminError } from './moderation.server.js';
+import type { Actor } from './types.js';
 import { VERSION_RATE_WINDOW_SEC } from './version-rate.server.js';
 
 export const DEFAULT_APP_VERSIONS_KEEP = 200;
+export const DEFAULT_APP_VERSIONS_KEPT_MAX = 20;
+export const DEFAULT_APP_VERSIONS_PAGE = 20;
 export const DEFAULT_WORKSPACE_SOURCE_QUOTA = 1024 * 1024 * 1024;
 export const VERSION_RETENTION_INTERVAL_MS = 60 * 60 * 1000;
 /** Versions one transaction of the retention deletes at most (the app's row lock is held meanwhile). */
@@ -48,6 +59,8 @@ const LOCK_KEY = 'drobek:lock:version-retention';
 export interface VersionStorageLimits {
   /** APP_VERSIONS_KEEP */
   keep: number;
+  /** APP_VERSIONS_KEPT_MAX */
+  keptMax: number;
   /** WORKSPACE_SOURCE_QUOTA, bytes */
   sourceQuota: number;
 }
@@ -67,6 +80,7 @@ function rowsOf<T>(res: unknown): T[] {
 export function versionStorageLimits(env: NodeJS.ProcessEnv = process.env): VersionStorageLimits {
   return {
     keep: positiveInt(env.APP_VERSIONS_KEEP, DEFAULT_APP_VERSIONS_KEEP),
+    keptMax: positiveInt(env.APP_VERSIONS_KEPT_MAX, DEFAULT_APP_VERSIONS_KEPT_MAX),
     sourceQuota: positiveInt(env.WORKSPACE_SOURCE_QUOTA, DEFAULT_WORKSPACE_SOURCE_QUOTA),
   };
 }
@@ -79,8 +93,14 @@ export function versionStorageLimitsOf(
   const base = versionStorageLimits(env);
   return {
     keep: positiveInt(limits.APP_VERSIONS_KEEP, base.keep),
+    keptMax: positiveInt(limits.APP_VERSIONS_KEPT_MAX, base.keptMax),
     sourceQuota: positiveInt(limits.WORKSPACE_SOURCE_QUOTA, base.sourceQuota),
   };
+}
+
+/** APP_VERSIONS_PAGE: versions one page of the history lists (the dashboard's page, list_versions' maximum). */
+export function versionsPageSize(env: NodeJS.ProcessEnv = process.env): number {
+  return positiveInt(env.APP_VERSIONS_PAGE, DEFAULT_APP_VERSIONS_PAGE);
 }
 
 // ── the quota ────────────────────────────────────────────────────────────────
@@ -194,10 +214,10 @@ export async function versionRetention(appId: string, keep: number, ex: Executor
 }
 
 /**
- * Why the app has no version `number`: it never existed, or the retention
- * deleted it (version numbers are never reused, so a missing number below the
- * newest one was deleted). `keep` = the workspace's APP_VERSIONS_KEEP, when
- * the caller knows it.
+ * Why the app has no version `number`: it never existed, or the retention or a
+ * member's clean-up deleted it (version numbers are never reused, so a missing
+ * number below the newest one was deleted). `keep` = the workspace's
+ * APP_VERSIONS_KEEP, when the caller knows it.
  */
 export async function missingVersionMessage(
   appId: string,
@@ -208,7 +228,71 @@ export async function missingVersionMessage(
   if (info.newest === null) return `Version ${number} does not exist — the app has no versions yet.`;
   if (number > info.newest) return `Version ${number} does not exist — the newest version is ${info.newest}.`;
   const newest = opts.keep ? `its newest ${opts.keep} versions` : 'its newest versions';
-  return `Version ${number} is no longer stored: the history retention deleted it. An app keeps ${newest}, the published one and those kept for a rollback; the oldest version still stored is ${info.oldest}.`;
+  return `Version ${number} is no longer stored: the history retention or a member's clean-up deleted it. An app keeps ${newest}, the published one, the kept ones and those kept for a rollback; the oldest version still stored is ${info.oldest}.`;
+}
+
+// ── what never goes ─────────────────────────────────────────────────────────
+
+/** Why a version stays when the retention or a clean-up would delete it. */
+export type VersionProtection = 'published' | 'preview' | 'kept' | 'rollback_assets' | 'newest' | 'recent';
+
+/**
+ * The one rule both deleters share: over `app_versions v` of app `appId`, the
+ * reason the version must stay (a VersionProtection), or NULL when it may go.
+ * The subqueries do not depend on `v`, so each runs once per statement.
+ */
+function protectionReason(appId: string): SQL {
+  return sql`CASE
+    WHEN v.id IS NOT DISTINCT FROM (SELECT published_version_id FROM apps WHERE id = ${appId}) THEN 'published'
+    WHEN v.id IS NOT DISTINCT FROM (
+      SELECT id FROM app_versions WHERE app_id = ${appId} AND compile_status = 'ok' ORDER BY number DESC LIMIT 1
+    ) THEN 'preview'
+    WHEN v.kept_at IS NOT NULL THEN 'kept'
+    WHEN v.assets_frozen_at IS NOT NULL THEN 'rollback_assets'
+    WHEN v.number = (SELECT max(number) FROM app_versions WHERE app_id = ${appId}) THEN 'newest'
+    WHEN v.created_at >= localtimestamp - make_interval(secs => ${VERSION_RATE_WINDOW_SEC}) THEN 'recent'
+  END`;
+}
+
+/** The reason each of `numbers` stays (null: it may go); the version must exist. */
+export async function versionProtections(
+  appId: string,
+  numbers: number[],
+  ex: Executor = getDb()
+): Promise<Map<number, VersionProtection | null>> {
+  if (numbers.length === 0) return new Map();
+  const res = await ex.execute(sql`
+    SELECT v.number, ${protectionReason(appId)} AS reason FROM app_versions v
+    WHERE v.app_id = ${appId} AND v.number IN (${sql.join(numbers.map((n) => sql`${n}`), sql`, `)})`);
+  return new Map(rowsOf<{ number: number; reason: VersionProtection | null }>(res).map((r) => [Number(r.number), r.reason ?? null]));
+}
+
+/** Delete one batch of the versions `which` selects that may go; the numbers deleted, ascending. */
+async function deleteBatch(ex: Executor, appId: string, which: SQL): Promise<number[]> {
+  const res = await ex.execute(sql`
+    DELETE FROM app_versions WHERE id IN (
+      SELECT v.id FROM app_versions v
+      WHERE v.app_id = ${appId} AND ${which} AND (${protectionReason(appId)}) IS NULL
+      ORDER BY v.number
+      LIMIT ${PRUNE_BATCH}
+    )
+    RETURNING number`);
+  return rowsOf<{ number: number }>(res)
+    .map((r) => Number(r.number))
+    .sort((a, b) => a - b);
+}
+
+/** Ascending version numbers as compact ranges: [3,4,5,9] → ["3-5", "9"]. */
+export function versionRanges(numbers: Iterable<number>): string[] {
+  const sorted = [...new Set(numbers)].sort((a, b) => a - b);
+  const out: string[] = [];
+  for (let i = 0; i < sorted.length; ) {
+    let j = i;
+    while (j + 1 < sorted.length && sorted[j + 1] === sorted[j] + 1) j += 1;
+    out.push(i === j ? String(sorted[i]) : `${sorted[i]}-${sorted[j]}`);
+    i = j + 1;
+  }
+  return out;
 }
 
 // ── the retention ────────────────────────────────────────────────────────────
@@ -241,24 +325,11 @@ async function pruneBatch(appId: string, keep: number): Promise<{ slug: string; 
       .where(eq(apps.id, appId))
       .for('update');
     if (!app) return null;
-    const res = await tx.execute(sql`
-      DELETE FROM app_versions WHERE id IN (
-        SELECT v.id FROM app_versions v
-        WHERE v.app_id = ${appId}
-          AND v.number <= (SELECT max(number) FROM app_versions WHERE app_id = ${appId}) - ${keep}
-          AND v.assets_frozen_at IS NULL
-          AND v.id IS DISTINCT FROM (SELECT published_version_id FROM apps WHERE id = ${appId})
-          AND v.id IS DISTINCT FROM (
-            SELECT id FROM app_versions WHERE app_id = ${appId} AND compile_status = 'ok' ORDER BY number DESC LIMIT 1
-          )
-          AND v.created_at < localtimestamp - make_interval(secs => ${VERSION_RATE_WINDOW_SEC})
-        ORDER BY v.number
-        LIMIT ${PRUNE_BATCH}
-      )
-      RETURNING number`);
-    const numbers = rowsOf<{ number: number }>(res)
-      .map((r) => Number(r.number))
-      .sort((a, b) => a - b);
+    const numbers = await deleteBatch(
+      tx,
+      appId,
+      sql`v.number <= (SELECT max(number) FROM app_versions WHERE app_id = ${appId}) - ${keep}`
+    );
     if (numbers.length > 0) {
       await writeAudit(
         {
@@ -336,6 +407,115 @@ export async function pruneVersionHistory(opts: PruneVersionHistoryOptions = {})
     }
   }
   return out;
+}
+
+// ── a member's clean-up ──────────────────────────────────────────────────────
+
+export interface VersionDeletionOptions {
+  /** Only versions whose build failed (`compile_status = 'error'`). */
+  failedOnly?: boolean;
+}
+
+export interface VersionDeletion {
+  /** The versions deleted (a plan: that a clean-up would delete) as ranges, e.g. ["3-41", "45"]. */
+  deleted: string[];
+  /** How many versions `deleted` covers. */
+  count: number;
+  /** The versions up to `upTo` that stay, by reason, as ranges; a reason with none is absent. */
+  skipped: Partial<Record<VersionProtection, string[]>>;
+}
+
+type Locked = { slug: string; workspaceId: string; lockedReason: string | null };
+
+async function appForCleanup(ex: Executor, appId: string, lock: boolean): Promise<Locked> {
+  const q = ex.select({ slug: apps.slug, workspaceId: apps.workspaceId, lockedReason: apps.lockedReason }).from(apps).where(eq(apps.id, appId));
+  const [app] = lock ? await q.for('update') : await q;
+  if (!app) throw new AppsError('not_found', `App ${appId} does not exist.`);
+  if (app.lockedReason !== null) throw lockedByAdminError(app.lockedReason);
+  return app;
+}
+
+function cleanupScope(upTo: number, opts: VersionDeletionOptions): SQL {
+  if (!Number.isSafeInteger(upTo)) throw new RangeError('upTo must be an integer version number');
+  return opts.failedOnly ? sql`v.number <= ${upTo} AND v.compile_status = 'error'` : sql`v.number <= ${upTo}`;
+}
+
+/** Of the versions in scope, the numbers that may go and the reason each other one stays. */
+async function classify(ex: Executor, appId: string, scope: SQL): Promise<{ free: number[]; skipped: Partial<Record<VersionProtection, string[]>> }> {
+  const res = await ex.execute(sql`
+    SELECT v.number, ${protectionReason(appId)} AS reason FROM app_versions v
+    WHERE v.app_id = ${appId} AND ${scope}
+    ORDER BY v.number`);
+  const free: number[] = [];
+  const byReason = new Map<VersionProtection, number[]>();
+  for (const r of rowsOf<{ number: number; reason: VersionProtection | null }>(res)) {
+    if (r.reason === null) free.push(Number(r.number));
+    else byReason.set(r.reason, [...(byReason.get(r.reason) ?? []), Number(r.number)]);
+  }
+  const skipped: Partial<Record<VersionProtection, string[]>> = {};
+  for (const [reason, numbers] of byReason) skipped[reason] = versionRanges(numbers);
+  return { free, skipped };
+}
+
+/**
+ * What `deleteVersions` would do now: the versions up to `upTo` (only the
+ * failed builds with `failedOnly`) that would go and why the others stay.
+ * Deletes nothing; refuses like `deleteVersions` (`not_found`,
+ * `app_locked_by_admin`).
+ */
+export async function planVersionDeletion(appId: string, upTo: number, opts: VersionDeletionOptions = {}): Promise<VersionDeletion> {
+  const db = getDb();
+  await appForCleanup(db, appId, false);
+  const { free, skipped } = await classify(db, appId, cleanupScope(upTo, opts));
+  return { deleted: versionRanges(free), count: free.length, skipped };
+}
+
+/**
+ * A member's clean-up: delete the app's versions up to `upTo` (only the failed
+ * builds with `failedOnly`) except those that stay (`VersionProtection`), in
+ * batches under the app's row lock like the retention. Each batch is audited
+ * `app.versions.delete` (meta: count, from, to, failedOnly); the version hosts
+ * of the deleted versions stop answering at once. The freed bytes stop
+ * counting against WORKSPACE_SOURCE_QUOTA. A taken-down app refuses with
+ * `app_locked_by_admin`.
+ */
+export async function deleteVersions(
+  appId: string,
+  upTo: number,
+  opts: VersionDeletionOptions,
+  actor: Actor
+): Promise<VersionDeletion> {
+  const scope = cleanupScope(upTo, opts);
+  const deleted: number[] = [];
+  let skipped: Partial<Record<VersionProtection, string[]>> = {};
+  let slug = '';
+  for (let first = true; ; first = false) {
+    const numbers = await getDb().transaction(async (tx) => {
+      const app = await appForCleanup(tx, appId, true);
+      slug = app.slug;
+      if (first) skipped = (await classify(tx, appId, scope)).skipped;
+      const batch = await deleteBatch(tx, appId, scope);
+      if (batch.length > 0) {
+        await writeAudit(
+          {
+            workspaceId: app.workspaceId,
+            actorUserId: actor.userId,
+            actorKind: actor.kind,
+            action: AUDIT_ACTIONS.appVersionsDelete,
+            subjectType: 'app',
+            target: app.slug,
+            meta: { appId, count: batch.length, from: batch[0], to: batch[batch.length - 1], failedOnly: opts.failedOnly === true },
+          },
+          tx
+        );
+      }
+      return batch;
+    });
+    deleted.push(...numbers);
+    if (numbers.length < PRUNE_BATCH) break;
+  }
+  if (deleted.length > 0) await notifyAppChanged({ app_id: appId, slug, kind: 'version' });
+  return { deleted: versionRanges(deleted), count: deleted.length, skipped };
 }
 
 /** The hourly retention in the server process, under a Redis lease. Returns a stop function. */
