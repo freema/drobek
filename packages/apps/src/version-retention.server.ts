@@ -432,15 +432,15 @@ export interface VersionDeletion {
   /**
    * The fingerprint of the set of versions the plan deletes (for
    * `deleteVersions`: the set it planned under the app's row lock). The same
-   * set always gives the same id.
+   * set of the same app always gives the same id.
    */
   planId: string;
 }
 
-/** The fingerprint of a set of version numbers to delete. */
-function planIdOf(numbers: number[]): string {
+/** The fingerprint of a set of an app's version numbers to delete. */
+function planIdOf(appId: string, numbers: number[]): string {
   const sorted = [...new Set(numbers)].sort((a, b) => a - b);
-  return createHash('sha256').update(`versions:${sorted.join(',')}`).digest('hex').slice(0, 24);
+  return createHash('sha256').update(`versions:${appId}:${sorted.join(',')}`).digest('hex').slice(0, 24);
 }
 
 type Locked = { slug: string; workspaceId: string; lockedReason: string | null };
@@ -485,7 +485,7 @@ export async function planVersionDeletion(appId: string, upTo: number, opts: Ver
   const db = getDb();
   await appForCleanup(db, appId, false);
   const { free, skipped } = await classify(db, appId, cleanupScope(upTo, opts));
-  return { deleted: versionRanges(free), count: free.length, skipped, planId: planIdOf(free) };
+  return { deleted: versionRanges(free), count: free.length, skipped, planId: planIdOf(appId, free) };
 }
 
 /**
@@ -519,7 +519,7 @@ export async function deleteVersions(
       slug = app.slug;
       if (first) {
         const plan = await classify(tx, appId, scope);
-        if (opts.expectedPlanId !== undefined && opts.expectedPlanId !== planIdOf(plan.free)) {
+        if (opts.expectedPlanId !== undefined && opts.expectedPlanId !== planIdOf(appId, plan.free)) {
           throw new AppsError(
             'plan_changed',
             'The versions this clean-up would delete changed since the plan was made (a version was written, published, kept or deleted in between); nothing was deleted.'
@@ -529,7 +529,7 @@ export async function deleteVersions(
         planned = plan.free;
       }
       if (planned.length === 0) return [];
-      const batch = await deleteBatch(tx, appId, sql`${scope} AND v.number IN (${sql.join(planned.map((n) => sql`${n}`), sql`, `)})`);
+      const batch = await deleteBatch(tx, appId, sql`${scope} AND v.number = ANY(${`{${planned.join(',')}}`}::int[])`);
       if (batch.length > 0) {
         await writeAudit(
           {
@@ -550,7 +550,7 @@ export async function deleteVersions(
     if (numbers.length < PRUNE_BATCH) break;
   }
   if (deleted.length > 0) await notifyAppChanged({ app_id: appId, slug, kind: 'version' });
-  return { deleted: versionRanges(deleted), count: deleted.length, skipped, planId: planIdOf(planned) };
+  return { deleted: versionRanges(deleted), count: deleted.length, skipped, planId: planIdOf(appId, planned) };
 }
 
 /** The hourly retention in the server process, under a Redis lease. Returns a stop function. */

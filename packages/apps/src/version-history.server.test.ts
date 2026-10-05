@@ -340,6 +340,7 @@ describe('planVersionDeletion / deleteVersions', () => {
     // The same set from another scope has the same id.
     expect((await planVersionDeletion(app.id, 7)).planId).toBe(plan.planId);
     expect((await planVersionDeletion(app.id, 4)).planId).not.toBe(plan.planId);
+    expect((await planVersionDeletion((await everyReason()).id, 9)).planId).not.toBe(plan.planId);
 
     // v3 is kept between the preview and the confirm: the plan changed.
     await keepVersion(app.id, 3, true, ann, { keptMax: 5 });
