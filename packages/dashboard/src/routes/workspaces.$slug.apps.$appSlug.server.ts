@@ -83,7 +83,15 @@ async function cleanupPreview(appId: string, params: URLSearchParams) {
         return { reason, label: VERSION_PROTECTION_LABEL[reason], ranges, count: countRanges(ranges) };
       });
     return {
-      cleanup: { upTo, failedOnly, count: plan.count, deleted: plan.deleted, stays, stayCount: stays.reduce((n, s) => n + s.count, 0) },
+      cleanup: {
+        upTo,
+        failedOnly,
+        count: plan.count,
+        deleted: plan.deleted,
+        planId: plan.planId,
+        stays,
+        stayCount: stays.reduce((n, s) => n + s.count, 0),
+      },
       cleanupError: null,
     };
   } catch (err) {

@@ -12,7 +12,10 @@
  * (it only protects history). Deleting is irreversible, so it needs the user's
  * explicit yes (`user_confirmed: true`, checked last, after the arguments and
  * the takedown check): without it the answer is `user_confirmation_required`
- * with the plan, and nothing changes. A taken-down app refuses the clean-up
+ * with the plan and its `plan_id`, and nothing changes. The confirmed call
+ * passes that `plan_id` back and deletes exactly that plan: when the versions
+ * that would go changed in between it answers `plan_changed` and deletes
+ * nothing (`deleteVersions`' `expectedPlanId`). A taken-down app refuses the clean-up
  * (`app_locked_by_admin`): its versions are the takedown's evidence. The
  * published version, the preview's, kept versions, rollback sets, the newest
  * version and the last hour's always stay, each reported with its reason.
@@ -154,7 +157,7 @@ function skippedText(skipped: VersionDeletion['skipped']): string {
 
 export async function deleteVersionsTool(
   ctx: CallContext,
-  args: { app_id: string; up_to: number; failed_only?: boolean; user_confirmed?: boolean }
+  args: { app_id: string; up_to: number; failed_only?: boolean; plan_id?: string; user_confirmed?: boolean }
 ) {
   const { app } = await authorizeApp(ctx.principal, args.app_id, 'editor');
   if (!positiveInt(args.up_to)) {
@@ -164,6 +167,11 @@ export async function deleteVersionsTool(
   }
   if (args.failed_only !== undefined && typeof args.failed_only !== 'boolean') {
     throw new ToolError('invalid_params', '`failed_only` must be true (only the versions whose build failed) or false.');
+  }
+  if (args.plan_id !== undefined && !(typeof args.plan_id === 'string' && /^[0-9a-f]{1,64}$/.test(args.plan_id))) {
+    throw new ToolError('invalid_params', '`plan_id` must be the `plan_id` of the user_confirmation_required answer, unchanged.', {
+      plan_id: args.plan_id,
+    });
   }
   if (app.lockedReason) throw lockedByAdmin(app.lockedReason);
   const name = nameOf(app);
@@ -182,11 +190,38 @@ export async function deleteVersionsTool(
   if (args.user_confirmed !== true) {
     throw new ToolError(
       'user_confirmation_required',
-      `Deleting ${plural(plan.count, failedOnly ? 'failed build' : 'old version')} of "${name}" (${plan.deleted.join(', ')}) removes them for good: their version hosts answer 404, and neither restore_version nor read_file can reach them again; it frees their share of the workspace's storage.${skippedText(plan.skipped)} Ask the user "Delete ${plan.count} old version${plan.count === 1 ? '' : 's'} of ${name} for good?", and call again with user_confirmed: true only after they say yes.`,
-      { app_id: app.id, up_to: args.up_to, failed_only: failedOnly, delete: plan.deleted, count: plan.count, skipped: plan.skipped }
+      `Deleting ${plural(plan.count, failedOnly ? 'failed build' : 'old version')} of "${name}" (${plan.deleted.join(', ')}) removes them for good: their version hosts answer 404, and neither restore_version nor read_file can reach them again; it frees their share of the workspace's storage.${skippedText(plan.skipped)} Ask the user "Delete ${plan.count} old version${plan.count === 1 ? '' : 's'} of ${name} for good?", and call again with the same up_to and failed_only, plan_id: "${plan.planId}" and user_confirmed: true only after they say yes.`,
+      {
+        app_id: app.id,
+        up_to: args.up_to,
+        failed_only: failedOnly,
+        delete: plan.deleted,
+        count: plan.count,
+        skipped: plan.skipped,
+        plan_id: plan.planId,
+      }
     );
   }
-  const out = await run(() => deleteVersions(app.id, args.up_to, { failedOnly }, actorOf(ctx)));
+  if (args.plan_id === undefined) {
+    throw new ToolError(
+      'invalid_params',
+      '`plan_id` is required with user_confirmed: true: call delete_versions without user_confirmed first, show the user the plan, and pass its `plan_id` once they said yes.'
+    );
+  }
+  const expectedPlanId = args.plan_id;
+  let out: VersionDeletion;
+  try {
+    out = await run(() => deleteVersions(app.id, args.up_to, { failedOnly, expectedPlanId }, actorOf(ctx)));
+  } catch (err) {
+    if (err instanceof AppsError && err.code === 'plan_changed') {
+      throw new ToolError(
+        'plan_changed',
+        `${err.message} Call delete_versions again without user_confirmed for the current plan and ask the user again.`,
+        { app_id: app.id, up_to: args.up_to, failed_only: failedOnly, plan_id: expectedPlanId }
+      );
+    }
+    throw err;
+  }
   return {
     app_id: app.id,
     deleted: out.deleted,

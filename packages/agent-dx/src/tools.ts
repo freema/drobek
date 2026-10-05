@@ -221,17 +221,23 @@ export const TOOL_DOCS: ToolDoc[] = [
     title: 'Delete old versions',
     scope: 'write (editor+ role in the workspace)',
     description:
-      'Delete the app\'s old versions for good — every version up to `up_to`, or with `failed_only: true` only the versions whose build failed. Some always stay, each reported under `skipped` by its reason: the published version (`published`), the preview\'s (`preview`), kept versions (`kept`, keep_version), versions kept for a production rollback (`rollback_assets`), the newest version (`newest`) and the last hour\'s (`recent`). A deleted version is gone: its version host answers 404, restore_version and read_file answer not_found, and its share of WORKSPACE_SOURCE_QUOTA is free at once — the way out when write_files answered limit_exceeded for the quota. It needs `user_confirmed: true` — set it ONLY after the user explicitly said yes; without it the answer is user_confirmation_required with the plan (`delete` as ranges, `count`, `skipped`) and nothing changes: show it to the user. Never delete versions on your own initiative. Nothing to delete answers count:0 without asking. A taken-down app answers app_locked_by_admin — its versions are kept as they are.',
+      'Delete the app\'s old versions for good — every version up to `up_to`, or with `failed_only: true` only the versions whose build failed. Some always stay, each reported under `skipped` by its reason: the published version (`published`), the preview\'s (`preview`), kept versions (`kept`, keep_version), versions kept for a production rollback (`rollback_assets`), the newest version (`newest`) and the last hour\'s (`recent`). A deleted version is gone: its version host answers 404, restore_version and read_file answer not_found, and its share of WORKSPACE_SOURCE_QUOTA is free at once — the way out when write_files answered limit_exceeded for the quota. It needs `user_confirmed: true` — set it ONLY after the user explicitly said yes — together with the `plan_id` of the plan they said yes to; without it the answer is user_confirmation_required with the plan (`delete` as ranges, `count`, `skipped`, `plan_id`) and nothing changes: show it to the user. The confirmed call deletes exactly that plan: when the versions that would go changed in between (a write, publish, keep_version, another clean-up) it answers plan_changed and deletes nothing — ask again with the new plan. Never delete versions on your own initiative. Nothing to delete answers count:0 without asking. A taken-down app answers app_locked_by_admin — its versions are kept as they are.',
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     fields: [
       { name: 'app_id', type: 'string', required: true, description: 'The app id.' },
       { name: 'up_to', type: 'number', required: true, description: 'The newest version number the clean-up may delete (e.g. a list_versions number).' },
       { name: 'failed_only', type: 'boolean (optional)', required: false, description: 'true deletes only the failed builds up to `up_to`; default false.' },
+      {
+        name: 'plan_id',
+        type: 'string (required with user_confirmed)',
+        required: false,
+        description: 'The `plan_id` of the user_confirmation_required answer whose plan the user said yes to.',
+      },
       { name: 'user_confirmed', type: 'boolean', required: false, description: 'true ONLY after the user explicitly said yes to deleting these versions for good.' },
     ],
     returns:
-      '{ app_id, deleted:["3-41","45"], count, skipped:{ published?, preview?, kept?, rollback_assets?, newest?, recent? } (each a list of ranges), note } — or isError user_confirmation_required with the plan { up_to, failed_only, delete, count, skipped }',
-    example: { app_id: 'k3v9x0…', up_to: 40, user_confirmed: true },
+      '{ app_id, deleted:["3-41","45"], count, skipped:{ published?, preview?, kept?, rollback_assets?, newest?, recent? } (each a list of ranges), note } — or isError user_confirmation_required with the plan { up_to, failed_only, delete, count, skipped, plan_id }, or isError plan_changed',
+    example: { app_id: 'k3v9x0…', up_to: 40, plan_id: '9f2c4e1a7b3d5f60a8c2e4b1', user_confirmed: true },
   },
   {
     name: 'publish',

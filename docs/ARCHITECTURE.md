@@ -196,7 +196,9 @@ This document is the map of how that works. The neighbours:
   rate). A member's clean-up (`deleteVersions`, over MCP `delete_versions`
   after the user's yes: every version up to a number, or only the failed
   builds) leaves the same versions alone — one SQL rule
-  serves both. Both work app by app under the app's row lock, in batches,
+  serves both. The clean-up deletes only the set it worked out under the
+  row lock of its first batch, and refuses (`plan_changed`) when that set's
+  fingerprint is not the `plan_id` the user confirmed. Both work app by app under the app's row lock, in batches,
   audit each batch (`app.versions.prune`, a system action; `app.versions.delete`,
   the member — shown in Activity) and bust the serve cache; `version_files`
   go with their version and the blob GC frees the bytes. Version numbers are

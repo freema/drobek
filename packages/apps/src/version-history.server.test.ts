@@ -270,7 +270,7 @@ describe('planVersionDeletion / deleteVersions', () => {
   it('plans and deletes all but the protected versions, saying why each stays; audits; frees the quota', async () => {
     const app = await everyReason();
     const plan = await planVersionDeletion(app.id, 9);
-    expect(plan).toEqual({ deleted: ['3', '5', '7'], count: 3, skipped: SKIPPED });
+    expect(plan).toEqual({ deleted: ['3', '5', '7'], count: 3, skipped: SKIPPED, planId: expect.stringMatching(/^[0-9a-f]{24}$/) });
     expect(await numbers(app.id)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
 
     const before = await workspaceSourceBytes(app.workspaceId);
@@ -298,10 +298,11 @@ describe('planVersionDeletion / deleteVersions', () => {
       deleted: ['3'],
       count: 1,
       skipped: { kept: ['1'], rollback_assets: ['2'], published: ['4'] },
+      planId: expect.any(String),
     });
-    expect(await planVersionDeletion(app.id, 0)).toEqual({ deleted: [], count: 0, skipped: {} });
+    expect(await planVersionDeletion(app.id, 0)).toMatchObject({ deleted: [], count: 0, skipped: {} });
     const out = await deleteVersions(app.id, 9, { failedOnly: true }, ann);
-    expect(out).toEqual({ deleted: ['5', '7'], count: 2, skipped: { recent: ['8'], newest: ['9'] } });
+    expect(out).toMatchObject({ deleted: ['5', '7'], count: 2, skipped: { recent: ['8'], newest: ['9'] } });
     expect(await numbers(app.id)).toEqual([1, 2, 3, 4, 6, 8, 9]);
     expect((await auditOf(app.workspaceId, 'app.versions.delete'))[0].meta).toEqual({ appId: app.id, count: 2, from: 5, to: 7, failedOnly: true });
   });
@@ -311,7 +312,7 @@ describe('planVersionDeletion / deleteVersions', () => {
     await write(app.id, '<p>ok</p>');
     await write(app.id, '<p>broken', false);
     await ageVersions(app.id);
-    expect(await deleteVersions(app.id, 2, {}, ann)).toEqual({ deleted: [], count: 0, skipped: { preview: ['1'], newest: ['2'] } });
+    expect(await deleteVersions(app.id, 2, {}, ann)).toMatchObject({ deleted: [], count: 0, skipped: { preview: ['1'], newest: ['2'] } });
     expect((await write(app.id, '<p>3</p>')).number).toBe(3);
   });
 
@@ -327,10 +328,54 @@ describe('planVersionDeletion / deleteVersions', () => {
       }))
     );
     const out = await deleteVersions(app.id, 205, {}, ann);
-    expect(out).toEqual({ deleted: ['1-204'], count: 204, skipped: { newest: ['205'] } });
+    expect(out).toMatchObject({ deleted: ['1-204'], count: 204, skipped: { newest: ['205'] } });
     expect(await numbers(app.id)).toEqual([205]);
     const rows = await auditOf(app.workspaceId, 'app.versions.delete');
     expect(rows.map((r) => (r.meta as { count: number }).count).sort((a, b) => a - b)).toEqual([4, 200]);
+  });
+
+  it('with expectedPlanId deletes exactly the confirmed plan, and nothing once the plan changed', async () => {
+    const app = await everyReason();
+    const plan = await planVersionDeletion(app.id, 9);
+    // The same set from another scope has the same id.
+    expect((await planVersionDeletion(app.id, 7)).planId).toBe(plan.planId);
+    expect((await planVersionDeletion(app.id, 4)).planId).not.toBe(plan.planId);
+
+    // v3 is kept between the preview and the confirm: the plan changed.
+    await keepVersion(app.id, 3, true, ann, { keptMax: 5 });
+    const err = await refusal(deleteVersions(app.id, 9, { expectedPlanId: plan.planId }, ann));
+    expect(err.code).toBe('plan_changed');
+    expect(await numbers(app.id)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(await auditOf(app.workspaceId, 'app.versions.delete')).toHaveLength(0);
+
+    // A version that becomes deletable after the preview widens the plan too.
+    await keepVersion(app.id, 3, false, ann, { keptMax: 5 });
+    await keepVersion(app.id, 1, false, ann, { keptMax: 5 });
+    expect((await refusal(deleteVersions(app.id, 9, { expectedPlanId: plan.planId }, ann))).code).toBe('plan_changed');
+    expect(await numbers(app.id)).toHaveLength(9);
+
+    // The plan the member saw again: exactly those versions go.
+    await keepVersion(app.id, 1, true, ann, { keptMax: 5 });
+    expect(await deleteVersions(app.id, 9, { expectedPlanId: plan.planId }, ann)).toEqual(plan);
+    expect(await numbers(app.id)).toEqual([1, 2, 4, 6, 8, 9]);
+  });
+
+  it('with expectedPlanId deletes a plan larger than one batch', async () => {
+    const app = await newApp();
+    await db.insert(appVersions).values(
+      Array.from({ length: 205 }, (_, i) => ({
+        appId: app.id,
+        number: i + 1,
+        actorKind: 'agent' as const,
+        compileStatus: 'error' as const,
+        createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000),
+      }))
+    );
+    const plan = await planVersionDeletion(app.id, 205);
+    expect(plan.count).toBe(204);
+    const out = await deleteVersions(app.id, 205, { expectedPlanId: plan.planId }, ann);
+    expect(out).toEqual(plan);
+    expect(await numbers(app.id)).toEqual([205]);
   });
 
   it('refuses on a taken-down app and an unknown one', async () => {

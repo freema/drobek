@@ -68,6 +68,8 @@ export const CORE_ERROR_CODES: readonly string[] = [
   'compile_error',
   'not_published',
   'user_confirmation_required',
+  // delete_versions: the confirmed plan is no longer what would go
+  'plan_changed',
   'gallery_hidden',
   'gallery_disabled',
   'not_duplicable',

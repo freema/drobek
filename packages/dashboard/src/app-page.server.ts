@@ -27,9 +27,10 @@
  *    the operator. A restore past the workspace's VERSIONS_PER_APP_HOUR /
  *    VERSIONS_PER_USER_HOUR answers 429 `rate_limited` with Retry-After.
  *    Keeping a version past APP_VERSIONS_KEPT_MAX answers 400 with the
- *    limit's message. `delete-versions` needs `confirmed=1` (the confirm
- *    panel's POST) and recomputes what goes itself; it never trusts a count
- *    from the preview.
+ *    limit's message. `delete-versions` needs `confirmed=1` and the
+ *    `planId` of the plan the confirm panel showed (its POST); it recomputes
+ *    what goes under the app's row lock and deletes nothing (409) when that is
+ *    no longer the plan the member confirmed.
  */
 import { data, redirect, type ActionFunctionArgs, type LoaderFunctionArgs } from 'react-router';
 import { and, desc, eq, inArray, max } from 'drizzle-orm';
@@ -284,8 +285,16 @@ export async function appAction({ request, params }: ActionFunctionArgs) {
         }
         const upTo = versionNumber(form.get('upTo'));
         if (!upTo) return fail(400, intent, 'Enter a version number to clean up to, e.g. 12.');
+        const planId = String(form.get('planId') ?? '');
+        if (!planId) {
+          return fail(
+            400,
+            intent,
+            'Nothing was deleted: review the clean-up first. Choose “Review clean-up”, check what goes and what stays, then confirm.'
+          );
+        }
         const failedOnly = form.get('failedOnly') === '1';
-        const out = await deleteVersions(app.id, upTo, { failedOnly }, actor);
+        const out = await deleteVersions(app.id, upTo, { failedOnly, expectedPlanId: planId }, actor);
         const stayed = Object.values(out.skipped).reduce((n, ranges) => n + countRanges(ranges ?? []), 0);
         return redirect(
           withVersionResult(base, {
@@ -378,6 +387,13 @@ export async function appAction({ request, params }: ActionFunctionArgs) {
     // A takedown that landed after the page loaded → 423 like the pre-check.
     if (err instanceof AppsError && err.code === 'app_locked_by_admin') return fail(423, intent, err.message);
     if (err instanceof AppsError && err.code === 'gallery_disabled') return fail(404, intent, err.message);
+    if (err instanceof AppsError && err.code === 'plan_changed') {
+      return fail(
+        409,
+        intent,
+        'Nothing was deleted: the versions this clean-up would delete changed after you reviewed it (a version was written, published, kept or deleted meanwhile). Choose “Review clean-up” again, check the new list, then confirm.'
+      );
+    }
     if (err instanceof AppsError && (err.code === 'publish_not_approved' || err.code === 'publish_blocked')) return fail(403, intent, err.message);
     if (err instanceof AppsError && err.code === 'rate_limited') {
       const retry = err.details?.retry_after_seconds;

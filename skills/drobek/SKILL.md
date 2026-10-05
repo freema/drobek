@@ -416,17 +416,21 @@ stored.
   app — past it `limit_exceeded`: ask the user which kept version to stop
   keeping (`kept: false`). After `kept: false`, `prunable: true` = the next
   retention run deletes it.
-- `delete_versions({ app_id, up_to, failed_only?, user_confirmed })` (scope
+- `delete_versions({ app_id, up_to, failed_only?, plan_id, user_confirmed })` (scope
   `write`, editor+) deletes old versions for good — every version up to
   `up_to`, or only the failed builds — and frees the workspace's storage at
   once (the way out of `limit_exceeded` for `WORKSPACE_SOURCE_QUOTA`). The
   published version, the preview's, kept versions, rollback sets, the newest
   version and the last hour's always stay; `skipped` names them by reason.
   Without `user_confirmed: true` the answer is `user_confirmation_required`
-  with the plan (`delete`, `count`, `skipped`) and nothing changes: show it
-  and ask "Delete N old versions of <app> for good?" — call again **only
-  after the user explicitly said yes**, never on your own initiative. A
-  taken-down app refuses it (`app_locked_by_admin`).
+  with the plan (`delete`, `count`, `skipped`, `plan_id`) and nothing
+  changes: show it and ask "Delete N old versions of <app> for good?" — call
+  again with the same `up_to` / `failed_only`, its `plan_id` and
+  `user_confirmed: true` **only after the user explicitly said yes**, never on
+  your own initiative. The confirmed call deletes exactly that plan; when the
+  versions that would go changed in between it answers `plan_changed` and
+  deletes nothing — ask again with the new plan. A taken-down app refuses it
+  (`app_locked_by_admin`).
 
 ## Publishing
 

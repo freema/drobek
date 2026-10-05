@@ -221,6 +221,10 @@ export const INPUT_SCHEMAS = {
     app_id: appId,
     up_to: z.number().describe('The newest version number the clean-up may delete; protected versions up to it stay.'),
     failed_only: z.boolean().optional().describe('true deletes only the versions whose build failed; default false.'),
+    plan_id: z
+      .string()
+      .optional()
+      .describe('Required with user_confirmed: the `plan_id` of the user_confirmation_required answer whose plan the user said yes to.'),
     user_confirmed: z.boolean().optional().describe('true ONLY after the user explicitly said yes to deleting these versions for good.'),
   },
   publish: {

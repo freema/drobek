@@ -120,7 +120,7 @@ describe('tools/list', () => {
         name: 'delete_versions',
         title: 'Delete old versions',
         annotations: { title: 'Delete old versions', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
-        properties: ['app_id', 'up_to', 'failed_only', 'user_confirmed'],
+        properties: ['app_id', 'up_to', 'failed_only', 'plan_id', 'user_confirmed'],
         required: ['app_id', 'up_to'],
       },
       {

@@ -58,6 +58,8 @@ export const TOOL_ERROR_CODES = [
   'unavailable',
   // An owner change the module refuses in the app's current state (set_end_user_role).
   'conflict',
+  // delete_versions: the versions that would go are no longer the plan the user confirmed.
+  'plan_changed',
   'internal_error',
 ] as const;
 

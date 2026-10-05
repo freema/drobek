@@ -189,7 +189,8 @@ describe('TOOL_DOCS manifest', () => {
     expect(toolDoc('keep_version').fields.map((f) => f.name)).toEqual(['app_id', 'version', 'kept']);
     expect(toolDoc('keep_version').description).toContain('APP_VERSIONS_KEPT_MAX');
     const del = toolDoc('delete_versions');
-    expect(del.fields.map((f) => f.name)).toEqual(['app_id', 'up_to', 'failed_only', 'user_confirmed']);
+    expect(del.fields.map((f) => f.name)).toEqual(['app_id', 'up_to', 'failed_only', 'plan_id', 'user_confirmed']);
+    expect(del.description).toMatch(/plan_changed/);
     expect(del.description).toMatch(/user_confirmed: true/);
     expect(del.description).toMatch(/ONLY after the user explicitly said yes/);
     expect(del.description).toMatch(/Never delete versions on your own initiative/);

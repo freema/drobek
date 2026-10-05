@@ -16,7 +16,8 @@ import { addMembership, personalWorkspaceOf, publishVersion, seedApp, seedVersio
  *    keep answers the limit's message; an unkeep of a version past the newest
  *    APP_VERSIONS_KEEP says the hourly retention will delete it.
  *  - Clean up: the GET form opens the confirm panel (what goes, what stays
- *    and why), an unconfirmed POST deletes nothing, the panel's POST deletes
+ *    and why), an unconfirmed POST and one with a stale plan id delete
+ *    nothing, the panel's POST (with the plan it showed) deletes
  *    and the result banner says what; the live, kept and last-hour versions
  *    survive; "only failed builds" deletes just those. Both clean-ups are
  *    Activity rows.
@@ -150,6 +151,12 @@ test('version history: pinned versions, paging, failed runs, keep / unkeep, clea
     // Without the panel's confirmation nothing is deleted.
     const unconfirmed = await page.request.post(base, { form: { intent: 'delete-versions', upTo: '15' } });
     expect(unconfirmed.status()).toBe(400);
+    const planId = await confirm.getAttribute('data-plan-id');
+    expect(planId).toMatch(/^[0-9a-f]+$/);
+    const stale = await page.request.post(base, {
+      form: { intent: 'delete-versions', upTo: '14', confirmed: '1', planId: planId ?? '' },
+    });
+    expect(stale.status()).toBe(409);
     expect(await storedNumbers(app.id)).toHaveLength(26);
 
     await page.getByTestId('cleanup-confirm-submit').click();
@@ -196,7 +203,7 @@ test('version history: pinned versions, paging, failed runs, keep / unkeep, clea
     await expect(page.getByTestId('cleanup-section')).toHaveCount(0);
     const refused = await page.request.post(base, { form: { intent: 'unkeep', version: '12' } });
     expect(refused.status()).toBe(403);
-    const forced = await page.request.post(base, { form: { intent: 'delete-versions', upTo: '20', confirmed: '1' } });
+    const forced = await page.request.post(base, { form: { intent: 'delete-versions', upTo: '20', confirmed: '1', planId: 'abc' } });
     expect(forced.status()).toBe(403);
     expect(await storedNumbers(app.id)).toHaveLength(11);
   } finally {
