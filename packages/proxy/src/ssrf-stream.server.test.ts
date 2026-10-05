@@ -60,6 +60,13 @@ beforeAll(async () => {
       res.on('close', () => clearInterval(t));
       return;
     }
+    if (url.pathname === '/flood') {
+      upstreamClosed = new Promise<void>((resolve) => res.on('close', () => resolve()));
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      const t = setInterval(() => res.write(`data: ${'y'.repeat(64 * 1024)}\n\n`), 5);
+      res.on('close', () => clearInterval(t));
+      return;
+    }
     if (url.pathname === '/drip' || url.pathname === '/stall') {
       upstreamClosed = new Promise<void>((resolve) => res.on('close', () => resolve()));
       res.writeHead(200, { 'content-type': 'text/event-stream' });
@@ -217,6 +224,16 @@ describe('streamUpstreamBody', () => {
     const { end } = await s.ended;
     expect(end.reason).toBe('stream_too_long');
     expect(Date.now() - started).toBeLessThan(2_000);
+    await upstreamClosed;
+  });
+
+  it('a client that stops reading cannot hold the stream past maxMs + idleMs: the Readable is destroyed', async () => {
+    const started = Date.now();
+    const s = await stream('/flood', { maxMs: 200, idleMs: 300, maxBytes: 64 * 1024 * 1024 });
+    const { end } = await s.ended;
+    expect(end.reason).toBe('stream_too_long');
+    expect(Date.now() - started).toBeLessThan(3_000);
+    expect(s.body.destroyed).toBe(true);
     await upstreamClosed;
   });
 

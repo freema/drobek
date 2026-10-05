@@ -19,8 +19,8 @@
  *      here (forwardToUpstream follows a redirect only within the upstream's
  *      origin and prefixes, each hop through this guard again).
  *   5. A connect timeout that ends once the TCP / TLS connection stands (a
- *      slow answer is bounded by the caller's deadline, not by it), an
- *      optional wall-clock deadline and a response-size cap (a HEAD / 204 /
+ *      slow answer is bounded by the caller's deadline, not by it), a
+ *      wall-clock deadline and a response-size cap (a HEAD / 204 /
  *      304 answer's declared length is not a body and is not held to it).
  *   6. A buffered request body goes out with `Content-Length`, never chunked.
  *
@@ -132,7 +132,7 @@ export interface OpenedUpstream {
 export interface SsrfForwardInput extends UpstreamRequestInput {
   /** Overrides PROXY_MAX_RESPONSE_BYTES (enforced while reading). */
   maxResponseBytes?: number;
-  /** Optional wall-clock cap for the whole exchange (a slow drip cannot outlive it). */
+  /** Wall-clock cap for the whole exchange (a slow drip cannot outlive it); default PROXY_RESPONSE_TIMEOUT_MS. */
   deadlineMs?: number;
 }
 
@@ -343,11 +343,8 @@ export async function ssrfSafeForward(
   const env = input.env ?? process.env;
   const maxBytes = input.maxResponseBytes ?? proxyMaxResponseBytes(env);
   const ctrl = new AbortController();
-  let deadline: NodeJS.Timeout | undefined;
-  if (input.deadlineMs !== undefined) {
-    deadline = setTimeout(() => ctrl.abort(upstreamTimedOut()), input.deadlineMs);
-    deadline.unref();
-  }
+  const deadline = setTimeout(() => ctrl.abort(upstreamTimedOut()), input.deadlineMs ?? proxyResponseTimeoutMs(env));
+  deadline.unref();
   try {
     const opened = await openUpstreamRequest({ ...input, signal: ctrl.signal });
     return await readUpstreamBody(opened, input.method, maxBytes, ctrl.signal);
@@ -396,12 +393,14 @@ export function streamUpstreamBody(opened: OpenedUpstream, opts: StreamBodyOptio
   let over = false;
   let idle: NodeJS.Timeout | undefined;
   let hard: NodeJS.Timeout | undefined;
+  let drain: NodeJS.Timeout | undefined;
 
   const finish = (err: ProxyError | null, reason: StreamEndReason) => {
     if (over) return;
     over = true;
     clearTimeout(idle);
     clearTimeout(hard);
+    clearTimeout(drain);
     opts.finished(err, { bytes, ms: Date.now() - started, reason });
   };
 
@@ -439,6 +438,10 @@ export function streamUpstreamBody(opened: OpenedUpstream, opts: StreamBodyOptio
     res.unpipe(out);
     res.destroy();
     out.end();
+    // A client that stops reading keeps the relayed tail (and the trailer)
+    // unflushed; it gets idleMs to take them before the Readable is destroyed.
+    drain = setTimeout(() => out.destroy(), opts.idleMs);
+    drain.unref();
   }
   function armIdle(): void {
     clearTimeout(idle);
@@ -460,7 +463,7 @@ export function streamUpstreamBody(opened: OpenedUpstream, opts: StreamBodyOptio
   out.on('close', () => {
     if (over) return;
     res.destroy();
-    finish(null, 'client_closed');
+    finish(null, cut ?? 'client_closed');
   });
 
   hard = setTimeout(() => stop('stream_too_long'), opts.maxMs);
