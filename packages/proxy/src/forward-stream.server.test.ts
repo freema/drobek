@@ -1,7 +1,8 @@
 /**
  * forwardToUpstream with `stream: true` against a real local server: only a
- * final, unencoded `text/event-stream` answer is relayed as it arrives (after
- * a followed redirect too); everything else stays buffered; the relayed
+ * final, unencoded `text/event-stream` answer of an upstream that allows
+ * streaming is relayed as it arrives (after a followed redirect too);
+ * everything else, and every answer of an upstream that does not, stays buffered; the relayed
  * headers keep the allow-list, `no-store` and `nosniff` and add
  * `X-Accel-Buffering: no`; a cut stream ends with an SSE error event; the
  * response deadline comes from PROXY_RESPONSE_TIMEOUT_MS. No error or event
@@ -88,6 +89,7 @@ const upstream = (over: Partial<UpstreamRecord> = {}): UpstreamRecord => ({
   authType: 'none',
   authHeaderName: null,
   allowedAppIds: [],
+  allowStreaming: true,
   secret: null,
   ...over,
 });
@@ -167,6 +169,22 @@ describe('forwardToUpstream — stream: true', () => {
     expect(Buffer.isBuffer(buffered.body)).toBe(true);
     expect(buffered.body!.toString('utf8')).toBe('event: a\ndata: 1\n\nevent: b\ndata: 2\n\n');
     expect(buffered.headers['X-Accel-Buffering']).toBeUndefined();
+  });
+
+  it('an upstream without allowStreaming gets its SSE answer buffered in one piece, within the response caps', async () => {
+    const r = await call('/sse', { up: { allowStreaming: false } });
+    expect(isStreamed(r)).toBe(false);
+    const b = r as ForwardResult;
+    expect(b.body?.toString('utf8')).toBe('event: a\ndata: 1\n\nevent: b\ndata: 2\n\n');
+    expect(b.headers['X-Accel-Buffering']).toBeUndefined();
+
+    const capped = await call('/sse', { up: { allowStreaming: false }, e: env({ PROXY_MAX_RESPONSE_BYTES: '20' }) }).catch((x: unknown) => x);
+    expect((capped as ProxyError).code).toBe('upstream_error');
+
+    const late = await call('/sse-stall', { up: { allowStreaming: false }, e: env({ PROXY_RESPONSE_TIMEOUT_MS: '200', PROXY_STREAM_IDLE_TIMEOUT_MS: '5000' }) }).catch(
+      (x: unknown) => x
+    );
+    expect((late as Error).message).toMatch(/timed out/);
   });
 
   it('an SSE answer with an error status is streamed as it is (the app reads the status)', async () => {

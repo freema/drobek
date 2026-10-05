@@ -41,10 +41,10 @@ export const DEFAULT_CONNECT_TIMEOUT_MS = 8_000;
 export const DEFAULT_MAX_RESPONSE_BYTES = 5 * 1024 * 1024; // 5 MiB
 /** Wall-clock cap of a buffered proxied exchange, and of the wait for a stream's headers. */
 export const DEFAULT_RESPONSE_TIMEOUT_MS = 120_000;
-/** A streamed answer is cut after this long without a byte from the upstream. */
+/** A streamed answer is cut after this long between two chunks from the upstream. */
 export const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 60_000;
 /** A streamed answer is cut after this long in total. */
-export const DEFAULT_STREAM_MAX_MS = 600_000;
+export const DEFAULT_STREAM_MAX_MS = 300_000;
 /** A streamed answer is cut past this many bytes. */
 export const DEFAULT_STREAM_MAX_BYTES = 32 * 1024 * 1024;
 
@@ -379,10 +379,16 @@ export interface StreamBodyOptions extends StreamLimits {
 
 /**
  * Relay an opened response as a Readable: each chunk passes as it arrives
- * (with backpressure), counted against `maxBytes`; `idleMs` without a chunk
- * or `maxMs` in total cut it (the upstream connection is closed, `trailer`
- * appended, the Readable ends). Destroying the Readable closes the upstream
- * connection.
+ * (with backpressure), counted against `maxBytes`; `idleMs` between two
+ * chunks received from the upstream, or `maxMs` in total, cut it (the
+ * upstream connection is closed, `trailer` appended, the Readable ends).
+ *
+ * The idle timer measures the upstream only: while the client's slow reading
+ * holds the relay back (backpressure), the upstream is not read and the timer
+ * does not cut; it starts again once the relay drains. A slow client is
+ * bounded by `maxMs` and `maxBytes`, and after a cut it gets `idleMs` to take
+ * the rest before the Readable is destroyed. Destroying the Readable closes
+ * the upstream connection.
  */
 export function streamUpstreamBody(opened: OpenedUpstream, opts: StreamBodyOptions): Readable {
   const res = opened.response;
@@ -417,7 +423,6 @@ export function streamUpstreamBody(opened: OpenedUpstream, opts: StreamBodyOptio
       }
       bytes += chunk.length;
       tail = Buffer.concat([tail, chunk]).subarray(-2);
-      armIdle();
       cb(null, chunk);
     },
     flush(cb) {
@@ -438,14 +443,15 @@ export function streamUpstreamBody(opened: OpenedUpstream, opts: StreamBodyOptio
     res.unpipe(out);
     res.destroy();
     out.end();
-    // A client that stops reading keeps the relayed tail (and the trailer)
-    // unflushed; it gets idleMs to take them before the Readable is destroyed.
     drain = setTimeout(() => out.destroy(), opts.idleMs);
     drain.unref();
   }
   function armIdle(): void {
     clearTimeout(idle);
-    idle = setTimeout(() => stop('stream_idle'), opts.idleMs);
+    if (cut !== null || over) return;
+    idle = setTimeout(() => {
+      if (!out.writableNeedDrain) stop('stream_idle');
+    }, opts.idleMs);
     idle.unref();
   }
 
@@ -470,5 +476,7 @@ export function streamUpstreamBody(opened: OpenedUpstream, opts: StreamBodyOptio
   hard.unref();
   armIdle();
   res.pipe(out);
+  res.on('data', armIdle);
+  out.on('drain', armIdle);
   return out;
 }

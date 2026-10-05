@@ -146,6 +146,7 @@ const upstream = (over: Partial<UpstreamRecord> = {}): UpstreamRecord => ({
   authType: 'none',
   authHeaderName: null,
   allowedAppIds: [],
+  allowStreaming: false,
   secret: null,
   ...over,
 });

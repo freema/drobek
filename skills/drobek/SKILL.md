@@ -616,9 +616,11 @@ workspace admin does it, over MCP or on the dashboard's Upstreams page:
    name that is not registered is refused (`invalid_params`, reason
    `upstream_not_registered`) — register first.
 3. The app calls `drobek.proxy.fetch(<name>, <path>)`. One app may use many
-   upstreams, each with its own name, rule and rate limit. A
-   `text/event-stream` answer (an LLM API with `stream: true`) streams to the
-   page event by event; anything else arrives whole.
+   upstreams, each with its own name, rule and rate limit. On an upstream
+   registered with `allow_streaming: true` (or switched on with
+   `set_upstream_streaming`), a `text/event-stream` answer (an LLM API with
+   `stream: true`) streams to the page event by event; anything else, and
+   every answer of an upstream without it, arrives whole.
 
 `list_upstreams({ workspace })` lists them (never a key);
 `remove_upstream({ workspace, name, user_confirmed })` deletes one only after

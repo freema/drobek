@@ -81,6 +81,7 @@ const WRITE_TOOLS = [
   'verify_domain',
   'remove_domain',
   'register_upstream',
+  'set_upstream_streaming',
   'remove_upstream',
   'set_member_role',
   'remove_member',

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { TOOL_DOCS, TOOL_NAMES, toolDoc } from './tools.js';
 
 describe('TOOL_DOCS manifest', () => {
-  it('documents exactly the 59 tools, in tools/list order', () => {
+  it('documents exactly the 60 tools, in tools/list order', () => {
     expect(TOOL_NAMES).toEqual([
       'list_apps',
       'create_app',
@@ -51,6 +51,7 @@ describe('TOOL_DOCS manifest', () => {
       'remove_domain',
       'list_upstreams',
       'register_upstream',
+      'set_upstream_streaming',
       'remove_upstream',
       'create_workspace',
       'list_members',
@@ -137,6 +138,7 @@ describe('TOOL_DOCS manifest', () => {
       remove_domain: [false, true, true, true], // a verified domain stops serving the public
       list_upstreams: [true, false, true, false],
       register_upstream: [false, false, true, false], // a second call answers upstream_already_registered
+      set_upstream_streaming: [false, false, true, false], // the same value again changes nothing
       remove_upstream: [false, true, true, false], // the apps calling it break; a second remove answers not_found
       create_workspace: [false, false, true, false], // a second call with the same slug answers slug_taken
       list_members: [true, false, true, false],

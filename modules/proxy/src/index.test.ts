@@ -152,7 +152,7 @@ beforeAll(async () => {
   };
   await add(ws1, 'echo', { authType: 'bearer', allowedPathPrefixes: ['/v1', '/redirect', '/cors'] }, SECRET);
   await add(ws1, 'keyed', { authType: 'header', authHeaderName: 'X-Api-Key', allowedMethods: ['GET'] }, HEADER_SECRET);
-  await add(ws1, 'open', {});
+  await add(ws1, 'open', { allowStreaming: true });
   await add(ws2, 'elsewhere', { authType: 'bearer' }, 'ws2-secret-never-used-1234567');
 });
 
@@ -681,6 +681,20 @@ describe('streamed answers (text/event-stream)', () => {
     expect((await tt.request('GET', '/open/x', { headers: SDK })).status).toBe(200);
   });
 
+  it('an upstream without allowStreaming gets its SSE answer buffered in one piece; the slot is released at once', async () => {
+    await db.update(upstreams).set({ allowStreaming: false }).where(and(eq(upstreams.workspaceId, ws1), eq(upstreams.name, 'open')));
+    try {
+      const { tt, out } = await direct('1', '/sse');
+      expect(out.status).toBe(200);
+      expect(Buffer.isBuffer(out.body)).toBe(true);
+      expect((out.body as Buffer).toString('utf8')).toBe('data: one\n\ndata: two\n\n');
+      expect(out.headers['X-Accel-Buffering']).toBeUndefined();
+      expect((await tt.request('GET', '/open/x', { headers: SDK })).status).toBe(200);
+    } finally {
+      await db.update(upstreams).set({ allowStreaming: true }).where(and(eq(upstreams.workspaceId, ws1), eq(upstreams.name, 'open')));
+    }
+  });
+
   it('HEAD on an SSE path is not streamed (no body); its slot is released at once', async () => {
     const { tt, out } = await direct('1', '/sse', USER, 'HEAD');
     expect(out.status).toBe(200);
@@ -754,10 +768,10 @@ describe('appInfo (get_app / configure_module) and registration', () => {
     const config = proxyConfigSchema.parse({ upstreams: { echo: { rateLimit: 5 }, ghost: { rules: { call: 'admin' } } } });
     const info = await proxyAppInfo({ app: { id: appA, slug: 'chat', workspaceId: ws1 }, config, db, log: console as never });
     expect(info.upstreams).toEqual([
-      { name: 'echo', registered: true, assigned: true, call: 'user', rateLimit: 5, hasSecret: true, allowedMethods: ['GET', 'HEAD', 'POST'], allowedPathPrefixes: ['/v1', '/redirect', '/cors'] },
+      { name: 'echo', registered: true, assigned: true, call: 'user', rateLimit: 5, hasSecret: true, allowedMethods: ['GET', 'HEAD', 'POST'], allowedPathPrefixes: ['/v1', '/redirect', '/cors'], allowStreaming: false },
       { name: 'ghost', registered: false, assigned: true, call: 'admin', hasSecret: false },
-      { name: 'keyed', registered: true, assigned: false, hasSecret: true, allowedMethods: ['GET'], allowedPathPrefixes: ['/'] },
-      { name: 'open', registered: true, assigned: false, hasSecret: false, allowedMethods: ['GET', 'HEAD', 'POST'], allowedPathPrefixes: ['/'] },
+      { name: 'keyed', registered: true, assigned: false, hasSecret: true, allowedMethods: ['GET'], allowedPathPrefixes: ['/'], allowStreaming: false },
+      { name: 'open', registered: true, assigned: false, hasSecret: false, allowedMethods: ['GET', 'HEAD', 'POST'], allowedPathPrefixes: ['/'], allowStreaming: true },
     ]);
     const text = JSON.stringify(info);
     expect(text).not.toContain(SECRET);

@@ -14,7 +14,7 @@ import { addMembership, personalWorkspaceOf, userIdByEmail } from './helpers/see
  *
  *  - registering an upstream whose base_url has port 8080 → invalid_request
  *    (the dashboard form shows it); `http://proxy-echo` registers with a
- *    write-only secret the dashboard never shows;
+ *    write-only secret the dashboard never shows and "Stream responses" on;
  *  - get_app / configure_module show the upstream with hasSecret, never the
  *    value; skill_info('proxy') documents the limits;
  *  - an upstream not assigned to the app → 403; assigning it waits for the
@@ -24,8 +24,10 @@ import { addMembership, personalWorkspaceOf, userIdByEmail } from './helpers/see
  *    in a real browser); anonymous → 401; method/path allow-lists;
  *  - a redirect of the upstream is returned as-is, never followed;
  *  - a text/event-stream answer streams event by event (raw and through the
- *    SDK in a real browser, where AbortController stops it); a 10 s answer
- *    is not cut by the connect timeout;
+ *    SDK in a real browser, where AbortController stops it) only while the
+ *    upstream allows streaming — turned off (set_upstream_streaming) it
+ *    arrives buffered in one piece, turned on again on the Upstreams page it
+ *    streams; a 10 s answer is not cut by the connect timeout;
  *  - the 61st call of an app within a minute → 429 rate_limited;
  *  - SSRF: a private base_url is refused at registration, a host resolving to
  *    a private address → ssrf_blocked; an editor cannot configure upstreams;
@@ -155,11 +157,13 @@ test.describe('platform module proxy — workspace upstreams per app @local', ()
     await form.getByTestId('field-paths').fill('/echo /redirect');
     await form.getByTestId('field-authtype').selectOption('bearer');
     await form.getByTestId('field-secret').fill(SECRET);
+    await form.getByTestId('field-streaming').check();
     await form.getByTestId('upstream-submit').click();
     await form.waitForURL(/\/upstreams$/);
     const row = form.locator('[data-testid="upstream-row"][data-upstream-name="echo"]');
     await expect(row).toBeVisible();
     await expect(row.getByTestId('upstream-secret')).toContainText('secret set');
+    await expect(row.getByTestId('upstream-streaming')).toHaveText('streaming');
     expect(await form.content()).not.toContain(SECRET);
     await form.close();
   });
@@ -184,7 +188,7 @@ test.describe('platform module proxy — workspace upstreams per app @local', ()
     expect(got.isError, JSON.stringify(got.json)).toBe(false);
     const proxy = (got.json.modules as Record<string, { info?: { upstreams: Record<string, unknown>[] } }>).proxy;
     expect(proxy.info?.upstreams).toEqual([
-      { name: 'echo', registered: true, assigned: false, hasSecret: true, allowedMethods: ['GET'], allowedPathPrefixes: ['/echo', '/redirect'] },
+      { name: 'echo', registered: true, assigned: false, hasSecret: true, allowedMethods: ['GET'], allowedPathPrefixes: ['/echo', '/redirect'], allowStreaming: true },
     ]);
     expect(got.text).not.toContain(SECRET);
     expect(JSON.stringify(got.json)).not.toContain(SECRET);
@@ -308,6 +312,36 @@ test.describe('platform module proxy — workspace upstreams per app @local', ()
     } finally {
       await ctx.close();
     }
+  });
+
+  test('without streaming on the upstream, a text/event-stream answer arrives buffered in one piece; turned on again on the Upstreams page, it streams', async () => {
+    skipUnlessLocal();
+    const off = await callTool(mcp.client, 'set_upstream_streaming', { workspace: ws, name: 'echo', allow_streaming: false });
+    expect(off.isError, JSON.stringify(off.json)).toBe(false);
+    expect(off.json).toMatchObject({ changed: true, upstream: { name: 'echo', allow_streaming: false } });
+
+    const r = await call(host, '/echo/echo/sse', { cookie: user.cookie });
+    expect(r.status, r.body).toBe(200);
+    expect(r.headers['content-type']).toBe('text/event-stream');
+    expect(r.headers['x-accel-buffering']).toBeUndefined();
+    expect([...r.body.matchAll(/data: \{"n":(\d)/g)].map((m) => Number(m[1]))).toEqual([1, 2, 3, 4, 5]);
+    // Buffered: the five events, sent ~400 ms apart, reach the app together.
+    const first = r.chunks.find((c) => c.text.includes('"n":1'))!;
+    const last = r.chunks.find((c) => c.text.includes('"n":5'))!;
+    expect(last.at - first.at).toBeLessThan(300);
+
+    const form = await owner.newPage();
+    try {
+      await form.goto(`/workspaces/${ws}/upstreams`);
+      const row = form.locator('[data-testid="upstream-row"][data-upstream-name="echo"]');
+      await expect(row.getByTestId('upstream-streaming')).toHaveText('buffered');
+      await row.getByTestId('upstream-streaming-toggle').click();
+      await expect(row.getByTestId('upstream-streaming')).toHaveText('streaming');
+    } finally {
+      await form.close();
+    }
+    const listed = await callTool(mcp.client, 'list_upstreams', { workspace: ws });
+    expect((listed.json.upstreams as { name: string; allow_streaming: boolean }[]).find((u) => u.name === 'echo')?.allow_streaming).toBe(true);
   });
 
   test('a text/event-stream answer streams through: the first event arrives long before the last is sent', async () => {

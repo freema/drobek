@@ -90,6 +90,7 @@ export {
   upstreamsMaxPerWorkspace,
   deleteUpstream,
   getUpstream,
+  setUpstreamStreaming,
   listUpstreams,
   resolveUpstreamForForward,
   allowAppOnUpstream,

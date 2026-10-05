@@ -1,8 +1,8 @@
 /**
  * /workspaces/:slug/upstreams — client half: the BFF proxy config.
  * Lists registered upstreams (name / base URL / methods / path prefixes / auth
- * type — NEVER the secret, only "set" vs "none") and a register form whose secret
- * field is WRITE-ONLY. workspace-admin / super-admin only (the server gate is the
+ * type / streaming — NEVER the secret, only "set" vs "none") with a streaming
+ * on/off button each, and a register form whose secret field is WRITE-ONLY. workspace-admin / super-admin only (the server gate is the
  * source of truth; the workspace page hides the link for everyone else).
  */
 import { Form, useActionData, useLoaderData } from 'react-router';
@@ -75,6 +75,8 @@ const styles = {
   select: { ...controls.select, width: '100%' },
   button: { ...controls.button, marginTop: '0.9rem' },
   deleteBtn: { ...controls.secondaryButton, color: '#b91c1c', border: '1px solid #fecaca' },
+  toggleBtn: { ...controls.secondaryButton },
+  check: { display: 'flex', alignItems: 'flex-start', gap: '0.5rem', marginTop: '0.9rem', fontSize: '0.85rem', fontWeight: 600 },
   error: {
     background: '#fef2f2',
     border: '1px solid #fecaca',
@@ -88,7 +90,7 @@ const styles = {
 } as const;
 
 export default function UpstreamsRoute() {
-  const { nav, upstreams, allowedPorts, prefill, maxUpstreams } = useLoaderData<typeof loader>();
+  const { nav, upstreams, allowedPorts, prefill, maxUpstreams, streamMaxMinutes } = useLoaderData<typeof loader>();
   const full = upstreams.length >= maxUpstreams;
   const needsKey = prefill?.authType === 'bearer' || prefill?.authType === 'header';
   const actionData = useActionData<typeof action>();
@@ -148,7 +150,24 @@ export default function UpstreamsRoute() {
                     no secret
                   </span>
                 )}
+                {u.allowStreaming ? (
+                  <span style={styles.secretSet} data-testid="upstream-streaming">
+                    streaming
+                  </span>
+                ) : (
+                  <span style={styles.badge} data-testid="upstream-streaming">
+                    buffered
+                  </span>
+                )}
                 <Form method="post" style={{ marginLeft: 'auto' }}>
+                  <input type="hidden" name="intent" value="streaming" />
+                  <input type="hidden" name="id" value={u.id} />
+                  <input type="hidden" name="allowStreaming" value={u.allowStreaming ? '0' : '1'} />
+                  <button type="submit" style={styles.toggleBtn} data-testid="upstream-streaming-toggle">
+                    {u.allowStreaming ? 'Turn streaming off' : 'Turn streaming on'}
+                  </button>
+                </Form>
+                <Form method="post">
                   <input type="hidden" name="intent" value="delete" />
                   <input type="hidden" name="id" value={u.id} />
                   <button
@@ -166,6 +185,11 @@ export default function UpstreamsRoute() {
               <div style={styles.meta}>
                 methods: {u.allowedMethods.join(', ')} · paths:{' '}
                 {u.allowedPathPrefixes.join(', ')}
+              </div>
+              <div style={styles.meta} data-testid="upstream-streaming-note">
+                {u.allowStreaming
+                  ? `Event-stream answers reach the apps as they arrive; each such call holds one of the app's proxy slots for up to ${streamMaxMinutes} min.`
+                  : 'Every answer reaches the apps in one piece, after the upstream finished it.'}
               </div>
             </li>
           ))}
@@ -263,6 +287,25 @@ export default function UpstreamsRoute() {
             style={styles.input}
             data-testid="field-secret"
           />
+          <label htmlFor="up-streaming" style={styles.check}>
+            <input
+              id="up-streaming"
+              name="allowStreaming"
+              type="checkbox"
+              value="1"
+              defaultChecked={prefill?.streaming === '1'}
+              data-testid="field-streaming"
+            />
+            <span>
+              Stream responses (for LLM APIs)
+              <span style={{ display: 'block', fontWeight: 400, color: '#71717a', marginTop: '0.2rem' }}>
+                Turn this on only for an API that answers with text/event-stream, such as an LLM API asked to stream. Its
+                answers then reach the app piece by piece as they arrive, and a call can hold one of the app&apos;s proxy
+                slots for up to {streamMaxMinutes} min. Left off, every answer arrives in one piece. You can change this
+                later in the list above.
+              </span>
+            </span>
+          </label>
           <button type="submit" style={styles.button} data-testid="upstream-submit">
             Register upstream
           </button>
