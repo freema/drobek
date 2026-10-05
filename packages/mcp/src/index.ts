@@ -1,6 +1,7 @@
 /**
  * @drobek/mcp — the MCP tool bodies: list_apps, create_app,
- * duplicate_app, get_app, read_file, write_files, restore_version, publish,
+ * duplicate_app, get_app, read_file, write_files, restore_version, the
+ * version history tools (list_versions, keep_version, delete_versions), publish,
  * skill_info, configure_module, query_data, the data write tools
  * (create_records, update_record, delete_record, delete_collection,
  * purge_orphan_records), get_logs, create_asset_upload,

@@ -240,6 +240,7 @@ test('MCP OAuth 2.1 end-to-end: discovery → register → consent → token →
       'list_members',
       'list_uploads',
       'list_upstreams',
+      'list_versions',
       'query_data',
       'read_file',
       'skill_info',

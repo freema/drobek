@@ -311,7 +311,8 @@ to, with your role in each.
   `Authorization: Bearer drk_…`.
 
 The agent gets these tools — `list_apps`, `create_app`, `duplicate_app`, `get_app`,
-`read_file`, `write_files`, `restore_version`, `publish`,
+`read_file`, `write_files`, `restore_version`, for the version history
+`list_versions`, `keep_version`, `delete_versions`, `publish`,
 `set_gallery_listing`, for the app's settings and lifecycle `unpublish`,
 `set_visibility`, `set_frame_ancestors`, `release_lease`, `delete_app`,
 `skill_info`, `configure_module`, `query_data`, for the app's stored data

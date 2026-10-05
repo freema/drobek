@@ -33,6 +33,9 @@ describe('/llms-full.txt loader', () => {
       'read_file',
       'write_files',
       'restore_version',
+      'list_versions',
+      'keep_version',
+      'delete_versions',
       'publish',
     ]) {
       expect(body).toContain(name);
