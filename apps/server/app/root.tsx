@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react';
 import {
   isRouteErrorResponse,
+  type LoaderFunctionArgs,
+  type ShouldRevalidateFunctionArgs,
   Links,
   Meta,
   Outlet,
@@ -12,6 +14,8 @@ import {
 import { DrobekMark, mascotDataUri } from '@drobek/auth/mark';
 import { SourceFooter } from '@drobek/dashboard/footer';
 import { githubStars } from '@drobek/dashboard/github-stars.server';
+import { WhatsNewBanner } from '@drobek/dashboard/whats-new-banner';
+import { loadWhatsNewBanner } from '@drobek/dashboard/whats-new.server';
 
 const FAVICON = mascotDataUri();
 
@@ -20,18 +24,21 @@ const FAVICON = mascotDataUri();
  * footer (the same GIT_SHA `/api/version` reports), the release
  * version (DROBEK_VERSION) and the repository's GitHub stars — answered from
  * memory, never awaited (null while unknown or when DASHBOARD_GITHUB_STARS is
- * off). The root never revalidates for them: they change once per document.
+ * off) — plus the "What's new" notice for a signed-in person. The root
+ * revalidates only after a form submission (sign-in, sign-out), which can
+ * change whether the notice applies; the other values change once per document.
  */
-export function loader() {
+export async function loader({ request }: LoaderFunctionArgs) {
   return {
     sourceSha: process.env.GIT_SHA || 'dev',
     version: process.env.DROBEK_VERSION || 'dev',
     stars: githubStars(),
+    whatsNew: await loadWhatsNewBanner(request),
   };
 }
 
-export function shouldRevalidate() {
-  return false;
+export function shouldRevalidate({ formMethod, defaultShouldRevalidate }: ShouldRevalidateFunctionArgs) {
+  return formMethod !== undefined && formMethod.toUpperCase() !== 'GET' && defaultShouldRevalidate;
 }
 
 export function Layout({ children }: { children: ReactNode }) {
@@ -49,6 +56,7 @@ export function Layout({ children }: { children: ReactNode }) {
         <Links />
       </head>
       <body>
+        {root?.whatsNew ? <WhatsNewBanner line={root.whatsNew.line} /> : null}
         {children}
         <SourceFooter sha={root?.sourceSha} version={root?.version} stars={root?.stars} />
         <ScrollRestoration />

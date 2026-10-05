@@ -610,7 +610,12 @@ for the 30-day window.
   shows each app as a small sandboxed iframe thumbnail. The footer names the
   release, the commit (the AGPL source link) and the repository's GitHub
   stars (fetched server-side, cached 1 h, `DASHBOARD_GITHUB_STARS=off`
-  disables it). All dashboard cookies are `__Host-` in production.
+  disables it). After an update to a new release line (`major.minor` of
+  `DROBEK_VERSION`) a signed-in person sees a dismissible "drobek was updated
+  · What's new" notice above every page; `/whats-new` (public) redirects to
+  the GitHub release of the running version, the dismissal is a cookie per
+  line, and `WHATS_NEW_BANNER=0` turns the notice off. All dashboard cookies
+  are `__Host-` in production.
 - **Abuse**: every app host points at the public report form; super-admins
   take an app down (unpublish + lock → 451 everywhere, every write refused
   with `app_locked_by_admin`) and restore it; a publish heuristic flags
