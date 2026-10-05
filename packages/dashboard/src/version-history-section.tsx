@@ -203,7 +203,8 @@ function ResultBanner({ result, keep, keptMax }: { result: VersionResult | null;
     </p>
   ) : (
     <p style={styles.warn} role="status" data-testid="version-result" data-kind="deleted" data-count={0}>
-      Nothing was deleted: every version in that range is protected now.{stayed}
+      Nothing was deleted: by the time you confirmed, no version in that range could go any more. Review the clean-up again to
+      see what stays.{stayed}
     </p>
   );
 }
@@ -340,6 +341,11 @@ export function VersionHistorySection({ data }: { data: Data }) {
                             <Link to={`${base}/files?version=${v.number}`} data-testid="failed-run-files-link" data-version={v.number}>
                               Files
                             </Link>
+                            {canKeep ? (
+                              <span style={{ display: 'inline-block', marginLeft: '0.5rem' }}>
+                                <KeepButton v={v} keep={retention.keep} busy={busy} />
+                              </span>
+                            ) : null}
                             {v.compileFirstError ? <div style={styles.firstError}>{v.compileFirstError}</div> : null}
                           </li>
                         ))}

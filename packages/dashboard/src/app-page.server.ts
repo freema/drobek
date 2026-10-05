@@ -218,9 +218,9 @@ export async function appAction({ request, params }: ActionFunctionArgs) {
   const requested = await requestApprovalAction(access, form, { base, fallback: back, appName: app.name ?? app.slug });
   if (requested) return requested;
 
-  // A taken-down app is not published, restored or unpublished from
-  // here (@drobek/apps refuses publish/restore itself; unpublish is checked
-  // here so all three answer the same 423).
+  // A taken-down app is not published, restored, unpublished or cleaned up
+  // from here (@drobek/apps refuses publish / restore / delete-versions
+  // itself; unpublish is checked here so all four answer the same 423).
   if (app.lockedReason && (intent === 'publish' || intent === 'restore' || intent === 'unpublish' || intent === 'delete-versions')) {
     return fail(423, intent, lockedByAdminError(app.lockedReason).message);
   }
