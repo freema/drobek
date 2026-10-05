@@ -266,11 +266,11 @@ export async function listVersions(
   appId: string,
   opts: { limit?: number; before?: number } = {}
 ): Promise<VersionPage> {
-  const limit = Math.max(1, Math.floor(opts.limit ?? 50));
+  const limit = opts.limit !== undefined && Number.isFinite(opts.limit) ? Math.max(1, Math.floor(opts.limit)) : 50;
   const where =
-    opts.before === undefined
+    opts.before === undefined || !Number.isFinite(opts.before)
       ? eq(appVersions.appId, appId)
-      : and(eq(appVersions.appId, appId), lt(appVersions.number, opts.before));
+      : and(eq(appVersions.appId, appId), lt(appVersions.number, Math.ceil(opts.before)));
   const [rows, previewId] = await Promise.all([
     versionRows(where).limit(limit + 1),
     previewVersionId(appId),

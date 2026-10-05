@@ -122,6 +122,10 @@ describe('listVersions', () => {
     expect(await listVersions(app.id, { limit: 3, before: -5 })).toEqual({ versions: [], nextBefore: null });
     // The default page is 50.
     expect((await listVersions(app.id)).versions).toHaveLength(7);
+    // A limit or cursor that is not a number falls back to the default page from the newest.
+    expect((await listVersions(app.id, { limit: Number.NaN, before: Number.NaN })).versions).toHaveLength(7);
+    expect((await listVersions(app.id, { limit: 2, before: Number.POSITIVE_INFINITY })).versions.map((v) => v.number)).toEqual([7, 6]);
+    expect((await listVersions(app.id, { limit: 2, before: 4.5 })).versions.map((v) => v.number)).toEqual([4, 3]);
   });
 
   it('flags the published, preview and kept versions', async () => {
