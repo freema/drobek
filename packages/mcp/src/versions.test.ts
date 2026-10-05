@@ -268,13 +268,18 @@ describe('delete_versions', () => {
         delete: ['1', '3', '5-6'],
         count: 4,
         skipped: { published: ['2'], kept: ['4'], preview: ['7'], newest: ['8'] },
+        plan_id: expect.stringMatching(/^[0-9a-f]+$/),
       });
+      const planId = String(ask.plan_id);
+      expect(String(ask.message)).toContain(`plan_id: "${planId}"`);
       expect(String(ask.message)).toContain(`Delete 4 old versions of Hist ${n} for good?`);
       expect(String(ask.hint)).toContain('Delete N old versions of <app> for good?');
       expect(errorOf(await c.call('delete_versions', { app_id: app.id, up_to: 8, user_confirmed: false })).code).toBe('user_confirmation_required');
+      // The yes without the plan it answers deletes nothing.
+      expect(errorOf(await c.call('delete_versions', { app_id: app.id, up_to: 8, user_confirmed: true })).code).toBe('invalid_params');
       expect(await stored(app.id)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
 
-      const done = ok(await c.call('delete_versions', { app_id: app.id, up_to: 8, user_confirmed: true }));
+      const done = ok(await c.call('delete_versions', { app_id: app.id, up_to: 8, plan_id: planId, user_confirmed: true }));
       expect(done).toMatchObject({ deleted: ['1', '3', '5-6'], count: 4, skipped: { published: ['2'], kept: ['4'], preview: ['7'], newest: ['8'] } });
       expect(await stored(app.id)).toEqual([2, 4, 7, 8]);
 
@@ -297,10 +302,34 @@ describe('delete_versions', () => {
     await createVersion(app.id, [{ path: 'index.html', content: '<h1>fresh</h1>' }], { actor, versionLimits: unlimited, compile: { status: 'error' } });
     await createVersion(app.id, [{ path: 'index.html', content: '<h1>fresher</h1>' }], { actor, versionLimits: unlimited, compile: { status: 'ok' } });
     await as('ed', async (c) => {
-      const done = ok(await c.call('delete_versions', { app_id: app.id, up_to: 7, failed_only: true, user_confirmed: true }));
+      const ask = errorOf(await c.call('delete_versions', { app_id: app.id, up_to: 7, failed_only: true }));
+      const done = ok(await c.call('delete_versions', { app_id: app.id, up_to: 7, failed_only: true, plan_id: ask.plan_id, user_confirmed: true }));
       expect(done).toMatchObject({ deleted: ['1', '3'], count: 2, skipped: { recent: ['6'] } });
       expect(await stored(app.id)).toEqual([2, 4, 5, 6, 7]);
     });
+  });
+
+  it('refuses with plan_changed and deletes nothing when the versions that would go changed after the question', async () => {
+    const app = await newApp(6, { published: 2 });
+    await as('ed', async (c) => {
+      const ask = errorOf(await c.call('delete_versions', { app_id: app.id, up_to: 6 }));
+      expect(ask).toMatchObject({ code: 'user_confirmation_required', delete: ['1', '3-5'], count: 4 });
+      ok(await c.call('keep_version', { app_id: app.id, version: 3, kept: true }));
+      const changed = errorOf(await c.call('delete_versions', { app_id: app.id, up_to: 6, plan_id: ask.plan_id, user_confirmed: true }));
+      expect(changed).toMatchObject({ code: 'plan_changed', app_id: app.id, plan_id: ask.plan_id });
+      expect(String(changed.hint)).toContain('delete_versions');
+      expect(await stored(app.id)).toEqual([1, 2, 3, 4, 5, 6]);
+
+      const again = errorOf(await c.call('delete_versions', { app_id: app.id, up_to: 6 }));
+      expect(again).toMatchObject({ delete: ['1', '4-5'], count: 3 });
+      expect(again.plan_id).not.toBe(ask.plan_id);
+      expect(ok(await c.call('delete_versions', { app_id: app.id, up_to: 6, plan_id: again.plan_id, user_confirmed: true }))).toMatchObject({
+        deleted: ['1', '4-5'],
+        count: 3,
+      });
+      expect(await stored(app.id)).toEqual([2, 3, 6]);
+    });
+    expect(await audits(app.slug, ['app.versions.delete'])).toHaveLength(1);
   });
 
   it('a viewer is refused, a non-member gets not_found, bad arguments invalid_params, a taken-down app app_locked_by_admin — all before the question', async () => {
@@ -309,6 +338,7 @@ describe('delete_versions', () => {
     await as('eve', async (c) => expect(errorOf(await c.call('delete_versions', { app_id: app.id, up_to: 2 })).code).toBe('not_found'));
     await as('ed', async (c) => {
       for (const up_to of [0, 1.5, -3]) expect(errorOf(await c.call('delete_versions', { app_id: app.id, up_to })).code).toBe('invalid_params');
+      expect(errorOf(await c.call('delete_versions', { app_id: app.id, up_to: 2, plan_id: 'not a plan' })).code).toBe('invalid_params');
     });
     await takedownApp({ appId: app.id, reason: 'spam', actorUserId: rootId });
     await as('ed', async (c) => {

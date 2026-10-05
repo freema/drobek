@@ -414,6 +414,12 @@ export async function pruneVersionHistory(opts: PruneVersionHistoryOptions = {})
 export interface VersionDeletionOptions {
   /** Only versions whose build failed (`compile_status = 'error'`). */
   failedOnly?: boolean;
+  /**
+   * `deleteVersions` only: the `planId` of the plan the member confirmed. When
+   * the versions that would go differ from it, nothing is deleted
+   * (`plan_changed`).
+   */
+  expectedPlanId?: string;
 }
 
 export interface VersionDeletion {
@@ -423,6 +429,18 @@ export interface VersionDeletion {
   count: number;
   /** The versions up to `upTo` that stay, by reason, as ranges; a reason with none is absent. */
   skipped: Partial<Record<VersionProtection, string[]>>;
+  /**
+   * The fingerprint of the set of versions the plan deletes (for
+   * `deleteVersions`: the set it planned under the app's row lock). The same
+   * set of the same app always gives the same id.
+   */
+  planId: string;
+}
+
+/** The fingerprint of a set of an app's version numbers to delete. */
+function planIdOf(appId: string, numbers: number[]): string {
+  const sorted = [...new Set(numbers)].sort((a, b) => a - b);
+  return createHash('sha256').update(`versions:${appId}:${sorted.join(',')}`).digest('hex').slice(0, 24);
 }
 
 type Locked = { slug: string; workspaceId: string; lockedReason: string | null };
@@ -467,7 +485,7 @@ export async function planVersionDeletion(appId: string, upTo: number, opts: Ver
   const db = getDb();
   await appForCleanup(db, appId, false);
   const { free, skipped } = await classify(db, appId, cleanupScope(upTo, opts));
-  return { deleted: versionRanges(free), count: free.length, skipped };
+  return { deleted: versionRanges(free), count: free.length, skipped, planId: planIdOf(appId, free) };
 }
 
 /**
@@ -478,6 +496,11 @@ export async function planVersionDeletion(appId: string, upTo: number, opts: Ver
  * of the deleted versions stop answering at once. The freed bytes stop
  * counting against WORKSPACE_SOURCE_QUOTA. A taken-down app refuses with
  * `app_locked_by_admin`.
+ *
+ * The set that may go is worked out once, under the row lock of the first
+ * batch, and no batch deletes outside it. With `expectedPlanId` that set must
+ * be the one the member confirmed (`planVersionDeletion`'s `planId`);
+ * otherwise nothing is deleted and the call refuses with `plan_changed`.
  */
 export async function deleteVersions(
   appId: string,
@@ -488,13 +511,25 @@ export async function deleteVersions(
   const scope = cleanupScope(upTo, opts);
   const deleted: number[] = [];
   let skipped: Partial<Record<VersionProtection, string[]>> = {};
+  let planned: number[] = [];
   let slug = '';
   for (let first = true; ; first = false) {
     const numbers = await getDb().transaction(async (tx) => {
       const app = await appForCleanup(tx, appId, true);
       slug = app.slug;
-      if (first) skipped = (await classify(tx, appId, scope)).skipped;
-      const batch = await deleteBatch(tx, appId, scope);
+      if (first) {
+        const plan = await classify(tx, appId, scope);
+        if (opts.expectedPlanId !== undefined && opts.expectedPlanId !== planIdOf(appId, plan.free)) {
+          throw new AppsError(
+            'plan_changed',
+            'The versions this clean-up would delete changed since the plan was made (a version was written, published, kept or deleted in between); nothing was deleted.'
+          );
+        }
+        skipped = plan.skipped;
+        planned = plan.free;
+      }
+      if (planned.length === 0) return [];
+      const batch = await deleteBatch(tx, appId, sql`${scope} AND v.number = ANY(${`{${planned.join(',')}}`}::int[])`);
       if (batch.length > 0) {
         await writeAudit(
           {
@@ -515,7 +550,7 @@ export async function deleteVersions(
     if (numbers.length < PRUNE_BATCH) break;
   }
   if (deleted.length > 0) await notifyAppChanged({ app_id: appId, slug, kind: 'version' });
-  return { deleted: versionRanges(deleted), count: deleted.length, skipped };
+  return { deleted: versionRanges(deleted), count: deleted.length, skipped, planId: planIdOf(appId, planned) };
 }
 
 /** The hourly retention in the server process, under a Redis lease. Returns a stop function. */

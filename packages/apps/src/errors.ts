@@ -31,7 +31,9 @@ export type AppsErrorCode =
    */
   | 'rate_limited'
   /** `createVersion` with `baseVersion` found a newer version than the one the write was based on. */
-  | 'version_conflict';
+  | 'version_conflict'
+  /** `deleteVersions` with `expectedPlanId`: the versions that would go are no longer the confirmed plan; nothing was deleted. */
+  | 'plan_changed';
 
 export interface AppsErrorDetails {
   limit: string;

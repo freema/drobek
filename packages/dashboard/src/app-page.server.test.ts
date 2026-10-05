@@ -5,8 +5,9 @@
  * unpublish answer 423 `app_locked_by_admin` before anything changes, other
  * intents are not refused as locked; a restore past the workspace's version
  * rate answers 429 `rate_limited` with Retry-After; keep / unkeep and the
- * history clean-up (a viewer → 403, an unconfirmed clean-up changes nothing,
- * the APP_VERSIONS_KEPT_MAX message, a clean-up of a taken-down app → 423
+ * history clean-up (a viewer → 403, an unconfirmed clean-up or one without
+ * the reviewed plan changes nothing, a plan that changed after the review →
+ * 409 and nothing deleted, the APP_VERSIONS_KEPT_MAX message, a clean-up of a taken-down app → 423
  * while keeping still works there).
  */
 import { fileURLToPath } from 'node:url';
@@ -17,6 +18,7 @@ import { migrate } from 'drizzle-orm/pglite/migrator';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import * as schema from '@drobek/db/schema';
 import { appVersions, apps, auditLog, setDbForTests, users, workspaces } from '@drobek/db';
+import { planVersionDeletion } from '@drobek/apps';
 import { setModuleRuntimeForTests } from '@drobek/modules';
 
 const role = vi.hoisted(() => ({
@@ -169,7 +171,7 @@ describe('keep / unkeep and the history clean-up', () => {
       const bodies: Record<string, string>[] = [
         { intent: 'keep', version: '1' },
         { intent: 'unkeep', version: '1' },
-        { intent: 'delete-versions', upTo: '2', confirmed: '1' },
+        { intent: 'delete-versions', upTo: '2', confirmed: '1', planId: 'abc' },
       ];
       for (const body of bodies) {
         const err = await post(body, 'viewer-app').then(
@@ -208,7 +210,7 @@ describe('keep / unkeep and the history clean-up', () => {
     expect(await auditFor('keep-app')).toEqual(['app.version.keep', 'app.version.unkeep']);
   });
 
-  it('an unconfirmed clean-up deletes nothing; a confirmed one recomputes what goes and redirects with the result', async () => {
+  it('an unconfirmed clean-up deletes nothing; a confirmed one deletes the reviewed plan and redirects with the result', async () => {
     const appId = await seedApp('clean-app', [
       { number: 1 },
       { number: 2, compileStatus: 'error' },
@@ -222,15 +224,28 @@ describe('keep / unkeep and the history clean-up', () => {
     expect(await numbers(appId)).toEqual([1, 2, 3, 4, 5]);
     expect(await auditFor('clean-app')).toEqual([]);
 
-    expect(failed(await post({ intent: 'delete-versions', upTo: '0', confirmed: '1' }, 'clean-app'))).toMatchObject({ status: 400 });
+    expect(failed(await post({ intent: 'delete-versions', upTo: '0', confirmed: '1', planId: 'abc' }, 'clean-app'))).toMatchObject({ status: 400 });
+    // Confirmed without the plan the panel showed: nothing is deleted.
+    const planless = failed(await post({ intent: 'delete-versions', upTo: '4', confirmed: '1' }, 'clean-app'));
+    expect(planless).toMatchObject({ status: 400, intent: 'delete-versions' });
+    expect(planless.error).toContain('Nothing was deleted');
+    expect(await numbers(appId)).toEqual([1, 2, 3, 4, 5]);
 
-    expect(location(await post({ intent: 'delete-versions', upTo: '4', failedOnly: '1', confirmed: '1' }, 'clean-app'))).toBe(
-      '/workspaces/acme/apps/clean-app?deletedCount=2&deletedRanges=2-3&deletedFailedOnly=1'
-    );
+    const failedPlan = await planVersionDeletion(appId, 4, { failedOnly: true });
+    expect(
+      location(await post({ intent: 'delete-versions', upTo: '4', failedOnly: '1', confirmed: '1', planId: failedPlan.planId }, 'clean-app'))
+    ).toBe('/workspaces/acme/apps/clean-app?deletedCount=2&deletedRanges=2-3&deletedFailedOnly=1');
+    expect(await numbers(appId)).toEqual([1, 4, 5]);
+
+    // The plan reviewed before the failed builds went no longer matches: 409, nothing deleted.
+    const stale = failed(await post({ intent: 'delete-versions', upTo: '5', confirmed: '1', planId: failedPlan.planId }, 'clean-app'));
+    expect(stale).toMatchObject({ status: 409, intent: 'delete-versions' });
+    expect(stale.error).toContain('changed after you reviewed it');
     expect(await numbers(appId)).toEqual([1, 4, 5]);
 
     // v5 is the preview and the newest: it stays.
-    expect(location(await post({ intent: 'delete-versions', upTo: '5', confirmed: '1' }, 'clean-app'))).toBe(
+    const plan = await planVersionDeletion(appId, 5);
+    expect(location(await post({ intent: 'delete-versions', upTo: '5', confirmed: '1', planId: plan.planId }, 'clean-app'))).toBe(
       '/workspaces/acme/apps/clean-app?deletedCount=2&deletedRanges=1%2C4&stayed=1'
     );
     expect(await numbers(appId)).toEqual([5]);
@@ -238,7 +253,7 @@ describe('keep / unkeep and the history clean-up', () => {
   });
 
   it('on a taken-down app the clean-up answers 423 and keeping still works', async () => {
-    const locked = failed(await post({ intent: 'delete-versions', upTo: '1', confirmed: '1' }));
+    const locked = failed(await post({ intent: 'delete-versions', upTo: '1', confirmed: '1', planId: 'abc' }));
     expect(locked.status).toBe(423);
     expect(locked.error).toContain('taken down by the server operator');
     expect(await db().select().from(appVersions).where(eq(appVersions.appId, appId))).toHaveLength(1);

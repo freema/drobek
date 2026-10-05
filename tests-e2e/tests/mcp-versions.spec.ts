@@ -14,7 +14,9 @@ import { addMembership, personalWorkspaceOf, userIdByEmail, withDb } from './hel
  *     APP_VERSIONS_KEPT_MAX of the workspace's plan (the fake limits provider
  *     sets 1), past it `limit_exceeded`;
  *   - delete_versions answers `user_confirmation_required` with the plan and
- *     changes nothing; with `user_confirmed: true` the versions are gone for
+ *     its `plan_id` and changes nothing; a yes with another plan_id answers
+ *     `plan_changed` and deletes nothing; with `user_confirmed: true` and the
+ *     plan's `plan_id` the versions are gone for
  *     good (their version hosts 404, read_file not_found), the protected ones
  *     reported by reason, audited `app.versions.delete` as the agent.
  * The versions are aged past the last hour in SQL, the way time would.
@@ -80,7 +82,7 @@ test('MCP version history: list_versions pages, keep_version keeps, delete_versi
     // ── A viewer may neither keep nor delete. ───────────────────────────────
     for (const [name, args] of [
       ['keep_version', { version: 3, kept: true }],
-      ['delete_versions', { up_to: 6, user_confirmed: true }],
+      ['delete_versions', { up_to: 6, plan_id: 'abc', user_confirmed: true }],
     ] as const) {
       const refused = await callTool(b.client, name, { app_id: appId, ...args });
       expect(refused.isError, name).toBe(true);
@@ -111,9 +113,16 @@ test('MCP version history: list_versions pages, keep_version keeps, delete_versi
       skipped: { published: ['2'], kept: ['3'], preview: ['6'] },
     });
     expect(String(ask.json.message)).toContain('Delete 3 old versions of Versions E2E for good?');
+    const planId = String(ask.json.plan_id);
+    expect(planId).toMatch(/^[0-9a-f]+$/);
     expect((await hostRequest(versionHost(slug, 1))).status).toBe(200);
 
-    const done = await callTool(a.client, 'delete_versions', { app_id: appId, up_to: 6, user_confirmed: true });
+    const stale = await callTool(a.client, 'delete_versions', { app_id: appId, up_to: 5, plan_id: planId.split('').reverse().join(''), user_confirmed: true });
+    expect(stale.isError).toBe(true);
+    expect(stale.json.code).toBe('plan_changed');
+    expect((await hostRequest(versionHost(slug, 1))).status).toBe(200);
+
+    const done = await callTool(a.client, 'delete_versions', { app_id: appId, up_to: 6, plan_id: planId, user_confirmed: true });
     expect(done.isError, done.text).toBe(false);
     expect(done.json).toMatchObject({ deleted: ['1', '4-5'], count: 3, skipped: { published: ['2'], kept: ['3'], preview: ['6'] } });
     expect(numbers((await callTool(a.client, 'list_versions', { app_id: appId })).json.versions)).toEqual([6, 3, 2]);

@@ -11,7 +11,8 @@
  *  - "Clean up history" (editor+, not on a taken-down app): a GET form opens
  *    the confirm panel (`?cleanup=<N>[&failedOnly=1]`, works without
  *    JavaScript) that says what goes and why the rest stays; only its POST
- *    (`intent=delete-versions`, `confirmed=1`) deletes.
+ *    (`intent=delete-versions`, `confirmed=1`, the plan's `planId`) deletes,
+ *    and only while what goes is still that plan.
  *
  * Per version: number, author, build (+ the first error), the agent's note,
  * time, and — editor+ only — Publish (a compiled, unpublished version; an
@@ -529,6 +530,7 @@ function CleanupSection({
           data-testid="cleanup-confirm"
           data-count={cleanup.count}
           data-up-to={cleanup.upTo}
+          data-plan-id={cleanup.planId}
         >
           <h4 id="cleanup-confirm-title" style={styles.confirmH}>
             {cleanup.count > 0
@@ -554,8 +556,8 @@ function CleanupSection({
           ) : null}
           {cleanup.count > 0 ? (
             <p style={{ ...styles.note, marginTop: '0.4rem' }}>
-              A deleted version&apos;s address, files and ZIP are gone and cannot be restored; its number is never reused. What goes
-              is worked out again when you confirm.
+              A deleted version&apos;s address, files and ZIP are gone and cannot be restored; its number is never reused. If this
+              list changes before you confirm, nothing is deleted and you review the new one.
             </p>
           ) : null}
           <div style={{ ...s.inline, marginTop: '0.4rem' }}>
@@ -564,6 +566,7 @@ function CleanupSection({
                 <input type="hidden" name="intent" value="delete-versions" />
                 <input type="hidden" name="upTo" value={cleanup.upTo} />
                 {cleanup.failedOnly ? <input type="hidden" name="failedOnly" value="1" /> : null}
+                <input type="hidden" name="planId" value={cleanup.planId} />
                 <input type="hidden" name="confirmed" value="1" />
                 <button type="submit" style={s.dangerButton} disabled={busy} data-testid="cleanup-confirm-submit">
                   {busy ? 'Deleting…' : `Delete ${plural(cleanup.count, 'version')}`}
