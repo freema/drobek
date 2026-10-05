@@ -112,6 +112,10 @@ export interface VersionHistoryRow {
   compileStatus: CompileStatusName;
   createdAt: Date;
   published: boolean;
+  /** The version the preview host serves (the newest that compiled). */
+  preview?: boolean;
+  /** A member kept it: neither the retention nor a clean-up deletes it. */
+  kept?: boolean;
 }
 
 export interface VersionHistoryItem {
@@ -122,6 +126,8 @@ export interface VersionHistoryItem {
   compileStatus: CompileStatusName;
   createdAt: string;
   published: boolean;
+  preview: boolean;
+  kept: boolean;
   /** A version that compiled and is not the published one → can be published. */
   publishable: boolean;
 }
@@ -142,9 +148,57 @@ export function shapeVersionHistory(rows: VersionHistoryRow[]): VersionHistoryIt
       compileStatus: r.compileStatus,
       createdAt: r.createdAt.toISOString(),
       published: r.published,
+      preview: r.preview ?? false,
+      kept: r.kept ?? false,
       publishable: r.compileStatus === 'ok' && !r.published,
     }));
 }
+
+/** A history entry: one version, or a run of failed builds shown collapsed. */
+export type VersionHistoryEntry<T> =
+  | { kind: 'version'; item: T }
+  | { kind: 'failedRun'; from: number; to: number; items: T[] };
+
+/**
+ * Collapse 2+ consecutive failed builds of one history page (newest first)
+ * into a `failedRun` (`from` = its oldest number, `to` = its newest). A single
+ * failure stays a row, and so does a failed build a member kept. Only rows of
+ * the given page are grouped, so a run that crosses a page edge splits there.
+ */
+export function groupFailedRuns<T extends { number: number; compileStatus: CompileStatusName; kept?: boolean }>(
+  rows: readonly T[]
+): VersionHistoryEntry<T>[] {
+  const out: VersionHistoryEntry<T>[] = [];
+  let run: T[] = [];
+  const flush = () => {
+    if (run.length >= 2) {
+      out.push({ kind: 'failedRun', from: run[run.length - 1].number, to: run[0].number, items: run });
+    } else {
+      for (const item of run) out.push({ kind: 'version', item });
+    }
+    run = [];
+  };
+  for (const row of rows) {
+    if (row.compileStatus === 'error' && !row.kept) {
+      run.push(row);
+    } else {
+      flush();
+      out.push({ kind: 'version', item: row });
+    }
+  }
+  flush();
+  return out;
+}
+
+/** The reasons a clean-up leaves a version in place, in the order the confirm panel lists them. */
+export const VERSION_PROTECTION_LABEL = {
+  published: 'live',
+  preview: 'the preview',
+  kept: 'kept',
+  rollback_assets: 'kept for a rollback',
+  newest: 'the newest version',
+  recent: 'from the last hour',
+} as const;
 
 // ── Publish authorization (pure) ─────────────────────────────────────────────
 
