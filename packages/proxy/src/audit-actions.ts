@@ -6,6 +6,7 @@
  */
 export const PROXY_AUDIT_ACTIONS = {
   upstreamCreate: 'proxy.upstream.create',
+  upstreamUpdate: 'proxy.upstream.update',
   upstreamDelete: 'proxy.upstream.delete',
 } as const;
 

@@ -67,7 +67,7 @@ import {
   signOutEndUsersTool,
 } from './owner.js';
 import { ownerListEnvelope, type OwnerListPayload } from './owner-list.js';
-import { listUpstreamsTool, registerUpstreamTool, removeUpstreamTool } from './upstreams.js';
+import { listUpstreamsTool, registerUpstreamTool, removeUpstreamTool, setUpstreamStreamingTool } from './upstreams.js';
 import { listMembersTool, removeMemberTool, setMemberRoleTool } from './members.js';
 import { deleteWorkspaceTool } from './workspace-delete.js';
 import { setWorkspacePublishingTool } from './workspace-publishing.js';
@@ -124,6 +124,7 @@ export const APP_TOOL_NAMES = [
   'remove_domain',
   'list_upstreams',
   'register_upstream',
+  'set_upstream_streaming',
   'remove_upstream',
   'create_workspace',
   'list_members',
@@ -450,6 +451,15 @@ export const INPUT_SCHEMAS = {
       .enum(['none', 'bearer', 'header'])
       .describe('none = no key (registers now); bearer / header = a key the user pastes in the dashboard (secret_url).'),
     auth_header_name: z.string().optional().describe('auth_type header only: the header that carries the key, e.g. X-Api-Key.'),
+    allow_streaming: z
+      .boolean()
+      .optional()
+      .describe('true = a text/event-stream answer (an LLM API with stream: true) reaches the app as it arrives; default false = every answer arrives whole.'),
+  },
+  set_upstream_streaming: {
+    workspace: z.string().describe('The workspace slug; you need the workspace-admin role.'),
+    name: z.string().describe('A registered upstream (list_upstreams lists them).'),
+    allow_streaming: z.boolean().describe('true = relay its text/event-stream answers as they arrive; false = buffer every answer.'),
   },
   remove_upstream: {
     workspace: z.string().describe('The workspace slug; you need the workspace-admin role.'),
@@ -814,6 +824,7 @@ export function registerAppTools(
   register('remove_domain', removeDomainTool);
   register('list_upstreams', listUpstreamsTool);
   register('register_upstream', registerUpstreamTool);
+  register('set_upstream_streaming', setUpstreamStreamingTool);
   register('remove_upstream', removeUpstreamTool);
   register('create_workspace', createWorkspaceTool);
   register('list_members', listMembersTool);

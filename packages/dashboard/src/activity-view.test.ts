@@ -27,6 +27,12 @@ describe('activitySummary', () => {
     expect(
       activitySummary(ev('proxy.upstream.create', 'upstream', 'up_1', { name: 'github', authType: 'bearer', methods: ['GET'], pathPrefixes: ['/'] }))
     ).toBe('Registered the proxy upstream github');
+    expect(activitySummary(ev('proxy.upstream.update', 'upstream', 'up_1', { name: 'anthropic', allowStreaming: true }))).toBe(
+      'Turned streaming on for the proxy upstream anthropic'
+    );
+    expect(activitySummary(ev('proxy.upstream.update', 'upstream', 'up_1', { name: 'anthropic', allowStreaming: false }))).toBe(
+      'Turned streaming off for the proxy upstream anthropic'
+    );
     expect(activitySummary(ev('app.version.restore', 'app', 'x', { version: 7, restoredFrom: 4 }))).toBe(
       'Restored the files of version 4 as version 7'
     );

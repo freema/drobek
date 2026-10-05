@@ -2574,20 +2574,24 @@ calls an external API without holding its secret. `skill_info('proxy')`.
   `Clear-Site-Data`, `Refresh`, `Link`, HSTS, `Service-Worker-Allowed` and an
   absolute `Location` never reach the app origin — with
   `Cache-Control: no-store` and `X-Content-Type-Options: nosniff`.
-  **Streaming**: a final answer (after any followed redirect) that is
-  `text/event-stream`, not encoded, not a 3xx and not HEAD / 204 / 304 is
-  relayed chunk by chunk instead of buffered, with `X-Accel-Buffering: no`;
-  the response deadline then covers only its headers. The stream is cut after
-  `PROXY_STREAM_IDLE_TIMEOUT_MS` (60 s) without data, `PROXY_STREAM_MAX_MS`
-  (10 min) in total or past `PROXY_STREAM_MAX_BYTES` (32 MiB): the upstream
+  **Streaming**: on an upstream a workspace admin enabled streaming for
+  (`allow_streaming`, off by default), a final answer (after any followed
+  redirect) that is `text/event-stream`, not encoded, not a 3xx and not
+  HEAD / 204 / 304 is relayed chunk by chunk instead of buffered, with
+  `X-Accel-Buffering: no`; the response deadline then covers only its
+  headers. Every other upstream's SSE answer is buffered like any answer. The
+  stream is cut after `PROXY_STREAM_IDLE_TIMEOUT_MS` (60 s) between two
+  chunks from the upstream (a slowly reading client holds the upstream back
+  and is not cut for it), `PROXY_STREAM_MAX_MS` (5 min) in total or past
+  `PROXY_STREAM_MAX_BYTES` (32 MiB): the upstream
   connection is closed and a last SSE event is appended — `event: error`,
   `data: {"error":"upstream_error","message":…,"details":{"reason":
   "stream_idle" | "stream_too_long" | "stream_too_large"}}`. A client that
   leaves closes the upstream connection. The `proxy call` log line of a stream
   is written when it ends, with `bytes`, `streamed: true` and `end_reason`.
 - **Info**: `get_app` → `modules.proxy.info.upstreams: [{ name, registered,
-  assigned, call?, rateLimit?, hasSecret, allowedMethods?, allowedPathPrefixes?
-  }]` (never the secret or the base URL).
+  assigned, call?, rateLimit?, hasSecret, allowedMethods?, allowedPathPrefixes?,
+  allowStreaming? }]` (never the secret or the base URL).
 - **SDK**: `drobek.proxy.fetch(upstream, path?, init?)` → the standard
   `Response` (same-origin fetch with `X-Drobek-SDK: 1`).
 - The old dashboard-host route `/:ws/api/proxy/:name/*` (workspace members

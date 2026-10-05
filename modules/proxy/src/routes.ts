@@ -27,7 +27,8 @@
  *      deadline, 5 MiB), a redirect followed only within the upstream's
  *      origin and prefixes (else 502 upstream_redirect), an encoded body
  *      decoded within the cap, the response relayed with allow-listed
- *      headers and `Cache-Control: no-store`. A `text/event-stream` answer
+ *      headers and `Cache-Control: no-store`. A `text/event-stream` answer of
+ *      an upstream with `allowStreaming`
  *      is relayed as it arrives; its slot is held until the stream is over.
  */
 import { ModuleError, perIpLimitKey, respond, ruleIsPublic, type ModuleContext, type ModuleRequest, type ModuleRouter } from '@drobek/modules';

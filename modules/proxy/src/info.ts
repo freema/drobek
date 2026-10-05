@@ -3,7 +3,7 @@
  * configure_module `info`): every upstream of the app's workspace and every
  * upstream the app's config names, with
  *
- *   { name, registered, assigned, call?, rateLimit?, hasSecret, allowedMethods?, allowedPathPrefixes? }
+ *   { name, registered, assigned, call?, rateLimit?, hasSecret, allowedMethods?, allowedPathPrefixes?, allowStreaming? }
  *
  * `hasSecret` says whether the workspace admin stored the upstream's secret —
  * NEVER its value (nor the base URL: the app only ever names the upstream).
@@ -23,6 +23,8 @@ export interface UpstreamInfo {
   hasSecret: boolean;
   allowedMethods?: string[];
   allowedPathPrefixes?: string[];
+  /** A text/event-stream answer reaches the app as it arrives (a workspace admin's choice). */
+  allowStreaming?: boolean;
 }
 
 export async function proxyAppInfo(view: ModuleAppView<ProxyConfig>): Promise<{ upstreams: UpstreamInfo[] }> {
@@ -41,6 +43,7 @@ export async function proxyAppInfo(view: ModuleAppView<ProxyConfig>): Promise<{ 
       if (u) {
         out.allowedMethods = u.allowedMethods;
         out.allowedPathPrefixes = u.allowedPathPrefixes;
+        out.allowStreaming = u.allowStreaming;
       }
       return out;
     }),

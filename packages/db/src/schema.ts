@@ -707,6 +707,8 @@ export const upstreams = pgTable(
      * anonymously) — NOT the v1 caller-auth (v1 = an authed workspace member).
      */
     allowedAppIds: text('allowed_app_ids').array().notNull().default([]),
+    /** A `text/event-stream` answer is relayed as it arrives; otherwise every answer is buffered. */
+    allowStreaming: boolean('allow_streaming').notNull().default(false),
     createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at').notNull().defaultNow(),
   },

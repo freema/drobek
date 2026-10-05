@@ -10,9 +10,9 @@ forwards. Never put a key in app files (write_files refuses it), never import
 
 ## 2. Minimal working code
 
-(1) A workspace admin registers the upstream: `register_upstream({ workspace,
-name, base_url, allowed_methods, allowed_path_prefixes, auth_type })` (public
-host, port 80/443). `auth_type: "none"` registers at once; `bearer` / a named
+(1) A workspace admin registers the upstream: `register_upstream({ workspace, name, base_url,
+allowed_methods, allowed_path_prefixes, auth_type, allow_streaming })` (public host, port
+80/443; `allow_streaming: true` for an LLM API). `auth_type: "none"` registers at once; `bearer` / a named
 `header` need a key, which never goes through MCP: give the user the answer's
 `secret_url` (the dashboard form) to paste it. Check with `list_upstreams`.
 One upstream = one host; never register in bulk (`UPSTREAMS_MAX_PER_WORKSPACE`
@@ -28,8 +28,8 @@ A **workspace admin** confirms it: the answer is `applied: false` + `confirm_url
 
 ### Streaming (LLM APIs)
 
-Ask an LLM API to stream (`stream: true`): the `text/event-stream` answer arrives
-event by event, renders as it is written and never hits a timeout. Stop = abort.
+Only an upstream with `allow_streaming: true` streams (`set_upstream_streaming` switches a
+registered one), else SSE arrives whole. Ask for `stream: true`; events render as they arrive. Stop = abort.
 
 ```tsx
 // src/main.tsx
@@ -107,7 +107,7 @@ export interface Api {
   minute from the whole app; `id` = the record an admin confirmed, set by
   drobek — never write it. Unassign: `{ "upstreams": { "anthropic": null } }`.
 - `get_app` → `modules.proxy.info.upstreams[]`: `{ name, registered, assigned,
-  call?, rateLimit?, hasSecret, allowedMethods?, allowedPathPrefixes? }`.
+  call?, rateLimit?, hasSecret, allowedMethods?, allowedPathPrefixes?, allowStreaming? }`.
 - REST: `/__drobek/v1/proxy/<upstream>/<path>` with `X-Drobek-SDK: 1`.
 
 ## 4. Rules and limits
@@ -123,8 +123,8 @@ export interface Api {
   `/rss/`) is followed on the server, at most 3 hops (301/302/303 after POST →
   GET); any other is `upstream_redirect` (502). The app never sees a 3xx but 304.
 - Buffered: 120 s and ≤ 5 MiB for the whole redirect chain; request ≤ 1 MiB.
-  A `text/event-stream` answer streams; 60 s without data, 10 min or 32 MiB cut
-  it with a last `event: error`, `data: {"error":"upstream_error","message":…,
+  A streamed answer is cut after 60 s between two upstream chunks, 5 min or
+  32 MiB with a last `event: error`, `data: {"error":"upstream_error","message":…,
   "details":{"reason":"stream_idle|stream_too_long|stream_too_large"}}`.
 - Private/internal addresses and ports other than 80/443 are unreachable.
 - The key never appears in responses, logs, get_app or skill_info.

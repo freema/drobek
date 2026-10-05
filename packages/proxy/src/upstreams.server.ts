@@ -1,6 +1,7 @@
 /**
  * Upstream CRUD. Registration is workspace-admin+ only (super-admin
- * override); every mutation writes an audit row. The injected secret is
+ * override); every mutation writes an audit row. Streaming passthrough
+ * (`allowStreaming`) is off unless an admin turns it on for the upstream. The injected secret is
  * envelope-encrypted at rest and is NEVER returned by any function here — the
  * safe view exposes only `hasSecret`.
  */
@@ -50,6 +51,8 @@ export interface UpstreamView {
   authType: UpstreamAuthType;
   authHeaderName: string | null;
   allowedAppIds: string[];
+  /** A `text/event-stream` answer is relayed as it arrives (else buffered). */
+  allowStreaming: boolean;
   hasSecret: boolean;
   createdAt: string;
 }
@@ -65,6 +68,7 @@ export interface UpstreamRecord {
   authType: UpstreamAuthType;
   authHeaderName: string | null;
   allowedAppIds: string[];
+  allowStreaming: boolean;
   secret: SecretEnvelope | null;
 }
 
@@ -85,6 +89,8 @@ export interface CreateUpstreamInput extends ConfigureActor {
   authType: string;
   authHeaderName?: string | null;
   allowedAppIds?: string[];
+  /** Relay a `text/event-stream` answer as it arrives (default false: buffered). */
+  allowStreaming?: boolean;
   /** Plaintext secret — encrypted here, never persisted or returned in the clear. */
   secret?: string | null;
   /** PROXY_ALLOWED_PORTS / DROBEK_MASTER_KEY / UPSTREAM_REGISTRATIONS_PER_HOUR source (default process.env). */
@@ -114,6 +120,7 @@ function toView(row: typeof upstreams.$inferSelect, hasSecret: boolean): Upstrea
     authType: row.authType as UpstreamAuthType,
     authHeaderName: row.authHeaderName,
     allowedAppIds: row.allowedAppIds,
+    allowStreaming: row.allowStreaming,
     hasSecret,
     createdAt: row.createdAt.toISOString(),
   };
@@ -266,6 +273,7 @@ export async function createUpstream(
         authType,
         authHeaderName,
         allowedAppIds: input.allowedAppIds ?? [],
+        allowStreaming: input.allowStreaming === true,
         createdBy: input.actorUserId,
       })
       .returning();
@@ -295,6 +303,7 @@ export async function createUpstream(
           authType,
           methods: allowedMethods,
           pathPrefixes: allowedPathPrefixes,
+          allowStreaming: input.allowStreaming === true,
         },
       },
       tx
@@ -348,6 +357,50 @@ export async function getUpstream(
   return toView(row, sec.length > 0);
 }
 
+/**
+ * Turn streaming passthrough on or off for an upstream (workspace-admin+).
+ * Audited as `proxy.upstream.update` when it changes; the same value again
+ * changes nothing and writes no row.
+ */
+export async function setUpstreamStreaming(
+  actor: ConfigureActor,
+  upstreamId: string,
+  allowStreaming: boolean
+): Promise<UpstreamView> {
+  assertConfigure(actor);
+  const db = getDb();
+  const row = await db.transaction(async (tx) => {
+    const [current] = await tx
+      .select()
+      .from(upstreams)
+      .where(and(eq(upstreams.id, upstreamId), eq(upstreams.workspaceId, actor.workspaceId)))
+      .limit(1)
+      .for('update');
+    if (!current) throw new ProxyError('not_found', 'upstream not found');
+    if (current.allowStreaming === allowStreaming) return current;
+    const [updated] = await tx.update(upstreams).set({ allowStreaming }).where(eq(upstreams.id, upstreamId)).returning();
+    await writeAudit(
+      {
+        workspaceId: actor.workspaceId,
+        actorUserId: actor.actorUserId,
+        actorKind: actor.actorKind ?? actorKindForSurface('web'),
+        action: PROXY_AUDIT_ACTIONS.upstreamUpdate,
+        subjectType: PROXY_SUBJECT_TYPE,
+        target: upstreamId,
+        meta: { name: current.name, allowStreaming },
+      },
+      tx
+    );
+    return updated;
+  });
+  const sec = await db
+    .select({ upstreamId: upstreamSecrets.upstreamId })
+    .from(upstreamSecrets)
+    .where(eq(upstreamSecrets.upstreamId, row.id))
+    .limit(1);
+  return toView(row, sec.length > 0);
+}
+
 /** Delete an upstream by id (workspace-admin+). Cascade removes its secret. */
 export async function deleteUpstream(
   actor: ConfigureActor,
@@ -393,6 +446,7 @@ export interface UpstreamSummary {
   hasSecret: boolean;
   allowedMethods: string[];
   allowedPathPrefixes: string[];
+  allowStreaming: boolean;
 }
 
 export async function upstreamSummaries(
@@ -405,6 +459,7 @@ export async function upstreamSummaries(
       name: upstreams.name,
       allowedMethods: upstreams.allowedMethods,
       allowedPathPrefixes: upstreams.allowedPathPrefixes,
+      allowStreaming: upstreams.allowStreaming,
     })
     .from(upstreams)
     .where(eq(upstreams.workspaceId, workspaceId))
@@ -423,6 +478,7 @@ export async function upstreamSummaries(
     hasSecret: withSecret.has(r.id),
     allowedMethods: r.allowedMethods,
     allowedPathPrefixes: r.allowedPathPrefixes,
+    allowStreaming: r.allowStreaming,
   }));
 }
 
@@ -485,6 +541,7 @@ export async function resolveUpstreamForForward(
     authType: row.authType as UpstreamAuthType,
     authHeaderName: row.authHeaderName,
     allowedAppIds: row.allowedAppIds,
+    allowStreaming: row.allowStreaming,
     secret: sec
       ? {
           ciphertext: sec.ciphertext,

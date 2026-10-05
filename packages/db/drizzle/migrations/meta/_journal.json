@@ -232,6 +232,13 @@
       "when": 1790948000000,
       "tag": "0037_app_versions_kept",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1790948100000,
+      "tag": "0038_upstreams_allow_streaming",
+      "breakpoints": true
     }
   ]
 }

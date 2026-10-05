@@ -3,7 +3,8 @@
  * upstream tools do what the dashboard's Upstreams page does, through the
  * same @drobek/proxy operations — list without secrets, register a keyless
  * upstream at once, answer a keyed one with the prefilled dashboard link (no
- * secret argument exists), refuse a duplicate and a bad base URL, remove only
+ * secret argument exists), refuse a duplicate and a bad base URL, register
+ * with streaming and turn it on or off (set_upstream_streaming), remove only
  * with the user's explicit yes, the workspace-admin floor, and the audit rows
  * attributed to the agent.
  */
@@ -91,6 +92,7 @@ describe('the proxy upstream tools', () => {
           auth_type: 'none',
           auth_header_name: null,
           has_secret: false,
+          allow_streaming: false,
           apps: [],
         },
       });
@@ -304,5 +306,74 @@ describe('upstream caps (UPSTREAMS_MAX_PER_WORKSPACE, UPSTREAM_REGISTRATIONS_PER
     expect(secretReads).toHaveLength(1);
     expect(secretReads[0].sql).toMatch(/where "upstream_secrets"\."upstream_id" in/);
     expect(secretReads[0].params).not.toContain(b.id);
+  });
+});
+
+describe('streaming passthrough (allow_streaming, set_upstream_streaming)', () => {
+  beforeAll(async () => {
+    const [ws] = await db.insert(workspaces).values({ kind: 'team', slug: 'stream-u', name: 'Stream' }).returning();
+    await db.insert(memberships).values([
+      { userId: P.alice.userId, workspaceId: ws.id, role: 'workspace-admin' },
+      { userId: P.ed.userId, workspaceId: ws.id, role: 'editor' },
+    ]);
+  });
+
+  const LLM = {
+    workspace: 'stream-u',
+    name: 'llm',
+    base_url: 'https://llm.example.com',
+    allowed_methods: ['POST'],
+    allowed_path_prefixes: ['/v1/'],
+    auth_type: 'none',
+  };
+
+  it('register_upstream with allow_streaming: true stores it, lists it and names it in the audit row; without it the upstream is buffered', async () => {
+    await as('alice', async (c) => {
+      const out = ok(await c.call('register_upstream', { ...LLM, allow_streaming: true }));
+      expect(out).toMatchObject({ registered: true, upstream: { name: 'llm', allow_streaming: true } });
+      ok(await c.call('register_upstream', { ...LLM, name: 'plain', base_url: 'https://plain.example.com' }));
+      const listed = ok(await c.call('list_upstreams', { workspace: 'stream-u' })).upstreams as { name: string; allow_streaming: boolean }[];
+      expect(listed.map((u) => [u.name, u.allow_streaming])).toEqual([
+        ['llm', true],
+        ['plain', false],
+      ]);
+      const [row] = await db.select().from(upstreams).where(eq(upstreams.name, 'llm'));
+      expect(row.allowStreaming).toBe(true);
+      const [audit] = await db.select().from(auditLog).where(eq(auditLog.target, row.id));
+      expect(audit.meta).toMatchObject({ name: 'llm', allowStreaming: true });
+      const bad = await c.call('register_upstream', { ...LLM, name: 'bad', allow_streaming: 'yes' });
+      expect(bad.isError).toBe(true);
+      expect(await db.select().from(upstreams).where(eq(upstreams.name, 'bad'))).toHaveLength(0);
+    });
+  });
+
+  it('a keyed upstream with allow_streaming carries streaming=1 in secret_url', async () => {
+    await as('alice', async (c) => {
+      const out = ok(await c.call('register_upstream', { ...LLM, name: 'keyed', auth_type: 'bearer', allow_streaming: true }));
+      expect(new URL(String(out.secret_url)).searchParams.get('streaming')).toBe('1');
+      const plain = ok(await c.call('register_upstream', { ...LLM, name: 'keyed', auth_type: 'bearer' }));
+      expect(new URL(String(plain.secret_url)).searchParams.has('streaming')).toBe(false);
+    });
+  });
+
+  it('set_upstream_streaming turns it on and off, audited as the agent; the same value again is changed: false with no row', async () => {
+    await as('alice', async (c) => {
+      const on = ok(await c.call('set_upstream_streaming', { workspace: 'stream-u', name: 'plain', allow_streaming: true }));
+      expect(on).toMatchObject({ changed: true, upstream: { name: 'plain', allow_streaming: true } });
+      expect(String(on.note)).toContain('PROXY_STREAM_MAX_MS');
+      expect(ok(await c.call('set_upstream_streaming', { workspace: 'stream-u', name: 'plain', allow_streaming: true }))).toMatchObject({ changed: false });
+      const off = ok(await c.call('set_upstream_streaming', { workspace: 'stream-u', name: 'plain', allow_streaming: false }));
+      expect(off).toMatchObject({ changed: true, upstream: { allow_streaming: false } });
+      const [row] = await db.select().from(upstreams).where(eq(upstreams.name, 'plain'));
+      const updates = await db.select().from(auditLog).where(eq(auditLog.target, row.id));
+      expect(updates.filter((a) => a.action === 'proxy.upstream.update').map((a) => [a.actorKind, a.meta])).toEqual([
+        ['agent', { name: 'plain', allowStreaming: true }],
+        ['agent', { name: 'plain', allowStreaming: false }],
+      ]);
+      expect(errorOf(await c.call('set_upstream_streaming', { workspace: 'stream-u', name: 'ghost', allow_streaming: true }))).toMatchObject({ code: 'not_found' });
+    });
+    await as('ed', async (c) => {
+      expect(errorOf(await c.call('set_upstream_streaming', { workspace: 'stream-u', name: 'plain', allow_streaming: true }))).toMatchObject({ code: 'forbidden' });
+    });
   });
 });

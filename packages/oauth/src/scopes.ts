@@ -16,7 +16,7 @@
  *             keep a version and delete old versions (`keep_version`,
  *             `delete_versions`, the clean-up only after the user's yes),
  *             configure platform modules, upload (upload URLs) and delete assets,
- *             add, verify and remove custom domains, register and
+ *             add, verify and remove custom domains, register, stream and
  *             remove proxy upstreams without a secret, set which sites may
  *             embed an app, release one's own write lease and delete an app
  *             (`set_frame_ancestors`, `release_lease`, `delete_app`), and
@@ -123,6 +123,7 @@ export const TOOL_SCOPES = {
   verify_domain: 'write',
   remove_domain: 'write',
   register_upstream: 'write',
+  set_upstream_streaming: 'write',
   remove_upstream: 'write',
   // Workspace members: reading them is read, changing a role or removing someone is write.
   list_members: 'read',

@@ -193,6 +193,12 @@ const SUMMARIES: Record<string, Summarize> = {
   'asset.upload': (m) => `${m.replaced === true ? 'Replaced' : 'Uploaded'} the asset ${str(m, 'name') ?? ''}`.trim(),
   'asset.delete': (m) => `Deleted the asset ${str(m, 'name') ?? ''}`.trim(),
   'proxy.upstream.create': (m) => `Registered the proxy upstream ${str(m, 'name') ?? ''}`.trim(),
+  'proxy.upstream.update': (m) => {
+    const name = str(m, 'name') ?? '';
+    if (m.allowStreaming === true) return `Turned streaming on for the proxy upstream ${name}`.trim();
+    if (m.allowStreaming === false) return `Turned streaming off for the proxy upstream ${name}`.trim();
+    return `Changed the proxy upstream ${name}`.trim();
+  },
   'proxy.upstream.delete': (m) => `Deleted the proxy upstream ${str(m, 'name') ?? ''}`.trim(),
   'proxy.blocked': (m) => {
     const up = str(m, 'upstream');

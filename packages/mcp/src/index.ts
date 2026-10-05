@@ -12,7 +12,8 @@
  * (unpublish, set_visibility, set_frame_ancestors, release_lease, delete_app),
  * the custom-domain tools (list_domains,
  * add_domain, verify_domain, set_primary_domain, remove_domain), the proxy
- * upstream tools (list_upstreams, register_upstream, remove_upstream), the
+ * upstream tools (list_upstreams, register_upstream, set_upstream_streaming,
+ * remove_upstream), the
  * workspace tools (create_workspace, list_members, invite_member,
  * set_member_role, remove_member, delete_workspace) and — for a super-admin
  * only — set_workspace_publishing, set_workspace_module, takedown_app,

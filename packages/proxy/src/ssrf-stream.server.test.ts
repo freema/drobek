@@ -20,6 +20,9 @@ import {
   type StreamEnd,
 } from './ssrf.server.js';
 
+const STEADY_CHUNK = 64 * 1024;
+const STEADY_CHUNKS = 24;
+
 let server: http.Server;
 let port: number;
 /** Resolves when the upstream side of the last /drip request closed. */
@@ -64,6 +67,20 @@ beforeAll(async () => {
       upstreamClosed = new Promise<void>((resolve) => res.on('close', () => resolve()));
       res.writeHead(200, { 'content-type': 'text/event-stream' });
       const t = setInterval(() => res.write(`data: ${'y'.repeat(64 * 1024)}\n\n`), 5);
+      res.on('close', () => clearInterval(t));
+      return;
+    }
+    if (url.pathname === '/steady') {
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      let n = 0;
+      const t = setInterval(() => {
+        n += 1;
+        res.write(`data: ${'z'.repeat(STEADY_CHUNK - 8)}\n\n`);
+        if (n === STEADY_CHUNKS) {
+          clearInterval(t);
+          res.end();
+        }
+      }, 25);
       res.on('close', () => clearInterval(t));
       return;
     }
@@ -171,13 +188,13 @@ describe('the connect timeout covers only the connect', () => {
 });
 
 describe('env defaults', () => {
-  it('PROXY_RESPONSE_TIMEOUT_MS 120 s; stream idle 60 s, max 10 min, 32 MiB', () => {
+  it('PROXY_RESPONSE_TIMEOUT_MS 120 s; stream idle 60 s, max 5 min, 32 MiB', () => {
     expect(proxyResponseTimeoutMs({} as NodeJS.ProcessEnv)).toBe(120_000);
     expect(proxyResponseTimeoutMs({ PROXY_RESPONSE_TIMEOUT_MS: '5000' } as NodeJS.ProcessEnv)).toBe(5_000);
-    expect(proxyStreamLimits({} as NodeJS.ProcessEnv)).toEqual({ idleMs: 60_000, maxMs: 600_000, maxBytes: 33_554_432 });
+    expect(proxyStreamLimits({} as NodeJS.ProcessEnv)).toEqual({ idleMs: 60_000, maxMs: 300_000, maxBytes: 33_554_432 });
     expect(
       proxyStreamLimits({ PROXY_STREAM_IDLE_TIMEOUT_MS: '1', PROXY_STREAM_MAX_MS: 'x', PROXY_STREAM_MAX_BYTES: '-5' } as NodeJS.ProcessEnv)
-    ).toEqual({ idleMs: 1, maxMs: 600_000, maxBytes: 33_554_432 });
+    ).toEqual({ idleMs: 1, maxMs: 300_000, maxBytes: 33_554_432 });
   });
 });
 
@@ -213,6 +230,34 @@ describe('streamUpstreamBody', () => {
     expect(text).toBe('data: first\n\n[cut: stream_idle]');
     expect((await s.ended).end.reason).toBe('stream_idle');
     await upstreamClosed;
+  });
+
+  it('an upstream silent for idleMs is cut with stream_idle although the client reads at once', async () => {
+    const started = Date.now();
+    const s = await stream('/stall', { idleMs: 250, maxMs: 10_000 });
+    const it = s.body[Symbol.asyncIterator]();
+    expect(Buffer.from((await it.next()).value as Uint8Array).toString()).toBe('data: first\n\n');
+    const { end } = await s.ended;
+    expect(end.reason).toBe('stream_idle');
+    expect(Date.now() - started).toBeGreaterThanOrEqual(240);
+    expect(Date.now() - started).toBeLessThan(2_000);
+    await upstreamClosed;
+  });
+
+  it('a client that reads slower than idleMs is not cut for idle while the upstream keeps sending', async () => {
+    const s = await stream('/steady', { idleMs: 150, maxMs: 20_000, maxBytes: 64 * 1024 * 1024 });
+    let received = 0;
+    let reads = 0;
+    for await (const c of s.body) {
+      received += (c as Uint8Array).length;
+      reads += 1;
+      if (reads <= 4) await new Promise((r) => setTimeout(r, 400));
+    }
+    const { err, end } = await s.ended;
+    expect(err).toBeNull();
+    expect(end.reason).toBe('end');
+    expect(received).toBe(STEADY_CHUNK * STEADY_CHUNKS);
+    expect(end.bytes).toBe(STEADY_CHUNK * STEADY_CHUNKS);
   });
 
   it('a stream that keeps sending is cut at maxMs (stream_too_long)', async () => {

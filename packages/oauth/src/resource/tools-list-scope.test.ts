@@ -83,6 +83,7 @@ const WRITE = [
   'set_end_user_role',
   'set_frame_ancestors',
   'set_member_role',
+  'set_upstream_streaming',
   'sign_out_end_users',
   'sync_now',
   'update_record',

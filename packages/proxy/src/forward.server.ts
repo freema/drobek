@@ -23,7 +23,8 @@
  *      decoded — the DECODED body must fit the same cap;
  *   6. the response relayed with allow-listed headers + `Cache-Control: no-store`.
  *
- * With `stream: true` a final answer that is `text/event-stream` (not a 3xx,
+ * With `stream: true`, on an upstream whose admin allowed streaming
+ * (`allowStreaming`), a final answer that is `text/event-stream` (not a 3xx,
  * not encoded, not HEAD / 204 / 304) is relayed as it arrives instead: the
  * deadline then covers only the wait for its headers, and the stream has its
  * own caps (PROXY_STREAM_IDLE_TIMEOUT_MS, PROXY_STREAM_MAX_MS,
@@ -267,7 +268,7 @@ export async function decodeBody(body: Buffer, contentEncoding: string | undefin
   return out;
 }
 
-/** `stream: true` relays a final `text/event-stream` answer as it arrives (everything else stays buffered). */
+/** `stream: true` relays a final `text/event-stream` answer of a streaming upstream as it arrives (everything else stays buffered). */
 export function forwardToUpstream(input: ForwardInput & { stream: true }): Promise<ForwardResult | StreamedForwardResult>;
 export function forwardToUpstream(input: ForwardInput & { stream?: false }): Promise<ForwardResult>;
 export async function forwardToUpstream(input: ForwardInput & { stream?: boolean }): Promise<ForwardResult | StreamedForwardResult> {
@@ -328,7 +329,7 @@ export async function forwardToUpstream(input: ForwardInput & { stream?: boolean
         env,
         signal: ctrl.signal,
       });
-      if (input.stream && streamable(opened, hop.method)) {
+      if (input.stream && upstream.allowStreaming && streamable(opened, hop.method)) {
         clearTimeout(deadline);
         return streamed(opened, input.maxResponseBytes, env);
       }

@@ -60,6 +60,7 @@ describe('account dictionary + actor filter', () => {
       'forms.export',
       'proxy.blocked',
       'proxy.upstream.create',
+      'proxy.upstream.update',
       'proxy.upstream.delete',
       'auth.sign_in',
     ]) {

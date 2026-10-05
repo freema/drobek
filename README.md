@@ -325,7 +325,7 @@ the model), for the owner's module tabs `list_form_submissions`,
 `delete_upload`, `remove_module_secret` and `list_activity`, and for custom domains `list_domains`, `add_domain`,
 `verify_domain`, `set_primary_domain`, `remove_domain`, and for the proxy
 module's external APIs `list_upstreams`, `register_upstream`,
-`remove_upstream`, `sync_now` for the sync module's scheduled imports, and
+`set_upstream_streaming`, `remove_upstream`, `sync_now` for the sync module's scheduled imports, and
 for workspaces `create_workspace`, `list_members`, `invite_member`,
 `set_member_role`, `remove_member` and `delete_workspace` (a super-admin also
 gets `set_workspace_publishing`, `set_workspace_module`, `takedown_app`,
