@@ -202,7 +202,7 @@ compose file fixes, for drobek: `NODE_ENV=production`,
 `TRUST_PROXY=x-real-ip`, `APPS_URL_SCHEME=https`, `FILES_DIR=/data/files`,
 `ASSETS_DIR=/data/assets`,
 `DATABASE_URL` / `REDIS_URL` of the bundled services, `PUBLIC_ORIGIN`
-defaulting to `PUBLIC_APP_URL`, and `DROBEK_MODULES` defaulting to all six
+defaulting to `PUBLIC_APP_URL`, and `DROBEK_MODULES` defaulting to all nine
 built-ins.
 
 | Variable | Required | What |
