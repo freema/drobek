@@ -125,7 +125,7 @@ function feedbackWidgetSource(dashboardOrigin: string): string {
     ':host,*{box-sizing:border-box;font:600 13px/1.3 system-ui,-apple-system,sans-serif}' +
     'button{border:0;border-radius:999px;padding:9px 14px;background:#1a1a1a;color:#fff;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.25)}' +
     'button.secondary{background:#fff;color:#1a1a1a;border:1px solid #d4d4d8;box-shadow:none;padding:6px 10px}' +
-    '.bar{display:none;position:fixed;left:50%;top:12px;transform:translateX(-50%);background:#1a1a1a;color:#fff;border-radius:10px;padding:8px 12px;align-items:center;gap:10px;max-width:calc(100vw - 24px);box-shadow:0 2px 10px rgba(0,0,0,.25)}' +
+    '.bar{display:none;position:fixed;right:16px;bottom:64px;background:#1a1a1a;color:#fff;border-radius:10px;padding:8px 12px;align-items:center;gap:10px;max-width:min(420px,calc(100vw - 32px));box-shadow:0 2px 10px rgba(0,0,0,.25)}' +
     '.bar.on{display:flex}' +
     '.toast{display:none;position:fixed;right:16px;bottom:64px;background:#fff;color:#1a1a1a;border:1px solid #d4d4d8;border-radius:10px;padding:8px 12px;max-width:280px;font-weight:500}' +
     '.toast.on{display:block}' +
