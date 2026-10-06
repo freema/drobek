@@ -7,6 +7,7 @@
  * skill — and no body or secret in any log line.
  */
 import { createHmac } from 'node:crypto';
+import type { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
@@ -39,6 +40,7 @@ let workspaceId: string;
 let app: { id: string; slug: string; workspaceId: string; workspaceSlug: string };
 let rt: ModuleRuntime;
 let logs: ReturnType<typeof logger>;
+let caller: { kind: 'anon' } | { kind: 'user'; id: string; email: string; role: 'user' | 'admin' } = { kind: 'anon' };
 
 function logger() {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -85,7 +87,7 @@ async function runtime(extra: Record<string, string> = {}): Promise<ModuleRuntim
     deps: {
       db: () => db,
       rateLimit: memoryRateLimiter(),
-      principal: async () => ({ kind: 'anon' }),
+      principal: async () => caller,
       email: { send: async () => {} },
       mailGuard: memoryMailGuard({ hourlyMax: 100, pauseMinutes: 1 }, logs),
       requestStats: () => undefined,
@@ -151,6 +153,7 @@ async function deliveries() {
 }
 
 beforeEach(async () => {
+  caller = { kind: 'anon' };
   rt = await runtime();
 });
 
@@ -237,6 +240,36 @@ describe('deliveries', () => {
     });
     const rows = await db.select().from(webhookDeliveries).where(eq(webhookDeliveries.appId, app.id));
     expect(rows).toEqual([expect.objectContaining({ endpoint: 'payments', status: 'accepted', httpStatus: 200, bytes: Buffer.byteLength(body), recordId: res.json.id })]);
+  });
+
+  it('a stored delivery reaches live subscribers of the collection like any other write', async () => {
+    await freshApp({});
+    caller = { kind: 'user', id: 'eu_admin', email: 'admin@example.com', role: 'admin' };
+    const h: Record<string, string> = { host: `${app.slug}.apps.localhost`, 'x-drobek-sdk': '1' };
+    const res = await rt.handle(
+      { method: 'GET', path: '/__drobek/v1/data/payments/events', query: '', header: (n) => h[n.toLowerCase()] ?? null, headers: () => h, clientIp: '203.0.113.8', readBody: async () => Buffer.alloc(0) },
+      { id: app.id, slug: app.slug, workspaceId }
+    );
+    expect(res.status).toBe(200);
+    const stream = res.body as Readable;
+    let text = '';
+    stream.on('data', (c: Buffer | string) => (text += c.toString()));
+    const until = async (ok: () => boolean) => {
+      for (let i = 0; i < 200 && !ok(); i++) await new Promise((r) => setTimeout(r, 10));
+      expect(ok()).toBe(true);
+    };
+    try {
+      await until(() => text.includes('event: ready'));
+      const body = JSON.stringify({ type: 'payment.succeeded', amount: 5 });
+      const posted = await post('payments', body, { 'X-Webhook-Signature': `sha256=${sign(body)}`, 'Webhook-Id': 'msg_live' });
+      expect(posted.status).toBe(200);
+      await until(() => text.includes('event: change'));
+      const change = text.split('\n\n').find((b) => b.includes('event: change'))!;
+      const data = JSON.parse(change.split('\n').find((l) => l.startsWith('data: '))!.slice(6)) as { op: string; record: Record<string, unknown> };
+      expect(data).toMatchObject({ op: 'create', record: { _id: posted.json.id, source: 'payments', event_id: 'msg_live' } });
+    } finally {
+      stream.destroy();
+    }
   });
 
   it('a bad or missing signature is 401 and logged; nothing is stored', async () => {
