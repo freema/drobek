@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type BrowserContext } from '@playwright/test';
 import { BASE_URL_WEB } from '../playwright.config';
 import { hostRequest, previewHost, prodHost, urlOf, versionHost } from './helpers/apps-host';
 import { skipUnlessLocal } from './helpers/auth';
@@ -30,16 +30,19 @@ test.describe.configure({ mode: 'serial' });
 
 test.describe('feedback on the preview @local', () => {
   let mcp: McpClient;
+  let member: BrowserContext;
   let app: Created;
   let version = 0;
 
   test.afterAll(async () => {
     await mcp?.client.close();
+    await member?.close();
   });
 
   test('the preview and version hosts carry the widget; production and an opted-out app do not', async ({ page, request }) => {
     skipUnlessLocal();
     mcp = await mcpClient(page, request, { tag: 'feedback', scope: FULL_SCOPE });
+    member = await page.context().browser()!.newContext({ storageState: await page.context().storageState() });
     app = (await callTool(mcp.client, 'create_app', { name: 'Feedback demo', template: 'html' })).json as unknown as Created;
     const w = await callTool(mcp.client, 'write_files', { app_id: app.app_id, files: [{ path: 'index.html', content: PAGE }], reasoning: 'A page to review' });
     expect(w.isError, JSON.stringify(w.json)).toBe(false);
@@ -78,25 +81,26 @@ test.describe('feedback on the preview @local', () => {
     expect((await hostRequest(previewHost(off.slug), '/')).body).not.toContain('/__drobek/feedback.js');
   });
 
-  test('the Feedback tab starts empty', async ({ page }) => {
+  test('the Feedback tab starts empty', async () => {
     skipUnlessLocal();
+    const page = await member.newPage();
     await page.goto(`${BASE_URL_WEB}/workspaces/${mcp.workspace}/apps/${app.slug}/feedback`);
     await expect(page.getByTestId('feedback-none')).toBeVisible();
     await expect(page.getByTestId('feedback-row')).toHaveCount(0);
   });
 
-  test('a member clicks Feedback on the preview, picks the heading and sends a note from the dashboard window', async ({ page, context }) => {
+  test('a member clicks Feedback on the preview, picks the heading and sends a note from the dashboard window', async () => {
     skipUnlessLocal();
+    const page = await member.newPage();
     await page.goto(`${urlOf(previewHost(app.slug))}/`);
     await expect(page.getByRole('heading', { name: 'Feedback demo' })).toBeVisible();
     const fab = page.locator('[data-drobek-feedback]');
     await expect(fab).toBeVisible();
     await fab.click();
-    const popupPromise = context.waitForEvent('page');
+    const popupPromise = member.waitForEvent('page');
     await page.getByRole('heading', { name: 'Feedback demo' }).click();
     const popup = await popupPromise;
-    await popup.waitForLoadState();
-    expect(new URL(popup.url()).pathname).toBe('/feedback/new');
+    await popup.waitForURL((u) => u.pathname === '/feedback/new');
 
     await expect(popup.getByTestId('feedback-context')).toContainText(`${version}`);
     await expect(popup.getByTestId('feedback-spot')).toContainText('#title');
@@ -105,13 +109,14 @@ test.describe('feedback on the preview @local', () => {
     await expect(popup.getByTestId('feedback-sent')).toBeVisible();
     await popup.close();
 
-    const framed = await page.request.get(`${BASE_URL_WEB}/feedback/new?app=${app.slug}`);
+    const framed = await member.request.get(`${BASE_URL_WEB}/feedback/new?app=${app.slug}`);
     expect(framed.headers()['x-frame-options']).toBe('DENY');
     expect(framed.headers()['content-security-policy']).toContain("frame-ancestors 'none'");
   });
 
-  test('list_feedback reads it in the envelope; resolve_feedback resolves it; the tab shows it resolved', async ({ page }) => {
+  test('list_feedback reads it in the envelope; resolve_feedback resolves it; the tab shows it resolved', async () => {
     skipUnlessLocal();
+    const page = await member.newPage();
     const got = await callTool(mcp.client, 'get_app', { app_id: app.app_id });
     expect(got.json.feedback).toEqual({ open: 1, resolved: 0 });
 
@@ -119,9 +124,8 @@ test.describe('feedback on the preview @local', () => {
     expect(listed.isError).toBe(false);
     expect(listed.text.startsWith('UNTRUSTED CONTENT:')).toBe(true);
     expect(listed.text).toMatch(/<untrusted-feedback app_id="[^"]+" status="open" open="1" resolved="0" next_before="" nonce="[0-9a-f]{16}">/);
-    const start = listed.text.indexOf('{');
-    const end = listed.text.indexOf('\n</untrusted-feedback');
-    const payload = JSON.parse(listed.text.slice(start, end)) as { notes: { id: string; version: number; path: string; body: string; author: string; anchor: { selector?: string } }[] };
+    expect(listed.structured).toBe(false);
+    const payload = listed.json as unknown as { notes: { id: string; version: number; path: string; body: string; author: string; anchor: { selector?: string } }[] };
     expect(payload.notes).toHaveLength(1);
     const note = payload.notes[0];
     expect(note).toMatchObject({ version, path: '/', author: mcp.email });

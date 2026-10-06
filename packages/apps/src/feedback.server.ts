@@ -8,13 +8,14 @@
  * FEEDBACK_PER_USER_HOUR notes per account within the last hour
  * (`rate_limited` with `retry_after_seconds`) and FEEDBACK_MAX_OPEN_PER_APP
  * open notes per app (`limit_exceeded`); both are counted from the table under
- * the app's row lock, so concurrent notes cannot pass them.
+ * the app's row lock and a per-account advisory lock, so concurrent notes
+ * (on one app or on several) cannot pass them.
  *
  * Lists page newest first (created_at, id) with `before` = the id of the last
  * note of the previous page.
  */
 import { randomBytes } from 'node:crypto';
-import { and, count, desc, eq, gte, inArray, lt, or, type SQL } from 'drizzle-orm';
+import { and, count, desc, eq, gte, inArray, lt, or, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { AUDIT_ACTIONS, writeAudit } from '@drobek/audit';
 import { appFeedback, getDb, users } from '@drobek/db';
@@ -121,6 +122,7 @@ export async function createFeedback(input: CreateFeedbackInput, opts: { limits?
   const id = newFeedbackId();
   await getDb().transaction(async (tx) => {
     const app = await lockApp(tx, input.appId);
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`drobek:feedback:${input.authorUserId}`}::text))`);
     const since = new Date(now.getTime() - HOUR_MS);
     const recent = await tx
       .select({ createdAt: appFeedback.createdAt })
