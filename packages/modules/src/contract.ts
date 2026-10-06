@@ -1311,6 +1311,21 @@ export interface ModuleContext<Config = unknown> extends ModuleServices {
    * about something the agent configured but the owner has not confirmed.
    */
   pendingConfig?: Config | null;
+  /**
+   * This app's effective config as stored NOW. `config` is read once per
+   * request; a response that stays open (an event stream) reads this again
+   * before it sends what the config decides. Throws once the app is no
+   * longer served (deleted, taken down): the response ends. Absent on
+   * servers before it existed: fall back to `config`.
+   */
+  currentConfig?(): Promise<Config>;
+  /**
+   * The caller as of NOW (the session read again: signed out, blocked or
+   * expired → anon). A response that stays open checks it again before it
+   * sends what the caller may see. Absent on servers before it existed:
+   * fall back to `principal`.
+   */
+  currentPrincipal?(): Promise<Principal>;
   rules: {
     /** Evaluate `rule` for the caller; `ownerId` = the record's owner (for `owner`). */
     decide(rule: Rule, ownerId?: string | null): AccessDecision;

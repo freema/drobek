@@ -156,6 +156,13 @@ describe('renderBriefing', () => {
     expect(renderBriefing({ skills: [{ name: 'hello', use_when: 'x' }] })).not.toContain('Per-visitor state');
   });
 
+  it('with the data module: live updates subscribe instead of polling', () => {
+    const withData = renderBriefing({ skills: [{ name: 'data', use_when: 'the app stores records' }] });
+    expect(withData).toContain('need no polling: `drobek.data.subscribe(collection, { onChange, onSync })`');
+    expect(withData).toContain('return the unsubscribe from the `useEffect`');
+    expect(renderBriefing({ skills: [{ name: 'hello', use_when: 'x' }] })).not.toContain('drobek.data.subscribe');
+  });
+
   it('with the sync module: scheduled work and crons go to the sync module, without it no cron is promised', () => {
     const withSync = renderBriefing({ skills: [{ name: 'sync', use_when: 'data refreshes on a schedule' }] });
     expect(withSync).toContain("Work on a schedule (a cron, a periodic refresh of data from an external API");

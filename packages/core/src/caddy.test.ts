@@ -98,6 +98,24 @@ describe('proxy + secret invariants (every mode)', () => {
     }
   });
 
+  it('relays event streams on the app hosts unbuffered: the app-host sites only import the snippet, nothing buffers or compresses SSE', () => {
+    for (const env of [...modes, { ...PROD, TLS_DNS_PROVIDER: 'cloudflare', TLS_CUSTOM_DOMAINS: '1', TLS_ASK_TOKEN: TOKEN }]) {
+      const out = render(env);
+      expect(out).not.toMatch(/flush_interval|buffer_responses|response_buffers|buffer_requests/);
+      const appSites = out.split(/\n(?=\S)/).filter((b) => /^(\*\.\S+|https:\/\/) \{/.test(b));
+      expect(appSites.length).toBeGreaterThanOrEqual(1);
+      for (const block of appSites) {
+        expect(block).toMatch(/\n\timport drobek(\n|$)/);
+        expect(block).not.toMatch(/\bencode\b|reverse_proxy/);
+      }
+      const start = out.indexOf('(drobek) {');
+      const snippet = out.slice(start, out.indexOf('\n}\n', start));
+      expect(snippet.match(/\bencode zstd gzip\b/g)).toHaveLength(1);
+      expect(snippet).not.toContain('text/event-stream\n');
+      expect(snippet).not.toMatch(/header Content-Type text\/\*/);
+    }
+  });
+
   it('on_demand appears only together with the ask guard', () => {
     for (const env of modes) {
       const out = render(env);

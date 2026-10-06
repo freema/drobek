@@ -1,5 +1,5 @@
-import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { Readable } from 'node:stream';
+import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { ZodType } from 'zod';
 
 /**
@@ -2111,6 +2111,21 @@ interface ModuleContext<Config = unknown> extends ModuleServices {
      * about something the agent configured but the owner has not confirmed.
      */
     pendingConfig?: Config | null;
+    /**
+     * This app's effective config as stored NOW. `config` is read once per
+     * request; a response that stays open (an event stream) reads this again
+     * before it sends what the config decides. Throws once the app is no
+     * longer served (deleted, taken down): the response ends. Absent on
+     * servers before it existed: fall back to `config`.
+     */
+    currentConfig?(): Promise<Config>;
+    /**
+     * The caller as of NOW (the session read again: signed out, blocked or
+     * expired → anon). A response that stays open checks it again before it
+     * sends what the caller may see. Absent on servers before it existed:
+     * fall back to `principal`.
+     */
+    currentPrincipal?(): Promise<Principal>;
     rules: {
         /** Evaluate `rule` for the caller; `ownerId` = the record's owner (for `owner`). */
         decide(rule: Rule, ownerId?: string | null): AccessDecision;
@@ -2611,6 +2626,11 @@ interface TestRequestInit {
     headers?: Record<string, string>;
     /** Default `127.0.0.1`; `null` = no resolved client IP (per-IP limits are skipped). */
     clientIp?: string | null;
+    /**
+     * Hand a streamed body over unread (`res.stream`) instead of collecting it —
+     * for a response that stays open (an event stream). Destroy it when done.
+     */
+    stream?: boolean;
 }
 interface TestJobRunInit {
     /** Default: a signal that never aborts. */
@@ -2636,6 +2656,8 @@ interface TestResponse {
     bytes: Buffer;
     /** Request body bytes a streaming (`file`) route pulled before it stopped. */
     bodyBytesRead: number;
+    /** The unread streamed body when the request asked for `stream: true` (else null). */
+    stream: Readable | null;
 }
 interface ModuleTestContext {
     ctx: ModuleContext<any>;
@@ -2663,8 +2685,14 @@ interface ModuleTestContext {
         text: string;
         kind: 'sign_in' | 'notification';
     } & MailEnvelope)[];
-    /** Change who is calling. */
+    /** Change who is calling (`ctx.currentPrincipal()` of an open response answers the new one). */
     setPrincipal(principal: Principal): void;
+    /**
+     * Change the app's config (a partial config merged over configDefaults,
+     * then validated): new requests get it as `ctx.config`, an open response
+     * through `ctx.currentConfig()`.
+     */
+    setConfig(config: Record<string, unknown>): void;
     /**
      * Run the module's `confirmRequired(before, after, context)` the way
      * configure_module does — both configs merged over configDefaults and

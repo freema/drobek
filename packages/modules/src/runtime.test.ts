@@ -17,7 +17,7 @@ import { createLimitsProvider } from './limits.js';
 import { ModuleError } from './errors.js';
 import { FakeRedis } from '@drobek/auth';
 import { z } from 'zod';
-import { defineModule, type AnyModule } from './contract.js';
+import { defineModule, type AnyModule, type ModuleContext } from './contract.js';
 import { cookiePrincipalResolver, createEndUserSession, loadEndUserSession } from './principal.js';
 import { ModuleRuntime, loadModuleRuntime, memoryRateLimiter, type PlatformRequest, type RuntimeDeps, type TransportMessage } from './runtime.js';
 import { memoryMailGuard, type MailGuard, type MailGuardConfig } from './mail-guard.js';
@@ -888,6 +888,48 @@ describe('HTTP on the app hosts', () => {
     });
     // Without a session owner, no module honours a session.
     expect(await rt.currentEndUser(hookApp, { id: 'eu_1', email: 'ana@example.com', role: 'user' })).toBeNull();
+  });
+
+  it('ctx.currentConfig() reads the stored config again, and throws once the app is deleted or taken down', async () => {
+    let held: ModuleContext<{ n: number }> | null = null;
+    const watcher = defineModule<{ n: number }>({
+      name: 'watcher',
+      version: '1.0.0',
+      skill: { useWhen: 'you watch config in a test', markdown: '# watcher\n' },
+      configSchema: z.object({ n: z.number().int() }),
+      configDefaults: { n: 1 },
+      routes(r) {
+        r.get('/', { rule: 'public' }, (_req, ctx) => {
+          held = ctx;
+          return { n: ctx.config.n };
+        });
+      },
+    });
+    const r = await loadModuleRuntime({
+      env: ENV,
+      log: noopLogger,
+      modules: [echo, quiet, watcher],
+      skillsDir,
+      deps: {
+        rateLimit: memoryRateLimiter(),
+        email: { send: async () => {} },
+        mailGuard: memoryMailGuard({ hourlyMax: 1000, pauseMinutes: 1 }, noopLogger),
+        principal: async () => ({ kind: 'anon' }),
+      },
+    });
+    expect(json(await r.handle(req('GET', '/__drobek/v1/watcher'), app))).toEqual({ n: 1 });
+    const ctx = held as ModuleContext<{ n: number }> | null;
+    expect(ctx?.currentConfig).toBeTypeOf('function');
+    await r.configure({ app, module: 'watcher', patch: { n: 2 }, actorUserId: userId });
+    expect(await ctx!.currentConfig!()).toEqual({ n: 2 });
+    try {
+      await db.update(apps).set({ lockedReason: 'spam' }).where(eq(apps.id, app.id));
+      await expect(ctx!.currentConfig!()).rejects.toMatchObject({ code: 'not_found' });
+      await db.update(apps).set({ lockedReason: null, deletedAt: new Date() }).where(eq(apps.id, app.id));
+      await expect(ctx!.currentConfig!()).rejects.toMatchObject({ code: 'not_found' });
+    } finally {
+      await db.update(apps).set({ lockedReason: null, deletedAt: null }).where(eq(apps.id, app.id));
+    }
   });
 });
 

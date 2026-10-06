@@ -41,7 +41,7 @@ import { TypecheckRunner, installTypecheckRunner, typecheckLimitsFromEnv } from 
 import { dbConfigError, dbErrorForLog, runCoreMigrations } from '@drobek/db';
 import { dnsMockWarning, domainsConfigError } from '@drobek/domains';
 import { emailConfigError } from '@drobek/email';
-import { limitsProviderConfigError, moduleRuntime, previousMasterKeyConfigError, storedSecretKeysCheck } from '@drobek/modules';
+import { endModuleStreams, limitsProviderConfigError, moduleRuntime, previousMasterKeyConfigError, storedSecretKeysCheck } from '@drobek/modules';
 import {
   ServeStore,
   createAppsHostMiddleware,
@@ -186,12 +186,13 @@ httpServer.listen(port, '0.0.0.0', () => {
 });
 
 let stopping: Promise<void> | null = null;
-/** The graceful stop, once: drain the requests in flight, then close the sessions, jobs and caches. Does not exit. */
+/** The graceful stop, once: end the long-lived streams, drain the requests in flight, then close the sessions, jobs and caches. Does not exit. */
 function stop(reason: string): Promise<void> {
   stopping ??= (async () => {
     const graceMs = shutdownGraceMs(process.env);
     log.info('shutting down', { reason, grace_ms: graceMs });
     app.mcp.endListenStreams();
+    endModuleStreams();
     await closeDevServer();
     const { drained } = await closeGracefully(httpServer, { graceMs });
     if (!drained) log.warn('requests still running after the shutdown grace period were cut', { grace_ms: graceMs });

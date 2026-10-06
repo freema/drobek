@@ -26,6 +26,7 @@
  * `ctx.records.import` are the test's `upstreams` / `records` fakes.
  */
 import { existsSync } from 'node:fs';
+import type { Readable } from 'node:stream';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -174,6 +175,11 @@ export interface TestRequestInit {
   headers?: Record<string, string>;
   /** Default `127.0.0.1`; `null` = no resolved client IP (per-IP limits are skipped). */
   clientIp?: string | null;
+  /**
+   * Hand a streamed body over unread (`res.stream`) instead of collecting it —
+   * for a response that stays open (an event stream). Destroy it when done.
+   */
+  stream?: boolean;
 }
 
 export interface TestJobRunInit {
@@ -202,6 +208,8 @@ export interface TestResponse {
   bytes: Buffer;
   /** Request body bytes a streaming (`file`) route pulled before it stopped. */
   bodyBytesRead: number;
+  /** The unread streamed body when the request asked for `stream: true` (else null). */
+  stream: Readable | null;
 }
 
 export interface ModuleTestContext {
@@ -222,8 +230,14 @@ export interface ModuleTestContext {
    * runs first (limits, envelope) exactly as core runs it.
    */
   emails: ({ to: string[]; subject: string; text: string; kind: 'sign_in' | 'notification' } & MailEnvelope)[];
-  /** Change who is calling. */
+  /** Change who is calling (`ctx.currentPrincipal()` of an open response answers the new one). */
   setPrincipal(principal: Principal): void;
+  /**
+   * Change the app's config (a partial config merged over configDefaults,
+   * then validated): new requests get it as `ctx.config`, an open response
+   * through `ctx.currentConfig()`.
+   */
+  setConfig(config: Record<string, unknown>): void;
   /**
    * Run the module's `confirmRequired(before, after, context)` the way
    * configure_module does — both configs merged over configDefaults and
@@ -265,7 +279,7 @@ export function createModuleTestContext(declared: AnyModule, opts: ModuleTestOpt
   if (!parsed.success) {
     throw new Error(`createModuleTestContext: config does not pass ${module.name}.configSchema: ${parsed.error.message}`);
   }
-  const config = parsed.data;
+  let config = parsed.data;
   let pendingConfig: unknown = null;
   if (opts.pendingConfig) {
     const p = module.configSchema.safeParse(mergePatch(module.configDefaults, opts.pendingConfig));
@@ -290,6 +304,8 @@ export function createModuleTestContext(declared: AnyModule, opts: ModuleTestOpt
     principal,
     config,
     pendingConfig,
+    currentConfig: async () => config,
+    currentPrincipal: async () => principal,
     db: opts.db ?? noDb(),
     log: opts.log ?? noopLogger,
     contributions: <T,>(slot: string) => [...(opts.contributions?.[slot] ?? [])] as T[],
@@ -339,16 +355,20 @@ export function createModuleTestContext(declared: AnyModule, opts: ModuleTestOpt
   // As in production: a route may answer the core codes and the module's own `errors` only.
   const errorCodes = new Set([...CORE_ERROR_CODES, ...(module.errors ?? []).map((e) => e.code)]);
 
-  const toResponse = async (r: PipelineResult, bodyBytesRead = 0): Promise<TestResponse> => {
+  const toResponse = async (r: PipelineResult, bodyBytesRead = 0, keepStream = false): Promise<TestResponse> => {
     let bytes: Buffer;
-    if (isReadable(r.body)) {
+    let stream: Readable | null = null;
+    if (keepStream && isReadable(r.body)) {
+      stream = r.body;
+      bytes = Buffer.alloc(0);
+    } else if (isReadable(r.body)) {
       const chunks: Buffer[] = [];
       for await (const c of r.body) chunks.push(Buffer.from(c as Uint8Array));
       bytes = Buffer.concat(chunks);
     } else {
       bytes = r.body === null ? Buffer.alloc(0) : Buffer.from(r.body);
     }
-    let body: unknown = r.body === null ? null : bytes.toString('utf8');
+    let body: unknown = r.body === null || stream ? null : bytes.toString('utf8');
     if (typeof body === 'string') {
       try {
         body = JSON.parse(body);
@@ -362,7 +382,7 @@ export function createModuleTestContext(declared: AnyModule, opts: ModuleTestOpt
       headers[k] = Array.isArray(v) ? v.join(', ') : v;
       if (k.toLowerCase() === 'set-cookie') setCookies.push(...(Array.isArray(v) ? v : [v]));
     }
-    return { status: r.status, headers, setCookies, body, bytes, bodyBytesRead };
+    return { status: r.status, headers, setCookies, body, bytes, bodyBytesRead, stream };
   };
 
   /** `raw` as the adapter's pull stream, in `size`-byte chunks; counts what was pulled. */
@@ -400,6 +420,11 @@ export function createModuleTestContext(declared: AnyModule, opts: ModuleTestOpt
     emails,
     setPrincipal(p) {
       principal = p;
+    },
+    setConfig(patch) {
+      const next = module.configSchema.safeParse(mergePatch(module.configDefaults, patch));
+      if (!next.success) throw new Error(`setConfig: config does not pass ${module.name}.configSchema: ${next.error.message}`);
+      config = next.data;
     },
     async confirm(before, after) {
       if (!module.confirmRequired) return [];
@@ -529,7 +554,7 @@ export function createModuleTestContext(declared: AnyModule, opts: ModuleTestOpt
           },
         }
       );
-      return toResponse(res, read.n);
+      return toResponse(res, read.n, init.stream === true);
     },
   };
 }

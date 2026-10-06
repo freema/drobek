@@ -248,7 +248,8 @@ export function findApiMisuse(files, sdk) {
         .map((n) => n.trim().replace(/^type\s+/, '').split(/\s+as\s+/)[0].trim())
         .filter(Boolean);
       if (sub === undefined) {
-        for (const n of names) if (!sdk.root.has(n)) add({ file, kind: 'import', name: `${n} from 'drobek'` });
+        // A module's namespace (`type data` → data.ChangeEvent<T>) is exported too.
+        for (const n of names) if (!sdk.root.has(n) && !sdk.modules.has(n)) add({ file, kind: 'import', name: `${n} from 'drobek'` });
         continue;
       }
       const exported = sdk.inline.get(sub);

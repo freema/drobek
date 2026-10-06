@@ -42,7 +42,7 @@ This document is the map of how that works. The neighbours:
                 │ postgres-js + drizzle                     │ ioredis                        │ SMTP (nodemailer) or Resend
           Postgres 17: users, workspaces, apps,       Redis 7: sessions, rate limits,     any SMTP server
           versions + blobs, module data, OAuth,       OTP counters, leases, caches,       (EMAIL_TRANSPORT; Mailpit in dev)
-          API keys, domains, abuse, audit             serve-cache bust pub/sub
+          API keys, domains, abuse, audit             serve-cache + live data pub/sub
 ```
 
 - **`apps/server`** is the only process: Express with
@@ -515,6 +515,15 @@ into `DROBEK_MODULES_DIR`) are loaded exactly as third-party modules are. The co
   (`GET /limits/<workspace_id>`, cached 60 s; an outage falls back to the env
   values). Module e-mail also passes the operator-wide mail guard (hourly
   budgets per class and per app, pause + ALERT line).
+- **Live data**: the data module's store publishes every committed record
+  write (whoever wrote it: the app, MCP, the dashboard, a sync import) to a
+  Redis pub/sub channel per app + collection and a short Redis stream (the
+  resume backlog); each process relays the channel to its open
+  `GET /__drobek/v1/data/<collection>/events` streams (`text/event-stream`,
+  `drobek.data.subscribe`), checking the collection's read rule and the
+  caller again for every event. The graceful stop ends these streams first
+  (`endModuleStreams`, next to the MCP listen streams), so the drain does
+  not wait on them ([`MODULES.md`](./MODULES.md#the-built-in-data-module)).
 - **Opt-in modules** (`availability: 'opt-in'`) are active only for the
   workspaces they are enabled for: by the limits provider's plan
   (`MODULE_ENABLED_<NAME>`: `1` on, `0` off — it wins), by the env value
