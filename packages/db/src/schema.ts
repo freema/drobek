@@ -252,6 +252,47 @@ export const galleryOpens = pgTable(
   (t) => [primaryKey({ columns: [t.appId, t.day] })]
 );
 
+/** A feedback note is `open` until an editor (or their agent) resolves it; it can be reopened. */
+export const feedbackStatusEnum = pgEnum('feedback_status', ['open', 'resolved']);
+
+/**
+ * Notes a member of the app's workspace left on what they saw on a preview or
+ * version host, pinned to the page (`path`) and a spot on it (`anchor`:
+ * `{ selector?, x, y, vw, vh }` — document coordinates and the viewport the
+ * reviewer had). Written only through the dashboard (signed-in member, never
+ * the app host); the body is the member's own text, handed to agents only
+ * inside an untrusted envelope. `resolved_by_kind` says whether a person in
+ * the dashboard or their agent over MCP resolved it.
+ */
+export const appFeedback = pgTable(
+  'app_feedback',
+  {
+    id: text('id').primaryKey(),
+    appId: text('app_id')
+      .notNull()
+      .references(() => apps.id, { onDelete: 'cascade' }),
+    /** The version the reviewer saw (null when the page did not say). */
+    versionNumber: integer('version_number'),
+    /** The page path (no query, no fragment). */
+    path: text('path').notNull(),
+    anchor: jsonb('anchor'),
+    body: text('body').notNull(),
+    authorUserId: text('author_user_id').references(() => users.id, { onDelete: 'set null' }),
+    status: feedbackStatusEnum('status').notNull().default('open'),
+    resolvedAt: timestamp('resolved_at'),
+    resolvedByUserId: text('resolved_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    resolvedByKind: auditActorKindEnum('resolved_by_kind'),
+    resolutionNote: text('resolution_note'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (t) => [
+    // The Feedback tab and list_feedback page one app's notes per status, newest first.
+    index('app_feedback_app_status_created_idx').on(t.appId, t.status, t.createdAt, t.id),
+    // The per-author hourly limit counts an author's recent notes.
+    index('app_feedback_author_created_idx').on(t.authorUserId, t.createdAt),
+  ]
+);
+
 /** Content-addressed file bytes, shared by every version (and app) that uses them. */
 export const blobs = pgTable('blobs', {
   sha256: text('sha256').primaryKey(),

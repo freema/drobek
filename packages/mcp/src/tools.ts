@@ -71,6 +71,7 @@ import {
   deriveSlug,
   duplicateAppFiles,
   duplicationSource,
+  feedbackCounts,
   galleryCounts,
   galleryEnabled,
   galleryState,
@@ -452,6 +453,8 @@ export async function getApp(ctx: CallContext, args: { app_id: string }) {
       status: d.verified ? 'verified' : 'pending',
       primary: d.isPrimary,
     })),
+    // Notes members left on the preview (list_feedback reads them, inside the untrusted envelope).
+    feedback: (await feedbackCounts([app.id])).get(app.id) ?? { open: 0, resolved: 0 },
     ...publishOut(permission),
     ...(lock ? { lock } : {}),
   };

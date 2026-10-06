@@ -68,6 +68,7 @@ export {
   verifyAppPassword,
 } from './password.js';
 export { ByteLru, CountLru, DEFAULT_BLOB_CACHE_BYTES, ExpiringLru } from './lru.js';
+export { FEEDBACK_SCRIPT_PATH, feedbackWidget, type FeedbackWidget } from './feedback-widget.js';
 export {
   isUnservedSource,
   servedManifest,

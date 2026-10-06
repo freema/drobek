@@ -138,6 +138,16 @@ export const LIMITS: LimitDoc[] = [
     meaning: 'New versions one person makes within the last hour, in every app and workspace (→ rate_limited with retry_after_seconds; nothing is stored). The limits provider may set it per workspace.',
   },
   {
+    env: 'FEEDBACK_MAX_OPEN_PER_APP',
+    default: '500',
+    meaning: 'Max open feedback notes of one app; a member\'s new note past it is refused on the dashboard until notes are resolved or deleted (resolve_feedback, delete_feedback).',
+  },
+  {
+    env: 'FEEDBACK_PER_USER_HOUR',
+    default: '30',
+    meaning: 'Feedback notes one member may leave on the previews within the last hour, in every app (the dashboard answers 429 with Retry-After past it).',
+  },
+  {
     env: 'APP_VERSIONS_KEEP',
     default: '200',
     meaning: 'The newest versions of each app the hourly history retention keeps; older ones are deleted except the published one, the one the preview serves, the kept ones, those kept for a rollback and those from the last hour (read_file / restore_version / publish of a deleted one → not_found; get_app `version_retention`). A member deletes older ones sooner with delete_versions. The limits provider may set it per workspace.',
@@ -210,12 +220,12 @@ export const LIMITS: LimitDoc[] = [
   {
     env: 'tool: owner list entries',
     default: `${OWNER_LIST_MAX} per call`,
-    meaning: 'Max entries one list_form_submissions, list_end_users, list_uploads or list_activity call returns (`limit`; more → invalid_params); next_cursor pages on.',
+    meaning: 'Max entries one list_form_submissions, list_end_users, list_uploads, list_activity or list_feedback call returns (`limit`; more → invalid_params); next_cursor (next_before for list_feedback) pages on.',
   },
   {
     env: 'tool: owner list answer',
     default: `${OWNER_LIST_MAX_BYTES} bytes (64 KiB)`,
-    meaning: 'Max JSON bytes of the entries in one answer of those four tools: a page that would be bigger ends earlier (`cut: true`) and next_cursor continues right after it; a single bigger entry has its long texts shortened (`clipped: true`).',
+    meaning: 'Max JSON bytes of the entries in one answer of those five tools: a page that would be bigger ends earlier (`cut: true`) and next_cursor continues right after it; a single bigger entry has its long texts shortened (`clipped: true`).',
   },
   {
     env: 'tool: single-writer lease',

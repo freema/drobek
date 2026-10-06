@@ -64,6 +64,7 @@ import {
 } from './handler.js';
 import type { AssetSource } from './assets.js';
 import { appSecurityHeaders, frameSrcFromEnv, galleryFrameAncestorsFromEnv } from './csp.js';
+import { feedbackWidget } from './feedback-widget.js';
 import { appAccessSecret, appCookiesSecure } from './password.js';
 import { ServeStore } from './store.server.js';
 import { UnknownHostLimiter, unknownHostLimitsFromEnv } from './unknown-host.js';
@@ -183,8 +184,9 @@ export async function unlockAttemptAllowed(
  * APPS_UNKNOWN_HOST_WINDOW_MS), insights counters + beacon, the dashboard
  * origin every app host lets frame it (the app-list thumbnail), the
  * operator's gallery origins (GALLERY_FRAME_ANCESTORS, only while
- * GALLERY_ENABLED), the frame-src list (APP_FRAME_SRC_EXTRA) and the app
- * assets on ASSETS_DIR.
+ * GALLERY_ENABLED), the frame-src list (APP_FRAME_SRC_EXTRA), the app
+ * assets on ASSETS_DIR and the preview's feedback widget (opening the
+ * dashboard's /feedback/new).
  */
 export function defaultHandlerDeps(store: ServeStore, log?: Logger): HandlerDeps {
   return {
@@ -195,6 +197,7 @@ export function defaultHandlerDeps(store: ServeStore, log?: Logger): HandlerDeps
     signal: (appId, kind, path) => void incrementServingSignal(appId, kind, path),
     beacon: (req, app, version) => handleBeacon(req, app.id, { servedVersion: version?.number ?? null }),
     dashboardOrigin: dashboardOrigin(),
+    feedback: feedbackWidget(dashboardOrigin()),
     galleryFrameAncestors: galleryEnabled() ? galleryFrameAncestorsFromEnv() : [],
     frameSrc: frameSrcFromEnv(),
     assets: defaultAssetSource(),

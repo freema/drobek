@@ -236,6 +236,7 @@ test('MCP OAuth 2.1 end-to-end: discovery → register → consent → token →
       'list_assets',
       'list_domains',
       'list_end_users',
+      'list_feedback',
       'list_form_submissions',
       'list_members',
       'list_uploads',

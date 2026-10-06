@@ -64,6 +64,14 @@
  * shows right now (`ServeApp.galleryVisible`, cached like the rest of the app
  * row) — never on its preview or version hosts.
  *
+ * FEEDBACK: with `deps.feedback`, every HTML file the preview and version
+ * hosts serve carries the feedback widget's script tag before `</body>` (its
+ * ETag says so: `"<sha256>-fb<N>-<widget hash>"`), unless the version's
+ * drobek.json says `"feedback": false`; `GET /__drobek/feedback.js` serves the
+ * widget there, after steps 2 and 3, and is not counted as a request. The
+ * production host and custom domains never carry or serve it (see
+ * feedback-widget.ts).
+ *
  * ABUSE: `GET /.well-known/drobek-report` on ANY app host
  * answers `{ report_url, app, terms_url }` (public, cacheable 1 h) before
  * anything else — where to report this host. A taken-down app
@@ -86,6 +94,7 @@ import {
 } from '@drobek/apps';
 import { assetNameOf, assetResponsePlan, type AssetSource } from './assets.js';
 import { contentTypeForPath } from './content-type.js';
+import { FEEDBACK_SCRIPT_PATH, feedbackScriptTag, injectBeforeBodyEnd, type FeedbackWidget } from './feedback-widget.js';
 import { appSecurityHeaders, parseFrameAncestors, withFrameAncestors } from './csp.js';
 import { UNLOCK_PATH, errorPage, lockedPage, missingPage, passwordPage, type MissingReason } from './pages.js';
 import {
@@ -205,6 +214,8 @@ export interface HandlerDeps {
   frameSrc?: string;
   /** The app's uploaded assets at `/<name>` (absent → only the version's files are served). */
   assets?: AssetSource;
+  /** The feedback widget of the preview and version hosts (absent → no widget). */
+  feedback?: FeedbackWidget | null;
 }
 
 /** Header naming the app behind an app-host response. */
@@ -252,7 +263,9 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
 
   const isUnlock = method === 'POST' && req.path === UNLOCK_PATH;
   const isBeacon = deps.beacon !== undefined && req.path === BEACON_PATH;
-  const isPlatform = !isUnlock && !isBeacon && deps.platform !== undefined && req.path.startsWith(PLATFORM_PREFIX);
+  const widget = !production && kind !== undefined ? (deps.feedback ?? null) : null;
+  const isWidget = widget !== null && (method === 'GET' || method === 'HEAD') && req.path === FEEDBACK_SCRIPT_PATH;
+  const isPlatform = !isUnlock && !isBeacon && !isWidget && deps.platform !== undefined && req.path.startsWith(PLATFORM_PREFIX);
   if (method !== 'GET' && method !== 'HEAD' && !isUnlock && !isPlatform && !isBeacon) {
     return page(405, errorPage('Method not allowed', 'This address only serves files.'), {
       Allow: 'GET, HEAD',
@@ -299,7 +312,7 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
   if (req.target.kind === 'version' && !version && deps.unknownHosts && !(await deps.unknownHosts.allow(req.clientIp))) {
     return throttled();
   }
-  if (!isBeacon) deps.signal?.(app.id, 'request');
+  if (!isBeacon && !isWidget) deps.signal?.(app.id, 'request');
 
   // ── taken down by a super-admin: 451 on every host and path ──
   if (app.lockedReason) {
@@ -363,6 +376,7 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
     const next = safeNext(req.query ? `${req.path}?${req.query}` : req.path);
     return page(401, passwordPage({ next }));
   }
+  if (isWidget) return serveWidget(req, widget, security);
 
   // ── the version this host serves ──
   if (!version) {
@@ -406,8 +420,13 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
     production && entry.built && mayCarryInlineSourceMap(hit.path)
       ? await deps.store.splitSourceMap(entry.sha256, hit.path)
       : null;
-  const etag = split ? etagFor(`${entry.sha256}-nomap`) : etagFor(entry.sha256);
   const contentType = contentTypeForPath(hit.path);
+  const withWidget = widget !== null && contentType.startsWith('text/html') && (await deps.store.feedbackEnabled(version.id));
+  const etag = split
+    ? etagFor(`${entry.sha256}-nomap`)
+    : withWidget
+      ? etagFor(`${entry.sha256}-fb${version.number}-${widget.hash}`)
+      : etagFor(entry.sha256);
   const headers: Record<string, string> = {
     ...security,
     'Content-Type': contentType,
@@ -422,14 +441,29 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
   if (isNotModified(req.header('if-none-match'), etag)) {
     return { status: 304, headers, body: null };
   }
-  const bytes = split ? split.code : await deps.store.blob(entry.sha256);
-  if (!bytes) {
+  const stored = split ? split.code : await deps.store.blob(entry.sha256);
+  if (!stored) {
     // metadata without bytes — fail closed
     deps.signal?.(app.id, '5xx', req.path);
     return missing('no-file');
   }
+  const bytes = withWidget ? injectBeforeBodyEnd(stored, feedbackScriptTag(app.slug, version.number)) : stored;
   headers['Content-Length'] = String(bytes.length);
   return { status: 200, headers, body: method === 'HEAD' ? null : bytes };
+}
+
+/** `GET /__drobek/feedback.js` on a preview or version host: the widget, revalidated by its ETag. */
+function serveWidget(req: AppRequest, widget: FeedbackWidget, security: Record<string, string>): AppResponse {
+  const etag = etagFor(`feedback-${widget.hash}`);
+  const headers: Record<string, string> = {
+    ...security,
+    'Content-Type': 'text/javascript; charset=utf-8',
+    ETag: etag,
+    'Cache-Control': 'no-cache',
+  };
+  if (isNotModified(req.header('if-none-match'), etag)) return { status: 304, headers, body: null };
+  headers['Content-Length'] = String(widget.script.length);
+  return { status: 200, headers, body: req.method.toUpperCase() === 'HEAD' ? null : widget.script };
 }
 
 /**

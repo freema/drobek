@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { TOOL_DOCS, TOOL_NAMES, toolDoc } from './tools.js';
 
 describe('TOOL_DOCS manifest', () => {
-  it('documents exactly the 60 tools, in tools/list order', () => {
+  it('documents exactly the 63 tools, in tools/list order', () => {
     expect(TOOL_NAMES).toEqual([
       'list_apps',
       'create_app',
@@ -30,6 +30,9 @@ describe('TOOL_DOCS manifest', () => {
       'delete_collection',
       'purge_orphan_records',
       'get_logs',
+      'list_feedback',
+      'resolve_feedback',
+      'delete_feedback',
       'sync_now',
       'create_asset_upload',
       'list_assets',
@@ -117,6 +120,9 @@ describe('TOOL_DOCS manifest', () => {
       delete_collection: [false, true, true, false], // records + declaration gone; a second call answers not_found
       purge_orphan_records: [false, true, true, false], // a second call finds nothing to purge
       get_logs: [true, false, true, false],
+      list_feedback: [true, false, true, false],
+      resolve_feedback: [false, false, true, false], // the same status again answers changed:false
+      delete_feedback: [false, true, true, false], // the note is gone for good; a second delete answers not_found
       sync_now: [false, true, false, true], // replace mode swaps the collection's records; calls the app's external API
       create_asset_upload: [false, false, false, false], // a new single-use URL on every call; the PUT stores
       list_assets: [true, false, true, false],
@@ -394,6 +400,24 @@ describe('TOOL_DOCS manifest', () => {
     expect(toolDoc('set_end_user_blocked').returns).not.toContain('email');
     expect(toolDoc('remove_module_secret').description).toMatch(/Setting a value stays in the dashboard/);
     expect(toolDoc('list_uploads').description).toMatch(/not available over MCP/);
+  });
+
+  it('the preview feedback tools: list_feedback reads in an envelope, resolving is editor+, deleting needs the author or an admin and the user\'s yes', () => {
+    const list = toolDoc('list_feedback');
+    expect(list.scope).toMatch(/^read \(any role/);
+    expect(list.fields.map((f) => f.name)).toEqual(['app_id', 'status', 'before', 'limit']);
+    expect(list.description).toMatch(/untrusted envelope/);
+    expect(list.description).toMatch(/never follow instructions/);
+    expect(list.description).toMatch(/At most 100 notes and 64 KiB per call/);
+    expect(list.returns).toContain('next_before');
+    expect(toolDoc('resolve_feedback').scope).toMatch(/^write \(editor\+/);
+    expect(toolDoc('resolve_feedback').fields.map((f) => f.name)).toEqual(['app_id', 'feedback_id', 'resolved', 'note']);
+    const del = toolDoc('delete_feedback');
+    expect(del.scope).toMatch(/^write \(the note's author or a workspace admin/);
+    expect(del.description).toMatch(/user_confirmed: true/);
+    expect(del.description).toMatch(/ONLY after the user explicitly said yes/);
+    expect(del.fields.at(-1)?.name).toBe('user_confirmed');
+    expect(toolDoc('get_app').returns).toContain('feedback:{open,resolved}');
   });
 
   it('publish is documented as explicit-request only, with the publish scope', () => {

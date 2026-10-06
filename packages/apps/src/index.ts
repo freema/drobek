@@ -308,3 +308,36 @@ export {
   type WorkspacePublishingEntry,
 } from './publish-approval.server.js';
 export { notifyOperatorOfPublish, type PublishKind, type PublishNotifyResult } from './publish-notify.server.js';
+export {
+  DEFAULT_FEEDBACK_MAX_OPEN_PER_APP,
+  DEFAULT_FEEDBACK_PER_USER_HOUR,
+  FEEDBACK_BODY_MAX,
+  FEEDBACK_PAGE_MAX,
+  FEEDBACK_PATH_MAX,
+  FEEDBACK_RESOLUTION_NOTE_MAX,
+  FEEDBACK_SELECTOR_MAX,
+  FEEDBACK_STATUSES,
+  feedbackLimits,
+  isFeedbackId,
+  mayDeleteFeedback,
+  normalizeFeedbackPath,
+  parseFeedbackAnchor,
+  parseFeedbackFilter,
+  validateFeedbackBody,
+  type FeedbackAnchor,
+  type FeedbackLimits,
+  type FeedbackStatus,
+} from './feedback.js';
+export {
+  createFeedback,
+  deleteFeedback,
+  feedbackCounts,
+  getFeedback,
+  listFeedback,
+  setFeedbackResolved,
+  type CreateFeedbackInput,
+  type FeedbackNote,
+  type FeedbackPage,
+  type ListFeedbackOptions,
+  type SetFeedbackResolvedResult,
+} from './feedback.server.js';

@@ -148,6 +148,22 @@
       "types": "./src/routes/workspaces.$slug.apps.$appSlug.uploads.$fileId.server.ts",
       "default": "./dist/routes/workspaces.$slug.apps.$appSlug.uploads.$fileId.server.js"
     },
+    "./routes/workspaces.$slug.apps.$appSlug.feedback": {
+      "types": "./src/routes/workspaces.$slug.apps.$appSlug.feedback.tsx",
+      "default": "./dist/routes/workspaces.$slug.apps.$appSlug.feedback.js"
+    },
+    "./routes/workspaces.$slug.apps.$appSlug.feedback.server": {
+      "types": "./src/routes/workspaces.$slug.apps.$appSlug.feedback.server.ts",
+      "default": "./dist/routes/workspaces.$slug.apps.$appSlug.feedback.server.js"
+    },
+    "./routes/feedback.new": {
+      "types": "./src/routes/feedback.new.tsx",
+      "default": "./dist/routes/feedback.new.js"
+    },
+    "./routes/feedback.new.server": {
+      "types": "./src/routes/feedback.new.server.ts",
+      "default": "./dist/routes/feedback.new.server.js"
+    },
     "./routes/workspaces.$slug.apps.$appSlug.logs": {
       "types": "./src/routes/workspaces.$slug.apps.$appSlug.logs.tsx",
       "default": "./dist/routes/workspaces.$slug.apps.$appSlug.logs.js"

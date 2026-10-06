@@ -62,6 +62,10 @@ describe('account dictionary + actor filter', () => {
       'proxy.upstream.create',
       'proxy.upstream.update',
       'proxy.upstream.delete',
+      'app.feedback.create',
+      'app.feedback.resolve',
+      'app.feedback.reopen',
+      'app.feedback.delete',
       'auth.sign_in',
     ]) {
       expect(AUDIT_ACTION_LIST).toContain(a);

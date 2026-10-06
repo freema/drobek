@@ -39,6 +39,7 @@
  */
 import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { isGalleryVisible, type AppHostTarget } from '@drobek/apps';
+import { CONFIG_FILE, feedbackWidgetEnabled } from '@drobek/compile';
 import { appVersions, apps, blobs, getDb, versionFiles } from '@drobek/db';
 import { primaryDomainOf, resolveCustomHost, type CustomHostResolution } from '@drobek/domains';
 import { ByteLru, CountLru, DEFAULT_BLOB_CACHE_BYTES, ExpiringLru } from './lru.js';
@@ -132,6 +133,7 @@ export class ServeStore {
   private readonly resolved: ExpiringLru<Resolved>;
   private readonly manifests = new CountLru<ServedManifest>(MAX_CACHED_MANIFESTS);
   private readonly noInlineMap = new CountLru<true>(MAX_CACHED_MANIFESTS * 4);
+  private readonly feedbackOn = new CountLru<boolean>(MAX_CACHED_MANIFESTS);
   private readonly customHosts: ExpiringLru<CustomHostResolution>;
   /** Slug misses (`<slug>:*`) and version misses (`<slug>:v<N>`, with the app). */
   private readonly missing: ExpiringLru<Resolved>;
@@ -205,6 +207,21 @@ export class ServeStore {
     const m = servedManifest(await this.loaders.loadFiles(versionId));
     this.manifests.set(versionId, m);
     return m;
+  }
+
+  /**
+   * Does version `versionId` show the feedback widget on its preview and
+   * version hosts — false only when its drobek.json says `"feedback": false`.
+   * A version is immutable, so the answer is cached like its manifest.
+   */
+  async feedbackEnabled(versionId: string): Promise<boolean> {
+    const hit = this.feedbackOn.get(versionId);
+    if (hit !== undefined) return hit;
+    const config = (await this.loaders.loadFiles(versionId)).find((f) => f.kind === 'source' && f.path === CONFIG_FILE);
+    const bytes = config ? await this.blob(config.sha256) : null;
+    const on = feedbackWidgetEnabled(bytes ? bytes.toString('utf8') : undefined);
+    this.feedbackOn.set(versionId, on);
+    return on;
   }
 
   async blob(sha256: string): Promise<Buffer | null> {

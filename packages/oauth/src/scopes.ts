@@ -7,7 +7,8 @@
  *
  *   read    — look: list apps (+ who am I), get an app, read its files and
  *             page its version history (`list_versions`), read skills,
- *             query an app's stored data, read its logs, list its assets and
+ *             query an app's stored data, read its logs and the feedback
+ *             members left on its preview (`list_feedback`), list its assets and
  *             its custom domains, its form submissions, end users and uploads,
  *             a workspace's members, and (workspace admins) the workspace's
  *             proxy upstreams and activity log.
@@ -15,6 +16,8 @@
  *             `duplicate_app`), write files (new versions), restore,
  *             keep a version and delete old versions (`keep_version`,
  *             `delete_versions`, the clean-up only after the user's yes),
+ *             resolve, reopen or delete a feedback note (`resolve_feedback`,
+ *             `delete_feedback`, the deletion only after the user's yes),
  *             configure platform modules, upload (upload URLs) and delete assets,
  *             add, verify and remove custom domains, register, stream and
  *             remove proxy upstreams without a secret, set which sites may
@@ -102,6 +105,10 @@ export const TOOL_SCOPES = {
   skill_info: 'read',
   query_data: 'read',
   get_logs: 'read',
+  // Feedback on the preview: reading it is a read, resolving or deleting a note an app change.
+  list_feedback: 'read',
+  resolve_feedback: 'write',
+  delete_feedback: 'write',
   list_assets: 'read',
   list_domains: 'read',
   list_upstreams: 'read',

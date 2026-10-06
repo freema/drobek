@@ -289,7 +289,7 @@ function decodeFiles(text: string): Record<string, unknown> {
  * null when `text` is not an envelope.
  */
 function decodeUntrusted(text: string): Record<string, unknown> | null {
-  const list = /^<untrusted-(form-submissions|end-users|uploads|activity) (.*)>$/m.exec(text);
+  const list = /^<untrusted-(form-submissions|end-users|uploads|activity|feedback) (.*)>$/m.exec(text);
   if (list) {
     const nonce = /nonce="([0-9a-f]+)"/.exec(list[2])?.[1];
     const start = list.index + list[0].length + 1;

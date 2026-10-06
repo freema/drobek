@@ -79,7 +79,10 @@ describe('host dispatch', () => {
     dashboardHits = [];
     const r = await get('shop--preview.apps.localhost:3041', '/');
     expect(r.status).toBe(200);
-    expect(r.body).toBe(HTML);
+    // The preview carries the feedback widget, which opens the dashboard origin.
+    expect(r.body).toBe(`${HTML}<script src="/__drobek/feedback.js" defer data-app="shop" data-version="1"></script>`);
+    const widget = await get('shop--preview.apps.localhost:3041', '/__drobek/feedback.js');
+    expect(widget.body).toContain('"http://localhost:3041"');
     // Only the dashboard origin (PUBLIC_APP_URL, default localhost:3041) may frame it.
     expect(r.headers['content-security-policy']).toContain('frame-ancestors http://localhost:3041;');
     expect(r.headers['x-robots-tag']).toBe('noindex');
