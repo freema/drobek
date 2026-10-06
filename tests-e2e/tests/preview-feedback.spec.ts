@@ -98,7 +98,7 @@ test.describe('feedback on the preview @local', () => {
     await expect(fab).toBeVisible();
     await fab.click();
     const popupPromise = member.waitForEvent('page');
-    await page.getByRole('heading', { name: 'Feedback demo' }).click();
+    await page.getByRole('heading', { name: 'Feedback demo' }).click({ position: { x: 8, y: 8 } });
     const popup = await popupPromise;
     await popup.waitForURL((u) => u.pathname === '/feedback/new');
 

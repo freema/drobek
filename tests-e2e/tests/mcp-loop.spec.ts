@@ -255,7 +255,9 @@ test('mcp loop: DCR + PKCE consent → list → create → broken write → fix 
     expect(published.json).toMatchObject({ published_version: 3, previous_version: null, published_url: prodUrl });
     const prodHtml = await getAppUrl(prodUrl);
     expect(prodHtml.status).toBe(200);
-    expect(prodHtml.body).toBe(previewHtml.body);
+    expect(previewHtml.body).toContain('<script src="/__drobek/feedback.js" defer');
+    expect(prodHtml.body).not.toContain('/__drobek/feedback.js');
+    expect(prodHtml.body).toBe(previewHtml.body.replace(/<script src="\/__drobek\/feedback\.js"[^>]*><\/script>/, ''));
     expect(prodHtml.headers['x-robots-tag']).toBeUndefined();
     const prodJs = await getAppUrl(prodUrl, '/main.js');
     expect(prodJs.body).toContain(marker);

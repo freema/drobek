@@ -166,7 +166,9 @@ test('app hosts: preview / publish / rollback / --vN, served files, headers, cac
     expect(html.headers['content-type']).toMatch(/^text\/html/);
     expect(html.body).toContain('<script type="module" src="/main.js"></script>');
     expect(html.headers['cache-control']).toBe('public, max-age=0, must-revalidate');
-    expect(html.headers.etag).toMatch(/^"[0-9a-f]{64}"$/);
+    expect(html.headers.etag).toMatch(/^"[0-9a-f]{64}-fb\d+-[0-9a-f]+"$/);
+    expect(html.body).toContain('<script src="/__drobek/feedback.js" defer');
+    const prodBody = html.body.replace(/<script src="\/__drobek\/feedback\.js"[^>]*><\/script>/, '');
     expectAppSecurityHeaders(html, { noindex: true });
 
     const js = await hostRequest(previewHost(slug), '/main.js');
@@ -226,7 +228,7 @@ test('app hosts: preview / publish / rollback / --vN, served files, headers, cac
     });
     const prod1 = await hostRequest(prodHost(slug));
     expect(prod1.status).toBe(200);
-    expect(prod1.body).toBe(html.body);
+    expect(prod1.body).toBe(prodBody);
     expectAppSecurityHeaders(prod1, { noindex: false });
 
     // ── A new version: preview follows at once (bust), production does not. ─
@@ -238,7 +240,7 @@ test('app hosts: preview / publish / rollback / --vN, served files, headers, cac
     expect(v2.isError, v2.text).toBe(false);
     expect(v2.json).toMatchObject({ version: 2, compile: { ok: true } });
     expect((await hostRequest(previewHost(slug))).body).toContain('<p id="marker">second</p>');
-    expect((await hostRequest(prodHost(slug))).body).toBe(html.body);
+    expect((await hostRequest(prodHost(slug))).body).toBe(prodBody);
     // A stale ETag no longer matches.
     expect(
       (await hostRequest(previewHost(slug), '/', { headers: { 'If-None-Match': String(html.headers.etag) } })).status
@@ -268,7 +270,7 @@ test('app hosts: preview / publish / rollback / --vN, served files, headers, cac
     // ── Rollback = publish an older version. ──────────────────────────────
     const rollback = await callTool(a.client, 'publish', { app_id: appId, version: 1 });
     expect(rollback.json).toMatchObject({ published_version: 1, previous_version: 2 });
-    expect((await hostRequest(prodHost(slug))).body).toBe(html.body);
+    expect((await hostRequest(prodHost(slug))).body).toBe(prodBody);
 
     // ── --vN = exactly version N (noindex). ────────────────────────────────
     const v1Host = await hostRequest(versionHost(slug, 1));
