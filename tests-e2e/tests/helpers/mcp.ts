@@ -283,7 +283,7 @@ function decodeFiles(text: string): Record<string, unknown> {
 }
 
 /**
- * The payload of an untrusted envelope: read_file, query_data and get_logs
+ * The payload of an untrusted envelope: read_file, query_data, get_logs and get_analytics
  * answer ONLY the envelope text, no structuredContent. Rebuilt from
  * the opening marker's attributes and the body into the tool's result shape;
  * null when `text` is not an envelope.
@@ -297,6 +297,22 @@ function decodeUntrusted(text: string): Record<string, unknown> | null {
     const end = text.indexOf(closing, start - 1);
     const after = text.slice(end + closing.length).replace(/^\n+/, '');
     return { ...(JSON.parse(text.slice(start, end)) as Record<string, unknown>), ...(after ? { note: after } : {}) };
+  }
+  const analytics = /^<untrusted-app-analytics (.*)>$/m.exec(text);
+  if (analytics) {
+    const attrs = envelopeAttrs(analytics[1]);
+    const start = analytics.index + analytics[0].length + 1;
+    const closing = `\n</untrusted-app-analytics nonce="${attrs.nonce}">`;
+    const end = text.indexOf(closing, start - 1);
+    const after = text.slice(end + closing.length).replace(/^\n+/, '');
+    return {
+      app_id: attrs.app_id,
+      days: Number(attrs.days),
+      enabled: attrs.enabled === 'true',
+      untrusted: true,
+      ...(JSON.parse(text.slice(start, end)) as Record<string, unknown>),
+      ...(after ? { note: after } : {}),
+    };
   }
   const open = /^<untrusted-app-(file|data|logs|search) (.*)>$/m.exec(text);
   if (!open) return null;

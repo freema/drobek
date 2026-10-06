@@ -118,7 +118,7 @@ import { confirmUrl, duplicateModuleConfigs, isModuleError, type ModuleRuntime, 
 import { ensurePersonalWorkspace, listAllWorkspaces, listUserWorkspaces } from '@drobek/tenancy';
 import { authorizeApp, authorizeWorkspace } from './access.js';
 import type { ToolDeps, ToolPrincipal } from './context.js';
-import { LOG_KINDS, logsWindowStart, type LogKind, type RuntimeEntry } from '@drobek/insights';
+import { LOG_KINDS, analyticsEnabled, logsWindowStart, type LogKind, type RuntimeEntry } from '@drobek/insights';
 import { dbErrorForLog } from '@drobek/db';
 import { ToolError, lockedByAdmin, notFound, publishRefused } from './errors.js';
 import type { Lease } from './lease.js';
@@ -421,6 +421,7 @@ export async function getApp(ctx: CallContext, args: { app_id: string }) {
   // The newest version's readiness report — with its type errors once the background check is done.
   const readiness = head ? await storedReadiness(ctx, app.id, enabled, head.number) : undefined;
   const render = head ? await renderSignal(ctx, app.id, head) : undefined;
+  const traffic = await trafficSummary(ctx, app.id);
   return {
     ...items[0],
     compile_errors: head?.compileStatus === 'error' ? toCompileOut(head.compileErrors, ctx.modules, enabled) : [],
@@ -455,9 +456,27 @@ export async function getApp(ctx: CallContext, args: { app_id: string }) {
     })),
     // Notes members left on the preview (list_feedback reads them, inside the untrusted envelope).
     feedback: (await feedbackCounts([app.id])).get(app.id) ?? { open: 0, resolved: 0 },
+    ...(traffic ? { traffic } : {}),
     ...publishOut(permission),
     ...(lock ? { lock } : {}),
   };
+}
+
+/**
+ * get_app's `traffic`: page views, estimated visitors and bot views of the
+ * production address and custom domains over the last 7 days (counts only;
+ * get_analytics has the series and top lists). Absent when the server counts
+ * no visits (ANALYTICS_ENABLED=0) or the read failed.
+ */
+async function trafficSummary(ctx: CallContext, appId: string) {
+  if (!analyticsEnabled(ctx.deps.env)) return undefined;
+  try {
+    const t = await ctx.deps.traffic(appId, 7, 0);
+    return { days: 7, views: t.totals.views, visitors: t.totals.visitors, bot_views: t.totals.bot_views };
+  } catch (err) {
+    ctx.deps.log.warn('get_app traffic summary failed', { error: dbErrorForLog(err) });
+    return undefined;
+  }
 }
 
 /**

@@ -50,7 +50,7 @@ import {
   requestBodyStream,
   type Logger,
 } from '@drobek/core';
-import { handleBeacon, incrementServingSignal } from '@drobek/insights';
+import { analyticsEnabled, handleBeacon, incrementServingSignal, recordPageView, type PageViewInput } from '@drobek/insights';
 import { dbErrorForLog, isQueryTimeout } from '@drobek/db';
 import {
   PLATFORM_PREFIX,
@@ -181,7 +181,8 @@ export async function unlockAttemptAllowed(
 /**
  * The production handler deps: HKDF'd access key, Redis limiters (unlock
  * attempts; unknown hosts per IP, APPS_UNKNOWN_HOST_LIMIT /
- * APPS_UNKNOWN_HOST_WINDOW_MS), insights counters + beacon, the dashboard
+ * APPS_UNKNOWN_HOST_WINDOW_MS), insights counters + beacon, the page-view
+ * counter of app traffic analytics (unless ANALYTICS_ENABLED=0), the dashboard
  * origin every app host lets frame it (the app-list thumbnail), the
  * operator's gallery origins (GALLERY_FRAME_ANCESTORS, only while
  * GALLERY_ENABLED), the frame-src list (APP_FRAME_SRC_EXTRA), the app
@@ -195,6 +196,7 @@ export function defaultHandlerDeps(store: ServeStore, log?: Logger): HandlerDeps
     secureCookies: appCookiesSecure(),
     allowUnlockAttempt: (appId, ip) => unlockAttemptAllowed(appId, ip),
     signal: (appId, kind, path) => void incrementServingSignal(appId, kind, path),
+    ...(analyticsEnabled() ? { pageView: (appId: string, view: PageViewInput) => void recordPageView(appId, view) } : {}),
     beacon: (req, app, version) => handleBeacon(req, app.id, { servedVersion: version?.number ?? null }),
     dashboardOrigin: dashboardOrigin(),
     feedback: feedbackWidget(dashboardOrigin()),

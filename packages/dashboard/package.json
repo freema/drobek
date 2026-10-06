@@ -172,6 +172,14 @@
       "types": "./src/routes/workspaces.$slug.apps.$appSlug.logs.server.ts",
       "default": "./dist/routes/workspaces.$slug.apps.$appSlug.logs.server.js"
     },
+    "./routes/workspaces.$slug.apps.$appSlug.analytics": {
+      "types": "./src/routes/workspaces.$slug.apps.$appSlug.analytics.tsx",
+      "default": "./dist/routes/workspaces.$slug.apps.$appSlug.analytics.js"
+    },
+    "./routes/workspaces.$slug.apps.$appSlug.analytics.server": {
+      "types": "./src/routes/workspaces.$slug.apps.$appSlug.analytics.server.ts",
+      "default": "./dist/routes/workspaces.$slug.apps.$appSlug.analytics.server.js"
+    },
     "./routes/workspaces.$slug.activity": {
       "types": "./src/routes/workspaces.$slug.activity.tsx",
       "default": "./dist/routes/workspaces.$slug.activity.js"

@@ -38,6 +38,7 @@ const ALL_TOOLS = [
   'delete_collection',
   'purge_orphan_records',
   'get_logs',
+  'get_analytics',
   'list_feedback',
   'resolve_feedback',
   'delete_feedback',

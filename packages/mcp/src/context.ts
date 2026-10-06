@@ -11,12 +11,14 @@ import {
   queryRenderCounts,
   queryRequestLog,
   queryRuntimeLog,
+  queryTraffic,
   recordCompile,
   type CompileEntry,
   type RecordCompileInput,
   type RenderCounts,
   type RequestsEntry,
   type RuntimeEntry,
+  type TrafficView,
 } from '@drobek/insights';
 import { domainsResolver, type DnsResolver } from '@drobek/domains';
 import { moduleRuntime, revokeEndUserSessions, type ModuleRuntime } from '@drobek/modules';
@@ -74,6 +76,8 @@ export interface ToolDeps {
   modules: () => Promise<ModuleRuntime>;
   /** Compile history + get_logs reads. */
   logs: LogStore;
+  /** App traffic analytics (get_analytics, get_app `traffic`): the last `days` days, top lists of `topLimit` entries. */
+  traffic: (appId: string, days: number, topLimit: number) => Promise<TrafficView>;
   /** Upload tokens, the hourly upload-URL budget and the asset disk. */
   assets: AssetDeps;
   /** The resolver verify_domain looks the custom-domain records up with (DOMAINS_DNS_SERVERS / the dev mock). */
@@ -106,6 +110,7 @@ export function defaultDeps(overrides: Partial<ToolDeps> = {}): ToolDeps {
     log,
     modules: () => moduleRuntime(),
     logs: insightsLogStore(),
+    traffic: (appId, days, topLimit) => queryTraffic(appId, days, { topLimit }),
     assets: {
       tokens: redisUploadTokenStore(),
       uploadAllowed: (appId) => assetUploadAllowed(appId),

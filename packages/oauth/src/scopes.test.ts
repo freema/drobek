@@ -57,6 +57,7 @@ const READ_TOOLS = [
   'skill_info',
   'query_data',
   'get_logs',
+  'get_analytics',
   'list_feedback',
   'list_assets',
   'list_domains',

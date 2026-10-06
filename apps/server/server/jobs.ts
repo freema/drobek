@@ -12,7 +12,7 @@ import {
 import { auditRetentionDays, pruneAuditLog } from '@drobek/audit';
 import { getRedis, type Logger } from '@drobek/core';
 import { startDomainRecheck } from '@drobek/domains';
-import { startLogsPrune } from '@drobek/insights';
+import { startLogsPrune, startTrafficRollup } from '@drobek/insights';
 import { forgetEndUserSessions, startModuleJobs, type EndUserScanRedis, type ModuleRuntime } from '@drobek/modules';
 import { pruneExpiredOAuth } from '@drobek/oauth';
 import { startFilesSweep } from 'drobek-module-files';
@@ -53,6 +53,10 @@ export interface BackgroundJobs {
  *   browser errors, compiles and daily request stats older than their
  *   retention (30 days) and errors past the newest 500 per app, for every app
  *   (logic in @drobek/insights).
+ * - Analytics rollup (a minute after start, then hourly; Redis lease): the app traffic counters of the
+ *   last 7 days move from Redis into app_traffic_daily / app_traffic_top, and
+ *   days past ANALYTICS_RETENTION_DAYS (90) are removed (logic in
+ *   @drobek/insights).
  * - Assets sweep (hourly, Redis lease): the asset files of apps
  *   deleted 24 h+ ago, stale temp uploads and files no `app_assets` row
  *   references (logic in @drobek/apps).
@@ -94,6 +98,7 @@ function startJobs(log: Logger, opts: { filesSweep?: boolean; modules?: ModuleRu
   });
   const stopFilesSweep = opts.filesSweep ? startFilesSweep({ log: jobLog, lease: withRedisLock }) : () => {};
   const stopLogsPrune = startLogsPrune({ log: jobLog, lease: withRedisLock });
+  const stopTrafficRollup = startTrafficRollup({ log: jobLog, lease: withRedisLock });
   const stopAssetsSweep = startAssetsSweep({ log: jobLog });
   const stopModuleJobs = opts.modules ? startModuleJobs({ runtime: opts.modules, lease: withRedisLock, log }) : async () => {};
 
@@ -151,6 +156,7 @@ function startJobs(log: Logger, opts: { filesSweep?: boolean; modules?: ModuleRu
       stopAppPurge();
       stopFilesSweep();
       stopLogsPrune();
+      stopTrafficRollup();
       stopAssetsSweep();
       stopDomainRecheck();
       await stopModuleJobs();

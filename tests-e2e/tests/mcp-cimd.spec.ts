@@ -118,6 +118,7 @@ test('CIMD: a metadata-document client → consent → token → tools/list filt
   try {
     const names = (await client.listTools()).tools.map((t) => t.name).sort();
     expect(names).toEqual([
+      'get_analytics',
       'get_app',
       'get_logs',
       'list_activity',

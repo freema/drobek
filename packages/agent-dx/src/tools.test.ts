@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { TOOL_DOCS, TOOL_NAMES, toolDoc } from './tools.js';
 
 describe('TOOL_DOCS manifest', () => {
-  it('documents exactly the 63 tools, in tools/list order', () => {
+  it('documents exactly the 64 tools, in tools/list order', () => {
     expect(TOOL_NAMES).toEqual([
       'list_apps',
       'create_app',
@@ -30,6 +30,7 @@ describe('TOOL_DOCS manifest', () => {
       'delete_collection',
       'purge_orphan_records',
       'get_logs',
+      'get_analytics',
       'list_feedback',
       'resolve_feedback',
       'delete_feedback',
@@ -120,6 +121,7 @@ describe('TOOL_DOCS manifest', () => {
       delete_collection: [false, true, true, false], // records + declaration gone; a second call answers not_found
       purge_orphan_records: [false, true, true, false], // a second call finds nothing to purge
       get_logs: [true, false, true, false],
+      get_analytics: [true, false, true, false],
       list_feedback: [true, false, true, false],
       resolve_feedback: [false, false, true, false], // the same status again answers changed:false
       delete_feedback: [false, true, true, false], // the note is gone for good; a second delete answers not_found

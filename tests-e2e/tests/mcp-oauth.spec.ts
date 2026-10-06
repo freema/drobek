@@ -229,6 +229,7 @@ test('MCP OAuth 2.1 end-to-end: discovery → register → consent → token →
     const names = tools.tools.map((t) => t.name);
     // read was granted → the read tools are exposed; write was not → no write tools.
     expect(names.sort()).toEqual([
+      'get_analytics',
       'get_app',
       'get_logs',
       'list_activity',

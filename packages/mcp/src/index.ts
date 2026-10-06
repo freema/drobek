@@ -4,7 +4,7 @@
  * version history tools (list_versions, keep_version, delete_versions), publish,
  * skill_info, configure_module, query_data, the data write tools
  * (create_records, update_record, delete_record, delete_collection,
- * purge_orphan_records), get_logs, the preview feedback tools (list_feedback,
+ * purge_orphan_records), get_logs, get_analytics, the preview feedback tools (list_feedback,
  * resolve_feedback, delete_feedback), create_asset_upload,
  * list_assets, delete_asset, the owner's module tabs (list_form_submissions,
  * delete_form_submission, list_end_users, set_end_user_role,

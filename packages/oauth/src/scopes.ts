@@ -105,6 +105,7 @@ export const TOOL_SCOPES = {
   skill_info: 'read',
   query_data: 'read',
   get_logs: 'read',
+  get_analytics: 'read',
   // Feedback on the preview: reading it is a read, resolving or deleting a note an app change.
   list_feedback: 'read',
   resolve_feedback: 'write',
