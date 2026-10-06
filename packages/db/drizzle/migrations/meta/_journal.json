@@ -239,6 +239,13 @@
       "when": 1790948100000,
       "tag": "0038_upstreams_allow_streaming",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1790948300000,
+      "tag": "0040_app_traffic",
+      "breakpoints": true
     }
   ]
 }

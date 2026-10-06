@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { TOOL_DOCS, TOOL_NAMES, toolDoc } from './tools.js';
 
 describe('TOOL_DOCS manifest', () => {
-  it('documents exactly the 60 tools, in tools/list order', () => {
+  it('documents exactly the 61 tools, in tools/list order', () => {
     expect(TOOL_NAMES).toEqual([
       'list_apps',
       'create_app',
@@ -30,6 +30,7 @@ describe('TOOL_DOCS manifest', () => {
       'delete_collection',
       'purge_orphan_records',
       'get_logs',
+      'get_analytics',
       'sync_now',
       'create_asset_upload',
       'list_assets',
@@ -117,6 +118,7 @@ describe('TOOL_DOCS manifest', () => {
       delete_collection: [false, true, true, false], // records + declaration gone; a second call answers not_found
       purge_orphan_records: [false, true, true, false], // a second call finds nothing to purge
       get_logs: [true, false, true, false],
+      get_analytics: [true, false, true, false],
       sync_now: [false, true, false, true], // replace mode swaps the collection's records; calls the app's external API
       create_asset_upload: [false, false, false, false], // a new single-use URL on every call; the PUT stores
       list_assets: [true, false, true, false],

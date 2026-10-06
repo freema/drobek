@@ -254,6 +254,13 @@ describe('tools/list', () => {
         required: ['app_id', 'kind'],
       },
       {
+        name: 'get_analytics',
+        title: "Read an app's visitor analytics",
+        annotations: { title: "Read an app's visitor analytics", ...RO },
+        properties: ['app_id', 'days'],
+        required: ['app_id'],
+      },
+      {
         name: 'sync_now',
         title: 'Run a sync source now',
         annotations: { title: 'Run a sync source now', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
@@ -495,8 +502,8 @@ describe('tools/list', () => {
 
   it('a super-admin also gets set_workspace_publishing, set_workspace_module and the moderation tools, last', async () => {
     const tools = await listTools(undefined, true);
-    expect(tools).toHaveLength(60);
-    expect(tools.slice(55).map((t) => t.name)).toEqual(['set_workspace_publishing', 'set_workspace_module', 'takedown_app', 'restore_app', 'set_gallery_hidden']);
+    expect(tools).toHaveLength(61);
+    expect(tools.slice(56).map((t) => t.name)).toEqual(['set_workspace_publishing', 'set_workspace_module', 'takedown_app', 'restore_app', 'set_gallery_hidden']);
     const props = (name: string) => Object.keys((tools.find((t) => t.name === name)!.inputSchema.properties ?? {}) as object);
     expect(props('set_workspace_module')).toEqual(['workspace', 'module', 'enabled', 'user_confirmed']);
     expect(props('takedown_app')).toEqual(['app', 'reason', 'user_confirmed']);
@@ -504,7 +511,7 @@ describe('tools/list', () => {
     expect(props('set_gallery_hidden')).toEqual(['app', 'hidden', 'user_confirmed']);
     const takedown = tools.find((t) => t.name === 'takedown_app')!;
     expect((takedown.inputSchema.properties as Record<string, { enum?: string[] }>).reason.enum).toEqual(['phishing', 'malware', 'spam', 'copyright', 'illegal', 'other']);
-    const last = tools[55];
+    const last = tools[56];
     expect(last.name).toBe('set_workspace_publishing');
     expect(last.annotations).toEqual({
       title: 'Set a workspace\'s publishing',

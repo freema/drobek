@@ -323,7 +323,7 @@ The agent gets these tools — `list_apps`, `create_app`, `duplicate_app`, `get_
 `set_visibility`, `set_frame_ancestors`, `release_lease`, `delete_app`,
 `skill_info`, `configure_module`, `query_data`, for the app's stored data
 `create_records`, `update_record`, `delete_record`, `delete_collection`,
-`purge_orphan_records`, `get_logs`, for video, audio, images and fonts `create_asset_upload`,
+`purge_orphan_records`, `get_logs`, for visitor numbers `get_analytics`, for video, audio, images and fonts `create_asset_upload`,
 `list_assets`, `delete_asset` (an upload URL — the file never passes through
 the model), for the owner's module tabs `list_form_submissions`,
 `delete_form_submission`, `list_end_users`, `set_end_user_role`,

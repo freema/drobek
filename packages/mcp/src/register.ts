@@ -14,7 +14,7 @@
  *
  * Every tool answers its JSON as text AND as `structuredContent` — except the
  * ones that return app- or user-written content (read_file, query_data,
- * get_logs, and the owner's lists list_form_submissions, list_end_users,
+ * get_logs, get_analytics, and the owner's lists list_form_submissions, list_end_users,
  * list_uploads, list_activity — owner-list.ts): they answer ONLY the text inside the untrusted envelope
  * with its per-response nonce. A client that hands `structuredContent` to the
  * model would otherwise pass the raw payload past the envelope, and no
@@ -54,6 +54,7 @@ import { createRecordsTool, deleteCollectionTool, deleteRecordTool, purgeOrphanR
 import { addDomainTool, listDomainsTool, removeDomainTool, setPrimaryDomainTool, verifyDomainTool } from './domains.js';
 import { deleteAppTool, releaseLeaseTool, setFrameAncestorsTool, setVisibilityTool, unpublishTool } from './lifecycle.js';
 import { listActivityTool } from './activity.js';
+import { getAnalyticsTool, untrustedAnalyticsEnvelope, type GetAnalyticsResult } from './analytics.js';
 import { deleteVersionsTool, keepVersionTool, listVersionsTool } from './versions.js';
 import {
   deleteFormSubmissionTool,
@@ -103,6 +104,7 @@ export const APP_TOOL_NAMES = [
   'delete_collection',
   'purge_orphan_records',
   'get_logs',
+  'get_analytics',
   'sync_now',
   'create_asset_upload',
   'list_assets',
@@ -344,6 +346,10 @@ export const INPUT_SCHEMAS = {
       .string()
       .describe('"runtime" (browser errors), "compile" (the last 50 compiles), "requests" (daily totals + module calls by status) or "sync" (the latest runs of the sync sources).'),
     since: z.string().optional().describe('ISO 8601 date-time: only entries from then on (at most 30 days back).'),
+  },
+  get_analytics: {
+    app_id: appId,
+    days: z.number().optional().describe('How many UTC days back, today included (1 to ANALYTICS_RETENTION_DAYS, default 30).'),
   },
   sync_now: {
     app_id: appId,
@@ -807,6 +813,7 @@ export function registerAppTools(
   register('delete_collection', deleteCollectionTool);
   register('purge_orphan_records', purgeOrphanRecordsTool);
   register<{ app_id: string; kind: string; since?: string }>('get_logs', getLogs, (p) => untrustedResult(untrustedLogsEnvelope(p as GetLogsResult)));
+  register('get_analytics', getAnalyticsTool, (p) => untrustedResult(untrustedAnalyticsEnvelope(p as GetAnalyticsResult)));
   register('sync_now', syncNow);
   register('create_asset_upload', createAssetUpload);
   register('list_assets', listAssetsTool);

@@ -101,7 +101,7 @@ const styles = {
 
 export default function AppDetailRoute() {
   const data = useLoaderData<typeof loader>();
-  const { header, errors, logs, readiness, pendingBanner, syncBanner, duplicateResult, gallery } = data;
+  const { header, errors, logs, visits, readiness, pendingBanner, syncBanner, duplicateResult, gallery } = data;
   const actionData = useActionData<typeof action>();
   const nav = useNavigation();
   const submitting = nav.state !== 'idle';
@@ -219,6 +219,46 @@ export default function AppDetailRoute() {
             ))
           )}
         </section>
+
+        {visits ? (
+          <section style={styles.panel} data-testid="visits-panel" aria-label="Visits in the last 7 days">
+            <div style={styles.panelHead}>
+              <p style={styles.panelTitle}>Visits (7 days)</p>
+              <Link to={`${header.basePath}/analytics`} style={styles.muted} data-testid="visits-link">
+                Analytics
+              </Link>
+            </div>
+            {visits.error ? (
+              <p style={styles.muted} role="alert" data-testid="visits-error">
+                The visit counts could not be loaded. Open Analytics or reload the page.
+              </p>
+            ) : (
+              <>
+                <div style={styles.statRow}>
+                  <span>
+                    <span style={styles.statNum} data-testid="visits-views">
+                      {visits.views}
+                    </span>
+                    <span style={styles.statLabel}>page views</span>
+                  </span>
+                  <span>
+                    <span style={styles.statNum} data-testid="visits-visitors">
+                      {visits.visitors}
+                    </span>
+                    <span style={styles.statLabel}>visitors</span>
+                  </span>
+                </div>
+                {visits.views === 0 ? (
+                  <p style={styles.muted} data-testid="visits-empty">
+                    {header.publishedVersion === null
+                      ? 'No visits yet — publish the app and share its address.'
+                      : 'No visits yet — share the app’s production address.'}
+                  </p>
+                ) : null}
+              </>
+            )}
+          </section>
+        ) : null}
       </div>
     </AppPage>
   );

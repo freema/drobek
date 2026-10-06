@@ -102,6 +102,7 @@ export const TOOL_SCOPES = {
   skill_info: 'read',
   query_data: 'read',
   get_logs: 'read',
+  get_analytics: 'read',
   list_assets: 'read',
   list_domains: 'read',
   list_upstreams: 'read',

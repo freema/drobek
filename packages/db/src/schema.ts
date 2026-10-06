@@ -615,6 +615,50 @@ export const appDailyStats = pgTable(
   (t) => [primaryKey({ columns: [t.appId, t.day] })]
 );
 
+/**
+ * App traffic analytics per app and UTC day — page views of the production
+ * host and custom domains (successful HTML documents; bots counted apart), an
+ * estimate of the day's unique visitors and the bot views. Counts only: the
+ * visitor estimate is counted in Redis from a hash with a salt that lives only
+ * there for the day; no IP, user agent or hash is stored. Rolled up from Redis
+ * hourly by @drobek/insights and pruned after ANALYTICS_RETENTION_DAYS.
+ */
+export const appTrafficDaily = pgTable(
+  'app_traffic_daily',
+  {
+    appId: text('app_id')
+      .notNull()
+      .references(() => apps.id, { onDelete: 'cascade' }),
+    day: text('day').notNull(),
+    views: integer('views').notNull().default(0),
+    visitors: integer('visitors').notNull().default(0),
+    botViews: integer('bot_views').notNull().default(0),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.appId, t.day] }), index('app_traffic_daily_day_idx').on(t.day)]
+);
+
+export const appTrafficKind = pgEnum('app_traffic_kind', ['path', 'referrer']);
+
+/**
+ * The page views of one app and UTC day per page path (no query string) or
+ * per external referrer host (no path); `__other__` absorbs the keys past the
+ * per-day cap.
+ */
+export const appTrafficTop = pgTable(
+  'app_traffic_top',
+  {
+    appId: text('app_id')
+      .notNull()
+      .references(() => apps.id, { onDelete: 'cascade' }),
+    day: text('day').notNull(),
+    kind: appTrafficKind('kind').notNull(),
+    key: text('key').notNull(),
+    views: integer('views').notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.appId, t.day, t.kind, t.key] }), index('app_traffic_top_day_idx').on(t.day)]
+);
+
 // ── get_logs — compile history + module request stats ────────
 //
 // `app_compiles` is a per-app history of every compile a write ran (create_app,

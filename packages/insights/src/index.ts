@@ -16,7 +16,10 @@
  *    (recordCompile), module request counters (recordModuleRequest — Redis,
  *    flushed lazily into Postgres), the
  *    three get_logs kinds (queryRuntimeLog / queryCompileLog / queryRequestLog)
- *    and the periodic retention prune (startLogsPrune).
+ *    and the periodic retention prune (startLogsPrune),
+ *  - app traffic analytics (recordPageView on the serving path, the hourly
+ *    rollup + prune startTrafficRollup, the read queryTraffic): page views,
+ *    a daily unique-visitor estimate, bots, top paths and referrer hosts.
  *
  * Depends only on @drobek/auth (rate-limit + client IP), @drobek/core (Redis)
  * and @drobek/db so @drobek/serving can import the signal hook with no cycle.
@@ -150,3 +153,31 @@ export {
   type ModuleStatsRedis,
 } from './module-stats.server.js';
 export { recordModuleJobFailure, type ModuleJobFailure } from './module-jobs.server.js';
+export {
+  DEFAULT_ANALYTICS_RETENTION_DAYS,
+  TRAFFIC_OTHER,
+  TRAFFIC_RANGES,
+  TRAFFIC_TOP_KEYS_MAX,
+  TRAFFIC_TOP_LIMIT,
+  analyticsEnabled,
+  analyticsRetentionDays,
+  clampTrafficDays,
+  classifyPageView,
+  isBotUserAgent,
+  referrerHost,
+  type PageViewClass,
+  type PageViewInput,
+  type TrafficDay,
+  type TrafficTopPath,
+  type TrafficTopReferrer,
+  type TrafficView,
+} from './traffic.js';
+export {
+  memoryTrafficRedis,
+  queryTraffic,
+  recordPageView,
+  rollupTraffic,
+  startTrafficRollup,
+  type QueryTrafficOptions,
+  type TrafficRedis,
+} from './traffic.server.js';

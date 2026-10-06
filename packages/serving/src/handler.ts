@@ -73,6 +73,7 @@
  */
 import type { Readable } from 'node:stream';
 import { readCookieValue } from '@drobek/core';
+import type { PageViewInput } from '@drobek/insights';
 import {
   REPORT_WELL_KNOWN_PATH,
   lockCategory,
@@ -161,6 +162,12 @@ export interface HandlerDeps {
   allowUnlockAttempt(appId: string, clientIp: string | null): Promise<boolean>;
   /** Best-effort, fire-and-forget request/404/5xx counters; `4xx` (a platform 4xx) and a 5xx with `path` record the failing path. */
   signal?(appId: string, kind: 'request' | '404' | '4xx' | '5xx', path?: string): void;
+  /**
+   * Best-effort, fire-and-forget page-view counter (app traffic analytics):
+   * called for a successful (200 / 304) GET of an HTML document on the
+   * production host or a custom domain only (absent → nothing is counted).
+   */
+  pageView?(appId: string, view: PageViewInput): void;
   now?: () => number;
   /** `__Host-` + Secure app-access cookie (default true; false only on plain-http dev). */
   secureCookies?: boolean;
@@ -411,7 +418,11 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
     }),
     ...(contentType.startsWith('text/html') ? { 'Server-Timing': `${VERSION_TIMING_METRIC};desc="${version.number}"` } : {}),
   };
+  const countView = () => {
+    if (production && method === 'GET' && contentType.startsWith('text/html')) deps.pageView?.(app.id, pageViewOf(req, deps));
+  };
   if (isNotModified(req.header('if-none-match'), etag)) {
+    countView();
     return { status: 304, headers, body: null };
   }
   const bytes = split ? split.code : await deps.store.blob(entry.sha256);
@@ -421,7 +432,22 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
     return missing('no-file');
   }
   headers['Content-Length'] = String(bytes.length);
+  countView();
   return { status: 200, headers, body: method === 'HEAD' ? null : bytes };
+}
+
+/** What the page-view counter is told about a request (it keeps none of it but counts). */
+function pageViewOf(req: AppRequest, deps: HandlerDeps): PageViewInput {
+  return {
+    path: req.path,
+    host: req.header('host'),
+    userAgent: req.header('user-agent'),
+    referer: req.header('referer'),
+    clientIp: req.clientIp,
+    secFetchDest: req.header('sec-fetch-dest'),
+    purpose: req.header('sec-purpose') ?? req.header('purpose'),
+    dashboardOrigin: deps.dashboardOrigin ?? null,
+  };
 }
 
 /**

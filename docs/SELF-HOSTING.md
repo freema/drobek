@@ -462,6 +462,8 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `TYPECHECK_WORKERS` / `TYPECHECK_TIMEOUT_MS` / `TYPECHECK_MAX_MEMORY_MB` / `TYPECHECK_MAX_FILES` | 1 / 20000 / 512 / 150 | the background TypeScript check of each stored version (`type_error` readiness warnings): checks at once in worker threads (0 = off), time and heap per check, max .ts/.tsx files per app; a check over a limit gives no type warnings and is logged |
 | `BEACON_RATE_LIMIT` / `BEACON_APP_RATE_LIMIT` / `BEACON_RATE_WINDOW_MS` | 60 / 600 / 60000 | browser error reports per app+IP and per app per window |
 | `BEACON_MAX_EVENTS_PER_APP` / `BEACON_RETENTION_DAYS` / `BEACON_SAMPLE_RATE` | 500 / 30 / 1 | the per-app error buffer (newest N, max age) and sampling |
+| `ANALYTICS_ENABLED` | 1 | app traffic analytics: page views of each app's production address and custom domains, a daily visitor estimate without cookies (a hash with a salt kept only in Redis for the day), bot views, top pages and referrer hosts — the Analytics tab and `get_analytics`; `0` counts nothing and the tab says so |
+| `ANALYTICS_RETENTION_DAYS` | 90 | days of traffic counts kept; an hourly job moves the counters from Redis into Postgres and removes older days |
 | `LOGS_PRUNE_INTERVAL_MS` | 3600000 | how often the server removes `get_logs` rows past their retention for every app (errors past the buffer above, compiles and daily request stats older than 30 days) |
 | `DROBEK_MIGRATE_ON_START` | 1 | `0` = the server does not apply migrations on start (tests, tooling) |
 | `AUDIT_RETENTION_DAYS` | 365 | audit rows older than this are pruned daily |

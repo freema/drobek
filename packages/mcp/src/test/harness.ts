@@ -14,6 +14,7 @@ import { AssetDisk, memoryUploadTokenStore } from '@drobek/apps';
 import { Compiler, type CompileLimits } from '@drobek/compile';
 import type { DnsResolver } from '@drobek/domains';
 import { noopLogger } from '@drobek/core';
+import { memoryTrafficRedis, queryTraffic, type TrafficRedis } from '@drobek/insights';
 import { loadModuleRuntime, memoryRateLimiter, type ModuleRuntime } from '@drobek/modules';
 import type { AppChangedEvent, ToolDeps, ToolPrincipal } from '../context.js';
 import { insightsLogStore } from '../context.js';
@@ -88,6 +89,8 @@ function zoneResolver(zone: TestZone): DnsResolver {
 
 export interface TestDeps extends ToolDeps {
   events: AppChangedEvent[];
+  /** The in-memory Redis behind get_analytics' live counters (recordPageView into it). */
+  trafficRedis: TrafficRedis;
   clock: TestClock;
   /** The in-memory upload tokens and the upload-URL budget left (set it to test rate_limited). */
   uploadTokens: ReturnType<typeof memoryUploadTokenStore>;
@@ -109,6 +112,7 @@ export function testDeps(limits: Partial<CompileLimits> = {}): TestDeps {
   const zone: TestZone = { txt: {}, cname: {}, fail: new Set() };
   const sessionEpochs = new Map<string, number>();
   const invited: TestDeps['invited'] = { tokens: new Map(), sent: [], failNext: false };
+  const trafficRedis = memoryTrafficRedis();
   let inviteSeq = 0;
   return {
     leases: memoryLeaseStore(clock.now),
@@ -123,6 +127,7 @@ export function testDeps(limits: Partial<CompileLimits> = {}): TestDeps {
     modules: testModules,
     // Postgres (PGlite) only — no Redis for the daily serving counters.
     logs: insightsLogStore({ flushSignals: false }),
+    traffic: (appId, days, topLimit) => queryTraffic(appId, days, { topLimit, redis: () => trafficRedis }),
     assets: {
       tokens: uploadTokens,
       uploadAllowed: async () => uploadBudget.left-- > 0,
@@ -152,6 +157,7 @@ export function testDeps(limits: Partial<CompileLimits> = {}): TestDeps {
       },
     },
     invited,
+    trafficRedis,
     events,
     clock,
     uploadTokens,
@@ -216,6 +222,22 @@ function decodeUntrusted(text: string): Record<string, unknown> | null {
     const end = text.indexOf(closing, start - 1);
     const after = text.slice(end + closing.length).replace(/^\n+/, '');
     return { ...(JSON.parse(text.slice(start, end)) as Record<string, unknown>), ...(after ? { note: after } : {}) };
+  }
+  const analytics = /^<untrusted-app-analytics (.*)>$/m.exec(text);
+  if (analytics) {
+    const attrs = envelopeAttrs(analytics[1]);
+    const start = analytics.index + analytics[0].length + 1;
+    const closing = `\n</untrusted-app-analytics nonce="${attrs.nonce}">`;
+    const end = text.indexOf(closing, start - 1);
+    const after = text.slice(end + closing.length).replace(/^\n+/, '');
+    return {
+      app_id: attrs.app_id,
+      days: Number(attrs.days),
+      enabled: attrs.enabled === 'true',
+      untrusted: true,
+      ...(JSON.parse(text.slice(start, end)) as Record<string, unknown>),
+      ...(after ? { note: after } : {}),
+    };
   }
   const open = /^<untrusted-app-(file|data|logs|search) (.*)>$/m.exec(text);
   if (!open) return null;

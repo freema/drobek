@@ -1416,3 +1416,46 @@ describe('serving signals: counts and failing paths', () => {
     expect(signals).toEqual(['app_shop:request', 'app_shop:5xx:/__drobek/v1/proxy/x']);
   });
 });
+
+describe('page views (app traffic analytics)', () => {
+  function withViews(): { d: HandlerDeps; views: { appId: string; path: string; host: string | null; userAgent: string | null; referer: string | null }[] } {
+    const views: { appId: string; path: string; host: string | null; userAgent: string | null; referer: string | null }[] = [];
+    const d: HandlerDeps = {
+      ...deps,
+      dashboardOrigin: 'https://dash.example.com',
+      pageView: (appId, v) => views.push({ appId, path: v.path, host: v.host, userAgent: v.userAgent, referer: v.referer }),
+    };
+    return { d, views };
+  }
+  const custom = (slug: string): AppHostTarget => ({ kind: 'custom', slug, hostname: 'shop.example.org' });
+  const ua = { 'user-agent': 'Mozilla/5.0 Firefox/131.0', host: 'shop.apps.example.com', referer: 'https://news.example/x' };
+
+  it('a successful HTML document on the production host or a custom domain is a page view (a 304 too)', async () => {
+    const { d, views } = withViews();
+    expect((await handleAppRequest(req(prod('shop'), '/', { headers: ua }), d)).status).toBe(200);
+    expect((await handleAppRequest(req(prod('shop'), '/some/route', { headers: ua, query: 'q=1' }), d)).status).toBe(200);
+    expect((await handleAppRequest(req(custom('shop'), '/', { headers: { ...ua, host: 'shop.example.org' } }), d)).status).toBe(200);
+    const etag = (await handleAppRequest(req(prod('shop')), { ...deps })).headers.ETag as string;
+    expect((await handleAppRequest(req(prod('shop'), '/', { headers: { ...ua, 'if-none-match': etag } }), d)).status).toBe(304);
+    expect(views.map((v) => [v.appId, v.path, v.host])).toEqual([
+      ['app_shop', '/', 'shop.apps.example.com'],
+      ['app_shop', '/some/route', 'shop.apps.example.com'],
+      ['app_shop', '/', 'shop.example.org'],
+      ['app_shop', '/', 'shop.apps.example.com'],
+    ]);
+    expect(views[0]).toMatchObject({ userAgent: 'Mozilla/5.0 Firefox/131.0', referer: 'https://news.example/x' });
+  });
+
+  it('never counts preview or version hosts, other files, HEAD, a missing page or a locked one', async () => {
+    const { d, views } = withViews();
+    await handleAppRequest(req(preview('shop'), '/', { headers: ua }), d);
+    await handleAppRequest(req(ver('shop', 2), '/', { headers: ua }), d);
+    await handleAppRequest(req(prod('shop'), '/main.js', { headers: ua }), d);
+    await handleAppRequest(req(prod('shop'), '/', { headers: ua, method: 'HEAD' }), d);
+    await handleAppRequest(req(prod('shop'), '/favicon.ico', { headers: ua }), d);
+    await handleAppRequest(req(prod('draft'), '/', { headers: ua }), d);
+    expect((await handleAppRequest(req(prod('vault'), '/', { headers: ua }), d)).status).toBe(401);
+    await handleAppRequest(req(prod('shop'), BEACON_PATH, { headers: ua, method: 'POST' }), d);
+    expect(views).toEqual([]);
+  });
+});

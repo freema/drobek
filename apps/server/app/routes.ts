@@ -117,6 +117,8 @@ export default [
   route('workspaces/:slug/apps/:appSlug/uploads', 'routes/workspaces.$slug.apps.$appSlug.uploads.tsx'),
   route('workspaces/:slug/apps/:appSlug/uploads/:fileId', 'routes/workspaces.$slug.apps.$appSlug.uploads.$fileId.ts'),
   route('workspaces/:slug/apps/:appSlug/logs', 'routes/workspaces.$slug.apps.$appSlug.logs.tsx'),
+  // The Analytics tab — page views, visitors, top pages and referrers (get_analytics).
+  route('workspaces/:slug/apps/:appSlug/analytics', 'routes/workspaces.$slug.apps.$appSlug.analytics.tsx'),
   // The owner confirms/rejects a pending platform-module
   // change (configure_module → confirm_url; the page calls this API).
   route(

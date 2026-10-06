@@ -4,7 +4,7 @@
  *
  * GET (viewer+): the shared app header (URLs, compile state, lock), the
  * newest version's publish readiness report, the insight panels (recent
- * errors, traffic / 404s), the public gallery section (absent unless
+ * errors, traffic / 404s, the last 7 days' visits), the public gallery section (absent unless
  * GALLERY_ENABLED) and the VERSION HISTORY:
  *  - the pinned versions (live, preview, kept), whatever page is shown;
  *  - one page of APP_VERSIONS_PAGE versions, newest first, from `?before=<N>`
@@ -39,8 +39,10 @@ import {
   type VersionSummary,
 } from '@drobek/apps';
 import {
+  analyticsEnabled,
   queryAppErrors,
   queryAppLogs,
+  queryTraffic,
   type AppErrorsView,
   type AppLogsView,
 } from '@drobek/insights';
@@ -65,6 +67,17 @@ const EMPTY_LOGS: AppLogsView = {
   top404Paths: [],
   recentVersions: [],
 };
+
+/** The Overview's visits panel: the last 7 days (null = analytics is off; `error` = the read failed). */
+async function visitsSummary(appId: string) {
+  if (!analyticsEnabled()) return null;
+  try {
+    const t = await queryTraffic(appId, 7, { topLimit: 0 });
+    return { views: t.totals.views, visitors: t.totals.visitors, botViews: t.totals.bot_views, error: false };
+  } catch {
+    return { views: 0, visitors: 0, botViews: 0, error: true };
+  }
+}
 
 /** The clean-up preview of `?cleanup=<N>[&failedOnly=1]`, or why it cannot be shown. */
 async function cleanupPreview(appId: string, params: URLSearchParams) {
@@ -115,7 +128,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   ]);
   const newest = retention.newest;
   const canClean = header.canEdit && header.lockedByAdmin === null;
-  const [emails, errors, logs, readiness, cleanup] = await Promise.all([
+  const [emails, errors, logs, readiness, cleanup, visits] = await Promise.all([
     emailsOf([...raw, ...pinnedRaw].map((v) => v.createdByUserId)),
     // Insight panels — best effort: a signals hiccup degrades to
     // empty, never 500s the page. Stored text is React-escaped on render.
@@ -124,6 +137,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     // The newest version's publish readiness report (best effort, never a 500).
     newest !== null ? loadReadiness(app, newest) : null,
     canClean ? cleanupPreview(app.id, url.searchParams) : { cleanup: null, cleanupError: null },
+    visitsSummary(app.id),
   ]);
 
   const shape = (rows: VersionSummary[]) => {
@@ -164,6 +178,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     ...cleanup,
     errors,
     logs,
+    visits,
     readiness,
     // A taken-down app shows no publish / restore controls (the action answers 423 anyway).
     canPublish: header.canEdit && header.lockedByAdmin === null,
