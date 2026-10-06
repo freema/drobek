@@ -11,7 +11,7 @@ import { personalWorkspaceOf, withDb } from './helpers/seed';
  * The module list of /healthz and /api/version, and a
  * module installed into DROBEK_MODULES_DIR the way an operator installs one.
  *
- * Both stacks list hello,auth,email,forms,data,proxy,files,sync,oidc (server
+ * Both stacks list hello,auth,email,forms,data,proxy,files,sync,oidc,webhooks (server
  * dependencies, `source: builtin`) and the external example module
  * examples/drobek-module-acme-crm: never a server dependency, packed and
  * installed before the stack starts (dev: `task module:example` → ./.modules;
@@ -28,7 +28,7 @@ import { personalWorkspaceOf, withDb } from './helpers/seed';
  *    host-provided `@drobek/modules` peer and its brand work; the address
  *    came in through the module's `auth.signedIn` observer.
  */
-const BUILTIN = ['hello', 'auth', 'email', 'forms', 'data', 'proxy', 'files', 'sync', 'oidc'];
+const BUILTIN = ['hello', 'auth', 'email', 'forms', 'data', 'proxy', 'files', 'sync', 'oidc', 'webhooks'];
 const EXTERNAL = 'acmecrm';
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PACKAGE_DIR = `/data/modules/${EXTERNAL}/node_modules/drobek-module-acme-crm`;
@@ -55,8 +55,8 @@ test('healthz and api/version list the active modules in DROBEK_MODULES order, t
     expect(m.version).toMatch(/^\d+\.\d+\.\d+/);
     if (BUILTIN.includes(m.name)) {
       expect(m.source).toBe('builtin');
-      // sync runs app jobs (contract 1.2); the others need 1.1.
-      expect(m.contract).toBe(m.name === 'sync' ? '^1.2' : '^1.1');
+      // sync runs app jobs (contract 1.2), webhooks has secrets that follow its config (1.3); the others need 1.1.
+      expect(m.contract).toBe(m.name === 'sync' ? '^1.2' : m.name === 'webhooks' ? '^1.3' : '^1.1');
     }
   }
   expect(health.modules).toContainEqual({ name: EXTERNAL, version: '0.1.0', source: 'dir', contract: '^1.2' });

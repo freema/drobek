@@ -106,6 +106,10 @@ export {
   type UpstreamRequest,
   type UpstreamResponse,
   type UpstreamsAuthority,
+  type WebhookDelivery,
+  type WebhookDeliveryStatus,
+  type WebhookEndpointState,
+  type WebhooksAuthority,
 } from './contract.js';
 export {
   AUTH_PROVIDER_API_VERSION,

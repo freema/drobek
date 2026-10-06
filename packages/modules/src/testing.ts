@@ -151,6 +151,8 @@ export interface ModuleTestOptions {
   upstreams?: (name: string, request: UpstreamRequest) => Promise<UpstreamResponse>;
   /** A job's `ctx.records.import` (default: ModuleError `unavailable`, like a server without data). */
   records?: (collection: string, records: Record<string, unknown>[], opts: RecordsImportOptions) => Promise<RecordsImportResult>;
+  /** A route's `ctx.records.create` (default: ModuleError `unavailable`, like a server without data). */
+  createRecords?: (collection: string, records: Record<string, unknown>[]) => Promise<Record<string, unknown>[]>;
 }
 
 /** One request to the module's `endUsers.callback` (the dashboard-host IdP callback). */
@@ -281,7 +283,10 @@ export function createModuleTestContext(declared: AnyModule, opts: ModuleTestOpt
   const rateLimit = memoryRateLimiter(opts.now);
   const audits: ModuleTestContext['audits'] = [];
   const emails: ModuleTestContext['emails'] = [];
-  const secretNames = new Set((module.secrets ?? []).map((s) => s.name));
+  const secretNames = new Set([
+    ...(module.secrets ?? []).map((s) => s.name),
+    ...(module.secretsFor ? module.secretsFor(config).map((s) => s.name) : []),
+  ]);
   let principal: Principal = opts.principal ?? { kind: 'anon' };
 
   const buildCtx = (): ModuleContext<any> => ({
@@ -304,6 +309,12 @@ export function createModuleTestContext(declared: AnyModule, opts: ModuleTestOpt
     },
     audit: async (action, meta = {}) => {
       audits.push({ action: action.startsWith(`${module.name}.`) ? action : `${module.name}.${action}`, meta });
+    },
+    records: {
+      create: async (collection, records) => {
+        if (!opts.createRecords) throw new ModuleError('unavailable', 'No module that stores records (data) is on for this app\'s workspace.');
+        return opts.createRecords(collection, records);
+      },
     },
     email: {
       send: async (message: EmailMessage) => {

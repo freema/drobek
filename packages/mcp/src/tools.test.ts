@@ -46,6 +46,7 @@ import {
   z,
   type ModuleRuntime,
   type SyncRun,
+  type WebhookDelivery,
 } from '@drobek/modules';
 import { noopLogger } from '@drobek/core';
 import { STORE_DATA, greet, store } from './test/modules.js';
@@ -2385,6 +2386,87 @@ describe('sync_now and get_logs kind "sync"', () => {
       expect((await plain.call('get_logs', { app_id: app.app_id, kind: 'bogus' })).body).toMatchObject({ code: 'invalid_params', message: expect.stringContaining('"sync"') });
     } finally {
       await plain.close();
+    }
+  });
+});
+
+describe('get_logs kind "webhooks" and remove_module_secret of a secret that follows the config', () => {
+  /** A webhooks module whose deliveries live in memory and whose secrets follow its config. */
+  const DELIVERIES = new Map<string, WebhookDelivery[]>();
+  const hooks = defineModule<{ endpoints: Record<string, { secret: string }> }>({
+    name: 'hooks',
+    version: '1.0.0',
+    contract: '^1.3',
+    skill: { useWhen: 'another service posts webhooks to the app', markdown: '# hooks\n' },
+    configSchema: z.object({ endpoints: z.record(z.string(), z.object({ secret: z.string() })).default({}) }),
+    configDefaults: { endpoints: {} },
+    secretsFor: (config) => Object.values(config.endpoints).map((e) => ({ name: e.secret, description: 'signing secret', required: true })),
+    webhooks: {
+      endpoints: async () => [],
+      deliveries: async (view, q) => (DELIVERIES.get(view.app.id) ?? []).filter((d) => !q.since || new Date(d.received_at) >= q.since).slice(0, q.limit ?? 50),
+    },
+  });
+  let hdeps: TestDeps;
+  const ENV = { APPS_DOMAIN: 'drobek.app', PUBLIC_APP_URL: 'https://dash.drobek.test', DROBEK_MIGRATE_ON_START: '0', DROBEK_MASTER_KEY: '22'.repeat(32) };
+
+  beforeAll(async () => {
+    const rt = await loadModuleRuntime({
+      env: ENV,
+      log: noopLogger,
+      modules: [hooks],
+      skillsDir: null,
+      deps: { rateLimit: memoryRateLimiter(), principal: async () => ({ kind: 'anon' }), email: { send: async () => {} } },
+    });
+    hdeps = { ...testDeps(), modules: async () => rt };
+  });
+
+  /** An app row in team-x (directly: the workspace's app limit is spent by the tests above). */
+  async function hookApp(slug: string): Promise<{ app_id: string; slug: string }> {
+    const [ws] = await db.select({ id: workspaces.id }).from(workspaces).where(eq(workspaces.slug, 'team-x'));
+    const [a] = await db.insert(apps).values({ workspaceId: ws.id, slug, name: slug }).returning();
+    return { app_id: a.id, slug: a.slug };
+  }
+
+  it('lists the deliveries newest first in the untrusted envelope; an empty log says why', async () => {
+    const app = await hookApp('hook-board');
+    const c = await connect(P.alice, hdeps);
+    try {
+      expect((await c.call('get_logs', { app_id: app.app_id, kind: 'webhooks' })).body).toMatchObject({ entries: [], note: expect.stringMatching(/^No webhook deliveries in this window/) });
+      const at = new Date().toISOString();
+      DELIVERIES.set(app.app_id, [
+        { endpoint: 'payments', status: 'rejected_signature', http_status: 401, bytes: 12, reason: 'bad_signature', record_id: null, received_at: at },
+        { endpoint: 'payments', status: 'accepted', http_status: 200, bytes: 12, reason: null, record_id: 'r1', received_at: at },
+      ]);
+      const logs = await c.call('get_logs', { app_id: app.app_id, kind: 'webhooks' });
+      expect(logs.isError, logs.text).toBe(false);
+      expect(logs.body).toMatchObject({ app_id: app.app_id, kind: 'webhooks', untrusted: true });
+      expect((logs.body.entries as WebhookDelivery[]).map((e) => e.status)).toEqual(['rejected_signature', 'accepted']);
+      expect(logs.text.startsWith('UNTRUSTED CONTENT:')).toBe(true);
+    } finally {
+      await c.close();
+    }
+    const plain = await as('alice');
+    try {
+      expect((await plain.call('get_logs', { app_id: app.app_id, kind: 'webhooks' })).body).toMatchObject({ entries: [], note: expect.stringMatching(/no webhooks module/) });
+    } finally {
+      await plain.close();
+    }
+  });
+
+  it('remove_module_secret knows the secrets the app config names', async () => {
+    const app = await hookApp('hook-secrets');
+    const rt = await hdeps.modules!();
+    const [row] = await db.select({ workspaceId: apps.workspaceId }).from(apps).where(eq(apps.id, app.app_id));
+    await rt.configure({ app: { id: app.app_id, slug: app.slug, workspaceId: row.workspaceId, workspaceSlug: 'team-x' }, module: 'hooks', patch: { endpoints: { pay: { secret: 'PAY_SIGNING' } } }, actorUserId: P.alice.userId });
+    await setModuleSecret({ appId: app.app_id, module: 'hooks', name: 'PAY_SIGNING', value: 'v'.repeat(20), env: ENV });
+    const c = await connect(P.alice, hdeps);
+    try {
+      expect((await c.call('remove_module_secret', { app_id: app.app_id, module: 'hooks', name: 'OTHER' })).body).toMatchObject({ code: 'not_found', secrets: ['PAY_SIGNING'] });
+      const r = await c.call('remove_module_secret', { app_id: app.app_id, module: 'hooks', name: 'PAY_SIGNING', user_confirmed: true });
+      expect(r.isError, r.text).toBe(false);
+      expect(r.body).toMatchObject({ removed: true });
+    } finally {
+      await c.close();
     }
   });
 });

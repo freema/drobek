@@ -81,6 +81,7 @@ import type {
   ModuleDashboardEditor,
   ModuleErrorDoc,
   ModuleAppView,
+  ModuleSecretDoc,
   ModuleServices,
   Principal,
   RateLimitResult,
@@ -92,6 +93,8 @@ import type {
   ServerJobContext,
   SyncRun,
   SyncSourceState,
+  WebhookDelivery,
+  WebhookEndpointState,
 } from './contract.js';
 import { asObject, asPending, readConfigRow, readConfigRows, withLockedConfig, type PendingChange } from './configs.server.js';
 import { installModuleEmailTransport } from './email-transport-slot.js';
@@ -125,6 +128,7 @@ import {
   submissionsAuthorityOf,
   syncAuthorityOf,
   upstreamsAuthorityOf,
+  webhooksAuthorityOf,
   type AppFacingModule,
   type ModuleOrigin,
   type ModuleSource,
@@ -136,7 +140,7 @@ import { decideAccess } from './rules.js';
 import { moduleJobsSettingsFromEnv } from './jobs.js';
 import { BEACON_SCRIPT_PATH, SDK_PATH, SDK_TYPES_PATH, buildSdk, moduleTypes, toPath, type SdkBundle } from './sdk-build.js';
 import { PENDING_MAIL_WINDOW_MS, pendingMail, pendingMailKey } from './pending-mail.js';
-import { getModuleSecret, secretsSet, secretsStatus } from './secrets.server.js';
+import { SECRET_NAME_RE, getModuleSecret, secretsSet, secretsStatus, storedSecretNames } from './secrets.server.js';
 import { generalSkillsDir, loadGeneralSkills, mergeSkills, moduleSkills, skillForImport, type SkillEntry } from './skills.js';
 
 // ── deps ─────────────────────────────────────────────────────────────────────
@@ -487,6 +491,13 @@ export interface BoundSync {
   runNow(source: string, actor: RunActor): Promise<SyncRun>;
   /** Clear a pause after failures; audited `<module>.resume` (actor: the person). */
   resume(source: string, actor: RunActor): Promise<boolean>;
+}
+
+/** The webhook endpoints and deliveries of one app (the module that declares `webhooks`, bound to the app's config). */
+export interface BoundWebhooks {
+  module: string;
+  endpoints(): Promise<WebhookEndpointState[]>;
+  deliveries(query?: { endpoint?: string; since?: Date; limit?: number }): Promise<WebhookDelivery[]>;
 }
 
 /** The end-user uploads of one app (the module that declares `files`). */
@@ -1058,7 +1069,7 @@ export class ModuleRuntime {
     const enabled = await this.enabledModules(app.workspaceId);
     if (!enabled.has(m.name)) return null;
     const config = this.effectiveConfig(m, (await readConfigRow(app.id, m.name, db)).config);
-    const declared = new Set((m.secrets ?? []).map((s) => s.name));
+    const declared = new Set(this.secretDocs(m, config).map((s) => s.name));
     let limits: Promise<Limits> | null = null;
     return {
       app,
@@ -1433,7 +1444,7 @@ export class ModuleRuntime {
       };
       if (!r.success) pending.invalid = issuePaths(r.error.issues);
     }
-    const docs = m.secrets ?? [];
+    const docs = await this.appSecretDocs(app.id, m, config, ...(pending?.after ? [pending.after] : []));
     const status = await secretsStatus(app.id, m.name, docs.map((s) => s.name));
     const facts = this.moduleFacts(m.name)!;
     const view: ModuleDashboardView = {
@@ -1562,9 +1573,10 @@ export class ModuleRuntime {
         if (row.pending.confirm_role === 'admin') state.confirm_role = 'admin';
         if (confirmLink) state.confirm_url = confirmLink(m.name);
       }
-      if (m.secrets?.length) {
-        const set = await secretsSet(appId, m.name, m.secrets.map((s) => s.name));
-        state.secrets = m.secrets.map((s) => ({ name: s.name, hasSecret: set.has(s.name) }));
+      const docs = await this.appSecretDocs(appId, m, state.config);
+      if (docs.length > 0) {
+        const set = await secretsSet(appId, m.name, docs.map((s) => s.name));
+        state.secrets = docs.map((s) => ({ name: s.name, hasSecret: set.has(s.name) }));
       }
       if (typeof app !== 'string') {
         const info = await this.appInfo(m, app, state.config);
@@ -1605,8 +1617,10 @@ export class ModuleRuntime {
     return r.data;
   }
 
-  private async missingSecrets(appId: string, m: AnyModule): Promise<string[]> {
-    const required = (m.secrets ?? []).filter((s) => s.required).map((s) => s.name);
+  private async missingSecrets(appId: string, m: AnyModule, ...configs: unknown[]): Promise<string[]> {
+    const required = this.secretDocs(m, ...configs)
+      .filter((s) => s.required)
+      .map((s) => s.name);
     if (required.length === 0) return [];
     const set = await secretsSet(appId, m.name, required);
     return required.filter((n) => !set.has(n));
@@ -1673,6 +1687,7 @@ export class ModuleRuntime {
       // or rejects both as one change over the config in force.
       let pendingPatch = patch as Record<string, unknown>;
       let { changes, role } = own;
+      let proposed: unknown = after;
       const earlier = row.pending;
       if (earlier) {
         const combined = mergePatch(mergePatch(row.config, earlier.patch), patch) as Record<string, unknown>;
@@ -1685,6 +1700,7 @@ export class ModuleRuntime {
           );
         }
         const all = await confirmItems(parsed.data);
+        proposed = parsed.data;
         pendingPatch = diffMergePatch(row.config, combined);
         changes = all.changes.length > 0 ? all.changes : [...new Set([...earlier.changes, ...own.changes])];
         role = stricterRole(earlier.confirm_role, own.role, all.role);
@@ -1714,7 +1730,7 @@ export class ModuleRuntime {
         },
         tx
       );
-      return { applied: false, config: before, pending: changes, role, merged: earlier?.changes };
+      return { applied: false, config: before, pending: changes, role, merged: earlier?.changes, proposed };
     });
 
     const out: ConfigureResult = {
@@ -1729,7 +1745,7 @@ export class ModuleRuntime {
     }
     if ('unchanged' in result && result.unchanged) out.unchanged = true;
     if ('merged' in result && result.merged) out.merged_with_pending = result.merged;
-    const missing = await this.missingSecrets(input.app.id, m);
+    const missing = await this.missingSecrets(input.app.id, m, result.config, ...('proposed' in result && result.proposed !== undefined ? [result.proposed] : []));
     if (missing.length > 0) out.secrets_missing = missing;
     const info = await this.appInfo(m, { id: input.app.id, slug: input.app.slug, workspaceId: input.app.workspaceId }, result.config);
     if (info) out.info = info;
@@ -1959,7 +1975,7 @@ export class ModuleRuntime {
     const deps = this.deps;
     const { app } = row;
     const enabled = await this.enabledModules(app.workspaceId);
-    const declared = new Set((m.secrets ?? []).map((s) => s.name));
+    const declared = new Set(this.secretDocs(m, row.config).map((s) => s.name));
     let limits: Promise<Limits> | null = null;
     return {
       ...this.services(enabled),
@@ -2068,6 +2084,68 @@ export class ModuleRuntime {
     };
   }
 
+  // ── webhooks ──
+
+  /**
+   * The app's webhook endpoints and deliveries (the module that declares
+   * `webhooks`), bound to the app's config — null when no active module
+   * declares it. For the OWNER's view (the dashboard, get_logs): the caller
+   * authorized a drobek account for the app already.
+   */
+  async webhooks(app: HookApp): Promise<BoundWebhooks | null> {
+    const m = webhooksAuthorityOf(this.modules);
+    if (!m?.webhooks) return null;
+    const authority = m.webhooks;
+    const db = this.deps.db();
+    const row = await readConfigRow(app.id, m.name, db);
+    const view = this.ownerView(app, this.effectiveConfig(m, row.config), db);
+    return {
+      module: m.name,
+      endpoints: () => authority.endpoints(view),
+      deliveries: (q = {}) => authority.deliveries(view, q),
+    };
+  }
+
+  // ── secrets ──
+
+  /**
+   * The secrets of `m` for an app whose config is one of `configs`: the
+   * declared ones, then those the configs name (`secretsFor`), each name once.
+   */
+  secretDocs(m: AnyModule, ...configs: unknown[]): ModuleSecretDoc[] {
+    const out = new Map<string, ModuleSecretDoc>();
+    for (const s of m.secrets ?? []) out.set(s.name, { name: s.name, description: s.description, required: s.required === true });
+    if (!m.secretsFor) return [...out.values()];
+    for (const config of configs) {
+      let extra: unknown;
+      try {
+        extra = m.secretsFor(config);
+      } catch (err) {
+        this.deps.log.warn('module secretsFor failed', { module: m.name, error: dbErrorForLog(err) });
+        continue;
+      }
+      if (!Array.isArray(extra)) continue;
+      for (const s of extra as Partial<ModuleSecretDoc>[]) {
+        if (!s || typeof s.name !== 'string' || !SECRET_NAME_RE.test(s.name) || out.has(s.name)) continue;
+        out.set(s.name, { name: s.name, description: typeof s.description === 'string' ? s.description : '', required: s.required === true });
+      }
+    }
+    return [...out.values()];
+  }
+
+  /**
+   * The secrets the owner sees and may remove for one app: {@link secretDocs},
+   * plus — for a module whose secrets follow its config — values still stored
+   * under a name the config no longer uses (so they can be removed).
+   */
+  async appSecretDocs(appId: string, m: AnyModule, ...configs: unknown[]): Promise<ModuleSecretDoc[]> {
+    const docs = this.secretDocs(m, ...configs);
+    if (!m.secretsFor) return docs;
+    const known = new Set(docs.map((d) => d.name));
+    const stale = (await storedSecretNames(appId, m.name)).filter((n) => !known.has(n));
+    return [...docs, ...stale.map((name) => ({ name, description: 'No longer used by this app\'s config: remove it.', required: false }))];
+  }
+
   // ── e-mail ──
 
   /**
@@ -2174,6 +2252,22 @@ export class ModuleRuntime {
     // A 429 is not counted: a throttled flood must cost nothing past the limiter.
     if (seen.module && res.status !== 429) this.countRequest(app.id, seen.module, res.status);
     return res;
+  }
+
+  /**
+   * Whether the `/__drobek/*` request `method path` matches a module route
+   * that declares `passwordGate: 'skip'` (it authenticates the caller
+   * itself): the app host's password gate lets it through to `handle`.
+   * Never a GET or HEAD: a read always stays behind the gate.
+   */
+  skipsPasswordGate(method: string, path: string): boolean {
+    if (method === 'GET' || method === 'HEAD') return false;
+    const match = V1_RE.exec(path);
+    if (!match) return false;
+    const m = this.byName.get(match[1]);
+    if (!m || !isAppFacing(m)) return false;
+    const hit = matchRoute(this.routes.get(m.name) ?? [], method, match[2] ?? '/');
+    return hit.kind === 'route' && hit.route.opts.passwordGate === 'skip';
   }
 
   /** get_logs `requests`: one response of a matched route of an active module (fire-and-forget). */
@@ -2317,7 +2411,7 @@ export class ModuleRuntime {
     const row = await readConfigRow(app.id, m.name, deps.db());
     const config = this.effectiveConfig(m, row.config);
     const pending = row.pending ? this.parsePending(m, row.config, row.pending) : null;
-    const declared = new Set((m.secrets ?? []).map((s) => s.name));
+    const declared = new Set(this.secretDocs(m, config).map((s) => s.name));
     const hookApp: HookApp = { id: app.id, slug: app.slug, workspaceId: app.workspaceId };
     return {
       app: hookApp,
@@ -2345,6 +2439,18 @@ export class ModuleRuntime {
           target: app.slug,
           meta: { ...meta, module: m.name, end_user: principal.kind === 'user' ? principal.id : 'anon' },
         });
+      },
+      records: {
+        create: async (collection, records) => {
+          const owner = recordsAuthorityOf(this.modules);
+          const create = owner?.records?.create?.bind(owner.records);
+          if (!owner || !create || !enabled.has(owner.name)) {
+            throw new ModuleError('unavailable', 'No module that stores records (data) is on for this app\'s workspace.');
+          }
+          const db = deps.db();
+          const ownerConfig = this.effectiveConfig(owner, (await readConfigRow(app.id, owner.name, db)).config);
+          return create(this.ownerView(hookApp, ownerConfig, db), collection, records);
+        },
       },
       email: {
         send: (message) => this.sendEmail(m, hookApp, principal, config, getLimits, message),

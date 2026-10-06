@@ -95,6 +95,15 @@ export async function secretsStatus(appId: string, module: string, names: string
   return new Map(rows.map((r) => [r.name, r.updatedAt]));
 }
 
+/** Every secret name stored for this app + module — names only, never values. */
+export async function storedSecretNames(appId: string, module: string): Promise<string[]> {
+  const rows = await getDb()
+    .select({ name: moduleSecrets.name })
+    .from(moduleSecrets)
+    .where(and(eq(moduleSecrets.appId, appId), eq(moduleSecrets.module, module)));
+  return rows.map((r) => r.name).sort();
+}
+
 /** Which of `names` are set for this app + module — names only, never values. */
 export async function secretsSet(appId: string, module: string, names: string[]): Promise<Set<string>> {
   if (names.length === 0) return new Set();

@@ -22,6 +22,7 @@ import { PendingPanel } from '../module-ui/pending-panel.js';
 import { CollectionsEditor, UpstreamsEditor } from '../module-ui/rules-editors.js';
 import { SecretsForm } from '../module-ui/secrets-form.js';
 import { SyncSourcesPanel } from '../module-ui/sync-sources.js';
+import { WebhookEndpointsPanel } from '../module-ui/webhook-endpoints.js';
 import { SyncBanner } from '../sync-banner.js';
 import { ui } from '../module-ui/styles.js';
 
@@ -169,6 +170,13 @@ export default function AppModuleRoute() {
         <section id="sync" aria-label="Sources">
           <h2 style={ui.h2}>Sources</h2>
           <SyncSourcesPanel data={d.sync} canEdit={d.canEdit} busy={busy} error={errors && SYNC_INTENTS.has(errors.intent) ? errors : null} />
+        </section>
+      ) : null}
+
+      {d.webhooks ? (
+        <section id="webhooks" aria-label="Endpoints">
+          <h2 style={ui.h2}>Endpoints</h2>
+          <WebhookEndpointsPanel data={d.webhooks} />
         </section>
       ) : null}
 

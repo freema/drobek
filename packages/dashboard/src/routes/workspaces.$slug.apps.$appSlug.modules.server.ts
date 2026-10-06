@@ -26,7 +26,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const modules = runtime.appFacing.map((m) => {
     const s = states[m.name];
     const secrets = s?.secrets ?? [];
-    const requiredMissing = (m.secrets ?? []).filter((d) => d.required && !secrets.find((x) => x.name === d.name)?.hasSecret).map((d) => d.name);
+    const requiredMissing = runtime
+      .secretDocs(m, s?.config)
+      .filter((d) => d.required && !secrets.find((x) => x.name === d.name)?.hasSecret)
+      .map((d) => d.name);
     return {
       name: m.name,
       version: m.version,

@@ -97,6 +97,14 @@ const VISITOR_STATE_RULE =
 const SCHEDULED_WORK_RULE =
   '- Work on a schedule (a cron, a periodic refresh of data from an external API: scores, prices, fixtures, a feed) is the `sync` module — call `skill_info(\'sync\')`. The server never runs app code, so there are no cron scripts of your own: a sync source fetches JSON from a proxy upstream on an interval into a `data` collection the app reads with `drobek.data`; any computation on that data happens in the browser.';
 
+/**
+ * Where events from other services go: the server never runs app code, so
+ * an app has no request handler of its own — the webhooks module verifies
+ * and stores each delivery in a collection.
+ */
+const INCOMING_EVENTS_RULE =
+  '- Events another service sends the app (a webhook from payments, code hosting, a form service) go to the `webhooks` module — call `skill_info(\'webhooks\')`. The app has no server code to receive a POST: an endpoint verifies each delivery with a secret the owner sets in the dashboard and stores it in a `data` collection the app reads with `drobek.data`.';
+
 function skillsSection(skills: BriefingSkill[]): string[] {
   const rule =
     '- Before using a backend (login, stored data, forms, email, file uploads, external APIs), call `skill_info` with the skill\'s name and follow it exactly. `skill_info()` lists the skills; `configure_module` sets a module\'s per-app config (sensitive changes wait for the owner\'s confirmation — give the user the `confirm_url`).';
@@ -116,6 +124,7 @@ function skillsSection(skills: BriefingSkill[]): string[] {
     ...skills.map((s) => `  - \`${s.name}\` — use when ${s.use_when.replace(/^use when\s+/i, '')}`),
     ...(skills.some((s) => s.name === 'data') ? [VISITOR_STATE_RULE] : []),
     ...(skills.some((s) => s.name === 'sync') ? [SCHEDULED_WORK_RULE] : []),
+    ...(skills.some((s) => s.name === 'webhooks') ? [INCOMING_EVENTS_RULE] : []),
   ];
 }
 

@@ -91,7 +91,7 @@ services:
       # Behind Caddy: only its X-Real-IP (the TCP peer) identifies the client.
       TRUST_PROXY: x-real-ip
       # All six built-in platform modules (forms requires email).
-      DROBEK_MODULES: ${DROBEK_MODULES:-auth,email,forms,data,proxy,files,sync,oidc}
+      DROBEK_MODULES: ${DROBEK_MODULES:-auth,email,forms,data,proxy,files,sync,oidc,webhooks}
       # The files module's uploads live on the files_data volume below.
       FILES_DIR: /data/files
       # App assets (video, audio, images, fonts) on the assets_data volume.

@@ -39,7 +39,9 @@
  * PLATFORM paths: `/__drobek/*` (except the unlock POST) go to
  * `deps.platform` — the module runtime (SDK, module routes) — AFTER steps 2
  * and 3, so a module route never runs for a missing app or behind a locked
- * password gate (that answers JSON 401 `password_required`). Any method may reach
+ * password gate (that answers JSON 401 `password_required`) — except a route
+ * that authenticates the caller itself (`deps.platformSkipsGate`, a signed
+ * webhook). Any method may reach
  * it; the runtime answers 405 itself. The app's files are never involved.
  *
  * CUSTOM DOMAINS: a verified custom domain arrives as target
@@ -166,6 +168,12 @@ export interface HandlerDeps {
   secureCookies?: boolean;
   /** The module runtime for `/__drobek/*` (absent → those paths are plain 404s). */
   platform?: PlatformHandler;
+  /**
+   * Whether a platform request goes to a module route that authenticates the
+   * caller itself (`passwordGate: 'skip'`, e.g. a signed webhook): the
+   * password gate lets it through (absent → every platform path is gated).
+   */
+  platformSkipsGate?(method: string, path: string): boolean;
   /** The browser error beacon at BEACON_PATH (absent → the path falls to `platform`). */
   beacon?: BeaconHandler;
   /**
@@ -334,7 +342,7 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
       : false;
   const locked = decideVisibility({ visibility: app.visibility, hasAppAccess }).action === 'password';
   if (isPlatform || isBeacon) {
-    if (locked) {
+    if (locked && !(isPlatform && deps.platformSkipsGate?.(method, req.path))) {
       return {
         status: 401,
         headers: { ...security, 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': NO_STORE },

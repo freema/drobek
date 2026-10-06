@@ -1406,9 +1406,9 @@ export async function queryData(
 
 // ── get_logs ─────────────────────────────────────────────────────────────────
 
-/** get_logs kinds: the insights logs plus `sync` (the sync module's run history). */
-type GetLogsKind = LogKind | 'sync';
-const GET_LOGS_KINDS: readonly GetLogsKind[] = [...LOG_KINDS, 'sync'];
+/** get_logs kinds: the insights logs plus `sync` (the sync module's run history) and `webhooks` (the webhooks module's deliveries). */
+type GetLogsKind = LogKind | 'sync' | 'webhooks';
+const GET_LOGS_KINDS: readonly GetLogsKind[] = [...LOG_KINDS, 'sync', 'webhooks'];
 const GET_LOGS_MAX = 100;
 
 export interface GetLogsResult {
@@ -1429,6 +1429,8 @@ const EMPTY_NOTES: Record<GetLogsKind, string> = {
   compile: 'No compiles in this window.',
   requests: 'No requests in this window.',
   sync: 'No sync runs in this window. A source runs on its schedule once the owner confirmed it; sync_now runs it at once.',
+  webhooks:
+    'No webhook deliveries in this window. An endpoint takes deliveries once the owner confirmed it; the sending service must post to its url (get_app → modules.webhooks.info.endpoints).',
 };
 
 /**
@@ -1438,7 +1440,8 @@ const EMPTY_NOTES: Record<GetLogsKind, string> = {
  *              signal (page loads, errors of its pages);
  *   compile  — the last 50 compiles (ok / errors / version / duration);
  *   requests — per UTC day: requests, 5xx, 404s, and module calls by status class;
- *   sync     — the latest runs of the app's sync sources (newest first).
+ *   sync     — the latest runs of the app's sync sources (newest first);
+ *   webhooks — the latest deliveries to the app's webhook endpoints (newest first, never a body).
  * `since` (ISO) narrows the window; nothing older than 30 days exists. ≤ 100
  * entries. Everything is app-authored or user-supplied text → `untrusted`.
  */
@@ -1449,7 +1452,7 @@ export async function getLogs(
   const { app } = await authorizeApp(ctx.principal, args.app_id, 'viewer');
   const kind = args.kind as GetLogsKind;
   if (!(GET_LOGS_KINDS as readonly string[]).includes(kind)) {
-    throw new ToolError('invalid_params', '`kind` must be "runtime", "compile", "requests" or "sync".');
+    throw new ToolError('invalid_params', '`kind` must be "runtime", "compile", "requests", "sync" or "webhooks".');
   }
   if (args.since !== undefined && (typeof args.since !== 'string' || Number.isNaN(Date.parse(args.since)))) {
     throw new ToolError('invalid_params', '`since` must be an ISO 8601 date-time, e.g. "2026-09-23T10:00:00Z".');
@@ -1465,6 +1468,18 @@ export async function getLogs(
       entries: runs,
       untrusted: true,
       ...(runs.length === 0 ? { note: sync ? EMPTY_NOTES.sync : 'This server has no sync module: apps here import nothing on a schedule.' } : {}),
+    };
+  }
+  if (kind === 'webhooks') {
+    const hooks = await ctx.modules.webhooks({ id: app.id, slug: app.slug, workspaceId: app.workspaceId });
+    const entries = hooks ? await hooks.deliveries({ since: from, limit: GET_LOGS_MAX }) : [];
+    return {
+      app_id: app.id,
+      kind,
+      since: from.toISOString(),
+      entries,
+      untrusted: true,
+      ...(entries.length === 0 ? { note: hooks ? EMPTY_NOTES.webhooks : 'This server has no webhooks module: apps here receive no webhooks.' } : {}),
     };
   }
   if (kind === 'runtime') {

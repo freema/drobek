@@ -95,7 +95,7 @@ Before using a backend (login, stored data, forms, email, file uploads, external
   `contributes` describe the module itself (what the dashboard's workspace
   Modules page shows).
 - Besides the module skills (`auth`, `data`, `forms`, `email`, `files`,
-  `proxy`, `sync`, `oidc`, …) the list has general skills: `start` (files, drobek.json, the
+  `proxy`, `sync`, `oidc`, `webhooks`, …) the list has general skills: `start` (files, drobek.json, the
   write → preview → publish loop), `debug` (compile errors, `get_logs`,
   401/403 from a module), `ui` (Tailwind from esm.sh, responsive and
   accessible screens, loading and error states) and `port-artifact` (moving
@@ -645,6 +645,16 @@ a schedule (the owner confirms a new source) and writes the records into a
 `sync_now({ app_id, source })` runs a source at once and returns the run
 (`status: "failed"` + `error` is a failed run, not a tool error);
 `get_logs({ app_id, kind: "sync" })` lists the latest runs.
+
+Events another service sends the app (a payment, a push, a form service's
+notification) go to the `webhooks` module (`skill_info('webhooks')`): an
+endpoint in `configure_module('webhooks', { endpoints: { <name>: {
+collection, verify } } })` (the owner confirms it and sets its signing
+secret in the dashboard — never ask for the secret) verifies each POST and
+stores it as a record of a `data` collection the app reads with
+`drobek.data`. `get_app` shows each endpoint's address under
+`modules.webhooks.info.endpoints`; `get_logs({ app_id, kind: "webhooks" })`
+lists the latest deliveries (never their bodies).
 
 ## Workspace members
 

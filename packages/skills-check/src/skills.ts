@@ -5,7 +5,7 @@
  * The skills of a server running every built-in module — exactly what
  * `skill_info()` serves in the dev stack and the image (minus the example
  * modules `hello` and `acmecrm`, each checked by its own skill.test.ts): the
- * module skills of auth, email, forms, data, proxy, files, sync, oidc and the
+ * module skills of auth, email, forms, data, proxy, files, sync, oidc, webhooks and the
  * general skills of the repo's `skills/` directory (debug,
  * port-artifact, start, ui; `skills/drobek` is the platform skill and never
  * listed).
@@ -21,6 +21,7 @@ import data from 'drobek-module-data';
 import email from 'drobek-module-email';
 import files from 'drobek-module-files';
 import sync from 'drobek-module-sync';
+import webhooks from 'drobek-module-webhooks';
 import forms from 'drobek-module-forms';
 import oidc from 'drobek-module-oidc';
 import proxy from 'drobek-module-proxy';
@@ -31,10 +32,10 @@ export const PKG_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const SKILLS_DIR = join(REPO_ROOT, 'skills');
 
 /** The built-in modules in the dev compose's DROBEK_MODULES order. */
-export const BUILTIN_MODULES: AnyModule[] = [auth, email, forms, data, proxy, files, sync, oidc] as AnyModule[];
+export const BUILTIN_MODULES: AnyModule[] = [auth, email, forms, data, proxy, files, sync, oidc, webhooks] as AnyModule[];
 
-/** The 12 skills an agent can read on a server with every built-in module. */
-export const EXPECTED_SKILLS = ['auth', 'email', 'forms', 'data', 'proxy', 'files', 'sync', 'oidc', 'debug', 'port-artifact', 'start', 'ui'] as const;
+/** The 13 skills an agent can read on a server with every built-in module. */
+export const EXPECTED_SKILLS = ['auth', 'email', 'forms', 'data', 'proxy', 'files', 'sync', 'oidc', 'webhooks', 'debug', 'port-artifact', 'start', 'ui'] as const;
 
 let runtime: Promise<ModuleRuntime> | null = null;
 

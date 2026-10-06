@@ -150,7 +150,7 @@ services:
       # are installed into modules_data by scripts/e2e-image.sh. The fixture's
       # error reporter sends to proxy-echo; mail goes over the built-in SMTP,
       # in the second phase through the fixture's relay to Mailpit's HTTP API.
-      DROBEK_MODULES: hello,auth,email,forms,data,proxy,files,sync,oidc,drobek-module-acme-crm,drobek-module-ops-probe
+      DROBEK_MODULES: hello,auth,email,forms,data,proxy,files,sync,oidc,webhooks,drobek-module-acme-crm,drobek-module-ops-probe
       ERROR_REPORTER: capture
       OPSPROBE_URL: http://proxy-echo:8099/opsprobe
       EMAIL_TRANSPORT: ${E2E_EMAIL_TRANSPORT:-smtp}

@@ -77,7 +77,7 @@ describe('scaffold', () => {
     expect(readFileSync(join(dir, 'src/index.ts'), 'utf8')).toContain("contract: '^1.1'");
     expect(readFileSync(join(dir, 'migrations/0000_init.sql'), 'utf8')).toContain('"mod_acmeerp_items"');
     expect(readFileSync(join(dir, 'README.md'), 'utf8')).toContain('task selfhost:module:add -- drobek-module-acme-erp@0.1.0');
-    expect(readFileSync(join(dir, 'README.md'), 'utf8')).toContain('DROBEK_MODULES=auth,email,forms,data,proxy,files,sync,oidc,drobek-module-acme-erp');
+    expect(readFileSync(join(dir, 'README.md'), 'utf8')).toContain('DROBEK_MODULES=auth,email,forms,data,proxy,files,sync,oidc,webhooks,drobek-module-acme-erp');
     expect(() => scaffold(parseTarget('acme-erp'), { parent: join(tmp, 'unit') })).toThrow(/not empty/);
   });
 

@@ -200,6 +200,10 @@ const FIXTURES: Record<string, (id: string) => Promise<unknown>> = {
     );
   },
   mod_sync_runs: async () => {},
+  mod_webhooks_deliveries: (id) =>
+    pg.query(`INSERT INTO mod_webhooks_deliveries (id, app_id, endpoint, status, http_status, bytes) VALUES ($1, $2, 'payments', 'accepted', 200, 9)`, [`hook${id}`, id]),
+  mod_webhooks_events: (id) =>
+    pg.query(`INSERT INTO mod_webhooks_events (app_id, endpoint, event_id, expires_at) VALUES ($1, 'payments', 'evt_1', now() + interval '1 day')`, [id]),
   mod_hello_waves: (id) => pg.query(`INSERT INTO mod_hello_waves (app_id, name) VALUES ($1, 'Ana')`, [id]),
   mod_acmecrm_contacts: (id) => pg.query(`INSERT INTO mod_acmecrm_contacts (app_id, email, source) VALUES ($1, 'ana@example.com', 'signin')`, [id]),
 };

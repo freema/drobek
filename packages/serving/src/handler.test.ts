@@ -719,6 +719,17 @@ describe('platform paths (/__drobek/*)', () => {
     expect(open.status).toBe(200);
   });
 
+  it('a platform route that authenticates the caller itself passes the password gate; nothing else does', async () => {
+    const { d, seen } = withPlatform();
+    const gated: HandlerDeps = { ...d, platformSkipsGate: (method, path) => method === 'POST' && path === '/__drobek/v1/webhooks/payments' };
+    const hook = await handleAppRequest(req(prod('vault'), '/__drobek/v1/webhooks/payments', { method: 'POST' }), gated);
+    expect(hook.status).toBe(200);
+    expect(seen.map((s) => s.path)).toEqual(['/__drobek/v1/webhooks/payments']);
+    expect((await handleAppRequest(req(prod('vault'), '/__drobek/v1/webhooks/payments'), gated)).status).toBe(401);
+    expect((await handleAppRequest(req(prod('vault'), '/__drobek/v1/hello', { method: 'POST' }), gated)).status).toBe(401);
+    expect((await handleAppRequest(req(prod('vault'), '/index.html'), gated)).status).toBe(401);
+  });
+
   it('the unlock POST stays the password gate; without a platform handler the paths are plain files', async () => {
     const { d, seen } = withPlatform();
     expect((await handleAppRequest(req(prod('shop'), UNLOCK_PATH, { method: 'POST', form: { password: 'x' } }), d)).status).toBe(303);
