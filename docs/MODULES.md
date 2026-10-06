@@ -474,6 +474,7 @@ The contract fields of 1.2 (additive: a module declaring `'^1.1'` loads unchange
 | `records.importRecords` | optional on the records authority: `(view, collection, records, { mode: 'replace' \| 'upsert', key? })` → `{ inserted, updated, deleted }`, all or nothing — what `ctx.records.import` of a job reaches |
 | `sync` | the owner of scheduled imports (the built-in `sync`; two refuse the start): `sources(view)`, `runs(view, q)`, `runNow(ctx, source)`, `resume(view, source)` — what the dashboard's sources panel, MCP `sync_now` and `get_logs({ kind: 'sync' })` call ([The built-in `sync` module](#the-built-in-sync-module)) |
 | `ConfirmContext.limits` | `confirmRequired`'s third argument may read the workspace's limits (`sync` refuses a source past its limits there) |
+| `ModuleContext.currentConfig()` / `.currentPrincipal()` | the app's config and the caller as of now, for a response that stays open — see [`ModuleContext`](#modulecontext). Optional in the type: fall back to `ctx.config` / `ctx.principal` |
 | `dashboard.title` / `dashboard.description` | the module's name for people and one line under it, for the app's owner — the dashboard shows "Scheduled imports (sync)" and the description in place of "Use when …" (written for agents). The `name` stays the identifier in URLs, the config key, MCP and `skill_info`. One line each (trimmed, no line break or control character), 1–60 / 1–200 characters, else the start is refused; a server that predates them ignores both |
 | `ConfigFieldMeta` | the keywords the dashboard's config form reads from a `configSchema` field (zod `.meta()`): `title`, `description`, `x-drobek-choices`, `x-drobek-min-interval` — [Choices of a config field](#choices-of-a-config-field-x-drobek-choices); `x-drobek-rule`, `x-drobek-unit`, `x-drobek-default-limit`, `x-drobek-hidden`, `x-drobek-order` — [How a config field is shown](#how-a-config-field-is-shown). Presentation only |
 | `OperatorModule` | a module declared without `skill` (`defineModule` types it `OperatorModule`; `DrobekModule` keeps `skill` required) — allowed only without an app surface ([Operator-only modules](#operator-only-modules)); a server that predates it refuses a module without a skill (`skill.useWhen is required`) |
@@ -638,6 +639,7 @@ Everything a handler gets is scoped to **one app and one module**:
 | `principal` | `{ kind: 'anon' }` or `{ kind: 'user', id, email, role: 'user' \| 'admin' }`, resolved by core from the host-only end-user cookie (`__Host-drobek_eu`; plain-http dev: `drobek_eu`). A module never reads cookies, and the dashboard session is never read on an app host. |
 | `config` | this app's effective config: `configSchema.parse(merge(configDefaults, stored))` |
 | `pendingConfig` | the config this app would have once the owner confirms its pending change, or `null` (nothing pending, or it no longer validates). Never act on it — it is not in force; it lets a route say that something waits for confirmation (e.g. data's `409 pending_confirmation`). `createModuleTestContext({ pendingConfig })` sets it in tests. |
+| `currentConfig()` / `currentPrincipal()` | the config as stored NOW and the caller as of NOW (the session read again: signed out, blocked or expired → anon). `config` and `principal` are read once per request; a response that stays open (an event stream, like data's `subscribe`) checks these again before it sends what they decide. In tests they follow `setConfig(patch)` / `setPrincipal(p)` of `createModuleTestContext`, and `request(…, { stream: true })` hands the unread stream over as `res.stream`. |
 | `rules.decide(rule, ownerId?)` | `{ ok: true }` or `{ ok: false, status: 401 \| 403 }` |
 | `limits()` | this workspace's limits (env defaults or the limits provider) |
 | `rateLimit(bucket, key, max, windowMs)` | fixed-window counter in Redis, namespaced to the module and app |
@@ -2441,7 +2443,10 @@ of JSON records with per-operation rules. `skill_info('data')`.
     `{ id, deleted: true }`;
   - `GET :collection/export.csv?filter=&sort=&dir=` (rule `admin`) →
     `text/csv` attachment through `@drobek/core` `csvLine` (formulas
-    neutralized), audit `data.export`.
+    neutralized), audit `data.export`;
+  - `GET :collection/events` (rule `read`, like a list) → a
+    `text/event-stream` of the collection's committed changes (see
+    **Live subscriptions** below).
   A record is `{ _id, _owner, _created_at, _updated_at, …fields }`. The `_…`
   fields are the server's: sent by a client they are dropped. `_owner` is the
   principal's id at create time (null for a visitor) and never changes;
@@ -2481,9 +2486,53 @@ of JSON records with per-operation rules. `skill_info('data')`.
   `{read: owner|admin, create: user, update / delete: owner|admin}`), every
   live document a record; then the old tables and enum are dropped. Every
   statement is re-runnable.
+- **Live subscriptions** (`live.ts`, `live-feed.ts`). The store publishes
+  every committed write — the SDK routes, the owner's MCP writes and Data
+  tab, CSV imports, module imports (`sync`) — so no caller publishes on its
+  own. Over Redis: one pub/sub channel per app + collection fans the event
+  out to every process, and a Redis stream per app + collection keeps the
+  last `DATA_SUBSCRIBE_BACKLOG` (100) events for 10 minutes after the last
+  write (Redis 7: a resume checks the stream's `max-deleted-entry-id`). A
+  batch of more than 50 records (an import, a big `create_records`) and a
+  lost subscriber connection send `reset` instead. A collection removed
+  with its records sends nothing: its open streams end with `not_found` at
+  the next heartbeat.
+  The stream sends `retry: 2000`, then `event: ready` (its `id` is where it
+  starts, the Redis clock) — or, with a `Last-Event-ID` (or
+  `?last_event_id=`) younger than the backlog and nothing trimmed after it,
+  the missed events; otherwise `event: reset`. Then `event: change` with
+  `{ op: 'create' | 'update', record, at }` or `{ op: 'delete', id, at }`
+  (the id of the stream entry as `id:`), `event: reset` (load the list
+  again), `: ping` every 25 s, and a last `event: error` `{ error, message }`
+  when the stream ends for a reason (`unauthorized`, `forbidden`,
+  `not_found`, `unavailable`, `slow_client`).
+  **Authorization** is the list's, at the subscribe and for every event:
+  the collection's read rule is read again from the stored config
+  (`ctx.currentConfig()`, once per event and process) and the caller's
+  session (`ctx.currentPrincipal()`) at most every 10 s and on every
+  heartbeat; under a rule that admits the caller only through `owner` an
+  event is sent only for a record whose stored `_owner` is the caller (a
+  delete carries only the id); a visitor never gets `_owner`. A rule that
+  no longer admits the caller, or a removed collection, ends the stream.
+  **Limits** (in each process, like the proxy's slots):
+  `DATA_SUBSCRIBE_MAX_PER_APP` (200) open streams per app,
+  `DATA_SUBSCRIBE_MAX_PER_CALLER` (4) per signed-in user or visitor IP →
+  `429 limit_exceeded` (`details.limit`); a stream ends after
+  `DATA_SUBSCRIBE_MAX_MS` (1 h) and the SDK resumes it; one whose client
+  leaves 1 MiB unread ends with `slow_client`. Every end — the client
+  leaving, the lifetime, an error, the server's graceful stop
+  (`endModuleStreams`, then new subscribes answer `503 unavailable`) —
+  releases its slots, timers and channel.
 - **SDK** `drobek.data.collection<T>(name)` → `list(opts)`, `get(id)`,
-  `create(fields)`, `update(id, fields)`, `remove(id)`, `exportCsvUrl(opts)`;
-  the types (`Doc<T>`, `Filter<T>`, `Page<T>`) are in `/__drobek/sdk.d.ts`.
+  `create(fields)`, `update(id, fields)`, `remove(id)`, `exportCsvUrl(opts)`,
+  `subscribe({ onChange, onSync?, onError? })` (also
+  `drobek.data.subscribe(name, opts)`) → the unsubscribe function. It reads
+  the stream with `fetch` (`@drobek/sdk` `openEventStream`): `ready` and
+  `reset` call `onSync` (load the list), `change` calls `onChange`; a dropped
+  connection, an ended stream, a 429 or a 5xx reconnect with backoff (≤ 30 s)
+  and `Last-Event-ID`; a 4xx or a final `error` event stops and calls
+  `onError`. The types (`Doc<T>`, `Filter<T>`, `Page<T>`, `ChangeEvent<T>`,
+  `SubscribeOptions<T>`) are in `/__drobek/sdk.d.ts`.
 
 ## The built-in `proxy` module
 

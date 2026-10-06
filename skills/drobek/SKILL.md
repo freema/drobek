@@ -88,6 +88,12 @@ Before using a backend (login, stored data, forms, email, file uploads, external
   a guestbook, votes) or belongs to signed-in users (`owner` rules with
   `skill_info('auth')`). Combine them: keep the save in `localStorage` and
   send only what others should see (a score) to a collection.
+- Live updates (a chat, a shared board, a scoreboard others change) need no
+  polling: `drobek.data.subscribe(collection, { onChange, onSync })` pushes
+  every create / update / delete the caller may read, from any writer (the
+  app, your `create_records`, the dashboard, a sync import). Load the list
+  in `onSync`, apply `onChange` by `_id`, return the unsubscribe from the
+  `useEffect` (`skill_info('data')`).
 - `skill_info({ name })` returns the skill: minimal working code, the exact
   SDK calls and types, the module's config schema, limits and common errors;
   `errors` lists the module's own error codes with their meaning and fix;

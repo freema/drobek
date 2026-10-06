@@ -19,6 +19,10 @@
       "types": "./dist/core.d.ts",
       "default": "./dist/core.js"
     },
+    "./events": {
+      "types": "./dist/events.d.ts",
+      "default": "./dist/events.js"
+    },
     "./beacon": {
       "types": "./dist/beacon.d.ts",
       "default": "./dist/beacon.js"

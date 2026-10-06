@@ -91,6 +91,13 @@ const VISITOR_STATE_RULE =
   '- Per-visitor state without sign-in (game saves, settings, a half-filled form) belongs in the browser\'s `localStorage`: the data module has no anonymous per-visitor identity — records a visitor creates without signing in carry no owner, so they cannot be kept to that visitor. `drobek.data` is for data that is shared (a leaderboard, a guestbook, votes) or belongs to signed-in users (`owner` rules with `skill_info(\'auth\')`). Combine them: keep the save in `localStorage` and send only what others should see (a score) to a collection.';
 
 /**
+ * Live data: an app that shows what others change (a chat, a shared board)
+ * subscribes to the collection instead of polling it.
+ */
+const LIVE_DATA_RULE =
+  '- Live updates (a chat, a shared board, a scoreboard others change) need no polling: `drobek.data.subscribe(collection, { onChange, onSync })` pushes every create / update / delete the caller may read — load the list in `onSync`, apply `onChange` by `_id`, and return the unsubscribe from the `useEffect` (`skill_info(\'data\')`).';
+
+/**
  * Where scheduled work goes: the server never runs app code, so the only
  * cron is the sync module's import of an upstream's JSON into a collection.
  */
@@ -114,7 +121,7 @@ function skillsSection(skills: BriefingSkill[]): string[] {
     '- Secrets (API keys, tokens) are set by the app owner in the drobek dashboard — never ask for their values, never put them in files or config.',
     '- Available skills:',
     ...skills.map((s) => `  - \`${s.name}\` — use when ${s.use_when.replace(/^use when\s+/i, '')}`),
-    ...(skills.some((s) => s.name === 'data') ? [VISITOR_STATE_RULE] : []),
+    ...(skills.some((s) => s.name === 'data') ? [VISITOR_STATE_RULE, LIVE_DATA_RULE] : []),
     ...(skills.some((s) => s.name === 'sync') ? [SCHEDULED_WORK_RULE] : []),
   ];
 }

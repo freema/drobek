@@ -8,7 +8,9 @@
  *   GET/POST          /__drobek/v1/data/:collection
  *   GET/PATCH/DELETE  /__drobek/v1/data/:collection/:id
  *   GET               /__drobek/v1/data/:collection/export.csv   (admin)
- *   drobek.data.collection(name).list() / get() / create() / update() / remove() / exportCsvUrl()
+ *   GET               /__drobek/v1/data/:collection/events       (read; text/event-stream)
+ *   drobek.data.collection(name).list() / get() / create() / update() / remove() / exportCsvUrl() / subscribe()
+ *   drobek.data.subscribe(name, { onChange, onSync, onError }) → unsubscribe
  *   config { collections: { <name>: { schema?, rules: { read, create, update, delete } } } }
  *   records authority → MCP query_data + the data write tools and the dashboard Data tab (the owner's view).
  *
@@ -24,6 +26,7 @@ import { defineModule, type ModuleErrorDoc } from '@drobek/modules';
 import { DATA_CONFIG_DEFAULTS, dataConfigSchema, dataConfirmRequired, dataOnConfirmed, salvageDataConfig, type DataConfig } from './config.js';
 import { DEFAULT_MAX_BYTES_PER_APP, DEFAULT_MAX_DOC_BYTES, DEFAULT_MAX_DOCS_PER_APP } from './quota.js';
 import { recordsAuthority } from './records.js';
+import { DEFAULT_SUBSCRIBE_MAX_MS, DEFAULT_SUBSCRIBE_MAX_PER_APP, DEFAULT_SUBSCRIBE_MAX_PER_CALLER } from './live.js';
 import { DEFAULT_WRITES_PER_PRINCIPAL_PER_MIN, DEFAULT_WRITE_RATE_LIMIT, DEFAULT_WRITE_RATE_WINDOW_MS, registerRoutes } from './routes.js';
 
 export { DEFAULT_RULES, LEGACY_ACCESS_MODES, OPS, accessModeToRules, decideRecord, listScope, ruleAdmits, type Op, type Rules } from './access.js';
@@ -86,10 +89,26 @@ export interface Collection<T> {
   remove(id: string): Promise<{ id: string; deleted: true }>;
   /** The CSV export URL (admins only), e.g. for <a href download>. */
   exportCsvUrl(opts?: Pick<ListOptions<T>, 'filter' | 'sort' | 'dir'>): string;
+  /** Live changes without polling; returns the function that unsubscribes. */
+  subscribe(opts: SubscribeOptions<T>): () => void;
+}
+/** A committed change of a record the caller may read (as a list would return it). */
+export type ChangeEvent<T> =
+  | { op: 'create' | 'update'; record: Doc<T>; at: string }
+  | { op: 'delete'; id: string; at: string };
+export interface SubscribeOptions<T> {
+  /** Apply the change to the list you hold, by _id (a create may name a record the list already has). */
+  onChange(event: ChangeEvent<T>): void;
+  /** Load the list now: once the subscription is live, and again whenever changes may have been missed. */
+  onSync?(): void;
+  /** The subscription stopped for good (401, 403, 404, …). A dropped connection is not an error: it reconnects. */
+  onError?(error: DrobekError): void;
 }
 export interface Api {
   /** A collection the app's config declares. */
   collection<T extends object = Record<string, unknown>>(name: string): Collection<T>;
+  /** The same as collection(name).subscribe(opts). */
+  subscribe<T extends object = Record<string, unknown>>(name: string, opts: SubscribeOptions<T>): () => void;
 }
 `;
 
@@ -147,6 +166,13 @@ const data = defineModule<DataConfig>({
       default: DEFAULT_WRITES_PER_PRINCIPAL_PER_MIN,
       meaning: 'record writes one signed-in user (or one visitor IP) may make per minute, checked before the per-app limit',
     },
+    { env: 'DATA_SUBSCRIBE_MAX_PER_APP', default: DEFAULT_SUBSCRIBE_MAX_PER_APP, meaning: 'live subscriptions (subscribe) one app may hold open at once' },
+    {
+      env: 'DATA_SUBSCRIBE_MAX_PER_CALLER',
+      default: DEFAULT_SUBSCRIBE_MAX_PER_CALLER,
+      meaning: 'live subscriptions one signed-in user (or one visitor IP) may hold open in one app at once',
+    },
+    { env: 'DATA_SUBSCRIBE_MAX_MS', default: DEFAULT_SUBSCRIBE_MAX_MS, meaning: 'how long one live subscription stays open before the SDK reconnects it (milliseconds)' },
   ],
   routes: registerRoutes,
   records: recordsAuthority,

@@ -15,7 +15,9 @@ export type DataErrorCode =
   | 'pending_confirmation'
   | 'rate_limited'
   | 'payload_too_large'
-  | 'quota_exceeded';
+  | 'quota_exceeded'
+  | 'limit_exceeded'
+  | 'unavailable';
 
 const STATUS: Record<DataErrorCode, number> = {
   invalid_request: 400,
@@ -28,6 +30,8 @@ const STATUS: Record<DataErrorCode, number> = {
   rate_limited: 429,
   payload_too_large: 413,
   quota_exceeded: 409,
+  limit_exceeded: 429,
+  unavailable: 503,
 };
 
 /** The HTTP status of a data error code. */

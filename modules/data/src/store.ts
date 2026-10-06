@@ -6,7 +6,9 @@
  * query are always bound parameters (query-build.ts validated them first).
  *
  * Writes of one app are serialized by a transaction-scoped advisory lock, so
- * the quota (records and bytes per app) holds under concurrency.
+ * the quota (records and bytes per app) holds under concurrency. Every
+ * committed write is published to the change feed (live-feed.ts) here, so
+ * subscribers see the writes of every caller.
  */
 import { createId } from '@paralleldrive/cuid2';
 import { and, eq, sql, type SQL } from 'drizzle-orm';
@@ -16,6 +18,7 @@ import { encodeCursor } from './query-build.js';
 import { DataError } from './errors.js';
 import { docByteSize, enforceWriteQuota, type DataQuotaLimits } from './quota.js';
 import { dataRecords, type DataRecordRow } from './schema.js';
+import { changeFeed, type ChangeEvent } from './live-feed.js';
 
 /** A record as every API returns it: the server's fields first, then the record's own. */
 export type DataRecord = { _id: string; _owner: string | null; _created_at: string; _updated_at: string } & Record<string, unknown>;
@@ -31,6 +34,18 @@ export function toRecord(row: Pick<DataRecordRow, 'id' | 'ownerId' | 'doc' | 'cr
   };
   for (const [k, v] of Object.entries(row.doc ?? {})) if (!SYSTEM_FIELDS.has(k)) out[k] = v;
   return out;
+}
+
+/** A batch with more changes than this is published as one `reset` (subscribers load the list again). */
+const BATCH_EVENTS_MAX = 50;
+
+function announce(appId: string, collection: string, events: ChangeEvent[]): Promise<void> {
+  return changeFeed().publish(appId, collection, events);
+}
+
+function changed(op: 'create' | 'update', row: DataRecordRow): ChangeEvent {
+  const record = toRecord(row);
+  return { op, record, at: record._updated_at };
 }
 
 function newRecordId(): string {
@@ -82,7 +97,7 @@ export async function insertRecord(
   input: { appId: string; collection: string; ownerId: string | null; doc: Record<string, unknown>; limits: DataQuotaLimits }
 ): Promise<DataRecordRow> {
   const bytes = docByteSize(input.doc);
-  return withAppWriteLock(db, input.appId, async (tx) => {
+  const stored = await withAppWriteLock(db, input.appId, async (tx) => {
     const u = await usage(tx, input.appId);
     enforceWriteQuota({ limits: input.limits, newDocBytes: bytes, liveDocCount: u.count, liveBytesExcludingTarget: u.bytes, isCreate: true });
     // A JS timestamp (millisecond precision): cursors compare it exactly.
@@ -93,6 +108,8 @@ export async function insertRecord(
       .returning();
     return row;
   });
+  await announce(input.appId, input.collection, [changed('create', stored)]);
+  return stored;
 }
 
 export async function loadRecord(db: DB, appId: string, collection: string, id: string): Promise<DataRecordRow | null> {
@@ -122,7 +139,7 @@ export async function patchRecord(
     limits: DataQuotaLimits;
   }
 ): Promise<DataRecordRow | null> {
-  return withAppWriteLock(db, input.appId, async (tx) => {
+  const updated = await withAppWriteLock(db, input.appId, async (tx) => {
     const [current] = await tx
       .select()
       .from(dataRecords)
@@ -141,6 +158,8 @@ export async function patchRecord(
       .returning();
     return row ?? null;
   });
+  if (updated) await announce(input.appId, input.collection, [changed('update', updated)]);
+  return updated;
 }
 
 /**
@@ -155,7 +174,7 @@ export async function insertRecords(
   input: { appId: string; collection: string; docs: Record<string, unknown>[]; limits: DataQuotaLimits }
 ): Promise<DataRecordRow[]> {
   const sized = input.docs.map((doc) => ({ doc, bytes: docByteSize(doc) }));
-  return withAppWriteLock(db, input.appId, async (tx) => {
+  const rows = await withAppWriteLock(db, input.appId, async (tx) => {
     const u = await usage(tx, input.appId);
     const total = sized.reduce((a, d) => a + d.bytes, 0);
     for (const d of sized) {
@@ -181,6 +200,14 @@ export async function insertRecords(
     // Every record has its own created_at: that is the given order, whatever order RETURNING used.
     return stored.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
   });
+  if (rows.length > 0) {
+    await announce(
+      input.appId,
+      input.collection,
+      rows.length > BATCH_EVENTS_MAX ? [{ op: 'reset', at: new Date().toISOString() }] : rows.map((r) => changed('create', r))
+    );
+  }
+  return rows;
 }
 
 /**
@@ -204,7 +231,7 @@ export async function importBatch(
   for (const d of sized) {
     enforceWriteQuota({ limits: input.limits, newDocBytes: d.bytes, liveDocCount: 0, liveBytesExcludingTarget: 0, isCreate: false });
   }
-  return withAppWriteLock(db, input.appId, async (tx) => {
+  const result = await withAppWriteLock(db, input.appId, async (tx) => {
     const u = await usage(tx, input.appId);
     const [inColl] = await tx
       .select({ n: sql<string>`count(*)`, b: sql<string>`coalesce(sum(${dataRecords.bytes}), 0)` })
@@ -282,6 +309,10 @@ export async function importBatch(
     }
     return { inserted: toInsert.length, updated: toUpdate.length, deleted };
   });
+  if (result.inserted + result.updated + result.deleted > 0) {
+    await announce(input.appId, input.collection, [{ op: 'reset', at: new Date().toISOString() }]);
+  }
+  return result;
 }
 
 /** A jsonb value's text form (`"p1"`, `7`) as a JS value. */
@@ -308,8 +339,10 @@ export async function deleteRecord(db: DB, appId: string, collection: string, id
   const rows = await db
     .delete(dataRecords)
     .where(and(scope(appId, collection), eq(dataRecords.id, id)))
-    .returning({ id: dataRecords.id });
-  return rows.length > 0;
+    .returning({ id: dataRecords.id, ownerId: dataRecords.ownerId });
+  if (rows.length === 0) return false;
+  await announce(appId, collection, [{ op: 'delete', id, owner: rows[0].ownerId, at: new Date().toISOString() }]);
+  return true;
 }
 
 // ── queries ─────────────────────────────────────────────────────────────────

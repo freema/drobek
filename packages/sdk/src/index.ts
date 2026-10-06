@@ -1,7 +1,8 @@
 /**
  * @drobek/sdk — the browser SDK core. `core.ts` is bundled
  * into `/__drobek/sdk.js` with the SDK entry of every active platform module;
- * module SDK entries type their argument with `SdkCore` from here.
+ * module SDK entries type their argument with `SdkCore` from here;
+ * `events.ts` reads a module route's event stream (`openEventStream`).
  * `beacon.ts` is bundled into `/__drobek/beacon.js`, which the
  * compiler imports into every app: the page load, uncaught browser errors,
  * failed resource loads and CSP blocks → the app's beacon.
@@ -17,6 +18,7 @@ export {
   type SdkCore,
 } from './core.js';
 export { CORE_SDK_TYPES } from './types.js';
+export { openEventStream, sseParser, type EventStreamOptions, type StreamEvent } from './events.js';
 export {
   BEACON_ENDPOINT,
   BEACON_FLUSH_MS,

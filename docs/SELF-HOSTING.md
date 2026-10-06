@@ -282,7 +282,9 @@ the same way or leave it to drobek.
 host reboot) does not cut the requests it is answering. On `SIGTERM` drobek
 stops accepting connections, closes idle keep-alive connections, ends the MCP
 listen streams (the long-lived `GET /mcp` an MCP client holds open; the
-stopping server answers a new one 405), lets requests in flight — a
+stopping server answers a new one 405) and the apps' live data subscriptions
+(`drobek.data.subscribe` reconnects to the restarted server and resumes;
+a new one answers 503 meanwhile), lets requests in flight — a
 `write_files` compile, a token refresh, a page — finish for up to
 `SHUTDOWN_GRACE_MS` (20 s), cuts whatever is still running after that, stops
 its background jobs and exits. The compose file gives the container
@@ -510,6 +512,9 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `DATA_MAX_DOCS_PER_APP` / `DATA_MAX_DOC_BYTES` / `DATA_MAX_BYTES_PER_APP` | 10000 / 102400 / 52428800 | `data`: records, bytes per record, bytes per app *(plan)* |
 | `DATA_WRITE_RATE_LIMIT` / `DATA_WRITE_RATE_WINDOW_MS` | 120 / 60000 | `data`: writes per app per window *(plan)* |
 | `DATA_WRITES_PER_PRINCIPAL_PER_MIN` | 60 | `data`: writes per minute of one signed-in user (or one visitor IP), checked before the per-app limit *(plan)* |
+| `DATA_SUBSCRIBE_MAX_PER_APP` / `DATA_SUBSCRIBE_MAX_PER_CALLER` | 200 / 4 | `data`: live subscriptions (`drobek.data.subscribe`, a `text/event-stream` each) open at once per app / per signed-in user or visitor IP of an app, counted in each drobek process; over either → `429 limit_exceeded` *(plan)* |
+| `DATA_SUBSCRIBE_MAX_MS` | 3600000 | `data`: how long one live subscription stays open; then the SDK reconnects and resumes it *(plan)* |
+| `DATA_SUBSCRIBE_BACKLOG` | 100 | `data`: changes kept per collection in Redis (1–1000, for 10 minutes after the last write) so a reconnecting subscription gets what it missed; one that missed more loads the list again |
 | `FILES_DIR` | `/data/files` | `files`: upload storage (the `files_data` volume) |
 | `FILES_MAX_BYTES` / `FILES_QUOTA_PER_APP` / `FILES_UPLOAD_RATE_LIMIT` | 10 MiB / 500 MiB / 60 per min | `files` *(plan)* |
 | `FILES_UPLOADS_PER_PRINCIPAL_PER_MIN` | 20 | `files`: uploads per minute of one signed-in user (or one visitor IP), checked before the per-app limit *(plan)* |

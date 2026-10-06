@@ -2227,16 +2227,17 @@ export class ModuleRuntime {
       const selfOrigin = host ? `${appsOrigin(this.deps.env).scheme}://${host.trim().toLowerCase()}` : null;
       let limits: Limits | null = null;
       const getLimits = async () => (limits ??= await this.deps.limits.forWorkspace(app.workspaceId));
+      const resolvePrincipal = () =>
+        this.deps.principal({
+          app: { id: app.id, slug: app.slug, workspaceId: app.workspaceId },
+          cookieHeader: req.header('cookie'),
+        });
       const res = await runRoute({ ...req, path: match[2] ?? '/' }, hit.route, hit.params, {
         module: m.name,
         errorCodes: this.errorCodes.get(m.name),
         selfOrigin,
-        principal: () =>
-          this.deps.principal({
-            app: { id: app.id, slug: app.slug, workspaceId: app.workspaceId },
-            cookieHeader: req.header('cookie'),
-          }),
-        context: (principal) => this.context(m, app, principal, getLimits, enabled),
+        principal: resolvePrincipal,
+        context: (principal) => this.context(m, app, principal, getLimits, enabled, resolvePrincipal),
         limit: async (name) => {
           const l = await getLimits();
           const v = l[name];
@@ -2311,7 +2312,8 @@ export class ModuleRuntime {
     app: PlatformApp,
     principal: Principal,
     getLimits: () => Promise<Limits>,
-    enabled: ReadonlySet<string>
+    enabled: ReadonlySet<string>,
+    resolvePrincipal: () => Promise<Principal>
   ): Promise<ModuleContext<unknown>> {
     const deps = this.deps;
     const row = await readConfigRow(app.id, m.name, deps.db());
@@ -2325,6 +2327,8 @@ export class ModuleRuntime {
       principal,
       config,
       pendingConfig: pending?.success ? pending.data : null,
+      currentConfig: async () => this.effectiveConfig(m, (await readConfigRow(app.id, m.name, deps.db())).config),
+      currentPrincipal: resolvePrincipal,
       ...this.services(enabled),
       rules: { decide: (rule, ownerId) => decideAccess(rule, principal, ownerId) },
       limits: getLimits,

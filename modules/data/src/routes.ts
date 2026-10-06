@@ -5,6 +5,7 @@
  *   GET    :collection              → { records, next_cursor }   (read; `owner` → the caller's own)
  *   POST   :collection              → 201 the record             (create)
  *   GET    :collection/export.csv   → text/csv attachment, streamed (admin)
+ *   GET    :collection/events       → text/event-stream of the changes (read; live.ts)
  *   GET    :collection/:id          → the record                 (read)
  *   PATCH  :collection/:id          → the record (shallow merge) (update)
  *   DELETE :collection/:id          → { id, deleted: true }      (delete)
@@ -22,7 +23,7 @@
  * per-app lock) → stored. Every statement is scoped to this app (store.ts).
  */
 import { Readable } from 'node:stream';
-import { csvChunks, respond, z, type ModuleContext, type ModuleRouter } from '@drobek/modules';
+import { csvChunks, respond, z, type ModuleContext, type ModuleRouter, type Principal } from '@drobek/modules';
 import { decideRecord, listScope, type Op } from './access.js';
 import { COLLECTION_NAME_RE, collectionConfig, rulesOf, type CollectionConfig, type DataConfig } from './config.js';
 import { DataError } from './errors.js';
@@ -32,6 +33,8 @@ import { parseFilterParam } from './query-build.js';
 import { validateDocument } from './schema-validate.js';
 import { principalBucketKey } from './principal-bucket.js';
 import { deleteRecord, insertRecord, loadRecord, patchRecord, toRecord, type DataRecord } from './store.js';
+import { EVENT_ID_RE } from './live-feed.js';
+import { DEFAULT_SUBSCRIBE_MAX_MS, DEFAULT_SUBSCRIBE_MAX_PER_APP, DEFAULT_SUBSCRIBE_MAX_PER_CALLER, liveHub } from './live.js';
 
 type Ctx = ModuleContext<DataConfig>;
 
@@ -107,12 +110,16 @@ async function writeAllowed(ctx: Ctx, clientIp: string | null): Promise<void> {
   }
 }
 
-/** A record as this caller may see it: without `_owner` for a visitor who is not signed in. */
-function forCaller(ctx: Ctx, record: DataRecord): Record<string, unknown> {
-  if (ctx.principal.kind === 'user') return record;
+/** A record as `principal` may see it: without `_owner` for a visitor who is not signed in. */
+function visibleTo(principal: Principal, record: Record<string, unknown>): Record<string, unknown> {
+  if (principal.kind === 'user') return record;
   const { _owner: _hidden, ...rest } = record;
   void _hidden;
   return rest;
+}
+
+function forCaller(ctx: Ctx, record: DataRecord): Record<string, unknown> {
+  return visibleTo(ctx.principal, record);
 }
 
 const listQuery = z.object({
@@ -124,6 +131,7 @@ const listQuery = z.object({
 });
 
 const exportQuery = listQuery.pick({ filter: true, sort: true, dir: true });
+const eventsQuery = z.object({ last_event_id: z.string().max(64).optional() });
 
 export function registerRoutes(r: ModuleRouter<DataConfig>): void {
   r.get('/:collection', { query: listQuery }, async (req, ctx) => {
@@ -185,6 +193,38 @@ export function registerRoutes(r: ModuleRouter<DataConfig>): void {
       'Content-Type': 'text/csv; charset=utf-8',
       'Content-Disposition': `attachment; filename="${name}.csv"`,
     });
+  });
+
+  // Before `:collection/:id` too. Authorized like a list; every event again (live.ts).
+  r.get('/:collection/events', { query: eventsQuery }, async (req, ctx) => {
+    const { name, c } = collectionOf(ctx, req.params.collection);
+    const rule = rulesOf(c).read;
+    const scope = listScope(rule, ctx.principal);
+    if (!scope.ok) deny(scope.status, 'read', name, rule);
+    const limits = await ctx.limits();
+    const raw = (req.header('last-event-id') ?? req.query.last_event_id ?? '').trim();
+    const opened = liveHub().subscribe({
+      appId: ctx.app.id,
+      collection: name,
+      principal: ctx.principal,
+      callerKey: principalBucketKey(ctx.principal, req.clientIp),
+      lastEventId: EVENT_ID_RE.test(raw) ? raw : null,
+      limits: {
+        maxPerApp: limits.DATA_SUBSCRIBE_MAX_PER_APP ?? DEFAULT_SUBSCRIBE_MAX_PER_APP,
+        maxPerCaller: limits.DATA_SUBSCRIBE_MAX_PER_CALLER ?? DEFAULT_SUBSCRIBE_MAX_PER_CALLER,
+        maxMs: limits.DATA_SUBSCRIBE_MAX_MS ?? DEFAULT_SUBSCRIBE_MAX_MS,
+      },
+      currentRule: async () => {
+        const now = collectionConfig(ctx.currentConfig ? await ctx.currentConfig() : ctx.config, name);
+        return now ? rulesOf(now).read : null;
+      },
+      currentPrincipal: ctx.currentPrincipal ? () => ctx.currentPrincipal!() : async () => ctx.principal,
+      forCaller: (record, principal) => visibleTo(principal, record),
+    });
+    if (!opened.ok) {
+      throw new DataError(opened.code, opened.message, { details: opened.details, headers: { 'Retry-After': opened.code === 'unavailable' ? '5' : '30' } });
+    }
+    return respond(200, opened.stream, { 'Content-Type': 'text/event-stream; charset=utf-8', 'X-Accel-Buffering': 'no' });
   });
 
   /** Load `:id` for `op`: 401 before the lookup for a visitor the rule can never admit, 404, then the rule with the stored owner. */
