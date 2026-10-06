@@ -307,6 +307,21 @@ cache. The compile result is part of the tool response.
   JS entry (`"beacon": false` opts out): each page reports its load and its
   browser errors, failed resource loads and CSP blocks with the version it
   was served from (`get_app` `render`, `get_logs` runtime).
+- Preview feedback: the preview and `--v<N>` hosts (never the production
+  host or a custom domain) add `<script src="/__drobek/feedback.js">` before
+  `</body>` of every HTML response, unless drobek.json says
+  `"feedback": false` (read from the version's sources, cached per version);
+  the ETag carries the widget's hash. The script (served by the app host,
+  `no-cache`, built at start around `PUBLIC_APP_URL`) draws a Feedback button
+  in a closed shadow root; picking a spot opens the dashboard's
+  `/feedback/new` in a `noopener` window with the version, path, spot and a
+  CSS selector in the query — never a note's text, never a credential. That
+  page (signed-in members of the app's workspace, any role; `frame-ancestors
+  'none'`) stores the note in `app_feedback` (`@drobek/apps`, per-member
+  hourly and per-app open limits `FEEDBACK_PER_USER_HOUR` /
+  `FEEDBACK_MAX_OPEN_PER_APP`, audited `app.feedback.*`). The app's Feedback
+  tab and `list_feedback` / `resolve_feedback` / `delete_feedback` read and
+  change them with the same functions.
 - Limits (`COMPILE_*`): 200 files, 512 KiB per file, 5 MiB per version, an
   import depth of 50, 10 s per build (cancelled with its own `ctx.cancel()`),
   4 builds at once and a FIFO queue whose wait answers `busy`.
@@ -364,7 +379,8 @@ before any byte of the app is touched:
    host-only `__Host-drobek_app_access` cookie (HMAC, key derived from
    `DROBEK_MASTER_KEY`) is set;
 9. `/__drobek/*`: the SDK, the module routes and the beacon — handed to the
-   module runtime, never to the app's files;
+   module runtime, never to the app's files; on the preview and version hosts
+   `/__drobek/feedback.js` is the feedback widget, served by the handler;
 10. the version the host serves (**404** "not published" / "nothing compiled"),
     then the file: built output wins over sources, `.ts/.tsx/.jsx` sources and
     `drobek.json` are never served, extension-less paths fall back to

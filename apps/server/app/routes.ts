@@ -117,6 +117,9 @@ export default [
   route('workspaces/:slug/apps/:appSlug/uploads', 'routes/workspaces.$slug.apps.$appSlug.uploads.tsx'),
   route('workspaces/:slug/apps/:appSlug/uploads/:fileId', 'routes/workspaces.$slug.apps.$appSlug.uploads.$fileId.ts'),
   route('workspaces/:slug/apps/:appSlug/logs', 'routes/workspaces.$slug.apps.$appSlug.logs.tsx'),
+  // The Feedback tab, and the note page the preview's feedback widget opens (signed-in members).
+  route('workspaces/:slug/apps/:appSlug/feedback', 'routes/workspaces.$slug.apps.$appSlug.feedback.tsx'),
+  route('feedback/new', 'routes/feedback.new.tsx'),
   // The owner confirms/rejects a pending platform-module
   // change (configure_module → confirm_url; the page calls this API).
   route(

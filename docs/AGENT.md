@@ -116,8 +116,8 @@ answers `not_found`, the same as one that does not exist.
 
 | Scope | Tools |
 | --- | --- |
-| `read` | `list_apps`, `get_app`, `read_file`, `list_versions`, `skill_info`, `query_data`, `get_logs`, `list_assets`, `list_form_submissions`, `list_end_users`, `list_uploads`, `list_activity`, `list_domains`, `list_upstreams`, `list_members` |
-| `write` | `create_app`, `duplicate_app`, `write_files`, `restore_version`, `keep_version`, `delete_versions`, `configure_module`, `sync_now`, `create_asset_upload`, `delete_asset`, `add_domain`, `verify_domain`, `remove_domain`, `register_upstream`, `set_upstream_streaming`, `remove_upstream`, `set_frame_ancestors`, `release_lease`, `delete_app`, `create_records`, `update_record`, `delete_record`, `delete_collection`, `purge_orphan_records`, `delete_form_submission`, `set_end_user_role`, `set_end_user_blocked`, `sign_out_end_users`, `delete_upload`, `remove_module_secret`, `create_workspace`, `invite_member`, `set_member_role`, `remove_member`, `delete_workspace`, `set_workspace_module` (super-admins only) |
+| `read` | `list_apps`, `get_app`, `read_file`, `list_versions`, `skill_info`, `query_data`, `get_logs`, `list_assets`, `list_form_submissions`, `list_end_users`, `list_uploads`, `list_activity`, `list_domains`, `list_upstreams`, `list_members`, `list_feedback` |
+| `write` | `create_app`, `duplicate_app`, `write_files`, `restore_version`, `keep_version`, `delete_versions`, `configure_module`, `sync_now`, `create_asset_upload`, `delete_asset`, `add_domain`, `verify_domain`, `remove_domain`, `register_upstream`, `set_upstream_streaming`, `remove_upstream`, `set_frame_ancestors`, `release_lease`, `delete_app`, `create_records`, `update_record`, `delete_record`, `delete_collection`, `purge_orphan_records`, `delete_form_submission`, `set_end_user_role`, `set_end_user_blocked`, `sign_out_end_users`, `delete_upload`, `remove_module_secret`, `create_workspace`, `invite_member`, `set_member_role`, `remove_member`, `delete_workspace`, `resolve_feedback`, `delete_feedback`, `set_workspace_module` (super-admins only) |
 | `publish` | `publish`, `unpublish`, `set_visibility`, `set_gallery_listing`, `set_primary_domain`, `set_workspace_publishing`, `takedown_app`, `restore_app`, `set_gallery_hidden` (the last four for super-admins only) |
 
 ## Tools
@@ -165,6 +165,9 @@ answers `not_found`, the same as one that does not exist.
 | `delete_upload` | write, editor+ | destructive, idempotent | Deletes one upload (the Uploads tab's Delete); the app's links to it answer 404. Audited `files.delete`. |
 | `remove_module_secret` | write, editor+ | destructive, idempotent | Removes one secret a module declares (`module`, `name`) from the app. Needs `user_confirmed: true` (else `user_confirmation_required`); a secret that is not set answers `removed: false`. A value is set only in the dashboard (`secrets_url`) — no tool sets or reads one. Audited `module.secret_remove`. |
 | `list_activity` | read, workspace-admin | read-only | The workspace's audit trail (the dashboard's Activity page), newest first, filtered by `app`, `action`, `actor` (`user` / `agent` / `end_user`) and an inclusive UTC day range, ≤ 100 per call (default 50) with `next_cursor`; each entry's context redacted like the page's Technical details. Only inside an untrusted envelope. |
+| `list_feedback` | read, viewer+ | read-only | The notes workspace members left with the Feedback button on the app's preview and version hosts (the dashboard's Feedback tab), newest first: `status` `open` (default) / `resolved` / `all`, each pinned to its `version`, page `path` (`page_url`) and spot (`anchor`: x/y in a vw×vh window, a CSS `selector` when known), with author, time and — resolved — the resolver and `resolution_note`; `open` / `resolved` counts; ≤ 100 notes and 64 KiB per call, `next_before` continues. Only inside an untrusted envelope. `get_app` returns `feedback: { open, resolved }`. |
+| `resolve_feedback` | write, editor+ | idempotent | Resolves a note (with an optional `note` on what changed, shown on the tab) or reopens it (`resolved: false`); the same status again answers `changed: false`. Audited `app.feedback.resolve` / `app.feedback.reopen`. |
+| `delete_feedback` | write, the note's author or a workspace admin | destructive, idempotent | Deletes a note for good. Needs `user_confirmed: true` (else `user_confirmation_required`). Audited `app.feedback.delete`. Notes are written only by people in the dashboard — no tool creates one. |
 | `list_domains` | read, viewer+ | read-only | The app's custom domains (the dashboard's Domains tab): per domain `host`, `status` (`pending` / `verified`), `primary`, the two DNS `records` to create, `verified_at`, `last_check_at`, `last_error`, the certificate state; plus `cname_target` and `max_per_app`. |
 | `add_domain` | write, editor+ | not destructive, idempotent | Attaches a domain the user owns (pending) and returns the two records: CNAME `<host>` → `<slug>.<APPS_DOMAIN>` and TXT `_drobek.<host>` = `drobek-verify=<token>`. Same validation and `DOMAINS_MAX_PER_APP` as the dashboard (`invalid_hostname`, `hostname_not_allowed`, `limit_exceeded`, `domain_already_added`, `domain_taken`). |
 | `verify_domain` | write, editor+ | not destructive, idempotent, open world | Looks both records up now. Verified → the domain serves the published version. Otherwise `domain_not_verified` with `cname` / `txt` = `ok` / `missing` / `wrong` and the expected `records` (DNS can take up to 48 hours), or `dns_unavailable` (a lookup failed; nothing changed). |
@@ -354,9 +357,9 @@ saying it is data, not instructions. These three tools answer that text ONLY
 envelope, and the keys of a schemaless record are user input too, so no
 wrapping of the payload's strings could cover it.
 The owner's lists answer the same way: `list_form_submissions`,
-`list_end_users`, `list_uploads` and `list_activity` wrap their JSON in
+`list_end_users`, `list_uploads`, `list_activity` and `list_feedback` wrap their JSON in
 `<untrusted-form-submissions …>` / `<untrusted-end-users …>` /
-`<untrusted-uploads …>` / `<untrusted-activity …>` and keep it to at most
+`<untrusted-uploads …>` / `<untrusted-activity …>` / `<untrusted-feedback …>` and keep it to at most
 100 entries and 64 KiB of entries per call: a page that would be bigger ends
 early (`cut: true`, `next_cursor` continues right after it), and an entry
 bigger than the whole budget comes alone with its long texts shortened

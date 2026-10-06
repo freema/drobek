@@ -31,6 +31,7 @@ const ALL_TOOLS = [
   'delete_app',
   'delete_asset',
   'delete_collection',
+  'delete_feedback',
   'delete_form_submission',
   'delete_record',
   'delete_upload',
@@ -46,6 +47,7 @@ const ALL_TOOLS = [
   'list_assets',
   'list_domains',
   'list_end_users',
+  'list_feedback',
   'list_form_submissions',
   'list_members',
   'list_uploads',
@@ -60,6 +62,7 @@ const ALL_TOOLS = [
   'remove_member',
   'remove_module_secret',
   'remove_upstream',
+  'resolve_feedback',
   'restore_version',
   'set_end_user_blocked',
   'set_end_user_role',
@@ -89,6 +92,7 @@ const READ_TOOLS = new Set([
   'list_uploads',
   'list_activity',
   'list_members',
+  'list_feedback',
 ]);
 /** The tools that ask public DNS or change the public site. */
 const OPEN_WORLD_TOOLS = new Set(['sync_now', 'verify_domain', 'remove_domain', 'set_frame_ancestors', 'delete_app', 'invite_member']);
@@ -115,6 +119,8 @@ const IDEMPOTENT_WRITES = new Set([
   'set_end_user_blocked',
   'delete_upload',
   'remove_module_secret',
+  'resolve_feedback',
+  'delete_feedback',
   'create_workspace',
   'set_member_role',
   'remove_member',

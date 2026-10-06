@@ -53,6 +53,14 @@ describe('activitySummary', () => {
     );
     expect(activitySummary(ev('app.version.unkeep', 'app', 'x', { version: 12 }))).toBe('Stopped keeping version 12');
     expect(activityRefs(ev('app.version.keep', 'app', 'x', { version: 12 }))).toContainEqual({ kind: 'version', slug: 'x', number: 12 });
+    expect(activitySummary(ev('app.feedback.create', 'app', 'x', { feedback: 'fb_1', version: 4 }))).toBe(
+      'Left a feedback note on the preview of version 4'
+    );
+    expect(activitySummary(ev('app.feedback.create', 'app', 'x', { feedback: 'fb_1' }))).toBe('Left a feedback note on the preview');
+    expect(activityRefs(ev('app.feedback.create', 'app', 'x', { version: 4 }))).toContainEqual({ kind: 'version', slug: 'x', number: 4 });
+    expect(activitySummary(ev('app.feedback.resolve', 'app', 'x', { feedback: 'fb_1' }))).toBe('Resolved a feedback note');
+    expect(activitySummary(ev('app.feedback.reopen', 'app', 'x', { feedback: 'fb_1' }))).toBe('Reopened a feedback note');
+    expect(activitySummary(ev('app.feedback.delete', 'app', 'x', { feedback: 'fb_1' }))).toBe('Deleted a feedback note');
     expect(activitySummary(ev('domain.add', 'domain', 'shop.example.com', { app: 'x' }))).toBe('Added the custom domain shop.example.com');
     expect(activitySummary(ev('app.gallery_unlisted', 'app', 'x', { reason: 'takedown' }))).toContain('taken down');
     expect(activitySummary(ev('app.purge', 'app', 'x', { appId: 'app_0' }))).toBe('Deleted the app’s versions and data for good');

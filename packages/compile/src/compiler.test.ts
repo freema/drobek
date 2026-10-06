@@ -1,6 +1,6 @@
 import { transformSync } from 'esbuild';
 import { describe, expect, it } from 'vitest';
-import { Compiler, compile } from './index.js';
+import { Compiler, compile, feedbackWidgetEnabled } from './index.js';
 import type { SourceFiles } from './index.js';
 
 const REACT_TS: Array<[string, string]> = [
@@ -129,6 +129,26 @@ describe('compile — happy path', () => {
       expect(r.ok).toBe(false);
       expect(r.errors[0]).toMatchObject({ code: 'invalid_config', file: 'drobek.json' });
       expect(r.errors[0].text).toContain('"beacon" must be true or false');
+    });
+  });
+
+  describe('the feedback widget flag', () => {
+    it('"feedback": false compiles; anything but a boolean is invalid_config', async () => {
+      const deps = { react: 'https://esm.sh/react@19', 'react-dom': 'https://esm.sh/react-dom@19' };
+      expect((await compile(app([['drobek.json', JSON.stringify({ imports: deps, feedback: false })]]))).ok).toBe(true);
+      const r = await compile(app([['drobek.json', JSON.stringify({ imports: deps, feedback: 'off' })]]));
+      expect(r.ok).toBe(false);
+      expect(r.errors[0]).toMatchObject({ code: 'invalid_config', file: 'drobek.json' });
+      expect(r.errors[0].text).toContain('"feedback" must be true or false');
+    });
+
+    it('feedbackWidgetEnabled: only an explicit false turns the widget off', () => {
+      expect(feedbackWidgetEnabled(undefined)).toBe(true);
+      expect(feedbackWidgetEnabled('{}')).toBe(true);
+      expect(feedbackWidgetEnabled('{"feedback":true}')).toBe(true);
+      expect(feedbackWidgetEnabled('{"feedback":false}')).toBe(false);
+      expect(feedbackWidgetEnabled('{"feedback":"false"}')).toBe(true);
+      expect(feedbackWidgetEnabled('not json')).toBe(true);
     });
   });
 

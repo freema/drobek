@@ -86,6 +86,13 @@ const SUMMARIES: Record<string, Summarize> = {
     const v = num(m, 'version');
     return `Stopped keeping ${v !== null ? `version ${v}` : 'a version'}`;
   },
+  'app.feedback.create': (m) => {
+    const v = num(m, 'version');
+    return `Left a feedback note on the preview${v !== null ? ` of version ${v}` : ''}`;
+  },
+  'app.feedback.resolve': () => 'Resolved a feedback note',
+  'app.feedback.reopen': () => 'Reopened a feedback note',
+  'app.feedback.delete': () => 'Deleted a feedback note',
   'app.publish': (m) => {
     const v = num(m, 'version');
     const prev = num(m, 'previousVersion');
@@ -285,6 +292,7 @@ const VERSION_KEY: Record<string, string> = {
   'app.version.restore': 'version',
   'app.version.keep': 'version',
   'app.version.unkeep': 'version',
+  'app.feedback.create': 'version',
   'app.publish': 'version',
   'app.unpublish': 'previousVersion',
 };

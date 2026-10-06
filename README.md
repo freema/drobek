@@ -328,7 +328,7 @@ The agent gets these tools — `list_apps`, `create_app`, `duplicate_app`, `get_
 the model), for the owner's module tabs `list_form_submissions`,
 `delete_form_submission`, `list_end_users`, `set_end_user_role`,
 `set_end_user_blocked`, `sign_out_end_users`, `list_uploads`,
-`delete_upload`, `remove_module_secret` and `list_activity`, and for custom domains `list_domains`, `add_domain`,
+`delete_upload`, `remove_module_secret` and `list_activity`, for the notes members leave with the preview's Feedback button `list_feedback`, `resolve_feedback` and `delete_feedback`, and for custom domains `list_domains`, `add_domain`,
 `verify_domain`, `set_primary_domain`, `remove_domain`, and for the proxy
 module's external APIs `list_upstreams`, `register_upstream`,
 `set_upstream_streaming`, `remove_upstream`, `sync_now` for the sync module's scheduled imports, and

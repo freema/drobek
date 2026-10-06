@@ -125,6 +125,7 @@ test('CIMD: a metadata-document client → consent → token → tools/list filt
       'list_assets',
       'list_domains',
       'list_end_users',
+      'list_feedback',
       'list_form_submissions',
       'list_members',
       'list_uploads',

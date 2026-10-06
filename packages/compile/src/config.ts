@@ -20,6 +20,12 @@ export interface AppConfig {
    * the compiler then adds no beacon import. Default true.
    */
   beacon: boolean;
+  /**
+   * `"feedback": false` in drobek.json keeps the feedback widget off the
+   * app's preview and version hosts (the serving layer reads it with
+   * feedbackWidgetEnabled). Default true.
+   */
+  feedback: boolean;
 }
 
 function configError(text: string): CompileMessage {
@@ -34,10 +40,10 @@ export function readAppConfig(
   files: Map<string, string>
 ): { config: AppConfig; errors: CompileMessage[] } {
   const errors: CompileMessage[] = [];
-  const config: AppConfig = { imports: {}, entries: {}, beacon: true };
+  const config: AppConfig = { imports: {}, entries: {}, beacon: true, feedback: true };
 
   const raw = files.get(CONFIG_FILE);
-  let parsed: { imports?: unknown; entries?: unknown; beacon?: unknown } = {};
+  let parsed: { imports?: unknown; entries?: unknown; beacon?: unknown; feedback?: unknown } = {};
   if (raw !== undefined) {
     try {
       const v = JSON.parse(raw) as unknown;
@@ -75,6 +81,14 @@ export function readAppConfig(
     }
   }
 
+  if (parsed.feedback !== undefined) {
+    if (typeof parsed.feedback !== 'boolean') {
+      errors.push(configError('"feedback" must be true or false (false keeps the feedback widget off the preview)'));
+    } else {
+      config.feedback = parsed.feedback;
+    }
+  }
+
   const main = DEFAULT_ENTRIES.find((p) => files.has(p));
   if (main) config.entries.main = main;
 
@@ -103,4 +117,19 @@ export function readAppConfig(
   }
 
   return { config, errors };
+}
+
+/**
+ * Does a version with this drobek.json text show the feedback widget on its
+ * preview and version hosts? Only an explicit `"feedback": false` turns it
+ * off; a missing or unreadable file keeps the default.
+ */
+export function feedbackWidgetEnabled(raw: string | undefined): boolean {
+  if (raw === undefined) return true;
+  try {
+    const v = JSON.parse(raw) as unknown;
+    return !(v && typeof v === 'object' && !Array.isArray(v) && (v as { feedback?: unknown }).feedback === false);
+  } catch {
+    return true;
+  }
 }

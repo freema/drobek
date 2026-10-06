@@ -57,6 +57,7 @@ const READ_TOOLS = [
   'skill_info',
   'query_data',
   'get_logs',
+  'list_feedback',
   'list_assets',
   'list_domains',
   'list_upstreams',
@@ -73,6 +74,8 @@ const WRITE_TOOLS = [
   'restore_version',
   'keep_version',
   'delete_versions',
+  'resolve_feedback',
+  'delete_feedback',
   'configure_module',
   'sync_now',
   'create_asset_upload',
@@ -185,6 +188,12 @@ describe('tool → scope table', () => {
     // Paging the version history is read; keeping a version and the clean-up change the app.
     expect(toolAllowed(['read'], 'list_versions')).toBe(true);
     for (const t of ['keep_version', 'delete_versions'] as const) {
+      expect(toolAllowed(['write'], t), t).toBe(true);
+      expect(toolAllowed(['read', 'publish'], t), t).toBe(false);
+    }
+    // Reading the preview's feedback is read; resolving or deleting a note changes the app.
+    expect(toolAllowed(['read'], 'list_feedback')).toBe(true);
+    for (const t of ['resolve_feedback', 'delete_feedback'] as const) {
       expect(toolAllowed(['write'], t), t).toBe(true);
       expect(toolAllowed(['read', 'publish'], t), t).toBe(false);
     }

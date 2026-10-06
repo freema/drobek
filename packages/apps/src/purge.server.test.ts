@@ -153,6 +153,8 @@ const FIXTURES: Record<string, (id: string) => Promise<unknown>> = {
       `INSERT INTO app_assets (app_id, name, content_type, size, sha256, storage_key) VALUES ($1, 'film.mp4', 'video/mp4', 10, $2, $2)`,
       [id, SHA_A]
     ),
+  app_feedback: (id) =>
+    pg.query(`INSERT INTO app_feedback (id, app_id, path, body) VALUES ($1, $2, '/', 'note')`, [`fb_${id.replace(/-/g, '').slice(0, 24).padEnd(24, '0')}`, id]),
   app_errors: (id) =>
     pg.query(`INSERT INTO app_errors (id, app_id, type, message, url, dedup_key) VALUES ($1, $2, 'error', 'boom', '/', 'k')`, [`err${id}`, id]),
   app_daily_stats: (id) => pg.query(`INSERT INTO app_daily_stats (app_id, day) VALUES ($1, '2026-09-01')`, [id]),

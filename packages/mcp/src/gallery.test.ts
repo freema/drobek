@@ -242,6 +242,7 @@ describe('set_gallery_listing', () => {
         'delete_app',
         'delete_collection',
         'purge_orphan_records',
+        'delete_feedback',
         'sign_out_end_users',
         'remove_module_secret',
         'set_primary_domain',

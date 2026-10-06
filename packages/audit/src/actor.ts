@@ -53,6 +53,14 @@ export const AUDIT_ACTIONS = {
   appVersionUnkeep: 'app.version.unkeep',
   /** A member deleted old versions of an app (meta: count, the first and last number, failedOnly). */
   appVersionsDelete: 'app.versions.delete',
+  /** A member left a feedback note on the app's preview (meta: the note id and the version; never its text). */
+  appFeedbackCreate: 'app.feedback.create',
+  /** A member (or their agent, resolve_feedback) resolved a feedback note (meta: the note id). */
+  appFeedbackResolve: 'app.feedback.resolve',
+  /** A member (or their agent, resolve_feedback with resolved:false) reopened a feedback note (meta: the note id). */
+  appFeedbackReopen: 'app.feedback.reopen',
+  /** A feedback note was deleted by its author or a workspace admin, or their agent (meta: the note id). */
+  appFeedbackDelete: 'app.feedback.delete',
   appPublish: 'app.publish',
   /** Legacy upload pipeline — kept so historic rows still label. */
   deployActivate: 'deploy.activate',
