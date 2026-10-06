@@ -26,7 +26,7 @@ function view(over: Partial<PageViewInput> = {}): PageViewInput {
     clientIp: '203.0.113.7',
     secFetchDest: 'document',
     purpose: null,
-    dashboardOrigin: 'https://dash.example.com',
+    frameOrigins: ['https://dash.example.com', 'https://gallery.example.net'],
     ...over,
   };
 }
@@ -89,6 +89,14 @@ describe('classifyPageView', () => {
     expect(classifyPageView(view({ secFetchDest: 'empty' }))).toBe('skip');
     expect(classifyPageView(view({ secFetchDest: 'script' }))).toBe('skip');
     expect(classifyPageView(view({ secFetchDest: 'iframe', referer: 'https://dash.example.com/workspaces/me/apps' }))).toBe('skip');
+  });
+
+  it('a frame without a referrer (the dashboard thumbnail is sent none) or from the gallery website is no visit', () => {
+    expect(classifyPageView(view({ secFetchDest: 'iframe', referer: null }))).toBe('skip');
+    expect(classifyPageView(view({ secFetchDest: 'iframe', referer: 'not a url' }))).toBe('skip');
+    expect(classifyPageView(view({ secFetchDest: 'iframe', referer: 'https://gallery.example.net/apps' }))).toBe('skip');
+    expect(classifyPageView(view({ secFetchDest: 'frame', referer: null }))).toBe('skip');
+    expect(classifyPageView(view({ secFetchDest: 'document', referer: null }))).toBe('human');
   });
 });
 

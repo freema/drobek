@@ -1418,12 +1418,14 @@ describe('serving signals: counts and failing paths', () => {
 });
 
 describe('page views (app traffic analytics)', () => {
-  function withViews(): { d: HandlerDeps; views: { appId: string; path: string; host: string | null; userAgent: string | null; referer: string | null }[] } {
-    const views: { appId: string; path: string; host: string | null; userAgent: string | null; referer: string | null }[] = [];
+  type Seen = { appId: string; path: string; host: string | null; userAgent: string | null; referer: string | null; frameOrigins?: readonly string[] };
+  function withViews(): { d: HandlerDeps; views: Seen[] } {
+    const views: Seen[] = [];
     const d: HandlerDeps = {
       ...deps,
       dashboardOrigin: 'https://dash.example.com',
-      pageView: (appId, v) => views.push({ appId, path: v.path, host: v.host, userAgent: v.userAgent, referer: v.referer }),
+      galleryFrameAncestors: ['https://gallery.example.net'],
+      pageView: (appId, v) => views.push({ appId, path: v.path, host: v.host, userAgent: v.userAgent, referer: v.referer, frameOrigins: v.frameOrigins }),
     };
     return { d, views };
   }
@@ -1443,7 +1445,11 @@ describe('page views (app traffic analytics)', () => {
       ['app_shop', '/', 'shop.example.org'],
       ['app_shop', '/', 'shop.apps.example.com'],
     ]);
-    expect(views[0]).toMatchObject({ userAgent: 'Mozilla/5.0 Firefox/131.0', referer: 'https://news.example/x' });
+    expect(views[0]).toMatchObject({
+      userAgent: 'Mozilla/5.0 Firefox/131.0',
+      referer: 'https://news.example/x',
+      frameOrigins: ['https://dash.example.com', 'https://gallery.example.net'],
+    });
   });
 
   it('never counts preview or version hosts, other files, HEAD, a missing page or a locked one', async () => {

@@ -446,7 +446,7 @@ function pageViewOf(req: AppRequest, deps: HandlerDeps): PageViewInput {
     clientIp: req.clientIp,
     secFetchDest: req.header('sec-fetch-dest'),
     purpose: req.header('sec-purpose') ?? req.header('purpose'),
-    dashboardOrigin: deps.dashboardOrigin ?? null,
+    frameOrigins: [...(deps.dashboardOrigin ? [deps.dashboardOrigin] : []), ...(deps.galleryFrameAncestors ?? [])],
   };
 }
 

@@ -109,26 +109,39 @@ export interface PageViewInput {
   secFetchDest: string | null;
   /** `Sec-Purpose` / `Purpose` (a prefetch or prerender says so). */
   purpose: string | null;
-  /** The dashboard origin: its sandboxed app thumbnail is not a visit. */
-  dashboardOrigin?: string | null;
+  /**
+   * Origins whose frames of the app are not visits: the dashboard (its app
+   * thumbnail) and the operator's gallery website (its scaled-down live preview).
+   */
+  frameOrigins?: readonly string[];
 }
 
 export type PageViewClass = 'human' | 'bot' | 'skip';
 
 const DOCUMENT_DESTS = new Set(['document', 'iframe', 'frame']);
 
-/** Whether a page view is counted, and as a person or a bot. */
+function originOf(url: string): string | null {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether a page view is counted, and as a person or a bot. A frame counts
+ * only when the embedding page sent its address and is not one of
+ * `frameOrigins`: the dashboard's thumbnail is sent without a referrer.
+ */
 export function classifyPageView(input: PageViewInput): PageViewClass {
   if (isInternalUserAgent(input.userAgent)) return 'skip';
   if (input.purpose && /prefetch|prerender/i.test(input.purpose)) return 'skip';
   const dest = input.secFetchDest?.trim().toLowerCase();
   if (dest && !DOCUMENT_DESTS.has(dest)) return 'skip';
-  if (dest === 'iframe' && input.dashboardOrigin && input.referer) {
-    try {
-      if (new URL(input.referer).origin === new URL(input.dashboardOrigin).origin) return 'skip';
-    } catch {
-      /* an unparsable referrer is just not the dashboard */
-    }
+  if (dest === 'iframe' || dest === 'frame') {
+    if (!input.referer) return 'skip';
+    const origin = originOf(input.referer);
+    if (origin === null || (input.frameOrigins ?? []).some((o) => originOf(o) === origin)) return 'skip';
   }
   return isBotUserAgent(input.userAgent) ? 'bot' : 'human';
 }

@@ -46,6 +46,7 @@ import {
   type AppErrorsView,
   type AppLogsView,
 } from '@drobek/insights';
+import { dbErrorForLog } from '@drobek/db';
 import { moduleRuntime } from '@drobek/modules';
 import { appAction, appHeaderData, emailsOf, loadAppPage } from '../app-page.server.js';
 import { compileSummary } from '../app-view.js';
@@ -74,7 +75,8 @@ async function visitsSummary(appId: string) {
   try {
     const t = await queryTraffic(appId, 7, { topLimit: 0 });
     return { views: t.totals.views, visitors: t.totals.visitors, botViews: t.totals.bot_views, error: false };
-  } catch {
+  } catch (err) {
+    console.error('[dashboard] visits summary failed', dbErrorForLog(err));
     return { views: 0, visitors: 0, botViews: 0, error: true };
   }
 }

@@ -1,4 +1,4 @@
--- NSO-454: app traffic analytics — page views, a daily unique-visitor estimate
+-- App traffic analytics — page views, a daily unique-visitor estimate
 -- and bot views per app and UTC day, plus the top page paths and referrer hosts.
 CREATE TYPE "public"."app_traffic_kind" AS ENUM('path', 'referrer');--> statement-breakpoint
 CREATE TABLE "app_traffic_daily" (

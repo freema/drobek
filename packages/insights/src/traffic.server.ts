@@ -25,7 +25,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { and, eq, gte, inArray, lt, notInArray, sql } from 'drizzle-orm';
 import { getRedis } from '@drobek/core';
-import { appTrafficDaily, appTrafficTop, apps, dbErrorForLog, getDb } from '@drobek/db';
+import { appTrafficDaily, appTrafficTop, apps, dbErrorForLog, getDb, isForeignKeyViolation } from '@drobek/db';
 import { daysBetween } from './logs.js';
 import { utcDay } from './signals.server.js';
 import {
@@ -49,6 +49,8 @@ const ROLLUP_DAYS = 7;
 /** Days a read takes live from Redis (today, and yesterday until the rollup stored it). */
 const LIVE_DAYS = 2;
 const ROLLUP_INTERVAL_MS = 60 * 60 * 1000;
+/** The first rollup a minute after start, so a server restarted more often than hourly still stores its days. */
+const ROLLUP_FIRST_DELAY_MS = 60_000;
 const ROLLUP_LOCK_KEY = 'drobek:lock:analytics-rollup';
 const APPS_CHUNK = 200;
 
@@ -282,7 +284,8 @@ export interface TrafficRollupResult {
 
 /**
  * The hourly job: store the last ROLLUP_DAYS of every counted app into
- * app_traffic_daily / app_traffic_top (apps deleted for good are skipped),
+ * app_traffic_daily / app_traffic_top (apps deleted for good are skipped; a
+ * chunk whose app is purged mid-run waits for the next run),
  * then remove the days past ANALYTICS_RETENTION_DAYS.
  */
 export async function rollupTraffic(opts: { now?: Date; env?: NodeJS.ProcessEnv; redis?: () => TrafficRedis } = {}): Promise<TrafficRollupResult> {
@@ -300,8 +303,12 @@ export async function rollupTraffic(opts: { now?: Date; env?: NodeJS.ProcessEnv;
       const pairs = chunk.filter((id) => existing.has(id)).map((appId) => ({ appId, day }));
       const live = await readLiveTraffic(r, pairs);
       const rows = pairs.flatMap((p, j) => (live[j] ? [{ ...p, live: live[j]! }] : []));
-      await storeTrafficDays(rows);
-      stored += rows.length;
+      try {
+        await storeTrafficDays(rows);
+        stored += rows.length;
+      } catch (err) {
+        if (!isForeignKeyViolation(err)) throw err;
+      }
     }
   }
   const pruned = await pruneTraffic({ now, env: opts.env });
@@ -334,9 +341,14 @@ export function startTrafficRollup(opts: { log: (msg: string, error?: string) =>
       opts.log('analytics rollup failed', dbErrorForLog(err));
     }
   };
+  const first = setTimeout(() => void tick(), ROLLUP_FIRST_DELAY_MS);
+  first.unref();
   const timer = setInterval(() => void tick(), ROLLUP_INTERVAL_MS);
   timer.unref();
-  return () => clearInterval(timer);
+  return () => {
+    clearTimeout(first);
+    clearInterval(timer);
+  };
 }
 
 // ── reads ────────────────────────────────────────────────────────────────────

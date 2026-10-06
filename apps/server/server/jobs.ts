@@ -53,7 +53,7 @@ export interface BackgroundJobs {
  *   browser errors, compiles and daily request stats older than their
  *   retention (30 days) and errors past the newest 500 per app, for every app
  *   (logic in @drobek/insights).
- * - Analytics rollup (hourly, Redis lease): the app traffic counters of the
+ * - Analytics rollup (a minute after start, then hourly; Redis lease): the app traffic counters of the
  *   last 7 days move from Redis into app_traffic_daily / app_traffic_top, and
  *   days past ANALYTICS_RETENTION_DAYS (90) are removed (logic in
  *   @drobek/insights).

@@ -575,7 +575,7 @@ query:
 | files sweep (only with the `files` module) | `FILES_SWEEP_INTERVAL_MS` (1 h), Redis lease | removes the uploads of apps deleted `FILES_SWEEP_RETENTION_MS` (24 h) ago, stale temp uploads and blobs no `mod_files` row references (`drobek-module-files`) |
 | assets sweep | hourly, Redis lease | removes the asset files and rows of apps deleted 24 h ago, stale temp uploads and files neither the draft (`app_assets`) nor a kept published set (`app_version_assets`) references (`@drobek/apps`) |
 | logs prune | `LOGS_PRUNE_INTERVAL_MS` (1 h), Redis lease | removes `get_logs` rows past their retention for every app: browser errors older than 30 days or past the newest 500 per app, compiles and daily request stats older than 30 days (`@drobek/insights`) |
-| analytics rollup | hourly, Redis lease | moves the app traffic counters of the last 7 days from Redis into `app_traffic_daily` / `app_traffic_top` (a count never goes down) and deletes days older than `ANALYTICS_RETENTION_DAYS` (90) (`@drobek/insights`) |
+| analytics rollup | a minute after start, then hourly; Redis lease | moves the app traffic counters of the last 7 days from Redis into `app_traffic_daily` / `app_traffic_top` (a count never goes down) and deletes days older than `ANALYTICS_RETENTION_DAYS` (90) (`@drobek/insights`) |
 | module jobs (only when an active module declares `jobs`) | each job's own interval (checked every 15 s), a Redis lease per run | the modules' scheduled work, for the server or for each app that configured the module; at most `MODULE_JOBS_CONCURRENCY` (4) runs per process, each cut off at `MODULE_JOBS_TIMEOUT_MS` (5 min); a failed run retries with backoff and an app's failure shows in its `get_logs` runtime; `MODULE_JOBS_ENABLED=0` = none on this process (`@drobek/modules`, [`MODULES.md`](./MODULES.md#scheduled-jobs-jobs)) |
 | audit retention | at start, then daily | deletes audit rows older than `AUDIT_RETENTION_DAYS` (365) — the only deletion of audit rows anywhere |
 | retention prune | at start, then daily, Redis lease | deletes OAuth access and refresh tokens 7 days after they expired (a rotated refresh token stays until then, so reuse detection still sees it) and authorization codes 37 days after (when the lineage a code minted has expired as well, so a replayed code revokes it as long as it exists) (`@drobek/oauth`); gallery open counts of days older than the 30-day `opens` window plus 7 days; abuse reports resolved more than `ABUSE_REPORTS_RETENTION_DAYS` (365) ago — open reports stay (`@drobek/apps`) |
@@ -595,13 +595,15 @@ App traffic analytics (the Analytics tab, `get_analytics`, `get_app`
 `traffic`; `ANALYTICS_ENABLED`) counts what the serving handler answered
 with a 200 or 304 HTML page to a GET on the production host or a custom
 domain — never a preview or version host, a file, a platform route, a
-prefetch, a `drobek-…` user agent or the dashboard's thumbnail. Per app and
+prefetch, a `drobek-…` user agent or a frame sent without a referrer or
+from the dashboard or the gallery website (the app thumbnail, the gallery's
+live preview). Per app and
 UTC day Redis holds page views, bot views (user-agent list), a HyperLogLog
 of `sha256(daily salt, app id, client IP, user agent)` for the visitor
 estimate, and hashes of page paths and external referrer hosts (at most 200
 each, the rest `__other__`). The salt is random per day and lives only in
 Redis, so the hashes cannot be linked across days; Postgres gets counts only.
-The hourly rollup stores the last 7 days; a read merges today and yesterday
+The rollup (a minute after start, then hourly) stores the last 7 days; a read merges today and yesterday
 from Redis (the larger count wins), so the tab is live.
 
 ## 9. Agents, the dashboard and abuse

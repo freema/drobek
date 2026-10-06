@@ -7,7 +7,8 @@ import { FULL_SCOPE, callTool, mcpClient, type McpClient } from './helpers/mcp';
  * App traffic analytics end to end on the local stack: a published app's
  * production page is opened a few times with different user agents (one of
  * them a bot, one a drobek check, one from an external site) plus requests
- * that must not count (the preview host, a script, a HEAD); the live counters
+ * that must not count (the preview host, a prefetch, a HEAD, the app list's
+ * thumbnail); the live counters
  * show at once — on the Analytics tab, the Overview's visits panel, get_app's
  * `traffic` and get_analytics (inside the untrusted envelope) — without
  * waiting for the hourly rollup.
@@ -74,6 +75,11 @@ test.describe('app traffic analytics @local', () => {
     expect((await hostRequest(previewHost(app.slug), '/', { headers: { 'User-Agent': FIREFOX } })).status).toBe(200);
     expect((await hostRequest(prod, '/', { headers: { 'User-Agent': FIREFOX, 'Sec-Purpose': 'prefetch' } })).status).toBe(200);
     expect((await hostRequest(prod, '/', { method: 'HEAD', headers: { 'User-Agent': FIREFOX } })).status).toBe(200);
+    // Not counted either: the app list's live thumbnail of the production address.
+    await page.goto(`/workspaces/${mcp.workspace}/apps`);
+    const thumb = page.locator(`[data-testid="app-row"][data-app-slug="${app.slug}"]`).getByTestId('app-thumb-frame');
+    await thumb.scrollIntoViewIfNeeded();
+    await expect(thumb.contentFrame().locator('body')).toBeAttached();
 
     // MCP: live counts, without waiting for the rollup (counting is fire-and-forget: poll briefly).
     let a: Analytics | null = null;

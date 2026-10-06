@@ -4,7 +4,7 @@
  * (PGlite), the retention prune and the read that merges today's live counters.
  */
 import type { PGlite } from '@electric-sql/pglite';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { appTrafficDaily, appTrafficTop, apps, workspaces } from '@drobek/db';
 import { eq } from 'drizzle-orm';
 import { TRAFFIC_OTHER, TRAFFIC_TOP_KEYS_MAX, type PageViewInput } from './traffic.js';
@@ -16,6 +16,7 @@ import {
   recordPageView,
   resetTrafficSaltCache,
   rollupTraffic,
+  startTrafficRollup,
   TRAFFIC_TTL_SEC,
   trafficKeys,
   visitorHash,
@@ -193,5 +194,30 @@ describe('pruneTraffic', () => {
     expect(await pruneTraffic({ now: NOW, env: {} })).toEqual({ prunedDays: 1, prunedTops: 1 });
     expect((await db.select().from(appTrafficDaily)).map((d) => d.day)).toEqual(['2026-07-09']);
     expect(await pruneTraffic({ now: NOW, env: { ANALYTICS_RETENTION_DAYS: '7' } })).toEqual({ prunedDays: 1, prunedTops: 0 });
+  });
+});
+
+describe('startTrafficRollup', () => {
+  it('runs a minute after start, then hourly, under the lease; stop clears both timers', async () => {
+    vi.useFakeTimers();
+    try {
+      const keys: string[] = [];
+      const lease = async <T,>(key: string) => {
+        keys.push(key);
+        return { acquired: false as const } as { acquired: true; result: T } | { acquired: false };
+      };
+      const stop = startTrafficRollup({ log: () => {}, lease });
+      await vi.advanceTimersByTimeAsync(59_000);
+      expect(keys).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(keys).toEqual(['drobek:lock:analytics-rollup']);
+      await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+      expect(keys).toHaveLength(2);
+      stop();
+      await vi.advanceTimersByTimeAsync(2 * 60 * 60 * 1000);
+      expect(keys).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
