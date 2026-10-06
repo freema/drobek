@@ -112,7 +112,8 @@ reason, record_id, received_at }` — never a body.
   stores nothing (`duplicate`): senders retry, the app sees one record.
 - `WEBHOOKS_MAX_BODY_BYTES` 256 KiB (never above 1 MiB);
   `WEBHOOKS_PER_APP_PER_MINUTE` 120; `WEBHOOKS_MAX_ENDPOINTS_PER_APP` 10.
-  The data quotas (`DATA_MAX_DOCS_PER_APP` …) apply to every record.
+  The data quotas apply to every record; a record over `DATA_MAX_DOC_BYTES`
+  (100 KiB) is refused with 413, so that is the real cap by default.
 - The app's password does not apply to the endpoint (the signature does).
 - Statuses in the log: `accepted`, `rejected_signature`, `duplicate`,
   `too_large`, `rate_limited`, `collection_error`; kept 30 days.
@@ -127,6 +128,6 @@ The sender gets these; the agent sees them in `get_logs({ kind: "webhooks" })`.
 | `webhook_secret_not_set` | the endpoint's secret is not set (`hasSecret: false`) | the owner sets it on the module page; the sender's retry lands |
 | `webhook_not_stored` | the collection is missing, its schema rejects the record, or quota | declare it / relax the schema; the retry lands |
 | `not_found` | no such endpoint, or it is disabled | check the URL's last part and `enabled` |
-| `payload_too_large` | the body is over `max_bytes` / `WEBHOOKS_MAX_BODY_BYTES` | raise `max_bytes` (≤ the server cap) |
+| `payload_too_large` | the body is over `max_bytes` / `WEBHOOKS_MAX_BODY_BYTES`, or its record over `DATA_MAX_DOC_BYTES` | raise `max_bytes` (≤ the server cap); a record cap is the operator's |
 | `rate_limited` | over `WEBHOOKS_PER_APP_PER_MINUTE` | the sender retries later |
 | `invalid_params` | bad config or too many endpoints | fix the named field |

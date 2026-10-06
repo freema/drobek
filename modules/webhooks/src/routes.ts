@@ -15,14 +15,16 @@
  *      stored delivery answers 200 and stores nothing (`duplicate`);
  *   7. one record `{ source, event_type?, event_id?, received_at, payload }`
  *      in the endpoint's collection through the records module (its schema
- *      and the app's quotas apply) → 200 `{ ok, id }`; a refusal → 503
- *      `collection_error` (the sender retries).
+ *      and the app's quotas apply) → 200 `{ ok, id }`; a record over the
+ *      data module's DATA_MAX_DOC_BYTES → 413 `too_large` (a retry cannot
+ *      fit either); any other refusal → 503 `collection_error` (the sender
+ *      retries).
  *
  * The password gate does not apply (the route authenticates the sender
  * itself), and no SDK header is needed. Every delivery is logged without
  * its body, headers or the secret.
  */
-import { ModuleError, isModuleError, type ModuleContext, type ModuleRouter, type WebhookDeliveryStatus } from '@drobek/modules';
+import { ModuleError, isModuleError, type Limits, type ModuleContext, type ModuleRouter, type WebhookDeliveryStatus } from '@drobek/modules';
 import { BODY_CEILING_BYTES, ENDPOINT_NAME_RE, endpointOf, secretOf, webhooksLimits, type WebhooksConfig } from './config.js';
 import { claimEvent, logDelivery, releaseEvent } from './store.js';
 import { eventFacts, payloadOf, verifyDelivery } from './verify.js';
@@ -30,6 +32,12 @@ import { eventFacts, payloadOf, verifyDelivery } from './verify.js';
 type Ctx = ModuleContext<WebhooksConfig>;
 
 const MINUTE_MS = 60_000;
+
+/** The data module's per-record cap (DATA_MAX_DOC_BYTES) for this workspace, or null when it is not known. */
+function recordLimit(limits: Limits): number | null {
+  const v = limits.DATA_MAX_DOC_BYTES;
+  return typeof v === 'number' && Number.isInteger(v) && v > 0 ? v : null;
+}
 
 function notFound(): ModuleError {
   return new ModuleError('not_found', 'No enabled webhook endpoint of this name in this app.', { hint: "skill_info('webhooks')" });
@@ -113,6 +121,15 @@ export function registerRoutes(r: ModuleRouter<WebhooksConfig>): void {
         received_at: new Date().toISOString(),
         payload,
       };
+      const recordCap = recordLimit(await ctx.limits());
+      const recordBytes = Buffer.byteLength(JSON.stringify(doc), 'utf8');
+      if (recordCap !== null && recordBytes > recordCap) {
+        if (facts.id !== null) await releaseEvent(ctx.db, { appId: ctx.app.id, endpoint: name, eventId: facts.id });
+        await record(ctx, name, 'too_large', 413, bytes, { reason: 'record_too_large' });
+        throw new ModuleError('payload_too_large', `The delivery makes a record of ${recordBytes} bytes; one record of the app may have at most ${recordCap}.`, {
+          details: { limit: 'DATA_MAX_DOC_BYTES', value: recordCap },
+        });
+      }
       let stored: Record<string, unknown>;
       try {
         [stored] = await ctx.records.create(endpoint.collection, [doc]);

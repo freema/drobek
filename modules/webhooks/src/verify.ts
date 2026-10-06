@@ -163,9 +163,9 @@ export function payloadOf(body: Buffer, contentType: string | null): unknown {
   const type = (contentType ?? '').split(';')[0].trim().toLowerCase();
   const text = body.toString('utf8');
   if (type === 'application/x-www-form-urlencoded') {
-    const out: Record<string, string> = {};
-    for (const [k, v] of new URLSearchParams(text)) if (!(k in out) && !k.startsWith('_')) out[k] = v;
-    return out;
+    const out = new Map<string, string>();
+    for (const [k, v] of new URLSearchParams(text)) if (!out.has(k) && !k.startsWith('_')) out.set(k, v);
+    return Object.fromEntries(out);
   }
   if (type === '' || type === 'application/json' || type.endsWith('+json') || type === 'text/plain') {
     try {

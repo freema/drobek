@@ -2786,8 +2786,10 @@ dashboard calls it **Incoming webhooks**.
   delivery answers `200 { ok, duplicate: true }`; ids are kept 7 days), then
   one record `{ source, event_type?, event_id?, received_at, payload }`
   through `ctx.records.create` → `200 { ok, id }`. A JSON body is stored
-  parsed, a form body as its fields, anything else as text. A record the
-  collection refuses (its schema, a quota) answers
+  parsed, a form body as its fields, anything else as text. A record over
+  the data module's `DATA_MAX_DOC_BYTES` answers `413 payload_too_large`
+  (`too_large`, reason `record_too_large`: a retry cannot fit either). A
+  record the collection refuses otherwise (its schema, a quota) answers
   `503 webhook_not_stored` and frees the event id, so the sender's retry can
   land.
 - **The log** — every delivery past the endpoint check is logged without

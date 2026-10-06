@@ -34,6 +34,7 @@ const REASON_TEXT: Record<string, string> = {
   validation_failed: 'the collection’s schema rejects it',
   quota_exceeded: 'the app’s data quota is full',
   not_found: 'the collection is not declared',
+  record_too_large: 'larger than one record of the app may be',
 };
 
 function statusBadge(status: WebhookDelivery['status'] | null) {
@@ -114,7 +115,7 @@ export function WebhookEndpointsPanel({ data }: { data: WebhooksPanelData }) {
                   <td style={{ ...ui.td, ...ui.mono }}>{d.endpoint}</td>
                   <td style={ui.td}>
                     {statusBadge(d.status)}
-                    {d.reason && d.status !== 'accepted' && d.status !== 'duplicate' ? ` — ${REASON_TEXT[d.reason] ?? d.reason}` : ''} (HTTP {d.http_status})
+                    {d.reason && d.reason !== d.status && d.status !== 'accepted' && d.status !== 'duplicate' ?` — ${REASON_TEXT[d.reason] ?? d.reason}` : ''} (HTTP {d.http_status})
                   </td>
                   <td style={ui.td}>{d.bytes} bytes</td>
                 </tr>

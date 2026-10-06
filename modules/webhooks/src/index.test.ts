@@ -352,6 +352,31 @@ describe('deliveries', () => {
     expect(res.json).toMatchObject({ error: 'webhook_not_stored', details: { reason: 'not_found' } });
   });
 
+  it('a delivery whose record exceeds DATA_MAX_DOC_BYTES is 413 too_large, not a 503 the sender retries forever', async () => {
+    rt = await runtime({ DATA_MAX_DOC_BYTES: '200' });
+    await freshApp({});
+    const body = JSON.stringify({ long: 'x'.repeat(300) });
+    const headers = { 'X-Webhook-Signature': sign(body), 'Webhook-Id': 'msg_big' };
+    const res = await post('payments', body, headers);
+    expect(res.status).toBe(413);
+    expect(res.json).toMatchObject({ error: 'payload_too_large', details: { limit: 'DATA_MAX_DOC_BYTES', value: 200 } });
+    expect(await stored()).toEqual([]);
+    expect(await deliveries()).toEqual([{ status: 'too_large', http: 413, reason: 'record_too_large' }]);
+    expect((await post('payments', body, headers)).status).toBe(413);
+  });
+
+  it('a form body keeps fields named like object members', async () => {
+    await freshApp({ verify: 'none-with-token' });
+    const body = 'constructor=a&toString=b&__proto__=c&_hidden=d';
+    const res = await post('payments', body, { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Webhook-Token': SECRET });
+    expect(res.status).toBe(200);
+    const [doc] = await stored();
+    const payload = doc.payload as Record<string, unknown>;
+    expect([payload.constructor, payload.toString]).toEqual(['a', 'b']);
+    expect(Object.keys(payload)).not.toContain('_hidden');
+    expect(Object.getPrototypeOf({})).toBe(Object.prototype);
+  });
+
   it('logs never carry the body, a signature or the secret', async () => {
     await freshApp({});
     const body = JSON.stringify({ note: MARKER });
