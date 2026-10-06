@@ -78,8 +78,11 @@ export function compareEventIds(a: string, b: string): number {
   return 0;
 }
 
+/** An id from the future would hide every later event from its subscriber: it is not resumable either. */
 function resumable(lastId: string, nowMs: number): boolean {
-  return EVENT_ID_RE.test(lastId) && Number(lastId.split('-')[0]) >= nowMs - BACKLOG_TTL_MS + RESUME_MARGIN_MS;
+  if (!EVENT_ID_RE.test(lastId)) return false;
+  const ms = Number(lastId.split('-')[0]);
+  return ms >= nowMs - BACKLOG_TTL_MS + RESUME_MARGIN_MS && ms <= nowMs;
 }
 
 const channelOf = (appId: string, collection: string) => `drobek:data:live:${appId}:${collection}`;

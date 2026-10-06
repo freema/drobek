@@ -326,9 +326,53 @@ describe('LiveHub — resume with Last-Event-ID', () => {
     expect(trimmed.read.changes()).toEqual([]);
     trimmed.stream.destroy();
 
+    const future = open(hub, input(feed, knobs, { lastEventId: `${clock + 60_000}-0` }));
+    await until(() => future.read.events('reset').length === 1, 'reset (future id)');
+    clock += 1;
+    await feed.publish('app_1', 'notes', [created(record('r_f', null))]);
+    await until(() => future.read.changes().length === 1, 'live after a future id');
+    future.stream.destroy();
+
     clock += BACKLOG_TTL_MS;
     const old = open(hub, input(feed, knobs, { lastEventId: `${clock - BACKLOG_TTL_MS}-0` }));
     await until(() => old.read.events('reset').length === 1, 'reset (expired)');
+    hub.endAll();
+  });
+
+  it('events that arrive while a resume is replayed keep their order, none is lost', async () => {
+    const feed = memoryChangeFeed();
+    const knobs: Knobs = { rule: 'public', principal: ANON };
+    const hub = new LiveHub(feed);
+    const first = open(hub, input(feed, knobs));
+    await until(() => first.read.events('ready').length === 1);
+    await feed.publish('app_1', 'notes', [created(record('r_1', null))]);
+    await until(() => first.read.changes().length === 1);
+    const lastId = first.read.events('change')[0].id!;
+    first.stream.destroy();
+    await feed.publish('app_1', 'notes', [created(record('r_2', null))]);
+
+    const gates: (() => void)[] = [];
+    let calls = 0;
+    const again = open(
+      hub,
+      input(feed, knobs, {
+        lastEventId: lastId,
+        currentRule: async () => {
+          calls += 1;
+          if (calls <= 2) await new Promise<void>((r) => gates.push(r));
+          return 'public';
+        },
+      })
+    );
+    await until(() => gates.length === 1, 'replay reads the rule');
+    await feed.publish('app_1', 'notes', [created(record('r_3', null))]);
+    gates[0]();
+    await until(() => gates.length === 2 || calls > 2, 'the held events read the rule');
+    await feed.publish('app_1', 'notes', [created(record('r_4', null))]);
+    await tick();
+    gates[1]?.();
+    await until(() => again.read.changes().length === 3, 'all three');
+    expect(again.read.changes().map((c) => (c.record as DataRecord)._id)).toEqual(['r_2', 'r_3', 'r_4']);
     hub.endAll();
   });
 

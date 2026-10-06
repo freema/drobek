@@ -9,7 +9,8 @@
  *   event: change   { op: 'create' | 'update', record, at } | { op: 'delete', id, at }
  *   event: reset    events may have been missed: load the list again
  *   event: error    { error, message } — the stream ends (the rule no longer
- *                   admits the caller, the collection is gone, a slow reader)
+ *                   admits the caller, the collection is gone, a slow reader);
+ *                   the SDK reconnects and the subscribe's answer decides
  *   : ping          every HEARTBEAT_MS
  *
  * Authorization runs at the subscribe (the route: the collection's read
@@ -40,6 +41,8 @@ export const MAX_BUFFERED_BYTES = 1024 * 1024;
 export const DEFAULT_SUBSCRIBE_MAX_PER_APP = 200;
 export const DEFAULT_SUBSCRIBE_MAX_PER_CALLER = 4;
 export const DEFAULT_SUBSCRIBE_MAX_MS = 3_600_000;
+/** setTimeout's ceiling: a longer DATA_SUBSCRIBE_MAX_MS would fire at once. */
+const MAX_TIMER_MS = 2_147_483_647;
 /** The client's reconnect delay (the SSE `retry:` field). */
 const RETRY_MS = 2000;
 
@@ -183,7 +186,7 @@ export class LiveHub {
     stream.on('error', sub.close);
 
     timers.push(setInterval(() => void this.heartbeat(sub), this.opts.heartbeatMs ?? HEARTBEAT_MS));
-    timers.push(setTimeout(sub.close, input.limits.maxMs));
+    timers.push(setTimeout(sub.close, Math.min(input.limits.maxMs, MAX_TIMER_MS)));
     for (const t of timers) t.unref?.();
 
     channel = this.join(sub);
@@ -235,12 +238,13 @@ export class LiveHub {
         sub.lastId = startId;
         this.write(sub, frame('ready', { at: new Date(this.now()).toISOString() }, startId));
       }
-      const held = sub.held ?? [];
-      sub.held = null;
-      if (held.length > 0 && !sub.closed) {
+      // Drained before the sub goes live: what arrives meanwhile queues behind, in order.
+      while (sub.held && sub.held.length > 0 && !sub.closed) {
         const rule = await sub.input.currentRule();
-        for (const m of held) if (!sub.closed) await this.deliver(sub, m, rule);
+        const m = sub.held.shift()!;
+        await this.deliver(sub, m, rule);
       }
+      sub.held = null;
     } catch {
       this.fail(sub, 'unavailable', 'The live subscription could not start; it reconnects.');
     }

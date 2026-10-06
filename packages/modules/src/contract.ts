@@ -1314,8 +1314,9 @@ export interface ModuleContext<Config = unknown> extends ModuleServices {
   /**
    * This app's effective config as stored NOW. `config` is read once per
    * request; a response that stays open (an event stream) reads this again
-   * before it sends what the config decides. Absent on servers before it
-   * existed: fall back to `config`.
+   * before it sends what the config decides. Throws once the app is no
+   * longer served (deleted, taken down): the response ends. Absent on
+   * servers before it existed: fall back to `config`.
    */
   currentConfig?(): Promise<Config>;
   /**

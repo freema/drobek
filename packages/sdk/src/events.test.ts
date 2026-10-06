@@ -90,20 +90,24 @@ describe('openEventStream', () => {
     expect(events[0]).toMatchObject({ type: 'change', data: 'ok' });
   });
 
-  it('an error event with a final code stops; another code keeps the stream', async () => {
+  it('an error event ends the connection and reconnects; the answer to the reconnect decides whether it stops', async () => {
     const errors: DrobekError[] = [];
     const events: StreamEvent[] = [];
+    let calls = 0;
     openEventStream('/x', {
+      retryMs: 1,
       onEvent: (e) => events.push(e),
       onError: (e) => errors.push(e),
-      fetchImpl: async () =>
-        sse(['event: error\ndata: {"error":"slow_client"}\n\n', 'event: change\ndata: 1\n\n', 'event: error\ndata: {"error":"forbidden","message":"no"}\n\n'], {
-          hold: true,
-        }),
+      fetchImpl: async () => {
+        calls += 1;
+        if (calls === 1) return sse(['retry: 1\n\nid: 5-0\nevent: change\ndata: 1\n\nevent: error\ndata: {"error":"unauthorized"}\n\nevent: change\ndata: 2\n\n'], { hold: true });
+        return json(401, { error: 'unauthorized', message: 'Sign in first.' });
+      },
     });
     await until(() => errors.length === 1);
-    expect(events).toHaveLength(1);
-    expect(errors[0]).toMatchObject({ code: 'forbidden', message: 'no' });
+    expect(calls).toBe(2);
+    expect(events.map((e) => e.data)).toEqual(['1']);
+    expect(errors[0]).toMatchObject({ code: 'unauthorized', message: 'Sign in first.' });
   });
 
   it('close() aborts the request and no callback runs after it', async () => {

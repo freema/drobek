@@ -4,9 +4,13 @@
  * refused stream, sends `X-Drobek-SDK: 1`, and resumes with `Last-Event-ID`
  * after every reconnect.
  *
- * A dropped connection, a stream the server ended (its lifetime, a restart)
- * and a 429 / 5xx answer reconnect after a delay that grows to 30 s; a 4xx
- * answer or an `event: error` with such a code stops for good (`onError`).
+ * A dropped connection, a stream the server ended (its lifetime, a restart,
+ * an `event: error`) and a 429 / 5xx answer reconnect after a delay that
+ * grows to 30 s; only a 4xx answer to the request stops for good
+ * (`onError`). An `event: error` never stops it by itself: the reconnect's
+ * answer decides, so a caller the server could not check for a moment (its
+ * session store briefly unreachable) comes back, while a caller who really
+ * signed out, or a rule that no longer admits them, gets the 4xx.
  * `close()` stops it at once; no callback runs after it.
  */
 import { DrobekError, SDK_HEADER } from './core.js';
@@ -20,7 +24,7 @@ export interface StreamEvent {
 
 export interface EventStreamOptions {
   onEvent(event: StreamEvent): void;
-  /** The stream stopped for good (a 4xx answer, or an `error` event with a code that will not change by retrying). */
+  /** The stream stopped for good: the server refused the request with a 4xx (not 408 / 429). */
   onError?(error: DrobekError): void;
   /** First reconnect delay in ms (default 1000; the server's `retry:` field overrides it). */
   retryMs?: number;
@@ -28,9 +32,6 @@ export interface EventStreamOptions {
 }
 
 const MAX_RETRY_MS = 30_000;
-
-/** Codes that a retry does not change: the stream stops. */
-const FATAL = new Set(['unauthorized', 'forbidden', 'not_found', 'invalid_request', 'module_not_enabled', 'pending_confirmation', 'password_required']);
 
 /** Incremental SSE parser: feed text chunks, get the complete events. */
 export function sseParser(): { push(chunk: string): StreamEvent[]; retry(): number | null } {
@@ -140,31 +141,22 @@ export function openEventStream(url: string, opts: EventStreamOptions): () => vo
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     try {
-      for (;;) {
+      let ended = false;
+      while (!ended) {
         const { value, done } = await reader.read();
         if (done || closed) break;
-        for (const ev of parser.push(decoder.decode(value, { stream: true }))) {
+        const events = parser.push(decoder.decode(value, { stream: true }));
+        serverRetry = parser.retry() ?? serverRetry;
+        for (const ev of events) {
           if (closed) break;
           if (ev.id !== null) lastId = ev.id;
-          delay = base;
           if (ev.type === 'error') {
-            let b: Record<string, unknown> = {};
-            try {
-              b = JSON.parse(ev.data) as Record<string, unknown>;
-            } catch {
-              /* not JSON */
-            }
-            const code = typeof b.error === 'string' ? b.error : 'stream_error';
-            const err = new DrobekError(0, code, typeof b.message === 'string' ? b.message : 'The event stream ended with an error.', b.details);
-            if (FATAL.has(code)) {
-              stop(err);
-              return;
-            }
-            continue;
+            ended = true;
+            break;
           }
+          delay = base;
           opts.onEvent(ev);
         }
-        serverRetry = parser.retry();
       }
     } catch {
       /* the connection dropped: reconnect */

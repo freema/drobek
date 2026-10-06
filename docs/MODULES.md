@@ -639,7 +639,7 @@ Everything a handler gets is scoped to **one app and one module**:
 | `principal` | `{ kind: 'anon' }` or `{ kind: 'user', id, email, role: 'user' \| 'admin' }`, resolved by core from the host-only end-user cookie (`__Host-drobek_eu`; plain-http dev: `drobek_eu`). A module never reads cookies, and the dashboard session is never read on an app host. |
 | `config` | this app's effective config: `configSchema.parse(merge(configDefaults, stored))` |
 | `pendingConfig` | the config this app would have once the owner confirms its pending change, or `null` (nothing pending, or it no longer validates). Never act on it — it is not in force; it lets a route say that something waits for confirmation (e.g. data's `409 pending_confirmation`). `createModuleTestContext({ pendingConfig })` sets it in tests. |
-| `currentConfig()` / `currentPrincipal()` | the config as stored NOW and the caller as of NOW (the session read again: signed out, blocked or expired → anon). `config` and `principal` are read once per request; a response that stays open (an event stream, like data's `subscribe`) checks these again before it sends what they decide. In tests they follow `setConfig(patch)` / `setPrincipal(p)` of `createModuleTestContext`, and `request(…, { stream: true })` hands the unread stream over as `res.stream`. |
+| `currentConfig()` / `currentPrincipal()` | the config as stored NOW and the caller as of NOW (the session read again: signed out, blocked or expired → anon). `config` and `principal` are read once per request; a response that stays open (an event stream, like data's `subscribe`) checks these again before it sends what they decide; `currentConfig()` throws once the app is deleted or taken down, so the response ends. In tests they follow `setConfig(patch)` / `setPrincipal(p)` of `createModuleTestContext`, and `request(…, { stream: true })` hands the unread stream over as `res.stream`. |
 | `rules.decide(rule, ownerId?)` | `{ ok: true }` or `{ ok: false, status: 401 \| 403 }` |
 | `limits()` | this workspace's limits (env defaults or the limits provider) |
 | `rateLimit(bucket, key, max, windowMs)` | fixed-window counter in Redis, namespaced to the module and app |
@@ -2513,7 +2513,8 @@ of JSON records with per-operation rules. `skill_info('data')`.
   heartbeat; under a rule that admits the caller only through `owner` an
   event is sent only for a record whose stored `_owner` is the caller (a
   delete carries only the id); a visitor never gets `_owner`. A rule that
-  no longer admits the caller, or a removed collection, ends the stream.
+  no longer admits the caller, a removed collection, or an app deleted or
+  taken down ends the stream (the heartbeat checks it too).
   **Limits** (in each process, like the proxy's slots):
   `DATA_SUBSCRIBE_MAX_PER_APP` (200) open streams per app,
   `DATA_SUBSCRIBE_MAX_PER_CALLER` (4) per signed-in user or visitor IP →
@@ -2529,9 +2530,11 @@ of JSON records with per-operation rules. `skill_info('data')`.
   `drobek.data.subscribe(name, opts)`) → the unsubscribe function. It reads
   the stream with `fetch` (`@drobek/sdk` `openEventStream`): `ready` and
   `reset` call `onSync` (load the list), `change` calls `onChange`; a dropped
-  connection, an ended stream, a 429 or a 5xx reconnect with backoff (≤ 30 s)
-  and `Last-Event-ID`; a 4xx or a final `error` event stops and calls
-  `onError`. The types (`Doc<T>`, `Filter<T>`, `Page<T>`, `ChangeEvent<T>`,
+  connection, an ended stream (an `error` event too), a 429 or a 5xx
+  reconnect with backoff (≤ 30 s) and `Last-Event-ID`; only a 4xx answer to
+  that request stops and calls `onError` — so a session check that failed
+  for a moment does not end the subscription, while a signed-out caller or
+  a tightened rule gets its `401` / `403` on the reconnect. The types (`Doc<T>`, `Filter<T>`, `Page<T>`, `ChangeEvent<T>`,
   `SubscribeOptions<T>`) are in `/__drobek/sdk.d.ts`.
 
 ## The built-in `proxy` module

@@ -2327,7 +2327,12 @@ export class ModuleRuntime {
       principal,
       config,
       pendingConfig: pending?.success ? pending.data : null,
-      currentConfig: async () => this.effectiveConfig(m, (await readConfigRow(app.id, m.name, deps.db())).config),
+      currentConfig: async () => {
+        const db = deps.db();
+        const [state] = await db.select({ deletedAt: apps.deletedAt, lockedReason: apps.lockedReason }).from(apps).where(eq(apps.id, app.id)).limit(1);
+        if (!state || state.deletedAt || state.lockedReason) throw new ModuleError('not_found', 'This app is no longer served.');
+        return this.effectiveConfig(m, (await readConfigRow(app.id, m.name, db)).config);
+      },
       currentPrincipal: resolvePrincipal,
       ...this.services(enabled),
       rules: { decide: (rule, ownerId) => decideAccess(rule, principal, ownerId) },
