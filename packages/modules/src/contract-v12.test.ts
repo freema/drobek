@@ -81,8 +81,8 @@ const sync = defineModule<SyncConfig>({
 // ── the load-time rules ──────────────────────────────────────────────────────
 
 describe('jobs: load-time rules', () => {
-  it('the server implements contract 1.2.0; a 1.1 module (no jobs, ^1.1) validates and loads unchanged', async () => {
-    expect(MODULE_CONTRACT_VERSION).toBe('1.2.0');
+  it('the server implements contract 1.3.0; a 1.1 module (no jobs, ^1.1) validates and loads unchanged', async () => {
+    expect(MODULE_CONTRACT_VERSION).toBe('1.3.0');
     const old = defineModule({ ...base, name: 'old', contract: '^1.1' });
     expect(() => validateModule(old)).not.toThrow();
     const log = logger();

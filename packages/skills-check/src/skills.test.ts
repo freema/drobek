@@ -6,7 +6,7 @@ import { BUILTIN_MODULES, EXPECTED_SKILLS, skillSources, skillsRuntime } from '.
 
 /**
  * The content `skill_info` serves. Written for the AGENT only, one
- * format for all 12 skills (docs/MODULES.md "Skills"):
+ * format for all 13 skills (docs/MODULES.md "Skills"):
  *
  *   ## 1. When to use / ## 2. Minimal working code / ## 3. API and types /
  *   ## 4. Rules and limits / ## 5. Errors → fix — at most 150 lines.
@@ -20,7 +20,7 @@ const CORE_CODES = ERROR_CATALOGUE.map((e) => e.code);
 const sources = await skillSources();
 
 describe('skill_info() with every built-in module', () => {
-  it('lists exactly the 12 skills — modules first, then the general skills', async () => {
+  it('lists exactly the 13 skills — modules first, then the general skills', async () => {
     const rt = await skillsRuntime();
     expect(rt.skillList().map((s) => s.name)).toEqual([...EXPECTED_SKILLS]);
   });
@@ -37,12 +37,12 @@ describe('skill_info() with every built-in module', () => {
     const moduleCodes = rt.errorCatalogue().flatMap((s) => s.errors.map((e) => e.code));
     const all = [...CORE_CODES, ...moduleCodes];
     expect(new Set(all).size).toBe(all.length);
-    for (const code of ['email_not_allowed', 'invalid_code', 'too_many_attempts', 'invalid_form_token', 'submitted_too_fast', 'validation_failed', 'unsupported_type', 'ssrf_blocked', 'proxy_busy', 'path_not_allowed', 'upstream_error', 'upstream_redirect']) {
+    for (const code of ['email_not_allowed', 'invalid_code', 'too_many_attempts', 'invalid_form_token', 'submitted_too_fast', 'validation_failed', 'unsupported_type', 'ssrf_blocked', 'proxy_busy', 'path_not_allowed', 'upstream_error', 'upstream_redirect', 'invalid_signature', 'webhook_secret_not_set', 'webhook_not_stored']) {
       expect(moduleCodes, code).toContain(code);
     }
     for (const m of BUILTIN_MODULES) {
-      // sync needs contract 1.2 (app jobs + ctx.upstreams / ctx.records); the others run on 1.1.
-      expect(m.contract, m.name).toBe(m.jobs ? '^1.2' : '^1.1');
+      // webhooks needs 1.3 (secretsFor, ctx.records.create, passwordGate); sync 1.2 (app jobs); the others run on 1.1.
+      expect(m.contract, m.name).toBe(m.secretsFor ? '^1.3' : m.jobs ? '^1.2' : '^1.1');
       expect(rt.skillInfo(m.name)!.errors, m.name).toEqual(m.errors ?? []);
     }
   });

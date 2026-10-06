@@ -241,6 +241,34 @@ const feeder = defineModule<{ sources: Record<string, { upstream: string; collec
   configDefaults: { sources: {} },
 });
 
+/** A module that receives webhooks: its secrets follow its config, its endpoints come from the declared `webhooks` authority. */
+const hooks = defineModule<{ endpoints: Record<string, { collection: string }> }>({
+  name: 'hooks',
+  version: '1.0.0',
+  contract: '^1.3',
+  skill: { useWhen: 'another service posts events to the app', markdown: '# hooks' },
+  configSchema: z.object({ endpoints: z.record(z.string(), z.object({ collection: z.string() })).default({}) }),
+  configDefaults: { endpoints: {} },
+  secretsFor: (config) => Object.keys(config.endpoints).map((n) => ({ name: `HOOK_${n.toUpperCase()}`, description: `The secret of ${n}`, required: true })),
+  webhooks: {
+    endpoints: async ({ config, app }) =>
+      Object.entries(config.endpoints).map(([name, e]) => ({
+        name,
+        url: `https://${app.slug}.apps.example/__drobek/v1/hooks/${name}`,
+        collection: e.collection,
+        verify: 'hmac-sha256',
+        signed: true,
+        secret: `HOOK_${name.toUpperCase()}`,
+        enabled: true,
+        last_delivery_at: null,
+        last_status: null,
+      })),
+    deliveries: async () => [
+      { endpoint: 'pay', status: 'rejected_signature', http_status: 401, bytes: 10, reason: 'bad_signature', record_id: null, received_at: new Date(0).toISOString() },
+    ],
+  },
+});
+
 /** An operator-only module: no skill, only the core-hosted errors.reporter slot. */
 const sentinel = defineModule({
   name: 'sentinel',
@@ -350,7 +378,7 @@ beforeAll(async () => {
   rt = await loadModuleRuntime({
     env: ENV,
     log: noopLogger,
-    modules: [shop, store, gateway, proxy, vault, importer, feeder, sentinel, leads],
+    modules: [shop, store, gateway, proxy, vault, importer, feeder, sentinel, leads, hooks],
     skillsDir: null,
     deps: {
       rateLimit: memoryRateLimiter(),
@@ -380,6 +408,23 @@ beforeEach(async () => {
 function drizzleDb() {
   return drizzle(pg, { schema });
 }
+
+describe('the webhooks panel', () => {
+  it('lists each endpoint with its address and whether its secret is set; the secret named by the config is set write-only', async () => {
+    expect((await load('shop')).webhooks).toBeNull();
+    const empty = await load('hooks');
+    expect(empty.webhooks).toEqual({ endpoints: [], deliveries: expect.any(Array) });
+    expect(empty.secrets).toEqual([]);
+    await rt.configure({ app: { id: appId, slug: 'shop-app', workspaceId: role.ws!.id, workspaceSlug: 'acme' }, module: 'hooks', patch: { endpoints: { pay: { collection: 'payments' } } }, actorUserId: role.user!.id });
+    const d = await load('hooks');
+    expect(d.webhooks!.endpoints).toEqual([expect.objectContaining({ name: 'pay', url: 'https://shop-app.apps.example/__drobek/v1/hooks/pay', secret: 'HOOK_PAY', hasSecret: false })]);
+    expect(d.webhooks!.deliveries).toEqual([expect.objectContaining({ status: 'rejected_signature', reason: 'bad_signature' })]);
+    expect(d.secrets).toEqual([expect.objectContaining({ name: 'HOOK_PAY', required: true, hasSecret: false })]);
+    expect(doneOf(await post('hooks', { intent: 'set-secret', secret: 'HOOK_PAY', value: 'v'.repeat(24) }))).toBe('secret-set');
+    expect((await load('hooks')).webhooks?.endpoints?.[0]?.hasSecret).toBe(true);
+    expect(failed(await post('hooks', { intent: 'set-secret', secret: 'HOOK_OTHER', value: 'v'.repeat(24) })).status).toBe(400);
+  });
+});
 
 describe('the module page', () => {
   it('loader: the generated form, the secrets as status only, the banner; unknown module / app → 404', async () => {

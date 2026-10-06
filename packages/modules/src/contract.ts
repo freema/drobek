@@ -21,8 +21,10 @@
  * `services.contributions()`), `availability`, `dashboard.editor` and
  * `hooks.onAppDelete`. Contract 1.2 adds `jobs` (scheduled work), a route
  * context's `pendingConfig`, and a per-app job context's `upstreams.fetch`,
- * `records.import` and audit. Every addition is optional, so an older module
- * loads unchanged.
+ * `records.import` and audit. Contract 1.3 adds `secretsFor` (secrets that
+ * follow the app's config), the `webhooks` authority, a route context's
+ * `records.create` and a route's `passwordGate: 'skip'`. Every addition is
+ * optional, so an older module loads unchanged.
  *
  * Everything a handler needs arrives in a per-request, APP-SCOPED
  * ModuleContext: the caller (principal from the `drobek_eu` end-user cookie),
@@ -41,7 +43,7 @@ import type { ZodType } from 'zod';
  * e.g. `'^1.1'`); the server refuses to start a module whose range this
  * version does not satisfy.
  */
-export const MODULE_CONTRACT_VERSION = '1.2.0';
+export const MODULE_CONTRACT_VERSION = '1.3.0';
 
 /** Module names: lowercase, URL-, JS-property- and env-safe. */
 export const MODULE_NAME_RE = /^[a-z][a-z0-9]{1,30}$/;
@@ -916,6 +918,55 @@ export interface SyncAuthority<Config = unknown> {
   resume(view: OwnerView<Config>, source: string): Promise<boolean>;
 }
 
+// ── the webhooks authority (webhooks) ───────────────────────────────────────
+
+/** One endpoint of the module that receives webhooks, as the owner sees it. */
+export interface WebhookEndpointState {
+  name: string;
+  /** The address a sending service posts to (the app's production host). */
+  url: string;
+  collection: string;
+  /** How a delivery is verified, e.g. `hmac-sha256` (the module's own scheme names). */
+  verify: string;
+  /** Deliveries carry a signature (false: a shared token only). */
+  signed: boolean;
+  /** The name of the app's module secret the endpoint verifies with (its value is never shown). */
+  secret: string;
+  enabled: boolean;
+  last_delivery_at: string | null;
+  last_status: WebhookDeliveryStatus | null;
+}
+
+/** What happened to one delivery. */
+export type WebhookDeliveryStatus = 'accepted' | 'rejected_signature' | 'duplicate' | 'too_large' | 'rate_limited' | 'collection_error';
+
+/** One delivery (newest first in `deliveries`) — never its body. */
+export interface WebhookDelivery {
+  endpoint: string;
+  status: WebhookDeliveryStatus;
+  /** The HTTP status the sender got. */
+  http_status: number;
+  /** Body size in bytes. */
+  bytes: number;
+  /** A short code of why it was not accepted (`bad_signature`, `secret_not_set`, `quota_exceeded`, …), null when accepted. */
+  reason: string | null;
+  /** The stored record's `_id` (accepted), else null. */
+  record_id: string | null;
+  received_at: string;
+}
+
+/**
+ * The module that receives webhooks into the app's collections (the built-in
+ * `webhooks`) answers the OWNER — the dashboard and MCP (get_logs
+ * `webhooks`): core calls it only after it authorized a drobek account for
+ * the app.
+ */
+export interface WebhooksAuthority<Config = unknown> {
+  endpoints(view: OwnerView<Config>): Promise<WebhookEndpointState[]>;
+  /** The latest deliveries (newest first; `endpoint` narrows, `since` bounds, at most `limit`, ≤ 100). */
+  deliveries(view: OwnerView<Config>, query: { endpoint?: string; since?: Date; limit?: number }): Promise<WebhookDelivery[]>;
+}
+
 // ── per-app info (get_app / configure_module) ────────────────────────────────
 
 /** One app as a module sees it outside a request: its effective config + services. */
@@ -1115,6 +1166,16 @@ export interface DrobekModule<Config = unknown> {
    */
   onConfirmed?(before: Config, after: Config, context: ConfirmedContext): void | Promise<void>;
   secrets?: ModuleSecretDoc[];
+  /**
+   * Secrets that follow the app's config, in addition to `secrets`: the
+   * names this app's effective config uses (e.g. one signing secret per
+   * webhook endpoint). Core calls it with the effective config wherever it
+   * lists or reads the app's secrets — the dashboard, get_app,
+   * configure_module's `secrets_missing`, `ctx.secrets.get`,
+   * remove_module_secret. Names that are not UPPER_SNAKE are ignored; a
+   * throw counts as none.
+   */
+  secretsFor?(config: Config): ModuleSecretDoc[];
   rules?: RuleSurface;
   limits?: ModuleLimit[];
   /** Register the HTTP routes (called once at startup). */
@@ -1140,6 +1201,8 @@ export interface DrobekModule<Config = unknown> {
   upstreams?: UpstreamsAuthority<Config>;
   /** Contract 1.2 — only the module that imports data on a schedule (sync): the owner's view for the dashboard and MCP. */
   sync?: SyncAuthority<Config>;
+  /** Only the module that receives webhooks into the app's collections (webhooks): the owner's view for the dashboard and MCP. */
+  webhooks?: WebhooksAuthority<Config>;
   /**
    * Secret-free facts about this module's state for ONE app, shown to the
    * app's agents: get_app's `modules.<name>.info` and configure_module's
@@ -1340,6 +1403,16 @@ export interface ModuleContext<Config = unknown> extends ModuleServices {
   };
   /** Append an audit row for this app (actor derived by the server). */
   audit(action: string, meta?: Record<string, unknown>): Promise<void>;
+  /**
+   * Store new records (no owner) in one of THIS app's declared collections
+   * through the records authority (`create`: the collection's schema, the
+   * per-record size and the app's quotas apply; the end-user rules do not —
+   * the module authorized the caller itself). All or nothing. ModuleError
+   * `unavailable` when no records module is on for the workspace.
+   */
+  records: {
+    create(collection: string, records: Record<string, unknown>[]): Promise<Record<string, unknown>[]>;
+  };
   email: {
     /**
      * Send to allowed recipients only (never an arbitrary address). Resolves
@@ -1477,6 +1550,13 @@ export interface RouteOptions<Config = unknown, Body = unknown, Query = Record<s
    * endpoints a browser calls without custom headers (e.g. navigator.sendBeacon).
    */
   csrf?: 'sdk-header' | 'same-origin';
+  /**
+   * `skip`: the app's password gate does not apply to this route — for a
+   * route that authenticates the caller itself (a signed webhook from
+   * another server, which cannot unlock the app). Default: a
+   * password-protected app answers 401 `password_required` until unlocked.
+   */
+  passwordGate?: 'skip';
 }
 
 export interface ModuleRouter<Config = unknown> {

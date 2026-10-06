@@ -150,6 +150,10 @@ const config: KnipConfig = {
       // No browser SDK: the module only contributes auth's sign-in provider.
       entry: [],
     },
+    'modules/webhooks': {
+      // No browser SDK: apps read the stored deliveries through the data module.
+      entry: [],
+    },
 
     'examples/*': {
       // Same contract as modules/*: the SDK entry is loaded by path; `exports`

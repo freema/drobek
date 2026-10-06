@@ -160,6 +160,7 @@ export {
   type BoundRecords,
   type BoundSubmissions,
   type BoundSync,
+  type BoundWebhooks,
   type RunActor,
   type ConfigureInput,
   type ConfigureResult,

@@ -1770,6 +1770,53 @@ interface SyncAuthority<Config = unknown> {
     /** Clear a pause after failures (the next run is due at once); false when it was not paused so. */
     resume(view: OwnerView<Config>, source: string): Promise<boolean>;
 }
+/** One endpoint of the module that receives webhooks, as the owner sees it. */
+interface WebhookEndpointState {
+    name: string;
+    /** The address a sending service posts to (the app's production host). */
+    url: string;
+    collection: string;
+    /** How a delivery is verified, e.g. `hmac-sha256` (the module's own scheme names). */
+    verify: string;
+    /** Deliveries carry a signature (false: a shared token only). */
+    signed: boolean;
+    /** The name of the app's module secret the endpoint verifies with (its value is never shown). */
+    secret: string;
+    enabled: boolean;
+    last_delivery_at: string | null;
+    last_status: WebhookDeliveryStatus | null;
+}
+/** What happened to one delivery. */
+type WebhookDeliveryStatus = 'accepted' | 'rejected_signature' | 'duplicate' | 'too_large' | 'rate_limited' | 'collection_error';
+/** One delivery (newest first in `deliveries`) — never its body. */
+interface WebhookDelivery {
+    endpoint: string;
+    status: WebhookDeliveryStatus;
+    /** The HTTP status the sender got. */
+    http_status: number;
+    /** Body size in bytes. */
+    bytes: number;
+    /** A short code of why it was not accepted (`bad_signature`, `secret_not_set`, `quota_exceeded`, …), null when accepted. */
+    reason: string | null;
+    /** The stored record's `_id` (accepted), else null. */
+    record_id: string | null;
+    received_at: string;
+}
+/**
+ * The module that receives webhooks into the app's collections (the built-in
+ * `webhooks`) answers the OWNER — the dashboard and MCP (get_logs
+ * `webhooks`): core calls it only after it authorized a drobek account for
+ * the app.
+ */
+interface WebhooksAuthority<Config = unknown> {
+    endpoints(view: OwnerView<Config>): Promise<WebhookEndpointState[]>;
+    /** The latest deliveries (newest first; `endpoint` narrows, `since` bounds, at most `limit`, ≤ 100). */
+    deliveries(view: OwnerView<Config>, query: {
+        endpoint?: string;
+        since?: Date;
+        limit?: number;
+    }): Promise<WebhookDelivery[]>;
+}
 /** One app as a module sees it outside a request: its effective config + services. */
 interface ModuleAppView<Config = unknown> {
     app: HookApp;
@@ -1937,6 +1984,16 @@ interface DrobekModule<Config = unknown> {
      */
     onConfirmed?(before: Config, after: Config, context: ConfirmedContext): void | Promise<void>;
     secrets?: ModuleSecretDoc[];
+    /**
+     * Secrets that follow the app's config, in addition to `secrets`: the
+     * names this app's effective config uses (e.g. one signing secret per
+     * webhook endpoint). Core calls it with the effective config wherever it
+     * lists or reads the app's secrets — the dashboard, get_app,
+     * configure_module's `secrets_missing`, `ctx.secrets.get`,
+     * remove_module_secret. Names that are not UPPER_SNAKE are ignored; a
+     * throw counts as none.
+     */
+    secretsFor?(config: Config): ModuleSecretDoc[];
     rules?: RuleSurface;
     limits?: ModuleLimit[];
     /** Register the HTTP routes (called once at startup). */
@@ -1962,6 +2019,8 @@ interface DrobekModule<Config = unknown> {
     upstreams?: UpstreamsAuthority<Config>;
     /** Contract 1.2 — only the module that imports data on a schedule (sync): the owner's view for the dashboard and MCP. */
     sync?: SyncAuthority<Config>;
+    /** Only the module that receives webhooks into the app's collections (webhooks): the owner's view for the dashboard and MCP. */
+    webhooks?: WebhooksAuthority<Config>;
     /**
      * Secret-free facts about this module's state for ONE app, shown to the
      * app's agents: get_app's `modules.<name>.info` and configure_module's
@@ -2140,6 +2199,16 @@ interface ModuleContext<Config = unknown> extends ModuleServices {
     };
     /** Append an audit row for this app (actor derived by the server). */
     audit(action: string, meta?: Record<string, unknown>): Promise<void>;
+    /**
+     * Store new records (no owner) in one of THIS app's declared collections
+     * through the records authority (`create`: the collection's schema, the
+     * per-record size and the app's quotas apply; the end-user rules do not —
+     * the module authorized the caller itself). All or nothing. ModuleError
+     * `unavailable` when no records module is on for the workspace.
+     */
+    records: {
+        create(collection: string, records: Record<string, unknown>[]): Promise<Record<string, unknown>[]>;
+    };
     email: {
         /**
          * Send to allowed recipients only (never an arbitrary address). Resolves
@@ -2255,6 +2324,13 @@ interface RouteOptions<Config = unknown, Body = unknown, Query = Record<string, 
      * endpoints a browser calls without custom headers (e.g. navigator.sendBeacon).
      */
     csrf?: 'sdk-header' | 'same-origin';
+    /**
+     * `skip`: the app's password gate does not apply to this route — for a
+     * route that authenticates the caller itself (a signed webhook from
+     * another server, which cannot unlock the app). Default: a
+     * password-protected app answers 401 `password_required` until unlocked.
+     */
+    passwordGate?: 'skip';
 }
 interface ModuleRouter<Config = unknown> {
     get<Q = Record<string, string>>(path: string, opts: RouteOptions<Config, undefined, Q>, handler: RouteHandler<Config, undefined, Q>): void;
@@ -2605,6 +2681,8 @@ interface ModuleTestOptions {
     upstreams?: (name: string, request: UpstreamRequest) => Promise<UpstreamResponse>;
     /** A job's `ctx.records.import` (default: ModuleError `unavailable`, like a server without data). */
     records?: (collection: string, records: Record<string, unknown>[], opts: RecordsImportOptions) => Promise<RecordsImportResult>;
+    /** A route's `ctx.records.create` (default: ModuleError `unavailable`, like a server without data). */
+    createRecords?: (collection: string, records: Record<string, unknown>[]) => Promise<Record<string, unknown>[]>;
 }
 /** One request to the module's `endUsers.callback` (the dashboard-host IdP callback). */
 interface TestCallbackInit {

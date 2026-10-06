@@ -66,6 +66,7 @@ import {
   moduleRuntime,
   setModuleSecret,
   type BoundSync,
+  type BoundWebhooks,
   type ModuleDashboardEditor,
   type ModuleRuntime,
 } from '@drobek/modules';
@@ -93,6 +94,7 @@ import { loadChoices, loadFieldLimits } from '../module-choices.server.js';
 import { loadPendingBanner } from '../pending-banner.server.js';
 import { loadSyncBanner } from '../sync-banner.server.js';
 import type { SyncPanelData } from '../module-ui/sync-sources.js';
+import type { WebhooksPanelData } from '../module-ui/webhook-endpoints.js';
 import { canPublish } from '../view.js';
 
 /**
@@ -218,6 +220,19 @@ async function syncPanel(sync: BoundSync): Promise<SyncPanelData> {
   }
 }
 
+/** The deliveries the webhooks panel lists. */
+const WEBHOOKS_PANEL_DELIVERIES = 20;
+
+async function webhooksPanel(hooks: BoundWebhooks, secrets: { name: string; hasSecret: boolean }[]): Promise<WebhooksPanelData> {
+  try {
+    const [endpoints, deliveries] = await Promise.all([hooks.endpoints(), hooks.deliveries({ limit: WEBHOOKS_PANEL_DELIVERIES })]);
+    const set = new Set(secrets.filter((s) => s.hasSecret).map((s) => s.name));
+    return { endpoints: endpoints.map((e) => ({ ...e, hasSecret: set.has(e.secret) })), deliveries };
+  } catch {
+    return { endpoints: null, deliveries: [] };
+  }
+}
+
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const { access, app, runtime, name, hookApp } = await context(request, params, 'viewer');
   const view = await runtime.moduleView(hookApp, name);
@@ -239,6 +254,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   const done = new URL(request.url).searchParams.get('done');
   const sync = view.enabled ? await runtime.sync(hookApp) : null;
+  const hooks = view.enabled ? await runtime.webhooks(hookApp) : null;
   return {
     workspace: { slug: access.workspace.slug, name: access.workspace.name },
     app: { slug: app.slug },
@@ -286,6 +302,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     /** The scheduled-import module's sources (null on every other module's page). */
     sync: sync && sync.module === name ? await syncPanel(sync) : null,
     syncBanner: await loadSyncBanner(hookApp, access.workspace.slug),
+    /** The webhooks module's endpoints and deliveries (null on every other module's page). */
+    webhooks: hooks && hooks.module === name ? await webhooksPanel(hooks, view.secrets) : null,
     canEdit: canPublish(access.effectiveRole),
     done: done && /^[a-z-]{1,32}$/.test(done) ? done : null,
   };
@@ -474,8 +492,8 @@ async function secretAction(
 ) {
   const { intent, form, name, hookApp } = input;
   const secret = String(form.get('secret') ?? '');
-  const declared = runtime.get(name)?.secrets ?? [];
-  if (!declared.some((s) => s.name === secret)) {
+  const view = await runtime.moduleView(hookApp, name);
+  if (!view.secrets.some((s) => s.name === secret)) {
     return failure(400, { intent, target: secret, fields: {}, general: ['This module declares no such secret.'] });
   }
   const audit = (action: string, meta: Record<string, unknown>) =>
@@ -500,7 +518,6 @@ async function secretAction(
   if (value.trim() === '') {
     return failure(400, { intent, target: secret, fields: {}, general: ['Enter the secret value.'] });
   }
-  const view = await runtime.moduleView(hookApp, name);
   const rotated = view.secrets.some((s) => s.name === secret && s.hasSecret);
   try {
     await setModuleSecret({ appId: hookApp.id, module: name, name: secret, value });

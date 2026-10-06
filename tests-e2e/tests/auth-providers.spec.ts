@@ -8,7 +8,7 @@ import { callTool, mcpClient, type McpClient } from './helpers/mcp';
  * The auth module's sign-in provider slot on the dev stack.
  *
  * The dev stack runs the oidc provider module (DROBEK_MODULES =
- * hello,auth,email,forms,data,proxy,files,sync,oidc), off for every app until
+ * hello,auth,email,forms,data,proxy,files,sync,oidc,webhooks), off for every app until
  * its auth config turns it on, so this spec covers an app without a provider:
  *
  *  - GET /__drobek/v1/auth/providers lists only the e-mail code;

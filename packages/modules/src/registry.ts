@@ -81,7 +81,7 @@ const DASHBOARD_EDITORS = new Set<string>(['collections', 'upstreams']);
 const DASHBOARD_TITLE_MAX = 60;
 const DASHBOARD_DESCRIPTION_MAX = 200;
 const HOOKS = ['onAppCreate', 'onPublish', 'onAppDelete'] as const;
-const OWNER_AUTHORITIES = ['endUsers', 'mail', 'records', 'submissions', 'files', 'upstreams', 'sync'] as const;
+const OWNER_AUTHORITIES = ['endUsers', 'mail', 'records', 'submissions', 'files', 'upstreams', 'sync', 'webhooks'] as const;
 const CONFIG_HOOKS = ['salvageConfig', 'confirmRequired', 'onConfirmed'] as const;
 const DEFAULTS_ENV_RE = /^DROBEK_MODULE_([A-Z0-9]+)_DEFAULTS$/;
 
@@ -243,6 +243,7 @@ export function validateModule(m: AnyModule): void {
   for (const s of m.secrets ?? []) {
     if (!SECRET_NAME_RE.test(s.name)) fail(`secret name "${s.name}" must be UPPER_SNAKE`);
   }
+  if (m.secretsFor !== undefined && typeof m.secretsFor !== 'function') fail('secretsFor must be a function of the app config');
   for (const l of m.limits ?? []) {
     if (!ENV_NAME_RE.test(l.env)) fail(`limit "${l.env}" must be an UPPER_SNAKE env name`);
     if (!Number.isInteger(l.default) || l.default <= 0) fail(`limit "${l.env}" needs a positive integer default`);
@@ -405,6 +406,7 @@ export function appSurfaceOf(m: AnyModule): string[] {
   if (!isEmptyConfigSchema(m.configSchema)) out.push('configSchema (an app config)');
   for (const k of CONFIG_HOOKS) if (m[k] !== undefined) out.push(k);
   if ((m.secrets ?? []).length > 0) out.push('secrets');
+  if (m.secretsFor !== undefined) out.push('secretsFor');
   if (m.rules !== undefined) out.push('rules');
   if ((m.errors ?? []).length > 0) out.push('errors');
   for (const k of OWNER_AUTHORITIES) if (m[k] !== undefined) out.push(k);
@@ -627,6 +629,7 @@ export function checkModuleSet(modules: AnyModule[], env: NodeJS.ProcessEnv = pr
   filesAuthorityOf(modules);
   upstreamsAuthorityOf(modules);
   syncAuthorityOf(modules);
+  webhooksAuthorityOf(modules);
   checkRequires(modules);
   const limitNames = new Map<string, string>();
   for (const m of modules) {
@@ -712,6 +715,15 @@ export function syncAuthorityOf(modules: AnyModule[]): AnyModule | null {
   const owners = modules.filter((m) => m.sync !== undefined);
   if (owners.length > 1) {
     throw new ModuleLoadError(`only one module may run scheduled imports (sync); active: ${owners.map((m) => m.name).join(', ')}`);
+  }
+  return owners[0] ?? null;
+}
+
+/** The one active module that receives webhooks (`webhooks`), or null (two refuse the start). */
+export function webhooksAuthorityOf(modules: AnyModule[]): AnyModule | null {
+  const owners = modules.filter((m) => m.webhooks !== undefined);
+  if (owners.length > 1) {
+    throw new ModuleLoadError(`only one module may receive webhooks (webhooks); active: ${owners.map((m) => m.name).join(', ')}`);
   }
   return owners[0] ?? null;
 }

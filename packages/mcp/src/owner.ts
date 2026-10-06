@@ -18,7 +18,7 @@
  * answers carry ids, roles and states only, never an end user's address.
  */
 import { AUDIT_ACTIONS, actorKindForSurface, writeAudit } from '@drobek/audit';
-import { confirmUrl, deleteModuleSecret, isModuleError, secretsSet, type EndUserRecord, type HookApp } from '@drobek/modules';
+import { confirmUrl, deleteModuleSecret, isAppFacing, isModuleError, secretsSet, type EndUserRecord, type HookApp } from '@drobek/modules';
 import { authorizeApp } from './access.js';
 import { ToolError } from './errors.js';
 import { budgetFlags, cappedPage, cursorArg, dayArg, dayRange, limitArg, textArg, type OwnerListPayload } from './owner-list.js';
@@ -302,7 +302,8 @@ export async function removeModuleSecretTool(ctx: CallContext, args: { app_id: s
   if (!m) {
     throw new ToolError('not_found', `This server has no module "${String(args.module)}".`, { available: ctx.modules.summary().map((s) => s.name), hint: 'skill_info()' });
   }
-  const declared = (m.secrets ?? []).map((s) => s.name);
+  const docs = isAppFacing(m) ? (await ctx.modules.moduleView(hookApp(app), m.name)).secrets : [];
+  const declared = docs.map((s) => s.name);
   if (typeof args.name !== 'string' || !declared.includes(args.name)) {
     throw new ToolError('not_found', `The ${m.name} module declares no secret "${String(args.name)}".`, { secrets: declared, hint: `skill_info('${m.name}')` });
   }
@@ -312,7 +313,7 @@ export async function removeModuleSecretTool(ctx: CallContext, args: { app_id: s
     return { app_id: app.id, module: m.name, name, removed: false, note: `${name} is not set for this app: nothing to remove.` };
   }
   if (args.user_confirmed !== true) {
-    const required = (m.secrets ?? []).find((s) => s.name === name)?.required === true;
+    const required = docs.find((s) => s.name === name)?.required === true;
     throw new ToolError(
       'user_confirmation_required',
       `Removing ${name} deletes its stored value for "${app.name ?? app.slug}" at once: what the ${m.name} module needs it for stops working${required ? ' (the module requires it)' : ''}, and only the owner can set a value again, in the dashboard — never through you. Ask the user whether to remove ${name}, and call again with user_confirmed: true only after they say yes.`,

@@ -165,7 +165,7 @@ const serveCache = subscribeServeCache(serveStore, { log });
 const appsHost = createAppsHostMiddleware({
   store: serveStore,
   // `/__drobek/*` on the app hosts: the SDK + module routes.
-  deps: { platform: (req, { app }) => modules.handle(req, app) },
+  deps: { platform: (req, { app }) => modules.handle(req, app), platformSkipsGate: (method, path) => modules.skipsPasswordGate(method, path) },
 }) as RequestHandler;
 
 // The asset upload URLs (create_asset_upload / the Assets tab).

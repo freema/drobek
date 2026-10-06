@@ -113,6 +113,9 @@ importers:
       drobek-module-sync:
         specifier: workspace:*
         version: link:../../modules/sync
+      drobek-module-webhooks:
+        specifier: workspace:*
+        version: link:../../modules/webhooks
       esbuild:
         specifier: ^0.28.2
         version: 0.28.2
@@ -525,6 +528,40 @@ importers:
       drobek-module-proxy:
         specifier: workspace:*
         version: link:../proxy
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.7
+        version: 3.2.6(@types/node@22.20.0)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.1)
+
+  modules/webhooks:
+    dependencies:
+      '@drobek/apps':
+        specifier: workspace:*
+        version: link:../../packages/apps
+      '@drobek/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@drobek/modules':
+        specifier: workspace:*
+        version: link:../../packages/modules
+      '@paralleldrive/cuid2':
+        specifier: ^2.2.2
+        version: 2.3.1
+      drizzle-orm:
+        specifier: ^0.45.3
+        version: 0.45.3(@electric-sql/pglite@0.2.17)(@types/pg@8.20.0)(pg@8.22.0)(postgres@3.4.9)
+    devDependencies:
+      '@electric-sql/pglite':
+        specifier: ^0.2.17
+        version: 0.2.17
+      '@types/node':
+        specifier: ^22
+        version: 22.20.0
+      drobek-module-data:
+        specifier: workspace:*
+        version: link:../data
       typescript:
         specifier: ^5.7.3
         version: 5.9.3
@@ -1215,6 +1252,9 @@ importers:
       drobek-module-sync:
         specifier: workspace:*
         version: link:../../modules/sync
+      drobek-module-webhooks:
+        specifier: workspace:*
+        version: link:../../modules/webhooks
       typescript:
         specifier: ^5.7.3
         version: 5.9.3

@@ -3,7 +3,7 @@
 A **platform module** is the only way an app on drobek gets a backend. It is
 platform code the **operator** installs, never code an app author or agent
 uploads: the server still never executes app code. The contract is the
-TypeScript package `@drobek/modules` (contract version `1.2.0`, semver:
+TypeScript package `@drobek/modules` (contract version `1.3.0`, semver:
 `MODULE_CONTRACT_VERSION`).
 
 A module contributes, for every app on the server:
@@ -44,8 +44,10 @@ records with per-operation rules), [`forms`](#the-built-in-forms-module)
 [`email`](#the-built-in-email-module) (e-mails to the app's owners),
 [`proxy`](#the-built-in-proxy-module) (calls to an external API with its key
 added server-side), [`sync`](#the-built-in-sync-module) (scheduled imports
-into a data collection) and [`oidc`](#the-built-in-oidc-module) (company
-sign-in with an OpenID Connect provider, through `auth`). A server may run fewer or more:
+into a data collection), [`oidc`](#the-built-in-oidc-module) (company
+sign-in with an OpenID Connect provider, through `auth`) and
+[`webhooks`](#the-built-in-webhooks-module) (signed incoming webhooks stored
+in a data collection). A server may run fewer or more:
 `skill_info()` over MCP and the workspace's **Modules** tab in the dashboard
 list the ones this server runs. `skill_info('<name>')` gives the agent the
 module's code examples, SDK types, config schema, limits and error codes.
@@ -148,7 +150,7 @@ The server **refuses to start** when anything is off: an unknown package, an
 export that is not a module, an invalid name, a short name whose package
 exports another name, defaults that fail the schema, a `contract` range the
 server's `MODULE_CONTRACT_VERSION` does not satisfy (`module "crm": it needs
-module contract ^2.0, but this server implements 1.2.0 — …`), two modules
+module contract ^2.0, but this server implements 1.3.0 — …`), two modules
 with one name, a missing `sdk.entry`, a reserved name (`sdk`, `v1`,
 `drobek`, `internal`, `errors`), a module whose `requires` is not enabled
 (`module "forms" requires the module "email": add it to DROBEK_MODULES
@@ -263,7 +265,7 @@ module is "used" through its configuration, as for every module — there is
 no per-app switch.
 
 The dev compose enables both example modules and every built-in module
-(`DROBEK_MODULES=hello,auth,email,forms,data,proxy,files,sync,oidc,drobek-module-acme-crm,drobek-module-ops-probe`,
+(`DROBEK_MODULES=hello,auth,email,forms,data,proxy,files,sync,oidc,webhooks,drobek-module-acme-crm,drobek-module-ops-probe`,
 the last two installed into `./.modules` by `task dev`, `HELLO_WAVES_PER_MINUTE=5`,
 relaxed `AUTH_*` limits because every local request shares one client IP,
 `DATA_MAX_DOCS_PER_APP=5` so the quota e2e trips quickly); so does the e2e
@@ -456,7 +458,7 @@ The contract fields of 1.1:
 
 | Field | Rules |
 | ----- | ----- |
-| `contract` | a semver range matched against `MODULE_CONTRACT_VERSION` (`1.2.0`); not satisfied → the start is refused; missing → a warning. The built-in modules and the example declare `'^1.1'`; `sync` (app jobs) declares `'^1.2'` |
+| `contract` | a semver range matched against `MODULE_CONTRACT_VERSION` (`1.3.0`); not satisfied → the start is refused; missing → a warning. The built-in modules and the example declare `'^1.1'`; `sync` (app jobs) declares `'^1.2'`; `webhooks` (config-named secrets) declares `'^1.3'` |
 | `errors` | `[{ code, meaning, fix }]`: `code` matches `^[a-z][a-z0-9_]{2,40}$`, is not a core code (`CORE_ERROR_CODES`, the catalogue in `/llms-full.txt`) and is declared by no other active module; meaning and fix are required |
 | `slots` / `contributes` | see [Slots](#slots) |
 | `availability` | `'default'` (the default: every workspace of the server) or `'opt-in'` (only the workspaces it is enabled for — [Per-workspace enabling](#per-workspace-enabling-opt-in-modules)); returned by `skill_info('<name>')` and the dashboard's module view |
@@ -480,6 +482,15 @@ The contract fields of 1.2 (additive: a module declaring `'^1.1'` loads unchange
 | `OperatorModule` | a module declared without `skill` (`defineModule` types it `OperatorModule`; `DrobekModule` keeps `skill` required) — allowed only without an app surface ([Operator-only modules](#operator-only-modules)); a server that predates it refuses a module without a skill (`skill.useWhen is required`) |
 | `ModuleSlot.operatorOnly` | `true` on a slot whose contributions configure the server, not apps (the core-hosted `errors.reporter`, `email`'s `email.transport`): a module contributing only to such slots needs no skill. Default `false`; anything but a boolean refuses the start |
 
+The contract fields of 1.3 (additive: a module declaring `'^1.1'` or `'^1.2'` loads unchanged):
+
+| Field | Rules |
+| ----- | ----- |
+| `secretsFor` | `(config) => [{ name, description, required? }]`: secrets that follow the app's config (the `webhooks` module: one per endpoint), declared next to `secrets` — `ctx.secrets.get`, the dashboard's Secrets section, `get_app`'s `secrets`, `remove_module_secret` and the `secrets_missing` check of `configure_module` read both. A secret stored under a name the config no longer declares stays listed (not required) until the owner removes it |
+| `ModuleContext.records.create` | a route writes records through the records module — see [`ModuleContext`](#modulecontext) |
+| `RouteOptions.passwordGate` | `'skip'`: a non-GET route that authenticates its caller itself passes a password-protected app's gate — see [Routes](#routes-modulerouter) |
+| `webhooks` | the owner of incoming webhooks (the built-in `webhooks`; two refuse the start): `endpoints(view)` → `[{ name, url, collection, verify, signed, secret, enabled, last_delivery_at, last_status }]`, `deliveries(view, { since?, limit? })` → `[{ endpoint, status, http_status, bytes, reason, record_id, received_at }]` — what the dashboard's endpoints panel and `get_logs({ kind: 'webhooks' })` read |
+
 ### Operator-only modules
 
 A module that serves only the server itself — an error reporter, an e-mail
@@ -491,7 +502,7 @@ That is allowed only while nothing of it reaches apps:
   (`configSchema: z.object({}), configDefaults: {}`), and no `salvageConfig`,
   `confirmRequired` or `onConfirmed`;
 - no owner authority (`endUsers`, `mail`, `records`, `submissions`, `files`,
-  `upstreams`, `sync`), no `availability: 'opt-in'`, no `dashboard.editor`,
+  `upstreams`, `sync`, `webhooks`), no `availability: 'opt-in'`, no `dashboard.editor`,
   no `scope: 'app'` job, no `compose`;
 - every slot it declares and every slot it contributes to is
   `operatorOnly` — the core-hosted `errors.reporter` and the `email`
@@ -534,7 +545,8 @@ section per active module. The built-in modules declare theirs: `auth`
 (`submitted_too_fast`, `invalid_form_token`), `data` (`validation_failed`,
 `invalid_schema`, `pending_confirmation`), `files` (`unsupported_type`), `proxy`
 (`path_not_allowed`, `ssrf_blocked`, `upstream_error`, `proxy_busy`,
-`config_error`); `oidc` (`oidc_discovery_failed`, `oidc_token_invalid`)
+`config_error`), `webhooks` (`invalid_signature`, `webhook_secret_not_set`,
+`webhook_not_stored`); `oidc` (`oidc_discovery_failed`, `oidc_token_invalid`)
 declares codes no route answers — its failures reach the app as auth's
 `provider_error` — so agents can read the causes the server logs.
 
@@ -551,6 +563,7 @@ r.post(
     maxBodyBytes: 1024,                              // default 32 KiB
     bodyTypes: ['json', 'multipart'],                // default ['json']; multipart = text fields only; 'raw' = the Buffer; ['file'] = one streamed file
     csrf: 'sdk-header',                              // default; 'same-origin' for sendBeacon-style calls
+    passwordGate: 'skip',                            // optional (1.3): a POST that authenticates its caller itself passes a password-protected app's gate
   },
   async (req, ctx) => ({ waves: 1 })                 // JSON 200, or respond(status, body, headers)
 );
@@ -619,7 +632,10 @@ agent-facing error catalogue (`/llms-full.txt`).
 
 Platform routes answer on an app host **after** the app is resolved and after
 its visibility gate: a password-protected app answers `401
-password_required` (JSON) until the visitor unlocked it. The apps-origin
+password_required` (JSON) until the visitor unlocked it — except a route
+declared with `passwordGate: 'skip'` (contract 1.3, non-GET methods only),
+which authenticates its caller itself, as the `webhooks` module's endpoint
+checks the sender's signature. The apps-origin
 security headers (CSP, `X-Content-Type-Options`, …) override whatever a module
 sets.
 
@@ -643,7 +659,8 @@ Everything a handler gets is scoped to **one app and one module**:
 | `rules.decide(rule, ownerId?)` | `{ ok: true }` or `{ ok: false, status: 401 \| 403 }` |
 | `limits()` | this workspace's limits (env defaults or the limits provider) |
 | `rateLimit(bucket, key, max, windowMs)` | fixed-window counter in Redis, namespaced to the module and app |
-| `secrets.get(name)` | the plaintext of a **declared** secret of this app, or `null`; reading an undeclared name throws |
+| `secrets.get(name)` | the plaintext of a **declared** secret of this app (`secrets`, plus `secretsFor(config)` of this config), or `null`; reading an undeclared name throws |
+| `records.create(collection, records)` | (1.3) writes records into one of this app's collections through the records module (the built-in `data`): its schema, quotas and the app's records limits apply, its end-user rules do not — the route decided who may write. Returns the stored records; `unavailable` without a records module |
 | `audit(action, meta?)` | an audit row `<module>.<action>` for this app, actor kind `end_user` |
 | `email.send({ to, subject, text })` → `{ sent }` | `to` is one reference or a list: `{ config: 'dotted.path' }` (addresses in this app's owner-confirmed config), `{ principal: true }` (the signed-in end user), `{ appOwners: true }` (the editors and workspace-admins of the app's drobek workspace) or `{ signInAddress }` (the address a visitor typed into a sign-in form: always alone, for a sign-in code only; the module decides first that it may sign in; only the module that owns end-user sessions — `endUsers`, the built-in `auth` — may use it, any other module gets `403 forbidden` with `details.reason: sign_in_address_not_allowed`). Never an arbitrary address. Addresses are validated, lowercased and de-duplicated; each gets its own message. The subject is one line (control and line-separator characters become spaces, 200 characters at most); the text (≤ 20 000 characters) is escaped into the drobek layout. Rejects with `limit_exceeded` / `unavailable` — see [Module e-mail](#module-e-mail). |
 | `db`, `log` | the database (drizzle) and a logger |
@@ -1605,7 +1622,7 @@ loading/error states) and `port-artifact` (moving a Claude artifact to
 drobek: text files unchanged with `write_files`, every binary through
 `create_asset_upload` at the same path, what the app CSP changes, no
 `window.claude.*`). With every built-in module enabled `skill_info()` lists
-12 skills: `auth, email, forms, data, proxy, files, sync, oidc, debug,
+13 skills: `auth, email, forms, data, proxy, files, sync, oidc, webhooks, debug,
 port-artifact, start, ui` (plus `hello` and the opt-in `acmecrm` in the dev
 stack).
 
@@ -1915,7 +1932,8 @@ pinned counter module against candidate core packages before release.
 | --- | --- | --- |
 | `1.0.0` | v0.1.0 – v0.1.4 | `'^1.0'` (or no `contract`) |
 | `1.1.0` | v0.2.0 – v0.5.x | `'^1.1'` or `'^1.0'` |
-| `1.2.0` | v0.6.0 – | `'^1.2'` (a module with `jobs`), `'^1.1'` or `'^1.0'` |
+| `1.2.0` | v0.6.0 – v0.8.x | `'^1.2'` (a module with `jobs`), `'^1.1'` or `'^1.0'` |
+| `1.3.0` | v0.9.0 – | `'^1.3'` (a module with `secretsFor`, `records.create` or `passwordGate`), `'^1.2'`, `'^1.1'` or `'^1.0'` |
 
 `@freema/drobek-modules@X.Y.Z` is the contract of the image `ghcr.io/freema/drobek:vX.Y.Z`
 (both come from one tag). Additive contract changes raise the minor version
@@ -2782,6 +2800,66 @@ code on the server and without the API key leaving the dashboard.
   `get_app` shows each source's state under `modules.sync.info.sources`.
 - `duplicate_app` never copies the sources (they would start calling an
   external API from the copy); deleting the app removes its sources and runs.
+
+## The built-in `webhooks` module
+
+[`modules/webhooks`](../modules/webhooks) (`drobek-module-webhooks`, contract
+`^1.3`, requires `data`): another service — payments, code hosting, a form
+service — notifies the app with webhooks; drobek verifies each delivery and
+stores it as a record of a data collection the app reads with
+`drobek.data`. No app code runs on the server. `skill_info('webhooks')`. The
+dashboard calls it **Incoming webhooks**.
+
+- **Config** — `endpoints: { <name>: { collection, verify, header?, secret?,
+  id_header?, max_bytes?, enabled } }`: `name` matches `^[a-z][a-z0-9_-]{0,39}$`
+  and is the last path segment of the address
+  `https://<app host>/__drobek/v1/webhooks/<name>`; `collection` is declared
+  in the data config; `verify` is `hmac-sha256` (an HMAC-SHA256 of the raw
+  body in `header`, default `X-Webhook-Signature`: hex, `sha256=<hex>` or
+  base64), `stripe` (the `Stripe-Signature` scheme with a signed timestamp,
+  300 s tolerance), `github` (`X-Hub-Signature-256`) or `none-with-token`
+  (a shared token in `header`, default `X-Webhook-Token`, or `?token=` — no
+  signature); `secret` names the app secret (default
+  `WEBHOOK_SECRET_<NAME>`); `id_header` names the header with the sender's
+  event id (default `Webhook-Id`); `max_bytes` lowers
+  `WEBHOOKS_MAX_BODY_BYTES` for the endpoint. A new endpoint, a changed
+  collection, or a change from a signed scheme to `none-with-token` waits
+  for the owner's confirmation; `configure_module` refuses an endpoint past
+  `WEBHOOKS_MAX_ENDPOINTS_PER_APP`. Each endpoint's secret is declared
+  through `secretsFor` and set only in the dashboard.
+- **A delivery** — `POST` on the app host; the app's password gate does not
+  apply and no SDK header is needed. In order: the endpoint exists and is
+  enabled (`404`), `WEBHOOKS_PER_APP_PER_MINUTE` (`429`), the size
+  (`WEBHOOKS_MAX_BODY_BYTES`, at most 1 MiB, `413`), the secret is set
+  (`503 webhook_secret_not_set` — the sender retries), the signature over
+  the raw body in constant time (`401 invalid_signature` with
+  `details.reason`: `missing_signature`, `bad_signature`,
+  `timestamp_out_of_tolerance`), the sender's event id (a retry of a stored
+  delivery answers `200 { ok, duplicate: true }`; ids are kept 7 days), then
+  one record `{ source, event_type?, event_id?, received_at, payload }`
+  through `ctx.records.create` → `200 { ok, id }`. A JSON body is stored
+  parsed, a form body as its fields, anything else as text. A record over
+  the data module's `DATA_MAX_DOC_BYTES` answers `413 payload_too_large`
+  (`too_large`, reason `record_too_large`: a retry cannot fit either). A
+  record the collection refuses otherwise (its schema, a quota) answers
+  `503 webhook_not_stored` and frees the event id, so the sender's retry can
+  land.
+- **The log** — every delivery past the endpoint check is logged without
+  its body, headers or secret (`mod_webhooks_deliveries`: endpoint, status
+  `accepted` / `rejected_signature` / `duplicate` / `too_large` /
+  `rate_limited` / `collection_error`, HTTP status, bytes, reason, record
+  id; a flood of refusals costs one row per minute). The module's daily
+  job keeps 30 days and at most 1000 deliveries per app, and drops expired
+  event ids.
+- **The owner** — the module page lists the endpoints (the copyable
+  address, the verification, the secret and whether it is set, the
+  collection, the last delivery) and the latest deliveries, above the
+  Secrets form. Over MCP: `get_logs({ app_id, kind: 'webhooks' })` and
+  `get_app`'s `modules.webhooks.info.endpoints`; secrets stay
+  dashboard-only.
+- `duplicate_app` proposes the endpoints through the copy's confirmation
+  (never their secrets: the copy refuses deliveries until its owner sets
+  them); deleting the app removes its deliveries and event ids.
 
 ## The built-in `oidc` module
 

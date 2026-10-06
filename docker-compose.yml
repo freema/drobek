@@ -161,7 +161,7 @@ services:
       # Auth sign-in limits are relaxed: behind Caddy the e2e signs in many times
       # from one client IP. A request without X-Real-IP has no per-IP bucket, so
       # the forms e2e sends its own X-Real-IP to count.
-      DROBEK_MODULES: ${DROBEK_MODULES:-hello,auth,email,forms,data,proxy,files,sync,oidc,drobek-module-acme-crm,drobek-module-ops-probe}
+      DROBEK_MODULES: ${DROBEK_MODULES:-hello,auth,email,forms,data,proxy,files,sync,oidc,webhooks,drobek-module-acme-crm,drobek-module-ops-probe}
       DROBEK_MODULES_DIR: ${DROBEK_MODULES_DIR:-/data/modules}
       DROBEK_MODULES_UNLOCKED: ${DROBEK_MODULES_UNLOCKED:-}
       HELLO_WAVES_PER_MINUTE: ${HELLO_WAVES_PER_MINUTE:-5}
@@ -244,6 +244,7 @@ services:
       - /repo/modules/files/node_modules
       - /repo/modules/sync/node_modules
       - /repo/modules/oidc/node_modules
+      - /repo/modules/webhooks/node_modules
       - files_data:/data/files
       - assets_data:/data/assets
       # Modules installed on the host into ./.modules/<name>/ (+ modules.lock.json).

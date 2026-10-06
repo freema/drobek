@@ -176,6 +176,15 @@ describe('renderBriefing', () => {
   });
 });
 
+describe('incoming events', () => {
+  it('with the webhooks module: events from other services go to it, without it no webhook is promised', () => {
+    const withHooks = renderBriefing({ skills: [{ name: 'webhooks', use_when: 'another service notifies the app' }] });
+    expect(withHooks).toContain("call `skill_info('webhooks')`");
+    expect(withHooks).toContain('The app has no server code to receive a POST');
+    expect(renderBriefing({ skills: [{ name: 'data', use_when: 'x' }] })).not.toContain('webhooks');
+  });
+});
+
 describe('onboarding', () => {
   it('server instructions name list_apps, the start skill, preview_url and publish-on-request', () => {
     expect(SERVER_INSTRUCTIONS).toContain('Start with `list_apps`');

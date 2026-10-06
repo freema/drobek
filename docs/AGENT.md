@@ -150,7 +150,7 @@ answers `not_found`, the same as one that does not exist.
 | `delete_record` | write, editor+ | destructive, idempotent | Deletes one record for good (the Data tab's Delete); `not_found` for an unknown record; audited `data.record_delete`. |
 | `delete_collection` | write, editor+ | destructive, idempotent | Deletes a collection with its records and its declaration in the data config, in one transaction (the Data tab's Delete collection). Needs `user_confirmed: true` — the user's explicit yes (else `user_confirmation_required` with the record count); takes the app's single-writer lease. Audited `data.collection_delete` with the agent as the actor. |
 | `purge_orphan_records` | write, editor+ | destructive, idempotent | Deletes the records of collections the data config no longer declares (the Data tab's Orphan records) — every orphan collection, or the one named in `collection`. Needs `user_confirmed: true` (else `user_confirmation_required` with the `orphans`); no orphans → `purged: []`. Audited `data.collection.purge`. |
-| `get_logs` | read, viewer+ | read-only | `kind: runtime` (browser errors from the beacon — uncaught `error` / `unhandledrejection`, `resource` for a file that failed to load, `csp` for a request the CSP blocked, each with the `version` its page was served from, plus the latest version's page loads and errors on the envelope — and failed runs of a module's scheduled job, type `module_job` with `module` and `job`), `compile` (the compile history) or `requests` (daily request and module-call stats with the top failing paths per status class, path only), or `sync` (the latest runs of the app's sync sources: source, trigger, status, records, error), ≤ 100 entries, 30-day window, inside an untrusted envelope. |
+| `get_logs` | read, viewer+ | read-only | `kind: runtime` (browser errors from the beacon — uncaught `error` / `unhandledrejection`, `resource` for a file that failed to load, `csp` for a request the CSP blocked, each with the `version` its page was served from, plus the latest version's page loads and errors on the envelope — and failed runs of a module's scheduled job, type `module_job` with `module` and `job`), `compile` (the compile history) or `requests` (daily request and module-call stats with the top failing paths per status class, path only), `sync` (the latest runs of the app's sync sources: source, trigger, status, records, error) or `webhooks` (the latest incoming webhook deliveries: endpoint, status, HTTP status, bytes, reason, record id — never the body), ≤ 100 entries, 30-day window, inside an untrusted envelope. |
 | `sync_now` | write, editor+ | destructive, not idempotent, open world | Runs one of the app's sync sources (the `sync` module's scheduled imports) now and returns the run `{ source, trigger, started_at, duration_ms, status, records, inserted?, updated?, deleted?, error }`; a paused source runs too, and a successful run resumes one paused after failed runs. A failed run is `status: "failed"` with its `error`, not a tool error — nothing changed. `not_found` (+ `available`), `rate_limited` (`SYNC_NOW_PER_MINUTE` per source, `SYNC_RUNS_PER_HOUR_PER_APP`), `busy` (`reason: "sync_running"`), `limit_exceeded`, `module_not_enabled`. Audited `sync.run` with the agent as the actor. |
 | `create_asset_upload` | write, editor+ | not destructive | A single-use upload URL (30 min) for ONE binary file — video, audio, image, font — at `path`, plus a `curl -T <file> '<url>'` line. The file never passes through the model; the preview serves it at `/<path>` next to the app's files, production after the next `publish`. |
 | `list_assets` | read, viewer+ | read-only | The app's draft assets (path, sniffed type, size, time, `published`), the paths production serves that the draft deleted (`published_only`), `changes_pending_publish` and the quota usage. |
@@ -431,7 +431,9 @@ unchanged.
   `skill_info` before using a backend. With the `sync` module active it
   sends work on a schedule (crons, periodic refreshes from an external API)
   to `skill_info('sync')`: no app code runs on the server, sync imports an
-  upstream's JSON into a data collection.
+  upstream's JSON into a data collection. With the `webhooks` module active it sends
+  events another service posts to the app to `skill_info('webhooks')`: an
+  endpoint verifies each delivery and stores it in a data collection.
 - **Rules** — no secrets in files; the single-writer lease (`app_locked`);
   `app_locked_by_admin` means the operator took the app down; give the user
   the `preview_url` after every successful compile; publish only on the
@@ -447,7 +449,7 @@ lines). `skill_info` serves two kinds:
 
 - **module skills** — each enabled module's own `SKILL.md`
   (`modules/<name>/SKILL.md`): `auth`, `email`, `forms`, `data`, `proxy`,
-  `files`, `sync`, `oidc` (the steps for one app, from configuration to the SDK:
+  `files`, `sync`, `oidc`, `webhooks` (the steps for one app, from configuration to the SDK:
   [Using modules in an app](./MODULES.md#using-modules-in-an-app));
 - **general skills** — `skills/<name>/SKILL.md` (`DROBEK_SKILLS_DIR`):
   `start` (how an app works and the write → compile → preview → publish
