@@ -1,6 +1,7 @@
 # drobek (PUBLIC core) — CI
 #
-#   quality  doc-lint → lint → typecheck → knip → unit tests (the `task check` pieces)
+#   quality  doc-lint → lint → typecheck → knip (the `task check` pieces)
+#   unit     the unit tests, a job of their own so both stay within 10 minutes
 #   module-compatibility  (module-compatibility.yml) the pinned external
 #            drobek-module-counter typechecked, built, tested, packed and
 #            loaded against this checkout's packed public packages
@@ -20,7 +21,7 @@
 #            passed is pushed as ghcr.io/freema/drobek:<sha> (main) or
 #            :<sha>-vX.Y.Z (tags): a tag and main on the same commit build
 #            different VERSIONs and must not overwrite each other.
-#   quality, module-compatibility and image → e2e run in parallel.
+#   quality, unit, module-compatibility and image → e2e run in parallel.
 #   The release gate — three more jobs, on tags only (skipped on main):
 #   audit    `pnpm audit --prod --audit-level high` over the lockfile: an
 #            advisory of high or critical severity in a production
@@ -33,7 +34,7 @@
 #   rehearsal (after e2e, selfhost-rehearsal.yml) the image e2e pushed as
 #            <sha>-vX.Y.Z, pulled like a VPS does: the docs/SELF-HOSTING.md
 #            quickstart, `task backup` and a restore on a second machine.
-#   promote  (main and tags, after quality, module-compatibility and e2e
+#   promote  (main and tags, after quality, unit, module-compatibility and e2e
 #            pass; a tag also needs audit, scan and rehearsal) no rebuild —
 #            registry-side tags of the image the e2e job tested and pushed:
 #              main       edge
@@ -107,7 +108,7 @@ env:
 
 jobs:
   quality:
-    name: Lint · typecheck · unit
+    name: Lint · typecheck
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -139,6 +140,28 @@ jobs:
 
       - name: Knip (unused files, exports, dependencies)
         run: pnpm knip
+
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace packages
+        run: pnpm build:packages
 
       - name: Unit tests
         run: pnpm test
@@ -355,12 +378,13 @@ jobs:
   promote:
     name: Image tags (edge, vX.Y.Z, latest, previous)
     runs-on: ubuntu-latest
-    needs: [quality, module-compatibility, e2e, audit, scan, rehearsal]
+    needs: [quality, unit, module-compatibility, e2e, audit, scan, rehearsal]
     # audit, scan and rehearsal are skipped on main; a tag needs all three.
     if: >-
       !cancelled()
       && (github.ref == 'refs/heads/main' || github.ref_type == 'tag')
       && needs.quality.result == 'success'
+      && needs.unit.result == 'success'
       && needs.module-compatibility.result == 'success'
       && needs.e2e.result == 'success'
       && (github.ref_type != 'tag' || needs.audit.result == 'success')

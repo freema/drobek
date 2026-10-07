@@ -1,10 +1,10 @@
 # drobek (PUBLIC core) — pull request checks
 #
-# The `quality` job of ci.yml (doc-lint → build → lint → typecheck → knip →
-# unit tests) on every pull request to `main`, forks included, so a
-# contributor sees the result of `task check` on GitHub. Same job name as in
-# ci.yml, so it satisfies the same required status check; keep the steps in
-# sync with ci.yml's `quality`.
+# The `quality` (doc-lint → build → lint → typecheck → knip) and `unit` jobs
+# of ci.yml on every pull request to `main`, forks included, so a
+# contributor sees the result of `task check` on GitHub. Same job names as in
+# ci.yml, so they satisfy the same required status checks; keep the steps in
+# sync with ci.yml.
 #
 # `pull_request` (never `pull_request_target`): a fork's run gets a read-only
 # GITHUB_TOKEN and no secrets. No e2e and no image here — Actions capacity is
@@ -29,7 +29,7 @@ env:
 
 jobs:
   quality:
-    name: Lint · typecheck · unit
+    name: Lint · typecheck
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -61,6 +61,28 @@ jobs:
 
       - name: Knip (unused files, exports, dependencies)
         run: pnpm knip
+
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace packages
+        run: pnpm build:packages
 
       - name: Unit tests
         run: pnpm test
