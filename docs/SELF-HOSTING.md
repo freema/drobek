@@ -1303,6 +1303,8 @@ Anyone can publish on a public drobek, so the operator (every address in
   `abuse_reports` (the reporter's IP only as a keyed hash), audited
   `abuse.report` in the app's workspace, and e-mailed to the super-admins
   and `OPERATOR_EMAIL` (each address once) — at most once per app per hour.
+  A report on a host no app matches only waits in the queue, without an
+  e-mail, so the form cannot carry spam into the operator's mailbox.
 - **Queue** (`/admin/abuse`, super-admins only, 403 for everyone else): the
   open reports with the app and workspace behind each host.
   - **Take down** (pick a reason category): the app is unpublished and

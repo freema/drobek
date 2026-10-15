@@ -1,5 +1,12 @@
 # Changelog — drobek (core)
 
+## v0.9.3 — 2026-10-15
+
+No migration and no new env var.
+
+### Changed
+- **An abuse report on a host no app matches no longer e-mails the moderators** (NSO-458): Such a report is still stored and listed in the queue (`/admin/abuse`), but only reports on an app e-mail the super-admins and `OPERATOR_EMAIL`. Before, anyone could send the moderators any text through the public report form by naming the dashboard's own host, which advertisers of paid upvotes did.
+
 ## v0.9.2 — 2026-10-06
 
 The tag v0.9.0 was not released: the production dependency audit stopped it on two advisories published the same day, fixed here. Before you upgrade: core migrations 0039 (`app_feedback` and the `feedback_status` enum) and 0040 (`app_traffic_daily`, `app_traffic_top`) and the new `webhooks` module's migration 0000 (`mod_webhooks_deliveries`, `mod_webhooks_events`, journal `__drizzle_migrations_mod_webhooks`) are applied at start; an older image then refuses to start on the migrated database. New env vars, all with production defaults: `FEEDBACK_MAX_OPEN_PER_APP` (500), `FEEDBACK_PER_USER_HOUR` (30), `DATA_SUBSCRIBE_MAX_PER_APP` (200), `DATA_SUBSCRIBE_MAX_PER_CALLER` (4), `DATA_SUBSCRIBE_MAX_MS` (3600000), `DATA_SUBSCRIBE_BACKLOG` (100), `ANALYTICS_ENABLED` (1), `ANALYTICS_RETENTION_DAYS` (90), `WEBHOOKS_MAX_BODY_BYTES` (262144, at most 1048576), `WEBHOOKS_PER_APP_PER_MINUTE` (120) and `WEBHOOKS_MAX_ENDPOINTS_PER_APP` (10). On by default: the Feedback button on every app's preview and version hosts (never on production or a custom domain; `"feedback": false` in an app's drobek.json turns it off), page-view counting on production addresses and custom domains (`ANALYTICS_ENABLED=0` turns it off), and live data subscriptions. The compose files add `webhooks` to the default `DROBEK_MODULES`; if you set `DROBEK_MODULES` yourself, add `webhooks` to it to offer the module. Live subscriptions resume after a reconnect only on Redis 7 or newer (the bundled `redis:7-alpine` is); with older Redis a reconnect reloads the list. If another reverse proxy sits in front of drobek, it must not buffer `text/event-stream` (nginx: `proxy_buffering off`).

@@ -8,8 +8,8 @@
  * chars, optional reporter e-mail → 400 with the field); the rate limit
  * (ABUSE_REPORTS_PER_IP_HOUR valid reports per client IP per hour, default 5
  * → 429; skipped without a resolved client IP); then the report is stored (`abuse_reports`, audit `abuse.report`
- * when the host belongs to an app) and the super-admins are e-mailed (at most
- * once per app per hour).
+ * when the host belongs to an app) and, when it does, the super-admins are
+ * e-mailed (at most once per app per hour).
  */
 import { data, type ActionFunctionArgs, type HeadersArgs, type LoaderFunctionArgs } from 'react-router';
 import {

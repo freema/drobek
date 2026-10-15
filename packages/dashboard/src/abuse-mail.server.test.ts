@@ -1,6 +1,7 @@
 /**
- * A new abuse report e-mails every super-admin AND OPERATOR_EMAIL,
- * each address once (case-insensitive); nobody configured → no mail.
+ * A new abuse report on an app e-mails every super-admin AND OPERATOR_EMAIL,
+ * each address once (case-insensitive); nobody configured → no mail; a
+ * report on a host no app matches → no mail.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -20,7 +21,8 @@ const { mailSuperAdminsAboutReport } = await import('./abuse-mail.server.js');
 
 const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 let k = 0;
-const report = () => ({ reportId: `r${++k}`, host: `h${k}.drobek.app`, reason: 'phishing', details: 'x', reporterEmail: null, app: null });
+const app = (id: string) => ({ id, slug: 'bank', name: null, workspaceId: 'w1', workspaceSlug: 'acme', lockedReason: null, published: true });
+const report = () => ({ reportId: `r${++k}`, host: `h${k}.drobek.app`, reason: 'phishing', details: 'x', reporterEmail: null, app: app(`a${k}`) });
 
 beforeEach(() => {
   mail.send.mockClear();
@@ -55,5 +57,15 @@ describe('abuse report recipients', () => {
     expect(m.html).toMatch(/<a href="https:\/\/dash\.x\.test\/[^"]+"/);
     expect(m.text).toMatch(/Review the report queue: https:\/\/dash\.x\.test\//);
     expect(m.html).toContain('Sent by the drobek server at dash.x.test because you moderate this server');
+  });
+
+  it('a report on a host no app matches is queued without a mail', async () => {
+    const env = { SUPERADMIN_EMAIL: 'boss@x.test', OPERATOR_EMAIL: 'ops@x.test', PUBLIC_APP_URL: 'https://dash.x.test' };
+    expect(await mailSuperAdminsAboutReport({ ...report(), host: 'drobek.app', reason: 'other', app: null }, log, env)).toEqual({
+      sent: 0,
+      deduped: false,
+    });
+    expect(mail.send).not.toHaveBeenCalled();
+    expect(redis.set).not.toHaveBeenCalled();
   });
 });

@@ -23,6 +23,7 @@ import { withDb } from './helpers/seed';
  *    the dashboard origin) and sends X-Drobek-App;
  *  - an anonymous report through the form stores a row, audits
  *    `abuse.report` and e-mails the super-admins; the honeypot stores nothing;
+ *  - a report on a host no app matches is stored but e-mails nobody;
  *  - the queue is super-admin only (403); a takedown → 451 with the terms
  *    link on the prod, preview AND version hosts, `write_files` →
  *    `app_locked_by_admin`, get_app `locked_by_admin`, the owner is e-mailed,
@@ -249,6 +250,25 @@ test.describe('abuse: reports, takedown/restore, publish heuristic @local', () =
     });
     expect(bot.status()).toBe(200);
     expect((await reportsOf(calc.app_id)).length).toBe(before);
+  });
+
+  test('a report on a host no app matches is queued without e-mailing the super-admins', async ({ request }) => {
+    skipUnlessLocal();
+    await resetRateLimitBucket(REPORT_BUCKET);
+    const host = `no-app-${Date.now().toString(36)}.example.test`;
+    const res = await request.post('/report', {
+      form: { host, reason: 'other', details: 'Buy upvotes for your launch.', email: 'seller@example.test', website: '' },
+    });
+    expect(res.status()).toBe(200);
+
+    const rows = await withDb(async (c) =>
+      (await c.query(`SELECT status, app_id FROM abuse_reports WHERE host = $1`, [host])).rows
+    );
+    expect(rows).toEqual([{ status: 'open', app_id: null }]);
+    // The action awaits the mail before it answers, so a mail would already be in Mailpit.
+    await new Promise((r) => setTimeout(r, 1500));
+    const mails = (await mailpitMessagesFor(request, SUPER_ADMIN)).filter((m) => (m.Subject ?? '').includes(host));
+    expect(mails).toEqual([]);
   });
 
   test('the queue is super-admin only; a takedown → 451 everywhere, app_locked_by_admin, owner e-mail, audit', async ({

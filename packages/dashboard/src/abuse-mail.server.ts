@@ -4,11 +4,13 @@
  * become markup in the operator's mail client; only the queue link, on this
  * server's origin, is a button):
  *
- *  - a new report → every super-admin (SUPERADMIN_EMAIL) and OPERATOR_EMAIL
- *    (deduplicated, case-insensitive), at most ONE mail
- *    per reported app (or unresolved host) per hour — a flood of reports on
- *    one app does not flood the operator (`drobek:abuse:mail:<key>`, Redis
- *    SET NX, 1 h; a Redis error sends anyway);
+ *  - a new report on an app → every super-admin (SUPERADMIN_EMAIL) and
+ *    OPERATOR_EMAIL (deduplicated, case-insensitive), at most ONE mail per
+ *    reported app per hour — a flood of reports on one app does not flood the
+ *    operator (`drobek:abuse:mail:<app id>`, Redis SET NX, 1 h; a Redis error
+ *    sends anyway). A report on a host no app matches only waits in the
+ *    queue: there is nothing to take down, and the form must not be a free
+ *    channel into the operator's mailbox;
  *  - a takedown / a restore → the app's owners (its workspace's editors and
  *    workspace-admins): the reason CATEGORY and what happens next — never the
  *    reporter's text or address (@drobek/apps mailOwnersAboutModeration,
@@ -77,19 +79,24 @@ export interface ReportMailInput {
   app: ReportedApp | null;
 }
 
-/** Tell the super-admins and the operator about a new report (deduped per app / host per hour). */
+/** Tell the super-admins and the operator about a new report on an app (deduped per app per hour). */
 export async function mailSuperAdminsAboutReport(
   input: ReportMailInput,
   log: Logger,
   env: NodeJS.ProcessEnv = process.env
 ): Promise<{ sent: number; deduped: boolean }> {
+  const { app } = input;
+  if (!app) {
+    log.info('abuse report on a host no app matches — queued without a mail', { report_id: input.reportId });
+    return { sent: 0, deduped: false };
+  }
   const to = reportMailRecipients(env);
   if (to.length === 0) {
     log.warn('abuse report stored but SUPERADMIN_EMAIL and OPERATOR_EMAIL are empty — nobody is notified', { report_id: input.reportId });
     return { sent: 0, deduped: false };
   }
-  if (!(await firstInWindow(input.app?.id ?? `host:${input.host}`, log))) {
-    log.info('abuse report mail deduped (one per app per hour)', { report_id: input.reportId, app_id: input.app?.id ?? null });
+  if (!(await firstInWindow(app.id, log))) {
+    log.info('abuse report mail deduped (one per app per hour)', { report_id: input.reportId, app_id: app.id });
     return { sent: 0, deduped: true };
   }
   const subject = `Abuse report: ${input.host} (${input.reason})`;
@@ -97,9 +104,7 @@ export async function mailSuperAdminsAboutReport(
     `A new abuse report was filed for ${input.host}.`,
     '',
     `Reason: ${reasonLabel(input.reason)} (${input.reason})`,
-    input.app
-      ? `App: ${input.app.slug} in workspace ${input.app.workspaceSlug}${input.app.lockedReason ? ` — already taken down (${input.app.lockedReason})` : ''}`
-      : 'App: no app on this server matches the host.',
+    `App: ${app.slug} in workspace ${app.workspaceSlug}${app.lockedReason ? ` — already taken down (${app.lockedReason})` : ''}`,
     `Reporter: ${input.reporterEmail ?? 'anonymous'}`,
     '',
     'Details:',
