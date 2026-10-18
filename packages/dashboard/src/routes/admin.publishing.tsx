@@ -1,7 +1,8 @@
 /**
  * /admin/publishing — client half: the super-admin's switch for
- * who may publish. Workspaces with their state (blocked, allowed, waiting,
- * default) and mode-aware actions — `open`: Block / Unblock first;
+ * who may publish. A page of workspaces in a state (blocked, allowed,
+ * waiting, default — the tabs), with a search, a sort and the pager, and
+ * mode-aware actions — `open`: Block / Unblock first;
  * `approval`: Approve / Revoke / Block — plus each workspace's live apps
  * with the moderation queue's takedown form. Block and Take down open a
  * confirm panel first (a GET, works without JavaScript). The server gate
@@ -9,7 +10,9 @@
  */
 import { useEffect, useRef } from 'react';
 import { Form, Link, useActionData, useLoaderData, useNavigation } from 'react-router';
-import { DashboardPage, TabStrip, controls, mergeStyles, tabStyles } from '@drobek/tenancy/layout';
+import { adminListHref } from '@drobek/tenancy/admin-list';
+import { AdminFilterBar, AdminListCount, AdminPager } from '@drobek/tenancy/admin-list-ui';
+import { DashboardPage, TabStrip, controls, tabStyles } from '@drobek/tenancy/layout';
 import type { action, loader } from './admin.publishing.server.js';
 
 export function meta() {
@@ -38,7 +41,6 @@ const styles = {
   h1: { fontSize: '1.75rem', marginBottom: '0.25rem' },
   nav: { margin: '0 0 1.5rem', fontSize: '0.9rem', color: '#555', display: 'flex', gap: '0.9rem', flexWrap: 'wrap' },
   navLink: { color: '#1a1a1a', fontWeight: 600 },
-  search: { display: 'flex', gap: '0.5rem', alignItems: 'flex-end', flexWrap: 'wrap', margin: '1rem 0 0.5rem' },
   h3: { fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.04em', color: '#71717a', margin: '0.9rem 0 0.3rem' },
   hint: { color: '#555', marginTop: 0, fontSize: '0.95rem' },
   list: { listStyle: 'none', padding: 0, margin: '1rem 0' },
@@ -98,9 +100,13 @@ const styles = {
   effects: { margin: '0.5rem 0 0.75rem', paddingLeft: '1.2rem', fontSize: '0.92rem', overflowWrap: 'anywhere' },
 } as const;
 
-function when(iso: string): string {
-  return new Date(iso).toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
-}
+const PUBLISHING_PATH = '/admin/publishing';
+
+const WORKSPACE_SORTS = [
+  { value: 'requested', label: 'Waiting longest' },
+  { value: 'newest', label: 'Newest first' },
+  { value: 'name', label: 'Name' },
+] as const;
 
 type Intent = 'approve' | 'revoke' | 'block' | 'unblock';
 
@@ -119,7 +125,7 @@ function intentsFor(publishing: string, mode: string): Intent[] {
 }
 
 export default function PublishingRoute() {
-  const { state, defaultState, states, workspace, mode, contact, reasons, workspaces, blockConfirm, blockConfirmError } =
+  const { state, list, listError, defaultState, states, workspace, mode, contact, reasons, workspaces, blockConfirm, blockConfirmError } =
     useLoaderData<typeof loader>();
   const result = useActionData<typeof action>();
   const busy = useNavigation().state !== 'idle';
@@ -157,7 +163,7 @@ export default function PublishingRoute() {
         {states.map((s) => (
           <Link
             key={s}
-            to={s === defaultState ? '/admin/publishing' : `/admin/publishing?state=${s}`}
+            to={adminListHref(PUBLISHING_PATH, { ...list.params, workspace: '' }, { state: s === defaultState ? null : s })}
             style={!workspace && s === state ? tabStyles.active : tabStyles.tab}
             aria-current={!workspace && s === state ? 'page' : undefined}
             data-testid="publishing-state"
@@ -167,26 +173,14 @@ export default function PublishingRoute() {
           </Link>
         ))}
       </TabStrip>
-      <Form method="get" style={styles.search} role="search">
-        <label style={controls.field}>
-          <span style={controls.label}>Workspace slug</span>
-          <input
-            type="search"
-            name="workspace"
-            defaultValue={workspace ?? ''}
-            placeholder="e.g. acme-team"
-            style={mergeStyles(controls.input, { width: '16rem', maxWidth: '100%' })}
-          />
-        </label>
-        <button type="submit" style={controls.secondaryButton}>
-          Find
-        </button>
-        {workspace ? (
-          <Link to="/admin/publishing" style={controls.link}>
-            Clear
-          </Link>
-        ) : null}
-      </Form>
+      <AdminFilterBar
+        path={PUBLISHING_PATH}
+        params={list.params}
+        label="Search slug, name or e-mail"
+        placeholder="e.g. acme-team"
+        sorts={WORKSPACE_SORTS}
+        testId="publishing-filter"
+      />
       {workspace ? (
         <p style={styles.hint} data-testid="publishing-one">
           Showing workspace <strong>{workspace}</strong> · <Link to="/admin/publishing">all workspaces</Link>
@@ -251,13 +245,29 @@ export default function PublishingRoute() {
         </section>
       ) : null}
 
-      {workspaces.length === 0 ? (
-        <p style={styles.empty} data-testid="publishing-empty">
+      {listError ? (
+        <p style={styles.error} role="alert" data-testid="publishing-list-error">
+          The workspaces could not be loaded, so none is shown. Reload the page; if it keeps failing, the server log says
+          why.
+        </p>
+      ) : (
+        <AdminListCount
+          total={list.total}
+          matching={list.matching}
+          filtered={list.filtered}
+          noun={['workspace', 'workspaces']}
+          testId="publishing-count"
+        />
+      )}
+      {listError ? null : workspaces.length === 0 ? (
+        <p style={styles.empty} data-testid={list.total > 0 && list.filtered ? 'publishing-none' : 'publishing-empty'}>
           {workspace
             ? `No workspace has the slug ${workspace}. Check the slug in the workspace's address, or clear the search to see every workspace.`
-            : state === 'all'
-              ? 'No workspace exists yet. Workspaces appear here once someone signs up.'
-              : `No workspace in ${stateLabel(state, mode)}. Pick another tab to see the rest.`}
+            : list.total > 0 && list.params.q
+              ? `No workspace in ${stateLabel(state, mode)} matches “${list.params.q}”. Try part of the slug or an e-mail, or choose Clear.`
+              : state === 'all'
+                ? 'No workspace exists yet. Workspaces appear here once someone signs up.'
+                : `No workspace in ${stateLabel(state, mode)}. Pick another tab to see the rest.`}
         </p>
       ) : (
         <ul style={styles.list} data-testid="publishing-workspaces">
@@ -298,22 +308,26 @@ export default function PublishingRoute() {
               </div>
               <div style={styles.meta}>
                 Admins: {w.admins.length > 0 ? w.admins.join(', ') : '—'} · {w.apps} app{w.apps === 1 ? '' : 's'},{' '}
-                {w.publishedApps} published · created {when(w.createdAt)}
+                {w.publishedApps} published ·{' '}
+                <span title={w.created.at} data-testid="publishing-created">
+                  created {w.created.ago}
+                </span>
               </div>
-              {w.requestedAt && w.publishing === 'default' ? (
+              {w.requested && w.publishing === 'default' ? (
                 <div style={styles.meta} data-testid="publishing-requested">
-                  Approval requested {when(w.requestedAt)} by {w.requestedBy ?? 'a removed user'}
+                  Approval requested <span title={w.requested.at}>{w.requested.ago}</span> by{' '}
+                  {w.requestedBy ?? 'a removed user'}
                 </div>
               ) : null}
-              {w.blockedAt ? (
+              {w.blocked ? (
                 <div style={styles.meta} data-testid="publishing-blocked">
-                  Blocked {when(w.blockedAt)}
+                  Blocked <span title={w.blocked.at}>{w.blocked.ago}</span>
                   {w.blockedBy ? ` by ${w.blockedBy}` : ''}
                 </div>
               ) : null}
-              {w.approvedAt ? (
-                <div style={styles.meta}>
-                  Allowed {when(w.approvedAt)}
+              {w.approved ? (
+                <div style={styles.meta} data-testid="publishing-approved">
+                  Allowed <span title={w.approved.at}>{w.approved.ago}</span>
                   {w.approvedBy ? ` by ${w.approvedBy}` : ' — no approver recorded (the upgrade allowed workspaces that already had a published app)'}
                 </div>
               ) : null}
@@ -377,6 +391,16 @@ export default function PublishingRoute() {
             </li>
           ))}
         </ul>
+      )}
+      {listError ? null : (
+        <AdminPager
+          path={PUBLISHING_PATH}
+          params={list.params}
+          page={list.page}
+          pageSize={list.pageSize}
+          matching={list.matching}
+          testId="publishing-pager"
+        />
       )}
     </DashboardPage>
   );

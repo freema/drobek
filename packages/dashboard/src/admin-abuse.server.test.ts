@@ -188,4 +188,39 @@ describe('/admin/abuse', () => {
     expect((await appRow()).lockedReason).toBeNull();
     who.user = { id: bossId, email: 'boss@example.com' };
   });
+
+  it('the list: ?q= and ?app= on the server, the counts, ADMIN_LIST_PAGE and the URL state', async () => {
+    await db.insert(abuseReports).values([
+      { host: 'nowhere-1.example', reason: 'spam', details: 'link farm' },
+      { host: 'nowhere-2.example', reason: 'spam', reporterEmail: 'vera@example.org' },
+    ]);
+    type List = {
+      list: { params: Record<string, string>; page: number; pageSize: number; total: number; matching: number; filtered: boolean };
+      reports: { host: string; created: { ago: string; at: string } }[];
+    };
+    const loadList = async (qs: string) => (await load(qs)) as unknown as List;
+    const page = await loadList('?q=nowhere&app=unknown-host&sort=host');
+    expect(page.reports.map((r) => r.host)).toEqual(['nowhere-1.example', 'nowhere-2.example']);
+    expect(page.list).toMatchObject({ total: 2, matching: 2, filtered: true, page: 1, pageSize: 50 });
+    expect(page.list.params).toEqual({ status: '', q: 'nowhere', app: 'unknown-host', sort: 'host', page: '' });
+    expect(page.reports[0].created.at).toMatch(/ UTC$/);
+
+    expect((await loadList('?q=vera@')).reports.map((r) => r.host)).toEqual(['nowhere-2.example']);
+    const none = await loadList('?app=present');
+    expect(none.reports).toEqual([]);
+    expect(none.list).toMatchObject({ total: 2, matching: 0 });
+    const resolved = await loadList('?status=resolved&app=present');
+    expect(resolved.reports.map((r) => r.host)).toEqual(['fake-bank.apps.example']);
+    expect(resolved.list.params.status).toBe('resolved');
+
+    vi.stubEnv('ADMIN_LIST_PAGE', '1');
+    const first = await loadList('?sort=host');
+    expect(first.reports.map((r) => r.host)).toEqual(['nowhere-1.example']);
+    expect(first.list).toMatchObject({ page: 1, pageSize: 1, matching: 2 });
+    const past = await loadList('?sort=host&page=7');
+    expect(past.reports.map((r) => r.host)).toEqual(['nowhere-2.example']);
+    expect(past.list).toMatchObject({ page: 2 });
+    expect(past.list.params.page).toBe('2');
+    vi.stubEnv('ADMIN_LIST_PAGE', '');
+  });
 });

@@ -216,4 +216,17 @@ describe('/admin/publishing', () => {
     const actions = (await db.select().from(auditLog).where(eq(auditLog.actorUserId, bossId))).map((r) => r.action);
     expect(actions).toEqual(['workspace.publish_approve', 'workspace.publish_revoke', 'workspace.publish_block', 'workspace.publish_unblock']);
   });
+
+  it('?q= searches on the server; the counts and the URL state come with the page', async () => {
+    who.user = { id: bossId, email: 'boss@example.com' };
+    const hit = result(await adminLoad('?state=all&q=OWNER@example&sort=name'));
+    expect((hit.data.workspaces as Record<string, unknown>[]).map((r) => r.slug)).toEqual(['acme']);
+    expect(hit.data.list).toMatchObject({ matching: 1, filtered: true, page: 1, pageSize: 50, params: { state: 'all', q: 'OWNER@example', sort: 'name', workspace: '', page: '' } });
+    expect((hit.data.list as { total: number }).total).toBeGreaterThanOrEqual(1);
+    expect((hit.data.workspaces as { created: { ago: string; at: string } }[])[0].created.at).toMatch(/ UTC$/);
+    const miss = result(await adminLoad('?state=all&q=nobody-here'));
+    expect(miss.data.workspaces).toEqual([]);
+    expect(miss.data.list).toMatchObject({ matching: 0 });
+    expect(miss.data.listError).toBe(false);
+  });
 });

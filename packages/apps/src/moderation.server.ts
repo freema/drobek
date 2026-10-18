@@ -23,10 +23,10 @@
  * report mail is the dashboard's.
  */
 import { createHmac } from 'node:crypto';
-import { and, desc, eq, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import { AUDIT_ACTIONS, writeAudit, type AuditActorKind } from '@drobek/audit';
 import { createConsoleLogger, type Logger } from '@drobek/core';
-import { abuseReports, appVersions, apps, blobs, dbErrorForLog, domains, getDb, users, versionFiles, workspaces } from '@drobek/db';
+import { abuseReports, appVersions, apps, blobs, containsPattern, dbErrorForLog, domains, getDb, users, versionFiles, workspaces } from '@drobek/db';
 import { AppsError } from './errors.js';
 import { notifyAppChanged } from './events.js';
 import { brandWordsFromEnv, describeFinding, scanForPhishing, type HeuristicFinding } from './heuristic.js';
@@ -360,58 +360,123 @@ export interface AbuseReportRow {
   app: ReportedApp | null;
 }
 
-/** The queue: reports by status, newest first (with the app, its workspace and lock state). */
-export async function listAbuseReports(opts: { status?: 'open' | 'resolved'; limit?: number } = {}): Promise<AbuseReportRow[]> {
+export const ABUSE_REPORT_SORTS = ['newest', 'oldest', 'host'] as const;
+type AbuseReportSort = (typeof ABUSE_REPORT_SORTS)[number];
+export const ABUSE_REPORT_APP_FILTERS = ['present', 'unknown-host'] as const;
+
+interface AbuseReportQuery {
+  status?: 'open' | 'resolved';
+  /** Host, app slug, reporter e-mail, reason or details contain it (case-insensitive). */
+  q?: string;
+  /** `present` = the host is an app's, `unknown-host` = no app matched it. */
+  app?: (typeof ABUSE_REPORT_APP_FILTERS)[number] | null;
+  sort?: AbuseReportSort;
+  /** 1-based. */
+  page?: number;
+  pageSize?: number;
+}
+
+interface AbuseReportPage {
+  reports: AbuseReportRow[];
+  /** The reports with this status. */
+  total: number;
+  /** Of them, the ones the search and filter match (all pages). */
+  matching: number;
+}
+
+/** The queue: one page of the reports with a status (with the app, its workspace and lock state), newest first by default. */
+export async function listAbuseReports(opts: AbuseReportQuery = {}): Promise<AbuseReportPage> {
   const status = opts.status ?? 'open';
-  const rows = await getDb()
-    .select({
-      id: abuseReports.id,
-      host: abuseReports.host,
-      reason: abuseReports.reason,
-      details: abuseReports.details,
-      reporterEmail: abuseReports.reporterEmail,
-      status: abuseReports.status,
-      createdAt: abuseReports.createdAt,
-      resolvedAt: abuseReports.resolvedAt,
-      resolvedByEmail: users.email,
-      appId: apps.id,
-      appSlug: apps.slug,
-      appName: apps.name,
-      workspaceId: apps.workspaceId,
-      workspaceSlug: workspaces.slug,
-      lockedReason: apps.lockedReason,
-      publishedVersionId: apps.publishedVersionId,
-    })
-    .from(abuseReports)
-    .leftJoin(apps, eq(apps.id, abuseReports.appId))
-    .leftJoin(workspaces, eq(workspaces.id, apps.workspaceId))
-    .leftJoin(users, eq(users.id, abuseReports.resolvedBy))
-    .where(eq(abuseReports.status, status))
-    .orderBy(desc(abuseReports.createdAt))
-    .limit(Math.min(Math.max(opts.limit ?? 100, 1), 500));
-  return rows.map((r) => ({
-    id: r.id,
-    host: r.host,
-    reason: r.reason,
-    details: r.details,
-    reporterEmail: r.reporterEmail,
-    status: r.status,
-    createdAt: r.createdAt,
-    resolvedAt: r.resolvedAt,
-    resolvedByEmail: r.resolvedByEmail,
-    app:
-      r.appId && r.appSlug && r.workspaceId && r.workspaceSlug
-        ? {
-            id: r.appId,
-            slug: r.appSlug,
-            name: r.appName,
-            workspaceId: r.workspaceId,
-            workspaceSlug: r.workspaceSlug,
-            lockedReason: r.lockedReason,
-            published: r.publishedVersionId !== null,
-          }
-        : null,
-  }));
+  const conditions = [eq(abuseReports.status, status)];
+  const q = opts.q?.trim();
+  if (q) {
+    const pattern = containsPattern(q);
+    conditions.push(
+      or(
+        ilike(abuseReports.host, pattern),
+        ilike(apps.slug, pattern),
+        ilike(abuseReports.reporterEmail, pattern),
+        ilike(abuseReports.reason, pattern),
+        ilike(abuseReports.details, pattern)
+      )!
+    );
+  }
+  if (opts.app === 'present') conditions.push(isNotNull(apps.id));
+  if (opts.app === 'unknown-host') conditions.push(isNull(apps.id));
+  const sort = opts.sort ?? 'newest';
+  const order =
+    sort === 'oldest'
+      ? [asc(abuseReports.createdAt), asc(abuseReports.id)]
+      : sort === 'host'
+        ? [asc(abuseReports.host), desc(abuseReports.createdAt)]
+        : [desc(abuseReports.createdAt), desc(abuseReports.id)];
+  const pageSize = Math.min(Math.max(opts.pageSize ?? 100, 1), 500);
+  const page = Math.max(1, opts.page ?? 1);
+  const db = getDb();
+  const [rows, [counts]] = await Promise.all([
+    db
+      .select({
+        id: abuseReports.id,
+        host: abuseReports.host,
+        reason: abuseReports.reason,
+        details: abuseReports.details,
+        reporterEmail: abuseReports.reporterEmail,
+        status: abuseReports.status,
+        createdAt: abuseReports.createdAt,
+        resolvedAt: abuseReports.resolvedAt,
+        resolvedByEmail: users.email,
+        appId: apps.id,
+        appSlug: apps.slug,
+        appName: apps.name,
+        workspaceId: apps.workspaceId,
+        workspaceSlug: workspaces.slug,
+        lockedReason: apps.lockedReason,
+        publishedVersionId: apps.publishedVersionId,
+      })
+      .from(abuseReports)
+      .leftJoin(apps, eq(apps.id, abuseReports.appId))
+      .leftJoin(workspaces, eq(workspaces.id, apps.workspaceId))
+      .leftJoin(users, eq(users.id, abuseReports.resolvedBy))
+      .where(and(...conditions))
+      .orderBy(...order)
+      .limit(pageSize)
+      .offset((page - 1) * pageSize),
+    db
+      .select({
+        total: sql<number>`count(*)`.mapWith(Number),
+        matching: sql<number>`(count(*) filter (where ${and(...conditions)}))`.mapWith(Number),
+      })
+      .from(abuseReports)
+      .leftJoin(apps, eq(apps.id, abuseReports.appId))
+      .where(eq(abuseReports.status, status)),
+  ]);
+  return {
+    total: counts?.total ?? 0,
+    matching: counts?.matching ?? 0,
+    reports: rows.map((r) => ({
+      id: r.id,
+      host: r.host,
+      reason: r.reason,
+      details: r.details,
+      reporterEmail: r.reporterEmail,
+      status: r.status,
+      createdAt: r.createdAt,
+      resolvedAt: r.resolvedAt,
+      resolvedByEmail: r.resolvedByEmail,
+      app:
+        r.appId && r.appSlug && r.workspaceId && r.workspaceSlug
+          ? {
+              id: r.appId,
+              slug: r.appSlug,
+              name: r.appName,
+              workspaceId: r.workspaceId,
+              workspaceSlug: r.workspaceSlug,
+              lockedReason: r.lockedReason,
+              published: r.publishedVersionId !== null,
+            }
+          : null,
+    })),
+  };
 }
 
 /** Mark one open report resolved (no other effect). false when it is not open. */

@@ -3,8 +3,13 @@
  * moderation queue. SUPER-ADMIN ONLY: no session → /login; a signed-in user
  * who is not in SUPERADMIN_EMAIL → 403 (loader AND action).
  *
- * Shows the open reports (`?status=resolved` the resolved ones) with the app
- * behind each host, and every app that is currently taken down. Actions:
+ * Shows one page (ADMIN_LIST_PAGE) of the open reports (`?status=resolved`
+ * the resolved ones) with the app behind each host — `?q=` searches the
+ * host, the app slug, the reporter's e-mail, the reason and the details,
+ * `?app=present|unknown-host` keeps the reports on an app or on a host no app
+ * matches, `?sort=newest|oldest|host`, `?page=` — and every app that is
+ * currently taken down. A failed list says so instead of failing the page.
+ * Actions:
  *  - `takedown` (app, reason category, `confirmed=1`): unpublish + lock
  *    (`apps.locked_reason`), resolve the app's open reports, audit
  *    `admin.takedown`, e-mail the owners;
@@ -25,6 +30,8 @@
  */
 import { data, type ActionFunctionArgs, type LoaderFunctionArgs } from 'react-router';
 import {
+  ABUSE_REPORT_APP_FILTERS,
+  ABUSE_REPORT_SORTS,
   AppsError,
   LOCK_REASONS,
   abuseReportsRetentionDays,
@@ -45,6 +52,8 @@ import {
 } from '@drobek/apps';
 import { isSuperAdmin, requireSessionUser, type SessionUser } from '@drobek/auth';
 import { createConsoleLogger } from '@drobek/core';
+import { dbErrorForLog } from '@drobek/db';
+import { adminListPageSize, lastPage, parseAdminList, pickParam, whenView } from '@drobek/tenancy/admin-list';
 import { mailOwnersAboutModeration } from '../abuse-mail.server.js';
 import { isConfirmed, safeModerationBack, takedownEffects } from '../moderation-confirm.js';
 
@@ -98,20 +107,66 @@ async function takedownConfirm(params: URLSearchParams) {
   };
 }
 
+/** One page of the queue for the URL's list state; `listError` when it could not be read. */
+async function reportsPage(params: URLSearchParams, status: 'open' | 'resolved') {
+  const { q, sort, page } = parseAdminList(params, ABUSE_REPORT_SORTS);
+  const app = pickParam(params, 'app', ABUSE_REPORT_APP_FILTERS);
+  const pageSize = adminListPageSize();
+  const query = { status, q, app, sort, pageSize };
+  const state = { status: status === 'open' ? '' : status, q, app: app ?? '', sort: sort === ABUSE_REPORT_SORTS[0] ? '' : sort };
+  try {
+    let shown = page;
+    let result = await listAbuseReports({ ...query, page });
+    if (result.reports.length === 0 && result.matching > 0) {
+      shown = lastPage(pageSize, result.matching);
+      result = await listAbuseReports({ ...query, page: shown });
+    }
+    return {
+      listError: false,
+      list: {
+        params: { ...state, page: shown > 1 ? String(shown) : '' },
+        page: shown,
+        pageSize,
+        total: result.total,
+        matching: result.matching,
+        filtered: Boolean(q || app),
+      },
+      reports: result.reports,
+    };
+  } catch (err) {
+    log.error('abuse queue list failed', { error: dbErrorForLog(err) });
+    return {
+      listError: true,
+      list: {
+        params: { ...state, page: '' },
+        page: 1,
+        pageSize,
+        total: 0,
+        matching: 0,
+        filtered: true,
+      },
+      reports: [],
+    };
+  }
+}
+
 export async function loader({ request }: LoaderFunctionArgs) {
   await requireSuperAdmin(request);
   const params = new URL(request.url).searchParams;
   const status = params.get('status') === 'resolved' ? 'resolved' : 'open';
   const gallery = galleryEnabled();
-  const [reports, locked, listed, confirm] = await Promise.all([
-    listAbuseReports({ status }),
+  const [{ reports, list, listError }, locked, listed, confirm] = await Promise.all([
+    reportsPage(params, status),
     listLockedApps(),
     gallery ? listGalleryForModeration() : Promise.resolve(null),
     takedownConfirm(params),
   ]);
+  const now = new Date();
   return data(
     {
       status,
+      list,
+      listError,
       retentionDays: abuseReportsRetentionDays(),
       ...confirm,
       reasons: LOCK_REASONS.map((value) => ({ value, label: reasonLabel(value) })),
@@ -122,8 +177,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
         reasonLabel: reasonLabel(r.reason),
         details: r.details,
         reporterEmail: r.reporterEmail,
-        createdAt: r.createdAt.toISOString(),
-        resolvedAt: r.resolvedAt?.toISOString() ?? null,
+        created: whenView(r.createdAt, now)!,
+        resolved: whenView(r.resolvedAt, now),
         resolvedBy: r.resolvedByEmail,
         app: r.app
           ? {
