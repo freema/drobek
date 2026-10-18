@@ -6,7 +6,10 @@
  * Lists workspaces with their publishing state (`?state=` requested |
  * default | allowed | blocked | all — the waiting requests by default in
  * `approval` mode, every workspace in `open` mode; `?workspace=<slug>` shows
- * one): admins, apps / published apps, who asked, allowed or blocked and
+ * one), a page of ADMIN_LIST_PAGE at a time (`?page=`), searched with `?q=`
+ * (slug, name, an admin's or the requester's e-mail) and sorted with
+ * `?sort=requested|newest|name`; a failed list says so instead of failing
+ * the page. Each row: admins, apps / published apps, who asked, allowed or blocked and
  * when, and the live apps — each with the takedown form of the moderation
  * queue (it posts to /admin/abuse). Actions: `approve` (→ allowed),
  * `revoke` (allowed → default), `block` (→ blocked), `unblock` (blocked →
@@ -27,6 +30,7 @@ import {
   AppsError,
   LOCK_REASONS,
   PUBLISHING_FILTERS,
+  PUBLISHING_SORTS,
   listWorkspacePublishing,
   operatorContact,
   publishApprovalMode,
@@ -39,6 +43,8 @@ import {
 import { actorKindForSurface } from '@drobek/audit';
 import { isSuperAdmin, requireSessionUser, type SessionUser } from '@drobek/auth';
 import { createConsoleLogger } from '@drobek/core';
+import { dbErrorForLog } from '@drobek/db';
+import { adminListPageSize, lastPage, parseAdminList, whenView } from '@drobek/tenancy/admin-list';
 import { isConfirmed } from '../moderation-confirm.js';
 
 const log = createConsoleLogger('publish-approval');
@@ -63,7 +69,38 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const rawWorkspace = (params.get('workspace') ?? '').trim().toLowerCase();
   const workspace = rawWorkspace && /^[a-z0-9-]{1,64}$/.test(rawWorkspace) ? rawWorkspace : null;
   const state = workspace ? filterOf(params.get('state'), 'all') : filterOf(params.get('state'), fallback);
-  const entries = await listWorkspacePublishing({ filter: state, workspace });
+  const { q, sort, page } = parseAdminList(params, PUBLISHING_SORTS);
+  const pageSize = adminListPageSize();
+  const query = { filter: state, workspace, q, sort, pageSize };
+  let shown = page;
+  let listed: Awaited<ReturnType<typeof listWorkspacePublishing>> = { entries: [], total: 0, matching: 0 };
+  let listError = false;
+  try {
+    listed = await listWorkspacePublishing({ ...query, page });
+    if (listed.entries.length === 0 && listed.matching > 0) {
+      shown = lastPage(pageSize, listed.matching);
+      listed = await listWorkspacePublishing({ ...query, page: shown });
+    }
+  } catch (err) {
+    log.error('publishing list failed', { error: dbErrorForLog(err) });
+    listError = true;
+  }
+  const entries = listed.entries;
+  const now = new Date();
+  const list = {
+    params: {
+      state: params.get('state') && state !== fallback ? state : '',
+      workspace: workspace ?? '',
+      q,
+      sort: sort === PUBLISHING_SORTS[0] ? '' : sort,
+      page: shown > 1 ? String(shown) : '',
+    },
+    page: shown,
+    pageSize,
+    total: listed.total,
+    matching: listed.matching,
+    filtered: Boolean(q || workspace),
+  };
   const wantsBlock = params.get('confirm') === 'block' && workspace !== null;
   const target = wantsBlock ? entries.find((e) => e.slug === workspace) : undefined;
   const blockConfirm =
@@ -87,6 +124,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
   return data(
     {
       state,
+      list,
+      listError,
       blockConfirm,
       blockConfirmError,
       defaultState: fallback,
@@ -102,6 +141,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
         kind: e.kind,
         publishing: e.publishing,
         createdAt: e.createdAt.toISOString(),
+        created: whenView(e.createdAt, now)!,
+        requested: whenView(e.requestedAt, now),
+        approved: whenView(e.approvedAt, now),
+        blocked: whenView(e.blockedAt, now),
         approvedAt: e.approvedAt?.toISOString() ?? null,
         approvedBy: e.approvedByEmail,
         blockedAt: e.blockedAt?.toISOString() ?? null,

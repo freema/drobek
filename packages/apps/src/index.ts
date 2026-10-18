@@ -176,6 +176,8 @@ export {
   type HeuristicFinding,
 } from './heuristic.js';
 export {
+  ABUSE_REPORT_APP_FILTERS,
+  ABUSE_REPORT_SORTS,
   appLockState,
   createAbuseReport,
   findAppByReportedHost,
@@ -296,6 +298,7 @@ export {
 } from './publish-approval.js';
 export {
   PUBLISHING_FILTERS,
+  PUBLISHING_SORTS,
   listWorkspacePublishing,
   publishPermission,
   publishPermissions,

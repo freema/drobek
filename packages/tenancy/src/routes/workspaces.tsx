@@ -1,6 +1,8 @@
 /**
  * /workspaces — client half: my workspaces with role badges,
- * create-team form, and (super-admin only) the all-workspaces section.
+ * create-team form, and (super-admin only) the all-workspaces section: a
+ * search, quick filters, a sort and a page of workspaces, each saying when it
+ * was created, who owns it, its members, apps and last activity.
  * Server code lives in ./workspaces.server.ts.
  */
 import {
@@ -10,7 +12,7 @@ import {
   useLoaderData,
   useNavigation,
 } from 'react-router';
-import { useState } from 'react';
+import { AdminChips, AdminFilterBar, AdminListCount, AdminPager, type AdminChipGroup } from '../admin-list-ui.js';
 import { DashboardPage, controls, mergeStyles, workspaceHref } from '../layout.js';
 import type { action, loader } from './workspaces.server.js';
 
@@ -71,7 +73,16 @@ const styles = {
     border: '1px solid #fdba74',
     marginLeft: 'auto',
   },
-  owner: { color: '#52525b', fontSize: '0.85rem', overflowWrap: 'anywhere', minWidth: 0 },
+  facts: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '0.15rem 0.9rem',
+    flexBasis: '100%',
+    color: '#52525b',
+    fontSize: '0.85rem',
+    overflowWrap: 'anywhere',
+    minWidth: 0,
+  },
   form: { display: 'flex', gap: '0.5rem', alignItems: 'flex-end', flexWrap: 'wrap', marginTop: '0.75rem' },
   field: { display: 'flex', flexDirection: 'column', gap: '0.2rem', flex: '1 1 12rem', minWidth: 0 },
   cards: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(15rem, 1fr))', gap: '0.6rem' },
@@ -110,30 +121,49 @@ const styles = {
   },
 } as const;
 
-interface AdminWorkspaceRow {
-  slug: string;
-  name: string;
-  kind: string;
-  ownerEmail: string | null;
-  myRole: string | null;
-  apps: number;
-  publishedApps: number;
-}
+type AllWorkspacesData = NonNullable<Awaited<ReturnType<typeof loader>>['allWorkspaces']>;
+
+const WORKSPACE_SORTS = [
+  { value: 'newest', label: 'Newest first' },
+  { value: 'oldest', label: 'Oldest first' },
+  { value: 'name', label: 'Name' },
+  { value: 'apps', label: 'Most apps' },
+  { value: 'activity', label: 'Recent activity' },
+] as const;
+
+const WORKSPACE_CHIPS: readonly AdminChipGroup[] = [
+  { param: 'kind', label: 'Kind', allLabel: 'Any', options: [{ value: 'personal', label: 'Personal' }, { value: 'team', label: 'Team' }] },
+  {
+    param: 'apps',
+    label: 'Apps',
+    allLabel: 'Any',
+    options: [
+      { value: 'none', label: 'No apps' },
+      { value: 'some', label: 'Has apps' },
+      { value: 'published', label: 'Has published' },
+    ],
+  },
+  {
+    param: 'publishing',
+    label: 'Publishing',
+    allLabel: 'Any',
+    options: [
+      { value: 'default', label: 'Default' },
+      { value: 'approved', label: 'Approved' },
+      { value: 'blocked', label: 'Blocked' },
+    ],
+  },
+];
+
+const ALL_WORKSPACES_PATH = '/workspaces';
 
 function appCountLabel(apps: number, published: number): string {
   if (apps === 0) return 'No apps';
   return `${apps} app${apps === 1 ? '' : 's'} · ${published} published`;
 }
 
-function AllWorkspaces({ workspaces }: { workspaces: readonly AdminWorkspaceRow[] }) {
-  const [query, setQuery] = useState('');
-  const q = query.trim().toLowerCase();
-  const shown = q
-    ? workspaces.filter(
-        (ws) =>
-          ws.slug.includes(q) || ws.name.toLowerCase().includes(q) || (ws.ownerEmail ?? '').toLowerCase().includes(q)
-      )
-    : workspaces;
+function AllWorkspaces({ data }: { data: AllWorkspacesData }) {
+  const { params, rows } = data;
   return (
     <section>
       <h2 style={styles.h2}>Server administration</h2>
@@ -148,56 +178,94 @@ function AllWorkspaces({ workspaces }: { workspaces: readonly AdminWorkspaceRow[
           <span style={styles.cardText}>Review abuse reports, take apps down and restore them.</span>
         </Link>
       </div>
-      <h2 style={styles.h2}>All workspaces</h2>
-      <div style={controls.row}>
-        <label style={controls.field}>
-          <span style={controls.label}>Filter by name, slug or owner</span>
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="acme"
-            style={mergeStyles(controls.input, { width: '18rem', maxWidth: '100%' })}
-            data-testid="all-workspaces-filter"
-          />
-        </label>
-        <span style={mergeStyles(controls.link, { color: '#71717a' })} data-testid="all-workspaces-count">
-          {q ? `${shown.length} of ${workspaces.length}` : `${workspaces.length} workspace${workspaces.length === 1 ? '' : 's'}`}
-        </span>
-      </div>
-      {shown.length === 0 ? (
-        <p style={styles.empty} data-testid="all-workspaces-none">
-          No workspace matches “{query.trim()}”. Try part of the slug, or clear the filter.
+      <h2 style={styles.h2} id="all-workspaces">
+        All workspaces
+      </h2>
+      <AdminFilterBar
+        path={ALL_WORKSPACES_PATH}
+        params={params}
+        label="Search name, slug or admin e-mail"
+        placeholder="acme"
+        sorts={WORKSPACE_SORTS}
+        testId="all-workspaces-filter"
+      />
+      <AdminChips path={ALL_WORKSPACES_PATH} params={params} groups={WORKSPACE_CHIPS} testId="all-workspaces-chips" />
+      {data.error ? (
+        <p style={styles.error} role="alert" data-testid="all-workspaces-error">
+          The list of all workspaces could not be loaded, so none is shown. Reload the page; if it keeps failing, the
+          server log says why.
         </p>
       ) : (
-        <ul style={styles.list} data-testid="all-workspaces">
-          {shown.map((ws) => (
-            <li key={ws.slug} style={styles.item} data-testid="all-workspace-item" data-slug={ws.slug}>
-              <Link to={workspaceHref(ws.slug)} style={styles.wsLink}>
-                {ws.name}
-              </Link>
-              <span style={styles.slug}>/{ws.slug}</span>
-              <span style={styles.badge}>{ws.kind}</span>
-              {ws.ownerEmail ? (
-                <span style={styles.owner} data-testid="workspace-owner">
-                  owner {ws.ownerEmail}
-                </span>
-              ) : null}
-              <span style={styles.owner} data-testid="workspace-app-count">
-                {appCountLabel(ws.apps, ws.publishedApps)}
-              </span>
-              {ws.myRole ? (
-                <span style={styles.roleBadge} data-testid="all-workspace-access">
-                  {ws.myRole}
-                </span>
-              ) : (
-                <span style={styles.superBadge} data-testid="all-workspace-access">
-                  Superadmin access — not a member
-                </span>
-              )}
-            </li>
-          ))}
-        </ul>
+        <>
+          <AdminListCount
+            total={data.total}
+            matching={data.matching}
+            filtered={data.filtered}
+            noun={['workspace', 'workspaces']}
+            testId="all-workspaces-count"
+          />
+          {data.total === 0 ? (
+            <p style={styles.empty} data-testid="all-workspaces-empty">
+              No workspace exists on this server yet. Each person gets a personal workspace when they first sign in.
+            </p>
+          ) : rows.length === 0 ? (
+            <p style={styles.empty} data-testid="all-workspaces-none">
+              No workspace matches {params.q ? `“${params.q}”` : 'these filters'}. Try part of the slug or an e-mail, or
+              choose Clear to see every workspace.
+            </p>
+          ) : (
+            <ul style={styles.list} data-testid="all-workspaces">
+              {rows.map((ws) => (
+                <li key={ws.slug} style={styles.item} data-testid="all-workspace-item" data-slug={ws.slug}>
+                  <Link to={workspaceHref(ws.slug)} style={styles.wsLink}>
+                    {ws.name}
+                  </Link>
+                  <span style={styles.slug}>/{ws.slug}</span>
+                  <span style={styles.badge}>{ws.kind}</span>
+                  {ws.publishing !== 'default' ? (
+                    <span style={styles.badge} data-testid="workspace-publishing">
+                      publishing {ws.publishing}
+                    </span>
+                  ) : null}
+                  {ws.myRole ? (
+                    <span style={styles.roleBadge} data-testid="all-workspace-access">
+                      {ws.myRole}
+                    </span>
+                  ) : (
+                    <span style={styles.superBadge} data-testid="all-workspace-access">
+                      Superadmin access — not a member
+                    </span>
+                  )}
+                  <span style={styles.facts}>
+                    <span title={ws.created.at} data-testid="workspace-created">
+                      created {ws.created.ago}
+                    </span>
+                    {ws.adminEmail ? (
+                      <span data-testid="workspace-owner">
+                        {ws.kind === 'personal' ? 'owner' : 'admin'} {ws.adminEmail}
+                      </span>
+                    ) : null}
+                    <span data-testid="workspace-members">
+                      {ws.members} member{ws.members === 1 ? '' : 's'}
+                    </span>
+                    <span data-testid="workspace-app-count">{appCountLabel(ws.apps, ws.publishedApps)}</span>
+                    <span title={ws.lastActivity?.at} data-testid="workspace-last-activity">
+                      {ws.lastActivity ? `last activity ${ws.lastActivity.ago}` : 'no activity yet'}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <AdminPager
+            path={ALL_WORKSPACES_PATH}
+            params={params}
+            page={data.page}
+            pageSize={data.pageSize}
+            matching={data.matching}
+            testId="all-workspaces-pager"
+          />
+        </>
       )}
     </section>
   );
@@ -287,7 +355,7 @@ export default function WorkspacesRoute() {
         </button>
       </Form>
 
-      {superAdmin && allWorkspaces ? <AllWorkspaces workspaces={allWorkspaces} /> : null}
+      {superAdmin && allWorkspaces ? <AllWorkspaces data={allWorkspaces} /> : null}
 
       <p style={styles.back}>
         <Link to="/me">Your account</Link>

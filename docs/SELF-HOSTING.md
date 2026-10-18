@@ -552,6 +552,7 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `ABUSE_REPORTS_PER_IP_HOUR` | 5 | valid abuse reports per client IP per hour |
 | `ABUSE_BRAND_WORDS` | a built-in list | the publish heuristic's brand words (comma-separated) |
 | `ABUSE_REPORTS_RETENTION_DAYS` | 365 | a resolved abuse report is deleted this many days after it was resolved (the daily retention prune); open reports stay |
+| `ADMIN_LIST_PAGE` | 50 | rows per page of the super-admin lists — All workspaces on `/workspaces`, `/admin/abuse` and `/admin/publishing` (1–500; a bad value falls back to 50) |
 | `GALLERY_ENABLED` | off | `true` = the [public gallery](#public-gallery): owners (and, on their explicit yes, their agents) may list published apps; `GET /api/public/gallery` answers. Off = no switch in the dashboard, the endpoint answers 404 |
 | `GALLERY_API_PER_IP_MINUTE` | 60 | requests to `GET /api/public/gallery` per client IP per minute (429 over it) |
 | `GALLERY_OPENS_PER_IP_HOUR` | 60 | visits through a gallery `openUrl` counted per client IP per hour (more still redirect, uncounted) |
@@ -1306,7 +1307,10 @@ Anyone can publish on a public drobek, so the operator (every address in
   A report on a host no app matches only waits in the queue, without an
   e-mail, so the form cannot carry spam into the operator's mailbox.
 - **Queue** (`/admin/abuse`, super-admins only, 403 for everyone else): the
-  open reports with the app and workspace behind each host.
+  open (or resolved) reports with the app and workspace behind each host,
+  when they came and from whom, `ADMIN_LIST_PAGE` (50) at a time. Search the
+  host, app, reporter or reason (`?q=`), keep the reports on an app or on a
+  host no app matches, and sort by newest, oldest or host.
   - **Take down** (pick a reason category): the app is unpublished and
     locked (`apps.locked_reason`). Its production, preview, version and
     custom-domain hosts answer **451** with a link to `TERMS_URL` (default
@@ -1511,8 +1515,10 @@ state in `list_apps` and `get_app`.
 
 **Decide** at `/admin/publishing` (super-admins only; linked from
 `/workspaces` and the moderation queue): every workspace with its state,
-admins, apps and live apps; filters for waiting requests, default, allowed
-and blocked; `?workspace=<slug>` shows one. In `open` mode **Block
+admins, apps and live apps, who asked, allowed or blocked it and when;
+filters for waiting requests, default, allowed and blocked, a search over
+slug, name and e-mails (`?q=`), a sort and pages of `ADMIN_LIST_PAGE`;
+`?workspace=<slug>` shows one. In `open` mode **Block
 publishing** / **Unblock** come first; in `approval` mode **Approve** /
 **Revoke approval** / **Block publishing**. Audited
 `workspace.publish_approve`, `workspace.publish_revoke`,

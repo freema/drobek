@@ -18,3 +18,4 @@ export {
 } from './client.js';
 export { runCoreMigrations, runJournalMigrations } from './migrate.js';
 export { pgErrorCode, isQueryTimeout, isUniqueViolation, isForeignKeyViolation, dbErrorForLog } from './errors.js';
+export { containsPattern } from './like.js';

@@ -16,6 +16,14 @@
       "types": "./src/layout.tsx",
       "default": "./dist/layout.js"
     },
+    "./admin-list": {
+      "types": "./src/admin-list.ts",
+      "default": "./dist/admin-list.js"
+    },
+    "./admin-list-ui": {
+      "types": "./src/admin-list-ui.tsx",
+      "default": "./dist/admin-list-ui.js"
+    },
     "./routes/workspaces": {
       "types": "./src/routes/workspaces.tsx",
       "default": "./dist/routes/workspaces.js"

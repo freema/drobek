@@ -19,11 +19,11 @@
  * Setting the state is audited; blocking and unblocking e-mail the
  * workspace's editors and admins.
  */
-import { and, desc, eq, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, exists, ilike, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { AUDIT_ACTIONS, AUDIT_SUBJECT_TYPES, writeAudit, type AuditExecutor } from '@drobek/audit';
 import { createConsoleLogger, type Logger } from '@drobek/core';
-import { apps, dbErrorForLog, getDb, memberships, users, workspaces } from '@drobek/db';
+import { apps, containsPattern, dbErrorForLog, getDb, memberships, users, workspaces } from '@drobek/db';
 import { renderPlatformEmail, sendEmail, serverFootNote, type PlatformEmailInput } from '@drobek/email';
 import { AppsError } from './errors.js';
 import { dashboardOrigin } from './origin.js';
@@ -454,10 +454,34 @@ export interface WorkspacePublishingEntry {
   superAdminMember: boolean;
 }
 
-/** The workspaces for the super-admin publishing page — waiting requests first, newest first. */
+export const PUBLISHING_SORTS = ['requested', 'newest', 'name'] as const;
+type PublishingSort = (typeof PUBLISHING_SORTS)[number];
+
+interface WorkspacePublishingPage {
+  entries: WorkspacePublishingEntry[];
+  /** The workspaces in this state. */
+  total: number;
+  /** Of them, the ones the search (and `workspace`) match (all pages). */
+  matching: number;
+}
+
+/**
+ * One page of the workspaces for the super-admin publishing page, in a
+ * state: `q` searches the slug, the name, the admins' and the requester's
+ * e-mail, `workspace` picks one slug; sorted by the waiting request (then
+ * newest), newest or name.
+ */
 export async function listWorkspacePublishing(
-  opts: { filter?: PublishingFilter; workspace?: string | null; limit?: number; env?: NodeJS.ProcessEnv } = {}
-): Promise<WorkspacePublishingEntry[]> {
+  opts: {
+    filter?: PublishingFilter;
+    workspace?: string | null;
+    q?: string;
+    sort?: PublishingSort;
+    page?: number;
+    pageSize?: number;
+    env?: NodeJS.ProcessEnv;
+  } = {}
+): Promise<WorkspacePublishingPage> {
   const env = opts.env ?? process.env;
   const filter = opts.filter ?? 'requested';
   const approver = alias(users, 'approver');
@@ -474,9 +498,38 @@ export async function listWorkspacePublishing(
           : filter === 'blocked'
             ? isNotNull(workspaces.publishBlockedAt)
             : undefined;
-  const where = opts.workspace ? and(eq(workspaces.slug, opts.workspace), byFilter) : byFilter;
+  const conditions = [byFilter];
+  if (opts.workspace) conditions.push(eq(workspaces.slug, opts.workspace));
+  const q = opts.q?.trim();
+  if (q) {
+    const pattern = containsPattern(q);
+    const admin = getDb()
+      .select({ one: sql`1` })
+      .from(memberships)
+      .innerJoin(users, eq(users.id, memberships.userId))
+      .where(and(eq(memberships.workspaceId, workspaces.id), eq(memberships.role, 'workspace-admin'), ilike(users.email, pattern)));
+    conditions.push(or(ilike(workspaces.slug, pattern), ilike(workspaces.name, pattern), ilike(requester.email, pattern), exists(admin)));
+  }
+  const where = and(...conditions);
+  const sort = opts.sort ?? 'requested';
+  const order =
+    sort === 'newest'
+      ? [desc(workspaces.createdAt), asc(workspaces.slug)]
+      : sort === 'name'
+        ? [sql`lower(${workspaces.name})`, asc(workspaces.slug)]
+        : [sql`${workspaces.publishApprovalRequestedAt} DESC NULLS LAST`, desc(workspaces.createdAt), asc(workspaces.slug)];
+  const pageSize = Math.min(Math.max(opts.pageSize ?? 200, 1), 500);
+  const page = Math.max(1, opts.page ?? 1);
   const db = getDb();
-  const rows = await db
+  const countsQuery = db
+    .select({
+      total: sql<number>`count(*)`.mapWith(Number),
+      matching: sql<number>`(count(*) filter (where ${where ?? sql`true`}))`.mapWith(Number),
+    })
+    .from(workspaces)
+    .leftJoin(requester, eq(requester.id, workspaces.publishApprovalRequestedBy))
+    .where(byFilter);
+  const rowsQuery = db
     .select({
       id: workspaces.id,
       slug: workspaces.slug,
@@ -498,8 +551,10 @@ export async function listWorkspacePublishing(
     .leftJoin(blocker, eq(blocker.id, workspaces.publishBlockedBy))
     .leftJoin(requester, eq(requester.id, workspaces.publishApprovalRequestedBy))
     .where(where)
-    .orderBy(sql`${workspaces.publishApprovalRequestedAt} DESC NULLS LAST`, desc(workspaces.createdAt))
-    .limit(Math.min(Math.max(opts.limit ?? 200, 1), 500));
+    .orderBy(...order)
+    .limit(pageSize)
+    .offset((page - 1) * pageSize);
+  const [rows, [counts]] = await Promise.all([rowsQuery, countsQuery]);
   const ids = rows.map((r) => r.id);
   const [withAdmin, live] = await Promise.all([
     workspacesWithSuperAdmin(db, ids, env),
@@ -513,13 +568,17 @@ export async function listWorkspacePublishing(
           )
           .orderBy(apps.slug),
   ]);
-  return rows.map((r) => ({
-    ...r,
-    publishing: stateOf(r),
-    apps: Number(r.apps),
-    publishedApps: Number(r.publishedApps),
-    liveApps: live.filter((a) => a.workspaceId === r.id).map(({ id, slug, name }) => ({ id, slug, name })),
-    admins: r.admins ? r.admins.split(',') : [],
-    superAdminMember: withAdmin.has(r.id),
-  }));
+  return {
+    total: counts?.total ?? 0,
+    matching: counts?.matching ?? 0,
+    entries: rows.map((r) => ({
+      ...r,
+      publishing: stateOf(r),
+      apps: Number(r.apps),
+      publishedApps: Number(r.publishedApps),
+      liveApps: live.filter((a) => a.workspaceId === r.id).map(({ id, slug, name }) => ({ id, slug, name })),
+      admins: r.admins ? r.admins.split(',') : [],
+      superAdminMember: withAdmin.has(r.id),
+    })),
+  };
 }

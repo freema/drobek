@@ -270,7 +270,7 @@ describe('listWorkspacePublishing', () => {
     const s = await setup();
     await publish(s.app.id, s.v.id, s.actor, { screen: false, env: OPEN });
     await requestPublishApproval({ workspaceId: s.ws.id, actor: s.actor, env: APPROVAL, send: async () => true });
-    const requested = (await listWorkspacePublishing({ filter: 'requested', env: APPROVAL })).find((e) => e.id === s.ws.id);
+    const requested = (await listWorkspacePublishing({ filter: 'requested', env: APPROVAL })).entries.find((e) => e.id === s.ws.id);
     expect(requested).toMatchObject({
       publishing: 'default',
       apps: 1,
@@ -281,16 +281,56 @@ describe('listWorkspacePublishing', () => {
       superAdminMember: false,
     });
     await setWorkspacePublishing({ workspaceId: s.ws.id, publishing: 'blocked', actor: boss, env: OPEN, log: quiet(), send: async () => true });
-    expect((await listWorkspacePublishing({ filter: 'requested' })).some((e) => e.id === s.ws.id)).toBe(false);
-    expect((await listWorkspacePublishing({ filter: 'default' })).some((e) => e.id === s.ws.id)).toBe(false);
-    expect((await listWorkspacePublishing({ filter: 'blocked' })).find((e) => e.id === s.ws.id)).toMatchObject({
+    expect((await listWorkspacePublishing({ filter: 'requested' })).entries.some((e) => e.id === s.ws.id)).toBe(false);
+    expect((await listWorkspacePublishing({ filter: 'default' })).entries.some((e) => e.id === s.ws.id)).toBe(false);
+    expect((await listWorkspacePublishing({ filter: 'blocked' })).entries.find((e) => e.id === s.ws.id)).toMatchObject({
       publishing: 'blocked',
       blockedByEmail: 'boss@x.test',
     });
     const one = await listWorkspacePublishing({ filter: 'all', workspace: s.ws.slug });
-    expect(one.map((e) => e.slug)).toEqual([s.ws.slug]);
+    expect(one.entries.map((e) => e.slug)).toEqual([s.ws.slug]);
     await setWorkspacePublishing({ workspaceId: s.ws.id, publishing: 'allowed', actor: boss, env: OPEN, log: quiet(), send: async () => true });
-    expect((await listWorkspacePublishing({ filter: 'allowed' })).find((e) => e.id === s.ws.id)).toMatchObject({ approvedByEmail: 'boss@x.test' });
+    expect((await listWorkspacePublishing({ filter: 'allowed' })).entries.find((e) => e.id === s.ws.id)).toMatchObject({ approvedByEmail: 'boss@x.test' });
+  });
+});
+
+describe('listWorkspacePublishing: search, sort and pages', () => {
+  it('searches slug, name, admin and requester e-mail; sorts; pages with the counts of the state', async () => {
+    const at = (d: number) => new Date(Date.UTC(2026, 1, d));
+    const [admin, asker] = await db
+      .insert(users)
+      .values([{ email: 'pubq-admin@corp.test' }, { email: 'pubq-asker@corp.test' }])
+      .returning();
+    const rows = await db
+      .insert(workspaces)
+      .values([
+        { kind: 'team', slug: 'pubq-alpha', name: 'Zulu Team', createdAt: at(1) },
+        { kind: 'team', slug: 'pubq-beta', name: 'Alpha Team', createdAt: at(2), publishApprovalRequestedAt: at(9), publishApprovalRequestedBy: asker.id },
+        { kind: 'team', slug: 'pubq-gamma', name: 'Mike Team', createdAt: at(3), publishApprovalRequestedAt: at(5), publishApprovalRequestedBy: asker.id },
+      ])
+      .returning();
+    await db.insert(memberships).values({ userId: admin.id, workspaceId: rows[0].id, role: 'workspace-admin' });
+    const slugs = async (o: Parameters<typeof listWorkspacePublishing>[0]) => (await listWorkspacePublishing({ filter: 'all', ...o })).entries.map((e) => e.slug);
+
+    expect(await slugs({ q: 'pubq', sort: 'newest' })).toEqual(['pubq-gamma', 'pubq-beta', 'pubq-alpha']);
+    expect(await slugs({ q: 'pubq', sort: 'name' })).toEqual(['pubq-beta', 'pubq-gamma', 'pubq-alpha']);
+    expect(await slugs({ q: 'pubq', sort: 'requested' })).toEqual(['pubq-beta', 'pubq-gamma', 'pubq-alpha']);
+    expect(await slugs({ q: 'ZULU' })).toEqual(['pubq-alpha']);
+    expect(await slugs({ q: 'pubq-admin@' })).toEqual(['pubq-alpha']);
+    expect(await slugs({ q: 'pubq-asker', sort: 'newest' })).toEqual(['pubq-gamma', 'pubq-beta']);
+    expect(await slugs({ q: 'pubq-gam' })).toEqual(['pubq-gamma']);
+
+    const page = await listWorkspacePublishing({ filter: 'all', q: 'pubq', sort: 'newest', pageSize: 2, page: 2 });
+    expect(page.entries.map((e) => e.slug)).toEqual(['pubq-alpha']);
+    expect(page.matching).toBe(3);
+    const everything = await listWorkspacePublishing({ filter: 'all' });
+    expect(page.total).toBe(everything.total);
+    expect(everything.total).toBeGreaterThan(3);
+
+    const waiting = await listWorkspacePublishing({ filter: 'requested', q: 'pubq' });
+    expect(waiting.entries.map((e) => e.slug)).toEqual(['pubq-beta', 'pubq-gamma']);
+    expect(waiting.matching).toBe(2);
+    expect(waiting.total).toBeGreaterThanOrEqual(2);
   });
 });
 

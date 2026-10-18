@@ -44,6 +44,10 @@ describe('renderBriefing', () => {
     expect(b).toContain('Never publish on your own initiative');
   });
 
+  it('points to the QR codes on the dashboard app page for a phone', () => {
+    expect(b).toContain('QR code of the preview URL or of the live address on the app page of the drobek dashboard');
+  });
+
   it('lists in the gallery only after the user said yes', () => {
     expect(b).toContain('`set_gallery_listing` ONLY after the user explicitly said yes');
     expect(b).toContain('`user_confirmed: true`');
