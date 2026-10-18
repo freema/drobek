@@ -272,9 +272,9 @@ test('app hosts: preview / publish / rollback / --vN, served files, headers, cac
     expect(rollback.json).toMatchObject({ published_version: 1, previous_version: 2 });
     expect((await hostRequest(prodHost(slug))).body).toBe(prodBody);
 
-    // ── --vN = exactly version N (noindex). ────────────────────────────────
+    // ── --vN = exactly version N (noindex); its preview script reports errors but never reloads. ──
     const v1Host = await hostRequest(versionHost(slug, 1));
-    expect(v1Host.body).toBe(html.body);
+    expect(v1Host.body).toBe(html.body.replace(' data-reload data-errors>', ' data-errors>'));
     expectAppSecurityHeaders(v1Host, { noindex: true });
     expect((await hostRequest(versionHost(slug, 2))).body).toContain('<p id="marker">second</p>');
     expect((await hostRequest(versionHost(slug, 42))).status).toBe(404);

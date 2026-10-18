@@ -173,7 +173,7 @@ test.describe('port a Lovable export — shadcn/ui with the @/ alias, esm.sh wit
         if (/Content Security Policy/i.test(m.text())) cspConsole.push(m.text());
       });
 
-      await tab.goto(urlOf(app.host), { waitUntil: 'networkidle' });
+      await tab.goto(urlOf(app.host), { waitUntil: 'load' });
       await expect(tab.getByRole('heading', { name: 'Guestbook', exact: true })).toBeVisible();
       await expect(tab.getByText('No messages yet. Be the first!')).toBeVisible();
       const sign = tab.getByRole('button', { name: 'Sign' });
@@ -192,7 +192,7 @@ test.describe('port a Lovable export — shadcn/ui with the @/ alias, esm.sh wit
       await tab.setViewportSize({ width: 390, height: 844 });
       expect(await tab.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
-      await tab.goto(`${urlOf(app.host)}/no-such-page`, { waitUntil: 'networkidle' });
+      await tab.goto(`${urlOf(app.host)}/no-such-page`, { waitUntil: 'load' });
       await expect(tab.getByRole('heading', { name: '404' })).toBeVisible();
       await expect(tab.getByRole('link', { name: 'Return to Home' })).toBeVisible();
 
