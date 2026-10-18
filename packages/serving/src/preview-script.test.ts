@@ -1,9 +1,10 @@
 /**
- * The preview script: its tag goes into HTML pages of the preview host only
- * (never a version host for the reload, never the production host or a
- * custom domain), `"reload": false` keeps it out, `/__drobek/preview.js` is
- * served only on the preview and version hosts, and every other preview path
- * answers 404 without reaching the platform.
+ * The preview script: its tag goes into HTML pages of the preview host (reload
+ * + errors) and the version hosts (errors only), never the production host or
+ * a custom domain; `"reload": false` / `"browserErrors": false` switch the
+ * parts off, `/__drobek/preview.js` is served only on the preview and version
+ * hosts, and every other preview path answers 404 without reaching the
+ * platform. The script itself runs against a stand-in of the page.
  */
 import { createHash } from 'node:crypto';
 import { runInNewContext } from 'node:vm';
@@ -64,6 +65,8 @@ beforeEach(() => {
     [1, { id: 'v_1', files: filesWith('{}') }],
     [2, { id: 'v_2', files: filesWith('{}') }],
     [3, { id: 'v_3', files: filesWith('{"reload": false}') }],
+    [4, { id: 'v_4', files: filesWith('{"browserErrors": false}') }],
+    [5, { id: 'v_5', files: filesWith('{"reload": false, "browserErrors": false}') }],
   ]);
   platformCalls = 0;
   signals = [];
@@ -94,7 +97,7 @@ function req(target: AppHostTarget, path = '/', headers: Record<string, string> 
 }
 
 const text = (b: unknown) => (b === null ? '' : String(b));
-const TAG = (n: number) => `<script src="/__drobek/preview.js" defer data-app="shop" data-version="${n}" data-reload></script>`;
+const TAG = (n: number, flags = ' data-reload data-errors') => `<script src="/__drobek/preview.js" defer data-app="shop" data-version="${n}"${flags}></script>`;
 const PREVIEW: AppHostTarget = { kind: 'preview', slug: 'shop' };
 
 describe('the preview script tag in served HTML', () => {
@@ -102,14 +105,21 @@ describe('the preview script tag in served HTML', () => {
     const r = await handleAppRequest(req(PREVIEW), deps);
     expect(text(r.body)).toContain(`${TAG(2)}</body>`);
     expect(r.headers['Content-Length']).toBe(String(Buffer.byteLength(text(r.body))));
-    expect(r.headers.ETag).toBe(`"${sha(INDEX)}-pv2r-${script.hash}"`);
+    expect(r.headers.ETag).toBe(`"${sha(INDEX)}-pv2re-${script.hash}"`);
     const again = await handleAppRequest(req(PREVIEW, '/', { 'if-none-match': String(r.headers.ETag) }), deps);
     expect(again.status).toBe(304);
   });
 
-  it('a version host, the production host and a custom domain never get it', async () => {
+  it('a version host gets only the errors part', async () => {
+    const r = await handleAppRequest(req({ kind: 'version', slug: 'shop', number: 1 }), deps);
+    expect(text(r.body)).toContain(`${TAG(1, ' data-errors')}</body>`);
+    expect(r.headers.ETag).toBe(`"${sha(INDEX)}-pv1e-${script.hash}"`);
+    const off = await handleAppRequest(req({ kind: 'version', slug: 'shop', number: 4 }), deps);
+    expect(text(off.body)).toBe(INDEX);
+  });
+
+  it('the production host and a custom domain never get it', async () => {
     const targets: AppHostTarget[] = [
-      { kind: 'version', slug: 'shop', number: 1 },
       { kind: 'prod', slug: 'shop' },
       { kind: 'custom', slug: 'shop', hostname: 'shop.example.com' },
     ];
@@ -121,8 +131,14 @@ describe('the preview script tag in served HTML', () => {
     }
   });
 
-  it('"reload": false in the version\'s drobek.json keeps it out', async () => {
+  it('"reload": false / "browserErrors": false in the version\'s drobek.json switch their part off; both → no tag', async () => {
     previewVersion = 3;
+    expect(text((await handleAppRequest(req(PREVIEW), deps)).body)).toContain(TAG(3, ' data-errors'));
+    previewVersion = 4;
+    deps.store.bust('shop');
+    expect(text((await handleAppRequest(req(PREVIEW), deps)).body)).toContain(TAG(4, ' data-reload'));
+    previewVersion = 5;
+    deps.store.bust('shop');
     const r = await handleAppRequest(req(PREVIEW), deps);
     expect(text(r.body)).toBe(INDEX);
     expect(r.headers.ETag).toBe(`"${sha(INDEX)}"`);
@@ -136,14 +152,14 @@ describe('the preview script tag in served HTML', () => {
   it('goes before the feedback tag, which stays right before </body>', async () => {
     const r = await handleAppRequest(req(PREVIEW), { ...deps, feedback: widget });
     expect(text(r.body)).toContain(`${TAG(2)}<script src="/__drobek/feedback.js" defer data-app="shop" data-version="2"></script></body>`);
-    expect(r.headers.ETag).toBe(`"${sha(INDEX)}-fb2-${widget.hash}-pv2r-${script.hash}"`);
+    expect(r.headers.ETag).toBe(`"${sha(INDEX)}-fb2-${widget.hash}-pv2re-${script.hash}"`);
   });
 
   it('carries only the slug characters and the version number; no part on → no tag', () => {
-    expect(previewScriptTag('shop"><x', 4.7, { reload: true })).toBe(
+    expect(previewScriptTag('shop"><x', 4.7, { reload: true, errors: false })).toBe(
       '<script src="/__drobek/preview.js" defer data-app="shopx" data-version="4" data-reload></script>'
     );
-    expect(previewScriptTag('shop', 4, { reload: false })).toBeNull();
+    expect(previewScriptTag('shop', 4, { reload: false, errors: false })).toBeNull();
   });
 });
 
@@ -217,6 +233,10 @@ function runScript(attrs: Record<string, string>, opts: { framed?: boolean; stor
   const appended: unknown[] = [];
   const reload = vi.fn();
   const scrollTo = vi.fn();
+  const listeners = new Map<string, ((e: unknown) => void)[]>();
+  const timers: { fn: () => void; ms: number }[] = [];
+  const beacons: { url: string; body: Record<string, unknown> }[] = [];
+  const logged: unknown[][] = [];
   const win: Record<string, unknown> = {
     document: {
       currentScript: { getAttribute: (n: string) => attrs[n] ?? null, hasAttribute: (n: string) => n in attrs },
@@ -230,7 +250,16 @@ function runScript(attrs: Record<string, string>, opts: { framed?: boolean; stor
         sources.push(this);
       }
     },
-    location: { pathname: '/list', search: '?page=2', reload },
+    location: { origin: 'https://shop--preview.drobek.test', pathname: '/list', search: '?page=2', reload },
+    navigator: {
+      userAgent: 'Mozilla/5.0 (Macintosh) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Safari/537.36',
+      sendBeacon: (url: string, body: string) => {
+        beacons.push({ url, body: JSON.parse(body) as Record<string, unknown> });
+        return true;
+      },
+    },
+    console: { error: (...args: unknown[]) => void logged.push(args) },
+    addEventListener: (type: string, fn: (e: unknown) => void) => listeners.set(type, [...(listeners.get(type) ?? []), fn]),
     sessionStorage: {
       getItem: (k: string) => storage.get(k) ?? null,
       setItem: (k: string, v: string) => void storage.set(k, v),
@@ -239,14 +268,23 @@ function runScript(attrs: Record<string, string>, opts: { framed?: boolean; stor
     scrollX: 0,
     scrollY: 640,
     scrollTo,
-    setTimeout: () => 0,
+    setTimeout: (fn: () => void, ms: number) => timers.push({ fn, ms }),
+    clearTimeout: () => {},
   };
   win.window = win;
   win.self = win;
   win.top = opts.framed ? {} : win;
   runInNewContext(script.script.toString(), win);
   const send = (m: unknown) => sources[0]?.onmessage?.({ data: JSON.stringify(m) });
-  return { sources, send, reload, scrollTo, storage, host, toast, appended };
+  const fire = (type: string, e: unknown) => (listeners.get(type) ?? []).forEach((fn) => fn(e));
+  /** Run the timers due within `ms` (each once). */
+  const runTimers = (ms: number) => {
+    const due = timers.filter((t) => t.ms <= ms);
+    for (const t of due) timers.splice(timers.indexOf(t), 1);
+    for (const t of due) t.fn();
+  };
+  const consoleError = (...args: unknown[]) => (win.console as { error: (...a: unknown[]) => void }).error(...args);
+  return { sources, send, reload, scrollTo, storage, host, toast, appended, listeners, fire, runTimers, beacons, logged, consoleError };
 }
 
 describe('the script in a page', () => {
@@ -294,5 +332,82 @@ describe('the script in a page', () => {
   it('does nothing in a frame or without data-reload', () => {
     expect(runScript(RELOAD, { framed: true }).sources).toHaveLength(0);
     expect(runScript({ 'data-app': 'shop', 'data-version': '4' }).sources).toHaveLength(0);
+  });
+});
+
+describe('the script reporting errors', () => {
+  const ERRORS = { 'data-app': 'shop', 'data-version': '4', 'data-errors': '' };
+  const boom = () => {
+    const e = new TypeError('x is undefined');
+    e.stack = 'TypeError: x is undefined\n    at submit (https://shop--preview.drobek.test/main.js?v=1:12:5)';
+    return e;
+  };
+
+  it('an uncaught error goes out once, batched, with the page path, the version and the browser family only', () => {
+    const page = runScript(ERRORS);
+    expect(page.sources).toHaveLength(0);
+    page.fire('error', { message: 'Uncaught TypeError: x is undefined', error: boom(), filename: 'https://shop--preview.drobek.test/main.js?v=1', lineno: 12, colno: 5 });
+    expect(page.beacons).toHaveLength(0);
+    page.runTimers(1000);
+    expect(page.beacons).toHaveLength(1);
+    expect(page.beacons[0].url).toBe('/__drobek/preview/errors');
+    expect(page.beacons[0].body).toMatchObject({ version: 4, ua: 'chrome' });
+    const [e] = page.beacons[0].body.errors as Record<string, unknown>[];
+    expect(e).toMatchObject({ type: 'error', message: 'Uncaught TypeError: x is undefined', source: '/main.js', line: 12, col: 5, path: '/list', count: 1 });
+    expect(String(e.stack)).toContain('main.js?v=1:12:5');
+  });
+
+  it('the same error within a minute is counted, not sent again; the count goes out when the minute ends', () => {
+    const page = runScript(ERRORS);
+    for (let i = 0; i < 3; i++) page.fire('error', { message: 'Uncaught TypeError: x is undefined', error: boom(), filename: '', lineno: 12, colno: 5 });
+    page.runTimers(1000);
+    expect(page.beacons).toHaveLength(1);
+    page.runTimers(60_000);
+    page.runTimers(1000);
+    expect(page.beacons).toHaveLength(2);
+    expect((page.beacons[1].body.errors as Record<string, unknown>[])[0]).toMatchObject({ count: 2 });
+  });
+
+  it('unhandled rejections and console.error with an Error are reported; console.error with text is not, and still logs', () => {
+    const page = runScript(ERRORS);
+    page.fire('unhandledrejection', { reason: boom() });
+    page.consoleError('Save failed', new RangeError('too far'));
+    page.consoleError('just text', { a: 1 });
+    page.runTimers(1000);
+    const sent = page.beacons.flatMap((b) => b.body.errors as Record<string, unknown>[]);
+    expect(sent.map((e) => [e.type, e.message])).toEqual([
+      ['unhandledrejection', 'TypeError: x is undefined'],
+      ['console', 'RangeError: too far'],
+    ]);
+    expect(page.logged).toHaveLength(2);
+  });
+
+  it('leaving the page sends what is still queued or counted', () => {
+    const page = runScript(ERRORS);
+    page.fire('error', { message: 'Uncaught Error: a', error: null, filename: '', lineno: 1, colno: 1 });
+    page.fire('error', { message: 'Uncaught Error: a', error: null, filename: '', lineno: 1, colno: 1 });
+    page.fire('pagehide', {});
+    const sent = page.beacons.flatMap((b) => b.body.errors as Record<string, unknown>[]);
+    expect(sent.map((e) => e.count)).toEqual([1, 1]);
+  });
+
+  it('caps the message and the stack; a resource load error (no message) is not its business', () => {
+    const page = runScript(ERRORS);
+    const e = new Error('m'.repeat(5000));
+    e.stack = 's'.repeat(9000);
+    page.fire('error', { message: 'm'.repeat(5000), error: e, filename: '', lineno: 1, colno: 1 });
+    page.fire('error', { target: {} });
+    page.runTimers(1000);
+    const sent = page.beacons.flatMap((b) => b.body.errors as Record<string, unknown>[]);
+    expect(sent).toHaveLength(1);
+    expect(String(sent[0].message)).toHaveLength(1024);
+    expect(String(sent[0].stack)).toHaveLength(4096);
+  });
+
+  it('without data-errors nothing is collected', () => {
+    const page = runScript({ 'data-app': 'shop', 'data-version': '4' });
+    expect(page.listeners.size).toBe(0);
+    page.consoleError(new Error('x'));
+    expect(page.logged).toHaveLength(1);
   });
 });

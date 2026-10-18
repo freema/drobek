@@ -72,16 +72,22 @@
  * production host and custom domains never carry or serve it (see
  * feedback-widget.ts).
  *
- * PREVIEW SCRIPT: with `deps.preview`, an HTML file the preview host serves
- * also carries `/__drobek/preview.js` (before the feedback tag; its ETag
- * gains `-pv<N><parts>-<script hash>`) unless no part of it is on for the
- * version (`"reload": false`); `GET /__drobek/preview.js` serves the script
- * on the preview and version hosts. `GET /__drobek/preview/events` on the
- * preview host is the event stream (`deps.previewEvents`, see
- * preview-events.server.ts) behind the password gate (401 JSON), not counted
- * as a request. Every other `/__drobek/preview*` request — and any of them on
- * the production host or a custom domain — answers 404 without reaching the
- * platform (see preview-script.ts).
+ * PREVIEW SCRIPT: with `deps.preview`, an HTML file the preview and version
+ * hosts serve also carries `/__drobek/preview.js` (before the feedback tag;
+ * its ETag gains `-pv<N><parts>-<script hash>`) unless no part of it is on
+ * for the version (reload: preview host only, not with `"reload": false`;
+ * errors: not with `"browserErrors": false`); `GET /__drobek/preview.js`
+ * serves the script there. `GET /__drobek/preview/events` on the preview
+ * host is the event stream (`deps.previewEvents`, see
+ * preview-events.server.ts) behind the password gate (401 JSON).
+ * `POST /__drobek/preview/errors` on the preview and version hosts takes the
+ * script's error beacon (`deps.browserErrors`, see browser-errors.server.ts)
+ * and always answers 204: behind a locked password gate, for a version
+ * with `"browserErrors": false` or with nothing served, the beacon is
+ * dropped unread. None of them is counted as a request. Every other
+ * `/__drobek/preview*` request — and any of them on the production host or a
+ * custom domain — answers 404 without reaching the platform (see
+ * preview-script.ts).
  *
  * ABUSE: `GET /.well-known/drobek-report` on ANY app host
  * answers `{ report_url, app, terms_url }` (public, cacheable 1 h) before
@@ -108,6 +114,7 @@ import { assetNameOf, assetResponsePlan, type AssetSource } from './assets.js';
 import { contentTypeForPath } from './content-type.js';
 import { FEEDBACK_SCRIPT_PATH, feedbackScriptTag, injectBeforeBodyEnd, type FeedbackWidget } from './feedback-widget.js';
 import {
+  PREVIEW_ERRORS_PATH,
   PREVIEW_EVENTS_PATH,
   PREVIEW_PATH_PREFIX,
   PREVIEW_SCRIPT_PATH,
@@ -177,6 +184,9 @@ export const VERSION_TIMING_METRIC = 'drobek-version';
 
 /** Answers `GET /__drobek/preview/events` on a preview host for a resolved, visibility-cleared app; `version` = what it serves now. */
 export type PreviewEventsHandler = (req: AppRequest, app: ServeApp, version: ServeVersion | null) => AppResponse | Promise<AppResponse>;
+
+/** Takes `POST /__drobek/preview/errors` of a resolved, unlocked app whose served `version` collects errors (never throws). */
+export type BrowserErrorsHandler = (req: AppRequest, app: ServeApp, version: ServeVersion) => Promise<void>;
 
 /** Answers a `/__drobek/*` request for a resolved, visibility-cleared app. */
 export type PlatformHandler = (req: AppRequest, ctx: { app: ServeApp; target: AppHostTarget }) => Promise<AppResponse>;
@@ -250,6 +260,8 @@ export interface HandlerDeps {
   preview?: PreviewScript | null;
   /** The preview host's event stream (absent → `/__drobek/preview/events` answers 404). */
   previewEvents?: PreviewEventsHandler;
+  /** The preview's error beacon (absent → `/__drobek/preview/errors` answers 404). */
+  browserErrors?: BrowserErrorsHandler;
 }
 
 /** Header naming the app behind an app-host response. */
@@ -303,6 +315,7 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
   const isPreviewPath = req.path === PREVIEW_SCRIPT_PATH || req.path.startsWith(PREVIEW_PATH_PREFIX);
   const isPreviewScript = preview !== null && (method === 'GET' || method === 'HEAD') && req.path === PREVIEW_SCRIPT_PATH;
   const isEvents = kind === 'preview' && deps.previewEvents !== undefined && method === 'GET' && req.path === PREVIEW_EVENTS_PATH;
+  const isErrors = preview !== null && deps.browserErrors !== undefined && method === 'POST' && req.path === PREVIEW_ERRORS_PATH;
   // Every other preview path answers JSON: the stream, its gate, or 404 where it does not exist.
   const isPreviewJson = isPreviewPath && !isPreviewScript;
   const isPlatform =
@@ -395,6 +408,12 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
       ? verifyAppAccessToken(token, app.id, deps.accessSecret, (deps.now ?? Date.now)())
       : false;
   const locked = decideVisibility({ visibility: app.visibility, hasAppAccess }).action === 'password';
+  if (isErrors) {
+    if (!locked && version && (await deps.store.previewOptions(version.id)).browserErrors) {
+      await deps.browserErrors!(req, app, version);
+    }
+    return { status: 204, headers: { ...security, 'Cache-Control': NO_STORE }, body: null };
+  }
   if (isPlatform || isBeacon || isPreviewJson) {
     if (locked && !(isPlatform && deps.platformSkipsGate?.(method, req.path))) {
       return {
@@ -533,7 +552,7 @@ function serveWidget(req: AppRequest, widget: FeedbackWidget, security: Record<s
 /** Which parts of the preview script a page of `versionId` on a `kind` host runs. */
 async function previewPartsFor(kind: AppHostTarget['kind'], store: ServeStore, versionId: string): Promise<PreviewScriptParts> {
   const options = await store.previewOptions(versionId);
-  return { reload: kind === 'preview' && options.reload };
+  return { reload: kind === 'preview' && options.reload, errors: options.browserErrors };
 }
 
 /** `GET /__drobek/preview.js` on a preview or version host: the script, revalidated by its ETag. */

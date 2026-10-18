@@ -159,15 +159,21 @@ describe('compile — happy path', () => {
       const r = await compile(app([['drobek.json', JSON.stringify({ imports: deps, reload: 'no' })]]));
       expect(r.ok).toBe(false);
       expect(r.errors[0].text).toContain('"reload" must be true or false');
+      const e = await compile(app([['drobek.json', JSON.stringify({ imports: deps, browserErrors: 0 })]]));
+      expect(e.ok).toBe(false);
+      expect(e.errors[0].text).toContain('"browserErrors" must be true or false');
+      expect((await compile(app([['drobek.json', JSON.stringify({ imports: deps, browserErrors: false })]]))).ok).toBe(true);
     });
 
     it('previewScriptOptions: only an explicit false turns a switch off', () => {
-      expect(previewScriptOptions(undefined)).toEqual({ reload: true });
-      expect(previewScriptOptions('{}')).toEqual({ reload: true });
-      expect(previewScriptOptions('{"reload":false}')).toEqual({ reload: false });
-      expect(previewScriptOptions('{"reload":"false"}')).toEqual({ reload: true });
-      expect(previewScriptOptions('[]')).toEqual({ reload: true });
-      expect(previewScriptOptions('not json')).toEqual({ reload: true });
+      const on = { reload: true, browserErrors: true };
+      expect(previewScriptOptions(undefined)).toEqual(on);
+      expect(previewScriptOptions('{}')).toEqual(on);
+      expect(previewScriptOptions('{"reload":false}')).toEqual({ reload: false, browserErrors: true });
+      expect(previewScriptOptions('{"browserErrors":false}')).toEqual({ reload: true, browserErrors: false });
+      expect(previewScriptOptions('{"reload":"false"}')).toEqual(on);
+      expect(previewScriptOptions('[]')).toEqual(on);
+      expect(previewScriptOptions('not json')).toEqual(on);
     });
   });
 

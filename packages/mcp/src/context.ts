@@ -22,6 +22,7 @@ import {
 } from '@drobek/insights';
 import { domainsResolver, type DnsResolver } from '@drobek/domains';
 import { moduleRuntime, revokeEndUserSessions, type ModuleRuntime } from '@drobek/modules';
+import { browserErrorStore, type BrowserErrorStore } from '@drobek/serving';
 import { defaultMemberInviteDeps, type MemberInviteDeps } from '@drobek/tenancy';
 import type { AssetDeps } from './assets.js';
 import { redisLeaseStore, type LeaseStore } from './lease.js';
@@ -76,6 +77,8 @@ export interface ToolDeps {
   modules: () => Promise<ModuleRuntime>;
   /** Compile history + get_logs reads. */
   logs: LogStore;
+  /** The preview's browser errors (get_logs `browser`, get_app `preview_errors`, write_files). */
+  browserErrors: BrowserErrorStore;
   /** App traffic analytics (get_analytics, get_app `traffic`): the last `days` days, top lists of `topLimit` entries. */
   traffic: (appId: string, days: number, topLimit: number) => Promise<TrafficView>;
   /** Upload tokens, the hourly upload-URL budget and the asset disk. */
@@ -110,6 +113,7 @@ export function defaultDeps(overrides: Partial<ToolDeps> = {}): ToolDeps {
     log,
     modules: () => moduleRuntime(),
     logs: insightsLogStore(),
+    browserErrors: browserErrorStore(),
     traffic: (appId, days, topLimit) => queryTraffic(appId, days, { topLimit }),
     assets: {
       tokens: redisUploadTokenStore(),

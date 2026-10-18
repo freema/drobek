@@ -348,7 +348,7 @@ export const INPUT_SCHEMAS = {
     app_id: appId,
     kind: z
       .string()
-      .describe('"runtime" (browser errors), "compile" (the last 50 compiles), "requests" (daily totals + module calls by status), "sync" (the latest runs of the sync sources) or "webhooks" (the latest webhook deliveries).'),
+      .describe('"runtime" (browser errors), "browser" (the preview\'s browser errors, stacks mapped to your sources), "compile" (the last 50 compiles), "requests" (daily totals + module calls by status), "sync" (the latest runs of the sync sources) or "webhooks" (the latest webhook deliveries).'),
     since: z.string().optional().describe('ISO 8601 date-time: only entries from then on (at most 30 days back).'),
   },
   get_analytics: {

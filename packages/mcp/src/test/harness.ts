@@ -16,6 +16,7 @@ import type { DnsResolver } from '@drobek/domains';
 import { noopLogger } from '@drobek/core';
 import { memoryTrafficRedis, queryTraffic, type TrafficRedis } from '@drobek/insights';
 import { loadModuleRuntime, memoryRateLimiter, type ModuleRuntime } from '@drobek/modules';
+import { browserErrorStore, memoryBrowserErrorsRedis } from '@drobek/serving';
 import type { AppChangedEvent, ToolDeps, ToolPrincipal } from '../context.js';
 import { insightsLogStore } from '../context.js';
 import { memoryLeaseStore } from '../lease.js';
@@ -113,6 +114,7 @@ export function testDeps(limits: Partial<CompileLimits> = {}): TestDeps {
   const sessionEpochs = new Map<string, number>();
   const invited: TestDeps['invited'] = { tokens: new Map(), sent: [], failNext: false };
   const trafficRedis = memoryTrafficRedis();
+  const browserErrorsRedis = memoryBrowserErrorsRedis();
   let inviteSeq = 0;
   return {
     leases: memoryLeaseStore(clock.now),
@@ -127,6 +129,7 @@ export function testDeps(limits: Partial<CompileLimits> = {}): TestDeps {
     modules: testModules,
     // Postgres (PGlite) only — no Redis for the daily serving counters.
     logs: insightsLogStore({ flushSignals: false }),
+    browserErrors: browserErrorStore({ redis: () => browserErrorsRedis }),
     traffic: (appId, days, topLimit) => queryTraffic(appId, days, { topLimit, redis: () => trafficRedis }),
     assets: {
       tokens: uploadTokens,

@@ -10,9 +10,10 @@ import { FULL_SCOPE, callTool, mcpClient, type McpClient } from './helpers/mcp';
  *  - an open preview tab redraws itself with the new content a few seconds
  *    after a write_files over MCP that compiled, at the same scroll position;
  *  - a write that does not compile shows the notice and does not reload;
- *  - `"reload": false` in drobek.json leaves the script out;
- *  - the version and production hosts never carry it (the production host
- *    answers 404 for the event stream);
+ *  - `"reload": false` in drobek.json drops the reload (the script stays for
+ *    the error reports, without `data-reload`);
+ *  - a version host carries the script without the reload, production never
+ *    (both answer 404 for the event stream);
  *  - the preview framed as the dashboard's app-list thumbnail never connects.
  */
 
@@ -50,7 +51,7 @@ test.describe('live reload of the preview @local', () => {
     version = w.json.version as number;
 
     const html = await hostRequest(previewHost(app.slug), '/');
-    expect(html.body).toContain(`<script src="/__drobek/preview.js" defer data-app="${app.slug}" data-version="${version}" data-reload></script>`);
+    expect(html.body).toContain(`<script src="/__drobek/preview.js" defer data-app="${app.slug}" data-version="${version}" data-reload data-errors></script>`);
     const script = await hostRequest(previewHost(app.slug), '/__drobek/preview.js');
     expect(script.status).toBe(200);
     expect(String(script.headers['content-type'])).toContain('javascript');
@@ -95,7 +96,7 @@ test.describe('live reload of the preview @local', () => {
     expect(failed).toBeGreaterThan(version);
   });
 
-  test('"reload": false leaves the script out; the version and production hosts never carry it', async () => {
+  test('"reload": false drops the reload; the version host has no reload and production no script', async () => {
     skipUnlessLocal();
     const off = await callTool(mcp.client, 'write_files', {
       app_id: app.app_id,
@@ -106,11 +107,12 @@ test.describe('live reload of the preview @local', () => {
     expect((off.json.compile as { ok: boolean }).ok).toBe(true);
     const offHtml = await hostRequest(previewHost(app.slug), '/');
     expect(offHtml.body).toContain('Two');
-    expect(offHtml.body).not.toContain('/__drobek/preview.js');
+    expect(offHtml.body).toContain('/__drobek/preview.js');
+    expect(offHtml.body).not.toContain('data-reload');
 
     const pinned = await hostRequest(versionHost(app.slug, version), '/');
     expect(pinned.status).toBe(200);
-    expect(pinned.body).not.toContain('data-reload');
+    expect(pinned.body).toContain(`<script src="/__drobek/preview.js" defer data-app="${app.slug}" data-version="${version}" data-errors></script>`);
     expect((await hostRequest(versionHost(app.slug, version), EVENTS_PATH)).status).toBe(404);
 
     const pub = await callTool(mcp.client, 'publish', { app_id: app.app_id, version });

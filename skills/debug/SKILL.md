@@ -80,6 +80,14 @@ Fix = the line it names, in the same app, e.g. `"date-fns": "https://esm.sh/date
     (`--preview`) from production. Arrives within seconds after a page ran. The envelope also carries the latest
     version's `page_loads` / `page_errors`. A failed run of a module's scheduled job is `type: 'module_job'` with
     `module` and `job` (empty `url`): fix that module's config or secrets.
+  - `browser` — what the preview (`--preview`) and version (`--v<N>`) pages raised in the browser: uncaught
+    errors, unhandled rejections and `console.error` with an `Error`, deduped, newest first:
+    `{ at, first_seen, version, type, path, message, stack, source, count, ua }`. `type`: `error` /
+    `unhandledrejection` / `console`. `source` and every frame of `stack` point at your own `src/…:line:column`
+    (mapped through the version's source map) — open that line with `read_file`. `path` is the page path, `ua`
+    the browser family only. Kept 48 hours. Read it first when the user says "it does not work"; `get_app`
+    `preview_errors` and `write_files` `previous_version_browser_errors` count them. `"browserErrors": false`
+    in `drobek.json` turns the reporting off.
   - `compile` — last 50 compiles: `{ at, version, ok, errors, warning_count, duration_ms, trigger }`
     (`version: null` = refused, nothing stored).
   - `requests` — per day: `{ day, requests, count_5xx, count_404, modules: { <m>: { "2xx", "3xx", "4xx", "5xx" } }, failing_paths: { "4xx": [{ path, count }], "5xx": [{ path, count }] } }`.
@@ -96,7 +104,7 @@ Fix = the line it names, in the same app, e.g. `"date-fns": "https://esm.sh/date
 - esbuild strips types: a TYPE error compiles fine and fails only at run
   time (`undefined is not a function`, a wrong prop). Check names against
   `skill_info(<module>).sdk.types`, then look at `get_logs('runtime')`.
-- `compile.ok: true` + blank page: usually a runtime error (`get_logs`),
+- `compile.ok: true` + blank page: usually a runtime error (`get_logs` kind `browser`),
   `index.html` without `<script type="module" src="/main.js">` /
   `<div id="root">` (a `resource` entry names a script that failed to
   load), or a script from a host other than esm.sh (a `csp` entry).

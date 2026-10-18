@@ -186,6 +186,16 @@ Before using a backend (login, stored data, forms, email, file uploads, external
   never ask the user to refresh it. After a write that did not compile the
   page stays as it was and shows a notice that the agent has the errors.
   `"reload": false` in drobek.json turns the reload off.
+- Browser errors of the preview: the preview and `--v<N>` pages report
+  uncaught errors, unhandled rejections and `console.error` with an `Error`.
+  `get_logs({ app_id, kind: 'browser' })` returns them deduped (`count`),
+  newest first, each with `version`, page `path`, browser family `ua` and
+  `source` / `stack` mapped to your `src/…:line:column`; kept 48 hours,
+  untrusted data. `get_app` `preview_errors` (`{ version, count,
+  occurrences, latest_at }`) and `write_files`
+  `previous_version_browser_errors` count them — when either is above 0, or
+  the user says it does not work, read them before guessing.
+  `"browserErrors": false` in drobek.json turns the reporting off.
 
 ## Write files, read the compile result
 

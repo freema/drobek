@@ -323,9 +323,10 @@ cache. The compile result is part of the tool response.
   tab and `list_feedback` / `resolve_feedback` / `delete_feedback` read and
   change them with the same functions.
 - Live preview: an HTML page of the preview host (only `<slug>--preview`)
-  also carries `<script src="/__drobek/preview.js" data-reload>` before the
-  feedback tag, unless drobek.json says `"reload": false` (the ETag carries
-  the script's hash). The script opens `GET /__drobek/preview/events` on its
+  also carries `<script src="/__drobek/preview.js" data-reload data-errors>`
+  before the feedback tag, unless drobek.json says `"reload": false` (the
+  ETag carries the script's hash); a `--v<N>` host carries it with
+  `data-errors` only. The script opens `GET /__drobek/preview/events` on its
   own origin — a `text/event-stream` behind the same password gate as the
   pages, fed by the `drobek:app-changed` events (in-process, and every other
   process's through the serve-cache subscriber's Redis relay). Each message
@@ -336,6 +337,21 @@ cache. The compile result is part of the tool response.
   and the page stays. Streams per app and per client IP and their lifetime
   are capped (`PREVIEW_EVENTS_*`, 429 past a cap); the graceful stop ends
   them. The script does nothing in a frame and reads no cookie.
+- Browser errors of the preview: with `data-errors` (drobek.json
+  `"browserErrors": false` drops it) the same script collects uncaught
+  errors, unhandled rejections and `console.error` calls with an `Error`,
+  deduplicates them in the page (one report per error per minute, with a
+  count) and beacons them to `POST /__drobek/preview/errors` on its own origin
+  (same-origin only, 16 KiB, per-IP limit `BROWSER_ERRORS_PER_IP_MINUTE`,
+  always 204). Each field is checked, capped and redacted; the page URL keeps
+  its path only and the visitor only a browser family. They are stored in
+  Redis, not Postgres: a hash per app version keyed by a hash of message and
+  stack (a repeat raises its count), at most `BROWSER_ERRORS_MAX_PER_VERSION`
+  per version, expiring `BROWSER_ERRORS_TTL_HOURS` after the last one. At read
+  time every frame of a built bundle is mapped through the version's inline
+  source map to the app's own `src/…:line:column`. `get_logs` kind `browser`,
+  `get_app` `preview_errors`, `write_files` `previous_version_browser_errors`
+  and the Logs tab read them (`@drobek/serving`).
 - Limits (`COMPILE_*`): 200 files, 512 KiB per file, 5 MiB per version, an
   import depth of 50, 10 s per build (cancelled with its own `ctx.cancel()`),
   4 builds at once and a FIFO queue whose wait answers `busy`.
