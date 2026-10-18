@@ -19,7 +19,8 @@
  * with its per-response nonce. A client that hands `structuredContent` to the
  * model would otherwise pass the raw payload past the envelope, and no
  * wrapping of the payload's strings can cover it: the keys of a schemaless
- * record are user input too.
+ * record are user input too. get_feedback_screenshot answers an image content
+ * block between the two text blocks of its envelope (image.ts).
  */
 import { randomBytes } from 'node:crypto';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -55,7 +56,17 @@ import { addDomainTool, listDomainsTool, removeDomainTool, setPrimaryDomainTool,
 import { deleteAppTool, releaseLeaseTool, setFrameAncestorsTool, setVisibilityTool, unpublishTool } from './lifecycle.js';
 import { listActivityTool } from './activity.js';
 import { getAnalyticsTool, untrustedAnalyticsEnvelope, type GetAnalyticsResult } from './analytics.js';
-import { deleteFeedbackTool, feedbackEnvelope, listFeedbackTool, resolveFeedbackTool, type FeedbackListPayload } from './feedback.js';
+import {
+  deleteFeedbackTool,
+  feedbackEnvelope,
+  feedbackScreenshotContent,
+  getFeedbackScreenshotTool,
+  listFeedbackTool,
+  resolveFeedbackTool,
+  type FeedbackListPayload,
+  type FeedbackScreenshotPayload,
+} from './feedback.js';
+import type { McpContentBlock } from './image.js';
 import { deleteVersionsTool, keepVersionTool, listVersionsTool } from './versions.js';
 import {
   deleteFormSubmissionTool,
@@ -107,6 +118,7 @@ export const APP_TOOL_NAMES = [
   'get_logs',
   'get_analytics',
   'list_feedback',
+  'get_feedback_screenshot',
   'resolve_feedback',
   'delete_feedback',
   'sync_now',
@@ -361,6 +373,10 @@ export const INPUT_SCHEMAS = {
     before: z.string().optional().describe('next_before of the previous page: lists the notes older than that one; default from the newest.'),
     limit: z.number().optional().describe('1–100 notes, default 20.'),
   },
+  get_feedback_screenshot: {
+    app_id: appId,
+    feedback_id: z.string().describe('The id of a note whose `screenshot` list_feedback shows.'),
+  },
   resolve_feedback: {
     app_id: appId,
     feedback_id: z.string().describe('The note\'s id (list_feedback lists them).'),
@@ -604,7 +620,7 @@ function splitToolArgs(name: AppToolName, args: unknown): { known: Payload; warn
 }
 
 /** `result` with `warnings`: in the JSON (text + structuredContent), or — for an untrusted envelope — as its own text block after it. */
-function withWarnings<R extends { content: { type: 'text'; text: string }[]; structuredContent?: Payload }>(result: R, warnings: ToolWarning[]): R {
+function withWarnings<R extends { content: McpContentBlock[]; structuredContent?: Payload }>(result: R, warnings: ToolWarning[]): R {
   if (warnings.length === 0) return result;
   if (result.structuredContent) {
     const own = result.structuredContent.warnings;
@@ -614,7 +630,7 @@ function withWarnings<R extends { content: { type: 'text'; text: string }[]; str
   return { ...result, content: [...result.content, { type: 'text' as const, text: JSON.stringify({ warnings }, null, 2) }] };
 }
 
-type ToolResult = { content: { type: 'text'; text: string }[]; structuredContent?: Payload };
+type ToolResult = { content: McpContentBlock[]; structuredContent?: Payload };
 
 function jsonResult(payload: Payload): ToolResult {
   return {
@@ -836,6 +852,7 @@ export function registerAppTools(
   register<{ app_id: string; kind: string; since?: string }>('get_logs', getLogs, (p) => untrustedResult(untrustedLogsEnvelope(p as GetLogsResult)));
   register('get_analytics', getAnalyticsTool, (p) => untrustedResult(untrustedAnalyticsEnvelope(p as GetAnalyticsResult)));
   register('list_feedback', listFeedbackTool, (p) => untrustedResult(feedbackEnvelope(p as FeedbackListPayload)));
+  register('get_feedback_screenshot', getFeedbackScreenshotTool, (p) => ({ content: feedbackScreenshotContent(p as FeedbackScreenshotPayload) }));
   register('resolve_feedback', resolveFeedbackTool);
   register('delete_feedback', deleteFeedbackTool);
   register('sync_now', syncNow);

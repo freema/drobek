@@ -40,6 +40,7 @@ const ALL_TOOLS = [
   'get_logs',
   'get_analytics',
   'list_feedback',
+  'get_feedback_screenshot',
   'resolve_feedback',
   'delete_feedback',
   'sync_now',

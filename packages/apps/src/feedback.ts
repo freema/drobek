@@ -22,6 +22,8 @@ export const FEEDBACK_PAGE_MAX = 100;
 
 export const DEFAULT_FEEDBACK_MAX_OPEN_PER_APP = 500;
 export const DEFAULT_FEEDBACK_PER_USER_HOUR = 30;
+export const DEFAULT_FEEDBACK_SCREENSHOTS_MAX_PER_APP = 100;
+export const DEFAULT_FEEDBACK_SCREENSHOT_RETENTION_DAYS = 30;
 
 export const FEEDBACK_STATUSES = ['open', 'resolved'] as const;
 export type FeedbackStatus = (typeof FEEDBACK_STATUSES)[number];
@@ -31,6 +33,10 @@ export interface FeedbackLimits {
   maxOpenPerApp: number;
   /** FEEDBACK_PER_USER_HOUR: notes one account may leave within an hour, over all apps. */
   perUserHour: number;
+  /** FEEDBACK_SCREENSHOTS_MAX_PER_APP: notes with a screenshot an app may hold; a new screenshot past it is refused. */
+  screenshotsMaxPerApp: number;
+  /** FEEDBACK_SCREENSHOT_RETENTION_DAYS: days a resolved note keeps its screenshot; then the screenshot (not the note) is deleted. */
+  screenshotRetentionDays: number;
 }
 
 function positiveIntEnv(raw: string | undefined, fallback: number): number {
@@ -42,6 +48,8 @@ export function feedbackLimits(env: NodeJS.ProcessEnv = process.env): FeedbackLi
   return {
     maxOpenPerApp: positiveIntEnv(env.FEEDBACK_MAX_OPEN_PER_APP, DEFAULT_FEEDBACK_MAX_OPEN_PER_APP),
     perUserHour: positiveIntEnv(env.FEEDBACK_PER_USER_HOUR, DEFAULT_FEEDBACK_PER_USER_HOUR),
+    screenshotsMaxPerApp: positiveIntEnv(env.FEEDBACK_SCREENSHOTS_MAX_PER_APP, DEFAULT_FEEDBACK_SCREENSHOTS_MAX_PER_APP),
+    screenshotRetentionDays: positiveIntEnv(env.FEEDBACK_SCREENSHOT_RETENTION_DAYS, DEFAULT_FEEDBACK_SCREENSHOT_RETENTION_DAYS),
   };
 }
 

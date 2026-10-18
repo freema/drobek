@@ -11,14 +11,23 @@
  * the app's row lock and a per-account advisory lock, so concurrent notes
  * (on one app or on several) cannot pass them.
  *
+ * A note may carry one screenshot: the uploaded image is re-encoded
+ * (image.server.ts — never stored as uploaded) into a WebP in `blobs`, keyed
+ * by its sha256 like version files; the note keeps the sha256, dimensions and
+ * size. FEEDBACK_SCREENSHOTS_MAX_PER_APP caps the notes with a screenshot per
+ * app (`limit_exceeded`, counted under the app's row lock). Deleting a note
+ * releases its screenshot, and so does the hourly job once a note has been
+ * resolved for FEEDBACK_SCREENSHOT_RETENTION_DAYS (the note stays); the blob
+ * GC then frees the bytes nothing else references.
+ *
  * Lists page newest first (created_at, id) with `before` = the id of the last
  * note of the previous page.
  */
-import { randomBytes } from 'node:crypto';
-import { and, count, desc, eq, gte, inArray, lt, or, sql, type SQL } from 'drizzle-orm';
+import { createHash, randomBytes } from 'node:crypto';
+import { and, count, desc, eq, gte, inArray, isNotNull, lt, or, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { AUDIT_ACTIONS, writeAudit } from '@drobek/audit';
-import { appFeedback, getDb, users } from '@drobek/db';
+import { appFeedback, blobs, getDb, users } from '@drobek/db';
 import { AppsError } from './errors.js';
 import {
   feedbackLimits,
@@ -31,10 +40,20 @@ import {
   type FeedbackLimits,
   type FeedbackStatus,
 } from './feedback.js';
+import { imageLimits, reencodeScreenshot, type EncodedImage, type ImageLimits } from './image.server.js';
 import { lockApp } from './versions.server.js';
 import type { Actor } from './types.js';
 
 const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
+
+/** A note's screenshot as the lists show it (the bytes are read on their own, getFeedbackScreenshot). */
+export interface FeedbackScreenshotInfo {
+  sha256: string;
+  width: number;
+  height: number;
+  bytes: number;
+}
 
 export interface FeedbackNote {
   id: string;
@@ -54,6 +73,8 @@ export interface FeedbackNote {
   /** `user` = resolved in the dashboard, `agent` = by an agent over MCP. */
   resolvedByKind: 'user' | 'agent' | null;
   resolutionNote: string | null;
+  /** The attached screenshot (re-encoded WebP), or null. */
+  screenshot: FeedbackScreenshotInfo | null;
 }
 
 function newFeedbackId(): string {
@@ -80,6 +101,10 @@ function selectNotes(ex: Pick<ReturnType<typeof getDb>, 'select'>) {
       resolvedByEmail: resolver.email,
       resolvedByKind: appFeedback.resolvedByKind,
       resolutionNote: appFeedback.resolutionNote,
+      screenshotSha256: appFeedback.screenshotSha256,
+      screenshotWidth: appFeedback.screenshotWidth,
+      screenshotHeight: appFeedback.screenshotHeight,
+      screenshotBytes: appFeedback.screenshotBytes,
     })
     .from(appFeedback)
     .leftJoin(users, eq(users.id, appFeedback.authorUserId))
@@ -88,9 +113,13 @@ function selectNotes(ex: Pick<ReturnType<typeof getDb>, 'select'>) {
 
 type NoteRow = Awaited<ReturnType<ReturnType<typeof selectNotes>['where']>>[number];
 
-function noteOf(r: NoteRow): FeedbackNote {
+function noteOf({ screenshotSha256, screenshotWidth, screenshotHeight, screenshotBytes, ...r }: NoteRow): FeedbackNote {
   return {
     ...r,
+    screenshot:
+      screenshotSha256 && screenshotWidth && screenshotHeight && screenshotBytes
+        ? { sha256: screenshotSha256, width: screenshotWidth, height: screenshotHeight, bytes: screenshotBytes }
+        : null,
     anchor: storedFeedbackAnchor(r.anchor),
     authorEmail: r.authorEmail ?? null,
     resolvedByEmail: r.resolvedByEmail ?? null,
@@ -106,20 +135,41 @@ export interface CreateFeedbackInput {
   path?: unknown;
   anchor?: FeedbackAnchor | null;
   body: unknown;
+  /** The uploaded screenshot as sent (PNG, JPEG or WebP, at most SCREENSHOT_MAX_BYTES); it is re-encoded, never stored as is. */
+  screenshot?: Uint8Array | null;
 }
 
 /**
  * Store a note. Refuses `invalid_settings` for an empty or too long body,
- * `rate_limited` past FEEDBACK_PER_USER_HOUR, `limit_exceeded` past
- * FEEDBACK_MAX_OPEN_PER_APP and `not_found` for an app that is gone.
- * Audited `app.feedback.create` (the note id and version, never the text).
+ * `too_large` for a screenshot over SCREENSHOT_MAX_BYTES, `invalid_image` for
+ * one that is not a PNG, JPEG or WebP that decodes, `rate_limited` past
+ * FEEDBACK_PER_USER_HOUR, `limit_exceeded` past FEEDBACK_MAX_OPEN_PER_APP or
+ * FEEDBACK_SCREENSHOTS_MAX_PER_APP and `not_found` for an app that is gone.
+ * Audited `app.feedback.create` (the note id, the version and whether it has
+ * a screenshot — never the text or the image).
  */
-export async function createFeedback(input: CreateFeedbackInput, opts: { limits?: FeedbackLimits; now?: Date } = {}): Promise<FeedbackNote> {
+export async function createFeedback(
+  input: CreateFeedbackInput,
+  opts: { limits?: FeedbackLimits; imageLimits?: ImageLimits; now?: Date } = {}
+): Promise<FeedbackNote> {
   const body = validateFeedbackBody(input.body);
   if (!body.ok) throw new AppsError('invalid_settings', body.message);
   const limits = opts.limits ?? feedbackLimits();
   const now = opts.now ?? new Date();
   const id = newFeedbackId();
+  let shot: (EncodedImage & { sha256: string }) | null = null;
+  if (input.screenshot && input.screenshot.byteLength > 0) {
+    const imgLimits = opts.imageLimits ?? imageLimits();
+    if (input.screenshot.byteLength > imgLimits.screenshotMaxBytes) {
+      throw new AppsError(
+        'too_large',
+        `The screenshot is ${mibText(input.screenshot.byteLength)}; a note takes one of at most ${mibText(imgLimits.screenshotMaxBytes)} (SCREENSHOT_MAX_BYTES). Take a smaller one, or crop it.`,
+        { details: { limit: 'SCREENSHOT_MAX_BYTES', value: imgLimits.screenshotMaxBytes } }
+      );
+    }
+    const encoded = await reencodeScreenshot(input.screenshot, imgLimits);
+    shot = { ...encoded, sha256: createHash('sha256').update(encoded.bytes).digest('hex') };
+  }
   await getDb().transaction(async (tx) => {
     const app = await lockApp(tx, input.appId);
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`drobek:feedback:${input.authorUserId}`}::text))`);
@@ -149,6 +199,23 @@ export async function createFeedback(input: CreateFeedbackInput, opts: { limits?
         { details: { limit: 'FEEDBACK_MAX_OPEN_PER_APP', value: limits.maxOpenPerApp } }
       );
     }
+    if (shot) {
+      const [withShot] = await tx
+        .select({ n: count() })
+        .from(appFeedback)
+        .where(and(eq(appFeedback.appId, input.appId), isNotNull(appFeedback.screenshotSha256)));
+      if (Number(withShot?.n ?? 0) >= limits.screenshotsMaxPerApp) {
+        throw new AppsError(
+          'limit_exceeded',
+          `This app already holds ${limits.screenshotsMaxPerApp} notes with a screenshot, the most it may (FEEDBACK_SCREENSHOTS_MAX_PER_APP). Send this note without the screenshot, or delete notes that are done — a resolved note drops its screenshot ${limits.screenshotRetentionDays} days after it was resolved.`,
+          { details: { limit: 'FEEDBACK_SCREENSHOTS_MAX_PER_APP', value: limits.screenshotsMaxPerApp } }
+        );
+      }
+      await tx
+        .insert(blobs)
+        .values({ sha256: shot.sha256, bytes: shot.bytes, size: shot.bytes.length })
+        .onConflictDoUpdate({ target: blobs.sha256, set: { createdAt: sql`now()` } });
+    }
     const versionNumber = feedbackVersionNumber(input.versionNumber);
     await tx.insert(appFeedback).values({
       id,
@@ -159,6 +226,9 @@ export async function createFeedback(input: CreateFeedbackInput, opts: { limits?
       body: body.body,
       authorUserId: input.authorUserId,
       createdAt: now,
+      ...(shot
+        ? { screenshotSha256: shot.sha256, screenshotWidth: shot.width, screenshotHeight: shot.height, screenshotBytes: shot.bytes.length }
+        : {}),
     });
     await writeAudit(
       {
@@ -168,12 +238,17 @@ export async function createFeedback(input: CreateFeedbackInput, opts: { limits?
         action: AUDIT_ACTIONS.appFeedbackCreate,
         subjectType: 'app',
         target: app.slug,
-        meta: { appId: input.appId, feedback: id, ...(versionNumber !== null ? { version: versionNumber } : {}) },
+        meta: { appId: input.appId, feedback: id, ...(versionNumber !== null ? { version: versionNumber } : {}), ...(shot ? { screenshot: true } : {}) },
       },
       tx
     );
   });
   return (await getFeedback(input.appId, id))!;
+}
+
+function mibText(bytes: number): string {
+  const v = bytes / (1024 * 1024);
+  return v >= 1 ? `${Number.isInteger(v) ? v : v.toFixed(1)} MiB` : `${Math.ceil(bytes / 1024)} KiB`;
 }
 
 /** One note of the app, or null. */
@@ -323,4 +398,44 @@ export async function deleteFeedback(appId: string, id: string, actor: Actor): P
     );
     return true;
   });
+}
+
+export interface FeedbackScreenshot extends FeedbackScreenshotInfo {
+  /** The stored WebP. */
+  data: Buffer;
+  mimeType: 'image/webp';
+}
+
+/** The screenshot of one note of the app, or null when the app has no such note or the note has none. */
+export async function getFeedbackScreenshot(appId: string, id: string): Promise<FeedbackScreenshot | null> {
+  const [row] = await getDb()
+    .select({
+      sha256: appFeedback.screenshotSha256,
+      width: appFeedback.screenshotWidth,
+      height: appFeedback.screenshotHeight,
+      data: blobs.bytes,
+    })
+    .from(appFeedback)
+    .innerJoin(blobs, eq(blobs.sha256, appFeedback.screenshotSha256))
+    .where(and(eq(appFeedback.appId, appId), eq(appFeedback.id, id)))
+    .limit(1);
+  if (!row?.sha256 || !row.width || !row.height) return null;
+  const data = Buffer.from(row.data);
+  return { sha256: row.sha256, width: row.width, height: row.height, bytes: data.length, data, mimeType: 'image/webp' };
+}
+
+/**
+ * Drop the screenshots of notes resolved more than
+ * FEEDBACK_SCREENSHOT_RETENTION_DAYS ago (the notes stay); the blob GC frees
+ * the bytes. Returns how many notes lost theirs.
+ */
+export async function pruneResolvedFeedbackScreenshots(opts: { retentionDays?: number; now?: Date } = {}): Promise<number> {
+  const days = opts.retentionDays ?? feedbackLimits().screenshotRetentionDays;
+  const cutoff = new Date((opts.now ?? new Date()).getTime() - days * DAY_MS);
+  const rows = await getDb()
+    .update(appFeedback)
+    .set({ screenshotSha256: null, screenshotWidth: null, screenshotHeight: null, screenshotBytes: null })
+    .where(and(eq(appFeedback.status, 'resolved'), lt(appFeedback.resolvedAt, cutoff), isNotNull(appFeedback.screenshotSha256)))
+    .returning({ id: appFeedback.id });
+  return rows.length;
 }

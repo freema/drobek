@@ -271,7 +271,8 @@ Request bodies on the dashboard origin are capped at `DASHBOARD_MAX_BODY_BYTES`
 endpoint answers `413` — a declared `Content-Length` before anything is read,
 a chunked body as soon as the bytes that arrived pass the cap — and the
 connection closes after the answer. `/mcp` (`MCP_MAX_BODY_BYTES`), the asset
-upload URLs (the asset size) and the Data tab's CSV import (a 10 MiB file)
+upload URLs (the asset size), the Data tab's CSV import (a 10 MiB file) and the
+feedback note page `/feedback/new` (its screenshot, `SCREENSHOT_MAX_BYTES`)
 keep their own limits. The generated Caddyfile refuses the same bodies on the
 dashboard site before they reach drobek (`request_body`, those paths left to
 drobek), so after changing the variable re-run `task selfhost:init` and
@@ -397,7 +398,7 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `APPS_URL_SCHEME` | `http` for `*.localhost`, else `https` *(compose: https)* | scheme of the app URLs drobek hands out |
 | `APPS_UNKNOWN_HOST_LIMIT` / `APPS_UNKNOWN_HOST_WINDOW_MS` | 60 / 60000 | "no app here" answers per client IP per window, then 429 |
 | `APPS_MODULE_BODY_TIMEOUT_MS` | 120000 | a `/__drobek/*` request (module routes, uploads, the beacon) must deliver its body within it, else 408; raise it with `FILES_MAX_BYTES` for big uploads over slow links |
-| `DASHBOARD_MAX_BODY_BYTES` | 1048576 | the largest request body of the dashboard origin's pages, sign-in and OAuth endpoints — a declared length or a chunked body counted as it arrives; a bigger one answers 413 before it is read further. `/mcp`, the asset upload URLs and the Data tab's CSV import keep their own limits. The generated Caddyfile carries the same cap: re-render it after a change ([Production compose](#production-compose)) |
+| `DASHBOARD_MAX_BODY_BYTES` | 1048576 | the largest request body of the dashboard origin's pages, sign-in and OAuth endpoints — a declared length or a chunked body counted as it arrives; a bigger one answers 413 before it is read further. `/mcp`, the asset upload URLs, the Data tab's CSV import and the feedback note page (its screenshot) keep their own limits. The generated Caddyfile carries the same cap: re-render it after a change ([Production compose](#production-compose)) |
 | `DROBEK_IMAGE_TAG` | `latest` | image tag of the production compose ([Image tags](#image-tags)) |
 | `HTTP_PORT` / `HTTPS_PORT` / `PUBLISH_IP` | 80 / 443 / all | ports and bind address Caddy publishes |
 | `TRUST_PROXY` | auto *(compose: `x-real-ip`)* | which client-IP header is trusted: `x-real-ip` = only Caddy's `X-Real-IP`; unset = `X-Real-IP`, else the rightmost `X-Forwarded-For` hop |
@@ -473,6 +474,9 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `APPS_MAX_PER_WORKSPACE` | 50 | live apps per workspace (deleted ones do not count); `create_app` beyond it answers `limit_exceeded` *(plan)* |
 | `VERSIONS_PER_APP_HOUR` / `VERSIONS_PER_USER_HOUR` | 600 / 1200 | new versions of one app / made by one person (every app and workspace) within the last hour — `write_files`, `create_app`, `restore_version`, `duplicate_app` and the dashboard's Restore and duplicate page together; past either the call answers `rate_limited` with `retry_after_seconds` (the dashboard 429 + `Retry-After`) and nothing is stored *(plan)* |
 | `FEEDBACK_MAX_OPEN_PER_APP` / `FEEDBACK_PER_USER_HOUR` | 500 / 30 | open feedback notes one app may hold (a new note past it is refused until notes are resolved or deleted) / notes one member may leave on the previews within the last hour, in every app (the dashboard answers 429 + `Retry-After`) |
+| `SCREENSHOT_MAX_BYTES` | 1048576 | the largest screenshot a member may attach to a feedback note — the upload (bigger → 413; the note page shrinks a capture, a chosen file or a pasted image below it in the browser first) and the WebP drobek stores after re-encoding it (longer side 1600 px, metadata dropped; the upload itself is never kept). The note page has its own request body limit of this plus 64 KiB, in drobek and in the generated Caddyfile |
+| `FEEDBACK_SCREENSHOTS_MAX_PER_APP` / `FEEDBACK_SCREENSHOT_RETENTION_DAYS` | 100 / 30 | feedback notes with a screenshot one app may hold (a new screenshot past it is refused; the note can go without it) / days a resolved note keeps its screenshot — the hourly blob job then deletes the screenshot (not the note) and the blob GC frees its bytes. Screenshots do not count against `WORKSPACE_SOURCE_QUOTA` |
+| `MCP_IMAGE_MAX_BYTES` | 409600 | the largest image an MCP tool returns as an image content block (`get_feedback_screenshot`): a JPEG re-encoded from the stored screenshot with its longer side at most 1280 px, its quality and then its size stepped down until it fits |
 | `APP_VERSIONS_KEEP` | 200 | the newest versions of each app the hourly history retention keeps; older versions are deleted — never the published one, the one the preview serves, a version a member keeps, one whose asset set is kept for a rollback or one from the last hour — and the blob GC frees their bytes. `read_file` / `restore_version` of a deleted one answer `not_found` saying so; the dashboard's version history and `get_app` state the number *(plan; while the limits provider does not answer, the retention leaves the workspace alone)* |
 | `APP_VERSIONS_KEPT_MAX` | 20 | versions of one app its members may keep (neither the retention nor a member's clean-up deletes a kept version); keeping one more answers `limit_exceeded` with `limit` / `value`; a lower value leaves the versions already kept alone *(plan)* |
 | `APP_VERSIONS_PAGE` | 20 | versions one page of an app's version history lists |

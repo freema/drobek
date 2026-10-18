@@ -8,7 +8,8 @@
  *   read    — look: list apps (+ who am I), get an app, read its files and
  *             page its version history (`list_versions`), read skills,
  *             query an app's stored data, read its logs and the feedback
- *             members left on its preview (`list_feedback`), list its assets and
+ *             members left on its preview with their screenshots
+             (`list_feedback`, `get_feedback_screenshot`), list its assets and
  *             its custom domains, its form submissions, end users and uploads,
  *             a workspace's members, and (workspace admins) the workspace's
  *             proxy upstreams and activity log.
@@ -108,6 +109,7 @@ export const TOOL_SCOPES = {
   get_analytics: 'read',
   // Feedback on the preview: reading it is a read, resolving or deleting a note an app change.
   list_feedback: 'read',
+  get_feedback_screenshot: 'read',
   resolve_feedback: 'write',
   delete_feedback: 'write',
   list_assets: 'read',

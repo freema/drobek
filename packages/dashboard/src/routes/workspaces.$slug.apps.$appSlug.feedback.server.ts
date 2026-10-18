@@ -7,7 +7,8 @@
  * GET (viewer+): `?status=open|resolved|all` (default open), one page
  * (FEEDBACK_TAB_PAGE, newest first, `?before=<id>`), the open and resolved
  * counts; a page that cannot be read (a stale cursor) shows its error with the
- * filter intact. `?confirm=<id>` opens the delete confirmation.
+ * filter intact. A note with a screenshot links its image route (`…/feedback/:id/screenshot`,
+ * members only; `?size=thumb` for the list's thumbnail). `?confirm=<id>` opens the delete confirmation.
  *
  * POST: `intent=resolve` (with an optional `note`) and `intent=reopen` need
  * editor+; `intent=delete` the note's author or a workspace admin. Each change
@@ -85,6 +86,14 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         resolvedBy: n.resolvedByEmail,
         resolvedByAgent: n.resolvedByKind === 'agent',
         resolutionNote: n.resolutionNote,
+        screenshot: n.screenshot
+          ? {
+              url: `/workspaces/${access.workspace.slug}/apps/${app.slug}/feedback/${n.id}/screenshot`,
+              width: n.screenshot.width,
+              height: n.screenshot.height,
+              bytes: n.screenshot.bytes,
+            }
+          : null,
         canDelete: mayDeleteFeedback(n, { userId: access.user.id, role: access.effectiveRole }),
       })),
       nextBefore: page.nextBefore ? filterSearch(status, { before: page.nextBefore }) : null,

@@ -40,6 +40,7 @@ const ALL_TOOLS = [
   'duplicate_app',
   'get_analytics',
   'get_app',
+  'get_feedback_screenshot',
   'get_logs',
   'invite_member',
   'keep_version',
@@ -95,6 +96,7 @@ const READ_TOOLS = new Set([
   'list_activity',
   'list_members',
   'list_feedback',
+  'get_feedback_screenshot',
 ]);
 /** The tools that ask public DNS or change the public site. */
 const OPEN_WORLD_TOOLS = new Set(['sync_now', 'verify_domain', 'remove_domain', 'set_frame_ancestors', 'delete_app', 'invite_member']);

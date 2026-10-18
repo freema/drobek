@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { TOOL_DOCS, TOOL_NAMES, toolDoc } from './tools.js';
 
 describe('TOOL_DOCS manifest', () => {
-  it('documents exactly the 64 tools, in tools/list order', () => {
+  it('documents exactly the 65 tools, in tools/list order', () => {
     expect(TOOL_NAMES).toEqual([
       'list_apps',
       'create_app',
@@ -32,6 +32,7 @@ describe('TOOL_DOCS manifest', () => {
       'get_logs',
       'get_analytics',
       'list_feedback',
+      'get_feedback_screenshot',
       'resolve_feedback',
       'delete_feedback',
       'sync_now',
@@ -123,6 +124,7 @@ describe('TOOL_DOCS manifest', () => {
       get_logs: [true, false, true, false],
       get_analytics: [true, false, true, false],
       list_feedback: [true, false, true, false],
+      get_feedback_screenshot: [true, false, true, false],
       resolve_feedback: [false, false, true, false], // the same status again answers changed:false
       delete_feedback: [false, true, true, false], // the note is gone for good; a second delete answers not_found
       sync_now: [false, true, false, true], // replace mode swaps the collection's records; calls the app's external API

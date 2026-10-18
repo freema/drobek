@@ -1,10 +1,12 @@
 /**
  * /feedback/new — client half: the note form the preview's Feedback button
  * opens. Shows what the note is pinned to (app, version, page, spot), takes
- * the text, and after Send says where the note can be found.
+ * the text and an optional screenshot, and after Send says where the note
+ * can be found.
  */
 import { Form, useActionData, useLoaderData, useNavigation } from 'react-router';
 import type { action, loader } from './feedback.new.server.js';
+import { FeedbackScreenshotField } from '../feedback-screenshot.js';
 
 export function meta({ data }: { data?: { app?: { name?: string } } }) {
   return [{ title: `Feedback on ${data?.app?.name ?? 'an app'} — drobek` }, { name: 'robots', content: 'noindex' }];
@@ -80,7 +82,7 @@ export default function FeedbackNewRoute() {
           {c.spot}
         </dd>
       </dl>
-      <Form method="post">
+      <Form method="post" encType="multipart/form-data">
         <input type="hidden" name="app" value={page.app.slug} />
         {c.version !== null ? <input type="hidden" name="v" value={c.version} /> : null}
         <input type="hidden" name="path" value={c.path} />
@@ -109,6 +111,7 @@ export default function FeedbackNewRoute() {
         <p style={styles.hint}>
           Plain text, up to {page.bodyMax} characters. Everyone in the workspace {page.workspace.name} and their coding agents can read it.
         </p>
+        <FeedbackScreenshotField maxBytes={page.screenshot.maxBytes} maxSide={page.screenshot.maxSide} />
         <div style={styles.row}>
           <button type="submit" style={styles.button} disabled={busy} data-testid="feedback-send">
             {busy ? 'Sending…' : 'Send note'}

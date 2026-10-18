@@ -2,7 +2,8 @@
  * The dashboard paths whose routes take request bodies larger than the
  * server's dashboard cap (DASHBOARD_MAX_BODY_BYTES) and enforce their own
  * limit: the Data tab's collection page, whose CSV import takes a file of up
- * to IMPORT_MAX_BYTES. The server leaves these paths to their routes, and the
+ * to IMPORT_MAX_BYTES, and the feedback note page, whose screenshot takes up
+ * to SCREENSHOT_MAX_BYTES. The server leaves these paths to their routes, and the
  * generated Caddyfile exempts the same paths (DASHBOARD_BODY_CAP_EXEMPT_PATHS
  * in @drobek/core). Imports nothing but owner-view, so the Express app loads
  * it without the route modules.
@@ -15,9 +16,17 @@ export const IMPORT_REQUEST_MAX_BYTES = IMPORT_MAX_BYTES + 64 * 1024;
 /** `/workspaces/:slug/apps/:appSlug/data/:collection`, also as React Router's `.data` request; matched on a normalized path. */
 const COLLECTION_PAGE = /^\/workspaces\/[^/]+\/apps\/[^/]+\/data\/[^/]+\/?$/i;
 
+/** `/feedback/new`, also as React Router's `.data` request. */
+const FEEDBACK_NEW_PAGE = /^\/feedback\/new(\.data)?\/?$/i;
+
+/** The most bytes a feedback note request may carry: the screenshot plus the note's text, the other fields and the multipart framing. */
+export function feedbackRequestMaxBytes(screenshotMaxBytes: number): number {
+  return screenshotMaxBytes + 64 * 1024;
+}
+
 /** True for a path whose route enforces its own, larger body limit. */
 export function hasOwnBodyLimit(pathname: string): boolean {
-  return COLLECTION_PAGE.test(pathname);
+  return COLLECTION_PAGE.test(pathname) || FEEDBACK_NEW_PAGE.test(pathname);
 }
 
 /**

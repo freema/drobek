@@ -148,6 +148,26 @@ export const LIMITS: LimitDoc[] = [
     meaning: 'Feedback notes one member may leave on the previews within the last hour, in every app (the dashboard answers 429 with Retry-After past it).',
   },
   {
+    env: 'FEEDBACK_SCREENSHOTS_MAX_PER_APP',
+    default: '100',
+    meaning: 'Max feedback notes with a screenshot one app holds; a member\'s new screenshot past it is refused on the dashboard (the note can go without it) until notes are deleted or their screenshots expire.',
+  },
+  {
+    env: 'FEEDBACK_SCREENSHOT_RETENTION_DAYS',
+    default: '30',
+    meaning: 'Days a resolved feedback note keeps its screenshot; then the screenshot is deleted and the note stays (get_feedback_screenshot → not_found, list_feedback `screenshot: null`).',
+  },
+  {
+    env: 'SCREENSHOT_MAX_BYTES',
+    default: '1048576',
+    meaning: 'The largest screenshot a member may attach to a feedback note (the upload; the dashboard answers 413 past it) and the most the stored, re-encoded WebP takes.',
+  },
+  {
+    env: 'MCP_IMAGE_MAX_BYTES',
+    default: '409600',
+    meaning: 'The largest image an MCP tool returns as an image content block (get_feedback_screenshot): a JPEG re-encoded with its longer side at most 1280 px and stepped down until it fits.',
+  },
+  {
     env: 'APP_VERSIONS_KEEP',
     default: '200',
     meaning: 'The newest versions of each app the hourly history retention keeps; older ones are deleted except the published one, the one the preview serves, the kept ones, those kept for a rollback and those from the last hour (read_file / restore_version / publish of a deleted one → not_found; get_app `version_retention`). A member deletes older ones sooner with delete_versions. The limits provider may set it per workspace.',

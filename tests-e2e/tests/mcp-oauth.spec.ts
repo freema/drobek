@@ -231,6 +231,7 @@ test('MCP OAuth 2.1 end-to-end: discovery → register → consent → token →
     expect(names.sort()).toEqual([
       'get_analytics',
       'get_app',
+      'get_feedback_screenshot',
       'get_logs',
       'list_activity',
       'list_apps',

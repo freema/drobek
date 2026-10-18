@@ -3,11 +3,14 @@
  * context and audits it without the text, the per-account hourly limit and
  * the open-notes cap refuse with the limit's name, lists page newest first
  * per status, resolving and reopening say whether anything changed, and a
- * deleted app takes its notes along.
+ * deleted app takes its notes along. A screenshot is stored re-encoded in
+ * `blobs`, counted per app, kept by the blob GC while a note references it and
+ * released by deleting the note or by the retention after resolving.
  */
 import { and, eq } from 'drizzle-orm';
+import sharp from 'sharp';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { appFeedback, apps, auditLog, users, workspaces } from '@drobek/db';
+import { appFeedback, apps, auditLog, blobs, users, workspaces } from '@drobek/db';
 import {
   AppsError,
   createApp,
@@ -15,8 +18,11 @@ import {
   deleteFeedback,
   feedbackCounts,
   getFeedback,
+  getFeedbackScreenshot,
   listFeedback,
+  pruneResolvedFeedbackScreenshots,
   setFeedbackResolved,
+  sweepUnreferencedBlobs,
   type Actor,
 } from './index.js';
 import { freshDb, type TestDb } from './test/db.js';
@@ -45,7 +51,8 @@ async function newApp(): Promise<{ id: string; slug: string; workspaceId: string
   return { ...app, workspaceId: ws.id };
 }
 
-const roomy = { maxOpenPerApp: 1000, perUserHour: 1000 };
+const shots = { screenshotsMaxPerApp: 100, screenshotRetentionDays: 30 };
+const roomy = { maxOpenPerApp: 1000, perUserHour: 1000, ...shots };
 
 describe('createFeedback', () => {
   it('stores the cleaned context and audits the note id, never its text', async () => {
@@ -88,7 +95,7 @@ describe('createFeedback', () => {
   it('refuses past FEEDBACK_PER_USER_HOUR with the time to wait, over all apps', async () => {
     const a = await newApp();
     const b = await newApp();
-    const limits = { maxOpenPerApp: 100, perUserHour: 2 };
+    const limits = { maxOpenPerApp: 100, perUserHour: 2, ...shots };
     const t0 = new Date('2026-10-06T10:00:00Z');
     await createFeedback({ appId: a.id, authorUserId: bob.userId, body: 'one' }, { limits, now: t0 });
     await createFeedback({ appId: b.id, authorUserId: bob.userId, body: 'two' }, { limits, now: new Date(t0.getTime() + 60_000) });
@@ -104,7 +111,7 @@ describe('createFeedback', () => {
 
   it('refuses past FEEDBACK_MAX_OPEN_PER_APP; resolving one makes room', async () => {
     const app = await newApp();
-    const limits = { maxOpenPerApp: 2, perUserHour: 100 };
+    const limits = { maxOpenPerApp: 2, perUserHour: 100, ...shots };
     const first = await createFeedback({ appId: app.id, authorUserId: ann.userId, body: 'a' }, { limits });
     await createFeedback({ appId: app.id, authorUserId: ann.userId, body: 'b' }, { limits });
     await expect(createFeedback({ appId: app.id, authorUserId: ann.userId, body: 'c' }, { limits })).rejects.toMatchObject({
@@ -198,5 +205,94 @@ describe('setFeedbackResolved / deleteFeedback', () => {
     expect(await getFeedback(app.id, note.id)).toMatchObject({ authorUserId: null, authorEmail: null });
     await db.delete(apps).where(eq(apps.id, app.id));
     expect(await db.select().from(appFeedback).where(eq(appFeedback.appId, app.id))).toEqual([]);
+  });
+});
+
+async function screenshotPng(width = 2400, height = 1200, color = '#ff6600'): Promise<Buffer> {
+  return sharp({ create: { width, height, channels: 3, background: color } })
+    .png()
+    .withMetadata({ exif: { IFD0: { Artist: 'private-name' } } })
+    .toBuffer();
+}
+
+async function blobExists(sha256: string): Promise<boolean> {
+  return (await db.select({ sha256: blobs.sha256 }).from(blobs).where(eq(blobs.sha256, sha256))).length > 0;
+}
+
+describe('screenshots', () => {
+  it('stores the re-encoded WebP (never the upload), lists its size and audits that there is one', async () => {
+    const app = await newApp();
+    const upload = await screenshotPng();
+    const note = await createFeedback({ appId: app.id, authorUserId: ann.userId, body: 'look', screenshot: upload }, { limits: roomy });
+    expect(note.screenshot).toMatchObject({ width: 1600, height: 800 });
+    expect(note.screenshot!.sha256).toMatch(/^[0-9a-f]{64}$/);
+    const shot = await getFeedbackScreenshot(app.id, note.id);
+    expect(shot).toMatchObject({ width: 1600, height: 800, mimeType: 'image/webp', bytes: note.screenshot!.bytes });
+    expect(shot!.data.subarray(8, 12).toString('latin1')).toBe('WEBP');
+    expect(shot!.data.equals(upload)).toBe(false);
+    expect(shot!.data.includes(Buffer.from('private-name'))).toBe(false);
+    const page = await listFeedback(app.id, { limit: 10 });
+    expect(page.notes[0].screenshot).toEqual(note.screenshot);
+    const audits = await db.select().from(auditLog).where(eq(auditLog.action, 'app.feedback.create'));
+    expect(audits.find((r) => (r.meta as { feedback?: string }).feedback === note.id)?.meta).toEqual({ appId: app.id, feedback: note.id, screenshot: true });
+    // A note without one has none; a screenshot of another app's note is not found.
+    const plain = await createFeedback({ appId: app.id, authorUserId: ann.userId, body: 'plain', screenshot: new Uint8Array(0) }, { limits: roomy });
+    expect(plain.screenshot).toBeNull();
+    expect(await getFeedbackScreenshot(app.id, plain.id)).toBeNull();
+    const other = await newApp();
+    expect(await getFeedbackScreenshot(other.id, note.id)).toBeNull();
+  });
+
+  it('refuses an upload over SCREENSHOT_MAX_BYTES and one that is not an image; nothing is stored', async () => {
+    const app = await newApp();
+    const upload = await screenshotPng(400, 300);
+    await expect(
+      createFeedback(
+        { appId: app.id, authorUserId: ann.userId, body: 'big', screenshot: upload },
+        { limits: roomy, imageLimits: { screenshotMaxBytes: upload.length - 1, mcpImageMaxBytes: 400 * 1024 } }
+      )
+    ).rejects.toMatchObject({ code: 'too_large', details: { limit: 'SCREENSHOT_MAX_BYTES', value: upload.length - 1 } });
+    await expect(
+      createFeedback({ appId: app.id, authorUserId: ann.userId, body: 'gif', screenshot: Buffer.from('GIF89a……') }, { limits: roomy })
+    ).rejects.toMatchObject({ code: 'invalid_image' });
+    expect(await db.select().from(appFeedback).where(eq(appFeedback.appId, app.id))).toEqual([]);
+  });
+
+  it('refuses past FEEDBACK_SCREENSHOTS_MAX_PER_APP; a note without a screenshot still goes through', async () => {
+    const app = await newApp();
+    const limits = { ...roomy, screenshotsMaxPerApp: 1 };
+    await createFeedback({ appId: app.id, authorUserId: ann.userId, body: 'one', screenshot: await screenshotPng(200, 100) }, { limits });
+    await expect(
+      createFeedback({ appId: app.id, authorUserId: ann.userId, body: 'two', screenshot: await screenshotPng(200, 100, '#00ff00') }, { limits })
+    ).rejects.toMatchObject({ code: 'limit_exceeded', details: { limit: 'FEEDBACK_SCREENSHOTS_MAX_PER_APP', value: 1 } });
+    await createFeedback({ appId: app.id, authorUserId: ann.userId, body: 'two' }, { limits });
+  });
+
+  it('the blob GC keeps a screenshot a note references; deleting the note releases it', async () => {
+    const app = await newApp();
+    const note = await createFeedback({ appId: app.id, authorUserId: ann.userId, body: 'gc', screenshot: await screenshotPng(300, 200, '#123456') }, { limits: roomy });
+    const sha = note.screenshot!.sha256;
+    await sweepUnreferencedBlobs({ graceMs: 0 });
+    expect(await blobExists(sha)).toBe(true);
+    expect(await deleteFeedback(app.id, note.id, ann)).toBe(true);
+    await sweepUnreferencedBlobs({ graceMs: 0 });
+    expect(await blobExists(sha)).toBe(false);
+  });
+
+  it('a note resolved longer than FEEDBACK_SCREENSHOT_RETENTION_DAYS loses its screenshot, not itself', async () => {
+    const app = await newApp();
+    const old = await createFeedback({ appId: app.id, authorUserId: ann.userId, body: 'old', screenshot: await screenshotPng(300, 200, '#abcdef') }, { limits: roomy });
+    const fresh = await createFeedback({ appId: app.id, authorUserId: ann.userId, body: 'fresh', screenshot: await screenshotPng(300, 200, '#fedcba') }, { limits: roomy });
+    const open = await createFeedback({ appId: app.id, authorUserId: ann.userId, body: 'open', screenshot: await screenshotPng(300, 200, '#a1b2c3') }, { limits: roomy });
+    const now = new Date();
+    await setFeedbackResolved(app.id, old.id, true, ann, { now: new Date(now.getTime() - 31 * 86_400_000) });
+    await setFeedbackResolved(app.id, fresh.id, true, ann, { now: new Date(now.getTime() - 29 * 86_400_000) });
+    expect(await pruneResolvedFeedbackScreenshots({ retentionDays: 30, now })).toBe(1);
+    expect((await getFeedback(app.id, old.id))?.screenshot).toBeNull();
+    expect((await getFeedback(app.id, fresh.id))?.screenshot).not.toBeNull();
+    expect((await getFeedback(app.id, open.id))?.screenshot).not.toBeNull();
+    await sweepUnreferencedBlobs({ graceMs: 0 });
+    expect(await blobExists(old.screenshot!.sha256)).toBe(false);
+    expect(await blobExists(fresh.screenshot!.sha256)).toBe(true);
   });
 });

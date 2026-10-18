@@ -33,7 +33,11 @@ export type AppsErrorCode =
   /** `createVersion` with `baseVersion` found a newer version than the one the write was based on. */
   | 'version_conflict'
   /** `deleteVersions` with `expectedPlanId`: the versions that would go are no longer the confirmed plan; nothing was deleted. */
-  | 'plan_changed';
+  | 'plan_changed'
+  /** An image (a feedback screenshot) that is not a PNG, JPEG or WebP, does not decode, or has too many pixels. */
+  | 'invalid_image'
+  /** An image (a feedback screenshot) larger than SCREENSHOT_MAX_BYTES, or one no re-encoding fits into its limit. */
+  | 'too_large';
 
 export interface AppsErrorDetails {
   limit: string;

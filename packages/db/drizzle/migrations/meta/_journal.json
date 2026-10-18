@@ -253,6 +253,13 @@
       "when": 1790948300000,
       "tag": "0040_app_traffic",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1790948400000,
+      "tag": "0041_feedback_screenshots",
+      "breakpoints": true
     }
   ]
 }

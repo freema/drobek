@@ -88,7 +88,7 @@ const SUMMARIES: Record<string, Summarize> = {
   },
   'app.feedback.create': (m) => {
     const v = num(m, 'version');
-    return `Left a feedback note on the preview${v !== null ? ` of version ${v}` : ''}`;
+    return `Left a feedback note on the preview${v !== null ? ` of version ${v}` : ''}${m.screenshot === true ? ' with a screenshot' : ''}`;
   },
   'app.feedback.resolve': () => 'Resolved a feedback note',
   'app.feedback.reopen': () => 'Reopened a feedback note',

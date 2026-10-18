@@ -57,6 +57,9 @@ describe('activitySummary', () => {
       'Left a feedback note on the preview of version 4'
     );
     expect(activitySummary(ev('app.feedback.create', 'app', 'x', { feedback: 'fb_1' }))).toBe('Left a feedback note on the preview');
+    expect(activitySummary(ev('app.feedback.create', 'app', 'x', { feedback: 'fb_1', version: 2, screenshot: true }))).toBe(
+      'Left a feedback note on the preview of version 2 with a screenshot'
+    );
     expect(activityRefs(ev('app.feedback.create', 'app', 'x', { version: 4 }))).toContainEqual({ kind: 'version', slug: 'x', number: 4 });
     expect(activitySummary(ev('app.feedback.resolve', 'app', 'x', { feedback: 'fb_1' }))).toBe('Resolved a feedback note');
     expect(activitySummary(ev('app.feedback.reopen', 'app', 'x', { feedback: 'fb_1' }))).toBe('Reopened a feedback note');

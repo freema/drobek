@@ -12,14 +12,22 @@
  * is a same-origin form (the dashboard's origin check), the page cannot be
  * framed (`frame-ancestors 'none'`), and the limits FEEDBACK_PER_USER_HOUR
  * (429 + Retry-After) and FEEDBACK_MAX_OPEN_PER_APP (409) apply.
+ *
+ * The POST is multipart and may carry a `screenshot` file: the page keeps its
+ * own body limit (SCREENSHOT_MAX_BYTES plus the text, `hasOwnBodyLimit`), a
+ * bigger body or file answers 413, a file that is not a PNG / JPEG / WebP
+ * image 400, and past FEEDBACK_SCREENSHOTS_MAX_PER_APP 409. @drobek/apps
+ * re-encodes the image; the upload itself is never stored.
  */
 import { data, redirect, type ActionFunctionArgs, type HeadersArgs, type LoaderFunctionArgs } from 'react-router';
 import { and, eq, isNull } from 'drizzle-orm';
 import {
   AppsError,
   FEEDBACK_BODY_MAX,
+  SCREENSHOT_MAX_SIDE,
   createFeedback,
   feedbackLimits,
+  imageLimits,
   normalizeFeedbackPath,
   parseFeedbackAnchor,
   previewUrl,
@@ -30,6 +38,7 @@ import { getSessionUser } from '@drobek/auth';
 import { apps, getDb } from '@drobek/db';
 import { getWorkspaceById, requireWorkspaceRole, type WorkspaceAccess } from '@drobek/tenancy';
 import { appBasePath } from '../app-tabs.js';
+import { feedbackRequestMaxBytes, readBodyUpTo } from '../body-limits.js';
 import { anchorText, noteOpenUrl } from '../feedback-view.js';
 
 const PAGE_HEADERS = {
@@ -98,6 +107,7 @@ function pageData(access: WorkspaceAccess, app: { id: string; slug: string; name
       pageUrl: noteOpenUrl({ versionNumber: ctx.version, path: ctx.path }, { preview: previewUrl(app.slug), version: (n) => versionUrl(app.slug, n) }),
     },
     bodyMax: FEEDBACK_BODY_MAX,
+    screenshot: { maxBytes: imageLimits().screenshotMaxBytes, maxSide: SCREENSHOT_MAX_SIDE },
     feedbackTab: `${appBasePath(access.workspace.slug, app.slug)}/feedback`,
   };
 }
@@ -118,7 +128,27 @@ export async function action({ request }: ActionFunctionArgs) {
   }
   const user = await getSessionUser(request);
   if (!user) throw loginRedirect(request);
-  const form = await request.formData();
+  const limits = imageLimits();
+  const tooLarge = () =>
+    data<FeedbackActionResult>(
+      {
+        ok: false,
+        error: `The screenshot is larger than ${Math.round(limits.screenshotMaxBytes / 1024)} KiB, the most a note takes — nothing was sent. Write the note again with a smaller screenshot, or crop it.`,
+        body: '',
+      },
+      { status: 413 }
+    );
+  const maxBody = feedbackRequestMaxBytes(limits.screenshotMaxBytes);
+  const declared = Number(request.headers.get('content-length') ?? NaN);
+  if (Number.isFinite(declared) && declared > maxBody) return tooLarge();
+  const raw = await readBodyUpTo(request, maxBody);
+  if (!raw) return tooLarge();
+  let form: FormData;
+  try {
+    form = await new Response(raw, { headers: { 'Content-Type': request.headers.get('content-type') ?? '' } }).formData();
+  } catch {
+    return data<FeedbackActionResult>({ ok: false, error: 'The form could not be read. Reload the page and send the note again.', body: '' }, { status: 400 });
+  }
   const field = (k: string) => {
     const v = form.get(k);
     return typeof v === 'string' ? v : null;
@@ -126,10 +156,12 @@ export async function action({ request }: ActionFunctionArgs) {
   const { app } = await reviewTarget(request, String(field('app') ?? ''));
   const ctx = contextOf(field);
   const body = String(field('body') ?? '');
+  const file = form.get('screenshot');
+  const screenshot = file instanceof Blob && file.size > 0 ? new Uint8Array(await file.arrayBuffer()) : null;
   try {
     const note = await createFeedback(
-      { appId: app.id, authorUserId: user.id, versionNumber: ctx.version, path: ctx.path, anchor: ctx.anchor, body },
-      { limits: feedbackLimits() }
+      { appId: app.id, authorUserId: user.id, versionNumber: ctx.version, path: ctx.path, anchor: ctx.anchor, body, screenshot },
+      { limits: feedbackLimits(), imageLimits: limits }
     );
     return data<FeedbackActionResult>({ ok: true, id: note.id });
   } catch (err) {
@@ -142,6 +174,10 @@ export async function action({ request }: ActionFunctionArgs) {
     }
     if (err.code === 'limit_exceeded') return data<FeedbackActionResult>({ ok: false, error: err.message, body }, { status: 409 });
     if (err.code === 'invalid_settings') return data<FeedbackActionResult>({ ok: false, error: err.message, body }, { status: 400 });
+    if (err.code === 'too_large') return data<FeedbackActionResult>({ ok: false, error: err.message, body }, { status: 413 });
+    if (err.code === 'invalid_image') {
+      return data<FeedbackActionResult>({ ok: false, error: `${err.message} Choose a PNG, JPEG or WebP image, or send the note without one.`, body }, { status: 400 });
+    }
     if (err.code === 'not_found') notFound();
     throw err;
   }

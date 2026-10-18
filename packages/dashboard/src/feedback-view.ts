@@ -1,7 +1,7 @@
 /**
  * The Feedback tab's pure view helpers (client-safe): which empty state a
- * list shows, where a note's "Open the preview" link goes, and how a spot
- * reads.
+ * list shows, where a note's "Open the preview" link goes, how a spot
+ * reads, and how large the note page draws a screenshot before sending it.
  */
 import type { FeedbackAnchor } from '@drobek/apps';
 
@@ -41,4 +41,10 @@ export function anchorText(anchor: FeedbackAnchor | null): string {
 export function noteOpenUrl(note: { versionNumber: number | null; path: string }, hosts: { preview: string; version: (n: number) => string }): string {
   const origin = note.versionNumber !== null ? hosts.version(note.versionNumber) : hosts.preview;
   return `${origin}${note.path.startsWith('/') ? note.path : '/'}`;
+}
+
+/** `width`×`height` scaled down (never up) so the longer side is at most `maxSide`, in whole pixels of at least 1. */
+export function fitWithin(width: number, height: number, maxSide: number): { width: number; height: number } {
+  const scale = Math.min(1, maxSide / Math.max(width, height, 1));
+  return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) };
 }

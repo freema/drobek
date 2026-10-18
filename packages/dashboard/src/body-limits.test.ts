@@ -3,7 +3,7 @@
  * page, the CSV import) and the counted body read its route uses.
  */
 import { describe, expect, it } from 'vitest';
-import { IMPORT_REQUEST_MAX_BYTES, hasOwnBodyLimit, readBodyUpTo } from './body-limits.js';
+import { IMPORT_REQUEST_MAX_BYTES, feedbackRequestMaxBytes, hasOwnBodyLimit, readBodyUpTo } from './body-limits.js';
 import { IMPORT_MAX_BYTES } from './owner-view.js';
 
 function streamed(chunks: Uint8Array[]): Request {
@@ -17,8 +17,14 @@ function streamed(chunks: Uint8Array[]): Request {
 }
 
 describe('hasOwnBodyLimit', () => {
-  it('the collection page (also as a React Router .data request) and nothing else', () => {
-    for (const p of ['/workspaces/acme/apps/shop/data/todos', '/workspaces/acme/apps/shop/data/todos.data', '/workspaces/acme/apps/shop/data/todos/']) {
+  it('the collection page and the feedback note page (also as React Router .data requests) and nothing else', () => {
+    for (const p of [
+      '/workspaces/acme/apps/shop/data/todos',
+      '/workspaces/acme/apps/shop/data/todos.data',
+      '/workspaces/acme/apps/shop/data/todos/',
+      '/feedback/new',
+      '/feedback/new.data',
+    ]) {
       expect(hasOwnBodyLimit(p), p).toBe(true);
     }
     for (const p of [
@@ -29,6 +35,9 @@ describe('hasOwnBodyLimit', () => {
       '/login',
       '/oauth/token',
       '/x/workspaces/acme/apps/shop/data/todos',
+      '/feedback',
+      '/feedback/new/x',
+      '/x/feedback/new',
     ]) {
       expect(hasOwnBodyLimit(p), p).toBe(false);
     }
@@ -36,6 +45,10 @@ describe('hasOwnBodyLimit', () => {
 
   it('allows the import file plus 64 KiB of form fields and framing', () => {
     expect(IMPORT_REQUEST_MAX_BYTES).toBe(IMPORT_MAX_BYTES + 64 * 1024);
+  });
+
+  it('a feedback note allows the screenshot plus 64 KiB of text, fields and framing', () => {
+    expect(feedbackRequestMaxBytes(1024 * 1024)).toBe(1024 * 1024 + 64 * 1024);
   });
 });
 

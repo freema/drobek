@@ -120,6 +120,7 @@ test('CIMD: a metadata-document client → consent → token → tools/list filt
     expect(names).toEqual([
       'get_analytics',
       'get_app',
+      'get_feedback_screenshot',
       'get_logs',
       'list_activity',
       'list_apps',

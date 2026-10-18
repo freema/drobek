@@ -1,5 +1,17 @@
 # Changelog — drobek (core)
 
+## Unreleased
+
+Before you upgrade: core migration 0041 (`app_feedback.screenshot_sha256`, `screenshot_width`, `screenshot_height`, `screenshot_bytes`, a foreign key to `blobs`) is applied at start; an older image then refuses to start on the migrated database. New env vars, all with production defaults: `SCREENSHOT_MAX_BYTES` (1048576), `MCP_IMAGE_MAX_BYTES` (409600), `FEEDBACK_SCREENSHOTS_MAX_PER_APP` (100) and `FEEDBACK_SCREENSHOT_RETENTION_DAYS` (30). The image now carries sharp (libvips) to re-encode screenshots. The generated Caddyfile leaves `/feedback/new` to drobek's own body limit: re-render it with `task selfhost:init` and run `task tls:reload` (`task caddy:config` in a development checkout), or a screenshot near 1 MiB is refused by Caddy.
+
+### Added
+- **A screenshot on a feedback note** (NSO-465): The note page (`/feedback/new`) takes an optional screenshot: Capture a tab (the browser's tab picker, this window excluded; the first frame is taken and the capture stopped at once), a chosen PNG, JPEG or WebP, or an image pasted from the clipboard, shrunk in the browser and shown with Remove before sending. Without JavaScript the file input alone works. The server sniffs the type from the bytes, decodes it in-process with every other image loader blocked and stores a fresh WebP (longer side 1600 px, at most `SCREENSHOT_MAX_BYTES`) without EXIF, XMP or ICC metadata; the uploaded file is never stored or served. A bigger upload answers 413, a file that is not an image 400, and past `FEEDBACK_SCREENSHOTS_MAX_PER_APP` notes with a screenshot per app 409 (the note can go without it). Screenshots live in the content-addressed blob store and do not count against `WORKSPACE_SOURCE_QUOTA`: deleting a note releases its screenshot, a note resolved `FEEDBACK_SCREENSHOT_RETENTION_DAYS` ago drops it (the note stays), and the blob GC keeps every screenshot a note still references.
+- **Screenshots on the Feedback tab** (NSO-465): A thumbnail per note that opens the full image on a members-only route; Activity reads "Left a feedback note on the preview … with a screenshot".
+- **MCP `get_feedback_screenshot(app_id, feedback_id)`** (NSO-465): Read, any role. Returns the note's screenshot as an MCP image content block — a JPEG re-encoded to at most `MCP_IMAGE_MAX_BYTES` (400 KiB) with its longer side at most 1280 px — between the two text blocks of an untrusted envelope, because a screenshot can show text. `list_feedback` lists `screenshot: { width, height, bytes }` (no URL) per note, and the briefing and the drobek skill tell agents to look at it.
+
+### Changed
+- **MCP has 65 tools** (NSO-465): `get_feedback_screenshot` is new.
+
 ## v0.9.3 — 2026-10-15
 
 No migration and no new env var.
