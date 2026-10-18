@@ -2,7 +2,7 @@ import { request as httpRequest, type Server } from 'node:http';
 import { createReadableStreamFromReadable } from '@react-router/node';
 import type { RequestHandler } from 'express';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { ASSET_UPLOAD_PATH_PREFIX } from '@drobek/apps';
+import { ASSET_UPLOAD_PATH_PREFIX, SCREENSHOT_UPLOAD_PATH_PREFIX } from '@drobek/apps';
 import { DASHBOARD_BODY_CAP_EXEMPT_PATHS, installErrorReporter, resetErrorReporterForTests, type ErrorReportEvent } from '@drobek/core';
 import { hasOwnBodyLimit } from '@drobek/dashboard/body-limits';
 import { createTlsAskHandler } from '@drobek/serving';
@@ -41,7 +41,8 @@ beforeAll(async () => {
   process.env.TLS_ASK_TOKEN = ASK_TOKEN;
   // The custom-domain lookup is the domains table in production; no DB here.
   const tlsAsk = createTlsAskHandler({ customDomainAllowed: async (h) => h === 'firma.example.com' }) as RequestHandler;
-  app = createServerApp({ rrHandler, tlsAsk, maxBodyBytes: MAX_BODY });
+  const screenshotUpload: RequestHandler = (req, res) => void res.json({ screenshot: true, path: req.path });
+  app = createServerApp({ rrHandler, tlsAsk, maxBodyBytes: MAX_BODY, screenshotUpload });
   server = app.listen(0, '127.0.0.1');
   await new Promise<void>((resolve) => server.once('listening', resolve));
   const address = server.address();
@@ -188,6 +189,9 @@ describe('apps origin dispatch + dashboard CSRF', () => {
     expect(evil.body).not.toContain('"rr":true');
     const own = await raw('POST', '/auth/logout', { Host: 'drobek.test', Origin: 'http://drobek.test' });
     expect(JSON.parse(own.body)).toMatchObject({ rr: true });
+    // The screenshot answers come from an app's preview page: the handler checks that Origin itself.
+    const shot = await raw('POST', `${SCREENSHOT_UPLOAD_PATH_PREFIX}ss_0123456789abcdef01234567`, { Host: 'drobek.test', Origin: 'https://shop--preview.apps.drobek.test' });
+    expect(JSON.parse(shot.body)).toEqual({ screenshot: true, path: `${SCREENSHOT_UPLOAD_PATH_PREFIX}ss_0123456789abcdef01234567` });
     // The token endpoint is exempt (native / web MCP clients call it cross-origin).
     const token = await raw('POST', '/oauth/token', { Host: 'drobek.test', Origin: 'https://claude.ai' });
     expect(JSON.parse(token.body)).toMatchObject({ rr: true });
@@ -268,10 +272,11 @@ describe('the request body cap in front of React Router (DASHBOARD_MAX_BODY_BYTE
           ? p.startsWith(pattern.slice(0, -1))
           : new RegExp(`^${pattern.split('*').map((s) => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('[^/]*')}$`, 'i').test(p)
       );
-    const drobekExempt = (p: string) => p === '/mcp' || p.startsWith(ASSET_UPLOAD_PATH_PREFIX) || hasOwnBodyLimit(p);
+    const drobekExempt = (p: string) => p === '/mcp' || p.startsWith(ASSET_UPLOAD_PATH_PREFIX) || p.startsWith(SCREENSHOT_UPLOAD_PATH_PREFIX) || hasOwnBodyLimit(p);
     const paths = [
       '/mcp',
       `${ASSET_UPLOAD_PATH_PREFIX}tok_123`,
+      `${SCREENSHOT_UPLOAD_PATH_PREFIX}ss_0123456789abcdef01234567`,
       '/workspaces/acme/apps/shop/data/todos',
       '/workspaces/acme/apps/shop/data/todos.data',
       '/login',
@@ -287,7 +292,7 @@ describe('the request body cap in front of React Router (DASHBOARD_MAX_BODY_BYTE
       '/feedback/new/x',
     ];
     for (const p of paths) expect(caddyExempt(p), p).toBe(drobekExempt(p));
-    expect(paths.filter(drobekExempt)).toHaveLength(6);
+    expect(paths.filter(drobekExempt)).toHaveLength(7);
   });
 });
 

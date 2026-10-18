@@ -76,7 +76,11 @@
  * hosts serve also carries `/__drobek/preview.js` (before the feedback tag;
  * its ETag gains `-pv<N><parts>-<script hash>`) unless no part of it is on
  * for the version (reload: preview host only, not with `"reload": false`;
- * errors: not with `"browserErrors": false`); `GET /__drobek/preview.js`
+ * errors: not with `"browserErrors": false`; screenshots: preview host only,
+ * not with `"screenshots": false`, and only when the script knows the
+ * dashboard origin — every preview-host response then lets `connect-src`
+ * reach that origin, where the script answers a screenshot request);
+ * `GET /__drobek/preview.js`
  * serves the script there. `GET /__drobek/preview/events` on the preview
  * host is the event stream (`deps.previewEvents`, see
  * preview-events.server.ts) behind the password gate (401 JSON).
@@ -298,7 +302,8 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
   const kind = req.target?.kind;
   const production = kind === 'prod' || kind === 'custom';
   const noindex = !production;
-  let security = appSecurityHeaders({ noindex, frameSrc: deps.frameSrc });
+  const connectSrcExtra = kind === 'preview' ? (deps.preview?.uploadOrigin ?? null) : null;
+  let security = appSecurityHeaders({ noindex, frameSrc: deps.frameSrc, connectSrcExtra });
 
   const page = (status: number, html: string, extra: Record<string, string> = {}): AppResponse => ({
     status,
@@ -355,6 +360,7 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
     ...appSecurityHeaders({
       noindex,
       frameSrc: deps.frameSrc,
+      connectSrcExtra,
       frameAncestors: withFrameAncestors(parseFrameAncestors(app.frameAncestors), [
         deps.dashboardOrigin,
         ...(production && app.galleryVisible ? (deps.galleryFrameAncestors ?? []) : []),
@@ -495,7 +501,7 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
   const contentType = contentTypeForPath(hit.path);
   const isHtml = contentType.startsWith('text/html');
   const withWidget = widget !== null && isHtml && (await deps.store.feedbackEnabled(version.id));
-  const previewParts = preview !== null && isHtml ? await previewPartsFor(req.target.kind, deps.store, version.id) : null;
+  const previewParts = preview !== null && isHtml ? await previewPartsFor(req.target.kind, deps.store, version.id, preview) : null;
   const previewTag = previewParts ? previewScriptTag(app.slug, version.number, previewParts) : null;
   const etag = split
     ? etagFor(`${entry.sha256}-nomap`)
@@ -550,9 +556,13 @@ function serveWidget(req: AppRequest, widget: FeedbackWidget, security: Record<s
 }
 
 /** Which parts of the preview script a page of `versionId` on a `kind` host runs. */
-async function previewPartsFor(kind: AppHostTarget['kind'], store: ServeStore, versionId: string): Promise<PreviewScriptParts> {
+async function previewPartsFor(kind: AppHostTarget['kind'], store: ServeStore, versionId: string, preview: PreviewScript): Promise<PreviewScriptParts> {
   const options = await store.previewOptions(versionId);
-  return { reload: kind === 'preview' && options.reload, errors: options.browserErrors };
+  return {
+    reload: kind === 'preview' && options.reload,
+    errors: options.browserErrors,
+    screenshots: kind === 'preview' && options.screenshots && preview.uploadOrigin !== null,
+  };
 }
 
 /** `GET /__drobek/preview.js` on a preview or version host: the script, revalidated by its ETag. */

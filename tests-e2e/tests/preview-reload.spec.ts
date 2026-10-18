@@ -51,7 +51,7 @@ test.describe('live reload of the preview @local', () => {
     version = w.json.version as number;
 
     const html = await hostRequest(previewHost(app.slug), '/');
-    expect(html.body).toContain(`<script src="/__drobek/preview.js" defer data-app="${app.slug}" data-version="${version}" data-reload data-errors></script>`);
+    expect(html.body).toContain(`<script src="/__drobek/preview.js" defer data-app="${app.slug}" data-version="${version}" data-reload data-errors data-screenshots></script>`);
     const script = await hostRequest(previewHost(app.slug), '/__drobek/preview.js');
     expect(script.status).toBe(200);
     expect(String(script.headers['content-type'])).toContain('javascript');

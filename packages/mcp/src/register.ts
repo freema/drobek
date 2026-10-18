@@ -19,8 +19,9 @@
  * with its per-response nonce. A client that hands `structuredContent` to the
  * model would otherwise pass the raw payload past the envelope, and no
  * wrapping of the payload's strings can cover it: the keys of a schemaless
- * record are user input too. get_feedback_screenshot answers an image content
- * block between the two text blocks of its envelope (image.ts).
+ * record are user input too. get_feedback_screenshot and a ready get_screenshot
+ * answer an image content block between the two text blocks of their envelope
+ * (image.ts).
  */
 import { randomBytes } from 'node:crypto';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -67,6 +68,7 @@ import {
   type FeedbackScreenshotPayload,
 } from './feedback.js';
 import type { McpContentBlock } from './image.js';
+import { getScreenshotTool, requestScreenshotTool, screenshotContent, type ScreenshotPayload } from './screenshots.js';
 import { deleteVersionsTool, keepVersionTool, listVersionsTool } from './versions.js';
 import {
   deleteFormSubmissionTool,
@@ -121,6 +123,8 @@ export const APP_TOOL_NAMES = [
   'get_feedback_screenshot',
   'resolve_feedback',
   'delete_feedback',
+  'request_screenshot',
+  'get_screenshot',
   'sync_now',
   'create_asset_upload',
   'list_assets',
@@ -387,6 +391,13 @@ export const INPUT_SCHEMAS = {
     app_id: appId,
     feedback_id: z.string().describe('The note\'s id (list_feedback lists them).'),
     user_confirmed: z.boolean().optional().describe('true ONLY after the user explicitly said yes to deleting this note for good.'),
+  },
+  request_screenshot: {
+    app_id: appId,
+    note: z.string().optional().describe('What you want to see, shown to the person on the bar (≤ 200 characters), e.g. "the checkout page on your phone".'),
+  },
+  get_screenshot: {
+    request_id: z.string().describe('The request_id request_screenshot answered.'),
   },
   sync_now: {
     app_id: appId,
@@ -855,6 +866,11 @@ export function registerAppTools(
   register('get_feedback_screenshot', getFeedbackScreenshotTool, (p) => ({ content: feedbackScreenshotContent(p as FeedbackScreenshotPayload) }));
   register('resolve_feedback', resolveFeedbackTool);
   register('delete_feedback', deleteFeedbackTool);
+  register('request_screenshot', requestScreenshotTool);
+  register('get_screenshot', getScreenshotTool, (p) => {
+    const content = screenshotContent(p as ScreenshotPayload);
+    return content ? { content } : jsonResult(p as Payload);
+  });
   register('sync_now', syncNow);
   register('create_asset_upload', createAssetUpload);
   register('list_assets', listAssetsTool);

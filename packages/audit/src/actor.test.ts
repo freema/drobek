@@ -66,6 +66,9 @@ describe('account dictionary + actor filter', () => {
       'app.feedback.resolve',
       'app.feedback.reopen',
       'app.feedback.delete',
+      'app.screenshot.request',
+      'app.screenshot.capture',
+      'app.screenshot.decline',
       'auth.sign_in',
     ]) {
       expect(AUDIT_ACTION_LIST).toContain(a);

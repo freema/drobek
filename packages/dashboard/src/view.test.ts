@@ -235,6 +235,25 @@ describe('shapeActivity (audit-row shaping)', () => {
     expect(row.actorLabel).toBe('app end user');
   });
 
+  it('labels a screenshot answer from the preview (no session) as someone on the preview', () => {
+    const shaped = shapeActivity(
+      (['app.screenshot.capture', 'app.screenshot.decline', 'app.screenshot.request'] as const).map((action, i) => ({
+        id: `s${i}`,
+        actorEmail: null,
+        actorKind: 'user' as const,
+        action,
+        subjectType: 'app',
+        subject: 'my-app',
+        createdAt: new Date(Date.UTC(2026, 9, 18, 10, i)),
+      }))
+    );
+    expect(Object.fromEntries(shaped.map((r) => [r.action, r.actorLabel]))).toEqual({
+      'app.screenshot.capture': 'someone on the preview',
+      'app.screenshot.decline': 'someone on the preview',
+      'app.screenshot.request': 'system',
+    });
+  });
+
   it('renders a deterministic UTC time and carries the subject', () => {
     const shaped = shapeActivity(rows);
     const rollback = shaped.find((r) => r.id === 'a1')!;

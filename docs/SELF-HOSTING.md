@@ -272,9 +272,10 @@ Request bodies on the dashboard origin are capped at `DASHBOARD_MAX_BODY_BYTES`
 endpoint answers `413` — a declared `Content-Length` before anything is read,
 a chunked body as soon as the bytes that arrived pass the cap — and the
 connection closes after the answer. `/mcp` (`MCP_MAX_BODY_BYTES`), the asset
-upload URLs (the asset size), the Data tab's CSV import (a 10 MiB file) and the
-feedback note page `/feedback/new` (its screenshot, `SCREENSHOT_MAX_BYTES`)
-keep their own limits. The generated Caddyfile refuses the same bodies on the
+upload URLs (the asset size), the Data tab's CSV import (a 10 MiB file), the
+feedback note page `/feedback/new` and the preview's screenshot answers
+`/api/screenshots/<id>` (their screenshot, `SCREENSHOT_MAX_BYTES`) keep their
+own limits. The generated Caddyfile refuses the same bodies on the
 dashboard site before they reach drobek (`request_body`, those paths left to
 drobek), so after changing the variable re-run `task selfhost:init` and
 `task tls:reload`. With a different proxy in front, cap the dashboard origin
@@ -475,9 +476,12 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `APPS_MAX_PER_WORKSPACE` | 50 | live apps per workspace (deleted ones do not count); `create_app` beyond it answers `limit_exceeded` *(plan)* |
 | `VERSIONS_PER_APP_HOUR` / `VERSIONS_PER_USER_HOUR` | 600 / 1200 | new versions of one app / made by one person (every app and workspace) within the last hour — `write_files`, `create_app`, `restore_version`, `duplicate_app` and the dashboard's Restore and duplicate page together; past either the call answers `rate_limited` with `retry_after_seconds` (the dashboard 429 + `Retry-After`) and nothing is stored *(plan)* |
 | `FEEDBACK_MAX_OPEN_PER_APP` / `FEEDBACK_PER_USER_HOUR` | 500 / 30 | open feedback notes one app may hold (a new note past it is refused until notes are resolved or deleted) / notes one member may leave on the previews within the last hour, in every app (the dashboard answers 429 + `Retry-After`) |
-| `SCREENSHOT_MAX_BYTES` | 1048576 | the largest screenshot a member may attach to a feedback note — the upload (bigger → 413; the note page shrinks a capture, a chosen file or a pasted image below it in the browser first) and the WebP drobek stores after re-encoding it (longer side 1600 px, metadata dropped; the upload itself is never kept). The note page has its own request body limit of this plus 64 KiB, in drobek and in the generated Caddyfile |
+| `SCREENSHOT_MAX_BYTES` | 1048576 | the largest screenshot a member may attach to a feedback note or send from the preview for `request_screenshot` — the upload (bigger → 413; the note page and the preview shrink a capture, a chosen file or a pasted image below it in the browser first) and the WebP drobek stores after re-encoding it (longer side 1600 px, metadata dropped; the upload itself is never kept). The note page and `/api/screenshots/<id>` have their own request body limit of this plus 64 KiB, in drobek and in the generated Caddyfile |
 | `FEEDBACK_SCREENSHOTS_MAX_PER_APP` / `FEEDBACK_SCREENSHOT_RETENTION_DAYS` | 100 / 30 | feedback notes with a screenshot one app may hold (a new screenshot past it is refused; the note can go without it) / days a resolved note keeps its screenshot — the hourly blob job then deletes the screenshot (not the note) and the blob GC frees its bytes. Screenshots do not count against `WORKSPACE_SOURCE_QUOTA` |
-| `MCP_IMAGE_MAX_BYTES` | 409600 | the largest image an MCP tool returns as an image content block (`get_feedback_screenshot`): a JPEG re-encoded from the stored screenshot with its longer side at most 1280 px, its quality and then its size stepped down until it fits |
+| `MCP_IMAGE_MAX_BYTES` | 409600 | the largest image an MCP tool returns as an image content block (`get_feedback_screenshot`, `get_screenshot`): a JPEG re-encoded from the stored screenshot with its longer side at most 1280 px, its quality and then its size stepped down until it fits |
+| `SCREENSHOT_REQUEST_TTL_SEC` | 600 | how long a `request_screenshot` request waits for someone on the preview to click Capture or Not now; then `get_screenshot` answers `expired` and the request's one-time upload token is void |
+| `SCREENSHOT_REQUESTS_PER_APP_HOUR` | 20 | `request_screenshot` requests per app in a fixed hour (Redis); past it the tool answers `rate_limited` with `retry_after_seconds` |
+| `SCREENSHOTS_RETENTION_DAYS` | 7 | days a screenshot sent for `request_screenshot` is kept — the hourly blob job then deletes it and the blob GC frees its bytes; it does not count against `WORKSPACE_SOURCE_QUOTA` |
 | `PREVIEW_EVENTS_MAX_PER_APP` / `PREVIEW_EVENTS_MAX_PER_IP` | 50 / 4 | live reload of the preview: event streams (`/__drobek/preview/events`, one per open preview tab) open at once per app / per client IP of an app, counted in each drobek process; past either the stream answers 429 and that tab does not reload by itself |
 | `PREVIEW_EVENTS_MAX_MS` | 3600000 | how long one preview event stream stays open; then the browser reconnects by itself |
 | `BROWSER_ERRORS_PER_IP_MINUTE` | 30 | error reports (`POST /__drobek/preview/errors`) one client IP may send to one app per minute; the rest are dropped silently |

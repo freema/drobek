@@ -1,7 +1,7 @@
 /**
  * Migration 0007 against a database in today's production shape (0000–0006
  * applied, deploy-pipeline data present), and against an empty one; migration
- * 0041 against notes that existed before it.
+ * 0041 against notes that existed before it; migration 0042 (app screenshots).
  */
 import { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
@@ -113,5 +113,33 @@ describe('migration 0041 (feedback screenshots)', () => {
       UPDATE app_feedback SET screenshot_sha256 = 's1', screenshot_width = 1, screenshot_height = 1, screenshot_bytes = 1 WHERE id = 'fb_1';
     `);
     await expect(db.execute(sql`DELETE FROM blobs WHERE sha256 = 's1'`)).rejects.toThrow();
+  });
+});
+
+describe('migration 0042 (app screenshots)', () => {
+  it('creates app_screenshots: blob FK kept, rows go with their app', async () => {
+    const db = newDb();
+    await migrateTo(db, migrationsUpTo(41));
+    await db.pg.exec(`
+      INSERT INTO users (id, email) VALUES ('u1', 'a@example.test');
+      INSERT INTO workspaces (id, kind, slug, name) VALUES ('w1', 'personal', 'alice', 'Alice');
+      INSERT INTO apps (id, workspace_id, slug) VALUES ('a1', 'w1', 'todo');
+    `);
+    await migrateTo(db);
+    expect(await tables(db)).toContain('app_screenshots');
+    await expect(
+      db.execute(sql`INSERT INTO app_screenshots (id, app_id, sha256, width, height, bytes, requested_at) VALUES ('ss_1', 'a1', 'missing', 1, 1, 1, now())`)
+    ).rejects.toThrow();
+    await db.pg.exec(`
+      INSERT INTO blobs (sha256, bytes, size) VALUES ('s1', '\\x00', 1);
+      INSERT INTO app_screenshots (id, app_id, version_number, path, note, requested_by_user_id, sha256, width, height, bytes, requested_at)
+        VALUES ('ss_1', 'a1', 3, '/', 'the header', 'u1', 's1', 1, 1, 1, now());
+    `);
+    await expect(db.execute(sql`DELETE FROM blobs WHERE sha256 = 's1'`)).rejects.toThrow();
+    await db.pg.exec(`DELETE FROM users WHERE id = 'u1';`);
+    const kept = await db.execute<{ requested_by_user_id: string | null }>(sql`SELECT requested_by_user_id FROM app_screenshots WHERE id = 'ss_1'`);
+    expect(kept.rows).toEqual([{ requested_by_user_id: null }]);
+    await db.pg.exec(`DELETE FROM apps WHERE id = 'a1';`);
+    expect((await db.execute(sql`SELECT 1 FROM app_screenshots`)).rows).toHaveLength(0);
   });
 });

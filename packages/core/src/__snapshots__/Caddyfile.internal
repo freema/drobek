@@ -60,7 +60,7 @@ localhost {
 	# reaches drobek, except on the paths drobek caps with their own limits:
 	# /mcp, the asset upload URLs and the Data tab's CSV import.
 	@capped_body {
-		not path /mcp /mcp/* /api/assets/upload/* /workspaces/*/apps/*/data/* /feedback/new /feedback/new.data
+		not path /mcp /mcp/* /api/assets/upload/* /api/screenshots/* /workspaces/*/apps/*/data/* /feedback/new /feedback/new.data
 	}
 	request_body @capped_body {
 		max_size 1048576

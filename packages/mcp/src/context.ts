@@ -3,7 +3,15 @@
  * side-effect seams the tools use (lease store, change notifications, compiler,
  * clock) — injectable so unit tests run without Redis and without sleeping.
  */
-import { assetDisk, assetUploadAllowed, notifyAppChanged, redisUploadTokenStore, type AppChangedEvent } from '@drobek/apps';
+import {
+  assetDisk,
+  assetUploadAllowed,
+  notifyAppChanged,
+  redisUploadTokenStore,
+  screenshotRequestStore,
+  type AppChangedEvent,
+  type ScreenshotRequestStore,
+} from '@drobek/apps';
 import { Compiler, type CompileOptions, type SourceFiles } from '@drobek/compile';
 import { createConsoleLogger, getRedis, type Logger } from '@drobek/core';
 import {
@@ -89,6 +97,8 @@ export interface ToolDeps {
   revokeEndUserSessions: (appId: string) => Promise<number>;
   /** invite_member: the Redis invite tokens and the invite e-mail. */
   invites: MemberInviteDeps;
+  /** request_screenshot / get_screenshot: the pending requests (Redis). */
+  screenshots: ScreenshotRequestStore;
 }
 
 let sharedCompiler: Compiler | null = null;
@@ -123,6 +133,7 @@ export function defaultDeps(overrides: Partial<ToolDeps> = {}): ToolDeps {
     dns: () => domainsResolver(overrides.env ?? process.env),
     revokeEndUserSessions: (appId) => revokeEndUserSessions(getRedis(), appId),
     invites: defaultMemberInviteDeps(),
+    screenshots: screenshotRequestStore(),
     ...overrides,
   };
 }

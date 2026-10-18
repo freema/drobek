@@ -1,4 +1,4 @@
-import { ASSET_UPLOAD_PATH_PREFIX } from '@drobek/apps';
+import { ASSET_UPLOAD_PATH_PREFIX, SCREENSHOT_UPLOAD_PATH_PREFIX } from '@drobek/apps';
 import { createOriginCheckMiddleware } from '@drobek/auth';
 import { coreVersion, dashboardMaxBodyBytes, reportError, withBodyLimit } from '@drobek/core';
 import { hasOwnBodyLimit } from '@drobek/dashboard/body-limits';
@@ -35,6 +35,11 @@ export interface ServerAppOptions {
    * @drobek/apps createAssetUploadHandler). Absent → not mounted.
    */
   assetUpload?: RequestHandler;
+  /**
+   * The screenshot answer endpoint (`/api/screenshots/<request_id>`,
+   * @drobek/apps createScreenshotUploadHandler). Absent → not mounted.
+   */
+  screenshotUpload?: RequestHandler;
   /** The request body cap in front of React Router. Default: DASHBOARD_MAX_BODY_BYTES. */
   maxBodyBytes?: number;
 }
@@ -54,12 +59,16 @@ export type ServerApp = Express & { mcp: McpEndpoint };
  *  2. the asset upload URLs (`/api/assets/upload/<token>`): the
  *     token in the path is the whole authorization (single use, no cookie is
  *     read), so they sit before the Origin check — `curl -T` sends no Origin;
+ *     likewise the screenshot answers (`/api/screenshots/<request_id>`): the
+ *     one-time token in the body is the credential, the preview's page posts
+ *     cross-origin without cookies, and the handler checks the Origin itself
+ *     (only the app's own hosts) and caps its body at SCREENSHOT_MAX_BYTES;
  *  3. the Origin check (CSRF) for every mutating dashboard request;
  *  4. health/version, Caddy's TLS `ask` endpoint (token-guarded,
  *     internal network only, blocked by Caddy on every public site), then `/mcp` (it parses its own
  *     JSON bodies; no parser runs app-wide, because React Router actions must read the raw body),
  *     then React Router behind the request body cap (DASHBOARD_MAX_BODY_BYTES → 413; the Data
- *     tab's collection page keeps its own, larger limit; /mcp and the asset uploads never get here).
+ *     tab's collection page keeps its own, larger limit; /mcp, the asset uploads and the screenshot answers never get here).
  */
 export function createServerApp(opts: ServerAppOptions): ServerApp {
   const app = express();
@@ -67,6 +76,7 @@ export function createServerApp(opts: ServerAppOptions): ServerApp {
 
   app.use(opts.appsHost ?? (createAppsHostMiddleware() as RequestHandler));
   if (opts.assetUpload) app.all(`${ASSET_UPLOAD_PATH_PREFIX}:token`, opts.assetUpload);
+  if (opts.screenshotUpload) app.all(`${SCREENSHOT_UPLOAD_PATH_PREFIX}:id`, opts.screenshotUpload);
   app.use(createOriginCheckMiddleware() as RequestHandler);
 
   // Static liveness (D3) — no dependency checks; `/healthz` (React Router)

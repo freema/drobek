@@ -43,6 +43,8 @@ const ALL_TOOLS = [
   'get_feedback_screenshot',
   'resolve_feedback',
   'delete_feedback',
+  'request_screenshot',
+  'get_screenshot',
   'sync_now',
   'create_asset_upload',
   'list_assets',

@@ -304,6 +304,48 @@ export const appFeedback = pgTable(
   ]
 );
 
+/**
+ * A screenshot an agent asked for (request_screenshot) and a person with the
+ * app's preview open captured. `id` is the request id; the request itself
+ * (token, note, expiry) lives in Redis only, the row exists once the image
+ * arrived. The image is the re-encoded WebP in `blobs` (the blob GC keeps a
+ * blob a row references); `path` is the preview page it was taken on,
+ * `browser` the capturing browser's family. Deleted
+ * SCREENSHOTS_RETENTION_DAYS after `captured_at`.
+ */
+export const appScreenshots = pgTable(
+  'app_screenshots',
+  {
+    id: text('id').primaryKey(),
+    appId: text('app_id')
+      .notNull()
+      .references(() => apps.id, { onDelete: 'cascade' }),
+    /** The preview's version when the agent asked (null = nothing had compiled). */
+    versionNumber: integer('version_number'),
+    /** The page path the person was on (no query, no fragment). */
+    path: text('path'),
+    /** The agent's note shown with the request. */
+    note: text('note'),
+    requestedByUserId: text('requested_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    browser: text('browser'),
+    sha256: text('sha256')
+      .notNull()
+      .references((): AnyPgColumn => blobs.sha256),
+    width: integer('width').notNull(),
+    height: integer('height').notNull(),
+    bytes: integer('bytes').notNull(),
+    requestedAt: timestamp('requested_at').notNull(),
+    capturedAt: timestamp('captured_at').notNull().defaultNow(),
+  },
+  (t) => [
+    // The Feedback tab lists one app's screenshots newest first; the retention deletes by age.
+    index('app_screenshots_app_captured_idx').on(t.appId, t.capturedAt),
+    index('app_screenshots_captured_idx').on(t.capturedAt),
+    // The blob GC asks whether a screenshot references a blob.
+    index('app_screenshots_sha256_idx').on(t.sha256),
+  ]
+);
+
 /** Content-addressed file bytes, shared by every version (and app) that uses them. */
 export const blobs = pgTable('blobs', {
   sha256: text('sha256').primaryKey(),

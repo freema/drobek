@@ -47,7 +47,7 @@ const loaders: ServeLoaders = {
 };
 
 function newHub(limits = { maxPerApp: 3, maxPerIp: 2, maxMs: 60_000 }, heartbeatMs = 25_000): PreviewEventsHub {
-  return new PreviewEventsHub({ compileOf: async (_appId, n) => compiles.get(n) ?? null, limits, heartbeatMs });
+  return new PreviewEventsHub({ compileOf: async (_appId, n) => compiles.get(n) ?? null, limits, heartbeatMs, pendingScreenshot: async () => null });
 }
 
 function deps(): HandlerDeps {
@@ -202,6 +202,48 @@ describe('the hub', () => {
     sub.emit('message', APP_CHANGED_CHANNEL, JSON.stringify({ app_id: 'app_1', slug: 'shop', version: 4 }));
     await vi.waitFor(() => expect(messages(drain(a))).toEqual([{ type: 'version', version: 4, compiled: true, errors: 0 }]), { timeout: 1000 });
     await relay.stop();
+  });
+
+  it('a screenshot request and its answer reach the app\'s streams only, also through the Redis relay; the serve cache is not busted', async () => {
+    const a = open();
+    const other = hub.subscribe({ appId: 'app_2', clientIp: null, current: null });
+    const requested = { state: 'requested' as const, request_id: 'ss_0123456789abcdef01234567', token: 't'.repeat(43), note: 'the menu', expires_at: 1_900_000_000_000 };
+    emitLocalAppChanged({ app_id: 'app_1', slug: 'shop', kind: 'screenshot', screenshot: requested });
+    expect(messages(drain(a))).toEqual([
+      { type: 'screenshot_requested', request_id: requested.request_id, token: requested.token, note: 'the menu', expires_at: requested.expires_at },
+    ]);
+    class FakeSub extends EventEmitter {
+      subscribe = vi.fn(async () => 1);
+      quit = vi.fn(async () => 'OK');
+      disconnect = vi.fn();
+    }
+    const sub = new FakeSub();
+    const store = new ServeStore({ loaders });
+    const bust = vi.spyOn(store, 'bust');
+    const relay = subscribeServeCache(store, { redis: { duplicate: () => sub } as unknown as Redis });
+    sub.emit('message', APP_CHANGED_CHANNEL, JSON.stringify({ app_id: 'app_1', slug: 'shop', kind: 'screenshot', screenshot: { state: 'done', request_id: requested.request_id } }));
+    expect(messages(drain(a))).toEqual([{ type: 'screenshot_done', request_id: requested.request_id }]);
+    expect(bust).not.toHaveBeenCalled();
+    expect(other.ok && messages(drain(other.stream))).toEqual([{ type: 'ready', version: null }]);
+    await relay.stop();
+  });
+
+  it('a stream that opens while a request is open gets it after ready', async () => {
+    hub = new PreviewEventsHub({
+      compileOf: async () => null,
+      limits: { maxPerApp: 3, maxPerIp: 2, maxMs: 60_000 },
+      pendingScreenshot: async (appId) =>
+        appId === 'app_1' ? { state: 'requested', request_id: 'ss_0123456789abcdef01234567', token: 'tok', note: null, expires_at: 1 } : null,
+    });
+    const r = hub.subscribe({ appId: 'app_1', clientIp: null, current: 3 });
+    if (!r.ok) throw new Error('no slot');
+    let seen = '';
+    await vi.waitFor(() =>
+      expect(messages((seen += drain(r.stream)))).toEqual([
+        { type: 'ready', version: 3 },
+        { type: 'screenshot_requested', request_id: 'ss_0123456789abcdef01234567', token: 'tok', note: null, expires_at: 1 },
+      ])
+    );
   });
 
   it('sends a heartbeat comment and ends a stream after its lifetime, freeing the slot', () => {

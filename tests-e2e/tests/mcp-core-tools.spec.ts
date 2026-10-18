@@ -42,6 +42,7 @@ const ALL_TOOLS = [
   'get_app',
   'get_feedback_screenshot',
   'get_logs',
+  'get_screenshot',
   'invite_member',
   'keep_version',
   'list_activity',
@@ -64,6 +65,7 @@ const ALL_TOOLS = [
   'remove_member',
   'remove_module_secret',
   'remove_upstream',
+  'request_screenshot',
   'resolve_feedback',
   'restore_version',
   'set_end_user_blocked',
@@ -97,6 +99,7 @@ const READ_TOOLS = new Set([
   'list_members',
   'list_feedback',
   'get_feedback_screenshot',
+  'get_screenshot',
 ]);
 /** The tools that ask public DNS or change the public site. */
 const OPEN_WORLD_TOOLS = new Set(['sync_now', 'verify_domain', 'remove_domain', 'set_frame_ancestors', 'delete_app', 'invite_member']);

@@ -6,26 +6,45 @@
  * (`<slug>--v<N>`) serves gets ONE tag before its `</body>` (before the
  * feedback widget's tag):
  *
- *   <script src="/__drobek/preview.js" defer data-app="<slug>" data-version="<N>" data-reload data-errors></script>
+ *   <script src="/__drobek/preview.js" defer data-app="<slug>" data-version="<N>" data-reload data-errors data-screenshots></script>
  *
  * (`script-src 'self'` of the app CSP covers it). `data-reload` is set on the
  * preview host only, unless the version's drobek.json says `"reload": false`;
- * `data-errors` on both, unless it says `"browserErrors": false`. A page with
- * no part switched on gets no tag. The production host and custom domains
- * never get it.
+ * `data-errors` on both, unless it says `"browserErrors": false`;
+ * `data-screenshots` on the preview host only, unless it says
+ * `"screenshots": false` (and only when the script knows the dashboard
+ * origin). A page with no part switched on gets no tag. The production host
+ * and custom domains never get it.
  *
- * With `data-reload` the script opens an `EventSource` on its own origin
- * (`/__drobek/preview/events`, `connect-src 'self'`). Every message is one
- * JSON object typed by its `type` field, handled by the entry of `handlers`
- * of that name (an unknown type is ignored):
+ * With `data-reload` or `data-screenshots` the script opens an `EventSource`
+ * on its own origin (`/__drobek/preview/events`, `connect-src 'self'`). Every
+ * message is one JSON object typed by its `type` field, handled by the entry
+ * of `handlers` of that name (an unknown type is ignored):
  *
  *   { type: 'ready', version }                  the newest compiled version when the stream opened
  *   { type: 'version', version, compiled, errors }  a new version was stored
+ *   { type: 'screenshot_requested', request_id, token, note, expires_at }
+ *                                               an agent asks for a screenshot (request_screenshot)
+ *   { type: 'screenshot_done', request_id }     a request was answered (in this or another tab)
  *
- * A newer version that compiled reloads the page (the scroll position kept in
- * sessionStorage for the reloaded page); one that did not compile shows a
- * notice instead and the page stays as it is. A stream that cannot open
- * (limits, a proxy) changes nothing.
+ * reload: a newer version that compiled reloads the page (the scroll position
+ * kept in sessionStorage for the reloaded page); one that did not compile
+ * shows a notice instead and the page stays as it is. A stream that cannot
+ * open (limits, a proxy) changes nothing.
+ *
+ * screenshots: a request shows a bar — "Your agent asks for a screenshot of
+ * this page", the agent's note (as text, at most 200 characters) and Capture
+ * / Not now — once per request and tab (the answered ids are kept in
+ * sessionStorage, so a reload does not ask again), until it expires or is
+ * answered elsewhere. Capture hides the bar and calls `getDisplayMedia`
+ * (`preferCurrentTab`, so Chrome offers this tab; other browsers show their
+ * picker), draws the first frame, stops the stream and encodes it as a WebP
+ * (JPEG where the browser cannot) of at most SCREENSHOT_MAX_BYTES; the image
+ * and the request's token go with `fetch` — no credentials — to the
+ * dashboard's `/api/screenshots/<request_id>` (the preview host's
+ * `connect-src` allows the dashboard origin for it). Not now sends the same
+ * token with `action=decline`. A browser without `getDisplayMedia` shows the
+ * request with an OK button only, which declines it.
  *
  * With `data-errors` the script reports the page's uncaught errors, unhandled
  * promise rejections and `console.error` calls that pass an `Error` (never
@@ -38,10 +57,15 @@
  * meanwhile (and the rest when the page is left); at most 100 reports a page.
  *
  * The script reads no cookie, sets none, and does nothing inside a frame (the
- * dashboard's app thumbnails). Its one piece of UI is `notice()`: a closed
- * shadow root at the bottom left, styled in place (no shared stylesheet).
+ * dashboard's app thumbnails). Its UI is `notice()`: a closed shadow root at
+ * the bottom left (the feedback button sits at the bottom right) holding the
+ * toast and the screenshot bar, styled in place in the platform theme's
+ * colours (inlined at build time, light and dark; no motion under
+ * `prefers-reduced-motion`).
  */
 import { createHash } from 'node:crypto';
+import { PLATFORM_FONT, PLATFORM_SHADOW } from '@drobek/core/platform-theme';
+import { widgetThemeCss } from './widget-theme.js';
 
 export const PREVIEW_SCRIPT_PATH = '/__drobek/preview.js';
 /** The event stream of the preview host. */
@@ -56,6 +80,8 @@ export interface PreviewScript {
   script: Buffer;
   /** sha256 (16 hex) of `script` — part of the injected pages' ETag. */
   hash: string;
+  /** Where the script answers screenshot requests (the dashboard origin); null → no screenshot part. */
+  uploadOrigin: string | null;
 }
 
 /** Which parts of the script a page runs. */
@@ -64,28 +90,71 @@ export interface PreviewScriptParts {
   reload: boolean;
   /** Report the page's errors (preview and version hosts). */
   errors: boolean;
+  /** Show an agent's screenshot requests (preview host only). */
+  screenshots: boolean;
 }
 
-export function previewScript(): PreviewScript {
-  const script = Buffer.from(PREVIEW_SCRIPT_SOURCE);
-  return { script, hash: createHash('sha256').update(script).digest('hex').slice(0, 16) };
+export interface PreviewScriptOptions {
+  /** The dashboard origin (PUBLIC_APP_URL) screenshots are uploaded to; absent or invalid → no screenshot part. */
+  dashboardOrigin?: string | null;
+  /** SCREENSHOT_MAX_BYTES: the largest image the script uploads. */
+  screenshotMaxBytes?: number;
 }
 
-/** The ETag marker of a page carrying the tag of `parts` (`r` = reload, `e` = errors). */
+function httpOrigin(raw: string | null | undefined): string | null {
+  try {
+    const url = new URL(String(raw ?? ''));
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.origin : null;
+  } catch {
+    return null;
+  }
+}
+
+export function previewScript(opts: PreviewScriptOptions = {}): PreviewScript {
+  const uploadOrigin = httpOrigin(opts.dashboardOrigin);
+  const script = Buffer.from(previewScriptSource(uploadOrigin ?? '', opts.screenshotMaxBytes ?? 1024 * 1024));
+  return { script, hash: createHash('sha256').update(script).digest('hex').slice(0, 16), uploadOrigin };
+}
+
+/** The ETag marker of a page carrying the tag of `parts` (`r` = reload, `e` = errors, `s` = screenshots). */
 export function previewPartsKey(parts: PreviewScriptParts): string {
-  return `${parts.reload ? 'r' : ''}${parts.errors ? 'e' : ''}`;
+  return `${parts.reload ? 'r' : ''}${parts.errors ? 'e' : ''}${parts.screenshots ? 's' : ''}`;
 }
 
 /** The tag injected into an HTML page served from version `versionNumber` of app `slug`; null when no part is on. */
 export function previewScriptTag(slug: string, versionNumber: number, parts: PreviewScriptParts): string | null {
-  if (!parts.reload && !parts.errors) return null;
+  if (!parts.reload && !parts.errors && !parts.screenshots) return null;
   const safeSlug = slug.replace(/[^a-z0-9-]/g, '');
-  const flags = `${parts.reload ? ' data-reload' : ''}${parts.errors ? ' data-errors' : ''}`;
+  const flags = `${parts.reload ? ' data-reload' : ''}${parts.errors ? ' data-errors' : ''}${parts.screenshots ? ' data-screenshots' : ''}`;
   return `<script src="${PREVIEW_SCRIPT_PATH}" defer data-app="${safeSlug}" data-version="${Math.trunc(versionNumber)}"${flags}></script>`;
 }
 
+/** The shadow root's stylesheet: the platform theme's values, light and dark. */
+function noticeCss(): string {
+  return [
+    widgetThemeCss(),
+    `*{box-sizing:border-box;font:500 13px/1.4 ${PLATFORM_FONT}}`,
+    `.toast,.ask{display:none;max-width:min(420px,calc(100vw - 32px));background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:12px;padding:8px 12px;box-shadow:${PLATFORM_SHADOW}}`,
+    '.toast.on{display:block}',
+    '.ask{padding:12px 14px;margin-top:8px}',
+    '.ask.on{display:block}',
+    '.ask p{margin:0}',
+    '.ask .title{font-weight:600}',
+    '.ask .note{margin-top:4px;color:var(--muted);overflow-wrap:anywhere}',
+    '.ask .note:empty{display:none}',
+    '.ask .actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}',
+    'button{font-weight:600;border:1px solid var(--accent);border-radius:999px;padding:6px 14px;background:var(--accent);color:var(--accent-ink);cursor:pointer}',
+    'button.secondary{background:var(--surface);color:var(--ink);border-color:var(--line)}',
+    'button[hidden]{display:none}',
+    'button:focus-visible{outline:2px solid var(--crumb);outline-offset:2px}',
+    '@media (prefers-reduced-motion:no-preference){.toast.on,.ask.on{animation:drobek-in .18s ease-out}}',
+    '@keyframes drobek-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}',
+  ].join('');
+}
+
 /** The browser script (ES2017, no imports, no eval). */
-const PREVIEW_SCRIPT_SOURCE = `(function () {
+function previewScriptSource(uploadOrigin: string, maxBytes: number): string {
+  return `(function () {
   'use strict';
   var me = document.currentScript;
   try { if (window.top !== window.self) return; } catch (e) { return; }
@@ -94,9 +163,13 @@ const PREVIEW_SCRIPT_SOURCE = `(function () {
   var version = Number((me && me.getAttribute('data-version')) || 0);
   var reload = !!(me && me.hasAttribute('data-reload'));
   var errorsOn = !!(me && me.hasAttribute('data-errors'));
+  var UPLOAD = ${JSON.stringify(uploadOrigin)};
+  var shotsOn = !!(me && me.hasAttribute('data-screenshots')) && !!UPLOAD;
+  var MAX_BYTES = ${Math.max(1, Math.trunc(maxBytes))};
   var EVENTS = ${JSON.stringify(PREVIEW_EVENTS_PATH)};
   var ERRORS = ${JSON.stringify(PREVIEW_ERRORS_PATH)};
   var SCROLL_KEY = 'drobek:preview-scroll';
+  var SHOTS_KEY = 'drobek:preview-screenshots';
 
   var ui = null;
   function notice() {
@@ -106,25 +179,47 @@ const PREVIEW_SCRIPT_SOURCE = `(function () {
     host.style.cssText = 'position:fixed;left:16px;bottom:16px;z-index:2147483647;';
     var root = host.attachShadow ? host.attachShadow({ mode: 'closed' }) : host;
     root.innerHTML =
-      '<style>' +
-      ':host,*{box-sizing:border-box;font:500 13px/1.4 system-ui,-apple-system,sans-serif}' +
-      '.toast{display:none;max-width:min(420px,calc(100vw - 32px));background:#1a1a1a;color:#fff;border-radius:10px;padding:8px 12px;box-shadow:0 2px 10px rgba(0,0,0,.25)}' +
-      '.toast.on{display:block}' +
-      '@media (prefers-reduced-motion: no-preference){.toast.on{animation:drobek-in .18s ease-out}}' +
-      '@keyframes drobek-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}' +
-      '</style>' +
-      '<div class="toast" role="status" aria-live="polite"></div>';
+      '<style>' + ${JSON.stringify(noticeCss())} + '</style>' +
+      '<div class="toast" role="status" aria-live="polite"></div>' +
+      '<section class="ask" aria-live="polite" aria-label="Screenshot for your agent">' +
+      '<p class="title"></p><p class="note"></p>' +
+      '<div class="actions"><button type="button" data-capture>Capture</button><button type="button" class="secondary" data-decline>Not now</button></div>' +
+      '</section>';
     var toast = root.querySelector('.toast');
+    var ask = root.querySelector('.ask');
+    var title = root.querySelector('.title');
+    var note = root.querySelector('.note');
+    var captureButton = root.querySelector('[data-capture]');
+    var declineButton = root.querySelector('[data-decline]');
+    var toastTimer = 0;
     (document.body || document.documentElement).appendChild(host);
     ui = {
-      show: function (kind, text) {
+      show: function (kind, text, ms) {
         host.setAttribute('data-notice', kind);
         toast.textContent = text;
         toast.className = 'toast on';
+        clearTimeout(toastTimer);
+        if (ms) toastTimer = setTimeout(ui.hide, ms);
       },
       hide: function () {
         host.removeAttribute('data-notice');
         toast.className = 'toast';
+      },
+      ask: function (text, agentNote, canCapture, onCapture, onDecline) {
+        title.textContent = text;
+        note.textContent = agentNote;
+        captureButton.hidden = !canCapture;
+        declineButton.textContent = canCapture ? 'Not now' : 'OK';
+        captureButton.onclick = onCapture;
+        declineButton.onclick = onDecline;
+        host.setAttribute('data-ask', '');
+        ask.className = 'ask on';
+      },
+      closeAsk: function () {
+        host.removeAttribute('data-ask');
+        ask.className = 'ask';
+        captureButton.onclick = null;
+        declineButton.onclick = null;
       }
     };
     return ui;
@@ -149,19 +244,187 @@ const PREVIEW_SCRIPT_SOURCE = `(function () {
 
   var handlers = {
     ready: function (m) {
-      if (Number(m.version) > version) { keepScroll(); location.reload(); }
+      if (reload && Number(m.version) > version) { keepScroll(); location.reload(); }
     },
     version: function (m) {
       var n = Number(m.version);
-      if (!(n > version)) return;
+      if (!reload || !(n > version)) return;
       if (m.compiled === true) {
         keepScroll();
         location.reload();
         return;
       }
       notice().show('compile-failed', 'Version ' + n + ' did not compile \\u2014 your agent has the errors.');
+    },
+    screenshot_requested: function (m) {
+      if (!shotsOn || typeof m.request_id !== 'string' || typeof m.token !== 'string') return;
+      if (answered(m.request_id) || !(Number(m.expires_at) > Date.now())) return;
+      if (pending && pending.request_id === m.request_id) return;
+      askFor(m);
+    },
+    screenshot_done: function (m) {
+      if (pending && pending.request_id === m.request_id) closeAsk();
     }
   };
+
+  var pending = null;
+  var expiryTimer = 0;
+  function answeredIds() {
+    try {
+      var ids = JSON.parse(sessionStorage.getItem(SHOTS_KEY) || '[]');
+      return Array.isArray(ids) ? ids : [];
+    } catch (e) { return []; }
+  }
+  function answered(id) {
+    return answeredIds().indexOf(id) >= 0;
+  }
+  function remember(id) {
+    try { sessionStorage.setItem(SHOTS_KEY, JSON.stringify(answeredIds().concat([id]).slice(-20))); } catch (e) { /* storage off: a reload may ask again */ }
+  }
+  function closeAsk() {
+    pending = null;
+    clearTimeout(expiryTimer);
+    if (ui) ui.closeAsk();
+  }
+  function canCapture() {
+    return !!(navigator.mediaDevices && typeof navigator.mediaDevices.getDisplayMedia === 'function');
+  }
+  function askFor(m) {
+    pending = m;
+    clearTimeout(expiryTimer);
+    expiryTimer = setTimeout(function () { if (pending === m) closeAsk(); }, Math.min(Math.max(Number(m.expires_at) - Date.now(), 0), 2147483647));
+    var able = canCapture();
+    notice().ask(
+      able ? 'Your agent asks for a screenshot of this page' : 'Your agent asks for a screenshot of this page, but this browser cannot take one \\u2014 tell your agent what you see.',
+      typeof m.note === 'string' ? m.note.slice(0, 200) : '',
+      able,
+      function () { capture(m); },
+      function () { decline(m); }
+    );
+  }
+
+  function answer(m, form) {
+    form.append('token', m.token);
+    return fetch(UPLOAD + '/api/screenshots/' + encodeURIComponent(m.request_id), {
+      method: 'POST',
+      body: form,
+      mode: 'cors',
+      credentials: 'omit',
+      cache: 'no-store',
+      referrerPolicy: 'no-referrer'
+    }).then(function (r) {
+      if (r.ok) return r;
+      return r.json().catch(function () { return {}; }).then(function (b) {
+        throw new Error(b && typeof b.message === 'string' ? b.message : 'the answer was refused (' + r.status + ')');
+      });
+    });
+  }
+  function decline(m) {
+    closeAsk();
+    remember(m.request_id);
+    var form = new FormData();
+    form.append('action', 'decline');
+    return answer(m, form).then(function () {
+      notice().show('screenshot', 'OK \\u2014 your agent will not get a screenshot this time.', 5000);
+    }, function (e) {
+      notice().show('screenshot-failed', 'Could not tell your agent: ' + e.message, 8000);
+    });
+  }
+
+  function firstFrame(stream) {
+    return new Promise(function (resolve, reject) {
+      var video = document.createElement('video');
+      video.muted = true;
+      video.playsInline = true;
+      video.srcObject = stream;
+      var done = false;
+      var draw = function () {
+        if (done) return;
+        done = true;
+        var w = video.videoWidth, h = video.videoHeight;
+        if (!w || !h) { reject(new Error('the capture had no picture')); return; }
+        var canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        canvas.getContext('2d').drawImage(video, 0, 0, w, h);
+        resolve(canvas);
+      };
+      video.onloadeddata = function () { setTimeout(draw, 250); };
+      video.onerror = function () { if (!done) { done = true; reject(new Error('the capture could not be read')); } };
+      var played = video.play();
+      if (played && typeof played.catch === 'function') played.catch(function () { /* loadeddata still fires */ });
+    });
+  }
+  function scaled(source, side) {
+    var k = Math.min(1, side / Math.max(source.width, source.height));
+    if (k === 1) return source;
+    var c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(source.width * k));
+    c.height = Math.max(1, Math.round(source.height * k));
+    c.getContext('2d').drawImage(source, 0, 0, c.width, c.height);
+    return c;
+  }
+  function encode(source) {
+    var sides = [1600, 1200, 900, 640];
+    var qualities = [0.85, 0.7, 0.55, 0.4];
+    var i = 0, j = 0, type = 'image/webp';
+    var next = function () {
+      if (i >= sides.length) return Promise.reject(new Error('the screenshot is too large to send'));
+      var canvas = scaled(source, sides[i]);
+      return new Promise(function (resolve) { canvas.toBlob(resolve, type, qualities[j]); }).then(function (blob) {
+        if (blob && blob.type !== type && type === 'image/webp') { type = 'image/jpeg'; return next(); }
+        if (blob && blob.size <= MAX_BYTES) return blob;
+        j++;
+        if (j >= qualities.length) { j = 0; i++; }
+        return next();
+      });
+    };
+    return next();
+  }
+  function capture(m) {
+    closeAsk();
+    var stream = null;
+    var stop = function () {
+      if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
+      stream = null;
+    };
+    var shot;
+    try {
+      shot = navigator.mediaDevices.getDisplayMedia({
+        video: { displaySurface: 'browser' },
+        audio: false,
+        preferCurrentTab: true,
+        selfBrowserSurface: 'include',
+        surfaceSwitching: 'exclude'
+      });
+    } catch (e) {
+      shot = Promise.reject(e);
+    }
+    return shot.then(function (s) {
+      stream = s;
+      return firstFrame(s);
+    }).then(function (canvas) {
+      stop();
+      return encode(canvas);
+    }).then(function (blob) {
+      notice().show('screenshot', 'Sending the screenshot to your agent\\u2026');
+      var form = new FormData();
+      form.append('screenshot', blob, blob.type === 'image/webp' ? 'screenshot.webp' : 'screenshot.jpg');
+      form.append('path', location.pathname);
+      form.append('browser', family());
+      return answer(m, form);
+    }).then(function () {
+      remember(m.request_id);
+      notice().show('screenshot', 'Sent \\u2014 your agent can see the screenshot now.', 5000);
+    }, function (e) {
+      stop();
+      if (e && e.name === 'NotAllowedError') {
+        if (!answered(m.request_id) && Number(m.expires_at) > Date.now()) askFor(m);
+        return;
+      }
+      notice().show('screenshot-failed', 'The screenshot could not be sent: ' + ((e && e.message) || 'unknown error') + '.', 8000);
+    });
+  }
 
   function listen() {
     if (typeof EventSource !== 'function') return;
@@ -296,9 +559,8 @@ const PREVIEW_SCRIPT_SOURCE = `(function () {
   }
 
   if (errorsOn) collect();
-  if (reload) {
-    restoreScroll();
-    listen();
-  }
+  if (reload) restoreScroll();
+  if (reload || shotsOn) listen();
 })();
 `;
+}

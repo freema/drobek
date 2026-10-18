@@ -9,7 +9,8 @@
  * Busting twice is harmless. A `domain` event also drops every cached
  * custom-host resolution (and every cached custom-host miss). A `create` event
  * (from createApp) busts the slug like any other — which forgets a
- * cached "no such slug", so the new app is served at once.
+ * cached "no such slug", so the new app is served at once. A `screenshot`
+ * event (an agent's request reaching the preview streams) busts nothing.
  */
 import type { Redis } from 'ioredis';
 import {
@@ -36,6 +37,8 @@ export function subscribeServeCache(
   opts: { redis?: Redis | null; log?: Logger } = {}
 ): ServeCacheSubscription {
   const offLocal = onLocalAppChanged((e) => {
+    // A screenshot request changes nothing the app hosts serve.
+    if (e.kind === 'screenshot') return;
     store.bust(e.slug);
     // A domain change can move ANY custom hostname (added / verified / removed).
     if (e.kind === 'domain') store.bustCustomHosts();

@@ -160,12 +160,27 @@ export const LIMITS: LimitDoc[] = [
   {
     env: 'SCREENSHOT_MAX_BYTES',
     default: '1048576',
-    meaning: 'The largest screenshot a member may attach to a feedback note (the upload; the dashboard answers 413 past it) and the most the stored, re-encoded WebP takes.',
+    meaning: 'The largest screenshot a member may attach to a feedback note or send for request_screenshot (the upload; the dashboard answers 413 past it) and the most the stored, re-encoded WebP takes.',
+  },
+  {
+    env: 'SCREENSHOT_REQUEST_TTL_SEC',
+    default: '600',
+    meaning: 'Seconds a request_screenshot request waits for the person on the preview to click Capture or Not now; then get_screenshot answers expired and the one-time upload token is void.',
+  },
+  {
+    env: 'SCREENSHOT_REQUESTS_PER_APP_HOUR',
+    default: '20',
+    meaning: 'Max request_screenshot requests per app in a fixed hour; past it the tool answers rate_limited with retry_after_seconds.',
+  },
+  {
+    env: 'SCREENSHOTS_RETENTION_DAYS',
+    default: '7',
+    meaning: 'Days a screenshot sent for request_screenshot is kept; then it is deleted and get_screenshot answers not_found.',
   },
   {
     env: 'MCP_IMAGE_MAX_BYTES',
     default: '409600',
-    meaning: 'The largest image an MCP tool returns as an image content block (get_feedback_screenshot): a JPEG re-encoded with its longer side at most 1280 px and stepped down until it fits.',
+    meaning: 'The largest image an MCP tool returns as an image content block (get_feedback_screenshot, get_screenshot): a JPEG re-encoded with its longer side at most 1280 px and stepped down until it fits.',
   },
   {
     env: 'APP_VERSIONS_KEEP',

@@ -247,7 +247,8 @@ export interface ActivityItem {
   actorBadge: AuditActorKind;
   /**
    * Which human/agent: the actor's email, 'app end user' for an end-user row
-   * (no drobek actor), or 'system' when there is no actor at all.
+   * (no drobek actor), 'someone on the preview' for a screenshot answer (the
+   * preview posts it without a session), or 'system' when there is no actor at all.
    */
   actorLabel: string;
   subjectType: string | null;
@@ -263,6 +264,9 @@ export interface ActivityItem {
  * actor's email (or 'system' for an actor-less row). No secrets/PII beyond the
  * email that the admin viewer is already entitled to see.
  */
+/** Audit actions written by the preview's screenshot bar, which answers without a drobek session. */
+const PREVIEW_ANSWERS = new Set(['app.screenshot.capture', 'app.screenshot.decline']);
+
 export function shapeActivity(rows: ActivityRowInput[]): ActivityItem[] {
   return [...rows]
     .sort(
@@ -276,7 +280,7 @@ export function shapeActivity(rows: ActivityRowInput[]): ActivityItem[] {
       actorKind: r.actorKind,
       actorBadge: r.actorKind,
       // End users are not drobek users: their rows carry no actor id.
-      actorLabel: r.actorEmail ?? (r.actorKind === 'end_user' ? 'app end user' : 'system'),
+      actorLabel: r.actorEmail ?? (r.actorKind === 'end_user' ? 'app end user' : PREVIEW_ANSWERS.has(r.action) ? 'someone on the preview' : 'system'),
       subjectType: r.subjectType,
       subject: r.subject,
       time: formatTimestamp(r.createdAt.toISOString()),

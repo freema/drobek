@@ -82,7 +82,7 @@ test.describe('browser errors of the preview @local', () => {
     version = w.json.version as number;
 
     const html = await hostRequest(previewHost(app.slug), '/');
-    expect(html.body).toContain(`data-version="${version}" data-reload data-errors></script>`);
+    expect(html.body).toContain(`data-version="${version}" data-reload data-errors data-screenshots></script>`);
 
     const ctx = await browser.newContext();
     try {

@@ -146,7 +146,7 @@ describe('proxy + secret invariants (every mode)', () => {
 
   it('caps request bodies on the dashboard site only (DASHBOARD_MAX_BODY_BYTES), never the paths with their own limits', () => {
     const cap = (n: number) =>
-      `\t@capped_body {\n\t\tnot path /mcp /mcp/* /api/assets/upload/* /workspaces/*/apps/*/data/* /feedback/new /feedback/new.data\n\t}\n\trequest_body @capped_body {\n\t\tmax_size ${n}\n\t}\n\timport drobek\n}\n`;
+      `\t@capped_body {\n\t\tnot path /mcp /mcp/* /api/assets/upload/* /api/screenshots/* /workspaces/*/apps/*/data/* /feedback/new /feedback/new.data\n\t}\n\trequest_body @capped_body {\n\t\tmax_size ${n}\n\t}\n\timport drobek\n}\n`;
     for (const env of [...modes, { ...PROD, TLS_DNS_PROVIDER: 'cloudflare', TLS_CUSTOM_DOMAINS: '1', TLS_ASK_TOKEN: TOKEN }]) {
       const out = render(env);
       expect(out.match(/request_body/g)).toHaveLength(1);

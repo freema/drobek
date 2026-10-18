@@ -5,6 +5,8 @@
  * there, Resolve (with an optional note) / Reopen for editors, and Delete for
  * the author and workspace admins. A note's screenshot shows as a thumbnail
  * that opens the full image. Note texts are member input: React escapes them.
+ * Below them, "Screenshots for the agent": what people sent from the preview
+ * when an agent asked for a screenshot, newest first, as thumbnails.
  */
 import { Form, Link, useActionData, useLoaderData, useNavigation } from 'react-router';
 import type { action, loader } from './workspaces.$slug.apps.$appSlug.feedback.server.js';
@@ -233,6 +235,55 @@ export default function AppFeedbackRoute() {
           </Link>
         ) : null}
       </div>
+
+      <section aria-labelledby="agent-screenshots-title" data-testid="agent-screenshots">
+        <h3 id="agent-screenshots-title" style={{ ...ui.title, fontSize: '1.05rem', marginTop: '1.5rem' }}>
+          Screenshots for the agent
+        </h3>
+        <p style={ui.hint}>
+          When a coding agent needs to see the page, it asks with <code>request_screenshot</code>: everyone with the preview open sees a bar
+          with <strong>Capture</strong> and <strong>Not now</strong>. What they send shows up here and reaches the agent through{' '}
+          <code>get_screenshot</code>; each screenshot is deleted after {d.screenshotRetentionDays} days.
+        </p>
+        {d.screenshots.length === 0 ? (
+          <p style={ui.empty} data-testid="agent-screenshots-none">
+            No screenshots yet. Ask your agent to request one, then open the preview and click Capture on the bar at the top.
+          </p>
+        ) : (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem' }}>
+            {d.screenshots.map((s) => (
+              <article key={s.id} style={{ ...card, margin: 0, width: 'min(17.5rem, 100%)' }} data-testid="agent-screenshot" data-screenshot-id={s.id}>
+                <a href={s.url} target="_blank" rel="noopener" style={{ display: 'block' }}>
+                  <img
+                    src={`${s.url}?size=thumb`}
+                    alt={`Screenshot sent from the preview, ${s.width}×${s.height} — opens the full size`}
+                    loading="lazy"
+                    width={Math.min(256, s.width)}
+                    height={Math.round((Math.min(256, s.width) * s.height) / s.width)}
+                    style={thumb}
+                  />
+                </a>
+                {s.note ? (
+                  <p style={{ ...body, fontSize: '0.85rem' }} data-testid="agent-screenshot-note">
+                    {s.note}
+                  </p>
+                ) : null}
+                <p style={meta2}>
+                  {formatTimestamp(s.capturedAt)} · {s.version !== null ? `version ${s.version}` : 'preview'}
+                  {s.path ? (
+                    <>
+                      {' · '}
+                      <code style={ui.mono}>{s.path}</code>
+                    </>
+                  ) : null}
+                  {s.browser ? ` · ${s.browser}` : ''} · {kib(s.bytes)}
+                  {s.requestedBy ? ` · asked by ${s.requestedBy}'s agent` : ''}
+                </p>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
     </AppPage>
   );
 }

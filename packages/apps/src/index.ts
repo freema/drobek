@@ -124,6 +124,7 @@ export {
   onLocalAppChanged,
   parseAppChangedEvent,
   type AppChangedEvent,
+  type ScreenshotSignal,
 } from './events.js';
 export {
   DEV_APPS_DOMAIN,
@@ -369,3 +370,41 @@ export {
   type ImageOutputFormat,
   type ReencodeOptions,
 } from './image.server.js';
+export {
+  DEFAULT_SCREENSHOT_REQUEST_TTL_SEC,
+  DEFAULT_SCREENSHOT_REQUESTS_PER_APP_HOUR,
+  DEFAULT_SCREENSHOTS_RETENTION_DAYS,
+  SCREENSHOT_LIST_MAX,
+  SCREENSHOT_NOTE_MAX,
+  SCREENSHOT_RETRY_AFTER_SECONDS,
+  SCREENSHOT_UPLOAD_PATH_PREFIX,
+  isScreenshotRequestId,
+  screenshotLimits,
+  screenshotUploadMaxBytes,
+  validateScreenshotNote,
+  type ScreenshotLimits,
+} from './screenshots.js';
+export {
+  captureScreenshot,
+  declineScreenshot,
+  getAppScreenshot,
+  listAppScreenshots,
+  lookupScreenshot,
+  memoryScreenshotRequestStore,
+  openScreenshotRequest,
+  pruneOldScreenshots,
+  redisScreenshotRequestStore,
+  requestScreenshot,
+  screenshotEvent,
+  screenshotOriginAllowed,
+  screenshotRequestStore,
+  screenshotRequestedSignal,
+  type AppScreenshot,
+  type AppScreenshotInfo,
+  type ScreenshotDeps,
+  type ScreenshotLookup,
+  type ScreenshotRequest,
+  type ScreenshotRequestState,
+  type ScreenshotRequestStore,
+} from './screenshots.server.js';
+export { createScreenshotUploadHandler, type ScreenshotUploadHandlerOptions } from './screenshot-upload.server.js';

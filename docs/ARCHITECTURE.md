@@ -355,7 +355,34 @@ cache. The compile result is part of the tool response.
   position kept in sessionStorage); one that did not compile shows a notice
   and the page stays. Streams per app and per client IP and their lifetime
   are capped (`PREVIEW_EVENTS_*`, 429 past a cap); the graceful stop ends
-  them. The script does nothing in a frame and reads no cookie.
+  them. The script does nothing in a frame and reads no cookie. Its notice
+  and bar live in a shadow root styled with the platform theme (light and
+  dark), like the feedback widget.
+- Screenshots for the agent: on the preview host the tag also carries
+  `data-screenshots` (drobek.json `"screenshots": false` drops it) and the
+  dashboard origin to answer to; the app CSP's `connect-src` names that
+  origin on the preview host only. `request_screenshot` stores a request in
+  Redis (`drobek:screenshot:<id>`, the note, the version, a one-time 32-byte
+  token, `SCREENSHOT_REQUEST_TTL_SEC`), counts it against
+  `SCREENSHOT_REQUESTS_PER_APP_HOUR` and publishes a `screenshot` event on
+  `drobek:app-changed`; the serve cache ignores it and the preview event
+  streams pass it on as `screenshot_requested` (with the token), replaying
+  the newest pending request to a stream that opens later. The script shows
+  a bar with the note as text and Capture / Not now; Capture takes one frame
+  of the current tab with `getDisplayMedia`, encodes a WebP (JPEG where the
+  browser cannot) below `SCREENSHOT_MAX_BYTES` and posts it with the token,
+  without credentials, to `POST /api/screenshots/<request_id>` on the
+  dashboard origin — mounted before the Origin check like the asset upload
+  URLs, CORS only for the app's own hosts, its own body limit. The token is
+  checked in constant time and claimed once (Redis `DEL`); the image is
+  re-encoded like a feedback screenshot into `blobs` with an
+  `app_screenshots` row (core migration 0042), and `screenshot_done` closes
+  the bar in every other tab. Not now marks the request declined; no answer
+  leaves it to expire. `get_screenshot` reads the row or the Redis state and
+  returns the image as a JPEG within `MCP_IMAGE_MAX_BYTES` in an untrusted
+  envelope; the Feedback tab lists the newest under "Screenshots for the
+  agent". The hourly blob job deletes screenshots older than
+  `SCREENSHOTS_RETENTION_DAYS` before it sweeps.
 - Browser errors of the preview: with `data-errors` (drobek.json
   `"browserErrors": false` drops it) the same script collects uncaught
   errors, unhandled rejections and `console.error` calls with an `Error`,
@@ -642,9 +669,9 @@ query:
 | Job | Interval | What |
 | --- | --- | --- |
 | version retention | hourly, Redis lease | deletes the versions of each app past its workspace's `APP_VERSIONS_KEEP` (200) — never the published one, the one the preview serves, a kept one, a rollback set or the last hour's; skips a workspace whose limits provider does not answer (`@drobek/apps`) |
-| blob GC | hourly, Redis lease | drops the screenshots of feedback notes resolved `FEEDBACK_SCREENSHOT_RETENTION_DAYS` (30) ago, then deletes blobs no version and no note references, after 7 days |
+| blob GC | hourly, Redis lease | drops the screenshots of feedback notes resolved `FEEDBACK_SCREENSHOT_RETENTION_DAYS` (30) ago and the screenshots for the agent older than `SCREENSHOTS_RETENTION_DAYS` (7), then deletes blobs no version, note or screenshot references, after 7 days |
 | slug release | hourly, Redis lease | a soft-deleted app's slug is free again after 30 days |
-| app purge | `APP_PURGE_INTERVAL_MS` (1 h), Redis lease | deletes an app deleted `APP_PURGE_AFTER_DAYS` (30) ago for good, one app per transaction: the `apps` row and through `ON DELETE CASCADE` its versions (their blobs go with the blob GC), module configs and secrets, domains, asset rows, gallery likes and opens, logs and statistics, and the module tables (records, form submissions, end users and identities, uploads, sync state); abuse reports and duplicates keep their rows without the reference; its id leaves `upstreams.allowed_app_ids`, its asset directory and end-user sessions go; audited `app.purge`. An app a foreign key without `ON DELETE` holds is logged and retried every run (`@drobek/apps`) |
+| app purge | `APP_PURGE_INTERVAL_MS` (1 h), Redis lease | deletes an app deleted `APP_PURGE_AFTER_DAYS` (30) ago for good, one app per transaction: the `apps` row and through `ON DELETE CASCADE` its versions (their blobs go with the blob GC), module configs and secrets, domains, asset rows, feedback notes and screenshots, gallery likes and opens, logs and statistics, and the module tables (records, form submissions, end users and identities, uploads, sync state); abuse reports and duplicates keep their rows without the reference; its id leaves `upstreams.allowed_app_ids`, its asset directory and end-user sessions go; audited `app.purge`. An app a foreign key without `ON DELETE` holds is logged and retried every run (`@drobek/apps`) |
 | domain re-check | `DOMAINS_RECHECK_INTERVAL_MS` (1 h), Redis lease | re-verifies domains checked more than 24 h ago; unverifies + mails on a definitive failure |
 | files sweep (only with the `files` module) | `FILES_SWEEP_INTERVAL_MS` (1 h), Redis lease | removes the uploads of apps deleted `FILES_SWEEP_RETENTION_MS` (24 h) ago, stale temp uploads and blobs no `mod_files` row references (`drobek-module-files`) |
 | assets sweep | hourly, Redis lease | removes the asset files and rows of apps deleted 24 h ago, stale temp uploads and files neither the draft (`app_assets`) nor a kept published set (`app_version_assets`) references (`@drobek/apps`) |
