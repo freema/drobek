@@ -237,10 +237,14 @@ jobs:
           retention-days: 1
 
   e2e:
-    name: Prod image · compose · e2e (@smoke + @local)
+    name: Prod image · compose · e2e (@smoke + @local) ${{ matrix.shard }}
     runs-on: ubuntu-latest
     needs: image
     timeout-minutes: 10
+    strategy:
+      fail-fast: true
+      matrix:
+        shard: ['1/2', '2/2']
     permissions:
       contents: read
       packages: write # only used by the main-branch / tag push step below
@@ -297,20 +301,21 @@ jobs:
       - name: e2e against the image (compose up → migrate → @smoke + @local → relay + approval → skip guard)
         env:
           DROBEK_IMAGE: ${{ env.IMAGE }}:${{ needs.image.outputs.short }}
+          E2E_SHARD: ${{ matrix.shard }}
         run: ./scripts/e2e-image.sh
 
       - name: Upload the Playwright report
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report-${{ needs.image.outputs.short }}
+          name: playwright-report-${{ needs.image.outputs.short }}-${{ strategy.job-index }}
           path: |
             tests-e2e/playwright-report
             tests-e2e/test-results
           retention-days: 7
 
       - name: Log in to GHCR
-        if: github.ref == 'refs/heads/main' || github.ref_type == 'tag'
+        if: (github.ref == 'refs/heads/main' || github.ref_type == 'tag') && matrix.shard == '1/2'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -318,7 +323,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Push the tested image (<sha> | <sha>-vX.Y.Z)
-        if: github.ref == 'refs/heads/main' || github.ref_type == 'tag'
+        if: (github.ref == 'refs/heads/main' || github.ref_type == 'tag') && matrix.shard == '1/2'
         env:
           SHA: ${{ needs.image.outputs.short }}
           STAGE: ${{ needs.image.outputs.stage }}

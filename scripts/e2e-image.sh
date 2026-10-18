@@ -106,10 +106,15 @@ run_phase() {
   return "$code"
 }
 
+# E2E_SHARD=i/n (the CI matrix): phase 1 and the guard's list cover that
+# shard only; phase 2 is short and runs in every shard.
+SHARD_ARGS=()
+[ -z "${E2E_SHARD:-}" ] || SHARD_ARGS=(--shard="$E2E_SHARD")
+
 # 0. The guard checks itself, and lists every test of the suite (no stack needed).
 if [ "$#" -eq 0 ]; then
   node scripts/e2e-skip-guard.mjs --self-check
-  PLAYWRIGHT_JSON_OUTPUT_FILE="$WORK/listed.json" pnpm -C tests-e2e exec playwright test --list --reporter=json >/dev/null
+  PLAYWRIGHT_JSON_OUTPUT_FILE="$WORK/listed.json" pnpm -C tests-e2e exec playwright test --list --reporter=json ${SHARD_ARGS[@]+"${SHARD_ARGS[@]}"} >/dev/null
 fi
 
 # 1. Caddyfile from the image's own generator (proves the CLI ships in it),
@@ -183,7 +188,7 @@ if [ "$#" -gt 0 ]; then
 fi
 
 status=0
-run_phase phase-1 --grep "@smoke|@local" || status=$?
+run_phase phase-1 --grep "@smoke|@local" ${SHARD_ARGS[@]+"${SHARD_ARGS[@]}"} || status=$?
 
 echo "── phase 2: drobek recreated with EMAIL_TRANSPORT=relay and PUBLISH_APPROVAL=approval ──"
 phase2_config
