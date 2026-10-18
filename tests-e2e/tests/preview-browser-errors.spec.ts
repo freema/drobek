@@ -194,7 +194,7 @@ test.describe('browser errors of the preview @local', () => {
     expect(off.isError, JSON.stringify(off.json)).toBe(false);
     expect((off.json.compile as { ok: boolean }).ok).toBe(true);
     const offHtml = await hostRequest(previewHost(app.slug), '/');
-    expect(offHtml.body).toContain('data-reload></script>');
+    expect(offHtml.body).toContain('data-reload data-screenshots></script>');
     expect(offHtml.body).not.toContain('data-errors');
   });
 
