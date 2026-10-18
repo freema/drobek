@@ -6,6 +6,7 @@
  * Rendered by the root layout on every dashboard page; client-safe (the
  * values come from the root loader, see ./source-link.ts).
  */
+import { PLATFORM_FONT, PLATFORM_MONO_FONT, platformColor } from '@drobek/core/platform-theme';
 import { SOURCE_REPO_URL, sourceLink } from './source-link.js';
 
 /** The repository URL, for pages that link the source outside the footer (the apex landing). */
@@ -13,14 +14,14 @@ export { SOURCE_REPO_URL } from './source-link.js';
 
 const styles = {
   footer: {
-    fontFamily: 'system-ui, sans-serif',
+    fontFamily: PLATFORM_FONT,
     fontSize: '0.78rem',
-    color: '#71717a',
+    color: platformColor('muted'),
     textAlign: 'center',
     padding: '2rem 1rem 1.5rem',
   },
-  link: { color: '#71717a' },
-  mono: { fontFamily: 'ui-monospace, monospace' },
+  link: { color: platformColor('muted') },
+  mono: { fontFamily: PLATFORM_MONO_FONT },
 } as const;
 
 const SEP = ' · ';

@@ -87,7 +87,7 @@ This document is the map of how that works. The neighbours:
   | `@drobek/dashboard` | the dashboard routes and their server halves |
   | `@drobek/auth`, `@drobek/tenancy`, `@drobek/audit` | dashboard sign-in (e-mail code, Google), sessions, rate limits, origin check; workspaces and roles; the audit log |
   | `@drobek/domains`, `@drobek/email`, `@drobek/insights`, `@drobek/proxy` | custom domains; the one mail transport of the dashboard and the modules (`EMAIL_TRANSPORT=smtp` via nodemailer, `resend` via the Resend HTTP API over `fetch`, or the id of a module's `email.transport` contribution, installed at start); the error beacon and request stats; upstream registry, envelope crypto, SSRF guard |
-  | `@drobek/core`, `@drobek/db`, `@drobek/sdk` | env/config, health, logger, the installed error reporter (`reportError`), Caddyfile generator; drizzle schema + migrations; the browser SDK core |
+  | `@drobek/core`, `@drobek/db`, `@drobek/sdk` | env/config, health, logger, the installed error reporter (`reportError`), Caddyfile generator, the platform theme (`@drobek/core/platform-theme`: the light/dark colours, font, radii and page CSS of every page drobek draws for people outside the dashboard — the app-host pages, the public dashboard pages, the e-mails and the preview widget); drizzle schema + migrations; the browser SDK core |
   | `modules/{auth,email,forms,data,proxy,files,sync,oidc,webhooks}` | the built-in platform modules (`drobek-module-<name>`) |
   | `create-drobek-module` | the scaffold for external modules; with `@drobek/modules` + `@drobek/sdk` published to npm as `@freema/drobek-modules` + `@freema/drobek-sdk` from each release tag (`scripts/npm-packages.mjs` bundles the private packages in; modules install them under the `@drobek/*` names via npm aliases) |
 
@@ -313,9 +313,14 @@ cache. The compile result is part of the tool response.
   `"feedback": false` (read from the version's sources, cached per version);
   the ETag carries the widget's hash. The script (served by the app host,
   `no-cache`, built at start around `PUBLIC_APP_URL`) draws a Feedback button
-  in a closed shadow root; picking a spot opens the dashboard's
-  `/feedback/new` in a `noopener` window with the version, path, spot and a
-  CSS selector in the query — never a note's text, never a credential. That
+  in a closed shadow root, in the platform theme's light or dark colours
+  (copied into the script). While picking, an outline with a short label of
+  the element (`button "Send"`) follows the pointer, or the focus (Tab moves,
+  Enter picks; on touch a second tap picks); picking opens the dashboard's
+  `/feedback/new` in a `noopener` window with the version, path, spot, a
+  CSS selector and that label in the query — never a note's text, never a
+  credential. The label is cleaned and kept in the note's `anchor` (at most
+  80 characters). That
   page (signed-in members of the app's workspace, any role; `frame-ancestors
   'none'`) stores the note in `app_feedback` (`@drobek/apps`, per-member
   hourly and per-app open limits `FEEDBACK_PER_USER_HOUR` /

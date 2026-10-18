@@ -10,20 +10,28 @@
  * (`script-src 'self'` of the app CSP covers it). The production host and
  * custom domains never get it, and a version whose drobek.json says
  * `"feedback": false` does not either. The script draws a "Feedback" button
- * in a closed shadow root; a click lets the reviewer pick the spot their note
- * is about and opens the dashboard's `/feedback/new` page in a new window
+ * in a closed shadow root, in the platform theme's colours (copied into the
+ * script, light and dark). A click starts picking: an outline follows the
+ * element under the pointer (or the focused one — Tab moves, Enter picks; on
+ * a touch screen the first tap outlines, a second tap on the same element
+ * picks) with a short description of it, Esc or the button ("Cancel") stops.
+ * Picking opens the dashboard's `/feedback/new` page in a new window
  * (`noopener`, so neither page holds a handle on the other) with the app, the
- * version, the page path, the spot (document coordinates + viewport) and a
- * CSS selector of the element in the query. The note itself is written and
- * sent on the dashboard origin by a signed-in member of the app's workspace:
- * the app host carries no dashboard credential, and nothing the app's
- * JavaScript can read or forge on its origin sends a note.
+ * version, the page path, the spot (document coordinates + viewport), a CSS
+ * selector and the description of the element in the query. The note itself
+ * is written and sent on the dashboard origin by a signed-in member of the
+ * app's workspace: the app host carries no dashboard credential, and nothing
+ * the app's JavaScript can read or forge on its origin sends a note.
  *
  * The widget is not drawn inside a frame (the dashboard's app thumbnails).
  */
 import { createHash } from 'node:crypto';
+import { PLATFORM_COLORS, PLATFORM_FONT, PLATFORM_SHADOW, type PlatformPalette } from '@drobek/core/platform-theme';
 
 export const FEEDBACK_SCRIPT_PATH = '/__drobek/feedback.js';
+
+/** Characters of the element description the widget sends (the server keeps at most FEEDBACK_LABEL_MAX). */
+export const FEEDBACK_WIDGET_LABEL_MAX = 40;
 
 /** The widget the handler serves and injects (absent from the deps → no widget anywhere). */
 export interface FeedbackWidget {
@@ -67,11 +75,48 @@ export function injectBeforeBodyEnd(html: Buffer, tag: string): Buffer {
   return Buffer.concat([html.subarray(0, at), inject, html.subarray(at)]);
 }
 
+function themeVars(p: PlatformPalette): string {
+  return `--surface:${p.surface};--ink:${p.ink};--muted:${p.muted};--line:${p.line};--accent:${p.accent};--accent-ink:${p.accentInk};--crumb:${p.crumb}`;
+}
+
+/** The shadow root's stylesheet: the platform theme's values, light and dark. */
+function widgetCss(): string {
+  return [
+    `:host{${themeVars(PLATFORM_COLORS.light)}}`,
+    `@media (prefers-color-scheme:dark){:host{${themeVars(PLATFORM_COLORS.dark)}}}`,
+    `*{box-sizing:border-box;font:600 13px/1.3 ${PLATFORM_FONT}}`,
+    'button{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--accent);border-radius:999px;padding:8px 14px 8px 11px;background:var(--accent);color:var(--accent-ink);cursor:pointer}',
+    `.fab{box-shadow:${PLATFORM_SHADOW}}`,
+    '.fab[aria-pressed="true"]{background:var(--surface);color:var(--ink);border-color:var(--line)}',
+    'button:focus-visible{outline:2px solid var(--crumb);outline-offset:2px}',
+    'button svg{flex:none}',
+    'button.secondary{background:var(--surface);color:var(--ink);border-color:var(--line);padding:5px 10px;border-radius:8px;white-space:nowrap}',
+    `.bar,.toast{display:none;position:fixed;right:16px;bottom:64px;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:12px;padding:8px 12px;box-shadow:${PLATFORM_SHADOW};max-width:min(420px,calc(100vw - 32px))}`,
+    '.bar{align-items:center;gap:10px}',
+    '.bar span,.toast{font-weight:500}',
+    '.bar.on{display:flex}',
+    '.toast{max-width:min(300px,calc(100vw - 32px))}',
+    '.toast.on{display:block}',
+    '.hl{display:none;position:fixed;pointer-events:none;border:2px solid var(--crumb);border-radius:4px;background:rgba(217,154,78,.12);transition:left .06s,top .06s,width .06s,height .06s,background-color .12s}',
+    '.hl.on{display:block}',
+    '.hl.flash{background:rgba(217,154,78,.45)}',
+    '.tag{display:none;position:fixed;pointer-events:none;max-width:calc(100vw - 8px);padding:3px 7px;border-radius:6px;background:var(--accent);color:var(--accent-ink);font-size:12px;line-height:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+    '.tag.on{display:block}',
+    '@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}',
+  ].join('');
+}
+
+const ICON_NOTE =
+  '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 3h11v7.5h-6L4.5 13v-2.5h-2z"/><path d="M5.5 6h5M5.5 8h3"/></svg>';
+const ICON_CANCEL =
+  '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg>';
+
 /** The browser script (ES2017, no imports, no eval). */
 function feedbackWidgetSource(dashboardOrigin: string): string {
   return `(function () {
   'use strict';
   var DASHBOARD = ${JSON.stringify(dashboardOrigin)};
+  var LABEL_MAX = ${FEEDBACK_WIDGET_LABEL_MAX};
   var me = document.currentScript;
   try { if (window.top !== window.self) return; } catch (e) { return; }
   if (window.__drobekFeedback) return;
@@ -100,6 +145,32 @@ function feedbackWidgetSource(dashboardOrigin: string): string {
     return parts.join(' > ').slice(0, 500);
   }
 
+  function clip(text, max) {
+    text = String(text || '').replace(/\\s+/g, ' ').trim();
+    return text.length > max ? text.slice(0, Math.max(max - 1, 1)) + '\\u2026' : text;
+  }
+
+  function describe(el) {
+    var tag = el.tagName.toLowerCase();
+    var name = tag;
+    if (el.id && /^[A-Za-z][\\w-]*$/.test(el.id)) name += '#' + el.id;
+    else {
+      var cls = typeof el.className === 'string' ? el.className.trim().split(/\\s+/)[0] : '';
+      if (cls && /^[A-Za-z_-][\\w-]*$/.test(cls)) name += '.' + cls;
+    }
+    name = clip(name, 24);
+    var room = Math.max(LABEL_MAX - name.length - 3, 8);
+    if (tag === 'img') {
+      var alt = el.getAttribute('alt');
+      return alt ? name + ' alt="' + clip(alt, room - 4) + '"' : name;
+    }
+    var text = el.getAttribute('aria-label') || el.getAttribute('title') || '';
+    if (!text && /^(input|textarea|select)$/.test(tag)) text = el.getAttribute('placeholder') || el.getAttribute('name') || '';
+    else if (!text) text = (el.textContent || '').slice(0, 200);
+    text = clip(text, room);
+    return text ? name + ' "' + text + '"' : name;
+  }
+
   function open(spot) {
     var q = new URLSearchParams();
     q.set('app', app);
@@ -111,6 +182,7 @@ function feedbackWidgetSource(dashboardOrigin: string): string {
       q.set('vw', String(window.innerWidth));
       q.set('vh', String(window.innerHeight));
       if (spot.selector) q.set('sel', spot.selector);
+      if (spot.label) q.set('label', spot.label);
     }
     window.open(DASHBOARD + '/feedback/new?' + q.toString(), '_blank', 'popup=yes,width=520,height=720,noopener,noreferrer');
     say('The note form opened in a new window. Sign in there if asked.');
@@ -120,21 +192,19 @@ function feedbackWidgetSource(dashboardOrigin: string): string {
   host.setAttribute('data-drobek-feedback', '');
   host.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:2147483647;';
   var root = host.attachShadow ? host.attachShadow({ mode: 'closed' }) : host;
+  var ICON_NOTE = ${JSON.stringify(ICON_NOTE)};
+  var ICON_CANCEL = ${JSON.stringify(ICON_CANCEL)};
   root.innerHTML =
-    '<style>' +
-    ':host,*{box-sizing:border-box;font:600 13px/1.3 system-ui,-apple-system,sans-serif}' +
-    'button{border:0;border-radius:999px;padding:9px 14px;background:#1a1a1a;color:#fff;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.25)}' +
-    'button.secondary{background:#fff;color:#1a1a1a;border:1px solid #d4d4d8;box-shadow:none;padding:6px 10px}' +
-    '.bar{display:none;position:fixed;right:16px;bottom:64px;background:#1a1a1a;color:#fff;border-radius:10px;padding:8px 12px;align-items:center;gap:10px;max-width:min(420px,calc(100vw - 32px));box-shadow:0 2px 10px rgba(0,0,0,.25)}' +
-    '.bar.on{display:flex}' +
-    '.toast{display:none;position:fixed;right:16px;bottom:64px;background:#fff;color:#1a1a1a;border:1px solid #d4d4d8;border-radius:10px;padding:8px 12px;max-width:280px;font-weight:500}' +
-    '.toast.on{display:block}' +
-    '</style>' +
-    '<div class="bar" role="status"><span>Click the spot your note is about. Esc cancels.</span><button type="button" class="secondary" data-whole>Note on the whole page</button></div>' +
+    '<style>' + ${JSON.stringify(widgetCss())} + '</style>' +
+    '<div class="hl" aria-hidden="true"></div><div class="tag" aria-hidden="true"></div>' +
+    '<div class="bar" role="status"><span>Click the spot your note is about, or Tab to it and press Enter. On a touch screen, tap it twice. Esc cancels.</span><button type="button" class="secondary" data-whole>Note on the whole page</button></div>' +
     '<div class="toast" role="status"></div>' +
-    '<button type="button" data-start title="Leave a note for the people building this app">Feedback</button>';
+    '<button type="button" class="fab" data-start aria-pressed="false" title="Leave a note for the people building this app"></button>';
+  var hl = root.querySelector('.hl');
+  var tagBox = root.querySelector('.tag');
   var bar = root.querySelector('.bar');
   var toast = root.querySelector('.toast');
+  var start = root.querySelector('[data-start]');
   var timer = 0;
 
   function say(text) {
@@ -145,35 +215,150 @@ function feedbackWidgetSource(dashboardOrigin: string): string {
   }
 
   var picking = false;
+  var current = null;
+  var currentBy = '';
+  var pointerType = '';
+
+  function drawButton() {
+    start.innerHTML = picking ? ICON_CANCEL + '<span>Cancel</span>' : ICON_NOTE + '<span>Feedback</span>';
+    start.setAttribute('aria-pressed', picking ? 'true' : 'false');
+  }
+
+  function hide() {
+    current = null;
+    currentBy = '';
+    hl.className = 'hl';
+    tagBox.className = 'tag';
+  }
+
+  function place() {
+    if (!current) return;
+    if (!current.isConnected) { hide(); return; }
+    var r = current.getBoundingClientRect();
+    hl.style.left = r.left + 'px';
+    hl.style.top = r.top + 'px';
+    hl.style.width = r.width + 'px';
+    hl.style.height = r.height + 'px';
+    var vw = window.innerWidth, vh = window.innerHeight;
+    var h = tagBox.offsetHeight || 22;
+    var top = r.top - h - 4;
+    if (top < 4) top = r.bottom + 4;
+    if (top > vh - h - 4) top = Math.max(r.top + 4, 4);
+    tagBox.style.top = Math.min(Math.max(top, 4), Math.max(vh - h - 4, 4)) + 'px';
+    tagBox.style.left = Math.max(4, Math.min(r.left, vw - tagBox.offsetWidth - 4)) + 'px';
+  }
+
+  function show(el, by) {
+    current = el;
+    currentBy = by;
+    tagBox.textContent = describe(el);
+    hl.className = 'hl on';
+    tagBox.className = 'tag on';
+    place();
+  }
+
+  function targetOf(e) {
+    var path = e.composedPath ? e.composedPath() : [e.target];
+    if (path.indexOf(host) >= 0) return null;
+    var t = path[0] || e.target;
+    while (t && t.nodeType !== 1) t = t.parentNode;
+    return t && t !== document.documentElement ? t : null;
+  }
+
+  function focusables() {
+    var all = document.querySelectorAll('a[href],button,input:not([type=hidden]),select,textarea,summary,[tabindex],[contenteditable=""],[contenteditable=true]');
+    var out = [];
+    for (var i = 0; i < all.length; i++) {
+      var el = all[i];
+      if (el.disabled || el.getAttribute('tabindex') === '-1' || !el.getClientRects().length) continue;
+      out.push(el);
+    }
+    return out;
+  }
+
   function stop() {
     picking = false;
+    hide();
     bar.className = 'bar';
     document.documentElement.style.cursor = '';
     window.removeEventListener('click', onPick, true);
     window.removeEventListener('keydown', onKey, true);
+    window.removeEventListener('pointermove', onMove, true);
+    window.removeEventListener('pointerdown', onDown, true);
+    document.removeEventListener('focusin', onFocus, true);
+    window.removeEventListener('scroll', place, true);
+    window.removeEventListener('resize', place);
+    drawButton();
   }
-  function onKey(e) { if (e.key === 'Escape') { e.preventDefault(); stop(); } }
+
+  function pick(el, x, y) {
+    var spot = { x: x, y: y, selector: cssPath(el), label: describe(el) };
+    show(el, currentBy);
+    window.removeEventListener('click', onPick, true);
+    window.removeEventListener('keydown', onKey, true);
+    window.removeEventListener('pointermove', onMove, true);
+    document.removeEventListener('focusin', onFocus, true);
+    hl.className = 'hl on flash';
+    setTimeout(function () { stop(); open(spot); }, 180);
+  }
+
+  function onKey(e) {
+    if (e.key === 'Escape') { e.preventDefault(); stop(); return; }
+    var inWidget = (e.composedPath ? e.composedPath() : []).indexOf(host) >= 0;
+    if (e.key === 'Tab' && document.activeElement === host) {
+      var list = focusables();
+      if (!list.length) return;
+      e.preventDefault();
+      list[e.shiftKey ? list.length - 1 : 0].focus();
+      return;
+    }
+    if (e.key === 'Enter' && !inWidget && current && currentBy === 'focus') {
+      e.preventDefault();
+      e.stopPropagation();
+      var r = current.getBoundingClientRect();
+      pick(current, r.left + r.width / 2 + window.pageXOffset, r.top + r.height / 2 + window.pageYOffset);
+    }
+  }
+  function onDown(e) { pointerType = e.pointerType || ''; }
+  function onMove(e) {
+    if (e.pointerType === 'touch') return;
+    var t = targetOf(e);
+    if (t && t !== current) show(t, 'pointer');
+  }
+  function onFocus(e) {
+    var t = targetOf(e);
+    if (t && t !== document.body) show(t, 'focus');
+  }
   function onPick(e) {
     var path = e.composedPath ? e.composedPath() : [];
     if (path.indexOf(host) >= 0) return;
     e.preventDefault();
     e.stopPropagation();
-    stop();
-    var target = e.target && e.target.nodeType === 1 ? e.target : null;
-    open({ x: e.pageX, y: e.pageY, selector: target ? cssPath(target) : '' });
+    var t = targetOf(e);
+    if (!t) return;
+    if (pointerType === 'touch' && t !== current) { show(t, 'touch'); return; }
+    pick(t, e.pageX, e.pageY);
   }
 
-  root.querySelector('[data-start]').addEventListener('click', function () {
+  start.addEventListener('click', function () {
     if (picking) { stop(); return; }
     picking = true;
     bar.className = 'bar on';
+    drawButton();
     document.documentElement.style.cursor = 'crosshair';
     setTimeout(function () {
+      if (!picking) return;
       window.addEventListener('click', onPick, true);
       window.addEventListener('keydown', onKey, true);
+      window.addEventListener('pointermove', onMove, { capture: true, passive: true });
+      window.addEventListener('pointerdown', onDown, { capture: true, passive: true });
+      document.addEventListener('focusin', onFocus, true);
+      window.addEventListener('scroll', place, { capture: true, passive: true });
+      window.addEventListener('resize', place);
     }, 0);
   });
   root.querySelector('[data-whole]').addEventListener('click', function () { stop(); open(null); });
+  drawButton();
 
   function mount() { (document.body || document.documentElement).appendChild(host); }
   if (document.body) mount(); else document.addEventListener('DOMContentLoaded', mount);

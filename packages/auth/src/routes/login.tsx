@@ -10,99 +10,14 @@ import {
   useNavigation,
 } from 'react-router';
 import type { action, loader } from './login.server.js';
-import { DrobekMark } from '../mark.js';
+import { PlatformPage } from '../platform-page.js';
 
 export function meta() {
   return [{ title: 'Sign in — drobek' }];
 }
 
-const styles = {
-  main: {
-    fontFamily: 'system-ui, sans-serif',
-    maxWidth: '24rem',
-    margin: '0 auto',
-    padding: '4rem 1.5rem',
-    color: '#1a1a1a',
-    lineHeight: 1.6,
-  },
-  h1: { fontSize: '1.75rem', marginBottom: '0.25rem' },
-  hint: { color: '#555', marginTop: 0, fontSize: '0.95rem' },
-  label: {
-    display: 'block',
-    fontSize: '0.85rem',
-    fontWeight: 600,
-    marginBottom: '0.35rem',
-  },
-  input: {
-    width: '100%',
-    boxSizing: 'border-box',
-    padding: '0.6rem 0.75rem',
-    fontSize: '1rem',
-    fontFamily: 'inherit',
-    border: '1px solid #d4d4d8',
-    borderRadius: '8px',
-  },
-  button: {
-    marginTop: '0.9rem',
-    width: '100%',
-    padding: '0.6rem 0.75rem',
-    fontSize: '1rem',
-    fontFamily: 'inherit',
-    fontWeight: 600,
-    color: '#fff',
-    background: '#1a1a1a',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-  },
-  error: {
-    background: '#fef2f2',
-    border: '1px solid #fecaca',
-    color: '#991b1b',
-    borderRadius: '8px',
-    padding: '0.6rem 0.75rem',
-    fontSize: '0.9rem',
-    marginBottom: '1rem',
-  },
-  notice: {
-    background: '#f0fdf4',
-    border: '1px solid #bbf7d0',
-    color: '#166534',
-    borderRadius: '8px',
-    padding: '0.6rem 0.75rem',
-    fontSize: '0.9rem',
-    marginBottom: '1rem',
-  },
-  // "Continue with Google" — same footprint as the primary button,
-  // inverted colors so the email form stays the visual default.
-  googleLink: {
-    display: 'block',
-    boxSizing: 'border-box',
-    width: '100%',
-    padding: '0.6rem 0.75rem',
-    fontSize: '1rem',
-    fontFamily: 'inherit',
-    fontWeight: 600,
-    textAlign: 'center',
-    textDecoration: 'none',
-    color: '#1a1a1a',
-    background: '#fff',
-    border: '1px solid #d4d4d8',
-    borderRadius: '8px',
-    cursor: 'pointer',
-  },
-  divider: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.75rem',
-    margin: '1.25rem 0',
-    color: '#888',
-    fontSize: '0.8rem',
-  },
-  dividerLine: { flex: 1, height: 1, background: '#e4e4e7' },
-  about: { marginTop: '2rem', color: '#555', fontSize: '0.9rem' },
-  aboutLink: { color: '#1a1a1a', fontWeight: 600 },
-} as const;
+const divider = { display: 'flex', alignItems: 'center', gap: '0.75rem', margin: '1.25rem 0 0' } as const;
+const dividerLine = { flex: 1, height: 1, background: 'var(--drobek-line)' } as const;
 
 export default function LoginRoute() {
   const { googleEnabled, googleError, docsUrl, accountDeleted } = useLoaderData<typeof loader>();
@@ -112,31 +27,28 @@ export default function LoginRoute() {
   const error = actionData?.error ?? googleError;
 
   return (
-    <main style={styles.main}>
-      <div style={{ marginBottom: '1.5rem' }}>
-        <DrobekMark size={48} idle title="drobek" />
-      </div>
-      <h1 style={styles.h1}>Sign in</h1>
-      <p style={styles.hint}>
+    <PlatformPage page="login">
+      <h1>Sign in</h1>
+      <p className="drobek-hint">
         Enter your email and we&apos;ll send you a one-time 6-digit code. No
         password needed. A new email gets a new account.
       </p>
 
       {accountDeleted && !error ? (
-        <div style={styles.notice} role="status" data-testid="login-account-deleted">
+        <div className="drobek-ok" role="status" data-testid="login-account-deleted">
           Your account was deleted, with your personal workspace and its apps. Signing in with the same address starts
           a new, empty account.
         </div>
       ) : null}
 
       {error ? (
-        <div style={styles.error} role="alert">
+        <div className="drobek-error" role="alert">
           {error}
         </div>
       ) : null}
 
       <Form method="post">
-        <label htmlFor="email" style={styles.label}>
+        <label htmlFor="email" className="drobek-label">
           Email
         </label>
         <input
@@ -147,33 +59,33 @@ export default function LoginRoute() {
           autoComplete="email"
           autoFocus
           placeholder="you@example.com"
-          style={styles.input}
+          className="drobek-input"
         />
-        <button type="submit" disabled={submitting} style={styles.button}>
+        <button type="submit" disabled={submitting} className="drobek-button drobek-button-block">
           {submitting ? 'Sending…' : 'Send code'}
         </button>
       </Form>
 
       {googleEnabled ? (
         <>
-          <div style={styles.divider} aria-hidden="true">
-            <span style={styles.dividerLine} />
+          <div style={divider} className="drobek-small" aria-hidden="true">
+            <span style={dividerLine} />
             <span>or</span>
-            <span style={styles.dividerLine} />
+            <span style={dividerLine} />
           </div>
-          <a href="/auth/google" style={styles.googleLink}>
+          <a href="/auth/google" className="drobek-button drobek-button-secondary drobek-button-block">
             Continue with Google
           </a>
         </>
       ) : null}
 
-      <p style={styles.about}>
+      <p className="drobek-hint" style={{ marginTop: '2rem' }}>
         drobek hosts the web apps your agent builds: connect it over MCP and
         it creates, previews and publishes them in your workspace.{' '}
-        <a href={docsUrl} style={styles.aboutLink} data-testid="login-docs-link">
+        <a href={docsUrl} style={{ fontWeight: 600 }} data-testid="login-docs-link">
           Read the docs
         </a>
       </p>
-    </main>
+    </PlatformPage>
   );
 }

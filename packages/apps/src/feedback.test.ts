@@ -3,6 +3,7 @@ import {
   FEEDBACK_BODY_MAX,
   FEEDBACK_PATH_MAX,
   FEEDBACK_RESOLUTION_NOTE_MAX,
+  FEEDBACK_LABEL_MAX,
   FEEDBACK_SELECTOR_MAX,
   feedbackLimits,
   feedbackVersionNumber,
@@ -50,6 +51,14 @@ describe('the context the widget passes along', () => {
     expect(parseFeedbackAnchor({ x: 1, y: 2, vw: 3, vh: 4, selector: 's'.repeat(FEEDBACK_SELECTOR_MAX + 50) })?.selector).toHaveLength(
       FEEDBACK_SELECTOR_MAX
     );
+  });
+
+  it('reads the element label: one line, trimmed, at most FEEDBACK_LABEL_MAX characters; none without one', () => {
+    expect(parseFeedbackAnchor({ x: 1, y: 2, vw: 3, vh: 4, label: '  button\u0000 "Send\n now"  ' })).toEqual({ label: 'button "Send now"', x: 1, y: 2, vw: 3, vh: 4 });
+    expect(parseFeedbackAnchor({ x: 1, y: 2, vw: 3, vh: 4, label: 'l'.repeat(FEEDBACK_LABEL_MAX + 20) })?.label).toHaveLength(FEEDBACK_LABEL_MAX);
+    expect(parseFeedbackAnchor({ x: 1, y: 2, vw: 3, vh: 4, label: '   ' })).toEqual({ x: 1, y: 2, vw: 3, vh: 4 });
+    expect(parseFeedbackAnchor({ x: 1, y: 2, vw: 3, vh: 4, label: 42 })).toEqual({ x: 1, y: 2, vw: 3, vh: 4 });
+    expect(parseFeedbackAnchor({ label: 'button "Send"' })).toBeNull();
   });
 
   it('a missing or out-of-range coordinate means a note on the whole page', () => {

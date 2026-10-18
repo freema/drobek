@@ -77,8 +77,8 @@ export function renderEmailActionsHtml(actions: EmailAction[], env: NodeJS.Proce
       const href = escapeHtml(trustedActionUrl(a.url, env));
       return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0 8px;">
   <tr>
-    <td bgcolor="${emailBrand.ink}" style="border-radius:6px;background:${emailBrand.ink};">
-      <a href="${href}" target="_blank" rel="noopener" style="display:inline-block;padding:10px 18px;border:1px solid ${emailBrand.ink};border-radius:6px;font-family:${emailFont};font-size:14px;font-weight:600;line-height:1.2;color:#ffffff;text-decoration:none;">${escapeHtml(a.label)}</a>
+    <td bgcolor="${emailBrand.accent}" style="border-radius:${emailBrand.radius};background:${emailBrand.accent};">
+      <a href="${href}" target="_blank" rel="noopener" data-drobek-email="button" style="display:inline-block;padding:10px 18px;border:1px solid ${emailBrand.accent};border-radius:${emailBrand.radius};font-family:${emailFont};font-size:14px;font-weight:600;line-height:1.2;color:${emailBrand.accentInk};text-decoration:none;">${escapeHtml(a.label)}</a>
     </td>
   </tr>
 </table>

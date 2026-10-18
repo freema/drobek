@@ -1,18 +1,27 @@
 /**
  * The drobek e-mail layout: minimal, white, one narrow column, no card —
- * the wordmark with the crumb, the body, a one-line footer. Table-based and
- * inline-styled for mail clients; no images (they are blocked by default in
- * most clients), so the mascot is drawn with table cells.
+ * the wordmark with the crumb (`data-drobek-email="header"`), the body, a
+ * one-line footer (`data-drobek-email="footer"`). The colours, font and
+ * radius are the light values of the platform theme
+ * (@drobek/core/platform-theme) the app-host and public dashboard pages use.
+ * Table-based and inline-styled for mail clients; no images (they are blocked
+ * by default in most clients), so the mascot is drawn with table cells.
  */
+import { PLATFORM_COLORS, PLATFORM_FONT, PLATFORM_RADIUS } from '@drobek/core/platform-theme';
 import { mascotEmailHtml } from './mascot.js';
 
+const LIGHT = PLATFORM_COLORS.light;
+
 const BRAND = {
-  bg: '#ffffff',
-  ink: '#1a1a1a',
-  muted: '#555555',
-  line: '#e7e5e1',
-  faint: '#8a8a8e',
-  crumb: '#d99a4e',
+  bg: LIGHT.surface,
+  ink: LIGHT.ink,
+  muted: LIGHT.muted,
+  line: LIGHT.line,
+  faint: LIGHT.faint,
+  crumb: LIGHT.crumb,
+  accent: LIGHT.accent,
+  accentInk: LIGHT.accentInk,
+  radius: PLATFORM_RADIUS.md,
 };
 
 export interface EmailLayoutInput {
@@ -21,7 +30,7 @@ export interface EmailLayoutInput {
   footNote?: string;
 }
 
-const FONT = "system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+const FONT = PLATFORM_FONT;
 
 export function renderEmailLayout({
   preview,
@@ -45,7 +54,7 @@ export function renderEmailLayout({
         <td align="center" style="padding:40px 20px 48px;">
           <table role="presentation" width="480" cellpadding="0" cellspacing="0" border="0" style="max-width:480px;width:100%;">
             <tr>
-              <td style="padding:0 0 32px;">
+              <td style="padding:0 0 32px;" data-drobek-email="header">
                 <table role="presentation" cellpadding="0" cellspacing="0" border="0">
                   <tr>
                     <td style="vertical-align:middle;">${mascotEmailHtml(2)}</td>
@@ -61,7 +70,7 @@ export function renderEmailLayout({
             </tr>
             <tr>
               <td style="padding:32px 0 0;">
-                <div style="border-top:1px solid ${BRAND.line};padding-top:16px;color:${BRAND.faint};font-size:12px;line-height:1.55;">
+                <div data-drobek-email="footer" style="border-top:1px solid ${BRAND.line};padding-top:16px;color:${BRAND.faint};font-size:12px;line-height:1.55;">
                   ${footNote ?? 'Sent by drobek — a cloud workspace for agent-built web apps.'}
                 </div>
               </td>

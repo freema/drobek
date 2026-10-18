@@ -56,7 +56,7 @@ describe('createFeedback', () => {
         authorUserId: ann.userId,
         versionNumber: '3',
         path: '/pricing?ref=x#plans',
-        anchor: { selector: 'main > h1', x: 10, y: 20, vw: 1280, vh: 800 },
+        anchor: { selector: 'main > h1', label: 'h1 "Pricing"', x: 10, y: 20, vw: 1280, vh: 800 },
         body: '  The headline overlaps the logo.  ',
       },
       { limits: roomy }
@@ -65,7 +65,7 @@ describe('createFeedback', () => {
       appId: app.id,
       versionNumber: 3,
       path: '/pricing',
-      anchor: { selector: 'main > h1', x: 10, y: 20, vw: 1280, vh: 800 },
+      anchor: { selector: 'main > h1', label: 'h1 "Pricing"', x: 10, y: 20, vw: 1280, vh: 800 },
       body: 'The headline overlaps the logo.',
       authorEmail: 'ann@example.test',
       status: 'open',
@@ -74,7 +74,7 @@ describe('createFeedback', () => {
     expect(note.id).toMatch(/^fb_[0-9a-f]{24}$/);
     const [row] = await db.select().from(auditLog).where(eq(auditLog.action, 'app.feedback.create'));
     expect(row).toMatchObject({ workspaceId: app.workspaceId, actorUserId: ann.userId, actorKind: 'user', target: app.slug });
-    expect(row.meta).toEqual({ appId: app.id, feedback: note.id, version: 3 });
+    expect(row.meta).toEqual({ appId: app.id, feedback: note.id, version: 3, label: 'h1 "Pricing"' });
     expect(JSON.stringify(row.meta)).not.toContain('headline');
   });
 

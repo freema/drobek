@@ -1,5 +1,5 @@
 /**
- * GET/POST /feedback/new?app=<slug>&v=<N>&path=&x=&y=&vw=&vh=&sel= — server
+ * GET/POST /feedback/new?app=<slug>&v=<N>&path=&x=&y=&vw=&vh=&sel=&label= — server
  * half of the page the preview's feedback widget opens in a new window: a
  * signed-in member of the app's workspace (any role, viewer included) writes
  * a note about what they saw.
@@ -30,7 +30,7 @@ import { getSessionUser } from '@drobek/auth';
 import { apps, getDb } from '@drobek/db';
 import { getWorkspaceById, requireWorkspaceRole, type WorkspaceAccess } from '@drobek/tenancy';
 import { appBasePath } from '../app-tabs.js';
-import { anchorText, noteOpenUrl } from '../feedback-view.js';
+import { anchorText, feedbackSpot, noteOpenUrl } from '../feedback-view.js';
 
 const PAGE_HEADERS = {
   'Cache-Control': 'no-store',
@@ -78,7 +78,14 @@ function contextOf(read: (name: string) => string | null): ReviewContext {
   return {
     version: Number.isSafeInteger(v) && v >= 1 ? v : null,
     path: normalizeFeedbackPath(read('path') ?? '/'),
-    anchor: parseFeedbackAnchor({ x: read('x'), y: read('y'), vw: read('vw'), vh: read('vh'), selector: read('sel') ?? undefined }),
+    anchor: parseFeedbackAnchor({
+      x: read('x'),
+      y: read('y'),
+      vw: read('vw'),
+      vh: read('vh'),
+      selector: read('sel') ?? undefined,
+      label: read('label') ?? undefined,
+    }),
   };
 }
 
@@ -95,6 +102,7 @@ function pageData(access: WorkspaceAccess, app: { id: string; slug: string; name
     context: {
       ...ctx,
       spot: anchorText(ctx.anchor),
+      spotParts: feedbackSpot(ctx.anchor),
       pageUrl: noteOpenUrl({ versionNumber: ctx.version, path: ctx.path }, { preview: previewUrl(app.slug), version: (n) => versionUrl(app.slug, n) }),
     },
     bodyMax: FEEDBACK_BODY_MAX,

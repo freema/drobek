@@ -33,6 +33,10 @@ test('unknown app hosts: a cached miss never hides a newly created app @local', 
       const miss = await hostRequest(previewHost(slug));
       expect(miss.status).toBe(404);
       expect(miss.body).toContain('There is no app at this address.');
+      expect(miss.body).toContain('data-drobek-page="missing"');
+      expect(miss.body).toContain('<meta name="viewport"');
+      expect(miss.body).toContain('prefers-color-scheme:dark');
+      expect(miss.body).not.toMatch(/<script/i);
       expect(miss.headers['content-type']).toMatch(/^text\/html/);
       expect(miss.headers['cache-control']).toBe('no-store');
       expect(miss.headers['content-security-policy']).toContain("frame-ancestors 'none'");

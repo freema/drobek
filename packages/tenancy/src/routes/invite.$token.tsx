@@ -11,55 +11,12 @@ import {
   useNavigation,
   useRouteError,
 } from 'react-router';
+import { PlatformPage } from '@drobek/auth/platform-page';
 import type { loader } from './invite.$token.server.js';
 
 export function meta() {
   return [{ title: 'Workspace invite — drobek' }];
 }
-
-const styles = {
-  main: {
-    fontFamily: 'system-ui, sans-serif',
-    maxWidth: '28rem',
-    margin: '0 auto',
-    padding: '4rem 1.5rem',
-    color: '#1a1a1a',
-    lineHeight: 1.6,
-  },
-  h1: { fontSize: '1.75rem', marginBottom: '0.25rem' },
-  hint: { color: '#555', marginTop: 0, fontSize: '0.95rem' },
-  button: {
-    marginTop: '1.1rem',
-    width: '100%',
-    padding: '0.6rem 0.75rem',
-    fontSize: '1rem',
-    fontFamily: 'inherit',
-    fontWeight: 600,
-    color: '#fff',
-    background: '#1a1a1a',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-  },
-  loginLink: {
-    display: 'block',
-    boxSizing: 'border-box',
-    width: '100%',
-    marginTop: '1.1rem',
-    padding: '0.6rem 0.75rem',
-    fontSize: '1rem',
-    fontFamily: 'inherit',
-    fontWeight: 600,
-    textAlign: 'center',
-    textDecoration: 'none',
-    color: '#fff',
-    background: '#1a1a1a',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-  },
-  back: { fontSize: '0.9rem', color: '#555', marginTop: '2rem' },
-} as const;
 
 export default function InviteAcceptRoute() {
   const { anonymous, workspaceName, role } = useLoaderData<typeof loader>();
@@ -67,30 +24,30 @@ export default function InviteAcceptRoute() {
   const submitting = nav.state !== 'idle';
 
   return (
-    <main style={styles.main}>
-      <h1 style={styles.h1}>You&apos;re invited</h1>
-      <p style={styles.hint}>
+    <PlatformPage page="invite">
+      <h1>You&apos;re invited</h1>
+      <p className="drobek-hint">
         You have been invited to join <strong>{workspaceName}</strong> as{' '}
         <strong>{role}</strong>.
       </p>
 
       {anonymous ? (
         <>
-          <p style={styles.hint}>
+          <p className="drobek-hint">
             Sign in first, then open this invite link again to accept it.
           </p>
-          <a href="/login" style={styles.loginLink}>
+          <a href="/login" className="drobek-button drobek-button-block">
             Sign in to accept
           </a>
         </>
       ) : (
         <Form method="post">
-          <button type="submit" disabled={submitting} style={styles.button}>
+          <button type="submit" disabled={submitting} className="drobek-button drobek-button-block">
             {submitting ? 'Accepting…' : 'Accept invite'}
           </button>
         </Form>
       )}
-    </main>
+    </PlatformPage>
   );
 }
 
@@ -99,16 +56,16 @@ export function ErrorBoundary() {
   const invalid = isRouteErrorResponse(error) && error.status === 404;
 
   return (
-    <main style={styles.main}>
-      <h1 style={styles.h1}>Workspace invite</h1>
-      <p style={styles.hint}>
+    <PlatformPage page="invite-invalid">
+      <h1>Workspace invite</h1>
+      <p className="drobek-hint">
         {invalid
-          ? 'This invite is not valid or has expired.'
-          : 'Unexpected error.'}
+          ? 'This invite is not valid or has expired. Ask the person who invited you for a new link.'
+          : 'Something went wrong while opening this invite. Try the link again in a moment.'}
       </p>
-      <p style={styles.back}>
+      <p className="drobek-foot">
         <Link to="/">← Home</Link>
       </p>
-    </main>
+    </PlatformPage>
   );
 }

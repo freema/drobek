@@ -17,6 +17,7 @@ import { migrate } from 'drizzle-orm/pglite/migrator';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as schema from '@drobek/db/schema';
+import { FEEDBACK_LABEL_MAX } from '@drobek/apps';
 import { appFeedback, apps, auditLog, setDbForTests, users, workspaces } from '@drobek/db';
 
 type Role = 'viewer' | 'editor' | 'workspace-admin';
@@ -123,6 +124,7 @@ describe('/feedback/new', () => {
       path: '/cart',
       anchor: { selector: 'main > h1', x: 120, y: 640, vw: 1280, vh: 800 },
       spot: 'x 120, y 640 in a 1280×800 window — main > h1',
+      spotParts: { label: null, where: 'x 120, y 640 · 1280×800', selector: 'main > h1' },
       pageUrl: 'https://shop--v3.apps.example/cart',
     });
     expect(JSON.stringify(d)).not.toContain('Do this');
@@ -139,6 +141,26 @@ describe('/feedback/new', () => {
     const [row] = await db().select().from(appFeedback).where(eq(appFeedback.id, r.id));
     expect(row).toMatchObject({ appId, authorUserId: people.vera.id, versionNumber: 3, path: '/cart', body: 'The total is wrong.', status: 'open' });
     expect(row.anchor).toEqual({ x: 1, y: 2, vw: 300, vh: 400 });
+  });
+
+  it('the element label is cleaned, cut to FEEDBACK_LABEL_MAX, shown as the spot and stored in the anchor', async () => {
+    const long = `button.cta "${'x'.repeat(200)}"`;
+    const res = await openPopup(`app=shop&x=412&y=230&vw=1280&vh=720&sel=%23buy&label=${encodeURIComponent(`  button#buy\n "Buy now" `)}`);
+    const d = body<Awaited<ReturnType<typeof popup.loader>>['data']>(res);
+    expect(d.context.anchor).toEqual({ selector: '#buy', label: 'button#buy "Buy now"', x: 412, y: 230, vw: 1280, vh: 720 });
+    expect(d.context.spot).toBe('button#buy "Buy now" · x 412, y 230 · 1280×720');
+    expect(d.context.spotParts).toEqual({ label: 'button#buy "Buy now"', where: 'x 412, y 230 · 1280×720', selector: '#buy' });
+
+    const sent = body<{ ok: boolean; id: string }>(
+      await sendNote({ app: 'shop', x: '412', y: '230', vw: '1280', vh: '720', sel: '#buy', label: long, body: 'Too long a label.' })
+    );
+    const [row] = await db().select().from(appFeedback).where(eq(appFeedback.id, sent.id));
+    expect((row.anchor as { label: string }).label).toBe(long.slice(0, FEEDBACK_LABEL_MAX));
+
+    const plain = body<{ ok: boolean; id: string }>(await sendNote({ app: 'shop', x: '1', y: '2', vw: '3', vh: '4', body: 'No label.' }));
+    const [noLabel] = await db().select().from(appFeedback).where(eq(appFeedback.id, plain.id));
+    expect(noLabel.anchor).toEqual({ x: 1, y: 2, vw: 3, vh: 4 });
+    for (const id of [sent.id, plain.id]) await db().delete(appFeedback).where(eq(appFeedback.id, id));
   });
 
   it('a non-member cannot post either', async () => {

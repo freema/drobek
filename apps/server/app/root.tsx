@@ -11,7 +11,8 @@ import {
   useRouteError,
   useRouteLoaderData,
 } from 'react-router';
-import { DrobekMark, mascotDataUri } from '@drobek/auth/mark';
+import { mascotDataUri } from '@drobek/auth/mark';
+import { PlatformPage } from '@drobek/auth/platform-page';
 import { SourceFooter } from '@drobek/dashboard/footer';
 import { githubStars } from '@drobek/dashboard/github-stars.server';
 import { WhatsNewBanner } from '@drobek/dashboard/whats-new-banner';
@@ -72,14 +73,19 @@ export default function App() {
 
 export function ErrorBoundary() {
   const error = useRouteError();
-  const message = isRouteErrorResponse(error)
-    ? `${error.status} ${error.statusText}`
-    : 'Unexpected error';
+  const status = isRouteErrorResponse(error) ? error.status : 500;
+  const heading = status === 404 ? 'Page not found' : isRouteErrorResponse(error) ? `${error.status} ${error.statusText}` : 'Something went wrong';
+  const text =
+    status === 404
+      ? 'There is nothing at this address. Check it for typos, or start again from the home page.'
+      : 'drobek could not show this page. Try again in a moment; if it keeps happening, tell the operator of this server.';
   return (
-    <main style={{ fontFamily: 'system-ui, sans-serif', padding: '3rem' }}>
-      <DrobekMark size={48} />
-      <h1>drobek</h1>
-      <p>{message}</p>
-    </main>
+    <PlatformPage page="error">
+      <h1>{heading}</h1>
+      <p className="drobek-hint">{text}</p>
+      <p className="drobek-foot">
+        <a href="/">← Home</a>
+      </p>
+    </PlatformPage>
   );
 }

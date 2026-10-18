@@ -27,9 +27,23 @@ export function feedbackListState(input: {
   return 'none-resolved';
 }
 
-/** "x 120, y 640 in a 1280×800 window — main > h1" */
+/**
+ * A spot in parts: the element's label (`button "Send"`) when the widget
+ * named it, where on the page (`x 412, y 230 · 1280×720`) and the CSS
+ * selector when known. Null for a note on the whole page.
+ */
+export function feedbackSpot(anchor: FeedbackAnchor | null): { label: string | null; where: string; selector: string | null } | null {
+  if (!anchor) return null;
+  return { label: anchor.label ?? null, where: `x ${anchor.x}, y ${anchor.y} · ${anchor.vw}×${anchor.vh}`, selector: anchor.selector ?? null };
+}
+
+/**
+ * The spot as one line: `button "Send" · x 412, y 230 · 1280×720` with a
+ * label, else `x 120, y 640 in a 1280×800 window — main > h1`.
+ */
 export function anchorText(anchor: FeedbackAnchor | null): string {
   if (!anchor) return 'the whole page';
+  if (anchor.label) return `${anchor.label} · x ${anchor.x}, y ${anchor.y} · ${anchor.vw}×${anchor.vh}`;
   const where = `x ${anchor.x}, y ${anchor.y} in a ${anchor.vw}×${anchor.vh} window`;
   return anchor.selector ? `${where} — ${anchor.selector}` : where;
 }
