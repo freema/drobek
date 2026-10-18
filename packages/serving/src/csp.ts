@@ -203,14 +203,19 @@ export interface SecurityHeaderInput {
   frameSrc?: string;
   /** Preview and version hosts are never indexed. */
   noindex: boolean;
-  /** One more `connect-src` origin (a bare http(s) origin, else ignored): the dashboard origin on the preview host. */
+  /** The dashboard origin on the preview host (a bare http(s) origin, else ignored): `connect-src` then allows its `/api/screenshots/` path only. */
   connectSrcExtra?: string | null;
+}
+
+function screenshotUploadSource(raw: string | null | undefined): string | null {
+  const origin = ancestorOrigin(raw);
+  return origin ? `${origin}/api/screenshots/` : null;
 }
 
 /** The invariant security headers of EVERY app-host response (incl. 304/401/404/405). */
 export function appSecurityHeaders(input: SecurityHeaderInput): Record<string, string> {
   const h: Record<string, string> = {
-    'Content-Security-Policy': appCsp(input.frameAncestors ?? DEFAULT_FRAME_ANCESTORS, input.frameSrc ?? DEFAULT_FRAME_SRC, ancestorOrigin(input.connectSrcExtra)),
+    'Content-Security-Policy': appCsp(input.frameAncestors ?? DEFAULT_FRAME_ANCESTORS, input.frameSrc ?? DEFAULT_FRAME_SRC, screenshotUploadSource(input.connectSrcExtra)),
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'no-referrer',
   };

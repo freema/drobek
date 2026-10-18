@@ -177,7 +177,7 @@ describe('the screenshot part', () => {
     const r = await handleAppRequest(req(PREVIEW), shots);
     expect(text(r.body)).toContain(`${TAG(2, ' data-reload data-errors data-screenshots')}</body>`);
     expect(r.headers.ETag).toBe(`"${sha(INDEX)}-pv2res-${shotScript.hash}"`);
-    expect(String(r.headers['Content-Security-Policy'])).toContain(`connect-src 'self' https://esm.sh ${DASH};`);
+    expect(String(r.headers['Content-Security-Policy'])).toContain(`connect-src 'self' https://esm.sh ${DASH}/api/screenshots/;`);
     const v = await handleAppRequest(req({ kind: 'version', slug: 'shop', number: 1 }), shots);
     expect(text(v.body)).toContain(TAG(1, ' data-errors'));
     expect(String(v.headers['Content-Security-Policy'])).toContain("connect-src 'self' https://esm.sh;");

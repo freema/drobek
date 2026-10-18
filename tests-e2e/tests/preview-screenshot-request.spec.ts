@@ -120,7 +120,7 @@ test.describe('a screenshot for the agent @local', () => {
     version = w.json.version as number;
     const page = await hostRequest(previewHost(app.slug), '/');
     expect(page.body).toContain(`data-version="${version}" data-reload data-errors data-screenshots></script>`);
-    expect(String(page.headers['content-security-policy'])).toMatch(new RegExp(`connect-src [^;]*${DASHBOARD_ORIGIN.replace(/[.:/]/g, '\\$&')}`));
+    expect(String(page.headers['content-security-policy'])).toMatch(new RegExp(`connect-src [^;]*${DASHBOARD_ORIGIN.replace(/[.:/]/g, '\\$&')}\\/api\\/screenshots\\/`));
   });
 
   test('request → the bar and the event with its token → the upload → get_screenshot ready with the image', async ({ page: p, request }) => {

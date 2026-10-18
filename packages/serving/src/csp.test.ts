@@ -32,7 +32,7 @@ describe('app CSP', () => {
   it('takes one more connect-src origin (the dashboard on the preview host); anything but a bare origin is ignored', () => {
     expect(appCsp(undefined, undefined, 'https://dash.drobek.app')).toContain("connect-src 'self' https://esm.sh https://dash.drobek.app;");
     expect(appSecurityHeaders({ noindex: true, connectSrcExtra: 'https://dash.drobek.app' })['Content-Security-Policy']).toContain(
-      "connect-src 'self' https://esm.sh https://dash.drobek.app;"
+      "connect-src 'self' https://esm.sh https://dash.drobek.app/api/screenshots/;"
     );
     for (const bad of ['https://dash.drobek.app; script-src *', 'https://*.drobek.app', 'https:', "'self'", 'https://dash.drobek.app/x']) {
       expect(appSecurityHeaders({ noindex: true, connectSrcExtra: bad })['Content-Security-Policy'], bad).toContain("connect-src 'self' https://esm.sh;");

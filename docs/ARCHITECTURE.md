@@ -361,7 +361,7 @@ cache. The compile result is part of the tool response.
 - Screenshots for the agent: on the preview host the tag also carries
   `data-screenshots` (drobek.json `"screenshots": false` drops it) and the
   dashboard origin to answer to; the app CSP's `connect-src` names that
-  origin on the preview host only. `request_screenshot` stores a request in
+  origin's `/api/screenshots/` path on the preview host only. `request_screenshot` stores a request in
   Redis (`drobek:screenshot:<id>`, the note, the version, a one-time 32-byte
   token, `SCREENSHOT_REQUEST_TTL_SEC`), counts it against
   `SCREENSHOT_REQUESTS_PER_APP_HOUR` and publishes a `screenshot` event on
