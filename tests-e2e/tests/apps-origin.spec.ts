@@ -166,10 +166,10 @@ test('app hosts: preview / publish / rollback / --vN, served files, headers, cac
     expect(html.headers['content-type']).toMatch(/^text\/html/);
     expect(html.body).toContain('<script type="module" src="/main.js"></script>');
     expect(html.headers['cache-control']).toBe('public, max-age=0, must-revalidate');
-    expect(html.headers.etag).toMatch(/^"[0-9a-f]{64}-fb\d+-[0-9a-f]+-pv\d+re-[0-9a-f]+"$/);
+    expect(html.headers.etag).toMatch(/^"[0-9a-f]{64}-fb\d+-[0-9a-f]+-pv\d+res?-[0-9a-f]+"$/);
     expect(html.body).toContain('<script src="/__drobek/feedback.js" defer');
     const prodBody = html.body.replace(/<script src="\/__drobek\/preview\.js"[^>]*><\/script><script src="\/__drobek\/feedback\.js"[^>]*><\/script>/, '');
-    expectAppSecurityHeaders(html, { noindex: true });
+    expectAppSecurityHeaders(html, { noindex: true, csp: EXPECTED_CSP.replace("connect-src 'self' https://esm.sh;", `connect-src 'self' https://esm.sh ${DASHBOARD_ORIGIN}/api/screenshots/;`) });
 
     const js = await hostRequest(previewHost(slug), '/main.js');
     expect(js.status).toBe(200);
@@ -282,7 +282,7 @@ test('app hosts: preview / publish / rollback / --vN, served files, headers, cac
     // Unknown app / malformed app labels: an apps-side 404, never the dashboard.
     const unknown = await hostRequest(previewHost(`${slug}-nope`));
     expect(unknown.status).toBe(404);
-    expectAppSecurityHeaders(unknown, { noindex: true, csp: NO_APP_CSP });
+    expectAppSecurityHeaders(unknown, { noindex: true, csp: NO_APP_CSP.replace("connect-src 'self' https://esm.sh;", `connect-src 'self' https://esm.sh ${DASHBOARD_ORIGIN}/api/screenshots/;`) });
     if (APPS_URL_SCHEME === 'https') {
       // Behind Caddy a nested label matches no certificate (`*.<APPS_DOMAIN>`
       // covers one label): the handshake is refused before drobek sees it.

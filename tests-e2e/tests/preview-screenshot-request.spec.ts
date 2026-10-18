@@ -105,6 +105,7 @@ test.describe('a screenshot for the agent @local', () => {
   let app: Created;
   let version = 0;
   let readyId = '';
+  let session: Awaited<ReturnType<Page['context']>['storageState']> | undefined;
   const preview = () => urlOf(previewHost(app.slug));
 
   test.afterAll(async () => {
@@ -114,6 +115,7 @@ test.describe('a screenshot for the agent @local', () => {
   test('the preview carries the screenshot part and may reach the dashboard origin', async ({ page: p, request }) => {
     skipUnlessLocal();
     mcp = await mcpClient(p, request, { tag: 'agent-shot', scope: FULL_SCOPE });
+    session = await p.context().storageState();
     app = (await callTool(mcp.client, 'create_app', { name: 'Shot request', template: 'html' })).json as unknown as Created;
     const w = await callTool(mcp.client, 'write_files', { app_id: app.app_id, files: [{ path: 'index.html', content: html('Menu') }], reasoning: 'A page' });
     expect(w.isError, JSON.stringify(w.json)).toBe(false);
@@ -181,8 +183,10 @@ test.describe('a screenshot for the agent @local', () => {
     expect((await answer(request, late, preview(), { token: lateEvent.token }, readFileSync(FIXTURE))).status()).toBe(404);
   });
 
-  test('the Feedback tab lists the screenshot for the agent', async ({ page: p }) => {
+  test('the Feedback tab lists the screenshot for the agent', async ({ browser }) => {
     skipUnlessLocal();
+    const member = await browser.newContext({ storageState: session });
+    const p = await member.newPage();
     await p.goto(`${BASE_URL_WEB}/workspaces/${mcp.workspace}/apps/${app.slug}/feedback`);
     const shot = p.locator(`[data-testid="agent-screenshot"][data-screenshot-id="${readyId}"]`);
     await expect(shot).toBeVisible();
@@ -190,6 +194,7 @@ test.describe('a screenshot for the agent @local', () => {
     const full = await p.request.get(`${BASE_URL_WEB}/workspaces/${mcp.workspace}/apps/${app.slug}/feedback/screenshots/${readyId}`);
     expect(full.status()).toBe(200);
     expect(full.headers()['content-type']).toBe('image/webp');
+    await member.close();
   });
 
   test('a version host and production never carry the screenshot part', async () => {
