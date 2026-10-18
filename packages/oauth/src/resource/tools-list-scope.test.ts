@@ -39,6 +39,7 @@ async function connect(scopes: Scope[], superAdmin = false): Promise<Client> {
 const READ = [
   'get_analytics',
   'get_app',
+  'get_feedback_screenshot',
   'get_logs',
   'list_activity',
   'list_apps',

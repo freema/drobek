@@ -53,7 +53,7 @@ export const AUDIT_ACTIONS = {
   appVersionUnkeep: 'app.version.unkeep',
   /** A member deleted old versions of an app (meta: count, the first and last number, failedOnly). */
   appVersionsDelete: 'app.versions.delete',
-  /** A member left a feedback note on the app's preview (meta: the note id, the version and the element's label; never its text). */
+  /** A member left a feedback note on the app's preview (meta: the note id, the version, the element's label and `screenshot: true` when one is attached; never its text or image). */
   appFeedbackCreate: 'app.feedback.create',
   /** A member (or their agent, resolve_feedback) resolved a feedback note (meta: the note id). */
   appFeedbackResolve: 'app.feedback.resolve',

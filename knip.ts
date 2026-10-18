@@ -50,6 +50,9 @@ const config: KnipConfig = {
         'ioredis',
         // Same reason: @drobek/modules builds the SDK with it.
         'esbuild',
+        // Same reason: @drobek/apps re-encodes feedback screenshots with it
+        // (a native dependency, so it must resolve from the server too).
+        'sharp',
         // DROBEK_MODULES entries are resolved at runtime from the SERVER's
         // package.json (packages/modules registry.ts, createRequire): the
         // built-in modules and the example module are dependencies so the

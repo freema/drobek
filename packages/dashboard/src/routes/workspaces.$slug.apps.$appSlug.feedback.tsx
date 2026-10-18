@@ -3,8 +3,8 @@
  * tab: the notes members left on the preview, filtered open / resolved / all,
  * each with its author, version, page and spot, a link that opens the preview
  * there, Resolve (with an optional note) / Reopen for editors, and Delete for
- * the author and workspace admins. Note texts are member input: React
- * escapes them.
+ * the author and workspace admins. A note's screenshot shows as a thumbnail
+ * that opens the full image. Note texts are member input: React escapes them.
  */
 import { Form, Link, useActionData, useLoaderData, useNavigation } from 'react-router';
 import type { action, loader } from './workspaces.$slug.apps.$appSlug.feedback.server.js';
@@ -27,6 +27,19 @@ const card = { border: '1px solid #e4e4e7', borderRadius: '10px', padding: '0.8r
 const body = { whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: '0.4rem 0', fontSize: '0.95rem' } as const;
 const meta2 = { color: '#555', fontSize: '0.8rem', margin: 0 } as const;
 const actions = { display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap', marginTop: '0.5rem' } as const;
+const thumb = {
+  display: 'block',
+  maxWidth: 'min(16rem, 100%)',
+  height: 'auto',
+  border: '1px solid #e4e4e7',
+  borderRadius: '6px',
+  margin: '0.4rem 0',
+  background: '#fafafa',
+} as const;
+
+function kib(bytes: number): string {
+  return bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MiB` : `${Math.max(1, Math.round(bytes / 1024))} KiB`;
+}
 
 export default function AppFeedbackRoute() {
   const d = useLoaderData<typeof loader>();
@@ -43,7 +56,7 @@ export default function AppFeedbackRoute() {
       <h2 style={ui.title}>Feedback</h2>
       <p style={ui.hint}>
         Notes people in this workspace left on <strong>{d.appSlug}</strong>&apos;s preview with its Feedback button, pinned to the version,
-        page and spot they saw. Your coding agent reads them with <code>list_feedback</code> and marks them resolved once they are fixed.
+        page and spot they saw. Your coding agent reads them with <code>list_feedback</code> (and a note&apos;s screenshot with <code>get_feedback_screenshot</code>) and marks them resolved once they are fixed.
       </p>
 
       {actionData && 'error' in actionData ? (
@@ -127,6 +140,22 @@ export default function AppFeedbackRoute() {
                   r.spot
                 )}
               </p>
+              {r.screenshot ? (
+                <a href={r.screenshot.url} target="_blank" rel="noopener" data-testid="feedback-screenshot" style={{ display: 'inline-block' }}>
+                  <img
+                    src={`${r.screenshot.url}?size=thumb`}
+                    alt={`Screenshot attached to this note, ${r.screenshot.width}×${r.screenshot.height} — opens the full size`}
+                    loading="lazy"
+                    width={Math.min(256, r.screenshot.width)}
+                    height={Math.round((Math.min(256, r.screenshot.width) * r.screenshot.height) / r.screenshot.width)}
+                    style={thumb}
+                    data-testid="feedback-screenshot-thumb"
+                  />
+                  <span style={meta2}>
+                    Screenshot · {r.screenshot.width}×{r.screenshot.height} · {kib(r.screenshot.bytes)} — open full size ↗
+                  </span>
+                </a>
+              ) : null}
               {r.status === 'resolved' ? (
                 <p style={{ ...meta2, marginTop: '0.35rem' }} data-testid="feedback-resolution">
                   Resolved {formatTimestamp(r.resolvedAt)}

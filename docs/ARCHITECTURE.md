@@ -180,7 +180,8 @@ This document is the map of how that works. The neighbours:
   compiled output, plus who made it, the agent's one-line `reasoning` and the
   compile status. File bytes are content-addressed blobs in Postgres
   (`blobs`, sha256, deduplicated across versions and apps); unreferenced blobs
-  are garbage-collected hourly after a 7-day grace period.
+  are garbage-collected hourly after a 7-day grace period (a blob a feedback
+  note's screenshot references is kept like one a version references).
 - **Publishing** moves one pointer, `apps.published_version_id`, to a version
   that compiled. Rolling production back is publishing an older version.
   `restore_version` rolls the working copy back by writing a NEW version with
@@ -327,7 +328,19 @@ cache. The compile result is part of the tool response.
   hourly and per-app open limits `FEEDBACK_PER_USER_HOUR` /
   `FEEDBACK_MAX_OPEN_PER_APP`, audited `app.feedback.*`). The app's Feedback
   tab and `list_feedback` / `resolve_feedback` / `delete_feedback` read and
-  change them with the same functions.
+  change them with the same functions. A note may carry a screenshot (the
+  page's Capture a tab via `getDisplayMedia`, a chosen file or a pasted
+  image, shrunk in the browser; without JavaScript the file input alone):
+  the upload is sniffed (PNG / JPEG / WebP only), decoded in-process by sharp
+  with every other libvips loader blocked and re-encoded to a WebP (longer
+  side 1600 px, metadata dropped, ≤ `SCREENSHOT_MAX_BYTES`) stored in `blobs`
+  by sha256 (`app_feedback.screenshot_*`, `FEEDBACK_SCREENSHOTS_MAX_PER_APP`);
+  the upload is never stored. The tab shows a thumbnail and a members-only
+  route the full image; `get_feedback_screenshot` returns a JPEG re-encoding
+  (≤ `MCP_IMAGE_MAX_BYTES`, 1280 px) as an MCP image content block inside an
+  untrusted envelope. Deleting the note releases the screenshot, and the
+  hourly blob job drops the screenshots of notes resolved
+  `FEEDBACK_SCREENSHOT_RETENTION_DAYS` ago before it sweeps.
 - Limits (`COMPILE_*`): 200 files, 512 KiB per file, 5 MiB per version, an
   import depth of 50, 10 s per build (cancelled with its own `ctx.cancel()`),
   4 builds at once and a FIFO queue whose wait answers `busy`.
@@ -584,7 +597,7 @@ explicit type list without `text/event-stream`, so `/mcp` SSE is not
 buffered); drobek itself never compresses. On the dashboard site Caddy refuses
 a request body over `DASHBOARD_MAX_BODY_BYTES` (`request_body`, 413) except on
 the paths drobek caps with their own limits (`/mcp`, the asset upload URLs, the
-Data tab's CSV import); drobek applies the same cap itself in front of React
+Data tab's CSV import, the feedback note page with its screenshot); drobek applies the same cap itself in front of React
 Router (`@drobek/core` `withBodyLimit`), counting a chunked body as it arrives.
 Details: [`SELF-HOSTING.md` → TLS](./SELF-HOSTING.md#tls).
 
@@ -599,7 +612,7 @@ query:
 | Job | Interval | What |
 | --- | --- | --- |
 | version retention | hourly, Redis lease | deletes the versions of each app past its workspace's `APP_VERSIONS_KEEP` (200) — never the published one, the one the preview serves, a kept one, a rollback set or the last hour's; skips a workspace whose limits provider does not answer (`@drobek/apps`) |
-| blob GC | hourly, Redis lease | deletes blobs no version references, after 7 days |
+| blob GC | hourly, Redis lease | drops the screenshots of feedback notes resolved `FEEDBACK_SCREENSHOT_RETENTION_DAYS` (30) ago, then deletes blobs no version and no note references, after 7 days |
 | slug release | hourly, Redis lease | a soft-deleted app's slug is free again after 30 days |
 | app purge | `APP_PURGE_INTERVAL_MS` (1 h), Redis lease | deletes an app deleted `APP_PURGE_AFTER_DAYS` (30) ago for good, one app per transaction: the `apps` row and through `ON DELETE CASCADE` its versions (their blobs go with the blob GC), module configs and secrets, domains, asset rows, gallery likes and opens, logs and statistics, and the module tables (records, form submissions, end users and identities, uploads, sync state); abuse reports and duplicates keep their rows without the reference; its id leaves `upstreams.allowed_app_ids`, its asset directory and end-user sessions go; audited `app.purge`. An app a foreign key without `ON DELETE` holds is logged and retried every run (`@drobek/apps`) |
 | domain re-check | `DOMAINS_RECHECK_INTERVAL_MS` (1 h), Redis lease | re-verifies domains checked more than 24 h ago; unverifies + mails on a definitive failure |

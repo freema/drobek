@@ -18,12 +18,19 @@ import {
 
 describe('feedback limits', () => {
   it('defaults to 500 open notes per app and 30 notes per account and hour', () => {
-    expect(feedbackLimits({})).toEqual({ maxOpenPerApp: 500, perUserHour: 30 });
+    expect(feedbackLimits({})).toEqual({ maxOpenPerApp: 500, perUserHour: 30, screenshotsMaxPerApp: 100, screenshotRetentionDays: 30 });
   });
 
   it('takes positive integers from the env and ignores anything else', () => {
-    expect(feedbackLimits({ FEEDBACK_MAX_OPEN_PER_APP: '20', FEEDBACK_PER_USER_HOUR: '3' })).toEqual({ maxOpenPerApp: 20, perUserHour: 3 });
-    expect(feedbackLimits({ FEEDBACK_MAX_OPEN_PER_APP: '0', FEEDBACK_PER_USER_HOUR: 'many' })).toEqual({ maxOpenPerApp: 500, perUserHour: 30 });
+    expect(
+      feedbackLimits({ FEEDBACK_MAX_OPEN_PER_APP: '20', FEEDBACK_PER_USER_HOUR: '3', FEEDBACK_SCREENSHOTS_MAX_PER_APP: '5', FEEDBACK_SCREENSHOT_RETENTION_DAYS: '7' })
+    ).toEqual({ maxOpenPerApp: 20, perUserHour: 3, screenshotsMaxPerApp: 5, screenshotRetentionDays: 7 });
+    expect(feedbackLimits({ FEEDBACK_MAX_OPEN_PER_APP: '0', FEEDBACK_PER_USER_HOUR: 'many', FEEDBACK_SCREENSHOTS_MAX_PER_APP: '-1' })).toEqual({
+      maxOpenPerApp: 500,
+      perUserHour: 30,
+      screenshotsMaxPerApp: 100,
+      screenshotRetentionDays: 30,
+    });
   });
 });
 

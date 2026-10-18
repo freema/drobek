@@ -1,6 +1,7 @@
 /**
  * Migration 0007 against a database in today's production shape (0000–0006
- * applied, deploy-pipeline data present), and against an empty one.
+ * applied, deploy-pipeline data present), and against an empty one; migration
+ * 0041 against notes that existed before it.
  */
 import { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
@@ -88,5 +89,29 @@ describe('migration 0007 (app versions)', () => {
     for (const gone of ['active_deploy_id', 'routing_mode', 'uses_end_user_auth']) expect(cols).not.toContain(gone);
     expect((await db.execute(sql`SELECT 1 FROM collections WHERE app_id = 'a-dup'`)).rows).toHaveLength(1);
     expect((await db.execute(sql`SELECT 1 FROM audit_log WHERE id = 'l1'`)).rows).toHaveLength(1);
+  });
+});
+
+describe('migration 0041 (feedback screenshots)', () => {
+  it('adds the screenshot columns to existing notes as null, with the blob FK', async () => {
+    const db = newDb();
+    await migrateTo(db, migrationsUpTo(40));
+    await db.pg.exec(`
+      INSERT INTO users (id, email) VALUES ('u1', 'a@example.test');
+      INSERT INTO workspaces (id, kind, slug, name) VALUES ('w1', 'personal', 'alice', 'Alice');
+      INSERT INTO apps (id, workspace_id, slug) VALUES ('a1', 'w1', 'todo');
+      INSERT INTO app_feedback (id, app_id, path, body, author_user_id) VALUES ('fb_1', 'a1', '/', 'before', 'u1');
+    `);
+    await migrateTo(db);
+    const res = await db.execute<{ screenshot_sha256: string | null; screenshot_bytes: number | null }>(
+      sql`SELECT screenshot_sha256, screenshot_bytes FROM app_feedback WHERE id = 'fb_1'`
+    );
+    expect(res.rows).toEqual([{ screenshot_sha256: null, screenshot_bytes: null }]);
+    await expect(db.execute(sql`UPDATE app_feedback SET screenshot_sha256 = 'missing' WHERE id = 'fb_1'`)).rejects.toThrow();
+    await db.pg.exec(`
+      INSERT INTO blobs (sha256, bytes, size) VALUES ('s1', '\\x00', 1);
+      UPDATE app_feedback SET screenshot_sha256 = 's1', screenshot_width = 1, screenshot_height = 1, screenshot_bytes = 1 WHERE id = 'fb_1';
+    `);
+    await expect(db.execute(sql`DELETE FROM blobs WHERE sha256 = 's1'`)).rejects.toThrow();
   });
 });

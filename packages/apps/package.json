@@ -25,7 +25,8 @@
     "@drobek/core": "workspace:*",
     "@drobek/db": "workspace:*",
     "@drobek/email": "workspace:*",
-    "drizzle-orm": "^0.45.3"
+    "drizzle-orm": "^0.45.3",
+    "sharp": "0.35.5"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.2.17",

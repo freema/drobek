@@ -284,12 +284,23 @@ export const appFeedback = pgTable(
     resolvedByKind: auditActorKindEnum('resolved_by_kind'),
     resolutionNote: text('resolution_note'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
+    /**
+     * The screenshot attached to the note: the re-encoded WebP in `blobs`
+     * (never the uploaded original). All four are set or all are null; the
+     * blob GC keeps a blob a note references.
+     */
+    screenshotSha256: text('screenshot_sha256').references((): AnyPgColumn => blobs.sha256),
+    screenshotWidth: integer('screenshot_width'),
+    screenshotHeight: integer('screenshot_height'),
+    screenshotBytes: integer('screenshot_bytes'),
   },
   (t) => [
     // The Feedback tab and list_feedback page one app's notes per status, newest first.
     index('app_feedback_app_status_created_idx').on(t.appId, t.status, t.createdAt, t.id),
     // The per-author hourly limit counts an author's recent notes.
     index('app_feedback_author_created_idx').on(t.authorUserId, t.createdAt),
+    // The blob GC asks whether a note references a blob.
+    index('app_feedback_screenshot_sha256_idx').on(t.screenshotSha256),
   ]
 );
 

@@ -282,9 +282,12 @@ describe('the request body cap in front of React Router (DASHBOARD_MAX_BODY_BYTE
       '/workspaces/acme/apps/shop/data',
       '/workspaces/acme/apps/shop/data.data',
       '/workspaces/acme/apps/shop/settings',
+      '/feedback/new',
+      '/feedback/new.data',
+      '/feedback/new/x',
     ];
     for (const p of paths) expect(caddyExempt(p), p).toBe(drobekExempt(p));
-    expect(paths.filter(drobekExempt)).toHaveLength(4);
+    expect(paths.filter(drobekExempt)).toHaveLength(6);
   });
 });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { anchorText, feedbackListState, feedbackSpot, noteOpenUrl } from './feedback-view.js';
+import { anchorText, feedbackListState, feedbackSpot, fitWithin, noteOpenUrl } from './feedback-view.js';
 
 describe('the Feedback tab view', () => {
   it('tells an empty app, all resolved, nothing resolved yet and a loading error apart', () => {
@@ -23,6 +23,13 @@ describe('the Feedback tab view', () => {
       selector: '#buy',
     });
     expect(feedbackSpot({ x: 1, y: 2, vw: 3, vh: 4 })).toEqual({ label: null, where: 'x 1, y 2 · 3×4', selector: null });
+  });
+
+  it('scales a screenshot down to the longer side, never up', () => {
+    expect(fitWithin(3200, 1000, 1600)).toEqual({ width: 1600, height: 500 });
+    expect(fitWithin(1000, 3000, 1600)).toEqual({ width: 533, height: 1600 });
+    expect(fitWithin(800, 600, 1600)).toEqual({ width: 800, height: 600 });
+    expect(fitWithin(5000, 1, 1600)).toEqual({ width: 1600, height: 1 });
   });
 
   it('opens the version the note was left on, else the preview', () => {

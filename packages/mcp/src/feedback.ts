@@ -1,8 +1,8 @@
 /**
  * Feedback on the app preview over MCP (parity with the dashboard's Feedback
  * tab): list_feedback reads the notes members left with the preview's
- * Feedback button, resolve_feedback resolves or reopens one, delete_feedback
- * deletes one. Each body calls the SAME @drobek/apps function as the
+ * Feedback button, get_feedback_screenshot returns the screenshot attached to
+ * one, resolve_feedback resolves or reopens one, delete_feedback deletes one. Each body calls the SAME @drobek/apps function as the
  * dashboard (`listFeedback`, `setFeedbackResolved`, `deleteFeedback`, each
  * change audited, here as the agent). Notes are written only by people in the
  * dashboard — there is no tool that creates one.
@@ -12,9 +12,12 @@
  * answers ONLY text inside an untrusted envelope with a per-response nonce
  * (no structuredContent), at most OWNER_LIST_MAX notes and OWNER_LIST_MAX_BYTES
  * per answer; the counts and the paging cursor are drobek's own and repeat on
- * the opening marker.
+ * the opening marker. A note lists its screenshot's size only (no URL);
+ * get_feedback_screenshot answers the image itself as an MCP image content
+ * block (a JPEG re-encoded within MCP_IMAGE_MAX_BYTES, image.ts) between the
+ * two text blocks of an untrusted envelope — a screenshot can show text.
  *
- * Roles: listing any role in the workspace; resolving and reopening editor+;
+ * Roles: listing and reading a screenshot any role in the workspace; resolving and reopening editor+;
  * deleting the note's author or a workspace admin, and only with the user's
  * explicit yes (`user_confirmed: true`, checked last).
  */
@@ -24,10 +27,13 @@ import {
   deleteFeedback,
   feedbackCounts,
   getFeedback,
+  getFeedbackScreenshot,
+  imageLimits,
   isFeedbackId,
   listFeedback,
   mayDeleteFeedback,
   previewUrl,
+  reencodeForMcp,
   setFeedbackResolved,
   versionUrl,
   type FeedbackNote,
@@ -35,6 +41,7 @@ import {
 import { actorKindForSurface } from '@drobek/audit';
 import { authorizeApp } from './access.js';
 import { ToolError } from './errors.js';
+import { mcpImageOf, untrustedImageContent, type McpContentBlock, type McpImage } from './image.js';
 import { budgetFlags, cappedPage, limitArg } from './owner-list.js';
 import type { CallContext } from './tools.js';
 
@@ -59,6 +66,7 @@ function noteOut(n: FeedbackNote, slug: string, env: NodeJS.ProcessEnv) {
     body: n.body,
     author: n.authorEmail,
     created_at: n.createdAt.toISOString(),
+    screenshot: n.screenshot ? { width: n.screenshot.width, height: n.screenshot.height, bytes: n.screenshot.bytes } : null,
     ...(n.status === 'resolved'
       ? {
           resolved_at: n.resolvedAt?.toISOString() ?? null,
@@ -113,7 +121,7 @@ export async function listFeedbackTool(ctx: CallContext, args: { app_id: string;
           ? `No open notes on "${app.name ?? app.slug}" — all ${counts.resolved} are resolved.`
           : `No feedback on "${app.name ?? app.slug}" yet. Members leave notes with the Feedback button on the preview; ask the user to review the preview and leave some.`
         : 'No notes match.'
-      : 'Each note is pinned to the version, page (`page_url` opens it) and spot (`anchor`: document x/y in a vw×vh window, the element `selector` and `label` when known) the member saw. Fix what a note asks for if the user wants it, then resolve_feedback({ app_id, feedback_id, note }) with a short note on what changed.',
+      : `Each note is pinned to the version, page (\`page_url\` opens it) and spot (\`anchor\`: document x/y in a vw×vh window, the element \`selector\` and \`label\` when known) the member saw.${notes.some((n) => n.screenshot) ? ' A note with `screenshot` has an image the member attached: get_feedback_screenshot({ app_id, feedback_id }) shows it to you.' : ''} Fix what a note asks for if the user wants it, then resolve_feedback({ app_id, feedback_id, note }) with a short note on what changed.`,
     ...flags.notes,
   ];
   return {
@@ -146,6 +154,58 @@ export function feedbackEnvelope(p: FeedbackListPayload): string {
     '',
     note,
   ].join('\n');
+}
+
+// ── get_feedback_screenshot ──────────────────────────────────────────────────
+
+export interface FeedbackScreenshotPayload {
+  app_id: string;
+  feedback_id: string;
+  /** The stored screenshot (WebP) the image was made from. */
+  stored: { width: number; height: number; bytes: number };
+  image: McpImage;
+  note: string;
+}
+
+export async function getFeedbackScreenshotTool(ctx: CallContext, args: { app_id: string; feedback_id: string }): Promise<FeedbackScreenshotPayload> {
+  const { app } = await authorizeApp(ctx.principal, args.app_id, 'viewer');
+  const id = feedbackIdArg(args.feedback_id);
+  const shot = await getFeedbackScreenshot(app.id, id);
+  if (!shot) {
+    const note = await getFeedback(app.id, id);
+    if (!note) throw new ToolError('not_found', 'This app has no such feedback note: it was deleted, or the id is wrong.', { feedback_id: id });
+    throw new ToolError(
+      'not_found',
+      'This note has no screenshot: none was attached, or it was removed after the note had been resolved for a while (FEEDBACK_SCREENSHOT_RETENTION_DAYS). list_feedback shows `screenshot` on the notes that have one.',
+      { feedback_id: id }
+    );
+  }
+  const img = await reencodeForMcp(shot.data, imageLimits(ctx.deps.env)).catch((err: unknown) => {
+    if (err instanceof AppsError && err.code === 'too_large') {
+      throw new ToolError('limit_exceeded', `The screenshot does not fit into MCP_IMAGE_MAX_BYTES (${imageLimits(ctx.deps.env).mcpImageMaxBytes} bytes) even when made smaller; ask the operator for a higher limit, or ask the user to describe what it shows.`, {
+        limit: 'MCP_IMAGE_MAX_BYTES',
+      });
+    }
+    throw err;
+  });
+  return {
+    app_id: app.id,
+    feedback_id: id,
+    stored: { width: shot.width, height: shot.height, bytes: shot.bytes },
+    image: mcpImageOf(img),
+    note: 'This is what the member saw when they wrote the note; list_feedback has the note\'s text, page and spot. Fix what the note asks for if the user wants it, then resolve_feedback({ app_id, feedback_id, note }).',
+  };
+}
+
+/** get_feedback_screenshot's content: the image between the two text blocks of the untrusted envelope. */
+export function feedbackScreenshotContent(p: FeedbackScreenshotPayload): McpContentBlock[] {
+  return untrustedImageContent({
+    tag: 'untrusted-feedback-screenshot',
+    attrs: { app_id: p.app_id, feedback_id: p.feedback_id, stored_width: p.stored.width, stored_height: p.stored.height },
+    what: 'the image below is a screenshot a person attached to a feedback note on the app\'s preview; it shows the app\'s own pages.',
+    image: p.image,
+    note: p.note,
+  });
 }
 
 // ── resolve_feedback ─────────────────────────────────────────────────────────

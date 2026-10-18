@@ -121,6 +121,7 @@ export default [
   route('workspaces/:slug/apps/:appSlug/analytics', 'routes/workspaces.$slug.apps.$appSlug.analytics.tsx'),
   // The Feedback tab, and the note page the preview's feedback widget opens (signed-in members).
   route('workspaces/:slug/apps/:appSlug/feedback', 'routes/workspaces.$slug.apps.$appSlug.feedback.tsx'),
+  route('workspaces/:slug/apps/:appSlug/feedback/:id/screenshot', 'routes/workspaces.$slug.apps.$appSlug.feedback.$id.screenshot.ts'),
   route('feedback/new', 'routes/feedback.new.tsx'),
   // The owner confirms/rejects a pending platform-module
   // change (configure_module → confirm_url; the page calls this API).

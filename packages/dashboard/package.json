@@ -156,6 +156,10 @@
       "types": "./src/routes/workspaces.$slug.apps.$appSlug.feedback.server.ts",
       "default": "./dist/routes/workspaces.$slug.apps.$appSlug.feedback.server.js"
     },
+    "./routes/workspaces.$slug.apps.$appSlug.feedback.$id.screenshot.server": {
+      "types": "./src/routes/workspaces.$slug.apps.$appSlug.feedback.$id.screenshot.server.ts",
+      "default": "./dist/routes/workspaces.$slug.apps.$appSlug.feedback.$id.screenshot.server.js"
+    },
     "./routes/feedback.new": {
       "types": "./src/routes/feedback.new.tsx",
       "default": "./dist/routes/feedback.new.js"
