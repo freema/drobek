@@ -247,7 +247,7 @@ export default function AppFeedbackRoute() {
         </p>
         {d.screenshots.length === 0 ? (
           <p style={ui.empty} data-testid="agent-screenshots-none">
-            No screenshots yet. Ask your agent to request one, then open the preview and click Capture on the bar at the top.
+            No screenshots yet. Ask your agent to request one, then open the preview and click Capture on the bar at the bottom left.
           </p>
         ) : (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem' }}>

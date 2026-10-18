@@ -195,6 +195,11 @@ test('one layout: breadcrumb, app header + tabs on every app page, aligned filte
   await expect(page.getByTestId('footer-version')).toHaveText(`drobek ${version.version}`);
   await expect(page.getByTestId('source-link')).toHaveText('Source (AGPL-3.0)');
   if (/^[0-9a-f]{7,40}$/.test(version.sha)) await expect(page.getByTestId('footer-sha')).toHaveText(version.sha.slice(0, 7));
+  const missing = await page.goto('/no-such-page');
+  expect(missing?.status()).toBe(404);
+  await expect(page.getByRole('heading', { name: 'Page not found' })).toBeVisible();
+  await expect(page.getByTestId('footer-version')).toHaveText(`drobek ${version.version}`);
+  await page.goBack();
   const stars = page.getByTestId('footer-stars');
   if ((await stars.count()) > 0) {
     // Only once the server-side count is known (api.github.com may be unreachable).

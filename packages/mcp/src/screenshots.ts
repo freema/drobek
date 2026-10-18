@@ -78,7 +78,7 @@ export async function requestScreenshotTool(ctx: CallContext, args: { app_id: st
     expires_at: new Date(req.expiresAt).toISOString(),
     retry_after_seconds: SCREENSHOT_RETRY_AFTER_SECONDS,
     hint: 'ask the person to open the preview and click Capture',
-    note: `Tell the user: "Open ${previewUrl(app.slug, ctx.deps.env)} on the page you want me to see and click Capture on the bar at the top." Then call get_screenshot({ request_id }) every ${SCREENSHOT_RETRY_AFTER_SECONDS} seconds or so until it is ready, declined or expired (after ${Math.round(limits.requestTtlSec / 60)} minutes).`,
+    note: `Tell the user: "Open ${previewUrl(app.slug, ctx.deps.env)} on the page you want me to see and click Capture on the bar at the bottom left." Then call get_screenshot({ request_id }) every ${SCREENSHOT_RETRY_AFTER_SECONDS} seconds or so until it is ready, declined or expired (after ${Math.round(limits.requestTtlSec / 60)} minutes).`,
   };
 }
 

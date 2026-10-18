@@ -162,4 +162,6 @@ export default [
   // module's `auth.provider` slot) — one redirect URI per server; answers a
   // 302 with a handoff code to the app host, never touches the dashboard session.
   route('__drobek/auth/callback/:provider', 'routes/drobek.auth.callback.$provider.ts'),
+  // Any other path: a 404 rendered under the root loader, so the page keeps its footer and notice.
+  route('*', 'routes/not-found.tsx'),
 ] satisfies RouteConfig;
