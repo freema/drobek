@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type BrowserContext, type Page } from '@playwright/test';
 import { Redis } from 'ioredis';
 import { BASE_URL_WEB, TEST_ENV } from '../playwright.config';
 import { DASHBOARD_ORIGIN, hostRequest, previewHost, prodHost, urlOf, versionHost } from './helpers/apps-host';
@@ -105,7 +105,7 @@ test.describe('a screenshot for the agent @local', () => {
   let app: Created;
   let version = 0;
   let readyId = '';
-  let session: Awaited<ReturnType<Page['context']>['storageState']> | undefined;
+  let session: Awaited<ReturnType<BrowserContext['storageState']>> | undefined;
   const preview = () => urlOf(previewHost(app.slug));
 
   test.afterAll(async () => {
