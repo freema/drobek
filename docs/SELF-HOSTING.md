@@ -262,9 +262,10 @@ range stays byte-exact, images are left alone, and `text/event-stream` is
 never compressed, so MCP's streamable HTTP and any SSE an app backend proxies
 arrive event by event. With a different proxy in front, compress the same way
 and keep `text/event-stream` out of it, and do not buffer it either (nginx:
-`proxy_buffering off` — the proxy module's streamed answers carry
-`X-Accel-Buffering: no`, which nginx honours), or an LLM answer streamed through
-the `proxy` module reaches the browser only when it is complete.
+`proxy_buffering off` — the proxy module's streamed answers and the preview's
+live-reload stream carry `X-Accel-Buffering: no`, which nginx honours), or an
+LLM answer streamed through the `proxy` module reaches the browser only when it
+is complete and an open preview does not reload after a write.
 
 Request bodies on the dashboard origin are capped at `DASHBOARD_MAX_BODY_BYTES`
 (1 MiB): a bigger body sent to a dashboard page, the sign-in or an OAuth
@@ -473,6 +474,8 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `APPS_MAX_PER_WORKSPACE` | 50 | live apps per workspace (deleted ones do not count); `create_app` beyond it answers `limit_exceeded` *(plan)* |
 | `VERSIONS_PER_APP_HOUR` / `VERSIONS_PER_USER_HOUR` | 600 / 1200 | new versions of one app / made by one person (every app and workspace) within the last hour — `write_files`, `create_app`, `restore_version`, `duplicate_app` and the dashboard's Restore and duplicate page together; past either the call answers `rate_limited` with `retry_after_seconds` (the dashboard 429 + `Retry-After`) and nothing is stored *(plan)* |
 | `FEEDBACK_MAX_OPEN_PER_APP` / `FEEDBACK_PER_USER_HOUR` | 500 / 30 | open feedback notes one app may hold (a new note past it is refused until notes are resolved or deleted) / notes one member may leave on the previews within the last hour, in every app (the dashboard answers 429 + `Retry-After`) |
+| `PREVIEW_EVENTS_MAX_PER_APP` / `PREVIEW_EVENTS_MAX_PER_IP` | 50 / 4 | live reload of the preview: event streams (`/__drobek/preview/events`, one per open preview tab) open at once per app / per client IP of an app, counted in each drobek process; past either the stream answers 429 and that tab does not reload by itself |
+| `PREVIEW_EVENTS_MAX_MS` | 3600000 | how long one preview event stream stays open; then the browser reconnects by itself |
 | `APP_VERSIONS_KEEP` | 200 | the newest versions of each app the hourly history retention keeps; older versions are deleted — never the published one, the one the preview serves, a version a member keeps, one whose asset set is kept for a rollback or one from the last hour — and the blob GC frees their bytes. `read_file` / `restore_version` of a deleted one answer `not_found` saying so; the dashboard's version history and `get_app` state the number *(plan; while the limits provider does not answer, the retention leaves the workspace alone)* |
 | `APP_VERSIONS_KEPT_MAX` | 20 | versions of one app its members may keep (neither the retention nor a member's clean-up deletes a kept version); keeping one more answers `limit_exceeded` with `limit` / `value`; a lower value leaves the versions already kept alone *(plan)* |
 | `APP_VERSIONS_PAGE` | 20 | versions one page of an app's version history lists |

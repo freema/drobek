@@ -1,6 +1,6 @@
 import { transformSync } from 'esbuild';
 import { describe, expect, it } from 'vitest';
-import { Compiler, compile, feedbackWidgetEnabled } from './index.js';
+import { Compiler, compile, feedbackWidgetEnabled, previewScriptOptions } from './index.js';
 import type { SourceFiles } from './index.js';
 
 const REACT_TS: Array<[string, string]> = [
@@ -149,6 +149,25 @@ describe('compile — happy path', () => {
       expect(feedbackWidgetEnabled('{"feedback":false}')).toBe(false);
       expect(feedbackWidgetEnabled('{"feedback":"false"}')).toBe(true);
       expect(feedbackWidgetEnabled('not json')).toBe(true);
+    });
+  });
+
+  describe('the preview script flags', () => {
+    it('"reload": false compiles; anything but a boolean is invalid_config', async () => {
+      const deps = { react: 'https://esm.sh/react@19', 'react-dom': 'https://esm.sh/react-dom@19' };
+      expect((await compile(app([['drobek.json', JSON.stringify({ imports: deps, reload: false })]]))).ok).toBe(true);
+      const r = await compile(app([['drobek.json', JSON.stringify({ imports: deps, reload: 'no' })]]));
+      expect(r.ok).toBe(false);
+      expect(r.errors[0].text).toContain('"reload" must be true or false');
+    });
+
+    it('previewScriptOptions: only an explicit false turns a switch off', () => {
+      expect(previewScriptOptions(undefined)).toEqual({ reload: true });
+      expect(previewScriptOptions('{}')).toEqual({ reload: true });
+      expect(previewScriptOptions('{"reload":false}')).toEqual({ reload: false });
+      expect(previewScriptOptions('{"reload":"false"}')).toEqual({ reload: true });
+      expect(previewScriptOptions('[]')).toEqual({ reload: true });
+      expect(previewScriptOptions('not json')).toEqual({ reload: true });
     });
   });
 

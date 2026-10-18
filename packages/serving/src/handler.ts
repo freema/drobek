@@ -72,6 +72,17 @@
  * production host and custom domains never carry or serve it (see
  * feedback-widget.ts).
  *
+ * PREVIEW SCRIPT: with `deps.preview`, an HTML file the preview host serves
+ * also carries `/__drobek/preview.js` (before the feedback tag; its ETag
+ * gains `-pv<N><parts>-<script hash>`) unless no part of it is on for the
+ * version (`"reload": false`); `GET /__drobek/preview.js` serves the script
+ * on the preview and version hosts. `GET /__drobek/preview/events` on the
+ * preview host is the event stream (`deps.previewEvents`, see
+ * preview-events.server.ts) behind the password gate (401 JSON), not counted
+ * as a request. Every other `/__drobek/preview*` request — and any of them on
+ * the production host or a custom domain — answers 404 without reaching the
+ * platform (see preview-script.ts).
+ *
  * ABUSE: `GET /.well-known/drobek-report` on ANY app host
  * answers `{ report_url, app, terms_url }` (public, cacheable 1 h) before
  * anything else — where to report this host. A taken-down app
@@ -96,6 +107,15 @@ import {
 import { assetNameOf, assetResponsePlan, type AssetSource } from './assets.js';
 import { contentTypeForPath } from './content-type.js';
 import { FEEDBACK_SCRIPT_PATH, feedbackScriptTag, injectBeforeBodyEnd, type FeedbackWidget } from './feedback-widget.js';
+import {
+  PREVIEW_EVENTS_PATH,
+  PREVIEW_PATH_PREFIX,
+  PREVIEW_SCRIPT_PATH,
+  previewPartsKey,
+  previewScriptTag,
+  type PreviewScript,
+  type PreviewScriptParts,
+} from './preview-script.js';
 import { appSecurityHeaders, parseFrameAncestors, withFrameAncestors } from './csp.js';
 import { UNLOCK_PATH, errorPage, lockedPage, missingPage, passwordPage, type MissingReason } from './pages.js';
 import {
@@ -154,6 +174,9 @@ export type BeaconHandler = (req: AppRequest, app: ServeApp, version: ServeVersi
 
 /** The `Server-Timing` metric that names the version an HTML page was served from (read by the beacon). */
 export const VERSION_TIMING_METRIC = 'drobek-version';
+
+/** Answers `GET /__drobek/preview/events` on a preview host for a resolved, visibility-cleared app; `version` = what it serves now. */
+export type PreviewEventsHandler = (req: AppRequest, app: ServeApp, version: ServeVersion | null) => AppResponse | Promise<AppResponse>;
 
 /** Answers a `/__drobek/*` request for a resolved, visibility-cleared app. */
 export type PlatformHandler = (req: AppRequest, ctx: { app: ServeApp; target: AppHostTarget }) => Promise<AppResponse>;
@@ -223,6 +246,10 @@ export interface HandlerDeps {
   assets?: AssetSource;
   /** The feedback widget of the preview and version hosts (absent → no widget). */
   feedback?: FeedbackWidget | null;
+  /** The preview script of the preview and version hosts (absent → no script). */
+  preview?: PreviewScript | null;
+  /** The preview host's event stream (absent → `/__drobek/preview/events` answers 404). */
+  previewEvents?: PreviewEventsHandler;
 }
 
 /** Header naming the app behind an app-host response. */
@@ -272,8 +299,15 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
   const isBeacon = deps.beacon !== undefined && req.path === BEACON_PATH;
   const widget = !production && kind !== undefined ? (deps.feedback ?? null) : null;
   const isWidget = widget !== null && (method === 'GET' || method === 'HEAD') && req.path === FEEDBACK_SCRIPT_PATH;
-  const isPlatform = !isUnlock && !isBeacon && !isWidget && deps.platform !== undefined && req.path.startsWith(PLATFORM_PREFIX);
-  if (method !== 'GET' && method !== 'HEAD' && !isUnlock && !isPlatform && !isBeacon) {
+  const preview = !production && kind !== undefined ? (deps.preview ?? null) : null;
+  const isPreviewPath = req.path === PREVIEW_SCRIPT_PATH || req.path.startsWith(PREVIEW_PATH_PREFIX);
+  const isPreviewScript = preview !== null && (method === 'GET' || method === 'HEAD') && req.path === PREVIEW_SCRIPT_PATH;
+  const isEvents = kind === 'preview' && deps.previewEvents !== undefined && method === 'GET' && req.path === PREVIEW_EVENTS_PATH;
+  // Every other preview path answers JSON: the stream, its gate, or 404 where it does not exist.
+  const isPreviewJson = isPreviewPath && !isPreviewScript;
+  const isPlatform =
+    !isUnlock && !isBeacon && !isWidget && !isPreviewPath && deps.platform !== undefined && req.path.startsWith(PLATFORM_PREFIX);
+  if (method !== 'GET' && method !== 'HEAD' && !isUnlock && !isPlatform && !isBeacon && !isPreviewJson) {
     return page(405, errorPage('Method not allowed', 'This address only serves files.'), {
       Allow: 'GET, HEAD',
     });
@@ -319,13 +353,13 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
   if (req.target.kind === 'version' && !version && deps.unknownHosts && !(await deps.unknownHosts.allow(req.clientIp))) {
     return throttled();
   }
-  if (!isBeacon && !isWidget) deps.signal?.(app.id, 'request');
+  if (!isBeacon && !isWidget && !isPreviewPath) deps.signal?.(app.id, 'request');
 
   // ── taken down by a super-admin: 451 on every host and path ──
   if (app.lockedReason) {
     const category = lockCategory(app.lockedReason);
     const terms = deps.termsUrl ?? termsUrl();
-    if (isPlatform || isBeacon) {
+    if (isPlatform || isBeacon || isPreviewJson) {
       return {
         status: 451,
         headers: { ...security, 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': NO_STORE },
@@ -361,7 +395,7 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
       ? verifyAppAccessToken(token, app.id, deps.accessSecret, (deps.now ?? Date.now)())
       : false;
   const locked = decideVisibility({ visibility: app.visibility, hasAppAccess }).action === 'password';
-  if (isPlatform || isBeacon) {
+  if (isPlatform || isBeacon || isPreviewJson) {
     if (locked && !(isPlatform && deps.platformSkipsGate?.(method, req.path))) {
       return {
         status: 401,
@@ -372,6 +406,17 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
     if (isBeacon) {
       const b = await deps.beacon!(req, app, version);
       return { ...b, headers: { ...b.headers, ...security } };
+    }
+    if (isEvents) {
+      const e = await deps.previewEvents!(req, app, version);
+      return { ...e, headers: { ...e.headers, ...security } };
+    }
+    if (isPreviewJson) {
+      return {
+        status: 404,
+        headers: { ...security, 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': NO_STORE },
+        body: method === 'HEAD' ? null : JSON.stringify({ error: 'not_found', message: 'Nothing is served at this address on this host.' }),
+      };
     }
     const r = await deps.platform!(req, { app, target: req.target });
     if (r.status >= 500) deps.signal?.(app.id, '5xx', req.path);
@@ -384,6 +429,7 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
     return page(401, passwordPage({ next }));
   }
   if (isWidget) return serveWidget(req, widget, security);
+  if (isPreviewScript) return servePreviewScript(req, preview, security);
 
   // ── the version this host serves ──
   if (!version) {
@@ -428,12 +474,17 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
       ? await deps.store.splitSourceMap(entry.sha256, hit.path)
       : null;
   const contentType = contentTypeForPath(hit.path);
-  const withWidget = widget !== null && contentType.startsWith('text/html') && (await deps.store.feedbackEnabled(version.id));
+  const isHtml = contentType.startsWith('text/html');
+  const withWidget = widget !== null && isHtml && (await deps.store.feedbackEnabled(version.id));
+  const previewParts = preview !== null && isHtml ? await previewPartsFor(req.target.kind, deps.store, version.id) : null;
+  const previewTag = previewParts ? previewScriptTag(app.slug, version.number, previewParts) : null;
   const etag = split
     ? etagFor(`${entry.sha256}-nomap`)
-    : withWidget
-      ? etagFor(`${entry.sha256}-fb${version.number}-${widget.hash}`)
-      : etagFor(entry.sha256);
+    : etagFor(
+        entry.sha256 +
+          (withWidget ? `-fb${version.number}-${widget.hash}` : '') +
+          (previewTag ? `-pv${version.number}${previewPartsKey(previewParts!)}-${preview!.hash}` : '')
+      );
   const headers: Record<string, string> = {
     ...security,
     'Content-Type': contentType,
@@ -458,7 +509,8 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
     deps.signal?.(app.id, '5xx', req.path);
     return missing('no-file');
   }
-  const bytes = withWidget ? injectBeforeBodyEnd(stored, feedbackScriptTag(app.slug, version.number)) : stored;
+  const inject = (previewTag ?? '') + (withWidget ? feedbackScriptTag(app.slug, version.number) : '');
+  const bytes = inject ? injectBeforeBodyEnd(stored, inject) : stored;
   headers['Content-Length'] = String(bytes.length);
   countView();
   return { status: 200, headers, body: method === 'HEAD' ? null : bytes };
@@ -476,6 +528,26 @@ function serveWidget(req: AppRequest, widget: FeedbackWidget, security: Record<s
   if (isNotModified(req.header('if-none-match'), etag)) return { status: 304, headers, body: null };
   headers['Content-Length'] = String(widget.script.length);
   return { status: 200, headers, body: req.method.toUpperCase() === 'HEAD' ? null : widget.script };
+}
+
+/** Which parts of the preview script a page of `versionId` on a `kind` host runs. */
+async function previewPartsFor(kind: AppHostTarget['kind'], store: ServeStore, versionId: string): Promise<PreviewScriptParts> {
+  const options = await store.previewOptions(versionId);
+  return { reload: kind === 'preview' && options.reload };
+}
+
+/** `GET /__drobek/preview.js` on a preview or version host: the script, revalidated by its ETag. */
+function servePreviewScript(req: AppRequest, preview: PreviewScript, security: Record<string, string>): AppResponse {
+  const etag = etagFor(`preview-${preview.hash}`);
+  const headers: Record<string, string> = {
+    ...security,
+    'Content-Type': 'text/javascript; charset=utf-8',
+    ETag: etag,
+    'Cache-Control': 'no-cache',
+  };
+  if (isNotModified(req.header('if-none-match'), etag)) return { status: 304, headers, body: null };
+  headers['Content-Length'] = String(preview.script.length);
+  return { status: 200, headers, body: req.method.toUpperCase() === 'HEAD' ? null : preview.script };
 }
 
 /** What the page-view counter is told about a request (it keeps none of it but counts). */

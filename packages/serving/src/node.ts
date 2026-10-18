@@ -65,6 +65,8 @@ import {
 import type { AssetSource } from './assets.js';
 import { appSecurityHeaders, frameSrcFromEnv, galleryFrameAncestorsFromEnv } from './csp.js';
 import { feedbackWidget } from './feedback-widget.js';
+import { previewEventsHub, previewEventsResponse } from './preview-events.server.js';
+import { previewScript } from './preview-script.js';
 import { appAccessSecret, appCookiesSecure } from './password.js';
 import { ServeStore } from './store.server.js';
 import { UnknownHostLimiter, unknownHostLimitsFromEnv } from './unknown-host.js';
@@ -186,8 +188,9 @@ export async function unlockAttemptAllowed(
  * origin every app host lets frame it (the app-list thumbnail), the
  * operator's gallery origins (GALLERY_FRAME_ANCESTORS, only while
  * GALLERY_ENABLED), the frame-src list (APP_FRAME_SRC_EXTRA), the app
- * assets on ASSETS_DIR and the preview's feedback widget (opening the
- * dashboard's /feedback/new).
+ * assets on ASSETS_DIR, the preview's feedback widget (opening the
+ * dashboard's /feedback/new) and the preview script with its event stream
+ * (PREVIEW_EVENTS_*).
  */
 export function defaultHandlerDeps(store: ServeStore, log?: Logger): HandlerDeps {
   return {
@@ -200,6 +203,8 @@ export function defaultHandlerDeps(store: ServeStore, log?: Logger): HandlerDeps
     beacon: (req, app, version) => handleBeacon(req, app.id, { servedVersion: version?.number ?? null }),
     dashboardOrigin: dashboardOrigin(),
     feedback: feedbackWidget(dashboardOrigin()),
+    preview: previewScript(),
+    previewEvents: (req, app, version) => previewEventsResponse(previewEventsHub(), req, app, version),
     galleryFrameAncestors: galleryEnabled() ? galleryFrameAncestorsFromEnv() : [],
     frameSrc: frameSrcFromEnv(),
     assets: defaultAssetSource(),

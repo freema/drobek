@@ -1,5 +1,10 @@
 # Changelog — drobek (core)
 
+## Unreleased
+
+### Added
+- **The preview reloads itself after a write** (NSO-461): An open preview tab (`<slug>--preview` only) shows the new version within seconds after a `write_files`, `create_app` or restore that compiled, and keeps its scroll position. After a write that did not compile the page stays as it was and shows a notice that the agent has the errors. The preview host injects `/__drobek/preview.js` (before the feedback tag), which listens on `GET /__drobek/preview/events`, a `text/event-stream` behind the same password gate as the pages; version hosts, production and custom domains never get it, and a frame (the dashboard's thumbnails) never connects. `"reload": false` in drobek.json turns it off. New env vars: `PREVIEW_EVENTS_MAX_PER_APP` (50 open streams per app), `PREVIEW_EVENTS_MAX_PER_IP` (4 per client IP of an app; past either 429 and that tab does not reload) and `PREVIEW_EVENTS_MAX_MS` (1 h per stream, then the browser reconnects). A graceful stop ends the streams. A reverse proxy in front of drobek must not buffer `text/event-stream` (nginx: `proxy_buffering off`).
+
 ## v0.9.3 — 2026-10-15
 
 No migration and no new env var.

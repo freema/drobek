@@ -181,6 +181,11 @@ Before using a backend (login, stored data, forms, email, file uploads, external
   `delete_feedback({ app_id, feedback_id, user_confirmed })` (the note's
   author or a workspace admin) only after the user explicitly said yes.
   `"feedback": false` in drobek.json turns the button off.
+- Live preview: an open preview tab (`<slug>--preview` only) reloads itself
+  within seconds after a write that compiled, keeping its scroll position —
+  never ask the user to refresh it. After a write that did not compile the
+  page stays as it was and shows a notice that the agent has the errors.
+  `"reload": false` in drobek.json turns the reload off.
 
 ## Write files, read the compile result
 

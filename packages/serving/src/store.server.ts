@@ -39,7 +39,7 @@
  */
 import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { isGalleryVisible, type AppHostTarget } from '@drobek/apps';
-import { CONFIG_FILE, feedbackWidgetEnabled } from '@drobek/compile';
+import { CONFIG_FILE, feedbackWidgetEnabled, previewScriptOptions, type PreviewScriptOptions } from '@drobek/compile';
 import { appVersions, apps, blobs, getDb, versionFiles } from '@drobek/db';
 import { primaryDomainOf, resolveCustomHost, type CustomHostResolution } from '@drobek/domains';
 import { ByteLru, CountLru, DEFAULT_BLOB_CACHE_BYTES, ExpiringLru } from './lru.js';
@@ -134,6 +134,7 @@ export class ServeStore {
   private readonly manifests = new CountLru<ServedManifest>(MAX_CACHED_MANIFESTS);
   private readonly noInlineMap = new CountLru<true>(MAX_CACHED_MANIFESTS * 4);
   private readonly feedbackOn = new CountLru<boolean>(MAX_CACHED_MANIFESTS);
+  private readonly previewOn = new CountLru<PreviewScriptOptions>(MAX_CACHED_MANIFESTS);
   private readonly customHosts: ExpiringLru<CustomHostResolution>;
   /** Slug misses (`<slug>:*`) and version misses (`<slug>:v<N>`, with the app). */
   private readonly missing: ExpiringLru<Resolved>;
@@ -222,6 +223,21 @@ export class ServeStore {
     const on = feedbackWidgetEnabled(bytes ? bytes.toString('utf8') : undefined);
     this.feedbackOn.set(versionId, on);
     return on;
+  }
+
+  /**
+   * The preview-script switches of version `versionId` (`"reload": false`
+   * in its drobek.json turns the reload off). Cached per version like its
+   * manifest.
+   */
+  async previewOptions(versionId: string): Promise<PreviewScriptOptions> {
+    const hit = this.previewOn.get(versionId);
+    if (hit !== undefined) return hit;
+    const config = (await this.loaders.loadFiles(versionId)).find((f) => f.kind === 'source' && f.path === CONFIG_FILE);
+    const bytes = config ? await this.blob(config.sha256) : null;
+    const options = previewScriptOptions(bytes ? bytes.toString('utf8') : undefined);
+    this.previewOn.set(versionId, options);
+    return options;
   }
 
   async blob(sha256: string): Promise<Buffer | null> {

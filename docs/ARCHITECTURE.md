@@ -322,6 +322,20 @@ cache. The compile result is part of the tool response.
   `FEEDBACK_MAX_OPEN_PER_APP`, audited `app.feedback.*`). The app's Feedback
   tab and `list_feedback` / `resolve_feedback` / `delete_feedback` read and
   change them with the same functions.
+- Live preview: an HTML page of the preview host (only `<slug>--preview`)
+  also carries `<script src="/__drobek/preview.js" data-reload>` before the
+  feedback tag, unless drobek.json says `"reload": false` (the ETag carries
+  the script's hash). The script opens `GET /__drobek/preview/events` on its
+  own origin — a `text/event-stream` behind the same password gate as the
+  pages, fed by the `drobek:app-changed` events (in-process, and every other
+  process's through the serve-cache subscriber's Redis relay). Each message
+  is one JSON object typed by `type`: `ready` (the newest compiled version
+  when the stream opened) and `version` (`{ version, compiled, errors }` of a
+  version just stored). A newer compiled version reloads the page (the scroll
+  position kept in sessionStorage); one that did not compile shows a notice
+  and the page stays. Streams per app and per client IP and their lifetime
+  are capped (`PREVIEW_EVENTS_*`, 429 past a cap); the graceful stop ends
+  them. The script does nothing in a frame and reads no cookie.
 - Limits (`COMPILE_*`): 200 files, 512 KiB per file, 5 MiB per version, an
   import depth of 50, 10 s per build (cancelled with its own `ctx.cancel()`),
   4 builds at once and a FIFO queue whose wait answers `busy`.
