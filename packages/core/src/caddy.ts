@@ -66,13 +66,15 @@ export interface CaddyConfig {
 /**
  * Dashboard-site paths (Caddy path patterns) whose bodies drobek caps itself
  * with their own, larger limits: the MCP endpoint (MCP_MAX_BODY_BYTES), the
- * asset upload URLs (the asset size), the Data tab's collection page (its
- * CSV import) and the feedback note page (its screenshot, SCREENSHOT_MAX_BYTES).
+ * asset upload URLs (the asset size), the screenshot answers to
+ * request_screenshot and the feedback note page (their screenshot,
+ * SCREENSHOT_MAX_BYTES) and the Data tab's collection page (its CSV import).
  */
 export const DASHBOARD_BODY_CAP_EXEMPT_PATHS: readonly string[] = [
   '/mcp',
   '/mcp/*',
   '/api/assets/upload/*',
+  '/api/screenshots/*',
   '/workspaces/*/apps/*/data/*',
   '/feedback/new',
   '/feedback/new.data',

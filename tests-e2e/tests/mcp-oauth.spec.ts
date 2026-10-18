@@ -233,6 +233,7 @@ test('MCP OAuth 2.1 end-to-end: discovery → register → consent → token →
       'get_app',
       'get_feedback_screenshot',
       'get_logs',
+      'get_screenshot',
       'list_activity',
       'list_apps',
       'list_assets',

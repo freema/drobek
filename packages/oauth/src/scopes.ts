@@ -9,7 +9,8 @@
  *             page its version history (`list_versions`), read skills,
  *             query an app's stored data, read its logs and the feedback
  *             members left on its preview with their screenshots
-             (`list_feedback`, `get_feedback_screenshot`), list its assets and
+             (`list_feedback`, `get_feedback_screenshot`) and the screenshots
+ *             it asked for (`get_screenshot`), list its assets and
  *             its custom domains, its form submissions, end users and uploads,
  *             a workspace's members, and (workspace admins) the workspace's
  *             proxy upstreams and activity log.
@@ -19,6 +20,7 @@
  *             `delete_versions`, the clean-up only after the user's yes),
  *             resolve, reopen or delete a feedback note (`resolve_feedback`,
  *             `delete_feedback`, the deletion only after the user's yes),
+ *             ask the preview for a screenshot (`request_screenshot`),
  *             configure platform modules, upload (upload URLs) and delete assets,
  *             add, verify and remove custom domains, register, stream and
  *             remove proxy upstreams without a secret, set which sites may
@@ -112,6 +114,9 @@ export const TOOL_SCOPES = {
   get_feedback_screenshot: 'read',
   resolve_feedback: 'write',
   delete_feedback: 'write',
+  // A screenshot of the preview: asking for one adds a request the people on the preview answer; reading it is a read.
+  request_screenshot: 'write',
+  get_screenshot: 'read',
   list_assets: 'read',
   list_domains: 'read',
   list_upstreams: 'read',

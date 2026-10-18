@@ -11,7 +11,10 @@
  *   img-src     'self' data: blob: https:
  *   font-src    'self' data: https:
  *   connect-src 'self' https://esm.sh                   — fetch only back to the app itself
- *                                                          (modules live at /__drobek/*)
+ *                                                          (modules live at /__drobek/*); the preview
+                                                         host also the dashboard origin, where the
+                                                         preview script answers an agent's
+                                                         screenshot request
  *   media-src   'self' blob: https:                     — <video>/<audio> from the app's own
  *                                                          assets or any https URL (media runs
  *                                                          no script)
@@ -48,10 +51,12 @@ const CSP_TAIL = ["object-src 'none'", "base-uri 'self'"];
 /**
  * The CSP for an app host with the given (already validated) frame-ancestors
  * value and frame-src list (default: the curated embeds; node.ts adds the
- * operator's APP_FRAME_SRC_EXTRA, see frameSrcFromEnv).
+ * operator's APP_FRAME_SRC_EXTRA, see frameSrcFromEnv), and one more
+ * `connect-src` origin when given (the dashboard origin on the preview host).
  */
-export function appCsp(frameAncestors: string = DEFAULT_FRAME_ANCESTORS, frameSrc: string = DEFAULT_FRAME_SRC): string {
-  return [...CSP_HEAD, `frame-src ${frameSrc}`, ...CSP_TAIL, `frame-ancestors ${frameAncestors}`, "form-action 'self'"].join('; ');
+export function appCsp(frameAncestors: string = DEFAULT_FRAME_ANCESTORS, frameSrc: string = DEFAULT_FRAME_SRC, connectExtra: string | null = null): string {
+  const head = connectExtra ? CSP_HEAD.map((d) => (d.startsWith('connect-src ') ? `${d} ${connectExtra}` : d)) : CSP_HEAD;
+  return [...head, `frame-src ${frameSrc}`, ...CSP_TAIL, `frame-ancestors ${frameAncestors}`, "form-action 'self'"].join('; ');
 }
 
 // One APP_FRAME_SRC_EXTRA entry: an https origin — a host (no wildcard, no
@@ -198,12 +203,14 @@ export interface SecurityHeaderInput {
   frameSrc?: string;
   /** Preview and version hosts are never indexed. */
   noindex: boolean;
+  /** One more `connect-src` origin (a bare http(s) origin, else ignored): the dashboard origin on the preview host. */
+  connectSrcExtra?: string | null;
 }
 
 /** The invariant security headers of EVERY app-host response (incl. 304/401/404/405). */
 export function appSecurityHeaders(input: SecurityHeaderInput): Record<string, string> {
   const h: Record<string, string> = {
-    'Content-Security-Policy': appCsp(input.frameAncestors ?? DEFAULT_FRAME_ANCESTORS, input.frameSrc ?? DEFAULT_FRAME_SRC),
+    'Content-Security-Policy': appCsp(input.frameAncestors ?? DEFAULT_FRAME_ANCESTORS, input.frameSrc ?? DEFAULT_FRAME_SRC, ancestorOrigin(input.connectSrcExtra)),
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'no-referrer',
   };

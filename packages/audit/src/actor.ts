@@ -61,6 +61,12 @@ export const AUDIT_ACTIONS = {
   appFeedbackReopen: 'app.feedback.reopen',
   /** A feedback note was deleted by its author or a workspace admin, or their agent (meta: the note id). */
   appFeedbackDelete: 'app.feedback.delete',
+  /** An agent asked the app's open previews for a screenshot (request_screenshot; meta: the request id and the preview's version, never the note). */
+  appScreenshotRequest: 'app.screenshot.request',
+  /** A person with the preview open captured the screenshot an agent asked for (no actor: the app host carries no dashboard credential; meta: the request id, version, browser family). */
+  appScreenshotCapture: 'app.screenshot.capture',
+  /** A person with the preview open declined an agent's screenshot request (no actor; meta: the request id, version). */
+  appScreenshotDecline: 'app.screenshot.decline',
   appPublish: 'app.publish',
   /** Legacy upload pipeline — kept so historic rows still label. */
   deployActivate: 'deploy.activate',

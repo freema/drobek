@@ -26,7 +26,8 @@
  * The widget is not drawn inside a frame (the dashboard's app thumbnails).
  */
 import { createHash } from 'node:crypto';
-import { PLATFORM_COLORS, PLATFORM_FONT, PLATFORM_SHADOW, type PlatformPalette } from '@drobek/core/platform-theme';
+import { PLATFORM_FONT, PLATFORM_SHADOW } from '@drobek/core/platform-theme';
+import { widgetThemeCss } from './widget-theme.js';
 
 export const FEEDBACK_SCRIPT_PATH = '/__drobek/feedback.js';
 
@@ -75,15 +76,10 @@ export function injectBeforeBodyEnd(html: Buffer, tag: string): Buffer {
   return Buffer.concat([html.subarray(0, at), inject, html.subarray(at)]);
 }
 
-function themeVars(p: PlatformPalette): string {
-  return `--surface:${p.surface};--ink:${p.ink};--muted:${p.muted};--line:${p.line};--accent:${p.accent};--accent-ink:${p.accentInk};--crumb:${p.crumb}`;
-}
-
 /** The shadow root's stylesheet: the platform theme's values, light and dark. */
 function widgetCss(): string {
   return [
-    `:host{${themeVars(PLATFORM_COLORS.light)}}`,
-    `@media (prefers-color-scheme:dark){:host{${themeVars(PLATFORM_COLORS.dark)}}}`,
+    widgetThemeCss(),
     `*{box-sizing:border-box;font:600 13px/1.3 ${PLATFORM_FONT}}`,
     'button{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--accent);border-radius:999px;padding:8px 14px 8px 11px;background:var(--accent);color:var(--accent-ink);cursor:pointer}',
     `.fab{box-shadow:${PLATFORM_SHADOW}}`,

@@ -8,12 +8,19 @@
  *                                                   the newest compiled version (null = none)
  *   { type: 'version', version, compiled, errors }  a new version of the app was stored
  *                                                   (write_files, create_app, a restore, a copy)
+ *   { type: 'screenshot_requested', request_id, token, note, expires_at }
+ *                                                   an agent asked for a screenshot
+ *                                                   (request_screenshot); also right after
+ *                                                   `ready` for the newest request still open
+ *   { type: 'screenshot_done', request_id }         a request was captured or declined
  *   : ping                                          every HEARTBEAT_MS
  *
  * The source is the `drobek:app-changed` feed: the in-process emitter, which
  * the serve-cache subscriber also relays every Redis message into, so a
- * version stored by any drobek process reaches every stream. One lookup of the
- * version's compile result per event serves every stream of the app.
+ * version stored — or a screenshot asked for — by any drobek process reaches
+ * every stream. One lookup of the version's compile result per event serves
+ * every stream of the app. A screenshot request's token goes only to the
+ * preview host's streams (it is what the page answers with).
  *
  * Slots: PREVIEW_EVENTS_MAX_PER_APP streams per app and
  * PREVIEW_EVENTS_MAX_PER_IP per client IP of an app in this process (over
@@ -24,7 +31,7 @@
  */
 import { Readable } from 'node:stream';
 import { and, eq } from 'drizzle-orm';
-import { onLocalAppChanged, type AppChangedEvent } from '@drobek/apps';
+import { onLocalAppChanged, screenshotRequestStore, screenshotRequestedSignal, type AppChangedEvent, type ScreenshotSignal } from '@drobek/apps';
 import { perIpLimitKey } from '@drobek/core';
 import { appVersions, getDb } from '@drobek/db';
 import type { AppRequest, AppResponse } from './handler.js';
@@ -65,7 +72,9 @@ export function previewEventLimitsFromEnv(env: NodeJS.ProcessEnv = process.env):
 /** One message of the stream (the script dispatches on `type`). */
 export type PreviewEvent =
   | { type: 'ready'; version: number | null }
-  | { type: 'version'; version: number; compiled: boolean; errors: number };
+  | { type: 'version'; version: number; compiled: boolean; errors: number }
+  | { type: 'screenshot_requested'; request_id: string; token: string; note: string | null; expires_at: number }
+  | { type: 'screenshot_done'; request_id: string };
 
 /** The compile result of one stored version. */
 export interface VersionCompile {
@@ -78,6 +87,8 @@ export interface PreviewEventsOptions {
   compileOf?: (appId: string, number: number) => Promise<VersionCompile | null>;
   /** Subscribe to the app-changed feed (default: the in-process emitter). */
   listen?: (listener: (event: AppChangedEvent) => void) => () => void;
+  /** The app's newest open screenshot request, sent to a stream when it opens (default: the Redis request store). */
+  pendingScreenshot?: (appId: string) => Promise<ScreenshotSignal | null>;
   limits?: PreviewEventLimits;
   heartbeatMs?: number;
 }
@@ -96,6 +107,20 @@ interface Sub {
 
 function frame(event: PreviewEvent): string {
   return `data: ${JSON.stringify(event)}\n\n`;
+}
+
+function screenshotFrame(s: ScreenshotSignal): string {
+  return frame(
+    s.state === 'requested'
+      ? { type: 'screenshot_requested', request_id: s.request_id, token: s.token, note: s.note, expires_at: s.expires_at }
+      : { type: 'screenshot_done', request_id: s.request_id }
+  );
+}
+
+/** The newest unanswered, unexpired request of the app in the Redis store. */
+async function pendingFromStore(appId: string): Promise<ScreenshotSignal | null> {
+  const [newest] = await screenshotRequestStore().pending(appId, Date.now());
+  return newest ? screenshotRequestedSignal(newest) : null;
 }
 
 /** The compile result of a version, from Postgres. */
@@ -181,6 +206,11 @@ export class PreviewEventsHub {
     this.off ??= (this.opts.listen ?? onLocalAppChanged)((e) => this.onChanged(e));
     this.write(sub, `retry: ${RETRY_MS}\n\n`);
     this.write(sub, frame({ type: 'ready', version: input.current }));
+    void (this.opts.pendingScreenshot ?? pendingFromStore)(appId)
+      .then((s) => {
+        if (s) this.write(sub, screenshotFrame(s));
+      })
+      .catch(() => undefined);
     return { ok: true, stream };
   }
 
@@ -191,6 +221,12 @@ export class PreviewEventsHub {
   }
 
   private onChanged(e: AppChangedEvent): void {
+    if (e.kind === 'screenshot') {
+      if (!e.screenshot) return;
+      const text = screenshotFrame(e.screenshot);
+      for (const sub of [...(this.byApp.get(e.app_id) ?? [])]) this.write(sub, text);
+      return;
+    }
     if (e.kind !== undefined && e.kind !== 'version') return;
     if (typeof e.version !== 'number' || !this.byApp.has(e.app_id)) return;
     const appId = e.app_id;

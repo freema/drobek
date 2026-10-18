@@ -26,7 +26,14 @@ import { createRequestHandler } from '@react-router/express';
 import type { RequestHandler } from 'express';
 import type { ServerBuild } from 'react-router';
 import { docsUrlConfigError, errorHint } from '@drobek/agent-dx';
-import { appsOriginConfigError, assetLimitsOf, createAssetUploadHandler, previewUrl, publishApprovalConfigError } from '@drobek/apps';
+import {
+  appsOriginConfigError,
+  assetLimitsOf,
+  createAssetUploadHandler,
+  createScreenshotUploadHandler,
+  previewUrl,
+  publishApprovalConfigError,
+} from '@drobek/apps';
 import { trustProxyConfigError } from '@drobek/auth';
 import {
   closeGracefully,
@@ -177,7 +184,10 @@ const assetUpload = createAssetUploadHandler({
   log: createConsoleLogger('assets'),
 }) as RequestHandler;
 
-const app = createServerApp({ rrHandler, before, clientDir, appsHost, assetUpload });
+// The preview's answers to request_screenshot (Capture / Not now).
+const screenshotUpload = createScreenshotUploadHandler({ hint: errorHint, log: createConsoleLogger('screenshots') }) as RequestHandler;
+
+const app = createServerApp({ rrHandler, before, clientDir, appsHost, assetUpload, screenshotUpload });
 const jobs = startBackgroundJobs(log, { filesSweep: modules.modules.some((m) => m.name === 'files'), modules });
 
 httpServer.on('request', app);

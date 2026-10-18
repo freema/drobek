@@ -37,7 +37,9 @@ export type AppsErrorCode =
   /** An image (a feedback screenshot) that is not a PNG, JPEG or WebP, does not decode, or has too many pixels. */
   | 'invalid_image'
   /** An image (a feedback screenshot) larger than SCREENSHOT_MAX_BYTES, or one no re-encoding fits into its limit. */
-  | 'too_large';
+  | 'too_large'
+  /** A screenshot request answered with a wrong token. */
+  | 'forbidden';
 
 export interface AppsErrorDetails {
   limit: string;

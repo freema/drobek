@@ -43,6 +43,11 @@ export interface AppConfig {
    * reporting the page's errors (get_logs `browser`). Default true.
    */
   browserErrors: boolean;
+  /**
+   * `"screenshots": false` in drobek.json keeps an agent's screenshot
+   * requests (request_screenshot) off the app's preview. Default true.
+   */
+  screenshots: boolean;
 }
 
 function configError(text: string): CompileMessage {
@@ -57,10 +62,10 @@ export function readAppConfig(
   files: Map<string, string>
 ): { config: AppConfig; errors: CompileMessage[] } {
   const errors: CompileMessage[] = [];
-  const config: AppConfig = { imports: {}, paths: {}, entries: {}, beacon: true, feedback: true, reload: true, browserErrors: true };
+  const config: AppConfig = { imports: {}, paths: {}, entries: {}, beacon: true, feedback: true, reload: true, browserErrors: true, screenshots: true };
 
   const raw = files.get(CONFIG_FILE);
-  let parsed: { imports?: unknown; paths?: unknown; entries?: unknown; beacon?: unknown; feedback?: unknown; reload?: unknown; browserErrors?: unknown } = {};
+  let parsed: { imports?: unknown; paths?: unknown; entries?: unknown; beacon?: unknown; feedback?: unknown; reload?: unknown; browserErrors?: unknown; screenshots?: unknown } = {};
   if (raw !== undefined) {
     try {
       const v = JSON.parse(raw) as unknown;
@@ -121,6 +126,14 @@ export function readAppConfig(
       errors.push(configError('"browserErrors" must be true or false (false stops the preview from reporting its errors to get_logs kind "browser")'));
     } else {
       config.browserErrors = parsed.browserErrors;
+    }
+  }
+
+  if (parsed.screenshots !== undefined) {
+    if (typeof parsed.screenshots !== 'boolean') {
+      errors.push(configError('"screenshots" must be true or false (false keeps an agent\'s screenshot requests off the preview)'));
+    } else {
+      config.screenshots = parsed.screenshots;
     }
   }
 
@@ -220,6 +233,8 @@ export interface PreviewScriptOptions {
   reload: boolean;
   /** The preview and version hosts report the page's errors (`"browserErrors": false` turns it off). */
   browserErrors: boolean;
+  /** The preview host shows an agent's screenshot requests (`"screenshots": false` turns it off). */
+  screenshots: boolean;
 }
 
 /**
@@ -228,13 +243,13 @@ export interface PreviewScriptOptions {
  * defaults.
  */
 export function previewScriptOptions(raw: string | undefined): PreviewScriptOptions {
-  const on: PreviewScriptOptions = { reload: true, browserErrors: true };
+  const on: PreviewScriptOptions = { reload: true, browserErrors: true, screenshots: true };
   if (raw === undefined) return on;
   try {
     const v = JSON.parse(raw) as unknown;
     if (!v || typeof v !== 'object' || Array.isArray(v)) return on;
-    const o = v as { reload?: unknown; browserErrors?: unknown };
-    return { reload: o.reload !== false, browserErrors: o.browserErrors !== false };
+    const o = v as { reload?: unknown; browserErrors?: unknown; screenshots?: unknown };
+    return { reload: o.reload !== false, browserErrors: o.browserErrors !== false, screenshots: o.screenshots !== false };
   } catch {
     return on;
   }

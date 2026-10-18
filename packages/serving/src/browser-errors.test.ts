@@ -261,7 +261,7 @@ describe('POST /__drobek/preview/errors', () => {
       accessSecret: SECRET,
       secureCookies: false,
       allowUnlockAttempt: async () => true,
-      preview: { script: Buffer.from(''), hash: 'h' },
+      preview: { script: Buffer.from(''), hash: 'h', uploadOrigin: null },
       browserErrors: (req, a, v) => takeBrowserErrorBeacon(req, a, v, { store, limits: LIMITS, allowIp: async () => ipAllowed }),
       platform: async () => ({ status: 404, headers: {}, body: 'platform' }),
     };

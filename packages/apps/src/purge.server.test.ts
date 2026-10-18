@@ -155,6 +155,14 @@ const FIXTURES: Record<string, (id: string) => Promise<unknown>> = {
     ),
   app_feedback: (id) =>
     pg.query(`INSERT INTO app_feedback (id, app_id, path, body) VALUES ($1, $2, '/', 'note')`, [`fb_${id.replace(/-/g, '').slice(0, 24).padEnd(24, '0')}`, id]),
+  app_screenshots: async (id) => {
+    const sha = `s${id.replace(/-/g, '')}`.padEnd(64, '0').slice(0, 64);
+    await pg.query(`INSERT INTO blobs (sha256, bytes, size) VALUES ($1, '\\x00'::bytea, 1) ON CONFLICT DO NOTHING`, [sha]);
+    await pg.query(
+      `INSERT INTO app_screenshots (id, app_id, sha256, width, height, bytes, requested_at) VALUES ($1, $2, $3, 1, 1, 1, now())`,
+      [`ss_${id.replace(/-/g, '').slice(0, 24).padEnd(24, '0')}`, id, sha]
+    );
+  },
   app_errors: (id) =>
     pg.query(`INSERT INTO app_errors (id, app_id, type, message, url, dedup_key) VALUES ($1, $2, 'error', 'boom', '/', 'k')`, [`err${id}`, id]),
   app_daily_stats: (id) => pg.query(`INSERT INTO app_daily_stats (app_id, day) VALUES ($1, '2026-09-01')`, [id]),

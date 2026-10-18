@@ -60,6 +60,7 @@ const READ_TOOLS = [
   'get_analytics',
   'list_feedback',
   'get_feedback_screenshot',
+  'get_screenshot',
   'list_assets',
   'list_domains',
   'list_upstreams',
@@ -78,6 +79,7 @@ const WRITE_TOOLS = [
   'delete_versions',
   'resolve_feedback',
   'delete_feedback',
+  'request_screenshot',
   'configure_module',
   'sync_now',
   'create_asset_upload',
@@ -196,7 +198,8 @@ describe('tool → scope table', () => {
     // Reading the preview's feedback is read; resolving or deleting a note changes the app.
     expect(toolAllowed(['read'], 'list_feedback')).toBe(true);
     expect(toolAllowed(['read'], 'get_feedback_screenshot')).toBe(true);
-    for (const t of ['resolve_feedback', 'delete_feedback'] as const) {
+    expect(toolAllowed(['read'], 'get_screenshot')).toBe(true);
+    for (const t of ['resolve_feedback', 'delete_feedback', 'request_screenshot'] as const) {
       expect(toolAllowed(['write'], t), t).toBe(true);
       expect(toolAllowed(['read', 'publish'], t), t).toBe(false);
     }

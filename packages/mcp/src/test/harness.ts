@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { AssetDisk, memoryUploadTokenStore } from '@drobek/apps';
+import { AssetDisk, memoryScreenshotRequestStore, memoryUploadTokenStore } from '@drobek/apps';
 import { Compiler, type CompileLimits } from '@drobek/compile';
 import type { DnsResolver } from '@drobek/domains';
 import { noopLogger } from '@drobek/core';
@@ -159,6 +159,7 @@ export function testDeps(limits: Partial<CompileLimits> = {}): TestDeps {
         invited.sent.push(m);
       },
     },
+    screenshots: memoryScreenshotRequestStore(clock.now),
     invited,
     trafficRedis,
     events,

@@ -9,6 +9,9 @@
  * counts; a page that cannot be read (a stale cursor) shows its error with the
  * filter intact. A note with a screenshot links its image route (`…/feedback/:id/screenshot`,
  * members only; `?size=thumb` for the list's thumbnail). `?confirm=<id>` opens the delete confirmation.
+ * Below the notes, "Screenshots for the agent": the newest screenshots people
+ * sent from the preview when an agent asked (request_screenshot), each linking
+ * its image route (`…/feedback/screenshots/:id`); kept SCREENSHOTS_RETENTION_DAYS.
  *
  * POST: `intent=resolve` (with an optional `note`) and `intent=reopen` need
  * editor+; `intent=delete` the note's author or a workspace admin. Each change
@@ -19,6 +22,8 @@ import {
   AppsError,
   FEEDBACK_RESOLUTION_NOTE_MAX,
   feedbackCounts,
+  listAppScreenshots,
+  screenshotLimits,
   getFeedback,
   isFeedbackId,
   listFeedback,
@@ -37,6 +42,8 @@ import { anchorText, feedbackSpot, noteOpenUrl } from '../feedback-view.js';
 import { ownerApp } from '../owner-http.server.js';
 
 export const FEEDBACK_TAB_PAGE = 25;
+/** The newest agent screenshots the Feedback tab shows. */
+const AGENT_SCREENSHOTS_SHOWN = 12;
 
 function filterSearch(status: string, extra: Record<string, string> = {}): string {
   const sp = new URLSearchParams();
@@ -67,6 +74,20 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     noteMax: FEEDBACK_RESOLUTION_NOTE_MAX,
     confirmId: isFeedbackId(confirm) ? confirm : '',
     paged: before !== null,
+    screenshots: (await listAppScreenshots(app.id, { limit: AGENT_SCREENSHOTS_SHOWN })).map((s) => ({
+      id: s.id,
+      url: `/workspaces/${access.workspace.slug}/apps/${app.slug}/feedback/screenshots/${s.id}`,
+      note: s.note,
+      requestedBy: s.requestedByEmail,
+      version: s.versionNumber,
+      path: s.path,
+      browser: s.browser,
+      width: s.width,
+      height: s.height,
+      bytes: s.bytes,
+      capturedAt: s.capturedAt.toISOString(),
+    })),
+    screenshotRetentionDays: screenshotLimits().retentionDays,
   };
   try {
     const page = await listFeedback(app.id, { status, before, limit: FEEDBACK_TAB_PAGE });

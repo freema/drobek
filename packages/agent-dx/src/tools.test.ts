@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { TOOL_DOCS, TOOL_NAMES, toolDoc } from './tools.js';
 
 describe('TOOL_DOCS manifest', () => {
-  it('documents exactly the 65 tools, in tools/list order', () => {
+  it('documents exactly the 67 tools, in tools/list order', () => {
     expect(TOOL_NAMES).toEqual([
       'list_apps',
       'create_app',
@@ -35,6 +35,8 @@ describe('TOOL_DOCS manifest', () => {
       'get_feedback_screenshot',
       'resolve_feedback',
       'delete_feedback',
+      'request_screenshot',
+      'get_screenshot',
       'sync_now',
       'create_asset_upload',
       'list_assets',
@@ -127,6 +129,8 @@ describe('TOOL_DOCS manifest', () => {
       get_feedback_screenshot: [true, false, true, false],
       resolve_feedback: [false, false, true, false], // the same status again answers changed:false
       delete_feedback: [false, true, true, false], // the note is gone for good; a second delete answers not_found
+      request_screenshot: [false, false, false, false], // a new request on every call
+      get_screenshot: [true, false, true, false],
       sync_now: [false, true, false, true], // replace mode swaps the collection's records; calls the app's external API
       create_asset_upload: [false, false, false, false], // a new single-use URL on every call; the PUT stores
       list_assets: [true, false, true, false],

@@ -122,6 +122,7 @@ test('CIMD: a metadata-document client → consent → token → tools/list filt
       'get_app',
       'get_feedback_screenshot',
       'get_logs',
+      'get_screenshot',
       'list_activity',
       'list_apps',
       'list_assets',

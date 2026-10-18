@@ -94,6 +94,15 @@ const SUMMARIES: Record<string, Summarize> = {
   'app.feedback.resolve': () => 'Resolved a feedback note',
   'app.feedback.reopen': () => 'Reopened a feedback note',
   'app.feedback.delete': () => 'Deleted a feedback note',
+  'app.screenshot.request': (m) => {
+    const v = num(m, 'version');
+    return `Asked the preview${v !== null ? ` of version ${v}` : ''} for a screenshot`;
+  },
+  'app.screenshot.capture': (m) => {
+    const v = num(m, 'version');
+    return `Sent a screenshot of the preview${v !== null ? ` of version ${v}` : ''} to the agent that asked for it`;
+  },
+  'app.screenshot.decline': () => 'Declined to send a screenshot of the preview (Not now)',
   'app.publish': (m) => {
     const v = num(m, 'version');
     const prev = num(m, 'previousVersion');
@@ -294,6 +303,8 @@ const VERSION_KEY: Record<string, string> = {
   'app.version.keep': 'version',
   'app.version.unkeep': 'version',
   'app.feedback.create': 'version',
+  'app.screenshot.request': 'version',
+  'app.screenshot.capture': 'version',
   'app.publish': 'version',
   'app.unpublish': 'previousVersion',
 };

@@ -48,6 +48,8 @@ vi.mock('../app-page.server.js', () => ({ appHeaderFor: async () => ({}) }));
 const popup = await import('./feedback.new.server.js');
 const tab = await import('./workspaces.$slug.apps.$appSlug.feedback.server.js');
 const image = await import('./workspaces.$slug.apps.$appSlug.feedback.$id.screenshot.server.js');
+const agentImage = await import('./workspaces.$slug.apps.$appSlug.feedback.screenshots.$id.server.js');
+const { captureScreenshot, memoryScreenshotRequestStore, requestScreenshot } = await import('@drobek/apps');
 
 let pg: PGlite;
 const db = () => drizzle(pg, { schema });
@@ -218,5 +220,50 @@ describe('the screenshot on the Feedback tab', () => {
     } as never);
     expect(status(del)).toBe(302);
     expect((await getImage(noteId)).status).toBe(404);
+  });
+});
+
+describe('screenshots for the agent on the Feedback tab', () => {
+  const getShot = (id: string, query = '', headers: Record<string, string> = {}) =>
+    agentImage.loader({ request: new Request(`${TAB}/screenshots/${id}${query}`, { headers }), params: { ...params, id }, context: {} } as never);
+  let shotId = '';
+
+  it('the tab shows none at first, then the captured one with its note, page and route', async () => {
+    expect((await loadTab()).screenshots).toEqual([]);
+    const store = memoryScreenshotRequestStore();
+    const [app] = await db().select().from(apps).where(eq(apps.slug, 'shop'));
+    const quiet = { store, notify: async () => {} };
+    const req = await requestScreenshot({ app, version: null, note: 'The <b>menu</b>', actor: { userId: vera.id, kind: 'agent' } }, quiet);
+    await captureScreenshot({ id: req.id, token: req.token, image: png(1800, 900), path: '/menu', browser: 'safari' }, quiet);
+    shotId = req.id;
+    const d = await loadTab();
+    expect(d.screenshots).toEqual([
+      expect.objectContaining({
+        id: shotId,
+        url: `/workspaces/acme/apps/shop/feedback/screenshots/${shotId}`,
+        note: 'The <b>menu</b>',
+        path: '/menu',
+        browser: 'safari',
+        requestedBy: 'vera@example.com',
+        width: 1600,
+        height: 800,
+      }),
+    ]);
+    expect(d.screenshotRetentionDays).toBe(7);
+  });
+
+  it('serves the WebP to members with nosniff and a sandbox CSP; a thumbnail; 304 by id; 404 otherwise', async () => {
+    const res = await getShot(shotId);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toBe('image/webp');
+    expect(res.headers.get('X-Content-Type-Options')).toBe('nosniff');
+    expect(res.headers.get('Content-Security-Policy')).toBe("default-src 'none'; sandbox");
+    expect(Buffer.from(await res.arrayBuffer()).subarray(8, 12).toString('latin1')).toBe('WEBP');
+    expect((await getShot(shotId, '', { 'If-None-Match': res.headers.get('ETag')! })).status).toBe(304);
+    expect((await getShot(shotId, '?size=thumb')).status).toBe(200);
+    expect((await getShot('ss_000000000000000000000000')).status).toBe(404);
+    expect((await getShot('nope')).status).toBe(404);
+    s.member = false;
+    expect(status(await thrown(getShot(shotId)))).toBe(404);
   });
 });

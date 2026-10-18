@@ -127,6 +127,17 @@ export async function lastOkVersionNumber(appId: string): Promise<number | null>
   return row?.number ?? null;
 }
 
+/** The newest version that compiled ok with its id, or null. */
+export async function previewVersionHead(appId: string): Promise<{ id: string; number: number } | null> {
+  const [row] = await getDb()
+    .select({ id: appVersions.id, number: appVersions.number })
+    .from(appVersions)
+    .where(and(eq(appVersions.appId, appId), eq(appVersions.compileStatus, 'ok')))
+    .orderBy(desc(appVersions.number))
+    .limit(1);
+  return row ?? null;
+}
+
 export async function emailsByUserIds(userIds: string[]): Promise<Map<string, string>> {
   const out = new Map<string, string>();
   const ids = [...new Set(userIds)];

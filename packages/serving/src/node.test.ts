@@ -109,7 +109,7 @@ describe('host dispatch', () => {
     expect(r.status).toBe(200);
     // The preview carries the preview script and the feedback widget, which opens the dashboard origin.
     expect(r.body).toBe(
-      `${HTML}<script src="/__drobek/preview.js" defer data-app="shop" data-version="1" data-reload data-errors></script><script src="/__drobek/feedback.js" defer data-app="shop" data-version="1"></script>`
+      `${HTML}<script src="/__drobek/preview.js" defer data-app="shop" data-version="1" data-reload data-errors data-screenshots></script><script src="/__drobek/feedback.js" defer data-app="shop" data-version="1"></script>`
     );
     const widget = await get('shop--preview.apps.localhost:3041', '/__drobek/feedback.js');
     expect(widget.body).toContain('"http://localhost:3041"');
