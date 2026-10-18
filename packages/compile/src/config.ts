@@ -10,6 +10,12 @@ export interface AppConfig {
   /** Bare specifier → `https://` module URL (esm.sh etc.). */
   imports: Record<string, string>;
   /**
+   * Import aliases onto app files, tsconfig `compilerOptions.paths` style:
+   * `"@/*": ["src/*"]` lets `@/lib/utils` resolve to `src/lib/utils.ts`.
+   * Targets are app-relative paths (a leading `./` is dropped), tried in order.
+   */
+  paths: Record<string, string[]>;
+  /**
    * Resolved entry points: output name (without extension) → app source path.
    * `drobek.json` itself lists `entries` as an ARRAY of paths; the output name
    * is the basename.
@@ -40,10 +46,10 @@ export function readAppConfig(
   files: Map<string, string>
 ): { config: AppConfig; errors: CompileMessage[] } {
   const errors: CompileMessage[] = [];
-  const config: AppConfig = { imports: {}, entries: {}, beacon: true, feedback: true };
+  const config: AppConfig = { imports: {}, paths: {}, entries: {}, beacon: true, feedback: true };
 
   const raw = files.get(CONFIG_FILE);
-  let parsed: { imports?: unknown; entries?: unknown; beacon?: unknown; feedback?: unknown } = {};
+  let parsed: { imports?: unknown; paths?: unknown; entries?: unknown; beacon?: unknown; feedback?: unknown } = {};
   if (raw !== undefined) {
     try {
       const v = JSON.parse(raw) as unknown;
@@ -72,6 +78,8 @@ export function readAppConfig(
       }
     }
   }
+
+  if (parsed.paths !== undefined) readPaths(parsed.paths, config, errors);
 
   if (parsed.beacon !== undefined) {
     if (typeof parsed.beacon !== 'boolean') {
@@ -117,6 +125,51 @@ export function readAppConfig(
   }
 
   return { config, errors };
+}
+
+const PATHS_EXAMPLE = '{ "@/*": ["src/*"] }';
+
+function readPaths(raw: unknown, config: AppConfig, errors: CompileMessage[]): void {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    errors.push(configError(`"paths" must be an object of aliases onto app files, e.g. ${PATHS_EXAMPLE}`));
+    return;
+  }
+  for (const [alias, value] of Object.entries(raw as Record<string, unknown>)) {
+    const stars = alias.split('*').length - 1;
+    if (alias === '' || alias === '*' || stars > 1 || (stars === 1 && !alias.endsWith('*')) || /^[./]/.test(alias) || /^https?:/i.test(alias) || alias === SDK_SPECIFIER || alias.startsWith(`${SDK_SPECIFIER}/`)) {
+      errors.push(configError(`paths: "${alias}" is not an alias — use a prefix like "@/*" or an exact name like "~config" (not "drobek", not a relative path or URL)`));
+      continue;
+    }
+    const targets = Array.isArray(value) ? value : [value];
+    const out: string[] = [];
+    for (const target of targets) {
+      const shapeOk = typeof target === 'string' && target.split('*').length - 1 === stars && (stars === 0 || target.endsWith('*'));
+      const norm = shapeOk ? normalizeAppPath(stars ? `${target.slice(0, -1)}x` : target) : null;
+      if (!norm) {
+        errors.push(configError(`paths["${alias}"]: ${JSON.stringify(target)} is not an app path${stars ? ' ending in *' : ''}, e.g. ${PATHS_EXAMPLE}`));
+        continue;
+      }
+      out.push(stars ? `${norm.slice(0, -1)}*` : norm);
+    }
+    if (out.length > 0) config.paths[alias] = out;
+  }
+}
+
+/**
+ * The app paths an aliased specifier may stand for, in order — `null` when
+ * no `paths` alias matches it. The longest matching prefix wins.
+ */
+export function aliasTargets(specifier: string, paths: Record<string, string[]>): string[] | null {
+  if (!specifier.endsWith('*') && Object.prototype.hasOwnProperty.call(paths, specifier)) return paths[specifier];
+  let best: string | null = null;
+  for (const alias of Object.keys(paths)) {
+    if (!alias.endsWith('*')) continue;
+    const prefix = alias.slice(0, -1);
+    if (specifier.length > prefix.length && specifier.startsWith(prefix) && (best === null || prefix.length > best.length)) best = prefix;
+  }
+  if (best === null) return null;
+  const rest = specifier.slice(best.length);
+  return paths[`${best}*`].map((t) => `${t.slice(0, -1)}${rest}`);
 }
 
 /**

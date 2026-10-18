@@ -5,7 +5,8 @@ costs model tokens and needs the local stack.
 
 Three clean Claude Code sessions each build one reference app. Each session sees nothing but
 the drobek MCP server: no files, no shell, no project settings, no other MCP servers. A fourth
-session ports a Claude artifact: it also gets the artifact folder, file reads and `curl`.
+session ports a Claude artifact and a fifth a Lovable export: each also gets its folder, file
+reads and `curl`.
 Then the harness checks the result like a user would, in a real browser and against Mailpit.
 
 | id | app | what the agent is asked | what the harness checks |
@@ -14,6 +15,7 @@ Then the harness checks the result like a user would, in a real browser and agai
 | b | team-list-admin | a shared list: two people may sign in, only admins add/remove | an anonymous visitor sees `<LoginGate>`; the owner signs in as `admin` and the member as `user`; the collection is 401 to anonymous visitors and 200 to the member; the member's POST is 403; the admin passes the create rule |
 | c | proxy-call | show what `GET /echo/hello` on the workspace upstream `echo` returns | the member signs in; `/__drobek/v1/proxy/echo/echo/hello` → 200 and the upstream receives the injected bearer secret; in a browser the page calls the proxy (200) and shows the response |
 | d | port-artifact | move the Claude artifact in `./artifact` (a copy of `fixtures/artifact/`: `index.html` with relative paths, `style.css`, `chapters.js`, a 2 s H.264 `film.mp4`, `poster.jpg`, `s1.jpg`, `s2.jpg`) to drobek as it is | every text file written unchanged and `index.html` keeps every relative path; no binary went through `write_files` (no media path, no base64 blob) and the agent asked for upload URLs; `list_assets` holds every binary at its own path with its exact size; `film.mp4` with Range → 206, `s1.jpg` → 200 `image/jpeg`, `chapters.js` → 200; in a browser the chapter buttons render and the video loads its metadata (when the browser build plays H.264) |
+| e | port-app | port the Lovable app in `./lovable-export` (a copy of `fixtures/lovable-export/`: a guestbook on Vite, React, Tailwind, shadcn/ui and a Supabase table) without rewriting it | no Supabase client, `import.meta.env`, foreign `<script>` or second React left, `@/` resolvable (`portAppIssues`); the shadcn/ui components, `src/lib/utils.ts` and `NotFound.tsx` written at their paths and unchanged; Tailwind's browser build from esm.sh in `index.html`; no binary through `write_files` and `/logo.png` an asset with its exact size; a data collection replaces the table; in a browser the theme colors match the export, a visitor signs the guestbook and sees the entry, a deep link renders the 404 route, no CSP violation and no page error |
 
 Every app is also checked for these:
 
@@ -59,9 +61,10 @@ never touches Linear.
 ```sh
 task eval -- --self-check        # the parsers on fixtures/ (no network, no Claude): exit 0
 task eval -- --dry-run           # prerequisites + the exact claude command lines; creates nothing
-task eval                        # all four sessions (a,b,c,d); ~15–40 min, a few dollars
+task eval                        # all five sessions (a,b,c,d,e); ~20–50 min, a few dollars
 task eval -- --only b            # one app
 task eval -- --only d --mode plugin   # the artifact port by a fresh agent with only the plugin
+task eval -- --only e            # port the Lovable export (fixtures/lovable-export)
 task eval -- --mode plugin       # through the drobek plugin instead of a bare MCP config
 ```
 
@@ -81,8 +84,8 @@ A full run does these steps:
 4. **For each app it runs one session:** `claude -p "<prompt>" --output-format stream-json
    --verbose --no-session-persistence --setting-sources project --tools "" --allowedTools
    mcp__drobek --strict-mcp-config --mcp-config <tmp>/mcp.json --disable-slash-commands
-   --max-budget-usd 5`. It runs in an empty temp directory. Session d gets `artifact/` copied
-   into it, `--tools Read,Glob,Bash`, and `--allowedTools` adds `Read Glob Bash(curl:*)
+   --max-budget-usd 5`. It runs in an empty temp directory. Session d gets `artifact/` and
+   session e `lovable-export/` copied into it, `--tools Read,Glob,Bash`, and `--allowedTools` adds `Read Glob Bash(curl:*)
    Bash(ls:*) Bash(stat:*) Bash(wc:*)`, so it can read the files and upload the binaries.
 5. **It checks the app.** It confirms the app's pending module changes as the owner, through
    `POST /api/apps/:id/modules/:m/confirm`, just as the owner would with the agent's
@@ -126,5 +129,11 @@ The exit code is 0 only when every app passes.
 - `fixtures/` holds a synthetic stream-json transcript and a generated `sdk.d.ts` for
   `--self-check`, and `artifact/`, the Claude artifact of session d (also used by
   `tests-e2e/tests/port-artifact.spec.ts`; `--self-check` keeps it valid and tiny).
+- `fixtures/lovable-export/` is the Lovable-shaped project of session e (Vite + React 18 +
+  TypeScript + Tailwind v3 + shadcn/ui with the `@/` alias, react-router-dom, a Supabase
+  guestbook table, `.env`, `public/`); `fixtures/lovable-ported/` is that project ported by the
+  `port-app` skill — the files `tests-e2e/tests/port-app.spec.ts` writes over MCP and that
+  `@drobek/skills-check` compiles with drobek's compiler. `--self-check` keeps the port checks
+  (`portAppIssues` in `lib.mjs`) failing on the export and passing on the port.
 - `results/` holds the run outputs: `.md` / `.json` for the task comment, and the git-ignored
   `.jsonl` transcripts.

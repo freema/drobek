@@ -190,7 +190,7 @@ export class Compiler {
 
   private async build(
     files: Map<string, string | Buffer>,
-    config: { imports: Record<string, string>; entries: Record<string, string>; beacon?: boolean },
+    config: { imports: Record<string, string>; paths: Record<string, string[]>; entries: Record<string, string>; beacon?: boolean },
     opts: CompileOptions,
     hooks: CompileHooks,
     started: number
@@ -199,6 +199,7 @@ export class Compiler {
     const state: VirtualFsState = {
       files,
       imports: config.imports,
+      paths: config.paths,
       sdkUrl: opts.sdkUrl ?? SDK_URL,
       sdkSources: opts.sdkSources ?? {},
       maxImportDepth: this.limits.maxImportDepth,

@@ -1216,6 +1216,9 @@ importers:
       '@drobek/agent-dx':
         specifier: workspace:*
         version: link:../agent-dx
+      '@drobek/compile':
+        specifier: workspace:*
+        version: link:../compile
       '@drobek/core':
         specifier: workspace:*
         version: link:../core

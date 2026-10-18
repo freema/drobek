@@ -104,8 +104,9 @@ Before using a backend (login, stored data, forms, email, file uploads, external
   `proxy`, `sync`, `oidc`, `webhooks`, …) the list has general skills: `start` (files, drobek.json, the
   write → preview → publish loop), `debug` (compile errors, `get_logs`,
   401/403 from a module), `ui` (Tailwind from esm.sh, responsive and
-  accessible screens, loading and error states) and `port-artifact` (moving
-  a Claude artifact to drobek).
+  accessible screens, loading and error states), `port-artifact` (moving
+  a Claude artifact to drobek) and `port-app` (moving a Lovable, Bolt, v0 or
+  Vite + React project to drobek).
 - Sign-in (`auth`) is the e-mail code plus any sign-in provider the server
   runs (company SSO): `drobek.auth.providers()` lists the methods that are
   on, `<LoginGate>` offers them. Enabling a provider waits for the owner's
@@ -394,6 +395,21 @@ becomes `localStorage` or the data module, `window.claude.complete` is dropped
 or goes through the proxy module. An artifact rarely has a description, a
 favicon or link-preview tags: add them as in "Browser tab, search results and
 shared links".
+
+## Port an app from Lovable, Bolt or v0
+
+A project exported from Lovable, Bolt, v0 or any Vite + React app (a repo, a
+zip, a folder) moves to drobek without a rewrite; `skill_info('port-app')` is
+the full procedure. In short: inventory `package.json`, the routes, the env
+and every backend call → show the user the plan and ask → `create_app`
+(`react-ts`) → `write_files` in parts with paths unchanged: `drobek.json`
+(`imports` pinned on esm.sh with `?deps=react@<version>` for every React
+package, `"paths": { "@/*": ["src/*"] }` for the shadcn/ui alias), an
+`index.html` that loads `/main.js` and Tailwind's browser build, then the
+pages → `public/` binaries with `create_asset_upload` → Supabase Auth,
+tables, Storage and Edge Functions become the `auth`, `data`, `files` and
+`proxy` modules → `publish` only when the user asks. Next.js, Remix or
+SvelteKit server code does not port: say so at once.
 
 ## One writer at a time
 

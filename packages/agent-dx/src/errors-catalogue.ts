@@ -312,7 +312,7 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
   {
     code: 'invalid_config',
     surface: 'compile.errors[]',
-    meaning: 'drobek.json is not valid JSON or has a wrong shape (`imports` must map names to https URLs, `entries` must list existing source files).',
+    meaning: 'drobek.json is not valid JSON or has a wrong shape (`imports` must map names to https URLs, `paths` must map aliases like "@/*" to app paths like "src/*", `entries` must list existing source files).',
     fix: 'Rewrite drobek.json as { "imports": { "<pkg>": "https://…" }, "entries": ["src/other.tsx"] }.',
   },
   {

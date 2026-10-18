@@ -6,7 +6,7 @@ import { BUILTIN_MODULES, EXPECTED_SKILLS, skillSources, skillsRuntime } from '.
 
 /**
  * The content `skill_info` serves. Written for the AGENT only, one
- * format for all 13 skills (docs/MODULES.md "Skills"):
+ * format for all 14 skills (docs/MODULES.md "Skills"):
  *
  *   ## 1. When to use / ## 2. Minimal working code / ## 3. API and types /
  *   ## 4. Rules and limits / ## 5. Errors → fix — at most 150 lines.
@@ -20,7 +20,7 @@ const CORE_CODES = ERROR_CATALOGUE.map((e) => e.code);
 const sources = await skillSources();
 
 describe('skill_info() with every built-in module', () => {
-  it('lists exactly the 13 skills — modules first, then the general skills', async () => {
+  it('lists exactly the 14 skills — modules first, then the general skills', async () => {
     const rt = await skillsRuntime();
     expect(rt.skillList().map((s) => s.name)).toEqual([...EXPECTED_SKILLS]);
   });
@@ -103,6 +103,36 @@ describe('skill ui', () => {
     const html = codeBlocks(ui.content).find((b) => b.lang === 'html')!;
     expect(html.code).toContain(`<script type="module" src="${TAILWIND_BROWSER_URL}"></script>`);
     expect(renderBriefing()).toContain(TAILWIND_BROWSER_URL);
+  });
+});
+
+describe('skill port-app', () => {
+  const port = sources.find((s) => s.name === 'port-app')!;
+
+  it('maps every Supabase-era backend to the module skill that replaces it', () => {
+    for (const m of ['auth', 'data', 'sync', 'files', 'proxy', 'email', 'forms', 'webhooks', 'ui', 'port-artifact']) {
+      expect(port.content, m).toContain(`skill_info('${m}')`);
+    }
+    expect(port.content).toContain('`create_records` (≤ 500 a call)');
+  });
+
+  it('keeps the @/ alias through drobek.json paths and pins one React with ?deps', () => {
+    const map = JSON.parse(codeBlocks(port.content).find((b) => b.meta === 'drobek.json')!.code) as { imports: Record<string, string>; paths: unknown };
+    expect(map.paths).toEqual({ '@/*': ['src/*'] });
+    const react = /react@([\d.]+)$/.exec(map.imports.react)![1];
+    for (const [name, url] of Object.entries(map.imports)) {
+      if (/react-dom|react-router|radix|lucide/.test(name)) expect(url, name).toContain(`?deps=react@${react}`);
+    }
+    expect(port.content).toContain('Not `?external=react`');
+  });
+
+  it('loads the Tailwind browser build the briefing names, and states what is never ported and when to publish', () => {
+    const html = codeBlocks(port.content).find((b) => b.lang === 'html')!;
+    expect(html.code).toContain(`<script type="module" src="${TAILWIND_BROWSER_URL}"></script>`);
+    expect(html.code).toContain('<style type="text/tailwindcss">');
+    for (const never of ['`vite.config.*`', '`.env*`', '`node_modules`', 'server code', '`cdn.gpteng.co`']) expect(port.content, never).toContain(never);
+    expect(port.content).toContain('ONLY when the user explicitly asks');
+    expect(port.content).toContain('Next.js');
   });
 });
 

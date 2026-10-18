@@ -14,6 +14,8 @@
  *    does not exist (unknown module / member / inline import / route);
  *  - relativeRefs / binaryWrites: the artifact-port checks — the
  *    page keeps its relative paths, no binary travels through write_files;
+ *  - portAppIssues: the app-port checks — what a ported Vite + React
+ *    export must not keep (the port-app skill);
  *  - renderResults: the Markdown results table.
  */
 
@@ -326,6 +328,50 @@ export function binaryWrites(writes) {
   for (const w of writes) {
     const ext = w.path.slice(w.path.lastIndexOf('.')).toLowerCase();
     if (!TEXT_FILE_EXTS.includes(ext) || /;base64,[A-Za-z0-9+/=]{1024,}/.test(w.content)) out.push(w.path);
+  }
+  return out;
+}
+
+/** Import-map names of packages that import React themselves (one React needs `?deps=react@<v>`). */
+const REACT_PACKAGE = /^(?:react-dom|react-router|react-router-dom|@radix-ui\/|@tanstack\/react-|lucide-react|sonner|next-themes|react-hook-form|@hookform\/|recharts|cmdk|vaul|embla-carousel-react|react-day-picker|input-otp|react-resizable-panels)/;
+
+/**
+ * What a ported Vite + React export (Lovable, Bolt, v0 — the `port-app`
+ * skill) must not keep, read from the app's final files: a Supabase client or
+ * `import.meta.env` in the code, an index.html that does not load the build
+ * or loads a script from outside esm.sh, `@/` imports without
+ * `drobek.json` `paths`, and a React package without `?deps=` on the app's
+ * React (a second React on the page).
+ * @param {Iterable<[string, string]>} files
+ * @returns {string[]}
+ */
+export function portAppIssues(files) {
+  const map = new Map(files);
+  /** @type {string[]} */
+  const out = [];
+  const code = [...map].filter(([p]) => /\.(?:tsx?|jsx?|mjs)$/.test(p));
+  for (const [p, c] of code) {
+    if (/@supabase\/supabase-js|\bsupabase\s*\.\s*(?:from|auth|storage|functions|channel)\b/.test(c)) out.push(`${p}: a Supabase client`);
+    if (/import\.meta\.env\b/.test(c)) out.push(`${p}: import.meta.env`);
+  }
+  const html = map.get('index.html') ?? '';
+  if (!/<script\b[^>]*\bsrc=["']\/main\.js["']/.test(html)) out.push('index.html: does not load /main.js');
+  for (const m of html.matchAll(/<script\b[^>]*\bsrc=["'](https?:[^"']+)["']/g)) {
+    if (!m[1].startsWith('https://esm.sh/')) out.push(`index.html: a script from ${m[1]}`);
+  }
+  /** @type {{ imports?: Record<string, string>, paths?: Record<string, string[]> }} */
+  let config = {};
+  try {
+    config = JSON.parse(map.get('drobek.json') ?? '{}');
+  } catch {
+    out.push('drobek.json: not JSON');
+  }
+  const aliased = code.some(([, c]) => /(?:from|import)\s*\(?\s*["']@\//.test(c));
+  if (aliased && !config.paths?.['@/*']) out.push('drobek.json: @/ imports without "paths"');
+  const imports = config.imports ?? {};
+  const react = /react@([\d.]+)/.exec(imports.react ?? '')?.[1];
+  for (const [name, url] of Object.entries(imports)) {
+    if (REACT_PACKAGE.test(name) && !(react && String(url).includes(`deps=react@${react}`))) out.push(`drobek.json: ${name} without ?deps=react@${react ?? '<version>'}`);
   }
   return out;
 }

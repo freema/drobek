@@ -298,7 +298,8 @@ cache. The compile result is part of the tool response.
   imports only inside that map — **never the disk**. Bare imports resolve
   only through the app's `drobek.json` import map to pinned `https://` URLs
   (esm.sh), marked external: the browser loads them, the server never fetches
-  them. `drobek` maps to the platform SDK (`/__drobek/sdk.js`);
+  them. `drobek.json` `paths` aliases (`"@/*": ["src/*"]`) resolve to app
+  files of the same map. `drobek` maps to the platform SDK (`/__drobek/sdk.js`);
   `drobek/<module>` imports inline module components (compiled with the
   app's own React).
 - `src/main.{tsx,ts,jsx,js}` → `/main.js`, the CSS it imports → `/main.css`,

@@ -57,6 +57,55 @@ describe('typecheckApp', () => {
     expect(out.findings.map((f) => [f.line, f.message.slice(0, 7)])).toEqual([[3, 'TS2551:']]);
   });
 
+  it('resolves drobek.json "paths" aliases, so an aliased import is typed (and a wrong use is reported)', async () => {
+    const files = new Map([
+      ['drobek.json', JSON.stringify({ paths: { '@/*': ['src/*'] } })],
+      ['src/main.ts', "import { cn } from '@/lib/utils';\nconst n: number = cn('a');\nconsole.log(n);\n"],
+      ['src/lib/utils.ts', "export const cn = (...c: string[]): string => c.join(' ');\n"],
+    ]);
+    const out = await typecheckApp(files, SDK, 50);
+    expect(out.findings.map((f) => [f.file, f.line, f.message.slice(0, 7)])).toEqual([['src/main.ts', 2, 'TS2322:']]);
+    const fixed = new Map(files).set('src/main.ts', "import { cn } from '@/lib/utils';\nconsole.log(cn('a').length);\n");
+    expect(await typecheckApp(fixed, SDK, 50)).toEqual({ findings: [], total: 0 });
+  });
+
+  it('an untyped import-map package takes named imports, type uses and namespace members (shadcn/ui code checks clean)', async () => {
+    const files = new Map([
+      [
+        'src/button.tsx',
+        [
+          "import * as React from 'react';",
+          "import * as LabelPrimitive from '@radix-ui/react-label';",
+          "import { cva, type VariantProps } from 'class-variance-authority';",
+          "import { clsx, type ClassValue } from 'clsx';",
+          "import { z } from 'zod';",
+          "import { Toaster as Sonner, toast } from 'sonner';",
+          "export { format } from 'date-fns';",
+          "const variants = cva('btn', { variants: { size: { sm: 'h-9' } } });",
+          'export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement>, VariantProps<typeof variants> { asChild?: boolean }',
+          'export const cn = (...c: ClassValue[]) => clsx(c);',
+          'export const Button = ({ size, asChild, ...props }: ButtonProps) => <button className={cn(variants({ size }), asChild && "x")} {...props} />;',
+          'export const Label = React.forwardRef<React.ElementRef<typeof LabelPrimitive.Root>, React.ComponentPropsWithoutRef<typeof LabelPrimitive.Root>>((p, ref) => <LabelPrimitive.Root ref={ref} {...p} />);',
+          "const entry = z.object({ name: z.string() });",
+          'export type Entry = z.infer<typeof entry>;',
+          'type ToasterProps = React.ComponentProps<typeof Sonner>;',
+          'export const T = (p: ToasterProps) => <Sonner {...p} />;',
+          "toast.success('hi');",
+          'export const wrong: number = "nope";',
+          '',
+        ].join('\n'),
+      ],
+    ]);
+    const out = await typecheckApp(files, SDK, 50);
+    expect(out.findings.map((f) => [f.line, f.message.slice(0, 7)])).toEqual([[18, 'TS2322:']]);
+  });
+
+  it('an untyped package imported under a name that cannot be declared is left opaque, not a broken shim', async () => {
+    const files = new Map([['src/main.ts', "import { 'odd-name' as odd, delete as del } from 'weird';\nconsole.log(odd, del);\nexport const n: number = 1;\n"]]);
+    const out = await typecheckApp(files, SDK, 50);
+    expect(out).toEqual({ findings: [], total: 0 });
+  });
+
   it('treats an import-map package without types as untyped, and asset imports as modules', async () => {
     const files = new Map([
       [

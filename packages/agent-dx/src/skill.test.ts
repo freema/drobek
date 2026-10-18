@@ -27,6 +27,7 @@ const REQUIRED_SECTIONS = [
   '## Create an app',
   '## Write files, read the compile result',
   '## Port a Claude artifact',
+  '## Port an app from Lovable, Bolt or v0',
   '## One writer at a time',
   '## Roll back',
   '## Publishing',
@@ -89,6 +90,16 @@ describe('skills/drobek/SKILL.md', () => {
     expect(port).toContain('SAME relative path');
     expect(port).toContain('never base64 through a tool call');
     expect(port).toContain('`window.claude.*`');
+  });
+
+  it('ports a Lovable, Bolt or v0 export through the port-app skill: paths alias, esm.sh with one React, modules for Supabase', () => {
+    const port = md.slice(md.indexOf('## Port an app from Lovable, Bolt or v0'), md.indexOf('## One writer at a time'));
+    expect(port).toContain("skill_info('port-app')");
+    expect(port).toContain('`"paths": { "@/*": ["src/*"] }`');
+    expect(port).toContain('`?deps=react@<version>`');
+    for (const tool of ['create_app', 'write_files', 'create_asset_upload', 'publish']) expect(port, tool).toContain(`\`${tool}\``);
+    for (const m of ['`auth`', '`data`', '`files`', '`proxy`']) expect(port, m).toContain(m);
+    expect(port).toContain('server code does not port');
   });
 
   it('has the agent write the description, favicon and link previews itself, with the readiness codes that flag them', () => {
