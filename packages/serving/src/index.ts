@@ -69,6 +69,37 @@ export {
 } from './password.js';
 export { ByteLru, CountLru, DEFAULT_BLOB_CACHE_BYTES, ExpiringLru } from './lru.js';
 export { FEEDBACK_SCRIPT_PATH, feedbackWidget, type FeedbackWidget } from './feedback-widget.js';
+export { PREVIEW_ERRORS_PATH, PREVIEW_EVENTS_PATH, PREVIEW_SCRIPT_PATH, previewScript, type PreviewScript } from './preview-script.js';
+export {
+  DEFAULT_BROWSER_ERRORS_MAX_PER_VERSION,
+  DEFAULT_BROWSER_ERRORS_PER_IP_MINUTE,
+  DEFAULT_BROWSER_ERRORS_TTL_HOURS,
+  browserErrorLimitsFromEnv,
+  parseBrowserErrors,
+  type BrowserErrorBatch,
+  type BrowserErrorLimits,
+  type BrowserErrorType,
+  type BrowserFamily,
+} from './browser-errors.js';
+export {
+  browserErrorStore,
+  memoryBrowserErrorsRedis,
+  type BrowserErrorEntry,
+  type BrowserErrorStore,
+  type BrowserErrorStoreOptions,
+  type BrowserErrorSummary,
+  type BrowserErrorsRedis,
+} from './browser-errors.server.js';
+export {
+  DEFAULT_PREVIEW_EVENTS_MAX_MS,
+  DEFAULT_PREVIEW_EVENTS_MAX_PER_APP,
+  DEFAULT_PREVIEW_EVENTS_MAX_PER_IP,
+  PreviewEventsHub,
+  endPreviewEvents,
+  previewEventLimitsFromEnv,
+  type PreviewEvent,
+  type PreviewEventLimits,
+} from './preview-events.server.js';
 export {
   isUnservedSource,
   servedManifest,
@@ -89,6 +120,8 @@ export {
   BEACON_PATH,
   type BeaconHandler,
   type PlatformHandler,
+  type PreviewEventsHandler,
+  type BrowserErrorsHandler,
 } from './handler.js';
 export {
   MAX_NEGATIVE_ENTRIES,

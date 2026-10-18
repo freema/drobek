@@ -17,6 +17,7 @@ import {
   defaultHandlerDeps,
   moduleBodyTimeoutFromEnv,
 } from './node.js';
+import { previewEventsHub } from './preview-events.server.js';
 import { ServeStore, type ServeLoaders } from './store.server.js';
 
 const HTML = '<!doctype html><h1>hi</h1>';
@@ -74,13 +75,42 @@ function get(
   });
 }
 
+describe('the preview event stream over HTTP', () => {
+  it('streams the ready message at once and frees its slot when the client leaves', async () => {
+    const first = await new Promise<{ status: number; type: string; text: string }>((resolve, reject) => {
+      const req = httpRequest(
+        { host: '127.0.0.1', port, path: '/__drobek/preview/events', headers: { Host: 'shop--preview.apps.localhost:3041' }, setHost: false },
+        (res) => {
+          res.setEncoding('utf8');
+          let text = '';
+          res.on('data', (c: string) => {
+            text += c;
+            if (text.includes('"type":"ready"')) {
+              resolve({ status: res.statusCode ?? 0, type: String(res.headers['content-type']), text });
+              req.destroy();
+            }
+          });
+        }
+      );
+      req.on('error', (err) => (err.message.includes('socket hang up') ? undefined : reject(err)));
+      req.end();
+    });
+    expect(first.status).toBe(200);
+    expect(first.type).toBe('text/event-stream; charset=utf-8');
+    expect(first.text).toContain('data: {"type":"ready","version":1}');
+    await vi.waitFor(() => expect(previewEventsHub().open('a1')).toBe(0), { timeout: 2000 });
+  });
+});
+
 describe('host dispatch', () => {
   it('an app host is answered by the apps handler and never reaches the dashboard', async () => {
     dashboardHits = [];
     const r = await get('shop--preview.apps.localhost:3041', '/');
     expect(r.status).toBe(200);
-    // The preview carries the feedback widget, which opens the dashboard origin.
-    expect(r.body).toBe(`${HTML}<script src="/__drobek/feedback.js" defer data-app="shop" data-version="1"></script>`);
+    // The preview carries the preview script and the feedback widget, which opens the dashboard origin.
+    expect(r.body).toBe(
+      `${HTML}<script src="/__drobek/preview.js" defer data-app="shop" data-version="1" data-reload data-errors></script><script src="/__drobek/feedback.js" defer data-app="shop" data-version="1"></script>`
+    );
     const widget = await get('shop--preview.apps.localhost:3041', '/__drobek/feedback.js');
     expect(widget.body).toContain('"http://localhost:3041"');
     // Only the dashboard origin (PUBLIC_APP_URL, default localhost:3041) may frame it.

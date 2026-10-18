@@ -32,6 +32,17 @@ export interface AppConfig {
    * feedbackWidgetEnabled). Default true.
    */
   feedback: boolean;
+  /**
+   * `"reload": false` in drobek.json keeps the live-reload script off the
+   * app's preview host (the serving layer reads it with previewScriptOptions).
+   * Default true.
+   */
+  reload: boolean;
+  /**
+   * `"browserErrors": false` in drobek.json stops the preview script from
+   * reporting the page's errors (get_logs `browser`). Default true.
+   */
+  browserErrors: boolean;
 }
 
 function configError(text: string): CompileMessage {
@@ -46,10 +57,10 @@ export function readAppConfig(
   files: Map<string, string>
 ): { config: AppConfig; errors: CompileMessage[] } {
   const errors: CompileMessage[] = [];
-  const config: AppConfig = { imports: {}, paths: {}, entries: {}, beacon: true, feedback: true };
+  const config: AppConfig = { imports: {}, paths: {}, entries: {}, beacon: true, feedback: true, reload: true, browserErrors: true };
 
   const raw = files.get(CONFIG_FILE);
-  let parsed: { imports?: unknown; paths?: unknown; entries?: unknown; beacon?: unknown; feedback?: unknown } = {};
+  let parsed: { imports?: unknown; paths?: unknown; entries?: unknown; beacon?: unknown; feedback?: unknown; reload?: unknown; browserErrors?: unknown } = {};
   if (raw !== undefined) {
     try {
       const v = JSON.parse(raw) as unknown;
@@ -94,6 +105,22 @@ export function readAppConfig(
       errors.push(configError('"feedback" must be true or false (false keeps the feedback widget off the preview)'));
     } else {
       config.feedback = parsed.feedback;
+    }
+  }
+
+  if (parsed.reload !== undefined) {
+    if (typeof parsed.reload !== 'boolean') {
+      errors.push(configError('"reload" must be true or false (false keeps the preview from reloading itself after a write)'));
+    } else {
+      config.reload = parsed.reload;
+    }
+  }
+
+  if (parsed.browserErrors !== undefined) {
+    if (typeof parsed.browserErrors !== 'boolean') {
+      errors.push(configError('"browserErrors" must be true or false (false stops the preview from reporting its errors to get_logs kind "browser")'));
+    } else {
+      config.browserErrors = parsed.browserErrors;
     }
   }
 
@@ -184,5 +211,31 @@ export function feedbackWidgetEnabled(raw: string | undefined): boolean {
     return !(v && typeof v === 'object' && !Array.isArray(v) && (v as { feedback?: unknown }).feedback === false);
   } catch {
     return true;
+  }
+}
+
+/** What the preview script does on the hosts of a version (see previewScriptOptions). */
+export interface PreviewScriptOptions {
+  /** The preview host reloads itself after a write that compiled (`"reload": false` turns it off). */
+  reload: boolean;
+  /** The preview and version hosts report the page's errors (`"browserErrors": false` turns it off). */
+  browserErrors: boolean;
+}
+
+/**
+ * The preview-script switches of a version with this drobek.json text: only
+ * an explicit `false` turns one off; a missing or unreadable file keeps the
+ * defaults.
+ */
+export function previewScriptOptions(raw: string | undefined): PreviewScriptOptions {
+  const on: PreviewScriptOptions = { reload: true, browserErrors: true };
+  if (raw === undefined) return on;
+  try {
+    const v = JSON.parse(raw) as unknown;
+    if (!v || typeof v !== 'object' || Array.isArray(v)) return on;
+    const o = v as { reload?: unknown; browserErrors?: unknown };
+    return { reload: o.reload !== false, browserErrors: o.browserErrors !== false };
+  } catch {
+    return on;
   }
 }

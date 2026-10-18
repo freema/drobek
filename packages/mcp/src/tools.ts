@@ -422,11 +422,13 @@ export async function getApp(ctx: CallContext, args: { app_id: string }) {
   const readiness = head ? await storedReadiness(ctx, app.id, enabled, head.number) : undefined;
   const render = head ? await renderSignal(ctx, app.id, head) : undefined;
   const traffic = await trafficSummary(ctx, app.id);
+  const previewErrors = await previewErrorsOf(ctx, app.id);
   return {
     ...items[0],
     compile_errors: head?.compileStatus === 'error' ? toCompileOut(head.compileErrors, ctx.modules, enabled) : [],
     ...(readiness ? { readiness } : {}),
     ...(render ? { render } : {}),
+    ...(previewErrors ? { preview_errors: previewErrors } : {}),
     briefing: briefing(ctx, enabled, versionLimits),
     files: (detail?.files ?? [])
       .filter((f) => f.kind === 'source')
@@ -476,6 +478,34 @@ async function trafficSummary(ctx: CallContext, appId: string) {
   } catch (err) {
     ctx.deps.log.warn('get_app traffic summary failed', { error: dbErrorForLog(err) });
     return undefined;
+  }
+}
+
+/**
+ * get_app's `preview_errors`: the browser errors the pages of the version the
+ * preview serves now reported (get_logs `browser` reads them) — `count`
+ * distinct errors, `occurrences` in all, `latest_at`. Absent when nothing has
+ * compiled yet or the read failed.
+ */
+async function previewErrorsOf(ctx: CallContext, appId: string) {
+  try {
+    const version = await lastOkVersionNumber(appId);
+    if (version === null) return undefined;
+    return { version, ...(await ctx.deps.browserErrors.summary(appId, version)) };
+  } catch (err) {
+    ctx.deps.log.warn('get_app preview errors failed', { error: dbErrorForLog(err) });
+    return undefined;
+  }
+}
+
+/** How many distinct browser errors version `version` of the app reported (0 when unknown). */
+async function browserErrorCount(ctx: CallContext, appId: string, version: number | null): Promise<number> {
+  if (version === null) return 0;
+  try {
+    return (await ctx.deps.browserErrors.summary(appId, version)).count;
+  } catch (err) {
+    ctx.deps.log.warn('browser error count failed', { error: dbErrorForLog(err) });
+    return 0;
   }
 }
 
@@ -1029,6 +1059,8 @@ export async function writeFiles(
   // edits is stored only on top of its base and re-applied to a newer one;
   // whole-file writes land on top of the latest version as they always did.
   const hasEdits = changes.some((c) => c.edits !== undefined);
+  // What the preview showed before this write: the agent hears when its pages reported errors.
+  const previousErrors = await browserErrorCount(ctx, app.id, await lastOkVersionNumber(app.id));
 
   for (let attempt = 1; ; attempt++) {
     const { base, files } = await latestSources(app.id);
@@ -1076,6 +1108,7 @@ export async function writeFiles(
       changed,
       readiness: await filesReadiness(ctx, app.id, enabled, files, compile.errors, typecheck),
       ...(await previewNote(app.id, result.ok)),
+      ...(previousErrors > 0 ? { previous_version_browser_errors: previousErrors } : {}),
       ...(warnings.length > 0 ? { warnings } : {}),
     };
   }
@@ -1428,9 +1461,13 @@ export async function queryData(
 
 // ── get_logs ─────────────────────────────────────────────────────────────────
 
-/** get_logs kinds: the insights logs plus `sync` (the sync module's run history) and `webhooks` (the webhooks module's deliveries). */
-type GetLogsKind = LogKind | 'sync' | 'webhooks';
-const GET_LOGS_KINDS: readonly GetLogsKind[] = [...LOG_KINDS, 'sync', 'webhooks'];
+/**
+ * get_logs kinds: the insights logs plus `browser` (the preview's browser
+ * errors), `sync` (the sync module's run history) and `webhooks` (the
+ * webhooks module's deliveries).
+ */
+type GetLogsKind = LogKind | 'browser' | 'sync' | 'webhooks';
+const GET_LOGS_KINDS: readonly GetLogsKind[] = [...LOG_KINDS, 'browser', 'sync', 'webhooks'];
 const GET_LOGS_MAX = 100;
 
 export interface GetLogsResult {
@@ -1448,6 +1485,8 @@ export interface GetLogsResult {
 const EMPTY_NOTES: Record<GetLogsKind, string> = {
   runtime:
     'No browser errors in this window. Every page that loads a compiled entry reports uncaught errors, unhandled promise rejections, files that failed to load and requests the CSP blocked here within seconds (unless drobek.json has "beacon": false) — open the preview_url to reproduce a problem, then call get_logs again.',
+  browser:
+    'No browser errors from the preview in this window. Pages of the preview and of version addresses report their uncaught errors, unhandled promise rejections and console.error calls with an Error here within seconds (unless drobek.json has "browserErrors": false); they are kept 48 hours by default. Ask the user to open the preview_url and repeat what failed, then call get_logs again.',
   compile: 'No compiles in this window.',
   requests: 'No requests in this window.',
   sync: 'No sync runs in this window. A source runs on its schedule once the owner confirmed it; sync_now runs it at once.',
@@ -1460,6 +1499,9 @@ const EMPTY_NOTES: Record<GetLogsKind, string> = {
  *   runtime  — browser errors reported by the app's pages (deduped, with counts,
  *              each with the version of its page) + the newest version's render
  *              signal (page loads, errors of its pages);
+ *   browser  — the preview's browser errors (preview and version hosts only;
+ *              console.error included), deduped with counts, each stack mapped
+ *              through its version's source map to the app's sources;
  *   compile  — the last 50 compiles (ok / errors / version / duration);
  *   requests — per UTC day: requests, 5xx, 404s, and module calls by status class;
  *   sync     — the latest runs of the app's sync sources (newest first);
@@ -1474,7 +1516,7 @@ export async function getLogs(
   const { app } = await authorizeApp(ctx.principal, args.app_id, 'viewer');
   const kind = args.kind as GetLogsKind;
   if (!(GET_LOGS_KINDS as readonly string[]).includes(kind)) {
-    throw new ToolError('invalid_params', '`kind` must be "runtime", "compile", "requests", "sync" or "webhooks".');
+    throw new ToolError('invalid_params', '`kind` must be "runtime", "browser", "compile", "requests", "sync" or "webhooks".');
   }
   if (args.since !== undefined && (typeof args.since !== 'string' || Number.isNaN(Date.parse(args.since)))) {
     throw new ToolError('invalid_params', '`since` must be an ISO 8601 date-time, e.g. "2026-09-23T10:00:00Z".');
@@ -1502,6 +1544,17 @@ export async function getLogs(
       entries,
       untrusted: true,
       ...(entries.length === 0 ? { note: hooks ? EMPTY_NOTES.webhooks : 'This server has no webhooks module: apps here receive no webhooks.' } : {}),
+    };
+  }
+  if (kind === 'browser') {
+    const entries = await ctx.deps.browserErrors.read(app.id, { since: from, limit: GET_LOGS_MAX });
+    return {
+      app_id: app.id,
+      kind,
+      since: from.toISOString(),
+      entries,
+      untrusted: true,
+      ...(entries.length === 0 ? { note: EMPTY_NOTES.browser } : {}),
     };
   }
   if (kind === 'runtime') {

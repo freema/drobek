@@ -1,7 +1,7 @@
 /**
  * /workspaces/:slug/apps/:appSlug/logs — client half of the Logs tab:
- * the same three kinds as `get_logs` (runtime errors, compiles, requests) for
- * a chosen window, with a Refresh button. Read-only; no realtime.
+ * the same kinds as `get_logs` (runtime errors, the preview's browser
+ * errors, compiles, requests) for a chosen window, with a Refresh button. Read-only; no realtime.
  */
 import { Form, useLoaderData, useNavigation } from 'react-router';
 import type { loader } from './workspaces.$slug.apps.$appSlug.logs.server.js';
@@ -82,6 +82,58 @@ export default function AppLogsRoute() {
                   <td style={ui.td}>{e.count}</td>
                   <td style={{ ...ui.td, whiteSpace: 'nowrap' }}>{formatTimestamp(e.last_seen)}</td>
                   <td style={{ ...ui.td, ...ui.mono, wordBreak: 'break-all' }}>{e.module ? `module ${e.module}, job ${e.job ?? ''}` : e.url}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <h2 style={h2}>Browser errors in the preview</h2>
+      <p style={ui.hint}>
+        Errors the preview and version pages raised in a visitor&apos;s browser, with the stack mapped to your source files. Your agent reads
+        them with <code>get_logs</code> (kind &quot;browser&quot;); they are kept for a limited time.
+      </p>
+      <SectionError error={d.browser.error} testId="browser-errors-error" />
+      {d.browser.entries.length === 0 && !d.browser.error ? (
+        <p style={ui.empty} data-testid="browser-errors-empty">
+          No browser errors from the preview in this time range.
+        </p>
+      ) : (
+        <div style={ui.tableWrap}>
+          <table style={ui.table} data-testid="browser-errors-table">
+            <thead>
+              <tr>
+                <th style={ui.th}>Error</th>
+                <th style={ui.th}>Version</th>
+                <th style={ui.th}>Count</th>
+                <th style={ui.th}>Last seen</th>
+                <th style={ui.th}>Page</th>
+              </tr>
+            </thead>
+            <tbody>
+              {d.browser.entries.map((e, i) => (
+                <tr key={`${e.version}:${e.message}:${i}`} data-testid="browser-errors-row">
+                  <td style={ui.td}>
+                    <strong>{e.type}</strong>: <span data-testid="browser-errors-message">{e.message}</span>
+                    {e.source ? (
+                      <div style={{ ...ui.muted, ...ui.mono }} data-testid="browser-errors-source">
+                        {e.source}
+                      </div>
+                    ) : null}
+                    {e.stack ? (
+                      <details>
+                        <summary style={ui.muted}>Stack</summary>
+                        <pre style={ui.pre}>{e.stack}</pre>
+                      </details>
+                    ) : null}
+                  </td>
+                  <td style={ui.td}>v{e.version}</td>
+                  <td style={ui.td} data-testid="browser-errors-count">
+                    {e.count}
+                  </td>
+                  <td style={{ ...ui.td, whiteSpace: 'nowrap' }}>{formatTimestamp(e.at)}</td>
+                  <td style={{ ...ui.td, ...ui.mono, wordBreak: 'break-all' }}>{e.path}</td>
                 </tr>
               ))}
             </tbody>

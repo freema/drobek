@@ -262,9 +262,10 @@ range stays byte-exact, images are left alone, and `text/event-stream` is
 never compressed, so MCP's streamable HTTP and any SSE an app backend proxies
 arrive event by event. With a different proxy in front, compress the same way
 and keep `text/event-stream` out of it, and do not buffer it either (nginx:
-`proxy_buffering off` — the proxy module's streamed answers carry
-`X-Accel-Buffering: no`, which nginx honours), or an LLM answer streamed through
-the `proxy` module reaches the browser only when it is complete.
+`proxy_buffering off` — the proxy module's streamed answers and the preview's
+live-reload stream carry `X-Accel-Buffering: no`, which nginx honours), or an
+LLM answer streamed through the `proxy` module reaches the browser only when it
+is complete and an open preview does not reload after a write.
 
 Request bodies on the dashboard origin are capped at `DASHBOARD_MAX_BODY_BYTES`
 (1 MiB): a bigger body sent to a dashboard page, the sign-in or an OAuth
@@ -477,6 +478,11 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `SCREENSHOT_MAX_BYTES` | 1048576 | the largest screenshot a member may attach to a feedback note — the upload (bigger → 413; the note page shrinks a capture, a chosen file or a pasted image below it in the browser first) and the WebP drobek stores after re-encoding it (longer side 1600 px, metadata dropped; the upload itself is never kept). The note page has its own request body limit of this plus 64 KiB, in drobek and in the generated Caddyfile |
 | `FEEDBACK_SCREENSHOTS_MAX_PER_APP` / `FEEDBACK_SCREENSHOT_RETENTION_DAYS` | 100 / 30 | feedback notes with a screenshot one app may hold (a new screenshot past it is refused; the note can go without it) / days a resolved note keeps its screenshot — the hourly blob job then deletes the screenshot (not the note) and the blob GC frees its bytes. Screenshots do not count against `WORKSPACE_SOURCE_QUOTA` |
 | `MCP_IMAGE_MAX_BYTES` | 409600 | the largest image an MCP tool returns as an image content block (`get_feedback_screenshot`): a JPEG re-encoded from the stored screenshot with its longer side at most 1280 px, its quality and then its size stepped down until it fits |
+| `PREVIEW_EVENTS_MAX_PER_APP` / `PREVIEW_EVENTS_MAX_PER_IP` | 50 / 4 | live reload of the preview: event streams (`/__drobek/preview/events`, one per open preview tab) open at once per app / per client IP of an app, counted in each drobek process; past either the stream answers 429 and that tab does not reload by itself |
+| `PREVIEW_EVENTS_MAX_MS` | 3600000 | how long one preview event stream stays open; then the browser reconnects by itself |
+| `BROWSER_ERRORS_PER_IP_MINUTE` | 30 | error reports (`POST /__drobek/preview/errors`) one client IP may send to one app per minute; the rest are dropped silently |
+| `BROWSER_ERRORS_MAX_PER_VERSION` | 200 | distinct browser errors kept per version of an app (`get_logs` kind `browser`); past it new ones are dropped, the counts of kept ones still go up |
+| `BROWSER_ERRORS_TTL_HOURS` | 48 | how long a version's browser errors stay in Redis after the last one arrived |
 | `APP_VERSIONS_KEEP` | 200 | the newest versions of each app the hourly history retention keeps; older versions are deleted — never the published one, the one the preview serves, a version a member keeps, one whose asset set is kept for a rollback or one from the last hour — and the blob GC frees their bytes. `read_file` / `restore_version` of a deleted one answer `not_found` saying so; the dashboard's version history and `get_app` state the number *(plan; while the limits provider does not answer, the retention leaves the workspace alone)* |
 | `APP_VERSIONS_KEPT_MAX` | 20 | versions of one app its members may keep (neither the retention nor a member's clean-up deletes a kept version); keeping one more answers `limit_exceeded` with `limit` / `value`; a lower value leaves the versions already kept alone *(plan)* |
 | `APP_VERSIONS_PAGE` | 20 | versions one page of an app's version history lists |

@@ -45,6 +45,7 @@ import { endModuleStreams, limitsProviderConfigError, moduleRuntime, previousMas
 import {
   ServeStore,
   createAppsHostMiddleware,
+  endPreviewEvents,
   frameSrcConfigError,
   galleryFrameAncestorsConfigError,
   subscribeServeCache,
@@ -193,6 +194,7 @@ function stop(reason: string): Promise<void> {
     log.info('shutting down', { reason, grace_ms: graceMs });
     app.mcp.endListenStreams();
     endModuleStreams();
+    endPreviewEvents();
     await closeDevServer();
     const { drained } = await closeGracefully(httpServer, { graceMs });
     if (!drained) log.warn('requests still running after the shutdown grace period were cut', { grace_ms: graceMs });

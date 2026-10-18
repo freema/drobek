@@ -68,6 +68,18 @@ describe('renderBriefing', () => {
     expect(b).toContain('player.vimeo.com');
   });
 
+  it('says the preview reloads itself and names the reload opt-out', () => {
+    expect(b).toContain('The preview reloads itself after a write that compiled');
+    expect(b).toContain('never ask the user to refresh it');
+    expect(b).toContain('"reload": false');
+  });
+
+  it('points at get_logs kind browser for the preview\'s errors and names the opt-out', () => {
+    expect(b).toContain('get_logs({ app_id, kind: "browser" })` before guessing');
+    expect(b).toContain('previous_version_browser_errors');
+    expect(b).toContain('"browserErrors": false');
+  });
+
   it('tells the agent to check the render signal after the user opened the preview', () => {
     expect(b).toContain('After the user opened the preview, call `get_app` — `render`');
     expect(b).toContain('page_loads 0 means nobody has opened that version yet');
