@@ -168,7 +168,12 @@ export async function createFeedback(input: CreateFeedbackInput, opts: { limits?
         action: AUDIT_ACTIONS.appFeedbackCreate,
         subjectType: 'app',
         target: app.slug,
-        meta: { appId: input.appId, feedback: id, ...(versionNumber !== null ? { version: versionNumber } : {}) },
+        meta: {
+          appId: input.appId,
+          feedback: id,
+          ...(versionNumber !== null ? { version: versionNumber } : {}),
+          ...(input.anchor?.label ? { label: input.anchor.label } : {}),
+        },
       },
       tx
     );

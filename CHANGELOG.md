@@ -2,7 +2,10 @@
 
 ## Unreleased
 
+No migration and no new env var.
+
 ### Changed
+- **The preview's Feedback button shows what you are pointing at** (NSO-460): The button has an icon and turns into Cancel while you pick (`aria-pressed`), in the platform theme's light or dark colours. While picking, an outline follows the element under the pointer with a short label such as `button "Buy now"`; Esc cancels, Tab moves the outline over the focusable elements and Enter picks, and on a touch screen the first tap outlines and the second picks. The outline flashes before the note window opens. The label travels with the note: `/feedback/new` shows it as the Spot (the selector below it), it is stored in the note's `anchor` (`label`, at most 80 characters, no migration), and the Feedback tab, `list_feedback` (inside its untrusted envelope) and the Activity sentence use it.
 - **One look for every page drobek shows people outside the dashboard** (NSO-462): The app-host pages (not found, not published, the password form, errors and the 451 "taken down" page), the sign-in and code pages, the invite, report and preview-feedback pages, the dashboard's error page and the e-mails share one small theme (`@drobek/core/platform-theme`): the mascot and wordmark on top, one centred column, light or dark after the visitor's system setting, and on the app hosts still no script and an unchanged CSP. Each page now also says what the visitor can do next. The e-mails share one header, footer and button in the theme's light colours, and the "What's new" bar and the dashboard footer use the theme's colours.
 
 ## v0.9.3 — 2026-10-15

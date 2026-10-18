@@ -8,7 +8,9 @@
 import { createHash } from 'node:crypto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { AppHostTarget } from '@drobek/apps';
-import { FEEDBACK_SCRIPT_PATH, feedbackScriptTag, feedbackWidget, injectBeforeBodyEnd } from './feedback-widget.js';
+import { PLATFORM_COLORS } from '@drobek/core/platform-theme';
+import { FEEDBACK_LABEL_MAX } from '@drobek/apps';
+import { FEEDBACK_SCRIPT_PATH, FEEDBACK_WIDGET_LABEL_MAX, feedbackScriptTag, feedbackWidget, injectBeforeBodyEnd } from './feedback-widget.js';
 import { handleAppRequest, type AppRequest, type HandlerDeps } from './handler.js';
 import type { StoredFile } from './manifest.js';
 import { ServeStore, type ServeLoaders } from './store.server.js';
@@ -164,6 +166,44 @@ describe('the widget script', () => {
     expect(js).toContain('noopener');
     expect(js).not.toMatch(/fetch\(|XMLHttpRequest|sendBeacon|document\.cookie|localStorage/);
     expect(js).toContain('window.top !== window.self');
+  });
+
+  it('draws the button with an icon and a Cancel state, in the platform theme, light and dark', () => {
+    const js = widget.script.toString();
+    expect(js).toContain('<svg width=\\"16\\" height=\\"16\\"');
+    expect(js).toContain("'<span>Cancel</span>'");
+    expect(js).toContain("'<span>Feedback</span>'");
+    expect(js).toContain("setAttribute('aria-pressed'");
+    expect(js).toContain('button:focus-visible');
+    expect(js).toContain('prefers-reduced-motion:reduce');
+    expect(js).toContain('@media (prefers-color-scheme:dark)');
+    for (const scheme of [PLATFORM_COLORS.light, PLATFORM_COLORS.dark]) {
+      for (const value of [scheme.surface, scheme.ink, scheme.line, scheme.accent, scheme.accentInk, scheme.crumb]) expect(js).toContain(value);
+    }
+    expect(js).toContain('<div class="bar" role="status">');
+  });
+
+  it('outlines the element being picked, by pointer, focus (Tab + Enter) or two taps, and passes its label along', () => {
+    const js = widget.script.toString();
+    expect(js).toContain('<div class="hl" aria-hidden="true"></div>');
+    expect(js).toContain('pointer-events:none');
+    expect(js).toContain('getBoundingClientRect()');
+    expect(js).toContain("e.composedPath()");
+    expect(js).not.toContain('elementFromPoint');
+    expect(js).not.toContain('requestAnimationFrame');
+    for (const event of ["'pointermove'", "'focusin'", "'scroll'", "'resize'", "'keydown'"]) expect(js).toContain(event);
+    expect(js).toContain("e.key === 'Escape'");
+    expect(js).toContain("e.key === 'Enter'");
+    expect(js).toContain("e.key === 'Tab'");
+    expect(js).toContain("pointerType === 'touch'");
+    expect(js).toContain("q.set('label', spot.label)");
+    expect(js).toContain(`var LABEL_MAX = ${FEEDBACK_WIDGET_LABEL_MAX};`);
+    expect(FEEDBACK_WIDGET_LABEL_MAX).toBeLessThanOrEqual(FEEDBACK_LABEL_MAX);
+    expect(js).toContain('}, 180);');
+  });
+
+  it('stays small: under 16 KiB', () => {
+    expect(widget.script.byteLength).toBeLessThan(16 * 1024);
   });
 
   it('needs an http(s) dashboard origin', () => {

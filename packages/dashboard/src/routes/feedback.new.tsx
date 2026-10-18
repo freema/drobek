@@ -1,6 +1,7 @@
 /**
  * /feedback/new — client half: the note form the preview's Feedback button
- * opens. Shows what the note is pinned to (app, version, page, spot), takes
+ * opens. Shows what the note is pinned to (app, version, page, and the spot:
+ * the element's description, where on the page, its selector below), takes
  * the text, and after Send says where the note can be found.
  */
 import { Form, useActionData, useLoaderData, useNavigation } from 'react-router';
@@ -58,7 +59,20 @@ export default function FeedbackNewRoute() {
         </dd>
         <dt style={styles.dt}>Spot</dt>
         <dd style={styles.dd} data-testid="feedback-spot">
-          {c.spot}
+          {c.spotParts?.label ? (
+            <>
+              <strong data-testid="feedback-spot-label">{c.spotParts.label}</strong> · {c.spotParts.where}
+            </>
+          ) : c.spotParts ? (
+            c.spotParts.where
+          ) : (
+            c.spot
+          )}
+          {c.spotParts?.selector ? (
+            <code className="drobek-small" style={{ display: 'block' }} data-testid="feedback-spot-selector">
+              {c.spotParts.selector}
+            </code>
+          ) : null}
         </dd>
       </dl>
       <Form method="post">
@@ -72,6 +86,7 @@ export default function FeedbackNewRoute() {
             <input type="hidden" name="vw" value={c.anchor.vw} />
             <input type="hidden" name="vh" value={c.anchor.vh} />
             {c.anchor.selector ? <input type="hidden" name="sel" value={c.anchor.selector} /> : null}
+            {c.anchor.label ? <input type="hidden" name="label" value={c.anchor.label} /> : null}
           </>
         ) : null}
         <label className="drobek-label" htmlFor="feedback-body">

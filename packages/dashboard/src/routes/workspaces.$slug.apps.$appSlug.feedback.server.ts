@@ -32,7 +32,7 @@ import {
 import { actorKindForSurface } from '@drobek/audit';
 import { requireWorkspaceRole, roleAtLeast } from '@drobek/tenancy';
 import { appHeaderFor } from '../app-page.server.js';
-import { anchorText, noteOpenUrl } from '../feedback-view.js';
+import { anchorText, feedbackSpot, noteOpenUrl } from '../feedback-view.js';
 import { ownerApp } from '../owner-http.server.js';
 
 export const FEEDBACK_TAB_PAGE = 25;
@@ -79,6 +79,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         version: n.versionNumber,
         path: n.path,
         spot: anchorText(n.anchor),
+        spotParts: feedbackSpot(n.anchor),
         openUrl: noteOpenUrl(n, { preview: previewUrl(app.slug), version: (v) => versionUrl(app.slug, v) }),
         status: n.status,
         resolvedAt: n.resolvedAt?.toISOString() ?? null,

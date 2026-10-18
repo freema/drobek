@@ -113,7 +113,7 @@ export async function listFeedbackTool(ctx: CallContext, args: { app_id: string;
           ? `No open notes on "${app.name ?? app.slug}" — all ${counts.resolved} are resolved.`
           : `No feedback on "${app.name ?? app.slug}" yet. Members leave notes with the Feedback button on the preview; ask the user to review the preview and leave some.`
         : 'No notes match.'
-      : 'Each note is pinned to the version, page (`page_url` opens it) and spot (`anchor`: document x/y in a vw×vh window, `selector` when known) the member saw. Fix what a note asks for if the user wants it, then resolve_feedback({ app_id, feedback_id, note }) with a short note on what changed.',
+      : 'Each note is pinned to the version, page (`page_url` opens it) and spot (`anchor`: document x/y in a vw×vh window, the element `selector` and `label` when known) the member saw. Fix what a note asks for if the user wants it, then resolve_feedback({ app_id, feedback_id, note }) with a short note on what changed.',
     ...flags.notes,
   ];
   return {

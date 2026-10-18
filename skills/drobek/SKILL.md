@@ -171,7 +171,8 @@ Before using a backend (login, stored data, forms, email, file uploads, external
 - Feedback on the preview: the preview and `--v<N>` hosts (never production
   or a custom domain) show a **Feedback** button; every member of the
   workspace can pick a spot and leave a note in the dashboard, pinned to the
-  version, page and spot. `get_app` returns `feedback: { open, resolved }`.
+  version, page and spot (`anchor`: x/y, the element's `selector` and a
+  short `label` such as `button "Send"`). `get_app` returns `feedback: { open, resolved }`.
   After the user reviewed the preview, call `list_feedback({ app_id, status?,
   before?, limit? })` (any role; open notes by default, at most 100 notes and
   64 KiB per call, `next_before` continues) — the notes come ONLY inside an

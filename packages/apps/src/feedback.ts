@@ -17,6 +17,8 @@ export const FEEDBACK_RESOLUTION_NOTE_MAX = 1000;
 export const FEEDBACK_PATH_MAX = 1000;
 /** Characters of the CSS selector of the spot a note is pinned to. */
 export const FEEDBACK_SELECTOR_MAX = 500;
+/** Characters of the human description of the element a note is pinned to (`button "Send"`). */
+export const FEEDBACK_LABEL_MAX = 80;
 /** Notes one page of the list holds at most (the dashboard's page and list_feedback's largest `limit`). */
 export const FEEDBACK_PAGE_MAX = 100;
 
@@ -45,9 +47,14 @@ export function feedbackLimits(env: NodeJS.ProcessEnv = process.env): FeedbackLi
   };
 }
 
-/** Where on the page a note is pinned: document coordinates, the viewport the reviewer had, and the element when known. */
+/**
+ * Where on the page a note is pinned: document coordinates, the viewport the
+ * reviewer had, and the element when known — its CSS selector and a short
+ * human description (`label`, e.g. `button "Send"`).
+ */
 export interface FeedbackAnchor {
   selector?: string;
+  label?: string;
   x: number;
   y: number;
   vw: number;
@@ -77,17 +84,25 @@ function oneLine(raw: string, max: number): string {
 /**
  * The spot of a note from the widget's values, or null when x / y / the
  * viewport are missing or out of range (a note on the whole page). The
- * selector is optional and kept as plain text: it is shown and handed to the
- * agent, never evaluated.
+ * selector and the label are optional and kept as plain one-line text: they
+ * are shown and handed to the agent, never evaluated.
  */
-export function parseFeedbackAnchor(input: { selector?: unknown; x?: unknown; y?: unknown; vw?: unknown; vh?: unknown }): FeedbackAnchor | null {
+export function parseFeedbackAnchor(input: {
+  selector?: unknown;
+  label?: unknown;
+  x?: unknown;
+  y?: unknown;
+  vw?: unknown;
+  vh?: unknown;
+}): FeedbackAnchor | null {
   const x = coord(input.x);
   const y = coord(input.y);
   const vw = coord(input.vw);
   const vh = coord(input.vh);
   if (x === null || y === null || vw === null || vh === null || vw === 0 || vh === 0) return null;
   const selector = typeof input.selector === 'string' ? oneLine(input.selector, FEEDBACK_SELECTOR_MAX) : '';
-  return { ...(selector ? { selector } : {}), x, y, vw, vh };
+  const label = typeof input.label === 'string' ? oneLine(input.label, FEEDBACK_LABEL_MAX) : '';
+  return { ...(selector ? { selector } : {}), ...(label ? { label } : {}), x, y, vw, vh };
 }
 
 /** A stored anchor read back (a jsonb value), or null when it is not one. */

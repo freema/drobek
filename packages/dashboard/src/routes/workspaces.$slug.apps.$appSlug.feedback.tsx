@@ -111,7 +111,22 @@ export default function AppFeedbackRoute() {
               <p style={body} data-testid="feedback-body">
                 {r.body}
               </p>
-              <p style={meta2}>Spot: {r.spot}</p>
+              <p style={meta2} data-testid="feedback-spot">
+                Spot:{' '}
+                {r.spotParts?.label ? (
+                  <>
+                    <strong data-testid="feedback-spot-label">{r.spotParts.label}</strong> · {r.spotParts.where}
+                    {r.spotParts.selector ? (
+                      <>
+                        {' — '}
+                        <code style={ui.mono}>{r.spotParts.selector}</code>
+                      </>
+                    ) : null}
+                  </>
+                ) : (
+                  r.spot
+                )}
+              </p>
               {r.status === 'resolved' ? (
                 <p style={{ ...meta2, marginTop: '0.35rem' }} data-testid="feedback-resolution">
                   Resolved {formatTimestamp(r.resolvedAt)}
