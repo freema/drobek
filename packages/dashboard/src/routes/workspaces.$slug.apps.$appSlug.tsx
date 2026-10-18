@@ -1,6 +1,6 @@
 /**
  * /workspaces/:slug/apps/:appSlug — the app page's Overview tab:
- * the shared header (production / preview URLs, compile state, the agent
+ * the shared header (production / preview URLs each with "Show QR", compile state, the agent
  * lock + Unlock, Unpublish), "Before you publish" (the newest version's
  * publish readiness report), the version history (version-history-section:
  * pinned versions, a page of the history, keep / unkeep, the clean-up), the
@@ -101,13 +101,13 @@ const styles = {
 
 export default function AppDetailRoute() {
   const data = useLoaderData<typeof loader>();
-  const { header, errors, logs, visits, readiness, pendingBanner, syncBanner, duplicateResult, gallery } = data;
+  const { header, qr, errors, logs, visits, readiness, pendingBanner, syncBanner, duplicateResult, gallery } = data;
   const actionData = useActionData<typeof action>();
   const nav = useNavigation();
   const submitting = nav.state !== 'idle';
 
   return (
-    <AppPage header={header}>
+    <AppPage header={header} qr={qr}>
       <ActionError actionData={actionData} />
       <DuplicateResult result={duplicateResult} />
       <PendingBanner banner={pendingBanner} />

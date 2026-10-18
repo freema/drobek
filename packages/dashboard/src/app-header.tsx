@@ -3,7 +3,8 @@
  * inside the shared dashboard layout with the breadcrumb
  * `Workspaces › <workspace> › <app> › <section>`): the app's name + badges,
  * its preview / production URLs (links; the only place the dashboard frames
- * an app is the small sandboxed thumbnail of the workspace app list), the
+ * an app is the small sandboxed thumbnail of the workspace app list) with a
+ * "Show QR" under each when the tab passes `qr` (Overview does), the
  * compile state of the newest version, the single-writer lease banner with
  * "Unlock", the "Unpublish" control, the "taken down by the operator" banner,
  * the "publishing turned off / needs approval" notice, and the tab
@@ -23,6 +24,8 @@ import { APP_TABS, activeAppTab, appTabHref } from './app-tabs.js';
 import { formatAgo } from './app-view.js';
 import { LockedByAdminNotice } from './locked-notice.js';
 import { PublishApprovalNotice } from './publish-approval-notice.js';
+import { QrDetails } from './app-qr.js';
+import type { AppQrView } from './qr.js';
 
 export const appStyles = {
   h1: { fontSize: 'clamp(1.35rem, 5vw, 1.75rem)', lineHeight: 1.25, margin: 0, minWidth: 0, overflowWrap: 'anywhere' },
@@ -195,7 +198,7 @@ function AppTabs({ header }: { header: AppHeaderData }) {
   );
 }
 
-function AppHeader({ header }: { header: AppHeaderData }) {
+function AppHeader({ header, qr }: { header: AppHeaderData; qr?: AppQrView }) {
   const nav = useNavigation();
   const busy = nav.state !== 'idle';
   const { latest, lock } = header;
@@ -261,6 +264,12 @@ function AppHeader({ header }: { header: AppHeaderData }) {
             </span>
           )}
         </span>
+        {qr?.live ? (
+          <>
+            <span />
+            <QrDetails qr={qr} kind="live" />
+          </>
+        ) : null}
 
         <span style={s.label}>Preview</span>
         <span style={s.inline}>
@@ -280,6 +289,12 @@ function AppHeader({ header }: { header: AppHeaderData }) {
             <span style={s.muted}>no successful build yet</span>
           )}
         </span>
+        {qr ? (
+          <>
+            <span />
+            <QrDetails qr={qr} kind="preview" />
+          </>
+        ) : null}
 
         <span style={s.label}>Latest</span>
         <span style={s.inline} data-testid="app-compile-status" data-status={latest?.compileStatus ?? 'none'}>
@@ -343,10 +358,12 @@ function AppHeader({ header }: { header: AppHeaderData }) {
 export function AppPage({
   header,
   trail = [],
+  qr,
   children,
 }: {
   header: AppHeaderData;
   trail?: readonly Crumb[];
+  qr?: AppQrView;
   children: ReactNode;
 }) {
   const location = useLocation();
@@ -358,7 +375,7 @@ export function AppPage({
   return (
     <DashboardPage crumbs={crumbs}>
       <style>{APP_PAGE_CSS}</style>
-      <AppHeader header={header} />
+      <AppHeader header={header} qr={qr} />
       {children}
     </DashboardPage>
   );

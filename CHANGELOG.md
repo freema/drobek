@@ -1,5 +1,10 @@
 # Changelog — drobek (core)
 
+## Unreleased
+
+### Added
+- **A QR code for the preview and the live address on the app page** (NSO-463): The Overview's header has a "Show QR" under the preview URL and, once a version is published, under the live address (the verified primary custom domain, else the production host). It opens without JavaScript and shows the code with the address under it, so the app opens on a phone without typing the URL. The server draws it as an SVG (error correction M, the address in `data-url`) with a compact built-in encoder and no new dependency. A password app's codes say they open the password page first; an unpublished app's preview code says to publish for a live address; version addresses (`--v<N>`) have no code. The briefing tells agents the user can scan it there.
+
 ## v0.9.3 — 2026-10-15
 
 No migration and no new env var.

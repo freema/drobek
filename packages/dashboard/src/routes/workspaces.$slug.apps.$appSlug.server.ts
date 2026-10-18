@@ -4,7 +4,9 @@
  *
  * GET (viewer+): the shared app header (URLs, compile state, lock), the
  * newest version's publish readiness report, the insight panels (recent
- * errors, traffic / 404s, the last 7 days' visits), the public gallery section (absent unless
+ * errors, traffic / 404s, the last 7 days' visits), the QR codes of the preview URL and of the
+ * live address (the verified primary custom domain, else the production host; only while
+ * published), the public gallery section (absent unless
  * GALLERY_ENABLED) and the VERSION HISTORY:
  *  - the pinned versions (live, preview, kept), whatever page is shown;
  *  - one page of APP_VERSIONS_PAGE versions, newest first, from `?before=<N>`
@@ -47,12 +49,14 @@ import {
   type AppLogsView,
 } from '@drobek/insights';
 import { dbErrorForLog } from '@drobek/db';
+import { primaryDomainOf } from '@drobek/domains';
 import { moduleRuntime } from '@drobek/modules';
 import { appAction, appHeaderData, emailsOf, loadAppPage } from '../app-page.server.js';
 import { compileSummary } from '../app-view.js';
 import { parseDuplicateResult } from '../duplicate-result.server.js';
 import { loadPendingBanner } from '../pending-banner.server.js';
 import { loadReadiness } from '../readiness.server.js';
+import { appQrView } from '../qr.js';
 import { loadSyncBanner } from '../sync-banner.server.js';
 import { countRanges, parseVersionNumber, versionResultFrom } from '../version-history.js';
 import { VERSION_PROTECTION_LABEL, groupFailedRuns, shapeVersionHistory } from '../view.js';
@@ -130,7 +134,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   ]);
   const newest = retention.newest;
   const canClean = header.canEdit && header.lockedByAdmin === null;
-  const [emails, errors, logs, readiness, cleanup, visits] = await Promise.all([
+  const [emails, errors, logs, readiness, cleanup, visits, primaryDomain] = await Promise.all([
     emailsOf([...raw, ...pinnedRaw].map((v) => v.createdByUserId)),
     // Insight panels — best effort: a signals hiccup degrades to
     // empty, never 500s the page. Stored text is React-escaped on render.
@@ -140,6 +144,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     newest !== null ? loadReadiness(app, newest) : null,
     canClean ? cleanupPreview(app.id, url.searchParams) : { cleanup: null, cleanupError: null },
     visitsSummary(app.id),
+    header.publishedVersion !== null ? primaryDomainOf(app.id) : null,
   ]);
 
   const shape = (rows: VersionSummary[]) => {
@@ -163,6 +168,11 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   return {
     header,
+    qr: appQrView({
+      previewUrl: header.previewUrl,
+      liveUrl: header.publishedVersion === null ? null : primaryDomain ? `https://${primaryDomain}` : header.publishedUrl,
+      visibility: header.visibility,
+    }),
     pinned: shape(pinnedRaw),
     history: groupFailedRuns(versions),
     paging: { before, nextBefore },
