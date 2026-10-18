@@ -455,6 +455,8 @@ test('password gate: 401 form, wrong password, unlock sets a host-only cookie on
     const gated = await hostRequest(prodHost(slug), '/deep/link?x=1');
     expect(gated.status).toBe(401);
     expect(gated.body).toContain('This app is password protected');
+    expect(gated.body).toContain('data-drobek-page="password"');
+    expect(gated.body).not.toMatch(/<script/i);
     expect(gated.body).toContain('value="/deep/link?x=1"');
     expect(gated.body).not.toContain('src="/main.js"');
     expectAppSecurityHeaders(gated, { noindex: false });

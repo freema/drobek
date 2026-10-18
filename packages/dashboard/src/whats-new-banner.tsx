@@ -5,10 +5,11 @@
  * whole page reloads without the bar.
  */
 import { useLocation } from 'react-router';
+import { PLATFORM_FONT, PLATFORM_RADIUS, platformColor } from '@drobek/core/platform-theme';
 
 const styles = {
   bar: {
-    fontFamily: 'system-ui, sans-serif',
+    fontFamily: PLATFORM_FONT,
     fontSize: '0.88rem',
     display: 'flex',
     alignItems: 'center',
@@ -16,20 +17,21 @@ const styles = {
     flexWrap: 'wrap',
     gap: '0.4rem 0.9rem',
     padding: '0.5rem 1rem',
-    background: '#eff6ff',
-    borderBottom: '1px solid #bfdbfe',
-    color: '#1e3a8a',
+    background: platformColor('surface'),
+    borderBottom: `1px solid ${platformColor('line')}`,
+    boxShadow: `inset 3px 0 0 ${platformColor('crumb')}`,
+    color: platformColor('ink'),
   },
-  link: { color: '#1d4ed8', fontWeight: 600 },
+  link: { color: platformColor('ink'), fontWeight: 600 },
   form: { margin: 0 },
   button: {
     font: 'inherit',
     fontSize: '0.82rem',
     padding: '0.15rem 0.6rem',
-    border: '1px solid #93c5fd',
-    borderRadius: '6px',
-    background: '#fff',
-    color: '#1e3a8a',
+    border: `1px solid ${platformColor('line')}`,
+    borderRadius: PLATFORM_RADIUS.sm,
+    background: platformColor('bg'),
+    color: platformColor('ink'),
     cursor: 'pointer',
   },
 } as const;

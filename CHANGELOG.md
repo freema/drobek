@@ -1,5 +1,10 @@
 # Changelog — drobek (core)
 
+## Unreleased
+
+### Changed
+- **One look for every page drobek shows people outside the dashboard** (NSO-462): The app-host pages (not found, not published, the password form, errors and the 451 "taken down" page), the sign-in and code pages, the invite, report and preview-feedback pages, the dashboard's error page and the e-mails share one small theme (`@drobek/core/platform-theme`): the mascot and wordmark on top, one centred column, light or dark after the visitor's system setting, and on the app hosts still no script and an unchanged CSP. Each page now also says what the visitor can do next. The e-mails share one header, footer and button in the theme's light colours, and the "What's new" bar and the dashboard footer use the theme's colours.
+
 ## v0.9.3 — 2026-10-15
 
 No migration and no new env var.

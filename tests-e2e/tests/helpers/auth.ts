@@ -49,6 +49,13 @@ export async function mailpitMessagesFor(
   );
 }
 
+/** The HTML part of one Mailpit message. */
+export async function mailpitHtml(request: APIRequestContext, id: string): Promise<string> {
+  const res = await request.get(`${MAILPIT_URL}/api/v1/message/${id}`);
+  expect(res.ok(), 'mailpit message must be readable').toBeTruthy();
+  return ((await res.json()) as { HTML?: string }).HTML ?? '';
+}
+
 export async function pollLoginCode(
   request: APIRequestContext,
   email: string,

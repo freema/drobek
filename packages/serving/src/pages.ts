@@ -1,9 +1,15 @@
 /**
  * The few pages an app host renders itself: not found, not published,
- * the password form, and the 451 "taken down" page. Plain HTML with one inline <style> (allowed by the app
- * CSP's style-src 'unsafe-inline'), no script, and the form posts to the same
- * host (form-action 'self'). Every value is HTML-escaped.
+ * the password form, an error and the 451 "taken down" page. All of them go
+ * through `platformPageShell` — the platform look shared with the public
+ * dashboard pages and the e-mails (@drobek/core/platform-theme), light or
+ * dark after the visitor's system setting. Plain HTML with one inline
+ * <style> (allowed by the app CSP's style-src 'unsafe-inline'), the mascot as
+ * inline SVG (no request), no script, and the form posts to the same host
+ * (form-action 'self'). Every value is HTML-escaped.
  */
+import { platformPageCss } from '@drobek/core/platform-theme';
+import { mascotSvg } from '@drobek/email/mascot';
 
 function escapeHtml(value: string): string {
   return value
@@ -14,48 +20,78 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
-const STYLE = `
-  body{font-family:system-ui,-apple-system,sans-serif;background:#f6f7f9;color:#1f2328;display:grid;place-items:center;min-height:100vh;margin:0;padding:1rem;box-sizing:border-box}
-  main{background:#fff;padding:2rem;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.08);width:min(92vw,380px)}
-  h1{font-size:1.1rem;margin:0 0 .5rem}
-  p{margin:.25rem 0;color:#57606a;font-size:.95rem;line-height:1.45}
-  label{display:block;font-size:.8rem;margin:1rem 0 .35rem;color:#57606a}
-  input{width:100%;box-sizing:border-box;padding:.6rem .7rem;border-radius:8px;border:1px solid #d0d7de;font-size:1rem}
-  button{margin-top:1rem;width:100%;padding:.65rem;border:0;border-radius:8px;background:#1f6feb;color:#fff;font-size:1rem;cursor:pointer}
-  .err{color:#cf222e;font-size:.9rem;margin:.75rem 0 0}
-  a{color:#1f6feb}
-`;
+const STYLE = platformPageCss();
+const MARK = mascotSvg().replace('<svg ', '<svg width="32" height="22" aria-hidden="true" ');
 
-function layout(title: string, body: string): string {
+export interface PlatformPageShellInput {
+  /** The `data-drobek-page` marker: which page this is (`missing`, `password`, `error`, `locked`). */
+  page: string;
+  /** The document title (plain text). */
+  title: string;
+  /** The page's heading (plain text). */
+  heading: string;
+  /** HTML under the heading — the caller escapes every value in it. */
+  body: string;
+  /** HTML of the small print under a rule; none when omitted. */
+  footer?: string;
+}
+
+/** A whole app-host platform page: the mascot and wordmark, the heading, the body, the optional foot. */
+export function platformPageShell({ page, title, heading, body, footer }: PlatformPageShellInput): string {
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <meta name="robots" content="noindex">
 <title>${escapeHtml(title)}</title>
 <style>${STYLE}</style></head>
-<body><main>${body}</main></body></html>
+<body><main class="drobek-page" data-drobek-page="${escapeHtml(page)}">
+<div class="drobek-mark">${MARK}<span>drobek</span></div>
+<h1>${escapeHtml(heading)}</h1>
+${body}${footer ? `\n<p class="drobek-foot">${footer}</p>` : ''}
+</main></body></html>
 `;
 }
 
 export type MissingReason = 'no-app' | 'not-published' | 'nothing-compiled' | 'no-version' | 'no-file';
 
-const MISSING: Record<MissingReason, { title: string; text: string }> = {
-  'no-app': { title: 'Not found', text: 'There is no app at this address.' },
+const MISSING: Record<MissingReason, { title: string; text: string; next: string }> = {
+  'no-app': {
+    title: 'Not found',
+    text: 'There is no app at this address.',
+    next: 'Check the address for typos, or ask whoever sent you the link for the right one.',
+  },
   'not-published': {
     title: 'Not published yet',
     text: 'This app exists but has not been published yet.',
+    next: 'Come back once its owner publishes it.',
   },
   'nothing-compiled': {
     title: 'Nothing to preview yet',
     text: 'No version of this app has compiled yet.',
+    next: 'The preview appears here as soon as a version compiles.',
   },
-  'no-version': { title: 'Not found', text: 'This version does not exist or did not compile.' },
-  'no-file': { title: 'Not found', text: 'This page does not exist in the app.' },
+  'no-version': {
+    title: 'Not found',
+    text: 'This version does not exist or did not compile.',
+    next: 'Open the app’s preview for its latest version instead.',
+  },
+  'no-file': {
+    title: 'Not found',
+    text: 'This page does not exist in the app.',
+    next: 'Check the address, or go to the app’s start page.',
+  },
 };
 
 export function missingPage(reason: MissingReason): string {
   const m = MISSING[reason];
-  return layout(m.title, `<h1>${escapeHtml(m.title)}</h1><p>${escapeHtml(m.text)}</p>`);
+  const home = reason === 'no-file' ? `\n<p><a href="/">Go to the start page</a></p>` : '';
+  return platformPageShell({
+    page: 'missing',
+    title: m.title,
+    heading: m.title,
+    body: `<p>${escapeHtml(m.text)}</p>\n<p class="drobek-hint">${escapeHtml(m.next)}</p>${home}`,
+  });
 }
 
 export const UNLOCK_PATH = '/__drobek/password';
@@ -63,26 +99,26 @@ export const UNLOCK_PATH = '/__drobek/password';
 export function passwordPage(opts: { next: string; error?: 'wrong' | 'rate_limited' | null }): string {
   const error =
     opts.error === 'wrong'
-      ? '<p class="err" role="alert">Incorrect password. Try again.</p>'
+      ? '<p class="drobek-error" role="alert">Incorrect password. Try again.</p>'
       : opts.error === 'rate_limited'
-        ? '<p class="err" role="alert">Too many attempts. Wait a few minutes and try again.</p>'
+        ? '<p class="drobek-error" role="alert">Too many attempts. Wait a few minutes and try again.</p>'
         : '';
-  return layout(
-    'Password required',
-    `<form method="POST" action="${UNLOCK_PATH}">
-  <h1>This app is password protected</h1>
-  <p>Enter the password to continue.</p>
+  return platformPageShell({
+    page: 'password',
+    title: 'Password required',
+    heading: 'This app is password protected',
+    body: `<p class="drobek-hint">Enter the password to continue. If you do not have it, ask whoever shared the app with you.</p>
+${error}<form method="POST" action="${UNLOCK_PATH}">
   <input type="hidden" name="next" value="${escapeHtml(opts.next)}">
-  <label for="drobek-app-password">Password</label>
-  <input id="drobek-app-password" name="password" type="password" autocomplete="current-password" autofocus required>
-  <button type="submit">Unlock</button>
-  ${error}
-</form>`
-  );
+  <label class="drobek-label" for="drobek-app-password">Password</label>
+  <input class="drobek-input" id="drobek-app-password" name="password" type="password" autocomplete="current-password" autofocus required>
+  <button class="drobek-button drobek-button-block" type="submit">Unlock</button>
+</form>`,
+  });
 }
 
 export function errorPage(title: string, text: string): string {
-  return layout(title, `<h1>${escapeHtml(title)}</h1><p>${escapeHtml(text)}</p>`);
+  return platformPageShell({ page: 'error', title, heading: title, body: `<p>${escapeHtml(text)}</p>` });
 }
 
 /**
@@ -90,10 +126,12 @@ export function errorPage(title: string, text: string): string {
  * down. Names the reason category only, links the operator's terms.
  */
 export function lockedPage(opts: { reasonLabel: string; termsUrl: string }): string {
-  return layout(
-    'Unavailable',
-    `<h1>This app is unavailable</h1>
-  <p>It was taken down by the operator of this server for a violation of the terms of service (${escapeHtml(opts.reasonLabel.toLowerCase())}).</p>
-  <p><a href="${escapeHtml(opts.termsUrl)}" rel="noopener noreferrer">Terms of service</a></p>`
-  );
+  return platformPageShell({
+    page: 'locked',
+    title: 'Unavailable',
+    heading: 'This app is unavailable',
+    body: `<p>It was taken down by the operator of this server for a violation of the terms of service (${escapeHtml(opts.reasonLabel.toLowerCase())}).</p>
+<p class="drobek-hint">Only the operator can bring it back. The terms explain the rules and how to reach them.</p>`,
+    footer: `<a href="${escapeHtml(opts.termsUrl)}" rel="noopener noreferrer">Terms of service</a>`,
+  });
 }

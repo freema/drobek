@@ -216,6 +216,7 @@ test.describe('abuse: reports, takedown/restore, publish heuristic @local', () =
       const page = await anon.newPage();
       await page.goto(pointer.report_url);
       await expect(page.getByTestId('report-host')).toHaveValue(host);
+      await expect(page.locator('main[data-drobek-page="report"]')).toBeVisible();
       await page.getByTestId('report-reason').selectOption('phishing');
       await page.getByTestId('report-details').fill('Fake bank login page asking for my PIN.');
       await page.getByTestId('report-email').fill('Reporter.E2E@example.com');
@@ -323,6 +324,8 @@ test.describe('abuse: reports, takedown/restore, publish heuristic @local', () =
       expect(r.headers['link']).toBe(`<${TERMS}>; rel="blocked-by"`);
       expect(r.body).toContain(`href="${TERMS}"`);
       expect(r.body).toContain('This app is unavailable');
+      expect(r.body).toContain('data-drobek-page="locked"');
+      expect(r.body).not.toMatch(/<script/i);
     }
     const sdk = await hostRequest(previewHost(bank.slug), '/__drobek/sdk.js');
     expect(sdk.status).toBe(451);

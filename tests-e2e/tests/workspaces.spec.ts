@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 import {
   loginViaEmail,
   logout,
+  mailpitHtml,
   mailpitMessagesFor,
   skipUnlessLocal,
   uniqueEmail,
@@ -78,11 +79,16 @@ test('invite → accept → editor: invitee joins the team as editor and sees no
   const msgs = await mailpitMessagesFor(request, invitee);
   expect(msgs.length).toBeGreaterThanOrEqual(1);
   expect(msgs[0].Subject ?? '').toContain('invited');
+  const inviteHtml = await mailpitHtml(request, msgs[0].ID);
+  expect(inviteHtml, 'the invite e-mail has the platform header, button and footer').toContain('data-drobek-email="header"');
+  expect(inviteHtml).toContain('data-drobek-email="button"');
+  expect(inviteHtml).toContain('data-drobek-email="footer"');
 
   // Invitee signs in and accepts.
   await logout(page);
   await loginViaEmail(page, request, invitee);
   await page.goto(inviteUrl as string);
+  await expect(page.locator('main[data-drobek-page="invite"]')).toBeVisible();
   await page.getByRole('button', { name: 'Accept invite' }).click();
   await page.waitForURL(new RegExp(`/workspaces/${slug}$`));
   await expect(page.getByTestId('my-role')).toHaveText('editor');
@@ -164,6 +170,7 @@ test('an invite link is single-use; used, garbage, and expired-shaped tokens 404
   await expect(
     page.getByText('This invite is not valid or has expired.')
   ).toBeVisible();
+  await expect(page.locator('main[data-drobek-page="invite-invalid"]')).toBeVisible();
 
   // Garbage token → same generic 404, no enumeration.
   const garbage = await page.request.get('/invite/deadbeefdeadbeef');

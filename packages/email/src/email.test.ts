@@ -1,5 +1,6 @@
 import { createServer, type Socket } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
+import { PLATFORM_COLORS, PLATFORM_FONT, PLATFORM_RADIUS } from '@drobek/core/platform-theme';
 import { escapeHtml, renderEmailLayout } from './layout.server.js';
 import { emailFromParts, fromHeader, messageFor, safeDisplayName, sendEmail } from './send.server.js';
 import { getSmtpTransport, resetSmtpTransportForTests, smtpTransportOptions } from './smtp.server.js';
@@ -47,6 +48,24 @@ describe('layout', () => {
     expect(html).toContain('white-space:pre-wrap');
     expect(renderTextEmailHtml({ subject: 's', text: 't', footNote: '<i>x</i>' })).toContain('&lt;i&gt;x&lt;/i&gt;');
     expect(renderEmailLayout({ preview: 'p', body: '<p>b</p>' })).toContain('<p>b</p>');
+  });
+
+  it('one header, footer and button for every e-mail, in the platform theme’s light colours', () => {
+    const env = { PUBLIC_APP_URL: 'https://apps.example.org' };
+    const plain = renderEmailLayout({ preview: 'p', body: '<p>b</p>' });
+    const platform = renderPlatformEmail({ subject: 's', text: 't', actions: [{ label: 'Open', url: 'https://apps.example.org/x' }] }, env).html;
+    const text = renderTextEmailHtml({ subject: 's', text: 't' });
+    for (const html of [plain, platform, text]) {
+      expect(html).toContain('data-drobek-email="header"');
+      expect(html).toContain('data-drobek-email="footer"');
+      expect(html).toContain(`font-family:${PLATFORM_FONT}`);
+      expect(html).toContain(`background:${PLATFORM_COLORS.light.surface}`);
+      expect(html).toContain(`color:${PLATFORM_COLORS.light.ink}`);
+    }
+    expect(platform).toContain('data-drobek-email="button"');
+    expect(platform).toContain(`background:${PLATFORM_COLORS.light.accent}`);
+    expect(platform).toContain(`color:${PLATFORM_COLORS.light.accentInk}`);
+    expect(platform).toContain(`border-radius:${PLATFORM_RADIUS.md}`);
   });
 
   it('the default footer carries the current tagline', () => {

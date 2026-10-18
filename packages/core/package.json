@@ -7,6 +7,10 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./dist/index.js"
+    },
+    "./platform-theme": {
+      "types": "./src/platform-theme.ts",
+      "default": "./dist/platform-theme.js"
     }
   },
   "scripts": {

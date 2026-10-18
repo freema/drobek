@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 import { Redis } from 'ioredis';
 import {
+  mailpitHtml,
   mailpitMessagesFor,
   pollLoginCode,
   skipUnlessLocal,
@@ -40,12 +41,18 @@ test('full flow: request code → mailpit → verify → /me shows email → log
   const email = uniqueEmail('flow');
 
   await page.goto('/login');
+  await expect(page.locator('main[data-drobek-page="login"]')).toBeVisible();
   await page.getByLabel('Email').fill(email);
   await page.getByRole('button', { name: 'Send code' }).click();
   await page.waitForURL(/\/login\/verify/);
+  await expect(page.locator('main[data-drobek-page="login-verify"]')).toBeVisible();
 
   const code = await pollLoginCode(request, email);
   expect(code).toMatch(/^\d{6}$/);
+  const [codeMail] = await mailpitMessagesFor(request, email);
+  const codeHtml = await mailpitHtml(request, codeMail.ID);
+  expect(codeHtml, 'the sign-in e-mail has the platform header and footer').toContain('data-drobek-email="header"');
+  expect(codeHtml).toContain('data-drobek-email="footer"');
 
   await page.getByLabel('Code').fill(code);
   await page.getByRole('button', { name: 'Sign in' }).click();

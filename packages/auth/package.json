@@ -12,6 +12,10 @@
       "types": "./src/mark.tsx",
       "default": "./dist/mark.js"
     },
+    "./platform-page": {
+      "types": "./src/platform-page.tsx",
+      "default": "./dist/platform-page.js"
+    },
     "./routes/login": {
       "types": "./src/routes/login.tsx",
       "default": "./dist/routes/login.js"
