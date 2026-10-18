@@ -275,6 +275,28 @@ the same procedure as `/drobek:port-artifact` (Claude Code, Cursor) and the
 `port-artifact-to-drobek` skill (Codex). `task eval -- --only d` has a
 fresh agent port a fixture artifact and checks the result.
 
+**Porting an app from Lovable, Bolt or v0.** Those tools export a Vite +
+React + TypeScript project (often Tailwind, shadcn/ui and a Supabase
+client). The general skill `port-app` (`skill_info('port-app')`) moves one
+to drobek without a rewrite: the agent inventories `package.json`, the
+routes, the env and the backend calls, shows the user the plan, then
+`create_app` (`react-ts`) and `write_files` in parts with the paths
+unchanged. `drobek.json` maps each dependency to a pinned esm.sh URL
+(`?deps=react@<version>` on every package that imports React, so the page
+has one React) and resolves the shadcn/ui `@/` alias with `"paths": { "@/*":
+["src/*"] }`; `index.html` loads `/main.js` and Tailwind v4's browser build,
+with the `tailwind.config` colors and `@apply` rules in a
+`<style type="text/tailwindcss">`; `public/` binaries go up with
+`create_asset_upload`. Supabase Auth, tables (rows via `create_records` or a
+`sync` source), Storage and Edge Functions become the `auth`, `data`,
+`files` and `proxy` modules, client-side mail `email`, third-party forms
+`forms`, incoming webhooks `webhooks`; a public `import.meta.env.VITE_*`
+value becomes a constant, a secret the key of a proxy upstream. Build
+config, `.env`, server code and third-party scripts are not ported, and a
+Next.js, Remix or SvelteKit server part does not port at all. `task eval --
+--only e` has a fresh agent port the Lovable-shaped fixture
+`tests-eval/fixtures/lovable-export`.
+
 **Compile warnings.** Next to esbuild's own warnings, `compile.warnings`
 of `write_files` and `create_app` lists references the browser will fail to
 load — warnings only, the version is stored and compiles as usual. Each is
@@ -428,7 +450,9 @@ unchanged.
   restore always fits. The briefing states both values.
 - **Dependencies** — `drobek.json` `imports` → pinned esm.sh URLs; an unlisted
   bare import is `unresolved_import` naming the line to add; `drobek` is the
-  platform SDK.
+  platform SDK. `?deps=react@<version>` keeps one React for every package
+  that imports it; `drobek.json` `paths` (`{ "@/*": ["src/*"] }`, the
+  tsconfig shape) resolves path aliases onto app files.
 - **Styling** — plain CSS, or Tailwind v4's browser build from esm.sh; there
   is no Tailwind build step.
 - **Modules and skills** — the modules and skills of THIS server; call
@@ -459,9 +483,10 @@ lines). `skill_info` serves two kinds:
   `start` (how an app works and the write → compile → preview → publish
   loop), `debug` (compile errors and `get_logs`), `ui` (Tailwind's browser
   build, layout, accessibility, forms), `port-artifact` (moving a Claude
-  artifact to drobek).
+  artifact to drobek), `port-app` (moving a Lovable, Bolt, v0 or Vite + React
+  project to drobek).
 
-With every built-in module enabled `skill_info()` lists twelve (plus `hello` and the
+With every built-in module enabled `skill_info()` lists fourteen (plus `hello` and the
 opt-in `acmecrm` in the dev stack). `@drobek/skills-check` compiles and typechecks every code
 block of every skill against the current SDK types in `task check`, so a skill
 cannot drift from the code.

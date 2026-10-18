@@ -9,6 +9,8 @@ pnpm-debug.log*
 .env.*
 !.env.example
 !.env.production.example
+# the Lovable-shaped export the port-app eval and e2e use (placeholder values only)
+!tests-eval/fixtures/lovable-export/.env
 *.pem
 *.key
 secrets/

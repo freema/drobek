@@ -4,12 +4,13 @@
  * tests-eval/run.mjs — the MANUAL agent eval: a clean Claude Code
  * session with ONLY the drobek MCP builds three reference apps against a
  * running drobek stack, then the harness checks what came out; a fourth
- * session ports a multi-file Claude artifact. Never in CI (it costs
+ * session ports a multi-file Claude artifact, a fifth a Lovable-shaped
+ * Vite + React export. Never in CI (it costs
  * model tokens and needs the local stack + Mailpit).
  *
  *   node tests-eval/run.mjs --self-check   parsers on the fixtures (no network, no Claude)
  *   node tests-eval/run.mjs --dry-run      prerequisites + the plan (no writes anywhere)
- *   node tests-eval/run.mjs [--only a,b,c,d] [--mode mcp|plugin]
+ *   node tests-eval/run.mjs [--only a,b,c,d,e] [--mode mcp|plugin]
  *
  * See tests-eval/README.md for the prerequisites, the environment and the metrics.
  */
@@ -23,7 +24,7 @@ import { tmpdir } from 'node:os';
 import { dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { TEXT_FILE_EXTS, binaryWrites, findApiMisuse, formNameOf, parseSdkDts, parseTranscript, relativeRefs, renderResults, unknownToolCalls } from './lib.mjs';
+import { TEXT_FILE_EXTS, binaryWrites, findApiMisuse, formNameOf, parseSdkDts, parseTranscript, portAppIssues, relativeRefs, renderResults, unknownToolCalls } from './lib.mjs';
 
 /**
  * @typedef {import('./lib.mjs').Transcript} Transcript
@@ -51,7 +52,7 @@ const { values: flags } = parseArgs({
     'self-check': { type: 'boolean', default: false },
     'dry-run': { type: 'boolean', default: false },
     mode: { type: 'string', default: 'mcp' },
-    only: { type: 'string', default: 'a,b,c,d' },
+    only: { type: 'string', default: 'a,b,c,d,e' },
     keep: { type: 'boolean', default: false },
     help: { type: 'boolean', short: 'h', default: false },
   },
@@ -114,6 +115,20 @@ const SCENARIOS = [
       `The folder ./artifact is a Claude artifact I made: a page for our family film with its video, poster, stills, stylesheet and chapter script. Move it to drobek as a new app "Eval Film ${c.stamp}", exactly as it is — keep its file paths. Read the files with your file tools; upload the binary files with curl. Do not publish. When the preview works, reply with its preview URL.`,
     verify: verifyPort,
     fixture: 'artifact',
+    tools: 'Read,Glob,Bash',
+    allowedTools: ['Read', 'Glob', 'Bash(curl:*)', 'Bash(ls:*)', 'Bash(stat:*)', 'Bash(wc:*)'],
+  },
+  {
+    // Port a Lovable export (Vite + React + TypeScript + Tailwind + shadcn/ui
+    // + a Supabase guestbook table). The session gets the project folder
+    // (./lovable-export, copied from fixtures/lovable-export), file reads and
+    // curl for the logo in public/.
+    id: 'e',
+    app: 'port-app',
+    prompt: (c) =>
+      `The folder ./lovable-export is an app I built in Lovable: a guestbook (Vite, React, Tailwind, shadcn/ui, a Supabase table "messages" anyone may read and sign). Port it to drobek as a new app "Eval Guestbook ${c.stamp}" without rewriting it: keep its components and pages, keep the look, and move the Supabase table to drobek so visitors can still sign it. Read the files with your file tools; upload binary files with curl. Do not publish. When the preview works, reply with its preview URL and one sentence on anything the owner still has to confirm in the drobek dashboard.`,
+    verify: verifyPortApp,
+    fixture: 'lovable-export',
     tools: 'Read,Glob,Bash',
     allowedTools: ['Read', 'Glob', 'Bash(curl:*)', 'Bash(ls:*)', 'Bash(stat:*)', 'Bash(wc:*)'],
   },
@@ -552,6 +567,74 @@ async function verifyPort(c, app, files, t) {
   return out;
 }
 
+/** The Lovable-shaped export of scenario e and its port (the one port-app.spec.ts writes). */
+function lovableFixture() {
+  /** @param {string} root @param {string} [dir] @param {Map<string, Buffer>} [out] @returns {Map<string, Buffer>} */
+  const walk = (root, dir = root, out = new Map()) => {
+    for (const d of readdirSync(dir, { withFileTypes: true })) {
+      const p = join(dir, d.name);
+      if (d.isDirectory()) walk(root, p, out);
+      else out.set(p.slice(root.length + 1).split('\\').join('/'), readFileSync(p));
+    }
+    return out;
+  };
+  /** @param {Map<string, Buffer>} files */
+  const text = (files) => new Map([...files].filter(([p]) => TEXT_FILE_EXTS.includes(extname(p).toLowerCase())).map(([p, b]) => /** @type {[string, string]} */ ([p, b.toString('utf8')])));
+  return { exported: walk(join(FIXTURES, 'lovable-export')), ported: text(walk(join(FIXTURES, 'lovable-ported'))), text };
+}
+
+/** @type {Scenario['verify']} */
+async function verifyPortApp(c, app, files, t) {
+  /** @type {Check[]} */
+  const out = [];
+  const fx = lovableFixture();
+  const issues = portAppIssues(files);
+  out.push(check('the port keeps no Supabase client, no import.meta.env, no foreign script, one React, @/ resolvable', issues.length === 0, issues.slice(0, 5).join('; ')));
+  const ui = [...fx.exported.keys()].filter((p) => p.startsWith('src/components/ui/') || p === 'src/lib/utils.ts' || p === 'src/pages/NotFound.tsx');
+  const missing = ui.filter((p) => !files.has(p));
+  out.push(check('the components, utils and pages kept their paths', missing.length === 0, missing.join(', ') || `${ui.length} files`));
+  const rewritten = ui.filter((p) => files.has(p) && (files.get(p) ?? '').trimEnd() !== (fx.exported.get(p)?.toString('utf8') ?? '').trimEnd());
+  out.push(check('the shadcn/ui components are unchanged (no rewrite)', rewritten.length === 0, rewritten.join(', ')));
+  const html = files.get('index.html') ?? '';
+  out.push(check('index.html loads Tailwind\'s browser build from esm.sh', /<script\b[^>]*src="https:\/\/esm\.sh\/@tailwindcss\/browser@4[^"]*"/.test(html)));
+  const smuggled = binaryWrites(t.writes.filter((w) => w.appId === app.app_id));
+  out.push(check('no binary went through write_files', smuggled.length === 0, smuggled.join(', ')));
+  const logo = fx.exported.get('public/logo.png');
+  const listed = await c.mcp.call('list_assets', { app_id: app.app_id });
+  /** @type {{ path: string, size: number }[]} */
+  const assets = listed.json?.assets ?? [];
+  out.push(check('public/logo.png is an asset at /logo.png with its exact size', assets.some((a) => a.path === '/logo.png' && a.size === logo?.length), assets.map((a) => `${a.path} ${a.size}`).join(', ') || 'no assets'));
+  const got = await c.mcp.call('get_app', { app_id: app.app_id });
+  const collections = Object.keys(got.json?.modules?.data?.config?.collections ?? {});
+  out.push(check('the Supabase table became a data collection', collections.length > 0, collections.join(', ') || 'none'));
+
+  const { ctx, page, errors } = await openPreview(c.browser, app.preview_url);
+  try {
+    // String expressions: this file is typechecked without the DOM lib.
+    await page.addInitScript("window.__csp = []; document.addEventListener('securitypolicyviolation', (e) => window.__csp.push(e.effectiveDirective + ' ' + e.blockedURI));");
+    await page.goto(app.preview_url, { waitUntil: 'networkidle' });
+    await page.getByRole('heading', { name: 'Guestbook', exact: true }).waitFor({ timeout: 20_000 });
+    const styled = await page.evaluate("(() => { const b = [...document.querySelectorAll('button')].find((x) => /Sign/.test(x.textContent || '')); return { body: getComputedStyle(document.body).backgroundColor, button: b ? getComputedStyle(b).backgroundColor : null }; })()");
+    out.push(check('the look survived (Tailwind theme colors from the export)', styled.body === 'rgb(252, 250, 248)' && styled.button === 'rgb(13, 119, 107)', JSON.stringify(styled)));
+    const note = `Eval note ${c.stamp}`;
+    await page.getByLabel('Name').fill('Eval visitor');
+    await page.getByLabel('Message').fill(note);
+    await page.getByRole('button', { name: 'Sign' }).click();
+    await page.getByText(note).waitFor({ timeout: 15_000 });
+    out.push(check('a visitor signs the guestbook and sees the entry', true));
+    await page.goto(new URL('/no-such-page', app.preview_url).href, { waitUntil: 'networkidle' });
+    out.push(check('the catch-all route renders on a deep link', await page.getByRole('heading', { name: '404' }).isVisible()));
+    const csp = await page.evaluate('window.__csp');
+    out.push(check('no CSP violation in the browser', Array.isArray(csp) && csp.length === 0, JSON.stringify(csp)));
+    out.push(check('no page errors in the browser', errors.length === 0, errors.slice(0, 3).join(' | ')));
+  } catch (err) {
+    out.push(check('the ported app works in a browser', false, msg(err)));
+  } finally {
+    await ctx.close();
+  }
+  return out;
+}
+
 // ── one Claude Code session ─────────────────────────────────────────────────
 
 /**
@@ -650,6 +733,7 @@ function selfCheck() {
     ['results table row', md.includes('| contact-form | PASS | 2 | 5 (1) | forms |'), true],
     ['results total', md.includes('Non-existent API uses in total: **3** (must be 0).'), true],
     ...artifactCases(),
+    ...lovableCases(),
   ];
   let failed = 0;
   for (const [name, actual, expected] of cases) {
@@ -687,6 +771,36 @@ function artifactCases() {
       { path: 'film.mp4', content: 'AAAA' },
       { path: 'inline.html', content: `<img src="data:image/jpeg;base64,${'A'.repeat(2048)}">` },
     ]), ['film.mp4', 'inline.html']],
+  ];
+}
+
+/**
+ * The Lovable fixture stays what scenario e and port-app.spec.ts need — a
+ * Lovable-shaped export whose every shortcut the port checks catch, and a
+ * port they pass — and stays small.
+ * @returns {[string, unknown, unknown][]}
+ */
+function lovableCases() {
+  const fx = lovableFixture();
+  const exportedText = fx.text(fx.exported);
+  const size = [...fx.exported.values()].reduce((n, b) => n + b.length, 0);
+  const deps = new Map(fx.ported);
+  deps.set('drobek.json', String(deps.get('drobek.json')).replace('lucide-react@0.462.0?deps=react@18.3.1', 'lucide-react@0.462.0'));
+  return [
+    ['lovable: export has src, public, supabase, configs', ['index.html', 'package.json', 'public/logo.png', 'src/App.tsx', 'src/integrations/supabase/client.ts', 'supabase/migrations/20250601120000_messages.sql', 'tailwind.config.ts', 'vite.config.ts'].every((p) => fx.exported.has(p)), true],
+    ['lovable: logo.png is a PNG', fx.exported.get('public/logo.png')?.subarray(1, 4).toString('latin1'), 'PNG'],
+    ['lovable: small (< 48 KiB in total)', size < 48 * 1024, true],
+    ['port-app check: the ported fixture passes', portAppIssues(fx.ported), []],
+    ['port-app check: the export as is fails', portAppIssues(exportedText), [
+      'src/integrations/supabase/client.ts: a Supabase client',
+      'src/integrations/supabase/client.ts: import.meta.env',
+      'src/pages/Index.tsx: a Supabase client',
+      'src/pages/Index.tsx: import.meta.env',
+      'index.html: does not load /main.js',
+      'index.html: a script from https://cdn.gpteng.co/gptengineer.js',
+      'drobek.json: @/ imports without "paths"',
+    ]],
+    ['port-app check: a React package without ?deps', portAppIssues(deps), ['drobek.json: lucide-react without ?deps=react@18.3.1']],
   ];
 }
 

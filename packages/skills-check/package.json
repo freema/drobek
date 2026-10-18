@@ -11,6 +11,7 @@
   },
   "devDependencies": {
     "@drobek/agent-dx": "workspace:*",
+    "@drobek/compile": "workspace:*",
     "@drobek/core": "workspace:*",
     "@drobek/modules": "workspace:*",
     "@types/node": "^22",

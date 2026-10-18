@@ -1,5 +1,14 @@
 # Changelog — drobek (core)
 
+## Unreleased
+
+### Added
+- **The `port-app` skill** (NSO-467): `skill_info('port-app')` tells an agent how to move a Lovable, Bolt, v0 or other Vite + React project to drobek with its files unchanged. Each package is pinned on esm.sh with `?deps=react@<v>,react-dom@<v>`, so the page loads only one React. Tailwind runs as its browser build inside `index.html`. `public/` files are written as text or uploaded as assets. Supabase Auth, tables, Storage and Edge Functions move to the auth, data, files and proxy modules. A public `import.meta.env.VITE_*` value becomes a constant, and a secret becomes the key of a proxy upstream. The skill also lists what never ports: build configs, `.env`, server code and third-party scripts. The `drobek` skill, `docs/AGENT.md` and the eval (session e, `tests-eval/fixtures/lovable-export`) cover it.
+- **`drobek.json` `paths`** (NSO-467): `"paths": { "@/*": ["src/*"] }` maps an import alias onto the app's files, both in the build and in the background type check, so shadcn/ui-style `@/components/...` imports compile without being rewritten. An alias is a name or a prefix ending in `*`, and its targets are app paths with the same wildcard. When an alias resolves to nothing, the import fails with `unresolved_import` naming the targets it tried. A malformed `paths` value is `invalid_config`. When a `@/`, `~/` or `#/` import has no alias, the error names the `paths` entry to add.
+
+### Fixed
+- **The background type check no longer reports named imports from an untyped package** (NSO-467): A package from the import map without types now accepts any named, default or namespace import and its type positions (`VariantProps<...>`, `React.ComponentProps<...>`-style qualified names). It used to report `type_error` warnings for every named import, 27 of them on a shadcn/ui app.
+
 ## v0.9.3 — 2026-10-15
 
 No migration and no new env var.

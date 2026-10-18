@@ -7,6 +7,7 @@
 import { createRequire } from 'node:module';
 import { dirname, posix } from 'node:path';
 import type TS from 'typescript';
+import { CONFIG_FILE, readAppConfig } from '../config.js';
 
 /** The declarations of this server's SDK: `drobek` and each `drobek/<module>` inline import. */
 export interface TypecheckSdk {
@@ -62,8 +63,9 @@ function reactTypes(): { react?: string; reactDom?: string } {
   return { react, reactDom: react ? dir('@types/react-dom') : undefined };
 }
 
-function compilerOptions(t: typeof TS, react: { react?: string; reactDom?: string }): TS.CompilerOptions {
+function compilerOptions(t: typeof TS, react: { react?: string; reactDom?: string }, appPaths: Record<string, string[]>): TS.CompilerOptions {
   const paths: Record<string, string[]> = {
+    ...appPaths,
     drobek: [`${TYPES_DIR}/drobek.d.ts`],
     'drobek/*': [`${TYPES_DIR}/inline/*.d.ts`],
   };
@@ -136,6 +138,90 @@ function messageOf(t: typeof TS, d: TS.Diagnostic): string {
   return msg.length > MESSAGE_MAX ? `${msg.slice(0, MESSAGE_MAX - 1)}…` : msg;
 }
 
+const ANY_TYPE_PARAMS = '<A0 = any, A1 = any, A2 = any, A3 = any>';
+
+const RESERVED = new Set(
+  (
+    'break case catch class const continue debugger default delete do else enum export extends false finally for ' +
+    'function if import in instanceof new null return super switch this throw true try typeof var void while with ' +
+    'implements interface let package private protected public static yield await arguments eval'
+  ).split(' ')
+);
+
+/**
+ * Declarations for the import-map packages without types: every name the app
+ * imports from one is an `any` value AND an `any` generic type, and a member
+ * it reads as `name.Member` (`z.infer<…>`, `typeof Primitive.Root`) is a type
+ * of that name's namespace — so the check never reports a package it cannot
+ * see, only the app's own code.
+ */
+function untypedModules(t: typeof TS, roots: [string, string][], shims: Set<string>): string[] {
+  const used = new Map<string, { default: boolean; names: Map<string, Set<string>>; opaque: boolean }>();
+  const entry = (spec: string) => {
+    let e = used.get(spec);
+    if (!e) used.set(spec, (e = { default: false, names: new Map(), opaque: false }));
+    return e;
+  };
+  const declarable = (name: string) => {
+    return /^[A-Za-z_$][\w$]*$/.test(name) && !RESERVED.has(name);
+  };
+  const exported = (spec: string, name: string) => {
+    const e = entry(spec);
+    if (name === 'default') e.default = true;
+    else if (!declarable(name)) e.opaque = true;
+    else if (!e.names.has(name)) e.names.set(name, new Set());
+  };
+  for (const [path, text] of roots) {
+    const sf = t.createSourceFile(path, text, t.ScriptTarget.ES2022, true, /\.tsx$/i.test(path) ? t.ScriptKind.TSX : t.ScriptKind.TS);
+    const local = new Map<string, { spec: string; name: string | null }>();
+    for (const st of sf.statements) {
+      const spec = (t.isImportDeclaration(st) || t.isExportDeclaration(st)) && st.moduleSpecifier && t.isStringLiteral(st.moduleSpecifier) ? st.moduleSpecifier.text : null;
+      if (!spec || !shims.has(spec)) continue;
+      entry(spec);
+      if (t.isExportDeclaration(st)) {
+        if (st.exportClause && t.isNamedExports(st.exportClause)) for (const el of st.exportClause.elements) exported(spec, (el.propertyName ?? el.name).text);
+        continue;
+      }
+      const clause = (st as TS.ImportDeclaration).importClause;
+      if (clause?.name) {
+        exported(spec, 'default');
+        local.set(clause.name.text, { spec, name: 'default' });
+      }
+      const bindings = clause?.namedBindings;
+      if (bindings && t.isNamespaceImport(bindings)) local.set(bindings.name.text, { spec, name: null });
+      if (bindings && t.isNamedImports(bindings)) {
+        for (const el of bindings.elements) {
+          const name = (el.propertyName ?? el.name).text;
+          exported(spec, name);
+          local.set(el.name.text, { spec, name });
+        }
+      }
+    }
+    if (local.size === 0) continue;
+    const visit = (n: TS.Node): void => {
+      const pair = t.isQualifiedName(n) && t.isIdentifier(n.left) ? [n.left.text, n.right.text] : t.isPropertyAccessExpression(n) && t.isIdentifier(n.expression) ? [n.expression.text, n.name.text] : null;
+      const b = pair ? local.get(pair[0]) : undefined;
+      if (pair && b) {
+        if (b.name === null) exported(b.spec, pair[1]);
+        else if (b.name !== 'default' && declarable(pair[1])) used.get(b.spec)!.names.get(b.name)?.add(pair[1]);
+      }
+      t.forEachChild(n, visit);
+    };
+    visit(sf);
+  }
+  return [...shims].map((spec) => {
+    const e = used.get(spec);
+    if (!e || e.opaque || (!e.default && e.names.size === 0)) return `declare module ${JSON.stringify(spec)};`;
+    const body: string[] = [];
+    if (e.default) body.push('const __default: any; export default __default;');
+    for (const [name, members] of e.names) {
+      body.push(`export const ${name}: any; export type ${name}${ANY_TYPE_PARAMS} = any;`);
+      if (members.size > 0) body.push(`export namespace ${name} { ${[...members].map((m) => `type ${m}${ANY_TYPE_PARAMS} = any;`).join(' ')} }`);
+    }
+    return `declare module ${JSON.stringify(spec)} { ${body.join(' ')} }`;
+  });
+}
+
 /**
  * Type errors of the app's .ts/.tsx files, ordered by file and line. A bare
  * or URL import the program cannot resolve (an import-map entry without
@@ -161,7 +247,9 @@ export async function typecheckApp(
   const t = await loadTypescript();
   vfiles.set(`${TYPES_DIR}/drobek.d.ts`, sdk.dts);
   for (const [name, types] of Object.entries(sdk.inline)) vfiles.set(`${TYPES_DIR}/inline/${name}.d.ts`, `${types.trim()}\n`);
-  const opts = compilerOptions(t, reactTypes());
+  const config = files instanceof Map ? files.get(CONFIG_FILE) : (files as Readonly<Record<string, string>>)[CONFIG_FILE];
+  const appPaths = typeof config === 'string' ? readAppConfig(new Map([[CONFIG_FILE, config]])).config.paths : {};
+  const opts = compilerOptions(t, reactTypes(), appPaths);
 
   const probe = virtualHost(t, opts, vfiles);
   const shims = new Set<string>();
@@ -177,7 +265,7 @@ export async function typecheckApp(
     shimPath,
     [
       ...ASSET_EXTS.map((ext) => `declare module '*.${ext}' { const url: string; export default url; }`),
-      ...[...shims].map((s) => `declare module ${JSON.stringify(s)} { const value: any; export = value; }`),
+      ...untypedModules(t, roots.map((r) => [r, vfiles.get(r) ?? '']), shims),
     ].join('\n') + '\n'
   );
 

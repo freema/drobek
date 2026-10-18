@@ -263,6 +263,64 @@ describe('compile — happy path', () => {
   });
 });
 
+describe('drobek.json paths (import aliases onto app files)', () => {
+  const shadcn = (paths: unknown, extra: Array<[string, string]> = []): SourceFiles =>
+    new Map<string, string | Buffer>([
+      ['drobek.json', JSON.stringify({ imports: { react: 'https://esm.sh/react@19.1.0' }, paths })],
+      ['src/main.tsx', "import { cn } from '@/lib/utils';\nimport { Button } from '@/components/ui/button';\nimport cfg from '~config';\nconsole.log(cn('a', cfg.title), Button);"],
+      ['src/lib/utils.ts', "export const cn = (...c: string[]): string => c.join(' ');"],
+      ['src/components/ui/button/index.tsx', "import { cn } from '@/lib/utils';\nexport const Button = () => <button className={cn('btn')} />;"],
+      ['config/app.json', '{ "title": "Guestbook" }'],
+      ...extra,
+    ]);
+
+  it('"@/*" resolves to src/* (extensions and /index.* as for relative imports); an exact alias maps one file', async () => {
+    const r = await compile(shadcn({ '@/*': ['./src/*'], '~config': 'config/app.json' }));
+    expect(r.errors).toEqual([]);
+    expect(r.inputs.sort()).toEqual(['config/app.json', 'src/components/ui/button/index.tsx', 'src/lib/utils.ts', 'src/main.tsx']);
+    expect(text(r.outputs.get('main.js'))).toContain('Guestbook');
+  });
+
+  it('tries the targets in order and the longest alias prefix wins', async () => {
+    const r = await compile(
+      shadcn(
+        { '@/*': ['missing/*', 'src/*'], '@/components/ui/*': ['ui/*'], '~config': ['config/app.json'] },
+        [['ui/button.tsx', 'export const Button = () => <b>ui</b>;']]
+      )
+    );
+    expect(r.errors).toEqual([]);
+    expect(r.inputs).toContain('ui/button.tsx');
+    expect(r.inputs).not.toContain('src/components/ui/button/index.tsx');
+  });
+
+  it('an alias whose file is missing names the paths it tried; an alias never leaves the app', async () => {
+    const missing = await compile(shadcn({ '@/*': ['src/*'], '~config': ['config/nope.json'] }));
+    expect(missing.errors[0]).toMatchObject({ code: 'unresolved_import', specifier: '~config' });
+    expect(missing.errors[0].text).toContain('drobek.json paths → config/nope.json');
+    const escape = await compile(
+      new Map([
+        ['drobek.json', JSON.stringify({ paths: { '@/*': ['src/*'] } })],
+        ['src/main.ts', "import '@/../../etc/passwd';"],
+      ])
+    );
+    expect(escape.errors[0]).toMatchObject({ code: 'unresolved_import' });
+    expect(escape.errors[0].text).toContain('(outside the app)');
+  });
+
+  it('without "paths" an @/ import says to add the alias, not a package', async () => {
+    const r = await compile(new Map([['src/main.ts', "import { cn } from '@/lib/utils';\nconsole.log(cn);"], ['src/lib/utils.ts', 'export const cn = 1;']]));
+    expect(r.errors[0]).toMatchObject({ code: 'unresolved_import', specifier: '@/lib/utils' });
+    expect(r.errors[0].text).toContain('"paths": { "@/*": ["src/*"] }');
+  });
+
+  it('refuses a malformed "paths" as invalid_config', async () => {
+    for (const paths of [['src/*'], { '@/*': ['../outside/*'] }, { '@/*': 'src' }, { './x': ['src/x.ts'] }, { drobek: ['src/fake.ts'] }, { 'a*b': ['src/*'] }, { '@/*': [42] }]) {
+      const r = await compile(new Map([['drobek.json', JSON.stringify({ paths })], ['src/main.ts', '']]));
+      expect(r.errors[0], JSON.stringify(paths)).toMatchObject({ code: 'invalid_config', file: 'drobek.json' });
+    }
+  });
+});
+
 describe('compile — errors', () => {
   it('reports syntax errors with the exact esbuild location', async () => {
     const broken = 'export const x = (1 + ;\n';

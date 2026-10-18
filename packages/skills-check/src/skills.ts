@@ -7,7 +7,7 @@
  * modules `hello` and `acmecrm`, each checked by its own skill.test.ts): the
  * module skills of auth, email, forms, data, proxy, files, sync, oidc, webhooks and the
  * general skills of the repo's `skills/` directory (debug,
- * port-artifact, start, ui; `skills/drobek` is the platform skill and never
+ * port-app, port-artifact, start, ui; `skills/drobek` is the platform skill and never
  * listed).
  */
 import { readFileSync } from 'node:fs';
@@ -34,8 +34,8 @@ const SKILLS_DIR = join(REPO_ROOT, 'skills');
 /** The built-in modules in the dev compose's DROBEK_MODULES order. */
 export const BUILTIN_MODULES: AnyModule[] = [auth, email, forms, data, proxy, files, sync, oidc, webhooks] as AnyModule[];
 
-/** The 13 skills an agent can read on a server with every built-in module. */
-export const EXPECTED_SKILLS = ['auth', 'email', 'forms', 'data', 'proxy', 'files', 'sync', 'oidc', 'webhooks', 'debug', 'port-artifact', 'start', 'ui'] as const;
+/** The 14 skills an agent can read on a server with every built-in module. */
+export const EXPECTED_SKILLS = ['auth', 'email', 'forms', 'data', 'proxy', 'files', 'sync', 'oidc', 'webhooks', 'debug', 'port-app', 'port-artifact', 'start', 'ui'] as const;
 
 let runtime: Promise<ModuleRuntime> | null = null;
 

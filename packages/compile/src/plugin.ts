@@ -1,5 +1,5 @@
 import type { Loader, Plugin } from 'esbuild';
-import { SDK_SPECIFIER, SDK_URL } from './config.js';
+import { SDK_SPECIFIER, SDK_URL, aliasTargets } from './config.js';
 import { BINARY_EXTS, extOf, resolveAppSpecifier } from './paths.js';
 import type { CompileErrorCode } from './types.js';
 
@@ -29,6 +29,8 @@ export interface VirtualFsState {
   /** App path → content (text as string, binary assets as Buffer). */
   files: Map<string, string | Buffer>;
   imports: Record<string, string>;
+  /** drobek.json `paths`: aliases onto app files. */
+  paths: Record<string, string[]>;
   /** What the bare `drobek` import resolves to (external). */
   sdkUrl: string;
   /** `drobek/<module>` → platform source compiled into the app. */
@@ -79,6 +81,16 @@ function findInApp(path: string, files: Map<string, string | Buffer>): string | 
  */
 export function virtualFsPlugin(state: VirtualFsState): Plugin {
   const depth = new Map<string, number>();
+
+  const appFile = (found: string, parentDepth: number) => {
+    const d = parentDepth + 1;
+    if (d > state.maxImportDepth) {
+      return fail('limit_exceeded', `Import chain deeper than ${state.maxImportDepth} levels at "${found}".`);
+    }
+    const prev = depth.get(found);
+    if (prev === undefined || d < prev) depth.set(found, d);
+    return { path: found, namespace: APP_NAMESPACE };
+  };
 
   return {
     name: 'drobek-virtual-fs',
@@ -133,6 +145,20 @@ export function virtualFsPlugin(state: VirtualFsState): Plugin {
         const importer = args.namespace === APP_NAMESPACE ? args.importer : '';
         const parentDepth = depth.get(importer) ?? 0;
 
+        const aliased = spec.startsWith('.') || spec.startsWith('/') ? null : aliasTargets(spec, state.paths);
+        if (aliased) {
+          const targets = aliased.map((t) => resolveAppSpecifier(`/${t}`, importer));
+          const found = targets.reduce<string | null>((hit, t) => hit ?? (t ? findInApp(t, state.files) : null), null);
+          if (!found) {
+            return fail(
+              'unresolved_import',
+              `Cannot find "${spec}" in the app files (drobek.json paths → ${targets.map((t) => t ?? '(outside the app)').join(', ')} with .tsx/.ts/.jsx/.js/.css/.json and /index.*).`,
+              spec
+            );
+          }
+          return appFile(found, parentDepth);
+        }
+
         if (spec.startsWith('.') || spec.startsWith('/')) {
           const target = resolveAppSpecifier(spec, importer);
           const found = target ? findInApp(target, state.files) : null;
@@ -145,20 +171,19 @@ export function virtualFsPlugin(state: VirtualFsState): Plugin {
               spec
             );
           }
-          const d = parentDepth + 1;
-          if (d > state.maxImportDepth) {
-            return fail(
-              'limit_exceeded',
-              `Import chain deeper than ${state.maxImportDepth} levels at "${found}".`
-            );
-          }
-          const prev = depth.get(found);
-          if (prev === undefined || d < prev) depth.set(found, d);
-          return { path: found, namespace: APP_NAMESPACE };
+          return appFile(found, parentDepth);
         }
 
         const url = lookupBare(spec, state.imports);
         if (url) return { path: url, external: true };
+        if (/^[@~#]\//.test(spec)) {
+          const prefix = spec.slice(0, 2);
+          return fail(
+            'unresolved_import',
+            `"${spec}" is a path alias drobek.json does not define — add "paths": { "${prefix}*": ["src/*"] } (the alias of the project's tsconfig or vite config) or import the file by a relative path.`,
+            spec
+          );
+        }
         const pkg = spec.startsWith('@') ? spec.split('/').slice(0, 2).join('/') : spec.split('/')[0];
         return fail(
           'unresolved_import',
