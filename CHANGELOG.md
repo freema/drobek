@@ -1,5 +1,12 @@
 # Changelog — drobek (core)
 
+## v0.10.5 — 2026-10-22
+
+The product is the same as v0.10.4; no migrations, no new env vars.
+
+### Security
+- **The image runs on Node.js 22.23.4**: Rebuilt on the Node.js security release of 2026-10-21, which fixes three high-severity issues on the 22.x line: an out-of-bounds write in the Brotli decoder with possible remote code execution (CVE-2026-111497), a TLS hostname-verification bypass (CVE-2026-106069) and `dns.resolve` truncating names that contain a NUL byte (CVE-2026-105482), plus the medium and low ones and the c-ares, OpenSSL, SQLite, Undici and CA-store updates. v0.10.4 and older images carry Node.js 22.23.3 or older.
+
 ## v0.10.4 — 2026-10-18
 
 ### Fixed
