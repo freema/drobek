@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import {
   expect,
   test,
@@ -13,7 +13,7 @@ import {
   skipUnlessLocal,
   uniqueEmail,
 } from './helpers/auth';
-import { callTool, mcpClient, rawInitialize } from './helpers/mcp';
+import { callTool, mcpClient, newMcpClient, rawInitialize } from './helpers/mcp';
 import { personalWorkspaceOf, seedApp, workspaceIdBySlug } from './helpers/seed';
 
 /**
@@ -221,7 +221,7 @@ test('MCP OAuth 2.1 end-to-end: discovery → register → consent → token →
     new URL(`${BASE_URL_MCP}/mcp`),
     { requestInit: { headers: { Authorization: `Bearer ${accessToken}` } } }
   );
-  const client = new Client({ name: 'drobek-e2e', version: '0.0.0' });
+  const client = newMcpClient();
   await client.connect(transport);
   try {
     const tools = await client.listTools();

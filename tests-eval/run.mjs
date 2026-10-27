@@ -279,7 +279,7 @@ async function mcpConnect(bearer) {
   const transport = new StreamableHTTPClientTransport(new URL(`${ENV.url}/mcp`), {
     requestInit: { headers: { Authorization: `Bearer ${bearer}` } },
   });
-  const client = new Client({ name: 'drobek-eval', version: '0.0.0' });
+  const client = new Client({ name: 'drobek-eval', version: '0.0.0' }, { versionNegotiation: { mode: 'auto' } });
   await client.connect(transport);
   const listed = await client.listTools();
   /** @type {string[]} */

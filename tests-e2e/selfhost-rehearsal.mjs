@@ -72,7 +72,7 @@ async function connect() {
   const transport = new StreamableHTTPClientTransport(new URL(`${BASE_URL}/mcp`), {
     requestInit: { headers: { Authorization: `Bearer ${API_KEY}` } },
   });
-  const client = new Client({ name: 'drobek-selfhost-rehearsal', version: '0.0.0' });
+  const client = new Client({ name: 'drobek-selfhost-rehearsal', version: '0.0.0' }, { versionNegotiation: { mode: 'auto' } });
   await client.connect(transport);
   return client;
 }
