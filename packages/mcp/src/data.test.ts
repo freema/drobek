@@ -220,7 +220,7 @@ describe('delete_collection', () => {
   it("takes the single-writer lease: another user's lease answers app_locked and nothing is dropped", async () => {
     const app = await newApp();
     STORE_DATA.set(app.id, { todos: [{ _id: 'r1' }] });
-    await deps.leases.acquire(app.id, { userId: P.alice.userId, sessionId: 'alice-session' }, 60_000);
+    await deps.leases.acquire(app.id, { userId: P.alice.userId, grant: 'alice-session' }, 60_000);
     await as('ed', async (c) => {
       expect(errorOf(await c.call('delete_collection', { app_id: app.id, collection: 'todos', user_confirmed: true })).code).toBe('app_locked');
     });

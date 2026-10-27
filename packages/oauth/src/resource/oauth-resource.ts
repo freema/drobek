@@ -13,9 +13,9 @@
  * (resource/access.ts).
  */
 import type { Request, Response } from 'express';
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { isSuperAdmin } from '@drobek/auth';
-import { apiKeys, getDb, oauthAccessTokens, users } from '@drobek/db';
+import { getDb, users } from '@drobek/db';
 import { looksLikeApiKey, validateApiKey } from '../api-keys.server.js';
 import { authorizationServer, mcpResourceUri } from '../metadata.js';
 import { knownScopes, SCOPES, type Scope } from '../scopes.js';
@@ -136,38 +136,4 @@ export async function authenticate(req: Request): Promise<AuthOutcome> {
       audience: claims.audience,
     },
   };
-}
-
-/** One credential as `AuthContext` names it: which kind and its row id. */
-export interface CredentialRef {
-  kind: AuthContext['kind'];
-  id: string;
-}
-
-/**
- * Which of `refs` are still live, as a lookup: an API key that is not
- * revoked, an OAuth access token that is neither revoked nor deleted (a
- * revoked connection deletes its tokens). An expired access token still
- * counts: its client refreshes it and goes on.
- */
-export async function liveCredentials(refs: readonly CredentialRef[]): Promise<(ref: CredentialRef) => boolean> {
-  const keyIds = [...new Set(refs.filter((r) => r.kind === 'api_key').map((r) => r.id))];
-  const tokenIds = [...new Set(refs.filter((r) => r.kind === 'oauth').map((r) => r.id))];
-  const db = getDb();
-  const [keys, tokens] = await Promise.all([
-    keyIds.length === 0
-      ? []
-      : db
-          .select({ id: apiKeys.id })
-          .from(apiKeys)
-          .where(and(inArray(apiKeys.id, keyIds), isNull(apiKeys.revokedAt))),
-    tokenIds.length === 0
-      ? []
-      : db
-          .select({ id: oauthAccessTokens.id })
-          .from(oauthAccessTokens)
-          .where(and(inArray(oauthAccessTokens.id, tokenIds), isNull(oauthAccessTokens.revokedAt))),
-  ]);
-  const live = { api_key: new Set(keys.map((r) => r.id)), oauth: new Set(tokens.map((r) => r.id)) };
-  return (ref) => live[ref.kind].has(ref.id);
 }

@@ -1,0 +1,96 @@
+{
+  "date": "2026-10-27",
+  "stamp": "mvqz24kya35c",
+  "target": "http://localhost:3041",
+  "mode": "mcp",
+  "model": null,
+  "rows": [
+    {
+      "app": "port-app",
+      "pass": false,
+      "writeFiles": 1,
+      "toolCalls": 17,
+      "toolErrors": 3,
+      "skills": [
+        "start",
+        "port-app",
+        "data"
+      ],
+      "misuse": [],
+      "turns": 18,
+      "costUsd": 0.9755662,
+      "durationMs": 126470,
+      "checks": [
+        {
+          "name": "the session finished",
+          "ok": true,
+          "detail": "The guestbook is ported to drobek: http://eval-guestbook-mvqz24kya35c--preview.apps.localhost:3041\n\n**To confirm in the dashboard:** the owner has to approve letting anyone add messages to the `messag"
+        },
+        {
+          "name": "the agent created an app",
+          "ok": true,
+          "detail": "eval-guestbook-mvqz24kya35c (v2, compile ok)"
+        },
+        {
+          "name": "pending module changes confirmed by the owner",
+          "ok": true,
+          "detail": "data"
+        },
+        {
+          "name": "the agent did not publish",
+          "ok": true
+        },
+        {
+          "name": "the preview answers 200",
+          "ok": true,
+          "detail": "HTTP 200"
+        },
+        {
+          "name": "the port keeps no Supabase client, no import.meta.env, no foreign script, one React, @/ resolvable",
+          "ok": false,
+          "detail": "src/lib/messages.ts: a Supabase client; src/lib/messages.ts: import.meta.env"
+        },
+        {
+          "name": "the components, utils and pages kept their paths",
+          "ok": true,
+          "detail": "7 files"
+        },
+        {
+          "name": "the shadcn/ui components are unchanged (no rewrite)",
+          "ok": true
+        },
+        {
+          "name": "index.html loads Tailwind's browser build from esm.sh",
+          "ok": true
+        },
+        {
+          "name": "no binary went through write_files",
+          "ok": true
+        },
+        {
+          "name": "public/logo.png is an asset at /logo.png with its exact size",
+          "ok": true,
+          "detail": "/logo.png 116"
+        },
+        {
+          "name": "the Supabase table became a data collection",
+          "ok": true,
+          "detail": "messages"
+        },
+        {
+          "name": "the ported app works in a browser",
+          "ok": false,
+          "detail": "page.goto: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - navigating to \"http://eval-guestbook-mvqz24kya35c--preview.apps.localhost:3041/\", waiting until \"networkidle\"\u001b[22m\n"
+        },
+        {
+          "name": "get_logs runtime: no browser errors",
+          "ok": true
+        },
+        {
+          "name": "non-existent API uses = 0",
+          "ok": true
+        }
+      ]
+    }
+  ]
+}

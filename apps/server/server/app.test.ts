@@ -134,11 +134,17 @@ describe('single drobek process', () => {
     expect(await res.json()).toMatchObject({ jsonrpc: '2.0', error: { code: -32001 }, id: null });
   });
 
-  it('exposes the MCP sessions for the shutdown', async () => {
-    expect(app.mcp.sessionCount()).toBe(0);
-    app.mcp.endListenStreams();
-    await app.mcp.closeSessions();
-    expect(app.mcp.sessionCount()).toBe(0);
+  it('exposes the MCP endpoint to the shutdown: after stop a request answers 503 with Retry-After, close tears the handler down', async () => {
+    app.mcp.stop();
+    const res = await fetch(`${baseUrl}/mcp`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+    });
+    expect(res.status).toBe(503);
+    expect(res.headers.get('retry-after')).toBe('5');
+    expect(await res.json()).toMatchObject({ jsonrpc: '2.0', error: { code: -32000 }, id: null });
+    await app.mcp.close();
   });
 });
 

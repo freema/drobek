@@ -97,14 +97,13 @@ key, revokes a connection, changes the sign-in e-mail or deletes an account.
    refresh token. Sending a rotated refresh token again within 60 s (a retry
    after a lost response) gets a fresh pair; later, it is reuse and burns
    that lineage.
-6. `initialize` opens a session (`Mcp-Session-Id`) bound to the user, the
-   scope and the grant (the API key, or the OAuth client) that opened it;
-   another credential gets 401 on it. drobek closes a session after
-   `MCP_SESSION_IDLE_TTL_MS` (1 hour) without a request, when the user opens
-   more than `MCP_SESSIONS_PER_USER` (10; the least recently used goes), when
-   its key or connection is revoked, and on a restart. A request with a
-   closed session's id answers 404, and the client initializes a new
-   session.
+6. drobek keeps no MCP session: every request is authenticated from its
+   own credential and served on its own. A 2026-07-28 client sends each
+   request with its protocol version in `_meta` and needs no `initialize`; a
+   2025-era client's `initialize` answers with the instructions and no
+   `Mcp-Session-Id`, and a session id it still sends is ignored. A revoked
+   key or connection gets 401 on its next request; a restart is invisible to
+   the client.
 
 ## Scopes and roles
 

@@ -88,7 +88,7 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     surface: 'MCP tool isError',
     meaning:
       'Another user\'s agent is writing this app right now (single-writer lease, 3 minutes, renewed by each of their writes). The body carries the masked `holder` and `expires_at`. From release_lease: that lease is not yours, so it stays.',
-    fix: 'Tell the user who holds the app and wait until `expires_at`, then retry. Your own other sessions never block you — they hand the lease over.',
+    fix: 'Tell the user who holds the app and wait until `expires_at`, then retry. Your own other connections never block you — they hand the lease over.',
   },
   {
     code: 'app_locked_by_admin',

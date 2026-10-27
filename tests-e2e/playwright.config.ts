@@ -1,3 +1,6 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { defineConfig, type ReporterDescription } from '@playwright/test';
 
 /**
@@ -21,6 +24,12 @@ import { defineConfig, type ReporterDescription } from '@playwright/test';
  *                   image flow publishes it on loopback); default BASE_URL_WEB.
  * - PLAYWRIGHT_JSON_OUTPUT_FILE — also write a JSON report there (the image
  *                   flow's per-phase reports for scripts/e2e-skip-guard.mjs).
+ *
+ * Two projects, one per MCP protocol era drobek serves on `/mcp`: `legacy`
+ * runs every spec with the 2025 client (`initialize`), `modern` runs again
+ * the specs that talk MCP through the official client (they import
+ * tests/helpers/mcp.ts or the client itself) pinned to 2026-07-28. The era
+ * reaches the helper as the project's `metadata.era`.
  */
 export const BASE_URL_WEB =
   process.env.BASE_URL_WEB ?? 'http://localhost:3041';
@@ -44,8 +53,18 @@ export const APPS_URL_SCHEME =
   process.env.APPS_URL_SCHEME ||
   (/(^|\.)localhost(:\d+)?$/.test(APPS_DOMAIN) ? 'http' : 'https');
 
+const TEST_DIR = fileURLToPath(new URL('./tests', import.meta.url));
+const MCP_SPECS = readdirSync(TEST_DIR)
+  .filter((f) => f.endsWith('.spec.ts'))
+  .filter((f) => /from '(\.\/helpers\/mcp|@modelcontextprotocol\/client)'/.test(readFileSync(join(TEST_DIR, f), 'utf8')))
+  .map((f) => `**/tests/${f}`);
+
 export default defineConfig({
   testDir: './tests',
+  projects: [
+    { name: 'legacy', metadata: { era: 'legacy' } },
+    { name: 'modern', metadata: { era: 'modern' }, testMatch: MCP_SPECS },
+  ],
   globalSetup: './global-setup.ts',
   forbidOnly: Boolean(process.env.CI),
   // One retry on CI's cold, shared runner (a retried pass is still reported as flaky).

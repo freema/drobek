@@ -24,7 +24,15 @@
  * (image.ts).
  */
 import { randomBytes } from 'node:crypto';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type {
+  CallToolResult,
+  JSONRPCRequest,
+  McpServer,
+  Result,
+  ServerContext,
+  StandardSchemaV1,
+  StandardSchemaWithJSON,
+} from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import { READ_FILE_SEARCH_MATCHES_MAX, toolDoc } from '@drobek/agent-dx';
 import { AppsError, LOCK_REASONS, WORKSPACE_PUBLISHING_STATES } from '@drobek/apps';
@@ -601,10 +609,21 @@ const MAX_ARG_NAME = 64;
 /**
  * The registered input schema of a tool: its shape as a LOOSE object, so the
  * handler sees the unknown keys it has to report; `additionalProperties` is
- * dropped from the listed JSON Schema so tools/list stays what it was.
+ * dropped from the listed JSON Schema so tools/list stays what it was. The
+ * listed schema is JSON Schema draft-07, the dialect tools/list has always
+ * declared (the SDK would convert to 2020-12); validation is Zod's own.
  */
-function toolInput(name: AppToolName) {
-  return z.looseObject(INPUT_SCHEMAS[name]).meta({ additionalProperties: undefined });
+function toolInput(name: AppToolName): StandardSchemaWithJSON {
+  const schema = z.looseObject(INPUT_SCHEMAS[name]).meta({ additionalProperties: undefined });
+  return {
+    '~standard': {
+      ...schema['~standard'],
+      jsonSchema: {
+        input: () => z.toJSONSchema(schema, { target: 'draft-7', io: 'input' }),
+        output: () => z.toJSONSchema(schema, { target: 'draft-7', io: 'output' }),
+      },
+    },
+  };
 }
 
 /** The known arguments of a call, and the warning for the rest (null when there is none). */
@@ -770,9 +789,54 @@ export function untrustedLogsEnvelope(r: GetLogsResult): string {
   ].join('\n');
 }
 
+type StoredRequestHandler = (request: JSONRPCRequest, ctx: ServerContext) => Promise<Result>;
+
+type IssuePath = NonNullable<StandardSchemaV1.Issue['path']>;
+
+function issuePath(path: IssuePath): string {
+  return path.reduce<string>((acc, seg, i) => {
+    const key = typeof seg === 'object' && seg !== null ? seg.key : seg;
+    if (i === 0) return String(key);
+    return typeof key === 'number' ? `${acc}[${key}]` : `${acc}.${String(key)}`;
+  }, '');
+}
+
+function invalidParams(text: string): CallToolResult {
+  return { content: [{ type: 'text', text: `MCP error -32602: ${text}` }], isError: true };
+}
+
+/**
+ * tools/call keeps the answers clients have always had from this server, which
+ * the SDK words differently: a call to a tool the grant does not have and
+ * arguments that fail the tool's input schema both answer an `isError` result
+ * carrying the invalid-params code ("MCP error -32602: Tool <name> not found",
+ * "MCP error -32602: Input validation error: Invalid arguments for tool <name>:
+ * <message> at <path>", one issue per line). A valid call goes to the SDK's own
+ * tools/call handler unchanged.
+ */
+function keepToolCallAnswers(server: McpServer, registered: ReadonlyMap<string, StandardSchemaWithJSON>): void {
+  const low = server.server;
+  const sdkCall = (low as unknown as { _getRequestHandler(method: string): StoredRequestHandler | undefined })._getRequestHandler('tools/call');
+  if (!sdkCall) throw new Error('the MCP SDK installed no tools/call handler');
+  low.removeRequestHandler('tools/call');
+  low.setRequestHandler('tools/call', async (request, ctx): Promise<CallToolResult> => {
+    const { name } = request.params;
+    const schema = registered.get(name);
+    if (!schema) return invalidParams(`Tool ${name} not found`);
+    const checked = await schema['~standard'].validate(request.params.arguments ?? {});
+    if (checked.issues?.length) {
+      const issues = checked.issues.map((i) => (i.path?.length ? `${i.message} at ${issuePath(i.path)}` : i.message));
+      return invalidParams(`Input validation error: Invalid arguments for tool ${name}: ${issues.join('\n')}`);
+    }
+    return (await sdkCall({ jsonrpc: '2.0', id: ctx.mcpReq.id, ...request }, ctx)) as CallToolResult;
+  });
+}
+
 export interface RegisterOptions {
   /** Scope gate: a tool is registered only when this returns true (default: all). */
   allow?: (tool: AppToolName) => boolean;
+  /** The grant the calls come through (`api_key:<id>` / `oauth:<client_id>`), recorded in the lease. Default: `stateless`. */
+  grant?: string;
   deps?: Partial<ToolDeps>;
 }
 
@@ -783,7 +847,8 @@ export function registerAppTools(
   opts: RegisterOptions = {}
 ): void {
   const allow = opts.allow ?? (() => true);
-  let registered = 0;
+  const grant = opts.grant ?? 'stateless';
+  const registered = new Map<string, StandardSchemaWithJSON>();
   let deps: ToolDeps | null = null;
   const getDeps = () => (deps ??= defaultDeps(opts.deps));
 
@@ -794,18 +859,19 @@ export function registerAppTools(
   ): void {
     if (!allow(name)) return;
     if (SUPER_ADMIN_TOOL_NAMES.includes(name) && !principal.superAdmin) return;
-    registered += 1;
+    const inputSchema = toolInput(name);
+    registered.set(name, inputSchema);
     const doc = toolDoc(name);
-    server.registerTool(
+    const tool = server.registerTool(
       name,
       {
         title: doc.title,
         description: doc.description,
-        inputSchema: toolInput(name),
+        inputSchema,
         annotations: { title: doc.title, ...doc.annotations },
       },
       // The SDK infers args from the schema; each body re-validates what it relies on.
-      (async (raw: unknown, extra: { sessionId?: string }) => {
+      (async (raw: unknown) => {
         const d = getDeps();
         const { known, warning } = splitToolArgs(name, raw);
         const args = known as A;
@@ -813,7 +879,7 @@ export function registerAppTools(
         try {
           const ctx: CallContext = {
             principal,
-            sessionId: extra?.sessionId ?? 'stateless',
+            grant,
             deps: d,
             modules: await d.modules(),
           };
@@ -833,6 +899,8 @@ export function registerAppTools(
         }
       }) as never
     );
+    // tools/list has always declared every tool as one that does not run as a task.
+    tool.execution = { taskSupport: 'forbidden' };
   }
 
   register('list_apps', listApps);
@@ -906,10 +974,11 @@ export function registerAppTools(
   register('restore_app', restoreAppTool);
   register('set_gallery_hidden', setGalleryHiddenTool);
 
-  if (registered === 0) {
+  if (registered.size === 0) {
     // A grant with no tool scope (e.g. none of read/write/publish) must still get an
     // empty tools/list, not "Method not found": the SDK installs the tools
     // handlers on the first registration, so register a placeholder and drop it.
     server.registerTool('__drobek_none', { description: 'placeholder' }, async () => ({ content: [] })).remove();
   }
+  keepToolCallAnswers(server, registered);
 }

@@ -7,9 +7,8 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server';
+import { Client } from '@modelcontextprotocol/client';
 import { AssetDisk, memoryScreenshotRequestStore, memoryUploadTokenStore } from '@drobek/apps';
 import { Compiler, type CompileLimits } from '@drobek/compile';
 import type { DnsResolver } from '@drobek/domains';

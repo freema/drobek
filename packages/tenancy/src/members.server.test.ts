@@ -94,7 +94,7 @@ function leaseTable(entries: Record<string, string> = {}) {
     take: async (appId: string, holderUserId: string): Promise<Lease | null> => {
       if (held.get(appId) !== holderUserId) return null;
       held.delete(appId);
-      return { holder_user_id: holderUserId, session_id: 's', expires_at: '2026-10-02T10:03:00.000Z' };
+      return { holder_user_id: holderUserId, session_id: 's', grant: 's', expires_at: '2026-10-02T10:03:00.000Z' };
     },
   };
 }

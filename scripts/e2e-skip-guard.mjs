@@ -10,28 +10,31 @@
  *   node scripts/e2e-skip-guard.mjs --self-check
  *
  * <listed.json>: `playwright test --list --reporter=json` over the whole
- * suite — every test that must run. <phase.json>: the JSON report of one
+ * suite — every test that must run, once per Playwright project (the MCP
+ * protocol eras) that collects it. <phase.json>: the JSON report of one
  * phase (its file name names the phase). A test ran in a phase when the
- * phase reports an outcome other than `skipped` for it (expected,
- * unexpected or flaky). Exit 0 when every listed test ran somewhere, 1 with
- * the list of those that did not and the skip reasons each phase gave.
+ * phase reports an outcome other than `skipped` for it in that project
+ * (expected, unexpected or flaky). Exit 0 when every listed test ran
+ * somewhere, 1 with the list of those that did not and the skip reasons each
+ * phase gave.
  */
 import { readFileSync } from 'node:fs';
 import { basename } from 'node:path';
 
-/** Every test of a Playwright JSON report: `file › describe… › title` → { ran, reasons }. */
+/** Every test of a Playwright JSON report: `[project] file › describe… › title` → { ran, reasons }. */
 function testsOf(report) {
   const out = new Map();
   const walk = (suite, titles) => {
     for (const spec of suite.specs ?? []) {
-      const key = [spec.file, ...titles, spec.title].join(' › ');
-      const tests = spec.tests ?? [];
-      const reasons = tests.flatMap((t) => (t.annotations ?? []).filter((a) => a.type === 'skip' && a.description).map((a) => a.description));
-      const prev = out.get(key);
-      out.set(key, {
-        ran: (prev?.ran ?? false) || tests.some((t) => t.status !== 'skipped'),
-        reasons: [...(prev?.reasons ?? []), ...reasons],
-      });
+      for (const t of spec.tests ?? []) {
+        const key = `${t.projectName ? `[${t.projectName}] ` : ''}${[spec.file, ...titles, spec.title].join(' › ')}`;
+        const reasons = (t.annotations ?? []).filter((a) => a.type === 'skip' && a.description).map((a) => a.description);
+        const prev = out.get(key);
+        out.set(key, {
+          ran: (prev?.ran ?? false) || t.status !== 'skipped',
+          reasons: [...(prev?.reasons ?? []), ...reasons],
+        });
+      }
     }
     for (const child of suite.suites ?? []) walk(child, [...titles, child.title]);
   };
@@ -113,6 +116,21 @@ function selfCheck() {
   }
   if (neverRan(listed, [{ name: 'all', report: listed }]).length !== 6) {
     console.error('e2e-skip-guard self-check failed: a listed-only report must count every test as not run');
+    process.exit(1);
+  }
+  const inProjects = (status) => ({
+    file: 'd.spec.ts',
+    title: 'both eras',
+    tests: [
+      { projectName: 'legacy', status: 'expected', annotations: [] },
+      { projectName: 'modern', status, annotations: [] },
+    ],
+  });
+  const perProject = neverRan(report(file('d.spec.ts', [inProjects('skipped')])), [
+    { name: 'phase-1', report: report(file('d.spec.ts', [inProjects('skipped')])) },
+  ]).map((m) => m.test);
+  if (JSON.stringify(perProject) !== JSON.stringify(['[modern] d.spec.ts › both eras'])) {
+    console.error(`e2e-skip-guard self-check failed: a test must run in every project that lists it, got ${JSON.stringify(perProject)}`);
     process.exit(1);
   }
   console.log('e2e-skip-guard self-check ok');

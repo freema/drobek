@@ -132,6 +132,16 @@ export function ownClientIpHeaders(): Record<string, string> {
 }
 
 /**
+ * The dashboard's per-IP OTP send windows (OTP_IP_SHORT_LIMIT /
+ * OTP_IP_DAILY_LIMIT): behind Caddy every sign-in of the run comes from one IP,
+ * and the suite signs in more often than the relaxed daily limit allows.
+ */
+async function resetOtpIpLimits(): Promise<void> {
+  await resetRateLimitBucket('otp-ip-15m');
+  await resetRateLimitBucket('otp-ip-24h');
+}
+
+/**
  * Full magic-code sign-in via the UI; leaves the page authenticated on /me, or
  * on `landing` when an earlier `/login?returnTo=` visit set where to come back.
  */
@@ -145,6 +155,7 @@ export async function loginViaEmail(
   const deadline = Date.now() + 30_000;
   let code: string | null = null;
   while (code === null) {
+    await resetOtpIpLimits();
     await page.goto('/login');
     await page.getByLabel('Email').fill(email);
     await page.getByRole('button', { name: 'Send code' }).click();

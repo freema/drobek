@@ -284,8 +284,9 @@ the same way or leave it to drobek.
 **Stopping and restarting drobek** (an upgrade, `docker compose restart`, a
 host reboot) does not cut the requests it is answering. On `SIGTERM` drobek
 stops accepting connections, closes idle keep-alive connections, ends the MCP
-listen streams (the long-lived `GET /mcp` an MCP client holds open; the
-stopping server answers a new one 405) and the apps' live data subscriptions
+listen streams (the long-lived `subscriptions/listen` stream an MCP
+2026-07-28 client holds open; the stopping server answers a new `/mcp`
+request 503) and the apps' live data subscriptions
 (`drobek.data.subscribe` reconnects to the restarted server and resumes;
 a new one answers 503 meanwhile), lets requests in flight — a
 `write_files` compile, a token refresh, a page — finish for up to
@@ -299,17 +300,16 @@ early. An error nothing in drobek
 caught (an uncaught exception or an unhandled promise rejection) stops it the
 same way: the error is logged, sent to the error reporter (`ERROR_REPORTER`)
 and drobek exits with code 1 once the requests in flight drained, so Docker's
-`restart: unless-stopped` starts it again. MCP sessions live in the
-process: after a restart a client's next request with its old session id
-answers `404 MCP session not found — reconnect.`, which per the MCP
-specification makes the client open a new session (reconnect a client that
-does not). The same answer comes for a session drobek closed while running:
-one without a request for `MCP_SESSION_IDLE_TTL_MS` (1 hour; an open listen
-stream counts as a request), a user's least recently used one when they open
-more than `MCP_SESSIONS_PER_USER` (10), and every session of an API key or
-an OAuth connection the moment it is revoked. Each closing leaves a
-`mcp session closed` log line with the reason (`idle`, `limit`, `revoked`),
-the short session id and the user id.
+`restart: unless-stopped` starts it again. `/mcp` keeps nothing in the
+process: every request is authenticated and served on its own, so an agent's
+next request after a restart works without reconnecting, and a revoked API
+key or OAuth connection gets 401 on its next request. While drobek stops, a
+new `/mcp` request answers 503 with `Retry-After`, and the
+`subscriptions/listen` streams of MCP 2026-07-28 clients end before the drain
+(the client opens its stream again). Every `/mcp` request leaves one
+`mcp request` log line with the JSON-RPC method, the tool name, the status,
+`duration_ms`, the `protocol` (`2026-07-28`, or `legacy` for a 2025-era
+client) and the user id, never arguments or credentials.
 drobek keeps idle connections open for 125 s, longer than Caddy's 2-minute
 upstream keep-alive, so Caddy never reuses a connection drobek is closing;
 with a different proxy in front, keep its upstream idle timeout below 125 s.
@@ -462,7 +462,7 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `COMPILE_MAX_IMPORT_DEPTH` | 50 | depth of a relative import chain |
 | `COMPILE_TIMEOUT_MS` / `COMPILE_CONCURRENCY` / `COMPILE_QUEUE_TIMEOUT_MS` | 10000 / 4 / 10000 | per build; builds at once; max queue wait (then `busy`) |
 | `MCP_MAX_BODY_BYTES` | 2 × `COMPILE_MAX_TOTAL_BYTES` (10485760) | the largest `/mcp` request body — one `write_files` call as JSON; a bigger one answers 413 with a JSON-RPC error telling the agent to split the write (the briefing states the value) |
-| `MCP_SESSION_IDLE_TTL_MS` / `MCP_SESSIONS_PER_USER` | 3600000 / 10 | MCP sessions are held in the server's memory: one with no request open for the idle TTL is closed (an open listen stream keeps it), and a user who opens a session past the cap has their least recently used one closed. The client's next request with a closed session's id answers 404, and the client initializes a new session ([Production compose](#production-compose)) |
+| `MCP_MAX_SUBSCRIPTIONS` | 256 | the `subscriptions/listen` streams (SSE, MCP 2026-07-28 clients) the server holds open at once; one more answers the JSON-RPC error "Subscription limit reached". drobek sends nothing on them, but each holds a connection, and the shutdown ends them before it drains the requests in flight |
 | `READINESS_MAX_WARNINGS` | 50 | warnings one publish readiness report lists (write_files, publish, the app page); the rest are counted in `warnings_omitted` |
 | `TYPECHECK_WORKERS` / `TYPECHECK_TIMEOUT_MS` / `TYPECHECK_MAX_MEMORY_MB` / `TYPECHECK_MAX_FILES` | 1 / 20000 / 512 / 150 | the background TypeScript check of each stored version (`type_error` readiness warnings): checks at once in worker threads (0 = off), time and heap per check, max .ts/.tsx files per app; a check over a limit gives no type warnings and is logged |
 | `BEACON_RATE_LIMIT` / `BEACON_APP_RATE_LIMIT` / `BEACON_RATE_WINDOW_MS` | 60 / 600 / 60000 | browser error reports per app+IP and per app per window |

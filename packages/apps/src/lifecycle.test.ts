@@ -221,6 +221,7 @@ describe('releaseAppLease', () => {
     const lease = {
       holder_user_id: 'user-agent-1',
       session_id: 's1',
+      grant: 's1',
       expires_at: '2026-09-23T10:03:00.000Z',
       renewed_at: '2026-09-23T10:00:00.000Z',
     };
@@ -249,7 +250,7 @@ describe('releaseAppLease', () => {
     const me = actor.userId as string;
     const store = new Map<string, string>();
     const redis = fakeRedis(store);
-    const theirs = { holder_user_id: 'user-other', session_id: 's9', expires_at: '2026-09-23T10:03:00.000Z' };
+    const theirs = { holder_user_id: 'user-other', session_id: 's9', grant: 's9', expires_at: '2026-09-23T10:03:00.000Z' };
     store.set(leaseKey(app.id), JSON.stringify(theirs));
     const before = (await auditOf(app.slug)).length;
 
@@ -260,7 +261,7 @@ describe('releaseAppLease', () => {
     expect(await readAppLease(app.id, redis)).toEqual(theirs);
     expect((await auditOf(app.slug)).length).toBe(before);
 
-    const mine = { holder_user_id: me, session_id: 's1', expires_at: '2026-09-23T10:03:00.000Z' };
+    const mine = { holder_user_id: me, session_id: 's1', grant: 's1', expires_at: '2026-09-23T10:03:00.000Z' };
     store.set(leaseKey(app.id), JSON.stringify(mine));
     expect(await releaseAppLease({ ...app, workspaceId: wsId }, actor, redis, { holderUserId: me })).toEqual({
       released: true,

@@ -1,0 +1,437 @@
+{
+  "date": "2026-10-27",
+  "stamp": "mvqytj7ta472",
+  "target": "http://localhost:3041",
+  "mode": "mcp",
+  "model": null,
+  "rows": [
+    {
+      "app": "contact-form",
+      "pass": true,
+      "writeFiles": 1,
+      "toolCalls": 7,
+      "toolErrors": 0,
+      "skills": [
+        "start",
+        "forms"
+      ],
+      "misuse": [],
+      "turns": 8,
+      "costUsd": 0.6950043999999999,
+      "durationMs": 30999,
+      "checks": [
+        {
+          "name": "the session finished",
+          "ok": true,
+          "detail": "The bakery contact page is ready in the preview: http://eval-bakery-mvqytj7ta472--preview.apps.localhost:3041\n\nIt compiled with no errors and passed the type check, but nobody has opened it in a brows"
+        },
+        {
+          "name": "the agent created an app",
+          "ok": true,
+          "detail": "eval-bakery-mvqytj7ta472 (v2, compile ok)"
+        },
+        {
+          "name": "pending module changes confirmed by the owner",
+          "ok": true,
+          "detail": "none pending"
+        },
+        {
+          "name": "the agent did not publish",
+          "ok": true
+        },
+        {
+          "name": "the preview answers 200",
+          "ok": true,
+          "detail": "HTTP 200"
+        },
+        {
+          "name": "the app submits a drobek form (<Form name> or drobek.forms.submit)",
+          "ok": true,
+          "detail": "contact"
+        },
+        {
+          "name": "a visitor submits the form in a browser → 200",
+          "ok": true,
+          "detail": "POST /__drobek/v1/forms/contact → 200"
+        },
+        {
+          "name": "the owner gets the submission by e-mail (Mailpit)",
+          "ok": true,
+          "detail": "New \"contact\" submission — Eval Bakery mvqytj7ta472"
+        },
+        {
+          "name": "no page errors in the browser",
+          "ok": true
+        },
+        {
+          "name": "get_logs runtime: no browser errors",
+          "ok": true
+        },
+        {
+          "name": "non-existent API uses = 0",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "app": "team-list-admin",
+      "pass": true,
+      "writeFiles": 1,
+      "toolCalls": 11,
+      "toolErrors": 0,
+      "skills": [
+        "start",
+        "auth",
+        "data"
+      ],
+      "misuse": [],
+      "turns": 12,
+      "costUsd": 0.6051894000000001,
+      "durationMs": 53029,
+      "checks": [
+        {
+          "name": "the session finished",
+          "ok": true,
+          "detail": "The shopping list is built and compiles, and I haven't published it. The background type check found no errors, but nobody has opened the preview yet, so I haven't seen it run in a browser.\n\n**Preview"
+        },
+        {
+          "name": "the agent created an app",
+          "ok": true,
+          "detail": "eval-list-mvqytj7ta472 (v2, compile ok)"
+        },
+        {
+          "name": "pending module changes confirmed by the owner",
+          "ok": true,
+          "detail": "none pending"
+        },
+        {
+          "name": "the agent did not publish",
+          "ok": true
+        },
+        {
+          "name": "the preview answers 200",
+          "ok": true,
+          "detail": "HTTP 200"
+        },
+        {
+          "name": "an anonymous visitor sees the <LoginGate> sign-in form",
+          "ok": true
+        },
+        {
+          "name": "no page errors in the browser",
+          "ok": true
+        },
+        {
+          "name": "the owner signs in as admin",
+          "ok": true,
+          "detail": "role admin"
+        },
+        {
+          "name": "the member signs in as user",
+          "ok": true,
+          "detail": "role user"
+        },
+        {
+          "name": "the app stores the list in a drobek.data collection",
+          "ok": true,
+          "detail": "items"
+        },
+        {
+          "name": "anonymous → the list is not readable (401)",
+          "ok": true,
+          "detail": "GET → 401"
+        },
+        {
+          "name": "the member reads the list (200)",
+          "ok": true,
+          "detail": "GET → 200"
+        },
+        {
+          "name": "the member may NOT add items (403)",
+          "ok": true,
+          "detail": "POST → 403"
+        },
+        {
+          "name": "the admin passes the create rule (201, or 422 from the schema)",
+          "ok": true,
+          "detail": "POST → 201"
+        },
+        {
+          "name": "get_logs runtime: no browser errors",
+          "ok": true
+        },
+        {
+          "name": "non-existent API uses = 0",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "app": "proxy-call",
+      "pass": true,
+      "writeFiles": 1,
+      "toolCalls": 12,
+      "toolErrors": 0,
+      "skills": [
+        "start",
+        "proxy",
+        "auth"
+      ],
+      "misuse": [],
+      "turns": 13,
+      "costUsd": 0.5691816000000001,
+      "durationMs": 53080,
+      "checks": [
+        {
+          "name": "the session finished",
+          "ok": true,
+          "detail": "The app is built and compiles, but the \"Call the API\" button won't work until you confirm one setting in the dashboard. I haven't opened it in a browser, so it's untested.\n\n**Preview:** http://eval-ec"
+        },
+        {
+          "name": "the agent created an app",
+          "ok": true,
+          "detail": "eval-echo-mvqytj7ta472 (v2, compile ok)"
+        },
+        {
+          "name": "pending module changes confirmed by the owner",
+          "ok": true,
+          "detail": "proxy"
+        },
+        {
+          "name": "the agent did not publish",
+          "ok": true
+        },
+        {
+          "name": "the preview answers 200",
+          "ok": true,
+          "detail": "HTTP 200"
+        },
+        {
+          "name": "the member signs in",
+          "ok": true
+        },
+        {
+          "name": "GET /echo/hello through the proxy → 200",
+          "ok": true,
+          "detail": "→ 200"
+        },
+        {
+          "name": "the upstream gets the injected bearer secret (never the page)",
+          "ok": true
+        },
+        {
+          "name": "the page calls the upstream through drobek.proxy in a browser → 200",
+          "ok": true,
+          "detail": "/__drobek/v1/proxy/echo/echo/hello → 200"
+        },
+        {
+          "name": "the page shows the upstream response",
+          "ok": true
+        },
+        {
+          "name": "no page errors in the browser",
+          "ok": true
+        },
+        {
+          "name": "get_logs runtime: no browser errors",
+          "ok": true
+        },
+        {
+          "name": "non-existent API uses = 0",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "app": "port-artifact",
+      "pass": true,
+      "writeFiles": 1,
+      "toolCalls": 17,
+      "toolErrors": 3,
+      "skills": [
+        "start"
+      ],
+      "misuse": [],
+      "turns": 18,
+      "costUsd": 0.7291909999999999,
+      "durationMs": 46829,
+      "checks": [
+        {
+          "name": "the session finished",
+          "ok": true,
+          "detail": "The film page is now an app on drobek, and the preview works:\n\n**http://eval-film-mvqytj7ta472--preview.apps.localhost:3041**\n\n- **Text files:** `index.html`, `style.css` and `chapters.js` went up unc"
+        },
+        {
+          "name": "the agent created an app",
+          "ok": true,
+          "detail": "eval-film-mvqytj7ta472 (v2, compile ok)"
+        },
+        {
+          "name": "pending module changes confirmed by the owner",
+          "ok": true,
+          "detail": "none pending"
+        },
+        {
+          "name": "the agent did not publish",
+          "ok": true
+        },
+        {
+          "name": "the preview answers 200",
+          "ok": true,
+          "detail": "HTTP 200"
+        },
+        {
+          "name": "every text file of the artifact was written",
+          "ok": true,
+          "detail": "chapters.js, index.html, style.css"
+        },
+        {
+          "name": "index.html keeps every relative path of the artifact",
+          "ok": true,
+          "detail": "style.css, film.mp4, poster.jpg, s1.jpg, s2.jpg, chapters.js"
+        },
+        {
+          "name": "the text files are unchanged",
+          "ok": true
+        },
+        {
+          "name": "no binary went through write_files (no media path, no base64 blob)",
+          "ok": true
+        },
+        {
+          "name": "the agent asked for upload URLs",
+          "ok": true
+        },
+        {
+          "name": "every binary is an asset at its own path with its exact size",
+          "ok": true,
+          "detail": "/film.mp4, /poster.jpg, /s1.jpg, /s2.jpg"
+        },
+        {
+          "name": "film.mp4 with Range → 206 video/mp4",
+          "ok": true,
+          "detail": "→ 206 video/mp4 bytes 0-99/2119"
+        },
+        {
+          "name": "s1.jpg → 200 image/jpeg",
+          "ok": true,
+          "detail": "→ 200"
+        },
+        {
+          "name": "chapters.js → 200",
+          "ok": true,
+          "detail": "→ 200"
+        },
+        {
+          "name": "the chapter script runs (two chapter buttons)",
+          "ok": true
+        },
+        {
+          "name": "the video plays in the browser",
+          "ok": true,
+          "detail": "this browser build plays no H.264 — covered by the 206 check only"
+        },
+        {
+          "name": "no page errors in the browser",
+          "ok": true
+        },
+        {
+          "name": "get_logs runtime: no browser errors",
+          "ok": true
+        },
+        {
+          "name": "non-existent API uses = 0",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "app": "port-app",
+      "pass": false,
+      "writeFiles": 1,
+      "toolCalls": 26,
+      "toolErrors": 3,
+      "skills": [
+        "start",
+        "data",
+        "port-app"
+      ],
+      "misuse": [],
+      "turns": 27,
+      "costUsd": 1.0248214,
+      "durationMs": 125249,
+      "checks": [
+        {
+          "name": "the session finished",
+          "ok": true,
+          "detail": "The guestbook is now a drobek app, and it is not published. Visitors can't sign it yet: the messages table first needs your confirmation in the dashboard.\n\n**Preview:** http://eval-guestbook-mvqytj7ta"
+        },
+        {
+          "name": "the agent created an app",
+          "ok": true,
+          "detail": "eval-guestbook-mvqytj7ta472 (v2, compile ok)"
+        },
+        {
+          "name": "pending module changes confirmed by the owner",
+          "ok": true,
+          "detail": "data"
+        },
+        {
+          "name": "the agent did not publish",
+          "ok": true
+        },
+        {
+          "name": "the preview answers 200",
+          "ok": true,
+          "detail": "HTTP 200"
+        },
+        {
+          "name": "the port keeps no Supabase client, no import.meta.env, no foreign script, one React, @/ resolvable",
+          "ok": false,
+          "detail": "src/lib/messages.ts: a Supabase client; src/lib/messages.ts: import.meta.env"
+        },
+        {
+          "name": "the components, utils and pages kept their paths",
+          "ok": true,
+          "detail": "7 files"
+        },
+        {
+          "name": "the shadcn/ui components are unchanged (no rewrite)",
+          "ok": false,
+          "detail": "src/components/ui/button.tsx, src/components/ui/card.tsx, src/components/ui/input.tsx"
+        },
+        {
+          "name": "index.html loads Tailwind's browser build from esm.sh",
+          "ok": true
+        },
+        {
+          "name": "no binary went through write_files",
+          "ok": true
+        },
+        {
+          "name": "public/logo.png is an asset at /logo.png with its exact size",
+          "ok": true,
+          "detail": "/logo.png 116"
+        },
+        {
+          "name": "the Supabase table became a data collection",
+          "ok": true,
+          "detail": "messages"
+        },
+        {
+          "name": "the ported app works in a browser",
+          "ok": false,
+          "detail": "page.goto: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - navigating to \"http://eval-guestbook-mvqytj7ta472--preview.apps.localhost:3041/\", waiting until \"networkidle\"\u001b[22m\n"
+        },
+        {
+          "name": "get_logs runtime: no browser errors",
+          "ok": true
+        },
+        {
+          "name": "non-existent API uses = 0",
+          "ok": true
+        }
+      ]
+    }
+  ]
+}

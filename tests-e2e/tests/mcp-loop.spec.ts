@@ -1,22 +1,15 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { UnauthorizedError, type OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import type {
-  OAuthClientInformationMixed,
-  OAuthClientMetadata,
-  OAuthTokens,
-} from '@modelcontextprotocol/sdk/shared/auth.js';
+import { UnauthorizedError, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
+import type { OAuthClientProvider, OAuthClientInformationMixed, OAuthClientMetadata, OAuthTokens } from '@modelcontextprotocol/client';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { BASE_URL_MCP, BASE_URL_WEB, TEST_ENV } from '../playwright.config';
 import { DASHBOARD_ORIGIN, getAppUrl, type Raw } from './helpers/apps-host';
 import { loginViaEmail, resetDcrIpRateLimit, skipUnlessLocal, uniqueEmail } from './helpers/auth';
-import { callTool, connectBearer } from './helpers/mcp';
-import { withDb } from './helpers/seed';
+import { callTool, connectBearer, mcpEra, newMcpClient, requireSmokeKey } from './helpers/mcp';
 
 /**
  * The agent loop, end to end, the way a real MCP client
- * (Claude Code, Cursor, …) drives it.
+ * (Claude Code, Cursor, …) drives it — in the project's protocol era.
  *
  * 1. `@local` — the official SDK client with an OAuthClientProvider: 401 →
  *    RFC 9728/8414 discovery → Dynamic Client Registration → PKCE S256
@@ -132,8 +125,8 @@ async function approveConsent(page: Page, url: URL): Promise<URL> {
   return back;
 }
 
-function newClient(): Client {
-  return new Client({ name: 'drobek-e2e-mcp-loop', version: '0.0.0' });
+function newClient() {
+  return newMcpClient('drobek-e2e-mcp-loop');
 }
 
 /** GET an app URL, retried while a fresh host warms up (TLS issuance, DNS). */
@@ -191,7 +184,7 @@ test('mcp loop: DCR + PKCE consent → list → create → broken write → fix 
   expect(back.searchParams.get('iss')).toBe(BASE_URL_WEB.replace(/\/+$/, ''));
   const code = back.searchParams.get('code');
   expect(code, 'authorization code').toBeTruthy();
-  await first.finishAuth(code as string);
+  await first.finishAuth(back.searchParams);
   expect(provider.tokens()?.access_token, 'access token').toBeTruthy();
   expect(provider.tokens()?.refresh_token, 'refresh token').toBeTruthy();
   expect(provider.tokens()?.scope?.split(' ').sort()).toEqual(['publish', 'read', 'write']);
@@ -199,6 +192,7 @@ test('mcp loop: DCR + PKCE consent → list → create → broken write → fix 
   const transport = new StreamableHTTPClientTransport(mcpUrl, { authProvider: provider });
   const client = newClient();
   await client.connect(transport);
+  expect(client.getProtocolEra()).toBe(mcpEra());
   try {
     // ── list_apps: the token is bound to this user; nothing yet. ───────────
     const listed = await callTool(client, 'list_apps', {});
@@ -310,27 +304,6 @@ test('mcp loop: DCR + PKCE consent → list → create → broken write → fix 
 });
 
 /**
- * The smoke credential. Production: SMOKE_API_KEY from the deploy
- * job's secrets. Local stack: a throwaway user + key written straight into the
- * local DB (withDb refuses unless TEST_ENV=local).
- */
-async function smokeKey(): Promise<string | null> {
-  const fromEnv = process.env.SMOKE_API_KEY?.trim();
-  if (fromEnv) return fromEnv;
-  if (TEST_ENV !== 'local') return null;
-  const key = `drk_${randomBytes(24).toString('base64url')}`;
-  const userId = `usr${randomBytes(12).toString('hex')}`;
-  await withDb(async (c) => {
-    await c.query(`INSERT INTO users (id, email) VALUES ($1, $2)`, [userId, uniqueEmail('smoke')]);
-    await c.query(
-      `INSERT INTO api_keys (id, user_id, name, key_hash, scopes) VALUES ($1, $2, 'smoke', $3, 'read write publish')`,
-      [`key${randomBytes(8).toString('hex')}`, userId, createHash('sha256').update(key).digest('hex')]
-    );
-  });
-  return key;
-}
-
-/**
  * The ONE slug a non-local smoke identity uses, run after run:
  * `smoke-<12 hex>` of a domain-separated SHA-256 of the key. Derived from the
  * secret (not from the key id or e-mail, which the client does not know or
@@ -365,17 +338,7 @@ test('smoke loop: API key → list → create/reuse smoke-* → write → previe
   request,
 }) => {
   test.setTimeout(LOOP_BUDGET_MS);
-  const key = await smokeKey();
-  const web = new URL(BASE_URL_WEB);
-  if (!key) {
-    // A local target without TEST_ENV=local simply has no credential; any
-    // other target (production after a deploy) MUST be given one.
-    test.skip(
-      web.hostname === 'localhost' || web.hostname === '127.0.0.1',
-      'no SMOKE_API_KEY (and not TEST_ENV=local)'
-    );
-    throw new Error('SMOKE_API_KEY is required for the @smoke MCP loop against a non-local target');
-  }
+  const key = await requireSmokeKey();
   // Local stack → a fresh `smoke-<random>` app, deleted through the dashboard
   // at the end. Anywhere else (production) → the identity's one stable slug,
   // reused every run: nothing to delete, nothing accumulates.

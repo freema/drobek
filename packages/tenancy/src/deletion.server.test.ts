@@ -385,7 +385,7 @@ describe('deleteAccount', () => {
     const takeLease = async (appId: string, holder: string): Promise<Lease | null> => {
       if (held.get(appId) !== holder) return null;
       held.delete(appId);
-      return { holder_user_id: holder, session_id: 's', expires_at: '2026-10-02T10:00:00.000Z' };
+      return { holder_user_id: holder, session_id: 's', grant: 's', expires_at: '2026-10-02T10:00:00.000Z' };
     };
     const { hooks, deleted, purged } = recordingHooks();
     const out = await deleteAccount({ userId: leaver.id, hooks, takeLease, disk });

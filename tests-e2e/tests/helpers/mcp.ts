@@ -1,22 +1,46 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import {
   expect,
+  test,
   type APIRequestContext,
   type Page,
 } from '@playwright/test';
-import { BASE_URL_MCP, BASE_URL_WEB } from '../../playwright.config';
+import { BASE_URL_MCP, BASE_URL_WEB, TEST_ENV } from '../../playwright.config';
 import { loginViaEmail, resetDcrIpRateLimit, uniqueEmail } from './auth';
-import { personalWorkspaceOf } from './seed';
+import { personalWorkspaceOf, withDb } from './seed';
 
 /**
  * Shared MCP harness: full login + OAuth consent (PKCE S256) + token exchange +
  * a connected Streamable-HTTP MCP client, plus a JSON tool-call helper.
  * Tokens are USER-bound: the consent screen has no workspace choice,
  * only the read / write / publish checkboxes.
+ * The client speaks the protocol era of the Playwright project the test runs
+ * in (`legacy` = the 2025 `initialize` handshake, `modern` = pinned to
+ * 2026-07-28; see playwright.config.ts) unless a call names one.
  * Not a spec file — Playwright's testMatch never collects it.
  */
+
+/** The protocol eras drobek serves on one endpoint. */
+export type McpEra = 'legacy' | 'modern';
+
+export const MODERN_PROTOCOL = '2026-07-28';
+
+/** The era of the running test's Playwright project (`legacy` outside the `modern` project). */
+export function mcpEra(): McpEra {
+  return test.info().project.metadata.era === 'modern' ? 'modern' : 'legacy';
+}
+
+/**
+ * The official SDK client in an era: `legacy` = the default version
+ * negotiation (2025), `modern` = pinned to 2026-07-28, `auto` = probe with
+ * `server/discover`, fall back to `initialize`.
+ */
+export function newMcpClient(name = 'drobek-e2e', era: McpEra | 'auto' = mcpEra()): Client {
+  if (era === 'legacy') return new Client({ name, version: '0.0.0' });
+  const mode = era === 'modern' ? { pin: MODERN_PROTOCOL } : 'auto';
+  return new Client({ name, version: '0.0.0' }, { versionNegotiation: { mode } });
+}
 
 /** The loopback redirect_uri the browser's cross-origin redirect is intercepted at. */
 export const REDIRECT_URI = 'http://127.0.0.1:9988/callback';
@@ -123,17 +147,57 @@ export async function exchangeCode(
   return { status: res.status(), body: (await res.json()) as TokenBody };
 }
 
-/** Connect the official SDK client with a Bearer (OAuth token or drk_ API key). */
+/**
+ * Connect the official SDK client with a Bearer (OAuth token or drk_ API key),
+ * in the test's era unless `opts.era` names one; `opts.headers` go on every request.
+ */
 export async function connectBearer(
-  bearer: string
+  bearer: string,
+  opts: { era?: McpEra | 'auto'; headers?: Record<string, string> } = {}
 ): Promise<{ client: Client; transport: StreamableHTTPClientTransport }> {
   const transport = new StreamableHTTPClientTransport(
     new URL(`${BASE_URL_MCP}/mcp`),
-    { requestInit: { headers: { Authorization: `Bearer ${bearer}` } } }
+    { requestInit: { headers: { ...opts.headers, Authorization: `Bearer ${bearer}` } } }
   );
-  const client = new Client({ name: 'drobek-e2e', version: '0.0.0' });
+  const client = newMcpClient('drobek-e2e', opts.era);
   await client.connect(transport);
   return { client, transport };
+}
+
+/**
+ * The smoke credential. Production: SMOKE_API_KEY from the deploy
+ * job's secrets. Local stack: a throwaway user + key written straight into the
+ * local DB (withDb refuses unless TEST_ENV=local). null = no credential here.
+ */
+async function smokeKey(): Promise<string | null> {
+  const fromEnv = process.env.SMOKE_API_KEY?.trim();
+  if (fromEnv) return fromEnv;
+  if (TEST_ENV !== 'local') return null;
+  const key = `drk_${randomBytes(24).toString('base64url')}`;
+  const userId = `usr${randomBytes(12).toString('hex')}`;
+  await withDb(async (c) => {
+    await c.query(`INSERT INTO users (id, email) VALUES ($1, $2)`, [userId, uniqueEmail('smoke')]);
+    await c.query(
+      `INSERT INTO api_keys (id, user_id, name, key_hash, scopes) VALUES ($1, $2, 'smoke', $3, 'read write publish')`,
+      [`key${randomBytes(8).toString('hex')}`, userId, createHash('sha256').update(key).digest('hex')]
+    );
+  });
+  return key;
+}
+
+/**
+ * The smoke key, or skip on a local target that has none; any other target
+ * (production after a deploy) MUST be given one.
+ */
+export async function requireSmokeKey(): Promise<string> {
+  const key = await smokeKey();
+  if (key) return key;
+  const web = new URL(BASE_URL_WEB);
+  test.skip(
+    web.hostname === 'localhost' || web.hostname === '127.0.0.1',
+    'no SMOKE_API_KEY (and not TEST_ENV=local)'
+  );
+  throw new Error('SMOKE_API_KEY is required for the @smoke MCP specs against a non-local target');
 }
 
 /** A raw MCP initialize POST — for the auth negatives (no SDK). */
@@ -170,6 +234,8 @@ interface ListedWorkspace {
 export interface McpClient {
   client: Client;
   transport: StreamableHTTPClientTransport;
+  /** The era the client negotiated. */
+  era: McpEra;
   /** The signed-in user's email (the token subject). */
   email: string;
   /** The OAuth access token the client connected with (for raw `/mcp` requests). */
@@ -182,8 +248,9 @@ export interface McpClient {
 
 /**
  * Full login (a fresh unique user, or `opts.email`) + consent(`scope`) + token +
- * connected MCP client. Leaves `page` signed in as that user. Pass
- * `signedIn: true` (with `email`) when `page` already holds that user's session.
+ * connected MCP client (the test's era unless `opts.era`). Leaves `page` signed
+ * in as that user. Pass `signedIn: true` (with `email`) when `page` already
+ * holds that user's session.
  */
 export async function mcpClient(
   page: Page,
@@ -193,6 +260,7 @@ export async function mcpClient(
     scope?: string;
     email?: string;
     signedIn?: boolean;
+    era?: McpEra;
   } = {}
 ): Promise<McpClient> {
   const scope = opts.scope ?? FULL_SCOPE;
@@ -206,7 +274,9 @@ export async function mcpClient(
   expect(tok.status, 'token exchange').toBe(200);
   expect(tok.body.access_token, 'access token issued').toBeTruthy();
 
-  const { client, transport } = await connectBearer(tok.body.access_token as string);
+  const era = opts.era ?? mcpEra();
+  const { client, transport } = await connectBearer(tok.body.access_token as string, { era });
+  expect(client.getProtocolEra(), 'the negotiated era').toBe(era);
   // list_apps (read scope) names the workspaces; a grant without read (e.g.
   // write-only) falls back to the database for the personal workspace.
   let workspaces: ListedWorkspace[];
@@ -223,6 +293,7 @@ export async function mcpClient(
   return {
     client,
     transport,
+    era,
     email,
     token: tok.body.access_token as string,
     workspace: (personal as ListedWorkspace).slug,

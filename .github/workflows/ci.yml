@@ -244,7 +244,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        shard: ['1/2', '2/2']
+        shard: ['1/4', '2/4', '3/4', '4/4']
     permissions:
       contents: read
       packages: write # only used by the main-branch / tag push step below
@@ -315,7 +315,7 @@ jobs:
           retention-days: 7
 
       - name: Log in to GHCR
-        if: (github.ref == 'refs/heads/main' || github.ref_type == 'tag') && matrix.shard == '1/2'
+        if: (github.ref == 'refs/heads/main' || github.ref_type == 'tag') && matrix.shard == '1/4'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -323,7 +323,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Push the tested image (<sha> | <sha>-vX.Y.Z)
-        if: (github.ref == 'refs/heads/main' || github.ref_type == 'tag') && matrix.shard == '1/2'
+        if: (github.ref == 'refs/heads/main' || github.ref_type == 'tag') && matrix.shard == '1/4'
         env:
           SHA: ${{ needs.image.outputs.short }}
           STAGE: ${{ needs.image.outputs.stage }}

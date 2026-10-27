@@ -41,6 +41,9 @@ const RETIRED = [
   ['static bundle', /static[ -]bundles?/i],
   ['dual license', /dual[ -]licen[cs]/i],
   ['set_publish_approval', /set_publish_approval/i],
+  ['MCP_SESSION_IDLE_TTL_MS', /MCP_SESSION_IDLE_TTL_MS/],
+  ['MCP_SESSIONS_PER_USER', /MCP_SESSIONS_PER_USER/],
+  ['MCP session not found', /MCP session not found/i],
 ];
 
 /** Vendors only the hosted instance (drobek-web) integrates — [label, pattern]. */

@@ -689,7 +689,7 @@ describe('write_files — edits', () => {
         return deps.compile(sources, opts);
       },
     };
-    const ctx: CallContext = { principal: P.alice, sessionId: 's-edit', deps: racing, modules: await racing.modules() };
+    const ctx: CallContext = { principal: P.alice, grant: 's-edit', deps: racing, modules: await racing.modules() };
     const r = await writeFiles(ctx, {
       app_id: app.app_id,
       files: [{ path: 'src/greet.ts', edits: [{ old_string: 'Bye', new_string: 'Ciao' }] }],
@@ -711,7 +711,7 @@ describe('write_files — edits', () => {
         return deps.compile(sources, opts);
       },
     };
-    const ctx: CallContext = { principal: P.alice, sessionId: 's-busy', deps: racing, modules: await racing.modules() };
+    const ctx: CallContext = { principal: P.alice, grant: 's-busy', deps: racing, modules: await racing.modules() };
     const err = await writeFiles(ctx, {
       app_id: app.app_id,
       files: [{ path: 'src/greet.ts', edits: [{ old_string: 'Bye', new_string: 'Ciao' }] }],
@@ -806,8 +806,8 @@ describe('write_files — background type check', () => {
 });
 
 describe('single-writer lease', () => {
-  const write = async (ctxDeps: TestDeps, who: ToolPrincipal, sessionId: string, appId: string, n: number) => {
-    const ctx: CallContext = { principal: who, sessionId, deps: ctxDeps, modules: await ctxDeps.modules() };
+  const write = async (ctxDeps: TestDeps, who: ToolPrincipal, grant: string, appId: string, n: number) => {
+    const ctx: CallContext = { principal: who, grant, deps: ctxDeps, modules: await ctxDeps.modules() };
     return writeFiles(ctx, {
       app_id: appId,
       files: [{ path: 'notes.txt', content: `v${n}` }],
@@ -817,10 +817,10 @@ describe('single-writer lease', () => {
 
   it('blocks another member with app_locked (masked holder, expires_at); the same user takes over; expiry frees it', async () => {
     const app = await newApp('Locked app', { template: 'html' });
-    await write(deps, P.alice, 'sess-a1', app.app_id, 1);
+    await write(deps, P.alice, 'api_key:a1', app.app_id, 1);
 
     // Bob (editor in team-x) while Alice holds the lease.
-    const err = await write(deps, P.bob, 'sess-b1', app.app_id, 2).catch((e) => e);
+    const err = await write(deps, P.bob, 'api_key:b1', app.app_id, 2).catch((e) => e);
     expect(err.code).toBe('app_locked');
     const body = err.toBody();
     expect(body.holder).toBe('al***@example.test');
@@ -845,21 +845,21 @@ describe('single-writer lease', () => {
       await bobClient.close();
     }
 
-    // Alice from ANOTHER session takes it over (her app) and renews it.
+    // Alice through ANOTHER grant takes it over (her app) and renews it.
     deps.clock.advance(60_000);
-    await expect(write(deps, P.alice, 'sess-a2', app.app_id, 3)).resolves.toMatchObject({ version: 3 });
+    await expect(write(deps, P.alice, 'oauth:a2', app.app_id, 3)).resolves.toMatchObject({ version: 3 });
     const renewed = (await deps.leases.get([app.app_id])).get(app.app_id)!;
-    expect(renewed.session_id).toBe('sess-a2');
+    expect(renewed).toMatchObject({ grant: 'oauth:a2', session_id: 'oauth:a2' });
     expect(renewed.expires_at).toBe(new Date(deps.clock.now() + APP_LOCK_TTL_SEC * 1000).toISOString());
 
     // Still locked for Bob just before expiry…
     deps.clock.advance(APP_LOCK_TTL_SEC * 1000 - 1);
-    expect((await write(deps, P.bob, 'sess-b1', app.app_id, 4).catch((e) => e)).code).toBe('app_locked');
+    expect((await write(deps, P.bob, 'api_key:b1', app.app_id, 4).catch((e) => e)).code).toBe('app_locked');
     // …and free once 3 minutes passed without a write.
     deps.clock.advance(1);
-    await expect(write(deps, P.bob, 'sess-b1', app.app_id, 4)).resolves.toMatchObject({ version: 4 });
+    await expect(write(deps, P.bob, 'api_key:b1', app.app_id, 4)).resolves.toMatchObject({ version: 4 });
     // Now Alice is the one who waits.
-    expect((await write(deps, P.alice, 'sess-a2', app.app_id, 5).catch((e) => e)).code).toBe('app_locked');
+    expect((await write(deps, P.alice, 'oauth:a2', app.app_id, 5).catch((e) => e)).code).toBe('app_locked');
   });
 
   it('restore_version takes the lease too', async () => {

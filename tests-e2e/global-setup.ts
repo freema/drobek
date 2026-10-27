@@ -83,7 +83,7 @@ async function viteDepsHash(base: string): Promise<string> {
   return /\.vite\/deps\/[^"']*\?v=([0-9a-f]+)/.exec(await res.text())?.[1] ?? '';
 }
 
-async function warmUpViteDevServer(base: string): Promise<void> {
+export async function warmUpViteDevServer(base: string): Promise<void> {
   const probe = await fetch(`${base}/@vite/client`).catch(() => null);
   await probe?.body?.cancel();
   if (!probe?.ok) return;

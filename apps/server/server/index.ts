@@ -197,18 +197,18 @@ httpServer.listen(port, '0.0.0.0', () => {
 });
 
 let stopping: Promise<void> | null = null;
-/** The graceful stop, once: end the long-lived streams, drain the requests in flight, then close the sessions, jobs and caches. Does not exit. */
+/** The graceful stop, once: refuse new MCP requests and end the long-lived streams, drain the requests in flight, then close the MCP handler, jobs and caches. Does not exit. */
 function stop(reason: string): Promise<void> {
   stopping ??= (async () => {
     const graceMs = shutdownGraceMs(process.env);
     log.info('shutting down', { reason, grace_ms: graceMs });
-    app.mcp.endListenStreams();
+    app.mcp.stop();
     endModuleStreams();
     endPreviewEvents();
     await closeDevServer();
     const { drained } = await closeGracefully(httpServer, { graceMs });
     if (!drained) log.warn('requests still running after the shutdown grace period were cut', { grace_ms: graceMs });
-    await app.mcp.closeSessions();
+    await app.mcp.close();
     await jobs.stop();
     await serveCache.stop();
     await typecheck.close();
