@@ -1,8 +1,11 @@
 # Changelog — drobek (core)
 
-## v0.11.0 — 2026-10-27
+## v0.11.1 — 2026-10-27
 
-No migrations. Removed env vars: `MCP_SESSION_IDLE_TTL_MS` and `MCP_SESSIONS_PER_USER` (left in `.env`, they are ignored). New env var: `MCP_MAX_SUBSCRIPTIONS` (256), the `subscriptions/listen` streams of MCP 2026-07-28 clients held open at once. `GET /mcp` now answers 405. Rolling back to v0.10.5 is safe (no migrations, the app lease stays readable), but an MCP client already connected in the 2026-07-28 protocol then gets `400 Missing or invalid MCP session` and has to reconnect once (it falls back to the 2025 protocol).
+The tag v0.11.0 was not released: its release gates refused two high advisories published after v0.10.5 (zod, body-parser); v0.11.1 is v0.11.0 with both fixed. No migrations. Removed env vars: `MCP_SESSION_IDLE_TTL_MS` and `MCP_SESSIONS_PER_USER` (left in `.env`, they are ignored). New env var: `MCP_MAX_SUBSCRIPTIONS` (256), the `subscriptions/listen` streams of MCP 2026-07-28 clients held open at once. `GET /mcp` now answers 405. Rolling back to v0.10.5 is safe (no migrations, the app lease stays readable), but an MCP client already connected in the 2026-07-28 protocol then gets `400 Missing or invalid MCP session` and has to reconnect once (it falls back to the 2025 protocol).
+
+### Security
+- **zod 4.6.6 and body-parser 1.20.9**: zod validated an oversized input with unbounded memory (GHSA-mrhx-c7xc-m3w5) and body-parser could be held by trailing bytes after a compressed body (CVE-2026-111181); both reach every MCP request.
 
 ### Changed
 - **drobek speaks MCP 2026-07-28, stateless** (NSO-477): `/mcp` keeps no session. Every request is authenticated from its own credential and served by an MCP server built for its user and scope, so a revoked API key or OAuth connection fails its next request and a restart or another replica is invisible to connected agents. 2026-07-28 clients need no `initialize` (the version travels in `_meta`, `server/discover` carries the instructions); 2025-era clients still get `initialize` with the instructions and no `Mcp-Session-Id`, and an old session id they send is ignored. A graceful stop answers new `/mcp` requests 503, ends the listen streams and lets requests in flight finish. The app lease is held per grant (API key or OAuth client), so your own other connections take it over.

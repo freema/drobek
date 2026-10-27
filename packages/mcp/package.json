@@ -31,7 +31,7 @@
     "@drobek/tenancy": "workspace:*",
     "@modelcontextprotocol/server": "^2.4.0",
     "drizzle-orm": "^0.45.3",
-    "zod": "^4.4.3"
+    "zod": "^4.6.6"
   },
   "peerDependencies": {
     "react": "^19.0.0",

@@ -6,7 +6,8 @@
       "esbuild"
     ],
     "overrides": {
-      "express@4>qs": "^6.16.0"
+      "express@4>qs": "^6.16.0",
+      "express@4>body-parser": "^1.20.9"
     }
   },
   "scripts": {
