@@ -835,6 +835,8 @@ function keepToolCallAnswers(server: McpServer, registered: ReadonlyMap<string, 
 export interface RegisterOptions {
   /** Scope gate: a tool is registered only when this returns true (default: all). */
   allow?: (tool: AppToolName) => boolean;
+  /** The grant the calls come through (`api_key:<id>` / `oauth:<client_id>`), recorded in the lease. Default: `stateless`. */
+  grant?: string;
   deps?: Partial<ToolDeps>;
 }
 
@@ -845,6 +847,7 @@ export function registerAppTools(
   opts: RegisterOptions = {}
 ): void {
   const allow = opts.allow ?? (() => true);
+  const grant = opts.grant ?? 'stateless';
   const registered = new Map<string, StandardSchemaWithJSON>();
   let deps: ToolDeps | null = null;
   const getDeps = () => (deps ??= defaultDeps(opts.deps));
@@ -868,7 +871,7 @@ export function registerAppTools(
         annotations: { title: doc.title, ...doc.annotations },
       },
       // The SDK infers args from the schema; each body re-validates what it relies on.
-      (async (raw: unknown, extra: ServerContext) => {
+      (async (raw: unknown) => {
         const d = getDeps();
         const { known, warning } = splitToolArgs(name, raw);
         const args = known as A;
@@ -876,7 +879,7 @@ export function registerAppTools(
         try {
           const ctx: CallContext = {
             principal,
-            sessionId: extra?.sessionId ?? 'stateless',
+            grant,
             deps: d,
             modules: await d.modules(),
           };

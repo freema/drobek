@@ -254,7 +254,7 @@ describe('end users', () => {
 
     const locked = await newApp();
     seedMembers(locked.id);
-    await deps.leases.acquire(locked.id, { userId: P.alice.userId, sessionId: 'alice-session' }, 60_000);
+    await deps.leases.acquire(locked.id, { userId: P.alice.userId, grant: 'alice-session' }, 60_000);
     await as('ed', async (c) => {
       expect(errorOf(await c.call('set_end_user_role', { app_id: locked.id, user_id: 'eu_1', role: 'admin' })).code).toBe('app_locked');
     });

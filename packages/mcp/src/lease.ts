@@ -1,8 +1,9 @@
 /**
  * The single-writer lease: Redis key `drobek:applock:<app_id>` =
- * `{ holder_user_id, session_id, expires_at }` with a TTL (3 min), renewed by
- * every write_files / restore_version. Another USER gets `app_locked`; the
- * same user from another session takes the lease over (it is their app).
+ * `{ holder_user_id, session_id, grant, expires_at }` with a TTL (3 min),
+ * renewed by every write_files / restore_version. Another USER gets
+ * `app_locked`; the same user through another grant takes the lease over (it
+ * is their app).
  * `release` (release_lease) frees only the caller's own lease, through
  * @drobek/apps `releaseAppLease` — the dashboard's unlock, audited;
  * `takeHeldBy` removes the leases of a member who lost write access (the
@@ -21,7 +22,8 @@ export { LEASE_KEY_PREFIX, leaseKey, type Lease };
 
 interface LeaseHolder {
   userId: string;
-  sessionId: string;
+  /** `api_key:<id>` / `oauth:<client_id>`: written as `grant` and as `session_id`, the field older releases read. */
+  grant: string;
 }
 
 type AcquireResult = { acquired: true; lease: Lease } | { acquired: false; lease: Lease };
@@ -64,7 +66,8 @@ export function redisLeaseStore(redis: () => RedisLike, now: () => number = Date
     async acquire(appId, holder, ttlMs) {
       const lease: Lease = {
         holder_user_id: holder.userId,
-        session_id: holder.sessionId,
+        session_id: holder.grant,
+        grant: holder.grant,
         expires_at: new Date(now() + ttlMs).toISOString(),
         renewed_at: new Date(now()).toISOString(),
       };
@@ -120,7 +123,8 @@ export function memoryLeaseStore(now: () => number = Date.now): LeaseStore & { c
       const expiresAtMs = now() + ttlMs;
       const lease: Lease = {
         holder_user_id: holder.userId,
-        session_id: holder.sessionId,
+        session_id: holder.grant,
+        grant: holder.grant,
         expires_at: new Date(expiresAtMs).toISOString(),
         renewed_at: new Date(now()).toISOString(),
       };

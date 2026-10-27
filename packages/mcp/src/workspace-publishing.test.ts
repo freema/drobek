@@ -111,7 +111,7 @@ describe('set_workspace_publishing', () => {
       await c.close();
     }
     const direct = await setWorkspacePublishingTool(
-      { principal: alice, sessionId: 's', deps, modules: await deps.modules() },
+      { principal: alice, grant: 's', deps, modules: await deps.modules() },
       { workspace: 'team-p', publishing: 'allowed', user_confirmed: true }
     ).catch((e) => e);
     expect(direct).toMatchObject({ code: 'forbidden' });

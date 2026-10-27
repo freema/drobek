@@ -1,10 +1,10 @@
 /**
  * @drobek/oauth/resource — the Express-mountable MCP OAuth 2.1 Protected
- * Resource + Streamable HTTP `/mcp` endpoint (user-bound
+ * Resource + the `/mcp` endpoint (user-bound
  * grants, scopes read/write/publish and API keys).
  *
  * The tool bodies live in @drobek/mcp; this entry owns discovery, the Bearer
- * gate, the transport and the sessions.
+ * gate and the stateless `/mcp` handler.
  *
  * Mounted by the single drobek server process (apps/server) next to the
  * dashboard; each edition owns only its `/health` + `/version` and calls
@@ -36,7 +36,7 @@ export { registerDocs } from './docs.js';
  * Bearer-gated Streamable HTTP MCP endpoint (POST/GET/DELETE `/mcp`) on an
  * existing Express app. The endpoint parses its own request bodies (capped at
  * MCP_MAX_BODY_BYTES), so no JSON parser may run before it on `/mcp`. The
- * returned handle reaches the open MCP sessions (the server's shutdown).
+ * returned handle is what the server's shutdown stops and closes.
  */
 export function mountMcpResource(app: Express, opts: McpEndpointOptions = {}): McpEndpoint {
   // OAuth 2.1 protected-resource metadata (RFC 9728). MCP clients fetch this
@@ -48,6 +48,6 @@ export function mountMcpResource(app: Express, opts: McpEndpointOptions = {}): M
   app.get('/.well-known/oauth-protected-resource', resourceMetadata);
   app.get('/.well-known/oauth-protected-resource/*', resourceMetadata);
 
-  // Bearer-gated MCP endpoint (Streamable HTTP) at POST/GET/DELETE /mcp.
+  // Bearer-gated MCP endpoint at POST /mcp (GET and DELETE answer 405).
   return mountMcpEndpoint(app, opts);
 }

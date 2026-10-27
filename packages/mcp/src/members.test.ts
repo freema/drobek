@@ -130,7 +130,7 @@ describe('set_member_role', () => {
   it('a member demoted to viewer loses their edit lock at once; a super-admin acts as an admin', async () => {
     const ws = await team();
     const app = (await as('alice', (c) => c.call('create_app', { name: 'Locked', workspace: ws.slug }))).body as { app_id: string; slug: string };
-    await deps.leases.acquire(app.app_id, { userId: P.ed.userId, sessionId: 'ed-session' }, 180_000);
+    await deps.leases.acquire(app.app_id, { userId: P.ed.userId, grant: 'ed-session' }, 180_000);
     const blocked = errorOf(await as('alice', (c) => c.call('write_files', { app_id: app.app_id, files: [{ path: 'a.txt', content: 'x' }], reasoning: 'r' })));
     expect(blocked.code).toBe('app_locked');
 
@@ -152,7 +152,7 @@ describe('remove_member', () => {
   it('asks for user_confirmed, then removes: the member is out at once (not_found), their lock released, audited as the agent', async () => {
     const ws = await team();
     const app = (await as('alice', (c) => c.call('create_app', { name: 'Shared', workspace: ws.slug }))).body as { app_id: string; slug: string };
-    await deps.leases.acquire(app.app_id, { userId: P.ed.userId, sessionId: 'ed-session' }, 180_000);
+    await deps.leases.acquire(app.app_id, { userId: P.ed.userId, grant: 'ed-session' }, 180_000);
     expect((await as('ed', (c) => c.call('get_app', { app_id: app.app_id }))).isError).toBe(false);
 
     const ask = errorOf(await as('alice', (c) => c.call('remove_member', { workspace: ws.slug, email: 'ed@example.test' })));

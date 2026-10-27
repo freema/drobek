@@ -14,7 +14,6 @@ import { and, desc, eq, isNull, lt, or } from 'drizzle-orm';
 import { apiKeys, getDb } from '@drobek/db';
 import { API_KEY_LAST_USED_THROTTLE_MS } from './constants.js';
 import { hashToken } from './crypto.server.js';
-import { credentialsRevoked } from './revocations.js';
 import { knownScopes, serializeScopes, type Scope } from './scopes.js';
 
 export const API_KEY_PREFIX = 'drk_';
@@ -104,7 +103,7 @@ export async function validateApiKey(
 
 /**
  * Revoke a key (idempotent). Returns true when a live key was revoked; its
- * MCP sessions are then closed.
+ * next MCP request answers 401.
  */
 export async function revokeApiKey(id: string): Promise<boolean> {
   const [row] = await getDb()
@@ -112,9 +111,7 @@ export async function revokeApiKey(id: string): Promise<boolean> {
     .set({ revokedAt: new Date() })
     .where(and(eq(apiKeys.id, id), isNull(apiKeys.revokedAt)))
     .returning({ userId: apiKeys.userId });
-  if (!row) return false;
-  credentialsRevoked(row.userId);
-  return true;
+  return row !== undefined;
 }
 
 /** A key as the owner sees it in the dashboard — never the key or its hash. */
@@ -150,8 +147,7 @@ export async function listApiKeys(userId: string): Promise<ApiKeySummary[]> {
  * Revoke one of `userId`'s own keys. Owner-scoped: another user's key
  * id is indistinguishable from an unknown one (null). Returns the revoked key,
  * or null when it is unknown, not the user's, or already revoked. Takes effect
- * on the very next request — validateApiKey reads the row every time (no cache)
- * — and closes the key's MCP sessions.
+ * on the very next request — validateApiKey reads the row every time (no cache).
  */
 export async function revokeUserApiKey(
   userId: string,
@@ -162,7 +158,5 @@ export async function revokeUserApiKey(
     .set({ revokedAt: new Date() })
     .where(and(eq(apiKeys.id, id), eq(apiKeys.userId, userId), isNull(apiKeys.revokedAt)))
     .returning(SUMMARY_COLUMNS);
-  if (!row) return null;
-  credentialsRevoked(userId);
-  return row;
+  return row ?? null;
 }

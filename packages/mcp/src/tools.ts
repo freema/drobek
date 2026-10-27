@@ -137,8 +137,8 @@ import { mcpMaxBodyBytes } from './request-limit.js';
 
 export interface CallContext {
   principal: ToolPrincipal;
-  /** MCP session id — recorded in the lease (the same user may take it over). */
-  sessionId: string;
+  /** The grant the call came through (`api_key:<id>` / `oauth:<client_id>`), recorded in the lease; the same user may take it over from another grant. */
+  grant: string;
   deps: ToolDeps;
   /** The platform modules + skills of this process (resolved once per call). */
   modules: ModuleRuntime;
@@ -261,11 +261,11 @@ function skills(ctx: CallContext, enabled: ReadonlySet<string>): SkillListItem[]
 
 // ── leases ───────────────────────────────────────────────────────────────────
 
-/** Take (or renew) the app's single-writer lease for the caller's session; another user's lease → `app_locked`. */
+/** Take (or renew) the app's single-writer lease for the caller's grant; another user's lease → `app_locked`. */
 export async function takeLease(ctx: CallContext, appId: string): Promise<void> {
   const res = await ctx.deps.leases.acquire(
     appId,
-    { userId: ctx.principal.userId, sessionId: ctx.sessionId },
+    { userId: ctx.principal.userId, grant: ctx.grant },
     APP_LOCK_TTL_SEC * 1000
   );
   if (res.acquired) return;

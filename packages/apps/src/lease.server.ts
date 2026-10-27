@@ -1,7 +1,7 @@
 /**
  * The app's single-writer lease as the rest of the platform sees it:
  * the Redis key `drobek:applock:<app_id>` holding
- * `{ holder_user_id, session_id, expires_at, renewed_at? }` with a TTL.
+ * `{ holder_user_id, session_id, grant?, expires_at, renewed_at? }` with a TTL.
  * @drobek/mcp acquires / renews it (its Lua script lives there); this module
  * owns the key format + value parsing so the dashboard can READ the lease
  * ("an agent of X is working on this app") and RELEASE it ("unlock") without
@@ -23,7 +23,10 @@ export function leaseKey(appId: string): string {
 
 export interface Lease {
   holder_user_id: string;
+  /** The grant again, for the releases that read only this field. */
   session_id: string;
+  /** The grant that took it: `api_key:<id>` / `oauth:<client_id>`; an older lease carries only `session_id`, which stands in for it. */
+  grant: string;
   /** ISO timestamp — informational; the key's TTL is what actually expires it. */
   expires_at: string;
   /** ISO timestamp of the last acquire/renew (older leases lack it). */
@@ -36,9 +39,11 @@ export function parseLease(raw: string | null | undefined): Lease | null {
   try {
     const v = JSON.parse(raw) as Partial<Lease>;
     if (typeof v.holder_user_id !== 'string' || typeof v.expires_at !== 'string') return null;
+    const sessionId = String(v.session_id ?? v.grant ?? '');
     const lease: Lease = {
       holder_user_id: v.holder_user_id,
-      session_id: String(v.session_id ?? ''),
+      session_id: sessionId,
+      grant: typeof v.grant === 'string' ? v.grant : sessionId,
       expires_at: v.expires_at,
     };
     if (typeof v.renewed_at === 'string') lease.renewed_at = v.renewed_at;

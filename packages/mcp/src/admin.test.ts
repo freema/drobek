@@ -106,7 +106,7 @@ describe('who gets the super-admin tools', () => {
     } finally {
       await c.close();
     }
-    const ctx = { principal: alice, sessionId: 's', deps, modules: rt };
+    const ctx = { principal: alice, grant: 's', deps, modules: rt };
     const calls = [
       setWorkspaceModuleTool(ctx, { workspace: 'team-m', module: 'files', enabled: true, user_confirmed: true }),
       takedownAppTool(ctx, { app: 'anything', reason: 'phishing', user_confirmed: true }),

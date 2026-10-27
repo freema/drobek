@@ -717,12 +717,14 @@ from Redis (the larger count wins), so the tab is live.
   `packages/oauth/src/tokens.server.ts`); or a personal `drk_` API key. A grant is
   bound to the **user** (every workspace they belong to) with the scopes
   `read`, `write`, `publish`; the scope decides which tools exist, the role in
-  the app's workspace decides each call. Sessions live in the process
-  (`packages/oauth/src/resource/mcp.ts`), bound to the user, scope and grant
-  that opened them; one is closed after `MCP_SESSION_IDLE_TTL_MS` without a
-  request, when its user opens more than `MCP_SESSIONS_PER_USER` (the least
-  recently used goes), or when its API key or OAuth connection is revoked —
-  the client then gets 404 for its id and initializes a new session. The tools,
+  the app's workspace decides each call. The endpoint keeps no state
+  (`packages/oauth/src/resource/mcp.ts`): every request is authenticated from
+  its headers and served by an MCP server built for its user and scope, so a
+  revoked API key or OAuth connection fails its next request and a restart is
+  invisible to clients. One handler serves MCP 2026-07-28 clients (no
+  `initialize`; each request carries its version in `_meta`) and 2025-era
+  clients (`initialize` answers but opens no session; an `Mcp-Session-Id`
+  they still send is ignored). The tools,
   the contract and the briefing are in [`AGENT.md`](./AGENT.md).
 - **The dashboard** (core, AGPL): sign-in by e-mail code (Google optional),
   workspaces (Apps / Members / Activity / Upstreams tabs), apps with Overview
