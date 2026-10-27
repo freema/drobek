@@ -1,6 +1,6 @@
 # Changelog — drobek (core)
 
-## v0.11.0 — UNRELEASED
+## v0.11.0 — 2026-10-27
 
 No migrations. Removed env vars: `MCP_SESSION_IDLE_TTL_MS` and `MCP_SESSIONS_PER_USER` (left in `.env`, they are ignored). New env var: `MCP_MAX_SUBSCRIPTIONS` (256), the `subscriptions/listen` streams of MCP 2026-07-28 clients held open at once. `GET /mcp` now answers 405. Rolling back to v0.10.5 is safe (no migrations, the app lease stays readable), but an MCP client already connected in the 2026-07-28 protocol then gets `400 Missing or invalid MCP session` and has to reconnect once (it falls back to the 2025 protocol).
 
