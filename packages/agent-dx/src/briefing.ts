@@ -136,7 +136,8 @@ function skillsSection(skills: BriefingSkill[]): string[] {
 }
 
 /**
- * The MCP server's `instructions` (the initialize result): the one
+ * The MCP server's `instructions` (in `server/discover` for MCP 2026-07-28,
+ * in the initialize result for 2025-era clients): the one
  * text a client shows the model before any tool call, so it names the first
  * calls — list_apps, then the `start` skill before an app is created.
  */
@@ -227,7 +228,7 @@ export function renderBriefing(opts: { limits?: Partial<BriefingLimits>; skills?
     '',
     '## Rules',
     '- No secrets in files. Every write is scanned for API keys, tokens and private keys and refused with `secret_in_source` (nothing is stored). Apps are public; secrets belong to the app owner in the drobek dashboard.',
-    `- Single writer: a write takes the app's lease for ${APP_LOCK_TTL_SEC / 60} minutes, renewed by each write. Another user's agent gets \`app_locked\` with the (masked) holder and \`expires_at\` — tell the user and wait. Your own other sessions take the lease over.`,
+    `- Single writer: a write takes the app's lease for ${APP_LOCK_TTL_SEC / 60} minutes, renewed by each write. Another user's agent gets \`app_locked\` with the (masked) holder and \`expires_at\` — tell the user and wait. Your own other connections take the lease over.`,
     '- `app_locked_by_admin` (and `locked_by_admin: true` in list_apps / get_app) means the server operator took the app down: stop changing it and tell the user the reason category — only the operator can restore it.',
     '- After every write with `compile.ok: true`, give the user the `preview_url`. With `compile.ok: false` the version is saved but the preview keeps serving the last version that compiled: fix `compile.errors` (file, line, column, text) and write again.',
     '- The preview reloads itself after a write that compiled: an open preview tab shows the new version within seconds, so never ask the user to refresh it. After a write that did not compile, the person sees a notice on the preview that you have the errors. `"reload": false` in drobek.json turns the reload off.',

@@ -455,7 +455,7 @@ SvelteKit server code does not port: say so at once.
 A write takes the app's lease for 3 minutes, renewed by every write. If another
 user's agent holds it you get `app_locked` with the (masked) `holder` and
 `expires_at`: tell the user who is working on the app and retry after
-`expires_at`. Your own other sessions never block you. When you are done
+`expires_at`. Your own other connections never block you. When you are done
 writing, `release_lease({ app_id })` frees your lease so another member's
 agent can write at once (only your own: another user's lease answers
 `app_locked` and stays).
