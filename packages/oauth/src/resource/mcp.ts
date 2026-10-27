@@ -32,9 +32,8 @@
  */
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
+import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node';
+import { McpServer, isInitializeRequest } from '@modelcontextprotocol/server';
 import express, { type Express, type Request, type Response } from 'express';
 import { SERVER_INSTRUCTIONS } from '@drobek/agent-dx';
 import { coreVersion, createConsoleLogger, reportError, type Logger } from '@drobek/core';
@@ -78,7 +77,7 @@ export function buildMcpServer(ctx: AuthContext, deps?: RegisterOptions['deps'])
 
 interface McpSession {
   id: string;
-  transport: StreamableHTTPServerTransport;
+  transport: NodeStreamableHTTPServerTransport;
   server: McpServer;
   /** The session is pinned to the principal + scope its tools were built for. */
   userId: string;
@@ -349,7 +348,7 @@ export function mountMcpEndpoint(app: Express, opts: McpEndpointOptions = {}): M
 
     if (req.method === 'POST' && isInitializeRequest(req.body)) {
       const server = build(ctx);
-      const transport = new StreamableHTTPServerTransport({
+      const transport = new NodeStreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
         onsessioninitialized: (id) => {
           const opened: McpSession = {

@@ -7,8 +7,7 @@
  *    not_found for a foreign / missing app, viewer cannot write, super-admin
  *    override.
  */
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 import type { Request } from 'express';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { noopLogger } from '@drobek/core';

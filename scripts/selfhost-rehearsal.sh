@@ -46,7 +46,7 @@ cd "$ROOT"
 for tool in docker task node npm curl openssl; do
   command -v "$tool" >/dev/null 2>&1 || die "$tool is required for the rehearsal"
 done
-[ -d "$ROOT/tests-e2e/node_modules/@modelcontextprotocol/sdk" ] || die "run pnpm install first (tests-e2e needs @modelcontextprotocol/sdk)"
+[ -d "$ROOT/tests-e2e/node_modules/@modelcontextprotocol/client" ] || die "run pnpm install first (tests-e2e needs @modelcontextprotocol/client)"
 
 # `task` exports the checkout's dev .env (Taskfile dotenv); the machines of
 # the rehearsal are configured by their own .env.production only.

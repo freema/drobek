@@ -1,12 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { UnauthorizedError, type OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import type {
-  OAuthClientInformationMixed,
-  OAuthClientMetadata,
-  OAuthTokens,
-} from '@modelcontextprotocol/sdk/shared/auth.js';
+import { Client, UnauthorizedError, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
+import type { OAuthClientProvider, OAuthClientInformationMixed, OAuthClientMetadata, OAuthTokens } from '@modelcontextprotocol/client';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { BASE_URL_MCP, BASE_URL_WEB, TEST_ENV } from '../playwright.config';
 import { DASHBOARD_ORIGIN, getAppUrl, type Raw } from './helpers/apps-host';
@@ -191,7 +185,7 @@ test('mcp loop: DCR + PKCE consent → list → create → broken write → fix 
   expect(back.searchParams.get('iss')).toBe(BASE_URL_WEB.replace(/\/+$/, ''));
   const code = back.searchParams.get('code');
   expect(code, 'authorization code').toBeTruthy();
-  await first.finishAuth(code as string);
+  await first.finishAuth(back.searchParams);
   expect(provider.tokens()?.access_token, 'access token').toBeTruthy();
   expect(provider.tokens()?.refresh_token, 'refresh token').toBeTruthy();
   expect(provider.tokens()?.scope?.split(' ').sort()).toEqual(['publish', 'read', 'write']);

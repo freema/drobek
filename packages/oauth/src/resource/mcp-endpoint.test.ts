@@ -7,7 +7,7 @@
  */
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import express from 'express';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import {

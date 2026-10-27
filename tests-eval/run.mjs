@@ -275,8 +275,7 @@ function mintApiKey(email) {
 /** @param {string} bearer @returns {Promise<Mcp>} */
 async function mcpConnect(bearer) {
   const req = e2eRequire();
-  const { Client } = req('@modelcontextprotocol/sdk/client/index.js');
-  const { StreamableHTTPClientTransport } = req('@modelcontextprotocol/sdk/client/streamableHttp.js');
+  const { Client, StreamableHTTPClientTransport } = req('@modelcontextprotocol/client');
   const transport = new StreamableHTTPClientTransport(new URL(`${ENV.url}/mcp`), {
     requestInit: { headers: { Authorization: `Bearer ${bearer}` } },
   });
@@ -814,7 +813,7 @@ async function dryRun() {
   checks.push(check(`Claude Code CLI (${ENV.claude})`, v.status === 0, (v.stdout ?? '').trim() || msg(v.error ?? `exit ${v.status}`)));
   try {
     const req = e2eRequire();
-    req.resolve('@modelcontextprotocol/sdk/client/index.js');
+    req.resolve('@modelcontextprotocol/client');
     const { chromium } = req('@playwright/test');
     const exe = chromium.executablePath();
     checks.push(check('Playwright + MCP SDK (from tests-e2e)', existsSync(exe), existsSync(exe) ? exe : `no browser at ${exe} — pnpm -C tests-e2e exec playwright install chromium`));

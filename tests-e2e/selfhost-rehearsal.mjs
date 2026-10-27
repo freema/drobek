@@ -1,6 +1,6 @@
 /**
  * The agent half of scripts/selfhost-rehearsal.sh — NOT a Playwright
- * spec. Lives in tests-e2e/ for its @modelcontextprotocol/sdk dependency.
+ * spec. Lives in tests-e2e/ for its @modelcontextprotocol/client dependency.
  *
  *   node tests-e2e/selfhost-rehearsal.mjs seed    create + write + publish an
  *        app over MCP (drk_ key), sign an end user in on the app host, upload
@@ -16,8 +16,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { request as httpsRequest } from 'node:https';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 
 const need = (name) => {
   const v = process.env[name];

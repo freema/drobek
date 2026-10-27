@@ -5,9 +5,8 @@
  * with their titles, annotations and input schemas. Hand-written on purpose — a
  * change to the public tool surface must be a deliberate edit here.
  */
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server';
+import { Client } from '@modelcontextprotocol/client';
 import { describe, expect, it } from 'vitest';
 import { registerAppTools } from './register.js';
 import { testDeps } from './test/harness.js';
@@ -578,6 +577,18 @@ describe('tools/list', () => {
     }
   });
 
+  it('declares every input schema as JSON Schema draft-07 and every tool as one that does not run as a task', async () => {
+    const tools = JSON.parse(JSON.stringify(await listTools(undefined, true))) as {
+      name: string;
+      inputSchema: Record<string, unknown>;
+      execution?: unknown;
+    }[];
+    for (const t of tools) {
+      expect(t.inputSchema.$schema, t.name).toBe('http://json-schema.org/draft-07/schema#');
+      expect(t.execution, t.name).toEqual({ taskSupport: 'forbidden' });
+    }
+  });
+
   it('registers only what `allow` lets through (the scope gate)', async () => {
     const tools = await listTools((t) => t === 'get_app' || t === 'read_file');
     expect(tools.map((t) => t.name)).toEqual(['get_app', 'read_file']);
@@ -587,5 +598,51 @@ describe('tools/list', () => {
 describe('a grant with no tool scope', () => {
   it('still answers tools/list with an empty list', async () => {
     expect(await listTools(() => false)).toEqual([]);
+  });
+
+  it('answers a call to a tool outside the grant with an isError result, not a JSON-RPC error', async () => {
+    const server = new McpServer({ name: 't', version: '0' }, { capabilities: { tools: {} } });
+    registerAppTools(server, principal, { deps: testDeps(), allow: () => false });
+    const [c, s] = InMemoryTransport.createLinkedPair();
+    await server.connect(s);
+    const client = new Client({ name: 't', version: '0' });
+    await client.connect(c);
+    try {
+      const res = await client.callTool({ name: 'list_apps', arguments: {} });
+      expect(res.isError).toBe(true);
+      expect(res.content).toEqual([{ type: 'text', text: 'MCP error -32602: Tool list_apps not found' }]);
+    } finally {
+      await client.close();
+    }
+  });
+});
+
+describe('a call whose arguments fail the input schema', () => {
+  it('answers an isError result carrying the invalid-params code, one issue per line with its path', async () => {
+    const server = new McpServer({ name: 't', version: '0' }, { capabilities: { tools: {} } });
+    registerAppTools(server, principal, { deps: testDeps(), allow: (t) => t === 'get_app' || t === 'write_files' });
+    const [c, s] = InMemoryTransport.createLinkedPair();
+    await server.connect(s);
+    const client = new Client({ name: 't', version: '0' });
+    await client.connect(c);
+    try {
+      const res = await client.callTool({ name: 'get_app', arguments: { app_id: 42 } });
+      expect(res.isError).toBe(true);
+      expect(res.content).toEqual([
+        {
+          type: 'text',
+          text: 'MCP error -32602: Input validation error: Invalid arguments for tool get_app: Invalid input: expected string, received number at app_id',
+        },
+      ]);
+      const nested = await client.callTool({ name: 'write_files', arguments: { app_id: 'a', reasoning: 'r', files: [{ path: 3, content: 'x' }] } });
+      expect(nested.content).toEqual([
+        {
+          type: 'text',
+          text: 'MCP error -32602: Input validation error: Invalid arguments for tool write_files: Invalid input: expected string, received number at files[0].path',
+        },
+      ]);
+    } finally {
+      await client.close();
+    }
   });
 });

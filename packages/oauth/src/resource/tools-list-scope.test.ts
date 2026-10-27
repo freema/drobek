@@ -5,8 +5,7 @@
  * outside the grant fails. No DB: listing never runs a tool body, and the
  * rejected call is refused before any handler.
  */
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 import { SERVER_INSTRUCTIONS } from '@drobek/agent-dx';
 import { describe, expect, it } from 'vitest';
 import { SCOPES, type Scope } from '../scopes.js';

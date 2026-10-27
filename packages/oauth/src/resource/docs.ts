@@ -11,7 +11,7 @@
  * scope. The docs contain no secrets; acting on them still requires the tool
  * scopes, which are gated in mcp.ts.
  */
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import {
   DOCS_RESOURCE_LLMS_FULL,
@@ -66,11 +66,11 @@ export function registerDocs(server: McpServer): void {
     {
       title: 'Build an app in drobek',
       description: 'Guided: create_app → write_files (compile result comes back) → share the preview_url.',
-      argsSchema: {
+      argsSchema: z.object({
         name: z.string().optional(),
         idea: z.string().optional(),
         workspace: z.string().optional(),
-      },
+      }),
     },
     ({ name, idea, workspace }) => {
       const appName = name ?? '<a short app name>';
