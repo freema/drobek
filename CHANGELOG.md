@@ -1,8 +1,8 @@
 # Changelog — drobek (core)
 
-## v0.11.2 — 2026-10-28
+## v0.11.3 — 2026-10-28
 
-No migrations, no new env vars.
+The tag v0.11.2 was not released: knip refused an unused export in its lint job; the product is the same. No migrations, no new env vars.
 
 ### Changed
 - **App hosts send `Referrer-Policy: strict-origin-when-cross-origin`** (NSO-480): A third party an app loads from (map tiles, esm.sh, an embed) now sees the app's origin, never its path or query, instead of no Referer at all. OpenStreetMap's tile servers refuse requests without a Referer, so a Leaflet or MapLibre map on `tile.openstreetmap.org` showed "Access blocked" tiles on every app host until now.

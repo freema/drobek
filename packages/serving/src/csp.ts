@@ -41,7 +41,7 @@ import { appCspFetchDirectives } from '@drobek/compile';
 
 export const DEFAULT_FRAME_ANCESTORS = "'none'";
 
-export const APP_REFERRER_POLICY = 'strict-origin-when-cross-origin';
+const APP_REFERRER_POLICY = 'strict-origin-when-cross-origin';
 
 /** The embeds every app may frame: YouTube (privacy-enhanced and classic), Vimeo, Google Drive. */
 export const DEFAULT_FRAME_SRC = 'https://www.youtube-nocookie.com https://www.youtube.com https://player.vimeo.com https://drive.google.com';
