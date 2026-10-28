@@ -213,6 +213,48 @@ function safeUrl(toks: Token[]): boolean {
 
 const safe = (kind: Kind, toks: Token[]): boolean => (kind === 'html' ? safeHtml(toks) : safeUrl(toks));
 
+const EQUALS = new Set(['===', '==']);
+const SAFE_SCHEME = /^(?:https?|mailto|tel):$/i;
+const safeScheme = (t: Token | undefined): boolean => t?.type === 'str' && SAFE_SCHEME.test(t.value);
+
+/** `[ 'https:', 'http:' ]` ending at `end` (the `]`) holds only safe schemes. */
+function safeSchemeList(toks: Token[], end: number): boolean {
+  let j = end - 1;
+  let seen = 0;
+  for (; j >= 0 && !isP(toks[j], '['); j--) {
+    if (isP(toks[j], ',')) continue;
+    if (!safeScheme(toks[j])) return false;
+    seen++;
+  }
+  return j >= 0 && seen > 0;
+}
+
+/**
+ * The URL object whose `.protocol` the code at `i` allow-lists: compared with
+ * a safe scheme (`u.protocol === 'https:'`, `'http:' === u.protocol`) or
+ * looked up in a list of them (`['https:', 'http:'].includes(u.protocol)`):
+ * `u`, else undefined. A block-list (`!== 'javascript:'`) does not count.
+ */
+function schemeCheckedAt(toks: Token[], i: number): string | undefined {
+  if (!isP(toks[i - 1], '.') || !isN(toks[i - 2])) return undefined;
+  const name = toks[i - 2].value;
+  const after = toks[i + 1];
+  if (after?.type === 'punct' && EQUALS.has(after.value) && safeScheme(toks[i + 2])) return name;
+  const before = toks[i - 3];
+  if (before?.type === 'punct' && EQUALS.has(before.value) && safeScheme(toks[i - 4])) return name;
+  if (isP(before, '(') && isN(toks[i - 4], 'includes') && isP(toks[i - 5], '.') && isP(toks[i - 6], ']') && safeSchemeList(toks, i - 6)) return name;
+  return undefined;
+}
+
+/** `u.href` / `u.toString()` / `String(u)` of a URL object whose scheme the code checked before. */
+function schemeChecked(toks: Token[], checked: ReadonlySet<string>): boolean {
+  toks = unwrap(toks);
+  if (toks.length === 3 && isN(toks[0]) && isP(toks[1], '.') && isN(toks[2], 'href')) return checked.has(toks[0].value);
+  if (toks.length === 1 && isN(toks[0])) return checked.has(toks[0].value);
+  if (toks.length === 5 && isN(toks[0]) && isP(toks[1], '.') && isN(toks[2], 'toString') && isP(toks[3], '(') && isP(toks[4], ')')) return checked.has(toks[0].value);
+  return false;
+}
+
 /** The argument token lists of the call whose `(` is at `i`. */
 function args(toks: Token[], i: number): Token[][] {
   const end = closing(toks, i);
@@ -250,13 +292,18 @@ function global(toks: Token[], i: number): boolean {
   return !(isP(toks[end + 1], '{') && (prev === undefined || isP(prev, '{') || isP(prev, '}') || isP(prev, ';') || isP(prev, ',')));
 }
 
-function scan(toks: Token[], jsx: boolean, hits: Hit[]): void {
+function scan(toks: Token[], jsx: boolean, hits: Hit[], checked: Set<string> = new Set()): void {
   let tag: string | undefined;
+  const urlSafe = (value: Token[]): boolean => safe('url', value) || schemeChecked(value, checked);
   for (let i = 0; i < toks.length; i++) {
     const t = toks[i];
     if (t.type === 'tpl') {
-      for (const sub of t.subs!) scan(sub, jsx, hits);
+      for (const sub of t.subs!) scan(sub, jsx, hits, checked);
       continue;
+    }
+    if (isN(t, 'protocol')) {
+      const name = schemeCheckedAt(toks, i);
+      if (name) checked.add(name);
     }
     if (t.type !== 'name') {
       if (jsx && isP(t, '<') && isN(toks[i + 1])) tag = toks[i + 1].value;
@@ -287,22 +334,22 @@ function scan(toks: Token[], jsx: boolean, hits: Hit[]): void {
       if (first && (first[0].type === 'str' || first[0].type === 'tpl')) hits.push(evalHit(t.line, `\`${v}()\` with a string`));
     } else if (member && URL_PROPS.has(v) && isP(next, '=')) {
       if (v === 'src' && MEDIA_OBJECT.test(objectName(toks, i))) continue;
-      if (!safe('url', expression(toks, i + 2))) hits.push(urlHit(t.line, `\`.${v}\``));
+      if (!urlSafe(expression(toks, i + 2))) hits.push(urlHit(t.line, `\`.${v}\``));
     } else if (member && v === 'setAttribute' && isP(next, '(')) {
       const [name, value] = args(toks, i + 1);
       const attr = name?.length === 1 && name[0].type === 'str' ? name[0].value.toLowerCase() : undefined;
       if (!attr || !URL_ATTRS.has(attr) || !value) continue;
       if (attr === 'src' && MEDIA_OBJECT.test(objectName(toks, i))) continue;
-      if (!safe('url', value)) hits.push(urlHit(t.line, `\`setAttribute('${attr}')\``));
+      if (!urlSafe(value)) hits.push(urlHit(t.line, `\`setAttribute('${attr}')\``));
     } else if (member && (v === 'assign' || v === 'replace') && isN(toks[i - 2], 'location') && isP(next, '(')) {
       const first = args(toks, i + 1)[0];
-      if (first && !safe('url', first)) hits.push(urlHit(t.line, `\`location.${v}()\``));
+      if (first && !urlSafe(first)) hits.push(urlHit(t.line, `\`location.${v}()\``));
     } else if (v === 'location' && isP(next, '=') && (!member || GLOBALS.has(toks[i - 2]?.value ?? ''))) {
       if (!member && (isN(prev, 'let') || isN(prev, 'const') || isN(prev, 'var'))) continue;
-      if (!safe('url', expression(toks, i + 2))) hits.push(urlHit(t.line, '`location`'));
+      if (!urlSafe(expression(toks, i + 2))) hits.push(urlHit(t.line, '`location`'));
     } else if (jsx && !member && isP(next, '=') && isP(toks[i + 2], '{') && v === 'src' && tag !== undefined && JSX_SRC_TAGS.has(tag)) {
       const end = closing(toks, i + 2);
-      if (!safe('url', toks.slice(i + 3, end))) hits.push(urlHit(t.line, `JSX \`${v}\``));
+      if (!urlSafe(toks.slice(i + 3, end))) hits.push(urlHit(t.line, `JSX \`${v}\``));
     }
   }
 }

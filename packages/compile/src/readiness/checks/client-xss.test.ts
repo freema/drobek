@@ -81,6 +81,26 @@ describe('client-xss check: URL sinks', () => {
     ]);
   });
 
+  it('passes the URL of an allow-listed scheme, the pattern the hint suggests', () => {
+    expect(
+      js(
+        "const u = new URL(value, location.href);\nif (u.protocol === 'https:' || u.protocol === 'http:') a.href = u.href;\n" +
+          "const v = new URL(raw);\nif (['https:', 'http:'].includes(v.protocol)) link.setAttribute('href', v.toString());\n" +
+          "const w = new URL(next);\nif ('https:' === w.protocol) location.assign(w);"
+      )
+    ).toEqual([]);
+  });
+
+  it('still reports a URL behind a block-list or no scheme check', () => {
+    expect(
+      js(
+        "const u = new URL(value);\nif (u.protocol !== 'javascript:') a.href = u.href;\n" +
+          "const v = new URL(raw);\nif (['javascript:'].includes(v.protocol)) return;\na.href = v.href;\n" +
+          "const w = new URL(other);\nb.href = w.href;"
+      )
+    ).toEqual(['xss_url_sink@2', 'xss_url_sink@5', 'xss_url_sink@7']);
+  });
+
   it('passes image/media src and object URLs', () => {
     expect(js('img.src = photo.url;\nthis.avatarEl.src = u;\npreview.src = URL.createObjectURL(file);\nframe.src = reader.result;')).toEqual([]);
   });

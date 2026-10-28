@@ -527,7 +527,7 @@ domains of an app the public gallery shows, never on preview or version
 hosts — the operator's `GALLERY_FRAME_ANCESTORS`; the dashboard frames an app
 solely for the app-list thumbnail, the gallery for its live preview, see
 [`SECURITY.md`](./SECURITY.md)),
-`nosniff` and `Referrer-Policy: no-referrer`; preview and version hosts add
+`nosniff` and `Referrer-Policy: strict-origin-when-cross-origin` (only the origin reaches a third party); preview and version hosts add
 `X-Robots-Tag: noindex`. Bytes come from a 256 MiB in-memory LRU; the host
 and manifest caches are busted through a local event emitter first and Redis
 pub/sub (`drobek:app-changed`) for other replicas, so a write is visible on

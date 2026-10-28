@@ -116,11 +116,11 @@ describe('parseFrameAncestors', () => {
 });
 
 describe('appSecurityHeaders (snapshot)', () => {
-  it('production host: CSP + nosniff + no-referrer, indexable', () => {
+  it('production host: CSP + nosniff + strict-origin referrer, indexable', () => {
     expect(appSecurityHeaders({ noindex: false })).toEqual({
       'Content-Security-Policy': APP_CSP,
       'X-Content-Type-Options': 'nosniff',
-      'Referrer-Policy': 'no-referrer',
+      'Referrer-Policy': 'strict-origin-when-cross-origin',
     });
   });
 
@@ -128,7 +128,7 @@ describe('appSecurityHeaders (snapshot)', () => {
     expect(appSecurityHeaders({ noindex: true })).toEqual({
       'Content-Security-Policy': APP_CSP,
       'X-Content-Type-Options': 'nosniff',
-      'Referrer-Policy': 'no-referrer',
+      'Referrer-Policy': 'strict-origin-when-cross-origin',
       'X-Robots-Tag': 'noindex',
     });
   });

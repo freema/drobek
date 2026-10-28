@@ -23,7 +23,7 @@ import { userIdByEmail, withDb } from './helpers/seed';
  *     <slug>--v<N>.<APPS_DOMAIN> = exactly version N;
  *   - built files win, sources (*.tsx) are never served, SPA fallback, ETag/304,
  *     the Cache-Control policy, the security header set (CSP, noindex on
- *     preview/version hosts, no-referrer, nosniff, frame-ancestors = only the
+ *     preview/version hosts, strict-origin-when-cross-origin, nosniff, frame-ancestors = only the
  *     dashboard origin (the app-list thumbnail));
  *   - MCP publish (scope `publish`, only ok versions, rollback, audited);
  *   - the cache is busted on publish / a new version (no stale first request);
@@ -119,7 +119,7 @@ async function announceAppChanged(appId: string, slug: string): Promise<void> {
 function expectAppSecurityHeaders(r: Raw, opts: { noindex: boolean; csp?: string }): void {
   expect(r.headers['content-security-policy']).toBe(opts.csp ?? EXPECTED_CSP);
   expect(r.headers['x-content-type-options']).toBe('nosniff');
-  expect(r.headers['referrer-policy']).toBe('no-referrer');
+  expect(r.headers['referrer-policy']).toBe('strict-origin-when-cross-origin');
   if (opts.noindex) expect(r.headers['x-robots-tag']).toBe('noindex');
   else expect(r.headers['x-robots-tag']).toBeUndefined();
   expect(r.headers['set-cookie']).toBeUndefined();

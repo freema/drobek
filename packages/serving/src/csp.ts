@@ -31,14 +31,17 @@
  *                                                          the public gallery
  *
  * Plus `X-Content-Type-Options: nosniff` (the Content-Type comes from the path
- * extension only), `Referrer-Policy: no-referrer` (an app URL never leaks to a
- * third party), and `X-Robots-Tag: noindex` on the preview and version hosts
+ * extension only), `Referrer-Policy: strict-origin-when-cross-origin` (a third
+ * party sees only the app's origin, never its path or query; map tile servers
+ * such as OpenStreetMap's refuse requests without a Referer), and `X-Robots-Tag: noindex` on the preview and version hosts
  * (only the published host may be indexed).
  */
 
 import { appCspFetchDirectives } from '@drobek/compile';
 
 export const DEFAULT_FRAME_ANCESTORS = "'none'";
+
+export const APP_REFERRER_POLICY = 'strict-origin-when-cross-origin';
 
 /** The embeds every app may frame: YouTube (privacy-enhanced and classic), Vimeo, Google Drive. */
 export const DEFAULT_FRAME_SRC = 'https://www.youtube-nocookie.com https://www.youtube.com https://player.vimeo.com https://drive.google.com';
@@ -217,7 +220,7 @@ export function appSecurityHeaders(input: SecurityHeaderInput): Record<string, s
   const h: Record<string, string> = {
     'Content-Security-Policy': appCsp(input.frameAncestors ?? DEFAULT_FRAME_ANCESTORS, input.frameSrc ?? DEFAULT_FRAME_SRC, screenshotUploadSource(input.connectSrcExtra)),
     'X-Content-Type-Options': 'nosniff',
-    'Referrer-Policy': 'no-referrer',
+    'Referrer-Policy': APP_REFERRER_POLICY,
   };
   if (input.noindex) h['X-Robots-Tag'] = 'noindex';
   return h;

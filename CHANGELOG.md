@@ -1,5 +1,15 @@
 # Changelog — drobek (core)
 
+## v0.11.2 — 2026-10-28
+
+No migrations, no new env vars.
+
+### Changed
+- **App hosts send `Referrer-Policy: strict-origin-when-cross-origin`** (NSO-480): A third party an app loads from (map tiles, esm.sh, an embed) now sees the app's origin, never its path or query, instead of no Referer at all. OpenStreetMap's tile servers refuse requests without a Referer, so a Leaflet or MapLibre map on `tile.openstreetmap.org` showed "Access blocked" tiles on every app host until now.
+
+### Fixed
+- **`xss_url_sink` accepts the fix its own hint suggests** (NSO-481): `const u = new URL(value, location.href); if (u.protocol === 'https:' || u.protocol === 'http:') a.href = u.href;` is no longer reported, nor `['https:', 'http:'].includes(u.protocol)` before `u.href`, `u.toString()` or `u`. A block-list (`u.protocol !== 'javascript:'`) still is.
+
 ## v0.11.1 — 2026-10-27
 
 The tag v0.11.0 was not released: its release gates refused two high advisories published after v0.10.5 (zod, body-parser); v0.11.1 is v0.11.0 with both fixed. No migrations. Removed env vars: `MCP_SESSION_IDLE_TTL_MS` and `MCP_SESSIONS_PER_USER` (left in `.env`, they are ignored). New env var: `MCP_MAX_SUBSCRIPTIONS` (256), the `subscriptions/listen` streams of MCP 2026-07-28 clients held open at once. `GET /mcp` now answers 405. Rolling back to v0.10.5 is safe (no migrations, the app lease stays readable), but an MCP client already connected in the 2026-07-28 protocol then gets `400 Missing or invalid MCP session` and has to reconnect once (it falls back to the 2025 protocol).

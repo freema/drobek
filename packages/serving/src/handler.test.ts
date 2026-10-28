@@ -394,7 +394,7 @@ describe('headers on every response (snapshot)', () => {
   const PREVIEW_SECURITY = {
     'Content-Security-Policy': APP_CSP,
     'X-Content-Type-Options': 'nosniff',
-    'Referrer-Policy': 'no-referrer',
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
     'X-Robots-Tag': 'noindex',
   };
 
@@ -416,7 +416,7 @@ describe('headers on every response (snapshot)', () => {
     expect(r.headers).toEqual({
       'Content-Security-Policy': APP_CSP,
       'X-Content-Type-Options': 'nosniff',
-      'Referrer-Policy': 'no-referrer',
+      'Referrer-Policy': 'strict-origin-when-cross-origin',
       'X-Drobek-App': 'shop',
       'Content-Type': 'text/html; charset=utf-8',
       ETag: `"${sha(INDEX_V1)}"`,
@@ -695,7 +695,7 @@ describe('platform paths (/__drobek/*)', () => {
     expect(r.headers['Content-Security-Policy']).toBe(`${APP_CSP}, sandbox`);
     expect(Object.keys(r.headers).filter((k) => k.toLowerCase() === 'content-security-policy')).toEqual(['Content-Security-Policy']);
     expect(r.headers['X-Content-Type-Options']).toBe('nosniff');
-    expect(r.headers['Referrer-Policy']).toBe('no-referrer');
+    expect(r.headers['Referrer-Policy']).toBe('strict-origin-when-cross-origin');
     // Without a module CSP the app CSP stands alone.
     const plain = await handleAppRequest(req(prod('shop'), '/__drobek/v1/files/abc12345'), { ...deps, platform: async () => ({ status: 200, headers: {}, body: 'x' }) });
     expect(plain.headers['Content-Security-Policy']).toBe(APP_CSP);
@@ -1053,7 +1053,7 @@ describe('unknown hosts: per-IP limit', () => {
     expect(r.headers).toEqual({
       'Content-Security-Policy': APP_CSP,
       'X-Content-Type-Options': 'nosniff',
-      'Referrer-Policy': 'no-referrer',
+      'Referrer-Policy': 'strict-origin-when-cross-origin',
       'Content-Type': 'text/plain; charset=utf-8',
       'Cache-Control': 'no-store',
       'Retry-After': '60',
