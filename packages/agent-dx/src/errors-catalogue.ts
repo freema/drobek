@@ -429,53 +429,46 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     fix: 'Allow-list the scheme before using a stored URL — `const u = new URL(value, location.href); if (u.protocol === \'https:\' || u.protocol === \'http:\') a.href = u.href;` — or build it from a fixed prefix (`\'/items/\' + encodeURIComponent(id)`).',
   },
   {
+    code: 'html_missing_lang',
+    surface: 'readiness.warnings[] (write_files, publish, dashboard app page)',
+    meaning:
+      'An HTML page of the version (a full document: a .html file with an <html> or <head> tag) has no lang attribute on its <html> element, or an empty one: screen readers read the page in the wrong language and browsers cannot offer a translation.',
+    fix: 'Add the language of the page\'s text to the <html> element, e.g. `<html lang="en">` (`cs`, `de`, … for another language) and write again.',
+  },
+  {
+    code: 'html_missing_viewport',
+    surface: 'readiness.warnings[] (write_files, publish, dashboard app page)',
+    meaning:
+      'An HTML page of the version (a full document) has no <meta name="viewport">, or one without content: phones lay the page out at desktop width and shrink it, so the text is tiny and the layout does not adapt.',
+    fix: 'Add `<meta name="viewport" content="width=device-width, initial-scale=1">` inside `<head>` and write again.',
+  },
+  {
+    code: 'a11y_img_alt',
+    surface: 'readiness.warnings[] (write_files, publish, dashboard app page)',
+    meaning:
+      'An <img> in a .html file has no alt attribute: a screen reader reads out the file name instead of what the image shows. Only the markup as written is checked (not what a script adds in the browser); the first 5 per file are listed, one more entry counts the rest.',
+    fix: 'Describe the image in `alt` (`<img src="team.jpg" alt="The team at the 2024 offsite">`), or write `alt=""` when it is decorative, and write again.',
+  },
+  {
+    code: 'a11y_name',
+    surface: 'readiness.warnings[] (write_files, publish, dashboard app page)',
+    meaning:
+      'A <button> or an <a href> in a .html file has no accessible name — no text, no aria-label, aria-labelledby or title, and no image with alt text inside (an icon-only control): a screen reader announces only "button" or "link". Only the markup as written is checked; the first 5 per file are listed, one more entry counts the rest.',
+    fix: 'Give it visible text, or name an icon-only control with `aria-label` (`<button aria-label="Close">`); an image inside names it through its `alt`. A script that fills in the text later is not seen: add `aria-label` to the element in the HTML.',
+  },
+  {
+    code: 'a11y_label',
+    surface: 'readiness.warnings[] (write_files, publish, dashboard app page)',
+    meaning:
+      'An <input>, <select> or <textarea> in a .html file has no label — no <label for> with its id, no <label> around it, no aria-label, aria-labelledby or title: a screen reader does not say what the field is for. A placeholder is not a label. Inputs of type hidden, submit, button, reset and image need none. Only the markup as written is checked; the first 5 per file are listed, one more entry counts the rest.',
+    fix: 'Add `<label for="email">E-mail</label>` for `<input id="email">`, or put the control inside its `<label>`; a field with no visible label (a search box) takes `aria-label="Search"`. Then write again.',
+  },
+  {
     code: 'type_error',
     surface: 'readiness.warnings[] (get_app, publish, dashboard app page — after the background type check)',
     meaning:
       'TypeScript found a type error at file:line (the message starts with the TS code). esbuild strips types without checking them, so the version compiled — but the mistake (a misspelled SDK method, a wrong argument, a possibly-null value) usually fails in the browser. The check runs in the background after write_files, against this server\'s drobek SDK declarations and React\'s types; untyped import-map packages count as `any`.',
     fix: 'Fix the code at the reported line and write again; get_app shows the new version\'s check once `readiness.typecheck` is `checked`. Check an SDK call against sdk.d.ts / skill_info.',
-  // ── compile.warnings[] (non-fatal static HTML checks) ────────────────────
-  {
-    code: 'html_missing_lang',
-    surface: 'compile.warnings[]',
-    meaning: 'A static HTML page has an <html> element without a language declaration.',
-    fix: 'Add a language tag such as <html lang="en">.',
-  },
-  {
-    code: 'html_missing_viewport',
-    surface: 'compile.warnings[]',
-    meaning: 'A static HTML page has no viewport meta tag for mobile browsers.',
-    fix: 'Add <meta name="viewport" content="width=device-width, initial-scale=1"> inside <head>.',
-  },
-  {
-    code: 'html_missing_title',
-    surface: 'compile.warnings[]',
-    meaning: 'A static HTML page has no non-empty title.',
-    fix: 'Add a descriptive, non-empty <title> inside <head>.',
-  },
-  {
-    code: 'missing_favicon',
-    surface: 'compile.warnings[]',
-    meaning: 'The app has no icon link and no favicon.ico or favicon.svg file.',
-    fix: 'Add <link rel="icon" href="/favicon.ico"> or include favicon.ico/favicon.svg in the app files.',
-  },
-  {
-    code: 'a11y_img_alt',
-    surface: 'compile.warnings[]',
-    meaning: 'A static HTML image has no alt attribute.',
-    fix: 'Describe the image with alt text, or use alt="" when it is decorative.',
-  },
-  {
-    code: 'a11y_name',
-    surface: 'compile.warnings[]',
-    meaning: 'A button or linked anchor has no accessible name.',
-    fix: 'Add visible text, aria-label, aria-labelledby, title, or an image with alt text.',
-  },
-  {
-    code: 'a11y_label',
-    surface: 'compile.warnings[]',
-    meaning: 'A form control has no associated label or accessible label.',
-    fix: 'Add a wrapping/for-associated <label>, aria-label, or aria-labelledby.',
   },
   // ── platform module routes (/__drobek/v1/<module>/…, the drobek SDK) ──────
   // Body { error, message, details?, hint } — `error` is the code below; the

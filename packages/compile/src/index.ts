@@ -16,7 +16,6 @@ export { elements, replaceSpans, startTagReader, type StartTag } from './markup.
 export { appCspFetchDirectives } from './app-csp.js';
 export type {
   CompileErrorCode,
-  CompileWarningCode,
   CompileMessage,
   CompileOptions,
   CompileResult,

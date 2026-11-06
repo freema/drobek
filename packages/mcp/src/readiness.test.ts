@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { filesReadiness } from './readiness.js';
 
 const files = new Map([
-  ['index.html', '<html><head><title>App</title><meta name="description" content="An app."><link rel="icon" href="/favicon.svg"></head></html>'],
+  [
+    'index.html',
+    '<html lang="en"><head><title>App</title><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="An app."><link rel="icon" href="/favicon.svg"></head></html>',
+  ],
 ]);
 
 describe('filesReadiness: the module rules audit sees the live configs and the pending changes', () => {

@@ -29,8 +29,8 @@ function fakeRunner(result: TypecheckResult | (() => Promise<TypecheckResult>)) 
   return run;
 }
 
-const HEAD = '<title>T</title><meta name="description" content="A typed app."><link rel="icon" href="/favicon.svg">';
-const TITLED = { path: 'index.html', content: `<head>${HEAD}</head><body><script type="module" src="/main.js"></script></body>` };
+const HEAD = '<title>T</title><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="A typed app."><link rel="icon" href="/favicon.svg">';
+const TITLED = { path: 'index.html', content: `<html lang="en"><head>${HEAD}</head><body><script type="module" src="/main.js"></script></body></html>` };
 
 async function tsVersion(main = 'export const n: number = 1;\n', status: 'ok' | 'error' = 'ok') {
   return createVersion(appId, [TITLED, { path: 'src/main.ts', content: main }], { actor, compile: { status } });

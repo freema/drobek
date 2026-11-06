@@ -442,7 +442,7 @@ describe('write_files', () => {
     }
   });
 
-  it('warns (never blocks) in `readiness` when index.html has no <title>, description or icon', async () => {
+  it('warns (never blocks) in `readiness` when index.html has no <title>, description, icon, language or viewport', async () => {
     const app = await newApp('Untitled', { template: 'html' });
     const c = await as('alice');
     try {
@@ -466,6 +466,8 @@ describe('write_files', () => {
           },
           expect.objectContaining({ code: 'missing_description', file: 'index.html', line: 3, hint: errorHint('missing_description') }),
           expect.objectContaining({ code: 'missing_favicon', file: 'index.html', line: 3, hint: errorHint('missing_favicon') }),
+          expect.objectContaining({ code: 'html_missing_lang', file: 'index.html', line: 2, hint: errorHint('html_missing_lang') }),
+          expect.objectContaining({ code: 'html_missing_viewport', file: 'index.html', line: 3, hint: errorHint('html_missing_viewport') }),
         ],
       });
       // The version is stored and compiled like any other — a warning changes nothing else.

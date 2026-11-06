@@ -3,7 +3,7 @@
 ## Unreleased
 
 ### Added
-- **Static HTML and accessibility compile warnings** (NSO-389): `write_files` reports non-fatal warnings for missing page metadata and favicons, images without `alt`, unnamed buttons/links, and unlabeled form controls. Each warning includes a fix hint and a source location when available; only static `.html` files are checked.
+- **Readiness warns about the HTML and accessibility basics** (#29, #41, thanks @rajjadhav123): `write_files`, `publish`, `get_app` and the dashboard's "Before you publish" now list, for every `.html` file of the version, `html_missing_lang` (no `lang` on `<html>`) and `html_missing_viewport` (no `<meta name="viewport">`) for a full document, and, in fragments too, `a11y_img_alt` (an `<img>` without `alt`; `alt=""` is fine), `a11y_name` (a `<button>` or `<a href>` without an accessible name) and `a11y_label` (an `<input>`, `<select>` or `<textarea>` without a label), each with its fix. The three element rules list their first 5 findings per file and count the rest. They are warnings: nothing is blocked, only the markup as written is read, and the template apps have none.
 
 ## v0.13.1 — 2026-11-16
 

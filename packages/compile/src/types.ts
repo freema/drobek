@@ -21,17 +21,8 @@ export type CompileErrorCode =
   /** Warning: a literal URL of another origin the app CSP blocks. */
   | 'blocked_by_csp';
 
-export type CompileWarningCode =
-  | 'html_missing_lang'
-  | 'html_missing_viewport'
-  | 'html_missing_title'
-  | 'missing_favicon'
-  | 'a11y_img_alt'
-  | 'a11y_name'
-  | 'a11y_label';
-
 export interface CompileMessage {
-  code: CompileErrorCode | CompileWarningCode;
+  code: CompileErrorCode;
   text: string;
   /** App-relative path, e.g. `src/main.tsx`. */
   file?: string;

@@ -14,9 +14,15 @@ export interface HtmlTag {
   /** Lower-case attribute name → decoded value (an attribute without a value is ""); the first of a repeated name wins. */
   attrs: ReadonlyMap<string, string>;
   line: number;
+  /** Index of the tag's `<` in the page text. */
+  start: number;
+  /** Index after the tag's `>`. */
+  end: number;
 }
 
 export interface HtmlPage {
+  /** The page with comments and raw-text contents blanked: the text the tags were read from, same offsets and lines as the source. */
+  text: string;
   /** Every start tag of the page, in order. */
   tags: HtmlTag[];
   /** The start tags of the document head: everything before `<body>` or `</head>` (the whole page when it has neither). */
@@ -65,7 +71,7 @@ export function readHtml(source: string): HtmlPage {
       const name = a.name.toLowerCase();
       if (!attrs.has(name)) attrs.set(name, decodeEntities(a.value ?? ''));
     }
-    const tag: HtmlTag = { name: t.name.toLowerCase(), attrs, line: lineAt(t.start) };
+    const tag: HtmlTag = { name: t.name.toLowerCase(), attrs, line: lineAt(t.start), start: t.start, end: t.end };
     tags.push(tag);
     if (headEnd === -1 || t.start < headEnd) head.push(tag);
     if (tag.name === 'head' && !seenHead) {
@@ -73,7 +79,7 @@ export function readHtml(source: string): HtmlPage {
       headLine = tag.line;
     }
   }
-  return { tags, head, headLine };
+  return { text, tags, head, headLine };
 }
 
 /** The space-separated tokens of an attribute (`rel="shortcut icon"` → ["shortcut", "icon"]), lower-case. */

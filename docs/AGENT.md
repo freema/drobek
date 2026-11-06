@@ -206,18 +206,6 @@ module (`errors`): `skill_info('<module>').errors` returns them and
 module. A query the database cut off (the server is under load) answers
 `busy` with `reason: "database_timeout"` from any tool. A compile error is not a tool failure: it is
 `compile.ok: false` with `compile.errors[]`, and the version is stored.
-Static HTML checks can also return non-fatal `compile.warnings[]` entries with
-`code`, `file`, `line` where available, and a fix in `text`. They do not make a
-successful compile fail. Fix each warning by following its `text`; `alt=""` is
-valid for a decorative image.
-
-- `html_missing_lang`: add a language such as `lang="en"` to `<html>`.
-- `html_missing_viewport`: add a viewport meta tag inside `<head>`.
-- `html_missing_title`: add a non-empty `<title>` inside `<head>`.
-- `missing_favicon`: add an icon link or include `favicon.ico` / `favicon.svg`.
-- `a11y_img_alt`: describe the image with `alt`, or use `alt=""` if decorative.
-- `a11y_name`: give the button or linked anchor text, an ARIA label, a title, or an image with alt text.
-- `a11y_label`: associate the input, select, or textarea with a label or ARIA label.
 
 **Video, audio and big files (assets).** `write_files` is text-only, and a
 binary must never travel through the model as base64. `create_asset_upload({
@@ -362,7 +350,19 @@ for innerHTML/outerHTML/insertAdjacentHTML/document.write/
 dangerouslySetInnerHTML, eval/new Function/string timers, and DOM href/src/
 location or a JSX frame/script `src` set from a value that is not a literal — literals, templates
 without `${}` and escaped substitutions pass; vendored and `.min.js` files
-are skipped). `READINESS_MAX_WARNINGS` (default 50) caps the
+are skipped). The HTML and accessibility basics come last, over every
+`.html` file as written (what a script adds in the browser is not seen):
+`html_missing_lang` and `html_missing_viewport` for a full document (a file
+with an `<html>` or `<head>` tag) without a `lang` on `<html>` or a
+`<meta name="viewport">`, and, in fragments too, `a11y_img_alt` (an `<img>`
+without `alt`; `alt=""` marks a decorative image), `a11y_name` (a
+`<button>` or `<a href>` with no text, `aria-label`, `aria-labelledby` or
+`title` and no image with alt text inside) and `a11y_label` (an `<input>`,
+`<select>` or `<textarea>` with no `<label for>`, no `<label>` around it
+and no `aria-label`, `aria-labelledby` or `title`; inputs of type hidden,
+submit, button, reset and image need none). Each of the three lists its
+first 5 elements per file and counts the rest in one more entry.
+`READINESS_MAX_WARNINGS` (default 50) caps the
 listed warnings; the rest are counted in `warnings_omitted`. The checks live
 in `packages/compile/src/readiness/checks/` — one file per check, one line
 in its registry.
