@@ -17,11 +17,11 @@ beforeAll(async () => {
 });
 afterAll(async () => close());
 
-const HEAD = '<meta name="description" content="A ready app."><link rel="icon" href="/favicon.svg">';
+const HEAD = '<meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="A ready app."><link rel="icon" href="/favicon.svg">';
 
 describe('versionReadiness', () => {
-  it('a compiled version with a titled, described index.html with an icon is ready with no warnings', async () => {
-    const v = await createVersion(appId, [{ path: 'index.html', content: `<head><title>Ready</title>${HEAD}</head>` }], {
+  it('a compiled version with a titled, described index.html with a language, a viewport and an icon is ready with no warnings', async () => {
+    const v = await createVersion(appId, [{ path: 'index.html', content: `<html lang="en"><head><title>Ready</title>${HEAD}</head></html>` }], {
       actor,
       compile: { status: 'ok' },
     });
@@ -35,7 +35,7 @@ describe('versionReadiness', () => {
     const v = await createVersion(
       appId,
       [
-        { path: 'index.html', content: `<head>${HEAD}</head><body><div id="root"></div></body>` },
+        { path: 'index.html', content: `<html lang="en"><head>${HEAD}</head><body><div id="root"></div></body></html>` },
         { path: 'index.html', content: '<head><title>built</title></head>', kind: 'built' },
       ],
       { actor, compile: { status: 'ok' } }

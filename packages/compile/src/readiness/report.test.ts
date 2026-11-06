@@ -4,9 +4,10 @@ import { READINESS_CHECKS } from './checks/index.js';
 import { DEFAULT_READINESS_LIMITS, readinessLimitsFromEnv, readinessReport } from './report.js';
 import type { ReadinessCheck } from './types.js';
 
-const HEAD = '<meta name="description" content="An app."><link rel="icon" href="/favicon.svg">';
-const titled = new Map([['index.html', `<html><head><title>App</title>${HEAD}</head></html>`]]);
-const untitled = new Map([['index.html', `<html><head>${HEAD}</head></html>`]]);
+const HEAD =
+  '<meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="An app."><link rel="icon" href="/favicon.svg">';
+const titled = new Map([['index.html', `<html lang="en"><head><title>App</title>${HEAD}</head></html>`]]);
+const untitled = new Map([['index.html', `<html lang="en"><head>${HEAD}</head></html>`]]);
 
 const fixed = (id: string, findings: { code: string; file?: string; line?: number }[], extra: Partial<ReadinessCheck> = {}): ReadinessCheck => ({
   id,
@@ -49,8 +50,20 @@ describe('readinessReport', () => {
   it('warns about a page without a description or a favicon, after the title', async () => {
     const report = await readinessReport({ files: new Map([['index.html', '<html><head></head><body></body></html>']]) });
     expect(report.ready).toBe(true);
-    expect(report.warnings.map((w) => w.code)).toEqual(['missing_title', 'missing_description', 'missing_favicon']);
+    expect(report.warnings.map((w) => w.code)).toEqual(['missing_title', 'missing_description', 'missing_favicon', 'html_missing_lang', 'html_missing_viewport']);
     expect(report.warnings[2].hint).toBe(errorHint('missing_favicon'));
+  });
+
+  it('lists the HTML and accessibility basics last, after the module rules and the script checks', async () => {
+    const report = await readinessReport({
+      files: new Map([
+        ['index.html', `<html><head><title>App</title>${HEAD}</head><body><img src="a.png"><button></button><input></body></html>`],
+        ['src/main.js', 'document.body.innerHTML = location.hash;'],
+      ]),
+    });
+    expect(report.ready).toBe(true);
+    expect(report.warnings.map((w) => w.code)).toEqual(['xss_html_sink', 'html_missing_lang', 'a11y_img_alt', 'a11y_name', 'a11y_label']);
+    for (const w of report.warnings) expect(w.hint, w.code).toBe(errorHint(w.code));
   });
 
   it('orders warnings by check, then file and line — the same input gives the same report', async () => {

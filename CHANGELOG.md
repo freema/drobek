@@ -1,5 +1,10 @@
 # Changelog — drobek (core)
 
+## Unreleased
+
+### Added
+- **Readiness warns about the HTML and accessibility basics** (#29, #41, thanks @rajjadhav123): `write_files`, `publish`, `get_app` and the dashboard's "Before you publish" now list, for every `.html` file of the version, `html_missing_lang` (no `lang` on `<html>`) and `html_missing_viewport` (no `<meta name="viewport">`) for a full document, and, in fragments too, `a11y_img_alt` (an `<img>` without `alt`; `alt=""` is fine), `a11y_name` (a `<button>` or `<a href>` without an accessible name) and `a11y_label` (an `<input>`, `<select>` or `<textarea>` without a label), each with its fix. The three element rules list their first 5 findings per file and count the rest. They are warnings: nothing is blocked, only the markup as written is read, and the template apps have none.
+
 ## v0.11.3 — 2026-10-28
 
 The tag v0.11.2 was not released: knip refused an unused export in its lint job; the product is the same. No migrations, no new env vars.
