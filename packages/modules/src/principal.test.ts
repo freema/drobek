@@ -194,3 +194,20 @@ describe('cookiePrincipalResolver', () => {
     expect(await resolve({ app: APP1, cookieHeader: `drobek_eu=${token}` })).toEqual({ kind: 'anon' });
   });
 });
+
+describe('end-user cookie scope (path routing)', () => {
+  it('is per app under path routing, the plain name otherwise', async () => {
+    const { endUserCookieScope, endUserCookieName, endUserCookieHeader, readEndUserToken } = await import('./principal.js');
+    const PATH = { APPS_ROUTING_MODE: 'path', APPS_BASE_URL: 'https://apps.example.com', PUBLIC_APP_URL: 'https://dash.example.com' };
+    expect(endUserCookieScope('app1', PATH)).toBe('app1');
+    expect(endUserCookieScope('app1', { APPS_DOMAIN: 'drobek.app' })).toBeUndefined();
+    expect(endUserCookieName(true, 'app1')).toBe(`${endUserCookieName(true)}-app1`);
+    const token = 'a'.repeat(64);
+    const header = endUserCookieHeader(token, { maxAgeSec: 60 }, true, 'app1');
+    expect(header.startsWith(`${endUserCookieName(true, 'app1')}=`)).toBe(true);
+    // Another app's cookie on the shared origin is never read as this app's session.
+    const cookie = header.split(';')[0];
+    expect(readEndUserToken(cookie, true, 'app2')).toBeNull();
+    expect(readEndUserToken(cookie, true)).toBeNull();
+  });
+});

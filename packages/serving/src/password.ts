@@ -74,9 +74,16 @@ export const APP_ACCESS_COOKIE = '__Host-drobek_app_access';
 /** The name on plain-http dev app hosts (browsers refuse `__Host-` over http). */
 export const APP_ACCESS_COOKIE_INSECURE = 'drobek_app_access';
 
-/** The app-access cookie name for the given mode (see appCookiesSecure). */
-export function appAccessCookieName(secure: boolean): string {
-  return secure ? APP_ACCESS_COOKIE : APP_ACCESS_COOKIE_INSECURE;
+/**
+ * The app-access cookie name for the given mode (see appCookiesSecure). With
+ * `appId` (path routing, where every app shares one host and so one cookie
+ * jar) the name carries the app: `__Host-drobek_app_access-<app id>`, so one
+ * app's unlock never overwrites another's. The token is bound to the app id
+ * either way.
+ */
+export function appAccessCookieName(secure: boolean, appId?: string): string {
+  const name = secure ? APP_ACCESS_COOKIE : APP_ACCESS_COOKIE_INSECURE;
+  return appId ? `${name}-${appId}` : name;
 }
 
 /**
@@ -170,11 +177,11 @@ export function verifyAppAccessToken(
  */
 export function appAccessCookieHeader(
   token: string,
-  opts: { maxAgeSec?: number; clear?: boolean; secure?: boolean } = {}
+  opts: { maxAgeSec?: number; clear?: boolean; secure?: boolean; appId?: string } = {}
 ): string {
   const secure = opts.secure ?? true;
   return [
-    `${appAccessCookieName(secure)}=${opts.clear ? '' : token}`,
+    `${appAccessCookieName(secure, opts.appId)}=${opts.clear ? '' : token}`,
     'Path=/',
     ...(secure ? ['Secure'] : []),
     'HttpOnly',

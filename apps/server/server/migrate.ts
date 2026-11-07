@@ -18,7 +18,7 @@
  */
 import { docsUrlConfigError } from '@drobek/agent-dx';
 import { appsOriginConfigError, publishApprovalConfigError } from '@drobek/apps';
-import { trustProxyConfigError } from '@drobek/auth';
+import { personalInstanceConfigError, trustProxyConfigError } from '@drobek/auth';
 import { createConsoleLogger, reportError, secretsConfigError } from '@drobek/core';
 import { dbConfigError, dbErrorForLog, runCoreMigrations } from '@drobek/db';
 import { domainsConfigError } from '@drobek/domains';
@@ -32,6 +32,7 @@ const configError =
   secretsConfigError(process.env) ??
   previousMasterKeyConfigError(process.env) ??
   appsOriginConfigError(process.env) ??
+  personalInstanceConfigError(process.env) ??
   trustProxyConfigError(process.env) ??
   tlsAskConfigError(process.env) ??
   limitsProviderConfigError(process.env) ??

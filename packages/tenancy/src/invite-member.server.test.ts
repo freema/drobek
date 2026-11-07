@@ -145,4 +145,21 @@ describe('createTeamWorkspace', () => {
     expect(await createTeamWorkspace(ownerId, 'x'.repeat(81), 'long')).toMatchObject({ ok: false, reason: 'invalid-name' });
     expect(await createTeamWorkspace(ownerId, 'Fine', 'no spaces')).toMatchObject({ ok: false, reason: 'invalid-slug' });
   });
+
+  it('refuses every invite on a personal instance (path routing): the owner stays the only member', async () => {
+    const PERSONAL = {
+      APPS_ROUTING_MODE: 'path',
+      APPS_BASE_URL: 'http://apps.localhost:3041',
+      PUBLIC_APP_URL: 'http://localhost:3041',
+      SUPERADMIN_EMAIL: 'owner@example.com',
+    };
+    for (const surface of ['web', 'mcp'] as const) {
+      expect(await inviteMember({ workspace: team, invitedByUserId: ownerId, role: 'editor', email: 'a@example.com', surface, deps, env: PERSONAL })).toMatchObject({
+        ok: false,
+        reason: 'personal-instance',
+      });
+    }
+    expect(tokens.size).toBe(0);
+    expect(sent).toEqual([]);
+  });
 });

@@ -514,6 +514,17 @@ Every app lives on its own hosts: `preview_url`
 production URL (`<slug>.<APPS_DOMAIN>`) serves the PUBLISHED version only, and
 `<slug>--v<N>.<APPS_DOMAIN>` serves exactly version N.
 
+An instance without a domain of its own runs **path routing**: every app
+shares one apps host and lives under `/apps/<slug>/`,
+`/apps/<slug>--preview/` and `/apps/<slug>--v<N>/`. Use the URLs the tools
+return, never build one. drobek rewrites root-absolute `src` / `href` in
+HTML and gives each page a `<base>` of its app; paths in CSS (`url(/x)`) and
+paths a script builds are not rewritten, so use relative paths or
+`new URL('x', document.baseURI)`. A client-side router takes its basename
+from `<meta name="drobek-base">`. Service workers are refused, custom
+domains and Google / OIDC sign-in are off (e-mail codes work); the SDK finds
+its endpoints by itself.
+
 `publish({ app_id, version? })` (scope `publish`) puts a version live — by
 default the newest version that compiled; an older `version` rolls production
 back. It returns `published_url`, which you give to the user. Only versions

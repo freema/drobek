@@ -10,7 +10,12 @@
  * Domain → host-only: a session of `a.<APPS_DOMAIN>` is never sent to
  * `b.<APPS_DOMAIN>`, and the preview host `<slug>--preview.…` has its own
  * sign-in); plain-http dev uses `drobek_eu` (browsers refuse `__Host-` and
- * even `Secure` there). Value: 64 hex chars.
+ * even `Secure` there). Value: 64 hex chars. In path routing
+ * (APPS_ROUTING_MODE=path) every app shares one host and so one cookie jar:
+ * the name then carries the app (`__Host-drobek_eu-<app id>`, see
+ * endUserCookieScope) so signing in to one app does not replace another's
+ * session. That is bookkeeping, not isolation — any app's script on that origin
+ * can call any other app's routes with that app's cookie (docs/SECURITY.md).
  *
  * Session record: Redis `drobek:eu:<app_id>:<token>` = JSON
  * `{ id, email, role: 'user'|'admin', epoch, provider?, connection? }`
@@ -34,7 +39,7 @@
  */
 import { randomBytes } from 'node:crypto';
 import { readCookieValue } from '@drobek/core';
-import { appsOrigin } from '@drobek/apps';
+import { appsOrigin, pathRouting } from '@drobek/apps';
 import type { EndUser, HookApp, Principal } from './contract.js';
 
 export const END_USER_COOKIE = '__Host-drobek_eu';
@@ -53,17 +58,33 @@ export function endUserCookiesSecure(env: NodeJS.ProcessEnv = process.env): bool
   }
 }
 
-export function endUserCookieName(secure: boolean): string {
-  return secure ? END_USER_COOKIE : END_USER_COOKIE_INSECURE;
+/** The app id the end-user cookie name carries: in path routing only (else undefined). */
+export function endUserCookieScope(appId: string, env: NodeJS.ProcessEnv = process.env): string | undefined {
+  try {
+    return pathRouting(env) ? appId : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** `scope`: endUserCookieScope's app id (path routing), appended to the name. */
+export function endUserCookieName(secure: boolean, scope?: string): string {
+  const name = secure ? END_USER_COOKIE : END_USER_COOKIE_INSECURE;
+  return scope ? `${name}-${scope}` : name;
 }
 
 /**
  * The end-user Set-Cookie value: host-only (no Domain), Path=/, HttpOnly,
  * SameSite=Lax; `__Host-` + Secure when `secure`. `clear` expires it.
  */
-export function endUserCookieHeader(token: string, opts: { maxAgeSec: number; clear?: boolean }, secure: boolean): string {
+export function endUserCookieHeader(
+  token: string,
+  opts: { maxAgeSec: number; clear?: boolean },
+  secure: boolean,
+  scope?: string
+): string {
   return [
-    `${endUserCookieName(secure)}=${opts.clear ? '' : token}`,
+    `${endUserCookieName(secure, scope)}=${opts.clear ? '' : token}`,
     'Path=/',
     'HttpOnly',
     'SameSite=Lax',
@@ -107,8 +128,8 @@ export interface EndUserRedis {
 }
 
 /** The end-user token of a Cookie header, or null (never a malformed value). */
-export function readEndUserToken(cookieHeader: string | null, secure: boolean): string | null {
-  const token = readCookieValue(cookieHeader, endUserCookieName(secure));
+export function readEndUserToken(cookieHeader: string | null, secure: boolean, scope?: string): string | null {
+  const token = readCookieValue(cookieHeader, endUserCookieName(secure, scope));
   return token && END_USER_TOKEN_RE.test(token) ? token : null;
 }
 
@@ -226,7 +247,7 @@ export function cookiePrincipalResolver(opts: {
   current: CurrentEndUser | null;
 }): PrincipalResolver {
   return async ({ app, cookieHeader }) => {
-    const token = readEndUserToken(cookieHeader, opts.secure);
+    const token = readEndUserToken(cookieHeader, opts.secure, endUserCookieScope(app.id));
     if (!token || !opts.current) return { kind: 'anon' };
     let s: EndUserSession | null;
     try {

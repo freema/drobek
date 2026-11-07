@@ -32,6 +32,7 @@ import {
 import { getSessionUser } from '../session.server.js';
 import { logger, serializeError } from '../logger.server.js';
 import { maskEmail } from '../mask-email.js';
+import { mayHoldAccount } from '../personal.server.js';
 
 // ONE generic message for every Google-login failure mode — the real
 // reason is logged server-side only (no detail leak to the browser).
@@ -75,6 +76,12 @@ export async function action({ request }: ActionFunctionArgs) {
       { error: 'Enter a valid email address.' },
       { status: 400 }
     );
+  }
+
+  // A personal instance (path routing) sends codes to its owner only; any
+  // other address gets the same answer as a sent code, so nothing tells them apart.
+  if (!mayHoldAccount(email)) {
+    throw redirect(`/login/verify?${new URLSearchParams({ email })}`);
   }
 
   const ip = getClientIp(request);

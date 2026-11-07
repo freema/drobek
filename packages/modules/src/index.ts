@@ -39,6 +39,7 @@ export {
   destroyEndUserSession,
   endUserCookieHeader,
   endUserCookieName,
+  endUserCookieScope,
   endUserCookiesSecure,
   endUserEpochKey,
   endUserSessionKey,

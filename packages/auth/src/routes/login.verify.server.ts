@@ -15,6 +15,7 @@ import {
   normalizeAuthEmail,
 } from '../email-code.server.js';
 import { ensureUserByEmail } from '../ensure-user.server.js';
+import { mayHoldAccount } from '../personal.server.js';
 import { guardOtpVerify } from '../otp-verify-guard.server.js';
 import {
   clearLoginReturnCookieHeader,
@@ -54,6 +55,11 @@ export async function action({ request }: ActionFunctionArgs) {
   if (!ipRl.ok) {
     // Same generic message → no signal that the limit (vs. a bad code) tripped.
     return data({ error: GENERIC_CODE_ERROR }, { status: 429 });
+  }
+
+  // A personal instance has no account but its owner's (no code was ever sent to another address).
+  if (!mayHoldAccount(email)) {
+    return data({ error: GENERIC_CODE_ERROR }, { status: 400 });
   }
 
   const consumed = await consumeEmailLoginCode(email, code);

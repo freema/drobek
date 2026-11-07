@@ -31,6 +31,7 @@ import {
   releaseOtpCooldown,
   type OtpGuardLimits,
 } from '@drobek/auth';
+import { pathRouting } from '@drobek/apps';
 import { getRedis } from '@drobek/core';
 import {
   END_USER_SESSION_TTL_SEC,
@@ -39,6 +40,7 @@ import {
   createEndUserSession,
   destroyEndUserSession,
   endUserCookieHeader,
+  endUserCookieScope,
   endUserCookiesSecure,
   loadEndUserSession,
   readEndUserToken,
@@ -51,7 +53,7 @@ import {
 } from '@drobek/modules';
 import { dbErrorForLog } from '@drobek/db';
 import type { AuthSignedInObserver } from '@drobek/modules';
-import { decideSignIn, methodEnabled, type AccessResult, type AuthConfig } from './config.js';
+import { EMAIL_CODE_KEY, decideSignIn, methodEnabled, type AccessResult, type AuthConfig } from './config.js';
 import { currentUser } from './current.js';
 import { begin, beginBody, complete } from './flow.js';
 import { SIGNED_IN_SLOT, notifySignedIn, signInMethods } from './providers.js';
@@ -184,12 +186,22 @@ async function checkSignIn(
   return { access, existing };
 }
 
-function sessionCookie(token: string): Record<string, string> {
-  return { 'Set-Cookie': endUserCookieHeader(token, { maxAgeSec: END_USER_SESSION_TTL_SEC }, endUserCookiesSecure()) };
+function sessionCookie(token: string, appId: string): Record<string, string> {
+  return {
+    'Set-Cookie': endUserCookieHeader(token, { maxAgeSec: END_USER_SESSION_TTL_SEC }, endUserCookiesSecure(), endUserCookieScope(appId)),
+  };
 }
 
-function clearedCookie(): Record<string, string> {
-  return { 'Set-Cookie': endUserCookieHeader('', { maxAgeSec: 0, clear: true }, endUserCookiesSecure()) };
+function clearedCookie(appId: string): Record<string, string> {
+  return { 'Set-Cookie': endUserCookieHeader('', { maxAgeSec: 0, clear: true }, endUserCookiesSecure(), endUserCookieScope(appId)) };
+}
+
+function pathRoutingOn(): boolean {
+  try {
+    return pathRouting();
+  } catch {
+    return false;
+  }
 }
 
 export function registerRoutes(r: ModuleRouter<AuthConfig>): void {
@@ -264,15 +276,15 @@ export function registerRoutes(r: ModuleRouter<AuthConfig>): void {
       db: ctx.db,
       log: ctx.log,
     });
-    return respond(200, { user: publicUser(row) }, sessionCookie(token));
+    return respond(200, { user: publicUser(row) }, sessionCookie(token, ctx.app.id));
   });
 
   r.get('/me', { rule: 'public' }, async (req, ctx) => {
-    const token = readEndUserToken(req.header('cookie'), endUserCookiesSecure());
+    const token = readEndUserToken(req.header('cookie'), endUserCookiesSecure(), endUserCookieScope(ctx.app.id));
     if (!token) return { user: null };
     const store = redis();
     const session = await loadEndUserSession(store, ctx.app.id, token);
-    if (!session) return respond(200, { user: null }, clearedCookie());
+    if (!session) return respond(200, { user: null }, clearedCookie(ctx.app.id));
 
     // The same decision core makes for every module request (current.ts):
     // removed from the allowlist, disabled or deleted → signed out; the role
@@ -280,23 +292,26 @@ export function registerRoutes(r: ModuleRouter<AuthConfig>): void {
     const now = await currentUser(ctx.db, ctx.app, ctx.config, session, ctx.contributions);
     if (!now) {
       await destroyEndUserSession(store, ctx.app.id, token);
-      return respond(200, { user: null }, clearedCookie());
+      return respond(200, { user: null }, clearedCookie(ctx.app.id));
     }
     const user: PublicUser = now.user;
     if (now.row.role !== user.role) await setUserRole(ctx.db, ctx.app.id, user.id, user.role);
     await renewEndUserSession(store, ctx.app.id, token, { ...session, ...user });
-    return respond(200, { user }, sessionCookie(token));
+    return respond(200, { user }, sessionCookie(token, ctx.app.id));
   });
 
   r.post('/logout', { rule: 'public' }, async (req, ctx) => {
-    const token = readEndUserToken(req.header('cookie'), endUserCookiesSecure());
+    const token = readEndUserToken(req.header('cookie'), endUserCookiesSecure(), endUserCookieScope(ctx.app.id));
     if (token) await destroyEndUserSession(redis(), ctx.app.id, token);
-    return respond(200, { ok: true }, clearedCookie());
+    return respond(200, { ok: true }, clearedCookie(ctx.app.id));
   });
 
   // ── sign-in providers (flow.ts) ──
 
-  r.get('/providers', { rule: 'public' }, (_req, ctx) => ({ providers: signInMethods(ctx.contributions, ctx.config) }));
+  // Path routing turns provider sign-in off (flow.ts): only the e-mail code is listed there.
+  r.get('/providers', { rule: 'public' }, (_req, ctx) => ({
+    providers: signInMethods(ctx.contributions, ctx.config).filter((m) => m.id === EMAIL_CODE_KEY || !pathRoutingOn()),
+  }));
 
   r.post('/begin', { rule: 'public', body: beginBody, rateLimit: attempts, maxBodyBytes: 4096 }, (req, ctx) =>
     begin(ctx, { provider: req.body.provider, return_to: req.body.return_to, host: req.header('host') })

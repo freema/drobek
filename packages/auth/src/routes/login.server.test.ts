@@ -128,3 +128,22 @@ describe('POST /login — a mail outage (production defaults: 3 codes per addres
     expect(mail.outbox).toHaveLength(3);
   });
 });
+
+describe('POST /login on a personal instance (APPS_ROUTING_MODE=path)', () => {
+  beforeEach(() => {
+    vi.stubEnv('APPS_ROUTING_MODE', 'path');
+    vi.stubEnv('APPS_BASE_URL', 'http://apps.localhost:3041');
+    vi.stubEnv('PUBLIC_APP_URL', 'http://localhost:3041');
+    vi.stubEnv('APPS_DOMAIN', '');
+    vi.stubEnv('APPS_URL_SCHEME', '');
+    vi.stubEnv('SUPERADMIN_EMAIL', 'owner@example.com');
+  });
+
+  it('sends a code to the owner only; another address gets the same answer and no mail', async () => {
+    const { outbox } = transport(0);
+    expect(await submit('stranger@example.com')).toEqual({ redirect: '/login/verify?email=stranger%40example.com' });
+    expect(outbox).toEqual([]);
+    expect(await submit('Owner@Example.com')).toMatchObject({ redirect: expect.stringContaining('/login/verify?email=') });
+    expect(outbox).toHaveLength(1);
+  });
+});

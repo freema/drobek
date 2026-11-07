@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { getDb, users } from '@drobek/db';
 import { normalizeAuthEmail } from './email-code.server.js';
 import type { GoogleIdentity } from './google-oauth.server.js';
+import { PersonalInstanceError, mayHoldAccount } from './personal.server.js';
 
 /**
  * Ensure a `users` row exists for this e-mail (normalized trim+lowercase);
@@ -12,6 +13,7 @@ import type { GoogleIdentity } from './google-oauth.server.js';
 export async function ensureUserByEmail(emailRaw: string): Promise<string> {
   const db = getDb();
   const email = normalizeAuthEmail(emailRaw);
+  if (!mayHoldAccount(email)) throw new PersonalInstanceError();
 
   const existing = await db
     .select({ id: users.id })
@@ -73,6 +75,7 @@ export async function resolveGoogleUser(
     throw new Error('google identity missing sub/email');
   }
   const email = normalizeAuthEmail(identity.email);
+  if (!mayHoldAccount(email)) throw new PersonalInstanceError();
 
   // (a) sub match wins over everything. The session gets the users-row email
   // (the canonical drobek identity), NOT the incoming Google email — the two

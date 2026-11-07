@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DrobekError, createCore } from './core.js';
+import { DrobekError, appBasePath, createCore } from './core.js';
 
 function fakeFetch(respond: (url: string, init: RequestInit) => Response) {
   const calls: { url: string; init: RequestInit }[] = [];
@@ -57,5 +57,24 @@ describe('SDK core', () => {
   it('a non-JSON failure still becomes a DrobekError', async () => {
     const { f } = fakeFetch(() => new Response('nope', { status: 502, statusText: 'Bad Gateway' }));
     await expect(createCore('x', f).request('GET')).rejects.toMatchObject({ status: 502, code: 'http_error' });
+  });
+});
+
+describe('appBasePath (path routing)', () => {
+  const doc = (content: string | null) => ({
+    querySelector: (s: string) => (s === 'meta[name="drobek-base"]' && content !== null ? { getAttribute: () => content } : null),
+  });
+
+  it('reads the base the server put in the page', () => {
+    expect(appBasePath(doc('/apps/notes/'))).toBe('/apps/notes');
+    expect(appBasePath(doc('/apps/notes--preview/'))).toBe('/apps/notes--preview');
+  });
+
+  it('is empty on an app host of its own and for anything that is not an app path', () => {
+    expect(appBasePath(doc(null))).toBe('');
+    expect(appBasePath(undefined)).toBe('');
+    for (const bad of ['/apps/notes', '//evil.example/', 'https://evil.example/apps/x/', '/apps/../mcp/', '/mcp/', '/apps/x/y/']) {
+      expect(appBasePath(doc(bad)), bad).toBe('');
+    }
   });
 });

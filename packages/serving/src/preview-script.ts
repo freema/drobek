@@ -166,10 +166,18 @@ function previewScriptSource(uploadOrigin: string, maxBytes: number): string {
   var UPLOAD = ${JSON.stringify(uploadOrigin)};
   var shotsOn = !!(me && me.hasAttribute('data-screenshots')) && !!UPLOAD;
   var MAX_BYTES = ${Math.max(1, Math.trunc(maxBytes))};
-  var EVENTS = ${JSON.stringify(PREVIEW_EVENTS_PATH)};
-  var ERRORS = ${JSON.stringify(PREVIEW_ERRORS_PATH)};
-  var SCROLL_KEY = 'drobek:preview-scroll';
-  var SHOTS_KEY = 'drobek:preview-screenshots';
+  // The app's base path: '' on its own host, '/apps/<label>' in path routing
+  // (withAppBase prefixed the tag's src: the script is at <base>/__drobek/preview.js).
+  var SELF = ${JSON.stringify(PREVIEW_SCRIPT_PATH)};
+  var BASE = '';
+  try {
+    var own = me && me.src ? new URL(me.src).pathname : SELF;
+    if (own.slice(-SELF.length) === SELF) BASE = own.slice(0, -SELF.length);
+  } catch (e) { BASE = ''; }
+  var EVENTS = BASE + ${JSON.stringify(PREVIEW_EVENTS_PATH)};
+  var ERRORS = BASE + ${JSON.stringify(PREVIEW_ERRORS_PATH)};
+  var SCROLL_KEY = 'drobek:preview-scroll' + BASE;
+  var SHOTS_KEY = 'drobek:preview-screenshots' + BASE;
 
   var ui = null;
   function notice() {

@@ -1,5 +1,18 @@
 # Changelog — drobek (core)
 
+## v0.12.0 — 2026-11-07
+
+No migrations. New env vars: `APPS_ROUTING_MODE` (`subdomain`, the default — nothing changes for existing instances), `APPS_BASE_URL` (path mode) and `APPS_PROXY_TARGET` (the apps proxy only). drobek now listens dual-stack (`::`, falling back to IPv4 only on a host without IPv6).
+
+### Added
+- **Path routing for a personal instance without a domain** (NSO-635): `APPS_ROUTING_MODE=path` serves every app under one apps origin, `APPS_BASE_URL/apps/<slug>/` (`--preview`, `--v<N>` likewise), on another host than the dashboard — no wildcard DNS, no custom domain. The apps host serves nothing but `/apps/<label>/…` and the shared SDK scripts; app and version come only from the literal first path segment. Pages get a `<base>` and `<meta name="drobek-base">`, root-absolute HTML attributes are prefixed, compiled assets use relative URLs, and the SDK and beacon find their endpoints under the app's path. End-user and app-access cookies carry the app id in their name. Custom domains, IdP sign-in for end users and service workers are off in this mode.
+- **One trusted owner in path mode**: the apps share one browser origin (see SECURITY.md, Known limitations), so the mode needs exactly one `SUPERADMIN_EMAIL`; only that address gets an account or a sign-in code, invites and e-mail changes are refused, and the server refuses to start when the database holds another account.
+- **The apps proxy** `node dist/server/apps-proxy.js` (same image): gives the apps origin its own hostname on platforms with one hostname per service. It forces `Host` to the apps host, drops `X-Forwarded-Host` and `Forwarded`, passes the client IP on, streams bodies and server-sent events, and answers `/healthz` itself.
+- **`task e2e:path`**: the production image as drobek + apps proxy behind a TLS edge, in the shape of the Railway template.
+
+### Changed
+- **Railway template** (`deployments/railway/TEMPLATE.md`, `docs/RAILWAY.md`): path routing with a second `apps` service — no domain or DNS needed.
+
 ## v0.11.3 — 2026-10-28
 
 The tag v0.11.2 was not released: knip refused an unused export in its lint job; the product is the same. No migrations, no new env vars.

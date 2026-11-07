@@ -176,6 +176,47 @@ DNS: an `A`/`AAAA` record for the dashboard host and a **wildcard**
 the apex of `APPS_DOMAIN` (`drobek.app` + `*.drobek.app`) — it never serves an
 app — but a separate registrable domain for the apps is the safer choice.
 
+### Path routing (no domain of your own)
+
+A platform that gives each service one generated hostname and no wildcard
+(Railway, for example) cannot give every app its own host. With
+`APPS_ROUTING_MODE=path` the apps share **one** separate apps origin,
+`APPS_BASE_URL`, and the app is the first path segment:
+
+| URL | What |
+| --- | --- |
+| `PUBLIC_APP_URL` | dashboard, OAuth server, MCP at `/mcp` (unchanged) |
+| `<APPS_BASE_URL>/apps/<slug>/` | an app's published version |
+| `<APPS_BASE_URL>/apps/<slug>--preview/` | the working copy |
+| `<APPS_BASE_URL>/apps/<slug>--v<N>/` | exactly version N |
+
+- `APPS_BASE_URL` must be a bare http(s) origin on **another host** than
+  `PUBLIC_APP_URL` (https in production); `APPS_DOMAIN` and `APPS_URL_SCHEME`
+  are refused in this mode.
+- The apps host serves nothing but `/apps/<label>/…` and the shared SDK
+  scripts; the dashboard, its API, MCP and OAuth answer 404 there.
+- When the platform cannot route a second hostname to the drobek service,
+  run the **apps proxy** from the same image as a second service:
+  `node dist/server/apps-proxy.js` with `APPS_PROXY_TARGET` (drobek's private
+  origin, e.g. `http://drobek.railway.internal:3000`), `APPS_BASE_URL` (its
+  own public origin) and `PORT`. It forces `Host` to the apps host, drops
+  `X-Forwarded-Host` and `Forwarded`, passes the client IP on as
+  `X-Real-IP`, streams bodies and server-sent events, and answers
+  `/healthz` itself. It runs no app code and holds no secrets.
+- **One trusted owner only.** All apps share one browser origin, so they are
+  not isolated from each other (see [SECURITY.md](SECURITY.md#known-limitations)).
+  The mode therefore needs exactly one `SUPERADMIN_EMAIL`; only that address
+  gets an account or a sign-in code, invites and e-mail changes are refused,
+  and the server refuses to start when the database holds another account.
+- Off in this mode: custom domains, IdP sign-in for end users (e-mail codes
+  work), service workers. Compiled assets use relative URLs and each page
+  gets a `<base>` of its app; apps should use relative URLs (or
+  `document.baseURI`), and a client-side router reads its basename from
+  `<meta name="drobek-base">`.
+- Switching an existing instance between the modes: versions compiled
+  before the switch keep the old asset URLs, so write to each app once to
+  get a version compiled for the new mode, and publish it.
+
 ## Production compose
 
 [`docker-compose.production.yaml`](../docker-compose.production.yaml) runs
@@ -396,8 +437,11 @@ limit marked *(plan)* can also come per workspace from the limits provider.
 | `PUBLIC_APP_URL` | dev `http://localhost:3041` | **required** — the dashboard origin: OAuth issuer, dashboard, MCP at `/mcp`. Never serves an app |
 | `PUBLIC_MCP_URL` | `PUBLIC_APP_URL` + `/mcp` | the MCP resource identifier (the token audience, RFC 8707) |
 | `PUBLIC_ORIGIN` | `PUBLIC_APP_URL` | invite links and the Google `redirect_uri` base |
-| `APPS_DOMAIN` | dev `apps.localhost:3041` | **required in production** — apps live on `*.<APPS_DOMAIN>` (host[:port], no scheme) |
-| `APPS_URL_SCHEME` | `http` for `*.localhost`, else `https` *(compose: https)* | scheme of the app URLs drobek hands out |
+| `APPS_ROUTING_MODE` | `subdomain` | `subdomain` (an own host per app under `APPS_DOMAIN`) or `path` (all apps under `APPS_BASE_URL/apps/<slug>/`, one trusted owner — [Path routing](#path-routing-no-domain-of-your-own)) |
+| `APPS_DOMAIN` | dev `apps.localhost:3041` | subdomain mode, **required in production** — apps live on `*.<APPS_DOMAIN>` (host[:port], no scheme). Refused in path mode |
+| `APPS_URL_SCHEME` | `http` for `*.localhost`, else `https` *(compose: https)* | subdomain mode — scheme of the app URLs drobek hands out. Refused in path mode |
+| `APPS_BASE_URL` | — | path mode, **required** — the apps origin (bare http(s) origin, another host than `PUBLIC_APP_URL`, https in production). Also read by the apps proxy |
+| `APPS_PROXY_TARGET` | — | apps proxy only (`node dist/server/apps-proxy.js`) — drobek's private origin, e.g. `http://drobek.railway.internal:3000` |
 | `APPS_UNKNOWN_HOST_LIMIT` / `APPS_UNKNOWN_HOST_WINDOW_MS` | 60 / 60000 | "no app here" answers per client IP per window, then 429 |
 | `APPS_MODULE_BODY_TIMEOUT_MS` | 120000 | a `/__drobek/*` request (module routes, uploads, the beacon) must deliver its body within it, else 408; raise it with `FILES_MAX_BYTES` for big uploads over slow links |
 | `DASHBOARD_MAX_BODY_BYTES` | 1048576 | the largest request body of the dashboard origin's pages, sign-in and OAuth endpoints — a declared length or a chunked body counted as it arrives; a bigger one answers 413 before it is read further. `/mcp`, the asset upload URLs, the Data tab's CSV import and the feedback note page (its screenshot) keep their own limits. The generated Caddyfile carries the same cap: re-render it after a change ([Production compose](#production-compose)) |

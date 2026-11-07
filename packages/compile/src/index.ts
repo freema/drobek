@@ -12,7 +12,7 @@ export {
 } from './config.js';
 export { normalizeAppPath, isAllowedExt, TEXT_EXTS, BINARY_EXTS, SOURCE_EXTS } from './paths.js';
 export { scanForSecrets } from './secrets.js';
-export { replaceSpans } from './markup.js';
+export { elements, replaceSpans, startTagReader, type StartTag } from './markup.js';
 export { appCspFetchDirectives } from './app-csp.js';
 export type {
   CompileErrorCode,

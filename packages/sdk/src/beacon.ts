@@ -30,6 +30,7 @@
  * Never throws, never recurses (an error while reporting is dropped), sends
  * at most 100 events per page load and at most 3 copies of the same error.
  */
+import { appBasePath } from './core.js';
 
 export const BEACON_ENDPOINT = '/__drobek/v1/_beacon';
 /** The server's hard cap per POST. */
@@ -78,7 +79,11 @@ export interface BeaconEnv {
   addEventListener(type: string, listener: Listener, capture?: boolean): void;
   location?: { href?: string };
   navigator?: { sendBeacon?: (url: string, data: Blob) => boolean; userAgent?: string };
-  document?: { visibilityState?: string; addEventListener?(type: string, listener: Listener): void };
+  document?: {
+    visibilityState?: string;
+    addEventListener?(type: string, listener: Listener): void;
+    querySelector?(selector: string): { getAttribute(name: string): string | null } | null;
+  };
   performance?: { getEntriesByType?(type: string): unknown[] };
   fetch?: (url: string, init: RequestInit) => Promise<unknown>;
   setTimeout(fn: () => void, ms: number): unknown;
@@ -304,16 +309,19 @@ export function installBeacon(env: BeaconEnv = globalThis as unknown as BeaconEn
   let busy = false;
 
   const now = () => (env.Date ?? Date).now();
+  // Path routing: the page's `<meta name="drobek-base">` puts the beacon under the app's base path.
+  const doc = env.document;
+  const endpoint = `${appBasePath(doc && typeof doc.querySelector === 'function' ? (doc as Parameters<typeof appBasePath>[0]) : undefined)}${BEACON_ENDPOINT}`;
 
   function send(bodyText: string): void {
     try {
       const nav = env.navigator;
       if (nav && typeof nav.sendBeacon === 'function' && typeof Blob !== 'undefined') {
-        if (nav.sendBeacon(BEACON_ENDPOINT, new Blob([bodyText], { type: 'application/json' }))) return;
+        if (nav.sendBeacon(endpoint, new Blob([bodyText], { type: 'application/json' }))) return;
       }
       if (typeof env.fetch === 'function') {
         void Promise.resolve(
-          env.fetch(BEACON_ENDPOINT, {
+          env.fetch(endpoint, {
             method: 'POST',
             body: bodyText,
             headers: { 'Content-Type': 'application/json' },

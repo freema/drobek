@@ -41,8 +41,12 @@ export type AppHostTarget =
 
 export type HostClass =
   | { side: 'dashboard' }
-  /** `target` null = a host under APPS_DOMAIN that names no valid app host → 404. */
-  | { side: 'apps'; target: AppHostTarget | null }
+  /**
+   * `target` null = a host under APPS_DOMAIN that names no valid app host → 404.
+   * `pathRouted`: the one apps host of path routing — the app comes from the
+   * request path (`parseAppPath`), `target` is always null here.
+   */
+  | { side: 'apps'; target: AppHostTarget | null; pathRouted?: true }
   /** A public DNS name outside APPS_DOMAIN — a custom domain if the domains table knows it. */
   | { side: 'custom'; hostname: string }
   | { side: 'invalid' };
@@ -106,6 +110,12 @@ export interface HostConfig {
   appsDomain: string;
   /** The dashboard's host (+ port), from PUBLIC_APP_URL, e.g. `drobek.app`. */
   dashboardHost: string | null;
+  /**
+   * `path`: APPS_ROUTING_MODE=path — `appsDomain` is the ONE apps host
+   * (APPS_BASE_URL's), apps are told apart by path, and no other host is ever
+   * an app host (no subdomains, no custom domains).
+   */
+  mode?: 'path';
 }
 
 /** Which side of drobek a Host header belongs to (see the module comment). */
@@ -118,6 +128,13 @@ export function classifyHost(rawHost: string | null | undefined, config: HostCon
 
   const apps = splitHost(config.appsDomain);
   if (!apps) return { side: 'dashboard' };
+  if (config.mode === 'path') {
+    // The apps host and nothing else: its port must match exactly, like APPS_DOMAIN's.
+    if (host.hostname === apps.hostname) {
+      return portMatches(apps.port, host.port) ? { side: 'apps', target: null, pathRouted: true } : { side: 'apps', target: null };
+    }
+    return { side: 'dashboard' };
+  }
   const suffix = `.${apps.hostname}`;
   const under = host.hostname === apps.hostname || host.hostname.endsWith(suffix);
   if (!under) {
@@ -162,6 +179,61 @@ export function isAppsOrigin(origin: string, config: HostConfig): boolean {
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
   const cls = classifyHost(url.host, config);
   return cls.side === 'apps';
+}
+
+/** One app address of path routing, split off the request path. */
+export interface AppPath {
+  target: AppHostTarget;
+  /** `/apps/<label>` — what the app's own root-absolute URLs are prefixed with. */
+  base: string;
+  /** The rest of the raw (percent-encoded) path, always starting with `/`. */
+  path: string;
+}
+
+export type AppPathMatch =
+  | { kind: 'app'; app: AppPath }
+  /** `/apps/<label>` without the slash: redirect to `<base>/` so relative URLs resolve under the app. */
+  | { kind: 'slash'; location: string }
+  /** Anything else on the apps host (`/`, `/apps/`, a bad label, an encoded `/` in the label) → 404. */
+  | { kind: 'none' };
+
+/**
+ * Parse a raw request path on the path-routing apps host. The label is the
+ * literal first segment after `/apps/` — no percent-decoding, so `%2F`, `%2E`
+ * or `..` can never form or change it — and must be a well-formed
+ * `<slug>[--preview|--v<N>]` (parseAppLabel). The rest is handed to the
+ * serving handler unchanged, which decodes and confines it as for any app host.
+ */
+export function parseAppPath(rawPath: string): AppPathMatch {
+  const prefix = '/apps/';
+  if (!rawPath.startsWith(prefix)) return { kind: 'none' };
+  const after = rawPath.slice(prefix.length);
+  const slash = after.indexOf('/');
+  const label = slash === -1 ? after : after.slice(0, slash);
+  const target = parseAppLabel(label);
+  if (!target) return { kind: 'none' };
+  const base = `${prefix}${label}`;
+  if (slash === -1) return { kind: 'slash', location: `${base}/` };
+  return { kind: 'app', app: { target, base, path: after.slice(slash) } };
+}
+
+/**
+ * The app target an absolute app URL of this server names, or null: on a
+ * subdomain host the host alone, on the path-routing apps host the first
+ * `/apps/<label>` segment of the path (`/apps/<label>` without a slash too).
+ */
+export function appTargetOfUrl(url: URL, config: HostConfig): Exclude<AppHostTarget, { kind: 'custom' }> | null {
+  const cls = classifyHost(url.host, config);
+  if (cls.side !== 'apps') return null;
+  if (cls.target) return cls.target.kind === 'custom' ? null : cls.target;
+  if (!cls.pathRouted) return null;
+  const m = parseAppPath(url.pathname.endsWith('/') ? url.pathname : `${url.pathname}/`);
+  return m.kind === 'app' && m.app.target.kind !== 'custom' ? m.app.target : null;
+}
+
+/** The label of a target in an app address: `<slug>`, `<slug>--preview`, `<slug>--v<N>`. */
+export function appLabelOf(target: Exclude<AppHostTarget, { kind: 'custom' }>): string {
+  return target.kind === 'prod' ? target.slug : target.kind === 'preview' ? `${target.slug}--preview` : `${target.slug}--v${target.number}`;
 }
 
 /** The canonical host string of a target, e.g. `x--v3.drobek.app`. */

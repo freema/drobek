@@ -114,6 +114,7 @@ import {
   type AppHostTarget,
   type AssetScope,
 } from '@drobek/apps';
+import { withAppBase } from './app-base.js';
 import { assetNameOf, assetResponsePlan, type AssetSource } from './assets.js';
 import { contentTypeForPath } from './content-type.js';
 import { FEEDBACK_SCRIPT_PATH, feedbackScriptTag, injectBeforeBodyEnd, type FeedbackWidget } from './feedback-widget.js';
@@ -154,8 +155,15 @@ export interface AppRequest {
   method: string;
   /** The parsed host; null = a host under APPS_DOMAIN that names no app host. */
   target: AppHostTarget | null;
-  /** Raw request path (percent-encoded, no query). */
+  /** Raw request path (percent-encoded, no query) — under `base` in path routing. */
   path: string;
+  /**
+   * Path routing: the app's base path on the one apps host (`/apps/<label>`,
+   * host.ts parseAppPath); every URL this handler writes for the app (form
+   * actions, redirects, injected scripts) is prefixed with it and its HTML
+   * gets `withAppBase`. '' or absent on an app's own host.
+   */
+  base?: string;
   /** Raw query string without the `?` ('' when none). */
   query: string;
   header(name: string): string | null;
@@ -299,6 +307,7 @@ function safeNext(raw: string | null | undefined): string {
 
 export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Promise<AppResponse> {
   const method = req.method.toUpperCase();
+  const base = req.base ?? '';
   const kind = req.target?.kind;
   const production = kind === 'prod' || kind === 'custom';
   const noindex = !production;
@@ -310,7 +319,7 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
     headers: { ...security, 'Content-Type': HTML, 'Cache-Control': NO_STORE, ...extra },
     body: method === 'HEAD' ? null : html,
   });
-  const missing = (reason: MissingReason) => page(404, missingPage(reason));
+  const missing = (reason: MissingReason) => page(404, missingPage(reason, base));
 
   const isUnlock = method === 'POST' && req.path === UNLOCK_PATH;
   const isBeacon = deps.beacon !== undefined && req.path === BEACON_PATH;
@@ -325,6 +334,12 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
   const isPreviewJson = isPreviewPath && !isPreviewScript;
   const isPlatform =
     !isUnlock && !isBeacon && !isWidget && !isPreviewPath && deps.platform !== undefined && req.path.startsWith(PLATFORM_PREFIX);
+  // Path routing: every app shares the apps origin, and a service worker an
+  // app registers would outlive its version and sit between that origin and
+  // the app's other addresses — never served as one there.
+  if (base && req.header('service-worker') === 'script') {
+    return page(404, missingPage('no-file', base));
+  }
   if (method !== 'GET' && method !== 'HEAD' && !isUnlock && !isPlatform && !isBeacon && !isPreviewJson) {
     return page(405, errorPage('Method not allowed', 'This address only serves files.'), {
       Allow: 'GET, HEAD',
@@ -397,6 +412,7 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
   // ── primary custom domain: the production host redirects there ──
   if (
     req.target.kind === 'prod' &&
+    !base &&
     app.primaryDomain &&
     (method === 'GET' || method === 'HEAD') &&
     !req.path.startsWith(PLATFORM_PREFIX)
@@ -408,7 +424,7 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
 
   // ── visibility gate ──
   if (isUnlock) return unlock(req, app, deps, page);
-  const token = readCookieValue(req.header('cookie'), appAccessCookieName(deps.secureCookies ?? true));
+  const token = readCookieValue(req.header('cookie'), appAccessCookieName(deps.secureCookies ?? true, base ? app.id : undefined));
   const hasAppAccess =
     app.visibility === 'password' && token !== null && deps.accessSecret !== null
       ? verifyAppAccessToken(token, app.id, deps.accessSecret, (deps.now ?? Date.now)())
@@ -451,7 +467,7 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
   }
   if (locked) {
     const next = safeNext(req.query ? `${req.path}?${req.query}` : req.path);
-    return page(401, passwordPage({ next }));
+    return page(401, passwordPage({ next, base }));
   }
   if (isWidget) return serveWidget(req, widget, security);
   if (isPreviewScript) return servePreviewScript(req, preview, security);
@@ -508,7 +524,8 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
     : etagFor(
         entry.sha256 +
           (withWidget ? `-fb${version.number}-${widget.hash}` : '') +
-          (previewTag ? `-pv${version.number}${previewPartsKey(previewParts!)}-${preview!.hash}` : '')
+          (previewTag ? `-pv${version.number}${previewPartsKey(previewParts!)}-${preview!.hash}` : '') +
+          (base && isHtml ? '-base' : '')
       );
   const headers: Record<string, string> = {
     ...security,
@@ -535,7 +552,8 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
     return missing('no-file');
   }
   const inject = (previewTag ?? '') + (withWidget ? feedbackScriptTag(app.slug, version.number) : '');
-  const bytes = inject ? injectBeforeBodyEnd(stored, inject) : stored;
+  const injected = inject ? injectBeforeBodyEnd(stored, inject) : stored;
+  const bytes = base && isHtml ? withAppBase(injected, base) : injected;
   headers['Content-Length'] = String(bytes.length);
   countView();
   return { status: 200, headers, body: method === 'HEAD' ? null : bytes };
@@ -684,25 +702,26 @@ async function unlock(
   page: (status: number, html: string, extra?: Record<string, string>) => AppResponse
 ): Promise<AppResponse> {
   const form = await req.readForm();
+  const base = req.base ?? '';
   const next = safeNext(form?.get('next'));
   const redirect = (setCookie?: string): AppResponse =>
-    page(303, '', { Location: next, ...(setCookie ? { 'Set-Cookie': setCookie } : {}) });
+    page(303, '', { Location: `${base}${next}`, ...(setCookie ? { 'Set-Cookie': setCookie } : {}) });
 
   if (app.visibility !== 'password') return redirect();
   if (!deps.accessSecret) {
     return page(500, errorPage('Unavailable', 'This app cannot be unlocked right now.'));
   }
   if (!(await deps.allowUnlockAttempt(app.id, req.clientIp))) {
-    return page(429, passwordPage({ next, error: 'rate_limited' }), { 'Retry-After': String(UNLOCK_WINDOW_MS / 1000) });
+    return page(429, passwordPage({ next, error: 'rate_limited', base }), { 'Retry-After': String(UNLOCK_WINDOW_MS / 1000) });
   }
   const password = form?.get('password') ?? '';
   const ok =
     password.length > 0 &&
     password.length <= MAX_PASSWORD_CHARS &&
     (await verifyAppPassword(password, await deps.store.passwordHash(app.id)));
-  if (!ok) return page(401, passwordPage({ next, error: 'wrong' }));
+  if (!ok) return page(401, passwordPage({ next, error: 'wrong', base }));
   const token = mintAppAccessToken(app.id, deps.accessSecret, undefined, (deps.now ?? Date.now)());
-  return redirect(appAccessCookieHeader(token, { secure: deps.secureCookies ?? true }));
+  return redirect(appAccessCookieHeader(token, { secure: deps.secureCookies ?? true, ...(base ? { appId: app.id } : {}) }));
 }
 
 /** `GET /.well-known/drobek-report` — the report form for this host (public, 1 h cacheable). */

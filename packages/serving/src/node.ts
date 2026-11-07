@@ -38,6 +38,7 @@ import {
   galleryEnabled,
   hostConfig,
   imageLimits,
+  parseAppPath,
   splitHost,
   type AppHostTarget,
   type HostConfig,
@@ -146,6 +147,13 @@ export interface AppsHostOptions {
   log?: Logger;
   /** Default: APPS_MODULE_BODY_TIMEOUT_MS. */
   moduleBodyTimeoutMs?: number;
+  /**
+   * Path routing: the app-independent platform scripts (`/__drobek/sdk.js`,
+   * `/__drobek/sdk.d.ts`, `/__drobek/beacon.js`) at the ROOT of the apps host —
+   * compiled bundles import them root-absolute, whatever base they are served
+   * under. null → not such a script (absent → those paths are 404s).
+   */
+  sharedScript?: (req: AppRequest) => AppResponse | null;
 }
 
 /** `<scheme>://<hostname>[:port]` of a custom domain: the apps origin's scheme and port. */
@@ -278,16 +286,61 @@ export function createAppsHostMiddleware(opts: AppsHostOptions = {}): NodeMiddle
       );
       return;
     }
+    if (cls.pathRouted) {
+      servePathRouted(req, res);
+      return;
+    }
     serve(req, res, cls.target);
   };
 
-  function serve(req: IncomingMessage, res: ServerResponse, target: AppHostTarget | null): void {
+  /**
+   * The one apps host of path routing: `/apps/<label>/…` is that app's
+   * address with `<label>` as its host label would be; `/apps/<label>` gets a
+   * 308 to `/apps/<label>/`; the platform scripts and the report pointer
+   * answer at the root; anything else is an apps-side 404. Never the dashboard.
+   */
+  function servePathRouted(req: IncomingMessage, res: ServerResponse): void {
     const rawUrl = req.url ?? '/';
     const q = rawUrl.indexOf('?');
-    const path = q === -1 ? rawUrl : rawUrl.slice(0, q);
-    const request: AppRequest = {
+    const rawPath = q === -1 ? rawUrl : rawUrl.slice(0, q);
+    const match = parseAppPath(rawPath);
+    if (match.kind === 'app') {
+      serve(req, res, match.app.target, match.app);
+      return;
+    }
+    if (match.kind === 'slash') {
+      const method = (req.method ?? 'GET').toUpperCase();
+      if (method === 'GET' || method === 'HEAD') {
+        send(req, res, {
+          status: 308,
+          headers: {
+            ...appSecurityHeaders({ noindex: true }),
+            Location: `${match.location}${q === -1 ? '' : rawUrl.slice(q)}`,
+            'Cache-Control': 'no-store',
+          },
+          body: null,
+        });
+        return;
+      }
+    }
+    if (opts.sharedScript) {
+      const shared = opts.sharedScript(requestOf(req, null, { base: '', path: rawPath }));
+      if (shared) {
+        send(req, res, { ...shared, headers: { ...shared.headers, ...appSecurityHeaders({ noindex: true }) } });
+        return;
+      }
+    }
+    serve(req, res, null);
+  }
+
+  function requestOf(req: IncomingMessage, target: AppHostTarget | null, routed?: { base: string; path: string }): AppRequest {
+    const rawUrl = req.url ?? '/';
+    const q = rawUrl.indexOf('?');
+    const path = routed ? routed.path : q === -1 ? rawUrl : rawUrl.slice(0, q);
+    return {
       method: req.method ?? 'GET',
       target,
+      ...(routed?.base ? { base: routed.base } : {}),
       path: path.startsWith('/') ? path : `/${path}`,
       query: q === -1 ? '' : rawUrl.slice(q + 1),
       header: (name) => headerOf(req, name),
@@ -315,6 +368,10 @@ export function createAppsHostMiddleware(opts: AppsHostOptions = {}): NodeMiddle
       },
       bodyStream: () => requestBodyStream(req),
     };
+  }
+
+  function serve(req: IncomingMessage, res: ServerResponse, target: AppHostTarget | null, routed?: { base: string; path: string }): void {
+    const request = requestOf(req, target, routed);
 
     // Exactly one answer per request: after a 408 the route's own (late) answer is dropped.
     let answered = false;

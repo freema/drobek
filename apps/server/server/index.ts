@@ -34,7 +34,7 @@ import {
   previewUrl,
   publishApprovalConfigError,
 } from '@drobek/apps';
-import { trustProxyConfigError } from '@drobek/auth';
+import { personalAccountsError, personalInstanceConfigError, trustProxyConfigError } from '@drobek/auth';
 import {
   closeGracefully,
   createConsoleLogger,
@@ -69,6 +69,7 @@ const configError =
   secretsConfigError(process.env) ??
   previousMasterKeyConfigError(process.env) ??
   appsOriginConfigError(process.env) ??
+  personalInstanceConfigError(process.env) ??
   trustProxyConfigError(process.env) ??
   tlsAskConfigError(process.env) ??
   limitsProviderConfigError(process.env) ??
@@ -114,6 +115,13 @@ if (secretKeys?.level === 'fatal') {
   process.exit(1);
 }
 if (secretKeys) log[secretKeys.level](secretKeys.message);
+
+// A personal instance (path routing) holds no account but its owner's.
+const personalAccounts = await personalAccountsError(process.env);
+if (personalAccounts) {
+  console.error(personalAccounts);
+  process.exit(1);
+}
 
 // The platform modules. Loaded once per process (moduleRuntime() is
 // shared with the Vite-loaded dashboard routes through globalThis).
@@ -174,6 +182,8 @@ const appsHost = createAppsHostMiddleware({
   store: serveStore,
   // `/__drobek/*` on the app hosts: the SDK + module routes.
   deps: { platform: (req, { app }) => modules.handle(req, app), platformSkipsGate: (method, path) => modules.skipsPasswordGate(method, path) },
+  // Path routing: the SDK and the beacon script at the root of the apps host.
+  sharedScript: (req) => modules.sharedScript(req),
 }) as RequestHandler;
 
 // The asset upload URLs (create_asset_upload / the Assets tab).
@@ -192,9 +202,19 @@ const jobs = startBackgroundJobs(log, { filesSweep: modules.modules.some((m) => 
 
 httpServer.on('request', app);
 const port = Number(process.env.PORT ?? 3000);
-httpServer.listen(port, '0.0.0.0', () => {
-  log.info('drobek listening', { port, mode: production ? 'production' : 'development' });
-});
+// Dual-stack ('::' also accepts IPv4 on Linux): a private network may be
+// IPv6-only (Railway's `<service>.railway.internal`, which the apps proxy of
+// path routing calls). A host without IPv6 falls back to IPv4 only.
+const onListening = (host: string) => () => {
+  httpServer.off('error', ipv4Fallback);
+  log.info('drobek listening', { port, host, mode: production ? 'production' : 'development' });
+};
+function ipv4Fallback(err: NodeJS.ErrnoException): void {
+  if (err.code !== 'EAFNOSUPPORT' && err.code !== 'EADDRNOTAVAIL') throw err;
+  httpServer.listen(port, '0.0.0.0', onListening('0.0.0.0'));
+}
+httpServer.once('error', ipv4Fallback);
+httpServer.listen(port, '::', onListening('::'));
 
 let stopping: Promise<void> | null = null;
 /** The graceful stop, once: refuse new MCP requests and end the long-lived streams, drain the requests in flight, then close the MCP handler, jobs and caches. Does not exit. */

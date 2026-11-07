@@ -83,9 +83,10 @@ const MISSING: Record<MissingReason, { title: string; text: string; next: string
   },
 };
 
-export function missingPage(reason: MissingReason): string {
+/** `base`: the app's base path in path routing (`/apps/<label>`), '' on its own host. */
+export function missingPage(reason: MissingReason, base = ''): string {
   const m = MISSING[reason];
-  const home = reason === 'no-file' ? `\n<p><a href="/">Go to the start page</a></p>` : '';
+  const home = reason === 'no-file' ? `\n<p><a href="${escapeHtml(base)}/">Go to the start page</a></p>` : '';
   return platformPageShell({
     page: 'missing',
     title: m.title,
@@ -96,7 +97,7 @@ export function missingPage(reason: MissingReason): string {
 
 export const UNLOCK_PATH = '/__drobek/password';
 
-export function passwordPage(opts: { next: string; error?: 'wrong' | 'rate_limited' | null }): string {
+export function passwordPage(opts: { next: string; error?: 'wrong' | 'rate_limited' | null; base?: string }): string {
   const error =
     opts.error === 'wrong'
       ? '<p class="drobek-error" role="alert">Incorrect password. Try again.</p>'
@@ -108,7 +109,7 @@ export function passwordPage(opts: { next: string; error?: 'wrong' | 'rate_limit
     title: 'Password required',
     heading: 'This app is password protected',
     body: `<p class="drobek-hint">Enter the password to continue. If you do not have it, ask whoever shared the app with you.</p>
-${error}<form method="POST" action="${UNLOCK_PATH}">
+${error}<form method="POST" action="${escapeHtml(opts.base ?? '')}${UNLOCK_PATH}">
   <input type="hidden" name="next" value="${escapeHtml(opts.next)}">
   <label class="drobek-label" for="drobek-app-password">Password</label>
   <input class="drobek-input" id="drobek-app-password" name="password" type="password" autocomplete="current-password" autofocus required>

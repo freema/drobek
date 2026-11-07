@@ -11,6 +11,10 @@
     "./password": {
       "types": "./src/password.ts",
       "default": "./dist/password.js"
+    },
+    "./apps-proxy": {
+      "types": "./src/apps-proxy.ts",
+      "default": "./dist/apps-proxy.js"
     }
   },
   "scripts": {

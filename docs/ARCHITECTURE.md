@@ -419,6 +419,19 @@ cache. The compile result is part of the tool response.
   dashboard's (cookies, the Public Suffix List, phishing optics); every app is
   its own origin, so apps are isolated from each other and from the dashboard
   by the browser's same-origin policy.
+- **Path routing** (`APPS_ROUTING_MODE=path`, a personal instance without a
+  domain): every app lives on ONE apps origin, `APPS_BASE_URL`, at
+  `/apps/<label>/` with the same labels (`<slug>`, `<slug>--preview`,
+  `<slug>--v<N>`). `classifyHost` reports the apps host as path-routed and
+  `parseAppPath` takes the label from the literal first segment; the apps
+  host serves nothing else but the shared SDK scripts. Serving injects a
+  `<base>` and `<meta name="drobek-base">`, prefixes root-absolute HTML
+  attributes, and the compiler emits relative asset URLs. Cookies carry the
+  app id in their name. The apps share one browser origin, so the mode is
+  limited to one owner (`@drobek/auth` `personal.server.ts`); the optional
+  apps proxy (`@drobek/serving/apps-proxy`, `dist/server/apps-proxy.js`)
+  gives that origin its own hostname on platforms with one hostname per
+  service. `@drobek/apps` builds every app URL for both modes.
 - Host classification (`@drobek/apps` `classifyHost`) is shared by serving,
   the origin check and the TLS `ask`. An unknown foreign host is the
   dashboard's (and 404s there); a registered but unverified custom domain

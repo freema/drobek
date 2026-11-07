@@ -340,3 +340,16 @@ describe('pageUrl', () => {
     expect(pageUrl(42)).toBe('');
   });
 });
+
+describe('installBeacon under path routing', () => {
+  it('reports to the app\'s own beacon under its base path', () => {
+    const w = fakeWindow({ href: 'https://apps.example/apps/shop--preview/cart' });
+    w.env.document = {
+      querySelector: (s: string) => (s === 'meta[name="drobek-base"]' ? { getAttribute: () => '/apps/shop--preview/' } : null),
+    } as unknown as BeaconEnv['document'];
+    installBeacon(w.env);
+    w.dispatch('error', { message: 'x', error: new Error('x'), filename: 'https://apps.example/apps/shop--preview/main.js', lineno: 1, colno: 1 });
+    w.runTimers();
+    expect(w.beacons[0].url).toBe(`/apps/shop--preview${BEACON_ENDPOINT}`);
+  });
+});

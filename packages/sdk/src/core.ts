@@ -19,6 +19,19 @@ export const SDK_HEADER = 'X-Drobek-SDK';
 export const MODULE_API_BASE = '/__drobek/v1';
 
 /**
+ * The app's base path: '' on its own host; in path routing
+ * (APPS_ROUTING_MODE=path) the server puts `<meta name="drobek-base"
+ * content="/apps/<label>/">` into every HTML page of the app, and every SDK
+ * URL goes under it. Read on each call (a page's head is parsed before any
+ * module script runs). Only a value of that exact shape counts.
+ */
+export function appBasePath(doc: { querySelector(selector: string): { getAttribute(name: string): string | null } | null } | undefined =
+  typeof document === 'undefined' ? undefined : document): string {
+  const raw = doc?.querySelector('meta[name="drobek-base"]')?.getAttribute('content') ?? '';
+  return /^\/apps\/[a-z0-9-]+\/$/.test(raw) ? raw.slice(0, -1) : '';
+}
+
+/**
  * A failed module call: `status` is the HTTP status, `code` the stable error
  * code from the module (`{ error, message, details?, hint? }`), `hint` what to
  * do (for agents: usually `skill_info('<module>')`).
@@ -54,7 +67,7 @@ export interface RequestOptions {
 export interface SdkCore {
   /** The module name (`drobek.<module>`). */
   readonly module: string;
-  /** `/__drobek/v1/<module><path>?<query>` */
+  /** `/__drobek/v1/<module><path>?<query>` (under the app's base path in path routing) */
   url(path?: string, query?: Record<string, QueryValue>): string;
   /**
    * Call a route of this module. Resolves with the parsed JSON body (text for a
@@ -98,7 +111,7 @@ async function readBody(res: Response): Promise<unknown> {
 export function createCore(module: string, fetchImpl?: FetchLike): SdkCore {
   const doFetch: FetchLike = fetchImpl ?? ((input, init) => fetch(input, init));
   const url = (path?: string, query?: Record<string, QueryValue>) =>
-    `${MODULE_API_BASE}/${module}${joinPath(path)}${queryString(query)}`;
+    `${appBasePath()}${MODULE_API_BASE}/${module}${joinPath(path)}${queryString(query)}`;
   return {
     module,
     url,

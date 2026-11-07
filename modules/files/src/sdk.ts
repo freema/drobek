@@ -31,15 +31,21 @@ export interface FilesApi {
 }
 
 export default function files(core: SdkCore): FilesApi {
+  // The server answers `/__drobek/v1/files/<id>`; the SDK's own URL also holds
+  // the app's base path under path routing.
+  const withUrl = (f: StoredFile): StoredFile => ({ ...f, url: core.url(`/${encodeURIComponent(f.id)}`) });
   return {
-    upload(file, opts = {}) {
+    async upload(file, opts = {}) {
       const form = new FormData();
       const name = opts.name ?? (typeof File !== 'undefined' && file instanceof File ? file.name : '') ?? '';
       form.append('file', file, name || 'file');
-      return core.request<StoredFile>('POST', '', { body: form, signal: opts.signal });
+      return withUrl(await core.request<StoredFile>('POST', '', { body: form, signal: opts.signal }));
     },
     url: (id) => core.url(`/${encodeURIComponent(id)}`),
     remove: (id) => core.request('DELETE', `/${encodeURIComponent(id)}`),
-    list: (opts = {}) => core.request('GET', '', { query: { limit: opts.limit, cursor: opts.cursor ?? undefined } }),
+    async list(opts = {}) {
+      const page = await core.request<FilesPage>('GET', '', { query: { limit: opts.limit, cursor: opts.cursor ?? undefined } });
+      return { ...page, files: page.files.map(withUrl) };
+    },
   };
 }

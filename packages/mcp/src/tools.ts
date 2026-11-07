@@ -63,6 +63,7 @@ import {
   AppsError,
   assertSourceQuota,
   assertVersionRate,
+  appTargetOfUrl,
   classifyHost,
   copyName,
   createApp as createAppRow,
@@ -93,6 +94,7 @@ import {
   setGalleryListing,
   suggestSlug,
   validateAppSlug,
+  pathRouting,
   versionRateLimitsOf,
   versionRetention,
   versionStorageLimitsOf,
@@ -635,6 +637,7 @@ async function compileAndStore(
     sdkSources: ctx.modules.sdk.inline,
     beaconUrl: ctx.modules.sdk.beacon.url,
     servedPaths: assets.map((a) => a.name),
+    relativeAssets: pathRouting(ctx.deps.env),
   });
   try {
     refuseUnstorable(result);
@@ -773,8 +776,9 @@ async function duplicateSourceSlug(from: string, env: NodeJS.ProcessEnv): Promis
     if (!page) throw foreign('is a dashboard page other than /duplicate/<slug>');
     return decodeURIComponent(page[1]).toLowerCase();
   }
+  const target = appTargetOfUrl(url, config);
+  if (target) return target.slug;
   const host = classifyHost(url.host, config);
-  if (host.side === 'apps' && host.target) return host.target.slug;
   if (host.side === 'custom') {
     const custom = await resolveCustomHost(host.hostname);
     if (custom?.slug) return custom.slug;

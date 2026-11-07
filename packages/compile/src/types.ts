@@ -82,6 +82,13 @@ export interface CompileOptions {
    * assets (`img/hero.jpg`): a reference to one is not a `missing_reference`.
    */
   servedPaths?: Iterable<string>;
+  /**
+   * Emit bundled asset URLs relative to the entry (`./assets/x-<hash>.png`)
+   * instead of root-absolute (`/assets/…`). Set when apps are served under a
+   * path prefix (`APPS_ROUTING_MODE=path`): every entry sits at the output
+   * root, so the relative URL resolves against the app's `<base href>`.
+   */
+  relativeAssets?: boolean;
 }
 
 export type SourceFiles = Map<string, string | Buffer>;

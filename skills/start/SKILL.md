@@ -120,7 +120,7 @@ pinned esm.sh URL, e.g. `"date-fns": "https://esm.sh/date-fns@4.1.0"`; `pkg/sub`
   dashboard. Never ask for their values. Lease: a write holds the app for 3 minutes (renewed per write).
 - Hosts: `<slug>--preview.<APPS_DOMAIN>` follows every write that compiled; `<slug>.<APPS_DOMAIN>`
   changes only on publish; `<slug>--v<N>.…` = version N. Sources and `drobek.json` are not
-  served; unknown extension-less paths get `index.html` (client routing works).
+  served; unknown extension-less paths get `index.html` (client routing works). Path routing (`/apps/<slug>/`): use returned URLs, relative paths, router basename from `<meta name="drobek-base">`.
 - Tab, search, shared link — drobek adds nothing to your `<head>`: `<title>`, `<meta name="description" content="…">` (one sentence:
   what the app does), an icon (`favicon.svg` via write_files + `<link rel="icon" href="/favicon.svg" type="image/svg+xml">`; PNG/ICO →
   `create_asset_upload`; none → `/favicon.ico` is a 404). Link preview: `og:title`, `og:description`, `og:type` `website`, `og:url`, `og:image`

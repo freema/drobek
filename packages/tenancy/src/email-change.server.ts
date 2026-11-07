@@ -39,6 +39,7 @@ import {
   logger,
   maskEmail,
   normalizeAuthEmail,
+  personalInstance,
   releaseOtpCooldown,
   serializeError,
 } from '@drobek/auth';
@@ -76,6 +77,10 @@ export async function requestEmailChange(input: {
   newEmail: string;
   ip: string | undefined;
 }): Promise<EmailChangeRequestResult> {
+  // A personal instance's one account is bound to SUPERADMIN_EMAIL; another address could hold no account.
+  if (personalInstance()) {
+    return { ok: false, status: 403, message: 'This server is a personal instance: its owner signs in with the SUPERADMIN_EMAIL address, which is changed in the server configuration.' };
+  }
   const email = normalizeAuthEmail(input.newEmail);
   if (!isValidAuthEmail(email)) return { ok: false, status: 400, message: INVALID_ADDRESS };
   if (email === normalizeAuthEmail(input.currentEmail)) {
@@ -128,6 +133,10 @@ export async function confirmEmailChange(input: {
   code: string;
   ip: string | undefined;
 }): Promise<EmailChangeConfirmResult> {
+  // A personal instance's one account is bound to SUPERADMIN_EMAIL; another address could hold no account.
+  if (personalInstance()) {
+    return { ok: false, status: 403, message: 'This server is a personal instance: its owner signs in with the SUPERADMIN_EMAIL address, which is changed in the server configuration.' };
+  }
   const email = normalizeAuthEmail(input.newEmail);
   const code = input.code.trim();
   if (!isValidAuthEmail(email) || !/^\d{6}$/.test(code)) return { ok: false, status: 400, message: BAD_CODE };

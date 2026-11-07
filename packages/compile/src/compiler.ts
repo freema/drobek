@@ -222,7 +222,7 @@ export class Compiler {
       outdir: OUT_DIR,
       entryNames: '[name]',
       assetNames: 'assets/[name]-[hash]',
-      publicPath: '/',
+      publicPath: opts.relativeAssets ? '' : '/',
       charset: 'utf8',
       absWorkingDir: this.workDir,
       nodePaths: [],

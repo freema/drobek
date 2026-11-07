@@ -182,8 +182,9 @@ export async function listDomains(app: DomainApp, env: NodeJS.ProcessEnv = proce
  * `opts.maxPerApp` is the workspace's effective DOMAINS_MAX_PER_APP (the
  * limits provider's plan); default: the env.
  */
-function domainsDisabled(): DomainsError {
-  return new DomainsError('limit_exceeded', 'Custom domains are not available for this workspace (DOMAINS_MAX_PER_APP is 0).', {
+function domainsDisabled(pathRouted = false): DomainsError {
+  const why = pathRouted ? 'this server serves apps by path (APPS_ROUTING_MODE=path)' : 'DOMAINS_MAX_PER_APP is 0';
+  return new DomainsError('limit_exceeded', `Custom domains are not available for this workspace (${why}).`, {
     limit: 'DOMAINS_MAX_PER_APP',
     value: 0,
   });
@@ -196,8 +197,10 @@ export async function addDomain(
   env: NodeJS.ProcessEnv = process.env,
   opts: { maxPerApp?: number } = {}
 ): Promise<DomainView> {
-  const max = opts.maxPerApp ?? domainsMaxPerApp(env);
-  if (max <= 0) throw domainsDisabled();
+  // Path routing has one apps host and serves no other: custom domains are off whatever a limit says.
+  const pathRouted = appsOrigin(env).mode === 'path';
+  const max = pathRouted ? 0 : (opts.maxPerApp ?? domainsMaxPerApp(env));
+  if (max <= 0) throw domainsDisabled(pathRouted);
   const checked = checkHostname(rawHostname, hostnameRules(env));
   if (!checked.ok) throw new DomainsError(checked.code, checked.message);
   const hostname = checked.hostname;

@@ -22,7 +22,7 @@
  */
 import { randomBytes } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
-import { logger, maskEmail, normalizeAuthEmail, serializeError } from '@drobek/auth';
+import { logger, maskEmail, normalizeAuthEmail, personalInstance, serializeError } from '@drobek/auth';
 import { getRedis } from '@drobek/core';
 import { getDb, memberships } from '@drobek/db';
 import {
@@ -154,7 +154,7 @@ export function defaultMemberInviteDeps(): MemberInviteDeps {
 
 export type InviteMemberResult =
   | { ok: true; role: WorkspaceRole; email: string | null; inviteUrl: string; emailSent: boolean }
-  | { ok: false; reason: 'not-team' | 'invalid-role' | 'invalid-email' | 'email-failed'; message: string };
+  | { ok: false; reason: 'not-team' | 'invalid-role' | 'invalid-email' | 'email-failed' | 'personal-instance'; message: string };
 
 /**
  * A workspace admin invites someone — the ONE invite flow of the dashboard's
@@ -177,6 +177,14 @@ export async function inviteMember(input: {
   deps?: MemberInviteDeps;
   env?: NodeJS.ProcessEnv;
 }): Promise<InviteMemberResult> {
+  // A personal instance (path routing) has no account but its owner's: nobody can be invited.
+  if (personalInstance(input.env)) {
+    return {
+      ok: false,
+      reason: 'personal-instance',
+      message: 'This server is a personal instance (APPS_ROUTING_MODE=path): it has no members besides its owner, so invites are off.',
+    };
+  }
   if (input.workspace.kind !== 'team') {
     return { ok: false, reason: 'not-team', message: 'Invites are only available for team workspaces.' };
   }

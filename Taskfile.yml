@@ -136,6 +136,12 @@ tasks:
       - '{{if not .DROBEK_IMAGE}}docker build --target runner --build-arg GIT_SHA={{.GIT_SHA}} --build-arg COMMIT_TIME={{.COMMIT_TIME}} -t {{.IMAGE}}:e2e .{{else}}true{{end}}'
       - DROBEK_IMAGE={{.DROBEK_IMAGE | default (printf "%s:e2e" .IMAGE)}} ./scripts/e2e-image.sh {{.CLI_ARGS}}
 
+  e2e:path:
+    desc: 'Path routing (APPS_ROUTING_MODE=path) end to end on the prod image in the Railway shape: drobek + the apps proxy (same image) + Postgres/Redis/Mailpit, then tests/apps-path-routing.spec.ts [DROBEK_IMAGE=… skips the build; E2E_KEEP=1 keeps the stack]'
+    cmds:
+      - '{{if not .DROBEK_IMAGE}}docker build --target runner --build-arg GIT_SHA={{.GIT_SHA}} --build-arg COMMIT_TIME={{.COMMIT_TIME}} -t {{.IMAGE}}:e2e .{{else}}true{{end}}'
+      - DROBEK_IMAGE={{.DROBEK_IMAGE | default (printf "%s:e2e" .IMAGE)}} ./scripts/e2e-path.sh {{.CLI_ARGS}}
+
   api-key:create:
     desc: 'Create a drk_ API key for a user in the local dev DB and print it once (EMAIL=… [NAME=cli] [SCOPES=read,write] [CREATE_USER=1] creates a user that never signed in)'
     requires:

@@ -2366,6 +2366,18 @@ export class ModuleRuntime {
     }
   }
 
+  /**
+   * The app-independent platform scripts (`/__drobek/sdk.js`, its `.d.ts`,
+   * `/__drobek/beacon.js`) without an app: path routing serves them at the
+   * root of the one apps host, where compiled bundles import them. null for
+   * any other path.
+   */
+  sharedScript(req: PlatformRequest): PipelineResult | null {
+    if (req.path === SDK_PATH || req.path === SDK_TYPES_PATH) return this.serveSdk(req);
+    if (req.path === BEACON_SCRIPT_PATH) return this.serveBeaconScript(req);
+    return null;
+  }
+
   private serveSdk(req: PlatformRequest): PipelineResult {
     const js = req.path === SDK_PATH;
     return this.serveScript(req, {

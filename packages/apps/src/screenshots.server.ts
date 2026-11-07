@@ -448,7 +448,8 @@ export async function declineScreenshot(input: { id: string; token: unknown }, d
  * May a browser page at `origin` answer a request of app `app`? Only the
  * app's own hosts: `<slug>`, `<slug>--preview` and `<slug>--v<N>` under
  * APPS_DOMAIN (scheme and port as the apps origin), and the app's verified
- * custom domains.
+ * custom domains. In path routing every app shares the one apps origin, so
+ * that origin is allowed for any app (the one-time token still decides).
  */
 export async function screenshotOriginAllowed(
   origin: string,
@@ -463,7 +464,7 @@ export async function screenshotOriginAllowed(
   }
   if ((url.protocol !== 'https:' && url.protocol !== 'http:') || url.origin !== origin) return false;
   const cls = classifyHost(url.host, opts.hosts ?? hostConfig());
-  if (cls.side === 'apps') return cls.target?.slug === app.slug;
+  if (cls.side === 'apps') return cls.pathRouted === true || cls.target?.slug === app.slug;
   if (cls.side === 'custom') return url.protocol === 'https:' && (await (opts.verifiedDomain ?? isVerifiedDomainOf)(app.id, cls.hostname));
   return false;
 }

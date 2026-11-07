@@ -40,7 +40,7 @@
  * pages without IdP details.
  */
 import { createHash, createHmac, hkdfSync, randomBytes, timingSafeEqual } from 'node:crypto';
-import { appsOrigin, dashboardOrigin } from '@drobek/apps';
+import { appsOrigin, dashboardOrigin, pathRouting } from '@drobek/apps';
 import { safeReturnPath } from '@drobek/auth';
 import { getRedis } from '@drobek/core';
 import {
@@ -295,7 +295,28 @@ export const beginBody = z.strictObject({
   return_to: z.string().max(2000).optional(),
 });
 
+/**
+ * Path routing shares one host between every app, so the handoff, bound to
+ * the app host, could not tell them apart: provider sign-in is off there and
+ * e-mailed codes are the only sign-in (docs/SECURITY.md → Path routing).
+ */
+function providersUnavailableInPathRouting(): ModuleError | null {
+  let path = false;
+  try {
+    path = pathRouting();
+  } catch {
+    path = false;
+  }
+  return path
+    ? new ModuleError('provider_not_enabled', 'Sign-in providers are not available on this server (path routing); sign in with an e-mailed code.', {
+        status: 404,
+      })
+    : null;
+}
+
 export async function begin(ctx: Ctx, input: { provider: string; return_to?: string; host: string | null }): Promise<ModuleResponse> {
+  const off = providersUnavailableInPathRouting();
+  if (off) throw off;
   const provider = enabledProvider(ctx.contributions, ctx.config, input.provider);
   if (!provider) throw providerNotEnabled();
   const returnTo = input.return_to === undefined ? '/' : safeReturnPath(input.return_to);
@@ -500,6 +521,7 @@ export async function providerCallback(input: EndUserCallbackInput<AuthConfig>):
 const EXPIRED = 'This sign-in link expired or was already used. Start the sign-in again from the app.';
 
 export async function complete(ctx: Ctx, input: { code: string | undefined; host: string | null; cookie: string | null }): Promise<ModuleResponse> {
+  if (providersUnavailableInPathRouting()) return pageResponse(404, 'Sign-in unavailable', 'Sign-in providers are not available on this server.');
   const code = input.code ?? '';
   if (!TOKEN_RE.test(code)) return pageResponse(400, 'Sign-in expired', EXPIRED);
   const record = parseRecord(handoffRecordSchema, await flowRedis().getdel(handoffKey(code)));

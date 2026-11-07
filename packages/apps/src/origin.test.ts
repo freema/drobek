@@ -3,8 +3,11 @@ import {
   DEV_APPS_DOMAIN,
   appsOrigin,
   appsOriginConfigError,
+  hostConfig,
+  pathRouting,
   previewUrl,
   publishedUrl,
+  versionUrl,
 } from './origin.js';
 
 describe('apps origin (APPS_DOMAIN)', () => {
@@ -16,7 +19,7 @@ describe('apps origin (APPS_DOMAIN)', () => {
   });
 
   it('defaults to apps.localhost:3041 over http outside production', () => {
-    expect(appsOrigin({})).toEqual({ domain: DEV_APPS_DOMAIN, scheme: 'http' });
+    expect(appsOrigin({})).toEqual({ domain: DEV_APPS_DOMAIN, scheme: 'http', mode: 'subdomain' });
     expect(previewUrl('todo', {})).toBe('http://todo--preview.apps.localhost:3041');
   });
 
@@ -51,5 +54,61 @@ describe('apps origin (APPS_DOMAIN)', () => {
       'https://a1b--preview.drobek.app'
     );
     expect(previewUrl('a1b', { APPS_DOMAIN: '' })).toBe('http://a1b--preview.apps.localhost:3041');
+  });
+});
+
+describe('apps origin (APPS_ROUTING_MODE=path)', () => {
+  const PATH = {
+    APPS_ROUTING_MODE: 'path',
+    APPS_BASE_URL: 'https://apps-xyz.up.railway.app',
+    PUBLIC_APP_URL: 'https://drobek-abc.up.railway.app',
+    NODE_ENV: 'production',
+  };
+
+  it('builds every app address under /apps/<label> of APPS_BASE_URL', () => {
+    expect(appsOriginConfigError(PATH)).toBeNull();
+    expect(appsOrigin(PATH)).toEqual({ domain: 'apps-xyz.up.railway.app', scheme: 'https', mode: 'path' });
+    expect(pathRouting(PATH)).toBe(true);
+    expect(publishedUrl('notes', PATH)).toBe('https://apps-xyz.up.railway.app/apps/notes');
+    expect(previewUrl('notes', PATH)).toBe('https://apps-xyz.up.railway.app/apps/notes--preview');
+    expect(versionUrl('notes', 7, PATH)).toBe('https://apps-xyz.up.railway.app/apps/notes--v7');
+    expect(hostConfig(PATH)).toMatchObject({ appsDomain: 'apps-xyz.up.railway.app', mode: 'path' });
+  });
+
+  it('stays subdomain routing by default', () => {
+    const env = { APPS_DOMAIN: 'drobek.app', NODE_ENV: 'production' };
+    expect(pathRouting(env)).toBe(false);
+    expect(hostConfig(env)).not.toHaveProperty('mode');
+  });
+
+  it('refuses an unknown mode', () => {
+    expect(appsOriginConfigError({ ...PATH, APPS_ROUTING_MODE: 'paths' })).toMatch(/APPS_ROUTING_MODE/);
+  });
+
+  it('refuses a missing, non-origin or insecure APPS_BASE_URL', () => {
+    expect(appsOriginConfigError({ ...PATH, APPS_BASE_URL: '' })).toMatch(/APPS_BASE_URL is not set/);
+    for (const bad of [
+      'apps.example.com',
+      'https://apps.example.com/x',
+      'https://apps.example.com/?a=1',
+      'https://user:pw@apps.example.com',
+      'ftp://apps.example.com',
+      'javascript:alert(1)',
+    ]) {
+      expect(appsOriginConfigError({ ...PATH, APPS_BASE_URL: bad }), bad).toMatch(/APPS_BASE_URL/);
+    }
+    expect(appsOriginConfigError({ ...PATH, APPS_BASE_URL: 'http://apps.example.com' })).toMatch(/https in production/);
+    expect(appsOriginConfigError({ ...PATH, NODE_ENV: 'development', APPS_BASE_URL: 'http://apps.localhost:3041', PUBLIC_APP_URL: 'http://localhost:3041' })).toBeNull();
+  });
+
+  it('refuses the dashboard host as the apps host (any port)', () => {
+    expect(appsOriginConfigError({ ...PATH, APPS_BASE_URL: 'https://drobek-abc.up.railway.app' })).toMatch(/another host than the dashboard/);
+    expect(appsOriginConfigError({ ...PATH, APPS_BASE_URL: 'https://drobek-abc.up.railway.app:8443' })).toMatch(/another host than the dashboard/);
+    expect(appsOriginConfigError({ ...PATH, APPS_BASE_URL: 'https://DROBEK-ABC.up.railway.app' })).toMatch(/another host than the dashboard/);
+  });
+
+  it('refuses the subdomain-only variables', () => {
+    expect(appsOriginConfigError({ ...PATH, APPS_DOMAIN: 'apps.example.com' })).toMatch(/APPS_DOMAIN does not apply/);
+    expect(appsOriginConfigError({ ...PATH, APPS_URL_SCHEME: 'https' })).toMatch(/APPS_URL_SCHEME does not apply/);
   });
 });
