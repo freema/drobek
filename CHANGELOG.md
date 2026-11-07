@@ -1,8 +1,8 @@
 # Changelog — drobek (core)
 
-## v0.12.0 — 2026-11-07
+## v0.12.1 — 2026-11-07
 
-No migrations. New env vars: `APPS_ROUTING_MODE` (`subdomain`, the default — nothing changes for existing instances), `APPS_BASE_URL` (path mode) and `APPS_PROXY_TARGET` (the apps proxy only). drobek now listens dual-stack (`::`, falling back to IPv4 only on a host without IPv6).
+The tag v0.12.0 was not released: the image e2e's skip guard counted the new path-routing tests as never run (they need their own stack); v0.12.1 runs them in their own CI step and is otherwise v0.12.0. No migrations. New env vars: `APPS_ROUTING_MODE` (`subdomain`, the default — nothing changes for existing instances), `APPS_BASE_URL` (path mode) and `APPS_PROXY_TARGET` (the apps proxy only). drobek now listens dual-stack (`::`, falling back to IPv4 only on a host without IPv6).
 
 ### Added
 - **Path routing for a personal instance without a domain** (NSO-635): `APPS_ROUTING_MODE=path` serves every app under one apps origin, `APPS_BASE_URL/apps/<slug>/` (`--preview`, `--v<N>` likewise), on another host than the dashboard — no wildcard DNS, no custom domain. The apps host serves nothing but `/apps/<label>/…` and the shared SDK scripts; app and version come only from the literal first path segment. Pages get a `<base>` and `<meta name="drobek-base">`, root-absolute HTML attributes are prefixed, compiled assets use relative URLs, and the SDK and beacon find their endpoints under the app's path. End-user and app-access cookies carry the app id in their name. Custom domains, IdP sign-in for end users and service workers are off in this mode.

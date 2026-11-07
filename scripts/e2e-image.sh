@@ -112,9 +112,11 @@ SHARD_ARGS=()
 [ -z "${E2E_SHARD:-}" ] || SHARD_ARGS=(--shard="$E2E_SHARD")
 
 # 0. The guard checks itself, and lists every test of the suite (no stack needed).
+#    @path tests need the path-routing stack and run in scripts/e2e-path.sh
+#    (`task e2e:path`, its own CI step), never against this subdomain stack.
 if [ "$#" -eq 0 ]; then
   node scripts/e2e-skip-guard.mjs --self-check
-  PLAYWRIGHT_JSON_OUTPUT_FILE="$WORK/listed.json" pnpm -C tests-e2e exec playwright test --list --reporter=json ${SHARD_ARGS[@]+"${SHARD_ARGS[@]}"} >/dev/null
+  PLAYWRIGHT_JSON_OUTPUT_FILE="$WORK/listed.json" pnpm -C tests-e2e exec playwright test --list --reporter=json --grep-invert @path ${SHARD_ARGS[@]+"${SHARD_ARGS[@]}"} >/dev/null
 fi
 
 # 1. Caddyfile from the image's own generator (proves the CLI ships in it),
