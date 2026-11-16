@@ -271,6 +271,7 @@ built-ins.
 | `EMAIL_SIGNIN_APP_HOURLY_SHARE` | — (25) | one app's percent of the sign-in e-mail budget — raise it on a single-app server (see [Production compose](#production-compose)) |
 | `EMAIL_WORKSPACE_HOURLY_SHARE` | — (50) | one workspace's percent of each module e-mail budget — raise it to 100 on a single-workspace server |
 | `BACKUP_DIR`, `BACKUP_KEEP`, `BACKUP_MIN_FREE_MB` | — (`backups`, 14, 1024) | [`task backup`](#backup-and-restore): where the archives go, how many stay (0 = all), the space a backup leaves free |
+| `BACKUP_PASSPHRASE_FILE` | — (plain archives) | [encrypts every archive](#encrypted-archives) with the passphrase in that file — keep the file apart from the archives |
 | `CONTAINER_LOG_MAX_SIZE`, `CONTAINER_LOG_MAX_FILES` | — (`20m`, 5) | each container's log rotates at this size and keeps this many files |
 | limits (`OTP_*`, `COMPILE_*`, `DATA_*`, `FILES_*`, `EMAIL_*`, …) | — | production defaults; every variable is in the [Environment reference](#environment-reference) |
 
@@ -630,8 +631,9 @@ backup BACKUP_KEEP=30`), else from `.env.production`; docker compose reads the
 | Variable | Default | What |
 | --- | --- | --- |
 | `BACKUP_DIR` | `backups` | where `task backup` writes `drobek-<UTC timestamp>.tar.gz` (relative to the checkout) — and its parts while it runs, not `/tmp`; `task backup:verify` checks the newest archive there |
-| `BACKUP_KEEP` | 14 | after a backup that verified, every `drobek-<UTC timestamp>.tar.gz` in `BACKUP_DIR` beyond the newest N is deleted; `0` = keep every archive. A failed backup deletes nothing, and files of any other name are never deleted |
+| `BACKUP_KEEP` | 14 | after a backup that verified, every `drobek-<UTC timestamp>.tar.gz` (or `.tar.gz.enc`) in `BACKUP_DIR` beyond the newest N is deleted; `0` = keep every archive. A failed backup deletes nothing, and files of any other name are never deleted |
 | `BACKUP_MIN_FREE_MB` | 1024 | the free space a backup leaves on the `BACKUP_DIR` disk: it refuses to start unless twice the data (the database's tables + the four volumes) plus this much is free |
+| `BACKUP_PASSPHRASE_FILE` | — (plain archives) | the path (absolute, or relative to the checkout) of a file whose first line is a passphrase of at least 16 characters. Set, `task backup` writes `drobek-<UTC timestamp>.tar.gz.enc`, encrypted with it (AES-256-CBC, key from PBKDF2-SHA256 with 600 000 iterations, `openssl enc`), and `task backup:verify` and `task restore` read encrypted archives with it. The passphrase is read by openssl from the file and never appears in a process argument, a log or the archive. Keep the file apart from the archives, like `DROBEK_MASTER_KEY` — losing it loses every archive made with it. A missing or unreadable file stops the backup before it writes anything. See [Encrypted archives](#encrypted-archives) |
 | `CONTAINER_LOG_MAX_SIZE` / `CONTAINER_LOG_MAX_FILES` | `20m` / 5 | the production compose's `json-file` log of every container rotates at this size (docker's `k`, `m`, `g` units) and keeps this many files |
 
 ### Development and tests only
@@ -660,7 +662,8 @@ task backup
 #   BACKUP_KEEP=14: 1 older archive(s) deleted, 1.2 MiB freed
 ```
 
-One archive (mode 600, in `backups/`, override with `BACKUP_DIR`):
+One archive (mode 600, in `backups/`, override with `BACKUP_DIR`;
+[encrypted](#encrypted-archives) with `BACKUP_PASSPHRASE_FILE`):
 `db.dump` (`pg_dump -Fc` of the whole database — one consistent snapshot),
 `files.tar` (the `files_data` volume), `assets.tar` (the `assets_data`
 volume), `modules.tar` (the `modules_data` volume), `caddy_data.tar`, `SHA256SUMS` and a
@@ -698,7 +701,7 @@ upgrade before anything changed.
 **Retention.** Before the new archive gets its name, `task backup` checks it
 the way `task backup:verify` does (below). Then it keeps the newest
 `BACKUP_KEEP` (14 — two weeks of the daily cron above) archives named
-`drobek-<UTC timestamp>.tar.gz` in `BACKUP_DIR` and deletes the older ones;
+`drobek-<UTC timestamp>.tar.gz` or `.tar.gz.enc` in `BACKUP_DIR` and deletes the older ones;
 `BACKUP_KEEP=0` keeps every archive. A backup that fails — no room, a part
 that cannot be read, an archive that does not verify — deletes nothing and
 leaves no partial file behind, and a file of any other name
@@ -718,7 +721,9 @@ task backup:verify
 #   made under DROBEK_MASTER_KEY of .env.production
 ```
 
-It reads `manifest.json` and `SHA256SUMS`, checks that both list the same
+It opens an encrypted archive with `BACKUP_PASSPHRASE_FILE` (see
+[Encrypted archives](#encrypted-archives)), reads `manifest.json` and
+`SHA256SUMS`, checks that both list the same
 parts with the same checksums and that the parts a restore needs are there,
 and streams every part out of the archive to compare its size and sha256 —
 nothing is unpacked to disk, and neither docker nor the stack is needed, so a
@@ -731,7 +736,8 @@ damaged archive exits 1 naming the first part that does not match. With
 without which the restored upstream and module secrets cannot be
 decrypted. Keep a copy of it somewhere safe, separately from the backups —
 after a [key rotation](#rotating-drobek_master_key), keep the old key with
-the archives made before it.
+the archives made before it. The same goes for the file
+`BACKUP_PASSPHRASE_FILE` names.
 Redis is not backed up (sessions, caches, rate-limit counters).
 
 **Restore** into a stack whose database is empty — a new machine, or this one
@@ -740,6 +746,7 @@ after `docker compose … down -v`:
 ```sh
 # on the new machine: steps 1–2 of the quickstart (the same or a newer release), then
 scp old-server:/opt/drobek/.env.production /opt/drobek/.env.production   # the SAME secrets
+# an encrypted archive (.tar.gz.enc): the passphrase file too, at the path BACKUP_PASSPHRASE_FILE names
 task selfhost:init                                     # renders the Caddyfile, keeps every secret
 task restore BACKUP=backups/drobek-20260923T201500Z.tar.gz
 # ✓ …verified — created 2026-09-23T20:15:00Z, image ghcr.io/freema/drobek:v1.2.0 (v1.2.0 abc1234)
@@ -747,7 +754,10 @@ task restore BACKUP=backups/drobek-20260923T201500Z.tar.gz
 #   apps 12 · files 40 (backup: apps 12 · files 40)
 ```
 
-`task restore` verifies the checksums, refuses a `DROBEK_MASTER_KEY` that does
+`task restore` decrypts an [encrypted archive](#encrypted-archives) with
+`BACKUP_PASSPHRASE_FILE` while it unpacks it (refused without the setting or
+with a wrong passphrase, before anything is stopped), verifies the
+checksums, refuses a `DROBEK_MASTER_KEY` that does
 not match the backup's fingerprint — unless `DROBEK_MASTER_KEY_PREVIOUS`
 matches it (a backup from before a key rotation: run `task selfhost:rekey`
 after the restore) or `ALLOW_KEY_MISMATCH=1` is set (restores anyway and
@@ -765,6 +775,55 @@ certificates over. Sessions (dashboard users and apps' end users) live in
 Redis, which is not in the backup: after a restore on a new machine everyone
 signs in again; API keys and OAuth clients are in the database and keep
 working. A `FORCE=1` restore on the same machine leaves Redis as it is.
+
+### Encrypted archives
+
+An archive holds the whole database and every upload in plain form; anyone
+who gets a copy (an off-site bucket, a leaked disk) can read them. Set
+`BACKUP_PASSPHRASE_FILE` and every archive is encrypted before it reaches the
+disk:
+
+```sh
+(umask 077 && openssl rand -base64 32 > /root/drobek-backup.pass)
+# in .env.production:
+#   BACKUP_PASSPHRASE_FILE=/root/drobek-backup.pass
+task backup
+# · encrypt (AES-256-CBC, PBKDF2 — BACKUP_PASSPHRASE_FILE)
+# · verify the archive
+# ✓ backups/drobek-20260923T201500Z.tar.gz.enc — 1234567 bytes in 5 s, encrypted
+#   Keep a copy of /root/drobek-backup.pass apart from the archives — without it this archive cannot be opened.
+```
+
+The gzip'd tar is piped through `openssl enc -aes-256-cbc -pbkdf2 -iter
+600000 -md sha256 -salt` (the `openssl` of the host — no extra tool, nothing
+in the image) into `drobek-<UTC timestamp>.tar.gz.enc`; no unencrypted copy of
+the archive is written, so it needs no more disk than a plain one. openssl
+reads the passphrase from the file (`-pass file:`): it is never in a process
+argument, the environment, a log or `manifest.json`. Retention counts plain
+and encrypted archives together.
+
+`task backup:verify` and `task restore` take plain and encrypted archives
+alike and read the same setting (from the environment —
+`task backup:verify BACKUP_PASSPHRASE_FILE=/root/drobek-backup.pass` — or
+from `.env.production`). Both exit 1 — restore before it stops or replaces
+anything — on an encrypted archive
+
+- without `BACKUP_PASSPHRASE_FILE`: `is encrypted — set BACKUP_PASSPHRASE_FILE …`;
+- with a wrong passphrase: `wrong passphrase — BACKUP_PASSPHRASE_FILE=… does not open this archive`;
+- changed or cut short: `is damaged`. Verify decrypts the whole archive
+  first, then checks gzip's checksum and the size and sha256 of every part
+  against `manifest.json` and `SHA256SUMS`, which travel inside the
+  encrypted stream; restore checks the same sums after unpacking.
+
+**Keep the passphrase file apart from the archives**, like
+`DROBEK_MASTER_KEY` — in a password manager or a second off-site location,
+not in the bucket the archives go to. Losing it loses every archive made with
+it: there is no recovery. To change the passphrase, point
+`BACKUP_PASSPHRASE_FILE` at a new file and keep the old one as long as
+archives made with it are kept (open those with
+`BACKUP_PASSPHRASE_FILE=<the old file>` on the `task` command line). The
+archive is protected by the passphrase alone, so use a generated one (at
+least 16 characters; a file other users can read is warned about).
 
 ## Rotating DROBEK_MASTER_KEY
 

@@ -254,28 +254,31 @@ tasks:
       - '{{.DC}} exec -T drobek wget -q -O - http://127.0.0.1:3000/api/version && echo'
 
   backup:
-    desc: 'Back up the production stack → backups/drobek-<UTC>.tar.gz (pg_dump -Fc + files_data + assets_data + modules_data + caddy_data + manifest.json); refuses without twice the data free, verifies the archive, then keeps the newest BACKUP_KEEP [BACKUP_DIR=backups BACKUP_KEEP=14 BACKUP_MIN_FREE_MB=1024, also from .env.production]'
+    desc: 'Back up the production stack → backups/drobek-<UTC>.tar.gz (pg_dump -Fc + files_data + assets_data + modules_data + caddy_data + manifest.json; .tar.gz.enc encrypted with the passphrase in BACKUP_PASSPHRASE_FILE); refuses without twice the data free, verifies the archive, then keeps the newest BACKUP_KEEP [BACKUP_DIR=backups BACKUP_KEEP=14 BACKUP_MIN_FREE_MB=1024 BACKUP_PASSPHRASE_FILE=, also from .env.production]'
     env:
       BACKUP_DIR: '{{.BACKUP_DIR}}'
       BACKUP_KEEP: '{{.BACKUP_KEEP}}'
       BACKUP_MIN_FREE_MB: '{{.BACKUP_MIN_FREE_MB}}'
+      BACKUP_PASSPHRASE_FILE: '{{.BACKUP_PASSPHRASE_FILE}}'
     cmds:
       - ./scripts/selfhost-backup.sh
 
   backup:verify:
-    desc: 'Check a `task backup` archive without restoring it: manifest.json, SHA256SUMS and the size + sha256 of every part, streamed (no docker, nothing unpacked) [BACKUP=… — default: the newest in BACKUP_DIR]'
+    desc: 'Check a `task backup` archive without restoring it: manifest.json, SHA256SUMS and the size + sha256 of every part, streamed (no docker, nothing unpacked); an encrypted one needs BACKUP_PASSPHRASE_FILE [BACKUP=… — default: the newest in BACKUP_DIR]'
     env:
       BACKUP: '{{.BACKUP}}'
       BACKUP_DIR: '{{.BACKUP_DIR}}'
+      BACKUP_PASSPHRASE_FILE: '{{.BACKUP_PASSPHRASE_FILE}}'
     cmds:
       - ./scripts/selfhost-backup-verify.sh
 
   restore:
-    desc: 'Restore a `task backup` archive into this stack and start it (refuses a non-empty database unless FORCE=1) — BACKUP=backups/drobek-<ts>.tar.gz'
+    desc: 'Restore a `task backup` archive into this stack and start it (refuses a non-empty database unless FORCE=1; an encrypted one needs BACKUP_PASSPHRASE_FILE) — BACKUP=backups/drobek-<ts>.tar.gz[.enc]'
     requires:
       vars: [BACKUP]
     env:
       BACKUP: '{{.BACKUP}}'
+      BACKUP_PASSPHRASE_FILE: '{{.BACKUP_PASSPHRASE_FILE}}'
       FORCE: '{{.FORCE}}'
       ALLOW_KEY_MISMATCH: '{{.ALLOW_KEY_MISMATCH}}'
     cmds:

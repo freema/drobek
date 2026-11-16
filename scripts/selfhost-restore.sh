@@ -2,7 +2,10 @@
 # `task restore BACKUP=backups/drobek-<ts>.tar.gz` — put a `task backup`
 # archive back into this stack (the same machine or a new one) and start it:
 #
-#   1. unpack + verify (format, SHA256SUMS)
+#   1. unpack + verify (format, SHA256SUMS); an encrypted archive
+#      (drobek-<ts>.tar.gz.enc) is decrypted on the way with the passphrase
+#      in BACKUP_PASSPHRASE_FILE — refused before anything else without it
+#      or with a wrong one
 #   2. DROBEK_MASTER_KEY of .env.production must match the backup's
 #      fingerprint (else the restored upstream / module secrets are
 #      unreadable) — or DROBEK_MASTER_KEY_PREVIOUS must (a backup from before a
@@ -24,7 +27,8 @@
 # (manifest.json `image_version`), never an older one: it refuses to start on
 # a database migrated by a newer image.
 #
-#   BACKUP=… (required)  FORCE=1  ALLOW_KEY_MISMATCH=1  ENV_FILE=.env.production
+#   BACKUP=… (required)  FORCE=1  ALLOW_KEY_MISMATCH=1  BACKUP_PASSPHRASE_FILE=…
+#   ENV_FILE=.env.production
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -34,21 +38,23 @@ cd "$ROOT"
 require_env_file
 
 backup="${BACKUP:-${1:-}}"
-[ -n "$backup" ] || die "usage: task restore BACKUP=backups/drobek-<timestamp>.tar.gz [FORCE=1]"
+[ -n "$backup" ] || die "usage: task restore BACKUP=backups/drobek-<timestamp>.tar.gz[.enc] [FORCE=1]"
 [ -f "$backup" ] || die "no such backup: $backup"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 started=$(date +%s)
 
 # ── 1. unpack + verify ───────────────────────────────────────────────────────
-tar -xzf "$backup" -C "$work"
+open_backup "$backup"
+backup_tar "$backup" x -C "$work" 2>"$work/tar.log" \
+  || die "$backup is damaged — it could not be unpacked$([ -n "$BACKUP_KEYFILE" ] && echo ' after decryption'): $(head -n 1 "$work/tar.log")"
 for f in manifest.json SHA256SUMS db.dump files.tar caddy_data.tar; do
   [ -f "$work/$f" ] || die "$backup is not a drobek backup (missing $f)"
 done
 grep -q '"format": "drobek-backup/1"' "$work/manifest.json" || die "unknown backup format (manifest.json)"
 (cd "$work" && sha256_check SHA256SUMS) || die "checksum mismatch — the archive is damaged"
 field() { sed -n "s/^  \"$1\": \"\\(.*\\)\",\$/\\1/p" "$work/manifest.json" | head -n 1; }
-say "✓ $backup verified — created $(field created_at), image $(field image) ($(field image_version) $(field image_git_sha))"
+say "✓ $backup verified$([ -n "$BACKUP_KEYFILE" ] && echo ' (decrypted)') — created $(field created_at), image $(field image) ($(field image_version) $(field image_git_sha))"
 
 # ── 2. master key ────────────────────────────────────────────────────────────
 want="$(field master_key_fingerprint)"

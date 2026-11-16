@@ -18,18 +18,24 @@
 #        → task selfhost:module:list → DROBEK_MODULES → drobek restarts and
 #        /api/version lists it with source "dir"
 #     5. task backup without room (BACKUP_MIN_FREE_MB) is refused and writes
-#        and deletes nothing; task backup BACKUP_KEEP=2 next to three older
+#        and deletes nothing; a plain task backup, then an encrypted one
+#        (BACKUP_PASSPHRASE_FILE → .tar.gz.enc, unreadable without it, the
+#        passphrase in no output) with BACKUP_KEEP=2 next to three older
 #        archives keeps the newest two and a file of another name →
 #        docker compose down -v (every volume gone)
-#   machine B (another fresh copy + A's .env.production, nothing else)
-#     6. task backup:verify of the copied archive (no stack running) passes, a
-#        damaged copy fails; task selfhost:init (renders the Caddyfile, keeps
-#        every secret)
-#     7. task restore BACKUP=… → the app serves on its host, the file downloads,
+#   machine B (another fresh copy + A's .env.production + the passphrase file)
+#     6. task backup:verify of the copied archives (no stack running): the
+#        encrypted one fails without BACKUP_PASSPHRASE_FILE and with a wrong
+#        passphrase, passes with the right one; the plain one passes; a
+#        damaged copy of each fails; task selfhost:init (renders the
+#        Caddyfile, keeps every secret)
+#     7. task restore of the encrypted archive is refused without the
+#        passphrase; with it → the app serves on its host, the file downloads,
 #        the same API key works, Caddy's restored local CA still validates, the
 #        server starts with the same modules.lock.json and loads the module
-#     8. a second restore is refused (non-empty database), FORCE=1 replaces
-#        it; the upgrade's migrate step twice (the second applies nothing)
+#     8. a second restore (the plain archive) is refused (non-empty database),
+#        FORCE=1 replaces it; the upgrade's migrate step twice (the second
+#        applies nothing)
 #
 # Wall-clock times are printed at the end. Knobs: REHEARSAL_HTTPS_PORT (9443),
 # REHEARSAL_HTTP_PORT (9080), REHEARSAL_MAILPIT_PORT (8046),
@@ -261,18 +267,31 @@ grep -q 'not enough free space' "$SCRATCH/nospace.log" || { cat "$SCRATCH/nospac
 [ "$(cd "$A/backups" && ls -A | LC_ALL=C sort | tr '\n' ' ')" = "$before_backups" ] \
   || { ls -lA "$A/backups" >&2; die "the refused backup wrote or deleted something in backups/"; }
 ok "a disk without room: refused with the sizes, nothing written, nothing deleted"
+plain="$(cd "$A" && COMPOSE_PROJECT_NAME="$PROJECT_A" task backup BACKUP_KEEP=0 2>"$SCRATCH/backup-plain.log" | tail -n 1)" \
+  || { cat "$SCRATCH/backup-plain.log" >&2; die "task backup (plain) failed"; }
+case "$plain" in */drobek-*Z.tar.gz) [ -f "$A/$plain" ] ;; *) false ;; esac || die "task backup did not produce a plain archive ($plain)"
+grep -q 'not encrypted' "$SCRATCH/backup-plain.log" || die "task backup without BACKUP_PASSPHRASE_FILE did not say the archive is not encrypted"
+ok "a plain archive: $(basename "$plain")"
+PASS="$SCRATCH/backup.pass"
+WRONG_PASS="$SCRATCH/wrong.pass"
+(umask 077 && openssl rand -base64 32 > "$PASS" && openssl rand -base64 32 > "$WRONG_PASS")
 TB=$(now)
-archive="$(cd "$A" && COMPOSE_PROJECT_NAME="$PROJECT_A" task backup BACKUP_KEEP=2 2>"$SCRATCH/backup.log" | tail -n 1)" \
-  || { cat "$SCRATCH/backup.log" >&2; die "task backup failed"; }
+archive="$(cd "$A" && COMPOSE_PROJECT_NAME="$PROJECT_A" task backup BACKUP_KEEP=2 BACKUP_PASSPHRASE_FILE="$PASS" 2>"$SCRATCH/backup.log" | tail -n 1)" \
+  || { cat "$SCRATCH/backup.log" >&2; die "task backup (encrypted) failed"; }
 sed 's/^/    /' "$SCRATCH/backup.log" | grep -v '^    task:' >&2 || true
-[ -f "$A/$archive" ] || die "task backup did not produce an archive ($archive)"
+case "$archive" in */drobek-*Z.tar.gz.enc) [ -f "$A/$archive" ] ;; *) false ;; esac || die "task backup with BACKUP_PASSPHRASE_FILE did not produce a .tar.gz.enc ($archive)"
 BACKUP_S=$(( $(now) - TB ))
 grep -q 'every size and sha256 matches manifest.json' "$SCRATCH/backup.log" || die "task backup did not verify its archive"
+is_encrypted "$A/$archive" || die "$archive is not openssl ciphertext"
+if tar -tzf "$A/$archive" >/dev/null 2>&1; then die "tar reads $archive without the passphrase"; fi
+if grep -qF "$(head -n 1 "$PASS")" "$SCRATCH/backup.log"; then die "the passphrase is in the output of task backup"; fi
+[ "$(stat -c %a "$A/$archive" 2>/dev/null || stat -f %Lp "$A/$archive")" = 600 ] || die "$archive is not mode 600"
+ok "an encrypted archive (mode 600, openssl ciphertext — tar cannot read it, the passphrase is in no output)"
 kept="$(cd "$A/backups" && ls -A | LC_ALL=C sort | tr '\n' ' ')"
-[ "$kept" = "drobek-20200103T000000Z.tar.gz $(basename "$archive") drobek-before-upgrade.tar.gz " ] \
+[ "$kept" = "$(basename "$plain") $(basename "$archive") drobek-before-upgrade.tar.gz " ] \
   || die "BACKUP_KEEP=2 left: $kept"
-ok "verified, then BACKUP_KEEP=2 deleted the two oldest archives (a file of another name stays)"
-tar -tzf "$A/$archive" | sort | tr '\n' ' ' | sed 's/^/  archive: /' >&2; printf '\n' >&2
+ok "verified, then BACKUP_KEEP=2 deleted the three oldest archives, plain and encrypted counted together (a file of another name stays)"
+BACKUP_KEYFILE="$PASS" backup_tar "$A/$archive" t | sort | tr '\n' ' ' | sed 's/^/  archive: /' >&2; printf '\n' >&2
 docker network disconnect "${PROJECT_A}_default" "$MAILPIT"
 on "$A" "$PROJECT_A" down -v --remove-orphans </dev/null >/dev/null 2>&1
 left="$(docker volume ls -q --filter "name=${PROJECT_A}_" | wc -l | tr -d ' ')"
@@ -280,30 +299,52 @@ left="$(docker volume ls -q --filter "name=${PROJECT_A}_" | wc -l | tr -d ' ')"
 ok "machine A is gone (containers + all five volumes)"
 
 # ── machine B ────────────────────────────────────────────────────────────────
-step "6. machine B: fresh checkout + A's .env.production + the archive → task backup:verify → task selfhost:init"
+step "6. machine B: fresh checkout + A's .env.production + the archives → task backup:verify → task selfhost:init"
 checkout "$B"
 ACTIVE="$B|$PROJECT_B"
 (umask 077 && cp "$A/.env.production" "$B/.env.production")
 mkdir -p "$B/backups"
-cp "$A/$archive" "$B/backups/"
-(cd "$B" && task backup:verify >"$SCRATCH/verify.log" 2>&1) || { cat "$SCRATCH/verify.log" >&2; die "task backup:verify refused the copied archive"; }
+cp "$A/$plain" "$A/$archive" "$B/backups/"
+if (cd "$B" && task backup:verify >"$SCRATCH/verify-nopass.log" 2>&1); then
+  die "task backup:verify passed an encrypted archive without BACKUP_PASSPHRASE_FILE"
+fi
+grep -q 'is encrypted — set BACKUP_PASSPHRASE_FILE' "$SCRATCH/verify-nopass.log" || { cat "$SCRATCH/verify-nopass.log" >&2; die "the refusal did not name BACKUP_PASSPHRASE_FILE"; }
+ok "the encrypted archive without BACKUP_PASSPHRASE_FILE: refused, naming the setting"
+if (cd "$B" && task backup:verify BACKUP_PASSPHRASE_FILE="$WRONG_PASS" >"$SCRATCH/verify-wrong.log" 2>&1); then
+  die "task backup:verify passed an encrypted archive with a wrong passphrase"
+fi
+grep -q 'wrong passphrase' "$SCRATCH/verify-wrong.log" || { cat "$SCRATCH/verify-wrong.log" >&2; die "the refusal did not name the wrong passphrase"; }
+ok "the encrypted archive with a wrong passphrase: refused"
+(cd "$B" && task backup:verify BACKUP_PASSPHRASE_FILE="$PASS" >"$SCRATCH/verify.log" 2>&1) || { cat "$SCRATCH/verify.log" >&2; die "task backup:verify refused the copied archive"; }
 grep -q "$(basename "$archive") is intact" "$SCRATCH/verify.log" || { cat "$SCRATCH/verify.log" >&2; die "task backup:verify did not check the newest archive"; }
 grep -q 'made under DROBEK_MASTER_KEY of' "$SCRATCH/verify.log" || { cat "$SCRATCH/verify.log" >&2; die "task backup:verify did not match the archive's key"; }
-ok "task backup:verify (the newest archive in backups/, no stack running): intact, made under this DROBEK_MASTER_KEY"
-cp "$B/backups/$(basename "$archive")" "$SCRATCH/damaged.tar.gz"
-printf 'damaged!' | dd of="$SCRATCH/damaged.tar.gz" bs=1 seek=$(( $(bytes_of "$SCRATCH/damaged.tar.gz") / 2 )) conv=notrunc 2>/dev/null
-if (cd "$B" && task backup:verify BACKUP="$SCRATCH/damaged.tar.gz" >"$SCRATCH/damaged.log" 2>&1); then
-  die "task backup:verify passed an archive with 8 bytes overwritten"
-fi
-grep -q '^✗ .*damaged' "$SCRATCH/damaged.log" || { cat "$SCRATCH/damaged.log" >&2; die "task backup:verify failed without naming the damage"; }
-ok "a copy with 8 bytes overwritten in the middle is refused"
+ok "task backup:verify BACKUP_PASSPHRASE_FILE=… (the newest archive in backups/, no stack running): intact, made under this DROBEK_MASTER_KEY"
+(cd "$B" && task backup:verify BACKUP="backups/$(basename "$plain")" >"$SCRATCH/verify-plain.log" 2>&1) || { cat "$SCRATCH/verify-plain.log" >&2; die "task backup:verify refused the plain archive"; }
+grep -q 'not encrypted' "$SCRATCH/verify-plain.log" || { cat "$SCRATCH/verify-plain.log" >&2; die "task backup:verify did not say the plain archive is not encrypted"; }
+ok "task backup:verify of the plain archive: intact"
+for f in "$plain" "$archive"; do
+  copy="$SCRATCH/damaged-$(basename "$f")"
+  cp "$B/backups/$(basename "$f")" "$copy"
+  printf 'damaged!' | dd of="$copy" bs=1 seek=$(( $(bytes_of "$copy") / 2 )) conv=notrunc 2>/dev/null
+  if (cd "$B" && task backup:verify BACKUP="$copy" BACKUP_PASSPHRASE_FILE="$PASS" >"$SCRATCH/damaged.log" 2>&1); then
+    die "task backup:verify passed $(basename "$f") with 8 bytes overwritten"
+  fi
+  grep -q '^✗ .*damaged' "$SCRATCH/damaged.log" || { cat "$SCRATCH/damaged.log" >&2; die "task backup:verify failed without naming the damage"; }
+done
+ok "a copy of either with 8 bytes overwritten in the middle is refused"
 TR=$(now)
 (cd "$B" && COMPOSE_PROJECT_NAME="$PROJECT_B" task selfhost:init >/dev/null 2>&1)
 [ "$(sha256_of "$B/.env.production")" = "$before_env" ] || die "selfhost:init on machine B changed the copied .env.production"
 ok "secrets kept, Caddyfile rendered"
 
-step "7. task restore BACKUP=backups/$(basename "$archive") (machine B)"
-(cd "$B" && COMPOSE_PROJECT_NAME="$PROJECT_B" task restore BACKUP="backups/$(basename "$archive")") 2>&1 | { grep -vE "^task:|Creat|Start|Waiting|Running|Stopp" || true; } | sed 's/^/    /' >&2
+step "7. task restore BACKUP=backups/$(basename "$archive") BACKUP_PASSPHRASE_FILE=… (machine B)"
+if (cd "$B" && COMPOSE_PROJECT_NAME="$PROJECT_B" task restore BACKUP="backups/$(basename "$archive")" >"$SCRATCH/restore-nopass.log" 2>&1); then
+  die "task restore of an encrypted archive ran without BACKUP_PASSPHRASE_FILE"
+fi
+grep -q 'is encrypted — set BACKUP_PASSPHRASE_FILE' "$SCRATCH/restore-nopass.log" || { cat "$SCRATCH/restore-nopass.log" >&2; die "the restore refusal did not name BACKUP_PASSPHRASE_FILE"; }
+[ -z "$(on "$B" "$PROJECT_B" ps -aq)" ] || die "the refused restore started containers"
+ok "without the passphrase: refused before any container started"
+(cd "$B" && COMPOSE_PROJECT_NAME="$PROJECT_B" task restore BACKUP="backups/$(basename "$archive")" BACKUP_PASSPHRASE_FILE="$PASS") 2>&1 | { grep -vE "^task:|Creat|Start|Waiting|Running|Stopp" || true; } | sed 's/^/    /' >&2
 RESTORE_S=$(( $(now) - TR ))
 curl -sf --cacert "$CA" "$BASE/healthz" >/dev/null || die "machine B /healthz (with machine A's CA root) failed"
 ok "/healthz through Caddy with machine A's root CA → caddy_data restored"
@@ -316,18 +357,18 @@ case "$(curl -sf --cacert "$CA" "$BASE/api/version")" in
   *) die "machine B does not load the restored module" ;;
 esac
 
-step "8. guard rails: a second restore is refused, FORCE=1 replaces; migrate twice"
-if (cd "$B" && COMPOSE_PROJECT_NAME="$PROJECT_B" task restore BACKUP="backups/$(basename "$archive")" >"$SCRATCH/refuse.log" 2>&1); then
+step "8. guard rails: a second restore (the plain archive) is refused, FORCE=1 replaces; migrate twice"
+if (cd "$B" && COMPOSE_PROJECT_NAME="$PROJECT_B" task restore BACKUP="backups/$(basename "$plain")" >"$SCRATCH/refuse.log" 2>&1); then
   die "a restore into a non-empty database was NOT refused"
 fi
 grep -q 'not empty' "$SCRATCH/refuse.log" || { cat "$SCRATCH/refuse.log" >&2; die "the refusal did not name the non-empty database"; }
 ok "restore into a non-empty database refused"
-(cd "$B" && COMPOSE_PROJECT_NAME="$PROJECT_B" task restore FORCE=1 BACKUP="backups/$(basename "$archive")" >"$SCRATCH/force.log" 2>&1) \
+(cd "$B" && COMPOSE_PROJECT_NAME="$PROJECT_B" task restore FORCE=1 BACKUP="backups/$(basename "$plain")" >"$SCRATCH/force.log" 2>&1) \
   || { cat "$SCRATCH/force.log" >&2; die "task restore FORCE=1 failed"; }
 grep -q 'dropping and recreating' "$SCRATCH/force.log" || die "FORCE=1 did not recreate the database"
 BASE_URL="$BASE" APPS_DOMAIN="apps.localhost:$HTTPS_PORT" API_KEY="$KEY" MAILPIT_URL="$MAILPIT_URL" \
   STATE_FILE="$STATE" CA_FILE="$CA" NODE_EXTRA_CA_CERTS="$CA" node "$ROOT/tests-e2e/selfhost-rehearsal.mjs" verify
-ok "task restore FORCE=1 over the live database: dropped, restored, serving again"
+ok "task restore FORCE=1 of the plain archive over the live database: dropped, restored, serving again"
 m1="$(cd "$B" && COMPOSE_PROJECT_NAME="$PROJECT_B" task selfhost:migrate 2>&1)"
 m2="$(cd "$B" && COMPOSE_PROJECT_NAME="$PROJECT_B" task selfhost:migrate 2>&1)"
 printf '%s\n' "$m2" | grep -q 'nothing to apply' || { printf '%s\n%s\n' "$m1" "$m2" >&2; die "the second migrate run was not a no-op"; }
@@ -337,6 +378,6 @@ TOTAL_S=$(( $(now) - T0 ))
 printf '\n══ self-host rehearsal PASSED ══\n' >&2
 printf '  image build            %4ss  (not on a VPS: it pulls)\n' "$BUILD_S" >&2
 printf '  quickstart A (init → published app + file)  %4ss\n' "$QUICKSTART_S" >&2
-printf '  task backup            %4ss\n' "$BACKUP_S" >&2
+printf '  task backup (encrypted) %4ss\n' "$BACKUP_S" >&2
 printf '  machine B (init + restore)  %4ss\n' "$RESTORE_S" >&2
 printf '  total wall clock       %4ss\n' "$TOTAL_S" >&2
