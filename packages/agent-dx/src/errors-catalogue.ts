@@ -562,6 +562,13 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
       'The Bearer token or API key is missing, expired, revoked, or the token was minted for a DIFFERENT resource/audience (RFC 8707).',
     fix: 'Obtain a token whose `resource` is exactly the MCP endpoint from the protected-resource metadata (or use a live drk_ API key), and send it as `Authorization: Bearer …`.',
   },
+  {
+    code: 'rate_limited (429 on /mcp)',
+    surface: 'MCP endpoint 429 + Retry-After, JSON-RPC error with data { code: "rate_limited", message, hint, limit, window_seconds, retry_after_seconds }',
+    meaning:
+      'The person behind the token or API key sent more than MCP_REQUESTS_PER_USER_MINUTE MCP requests (600 by default) in the current minute, counted over all of their OAuth connections and API keys together; every tool call, list or read is one request, and each message of a JSON-RPC batch counts. Nothing of the refused request ran.',
+    fix: 'Wait `retry_after_seconds` (the Retry-After header), then go on with the next call — do not retry in a loop and do not open more connections, they share the same budget. Batch work into fewer calls: up to 20 files in one write_files, `edits` instead of whole files, `paths` in one read_file.',
+  },
 ];
 
 const BY_CODE = new Map(ERROR_CATALOGUE.map((e) => [e.code, e]));

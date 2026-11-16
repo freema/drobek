@@ -4,8 +4,8 @@
  * (pinned) and a 2025 client (`initialize`, no session). Covers the body cap
  * and its JSON-RPC errors, the failures, revocation on the next request, two
  * users in parallel, the SDK's own refusals (405, header mismatch, the
- * subscription limit), the shutdown order, a client that outlives a restart
- * and the access log.
+ * subscription limit), the shutdown order, a client that outlives a restart,
+ * the per-user request limit and the access log.
  */
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
@@ -37,6 +37,7 @@ import {
   type McpEndpointOptions,
 } from './mcp.js';
 import { mcpResourceUri } from './oauth-resource.js';
+import type { McpRateCounter, McpRateLimit } from './rate-limit.js';
 
 const MAX_BODY = 4096;
 const MODERN = '2026-07-28';
@@ -99,6 +100,21 @@ afterEach(async () => {
   for (const h of harnesses.splice(0)) await h.stop();
 });
 
+/** An in-memory fixed-window counter, the stand-in for Redis. */
+function memoryCounter(): McpRateCounter {
+  const windows = new Map<string, { count: number; endsAt: number }>();
+  return async (key, windowMs, hits) => {
+    const now = Date.now();
+    let w = windows.get(key);
+    if (!w || w.endsAt <= now) {
+      w = { count: 0, endsAt: now + windowMs };
+      windows.set(key, w);
+    }
+    w.count += hits;
+    return { count: w.count, ttlMs: w.endsAt - now };
+  };
+}
+
 function captureLog(lines: Logged[]): Logger {
   const at = (level: string) => (message: string, meta: LogMeta = {}) => void lines.push({ level, message, meta });
   return { debug: at('debug'), info: at('info'), warn: at('warn'), error: at('error') };
@@ -111,6 +127,7 @@ async function mount(opts: McpEndpointOptions = {}): Promise<Harness> {
     maxBodyBytes: MAX_BODY,
     log: captureLog(lines),
     buildServer: (ctx) => buildMcpServer(ctx, { leases: memoryLeaseStore(), notifyAppChanged: async () => {}, log: noopLogger }),
+    rateLimit: { perMinute: 0, counter: memoryCounter() },
     ...opts,
   });
   const server = app.listen(0, '127.0.0.1');
@@ -486,6 +503,128 @@ describe('the shutdown', () => {
     release();
     await expect(slow).resolves.toMatchObject({ content: [{ type: 'text', text: 'done' }] });
     await h.endpoint.close();
+  });
+});
+
+describe('the per-user request limit (MCP_REQUESTS_PER_USER_MINUTE)', () => {
+  interface RateLimitedBody {
+    jsonrpc: string;
+    id: null;
+    error: { code: number; message: string; data: Record<string, unknown> };
+  }
+
+  const listTools = (bearer: string) =>
+    post(urlOf(), JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }), { authorization: `Bearer ${bearer}` });
+  let urlOf: () => string = () => '';
+
+  async function limited(perMinute: number, counter: McpRateCounter = memoryCounter()): Promise<Harness> {
+    const rateLimit: McpRateLimit = { perMinute, counter };
+    const h = await mount({ rateLimit });
+    urlOf = () => h.url;
+    return h;
+  }
+
+  it('past the limit a request answers 429 with Retry-After and the catalogue error; nothing of it runs', async () => {
+    const h = await limited(3);
+    for (let i = 0; i < 3; i++) {
+      const ok = await listTools(readKey);
+      expect(ok.status, `request ${i + 1}`).toBe(200);
+      await ok.text();
+    }
+    const refused = await listTools(readKey);
+    expect(refused.status).toBe(429);
+    const retryAfter = Number(refused.headers.get('retry-after'));
+    expect(retryAfter).toBeGreaterThanOrEqual(1);
+    expect(retryAfter).toBeLessThanOrEqual(60);
+    const body = (await refused.json()) as RateLimitedBody;
+    expect(body).toMatchObject({ jsonrpc: '2.0', id: null, error: { code: -32000 } });
+    expect(body.error.message).toContain('at most 3 per minute per user');
+    expect(body.error.data).toMatchObject({
+      code: 'rate_limited',
+      limit: 3,
+      window_seconds: 60,
+      retry_after_seconds: retryAfter,
+    });
+    expect(String(body.error.data.hint)).toContain('do not retry in a loop');
+
+    await vi.waitFor(() => expect(accessLines(h).filter((l) => l.status === 429)).toHaveLength(1));
+    expect(accessLines(h).find((l) => l.status === 429)).toMatchObject({ method: 'POST', user_id: userId });
+    expect(accessLines(h).find((l) => l.status === 429)).not.toHaveProperty('rpc');
+    const reached = h.lines.filter((l) => l.message === 'mcp rate limit reached');
+    expect(reached).toHaveLength(1);
+    expect(reached[0]).toMatchObject({ level: 'warn', meta: { user_id: userId, limit: 3 } });
+    await (await listTools(readKey)).text();
+    expect(h.lines.filter((l) => l.message === 'mcp rate limit reached')).toHaveLength(1);
+  });
+
+  it('the budget is the user\'s: another key of the same user is refused too, another user goes on', async () => {
+    await limited(2);
+    for (const key of [readKey, writeKey]) await (await listTools(key)).text();
+    expect((await listTools(writeKey)).status).toBe(429);
+    expect((await listTools(readKey)).status).toBe(429);
+    const other = await listTools(otherKey);
+    expect(other.status).toBe(200);
+    await other.text();
+  });
+
+  it('requests without a valid credential spend nobody\'s budget', async () => {
+    const counter = vi.fn(memoryCounter());
+    await limited(2, counter);
+    for (const bearer of ['', 'drk_not-a-real-key', 'not-a-token']) {
+      const res = await fetch(urlOf(), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: ACCEPT, ...(bearer ? { authorization: `Bearer ${bearer}` } : {}) },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+      });
+      expect(res.status, bearer || 'no bearer').toBe(401);
+    }
+    expect(counter).not.toHaveBeenCalled();
+    for (let i = 0; i < 2; i++) expect((await listTools(readKey)).status).toBe(200);
+  });
+
+  it.each(ERAS)('%s: the SDK client sees the refusal as the error of the call, with the wait in it', async (era) => {
+    let full = false;
+    const h = await limited(1, async () => ({ count: full ? 2 : 1, ttlMs: 30_000 }));
+    const client = await connect(h.url, era);
+    await client.callTool({ name: 'list_apps', arguments: {} });
+    full = true;
+    await expect(client.callTool({ name: 'list_apps', arguments: {} })).rejects.toThrow(/Too many MCP requests.*Wait 30 seconds/);
+  });
+
+  it('every message of a legacy JSON-RPC batch counts: a batch past the budget is refused and none of it runs', async () => {
+    const counter = vi.fn(memoryCounter());
+    const h = await limited(4, counter);
+    const calls = (n: number) =>
+      JSON.stringify(
+        Array.from({ length: n }, (_, i) => ({ jsonrpc: '2.0', id: i + 1, method: 'tools/call', params: { name: 'list_apps', arguments: {} } }))
+      );
+    const served = await post(urlOf(), calls(3), { authorization: `Bearer ${readKey}` });
+    expect(served.status).toBe(200);
+    await served.text();
+    expect(counter.mock.calls.map((c) => c[2])).toEqual([1, 2]);
+
+    const refused = await post(urlOf(), calls(3), { authorization: `Bearer ${readKey}` });
+    expect(refused.status).toBe(429);
+    expect(Number(refused.headers.get('retry-after'))).toBeGreaterThanOrEqual(1);
+    const body = (await refused.json()) as RateLimitedBody;
+    expect(body.error.data).toMatchObject({ code: 'rate_limited', limit: 4 });
+    expect(h.lines.filter((l) => l.message === 'mcp rate limit reached')).toHaveLength(1);
+    await vi.waitFor(() => expect(accessLines(h).filter((l) => l.status === 429)).toHaveLength(1));
+    expect(accessLines(h).filter((l) => l.status === 200 && l.tool === 'list_apps,list_apps,list_apps')).toHaveLength(1);
+
+    expect((await listTools(readKey)).status).toBe(429);
+  });
+
+  it('a counter failure lets the request through and logs a warning', async () => {
+    const h = await limited(1, async () => Promise.reject(new Error('redis down')));
+    for (let i = 0; i < 3; i++) {
+      const res = await listTools(readKey);
+      expect(res.status).toBe(200);
+      await res.text();
+    }
+    const warned = h.lines.filter((l) => l.message === 'mcp rate limit unavailable');
+    expect(warned).toHaveLength(3);
+    expect(warned[0].level).toBe('warn');
   });
 });
 

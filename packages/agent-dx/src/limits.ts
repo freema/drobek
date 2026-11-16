@@ -73,6 +73,11 @@ export const LIMITS: LimitDoc[] = [
     meaning: 'Max bytes of one MCP request, i.e. one write_files call as JSON (escaping included); a bigger one answers HTTP 413 with a JSON-RPC error and nothing is written — split the write into several calls or send `edits`.',
   },
   {
+    env: 'MCP_REQUESTS_PER_USER_MINUTE',
+    default: '600',
+    meaning: 'Max MCP requests one person may send in a fixed minute, over all of their OAuth connections and API keys together (every tool call, list or read is one request, each message of a JSON-RPC batch counts; 0 = no limit). Past it the request answers HTTP 429 with Retry-After and a JSON-RPC error `rate_limited` — nothing of it runs; wait, then go on.',
+  },
+  {
     env: 'READINESS_MAX_WARNINGS',
     default: '50',
     meaning: 'Max warnings one readiness report lists (write_files, publish); the rest are counted in `readiness.warnings_omitted`.',

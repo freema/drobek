@@ -35,7 +35,9 @@ export const TAILWIND_BROWSER_URL = 'https://esm.sh/@tailwindcss/browser@4.1.11'
 /**
  * The live limits the briefing states: the compile ones (defaults =
  * @drobek/compile DEFAULT_LIMITS), the largest MCP request body
- * (MCP_MAX_BODY_BYTES, default twice the version total), the version rate
+ * (MCP_MAX_BODY_BYTES, default twice the version total), the MCP requests
+ * one person may send per minute (MCP_REQUESTS_PER_USER_MINUTE, 0 = no
+ * limit, so no line), the version rate
  * of the app's workspace (VERSIONS_PER_APP_HOUR / VERSIONS_PER_USER_HOUR) and
  * its history limits (APP_VERSIONS_KEEP / WORKSPACE_SOURCE_QUOTA; defaults =
  * @drobek/apps).
@@ -46,6 +48,7 @@ export interface BriefingLimits {
   maxTotalBytes: number;
   timeoutMs: number;
   maxRequestBytes: number;
+  requestsPerMinute: number;
   versionsPerAppHour: number;
   versionsPerUserHour: number;
   versionsKeep: number;
@@ -58,6 +61,7 @@ const DEFAULT_BRIEFING_LIMITS: BriefingLimits = {
   maxTotalBytes: 5 * 1024 * 1024,
   timeoutMs: 10_000,
   maxRequestBytes: 10 * 1024 * 1024,
+  requestsPerMinute: 600,
   versionsPerAppHour: 600,
   versionsPerUserHour: 1200,
   versionsKeep: 200,
@@ -210,6 +214,11 @@ export function renderBriefing(opts: { limits?: Partial<BriefingLimits>; skills?
     `- Every write needs a \`reasoning\` line (≤ ${REASONING_MAX_CHARS} characters); it is shown in the version history.`,
     `- Limits per version: ${L.maxFiles} files, ${kib(L.maxFileBytes)} per file, ${kib(L.maxTotalBytes)} in total; a build may take ${L.timeoutMs / 1000} s.`,
     `- One write_files call travels as one MCP request of at most ${kib(L.maxRequestBytes)} (the JSON, escaping included); a bigger one is refused before it reaches the tool (HTTP 413) and nothing is written. Split a big write into several calls, or send \`edits\` instead of whole files.`,
+    ...(L.requestsPerMinute > 0
+      ? [
+          `- MCP requests are rate-limited: at most ${L.requestsPerMinute} per minute per person, over all of their connections and API keys together (every tool call, list or read is one request). Past it the server answers HTTP 429 with Retry-After and runs nothing of that request: wait that many seconds, then go on — never retry in a loop.`,
+        ]
+      : []),
     `- New versions are rate-limited: ${L.versionsPerAppHour} per app and ${L.versionsPerUserHour} per person (all apps) within an hour — every write_files, restore_version, create_app and duplicate_app makes one. Past either, the call answers \`rate_limited\` with \`retry_after_seconds\` and nothing is stored: tell the user and continue after that time, never retry in a loop. Put changes that belong together into one write_files call.`,
     `- History: an app keeps its newest ${L.versionsKeep} versions, the published one, the kept ones and those kept for a rollback; older versions are deleted (read_file, restore_version and publish of one answer \`not_found\` saying so — get_app's \`version_retention\` names the oldest one kept). \`list_versions\` pages the whole history (\`published\`, \`preview\`, \`kept\` per version); \`keep_version\` keeps a version the user wants to come back to; \`delete_versions\` deletes old versions (or only the failed builds) for good and frees storage — only after the user's explicit yes (\`user_confirmed: true\` with the \`plan_id\` of the plan they said yes to). The versions of all apps of a workspace may store ${storage(L.sourceQuotaBytes)} of unique files (sources and build output); a write past it answers \`limit_exceeded\` (\`limit: "WORKSPACE_SOURCE_QUOTA"\`) and stores nothing — tell the user, do not retry.`,
     '',

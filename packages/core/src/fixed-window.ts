@@ -19,14 +19,15 @@ function results(key: string, replies: Replies): unknown[] {
 }
 
 /**
- * Count one hit in the fixed window at `key`. One MULTI creates the key with
- * its expiry (`SET 0 PX NX`), increments it and reads the remaining time, so
- * a counter is never written without an expiry. A key that has none anyway
- * (an older counter, a hand-written key) gets the full window on its next
- * hit, so no counter outlives its window for good.
+ * Count `hits` (default one) in the fixed window at `key`. One MULTI creates
+ * the key with its expiry (`SET 0 PX NX`), increments it and reads the
+ * remaining time, so a counter is never written without an expiry. A key that
+ * has none anyway (an older counter, a hand-written key) gets the full window
+ * on its next hit, so no counter outlives its window for good.
  */
-export async function hitFixedWindow(redis: FixedWindowRedis, key: string, windowMs: number): Promise<FixedWindowHit> {
-  const [, count, pttl] = results(key, await redis.multi().set(key, '0', 'PX', windowMs, 'NX').incr(key).pttl(key).exec());
+export async function hitFixedWindow(redis: FixedWindowRedis, key: string, windowMs: number, hits = 1): Promise<FixedWindowHit> {
+  const tx = redis.multi().set(key, '0', 'PX', windowMs, 'NX');
+  const [, count, pttl] = results(key, await (hits === 1 ? tx.incr(key) : tx.incrby(key, hits)).pttl(key).exec());
   let ttlMs = Number(pttl);
   if (!Number.isFinite(ttlMs) || ttlMs < 0) {
     await redis.pexpire(key, windowMs);
