@@ -33,7 +33,10 @@
  *    slug (incl. `create`, emitted by createApp, and every new version) forgets
  *    its misses, any `domain` event forgets every hostname miss.
  *
- * The password hash is never cached; the unlock POST reads it on demand.
+ * The password hash is never cached: a host-resolution entry keeps only its
+ * one-way fingerprint (the app-access cookie is verified against it, with no
+ * query per request), and the unlock POST reads the hash on demand. A password
+ * change is a `settings` event, so the next request sees the new fingerprint.
  * The DB access sits behind `ServeLoaders`, so the unit tests run the real
  * caching logic against in-memory fakes.
  */
@@ -44,6 +47,7 @@ import { appVersions, apps, blobs, getDb, versionFiles } from '@drobek/db';
 import { primaryDomainOf, resolveCustomHost, type CustomHostResolution } from '@drobek/domains';
 import { ByteLru, CountLru, DEFAULT_BLOB_CACHE_BYTES, ExpiringLru } from './lru.js';
 import { servedManifest, type ServedManifest, type StoredFile } from './manifest.js';
+import { appPasswordFingerprint } from './password.js';
 import { splitInlineSourceMap, type SplitSourceMap } from './sourcemap.js';
 import type { Visibility } from './visibility.js';
 
@@ -54,6 +58,12 @@ export interface ServeApp {
   /** The owning workspace (module runtime: limits, audit). */
   workspaceId: string;
   visibility: Visibility;
+  /**
+   * appPasswordFingerprint of `apps.password_hash` (never the hash): the
+   * app-access cookie is valid only under this exact password. Absent/null =
+   * no password set, so no cookie opens the app.
+   */
+  passwordFingerprint?: string | null;
   /** Raw `apps.frame_ancestors` (validated by the header builder). */
   frameAncestors: string | null;
   /**
@@ -307,6 +317,7 @@ async function resolveFromDb(target: AppHostTarget): Promise<Resolved> {
       slug: apps.slug,
       workspaceId: apps.workspaceId,
       visibility: apps.visibility,
+      passwordHash: apps.passwordHash,
       frameAncestors: apps.frameAncestors,
       lockedReason: apps.lockedReason,
       status: apps.status,
@@ -326,6 +337,7 @@ async function resolveFromDb(target: AppHostTarget): Promise<Resolved> {
     slug: row.slug,
     workspaceId: row.workspaceId,
     visibility: row.visibility as Visibility,
+    passwordFingerprint: appPasswordFingerprint(row.passwordHash),
     frameAncestors: row.frameAncestors,
     lockedReason: row.lockedReason,
     galleryVisible: isGalleryVisible(row),

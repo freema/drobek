@@ -21,6 +21,8 @@ import {
 import { apps, users, workspaces } from '@drobek/db';
 import { addDomain, removeDomain, setPrimaryDomain, verifyDomain, type DnsResolver } from '@drobek/domains';
 import { handleAppRequest, type AppRequest, type HandlerDeps } from './handler.js';
+import { UNLOCK_PATH } from './pages.js';
+import { appPasswordFingerprint, hashAppPassword } from './password.js';
 import { ServeStore, dbLoaders } from './store.server.js';
 import { subscribeServeCache } from './subscriber.server.js';
 import { appSlugIsLive, appVersionIsLive } from './tls-ask.server.js';
@@ -78,6 +80,7 @@ describe('dbLoaders.resolve', () => {
       slug: 'loader-app',
       workspaceId: wsId,
       visibility: 'public',
+      passwordFingerprint: null,
       frameAncestors: null,
       lockedReason: null,
       primaryDomain: null,
@@ -130,7 +133,13 @@ describe('dbLoaders.resolve', () => {
     for (const r of rows) expect(blobs.get(r.sha256)?.length).toBe(r.size);
     await db.update(apps).set({ visibility: 'password', passwordHash: 'scrypt$aa$bb' }).where(eq(apps.id, app.id));
     expect(await dbLoaders.loadPasswordHash(app.id)).toBe('scrypt$aa$bb');
-    expect((await dbLoaders.resolve({ kind: 'prod', slug: 'files-app' })).app?.visibility).toBe('password');
+    const resolved = (await dbLoaders.resolve({ kind: 'prod', slug: 'files-app' })).app;
+    expect(resolved?.visibility).toBe('password');
+    // The resolved app carries only the fingerprint, never the hash itself.
+    expect(resolved?.passwordFingerprint).toBe(appPasswordFingerprint('scrypt$aa$bb'));
+    expect(JSON.stringify(resolved)).not.toContain('scrypt');
+    await db.update(apps).set({ visibility: 'public', passwordHash: null }).where(eq(apps.id, app.id));
+    expect((await dbLoaders.resolve({ kind: 'preview', slug: 'files-app' })).app?.passwordFingerprint).toBeNull();
   });
 });
 
@@ -187,6 +196,45 @@ describe('cache bust on app-changed', () => {
     expect(String((await handleAppRequest(get(preview), deps)).body)).toContain('<h1>old</h1>');
     store.bust('stale-app');
     expect(String((await handleAppRequest(get(preview), deps)).body)).toContain('<h1>new</h1>');
+  });
+
+  it('a new password set through setAppVisibility ends the cookies issued under the old one with the next request', async () => {
+    const store = new ServeStore();
+    const sub = subscribeServeCache(store, { redis: null });
+    const deps: HandlerDeps = { store, accessSecret: 'k'.repeat(64), secureCookies: false, allowUnlockAttempt: async () => true };
+    const prod = { kind: 'prod' as const, slug: 'rekeyed-app' };
+    const withCookie = (cookie: string): AppRequest => ({ ...get(prod), header: (n) => (n.toLowerCase() === 'cookie' ? cookie : null) });
+    const unlock = async (password: string): Promise<string> => {
+      const r = await handleAppRequest(
+        { ...get(prod, UNLOCK_PATH), method: 'POST', readForm: async () => new URLSearchParams({ password, next: '/' }) },
+        deps
+      );
+      expect(r.status, password).toBe(303);
+      return String(r.headers['Set-Cookie']).split(';')[0];
+    };
+    try {
+      const app = await createApp({ workspaceId: wsId, slug: 'rekeyed-app', actor });
+      const v1 = await write(app.id, 'gated');
+      await publish(app.id, v1.id, actor);
+      await setAppVisibility(app.id, { visibility: 'password', passwordHash: await hashAppPassword('first secret') }, actor);
+      await notifyAppChanged({ app_id: app.id, slug: app.slug, kind: 'settings' });
+
+      const old = await unlock('first secret');
+      expect((await handleAppRequest(withCookie(old), deps)).status).toBe(200);
+
+      await setAppVisibility(app.id, { visibility: 'password', passwordHash: await hashAppPassword('second secret') }, actor);
+      await notifyAppChanged({ app_id: app.id, slug: app.slug, kind: 'settings' });
+      expect((await handleAppRequest(withCookie(old), deps)).status).toBe(401);
+
+      const fresh = await unlock('second secret');
+      expect((await handleAppRequest(withCookie(fresh), deps)).status).toBe(200);
+      // Re-applying the stored password (MCP set_visibility) keeps the hash, so grants stay.
+      await setAppVisibility(app.id, { visibility: 'password' }, actor);
+      await notifyAppChanged({ app_id: app.id, slug: app.slug, kind: 'settings' });
+      expect((await handleAppRequest(withCookie(fresh), deps)).status).toBe(200);
+    } finally {
+      await sub.stop();
+    }
   });
 });
 

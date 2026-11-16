@@ -466,7 +466,8 @@ before any byte of the app is touched:
 7. the primary-domain **302** (production host, GET/HEAD page requests);
 8. visibility: a `password` app shows the password page (**401**) until the
    host-only `__Host-drobek_app_access` cookie (HMAC, key derived from
-   `DROBEK_MASTER_KEY`) is set;
+   `DROBEK_MASTER_KEY`, signed over a fingerprint of the app's current
+   password hash, so a new password ends every earlier cookie) is set;
 9. `/__drobek/*`: the SDK, the module routes and the beacon — handed to the
    module runtime, never to the app's files; on the preview and version hosts
    `/__drobek/feedback.js` is the feedback widget, served by the handler;

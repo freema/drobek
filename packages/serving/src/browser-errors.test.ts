@@ -31,7 +31,7 @@ import {
 } from './browser-errors.server.js';
 import { handleAppRequest, type AppRequest, type HandlerDeps } from './handler.js';
 import type { StoredFile } from './manifest.js';
-import { appAccessCookieName, mintAppAccessToken } from './password.js';
+import { appAccessCookieName, appPasswordFingerprint, mintAppAccessToken } from './password.js';
 import { PREVIEW_ERRORS_PATH } from './preview-script.js';
 import { ServeStore, type ServeApp, type ServeLoaders } from './store.server.js';
 
@@ -331,12 +331,13 @@ describe('POST /__drobek/preview/errors', () => {
     ipAllowed = false;
     expect((await handleAppRequest(post(PREVIEW, ERR()), d)).status).toBe(204);
     ipAllowed = true;
-    app = { ...app, visibility: 'password' };
+    const fp = appPasswordFingerprint('scrypt$aa$bb')!;
+    app = { ...app, visibility: 'password', passwordFingerprint: fp };
     const locked = await handleAppRequest(post(PREVIEW, ERR()), deps());
     expect(locked.status).toBe(204);
     expect(await rows()).toEqual([]);
 
-    const cookie = `${appAccessCookieName(false)}=${mintAppAccessToken('app_1', SECRET)}`;
+    const cookie = `${appAccessCookieName(false)}=${mintAppAccessToken('app_1', fp, SECRET)}`;
     expect((await handleAppRequest(post(PREVIEW, ERR(), { cookie, origin: 'http://shop--preview.apps.localhost', host: 'shop--preview.apps.localhost' }), deps())).status).toBe(204);
     expect(await rows()).toHaveLength(1);
   });

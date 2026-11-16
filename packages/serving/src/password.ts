@@ -5,8 +5,11 @@
  *
  * - App passwords (`apps.password_hash`) are stored scrypt-hashed with a random
  *   per-password salt. The plaintext is NEVER stored, returned, or logged.
- * - The app-access cookie is a stateless HMAC token binding the appId + expiry.
- *   It is signed with a key derived (HKDF) from DROBEK_MASTER_KEY under its own
+ * - The app-access cookie is a stateless HMAC token binding the appId + expiry
+ *   to the app's current password: the signature also covers a fingerprint of
+ *   `apps.password_hash` (appPasswordFingerprint), so a new password, a removed
+ *   one or a switch to public and back ends every earlier grant at once. It is
+ *   signed with a key derived (HKDF) from DROBEK_MASTER_KEY under its own
  *   label, and under a distinct `appaccess.` prefix, so it can never be confused
  *   with any other token. The cookie is `__Host-` prefixed: Secure, Path=/, NO
  *   Domain — it lives on exactly the one app host that set it (a sibling app on
@@ -109,18 +112,35 @@ interface AppAccessPayload {
   exp: number;
 }
 
-function accessSign(payloadB64: string, secret: string): Buffer {
-  // Domain separation from any other token signed with the same secret.
-  return createHmac('sha256', secret).update(`appaccess.${payloadB64}`).digest();
+const PASSWORD_FINGERPRINT_LABEL = 'drobek/app-access/password/v1';
+
+/**
+ * A short one-way fingerprint of an app's stored password hash, under its own
+ * label. Every stored hash carries a fresh random salt, so setting a password
+ * (even the same one again) always changes it. The app-access signature covers
+ * it and the token never carries it, so the cookie reveals nothing about the
+ * hash. null without a hash (nobody can be unlocked).
+ */
+export function appPasswordFingerprint(passwordHash: string | null | undefined): string | null {
+  if (!passwordHash) return null;
+  return createHmac('sha256', PASSWORD_FINGERPRINT_LABEL).update(passwordHash).digest('base64url').slice(0, 22);
 }
 
+function accessSign(payloadB64: string, passwordFingerprint: string, secret: string): Buffer {
+  // Domain separation from any other token signed with the same secret.
+  return createHmac('sha256', secret).update(`appaccess.${passwordFingerprint}.${payloadB64}`).digest();
+}
+
+/** A grant for `appId` under its current password (`appPasswordFingerprint` of the stored hash). */
 export function mintAppAccessToken(
   appId: string,
+  passwordFingerprint: string,
   secret: string,
   ttlSec: number = APP_ACCESS_TTL_SEC,
   nowMs: number = Date.now()
 ): string {
   if (!secret) throw new Error('app-access secret must be a non-empty string');
+  if (!passwordFingerprint) throw new Error('an app-access token needs the password fingerprint');
   const payload: AppAccessPayload = {
     appId,
     exp: Math.floor(nowMs / 1000) + ttlSec,
@@ -128,22 +148,27 @@ export function mintAppAccessToken(
   const payloadB64 = Buffer.from(JSON.stringify(payload), 'utf8').toString(
     'base64url'
   );
-  const sig = accessSign(payloadB64, secret).toString('base64url');
+  const sig = accessSign(payloadB64, passwordFingerprint, secret).toString('base64url');
   return `${payloadB64}.${sig}`;
 }
 
-/** Verify an app-access token: shape → signature (constant-time) → appId → expiry. */
+/**
+ * Verify an app-access token: shape → signature over the app's CURRENT
+ * password fingerprint (constant-time) → appId → expiry. A token minted under
+ * another password, or for an app without one, never verifies.
+ */
 export function verifyAppAccessToken(
   token: string,
   appId: string,
+  passwordFingerprint: string | null | undefined,
   secret: string,
   nowMs: number = Date.now()
 ): boolean {
-  if (!token || !secret) return false;
+  if (!token || !secret || !passwordFingerprint) return false;
   const parts = token.split('.');
   if (parts.length !== 2 || !parts[0] || !parts[1]) return false;
 
-  const expected = accessSign(parts[0], secret);
+  const expected = accessSign(parts[0], passwordFingerprint, secret);
   let presented: Buffer;
   try {
     presented = Buffer.from(parts[1], 'base64url');
