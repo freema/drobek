@@ -3,6 +3,10 @@
 # backup` archive without restoring it (default: the newest archive in
 # BACKUP_DIR):
 #
+#   0. an encrypted archive (drobek-<ts>.tar.gz.enc) opens with the passphrase
+#      in BACKUP_PASSPHRASE_FILE and decrypts into one whole gzip stream — a
+#      missing setting, a wrong passphrase and a changed or truncated file
+#      each fail with their own message
 #   1. it is a gzip'd tar with manifest.json (format drobek-backup/1) and
 #      SHA256SUMS, and the manifest lists the parts a restore needs (db.dump,
 #      files.tar, caddy_data.tar)
@@ -16,7 +20,7 @@
 # restore needs that key. `task backup` runs the same check on every new
 # archive before BACKUP_KEEP deletes older ones. Exit 0 = intact, 1 = not.
 #
-#   BACKUP=…  BACKUP_DIR=backups  ENV_FILE=.env.production
+#   BACKUP=…  BACKUP_DIR=backups  BACKUP_PASSPHRASE_FILE=…  ENV_FILE=.env.production
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -28,7 +32,7 @@ backup="${BACKUP:-${1:-}}"
 if [ -z "$backup" ]; then
   dir="$(setting BACKUP_DIR backups)"
   backup="$(backup_archives "$dir" | tail -n 1)"
-  [ -n "$backup" ] || die "no task backup archive (drobek-<timestamp>.tar.gz) in $dir — pass BACKUP=<archive>"
+  [ -n "$backup" ] || die "no task backup archive (drobek-<timestamp>.tar.gz or .tar.gz.enc) in $dir — pass BACKUP=<archive>"
 fi
 [ -f "$backup" ] || die "no such backup: $backup"
 work="$(mktemp -d)"
@@ -39,6 +43,11 @@ say "· verifying $backup ($(human_bytes "$(bytes_of "$backup")"))"
 verify_backup "$backup" "$work"
 manifest="$work/manifest.json"
 say "✓ $backup is intact — $VERIFIED; every size and sha256 matches manifest.json and SHA256SUMS ($(( $(date +%s) - started )) s)"
+if [ -n "$BACKUP_KEYFILE" ]; then
+  say "  encrypted (AES-256-CBC, PBKDF2) — opened with BACKUP_PASSPHRASE_FILE=$BACKUP_KEYFILE"
+else
+  say "  not encrypted"
+fi
 say "  created $(manifest_field "$manifest" created_at), image $(manifest_field "$manifest" image) ($(manifest_field "$manifest" image_version) $(manifest_field "$manifest" image_git_sha))"
 say "  $(sed -n 's/^  "counts": { \(.*\) },$/\1/p' "$manifest" | sed 's/"//g; s/_/ /g; s/: / /g; s/, / · /g')"
 

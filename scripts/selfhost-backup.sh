@@ -2,7 +2,7 @@
 # `task backup` — one archive with everything a drobek instance needs
 # to come back on another machine:
 #
-#   backups/drobek-<UTC timestamp>.tar.gz   (mode 600)
+#   backups/drobek-<UTC timestamp>.tar.gz   (mode 600; .tar.gz.enc encrypted)
 #     manifest.json    format, image (tag, id, version, sha), checkout sha,
 #                      master-key fingerprint, row counts, size + sha256 per part
 #     SHA256SUMS       the same checksums, for `sha256sum -c`
@@ -24,6 +24,13 @@
 # the restore checks the fingerprint) and Redis (sessions, caches, rate
 # limits — after a restore everyone signs in again).
 #
+# Encryption: with BACKUP_PASSPHRASE_FILE set, the gzip'd tar is piped through
+# openssl (AES-256-CBC, PBKDF2 — scripts/lib/selfhost.sh backup_cipher) into
+# drobek-<UTC timestamp>.tar.gz.enc; no plain copy of the archive is written.
+# The passphrase stays in its file (openssl reads it with -pass file:); keep
+# that file apart from the archives, like DROBEK_MASTER_KEY — losing it loses
+# every archive made with it.
+#
 # Disk: the parts are written next to the archive (a hidden work directory in
 # BACKUP_DIR, not /tmp), and the parts and the archive exist side by side until
 # the archive is complete. Before anything is written the backup estimates the
@@ -36,6 +43,7 @@
 #
 # Settings come from the environment, else ENV_FILE, else the default:
 #   BACKUP_DIR=backups  BACKUP_KEEP=14  BACKUP_MIN_FREE_MB=1024
+#   BACKUP_PASSPHRASE_FILE=  (unset = a plain archive)
 #   ENV_FILE=.env.production  COMPOSE_PROJECT_NAME=…
 set -euo pipefail
 
@@ -48,8 +56,9 @@ require_env_file
 out_dir="$(setting BACKUP_DIR backups)"
 keep="$(whole_number BACKUP_KEEP "$(setting BACKUP_KEEP 14)")"
 min_free_mb="$(whole_number BACKUP_MIN_FREE_MB "$(setting BACKUP_MIN_FREE_MB 1024)")"
+load_passphrase_file
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
-archive="$out_dir/drobek-$stamp.tar.gz"
+archive="$out_dir/drobek-$stamp.tar.gz${BACKUP_KEYFILE:+.enc}"
 tmp_archive="$archive.partial"
 mkdir -p "$out_dir"
 chmod 700 "$out_dir"
@@ -138,8 +147,8 @@ part() { printf '"%s": { "bytes": %s, "sha256": "%s" }' "$1" "$(bytes_of "$work/
   printf '}\n'
 } > "$work/manifest.json"
 
-(umask 077 && tar -C "$work" -czf "$tmp_archive" manifest.json SHA256SUMS db.dump files.tar assets.tar modules.tar caddy_data.tar)
-chmod 600 "$tmp_archive"
+[ -z "$BACKUP_KEYFILE" ] || say "· encrypt (AES-256-CBC, PBKDF2 — BACKUP_PASSPHRASE_FILE)"
+pack_backup "$work" "$tmp_archive"
 rm -f "$work/db.dump" "$work"/*.tar
 
 say "· verify the archive"
@@ -148,7 +157,7 @@ verify_backup "$tmp_archive" "$work/verify"
 say "  $VERIFIED — every size and sha256 matches manifest.json"
 mv "$tmp_archive" "$archive"
 
-say "✓ $archive — $(bytes_of "$archive") bytes in $(( $(date +%s) - started )) s"
+say "✓ $archive — $(bytes_of "$archive") bytes in $(( $(date +%s) - started )) s, $([ -n "$BACKUP_KEYFILE" ] && echo encrypted || echo 'not encrypted (BACKUP_PASSPHRASE_FILE unset)')"
 say "  apps $apps · files $files_rows · assets $asset_rows · core migrations $core_migrations · image $image (${image_version:-?} ${image_sha:-?})"
 
 if [ "$keep" -gt 0 ]; then
@@ -170,4 +179,7 @@ if [ "$keep" -gt 0 ]; then
   fi
 fi
 say "  Keep .env.production (DROBEK_MASTER_KEY) next to it — the archive does not contain it."
+if [ -n "$BACKUP_KEYFILE" ]; then
+  say "  Keep a copy of $BACKUP_KEYFILE apart from the archives — without it this archive cannot be opened."
+fi
 printf '%s\n' "$archive"

@@ -135,12 +135,137 @@ whole_number() {
 }
 
 # The archives `task backup` wrote into directory $1, oldest first (the UTC
-# timestamp in drobek-<timestamp>.tar.gz sorts). Other files are not listed.
+# timestamp in drobek-<timestamp>.tar.gz and drobek-<timestamp>.tar.gz.enc
+# sorts). Other files are not listed.
 backup_archives() {
-  local f
-  for f in "$1"/drobek-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]T[0-9][0-9][0-9][0-9][0-9][0-9]Z.tar.gz; do
+  local f stamp='[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]T[0-9][0-9][0-9][0-9][0-9][0-9]Z'
+  # shellcheck disable=SC2231
+  for f in "$1"/drobek-$stamp.tar.gz "$1"/drobek-$stamp.tar.gz.enc; do
     if [ -f "$f" ]; then printf '%s\n' "$f"; fi
   done | LC_ALL=C sort
+}
+
+# ── Encrypted archives (BACKUP_PASSPHRASE_FILE) ──────────────────────────────
+# `task backup` with BACKUP_PASSPHRASE_FILE pipes the gzip'd tar through
+# `openssl enc -aes-256-cbc -pbkdf2 -iter 600000 -md sha256 -salt` into
+# drobek-<timestamp>.tar.gz.enc ("Salted__" + an 8-byte salt + the ciphertext).
+# openssl reads the passphrase from the first line of the file (`-pass
+# file:`), so it is never in a process argument, the environment, a log or
+# the manifest. The integrity check is the one of a plain archive, after
+# decryption: gzip's CRC and the size + sha256 of every part in manifest.json
+# and SHA256SUMS, which are inside the encrypted stream. openssl enc does not
+# record the iteration count: changing it makes older archives unreadable.
+BACKUP_KDF_ITER=600000
+BACKUP_PASSPHRASE_MIN=16
+
+backup_cipher() { openssl enc -aes-256-cbc -pbkdf2 -iter "$BACKUP_KDF_ITER" -md sha256 "$@"; }
+
+# 0 when file $1 is an encrypted archive (starts with openssl's "Salted__").
+is_encrypted() { [ "$(head -c 8 "$1" | od -An -tx1 | tr -d ' \n')" = 53616c7465645f5f ]; }
+
+mode_of() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"; }
+
+# BACKUP_KEYFILE = the file BACKUP_PASSPHRASE_FILE names (environment, else
+# ENV_FILE), checked: a readable file whose first line holds a passphrase of
+# at least BACKUP_PASSPHRASE_MIN characters, and an openssl with PBKDF2.
+# Empty when the setting is unset. Dies naming the problem, never the value;
+# $1 = "open" when an existing archive is to be read (a new passphrase file
+# would not open it). LibreSSL's `enc -help` exits 1, so its text is matched
+# on its own, not through a pipe.
+BACKUP_KEYFILE=""
+load_passphrase_file() {
+  local f first help
+  BACKUP_KEYFILE=""
+  f="$(setting BACKUP_PASSPHRASE_FILE "")"
+  [ -n "$f" ] || return 0
+  if [ ! -f "$f" ] || [ ! -r "$f" ]; then
+    if [ "${1:-}" = open ]; then
+      die "BACKUP_PASSPHRASE_FILE=$f: no such readable file.
+  Copy the passphrase file this archive was made with to that path, or point BACKUP_PASSPHRASE_FILE at it —
+  a new passphrase does not open an existing archive."
+    fi
+    die "BACKUP_PASSPHRASE_FILE=$f: no such readable file.
+  Create it once and keep a copy apart from the backups — without it no encrypted archive opens:
+    (umask 077 && openssl rand -base64 32 > $f)"
+  fi
+  first="$(head -n 1 "$f")"
+  [ "${#first}" -ge "$BACKUP_PASSPHRASE_MIN" ] \
+    || die "BACKUP_PASSPHRASE_FILE=$f: its first line must hold a passphrase of at least $BACKUP_PASSPHRASE_MIN characters (openssl rand -base64 32 writes one)"
+  first=""
+  command -v openssl >/dev/null 2>&1 || die "BACKUP_PASSPHRASE_FILE is set, but this host has no openssl to encrypt or decrypt with"
+  help="$(openssl enc -help 2>&1 || true)"
+  case "$help" in
+    *-pbkdf2*) ;;
+    *) die "BACKUP_PASSPHRASE_FILE is set, but $(openssl version) has no -pbkdf2 (OpenSSL 1.1.1 or newer, or LibreSSL 2.9 or newer, has it)" ;;
+  esac
+  case "$(mode_of "$f")" in
+    *00) ;;
+    *) say "! $f can be read by other users of this machine — chmod 600 it" ;;
+  esac
+  BACKUP_KEYFILE="$f"
+}
+
+# Before reading archive $1: for an encrypted one, BACKUP_KEYFILE must open it
+# (its first two blocks decrypt to gzip's magic bytes; a wrong passphrase
+# passes this by chance once in 65536 and then fails the whole-stream check).
+# Dies with what is missing; a plain archive leaves BACKUP_KEYFILE empty, set
+# or not.
+open_backup() {
+  if ! is_encrypted "$1"; then
+    BACKUP_KEYFILE=""
+    return 0
+  fi
+  [ -n "$BACKUP_KEYFILE" ] || load_passphrase_file open
+  [ -n "$BACKUP_KEYFILE" ] || die "$1 is encrypted — set BACKUP_PASSPHRASE_FILE to the file with its passphrase
+  (in the environment or in $ENV_FILE), e.g. BACKUP_PASSPHRASE_FILE=/root/drobek-backup.pass"
+  [ "$(head -c 48 "$1" | backup_cipher -d -nopad -pass "file:$BACKUP_KEYFILE" 2>/dev/null | head -c 2 | od -An -tx1 | tr -d ' \n')" = 1f8b ] \
+    || die "$1: wrong passphrase — BACKUP_PASSPHRASE_FILE=$BACKUP_KEYFILE does not open this archive (or its first bytes are damaged)"
+}
+
+# The archive of the parts in directory $1, written to $2 (mode 600): a gzip'd
+# tar, streamed through backup_cipher when BACKUP_KEYFILE is set (no plain
+# copy of it is ever on disk).
+BACKUP_PARTS="manifest.json SHA256SUMS db.dump files.tar assets.tar modules.tar caddy_data.tar"
+pack_backup() {
+  # shellcheck disable=SC2086
+  if [ -n "$BACKUP_KEYFILE" ]; then
+    (umask 077 && tar -C "$1" -czf - $BACKUP_PARTS | backup_cipher -e -salt -pass "file:$BACKUP_KEYFILE" -out "$2")
+  else
+    (umask 077 && tar -C "$1" -czf "$2" $BACKUP_PARTS)
+  fi
+  chmod 600 "$2"
+}
+
+# tar -<mode>zf over the gzip'd tar of archive $1, decrypted with BACKUP_KEYFILE
+# when it is set (open_backup first); the rest of the arguments follow. Only
+# tar's status counts: a reader that stops early must not fail on openssl's
+# broken pipe — verify_backup checks the whole decryption separately, and the
+# sha256 of every part covers the content.
+backup_tar() {
+  local archive="$1" mode="$2"
+  shift 2
+  if [ -z "$BACKUP_KEYFILE" ]; then
+    tar "-${mode}zf" "$archive" "$@"
+    return
+  fi
+  ( set +o pipefail
+    backup_cipher -d -pass "file:$BACKUP_KEYFILE" -in "$archive" 2>/dev/null | tar "-${mode}zf" - "$@" )
+}
+
+# After open_backup: an encrypted archive $1 must decrypt into one whole gzip
+# stream (padding and gzip's CRC), else it dies as damaged; tar alone may stop
+# at garbled data without an error. $2 is a scratch directory for the logs.
+# gzip's 2 is a warning: bsdtar (macOS) pads its compressed output with zeros.
+check_encrypted_stream() {
+  local statuses
+  [ -n "$BACKUP_KEYFILE" ] || return 0
+  statuses="$(set +e +o pipefail
+    backup_cipher -d -pass "file:$BACKUP_KEYFILE" -in "$1" 2>"$2/dec.log" | gzip -dc 2>"$2/gz.log" >/dev/null
+    echo "${PIPESTATUS[0]} ${PIPESTATUS[1]}")"
+  case "$statuses" in
+    '0 0' | '0 2') ;;
+    *) die "$1 is damaged — it opens with the passphrase but does not decrypt into one whole gzip stream (a changed or truncated file): $(cat "$2/dec.log" "$2/gz.log" | head -n 1)" ;;
+  esac
 }
 
 # A top-level string field of a backup's manifest.json $1.
@@ -152,15 +277,19 @@ manifest_parts() {
 }
 
 # Check a `task backup` archive without restoring it or unpacking it to disk:
-# manifest.json (format drobek-backup/1) and SHA256SUMS list the same parts
-# with the same sha256, the parts a restore needs are there, and every part,
-# streamed out of the archive, has the size and sha256 of the manifest. $2 is
-# an empty scratch directory (manifest.json and SHA256SUMS land there). Dies on
-# the first finding; on success VERIFIED names the parts and their sizes.
+# an encrypted one opens with BACKUP_PASSPHRASE_FILE and decrypts into one
+# whole gzip stream; manifest.json (format drobek-backup/1) and SHA256SUMS
+# list the same parts with the same sha256, the parts a restore needs are
+# there, and every part, streamed out of the archive, has the size and sha256
+# of the manifest. $2 is an empty scratch directory (manifest.json and
+# SHA256SUMS land there). Dies on the first finding; on success VERIFIED names
+# the parts and their sizes, and BACKUP_KEYFILE is set for an encrypted archive.
 VERIFIED=""
 verify_backup() {
   local archive="$1" dir="$2" name want_bytes want_sum got_bytes got_sum count=0 list=""
-  tar -xzf "$archive" -C "$dir" manifest.json SHA256SUMS 2>"$dir/tar.log" \
+  open_backup "$archive"
+  check_encrypted_stream "$archive" "$dir"
+  backup_tar "$archive" x -C "$dir" manifest.json SHA256SUMS 2>"$dir/tar.log" \
     || die "$archive is damaged or not a drobek backup — tar could not read manifest.json and SHA256SUMS: $(head -n 1 "$dir/tar.log")"
   grep -q '"format": "drobek-backup/1"' "$dir/manifest.json" || die "$archive: unknown backup format (manifest.json)"
   manifest_parts "$dir/manifest.json" > "$dir/parts"
@@ -170,7 +299,7 @@ verify_backup() {
   [ "$(awk '{ print $1, $3 }' "$dir/parts" | LC_ALL=C sort)" = "$(awk '{ print $2, $1 }' "$dir/SHA256SUMS" | LC_ALL=C sort)" ] \
     || die "$archive: manifest.json and SHA256SUMS do not list the same parts with the same sha256"
   while read -r name want_bytes want_sum; do
-    got_bytes="$( { tar -xzOf "$archive" "$name" 2>"$dir/tar.log" | tee /dev/fd/3 | sha256_stdin > "$dir/sum"; } 3>&1 | wc -c | tr -d ' ')" \
+    got_bytes="$( { backup_tar "$archive" xO "$name" 2>"$dir/tar.log" | tee /dev/fd/3 | sha256_stdin > "$dir/sum"; } 3>&1 | wc -c | tr -d ' ')" \
       || die "$archive: could not read $name from the archive — it is damaged: $(head -n 1 "$dir/tar.log")"
     got_sum="$(cat "$dir/sum")"
     [ "$got_bytes" = "$want_bytes" ] && [ "$got_sum" = "$want_sum" ] \
