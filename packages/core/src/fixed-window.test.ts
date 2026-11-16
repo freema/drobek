@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { hitFixedWindow, peekFixedWindow, type FixedWindowRedis } from './fixed-window.js';
 
-/** GET / SET PX NX / INCR / PTTL / PEXPIRE over a map with a movable clock. */
+/** GET / SET PX NX / INCR / INCRBY / PTTL / PEXPIRE over a map with a movable clock. */
 function fakeRedis() {
   const store = new Map<string, { value: number; expiresAt: number | null }>();
   const state = { now: 0, store };
@@ -20,13 +20,13 @@ function fakeRedis() {
       store.set(key, { value: Number(value), expiresAt: state.now + ms });
       return 'OK';
     },
-    incr(key: string) {
+    incrby(key: string, by: number) {
       const e = live(key);
       if (!e) {
-        store.set(key, { value: 1, expiresAt: null });
-        return 1;
+        store.set(key, { value: by, expiresAt: null });
+        return by;
       }
-      e.value += 1;
+      e.value += by;
       return e.value;
     },
     pttl(key: string) {
@@ -41,7 +41,8 @@ function fakeRedis() {
       const chain = {
         get: (key: string) => (queued.push(() => ops.get(key)), chain),
         set: (...a: Parameters<typeof ops.set>) => (queued.push(() => ops.set(...a)), chain),
-        incr: (key: string) => (queued.push(() => ops.incr(key)), chain),
+        incr: (key: string) => (queued.push(() => ops.incrby(key, 1)), chain),
+        incrby: (key: string, by: number) => (queued.push(() => ops.incrby(key, by)), chain),
         pttl: (key: string) => (queued.push(() => ops.pttl(key)), chain),
         exec: async () => queued.map((op) => [null, op()]),
       };
@@ -66,6 +67,15 @@ describe('hitFixedWindow', () => {
     expect(await hitFixedWindow(redis, 'k', 60_000)).toEqual({ count: 2, ttlMs: 50_000 });
     state.now = 60_000;
     expect(await hitFixedWindow(redis, 'k', 60_000)).toEqual({ count: 1, ttlMs: 60_000 });
+  });
+
+  it('counts several hits at once in the same window', async () => {
+    const { redis, state, ttl } = fakeRedis();
+    expect(await hitFixedWindow(redis, 'k', 60_000, 5)).toEqual({ count: 5, ttlMs: 60_000 });
+    state.now = 20_000;
+    expect(await hitFixedWindow(redis, 'k', 60_000)).toEqual({ count: 6, ttlMs: 40_000 });
+    expect(await hitFixedWindow(redis, 'k', 60_000, 3)).toEqual({ count: 9, ttlMs: 40_000 });
+    expect(ttl('k')).toBe(40_000);
   });
 
   it('gives a counter without an expiry the window, after which it is gone', async () => {

@@ -75,7 +75,7 @@ export const LIMITS: LimitDoc[] = [
   {
     env: 'MCP_REQUESTS_PER_USER_MINUTE',
     default: '600',
-    meaning: 'Max MCP requests one person may send in a fixed minute, over all of their OAuth connections and API keys together (every tool call, list or read is one request; 0 = no limit). Past it the request answers HTTP 429 with Retry-After and a JSON-RPC error `rate_limited` — nothing of it runs; wait, then go on.',
+    meaning: 'Max MCP requests one person may send in a fixed minute, over all of their OAuth connections and API keys together (every tool call, list or read is one request, each message of a JSON-RPC batch counts; 0 = no limit). Past it the request answers HTTP 429 with Retry-After and a JSON-RPC error `rate_limited` — nothing of it runs; wait, then go on.',
   },
   {
     env: 'READINESS_MAX_WARNINGS',

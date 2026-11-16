@@ -5,8 +5,10 @@
  * of one person's API keys and OAuth connections share one budget, and minting
  * another key or registering another client does not raise it. It is counted
  * only after the request authenticated, so a request without a valid
- * credential never spends anyone's budget. A Redis failure lets the request
- * through (the endpoint logs it), as the other request throttles do.
+ * credential never spends anyone's budget. Every JSON-RPC message counts: a
+ * legacy batch of N messages costs N, so batching does not multiply the
+ * budget. A Redis failure lets the request through (the endpoint logs it), as
+ * the unknown-host throttle does.
  */
 import { errorDoc } from '@drobek/agent-dx';
 import { getRedis, hitFixedWindow, type FixedWindowHit } from '@drobek/core';
@@ -14,8 +16,8 @@ import { mcpRequestsPerUserMinute } from '@drobek/mcp';
 
 const MCP_RATE_WINDOW_MS = 60_000;
 
-/** Counts one hit at `key` in a fixed window of `windowMs`. */
-export type McpRateCounter = (key: string, windowMs: number) => Promise<FixedWindowHit>;
+/** Counts `hits` at `key` in a fixed window of `windowMs`. */
+export type McpRateCounter = (key: string, windowMs: number, hits: number) => Promise<FixedWindowHit>;
 
 export interface McpRateLimit {
   /** Requests per user per minute; 0 = no limit. */
@@ -31,7 +33,7 @@ export type McpRateDecision =
 export function mcpRateLimitFromEnv(env: NodeJS.ProcessEnv = process.env): McpRateLimit {
   return {
     perMinute: mcpRequestsPerUserMinute(env),
-    counter: (key, windowMs) => hitFixedWindow(getRedis(), key, windowMs),
+    counter: (key, windowMs, hits) => hitFixedWindow(getRedis(), key, windowMs, hits),
   };
 }
 
@@ -39,16 +41,21 @@ function mcpRateKey(userId: string): string {
   return `drobek:rl:mcp-user:${userId}`;
 }
 
-/** Count one request of `userId`; `onError` gets a counter failure, which lets the request through. */
+/**
+ * Count `hits` messages of `userId`; `onError` gets a counter failure, which
+ * lets the request through. The first refusal of a window is the one that
+ * crossed the limit.
+ */
 export async function checkMcpRate(
   limit: McpRateLimit,
   userId: string,
-  onError: (err: unknown) => void
+  onError: (err: unknown) => void,
+  hits = 1
 ): Promise<McpRateDecision> {
-  if (limit.perMinute <= 0) return { ok: true };
+  if (limit.perMinute <= 0 || hits <= 0) return { ok: true };
   let hit: FixedWindowHit;
   try {
-    hit = await limit.counter(mcpRateKey(userId), MCP_RATE_WINDOW_MS);
+    hit = await limit.counter(mcpRateKey(userId), MCP_RATE_WINDOW_MS, hits);
   } catch (err) {
     onError(err);
     return { ok: true };
@@ -57,7 +64,7 @@ export async function checkMcpRate(
   return {
     ok: false,
     retryAfterSeconds: Math.min(MCP_RATE_WINDOW_MS / 1000, Math.max(1, Math.ceil(hit.ttlMs / 1000))),
-    firstRefusal: hit.count === limit.perMinute + 1,
+    firstRefusal: hit.count - hits <= limit.perMinute,
   };
 }
 

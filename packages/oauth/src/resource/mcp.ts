@@ -21,7 +21,9 @@
  * A request is authenticated from its headers before its body is read. Then
  * it counts against its user's MCP_REQUESTS_PER_USER_MINUTE (rate-limit.ts):
  * past it the request answers 429 with Retry-After and the catalogue's
- * `rate_limited` error, its body unread. A POST
+ * `rate_limited` error, its body unread; a legacy JSON-RPC batch is charged
+ * its other messages once its body is parsed, and refused the same way when
+ * they cross the limit. A POST
  * body is parsed here, capped at MCP_MAX_BODY_BYTES, and always handed to the
  * SDK parsed (the SDK's own 4 MiB read limit never applies): an oversized one
  * answers 413 with a JSON-RPC error saying how to split the write, malformed
@@ -277,6 +279,21 @@ export function mountMcpEndpoint(app: Express, opts: McpEndpointOptions = {}): M
   );
   const serve = toNodeHandler(handler, { onerror: (err) => report(err, 'POST') });
 
+  /** Charge `hits` messages to the user; past the limit answer 429 and return false. */
+  async function withinRate(userId: string, hits: number, res: Response): Promise<boolean> {
+    const rate = await checkMcpRate(
+      rateLimit,
+      userId,
+      (err) => log.warn('mcp rate limit unavailable', { error: dbErrorForLog(err) }),
+      hits
+    );
+    if (rate.ok) return true;
+    if (rate.firstRefusal) log.warn('mcp rate limit reached', { user_id: userId, limit: rateLimit.perMinute });
+    res.setHeader('Retry-After', String(rate.retryAfterSeconds));
+    res.status(429).json({ jsonrpc: '2.0', error: rateLimitedError(rateLimit.perMinute, rate.retryAfterSeconds), id: null });
+    return false;
+  }
+
   async function handle(req: Request, res: Response, entry: AccessEntry): Promise<void> {
     if (stopping) {
       res.setHeader('Retry-After', String(RESTART_RETRY_AFTER_SEC));
@@ -306,15 +323,7 @@ export function mountMcpEndpoint(app: Express, opts: McpEndpointOptions = {}): M
       return;
     }
 
-    const rate = await checkMcpRate(rateLimit, ctx.userId, (err) =>
-      log.warn('mcp rate limit unavailable', { error: dbErrorForLog(err) })
-    );
-    if (!rate.ok) {
-      if (rate.firstRefusal) log.warn('mcp rate limit reached', { user_id: ctx.userId, limit: rateLimit.perMinute });
-      res.setHeader('Retry-After', String(rate.retryAfterSeconds));
-      res.status(429).json({ jsonrpc: '2.0', error: rateLimitedError(rateLimit.perMinute, rate.retryAfterSeconds), id: null });
-      return;
-    }
+    if (!(await withinRate(ctx.userId, 1, res))) return;
 
     const bodyError = await readBody(req, res);
     if (bodyError) {
@@ -327,6 +336,7 @@ export function mountMcpEndpoint(app: Express, opts: McpEndpointOptions = {}): M
     entry.protocol = protocolOf(req, req.body);
     entry.mcpMethod = header(req, 'mcp-method');
     entry.mcpName = header(req, 'mcp-name');
+    if (Array.isArray(req.body) && req.body.length > 1 && !(await withinRate(ctx.userId, req.body.length - 1, res))) return;
 
     if (entry.rpc === 'subscriptions/listen') {
       listenStreams.add(res);

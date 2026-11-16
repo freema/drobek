@@ -7,8 +7,8 @@ function fixed(hit: FixedWindowHit): { counter: McpRateCounter; keys: string[] }
   const keys: string[] = [];
   return {
     keys,
-    counter: async (key, windowMs) => {
-      keys.push(`${key}@${windowMs}`);
+    counter: async (key, windowMs, hits) => {
+      keys.push(`${key}@${windowMs}+${hits}`);
       return hit;
     },
   };
@@ -18,7 +18,21 @@ describe('checkMcpRate', () => {
   it('counts the request under the user id in a one-minute window and lets it through up to the limit', async () => {
     const { counter, keys } = fixed({ count: 5, ttlMs: 40_000 });
     expect(await checkMcpRate({ perMinute: 5, counter }, 'user-1', () => {})).toEqual({ ok: true });
-    expect(keys).toEqual(['drobek:rl:mcp-user:user-1@60000']);
+    expect(keys).toEqual(['drobek:rl:mcp-user:user-1@60000+1']);
+  });
+
+  it('charges several messages at once; the refusal that crossed the limit is the first one', async () => {
+    const { counter, keys } = fixed({ count: 8, ttlMs: 30_000 });
+    expect(await checkMcpRate({ perMinute: 5, counter }, 'u', () => {}, 4)).toEqual({
+      ok: false,
+      retryAfterSeconds: 30,
+      firstRefusal: true,
+    });
+    expect(keys).toEqual(['drobek:rl:mcp-user:u@60000+4']);
+    expect(await checkMcpRate({ perMinute: 5, counter: fixed({ count: 12, ttlMs: 30_000 }).counter }, 'u', () => {}, 4)).toMatchObject({
+      ok: false,
+      firstRefusal: false,
+    });
   });
 
   it('refuses past the limit with the seconds left in the window; the first refusal of a window is marked', async () => {

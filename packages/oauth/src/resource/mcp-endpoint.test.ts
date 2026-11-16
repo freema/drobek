@@ -103,14 +103,14 @@ afterEach(async () => {
 /** An in-memory fixed-window counter, the stand-in for Redis. */
 function memoryCounter(): McpRateCounter {
   const windows = new Map<string, { count: number; endsAt: number }>();
-  return async (key, windowMs) => {
+  return async (key, windowMs, hits) => {
     const now = Date.now();
     let w = windows.get(key);
     if (!w || w.endsAt <= now) {
       w = { count: 0, endsAt: now + windowMs };
       windows.set(key, w);
     }
-    w.count += 1;
+    w.count += hits;
     return { count: w.count, ttlMs: w.endsAt - now };
   };
 }
@@ -589,6 +589,30 @@ describe('the per-user request limit (MCP_REQUESTS_PER_USER_MINUTE)', () => {
     await client.callTool({ name: 'list_apps', arguments: {} });
     full = true;
     await expect(client.callTool({ name: 'list_apps', arguments: {} })).rejects.toThrow(/Too many MCP requests.*Wait 30 seconds/);
+  });
+
+  it('every message of a legacy JSON-RPC batch counts: a batch past the budget is refused and none of it runs', async () => {
+    const counter = vi.fn(memoryCounter());
+    const h = await limited(4, counter);
+    const calls = (n: number) =>
+      JSON.stringify(
+        Array.from({ length: n }, (_, i) => ({ jsonrpc: '2.0', id: i + 1, method: 'tools/call', params: { name: 'list_apps', arguments: {} } }))
+      );
+    const served = await post(urlOf(), calls(3), { authorization: `Bearer ${readKey}` });
+    expect(served.status).toBe(200);
+    await served.text();
+    expect(counter.mock.calls.map((c) => c[2])).toEqual([1, 2]);
+
+    const refused = await post(urlOf(), calls(3), { authorization: `Bearer ${readKey}` });
+    expect(refused.status).toBe(429);
+    expect(Number(refused.headers.get('retry-after'))).toBeGreaterThanOrEqual(1);
+    const body = (await refused.json()) as RateLimitedBody;
+    expect(body.error.data).toMatchObject({ code: 'rate_limited', limit: 4 });
+    expect(h.lines.filter((l) => l.message === 'mcp rate limit reached')).toHaveLength(1);
+    await vi.waitFor(() => expect(accessLines(h).filter((l) => l.status === 429)).toHaveLength(1));
+    expect(accessLines(h).filter((l) => l.status === 200 && l.tool === 'list_apps,list_apps,list_apps')).toHaveLength(1);
+
+    expect((await listTools(readKey)).status).toBe(429);
   });
 
   it('a counter failure lets the request through and logs a warning', async () => {

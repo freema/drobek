@@ -10,6 +10,8 @@ import { userIdByEmail } from './helpers/seed';
  * 600 per minute), read from the briefing create_app returned. The user's
  * Redis counter is filled up to the limit instead of sending hundreds of
  * requests:
+ *  - every message of a legacy JSON-RPC batch counts, so a batch crossing
+ *    the limit is refused whole;
  *  - the next request answers HTTP 429 with Retry-After and the JSON-RPC
  *    error `rate_limited` (message, hint, limit, retry_after_seconds) — raw,
  *    and through the SDK client as the error of the call;
@@ -49,17 +51,23 @@ test('past MCP_REQUESTS_PER_USER_MINUTE a request answers 429 rate_limited with 
     expect(perMinute).toBeGreaterThanOrEqual(100);
 
     const key = `drobek:rl:mcp-user:${await userIdByEmail(mcp.email)}`;
-    await r.set(key, String(perMinute), 'PX', 30_000);
 
-    const post = (authorization?: string) =>
+    const post = (authorization?: string, body: unknown = { jsonrpc: '2.0', id: 7, method: 'tools/list' }) =>
       request.post(`${BASE_URL_MCP}/mcp`, {
         headers: {
           ...(authorization ? { Authorization: authorization } : {}),
           'Content-Type': 'application/json',
           Accept: 'application/json, text/event-stream',
         },
-        data: JSON.stringify({ jsonrpc: '2.0', id: 7, method: 'tools/list' }),
+        data: JSON.stringify(body),
       });
+
+    await r.set(key, String(perMinute - 2), 'PX', 30_000);
+    const batch = [1, 2, 3].map((id) => ({ jsonrpc: '2.0', id, method: 'tools/list' }));
+    expect((await post(`Bearer ${mcp.token}`, batch)).status()).toBe(429);
+    expect(Number(await r.get(key))).toBe(perMinute + 1);
+
+    await r.set(key, String(perMinute), 'PX', 30_000);
 
     const refused = await post(`Bearer ${mcp.token}`);
     expect(refused.status()).toBe(429);

@@ -566,7 +566,7 @@ export const ERROR_CATALOGUE: ErrorDoc[] = [
     code: 'rate_limited (429 on /mcp)',
     surface: 'MCP endpoint 429 + Retry-After, JSON-RPC error with data { code: "rate_limited", message, hint, limit, window_seconds, retry_after_seconds }',
     meaning:
-      'The person behind the token or API key sent more than MCP_REQUESTS_PER_USER_MINUTE MCP requests (600 by default) in the current minute, counted over all of their OAuth connections and API keys together; every tool call, list or read is one request. Nothing of the refused request ran.',
+      'The person behind the token or API key sent more than MCP_REQUESTS_PER_USER_MINUTE MCP requests (600 by default) in the current minute, counted over all of their OAuth connections and API keys together; every tool call, list or read is one request, and each message of a JSON-RPC batch counts. Nothing of the refused request ran.',
     fix: 'Wait `retry_after_seconds` (the Retry-After header), then go on with the next call — do not retry in a loop and do not open more connections, they share the same budget. Batch work into fewer calls: up to 20 files in one write_files, `edits` instead of whole files, `paths` in one read_file.',
   },
 ];
