@@ -168,23 +168,36 @@ mode_of() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"; }
 # BACKUP_KEYFILE = the file BACKUP_PASSPHRASE_FILE names (environment, else
 # ENV_FILE), checked: a readable file whose first line holds a passphrase of
 # at least BACKUP_PASSPHRASE_MIN characters, and an openssl with PBKDF2.
-# Empty when the setting is unset. Dies naming the problem, never the value.
+# Empty when the setting is unset. Dies naming the problem, never the value;
+# $1 = "open" when an existing archive is to be read (a new passphrase file
+# would not open it). LibreSSL's `enc -help` exits 1, so its text is matched
+# on its own, not through a pipe.
 BACKUP_KEYFILE=""
 load_passphrase_file() {
-  local f first
+  local f first help
   BACKUP_KEYFILE=""
   f="$(setting BACKUP_PASSPHRASE_FILE "")"
   [ -n "$f" ] || return 0
-  [ -f "$f" ] && [ -r "$f" ] || die "BACKUP_PASSPHRASE_FILE=$f: no such readable file.
+  if [ ! -f "$f" ] || [ ! -r "$f" ]; then
+    if [ "${1:-}" = open ]; then
+      die "BACKUP_PASSPHRASE_FILE=$f: no such readable file.
+  Copy the passphrase file this archive was made with to that path, or point BACKUP_PASSPHRASE_FILE at it —
+  a new passphrase does not open an existing archive."
+    fi
+    die "BACKUP_PASSPHRASE_FILE=$f: no such readable file.
   Create it once and keep a copy apart from the backups — without it no encrypted archive opens:
     (umask 077 && openssl rand -base64 32 > $f)"
+  fi
   first="$(head -n 1 "$f")"
   [ "${#first}" -ge "$BACKUP_PASSPHRASE_MIN" ] \
     || die "BACKUP_PASSPHRASE_FILE=$f: its first line must hold a passphrase of at least $BACKUP_PASSPHRASE_MIN characters (openssl rand -base64 32 writes one)"
   first=""
   command -v openssl >/dev/null 2>&1 || die "BACKUP_PASSPHRASE_FILE is set, but this host has no openssl to encrypt or decrypt with"
-  openssl enc -help 2>&1 | grep -q -- '-pbkdf2' \
-    || die "BACKUP_PASSPHRASE_FILE is set, but $(openssl version) has no -pbkdf2 (OpenSSL 1.1.1 or newer, or LibreSSL 2.9 or newer, has it)"
+  help="$(openssl enc -help 2>&1 || true)"
+  case "$help" in
+    *-pbkdf2*) ;;
+    *) die "BACKUP_PASSPHRASE_FILE is set, but $(openssl version) has no -pbkdf2 (OpenSSL 1.1.1 or newer, or LibreSSL 2.9 or newer, has it)" ;;
+  esac
   case "$(mode_of "$f")" in
     *00) ;;
     *) say "! $f can be read by other users of this machine — chmod 600 it" ;;
@@ -202,7 +215,7 @@ open_backup() {
     BACKUP_KEYFILE=""
     return 0
   fi
-  [ -n "$BACKUP_KEYFILE" ] || load_passphrase_file
+  [ -n "$BACKUP_KEYFILE" ] || load_passphrase_file open
   [ -n "$BACKUP_KEYFILE" ] || die "$1 is encrypted — set BACKUP_PASSPHRASE_FILE to the file with its passphrase
   (in the environment or in $ENV_FILE), e.g. BACKUP_PASSPHRASE_FILE=/root/drobek-backup.pass"
   [ "$(head -c 48 "$1" | backup_cipher -d -nopad -pass "file:$BACKUP_KEYFILE" 2>/dev/null | head -c 2 | od -An -tx1 | tr -d ' \n')" = 1f8b ] \
@@ -239,6 +252,22 @@ backup_tar() {
     backup_cipher -d -pass "file:$BACKUP_KEYFILE" -in "$archive" 2>/dev/null | tar "-${mode}zf" - "$@" )
 }
 
+# After open_backup: an encrypted archive $1 must decrypt into one whole gzip
+# stream (padding and gzip's CRC), else it dies as damaged; tar alone may stop
+# at garbled data without an error. $2 is a scratch directory for the logs.
+# gzip's 2 is a warning: bsdtar (macOS) pads its compressed output with zeros.
+check_encrypted_stream() {
+  local statuses
+  [ -n "$BACKUP_KEYFILE" ] || return 0
+  statuses="$(set +e +o pipefail
+    backup_cipher -d -pass "file:$BACKUP_KEYFILE" -in "$1" 2>"$2/dec.log" | gzip -dc 2>"$2/gz.log" >/dev/null
+    echo "${PIPESTATUS[0]} ${PIPESTATUS[1]}")"
+  case "$statuses" in
+    '0 0' | '0 2') ;;
+    *) die "$1 is damaged — it opens with the passphrase but does not decrypt into one whole gzip stream (a changed or truncated file): $(cat "$2/dec.log" "$2/gz.log" | head -n 1)" ;;
+  esac
+}
+
 # A top-level string field of a backup's manifest.json $1.
 manifest_field() { sed -n "s/^  \"$2\": \"\\(.*\\)\",\$/\\1/p" "$1" | head -n 1; }
 
@@ -257,18 +286,9 @@ manifest_parts() {
 # the parts and their sizes, and BACKUP_KEYFILE is set for an encrypted archive.
 VERIFIED=""
 verify_backup() {
-  local archive="$1" dir="$2" name want_bytes want_sum got_bytes got_sum count=0 list="" statuses
+  local archive="$1" dir="$2" name want_bytes want_sum got_bytes got_sum count=0 list=""
   open_backup "$archive"
-  if [ -n "$BACKUP_KEYFILE" ]; then
-    # gzip's 2 is a warning: bsdtar (macOS) pads its compressed output with zeros.
-    statuses="$(set +e +o pipefail
-      backup_cipher -d -pass "file:$BACKUP_KEYFILE" -in "$archive" 2>"$dir/dec.log" | gzip -dc 2>"$dir/gz.log" >/dev/null
-      echo "${PIPESTATUS[0]} ${PIPESTATUS[1]}")"
-    case "$statuses" in
-      '0 0' | '0 2') ;;
-      *) die "$archive is damaged — it opens with the passphrase but does not decrypt into one whole gzip stream (a changed or truncated file): $(cat "$dir/dec.log" "$dir/gz.log" | head -n 1)" ;;
-    esac
-  fi
+  check_encrypted_stream "$archive" "$dir"
   backup_tar "$archive" x -C "$dir" manifest.json SHA256SUMS 2>"$dir/tar.log" \
     || die "$archive is damaged or not a drobek backup — tar could not read manifest.json and SHA256SUMS: $(head -n 1 "$dir/tar.log")"
   grep -q '"format": "drobek-backup/1"' "$dir/manifest.json" || die "$archive: unknown backup format (manifest.json)"

@@ -212,9 +212,19 @@ describe('an encrypted archive (BACKUP_PASSPHRASE_FILE)', () => {
     r = restore(enc, { BACKUP_PASSPHRASE_FILE: wrongFile });
     expect(r.status).toBe(1);
     expect(r.out).toContain('wrong passphrase');
-    r = restore(damaged(enc, 'restore-middle.tar.gz.enc', Math.floor(statSync(enc).size / 2)), { BACKUP_PASSPHRASE_FILE: passFile });
-    expect(r.status).toBe(1);
-    expect(r.out).toMatch(/damaged|checksum mismatch/);
+    const size = statSync(enc).size;
+    const cut = join(root, 'restore-cut.tar.gz.enc');
+    writeFileSync(cut, readFileSync(enc).subarray(0, Math.floor(size * 0.7)));
+    for (const archive of [
+      damaged(enc, 'restore-early.tar.gz.enc', 200),
+      damaged(enc, 'restore-middle.tar.gz.enc', Math.floor(size / 2)),
+      damaged(enc, 'restore-last-block.tar.gz.enc', -8),
+      cut,
+    ]) {
+      r = restore(archive, { BACKUP_PASSPHRASE_FILE: passFile });
+      expect(r.status, `${archive}: ${r.out}`).toBe(1);
+      expect(r.out).toContain('is damaged');
+    }
     expect(dockerCalls()).toBe('');
   }, 60_000);
 
@@ -240,6 +250,11 @@ describe('the passphrase file', () => {
     let r = verify(enc, { BACKUP_PASSPHRASE_FILE: join(root, 'missing.pass') });
     expect(r.status).toBe(1);
     expect(r.out).toContain('no such readable file');
+    expect(r.out).toContain('Copy the passphrase file this archive was made with');
+    expect(r.out).not.toContain('openssl rand');
+    r = bash(`${lib} load_passphrase_file`, [], { BACKUP_PASSPHRASE_FILE: join(root, 'missing.pass') });
+    expect(r.status).toBe(1);
+    expect(r.out).toContain('openssl rand -base64 32 >');
 
     const short = join(root, 'short.pass');
     writeFileSync(short, 'tooshort\n', { mode: 0o600 });
@@ -254,6 +269,25 @@ describe('the passphrase file', () => {
     r = verify(enc, { BACKUP_PASSPHRASE_FILE: shared });
     expect(r.status, r.out).toBe(0);
     expect(r.out).toContain('can be read by other users');
+  }, 60_000);
+
+  it('accepts an openssl whose `enc -help` exits 1 (LibreSSL), refuses one without -pbkdf2', () => {
+    const enc = join(root, 'drobek-20261116T031600Z.tar.gz.enc');
+    const realOpenssl = spawnSync('sh', ['-c', 'command -v openssl'], { encoding: 'utf8' }).stdout.trim();
+    const libre = join(root, 'libre-bin');
+    const old = join(root, 'old-bin');
+    mkdirSync(libre);
+    mkdirSync(old);
+    const fake = (help: string) =>
+      `#!/bin/sh\nif [ "$1 $2" = "enc -help" ]; then\n${help.split('\n').map((l) => `  echo '${l}' >&2`).join('\n')}\n  exit 1\nfi\nexec ${realOpenssl} "$@"\n`;
+    writeFileSync(join(libre, 'openssl'), fake(Array.from({ length: 400 }, (_, i) => (i === 3 ? ' -pbkdf2  Use the pbkdf2 key derivation function' : ` -opt${i}  an option`)).join('\n')), { mode: 0o755 });
+    writeFileSync(join(old, 'openssl'), fake(' -md digest  Digest to use\n -nosalt  Do not use a salt'), { mode: 0o755 });
+    let r = bash('exec ./scripts/selfhost-backup-verify.sh', [], { BACKUP: enc, BACKUP_PASSPHRASE_FILE: passFile, PATH: `${libre}:${process.env.PATH ?? ''}` });
+    expect(r.status, r.out).toBe(0);
+    expect(r.out).toContain('is intact');
+    r = bash('exec ./scripts/selfhost-backup-verify.sh', [], { BACKUP: enc, BACKUP_PASSPHRASE_FILE: passFile, PATH: `${old}:${process.env.PATH ?? ''}` });
+    expect(r.status).toBe(1);
+    expect(r.out).toContain('has no -pbkdf2');
   }, 60_000);
 });
 

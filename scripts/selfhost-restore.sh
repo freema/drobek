@@ -4,8 +4,9 @@
 #
 #   1. unpack + verify (format, SHA256SUMS); an encrypted archive
 #      (drobek-<ts>.tar.gz.enc) is decrypted on the way with the passphrase
-#      in BACKUP_PASSPHRASE_FILE — refused before anything else without it
-#      or with a wrong one
+#      in BACKUP_PASSPHRASE_FILE — refused before anything else without it,
+#      with a wrong one, or when it does not decrypt into one whole gzip
+#      stream (changed or cut short)
 #   2. DROBEK_MASTER_KEY of .env.production must match the backup's
 #      fingerprint (else the restored upstream / module secrets are
 #      unreadable) — or DROBEK_MASTER_KEY_PREVIOUS must (a backup from before a
@@ -46,6 +47,7 @@ started=$(date +%s)
 
 # ── 1. unpack + verify ───────────────────────────────────────────────────────
 open_backup "$backup"
+check_encrypted_stream "$backup" "$work"
 backup_tar "$backup" x -C "$work" 2>"$work/tar.log" \
   || die "$backup is damaged — it could not be unpacked$([ -n "$BACKUP_KEYFILE" ] && echo ' after decryption'): $(head -n 1 "$work/tar.log")"
 for f in manifest.json SHA256SUMS db.dump files.tar caddy_data.tar; do

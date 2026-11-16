@@ -284,7 +284,7 @@ BACKUP_S=$(( $(now) - TB ))
 grep -q 'every size and sha256 matches manifest.json' "$SCRATCH/backup.log" || die "task backup did not verify its archive"
 is_encrypted "$A/$archive" || die "$archive is not openssl ciphertext"
 if tar -tzf "$A/$archive" >/dev/null 2>&1; then die "tar reads $archive without the passphrase"; fi
-if grep -qF "$(head -n 1 "$PASS")" "$SCRATCH/backup.log"; then die "the passphrase is in the output of task backup"; fi
+if grep -qF -f "$PASS" "$SCRATCH/backup.log"; then die "the passphrase is in the output of task backup"; fi
 [ "$(stat -c %a "$A/$archive" 2>/dev/null || stat -f %Lp "$A/$archive")" = 600 ] || die "$archive is not mode 600"
 ok "an encrypted archive (mode 600, openssl ciphertext — tar cannot read it, the passphrase is in no output)"
 kept="$(cd "$A/backups" && ls -A | LC_ALL=C sort | tr '\n' ' ')"

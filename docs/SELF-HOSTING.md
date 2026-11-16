@@ -780,8 +780,7 @@ working. A `FORCE=1` restore on the same machine leaves Redis as it is.
 
 An archive holds the whole database and every upload in plain form; anyone
 who gets a copy (an off-site bucket, a leaked disk) can read them. Set
-`BACKUP_PASSPHRASE_FILE` and every archive is encrypted before it reaches the
-disk:
+`BACKUP_PASSPHRASE_FILE` and every archive is encrypted as it is written:
 
 ```sh
 (umask 077 && openssl rand -base64 32 > /root/drobek-backup.pass)
@@ -797,7 +796,12 @@ task backup
 The gzip'd tar is piped through `openssl enc -aes-256-cbc -pbkdf2 -iter
 600000 -md sha256 -salt` (the `openssl` of the host — no extra tool, nothing
 in the image) into `drobek-<UTC timestamp>.tar.gz.enc`; no unencrypted copy of
-the archive is written, so it needs no more disk than a plain one. openssl
+the archive is written, so it needs no more disk than a plain one. The parts
+themselves (`db.dump` and the volume tars) are still written unencrypted to
+the hidden mode-700 work directory in `BACKUP_DIR` while the backup runs and
+deleted when it ends, and `task restore` unpacks the decrypted parts into a
+mode-700 temporary directory: encryption protects the copies of the archive
+that leave the server, not the server's own disk. openssl
 reads the passphrase from the file (`-pass file:`): it is never in a process
 argument, the environment, a log or `manifest.json`. Retention counts plain
 and encrypted archives together.
@@ -813,7 +817,8 @@ anything — on an encrypted archive
 - changed or cut short: `is damaged`. Verify decrypts the whole archive
   first, then checks gzip's checksum and the size and sha256 of every part
   against `manifest.json` and `SHA256SUMS`, which travel inside the
-  encrypted stream; restore checks the same sums after unpacking.
+  encrypted stream; restore decrypts the whole archive and checks gzip's
+  checksum the same way first, then the sums after unpacking.
 
 **Keep the passphrase file apart from the archives**, like
 `DROBEK_MASTER_KEY` — in a password manager or a second off-site location,
