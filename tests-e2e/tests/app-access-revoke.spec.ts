@@ -40,7 +40,12 @@ async function savePassword(page: Page, settings: string, password: string): Pro
   await page.goto(settings);
   await page.getByTestId('visibility-password').check();
   await page.getByTestId('password-input').fill(password);
+  // "password" may already be shown before the save: wait for the action's response itself.
+  const saved = page.waitForResponse(
+    (r) => r.request().method() === 'POST' && new URL(r.url()).pathname.startsWith(settings)
+  );
   await page.getByTestId('visibility-save').click();
+  expect((await saved).status()).toBeLessThan(400);
   await expect(page.getByTestId('settings-visibility-current')).toHaveText('password');
 }
 
