@@ -5,6 +5,9 @@ Caddy terminates TLS for the dashboard and for every app host, and proxies
 everything to drobek on the internal network. This guide takes a clean
 server to a working instance — dashboard over TLS, an agent connected over
 MCP, a published app — and covers backups, upgrades and every setting.
+What the instance stores, what it encrypts, every outbound connection and
+what reaches a connected agent are listed in
+[SECURITY.md → Where data lives and what leaves the instance](SECURITY.md#where-data-lives-and-what-leaves-the-instance).
 
 **Measured:** on a clean Ubuntu 24.04 + Docker host (a fresh GitHub
 `ubuntu-24.04` runner, 2026-09-30) with the released `v0.6.1` image, the
