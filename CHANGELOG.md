@@ -1,8 +1,8 @@
 # Changelog — drobek (core)
 
-## v0.13.0 — 2026-11-16
+## v0.13.1 — 2026-11-16
 
-No migrations. New env vars: `MCP_REQUESTS_PER_USER_MINUTE` (600; `0` = no limit) and `BACKUP_PASSPHRASE_FILE` (unset = plain archives, as before). After the upgrade every visitor unlocked on a password-protected app enters the password once more: unlock cookies issued by an older version no longer verify.
+The tag v0.13.0 was not released: the hosted runner label `ubuntu-latest` moved to Ubuntu 26.04, which the pinned Playwright has no browser build for, so the image e2e could not start; v0.13.1 pins the workflows to `ubuntu-24.04` and is otherwise v0.13.0. No migrations. New env vars: `MCP_REQUESTS_PER_USER_MINUTE` (600; `0` = no limit) and `BACKUP_PASSPHRASE_FILE` (unset = plain archives, as before). After the upgrade every visitor unlocked on a password-protected app enters the password once more: unlock cookies issued by an older version no longer verify.
 
 ### Security
 - **A new app password ends every earlier unlock at once** (PHY-76): the app-access cookie's signature now covers a fingerprint of the stored password hash, so saving a new password (even the same one again) or making the app public and protecting it again stops every cookie issued before on the next request, on every host of the app, custom domains and path routing included. The cookie still carries only the app id and an expiry, and the serve cache keeps only the fingerprint, never the hash. The Settings tab says so next to the password field.

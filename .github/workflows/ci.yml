@@ -109,7 +109,7 @@ env:
 jobs:
   quality:
     name: Lint · typecheck
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -143,7 +143,7 @@ jobs:
 
   unit:
     name: Unit tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -172,7 +172,7 @@ jobs:
 
   image:
     name: Prod image build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
       short: ${{ steps.sha.outputs.short }}
@@ -238,7 +238,7 @@ jobs:
 
   e2e:
     name: Prod image · compose · e2e (@smoke + @local) ${{ matrix.shard }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: image
     timeout-minutes: 13
     strategy:
@@ -339,7 +339,7 @@ jobs:
 
   audit:
     name: Release gate · production dependency audit (high)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: github.ref_type == 'tag'
     timeout-minutes: 5
     steps:
@@ -359,7 +359,7 @@ jobs:
 
   scan:
     name: Release gate · image vulnerability scan (high, fixable)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: image
     if: github.ref_type == 'tag'
     timeout-minutes: 10
@@ -388,7 +388,7 @@ jobs:
 
   promote:
     name: Image tags (edge, vX.Y.Z, latest, previous)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [quality, unit, module-compatibility, e2e, audit, scan, rehearsal]
     # audit, scan and rehearsal are skipped on main; a tag needs all three.
     if: >-
@@ -448,7 +448,7 @@ jobs:
 
   release:
     name: GitHub Release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [e2e, promote]
     if: github.ref_type == 'tag'
     timeout-minutes: 5
@@ -474,7 +474,7 @@ jobs:
 
   npm:
     name: npm packages (@freema/drobek-modules, @freema/drobek-sdk, create-drobek-module)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [e2e, promote]
     if: github.ref_type == 'tag' && vars.NPM_PUBLISH == 'true'
     timeout-minutes: 10
@@ -511,7 +511,7 @@ jobs:
 
   registry:
     name: Official MCP Registry
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [e2e, promote]
     if: github.ref_type == 'tag'
     timeout-minutes: 5
