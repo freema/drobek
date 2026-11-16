@@ -434,7 +434,11 @@ unchanged.
   (≤ 300 characters); 200 files / 512 KiB per file / 5 MiB per version. One
   `write_files` call is one MCP request of at most `MCP_MAX_BODY_BYTES`
   (10 MiB of JSON); a bigger one answers HTTP 413 with a JSON-RPC error
-  telling the agent to split the write or send `edits`. New versions are
+  telling the agent to split the write or send `edits`. One person may send
+  `MCP_REQUESTS_PER_USER_MINUTE` MCP requests per minute (600, all of their
+  connections and API keys together; the briefing states it); one more
+  answers HTTP 429 with `Retry-After` and the JSON-RPC error `rate_limited`
+  (`retry_after_seconds`), nothing of it run. New versions are
   rate-limited: the workspace's `VERSIONS_PER_APP_HOUR` per app and
   `VERSIONS_PER_USER_HOUR` per person within an hour (the briefing states
   both); past either `write_files`, `restore_version`, `create_app` and

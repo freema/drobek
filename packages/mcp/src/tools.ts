@@ -135,7 +135,7 @@ import {
   type AppRow,
 } from './queries.js';
 import { templateFiles, type TemplateName } from './templates.js';
-import { mcpMaxBodyBytes } from './request-limit.js';
+import { mcpMaxBodyBytes, mcpRequestsPerUserMinute } from './request-limit.js';
 
 export interface CallContext {
   principal: ToolPrincipal;
@@ -202,6 +202,7 @@ function briefing(ctx: CallContext, enabled: ReadonlySet<string>, versions: Vers
       maxTotalBytes: L.maxTotalBytes,
       timeoutMs: L.timeoutMs,
       maxRequestBytes: mcpMaxBodyBytes(ctx.deps.env, L.maxTotalBytes),
+      requestsPerMinute: mcpRequestsPerUserMinute(ctx.deps.env),
       versionsPerAppHour: versions.rate.perApp,
       versionsPerUserHour: versions.rate.perUser,
       versionsKeep: versions.storage.keep,

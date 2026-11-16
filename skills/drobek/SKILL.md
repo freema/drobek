@@ -248,6 +248,12 @@ in the version history.
   `MCP_MAX_BODY_BYTES`; the briefing states it). A bigger call is refused with
   HTTP 413 and a JSON-RPC error before anything is written — split the write
   into several calls, or send `edits` instead of whole files.
+- MCP requests are rate-limited per person: by default 600 per minute over
+  all of your connections and API keys together (the server's
+  `MCP_REQUESTS_PER_USER_MINUTE`; the briefing states it). Past it a request
+  answers HTTP 429 with `Retry-After` and the JSON-RPC error `rate_limited`
+  (`retry_after_seconds`), and nothing of it ran: wait that long, then go on
+  — never retry in a loop; batch work into fewer calls.
 - New versions are rate-limited per app and per person within an hour (the
   briefing states the numbers, by default 600 and 1200). Every `write_files`,
   `restore_version`, `create_app` and `duplicate_app` makes a version; past
