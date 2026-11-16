@@ -1,9 +1,11 @@
+import { createHmac } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import {
   APP_ACCESS_COOKIE,
   appAccessCookieHeader,
   appCookiesSecure,
   appAccessSecret,
+  appPasswordFingerprint,
   hashAppPassword,
   mintAppAccessToken,
   verifyAppAccessToken,
@@ -37,31 +39,70 @@ describe('app password hashing', () => {
 });
 
 describe('app-access token', () => {
+  const FP = appPasswordFingerprint('scrypt$aa$bb')!;
+
   it('round-trips for the bound app', () => {
-    const token = mintAppAccessToken('app_1', SECRET);
-    expect(verifyAppAccessToken(token, 'app_1', SECRET)).toBe(true);
+    const token = mintAppAccessToken('app_1', FP, SECRET);
+    expect(verifyAppAccessToken(token, 'app_1', FP, SECRET)).toBe(true);
   });
 
   it('is NOT valid for a different app', () => {
-    const token = mintAppAccessToken('app_1', SECRET);
-    expect(verifyAppAccessToken(token, 'app_2', SECRET)).toBe(false);
+    const token = mintAppAccessToken('app_1', FP, SECRET);
+    expect(verifyAppAccessToken(token, 'app_2', FP, SECRET)).toBe(false);
   });
 
   it('is rejected under a different secret (bad signature)', () => {
-    const token = mintAppAccessToken('app_1', SECRET);
-    expect(verifyAppAccessToken(token, 'app_1', 'other-secret')).toBe(false);
+    const token = mintAppAccessToken('app_1', FP, SECRET);
+    expect(verifyAppAccessToken(token, 'app_1', FP, 'other-secret')).toBe(false);
   });
 
   it('is rejected once expired', () => {
     const now = Date.now();
-    const token = mintAppAccessToken('app_1', SECRET, 100, now);
-    expect(verifyAppAccessToken(token, 'app_1', SECRET, now + 101_000)).toBe(false);
+    const token = mintAppAccessToken('app_1', FP, SECRET, 100, now);
+    expect(verifyAppAccessToken(token, 'app_1', FP, SECRET, now + 101_000)).toBe(false);
   });
 
   it('rejects garbage tokens', () => {
-    expect(verifyAppAccessToken('', 'app_1', SECRET)).toBe(false);
-    expect(verifyAppAccessToken('a.b.c', 'app_1', SECRET)).toBe(false);
-    expect(verifyAppAccessToken('nope', 'app_1', SECRET)).toBe(false);
+    expect(verifyAppAccessToken('', 'app_1', FP, SECRET)).toBe(false);
+    expect(verifyAppAccessToken('a.b.c', 'app_1', FP, SECRET)).toBe(false);
+    expect(verifyAppAccessToken('nope', 'app_1', FP, SECRET)).toBe(false);
+  });
+
+  it('is bound to the password: a new hash, even of the same password, or none at all ends it', async () => {
+    const first = await hashAppPassword('same');
+    const again = await hashAppPassword('same');
+    const token = mintAppAccessToken('app_1', appPasswordFingerprint(first)!, SECRET);
+    expect(verifyAppAccessToken(token, 'app_1', appPasswordFingerprint(first), SECRET)).toBe(true);
+    expect(verifyAppAccessToken(token, 'app_1', appPasswordFingerprint(again), SECRET)).toBe(false);
+    expect(verifyAppAccessToken(token, 'app_1', null, SECRET)).toBe(false);
+    expect(verifyAppAccessToken(token, 'app_1', undefined, SECRET)).toBe(false);
+    expect(() => mintAppAccessToken('app_1', '', SECRET)).toThrow();
+  });
+
+  it('carries no trace of the password hash or its fingerprint', async () => {
+    const hash = await hashAppPassword('correct horse');
+    const fp = appPasswordFingerprint(hash)!;
+    const token = mintAppAccessToken('app_1', fp, SECRET);
+    const payload = Buffer.from(token.split('.')[0], 'base64url').toString('utf8');
+    expect(Object.keys(JSON.parse(payload)).sort()).toEqual(['appId', 'exp']);
+    expect(token).not.toContain(fp);
+  });
+
+  it('a token minted without the password binding (appId + expiry signed alone) never verifies', () => {
+    const payload = Buffer.from(JSON.stringify({ appId: 'app_1', exp: Math.floor(Date.now() / 1000) + 3600 })).toString('base64url');
+    const sig = createHmac('sha256', SECRET).update(`appaccess.${payload}`).digest('base64url');
+    expect(verifyAppAccessToken(`${payload}.${sig}`, 'app_1', FP, SECRET)).toBe(false);
+  });
+});
+
+describe('appPasswordFingerprint', () => {
+  it('is short, stable per hash, different per hash, null without one', () => {
+    const fp = appPasswordFingerprint('scrypt$aa$bb');
+    expect(fp).toMatch(/^[A-Za-z0-9_-]{22}$/);
+    expect(appPasswordFingerprint('scrypt$aa$bb')).toBe(fp);
+    expect(appPasswordFingerprint('scrypt$aa$bc')).not.toBe(fp);
+    expect(appPasswordFingerprint(null)).toBeNull();
+    expect(appPasswordFingerprint('')).toBeNull();
   });
 });
 

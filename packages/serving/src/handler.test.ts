@@ -11,7 +11,7 @@ import { APP_CSP, appCsp } from './csp.js';
 import { BEACON_PATH, VERSION_TIMING_METRIC, handleAppRequest, type AppRequest, type HandlerDeps } from './handler.js';
 import type { StoredFile } from './manifest.js';
 import { UNLOCK_PATH } from './pages.js';
-import { APP_ACCESS_COOKIE, hashAppPassword, mintAppAccessToken } from './password.js';
+import { APP_ACCESS_COOKIE, appPasswordFingerprint, hashAppPassword, mintAppAccessToken } from './password.js';
 import { ServeStore, type ServeApp, type ServeLoaders } from './store.server.js';
 import { emitLocalAppChanged } from '@drobek/apps';
 import { subscribeServeCache } from './subscriber.server.js';
@@ -62,7 +62,10 @@ const loaders: ServeLoaders = {
     else if (target.kind === 'preview') n = Math.max(0, ...[...a.versions].filter(([, v]) => v.ok).map(([k]) => k)) || null;
     else n = a.versions.get(target.number)?.ok ? target.number : null;
     const v = n === null ? null : a.versions.get(n)!;
-    return { app: a.app, version: v ? { id: v.id, number: n! } : null };
+    return {
+      app: { ...a.app, passwordFingerprint: appPasswordFingerprint(a.passwordHash) },
+      version: v ? { id: v.id, number: n! } : null,
+    };
   },
   async loadFiles(versionId) {
     calls.files++;
@@ -99,6 +102,11 @@ let passwordHash: string;
 beforeAll(async () => {
   passwordHash = await hashAppPassword('open sesame');
 });
+
+/** A valid grant for `app_vault` under the password it has now in the model. */
+function vaultToken(ttlSec?: number, nowMs?: number): string {
+  return mintAppAccessToken('app_vault', appPasswordFingerprint(model.get('vault')!.passwordHash)!, SECRET, ttlSec, nowMs);
+}
 
 beforeEach(() => {
   calls = { resolve: 0, files: 0, blobs: 0 };
@@ -616,9 +624,10 @@ describe('password gate', () => {
   });
 
   it("a token for another app, a forged or an expired token doesn't open it", async () => {
-    const other = mintAppAccessToken('app_shop', SECRET);
-    const forged = mintAppAccessToken('app_vault', 'x'.repeat(64));
-    const expired = mintAppAccessToken('app_vault', SECRET, 10, Date.now() - 60_000);
+    const fp = appPasswordFingerprint(passwordHash)!;
+    const other = mintAppAccessToken('app_shop', fp, SECRET);
+    const forged = mintAppAccessToken('app_vault', fp, 'x'.repeat(64));
+    const expired = vaultToken(10, Date.now() - 60_000);
     for (const t of [other, forged, expired, 'garbage']) {
       const r = await handleAppRequest(req(prod('vault'), '/', { headers: { Cookie: `${APP_ACCESS_COOKIE}=${t}` } }), deps);
       expect(r.status).toBe(401);
@@ -634,7 +643,7 @@ describe('password gate', () => {
 
   it('fails closed without a signing key', async () => {
     const d = { ...deps, accessSecret: null };
-    const token = mintAppAccessToken('app_vault', SECRET);
+    const token = vaultToken();
     expect(
       (await handleAppRequest(req(prod('vault'), '/', { headers: { Cookie: `${APP_ACCESS_COOKIE}=${token}` } }), d)).status
     ).toBe(401);
@@ -653,6 +662,110 @@ describe('password gate', () => {
     const r = await handleAppRequest(req(prod('shop'), UNLOCK_PATH, { method: 'POST', form: { password: 'x' } }), deps);
     expect(r.status).toBe(303);
     expect(r.headers['Set-Cookie']).toBeUndefined();
+  });
+});
+
+describe('password gate: a password change ends earlier grants', () => {
+  const vault = () => model.get('vault')!;
+  const withCookie = (target: AppHostTarget, cookie: string, path = '/') =>
+    handleAppRequest(req(target, path, { headers: { Cookie: cookie } }), deps);
+  async function unlockedCookie(password: string, target: AppHostTarget = prod('vault')): Promise<string> {
+    attempts = 0;
+    const r = await handleAppRequest(req(target, UNLOCK_PATH, { method: 'POST', form: { password, next: '/' } }), deps);
+    expect(r.status, password).toBe(303);
+    return String(r.headers['Set-Cookie']).split(';')[0];
+  }
+
+  it('a new password locks out every earlier cookie on every host at once; the new password unlocks', async () => {
+    const sub = subscribeServeCache(store, { redis: null });
+    try {
+      const old = await unlockedCookie('open sesame');
+      for (const t of [prod('vault'), preview('vault'), ver('vault', 1)]) expect((await withCookie(t, old)).status).toBe(200);
+
+      vault().passwordHash = await hashAppPassword('new and secret');
+      emitLocalAppChanged({ app_id: 'app_vault', slug: 'vault', kind: 'settings' });
+
+      for (const t of [prod('vault'), preview('vault'), ver('vault', 1)]) {
+        const r = await withCookie(t, old);
+        expect(r.status).toBe(401);
+        expect(text(r.body)).not.toContain('<h1>secret</h1>');
+      }
+      const platform = await handleAppRequest(req(prod('vault'), '/__drobek/v1/hello', { headers: { Cookie: old } }), {
+        ...deps,
+        platform: async () => ({ status: 200, headers: {}, body: '{}' }),
+      });
+      expect(platform.status).toBe(401);
+
+      attempts = 0;
+      expect((await handleAppRequest(req(prod('vault'), UNLOCK_PATH, { method: 'POST', form: { password: 'open sesame' } }), deps)).status).toBe(401);
+      const fresh = await unlockedCookie('new and secret');
+      expect((await withCookie(prod('vault'), fresh)).status).toBe(200);
+      expect((await withCookie(prod('vault'), old)).status).toBe(401);
+    } finally {
+      await sub.stop();
+    }
+  });
+
+  it('setting the same password again, or public and back, still ends earlier cookies (every hash has a fresh salt)', async () => {
+    const sub = subscribeServeCache(store, { redis: null });
+    try {
+      const first = await unlockedCookie('open sesame');
+      vault().passwordHash = await hashAppPassword('open sesame');
+      emitLocalAppChanged({ app_id: 'app_vault', slug: 'vault', kind: 'settings' });
+      expect((await withCookie(prod('vault'), first)).status).toBe(401);
+
+      const second = await unlockedCookie('open sesame');
+      vault().app = { ...vault().app, visibility: 'public' };
+      vault().passwordHash = null;
+      emitLocalAppChanged({ app_id: 'app_vault', slug: 'vault', kind: 'settings' });
+      expect((await withCookie(prod('vault'), second)).status).toBe(200);
+      vault().app = { ...vault().app, visibility: 'password' };
+      vault().passwordHash = await hashAppPassword('open sesame');
+      emitLocalAppChanged({ app_id: 'app_vault', slug: 'vault', kind: 'settings' });
+      expect((await withCookie(prod('vault'), second)).status).toBe(401);
+    } finally {
+      await sub.stop();
+    }
+  });
+
+  it('a password app without a stored hash opens for no cookie', async () => {
+    const old = await unlockedCookie('open sesame');
+    vault().passwordHash = null;
+    store.bust('vault');
+    expect((await withCookie(prod('vault'), old)).status).toBe(401);
+    attempts = 0;
+    expect((await handleAppRequest(req(prod('vault'), UNLOCK_PATH, { method: 'POST', form: { password: 'open sesame' } }), deps)).status).toBe(401);
+  });
+
+  it('an unlock under a stale cached entry refreshes it, so the new grant opens at once and the old one stops', async () => {
+    const old = await unlockedCookie('open sesame');
+    // No event: the cached entry still carries the old password until it expires …
+    vault().passwordHash = await hashAppPassword('changed quietly');
+    expect((await withCookie(prod('vault'), old)).status).toBe(200);
+    // … until an unlock reads the new hash.
+    const fresh = await unlockedCookie('changed quietly');
+    expect((await withCookie(prod('vault'), fresh)).status).toBe(200);
+    expect((await withCookie(prod('vault'), old)).status).toBe(401);
+  });
+
+  it('path routing: the per-app cookie is bound to the password the same way', async () => {
+    const sub = subscribeServeCache(store, { redis: null });
+    try {
+      const at = (path: string, opts: Parameters<typeof req>[2] = {}): AppRequest => ({ ...req(prod('vault'), path, opts), base: '/apps/vault' });
+      attempts = 0;
+      const r = await handleAppRequest(at(UNLOCK_PATH, { method: 'POST', form: { password: 'open sesame', next: '/' } }), deps);
+      expect(r.status).toBe(303);
+      expect(r.headers.Location).toBe('/apps/vault/');
+      const cookie = String(r.headers['Set-Cookie']).split(';')[0];
+      expect(cookie.startsWith(`${APP_ACCESS_COOKIE}-app_vault=`)).toBe(true);
+      expect((await handleAppRequest(at('/', { headers: { Cookie: cookie } }), deps)).status).toBe(200);
+
+      vault().passwordHash = await hashAppPassword('new and secret');
+      emitLocalAppChanged({ app_id: 'app_vault', slug: 'vault', kind: 'settings' });
+      expect((await handleAppRequest(at('/', { headers: { Cookie: cookie } }), deps)).status).toBe(401);
+    } finally {
+      await sub.stop();
+    }
   });
 });
 
@@ -714,7 +827,7 @@ describe('platform paths (/__drobek/*)', () => {
     expect(locked.status).toBe(401);
     expect(JSON.parse(text(locked.body))).toMatchObject({ error: 'password_required' });
     expect(seen).toEqual([]);
-    const token = mintAppAccessToken('app_vault', SECRET);
+    const token = vaultToken();
     const open = await handleAppRequest(req(prod('vault'), '/__drobek/v1/hello', { headers: { Cookie: `${APP_ACCESS_COOKIE}=${token}` } }), d);
     expect(open.status).toBe(200);
   });
@@ -781,7 +894,7 @@ describe('the browser error beacon (/__drobek/v1/_beacon)', () => {
     expect(locked.status).toBe(401);
     expect(JSON.parse(text(locked.body))).toMatchObject({ error: 'password_required' });
     expect(beacons).toEqual([]);
-    const token = mintAppAccessToken('app_vault', SECRET);
+    const token = vaultToken();
     const open = await handleAppRequest(
       req(prod('vault'), BEACON_PATH, { method: 'POST', body: '{}', headers: { Cookie: `${APP_ACCESS_COOKIE}=${token}` } }),
       d
@@ -1332,7 +1445,7 @@ describe('app assets at /<name>', () => {
     expect((await handleAppRequest(req(preview('shop'), '/film.mp4'), assetDeps())).headers['Cache-Control']).toBe(
       'public, max-age=0, must-revalidate'
     );
-    const token = mintAppAccessToken('app_vault', SECRET);
+    const token = vaultToken();
     const vault = await handleAppRequest(
       req(prod('vault'), '/film.mp4', { headers: { Cookie: `${APP_ACCESS_COOKIE}=${token}` } }),
       assetDeps()

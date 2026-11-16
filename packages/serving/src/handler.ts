@@ -133,6 +133,7 @@ import { UNLOCK_PATH, errorPage, lockedPage, missingPage, passwordPage, type Mis
 import {
   appAccessCookieName,
   appAccessCookieHeader,
+  appPasswordFingerprint,
   mintAppAccessToken,
   verifyAppAccessToken,
   verifyAppPassword,
@@ -427,7 +428,7 @@ export async function handleAppRequest(req: AppRequest, deps: HandlerDeps): Prom
   const token = readCookieValue(req.header('cookie'), appAccessCookieName(deps.secureCookies ?? true, base ? app.id : undefined));
   const hasAppAccess =
     app.visibility === 'password' && token !== null && deps.accessSecret !== null
-      ? verifyAppAccessToken(token, app.id, deps.accessSecret, (deps.now ?? Date.now)())
+      ? verifyAppAccessToken(token, app.id, app.passwordFingerprint, deps.accessSecret, (deps.now ?? Date.now)())
       : false;
   const locked = decideVisibility({ visibility: app.visibility, hasAppAccess }).action === 'password';
   if (isErrors) {
@@ -715,12 +716,12 @@ async function unlock(
     return page(429, passwordPage({ next, error: 'rate_limited', base }), { 'Retry-After': String(UNLOCK_WINDOW_MS / 1000) });
   }
   const password = form?.get('password') ?? '';
-  const ok =
-    password.length > 0 &&
-    password.length <= MAX_PASSWORD_CHARS &&
-    (await verifyAppPassword(password, await deps.store.passwordHash(app.id)));
-  if (!ok) return page(401, passwordPage({ next, error: 'wrong', base }));
-  const token = mintAppAccessToken(app.id, deps.accessSecret, undefined, (deps.now ?? Date.now)());
+  const stored = password.length > 0 && password.length <= MAX_PASSWORD_CHARS ? await deps.store.passwordHash(app.id) : null;
+  const fingerprint = appPasswordFingerprint(stored);
+  if (!fingerprint || !(await verifyAppPassword(password, stored))) return page(401, passwordPage({ next, error: 'wrong', base }));
+  // A cached entry from before a password change the event did not reach: refresh it, or the new grant would not open.
+  if (fingerprint !== (app.passwordFingerprint ?? null)) deps.store.bust(app.slug);
+  const token = mintAppAccessToken(app.id, fingerprint, deps.accessSecret, undefined, (deps.now ?? Date.now)());
   return redirect(appAccessCookieHeader(token, { secure: deps.secureCookies ?? true, ...(base ? { appId: app.id } : {}) }));
 }
 

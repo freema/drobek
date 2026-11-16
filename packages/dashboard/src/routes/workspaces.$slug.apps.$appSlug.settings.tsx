@@ -52,6 +52,11 @@ export default function AppSettingsRoute() {
           Anyone with the link can open a public app. Password protection applies to the published app, preview and
           saved versions, including visits by workspace members.
         </p>
+        <p style={styles.hint} data-testid="visibility-unlock-hint">
+          A visitor who enters the password stays unlocked for 12 hours. Saving a new password ends every earlier
+          unlock at once: everyone has to enter the new password. Making the app public removes the password, and
+          protecting it again needs a new one.
+        </p>
         <p style={s.inline}>
           Now: <strong data-testid="settings-visibility-current">{settings.visibility}</strong>
           {settings.visibility === 'password' && settings.hasPassword ? (

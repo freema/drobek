@@ -11,7 +11,7 @@ import type { Redis } from 'ioredis';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { APP_CHANGED_CHANNEL, emitLocalAppChanged, type AppHostTarget } from '@drobek/apps';
 import { handleAppRequest, type AppRequest, type HandlerDeps } from './handler.js';
-import { mintAppAccessToken, appAccessCookieName } from './password.js';
+import { mintAppAccessToken, appAccessCookieName, appPasswordFingerprint } from './password.js';
 import {
   DEFAULT_PREVIEW_EVENTS_MAX_MS,
   DEFAULT_PREVIEW_EVENTS_MAX_PER_APP,
@@ -119,12 +119,13 @@ describe('GET /__drobek/preview/events through the handler', () => {
   });
 
   it('a password app needs its access cookie (401 JSON without it)', async () => {
-    app = { ...app, visibility: 'password' };
+    const fp = appPasswordFingerprint('scrypt$aa$bb')!;
+    app = { ...app, visibility: 'password', passwordFingerprint: fp };
     const locked = await handleAppRequest(req(PREVIEW), deps());
     expect(locked.status).toBe(401);
     expect(JSON.parse(String(locked.body))).toMatchObject({ error: 'password_required' });
     expect(hub.open()).toBe(0);
-    const cookie = `${appAccessCookieName(false)}=${mintAppAccessToken('app_1', SECRET)}`;
+    const cookie = `${appAccessCookieName(false)}=${mintAppAccessToken('app_1', fp, SECRET)}`;
     expect((await handleAppRequest(req(PREVIEW, { cookie }), deps())).status).toBe(200);
   });
 
