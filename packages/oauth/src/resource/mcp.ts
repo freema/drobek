@@ -279,14 +279,23 @@ export function mountMcpEndpoint(app: Express, opts: McpEndpointOptions = {}): M
   );
   const serve = toNodeHandler(handler, { onerror: (err) => report(err, 'POST') });
 
+  let unavailableWarnedAt = 0;
+  let unavailableSkipped = 0;
+  /** A counter failure is logged at most once a minute, with how many went unlogged since. */
+  function warnUnavailable(err: unknown): void {
+    const now = Date.now();
+    if (now - unavailableWarnedAt < 60_000) {
+      unavailableSkipped++;
+      return;
+    }
+    log.warn('mcp rate limit unavailable', { error: dbErrorForLog(err), suppressed: unavailableSkipped });
+    unavailableWarnedAt = now;
+    unavailableSkipped = 0;
+  }
+
   /** Charge `hits` messages to the user; past the limit answer 429 and return false. */
   async function withinRate(userId: string, hits: number, res: Response): Promise<boolean> {
-    const rate = await checkMcpRate(
-      rateLimit,
-      userId,
-      (err) => log.warn('mcp rate limit unavailable', { error: dbErrorForLog(err) }),
-      hits
-    );
+    const rate = await checkMcpRate(rateLimit, userId, warnUnavailable, hits);
     if (rate.ok) return true;
     if (rate.firstRefusal) log.warn('mcp rate limit reached', { user_id: userId, limit: rateLimit.perMinute });
     res.setHeader('Retry-After', String(rate.retryAfterSeconds));

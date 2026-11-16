@@ -12,7 +12,7 @@
  * regardless of concurrency. IP/enumeration flooding is bounded separately by
  * the verify-side rate limit in login.verify.server.ts.
  */
-import { createHash, randomInt } from 'node:crypto';
+import { createHash, randomInt, timingSafeEqual } from 'node:crypto';
 import { isIP } from 'node:net';
 import { getRedis } from '@drobek/core';
 
@@ -28,6 +28,11 @@ interface LoginCodeRecord {
 
 function hashCode(code: string): string {
   return createHash('sha256').update(code).digest('hex');
+}
+
+function sameHash(a: string, b: unknown): boolean {
+  if (typeof b !== 'string' || a.length !== b.length) return false;
+  return timingSafeEqual(Buffer.from(a), Buffer.from(b));
 }
 
 function emailHash(email: string): string {
@@ -137,7 +142,7 @@ export async function consumeEmailLoginCode(
     return { ok: false, reason: 'bad_record' };
   }
 
-  if (hashCode(code.trim()) !== rec.codeHash) {
+  if (!sameHash(hashCode(code.trim()), rec.codeHash)) {
     if (attempts >= CODE_MAX_ATTEMPTS) {
       // Final allowed guess was wrong — invalidate the code entirely so the
       // next try fails even if it IS the correct code.

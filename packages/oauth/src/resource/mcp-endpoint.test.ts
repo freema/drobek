@@ -615,7 +615,7 @@ describe('the per-user request limit (MCP_REQUESTS_PER_USER_MINUTE)', () => {
     expect((await listTools(readKey)).status).toBe(429);
   });
 
-  it('a counter failure lets the request through and logs a warning', async () => {
+  it('a counter failure lets the request through and logs one warning a minute', async () => {
     const h = await limited(1, async () => Promise.reject(new Error('redis down')));
     for (let i = 0; i < 3; i++) {
       const res = await listTools(readKey);
@@ -623,7 +623,7 @@ describe('the per-user request limit (MCP_REQUESTS_PER_USER_MINUTE)', () => {
       await res.text();
     }
     const warned = h.lines.filter((l) => l.message === 'mcp rate limit unavailable');
-    expect(warned).toHaveLength(3);
+    expect(warned).toHaveLength(1);
     expect(warned[0].level).toBe('warn');
   });
 });

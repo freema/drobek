@@ -1,5 +1,18 @@
 # Changelog — drobek (core)
 
+## v0.13.0 — 2026-11-16
+
+No migrations. New env vars: `MCP_REQUESTS_PER_USER_MINUTE` (600; `0` = no limit) and `BACKUP_PASSPHRASE_FILE` (unset = plain archives, as before). After the upgrade every visitor unlocked on a password-protected app enters the password once more: unlock cookies issued by an older version no longer verify.
+
+### Security
+- **A new app password ends every earlier unlock at once** (PHY-76): the app-access cookie's signature now covers a fingerprint of the stored password hash, so saving a new password (even the same one again) or making the app public and protecting it again stops every cookie issued before on the next request, on every host of the app, custom domains and path routing included. The cookie still carries only the app id and an expiry, and the serve cache keeps only the fingerprint, never the hash. The Settings tab says so next to the password field.
+- **Sign-in codes are compared in constant time**: the dashboard's e-mailed code is checked against its stored SHA-256 with `timingSafeEqual`.
+
+### Added
+- **A per-user request limit on `/mcp`** (PHY-76): `MCP_REQUESTS_PER_USER_MINUTE` (600 per fixed minute) counts every authenticated request, and every message of a legacy JSON-RPC batch, against the user the credential belongs to, so all of one person's API keys and OAuth connections share one budget. A request without a valid credential is refused before it is counted. Past the budget `/mcp` answers 429 with `Retry-After` and the JSON-RPC error `rate_limited` (`retry_after_seconds`), and nothing of the request runs; the briefing states the value. While Redis cannot be reached requests are served and a warning is logged at most once a minute.
+- **Encrypted backup archives** (PHY-76): with `BACKUP_PASSPHRASE_FILE` (a file whose first line is a passphrase of at least 16 characters) `task backup` writes `drobek-<UTC>.tar.gz.enc`, encrypted by the host's openssl (AES-256-CBC, PBKDF2-SHA256, 600 000 iterations) as it is written; the passphrase never appears in a process argument, a log or the manifest. `task backup:verify` and `task restore` take plain and encrypted archives alike and refuse an encrypted one without the setting, with a wrong passphrase, or changed or cut short, before they unpack or stop anything. Works with OpenSSL 1.1.1+ and LibreSSL.
+- **SECURITY.md: where data lives and what leaves the instance** (PHY-76): what is stored where and what is encrypted, every outbound connection of the server with its off switch (no telemetry, no update check), what app visitors' browsers load from third parties, what a connected agent reads, and retention. Linked from the README and SELF-HOSTING.md.
+
 ## v0.12.1 — 2026-11-07
 
 The tag v0.12.0 was not released: the image e2e's skip guard counted the new path-routing tests as never run (they need their own stack); v0.12.1 runs them in their own CI step and is otherwise v0.12.0. No migrations. New env vars: `APPS_ROUTING_MODE` (`subdomain`, the default — nothing changes for existing instances), `APPS_BASE_URL` (path mode) and `APPS_PROXY_TARGET` (the apps proxy only). drobek now listens dual-stack (`::`, falling back to IPv4 only on a host without IPv6).
