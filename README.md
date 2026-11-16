@@ -531,7 +531,7 @@ are reported privately ([`SECURITY.md`](./SECURITY.md)).
 | [`docs/SELF-HOSTING.md`](./docs/SELF-HOSTING.md) | the quickstart, compose, every environment variable, TLS, backups, upgrades, custom domains, abuse |
 | [`docs/MODULES.md`](./docs/MODULES.md) | the platform module contract and the built-in modules |
 | [`docs/AGENT.md`](./docs/AGENT.md) | connecting agents, the tools and scopes, the briefing, skills, `llms.txt` |
-| [`docs/SECURITY.md`](./docs/SECURITY.md) | the threat model and how to report a vulnerability |
+| [`docs/SECURITY.md`](./docs/SECURITY.md) | the threat model, [where data lives and what leaves the instance](./docs/SECURITY.md#where-data-lives-and-what-leaves-the-instance), and how to report a vulnerability |
 | [`docs/LICENSING.md`](./docs/LICENSING.md) | AGPL-3.0 §13 and the boundary with the hosted drobek.app |
 | [`CHANGELOG.md`](./CHANGELOG.md) | every release |
 

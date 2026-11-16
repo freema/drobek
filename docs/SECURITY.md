@@ -42,7 +42,7 @@ the member's grant; everything they read from apps can be hostile);
 
 | Area | Threat | What drobek does (server-enforced) |
 | --- | --- | --- |
-| **Origin split** | App JavaScript steals the dashboard session or OAuth tokens; apps attack each other | Apps are served only on the apps origin (`APPS_DOMAIN`, a separate registrable domain recommended), each app on its **own host** = own origin (`<slug>`, `<slug>--preview`, `<slug>--v<N>`). The dashboard host never serves an app file. Dashboard cookies are `__Host-` (host-only, `Secure`, path `/`) in production and never read on the apps origin; the serving handler reads only its own app-access cookie. App CSP: scripts and `connect-src` only `'self'` + esm.sh (the preview host's `connect-src` also the dashboard's `/api/screenshots/` path, for a screenshot the agent asked for), `media-src 'self' blob: https:` (media runs no script), `frame-src` only the curated video embeds (`www.youtube-nocookie.com`, `www.youtube.com`, `player.vimeo.com`, `drive.google.com`) plus the operator's `APP_FRAME_SRC_EXTRA` (bare `https://host[:port]` origins only — a wildcard, a path, `http:` or a quote stops the server at start, so the value can never widen `frame-src` to the web or inject a directive), `object-src 'none'`, `base-uri 'self'`, `frame-ancestors` = the dashboard origin (owner override per app adds origins; the operator's `GALLERY_FRAME_ANCESTORS` only on the production host of a gallery-listed app, see **Public gallery**), `form-action 'self'`; `nosniff`, `Referrer-Policy: strict-origin-when-cross-origin` (a third party an app loads from sees only the app's origin, never its path or query — map tile servers such as OpenStreetMap's refuse requests without a Referer), `noindex` on preview/version hosts. A module response can only add a stricter CSP as a second policy: uploaded files (the `files` module, types sniffed from the bytes, SVG/CSV as attachments) also carry `Content-Security-Policy: sandbox`, except PDF. |
+| **Origin split** | App JavaScript steals the dashboard session or OAuth tokens; apps attack each other | Apps are served only on the apps origin (`APPS_DOMAIN`, a separate registrable domain recommended), each app on its **own host** = own origin (`<slug>`, `<slug>--preview`, `<slug>--v<N>`). The dashboard host never serves an app file. Dashboard cookies are `__Host-` (host-only, `Secure`, path `/`) in production and never read on the apps origin; the serving handler reads only its own app-access cookie. App CSP: scripts and `connect-src` only `'self'` + esm.sh (the preview host's `connect-src` also the dashboard's `/api/screenshots/` path, for a screenshot the agent asked for), `style-src`, `img-src` and `font-src` also any `https:` host, `media-src 'self' blob: https:` (media runs no script), `frame-src` only the curated video embeds (`www.youtube-nocookie.com`, `www.youtube.com`, `player.vimeo.com`, `drive.google.com`) plus the operator's `APP_FRAME_SRC_EXTRA` (bare `https://host[:port]` origins only — a wildcard, a path, `http:` or a quote stops the server at start, so the value can never widen `frame-src` to the web or inject a directive), `object-src 'none'`, `base-uri 'self'`, `frame-ancestors` = the dashboard origin (owner override per app adds origins; the operator's `GALLERY_FRAME_ANCESTORS` only on the production host of a gallery-listed app, see **Public gallery**), `form-action 'self'`; `nosniff`, `Referrer-Policy: strict-origin-when-cross-origin` (a third party an app loads from sees only the app's origin, never its path or query — map tile servers such as OpenStreetMap's refuse requests without a Referer), `noindex` on preview/version hosts. A module response can only add a stricter CSP as a second policy: uploaded files (the `files` module, types sniffed from the bytes, SVG/CSV as attachments) also carry `Content-Security-Policy: sandbox`, except PDF. |
 | **Path routing (`APPS_ROUTING_MODE=path`)** | On a platform without a wildcard domain, app JS lands on the dashboard origin; the apps entry reaches the dashboard, its API, MCP, OAuth or admin; a crafted path or forwarding header picks another app or version; another person signs up on a personal instance | The dashboard stays on `PUBLIC_APP_URL` and every app on ONE separate apps origin (`APPS_BASE_URL`, a different host) under `/apps/<slug>/`, `/apps/<slug>--preview/`, `/apps/<slug>--v<N>/`; the dashboard host never serves an app file. The apps host serves only `/apps/<label>/…` and the shared SDK scripts — every other path (`/api`, `/mcp`, `/oauth`, `/admin`, `/login`, encoded or `..` variants) is a 404 there. App and version come only from the literal first path segment, checked by the same label rules as a subdomain (no percent-decoding into another segment, no `..`); a request is classified by its `Host` alone, and the bundled apps proxy (`dist/server/apps-proxy.js`) forces `Host` to the apps host and drops `X-Forwarded-Host` and `Forwarded`, so a spoofed header cannot reach the dashboard. The end-user and app-access cookies stay host-only `__Host-` cookies and carry the app id in their name (`__Host-drobek_eu-<app id>`, `__Host-drobek_app_access-<app id>`), so signing in to one app never replaces another's session; their tokens stay bound to the app. Service-worker scripts are refused (a worker scoped to `/` would control every app). Custom domains and IdP sign-in for end users are off in this mode (e-mail codes only); compiled assets use relative URLs and the page gets a `<base>` of its app. The mode is for **one trusted owner**: it needs exactly one `SUPERADMIN_EMAIL`, only that address gets an account or a sign-in code, invites and e-mail changes are refused, and the server refuses to start when the database holds another account. What a shared origin cannot separate is listed under **Known limitations**. |
 | **App thumbnails in the dashboard** | Framing an app turns the dashboard into a clickjacking surface or lets app code reach the dashboard | The workspace app list is the only place the dashboard frames an app, and the app hosts allow exactly one extra ancestor for it: the dashboard origin (`PUBLIC_APP_URL`), no other site (the one exception is the operator's own gallery website on the production host of an app listed in the public gallery — see **Public gallery**). The iframe is `sandbox="allow-scripts allow-same-origin"`: the app keeps its own origin, which by the origin split is never the dashboard's, so it cannot touch the dashboard's DOM or cookies; without `allow-top-navigation`, `allow-popups`, `allow-forms` or `allow-modals` it cannot navigate the dashboard, open windows, submit forms or show dialogs. It is `credentialless` where the browser supports it (a throwaway cookie and storage partition, so the preview never runs as the viewer's end-user session), lazily loaded, sent no referrer, and inert (`pointer-events: none`, no focus, `aria-hidden`): nothing in it can be clicked. A password-gated, taken-down, inactive or never-compiled app gets a placeholder tile instead. Like any visit, a thumbnail load runs the app's start-up code and counts in its request stats, but not as a page view in Analytics. |
 | **Password-protected apps** | A visitor guesses the password; an unlock cookie opens another app, is forged, or keeps working after the owner changes the password | The password is set only on the dashboard's Settings tab and stored scrypt-hashed with a fresh random salt; it never passes through MCP. The gate covers every host of the app (production, preview, version hosts, custom domains), its files, assets and `/__drobek/*` routes (except a module's non-GET route declared `passwordGate: 'skip'`, see **Incoming webhooks**), members' visits included. Unlock attempts are limited per app and client IP and per app overall. A correct password sets a host-only app-access cookie (`__Host-` + `Secure` over https, `HttpOnly`, `SameSite=Lax`, 12 h; in path routing named per app) holding a stateless token: the app id and an expiry, HMAC-signed under a key derived from `DROBEK_MASTER_KEY` together with a fingerprint of the app's stored password hash — the cookie carries neither the hash nor the fingerprint, and the serve cache keeps only the fingerprint. A token never opens another app. Saving a new password (even the same one again: every hash has a new salt), or making the app public and protecting it again, changes the fingerprint, so every cookie issued before stops opening the app with the next request: the change busts the serve cache on every drobek process, a missed event is caught by the cache's 60 s expiry, and an unlock that finds a newer hash refreshes the cache at once. Rotating the master key ends every cookie too. |
@@ -135,4 +135,146 @@ Stated plainly so operators can plan around them:
   not matched to an app by host in this mode.
 - The operator of an instance can read everything stored on it (records,
   submissions, uploads); secrets are encrypted at rest but the process can
-  decrypt them. Choose your host accordingly.
+  decrypt them. Choose your host accordingly (see
+  [Where data lives and what leaves the instance](#where-data-lives-and-what-leaves-the-instance)).
+- **The app CSP is no data-loss barrier against an app's own code.** It keeps
+  `fetch` / XHR on the app's origin and esm.sh, but images, styles, fonts and
+  media may come from any https host and a page may navigate anywhere, so
+  app code can still carry data out in such a URL. It guards the dashboard
+  and (with subdomain routing) other apps, not an app's data from its
+  author.
+
+## Where data lives and what leaves the instance
+
+For deciding what data may go into a self-hosted instance. Volume names and
+defaults are those of `docker-compose.production.yaml`.
+
+### What is stored where
+
+| Store | What it holds |
+| --- | --- |
+| Postgres (`pg_data`) — accounts and access | `users` (e-mail, Google subject), `workspaces`, `memberships`; `api_keys`, `oauth_*` (keys, codes and tokens as hashes only) |
+| Postgres — apps | `apps` (app password as a scrypt hash), `app_versions`, `version_files` and `blobs` (the bytes of every source file of every kept version, plus the WebP screenshots), `app_compiles`, `app_assets` / `app_version_assets` (asset metadata), `module_configs`, `workspace_modules`, `domains`, `upstreams` |
+| Postgres — end users' data | `mod_data_documents` (records, JSON), `mod_forms_submissions` (field values), `mod_auth_users` / `mod_auth_identities` (end users' e-mail, role, IdP issuer and subject), `mod_files` (upload name, type, size, uploader), `mod_webhooks_deliveries` / `_events` (status, size, reason, sender event id — never the body), `mod_sync_sources` / `_runs` |
+| Postgres — secrets | `module_secrets`, `upstream_secrets` (encrypted, below) |
+| Postgres — feedback, logs, statistics | `app_feedback` (note text, page path, element), `app_screenshots`; `app_errors` (browser errors: redacted message and stack, page URL, user agent), `app_daily_stats`, `module_request_stats`, `app_version_loads`, `app_traffic_daily` / `app_traffic_top` (counts, paths without query, referrer hosts) |
+| Postgres — audit and moderation | `audit_log` (actor id, action, target, redacted context), `abuse_reports` (reporter e-mail, a keyed hash of the reporter's IP, free text), `gallery_likes`, `gallery_opens` |
+| `files_data` (`/data/files`) | the bytes end users upload (`files` module), one file per sha256 |
+| `assets_data` (`/data/assets`) | app assets (video, audio, images, fonts) uploaded by members and agents |
+| `modules_data` (`/data/modules`) | installed third-party modules and `modules.lock.json` |
+| `caddy_data` | the ACME account key, the certificates and their private keys, Caddy's local CA (`caddy_config` holds only Caddy's own autosaved config) |
+| Redis (`redis_data`, append-only file) | dashboard and end-user sessions, sign-in codes (SHA-256), invites, rate-limit counters, upload-URL capabilities (hashes), OAuth and IdP sign-in state, caches, the analytics HyperLogLog and its daily salt, preview browser errors, screenshot requests, and the `data` module's change backlog — copies of the last `DATA_SUBSCRIBE_BACKLOG` (100) changed records per collection, kept 10 minutes after the last write |
+| Container logs (json-file) | JSON log lines, rotated at `CONTAINER_LOG_MAX_SIZE` × `CONTAINER_LOG_MAX_FILES`; no secret values, form field values or webhook bodies. The generated Caddyfile turns on no access log |
+| `task backup` archives (`BACKUP_DIR`) | the database dump plus `files_data`, `assets_data`, `modules_data` and `caddy_data` (certificate private keys included), mode 600, **not encrypted**; without `.env.production` (`DROBEK_MASTER_KEY`) and without Redis |
+
+**Encrypted by drobek:** module secrets and upstream secrets only —
+AES-256-GCM, each under its own data key wrapped by `DROBEK_MASTER_KEY`
+(see **Secrets** above). **One-way hashed:** API keys, OAuth codes and
+tokens, app passwords, sign-in codes, upload-URL tokens. **Stored in plain
+form:** everything else — sources, records, form submissions, end users'
+addresses, uploads, assets, screenshots, feedback, logs, the audit log, Redis
+and the backups. Disk or volume encryption, access to the host, to Postgres
+(`POSTGRES_PASSWORD`; the compose file publishes no database port) and to
+Redis (no password, no published port — keep it on the compose network), and
+where backups and `.env.production` are kept, are the operator's job. drobek
+talks to Postgres and Redis over plain TCP on the compose network.
+
+### Outbound connections of the server
+
+Everything the drobek process connects to on its own. Caddy is listed
+separately below.
+
+| Call | Trigger | Destination | What it carries | Turn it off |
+| --- | --- | --- | --- | --- |
+| GitHub star count | a dashboard page render (also the sign-in page), at most once an hour (after a failure once per 10 minutes) | `api.github.com/repos/freema/drobek` | a GET without credentials, `User-Agent: drobek`; GitHub sees the server's IP | `DASHBOARD_GITHUB_STARS=off` |
+| Mail over SMTP | sign-in, e-mail-change and account-deletion codes, invites, notices (publish, abuse, takedown, blocked workspace), form notifications, an app's `notifyAdmins` | `SMTP_HOST` | the recipient and the message — a code, an invite link, **the submitted field values** of a form notification, the app's own text | required in production; point it at your own relay |
+| Mail over Resend | the same, with `EMAIL_TRANSPORT=resend` | `api.resend.com` | the same message, `RESEND_API_KEY` in the header | use `smtp` (the default) |
+| Module transport or error reporter | `EMAIL_TRANSPORT=<module id>` / `ERROR_REPORTER=<module id>` | whatever that module sends to | the message; for errors an allow-listed, redacted event (no bodies, headers, cookies or query strings) | leave both unset (the default; no built-in module contributes either) |
+| Dashboard Google sign-in | a member signs in with Google | Google's token and userinfo endpoints | the authorization code, `GOOGLE_CLIENT_SECRET`, the PKCE verifier, then the access token | leave `GOOGLE_CLIENT_ID` empty (the default) |
+| Limits provider | a workspace's limits are looked up (cached 60 s) | `LIMITS_PROVIDER_URL` | the workspace id, an HMAC-signed timestamp | leave it unset (the default) |
+| `proxy` module | an app's browser calls `drobek.proxy.fetch` | an upstream a workspace admin registered and confirmed for that app | the end user's method, path, query, body and headers — minus cookies, `Authorization`, `Origin`, `Referer`, `Sec-*` and every forwarding / client-IP header; the browser's `User-Agent` passes — plus the upstream's secret | remove `proxy` (and `sync`) from `DROBEK_MODULES`, or register no upstream |
+| `sync` module | its job (every minute while an app has a source) runs the due sources; `sync_now` | the same upstreams | the source's method and path, the upstream's secret | remove `sync` from `DROBEK_MODULES` |
+| `oidc` module | an end user signs in with the company IdP | the app's issuer or `AUTH_OIDC_ISSUER`: discovery, keys, token, userinfo | the code, the PKCE verifier, the client id and secret, the access token | remove `oidc` from `DROBEK_MODULES`, or enable no provider |
+| OAuth client metadata | an MCP client starts sign-in with an https URL as its `client_id` — anyone can, before signing in | that URL | a GET without credentials, `User-Agent: drobek-oauth-cimd`; that host sees the server's IP | none; https only, port 443, public addresses only, no redirects, 5 s, 64 KiB, cached 1 h (a failure 60 s) |
+| DNS for custom domains | a domain verification (`verify_domain`, the Domains tab) and the re-check (`DOMAINS_RECHECK_INTERVAL_MS`) | the system resolver or `DOMAINS_DNS_SERVERS` | the domain names | `DOMAINS_MAX_PER_APP=0` (no new domain) and remove the existing ones |
+| A third-party module | whatever its code does — it runs with all of Node | — | — | install only modules you reviewed; `/healthz` lists every module. Installing one (`task selfhost:module:add`) fetches it once from npm or the URL you give |
+
+The proxy, sync, oidc and client-metadata calls go through the SSRF guard
+(**SSRF** above). The compiler fetches nothing: an esm.sh import stays a URL
+for the browser. There is **no telemetry, no update check and no usage
+beacon**: no usage data goes to the drobek project (the star-count GET
+carries none); the "What's new" notice is built from the running image's own
+version, and the traffic analytics stay in the instance's database. With
+egress limited to the mail server, the DNS resolver and the hosts you
+configured (upstreams, IdPs, Google sign-in, a limits provider, a module's
+service), what stops working is the GitHub star count and the sign-in of MCP
+clients that identify by a metadata URL.
+
+**Caddy** (its own container) talks to the ACME CA when it issues or renews
+a certificate (with `TLS_ACME_EMAIL` as the account e-mail; with a DNS
+provider module also to that provider's API, credentials in `.env.caddy`).
+Public CAs publish every certificate in Certificate Transparency logs: with
+on-demand TLS each app host opened over https (`<slug>`, `<slug>--preview`,
+`<slug>--v<N>`) becomes public; a wildcard certificate (files or DNS-01)
+publishes only `*.<APPS_DOMAIN>` for them. A verified custom domain gets its
+own certificate in every mode but `TLS_INTERNAL=1`, which uses no public CA
+at all. The apps proxy of path routing (`dist/server/apps-proxy.js`)
+connects only to `APPS_PROXY_TARGET`.
+
+### What app visitors' browsers load from third parties
+
+drobek's own scripts (the SDK at `/__drobek/sdk.js`, the preview script)
+come from the app host, and the preview's screenshot uses the browser's own
+screen capture. The dashboard loads nothing from a third party, but its app
+list frames the apps, so a member's browser loads what the apps load.
+
+| Source | When | What the third party learns |
+| --- | --- | --- |
+| esm.sh (`script-src`, `connect-src`) | every package an app maps in `drobek.json` — the react-ts template maps React there | the visitor's IP and user agent, the time, the package, and the app's origin (`Referrer-Policy: strict-origin-when-cross-origin` sends the origin, never the path or query) |
+| any https host for styles, images, fonts and media | URLs the app's code names (web fonts, map tiles, …) | the same |
+| `www.youtube-nocookie.com`, `www.youtube.com`, `player.vimeo.com`, `drive.google.com`, `APP_FRAME_SRC_EXTRA` | an `<iframe>` the app embeds | the same, plus what the embedded player stores |
+
+No setting removes esm.sh from the CSP; an app that must not reach a third
+party keeps its libraries in its own files.
+
+### What a connected agent reads
+
+An agent acts with its member's role and its grant's scopes
+([AGENT.md](AGENT.md)). Everything a tool answers goes into the model the
+agent runs on, and so to that model's provider under the agent's terms —
+self-hosting drobek does not change that.
+
+| Reaches the agent | Tools |
+| --- | --- |
+| App sources (text files of any kept version; `get_app` lists their paths and sizes) | `read_file`, `get_app` |
+| Module configs (never secret values), upstream base URLs, custom domains | `get_app`, `list_upstreams`, `list_domains` |
+| Records, form submissions (field values), end users (e-mail, role, status, sign-in times) | `query_data`, `list_form_submissions`, `list_end_users` |
+| Upload names, types, sizes and uploaders; asset paths and sizes | `list_uploads`, `list_assets` |
+| Browser errors, compile errors, request counts, sync runs, webhook deliveries | `get_logs` |
+| Traffic counts, page paths, referrer hosts | `get_analytics` |
+| Feedback notes and their screenshots; screenshots the agent requested | `list_feedback`, `get_feedback_screenshot`, `get_screenshot` |
+| Members' e-mail addresses; the audit trail (workspace-admin) | `list_members`, `list_activity` |
+
+**Never reaches it:** secret values (module and upstream secrets are set in
+the dashboard only and shown as `hasSecret`), app passwords, API keys and
+OAuth tokens, sign-in codes, invite links, and the bytes of uploads, assets
+and other binary files (`read_file` answers their size).
+
+### Retention and deletion
+
+| Data | Kept | Setting |
+| --- | --- | --- |
+| Audit log | 365 days, also after the app, workspace or account is gone | `AUDIT_RETENTION_DAYS` |
+| Traffic counts | 90 days; the visitor-hash salt only for its UTC day | `ANALYTICS_RETENTION_DAYS`, `ANALYTICS_ENABLED=0` |
+| Browser errors (`app_errors`) | 30 days, newest 500 per app | `BEACON_RETENTION_DAYS`, `BEACON_MAX_EVENTS_PER_APP` |
+| Preview browser errors (Redis) | 48 h after the last one | `BROWSER_ERRORS_TTL_HOURS` |
+| Compile history, request counts, daily signals | 30 days (compiles: newest 200 per app) | — |
+| Webhook deliveries / sync runs | 30 days and 1000 per app / newest 50 per source | — |
+| App versions | newest 200 per app, plus the published, previewed, kept and rollback ones and the last hour's; members delete older ones with `delete_versions` | `APP_VERSIONS_KEEP` |
+| Screenshots | requested by an agent: 7 days; on a feedback note: 30 days after it is resolved | `SCREENSHOTS_RETENTION_DAYS`, `FEEDBACK_SCREENSHOT_RETENTION_DAYS` |
+| Records, form submissions, end users, uploads, assets, feedback notes | until a member deletes them or the app is purged — no age limit | — |
+| Deleted app | purged after 30 days: versions, module data, domains, assets, logs, statistics; upload bytes follow with the files sweep (24 h) | `APP_PURGE_AFTER_DAYS`, `FILES_SWEEP_RETENTION_MS` |
+| Deleted workspace or account | its apps purged at once; the user's keys, tokens and sessions removed with it | — |
+| Resolved abuse reports | 365 days after resolving | `ABUSE_REPORTS_RETENTION_DAYS` |
+| OAuth tokens / codes | 7 / 37 days after they expire | — |
+| Backups | the newest 14 archives — deleted data stays in older archives until they rotate out | `BACKUP_KEEP` |
