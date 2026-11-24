@@ -240,7 +240,10 @@ jobs:
     name: Prod image · compose · e2e (@smoke + @local) ${{ matrix.shard }}
     runs-on: ubuntu-24.04
     needs: image
-    timeout-minutes: 13
+    # The tests take about 4 minutes; `playwright install-deps` (apt, fonts) took
+    # 8–10 minutes on slow archive mirrors on 2026-11-24 and cut two shards off at
+    # the old 13-minute limit after all their tests had passed.
+    timeout-minutes: 20
     strategy:
       fail-fast: true
       matrix:
