@@ -1,6 +1,8 @@
 # Changelog — drobek (core)
 
-## Unreleased
+## v0.14.0 — 2026-11-24
+
+No migrations, no new env vars. Readiness lists five more warnings for HTML files; nothing that published before is blocked now.
 
 ### Added
 - **Readiness warns about the HTML and accessibility basics** (#29, #41, thanks @rajjadhav123): `write_files`, `publish`, `get_app` and the dashboard's "Before you publish" now list, for every `.html` file of the version, `html_missing_lang` (no `lang` on `<html>`) and `html_missing_viewport` (no `<meta name="viewport">`) for a full document, and, in fragments too, `a11y_img_alt` (an `<img>` without `alt`; `alt=""` is fine), `a11y_name` (a `<button>` or `<a href>` without an accessible name) and `a11y_label` (an `<input>`, `<select>` or `<textarea>` without a label), each with its fix. The three element rules list their first 5 findings per file and count the rest. They are warnings: nothing is blocked, only the markup as written is read, and the template apps have none.
