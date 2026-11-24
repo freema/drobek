@@ -81,10 +81,23 @@ function expectCapAnswer(a: Answer): void {
 
 const big = Buffer.from(new URLSearchParams({ email: 'body-limit@example.com', pad: 'x'.repeat(2 * MiB) }).toString());
 
+/**
+ * The declared upload must get its 413, but the answer can be lost to a race:
+ * the server answers and closes while 2 MiB are still on the way, and the
+ * kernel resets the connection over the unread data, sometimes before the
+ * client has read the 413 (main CI, 2026-11-24). A reset is retried, so the
+ * test still needs a real 413 and only stops failing on the race.
+ */
+async function postDeclared(path: string, body: Buffer): Promise<Answer> {
+  let answer = await post(path, body);
+  for (let attempt = 1; attempt < 3 && answer.status === -1; attempt++) answer = await post(path, body);
+  return answer;
+}
+
 test('a 2 MiB body on /login and /oauth/token answers 413 (declared or chunked); the process keeps answering @local', async ({ request }) => {
   skipUnlessLocal();
   for (const path of ['/login', '/oauth/token']) {
-    const declared = await post(path, big);
+    const declared = await postDeclared(path, big);
     expect(declared.status, `${path} declared`).toBe(413);
     expectCapAnswer(declared);
     const chunked = await post(path, big, { chunked: true });
