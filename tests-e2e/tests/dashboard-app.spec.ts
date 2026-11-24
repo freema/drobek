@@ -39,7 +39,7 @@ import {
  */
 
 const HTML = (text: string) =>
-  `<!doctype html><html><head><title>${text}</title><meta name="description" content="Version ${text}."><link rel="icon" href="data:,"></head><body><h1>${text}</h1></body></html>`;
+  `<!doctype html><html lang="en"><head><title>${text}</title><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Version ${text}."><link rel="icon" href="data:,"></head><body><h1>${text}</h1></body></html>`;
 
 function watchConsole(page: Page): string[] {
   const problems: string[] = [];
@@ -146,7 +146,7 @@ test('app page: publish, rollback, restore and unpublish from the UI change what
   await expect(page.getByTestId('app-preview-url')).toHaveAttribute('href', urlOf(previewHost(app.slug)));
   await expect(page.getByTestId('app-compile-status')).toHaveAttribute('data-status', 'ok');
   await expect(page.locator('[data-testid="app-tab"][aria-current="page"]')).toHaveAttribute('data-tab', 'overview');
-  // the newest version passed the publish readiness checks (a <title>, a description and an icon).
+  // the newest version passed the publish readiness checks (a language, a viewport, a <title>, a description and an icon).
   await expect(page.getByTestId('readiness-section')).toHaveAttribute('data-state', 'ready');
   await expect(page.getByTestId('readiness-section')).toHaveAttribute('data-version', '2');
   // "Open" goes to the version host (a link, never a frame).

@@ -33,6 +33,7 @@ const BARE = [
   '<html lang="en">',
   '  <head>',
   '    <meta charset="utf-8" />',
+  '    <meta name="viewport" content="width=device-width, initial-scale=1" />',
   '    <title>Head E2E</title>',
   '    <meta property="og:image" content="/og.png" />',
   '  </head>',
@@ -82,7 +83,7 @@ test('readiness names a missing description, a missing favicon and a relative og
     expect(before.warnings.map((w) => `${w.code} ${w.file}:${w.line}`), JSON.stringify(before.warnings)).toEqual([
       'missing_description index.html:3',
       'missing_favicon index.html:3',
-      'og_image_not_absolute index.html:6',
+      'og_image_not_absolute index.html:7',
     ]);
     const [description, favicon, ogImage] = before.warnings;
     expect(description.message).toContain('index.html has no <meta name="description">');

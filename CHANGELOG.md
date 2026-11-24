@@ -1,5 +1,10 @@
 # Changelog — drobek (core)
 
+## Unreleased
+
+### Added
+- **Readiness warns about the HTML and accessibility basics** (#29, #41, thanks @rajjadhav123): `write_files`, `publish`, `get_app` and the dashboard's "Before you publish" now list, for every `.html` file of the version, `html_missing_lang` (no `lang` on `<html>`) and `html_missing_viewport` (no `<meta name="viewport">`) for a full document, and, in fragments too, `a11y_img_alt` (an `<img>` without `alt`; `alt=""` is fine), `a11y_name` (a `<button>` or `<a href>` without an accessible name) and `a11y_label` (an `<input>`, `<select>` or `<textarea>` without a label), each with its fix. The three element rules list their first 5 findings per file and count the rest. They are warnings: nothing is blocked, only the markup as written is read, and the template apps have none.
+
 ## v0.13.1 — 2026-11-16
 
 The tag v0.13.0 was not released: the hosted runner label `ubuntu-latest` moved to Ubuntu 26.04, which the pinned Playwright has no browser build for, so the image e2e could not start; v0.13.1 pins the workflows to `ubuntu-24.04` and is otherwise v0.13.0. No migrations. New env vars: `MCP_REQUESTS_PER_USER_MINUTE` (600; `0` = no limit) and `BACKUP_PASSPHRASE_FILE` (unset = plain archives, as before). After the upgrade every visitor unlocked on a password-protected app enters the password once more: unlock cookies issued by an older version no longer verify.

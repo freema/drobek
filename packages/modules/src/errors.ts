@@ -111,6 +111,7 @@ export const CORE_ERROR_CODES: readonly string[] = [
   'missing_title', 'missing_description', 'missing_favicon', 'og_image_not_absolute',
   'data_public_write_no_schema', 'data_public_write_unbounded', 'data_public_read_personal', 'rule_needs_auth_module', 'proxy_public_upstream', 'module_change_pending',
   'xss_html_sink', 'xss_eval', 'xss_url_sink',
+  'html_missing_lang', 'html_missing_viewport', 'a11y_img_alt', 'a11y_name', 'a11y_label',
   'type_error',
   // OAuth
   'invalid_grant',
